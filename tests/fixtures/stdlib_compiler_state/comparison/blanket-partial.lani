@@ -1,0 +1,6 @@
+// Compile with --stdlib-root tests/fixtures/stdlib_compiler_state/comparison/blanket-root.
+// Generic implementation member routing reports LNC0027.
+module app::main;
+import core::cmp;
+fn same<T>(a: T,b: T) -> bool where T: core::cmp::Forwarded<T> { return T::forwarded_eq(a,b); }
+fn main() -> i32 { if (same(1,1)) { return 0; } return 1; }

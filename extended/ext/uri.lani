@@ -1,0 +1,158 @@
+// Strict RFC 3986 generic URI-reference syntax. Components retain their encoded
+// spelling and borrow the selected source view. No allocation or resolution.
+module ext::uri;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, LengthLimit, InvalidByte(i32), InvalidPercent(i32), InvalidScheme(i32), InvalidAuthority(i32), InvalidHost(i32), InvalidPort(i32) }
+pub enum HostKind { RegName, Ipv4, Ipv6, IpvFuture }
+pub struct Authority { raw: core::slice::View<u8>, userinfo: core::option::Option<core::slice::View<u8>>, host: core::slice::View<u8>, port: core::option::Option<core::slice::View<u8>>, kind: HostKind }
+pub struct Reference { raw: core::slice::View<u8>, scheme: core::option::Option<core::slice::View<u8>>, authority: core::option::Option<Authority>, path: core::slice::View<u8>, query: core::option::Option<core::slice::View<u8>>, fragment: core::option::Option<core::slice::View<u8>> }
+pub const DEFAULT_MAX_BYTES: i32 = 1048576;
+
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn window(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn alpha(value: u8) -> bool { return (value >= 65 && value <= 90) || (value >= 97 && value <= 122); }
+fn digit(value: u8) -> bool { return value >= 48 && value <= 57; }
+fn hex(value: u8) -> bool { return digit(value) || (value >= 65 && value <= 70) || (value >= 97 && value <= 102); }
+fn unreserved(value: u8) -> bool { return alpha(value) || digit(value) || value == 45 || value == 46 || value == 95 || value == 126; }
+fn sub_delim(value: u8) -> bool { return value == 33 || value == 36 || value == 38 || value == 39 || value == 40 || value == 41 || value == 42 || value == 43 || value == 44 || value == 59 || value == 61; }
+fn gen_delim(value: u8) -> bool { return value == 58 || value == 47 || value == 63 || value == 35 || value == 91 || value == 93 || value == 64; }
+// Percent syntax and the common ASCII alphabet are validated before splitting.
+fn lexical(view: core::slice::View<u8>) -> core::result::Result<bool, Error> {
+    let index: i32 = 0;
+    while (index < view.len()) {
+        let value: u8 = byte(view,index);
+        if (value == 37) {
+            if (view.len()-index < 3 || !hex(byte(view,index+1)) || !hex(byte(view,index+2))) { return core::result::Err(Error::InvalidPercent(index)); }
+            index += 3;
+        } else {
+            if (!unreserved(value) && !sub_delim(value) && !gen_delim(value)) { return core::result::Err(Error::InvalidByte(index)); }
+            index += 1;
+        }
+    }
+    return core::result::Ok(true);
+}
+// Modes: registered name, userinfo, path, query/fragment. Percent triplets
+// have already been checked; encoded delimiters never split components.
+fn component(view: core::slice::View<u8>, start: i32, end: i32, mode: i32) -> core::result::Result<bool, Error> {
+    let index: i32 = start;
+    while (index < end) {
+        let value: u8 = byte(view,index);
+        if (value == 37) { index += 3; }
+        else {
+            let allowed: bool = unreserved(value) || sub_delim(value);
+            if (mode >= 1 && value == 58) { allowed = true; }
+            if (mode >= 2 && (value == 64 || value == 47)) { allowed = true; }
+            if (mode == 3 && value == 63) { allowed = true; }
+            if (!allowed) { return core::result::Err(Error::InvalidByte(index)); }
+            index += 1;
+        }
+    }
+    return core::result::Ok(true);
+}
+fn ipv4(view: core::slice::View<u8>, start: i32, end: i32) -> bool {
+    let parsed: core::result::Result<core::net::Ipv4Addr,core::net::Error> = core::net::parse_ipv4(window(view,start,end));
+    return core::result::is_ok(parsed);
+}
+fn ipv6(view: core::slice::View<u8>, start: i32, end: i32) -> bool {
+    let parsed: core::result::Result<core::net::Ipv6Addr,core::net::Error> = core::net::parse_ipv6(window(view,start,end));
+    return core::result::is_ok(parsed);
+}
+fn ipv_future(view: core::slice::View<u8>, start: i32, end: i32) -> bool {
+    let index: i32 = start+1; let begin: i32 = index;
+    while (index < end && hex(byte(view,index))) { index += 1; }
+    if (index == begin || index == end || byte(view,index) != 46) { return false; } index += 1;
+    if (index == end) { return false; }
+    while (index < end) { let value: u8 = byte(view,index); if (!unreserved(value) && !sub_delim(value) && value != 58) { return false; } index += 1; }
+    return true;
+}
+fn authority(view: core::slice::View<u8>, start: i32, end: i32) -> core::result::Result<Authority, Error> {
+    let userinfo: core::option::Option<core::slice::View<u8>> = core::option::None();
+    let port: core::option::Option<core::slice::View<u8>> = core::option::None();
+    let host_start: i32 = start; let index: i32 = start;
+    while (index < end) {
+        if (byte(view,index) == 64) {
+            if (core::option::is_some(userinfo)) { return core::result::Err(Error::InvalidAuthority(index)); }
+            let checked: core::result::Result<bool, Error> = component(view,start,index,1);
+            if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+            userinfo = core::option::Some(window(view,start,index)); host_start = index+1;
+        }
+        index += 1;
+    }
+    let host_end: i32 = end; let kind: HostKind = HostKind::RegName;
+    if (host_start < end && byte(view,host_start) == 91) {
+        index = host_start+1; while (index < end && byte(view,index) != 93) { index += 1; }
+        if (index == end) { return core::result::Err(Error::InvalidHost(host_start)); }
+        let begin: i32 = host_start+1; let valid: bool = false;
+        if (begin < index && (byte(view,begin) == 118 || byte(view,begin) == 86)) { valid = ipv_future(view,begin,index); kind = HostKind::IpvFuture; }
+        else { valid = ipv6(view,begin,index); kind = HostKind::Ipv6; }
+        if (!valid) { return core::result::Err(Error::InvalidHost(host_start)); }
+        host_end = index+1;
+        if (host_end < end && byte(view,host_end) != 58) { return core::result::Err(Error::InvalidAuthority(host_end)); }
+    } else {
+        index = host_start; while (index < end && byte(view,index) != 58) { index += 1; } host_end = index;
+        let checked: core::result::Result<bool, Error> = component(view,host_start,host_end,0);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        if (ipv4(view,host_start,host_end)) { kind = HostKind::Ipv4; }
+    }
+    if (host_end < end) {
+        index = host_end+1; while (index < end) { if (!digit(byte(view,index))) { return core::result::Err(Error::InvalidPort(index)); } index += 1; }
+        port = core::option::Some(window(view,host_end+1,end));
+    }
+    return core::result::Ok(Authority { raw: window(view,start,end), userinfo: userinfo, host: window(view,host_start,host_end), port: port, kind: kind });
+}
+
+pub fn parse(bytes: core::slice::View<u8>) -> core::result::Result<Reference, Error> { return parse_with_limit(bytes,DEFAULT_MAX_BYTES); }
+pub fn parse_with_limit(bytes: core::slice::View<u8>, max_bytes: i32) -> core::result::Result<Reference, Error> {
+    if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647-bytes.length || max_bytes < 0) { return core::result::Err(Error::Bounds); }
+    if (bytes.len() > max_bytes) { return core::result::Err(Error::LengthLimit); }
+    let checked: core::result::Result<bool, Error> = lexical(bytes);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let scheme: core::option::Option<core::slice::View<u8>> = core::option::None();
+    let auth: core::option::Option<Authority> = core::option::None();
+    let query: core::option::Option<core::slice::View<u8>> = core::option::None();
+    let fragment: core::option::Option<core::slice::View<u8>> = core::option::None();
+    let index: i32 = 0;
+    while (index < bytes.len() && byte(bytes,index) != 58 && byte(bytes,index) != 47 && byte(bytes,index) != 63 && byte(bytes,index) != 35) { index += 1; }
+    let position: i32 = 0;
+    if (index < bytes.len() && byte(bytes,index) == 58) {
+        if (index == 0 || !alpha(byte(bytes,0))) { return core::result::Err(Error::InvalidScheme(0)); }
+        let cursor: i32 = 1; while (cursor < index) {
+            let value: u8 = byte(bytes,cursor);
+            if (!alpha(value) && !digit(value) && value != 43 && value != 45 && value != 46) { return core::result::Err(Error::InvalidScheme(cursor)); } cursor += 1;
+        }
+        scheme = core::option::Some(window(bytes,0,index)); position = index+1;
+    }
+    if (bytes.len()-position >= 2 && byte(bytes,position) == 47 && byte(bytes,position+1) == 47) {
+        let start: i32 = position+2; index = start;
+        while (index < bytes.len() && byte(bytes,index) != 47 && byte(bytes,index) != 63 && byte(bytes,index) != 35) { index += 1; }
+        let parsed: core::result::Result<Authority, Error> = authority(bytes,start,index);
+        if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+        auth = core::option::Some(core::result::unwrap(parsed)); position = index;
+    }
+    let path_start: i32 = position;
+    while (position < bytes.len() && byte(bytes,position) != 63 && byte(bytes,position) != 35) { position += 1; }
+    checked = component(bytes,path_start,position,2);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let path: core::slice::View<u8> = window(bytes,path_start,position);
+    if (position < bytes.len() && byte(bytes,position) == 63) {
+        let start: i32 = position+1; position = start;
+        while (position < bytes.len() && byte(bytes,position) != 35) { position += 1; }
+        checked = component(bytes,start,position,3); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        query = core::option::Some(window(bytes,start,position));
+    }
+    if (position < bytes.len()) {
+        let start: i32 = position+1; checked = component(bytes,start,bytes.len(),3);
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        fragment = core::option::Some(window(bytes,start,bytes.len()));
+    }
+    return core::result::Ok(Reference { raw: bytes, scheme: scheme, authority: auth, path: path, query: query, fragment: fragment });
+}
+
+pub impl Reference {
+    pub fn as_bytes(&self) -> core::slice::View<u8> { return self.raw; }
+    pub fn is_relative(&self) -> bool { return core::option::is_none(self.scheme); }
+}

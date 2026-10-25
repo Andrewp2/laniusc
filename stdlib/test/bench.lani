@@ -1,0 +1,60 @@
+// One measured batch, with explicit work and iteration bounds. No warmup,
+// statistical confidence claim, or optimizer barrier is implied.
+module test::bench;
+import core::result;
+import core::time;
+import core::decimal;
+import std::clock;
+import std::io;
+import std::io_decimal;
+
+pub const MAX_ITERATIONS: u32 = 1000000;
+pub enum Error { InvalidIterations, Clock(std::clock::Error), ClockReversed, WorkOverflow }
+pub struct Measurement { iterations: u32, work: u64, elapsed: core::time::Duration }
+pub trait Work { pub fn iteration(&self, index: u32) -> u64; }
+fn valid(iterations: u32) -> bool { return iterations > 0 && iterations <= MAX_ITERATIONS; }
+fn run_work<W>(work: &W, iterations: u32) -> core::result::Result<u64,Error> where W: Work {
+    let index: u32 = 0; let completed: u64 = 0;
+    while (index < iterations) {
+        let amount: u64 = work.iteration(index);
+        if (amount > 18446744073709551615 - completed) { return core::result::Err(Error::WorkOverflow); }
+        completed += amount; index += 1;
+    }
+    return core::result::Ok(completed);
+}
+fn finish(start: core::time::Instant, stopped: core::result::Result<core::time::Instant,std::clock::Error>, work: u64, iterations: u32) -> core::result::Result<Measurement,Error> {
+    if (core::result::is_err(stopped)) { return core::result::Err(Error::Clock(core::result::unwrap_err(stopped))); }
+    let stop: core::time::Instant = core::result::unwrap(stopped);
+    let elapsed: core::result::Result<core::time::Duration,core::time::Error> = stop.duration_since(start);
+    if (core::result::is_err(elapsed)) { return core::result::Err(Error::ClockReversed); }
+    return core::result::Ok(Measurement { iterations: iterations, work: work, elapsed: core::result::unwrap(elapsed) });
+}
+// Injection supports source-defined typed clocks, including deterministic faults.
+pub fn measure<C,W>(clock: &C, work: &W, iterations: u32) -> core::result::Result<Measurement, Error>
+    where C: std::clock::Monotonic, W: Work {
+    if (!valid(iterations)) { return core::result::Err(Error::InvalidIterations); }
+    let started: core::result::Result<core::time::Instant,std::clock::Error> = clock.now();
+    if (core::result::is_err(started)) { return core::result::Err(Error::Clock(core::result::unwrap_err(started))); }
+    let start: core::time::Instant = core::result::unwrap(started);
+    let completed: core::result::Result<u64,Error> = run_work(work,iterations);
+    if (core::result::is_err(completed)) { return core::result::Err(core::result::unwrap_err(completed)); }
+    return finish(start,clock.now(),core::result::unwrap(completed),iterations);
+}
+// Keep the default clock concrete. The earlier delegation shape is retained
+// in the development compiler-state fixture; source clock injection is separate.
+pub fn native<W>(work: &W, iterations: u32) -> core::result::Result<Measurement, Error> where W: Work {
+    if (!valid(iterations)) { return core::result::Err(Error::InvalidIterations); }
+    let started: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (core::result::is_err(started)) { return core::result::Err(Error::Clock(core::result::unwrap_err(started))); }
+    let start: core::time::Instant = core::result::unwrap(started);
+    let completed: core::result::Result<u64,Error> = run_work(work,iterations);
+    if (core::result::is_err(completed)) { return core::result::Err(core::result::unwrap_err(completed)); }
+    return finish(start,std::clock::monotonic_now(),core::result::unwrap(completed),iterations);
+}
+fn text(value: str, length: i32) -> bool { return std::io::write_text(1,value) == length; }
+fn number(value: u64) -> bool { return std::io_decimal::write_u64(1,value) == (core::decimal::len_u64(value) as i32); }
+// Optional checked stdout record. Nanos is the fractional second, not total.
+pub fn report(value: Measurement) -> bool {
+    return text("bench iterations=",17) && number(value.iterations as u64) && text(" work=",6) && number(value.work) &&
+        text(" elapsed_seconds=",17) && number(value.elapsed.seconds) && text(" elapsed_nanos=",15) && number(value.elapsed.nanos as u64) && std::io::write_newline(1) == 1;
+}

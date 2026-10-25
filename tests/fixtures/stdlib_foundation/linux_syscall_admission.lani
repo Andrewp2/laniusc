@@ -1,0 +1,22 @@
+module app::main;
+import std::linux;
+import core::mem;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let zero: [i32; 12] = [0; 12]; let raw: i64 = std::linux::syscall6(39, core::mem::i32_array_data_ptr(zero));
+    if (raw <= 0) { return 1; }
+    let high: i64 = 4294967301;
+    let seek: [std::linux::Argument; 3] = [std::linux::Argument::Word(1), std::linux::Argument::Word(high), std::linux::Argument::Word(0)];
+    let seek_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(seek, 3));
+    if (core::result::unwrap(std::linux::call(8, seek_view)) != high) { return 2; }
+    let time: [i32; 4] = [0; 4]; let pointer: ptr = core::mem::i32_array_data_ptr(time);
+    let clock: [std::linux::Argument; 2] = [std::linux::Argument::Word(1), std::linux::Argument::Address(pointer)];
+    let clock_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(clock, 2));
+    if (core::result::unwrap(std::linux::call(228, clock_view)) != 0 || time[0] < 0 || time[2] < 0 || time[2] >= 1000000000 || time[3] != 0) { return 3; }
+    let empty: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(clock, 0));
+    let error: core::result::Result<i64, std::linux::Error> = std::linux::call(-1, empty);
+    if (!core::result::is_err(error)) { return 4; }
+    let code: i32 = match (core::result::unwrap_err(error)) { std::linux::Error::System(number) -> number, _ -> 0 };
+    if (code != 38) { return 5; } return 0;
+}

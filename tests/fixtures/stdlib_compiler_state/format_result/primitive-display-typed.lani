@@ -1,0 +1,9 @@
+module app::main;
+import alloc::format;
+import alloc::string;
+import core::result;
+fn main() -> i32 {
+    let result: core::result::Result<alloc::string::String,alloc::format::Error> = alloc::format::display(42 as i64,100);
+    let owner: alloc::string::String = match (result) { Ok(value) -> value, Err(_) -> alloc::string::new() };
+    assert(owner.byte_len()==2); owner.destroy(); return 0;
+}

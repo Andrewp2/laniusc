@@ -1,0 +1,23 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import std::linux;
+import std::signal;
+// Independent kernel query: no action is installed by this oracle helper.
+fn handler(number: i64) -> i32 {
+    let action: [i32;8] = [0;8]; let empty: ptr = 0;
+    let args: [std::linux::Argument;6] = [std::linux::Argument::Word(number),std::linux::Argument::Address(empty),std::linux::Argument::Address(core::mem::i32_array_data_ptr(action)),std::linux::Argument::Word(8),std::linux::Argument::Word(0),std::linux::Argument::Word(0)];
+    assert(std::linux::call(13,core::slice::view(args,6).unwrap()).unwrap() == 0);
+    assert(action[1] == 0); return action[0];
+}
+fn check(signal: std::signal::Signal, number: i64) {
+    assert(std::signal::set_disposition(signal,std::signal::Disposition::Ignore).unwrap() == 0); assert(handler(number) == 1);
+    assert(std::signal::set_disposition(signal,std::signal::Disposition::Default).unwrap() == 0); assert(handler(number) == 0);
+}
+fn main() -> i32 {
+    check(std::signal::Signal::Hangup,1); check(std::signal::Signal::Interrupt,2); check(std::signal::Signal::Quit,3);
+    check(std::signal::Signal::User1,10); check(std::signal::Signal::User2,12); check(std::signal::Signal::BrokenPipe,13);
+    check(std::signal::Signal::Alarm,14); check(std::signal::Signal::Terminate,15); check(std::signal::Signal::Child,17);
+    return 0;
+}

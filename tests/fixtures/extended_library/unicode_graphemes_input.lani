@@ -1,0 +1,47 @@
+// Batch protocol: little-endian u32 byte length, then that many UTF-8 bytes.
+// Output: one line of comma-terminated cluster end offsets per input.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::unicode_graphemes;
+import std::io;
+import std::io_decimal;
+import std::stream;
+
+fn main() -> i32 {
+    let reader: std::stream::Descriptor = std::stream::stdin();
+    let words: [i32; 32769] = [0; 32769];
+    let storage: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words), 131076);
+    while (true) {
+        let received: i32 = core::result::unwrap(reader.read(storage, 0, 1));
+        if (received == 0) { return 0; }
+        core::result::unwrap(core::io::read_exact(reader.borrow(), storage, 1, 3));
+        let length: u32 = (storage[0] as u32) | ((storage[1] as u32) << 8) | ((storage[2] as u32) << 16) | ((storage[3] as u32) << 24);
+        if (length > 131072) { return 1; }
+        // Nonzero Text.start and malformed bytes beyond its selected range.
+        storage[0] = 255; storage[1] = 255; storage[2] = 255;
+        core::result::unwrap(core::io::read_exact(reader.borrow(), storage, 3, length as i32));
+        storage[3 + length as i32] = 255;
+        let text: core::text::Text = core::result::unwrap(core::text::from_utf8_range(storage, 3, length as i32));
+        let cursor: ext::unicode_graphemes::Cursor = core::result::unwrap(ext::unicode_graphemes::cursor(text));
+        let end: i32 = 0;
+        let total: i32 = 0;
+        let current: core::option::Option<ext::unicode_graphemes::Cluster> = cursor.next();
+        while (core::option::is_some(current)) {
+            let item: ext::unicode_graphemes::Cluster = core::option::unwrap(current);
+            if (item.start != end || item.end <= item.start || item.end > text.byte_len() ||
+                item.text.start != text.start + item.start || item.text.length != item.end - item.start ||
+                !item.text.equals(core::result::unwrap(text.slice(item.start, item.end)))) { return 2; }
+            end = item.end; total += 1;
+            std::io_decimal::write_i32(1, item.end); std::io::write_byte(1, 44);
+            current = cursor.next();
+        }
+        if (end != text.byte_len() || core::option::is_some(cursor.next()) || core::option::is_some(cursor.next()) ||
+            core::result::unwrap(ext::unicode_graphemes::count(text)) != total) { return 3; }
+        std::io::write_byte(1, 10);
+    }
+    return 0;
+}

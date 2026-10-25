@@ -1,0 +1,31 @@
+// Test-only adapter. This retains the historical borrowed forwarding shape.
+module probe::forward;
+import core::io;
+import core::result;
+
+pub struct Forward<W> { inner: &W }
+pub fn forward<W>(inner: &W) -> Forward<W> where W: core::io::Write {
+    return Forward { inner:inner };
+}
+pub fn read_forward<R>(inner: &R) -> Forward<R> where R: core::io::Read {
+    return Forward { inner:inner };
+}
+pub impl<W> Forward<W> {
+    pub fn borrow(&self) -> &Forward<W> { return self; }
+}
+pub impl<W> core::io::Write for Forward<W> where W: core::io::Write {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        let inner: &W = self.inner;
+        return inner.write(bytes,offset,count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        let inner: &W = self.inner;
+        return inner.flush();
+    }
+}
+pub impl<R> core::io::Read for Forward<R> where R: core::io::Read {
+    pub fn read(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        let inner: &R = self.inner;
+        return inner.read(bytes,offset,count);
+    }
+}

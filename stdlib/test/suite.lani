@@ -1,0 +1,182 @@
+// Explicit source dispatch. This does not register a compiler/runtime harness.
+// Callbacks must return normally; assert/panic/traps terminate the executable.
+module test::suite;
+import core::decimal;
+import core::mem;
+import core::result;
+import std::args_checked;
+import std::io;
+import std::io_decimal;
+import std::process;
+import test::check;
+import test::property;
+
+pub trait Cases {
+    pub fn count(&self) -> i32;
+    pub fn name(&self, index: i32) -> test::check::Label;
+    pub fn run(&self, index: i32, seed: u32, cases: u32) -> test::check::Outcome;
+}
+pub struct Options { seed: u32, cases: u32, filter_arg: i32, list: bool, error: bool }
+pub fn defaults() -> Options { return Options { seed: 1, cases: 100, filter_arg: -1, list: false, error: false }; }
+fn same(bytes: [u8], length: i32, text: test::check::Label) -> bool {
+    if (length != text.length) { return false; }
+    let index: i32 = 0;
+    while (index < length) { if (bytes[index] != text.bytes[index]) { return false; } index += 1; } return true;
+}
+fn read_argument(index: i32, pointer: ptr) -> i32 {
+    let length: i32 = std::args_checked::argument_len_or(index,-1);
+    if (length < 0 || length > 256) { return -1; }
+    if (!std::args_checked::read_exact_into(index,pointer,256)) { return -1; } return length;
+}
+// No heap allocation. Maximum 16 options/operands, each at most 256 bytes.
+// Duplicate options, unknown options and decimal overflow are errors.
+pub fn arguments() -> Options {
+    let options: Options = defaults();
+    let count: i32 = std::args_checked::argument_count_or(-1);
+    if (count < 1 || count > 17) { options.error = true; return options; }
+    let storage: [i32; 64] = [0;64]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,256);
+    let seed_seen: bool = false; let cases_seen: bool = false; let index: i32 = 1;
+    while (index < count) {
+        let length: i32 = read_argument(index,pointer);
+        if (length < 0) { options.error = true; return options; }
+        let kind: i32 = 0;
+        if (same(bytes,length,test::check::literal("--filter",8))) { kind = 1; }
+        if (same(bytes,length,test::check::literal("--seed",6))) { kind = 2; }
+        if (same(bytes,length,test::check::literal("--cases",7))) { kind = 3; }
+        if (same(bytes,length,test::check::literal("--list",6))) { kind = 4; }
+        if (kind == 4) {
+            if (options.list) { options.error = true; return options; } options.list = true; index += 1; continue;
+        }
+        if (kind == 0 || index + 1 >= count) { options.error = true; return options; }
+        index += 1; length = read_argument(index,pointer);
+        if (length < 0) { options.error = true; return options; }
+        if (kind == 1) {
+            if (options.filter_arg >= 0) { options.error = true; return options; } options.filter_arg = index;
+        } else {
+            let parsed: core::result::Result<u32,core::decimal::ParseError> = core::decimal::parse_u32(bytes,length);
+            if (core::result::is_err(parsed)) { options.error = true; return options; }
+            let number: u32 = core::result::unwrap(parsed);
+            if (kind == 2) {
+                if (seed_seen) { options.error = true; return options; } options.seed = number; seed_seen = true;
+            } else {
+                if (cases_seen || number == 0 || number > test::property::MAX_CASES) { options.error = true; return options; }
+                options.cases = number; cases_seen = true;
+            }
+        }
+        index += 1;
+    }
+    return options;
+}
+pub fn contains(name: test::check::Label, filter: test::check::Label) -> bool {
+    if (filter.length < 0 || name.length < filter.length) { return false; }
+    let start: i32 = 0;
+    while (start <= name.length - filter.length) {
+        let index: i32 = 0;
+        while (index < filter.length && name.bytes[start + index] == filter.bytes[index]) { index += 1; }
+        if (index == filter.length) { return true; } start += 1;
+    }
+    return false;
+}
+fn byte(value: i32) -> bool { return std::io::write_byte(1,value) == 1; }
+fn text(value: str, length: i32) -> bool { return std::io::write_text(1,value) == length; }
+fn number(value: u32) -> bool { return std::io_decimal::write_u32(1,value) == (core::decimal::len_u32(value) as i32); }
+fn signed(value: i64) -> bool { return std::io_decimal::write_i64(1,value) == (core::decimal::len_i64(value) as i32); }
+fn hex_digit(value: u8) -> i32 { if (value < 10) { return (48 + value) as i32; } return (97 + value - 10) as i32; }
+// Escape C0, DEL and backslash to preserve one physical line per record.
+fn label(value: test::check::Label) -> bool {
+    if (value.length < 0 || value.length > 4096) { return false; }
+    let index: i32 = 0;
+    while (index < value.length) {
+        let next: u8 = value.bytes[index];
+        if (next < 32 || next == 127 || next == 92) {
+            if (!text("\\x",2) || !byte(hex_digit(next / 16)) || !byte(hex_digit(next % 16))) { return false; }
+        } else { if (!byte(next as i32)) { return false; } }
+        index += 1;
+    }
+    return true;
+}
+// The primitive runner keeps dispatch in the caller. select is lazy: a false
+// result means do not evaluate that case. Every true select needs one record.
+pub struct Runner {
+    seed: u32, cases: u32, list: bool, filter_arg: i32, filter: test::check::Label,
+    selected: u32, passed: u32, failed: u32, skipped: u32, filtered: u32,
+    pending: test::check::Label, active: bool, error: bool
+}
+pub fn begin(filter: test::check::Label, seed: u32, cases: u32, list: bool) -> Runner {
+    let runner: Runner = Runner { seed: seed, cases: cases, list: list, filter_arg: -1, filter: filter,
+        selected: 0, passed: 0, failed: 0, skipped: 0, filtered: 0, pending: test::check::literal("",0), active: false, error: false };
+    if (cases == 0 || cases > test::property::MAX_CASES || filter.length < 0 || filter.length > 256) { runner.error = true; return runner; }
+    if (!text("lanius-test 1\nseed=",19) || !number(seed) || !text(" cases=",7) || !number(cases) || !byte(10)) { runner.error = true; }
+    return runner;
+}
+pub fn begin_args() -> Runner {
+    let options: Options = arguments();
+    if (options.error) {
+        std::io::eprintln("test arguments: [--filter BYTES] [--seed U32] [--cases 1..10000] [--list]");
+        // A zero case limit creates an error runner without emitting a header.
+        return begin(test::check::literal("",0),options.seed,0,false);
+    }
+    let runner: Runner = begin(test::check::literal("",0),options.seed,options.cases,options.list);
+    runner.filter_arg = options.filter_arg; return runner;
+}
+pub impl Runner {
+    pub fn borrow(&self) -> &Runner { return self; }
+    pub fn select(&self, name: test::check::Label) -> bool {
+        if (self.error) { return false; }
+        if (self.active || name.length < 1 || name.length > 4096 || self.selected + self.filtered >= 100000) { self.error = true; return false; }
+        let filter: test::check::Label = self.filter;
+        let storage: [i32;64] = [0;64]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+        if (self.filter_arg >= 0) {
+            let length: i32 = read_argument(self.filter_arg,pointer);
+            if (length < 0) { self.error = true; return false; }
+            filter = test::check::Label { bytes: core::mem::typed_slice_from_raw_parts(pointer,length), length: length };
+        }
+        if (!contains(name,filter)) { self.filtered += 1; return false; }
+        self.selected += 1;
+        if (self.list) {
+            if (!text("LIST ",5) || !label(name) || !byte(10)) { self.error = true; } return false;
+        }
+        self.pending = name; self.active = true; return true;
+    }
+    pub fn record(&self, result: test::check::Outcome) {
+        if (self.error) { return; }
+        if (!self.active) { self.error = true; return; } self.active = false;
+        let written: bool = false;
+        if (result.status == 0) { self.passed += 1; written = text("PASS ",5); }
+        else { if (result.status == 1) { self.failed += 1; written = text("FAIL ",5); }
+        else { if (result.status == 2) { self.skipped += 1; written = text("SKIP ",5); } else { self.error = true; return; } } }
+        if (!written || !label(self.pending) || !byte(10)) { self.error = true; return; }
+        if (result.status != 0) {
+            if (!text("  detail: ",10) || !label(result.detail) || !byte(10)) { self.error = true; return; }
+            if (result.has_values) {
+                if (!text("  expected=",11) || !signed(result.expected) || !text(" actual=",8) || !signed(result.actual) || !byte(10)) { self.error = true; return; }
+            }
+            if (result.case_id >= 0) {
+                if (!text("  counterexample seed=",22) || !number(result.seed) || !text(" case=",6) || !number(result.case_id as u32) || !text(" input=",7) || !number(result.input) || !text(" executed=",10) || !number(result.executed) || !byte(10)) { self.error = true; return; }
+            }
+        }
+    }
+    pub fn finish(&self) -> i32 {
+        if (self.error || self.active) { self.error = true; return 2; }
+        // Finish exactly once. Any later operation is an invalid transition.
+        self.error = true;
+        if (!text("summary selected=",17) || !number(self.selected) || !text(" passed=",8) || !number(self.passed) || !text(" failed=",8) || !number(self.failed) || !text(" skipped=",9) || !number(self.skipped) || !text(" filtered=",10) || !number(self.filtered) || !byte(10)) { return 2; }
+        if (self.selected == 0) { return 3; } if (self.failed > 0) { return 1; } return 0;
+    }
+}
+// Convenience dispatch for callback compositions supported by the compiler.
+fn dispatch<T>(tests: &T, runner: Runner) -> i32 where T: Cases {
+    let count: i32 = tests.count();
+    if (count < 0 || count > 100000) { return 2; }
+    let index: i32 = 0;
+    while (index < count) {
+        if (runner.select(tests.name(index))) { runner.record(tests.run(index,runner.seed,runner.cases)); }
+        index += 1;
+    }
+    return runner.finish();
+}
+pub fn run<T>(tests: &T, filter: test::check::Label, seed: u32, cases: u32, list: bool) -> i32 where T: Cases {
+    return dispatch(tests,begin(filter,seed,cases,list));
+}
+pub fn run_args<T>(tests: &T) -> i32 where T: Cases { return dispatch(tests,begin_args()); }

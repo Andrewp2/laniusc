@@ -1,0 +1,24 @@
+// u32 byte length + UTF-8. Output comma-separated offsets, mandatory encoded
+// as -offset-1, allowing the empty EOT opportunity to be represented.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::unicode_lines;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn main() -> i32 {
+ let reader: std::stream::Descriptor = std::stream::stdin(); let words: [i32;32769] = [0;32769]; let storage: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),131076);
+ while (true) {
+  if (reader.read(storage,0,1).unwrap() == 0) { return 0; } core::io::read_exact(reader.borrow(),storage,1,3).unwrap();
+  let length: u32 = (storage[0] as u32)|((storage[1] as u32)<<8)|((storage[2] as u32)<<16)|((storage[3] as u32)<<24); if (length > 131072) { return 1; }
+  storage[0] = 255; storage[1] = 255; storage[2] = 255; core::io::read_exact(reader.borrow(),storage,3,length as i32).unwrap(); storage[3+length as i32] = 255;
+  let text: core::text::Text = core::text::from_utf8_unchecked(storage,3,length as i32); let scan: ext::unicode_lines::Cursor = ext::unicode_lines::cursor(text,ext::unicode_lines::default_limits()).unwrap();
+  while (true) { let next: core::option::Option<ext::unicode_lines::Opportunity> = scan.next(); if (core::option::is_none(next)) { break; } let point: ext::unicode_lines::Opportunity = core::option::unwrap(next); let offset: i32 = point.offset; let mandatory: bool = match (point.kind) { ext::unicode_lines::Kind::Mandatory -> true, _ -> false }; if (mandatory) { offset = -offset-1; } std::io_decimal::write_i32(1,offset); std::io::write_byte(1,44); }
+  if (core::option::is_some(scan.next())) { return 2; } std::io::write_byte(1,10);
+ }
+ return 0;
+}

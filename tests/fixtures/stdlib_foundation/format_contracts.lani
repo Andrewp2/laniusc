@@ -1,0 +1,52 @@
+module app::main;
+import core::fmt;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+struct Point { x: i64, y: i64 }
+pub impl core::fmt::Display<Point> for Point {
+    pub fn format(value: Point, output: &core::fmt::Formatter) -> core::result::Result<i32, core::fmt::Error> {
+        output.write_scalar(40); core::fmt::display(value.x, output); output.write_scalar(44);
+        core::fmt::display(value.y, output); output.write_scalar(41); return output.finish();
+    }
+}
+fn text(value: str, length: i32) -> core::text::Text { let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length); return core::text::from_utf8_unchecked(bytes, 0, length); }
+fn small(error: core::fmt::Error) -> i32 { return match (error) { core::fmt::Error::BufferTooSmall(count) -> count, _ -> -1 }; }
+fn kind(error: core::fmt::Error) -> i32 { return match (error) { core::fmt::Error::Bounds -> 0, core::fmt::Error::BufferTooSmall(count) -> 1, core::fmt::Error::SizeOverflow -> 2, core::fmt::Error::InvalidRadix -> 3, core::fmt::Error::InvalidWidth -> 4, core::fmt::Error::InvalidScalar -> 5, core::fmt::Error::Float(detail) -> 6 }; }
+fn main() -> i32 {
+    let bytes: [u8; 240] = [88; 240]; let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 3, 230));
+    let minimum: i64 = -9223372036854775807 - 1; let maximum: u64 = 18446744073709551615;
+    core::fmt::display(minimum, output.borrow()); output.write_scalar(32); core::fmt::display(maximum, output.borrow());
+    output.write_scalar(32); core::fmt::display(Point { x: -42, y: 7 }, output.borrow());
+    let result: core::text::Text = core::text::from_utf8_unchecked(bytes, 3, core::result::unwrap(output.finish()));
+    assert(result.equals(text("-9223372036854775808 18446744073709551615 (-42,7)", 49)));
+    assert(bytes[0] == 88 && bytes[2] == 88 && bytes[3 + output.len()] == 88);
+    let tiny: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 100, 5));
+    core::result::unwrap(tiny.write_bool(true)); assert(small(core::result::unwrap_err(tiny.write_scalar(0x20ac))) == 7);
+    assert(tiny.len() == 4 && bytes[104] == 88);
+    assert(small(core::result::unwrap_err(tiny.write_scalar(65))) == 7 && tiny.len() == 4 && bytes[104] == 88);
+    let quoted: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 110, 20));
+    let special: [u8; 6] = [0,10,34,92,195,169]; let value: core::text::Text = core::result::unwrap(core::text::from_utf8(special, 6));
+    assert(core::result::unwrap(quoted.write_quoted(value)) == 20);
+    assert(core::text::from_utf8_unchecked(bytes, 110, 20).equals(text("\"\\u0000\\u000a\\\"\\\\é\"", 20)));
+    let measured: core::fmt::Formatter = core::fmt::measure(); assert(core::result::unwrap(measured.write_quoted(value)) == 20);
+    core::result::unwrap(measured.write_unsigned(maximum, core::fmt::Integer { radix: 2, uppercase: false, min_digits: 0 })); assert(measured.len() == 84);
+    let huge: core::fmt::Formatter = core::fmt::measure(); core::result::unwrap(huge.write_unsigned(0, core::fmt::Integer { radix: 10, uppercase: false, min_digits: 2147483647 })); assert(huge.len() == 2147483647 && core::result::is_err(huge.write_scalar(32)));
+    assert(kind(core::result::unwrap_err(core::fmt::buffer(bytes, -1, 0))) == 0 && kind(core::result::unwrap_err(core::fmt::buffer(bytes, 2147483647, 1))) == 0);
+    assert(kind(core::result::unwrap_err(huge.finish())) == 2);
+    let signed_huge: core::fmt::Formatter = core::fmt::measure(); assert(kind(core::result::unwrap_err(signed_huge.write_signed(-1, core::fmt::Integer { radix: 10, uppercase: false, min_digits: 2147483647 }))) == 2);
+    let invalid: core::fmt::Formatter = core::fmt::measure(); assert(kind(core::result::unwrap_err(invalid.write_scalar(0xd800))) == 5);
+    let invalid_large: core::fmt::Formatter = core::fmt::measure(); assert(kind(core::result::unwrap_err(invalid_large.write_scalar(0x110000))) == 5);
+    let radix: core::fmt::Formatter = core::fmt::measure(); assert(kind(core::result::unwrap_err(radix.write_unsigned(1, core::fmt::Integer { radix: 1, uppercase: false, min_digits: 1 }))) == 3);
+    let width: core::fmt::Formatter = core::fmt::measure(); assert(kind(core::result::unwrap_err(width.write_unsigned(1, core::fmt::Integer { radix: 36, uppercase: false, min_digits: -1 }))) == 4);
+    let scalars: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 150, 16));
+    core::result::unwrap(scalars.write_scalar(0)); core::result::unwrap(scalars.write_scalar(0x7ff)); core::result::unwrap(scalars.write_scalar(0x20ac)); core::result::unwrap(scalars.write_scalar(0x10ffff));
+    assert(scalars.len() == 10 && core::result::is_ok(core::text::from_utf8_range(bytes, 150, 10)));
+    let numbers: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes, 0, 240));
+    core::fmt::display(-8 as i8, numbers.borrow()); core::fmt::display(-16 as i16, numbers.borrow()); core::fmt::display(-32 as i32, numbers.borrow()); core::fmt::display(-64 as isize, numbers.borrow());
+    core::fmt::display(8 as u8, numbers.borrow()); core::fmt::display(16 as u16, numbers.borrow()); core::fmt::display(32 as u32, numbers.borrow()); core::fmt::display(64 as usize, numbers.borrow());
+    core::fmt::display(true, numbers.borrow()); core::fmt::display(false, numbers.borrow()); core::fmt::display('X', numbers.borrow()); core::fmt::display(text("!", 1), numbers.borrow());
+    assert(core::text::from_utf8_unchecked(bytes, 0, core::result::unwrap(numbers.finish())).equals(text("-8-16-32-648163264truefalseX!", 29)));
+    return 0;
+}

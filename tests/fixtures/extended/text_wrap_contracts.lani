@@ -1,0 +1,20 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::text;
+import ext::unicode_lines_wrap;
+fn text(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::text::from_utf8_unchecked(bytes,0,count); }
+fn equals(value: alloc::vec::Vec<u8>, expected: core::text::Text) -> bool { if (value.len() != expected.length) { return false; } let i: i32 = 0; while (i < value.len()) { if (value.at(i) != expected.bytes[expected.start+i]) { return false; } i += 1; } return true; }
+fn main() -> i32 {
+ let policy: ext::unicode_lines_wrap::Options = ext::unicode_lines_wrap::options(); policy.columns = 3; let limits: ext::unicode_lines_wrap::Limits = ext::unicode_lines_wrap::default_limits(); let input: core::text::Text = text("ab cd ef",8);
+ let output: alloc::vec::Vec<u8> = ext::unicode_lines_wrap::wrap(input,policy,limits).unwrap(); assert(equals(output,text("ab \ncd \nef",10))); output.destroy(); assert(input.bytes[2] == 32 && input.bytes[7] == 102);
+ let exact: ext::unicode_lines_wrap::Limits = limits; exact.max_bytes = 8; exact.max_scalars = 8; exact.max_lines = 3; exact.max_output_bytes = 10; exact.max_work = ext::unicode_lines_wrap::work(8).unwrap(); let same: alloc::vec::Vec<u8> = ext::unicode_lines_wrap::wrap(input,policy,exact).unwrap(); same.destroy();
+ exact.max_work -= 1; assert(match (ext::unicode_lines_wrap::wrap(input,policy,exact).unwrap_err()) { ext::unicode_lines_wrap::Error::WorkLimit -> true, _ -> false }); exact.max_work += 1; exact.max_output_bytes = 9; assert(match (ext::unicode_lines_wrap::wrap(input,policy,exact).unwrap_err()) { ext::unicode_lines_wrap::Error::OutputLimit -> true, _ -> false }); exact.max_output_bytes = 10; exact.max_lines = 2; assert(match (ext::unicode_lines_wrap::wrap(input,policy,exact).unwrap_err()) { ext::unicode_lines_wrap::Error::LineLimit -> true, _ -> false });
+ let long: alloc::vec::Vec<u8> = ext::unicode_lines_wrap::wrap(text("abcdef",6),policy,limits).unwrap(); assert(equals(long,text("abcdef",6))); long.destroy(); policy.overlong = ext::unicode_lines_wrap::Overlong::Reject;
+ assert(match (ext::unicode_lines_wrap::wrap(text("abcdef",6),policy,limits).unwrap_err()) { ext::unicode_lines_wrap::Error::Overlong(at) -> at == 0, _ -> false }); policy = ext::unicode_lines_wrap::options();
+ let newline: alloc::vec::Vec<u8> = ext::unicode_lines_wrap::wrap(text("a\r\nb ",7),policy,limits).unwrap(); assert(equals(newline,text("a\nb\n",4))); newline.destroy();
+ limits.max_lines = 0; limits.max_output_bytes = 0; let empty: alloc::vec::Vec<u8> = ext::unicode_lines_wrap::wrap(text("",0),policy,limits).unwrap(); assert(empty.len() == 0); empty.destroy(); limits = ext::unicode_lines_wrap::default_limits();
+ let control: [u8;10] = [97,32,98,32,99,32,100,32,27,120]; let bad: core::text::Text = core::text::from_utf8_unchecked(control,0,10); policy.columns = 2;
+ assert(match (ext::unicode_lines_wrap::wrap(bad,policy,limits).unwrap_err()) { ext::unicode_lines_wrap::Error::Control(at) -> at == 8, _ -> false }); assert(control[8] == 27);
+ policy.columns = 0; assert(match (ext::unicode_lines_wrap::wrap(input,policy,limits).unwrap_err()) { ext::unicode_lines_wrap::Error::InvalidOptions -> true, _ -> false }); return 0;
+}

@@ -1,0 +1,21 @@
+// Quiet executable entry for the imported-library compilation benchmark.
+module app::main;
+import alloc::string;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::json;
+import ext::schema;
+fn document(value: str, count: i32) -> ext::json::Document {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    let source: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes,count));
+    let parsed: ext::json::Document = core::result::unwrap(ext::json::parse(source,ext::json::default_options()));
+    source.destroy(); return parsed;
+}
+fn main() -> i32 {
+    let source: ext::json::Document = document("{\"type\":\"integer\",\"minimum\":2}",30);
+    let schema: ext::schema::Schema = core::result::unwrap(ext::schema::compile(source.borrow(),ext::schema::default_options()));
+    let instance: ext::json::Document = document("3",1); let empty: [u8;0] = [];
+    let report: ext::schema::Report = core::result::unwrap(schema.validate(instance.borrow(),core::result::unwrap(core::slice::view(empty,0))));
+    assert(report.valid); schema.destroy(); source.destroy(); instance.destroy(); return 0;
+}

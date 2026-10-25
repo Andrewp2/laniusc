@@ -37,9 +37,9 @@ const RUNTIME_DESCRIPTOR_CONSTANTS: &[(&str, &str, &str)] = &[
     ),
     ("UNKNOWN_RUNTIME_ABI_VERSION", "RuntimeAbiVersion", "0"),
     ("RUNTIME_ABI_VERSION", "RuntimeAbiVersion", "1"),
-    ("RUNTIME_SERVICE_COUNT", "RuntimeServiceCount", "13"),
+    ("RUNTIME_SERVICE_COUNT", "RuntimeServiceCount", "14"),
     ("FIRST_RUNTIME_SERVICE_ID", "RuntimeServiceId", "1"),
-    ("LAST_RUNTIME_SERVICE_ID", "RuntimeServiceId", "13"),
+    ("LAST_RUNTIME_SERVICE_ID", "RuntimeServiceId", "14"),
     (
         "RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT",
         "RuntimeServiceRequirementFieldCount",
@@ -76,6 +76,7 @@ const RUNTIME_DESCRIPTOR_CONSTANTS: &[(&str, &str, &str)] = &[
     ("SERVICE_PROCESS_ID", "RuntimeServiceId", "11"),
     ("SERVICE_ENV_ID", "RuntimeServiceId", "12"),
     ("SERVICE_TEST_HARNESS_ID", "RuntimeServiceId", "13"),
+    ("SERVICE_LINUX_SYSCALL_ID", "RuntimeServiceId", "14"),
 ];
 
 fn runtime_descriptor_value(name: &str) -> u32 {
@@ -141,6 +142,7 @@ fn runtime_bound_api_is_compiler_backed(api_name: &str) -> bool {
             | "std::time::monotonic_read"
             | "std::time::system_read"
             | "std::time::sleep_ms_i32"
+            | "std::linux::syscall6"
     )
 }
 
@@ -528,7 +530,7 @@ fn runtime_service_boundary_diagnostic_catalog_matches_runtime_contract_ids() {
             diagnostic.service_id, *service_id,
             "{service_constant} should share the stdlib/runtime descriptor id"
         );
-        if matches!(*service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+        if matches!(*service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14) {
             assert_eq!(diagnostic.current_status, "executable");
             assert!(diagnostic.executable);
         } else {
@@ -565,6 +567,9 @@ fn runtime_bound_api_diagnostic_catalog_keeps_stdlib_externs_fail_closed() {
                         "std::io::flush_stdout"
                             | "std::io::flush_stderr"
                             | "std::env::current_dir_len"
+                            | "std::linux::call"
+                            | "core::panic::panic"
+                            | "core::panic::unreachable"
                     )
             })
             .all(|api| api.diagnostic_code == "LNC0038"
@@ -714,14 +719,35 @@ fn runtime_bound_api_diagnostic_catalog_exposes_extern_abi_namespaces() {
         (
             "core::panic::panic",
             6,
-            "lanius_panic",
-            "known-unbound",
-            false,
+            "lanius_stdlib",
+            "executable-stdlib",
+            true,
+        ),
+        (
+            "core::panic::unreachable",
+            6,
+            "lanius_stdlib",
+            "executable-stdlib",
+            true,
         ),
     ] {
         let api = runtime_bound_api_diagnostic_info(api_name)
             .unwrap_or_else(|| panic!("{api_name} should have a runtime-bound API row"));
         assert_eq!(api.extern_abi, extern_abi);
+        if service_id == 6 {
+            // Trapping source operations execute independently of hook support.
+            assert_eq!(api.service_current_status, "known-unbound");
+            assert!(!api.service_executable);
+            assert!(api.executable);
+            assert_eq!(
+                api.executable_probe,
+                if api_name.ends_with("::panic") {
+                    "panic_is_executable()"
+                } else {
+                    "unreachable_is_executable()"
+                }
+            );
+        }
         assert!(apis.iter().any(|row| {
             row["api_name"] == api_name
                 && row["service_id"] == service_id
@@ -768,7 +794,10 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
         );
         if matches!(
             api.api_name,
-            "std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len"
+            "std::io::flush_stdout"
+                | "std::io::flush_stderr"
+                | "std::env::current_dir_len"
+                | "std::linux::call"
         ) {
             assert_eq!(api.current_status, "executable-stdlib");
             assert_eq!(api.extern_abi, "lanius_stdlib");
@@ -786,6 +815,8 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 assert_eq!(api.extern_abi, "compiler_host_filesystem");
             } else if api.api_name.starts_with("std::time::") {
                 assert_eq!(api.extern_abi, "compiler_host_clock");
+            } else if api.api_name == "std::linux::syscall6" {
+                assert_eq!(api.extern_abi, "lanius_linux");
             } else {
                 assert_eq!(api.extern_abi, "lanius_std");
             }
@@ -796,7 +827,7 @@ fn runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors() 
                 "{service_api_selector} must remain contract-only until a runtime binding exists"
             );
         }
-        if matches!(service.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+        if matches!(service.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14) {
             assert_eq!(service.current_status, "executable");
             assert!(service.executable);
         } else {
@@ -985,10 +1016,14 @@ fn runtime_boundary_explanation_reports_executable_stdio_service() {
             .filter(|api| {
                 !matches!(
                     api["service_id"].as_u64(),
-                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
                 ) && !api["api_name"]
                     .as_str()
                     .is_some_and(runtime_bound_api_is_compiler_backed)
+                    && !matches!(
+                        api["api_name"].as_str(),
+                        Some("core::panic::panic" | "core::panic::unreachable")
+                    )
             })
             .all(|api| {
                 api["diagnostic_code"] == "LNC0038"
@@ -1804,7 +1839,7 @@ fn main() {
     let stdio_api_blocked: core::runtime::Capability =
         core::runtime::runtime_bound_api_is_blocked(core::runtime::SERVICE_STDIO_ID);
     let unknown_api_blocked: Capability = runtime_bound_api_is_blocked(unknown_service_id);
-    if (service_count != declared_count || service_count != 13) {
+    if (service_count != declared_count || service_count != 14) {
         return 1;
     }
     if (metadata_version != declared_metadata_version || metadata_version != 1) {
@@ -1825,7 +1860,7 @@ fn main() {
     if (first_id != first_declared || last_id != last_declared) {
         return 1;
     }
-    if (first_id != SERVICE_ALLOCATOR_ID || last_id != SERVICE_TEST_HARNESS_ID) {
+    if (first_id != SERVICE_ALLOCATOR_ID || last_id != SERVICE_LINUX_SYSCALL_ID) {
         return 1;
     }
     if (!allocator_in_range || !test_harness_in_range || zero_in_range || future_in_range) {
@@ -1961,120 +1996,6 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect("runtime-bound API binding alias should type check through --stdlib-root");
-}
-
-#[test]
-fn core_runtime_requirement_row_guard_type_checks_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new(
-        "laniusc_stdlib_runtime",
-        "requirement_row_guard",
-        Some("lani"),
-    );
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::runtime;
-
-fn main() {
-    let stdio_service_id: core::runtime::RuntimeServiceId =
-        core::runtime::SERVICE_STDIO_ID;
-    let unknown_service_id: core::runtime::RuntimeServiceId = 99;
-    let active_abi: RuntimeAbiVersion = core::runtime::RUNTIME_ABI_VERSION;
-    let unknown_abi: core::runtime::RuntimeAbiVersion =
-        core::runtime::UNKNOWN_RUNTIME_ABI_VERSION;
-    let unavailable_status: RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_UNAVAILABLE;
-    let available_status: core::runtime::RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_AVAILABLE;
-    let unknown_status: RuntimeServiceStatus = SERVICE_STATUS_UNKNOWN;
-    let stdio_service_known: Capability =
-        runtime_service_requirement_service_is_known(stdio_service_id);
-    let unknown_service_known: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_service_is_known(unknown_service_id);
-    let active_abi_supported: Capability =
-        core::runtime::runtime_service_requirement_abi_is_supported(active_abi);
-    let unknown_abi_supported: core::runtime::Capability =
-        runtime_service_requirement_abi_is_supported(unknown_abi);
-    let unavailable_contract_status: Capability =
-        core::runtime::runtime_service_requirement_status_is_contract_only(unavailable_status);
-    let available_contract_status: core::runtime::Capability =
-        runtime_service_requirement_status_is_contract_only(available_status);
-    let unknown_contract_status: Capability =
-        core::runtime::runtime_service_requirement_status_is_contract_only(unknown_status);
-    let invalid_status: core::runtime::RuntimeServiceStatus = 99;
-    let unavailable_status_declared: Capability =
-        runtime_service_requirement_status_is_declared(unavailable_status);
-    let unknown_status_declared: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_declared(unknown_status);
-    let available_status_declared: Capability =
-        runtime_service_requirement_status_is_declared(available_status);
-    let invalid_status_declared: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_declared(invalid_status);
-    let unavailable_status_fail_closed: Capability =
-        runtime_service_requirement_status_is_fail_closed(unavailable_status);
-    let unknown_status_fail_closed: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_fail_closed(unknown_status);
-    let invalid_status_fail_closed: Capability =
-        runtime_service_requirement_status_is_fail_closed(invalid_status);
-    let available_status_fail_closed: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_status_is_fail_closed(available_status);
-    let stdio_row_valid: Capability =
-        runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, unavailable_status);
-    let stdio_row_known_unbound: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_known_unbound(stdio_service_id, active_abi, unavailable_status);
-    let unknown_service_row: Capability =
-        runtime_service_requirement_row_is_valid(unknown_service_id, active_abi, unavailable_status);
-    let unknown_abi_row: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_valid(stdio_service_id, unknown_abi, unavailable_status);
-    let available_status_row: Capability =
-        runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, available_status);
-    let unknown_status_row: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, unknown_status);
-    if (!stdio_service_known
-        || unknown_service_known
-        || !active_abi_supported
-        || unknown_abi_supported
-        || !unavailable_contract_status
-        || available_contract_status
-        || unknown_contract_status
-        || !unavailable_status_declared
-        || !unknown_status_declared
-        || !available_status_declared
-        || invalid_status_declared
-        || !unavailable_status_fail_closed
-        || !unknown_status_fail_closed
-        || !invalid_status_fail_closed
-        || available_status_fail_closed
-        || !stdio_row_valid
-        || !stdio_row_known_unbound
-        || unknown_service_row
-        || unknown_abi_row
-        || available_status_row
-        || unknown_status_row)
-    {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::runtime import");
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")
-        }),
-        "path manifest should include core::runtime from the stdlib root"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root runtime service requirement row guard",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect("runtime service requirement row guard should type check through --stdlib-root");
 }
 
 #[test]
@@ -2224,77 +2145,6 @@ fn main() {
 }
 
 #[test]
-fn core_runtime_requirement_row_fail_closed_guard_type_checks_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new(
-        "laniusc_stdlib_runtime",
-        "requirement_row_fail_closed",
-        Some("lani"),
-    );
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::runtime;
-
-fn main() {
-    let stdio_service_id: core::runtime::RuntimeServiceId =
-        core::runtime::SERVICE_STDIO_ID;
-    let unknown_service_id: core::runtime::RuntimeServiceId = 99;
-    let active_abi: RuntimeAbiVersion = core::runtime::RUNTIME_ABI_VERSION;
-    let unknown_abi: core::runtime::RuntimeAbiVersion =
-        core::runtime::UNKNOWN_RUNTIME_ABI_VERSION;
-    let unavailable_status: RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_UNAVAILABLE;
-    let available_status: core::runtime::RuntimeServiceStatus =
-        core::runtime::SERVICE_STATUS_AVAILABLE;
-    let unknown_status: RuntimeServiceStatus = SERVICE_STATUS_UNKNOWN;
-    let valid_row: core::runtime::Capability =
-        core::runtime::runtime_service_requirement_row_is_valid(stdio_service_id, active_abi, unavailable_status);
-    let valid_row_fail_closed: Capability =
-        runtime_service_requirement_row_is_fail_closed(stdio_service_id, active_abi, unavailable_status);
-    let unknown_service_fail_closed: core::runtime::Capability =
-        runtime_service_requirement_row_is_fail_closed(unknown_service_id, active_abi, unavailable_status);
-    let unknown_abi_fail_closed: Capability =
-        core::runtime::runtime_service_requirement_row_is_fail_closed(stdio_service_id, unknown_abi, unavailable_status);
-    let available_status_fail_closed: core::runtime::Capability =
-        runtime_service_requirement_row_is_fail_closed(stdio_service_id, active_abi, available_status);
-    let unknown_status_fail_closed: Capability =
-        core::runtime::runtime_service_requirement_row_is_fail_closed(stdio_service_id, active_abi, unknown_status);
-    if (!valid_row || valid_row_fail_closed) {
-        return 1;
-    }
-    if (!unknown_service_fail_closed
-        || !unknown_abi_fail_closed
-        || !available_status_fail_closed
-        || !unknown_status_fail_closed)
-    {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::runtime import");
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")
-        }),
-        "path manifest should include core::runtime from the stdlib root"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root runtime service requirement row fail-closed guard",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect(
-        "runtime service requirement row fail-closed guard should type check through --stdlib-root",
-    );
-}
-
-#[test]
 fn core_target_runtime_service_defaults_type_check_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new(
@@ -2365,8 +2215,6 @@ fn main() {
         core::mem::value_helpers_require_allocator();
     let helpers_runtime_free: MemoryCapability =
         core::mem::value_helpers_are_runtime_free();
-    let raw_available: core::mem::MemoryCapability = raw_memory_api_is_available();
-    let raw_blocked: MemoryCapability = core::mem::raw_memory_api_is_blocked();
     let number: i32 = core::mem::identity(7);
     let flag: bool = identity(false);
     let first_number: i32 = first(number, 11);
@@ -2375,9 +2223,7 @@ fn main() {
     let selected_flag: bool = core::mem::select(false, second_flag, flag);
     if (runtime_required
         || allocator_required
-        || !helpers_runtime_free
-        || raw_available
-        || !raw_blocked)
+        || !helpers_runtime_free)
     {
         return 1;
     }
@@ -2455,9 +2301,8 @@ fn main() {
     .expect("core::bool stdlib-root helpers should compile to x86");
     #[cfg(all(unix, target_arch = "x86_64"))]
     {
-        let output = common::run_x86_64_elf_output(
-            "core::bool stdlib helpers", "core_bool", &bytes,
-        );
+        let output =
+            common::run_x86_64_elf_output("core::bool stdlib helpers", "core_bool", &bytes);
         assert_eq!(output.status.code(), Some(0), "{output:?}");
     }
     #[cfg(not(all(unix, target_arch = "x86_64")))]
@@ -2653,88 +2498,6 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect("unsigned integer nonzero predicates should type check through --stdlib-root");
-}
-
-#[test]
-fn core_u32_alignment_helpers_type_check_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new(
-        "laniusc_stdlib_runtime",
-        "u32_alignment_helpers",
-        Some("lani"),
-    );
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::u32;
-
-fn main() {
-    let zero: u32 = 0;
-    let one: u32 = 1;
-    let three: u32 = 3;
-    let eight: u32 = 8;
-    let sixteen: u32 = 16;
-    let seventeen: u32 = 17;
-    let twenty_four: u32 = 24;
-    let twenty_six: u32 = 26;
-    let almost_max: u32 = core::u32::MAX - three;
-    let already_aligned: u32 = core::u32::align_up(sixteen, eight);
-    let rounded_up: u32 = align_up(seventeen, eight);
-    let zero_alignment: u32 = core::u32::align_up(seventeen, zero);
-    let one_alignment: u32 = align_up(seventeen, one);
-    let overflowed: u32 = core::u32::align_up(almost_max, eight);
-    let already_aligned_down: u32 = core::u32::align_down(sixteen, eight);
-    let rounded_down: u32 = align_down(twenty_six, eight);
-    let down_to_zero: u32 = core::u32::align_down(three, eight);
-    let down_zero_alignment: u32 = align_down(seventeen, zero);
-    let down_one_alignment: u32 = core::u32::align_down(seventeen, one);
-    let zero_alignment_is_aligned: bool = core::u32::is_aligned(seventeen, zero);
-    let one_alignment_is_aligned: bool = is_aligned(seventeen, one);
-    let exact_alignment: bool = core::u32::is_aligned(twenty_four, eight);
-    let missed_alignment: bool = is_aligned(twenty_six, eight);
-    if (already_aligned != 16 || rounded_up != 24 || zero_alignment != 0 || one_alignment != 17 || overflowed != 0) {
-        return 1;
-    }
-    if (already_aligned_down != 16
-        || rounded_down != 24
-        || down_to_zero != 0
-        || down_zero_alignment != 0
-        || down_one_alignment != 17)
-    {
-        return 1;
-    }
-    if (zero_alignment_is_aligned || !one_alignment_is_aligned || !exact_alignment || missed_alignment) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::u32");
-    assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/u32.lani")),
-        "path manifest should include core::u32 from the stdlib root"
-    );
-    assert!(
-        runtime_bound_api_diagnostic_info("core::u32::align_up").is_none(),
-        "core::u32::align_up is a source-level helper and must not claim a runtime binding"
-    );
-    assert!(
-        runtime_bound_api_diagnostic_info("core::u32::align_down").is_none(),
-        "core::u32::align_down is a source-level helper and must not claim a runtime binding"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core::u32 alignment helpers",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect("core::u32 alignment helpers should type check through --stdlib-root");
 }
 
 #[test]
@@ -3218,88 +2981,6 @@ fn main() {
 }
 
 #[test]
-fn core_mem_raw_memory_contract_matches_allocator_runtime_service_through_stdlib_root() {
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "mem_raw", Some("lani"));
-    entry.write_str(
-        r#"
-module app::main;
-
-import core::mem;
-import core::runtime;
-
-fn main() {
-    let raw_service_id: core::mem::RawMemoryServiceId =
-        core::mem::raw_memory_service_id();
-    let declared_raw_service_id: RawMemoryServiceId = RAW_MEMORY_SERVICE_ID;
-    let allocator_service_id: core::runtime::RuntimeServiceId =
-        core::runtime::SERVICE_ALLOCATOR_ID;
-    let raw_abi: RawMemoryRuntimeAbiVersion =
-        core::mem::raw_memory_runtime_abi_version();
-    let runtime_abi: core::runtime::RuntimeAbiVersion =
-        core::runtime::runtime_abi_version_for_service(allocator_service_id);
-    let raw_status: RawMemoryServiceStatus = raw_memory_service_status();
-    let declared_unavailable: core::mem::RawMemoryServiceStatus =
-        core::mem::RAW_MEMORY_SERVICE_STATUS_UNAVAILABLE;
-    let runtime_status: core::runtime::RuntimeServiceStatus =
-        core::runtime::service_status(allocator_service_id);
-    let raw_known: MemoryCapability = raw_memory_service_is_known();
-    let raw_metadata_available: core::mem::MemoryCapability =
-        core::mem::raw_memory_contract_metadata_is_available();
-    let runtime_known: core::runtime::Capability =
-        core::runtime::is_known_service(allocator_service_id);
-    let raw_binding: core::mem::MemoryCapability =
-        core::mem::raw_memory_has_runtime_binding();
-    let raw_available: MemoryCapability = raw_memory_api_is_available();
-    let raw_executable: core::mem::MemoryCapability =
-        core::mem::raw_memory_api_is_executable();
-    let raw_blocked: MemoryCapability = raw_memory_api_is_blocked();
-    let raw_needs_binding: MemoryCapability =
-        core::mem::raw_memory_api_requires_runtime_binding();
-    let raw_contract_only: MemoryCapability = raw_memory_host_abi_is_contract_only();
-    let runtime_needs_binding: core::runtime::Capability =
-        core::runtime::service_requires_runtime_binding(allocator_service_id);
-    if (raw_service_id != declared_raw_service_id || raw_service_id != allocator_service_id) {
-        return 1;
-    }
-    if (raw_abi != runtime_abi || raw_status != declared_unavailable || raw_status != runtime_status) {
-        return 1;
-    }
-    if (!raw_known || !raw_metadata_available || !runtime_known || raw_binding || raw_available || raw_executable) {
-        return 1;
-    }
-    if (!raw_blocked || !raw_needs_binding || !raw_contract_only || !runtime_needs_binding) {
-        return 1;
-    }
-    return 0;
-}
-"#,
-    );
-
-    let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load core::mem and core::runtime");
-    assert!(
-        manifest
-            .files
-            .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("core/mem.lani")),
-        "path manifest should include core::mem from the stdlib root"
-    );
-    assert!(
-        manifest.files.iter().any(|file| {
-            file.library_id == 0 && file.path == stdlib_root.join("core/runtime.lani")
-        }),
-        "path manifest should include core::runtime from the stdlib root"
-    );
-
-    common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root core::mem raw-memory runtime contract",
-        type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
-    )
-    .expect("core::mem raw-memory contract should type check through --stdlib-root");
-}
-
-#[test]
 fn core_i64_integer_width_metadata_type_checks_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "i64_width", Some("lani"));
@@ -3426,7 +3107,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::f32");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files
@@ -5423,27 +5103,27 @@ fn main() {
 }
 
 #[test]
-fn std_path_contract_type_checks_byte_classifiers_through_stdlib_root() {
+fn path_rules_contract_type_checks_byte_classifiers_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry = common::TempArtifact::new("laniusc_stdlib_runtime", "path", Some("lani"));
     entry.write_str(
         r#"
 module app::main;
 
-import std::path;
+import core::path_rules;
 
 fn main() {
     let slash: PathByte = PATH_SEPARATOR_UNIX;
     let backslash: PathByte = PATH_SEPARATOR_WINDOWS;
     let dot: PathByte = PATH_EXTENSION_SEPARATOR;
-    let colon: PathByte = std::path::PATH_DRIVE_SEPARATOR;
-    let nul: PathByte = std::path::PATH_NUL;
+    let colon: PathByte = core::path_rules::PATH_DRIVE_SEPARATOR;
+    let nul: PathByte = core::path_rules::PATH_NUL;
     let drive_letter: PathByte = 67;
     let letter: PathByte = 97;
     let digit: PathByte = 55;
-    let one_byte_component: std::path::PathComponentLength = 1;
+    let one_byte_component: core::path_rules::PathComponentLength = 1;
     let two_byte_component: PathComponentLength = 2;
-    let three_byte_component: std::path::PathComponentLength = 3;
+    let three_byte_component: core::path_rules::PathComponentLength = 3;
     let slash_is_separator: PathCapability =
         path_byte_is_separator(slash);
     let backslash_is_separator: PathCapability =
@@ -5451,21 +5131,21 @@ fn main() {
     let dot_is_separator: PathCapability =
         path_byte_is_separator(dot);
     let dot_is_extension: PathCapability =
-        std::path::path_byte_is_extension_separator(dot);
+        core::path_rules::path_byte_is_extension_separator(dot);
     let colon_is_drive_separator: PathCapability =
         path_byte_is_drive_separator(colon);
     let drive_letter_is_windows_drive_letter: PathCapability =
-        std::path::path_byte_is_windows_drive_letter(drive_letter);
+        core::path_rules::path_byte_is_windows_drive_letter(drive_letter);
     let letter_is_windows_drive_letter: PathCapability =
         path_byte_is_windows_drive_letter(letter);
     let digit_is_windows_drive_letter: PathCapability =
         path_byte_is_windows_drive_letter(digit);
     let digit_is_ascii_digit: PathCapability =
-        std::path::path_byte_is_ascii_digit(digit);
+        core::path_rules::path_byte_is_ascii_digit(digit);
     let letter_is_ascii_digit: PathCapability =
         path_byte_is_ascii_digit(letter);
     let nul_is_nul: PathCapability =
-        std::path::path_byte_is_nul(nul);
+        core::path_rules::path_byte_is_nul(nul);
     let slash_is_component_boundary: PathCapability =
         path_byte_is_component_boundary(slash);
     let nul_is_component_boundary: PathCapability =
@@ -5473,35 +5153,35 @@ fn main() {
     let letter_is_component_boundary: PathCapability =
         path_byte_is_component_boundary(letter);
     let current_dir_component: PathCapability =
-        std::path::path_component_is_current_dir(dot, one_byte_component);
+        core::path_rules::path_component_is_current_dir(dot, one_byte_component);
     let current_dir_rejects_name: PathCapability =
         path_component_is_current_dir(letter, one_byte_component);
     let current_dir_rejects_longer_component: PathCapability =
         path_component_is_current_dir(dot, two_byte_component);
     let parent_dir_component: PathCapability =
-        std::path::path_component_is_parent_dir(dot, dot, two_byte_component);
+        core::path_rules::path_component_is_parent_dir(dot, dot, two_byte_component);
     let parent_dir_rejects_single_dot: PathCapability =
         path_component_is_parent_dir(dot, dot, one_byte_component);
     let parent_dir_rejects_named_component: PathCapability =
-        std::path::path_component_is_parent_dir(dot, letter, two_byte_component);
+        core::path_rules::path_component_is_parent_dir(dot, letter, two_byte_component);
     let special_current_dir_component: PathCapability =
         path_component_is_current_or_parent_dir(dot, letter, one_byte_component);
     let special_parent_dir_component: PathCapability =
-        std::path::path_component_is_current_or_parent_dir(dot, dot, two_byte_component);
+        core::path_rules::path_component_is_current_or_parent_dir(dot, dot, two_byte_component);
     let special_rejects_longer_component: PathCapability =
         path_component_is_current_or_parent_dir(dot, dot, three_byte_component);
     let root_separator_component: PathCapability =
-        std::path::path_component_is_root_separator(slash, one_byte_component);
+        core::path_rules::path_component_is_root_separator(slash, one_byte_component);
     let windows_root_separator_component: PathCapability =
         path_component_is_root_separator(backslash, one_byte_component);
     let root_separator_rejects_dot: PathCapability =
         path_component_is_root_separator(dot, one_byte_component);
     let root_separator_rejects_longer_component: PathCapability =
-        std::path::path_component_is_root_separator(slash, two_byte_component);
+        core::path_rules::path_component_is_root_separator(slash, two_byte_component);
     let windows_drive_prefix_component: PathCapability =
         path_component_is_windows_drive_prefix(drive_letter, colon, two_byte_component);
     let windows_drive_prefix_rejects_digit: PathCapability =
-        std::path::path_component_is_windows_drive_prefix(digit, colon, two_byte_component);
+        core::path_rules::path_component_is_windows_drive_prefix(digit, colon, two_byte_component);
     let windows_drive_prefix_rejects_separator: PathCapability =
         path_component_is_windows_drive_prefix(drive_letter, slash, two_byte_component);
     let windows_drive_prefix_rejects_longer_component: PathCapability =
@@ -5567,33 +5247,36 @@ fn main() {
     );
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load std::path import");
+        .expect("stdlib-root path manifest should load core::path_rules import");
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
-        "path manifest should include std::path from the stdlib root"
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/path_rules.lani")),
+        "path manifest should include core::path_rules from the stdlib root"
     );
-    assert!(manifest.files.iter().any(|file| {
-        file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
-    }));
     assert!(
-        runtime_bound_api_diagnostic_info("std::path::path_byte_is_ascii_digit").is_none(),
-        "std::path::path_byte_is_ascii_digit is a source-level helper and must not claim a runtime binding"
+        manifest.files.iter().any(|file| {
+            file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
+        })
+    );
+    assert!(
+        runtime_bound_api_diagnostic_info("core::path_rules::path_byte_is_ascii_digit").is_none(),
+        "core::path_rules::path_byte_is_ascii_digit is a source-level helper and must not claim a runtime binding"
     );
 
     common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root std::path byte classifier contract",
+        "GPU type check stdlib-root core::path_rules byte classifier contract",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect(
-        "std::path byte classifier helpers should type check while allocation and host normalization remain blocked",
+        "core::path_rules byte classifier helpers should type check while allocation and host normalization remain blocked",
     );
 }
 
 #[test]
-fn std_path_unix_hidden_component_helper_type_checks_through_stdlib_root() {
+fn path_rules_unix_hidden_component_helper_type_checks_through_stdlib_root() {
     let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
     let entry =
         common::TempArtifact::new("laniusc_stdlib_runtime", "path_unix_hidden", Some("lani"));
@@ -5601,26 +5284,26 @@ fn std_path_unix_hidden_component_helper_type_checks_through_stdlib_root() {
         r#"
 module app::main;
 
-import std::path;
+import core::path_rules;
 
 fn main() {
-    let dot: std::path::PathByte = std::path::PATH_EXTENSION_SEPARATOR;
+    let dot: core::path_rules::PathByte = core::path_rules::PATH_EXTENSION_SEPARATOR;
     let letter: PathByte = 97;
-    let slash: std::path::PathByte = std::path::PATH_SEPARATOR_UNIX;
+    let slash: core::path_rules::PathByte = core::path_rules::PATH_SEPARATOR_UNIX;
     let one: PathComponentLength = 1;
-    let two: std::path::PathComponentLength = 2;
+    let two: core::path_rules::PathComponentLength = 2;
     let three: PathComponentLength = 3;
     let dotfile: PathCapability =
-        std::path::path_component_is_unix_hidden(dot, letter, two);
-    let current_dir: std::path::PathCapability =
+        core::path_rules::path_component_is_unix_hidden(dot, letter, two);
+    let current_dir: core::path_rules::PathCapability =
         path_component_is_unix_hidden(dot, letter, one);
     let parent_dir: PathCapability =
-        std::path::path_component_is_unix_hidden(dot, dot, two);
-    let dotted_name: std::path::PathCapability =
+        core::path_rules::path_component_is_unix_hidden(dot, dot, two);
+    let dotted_name: core::path_rules::PathCapability =
         path_component_is_unix_hidden(dot, dot, three);
     let ordinary_name: PathCapability =
-        std::path::path_component_is_unix_hidden(letter, dot, two);
-    let root_separator: std::path::PathCapability =
+        core::path_rules::path_component_is_unix_hidden(letter, dot, two);
+    let root_separator: core::path_rules::PathCapability =
         path_component_is_unix_hidden(slash, dot, one);
     if (!dotfile || current_dir || parent_dir || !dotted_name || ordinary_name || root_separator) {
         return 1;
@@ -5631,23 +5314,28 @@ fn main() {
     );
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
-        .expect("stdlib-root path manifest should load std::path import");
+        .expect("stdlib-root path manifest should load core::path_rules import");
     assert!(
         manifest
             .files
             .iter()
-            .any(|file| file.library_id == 0 && file.path == stdlib_root.join("std/path.lani")),
-        "path manifest should include std::path from the stdlib root"
+            .any(|file| file.library_id == 0
+                && file.path == stdlib_root.join("core/path_rules.lani")),
+        "path manifest should include core::path_rules from the stdlib root"
     );
-    assert!(manifest.files.iter().any(|file| {
-        file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
-    }));
+    assert!(
+        manifest.files.iter().any(|file| {
+            file.library_id == 0 && file.path == stdlib_root.join("core/utf8.lani")
+        })
+    );
 
     common::block_on_gpu_with_timeout(
-        "GPU type check stdlib-root std::path Unix hidden-component helper",
+        "GPU type check stdlib-root core::path_rules Unix hidden-component helper",
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
-    .expect("std::path Unix hidden-component helper should type check through --stdlib-root");
+    .expect(
+        "core::path_rules Unix hidden-component helper should type check through --stdlib-root",
+    );
 }
 
 #[test]
@@ -7584,4 +7272,71 @@ fn main() {
         type_check_entry_with_stdlib(entry.path().to_path_buf(), stdlib_root),
     )
     .expect("core result and helpers should type check through --stdlib-root");
+}
+
+#[test]
+fn linux_syscall_inventory_is_native_only_and_preserves_existing_service_ids() {
+    use laniusc_compiler::compiler::GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID;
+    assert_eq!(GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID, 14);
+    assert_eq!(
+        GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS[..13],
+        (1..=13).collect::<Vec<_>>()
+    );
+    let aggregate = runtime_service_boundary_diagnostic_info(7).unwrap();
+    assert_eq!(aggregate.module_path, "std::host");
+    assert!(!aggregate.executable);
+    let linux = runtime_service_boundary_diagnostic_info(14).unwrap();
+    assert_eq!(linux.module_path, "std::linux");
+    assert!(linux.executable);
+    assert_eq!(
+        runtime_bound_api_diagnostic_info("std::linux::syscall6")
+            .unwrap()
+            .extern_abi,
+        "lanius_linux"
+    );
+    for target in [
+        SourcePackArtifactTarget::X86_64,
+        SourcePackArtifactTarget::Wasm,
+        SourcePackArtifactTarget::Generic,
+    ] {
+        let mut descriptor = GpuSourcePackArtifactDescriptor::linked_output_contract_for_job(
+            target,
+            &link_job(),
+            0,
+            1,
+        );
+        descriptor.set_required_runtime_services([14]);
+        assert_eq!(
+            descriptor.required_runtime_services[0].service_status,
+            if target == SourcePackArtifactTarget::X86_64 {
+                2
+            } else {
+                1
+            }
+        );
+        // A native binding does not establish composable artifact byte emission.
+        // Existing required-runtime descriptor policy stays contract-only.
+        assert!(
+            descriptor
+                .validate_contract()
+                .unwrap_err()
+                .contains("unbound runtime services")
+        );
+        descriptor
+            .output_record_arrays
+            .retain(|array| array.name != "emitted_byte_records");
+        descriptor
+            .record_arrays
+            .retain(|array| array.name != "emitted_byte_records");
+        descriptor.validate_contract().unwrap();
+        if target != SourcePackArtifactTarget::X86_64 {
+            descriptor.required_runtime_services[0].service_status = 2;
+            assert!(
+                descriptor
+                    .validate_contract()
+                    .unwrap_err()
+                    .contains("expected current compiler/runtime status")
+            );
+        }
+    }
 }

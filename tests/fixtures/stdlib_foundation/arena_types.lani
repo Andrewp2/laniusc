@@ -1,0 +1,46 @@
+module app::main;
+import alloc::arena;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+struct Unit {}
+struct Inner { number: u64, mark: core::option::Option<bool> }
+struct Payload { item: Inner, bytes: [u8;3], integers: [i32;2], view: [u8], text: str }
+enum Variant<T> { Empty, Item(T), Pair(T,T) }
+fn same<T>(arena: &alloc::arena::Arena, low: T, high: T) -> bool where T: core::cmp::PartialEq<T> {
+    let one: core::slice::View<T> = core::result::unwrap(alloc::arena::alloc<T>(arena,low));
+    let many: core::slice::View<T> = core::result::unwrap(alloc::arena::alloc_slice<T>(arena,17,high));
+    let copied: core::slice::View<T> = core::result::unwrap(alloc::arena::copy_slice<T>(arena,many));
+    let index: i32 = 0; while (index < 17) { if (!T::partial_eq(core::option::unwrap(many.get(index)),high) || !T::partial_eq(core::option::unwrap(copied.get(index)),high)) { return false; } index += 1; }
+    return T::partial_eq(core::option::unwrap(one.get(0)),low);
+}
+fn main() -> i32 {
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::default_config()));
+    assert(same(arena.borrow(),-128 as i8,127 as i8)); assert(same(arena.borrow(),0 as u8,255 as u8));
+    assert(same(arena.borrow(),-32768 as i16,32767 as i16)); assert(same(arena.borrow(),0 as u16,65535 as u16));
+    assert(same(arena.borrow(),-2147483648 as i32,2147483647 as i32)); let unsigned32: u32 = 4294967295; assert(same(arena.borrow(),0 as u32,unsigned32));
+    let low: i64 = -9223372036854775808; let high: i64 = 9223372036854775807; let unsigned: u64 = 18446744073709551615;
+    assert(same(arena.borrow(),low,high)); assert(same(arena.borrow(),0 as u64,unsigned)); assert(same(arena.borrow(),low as isize,high as isize)); assert(same(arena.borrow(),0 as usize,unsigned as usize));
+    assert(same(arena.borrow(),false,true)); assert(same(arena.borrow(),'a','😀')); let small: f32 = -1.5; let big: f32 = 3.25; assert(same(arena.borrow(),small,big));
+    let wide: f64 = 3.25; let doubles: core::slice::View<f64> = core::result::unwrap(alloc::arena::alloc_slice<f64>(arena.borrow(),3,wide)); assert(core::option::unwrap(doubles.get(2)) == wide && core::mem::slice_stride(doubles.values) == -8 && core::mem::size_of<f64>() == 8);
+    let raw: [u8;4] = [0,128,255,97]; let integers: [i32;3] = [-4,2147483647,8];
+    let bytes: core::slice::View<u8> = core::result::unwrap(alloc::arena::copy_slice<u8>(arena.borrow(),core::result::unwrap(core::slice::view(raw,4))));
+    let ints: core::slice::View<i32> = core::result::unwrap(alloc::arena::copy_slice<i32>(arena.borrow(),core::result::unwrap(core::slice::view(integers,3))));
+    assert(core::mem::slice_stride(bytes.values) == 1 && core::mem::slice_stride(ints.values) == 4);
+    let item: Payload = Payload { item: Inner { number: 4294967297, mark: core::option::Some(true) }, bytes: [1,128,255], integers: [8,-9], view: raw, text: "hello" };
+    let records: core::slice::View<Payload> = core::result::unwrap(alloc::arena::alloc_slice<Payload>(arena.borrow(),9,item));
+    let copies: core::slice::View<Payload> = core::result::unwrap(alloc::arena::copy_slice<Payload>(arena.borrow(),records));
+    let index: i32 = 0; while (index < 9) { let held: Payload = core::option::unwrap(copies.get(index)); let text_bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(held.text),5); assert(held.item.number == 4294967297 && core::option::unwrap(held.item.mark) && held.bytes[0] == 1 && held.bytes[1] == 128 && held.bytes[2] == 255 && held.integers[0] == 8 && held.integers[1] == -9 && held.view[2] == 255 && text_bytes[0] == 104 && text_bytes[4] == 111); index += 1; }
+    let pointer: ptr = 0; let pointers: core::slice::View<ptr> = core::result::unwrap(alloc::arena::alloc_slice<ptr>(arena.borrow(),3,pointer)); assert(core::option::unwrap(pointers.get(2)) == pointer);
+    let strings: core::slice::View<str> = core::result::unwrap(alloc::arena::alloc_slice<str>(arena.borrow(),3,"hello")); let selected_string: str = core::option::unwrap(strings.get(2)); let chars: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(selected_string),5); assert(chars[4] == 111);
+    let variant: Variant<Payload> = Variant::Pair(item,item); let variants: core::slice::View<Variant<Payload>> = core::result::unwrap(alloc::arena::alloc_slice<Variant<Payload>>(arena.borrow(),5,variant));
+    let selected: Variant<Payload> = core::option::unwrap(variants.get(4)); let tag: i32 = match (selected) { Variant::Pair(a,b) -> a.bytes[2] as i32, _ -> 0 }; assert(tag == 255);
+    let zero: core::slice::View<Unit> = core::result::unwrap(alloc::arena::alloc_slice<Unit>(arena.borrow(),2147483647,Unit {})); assert(zero.length == 2147483647 && core::mem::slice_stride(zero.values) == 0); assert(core::option::is_some(zero.get(2147483646)));
+    let before: alloc::arena::Stats = arena.stats(); let empty: core::slice::View<Payload> = core::result::unwrap(alloc::arena::alloc_slice<Payload>(arena.borrow(),0,item)); assert(empty.length == 0 && arena.stats().retained == before.retained && arena.stats().used == before.used);
+    assert(core::result::is_err(alloc::arena::alloc_slice<Payload>(arena.borrow(),-1,item)));
+    assert(core::result::is_err(alloc::arena::alloc_slice<Payload>(arena.borrow(),2147483647,item)));
+    let invalid: core::slice::View<Payload> = records; invalid.start = -1; assert(core::result::is_err(alloc::arena::copy_slice<Payload>(arena.borrow(),invalid)));
+    arena.destroy(); return 0;
+}

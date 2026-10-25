@@ -1,0 +1,100 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::unicode_words;
+
+fn forged(bytes: [u8], start: i32, length: i32) -> core::text::Text {
+    return core::text::Text { bytes: bytes, start: start, length: length };
+}
+
+fn literal(value: str, length: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value), length);
+    return core::result::unwrap(core::text::from_utf8(bytes, length));
+}
+
+fn prefix_context() -> bool {
+    let flags: core::text::Text = literal("🇦🇧🇨🇩🇪", 20);
+    let at: i32 = 0;
+    while (at <= 20) {
+        let expected: bool = at == 0 || at == 8 || at == 16 || at == 20;
+        if (core::result::unwrap(ext::unicode_words::is_boundary(flags, at)) != expected) { return false; }
+        at += 1;
+    }
+    // A slice starts new text context, so its RI pairs can differ from its owner.
+    let sliced: core::text::Text = core::result::unwrap(flags.slice(4, 20));
+    if (!core::result::unwrap(ext::unicode_words::is_boundary(sliced, 8)) ||
+        core::result::unwrap(ext::unicode_words::is_boundary(flags, 12))) { return false; }
+    // Punctuation lookahead and prefix rules see ignores between properties.
+    let punctuation: core::text::Text = literal("a:́b", 5);
+    let suffix: core::text::Text = core::result::unwrap(punctuation.slice(1, 5));
+    if (core::result::unwrap(ext::unicode_words::is_boundary(punctuation, 4)) ||
+        !core::result::unwrap(ext::unicode_words::is_boundary(suffix, 3))) { return false; }
+    let hebrew: core::text::Text = literal("א\"ב", 5);
+    if (core::result::unwrap(ext::unicode_words::count(hebrew)) != 1) { return false; }
+    // WB3c/d precede WB4: these rules use immediate raw neighbors.
+    let spaces: core::text::Text = literal(" ́ ", 4);
+    let emoji: core::text::Text = literal("‍́🙂", 9);
+    let initial: core::text::Text = literal("‎a", 4);
+    if (core::result::unwrap(ext::unicode_words::count(spaces)) != 2 ||
+        !core::result::unwrap(ext::unicode_words::is_boundary(spaces, 3)) ||
+        core::result::unwrap(ext::unicode_words::count(emoji)) != 2 ||
+        !core::result::unwrap(ext::unicode_words::is_boundary(emoji, 5)) ||
+        !core::result::unwrap(ext::unicode_words::is_boundary(initial, 3))) { return false; }
+    // Ignored properties retain RI parity, but a slice starts fresh parity.
+    let ignored_flags: core::text::Text = literal("🇦́🇧🇨", 14);
+    return !core::result::unwrap(ext::unicode_words::is_boundary(ignored_flags, 6)) &&
+        core::result::unwrap(ext::unicode_words::is_boundary(ignored_flags, 10));
+}
+
+fn inspect(text: core::text::Text) -> bool {
+    let cursor: ext::unicode_words::Cursor = core::result::unwrap(ext::unicode_words::cursor(text));
+    let first: ext::unicode_words::Segment = core::option::unwrap(cursor.next());
+    let fork: ext::unicode_words::Cursor = cursor;
+    let second: ext::unicode_words::Segment = core::option::unwrap(cursor.next());
+    let third: ext::unicode_words::Segment = core::option::unwrap(cursor.next());
+    let copied: ext::unicode_words::Segment = core::option::unwrap(fork.next());
+    if (first.start != 0 || first.end != 3 || second.start != 3 || second.end != 5 || third.start != 5 || third.end != 9 ||
+        copied.start != second.start || copied.end != second.end || !copied.text.equals(second.text) ||
+        core::option::unwrap(fork.next()).end != third.end || core::option::is_some(fork.next()) ||
+        core::option::is_some(cursor.next()) || core::option::is_some(cursor.next()) ||
+        first.text.start != text.start || second.text.start != text.start + 3 || third.text.start != text.start + 5 ||
+        core::result::unwrap(ext::unicode_words::count(text)) != 3) { return false; }
+    let at: i32 = 0;
+    while (at <= 9) {
+        let boundary: bool = at == 0 || at == 3 || at == 5 || at == 9;
+        if (core::result::unwrap(ext::unicode_words::is_boundary(text, at)) != boundary) { return false; }
+        at += 1;
+    }
+    return core::result::is_err(ext::unicode_words::is_boundary(text, -1)) &&
+        core::result::is_err(ext::unicode_words::is_boundary(text, 10));
+}
+
+fn main() -> i32 {
+    // Native [u8;N] uses its native stride; the view must retain that layout.
+    let bytes: [u8; 11] = [255, 101, 204, 129, 13, 10, 240, 159, 153, 130, 255];
+    let native: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 1, 9));
+    if (!inspect(native)) { return 1; }
+    let owned: alloc::string::String = core::result::unwrap(alloc::string::from_text(native));
+    if (!inspect(owned.as_text())) { owned.destroy(); return 2; }
+    owned.destroy();
+    let literal: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("é\r\n🙂"), 9);
+    if (!inspect(core::result::unwrap(core::text::from_utf8(literal, 9)))) { return 3; }
+    let empty: core::text::Text = core::result::unwrap(native.slice(9, 9));
+    let cursor: ext::unicode_words::Cursor = core::result::unwrap(ext::unicode_words::cursor(empty));
+    if (core::option::is_some(cursor.next()) || core::option::is_some(cursor.next()) ||
+        core::result::unwrap(ext::unicode_words::count(empty)) != 0 ||
+        !core::result::unwrap(ext::unicode_words::is_boundary(empty, 0))) { return 4; }
+    // The constructor rejects forged integer metadata without touching backing.
+    let negative: core::text::Text = forged(bytes, -1, 0);
+    let overflow: core::text::Text = forged(bytes, 2147483647, 1);
+    let bad_length: core::text::Text = forged(bytes, 0, -1);
+    if (core::result::is_ok(ext::unicode_words::cursor(negative))) { return 51; }
+    if (core::result::is_ok(ext::unicode_words::cursor(overflow))) { return 52; }
+    if (core::result::is_ok(ext::unicode_words::count(bad_length))) { return 53; }
+    if (core::result::is_ok(ext::unicode_words::is_boundary(negative, 0))) { return 54; }
+    if (!prefix_context()) { return 6; }
+    return 0;
+}

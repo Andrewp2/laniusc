@@ -1,0 +1,65 @@
+// Run normally, then fail each observed allocation and all later allocations.
+// Every failed edit must preserve its owner, capacity and existing views.
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+fn allocation(error: alloc::string::Error) -> bool {
+    let yes: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+    return yes;
+}
+
+fn main() -> i32 {
+    let bytes: [u8; 7] = [195, 169, 0, 240, 159, 153, 130];
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes, 7));
+    let parts: [core::text::Text; 3] = [text, text, text];
+    let view: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(parts, 3));
+    let joined: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::join(view, text);
+    if (core::result::is_ok(joined)) {
+        let value: alloc::string::String = core::result::unwrap(joined);
+        if (value.byte_len() != 35 || value.scalar_count() != 15) { return 1; }
+        value.destroy();
+    } else { if (!allocation(core::result::unwrap_err(joined))) { return 2; } }
+    let repeated: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::repeat(text, 7);
+    if (core::result::is_ok(repeated)) {
+        let value: alloc::string::String = core::result::unwrap(repeated);
+        if (value.byte_len() != 49 || value.scalar_count() != 21) { return 3; }
+        value.destroy();
+    } else { if (!allocation(core::result::unwrap_err(repeated))) { return 4; } }
+    let opened: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_text(text);
+    if (core::result::is_err(opened)) {
+        if (!allocation(core::result::unwrap_err(opened))) { return 5; }
+        return 0;
+    }
+    let owner: alloc::string::String = core::result::unwrap(opened);
+    let operation: i32 = 0;
+    while (operation < 3) {
+        let before: core::text::Text = owner.as_text();
+        let capacity: i32 = owner.capacity();
+        let alias: core::text::Text = core::result::unwrap(before.slice(0, 7));
+        let alias_parts: [core::text::Text; 2] = [alias, alias];
+        let aliases: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(alias_parts, 2));
+        let edited: core::result::Result<i32, alloc::string::Error> = core::result::Ok(0);
+        let expected: i32 = before.byte_len();
+        if (operation == 0) { edited = owner.try_append_joined(aliases, alias); expected += 21; }
+        else { if (operation == 1) { edited = owner.try_append_repeated(alias, 8); expected += 56; }
+        else { edited = owner.try_append_text(alias); expected += 7; } }
+        if (core::result::is_err(edited)) {
+            if (!allocation(core::result::unwrap_err(edited)) || owner.capacity() != capacity || !owner.as_text().equals(before) || !alias.equals(text)) { return 6; }
+        } else {
+            if (owner.byte_len() != expected || owner.scalar_count() * 7 != expected * 3) { return 7; }
+        }
+        operation += 1;
+    }
+    owner.destroy();
+    // Empty operations remain allocation-free even when every allocation fails.
+    let none: core::slice::View<core::text::Text> = core::result::unwrap(view.subview(0, 0));
+    let empty: alloc::string::String = core::result::unwrap(alloc::string::join(none, text));
+    let zero: alloc::string::String = core::result::unwrap(alloc::string::repeat(text, 0));
+    if (empty.capacity() != 0 || zero.capacity() != 0) { return 8; }
+    empty.destroy(); zero.destroy();
+    return 0;
+}

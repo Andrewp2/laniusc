@@ -1,0 +1,9 @@
+module app::main;
+import test::check;
+import test::suite;
+fn main() -> i32 {
+    let runner: test::suite::Runner = test::suite::begin_args();
+    if (runner.select(test::check::literal("trap",4))) { assert(false); runner.record(test::check::pass()); }
+    if (runner.select(test::check::literal("after",5))) { runner.record(test::check::pass()); }
+    return runner.finish();
+}

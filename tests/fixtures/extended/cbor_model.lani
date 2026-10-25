@@ -1,0 +1,54 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cbor;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, allow_end: bool) -> bool {
+    let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { assert(allow_end && done == 0); return false; } done += got; } return true;
+}
+fn write_all(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let n: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(n > 0); done += n; } }
+fn kind(error: ext::cbor::Error) -> i32 {
+    let code: i32 = match (error.kind) { ext::cbor::ErrorKind::Bounds -> 1, ext::cbor::ErrorKind::InputLimit -> 2, ext::cbor::ErrorKind::OutputLimit -> 3, ext::cbor::ErrorKind::ScratchTooSmall -> 4, ext::cbor::ErrorKind::DepthLimit -> 5, ext::cbor::ErrorKind::ItemLimit -> 6, ext::cbor::ErrorKind::StringLimit -> 7, ext::cbor::ErrorKind::WorkLimit -> 8, ext::cbor::ErrorKind::UnexpectedEnd -> 9, ext::cbor::ErrorKind::InvalidHead -> 10, ext::cbor::ErrorKind::InvalidSimple -> 11, ext::cbor::ErrorKind::InvalidUtf8 -> 12, ext::cbor::ErrorKind::UnexpectedBreak -> 13, ext::cbor::ErrorKind::ChunkType -> 14, ext::cbor::ErrorKind::OddMap -> 15, ext::cbor::ErrorKind::TrailingData -> 16, ext::cbor::ErrorKind::InvalidEvent -> 17 }; return code;
+}
+fn mix(hash: u32, byte: u8) -> u32 { return (hash ^ (byte as u32))*16777619; }
+fn digest(hash: u32, event: ext::cbor::Event) -> u32 {
+    let event_kind: i32 = match (event) { ext::cbor::Event::Unsigned(value) -> 0, ext::cbor::Event::Negative(value) -> 1, ext::cbor::Event::Bytes(value) -> 2, ext::cbor::Event::Text(value) -> 3, ext::cbor::Event::Array(value) -> 4, ext::cbor::Event::Map(value) -> 5, ext::cbor::Event::Tag(value) -> 6, ext::cbor::Event::Simple(value) -> 7, ext::cbor::Event::Float16(value) -> 8, ext::cbor::Event::Float32(value) -> 9, ext::cbor::Event::Float64(value) -> 10, ext::cbor::Event::BeginBytes -> 11, ext::cbor::Event::BeginText -> 12, ext::cbor::Event::BeginArray -> 13, ext::cbor::Event::BeginMap -> 14, ext::cbor::Event::End -> 15 };
+    let result: u32 = mix(hash,event_kind as u8);
+    if (event_kind <= 10) {
+        let argument: u64 = match (event) { ext::cbor::Event::Unsigned(value) -> value, ext::cbor::Event::Negative(value) -> value, ext::cbor::Event::Bytes(value) -> value.length as u64, ext::cbor::Event::Text(value) -> value.length as u64, ext::cbor::Event::Array(value) -> value, ext::cbor::Event::Map(value) -> value, ext::cbor::Event::Tag(value) -> value, ext::cbor::Event::Simple(value) -> value as u64, ext::cbor::Event::Float16(value) -> value as u64, ext::cbor::Event::Float32(value) -> value as u64, ext::cbor::Event::Float64(value) -> value, _ -> 0 };
+        let i: i32 = 0; while (i < 8) { result = mix(result,((argument >> (i*8)) & 255) as u8); i += 1; }
+        if (event_kind == 2 || event_kind == 3) {
+            let fallback: [u8;1] = [0];
+            let data: core::slice::View<u8> = match (event) { ext::cbor::Event::Bytes(value) -> value, ext::cbor::Event::Text(value) -> value, _ -> core::result::unwrap(core::slice::view(fallback,0)) };
+            i = 0; while (i < data.length) { result = mix(result,data.values[data.start+i]); i += 1; }
+        }
+    } return result;
+}
+fn header(code: i32, offset: i32, size: i32, hash: u32) {
+    let words: [i32;4] = [0;4]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,16);
+    let values: [i32;4] = [code,offset,size,hash as i32]; let i: i32 = 0;
+    while (i < 4) { let j: i32 = 0; while (j < 4) { bytes[i*4+j] = ((values[i] >> (j*8)) & 255) as u8; j += 1; } i += 1; } write_all(pointer,16);
+}
+fn main() -> i32 {
+    let words: [i32;65537] = [0;65537]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,262148);
+    let stack: [ext::cbor::Frame;256] = [ext::cbor::empty_frame();256]; let frames: core::slice::View<ext::cbor::Frame> = core::result::unwrap(core::slice::view(stack,256));
+    let limits: ext::cbor::Limits = ext::cbor::default_limits(); limits.max_depth = 256;
+    while (read_exact(pointer,4,true)) {
+        let count: i32 = (bytes[0] as i32)|((bytes[1] as i32)<<8)|((bytes[2] as i32)<<16)|((bytes[3] as i32)<<24); assert(count >= 0 && count <= 262144); assert(read_exact(pointer+4,count,false));
+        let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes,4,count));
+        let opened: core::result::Result<ext::cbor::Reader,ext::cbor::Error> = ext::cbor::reader(input,frames,limits);
+        if (core::result::is_err(opened)) { let error: ext::cbor::Error = core::result::unwrap_err(opened); header(kind(error),error.offset,0,0); }
+        else {
+            let reader: ext::cbor::Reader = core::result::unwrap(opened); let events: alloc::vec::Vec<ext::cbor::Event> = alloc::vec::new();
+            let hash: u32 = 2166136261;
+            while (true) { let next: core::option::Option<ext::cbor::Event> = reader.next(); if (core::option::is_none(next)) { break; } let event: ext::cbor::Event = core::option::unwrap(next); hash = digest(hash,event); core::result::unwrap(events.try_push(event)); }
+            assert(reader.position() == count && core::option::is_none(reader.next()));
+            let size: i32 = core::result::unwrap(ext::cbor::encoded_len(events.as_view(),frames,limits)); let output: alloc::vec::Vec<u8> = alloc::vec::new(); core::result::unwrap(output.try_resize(size,0));
+            assert(core::result::unwrap(ext::cbor::encode_into(events.as_view(),output.as_view(),frames,limits)) == size);
+            header(0,reader.position(),size,hash); write_all(output.storage,size); output.destroy(); events.destroy();
+        }
+    } return 0;
+}

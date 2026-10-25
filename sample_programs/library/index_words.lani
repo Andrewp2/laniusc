@@ -1,0 +1,108 @@
+// Bounded unique-word indexing through real fallible iterator transfer to TreeMap.
+// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-index-words.md.
+module app::main;
+import alloc::io;
+import alloc::tree_map;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::text;
+import std::process;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 1048576;
+
+struct IndexEntry {}
+impl IndexEntry {
+    fn borrow(&self) -> &IndexEntry { return self; }
+}
+pub impl core::iter::Mapper<core::pair::Pair<u64,core::text::Text>,alloc::tree_map::Entry<core::text::Text,u64>> for IndexEntry {
+    pub fn apply(&self, value: core::pair::Pair<u64,core::text::Text>) -> alloc::tree_map::Entry<core::text::Text,u64> {
+        let entry: alloc::tree_map::Entry<core::text::Text,u64> = alloc::tree_map::Entry { key: value.second, value: value.first };
+        return entry;
+    }
+}
+
+fn output(words: &alloc::tree_map::TreeMap<core::text::Text,u64>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    // A u64 needs at most 20 decimal bytes, followed by one TAB.
+    let storage: [i32;8] = [0;8];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),32);
+    let newline: [u8;1] = [10];
+    let cursor: alloc::tree_map::Cursor<core::text::Text,u64> = words.iter();
+    while (true) {
+        let next: core::option::Option<alloc::tree_map::Entry<core::text::Text,u64>> = cursor.next();
+        if (next.is_none()) { break; }
+        let entry: alloc::tree_map::Entry<core::text::Text,u64> = next.unwrap();
+        let formatted: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_u64(bytes,0,31,entry.value);
+        if (formatted.is_err()) { return 3; }
+        let length: i32 = formatted.unwrap();
+        bytes[length] = 9;
+        let position: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),bytes,0,length+1);
+        if (position.is_err()) { return 3; }
+        let word: core::text::Text = entry.key;
+        let body: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),word.bytes,word.start,word.byte_len());
+        if (body.is_err()) { return 3; }
+        let ending: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),newline,0,1);
+        if (ending.is_err()) { return 3; }
+    }
+    return 0;
+}
+
+fn collect_and_index(input: &alloc::io::Buffer) -> i32 {
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(input.as_bytes(),input.len());
+    if (checked.is_err()) { return 6; }
+    let text: core::text::Text = checked.unwrap();
+    let source: core::text::SplitAsciiWhitespace = text.split_ascii_whitespace();
+    let indexed: core::iter::Enumerate<core::text::SplitAsciiWhitespace,core::text::Text> = core::iter::enumerate_from<core::text::SplitAsciiWhitespace,core::text::Text>(source.borrow(),1);
+    let mapper: IndexEntry = IndexEntry {};
+    let entries: core::iter::Map<core::iter::Enumerate<core::text::SplitAsciiWhitespace,core::text::Text>,IndexEntry,core::pair::Pair<u64,core::text::Text>,alloc::tree_map::Entry<core::text::Text,u64>> = core::iter::map<core::iter::Enumerate<core::text::SplitAsciiWhitespace,core::text::Text>,IndexEntry,core::pair::Pair<u64,core::text::Text>,alloc::tree_map::Entry<core::text::Text,u64>>(indexed.borrow(),mapper.borrow());
+    let words: alloc::tree_map::TreeMap<core::text::Text,u64> = alloc::tree_map::new();
+    // Every word occupies at least one input byte. This strict larger quota
+    // permits actual EOF observation, including on an empty input.
+    let collected: core::result::Result<core::iter::Transfer,core::iter::TransferError<alloc::tree_map::Entry<core::text::Text,u64>,alloc::tree_map::SinkError>> = core::iter::try_transfer_up_to<core::iter::Map<core::iter::Enumerate<core::text::SplitAsciiWhitespace,core::text::Text>,IndexEntry,core::pair::Pair<u64,core::text::Text>,alloc::tree_map::Entry<core::text::Text,u64>>,alloc::tree_map::TreeMap<core::text::Text,u64>,alloc::tree_map::Entry<core::text::Text,u64>,alloc::tree_map::SinkError>(entries.borrow(),words.borrow(),1048577);
+    if (collected.is_err()) {
+        let failure: core::iter::TransferError<alloc::tree_map::Entry<core::text::Text,u64>,alloc::tree_map::SinkError> = collected.unwrap_err();
+        let status: i32 = match (failure.error) {
+            alloc::tree_map::SinkError::Duplicate -> 8,
+            alloc::tree_map::SinkError::Storage(error) -> match (error) { alloc::tree_map::Error::AllocationFailed -> 4, _ -> 7 }
+        };
+        words.destroy();
+        return status;
+    }
+    let report: core::iter::Transfer = collected.unwrap();
+    if (!report.exhausted || report.accepted != words.len() as u64) { words.destroy(); return 7; }
+    let status: i32 = output(words.borrow());
+    words.destroy();
+    return status;
+}
+
+fn input_status(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 7, _ -> 3 };
+}
+
+fn main() -> i32 {
+    // Explicit process-wide policy before allocation permits cleanup on EPIPE.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let argc: i32 = std::process::argc();
+    if (argc < 0) { return 3; }
+    if (argc != 1) { return 2; }
+    let initialized: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(MAX_INPUT);
+    if (initialized.is_err()) { return input_status(initialized.unwrap_err()); }
+    let input: alloc::io::Buffer = initialized.unwrap();
+    let reserved: core::result::Result<i32,core::io::Error> = input.try_reserve(MAX_INPUT);
+    if (reserved.is_err()) { let status: i32 = input_status(reserved.unwrap_err()); input.destroy(); return status; }
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    let status: i32 = 0;
+    if (copied.is_err()) { let failure: core::io::CopyFailure = copied.unwrap_err(); status = input_status(failure.cause); }
+    else { status = collect_and_index(input.borrow()); }
+    // All map storage and borrowed Text containers have finished first.
+    input.destroy();
+    return status;
+}

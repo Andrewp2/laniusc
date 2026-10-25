@@ -1,0 +1,123 @@
+# Published round-to-nearest sanity vectors, OpenLibm-test/libc-test.
+# Source: https://github.com/JuliaMath/openlibm-test/tree/18e28496adee3d84fefdda6efcb9c5b8996a2398/src/math/sanity
+# Only sanity data is included; no ucb/crlibm data is copied.
+# libc-test is licensed under the following standard MIT license:
+#
+# Copyright © 2005-2013 libc-test AUTHORS
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+# IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+# CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+# TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+#
+# Portions of this software is derived from software authored by
+# third parties:
+#
+# math tests use numbers under BSD and GPL licenses see src/math/ucb/*
+# and src/math/crlibm/* for details
+# Columns: function x y expected (hexadecimal binary64 or nan).
+sin -0x1.02239f3c6a8f1p+3 0x0p+0 -0x1.f4719cbe20bd2p-1
+sin 0x1.161868e18bc67p+2 0x0p+0 -0x1.dde0a33834424p-1
+sin -0x1.0c34b3e01e6e7p+3 0x0p+0 -0x1.ba6a5410cb9ccp-1
+sin -0x1.a206f0a19dcc4p+2 0x0p+0 -0x1.f7aed6ca5f32fp-3
+sin 0x1.288bbb0d6a1e6p+3 0x0p+0 0x1.41acd05fae3c4p-3
+sin 0x1.52efd0cd80497p-1 0x0p+0 0x1.3ab7ecc98df9ap-1
+sin -0x1.a05cc754481d1p-2 0x0p+0 -0x1.94fbf72645bfcp-2
+sin 0x1.1f9ef934745cbp-1 0x0p+0 0x1.10baf3a5f550ep-1
+sin 0x1.8c5db097f7442p-1 0x0p+0 0x1.65f1c5e591db2p-1
+sin -0x1.5b86ea8118a0ep-1 0x0p+0 -0x1.417318671b83dp-1
+cos -0x1.02239f3c6a8f1p+3 0x0p+0 -0x1.b0aa8f2c9baf6p-3
+cos 0x1.161868e18bc67p+2 0x0p+0 -0x1.6f922aed88704p-2
+cos -0x1.0c34b3e01e6e7p+3 0x0p+0 -0x1.01b4e00041423p-1
+cos -0x1.a206f0a19dcc4p+2 0x0p+0 0x1.f0462a6686a9cp-1
+cos 0x1.288bbb0d6a1e6p+3 0x0p+0 -0x1.f9a51be5829b7p-1
+cos 0x1.52efd0cd80497p-1 0x0p+0 0x1.93da10e89d4d1p-1
+cos -0x1.a05cc754481d1p-2 0x0p+0 0x1.d64199a5cb117p-1
+cos 0x1.1f9ef934745cbp-1 0x0p+0 0x1.b150bae7795b1p-1
+cos 0x1.8c5db097f7442p-1 0x0p+0 0x1.6e164e427022bp-1
+cos -0x1.5b86ea8118a0ep-1 0x0p+0 0x1.8e83d35a366cp-1
+exp -0x1.02239f3c6a8f1p+3 0x0p+0 0x1.490327ea61235p-12
+exp 0x1.161868e18bc67p+2 0x0p+0 0x1.34712ed238c04p+6
+exp -0x1.0c34b3e01e6e7p+3 0x0p+0 0x1.e06b1b6c18e64p-13
+exp -0x1.a206f0a19dcc4p+2 0x0p+0 0x1.7dd47f810e68cp-10
+exp 0x1.288bbb0d6a1e6p+3 0x0p+0 0x1.4abc77496e07ep+13
+exp 0x1.52efd0cd80497p-1 0x0p+0 0x1.f04a9c10805p+0
+exp -0x1.a05cc754481d1p-2 0x0p+0 0x1.54f1e0fd3ea0dp-1
+exp 0x1.1f9ef934745cbp-1 0x0p+0 0x1.c0f6266a6a547p+0
+exp 0x1.8c5db097f7442p-1 0x0p+0 0x1.1599b1d4a25fbp+1
+exp -0x1.5b86ea8118a0ep-1 0x0p+0 0x1.03b5728a00229p-1
+expm1 -0x1.02239f3c6a8f1p+3 0x0p+0 -0x1.ffd6df9b02b3ep-1
+expm1 0x1.161868e18bc67p+2 0x0p+0 0x1.30712ed238c04p+6
+expm1 -0x1.0c34b3e01e6e7p+3 0x0p+0 -0x1.ffe1f94e493e7p-1
+expm1 -0x1.a206f0a19dcc4p+2 0x0p+0 -0x1.ff4115c03f78dp-1
+expm1 0x1.288bbb0d6a1e6p+3 0x0p+0 0x1.4ab477496e07ep+13
+expm1 0x1.52efd0cd80497p-1 0x0p+0 0x1.e095382100a01p-1
+expm1 -0x1.a05cc754481d1p-2 0x0p+0 -0x1.561c3e0582be6p-2
+expm1 0x1.1f9ef934745cbp-1 0x0p+0 0x1.81ec4cd4d4a8fp-1
+expm1 0x1.8c5db097f7442p-1 0x0p+0 0x1.2b3363a944bf7p+0
+expm1 -0x1.5b86ea8118a0ep-1 0x0p+0 -0x1.f8951aebffbafp-2
+log -0x1.02239f3c6a8f1p+3 0x0p+0 nan
+log 0x1.161868e18bc67p+2 0x0p+0 0x1.7815b08f99c65p+0
+log -0x1.0c34b3e01e6e7p+3 0x0p+0 nan
+log -0x1.a206f0a19dcc4p+2 0x0p+0 nan
+log 0x1.288bbb0d6a1e6p+3 0x0p+0 0x1.1cfcd53d72604p+1
+log 0x1.52efd0cd80497p-1 0x0p+0 -0x1.a6694a4a85621p-2
+log -0x1.a05cc754481d1p-2 0x0p+0 nan
+log 0x1.1f9ef934745cbp-1 0x0p+0 -0x1.2742bc03d02ddp-1
+log 0x1.8c5db097f7442p-1 0x0p+0 -0x1.06215de4a3f92p-2
+log -0x1.5b86ea8118a0ep-1 0x0p+0 nan
+log1p -0x1.02239f3c6a8f1p+3 0x0p+0 nan
+log1p 0x1.161868e18bc67p+2 0x0p+0 0x1.ad1bdd1e9e687p+0
+log1p -0x1.0c34b3e01e6e7p+3 0x0p+0 nan
+log1p -0x1.a206f0a19dcc4p+2 0x0p+0 nan
+log1p 0x1.288bbb0d6a1e6p+3 0x0p+0 0x1.2a1ab8365b56fp+1
+log1p 0x1.52efd0cd80497p-1 0x0p+0 0x1.041a4ec2a680ap-1
+log1p -0x1.a05cc754481d1p-2 0x0p+0 -0x1.0b3595423aec1p-1
+log1p 0x1.1f9ef934745cbp-1 0x0p+0 0x1.c8834348a846ep-2
+log1p 0x1.8c5db097f7442p-1 0x0p+0 0x1.258a8e8a35bbfp-1
+log1p -0x1.5b86ea8118a0ep-1 0x0p+0 -0x1.22b5426327502p+0
+atan -0x1.02239f3c6a8f1p+3 0x0p+0 -0x1.728cd4294633ap+0
+atan 0x1.161868e18bc67p+2 0x0p+0 0x1.583791db39f0fp+0
+atan -0x1.0c34b3e01e6e7p+3 0x0p+0 -0x1.73b94f31c3005p+0
+atan -0x1.a206f0a19dcc4p+2 0x0p+0 -0x1.6b3b72e10494cp+0
+atan 0x1.288bbb0d6a1e6p+3 0x0p+0 0x1.769b08f1d60c3p+0
+atan 0x1.52efd0cd80497p-1 0x0p+0 0x1.2b6504221346bp-1
+atan -0x1.a05cc754481d1p-2 0x0p+0 -0x1.8b7473c9ac112p-2
+atan 0x1.1f9ef934745cbp-1 0x0p+0 0x1.060e2eb21783ep-1
+atan 0x1.8c5db097f7442p-1 0x0p+0 0x1.514ba4df4ae08p-1
+atan -0x1.5b86ea8118a0ep-1 0x0p+0 -0x1.315244b290fe2p-1
+atan2 -0x1.02239f3c6a8f1p+3 0x1.22484b9ef31fp+2 -0x1.0effb95f41b7dp+0
+atan2 0x1.161868e18bc67p+2 -0x1.1c6a6cdce75e8p+3 0x1.57eb77cdcea8dp+1
+atan2 -0x1.0c34b3e01e6e7p+3 -0x1.61bde29e83f6dp+1 -0x1.e3a92bbad2d22p+0
+atan2 -0x1.a206f0a19dcc4p+2 0x1.24527f7b576acp+2 -0x1.ebcccdb5aed8dp-1
+atan2 0x1.288bbb0d6a1e6p+3 0x1.33edd910a3c01p+2 0x1.17879218f70fap+0
+atan2 -0x1.9ccd8be03f495p+2 0x1.52fb12ef638a1p-1 -0x1.77f02c500ba85p+0
+atan2 0x1.f6f80ed2eab44p+2 0x1.ab3ff8575b21dp-5 0x1.906ccb09df36bp+0
+atan2 -0x1.95882b433fad3p-1 0x1.eb4a2e7ce0693p+2 -0x1.a52301fb32d6bp-4
+atan2 0x1.3b3d617ae3c4ap-1 0x1.01860611d75e1p+1 0x1.301b74fc45333p-2
+atan2 -0x1.1e159e36313eep-1 0x1.081bd34224213p-5 -0x1.835e886278502p+0
+pow -0x1.02239f3c6a8f1p+3 0x1.22484b9ef31fp+2 nan
+pow 0x1.161868e18bc67p+2 -0x1.1c6a6cdce75e8p+3 0x1.1e84244b6adcbp-19
+pow -0x1.0c34b3e01e6e7p+3 -0x1.61bde29e83f6dp+1 nan
+pow -0x1.a206f0a19dcc4p+2 0x1.24527f7b576acp+2 nan
+pow 0x1.288bbb0d6a1e6p+3 0x1.33edd910a3c01p+2 0x1.5eda994cf09bap+15
+pow -0x1.9ccd8be03f495p+2 0x1.52fb12ef638a1p-1 nan
+pow 0x1.f6f80ed2eab44p+2 0x1.ab3ff8575b21dp-5 0x1.1d0f7faa98a5bp+0
+pow -0x1.95882b433fad3p-1 0x1.eb4a2e7ce0693p+2 nan
+pow 0x1.3b3d617ae3c4ap-1 0x1.01860611d75e1p+1 0x1.81f419f1692bep-2
+pow -0x1.1e159e36313eep-1 0x1.081bd34224213p-5 nan

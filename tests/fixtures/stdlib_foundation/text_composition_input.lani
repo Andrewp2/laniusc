@@ -1,0 +1,72 @@
+// Test protocol: opcode, count, prefix byte length, separator byte length,
+// then prefix, separator, and count (one-byte length, UTF-8 bytes) parts.
+module app::main;
+import alloc::string;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::fs;
+import std::stream;
+import std::vec;
+
+fn main() -> i32 {
+    let storage: [i32; 1024] = [0; 1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let count: i32 = std::fs::read(0, pointer, 4096);
+    if (count < 4) { return 1; }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, count);
+    let opcode: u8 = bytes[0];
+    let amount: i32 = bytes[1] as i32;
+    let prefix_length: i32 = bytes[2] as i32;
+    let separator_length: i32 = bytes[3] as i32;
+    if (4 + prefix_length + separator_length > count) { return 2; }
+    let prefix: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 4, prefix_length));
+    let separator: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 4 + prefix_length, separator_length));
+    let cursor: i32 = 4 + prefix_length + separator_length;
+    let parts: std::vec::Vec<core::text::Text> = std::vec::new();
+    let result: alloc::string::String = alloc::string::new();
+    if (opcode == 0 || opcode == 2) {
+        let index: i32 = 0;
+        while (index < amount) {
+            if (cursor >= count) { return 3; }
+            let length: i32 = bytes[cursor] as i32; cursor += 1;
+            if (length > count - cursor) { return 4; }
+            parts = std::vec::push(parts, core::result::unwrap(core::text::from_utf8_range(bytes, cursor, length)));
+            cursor += length; index += 1;
+        }
+        let view: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(std::vec::as_slice(parts), std::vec::len(parts)));
+        if (opcode == 0) { result = core::result::unwrap(alloc::string::join(view, separator)); }
+        else {
+            result = core::result::unwrap(alloc::string::from_text(prefix));
+            core::result::unwrap(result.try_append_joined(view, separator));
+        }
+    } else {
+        if (opcode == 1) { result = core::result::unwrap(alloc::string::repeat(separator, amount)); }
+        else {
+            if (opcode == 3) {
+                result = core::result::unwrap(alloc::string::from_text(prefix));
+                core::result::unwrap(result.try_append_repeated(separator, amount));
+            } else {
+                if (opcode != 4) { return 5; }
+                let words: core::text::SplitAsciiWhitespace = prefix.split_ascii_whitespace();
+                while (true) {
+                    let word: core::option::Option<core::text::Text> = words.next();
+                    if (core::option::is_none(word)) { break; }
+                    parts = std::vec::push(parts, core::option::unwrap(word));
+                }
+                let view: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(std::vec::as_slice(parts), std::vec::len(parts)));
+                result = core::result::unwrap(alloc::string::join(view, separator));
+                if (!core::option::is_none(words.next())) { return 6; }
+            }
+        }
+    }
+    if (cursor != count) { return 7; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), result.as_bytes(), 0, result.byte_len());
+    result.destroy(); std::vec::destroy(parts);
+    if (core::result::is_err(written)) { return 8; }
+    return 0;
+}

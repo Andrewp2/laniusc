@@ -1,0 +1,78 @@
+module app::main;
+import core::io;
+import core::result;
+import probe::alpha;
+import probe::beta;
+import probe::forward;
+import probe::script;
+
+// Retain the historical local generic implementation/helper control.
+struct LocalForward<W> { inner: &W }
+pub impl<W> LocalForward<W> { pub fn borrow(&self) -> &LocalForward<W> { return self; } }
+pub impl<W> core::io::Write for LocalForward<W> where W: core::io::Write {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        let inner: &W = self.inner;
+        return inner.write(bytes,offset,count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        let inner: &W = self.inner;
+        return inner.flush();
+    }
+}
+fn local_send<W>(writer: &W, bytes: [u8], offset: i32, count: i32)
+    -> core::result::Result<i32,core::io::Error> where W: core::io::Write {
+    return writer.write(bytes,offset,count);
+}
+
+// A single nongeneric control, not an alternate implementation of Forward.
+struct Fixed { inner: &probe::alpha::Endpoint }
+pub impl Fixed { pub fn borrow(&self) -> &Fixed { return self; } }
+pub impl core::io::Write for Fixed {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        let inner: &probe::alpha::Endpoint = self.inner;
+        return inner.write(bytes,offset,count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        let inner: &probe::alpha::Endpoint = self.inner;
+        return inner.flush();
+    }
+}
+
+fn main() -> i32 {
+    let source: [u8;8] = [90,0,128,255,42,7,91,92];
+    let direct_bytes: [u8;8] = [77;8]; let direct_trace: [i32;12] = [-1;12];
+    let direct: probe::script::State = probe::script::state(direct_bytes,direct_trace,false,false,false);
+    let direct_leaf: probe::alpha::Endpoint = probe::alpha::Endpoint { state:direct.borrow() };
+    let direct_adapter: probe::forward::Forward<probe::alpha::Endpoint> = probe::forward::forward(direct_leaf.borrow());
+    assert(direct_adapter.write(source,1,3).unwrap() == 3);
+    probe::script::assert_one_call(direct.borrow(),101,3);
+    assert(direct_adapter.flush().unwrap() == 0);
+    assert(direct.flushes == 1 && direct.marker == 103 && direct.calls == 1);
+    probe::script::assert_bytes(direct_bytes,[77,0,128,255,77,77,77,77]);
+
+    let local_bytes: [u8;8] = [77;8]; let local_trace: [i32;12] = [-1;12];
+    let local: probe::script::State = probe::script::state(local_bytes,local_trace,false,false,false);
+    let local_leaf: probe::beta::Endpoint = probe::beta::Endpoint { state:local.borrow() };
+    let local_adapter: LocalForward<probe::beta::Endpoint> = LocalForward<probe::beta::Endpoint> { inner:local_leaf.borrow() };
+    assert(local_send(local_adapter.borrow(),source,1,3).unwrap() == 3);
+    probe::script::assert_one_call(local.borrow(),201,3);
+    assert(local_adapter.flush().unwrap() == 0);
+    assert(local.flushes == 1 && local.marker == 203 && local.calls == 1);
+    probe::script::assert_bytes(local_bytes,[77,0,128,255,77,77,77,77]);
+
+    let fixed_bytes: [u8;8] = [77;8]; let fixed_trace: [i32;12] = [-1;12];
+    let fixed: probe::script::State = probe::script::state(fixed_bytes,fixed_trace,false,false,false);
+    let fixed_leaf: probe::alpha::Endpoint = probe::alpha::Endpoint { state:fixed.borrow() };
+    let fixed_adapter: Fixed = Fixed { inner:fixed_leaf.borrow() };
+    assert(core::io::write_all(fixed_adapter.borrow(),source,1,3).unwrap() == 3);
+    probe::script::assert_one_call(fixed.borrow(),101,3);
+    probe::script::assert_bytes(fixed_bytes,[77,0,128,255,77,77,77,77]);
+
+    let read_source: [u8;3] = [0,128,255];
+    let read_output: [u8;8] = [77;8];
+    let reader: core::io::SliceReader = core::io::slice_reader(read_source,3).unwrap();
+    assert(core::io::read_exact(reader.borrow(),read_output,1,3).unwrap() == 3 && reader.position() == 3);
+    probe::script::assert_bytes(read_output,[77,0,128,255,77,77,77,77]);
+    probe::script::assert_bytes(source,[90,0,128,255,42,7,91,92]);
+    return 0;
+}

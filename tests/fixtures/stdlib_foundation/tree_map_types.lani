@@ -1,0 +1,89 @@
+module app::main;
+import alloc::tree_map;
+import alloc::string;
+import alloc::vec;
+import core::cmp;
+import core::float_order;
+import core::option;
+import core::result;
+fn keys<T>(low: T, high: T) -> bool where T: core::cmp::Ord<T> {
+    let map: alloc::tree_map::TreeMap<T, bool> = alloc::tree_map::new();
+    core::result::unwrap(map.try_insert(high, true)); core::result::unwrap(map.try_insert(low, false));
+    if (core::option::unwrap(map.get(low)) || !core::option::unwrap(map.get(high))) { return false; }
+    let first: alloc::tree_map::Entry<T, bool> = core::option::unwrap(map.pop_first());
+    if (first.value || T::lt(first.key, low) || T::lt(low, first.key)) { return false; }
+    core::result::unwrap(map.try_reserve(16));
+    let copied: core::result::Result<alloc::tree_map::TreeMap<T, bool>, alloc::tree_map::Error> = map.try_clone();
+    let copy: alloc::tree_map::TreeMap<T, bool> = core::result::unwrap(copied);
+    let last: alloc::tree_map::Entry<T, bool> = core::option::unwrap(copy.pop_last());
+    let ok: bool = last.value && !T::lt(last.key, high) && !T::lt(high, last.key) && map.len() == 1 && copy.is_empty();
+    copy.destroy(); map.destroy(); return ok;
+}
+fn values<T>(low: T, high: T) -> bool where T: core::cmp::Eq<T> {
+    let map: alloc::tree_map::TreeMap<i32, T> = alloc::tree_map::new();
+    core::result::unwrap(map.try_insert(2, low)); core::result::unwrap(map.try_insert(1, high));
+    let old: alloc::tree_map::Entry<i32, T> = core::option::unwrap(core::result::unwrap(map.try_insert(2, high)));
+    let first: alloc::tree_map::Entry<i32, T> = core::option::unwrap(map.pop_first());
+    let last: alloc::tree_map::Entry<i32, T> = core::option::unwrap(map.remove(2));
+    let ok: bool = T::eq(old.value, low) && T::eq(first.value, high) && T::eq(last.value, high) && map.is_empty(); map.destroy(); return ok;
+}
+fn both<T>(low: T, high: T) -> bool where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> { return keys(low, high) && values(low, high); }
+struct Payload { wide: u64, mark: core::option::Option<bool>, bytes: [u8; 3] }
+struct Identity { order: i32, id: i32 }
+pub impl core::cmp::Ord<Identity> for Identity {
+    pub fn lt(a: Identity, b: Identity) -> bool { return a.order < b.order; }
+    pub fn le(a: Identity, b: Identity) -> bool { return a.order <= b.order; }
+    pub fn gt(a: Identity, b: Identity) -> bool { return a.order > b.order; }
+    pub fn ge(a: Identity, b: Identity) -> bool { return a.order >= b.order; }
+}
+struct Unit {}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(a: Unit, b: Unit) -> bool { return false; }
+    pub fn le(a: Unit, b: Unit) -> bool { return true; }
+    pub fn gt(a: Unit, b: Unit) -> bool { return false; }
+    pub fn ge(a: Unit, b: Unit) -> bool { return true; }
+}
+fn main() -> i32 {
+    if (!both(-128 as i8, 127 as i8) || !both(0 as u8, 255 as u8)) { return 1; }
+    if (!both(-32768 as i16, 32767 as i16) || !both(0 as u16, 65535 as u16)) { return 2; }
+    let u32max: u32 = 4294967295;
+    if (!both(-2147483648 as i32, 2147483647 as i32) || !both(0 as u32, u32max)) { return 3; }
+    let low: i64 = -9223372036854775808; let high: i64 = 9223372036854775807; let unsigned: u64 = 18446744073709551615;
+    if (!both(low, high) || !both(0 as u64, unsigned) || !both(low as isize, high as isize) || !both(0 as usize, unsigned as usize)) { return 4; }
+    let fl: core::float_order::TotalF32 = core::float_order::from_f32(-1.5); let fh: core::float_order::TotalF32 = core::float_order::from_f32(3.25);
+    if (!both(false, true) || !both('a', '😀') || !both(fl, fh)) { return 5; }
+    let ab: [u8; 1] = [97]; let bb: [u8; 2] = [195, 169];
+    let a: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(ab, 1));
+    let b: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bb, 2));
+    if (!both(a, b)) { return 6; } a.destroy(); b.destroy();
+    let records: alloc::tree_map::TreeMap<i32, Payload> = alloc::tree_map::new(); let index: i32 = 0;
+    while (index < 64) {
+        let bytes: [u8; 3] = [index as u8, 128, 255];
+        let item: Payload = Payload { wide: (index as u64) * 4294967297, mark: core::option::Some(index % 2 == 0), bytes: bytes };
+        core::result::unwrap(records.try_insert(63 - index, item)); index += 1;
+    }
+    core::result::unwrap(records.try_reserve(200)); core::result::unwrap(records.try_shrink_to_fit()); index = 0;
+    while (index < 64) {
+        let entry: alloc::tree_map::Entry<i32, Payload> = core::option::unwrap(records.pop_last()); let item: Payload = entry.value;
+        if (entry.key != 63 - index || item.wide != (index as u64) * 4294967297 || core::option::unwrap(item.mark) != (index % 2 == 0) || item.bytes[0] != index as u8 || item.bytes[1] != 128 || item.bytes[2] != 255) { return 7; }
+        index += 1;
+    }
+    records.destroy();
+    let identities: alloc::tree_map::TreeMap<Identity, bool> = alloc::tree_map::new();
+    core::result::unwrap(identities.try_insert(Identity { order: 7, id: 1 }, false));
+    let replaced: alloc::tree_map::Entry<Identity, bool> = core::option::unwrap(core::result::unwrap(identities.try_insert(Identity { order: 7, id: 2 }, true)));
+    let stored: alloc::tree_map::Entry<Identity, bool> = core::option::unwrap(identities.get_entry(Identity { order: 7, id: 999 }));
+    if (identities.len() != 1 || replaced.key.id != 1 || replaced.value || stored.key.id != 2 || !stored.value) { return 8; } identities.destroy();
+    let units: alloc::tree_map::TreeMap<Unit, Unit> = alloc::tree_map::new();
+    if (core::option::is_some(core::result::unwrap(units.try_insert(Unit {}, Unit {})))) { return 9; }
+    if (core::option::is_none(core::result::unwrap(units.try_insert(Unit {}, Unit {}))) || units.len() != 1 || core::option::is_none(units.pop_first())) { return 10; } units.destroy();
+    let x: alloc::vec::Vec<bool> = alloc::vec::new(); core::result::unwrap(x.try_push(false));
+    let y: alloc::vec::Vec<bool> = alloc::vec::new(); core::result::unwrap(y.try_push(true));
+    let owners: alloc::tree_map::TreeMap<i32, alloc::vec::Vec<bool>> = alloc::tree_map::new();
+    core::result::unwrap(owners.try_insert(1, x)); core::result::unwrap(owners.try_insert(2, y));
+    let removed: alloc::tree_map::Entry<i32, alloc::vec::Vec<bool>> = core::option::unwrap(owners.remove(1)); removed.value.destroy();
+    core::result::unwrap(owners.try_reserve(50));
+    let last: alloc::tree_map::Entry<i32, alloc::vec::Vec<bool>> = core::option::unwrap(owners.pop_last());
+    core::result::unwrap(last.value.try_push(false)); if (last.value.len() != 2 || !last.value.at(0) || last.value.at(1)) { return 11; }
+    last.value.destroy(); owners.destroy(); return 0;
+}

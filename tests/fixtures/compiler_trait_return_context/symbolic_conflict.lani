@@ -1,0 +1,15 @@
+module app::main;
+import core::result;
+import probe::protocol;
+import probe::values;
+
+fn conflicting<T,E,F>(source: T) -> core::result::Result<T,F>
+    where T: probe::protocol::Produce<T,E> {
+    return T::produce(source,false);
+}
+fn main() -> i32 {
+    let source: probe::values::Item = probe::values::Item { word:1,signed:2 };
+    let rejected: core::result::Result<probe::values::Item,i64> =
+        conflicting<probe::values::Item,probe::values::Fault,i64>(source);
+    return 0;
+}

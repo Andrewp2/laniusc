@@ -1,0 +1,17 @@
+// Reduced imported-helper call through entry-defined implementations.
+module app::main;
+import alloc::clone;
+import alloc::vec;
+import core::clone;
+import core::result;
+import core::slice;
+struct Local { value: i32 }
+enum Fault { Never }
+pub impl core::clone::TryClone<Local,Fault> for Local { pub fn try_clone_value(source: Local) -> core::result::Result<Local,Fault> { return core::result::Ok(source); } }
+pub impl core::clone::Destroy<Local> for Local { pub fn destroy_value(owned: Local) { return; } }
+fn main() -> i32 {
+    let values: [Local;2] = [Local { value:17 },Local { value:29 }];
+    let result: core::result::Result<alloc::vec::Vec<Local>,alloc::clone::Error<Fault>> = alloc::clone::from_view<Local,Fault>(core::slice::view(values,2).unwrap());
+    let owner = result.unwrap(); assert(owner.at(0).value == 17 && owner.at(1).value == 29);
+    alloc::clone::destroy_vec<Local>(owner.borrow()); return 0;
+}

@@ -34,6 +34,7 @@ RWStructuredBuffer<uint> external_type_unit_id;
 RWStructuredBuffer<uint> external_type_local_index;
 
 #include "body_type_graph_reference.slang"
+#include "body_impl_bindings.slang"
 
 [shader("compute")]
 [numthreads(256, 1, 1)]
@@ -42,8 +43,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint lane = dtid.x;
     if (dtid.y != 0u || dtid.z != 0u || lane >= BODY_ATOM_RESERVE_ROWS) return;
     static const uint INVALID = 0xffffffffu;
+    uint3 bindings;
+    if (!body_impl_binding_header(bindings))
+    { if (lane == 0u) record_min_token_error(status, 0u, 6u, 0x474e000au); return; }
+    uint4 header = body_specialization_inputs[0u];
+    uint4 entries = body_specialization_inputs[705u];
+    if (header.x > BODY_TYPE_SLOTS || header.z > BODY_GRAPH_NODES || header.w > BODY_GRAPH_EDGES ||
+        entries.x > BODY_CONSTANT_SLOTS || entries.y >= BODY_MAX_ENTRIES ||
+        (header.x == 0u && entries.x == 0u && entries.y != 0u))
+    { if (lane == 0u) record_min_token_error(status, 0u, 6u, 0x474e000au); return; }
+    // Every used record is checked once before a later routing dispatch can
+    // publish any binding. An environment visits at most32+32 owned arguments;
+    // contiguous spans cover the entire declared argument prefix exactly.
+    for (uint index = lane; index < bindings.x; index += BODY_ATOM_RESERVE_ROWS)
+        if (!body_impl_binding_valid(index, bindings))
+        { record_min_token_error(status, 0u, 6u, 0x474e000au); return; }
+    for (uint index = lane; index < bindings.y; index += BODY_ATOM_RESERVE_ROWS)
+        if (!body_impl_environment_valid(index, bindings))
+        { record_min_token_error(status, 0u, 6u, 0x474e000au); return; }
     uint count = body_graph_node_count();
-    uint constant_count = min(body_specialization_inputs[705u].x, BODY_CONSTANT_SLOTS);
+    uint constant_count = entries.x;
     if (count == 0u && constant_count == 0u) return;
     uint atom_base = body_constant_atom_base();
     if (atom_base == INVALID)

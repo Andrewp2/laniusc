@@ -1,0 +1,260 @@
+// Exact consumer effects, nested values and one manually retained String owner.
+module app::main;
+import alloc::string;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+struct Log { events: [i32], length: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, value: i32) { assert(self.length < 64); self.events[self.length] = value; self.length += 1; }
+    fn check(&self, items: i32, terminal: bool, callback: i32) {
+        let length: i32 = items * 2; if (terminal) { length += 1; }
+        assert(self.length == length);
+        let index: i32 = 0;
+        while (index < items) { assert(self.events[index * 2] == 1 && self.events[index * 2 + 1] == callback); index += 1; }
+        if (terminal) { assert(self.events[length - 1] == 1); }
+    }
+}
+struct Probe { length: i32, position: i32, calls: i32, log: &Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        let log: &Log = self.log; log.add(1); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.position; self.position += 1; return core::option::Some(value);
+    }
+}
+struct Predicate { target: i32, equal: bool, calls: i32, log: &Log }
+impl Predicate { fn borrow(&self) -> &Predicate { return self; } }
+pub impl core::iter::Mapper<i32, bool> for Predicate {
+    pub fn apply(&self, value: i32) -> bool {
+        let log: &Log = self.log; log.add(2); self.calls += 1;
+        return (value == self.target) == self.equal;
+    }
+}
+struct NestedOption { calls: i32, log: &Log }
+impl NestedOption { fn borrow(&self) -> &NestedOption { return self; } }
+pub impl core::iter::Mapper<i32, core::option::Option<core::option::Option<u64>>> for NestedOption {
+    pub fn apply(&self, value: i32) -> core::option::Option<core::option::Option<u64>> {
+        let log: &Log = self.log; log.add(2); self.calls += 1;
+        if (value != 1) { return core::option::None(); }
+        let empty: core::option::Option<u64> = core::option::None();
+        return core::option::Some(empty);
+    }
+}
+struct NestedResult { calls: i32, log: &Log }
+impl NestedResult { fn borrow(&self) -> &NestedResult { return self; } }
+pub impl core::iter::Mapper<i32, core::option::Option<core::result::Result<[u64; 2], i32>>> for NestedResult {
+    pub fn apply(&self, value: i32) -> core::option::Option<core::result::Result<[u64; 2], i32>> {
+        let log: &Log = self.log; log.add(2); self.calls += 1;
+        if (value != 1) { return core::option::None(); }
+        let ordinary: core::result::Result<[u64; 2], i32> = core::result::Err(71);
+        return core::option::Some(ordinary);
+    }
+}
+
+fn short_circuits() {
+    let events: [i32; 64] = [0; 64]; let log: Log = Log { events: events, length: 0 };
+    let source: Probe = Probe { length: 5, position: 0, calls: 0, log: log.borrow() };
+    let predicate: Predicate = Predicate { target: 2, equal: true, calls: 0, log: log.borrow() };
+    let found: core::option::Option<i32> = core::iter::find<Probe, Predicate, i32>(source.borrow(), predicate.borrow());
+    assert(core::option::unwrap(found) == 2 && source.position == 3 && source.calls == 3 && predicate.calls == 3);
+    log.check(3, false, 2);
+    let resume: core::option::Option<i32> = source.next(); assert(core::option::unwrap(resume) == 3);
+
+    log.length = 0; source = Probe { length: 2, position: 0, calls: 0, log: log.borrow() };
+    predicate.target = 9; predicate.calls = 0;
+    let missing: core::option::Option<i32> = core::iter::find<Probe, Predicate, i32>(source.borrow(), predicate.borrow());
+    assert(core::option::is_none(missing) && source.calls == 3 && predicate.calls == 2); log.check(2, true, 2);
+    let missing_again: core::option::Option<i32> = core::iter::find<Probe, Predicate, i32>(source.borrow(), predicate.borrow());
+    assert(core::option::is_none(missing_again) && source.calls == 4 && predicate.calls == 2);
+
+    log.length = 0; source = Probe { length: 0, position: 0, calls: 0, log: log.borrow() }; predicate.calls = 0;
+    let none_match: bool = core::iter::any<Probe, Predicate, i32>(source.borrow(), predicate.borrow());
+    let all_match: bool = core::iter::all<Probe, Predicate, i32>(source.borrow(), predicate.borrow());
+    assert(!none_match && all_match && source.calls == 2 && predicate.calls == 0 && log.length == 2);
+    assert(events[0] == 1 && events[1] == 1);
+
+    log.length = 0; source = Probe { length: 5, position: 0, calls: 0, log: log.borrow() };
+    predicate.target = 2; predicate.equal = false; predicate.calls = 0;
+    let stopped: bool = core::iter::all<Probe, Predicate, i32>(source.borrow(), predicate.borrow());
+    assert(!stopped && source.calls == 3 && predicate.calls == 3); log.check(3, false, 2);
+    let after_all: core::option::Option<i32> = source.next(); assert(core::option::unwrap(after_all) == 3);
+
+    log.length = 0; source = Probe { length: 4, position: 0, calls: 0, log: log.borrow() };
+    let maybe: NestedOption = NestedOption { calls: 0, log: log.borrow() };
+    let nested: core::option::Option<core::option::Option<u64>> =
+        core::iter::find_map<Probe, NestedOption, i32, core::option::Option<u64>>(source.borrow(), maybe.borrow());
+    assert(core::option::is_some(nested) && core::option::is_none(core::option::unwrap(nested)));
+    assert(source.calls == 2 && maybe.calls == 2); log.check(2, false, 2);
+    let after_optional: core::option::Option<i32> = source.next(); assert(core::option::unwrap(after_optional) == 2);
+
+    log.length = 0; source = Probe { length: 4, position: 0, calls: 0, log: log.borrow() };
+    let convert: NestedResult = NestedResult { calls: 0, log: log.borrow() };
+    let ordinary: core::option::Option<core::result::Result<[u64; 2], i32>> =
+        core::iter::find_map<Probe, NestedResult, i32, core::result::Result<[u64; 2], i32>>(source.borrow(), convert.borrow());
+    assert(core::option::is_some(ordinary) && core::result::unwrap_err(core::option::unwrap(ordinary)) == 71);
+    assert(source.calls == 2 && convert.calls == 2); log.check(2, false, 2);
+}
+
+struct Acc { count: i32, serial: i64, wide: u64, nested: core::option::Option<core::result::Result<[u64; 2], i32>> }
+struct Failure { item: i32, before: Acc, note: core::option::Option<core::result::Result<[u64; 2], i32>> }
+fn advance(acc: Acc, value: i32) -> Acc {
+    let cells: [u64; 2] = [18446744073709551615 - (value as u64), (acc.count + 1) as u64];
+    let ordinary: core::result::Result<[u64; 2], i32> = core::result::Ok(cells);
+    return Acc { count: acc.count + 1, serial: acc.serial * 10 + (value as i64) + 1,
+        wide: acc.wide - (value as u64), nested: core::option::Some(ordinary) };
+}
+struct Accumulate { calls: i32, log: &Log }
+impl Accumulate { fn borrow(&self) -> &Accumulate { return self; } }
+pub impl core::iter::Folder<Acc, i32> for Accumulate {
+    pub fn apply(&self, acc: Acc, value: i32) -> Acc {
+        let log: &Log = self.log; log.add(3); self.calls += 1; return advance(acc, value);
+    }
+}
+struct Stop { at: i32, calls: i32, log: &Log }
+impl Stop { fn borrow(&self) -> &Stop { return self; } }
+pub impl core::iter::TryFolder<Acc, i32, Failure> for Stop {
+    pub fn try_apply(&self, acc: Acc, value: i32) -> core::result::Result<Acc, Failure> {
+        let log: &Log = self.log; log.add(4); self.calls += 1;
+        if (value == self.at) {
+            let detail: core::result::Result<[u64; 2], i32> = core::result::Err(77);
+            return core::result::Err(Failure { item: value, before: acc, note: core::option::Some(detail) });
+        }
+        return core::result::Ok(advance(acc, value));
+    }
+}
+struct Payload { words: [u64; 2], tag: core::option::Option<core::result::Result<i32, bool>> }
+struct Choose { calls: i32 }
+impl Choose { fn borrow(&self) -> &Choose { return self; } }
+pub impl core::iter::Mapper<Payload, bool> for Choose {
+    pub fn apply(&self, value: Payload) -> bool { self.calls += 1; return value.words[1] == 2; }
+}
+struct Nest { calls: i32 }
+impl Nest { fn borrow(&self) -> &Nest { return self; } }
+pub impl core::iter::Folder<core::option::Option<core::result::Result<[u64; 2], i32>>, i32> for Nest {
+    pub fn apply(&self, acc: core::option::Option<core::result::Result<[u64; 2], i32>>, value: i32)
+        -> core::option::Option<core::result::Result<[u64; 2], i32>> {
+        self.calls += 1;
+        if (self.calls == 1) { assert(core::result::unwrap_err(core::option::unwrap(acc)) == 73); }
+        let cells: [u64; 2] = [18446744073709551615, value as u64];
+        let ordinary: core::result::Result<[u64; 2], i32> = core::result::Ok(cells);
+        return core::option::Some(ordinary);
+    }
+}
+fn compound_values() {
+    let events: [i32; 64] = [0; 64]; let log: Log = Log { events: events, length: 0 };
+    let initial: Acc = Acc { count: 2, serial: 7, wide: 18446744073709551605, nested: core::option::None() };
+    let source: Probe = Probe { length: 3, position: 0, calls: 0, log: log.borrow() };
+    let folder: Accumulate = Accumulate { calls: 0, log: log.borrow() };
+    let final: Acc = core::iter::fold<Probe, Accumulate, i32, Acc>(source.borrow(), initial, folder.borrow());
+    assert(final.count == 5 && final.serial == 7123 && final.wide == 18446744073709551602);
+    let cells: [u64; 2] = core::result::unwrap(core::option::unwrap(final.nested));
+    assert(cells[0] == 18446744073709551613 && cells[1] == 5 && folder.calls == 3 && source.calls == 4);
+    log.check(3, true, 3);
+
+    log.length = 0; source = Probe { length: 0, position: 0, calls: 0, log: log.borrow() }; folder.calls = 0;
+    let unchanged: Acc = core::iter::fold<Probe, Accumulate, i32, Acc>(source.borrow(), initial, folder.borrow());
+    assert(unchanged.count == 2 && unchanged.serial == 7 && unchanged.wide == initial.wide && core::option::is_none(unchanged.nested));
+    assert(folder.calls == 0 && source.calls == 1); log.check(0, true, 3);
+
+    log.length = 0; source = Probe { length: 4, position: 0, calls: 0, log: log.borrow() };
+    let fallible: Stop = Stop { at: 1, calls: 0, log: log.borrow() };
+    let rejected: core::result::Result<Acc, Failure> = core::iter::try_fold<Probe, Stop, i32, Acc, Failure>(source.borrow(), initial, fallible.borrow());
+    let failed: Failure = core::result::unwrap_err(rejected);
+    assert(failed.item == 1 && failed.before.count == 3 && failed.before.serial == 71 && failed.before.wide == initial.wide);
+    assert(core::result::unwrap_err(core::option::unwrap(failed.note)) == 77 && source.calls == 2 && fallible.calls == 2);
+    log.check(2, false, 4);
+    let resume: core::option::Option<i32> = source.next(); assert(core::option::unwrap(resume) == 2);
+
+    let success: core::result::Result<i32, bool> = core::result::Ok(99);
+    let ordinary_error: core::result::Result<i32, bool> = core::result::Err(false);
+    let a: Payload = Payload { words: [18446744073709551615, 0], tag: core::option::None() };
+    let b: Payload = Payload { words: [18446744073709551614, 1], tag: core::option::Some(ordinary_error) };
+    let c: Payload = Payload { words: [18446744073709551613, 2], tag: core::option::Some(success) };
+    let values: [Payload; 3] = [a, b, c];
+    let cursor: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(values, 3));
+    let choose: Choose = Choose { calls: 0 };
+    let found: core::option::Option<Payload> = core::iter::find<core::slice::Iter<Payload>, Choose, Payload>(cursor.borrow(), choose.borrow());
+    let item: Payload = core::option::unwrap(found);
+    assert(item.words[0] == 18446744073709551613 && core::result::unwrap(core::option::unwrap(item.tag)) == 99 && choose.calls == 3);
+
+    let integers: [i32; 2] = [0, 1];
+    let integer_source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(integers, 2));
+    let nest: Nest = Nest { calls: 0 };
+    let error: core::result::Result<[u64; 2], i32> = core::result::Err(73);
+    let nested_initial: core::option::Option<core::result::Result<[u64; 2], i32>> = core::option::Some(error);
+    let nested: core::option::Option<core::result::Result<[u64; 2], i32>> =
+        core::iter::fold<core::slice::Iter<i32>, Nest, i32, core::option::Option<core::result::Result<[u64; 2], i32>>>(integer_source.borrow(), nested_initial, nest.borrow());
+    let nested_cells: [u64; 2] = core::result::unwrap(core::option::unwrap(nested));
+    assert(nested_cells[0] == 18446744073709551615 && nested_cells[1] == 1 && nest.calls == 2);
+}
+
+struct OwnerPredicate { calls: i32, choose: i32 }
+impl OwnerPredicate { fn borrow(&self) -> &OwnerPredicate { return self; } }
+pub impl core::iter::Mapper<alloc::string::String, bool> for OwnerPredicate {
+    pub fn apply(&self, value: alloc::string::String) -> bool { assert(value.byte_len() == 4); self.calls += 1; return self.calls == self.choose; }
+}
+struct OwnerMap { calls: i32 }
+impl OwnerMap { fn borrow(&self) -> &OwnerMap { return self; } }
+pub impl core::iter::Mapper<alloc::string::String, core::option::Option<alloc::string::String>> for OwnerMap {
+    pub fn apply(&self, value: alloc::string::String) -> core::option::Option<alloc::string::String> {
+        self.calls += 1; if (self.calls == 2) { return core::option::Some(value); } return core::option::None();
+    }
+}
+struct OwnerFolder { calls: i32 }
+impl OwnerFolder { fn borrow(&self) -> &OwnerFolder { return self; } }
+pub impl core::iter::Folder<alloc::string::String, alloc::string::String> for OwnerFolder {
+    pub fn apply(&self, acc: alloc::string::String, value: alloc::string::String) -> alloc::string::String {
+        assert(acc.byte_len() == 4 && value.byte_len() == 4); self.calls += 1; return value;
+    }
+}
+pub impl core::iter::TryFolder<alloc::string::String, alloc::string::String, alloc::string::String> for OwnerFolder {
+    pub fn try_apply(&self, acc: alloc::string::String, value: alloc::string::String)
+        -> core::result::Result<alloc::string::String, alloc::string::String> {
+        assert(acc.byte_len() == 4 && value.byte_len() == 4); self.calls += 1;
+        if (self.calls == 2) { return core::result::Err(value); } return core::result::Ok(value);
+    }
+}
+fn ownership() {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let aliases: [alloc::string::String; 3] = [owner, owner, owner];
+    let cursor: core::slice::Iter<alloc::string::String> = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3));
+    let predicate: OwnerPredicate = OwnerPredicate { calls: 0, choose: 2 };
+    let found: core::option::Option<alloc::string::String> =
+        core::iter::find<core::slice::Iter<alloc::string::String>, OwnerPredicate, alloc::string::String>(cursor.borrow(), predicate.borrow());
+    let borrowed: alloc::string::String = core::option::unwrap(found);
+    assert(borrowed.byte_len() == 4 && predicate.calls == 2 && cursor.remaining() == 1 && owner.byte_len() == 4);
+    cursor = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3)); predicate.calls = 0; predicate.choose = 9;
+    let none: bool = core::iter::any<core::slice::Iter<alloc::string::String>, OwnerPredicate, alloc::string::String>(cursor.borrow(), predicate.borrow());
+    assert(!none && predicate.calls == 3 && owner.byte_len() == 4);
+    cursor = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3)); predicate.calls = 0;
+    let all: bool = core::iter::all<core::slice::Iter<alloc::string::String>, OwnerPredicate, alloc::string::String>(cursor.borrow(), predicate.borrow());
+    assert(!all && predicate.calls == 1 && cursor.remaining() == 2 && owner.byte_len() == 4);
+    cursor = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3));
+    let mapper: OwnerMap = OwnerMap { calls: 0 };
+    let mapped: core::option::Option<alloc::string::String> =
+        core::iter::find_map<core::slice::Iter<alloc::string::String>, OwnerMap, alloc::string::String, alloc::string::String>(cursor.borrow(), mapper.borrow());
+    assert(core::option::unwrap(mapped).byte_len() == 4 && cursor.remaining() == 1 && mapper.calls == 2);
+    cursor = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3));
+    let folder: OwnerFolder = OwnerFolder { calls: 0 };
+    let folded: alloc::string::String = core::iter::fold<core::slice::Iter<alloc::string::String>, OwnerFolder, alloc::string::String, alloc::string::String>(cursor.borrow(), owner, folder.borrow());
+    assert(folded.byte_len() == 4 && folder.calls == 3 && owner.byte_len() == 4);
+    cursor = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3)); folder.calls = 0;
+    let rejected: core::result::Result<alloc::string::String, alloc::string::String> =
+        core::iter::try_fold<core::slice::Iter<alloc::string::String>, OwnerFolder, alloc::string::String, alloc::string::String, alloc::string::String>(cursor.borrow(), owner, folder.borrow());
+    let error_alias: alloc::string::String = core::result::unwrap_err(rejected);
+    let resumed: core::option::Option<alloc::string::String> = cursor.next();
+    assert(error_alias.byte_len() == 4 && core::option::unwrap(resumed).byte_len() == 4 && folder.calls == 2 && cursor.remaining() == 0);
+    let still_live: core::text::Text = borrowed.as_text();
+    assert(core::option::unwrap(still_live.byte_at(0)) == 97 && core::option::unwrap(still_live.byte_at(3)) == 100);
+    // Every discarded/result owner is a shallow alias. Only this original
+    // release authority destroys storage, after the final alias use.
+    owner.destroy();
+}
+fn main() -> i32 { short_circuits(); compound_values(); ownership(); return 0; }

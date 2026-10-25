@@ -1,0 +1,13 @@
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+import core::text;
+import ext::record_probe;
+fn main() -> i32 {
+    let key: [u8; 3] = [65,66,67]; let fields: [ext::record_probe::Field; 1] = [ext::record_probe::Field { key: core::text::from_utf8_unchecked(key, 0, 3), value: ext::record_probe::Value::Number(42) }];
+    let record: ext::record_probe::Record = ext::record_probe::Record { level: ext::record_probe::Level::Info, target: core::text::from_utf8_unchecked(key,0,3), message: core::text::from_utf8_unchecked(key,0,3), fields: core::result::unwrap(core::slice::view(fields, 1)) };
+    let bytes: [u8; 3] = [0;3]; let writer: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(bytes, 3));
+    assert(core::result::unwrap(ext::record_probe::count(record.borrow())) == 5);
+    return 0;
+}

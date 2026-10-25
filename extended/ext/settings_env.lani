@@ -1,0 +1,75 @@
+// Explicit allowlisted environment overlay. Snapshot owns only value strings;
+// mapping keys and their UTF-8 storage remain borrowed from the caller.
+module ext::settings_env;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::settings;
+import std::env;
+
+pub enum Parse { Text, Boolean, Integer, ExactDecimal }
+pub struct Spec { environment: core::text::Text, setting: core::text::Text, parse: Parse }
+pub enum Error { InvalidSpec(i32), DuplicateSetting(i32), InvalidLimit, ValueLimit(i32), AllocationFailed, Unavailable, HostRead(i32), InvalidUtf8(i32), Value(i32,ext::settings::Error) }
+pub struct Snapshot { strings: alloc::vec::Vec<alloc::string::String>, bindings: alloc::vec::Vec<ext::settings::Binding> }
+fn valid(value: core::text::Text) -> bool { return value.start >= 0 && value.length >= 0 && value.length <= 2147483647-value.start; }
+fn checked_text(value: core::text::Text, work: &ext::settings::Budget) -> core::result::Result<bool,ext::settings::Error> {
+    if (!valid(value)) { return core::result::Err(ext::settings::Error::Bounds); }
+    let paid = work.charge((value.byte_len() as u64)+1); if (core::result::is_err(paid)) { return paid; }
+    if (core::result::is_err(core::text::from_utf8_range(value.bytes,value.start,value.length))) { return core::result::Err(ext::settings::Error::InvalidScalar); }
+    return core::result::Ok(true);
+}
+fn read_value(spec: Spec, index: i32, maximum: i32, work: &ext::settings::Budget) -> core::result::Result<core::option::Option<alloc::string::String>,Error> {
+    if (core::result::is_err(work.charge((spec.environment.byte_len() as u64)+1))) { return core::result::Err(Error::Value(index,ext::settings::Error::WorkLimit)); }
+    let copied = alloc::string::from_text(spec.environment); if (core::result::is_err(copied)) { return core::result::Err(Error::AllocationFailed); }
+    let key: alloc::string::String = core::result::unwrap(copied); let count: i32 = std::env::var_len(key.bytes.storage,key.byte_len() as usize);
+    if (count < 0) { key.destroy(); return core::result::Ok(core::option::None()); }
+    if (count > maximum) { key.destroy(); return core::result::Err(Error::ValueLimit(index)); }
+    if (core::result::is_err(work.charge((count as u64)+1))) { key.destroy(); return core::result::Err(Error::Value(index,ext::settings::Error::WorkLimit)); }
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(bytes.try_resize(count,0))) { key.destroy(); bytes.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let received: i32 = 0; if (count > 0) { received = std::env::var_read(key.bytes.storage,key.byte_len() as usize,bytes.storage,count as usize); } key.destroy();
+    if (received != count) { bytes.destroy(); return core::result::Err(Error::HostRead(index)); }
+    let text = alloc::string::from_utf8(bytes.as_slice(),count); bytes.destroy();
+    if (core::result::is_err(text)) { let allocation: bool = match(core::result::unwrap_err(text)) { alloc::string::Error::AllocationFailed -> true, _ -> false }; if (allocation) { return core::result::Err(Error::AllocationFailed); } return core::result::Err(Error::InvalidUtf8(index)); }
+    return core::result::Ok(core::option::Some(core::result::unwrap(text)));
+}
+pub fn snapshot(specs: core::slice::View<Spec>, maximum_count: i32, maximum_value_bytes: i32, maximum_total_bytes: i32, work: &ext::settings::Budget) -> core::result::Result<Snapshot,Error> {
+    if (maximum_count < 0 || maximum_value_bytes < 0 || maximum_total_bytes < 0) { return core::result::Err(Error::InvalidLimit); }
+    if (specs.start < 0 || specs.length < 0 || specs.length > 2147483647-specs.start || specs.len() > maximum_count) { return core::result::Err(Error::InvalidLimit); }
+    let i: i32 = 0;
+    while (i < specs.len()) {
+        let spec: Spec = core::option::unwrap(specs.get(i));
+        if (!valid(spec.environment) || !valid(spec.setting) || spec.environment.is_empty() || spec.environment.byte_len() > maximum_total_bytes || spec.setting.byte_len() > maximum_total_bytes) { return core::result::Err(Error::InvalidSpec(i)); }
+        let checked = checked_text(spec.environment,work); if (core::result::is_err(checked)) { return core::result::Err(Error::Value(i,core::result::unwrap_err(checked))); }
+        let checked = checked_text(spec.setting,work); if (core::result::is_err(checked)) { return core::result::Err(Error::Value(i,core::result::unwrap_err(checked))); }
+        if (core::result::is_err(work.charge(spec.environment.byte_len() as u64))) { return core::result::Err(Error::Value(i,ext::settings::Error::WorkLimit)); }
+        let j: i32 = 0; while (j < spec.environment.byte_len()) { let byte: u8 = core::option::unwrap(spec.environment.byte_at(j)); if (byte == 0 || byte == 61) { return core::result::Err(Error::InvalidSpec(i)); } j += 1; }
+        j = 0; while (j < i) { let previous: Spec = core::option::unwrap(specs.get(j)); if (core::result::is_err(work.charge((spec.setting.byte_len() as u64)+1))) { return core::result::Err(Error::Value(i,ext::settings::Error::WorkLimit)); } if (spec.setting.equals(previous.setting)) { return core::result::Err(Error::DuplicateSetting(i)); } j += 1; }
+        i += 1;
+    }
+    if (!std::env::environment_variables_api_is_executable()) { return core::result::Err(Error::Unavailable); }
+    let result: Snapshot = Snapshot { strings:alloc::vec::new(),bindings:alloc::vec::new() }; let total: i32 = 0; i = 0;
+    while (i < specs.len()) {
+        let spec: Spec = core::option::unwrap(specs.get(i));
+        let maximum: i32 = maximum_value_bytes; if (maximum_total_bytes-total < maximum) { maximum = maximum_total_bytes-total; }
+        let read = read_value(spec,i,maximum,work); if (core::result::is_err(read)) { result.destroy(); return core::result::Err(core::result::unwrap_err(read)); }
+        let found: core::option::Option<alloc::string::String> = core::result::unwrap(read);
+        if (core::option::is_some(found)) {
+            let text: alloc::string::String = core::option::unwrap(found); let count: i32 = text.byte_len();
+            let parsed: core::result::Result<ext::settings::Value,ext::settings::Error> = match(spec.parse) { Parse::Text -> core::result::Ok(ext::settings::scalar(ext::settings::Scalar::Text(text.as_text()))), Parse::Boolean -> ext::settings::parse_boolean(text.as_text(),work), Parse::Integer -> ext::settings::parse_integer(text.as_text(),work), Parse::ExactDecimal -> ext::settings::exact_decimal(text.as_text(),maximum_value_bytes,work) };
+            if (core::result::is_err(parsed)) { text.destroy(); result.destroy(); return core::result::Err(Error::Value(i,core::result::unwrap_err(parsed))); }
+            if (core::result::is_err(result.strings.try_push(text))) { text.destroy(); result.destroy(); return core::result::Err(Error::AllocationFailed); }
+            if (core::result::is_err(result.bindings.try_push(ext::settings::Binding { key:spec.setting,value:core::result::unwrap(parsed) }))) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+            total += count;
+        }
+        i += 1;
+    }
+    return core::result::Ok(result);
+}
+pub impl Snapshot {
+    pub fn as_source(&self) -> ext::settings::Source { return ext::settings::Source::Bindings(self.bindings.as_view()); }
+    pub fn len(&self) -> i32 { return self.bindings.len(); }
+    pub fn destroy(&self) { while (!self.strings.is_empty()) { core::option::unwrap(self.strings.pop()).destroy(); } self.strings.destroy(); self.bindings.destroy(); }
+}

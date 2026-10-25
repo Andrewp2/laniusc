@@ -1,0 +1,54 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import ext::image;
+fn main() -> i32 {
+    let image: ext::image::Image = core::result::unwrap(ext::image::new(3,2,ext::image::Rgba { r: 10, g: 20, b: 30, a: 255 }));
+    assert(image.width() == 3 && image.height() == 2 && image.rgba().length == 24);
+    assert(ext::image::set(image.view(),1,0,ext::image::Rgba { r: 77, g: 0, b: 0, a: 128 }));
+    let pixel: ext::image::Rgba = core::option::unwrap(ext::image::get(image.view(),1,0)); assert(pixel.r == 77 && pixel.a == 128);
+    let copy: ext::image::Image = core::result::unwrap(ext::image::crop(image.view(),1,0,2,2));
+    let rotated: ext::image::Image = core::result::unwrap(ext::image::rotate90(copy.view()));
+    assert(core::option::unwrap(ext::image::get(rotated.view(),1,0)).r == 77);
+    core::result::unwrap(ext::image::flip_horizontal(rotated.view())); core::result::unwrap(ext::image::flip_vertical(rotated.view()));
+    core::result::unwrap(ext::image::blit(image.view(),0,0,copy.view()));
+    core::result::unwrap(ext::image::source_over(image.view(),1,0,copy.view()));
+    rotated.destroy(); copy.destroy(); image.destroy();
+    let width: i32 = 1;
+    while (width <= 7) { let height: i32 = 1; while (height <= 7) {
+        let source: ext::image::Image = core::result::unwrap(ext::image::new(width,height,ext::image::Rgba { r: 0, g: 0, b: 0, a: 255 }));
+        let y: i32 = 0; while (y < height) { let x: i32 = 0; while (x < width) { assert(ext::image::set(source.view(),x,y,ext::image::Rgba { r: x as u8, g: y as u8, b: (x+y*width) as u8, a: 255 })); x += 1; } y += 1; }
+        let turned: ext::image::Image = core::result::unwrap(ext::image::rotate90(source.view()));
+        assert(turned.width() == height && turned.height() == width);
+        y = 0; while (y < height) { let x: i32 = 0; while (x < width) { let p: ext::image::Rgba = core::option::unwrap(ext::image::get(turned.view(),height-1-y,x)); assert(p.r == x as u8 && p.g == y as u8); x += 1; } y += 1; }
+        let cropped: ext::image::Image = core::result::unwrap(ext::image::crop(source.view(),width/2,height/2,width-width/2,height-height/2));
+        assert(core::option::unwrap(ext::image::get(cropped.view(),0,0)).r == (width/2) as u8);
+        core::result::unwrap(ext::image::flip_horizontal(source.view())); core::result::unwrap(ext::image::flip_vertical(source.view()));
+        y = 0; while (y < height) { let x: i32 = 0; while (x < width) { let p: ext::image::Rgba = core::option::unwrap(ext::image::get(source.view(),x,y)); assert(p.r == (width-1-x) as u8 && p.g == (height-1-y) as u8); x += 1; } y += 1; }
+        turned.destroy(); cropped.destroy(); source.destroy(); height += 1;
+    } width += 1; }
+    let backing: [u8;100] = [199;100]; let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(backing,7,80));
+    let padded: ext::image::View = core::result::unwrap(ext::image::view(bytes,3,4,16));
+    core::result::unwrap(ext::image::fill(padded,ext::image::Rgba { r: 1, g: 2, b: 3, a: 4 }));
+    let y: i32 = 0; while (y < 4) { assert(backing[7+y*16] == 1 && backing[10+y*16] == 4 && backing[19+y*16] == 199); y += 1; }
+    assert(backing[0] == 199 && backing[6] == 199 && backing[86] == 199);
+    let selected: ext::image::View = core::result::unwrap(ext::image::subview(padded,1,1,2,3)); assert(selected.stride == 16);
+    assert(ext::image::set(selected,0,0,ext::image::Rgba { r: 91, g: 0, b: 0, a: 255 })); assert(core::option::unwrap(ext::image::get(padded,1,1)).r == 91);
+    let independent: ext::image::Image = core::result::unwrap(ext::image::crop(selected,0,0,2,3));
+    assert(ext::image::set(selected,0,0,ext::image::Rgba { r: 92, g: 0, b: 0, a: 255 })); assert(core::option::unwrap(ext::image::get(independent.view(),0,0)).r == 91); independent.destroy();
+    let invalid: ext::image::View = padded; invalid.bytes.start = -1; assert(!ext::image::valid(invalid)); invalid = padded; invalid.bytes.length = -1; assert(!ext::image::valid(invalid));
+    invalid = padded; invalid.bytes.start = 2147483647; assert(!ext::image::valid(invalid)); invalid = padded; invalid.stride = 11; assert(!ext::image::valid(invalid));
+    invalid = padded; invalid.height = 100; assert(!ext::image::valid(invalid));
+    assert(!ext::image::set(padded,-1,0,ext::image::Rgba {r:0,g:0,b:0,a:0})); assert(core::option::is_none(ext::image::get(padded,3,0)));
+    assert(core::result::is_err(ext::image::crop(padded,0,0,2147483647,1))); assert(core::result::is_err(ext::image::subview(padded,1,1,3,3)));
+    assert(core::result::is_err(ext::image::byte_len(0,1))); assert(core::result::is_err(ext::image::byte_len(2147483647,1))); assert(core::result::is_err(ext::image::byte_len(536870911,2)));
+    let overlap: ext::image::Image = core::result::unwrap(ext::image::new(4,1,ext::image::Rgba {r:0,g:0,b:0,a:255}));
+    let i: i32 = 0; while (i < 4) { assert(ext::image::set(overlap.view(),i,0,ext::image::Rgba {r:i as u8,g:0,b:0,a:255})); i += 1; }
+    let alias: ext::image::View = core::result::unwrap(ext::image::subview(overlap.view(),0,0,3,1));
+    core::result::unwrap(ext::image::blit(overlap.view(),1,0,alias));
+    assert(core::option::unwrap(ext::image::get(overlap.view(),1,0)).r == 0 && core::option::unwrap(ext::image::get(overlap.view(),2,0)).r == 1 && core::option::unwrap(ext::image::get(overlap.view(),3,0)).r == 2); overlap.destroy();
+    let blended: ext::image::Rgba = ext::image::over(ext::image::Rgba {r:255,g:0,b:0,a:128},ext::image::Rgba {r:0,g:0,b:255,a:128}); assert(blended.r == 170 && blended.b == 85 && blended.a == 192);
+    let zero: ext::image::Rgba = ext::image::over(ext::image::Rgba {r:255,g:12,b:17,a:0},ext::image::Rgba {r:5,g:6,b:7,a:0}); assert(zero.r == 0 && zero.g == 0 && zero.b == 0 && zero.a == 0);
+    return 0;
+}

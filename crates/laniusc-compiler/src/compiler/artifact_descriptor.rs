@@ -39,8 +39,10 @@ pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_PROCESS_ID: u32 = 11;
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_ENV_ID: u32 = 12;
 /// Runtime service id for test-harness APIs.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID: u32 = 13;
+/// Runtime service id for the unsafe Linux x86-64 syscall boundary.
+pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID: u32 = 14;
 /// Number of runtime services known by the descriptor contract.
-pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_COUNT: usize = 13;
+pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_COUNT: usize = 14;
 /// Runtime service status used when availability has not been determined.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNKNOWN: u32 = 0;
 /// Runtime service status used when a required service has no executable binding.
@@ -52,7 +54,7 @@ pub const GPU_SOURCE_PACK_FIRST_RUNTIME_SERVICE_ID: u32 =
     GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID;
 /// Last valid runtime service id in the contiguous service id range.
 pub const GPU_SOURCE_PACK_LAST_RUNTIME_SERVICE_ID: u32 =
-    GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID;
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID;
 const GPU_SOURCE_PACK_RUNTIME_SERVICE_REQUIREMENT_ROW_BYTE_LEN: usize = 12;
 /// Ordered runtime service ids known by the source-pack descriptor contract.
 pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS: [u32; GPU_SOURCE_PACK_RUNTIME_SERVICE_COUNT] = [
@@ -69,6 +71,7 @@ pub const GPU_SOURCE_PACK_RUNTIME_SERVICE_IDS: [u32; GPU_SOURCE_PACK_RUNTIME_SER
     GPU_SOURCE_PACK_RUNTIME_SERVICE_PROCESS_ID,
     GPU_SOURCE_PACK_RUNTIME_SERVICE_ENV_ID,
     GPU_SOURCE_PACK_RUNTIME_SERVICE_TEST_HARNESS_ID,
+    GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID,
 ];
 
 const GPU_SOURCE_PACK_TARGET_BYTE_RECORD_ARRAYS: &[&str] = &[
@@ -396,16 +399,22 @@ impl GpuSourcePackRuntimeServiceRequirement {
     }
 
     /// Creates a requirement row using the compiler's current binding status.
-    pub fn current(service_id: u32) -> Self {
+    pub fn current(service_id: u32, target: SourcePackArtifactTarget) -> Self {
         Self {
             service_id,
             required_abi_version: GPU_SOURCE_PACK_RUNTIME_ABI_VERSION,
-            service_status: runtime_service_status(service_id),
+            service_status: runtime_service_status(service_id, target),
         }
     }
 }
 
-const fn runtime_service_status(service_id: u32) -> u32 {
+const fn runtime_service_status(service_id: u32, target: SourcePackArtifactTarget) -> u32 {
+    if service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_LINUX_SYSCALL_ID {
+        return match target {
+            SourcePackArtifactTarget::X86_64 => GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_AVAILABLE,
+            _ => GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNAVAILABLE,
+        };
+    }
     if service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_ALLOCATOR_ID
         || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_FILESYSTEM_ID
         || service_id == GPU_SOURCE_PACK_RUNTIME_SERVICE_STDIO_ID
@@ -592,7 +601,9 @@ impl GpuSourcePackArtifactDescriptor {
             .required_runtime_service_ids
             .iter()
             .copied()
-            .map(GpuSourcePackRuntimeServiceRequirement::current)
+            .map(|service_id| {
+                GpuSourcePackRuntimeServiceRequirement::current(service_id, self.target)
+            })
             .collect();
         self.required_runtime_abi_version = if self.required_runtime_service_ids.is_empty() {
             None
@@ -1226,7 +1237,7 @@ impl GpuSourcePackArtifactDescriptor {
                     GPU_SOURCE_PACK_RUNTIME_SERVICE_STATUS_UNKNOWN
                 ));
             }
-            let expected_status = runtime_service_status(service_id);
+            let expected_status = runtime_service_status(service_id, self.target);
             if row.service_status != expected_status {
                 return Err(format!(
                     "descriptor runtime service row {index} for service id {service_id} has status {}; expected current compiler/runtime status {expected_status}",

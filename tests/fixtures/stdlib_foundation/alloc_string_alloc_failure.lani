@@ -1,0 +1,20 @@
+// expect: 1
+// Fault-injected mmap failure: expect 0. See stdlib_string_execution.rs.
+module app::main;
+import alloc::string;
+import core::result;
+
+fn allocation_failed(error: alloc::string::Error) -> bool {
+    return match (error) { AllocationFailed -> true, _ -> false };
+}
+
+fn main() -> i32 {
+    let text: alloc::string::String = alloc::string::new();
+    let failed: bool = match (text.try_push_scalar(8364)) {
+        Ok(_) -> false, Err(error) -> allocation_failed(error),
+    };
+    if (!failed) { text.destroy(); return 1; }
+    if (!text.is_empty() || text.capacity() != 0) { return 2; }
+    text.destroy();
+    return 0;
+}

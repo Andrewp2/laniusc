@@ -1,0 +1,35 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import ext::glob;
+import std::io_decimal;
+import std::process;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count));
+}
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> i32 {
+    let count: i32 = std::process::arg_len(index); assert(count >= 1 && count <= 32);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,count)); return core::result::unwrap(text.parse_i32());
+}
+fn main() -> i32 {
+    let storage: [i32; 4096] = [0;4096]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,16384);
+    let count: i32 = argument(1,pointer,input); let mode: i32 = argument(2,pointer,input); assert(count >= 1 && count <= 65536 && mode >= 0 && mode <= 1);
+    let source: core::slice::View<u8> = bytes("src/**/*.lani",13); let candidate: core::path::Path = core::result::unwrap(core::path::from_view(bytes("src/lib/foo.lani",16)));
+    if (mode == 0) {
+        assert(count < 16384); let index: i32 = 0; while (index < count) { input[index] = 97; index += 1; } input[count] = 99;
+        candidate = core::result::unwrap(core::path::from_bytes(input,count+1));
+        source = bytes("*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*ab",33);
+    }
+    let pattern: ext::glob::Pattern = core::result::unwrap(ext::glob::compile(source,ext::glob::default_options(),ext::glob::default_limits()));
+    let scratch: alloc::vec::Vec<u8> = core::result::unwrap(pattern.new_scratch()); let total: i32 = 0; let index: i32 = 0; let repetitions: i32 = count; if (mode == 0) { repetitions = 1; }
+    while (index < repetitions) {
+        let matched: bool = core::result::unwrap(pattern.matches(candidate,scratch.as_view(),ext::glob::DEFAULT_WORK_LIMIT));
+        if (mode == 0) { assert(!matched); } else { assert(matched); total += 1; } index += 1;
+    }
+    assert(std::io_decimal::write_i32(1,total) > 0); scratch.destroy(); pattern.destroy(); return 0;
+}

@@ -1,22 +1,31 @@
 module app::main;
-
+import core::decimal;
+import core::io;
 import std::fs;
-import std::io;
+import std::signal;
+import std::stream;
+
+
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line_to(handle: i32, value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::from_handle(handle);
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 6; }
     let output: std::fs::FileHandle = std::fs::open_write_path("host_runtime_files.txt");
     if (output < 0) {
         return 1;
     }
-    let write_value: i32 = std::io::write_i32(output, 12345);
-    let write_line: i32 = std::io::write_newline(output);
+    let written: bool = write_i32_line_to(output,12345);
     let output_close: i32 = std::fs::close_file(output);
-    if (write_value < 0) {
-        return 2;
-    }
-    if (write_line < 0) {
-        return 2;
-    }
+    if (!written) { return 2; }
     if (output_close < 0) {
         return 2;
     }
@@ -25,15 +34,20 @@ fn main() -> i32 {
     if (input < 0) {
         return 3;
     }
-    let value: i32 = std::fs::read_i32(input, -1);
+    let bytes: [u8; 6] = [0;6];
+    let source = std::stream::from_handle(input);
+    let read = core::io::read_exact(source.borrow(),bytes,0,6);
     let input_close: i32 = std::fs::close_file(input);
-    if (input_close < 0) {
+    if (read.is_err() || input_close < 0) {
         return 4;
     }
+    let parsed = core::decimal::parse_i32_range(bytes,0,5);
+    if (parsed.is_err() || bytes[5] != 10) { return 5; }
+    let value: i32 = parsed.unwrap();
     if (value != 12345) {
         return 5;
     }
 
-    std::io::print_i32(value);
+    if (!write_i32_line_to(1,value)) { return 6; }
     return 0;
 }

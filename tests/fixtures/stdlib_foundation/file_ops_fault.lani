@@ -1,0 +1,25 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import std::args;
+import std::file;
+import std::file_ops;
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn status(error:core::io::Error) -> i32 { return match(error) { core::io::Error::Interrupted->104, core::io::Error::WouldBlock->111, core::io::Error::Host(value)->100+value, _->2 }; }
+fn main() -> i32 {
+    let got=std::args::snapshot(1,1,16); if(core::result::is_err(got)) { return 4; } let args:std::args::Arguments=core::result::unwrap(got);
+    if(args.len()!=1) { args.destroy(); return 2; } let raw:core::slice::View<u8> =core::option::unwrap(args.get(0)); let parsed=core::text::from_utf8_range(raw.values,raw.start,raw.len()); let operation:i32=-1; if(core::result::is_ok(parsed)) { operation=core::result::unwrap_or(core::result::unwrap(parsed).parse_i32(),-1); } args.destroy();
+    let path:core::path::Path=core::result::unwrap(core::path::from_view(bytes("input",5))); let options:std::file_ops::OpenOptions=std::file_ops::options(); options.access=std::file_ops::Access::ReadWrite;
+    let opened=std::file_ops::open(path,options); if(core::result::is_err(opened)) { return status(core::result::unwrap_err(opened)); } let file:std::file::File=core::result::unwrap(opened); let failed:i32=0;
+    if(operation==0) { let result=std::file_ops::seek(file.borrow(),0,std::file_ops::Origin::End); if(core::result::is_err(result)) { failed=status(core::result::unwrap_err(result)); } }
+    if(operation==1) { let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata(); let result=std::file_ops::metadata_file_into(file.borrow(),metadata.borrow()); if(core::result::is_err(result)) { failed=status(core::result::unwrap_err(result)); } }
+    if(operation==2) { let result=std::file_ops::sync_all(file.borrow()); if(core::result::is_err(result)) { failed=status(core::result::unwrap_err(result)); } }
+    if(operation==3) { let result=std::file_ops::sync_data(file.borrow()); if(core::result::is_err(result)) { failed=status(core::result::unwrap_err(result)); } }
+    if(operation==4) { let result=std::file_ops::duplicate(file.borrow(),20,true); if(core::result::is_err(result)) { failed=status(core::result::unwrap_err(result)); } else { let other:std::file::File=core::result::unwrap(result); let closed=other.close(); if(core::result::is_err(closed)) { failed=status(core::result::unwrap_err(closed)); } } }
+    let closed=file.close(); if(failed==0 && core::result::is_err(closed)) { failed=status(core::result::unwrap_err(closed)); } if(file.is_open()) { return 5; } core::result::unwrap(file.close()); return failed;
+}

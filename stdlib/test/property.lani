@@ -1,0 +1,23 @@
+// Bounded reproducible generated checks; no shrinking or panic recovery.
+module test::property;
+import test::check;
+
+pub const MAX_CASES: u32 = 10000;
+pub trait Property {
+    pub fn check(&self, input: u32, case_id: u32) -> test::check::Outcome;
+}
+// The sequence is part of this API: u32 wrapping LCG, including seed zero.
+pub fn next(state: u32) -> u32 { return state * 1664525 + 1013904223; }
+pub fn run<P>(property: &P, seed: u32, cases: u32) -> test::check::Outcome where P: Property {
+    if (cases == 0 || cases > MAX_CASES) { return test::check::fail(test::check::literal("property case limit must be 1..10000",36)); }
+    let state: u32 = seed; let index: u32 = 0;
+    while (index < cases) {
+        state = next(state);
+        let result: test::check::Outcome = property.check(state,index);
+        if (result.status != 0) {
+            result.seed = seed; result.case_id = index as i32; result.input = state; result.executed = index + 1; return result;
+        }
+        index += 1;
+    }
+    let result: test::check::Outcome = test::check::pass(); result.seed = seed; result.executed = cases; return result;
+}

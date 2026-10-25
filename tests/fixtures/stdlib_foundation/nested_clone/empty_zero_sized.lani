@@ -1,0 +1,33 @@
+// Accepted native Linux x86-64: strict native exit 0; zero mmap/munmap calls.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+import alloc::clone_vec;
+import fixture::zst;
+fn main() -> i32 {
+    let empty: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = alloc::vec::new();
+    let made: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>,alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone_vec::try_clone<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>>(empty.borrow());
+    let copy = made.unwrap();
+    assert(copy.is_empty() && copy.capacity()==0 && empty.is_empty());
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    empty.destroy();
+    let units: [fixture::zst::Unit;3] = [fixture::zst::Unit {},fixture::zst::Unit {},fixture::zst::Unit {}];
+    let first: core::result::Result<alloc::vec::Vec<fixture::zst::Unit>,alloc::clone::Error<fixture::zst::Never>> =
+        alloc::clone::from_view<fixture::zst::Unit,fixture::zst::Never>(core::slice::view(units,3).unwrap());
+    let source = first.unwrap();
+    let second: core::result::Result<alloc::vec::Vec<fixture::zst::Unit>,alloc::clone::Error<fixture::zst::Never>> =
+        alloc::clone_vec::try_clone<fixture::zst::Unit,fixture::zst::Never>(source.borrow());
+    let cloned = second.unwrap();
+    assert(source.len()==3 && cloned.len()==3 && cloned.capacity()==2147483647);
+    assert(cloned.pop().is_some() && cloned.len()==2);
+    alloc::clone::destroy_vec<fixture::zst::Unit>(source.borrow());
+    alloc::clone::destroy_vec<fixture::zst::Unit>(cloned.borrow());
+    alloc::clone::destroy_vec<fixture::zst::Unit>(cloned.borrow());
+    assert(source.is_empty() && source.capacity()==0 && cloned.is_empty() && cloned.capacity()==0);
+    return 0;
+}

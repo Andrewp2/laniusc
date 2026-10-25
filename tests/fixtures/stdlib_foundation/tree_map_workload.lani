@@ -1,0 +1,59 @@
+// Three adversarial orders: ascending, descending and alternating extrema.
+// Reserve once, then insert/search/remove/reinsert and drain 32,768 keys.
+module app::main;
+import alloc::tree_map;
+import core::cmp;
+import core::option;
+import core::result;
+import std::args_checked;
+import std::io;
+import std::io_decimal;
+struct Counter { calls: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+struct Key { order: i32, counter: &Counter }
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left: Key, right: Key) -> bool { let counter: &Counter = left.counter; counter.calls += 1; return left.order < right.order; }
+    pub fn le(left: Key, right: Key) -> bool { return left.order <= right.order; }
+    pub fn gt(left: Key, right: Key) -> bool { return left.order > right.order; }
+    pub fn ge(left: Key, right: Key) -> bool { return left.order >= right.order; }
+}
+fn limit(size: i32) -> i32 { let width: i32 = size + 2; let bits: i32 = 0; while (width > 0) { width /= 2; bits += 1; } return 4 * bits + 4; }
+fn main() -> i32 {
+    let mode: i32 = std::args_checked::argument_count_or(1) - 1; let count: i32 = 32768;
+    let counter: Counter = Counter { calls: 0 }; let total: i64 = 0;
+    let map: alloc::tree_map::TreeMap<Key, i32> = alloc::tree_map::new(); core::result::unwrap(map.try_reserve(count));
+    let index: i32 = 0;
+    while (index < count) {
+        let ordinal: i32 = index;
+        if (mode == 1) { ordinal = count - index - 1; }
+        if (mode >= 2) { ordinal = index / 2; if (index % 2 != 0) { ordinal = count - 1 - index / 2; } }
+        let key: Key = Key { order: ordinal, counter: counter.borrow() }; counter.calls = 0;
+        assert(core::option::is_none(core::result::unwrap(map.try_insert(key, ordinal * 3))));
+        assert(counter.calls <= limit(index)); total += counter.calls as i64; index += 1;
+    }
+    index = 0;
+    while (index < count) {
+        let key: Key = Key { order: index, counter: counter.borrow() }; counter.calls = 0;
+        assert(core::option::unwrap(map.get(key)) == index * 3); assert(counter.calls <= limit(map.len())); total += counter.calls as i64;
+        index += 1;
+    }
+    index = 0;
+    while (index < count) {
+        let key: Key = Key { order: index, counter: counter.borrow() }; counter.calls = 0;
+        let removed: alloc::tree_map::Entry<Key, i32> = core::option::unwrap(map.remove(key));
+        assert(removed.key.order == index && removed.value == index * 3 && counter.calls <= limit(map.len() + 1)); total += counter.calls as i64; index += 3;
+    }
+    index = ((count - 1) / 3) * 3;
+    while (index >= 0) {
+        let key: Key = Key { order: index, counter: counter.borrow() }; counter.calls = 0;
+        assert(core::option::is_none(core::result::unwrap(map.try_insert(key, index * 3))));
+        assert(counter.calls <= limit(map.len())); total += counter.calls as i64; index -= 3;
+    }
+    let low: i32 = 0; let high: i32 = count - 1;
+    while (low <= high) {
+        let first: alloc::tree_map::Entry<Key, i32> = core::option::unwrap(map.pop_first()); assert(first.key.order == low && first.value == low * 3); low += 1;
+        if (low <= high) { let last: alloc::tree_map::Entry<Key, i32> = core::option::unwrap(map.pop_last()); assert(last.key.order == high && last.value == high * 3); high -= 1; }
+    }
+    assert(map.is_empty() && map.capacity() == count); map.destroy();
+    assert(std::io_decimal::write_i64(1, total) > 0 && std::io::write_byte(1, 10) == 1); return 0;
+}

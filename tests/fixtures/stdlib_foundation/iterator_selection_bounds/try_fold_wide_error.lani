@@ -1,0 +1,22 @@
+module app::main;
+import core::iter;
+import core::range;
+import core::result;
+
+struct WideErrorFolder {}
+impl WideErrorFolder { fn borrow(&self) -> &WideErrorFolder { return self; } }
+pub impl core::iter::TryFolder<i64, i32, u64> for WideErrorFolder {
+    pub fn try_apply(&self, accumulator: i64, value: i32) -> core::result::Result<i64, u64> {
+        let next: i64 = accumulator + (value as i64);
+        let result: core::result::Result<i64, u64> = core::result::Ok(next);
+        return result;
+    }
+}
+fn main() -> i32 {
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let source: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let folder: WideErrorFolder = WideErrorFolder {};
+    let initial: i64 = 0;
+    let rejected: core::result::Result<i64, i32> = core::iter::try_fold<core::iter::RangeI32, WideErrorFolder, i32, i64, i32>(source.borrow(), initial, folder.borrow());
+    return 0;
+}

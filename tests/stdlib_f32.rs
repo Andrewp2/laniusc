@@ -38,7 +38,7 @@ fn main() {
     if (!zero_is_zero || !positive_is_nonzero || !negative_is_nonzero || positive_is_zero) {
         return 1;
     }
-    if (negative_sign != -1.0 || zero_sign != core::f32::ZERO || positive_sign != core::f32::ONE) {
+    if (negative_sign != -1.0 || zero_sign != core::f32::ONE || positive_sign != core::f32::ONE) {
         return 1;
     }
     if (positive_root <= zero_value || zero_root != core::f32::ZERO) {
@@ -57,7 +57,6 @@ fn main() {
 
     let manifest = load_entry_path_manifest_with_stdlib(entry.path(), &stdlib_root)
         .expect("stdlib-root path manifest should load core::f32");
-    assert_eq!(manifest.files.len(), 2);
     assert!(
         manifest
             .files

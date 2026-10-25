@@ -1,0 +1,38 @@
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::signal;
+import std::io;
+fn read(pointer: ptr, count: i32, eof: bool) -> bool { let done: i32 = 0; while (done < count) { let n: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(n >= 0); if (n == 0) { assert(eof && done == 0); return false; } done += n; } return true; }
+fn write(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let n: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(n > 0); done += n; } }
+fn get64(bytes: [u8], at: i32) -> u64 { let value: u64 = 0; let i: i32 = 0; while (i < 8) { value = value | ((bytes[at+i] as u64) << (i*8)); i += 1; } return value; }
+fn number(value: f64) { let words: [i32;2] = [0;2]; let bits: u64 = core::f64::to_bits(value); words[0] = bits as i32; words[1] = (bits >> 32) as i32; write(core::mem::i32_array_data_ptr(words),8); }
+fn code(error: ext::signal::Error) -> i32 { return match (error) { InvalidLimits -> 1, Bounds -> 2, Size -> 3, LengthLimit -> 4, OutputLimit -> 5, WorkLimit -> 6, NonFinite -> 7, NumericalFailure -> 8, AllocationFailed -> 9 }; }
+fn header(status: i32, count: i32) { let words: [i32;2] = [status,count]; write(core::mem::i32_array_data_ptr(words),8); }
+fn complex_result(result: core::result::Result<alloc::vec::Vec<ext::signal::Complex>,ext::signal::Error>) { if (result.is_err()) { header(code(result.unwrap_err()),0); return; } let values: alloc::vec::Vec<ext::signal::Complex> = result.unwrap(); header(0,values.len()); let i: i32 = 0; while (i < values.len()) { number(values.at(i).re); number(values.at(i).im); i += 1; } values.destroy(); }
+fn real_result(result: core::result::Result<alloc::vec::Vec<f64>,ext::signal::Error>) { if (result.is_err()) { header(code(result.unwrap_err()),0); return; } let values: alloc::vec::Vec<f64> = result.unwrap(); header(0,values.len()); let i: i32 = 0; while (i < values.len()) { number(values.at(i)); i += 1; } values.destroy(); }
+fn main() -> i32 {
+ let h: [i32;6] = [0;6]; let hp: ptr = core::mem::i32_array_data_ptr(h); let hb: [u8] = core::mem::typed_slice_from_raw_parts<u8>(hp,24);
+ let raw: [i32;32772] = [0;32772]; let pointer: ptr = core::mem::i32_array_data_ptr(raw); let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer,131088);
+ let zero: ext::signal::Complex = ext::signal::Complex { re: 0.0,im: 0.0 };
+ while (read(hp,24,true)) {
+  let op: i32 = h[0]; let n: i32 = h[1]; let m: i32 = h[2]; let flags: i32 = h[3]; let factor: f64 = core::f64::from_bits(get64(hb,16)); assert(n >= 0 && n <= 8192 && m >= 0 && m <= 8192);
+  let count: i32 = n; let stride: i32 = 8; if (op == 0 || op == 1 || op == 5 || op == 6) { stride = 16; } if (op == 4) { count += m; } assert(read(pointer+16,count*stride,false)); let i: i32 = 0;
+  let complex: alloc::vec::Vec<ext::signal::Complex> = alloc::vec::new(); if (stride == 16) { if (complex.try_reserve(n+1).is_err()) { header(9,0); continue; } complex.try_push(zero).unwrap(); }
+  let reals: alloc::vec::Vec<f64> = alloc::vec::new(); if (stride == 8) { if (reals.try_reserve(count+2).is_err()) { complex.destroy(); header(9,0); continue; } reals.try_push(0.0).unwrap(); reals.try_push(0.0).unwrap(); }
+  while (i < count) { if (stride == 16) { complex.try_push(ext::signal::Complex { re: core::f64::from_bits(get64(bytes,16+i*16)),im: core::f64::from_bits(get64(bytes,24+i*16)) }).unwrap(); } else { reals.try_push(core::f64::from_bits(get64(bytes,16+i*8))).unwrap(); } i += 1; }
+  let limits: ext::signal::Limits = ext::signal::default_limits(); let cv: core::slice::View<ext::signal::Complex> = complex.as_view(); let rv: core::slice::View<f64> = reals.as_view(); if (stride == 16) { cv = cv.subview(1,n+1).unwrap(); } else { rv = rv.subview(2,n+2).unwrap(); }
+  let kind: ext::signal::Window = ext::signal::Window::Rectangular; if (flags%16 == 1) { kind = ext::signal::Window::Hann; } if (flags%16 == 2) { kind = ext::signal::Window::Hamming; } if (flags%16 == 3) { kind = ext::signal::Window::Blackman; } let periodic: bool = flags >= 16;
+  if (op == 0 || op == 1) { let direction: ext::signal::Direction = ext::signal::Direction::Forward; if (op == 1) { direction = ext::signal::Direction::Inverse; } complex_result(ext::signal::fft(cv,direction,limits)); }
+  if (op == 6) { let forward: core::result::Result<alloc::vec::Vec<ext::signal::Complex>,ext::signal::Error> = ext::signal::fft(cv,ext::signal::Direction::Forward,limits); if (forward.is_err()) { header(code(forward.unwrap_err()),0); } else { let owned: alloc::vec::Vec<ext::signal::Complex> = forward.unwrap(); let inverse: core::result::Result<alloc::vec::Vec<ext::signal::Complex>,ext::signal::Error> = ext::signal::fft(owned.as_view(),ext::signal::Direction::Inverse,limits); owned.destroy(); complex_result(inverse); } }
+  if (op == 2) { complex_result(ext::signal::real_fft(rv,m,kind,periodic,limits)); }
+  if (op == 3) { real_result(ext::signal::windowed(rv,kind,periodic,limits)); }
+  if (op == 4) { real_result(ext::signal::convolve(rv,reals.as_view().subview(2+n,2+n+m).unwrap(),limits)); }
+  if (op == 5) { let result: core::result::Result<alloc::vec::Vec<ext::signal::Bin>,ext::signal::Error> = ext::signal::bins(cv,factor,limits); if (result.is_err()) { header(code(result.unwrap_err()),0); } else { let values: alloc::vec::Vec<ext::signal::Bin> = result.unwrap(); header(0,values.len()); i = 0; while (i < values.len()) { number(values.at(i).magnitude); number(values.at(i).power); i += 1; } values.destroy(); } }
+  complex.destroy(); reals.destroy();
+ }
+ return 0;
+}

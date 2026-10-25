@@ -1,0 +1,35 @@
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::mem;
+import core::result;
+import core::slice;
+struct Poison { value: i32 }
+enum Never { Unreachable }
+pub impl core::clone::TryClone<Poison,Never> for Poison { pub fn try_clone_value(source: Poison) -> core::result::Result<Poison,Never> { assert(false); return core::result::Ok(source); } }
+pub impl core::clone::Destroy<Poison> for Poison { pub fn destroy_value(owned: Poison) {} }
+fn rejected(v: core::slice::View<alloc::string::String>) {
+    let result: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>> = alloc::clone::from_view<alloc::string::String,alloc::string::Error>(v);
+    assert(match(result.unwrap_err()) { alloc::clone::Error::Bounds -> true, _ -> false });
+}
+fn main() -> i32 {
+    let empty = alloc::string::new(); let values: [alloc::string::String;2] = [empty,empty]; let view = core::slice::view(values,2).unwrap();
+    let bad = view; bad.start = -1; rejected(bad); bad = view; bad.length = -1; rejected(bad); bad = view; bad.start = 2147483647; rejected(bad);
+    let e: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>> = alloc::clone::from_view<alloc::string::String,alloc::string::Error>(core::slice::view_range(values,2,0).unwrap());
+    let owner = e.unwrap(); assert(owner.len() == 0 && owner.capacity() == 0); alloc::clone::destroy_vec<alloc::string::String>(owner.borrow());
+    // Deliberately not a physically valid view: byte-capacity rejection must
+    // happen before allocation or any source access. This is preflight only.
+    assert(core::mem::size_of<alloc::string::String>() > 1);
+    let oversized = view; oversized.length = 2147483647;
+    let overflow: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>> = alloc::clone::from_view<alloc::string::String,alloc::string::Error>(oversized);
+    assert(match(overflow.unwrap_err()) { alloc::clone::Error::Storage(e) -> match(e) { alloc::vec::Error::CapacityOverflow -> true, _ -> false }, _ -> false });
+    let poison: [Poison;1] = [Poison { value:7 }];
+    let invalid = core::slice::view(poison,1).unwrap(); invalid.length = -1;
+    let no_call: core::result::Result<alloc::vec::Vec<Poison>,alloc::clone::Error<Never>> = alloc::clone::from_view<Poison,Never>(invalid);
+    assert(match(no_call.unwrap_err()) { alloc::clone::Error::Bounds -> true, _ -> false });
+    let zero: core::result::Result<alloc::vec::Vec<Poison>,alloc::clone::Error<Never>> = alloc::clone::from_view<Poison,Never>(core::slice::view_range(poison,1,0).unwrap());
+    let none = zero.unwrap(); assert(none.len() == 0); alloc::clone::destroy_vec<Poison>(none.borrow());
+    return 0;
+}

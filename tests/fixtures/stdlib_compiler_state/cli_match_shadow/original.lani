@@ -1,0 +1,181 @@
+// Bounded UTF-8 line search; compile the pattern once and reuse its owner.
+// See docs/extended-text-grep.md for record, limit and failure semantics.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::regex;
+import std::args;
+import std::stream;
+
+struct Options { invert: bool, numbers: bool, count: bool, max_line: i32, regex: ext::regex::Options, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32, line: u64, offset: i32, argument: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+struct Pattern { value: core::option::Option<ext::cli::Argument> }
+impl Pattern { fn borrow(&self) -> &Pattern { return self; } }
+struct Progress { selected: u64 }
+impl Progress { fn borrow(&self) -> &Progress { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text { let bytes: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(bytes.values,bytes.start,count); }
+fn fail(diagnostic: &Diagnostic, status: i32, reason: i32) -> i32 { diagnostic.reason = reason; return status; }
+fn write_part(value: core::slice::View<u8>) -> bool {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),value.values,value.start,value.len()));
+}
+fn write_number(value: u64, ending: core::text::Text) -> bool {
+    let storage: [i32;16] = [0;16]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),64);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,64));
+    format.write_unsigned(value,core::fmt::decimal()); format.write_text(ending);
+    let count: i32 = core::result::unwrap(format.finish()); let view: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,count));
+    return write_part(view);
+}
+fn regex_error(error: ext::regex::Error, diagnostic: &Diagnostic) -> i32 {
+    let status: i32 = 2; let reason: i32 = 3;
+    diagnostic.offset = match (error) { ext::regex::Error::Syntax(at) -> at, ext::regex::Error::Unsupported(at) -> at, ext::regex::Error::InvalidUtf8(at) -> at, _ -> -1 };
+    reason = match (error) { ext::regex::Error::Unsupported(at) -> 4, ext::regex::Error::Limit(at) -> 5, ext::regex::Error::WorkLimit -> 6, ext::regex::Error::AllocationFailed -> 8, ext::regex::Error::InvalidUtf8(at) -> 2, _ -> 3 };
+    if (reason == 8) { status = 4; } return fail(diagnostic,status,reason);
+}
+fn record(line: core::slice::View<u8>, terminated: bool, regex: &ext::regex::Regex, options: Options, progress: &Progress, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.stage = 2; diagnostic.offset = 0;
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(line.values,line.start,line.len());
+    if (core::result::is_err(checked)) {
+        diagnostic.offset = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 };
+        return fail(diagnostic,2,2);
+    }
+    let length: i32 = line.len(); if (terminated && length > 0 && line.values[line.start+length-1] == 13) { length -= 1; }
+    let input: core::text::Text = core::result::unwrap(core::result::unwrap(checked).slice(0,length));
+    diagnostic.stage = 3;
+    let matched: core::result::Result<bool,ext::regex::Error> = regex.is_match(input);
+    if (core::result::is_err(matched)) { return regex_error(core::result::unwrap_err(matched),diagnostic); }
+    let selected: bool = core::result::unwrap(matched); if (options.invert) { selected = !selected; }
+    if (!selected) { return 0; }
+    if (progress.selected == 18446744073709551615) { return fail(diagnostic,2,5); } progress.selected += 1;
+    if (options.count) { return 0; }
+    diagnostic.stage = 4;
+    if (options.numbers && !write_number(diagnostic.line,text(":",1))) { return fail(diagnostic,3,7); }
+    if (!write_part(line)) { return fail(diagnostic,3,7); }
+    if (terminated && !write_part(literal("\n",1))) { return fail(diagnostic,3,7); } return 0;
+}
+fn search(regex: &ext::regex::Regex, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let line: alloc::vec::Vec<u8> = alloc::vec::new(); let storage: [i32;256] = [0;256];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    let source: std::stream::Descriptor = std::stream::stdin(); let progress: Progress = Progress { selected: 0 }; diagnostic.line = 1;
+    while (true) {
+        diagnostic.stage = 2; diagnostic.offset = line.len();
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
+        if (core::result::is_err(received)) { let error: core::io::Error = core::result::unwrap_err(received); if (core::io::is_interrupted(error)) { continue; } line.destroy(); return fail(diagnostic,3,7); }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { break; } let index: i32 = 0;
+        while (index < count) {
+            let current: u8 = bytes[index];
+            if (current == 10) {
+                let status: i32 = record(line.as_view(),true,regex,options,progress.borrow(),diagnostic);
+                if (status != 0) { line.destroy(); return status; } line.clear();
+                if (diagnostic.line == 18446744073709551615) { line.destroy(); return fail(diagnostic,2,5); } diagnostic.line += 1;
+            } else {
+                diagnostic.stage = 2; diagnostic.offset = line.len();
+                if (line.len() == options.max_line) { line.destroy(); return fail(diagnostic,2,9); }
+                let pushed: core::result::Result<i32,alloc::vec::Error> = line.try_push(current);
+                if (core::result::is_err(pushed)) {
+                    let allocation: bool = match (core::result::unwrap_err(pushed)) { alloc::vec::Error::AllocationFailed -> true, _ -> false }; line.destroy();
+                    if (allocation) { return fail(diagnostic,4,8); } return fail(diagnostic,2,5);
+                }
+            } index += 1;
+        }
+    }
+    let status: i32 = 0; if (!line.is_empty()) { status = record(line.as_view(),false,regex,options,progress.borrow(),diagnostic); }
+    line.destroy(); if (status != 0) { return status; }
+    if (options.count) { diagnostic.stage = 4; diagnostic.offset = -1; if (!write_number(progress.selected,text("\n",1))) { return fail(diagnostic,3,7); } }
+    if (progress.selected == 0) { return 1; } return 0;
+}
+fn option(options: &Options, item: ext::cli::Occurrence, diagnostic: &Diagnostic) -> bool {
+    diagnostic.argument = item.at.argument; diagnostic.offset = item.at.byte;
+    if (item.id == 1) { options.invert = true; return true; } if (item.id == 2) { options.numbers = true; return true; }
+    if (item.id == 3) { options.count = true; return true; } if (item.id == 9) { options.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value); diagnostic.argument = value.at.argument; diagnostic.offset = value.at.byte;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let number: u64 = core::result::unwrap(parsed);
+    if (number > 2147483647 as u64) { return false; }
+    if (item.id == 4) { if (number > 67108864 as u64) { return false; } options.max_line = number as i32; }
+    if (item.id == 5) { if (number > 65536 as u64) { return false; } options.regex.max_pattern_bytes = number as i32; }
+    if (item.id == 6) { if (number < 4 || number > 65536 as u64) { return false; } options.regex.max_states = number as i32; }
+    if (item.id == 7) { if (number > 128 as u64) { return false; } options.regex.max_captures = number as i32; }
+    if (item.id == 8) { if (number == 0) { return false; } options.regex.max_work = number as i32; } return true;
+}
+fn operand(pattern: &Pattern, item: ext::cli::Argument, diagnostic: &Diagnostic) -> bool {
+    diagnostic.argument = item.at.argument; diagnostic.offset = item.at.byte;
+    if (core::option::is_some(pattern.value)) { return false; } pattern.value = core::option::Some(item); return true;
+}
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;9] = [
+        ext::cli::Spec { id: 1, long: literal("invert",6), short: 118, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("line-number",11), short: 110, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("count",5), short: 99, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("max-line",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-pattern",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-states",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("max-groups",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,9));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { invert: false, numbers: false, count: false, max_line: 1048576, regex: ext::regex::options(), help: false };
+    let pattern: Pattern = Pattern { value: core::option::None() };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) {
+            let at: ext::cli::Location = match (core::result::unwrap_err(event)) { ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: -1, byte: -1 } };
+            diagnostic.argument = at.argument; diagnostic.offset = at.byte; return fail(diagnostic,2,0);
+        }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(value) -> option(options.borrow(),value,diagnostic), ext::cli::Event::Operand(value) -> operand(pattern.borrow(),value,diagnostic) };
+        if (!valid) { return fail(diagnostic,2,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: text-grep [-v|--invert] [-n|--line-number] [-c|--count] [--max-line N] [--max-pattern N] [--max-states N] [--max-groups N] [--max-work N] [--] PATTERN\n",158);
+        diagnostic.stage = 4; if (!write_part(usage)) { return fail(diagnostic,3,7); } return 0;
+    }
+    if (core::option::is_none(pattern.value)) { diagnostic.argument = -1; diagnostic.offset = -1; return fail(diagnostic,2,0); }
+    let argument: ext::cli::Argument = core::option::unwrap(pattern.value); diagnostic.argument = argument.at.argument; diagnostic.stage = 1; diagnostic.offset = 0;
+    if (argument.bytes.len() > options.regex.max_pattern_bytes) { return fail(diagnostic,2,5); }
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(argument.bytes.values,argument.bytes.start,argument.bytes.len());
+    if (core::result::is_err(checked)) { diagnostic.offset = match (core::result::unwrap_err(checked)) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 }; return fail(diagnostic,2,2); }
+    let compiled: core::result::Result<ext::regex::Regex,ext::regex::Error> = ext::regex::compile(core::result::unwrap(checked),options.regex);
+    if (core::result::is_err(compiled)) { return regex_error(core::result::unwrap_err(compiled),diagnostic); }
+    let regex: ext::regex::Regex = core::result::unwrap(compiled); diagnostic.argument = -1;
+    let status: i32 = search(regex.borrow(),options,diagnostic); regex.destroy(); return status;
+}
+fn write_diagnostic(diagnostic: Diagnostic) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); format.write_text(text("text-grep: ",11));
+    if (diagnostic.reason == 0) { format.write_text(text("invalid-arguments",17)); } if (diagnostic.reason == 2) { format.write_text(text("invalid-utf8",12)); }
+    if (diagnostic.reason == 3) { format.write_text(text("invalid-regex",13)); } if (diagnostic.reason == 4) { format.write_text(text("unsupported-regex",17)); }
+    if (diagnostic.reason == 5) { format.write_text(text("resource-limit",14)); } if (diagnostic.reason == 6) { format.write_text(text("work-limit",10)); }
+    if (diagnostic.reason == 7) { format.write_text(text("io-failure",10)); } if (diagnostic.reason == 8) { format.write_text(text("allocation-failure",18)); }
+    if (diagnostic.reason == 9) { format.write_text(text("line-limit",10)); }
+    format.write_text(text(" stage=",7)); if (diagnostic.stage == 0) { format.write_text(text("arguments",9)); } if (diagnostic.stage == 1) { format.write_text(text("pattern",7)); }
+    if (diagnostic.stage == 2) { format.write_text(text("input",5)); } if (diagnostic.stage == 3) { format.write_text(text("search",6)); } if (diagnostic.stage == 4) { format.write_text(text("output",6)); }
+    if (diagnostic.line != 0) { format.write_text(text(" line=",6)); format.write_unsigned(diagnostic.line,core::fmt::decimal()); }
+    if (diagnostic.argument >= 0) { format.write_text(text(" argument=",10)); format.write_signed(diagnostic.argument as i64,core::fmt::decimal()); }
+    if (diagnostic.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(diagnostic.offset as i64,core::fmt::decimal()); }
+    format.write_text(text("\n",1)); let count: i32 = core::result::unwrap(format.finish()); let sink: std::stream::Descriptor = std::stream::stderr();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,count));
+}
+fn main() -> i32 {
+    let diagnostic: Diagnostic = Diagnostic { stage: 0, reason: 0, line: 0, offset: -1, argument: -1 };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,64,69632); let status: i32 = 0;
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(diagnostic.borrow(),4,8), std::args::Error::HostRead(at) -> fail(diagnostic.borrow(),3,7), _ -> fail(diagnostic.borrow(),2,0) }; }
+    else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,diagnostic.borrow()); arguments.destroy(); }
+    if (status > 1 && !write_diagnostic(diagnostic)) { return 3; } return status;
+}

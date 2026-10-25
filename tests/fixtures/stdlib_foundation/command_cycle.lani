@@ -1,0 +1,17 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::command;
+import std::command_raw;
+fn child(value: std::command::Child) -> i32 { let result = value.wait(); value.close_pipes(); if (result.is_err()) { value.cancel_and_wait(); return 4; } return core::option::unwrap_or(result.unwrap().code,5); }
+fn unknown(value: std::command::UnknownStart) -> i32 { value.child.cancel_and_wait(); return 6; }
+fn main() -> i32 {
+    let args = std::args::snapshot(1,1,4096).unwrap(); let program = core::option::unwrap(args.get(0)); let argv: [core::slice::View<u8>;1] = [program]; let values = core::slice::view(argv,1).unwrap(); let empty = core::slice::view(argv,0).unwrap();
+    let extra = std::command_raw::word(72,2,0,200); if (extra != 200) { return 1; } if (std::command_raw::close(0) < 0) { return 2; }
+    let request = std::command::request(program,values,empty); request.stdout = std::command::Stdio::Borrowed(2); request.stderr = std::command::Stdio::Borrowed(1);
+    let result = std::command::spawn(request); std::command_raw::close(200); if (result.is_err()) { args.destroy(); return 3; }
+    let code: i32 = match(result.unwrap()) { std::command::Spawn::Child(value) -> child(value), std::command::Spawn::Unknown(value) -> unknown(value), _ -> 7 };
+    if (std::command_raw::word(72,0,1,0) != -9) { return 8; } args.destroy(); return code;
+}

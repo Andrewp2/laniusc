@@ -1,149 +1,161 @@
-// Module-form signed halfword helpers. Operations that can overflow either
-// saturate, wrap, or return OptionI16 as named.
+// Native 16-bit signed integer operations; x86_64 Linux execution evidence.
+// Arithmetic widens before evaluation, then checks, clamps or keeps low bits.
+// checked_* returns Option; plain abs/clamp/div/rem/shifts/power/alignment
+// conveniences trap for invalid inputs. See docs/stdlib-narrow-integers.md.
 module core::i16;
-
-import core::number_i16;
 import core::option;
-
+import core::u64;
 pub const MIN: i16 = -32768;
 pub const MAX: i16 = 32767;
 pub const BITS: u32 = 16;
 pub const BYTES: u32 = 2;
+fn checked(value: i64) -> core::option::Option<i16> { if (value < -32768 || value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+fn saturated(value: i64) -> i16 { if (value < -32768) { return MIN; } if (value > 32767) { return MAX; } return value as i16; }
+pub fn min(left: i16, right: i16) -> i16 { if (left < right) { return left; } return right; }
+pub fn max(left: i16, right: i16) -> i16 { if (left > right) { return left; } return right; }
+// Reversed bounds always trap. Use checked_clamp or an explicit fallback.
+pub fn clamp(value: i16, low: i16, high: i16) -> i16 { assert(low <= high); if (value < low) { return low; } if (value > high) { return high; } return value; }
+pub fn checked_clamp(value: i16, low: i16, high: i16) -> core::option::Option<i16> { if (low > high) { return core::option::None(); } return core::option::Some(clamp(value,low,high)); }
+pub fn clamp_or(value: i16, low: i16, high: i16, fallback: i16) -> i16 { if (low > high) { return fallback; } return clamp(value,low,high); }
+pub fn is_zero(value: i16) -> bool { return value == 0; }
+pub fn is_nonzero(value: i16) -> bool { return value != 0; }
+pub fn is_even(value: i16) -> bool { return (value & 1) == 0; }
+pub fn is_odd(value: i16) -> bool { return (value & 1) != 0; }
+pub fn between_inclusive(value: i16, low: i16, high: i16) -> bool { return value >= low && value <= high; }
+pub fn between_exclusive(value: i16, low: i16, high: i16) -> bool { return value > low && value < high; }
+pub fn is_negative(value: i16) -> bool { return value < 0; }
+pub fn is_positive(value: i16) -> bool { return value > 0; }
+pub fn is_nonnegative(value: i16) -> bool { return value >= 0; }
+pub fn is_nonpositive(value: i16) -> bool { return value <= 0; }
+pub fn signum(value: i16) -> i16 { if (value < 0) { return -1; } if (value > 0) { return 1; } return 0; }
+pub fn compare_as_i32(left: i16, right: i16) -> i32 { if (left < right) { return -1; } if (left > right) { return 1; } return 0; }
+pub fn wrapping_add(left: i16, right: i16) -> i16 { return ((left as i64) + (right as i64)) as i16; }
+pub fn checked_add(left: i16, right: i16) -> core::option::Option<i16> { return checked((left as i64) + (right as i64)); }
+pub fn saturating_add(left: i16, right: i16) -> i16 { return saturated((left as i64) + (right as i64)); }
+pub fn wrapping_sub(left: i16, right: i16) -> i16 { return ((left as i64) - (right as i64)) as i16; }
+pub fn checked_sub(left: i16, right: i16) -> core::option::Option<i16> { return checked((left as i64) - (right as i64)); }
+pub fn saturating_sub(left: i16, right: i16) -> i16 { return saturated((left as i64) - (right as i64)); }
+pub fn wrapping_mul(left: i16, right: i16) -> i16 { return ((left as i64) * (right as i64)) as i16; }
+pub fn checked_mul(left: i16, right: i16) -> core::option::Option<i16> { return checked((left as i64) * (right as i64)); }
+pub fn saturating_mul(left: i16, right: i16) -> i16 { return saturated((left as i64) * (right as i64)); }
+pub fn wrapping_neg(value: i16) -> i16 { return ((0 as i64)-(value as i64)) as i16; }
+pub fn checked_neg(value: i16) -> core::option::Option<i16> { if (value == MIN) { return core::option::None(); } return core::option::Some(wrapping_neg(value)); }
+pub fn saturating_neg(value: i16) -> i16 { if (value == MIN) { return MAX; } return wrapping_neg(value); }
+// MIN has no positive result in this type and always traps.
+pub fn abs(value: i16) -> i16 { assert(value != MIN); if (value < 0) { return wrapping_neg(value); } return value; }
+pub fn checked_abs(value: i16) -> core::option::Option<i16> { if (value == MIN) { return core::option::None(); } return core::option::Some(abs(value)); }
+pub fn wrapping_abs(value: i16) -> i16 { if (value < 0) { return wrapping_neg(value); } return value; }
+pub fn saturating_abs(value: i16) -> i16 { if (value == MIN) { return MAX; } return abs(value); }
+pub fn unsigned_abs(value: i16) -> u16 { let wide: i64 = value as i64; if (wide < 0) { return (0-wide) as u16; } return wide as u16; }
+pub fn abs_diff(left: i16, right: i16) -> u16 { let difference: i64 = (left as i64)-(right as i64); if (difference < 0) { return (0-difference) as u16; } return difference as u16; }
+pub fn saturating_abs_diff(left: i16, right: i16) -> i16 { if (left >= right) { return saturating_sub(left,right); } return saturating_sub(right,left); }
+pub fn checked_div(left: i16, right: i16) -> core::option::Option<i16> { if (right == 0 || (left == MIN && right == -1)) { return core::option::None(); } return core::option::Some(((left as i64) / (right as i64)) as i16); }
+pub fn div(left: i16, right: i16) -> i16 { assert(!(right == 0 || (left == MIN && right == -1))); return ((left as i64) / (right as i64)) as i16; }
+pub fn wrapping_div(left: i16, right: i16) -> i16 { assert(right != 0); if (left == MIN && right == -1) { return MIN; } return ((left as i64) / (right as i64)) as i16; }
+pub fn checked_rem(left: i16, right: i16) -> core::option::Option<i16> { if (right == 0 || (left == MIN && right == -1)) { return core::option::None(); } return core::option::Some(((left as i64) % (right as i64)) as i16); }
+pub fn rem(left: i16, right: i16) -> i16 { assert(!(right == 0 || (left == MIN && right == -1))); return ((left as i64) % (right as i64)) as i16; }
+pub fn wrapping_rem(left: i16, right: i16) -> i16 { assert(right != 0); if (left == MIN && right == -1) { return 0; } return ((left as i64) % (right as i64)) as i16; }
+pub fn saturating_div(left: i16, right: i16) -> i16 { assert(right != 0); if (left == MIN && right == -1) { return MAX; } return ((left as i64)/(right as i64)) as i16; }
+pub fn div_euclid(left: i16, right: i16) -> i16 { assert(!(right == 0 || (left == MIN && right == -1))); let a: i64 = left as i64; let b: i64 = right as i64; let quotient: i64 = a/b; let remainder: i64 = a%b; if (remainder < 0) { if (b > 0) { quotient -= 1; } else { quotient += 1; } } return quotient as i16; }
+pub fn checked_div_euclid(left: i16, right: i16) -> core::option::Option<i16> { if (right == 0 || (left == MIN && right == -1)) { return core::option::None(); } return core::option::Some(div_euclid(left,right)); }
+pub fn rem_euclid(left: i16, right: i16) -> i16 { assert(!(right == 0 || (left == MIN && right == -1))); let a: i64 = left as i64; let b: i64 = right as i64; let quotient: i64 = a/b; let remainder: i64 = a%b; if (remainder < 0) { if (b > 0) { remainder += b; } else { remainder -= b; } } return remainder as i16; }
+pub fn checked_rem_euclid(left: i16, right: i16) -> core::option::Option<i16> { if (right == 0 || (left == MIN && right == -1)) { return core::option::None(); } return core::option::Some(rem_euclid(left,right)); }
+pub fn is_multiple_of(value: i16, divisor: i16) -> bool { if (divisor == 0) { return false; } if (divisor == -1) { return true; } return (value as i64) % (divisor as i64) == 0; }
+pub fn shl(value: i16, amount: u32) -> i16 { assert(amount < BITS); return ((value as i64) << amount) as i16; }
+// Checks the shift count; discarded bits are allowed.
+pub fn checked_shl(value: i16, amount: u32) -> core::option::Option<i16> { if (amount >= BITS) { return core::option::None(); } return core::option::Some(((value as i64) << amount) as i16); }
+pub fn wrapping_shl(value: i16, amount: u32) -> i16 { return ((value as i64) << (amount % BITS)) as i16; }
+pub fn shr(value: i16, amount: u32) -> i16 { assert(amount < BITS); return ((value as i64) >> amount) as i16; }
+// Checks the shift count; discarded bits are allowed.
+pub fn checked_shr(value: i16, amount: u32) -> core::option::Option<i16> { if (amount >= BITS) { return core::option::None(); } return core::option::Some(((value as i64) >> amount) as i16); }
+pub fn wrapping_shr(value: i16, amount: u32) -> i16 { return ((value as i64) >> (amount % BITS)) as i16; }
+// Exponent zero returns one, including 0^0.
+pub fn checked_pow(base: i16, exponent: u32) -> core::option::Option<i16> { let result: i16 = 1; let factor: i16 = base; let remaining: u32 = exponent; while (remaining != 0) { if ((remaining & 1) != 0) { let product: core::option::Option<i16> = checked_mul(result,factor); if (core::option::is_none(product)) { return core::option::None(); } result = core::option::unwrap(product); } remaining >>= 1; if (remaining != 0) { let square: core::option::Option<i16> = checked_mul(factor,factor); if (core::option::is_none(square)) { return core::option::None(); } factor = core::option::unwrap(square); } } return core::option::Some(result); }
+// Exponent zero returns one, including 0^0.
+pub fn wrapping_pow(base: i16, exponent: u32) -> i16 { let result: i16 = 1; let factor: i16 = base; let remaining: u32 = exponent; while (remaining != 0) { if ((remaining & 1) != 0) { result = wrapping_mul(result,factor); } remaining >>= 1; if (remaining != 0) { factor = wrapping_mul(factor,factor); } } return result; }
+// Exponent zero returns one, including 0^0.
+pub fn saturating_pow(base: i16, exponent: u32) -> i16 { let result: i16 = 1; let factor: i16 = base; let remaining: u32 = exponent; while (remaining != 0) { if ((remaining & 1) != 0) { result = saturating_mul(result,factor); } remaining >>= 1; if (remaining != 0) { factor = saturating_mul(factor,factor); } } return result; }
+fn bits(value: i16) -> u64 { return (value as u64) & 65535; }
+pub fn count_ones(value: i16) -> u32 { return core::u64::count_ones(bits(value)); }
+pub fn count_zeros(value: i16) -> u32 { return BITS-count_ones(value); }
+pub fn leading_zeros(value: i16) -> u32 { return core::u64::leading_zeros(bits(value))-48; }
+pub fn trailing_zeros(value: i16) -> u32 { if (value == 0) { return BITS; } return core::u64::trailing_zeros(bits(value)); }
+pub fn leading_ones(value: i16) -> u32 { return core::u64::leading_zeros(bits(value) ^ 65535)-48; }
+pub fn trailing_ones(value: i16) -> u32 { let inverted: u64 = bits(value) ^ 65535; if (inverted == 0) { return BITS; } return core::u64::trailing_zeros(inverted); }
+pub fn rotate_left(value: i16, amount: u32) -> i16 { let shift: u32 = amount % BITS; if (shift == 0) { return value; } let word: u64 = bits(value); return ((word << shift) | (word >> (BITS-shift))) as i16; }
+pub fn rotate_right(value: i16, amount: u32) -> i16 { let shift: u32 = amount % BITS; if (shift == 0) { return value; } let word: u64 = bits(value); return ((word >> shift) | (word << (BITS-shift))) as i16; }
+pub fn reverse_bits(value: i16) -> i16 { return (core::u64::reverse_bits(bits(value)) >> 48) as i16; }
+pub fn swap_bytes(value: i16) -> i16 { return (core::u64::swap_bytes(bits(value)) >> 48) as i16; }
+pub fn is_power_of_two(value: i16) -> bool { if (value <= 0) { return false; } let word: u64 = bits(value); return (word & (word-1)) == 0; }
+pub fn checked_next_power_of_two(value: i16) -> core::option::Option<i16> { if (value <= 1) { return core::option::Some(1); } if (value > 16384) { return core::option::None(); } let power: u64 = 1; let target: u64 = value as u64; while (power < target) { power <<= 1; } return core::option::Some(power as i16); }
+// Traps when no representable positive power can be returned.
+pub fn next_power_of_two(value: i16) -> i16 { return core::option::unwrap(checked_next_power_of_two(value)); }
+fn gcd_magnitude(left: i16, right: i16) -> u64 { let a: u64 = unsigned_abs(left) as u64; let b: u64 = unsigned_abs(right) as u64; while (b != 0) { let remainder: u64 = a%b; a = b; b = remainder; } return a; }
+// Nonnegative magnitude; gcd(0,0)=0. Signed MIN magnitudes fit the unsigned result.
+pub fn gcd(left: i16, right: i16) -> u16 { return gcd_magnitude(left,right) as u16; }
+pub fn checked_lcm(left: i16, right: i16) -> core::option::Option<i16> { if (left == 0 || right == 0) { return core::option::Some(0); } let divisor: u64 = gcd_magnitude(left,right); let a: u64 = unsigned_abs(left) as u64; let b: u64 = unsigned_abs(right) as u64; let reduced: u64 = a/divisor; if (reduced > (MAX as u64)/b) { return core::option::None(); } return core::option::Some((reduced*b) as i16); }
 
-// The mathematical absolute value of MIN cannot fit; return MAX there.
-pub fn abs(value: i16) -> i16 {
-    return core::number_i16::saturating_abs(value);
-}
-
-pub fn saturating_abs(value: i16) -> i16 {
-    return core::number_i16::saturating_abs(value);
-}
-
-pub fn checked_abs(value: i16) -> core::option::Option<i16> {
-    if (value == MIN) {
-        return core::option::None();
-    }
-    return core::option::Some(abs(value));
-}
-
-pub fn min(left: i16, right: i16) -> i16 {
-    return core::number_i16::min(left, right);
-}
-
-pub fn max(left: i16, right: i16) -> i16 {
-    return core::number_i16::max(left, right);
-}
-
-// Reversed bounds leave the input unchanged.
-pub fn clamp(value: i16, low: i16, high: i16) -> i16 {
-    return core::number_i16::clamp_or(value, low, high, value);
-}
-
-pub fn signum(value: i16) -> i16 {
-    return core::number_i16::signum(value);
-}
-
-pub fn is_zero(value: i16) -> bool {
-    return core::number_i16::is_zero(value);
-}
-
-pub fn is_nonzero(value: i16) -> bool {
-    return !core::number_i16::is_zero(value);
-}
-
-pub fn is_even(value: i16) -> bool {
-    return core::number_i16::is_even(value);
-}
-
-pub fn is_odd(value: i16) -> bool {
-    return core::number_i16::is_odd(value);
-}
-
-pub fn is_negative(value: i16) -> bool {
-    return value < 0;
-}
-
-pub fn is_positive(value: i16) -> bool {
-    return value > 0;
-}
-
-pub fn is_nonnegative(value: i16) -> bool {
-    return value >= 0;
-}
-
-pub fn is_nonpositive(value: i16) -> bool {
-    return value <= 0;
-}
-
-pub fn between_inclusive(value: i16, low: i16, high: i16) -> bool {
-    return value >= low && value <= high;
-}
-
-pub fn between_exclusive(value: i16, low: i16, high: i16) -> bool {
-    return value > low && value < high;
-}
-
-pub fn compare_as_i32(left: i16, right: i16) -> i32 {
-    if (left < right) {
-        return -1;
-    }
-    if (left > right) {
-        return 1;
-    }
-    return 0;
-}
-
-pub fn wrapping_add(left: i16, right: i16) -> i16 {
-    return core::number_i16::wrapping_add(left, right);
-}
-
-pub fn wrapping_sub(left: i16, right: i16) -> i16 {
-    return core::number_i16::wrapping_sub(left, right);
-}
-
-pub fn wrapping_mul(left: i16, right: i16) -> i16 {
-    return core::number_i16::wrapping_mul(left, right);
-}
-
-pub fn checked_add(left: i16, right: i16) -> core::option::Option<i16> {
-    let wide_left: i32 = left as i32;
-    let wide_right: i32 = right as i32;
-    let sum: i32 = wide_left + wide_right;
-    if (sum < -32768 || sum > 32767) {
-        return core::option::None();
-    }
-    let narrowed: i16 = sum as i16;
-    return core::option::Some(narrowed);
-}
-
-pub fn saturating_add(left: i16, right: i16) -> i16 {
-    return core::number_i16::saturating_add(left, right);
-}
-
-pub fn checked_sub(left: i16, right: i16) -> core::option::Option<i16> {
-    let wide_left: i32 = left as i32;
-    let wide_right: i32 = right as i32;
-    let difference: i32 = wide_left - wide_right;
-    if (difference < -32768 || difference > 32767) {
-        return core::option::None();
-    }
-    let narrowed: i16 = difference as i16;
-    return core::option::Some(narrowed);
-}
-
-pub fn saturating_sub(left: i16, right: i16) -> i16 {
-    return core::number_i16::saturating_sub(left, right);
-}
-
-pub fn saturating_abs_diff(left: i16, right: i16) -> i16 {
-    return core::number_i16::saturating_abs_diff(left, right);
-}
-
-pub fn is_power_of_two(value: i16) -> bool {
-    return core::number_i16::is_power_of_two(value);
-}
-
-// Zero signals that the next positive power cannot fit in i16.
-pub fn next_power_of_two(value: i16) -> i16 {
-    return core::number_i16::next_power_of_two(value);
-}
+// Integer conversions: checked means numeric range, wrapping keeps low bits.
+pub fn from_i8(value: i8) -> i16 { return value as i16; }
+pub fn from_u8(value: u8) -> i16 { return value as i16; }
+pub fn from_i16(value: i16) -> i16 { return value as i16; }
+pub fn checked_from_i8(value: i8) -> core::option::Option<i16> { return core::option::Some(value as i16); }
+pub fn saturating_from_i8(value: i8) -> i16 { return value as i16; }
+pub fn wrapping_from_i8(value: i8) -> i16 { return value as i16; }
+pub fn checked_from_u8(value: u8) -> core::option::Option<i16> { return core::option::Some(value as i16); }
+pub fn saturating_from_u8(value: u8) -> i16 { return value as i16; }
+pub fn wrapping_from_u8(value: u8) -> i16 { return value as i16; }
+pub fn checked_from_i16(value: i16) -> core::option::Option<i16> { return core::option::Some(value as i16); }
+pub fn saturating_from_i16(value: i16) -> i16 { return value as i16; }
+pub fn wrapping_from_i16(value: i16) -> i16 { return value as i16; }
+pub fn checked_from_u16(value: u16) -> core::option::Option<i16> { if (value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_u16(value: u16) -> i16 { if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_u16(value: u16) -> i16 { return value as i16; }
+pub fn checked_from_i32(value: i32) -> core::option::Option<i16> { if (value < -32768 || value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_i32(value: i32) -> i16 { if (value < -32768) { return MIN; } if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_i32(value: i32) -> i16 { return value as i16; }
+pub fn checked_from_u32(value: u32) -> core::option::Option<i16> { if (value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_u32(value: u32) -> i16 { if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_u32(value: u32) -> i16 { return value as i16; }
+pub fn checked_from_i64(value: i64) -> core::option::Option<i16> { if (value < -32768 || value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_i64(value: i64) -> i16 { if (value < -32768) { return MIN; } if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_i64(value: i64) -> i16 { return value as i16; }
+pub fn checked_from_u64(value: u64) -> core::option::Option<i16> { if (value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_u64(value: u64) -> i16 { if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_u64(value: u64) -> i16 { return value as i16; }
+pub fn checked_from_isize(value: isize) -> core::option::Option<i16> { if (value < -32768 || value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_isize(value: isize) -> i16 { if (value < -32768) { return MIN; } if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_isize(value: isize) -> i16 { return value as i16; }
+pub fn checked_from_usize(value: usize) -> core::option::Option<i16> { if (value > 32767) { return core::option::None(); } return core::option::Some(value as i16); }
+pub fn saturating_from_usize(value: usize) -> i16 { if (value > 32767) { return MAX; } return value as i16; }
+pub fn wrapping_from_usize(value: usize) -> i16 { return value as i16; }
+pub fn checked_to_i8(value: i16) -> core::option::Option<i8> { if (value < -128 || value > 127) { return core::option::None(); } return core::option::Some(value as i8); }
+pub fn saturating_to_i8(value: i16) -> i8 { if (value < -128) { return -128; } if (value > 127) { return 127; } return value as i8; }
+pub fn wrapping_to_i8(value: i16) -> i8 { return value as i8; }
+pub fn checked_to_u8(value: i16) -> core::option::Option<u8> { if (value < 0 || value > 255) { return core::option::None(); } return core::option::Some(value as u8); }
+pub fn saturating_to_u8(value: i16) -> u8 { if (value < 0) { return 0; } if (value > 255) { return 255; } return value as u8; }
+pub fn wrapping_to_u8(value: i16) -> u8 { return value as u8; }
+pub fn checked_to_i16(value: i16) -> core::option::Option<i16> { return core::option::Some(value as i16); }
+pub fn saturating_to_i16(value: i16) -> i16 { return value as i16; }
+pub fn wrapping_to_i16(value: i16) -> i16 { return value as i16; }
+pub fn checked_to_u16(value: i16) -> core::option::Option<u16> { if (value < 0) { return core::option::None(); } return core::option::Some(value as u16); }
+pub fn saturating_to_u16(value: i16) -> u16 { if (value < 0) { return 0; } return value as u16; }
+pub fn wrapping_to_u16(value: i16) -> u16 { return value as u16; }
+pub fn checked_to_i32(value: i16) -> core::option::Option<i32> { return core::option::Some(value as i32); }
+pub fn saturating_to_i32(value: i16) -> i32 { return value as i32; }
+pub fn wrapping_to_i32(value: i16) -> i32 { return value as i32; }
+pub fn checked_to_u32(value: i16) -> core::option::Option<u32> { if (value < 0) { return core::option::None(); } return core::option::Some(value as u32); }
+pub fn saturating_to_u32(value: i16) -> u32 { if (value < 0) { return 0; } return value as u32; }
+pub fn wrapping_to_u32(value: i16) -> u32 { return value as u32; }
+pub fn checked_to_i64(value: i16) -> core::option::Option<i64> { return core::option::Some(value as i64); }
+pub fn saturating_to_i64(value: i16) -> i64 { return value as i64; }
+pub fn wrapping_to_i64(value: i16) -> i64 { return value as i64; }
+pub fn checked_to_u64(value: i16) -> core::option::Option<u64> { if (value < 0) { return core::option::None(); } return core::option::Some(value as u64); }
+pub fn saturating_to_u64(value: i16) -> u64 { if (value < 0) { return 0; } return value as u64; }
+pub fn wrapping_to_u64(value: i16) -> u64 { return value as u64; }
+pub fn checked_to_isize(value: i16) -> core::option::Option<isize> { return core::option::Some(value as isize); }
+pub fn saturating_to_isize(value: i16) -> isize { return value as isize; }
+pub fn wrapping_to_isize(value: i16) -> isize { return value as isize; }
+pub fn checked_to_usize(value: i16) -> core::option::Option<usize> { if (value < 0) { return core::option::None(); } return core::option::Some(value as usize); }
+pub fn saturating_to_usize(value: i16) -> usize { if (value < 0) { return 0; } return value as usize; }
+pub fn wrapping_to_usize(value: i16) -> usize { return value as usize; }

@@ -1,0 +1,131 @@
+// expect: 1
+// Intended runtime gate; currently blocked as described in README.md.
+// Every allocation is failed in turn. Failure must preserve source containers,
+// return AllocationFailed, release partial destinations, and allow destruction.
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::option;
+import core::result;
+
+fn failure_code(error: alloc::hash_map::Error) -> i32 {
+    let code: i32 = match (error) { alloc::hash_map::Error::AllocationFailed -> 0, _ -> 2 };
+    return code;
+}
+fn valid_map(map: &alloc::hash_map::HashMap<i32, i32>, present: [bool]) -> bool {
+    let key: i32 = 0;
+    let count: i32 = 0;
+    while (key < 128) {
+        let found: core::option::Option<i32> = map.get(key);
+        if (core::option::is_some(found) != present[key]) { return false; }
+        if (present[key]) {
+            if (core::option::unwrap(found) != key * 3 + 1) { return false; }
+            count += 1;
+        }
+        key += 1;
+    }
+    return map.len() == count;
+}
+fn failed_map(map: &alloc::hash_map::HashMap<i32, i32>, present: [bool], capacity: i32, error: alloc::hash_map::Error) -> i32 {
+    let valid: bool = map.capacity() == capacity && valid_map(map, present);
+    map.destroy();
+    if (!valid) { return 3; }
+    return failure_code(error);
+}
+fn map_work() -> i32 {
+    let map: alloc::hash_map::HashMap<i32, i32> = alloc::hash_map::new();
+    let present: [bool; 128] = [false; 128];
+    let key: i32 = 0;
+    while (key < 64) {
+        let capacity: i32 = map.capacity();
+        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32, i32>>, alloc::hash_map::Error> =
+            map.try_insert(key, key * 3 + 1);
+        if (core::result::is_err(inserted)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(inserted)); }
+        present[key] = true; key += 1;
+    }
+    key = 1;
+    while (key < 64) { map.remove(key); present[key] = false; key += 2; }
+    let capacity: i32 = map.capacity();
+    let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32, i32>>, alloc::hash_map::Error> =
+        map.try_insert(64, 193);
+    if (core::result::is_err(inserted)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(inserted)); }
+    present[64] = true;
+    let cloned: core::result::Result<alloc::hash_map::HashMap<i32, i32>, alloc::hash_map::Error> = map.try_clone();
+    if (core::result::is_err(cloned)) { return failed_map(map.borrow(), present, map.capacity(), core::result::unwrap_err(cloned)); }
+    let copy: alloc::hash_map::HashMap<i32, i32> = core::result::unwrap(cloned);
+    if (!valid_map(copy.borrow(), present)) { return 4; }
+    copy.destroy();
+    capacity = map.capacity();
+    let reserved: core::result::Result<i32, alloc::hash_map::Error> = map.try_reserve(100);
+    if (core::result::is_err(reserved)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(reserved)); }
+    capacity = map.capacity();
+    let shrunk: core::result::Result<i32, alloc::hash_map::Error> = map.try_shrink_to_fit();
+    if (core::result::is_err(shrunk)) { return failed_map(map.borrow(), present, capacity, core::result::unwrap_err(shrunk)); }
+    if (!valid_map(map.borrow(), present)) { return 5; }
+    map.destroy();
+    return 1;
+}
+fn valid_set(set: &alloc::hash_set::HashSet<i32>, start: i32, end: i32) -> bool {
+    if (set.len() != end - start) { return false; }
+    let value: i32 = 0;
+    while (value < 40) {
+        if (set.contains(value) != (value >= start && value < end)) { return false; }
+        value += 1;
+    }
+    return true;
+}
+fn computed(result: core::result::Result<alloc::hash_set::HashSet<i32>, alloc::hash_map::Error>, start: i32, end: i32) -> i32 {
+    if (core::result::is_err(result)) { return failure_code(core::result::unwrap_err(result)); }
+    let set: alloc::hash_set::HashSet<i32> = core::result::unwrap(result);
+    let valid: bool = valid_set(set.borrow(), start, end);
+    set.destroy();
+    if (valid) { return 1; }
+    return 6;
+}
+fn finish_sets(a: &alloc::hash_set::HashSet<i32>, b: &alloc::hash_set::HashSet<i32>, status: i32) -> i32 {
+    let valid: bool = valid_set(a, 0, 20) && valid_set(b, 10, 30);
+    a.destroy(); b.destroy();
+    if (!valid) { return 7; }
+    return status;
+}
+fn set_work() -> i32 {
+    let a: alloc::hash_set::HashSet<i32> = alloc::hash_set::new();
+    let b: alloc::hash_set::HashSet<i32> = alloc::hash_set::new();
+    let index: i32 = 0;
+    while (index < 20) {
+        let capacity: i32 = a.capacity();
+        let added: core::result::Result<bool, alloc::hash_map::Error> = a.try_insert(index);
+        if (core::result::is_err(added)) {
+            let valid: bool = valid_set(a.borrow(), 0, index) && a.capacity() == capacity;
+            a.destroy(); b.destroy();
+            if (!valid) { return 8; }
+            return failure_code(core::result::unwrap_err(added));
+        }
+        index += 1;
+    }
+    index = 10;
+    while (index < 30) {
+        let capacity: i32 = b.capacity();
+        let added: core::result::Result<bool, alloc::hash_map::Error> = b.try_insert(index);
+        if (core::result::is_err(added)) {
+            let valid: bool = valid_set(a.borrow(), 0, 20) && valid_set(b.borrow(), 10, index) && b.capacity() == capacity;
+            a.destroy(); b.destroy();
+            if (!valid) { return 9; }
+            return failure_code(core::result::unwrap_err(added));
+        }
+        index += 1;
+    }
+    let status: i32 = computed(a.try_union(b.borrow()), 0, 30);
+    if (status != 1) { return finish_sets(a.borrow(), b.borrow(), status); }
+    status = computed(a.try_intersection(b.borrow()), 10, 20);
+    if (status != 1) { return finish_sets(a.borrow(), b.borrow(), status); }
+    status = computed(a.try_difference(b.borrow()), 0, 10);
+    if (status != 1) { return finish_sets(a.borrow(), b.borrow(), status); }
+    status = computed(a.try_clone(), 0, 20);
+    return finish_sets(a.borrow(), b.borrow(), status);
+}
+fn main() -> i32 {
+    let status: i32 = map_work();
+    if (status != 1) { return status; }
+    return set_work();
+}

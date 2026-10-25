@@ -1,0 +1,19 @@
+// Nonzero fixed-array repeat and a named full-value copy expand target rows
+// independently of source/HIR size. No library import or TLS is involved.
+module app::main;
+fn checksum(values: [u8], count: i32) -> i32 {
+    let index: i32 = 0; let total: i32 = 0;
+    while (index < count) { total += values[index] as i32; index += 1; }
+    return total;
+}
+fn main() -> i32 {
+    let source: [u8; 16386] = [165; 16386];
+    let snapshot: [u8; 16386] = source;
+    // Mutations distinguish independent value copying from an aliased view.
+    source[1] = 3; snapshot[0] = 17; snapshot[16385] = 29;
+    assert(source[0] == 165 && source[16385] == 165);
+    assert(snapshot[0] == 17 && snapshot[1] == 165 && snapshot[16385] == 29);
+    assert(checksum(source, 16386) == 2703528);
+    assert(checksum(snapshot, 16386) == 2703406);
+    return 0;
+}

@@ -1,0 +1,84 @@
+// Accepted native Linux x86-64: eight 2x2 index/stage owned-error cases.
+// No OOM injection here: E's mapping lifetime is checked separately from the
+// destination/source ledger. Every message is exactly five bytes.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+import fixture::matrix_leaf;
+import alloc::clone_vec;
+
+fn message(value: alloc::string::String, tag: i32, stage: i32, outer: i32, inner: i32, expected_outer: i32, expected_inner: i32, expected_stage: i32) -> i32 {
+    let valid: bool = outer==expected_outer && inner==expected_inner && stage==expected_stage
+        && tag==1+2*outer+inner && value.byte_len()==5
+        && value.byte_at(0).unwrap()==69 && value.byte_at(1).unwrap()==0
+        && value.byte_at(2).unwrap()==((48+tag) as u8)
+        && value.byte_at(3).unwrap()==((48+stage) as u8) && value.byte_at(4).unwrap()==85;
+    value.destroy();
+    if (!valid) { return 1; } return 0;
+}
+fn leaf_error(error: fixture::matrix_leaf::Fault, outer: i32, inner: i32, expected_outer: i32, expected_inner: i32, expected_stage: i32) -> i32 {
+    return match(error) {
+        fixture::matrix_leaf::Fault::Allocation(ignored) -> 4,
+        fixture::matrix_leaf::Fault::Injected(tag,stage,value) -> message(value,tag,stage,outer,inner,expected_outer,expected_inner,expected_stage)
+    };
+}
+fn row_error(error: alloc::clone::Error<fixture::matrix_leaf::Fault>, outer: i32, expected_outer: i32, expected_inner: i32, expected_stage: i32) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Element(inner,error) -> leaf_error(error,outer,inner,expected_outer,expected_inner,expected_stage),
+        alloc::clone::Error::Storage(ignored) -> 4,
+        alloc::clone::Error::Bounds -> 1
+    };
+}
+fn grid_error(error: alloc::clone::Error<alloc::clone::Error<fixture::matrix_leaf::Fault>>, expected_outer: i32, expected_inner: i32, expected_stage: i32) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Element(outer,error) -> row_error(error,outer,expected_outer,expected_inner,expected_stage),
+        alloc::clone::Error::Storage(ignored) -> 4,
+        alloc::clone::Error::Bounds -> 1
+    };
+}
+fn run_case(outer: i32, inner: i32, stage: i32) -> i32 {
+    let bytes: [u8;4] = [83,0,195,169];
+    let original: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let a: [fixture::matrix_leaf::Leaf;2] = [fixture::matrix_leaf::Leaf { text:original,tag:1,fail:-1 },fixture::matrix_leaf::Leaf { text:original,tag:2,fail:-1 }];
+    let b: [fixture::matrix_leaf::Leaf;2] = [fixture::matrix_leaf::Leaf { text:original,tag:3,fail:-1 },fixture::matrix_leaf::Leaf { text:original,tag:4,fail:-1 }];
+    if (outer==0) { a[inner]=fixture::matrix_leaf::Leaf { text:original,tag:1+inner,fail:stage }; }
+    else { b[inner]=fixture::matrix_leaf::Leaf { text:original,tag:3+inner,fail:stage }; }
+    let row0: alloc::vec::Vec<fixture::matrix_leaf::Leaf> = alloc::vec::from_view(core::slice::view(a,2).unwrap()).unwrap();
+    let row1: alloc::vec::Vec<fixture::matrix_leaf::Leaf> = alloc::vec::from_view(core::slice::view(b,2).unwrap()).unwrap();
+    let rows: [alloc::vec::Vec<fixture::matrix_leaf::Leaf>;2] = [row0,row1];
+    let source: alloc::vec::Vec<alloc::vec::Vec<fixture::matrix_leaf::Leaf>> = alloc::vec::from_view(core::slice::view(rows,2).unwrap()).unwrap();
+    let result: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<fixture::matrix_leaf::Leaf>>,alloc::clone::Error<alloc::clone::Error<fixture::matrix_leaf::Fault>>> =
+        alloc::clone_vec::try_clone<alloc::vec::Vec<fixture::matrix_leaf::Leaf>,alloc::clone::Error<fixture::matrix_leaf::Fault>>(source.borrow());
+    assert(original.byte_len()==4 && original.byte_at(1).unwrap()==0 && source.len()==2 && row0.len()==2 && row1.len()==2);
+    // Source entries borrow original. Deep release is reserved for independent
+    // destination entries, which the failed clone must already have released.
+    source.destroy(); row1.destroy(); row0.destroy(); original.destroy();
+    if (result.is_ok()) {
+        let unexpected = result.unwrap();
+        alloc::clone::destroy_vec<alloc::vec::Vec<fixture::matrix_leaf::Leaf>>(unexpected.borrow());
+        return 1;
+    }
+    // E is inspected only after all source storage has gone. Its own String
+    // is released by message(), separately from all destination destruction.
+    return grid_error(result.unwrap_err(),outer,inner,stage);
+}
+fn main() -> i32 {
+    let outer: i32 = 0;
+    while (outer<2) {
+        let inner: i32 = 0;
+        while (inner<2) {
+            let stage: i32 = 0;
+            while (stage<2) {
+                let status: i32 = run_case(outer,inner,stage);
+                if (status!=0) { return status; }
+                stage+=1;
+            }
+            inner+=1;
+        }
+        outer+=1;
+    }
+    return 0;
+}

@@ -9,7 +9,9 @@ use std::{
 use anyhow::{Context, Result};
 
 use super::{
-    lowering::{GpuSemanticHirInputs, GpuSemanticLoweringStage, semantic_input_views},
+    lowering::{
+        GpuSemanticHirInputs, GpuSemanticLoweringStage, LoweringOutputDemand, semantic_input_views,
+    },
     lowering_ir::{
         LoweringArtifactKind,
         LoweringCapacities,
@@ -234,6 +236,104 @@ fn flag_job_totals(
             status.available_capacity = status.available_capacity.min(available);
         }
     }
+}
+
+/// Capacity growth follows the GPU's measured requirement. Bucket rounding and
+/// artifact arithmetic must fail rather than saturating into a smaller arena.
+fn checked_output_bucket(value: u32) -> Result<u32, String> {
+    value
+        .checked_add(4095)
+        .map(|value| value / 4096 * 4096)
+        .ok_or_else(|| "lowering output capacity bucket overflows u32".to_string())
+}
+
+fn output_demand_for_status(
+    status: LoweringStatus,
+    job: LoweringCapacities,
+    target: LoweringTarget,
+) -> Result<Option<LoweringOutputDemand>, String> {
+    use super::lowering_ir::opcode::{
+        LOWERING_STATUS_ARTIFACT_CAPACITY,
+        LOWERING_STATUS_TARGET_CAPACITY,
+    };
+    // Other flags share the capacity words. Mixed failures have no unambiguous
+    // row/byte requirement and must retain their original diagnostics.
+    if !matches!(
+        status.flags,
+        LOWERING_STATUS_TARGET_CAPACITY | LOWERING_STATUS_ARTIFACT_CAPACITY
+    ) || status.diagnostic_reason != 0
+    {
+        return Ok(None);
+    }
+    let mut demand = LoweringOutputDemand {
+        target_instructions: job.target_instructions,
+        artifact_bytes: job.artifact_bytes,
+    };
+    if status.required_capacity <= status.available_capacity {
+        return Err(
+            "GPU lowering capacity failure did not report a larger requirement".to_string(),
+        );
+    }
+    if status.flags == LOWERING_STATUS_TARGET_CAPACITY {
+        if status.required_capacity <= job.target_instructions {
+            return Err("GPU target demand does not exceed the recorded job capacity".to_string());
+        }
+        demand.target_instructions = checked_output_bucket(status.required_capacity)?;
+        let bytes_per_row = match target {
+            LoweringTarget::X86_64 => 16,
+            LoweringTarget::Wasm => 8,
+        };
+        let artifact = demand
+            .target_instructions
+            .checked_mul(bytes_per_row)
+            .and_then(|bytes| {
+                job.hir_nodes
+                    .checked_mul(32)
+                    .and_then(|tables| bytes.checked_add(tables))
+            })
+            .and_then(|bytes| bytes.checked_add(job.source_bytes.max(4)))
+            .and_then(|bytes| bytes.checked_add(4096))
+            .ok_or_else(|| "lowering target artifact capacity overflows u32".to_string())?;
+        demand.artifact_bytes = checked_output_bucket(artifact.max(job.artifact_bytes))?;
+    } else {
+        if status.required_capacity <= job.artifact_bytes {
+            return Err(
+                "GPU artifact demand does not exceed the recorded job capacity".to_string(),
+            );
+        }
+        demand.artifact_bytes = checked_output_bucket(status.required_capacity)?;
+    }
+    Ok(Some(demand))
+}
+
+fn artifact_capacity_status(required: u32, available: u32) -> LoweringStatus {
+    LoweringStatus {
+        flags: super::lowering_ir::opcode::LOWERING_STATUS_ARTIFACT_CAPACITY,
+        required_capacity: required,
+        available_capacity: available,
+        first_unsupported_hir: u32::MAX,
+        first_unsupported_semantic_row: u32::MAX,
+        first_unsupported_opt_row: u32::MAX,
+        first_unsupported_target_op: u32::MAX,
+        diagnostic_detail: u32::MAX,
+        ..LoweringStatus::default()
+    }
+}
+
+fn apply_output_demand(
+    mut job: LoweringCapacities,
+    demand: LoweringOutputDemand,
+    built: LoweringCapacities,
+) -> LoweringCapacities {
+    job.target_instructions = job
+        .target_instructions
+        .max(demand.target_instructions)
+        .min(built.target_instructions);
+    job.artifact_bytes = job
+        .artifact_bytes
+        .max(demand.artifact_bytes)
+        .min(built.artifact_bytes);
+    job
 }
 
 /// Job phase resets the pipeline keeps, most recent last.
@@ -486,6 +586,43 @@ impl GpuLoweringWorkspaceCache {
         Ok(pipeline)
     }
 
+    /// Plan measured output growth before retiring the old graph. The caller
+    /// replays the full frontend because lowering aliases dead upstream tails.
+    pub(crate) fn grow_output(
+        &self,
+        device: &wgpu::Device,
+        demand: LoweringOutputDemand,
+    ) -> Result<(), String> {
+        let mut current = self
+            .current
+            .lock()
+            .expect("lowering workspace cache poisoned");
+        let pipeline = current
+            .as_ref()
+            .ok_or_else(|| "lowering workspace is not initialized".to_string())?;
+        let mut required = pipeline.capacities;
+        required.target_instructions =
+            checked_output_bucket(required.target_instructions.max(demand.target_instructions))?;
+        required.artifact_bytes =
+            checked_output_bucket(required.artifact_bytes.max(demand.artifact_bytes))?;
+        if pipeline.capacities.covers(required) {
+            return Ok(());
+        }
+        // Reuse the graph's device-limit/arena planning before retiring the old
+        // workspace. This plans host metadata and allocates no GPU buffers.
+        lowering_compiler_graph_for_artifact(required, self.target, pipeline.artifact_kind)?
+            .workspace_arena_layout(&device.limits())?;
+        let mut floor = self
+            .floor
+            .lock()
+            .expect("lowering workspace floor poisoned");
+        *floor = Some(floor.map_or(required, |floor| floor.grow_to_cover(required)));
+        let old = current.take();
+        drop(old);
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        Ok(())
+    }
+
     pub(crate) fn current(&self) -> Result<Arc<GpuLoweringPipeline>, String> {
         let target = match self.target {
             LoweringTarget::X86_64 => "x86_64",
@@ -712,8 +849,12 @@ impl GpuLoweringPipeline {
         if full_clears() {
             return self.capacities;
         }
-        self.capacities
-            .for_job(bounds.source_bytes, bounds.hir_rows, self.target.lowering_target())
+        let job = self.capacities.for_job(
+            bounds.source_bytes,
+            bounds.hir_rows,
+            self.target.lowering_target(),
+        );
+        apply_output_demand(job, bounds.output_demand, self.capacities)
     }
 
     /// The job's capacities when they are below this workspace's, for the
@@ -859,8 +1000,8 @@ impl GpuLoweringPipeline {
     /// (optimization/project.slang, x86 and Wasm validate.slang). A job at
     /// this workspace's capacities was checked on the GPU. The job's phase
     /// reset and x86 clears covered only its capacities, so its rows past
-    /// them could read stale words; `from_frontend_unit` bounds both totals
-    /// by eight rows per HIR row, and this enforces that bound.
+    /// them could read stale words. Target rows use an initial frontend estimate
+    /// plus explicit GPU demand from this compilation's earlier attempt.
     fn check_job_totals(&self, device: &wgpu::Device, status: &mut LoweringStatus) -> Result<()> {
         let job = *self
             .recorded_job
@@ -890,9 +1031,11 @@ impl GpuLoweringPipeline {
             .expect("lowering recorded job poisoned");
         let limit = job.artifact_bytes.max(4).next_multiple_of(4) as usize;
         if job != self.capacities && bytes > limit {
-            anyhow::bail!(
-                "GPU {what} requires {bytes} bytes but the job's lowering capacities provide {limit}"
-            );
+            let required_capacity = u32::try_from(bytes)
+                .map_err(|_| anyhow::anyhow!("GPU {what} byte demand exceeds u32"))?;
+            return Err(LoweringFailure {
+                status: artifact_capacity_status(required_capacity, job.artifact_bytes),
+            }.into());
         }
         Ok(())
     }
@@ -1197,6 +1340,20 @@ impl GpuLoweringPipeline {
         Ok(status)
     }
 
+    pub(crate) fn output_demand_for_retry(
+        &self,
+        error: &anyhow::Error,
+    ) -> Result<Option<LoweringOutputDemand>, String> {
+        let Some(failure) = error.downcast_ref::<LoweringFailure>() else {
+            return Ok(None);
+        };
+        let job = *self
+            .recorded_job
+            .lock()
+            .expect("lowering recorded job poisoned");
+        output_demand_for_status(failure.status, job, self.target.lowering_target())
+    }
+
     fn ensure_success(&self, device: &wgpu::Device) -> Result<()> {
         let status = self.finish_status(device)?;
         if status.flags != 0 {
@@ -1210,6 +1367,132 @@ impl GpuLoweringPipeline {
 mod tests {
     use super::*;
     use crate::gpu::device;
+
+    #[test]
+    fn measured_target_output_demand_survives_job_clamping_without_enlarging_other_jobs() {
+        use crate::codegen::lowering_ir::opcode::LOWERING_STATUS_TARGET_CAPACITY;
+        let job = LoweringCapacities::from_frontend_unit(1000, 100, 100, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        let status = LoweringStatus {
+            flags: LOWERING_STATUS_TARGET_CAPACITY,
+            required_capacity: 187055,
+            available_capacity: job.target_instructions,
+            ..LoweringStatus::default()
+        };
+        let demand = output_demand_for_status(status, job, LoweringTarget::X86_64)
+            .unwrap()
+            .unwrap();
+        assert_eq!(demand.target_instructions, 188416);
+        assert!(
+            demand.artifact_bytes >= 188416 * 16 + job.hir_nodes * 32 + job.source_bytes + 4096
+        );
+        let built = LoweringCapacities {
+            target_instructions: demand.target_instructions,
+            artifact_bytes: demand.artifact_bytes,
+            ..job
+        };
+        let small = built.for_job(1000, 100, LoweringTarget::X86_64);
+        assert!(small.target_instructions < demand.target_instructions);
+        let retry = apply_output_demand(small, demand, built);
+        assert_eq!(retry.target_instructions, demand.target_instructions);
+        assert_eq!(retry.artifact_bytes, demand.artifact_bytes);
+        assert_eq!(retry.semantic_instructions, small.semantic_instructions);
+        assert_eq!(
+            apply_output_demand(small, LoweringOutputDemand::default(), built),
+            small
+        );
+    }
+
+    #[test]
+    fn measured_artifact_output_demand_uses_the_same_typed_status_for_warm_jobs() {
+        let job = LoweringCapacities::from_frontend_unit(1000, 100, 100, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        let error: anyhow::Error = LoweringFailure {
+            status: artifact_capacity_status(job.artifact_bytes + 1, job.artifact_bytes),
+        }
+        .into();
+        let status = error.downcast_ref::<LoweringFailure>().unwrap().status;
+        let demand = output_demand_for_status(status, job, LoweringTarget::X86_64)
+            .unwrap()
+            .unwrap();
+        assert_eq!(demand.target_instructions, job.target_instructions);
+        assert_eq!(demand.artifact_bytes, job.artifact_bytes + 4096);
+    }
+
+    #[test]
+    fn output_demand_rejects_overflow_and_preserves_other_failure_domains() {
+        use crate::codegen::lowering_ir::opcode::{
+            LOWERING_STATUS_ARTIFACT_CAPACITY,
+            LOWERING_STATUS_SEMANTIC_CAPACITY,
+            LOWERING_STATUS_TARGET_CAPACITY,
+            LOWERING_STATUS_UNSUPPORTED_TARGET,
+        };
+        let job = LoweringCapacities::from_frontend_unit(1000, 100, 100, LoweringTarget::X86_64)
+            .unwrap()
+            .bucketed();
+        let base = LoweringStatus {
+            flags: LOWERING_STATUS_TARGET_CAPACITY,
+            required_capacity: job.target_instructions + 1,
+            available_capacity: job.target_instructions,
+            ..LoweringStatus::default()
+        };
+        for flags in [
+            0,
+            LOWERING_STATUS_SEMANTIC_CAPACITY,
+            LOWERING_STATUS_UNSUPPORTED_TARGET,
+            LOWERING_STATUS_TARGET_CAPACITY | LOWERING_STATUS_ARTIFACT_CAPACITY,
+        ] {
+            assert!(
+                output_demand_for_status(
+                    LoweringStatus { flags, ..base },
+                    job,
+                    LoweringTarget::X86_64
+                )
+                .unwrap()
+                .is_none()
+            );
+        }
+        assert!(
+            output_demand_for_status(
+                LoweringStatus {
+                    diagnostic_reason: 1,
+                    ..base
+                },
+                job,
+                LoweringTarget::X86_64
+            )
+            .unwrap()
+            .is_none()
+        );
+        for required_capacity in [0, job.target_instructions, u32::MAX, 1 << 28] {
+            assert!(
+                output_demand_for_status(
+                    LoweringStatus {
+                        required_capacity,
+                        ..base
+                    },
+                    job,
+                    LoweringTarget::X86_64
+                )
+                .is_err()
+            );
+        }
+        assert!(
+            output_demand_for_status(
+                artifact_capacity_status(u32::MAX, job.artifact_bytes),
+                job,
+                LoweringTarget::X86_64
+            )
+            .is_err()
+        );
+        assert_eq!(
+            checked_output_bucket(u32::MAX - 4095).unwrap(),
+            u32::MAX - 4095
+        );
+        assert!(checked_output_bucket(u32::MAX - 4094).is_err());
+    }
 
     #[test]
     fn job_totals_past_the_jobs_capacities_fail_as_the_gpu_checks_would() {

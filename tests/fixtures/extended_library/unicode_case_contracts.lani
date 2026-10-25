@@ -1,0 +1,67 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::unicode_case;
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::result::unwrap(core::text::from_utf8(bytes, length));
+}
+fn fabricated(bytes: [u8], start: i32, length: i32) -> core::text::Text {
+    return core::text::Text { bytes:bytes,start:start,length:length };
+}
+fn destination(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> {
+    return core::slice::View<u8> { values:bytes,start:start,length:length };
+}
+fn code(error: ext::unicode_case::Error) -> i32 {
+    return match(error) {
+        ext::unicode_case::Error::Bounds -> 1,
+        ext::unicode_case::Error::InvalidUtf8(position) -> 1000 + position,
+        ext::unicode_case::Error::SizeOverflow -> 2,
+        ext::unicode_case::Error::OutputCapacity(required) -> 200 + required,
+        ext::unicode_case::Error::WorkLimit(used) -> 3
+    };
+}
+fn verify(input: core::text::Text, kind: ext::unicode_case::Kind, locale: ext::unicode_case::Locale, expected: core::text::Text) {
+    let store: [u8;64] = [77;64];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(store,2,60));
+    let measured: ext::unicode_case::Report = core::result::unwrap(ext::unicode_case::measure(input,kind,locale,100000));
+    let actual: ext::unicode_case::Report = core::result::unwrap(ext::unicode_case::transform_into(input,kind,locale,output,measured.work));
+    assert(actual.bytes == expected.length && actual.bytes == measured.bytes && actual.scalars == measured.scalars && actual.work == measured.work);
+    let index: i32 = 0;
+    while (index < expected.length) { assert(store[index + 2] == expected.bytes[expected.start + index]); index += 1; }
+    assert(store[0] == 77 && store[1] == 77 && store[actual.bytes + 2] == 77 && store[63] == 77);
+}
+fn main() -> i32 {
+    let root: ext::unicode_case::Locale = ext::unicode_case::Locale::Root;
+    let turkic: ext::unicode_case::Locale = ext::unicode_case::Locale::Turkic;
+    let lithuanian: ext::unicode_case::Locale = ext::unicode_case::Locale::Lithuanian;
+    let lower: ext::unicode_case::Kind = ext::unicode_case::Kind::Lower;
+    let upper: ext::unicode_case::Kind = ext::unicode_case::Kind::Upper;
+    let title: ext::unicode_case::Kind = ext::unicode_case::Kind::Title;
+    let fold: ext::unicode_case::Kind = ext::unicode_case::Kind::Fold;
+    verify(text("Straße ΟΣ İ",16),lower,turkic,text("straße ος i",14));
+    verify(text("Straße ﬃ",11),upper,root,text("STRASSE FFI",11));
+    verify(text("can't ΟΣ ﬃRE",16),title,root,text("Can't Ος Ffire",16));
+    verify(text("i̇",3),upper,lithuanian,text("I",1));
+    verify(text("Í",3),lower,lithuanian,text("i̇́",5));
+    verify(text("IİßΣς",9),fold,turkic,text("ıissσσ",9));
+    let empty: core::text::Text = text("",0);
+    verify(empty,title,root,empty);
+    let store: [u8;32] = [77;32];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(store,2,28));
+    let input: core::text::Text = text("İ",2);
+    assert(code(core::result::unwrap_err(ext::unicode_case::transform_into(input,lower,root,core::result::unwrap(output.subview(0,2)),1000))) == 203);
+    assert(code(core::result::unwrap_err(ext::unicode_case::transform_into(input,lower,root,output,0))) == 3);
+    assert(code(core::result::unwrap_err(ext::unicode_case::measure(fabricated(store,-1,0),lower,root,1000))) == 1);
+    assert(code(core::result::unwrap_err(ext::unicode_case::measure(fabricated(store,0,-1),lower,root,1000))) == 1);
+    assert(code(core::result::unwrap_err(ext::unicode_case::measure(fabricated(store,2147483647,1),lower,root,1000))) == 1);
+    assert(code(core::result::unwrap_err(ext::unicode_case::transform_into(input,lower,root,destination(store,-1,0),1000))) == 1);
+    assert(code(core::result::unwrap_err(ext::unicode_case::transform_into(input,lower,root,destination(store,2147483647,1),1000))) == 1);
+    let invalid: [u8;4] = [65,237,160,128];
+    assert(code(core::result::unwrap_err(ext::unicode_case::transform_into(fabricated(invalid,0,4),title,root,output,1000))) == 1001);
+    assert(code(core::result::unwrap_err(ext::unicode_case::measure(fabricated(invalid,0,4),lower,root,1000))) == 1001);
+    let index: i32 = 0; while (index < 32) { assert(store[index] == 77); index += 1; }
+    return 0;
+}

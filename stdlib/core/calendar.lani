@@ -1,0 +1,403 @@
+// Portable proleptic Gregorian civil dates and RFC 3339 syntax. No allocation
+// or host calls. Construct values with the checked functions and preserve their
+// fields. Year 0 is 1 BCE; negative years use astronomical numbering.
+module core::calendar;
+import core::cmp;
+import core::hash;
+import core::result;
+import core::slice;
+import core::time;
+
+pub enum Error { InvalidMonth, InvalidDay, InvalidOrdinal, InvalidWeek, InvalidWeekday, InvalidHour, InvalidMinute, InvalidSecond, InvalidNanoseconds, InvalidOffset, Overflow, UnknownOffset, LeapSecond, InvalidSyntax, FractionPrecision, PrecisionLoss, YearOutOfRange, BufferTooSmall }
+pub struct ParseError { kind: Error, position: i32 }
+pub struct Date { year: i32, month: i32, day: i32 }
+// second == 60 records leap-second syntax, without asserting an announced leap.
+pub struct TimeOfDay { hour: i32, minute: i32, second: i32, nanos: u32 }
+pub struct LocalDateTime { date: Date, time: TimeOfDay }
+// Unknown offset has minutes == 0 and known == false; it formats as -00:00.
+pub struct UtcOffset { minutes: i32, known: bool }
+pub struct OffsetDateTime { local: LocalDateTime, offset: UtcOffset }
+pub struct ParsedDateTime { value: OffsetDateTime, fraction_digits: i32 }
+// i64 keeps the ISO week year representable at the extreme civil years.
+pub struct IsoWeek { year: i64, week: i32, weekday: i32 }
+
+pub fn is_leap_year(year: i32) -> bool { return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0); }
+pub fn days_in_month(year: i32, month: i32) -> core::result::Result<i32, Error> {
+    if (month < 1 || month > 12) { return core::result::Err(Error::InvalidMonth); }
+    if (month == 2) { if (is_leap_year(year)) { return core::result::Ok(29); } return core::result::Ok(28); }
+    if (month == 4 || month == 6 || month == 9 || month == 11) { return core::result::Ok(30); }
+    return core::result::Ok(31);
+}
+pub fn date(year: i32, month: i32, day: i32) -> core::result::Result<Date, Error> {
+    let last: core::result::Result<i32, Error> = days_in_month(year,month);
+    if (core::result::is_err(last)) { return core::result::Err(core::result::unwrap_err(last)); }
+    if (day < 1 || day > core::result::unwrap(last)) { return core::result::Err(Error::InvalidDay); }
+    return core::result::Ok(Date { year: year, month: month, day: day });
+}
+fn floor_div(value: i64, divisor: i64) -> i64 {
+    let quotient: i64 = value / divisor;
+    if (value % divisor < 0) { quotient -= 1; }
+    return quotient;
+}
+// March-based 400-year eras, derived in Howard Hinnant's date_algorithms.
+fn civil_days(year: i64, month: i32, day: i32) -> i64 {
+    let y: i64 = year; if (month <= 2) { y -= 1; }
+    let era: i64 = floor_div(y,400); let yoe: i64 = y - era * 400;
+    let mp: i64 = (month as i64) - 3; if (month <= 2) { mp = (month as i64) + 9; }
+    let doy: i64 = (153 * mp + 2) / 5 + (day as i64) - 1;
+    return era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468;
+}
+fn civil_date(days: i64) -> Date {
+    let z: i64 = days + 719468; let era: i64 = floor_div(z,146097);
+    let doe: i64 = z - era * 146097;
+    let yoe: i64 = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let year: i64 = yoe + era * 400;
+    let doy: i64 = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp: i64 = (5 * doy + 2) / 153;
+    let day: i32 = (doy - (153 * mp + 2) / 5 + 1) as i32;
+    let month: i32 = (mp + 3) as i32; if (mp >= 10) { month = (mp - 9) as i32; }
+    if (month <= 2) { year += 1; }
+    return Date { year: year as i32, month: month, day: day };
+}
+pub fn minimum_date() -> Date { return Date { year: -2147483648, month: 1, day: 1 }; }
+pub fn maximum_date() -> Date { return Date { year: 2147483647, month: 12, day: 31 }; }
+pub fn date_from_day_number(days: i64) -> core::result::Result<Date, Error> {
+    if (days < civil_days(-2147483648,1,1) || days > civil_days(2147483647,12,31)) { return core::result::Err(Error::Overflow); }
+    return core::result::Ok(civil_date(days));
+}
+pub fn date_from_ordinal(year: i32, ordinal: i32) -> core::result::Result<Date, Error> {
+    let last: i32 = 365; if (is_leap_year(year)) { last = 366; }
+    if (ordinal < 1 || ordinal > last) { return core::result::Err(Error::InvalidOrdinal); }
+    return date_from_day_number(civil_days(year as i64,1,1) + (ordinal as i64) - 1);
+}
+fn weekday_number(days: i64) -> i32 { let value: i64 = (days + 3) % 7; if (value < 0) { value += 7; } return (value + 1) as i32; }
+fn iso_start(year: i64) -> i64 { let january: i64 = civil_days(year,1,4); return january - (weekday_number(january) as i64) + 1; }
+pub fn date_from_iso_week(year: i64, week: i32, weekday: i32) -> core::result::Result<Date, Error> {
+    if (year < -2147483649 || year > 2147483648) { return core::result::Err(Error::Overflow); }
+    if (weekday < 1 || weekday > 7) { return core::result::Err(Error::InvalidWeekday); }
+    let start: i64 = iso_start(year); let count: i64 = (iso_start(year+1) - start) / 7;
+    if (week < 1 || (week as i64) > count) { return core::result::Err(Error::InvalidWeek); }
+    return date_from_day_number(start + ((week as i64)-1)*7 + (weekday as i64)-1);
+}
+pub impl Date {
+    pub fn day_number(&self) -> i64 { return civil_days(self.year as i64,self.month,self.day); }
+    pub fn weekday(&self) -> i32 { return weekday_number(self.day_number()); }
+    pub fn ordinal(&self) -> i32 { return (self.day_number() - civil_days(self.year as i64,1,1) + 1) as i32; }
+    pub fn iso_week(&self) -> IsoWeek {
+        let days: i64 = self.day_number(); let year: i64 = self.year as i64; let start: i64 = iso_start(year);
+        if (days < start) { year -= 1; start = iso_start(year); }
+        else { let next: i64 = iso_start(year+1); if (days >= next) { year += 1; start = next; } }
+        return IsoWeek { year: year, week: ((days-start)/7+1) as i32, weekday: self.weekday() };
+    }
+    pub fn compare(&self, other: Date) -> i32 {
+        if (self.year < other.year) { return -1; }if (self.year > other.year) { return 1; }
+        if (self.month < other.month) { return -1; }if (self.month > other.month) { return 1; }
+        if (self.day < other.day) { return -1; }if (self.day > other.day) { return 1; }return 0;
+    }
+    // Positive means self occurs after earlier; native year range fits i64.
+    pub fn days_since(&self, earlier: Date) -> i64 { return self.day_number() - earlier.day_number(); }
+    pub fn checked_add_days(&self, days: i64) -> core::result::Result<Date, Error> {
+        let current: i64 = self.day_number();
+        if (days < civil_days(-2147483648,1,1)-current || days > civil_days(2147483647,12,31)-current) { return core::result::Err(Error::Overflow); }
+        return date_from_day_number(current+days);
+    }
+    pub fn checked_sub_days(&self, days: i64) -> core::result::Result<Date, Error> {
+        let current: i64 = self.day_number();
+        if (days > current-civil_days(-2147483648,1,1) || days < current-civil_days(2147483647,12,31)) { return core::result::Err(Error::Overflow); }
+        return date_from_day_number(current-days);
+    }
+    // Month/year arithmetic rejects a nonexistent day; it never clamps.
+    pub fn checked_add_months(&self, months: i64) -> core::result::Result<Date, Error> {
+        let current: i64 = (self.year as i64)*12 + (self.month as i64)-1;
+        let minimum: i64 = -2147483648; let maximum: i64 = 2147483647;
+        if (months < minimum*12-current || months > maximum*12+11-current) { return core::result::Err(Error::Overflow); }
+        let shifted: i64 = current+months;let year: i64 = floor_div(shifted,12);
+        return date(year as i32,(shifted-year*12+1) as i32,self.day);
+    }
+    pub fn checked_add_years(&self, years: i64) -> core::result::Result<Date, Error> {
+        let minimum: i64 = -2147483648;let maximum: i64 = 2147483647;
+        if (years < minimum-(self.year as i64) || years > maximum-(self.year as i64)) { return core::result::Err(Error::Overflow); }
+        return date(((self.year as i64)+years) as i32,self.month,self.day);
+    }
+}
+
+pub fn time_of_day(hour: i32, minute: i32, second: i32, nanos: u32) -> core::result::Result<TimeOfDay, Error> {
+    if (hour < 0 || hour > 23) { return core::result::Err(Error::InvalidHour); }
+    if (minute < 0 || minute > 59) { return core::result::Err(Error::InvalidMinute); }
+    if (second < 0 || second > 60) { return core::result::Err(Error::InvalidSecond); }
+    if (nanos >= 1000000000) { return core::result::Err(Error::InvalidNanoseconds); }
+    return core::result::Ok(TimeOfDay { hour: hour, minute: minute, second: second, nanos: nanos });
+}
+pub impl TimeOfDay {
+    pub fn is_leap_second(&self) -> bool { return self.second == 60; }
+    // Civil field order. Represented second 60 follows second 59 within a minute.
+    pub fn compare(&self, other: TimeOfDay) -> i32 {
+        if (self.hour < other.hour) { return -1; }if (self.hour > other.hour) { return 1; }
+        if (self.minute < other.minute) { return -1; }if (self.minute > other.minute) { return 1; }
+        if (self.second < other.second) { return -1; }if (self.second > other.second) { return 1; }
+        if (self.nanos < other.nanos) { return -1; }if (self.nanos > other.nanos) { return 1; }return 0;
+    }
+}
+pub impl LocalDateTime {
+    pub fn compare(&self, other: LocalDateTime) -> i32 {
+        let date_order: i32 = self.date.compare(other.date);if (date_order != 0) { return date_order; }
+        return self.time.compare(other.time);
+    }
+}
+pub fn local_date_time(day: Date, time: TimeOfDay) -> core::result::Result<LocalDateTime, Error> {
+    let d: core::result::Result<Date, Error> = date(day.year,day.month,day.day);
+    if (core::result::is_err(d)) { return core::result::Err(core::result::unwrap_err(d)); }
+    let t: core::result::Result<TimeOfDay, Error> = time_of_day(time.hour,time.minute,time.second,time.nanos);
+    if (core::result::is_err(t)) { return core::result::Err(core::result::unwrap_err(t)); }
+    return core::result::Ok(LocalDateTime { date: day, time: time });
+}
+pub fn utc() -> UtcOffset { return UtcOffset { minutes: 0, known: true }; }
+pub fn unknown_offset() -> UtcOffset { return UtcOffset { minutes: 0, known: false }; }
+pub fn utc_offset(minutes: i32) -> core::result::Result<UtcOffset, Error> {
+    if (minutes < -1439 || minutes > 1439) { return core::result::Err(Error::InvalidOffset); }
+    return core::result::Ok(UtcOffset { minutes: minutes, known: true });
+}
+fn valid_offset(offset: UtcOffset) -> bool { return offset.minutes >= -1439 && offset.minutes <= 1439 && (offset.known || offset.minutes == 0); }
+pub fn offset_date_time(local: LocalDateTime, offset: UtcOffset) -> core::result::Result<OffsetDateTime, Error> {
+    let checked: core::result::Result<LocalDateTime, Error> = local_date_time(local.date,local.time);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (!valid_offset(offset)) { return core::result::Err(Error::InvalidOffset); }
+    return core::result::Ok(OffsetDateTime { local: local, offset: offset });
+}
+pub fn to_system_time(value: OffsetDateTime) -> core::result::Result<core::time::SystemTime, Error> {
+    let checked: core::result::Result<OffsetDateTime, Error> = offset_date_time(value.local,value.offset);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (!value.offset.known) { return core::result::Err(Error::UnknownOffset); }
+    if (value.local.time.is_leap_second()) { return core::result::Err(Error::LeapSecond); }
+    let t: TimeOfDay = value.local.time;
+    let seconds: i64 = value.local.date.day_number()*86400 + (t.hour as i64)*3600 + (t.minute as i64)*60 + (t.second as i64) - (value.offset.minutes as i64)*60;
+    return core::result::Ok(core::result::unwrap(core::time::system_time(seconds,t.nanos)));
+}
+pub fn from_system_time(value: core::time::SystemTime, offset: UtcOffset) -> core::result::Result<OffsetDateTime, Error> {
+    if (!valid_offset(offset)) { return core::result::Err(Error::InvalidOffset); }
+    if (!offset.known) { return core::result::Err(Error::UnknownOffset); }
+    if (value.subsec_nanos() >= 1000000000) { return core::result::Err(Error::InvalidNanoseconds); }
+    let delta: i64 = (offset.minutes as i64)*60; let seconds: i64 = value.unix_seconds();
+    let minimum: i64 = -9223372036854775808;let maximum: i64 = 9223372036854775807;
+    if (delta > 0 && seconds > maximum-delta) { return core::result::Err(Error::Overflow); }
+    if (delta < 0 && seconds < minimum-delta) { return core::result::Err(Error::Overflow); }
+    let shifted: i64 = seconds+delta;let days: i64 = floor_div(shifted,86400);
+    let checked: core::result::Result<Date, Error> = date_from_day_number(days);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    // Remainder avoids multiplying a floored quotient at i64::MIN.
+    let rest: i64 = shifted % 86400;if (rest < 0) { rest += 86400; }
+    let time: TimeOfDay = TimeOfDay { hour: (rest/3600) as i32, minute: ((rest/60)%60) as i32, second: (rest%60) as i32, nanos: value.subsec_nanos() };
+    let local: LocalDateTime = LocalDateTime { date: core::result::unwrap(checked), time: time };
+    return core::result::Ok(OffsetDateTime { local: local, offset: offset });
+}
+pub impl OffsetDateTime {
+    pub fn to_system_time(&self) -> core::result::Result<core::time::SystemTime, Error> { return to_system_time(OffsetDateTime { local: self.local, offset: self.offset }); }
+    pub fn to_offset(&self, offset: UtcOffset) -> core::result::Result<OffsetDateTime, Error> {
+        let instant: core::result::Result<core::time::SystemTime, Error> = self.to_system_time();
+        if (core::result::is_err(instant)) { return core::result::Err(core::result::unwrap_err(instant)); }
+        return from_system_time(core::result::unwrap(instant),offset);
+    }
+}
+
+fn byte(input: core::slice::View<u8>, position: i32) -> u8 { return input.values[input.start+position]; }
+fn digit(value: u8) -> bool { return value >= 48 && value <= 57; }
+fn number(input: core::slice::View<u8>, position: i32, width: i32) -> i32 {
+    let value: i32 = 0;let i: i32 = 0;while (i < width) { value = value*10 + (byte(input,position+i) as i32)-48;i += 1; }return value;
+}
+fn parse_error(kind: Error, position: i32) -> core::result::Result<ParsedDateTime, ParseError> { return core::result::Err(ParseError { kind: kind, position: position }); }
+// Parses the complete input, including lowercase t/z. No whitespace or suffix.
+// Fraction precision is bounded at nine digits, even if later digits are zero.
+// Leap-second syntax is retained, not validated against an announcement table.
+pub fn parse_rfc3339(input: core::slice::View<u8>) -> core::result::Result<ParsedDateTime, ParseError> {
+    if (input.length < 20) { return parse_error(Error::InvalidSyntax,input.length); }
+    let i: i32 = 0;
+    while (i < 19) {
+        let value: u8 = byte(input,i);
+        if (i == 4 || i == 7) { if (value != 45) { return parse_error(Error::InvalidSyntax,i); } }
+        else { if (i == 10) { if (value != 84 && value != 116) { return parse_error(Error::InvalidSyntax,i); } }
+        else { if (i == 13 || i == 16) { if (value != 58) { return parse_error(Error::InvalidSyntax,i); } }
+        else { if (!digit(value)) { return parse_error(Error::InvalidSyntax,i); } } } }
+        i += 1;
+    }
+    let d: core::result::Result<Date, Error> = date(number(input,0,4),number(input,5,2),number(input,8,2));
+    if (core::result::is_err(d)) { let kind: Error = core::result::unwrap_err(d);let position: i32 = 8;if (number(input,5,2) < 1 || number(input,5,2) > 12) { position = 5; }return parse_error(kind,position); }
+    let nanos: u32 = 0;let digits: i32 = 0;i = 19;
+    if (byte(input,i) == 46) {
+        i += 1;
+        while (i < input.length && digit(byte(input,i))) {
+            if (digits == 9) { return parse_error(Error::FractionPrecision,i); }
+            nanos = nanos*10 + ((byte(input,i)-48) as u32);digits += 1;i += 1;
+        }
+        if (digits == 0) { return parse_error(Error::InvalidSyntax,i); }
+        let padding: i32 = digits;while (padding < 9) { nanos *= 10;padding += 1; }
+    }
+    let t: core::result::Result<TimeOfDay, Error> = time_of_day(number(input,11,2),number(input,14,2),number(input,17,2),nanos);
+    if (core::result::is_err(t)) { let position: i32 = 17;if (number(input,11,2) > 23) { position = 11; }else { if (number(input,14,2) > 59) { position = 14; } }return parse_error(core::result::unwrap_err(t),position); }
+    if (i >= input.length) { return parse_error(Error::InvalidSyntax,i); }
+    let offset: UtcOffset = utc();let marker: u8 = byte(input,i);
+    if (marker == 90 || marker == 122) { i += 1; }
+    else {
+        if (marker != 43 && marker != 45) { return parse_error(Error::InvalidSyntax,i); }
+        if (input.length-i < 6) { return parse_error(Error::InvalidSyntax,input.length); }
+        if (!digit(byte(input,i+1))) { return parse_error(Error::InvalidSyntax,i+1); }
+        if (!digit(byte(input,i+2))) { return parse_error(Error::InvalidSyntax,i+2); }
+        if (byte(input,i+3) != 58) { return parse_error(Error::InvalidSyntax,i+3); }
+        if (!digit(byte(input,i+4))) { return parse_error(Error::InvalidSyntax,i+4); }
+        if (!digit(byte(input,i+5))) { return parse_error(Error::InvalidSyntax,i+5); }
+        let hour: i32 = number(input,i+1,2);let minute: i32 = number(input,i+4,2);
+        if (hour > 23) { return parse_error(Error::InvalidOffset,i+1); }
+        if (minute > 59) { return parse_error(Error::InvalidOffset,i+4); }
+        let minutes: i32 = hour*60+minute;
+        if (marker == 45) { minutes = -minutes; }
+        offset = UtcOffset { minutes: minutes, known: true };
+        if (marker == 45 && minutes == 0) { offset = unknown_offset(); }
+        i += 6;
+    }
+    if (i != input.length) { return parse_error(Error::InvalidSyntax,i); }
+    let local: LocalDateTime = LocalDateTime { date: core::result::unwrap(d), time: core::result::unwrap(t) };
+    let value: OffsetDateTime = OffsetDateTime { local: local, offset: offset };
+    return core::result::Ok(ParsedDateTime { value: value, fraction_digits: digits });
+}
+fn fraction_unit(digits: i32) -> u32 { let unit: u32 = 1;let i: i32 = digits;while (i < 9) { unit *= 10;i += 1; }return unit; }
+pub fn measure_rfc3339(value: OffsetDateTime, fraction_digits: i32) -> core::result::Result<i32, Error> {
+    let checked: core::result::Result<OffsetDateTime, Error> = offset_date_time(value.local,value.offset);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (value.local.date.year < 0 || value.local.date.year > 9999) { return core::result::Err(Error::YearOutOfRange); }
+    if (fraction_digits < 0 || fraction_digits > 9) { return core::result::Err(Error::FractionPrecision); }
+    if (value.local.time.nanos % fraction_unit(fraction_digits) != 0) { return core::result::Err(Error::PrecisionLoss); }
+    let count: i32 = 20;if (!value.offset.known || value.offset.minutes != 0) { count = 25; }
+    if (fraction_digits > 0) { count += fraction_digits+1; }
+    return core::result::Ok(count);
+}
+fn put(output: core::slice::View<u8>, position: i32, value: u8) { output.values[output.start+position] = value; }
+fn put_number(output: core::slice::View<u8>, position: i32, width: i32, value: i32) {
+    let rest: i32 = value;let i: i32 = width;while (i > 0) { i -= 1;put(output,position+i,((rest%10)+48) as u8);rest /= 10; }
+}
+// Validate and measure before the first write. Every returned error leaves the
+// caller's output unchanged; successful output has no NUL terminator.
+pub fn format_rfc3339(value: OffsetDateTime, fraction_digits: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    let measured: core::result::Result<i32, Error> = measure_rfc3339(value,fraction_digits);
+    if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
+    let count: i32 = core::result::unwrap(measured);if (output.length < count) { return core::result::Err(Error::BufferTooSmall); }
+    let d: Date = value.local.date;let t: TimeOfDay = value.local.time;
+    put_number(output,0,4,d.year);put(output,4,45);put_number(output,5,2,d.month);put(output,7,45);put_number(output,8,2,d.day);put(output,10,84);
+    put_number(output,11,2,t.hour);put(output,13,58);put_number(output,14,2,t.minute);put(output,16,58);put_number(output,17,2,t.second);
+    let i: i32 = 19;
+    if (fraction_digits > 0) { put(output,i,46);i += 1;put_number(output,i,fraction_digits,(t.nanos/fraction_unit(fraction_digits)) as i32);i += fraction_digits; }
+    if (value.offset.known && value.offset.minutes == 0) { put(output,i,90); }
+    else {
+        let minutes: i32 = value.offset.minutes;let sign: u8 = 43;
+        if (minutes < 0 || !value.offset.known) { sign = 45;minutes = -minutes; }
+        put(output,i,sign);put_number(output,i+1,2,minutes/60);put(output,i+3,58);put_number(output,i+4,2,minutes%60);
+    }
+    return core::result::Ok(count);
+}
+
+// Civil ordering and representational equality. Use constructor-valid values
+// and preserve fields. Offset types deliberately expose no total instant order:
+// leap-second syntax and unknown offsets cannot be converted implicitly.
+pub impl core::cmp::Eq<Date> for Date {
+    pub fn eq(left: Date, right: Date) -> bool { return left.compare(right) == 0; }
+    pub fn ne(left: Date, right: Date) -> bool { return left.compare(right) != 0; }
+}
+pub impl core::cmp::Ord<Date> for Date {
+    pub fn lt(left: Date, right: Date) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: Date, right: Date) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: Date, right: Date) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: Date, right: Date) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::cmp::PartialEq<Date> for Date {
+    pub fn partial_eq(left: Date, right: Date) -> bool { return Date::eq(left,right); }
+    pub fn partial_ne(left: Date, right: Date) -> bool { return Date::ne(left,right); }
+}
+pub impl core::cmp::PartialOrd<Date> for Date {
+    pub fn partial_lt(left: Date, right: Date) -> bool { return Date::lt(left,right); }
+    pub fn partial_le(left: Date, right: Date) -> bool { return Date::le(left,right); }
+    pub fn partial_gt(left: Date, right: Date) -> bool { return Date::gt(left,right); }
+    pub fn partial_ge(left: Date, right: Date) -> bool { return Date::ge(left,right); }
+    pub fn partial_cmp(left: Date, right: Date) -> core::cmp::PartialOrdering { return ordering(left.compare(right)); }
+}
+pub impl core::hash::Hash<Date> for Date {
+    pub fn hash(value: Date) -> u32 { return hash_date(core::hash::FNV1A_OFFSET_BASIS,value); }
+}
+pub impl core::cmp::Eq<TimeOfDay> for TimeOfDay {
+    pub fn eq(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) == 0; }
+    pub fn ne(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) != 0; }
+}
+pub impl core::cmp::Ord<TimeOfDay> for TimeOfDay {
+    pub fn lt(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: TimeOfDay, right: TimeOfDay) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::cmp::PartialEq<TimeOfDay> for TimeOfDay {
+    pub fn partial_eq(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::eq(left,right); }
+    pub fn partial_ne(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::ne(left,right); }
+}
+pub impl core::cmp::PartialOrd<TimeOfDay> for TimeOfDay {
+    pub fn partial_lt(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::lt(left,right); }
+    pub fn partial_le(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::le(left,right); }
+    pub fn partial_gt(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::gt(left,right); }
+    pub fn partial_ge(left: TimeOfDay, right: TimeOfDay) -> bool { return TimeOfDay::ge(left,right); }
+    pub fn partial_cmp(left: TimeOfDay, right: TimeOfDay) -> core::cmp::PartialOrdering { return ordering(left.compare(right)); }
+}
+pub impl core::hash::Hash<TimeOfDay> for TimeOfDay {
+    pub fn hash(value: TimeOfDay) -> u32 { return hash_time(core::hash::FNV1A_OFFSET_BASIS,value); }
+}
+pub impl core::cmp::Eq<LocalDateTime> for LocalDateTime {
+    pub fn eq(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) == 0; }
+    pub fn ne(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) != 0; }
+}
+pub impl core::cmp::Ord<LocalDateTime> for LocalDateTime {
+    pub fn lt(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) < 0; }
+    pub fn le(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) <= 0; }
+    pub fn gt(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) > 0; }
+    pub fn ge(left: LocalDateTime, right: LocalDateTime) -> bool { return left.compare(right) >= 0; }
+}
+pub impl core::cmp::PartialEq<LocalDateTime> for LocalDateTime {
+    pub fn partial_eq(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::eq(left,right); }
+    pub fn partial_ne(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::ne(left,right); }
+}
+pub impl core::cmp::PartialOrd<LocalDateTime> for LocalDateTime {
+    pub fn partial_lt(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::lt(left,right); }
+    pub fn partial_le(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::le(left,right); }
+    pub fn partial_gt(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::gt(left,right); }
+    pub fn partial_ge(left: LocalDateTime, right: LocalDateTime) -> bool { return LocalDateTime::ge(left,right); }
+    pub fn partial_cmp(left: LocalDateTime, right: LocalDateTime) -> core::cmp::PartialOrdering { return ordering(left.compare(right)); }
+}
+pub impl core::hash::Hash<LocalDateTime> for LocalDateTime {
+    pub fn hash(value: LocalDateTime) -> u32 { return hash_time(hash_date(core::hash::FNV1A_OFFSET_BASIS,value.date),value.time); }
+}
+pub impl core::cmp::Eq<UtcOffset> for UtcOffset {
+    pub fn eq(left: UtcOffset, right: UtcOffset) -> bool { return left.minutes == right.minutes && left.known == right.known; }
+    pub fn ne(left: UtcOffset, right: UtcOffset) -> bool { return !UtcOffset::eq(left,right); }
+}
+pub impl core::cmp::PartialEq<UtcOffset> for UtcOffset {
+    pub fn partial_eq(left: UtcOffset, right: UtcOffset) -> bool { return UtcOffset::eq(left,right); }
+    pub fn partial_ne(left: UtcOffset, right: UtcOffset) -> bool { return UtcOffset::ne(left,right); }
+}
+pub impl core::hash::Hash<UtcOffset> for UtcOffset {
+    pub fn hash(value: UtcOffset) -> u32 { return hash_offset(core::hash::FNV1A_OFFSET_BASIS,value); }
+}
+pub impl core::cmp::Eq<OffsetDateTime> for OffsetDateTime {
+    pub fn eq(left: OffsetDateTime, right: OffsetDateTime) -> bool { return LocalDateTime::eq(left.local,right.local) && UtcOffset::eq(left.offset,right.offset); }
+    pub fn ne(left: OffsetDateTime, right: OffsetDateTime) -> bool { return !OffsetDateTime::eq(left,right); }
+}
+pub impl core::cmp::PartialEq<OffsetDateTime> for OffsetDateTime {
+    pub fn partial_eq(left: OffsetDateTime, right: OffsetDateTime) -> bool { return OffsetDateTime::eq(left,right); }
+    pub fn partial_ne(left: OffsetDateTime, right: OffsetDateTime) -> bool { return OffsetDateTime::ne(left,right); }
+}
+pub impl core::hash::Hash<OffsetDateTime> for OffsetDateTime {
+    pub fn hash(value: OffsetDateTime) -> u32 { return hash_offset(hash_time(hash_date(core::hash::FNV1A_OFFSET_BASIS,value.local.date),value.local.time),value.offset); }
+}
+fn ordering(value: i32) -> core::cmp::PartialOrdering {
+    if (value < 0) { return core::cmp::Less; }if (value > 0) { return core::cmp::Greater; }return core::cmp::Equal;
+}
+fn hash_word(state: u32, word: u32) -> u32 {
+    let result: u32 = state;let rest: u32 = word;let i: i32 = 0;
+    while (i < 4) { result = core::hash::fnv1a_step(result,(rest&255) as u8);rest >>= 8;i += 1; }
+    return result;
+}
+fn hash_date(state: u32, value: Date) -> u32 { return hash_word(hash_word(hash_word(state,value.year as u32),value.month as u32),value.day as u32); }
+fn hash_time(state: u32, value: TimeOfDay) -> u32 { return hash_word(hash_word(hash_word(hash_word(state,value.hour as u32),value.minute as u32),value.second as u32),value.nanos); }
+fn hash_offset(state: u32, value: UtcOffset) -> u32 { return core::hash::fnv1a_step(hash_word(state,value.minutes as u32),value.known as u8); }

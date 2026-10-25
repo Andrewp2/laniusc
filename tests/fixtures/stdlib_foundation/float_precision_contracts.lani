@@ -1,0 +1,57 @@
+module app::main;
+import core::f32;
+import core::f64;
+import core::float_decimal;
+import core::mem;
+import core::result;
+import core::slice;
+fn same(output: core::slice::View<u8>, count: i32, text: str) {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); let i: i32 = 0;
+    while (i < count) { assert(output.values[output.start+i] == bytes[i]); i += 1; }
+}
+fn kind(error: core::float_decimal::Error) -> i32 { let code: i32 = match (error) { core::float_decimal::Error::Bounds -> 1, core::float_decimal::Error::ScratchTooSmall(n) -> 2, core::float_decimal::Error::WorkLimit -> 3, core::float_decimal::Error::Capacity(n) -> 10000+n, _ -> 9 }; return code; }
+fn main() -> i32 {
+    assert(core::float_decimal::MAX_PRECISION == 768);
+    let words: [u32;868] = [777;868]; let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(words,2,864));
+    let target: [u8;128] = [211;128]; let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(target,2,124));
+    let options: core::float_decimal::PrecisionOptions = core::float_decimal::PrecisionOptions { style: core::float_decimal::PrecisionStyle::Fixed, precision: 2, alternate: false, uppercase: false };
+    let value: f64 = 2.675;
+    assert(core::result::unwrap(core::float_decimal::format_f64_precision_len(value,options,scratch,1000000)) == 4);
+    assert(core::result::unwrap(core::float_decimal::format_f64_precision_into(value,output,options,scratch,1000000)) == 4); same(output,4,"2.67");
+    let exact: core::slice::View<u8> = core::result::unwrap(output.subview(0,4)); assert(core::result::unwrap(core::float_decimal::format_f64_precision_into(value,exact,options,scratch,1000000)) == 4);
+    assert(core::result::unwrap(core::float_decimal::format_f32_precision_into(core::f32::from_bits(1075838976),output,options,scratch,1000000)) == 4); same(output,4,"2.50");
+    options.precision = 768;
+    let large_words: [i32;512] = [0;512]; let large_raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(large_words),2048);
+    let large: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(large_raw,2,2044)); large.fill(211); large_raw[0] = 211; large_raw[1] = 211; large_raw[2046] = 211; large_raw[2047] = 211;
+    assert(core::result::unwrap(core::float_decimal::format_f64_precision_len(core::f64::from_bits(18442240474082181119),options,scratch,1000000)) == 1079);
+    assert(core::result::unwrap(core::float_decimal::format_f64_precision_into(core::f64::from_bits(18442240474082181119),large,options,scratch,1000000)) == 1079);
+    assert(large.values[large.start] == 45 && large.values[large.start+310] == 46 && large.values[large.start+1078] == 48);
+    assert(large_raw[0] == 211 && large_raw[1] == 211 && large_raw[2046] == 211 && large_raw[2047] == 211); let guard: i32 = 1081; while (guard < 2046) { assert(large_raw[guard] == 211); guard += 1; }
+    options.style = core::float_decimal::PrecisionStyle::Scientific; options.precision = 3;
+    assert(core::result::unwrap(core::float_decimal::format_f64_precision_into(core::f64::from_bits(1),output,options,scratch,1000000)) == 10); same(output,10,"4.941e-324");
+    // Packed u32 scratch and packed u8 output use the same indexing contract.
+    let packed_words: [i32;900] = [0;900]; let packed: [u32] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed_words),868);
+    packed[0] = 777; packed[1] = 777; packed[866] = 777; packed[867] = 777;
+    let packed_scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(packed,2,864));
+    let packed_target: [i32;32] = [0;32]; let packed_raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed_target),128);
+    let packed_output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(packed_raw,3,120)); packed_raw[2] = 211; packed_raw[123] = 211;
+    options.style = core::float_decimal::PrecisionStyle::General; options.precision = 4; options.alternate = true; options.uppercase = true;
+    assert(core::result::unwrap(core::float_decimal::format_f64_precision_into(123456.0,packed_output,options,packed_scratch,1000000)) == 9); same(packed_output,9,"1.235E+05");
+    assert(packed_raw[2] == 211 && packed_raw[123] == 211 && packed[0] == 777 && packed[1] == 777 && packed[866] == 777 && packed[867] == 777);
+    output.fill(211); options.style = core::float_decimal::PrecisionStyle::Fixed; options.precision = 2;
+    let short: core::slice::View<u8> = core::result::unwrap(output.subview(0,3)); assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,short,options,scratch,1000000))) == 10004);
+    assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,output,options,scratch,0))) == 3);
+    assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(core::f64::from_bits(1),output,options,scratch,100))) == 3);
+    // The final render charge is preflighted too (zero needs no big arithmetic).
+    assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(0.0,output,options,scratch,4))) == 3);
+    options.precision = -1; assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,output,options,scratch,1000000))) == 1);
+    options.precision = 769; assert(kind(core::result::unwrap_err(core::float_decimal::format_f32_precision_len(core::f32::from_bits(0),options,scratch,1000000))) == 1);
+    assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(core::f64::from_bits(9218868437227405312),output,options,scratch,1000000))) == 1); options.precision = 2;
+    let short_scratch: core::slice::View<u32> = core::result::unwrap(scratch.subview(0,863)); assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,output,options,short_scratch,1000000))) == 2);
+    let bad: core::slice::View<u8> = output; bad.start = -1; assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,bad,options,scratch,1000000))) == 1);
+    bad = output; bad.length = -1; assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,bad,options,scratch,1000000))) == 1);
+    bad = output; bad.start = 2147483647; assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,bad,options,scratch,1000000))) == 1);
+    let bad_scratch: core::slice::View<u32> = scratch; bad_scratch.start = 2147483647; assert(kind(core::result::unwrap_err(core::float_decimal::format_f64_precision_into(value,output,options,bad_scratch,1000000))) == 1);
+    let i: i32 = 0; while (i < 128) { assert(target[i] == 211); i += 1; } assert(words[0] == 777 && words[1] == 777 && words[866] == 777 && words[867] == 777);
+    return 0;
+}

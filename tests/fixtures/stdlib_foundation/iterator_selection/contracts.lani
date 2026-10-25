@@ -1,0 +1,205 @@
+// Selection adapters preserve shallow payloads, stride and borrowed callbacks.
+module app::main;
+import alloc::string;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+struct Context { calls: i32, sum: i32 }
+impl Context { fn borrow(&self) -> &Context { return self; } }
+struct Payload { key: i32, wide: u64, cells: [i32; 2], flag: core::option::Option<bool> }
+struct Wrapped<T> { item: T, stamp: u64 }
+struct Select { state: &Context }
+impl Select { fn borrow(&self) -> &Select { return self; } }
+pub impl core::iter::Mapper<Payload, bool> for Select {
+    pub fn apply(&self, value: Payload) -> bool {
+        let state: &Context = self.state; state.calls += 1; state.sum += value.key;
+        return value.key != 1;
+    }
+}
+struct Pack { state: &Context }
+impl Pack { fn borrow(&self) -> &Pack { return self; } }
+pub impl core::iter::Mapper<Payload, core::option::Option<Wrapped<Payload>>> for Pack {
+    pub fn apply(&self, value: Payload) -> core::option::Option<Wrapped<Payload>> {
+        let state: &Context = self.state; state.calls += 1;
+        if (value.key == 1) { return core::option::None(); }
+        let wrapped: Wrapped<Payload> = Wrapped { item: value, stamp: 18446744073709551615 - (value.key as u64) };
+        return core::option::Some(wrapped);
+    }
+}
+struct Maybe { calls: i32 }
+impl Maybe { fn borrow(&self) -> &Maybe { return self; } }
+pub impl core::iter::Mapper<i32, core::option::Option<core::option::Option<i32>>> for Maybe {
+    pub fn apply(&self, value: i32) -> core::option::Option<core::option::Option<i32>> {
+        self.calls += 1;
+        if (value == 0) { return core::option::None(); }
+        if (value == 1) { return core::option::Some(core::option::None()); }
+        return core::option::Some(core::option::Some(value + 40));
+    }
+}
+enum Fault { Rejected(i32) }
+struct Fallible { calls: i32 }
+impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
+pub impl core::iter::Mapper<i32, core::option::Option<core::result::Result<[u64; 2], Fault>>> for Fallible {
+    pub fn apply(&self, value: i32) -> core::option::Option<core::result::Result<[u64; 2], Fault>> {
+        self.calls += 1;
+        if (value == 1) { return core::option::None(); }
+        if (value == 0) { return core::option::Some(core::result::Err(Fault::Rejected(value))); }
+        let cells: [u64; 2] = [18446744073709551615, value as u64];
+        return core::option::Some(core::result::Ok(cells));
+    }
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next(); return item;
+}
+fn filtered<I, P, T>(source: &I, predicate: &P) -> core::iter::Filter<I, P, T>
+    where I: core::iter::Iterator<T>, P: core::iter::Mapper<T, bool> {
+    return core::iter::filter<I, P, T>(source, predicate);
+}
+fn shapes() {
+    let a: Payload = Payload { key: 0, wide: 18446744073709551615, cells: [-7, 42], flag: core::option::Some(false) };
+    let b: Payload = Payload { key: 1, wide: 4294967297, cells: [19, 23], flag: core::option::None() };
+    let c: Payload = Payload { key: 2, wide: 9223372036854775808, cells: [31, -99], flag: core::option::Some(true) };
+    let values: [Payload; 3] = [a, b, c];
+    let state: Context = Context { calls: 0, sum: 0 }; let predicate: Select = Select { state: state.borrow() };
+    let source: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(values, 3));
+    let selected: core::iter::Filter<core::slice::Iter<Payload>, Select, Payload> =
+        filtered<core::slice::Iter<Payload>, Select, Payload>(source.borrow(), predicate.borrow());
+    let zero: core::iter::Take<core::iter::Filter<core::slice::Iter<Payload>, Select, Payload>, Payload> =
+        core::iter::take<core::iter::Filter<core::slice::Iter<Payload>, Select, Payload>, Payload>(selected.borrow(), 0);
+    let none: core::option::Option<Payload> = zero.next(); assert(core::option::is_none(none) && source.remaining() == 3 && state.calls == 0);
+    let first: core::option::Option<Payload> = pull<core::iter::Filter<core::slice::Iter<Payload>, Select, Payload>, Payload>(selected.borrow());
+    let last: core::option::Option<Payload> = selected.next();
+    let x: Payload = core::option::unwrap(first); let y: Payload = core::option::unwrap(last);
+    assert(x.wide == 18446744073709551615 && x.cells[0] == -7 && !core::option::unwrap(x.flag));
+    assert(y.wide == 9223372036854775808 && y.cells[1] == -99 && core::option::unwrap(y.flag));
+    let end: core::option::Option<Payload> = selected.next(); let again: core::option::Option<Payload> = selected.next();
+    assert(core::option::is_none(end) && core::option::is_none(again) && state.calls == 3 && state.sum == 3);
+
+    let other: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(values, 3));
+    let pack: Pack = Pack { state: state.borrow() };
+    let packed: core::iter::FilterMap<core::slice::Iter<Payload>, Pack, Payload, Wrapped<Payload>> =
+        core::iter::filter_map<core::slice::Iter<Payload>, Pack, Payload, Wrapped<Payload>>(other.borrow(), pack.borrow());
+    let p0: core::option::Option<Wrapped<Payload>> = packed.next(); let p1: core::option::Option<Wrapped<Payload>> = packed.next();
+    let w0: Wrapped<Payload> = core::option::unwrap(p0); let w1: Wrapped<Payload> = core::option::unwrap(p1);
+    assert(w0.item.wide == 18446744073709551615 && w0.stamp == 18446744073709551615 && w1.item.cells[1] == -99 && w1.stamp == 18446744073709551613);
+    let drained: core::iter::Advance = core::iter::advance_up_to<core::iter::FilterMap<core::slice::Iter<Payload>, Pack, Payload, Wrapped<Payload>>, Wrapped<Payload>>(packed.borrow(), 4);
+    assert(drained.advanced == 0 && drained.exhausted && state.calls == 6);
+
+    let numbers: [i32; 3] = [0, 1, 2];
+    let optional_source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(numbers, 3));
+    let maybe: Maybe = Maybe { calls: 0 };
+    let optional: core::iter::FilterMap<core::slice::Iter<i32>, Maybe, i32, core::option::Option<i32>> =
+        core::iter::filter_map<core::slice::Iter<i32>, Maybe, i32, core::option::Option<i32>>(optional_source.borrow(), maybe.borrow());
+    let absent: core::option::Option<core::option::Option<i32>> = optional.next(); let present: core::option::Option<core::option::Option<i32>> = optional.next();
+    assert(core::option::is_some(absent) && core::option::is_none(core::option::unwrap(absent)) && core::option::unwrap(core::option::unwrap(present)) == 42 && maybe.calls == 3);
+    let optional_end: core::option::Option<core::option::Option<i32>> = optional.next(); assert(core::option::is_none(optional_end) && maybe.calls == 3);
+    let fallible_source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(numbers, 3));
+    let fallible: Fallible = Fallible { calls: 0 };
+    let results: core::iter::FilterMap<core::slice::Iter<i32>, Fallible, i32, core::result::Result<[u64; 2], Fault>> =
+        core::iter::filter_map<core::slice::Iter<i32>, Fallible, i32, core::result::Result<[u64; 2], Fault>>(fallible_source.borrow(), fallible.borrow());
+    let r0: core::option::Option<core::result::Result<[u64; 2], Fault>> = results.next(); let r1: core::option::Option<core::result::Result<[u64; 2], Fault>> = results.next();
+    let bad: Fault = core::result::unwrap_err(core::option::unwrap(r0)); let rejected: bool = match (bad) { Fault::Rejected(value) -> value == 0 };
+    let cells: [u64; 2] = core::result::unwrap(core::option::unwrap(r1));
+    let result_end: core::option::Option<core::result::Result<[u64; 2], Fault>> = results.next();
+    assert(rejected && cells[0] == 18446744073709551615 && cells[1] == 2 && core::option::is_none(result_end) && fallible.calls == 3);
+}
+struct BytePredicate { state: &Context, mode: i32 }
+impl BytePredicate { fn borrow(&self) -> &BytePredicate { return self; } }
+pub impl core::iter::Mapper<u8, bool> for BytePredicate {
+    pub fn apply(&self, value: u8) -> bool {
+        let state: &Context = self.state; state.calls += 1; state.sum += value as i32;
+        if (self.mode == 0) { return value >= 128; }
+        if (self.mode == 1) { return value != 255; }
+        return value < 200;
+    }
+}
+fn byte_views(bytes: [u8]) {
+    let view: core::slice::View<u8> = core::slice::View { values: bytes, start: 1, length: 4 };
+    let source: core::slice::Iter<u8> = view.iter();
+    let high_state: Context = Context { calls: 0, sum: 0 }; let high: BytePredicate = BytePredicate { state: high_state.borrow(), mode: 0 };
+    let selected: core::iter::Filter<core::slice::Iter<u8>, BytePredicate, u8> = core::iter::filter<core::slice::Iter<u8>, BytePredicate, u8>(source.borrow(), high.borrow());
+    let skipped: core::iter::Skip<core::iter::Filter<core::slice::Iter<u8>, BytePredicate, u8>, u8> = core::iter::skip<core::iter::Filter<core::slice::Iter<u8>, BytePredicate, u8>, u8>(selected.borrow(), 1);
+    let until_state: Context = Context { calls: 0, sum: 0 }; let until: BytePredicate = BytePredicate { state: until_state.borrow(), mode: 1 };
+    let prefix: core::iter::TakeWhile<core::iter::Skip<core::iter::Filter<core::slice::Iter<u8>, BytePredicate, u8>, u8>, BytePredicate, u8> =
+        core::iter::take_while<core::iter::Skip<core::iter::Filter<core::slice::Iter<u8>, BytePredicate, u8>, u8>, BytePredicate, u8>(skipped.borrow(), until.borrow());
+    assert(source.remaining() == 4 && high_state.calls == 0 && until_state.calls == 0);
+    let item: core::option::Option<u8> = prefix.next(); let end: core::option::Option<u8> = prefix.next(); let again: core::option::Option<u8> = prefix.next();
+    assert(core::option::unwrap(item) == 129 && core::option::is_none(end) && core::option::is_none(again) && source.remaining() == 1 && high_state.calls == 3 && high_state.sum == 512 && until_state.calls == 2 && until_state.sum == 384);
+    let rest: core::slice::Iter<u8> = view.iter(); let before_state: Context = Context { calls: 0, sum: 0 };
+    let before: BytePredicate = BytePredicate { state: before_state.borrow(), mode: 2 };
+    let suffix: core::iter::SkipWhile<core::slice::Iter<u8>, BytePredicate, u8> = core::iter::skip_while<core::slice::Iter<u8>, BytePredicate, u8>(rest.borrow(), before.borrow());
+    let boundary: core::option::Option<u8> = suffix.next(); let fork: core::iter::SkipWhile<core::slice::Iter<u8>, BytePredicate, u8> = suffix;
+    let forwarded: core::option::Option<u8> = fork.next();
+    let suffix_end: core::option::Option<u8> = suffix.next(); let fork_end: core::option::Option<u8> = fork.next();
+    assert(core::option::unwrap(boundary) == 255 && core::option::unwrap(forwarded) == 130 && core::option::is_none(suffix_end) && core::option::is_none(fork_end) && before_state.calls == 3 && before_state.sum == 512);
+}
+struct Unit {}
+struct UnitMap { calls: i32 }
+impl UnitMap { fn borrow(&self) -> &UnitMap { return self; } }
+pub impl core::iter::Mapper<Unit, core::option::Option<Unit>> for UnitMap {
+    pub fn apply(&self, value: Unit) -> core::option::Option<Unit> { self.calls += 1; return core::option::Some(value); }
+}
+fn strides_and_units() {
+    let bytes: [u8; 6] = [254, 128, 129, 255, 130, 253]; byte_views(bytes);
+    let storage: [i32; 2] = [0, 0]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer, 8);
+    let index: i32 = 0; while (index < 6) { packed[index] = bytes[index]; index += 1; } byte_views(packed);
+    let units: [Unit; 3] = [Unit {}, Unit {}, Unit {}]; let source: core::slice::Iter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 3));
+    let mapper: UnitMap = UnitMap { calls: 0 };
+    let mapped: core::iter::FilterMap<core::slice::Iter<Unit>, UnitMap, Unit, Unit> = core::iter::filter_map<core::slice::Iter<Unit>, UnitMap, Unit, Unit>(source.borrow(), mapper.borrow());
+    let skipped: core::iter::Skip<core::iter::FilterMap<core::slice::Iter<Unit>, UnitMap, Unit, Unit>, Unit> = core::iter::skip<core::iter::FilterMap<core::slice::Iter<Unit>, UnitMap, Unit, Unit>, Unit>(mapped.borrow(), 1);
+    let result: core::iter::Advance = core::iter::advance_up_to<core::iter::Skip<core::iter::FilterMap<core::slice::Iter<Unit>, UnitMap, Unit, Unit>, Unit>, Unit>(skipped.borrow(), 8);
+    assert(result.advanced == 2 && result.exhausted && mapper.calls == 3);
+}
+struct StringPredicate { calls: i32, mode: i32 }
+impl StringPredicate { fn borrow(&self) -> &StringPredicate { return self; } }
+pub impl core::iter::Mapper<alloc::string::String, bool> for StringPredicate {
+    pub fn apply(&self, value: alloc::string::String) -> bool {
+        self.calls += 1; assert(value.byte_len() == 4);
+        if (self.mode == 0) { return self.calls % 2 == 0; }
+        if (self.mode == 1) { return self.calls == 1; }
+        return self.calls < 2;
+    }
+}
+struct StringMaybe { calls: i32 }
+impl StringMaybe { fn borrow(&self) -> &StringMaybe { return self; } }
+pub impl core::iter::Mapper<alloc::string::String, core::option::Option<alloc::string::String>> for StringMaybe {
+    pub fn apply(&self, value: alloc::string::String) -> core::option::Option<alloc::string::String> {
+        self.calls += 1; assert(value.byte_len() == 4);
+        if (self.calls == 1) { return core::option::None(); } return core::option::Some(value);
+    }
+}
+fn owned_aliases() {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let aliases: [alloc::string::String; 10] = [owner; 10];
+    let source: core::slice::Iter<alloc::string::String> = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 10));
+    let skipped: core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String> = core::iter::skip<core::slice::Iter<alloc::string::String>, alloc::string::String>(source.borrow(), 1);
+    let predicate: StringPredicate = StringPredicate { calls: 0, mode: 0 };
+    let selected: core::iter::Filter<core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String>, StringPredicate, alloc::string::String> =
+        core::iter::filter<core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String>, StringPredicate, alloc::string::String>(skipped.borrow(), predicate.borrow());
+    let mapper: StringMaybe = StringMaybe { calls: 0 };
+    let mapped: core::iter::FilterMap<core::iter::Filter<core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String>, StringPredicate, alloc::string::String>, StringMaybe, alloc::string::String, alloc::string::String> =
+        core::iter::filter_map<core::iter::Filter<core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String>, StringPredicate, alloc::string::String>, StringMaybe, alloc::string::String, alloc::string::String>(selected.borrow(), mapper.borrow());
+    let boundary: StringPredicate = StringPredicate { calls: 0, mode: 1 };
+    let prefix: core::iter::TakeWhile<core::iter::FilterMap<core::iter::Filter<core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String>, StringPredicate, alloc::string::String>, StringMaybe, alloc::string::String, alloc::string::String>, StringPredicate, alloc::string::String> =
+        core::iter::take_while<core::iter::FilterMap<core::iter::Filter<core::iter::Skip<core::slice::Iter<alloc::string::String>, alloc::string::String>, StringPredicate, alloc::string::String>, StringMaybe, alloc::string::String, alloc::string::String>, StringPredicate, alloc::string::String>(mapped.borrow(), boundary.borrow());
+    let first: core::option::Option<alloc::string::String> = prefix.next(); let borrowed: alloc::string::String = core::option::unwrap(first);
+    let end: core::option::Option<alloc::string::String> = prefix.next(); let again: core::option::Option<alloc::string::String> = prefix.next();
+    assert(core::option::is_none(end) && core::option::is_none(again) && predicate.calls == 6 && mapper.calls == 3 && boundary.calls == 2 && source.remaining() == 3);
+    let other: core::slice::Iter<alloc::string::String> = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 2));
+    let before: StringPredicate = StringPredicate { calls: 0, mode: 2 };
+    let suffix: core::iter::SkipWhile<core::slice::Iter<alloc::string::String>, StringPredicate, alloc::string::String> = core::iter::skip_while<core::slice::Iter<alloc::string::String>, StringPredicate, alloc::string::String>(other.borrow(), before.borrow());
+    let last: core::option::Option<alloc::string::String> = suffix.next(); let alias: alloc::string::String = core::option::unwrap(last);
+    let suffix_end: core::option::Option<alloc::string::String> = suffix.next(); assert(core::option::is_none(suffix_end) && before.calls == 2);
+    let text: core::text::Text = borrowed.as_text(); let final_byte: core::option::Option<u8> = text.byte_at(3);
+    assert(core::option::unwrap(final_byte) == 100 && alias.byte_len() == 4 && owner.byte_len() == 4);
+    // The retained owner remains the sole release authority for every yielded
+    // alias and every shallow item discarded by selection or skipping.
+    owner.destroy();
+}
+fn main() -> i32 { shapes(); strides_and_units(); owned_aliases(); return 0; }

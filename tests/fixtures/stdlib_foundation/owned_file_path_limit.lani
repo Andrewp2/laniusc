@@ -1,0 +1,21 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import std::file;
+import core::path;
+
+fn main() -> i32 {
+    let storage: [i32; 1024] = [0; 1024];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 4096);
+    let index: i32 = 0;
+    while (index < 4096) { bytes[index] = 97; index += 1; }
+    let path: core::path::Path = core::result::unwrap(core::path::from_bytes(bytes, 4096));
+    // Path values can exceed the current host binding's path bound.
+    if (path.byte_len() != 4096) { return 1; }
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(path, std::file::OpenMode::Create);
+    let error: core::io::Error = core::result::unwrap_err(opened);
+    let code: i32 = match (error) { core::io::Error::Host(value) -> value, _ -> -1 };
+    if (code != 36) { return 2; }
+    return 0;
+}

@@ -1,37 +1,47 @@
 // Maintain a small ordered sequence and report its checksum after two edits.
 module app::main;
-import core::number_i32;
+import alloc::vec;
+import core::decimal;
+import core::i32;
+import core::io;
 import core::option;
-import std::io;
-import std::vec;
+import core::result;
+import core::slice;
+import std::signal;
+import std::stream;
+
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line(value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn main() -> i32 {
-    let readings: std::vec::Vec<i32> = std::vec::new();
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 4; }
     let initial: [i32; 3] = [3, 7, 11];
-    readings = std::vec::try_extend_from_slice(readings, initial, 3);
-    if (std::vec::len(readings) != 3) {
-        std::vec::destroy(readings);
-        return 1;
-    }
-    readings = std::vec::try_insert(readings, 1, 5);
-    if (std::vec::len(readings) != 4) {
-        std::vec::destroy(readings);
-        return 2;
-    }
-    readings = std::vec::try_remove(readings, 2);
-    if (std::vec::len(readings) != 3) {
-        std::vec::destroy(readings);
-        return 3;
-    }
+    let view: core::slice::View<i32> = core::slice::view(initial,3).unwrap();
+    let created: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::from_view(view);
+    if (created.is_err()) { return 1; }
+    let readings: alloc::vec::Vec<i32> = created.unwrap();
+    if (readings.try_insert(1,5).is_err()) { readings.destroy(); return 2; }
+    let removed: core::result::Result<i32,alloc::vec::Error> = readings.remove(2);
+    if (removed.is_err()) { readings.destroy(); return 3; }
+    // The removed plain integer transfers here and needs no resource cleanup.
+    if (removed.unwrap() != 7) { readings.destroy(); return 3; }
     let total: i32 = 0;
     let index: i32 = 0;
-    while (index < std::vec::len(readings)) {
-        total = core::number_i32::saturating_add(
-            total, std::vec::get_or(readings, index, 0));
+    while (index < readings.len()) {
+        total = core::i32::saturating_add(
+            total, readings.at(index));
         index += 1;
     }
-    std::vec::destroy(readings);
+    readings.destroy();
     let result: core::option::Option<i32> = core::option::Some(total);
-    std::io::print_i32(core::option::unwrap_or(result, -1));
+    if (!write_i32_line(core::option::unwrap_or(result,-1))) { return 4; }
     return 0;
 }

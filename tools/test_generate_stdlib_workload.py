@@ -5,7 +5,7 @@ from pathlib import Path
 
 from generate_generic_workload import Step, build_area
 from generate_stdlib_workload import (
-    BACKLOG_KINDS,
+    RECORD_KINDS,
     STEP_KINDS,
     Set,
     Vec,
@@ -22,9 +22,9 @@ from generate_stdlib_workload import (
 
 
 class ContainerModelTests(unittest.TestCase):
-    """The models follow stdlib/core/vec.lani and set.lani: failures change nothing."""
+    """Functional reference states model borrowed edits, including atomic errors."""
 
-    def test_vec_operations_that_fail_return_the_vector_unchanged(self):
+    def test_failed_edits_preserve_the_reference_state(self):
         full = Vec(2, [1, 2])
         self.assertEqual(full.try_push(3).items, [1, 2])
         self.assertEqual(full.try_insert(0, 3).items, [1, 2])
@@ -46,6 +46,10 @@ class ContainerModelTests(unittest.TestCase):
         self.assertIsNone(Vec(4).last())
         self.assertEqual(v.items, [1, 2, 3])  # value semantics
 
+    def test_record_set_equality_uses_every_field(self):
+        model = Set(3).try_insert((1, 2, 3)).try_insert((1, 2, 4))
+        self.assertEqual(model.items, [(1, 2, 3), (1, 2, 4)])
+
     def test_set_keeps_insertion_order_and_ignores_present_items(self):
         s = Set(3).try_insert(5).try_insert(1).try_insert(5).try_insert(2).try_insert(4)
         self.assertEqual(s.items, [5, 1, 2])
@@ -60,7 +64,7 @@ class StepTests(unittest.TestCase):
     def test_every_kind_renders_and_keeps_values_in_range(self):
         area = build_area(7, 0)
         record = area.records[0]
-        kinds = {**STEP_KINDS, **BACKLOG_KINDS}
+        kinds = {**STEP_KINDS, **RECORD_KINDS}
         for kind, (_, _, needs_record) in sorted(kinds.items()):
             for c in range(64):
                 step = Step(kind, 1000 + c, 3000 - c, c * 977, record if needs_record else None,
@@ -72,17 +76,17 @@ class StepTests(unittest.TestCase):
                     self.assertTrue(0 <= result <= 4095, (kind, c, value, x, result))
 
     def test_stdlib_calls_name_existing_core_items(self):
-        # Every core:: call in a rendered program is one of the pilot API's functions.
-        api = {
-            "vec": {"from_storage", "from_array", "len", "capacity", "is_empty", "is_full", "try_push",
-                    "try_pop", "get", "get_or", "first", "last", "try_set", "try_insert", "try_remove",
-                    "try_swap", "reverse", "truncate", "clear"},
-            "set": {"from_storage", "len", "capacity", "is_empty", "contains", "position_or", "get",
-                    "at_or", "try_insert", "try_remove", "clear", "is_subset"},
-            "pair": {"new", "first", "second", "swap", "zip"},
-            "option": {"Some", "None", "is_some", "is_none", "unwrap_or", "or", "and", "xor", "flatten"},
-            "result": {"Ok", "Err", "is_ok", "is_err", "unwrap_or", "unwrap_err_or", "or", "and"},
-        }
+        # Read the real public surface; a stale copied allowlist hid the
+        # removed try_pop/try_remove names during the container migration.
+        root = Path(__file__).resolve().parents[1]
+        api = {}
+        for module in ("vec", "set", "pair", "option", "result"):
+            source = (root / "stdlib/core" / f"{module}.lani").read_text()
+            functions = set(re.findall(r"\bpub\s+fn\s+(\w+)\s*(?:<|\()", source))
+            variants = set()
+            for body in re.findall(r"pub enum [^{]+\{([^}]+)\}", source):
+                variants.update(re.findall(r"(?:^|,)\s*([A-Z]\w*)", body))
+            api[module] = functions | variants
         kinds = kinds_for(True)
         source = render_single_file(build_workload(7, 200, kinds))
         for module, name in re.findall(r"\bcore::(\w+)::(\w+)\s*\(", source):
@@ -117,12 +121,14 @@ class ProgramTests(unittest.TestCase):
 
         self.assertLess(narrow_stats["generic_body_specializations"], wide_stats["generic_body_specializations"])
 
-    def test_record_keys_only_with_backlog(self):
+    def test_record_equality_uses_all_fields_in_record_generic_mix(self):
         default = render_single_file(build_workload(7, 200, kinds_for(False)))
-        backlog = render_single_file(build_workload(7, 200, kinds_for(True)))
+        record_mix = render_single_file(build_workload(7, 200, kinds_for(True)))
 
-        self.assertNotIn("core::set::Key for", default)
-        self.assertIn("pub impl core::set::Key for", backlog)
+        self.assertNotIn("pub impl core::cmp::Eq<", default)
+        self.assertIn("pub impl core::cmp::Eq<", record_mix)
+        self.assertNotIn("core::set::Key", record_mix)
+        self.assertIn("left.f2 == right.f2", record_mix)
 
     def test_string_helpers_put_literals_in_generic_bodies_only_when_asked(self):
         import generate_stdlib_workload as generator

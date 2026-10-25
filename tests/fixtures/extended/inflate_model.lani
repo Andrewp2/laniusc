@@ -1,0 +1,43 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::inflate;
+import std::io;
+
+fn read(pointer: ptr, count: i32) -> i32 {
+    let done: i32 = 0;
+    while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { return done; } done += got; } return done;
+}
+fn write(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) { let got: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got > 0); done += got; }
+}
+fn get_number(bytes: [u8], index: i32) -> i32 { return (bytes[index] as i32) | ((bytes[index+1] as i32) << 8) | ((bytes[index+2] as i32) << 16) | ((bytes[index+3] as i32) << 24); }
+fn number(bytes: [u8], index: i32, value: i32) { bytes[index] = (value & 255) as u8; bytes[index+1] = ((value >> 8) & 255) as u8; bytes[index+2] = ((value >> 16) & 255) as u8; bytes[index+3] = ((value >> 24) & 255) as u8; }
+fn code(error: ext::inflate::Error) -> i32 { return match (error) { ext::inflate::Error::Bounds -> 1, ext::inflate::Error::UnexpectedEof -> 2, ext::inflate::Error::InvalidBlockType -> 3, ext::inflate::Error::InvalidStoredLength -> 4, ext::inflate::Error::InvalidCodeLengths -> 5, ext::inflate::Error::InvalidSymbol -> 6, ext::inflate::Error::InvalidDistance -> 7, ext::inflate::Error::OutputTooSmall -> 8 }; }
+fn main() -> i32 {
+    let input_words: [i32;65536] = [0;65536]; let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,262144);
+    let output_words: [i32;65538] = [0;65538]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,262152);
+    let header_words: [i32;3] = [0;3]; let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words);
+    let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,12);
+    while (true) {
+        let got: i32 = read(header_pointer,12); if (got == 0) { break; } assert(got == 12);
+        let length: i32 = get_number(header,0); let capacity: i32 = get_number(header,4); let window: i32 = get_number(header,8);
+        assert(length >= 0 && length <= 262144 && capacity >= 0 && capacity <= 262144);
+        assert(read(input_pointer,length) == length);
+        let index: i32 = 0; while (index < capacity+8) { output[index] = 77; index += 1; }
+        let source: core::slice::View<u8> = core::result::unwrap(core::slice::view(input,length));
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,4,capacity));
+        let result: core::result::Result<ext::inflate::Progress,ext::inflate::Failure> = ext::inflate::decode_into_window(source,destination,window);
+        let status: i32 = 0; let consumed: i32 = 0; let written: i32 = 0;
+        if (core::result::is_err(result)) { let failure: ext::inflate::Failure = core::result::unwrap_err(result); status = code(failure.error); consumed = failure.read; written = failure.written; }
+        else { let done: ext::inflate::Progress = core::result::unwrap(result); consumed = done.read; written = done.written; }
+        assert(consumed >= 0 && consumed <= length && written >= 0 && written <= capacity);
+        index = 0; while (index < capacity+8) { if (index < 4 || index >= written+4) { assert(output[index] == 77); } index += 1; }
+        number(header,0,status); number(header,4,consumed); number(header,8,written); write(header_pointer,12); write(output_pointer+4,written);
+    }
+    return 0;
+}

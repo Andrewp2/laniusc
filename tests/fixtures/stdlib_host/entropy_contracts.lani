@@ -1,0 +1,56 @@
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::random;
+import core::result;
+import core::text;
+import std::entropy;
+import std::process;
+import std::stream;
+fn code(error: core::random::Error) -> i32 {
+    return match (error) { core::random::Error::Host(value) -> value, core::random::Error::NoProgress -> 1000, core::random::Error::InvalidCount -> 1001, core::random::Error::Bounds -> 1002, core::random::Error::ZeroState -> 1003, _ -> 1004 };
+}
+fn report(error: i32, count: i32) {
+    let bytes: [u8; 32] = [0;32]; let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,32));
+    core::fmt::display(error,output.borrow());output.write_scalar(32);core::fmt::display(count,output.borrow());output.write_scalar(10);
+    let sink: std::stream::Descriptor = std::stream::stdout(); core::result::unwrap(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(output.finish())));
+}
+fn main() -> i32 {
+    let argument: [i32; 8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(argument); let args: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let length: i32 = std::process::arg_len(1); assert(length == 1 && std::process::arg_read(1,pointer,1) == 1); let mode: u8 = args[0];
+    if (mode == 49) {
+        let drawn: core::result::Result<u64, core::random::Error> = std::entropy::secure_u64();
+        if (core::result::is_err(drawn)) { report(code(core::result::unwrap_err(drawn)),0); return 0; }
+        report(0,8); return 0;
+    }
+    if (mode == 50) {
+        let seeded: core::result::Result<core::random::Xoshiro256PlusPlus, core::random::Error> = std::entropy::seeded();
+        if (core::result::is_err(seeded)) { report(code(core::result::unwrap_err(seeded)),0); return 0; }
+        let rng: core::random::Xoshiro256PlusPlus = core::result::unwrap(seeded); rng.next_u64(); report(0,32); return 0;
+    }
+    if (mode == 51) {
+        let source: std::entropy::OsRandom = std::entropy::os_random(); let selected: core::result::Result<u64, core::random::Error> = core::random::below(source.borrow(),10);
+        if (core::result::is_err(selected)) { report(code(core::result::unwrap_err(selected)),0); return 0; }
+        assert(core::result::unwrap(selected) < 10 as u64); report(0,8); return 0;
+    }
+    let storage: [i32; 160] = [0;160]; let packed: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(packed,640);
+    let index: i32 = 0; while (index < 640) { bytes[index] = 85; index += 1; }
+    if (mode == 52) {
+        assert(core::result::unwrap(std::entropy::fill(bytes,4,0)) == 0);
+        assert(core::result::is_err(std::entropy::fill(bytes,-1,0)) && core::result::is_err(std::entropy::fill(bytes,0,-1)) && core::result::is_err(std::entropy::fill(bytes,2147483647,1)));
+        let source: std::entropy::OsRandom = std::entropy::os_random(); assert(core::result::unwrap(core::random::below(source.borrow(),1)) == 0 as u64 && core::result::is_err(core::random::below(source.borrow(),0)));
+        report(0,0); return 0;
+    }
+    if (mode == 53) {
+        let native: [u8; 19] = [85;19]; let result: core::result::Result<i32, core::random::Failure> = std::entropy::fill(native,1,17);
+        if (core::result::is_err(result)) { let failure: core::random::Failure = core::result::unwrap_err(result); report(code(failure.cause),failure.completed); return 0; }
+        assert(native[0] == 85 && native[18] == 85); report(0,17);
+        let sink: std::stream::Descriptor = std::stream::stdout(); core::result::unwrap(core::io::write_all(sink.borrow(),native,1,17)); return 0;
+    }
+    let filled: core::result::Result<i32, core::random::Failure> = std::entropy::fill(bytes,3,600); let error: i32 = 0; let completed: i32 = 600;
+    if (core::result::is_err(filled)) { let failure: core::random::Failure = core::result::unwrap_err(filled); error = code(failure.cause); completed = failure.completed; }
+    index = 0; while (index < 3) { assert(bytes[index] == 85); index += 1; }
+    index = 3 + completed; while (index < 640) { assert(bytes[index] == 85); index += 1; }
+    report(error,completed); let sink: std::stream::Descriptor = std::stream::stdout(); core::result::unwrap(core::io::write_all(sink.borrow(),bytes,3,completed)); return 0;
+}

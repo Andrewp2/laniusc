@@ -1,6 +1,6 @@
 // Recoverable results: Ok carries the value, Err the error. Every operation
 // takes the result by value and leaves the caller's copy unchanged. Each one
-// exists as a free function and as a method. Membership needs Eq on the
+// exists as a free function and as a method. Membership needs PartialEq on the
 // payload it compares. unwrap and unwrap_err panic on the other variant;
 // the *_or forms take an explicit fallback and never panic.
 
@@ -22,12 +22,12 @@ pub fn is_err<T, E>(value: Result<T, E>) -> bool {
     return match (value) { Ok(_) -> false, Err(_) -> true };
 }
 
-pub fn contains<T, E>(value: Result<T, E>, expected: T) -> bool where T: core::cmp::Eq<T> {
-    return match (value) { Ok(inner) -> T::eq(inner, expected), Err(_) -> false };
+pub fn contains<T, E>(value: Result<T, E>, expected: T) -> bool where T: core::cmp::PartialEq<T> {
+    return match (value) { Ok(inner) -> T::partial_eq(inner, expected), Err(_) -> false };
 }
 
-pub fn contains_err<T, E>(value: Result<T, E>, expected: E) -> bool where E: core::cmp::Eq<E> {
-    return match (value) { Ok(_) -> false, Err(error) -> E::eq(error, expected) };
+pub fn contains_err<T, E>(value: Result<T, E>, expected: E) -> bool where E: core::cmp::PartialEq<E> {
+    return match (value) { Ok(_) -> false, Err(error) -> E::partial_eq(error, expected) };
 }
 
 pub fn unwrap<T, E>(value: Result<T, E>) -> T {
@@ -67,12 +67,12 @@ pub impl<T, E> Result<T, E> {
         return match (self) { Ok(_) -> false, Err(_) -> true };
     }
 
-    pub fn contains(self, expected: T) -> bool where T: core::cmp::Eq<T> {
-        return match (self) { Ok(inner) -> T::eq(inner, expected), Err(_) -> false };
+    pub fn contains(self, expected: T) -> bool where T: core::cmp::PartialEq<T> {
+        return match (self) { Ok(inner) -> T::partial_eq(inner, expected), Err(_) -> false };
     }
 
-    pub fn contains_err(self, expected: E) -> bool where E: core::cmp::Eq<E> {
-        return match (self) { Ok(_) -> false, Err(error) -> E::eq(error, expected) };
+    pub fn contains_err(self, expected: E) -> bool where E: core::cmp::PartialEq<E> {
+        return match (self) { Ok(_) -> false, Err(error) -> E::partial_eq(error, expected) };
     }
 
     pub fn unwrap(self) -> T {

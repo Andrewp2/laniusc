@@ -1,0 +1,145 @@
+// Bounded binary stdin SHA-2 hashing with stack-only input and hex output.
+// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-hash-bytes.md.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::sha256;
+import core::sha512;
+import core::slice;
+import std::process;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 16777216;
+const MAX_IO_CALLS: i32 = 131072;
+struct Budget { remaining: i32 }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn charge(&self) -> bool {
+        if (self.remaining == 0) { return false; }
+        self.remaining -= 1;
+        return true;
+    }
+}
+
+fn same(bytes: [u8], length: i32, spelling: str, count: i32) -> bool {
+    if (length != count) { return false; }
+    let expected: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(spelling),count);
+    let index: i32 = 0;
+    while (index < count) { if (bytes[index] != expected[index]) { return false; } index += 1; }
+    return true;
+}
+// Nonnegative algorithm IDs, or negative exit status. Raw arguments need no
+// UTF-8 interpretation; a ten-byte packed stack buffer fits every spelling.
+fn algorithm() -> i32 {
+    let argc: i32 = std::process::argc();
+    if (argc < 1) { return -3; }
+    if (argc == 1) { return 1; }
+    if (argc != 2) { return -2; }
+    let length: i32 = std::process::arg_len(1);
+    if (length < 0) { return -3; }
+    if (length == 0 || length > 10) { return -2; }
+    let storage: [i32;3] = [0;3];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    if (std::process::arg_read(1,pointer,length as usize) != length) { return -3; }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,length);
+    if (same(bytes,length,"sha224",6)) { return 0; }
+    if (same(bytes,length,"sha256",6)) { return 1; }
+    if (same(bytes,length,"sha384",6)) { return 2; }
+    if (same(bytes,length,"sha512",6)) { return 3; }
+    if (same(bytes,length,"sha512-224",10)) { return 4; }
+    if (same(bytes,length,"sha512-256",10)) { return 5; }
+    return -2;
+}
+fn hex(value: u8) -> u8 {
+    if (value < 10) { return 48+value; }
+    return 87+value;
+}
+fn output(digest: core::slice::View<u8>, budget: &Budget) -> i32 {
+    if (digest.length < 0 || digest.length > 64) { return 7; }
+    let storage: [i32;33] = [0;33];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),129);
+    let index: i32 = 0;
+    while (index < digest.length) {
+        let value: u8 = digest.values[digest.start+index];
+        bytes[index*2] = hex(value >> 4);
+        bytes[index*2+1] = hex(value & 15);
+        index += 1;
+    }
+    let length: i32 = digest.length*2+1;
+    bytes[length-1] = 10;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let completed: i32 = 0;
+    while (completed < length) {
+        if (!budget.charge()) { return 7; }
+        let written: core::result::Result<i32,core::io::Error> = sink.write(bytes,completed,length-completed);
+        if (written.is_err()) {
+            if (core::io::is_interrupted(written.unwrap_err())) { continue; }
+            return 3;
+        }
+        let count: i32 = written.unwrap();
+        if (count <= 0 || count > length-completed) { return 3; }
+        completed += count;
+    }
+    return 0;
+}
+
+fn hash(selected: i32) -> i32 {
+    let small: core::sha256::State = core::sha256::new();
+    if (selected == 0) { small = core::sha256::new224(); }
+    let wide: core::sha512::State = core::sha512::new();
+    if (selected == 2) { wide = core::sha512::new384(); }
+    if (selected == 4) { wide = core::sha512::new512_224(); }
+    if (selected == 5) { wide = core::sha512::new512_256(); }
+    let budget: Budget = Budget { remaining: MAX_IO_CALLS };
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let storage: [i32;256] = [0;256];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    let total: i32 = 0;
+    while (true) {
+        let request: i32 = MAX_INPUT-total;
+        if (request > 1024) { request = 1024; }
+        // Actual EOF is required at the byte limit. A nonzero probe consumes
+        // exactly one excess byte, hashes none of it, and publishes nothing.
+        if (request == 0) { request = 1; }
+        if (!budget.charge()) { return 7; }
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,request);
+        if (received.is_err()) {
+            if (core::io::is_interrupted(received.unwrap_err())) { continue; }
+            return 3;
+        }
+        let count: i32 = received.unwrap();
+        if (count < 0 || count > request) { return 3; }
+        if (count == 0) { break; }
+        if (count > MAX_INPUT-total) { return 7; }
+        let chunk: core::slice::View<u8> = core::slice::View { values: bytes, start: 0, length: count };
+        if (selected < 2) {
+            let updated: core::result::Result<i32,core::sha256::Error> = small.update(chunk);
+            if (updated.is_err()) { return 7; }
+            if (updated.unwrap() != count) { return 7; }
+        } else {
+            let updated: core::result::Result<i32,core::sha512::Error> = wide.update(chunk);
+            if (updated.is_err()) { return 7; }
+            if (updated.unwrap() != count) { return 7; }
+        }
+        total += count;
+    }
+    // Consume the final digest immediately. No later state update or finish
+    // relies on an independent snapshot of its returned byte-array storage.
+    if (selected < 2) {
+        let digest: core::sha256::Digest = small.finish();
+        let value: core::slice::View<u8> = core::slice::view(digest.bytes,digest.length).unwrap();
+        return output(value,budget.borrow());
+    }
+    let digest: core::sha512::Digest = wide.finish();
+    let value: core::slice::View<u8> = core::slice::view(digest.bytes,digest.length).unwrap();
+    return output(value,budget.borrow());
+}
+
+fn main() -> i32 {
+    let selected: i32 = algorithm();
+    if (selected < 0) { return 0-selected; }
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    return hash(selected);
+}

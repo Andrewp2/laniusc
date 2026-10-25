@@ -1,0 +1,119 @@
+// Checked dot product through real borrowed Zip, Take, Map, and Enumerate.
+// Admitted x86_64 Linux ELF through the GPU compiler; see docs/stdlib-range-dot.md.
+module app::main;
+import core::decimal;
+import core::i64;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::range;
+import core::result;
+import core::slice;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Product {}
+impl Product {
+    fn borrow(&self) -> &Product { return self; }
+}
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,i64> for Product {
+    pub fn apply(&self, value: core::pair::Pair<i32,i32>) -> i64 {
+        // Widen both operands before multiplication. Every i32 product fits
+        // i64, including MIN * MIN = 2^62; the accumulated prefixes may not.
+        let left: i64 = value.first as i64;
+        let right: i64 = value.second as i64;
+        return left * right;
+    }
+}
+
+fn output(count: u64, dot: i64) -> i32 {
+    // Header 10, u64 at most 20, comma 1, i64 at most 20, newline 1:
+    // every valid summary fits 52 of these 64 packed logical stack bytes.
+    let storage: [i32;16] = [0;16];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),64);
+    bytes[0] = 99; bytes[1] = 111; bytes[2] = 117; bytes[3] = 110; bytes[4] = 116;
+    bytes[5] = 44; bytes[6] = 100; bytes[7] = 111; bytes[8] = 116; bytes[9] = 10;
+    let formatted_count: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_u64(bytes,10,54,count);
+    if (formatted_count.is_err()) { return 3; }
+    let comma: i32 = 10 + formatted_count.unwrap();
+    bytes[comma] = 44;
+    let start: i32 = comma + 1;
+    let formatted_dot: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_i64(bytes,start,63-start,dot);
+    if (formatted_dot.is_err()) { return 3; }
+    let newline: i32 = start + formatted_dot.unwrap();
+    bytes[newline] = 10;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),bytes,0,newline+1);
+    if (written.is_err()) { return 3; }
+    return 0;
+}
+
+fn calculate(left_start: i32, left_end: i32, right_start: i32, right_end: i32,
+    limit: u64) -> i32 {
+    let left_bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive(left_start,left_end);
+    let right_bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive(right_start,right_end);
+    let left: core::iter::RangeI32 = core::iter::range_i32_inclusive(left_bounds);
+    let right: core::iter::RangeI32 = core::iter::range_i32_inclusive(right_bounds);
+    let paired: core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32> = core::iter::zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>(left.borrow(),right.borrow());
+    let selected: core::iter::Take<core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>,core::pair::Pair<i32,i32>> = core::iter::take<core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>,core::pair::Pair<i32,i32>>(paired.borrow(),limit);
+    let product: Product = Product {};
+    let products: core::iter::Map<core::iter::Take<core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>,core::pair::Pair<i32,i32>>,Product,core::pair::Pair<i32,i32>,i64> = core::iter::map<core::iter::Take<core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>,core::pair::Pair<i32,i32>>,Product,core::pair::Pair<i32,i32>,i64>(selected.borrow(),product.borrow());
+    let indexed: core::iter::Enumerate<core::iter::Map<core::iter::Take<core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>,core::pair::Pair<i32,i32>>,Product,core::pair::Pair<i32,i32>,i64>,i64> = core::iter::enumerate<core::iter::Map<core::iter::Take<core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>,core::pair::Pair<i32,i32>>,Product,core::pair::Pair<i32,i32>,i64>,i64>(products.borrow());
+    let count: u64 = 0;
+    let dot: i64 = 0;
+    while (true) {
+        let next: core::option::Option<core::pair::Pair<u64,i64>> = indexed.next();
+        if (next.is_none()) { break; }
+        let value: core::pair::Pair<u64,i64> = next.unwrap();
+        let added: core::option::Option<i64> = core::i64::checked_add(dot,value.second);
+        if (added.is_none()) { return 5; }
+        dot = added.unwrap();
+        // Take yields at most 1,000,000 items. Enumerate starts at zero,
+        // so every index and index + 1 fit u64 without an overflow branch.
+        count = value.first + 1;
+    }
+    return output(count,dot);
+}
+
+// Main retains the active snapshot owner. This shallow read-only handle and
+// every argument view finish before main destroys that owner on all branches.
+fn process(arguments: std::args::Arguments) -> i32 {
+    if (arguments.len() != 5) { return 2; }
+    let first: core::option::Option<core::slice::View<u8>> = arguments.get(0);
+    let second: core::option::Option<core::slice::View<u8>> = arguments.get(1);
+    let third: core::option::Option<core::slice::View<u8>> = arguments.get(2);
+    let fourth: core::option::Option<core::slice::View<u8>> = arguments.get(3);
+    let fifth: core::option::Option<core::slice::View<u8>> = arguments.get(4);
+    let left_start_text: core::slice::View<u8> = first.unwrap();
+    let left_end_text: core::slice::View<u8> = second.unwrap();
+    let right_start_text: core::slice::View<u8> = third.unwrap();
+    let right_end_text: core::slice::View<u8> = fourth.unwrap();
+    let limit_text: core::slice::View<u8> = fifth.unwrap();
+    let parsed_left_start: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(left_start_text.values,left_start_text.start,left_start_text.length);
+    let parsed_left_end: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(left_end_text.values,left_end_text.start,left_end_text.length);
+    let parsed_right_start: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(right_start_text.values,right_start_text.start,right_start_text.length);
+    let parsed_right_end: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(right_end_text.values,right_end_text.start,right_end_text.length);
+    let parsed_limit: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(limit_text.values,limit_text.start,limit_text.length);
+    if (parsed_left_start.is_err() || parsed_left_end.is_err() || parsed_right_start.is_err()
+        || parsed_right_end.is_err() || parsed_limit.is_err()) { return 2; }
+    let limit: u64 = parsed_limit.unwrap();
+    if (limit > 1000000) { return 2; }
+    return calculate(parsed_left_start.unwrap(),parsed_left_end.unwrap(),parsed_right_start.unwrap(),parsed_right_end.unwrap(),limit);
+}
+
+fn main() -> i32 {
+    // Install explicit process-wide SIGPIPE policy before any allocation.
+    // A closed stdout pipe then reports an error and permits owner cleanup.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,5,160);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+    }
+    let arguments: std::args::Arguments = captured.unwrap();
+    let status: i32 = process(arguments);
+    arguments.destroy();
+    return status;
+}

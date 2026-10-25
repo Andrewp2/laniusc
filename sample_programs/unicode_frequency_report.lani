@@ -1,62 +1,40 @@
-// Count Unicode scalars in UTF-8 stdin and print first-seen order as
-// <scalar>:<decimal count> lines. NUL is accepted and emits a binary NUL.
+// Count UTF-8 stdin scalars and print <scalar>:<count> in first-seen order.
 // Return 2 for malformed UTF-8, 3 for input failure, 4 for allocation or
-// capacity failure, 5 for output failure, and 6 for a count overflow.
+// capacity failure, 5 for output failure, and 6 for count overflow.
 module app::main;
+import alloc::hash_map;
+import alloc::vec;
 import core::char;
+import core::option;
+import core::result;
 import std::io_byte;
 import std::io_decimal;
 import std::io_utf8;
-import std::map;
 
 fn main() -> i32 {
-    let counts: std::map::Map<char, u32> = std::map::new();
+    let counts: alloc::hash_map::HashMap<char, u32> = alloc::hash_map::new();
+    let order: alloc::vec::Vec<char> = alloc::vec::new();
     while (true) {
         let code: u32 = std::io_utf8::read_stdin_scalar_or(1114112, 1114113, 1114114);
         if (code == 1114112) { break; }
-        if (code == 1114113) {
-            std::map::destroy(counts);
-            return 2;
-        }
-        if (code == 1114114) {
-            std::map::destroy(counts);
-            return 3;
-        }
-        // The reader returns only scalar values below its sentinels.
+        if (code == 1114113) { counts.destroy(); order.destroy(); return 2; }
+        if (code == 1114114) { counts.destroy(); order.destroy(); return 3; }
         let scalar: char = core::char::from_u32_or(code, '\0');
-        if (std::map::contains_key(counts, scalar)) {
-            let prior: u32 = std::map::get_or(counts, scalar, 0);
-            if (prior == 4294967295) {
-                std::map::destroy(counts);
-                return 6;
-            }
-            if (!std::map::try_set(counts, scalar, prior + 1)) {
-                std::map::destroy(counts);
-                return 4;
-            }
-        } else {
-            let before: i32 = std::map::len(counts);
-            counts = std::map::try_insert(counts, scalar, 1);
-            if (std::map::len(counts) != before + 1) {
-                std::map::destroy(counts);
-                return 4;
-            }
+        let prior: u32 = core::option::unwrap_or(counts.get(scalar), 0);
+        if (prior == 4294967295) { counts.destroy(); order.destroy(); return 6; }
+        if (!counts.contains_key(scalar)) {
+            if (core::result::is_err(order.try_push(scalar))) { counts.destroy(); order.destroy(); return 4; }
         }
+        if (core::result::is_err(counts.try_insert(scalar, prior + 1))) { counts.destroy(); order.destroy(); return 4; }
     }
     let index: i32 = 0;
-    while (index < std::map::len(counts)) {
-        let scalar: char = std::map::key_at_or(counts, index, '\0');
-        let code: u32 = scalar as u32;
-        let count: u32 = std::map::value_at_or(counts, index, 0);
-        if (!std::io_utf8::write_stdout_scalar(code) ||
-            !std::io_byte::write_stdout_byte(58) ||
-            std::io_decimal::write_u32(1, count) < 0 ||
-            !std::io_byte::write_stdout_byte(10)) {
-            std::map::destroy(counts);
-            return 5;
-        }
+    while (index < order.len()) {
+        let scalar: char = order.at(index);
+        let count: u32 = core::option::unwrap(counts.get(scalar));
+        if (!std::io_utf8::write_stdout_scalar(scalar as u32) ||
+            !std::io_byte::write_stdout_byte(58) || std::io_decimal::write_u32(1, count) < 0 ||
+            !std::io_byte::write_stdout_byte(10)) { counts.destroy(); order.destroy(); return 5; }
         index += 1;
     }
-    std::map::destroy(counts);
-    return 0;
+    counts.destroy(); order.destroy(); return 0;
 }

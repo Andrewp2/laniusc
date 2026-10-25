@@ -5,9 +5,9 @@ fn main() -> i32 {
     if (core::runtime::RUNTIME_ABI_METADATA_VERSION != 1 ||
         core::runtime::UNKNOWN_RUNTIME_ABI_VERSION != 0 ||
         core::runtime::RUNTIME_ABI_VERSION != 1 ||
-        core::runtime::RUNTIME_SERVICE_COUNT != 13 ||
+        core::runtime::RUNTIME_SERVICE_COUNT != 14 ||
         core::runtime::FIRST_RUNTIME_SERVICE_ID != 1 ||
-        core::runtime::LAST_RUNTIME_SERVICE_ID != 13 ||
+        core::runtime::LAST_RUNTIME_SERVICE_ID != 14 ||
         core::runtime::RUNTIME_SERVICE_REQUIREMENT_FIELD_COUNT != 3 ||
         core::runtime::RUNTIME_SERVICE_REQUIREMENT_SERVICE_ID_FIELD != 0 ||
         core::runtime::RUNTIME_SERVICE_REQUIREMENT_ABI_VERSION_FIELD != 1 ||
@@ -29,13 +29,14 @@ fn main() -> i32 {
         core::runtime::SERVICE_GPU_ID != 10 ||
         core::runtime::SERVICE_PROCESS_ID != 11 ||
         core::runtime::SERVICE_ENV_ID != 12 ||
-        core::runtime::SERVICE_TEST_HARNESS_ID != 13) {
+        core::runtime::SERVICE_TEST_HARNESS_ID != 13 ||
+        core::runtime::SERVICE_LINUX_SYSCALL_ID != 14) {
         return 9;
     }
     if (!core::runtime::HAS_ALLOCATOR || !core::runtime::HAS_FILESYSTEM ||
         !core::runtime::HAS_STDIO || !core::runtime::HAS_CLOCK ||
         !core::runtime::HAS_SECURE_RNG || !core::runtime::HAS_PROCESS ||
-        !core::runtime::HAS_ENV || core::runtime::HAS_NETWORK ||
+        !core::runtime::HAS_ENV || !core::runtime::HAS_LINUX_SYSCALLS || core::runtime::HAS_NETWORK ||
         core::runtime::HAS_PANIC_HOOK || core::runtime::HAS_HOST_SERVICES ||
         core::runtime::HAS_THREADS || core::runtime::HAS_GPU ||
         core::runtime::HAS_TEST_HARNESS || core::runtime::HAS_RUNTIME_SERVICES) {
@@ -44,7 +45,7 @@ fn main() -> i32 {
     if (!core::runtime::has_allocator() || !core::runtime::has_filesystem() ||
         !core::runtime::has_stdio() || !core::runtime::has_clock() ||
         !core::runtime::has_secure_rng() || !core::runtime::has_process() ||
-        !core::runtime::has_env() || core::runtime::has_network() ||
+        !core::runtime::has_env() || !core::runtime::has_linux_syscalls() || core::runtime::has_network() ||
         core::runtime::has_panic_hook() || core::runtime::has_host_services() ||
         core::runtime::has_threads() || core::runtime::has_gpu() ||
         core::runtime::has_test_harness() || core::runtime::has_runtime_services() ||
@@ -54,9 +55,9 @@ fn main() -> i32 {
     }
     if (core::runtime::runtime_abi_metadata_version() != 1 ||
         core::runtime::runtime_abi_version() != 1 ||
-        core::runtime::runtime_service_count() != 13 ||
+        core::runtime::runtime_service_count() != 14 ||
         core::runtime::first_runtime_service_id() != 1 ||
-        core::runtime::last_runtime_service_id() != 13 ||
+        core::runtime::last_runtime_service_id() != 14 ||
         core::runtime::runtime_service_requirement_field_count() != 3 ||
         core::runtime::runtime_service_requirement_service_id_field() != 0 ||
         core::runtime::runtime_service_requirement_abi_version_field() != 1 ||
@@ -132,6 +133,31 @@ fn main() -> i32 {
         !core::runtime::runtime_bound_api_requires_binding(network) ||
         !core::runtime::runtime_bound_api_requires_runtime_binding(network)) {
         return 7;
+    }
+    // Every known service produces a structurally valid row for its actual
+    // status, including the bound allocator/stdio/files/clock services.
+    // Structural validity is deliberately separate from availability.
+    let id: u32 = 0;
+    while (id <= 15) {
+        let abi: u32 = 0;
+        while (abi <= 2) {
+            let recorded: u32 = 0;
+            while (recorded <= 3) {
+                let known: bool = id >= 1 && id <= 14;
+                let valid: bool = known && abi == 1 && (recorded == 1 || recorded == 2);
+                let unbound: bool = known && abi == 1 && recorded == 1;
+                if (core::runtime::runtime_service_requirement_row_is_valid(id,abi,recorded) != valid ||
+                    core::runtime::runtime_service_requirement_row_is_fail_closed(id,abi,recorded) == valid ||
+                    core::runtime::runtime_service_requirement_row_is_known_unbound(id,abi,recorded) != unbound ||
+                    core::runtime::runtime_service_requirement_row_is_contract_only(id,abi,recorded) != unbound) { return 11; }
+                recorded += 1;
+            } abi += 1;
+        }
+        if (id >= 1 && id <= 14) {
+            let active: u32 = core::runtime::service_status(id);
+            if (!core::runtime::runtime_service_requirement_row_is_valid(id,1,active)) { return 12; }
+            if (core::runtime::has_service(id) != (active == 2)) { return 13; }
+        } id += 1;
     }
     return 0;
 }

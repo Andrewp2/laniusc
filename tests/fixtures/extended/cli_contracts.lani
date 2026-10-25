@@ -1,0 +1,62 @@
+module app::main;
+import ext::cli;
+import core::option;
+import core::result;
+import core::slice;
+fn kind(error: ext::cli::Error) -> i32 { let value: i32 = match (error) { ext::cli::Error::InvalidSpec(index) -> 100 + index, ext::cli::Error::DuplicateSpec(index) -> 200 + index, _ -> 0 }; return value; }
+fn main() -> i32 {
+    let letters: [u8; 5] = [120, 97, 45, 49, 120];
+    let empty: core::slice::View<u8> = core::result::unwrap(core::slice::view(letters, 0));
+    let name: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(letters, 1, 3));
+    let tokens: [core::slice::View<u8>; 1] = [empty]; let none: core::slice::View<core::slice::View<u8>> = core::result::unwrap(core::slice::view(tokens, 0));
+    let base: ext::cli::Spec = ext::cli::Spec { id: 7, long: name, short: 97, arity: ext::cli::Arity::Flag };
+    let specs: [ext::cli::Spec; 2] = [base, base];
+    let view: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs, 1));
+    let mode: ext::cli::Ordering = ext::cli::Ordering::Intermixed;
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(none, view, mode));
+    assert(core::option::is_none(core::result::unwrap(parser.next())) && core::option::is_none(core::result::unwrap(parser.next())));
+    specs[0] = ext::cli::Spec { id: -1, long: name, short: 97, arity: ext::cli::Arity::Flag };
+    assert(kind(core::result::unwrap_err(ext::cli::parser(none, view, mode))) == 100);
+    specs[0] = ext::cli::Spec { id: 0, long: empty, short: 0, arity: ext::cli::Arity::Flag };
+    assert(kind(core::result::unwrap_err(ext::cli::parser(none, view, mode))) == 100);
+    let bad: [u8; 6] = [45, 61, 0, 255, 32, 95]; let index: i32 = 0;
+    while (index < 6) {
+        specs[0] = ext::cli::Spec { id: 0, long: empty, short: bad[index], arity: ext::cli::Arity::Flag };
+        assert(kind(core::result::unwrap_err(ext::cli::parser(none, view, mode))) == 100);
+        let bad_name: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bad, index, 1));
+        specs[0] = ext::cli::Spec { id: 0, long: bad_name, short: 97, arity: ext::cli::Arity::Flag };
+        assert(kind(core::result::unwrap_err(ext::cli::parser(none, view, mode))) == 100); index += 1;
+    }
+    specs[0] = base; let pair: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs, 2));
+    assert(kind(core::result::unwrap_err(ext::cli::parser(none, pair, mode))) == 201);
+    specs[1] = ext::cli::Spec { id: 8, long: empty, short: 97, arity: ext::cli::Arity::Required };
+    assert(kind(core::result::unwrap_err(ext::cli::parser(none, pair, mode))) == 201);
+    specs[1] = ext::cli::Spec { id: 8, long: name, short: 98, arity: ext::cli::Arity::Optional };
+    assert(kind(core::result::unwrap_err(ext::cli::parser(none, pair, mode))) == 201);
+    specs[1] = ext::cli::Spec { id: 7, long: empty, short: 98, arity: ext::cli::Arity::Flag };
+    assert(kind(core::result::unwrap_err(ext::cli::parser(none, pair, mode))) == 201);
+    specs[1] = ext::cli::Spec { id: 8, long: empty, short: 98, arity: ext::cli::Arity::Flag };
+    let valid: ext::cli::Parser = core::result::unwrap(ext::cli::parser(none, pair, mode)); assert(core::option::is_none(core::result::unwrap(valid.next())));
+    // A native array's byte stride and a nonzero logical start are retained.
+    let token_bytes: [u8; 5] = [120, 45, 97, 98, 120]; let token: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(token_bytes, 1, 3));
+    tokens[0] = token;
+    let parsed: ext::cli::Parser = core::result::unwrap(ext::cli::parser(core::result::unwrap(core::slice::view(tokens, 1)), pair, mode));
+    let fork: ext::cli::Parser = parsed;
+    let first: ext::cli::Event = core::option::unwrap(core::result::unwrap(parsed.next()));
+    let first_id: i32 = match (first) { ext::cli::Event::Option(item) -> item.id, _ -> -1 }; assert(first_id == 7);
+    let second: ext::cli::Event = core::option::unwrap(core::result::unwrap(parsed.next()));
+    let second_id: i32 = match (second) { ext::cli::Event::Option(item) -> item.id, _ -> -1 }; assert(second_id == 8);
+    let forked: ext::cli::Event = core::option::unwrap(core::result::unwrap(fork.next()));
+    let fork_id: i32 = match (forked) { ext::cli::Event::Option(item) -> item.id, _ -> -1 }; assert(fork_id == 7);
+    assert(core::option::is_none(core::result::unwrap(parsed.next())) && token_bytes[0] == 120 && token_bytes[4] == 120);
+    // Portable tokens may contain NUL even though host argv cannot.
+    let binary: [u8; 4] = [45, 97, 0, 255];
+    specs[0] = ext::cli::Spec { id: 7, long: name, short: 97, arity: ext::cli::Arity::Required };
+    tokens[0] = core::result::unwrap(core::slice::view(binary, 4));
+    let raw: ext::cli::Parser = core::result::unwrap(ext::cli::parser(core::result::unwrap(core::slice::view(tokens, 1)), view, mode));
+    let raw_event: ext::cli::Event = core::option::unwrap(core::result::unwrap(raw.next()));
+    let raw_argument: core::option::Option<ext::cli::Argument> = match (raw_event) { ext::cli::Event::Option(item) -> item.value, _ -> core::option::None() };
+    let raw_value: ext::cli::Argument = core::option::unwrap(raw_argument); let raw_bytes: core::slice::View<u8> = raw_value.bytes;
+    assert(raw_value.at.argument == 0 && raw_value.at.byte == 2 && raw_bytes.len() == 2 && core::option::unwrap(raw_bytes.get(0)) == 0 && core::option::unwrap(raw_bytes.get(1)) == 255);
+    return 0;
+}

@@ -1,0 +1,6 @@
+module app::main;
+enum Failure { Bad(i32) }
+fn main() -> i32 {
+    let at: i32 = match (Failure::Bad(7)) { Failure::Bad(at) -> at };
+    return at;
+}

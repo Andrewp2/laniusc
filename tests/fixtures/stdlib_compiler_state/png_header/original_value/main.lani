@@ -1,0 +1,7 @@
+module app::main;
+import core::result;
+import core::option;
+import core::slice;
+import probe::png;
+import ext::image;
+fn main() -> i32 { let bytes: [u8;117] = [137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,0,0,0,0,58,126,155,85,0,0,0,2,116,82,78,83,255,113,194,181,113,224,0,0,0,1,73,68,65,84,120,118,230,132,230,0,0,0,0,73,68,65,84,53,175,6,30,0,0,0,7,73,68,65,84,156,99,40,4,0,0,115,88,129,105,140,0,0,0,2,73,68,65,84,0,114,194,240,173,170,0,0,0,0,73,69,78,68,174,66,96,130]; let source: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,117)); let image: ext::image::Image = core::result::unwrap(probe::png::decode(source,probe::png::default_limits())); let alpha: u8 = core::option::unwrap(ext::image::get(image.view(),0,0)).a; image.destroy(); if (alpha == 0) { return 0; } return 1; }

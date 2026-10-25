@@ -1,0 +1,29 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import ext::kv;
+fn view(bytes: [u8], start: i32, count: i32) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view_range(bytes,start,count)); }
+fn main() -> i32 {
+    let data: [u8;8] = [199,0,255,1,42,43,44,199]; let a: core::slice::View<u8> = view(data,1,2); let b: core::slice::View<u8> = view(data,3,1); let value: core::slice::View<u8> = view(data,4,3);
+    let store: ext::kv::Store = ext::kv::new(); let limits: ext::kv::Limits = ext::kv::default_limits();
+    let inserted: ext::kv::Put = core::result::unwrap(store.put(b,value,limits)); let okay: bool = match (inserted) { ext::kv::Put::Inserted -> true, _ -> false }; assert(okay);
+    core::result::unwrap(store.put(a,view(data,1,0),limits)); assert(store.len() == 2 && store.byte_len() == 6);
+    let first: ext::kv::Entry = core::result::unwrap(store.entry(0)); assert(first.key.length == 2 && first.value.length == 0);
+    let found: core::slice::View<u8> = core::option::unwrap(core::result::unwrap(store.get(b,100))); assert(found.length == 3 && core::option::unwrap(found.get(1)) == 43);
+    data[4] = 99; assert(core::option::unwrap(found.get(0)) == 42);
+    // Alias the replacement value and new key from existing owned bytes.
+    let changed: ext::kv::Put = core::result::unwrap(store.put(a,found,limits)); assert(match (changed) { ext::kv::Put::Replaced -> true, _ -> false });
+    let before: alloc::vec::Vec<u8> = core::result::unwrap(ext::kv::encode(store.borrow(),1024,10000));
+    let loaded: ext::kv::Store = core::result::unwrap(ext::kv::decode(before.as_view(),limits));
+    let native: [u8;200] = [199;200]; let index: i32 = 0; while (index < before.len()) { native[7+index] = before.at(index); index += 1; }
+    let selected: core::slice::View<u8> = view(native,7,before.len()); let copied: ext::kv::Store = core::result::unwrap(ext::kv::decode(selected,limits)); assert(copied.len() == 2 && copied.byte_len() == 9); copied.destroy();
+    let malformed: core::slice::View<u8> = selected; malformed.start = -1; assert(core::result::is_err(ext::kv::decode(malformed,limits))); malformed = selected; malformed.length = -1; assert(core::result::is_err(ext::kv::decode(malformed,limits))); malformed = selected; malformed.start = 2147483647; assert(core::result::is_err(ext::kv::decode(malformed,limits)));
+    before.destroy(); assert(loaded.len() == 2 && loaded.byte_len() == 9);
+    assert(core::result::unwrap(store.remove(a,1000))); assert(!core::result::unwrap(store.remove(a,1000))); assert(store.len() == 1);
+    assert(core::result::is_err(store.put(b,value,ext::kv::Limits { max_entries: 0,max_key: 10,max_value: 10,max_bytes: 100,max_snapshot: 1000,max_work: 1000 })));
+    let bad: core::slice::View<u8> = a; bad.start = -1; assert(core::result::is_err(store.get(bad,1000))); bad = a; bad.length = -1; assert(core::result::is_err(store.put(bad,value,limits))); bad = a; bad.start = 2147483647; assert(core::result::is_err(store.remove(bad,1000)));
+    assert(core::result::is_err(store.get(b,0))); assert(core::result::is_err(store.put(b,value,ext::kv::Limits { max_entries: 10,max_key: 10,max_value: 10,max_bytes: 100,max_snapshot: 1000,max_work: 0 })));
+    loaded.destroy(); store.destroy(); return 0;
+}

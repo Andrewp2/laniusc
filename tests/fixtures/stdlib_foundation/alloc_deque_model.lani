@@ -1,0 +1,91 @@
+// Binary commands: opcode, LE i32 index, LE i32 value. Print each result/state.
+module app::main;
+import alloc::deque;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::fs;
+import std::io;
+import std::io_decimal;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) >= 0); assert(std::io::write_byte(1, 32) == 1); }
+fn integer(input: [u8], offset: i32) -> i32 {
+    let bits: u32 = (input[offset] as u32) | ((input[offset + 1] as u32) << 8) | ((input[offset + 2] as u32) << 16) | ((input[offset + 3] as u32) << 24);
+    return bits as i32;
+}
+fn error_tag(error: alloc::deque::Error) -> i32 {
+    let tag: i32 = match (error) { alloc::deque::Error::Bounds -> 2, alloc::deque::Error::InvalidCapacity -> 3, alloc::deque::Error::CapacityOverflow -> 4, _ -> 5 }; return tag;
+}
+fn main() -> i32 {
+    let storage: [i32; 16384] = [0; 16384]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let size: i32 = std::fs::read(0, pointer, 65536); if (size < 0 || size % 9 != 0) { return 1; }
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer, size);
+    let values: alloc::deque::Deque<i32> = alloc::deque::new(); let offset: i32 = 0;
+    while (offset < size) {
+        let opcode: u8 = input[offset]; let index: i32 = integer(input, offset + 1); let value: i32 = integer(input, offset + 5); offset += 9;
+        let result: core::result::Result<i32, alloc::deque::Error> = core::result::Ok(0);
+        let removed: core::option::Option<i32> = core::option::None(); let returns_value: bool = false;
+        if (opcode == 0) { result = values.try_push_back(value); }
+        if (opcode == 1) { result = values.try_push_front(value); }
+        if (opcode == 2) { removed = values.pop_front(); }
+        if (opcode == 3) { removed = values.pop_back(); }
+        if (opcode == 4) { result = values.set(index, value); returns_value = true; }
+        if (opcode == 5) { result = values.try_insert(index, value); }
+        if (opcode == 6) { result = values.remove(index); returns_value = true; }
+        if (opcode == 7) { result = values.swap_remove_front(index); returns_value = true; }
+        if (opcode == 8) { result = values.swap_remove_back(index); returns_value = true; }
+        if (opcode == 9) { let swapped: core::result::Result<bool, alloc::deque::Error> = values.swap(index, value); if (core::result::is_err(swapped)) { result = core::result::Err(core::result::unwrap_err(swapped)); } else { assert(core::result::unwrap(swapped)); } }
+        if (opcode == 10) { result = values.try_resize(index, value); }
+        if (opcode == 11) { result = values.truncate(index); }
+        if (opcode == 12) { result = values.try_reserve(index); if (core::result::is_ok(result)) { assert(values.capacity() >= values.len() + index); } }
+        if (opcode == 13) { result = values.try_shrink_to_fit(); assert(values.capacity() == values.len()); }
+        if (opcode == 14) { values.reverse(); }
+        if (opcode == 15) { result = values.rotate_left(index); }
+        if (opcode == 16) { result = values.rotate_right(index); }
+        if (opcode == 17) { values.clear(); }
+        if (opcode == 18 || opcode == 19) {
+            let items: [i32; 3] = [value, 0, value / 2]; let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(items, 3));
+            if (opcode == 18) { result = values.try_extend_front(view); } else { result = values.try_extend_back(view); }
+        }
+        if (opcode == 20 || opcode == 21) {
+            let view: core::slice::View<i32> = core::result::unwrap(values.try_make_contiguous());
+            if (opcode == 20) { result = values.try_extend_front(view); } else { result = values.try_extend_back(view); }
+        }
+        if (opcode == 22) {
+            let cloned: core::result::Result<alloc::deque::Deque<i32>, alloc::deque::Error> = values.try_clone();
+            let copy: alloc::deque::Deque<i32> = core::result::unwrap(cloned); removed = copy.pop_front(); copy.clear(); copy.destroy();
+        }
+        if (opcode == 23) {
+            let split: core::result::Result<alloc::deque::Deque<i32>, alloc::deque::Error> = values.try_split_off(index);
+            if (core::result::is_err(split)) { result = core::result::Err(core::result::unwrap_err(split)); }
+            else { let tail: alloc::deque::Deque<i32> = core::result::unwrap(split); removed = tail.pop_front(); tail.destroy(); }
+        }
+        if (opcode == 24) { removed = values.get(index); }
+        if (opcode == 25) { removed = core::option::Some(values.index_of(value)); assert(values.contains(value) == (core::option::unwrap(removed) >= 0)); }
+        if (opcode == 26) { let view: core::slice::View<i32> = core::result::unwrap(values.try_make_contiguous()); assert(view.len() == values.len()); }
+        if (opcode == 27) { values.destroy(); assert(values.capacity() == 0 && values.is_empty()); }
+        if (opcode > 28) { return 2; }
+        let tag: i32 = 0; let answer: i32 = 0;
+        if (core::result::is_err(result)) { tag = error_tag(core::result::unwrap_err(result)); }
+        else { if (returns_value) { tag = 1; answer = core::result::unwrap(result); }
+        else { if (opcode <= 1 || opcode == 5 || opcode == 10 || opcode == 11 || opcode == 15 || opcode == 16 || (opcode >= 18 && opcode <= 21)) { assert(core::result::unwrap(result) == values.len()); } } }
+        if (core::option::is_some(removed)) { tag = 1; answer = core::option::unwrap(removed); }
+        number(tag); number(answer); number(values.len());
+        let views: alloc::deque::Views<i32> = values.as_views();
+        assert(views.first.len() + views.second.len() == values.len());
+        let cursor: alloc::deque::Cursor<i32> = values.iter(); let low: i32 = 0; let high: i32 = values.len() - 1;
+        while (low <= high) {
+            assert(core::option::unwrap(cursor.next()) == values.at(low)); low += 1;
+            if (low <= high) { assert(core::option::unwrap(cursor.next_back()) == values.at(high)); high -= 1; }
+        }
+        assert(cursor.remaining() == 0 && core::option::is_none(cursor.next()) && core::option::is_none(cursor.next_back()));
+        let at: i32 = 0; while (at < values.len()) {
+            let observed: i32 = values.at(at); let segment: i32 = 0;
+            if (at < views.first.len()) { segment = core::option::unwrap(views.first.get(at)); }
+            else { segment = core::option::unwrap(views.second.get(at - views.first.len())); }
+            assert(observed == segment); number(observed); at += 1;
+        }
+        assert(std::io::write_byte(1, 10) == 1);
+    }
+    values.destroy(); return 0;
+}

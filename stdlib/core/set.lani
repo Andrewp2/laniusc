@@ -1,145 +1,164 @@
-// Generic fixed-capacity set stored inline in an [T; N] array, for any T with
-// core::set::Key. Two items are equal when their keys are. Items keep
-// insertion order; removal keeps the order of the rest. Values are copied:
-// operations return the new set and leave their argument unchanged.
-// Inserting a present item, inserting into a full set, or removing an absent
-// item returns the set unchanged; compare len to detect it. Lookup is linear.
-// The caller supplies the backing array (see core::vec).
-//
-// Key stands in for core::cmp::Eq. A bound dispatches only to a trait
-// declared in the same module, without type arguments, through a self method
-// (see tests/fixtures/generics_backlog/README.md). Implementations for user
-// types in other modules are not routed yet either.
+// Inline insertion-ordered set. Equality is the complete lawful Eq<T>
+// relation, never a truncated key. No allocation or nested destruction.
+// Operations borrow the owner; by-value copies own independent shallow arrays.
 module core::set;
+import core::cmp;
 import core::option;
-
-pub trait Key {
-    pub fn key(self) -> u32;
+import core::panic;
+import core::result;
+import core::slice;
+pub enum Error {
+    Full
 }
-
-pub impl Key for i32 {
-    pub fn key(self) -> u32 {
-        return self as u32;
+pub struct Set<T, const N: usize> {
+    items:[T; N],
+    length: i32
+}
+pub fn from_storage<T, const N: usize>(storage:[T; N]) -> Set<T, N> {
+    let count: usize = N;
+    if (count>2147483647) {
+        core::panic::panic();
     }
+    return Set {
+        items: storage,
+        length: 0
+    };
 }
-
-pub impl Key for u32 {
-    pub fn key(self) -> u32 {
+pub impl<T, const N: usize>Set<T, N> {
+    pub fn borrow(&self) -> &Set<T,
+    N> {
         return self;
     }
 }
-
-pub impl Key for char {
-    pub fn key(self) -> u32 {
-        return self as u32;
-    }
-}
-
-pub impl Key for bool {
-    pub fn key(self) -> u32 {
-        if (self) {
-            return 1;
-        }
-        return 0;
-    }
-}
-
-pub struct Set<T, const N: usize> {
-    items: [T; N],
-    length: i32,
-}
-
-// An empty set over storage. Its contents are only filler.
-pub fn from_storage<T, const N: usize>(storage: [T; N]) -> Set<T, N> {
-    return Set { items: storage, length: 0 };
-}
-
-pub fn len<T, const N: usize>(value: Set<T, N>) -> i32 {
+pub fn len<T, const N: usize>(value: &Set<T, N>) -> i32 {
     return value.length;
 }
-
-pub fn capacity<T, const N: usize>(value: Set<T, N>) -> i32 {
+pub fn capacity<T, const N: usize>(value: &Set<T, N>) -> i32 {
     let count: usize = N;
     return count as i32;
 }
-
-pub fn is_empty<T, const N: usize>(value: Set<T, N>) -> bool {
+pub fn is_empty<T, const N: usize>(value: &Set<T, N>) -> bool {
     return value.length == 0;
 }
-
-pub fn contains<T, const N: usize>(value: Set<T, N>, item: T) -> bool where T: Key {
+pub fn is_full<T, const N: usize>(value: &Set<T, N>) -> bool {
+    return(value.length as usize) == N;
+}
+pub fn contains<T, const N: usize>(value: &Set<T, N>, item: T) -> bool
+where
+    T: core::cmp::Eq<T>
+{
     return position_or(value, item, -1) >= 0;
 }
-
-// The insertion-order position of item, or fallback.
-pub fn position_or<T, const N: usize>(value: Set<T, N>, item: T, fallback: i32) -> i32 where T: Key {
-    let wanted: u32 = item.key();
+pub fn position<T, const N: usize>(value: &Set<T, N>, item: T) -> core::option::Option<i32>
+where
+    T: core::cmp::Eq<T>
+{
+    let found: i32 = position_or(value, item, -1);
+    if (found<0) {
+        return core::option::None();
+    }
+    return core::option::Some(found);
+}
+pub fn position_or<T, const N: usize>(value: &Set<T, N>, item: T, fallback: i32) -> i32
+where
+    T: core::cmp::Eq<T>
+{
     let index: i32 = 0;
-    while (index < value.length) {
-        let current: T = value.items[index];
-        if (current.key() == wanted) {
+    while (index<value.length) {
+        if (T::eq(value.items[index], item)) {
             return index;
         }
         index += 1;
     }
     return fallback;
 }
-
-pub fn get<T, const N: usize>(value: Set<T, N>, ordinal: i32) -> core::option::Option<T> {
-    let absent: core::option::Option<T> = core::option::None();
-    if (ordinal < 0 || ordinal >= value.length) {
-        return absent;
+pub fn get<T, const N: usize>(value: &Set<T, N>, ordinal: i32) -> core::option::Option<T> {
+    if (ordinal<0 || ordinal >= value.length) {
+        return core::option::None();
     }
     return core::option::Some(value.items[ordinal]);
 }
-
-pub fn at_or<T, const N: usize>(value: Set<T, N>, ordinal: i32, fallback: T) -> T {
-    if (ordinal < 0 || ordinal >= value.length) {
+pub fn at_or<T, const N: usize>(value: &Set<T, N>, ordinal: i32, fallback: T) -> T {
+    if (ordinal<0 || ordinal >= value.length) {
         return fallback;
     }
     return value.items[ordinal];
 }
-
-pub fn try_insert<T, const N: usize>(value: Set<T, N>, item: T) -> Set<T, N> where T: Key {
-    if ((value.length as usize) == N || position_or(value, item, -1) >= 0) {
-        return value;
+// Ok(true): inserted; Ok(false): present, even when full; Err: no writes.
+pub fn try_insert<T, const N: usize>(value: &Set<T, N>, item: T) -> core::result::Result<bool, Error>
+where
+    T: core::cmp::Eq<T>
+{
+    if (position_or(value, item, -1) >= 0) {
+        return core::result::Ok(false);
     }
-    let next: Set<T, N> = value;
-    next.items[next.length] = item;
-    next.length = next.length + 1;
-    return next;
+    if ((value.length as usize) == N) {
+        return core::result::Err(Error::Full);
+    }
+    value.items[value.length] = item;
+    value.length += 1;
+    return core::result::Ok(true);
 }
-
-pub fn try_remove<T, const N: usize>(value: Set<T, N>, item: T) -> Set<T, N> where T: Key {
+// Return the stored representative; absent removal is None without writes.
+pub fn remove<T, const N: usize>(value: &Set<T, N>, item: T) -> core::option::Option<T>
+where
+    T: core::cmp::Eq<T>
+{
     let found: i32 = position_or(value, item, -1);
-    if (found < 0) {
-        return value;
+    if (found<0) {
+        return core::option::None();
     }
-    let next: Set<T, N> = value;
+    let removed: T = value.items[found];
     let cursor: i32 = found;
-    while (cursor + 1 < next.length) {
-        next.items[cursor] = next.items[cursor + 1];
+    while (cursor + 1<value.length) {
+        value.items[cursor] = value.items[cursor + 1];
         cursor += 1;
     }
-    next.length = next.length - 1;
-    return next;
+    value.length -= 1;
+    return core::option::Some(removed);
 }
-
-pub fn clear<T, const N: usize>(value: Set<T, N>) -> Set<T, N> {
-    let next: Set<T, N> = value;
-    next.length = 0;
-    return next;
+pub fn clear<T, const N: usize>(value: &Set<T, N>) -> i32 {
+    let removed: i32 = value.length;
+    value.length = 0;
+    return removed;
 }
-
-// True when every item of left is in right.
-pub fn is_subset<T, const N: usize, const M: usize>(left: Set<T, N>, right: Set<T, M>) -> bool where T: Key {
+// Read through cursor operations; mutating cursor backing violates uniqueness.
+pub fn iter<T, const N: usize>(value: &Set<T, N>) -> core::slice::Iter<T> {
+    return core::slice::Iter {
+        values: value.items,
+        front: 0,
+        back: value.length
+    };
+}
+pub fn is_subset<T, const N: usize, const M: usize>(value: &Set<T, N>, other: &Set<T, M>) -> bool
+where
+    T: core::cmp::Eq<T>
+{
     let index: i32 = 0;
-    while (index < left.length) {
-        let current: T = left.items[index];
-        if (position_or(right, current, -1) < 0) {
+    while (index<value.length) {
+        if (!contains(other, value.items[index])) {
             return false;
         }
         index += 1;
     }
     return true;
+}
+pub fn is_disjoint<T, const N: usize, const M: usize>(value: &Set<T, N>, other: &Set<T, M>) -> bool
+where
+    T: core::cmp::Eq<T>
+{
+    let index: i32 = 0;
+    while (index<value.length) {
+        if (contains(other, value.items[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+pub fn equals<T, const N: usize, const M: usize>(value: &Set<T, N>, other: &Set<T, M>) -> bool
+where
+    T: core::cmp::Eq<T>
+{
+    return value.length == other.length && is_subset(value, other);
 }

@@ -1,0 +1,105 @@
+// RIFF/WAVE little-endian PCM and IEEE float. Complete input validation before decode.
+module ext::wave;
+import alloc::vec;
+import core::f32;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::audio;
+
+pub enum Error { InvalidView, Truncated, InvalidRiff, InvalidChunk, DuplicateChunk, MissingChunk, InvalidFormat, Unsupported, Limit, NonFinite, AllocationFailed, InvalidSample }
+pub enum Format { Pcm8, Pcm16, Pcm24, Pcm32, Float32, Float64 }
+pub struct Info { data: core::slice::View<u8>, channels: i32, sample_rate: u32, frames: i32, format: Format, valid_bits: i32, channel_mask: u32, extensible: bool }
+pub struct Limits { max_bytes: i32, max_samples: i32 }
+pub fn default_limits() -> Limits { return Limits { max_bytes: 67108864, max_samples: 8000000 }; }
+fn get(bytes: core::slice::View<u8>, index: i32) -> u8 { let data: [u8] = bytes.values; return data[bytes.start+index]; }
+fn word(bytes: core::slice::View<u8>, index: i32, count: i32) -> u64 { let value: u64 = 0; let i: i32 = 0; while (i < count) { value = value | ((get(bytes,index+i) as u64) << (i*8)); i += 1; } return value; }
+fn four(bytes: core::slice::View<u8>, index: i32, value: u64) -> bool { return word(bytes,index,4) == value; }
+pub fn bits(format: Format) -> i32 { return match (format) { Pcm8 -> 8, Pcm16 -> 16, Pcm24 -> 24, Pcm32 -> 32, Float32 -> 32, Float64 -> 64 }; }
+pub fn is_float(format: Format) -> bool { return match (format) { Float32 -> true, Float64 -> true, _ -> false }; }
+fn format_for(tag: i32, width: i32) -> core::result::Result<Format,Error> {
+    if (tag == 1) { if (width == 8) { return core::result::Ok(Format::Pcm8); } if (width == 16) { return core::result::Ok(Format::Pcm16); } if (width == 24) { return core::result::Ok(Format::Pcm24); } if (width == 32) { return core::result::Ok(Format::Pcm32); } }
+    if (tag == 3) { if (width == 32) { return core::result::Ok(Format::Float32); } if (width == 64) { return core::result::Ok(Format::Float64); } } return core::result::Err(Error::Unsupported);
+}
+pub fn inspect(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<Info,Error> {
+    if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647-bytes.length || limits.max_bytes < 0 || limits.max_samples < 0) { return core::result::Err(Error::InvalidView); }
+    if (bytes.length > limits.max_bytes) { return core::result::Err(Error::Limit); }
+    if (bytes.length < 12) { return core::result::Err(Error::Truncated); }
+    if (!four(bytes,0,1179011410) || !four(bytes,8,1163280727)) { return core::result::Err(Error::InvalidRiff); }
+    if (word(bytes,4,4) != (bytes.length-8) as u64) { return core::result::Err(Error::InvalidRiff); }
+    let fmt_at: i32 = -1; let fmt_size: i32 = 0; let data_at: i32 = -1; let data_size: i32 = 0; let fact_at: i32 = -1; let fact_frames: u64 = 0; let cursor: i32 = 12;
+    while (cursor < bytes.length) {
+        if (bytes.length-cursor < 8) { return core::result::Err(Error::Truncated); }
+        let size: u64 = word(bytes,cursor+4,4); let start: i32 = cursor+8;
+        if (size > (bytes.length-start) as u64) { return core::result::Err(Error::Truncated); }
+        let n: i32 = size as i32;
+        if (four(bytes,cursor,544501094)) { if (fmt_at >= 0) { return core::result::Err(Error::DuplicateChunk); } fmt_at = start; fmt_size = n; }
+        if (four(bytes,cursor,1635017060)) { if (data_at >= 0) { return core::result::Err(Error::DuplicateChunk); } data_at = start; data_size = n; }
+        if (four(bytes,cursor,1952670054)) { if (fact_at >= 0) { return core::result::Err(Error::DuplicateChunk); } if (n < 4) { return core::result::Err(Error::InvalidChunk); } fact_at = start; fact_frames = word(bytes,start,4); }
+        cursor = start+n;
+        if (n % 2 != 0) { if (cursor == bytes.length) { return core::result::Err(Error::Truncated); } cursor += 1; }
+    }
+    if (fmt_at < 0 || data_at < 0) { return core::result::Err(Error::MissingChunk); }
+    if (fmt_at > data_at || fmt_size < 16 || fmt_size == 17) { return core::result::Err(Error::InvalidFormat); }
+    let tag: i32 = word(bytes,fmt_at,2) as i32; let channels: i32 = word(bytes,fmt_at+2,2) as i32; let rate: u32 = word(bytes,fmt_at+4,4) as u32; let byte_rate: u64 = word(bytes,fmt_at+8,4); let align: i32 = word(bytes,fmt_at+12,2) as i32; let width: i32 = word(bytes,fmt_at+14,2) as i32;
+    let valid: i32 = width; let mask: u32 = 0; let extensible: bool = tag == 65534;
+    if (extensible) {
+        if (fmt_size < 40 || word(bytes,fmt_at+16,2) < 22 || word(bytes,fmt_at+16,2) > (fmt_size-18) as u64) { return core::result::Err(Error::InvalidFormat); }
+        valid = word(bytes,fmt_at+18,2) as i32; mask = word(bytes,fmt_at+20,4) as u32;
+        // Canonical PCM/IEEE subtype GUID: XXXXXXXX-0000-0010-8000-00aa00389b71.
+        if (word(bytes,fmt_at+28,4) != 1048576 || word(bytes,fmt_at+32,8) != 8186198323179290752) { return core::result::Err(Error::Unsupported); }
+        let subtype: u64 = word(bytes,fmt_at+24,4); if (subtype != 1 && subtype != 3) { return core::result::Err(Error::Unsupported); } tag = subtype as i32;
+    } else {
+        if (tag != 1 && tag != 3) { return core::result::Err(Error::Unsupported); }
+        if (tag == 3 && fmt_size >= 18 && word(bytes,fmt_at+16,2) != 0) { return core::result::Err(Error::Unsupported); }
+    }
+    let selected: core::result::Result<Format,Error> = format_for(tag,width); if (selected.is_err()) { return core::result::Err(selected.unwrap_err()); } let format: Format = selected.unwrap();
+    if (channels == 0 || rate == 0 || valid < 1 || valid > width || (tag == 3 && valid != width)) { return core::result::Err(Error::InvalidFormat); }
+    let expected: i32 = channels*(width/8); if (expected > 65535 || align != expected || (rate as u64)*(align as u64) > 4294967295 || byte_rate != (rate as u64)*(align as u64) || data_size % align != 0) { return core::result::Err(Error::InvalidFormat); }
+    let frames: i32 = data_size/align;
+    if (frames > ext::audio::MAX_SAMPLES/channels || frames > limits.max_samples/channels) { return core::result::Err(Error::Limit); }
+    if (fact_at >= 0 && fact_frames != frames as u64) { return core::result::Err(Error::InvalidFormat); }
+    let data: core::slice::View<u8> = core::slice::View { values: bytes.values, start: bytes.start+data_at, length: data_size };
+    return core::result::Ok(Info { data: data, channels: channels, sample_rate: rate, frames: frames, format: format, valid_bits: valid, channel_mask: mask, extensible: extensible });
+}
+// Re-inspect via decode; Info is metadata, not a proof for caller-forged data.
+pub fn decode(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<ext::audio::Buffer,Error> {
+    let inspected: core::result::Result<Info,Error> = inspect(bytes,limits); if (inspected.is_err()) { return core::result::Err(inspected.unwrap_err()); }
+    let info: Info = inspected.unwrap(); let width: i32 = bits(info.format); let stride: i32 = width/8; let n: i32 = info.frames*info.channels; let i: i32 = 0;
+    // Validate finite float values and unused low PCM bits before allocation.
+    while (i < n) { let raw: u64 = word(info.data,i*stride,stride);
+        if (is_float(info.format)) { let value: f64 = core::f64::from_bits(raw); if (width == 32) { value = core::f32::from_bits(raw as u32) as f64; } if (!core::f64::is_finite(value)) { return core::result::Err(Error::NonFinite); } }
+        else { let unused: i32 = width-info.valid_bits; if (unused > 0 && (raw & (((1 as u64) << unused)-1)) != 0) { return core::result::Err(Error::InvalidSample); } } i += 1;
+    }
+    let created: core::result::Result<ext::audio::Buffer,ext::audio::Error> = ext::audio::zeros(info.frames,info.channels,info.sample_rate,limits.max_samples);
+    if (created.is_err()) { return core::result::Err(Error::AllocationFailed); } let output: ext::audio::Buffer = created.unwrap(); let values: [f64] = output.samples.as_slice(); i = 0;
+    while (i < n) { let raw: u64 = word(info.data,i*stride,stride); let value: f64 = 0.0;
+        if (is_float(info.format)) { value = core::f64::from_bits(raw); if (width == 32) { value = core::f32::from_bits(raw as u32) as f64; } }
+        else { let signed: i64 = raw as i64; if (width == 8) { signed -= 128; } else { if ((raw & ((1 as u64) << (width-1))) != 0) { signed -= ((1 as u64) << width) as i64; } } value = core::result::unwrap(ext::audio::from_pcm(signed,width)); }
+        values[i] = value; i += 1;
+    } return core::result::Ok(output);
+}
+fn put(bytes: [u8], at: i32, count: i32, value: u64) { let i: i32 = 0; while (i < count) { bytes[at+i] = ((value >> (i*8)) & 255) as u8; i += 1; } }
+pub fn encode(value: ext::audio::View, format: Format, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (limits.max_bytes < 0 || limits.max_samples < 0) { return core::result::Err(Error::InvalidView); }
+    let valid: core::result::Result<i32,ext::audio::Error> = ext::audio::check_finite(value); if (valid.is_err()) { return core::result::Err(match (valid.unwrap_err()) { NonFinite -> Error::NonFinite, _ -> Error::InvalidView }); }
+    if (value.samples.length > limits.max_samples) { return core::result::Err(Error::Limit); }
+    let width: i32 = bits(format); let stride: i32 = width/8; let align: i32 = value.channels*stride; let byte_rate: u64 = (value.sample_rate as u64)*(align as u64);
+    if (align > 65535 || byte_rate > 4294967295) { return core::result::Err(Error::InvalidFormat); }
+    let header: i32 = 44; if (is_float(format)) { header = 58; }
+    let data_size: u64 = (value.samples.length as u64)*(stride as u64); let total: u64 = (header as u64)+data_size+(data_size % 2);
+    if (total > limits.max_bytes as u64 || total > 2147483647) { return core::result::Err(Error::Limit); }
+    let samples: [f64] = value.samples.values; let i: i32 = 0;
+    if (width == 32 && is_float(format)) { while (i < value.samples.length) { let narrow: f32 = samples[value.samples.start+i] as f32; if (!core::f32::is_finite(narrow)) { return core::result::Err(Error::NonFinite); } i += 1; } }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(total as i32); if (allocated.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let output: alloc::vec::Vec<u8> = allocated.unwrap(); core::result::unwrap(output.try_resize(total as i32,0)); let bytes: [u8] = output.as_slice();
+    put(bytes,0,4,1179011410); put(bytes,4,4,total-8); put(bytes,8,4,1163280727); put(bytes,12,4,544501094); let fmt_size: i32 = 16; let tag: i32 = 1; if (is_float(format)) { fmt_size = 18; tag = 3; }
+    put(bytes,16,4,fmt_size as u64); put(bytes,20,2,tag as u64); put(bytes,22,2,value.channels as u64); put(bytes,24,4,value.sample_rate as u64); put(bytes,28,4,byte_rate); put(bytes,32,2,align as u64); put(bytes,34,2,width as u64);
+    if (is_float(format)) { put(bytes,38,4,1952670054); put(bytes,42,4,4); put(bytes,46,4,valid.unwrap() as u64); }
+    put(bytes,header-8,4,1635017060); put(bytes,header-4,4,data_size); i = 0;
+    while (i < value.samples.length) { let x: f64 = samples[value.samples.start+i]; let raw: u64 = 0;
+        if (is_float(format)) { raw = core::f64::to_bits(x); if (width == 32) { raw = core::f32::to_bits(x as f32) as u64; } }
+        else { let signed: i64 = core::result::unwrap(ext::audio::to_pcm(x,width)); if (width == 8) { signed += 128; } raw = signed as u64; }
+        put(bytes,header+i*stride,stride,raw); i += 1;
+    } return core::result::Ok(output);
+}

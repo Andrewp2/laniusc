@@ -1,0 +1,22 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import ext::json;
+import ext::schema;
+import std::io;
+fn main() -> i32 {
+    let document: ext::json::Document = ext::json::new(); let added: core::result::Result<i32,ext::json::Error> = document.add_bool(ext::json::At::Root,true);
+    if (core::result::is_err(added)) { document.destroy(); return 0; }
+    let instance: ext::json::Document = ext::json::new(); let entered: core::result::Result<i32,ext::json::Error> = instance.add_bool(ext::json::At::Root,false);
+    if (core::result::is_err(entered)) { document.destroy(); instance.destroy(); return 0; }
+    assert(std::io::write_byte(2,65) == 1);
+    let result: core::result::Result<ext::schema::Schema,ext::schema::Error> = ext::schema::compile(document.borrow(),ext::schema::default_options());
+    if (core::result::is_err(result)) {
+        let failure: ext::schema::Error = core::result::unwrap_err(result); let allocation: bool = match (failure.kind) { ext::schema::ErrorKind::AllocationFailed -> true, _ -> false }; assert(allocation); document.destroy(); instance.destroy(); assert(std::io::write_byte(2,70) == 1); return 0;
+    }
+    let schema: ext::schema::Schema = core::result::unwrap(result); assert(std::io::write_byte(2,66) == 1);
+    let storage: [u8;1] = [0;1]; let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view(storage,0));
+    let report: ext::schema::Report = core::result::unwrap(schema.validate(instance.borrow(),scratch)); assert(report.valid && core::option::is_none(report.issue));
+    schema.destroy(); document.destroy(); instance.destroy(); assert(std::io::write_byte(2,67) == 1); return 0;
+}

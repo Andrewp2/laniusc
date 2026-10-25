@@ -1,0 +1,115 @@
+module app::main;
+import core::iter;
+import core::set;
+import core::slice;
+import core::cmp;
+import core::result;
+import core::option;
+struct Record {
+    x: i32,
+    y: i64,
+    tag: i32
+}
+pub impl core::cmp::Eq<Record>for Record {
+    pub fn eq(left: Record, right: Record) -> bool {
+        return left.x == right.x && left.y == right.y;
+    }
+    pub fn ne(left: Record, right: Record) -> bool {
+        return !Record::eq(left, right);
+    }
+}
+fn main() -> i32 {
+    let wide: u64 = 4294967297;
+    let missing: u64 = 8589934593;
+    let low: i64 = -4294967297;
+    let high: i64 = 4294967295;
+    let beyond: i64 = 8589934591;
+    let s: core::set::Set<u64,
+    2> = core::set::from_storage([0, 0]);
+    if (!core::set::is_empty(s.borrow()) || core::set::is_full(s.borrow()) || core::set::capacity(s.borrow()) != 2 || core::option::is_some(core::set::get(s.borrow(), 0)) || core::option::is_some(core::set::position(s.borrow(), 7 as u64)) || core::option::is_some(core::set::remove(s.borrow(), 7 as u64))) {
+        return 1;
+    }
+    if (!core::result::unwrap(core::set::try_insert(s.borrow(), 1 as u64)) || !core::result::unwrap(core::set::try_insert(s.borrow(), wide)) || core::set::len(s.borrow()) != 2 || !core::set::is_full(s.borrow()) || !core::set::contains(s.borrow(), 1 as u64) || !core::set::contains(s.borrow(), wide) || core::set::contains(s.borrow(), missing)) {
+        return 2;
+    }
+    if (core::result::unwrap(core::set::try_insert(s.borrow(), 1 as u64)) || !core::result::is_err(core::set::try_insert(s.borrow(), missing)) || core::set::len(s.borrow()) != 2 || core::set::at_or(s.borrow(), 0, 0) != 1 || core::set::at_or(s.borrow(), 1, 0) != 4294967297 || core::set::at_or(s.borrow(), -1, 99) != 99 || core::set::at_or(s.borrow(), 2, 99) != 99) {
+        return 3;
+    }
+    let copied: core::set::Set<u64,
+    2> = s;
+    if (core::option::unwrap(core::set::remove(copied.borrow(), 1 as u64)) != 1 || core::set::len(copied.borrow()) != 1 || core::set::len(s.borrow()) != 2 || !core::set::contains(s.borrow(), 1 as u64)) {
+        return 4;
+    }
+    let b: core::set::Set<u64,
+    3> = core::set::from_storage([0, 0, 0]);
+    core::result::unwrap(core::set::try_insert(b.borrow(), wide));
+    core::result::unwrap(core::set::try_insert(b.borrow(), 1 as u64));
+    if (!core::set::equals(s.borrow(), b.borrow()) || !core::set::is_subset(s.borrow(), b.borrow()) || core::set::is_disjoint(s.borrow(), b.borrow())) {
+        return 5;
+    }
+    let empty: core::set::Set<u64,
+    0> = core::set::from_storage([]);
+    if (!core::set::is_empty(empty.borrow()) || !core::set::is_full(empty.borrow()) || !core::set::is_subset(empty.borrow(), s.borrow()) || !core::set::is_disjoint(s.borrow(), empty.borrow()) || core::set::equals(s.borrow(), empty.borrow()) || !core::result::is_err(core::set::try_insert(empty.borrow(), 0 as u64)) || core::option::is_some(core::set::remove(empty.borrow(), 0 as u64))) {
+        return 6;
+    }
+    let cursor: core::slice::Iter<u64> = core::set::iter(s.borrow());
+    if (core::option::unwrap(cursor.next()) != 1 || core::option::unwrap(cursor.next_back()) != 4294967297 || core::option::is_some(cursor.next()) || core::option::is_some(cursor.next_back())) {
+        return 7;
+    }
+    let z: Record = Record {
+        x: 0,
+        y: 0,
+        tag: 0
+    };
+    let records: core::set::Set<Record,
+    3> = core::set::from_storage([z, z, z]);
+    let owner: &core::set::Set<Record,
+    3> = records.borrow();
+    if (!core::result::unwrap(core::set::try_insert(owner, Record {
+        x: 1, y: 1000, tag: 11
+    }
+    )) || !core::result::unwrap(core::set::try_insert(records.borrow(), Record {
+        x: 2, y: 0, tag: 22
+    }
+    )) || !core::result::unwrap(core::set::try_insert(records.borrow(), Record {
+        x: 1, y: 4294968296, tag: 33
+    }
+    ))) {
+        return 8;
+    }
+    if (core::result::unwrap(core::set::try_insert(records.borrow(), Record {
+        x: 1, y: 1000, tag: 99
+    }
+    )) || core::set::len(records.borrow()) != 3 || core::set::position_or(records.borrow(), Record {
+        x: 2, y: 0, tag: 0
+    }, -1) != 1) {
+        return 9;
+    }
+    let removed: Record = core::option::unwrap(core::set::remove(records.borrow(), Record {
+        x: 1, y: 1000, tag: 77
+    }
+    ));
+    if (removed.tag != 11 || core::set::len(records.borrow()) != 2 || core::set::at_or(records.borrow(), 0, z).tag != 22 || core::set::at_or(records.borrow(), 1, z).tag != 33 || core::option::is_some(core::set::remove(records.borrow(), removed))) {
+        return 10;
+    }
+    if (!core::result::unwrap(core::set::try_insert(records.borrow(), removed)) || core::set::at_or(records.borrow(), 2, z).tag != 11 || core::option::unwrap(core::set::position(records.borrow(), removed)) != 2) {
+        return 11;
+    }
+    if (core::set::clear(records.borrow()) != 3 || core::set::clear(records.borrow()) != 0 || !core::set::is_empty(records.borrow()) || core::option::is_some(core::set::get(records.borrow(), -1))) {
+        return 12;
+    }
+    let signed: core::set::Set<i64,
+    3> = core::set::from_storage([0, 0, 0]);
+    core::result::unwrap(core::set::try_insert(signed.borrow(), -1 as i64));
+    core::result::unwrap(core::set::try_insert(signed.borrow(), high));
+    core::result::unwrap(core::set::try_insert(signed.borrow(), low));
+    if (core::set::len(signed.borrow()) != 3 || !core::set::contains(signed.borrow(), low) || core::set::contains(signed.borrow(), beyond)) {
+        return 13;
+    }
+    let flags: core::set::Set<bool,
+    2> = core::set::from_storage([false, false]);
+    if (!core::result::unwrap(core::set::try_insert(flags.borrow(), false)) || !core::result::unwrap(core::set::try_insert(flags.borrow(), true)) || core::result::unwrap(core::set::try_insert(flags.borrow(), false))) {
+        return 14;
+    }
+    return 0;
+}

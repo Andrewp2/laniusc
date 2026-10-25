@@ -68,6 +68,7 @@ uint active_match_payload_count()
 
 #include "match_reference.slang"
 #include "receiver_layout.slang"
+#include "body_return.slang"
 
 uint match_payload_for_pattern(uint node)
 {
@@ -277,6 +278,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint original = semantic_lir_count[node];
     semantic_place_original_count[node] = original;
     uint count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    if (semantic_body_has_implicit_return(node, count))
+    {
+        semantic_lir_count[node] = 1u;
+        semantic_lir_value_row_by_hir[node] = LIR_INVALID;
+        return;
+    }
     uint projection = node < count ? projection_adjustment_rows(node, count) : LIR_INVALID;
     semantic_lir_value_row_by_hir[node] = value_row_in_node(node, original, projection);
     if (node >= count || semantic_function_id[node] == LIR_INVALID) return;

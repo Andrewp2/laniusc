@@ -1,0 +1,13 @@
+module app::main;
+import core::io;
+import core::result;
+import std::signal;
+import std::stream;
+fn host_status(code: i32) -> i32 { if (code == 32) { return 0; } return 2; }
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let byte: [u8;1] = [65]; let output: std::stream::Descriptor = std::stream::stdout();
+    let result: core::result::Result<i32,core::io::Error> = output.write(byte,0,1);
+    if (result.is_ok()) { return 1; }
+    return match (result.unwrap_err()) { core::io::Error::Host(code) -> host_status(code), _ -> 3 };
+}

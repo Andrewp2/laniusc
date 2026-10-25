@@ -1,0 +1,200 @@
+// Bounded PNG inspection and transformation. Complete output is staged.
+// Exit0 success;2 arguments/data;3 limits;4 allocation;5 host I/O.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::image;
+import ext::png;
+import std::args;
+import std::stream;
+
+struct Rectangle { x: i32, y: i32, width: i32, height: i32 }
+struct Options { mode: i32, limits: ext::png::Limits, max_output: i32, crop: core::option::Option<Rectangle>, turns: i32, flip_x: bool, flip_y: bool, transformed: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text { let bytes: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(bytes.values,bytes.start,count); }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0; while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true;
+}
+fn fail(detail: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 { detail.stage = stage; detail.reason = reason; return status; }
+fn number(bytes: core::slice::View<u8>, maximum: u64) -> core::option::Option<i32> {
+    if (bytes.length == 0) { return core::option::None(); }
+    let index: i32 = 0; while (index < bytes.length) { let value: u8 = bytes.values[bytes.start+index]; if (value < 48 || value > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.length);
+    if (core::result::is_err(parsed)) { return core::option::None(); }
+    let value: u64 = core::result::unwrap(parsed); if (value > maximum) { return core::option::None(); } return core::option::Some(value as i32);
+}
+fn rectangle(bytes: core::slice::View<u8>) -> core::option::Option<Rectangle> {
+    let values: [i32;4] = [0;4]; let field: i32 = 0; let begin: i32 = 0; let index: i32 = 0;
+    while (index <= bytes.length) {
+        if (index == bytes.length || bytes.values[bytes.start+index] == 44) {
+            if (field == 4) { return core::option::None(); }
+            let part: core::slice::View<u8> = core::result::unwrap(bytes.subview(begin,index));
+            let parsed: core::option::Option<i32> = number(part,2147483647); if (core::option::is_none(parsed)) { return core::option::None(); }
+            values[field] = core::option::unwrap(parsed); field += 1; begin = index+1;
+        } index += 1;
+    }
+    if (field != 4 || values[2] == 0 || values[3] == 0) { return core::option::None(); }
+    return core::option::Some(Rectangle { x: values[0], y: values[1], width: values[2], height: values[3] });
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 10) { options.help = true; return true; }
+    if (item.id == 2) { options.flip_x = true; options.transformed = true; return true; }
+    if (item.id == 3) { options.flip_y = true; options.transformed = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    if (item.id == 1) { options.crop = rectangle(bytes); options.transformed = true; return core::option::is_some(options.crop); }
+    let maximum: u64 = 268435456;
+    if (item.id == 4) { maximum = 270; }
+    if (item.id == 6) { maximum = 67108864; }
+    if (item.id == 7) { maximum = 1073741824; }
+    if (item.id == 8) { maximum = 1000000; }
+    let parsed: core::option::Option<i32> = number(bytes,maximum); if (core::option::is_none(parsed)) { return false; }
+    let value: i32 = core::option::unwrap(parsed);
+    if (item.id == 4) { if (value % 90 != 0) { return false; } options.turns = value/90; options.transformed = true; }
+    if (item.id == 5) { options.limits.max_input = value; }
+    if (item.id == 6) { options.limits.max_pixels = value; }
+    if (item.id == 7) { options.limits.max_inflated = value; }
+    if (item.id == 8) { options.limits.max_chunks = value; }
+    if (item.id == 9) { options.max_output = value; } return true;
+}
+fn operand(options: &Options, argument: ext::cli::Argument) -> bool {
+    if (options.mode != 0) { return false; }
+    if (equal(argument.bytes,literal("info",4))) { options.mode = 1; return true; }
+    if (equal(argument.bytes,literal("transform",9))) { options.mode = 2; return true; } return false;
+}
+fn input_error(error: core::io::Error, detail: &Diagnostic) -> i32 {
+    let status: i32 = match (error) { core::io::Error::LimitExceeded -> 3, core::io::Error::AllocationFailed -> 4, _ -> 5 };
+    let reason: i32 = 3; if (status == 3) { reason = 1; } if (status == 4) { reason = 2; } return fail(detail,status,1,reason);
+}
+fn png_error(error: ext::png::Error, detail: &Diagnostic, stage: i32) -> i32 {
+    let reason: i32 = match (error) {
+        ext::png::Error::AllocationFailed -> 2,
+        ext::png::Error::InputLimit -> 1,
+        ext::png::Error::PixelLimit -> 1,
+        ext::png::Error::InflatedLimit -> 1,
+        ext::png::Error::ChunkLimit -> 1,
+        ext::png::Error::OutputLimit -> 1,
+        ext::png::Error::SizeOverflow -> 1,
+        _ -> 4
+    };
+    if (reason == 1) { return fail(detail,3,stage,reason); }
+    if (reason == 2) { return fail(detail,4,stage,reason); }
+    return fail(detail,2,stage,4);
+}
+fn image_error(error: ext::image::Error, detail: &Diagnostic) -> i32 {
+    let reason: i32 = match (error) { ext::image::Error::AllocationFailed -> 2, ext::image::Error::SizeOverflow -> 1, _ -> 5 };
+    if (reason == 1) { return fail(detail,3,3,reason); }
+    if (reason == 2) { return fail(detail,4,3,reason); }
+    return fail(detail,2,3,5);
+}
+fn write(bytes: core::slice::View<u8>, detail: &Diagnostic) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.length))) { return fail(detail,5,5,3); } return 0;
+}
+fn inspect(image: &ext::image::Image, options: Options, detail: &Diagnostic) -> i32 {
+    let bytes: [u8;64] = [0;64]; let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,64));
+    output.write_text(text("width,height\n",13)); output.write_signed(image.width() as i64,core::fmt::decimal()); output.write_text(text(",",1)); output.write_signed(image.height() as i64,core::fmt::decimal()); output.write_text(text("\n",1));
+    let finished: core::result::Result<i32,core::fmt::Error> = output.finish(); if (core::result::is_err(finished)) { return fail(detail,3,5,1); }
+    let count: i32 = core::result::unwrap(finished); if (count > options.max_output) { return fail(detail,3,5,1); }
+    return write(core::result::unwrap(core::slice::view(bytes,count)),detail);
+}
+// This function receives ownership of the decoded image, replacing/destroying
+// intermediate rasters before returning. Its caller must not destroy a copy.
+fn consume_image(decoded: ext::image::Image, options: Options, detail: &Diagnostic) -> i32 {
+    let image: ext::image::Image = decoded;
+    if (options.mode == 1) { let status: i32 = inspect(image.borrow(),options,detail); image.destroy(); return status; }
+    if (core::option::is_some(options.crop)) {
+        let area: Rectangle = core::option::unwrap(options.crop);
+        let cropped: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::crop(image.view(),area.x,area.y,area.width,area.height);
+        if (core::result::is_err(cropped)) { image.destroy(); return image_error(core::result::unwrap_err(cropped),detail); }
+        let replacement: ext::image::Image = core::result::unwrap(cropped); image.destroy(); image = replacement;
+    }
+    let turn: i32 = 0; while (turn < options.turns) {
+        let rotated: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::rotate90(image.view());
+        if (core::result::is_err(rotated)) { image.destroy(); return image_error(core::result::unwrap_err(rotated),detail); }
+        let replacement: ext::image::Image = core::result::unwrap(rotated); image.destroy(); image = replacement; turn += 1;
+    }
+    if (options.flip_x) { let flipped = ext::image::flip_horizontal(image.view()); if (core::result::is_err(flipped)) { image.destroy(); return image_error(core::result::unwrap_err(flipped),detail); } }
+    if (options.flip_y) { let flipped = ext::image::flip_vertical(image.view()); if (core::result::is_err(flipped)) { image.destroy(); return image_error(core::result::unwrap_err(flipped),detail); } }
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::png::Error> = ext::png::encode(image.view(),options.max_output); image.destroy();
+    if (core::result::is_err(encoded)) { return png_error(core::result::unwrap_err(encoded),detail,4); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(encoded); let status: i32 = write(bytes.as_view(),detail); bytes.destroy(); return status;
+}
+fn execute(options: Options, detail: &Diagnostic) -> i32 {
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.limits.max_input)); let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); input.destroy(); return input_error(failure.cause,detail); }
+    let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.as_bytes(),input.len()));
+    let decoded: core::result::Result<ext::image::Image,ext::png::Error> = ext::png::decode(bytes,options.limits); input.destroy();
+    if (core::result::is_err(decoded)) { return png_error(core::result::unwrap_err(decoded),detail,2); }
+    return consume_image(core::result::unwrap(decoded),options,detail);
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;10] = [
+        ext::cli::Spec { id: 1, long: literal("crop",4), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("flip-x",6), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("flip-y",6), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("rotate",6), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-pixels",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("max-inflated-bytes",18), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("max-chunks",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,10));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let limits: ext::png::Limits = ext::png::Limits { max_input: 16777216, max_pixels: 16777216, max_inflated: 268435456, max_chunks: 65536 };
+    let options: Options = Options { mode: 0, limits: limits, max_output: 67108864, crop: core::option::None(), turns: 0, flip_x: false, flip_y: false, transformed: false, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return fail(detail,2,0,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) };
+        if (!valid) { return fail(detail,2,0,0); }
+    }
+    if (options.mode == 1 && options.transformed) { return fail(detail,2,0,0); }
+    if (options.help) { return write(literal("Usage: image-tool info [OPTIONS] <INPUT.png\n       image-tool transform [OPTIONS] <INPUT.png >OUTPUT.png\n",105),detail); }
+    if (options.mode == 0) { return fail(detail,2,0,0); } return execute(options,detail);
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let bytes: [u8;128] = [0;128]; let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,128)); output.write_text(text("image-tool: ",12));
+    if (detail.reason == 0) { output.write_text(text("invalid-arguments",17)); }
+    if (detail.reason == 1) { output.write_text(text("resource-limit",14)); }
+    if (detail.reason == 2) { output.write_text(text("allocation-failure",18)); }
+    if (detail.reason == 3) { output.write_text(text("io-failure",10)); }
+    if (detail.reason == 4) { output.write_text(text("invalid-png",11)); }
+    if (detail.reason == 5) { output.write_text(text("invalid-transform",17)); }
+    output.write_text(text(" stage=",7));
+    if (detail.stage == 0) { output.write_text(text("arguments",9)); }
+    if (detail.stage == 1) { output.write_text(text("input",5)); }
+    if (detail.stage == 2) { output.write_text(text("decode",6)); }
+    if (detail.stage == 3) { output.write_text(text("transform",9)); }
+    if (detail.stage == 4) { output.write_text(text("encode",6)); }
+    if (detail.stage == 5) { output.write_text(text("output",6)); }
+    output.write_text(text("\n",1)); let count: core::result::Result<i32,core::fmt::Error> = output.finish(); if (core::result::is_err(count)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(count)));
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { stage: 0, reason: 0 }; let status: i32 = 0;
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,2), std::args::Error::HostRead(index) -> fail(detail.borrow(),5,0,3), _ -> fail(detail.borrow(),2,0,0) }; }
+    else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 5; } return status;
+}

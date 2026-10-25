@@ -1,0 +1,168 @@
+// Portable finite binary64 signal processing. No host FFT or DSP service.
+// Owned results are atomic: borrowed inputs are never modified.
+module ext::signal;
+import alloc::vec;
+import core::f64;
+import core::math;
+import core::result;
+import core::slice;
+import ext::statistics;
+
+pub struct Complex { re: f64, im: f64 }
+pub struct Bin { magnitude: f64, power: f64 }
+pub enum Direction { Forward, Inverse }
+pub enum Window { Rectangular, Hann, Hamming, Blackman }
+pub struct Limits { max_len: i32, max_output_bytes: i32, max_work: u64 }
+pub enum Error { InvalidLimits, Bounds, Size, LengthLimit, OutputLimit, WorkLimit, NonFinite, NumericalFailure, AllocationFailed }
+pub const MAX_LENGTH: i32 = 67108864;
+pub fn default_limits() -> Limits { return Limits { max_len: 1048576, max_output_bytes: 16777216, max_work: 268435456 }; }
+fn finite(value: Complex) -> bool { return core::f64::is_finite(value.re) && core::f64::is_finite(value.im); }
+fn checked(value: Complex) -> core::result::Result<Complex,Error> { if (!finite(value)) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(value); }
+pub fn complex(re: f64, im: f64) -> core::result::Result<Complex,Error> { if (!core::f64::is_finite(re) || !core::f64::is_finite(im)) { return core::result::Err(Error::NonFinite); } return core::result::Ok(Complex { re: re, im: im }); }
+pub fn add(left: Complex, right: Complex) -> core::result::Result<Complex,Error> { if (!finite(left) || !finite(right)) { return core::result::Err(Error::NonFinite); } return checked(Complex { re: left.re+right.re, im: left.im+right.im }); }
+pub fn sub(left: Complex, right: Complex) -> core::result::Result<Complex,Error> { if (!finite(left) || !finite(right)) { return core::result::Err(Error::NonFinite); } return checked(Complex { re: left.re-right.re, im: left.im-right.im }); }
+pub fn mul(left: Complex, right: Complex) -> core::result::Result<Complex,Error> { if (!finite(left) || !finite(right)) { return core::result::Err(Error::NonFinite); } return checked(Complex { re: left.re*right.re-left.im*right.im, im: left.re*right.im+left.im*right.re }); }
+pub fn scale(value: Complex, factor: f64) -> core::result::Result<Complex,Error> { if (!finite(value) || !core::f64::is_finite(factor)) { return core::result::Err(Error::NonFinite); } return checked(Complex { re: value.re*factor, im: value.im*factor }); }
+pub fn conjugate(value: Complex) -> core::result::Result<Complex,Error> { if (!finite(value)) { return core::result::Err(Error::NonFinite); } return core::result::Ok(Complex { re: value.re, im: -value.im }); }
+pub fn magnitude(value: Complex) -> core::result::Result<f64,Error> {
+    if (!finite(value)) { return core::result::Err(Error::NonFinite); }
+    let large: f64 = core::f64::max(core::f64::abs(value.re),core::f64::abs(value.im)); if (large == 0.0) { return core::result::Ok(0.0); }
+    let small: f64 = core::f64::min(core::f64::abs(value.re),core::f64::abs(value.im)); let ratio: f64 = small/large;
+    let result: f64 = large*core::f64::sqrt(1.0+ratio*ratio); if (!core::f64::is_finite(result)) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(result);
+}
+pub fn power(value: Complex) -> core::result::Result<f64,Error> {
+    if (!finite(value)) { return core::result::Err(Error::NonFinite); }
+    let large: f64 = core::f64::max(core::f64::abs(value.re),core::f64::abs(value.im)); if (large == 0.0) { return core::result::Ok(0.0); }
+    let ratio: f64 = core::f64::min(core::f64::abs(value.re),core::f64::abs(value.im))/large;
+    let result: f64 = large*(large*(1.0+ratio*ratio)); if (!core::f64::is_finite(result)) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(result);
+}
+fn limits_valid(limits: Limits) -> bool { return limits.max_len >= 0 && limits.max_len <= MAX_LENGTH && limits.max_output_bytes >= 0; }
+fn bounds(start: i32, length: i32) -> bool { return start >= 0 && length >= 0 && length <= 2147483647-start; }
+fn preflight(start: i32, length: i32, output: i32, stride: i32, work: u64, limits: Limits) -> core::result::Result<bool,Error> {
+    if (!limits_valid(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!bounds(start,length) || output < 0) { return core::result::Err(Error::Bounds); }
+    if (length > limits.max_len || output > limits.max_len) { return core::result::Err(Error::LengthLimit); }
+    if (output > limits.max_output_bytes/stride) { return core::result::Err(Error::OutputLimit); }
+    if (work > limits.max_work) { return core::result::Err(Error::WorkLimit); } return core::result::Ok(true);
+}
+fn power_two(count: i32) -> bool { return count > 0 && (count & (count-1)) == 0; }
+// Exact abstract charge, not a CPU-instruction or decoder-read count.
+pub fn fft_work(count: i32) -> core::result::Result<u64,Error> {
+    if (count < 0 || count > MAX_LENGTH || (count != 0 && !power_two(count))) { return core::result::Err(Error::Size); }
+    let levels: u64 = 0; let rest: i32 = count; while (rest > 1) { rest /= 2; levels += 1; }
+    return core::result::Ok((count as u64)*(4+8*levels));
+}
+pub fn next_size(count: i32, limits: Limits) -> core::result::Result<i32,Error> {
+    if (!limits_valid(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (count < 0) { return core::result::Err(Error::Bounds); } if (count > limits.max_len) { return core::result::Err(Error::LengthLimit); }
+    if (count == 0) { return core::result::Ok(0); } let result: i32 = 1;
+    while (result < count) { result *= 2; }
+    if (result > limits.max_len) { return core::result::Err(Error::LengthLimit); } return core::result::Ok(result);
+}
+fn complex_at(values: core::slice::View<Complex>, index: i32) -> Complex { return values.values[values.start+index]; }
+fn real_at(values: core::slice::View<f64>, index: i32) -> f64 { return values.values[values.start+index]; }
+fn check_complex(values: core::slice::View<Complex>) -> bool { let i: i32 = 0; while (i < values.length) { if (!finite(complex_at(values,i))) { return false; } i += 1; } return true; }
+fn check_real(values: core::slice::View<f64>) -> bool { let i: i32 = 0; while (i < values.length) { if (!core::f64::is_finite(real_at(values,i))) { return false; } i += 1; } return true; }
+// Radix-2 decimation in time, bit-reversed input and natural-frequency output.
+// Direct sin/cos per stage offset avoids recurrence drift. Cardinal twiddles
+// are exact. No global input scaling can erase small cancellation residuals.
+fn transform(output: &alloc::vec::Vec<Complex>, inverse: bool) -> bool {
+    let values: [Complex] = output.as_slice(); let count: i32 = output.len(); let reversed: i32 = 0; let i: i32 = 1;
+    while (i < count) { let bit: i32 = count/2; while ((reversed & bit) != 0) { reversed = reversed ^ bit; bit /= 2; } reversed = reversed ^ bit; if (i < reversed) { let temporary: Complex = values[i]; values[i] = values[reversed]; values[reversed] = temporary; } i += 1; }
+    let span: i32 = 2;
+    while (span <= count) {
+        let half: i32 = span/2; let offset: i32 = 0;
+        while (offset < half) {
+            let twiddle: Complex = Complex { re: 1.0, im: 0.0 };
+            if (offset != 0) {
+                if (offset*4 == span) { twiddle.re = 0.0; twiddle.im = -1.0; if (inverse) { twiddle.im = 1.0; } }
+                else { let angle: f64 = -core::math::TAU*(offset as f64)/(span as f64); if (inverse) { angle = -angle; } let pair: core::math::SinCos = core::math::sin_cos(angle); twiddle.re = pair.cos; twiddle.im = pair.sin; }
+            }
+            if (!finite(twiddle)) { return false; }
+            let index: i32 = offset;
+            while (index < count) {
+                let left: Complex = values[index]; let source: Complex = values[index+half];
+                let right: Complex = Complex { re: source.re*twiddle.re-source.im*twiddle.im, im: source.re*twiddle.im+source.im*twiddle.re };
+                let a: Complex = Complex { re: left.re+right.re, im: left.im+right.im }; let b: Complex = Complex { re: left.re-right.re, im: left.im-right.im };
+                if (!finite(right) || !finite(a) || !finite(b)) { return false; } values[index] = a; values[index+half] = b; index += span;
+            }
+            offset += 1;
+        }
+        if (span == count) { break; } span *= 2;
+    }
+    if (inverse && count > 1) { i = 0; while (i < count) { let value: Complex = values[i]; value.re /= count as f64; value.im /= count as f64; if (!finite(value)) { return false; } values[i] = value; i += 1; } }
+    return true;
+}
+pub fn fft(values: core::slice::View<Complex>, direction: Direction, limits: Limits) -> core::result::Result<alloc::vec::Vec<Complex>,Error> {
+    let work: core::result::Result<u64,Error> = fft_work(values.length); if (work.is_err()) { return core::result::Err(work.unwrap_err()); }
+    let valid: core::result::Result<bool,Error> = preflight(values.start,values.length,values.length,16,work.unwrap(),limits); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (!check_complex(values)) { return core::result::Err(Error::NonFinite); }
+    let made: core::result::Result<alloc::vec::Vec<Complex>,alloc::vec::Error> = alloc::vec::from_view(values); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let output: alloc::vec::Vec<Complex> = made.unwrap(); let inverse: bool = match (direction) { Direction::Inverse -> true, _ -> false };
+    if (!transform(output.borrow(),inverse)) { output.destroy(); return core::result::Err(Error::NumericalFailure); } return core::result::Ok(output);
+}
+pub fn window_value(kind: Window, periodic: bool, index: i32, length: i32) -> core::result::Result<f64,Error> {
+    if (length < 0 || length > MAX_LENGTH || index < 0 || index >= length) { return core::result::Err(Error::Bounds); }
+    let rectangular: bool = match (kind) { Window::Rectangular -> true, _ -> false }; if (length == 1 || rectangular) { return core::result::Ok(1.0); }
+    let denominator: i32 = length-1; if (periodic) { denominator = length; }
+    let angle: f64 = core::math::TAU*(index as f64)/(denominator as f64); let cosine: f64 = core::math::cos(angle);
+    let value: f64 = match (kind) { Window::Rectangular -> 1.0, Window::Hann -> 0.5-0.5*cosine, Window::Hamming -> 0.54-0.46*cosine, Window::Blackman -> 0.42-0.5*cosine+0.08*core::math::cos(2.0*angle) };
+    if (!core::f64::is_finite(value)) { return core::result::Err(Error::NumericalFailure); }
+    // Analytic windows are nonnegative and <=1. Clamp arithmetic roundoff.
+    if (value < 0.0) { value = 0.0; } if (value > 1.0) { value = 1.0; }
+    let zero_edge: bool = match (kind) { Window::Hann -> true, Window::Blackman -> true, _ -> false };
+    if (zero_edge && (index == 0 || (!periodic && index == length-1))) { value = 0.0; } return core::result::Ok(value);
+}
+pub fn windowed(values: core::slice::View<f64>, kind: Window, periodic: bool, limits: Limits) -> core::result::Result<alloc::vec::Vec<f64>,Error> {
+    let valid: core::result::Result<bool,Error> = preflight(values.start,values.length,values.length,8,(values.length as u64)*4,limits); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (!check_real(values)) { return core::result::Err(Error::NonFinite); }
+    let made: core::result::Result<alloc::vec::Vec<f64>,alloc::vec::Error> = alloc::vec::with_capacity<f64>(values.length); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let output: alloc::vec::Vec<f64> = made.unwrap(); let i: i32 = 0;
+    while (i < values.length) { let coefficient: core::result::Result<f64,Error> = window_value(kind,periodic,i,values.length); if (coefficient.is_err()) { output.destroy(); return core::result::Err(coefficient.unwrap_err()); } let value: f64 = real_at(values,i)*coefficient.unwrap(); if (!core::f64::is_finite(value)) { output.destroy(); return core::result::Err(Error::NumericalFailure); } core::result::unwrap(output.try_push(value)); i += 1; } return core::result::Ok(output);
+}
+pub fn real_fft(values: core::slice::View<f64>, count: i32, kind: Window, periodic: bool, limits: Limits) -> core::result::Result<alloc::vec::Vec<Complex>,Error> {
+    let work: core::result::Result<u64,Error> = fft_work(count); if (work.is_err()) { return core::result::Err(work.unwrap_err()); }
+    let valid: core::result::Result<bool,Error> = preflight(values.start,values.length,count,16,work.unwrap()+(values.length as u64)*4,limits); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (count < values.length) { return core::result::Err(Error::Size); } if (!check_real(values)) { return core::result::Err(Error::NonFinite); }
+    let made: core::result::Result<alloc::vec::Vec<Complex>,alloc::vec::Error> = alloc::vec::with_capacity<Complex>(count); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let output: alloc::vec::Vec<Complex> = made.unwrap(); let zero: Complex = Complex { re: 0.0, im: 0.0 }; core::result::unwrap(output.try_resize(count,zero)); let i: i32 = 0;
+    while (i < values.length) { let coefficient: core::result::Result<f64,Error> = window_value(kind,periodic,i,values.length); if (coefficient.is_err()) { output.destroy(); return core::result::Err(coefficient.unwrap_err()); } let value: f64 = real_at(values,i)*coefficient.unwrap(); if (!core::f64::is_finite(value)) { output.destroy(); return core::result::Err(Error::NumericalFailure); } core::result::unwrap(output.set(i,Complex { re: value, im: 0.0 })); i += 1; }
+    if (!transform(output.borrow(),false)) { output.destroy(); return core::result::Err(Error::NumericalFailure); } return core::result::Ok(output);
+}
+pub fn convolve_work(left: i32, right: i32) -> core::result::Result<u64,Error> {
+    if (left < 0 || right < 0 || left > MAX_LENGTH || right > MAX_LENGTH) { return core::result::Err(Error::Size); }
+    let count: i32 = 0; if (left > 0 && right > 0) { count = left+right-1; }
+    return core::result::Ok((left as u64)+(right as u64)+(count as u64)*2+(left as u64)*(right as u64)*8);
+}
+// Full linear convolution. Compensate accumulation of binary64-rounded
+// products; overflow in a product, partial sum or compensation is explicit.
+pub fn convolve(left: core::slice::View<f64>, right: core::slice::View<f64>, limits: Limits) -> core::result::Result<alloc::vec::Vec<f64>,Error> {
+    if (!limits_valid(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (!bounds(left.start,left.length) || !bounds(right.start,right.length)) { return core::result::Err(Error::Bounds); }
+    if (left.length > limits.max_len || right.length > limits.max_len) { return core::result::Err(Error::LengthLimit); }
+    let count: i32 = 0; if (left.length > 0 && right.length > 0) { count = left.length+right.length-1; }
+    let work: u64 = convolve_work(left.length,right.length).unwrap();
+    let valid: core::result::Result<bool,Error> = preflight(0,count,count,8,work,limits); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (!check_real(left) || !check_real(right)) { return core::result::Err(Error::NonFinite); }
+    let made: core::result::Result<alloc::vec::Vec<f64>,alloc::vec::Error> = alloc::vec::with_capacity<f64>(count); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let output: alloc::vec::Vec<f64> = made.unwrap(); let index: i32 = 0;
+    while (index < count) {
+        let first: i32 = 0; if (index >= right.length) { first = index-right.length+1; } let end: i32 = left.length; if (end > index+1) { end = index+1; }
+        let sum: ext::statistics::CompensatedSum = ext::statistics::sum(); let i: i32 = first;
+        while (i < end) { let product: f64 = real_at(left,i)*real_at(right,index-i);
+            if (!core::f64::is_finite(product) || sum.push(product).is_err()) { output.destroy(); return core::result::Err(Error::NumericalFailure); } i += 1; }
+        let value: core::result::Result<f64,ext::statistics::Error> = sum.value(); if (value.is_err()) { output.destroy(); return core::result::Err(Error::NumericalFailure); } core::result::unwrap(output.try_push(value.unwrap())); index += 1;
+    } return core::result::Ok(output);
+}
+// Normalize components before magnitude/power, avoiding avoidable overflow in
+// an unnormalized norm. A zero factor is allowed; nonfinite inputs still fail.
+pub fn bins(values: core::slice::View<Complex>, factor: f64, limits: Limits) -> core::result::Result<alloc::vec::Vec<Bin>,Error> {
+    let valid: core::result::Result<bool,Error> = preflight(values.start,values.length,values.length,16,(values.length as u64)*4,limits); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    if (!core::f64::is_finite(factor)) { return core::result::Err(Error::NonFinite); } if (factor < 0.0) { return core::result::Err(Error::Bounds); } if (!check_complex(values)) { return core::result::Err(Error::NonFinite); }
+    let made: core::result::Result<alloc::vec::Vec<Bin>,alloc::vec::Error> = alloc::vec::with_capacity<Bin>(values.length); if (made.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    let output: alloc::vec::Vec<Bin> = made.unwrap(); let i: i32 = 0;
+    while (i < values.length) { let scaled: core::result::Result<Complex,Error> = scale(complex_at(values,i),factor); if (scaled.is_err()) { output.destroy(); return core::result::Err(scaled.unwrap_err()); }
+        let value: Complex = scaled.unwrap(); let amplitude: core::result::Result<f64,Error> = magnitude(value); let energy: core::result::Result<f64,Error> = power(value); if (amplitude.is_err() || energy.is_err()) { output.destroy(); return core::result::Err(Error::NumericalFailure); }
+        core::result::unwrap(output.try_push(Bin { magnitude: amplitude.unwrap(), power: energy.unwrap() })); i += 1;
+    } return core::result::Ok(output);
+}

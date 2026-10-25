@@ -1,39 +1,27 @@
 // Count distinct unsigned readings and print their wrapping checksum.
 module app::main;
-import core::number_u32;
+import alloc::hash_set;
+import core::u32;
+import core::result;
 import std::io;
 import std::io_decimal;
-import std::set;
 
 fn main() -> i32 {
-    let first: u32 = 0;
-    let high: u32 = 2147483648;
-    let one: u32 = 1;
-    let last: u32 = 4294967295;
-    let readings: [u32; 5] = [first, high, one, high, last];
-    let distinct: std::set::Set<u32> = std::set::new();
+    let readings: [u32; 5] = [0, 2147483648, 1, 2147483648, 4294967295];
+    let distinct: alloc::hash_set::HashSet<u32> = alloc::hash_set::new();
+    let total: u32 = 0;
     let index: i32 = 0;
     while (index < 5) {
         let reading: u32 = readings[index];
-        distinct = std::set::try_insert(distinct, reading);
+        if (!distinct.contains(reading)) {
+            if (core::result::is_err(distinct.try_insert(reading))) { distinct.destroy(); return 1; }
+            total = core::u32::wrapping_add(total, reading);
+        }
         index += 1;
     }
-    if (std::set::len(distinct) != 4) {
-        std::set::destroy(distinct);
-        return 1;
-    }
-    let total: u32 = 0;
-    index = 0;
-    while (index < std::set::len(distinct)) {
-        total = core::number_u32::wrapping_add(total, std::set::at_or(distinct, index, 0));
-        index += 1;
-    }
-    std::set::destroy(distinct);
-    if (std::io_decimal::write_u32(1, total) < 0) {
-        return 2;
-    }
-    if (std::io::write_byte(1, 10) != 1) {
-        return 3;
-    }
+    assert(distinct.len() == 4);
+    distinct.destroy();
+    if (std::io_decimal::write_u32(1, total) < 0) { return 2; }
+    if (std::io::write_byte(1, 10) != 1) { return 3; }
     return 0;
 }

@@ -1,0 +1,60 @@
+module app::main;
+import alloc::vec;
+import alloc::string;
+import core::cmp;
+import core::float_order;
+import core::option;
+import core::result;
+
+fn extremes<T>(low: T, high: T) -> bool where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    let heap: alloc::vec::Vec<T> = alloc::vec::new();
+    core::result::unwrap(heap.try_push(high)); core::result::unwrap(heap.try_push(low));
+    core::result::unwrap(heap.try_push(high)); core::result::unwrap(heap.try_push(low));
+    heap.sort(); heap.reverse();
+    let correct: bool = T::eq(core::option::unwrap(heap.pop()), low) && T::eq(core::option::unwrap(heap.pop()), low) &&
+        T::eq(core::option::unwrap(heap.pop()), high) && T::eq(core::option::unwrap(heap.pop()), high);
+    heap.destroy(); return correct;
+}
+
+struct Payload { priority: i64, flag: core::option::Option<bool>, bytes: [u8; 3], id: i32 }
+pub impl core::cmp::Ord<Payload> for Payload {
+    pub fn lt(left: Payload, right: Payload) -> bool { return left.priority < right.priority; }
+    pub fn le(left: Payload, right: Payload) -> bool { return left.priority <= right.priority; }
+    pub fn gt(left: Payload, right: Payload) -> bool { return left.priority > right.priority; }
+    pub fn ge(left: Payload, right: Payload) -> bool { return left.priority >= right.priority; }
+}
+
+fn main() -> i32 {
+    if (!extremes(-128 as i8, 127 as i8) || !extremes(0 as u8, 255 as u8)) { return 1; }
+    if (!extremes(-32768 as i16, 32767 as i16) || !extremes(0 as u16, 65535 as u16)) { return 2; }
+    let unsigned32: u32 = 4294967295;
+    if (!extremes(-2147483648 as i32, 2147483647 as i32) || !extremes(0 as u32, unsigned32)) { return 3; }
+    let low: i64 = -9223372036854775808; let high: i64 = 9223372036854775807;
+    let unsigned: u64 = 18446744073709551615;
+    if (!extremes(low, high) || !extremes(0 as u64, unsigned)) { return 4; }
+    if (!extremes(low as isize, high as isize) || !extremes(0 as usize, unsigned as usize)) { return 5; }
+    if (!extremes(false, true) || !extremes('a', '😀')) { return 6; }
+    let float_low: core::float_order::TotalF32 = core::float_order::from_f32(-1.5); let float_high: core::float_order::TotalF32 = core::float_order::from_f32(3.25);
+    if (!extremes(float_low, float_high)) { return 10; }
+    let first: [u8; 1] = [97]; let second: [u8; 2] = [195, 169];
+    let a: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(first, 1));
+    let b: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(second, 2));
+    if (!extremes(a, b)) { return 7; }
+    a.destroy(); b.destroy();
+    let records: alloc::vec::Vec<Payload> = alloc::vec::new();
+    let index: i32 = 0;
+    while (index < 64) {
+        let mark: core::option::Option<bool> = core::option::Some(index % 2 == 0);
+        let bytes: [u8; 3] = [index as u8, 128, 255];
+        let item: Payload = Payload { priority: (index as i64) * 4294967297, flag: mark, bytes: bytes, id: index };
+        core::result::unwrap(records.try_push(item)); index += 1;
+    }
+    records.reverse(); records.sort();
+    index = 63;
+    while (index >= 0) {
+        let item: Payload = core::option::unwrap(records.pop());
+        if (item.id != index || item.priority != (index as i64) * 4294967297 || core::option::unwrap(item.flag) != (index % 2 == 0) || item.bytes[0] != index as u8 || item.bytes[1] != 128 || item.bytes[2] != 255) { return 9; }
+        index -= 1;
+    }
+    records.destroy(); return 0;
+}

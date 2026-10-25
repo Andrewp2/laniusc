@@ -1,0 +1,112 @@
+// Binary test transport only; every case executes production Lanius casing.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::unicode_case;
+import std::io;
+fn read(pointer: ptr, length: i32) -> bool {
+    let done: i32 = 0;
+    while (done < length) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (length - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+fn write(pointer: ptr, length: i32) {
+    let done: i32 = 0;
+    while (done < length) {
+        let count: i32 = std::io::write_stdout(pointer + (done as usize), (length - done) as usize);
+        assert(count > 0); done += count;
+    }
+}
+fn little(bytes: [u8], index: i32, width: i32) -> u64 {
+    let result: u64 = 0; let part: i32 = 0;
+    while (part < width) { result |= (bytes[index + part] as u64) << ((part * 8) as u64); part += 1; }
+    return result;
+}
+fn number(bytes: [u8], index: i32, value: u64, width: i32) {
+    let part: i32 = 0;
+    while (part < width) { bytes[index + part] = ((value >> ((part * 8) as u64)) & 255) as u8; part += 1; }
+}
+fn error_code(error: ext::unicode_case::Error) -> i32 {
+    return match(error) {
+        ext::unicode_case::Error::Bounds -> 1,
+        ext::unicode_case::Error::InvalidUtf8(position) -> 2,
+        ext::unicode_case::Error::SizeOverflow -> 3,
+        ext::unicode_case::Error::OutputCapacity(required) -> 4,
+        ext::unicode_case::Error::WorkLimit(used) -> 5
+    };
+}
+fn error_detail(error: ext::unicode_case::Error) -> u64 {
+    return match(error) {
+        ext::unicode_case::Error::InvalidUtf8(position) -> position as u64,
+        ext::unicode_case::Error::OutputCapacity(required) -> required as u64,
+        ext::unicode_case::Error::WorkLimit(used) -> used,
+        _ -> 0
+    };
+}
+fn main() -> i32 {
+    let header_words: [i32;5] = [0;5];
+    let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words);
+    let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,20);
+    let input_words: [i32;16386] = [0;16386];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,65544);
+    let output_words: [i32;16386] = [0;16386];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,65544);
+    let response_words: [i32;7] = [0;7];
+    let response_pointer: ptr = core::mem::i32_array_data_ptr(response_words);
+    let response: [u8] = core::mem::typed_slice_from_raw_parts(response_pointer,28);
+    while (read(header_pointer,20)) {
+        let kind: ext::unicode_case::Kind = match(header[0]) {
+            0 -> ext::unicode_case::Kind::Lower, 1 -> ext::unicode_case::Kind::Upper,
+            2 -> ext::unicode_case::Kind::Title, _ -> ext::unicode_case::Kind::Fold
+        };
+        let locale: ext::unicode_case::Locale = match(header[1]) {
+            1 -> ext::unicode_case::Locale::Turkic, 2 -> ext::unicode_case::Locale::Lithuanian,
+            _ -> ext::unicode_case::Locale::Root
+        };
+        let operation: u8 = header[2];
+        let length: i32 = little(header,4,4) as i32;
+        let capacity: i32 = little(header,8,4) as i32;
+        let limit: u64 = little(header,12,8);
+        assert(length <= 65536 && capacity <= 65536);
+        if (length > 0) { assert(read(input_pointer + 3,length)); }
+        input[0] = 255; input[1] = 255; input[2] = 255; input[3 + length] = 255;
+        let index: i32 = 0;
+        while (index < capacity + 6) { output[index] = 77; index += 1; }
+        let source: core::text::Text = core::text::Text { bytes:input,start:3,length:length };
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,3,capacity));
+        let code: i32 = 0; let detail: u64 = 0;
+        let report: ext::unicode_case::Report = ext::unicode_case::Report {bytes:0,scalars:0,work:0};
+        let actual_limit: u64 = limit;
+        if (operation > 0) {
+            let measured: ext::unicode_case::Report = core::result::unwrap(ext::unicode_case::measure(source,kind,locale,limit));
+            actual_limit = measured.work;
+            if (operation == 2 && actual_limit > 0) {
+                let short: core::result::Result<ext::unicode_case::Report,ext::unicode_case::Error> = ext::unicode_case::transform_into(source,kind,locale,destination,actual_limit - 1);
+                assert(core::result::is_err(short) && error_code(core::result::unwrap_err(short)) == 5);
+                let short_measure: core::result::Result<ext::unicode_case::Report,ext::unicode_case::Error> = ext::unicode_case::measure(source,kind,locale,actual_limit - 1);
+                assert(core::result::is_err(short_measure) && error_code(core::result::unwrap_err(short_measure)) == 5);
+                index = 0; while (index < capacity + 6) { assert(output[index] == 77); index += 1; }
+            }
+        }
+        let result: core::result::Result<ext::unicode_case::Report,ext::unicode_case::Error> = ext::unicode_case::transform_into(source,kind,locale,destination,actual_limit);
+        if (core::result::is_err(result)) { let error: ext::unicode_case::Error = core::result::unwrap_err(result); code = error_code(error); detail = error_detail(error); }
+        else { report = core::result::unwrap(result); if (operation > 0) { assert(report.work == actual_limit); } }
+        index = 0;
+        while (index < capacity + 6) {
+            if (index < 3 || index >= 3 + report.bytes || code != 0) { assert(output[index] == 77); }
+            index += 1;
+        }
+        number(response,0,code as u64,4); number(response,4,detail,8);
+        number(response,12,report.bytes as u64,4); number(response,16,report.scalars as u64,4); number(response,20,report.work,8);
+        write(response_pointer,28); write(output_pointer + 3,report.bytes);
+    }
+    return 0;
+}

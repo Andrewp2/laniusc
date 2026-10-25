@@ -1,0 +1,55 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::poll;
+import std::process;
+
+fn code(error:std::poll::Error) -> i32 {
+    return match(error) {
+        std::poll::Error::Io(cause) -> match(cause) { core::io::Error::Interrupted -> 104, core::io::Error::WouldBlock -> 111, core::io::Error::Host(number) -> 100+number, _ -> 199 },
+        std::poll::Error::Clock(cause) -> match(cause) { std::clock::Error::Host(number) -> 150+number, std::clock::Error::ClockReversed -> 149, std::clock::Error::InvalidTimestamp -> 148, std::clock::Error::InvalidStatus -> 147, _ -> 146 },
+        std::poll::Error::Limit -> 50, std::poll::Error::InvalidResult -> 51, std::poll::Error::Bounds -> 52, std::poll::Error::AllocationFailed -> 53, _ -> 54,
+    };
+}
+fn main() -> i32 {
+    let argument:[i32;1]=[0]; let address:ptr=core::mem::i32_array_data_ptr(argument);
+    if(std::process::argc()!=2 || std::process::arg_len(1)!=1 || std::process::arg_read(1,address,1)!=1) { return 2; }
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts(address,1); let mode:i32=(raw[0] as i32)-48;
+    let made=std::poll::new(2); if(core::result::is_err(made)) { return code(core::result::unwrap_err(made)); }
+    let set:std::poll::PollSet=core::result::unwrap(made);
+    let requests:[std::poll::Request;2]=[std::poll::Request { handle:1,events:4 },std::poll::Request { handle:2147483647,events:0 }];
+    let original:core::slice::View<std::poll::Request> = core::result::unwrap(core::slice::view(requests,2));
+    assert(core::result::unwrap(set.poll_ms(original,0))==2);
+    let saved:core::slice::View<std::poll::Readiness> = set.as_view();
+    let one:core::slice::View<std::poll::Request> = original; one.length=1;
+    if(mode==5) { requests[0].handle=-1; }
+    if(mode==3 || mode==8) { one.length=0; }
+    let result:core::result::Result<i32,std::poll::Error> = core::result::Ok(0);
+    if(mode==0 || mode==5 || mode==6) { result=set.poll_ms(one,0); }
+    else {
+        let deadline:core::time::Deadline=core::time::deadline_at(core::time::instant(core::time::Duration { seconds:100,nanos:123456789 }));
+        let attempts:u32=3; if(mode==2) { attempts=0; } if(mode==3) { attempts=2; }
+        if(mode==1 || mode==2) { deadline.instant.ticks.seconds=0; deadline.instant.ticks.nanos=0; }
+        if(mode==1) { deadline.instant.ticks.nanos=1; }
+        if(mode==4 || mode==7 || mode==8) { deadline.instant.ticks.seconds=18446744073709551615; deadline.instant.ticks.nanos=999999999; }
+        if(mode==4) { attempts=1; } if(mode==8) { attempts=2; }
+        if(mode==9) { deadline=core::result::unwrap(core::time::deadline_after(core::result::unwrap(std::clock::monotonic_now()),core::time::from_millis(200))); }
+        result=set.poll_until(one,deadline,attempts);
+    }
+    let status:i32=0;
+    if(core::result::is_err(result)) {
+        status=code(core::result::unwrap_err(result));
+        assert(set.len()==2 && saved.length==2 && saved.values[saved.start].bits==4 && saved.values[saved.start+1].bits==32);
+    } else {
+        let count:i32=core::result::unwrap(result); assert(set.len()==one.length);
+        if(one.length>0) { let bits:u32=core::option::unwrap(set.readiness(0)).bits;
+            if(count==0) { assert(bits==0); } else { if(mode==6) { assert(count==1 && bits==32768); } else { assert(count==1 && bits==4); } }
+        } else { assert(count==0); }
+    }
+    set.destroy(); return status;
+}

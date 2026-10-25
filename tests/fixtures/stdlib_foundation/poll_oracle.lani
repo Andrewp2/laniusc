@@ -1,0 +1,32 @@
+// Test-only binary protocol: u32 count, then (i32 fd,u32 events) records;
+// replies u32 ready_count followed by count u32 revents. Production is Lanius.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import std::poll;
+import std::stream;
+fn word(output:&std::stream::Descriptor,value:u32) -> i32 {
+    let bytes:[u8;4]=[(value&255) as u8,((value>>8)&255) as u8,((value>>16)&255) as u8,(value>>24) as u8];
+    return core::result::unwrap(core::io::write_all(output,bytes,0,4));
+}
+fn main() -> i32 {
+    let input:std::stream::Descriptor=std::stream::stdin(); let output:std::stream::Descriptor=std::stream::stdout();
+    let storage:[i32;2]=[0;2]; let address:ptr=core::mem::i32_array_data_ptr(storage);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(address,8); let cells:[i32]=core::mem::typed_slice_from_raw_parts(address,2);
+    assert(core::result::unwrap(core::io::read_exact(input.borrow(),bytes,0,4))==4);
+    let count:i32=cells[0]; assert(count>=0 && count<=4096);
+    let allocated:core::result::Result<alloc::vec::Vec<std::poll::Request>,alloc::vec::Error> = alloc::vec::with_capacity(count);
+    let requests:alloc::vec::Vec<std::poll::Request> = core::result::unwrap(allocated);
+    let index:i32=0;
+    while(index<count) {
+        assert(core::result::unwrap(core::io::read_exact(input.borrow(),bytes,0,8))==8);
+        core::result::unwrap(requests.try_push(std::poll::Request { handle:cells[0],events:cells[1] as u32 })); index+=1;
+    }
+    let set:std::poll::PollSet=core::result::unwrap(std::poll::new(count));
+    let ready:i32=core::result::unwrap(set.poll_ms(requests.as_view(),0)); let written:i32=word(output.borrow(),ready as u32);
+    index=0; while(index<count) { let sent:i32=word(output.borrow(),core::option::unwrap(set.readiness(index)).bits); index+=1; }
+    set.destroy(); requests.destroy(); return 0;
+}

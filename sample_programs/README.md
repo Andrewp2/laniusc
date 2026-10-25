@@ -1,7 +1,7 @@
 # Sample Programs
 
 This directory contains small source-level examples for the current alpha
-language slice. Each `*.lani` file should have a sibling `*.stdout` file with
+language slice. Each top-level `*.lani` file should have a sibling `*.stdout` file with
 the expected stdout bytes for the same basename.
 
 These examples are documentation and smoke-test fixtures. They are not
@@ -20,3 +20,8 @@ Current fixture contract:
   artifact explicitly validates that claim.
 - If a sample demonstrates a source-level helper that is frontend-only today,
   say so in the test or docs that promote it.
+
+The `library/` directory holds application examples whose arguments, binary
+output or additional source roots require dedicated execution tests. Each has
+documented commands, target support and failure cases; the top-level fixed-input
+manifest runner does not discover subdirectories. See [library/README.md](library/README.md).

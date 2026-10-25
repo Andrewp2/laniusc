@@ -1,0 +1,17 @@
+// Ordinary consumer: receives a real certificate; no Error/ErrorKind projection.
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+import ext::x509;
+import std::stream;
+fn main() -> i32 {
+    let head: [u8; 8] = [0; 8]; let bytes: [u8; 16384] = [0; 16384]; let source: std::stream::Descriptor = std::stream::stdin();
+    assert(core::io::read_exact(source.borrow(), head, 0, 8).is_ok()); let length: u64 = 0; let at: i32 = 0; while (at < 8) { length |= (head[at] as u64) << (at * 8); at += 1; }
+    assert(length <= 16384 && core::io::read_exact(source.borrow(), bytes, 0, length as i32).is_ok());
+    let budget: ext::x509::Budget = ext::x509::budget(ext::x509::default_limits()).unwrap();
+    let cert: ext::x509::Certificate = ext::x509::parse(core::slice::View { values: bytes, start: 0, length: length as i32 }, budget.borrow()).unwrap();
+    assert(cert.encoded.length == length as i32 && cert.tbs.length < cert.encoded.length && cert.serial.length > 0);
+    assert(cert.spki.key.bytes.length > 0 && cert.signature_algorithm.oid.bytes.length > 0 && cert.issuer.element.content.length > 0);
+    assert(cert.validity.not_before.year >= 1 && cert.validity.not_after.year <= 9999); return 0;
+}

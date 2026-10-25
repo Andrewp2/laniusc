@@ -2,7 +2,10 @@
 
 use super::*;
 use crate::{
-    codegen::{lowering::LoweringJobBounds, lowering_ir::LoweringArtifactKind},
+    codegen::{
+        lowering::{LoweringJobBounds, LoweringOutputDemand},
+        lowering_ir::LoweringArtifactKind,
+    },
     gpu::buffers::LaniusBuffer,
     lexer::{
         types::{GpuToken, Token},
@@ -57,6 +60,39 @@ enum DeferredParserFinish<T> {
     /// more rounds or capacity; the type checker records the next attempt
     /// with them.
     RetryWithSynchronousCanonical,
+    RetryWithLoweringOutput {
+        target: LoweringTarget,
+        demand: LoweringOutputDemand,
+    },
+}
+
+const MAX_LOWERING_OUTPUT_RETRIES: u32 = 3;
+#[derive(Clone, Copy, Default)]
+struct LoweringOutputRetry {
+    demand: LoweringOutputDemand,
+    attempts: u32,
+}
+impl LoweringOutputRetry {
+    fn next(self, demand: LoweringOutputDemand) -> Result<Self, String> {
+        if self.attempts >= MAX_LOWERING_OUTPUT_RETRIES {
+            return Err(format!(
+                "GPU lowering output capacity still grows after {} retries",
+                self.attempts
+            ));
+        }
+        if demand.target_instructions < self.demand.target_instructions
+            || demand.artifact_bytes < self.demand.artifact_bytes
+            || demand == self.demand
+        {
+            return Err(
+                "GPU lowering output capacity retry made no monotonic progress".to_string(),
+            );
+        }
+        Ok(Self {
+            demand,
+            attempts: self.attempts + 1,
+        })
+    }
 }
 
 fn parser_shape_key_for_source(path: &Path) -> blake3::Hash {
@@ -147,6 +183,26 @@ enum ParserRetry {
 }
 
 impl<'gpu> GpuCompiler<'gpu> {
+    fn apply_lowering_output_retry(
+        &self,
+        target: LoweringTarget,
+        demand: LoweringOutputDemand,
+        state: &mut LoweringOutputRetry,
+    ) -> Result<(), CompileError> {
+        let next = state.next(demand).map_err(CompileError::GpuCodegen)?;
+        let cache = match target {
+            LoweringTarget::X86_64 => &self.x86_lowering,
+            LoweringTarget::Wasm => &self.wasm_lowering,
+        };
+        cache
+            .as_deref()
+            .map_err(|error| CompileError::GpuCodegen(error.clone()))?
+            .grow_output(&self.gpu.device, demand)
+            .map_err(CompileError::GpuCodegen)?;
+        *state = next;
+        Ok(())
+    }
+
     fn note_parser_retry(&self, retry: ParserRetry) {
         // A zero-length span marks the retry in a trace.
         drop(crate::gpu::trace::HostSpan::new(
@@ -324,6 +380,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         src: &str,
         diagnostic_path: &Path,
         target: Option<LoweringTarget>,
+        output_demand: LoweringOutputDemand,
     ) -> Result<
         DeferredParserRecord<(
             gpu_type_checker::RecordedTypeCheck,
@@ -410,7 +467,8 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 bufs.n,
                                 [src],
                             )
-                            .with_token_capacity(token_capacity),
+                            .with_token_capacity(token_capacity)
+                            .with_output_demand(output_demand),
                         )
                         .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
                 }
@@ -477,25 +535,37 @@ impl<'gpu> GpuCompiler<'gpu> {
                     err,
                 )
             })?;
-        let artifact = target
-            .map(|target| {
-                self.lowering_pipeline(target)
-                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                    .finish_artifact(device, queue)
-                    .map_err(|err| {
-                        lowering_error_to_compile_error_for_source(
-                            device,
-                            queue,
-                            bufs,
-                            &typecheck_hir,
-                            src,
-                            diagnostic_path,
+        let artifact = if let Some(target) = target {
+            let pipeline = self
+                .lowering_pipeline(target)
+                .map_err(CompileError::GpuCodegen)?;
+            match pipeline.finish_artifact(device, queue) {
+                Ok(artifact) => Some(artifact),
+                Err(error) => {
+                    if let Some(demand) = pipeline
+                        .output_demand_for_retry(&error)
+                        .map_err(CompileError::GpuCodegen)?
+                    {
+                        return Ok(DeferredParserFinish::RetryWithLoweringOutput {
                             target,
-                            err,
-                        )
-                    })
-            })
-            .transpose()?;
+                            demand,
+                        });
+                    }
+                    return Err(lowering_error_to_compile_error_for_source(
+                        device,
+                        queue,
+                        bufs,
+                        &typecheck_hir,
+                        src,
+                        diagnostic_path,
+                        target,
+                        error,
+                    ));
+                }
+            }
+        } else {
+            None
+        };
         Ok(DeferredParserFinish::Complete(artifact))
     }
 
@@ -517,11 +587,13 @@ impl<'gpu> GpuCompiler<'gpu> {
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest<'_>>,
         lowering_bounds: LoweringJobBounds,
+        output_demand: LoweringOutputDemand,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         let mut downstream_host_timer =
             CompilerHostTimer::new("compile.source-pack.record.downstream");
         // The parse ran with `token_capacity`, which bounds the job's HIR.
-        let mut lowering_bounds = lowering_bounds.with_token_capacity(token_capacity);
+        let mut lowering_bounds = lowering_bounds.with_token_capacity(token_capacity)
+            .with_output_demand(output_demand);
         // A declarations-only replay emits the same copies as a replay of
         // the full template, so it keeps that replay's bound: the tokens
         // its template left out count as the full template's would.
@@ -754,6 +826,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest<'_>>,
+        output_demand: LoweringOutputDemand,
     ) -> Result<RecordedTypeCheckWithDiagnosticBuffers, CompileError> {
         let (emit_semantic_interface, lowering_target, object_request) =
             resolve_source_pack_lowering_request(
@@ -790,6 +863,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             bufs.n,
                             diagnostic_files.iter().map(|file| file.source.as_str()),
                         ),
+                        output_demand,
                     )
                 },
             )
@@ -813,6 +887,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         unit_id: u32,
         lowering_target: Option<LoweringTarget>,
         object_request: Option<LoweringObjectRequest<'_>>,
+        output_demand: LoweringOutputDemand,
     ) -> Result<DeferredParserRecord<RecordedTypeCheckWithDiagnosticBuffers>, CompileError> {
         let (emit_semantic_interface, lowering_target, object_request) =
             resolve_source_pack_lowering_request(
@@ -872,6 +947,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                         bufs.n,
                         diagnostic_files.iter().map(|file| file.source.as_str()),
                     ),
+                    output_demand,
                 )
             },
             |err| parser_execution_failed_for_source_pack(diagnostic_files, err),
@@ -959,52 +1035,77 @@ impl<'gpu> GpuCompiler<'gpu> {
             })
             .transpose()?;
         finish_timer.stamp("semantic_interface");
-        let target_artifact = lowering_target
-            .map(|target| {
-                self.lowering_pipeline(target)
-                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?
-                    .finish_artifact(device, queue)
-                    .map_err(|err| {
-                        lowering_error_to_compile_error_for_source_pack(
-                            device,
-                            queue,
-                            &recorded.diagnostic_tokens,
-                            &recorded.hir,
-                            diagnostic_files,
+        let target_artifact = if let Some(target) = lowering_target {
+            let pipeline = self
+                .lowering_pipeline(target)
+                .map_err(CompileError::GpuCodegen)?;
+            match pipeline.finish_artifact(device, queue) {
+                Ok(artifact) => Some(artifact),
+                Err(error) => {
+                    if let Some(demand) = pipeline
+                        .output_demand_for_retry(&error)
+                        .map_err(CompileError::GpuCodegen)?
+                    {
+                        return Ok(DeferredParserFinish::RetryWithLoweringOutput {
                             target,
-                            err,
-                        )
-                    })
-            })
-            .transpose()?;
-        finish_timer.stamp("target_artifact");
-        let native_object = object_request
-            .map(|request| {
-                let target = request.target();
-                let (library_id, unit_id) = request.ids();
-                let pipeline = self.lowering_pipeline(target)
-                    .map_err(|err| CompileError::GpuCodegen(err.to_string()))?;
-                match target {
-                    LoweringTarget::X86_64 => pipeline
-                        .finish_x86_object(device, queue, library_id, unit_id)
-                        .map(|(object, hirs)| (CompiledSourcePackObject::X86_64(object), hirs)),
-                    LoweringTarget::Wasm => pipeline
-                        .finish_wasm_object(device, queue, library_id, unit_id)
-                        .map(|(object, hirs)| (CompiledSourcePackObject::Wasm(object), hirs)),
-                }
-                .map_err(|err| {
-                    lowering_error_to_compile_error_for_source_pack(
+                            demand,
+                        });
+                    }
+                    return Err(lowering_error_to_compile_error_for_source_pack(
                         device,
                         queue,
                         &recorded.diagnostic_tokens,
                         &recorded.hir,
                         diagnostic_files,
                         target,
-                        err,
-                    )
-                })
-            })
-            .transpose()?;
+                        error,
+                    ));
+                }
+            }
+        } else {
+            None
+        };
+        finish_timer.stamp("target_artifact");
+        let native_object = if let Some(request) = object_request {
+            let target = request.target();
+            let (library_id, unit_id) = request.ids();
+            let pipeline = self
+                .lowering_pipeline(target)
+                .map_err(CompileError::GpuCodegen)?;
+            let result = match target {
+                LoweringTarget::X86_64 => pipeline
+                    .finish_x86_object(device, queue, library_id, unit_id)
+                    .map(|(object, hirs)| (CompiledSourcePackObject::X86_64(object), hirs)),
+                LoweringTarget::Wasm => pipeline
+                    .finish_wasm_object(device, queue, library_id, unit_id)
+                    .map(|(object, hirs)| (CompiledSourcePackObject::Wasm(object), hirs)),
+            };
+            match result {
+                Ok(object) => Some(object),
+                Err(error) => {
+                    if let Some(demand) = pipeline
+                        .output_demand_for_retry(&error)
+                        .map_err(CompileError::GpuCodegen)?
+                    {
+                        return Ok(DeferredParserFinish::RetryWithLoweringOutput {
+                            target,
+                            demand,
+                        });
+                    }
+                    return Err(lowering_error_to_compile_error_for_source_pack(
+                        device,
+                        queue,
+                        &recorded.diagnostic_tokens,
+                        &recorded.hir,
+                        diagnostic_files,
+                        target,
+                        error,
+                    ));
+                }
+            }
+        } else {
+            None
+        };
         finish_timer.stamp("native_object");
         let (native_object, native_call_hirs) = match native_object {
             Some((object, call_hirs)) => (Some(object), call_hirs),
@@ -1030,11 +1131,15 @@ impl<'gpu> GpuCompiler<'gpu> {
             Default::default()
         };
         finish_timer.stamp("unit_facts");
-        let body_native_layouts = object_request
+        let body_layouts = object_request
             .and_then(LoweringObjectRequest::body_specialization)
-            .map(|specialization| self.type_checker.retained_body_native_layouts(device, queue, specialization))
+            .map(|specialization| self.type_checker.retained_body_native_layouts_with_bindings(device, queue, specialization))
             .transpose()
             .map_err(|error| CompileError::GpuFrontend(format!("checked body layout readback failed: {error}")))?;
+        let (body_native_layouts, body_binding_native_layouts) = match body_layouts {
+            Some((entries, bindings)) => (Some(entries), Some(bindings)),
+            None => (None, None),
+        };
         finish_timer.stamp("body_native_layouts");
         // An original x86 unit with an interface keeps the byte spans of its
         // generic bodies, from which a concrete replay copies instances. A
@@ -1051,6 +1156,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         };
         Ok(DeferredParserFinish::Complete(CheckedSourcePackArtifacts {
             body_native_layouts,
+            body_binding_native_layouts,
             owner_spans,
             semantic_interface,
             target_artifact,
@@ -1406,6 +1512,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         let _resident_guard = self.resident_pipeline_lock.lock().await;
         let mut forced_tree_capacity = None;
         let mut require_lexer_boundary = false;
+        let mut lowering_output_retry = LoweringOutputRetry::default();
         let source_capacity = u32::try_from(src.len()).map_err(|_| {
             CompileError::GpuFrontend("source exceeds lexer address capacity".into())
         })?;
@@ -1432,6 +1539,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 src,
                                 &diagnostic_path,
                                 target,
+                                lowering_output_retry.demand,
                             )?;
                             self.remember_parser_shape(parser_shape_key, &recorded);
                             Ok(recorded)
@@ -1494,6 +1602,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 src,
                                 &diagnostic_path,
                                 target,
+                                lowering_output_retry.demand,
                             )?;
                             self.remember_parser_shape(parser_shape_key, &recorded);
                             Ok(recorded)
@@ -1528,6 +1637,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                     require_lexer_boundary = true;
                 }
                 DeferredParserFinish::RetryWithSynchronousCanonical => {}
+                DeferredParserFinish::RetryWithLoweringOutput { target, demand } => {
+                    self.apply_lowering_output_retry(target, demand, &mut lowering_output_retry)?;
+                }
             }
         }
     }
@@ -1993,7 +2105,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         if let Some(input) = body_specialization {
             artifacts.semantic_interface = Some(input.interface.clone());
             if let Some(blanking) = input.blanking {
-                artifacts.blanked_to_full(blanking).map_err(|error| CompileError::GpuFrontend(format!(
+                artifacts.blanked_to_full(blanking, input.frontend_specialization, input.specialization).map_err(|error| CompileError::GpuFrontend(format!(
                     "declarations-only template results do not map back to the template: {error:#}"
                 )))?;
             }
@@ -2088,6 +2200,7 @@ impl<'gpu> GpuCompiler<'gpu> {
         };
         let mut forced_tree_capacity = None;
         let mut require_lexer_boundary = false;
+        let mut lowering_output_retry = LoweringOutputRetry::default();
         loop {
             let warm_shape = (!require_lexer_boundary && forced_tree_capacity.is_none())
                 .then(|| self.cached_parser_shape(&parser_shape_key, source_bytes))
@@ -2129,6 +2242,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                                 unit_id,
                                 lowering_target,
                                 object_request,
+                                lowering_output_retry.demand,
                             )
                         },
                         |device, queue, bufs, parser, recorded| {
@@ -2189,6 +2303,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                         require_lexer_boundary = true;
                     }
                     DeferredParserFinish::RetryWithSynchronousCanonical => {}
+                    DeferredParserFinish::RetryWithLoweringOutput { target, demand } => {
+                        self.apply_lowering_output_retry(target, demand, &mut lowering_output_retry)?;
+                    }
                 }
                 continue;
             }
@@ -2217,6 +2334,7 @@ impl<'gpu> GpuCompiler<'gpu> {
                             unit_id,
                             lowering_target,
                             object_request,
+                            lowering_output_retry.demand,
                         )?;
                         self.remember_parser_shape(parser_shape_key, &recorded);
                         Ok(recorded)
@@ -2248,6 +2366,9 @@ impl<'gpu> GpuCompiler<'gpu> {
                     unreachable!("source-pack path does not yet record speculative lexer metadata")
                 }
                 DeferredParserFinish::RetryWithSynchronousCanonical => {}
+                DeferredParserFinish::RetryWithLoweringOutput { target, demand } => {
+                    self.apply_lowering_output_retry(target, demand, &mut lowering_output_retry)?;
+                }
             }
         }
     }
@@ -2848,7 +2969,9 @@ fn finish_source_pack_unit(
         &mut artifacts.generic_calls,
         template_dependency_pages.as_ref(),
         impl_bindings,
-    );
+    ).map_err(|error| CompileError::GpuFrontend(format!(
+        "generic declaration arity retention failed: {error:#}"
+    )))?;
     let native_call_function_hirs = retain_native_call_owners(
         &artifacts.native_call_hirs, &artifacts.native_call_owners,
     ).map_err(|error| CompileError::GpuFrontend(format!(
@@ -2934,6 +3057,7 @@ fn finish_source_pack_unit(
         template_dependency_pages,
         generic_calls: artifacts.generic_calls.into(),
         body_native_layouts: artifacts.body_native_layouts.map(Into::into),
+        body_binding_native_layouts: artifacts.body_binding_native_layouts.map(Into::into),
         checked_contracts: std::sync::Arc::new(artifacts.checked_contracts),
         checked_call_owners: artifacts.checked_call_owners.into(),
         native_call_hirs: artifacts.native_call_hirs.into(),
@@ -2943,6 +3067,7 @@ fn finish_source_pack_unit(
 
 struct CheckedSourcePackArtifacts {
     body_native_layouts: Option<Vec<Vec<u32>>>,
+    body_binding_native_layouts: Option<Vec<Vec<u32>>>,
     owner_spans: Option<gpu_type_checker::CheckedOwnerSpans>,
     semantic_interface: Option<crate::compiler::GpuSemanticInterfaceArtifact>,
     target_artifact: Option<Vec<u8>>,
@@ -2982,6 +3107,7 @@ fn compare_declarations_only_replay(
             check("native call rows", full.native_call_hirs == short.native_call_hirs);
             check("native call functions", full.native_call_function_hirs == short.native_call_function_hirs);
             check("native layouts", full.body_native_layouts == short.body_native_layouts);
+            check("implementation native layouts", full.body_binding_native_layouts == short.body_binding_native_layouts);
             check("contracts", full.checked_contracts == short.checked_contracts);
             check("native object", objects);
             if !differences.is_empty() && crate::gpu::env::env_bool_truthy("LANIUS_DEBUG_DECL_ONLY_TEMPLATES", false) {
@@ -3032,8 +3158,18 @@ impl CheckedSourcePackArtifacts {
     /// Convert a declarations-only replay's results from the blanked
     /// template's copy space to the template's full space: every token and
     /// row the template unit's checked calls, owners and native symbols name.
-    fn blanked_to_full(&mut self, blanking: &gpu_type_checker::TemplateBlanking) -> anyhow::Result<()> {
+    fn blanked_to_full(
+        &mut self,
+        blanking: &gpu_type_checker::TemplateBlanking,
+        frontend: &gpu_type_checker::CheckedBodySpecializationBatch,
+        full: &gpu_type_checker::CheckedBodySpecializationBatch,
+    ) -> anyhow::Result<()> {
         let map = blanking.map(gpu_type_checker::BlankingDirection::ToFull);
+        if let Some(layouts) = &mut self.body_binding_native_layouts {
+            // Remapping local member identities can change their order relative
+            // to imported members. Keep each GPU witness with its exact binding.
+            *layouts = frontend.remap_binding_native_layouts(&map, full, layouts)?;
+        }
         for call in &mut self.generic_calls {
             map.call(call)?;
         }
@@ -3069,6 +3205,9 @@ pub(in crate::compiler) struct CompiledSourcePackUnit {
     /// concrete replay. These refine the cache independently of semantic keys.
     /// One vector per batched replay entry, in entry order.
     pub(in crate::compiler) body_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
+    /// GPU-admitted widths of implementation environments, aligned with the
+    /// replay packet's sorted bindings. These cover binding-only graph nodes.
+    pub(in crate::compiler) body_binding_native_layouts: Option<std::sync::Arc<[Vec<u32>]>>,
     /// Byte spans of this original unit's copyable generic bodies; None for
     /// a replay or a unit whose spans were not retained.
     pub(in crate::compiler) owner_spans: Option<std::sync::Arc<gpu_type_checker::CheckedOwnerSpans>>,
@@ -4886,6 +5025,51 @@ fn read_single_token_from_buffer(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn lowering_output_retry_requires_progress_and_stops_at_its_bound() {
+        let initial = super::LoweringOutputRetry::default();
+        assert!(
+            initial
+                .next(super::LoweringOutputDemand::default())
+                .is_err()
+        );
+        let first = super::LoweringOutputDemand {
+            target_instructions: 4096,
+            artifact_bytes: 8192,
+        };
+        let state = initial.next(first).unwrap();
+        assert!(state.next(first).is_err());
+        assert!(
+            state
+                .next(super::LoweringOutputDemand {
+                    target_instructions: 1,
+                    artifact_bytes: 16384
+                })
+                .is_err()
+        );
+        let state = state
+            .next(super::LoweringOutputDemand {
+                artifact_bytes: 16384,
+                ..first
+            })
+            .unwrap();
+        let state = state
+            .next(super::LoweringOutputDemand {
+                artifact_bytes: 32768,
+                ..first
+            })
+            .unwrap();
+        assert!(
+            state
+                .next(super::LoweringOutputDemand {
+                    artifact_bytes: 65536,
+                    ..first
+                })
+                .is_err()
+        );
+        assert_eq!(super::LoweringOutputRetry::default().attempts, 0);
+    }
+
     use super::*;
 
     #[test]

@@ -3,7 +3,7 @@ module app::main;
 import core::option;
 import core::slice;
 import core::range;
-import core::number_i32;
+import core::i32;
 
 struct Summary { count: i32, total: i32 }
 
@@ -21,7 +21,7 @@ fn summarize(values: [i32], len: i32) -> core::option::Option<Summary> {
             let absent: core::option::Option<Summary> = core::option::None();
             return absent;
         }
-        total = core::number_i32::saturating_add(total, value);
+        total = core::i32::saturating_add(total, value);
         index += 1;
     }
     let summary: Summary = Summary { count: len, total: total };

@@ -1,0 +1,21 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::directory;
+import std::file_ops;
+fn main() -> i32 {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("."),1); let path:core::path::Path=core::result::unwrap(core::path::from_bytes(raw,1));
+    let directory:std::directory::Reader=core::result::unwrap(std::directory::open(path,32768)); let count:i32=0;
+    while(true) { let next=core::result::unwrap(directory.next()); if(core::option::is_none(next)) { break; } let entry:std::directory::Entry=core::option::unwrap(next); assert(entry.name.len()>0 && entry.consumed>=24); count+=1; }
+    assert(count==4 && directory.work_done()>0 && core::option::is_none(core::result::unwrap(directory.next()))); core::result::unwrap(directory.close()); core::result::unwrap(directory.close()); assert(core::result::is_err(directory.next()));
+    let limits:std::directory::Limits=std::directory::default_limits(); let snapshot:std::directory::Snapshot=core::result::unwrap(std::directory::walk(path,2,limits)); assert(snapshot.len()==5 && snapshot.byte_len()==21 && snapshot.work_done()>0);
+    let row:std::directory::WalkEntry=std::directory::empty_entry(); let i:i32=0; while(i<snapshot.len()) { core::result::unwrap(snapshot.entry_into(i,row.borrow())); let path:core::slice::View<u8> =row.path; let metadata:std::file_ops::Metadata=row.metadata; assert(path.len()>0 && row.depth>=1 && row.depth<=2 && metadata.has(835)); i+=1; }
+    assert(core::result::is_err(snapshot.entry_into(-1,row.borrow())) && core::result::is_err(snapshot.entry_into(5,row.borrow()))); snapshot.destroy();
+    let empty:std::directory::Snapshot=core::result::unwrap(std::directory::walk(path,0,limits)); assert(empty.len()==0); empty.destroy();
+    limits.max_entries=5; limits.max_bytes=21; limits.max_path_bytes=8; let exact:std::directory::Snapshot=core::result::unwrap(std::directory::walk(path,2,limits)); assert(exact.len()==5); exact.destroy();
+    limits.max_bytes=20; assert(core::result::is_err(std::directory::walk(path,2,limits))); limits.max_bytes=21; limits.max_entries=4; assert(core::result::is_err(std::directory::walk(path,2,limits))); limits.max_entries=5; limits.max_path_bytes=7; assert(core::result::is_err(std::directory::walk(path,2,limits)));
+    limits.max_path_bytes=8; limits.max_work=0; assert(core::result::is_err(std::directory::walk(path,2,limits))); limits=std::directory::default_limits(); limits.max_depth=1; assert(core::result::is_err(std::directory::walk(path,2,limits))); return 0;
+}

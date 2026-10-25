@@ -1,5 +1,6 @@
 module app::main;
 import core::f32;
+import core::result;
 fn main() -> i32 {
     if (core::f32::ZERO != 0.0) {
         return 1;
@@ -19,7 +20,7 @@ fn main() -> i32 {
     if (core::f32::clamp(-3.0, -1.0, 2.0) != -1.0 || core::f32::clamp(4.0, -1.0, 2.0) != 2.0 || core::f32::clamp(1.0, -1.0, 2.0) != 1.0) {
         return 4;
     }
-    if (core::f32::clamp(1.5, 2.0, 1.0) != 1.5 ||
+    if (!core::result::is_err(core::f32::try_clamp(1.5, 2.0, 1.0)) ||
         core::f32::clamp_or(1.5, 2.0, 1.0, -7.0) != -7.0 ||
         core::f32::clamp_or(-3.0, -1.0, 2.0, -7.0) != -1.0 ||
         core::f32::clamp_or(4.0, -1.0, 2.0, -7.0) != 2.0 ||
@@ -28,7 +29,7 @@ fn main() -> i32 {
         core::f32::clamp(0.0, 2.0, 2.0) != 2.0) {
         return 17;
     }
-    if (core::f32::sqrt(0.0) != 0.0 || core::f32::sqrt(-1.0) != 0.0 || core::f32::sqrt(4.0) != 2.0) {
+    if (core::f32::sqrt(0.0) != 0.0 || !core::f32::is_nan(core::f32::sqrt(-1.0)) || core::f32::sqrt(4.0) != 2.0) {
         return 5;
     }
     let large_root: f32 = core::f32::sqrt(100000000000000000000.0);
@@ -51,7 +52,7 @@ fn main() -> i32 {
     if (!core::f32::is_nonzero(-1.0) || core::f32::is_nonzero(0.0)) {
         return 11;
     }
-    if (core::f32::signum(-1.0) != -1.0 || core::f32::signum(0.0) != 0.0 || core::f32::signum(2.0) != 1.0) {
+    if (core::f32::signum(-1.0) != -1.0 || core::f32::signum(0.0) != 1.0 || core::f32::signum(2.0) != 1.0) {
         return 12;
     }
     if (!core::f32::between_exclusive(1.0, 0.0, 2.0) || core::f32::between_exclusive(0.0, 0.0, 2.0)) {
@@ -70,7 +71,7 @@ fn main() -> i32 {
         core::f32::max(nan, nan) == core::f32::max(nan, nan)) { return 19; }
     if (core::f32::clamp_or(1.0, nan, 2.0, -7.0) != -7.0 ||
         core::f32::clamp_or(1.0, 0.0, nan, -7.0) != -7.0 ||
-        core::f32::clamp(1.0, nan, 2.0) != 1.0 ||
+        !core::result::is_err(core::f32::try_clamp(1.0, nan, 2.0)) ||
         core::f32::clamp_or(nan, 0.0, 2.0, -7.0) ==
             core::f32::clamp_or(nan, 0.0, 2.0, -7.0)) { return 20; }
     if (core::f32::abs(nan) == core::f32::abs(nan) ||

@@ -1,0 +1,113 @@
+// Filter NUL-delimited raw byte paths from stdin; emit matching paths with NUL.
+// A final nonempty record at EOF is accepted. No filesystem lookup occurs.
+// Exit 2: arguments/syntax/limits/work, 3: I/O, 4: allocation.
+// Earlier records may already have been written when a later record fails.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::glob;
+import std::args;
+import std::stream;
+
+struct Options { glob: ext::glob::Options, pattern: core::option::Option<core::slice::View<u8>>, maximum_path: i32, maximum_work: u64, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 1) { options.glob.literal_leading_dot = false; return true; }
+    if (item.id == 2) { options.glob.ascii_case_insensitive = true; return true; }
+    if (item.id == 3) { options.glob.globstar = false; return true; }
+    if (item.id == 6) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    let parsed: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 4) { if (value > 1048576 as u64) { return false; } options.maximum_path = value as i32; }
+    else { options.maximum_work = value; } return true;
+}
+fn operand(options: &Options, argument: ext::cli::Argument) -> bool {
+    if (core::option::is_some(options.pattern)) { return false; } options.pattern = core::option::Some(argument.bytes); return true;
+}
+fn glob_error(error: ext::glob::Error) -> i32 { let status: i32 = match (error) { ext::glob::Error::AllocationFailed -> 4, _ -> 2 }; return status; }
+fn emit(pattern: &ext::glob::Pattern, scratch: core::slice::View<u8>, record: &alloc::vec::Vec<u8>, maximum_work: u64) -> i32 {
+    let path: core::path::Path = core::result::unwrap(core::path::from_view(record.as_view()));
+    let result: core::result::Result<bool, ext::glob::Error> = pattern.matches(path,scratch,maximum_work);
+    if (core::result::is_err(result)) { return glob_error(core::result::unwrap_err(result)); }
+    if (!core::result::unwrap(result)) { return 0; }
+    let sink: std::stream::Descriptor = std::stream::stdout(); let bytes: core::slice::View<u8> = record.as_view();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return 3; }
+    let zero: [u8; 1] = [0]; if (core::result::is_err(core::io::write_all(sink.borrow(),zero,0,1))) { return 3; } return 0;
+}
+fn stream(pattern: &ext::glob::Pattern, scratch: core::slice::View<u8>, record: &alloc::vec::Vec<u8>, options: Options) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin(); let storage: [i32; 256] = [0;256];
+    let chunk: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    while (true) {
+        let result: core::result::Result<i32, core::io::Error> = source.read(chunk,0,1024);
+        if (core::result::is_err(result)) {
+            let error: core::io::Error = core::result::unwrap_err(result); if (core::io::is_interrupted(error)) { continue; } return 3;
+        }
+        let count: i32 = core::result::unwrap(result);
+        if (count == 0) { if (record.is_empty()) { return 0; } return emit(pattern,scratch,record,options.maximum_work); }
+        let index: i32 = 0;
+        while (index < count) {
+            let value: u8 = chunk[index];
+            if (value == 0) {
+                let status: i32 = emit(pattern,scratch,record,options.maximum_work); if (status != 0) { return status; } record.clear();
+            } else {
+                if (record.len() == options.maximum_path) { return 2; }
+                if (core::result::is_err(record.try_push(value))) { return 4; }
+            }
+            index += 1;
+        }
+    }
+    return 0;
+}
+fn filter(options: Options) -> i32 {
+    let compiled: core::result::Result<ext::glob::Pattern, ext::glob::Error> = ext::glob::compile(core::option::unwrap(options.pattern),options.glob,ext::glob::default_limits());
+    if (core::result::is_err(compiled)) { return glob_error(core::result::unwrap_err(compiled)); }
+    let pattern: ext::glob::Pattern = core::result::unwrap(compiled);
+    let allocated: core::result::Result<alloc::vec::Vec<u8>, ext::glob::Error> = pattern.new_scratch();
+    if (core::result::is_err(allocated)) { pattern.destroy(); return glob_error(core::result::unwrap_err(allocated)); }
+    let scratch: alloc::vec::Vec<u8> = core::result::unwrap(allocated); let record: alloc::vec::Vec<u8> = alloc::vec::new();
+    let status: i32 = stream(pattern.borrow(),scratch.as_view(),record.borrow(),options);
+    record.destroy(); scratch.destroy(); pattern.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec; 6] = [
+        ext::cli::Spec { id: 1, long: literal("all",3), short: 97, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("ignore-case",11), short: 105, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("no-globstar",11), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 4, long: literal("max-path-bytes",14), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,6));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { glob: ext::glob::default_options(), pattern: core::option::None(), maximum_path: 65536, maximum_work: ext::glob::DEFAULT_WORK_LIMIT, help: false };
+    while (true) {
+        let result: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+        if (core::result::is_err(result)) { return 2; } let next: core::option::Option<ext::cli::Event> = core::result::unwrap(result);
+        if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) };
+        if (!valid) { return 2; }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: path-filter [--all] [--ignore-case] [--no-globstar] [--max-path-bytes N] [--max-work N] [--] PATTERN\n",108);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.len()))) { return 3; } return 0;
+    }
+    if (core::option::is_none(options.pattern)) { return 2; } return filter(options);
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1,32,65536);
+    if (core::result::is_err(captured)) { let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; return status; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured); let status: i32 = process(arguments); arguments.destroy(); return status;
+}

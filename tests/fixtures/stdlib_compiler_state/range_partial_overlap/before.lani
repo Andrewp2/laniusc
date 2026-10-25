@@ -1,0 +1,47 @@
+module app::main;
+import core::cmp;
+import core::range;
+
+// Two incomparable lower values 0,1 and two incomparable upper values 2,3.
+// Every lower value is below every upper value. Equality is identity.
+struct Node { id: i32 }
+pub impl core::cmp::PartialEq<Node> for Node {
+    pub fn partial_eq(a: Node,b: Node) -> bool { return a.id == b.id; }
+    pub fn partial_ne(a: Node,b: Node) -> bool { return a.id != b.id; }
+}
+pub impl core::cmp::PartialOrd<Node> for Node {
+    pub fn partial_lt(a: Node,b: Node) -> bool { return a.id < 2 && b.id >= 2; }
+    pub fn partial_le(a: Node,b: Node) -> bool { return a.id == b.id || Node::partial_lt(a,b); }
+    pub fn partial_gt(a: Node,b: Node) -> bool { return Node::partial_lt(b,a); }
+    pub fn partial_ge(a: Node,b: Node) -> bool { return Node::partial_le(b,a); }
+    pub fn partial_cmp(a: Node,b: Node) -> core::cmp::PartialOrdering {
+        if (a.id == b.id) { return core::cmp::Equal; }
+        if (Node::partial_lt(a,b)) { return core::cmp::Less; }
+        if (Node::partial_lt(b,a)) { return core::cmp::Greater; }
+        return core::cmp::Unordered;
+    }
+}
+fn main() -> i32 {
+    let a: Node = Node { id: 0 }; let c: Node = Node { id: 1 };
+    let b: Node = Node { id: 2 }; let d: Node = Node { id: 3 };
+    let left: core::range::Range<Node> = core::range::range(a,b);
+    let right: core::range::Range<Node> = core::range::range(c,d);
+    let closed_left: core::range::RangeInclusive<Node> = core::range::range_inclusive(a,b);
+    let closed_right: core::range::RangeInclusive<Node> = core::range::range_inclusive(c,d);
+    let half_shared: i32 = 0; let closed_shared: i32 = 0; let id: i32 = 0;
+    while (id < 4) {
+        let value: Node = Node { id: id };
+        if (left.contains(value) && right.contains(value)) { half_shared += 1; }
+        if (closed_left.contains(value) && closed_right.contains(value)) { closed_shared += 1; }
+        id += 1;
+    }
+    assert(half_shared == 0 && closed_shared == 0);
+    let flags: i32 = 0;
+    if (core::range::overlaps(left,right)) { flags |= 1; }
+    if (left.overlaps(right)) { flags |= 2; }
+    if (core::range::overlaps_inclusive(closed_left,closed_right)) { flags |= 4; }
+    if (closed_left.overlaps(closed_right)) { flags |= 8; }
+    print(half_shared); print(closed_shared); print(flags);
+    assert(flags == 15);
+    return 0;
+}

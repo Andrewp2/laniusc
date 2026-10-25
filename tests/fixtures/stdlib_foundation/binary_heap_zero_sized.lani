@@ -1,0 +1,33 @@
+module app::main;
+import alloc::binary_heap;
+import core::cmp;
+import core::option;
+import core::result;
+import core::slice;
+import std::vec;
+struct Unit {}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(left: Unit, right: Unit) -> bool { return false; }
+    pub fn le(left: Unit, right: Unit) -> bool { return true; }
+    pub fn gt(left: Unit, right: Unit) -> bool { return false; }
+    pub fn ge(left: Unit, right: Unit) -> bool { return true; }
+}
+fn main() -> i32 {
+    let heap: alloc::binary_heap::BinaryHeap<Unit> = alloc::binary_heap::new(alloc::binary_heap::Order::Min);
+    if (core::result::unwrap(heap.try_reserve(2147483647)) != 2147483647) { return 1; }
+    let index: i32 = 0;
+    while (index < 65) { core::result::unwrap(heap.try_push(Unit {})); index += 1; }
+    heap.push_pop(Unit {}); heap.replace_top(Unit {});
+    if (heap.len() != 65 || core::result::is_ok(heap.try_reserve(2147483647))) { return 2; }
+    let view: core::slice::View<Unit> = heap.as_view();
+    if (core::result::unwrap(heap.try_extend(view)) != 130) { return 3; }
+    let copy: alloc::binary_heap::BinaryHeap<Unit> = core::result::unwrap(heap.try_clone());
+    if (copy.len() != 130 || core::result::unwrap(heap.try_shrink_to_fit()) != 2147483647) { return 4; }
+    let sorted: std::vec::Vec<Unit> = copy.take_sorted_vec();
+    if (std::vec::len(sorted) != 130 || !copy.is_empty()) { return 5; }
+    std::vec::destroy(sorted); copy.destroy();
+    index = 0;
+    while (index < 130) { if (core::option::is_none(heap.pop())) { return 6; } index += 1; }
+    if (!core::option::is_none(heap.pop())) { return 7; }
+    heap.clear(); heap.destroy(); heap.destroy(); return 0;
+}

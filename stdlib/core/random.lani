@@ -1,0 +1,150 @@
+// Deterministic non-cryptographic generation and source-independent sampling.
+// xoshiro256++ 1.0 / SplitMix64 by Blackman and Vigna (public domain):
+// https://prng.di.unimi.it/xoshiro256plusplus.c and splitmix.c
+// See docs/stdlib-randomness.md for sequences, consumption and failure rules.
+module core::random;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, InvalidBound, InvalidRange, ZeroState, Host(i32), NoProgress, InvalidCount }
+pub struct Failure { cause: Error, completed: i32 }
+pub trait Source64 { pub fn draw(&self) -> core::result::Result<u64, Error>; }
+pub struct State { s0: u64, s1: u64, s2: u64, s3: u64 }
+pub struct Xoshiro256PlusPlus { state: State }
+
+fn rotate(value: u64, count: u32) -> u64 { return (value << count) | (value >> (64 - count)); }
+fn mix(value: u64) -> u64 {
+    let z: u64 = value;
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
+    return z ^ (z >> 31);
+}
+// Four consecutive SplitMix64 outputs. Native integer operators wrap modulo
+// 2^64; every u64 seed, including zero, gives a nonzero xoshiro state.
+pub fn from_seed(seed: u64) -> Xoshiro256PlusPlus {
+    let step: u64 = 0x9e3779b97f4a7c15; let cursor: u64 = seed + step; let a: u64 = mix(cursor);
+    cursor += step; let b: u64 = mix(cursor); cursor += step; let c: u64 = mix(cursor); cursor += step;
+    return Xoshiro256PlusPlus { state: State { s0: a, s1: b, s2: c, s3: mix(cursor) } };
+}
+pub fn from_state(state: State) -> core::result::Result<Xoshiro256PlusPlus, Error> {
+    if ((state.s0 | state.s1 | state.s2 | state.s3) == 0) { return core::result::Err(Error::ZeroState); }
+    return core::result::Ok(Xoshiro256PlusPlus { state: state });
+}
+pub impl Xoshiro256PlusPlus {
+    pub fn borrow(&self) -> &Xoshiro256PlusPlus { return self; }
+    pub fn snapshot(&self) -> State { return self.state; }
+    pub fn next_u64(&self) -> u64 {
+        let result: u64 = rotate(self.state.s0 + self.state.s3, 23) + self.state.s0;
+        let shifted: u64 = self.state.s1 << 17;
+        self.state.s2 ^= self.state.s0; self.state.s3 ^= self.state.s1;
+        self.state.s1 ^= self.state.s2; self.state.s0 ^= self.state.s3;
+        self.state.s2 ^= shifted; self.state.s3 = rotate(self.state.s3, 45);
+        return result;
+    }
+    // One whole generator step, taking its upper 32 bits.
+    pub fn next_u32(&self) -> u32 { return (self.next_u64() >> 32) as u32; }
+    fn apply_jump(&self, polynomial: [u64]) {
+        let accumulated: State = State { s0: 0, s1: 0, s2: 0, s3: 0 }; let index: i32 = 0;
+        while (index < 4) {
+            let bit: u32 = 0; while (bit < 64) {
+                let one: u64 = 1;
+                if ((polynomial[index] & (one << bit)) != 0) {
+                    accumulated.s0 ^= self.state.s0; accumulated.s1 ^= self.state.s1;
+                    accumulated.s2 ^= self.state.s2; accumulated.s3 ^= self.state.s3;
+                }
+                self.next_u64(); bit += 1;
+            }
+            index += 1;
+        }
+        self.state = accumulated;
+    }
+    pub fn jump(&self) {
+        let polynomial: [u64; 4] = [0x180ec6d33cfd0aba,0xd5a61266f0c9392c,0xa9582618e03fc9aa,0x39abdc4529b1661c];
+        self.apply_jump(polynomial);
+    }
+    pub fn long_jump(&self) {
+        let polynomial: [u64; 4] = [0x76e15d3efefdcbbf,0xc5004e441c522fb3,0x77710069854ee241,0x39109bb02acbe635];
+        self.apply_jump(polynomial);
+    }
+}
+pub impl Source64 for Xoshiro256PlusPlus {
+    pub fn draw(&self) -> core::result::Result<u64, Error> { return core::result::Ok(self.next_u64()); }
+}
+
+// Uniformity assumes a uniform source. Reject the low remainder of 2^64
+// divided by bound, then reduce modulo bound. No retry cap or modulo bias.
+pub fn below<R>(source: &R, bound: u64) -> core::result::Result<u64, Error> where R: Source64 {
+    if (bound == 0) { return core::result::Err(Error::InvalidBound); }
+    if (bound == 1) { return core::result::Ok(0); }
+    let negative: u64 = 0 - bound; let threshold: u64 = negative % bound;
+    while (true) {
+        let drawn: core::result::Result<u64, Error> = source.draw(); if (core::result::is_err(drawn)) { return drawn; }
+        let value: u64 = core::result::unwrap(drawn);
+        if (value >= threshold) { return core::result::Ok(value % bound); }
+    }
+    return core::result::Err(Error::InvalidBound);
+}
+pub fn inclusive_u64<R>(source: &R, low: u64, high: u64) -> core::result::Result<u64, Error> where R: Source64 {
+    if (low > high) { return core::result::Err(Error::InvalidRange); }
+    if (low == high) { return core::result::Ok(low); }
+    let maximum: u64 = 18446744073709551615;
+    if (low == 0 && high == maximum) { return source.draw(); }
+    let offset: core::result::Result<u64, Error> = below(source, high - low + 1);
+    if (core::result::is_err(offset)) { return offset; } return core::result::Ok(low + core::result::unwrap(offset));
+}
+pub fn inclusive_i64<R>(source: &R, low: i64, high: i64) -> core::result::Result<i64, Error> where R: Source64 {
+    if (low > high) { return core::result::Err(Error::InvalidRange); }
+    let bias: u64 = 9223372036854775808;
+    let drawn: core::result::Result<u64, Error> = inclusive_u64(source, (low as u64) ^ bias, (high as u64) ^ bias);
+    if (core::result::is_err(drawn)) { return core::result::Err(core::result::unwrap_err(drawn)); }
+    return core::result::Ok((core::result::unwrap(drawn) ^ bias) as i64);
+}
+pub fn unit_f32<R>(source: &R) -> core::result::Result<f32, Error> where R: Source64 {
+    let drawn: core::result::Result<u64, Error> = source.draw(); if (core::result::is_err(drawn)) { return core::result::Err(core::result::unwrap_err(drawn)); }
+    let bits: u32 = (core::result::unwrap(drawn) >> 40) as u32;
+    let value: f32 = (bits as f32) * 0.000000059604644775390625; return core::result::Ok(value);
+}
+pub fn boolean<R>(source: &R) -> core::result::Result<bool, Error> where R: Source64 {
+    let drawn: core::result::Result<u64, Error> = source.draw();
+    if (core::result::is_err(drawn)) { return core::result::Err(core::result::unwrap_err(drawn)); }
+    return core::result::Ok((core::result::unwrap(drawn) >> 63) != 0);
+}
+pub fn unit_f64<R>(source: &R) -> core::result::Result<f64, Error> where R: Source64 {
+    let drawn: core::result::Result<u64, Error> = source.draw(); if (core::result::is_err(drawn)) { return core::result::Err(core::result::unwrap_err(drawn)); }
+    let bits: u64 = core::result::unwrap(drawn) >> 11;
+    let value: f64 = (bits as f64) * 0.00000000000000011102230246251565404236316680908203125; return core::result::Ok(value);
+}
+// Each draw emits up to eight bytes, least significant byte first. Unused
+// bytes of the last word are discarded. Failure leaves an initialized prefix.
+pub fn fill<R>(source: &R, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, Failure> where R: Source64 {
+    if (offset < 0 || count < 0 || offset > 2147483647 - count) { return core::result::Err(Failure { cause: Error::Bounds, completed: 0 }); }
+    let completed: i32 = 0;
+    while (completed < count) {
+        let drawn: core::result::Result<u64, Error> = source.draw();
+        if (core::result::is_err(drawn)) { return core::result::Err(Failure { cause: core::result::unwrap_err(drawn), completed: completed }); }
+        let word: u64 = core::result::unwrap(drawn); let amount: i32 = count - completed; if (amount > 8) { amount = 8; }
+        let index: i32 = 0; while (index < amount) { bytes[offset + completed + index] = (word & 255) as u8; word >>= 8; index += 1; }
+        completed += amount;
+    }
+    return core::result::Ok(completed);
+}
+// Fisher-Yates from the end. A failed draw performs no swap for that step.
+// completed counts finalized suffix positions (including self-swaps).
+pub fn shuffle<R,T>(source: &R, values: core::slice::View<T>) -> core::result::Result<i32, Failure> where R: Source64 {
+    let remaining: i32 = values.len(); let completed: i32 = 0;
+    while (remaining > 1) {
+        let drawn: core::result::Result<u64, Error> = below(source, remaining as u64);
+        if (core::result::is_err(drawn)) { return core::result::Err(Failure { cause: core::result::unwrap_err(drawn), completed: completed }); }
+        let selected: i32 = values.start + (core::result::unwrap(drawn) as i32); let last: i32 = values.start + remaining - 1;
+        let previous: T = values.values[last]; values.values[last] = values.values[selected]; values.values[selected] = previous;
+        remaining -= 1; completed += 1;
+    }
+    return core::result::Ok(completed);
+}
+pub fn choose<R,T>(source: &R, values: core::slice::View<T>) -> core::result::Result<core::option::Option<T>, Error> where R: Source64 {
+    if (values.is_empty()) { return core::result::Ok(core::option::None()); }
+    let drawn: core::result::Result<u64, Error> = below(source, values.len() as u64);
+    if (core::result::is_err(drawn)) { return core::result::Err(core::result::unwrap_err(drawn)); }
+    return core::result::Ok(values.get(core::result::unwrap(drawn) as i32));
+}

@@ -1,42 +1,42 @@
 // Read zeroes and ones, then print how many of the last five are one.
 module app::main;
-import core::byte;
-import std::deque;
+import core::u8;
+import alloc::deque;
+import core::result;
 import std::io_byte;
 
 fn main() -> i32 {
-    let recent: std::deque::Deque<bool> = std::deque::new();
+    let recent: alloc::deque::Deque<bool> = alloc::deque::new();
     let next: i32 = std::io_byte::read_stdin_byte_or(-1, -2);
     while (next >= 0) {
         let character: u8 = next as u8;
-        if (!core::byte::is_ascii_whitespace(character)) {
+        if (!core::u8::is_ascii_whitespace(character)) {
             if (character != 48 && character != 49) {
-                std::deque::destroy(recent);
+                recent.destroy();
                 return 3;
             }
-            let before: i32 = std::deque::len(recent);
-            recent = std::deque::try_push_back(recent, character == 49);
-            if (std::deque::len(recent) != before + 1) {
-                std::deque::destroy(recent);
+            let added: core::result::Result<i32, alloc::deque::Error> = recent.try_push_back(character == 49);
+            if (core::result::is_err(added)) {
+                recent.destroy();
                 return 2;
             }
-            if (std::deque::len(recent) > 5) {
-                recent = std::deque::try_pop_front(recent);
+            if (recent.len() > 5) {
+                recent.pop_front();
             }
         }
         next = std::io_byte::read_stdin_byte_or(-1, -2);
     }
     if (next != -1) {
-        std::deque::destroy(recent);
+        recent.destroy();
         return 4;
     }
     let count: i32 = 0;
     let index: i32 = 0;
-    while (index < std::deque::len(recent)) {
-        if (std::deque::at_or(recent, index, false)) { count += 1; }
+    while (index < recent.len()) {
+        if (recent.get_or(index, false)) { count += 1; }
         index += 1;
     }
-    std::deque::destroy(recent);
+    recent.destroy();
     print(count);
     return 0;
 }

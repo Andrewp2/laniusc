@@ -1,128 +1,169 @@
-// Allocation-free f32 helpers. Clamp failures have explicit fallback behavior.
+// IEEE binary32 value utilities. Exact bits and integer algorithms;
+// no allocation, host math calls or assumed floating-point rounding mode.
 module core::f32;
+import core::mem;
+import core::result;
+
 pub const ZERO: f32 = 0.0;
 pub const ONE: f32 = 1.0;
-pub fn is_nan(value: f32) -> bool {
-    return value != value;
+pub const EPSILON: f32 = 0.00000011920928955078125;
+pub const MIN_POSITIVE: f32 = 1.1754943508222875e-38;
+pub const MAX: f32 = 3.4028234663852886e38;
+pub const MIN: f32 = -3.4028234663852886e38;
+pub const SIGN_MASK: u32 = 2147483648;
+pub const EXPONENT_MASK: u32 = 2139095040;
+pub const FRACTION_MASK: u32 = 8388607;
+pub const QUIET_MASK: u32 = 4194304;
+pub const INFINITY_BITS: u32 = 2139095040;
+pub const NAN_BITS: u32 = 2143289344;
+const ONE_BITS: u32 = 1065353216;
+const MAGNITUDE_MASK: u32 = 2147483647;
+pub enum FpCategory { Nan, Infinite, Zero, Subnormal, Normal }
+pub enum ClampError { InvalidBounds }
+
+// Stack storage is 8-aligned and covers one native word. Both views use the
+// same complete extent; transfers preserve NaN payloads without arithmetic.
+pub fn to_bits(value: f32) -> u32 {
+    let words: [i32;2] = [0;2]; let storage: ptr = core::mem::i32_array_data_ptr(words);
+    let floats: [f32] = core::mem::typed_slice_from_storage<f32>(storage,1); floats[0] = value;
+    let integers: [u32] = core::mem::typed_slice_from_storage<u32>(storage,1); return integers[0];
 }
-// Finite nonzero values change when doubled; either infinity does not.
-pub fn is_infinite(value: f32) -> bool {
-    if (is_nan(value) || value == ZERO) {
-        return false;
-    }
-    return value + value == value;
+pub fn from_bits(value: u32) -> f32 {
+    let words: [i32;2] = [0;2]; let storage: ptr = core::mem::i32_array_data_ptr(words);
+    let integers: [u32] = core::mem::typed_slice_from_storage<u32>(storage,1); integers[0] = value;
+    let floats: [f32] = core::mem::typed_slice_from_storage<f32>(storage,1); return floats[0];
 }
-pub fn is_finite(value: f32) -> bool {
-    return !is_nan(value) && !is_infinite(value);
+pub fn infinity() -> f32 { return from_bits(INFINITY_BITS); }
+pub fn neg_infinity() -> f32 { return from_bits(INFINITY_BITS | SIGN_MASK); }
+pub fn nan() -> f32 { return from_bits(NAN_BITS); }
+pub fn classify(value: f32) -> FpCategory {
+    let magnitude: u32 = to_bits(value) & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS) { return FpCategory::Nan; }
+    if (magnitude == INFINITY_BITS) { return FpCategory::Infinite; }
+    if (magnitude == 0) { return FpCategory::Zero; }
+    if ((magnitude & EXPONENT_MASK) == 0) { return FpCategory::Subnormal; }
+    return FpCategory::Normal;
 }
-pub fn abs(value: f32) -> f32 {
-    if (value<0.0) {
-        return -value;
-    } else {
-        return value;
-    }
-}
+pub fn is_nan(value: f32) -> bool { return (to_bits(value) & MAGNITUDE_MASK) > INFINITY_BITS; }
+pub fn is_infinite(value: f32) -> bool { return (to_bits(value) & MAGNITUDE_MASK) == INFINITY_BITS; }
+pub fn is_finite(value: f32) -> bool { return (to_bits(value) & EXPONENT_MASK) != EXPONENT_MASK; }
+pub fn is_normal(value: f32) -> bool { let exponent: u32 = to_bits(value) & EXPONENT_MASK; return exponent != 0 && exponent != EXPONENT_MASK; }
+pub fn is_subnormal(value: f32) -> bool { let magnitude: u32 = to_bits(value) & MAGNITUDE_MASK; return magnitude != 0 && (magnitude & EXPONENT_MASK) == 0; }
+pub fn is_sign_negative(value: f32) -> bool { return (to_bits(value) & SIGN_MASK) != 0; }
+pub fn is_sign_positive(value: f32) -> bool { return (to_bits(value) & SIGN_MASK) == 0; }
+pub fn is_negative(value: f32) -> bool { let bits: u32 = to_bits(value); let magnitude: u32 = bits & MAGNITUDE_MASK; return (bits & SIGN_MASK) != 0 && magnitude != 0 && magnitude <= INFINITY_BITS; }
+pub fn is_positive(value: f32) -> bool { let bits: u32 = to_bits(value); let magnitude: u32 = bits & MAGNITUDE_MASK; return (bits & SIGN_MASK) == 0 && magnitude != 0 && magnitude <= INFINITY_BITS; }
+pub fn is_zero(value: f32) -> bool { return (to_bits(value) & MAGNITUDE_MASK) == 0; }
+pub fn is_nonzero(value: f32) -> bool { return (to_bits(value) & MAGNITUDE_MASK) != 0; }
+pub fn abs(value: f32) -> f32 { return from_bits(to_bits(value) & MAGNITUDE_MASK); }
+pub fn copy_sign(magnitude: f32, sign: f32) -> f32 { return from_bits((to_bits(magnitude) & MAGNITUDE_MASK) | (to_bits(sign) & SIGN_MASK)); }
+// Non-NaN values, including both zeros, return the sign's unit value.
+pub fn signum(value: f32) -> f32 { let bits: u32 = to_bits(value); if ((bits & MAGNITUDE_MASK) > INFINITY_BITS) { return from_bits(bits | QUIET_MASK); } return from_bits((bits & SIGN_MASK) | ONE_BITS); }
+// Ignore one NaN. Two NaNs return a quieted left payload. Signed-zero ties
+// are deterministic and independent of operand order.
 pub fn min(left: f32, right: f32) -> f32 {
-    if (left != left) { return right; }
-    if (right != right) { return left; }
-    if (left<right) {
-        return left;
-    } else {
-        return right;
-    }
+    let a: u32 = to_bits(left); let b: u32 = to_bits(right);
+    if ((a & MAGNITUDE_MASK) > INFINITY_BITS) { if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return from_bits(a | QUIET_MASK); } return right; }
+    if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return left; }
+    if ((a & MAGNITUDE_MASK) == 0 && (b & MAGNITUDE_MASK) == 0) { return from_bits(a | b); }
+    if (left < right) { return left; } return right;
 }
 pub fn max(left: f32, right: f32) -> f32 {
-    if (left != left) { return right; }
-    if (right != right) { return left; }
-    if (left>right) {
-        return left;
-    } else {
-        return right;
-    }
+    let a: u32 = to_bits(left); let b: u32 = to_bits(right);
+    if ((a & MAGNITUDE_MASK) > INFINITY_BITS) { if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return from_bits(a | QUIET_MASK); } return right; }
+    if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return left; }
+    if ((a & MAGNITUDE_MASK) == 0 && (b & MAGNITUDE_MASK) == 0) { return from_bits(a & b); }
+    if (left > right) { return left; } return right;
 }
-// Reversed or NaN bounds return fallback unchanged. A NaN value propagates.
-pub fn clamp_or(value: f32, low: f32, high: f32, fallback: f32) -> f32 {
-    if (low != low || high != high || low>high) {
-        return fallback;
-    }
-    if (value != value) { return value; }
-    if (value<low) {
-        return low;
-    } else {
-        if (value>high) {
-            return high;
-        } else {
-            return value;
-        }
-    }
+pub fn total_cmp(left: f32, right: f32) -> i32 {
+    let a: u32 = to_bits(left); let b: u32 = to_bits(right);
+    if ((a & SIGN_MASK) != 0) { a = a ^ 4294967295; } else { a = a ^ SIGN_MASK; }
+    if ((b & SIGN_MASK) != 0) { b = b ^ 4294967295; } else { b = b ^ SIGN_MASK; }
+    if (a < b) { return -1; } if (a > b) { return 1; } return 0;
 }
-// Invalid bounds leave the input value unchanged.
-pub fn clamp(value: f32, low: f32, high: f32) -> f32 {
-    return clamp_or(value, low, high, value);
+pub fn next_up(value: f32) -> f32 {
+    let bits: u32 = to_bits(value); let magnitude: u32 = bits & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS || bits == INFINITY_BITS) { return value; }
+    if (magnitude == 0) { return from_bits(1); }
+    if ((bits & SIGN_MASK) != 0) { return from_bits(bits-1); } return from_bits(bits+1);
+}
+pub fn next_down(value: f32) -> f32 {
+    let bits: u32 = to_bits(value); let magnitude: u32 = bits & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS || bits == (INFINITY_BITS | SIGN_MASK)) { return value; }
+    if (magnitude == 0) { return from_bits(SIGN_MASK | 1); }
+    if ((bits & SIGN_MASK) != 0) { return from_bits(bits+1); } return from_bits(bits-1);
+}
+// Modes: truncate, floor, ceil, nearest/ties-away, nearest/ties-even. Only
+// integer bit operations are used, including for the signed-zero cases.
+fn integer_bits(bits: u32, mode: i32) -> u32 {
+    let magnitude: u32 = bits & MAGNITUDE_MASK; let sign: u32 = bits & SIGN_MASK;
+    if (magnitude >= INFINITY_BITS || magnitude == 0) { return bits; }
+    let exponent: i32 = (magnitude >> 23) as i32-127;
+    if (exponent >= 23) { return bits; }
+    if (exponent < 0) {
+        let result: u32 = 0;
+        if ((mode == 1 && sign != 0) || (mode == 2 && sign == 0)) { result = ONE_BITS; }
+        if (mode >= 3) { let half: u32 = 1056964608; if (magnitude > half || (magnitude == half && mode == 3)) { result = ONE_BITS; } }
+        return sign | result;
+    }
+    let unit: u32 = 1; unit = unit << (23-exponent); let mask: u32 = unit-1; let tail: u32 = magnitude & mask;
+    if (tail == 0) { return bits; }
+    let rounded: u32 = magnitude & (mask ^ 4294967295);
+    let increase: bool = (mode == 1 && sign != 0) || (mode == 2 && sign == 0);
+    if (mode == 3 && tail >= (unit >> 1)) { increase = true; }
+    if (mode == 4 && (tail > (unit >> 1) || (tail == (unit >> 1) && (rounded & unit) != 0))) { increase = true; }
+    if (increase) { rounded += unit; } return sign | rounded;
+}
+pub fn trunc(value: f32) -> f32 { return from_bits(integer_bits(to_bits(value),0)); }
+pub fn floor(value: f32) -> f32 { return from_bits(integer_bits(to_bits(value),1)); }
+pub fn ceil(value: f32) -> f32 { return from_bits(integer_bits(to_bits(value),2)); }
+pub fn round(value: f32) -> f32 { return from_bits(integer_bits(to_bits(value),3)); }
+pub fn round_ties_even(value: f32) -> f32 { return from_bits(integer_bits(to_bits(value),4)); }
+
+// Restore one root bit from each radicand pair. The radicand has at most
+// 2*precision bits and is held in two u64 words. q and remainder fit u64.
+// After the final pair: N=q*q+remainder and 0<=remainder<2*q+1.
+fn root_significand(mantissa: u64) -> u64 {
+    let high: u64 = mantissa >> 41; let low: u64 = mantissa << 23;
+    let root: u64 = 0; let remainder: u64 = 0; let pair_index: i32 = 23;
+    while (pair_index >= 0) {
+        let pair: u64 = 0;
+        if (pair_index >= 32) { pair = (high >> ((pair_index-32)*2)) & 3; }
+        else { pair = (low >> (pair_index*2)) & 3; }
+        remainder = (remainder << 2) | pair; root = root << 1;
+        let trial: u64 = (root << 1) | 1;
+        if (remainder >= trial) { remainder -= trial; root += 1; }
+        pair_index -= 1;
+    }
+    // The half-way square is q*q+q+1/4 and N is integral, so exact ties
+    // cannot occur. A remainder above q rounds the root up by one unit.
+    if (remainder > root) { root += 1; } return root;
 }
 pub fn sqrt(value: f32) -> f32 {
-    if (value != value) { return value; }
-    if (value <= 0.0) {
-        return 0.0;
-    }
-    if (value + value == value) {
-        return value;
-    }
-    // Scale by powers of four so Newton's method always starts near the root.
-    // The matching powers of two are applied to the final approximation.
-    let scaled: f32 = value;
-    let factor: f32 = 1.0;
-    while (scaled >= 4.0) {
-        scaled = scaled * 0.25;
-        factor = factor * 2.0;
-    }
-    while (scaled<1.0) {
-        scaled = scaled * 4.0;
-        factor = factor * 0.5;
-    }
-    let guess: f32 = 0.5 *(scaled + 1.0);
-    let iteration: i32 = 0;
-    while (iteration<6) {
-        guess = 0.5 *(guess + scaled / guess);
-        iteration = iteration + 1;
-    }
-    return guess * factor;
+    let bits: u32 = to_bits(value); let magnitude: u32 = bits & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS) { return from_bits(bits | QUIET_MASK); }
+    if (magnitude == 0) { return value; }
+    if ((bits & SIGN_MASK) != 0) { return nan(); }
+    if (magnitude == INFINITY_BITS) { return value; }
+    let exponent: i32 = (magnitude >> 23) as i32-127;
+    let mantissa: u64 = (magnitude & FRACTION_MASK) as u64;
+    if ((magnitude & EXPONENT_MASK) == 0) {
+        exponent = 1-127; while (mantissa < 8388608) { mantissa = mantissa << 1; exponent -= 1; }
+    } else { mantissa = mantissa | 8388608; }
+    if (exponent % 2 != 0) { mantissa = mantissa << 1; exponent -= 1; }
+    let root_exponent: i32 = exponent/2; let root: u64 = root_significand(mantissa);
+    if (root == 16777216) { root = root >> 1; root_exponent += 1; }
+    return from_bits((((root_exponent+127) as u32) << 23) | ((root as u32) & FRACTION_MASK));
 }
-// Invalid real inputs return the caller's fallback. Positive infinity and
-// signed zero remain valid inputs; sqrt's negative-input default is zero.
-pub fn sqrt_or(value: f32, fallback: f32) -> f32 {
-    if (is_nan(value) || value < ZERO) {
-        return fallback;
-    }
-    return sqrt(value);
+pub fn sqrt_or(value: f32, fallback: f32) -> f32 { if (is_nan(value) || is_negative(value)) { return fallback; } return sqrt(value); }
+pub fn try_clamp(value: f32, low: f32, high: f32) -> core::result::Result<f32,ClampError> {
+    if (is_nan(low) || is_nan(high) || low > high) { return core::result::Err(ClampError::InvalidBounds); }
+    if (is_nan(value)) { return core::result::Ok(value); }
+    if (value < low) { return core::result::Ok(low); } if (value > high) { return core::result::Ok(high); } return core::result::Ok(value);
 }
-pub fn is_negative(value: f32) -> bool {
-    return value<ZERO;
+pub fn clamp_or(value: f32, low: f32, high: f32, fallback: f32) -> f32 {
+    let result: core::result::Result<f32,ClampError> = try_clamp(value,low,high); if (core::result::is_err(result)) { return fallback; } return core::result::unwrap(result);
 }
-pub fn is_positive(value: f32) -> bool {
-    return value>ZERO;
-}
-pub fn is_zero(value: f32) -> bool {
-    return value == ZERO;
-}
-pub fn is_nonzero(value: f32) -> bool {
-    return value != ZERO;
-}
-pub fn signum(value: f32) -> f32 {
-    if (value != value) { return value; }
-    if (is_positive(value)) {
-        return ONE;
-    } else {
-        if (is_negative(value)) {
-            return -ONE;
-        } else {
-            return ZERO;
-        }
-    }
-}
-pub fn between_exclusive(value: f32, low: f32, high: f32) -> bool {
-    return value>low && value<high;
-}
-pub fn between_inclusive(value: f32, low: f32, high: f32) -> bool {
-    return value >= low && value <= high;
-}
+pub fn clamp(value: f32, low: f32, high: f32) -> f32 { return core::result::unwrap(try_clamp(value,low,high)); }
+pub fn between_exclusive(value: f32, low: f32, high: f32) -> bool { return value > low && value < high; }
+pub fn between_inclusive(value: f32, low: f32, high: f32) -> bool { return value >= low && value <= high; }

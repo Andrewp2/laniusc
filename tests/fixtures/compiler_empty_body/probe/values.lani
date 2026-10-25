@@ -1,0 +1,11 @@
+module probe::values;
+
+pub struct Item { word: u64, signed: i32 }
+
+pub impl Item {
+    pub fn empty_value(source: Item) {}
+    pub fn empty_receiver(self) {}
+    pub fn sentinel(self, delta: i32) -> Item {
+        return Item { word:self.word+7,signed:self.signed+delta };
+    }
+}

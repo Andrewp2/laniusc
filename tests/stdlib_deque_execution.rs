@@ -1,121 +1,13 @@
+#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
-
 use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
 
-fn compile_fixture(name: &str) -> Vec<u8> {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let entry = root.join(format!("tests/fixtures/stdlib_foundation/{name}.lani"));
-    let stdlib_root = root.join("stdlib");
-    common::run_gpu_codegen_with_timeout(name, move || {
-        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
-    })
-    .unwrap_or_else(|error| panic!("{name}: compile: {error}"))
-}
-
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn write_executable(bytes: &[u8], name: &str) -> common::TempArtifact {
     use std::os::unix::fs::PermissionsExt;
-
     let executable = common::TempArtifact::new("laniusc_deque", name, None);
     executable.write_bytes(bytes);
-    let mut permissions = std::fs::metadata(executable.path()).unwrap().permissions();
-    permissions.set_mode(0o700);
-    std::fs::set_permissions(executable.path(), permissions).unwrap();
+    std::fs::set_permissions(executable.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     executable
-}
-
-#[test]
-fn deque_public_functions_execute_for_every_element_type_on_x86() {
-    let bytes = compile_fixture("std_deque");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output("std_deque", "complete", &bytes);
-        assert_eq!(output.status.code(), Some(0), "{output:?}");
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{output:?}"
-        );
-    }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
-}
-
-#[test]
-fn every_public_deque_function_has_a_runtime_case() {
-    let source = include_str!("../stdlib/std/deque.lani");
-    let fixture = include_str!("fixtures/stdlib_foundation/std_deque.lani");
-    let mut covered = 0;
-    for line in source.lines() {
-        let Some(tail) = line.strip_prefix("pub fn ") else {
-            continue;
-        };
-        let name = tail
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .next()
-            .expect("deque function has a name");
-        let call = format!("std::deque::{name}(");
-        assert!(fixture.contains(&call), "{call} lacks a runtime case");
-        covered += 1;
-    }
-    assert_eq!(covered, 20);
-}
-
-#[test]
-fn allocation_failures_preserve_deque_ownership_and_order() {
-    for (name, when) in [
-        ("std_deque_alloc_failure", 1),
-        ("std_deque_push_back_failure", 2),
-        ("std_deque_push_front_failure", 2),
-        ("std_deque_reserve_failure", 2),
-        ("std_deque_clone_failure", 2),
-        ("std_deque_shrink_failure", 2),
-    ] {
-        let bytes = compile_fixture(name);
-        #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-        {
-            let executable = write_executable(&bytes, name);
-            let normal = common::short_process_output_with_timeout(
-                format!("{name} normal allocation"),
-                &mut std::process::Command::new(executable.path()),
-            );
-            assert_eq!(normal.status.code(), Some(4), "{name}: {normal:?}");
-            assert!(
-                normal.stdout.is_empty() && normal.stderr.is_empty(),
-                "{normal:?}"
-            );
-
-            if std::process::Command::new("strace")
-                .arg("-V")
-                .output()
-                .is_err()
-            {
-                continue;
-            }
-            let trace = common::TempArtifact::new("laniusc_deque", "trace", None);
-            let injected = common::short_process_output_with_timeout(
-                format!("{name} injected allocation failure"),
-                std::process::Command::new("strace")
-                    .arg("-qq")
-                    .arg("-o")
-                    .arg(trace.path())
-                    .arg("-e")
-                    .arg("trace=mmap")
-                    .arg("-e")
-                    .arg(format!("inject=mmap:error=ENOMEM:when={when}"))
-                    .arg(executable.path()),
-            );
-            assert_eq!(injected.status.code(), Some(0), "{name}: {injected:?}");
-            assert!(
-                injected.stdout.is_empty() && injected.stderr.is_empty(),
-                "{injected:?}"
-            );
-            let trace_text = std::fs::read_to_string(trace.path()).unwrap();
-            assert!(trace_text.contains("INJECTED"), "{name}: {trace_text}");
-            assert!(trace_text.contains("ENOMEM"), "{name}: {trace_text}");
-        }
-        #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-        let _ = (bytes, when);
-    }
 }
 
 #[test]
@@ -127,7 +19,6 @@ fn recent_boolean_count_program_uses_deque_byte_and_io() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent boolean count");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_bool_count");
         for (input_bytes, expected_stdout, expected_code) in [
@@ -158,8 +49,6 @@ fn recent_boolean_count_program_uses_deque_byte_and_io() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -171,7 +60,6 @@ fn recent_unicode_program_uses_deque_and_utf8_io() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent unicode scalars");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_unicode_scalars");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -214,8 +102,6 @@ fn recent_unicode_program_uses_deque_and_utf8_io() {
             .expect("run with /dev/full stdout");
         assert_eq!(status.code(), Some(4), "{status:?}");
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -227,7 +113,6 @@ fn recent_signed_byte_lines_program_checks_bounds_and_io() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent i8 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_i8_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -265,8 +150,6 @@ fn recent_signed_byte_lines_program_checks_bounds_and_io() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -278,7 +161,6 @@ fn recent_signed_halfword_lines_program_checks_bounds_and_io() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent i16 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_i16_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -316,8 +198,6 @@ fn recent_signed_halfword_lines_program_checks_bounds_and_io() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -329,7 +209,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_i32() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent i32 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_i32_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -367,8 +246,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_i32() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -380,7 +257,6 @@ fn recent_byte_checksum_program_uses_deque_byte_option_and_io() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent byte checksum");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_byte_checksum");
         for (input_bytes, expected_stdout) in [
@@ -407,8 +283,6 @@ fn recent_byte_checksum_program_uses_deque_byte_option_and_io() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -420,7 +294,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_u16() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent u16 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_u16_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -458,8 +331,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_u16() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -471,7 +342,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_u32() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent u32 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_u32_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -509,8 +379,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_u32() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -522,7 +390,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_wide_i64() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent wide i64 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_wide_i64_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -560,8 +427,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_wide_i64() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }
 
 #[test]
@@ -573,7 +438,6 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_wide_u64() {
         pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry, &stdlib_root))
     })
     .expect("compile recent wide u64 lines");
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         let executable = write_executable(&bytes, "recent_wide_u64_lines");
         for (input_bytes, expected_code, expected_stdout) in [
@@ -611,6 +475,4 @@ fn recent_lines_program_uses_deque_decimal_and_io_helpers_wide_u64() {
             assert!(output.stderr.is_empty(), "{input_bytes:?}: {output:?}");
         }
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
 }

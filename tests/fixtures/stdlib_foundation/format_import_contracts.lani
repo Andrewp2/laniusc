@@ -1,0 +1,14 @@
+// Same executable entry for measuring the import cost of formatter extensions.
+module app::main;
+import core::fmt;
+import core::result;
+fn main() -> i32 {
+    let bytes: [u8;32] = [0;32];
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,32));
+    core::fmt::display(true,output.borrow()); output.write_scalar(32);
+    let maximum: u64 = 18446744073709551615;
+    core::fmt::display(maximum,output.borrow());
+    assert(core::result::unwrap(output.finish()) == 25);
+    assert(bytes[0] == 116 && bytes[4] == 32 && bytes[5] == 49 && bytes[24] == 53);
+    return 0;
+}

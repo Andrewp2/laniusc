@@ -1,0 +1,248 @@
+// Borrowed Unix byte paths. Components ignore repeated slashes and interior
+// dots, preserve the initial relative dot and every parent component.
+// No host lookup, symlink resolution, allocation or implicit UTF-8 conversion.
+
+module core::path;
+import core::cmp;
+import core::hash;
+import core::text;
+import core::option;
+import core::result;
+import core::slice;
+
+// Borrowed Linux path bytes, without a terminating NUL. No UTF-8 requirement,
+// normalization, allocation, or filesystem lookup. Empty paths are valid
+// values; opening one reports the host error. Keep storage alive and unchanged.
+pub enum Error { Bounds, Nul(i32) }
+pub struct Path { bytes: core::slice::View<u8> }
+pub enum Kind { Root, Current, Parent, Normal }
+pub struct Component { kind: Kind, bytes: core::slice::View<u8> }
+pub struct Components { path: Path, front: i32, back: i32, prefix: bool, rooted: bool }
+pub struct Ancestors { path: Path, done: bool }
+
+pub fn from_view(bytes: core::slice::View<u8>) -> core::result::Result<Path, Error> {
+    if (bytes.start < 0 || bytes.length < 0 || bytes.start > 2147483647 - bytes.length) { return core::result::Err(Error::Bounds); }
+    let index: i32 = 0;
+    while (index < bytes.len()) {
+        if (core::option::unwrap(bytes.get(index)) == 0) { return core::result::Err(Error::Nul(index)); }
+        index += 1;
+    }
+    return core::result::Ok(Path { bytes: bytes });
+}
+
+// The caller must supply physically backed elements, as for core::slice::view.
+pub fn from_bytes_range(bytes: [u8], start: i32, count: i32) -> core::result::Result<Path, Error> {
+    let view: core::result::Result<core::slice::View<u8>, core::slice::ViewError> = core::slice::view_range(bytes, start, count);
+    if (core::result::is_err(view)) { return core::result::Err(Error::Bounds); }
+    return from_view(core::result::unwrap(view));
+}
+
+pub fn from_bytes(bytes: [u8], count: i32) -> core::result::Result<Path, Error> {
+    return from_bytes_range(bytes, 0, count);
+}
+
+pub impl Path {
+    pub fn borrow(&self) -> &Path { return self; }
+    pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
+    pub fn is_empty(&self) -> bool { return self.bytes.is_empty(); }
+    pub fn byte_at(&self, index: i32) -> core::option::Option<u8> { return self.bytes.get(index); }
+    // Read-only by contract: writable slices are not yet compiler restricted.
+    pub fn as_bytes(&self) -> core::slice::View<u8> { return self.bytes; }
+    pub fn is_absolute(&self) -> bool {
+        if (self.bytes.is_empty()) { return false; }
+        return core::option::unwrap(self.bytes.first()) == 47;
+    }
+    pub fn is_relative(&self) -> bool { return !self.is_absolute(); }
+    pub fn has_trailing_separator(&self) -> bool {
+        if (self.is_empty()) { return false; } return core::option::unwrap(self.bytes.last()) == 47;
+    }
+    pub fn as_text(&self) -> core::result::Result<core::text::Text, core::text::Error> {
+        return core::text::from_utf8_range(self.bytes.values,self.bytes.start,self.bytes.length);
+    }
+    pub fn components(&self) -> Components {
+        let rooted: bool = self.is_absolute(); let current: bool = false;
+        if (!self.is_empty() && !rooted) {
+            if (core::option::unwrap(self.byte_at(0)) == 46) {
+                if (self.byte_len() == 1) { current = true; }
+                else { current = core::option::unwrap(self.byte_at(1)) == 47; }
+            }
+        }
+        let first: i32 = 0; if (rooted || current) { first = 1; }
+        return Components { path: Path { bytes: self.bytes }, front: first, back: self.byte_len(), prefix: rooted || current, rooted: rooted };
+    }
+    pub fn parent(&self) -> core::option::Option<Path> {
+        let cursor: Components = self.components(); let last: core::option::Option<Component> = cursor.next_back();
+        if (core::option::is_none(last)) { return core::option::None(); }
+        let value: Component = core::option::unwrap(last); if (value.is_root()) { return core::option::None(); }
+        return core::option::Some(cursor.remaining());
+    }
+    pub fn file_name(&self) -> core::option::Option<core::slice::View<u8>> {
+        let cursor: Components = self.components(); let last: core::option::Option<Component> = cursor.next_back();
+        if (core::option::is_none(last)) { return core::option::None(); }
+        let value: Component = core::option::unwrap(last);
+        if (!value.is_normal()) { return core::option::None(); } return core::option::Some(value.bytes);
+    }
+    pub fn extension(&self) -> core::option::Option<core::slice::View<u8>> {
+        let found: core::option::Option<core::slice::View<u8>> = self.file_name();
+        if (core::option::is_none(found)) { return core::option::None(); }
+        let name: core::slice::View<u8> = core::option::unwrap(found); let dot: i32 = extension_dot(name);
+        if (dot < 0) { return core::option::None(); }
+        return core::option::Some(part(name,dot+1,name.len()));
+    }
+    pub fn file_stem(&self) -> core::option::Option<core::slice::View<u8>> {
+        let found: core::option::Option<core::slice::View<u8>> = self.file_name();
+        if (core::option::is_none(found)) { return found; }
+        let name: core::slice::View<u8> = core::option::unwrap(found); let dot: i32 = extension_dot(name);
+        if (dot < 0) { return found; } return core::option::Some(part(name,0,dot));
+    }
+    pub fn ancestors(&self) -> Ancestors { return Ancestors { path: Path { bytes: self.bytes }, done: false }; }
+    pub fn strip_prefix(&self, prefix: Path) -> core::option::Option<Path> {
+        let left: Components = self.components(); let right: Components = prefix.components();
+        while (true) {
+            let next: core::option::Option<Component> = right.next();
+            if (core::option::is_none(next)) { return core::option::Some(left.remaining()); }
+            let actual: core::option::Option<Component> = left.next();
+            if (core::option::is_none(actual)) { return core::option::None(); }
+            let component: Component = core::option::unwrap(actual);
+            if (component.compare(core::option::unwrap(next)) != 0) { return core::option::None(); }
+        }
+        return core::option::None();
+    }
+    pub fn starts_with(&self, prefix: Path) -> bool { return core::option::is_some(self.strip_prefix(prefix)); }
+    pub fn ends_with(&self, suffix: Path) -> bool {
+        let left: Components = self.components(); let right: Components = suffix.components();
+        while (true) {
+            let next: core::option::Option<Component> = right.next_back(); if (core::option::is_none(next)) { return true; }
+            let actual: core::option::Option<Component> = left.next_back(); if (core::option::is_none(actual)) { return false; }
+            let component: Component = core::option::unwrap(actual); if (component.compare(core::option::unwrap(next)) != 0) { return false; }
+        }
+        return false;
+    }
+    pub fn compare(&self, other: Path) -> i32 {
+        let left: Components = self.components(); let right: Components = other.components();
+        while (true) {
+            let a: core::option::Option<Component> = left.next(); let b: core::option::Option<Component> = right.next();
+            if (core::option::is_none(a)) { if (core::option::is_none(b)) { return 0; } return -1; }
+            if (core::option::is_none(b)) { return 1; }
+            let value: Component = core::option::unwrap(a); let order: i32 = value.compare(core::option::unwrap(b)); if (order != 0) { return order; }
+        }
+        return 0;
+    }
+    pub fn equals(&self, other: Path) -> bool { return self.compare(other) == 0; }
+}
+
+fn part(bytes: core::slice::View<u8>, first: i32, end: i32) -> core::slice::View<u8> {
+    return core::slice::View { values: bytes.values, start: bytes.start + first, length: end - first };
+}
+fn extension_dot(name: core::slice::View<u8>) -> i32 {
+    let index: i32 = name.len() - 1;
+    while (index > 0) { if (core::option::unwrap(name.get(index)) == 46) { return index; } index -= 1; } return -1;
+}
+fn rank(kind: Kind) -> i32 { let value: i32 = match (kind) { Kind::Root -> 0, Kind::Current -> 1, Kind::Parent -> 2, Kind::Normal -> 3 }; return value; }
+pub impl Component {
+    pub fn is_root(&self) -> bool { return rank(self.kind) == 0; }
+    pub fn is_current(&self) -> bool { return rank(self.kind) == 1; }
+    pub fn is_parent(&self) -> bool { return rank(self.kind) == 2; }
+    pub fn is_normal(&self) -> bool { return rank(self.kind) == 3; }
+    pub fn as_path(&self) -> Path { return Path { bytes: self.bytes }; }
+    pub fn compare(&self, other: Component) -> i32 {
+        let a: i32 = rank(self.kind); let b: i32 = rank(other.kind); if (a < b) { return -1; } if (a > b) { return 1; }
+        let count: i32 = self.bytes.len(); if (other.bytes.len() < count) { count = other.bytes.len(); }
+        let index: i32 = 0;
+        while (index < count) {
+            let left: u8 = core::option::unwrap(self.bytes.get(index)); let right: u8 = core::option::unwrap(other.bytes.get(index));
+            if (left < right) { return -1; } if (left > right) { return 1; } index += 1;
+        }
+        if (self.bytes.len() < other.bytes.len()) { return -1; } if (self.bytes.len() > other.bytes.len()) { return 1; } return 0;
+    }
+}
+pub impl Components {
+    fn copy(&self) -> Components { return Components { path: self.path, front: self.front, back: self.back, prefix: self.prefix, rooted: self.rooted }; }
+    fn leading(&self) -> Component {
+        self.prefix = false; let kind: Kind = Kind::Current; if (self.rooted) { kind = Kind::Root; }
+        return Component { kind: kind, bytes: part(self.path.bytes,0,1) };
+    }
+    fn classify(&self, first: i32, end: i32) -> core::option::Option<Component> {
+        let count: i32 = end - first; let kind: Kind = Kind::Normal;
+        if (core::option::unwrap(self.path.byte_at(first)) == 46) {
+            if (count == 1) { return core::option::None(); }
+            if (count == 2 && core::option::unwrap(self.path.byte_at(first+1)) == 46) { kind = Kind::Parent; }
+        }
+        return core::option::Some(Component { kind: kind, bytes: part(self.path.bytes,first,end) });
+    }
+    pub fn next(&self) -> core::option::Option<Component> {
+        if (self.prefix) { return core::option::Some(self.leading()); }
+        while (self.front < self.back) {
+            if (core::option::unwrap(self.path.byte_at(self.front)) == 47) { self.front += 1; continue; }
+            let first: i32 = self.front;
+            while (self.front < self.back && core::option::unwrap(self.path.byte_at(self.front)) != 47) { self.front += 1; }
+            let value: core::option::Option<Component> = self.classify(first,self.front); if (core::option::is_some(value)) { return value; }
+        }
+        return core::option::None();
+    }
+    pub fn next_back(&self) -> core::option::Option<Component> {
+        while (self.back > self.front) {
+            if (core::option::unwrap(self.path.byte_at(self.back-1)) == 47) { self.back -= 1; continue; }
+            let end: i32 = self.back;
+            while (self.back > self.front && core::option::unwrap(self.path.byte_at(self.back-1)) != 47) { self.back -= 1; }
+            let value: core::option::Option<Component> = self.classify(self.back,end); if (core::option::is_some(value)) { return value; }
+        }
+        if (self.prefix) { return core::option::Some(self.leading()); } return core::option::None();
+    }
+    // A borrowed window from the first remaining component through the last.
+    // Internal spelling stays intact; outer separators/dots are omitted.
+    pub fn remaining(&self) -> Path {
+        let forward: Components = self.copy(); let first: core::option::Option<Component> = forward.next();
+        if (core::option::is_none(first)) { return Path { bytes: part(self.path.bytes,self.back,self.back) }; }
+        let backward: Components = self.copy(); let last: Component = core::option::unwrap(backward.next_back());
+        let begin: Component = core::option::unwrap(first);
+        return Path { bytes: core::slice::View { values: self.path.bytes.values, start: begin.bytes.start, length: last.bytes.start + last.bytes.length - begin.bytes.start } };
+    }
+}
+pub impl Ancestors {
+    pub fn next(&self) -> core::option::Option<Path> {
+        if (self.done) { return core::option::None(); } let value: Path = self.path;
+        let parent: core::option::Option<Path> = value.parent();
+        if (core::option::is_none(parent)) { self.done = true; } else { self.path = core::option::unwrap(parent); }
+        return core::option::Some(value);
+    }
+}
+pub impl core::cmp::Eq<Path> for Path {
+    pub fn eq(a: Path,b: Path) -> bool { return a.equals(b); }
+    pub fn ne(a: Path,b: Path) -> bool { return !a.equals(b); }
+}
+pub impl core::cmp::Ord<Path> for Path {
+    pub fn lt(a: Path,b: Path) -> bool { return a.compare(b) < 0; }
+    pub fn le(a: Path,b: Path) -> bool { return a.compare(b) <= 0; }
+    pub fn gt(a: Path,b: Path) -> bool { return a.compare(b) > 0; }
+    pub fn ge(a: Path,b: Path) -> bool { return a.compare(b) >= 0; }
+}
+pub impl core::hash::Hash<Path> for Path {
+    pub fn hash(value: Path) -> u32 {
+        let cursor: Components = value.components(); let state: u32 = core::hash::FNV1A_OFFSET_BASIS;
+        while (true) {
+            let next: core::option::Option<Component> = cursor.next(); if (core::option::is_none(next)) { break; }
+            let component: Component = core::option::unwrap(next); state = core::hash::fnv1a_step(state,rank(component.kind) as u8); let index: i32 = 0;
+            while (index < component.bytes.len()) { state = core::hash::fnv1a_step(state,core::option::unwrap(component.bytes.get(index))); index += 1; }
+            state = core::hash::fnv1a_step(state,0);
+        }
+        return state;
+    }
+}
+
+pub impl core::cmp::PartialEq<Path> for Path {
+    pub fn partial_eq(left: Path, right: Path) -> bool { return Path::eq(left, right); }
+    pub fn partial_ne(left: Path, right: Path) -> bool { return Path::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Path> for Path {
+    pub fn partial_lt(left: Path, right: Path) -> bool { return Path::lt(left, right); }
+    pub fn partial_le(left: Path, right: Path) -> bool { return Path::le(left, right); }
+    pub fn partial_gt(left: Path, right: Path) -> bool { return Path::gt(left, right); }
+    pub fn partial_ge(left: Path, right: Path) -> bool { return Path::ge(left, right); }
+    pub fn partial_cmp(left: Path, right: Path) -> core::cmp::PartialOrdering {
+        if (Path::lt(left, right)) { return core::cmp::Less; }
+        if (Path::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

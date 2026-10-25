@@ -1,0 +1,185 @@
+// Normalize bounded UTF-8 stdin with Unicode 17.0.0; write only normalized bytes.
+// Exit 2: arguments, malformed input or resource limit; 3: I/O; 4: allocation.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::unicode_graphemes;
+import ext::unicode_normalize;
+import std::args;
+import std::stream;
+
+struct Options { form: ext::unicode_normalize::Form, stats: bool, input: i32, output: i32, scratch: i32, work: u64, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { stage: i32, reason: i32, offset: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value,count);
+    return core::text::from_utf8_unchecked(bytes.values,bytes.start,count);
+}
+fn fail(diagnostic: &Diagnostic, status: i32, stage: i32, reason: i32) -> i32 {
+    diagnostic.stage = stage; diagnostic.reason = reason; return status;
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0;
+    while (index < left.len()) { if (left.values[left.start + index] != right.values[right.start + index]) { return false; } index += 1; }
+    return true;
+}
+fn input_error(error: core::io::Error, diagnostic: &Diagnostic) -> i32 {
+    return match (error) {
+        core::io::Error::LimitExceeded -> fail(diagnostic,2,1,2),
+        core::io::Error::AllocationFailed -> fail(diagnostic,4,1,4),
+        _ -> fail(diagnostic,3,1,3)
+    };
+}
+fn normalization_error(error: ext::unicode_normalize::Error, stage: i32, diagnostic: &Diagnostic) -> i32 {
+    let reason: i32 = 2;
+    diagnostic.offset = match (error) { ext::unicode_normalize::Error::InvalidUtf8(offset) -> offset, _ -> -1 };
+    if (diagnostic.offset >= 0) { reason = 1; }
+    return fail(diagnostic,2,stage,reason);
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 2) { options.stats = true; return true; }
+    if (item.id == 7) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value);
+    let bytes: core::slice::View<u8> = argument.bytes;
+    if (item.id == 1) {
+        if (equal(bytes,literal("nfc",3))) { options.form = ext::unicode_normalize::Form::Nfc; return true; }
+        if (equal(bytes,literal("nfd",3))) { options.form = ext::unicode_normalize::Form::Nfd; return true; }
+        if (equal(bytes,literal("nfkc",4))) { options.form = ext::unicode_normalize::Form::Nfkc; return true; }
+        if (equal(bytes,literal("nfkd",4))) { options.form = ext::unicode_normalize::Form::Nfkd; return true; }
+        return false;
+    }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; }
+    let value: u64 = core::result::unwrap(parsed);
+    if (item.id == 6) { if (value > 1000000000 as u64) { return false; } options.work = value; return true; }
+    if (value > 67108864 as u64) { return false; }
+    if (item.id == 3) { options.input = value as i32; }
+    if (item.id == 4) { options.output = value as i32; }
+    if (item.id == 5) { options.scratch = value as i32; }
+    return true;
+}
+fn statistics(report: ext::unicode_normalize::Normalized, normalized: core::text::Text) -> bool {
+    let clusters: i32 = core::result::unwrap(ext::unicode_graphemes::count(normalized));
+    let storage: [i32;32] = [0;32];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),128);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,128));
+    format.write_text(text("bytes=",6)); format.write_signed(report.bytes as i64,core::fmt::decimal());
+    format.write_text(text(" scalars=",9)); format.write_signed(report.scalars as i64,core::fmt::decimal());
+    format.write_text(text(" graphemes=",11)); format.write_signed(clusters as i64,core::fmt::decimal());
+    format.write_text(text("\n",1));
+    let size: i32 = core::result::unwrap(format.finish()); let sink: std::stream::Descriptor = std::stream::stderr();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,size));
+}
+fn output(input: core::text::Text, scratch: core::slice::View<u32>, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let measured: core::result::Result<ext::unicode_normalize::Normalized,ext::unicode_normalize::Error> = ext::unicode_normalize::measure(input,options.form,scratch,options.work);
+    if (core::result::is_err(measured)) { return normalization_error(core::result::unwrap_err(measured),2,diagnostic); }
+    let expected: ext::unicode_normalize::Normalized = core::result::unwrap(measured);
+    if (expected.bytes > options.output) { return fail(diagnostic,2,2,2); }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(expected.bytes);
+    if (core::result::is_err(allocated)) { return fail(diagnostic,4,2,4); }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(allocated); core::result::unwrap(bytes.try_resize(expected.bytes,0));
+    let normalized: core::result::Result<ext::unicode_normalize::Normalized,ext::unicode_normalize::Error> = ext::unicode_normalize::normalize_into(input,options.form,bytes.as_view(),scratch,options.work);
+    if (core::result::is_err(normalized)) { bytes.destroy(); return normalization_error(core::result::unwrap_err(normalized),2,diagnostic); }
+    let report: ext::unicode_normalize::Normalized = core::result::unwrap(normalized);
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),bytes.as_slice(),0,report.bytes);
+    let status: i32 = 0;
+    if (core::result::is_err(written)) { status = fail(diagnostic,3,3,3); }
+    if (status == 0 && options.stats) {
+        let value: core::text::Text = core::text::from_utf8_unchecked(bytes.as_slice(),0,report.bytes);
+        if (!statistics(report,value)) { status = fail(diagnostic,3,4,3); }
+    }
+    bytes.destroy(); return status;
+}
+fn normalize(buffer: &alloc::io::Buffer, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(buffer.as_bytes(),buffer.len());
+    if (core::result::is_err(checked)) {
+        let error: core::text::Error = core::result::unwrap_err(checked);
+        diagnostic.offset = match (error) { core::text::Error::InvalidUtf8(offset) -> offset, _ -> -1 };
+        return fail(diagnostic,2,1,1);
+    }
+    let input: core::text::Text = core::result::unwrap(checked);
+    let required: core::result::Result<i32,ext::unicode_normalize::Error> = ext::unicode_normalize::scratch_len(input,options.form,options.work);
+    if (core::result::is_err(required)) { return normalization_error(core::result::unwrap_err(required),2,diagnostic); }
+    let count: i32 = core::result::unwrap(required);
+    if (count > options.scratch) { return fail(diagnostic,2,2,2); }
+    let allocated: core::result::Result<alloc::vec::Vec<u32>,alloc::vec::Error> = alloc::vec::with_capacity<u32>(count);
+    if (core::result::is_err(allocated)) { return fail(diagnostic,4,2,4); }
+    let scratch: alloc::vec::Vec<u32> = core::result::unwrap(allocated); core::result::unwrap(scratch.try_resize(count,0));
+    let status: i32 = output(input,scratch.as_view(),options,diagnostic); scratch.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;7] = [
+        ext::cli::Spec { id: 1, long: literal("form",4), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("stats",5), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 3, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-scratch-scalars",19), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let specification: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,7));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),specification,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { form: ext::unicode_normalize::Form::Nfc, stats: false, input: 4194304, output: 16777216, scratch: 4194304, work: 100000000, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return fail(diagnostic,2,0,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), _ -> false };
+        if (!valid) { return fail(diagnostic,2,0,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: text-normalize [--form nfc|nfd|nfkc|nfkd] [--stats] [--max-input-bytes N] [--max-output-bytes N] [--max-scratch-scalars N] [--max-work N]\n",145);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(diagnostic,3,0,3); } return 0;
+    }
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.input));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),buffer.borrow());
+    if (core::result::is_err(copied)) { let failure: core::io::CopyFailure = core::result::unwrap_err(copied); buffer.destroy(); return input_error(failure.cause,diagnostic); }
+    let status: i32 = normalize(buffer.borrow(),options,diagnostic); buffer.destroy(); return status;
+}
+fn diagnostic(value: Diagnostic) -> bool {
+    let storage: [i32;32] = [0;32]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),128);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,128));
+    format.write_text(text("text-normalize: ",16));
+    if (value.reason == 0) { format.write_text(text("invalid-arguments",17)); }
+    if (value.reason == 1) { format.write_text(text("invalid-utf8",12)); }
+    if (value.reason == 2) { format.write_text(text("resource-limit",14)); }
+    if (value.reason == 3) { format.write_text(text("io-failure",10)); }
+    if (value.reason == 4) { format.write_text(text("allocation-failure",18)); }
+    format.write_text(text(" stage=",7));
+    if (value.stage == 0) { format.write_text(text("arguments",9)); }
+    if (value.stage == 1) { format.write_text(text("input",5)); }
+    if (value.stage == 2) { format.write_text(text("normalization",13)); }
+    if (value.stage == 3) { format.write_text(text("output",6)); }
+    if (value.stage == 4) { format.write_text(text("statistics",10)); }
+    if (value.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(value.offset as i64,core::fmt::decimal()); }
+    format.write_text(text("\n",1));
+    let size: i32 = core::result::unwrap(format.finish()); let sink: std::stream::Descriptor = std::stream::stderr();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,size));
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { stage: 0, reason: 0, offset: -1 };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    let status: i32 = 0;
+    if (core::result::is_err(captured)) {
+        status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,4), std::args::Error::HostRead(index) -> fail(detail.borrow(),3,0,3), _ -> fail(detail.borrow(),2,0,0) };
+    } else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 3; } return status;
+}

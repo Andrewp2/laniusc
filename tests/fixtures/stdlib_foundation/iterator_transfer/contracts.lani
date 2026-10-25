@@ -1,0 +1,168 @@
+// Typed transfer boundaries. One external String owner; the two array sinks
+// each reserve once. Cursors, fixed storage, ZSTs and transfer do not allocate.
+module app::main;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::vec;
+
+struct Fault { code: i64, flag: core::option::Option<bool> }
+struct Payload {
+    id: i32, wide: i64, bytes: [u8; 3],
+    nested: core::option::Option<core::result::Result<[u64; 2], Fault>>,
+    text: alloc::string::String
+}
+struct Unit {}
+// Exercise the fixed sink impl while both its item and capacity are symbolic.
+fn transfer_fixed<I, T, const N: usize>(source: &I, sink: &core::vec::Vec<T, N>, limit: u64)
+    -> core::result::Result<core::iter::Transfer, core::iter::TransferError<T, core::vec::Error>>
+    where I: core::iter::Iterator<T> {
+    return core::iter::try_transfer_up_to<I, core::vec::Vec<T, N>, T, core::vec::Error>(source, sink, limit);
+}
+struct OptionalErrorSink { calls: i32 }
+impl OptionalErrorSink { fn borrow(&self) -> &OptionalErrorSink { return self; } }
+pub impl core::iter::TrySink<Payload, core::option::Option<Fault>> for OptionalErrorSink {
+    pub fn try_accept(&self, item: Payload) -> core::option::Option<core::option::Option<Fault>> {
+        self.calls += 1;
+        let absent: core::option::Option<Fault> = core::option::None();
+        return core::option::Some(absent);
+    }
+}
+fn payload(id: i32, text: alloc::string::String) -> Payload {
+    let nested: core::option::Option<core::result::Result<[u64; 2], Fault>> = core::option::None();
+    if (id % 3 == 0) {
+        let pair: [u64; 2] = [18446744073709551615, 4294967297 + (id as u64)];
+        let good: core::result::Result<[u64; 2], Fault> = core::result::Ok(pair);
+        nested = core::option::Some(good);
+    }
+    if (id % 3 == 1) {
+        let flag: core::option::Option<bool> = core::option::Some(false);
+        let bad: core::result::Result<[u64; 2], Fault> = core::result::Err(Fault { code: -4294967297 - (id as i64), flag: flag });
+        nested = core::option::Some(bad);
+    }
+    let bytes: [u8; 3] = [id as u8, 128, 255];
+    return Payload { id: id, wide: -8589934593 - (id as i64), bytes: bytes, nested: nested, text: text };
+}
+fn check(item: Payload, id: i32) {
+    assert(item.id == id && item.wide == -8589934593 - (id as i64));
+    assert(item.bytes[0] == id as u8 && item.bytes[1] == 128 && item.bytes[2] == 255);
+    if (id % 3 == 2) { assert(core::option::is_none(item.nested)); }
+    else {
+        let nested: core::result::Result<[u64; 2], Fault> = core::option::unwrap(item.nested);
+        if (id % 3 == 0) {
+            let pair: [u64; 2] = core::result::unwrap(nested);
+            assert(pair[0] == 18446744073709551615 && pair[1] == 4294967297 + (id as u64));
+        } else {
+            let error: Fault = core::result::unwrap_err(nested);
+            assert(error.code == -4294967297 - (id as i64) && !core::option::unwrap(error.flag));
+        }
+    }
+    let text: core::text::Text = item.text.as_text();
+    assert(text.byte_len() == 4 && core::option::unwrap(text.byte_at(0)) == 97 && core::option::unwrap(text.byte_at(3)) == 100);
+}
+fn fixed_recovery(owner: alloc::string::String) {
+    let items: [Payload; 6] = [payload(0, owner), payload(1, owner), payload(2, owner), payload(3, owner), payload(4, owner), payload(5, owner)];
+    let source: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(items, 6));
+    let storage: [Payload; 2] = [payload(5, owner), payload(5, owner)];
+    let sink: core::vec::Vec<Payload, 2> = core::vec::from_storage<Payload, 2>(storage);
+    let zero: core::iter::Transfer = core::result::unwrap(transfer_fixed<core::slice::Iter<Payload>, Payload, 2>(source.borrow(), sink.borrow(), 0));
+    assert(zero.accepted == 0 && !zero.exhausted && source.remaining() == 6 && core::vec::len(sink.borrow()) == 0);
+    let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, core::vec::Error>> = core::iter::try_transfer_up_to<core::slice::Iter<Payload>, core::vec::Vec<Payload, 2>, Payload, core::vec::Error>(source.borrow(), sink.borrow(), 4);
+    let rejected: core::iter::TransferError<Payload, core::vec::Error> = core::result::unwrap_err(result);
+    assert(rejected.accepted == 2 && source.remaining() == 3 && core::vec::len(sink.borrow()) == 2 && core::vec::capacity(sink.borrow()) == 2);
+    assert(match (rejected.error) { core::vec::Error::Full -> true, _ -> false });
+    check(core::option::unwrap(core::vec::get(sink.borrow(), 0)), 0);
+    check(core::option::unwrap(core::vec::get(sink.borrow(), 1)), 1);
+    check(rejected.rejected, 2);
+    // Release the accepted logical entries; their String descriptors are aliases.
+    assert(core::vec::clear(sink.borrow()) == 2);
+    let retried: core::option::Option<core::vec::Error> = sink.try_accept(rejected.rejected);
+    assert(core::option::is_none(retried));
+    check(core::option::unwrap(core::vec::get(sink.borrow(), 0)), 2);
+    let exact: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<Payload>, core::vec::Vec<Payload, 2>, Payload, core::vec::Error>(source.borrow(), sink.borrow(), 1));
+    assert(exact.accepted == 1 && !exact.exhausted && source.remaining() == 2);
+    check(core::option::unwrap(core::vec::get(sink.borrow(), 1)), 3);
+    core::vec::clear(sink.borrow());
+    let rest: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<Payload>, core::vec::Vec<Payload, 2>, Payload, core::vec::Error>(source.borrow(), sink.borrow(), 9));
+    assert(rest.accepted == 2 && rest.exhausted && source.remaining() == 0);
+    check(core::option::unwrap(core::vec::get(sink.borrow(), 0)), 4);
+    check(core::option::unwrap(core::vec::get(sink.borrow(), 1)), 5);
+    core::vec::clear(sink.borrow());
+    // A second full-sink rejection carries the populated nested Err intact.
+    let one: [Payload; 1] = [payload(1, owner)];
+    let pending: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(one, 1));
+    let full: core::vec::Vec<Payload, 2> = core::vec::from_array<Payload, 2>(storage);
+    let no_room: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, core::vec::Error>> = core::iter::try_transfer_up_to<core::slice::Iter<Payload>, core::vec::Vec<Payload, 2>, Payload, core::vec::Error>(pending.borrow(), full.borrow(), 1);
+    let nested_rejection: core::iter::TransferError<Payload, core::vec::Error> = core::result::unwrap_err(no_room);
+    assert(nested_rejection.accepted == 0 && pending.remaining() == 0 && core::vec::len(full.borrow()) == 2);
+    check(nested_rejection.rejected, 1);
+    check(core::option::unwrap(core::vec::get(full.borrow(), 0)), 5);
+    check(core::option::unwrap(core::vec::get(full.borrow(), 1)), 5);
+    core::vec::clear(full.borrow());
+}
+fn native_arrays() {
+    let pairs: [[u64; 2]; 3] = [[0, 18446744073709551615], [4294967297, 9], [18446744073709551614, 8589934595]];
+    let source: core::slice::Iter<[u64; 2]> = core::result::unwrap(core::iter::from_slice<[u64; 2]>(pairs, 3));
+    let sink: alloc::vec::Vec<[u64; 2]> = core::result::unwrap(alloc::vec::with_capacity<[u64; 2]>(3));
+    let exact: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<[u64; 2]>, alloc::vec::Vec<[u64; 2]>, [u64; 2], alloc::vec::Error>(source.borrow(), sink.borrow(), 3));
+    assert(exact.accepted == 3 && !exact.exhausted && sink.len() == 3 && sink.capacity() == 3);
+    let index: i32 = 0;
+    while (index < 3) { let pair: [u64; 2] = sink.at(index); assert(pair[0] == pairs[index][0] && pair[1] == pairs[index][1]); index += 1; }
+    let eof: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<[u64; 2]>, alloc::vec::Vec<[u64; 2]>, [u64; 2], alloc::vec::Error>(source.borrow(), sink.borrow(), 1));
+    assert(eof.accepted == 0 && eof.exhausted && sink.len() == 3);
+    let subview: core::slice::View<[u64; 2]> = core::slice::View { values: pairs, start: 1, length: 2 };
+    let tail: core::slice::Iter<[u64; 2]> = core::result::unwrap(core::iter::from_view<[u64; 2]>(subview));
+    let queue: alloc::deque::Deque<[u64; 2]> = core::result::unwrap(alloc::deque::with_capacity<[u64; 2]>(4));
+    core::result::unwrap(queue.try_push_back(pairs[0])); core::result::unwrap(queue.try_push_back(pairs[1]));
+    core::result::unwrap(queue.try_push_back(pairs[2])); core::result::unwrap(queue.try_push_back(pairs[0]));
+    queue.pop_front(); queue.pop_front(); queue.pop_front();
+    let copied: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<[u64; 2]>, alloc::deque::Deque<[u64; 2]>, [u64; 2], alloc::deque::Error>(tail.borrow(), queue.borrow(), 4));
+    assert(copied.accepted == 2 && copied.exhausted && queue.len() == 3 && queue.capacity() == 4);
+    let retained: [u64; 2] = queue.at(0); assert(retained[0] == pairs[0][0] && retained[1] == pairs[0][1]);
+    let wrapped: alloc::deque::Views<[u64; 2]> = queue.as_views(); assert(wrapped.first.len() == 1 && wrapped.second.len() == 2);
+    index = 0;
+    while (index < 2) { let pair: [u64; 2] = queue.at(index + 1); assert(pair[0] == pairs[index + 1][0] && pair[1] == pairs[index + 1][1]); index += 1; }
+    queue.destroy(); sink.destroy();
+}
+fn zero_sized() {
+    let units: [Unit; 4] = [Unit {}, Unit {}, Unit {}, Unit {}];
+    let source: core::slice::Iter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 4));
+    let sink: alloc::vec::Vec<Unit> = alloc::vec::new<Unit>();
+    let filled: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<Unit>, alloc::vec::Vec<Unit>, Unit, alloc::vec::Error>(source.borrow(), sink.borrow(), 5));
+    assert(filled.accepted == 4 && filled.exhausted && sink.len() == 4 && sink.capacity() == 2147483647);
+    let second: core::slice::Iter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 4));
+    let queue: alloc::deque::Deque<Unit> = alloc::deque::new<Unit>();
+    let queued: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<core::slice::Iter<Unit>, alloc::deque::Deque<Unit>, Unit, alloc::deque::Error>(second.borrow(), queue.borrow(), 5));
+    assert(queued.accepted == 4 && queued.exhausted && queue.len() == 4 && queue.capacity() == 2147483647);
+    let empty: [Unit; 0] = [];
+    let fixed: core::vec::Vec<Unit, 0> = core::vec::from_storage<Unit, 0>(empty);
+    let third: core::slice::Iter<Unit> = core::result::unwrap(core::iter::from_slice<Unit>(units, 4));
+    let failed: core::result::Result<core::iter::Transfer, core::iter::TransferError<Unit, core::vec::Error>> = transfer_fixed<core::slice::Iter<Unit>, Unit, 0>(third.borrow(), fixed.borrow(), 1);
+    let rejected: core::iter::TransferError<Unit, core::vec::Error> = core::result::unwrap_err(failed);
+    assert(rejected.accepted == 0 && third.remaining() == 3 && core::vec::len(fixed.borrow()) == 0);
+    assert(match (rejected.error) { core::vec::Error::Full -> true, _ -> false });
+    let recovered: Unit = rejected.rejected;
+    queue.destroy(); sink.destroy();
+}
+fn optional_error(owner: alloc::string::String) {
+    let items: [Payload; 1] = [payload(0, owner)];
+    let source: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(items, 1));
+    let sink: OptionalErrorSink = OptionalErrorSink { calls: 0 };
+    let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, core::option::Option<Fault>>> = core::iter::try_transfer_up_to<core::slice::Iter<Payload>, OptionalErrorSink, Payload, core::option::Option<Fault>>(source.borrow(), sink.borrow(), 5);
+    let rejected: core::iter::TransferError<Payload, core::option::Option<Fault>> = core::result::unwrap_err(result);
+    assert(rejected.accepted == 0 && core::option::is_none(rejected.error) && sink.calls == 1 && source.remaining() == 0);
+    check(rejected.rejected, 0);
+}
+fn main() -> i32 {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    fixed_recovery(owner); native_arrays(); zero_sized(); optional_error(owner);
+    let text: core::text::Text = owner.as_text();
+    assert(text.byte_len() == 4 && core::option::unwrap(text.byte_at(2)) == 162);
+    owner.destroy(); return 0;
+}

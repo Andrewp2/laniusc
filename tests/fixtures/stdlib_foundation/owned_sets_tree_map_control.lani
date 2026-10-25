@@ -1,0 +1,15 @@
+// expect: 0
+module app::main;
+import alloc::tree_map;
+import core::result;
+struct Unit {}
+fn main() -> i32 {
+    let map: alloc::tree_map::TreeMap<i16, Unit> = alloc::tree_map::new();
+    let value: i16 = 7;
+    let unit: Unit = Unit {};
+    let success: bool = core::result::is_ok(map.try_insert(value, unit));
+    let found: bool = map.contains_key(value);
+    map.destroy();
+    if (success && found) { return 0; }
+    return 1;
+}

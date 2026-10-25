@@ -1,5 +1,5 @@
 module app::main;
-import core::number_i32;
+import core::i32;
 import core::option;
 import core::result;
 import core::slice;
@@ -21,7 +21,7 @@ fn main() -> i32 {
     let index: i32 = 0;
     while (index < 5) {
         if (core::slice::get_or(window, 5, index, false)) {
-            total = core::number_i32::saturating_add(total, 1);
+            total = core::i32::saturating_add(total, 1);
         }
         index += 1;
     }

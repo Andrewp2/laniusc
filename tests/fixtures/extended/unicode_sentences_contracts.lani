@@ -1,0 +1,43 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::unicode_sentences;
+fn literal(value: str, length: i32) -> core::text::Text { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length); return core::text::from_utf8(raw,length).unwrap(); }
+fn forged(raw: [u8], start: i32, length: i32) -> core::text::Text { return core::text::Text { bytes: raw, start: start, length: length }; }
+fn inspect(text: core::text::Text) -> i32 {
+    let scan: ext::unicode_sentences::Cursor = ext::unicode_sentences::cursor(text).unwrap();
+    let first = core::option::unwrap(scan.next()); let fork: ext::unicode_sentences::Cursor = scan;
+    let second = core::option::unwrap(scan.next()); let third = core::option::unwrap(scan.next());
+    if (!(first.start == 0 && first.end == 4 && second.start == 4 && second.end == 7 && third.start == 7 && third.end == 12)) { return 1; }
+    if (!(first.text.start == text.start && second.text.start == text.start+4 && third.text.length == 5)) { return 2; }
+    if (!(first.text.equals(text.slice(0,4).unwrap()) && second.text.equals(text.slice(4,7).unwrap()) && third.text.equals(text.slice(7,12).unwrap()))) { return 3; }
+    if (!(core::option::unwrap(fork.next()).end == 7 && core::option::unwrap(fork.next()).end == 12)) { return 4; }
+    if (!(core::option::is_none(scan.next()) && core::option::is_none(scan.next()) && core::option::is_none(fork.next()))) { return 5; }
+    if (!(ext::unicode_sentences::count(text).unwrap() == 3)) { return 6; }
+    let at: i32 = 0; while (at <= 12) { if (!(ext::unicode_sentences::is_boundary(text,at).unwrap() == (at == 0 || at == 4 || at == 7 || at == 12))) { return 7; } at += 1; }
+    if (!(ext::unicode_sentences::is_boundary(text,-1).is_err() && ext::unicode_sentences::is_boundary(text,13).is_err())) { return 8; }
+    let limits = ext::unicode_sentences::default_limits(); limits.max_bytes = 11;
+    if (!(match(ext::unicode_sentences::cursor_with_limits(text,limits).unwrap_err()) { ext::unicode_sentences::Error::InputLimit -> true, _ -> false })) { return 9; }
+    limits.max_bytes = 12; limits.max_work = 35;
+    if (!(match(ext::unicode_sentences::cursor_with_limits(text,limits).unwrap_err()) { ext::unicode_sentences::Error::WorkLimit -> true, _ -> false })) { return 10; }
+    limits.max_work = 36; if (!(ext::unicode_sentences::cursor_with_limits(text,limits).is_ok())) { return 11; }
+    return 0;
+}
+fn main() -> i32 {
+    let raw: [u8;14] = [255,195,169,33,32,65,63,32,240,159,153,130,46,255];
+    let native: core::text::Text = core::text::from_utf8_range(raw,1,12).unwrap(); let checked1: i32 = inspect(native); if (checked1 != 0) { return checked1+30; }
+    let owned: alloc::string::String = alloc::string::from_text(native).unwrap(); let checked2: i32 = inspect(owned.as_text()); if (checked2 != 0) { return checked2+60; } owned.destroy();
+    let checked3: i32 = inspect(literal("é! A? 🙂.",12)); if (checked3 != 0) { return checked3+90; }
+    let empty = native.slice(12,12).unwrap(); let scan = ext::unicode_sentences::cursor(empty).unwrap();
+    if (!(core::option::is_none(scan.next()) && ext::unicode_sentences::count(empty).unwrap() == 0 && ext::unicode_sentences::is_boundary(empty,0).unwrap())) { return 12; }
+    let limits: ext::unicode_sentences::Limits = ext::unicode_sentences::Limits { max_bytes: 0, max_work: 0 }; if (!(ext::unicode_sentences::cursor_with_limits(empty,limits).is_ok())) { return 13; }
+    limits.max_bytes = -1; if (!(ext::unicode_sentences::cursor_with_limits(empty,limits).is_err())) { return 14; }
+    let bad: core::text::Text = forged(raw,-1,0); if (!(ext::unicode_sentences::cursor(bad).is_err())) { return 15; }
+    bad.start = 2147483647; bad.length = 1; if (!(ext::unicode_sentences::count(bad).is_err())) { return 16; } bad.start = 0; bad.length = -1; if (!(ext::unicode_sentences::is_boundary(bad,0).is_err())) { return 17; }
+    let initials = literal("a.A",3); if (!(!ext::unicode_sentences::is_boundary(initials,2).unwrap())) { return 18; } if (!(ext::unicode_sentences::is_boundary(initials.slice(1,3).unwrap(),1).unwrap())) { return 19; }
+    let paragraphs = literal("\r̈\nA",5); if (!(ext::unicode_sentences::is_boundary(paragraphs,1).unwrap())) { return 20; } if (!(!ext::unicode_sentences::is_boundary(paragraphs,3).unwrap())) { return 21; } if (!(ext::unicode_sentences::is_boundary(paragraphs,4).unwrap())) { return 22; }
+    return 0;
+}

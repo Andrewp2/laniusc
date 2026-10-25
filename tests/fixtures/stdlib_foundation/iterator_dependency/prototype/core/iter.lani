@@ -1,0 +1,44 @@
+// Allocation-free, fused iteration. Once next returns None it stays exhausted.
+// Adapters borrow cursors; backing storage and borrowed callback state must
+// remain alive. Items are ordinary shallow values, with no implicit destruction.
+module core::iter;
+import core::option;
+import core::result;
+
+pub trait Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T>;
+}
+pub enum Error { Bounds, CountOverflow }
+pub struct SliceIter<T> { values: [T], position: i32, end: i32 }
+pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
+
+pub fn from_slice<T>(values: [T], count: i32) -> core::result::Result<SliceIter<T>, Error> {
+    if (count < 0) { return core::result::Err(Error::Bounds); }
+    return core::result::Ok(SliceIter { values: values, position: 0, end: count });
+}
+pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T> {
+    return Take { source: source, remaining: count, done: false };
+}
+pub impl<T> SliceIter<T> {
+    pub fn borrow(&self) -> &SliceIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.end - self.position; }
+}
+pub impl<T> Iterator<T> for SliceIter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.position == self.end) { return core::option::None(); }
+        let value: T = self.values[self.position]; self.position += 1;
+        return core::option::Some(value);
+    }
+}
+pub impl<I, T> Take<I, T> {
+    pub fn borrow(&self) -> &Take<I, T> { return self; }
+}
+pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done || self.remaining == 0) { return core::option::None(); }
+        let source: &I = self.source;
+        let value: core::option::Option<T> = source.next();
+        if (core::option::is_none(value)) { self.done = true; return value; }
+        self.remaining -= 1; return value;
+    }
+}

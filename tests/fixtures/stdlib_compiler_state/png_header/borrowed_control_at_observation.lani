@@ -1,0 +1,247 @@
+// Bounded static PNG codec, implemented in Lanius with ext::compression zlib.
+module ext::png;
+import alloc::vec;
+import core::crc32;
+import core::result;
+import core::slice;
+import ext::compression;
+import ext::image;
+import ext::inflate;
+
+pub struct Limits { max_input: i32, max_pixels: i32, max_inflated: i32, max_chunks: i32 }
+pub enum Error { Bounds, InputLimit, PixelLimit, InflatedLimit, ChunkLimit, OutputLimit, AllocationFailed, SizeOverflow, Signature, Truncated, ChunkType, ChunkOrder, Crc, Header, Palette, Transparency, UnknownCritical, DataSize, Filter, TrailingData, Compression(ext::compression::Error) }
+pub fn default_limits() -> Limits { return Limits { max_input: 16777216, max_pixels: 16777216, max_inflated: 134217728, max_chunks: 65536 }; }
+struct Header { width: i32, height: i32, depth: i32, color: i32, interlace: i32, palette: i32, palette_len: i32, transparency: i32, transparency_len: i32, idat_len: i32, inflated: i32 }
+impl Header { fn borrow(&self) -> &Header { return self; } }
+struct Pass { x: i32, y: i32, dx: i32, dy: i32, width: i32, height: i32 }
+fn valid(input: core::slice::View<u8>) -> bool { return input.start >= 0 && input.length >= 0 && input.start <= 2147483647-input.length; }
+fn byte(input: core::slice::View<u8>, index: i32) -> u8 { return input.values[input.start+index]; }
+fn put(input: core::slice::View<u8>, index: i32, value: u8) { input.values[input.start+index] = value; }
+fn big16(input: core::slice::View<u8>, index: i32) -> i32 { return ((byte(input,index) as i32) << 8) | (byte(input,index+1) as i32); }
+fn big32(input: core::slice::View<u8>, index: i32) -> u32 { return ((byte(input,index) as u32) << 24) | ((byte(input,index+1) as u32) << 16) | ((byte(input,index+2) as u32) << 8) | (byte(input,index+3) as u32); }
+fn put32(input: core::slice::View<u8>, index: i32, value: u32) {
+    put(input,index,(value >> 24) as u8); put(input,index+1,((value >> 16) & 255) as u8); put(input,index+2,((value >> 8) & 255) as u8); put(input,index+3,(value & 255) as u8);
+}
+fn crc(input: core::slice::View<u8>, start: i32, count: i32) -> u32 {
+    let state: u32 = core::crc32::INITIAL; let i: i32 = 0;
+    while (i < count) { state = core::crc32::update_byte(state,byte(input,start+i)); i += 1; }
+    return core::crc32::finish(state);
+}
+fn channels(color: i32) -> i32 { if (color == 2) { return 3; } if (color == 4) { return 2; } if (color == 6) { return 4; } return 1; }
+fn legal(depth: i32, color: i32) -> bool {
+    if (color == 0) { return depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16; }
+    if (color == 3) { return depth == 1 || depth == 2 || depth == 4 || depth == 8; }
+    return (color == 2 || color == 4 || color == 6) && (depth == 8 || depth == 16);
+}
+fn pass(header: &Header, index: i32) -> Pass {
+    let x: i32 = 0; let y: i32 = 0; let dx: i32 = 1; let dy: i32 = 1;
+    if (header.interlace == 1) {
+        let xs: [i32;7] = [0,4,0,2,0,1,0]; let ys: [i32;7] = [0,0,4,0,2,0,1];
+        let dxs: [i32;7] = [8,8,4,4,2,2,1]; let dys: [i32;7] = [8,8,8,4,4,2,2];
+        x = xs[index]; y = ys[index]; dx = dxs[index]; dy = dys[index];
+    }
+    let width: i32 = 0; let height: i32 = 0;
+    if (header.width > x) { width = (header.width-1-x)/dx+1; }
+    if (header.height > y) { height = (header.height-1-y)/dy+1; }
+    if (width == 0 || height == 0) { width = 0; height = 0; }
+    return Pass { x: x, y: y, dx: dx, dy: dy, width: width, height: height };
+}
+fn inflated_size(header: &Header, limit: i32) -> core::result::Result<i32,Error> {
+    let total: i64 = 0; let index: i32 = 0; let passes: i32 = 1; if (header.interlace == 1) { passes = 7; }
+    while (index < passes) {
+        let p: Pass = pass(header,index);
+        let row: i64 = ((p.width as i64)*(channels(header.color) as i64)*(header.depth as i64)+7)/8;
+        if (p.width > 0) { total += (row+1)*(p.height as i64); }
+        if (total > (limit as i64)) { return core::result::Err(Error::InflatedLimit); } index += 1;
+    }
+    return core::result::Ok(total as i32);
+}
+fn parse(input: core::slice::View<u8>, limits: Limits, header: &Header) -> core::result::Result<i32,Error> {
+    if (input.length < 8) { return core::result::Err(Error::Truncated); }
+    if (big32(input,0) != 2303741511 || big32(input,4) != 218765834) { return core::result::Err(Error::Signature); }
+    let position: i32 = 8; let chunks: i32 = 0; let data: bool = false; let data_ended: bool = false;
+    while (position < input.length) {
+        if (chunks == limits.max_chunks) { return core::result::Err(Error::ChunkLimit); } chunks += 1;
+        if (input.length-position < 12) { return core::result::Err(Error::Truncated); }
+        let length_u: u32 = big32(input,position);
+        if (length_u > 2147483647) { return core::result::Err(Error::Header); }
+        let length: i32 = length_u as i32;
+        if (length > input.length-position-12) { return core::result::Err(Error::Truncated); }
+        let i: i32 = 0; while (i < 4) { let ch: u8 = byte(input,position+4+i); if (!((ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122))) { return core::result::Err(Error::ChunkType); } i += 1; }
+        if ((byte(input,position+6) & 32) != 0) { return core::result::Err(Error::ChunkType); }
+        let kind: u32 = big32(input,position+4); let start: i32 = position+8;
+        if (crc(input,position+4,length+4) != big32(input,start+length)) { return core::result::Err(Error::Crc); }
+        if (chunks == 1 && kind != 1229472850) { return core::result::Err(Error::ChunkOrder); }
+        if (kind == 1229472850) {
+            if (chunks != 1 || length != 13) { return core::result::Err(Error::ChunkOrder); }
+            let width: u32 = big32(input,start); let height: u32 = big32(input,start+4);
+            if (width == 0 || height == 0 || width > 2147483647 || height > 2147483647) { return core::result::Err(Error::Header); }
+            if ((width as i64)*(height as i64) > (limits.max_pixels as i64)) { return core::result::Err(Error::PixelLimit); }
+            header.width = width as i32; header.height = height as i32; header.depth = byte(input,start+8) as i32; header.color = byte(input,start+9) as i32; header.interlace = byte(input,start+12) as i32;
+            if (!legal(header.depth,header.color) || byte(input,start+10) != 0 || byte(input,start+11) != 0 || header.interlace > 1) { return core::result::Err(Error::Header); }
+            if (core::result::is_err(ext::image::byte_len(header.width,header.height))) { return core::result::Err(Error::SizeOverflow); }
+            let size: core::result::Result<i32,Error> = inflated_size(header,limits.max_inflated);
+            if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); } header.inflated = core::result::unwrap(size);
+        } else {
+            if (kind == 1347179589) {
+                if (data || header.palette != 0 || header.transparency != 0) { return core::result::Err(Error::ChunkOrder); }
+                if (header.color == 0 || header.color == 4 || length == 0 || length % 3 != 0 || length > 768 || (header.color == 3 && length/3 > (1 << header.depth))) { return core::result::Err(Error::Palette); }
+                header.palette = start; header.palette_len = length/3;
+            } else {
+                if (kind == 1951551059) {
+                    if (data || header.transparency != 0) { return core::result::Err(Error::ChunkOrder); }
+                    if ((header.color == 0 && length != 2) || (header.color == 2 && length != 6) || (header.color == 3 && (header.palette == 0 || length > header.palette_len)) || header.color == 4 || header.color == 6) { return core::result::Err(Error::Transparency); }
+                    header.transparency = start; header.transparency_len = length;
+                } else {
+                    if (kind == 1229209940) {
+                        if (data_ended) { return core::result::Err(Error::ChunkOrder); }
+                        if (header.color == 3 && header.palette == 0) { return core::result::Err(Error::Palette); }
+                        data = true; header.idat_len += length;
+                    } else {
+                        if (data) { data_ended = true; }
+                        if (kind == 1229278788) {
+                            if (!data || length != 0) { return core::result::Err(Error::ChunkOrder); }
+                            if (position+12 != input.length) { return core::result::Err(Error::TrailingData); }
+                            return core::result::Ok(chunks);
+                        }
+                        if ((byte(input,position+4) & 32) == 0) { return core::result::Err(Error::UnknownCritical); }
+                    }
+                }
+            }
+        }
+        position += length+12;
+    }
+    return core::result::Err(Error::Truncated);
+}
+fn abs(value: i32) -> i32 { if (value < 0) { return -value; } return value; }
+fn paeth(a: i32, b: i32, c: i32) -> i32 {
+    let p: i32 = a+b-c; let pa: i32 = abs(p-a); let pb: i32 = abs(p-b); let pc: i32 = abs(p-c);
+    if (pa <= pb && pa <= pc) { return a; } if (pb <= pc) { return b; } return c;
+}
+fn sample(raw: core::slice::View<u8>, row: i32, index: i32, depth: i32) -> i32 {
+    if (depth == 16) { return big16(raw,row+index*2); }
+    if (depth == 8) { return byte(raw,row+index) as i32; }
+    let bit: i32 = index*depth; return ((byte(raw,row+bit/8) as i32) >> (8-depth-bit%8)) & ((1 << depth)-1);
+}
+fn scaled(value: i32, depth: i32) -> u8 { let maximum: i32 = (1 << depth)-1; return ((value*255+maximum/2)/maximum) as u8; }
+fn reconstruct(input: core::slice::View<u8>, raw: core::slice::View<u8>, header: &Header, target: ext::image::View) -> core::result::Result<i32,Error> {
+    let position: i32 = 0; let pass_index: i32 = 0; let passes: i32 = 1; if (header.interlace == 1) { passes = 7; }
+    let count: i32 = channels(header.color); let bpp: i32 = (count*header.depth+7)/8;
+    while (pass_index < passes) {
+        let p: Pass = pass(header,pass_index); let row_bytes: i32 = (((p.width as i64)*(count as i64)*(header.depth as i64)+7)/8) as i32;
+        let y: i32 = 0; let previous: i32 = -1;
+        while (y < p.height) {
+            let filter: u8 = byte(raw,position); let row: i32 = position+1;
+            if (filter > 4) { return core::result::Err(Error::Filter); }
+            let i: i32 = 0; while (i < row_bytes) {
+                let a: i32 = 0; let b: i32 = 0; let c: i32 = 0;
+                if (i >= bpp) { a = byte(raw,row+i-bpp) as i32; }
+                if (previous >= 0) { b = byte(raw,previous+i) as i32; if (i >= bpp) { c = byte(raw,previous+i-bpp) as i32; } }
+                let predictor: i32 = 0;
+                if (filter == 1) { predictor = a; } if (filter == 2) { predictor = b; }
+                if (filter == 3) { predictor = (a+b)/2; } if (filter == 4) { predictor = paeth(a,b,c); }
+                put(raw,row+i,(((byte(raw,row+i) as i32)+predictor) & 255) as u8); i += 1;
+            }
+            let x: i32 = 0; while (x < p.width) {
+                let s: i32 = x*count; let r: i32 = sample(raw,row,s,header.depth); let g: i32 = r; let b: i32 = r; let a: u8 = 255;
+                if (header.color == 2 || header.color == 6) { g = sample(raw,row,s+1,header.depth); b = sample(raw,row,s+2,header.depth); }
+                if (header.color == 4) { a = scaled(sample(raw,row,s+1,header.depth),header.depth); }
+                if (header.color == 6) { a = scaled(sample(raw,row,s+3,header.depth),header.depth); }
+                if (header.transparency != 0 && (header.color == 0 || header.color == 2)) {
+                    let mask: i32 = (1 << header.depth)-1;
+                    let transparent: bool = r == (big16(input,header.transparency) & mask);
+                    if (header.color == 2) { transparent = transparent && g == (big16(input,header.transparency+2) & mask) && b == (big16(input,header.transparency+4) & mask); }
+                    if (transparent) { a = 0; }
+                }
+                let pixel: ext::image::Rgba = ext::image::Rgba { r: scaled(r,header.depth), g: scaled(g,header.depth), b: scaled(b,header.depth), a: a };
+                if (header.color == 3) {
+                    if (r >= header.palette_len) { return core::result::Err(Error::Palette); }
+                    pixel.r = byte(input,header.palette+r*3); pixel.g = byte(input,header.palette+r*3+1); pixel.b = byte(input,header.palette+r*3+2);
+                    if (r < header.transparency_len) { pixel.a = byte(input,header.transparency+r); }
+                }
+                let out: i32 = target.bytes.start+(p.y+y*p.dy)*target.stride+(p.x+x*p.dx)*4;
+                target.bytes.values[out] = pixel.r; target.bytes.values[out+1] = pixel.g; target.bytes.values[out+2] = pixel.b; target.bytes.values[out+3] = pixel.a;
+                x += 1;
+            }
+            previous = row; position = row+row_bytes; y += 1;
+        }
+        pass_index += 1;
+    }
+    return core::result::Ok(position);
+}
+fn compressed_error(error: ext::compression::Error) -> Error {
+    let value: Error = match (error) { ext::compression::Error::AllocationFailed -> Error::AllocationFailed, ext::compression::Error::OutputLimit -> Error::DataSize, _ -> Error::Compression(error) }; return value;
+}
+fn decompress(zipped: core::slice::View<u8>, expected: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let decoded: core::result::Result<alloc::vec::Vec<u8>,ext::compression::Error> = ext::compression::decode(zipped,ext::compression::Format::Zlib,ext::compression::Limits { max_input: zipped.length, max_output: expected, max_members: 1 });
+    if (core::result::is_ok(decoded)) { return core::result::Ok(core::result::unwrap(decoded)); }
+    let error: ext::compression::Error = core::result::unwrap_err(decoded);
+    let trailing: bool = match (error) { ext::compression::Error::TrailingData -> true, _ -> false };
+    if (!trailing) { return core::result::Err(compressed_error(error)); }
+    // PNG permits unused bytes after the zlib trailer in IDAT. TrailingData
+    // is reported only AFTER the existing zlib decoder verified header,
+    // window, deflate stream and Adler-32. Replay that validated stream into
+    // an exact buffer; do not relax any of those checks or scan for markers.
+    let raw: alloc::vec::Vec<u8> = alloc::vec::new();
+    let resized: core::result::Result<i32,alloc::vec::Error> = raw.try_resize(expected,0);
+    if (core::result::is_err(resized)) { raw.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let body: core::slice::View<u8> = core::result::unwrap(zipped.subview(2,zipped.length));
+    let rebuilt: core::result::Result<ext::inflate::Progress,ext::inflate::Failure> = ext::inflate::decode_into(body,raw.as_view());
+    if (core::result::is_err(rebuilt)) { raw.destroy(); return core::result::Err(Error::Compression(error)); }
+    raw.truncate(core::result::unwrap(rebuilt).written); return core::result::Ok(raw);
+}
+pub fn decode(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<ext::image::Image,Error> {
+    if (!valid(input) || limits.max_input < 0 || limits.max_pixels < 0 || limits.max_inflated < 0 || limits.max_chunks < 0) { return core::result::Err(Error::Bounds); }
+    if (input.length > limits.max_input) { return core::result::Err(Error::InputLimit); }
+    let header: Header = Header { width: 0, height: 0, depth: 0, color: 0, interlace: 0, palette: 0, palette_len: 0, transparency: 0, transparency_len: 0, idat_len: 0, inflated: 0 };
+    let parsed: core::result::Result<i32,Error> = parse(input,limits,header.borrow());
+    if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+    let compressed: alloc::vec::Vec<u8> = alloc::vec::new();
+    let allocated: core::result::Result<i32,alloc::vec::Error> = compressed.try_resize(header.idat_len,0);
+    if (core::result::is_err(allocated)) { compressed.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let zipped: core::slice::View<u8> = compressed.as_view(); let at: i32 = 0; let position: i32 = 8;
+    while (position < input.length) {
+        let length: i32 = big32(input,position) as i32;
+        if (big32(input,position+4) == 1229209940) { let i: i32 = 0; while (i < length) { put(zipped,at,byte(input,position+8+i)); at += 1; i += 1; } }
+        position += length+12;
+    }
+    let decoded: core::result::Result<alloc::vec::Vec<u8>,Error> = decompress(zipped,header.inflated);
+    compressed.destroy();
+    if (core::result::is_err(decoded)) { return core::result::Err(core::result::unwrap_err(decoded)); }
+    let raw: alloc::vec::Vec<u8> = core::result::unwrap(decoded);
+    if (raw.len() != header.inflated) { raw.destroy(); return core::result::Err(Error::DataSize); }
+    let made: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::new(header.width,header.height,ext::image::Rgba { r: 0, g: 0, b: 0, a: 0 });
+    if (core::result::is_err(made)) { raw.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let image: ext::image::Image = core::result::unwrap(made);
+    let rebuilt: core::result::Result<i32,Error> = reconstruct(input,raw.as_view(),header.borrow(),image.view()); raw.destroy();
+    if (core::result::is_err(rebuilt)) { image.destroy(); return core::result::Err(core::result::unwrap_err(rebuilt)); }
+    return core::result::Ok(image);
+}
+fn chunk(output: core::slice::View<u8>, position: i32, kind: u32, length: i32) {
+    put32(output,position,length as u32); put32(output,position+4,kind); put32(output,position+8+length,crc(output,position+4,length+4));
+}
+pub fn encode(source: ext::image::View, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (!ext::image::valid(source) || max_output < 0) { return core::result::Err(Error::Bounds); }
+    if (max_output < 57) { return core::result::Err(Error::OutputLimit); }
+    let needed: i64 = (source.width as i64)*(source.height as i64)*4+(source.height as i64);
+    if (needed > 2147483647) { return core::result::Err(Error::SizeOverflow); }
+    let raw: alloc::vec::Vec<u8> = alloc::vec::new();
+    let allocated: core::result::Result<i32,alloc::vec::Error> = raw.try_resize(needed as i32,0);
+    if (core::result::is_err(allocated)) { raw.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let filtered: core::slice::View<u8> = raw.as_view(); let y: i32 = 0;
+    while (y < source.height) { let i: i32 = 0; while (i < source.width*4) { put(filtered,y*(source.width*4+1)+1+i,source.bytes.values[source.bytes.start+y*source.stride+i]); i += 1; } y += 1; }
+    let zipped: core::result::Result<alloc::vec::Vec<u8>,ext::compression::Error> = ext::compression::encode(filtered,ext::compression::Format::Zlib,max_output-57); raw.destroy();
+    if (core::result::is_err(zipped)) {
+        let error: ext::compression::Error = core::result::unwrap_err(zipped);
+        let output_limit: bool = match (error) { ext::compression::Error::OutputLimit -> true, _ -> false };
+        if (output_limit) { return core::result::Err(Error::OutputLimit); } return core::result::Err(compressed_error(error));
+    }
+    let compressed: alloc::vec::Vec<u8> = core::result::unwrap(zipped); let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let resized: core::result::Result<i32,alloc::vec::Error> = output.try_resize(compressed.len()+57,0);
+    if (core::result::is_err(resized)) { compressed.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let bytes: core::slice::View<u8> = output.as_view(); put32(bytes,0,2303741511); put32(bytes,4,218765834);
+    put32(bytes,16,source.width as u32); put32(bytes,20,source.height as u32); put(bytes,24,8); put(bytes,25,6); chunk(bytes,8,1229472850,13);
+    let i: i32 = 0; while (i < compressed.len()) { put(bytes,41+i,compressed.at(i)); i += 1; }
+    chunk(bytes,33,1229209940,compressed.len()); chunk(bytes,45+compressed.len(),1229278788,0); compressed.destroy();
+    return core::result::Ok(output);
+}

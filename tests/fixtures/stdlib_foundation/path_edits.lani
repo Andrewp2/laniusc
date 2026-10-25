@@ -1,0 +1,78 @@
+module app::main;
+import alloc::path;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn error_code(error: alloc::path::Error) -> i32 {
+    let code: i32 = match (error) { alloc::path::Error::Bounds -> 1, alloc::path::Error::Nul(index) -> 2, alloc::path::Error::InvalidName -> 3, alloc::path::Error::NoFileName -> 4, alloc::path::Error::CapacityOverflow -> 5, alloc::path::Error::AllocationFailed -> 6 }; return code;
+}
+fn operate(owner: &alloc::path::PathBuf, opcode: u8, value: core::slice::View<u8>) -> core::result::Result<i32, alloc::path::Error> {
+    let path: core::path::Path = core::result::unwrap(core::path::from_view(value));
+    if (opcode == 48) {
+        let made: core::result::Result<alloc::path::PathBuf, alloc::path::Error> = alloc::path::from_path(path);
+        if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+        let replacement: alloc::path::PathBuf = core::result::unwrap(made); owner.destroy(); owner.bytes = replacement.bytes; return core::result::Ok(owner.byte_len());
+    }
+    if (opcode == 49) { return owner.try_push(path); }
+    if (opcode == 50) { owner.pop(); return core::result::Ok(owner.byte_len()); }
+    if (opcode == 51) { return owner.try_set_file_name(value); }
+    if (opcode == 52) { return owner.try_set_extension(value); }
+    if (opcode == 53) {
+        let made: core::result::Result<alloc::path::PathBuf, alloc::path::Error> = alloc::path::normalize_lexically(owner.as_path());
+        if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+        let replacement: alloc::path::PathBuf = core::result::unwrap(made); owner.destroy(); owner.bytes = replacement.bytes; return core::result::Ok(owner.byte_len());
+    }
+    if (opcode == 54) {
+        let made: core::result::Result<alloc::path::PathBuf, alloc::path::Error> = owner.try_clone();
+        if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); }
+        let copy: alloc::path::PathBuf = core::result::unwrap(made);
+        let alias: alloc::path::PathBuf = alloc::path::PathBuf { bytes: owner.bytes };
+        assert(alloc::path::PathBuf::eq(copy,alias) && !alloc::path::PathBuf::ne(copy,alias));
+        assert(alloc::path::PathBuf::le(copy,alias) && alloc::path::PathBuf::ge(copy,alias));
+        assert(!alloc::path::PathBuf::lt(copy,alias) && !alloc::path::PathBuf::gt(copy,alias));
+        assert(alloc::path::PathBuf::hash(copy) == alloc::path::PathBuf::hash(alias));
+        copy.clear(); assert(copy.is_empty()); copy.destroy(); return core::result::Ok(owner.byte_len());
+    }
+    if (opcode == 55) { let text: core::text::Text = core::result::unwrap(path.as_text()); return owner.try_reserve(core::result::unwrap(text.parse_i32())); }
+    if (opcode == 56) { return owner.try_shrink_to_fit(); }
+    if (opcode == 57) { owner.clear(); return core::result::Ok(0); }
+    if (opcode == 65) { return owner.try_push(owner.as_path()); }
+    let empty: core::slice::View<u8> = core::result::unwrap(owner.as_path().as_bytes().subview(0,0));
+    if (opcode == 66) { let current: core::path::Path = owner.as_path(); return owner.try_set_extension(core::option::unwrap_or(current.file_name(),empty)); }
+    if (opcode == 67) { let current: core::path::Path = owner.as_path(); return owner.try_set_file_name(core::option::unwrap_or(current.extension(),empty)); }
+    if (opcode == 68) { let invalid: [u8; 3] = [97,0,98]; let bad: core::slice::View<u8> = core::result::unwrap(core::slice::view(invalid,3)); return owner.try_set_file_name(bad); }
+    if (opcode == 69) { let bad: core::slice::View<u8> = core::slice::View { values: value.values, start: -1, length: 0 }; return owner.try_set_extension(bad); }
+    assert(false); return core::result::Ok(0);
+}
+fn main() -> i32 {
+    assert(core::result::is_err(alloc::path::with_capacity(-1)));
+    let storage: [i32; 1024] = [0;1024]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,4096);
+    let owner: alloc::path::PathBuf = alloc::path::new(); let index: i32 = 1;
+    while (index < std::process::argc()) {
+        let count: i32 = std::process::arg_len(index); assert(count >= 1 && count <= 4096);
+        assert(std::process::arg_read(index,pointer,count as usize) == count);
+        let value: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes,1,count-1));
+        let previous_capacity: i32 = owner.capacity(); let previous_view: core::path::Path = owner.as_path();
+        let result: core::result::Result<i32, alloc::path::Error> = operate(owner.borrow(),bytes[0],value);
+        let status: i32 = 0;
+        if (core::result::is_err(result)) {
+            status = error_code(core::result::unwrap_err(result)); assert(owner.capacity() == previous_capacity);
+            assert(previous_view.byte_len() == owner.byte_len()); let check: i32 = 0;
+            while (check < previous_view.byte_len()) { assert(core::option::unwrap(previous_view.byte_at(check)) == core::option::unwrap(owner.as_path().byte_at(check))); check += 1; }
+        }
+        number(status); number(owner.capacity()); number(owner.byte_len());
+        let position: i32 = 0; while (position < owner.byte_len()) { number(core::option::unwrap(owner.as_path().byte_at(position)) as i32); position += 1; }
+        index += 1;
+    }
+    owner.destroy(); owner.destroy(); assert(owner.is_empty() && owner.capacity() == 0); return 0;
+}

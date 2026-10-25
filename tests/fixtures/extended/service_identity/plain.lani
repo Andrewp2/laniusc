@@ -1,0 +1,21 @@
+// Ordinary public API use, without projecting service_identity or X509 errors.
+module app::main;
+import core::io;
+import core::slice;
+import ext::service_identity;
+import ext::x509;
+import std::stream;
+fn main()->i32{
+ let input:[u8;8192]=[0;8192];let header:[u8;8]=[0;8];let stdin:std::stream::Descriptor=std::stream::stdin();assert(core::io::read_exact(stdin.borrow(),header,0,8).is_ok());
+ let size:u64=0;let i:i32=0;while(i<8){size|=(header[i] as u64)<<(i*8);i+=1;}assert(size<=8192);assert(core::io::read_exact(stdin.borrow(),input,0,size as i32).is_ok());
+ let values:[u8]=input;let bytes:core::slice::View<u8> = core::slice::View{values:values,start:0,length:size as i32};
+ let budget:ext::x509::Budget=ext::x509::budget(ext::x509::default_limits()).unwrap();let cert:ext::x509::Certificate=ext::x509::parse(bytes,budget.borrow()).unwrap();
+ let dns:[u8;17]=[65,112,105,46,69,120,97,109,112,108,101,46,84,101,115,116,46];let dns_values:[u8]=dns;
+ let name:core::slice::View<u8> = core::slice::View{values:dns_values,start:0,length:17};let expected:ext::service_identity::Reference=ext::service_identity::dns_reference(name).unwrap();
+ let changed:ext::service_identity::Reference=expected;changed.bytes[0]=42;dns[0]=35;
+ assert(ext::service_identity::match_certificate(cert,expected,budget.borrow()).unwrap());
+ assert(ext::service_identity::match_certificate(cert,changed,budget.borrow()).is_err());
+ let ipv4:[u8;4]=[192,0,2,1];let ip_values:[u8]=ipv4;let ip:core::slice::View<u8> = core::slice::View{values:ip_values,start:0,length:4};
+ let wanted:ext::service_identity::Reference=ext::service_identity::ip_reference(ip).unwrap();assert(ext::service_identity::match_certificate(cert,wanted,budget.borrow()).unwrap());
+ let wrong:ext::service_identity::Reference=wanted;wrong.bytes[3]=2;assert(!ext::service_identity::match_certificate(cert,wrong,budget.borrow()).unwrap());return 0;
+}

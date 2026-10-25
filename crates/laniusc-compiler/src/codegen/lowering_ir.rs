@@ -99,6 +99,7 @@ pub enum HostService {
     SleepMsI32 = opcode::HOST_SERVICE_SLEEP_MS_I32,
     Realloc = opcode::HOST_SERVICE_REALLOC,
     AllocFailed = opcode::HOST_SERVICE_ALLOC_FAILED,
+    LinuxSyscall6 = opcode::HOST_SERVICE_LINUX_SYSCALL6,
 }
 
 impl HostService {
@@ -150,6 +151,7 @@ impl HostService {
             opcode::HOST_SERVICE_SLEEP_MS_I32 => Self::SleepMsI32,
             opcode::HOST_SERVICE_REALLOC => Self::Realloc,
             opcode::HOST_SERVICE_ALLOC_FAILED => Self::AllocFailed,
+            opcode::HOST_SERVICE_LINUX_SYSCALL6 => Self::LinuxSyscall6,
             _ => return None,
         })
     }
@@ -347,6 +349,7 @@ struct X86ArtifactGraphResources {
     body_length: ResourceId,
     entrypoint_state: ResourceId,
     layout: ResourceId,
+    runtime_dispatch_args: ResourceId,
     artifact_length: ResourceId,
     artifact_bytes: ResourceId,
     artifact_length_readback: Option<ResourceId>,
@@ -1169,7 +1172,7 @@ impl LoweringCapacities {
     /// The capacities that bound what a job with `source_bytes` lexed bytes
     /// and at most `hir_rows` compact-HIR rows can address in a workspace
     /// built with these, never more than these. They are those of a fresh
-    /// workspace for the job's rows (the structural bounds of
+    /// workspace for the job's rows (the initial capacities from
     /// `from_frontend_unit`; every kernel also clamps its totals to the
     /// capacities it was built with), except that the token capacity stays
     /// this workspace's: synthetic declarations are numbered after the built
@@ -1233,17 +1236,19 @@ impl LoweringCapacities {
         }
     }
 
-    /// Derives lossless lowering capacities from the bounded frontend unit.
-    /// These factors are structural upper bounds of the current IR contracts,
-    /// not workload guesses. A named inclusive range loop owns at least three
+    /// Derives initial lowering capacities from the bounded frontend unit.
+    /// Semantic factors below are structural bounds. Target rows and artifact
+    /// bytes are initial capacity estimates: wide aggregate repeats/copies can
+    /// exceed them, so host orchestration retries with measured GPU demand.
+    /// A named inclusive range loop owns at least three
     /// distinct compact-HIR rows: the loop owner, iterable path and body block.
     /// Its expanded recipe emits twenty-four semantic rows, including the
     /// equality check before increment, so it reaches eight rows per HIR row.
     /// Direct ranges own additional endpoint roots and have a smaller ratio.
     /// A match with N arms owns its scrutinee plus N distinct pattern rows and
     /// N distinct result roots; its first-match recipe stays below seven rows
-    /// per compact-HIR row. Target bounds are likewise coupled over distinct
-    /// HIR owners and edges instead of adding mutually exclusive maxima:
+    /// per compact-HIR row. The initial target estimate covers these coupled
+    /// recipes over distinct HIR owners and edges:
     ///
     /// - x86 range lowering preserves the eight-row bound, while match
     ///   lowering retains at most twelve target rows per arm and stays below
@@ -1256,8 +1261,8 @@ impl LoweringCapacities {
     ///   Every such edge has a distinct child HIR row, so their expansions do
     ///   not add another whole-HIR maximum on top of the range-loop maximum.
     ///
-    /// These remain logical stream bounds; converting them to fixed resident
-    /// pages is required before large-unit production use.
+    /// Output estimates are not semantic limits. Measured output growth leaves
+    /// these semantic and side-table capacities unchanged.
     pub fn from_frontend_unit(
         source_bytes: u32,
         token_capacity: u32,
@@ -5211,6 +5216,12 @@ fn lowering_compiler_graph_builder(
                 ResourceDomain::ArtifactBytes,
                 LoweringCapacities::bytes::<X86ArtifactLayout>(1),
             ))?,
+            runtime_dispatch_args: graph.add_indirect_storage(
+                "lir.x86.runtime_dispatch_args",
+                ResourceDomain::DispatchArguments,
+                ResourceClass::Workspace,
+                LoweringCapacities::bytes::<u32>(3),
+            )?,
             artifact_length: graph.add_resource(ResourceDesc {
                 name: "artifact.x86.length",
                 domain: ResourceDomain::ArtifactBytes,
@@ -9891,12 +9902,22 @@ fn lowering_compiler_graph_builder(
         })?;
         graph.repeat_pass_range(target_page_count, "lir.x86.scatter.replay", "lir.x86.emit")?;
         graph.add_pass(PassDesc {
+            name: "lir.x86.runtime.dispatch_args",
+            phase: CompilerPhase::Artifact,
+            dispatch_domain: ResourceDomain::ArtifactBytes,
+            accesses: vec![
+                PassAccess::read("x86_artifact_layout", x86.layout),
+                PassAccess::write("x86_runtime_dispatch_args", x86.runtime_dispatch_args),
+            ],
+        })?;
+        graph.add_pass(PassDesc {
             name: "lir.x86.runtime.emit",
             phase: CompilerPhase::Artifact,
             dispatch_domain: ResourceDomain::ArtifactBytes,
             accesses: vec![
                 PassAccess::read("x86_artifact_layout", x86.layout),
                 PassAccess::write("artifact_bytes", x86.artifact_bytes),
+                PassAccess::indirect(INDIRECT_DISPATCH_BINDING, x86.runtime_dispatch_args),
             ],
         })?;
     } else {
@@ -10698,7 +10719,7 @@ mod tests {
     #[test]
     fn host_service_namespace_round_trips_canonical_symbol_slots() {
         for slot in opcode::HOST_SERVICE_FIRST..opcode::HOST_SERVICE_END {
-            if slot == 52 {
+            if slot == 52 || (63..74).contains(&slot) {
                 assert_eq!(HostService::from_symbol_slot(slot), None);
             } else {
                 assert_eq!(
@@ -12409,6 +12430,10 @@ mod tests {
             ("lir.x86.artifact.layout", "codegen/lir/x86/artifact_layout"),
             ("lir.x86.artifact.clear", "codegen/lir/x86/artifact_clear"),
             ("lir.x86.emit", "codegen/lir/x86/emit"),
+            (
+                "lir.x86.runtime.dispatch_args",
+                "codegen/lir/x86/runtime_dispatch_args",
+            ),
             ("lir.x86.runtime.emit", "codegen/lir/x86/runtime_emit"),
             (
                 "artifact.x86.object.normalize_status",

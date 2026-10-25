@@ -1,0 +1,18 @@
+// Copy arbitrary stdin bytes to stdout with bounded stack storage.
+module app::main;
+import core::io;
+import core::result;
+import std::stream;
+
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(input.borrow(), output.borrow());
+    if (core::result::is_err(copied)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(copied);
+        // Distinguish failure before output from failure after a written prefix.
+        if (failure.written > 0) { return 2; }
+        return 1;
+    }
+    return 0;
+}

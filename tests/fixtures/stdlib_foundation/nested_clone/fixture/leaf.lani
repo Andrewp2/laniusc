@@ -1,0 +1,28 @@
+// Accepted native Linux x86-64. E owns its message independently of source and
+// the partial destination. It has no automatic destructor.
+module fixture::leaf;
+import alloc::string;
+import core::clone;
+import core::result;
+
+pub struct Leaf { text: alloc::string::String, fail: bool }
+pub enum Fault { Allocation(alloc::string::Error), Injected(alloc::string::String) }
+
+pub impl core::clone::TryClone<Leaf,Fault> for Leaf {
+    pub fn try_clone_value(source: Leaf) -> core::result::Result<Leaf,Fault> {
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(Fault::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.fail) {
+            let bytes: [u8;5] = [69,0,195,169,33];
+            let error = alloc::string::from_utf8(bytes,5);
+            partial.destroy(); // Only partial DESTINATION is released here.
+            if (error.is_err()) { return core::result::Err(Fault::Allocation(error.unwrap_err())); }
+            return core::result::Err(Fault::Injected(error.unwrap()));
+        }
+        return core::result::Ok(Leaf { text:partial,fail:false });
+    }
+}
+pub impl core::clone::Destroy<Leaf> for Leaf {
+    pub fn destroy_value(owned: Leaf) { owned.text.destroy(); }
+}

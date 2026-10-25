@@ -1,0 +1,10 @@
+module alloc::extend_wrapper;
+import alloc::vec;
+import core::result;
+import core::slice;
+pub struct Wrapper<T> { items: alloc::vec::Vec<T> }
+pub impl<T> Wrapper<T> {
+    pub fn extend(&self, values: core::slice::View<T>) -> core::result::Result<i32, alloc::vec::Error> {
+        return self.items.try_extend(values);
+    }
+}

@@ -1,0 +1,95 @@
+// expect: 0
+module app::main;
+import alloc::string;
+import core::cmp;
+import core::result;
+import alloc::hash_map;
+import core::option;
+import alloc::vec;
+
+fn size(result: core::result::Result<i32, alloc::string::Error>) -> i32 {
+    return match (result) { Ok(value) -> value, Err(_) -> -1 };
+}
+
+fn one(scalar: u32) -> alloc::string::String {
+    let value: alloc::string::String = alloc::string::new();
+    assert(core::result::is_ok(value.try_push_scalar(scalar)));
+    return value;
+}
+
+fn ordered<T>(left: T, right: T) -> bool where T: core::cmp::Eq<T>, T: core::cmp::Ord<T> {
+    return !T::eq(left, right) && T::ne(left, right) && T::lt(left, right) &&
+        T::le(left, right) && T::gt(right, left) && T::ge(right, left) &&
+        T::eq(left, left) && !T::ne(left, left) && T::le(left, left) && T::ge(left, left);
+}
+
+fn main() -> i32 {
+    let input: [u8; 7] = [32, 9, 195, 169, 32, 13, 10];
+    let text: alloc::string::String = match (alloc::string::from_utf8(input, 7)) {
+        Ok(value) -> value, Err(_) -> alloc::string::new(),
+    };
+    let accent: alloc::string::String = match (text.try_substring(2, 4)) {
+        Ok(value) -> value, Err(_) -> alloc::string::new(),
+    };
+    if (accent.byte_len() != 2 || accent.scalar_count() != 1) { return 1; }
+    if (!core::result::is_err(text.try_substring(3, 4))) { return 2; }
+    if (!core::result::is_err(text.try_substring(2, 3))) { return 3; }
+    if (!core::result::is_err(text.try_substring(-1, 4))) { return 4; }
+    if (!core::result::is_err(text.try_substring(4, 2))) { return 5; }
+    if (!core::result::is_err(text.try_substring(4, 8))) { return 6; }
+    let empty: alloc::string::String = match (text.try_substring(4, 4)) {
+        Ok(value) -> value, Err(_) -> one(65),
+    };
+    if (!empty.is_empty() || empty.capacity() != 0) { return 7; }
+    let capacity: i32 = text.capacity();
+    if (text.trim_ascii() != 2 || text.capacity() != capacity || !text.equals(accent)) { return 8; }
+    if (!text.starts_with(accent) || !text.ends_with(accent)) { return 9; }
+    if (!text.starts_with(empty) || !text.ends_with(empty)) { return 10; }
+    if (empty.starts_with(text) || empty.ends_with(text)) { return 11; }
+    let a: alloc::string::String = one(65);
+    if (text.starts_with(a) || text.ends_with(a)) { return 12; }
+    if (!core::result::is_err(text.try_replace_range(1, 2, a))) { return 13; }
+    if (!core::result::is_err(text.try_replace_range(0, 1, a))) { return 14; }
+    if (!core::result::is_err(text.try_replace_range(2, 1, a))) { return 15; }
+    if (!text.equals(accent)) { return 16; }
+    if (size(text.try_replace_range(0, 2, a)) != 1 || !text.equals(a)) { return 17; }
+    // Replacement aliases the original owner while the fresh buffer is built.
+    if (size(text.try_insert(1, text)) != 2) { return 18; }
+    if (size(text.try_remove_range(0, 1)) != 1 || !text.equals(a)) { return 19; }
+    if (size(text.try_insert(0, accent)) != 3 || !text.starts_with(accent) || !text.ends_with(a)) { return 20; }
+    if (size(text.try_remove_range(0, 3)) != 0 || !text.is_empty()) { return 21; }
+    if (text.trim_ascii() != 0) { return 22; }
+    // U+00A0 is not ASCII whitespace.
+    if (size(text.try_push_scalar(160)) != 2 || text.trim_ascii() != 2) { return 23; }
+    text.clear();
+    if (size(text.try_push_scalar(32)) != 1 || text.trim_ascii() != 0) { return 24; }
+
+    let b: alloc::string::String = one(66);
+    if (!ordered(a, b) || !ordered(b, accent) || !ordered(empty, a)) { return 25; }
+    let sorted: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    core::result::unwrap(sorted.try_push(accent));
+    core::result::unwrap(sorted.try_push(b));
+    core::result::unwrap(sorted.try_push(a));
+    sorted.sort();
+    let first: alloc::string::String = sorted.at(0);
+    let last: alloc::string::String = sorted.at(2);
+    if (!first.equals(a) || !last.equals(accent)) { return 26; }
+    // Containers copy handles. The original owners below keep these keys alive.
+    let counts: alloc::hash_map::HashMap<alloc::string::String, i32> = alloc::hash_map::new();
+    core::result::unwrap(counts.try_insert(a, 10));
+    core::result::unwrap(counts.try_insert(accent, 20));
+    let lookup: alloc::string::String = one(65);
+    if (core::option::unwrap_or(counts.get(lookup), -1) != 10) { return 27; }
+    let replaced: alloc::hash_map::Entry<alloc::string::String, i32> = core::option::unwrap(core::result::unwrap(counts.try_insert(lookup, 30)));
+    if (replaced.value != 10 || !replaced.key.equals(a)) { return 28; }
+    if (counts.len() != 2 || core::option::unwrap_or(counts.get(lookup), -1) != 30) { return 28; }
+    counts.destroy();
+    sorted.destroy();
+    lookup.destroy();
+    text.destroy();
+    empty.destroy();
+    accent.destroy();
+    a.destroy();
+    b.destroy();
+    return 0;
+}

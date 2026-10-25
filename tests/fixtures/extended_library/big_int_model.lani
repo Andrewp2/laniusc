@@ -1,0 +1,54 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::big_int;
+import ext::big_uint;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, allow_end: bool) -> bool {
+    let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer + (done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { assert(allow_end && done == 0); return false; } done += got; } return true;
+}
+fn write_all(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer + (done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn emit(value: &ext::big_int::BigInt, radix: i32, limits: ext::big_uint::Limits) {
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(value.format_radix(radix,limits));
+    let header: [i32;1] = [output.len()]; write_all(core::mem::i32_array_data_ptr(header),4); write_all(output.storage,output.len()); output.destroy();
+}
+fn main() -> i32 {
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    let words: [i32;8192] = [0;8192]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32768);
+    while (read_exact(pointer,8,true)) {
+        let op: i32 = bytes[0] as i32; let radix: i32 = bytes[1] as i32; let a_len: i32 = (bytes[2] as i32) | ((bytes[3] as i32)<<8); let b_len: i32 = (bytes[4] as i32) | ((bytes[5] as i32)<<8); let shift: u64 = (bytes[6] as u64) | ((bytes[7] as u64)<<8);
+        assert(a_len + b_len <= 32760); assert(read_exact(pointer+8,a_len+b_len,false));
+        let a_view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes,8,a_len)); let b_view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes,8+a_len,b_len));
+        let a: ext::big_int::BigInt = core::result::unwrap(ext::big_int::parse(a_view,radix,limits)); let b: ext::big_int::BigInt = core::result::unwrap(ext::big_int::parse(b_view,radix,limits));
+        if (op == 3 || op == 4) {
+            let divided: core::result::Result<ext::big_int::DivRem,ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+            if (op == 3) { divided = a.div_rem(b.borrow(),limits); } else { divided = a.div_rem_euclid(b.borrow(),limits); }
+            let pair: ext::big_int::DivRem = core::result::unwrap(divided); emit(pair.quotient.borrow(),radix,limits); emit(pair.remainder.borrow(),radix,limits); pair.destroy();
+        } else { if (op == 12) {
+            let order: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_i64(a.compare(b.borrow()) as i64,limits)); emit(order.borrow(),radix,limits); order.destroy();
+        } else {
+            let computed: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+            if (op == 0) { computed = a.add(b.borrow(),limits); }
+            if (op == 1) { computed = a.sub(b.borrow(),limits); }
+            if (op == 2) { computed = a.mul(b.borrow(),limits); }
+            if (op == 5) { computed = a.shl(shift,limits); }
+            if (op == 6) { computed = a.shr(shift,limits); }
+            if (op == 7) { computed = a.bit_and(b.borrow(),limits); }
+            if (op == 8) { computed = a.bit_or(b.borrow(),limits); }
+            if (op == 9) { computed = a.bit_xor(b.borrow(),limits); }
+            if (op == 10) { computed = a.bit_not(limits); }
+            if (op == 11) { computed = a.neg(limits); }
+            if (op == 13) { computed = a.abs(limits); }
+            if (op == 14) { computed = a.add(a.borrow(),limits); }
+            if (op == 15) { computed = a.sub(a.borrow(),limits); }
+            if (op == 16) { computed = a.mul(a.borrow(),limits); }
+            if (op == 17) { computed = a.pow(shift as u32,limits); }
+            if (op == 18) { computed = a.gcd(b.borrow(),limits); }
+            let value: ext::big_int::BigInt = core::result::unwrap(computed); emit(value.borrow(),radix,limits); value.destroy();
+        } }
+        // Every input is still available after the operation.
+        emit(a.borrow(),radix,limits); emit(b.borrow(),radix,limits); a.destroy(); b.destroy();
+    } return 0;
+}

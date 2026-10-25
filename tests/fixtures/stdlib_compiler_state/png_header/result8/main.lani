@@ -1,0 +1,3 @@
+module app::main;
+import probe::model;
+fn main() -> i32 { assert(probe::model::value() == 8); return 0; }

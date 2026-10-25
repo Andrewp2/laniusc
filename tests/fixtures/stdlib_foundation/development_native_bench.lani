@@ -1,0 +1,22 @@
+// Positive gate: native timing with no source clock declarations or impls.
+module app::main;
+import core::result;
+import test::bench;
+pub struct Work { calls: u32, checksum: u32 }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+pub impl test::bench::Work for Work {
+    pub fn iteration(&self, index: u32) -> u64 {
+        self.calls += 1; self.checksum = self.checksum * 1664525 + index + 1013904223; return 3;
+    }
+}
+fn main() -> i32 {
+    let work: Work = Work { calls: 0, checksum: 0 };
+    let measured: core::result::Result<test::bench::Measurement,test::bench::Error> = test::bench::native(work.borrow(),10000);
+    if (core::result::is_err(measured)) {
+        let error: test::bench::Error = core::result::unwrap_err(measured);
+        return match (error) { test::bench::Error::Clock(cause) -> 20, _ -> 21 };
+    }
+    let value: test::bench::Measurement = core::result::unwrap(measured);
+    if (value.iterations != 10000 || value.work != 30000 || work.calls != 10000 || work.checksum == 0) { return 1; }
+    if (!test::bench::report(value)) { return 2; } return 0;
+}

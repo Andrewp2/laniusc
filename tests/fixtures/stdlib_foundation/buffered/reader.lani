@@ -1,0 +1,89 @@
+// Admitted native x86_64 Linux reader model fixture.
+module app::main;
+import alloc::buffered;
+import core::io;
+import core::result;
+import fixture::streams;
+
+fn read_ahead_and_handoff() {
+    let source: [u8;6] = [11,0,195,169,44,55];
+    let peer = fixture::streams::reader(source,6,4);
+    assert(fixture::streams::invalid_input(alloc::buffered::reader(peer.borrow(),0).unwrap_err()));
+    assert(fixture::streams::invalid_input(alloc::buffered::reader(peer.borrow(),-1).unwrap_err()));
+    assert(peer.calls == 0);
+    let input = alloc::buffered::reader(peer.borrow(),4).unwrap();
+    let destination: [u8;8] = [99,99,99,99,99,99,99,99];
+    assert(input.is_active() && !input.is_faulted() && input.capacity() == 4);
+    assert(input.read(destination,3,0).unwrap() == 0 && peer.calls == 0);
+    assert(fixture::streams::invalid_input(input.read(destination,-1,0).unwrap_err()));
+    assert(fixture::streams::invalid_input(input.read(destination,2147483647,1).unwrap_err()));
+    assert(peer.calls == 0);
+    assert(input.fill_buf().unwrap().len() == 4 && peer.calls == 1 && peer.cursor == 4);
+    assert(input.fill_buf().unwrap().get(2).unwrap() == 195 && peer.calls == 1);
+    assert(input.read(destination,3,0).unwrap() == 0 && peer.calls == 1 && input.buffered().len() == 4);
+    assert(input.read(destination,1,1).unwrap() == 1 && destination[1] == 11);
+    assert(input.buffered().len() == 3 && peer.cursor == 4);
+    assert(fixture::streams::invalid_input(input.consume(4).unwrap_err()));
+    assert(input.buffered().len() == 3);
+    assert(input.consume(1).unwrap() == 1 && input.buffered().get(0).unwrap() == 195);
+    // A request larger than the unread suffix returns that suffix alone.
+    assert(input.read(destination,2,6).unwrap() == 2 && peer.calls == 1);
+    assert(destination[2] == 195 && destination[3] == 169 && destination[4] == 99);
+    assert(input.read(destination,4,1).unwrap() == 1 && destination[4] == 44);
+    // Reusing the internal read-ahead buffer cannot alter previously copied
+    // caller bytes from its earlier fill.
+    assert(destination[2] == 195 && destination[3] == 169);
+    assert(peer.calls == 2 && peer.cursor == 6 && input.buffered().len() == 1);
+    let parts = input.take_parts().unwrap();
+    assert(!parts.faulted && parts.start == 1 && parts.length == 1 && parts.buffer.len() == 4);
+    assert(parts.bytes().get(0).unwrap() == 55);
+    assert(!input.is_active() && !input.is_faulted() && input.capacity() == 0 && input.buffered().len() == 0);
+    assert(fixture::streams::invalid_input(input.read(destination,0,0).unwrap_err()));
+    assert(fixture::streams::invalid_input(input.fill_buf().unwrap_err()));
+    assert(fixture::streams::invalid_input(input.consume(0).unwrap_err()));
+    assert(fixture::streams::invalid_input(input.take_parts().unwrap_err()));
+    assert(input.discard() == 0 && peer.calls == 2);
+    // Complete the logical handoff: consume the unread byte before inner I/O.
+    assert(parts.bytes().get(0).unwrap() == 55);
+    let inner = parts.inner;
+    assert(inner.read(destination,0,1).unwrap() == 0);
+    assert(parts.discard() == 1 && parts.discard() == 0 && parts.buffer.len() == 0);
+}
+
+fn no_eof_cache_and_returned_errors() {
+    let source: [u8;2] = [7,8]; let destination: [u8;2] = [0,0];
+    let peer = fixture::streams::reader(source,2,1); peer.empty_call = 1;
+    let input = alloc::buffered::reader(peer.borrow(),2).unwrap();
+    assert(input.read(destination,0,1).unwrap() == 0 && peer.calls == 1);
+    assert(input.read(destination,0,1).unwrap() == 1 && destination[0] == 7 && peer.calls == 2);
+    assert(input.discard() == 0);
+    let failing = fixture::streams::reader(source,2,2); failing.fail_call = 1; failing.error = 1;
+    let retry = alloc::buffered::reader(failing.borrow(),2).unwrap();
+    assert(fixture::streams::interrupted(retry.read(destination,0,1).unwrap_err()));
+    assert(failing.calls == 1 && retry.buffered().len() == 0 && !retry.is_faulted());
+    assert(retry.read(destination,0,1).unwrap() == 1 && destination[0] == 7 && failing.calls == 2);
+    assert(retry.discard() == 1);
+}
+
+fn invalid_count_is_not_new_data(count: i32) {
+    let source: [u8;2] = [7,8]; let destination: [u8;2] = [99,99];
+    let peer = fixture::streams::reader(source,2,2); peer.bad_call = 1; peer.bad_count = count;
+    let input = alloc::buffered::reader(peer.borrow(),2).unwrap();
+    assert(fixture::streams::invalid_count(input.read(destination,0,1).unwrap_err()));
+    assert(destination[0] == 99 && peer.calls == 1 && input.buffered().len() == 0 && input.is_faulted());
+    // Fault state takes precedence even over zero/invalid request ranges.
+    assert(fixture::streams::invalid_count(input.read(destination,0,0).unwrap_err()));
+    assert(fixture::streams::invalid_count(input.read(destination,-1,0).unwrap_err()));
+    assert(fixture::streams::invalid_count(input.fill_buf().unwrap_err()));
+    assert(fixture::streams::invalid_count(input.consume(0).unwrap_err()));
+    assert(peer.calls == 1);
+    let parts = input.take_parts().unwrap();
+    assert(parts.faulted && parts.length == 0 && parts.buffer.len() == 2);
+    assert(parts.discard() == 0 && input.discard() == 0);
+}
+
+fn main() -> i32 {
+    read_ahead_and_handoff(); no_eof_cache_and_returned_errors();
+    invalid_count_is_not_new_data(-1); invalid_count_is_not_new_data(3);
+    return 0;
+}

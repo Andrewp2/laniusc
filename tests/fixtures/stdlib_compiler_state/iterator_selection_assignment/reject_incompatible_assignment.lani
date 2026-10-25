@@ -1,0 +1,22 @@
+module app::main;
+import core::iter;
+import core::option;
+
+struct Probe { calls: i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i64> for Probe {
+    pub fn next(&self) -> core::option::Option<i64> {
+        self.calls += 1;
+        let value: i64 = 0;
+        return core::option::Some(value);
+    }
+}
+fn incompatible<I>(first: I) where I: core::iter::Iterator<i64> {
+    let item: core::option::Option<bool> = core::option::None();
+    item = first.next();
+}
+fn main() -> i32 {
+    let source: Probe = Probe { calls: 0 };
+    incompatible<Probe>(source);
+    return 0;
+}

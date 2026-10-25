@@ -1,0 +1,124 @@
+// Raw-byte URI component percent encoding (RFC 3986 sections 2.1-2.4).
+// Only ASCII unreserved bytes remain literal. Decoding never maps '+' to space.
+// All functions are allocation-free. See docs/extended-percent.md for storage,
+// overlap, failure ordering and URI component boundary contracts.
+module ext::percent;
+
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, SizeOverflow, Capacity(i32), InvalidEscape(i32) }
+
+fn valid(view: core::slice::View<u8>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length;
+}
+
+pub fn is_unreserved(byte: u8) -> bool {
+    return (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122) || (byte >= 48 && byte <= 57)
+        || byte == 45 || byte == 46 || byte == 95 || byte == 126;
+}
+
+// Worst-case encoded byte count. Does not inspect or require input storage.
+pub fn encoded_capacity(input_length: i32) -> core::result::Result<i32, Error> {
+    if (input_length < 0) { return core::result::Err(Error::Bounds); }
+    if (input_length > 715827882) { return core::result::Err(Error::SizeOverflow); }
+    return core::result::Ok(input_length * 3);
+}
+
+// Exact byte count; valid input may fit even when its worst case does not.
+pub fn encoded_len(input: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    let length: i32 = 0;
+    let index: i32 = 0;
+    while (index < input.length) {
+        let width: i32 = 3;
+        if (is_unreserved(input.values[input.start + index])) { width = 1; }
+        if (length > 2147483647 - width) { return core::result::Err(Error::SizeOverflow); }
+        length += width;
+        index += 1;
+    }
+    return core::result::Ok(length);
+}
+
+fn hex_value(byte: u8) -> i32 {
+    if (byte >= 48 && byte <= 57) { return (byte - 48) as i32; }
+    if (byte >= 65 && byte <= 70) { return (byte - 55) as i32; }
+    if (byte >= 97 && byte <= 102) { return (byte - 87) as i32; }
+    return -1;
+}
+
+fn hex_digit(value: i32) -> u8 {
+    if (value < 10) { return (value + 48) as u8; }
+    return (value + 55) as u8;
+}
+
+// Validate every '%' triplet and return exact decoded bytes. Error positions
+// identify the '%' relative to the selected input view, never its backing.
+pub fn decoded_len(input: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); }
+    let length: i32 = 0;
+    let index: i32 = 0;
+    while (index < input.length) {
+        if (input.values[input.start + index] == 37) {
+            if (input.length - index < 3) { return core::result::Err(Error::InvalidEscape(index)); }
+            if (hex_value(input.values[input.start + index + 1]) < 0 || hex_value(input.values[input.start + index + 2]) < 0) {
+                return core::result::Err(Error::InvalidEscape(index));
+            }
+            index += 3;
+        } else { index += 1; }
+        length += 1;
+    }
+    return core::result::Ok(length);
+}
+
+// Validate metadata, exact size and capacity before writing. Writes backward
+// to support identical-start in-place expansion as well as disjoint storage.
+pub fn encode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    let measured: core::result::Result<i32, Error> = encoded_len(input);
+    if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
+    let length: i32 = core::result::unwrap(measured);
+    if (output.length < length) { return core::result::Err(Error::Capacity(length)); }
+    let source: i32 = input.length;
+    let target: i32 = length;
+    while (source > 0) {
+        source -= 1;
+        let byte: u8 = input.values[input.start + source];
+        if (is_unreserved(byte)) {
+            target -= 1;
+            output.values[output.start + target] = byte;
+        } else {
+            target -= 3;
+            output.values[output.start + target] = 37;
+            output.values[output.start + target + 1] = hex_digit((byte as i32) / 16);
+            output.values[output.start + target + 2] = hex_digit((byte as i32) % 16);
+        }
+    }
+    return core::result::Ok(length);
+}
+
+// Validate every escape and capacity before writing. Writes forward to support
+// identical-start in-place shrinking as well as disjoint storage.
+pub fn decode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    let measured: core::result::Result<i32, Error> = decoded_len(input);
+    if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
+    let length: i32 = core::result::unwrap(measured);
+    if (output.length < length) { return core::result::Err(Error::Capacity(length)); }
+    let source: i32 = 0;
+    let target: i32 = 0;
+    while (source < input.length) {
+        let byte: u8 = input.values[input.start + source];
+        if (byte == 37) {
+            let high: i32 = hex_value(input.values[input.start + source + 1]);
+            let low: i32 = hex_value(input.values[input.start + source + 2]);
+            output.values[output.start + target] = (high * 16 + low) as u8;
+            source += 3;
+        } else {
+            output.values[output.start + target] = byte;
+            source += 1;
+        }
+        target += 1;
+    }
+    return core::result::Ok(length);
+}

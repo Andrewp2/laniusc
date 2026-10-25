@@ -1,0 +1,64 @@
+# HTTP/1 wire messages
+
+`ext::http` is a portable Lanius HTTP/1.0 and HTTP/1.1 wire library. It parses borrowed request/response heads, determines framing, validates complete messages, decodes chunked bodies, and writes checked messages. It performs no I/O and opens no sockets. The offline [`http-message`](extended-http-message.md) program supplies file/stdin I/O. The separate [connected client](extended-http-client.md) owns socket transport; a server remains separate work.
+
+The behavior follows [RFC 9112 sections 2–7 and 11.2](https://www.rfc-editor.org/rfc/rfc9112.html) and [RFC 9110 sections 4–7 and 8.6](https://www.rfc-editor.org/rfc/rfc9110.html). The representation was compared with [h11's ordered headers and framing implementation](https://github.com/python-hyper/h11/tree/master/h11). Tests compare supported valid framing with h11 and response bodies with Python `http.client`; these independent implementations are test oracles only.
+
+## API
+
+All byte inputs are `core::slice::View<u8>`. Supply `default_limits()` or a `Limits` record to each parser.
+
+| Function | Result |
+| --- | --- |
+| `parse_request_head(bytes, limits)` | Borrowed `Head`; a body need not be present |
+| `parse_response_head(bytes, request_method, limits)` | Borrowed `Head`; original method is mandatory |
+| `parse_request(bytes, eof, limits)` | Complete borrowed `Message` |
+| `parse_response(bytes, request_method, eof, limits)` | Complete borrowed `Message` |
+| `decode_into(message, destination)` | Decoded byte count, or bounds/capacity error before destination mutation |
+| `write_head_into(head, destination, limits)` | Revalidates and copies the raw head, rejecting prohibited outbound CONNECT framing; bounds/capacity errors leave destination unchanged |
+| `encode_request(start_line, fields, body, limits)` | Owned `alloc::vec::Vec<u8>` containing a checked fixed-length message |
+| `encode_response(start_line, request_method, fields, body, limits)` | Owned checked response; suppresses framing/body for HEAD, 1xx, 204, 304, and successful CONNECT |
+
+A start line passed to an encoder excludes CRLF. Encoder fields are a view of `Field` records; only their `name` and `value` are used. The encoder validates field tokens and bytes, rejects CR/LF injection, reserves framing to itself, and emits `Content-Length` automatically. It rejects content in a 205 response and emits `Content-Length: 0` for an empty ordinary 205 response; parsing a received 205 still follows its ordinary framing, as RFC 9112 requires. Caller fields must exclude `Content-Length` and `Transfer-Encoding`. Empty bodies still receive a zero length except for responses whose semantics prohibit content; those responses require an empty body and omit the length. Validation or allocation failure releases all staging storage. The returned vector has one owner and must be destroyed once.
+
+`Head` contains `raw`, ordered `fields`, `field_count`, `request`, `method`, `target`, `version` (10 or 11), `status`, `reason`, `kind`, and `content_length` (-1 if absent or ignored for a tunnel). Request-only or response-only byte fields are empty when inapplicable; the response `method` retains the supplied request method. `kind` is `Empty`, `Fixed`, `Chunked`, `Close`, or `Tunnel`. Header parsing normalizes no bytes.
+
+`Head.headers()` returns an ordered `Fields` cursor. Each `next()` returns a `Field` with raw line bytes (including CRLF), original name spelling, a value with outer SP/HTAB removed, and a source-relative line offset. Duplicate ordinary fields stay separate. `Head.lookup(name)` returns the first case-insensitive match; use the cursor to collect all values. `equal_name` compares ASCII field names without allocation.
+
+`Message` contains its head, borrowed `encoded_body`, separate raw `trailers`, `trailer_count`, exact `consumed`, and `decoded_length`. The encoded body includes chunk framing and trailers when chunked. `fields(message.trailers, message.trailers.start-message.head.raw.start)` iterates validated trailers. Never merge trailers into headers automatically.
+
+## Incremental framing
+
+The [offset-only framing cursor](extended-http-cursor.md) scans cumulative input
+without retaining views into growable storage. It reports head readiness and an
+exact framing candidate. Freeze that prefix and use the canonical complete
+parser before publishing a validated Message. Incremental scan work and the
+existing final trailer-validation cost have separate documented bounds.
+
+## Framing and supported profile
+
+The parser requires CRLF and exact request-line spaces, accepts token methods, validates status lines and opaque field bytes, and rejects obsolete folding, whitespace before a colon, bare LF/CR, NUL, DEL, and other controls except allowed HTAB. Field values and reason phrases can contain opaque bytes 128–255. Bodies accept all 256 byte values.
+
+Targets support origin-form, HTTP/HTTPS absolute-form without userinfo or fragments, OPTIONS `*`, and CONNECT authority-form with a nonempty decimal port. Other syntactically valid absolute URI schemes return `Unsupported`. URI percent syntax is checked without decoding. Hosts support registered names, IPv6, and IPvFuture syntax; ports are decimal syntax and are not restricted to a transport port range. This profile requires a nonempty valid Host authority, exactly once in HTTP/1.1 requests and at most once in HTTP/1.0 requests. It validates syntax without performing DNS, routing, authority equivalence, or URI normalization. In particular an absolute target and Host are preserved separately; a caller implementing a proxy must use the target authority according to RFC 9112 section 3.2.2.
+
+A request without framing has an empty body. A single decimal Content-Length gives a fixed body. Except for successful CONNECT responses, an explicit conservative recipient policy rejects every repeated Content-Length field or comma list, including identical lengths, as permitted by RFC 9110 section 8.6. Signs, internal whitespace and non-digits are malformed. Values beyond the signed 32-bit library size range are a limit error. Except for successful CONNECT, Transfer-Encoding together with Content-Length is rejected; only one Transfer-Encoding field containing exactly the case-insensitive coding `chunked` is supported. Other codings, coding lists, and coding parameters return `Unsupported`. Outside tunnels, Transfer-Encoding in HTTP/1.0 is malformed.
+
+Responses to HEAD and statuses 1xx, 204 and 304 end at the head. Successful CONNECT yields `Tunnel` and consumes only the head; following bytes belong to the tunnel. For a successful CONNECT, the recipient preserves but ignores all Content-Length and Transfer-Encoding fields, including repeated fields, invalid framing values, and unsupported codings, as RFC 9112 section 6.3 requires. Generic field-line syntax and head limits still apply. The outbound head writer and encoders reject these prohibited sender fields. This strict recipient profile rejects framing fields prohibited on 1xx and 204. HEAD and 304 can carry a valid Content-Length or supported Transfer-Encoding as metadata, without requiring any body bytes. Framing syntax and conflict policy are checked on HEAD/1xx/204/304 responses; the successful CONNECT ignore rule takes precedence. A 101 is returned as a head-only response; protocol upgrade handling is the caller's responsibility.
+
+An otherwise unframed response is `Close`: `parse_response` returns `Incomplete` until `eof=true`, then consumes all remaining bytes. EOF is supplied explicitly by the caller and does not establish that a transport closed without truncation. Truncated fixed/chunked input remains incomplete even at EOF. Content-Encoding is representation metadata; this library removes chunked transfer framing and does not decompress content.
+
+Chunk sizes accept upper/lowercase hex and leading zeros, with checked arithmetic. Each data chunk requires its trailing CRLF. Token and quoted-string chunk extensions (including quoted pairs and permitted whitespace) are syntax checked and ignored, bounded by the line limit. The zero chunk is followed by a separately validated trailer section and final CRLF. Unknown end-to-end trailer names are preserved. The policy rejects framing, routing, connection, authentication, request conditional/control, response control, and content-format fields: `Content-Length`, `Transfer-Encoding`, `Host`, `Connection`, `Trailer`, `TE`, `Upgrade`, `Authorization`, `Proxy-Authorization`, `Proxy-Authenticate`, `WWW-Authenticate`, `Content-Encoding`, `Content-Type`, `Content-Range`, `Cache-Control`, `Max-Forwards`, `Expect`, `Range`, the standard `If-*` conditionals, `Location`, `Retry-After`, and `Set-Cookie`. A field nominated by a Connection header is also forbidden. Applications must decide whether an additional understood field definition permits trailer use.
+
+`consumed` ends precisely at the fixed body, empty head, final chunk/trailer CRLF, or explicit EOF. Bytes after that position are left untouched. A caller may use the boundary for request pipelining; response association, upgrades, tunnels, persistence and whether extra bytes may be treated as another response remain caller responsibilities.
+
+## Limits, errors and ownership
+
+Defaults are 65,536 head bytes, 8,192 bytes per line excluding CRLF, 100 header fields, 16,777,216 decoded body bytes, 16,384 trailer bytes including their final CRLF, 100 trailer fields, and 65,536 nonzero chunks. Caller limits may be zero but never negative. Head limits count only the selected message's head; pipelined trailing bytes do not consume that budget. Chunk and trailer scans stop as soon as a configured bound is exceeded. Parsing is linear except Connection-nominated trailer checks, which scan the bounded header set for each trailer. All parser operations allocate no memory.
+
+`Error` distinguishes `Bounds`, `Incomplete(offset)`, `Malformed(offset)`, `Limit(offset)`, `Unsupported(offset)`, `Capacity`, and `AllocationFailed`. Parser offsets count logical bytes from the selected source view, never physical storage addresses. Encoder field validation errors identify the zero-based field index; start-line errors identify its byte index, and final head validation errors identify the staged wire offset. Incomplete identifies the current end of input; malformed and limit offsets identify the offending byte or the start of the relevant bounded construct. No partially parsed head/message is returned on error. The caller can append input and retry after `Incomplete`.
+
+Views carry caller-supplied logical metadata. The library rejects negative/overflowing metadata but cannot discover physical slice length; backing storage must cover `start + length`. Source bytes must stay alive and unchanged while heads, messages or Fields cursors are used. Fields cursors must be constructed from validated head/trailer ranges; forged records are outside their contract. `decode_into` requires a Message returned by a parser, unchanged source, and a destination disjoint from the source. Its destination may use a nonzero start and native byte stride. Writer destinations likewise must be disjoint from source. The library does not enforce lifetimes or unique ownership at the type level.
+
+## Executable evidence
+
+`tests/extended_http_execution.rs` executes library contracts over native and packed storage, checks bounds/limits, exact pipeline positions, chunk extensions and trailers, binary decode, response method context and checked encoders. It traces allocations and injects every encoder allocation failure. `tests/extended_http_message_execution.rs` exercises offline stdin/file workflows, every truncation of a chunked message, malformed/smuggling inputs, deterministic generated binary framing compared with h11 and `http.client`, scale, and injected allocation/read/write/open/close failures. No test relies on network access or a host HTTP parser in production.

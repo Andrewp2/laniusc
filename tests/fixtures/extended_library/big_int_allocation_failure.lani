@@ -1,0 +1,60 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::big_int;
+import ext::big_uint;
+import std::io;
+fn failed(error: ext::big_uint::Error) { assert(match (error) { ext::big_uint::Error::AllocationFailed -> true, _ -> false }); }
+fn clean(result: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error>) { if (result.is_err()) { failed(result.unwrap_err()); } else { let value: ext::big_int::BigInt = result.unwrap(); value.destroy(); } }
+fn main() -> i32 {
+    let words: [i32;1] = [0]; let pointer: ptr = core::mem::i32_array_data_ptr(words); assert(std::io::read_stdin(pointer,1) == 1); let op: i32 = words[0] & 255;
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    let first_value: i64 = -9223372036854775807; if (op >= 23 && op <= 28) { first_value = 9223372036854775807; }
+    let second_value: i64 = -65537; if (op >= 20) { second_value = 65537; }
+    let first: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error> = ext::big_int::from_i64(first_value,limits);
+    if (first.is_err()) { failed(first.unwrap_err()); return 0; } let a: ext::big_int::BigInt = first.unwrap();
+    let second: core::result::Result<ext::big_int::BigInt,ext::big_uint::Error> = ext::big_int::from_i64(second_value,limits);
+    if (second.is_err()) { failed(second.unwrap_err()); a.destroy(); return 0; } let b: ext::big_int::BigInt = second.unwrap();
+    if (op == 0) { let bytes: [u8;21] = [45,49,56,52,52,54,55,52,52,48,55,51,55,48,57,53,53,49,54,49,53]; clean(ext::big_int::parse(core::result::unwrap(core::slice::view(bytes,21)),10,limits)); }
+    if (op == 1) { clean(ext::big_int::from_u64(18446744073709551615,limits)); }
+    if (op == 2) { clean(a.try_clone(limits)); }
+    if (op == 3) { clean(a.add(b.borrow(),limits)); }
+    if (op == 4) { clean(a.sub(b.borrow(),limits)); }
+    if (op == 5) { clean(a.mul(b.borrow(),limits)); }
+    if (op == 6 || op == 7) {
+        let result: core::result::Result<ext::big_int::DivRem,ext::big_uint::Error> = core::result::Err(ext::big_uint::Error::Bounds);
+        if (op == 6) { result = a.div_rem(b.borrow(),limits); } else { result = a.div_rem_euclid(b.borrow(),limits); }
+        if (result.is_err()) { failed(result.unwrap_err()); } else { let pair: ext::big_int::DivRem = result.unwrap(); pair.destroy(); }
+    }
+    if (op == 8) { clean(a.shl(97,limits)); }
+    if (op == 9) { clean(a.shr(17,limits)); }
+    if (op == 10) { clean(a.bit_and(b.borrow(),limits)); }
+    if (op == 11) { clean(a.bit_or(b.borrow(),limits)); }
+    if (op == 12) { clean(a.bit_xor(b.borrow(),limits)); }
+    if (op == 13) { clean(a.bit_not(limits)); }
+    if (op == 14) {
+        let result: core::result::Result<alloc::vec::Vec<u8>,ext::big_uint::Error> = a.format_radix(10,limits);
+        if (result.is_err()) { failed(result.unwrap_err()); } else { let value: alloc::vec::Vec<u8> = result.unwrap(); value.destroy(); }
+    }
+    if (op == 15) {
+        let bytes: [u8;32] = [93;32]; let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes,2,28));
+        let result: core::result::Result<i32,ext::big_uint::Error> = a.format_into(output,10,limits);
+        if (result.is_err()) { failed(result.unwrap_err()); let i: i32 = 0; while (i < 32) { assert(bytes[i] == 93); i += 1; } }
+        assert(bytes[0] == 93 && bytes[1] == 93 && bytes[30] == 93 && bytes[31] == 93);
+    }
+    if (op == 16) { clean(a.abs(limits)); }
+    if (op == 17) { clean(a.neg(limits)); }
+    if (op == 18) { clean(a.pow(3,limits)); }
+    if (op == 19) { clean(a.gcd(b.borrow(),limits)); }
+    if (op == 20 || op == 25) { clean(a.bit_and(b.borrow(),limits)); }
+    if (op == 21 || op == 26) { clean(a.bit_or(b.borrow(),limits)); }
+    if (op == 22 || op == 27) { clean(a.bit_xor(b.borrow(),limits)); }
+    if (op == 23) { clean(a.bit_not(limits)); }
+    if (op == 24) { clean(a.shr(17,limits)); }
+    if (op == 28) { clean(a.neg(limits)); }
+    if (op == 29) { let result: core::result::Result<ext::big_int::DivRem,ext::big_uint::Error> = a.div_rem_euclid(b.borrow(),limits); if (result.is_err()) { failed(result.unwrap_err()); } else { let pair: ext::big_int::DivRem = result.unwrap(); pair.destroy(); } }
+    if (op == 30) { clean(ext::big_int::from_i64(-9223372036854775807 - 1,limits)); }
+    assert(core::result::unwrap(a.to_i64()) == first_value); assert(core::result::unwrap(b.to_i64()) == second_value); a.destroy(); b.destroy(); return 0;
+}

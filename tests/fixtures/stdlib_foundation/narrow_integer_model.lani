@@ -1,0 +1,767 @@
+module app::main;
+import core::i8;
+import core::u8;
+import core::i16;
+import core::u16;
+import core::i32;
+import core::u32;
+import core::option;
+import core::mem;
+import std::io_checked;
+struct Answer { valid: bool, value: u64 }
+fn value(bits: u64) -> Answer { return Answer { valid: true, value: bits }; }
+fn answer_i8(item: core::option::Option<i8>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: i8 = core::option::unwrap(item); return value(result as u64); }
+fn answer_u8(item: core::option::Option<u8>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: u8 = core::option::unwrap(item); return value(result as u64); }
+fn answer_i16(item: core::option::Option<i16>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: i16 = core::option::unwrap(item); return value(result as u64); }
+fn answer_u16(item: core::option::Option<u16>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: u16 = core::option::unwrap(item); return value(result as u64); }
+fn answer_i32(item: core::option::Option<i32>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: i32 = core::option::unwrap(item); return value(result as u64); }
+fn answer_u32(item: core::option::Option<u32>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: u32 = core::option::unwrap(item); return value(result as u64); }
+fn answer_i64(item: core::option::Option<i64>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: i64 = core::option::unwrap(item); return value(result as u64); }
+fn answer_u64(item: core::option::Option<u64>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: u64 = core::option::unwrap(item); return value(result as u64); }
+fn answer_isize(item: core::option::Option<isize>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: isize = core::option::unwrap(item); return value(result as u64); }
+fn answer_usize(item: core::option::Option<usize>) -> Answer { if (core::option::is_none(item)) { return Answer { valid: false, value: 0 }; } let result: usize = core::option::unwrap(item); return value(result as u64); }
+fn evaluate_i8(operation: i32, raw_a: u64, raw_b: u64, amount: u32) -> Answer {
+    let a: i8 = raw_a as i8; let b: i8 = raw_b as i8;
+    if (operation == 0) { return value(core::i8::wrapping_add(a,b) as u64); }
+    if (operation == 1) { return value(core::i8::wrapping_sub(a,b) as u64); }
+    if (operation == 2) { return value(core::i8::wrapping_mul(a,b) as u64); }
+    if (operation == 3) { return answer_i8(core::i8::checked_add(a,b)); }
+    if (operation == 4) { return answer_i8(core::i8::checked_sub(a,b)); }
+    if (operation == 5) { return answer_i8(core::i8::checked_mul(a,b)); }
+    if (operation == 6) { return value(core::i8::saturating_add(a,b) as u64); }
+    if (operation == 7) { return value(core::i8::saturating_sub(a,b) as u64); }
+    if (operation == 8) { return value(core::i8::saturating_mul(a,b) as u64); }
+    if (operation == 9) { return answer_i8(core::i8::checked_div(a,b)); }
+    if (operation == 10) { return answer_i8(core::i8::checked_rem(a,b)); }
+    if (operation == 11) { return answer_i8(core::i8::checked_div_euclid(a,b)); }
+    if (operation == 12) { return answer_i8(core::i8::checked_rem_euclid(a,b)); }
+    if (operation == 13) { return answer_i8(core::i8::checked_neg(a)); }
+    if (operation == 14) { return value(core::i8::wrapping_neg(a) as u64); }
+    if (operation == 15) { return value(core::i8::saturating_neg(a) as u64); }
+    if (operation == 16) { return answer_i8(core::i8::checked_pow(a,amount)); }
+    if (operation == 17) { return value(core::i8::wrapping_pow(a,amount) as u64); }
+    if (operation == 18) { return value(core::i8::saturating_pow(a,amount) as u64); }
+    if (operation == 19) { return answer_i8(core::i8::checked_shl(a,amount)); }
+    if (operation == 20) { return answer_i8(core::i8::checked_shr(a,amount)); }
+    if (operation == 21) { return value(core::i8::wrapping_shl(a,amount) as u64); }
+    if (operation == 22) { return value(core::i8::wrapping_shr(a,amount) as u64); }
+    if (operation == 23) { return value(core::i8::rotate_left(a,amount) as u64); }
+    if (operation == 24) { return value(core::i8::rotate_right(a,amount) as u64); }
+    if (operation == 25) { return value(core::i8::reverse_bits(a) as u64); }
+    if (operation == 26) { return value(core::i8::swap_bytes(a) as u64); }
+    if (operation == 27) { return value(core::i8::count_ones(a) as u64); }
+    if (operation == 28) { return value(core::i8::count_zeros(a) as u64); }
+    if (operation == 29) { return value(core::i8::leading_zeros(a) as u64); }
+    if (operation == 30) { return value(core::i8::trailing_zeros(a) as u64); }
+    if (operation == 31) { return value(core::i8::leading_ones(a) as u64); }
+    if (operation == 32) { return value(core::i8::trailing_ones(a) as u64); }
+    if (operation == 33) { return answer_i8(core::i8::checked_next_power_of_two(a)); }
+    if (operation == 34) { return answer_i8(core::i8::checked_abs(a)); }
+    if (operation == 35) { return value(core::i8::wrapping_abs(a) as u64); }
+    if (operation == 36) { return value(core::i8::saturating_abs(a) as u64); }
+    if (operation == 37) { return value(core::i8::signum(a) as u64); }
+    if (operation == 38) { return value(core::i8::unsigned_abs(a) as u64); }
+    if (operation == 39) { return value(core::i8::abs_diff(a,b) as u64); }
+    if (operation == 40) { return value(core::i8::min(a,b) as u64); }
+    if (operation == 41) { return value(core::i8::max(a,b) as u64); }
+    if (operation == 42) { if (core::i8::is_even(a)) { return value(1); } return value(0); }
+    if (operation == 43) { if (core::i8::is_multiple_of(a,b)) { return value(1); } return value(0); }
+    if (operation == 44) { return answer_i32(core::i8::checked_to_i32(a)); }
+    if (operation == 45) { return answer_u32(core::i8::checked_to_u32(a)); }
+    if (operation == 46) { return answer_i8(core::i8::checked_from_i64(raw_a as i64)); }
+    if (operation == 47) { return answer_i8(core::i8::checked_from_u64(raw_a)); }
+    if (operation == 48) { return value(core::i8::wrapping_div(a,b) as u64); }
+    if (operation == 49) { return value(core::i8::wrapping_rem(a,b) as u64); }
+    if (operation == 50) { return value(core::i8::saturating_div(a,b) as u64); }
+    if (operation == 51) { if (core::i8::is_power_of_two(a)) { return value(1); } return value(0); }
+    if (operation == 52) { return answer_i8(core::i8::checked_to_i8(a)); }
+    if (operation == 53) { return value(core::i8::saturating_to_i8(a) as u64); }
+    if (operation == 54) { return value(core::i8::wrapping_to_i8(a) as u64); }
+    if (operation == 55) { return answer_u8(core::i8::checked_to_u8(a)); }
+    if (operation == 56) { return value(core::i8::saturating_to_u8(a) as u64); }
+    if (operation == 57) { return value(core::i8::wrapping_to_u8(a) as u64); }
+    if (operation == 58) { return answer_i16(core::i8::checked_to_i16(a)); }
+    if (operation == 59) { return value(core::i8::saturating_to_i16(a) as u64); }
+    if (operation == 60) { return value(core::i8::wrapping_to_i16(a) as u64); }
+    if (operation == 61) { return answer_u16(core::i8::checked_to_u16(a)); }
+    if (operation == 62) { return value(core::i8::saturating_to_u16(a) as u64); }
+    if (operation == 63) { return value(core::i8::wrapping_to_u16(a) as u64); }
+    if (operation == 64) { return answer_i32(core::i8::checked_to_i32(a)); }
+    if (operation == 65) { return value(core::i8::saturating_to_i32(a) as u64); }
+    if (operation == 66) { return value(core::i8::wrapping_to_i32(a) as u64); }
+    if (operation == 67) { return answer_u32(core::i8::checked_to_u32(a)); }
+    if (operation == 68) { return value(core::i8::saturating_to_u32(a) as u64); }
+    if (operation == 69) { return value(core::i8::wrapping_to_u32(a) as u64); }
+    if (operation == 70) { return answer_i64(core::i8::checked_to_i64(a)); }
+    if (operation == 71) { return value(core::i8::saturating_to_i64(a) as u64); }
+    if (operation == 72) { return value(core::i8::wrapping_to_i64(a) as u64); }
+    if (operation == 73) { return answer_u64(core::i8::checked_to_u64(a)); }
+    if (operation == 74) { return value(core::i8::saturating_to_u64(a) as u64); }
+    if (operation == 75) { return value(core::i8::wrapping_to_u64(a) as u64); }
+    if (operation == 76) { return answer_isize(core::i8::checked_to_isize(a)); }
+    if (operation == 77) { return value(core::i8::saturating_to_isize(a) as u64); }
+    if (operation == 78) { return value(core::i8::wrapping_to_isize(a) as u64); }
+    if (operation == 79) { return answer_usize(core::i8::checked_to_usize(a)); }
+    if (operation == 80) { return value(core::i8::saturating_to_usize(a) as u64); }
+    if (operation == 81) { return value(core::i8::wrapping_to_usize(a) as u64); }
+    if (operation == 82) { return answer_i8(core::i8::checked_from_i8(raw_a as i8)); }
+    if (operation == 83) { return value(core::i8::saturating_from_i8(raw_a as i8) as u64); }
+    if (operation == 84) { return value(core::i8::wrapping_from_i8(raw_a as i8) as u64); }
+    if (operation == 85) { return answer_i8(core::i8::checked_from_u8(raw_a as u8)); }
+    if (operation == 86) { return value(core::i8::saturating_from_u8(raw_a as u8) as u64); }
+    if (operation == 87) { return value(core::i8::wrapping_from_u8(raw_a as u8) as u64); }
+    if (operation == 88) { return answer_i8(core::i8::checked_from_i16(raw_a as i16)); }
+    if (operation == 89) { return value(core::i8::saturating_from_i16(raw_a as i16) as u64); }
+    if (operation == 90) { return value(core::i8::wrapping_from_i16(raw_a as i16) as u64); }
+    if (operation == 91) { return answer_i8(core::i8::checked_from_u16(raw_a as u16)); }
+    if (operation == 92) { return value(core::i8::saturating_from_u16(raw_a as u16) as u64); }
+    if (operation == 93) { return value(core::i8::wrapping_from_u16(raw_a as u16) as u64); }
+    if (operation == 94) { return answer_i8(core::i8::checked_from_i32(raw_a as i32)); }
+    if (operation == 95) { return value(core::i8::saturating_from_i32(raw_a as i32) as u64); }
+    if (operation == 96) { return value(core::i8::wrapping_from_i32(raw_a as i32) as u64); }
+    if (operation == 97) { return answer_i8(core::i8::checked_from_u32(raw_a as u32)); }
+    if (operation == 98) { return value(core::i8::saturating_from_u32(raw_a as u32) as u64); }
+    if (operation == 99) { return value(core::i8::wrapping_from_u32(raw_a as u32) as u64); }
+    if (operation == 100) { return answer_i8(core::i8::checked_from_i64(raw_a as i64)); }
+    if (operation == 101) { return value(core::i8::saturating_from_i64(raw_a as i64) as u64); }
+    if (operation == 102) { return value(core::i8::wrapping_from_i64(raw_a as i64) as u64); }
+    if (operation == 103) { return answer_i8(core::i8::checked_from_u64(raw_a as u64)); }
+    if (operation == 104) { return value(core::i8::saturating_from_u64(raw_a as u64) as u64); }
+    if (operation == 105) { return value(core::i8::wrapping_from_u64(raw_a as u64) as u64); }
+    if (operation == 106) { return answer_i8(core::i8::checked_from_isize(raw_a as isize)); }
+    if (operation == 107) { return value(core::i8::saturating_from_isize(raw_a as isize) as u64); }
+    if (operation == 108) { return value(core::i8::wrapping_from_isize(raw_a as isize) as u64); }
+    if (operation == 109) { return answer_i8(core::i8::checked_from_usize(raw_a as usize)); }
+    if (operation == 110) { return value(core::i8::saturating_from_usize(raw_a as usize) as u64); }
+    if (operation == 111) { return value(core::i8::wrapping_from_usize(raw_a as usize) as u64); }
+    if (operation == 112) { return value(core::i8::gcd(a,b) as u64); }
+    if (operation == 113) { return answer_i8(core::i8::checked_lcm(a,b)); }
+    if (operation == 117) { return value(core::i8::saturating_abs_diff(a,b) as u64); }
+    if (operation == 118) { return answer_i8(core::i8::checked_clamp(a,b,amount as i8)); }
+    if (operation == 119) { return value(core::i8::clamp_or(a,b,amount as i8,3) as u64); }
+    assert(false); return value(0);
+}
+fn evaluate_u8(operation: i32, raw_a: u64, raw_b: u64, amount: u32) -> Answer {
+    let a: u8 = raw_a as u8; let b: u8 = raw_b as u8;
+    if (operation == 0) { return value(core::u8::wrapping_add(a,b) as u64); }
+    if (operation == 1) { return value(core::u8::wrapping_sub(a,b) as u64); }
+    if (operation == 2) { return value(core::u8::wrapping_mul(a,b) as u64); }
+    if (operation == 3) { return answer_u8(core::u8::checked_add(a,b)); }
+    if (operation == 4) { return answer_u8(core::u8::checked_sub(a,b)); }
+    if (operation == 5) { return answer_u8(core::u8::checked_mul(a,b)); }
+    if (operation == 6) { return value(core::u8::saturating_add(a,b) as u64); }
+    if (operation == 7) { return value(core::u8::saturating_sub(a,b) as u64); }
+    if (operation == 8) { return value(core::u8::saturating_mul(a,b) as u64); }
+    if (operation == 9) { return answer_u8(core::u8::checked_div(a,b)); }
+    if (operation == 10) { return answer_u8(core::u8::checked_rem(a,b)); }
+    if (operation == 11) { return answer_u8(core::u8::checked_div_euclid(a,b)); }
+    if (operation == 12) { return answer_u8(core::u8::checked_rem_euclid(a,b)); }
+    if (operation == 13) { return answer_u8(core::u8::checked_neg(a)); }
+    if (operation == 14) { return value(core::u8::wrapping_neg(a) as u64); }
+    if (operation == 16) { return answer_u8(core::u8::checked_pow(a,amount)); }
+    if (operation == 17) { return value(core::u8::wrapping_pow(a,amount) as u64); }
+    if (operation == 18) { return value(core::u8::saturating_pow(a,amount) as u64); }
+    if (operation == 19) { return answer_u8(core::u8::checked_shl(a,amount)); }
+    if (operation == 20) { return answer_u8(core::u8::checked_shr(a,amount)); }
+    if (operation == 21) { return value(core::u8::wrapping_shl(a,amount) as u64); }
+    if (operation == 22) { return value(core::u8::wrapping_shr(a,amount) as u64); }
+    if (operation == 23) { return value(core::u8::rotate_left(a,amount) as u64); }
+    if (operation == 24) { return value(core::u8::rotate_right(a,amount) as u64); }
+    if (operation == 25) { return value(core::u8::reverse_bits(a) as u64); }
+    if (operation == 26) { return value(core::u8::swap_bytes(a) as u64); }
+    if (operation == 27) { return value(core::u8::count_ones(a) as u64); }
+    if (operation == 28) { return value(core::u8::count_zeros(a) as u64); }
+    if (operation == 29) { return value(core::u8::leading_zeros(a) as u64); }
+    if (operation == 30) { return value(core::u8::trailing_zeros(a) as u64); }
+    if (operation == 31) { return value(core::u8::leading_ones(a) as u64); }
+    if (operation == 32) { return value(core::u8::trailing_ones(a) as u64); }
+    if (operation == 33) { return answer_u8(core::u8::checked_next_power_of_two(a)); }
+    if (operation == 39) { return value(core::u8::abs_diff(a,b) as u64); }
+    if (operation == 40) { return value(core::u8::min(a,b) as u64); }
+    if (operation == 41) { return value(core::u8::max(a,b) as u64); }
+    if (operation == 42) { if (core::u8::is_even(a)) { return value(1); } return value(0); }
+    if (operation == 43) { if (core::u8::is_multiple_of(a,b)) { return value(1); } return value(0); }
+    if (operation == 44) { return answer_i32(core::u8::checked_to_i32(a)); }
+    if (operation == 45) { return answer_u32(core::u8::checked_to_u32(a)); }
+    if (operation == 46) { return answer_u8(core::u8::checked_from_i64(raw_a as i64)); }
+    if (operation == 47) { return answer_u8(core::u8::checked_from_u64(raw_a)); }
+    if (operation == 48) { return value(core::u8::wrapping_div(a,b) as u64); }
+    if (operation == 49) { return value(core::u8::wrapping_rem(a,b) as u64); }
+    if (operation == 50) { return value(core::u8::saturating_div(a,b) as u64); }
+    if (operation == 51) { if (core::u8::is_power_of_two(a)) { return value(1); } return value(0); }
+    if (operation == 52) { return answer_i8(core::u8::checked_to_i8(a)); }
+    if (operation == 53) { return value(core::u8::saturating_to_i8(a) as u64); }
+    if (operation == 54) { return value(core::u8::wrapping_to_i8(a) as u64); }
+    if (operation == 55) { return answer_u8(core::u8::checked_to_u8(a)); }
+    if (operation == 56) { return value(core::u8::saturating_to_u8(a) as u64); }
+    if (operation == 57) { return value(core::u8::wrapping_to_u8(a) as u64); }
+    if (operation == 58) { return answer_i16(core::u8::checked_to_i16(a)); }
+    if (operation == 59) { return value(core::u8::saturating_to_i16(a) as u64); }
+    if (operation == 60) { return value(core::u8::wrapping_to_i16(a) as u64); }
+    if (operation == 61) { return answer_u16(core::u8::checked_to_u16(a)); }
+    if (operation == 62) { return value(core::u8::saturating_to_u16(a) as u64); }
+    if (operation == 63) { return value(core::u8::wrapping_to_u16(a) as u64); }
+    if (operation == 64) { return answer_i32(core::u8::checked_to_i32(a)); }
+    if (operation == 65) { return value(core::u8::saturating_to_i32(a) as u64); }
+    if (operation == 66) { return value(core::u8::wrapping_to_i32(a) as u64); }
+    if (operation == 67) { return answer_u32(core::u8::checked_to_u32(a)); }
+    if (operation == 68) { return value(core::u8::saturating_to_u32(a) as u64); }
+    if (operation == 69) { return value(core::u8::wrapping_to_u32(a) as u64); }
+    if (operation == 70) { return answer_i64(core::u8::checked_to_i64(a)); }
+    if (operation == 71) { return value(core::u8::saturating_to_i64(a) as u64); }
+    if (operation == 72) { return value(core::u8::wrapping_to_i64(a) as u64); }
+    if (operation == 73) { return answer_u64(core::u8::checked_to_u64(a)); }
+    if (operation == 74) { return value(core::u8::saturating_to_u64(a) as u64); }
+    if (operation == 75) { return value(core::u8::wrapping_to_u64(a) as u64); }
+    if (operation == 76) { return answer_isize(core::u8::checked_to_isize(a)); }
+    if (operation == 77) { return value(core::u8::saturating_to_isize(a) as u64); }
+    if (operation == 78) { return value(core::u8::wrapping_to_isize(a) as u64); }
+    if (operation == 79) { return answer_usize(core::u8::checked_to_usize(a)); }
+    if (operation == 80) { return value(core::u8::saturating_to_usize(a) as u64); }
+    if (operation == 81) { return value(core::u8::wrapping_to_usize(a) as u64); }
+    if (operation == 82) { return answer_u8(core::u8::checked_from_i8(raw_a as i8)); }
+    if (operation == 83) { return value(core::u8::saturating_from_i8(raw_a as i8) as u64); }
+    if (operation == 84) { return value(core::u8::wrapping_from_i8(raw_a as i8) as u64); }
+    if (operation == 85) { return answer_u8(core::u8::checked_from_u8(raw_a as u8)); }
+    if (operation == 86) { return value(core::u8::saturating_from_u8(raw_a as u8) as u64); }
+    if (operation == 87) { return value(core::u8::wrapping_from_u8(raw_a as u8) as u64); }
+    if (operation == 88) { return answer_u8(core::u8::checked_from_i16(raw_a as i16)); }
+    if (operation == 89) { return value(core::u8::saturating_from_i16(raw_a as i16) as u64); }
+    if (operation == 90) { return value(core::u8::wrapping_from_i16(raw_a as i16) as u64); }
+    if (operation == 91) { return answer_u8(core::u8::checked_from_u16(raw_a as u16)); }
+    if (operation == 92) { return value(core::u8::saturating_from_u16(raw_a as u16) as u64); }
+    if (operation == 93) { return value(core::u8::wrapping_from_u16(raw_a as u16) as u64); }
+    if (operation == 94) { return answer_u8(core::u8::checked_from_i32(raw_a as i32)); }
+    if (operation == 95) { return value(core::u8::saturating_from_i32(raw_a as i32) as u64); }
+    if (operation == 96) { return value(core::u8::wrapping_from_i32(raw_a as i32) as u64); }
+    if (operation == 97) { return answer_u8(core::u8::checked_from_u32(raw_a as u32)); }
+    if (operation == 98) { return value(core::u8::saturating_from_u32(raw_a as u32) as u64); }
+    if (operation == 99) { return value(core::u8::wrapping_from_u32(raw_a as u32) as u64); }
+    if (operation == 100) { return answer_u8(core::u8::checked_from_i64(raw_a as i64)); }
+    if (operation == 101) { return value(core::u8::saturating_from_i64(raw_a as i64) as u64); }
+    if (operation == 102) { return value(core::u8::wrapping_from_i64(raw_a as i64) as u64); }
+    if (operation == 103) { return answer_u8(core::u8::checked_from_u64(raw_a as u64)); }
+    if (operation == 104) { return value(core::u8::saturating_from_u64(raw_a as u64) as u64); }
+    if (operation == 105) { return value(core::u8::wrapping_from_u64(raw_a as u64) as u64); }
+    if (operation == 106) { return answer_u8(core::u8::checked_from_isize(raw_a as isize)); }
+    if (operation == 107) { return value(core::u8::saturating_from_isize(raw_a as isize) as u64); }
+    if (operation == 108) { return value(core::u8::wrapping_from_isize(raw_a as isize) as u64); }
+    if (operation == 109) { return answer_u8(core::u8::checked_from_usize(raw_a as usize)); }
+    if (operation == 110) { return value(core::u8::saturating_from_usize(raw_a as usize) as u64); }
+    if (operation == 111) { return value(core::u8::wrapping_from_usize(raw_a as usize) as u64); }
+    if (operation == 112) { return value(core::u8::gcd(a,b) as u64); }
+    if (operation == 113) { return answer_u8(core::u8::checked_lcm(a,b)); }
+    if (operation == 114) { return answer_u8(core::u8::checked_align_up(a,b)); }
+    if (operation == 115) { return answer_u8(core::u8::checked_align_down(a,b)); }
+    if (operation == 116) { if (core::u8::is_aligned(a,b)) { return value(1); } return value(0); }
+    if (operation == 118) { return answer_u8(core::u8::checked_clamp(a,b,amount as u8)); }
+    if (operation == 119) { return value(core::u8::clamp_or(a,b,amount as u8,3) as u64); }
+    assert(false); return value(0);
+}
+fn evaluate_i16(operation: i32, raw_a: u64, raw_b: u64, amount: u32) -> Answer {
+    let a: i16 = raw_a as i16; let b: i16 = raw_b as i16;
+    if (operation == 0) { return value(core::i16::wrapping_add(a,b) as u64); }
+    if (operation == 1) { return value(core::i16::wrapping_sub(a,b) as u64); }
+    if (operation == 2) { return value(core::i16::wrapping_mul(a,b) as u64); }
+    if (operation == 3) { return answer_i16(core::i16::checked_add(a,b)); }
+    if (operation == 4) { return answer_i16(core::i16::checked_sub(a,b)); }
+    if (operation == 5) { return answer_i16(core::i16::checked_mul(a,b)); }
+    if (operation == 6) { return value(core::i16::saturating_add(a,b) as u64); }
+    if (operation == 7) { return value(core::i16::saturating_sub(a,b) as u64); }
+    if (operation == 8) { return value(core::i16::saturating_mul(a,b) as u64); }
+    if (operation == 9) { return answer_i16(core::i16::checked_div(a,b)); }
+    if (operation == 10) { return answer_i16(core::i16::checked_rem(a,b)); }
+    if (operation == 11) { return answer_i16(core::i16::checked_div_euclid(a,b)); }
+    if (operation == 12) { return answer_i16(core::i16::checked_rem_euclid(a,b)); }
+    if (operation == 13) { return answer_i16(core::i16::checked_neg(a)); }
+    if (operation == 14) { return value(core::i16::wrapping_neg(a) as u64); }
+    if (operation == 15) { return value(core::i16::saturating_neg(a) as u64); }
+    if (operation == 16) { return answer_i16(core::i16::checked_pow(a,amount)); }
+    if (operation == 17) { return value(core::i16::wrapping_pow(a,amount) as u64); }
+    if (operation == 18) { return value(core::i16::saturating_pow(a,amount) as u64); }
+    if (operation == 19) { return answer_i16(core::i16::checked_shl(a,amount)); }
+    if (operation == 20) { return answer_i16(core::i16::checked_shr(a,amount)); }
+    if (operation == 21) { return value(core::i16::wrapping_shl(a,amount) as u64); }
+    if (operation == 22) { return value(core::i16::wrapping_shr(a,amount) as u64); }
+    if (operation == 23) { return value(core::i16::rotate_left(a,amount) as u64); }
+    if (operation == 24) { return value(core::i16::rotate_right(a,amount) as u64); }
+    if (operation == 25) { return value(core::i16::reverse_bits(a) as u64); }
+    if (operation == 26) { return value(core::i16::swap_bytes(a) as u64); }
+    if (operation == 27) { return value(core::i16::count_ones(a) as u64); }
+    if (operation == 28) { return value(core::i16::count_zeros(a) as u64); }
+    if (operation == 29) { return value(core::i16::leading_zeros(a) as u64); }
+    if (operation == 30) { return value(core::i16::trailing_zeros(a) as u64); }
+    if (operation == 31) { return value(core::i16::leading_ones(a) as u64); }
+    if (operation == 32) { return value(core::i16::trailing_ones(a) as u64); }
+    if (operation == 33) { return answer_i16(core::i16::checked_next_power_of_two(a)); }
+    if (operation == 34) { return answer_i16(core::i16::checked_abs(a)); }
+    if (operation == 35) { return value(core::i16::wrapping_abs(a) as u64); }
+    if (operation == 36) { return value(core::i16::saturating_abs(a) as u64); }
+    if (operation == 37) { return value(core::i16::signum(a) as u64); }
+    if (operation == 38) { return value(core::i16::unsigned_abs(a) as u64); }
+    if (operation == 39) { return value(core::i16::abs_diff(a,b) as u64); }
+    if (operation == 40) { return value(core::i16::min(a,b) as u64); }
+    if (operation == 41) { return value(core::i16::max(a,b) as u64); }
+    if (operation == 42) { if (core::i16::is_even(a)) { return value(1); } return value(0); }
+    if (operation == 43) { if (core::i16::is_multiple_of(a,b)) { return value(1); } return value(0); }
+    if (operation == 44) { return answer_i32(core::i16::checked_to_i32(a)); }
+    if (operation == 45) { return answer_u32(core::i16::checked_to_u32(a)); }
+    if (operation == 46) { return answer_i16(core::i16::checked_from_i64(raw_a as i64)); }
+    if (operation == 47) { return answer_i16(core::i16::checked_from_u64(raw_a)); }
+    if (operation == 48) { return value(core::i16::wrapping_div(a,b) as u64); }
+    if (operation == 49) { return value(core::i16::wrapping_rem(a,b) as u64); }
+    if (operation == 50) { return value(core::i16::saturating_div(a,b) as u64); }
+    if (operation == 51) { if (core::i16::is_power_of_two(a)) { return value(1); } return value(0); }
+    if (operation == 52) { return answer_i8(core::i16::checked_to_i8(a)); }
+    if (operation == 53) { return value(core::i16::saturating_to_i8(a) as u64); }
+    if (operation == 54) { return value(core::i16::wrapping_to_i8(a) as u64); }
+    if (operation == 55) { return answer_u8(core::i16::checked_to_u8(a)); }
+    if (operation == 56) { return value(core::i16::saturating_to_u8(a) as u64); }
+    if (operation == 57) { return value(core::i16::wrapping_to_u8(a) as u64); }
+    if (operation == 58) { return answer_i16(core::i16::checked_to_i16(a)); }
+    if (operation == 59) { return value(core::i16::saturating_to_i16(a) as u64); }
+    if (operation == 60) { return value(core::i16::wrapping_to_i16(a) as u64); }
+    if (operation == 61) { return answer_u16(core::i16::checked_to_u16(a)); }
+    if (operation == 62) { return value(core::i16::saturating_to_u16(a) as u64); }
+    if (operation == 63) { return value(core::i16::wrapping_to_u16(a) as u64); }
+    if (operation == 64) { return answer_i32(core::i16::checked_to_i32(a)); }
+    if (operation == 65) { return value(core::i16::saturating_to_i32(a) as u64); }
+    if (operation == 66) { return value(core::i16::wrapping_to_i32(a) as u64); }
+    if (operation == 67) { return answer_u32(core::i16::checked_to_u32(a)); }
+    if (operation == 68) { return value(core::i16::saturating_to_u32(a) as u64); }
+    if (operation == 69) { return value(core::i16::wrapping_to_u32(a) as u64); }
+    if (operation == 70) { return answer_i64(core::i16::checked_to_i64(a)); }
+    if (operation == 71) { return value(core::i16::saturating_to_i64(a) as u64); }
+    if (operation == 72) { return value(core::i16::wrapping_to_i64(a) as u64); }
+    if (operation == 73) { return answer_u64(core::i16::checked_to_u64(a)); }
+    if (operation == 74) { return value(core::i16::saturating_to_u64(a) as u64); }
+    if (operation == 75) { return value(core::i16::wrapping_to_u64(a) as u64); }
+    if (operation == 76) { return answer_isize(core::i16::checked_to_isize(a)); }
+    if (operation == 77) { return value(core::i16::saturating_to_isize(a) as u64); }
+    if (operation == 78) { return value(core::i16::wrapping_to_isize(a) as u64); }
+    if (operation == 79) { return answer_usize(core::i16::checked_to_usize(a)); }
+    if (operation == 80) { return value(core::i16::saturating_to_usize(a) as u64); }
+    if (operation == 81) { return value(core::i16::wrapping_to_usize(a) as u64); }
+    if (operation == 82) { return answer_i16(core::i16::checked_from_i8(raw_a as i8)); }
+    if (operation == 83) { return value(core::i16::saturating_from_i8(raw_a as i8) as u64); }
+    if (operation == 84) { return value(core::i16::wrapping_from_i8(raw_a as i8) as u64); }
+    if (operation == 85) { return answer_i16(core::i16::checked_from_u8(raw_a as u8)); }
+    if (operation == 86) { return value(core::i16::saturating_from_u8(raw_a as u8) as u64); }
+    if (operation == 87) { return value(core::i16::wrapping_from_u8(raw_a as u8) as u64); }
+    if (operation == 88) { return answer_i16(core::i16::checked_from_i16(raw_a as i16)); }
+    if (operation == 89) { return value(core::i16::saturating_from_i16(raw_a as i16) as u64); }
+    if (operation == 90) { return value(core::i16::wrapping_from_i16(raw_a as i16) as u64); }
+    if (operation == 91) { return answer_i16(core::i16::checked_from_u16(raw_a as u16)); }
+    if (operation == 92) { return value(core::i16::saturating_from_u16(raw_a as u16) as u64); }
+    if (operation == 93) { return value(core::i16::wrapping_from_u16(raw_a as u16) as u64); }
+    if (operation == 94) { return answer_i16(core::i16::checked_from_i32(raw_a as i32)); }
+    if (operation == 95) { return value(core::i16::saturating_from_i32(raw_a as i32) as u64); }
+    if (operation == 96) { return value(core::i16::wrapping_from_i32(raw_a as i32) as u64); }
+    if (operation == 97) { return answer_i16(core::i16::checked_from_u32(raw_a as u32)); }
+    if (operation == 98) { return value(core::i16::saturating_from_u32(raw_a as u32) as u64); }
+    if (operation == 99) { return value(core::i16::wrapping_from_u32(raw_a as u32) as u64); }
+    if (operation == 100) { return answer_i16(core::i16::checked_from_i64(raw_a as i64)); }
+    if (operation == 101) { return value(core::i16::saturating_from_i64(raw_a as i64) as u64); }
+    if (operation == 102) { return value(core::i16::wrapping_from_i64(raw_a as i64) as u64); }
+    if (operation == 103) { return answer_i16(core::i16::checked_from_u64(raw_a as u64)); }
+    if (operation == 104) { return value(core::i16::saturating_from_u64(raw_a as u64) as u64); }
+    if (operation == 105) { return value(core::i16::wrapping_from_u64(raw_a as u64) as u64); }
+    if (operation == 106) { return answer_i16(core::i16::checked_from_isize(raw_a as isize)); }
+    if (operation == 107) { return value(core::i16::saturating_from_isize(raw_a as isize) as u64); }
+    if (operation == 108) { return value(core::i16::wrapping_from_isize(raw_a as isize) as u64); }
+    if (operation == 109) { return answer_i16(core::i16::checked_from_usize(raw_a as usize)); }
+    if (operation == 110) { return value(core::i16::saturating_from_usize(raw_a as usize) as u64); }
+    if (operation == 111) { return value(core::i16::wrapping_from_usize(raw_a as usize) as u64); }
+    if (operation == 112) { return value(core::i16::gcd(a,b) as u64); }
+    if (operation == 113) { return answer_i16(core::i16::checked_lcm(a,b)); }
+    if (operation == 117) { return value(core::i16::saturating_abs_diff(a,b) as u64); }
+    if (operation == 118) { return answer_i16(core::i16::checked_clamp(a,b,amount as i16)); }
+    if (operation == 119) { return value(core::i16::clamp_or(a,b,amount as i16,3) as u64); }
+    assert(false); return value(0);
+}
+fn evaluate_u16(operation: i32, raw_a: u64, raw_b: u64, amount: u32) -> Answer {
+    let a: u16 = raw_a as u16; let b: u16 = raw_b as u16;
+    if (operation == 0) { return value(core::u16::wrapping_add(a,b) as u64); }
+    if (operation == 1) { return value(core::u16::wrapping_sub(a,b) as u64); }
+    if (operation == 2) { return value(core::u16::wrapping_mul(a,b) as u64); }
+    if (operation == 3) { return answer_u16(core::u16::checked_add(a,b)); }
+    if (operation == 4) { return answer_u16(core::u16::checked_sub(a,b)); }
+    if (operation == 5) { return answer_u16(core::u16::checked_mul(a,b)); }
+    if (operation == 6) { return value(core::u16::saturating_add(a,b) as u64); }
+    if (operation == 7) { return value(core::u16::saturating_sub(a,b) as u64); }
+    if (operation == 8) { return value(core::u16::saturating_mul(a,b) as u64); }
+    if (operation == 9) { return answer_u16(core::u16::checked_div(a,b)); }
+    if (operation == 10) { return answer_u16(core::u16::checked_rem(a,b)); }
+    if (operation == 11) { return answer_u16(core::u16::checked_div_euclid(a,b)); }
+    if (operation == 12) { return answer_u16(core::u16::checked_rem_euclid(a,b)); }
+    if (operation == 13) { return answer_u16(core::u16::checked_neg(a)); }
+    if (operation == 14) { return value(core::u16::wrapping_neg(a) as u64); }
+    if (operation == 16) { return answer_u16(core::u16::checked_pow(a,amount)); }
+    if (operation == 17) { return value(core::u16::wrapping_pow(a,amount) as u64); }
+    if (operation == 18) { return value(core::u16::saturating_pow(a,amount) as u64); }
+    if (operation == 19) { return answer_u16(core::u16::checked_shl(a,amount)); }
+    if (operation == 20) { return answer_u16(core::u16::checked_shr(a,amount)); }
+    if (operation == 21) { return value(core::u16::wrapping_shl(a,amount) as u64); }
+    if (operation == 22) { return value(core::u16::wrapping_shr(a,amount) as u64); }
+    if (operation == 23) { return value(core::u16::rotate_left(a,amount) as u64); }
+    if (operation == 24) { return value(core::u16::rotate_right(a,amount) as u64); }
+    if (operation == 25) { return value(core::u16::reverse_bits(a) as u64); }
+    if (operation == 26) { return value(core::u16::swap_bytes(a) as u64); }
+    if (operation == 27) { return value(core::u16::count_ones(a) as u64); }
+    if (operation == 28) { return value(core::u16::count_zeros(a) as u64); }
+    if (operation == 29) { return value(core::u16::leading_zeros(a) as u64); }
+    if (operation == 30) { return value(core::u16::trailing_zeros(a) as u64); }
+    if (operation == 31) { return value(core::u16::leading_ones(a) as u64); }
+    if (operation == 32) { return value(core::u16::trailing_ones(a) as u64); }
+    if (operation == 33) { return answer_u16(core::u16::checked_next_power_of_two(a)); }
+    if (operation == 39) { return value(core::u16::abs_diff(a,b) as u64); }
+    if (operation == 40) { return value(core::u16::min(a,b) as u64); }
+    if (operation == 41) { return value(core::u16::max(a,b) as u64); }
+    if (operation == 42) { if (core::u16::is_even(a)) { return value(1); } return value(0); }
+    if (operation == 43) { if (core::u16::is_multiple_of(a,b)) { return value(1); } return value(0); }
+    if (operation == 44) { return answer_i32(core::u16::checked_to_i32(a)); }
+    if (operation == 45) { return answer_u32(core::u16::checked_to_u32(a)); }
+    if (operation == 46) { return answer_u16(core::u16::checked_from_i64(raw_a as i64)); }
+    if (operation == 47) { return answer_u16(core::u16::checked_from_u64(raw_a)); }
+    if (operation == 48) { return value(core::u16::wrapping_div(a,b) as u64); }
+    if (operation == 49) { return value(core::u16::wrapping_rem(a,b) as u64); }
+    if (operation == 50) { return value(core::u16::saturating_div(a,b) as u64); }
+    if (operation == 51) { if (core::u16::is_power_of_two(a)) { return value(1); } return value(0); }
+    if (operation == 52) { return answer_i8(core::u16::checked_to_i8(a)); }
+    if (operation == 53) { return value(core::u16::saturating_to_i8(a) as u64); }
+    if (operation == 54) { return value(core::u16::wrapping_to_i8(a) as u64); }
+    if (operation == 55) { return answer_u8(core::u16::checked_to_u8(a)); }
+    if (operation == 56) { return value(core::u16::saturating_to_u8(a) as u64); }
+    if (operation == 57) { return value(core::u16::wrapping_to_u8(a) as u64); }
+    if (operation == 58) { return answer_i16(core::u16::checked_to_i16(a)); }
+    if (operation == 59) { return value(core::u16::saturating_to_i16(a) as u64); }
+    if (operation == 60) { return value(core::u16::wrapping_to_i16(a) as u64); }
+    if (operation == 61) { return answer_u16(core::u16::checked_to_u16(a)); }
+    if (operation == 62) { return value(core::u16::saturating_to_u16(a) as u64); }
+    if (operation == 63) { return value(core::u16::wrapping_to_u16(a) as u64); }
+    if (operation == 64) { return answer_i32(core::u16::checked_to_i32(a)); }
+    if (operation == 65) { return value(core::u16::saturating_to_i32(a) as u64); }
+    if (operation == 66) { return value(core::u16::wrapping_to_i32(a) as u64); }
+    if (operation == 67) { return answer_u32(core::u16::checked_to_u32(a)); }
+    if (operation == 68) { return value(core::u16::saturating_to_u32(a) as u64); }
+    if (operation == 69) { return value(core::u16::wrapping_to_u32(a) as u64); }
+    if (operation == 70) { return answer_i64(core::u16::checked_to_i64(a)); }
+    if (operation == 71) { return value(core::u16::saturating_to_i64(a) as u64); }
+    if (operation == 72) { return value(core::u16::wrapping_to_i64(a) as u64); }
+    if (operation == 73) { return answer_u64(core::u16::checked_to_u64(a)); }
+    if (operation == 74) { return value(core::u16::saturating_to_u64(a) as u64); }
+    if (operation == 75) { return value(core::u16::wrapping_to_u64(a) as u64); }
+    if (operation == 76) { return answer_isize(core::u16::checked_to_isize(a)); }
+    if (operation == 77) { return value(core::u16::saturating_to_isize(a) as u64); }
+    if (operation == 78) { return value(core::u16::wrapping_to_isize(a) as u64); }
+    if (operation == 79) { return answer_usize(core::u16::checked_to_usize(a)); }
+    if (operation == 80) { return value(core::u16::saturating_to_usize(a) as u64); }
+    if (operation == 81) { return value(core::u16::wrapping_to_usize(a) as u64); }
+    if (operation == 82) { return answer_u16(core::u16::checked_from_i8(raw_a as i8)); }
+    if (operation == 83) { return value(core::u16::saturating_from_i8(raw_a as i8) as u64); }
+    if (operation == 84) { return value(core::u16::wrapping_from_i8(raw_a as i8) as u64); }
+    if (operation == 85) { return answer_u16(core::u16::checked_from_u8(raw_a as u8)); }
+    if (operation == 86) { return value(core::u16::saturating_from_u8(raw_a as u8) as u64); }
+    if (operation == 87) { return value(core::u16::wrapping_from_u8(raw_a as u8) as u64); }
+    if (operation == 88) { return answer_u16(core::u16::checked_from_i16(raw_a as i16)); }
+    if (operation == 89) { return value(core::u16::saturating_from_i16(raw_a as i16) as u64); }
+    if (operation == 90) { return value(core::u16::wrapping_from_i16(raw_a as i16) as u64); }
+    if (operation == 91) { return answer_u16(core::u16::checked_from_u16(raw_a as u16)); }
+    if (operation == 92) { return value(core::u16::saturating_from_u16(raw_a as u16) as u64); }
+    if (operation == 93) { return value(core::u16::wrapping_from_u16(raw_a as u16) as u64); }
+    if (operation == 94) { return answer_u16(core::u16::checked_from_i32(raw_a as i32)); }
+    if (operation == 95) { return value(core::u16::saturating_from_i32(raw_a as i32) as u64); }
+    if (operation == 96) { return value(core::u16::wrapping_from_i32(raw_a as i32) as u64); }
+    if (operation == 97) { return answer_u16(core::u16::checked_from_u32(raw_a as u32)); }
+    if (operation == 98) { return value(core::u16::saturating_from_u32(raw_a as u32) as u64); }
+    if (operation == 99) { return value(core::u16::wrapping_from_u32(raw_a as u32) as u64); }
+    if (operation == 100) { return answer_u16(core::u16::checked_from_i64(raw_a as i64)); }
+    if (operation == 101) { return value(core::u16::saturating_from_i64(raw_a as i64) as u64); }
+    if (operation == 102) { return value(core::u16::wrapping_from_i64(raw_a as i64) as u64); }
+    if (operation == 103) { return answer_u16(core::u16::checked_from_u64(raw_a as u64)); }
+    if (operation == 104) { return value(core::u16::saturating_from_u64(raw_a as u64) as u64); }
+    if (operation == 105) { return value(core::u16::wrapping_from_u64(raw_a as u64) as u64); }
+    if (operation == 106) { return answer_u16(core::u16::checked_from_isize(raw_a as isize)); }
+    if (operation == 107) { return value(core::u16::saturating_from_isize(raw_a as isize) as u64); }
+    if (operation == 108) { return value(core::u16::wrapping_from_isize(raw_a as isize) as u64); }
+    if (operation == 109) { return answer_u16(core::u16::checked_from_usize(raw_a as usize)); }
+    if (operation == 110) { return value(core::u16::saturating_from_usize(raw_a as usize) as u64); }
+    if (operation == 111) { return value(core::u16::wrapping_from_usize(raw_a as usize) as u64); }
+    if (operation == 112) { return value(core::u16::gcd(a,b) as u64); }
+    if (operation == 113) { return answer_u16(core::u16::checked_lcm(a,b)); }
+    if (operation == 114) { return answer_u16(core::u16::checked_align_up(a,b)); }
+    if (operation == 115) { return answer_u16(core::u16::checked_align_down(a,b)); }
+    if (operation == 116) { if (core::u16::is_aligned(a,b)) { return value(1); } return value(0); }
+    if (operation == 118) { return answer_u16(core::u16::checked_clamp(a,b,amount as u16)); }
+    if (operation == 119) { return value(core::u16::clamp_or(a,b,amount as u16,3) as u64); }
+    assert(false); return value(0);
+}
+fn evaluate_i32(operation: i32, raw_a: u64, raw_b: u64, amount: u32) -> Answer {
+    let a: i32 = raw_a as i32; let b: i32 = raw_b as i32;
+    if (operation == 0) { return value(core::i32::wrapping_add(a,b) as u64); }
+    if (operation == 1) { return value(core::i32::wrapping_sub(a,b) as u64); }
+    if (operation == 2) { return value(core::i32::wrapping_mul(a,b) as u64); }
+    if (operation == 3) { return answer_i32(core::i32::checked_add(a,b)); }
+    if (operation == 4) { return answer_i32(core::i32::checked_sub(a,b)); }
+    if (operation == 5) { return answer_i32(core::i32::checked_mul(a,b)); }
+    if (operation == 6) { return value(core::i32::saturating_add(a,b) as u64); }
+    if (operation == 7) { return value(core::i32::saturating_sub(a,b) as u64); }
+    if (operation == 8) { return value(core::i32::saturating_mul(a,b) as u64); }
+    if (operation == 9) { return answer_i32(core::i32::checked_div(a,b)); }
+    if (operation == 10) { return answer_i32(core::i32::checked_rem(a,b)); }
+    if (operation == 11) { return answer_i32(core::i32::checked_div_euclid(a,b)); }
+    if (operation == 12) { return answer_i32(core::i32::checked_rem_euclid(a,b)); }
+    if (operation == 13) { return answer_i32(core::i32::checked_neg(a)); }
+    if (operation == 14) { return value(core::i32::wrapping_neg(a) as u64); }
+    if (operation == 15) { return value(core::i32::saturating_neg(a) as u64); }
+    if (operation == 16) { return answer_i32(core::i32::checked_pow(a,amount)); }
+    if (operation == 17) { return value(core::i32::wrapping_pow(a,amount) as u64); }
+    if (operation == 18) { return value(core::i32::saturating_pow(a,amount) as u64); }
+    if (operation == 19) { return answer_i32(core::i32::checked_shl(a,amount)); }
+    if (operation == 20) { return answer_i32(core::i32::checked_shr(a,amount)); }
+    if (operation == 21) { return value(core::i32::wrapping_shl(a,amount) as u64); }
+    if (operation == 22) { return value(core::i32::wrapping_shr(a,amount) as u64); }
+    if (operation == 23) { return value(core::i32::rotate_left(a,amount) as u64); }
+    if (operation == 24) { return value(core::i32::rotate_right(a,amount) as u64); }
+    if (operation == 25) { return value(core::i32::reverse_bits(a) as u64); }
+    if (operation == 26) { return value(core::i32::swap_bytes(a) as u64); }
+    if (operation == 27) { return value(core::i32::count_ones(a) as u64); }
+    if (operation == 28) { return value(core::i32::count_zeros(a) as u64); }
+    if (operation == 29) { return value(core::i32::leading_zeros(a) as u64); }
+    if (operation == 30) { return value(core::i32::trailing_zeros(a) as u64); }
+    if (operation == 31) { return value(core::i32::leading_ones(a) as u64); }
+    if (operation == 32) { return value(core::i32::trailing_ones(a) as u64); }
+    if (operation == 33) { return answer_i32(core::i32::checked_next_power_of_two(a)); }
+    if (operation == 34) { return answer_i32(core::i32::checked_abs(a)); }
+    if (operation == 35) { return value(core::i32::wrapping_abs(a) as u64); }
+    if (operation == 36) { return value(core::i32::saturating_abs(a) as u64); }
+    if (operation == 37) { return value(core::i32::signum(a) as u64); }
+    if (operation == 38) { return value(core::i32::unsigned_abs(a) as u64); }
+    if (operation == 39) { return value(core::i32::abs_diff(a,b) as u64); }
+    if (operation == 40) { return value(core::i32::min(a,b) as u64); }
+    if (operation == 41) { return value(core::i32::max(a,b) as u64); }
+    if (operation == 42) { if (core::i32::is_even(a)) { return value(1); } return value(0); }
+    if (operation == 43) { if (core::i32::is_multiple_of(a,b)) { return value(1); } return value(0); }
+    if (operation == 44) { return answer_i32(core::i32::checked_to_i32(a)); }
+    if (operation == 45) { return answer_u32(core::i32::checked_to_u32(a)); }
+    if (operation == 46) { return answer_i32(core::i32::checked_from_i64(raw_a as i64)); }
+    if (operation == 47) { return answer_i32(core::i32::checked_from_u64(raw_a)); }
+    if (operation == 48) { return value(core::i32::wrapping_div(a,b) as u64); }
+    if (operation == 49) { return value(core::i32::wrapping_rem(a,b) as u64); }
+    if (operation == 50) { return value(core::i32::saturating_div(a,b) as u64); }
+    if (operation == 51) { if (core::i32::is_power_of_two(a)) { return value(1); } return value(0); }
+    if (operation == 52) { return answer_i8(core::i32::checked_to_i8(a)); }
+    if (operation == 53) { return value(core::i32::saturating_to_i8(a) as u64); }
+    if (operation == 54) { return value(core::i32::wrapping_to_i8(a) as u64); }
+    if (operation == 55) { return answer_u8(core::i32::checked_to_u8(a)); }
+    if (operation == 56) { return value(core::i32::saturating_to_u8(a) as u64); }
+    if (operation == 57) { return value(core::i32::wrapping_to_u8(a) as u64); }
+    if (operation == 58) { return answer_i16(core::i32::checked_to_i16(a)); }
+    if (operation == 59) { return value(core::i32::saturating_to_i16(a) as u64); }
+    if (operation == 60) { return value(core::i32::wrapping_to_i16(a) as u64); }
+    if (operation == 61) { return answer_u16(core::i32::checked_to_u16(a)); }
+    if (operation == 62) { return value(core::i32::saturating_to_u16(a) as u64); }
+    if (operation == 63) { return value(core::i32::wrapping_to_u16(a) as u64); }
+    if (operation == 64) { return answer_i32(core::i32::checked_to_i32(a)); }
+    if (operation == 65) { return value(core::i32::saturating_to_i32(a) as u64); }
+    if (operation == 66) { return value(core::i32::wrapping_to_i32(a) as u64); }
+    if (operation == 67) { return answer_u32(core::i32::checked_to_u32(a)); }
+    if (operation == 68) { return value(core::i32::saturating_to_u32(a) as u64); }
+    if (operation == 69) { return value(core::i32::wrapping_to_u32(a) as u64); }
+    if (operation == 70) { return answer_i64(core::i32::checked_to_i64(a)); }
+    if (operation == 71) { return value(core::i32::saturating_to_i64(a) as u64); }
+    if (operation == 72) { return value(core::i32::wrapping_to_i64(a) as u64); }
+    if (operation == 73) { return answer_u64(core::i32::checked_to_u64(a)); }
+    if (operation == 74) { return value(core::i32::saturating_to_u64(a) as u64); }
+    if (operation == 75) { return value(core::i32::wrapping_to_u64(a) as u64); }
+    if (operation == 76) { return answer_isize(core::i32::checked_to_isize(a)); }
+    if (operation == 77) { return value(core::i32::saturating_to_isize(a) as u64); }
+    if (operation == 78) { return value(core::i32::wrapping_to_isize(a) as u64); }
+    if (operation == 79) { return answer_usize(core::i32::checked_to_usize(a)); }
+    if (operation == 80) { return value(core::i32::saturating_to_usize(a) as u64); }
+    if (operation == 81) { return value(core::i32::wrapping_to_usize(a) as u64); }
+    if (operation == 82) { return answer_i32(core::i32::checked_from_i8(raw_a as i8)); }
+    if (operation == 83) { return value(core::i32::saturating_from_i8(raw_a as i8) as u64); }
+    if (operation == 84) { return value(core::i32::wrapping_from_i8(raw_a as i8) as u64); }
+    if (operation == 85) { return answer_i32(core::i32::checked_from_u8(raw_a as u8)); }
+    if (operation == 86) { return value(core::i32::saturating_from_u8(raw_a as u8) as u64); }
+    if (operation == 87) { return value(core::i32::wrapping_from_u8(raw_a as u8) as u64); }
+    if (operation == 88) { return answer_i32(core::i32::checked_from_i16(raw_a as i16)); }
+    if (operation == 89) { return value(core::i32::saturating_from_i16(raw_a as i16) as u64); }
+    if (operation == 90) { return value(core::i32::wrapping_from_i16(raw_a as i16) as u64); }
+    if (operation == 91) { return answer_i32(core::i32::checked_from_u16(raw_a as u16)); }
+    if (operation == 92) { return value(core::i32::saturating_from_u16(raw_a as u16) as u64); }
+    if (operation == 93) { return value(core::i32::wrapping_from_u16(raw_a as u16) as u64); }
+    if (operation == 94) { return answer_i32(core::i32::checked_from_i32(raw_a as i32)); }
+    if (operation == 95) { return value(core::i32::saturating_from_i32(raw_a as i32) as u64); }
+    if (operation == 96) { return value(core::i32::wrapping_from_i32(raw_a as i32) as u64); }
+    if (operation == 97) { return answer_i32(core::i32::checked_from_u32(raw_a as u32)); }
+    if (operation == 98) { return value(core::i32::saturating_from_u32(raw_a as u32) as u64); }
+    if (operation == 99) { return value(core::i32::wrapping_from_u32(raw_a as u32) as u64); }
+    if (operation == 100) { return answer_i32(core::i32::checked_from_i64(raw_a as i64)); }
+    if (operation == 101) { return value(core::i32::saturating_from_i64(raw_a as i64) as u64); }
+    if (operation == 102) { return value(core::i32::wrapping_from_i64(raw_a as i64) as u64); }
+    if (operation == 103) { return answer_i32(core::i32::checked_from_u64(raw_a as u64)); }
+    if (operation == 104) { return value(core::i32::saturating_from_u64(raw_a as u64) as u64); }
+    if (operation == 105) { return value(core::i32::wrapping_from_u64(raw_a as u64) as u64); }
+    if (operation == 106) { return answer_i32(core::i32::checked_from_isize(raw_a as isize)); }
+    if (operation == 107) { return value(core::i32::saturating_from_isize(raw_a as isize) as u64); }
+    if (operation == 108) { return value(core::i32::wrapping_from_isize(raw_a as isize) as u64); }
+    if (operation == 109) { return answer_i32(core::i32::checked_from_usize(raw_a as usize)); }
+    if (operation == 110) { return value(core::i32::saturating_from_usize(raw_a as usize) as u64); }
+    if (operation == 111) { return value(core::i32::wrapping_from_usize(raw_a as usize) as u64); }
+    if (operation == 112) { return value(core::i32::gcd(a,b) as u64); }
+    if (operation == 113) { return answer_i32(core::i32::checked_lcm(a,b)); }
+    if (operation == 117) { return value(core::i32::saturating_abs_diff(a,b) as u64); }
+    if (operation == 118) { return answer_i32(core::i32::checked_clamp(a,b,amount as i32)); }
+    if (operation == 119) { return value(core::i32::clamp_or(a,b,amount as i32,3) as u64); }
+    assert(false); return value(0);
+}
+fn evaluate_u32(operation: i32, raw_a: u64, raw_b: u64, amount: u32) -> Answer {
+    let a: u32 = raw_a as u32; let b: u32 = raw_b as u32;
+    if (operation == 0) { return value(core::u32::wrapping_add(a,b) as u64); }
+    if (operation == 1) { return value(core::u32::wrapping_sub(a,b) as u64); }
+    if (operation == 2) { return value(core::u32::wrapping_mul(a,b) as u64); }
+    if (operation == 3) { return answer_u32(core::u32::checked_add(a,b)); }
+    if (operation == 4) { return answer_u32(core::u32::checked_sub(a,b)); }
+    if (operation == 5) { return answer_u32(core::u32::checked_mul(a,b)); }
+    if (operation == 6) { return value(core::u32::saturating_add(a,b) as u64); }
+    if (operation == 7) { return value(core::u32::saturating_sub(a,b) as u64); }
+    if (operation == 8) { return value(core::u32::saturating_mul(a,b) as u64); }
+    if (operation == 9) { return answer_u32(core::u32::checked_div(a,b)); }
+    if (operation == 10) { return answer_u32(core::u32::checked_rem(a,b)); }
+    if (operation == 11) { return answer_u32(core::u32::checked_div_euclid(a,b)); }
+    if (operation == 12) { return answer_u32(core::u32::checked_rem_euclid(a,b)); }
+    if (operation == 13) { return answer_u32(core::u32::checked_neg(a)); }
+    if (operation == 14) { return value(core::u32::wrapping_neg(a) as u64); }
+    if (operation == 16) { return answer_u32(core::u32::checked_pow(a,amount)); }
+    if (operation == 17) { return value(core::u32::wrapping_pow(a,amount) as u64); }
+    if (operation == 18) { return value(core::u32::saturating_pow(a,amount) as u64); }
+    if (operation == 19) { return answer_u32(core::u32::checked_shl(a,amount)); }
+    if (operation == 20) { return answer_u32(core::u32::checked_shr(a,amount)); }
+    if (operation == 21) { return value(core::u32::wrapping_shl(a,amount) as u64); }
+    if (operation == 22) { return value(core::u32::wrapping_shr(a,amount) as u64); }
+    if (operation == 23) { return value(core::u32::rotate_left(a,amount) as u64); }
+    if (operation == 24) { return value(core::u32::rotate_right(a,amount) as u64); }
+    if (operation == 25) { return value(core::u32::reverse_bits(a) as u64); }
+    if (operation == 26) { return value(core::u32::swap_bytes(a) as u64); }
+    if (operation == 27) { return value(core::u32::count_ones(a) as u64); }
+    if (operation == 28) { return value(core::u32::count_zeros(a) as u64); }
+    if (operation == 29) { return value(core::u32::leading_zeros(a) as u64); }
+    if (operation == 30) { return value(core::u32::trailing_zeros(a) as u64); }
+    if (operation == 31) { return value(core::u32::leading_ones(a) as u64); }
+    if (operation == 32) { return value(core::u32::trailing_ones(a) as u64); }
+    if (operation == 33) { return answer_u32(core::u32::checked_next_power_of_two(a)); }
+    if (operation == 39) { return value(core::u32::abs_diff(a,b) as u64); }
+    if (operation == 40) { return value(core::u32::min(a,b) as u64); }
+    if (operation == 41) { return value(core::u32::max(a,b) as u64); }
+    if (operation == 42) { if (core::u32::is_even(a)) { return value(1); } return value(0); }
+    if (operation == 43) { if (core::u32::is_multiple_of(a,b)) { return value(1); } return value(0); }
+    if (operation == 44) { return answer_i32(core::u32::checked_to_i32(a)); }
+    if (operation == 45) { return answer_u32(core::u32::checked_to_u32(a)); }
+    if (operation == 46) { return answer_u32(core::u32::checked_from_i64(raw_a as i64)); }
+    if (operation == 47) { return answer_u32(core::u32::checked_from_u64(raw_a)); }
+    if (operation == 48) { return value(core::u32::wrapping_div(a,b) as u64); }
+    if (operation == 49) { return value(core::u32::wrapping_rem(a,b) as u64); }
+    if (operation == 50) { return value(core::u32::saturating_div(a,b) as u64); }
+    if (operation == 51) { if (core::u32::is_power_of_two(a)) { return value(1); } return value(0); }
+    if (operation == 52) { return answer_i8(core::u32::checked_to_i8(a)); }
+    if (operation == 53) { return value(core::u32::saturating_to_i8(a) as u64); }
+    if (operation == 54) { return value(core::u32::wrapping_to_i8(a) as u64); }
+    if (operation == 55) { return answer_u8(core::u32::checked_to_u8(a)); }
+    if (operation == 56) { return value(core::u32::saturating_to_u8(a) as u64); }
+    if (operation == 57) { return value(core::u32::wrapping_to_u8(a) as u64); }
+    if (operation == 58) { return answer_i16(core::u32::checked_to_i16(a)); }
+    if (operation == 59) { return value(core::u32::saturating_to_i16(a) as u64); }
+    if (operation == 60) { return value(core::u32::wrapping_to_i16(a) as u64); }
+    if (operation == 61) { return answer_u16(core::u32::checked_to_u16(a)); }
+    if (operation == 62) { return value(core::u32::saturating_to_u16(a) as u64); }
+    if (operation == 63) { return value(core::u32::wrapping_to_u16(a) as u64); }
+    if (operation == 64) { return answer_i32(core::u32::checked_to_i32(a)); }
+    if (operation == 65) { return value(core::u32::saturating_to_i32(a) as u64); }
+    if (operation == 66) { return value(core::u32::wrapping_to_i32(a) as u64); }
+    if (operation == 67) { return answer_u32(core::u32::checked_to_u32(a)); }
+    if (operation == 68) { return value(core::u32::saturating_to_u32(a) as u64); }
+    if (operation == 69) { return value(core::u32::wrapping_to_u32(a) as u64); }
+    if (operation == 70) { return answer_i64(core::u32::checked_to_i64(a)); }
+    if (operation == 71) { return value(core::u32::saturating_to_i64(a) as u64); }
+    if (operation == 72) { return value(core::u32::wrapping_to_i64(a) as u64); }
+    if (operation == 73) { return answer_u64(core::u32::checked_to_u64(a)); }
+    if (operation == 74) { return value(core::u32::saturating_to_u64(a) as u64); }
+    if (operation == 75) { return value(core::u32::wrapping_to_u64(a) as u64); }
+    if (operation == 76) { return answer_isize(core::u32::checked_to_isize(a)); }
+    if (operation == 77) { return value(core::u32::saturating_to_isize(a) as u64); }
+    if (operation == 78) { return value(core::u32::wrapping_to_isize(a) as u64); }
+    if (operation == 79) { return answer_usize(core::u32::checked_to_usize(a)); }
+    if (operation == 80) { return value(core::u32::saturating_to_usize(a) as u64); }
+    if (operation == 81) { return value(core::u32::wrapping_to_usize(a) as u64); }
+    if (operation == 82) { return answer_u32(core::u32::checked_from_i8(raw_a as i8)); }
+    if (operation == 83) { return value(core::u32::saturating_from_i8(raw_a as i8) as u64); }
+    if (operation == 84) { return value(core::u32::wrapping_from_i8(raw_a as i8) as u64); }
+    if (operation == 85) { return answer_u32(core::u32::checked_from_u8(raw_a as u8)); }
+    if (operation == 86) { return value(core::u32::saturating_from_u8(raw_a as u8) as u64); }
+    if (operation == 87) { return value(core::u32::wrapping_from_u8(raw_a as u8) as u64); }
+    if (operation == 88) { return answer_u32(core::u32::checked_from_i16(raw_a as i16)); }
+    if (operation == 89) { return value(core::u32::saturating_from_i16(raw_a as i16) as u64); }
+    if (operation == 90) { return value(core::u32::wrapping_from_i16(raw_a as i16) as u64); }
+    if (operation == 91) { return answer_u32(core::u32::checked_from_u16(raw_a as u16)); }
+    if (operation == 92) { return value(core::u32::saturating_from_u16(raw_a as u16) as u64); }
+    if (operation == 93) { return value(core::u32::wrapping_from_u16(raw_a as u16) as u64); }
+    if (operation == 94) { return answer_u32(core::u32::checked_from_i32(raw_a as i32)); }
+    if (operation == 95) { return value(core::u32::saturating_from_i32(raw_a as i32) as u64); }
+    if (operation == 96) { return value(core::u32::wrapping_from_i32(raw_a as i32) as u64); }
+    if (operation == 97) { return answer_u32(core::u32::checked_from_u32(raw_a as u32)); }
+    if (operation == 98) { return value(core::u32::saturating_from_u32(raw_a as u32) as u64); }
+    if (operation == 99) { return value(core::u32::wrapping_from_u32(raw_a as u32) as u64); }
+    if (operation == 100) { return answer_u32(core::u32::checked_from_i64(raw_a as i64)); }
+    if (operation == 101) { return value(core::u32::saturating_from_i64(raw_a as i64) as u64); }
+    if (operation == 102) { return value(core::u32::wrapping_from_i64(raw_a as i64) as u64); }
+    if (operation == 103) { return answer_u32(core::u32::checked_from_u64(raw_a as u64)); }
+    if (operation == 104) { return value(core::u32::saturating_from_u64(raw_a as u64) as u64); }
+    if (operation == 105) { return value(core::u32::wrapping_from_u64(raw_a as u64) as u64); }
+    if (operation == 106) { return answer_u32(core::u32::checked_from_isize(raw_a as isize)); }
+    if (operation == 107) { return value(core::u32::saturating_from_isize(raw_a as isize) as u64); }
+    if (operation == 108) { return value(core::u32::wrapping_from_isize(raw_a as isize) as u64); }
+    if (operation == 109) { return answer_u32(core::u32::checked_from_usize(raw_a as usize)); }
+    if (operation == 110) { return value(core::u32::saturating_from_usize(raw_a as usize) as u64); }
+    if (operation == 111) { return value(core::u32::wrapping_from_usize(raw_a as usize) as u64); }
+    if (operation == 112) { return value(core::u32::gcd(a,b) as u64); }
+    if (operation == 113) { return answer_u32(core::u32::checked_lcm(a,b)); }
+    if (operation == 114) { return answer_u32(core::u32::checked_align_up(a,b)); }
+    if (operation == 115) { return answer_u32(core::u32::checked_align_down(a,b)); }
+    if (operation == 116) { if (core::u32::is_aligned(a,b)) { return value(1); } return value(0); }
+    if (operation == 118) { return answer_u32(core::u32::checked_clamp(a,b,amount as u32)); }
+    if (operation == 119) { return value(core::u32::clamp_or(a,b,amount as u32,3) as u64); }
+    assert(false); return value(0);
+}
+fn decode(bytes: [u8], offset: i32, count: i32) -> u64 {
+    let result: u64 = 0; let at: i32 = 0;
+    while (at < count) { result |= (bytes[offset+at] as u64) << (at*8); at += 1; }
+    return result;
+}
+fn main() -> i32 {
+    let header: [i32;1] = [0]; let hp: ptr = core::mem::i32_array_data_ptr(header);
+    if (!std::io_checked::read_exact_stdin(hp,4)) { return 1; }
+    let count: i32 = header[0]; if (count < 0 || count > 1000000) { return 2; }
+    let record: [i32;6] = [0;6]; let pointer: ptr = core::mem::i32_array_data_ptr(record);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,24);
+    let output: [i32;3] = [0;3]; let out: ptr = core::mem::i32_array_data_ptr(output);
+    let at: i32 = 0;
+    while (at < count) {
+        if (!std::io_checked::read_exact_stdin(pointer,24)) { return 3; }
+        let kind: i32 = bytes[0] as i32; let operation: i32 = bytes[1] as i32;
+        let a: u64 = decode(bytes,4,8); let b: u64 = decode(bytes,12,8); let amount: u32 = decode(bytes,20,4) as u32;
+        let answer: Answer = value(0);
+        if (kind == 0) { answer = evaluate_i8(operation,a,b,amount); }
+        if (kind == 1) { answer = evaluate_u8(operation,a,b,amount); }
+        if (kind == 2) { answer = evaluate_i16(operation,a,b,amount); }
+        if (kind == 3) { answer = evaluate_u16(operation,a,b,amount); }
+        if (kind == 4) { answer = evaluate_i32(operation,a,b,amount); }
+        if (kind == 5) { answer = evaluate_u32(operation,a,b,amount); }
+        output[0] = 0; if (answer.valid) { output[0] = 1; }
+        output[1] = answer.value as i32; output[2] = (answer.value >> 32) as i32;
+        if (!std::io_checked::write_all_stdout(out,12)) { return 4; }
+        at += 1;
+    }
+    return 0;
+}

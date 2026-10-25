@@ -1,0 +1,78 @@
+// expect: 0
+// Intended runtime gate; currently blocked as described in README.md.
+module app::main;
+import alloc::hash_set;
+import core::option;
+import core::result;
+
+fn populated(mask: u32) -> alloc::hash_set::HashSet<i16> {
+    let set: alloc::hash_set::HashSet<i16> = alloc::hash_set::new();
+    let index: u32 = 0;
+    while (index < 5) {
+        if ((mask & (1 << index)) != 0) {
+            let value: i16 = ((index as i32) - 2) as i16;
+            assert(core::result::unwrap(set.try_insert(value)));
+            assert(!core::result::unwrap(set.try_insert(value)));
+        }
+        index += 1;
+    }
+    return set;
+}
+fn verify(set: &alloc::hash_set::HashSet<i16>, mask: u32) -> bool {
+    let count: i32 = 0;
+    let index: u32 = 0;
+    while (index < 5) {
+        let value: i16 = ((index as i32) - 2) as i16;
+        let present: bool = (mask & (1 << index)) != 0;
+        if (set.contains(value) != present || core::option::is_some(set.get(value)) != present) { return false; }
+        if (present) { count += 1; }
+        index += 1;
+    }
+    if (set.len() != count || set.is_empty() != (count == 0) || set.capacity() < count) { return false; }
+    let iterator: alloc::hash_set::Iter<i16> = set.iter();
+    let seen: u32 = 0;
+    while (true) {
+        let found: core::option::Option<i16> = iterator.next();
+        if (core::option::is_none(found)) { break; }
+        let value: i32 = core::option::unwrap(found) as i32;
+        if (value < -2 || value > 2) { return false; }
+        let bit: u32 = 1 << ((value + 2) as u32);
+        if ((seen & bit) != 0) { return false; }
+        seen |= bit;
+    }
+    return seen == mask && core::option::is_none(iterator.next());
+}
+fn main() -> i32 {
+    let left: u32 = 0;
+    while (left < 32) {
+        let right: u32 = 0;
+        while (right < 32) {
+            let a: alloc::hash_set::HashSet<i16> = populated(left);
+            let b: alloc::hash_set::HashSet<i16> = populated(right);
+            if (!verify(a.borrow(), left) || !verify(b.borrow(), right)) { return 1; }
+            if (a.is_subset(b.borrow()) != ((left & right) == left) ||
+                a.is_disjoint(b.borrow()) != ((left & right) == 0)) { return 2; }
+            let union: alloc::hash_set::HashSet<i16> = core::result::unwrap(a.try_union(b.borrow()));
+            let intersection: alloc::hash_set::HashSet<i16> = core::result::unwrap(a.try_intersection(b.borrow()));
+            let difference: alloc::hash_set::HashSet<i16> = core::result::unwrap(a.try_difference(b.borrow()));
+            let symmetric: alloc::hash_set::HashSet<i16> = core::result::unwrap(a.try_symmetric_difference(b.borrow()));
+            if (!verify(union.borrow(), left | right) || !verify(intersection.borrow(), left & right) ||
+                !verify(difference.borrow(), left & (31 ^ right)) || !verify(symmetric.borrow(), left ^ right)) { return 3; }
+            union.destroy(); intersection.destroy(); difference.destroy(); symmetric.destroy();
+            if (!verify(a.borrow(), left) || !verify(b.borrow(), right)) { return 4; }
+            let copy: alloc::hash_set::HashSet<i16> = core::result::unwrap(a.try_clone());
+            let key: i16 = -2;
+            let removed: core::option::Option<i16> = a.remove(key);
+            if (core::option::is_some(removed) != ((left & 1) != 0) || !verify(a.borrow(), left & 30) ||
+                !verify(copy.borrow(), left)) { return 5; }
+            copy.destroy();
+            a.clear();
+            if (core::result::is_err(a.try_reserve(50)) || a.capacity() < 50) { return 6; }
+            if (core::result::unwrap(a.try_shrink_to_fit()) != 0 || !verify(a.borrow(), 0)) { return 7; }
+            a.destroy(); a.destroy(); b.destroy();
+            right += 1;
+        }
+        left += 1;
+    }
+    return 0;
+}

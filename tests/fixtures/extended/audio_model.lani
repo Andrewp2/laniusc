@@ -1,0 +1,30 @@
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::audio;
+import std::io;
+fn read(pointer:ptr,count:i32,eof:bool)->bool { let done:i32=0;while(done<count){let n:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);assert(n>=0);if(n==0){assert(eof && done==0);return false;}done+=n;}return true; }
+fn write(pointer:ptr,count:i32){let done:i32=0;while(done<count){let n:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);assert(n>0);done+=n;}}
+fn get64(bytes:[u8],at:i32)->u64{let v:u64=0;let i:i32=0;while(i<8){v=v|((bytes[at+i] as u64)<<(8*i));i+=1;}return v;}
+fn code(error:ext::audio::Error)->i32{return match(error){ext::audio::Error::InvalidMetadata ->1,ext::audio::Error::Bounds ->2,ext::audio::Error::Shape ->3,ext::audio::Error::NonFinite ->4,ext::audio::Error::Overflow ->5,ext::audio::Error::AllocationFailed ->6,ext::audio::Error::Limit ->7,ext::audio::Error::Empty ->8,ext::audio::Error::UnsupportedBits ->9};}
+fn number(value:f64){let words:[i32;2]=[0;2];let p:ptr=core::mem::i32_array_data_ptr(words);let ints:[i32]=core::mem::typed_slice_from_raw_parts(p,2);let bits:u64=core::f64::to_bits(value);ints[0]=bits as i32;ints[1]=(bits>>32) as i32;write(p,8);}
+fn main()->i32{
+ let h:[i32;6]=[0;6];let hp:ptr=core::mem::i32_array_data_ptr(h);let hb:[u8]=core::mem::typed_slice_from_raw_parts(hp,24);
+ let words:[i32;32768]=[0;32768];let p:ptr=core::mem::i32_array_data_ptr(words);let raw:[u8]=core::mem::typed_slice_from_raw_parts(p,131072);let x:[f64;8196]=[0.0;8196];let y:[f64;8196]=[0.0;8196];
+ while(read(hp,24,true)){
+  let op:i32=h[0];let n:i32=h[1];let channels:i32=h[2];let rate:u32=h[3] as u32;let factor:f64=core::f64::from_bits(get64(hb,16));assert(n>=0 && n<=8192);assert(read(p,n*16,false));let i:i32=0;while(i<n){x[i+2]=core::f64::from_bits(get64(raw,i*16));y[i+2]=core::f64::from_bits(get64(raw,i*16+8));i+=1;}
+  let v:ext::audio::View=ext::audio::view(core::slice::view_range(x,2,n).unwrap(),channels,rate).unwrap();let right:ext::audio::View=ext::audio::view(core::slice::view_range(y,2,n).unwrap(),channels,rate).unwrap();let status:i32=0;let output:core::result::Result<ext::audio::Buffer,ext::audio::Error> = ext::audio::from_view(v,8192);
+  if(output.is_err()){status=code(output.unwrap_err());}else{
+   let b:ext::audio::Buffer=output.unwrap();let r:core::result::Result<bool,ext::audio::Error> = core::result::Ok(true);
+   if(op==1){r=ext::audio::gain(b.as_view(),factor);}if(op==2){r=ext::audio::clip(b.as_view(),-factor,factor);}
+   if(r.is_err()){status=code(r.unwrap_err());}
+   if(op==3 || op==4){let created:core::result::Result<ext::audio::Buffer,ext::audio::Error> = core::result::Err(ext::audio::Error::Shape);if(op==3){created=ext::audio::mono(b.as_view(),8192);}else{created=ext::audio::mix(b.as_view(),right,factor,8192);}if(created.is_err()){status=code(created.unwrap_err());}else{b.destroy();b=created.unwrap();}}
+   let header:[i32;3]=[0;3];header[0]=status;header[1]=b.channels;header[2]=b.samples.len();write(core::mem::i32_array_data_ptr(header),12);i=0;while(i<b.samples.len()){number(b.samples.at(i));i+=1;}
+   i=0;while(i<b.channels){let m:core::result::Result<ext::audio::Metrics,ext::audio::Error> = ext::audio::metrics(b.as_view(),i);if(m.is_err()){number(-1.0);number(-1.0);number(-1.0);}else{let stats:ext::audio::Metrics=m.unwrap();number(stats.peak);number(stats.rms);number(stats.dc);}i+=1;}b.destroy();continue;
+  }
+  let header:[i32;3]=[0;3];header[0]=status;header[1]=0;header[2]=0;write(core::mem::i32_array_data_ptr(header),12);
+ }return 0;
+}

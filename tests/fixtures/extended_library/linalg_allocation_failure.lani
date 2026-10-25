@@ -1,0 +1,28 @@
+module app::main;
+import core::mem;
+import core::result;
+import ext::linalg;
+import std::io;
+fn failed(error: ext::linalg::Error) { assert(match (error) { ext::linalg::Error::AllocationFailed -> true, _ -> false }); }
+fn clean(result: core::result::Result<ext::linalg::Matrix,ext::linalg::Error>) { if (result.is_err()) { failed(result.unwrap_err()); } else { let value: ext::linalg::Matrix = result.unwrap(); value.destroy(); } }
+fn main() -> i32 {
+ let words: [i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(words),1) == 1); let op: i32 = words[0]&255;
+ let limits: ext::linalg::Limits = ext::linalg::default_limits(); let data: [f64;9] = [0.0,2.0,1.0,1.0,1.0,0.0,2.0,0.0,1.0]; let source: ext::linalg::MatrixView = core::result::unwrap(ext::linalg::row_major(data,9,3,3));
+ let first: core::result::Result<ext::linalg::Matrix,ext::linalg::Error> = ext::linalg::from_view(source,limits); if (first.is_err()) { failed(first.unwrap_err()); return 0; } let a: ext::linalg::Matrix = first.unwrap();
+ if (op == 0) { clean(a.try_clone(limits)); }
+ if (op == 1) { clean(a.transpose(limits)); }
+ if (op == 2) { clean(ext::linalg::add(a.view(),a.view(),limits)); }
+ if (op == 3) { clean(ext::linalg::sub(a.view(),a.view(),limits)); }
+ if (op == 4) { clean(ext::linalg::scale(a.view(),2.0,limits)); }
+ if (op == 5) { clean(ext::linalg::matmul(a.view(),a.view(),limits)); }
+ if (op == 6) { let result: core::result::Result<ext::linalg::Lu,ext::linalg::Error> = ext::linalg::lu(a.view(),0.0,limits); if (result.is_err()) { failed(result.unwrap_err()); } else { let factor: ext::linalg::Lu = result.unwrap(); factor.destroy(); } }
+ if (op == 7) { clean(ext::linalg::solve(a.view(),a.view(),0.0,limits)); }
+ if (op == 8) { clean(ext::linalg::inverse(a.view(),0.0,limits)); }
+ if (op == 9) { let result: core::result::Result<f64,ext::linalg::Error> = ext::linalg::determinant(a.view(),0.0,limits); if (result.is_err()) { failed(result.unwrap_err()); } else { assert(result.unwrap() == -4.0); } }
+ if (op == 10) { let result: core::result::Result<ext::linalg::Qr,ext::linalg::Error> = ext::linalg::qr(a.view(),0.0,limits); if (result.is_err()) { failed(result.unwrap_err()); } else { let factor: ext::linalg::Qr = result.unwrap(); factor.destroy(); } }
+ if (op == 11) { clean(ext::linalg::least_squares(a.view(),a.view(),0.0,limits)); }
+ if (op >= 12 && op <= 14) { let result: core::result::Result<ext::linalg::Qr,ext::linalg::Error> = ext::linalg::qr(a.view(),0.0,limits); if (result.is_err()) { failed(result.unwrap_err()); } else { let factor: ext::linalg::Qr = result.unwrap(); if (op == 12) { clean(factor.apply_q(a.view(),limits)); } if (op == 13) { clean(factor.apply_q_transpose(a.view(),limits)); } if (op == 14) { clean(factor.least_squares(a.view(),limits)); } assert(core::result::unwrap(factor.packed().get(0,0)) != 0.0); factor.destroy(); } }
+ if (op == 15) { clean(ext::linalg::identity(3,limits)); }
+ if (op == 16 || op == 17) { let result: core::result::Result<ext::linalg::Lu,ext::linalg::Error> = ext::linalg::lu(a.view(),0.0,limits); if (result.is_err()) { failed(result.unwrap_err()); } else { let factor: ext::linalg::Lu = result.unwrap(); if (op == 16) { clean(factor.solve(a.view(),limits)); } else { clean(factor.inverse(limits)); } assert(core::result::unwrap(factor.determinant()) == -4.0); factor.destroy(); } }
+ assert(core::result::unwrap(a.get(0,0)) == 0.0 && core::result::unwrap(a.get(2,2)) == 1.0 && data[0] == 0.0 && data[8] == 1.0); a.destroy(); return 0;
+}

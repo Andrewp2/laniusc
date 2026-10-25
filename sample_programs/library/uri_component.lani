@@ -1,0 +1,94 @@
+// Extract one URI-reference component. Default output preserves encoded bytes;
+// --decode decodes percent triplets once and may write NUL or non-UTF-8 bytes.
+// Exit 0: present (including empty), 1: absent, 2: arguments/syntax/limits,
+// 3: output I/O, 4: allocation. Output has no added newline or terminator.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::percent;
+import ext::uri;
+import std::args;
+import std::stream;
+
+struct Options { decode: bool, help: bool, field: i32, uri: core::option::Option<core::slice::View<u8>> }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; } let index: i32 = 0;
+    while (index < left.len()) { if (core::option::unwrap(left.get(index)) != core::option::unwrap(right.get(index))) { return false; } index += 1; } return true;
+}
+fn field(bytes: core::slice::View<u8>) -> i32 {
+    if (equal(bytes,literal("scheme",6))) { return 1; }
+    if (equal(bytes,literal("authority",9))) { return 2; }
+    if (equal(bytes,literal("userinfo",8))) { return 3; }
+    if (equal(bytes,literal("host",4))) { return 4; }
+    if (equal(bytes,literal("port",4))) { return 5; }
+    if (equal(bytes,literal("path",4))) { return 6; }
+    if (equal(bytes,literal("query",5))) { return 7; }
+    if (equal(bytes,literal("fragment",8))) { return 8; } return 0;
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool { if (item.id == 1) { options.decode = true; } else { options.help = true; } return true; }
+fn operand(options: &Options, item: ext::cli::Argument) -> bool {
+    if (options.field == 0) { options.field = field(item.bytes); return options.field != 0; }
+    if (core::option::is_some(options.uri)) { return false; } options.uri = core::option::Some(item.bytes); return true;
+}
+fn component(reference: ext::uri::Reference, selected: i32) -> core::option::Option<core::slice::View<u8>> {
+    if (selected == 1) { return reference.scheme; }
+    if (selected == 6) { return core::option::Some(reference.path); }
+    if (selected == 7) { return reference.query; }
+    if (selected == 8) { return reference.fragment; }
+    if (core::option::is_none(reference.authority)) { return core::option::None(); }
+    let authority: ext::uri::Authority = core::option::unwrap(reference.authority);
+    if (selected == 2) { return core::option::Some(authority.raw); }
+    if (selected == 3) { return authority.userinfo; }
+    if (selected == 4) { return core::option::Some(authority.host); } return authority.port;
+}
+fn output(bytes: core::slice::View<u8>, decode: bool) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (!decode) { if (core::result::is_err(core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.len()))) { return 3; } return 0; }
+    let measured: core::result::Result<i32, ext::percent::Error> = ext::percent::decoded_len(bytes);
+    if (core::result::is_err(measured)) { return 2; }
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (core::result::is_err(storage.try_resize(core::result::unwrap(measured),0))) { return 4; }
+    let decoded: core::result::Result<i32, ext::percent::Error> = ext::percent::decode_into(bytes,storage.as_view());
+    if (core::result::is_err(decoded)) { storage.destroy(); return 2; }
+    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(sink.borrow(),storage.as_slice(),0,core::result::unwrap(decoded));
+    storage.destroy(); if (core::result::is_err(written)) { return 3; } return 0;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec; 2] = [
+        ext::cli::Spec { id: 1, long: literal("decode",6), short: 100, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,2));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { decode: false, help: false, field: 0, uri: core::option::None() };
+    while (true) {
+        let result: core::result::Result<core::option::Option<ext::cli::Event>, ext::cli::Error> = parser.next();
+        if (core::result::is_err(result)) { return 2; } let next: core::option::Option<ext::cli::Event> = core::result::unwrap(result);
+        if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) };
+        if (!valid) { return 2; }
+    }
+    if (options.help) {
+        return output(literal("Usage: uri-component [--decode] [--] FIELD URI\nFields: scheme authority userinfo host port path query fragment\n",111),false);
+    }
+    if (options.field == 0 || core::option::is_none(options.uri)) { return 2; }
+    let parsed: core::result::Result<ext::uri::Reference, ext::uri::Error> = ext::uri::parse(core::option::unwrap(options.uri));
+    if (core::result::is_err(parsed)) { return 2; }
+    let selected: core::option::Option<core::slice::View<u8>> = component(core::result::unwrap(parsed),options.field);
+    if (core::option::is_none(selected)) { return 1; } return output(core::option::unwrap(selected),options.decode);
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1,16,65536);
+    if (core::result::is_err(captured)) { let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; return status; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured); let status: i32 = process(arguments); arguments.destroy(); return status;
+}

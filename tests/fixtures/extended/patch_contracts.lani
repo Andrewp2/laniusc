@@ -1,0 +1,27 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::slice;
+import core::result;
+import ext::diff;
+import ext::patch;
+fn bytes(text:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn code(error:ext::patch::Error) -> i32 { return match(error.kind) {ext::patch::ErrorKind::Bounds -> 1,ext::patch::ErrorKind::InvalidLimits -> 2,ext::patch::ErrorKind::Malformed -> 3,ext::patch::ErrorKind::Unsupported -> 4,ext::patch::ErrorKind::Conflict -> 5,ext::patch::ErrorKind::LineLimit -> 6,ext::patch::ErrorKind::WorkLimit -> 7,ext::patch::ErrorKind::OutputLimit -> 8,_ -> 9}; }
+fn main() -> i32 {
+ let limits:ext::diff::Limits=ext::diff::default_limits(); let source:core::slice::View<u8> = bytes("--- a\n+++ b\n@@ -1 +1 @@\n-a\n+b\n",30);
+ let p:ext::patch::Patch=core::result::unwrap(ext::patch::parse(source,limits)); assert(p.hunk_count()==1 && p.line_count()==2); let h:ext::patch::Hunk=core::result::unwrap(p.hunk(0)); assert(h.before==0 && h.after==0 && h.before_count==1 && h.after_count==1); assert(core::result::is_err(p.hunk(1)));
+ // Base and patch payload borrow the same backing bytes.
+ let aliased:core::slice::View<u8> = core::result::unwrap(source.subview(25,27)); let applied:alloc::vec::Vec<u8> = core::result::unwrap(ext::patch::apply(aliased,p.borrow(),limits)); assert(applied.len()==2 && applied.at(0)==98 && applied.at(1)==10); applied.destroy();
+ let conflict:ext::patch::Error=core::result::unwrap_err(ext::patch::apply(bytes("z\n",2),p.borrow(),limits)); assert(code(conflict)==5 && conflict.offset==0);
+ limits.max_output=1; assert(code(core::result::unwrap_err(ext::patch::apply(bytes("a\n",2),p.borrow(),limits)))==8); limits=ext::diff::default_limits();
+ limits.max_work=1; assert(code(core::result::unwrap_err(ext::patch::apply(bytes("a\n",2),p.borrow(),limits)))==7); assert(code(core::result::unwrap_err(ext::patch::parse(source,limits)))==7); limits=ext::diff::default_limits();
+ limits.max_lines=0; assert(code(core::result::unwrap_err(ext::patch::parse(source,limits)))==6); assert(code(core::result::unwrap_err(ext::patch::apply(bytes("a\n",2),p.borrow(),limits)))==6); limits=ext::diff::default_limits();
+ limits.max_edits=1; assert(code(core::result::unwrap_err(ext::patch::parse(source,limits)))==6); limits=ext::diff::default_limits(); p.destroy(); p.destroy();
+ let bad:core::slice::View<u8> = bytes("",0); bad.length=-1; assert(code(core::result::unwrap_err(ext::patch::parse(bad,limits)))==1); bad.length=1; bad.start=-1; assert(code(core::result::unwrap_err(ext::patch::apply_unified(bad,bytes("",0),limits)))==1); bad.start=2147483647; assert(code(core::result::unwrap_err(ext::patch::parse(bad,limits)))==1);
+ let empty:ext::patch::Patch=core::result::unwrap(ext::patch::parse(bytes("",0),limits)); limits.max_work=4; assert(code(core::result::unwrap_err(ext::patch::apply(bytes("a\n",2),empty.borrow(),limits)))==7); limits.max_work=5; let copied:alloc::vec::Vec<u8> = core::result::unwrap(ext::patch::apply(bytes("a\n",2),empty.borrow(),limits)); assert(copied.len()==2); copied.destroy(); limits=ext::diff::default_limits();
+ limits.max_output=1; assert(code(core::result::unwrap_err(ext::patch::apply(bytes("a\n",2),empty.borrow(),limits)))==8); limits=ext::diff::default_limits(); empty.destroy();
+ assert(code(core::result::unwrap_err(ext::patch::parse(bytes("--- a\n+++ b\n",12),limits)))==3);
+ // A missing LF marks the final line of that side, even across hunks.
+ let extra:core::slice::View<u8> = bytes("--- a\n+++ b\n@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b\n@@ -1,0 +2 @@\n+c\n",75);
+ let inserted:alloc::vec::Vec<u8> = core::result::unwrap(ext::patch::apply_unified(bytes("a",1),extra,limits)); assert(inserted.len()==4 && inserted.at(2)==99); inserted.destroy(); return 0;
+}

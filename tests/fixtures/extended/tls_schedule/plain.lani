@@ -1,0 +1,14 @@
+// Ordinary imported use without projecting either module's Error enum.
+module app::main;
+import core::result; import core::slice; import core::sha256;
+import ext::tls_schedule; import ext::tls_transcript;
+fn main()->i32{
+ let client:[u8;4]=[1,0,0,0];let server:[u8;4]=[2,0,0,0];let shared:[u8;32]=[7;32];
+ let transcript:ext::tls_transcript::State=ext::tls_transcript::new();core::result::unwrap(transcript.update(core::slice::View{values:client,start:0,length:4}));let first:core::sha256::Digest=transcript.snapshot();
+ let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk();let early_traffic:ext::tls_schedule::Secret=core::result::unwrap(early.traffic(core::slice::View{values:first.bytes,start:0,length:32}));
+ core::result::unwrap(transcript.update(core::slice::View{values:server,start:0,length:4}));let hash:core::sha256::Digest=transcript.snapshot();
+ let handshake:ext::tls_schedule::Handshake=core::result::unwrap(early.handshake(core::slice::View{values:shared,start:0,length:32}));let secret:ext::tls_schedule::Secret=core::result::unwrap(handshake.traffic(ext::tls_schedule::Side::Server,core::slice::View{values:hash.bytes,start:0,length:32}));
+ let finished:ext::tls_schedule::Secret=core::result::unwrap(ext::tls_schedule::finished(secret.view(),core::slice::View{values:hash.bytes,start:0,length:32}));assert(core::result::unwrap(ext::tls_schedule::verify_finished(secret.view(),core::slice::View{values:hash.bytes,start:0,length:32},finished.view())));
+ let master:ext::tls_schedule::Master=handshake.master();let application:ext::tls_schedule::Secret=core::result::unwrap(master.traffic(ext::tls_schedule::Side::Client,core::slice::View{values:hash.bytes,start:0,length:32}));
+ assert(transcript.messages()==2&&!transcript.used_hrr());let difference:u32=0;let i:i32=0;while(i<32){difference|=(application.bytes[i]^early_traffic.bytes[i]) as u32;i+=1;}assert(difference!=0);return 0;
+}

@@ -1,0 +1,11 @@
+// expect: 42
+// Compiler dependency: the fallback arm currently reports LNC0005.
+module app::main;
+enum Error { LimitExceeded(i32), Other }
+fn inspect(error: Error) -> bool {
+    return match (error) { LimitExceeded(_) -> true, _ -> false };
+}
+fn main() -> i32 {
+    if (inspect(Error::LimitExceeded(3))) { return 42; }
+    return 1;
+}

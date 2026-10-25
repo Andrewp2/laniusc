@@ -1,0 +1,480 @@
+// TOML 1.1.0 owned documents. See docs/extended-toml.md.
+module ext::toml;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::option;
+import core::text;
+import core::utf8;
+import core::slice;
+import core::f64;
+import core::float_decimal;
+import core::calendar;
+import core::mem;
+
+pub type NodeId = i32;
+pub enum Kind { Table, Array, String, Integer, Float, Boolean, OffsetDateTime, LocalDateTime, LocalDate, LocalTime }
+pub enum ErrorKind {
+    UnexpectedEnd, UnexpectedByte, InvalidUtf8, InvalidEscape, InvalidNumber,
+    InvalidDateTime, NumberOutOfRange, DuplicateKey, TableRedefinition,
+    InputLimit, NodeLimit, DepthLimit, StringLimit, NumberLimit, OutputLimit,
+    WorkLimit, AllocationFailed, InvalidOptions, Bounds, WrongKind,
+}
+pub struct Error { kind: ErrorKind, offset: i32 }
+pub struct Options {
+    max_input_bytes: i32, max_nodes: i32, max_depth: i32, max_string_bytes: i32,
+    max_number_bytes: i32, max_output_bytes: i32, max_work: u64,
+}
+pub fn default_options() -> Options {
+    return Options { max_input_bytes: 16777216, max_nodes: 1000000, max_depth: 128,
+        max_string_bytes: 16777216, max_number_bytes: 1024, max_output_bytes: 67108864, max_work: 1000000000 };
+}
+fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
+fn literal(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::text::from_utf8_unchecked(bytes,0,count); }
+pub fn error_kind_text(value: ErrorKind) -> core::text::Text { return match (value) {
+    UnexpectedEnd -> literal("unexpected end",14),
+    UnexpectedByte -> literal("unexpected byte",15),
+    InvalidUtf8 -> literal("invalid utf-8",13),
+    InvalidEscape -> literal("invalid escape",14),
+    InvalidNumber -> literal("invalid number",14),
+    InvalidDateTime -> literal("invalid date/time",17),
+    NumberOutOfRange -> literal("number out of range",19),
+    DuplicateKey -> literal("duplicate key",13),
+    TableRedefinition -> literal("table redefinition",18),
+    InputLimit -> literal("input limit",11),
+    NodeLimit -> literal("node limit",10),
+    DepthLimit -> literal("depth limit",11),
+    StringLimit -> literal("string limit",12),
+    NumberLimit -> literal("number limit",12),
+    OutputLimit -> literal("output limit",12),
+    WorkLimit -> literal("work limit",10),
+    AllocationFailed -> literal("allocation failed",17),
+    InvalidOptions -> literal("invalid options",15),
+    Bounds -> literal("bounds",6),
+    WrongKind -> literal("wrong kind",10),
+}; }
+fn tag(kind: Kind) -> i32 { return match (kind) { Table -> 0, Array -> 1, String -> 2, Integer -> 3, Float -> 4, Boolean -> 5, OffsetDateTime -> 6, LocalDateTime -> 7, LocalDate -> 8, LocalTime -> 9 }; }
+fn valid_options(o: Options) -> bool { return o.max_input_bytes >= 0 && o.max_nodes >= 0 && o.max_depth >= 0 && o.max_string_bytes >= 0 && o.max_number_bytes >= 0 && o.max_output_bytes >= 0; }
+struct Node {
+    kind: Kind, key: alloc::string::String, text: alloc::string::String,
+    integer: i64, floating: f64, flag: bool, parent: NodeId, first: NodeId,
+    last: NodeId, next: NodeId, count: i32, depth: i32, state: i32, context: NodeId,
+}
+pub struct Temporal {
+    date: core::option::Option<core::calendar::Date>,
+    time: core::option::Option<core::calendar::TimeOfDay>,
+    offset: core::option::Option<core::calendar::UtcOffset>,
+    fraction: core::text::Text,
+}
+pub struct Document { nodes: alloc::vec::Vec<Node>, options: Options }
+pub impl Document {
+    pub fn borrow(&self) -> &Document { return self; }
+    fn valid(&self, id: NodeId) -> bool { return id >= 0 && id < self.nodes.len(); }
+    fn node(&self, id: NodeId) -> Node { let values: [Node] = self.nodes.as_slice(); return values[id]; }
+    fn put(&self, id: NodeId, node: Node) { let values: [Node] = self.nodes.as_slice(); values[id] = node; }
+    pub fn node_count(&self) -> i32 { return self.nodes.len(); }
+    pub fn root(&self) -> core::option::Option<NodeId> { if (self.nodes.is_empty()) { return core::option::None(); } return core::option::Some(0); }
+    pub fn kind(&self, id: NodeId) -> core::result::Result<Kind,Error> { if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } return core::result::Ok(self.node(id).kind); }
+    pub fn child_count(&self, id: NodeId) -> core::result::Result<i32,Error> { if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (tag(n.kind) > 1) { return core::result::Err(error(ErrorKind::WrongKind,-1)); } return core::result::Ok(n.count); }
+    pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>,Error> {
+        let checked: core::result::Result<i32,Error> = self.child_count(id); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let n: Node = self.node(id); if (n.first < 0) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(n.first));
+    }
+    pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>,Error> { if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (n.next < 0) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(n.next)); }
+    pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::option::Option<NodeId>,Error> {
+        if (!self.valid(id) || index < 0) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (tag(n.kind) != 1) { return core::result::Err(error(ErrorKind::WrongKind,-1)); }
+        let child: NodeId = n.first; let i: i32 = 0; while (i < index && child >= 0) { child = self.node(child).next; i += 1; } if (child < 0) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(child));
+    }
+    pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Result<core::option::Option<NodeId>,Error> { return self.member_text(id,key.as_text()); }
+    pub fn member_text(&self, id: NodeId, key: core::text::Text) -> core::result::Result<core::option::Option<NodeId>,Error> {
+        if (key.start < 0 || key.length < 0 || key.start > 2147483647-key.length) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (tag(n.kind) != 0) { return core::result::Err(error(ErrorKind::WrongKind,-1)); }
+        let child: NodeId = n.first; while (child >= 0) { let c: Node = self.node(child); let name: core::text::Text = c.key.as_text(); if (name.equals(key)) { return core::result::Ok(core::option::Some(child)); } child = c.next; } return core::result::Ok(core::option::None());
+    }
+    pub fn key_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (n.parent < 0 || tag(self.node(n.parent).kind) != 0) { return core::result::Err(error(ErrorKind::WrongKind,-1)); } return core::result::Ok(n.key.as_text());
+    }
+    fn view(&self, id: NodeId, mode: i32) -> core::result::Result<core::text::Text,Error> {
+        if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); let k: i32 = tag(n.kind);
+        if ((mode == 0 && k != 2) || (mode == 1 && k != 3 && k != 4) || (mode == 2 && k < 6)) { return core::result::Err(error(ErrorKind::WrongKind,-1)); } return core::result::Ok(n.text.as_text());
+    }
+    pub fn string_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error> { return self.view(id,0); }
+    pub fn number_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error> { return self.view(id,1); }
+    pub fn temporal_view(&self, id: NodeId) -> core::result::Result<core::text::Text,Error> { return self.view(id,2); }
+    // Calendar nanoseconds truncate after nine digits; fraction retains every digit.
+    pub fn temporal(&self, id: NodeId) -> core::result::Result<Temporal,Error> {
+        let viewed: core::result::Result<core::text::Text,Error> = self.temporal_view(id); if (core::result::is_err(viewed)) { return core::result::Err(core::result::unwrap_err(viewed)); }
+        return core::result::Ok(temporal_parts(core::result::unwrap(viewed)));
+    }
+    pub fn integer_i64(&self, id: NodeId) -> core::result::Result<i64,Error> { if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (tag(n.kind) != 3) { return core::result::Err(error(ErrorKind::WrongKind,-1)); } return core::result::Ok(n.integer); }
+    pub fn float64(&self, id: NodeId) -> core::result::Result<f64,Error> { if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (tag(n.kind) != 4) { return core::result::Err(error(ErrorKind::WrongKind,-1)); } return core::result::Ok(n.floating); }
+    pub fn boolean(&self, id: NodeId) -> core::result::Result<bool,Error> { if (!self.valid(id)) { return core::result::Err(error(ErrorKind::Bounds,-1)); } let n: Node = self.node(id); if (tag(n.kind) != 5) { return core::result::Err(error(ErrorKind::WrongKind,-1)); } return core::result::Ok(n.flag); }
+    fn copied(&self, id: NodeId, mode: i32) -> core::result::Result<alloc::string::String,Error> {
+        let viewed: core::result::Result<core::text::Text,Error> = self.view(id,mode); if (core::result::is_err(viewed)) { return core::result::Err(core::result::unwrap_err(viewed)); }
+        let made: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_text(core::result::unwrap(viewed)); if (core::result::is_err(made)) { return core::result::Err(error(ErrorKind::AllocationFailed,-1)); } return core::result::Ok(core::result::unwrap(made));
+    }
+    pub fn copy_string(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error> { return self.copied(id,0); }
+    pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error> { return self.copied(id,1); }
+    pub fn copy_temporal(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error> { return self.copied(id,2); }
+    pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String,Error> {
+        let viewed: core::result::Result<core::text::Text,Error> = self.key_view(id); if (core::result::is_err(viewed)) { return core::result::Err(core::result::unwrap_err(viewed)); }
+        let made: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_text(core::result::unwrap(viewed)); if (core::result::is_err(made)) { return core::result::Err(error(ErrorKind::AllocationFailed,-1)); } return core::result::Ok(core::result::unwrap(made));
+    }
+    pub fn destroy(&self) { let i: i32 = 0; while (i < self.nodes.len()) { let n: Node = self.node(i); n.key.destroy(); n.text.destroy(); i += 1; } self.nodes.destroy(); self.nodes = alloc::vec::new(); }
+}
+
+fn digit(b: u8) -> bool { return b >= 48 && b <= 57; }
+fn bare(b: u8) -> bool { return digit(b) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b == 45 || b == 95; }
+fn hex(b: u8) -> i32 { if (digit(b)) { return (b-48) as i32; } if (b >= 65 && b <= 70) { return (b-55) as i32; } if (b >= 97 && b <= 102) { return (b-87) as i32; } return -1; }
+fn horizontal(b: u8) -> bool { return b == 32 || b == 9; }
+fn delim(b: u8) -> bool { return horizontal(b) || b == 10 || b == 13 || b == 35 || b == 44 || b == 93 || b == 125; }
+struct Buffer { value: alloc::string::String }
+impl Buffer { fn borrow(&self) -> &Buffer { return self; } }
+struct Frame { node: NodeId, phase: i32 }
+struct Target { parent: NodeId, key: alloc::string::String }
+struct Parser { input: alloc::string::String, document: Document, frames: alloc::vec::Vec<Frame>, position: i32, failure: Error, work: u64 }
+impl Parser {
+    fn fail(&self, kind: ErrorKind, offset: i32) -> bool { self.failure = error(kind,offset); return false; }
+    fn pay(&self, amount: u64) -> bool { if (amount > self.work) { return self.fail(ErrorKind::WorkLimit,self.position); } self.work -= amount; return true; }
+    fn byte(&self) -> u8 { if (self.position >= self.input.byte_len()) { return 0; } let b: [u8] = self.input.as_bytes(); return b[self.position]; }
+    fn advance(&self) -> bool { if (!self.pay(1)) { return false; } self.position += 1; return true; }
+    fn hspace(&self) -> bool { while (self.position < self.input.byte_len() && horizontal(self.byte())) { if (!self.advance()) { return false; } } return true; }
+    fn newline(&self) -> bool {
+        if (self.byte() == 13) { if (!self.advance()) { return false; } if (self.position >= self.input.byte_len() || self.byte() != 10) { return self.fail(ErrorKind::UnexpectedByte,self.position); } }
+        if (self.position >= self.input.byte_len() || self.byte() != 10) { return self.fail(ErrorKind::UnexpectedByte,self.position); } return self.advance();
+    }
+    fn comment(&self) -> bool {
+        while (self.position < self.input.byte_len() && self.byte() != 10 && self.byte() != 13) { let b: u8 = self.byte(); if ((b < 32 && b != 9) || b == 127) { return self.fail(ErrorKind::UnexpectedByte,self.position); } if (!self.advance()) { return false; } } return true;
+    }
+    fn trivia(&self) -> bool {
+        while (self.position < self.input.byte_len()) { if (!self.hspace()) { return false; } if (self.position >= self.input.byte_len()) { break; } if (self.byte() == 35) { if (!self.comment()) { return false; } } if (self.position < self.input.byte_len() && (self.byte() == 10 || self.byte() == 13)) { if (!self.newline()) { return false; } } else { break; } } return true;
+    }
+    fn push_scalar(&self, text: &Buffer, scalar: u32) -> bool {
+        let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32; if (width == 0) { return self.fail(ErrorKind::InvalidEscape,self.position); }
+        if (width > self.document.options.max_string_bytes-text.value.byte_len()) { return self.fail(ErrorKind::StringLimit,self.position); }
+        if (core::result::is_err(text.value.try_push_scalar(scalar))) { return self.fail(ErrorKind::AllocationFailed,self.position); } return true;
+    }
+    fn quoted(&self, key: bool) -> core::result::Result<alloc::string::String,Error> {
+        self.failure = error(ErrorKind::UnexpectedEnd,self.input.byte_len());
+        let text: Buffer = Buffer { value: alloc::string::new() }; let quote: u8 = self.byte(); let bytes: [u8] = self.input.as_bytes(); let length: i32 = self.input.byte_len(); let multiline: bool = false;
+        if (!self.advance()) { return core::result::Err(self.failure); }
+        if (self.position+1 < length && bytes[self.position] == quote && bytes[self.position+1] == quote) { multiline = true; if (key) { self.fail(ErrorKind::UnexpectedByte,self.position); return core::result::Err(self.failure); } if (!self.pay(2)) { return core::result::Err(self.failure); } self.position += 2; if (self.position < length && (self.byte() == 10 || self.byte() == 13)) { if (!self.newline()) { return core::result::Err(self.failure); } } }
+        let success: bool = false;
+        while (self.position < length) {
+            let b: u8 = self.byte();
+            if (b == quote) {
+                let count: i32 = 1; while (self.position+count < length && bytes[self.position+count] == quote && count < 6) { count += 1; }
+                if (!multiline) { self.advance(); success = true; break; }
+                if (count >= 3) { if (count > 5) { self.fail(ErrorKind::UnexpectedByte,self.position); break; } let i: i32 = 3; while (i < count) { if (!self.push_scalar(text.borrow(),quote as u32)) { break; } i += 1; } if (i != count || !self.pay(count as u64)) { break; } self.position += count; success = true; break; }
+            }
+            if (b == 10 || b == 13) { if (!multiline) { self.fail(ErrorKind::UnexpectedByte,self.position); break; } if (!self.newline() || !self.push_scalar(text.borrow(),10)) { break; } continue; }
+            if ((b < 32 && b != 9) || b == 127) { self.fail(ErrorKind::UnexpectedByte,self.position); break; }
+            let scalar: u32 = 0;
+            if (quote == 34 && b == 92) {
+                if (!self.advance()) { break; } if (self.position >= length) { self.fail(ErrorKind::UnexpectedEnd,self.position); break; }
+                if (multiline && (horizontal(self.byte()) || self.byte() == 10 || self.byte() == 13)) {
+                    if (!self.hspace() || !self.newline()) { break; } let ok: bool = true;
+                    while (self.position < length) { if (horizontal(self.byte())) { if (!self.advance()) { ok = false; break; } } else { if (self.byte() == 10 || self.byte() == 13) { if (!self.newline()) { ok = false; break; } } else { break; } } }
+                    if (!ok) { break; } continue;
+                }
+                let escaped: u8 = self.byte(); if (!self.advance()) { break; } scalar = 4294967295;
+                if (escaped == 34 || escaped == 92) { scalar = escaped as u32; } if (escaped == 98) { scalar = 8; } if (escaped == 116) { scalar = 9; } if (escaped == 110) { scalar = 10; } if (escaped == 102) { scalar = 12; } if (escaped == 114) { scalar = 13; } if (escaped == 101) { scalar = 27; }
+                let count: i32 = 0; if (escaped == 120) { count = 2; } if (escaped == 117) { count = 4; } if (escaped == 85) { count = 8; }
+                if (count > 0) { scalar = 0; let i: i32 = 0; while (i < count) { if (self.position >= length) { self.fail(ErrorKind::UnexpectedEnd,self.position); break; } let d: i32 = hex(self.byte()); if (d < 0) { self.fail(ErrorKind::InvalidEscape,self.position); break; } scalar = scalar*16+(d as u32); if (!self.advance()) { break; } i += 1; } if (i != count) { break; } }
+                if (scalar == 4294967295 || !core::utf8::is_scalar(scalar)) { self.fail(ErrorKind::InvalidEscape,self.position); break; }
+            } else { scalar = core::option::unwrap_or(self.input.scalar_at_byte(self.position),4294967295); let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32; if (width == 0) { self.fail(ErrorKind::InvalidUtf8,self.position); break; } if (!self.pay(width as u64)) { break; } self.position += width; }
+            if (!self.push_scalar(text.borrow(),scalar)) { break; }
+        }
+        if (success) { return core::result::Ok(text.value); } text.value.destroy(); return core::result::Err(self.failure);
+    }
+    fn simple_key(&self) -> core::result::Result<alloc::string::String,Error> {
+        if (self.position >= self.input.byte_len()) { return core::result::Err(error(ErrorKind::UnexpectedEnd,self.position)); }
+        if (self.byte() == 34 || self.byte() == 39) { return self.quoted(true); } let start: i32 = self.position;
+        while (self.position < self.input.byte_len() && bare(self.byte())) { if (!self.advance()) { return core::result::Err(self.failure); } }
+        if (start == self.position) { return core::result::Err(error(ErrorKind::UnexpectedByte,start)); } if (self.position-start > self.document.options.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit,start)); }
+        let made: core::result::Result<alloc::string::String,alloc::string::Error> = self.input.try_substring(start,self.position); if (core::result::is_err(made)) { return core::result::Err(error(ErrorKind::AllocationFailed,start)); } return core::result::Ok(core::result::unwrap(made));
+    }
+    // Consumes key/text, including on failure.
+    fn insert(&self, parent: NodeId, key: alloc::string::String, kind: Kind, text: alloc::string::String, state: i32, context: NodeId) -> NodeId {
+        if (!self.pay(1)) { key.destroy(); text.destroy(); return -1; } let depth: i32 = 0; if (parent >= 0) { depth = self.document.node(parent).depth+1; }
+        if (depth > self.document.options.max_depth) { key.destroy(); text.destroy(); self.fail(ErrorKind::DepthLimit,self.position); return -1; }
+        if (self.document.nodes.len() >= self.document.options.max_nodes) { key.destroy(); text.destroy(); self.fail(ErrorKind::NodeLimit,self.position); return -1; }
+        let node: Node = Node { kind: kind, key: key, text: text, integer: 0, floating: 0.0, flag: false, parent: parent, first: -1, last: -1, next: -1, count: 0, depth: depth, state: state, context: context };
+        let id: NodeId = self.document.nodes.len(); if (core::result::is_err(self.document.nodes.try_push(node))) { key.destroy(); text.destroy(); self.fail(ErrorKind::AllocationFailed,self.position); return -1; }
+        if (parent >= 0) { let p: Node = self.document.node(parent); if (p.last < 0) { p.first = id; } else { let last: Node = self.document.node(p.last); last.next = id; self.document.put(p.last,last); } p.last = id; p.count += 1; self.document.put(parent,p); } return id;
+    }
+    fn find(&self, parent: NodeId, key: alloc::string::String) -> NodeId {
+        let child: NodeId = self.document.node(parent).first; while (child >= 0) { let n: Node = self.document.node(child); if (!self.pay((n.key.byte_len() as u64)+1)) { return -2; } let name: core::text::Text = n.key.as_text(); if (name.equals(key.as_text())) { return child; } child = n.next; } return -1;
+    }
+    fn target(&self, base: NodeId, header: bool) -> core::result::Result<Target,Error> {
+        let parent: NodeId = base;
+        while (true) {
+            let made: core::result::Result<alloc::string::String,Error> = self.simple_key(); if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); } let key: alloc::string::String = core::result::unwrap(made);
+            if (!self.hspace()) { key.destroy(); return core::result::Err(self.failure); }
+            if (self.position >= self.input.byte_len() || self.byte() != 46) { return core::result::Ok(Target { parent: parent, key: key }); }
+            if (!self.advance() || !self.hspace()) { key.destroy(); return core::result::Err(self.failure); }
+            let found: NodeId = self.find(parent,key); if (found == -2) { key.destroy(); return core::result::Err(self.failure); }
+            if (found < 0) { let state: i32 = 2; if (header) { state = 0; } parent = self.insert(parent,key,Kind::Table,alloc::string::new(),state,base); if (parent < 0) { return core::result::Err(self.failure); } }
+            else { key.destroy(); let n: Node = self.document.node(found);
+                if (header && tag(n.kind) == 1 && n.state == 4) { parent = n.last; }
+                else { if (tag(n.kind) != 0 || n.state == 3 || (!header && (n.state == 1 || (n.state == 2 && n.context != base)))) { return core::result::Err(error(ErrorKind::TableRedefinition,self.position)); }
+                    if (!header && n.state == 0) { n.state = 2; n.context = base; self.document.put(found,n); } parent = found;
+                }
+            }
+        }
+        return core::result::Err(error(ErrorKind::UnexpectedEnd,self.position));
+    }
+    fn digits(&self, base: i32) -> bool {
+        let start: i32 = self.position; let previous: bool = false;
+        while (self.position < self.input.byte_len()) { let b: u8 = self.byte(); let d: i32 = hex(b);
+            if (d >= 0 && d < base) { previous = true; if (!self.advance()) { return false; } }
+            else { if (b == 95) { if (!previous) { return self.fail(ErrorKind::InvalidNumber,self.position); } previous = false; if (!self.advance()) { return false; } } else { break; } }
+        }
+        if (self.position == start || !previous) { return self.fail(ErrorKind::InvalidNumber,self.position); } return true;
+    }
+    fn number(&self) -> core::result::Result<Node,Error> {
+        let start: i32 = self.position; let negative: bool = false; let signed: bool = false; let base: i32 = 10; let is_float: bool = false;
+        if (self.byte() == 43 || self.byte() == 45) { signed = true; negative = self.byte() == 45; if (!self.advance()) { return core::result::Err(self.failure); } }
+        let first_digit: i32 = self.position; let bytes: [u8] = self.input.as_bytes(); let length: i32 = self.input.byte_len();
+        if (self.position+2 < length && ((bytes[self.position] == 105 && bytes[self.position+1] == 110 && bytes[self.position+2] == 102) || (bytes[self.position] == 110 && bytes[self.position+1] == 97 && bytes[self.position+2] == 110))) {
+            if (!self.pay(3)) { return core::result::Err(self.failure); } self.position += 3; is_float = true;
+        } else {
+            if (self.position+1 < length && self.byte() == 48) { let prefix: u8 = bytes[self.position+1]; if (prefix == 120 || prefix == 111 || prefix == 98) { if (signed) { return core::result::Err(error(ErrorKind::InvalidNumber,start)); } if (prefix == 120) { base = 16; } if (prefix == 111) { base = 8; } if (prefix == 98) { base = 2; } if (!self.pay(2)) { return core::result::Err(self.failure); } self.position += 2; } }
+            let digits_start: i32 = self.position;
+            if (!self.digits(base)) { return core::result::Err(self.failure); }
+            if (base == 10 && self.position-digits_start > 1 && bytes[digits_start] == 48) { return core::result::Err(error(ErrorKind::InvalidNumber,digits_start)); }
+            if (base == 10 && self.position < length && self.byte() == 46) { is_float = true; if (!self.advance() || !self.digits(10)) { return core::result::Err(self.failure); } }
+            if (base == 10 && self.position < length && (self.byte() == 101 || self.byte() == 69)) { is_float = true; if (!self.advance()) { return core::result::Err(self.failure); } if (self.position < length && (self.byte() == 43 || self.byte() == 45)) { if (!self.advance()) { return core::result::Err(self.failure); } } if (!self.digits(10)) { return core::result::Err(self.failure); } }
+        }
+        if (self.position < length && !delim(self.byte())) { return core::result::Err(error(ErrorKind::InvalidNumber,self.position)); }
+        if (self.position-start > self.document.options.max_number_bytes) { return core::result::Err(error(ErrorKind::NumberLimit,start)); }
+        let text: alloc::string::String = alloc::string::new(); let integer: i64 = 0; let floating: f64 = 0.0;
+        if (is_float) {
+            let i: i32 = start; if (bytes[i] == 43) { i += 1; }
+            while (i < self.position) { if (bytes[i] != 95) { if (core::result::is_err(text.try_push_scalar(bytes[i] as u32))) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); } } i += 1; }
+            let scratch: [u32;864] = [0;864]; let scratch_view: core::slice::View<u32> = core::result::unwrap(core::slice::view(scratch,864));
+            let input_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(text.as_bytes(),text.byte_len())); let allowance: u64 = 1000000;
+            if (!self.pay(allowance)) { text.destroy(); return core::result::Err(self.failure); }
+            let limits: core::float_decimal::Limits = core::float_decimal::Limits { max_input: self.document.options.max_number_bytes, max_digits: 768, max_work: allowance };
+            let converted: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(input_view,scratch_view,limits);
+            if (core::result::is_err(converted)) { text.destroy(); let k: ErrorKind = match (core::result::unwrap_err(converted)) { core::float_decimal::Error::WorkLimit -> ErrorKind::WorkLimit, core::float_decimal::Error::DigitLimit -> ErrorKind::NumberLimit, _ -> ErrorKind::InvalidNumber }; return core::result::Err(error(k,start)); }
+            floating = core::result::unwrap(converted);
+            text.clear();
+            if (core::f64::is_nan(floating)) {
+                if (core::f64::is_sign_negative(floating) && core::result::is_err(text.try_push_scalar(45))) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); }
+                if (core::result::is_err(text.try_append_text(literal("nan",3)))) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); }
+            } else {
+                let rendered: [u8;64] = [0;64]; let rendered_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(rendered,64));
+                if (!self.pay(allowance)) { text.destroy(); return core::result::Err(self.failure); }
+                let formatted: core::result::Result<i32,core::float_decimal::Error> = core::float_decimal::format_f64_into(floating,rendered_view,scratch_view,allowance);
+                if (core::result::is_err(formatted)) { text.destroy(); return core::result::Err(error(ErrorKind::WorkLimit,start)); }
+                let count: i32 = core::result::unwrap(formatted); let i: i32 = 0; let marked: bool = core::f64::is_infinite(floating);
+                while (i < count) { if (rendered[i] == 46 || rendered[i] == 101) { marked = true; } if (core::result::is_err(text.try_push_scalar(rendered[i] as u32))) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); } i += 1; }
+                if (!marked && core::result::is_err(text.try_append_text(literal(".0",2)))) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); }
+            }
+        } else {
+            let magnitude: u64 = 0; let limit: u64 = 9223372036854775807; if (negative) { limit += 1; } let i: i32 = first_digit; if (base != 10) { i += 2; }
+            while (i < self.position) { if (bytes[i] != 95) { let d: u64 = hex(bytes[i]) as u64; let radix: u64 = base as u64; if (magnitude > limit/radix || (magnitude == limit/radix && d > limit%radix)) { text.destroy(); return core::result::Err(error(ErrorKind::NumberOutOfRange,start)); } magnitude = magnitude*radix+d; } i += 1; }
+            if (negative) { if (magnitude == 9223372036854775808) { integer = -9223372036854775808; } else { integer = 0-(magnitude as i64); } } else { integer = magnitude as i64; }
+            let written: core::result::Result<i32,alloc::string::Error> = text.try_append_i64(integer); if (core::result::is_err(written)) { text.destroy(); return core::result::Err(error(ErrorKind::AllocationFailed,start)); }
+        }
+        let kind: Kind = Kind::Integer; if (is_float) { kind = Kind::Float; } let empty: alloc::string::String = alloc::string::new();
+        return core::result::Ok(Node { kind: kind, key: empty, text: text, integer: integer, floating: floating, flag: false, parent: -1, first: -1, last: -1, next: -1, count: 0, depth: 0, state: 0, context: -1 });
+    }
+    fn temporal(&self) -> core::result::Result<Kind,Error> {
+        let start: i32 = self.position; let bytes: [u8] = self.input.as_bytes(); let length: i32 = self.input.byte_len();
+        while (self.position < length && !delim(self.byte())) { if (!self.advance()) { return core::result::Err(self.failure); } }
+        if (self.position-start == 10 && self.position+1 < length && self.byte() == 32 && digit(bytes[self.position+1])) { if (!self.advance()) { return core::result::Err(self.failure); } while (self.position < length && !delim(self.byte())) { if (!self.advance()) { return core::result::Err(self.failure); } } }
+        if (self.position-start > self.document.options.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit,start)); }
+        let text: core::text::Text = core::text::from_utf8_unchecked(bytes,start,self.position-start); return temporal_kind(text,start);
+    }
+    fn value(&self, parent: NodeId, key: alloc::string::String) -> bool {
+        let start: i32 = self.position; if (start >= self.input.byte_len()) { key.destroy(); return self.fail(ErrorKind::UnexpectedEnd,start); }
+        let first: u8 = self.byte(); let kind: Kind = Kind::String; let text: alloc::string::String = alloc::string::new(); let flag: bool = false; let integer: i64 = 0; let floating: f64 = 0.0; let state: i32 = 0;
+        if (first == 34 || first == 39) { let q: core::result::Result<alloc::string::String,Error> = self.quoted(false); if (core::result::is_err(q)) { key.destroy(); self.failure = core::result::unwrap_err(q); return false; } text = core::result::unwrap(q); }
+        else { if (first == 91 || first == 123) { kind = Kind::Array; if (first == 123) { kind = Kind::Table; state = 3; } if (!self.advance()) { key.destroy(); return false; } }
+        else { if (first == 116 || first == 102) {
+            let word: str = "true"; let count: i32 = 4; flag = first == 116; if (!flag) { word = "false"; count = 5; }
+            let expected: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(word),count); let i: i32 = 0; while (i < count) { if (self.position >= self.input.byte_len() || self.byte() != expected[i]) { key.destroy(); return self.fail(ErrorKind::UnexpectedByte,self.position); } if (!self.advance()) { key.destroy(); return false; } i += 1; }
+            if (self.position < self.input.byte_len() && !delim(self.byte())) { key.destroy(); return self.fail(ErrorKind::UnexpectedByte,self.position); } kind = Kind::Boolean;
+        } else {
+            let bytes: [u8] = self.input.as_bytes(); let temporal: bool = false; if (start+2 < self.input.byte_len() && digit(first) && digit(bytes[start+1]) && bytes[start+2] == 58) { temporal = true; } if (start+4 < self.input.byte_len() && digit(first) && digit(bytes[start+1]) && digit(bytes[start+2]) && digit(bytes[start+3]) && bytes[start+4] == 45) { temporal = true; }
+            if (temporal) { let parsed: core::result::Result<Kind,Error> = self.temporal(); if (core::result::is_err(parsed)) { key.destroy(); self.failure = core::result::unwrap_err(parsed); return false; } kind = core::result::unwrap(parsed); let made: core::result::Result<alloc::string::String,alloc::string::Error> = self.input.try_substring(start,self.position); if (core::result::is_err(made)) { key.destroy(); return self.fail(ErrorKind::AllocationFailed,start); } text = core::result::unwrap(made); }
+            else { let parsed: core::result::Result<Node,Error> = self.number(); if (core::result::is_err(parsed)) { key.destroy(); self.failure = core::result::unwrap_err(parsed); return false; } let n: Node = core::result::unwrap(parsed); kind = n.kind; text = n.text; integer = n.integer; floating = n.floating; }
+        } } }
+        let id: NodeId = self.insert(parent,key,kind,text,state,parent); if (id < 0) { return false; } let n: Node = self.document.node(id); n.integer = integer; n.floating = floating; n.flag = flag; self.document.put(id,n);
+        if (tag(kind) < 2) { let frame: Frame = Frame { node: id, phase: 0 }; if (core::result::is_err(self.frames.try_push(frame))) { return self.fail(ErrorKind::AllocationFailed,start); } } return true;
+    }
+    fn assignment(&self, base: NodeId) -> bool {
+        let parsed: core::result::Result<Target,Error> = self.target(base,false); if (core::result::is_err(parsed)) { self.failure = core::result::unwrap_err(parsed); return false; } let target: Target = core::result::unwrap(parsed);
+        if (self.position >= self.input.byte_len() || self.byte() != 61) { target.key.destroy(); return self.fail(ErrorKind::UnexpectedByte,self.position); }
+        if (!self.advance() || !self.hspace()) { target.key.destroy(); return false; } let found: NodeId = self.find(target.parent,target.key); if (found == -2) { target.key.destroy(); return false; } if (found >= 0) { target.key.destroy(); return self.fail(ErrorKind::DuplicateKey,self.position); }
+        return self.value(target.parent,target.key);
+    }
+    fn containers(&self) -> bool {
+        while (!self.frames.is_empty()) {
+            if (!self.trivia()) { return false; } if (self.position >= self.input.byte_len()) { return self.fail(ErrorKind::UnexpectedEnd,self.position); }
+            let top: i32 = self.frames.len()-1; let values: [Frame] = self.frames.as_slice(); let frame: Frame = values[top]; let n: Node = self.document.node(frame.node); let closing: u8 = 93; if (tag(n.kind) == 0) { closing = 125; }
+            if (self.byte() == closing) { self.frames.pop(); if (!self.advance()) { return false; } continue; }
+            if (frame.phase == 1) { if (self.byte() != 44) { return self.fail(ErrorKind::UnexpectedByte,self.position); } frame.phase = 0; values[top] = frame; if (!self.advance()) { return false; } continue; }
+            frame.phase = 1; values[top] = frame;
+            if (tag(n.kind) == 0) { if (!self.assignment(frame.node)) { return false; } } else { if (!self.value(frame.node,alloc::string::new())) { return false; } }
+        } return true;
+    }
+    fn header(&self) -> NodeId {
+        if (!self.advance()) { return -1; } let array: bool = self.position < self.input.byte_len() && self.byte() == 91; if (array && !self.advance()) { return -1; } if (!self.hspace()) { return -1; }
+        let parsed: core::result::Result<Target,Error> = self.target(0,true); if (core::result::is_err(parsed)) { self.failure = core::result::unwrap_err(parsed); return -1; } let target: Target = core::result::unwrap(parsed);
+        if (self.position >= self.input.byte_len() || self.byte() != 93) { target.key.destroy(); self.fail(ErrorKind::UnexpectedByte,self.position); return -1; }
+        if (!self.advance()) { target.key.destroy(); return -1; } if (array) { if (self.position >= self.input.byte_len() || self.byte() != 93) { target.key.destroy(); self.fail(ErrorKind::UnexpectedByte,self.position); return -1; } if (!self.advance()) { target.key.destroy(); return -1; } }
+        let found: NodeId = self.find(target.parent,target.key); if (found == -2) { target.key.destroy(); return -1; }
+        if (array) { let list: NodeId = found; if (found < 0) { list = self.insert(target.parent,target.key,Kind::Array,alloc::string::new(),4,-1); if (list < 0) { return -1; } } else { target.key.destroy(); let n: Node = self.document.node(found); if (tag(n.kind) != 1 || n.state != 4) { self.fail(ErrorKind::TableRedefinition,self.position); return -1; } }
+            return self.insert(list,alloc::string::new(),Kind::Table,alloc::string::new(),1,-1);
+        }
+        if (found < 0) { return self.insert(target.parent,target.key,Kind::Table,alloc::string::new(),1,-1); }
+        target.key.destroy(); let n: Node = self.document.node(found); if (tag(n.kind) != 0 || n.state != 0) { self.fail(ErrorKind::TableRedefinition,self.position); return -1; } n.state = 1; self.document.put(found,n); return found;
+    }
+    fn run(&self) -> bool {
+        if (self.insert(-1,alloc::string::new(),Kind::Table,alloc::string::new(),1,-1) < 0) { return false; } let current: NodeId = 0;
+        while (self.position < self.input.byte_len()) {
+            if (!self.trivia()) { return false; } if (self.position >= self.input.byte_len()) { break; }
+            if (self.byte() == 91) { current = self.header(); if (current < 0) { return false; } } else { if (!self.assignment(current) || !self.containers()) { return false; } }
+            if (!self.hspace()) { return false; } if (self.position < self.input.byte_len() && self.byte() == 35) { if (!self.comment()) { return false; } }
+            if (self.position < self.input.byte_len()) { if (!self.newline()) { return false; } }
+        } return true;
+    }
+}
+
+fn decimal_at(text: core::text::Text, at: i32, count: i32) -> i32 {
+    if (at < 0 || count > text.byte_len()-at) { return -1; } let value: i32 = 0; let i: i32 = 0; while (i < count) { let b: u8 = text.bytes[text.start+at+i]; if (!digit(b)) { return -1; } value = value*10+((b-48) as i32); i += 1; } return value;
+}
+fn temporal_kind(text: core::text::Text, offset: i32) -> core::result::Result<Kind,Error> {
+    let b: [u8] = text.bytes; let start: i32 = text.start; let length: i32 = text.byte_len(); let at: i32 = 0; let date: bool = length >= 10 && b[start+4] == 45 && b[start+7] == 45;
+    if (date) { let checked: core::result::Result<core::calendar::Date,core::calendar::Error> = core::calendar::date(decimal_at(text,0,4),decimal_at(text,5,2),decimal_at(text,8,2)); if (decimal_at(text,0,4) < 0 || core::result::is_err(checked)) { return core::result::Err(error(ErrorKind::InvalidDateTime,offset)); } if (length == 10) { return core::result::Ok(Kind::LocalDate); } if (b[start+10] != 84 && b[start+10] != 116 && b[start+10] != 32) { return core::result::Err(error(ErrorKind::InvalidDateTime,offset+10)); } at = 11; }
+    if (length-at < 5 || b[start+at+2] != 58) { return core::result::Err(error(ErrorKind::InvalidDateTime,offset+at)); }
+    let hour: i32 = decimal_at(text,at,2); let minute: i32 = decimal_at(text,at+3,2); let second: i32 = 0; at += 5;
+    if (at < length && b[start+at] == 58) { second = decimal_at(text,at+1,2); at += 3; if (at < length && b[start+at] == 46) { at += 1; let first: i32 = at; while (at < length && digit(b[start+at])) { at += 1; } if (at == first) { return core::result::Err(error(ErrorKind::InvalidDateTime,offset+at)); } } }
+    if (core::result::is_err(core::calendar::time_of_day(hour,minute,second,0))) { return core::result::Err(error(ErrorKind::InvalidDateTime,offset)); }
+    if (at == length) { if (date) { return core::result::Ok(Kind::LocalDateTime); } return core::result::Ok(Kind::LocalTime); }
+    if (!date) { return core::result::Err(error(ErrorKind::InvalidDateTime,offset+at)); }
+    if ((b[start+at] == 90 || b[start+at] == 122) && at+1 == length) { return core::result::Ok(Kind::OffsetDateTime); }
+    if ((b[start+at] == 43 || b[start+at] == 45) && length-at == 6 && b[start+at+3] == 58) { let h: i32 = decimal_at(text,at+1,2); let m: i32 = decimal_at(text,at+4,2); if (h >= 0 && h <= 23 && m >= 0 && m <= 59) { return core::result::Ok(Kind::OffsetDateTime); } }
+    return core::result::Err(error(ErrorKind::InvalidDateTime,offset+at));
+}
+
+fn temporal_parts(text: core::text::Text) -> Temporal {
+    let date: core::option::Option<core::calendar::Date> = core::option::None();
+    let time: core::option::Option<core::calendar::TimeOfDay> = core::option::None();
+    let offset: core::option::Option<core::calendar::UtcOffset> = core::option::None();
+    let fraction: core::text::Text = core::text::from_utf8_unchecked(text.bytes,text.start,0);
+    let b: [u8] = text.bytes; let start: i32 = text.start; let at: i32 = 0;
+    if (text.byte_len() >= 10 && b[start+4] == 45) {
+        date = core::option::Some(core::result::unwrap(core::calendar::date(decimal_at(text,0,4),decimal_at(text,5,2),decimal_at(text,8,2)))); at = 10;
+        if (at == text.byte_len()) { return Temporal { date: date, time: time, offset: offset, fraction: fraction }; } at += 1;
+    }
+    let hour: i32 = decimal_at(text,at,2); let minute: i32 = decimal_at(text,at+3,2); let second: i32 = 0; let nanos: u32 = 0; at += 5;
+    if (at < text.byte_len() && b[start+at] == 58) { second = decimal_at(text,at+1,2); at += 3;
+        if (at < text.byte_len() && b[start+at] == 46) { at += 1; let first: i32 = at;
+            while (at < text.byte_len() && digit(b[start+at])) { if (at-first < 9) { nanos = nanos*10+((b[start+at]-48) as u32); } at += 1; }
+            let digits: i32 = at-first; while (digits < 9) { nanos *= 10; digits += 1; }
+            fraction = core::text::from_utf8_unchecked(b,start+first,at-first);
+        }
+    }
+    time = core::option::Some(core::result::unwrap(core::calendar::time_of_day(hour,minute,second,nanos)));
+    if (at < text.byte_len()) {
+        let z: core::calendar::UtcOffset = core::calendar::utc();
+        if (b[start+at] == 43 || b[start+at] == 45) {
+            let minutes: i32 = decimal_at(text,at+1,2)*60+decimal_at(text,at+4,2);
+            if (b[start+at] == 45) { if (minutes == 0) { z = core::calendar::unknown_offset(); } else { minutes = 0-minutes; z = core::result::unwrap(core::calendar::utc_offset(minutes)); } }
+            else { z = core::result::unwrap(core::calendar::utc_offset(minutes)); }
+        }
+        offset = core::option::Some(z);
+    }
+    return Temporal { date: date, time: time, offset: offset, fraction: fraction };
+}
+
+pub fn parse_text(input: core::text::Text, options: Options) -> core::result::Result<Document,Error> {
+    if (!valid_options(options)) { return core::result::Err(error(ErrorKind::InvalidOptions,-1)); }
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+    if (input.byte_len() > options.max_input_bytes) { return core::result::Err(error(ErrorKind::InputLimit,0)); }
+    if ((input.byte_len() as u64) > options.max_work) { return core::result::Err(error(ErrorKind::WorkLimit,0)); }
+    let validated: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(input.bytes,input.start,input.length);
+    if (core::result::is_err(validated)) { let issue: Error = match (core::result::unwrap_err(validated)) { core::text::Error::InvalidUtf8(at) -> error(ErrorKind::InvalidUtf8,at), _ -> error(ErrorKind::Bounds,-1) }; return core::result::Err(issue); }
+    let copied: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_text(core::result::unwrap(validated));
+    if (core::result::is_err(copied)) { let e: ErrorKind = match (core::result::unwrap_err(copied)) { alloc::string::Error::InvalidUtf8(at) -> ErrorKind::InvalidUtf8, _ -> ErrorKind::AllocationFailed }; return core::result::Err(error(e,0)); }
+    let nodes: alloc::vec::Vec<Node> = alloc::vec::new(); let frames: alloc::vec::Vec<Frame> = alloc::vec::new(); let document: Document = Document { nodes: nodes, options: options };
+    let parser: Parser = Parser { input: core::result::unwrap(copied), document: document, frames: frames, position: 0, failure: error(ErrorKind::UnexpectedEnd,0), work: options.max_work-(input.byte_len() as u64) };
+    let success: bool = parser.run(); parser.frames.destroy(); parser.input.destroy(); if (!success) { parser.document.destroy(); return core::result::Err(parser.failure); } return core::result::Ok(parser.document);
+}
+pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Document,Error> { return parse_text(input.as_text(),options); }
+
+struct Encoder { output: alloc::string::String, count: i32, maximum: i32, work: u64, measuring: bool, failure: Error }
+impl Encoder {
+    fn pay(&self, amount: u64) -> bool { if (amount > self.work) { self.failure = error(ErrorKind::WorkLimit,-1); return false; } self.work -= amount; return true; }
+    fn push(&self, scalar: u32) -> bool {
+        let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32; if (width > self.maximum-self.count) { self.failure = error(ErrorKind::OutputLimit,-1); return false; }
+        if (!self.pay(width as u64)) { return false; } if (!self.measuring && core::result::is_err(self.output.try_push_scalar(scalar))) { self.failure = error(ErrorKind::AllocationFailed,-1); return false; } self.count += width; return true;
+    }
+    fn raw(&self, text: alloc::string::String) -> bool {
+        if (text.byte_len() > self.maximum-self.count) { self.failure = error(ErrorKind::OutputLimit,-1); return false; }
+        if (!self.pay(text.byte_len() as u64)) { return false; } if (!self.measuring && core::result::is_err(self.output.try_append(text))) { self.failure = error(ErrorKind::AllocationFailed,-1); return false; } self.count += text.byte_len(); return true;
+    }
+    fn quoted(&self, text: alloc::string::String) -> bool {
+        if (!self.push(34)) { return false; } let offset: i32 = 0;
+        while (offset < text.byte_len()) { let scalar: u32 = core::option::unwrap(text.scalar_at_byte(offset)); let width: i32 = core::utf8::encoded_len_or(scalar,0) as i32;
+            if (scalar == 34 || scalar == 92) { if (!self.push(92) || !self.push(scalar)) { return false; } }
+            else { if (scalar < 32 || scalar == 127) { if (!self.push(92) || !self.push(117) || !self.push(48) || !self.push(48) || !self.push(hex_digit(scalar/16)) || !self.push(hex_digit(scalar%16))) { return false; } } else { if (!self.push(scalar)) { return false; } } } offset += width;
+        } return self.push(34);
+    }
+    fn temporal(&self, text: alloc::string::String) -> bool {
+        let b: [u8] = text.as_bytes(); let length: i32 = text.byte_len(); let at: i32 = 0; let time: i32 = 0;
+        if (length >= 10 && b[4] == 45) { while (at < 10) { if (!self.push(b[at] as u32)) { return false; } at += 1; } if (at == length) { return true; } if (!self.push(84)) { return false; } at += 1; time = 11; }
+        while (at < time+5) { if (!self.push(b[at] as u32)) { return false; } at += 1; }
+        if (at < length && b[at] == 58) { let end: i32 = at+3; while (at < end) { if (!self.push(b[at] as u32)) { return false; } at += 1; } }
+        else { if (!self.push(58) || !self.push(48) || !self.push(48)) { return false; } }
+        if (at < length && b[at] == 46) { at += 1; let first: i32 = at; while (at < length && digit(b[at])) { if (!self.pay(1)) { return false; } at += 1; } let end: i32 = at; while (end > first && b[end-1] == 48) { if (!self.pay(1)) { return false; } end -= 1; }
+            if (end > first) { if (!self.push(46)) { return false; } let i: i32 = first; while (i < end) { if (!self.push(b[i] as u32)) { return false; } i += 1; } }
+        }
+        if (length-at == 6 && b[at] == 43 && b[at+1] == 48 && b[at+2] == 48 && b[at+4] == 48 && b[at+5] == 48) { return self.push(90); }
+        while (at < length) { let scalar: u32 = b[at] as u32; if (scalar == 122) { scalar = 90; } if (!self.push(scalar)) { return false; } at += 1; } return true;
+    }
+    fn value(&self, n: Node) -> bool {
+        let k: i32 = tag(n.kind); if (k == 0) { return self.push(123); } if (k == 1) { return self.push(91); } if (k == 2) { return self.quoted(n.text); }
+        if (k >= 6) { return self.temporal(n.text); }
+        if (k != 5) { return self.raw(n.text); }
+        if (n.flag) { return self.push(116) && self.push(114) && self.push(117) && self.push(101); } return self.push(102) && self.push(97) && self.push(108) && self.push(115) && self.push(101);
+    }
+    fn close(&self, n: Node) -> bool { if (tag(n.kind) == 0) { return self.push(125); } return self.push(93); }
+    fn run(&self, document: Document) -> bool {
+        if (document.nodes.is_empty()) { self.failure = error(ErrorKind::Bounds,-1); return false; } let current: NodeId = document.node(0).first;
+        while (current >= 0) {
+            if (!self.pay(1)) { return false; } let n: Node = document.node(current); let p: Node = document.node(n.parent);
+            if (tag(p.kind) == 0 && (!self.quoted(n.key) || !self.push(61))) { return false; }
+            if (!self.value(n)) { return false; }
+            if (tag(n.kind) < 2) { if (n.first >= 0) { current = n.first; continue; } if (!self.close(n)) { return false; } }
+            while (true) {
+                if (n.parent == 0) { if (!self.push(10)) { return false; } current = n.next; break; }
+                if (n.next >= 0) { if (!self.push(44)) { return false; } current = n.next; break; }
+                n = document.node(n.parent); if (!self.close(n)) { return false; }
+            }
+        } return true;
+    }
+}
+fn hex_digit(v: u32) -> u32 { if (v < 10) { return 48+v; } return 87+v; }
+pub fn measure(document: Document) -> core::result::Result<i32,Error> {
+    let encoder: Encoder = Encoder { output: alloc::string::new(), count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work, measuring: true, failure: error(ErrorKind::AllocationFailed,-1) };
+    if (!encoder.run(document)) { return core::result::Err(encoder.failure); } return core::result::Ok(encoder.count);
+}
+pub fn encode(document: Document) -> core::result::Result<alloc::string::String,Error> {
+    let encoder: Encoder = Encoder { output: alloc::string::new(), count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work, measuring: false, failure: error(ErrorKind::AllocationFailed,-1) };
+    if (!encoder.run(document)) { encoder.output.destroy(); return core::result::Err(encoder.failure); } return core::result::Ok(encoder.output);
+}
+// Every error precedes the first write, including allocation failure.
+pub fn encode_into(document: Document, output: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (output.start < 0 || output.length < 0 || output.start > 2147483647-output.length) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+    let probe: Encoder = Encoder { output: alloc::string::new(), count: 0, maximum: document.options.max_output_bytes, work: document.options.max_work, measuring: true, failure: error(ErrorKind::AllocationFailed,-1) };
+    if (!probe.run(document)) { return core::result::Err(probe.failure); } let size: i32 = probe.count;
+    if (size > output.length) { return core::result::Err(error(ErrorKind::OutputLimit,-1)); }
+    let spent: u64 = document.options.max_work-probe.work;
+    if (spent > probe.work || (size as u64) > probe.work-spent) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
+    let made: core::result::Result<alloc::string::String,Error> = encode(document); if (core::result::is_err(made)) { return core::result::Err(core::result::unwrap_err(made)); } let text: alloc::string::String = core::result::unwrap(made); let bytes: [u8] = text.as_bytes(); let i: i32 = 0; while (i < size) { output.values[output.start+i] = bytes[i]; i += 1; } text.destroy(); return core::result::Ok(size);
+}

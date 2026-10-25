@@ -1,0 +1,26 @@
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::audio;
+import ext::wave;
+import std::io;
+fn read(pointer:ptr,count:i32,eof:bool)->bool{let done:i32=0;while(done<count){let n:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize);assert(n>=0);if(n==0){assert(eof && done==0);return false;}done+=n;}return true;}
+fn write(pointer:ptr,count:i32){let done:i32=0;while(done<count){let n:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize);assert(n>0);done+=n;}}
+fn code(e:ext::wave::Error)->i32{return match(e){ext::wave::Error::InvalidView ->1,ext::wave::Error::Truncated ->2,ext::wave::Error::InvalidRiff ->3,ext::wave::Error::InvalidChunk ->4,ext::wave::Error::DuplicateChunk ->5,ext::wave::Error::MissingChunk ->6,ext::wave::Error::InvalidFormat ->7,ext::wave::Error::Unsupported ->8,ext::wave::Error::Limit ->9,ext::wave::Error::NonFinite ->10,ext::wave::Error::AllocationFailed ->11,ext::wave::Error::InvalidSample ->12};}
+fn integer(n:i32){let w:[i32;1]=[0;1];w[0]=n;write(core::mem::i32_array_data_ptr(w),4);}
+fn number(x:f64){let w:[i32;2]=[0;2];let bits:u64=core::f64::to_bits(x);w[0]=bits as i32;w[1]=(bits>>32) as i32;write(core::mem::i32_array_data_ptr(w),8);}
+fn main()->i32{
+ let h:[i32;5]=[0;5];let hp:ptr=core::mem::i32_array_data_ptr(h);
+ while(read(hp,20,true)){
+  let n:i32=h[0];assert(n>=0 && n<=4000000);let input:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(n+4).unwrap();input.try_resize(n+4,0).unwrap();
+  let storage:[i32;1024]=[0;1024];let p:ptr=core::mem::i32_array_data_ptr(storage);let raw:[u8]=core::mem::typed_slice_from_raw_parts(p,4096);let at:i32=0;while(at<n){let amount:i32=n-at;if(amount>4096){amount=4096;}assert(read(p,amount,false));let j:i32=0;while(j<amount){input.set(at+j+2,raw[j]).unwrap();j+=1;}at+=amount;}
+  let limits:ext::wave::Limits=ext::wave::Limits{max_bytes:h[1],max_samples:h[2]};let view=core::slice::view_range(input.as_slice(),2,n).unwrap();let decoded:core::result::Result<ext::audio::Buffer,ext::wave::Error> = ext::wave::decode(view,limits);
+  if(decoded.is_err()){integer(code(decoded.unwrap_err()));input.destroy();continue;}let info:ext::wave::Info=ext::wave::inspect(view,limits).unwrap();let b:ext::audio::Buffer=decoded.unwrap();
+  integer(0);integer(info.channels);integer(info.sample_rate as i32);integer(info.frames);integer(ext::wave::bits(info.format));integer(info.valid_bits);integer(info.channel_mask as i32);let ex:i32=0;if(info.extensible){ex=1;}integer(ex);let i:i32=0;while(i<b.samples.len()){number(b.samples.at(i));i+=1;}
+  let format:ext::wave::Format=info.format;if(h[3]==8){format=ext::wave::Format::Pcm8;}if(h[3]==16){format=ext::wave::Format::Pcm16;}if(h[3]==24){format=ext::wave::Format::Pcm24;}if(h[3]==32){format=ext::wave::Format::Pcm32;}if(h[3]==132){format=ext::wave::Format::Float32;}if(h[3]==164){format=ext::wave::Format::Float64;}
+  limits.max_bytes=h[4];let encoded:core::result::Result<alloc::vec::Vec<u8>,ext::wave::Error> = ext::wave::encode(b.as_view(),format,limits);if(encoded.is_err()){integer(-code(encoded.unwrap_err()));}else{let bytes:alloc::vec::Vec<u8> = encoded.unwrap();integer(bytes.len());let out:[u8]=bytes.as_slice();let at:i32=0;while(at<bytes.len()){let amount:i32=bytes.len()-at;if(amount>4096){amount=4096;}let j:i32=0;while(j<amount){raw[j]=out[at+j];j+=1;}write(p,amount);at+=amount;}bytes.destroy();}b.destroy();input.destroy();
+ }return 0;
+}

@@ -1,0 +1,7 @@
+// Binding the trait call to a typed PartialOrdering local first is supported.
+module app::main;
+import core::cmp;
+fn classify<T>(a: T,b: T) -> i32 where T: core::cmp::PartialOrd<T> {
+    return match (T::partial_cmp(a,b)) { Less -> -1, Equal -> 0, Greater -> 1, Unordered -> 2 };
+}
+fn main() -> i32 { return classify(0,1)+1; }

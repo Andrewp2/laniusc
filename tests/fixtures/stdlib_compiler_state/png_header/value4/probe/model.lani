@@ -1,0 +1,5 @@
+module probe::model;
+import core::result;
+pub struct Header { f0: i32, f1: i32, f2: i32, f3: i32 }
+fn consume(header: Header) -> i32 { return header.f3; }
+pub fn value() -> i32 { let header: Header = Header { f0: 1, f1: 2, f2: 3, f3: 4 }; return consume(header); }

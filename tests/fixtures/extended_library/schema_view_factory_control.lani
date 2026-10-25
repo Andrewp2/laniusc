@@ -1,0 +1,11 @@
+module app::main;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+fn main() -> i32 {
+    let storage: [u8;8] = [77;8];
+    let view: core::slice::View<u8> = core::result::unwrap(core::slice::view(storage,2)); view.start = -1;
+    std::io_decimal::write_i32(1,view.start); std::io::write_byte(1,44); std::io_decimal::write_i32(1,view.length); std::io::write_byte(1,10);
+    return 0;
+}

@@ -883,18 +883,21 @@ impl GpuTypeChecker {
             .collect();
         self.body_specialization_inputs
             .write(queue, 0, &specialization_bytes);
-        // The impl-binding header is rewritten on every job, so a previous
-        // replay's bindings are unreachable from this one.
+        // Both V2 headers are rewritten on every job, so a previous replay's
+        // bindings and environments are unreachable from this one. Upload
+        // only used section prefixes, never the unused fixed-capacity pools.
         let bindings = hir_items
             .body_specialization
-            .map(CheckedBodySpecializationBatch::impl_binding_words)
-            .unwrap_or_else(|| generic_body::impl_binding_words(&[]));
-        let binding_bytes: Vec<u8> = bindings.into_iter().flat_map(u32::to_le_bytes).collect();
-        self.body_specialization_inputs.write(
-            queue,
-            (generic_body::BODY_IMPL_BINDING_ROW * 16) as u64,
-            &binding_bytes,
-        );
+            .map(CheckedBodySpecializationBatch::impl_binding_sections)
+            .unwrap_or_else(generic_body::empty_impl_binding_sections);
+        for (relative_row, words) in bindings {
+            let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_le_bytes).collect();
+            self.body_specialization_inputs.write(
+                queue,
+                ((generic_body::BODY_IMPL_BINDING_ROW + relative_row) * 16) as u64,
+                &bytes,
+            );
+        }
         // So is the continuation header: only an instance-copy replay maps
         // files past its template to the modules they continue.
         let continuations = hir_items

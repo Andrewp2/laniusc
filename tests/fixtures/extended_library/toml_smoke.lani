@@ -1,0 +1,27 @@
+module app::main;
+import ext::toml;
+import core::mem;
+import core::text;
+import core::result;
+import core::option;
+import alloc::string;
+import core::f64;
+fn main() -> i32 {
+    let source: str = "i = -9223372036854775808\nf = -0.0\nb = true\ns = \"a\\e\\xE9\"\nd = 2000-02-29T03:04-00:00\nx = { a.b = [1,2,], }\n[[products]]\nname='first'\n[[products]]\nname='second'\n";
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(source),159);
+    let document: ext::toml::Document = core::result::unwrap(ext::toml::parse_text(core::text::from_utf8_unchecked(bytes,0,159),ext::toml::default_options()));
+    assert(core::option::unwrap(document.root()) == 0);
+    assert(core::result::unwrap(document.child_count(0)) == 7);
+    assert(core::result::unwrap(document.integer_i64(1)) == -9223372036854775808);
+    assert(core::f64::to_bits(core::result::unwrap(document.float64(2))) == 9223372036854775808);
+    let temporal: ext::toml::Temporal = core::result::unwrap(document.temporal(5));
+    assert(core::option::unwrap(temporal.date).day == 29);
+    assert(core::option::unwrap(temporal.time).second == 0);
+    assert(!core::option::unwrap(temporal.offset).known);
+    assert(temporal.fraction.byte_len() == 0);
+    let output: alloc::string::String = core::result::unwrap(ext::toml::encode(document));
+    assert(core::result::unwrap(ext::toml::measure(document)) == output.byte_len());
+    let round: ext::toml::Document = core::result::unwrap(ext::toml::parse(output,ext::toml::default_options()));
+    assert(round.node_count() == document.node_count());
+    round.destroy(); output.destroy(); document.destroy(); return 0;
+}

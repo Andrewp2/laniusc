@@ -1,0 +1,29 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import std::args;
+import std::clock;
+fn lit(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn main() -> i32 {
+    let args: std::args::Arguments = std::args::snapshot(1,1,128).unwrap(); let endpoint: core::net::SocketAddr = core::net::parse_socket(args.get(0).unwrap()).unwrap();
+    let method: alloc::vec::Vec<u8> = alloc::vec::from_view(lit("POST",4)).unwrap();
+    let bytes: [u8;8] = [9,9,0,255,13,10,9,9]; let body: core::slice::View<u8> = core::slice::view_range(bytes,2,4).unwrap();
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new();
+    let request: ext::http_client::Request = ext::http_client::Request { method:method.as_view(),target:lit("/native?q=x",11),authority:lit("virtual.example:8080",20),headers:fields.as_view(),body:body };
+    let now: core::time::Instant = std::clock::monotonic_now().unwrap(); let shifted: core::time::Instant = now.checked_add(core::time::from_millis(1000)).unwrap(); let deadline: core::time::Deadline = core::time::deadline_at(shifted);
+    let result = ext::http_client::exchange_until(endpoint,request,ext::http_client::default_options(),deadline);
+    method.destroy(); fields.destroy(); args.destroy(); assert(result.is_ok());
+    let response: ext::http_client::Response = result.unwrap();
+    assert(response.stats.request_sent == response.stats.request_bytes && !response.stats.upload_stopped);
+    let message: ext::http::Message = response.message(); assert(message.head.status == 200 && message.head.method.len() == 4 && message.head.method.get(0).unwrap() == 80);
+    assert(response.informational().len() == 2 && response.informational().get(0).unwrap().status == 100 && response.informational().get(1).unwrap().status == 103);
+    let decoded: core::slice::View<u8> = response.body(); assert(decoded.len() == 4 && decoded.get(0).unwrap() == 0 && decoded.get(1).unwrap() == 255 && decoded.get(2).unwrap() == 13 && decoded.get(3).unwrap() == 10);
+    assert(message.trailer_count == 1 && response.as_view().len() == message.consumed); response.destroy(); return 0;
+}

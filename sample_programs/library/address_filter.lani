@@ -1,0 +1,65 @@
+// Stream and canonicalize newline-delimited numeric network values.
+// Exit 2: arguments/input, 3: I/O. Earlier records may have been emitted.
+module app::main;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import std::process;
+import std::stream;
+struct Options { mode: i32, truncate: bool, invert: bool, network: core::option::Option<core::net::IpNet> }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool { if (left.length != right.length) { return false; } let index: i32 = 0; while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true; }
+fn selected(address: core::net::IpAddr, options: Options) -> bool { let found: bool = true; if (core::option::is_some(options.network)) { found = core::option::unwrap(options.network).contains(address); } if (options.invert) { return !found; } return found; }
+fn selected_network(address: core::net::IpNet, options: Options) -> bool { let found: bool = true; if (core::option::is_some(options.network)) { found = core::option::unwrap(options.network).contains_network(address); } if (options.invert) { return !found; } return found; }
+fn record(input: core::slice::View<u8>, options: Options) -> i32 {
+    let words: [i32;20] = [0;20]; let output: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),80); let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view(output,80)); let count: i32 = 0; let matches: bool = false;
+    if (options.mode == 0) { let parsed: core::result::Result<core::net::IpAddr,core::net::Error> = core::net::parse_ip(input); if (core::result::is_err(parsed)) { return 2; } let value: core::net::IpAddr = core::result::unwrap(parsed); matches = selected(value,options); count = core::result::unwrap(value.format_into(destination)); }
+    if (options.mode == 1) { let parsed: core::result::Result<core::net::SocketAddr,core::net::Error> = core::net::parse_socket(input); if (core::result::is_err(parsed)) { return 2; } let value: core::net::SocketAddr = core::result::unwrap(parsed); matches = selected(value.address(),options); count = core::result::unwrap(value.format_into(destination)); }
+    if (options.mode == 2) { let parsed: core::result::Result<core::net::IpNet,core::net::Error> = core::net::parse_prefix(input); if (options.truncate) { parsed = core::net::parse_prefix_truncate(input); } if (core::result::is_err(parsed)) { return 2; } let value: core::net::IpNet = core::result::unwrap(parsed); matches = selected_network(value,options); count = core::result::unwrap(value.format_into(destination)); }
+    if (options.mode == 3) { let parsed: core::result::Result<core::net::ScopedIpv6Addr,core::net::Error> = core::net::parse_scoped_ipv6(input); if (core::result::is_err(parsed)) { return 2; } let value: core::net::ScopedIpv6Addr = core::result::unwrap(parsed); matches = selected(core::net::IpAddr::V6(value.address),options); count = core::result::unwrap(value.format_into(destination)); }
+    if (!matches) { return 0; } output[count] = 10; let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),output,0,count+1))) { return 3; } return 0;
+}
+fn stream(options: Options) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin(); let chunk_words: [i32;256] = [0;256]; let chunk: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(chunk_words),1024);
+    let line: [u8;65] = [0;65]; let count: i32 = 0;
+    while (true) {
+        let read: core::result::Result<i32,core::io::Error> = source.read(chunk,0,1024);
+        if (core::result::is_err(read)) { if (core::io::is_interrupted(core::result::unwrap_err(read))) { continue; } return 3; }
+        let amount: i32 = core::result::unwrap(read); if (amount == 0) { if (count == 0) { return 0; } let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(line,count)); return record(input,options); }
+        let index: i32 = 0;
+        while (index < amount) {
+            let value: u8 = chunk[index]; if (value == 10) {
+                let length: i32 = count; if (length > 0 && line[length-1] == 13) { length -= 1; }
+                let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(line,length)); let status: i32 = record(input,options); if (status != 0) { return status; } count = 0;
+            } else { if (count == 65 || (count == 64 && value != 13)) { return 2; } line[count] = value; count += 1; } index += 1;
+        }
+    }
+    return 0;
+}
+fn run() -> i32 {
+    let argc: i32 = std::process::argc(); let words: [i32;20] = [0;20]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer,80);
+    let options: Options = Options { mode: 0, truncate: false, invert: false, network: core::option::None() }; let explicit_mode: bool = false; let index: i32 = 1;
+    while (index < argc) {
+        let count: i32 = std::process::arg_len(index); if (count < 1 || count > 64 || std::process::arg_read(index,pointer,count as usize) != count) { return 2; } let argument: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,count));
+        if (equal(argument,bytes("--network",9))) { if (core::option::is_some(options.network) || index+1 == argc) { return 2; } index += 1; let length: i32 = std::process::arg_len(index); if (length < 1 || length > 49 || std::process::arg_read(index,pointer,length as usize) != length) { return 2; } let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,length)); let parsed: core::result::Result<core::net::IpNet,core::net::Error> = core::net::parse_prefix(input); if (core::result::is_err(parsed)) { return 2; } options.network = core::option::Some(core::result::unwrap(parsed)); }
+        else { if (equal(argument,bytes("--invert",8))) { if (options.invert) { return 2; } options.invert = true; }
+        else { if (equal(argument,bytes("--truncate",10))) { if (options.truncate) { return 2; } options.truncate = true; }
+        else { if (equal(argument,bytes("--socket",8)) || equal(argument,bytes("--prefix",8)) || equal(argument,bytes("--scoped",8))) { if (explicit_mode) { return 2; } explicit_mode = true; if (equal(argument,bytes("--socket",8))) { options.mode = 1; } else { if (equal(argument,bytes("--prefix",8))) { options.mode = 2; } else { options.mode = 3; } } }
+        else { if (equal(argument,bytes("--help",6)) && argc == 2) { let usage: core::slice::View<u8> = bytes("Usage: address-filter [--socket|--prefix|--scoped] [--truncate] [--network CIDR] [--invert]\n",92); let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,0,usage.length))) { return 3; } return 0; } return 2; } } } }
+        index += 1;
+    }
+    if ((options.truncate && options.mode != 2) || (options.invert && core::option::is_none(options.network))) { return 2; } return stream(options);
+}
+
+fn main() -> i32 {
+    let status: i32 = run();
+    if (status != 0) {
+        let message: core::slice::View<u8> = bytes("address-filter: invalid arguments or input\n",43);
+        if (status == 3) { message = bytes("address-filter: I/O failed\n",27); }
+        let sink: std::stream::Descriptor = std::stream::stderr(); if (core::result::is_err(core::io::write_all(sink.borrow(),message.values,0,message.length))) { return 3; }
+    }
+    return status;
+}

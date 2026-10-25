@@ -1,0 +1,268 @@
+// Explicit numeric nameserver transport. See docs/extended-dns-client.md.
+module ext::dns_client;
+import alloc::vec;
+import core::io;
+import core::net;
+import core::option;
+import core::random;
+import core::result;
+import core::slice;
+import core::time;
+import ext::dns;
+import std::clock;
+import std::entropy;
+import std::socket;
+
+pub enum Mode { UdpOnly, UdpThenTcp, TcpOnly }
+pub enum Id { Random, Fixed(i32) }
+pub enum Transport { Udp, Tcp }
+pub enum Stage { Prepare, Entropy, Open, Connect, Send, Receive, ReceivePrefix, ReceiveBody, Validate, Close }
+pub enum Cause { InvalidOptions, UnsupportedQuery, AllocationFailed, Timeout, Clock(std::clock::Error), Entropy(core::random::Error), Io(core::io::Error), Dns(ext::dns::Error), DatagramLimit, ReceivedLimit, WorkLimit, ResponseLimit, Correlation, Truncated, FrameLength(i32), UnexpectedEof(i32) }
+pub struct Question { name: core::slice::View<u8>, qtype: i32, qclass: i32, dnssec: bool, id: Id }
+pub struct Options { mode: Mode, attempts: i32, retry_ms: i32, udp_payload: i32, response_bytes: i32, datagrams: i32, received_bytes: u64, work: u64, wire: ext::dns::Limits }
+pub struct Stats { attempts: i32, datagrams: i32, discarded: i32, received_bytes: u64, work: u64 }
+pub struct Failure { cause: Cause, stage: Stage, stats: Stats, cleanup: core::option::Option<core::io::Error> }
+// One active manual owner. Do not mutate/copy ownership of bytes or validated.
+// Views are constructed only after the byte allocation reaches its final size.
+pub struct Response { bytes: alloc::vec::Vec<u8>, validated: ext::dns::Message, transport: Transport, stats: Stats }
+struct State { options: Options, deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, stats: Stats }
+impl State { fn borrow(&self) -> &State { return self; } }
+enum Attempt { Complete(alloc::vec::Vec<u8>), Truncated, Expired }
+pub fn default_options() -> Options { return Options { mode: Mode::UdpThenTcp, attempts: 2, retry_ms: 2000, udp_payload: 1232, response_bytes: 65535, datagrams: 64, received_bytes: 4194304, work: 16777216, wire: ext::dns::default_limits() }; }
+pub fn question(name: core::slice::View<u8>, qtype: i32) -> Question { return Question { name:name,qtype:qtype,qclass:1,dnssec:false,id:Id::Random }; }
+pub impl Response {
+    pub fn as_view(&self) -> core::slice::View<u8> { return self.bytes.as_view(); }
+    pub fn message(&self) -> ext::dns::Message { return self.validated; }
+    pub fn destroy(&self) { self.bytes.destroy(); }
+}
+fn b(v: core::slice::View<u8>, i: i32) -> u8 { return v.get(i).unwrap(); }
+fn sub(v: core::slice::View<u8>, a: i32, z: i32) -> core::slice::View<u8> { return v.subview(a,z).unwrap(); }
+fn u16(v: core::slice::View<u8>, i: i32) -> i32 { return (b(v,i) as i32)*256+(b(v,i+1) as i32); }
+fn family(server: core::net::SocketAddr) -> std::socket::Family { return match(server) { core::net::SocketAddr::V4(v) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(v) -> std::socket::Family::Ipv6 }; }
+fn checked(o: Options, q: Question) -> bool {
+    if (o.attempts < 1 || o.attempts > 8 || o.retry_ms < 1 || o.retry_ms > 60000 || o.response_bytes < 512 || o.response_bytes > 65535 || o.datagrams < 1 || o.received_bytes < 1) { return false; }
+    if (o.udp_payload != 0 && (o.udp_payload < 512 || o.udp_payload > std::socket::MAX_DATAGRAM || o.udp_payload > o.response_bytes)) { return false; }
+    if (o.wire.message_bytes < o.response_bytes || o.wire.message_bytes > 65535 || o.wire.output_bytes < 282 || o.wire.output_bytes > 65535 || o.wire.records < 1 || o.wire.name_bytes < 1 || o.wire.name_bytes > 255 || o.wire.pointer_hops < 0 || o.wire.options < 0 || o.wire.work < 0) { return false; }
+    if (q.qtype < 0 || q.qtype > 65535 || q.qclass < 0 || q.qclass > 65535 || (q.dnssec && o.udp_payload == 0)) { return false; }
+    return match(q.id) { Id::Random -> true, Id::Fixed(id) -> id >= 0 && id <= 65535 };
+}
+fn charge(s: &State, amount: u64) -> core::result::Result<bool,Cause> {
+    if (amount > s.options.work-s.stats.work) { return core::result::Err(Cause::WorkLimit); }
+    s.stats.work += amount; return core::result::Ok(true);
+}
+fn now(s: &State) -> core::result::Result<core::time::Instant,Cause> {
+    let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (read.is_err()) { return core::result::Err(Cause::Clock(read.unwrap_err())); }
+    let value: core::time::Instant = read.unwrap();
+    if (value.compare(s.last) < 0) { return core::result::Err(Cause::Clock(std::clock::Error::ClockReversed)); }
+    s.last = value; if (s.deadline.is_expired(value)) { return core::result::Err(Cause::Timeout); }
+    return core::result::Ok(value);
+}
+fn active(s: &State) -> core::result::Result<bool,Cause> { let n = now(s); if (n.is_err()) { return core::result::Err(n.unwrap_err()); } return core::result::Ok(true); }
+fn failure(s: &State, cause: Cause, cleanup: core::option::Option<core::io::Error>) -> Failure { return Failure { cause:cause,stage:s.stage,stats:s.stats,cleanup:cleanup }; }
+fn received(s: &State, count: i32, datagram: bool) -> core::result::Result<bool,Cause> {
+    if (datagram) { if (s.stats.datagrams == s.options.datagrams) { return core::result::Err(Cause::DatagramLimit); } s.stats.datagrams += 1; }
+    if (count < 0 || (count as u64) > s.options.received_bytes-s.stats.received_bytes) { return core::result::Err(Cause::ReceivedLimit); }
+    s.stats.received_bytes += count as u64; return charge(s,(count as u64)+1);
+}
+fn id(s: &State, selected: Id) -> core::result::Result<i32,Cause> {
+    let before = active(s); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
+    s.stage = Stage::Entropy;
+    let value: i32 = 0;
+    let fixed: bool = match(selected) { Id::Fixed(v) -> true, _ -> false };
+    if (fixed) { value = match(selected) { Id::Fixed(v) -> v, _ -> 0 }; }
+    else { let random: core::result::Result<u64,core::random::Error> = std::entropy::secure_u64(); if (random.is_err()) { return core::result::Err(Cause::Entropy(random.unwrap_err())); } value = (random.unwrap() & 65535) as i32; }
+    let after = active(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+    return core::result::Ok(value);
+}
+// The first question cannot refer to any completed earlier name. Scan its
+// canonical wire extent, then reuse dns name validation and ASCII folding.
+fn correlates(s: &State, packet: core::slice::View<u8>, query: ext::dns::Name, selected: i32, qtype: i32, qclass: i32) -> core::result::Result<bool,Cause> {
+    let paid = charge(s,32); if (paid.is_err()) { return paid; }
+    if (packet.len() < 17 || u16(packet,0) != selected || (u16(packet,2) & 63488) != 32768 || u16(packet,4) != 1) { return core::result::Ok(false); }
+    let end: i32 = 12;
+    while (true) {
+        if (end >= packet.len() || end-12 >= 255) { return core::result::Ok(false); }
+        let c: i32 = b(packet,end) as i32;
+        let paid = charge(s,(c as u64)+1); if (paid.is_err()) { return paid; }
+        if (c > 63 || c > packet.len()-end-1) { return core::result::Ok(false); }
+        end += c+1; if (c == 0) { break; }
+    }
+    if (packet.len()-end < 4 || u16(packet,end) != qtype || u16(packet,end+2) != qclass) { return core::result::Ok(false); }
+    let parsed: core::result::Result<ext::dns::Name,ext::dns::Error> = ext::dns::parse_name(sub(packet,12,end),s.options.wire);
+    if (parsed.is_err()) { return core::result::Ok(false); }
+    return core::result::Ok(ext::dns::equal_dns(query,parsed.unwrap()));
+}
+fn validate(s: &State, bytes: core::slice::View<u8>) -> core::result::Result<ext::dns::Message,Cause> {
+    s.stage = Stage::Validate; let paid = charge(s,s.options.wire.work as u64); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let parsed: core::result::Result<ext::dns::Message,ext::dns::Error> = ext::dns::parse(bytes,s.options.wire);
+    if (parsed.is_err()) { return core::result::Err(Cause::Dns(parsed.unwrap_err())); }
+    let after = active(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+    return core::result::Ok(parsed.unwrap());
+}
+fn retryable(error: core::io::Error) -> bool { return core::io::is_interrupted(error) || match(error) { core::io::Error::WouldBlock -> true, _ -> false }; }
+fn connect(s: &State, socket: &std::socket::Socket, server: core::net::SocketAddr) -> core::result::Result<bool,Cause> {
+    s.stage = Stage::Connect; let before = active(s); if (before.is_err()) { return before; }
+    let result: core::result::Result<i32,core::io::Error> = socket.connect_until(server,s.deadline);
+    if (result.is_err()) { return core::result::Err(Cause::Io(result.unwrap_err())); }
+    return active(s);
+}
+fn udp(s: &State, socket: &std::socket::Socket, server: core::net::SocketAddr, wire: core::slice::View<u8>, q: Question, name: ext::dns::Name, selected: i32, buffer: &alloc::vec::Vec<u8>) -> core::result::Result<Attempt,Cause> {
+    let connected = connect(s,socket,server); if (connected.is_err()) { return core::result::Err(connected.unwrap_err()); }
+    let peer = socket.peer_addr(); if (peer.is_err()) { return core::result::Err(Cause::Io(peer.unwrap_err())); }
+    let expected: core::net::SocketAddr = peer.unwrap();
+    s.stage = Stage::Send;
+    while (true) {
+        let before = active(s); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
+        let sent = socket.send_to(wire,server);
+        if (sent.is_ok()) { if (sent.unwrap() != wire.len()) { return core::result::Err(Cause::Io(core::io::Error::InvalidCount)); } break; }
+        let error: core::io::Error = sent.unwrap_err(); if (!retryable(error)) { return core::result::Err(Cause::Io(error)); }
+        let waited = socket.wait_until(false,true,s.deadline); if (waited.is_err()) { return core::result::Err(Cause::Io(waited.unwrap_err())); }
+    }
+    let sent_at = now(s); if (sent_at.is_err()) { return core::result::Err(sent_at.unwrap_err()); }
+    let shifted: core::result::Result<core::time::Instant,core::time::Error> = sent_at.unwrap().checked_add(core::time::from_millis(s.options.retry_ms as u64));
+    if (shifted.is_err()) { return core::result::Err(Cause::Clock(std::clock::Error::Overflow)); }
+    let limit: core::time::Instant = shifted.unwrap(); if (limit.compare(s.deadline.instant) > 0) { limit = s.deadline.instant; }
+    let window: core::time::Deadline = core::time::deadline_at(limit); s.stage = Stage::Receive;
+    while (true) {
+        let before = now(s); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
+        if (window.is_expired(before.unwrap())) { return core::result::Ok(Attempt::Expired); }
+        if (s.stats.datagrams == s.options.datagrams) { return core::result::Err(Cause::DatagramLimit); }
+        let datagram_result = socket.receive_from(buffer.as_view());
+        let after = now(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+        if (window.is_expired(after.unwrap())) { return core::result::Ok(Attempt::Expired); }
+        if (datagram_result.is_err()) {
+            let error: core::io::Error = datagram_result.unwrap_err(); if (!retryable(error)) { return core::result::Err(Cause::Io(error)); }
+            let waited = socket.wait_until(true,false,window); if (waited.is_err()) { return core::result::Err(Cause::Io(waited.unwrap_err())); } continue;
+        }
+        let packet: std::socket::Datagram = datagram_result.unwrap();
+        let paid = received(s,packet.full_length,true); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+        if (!core::net::SocketAddr::eq(packet.peer,expected)) { s.stats.discarded += 1; continue; }
+        let raw: core::slice::View<u8> = sub(buffer.as_view(),0,packet.copied);
+        let matches = correlates(s,raw,name,selected,q.qtype,q.qclass); if (matches.is_err()) { return core::result::Err(matches.unwrap_err()); }
+        if (!matches.unwrap()) { s.stats.discarded += 1; continue; }
+        if (packet.full_length > s.options.response_bytes) { return core::result::Err(Cause::ResponseLimit); }
+        if (packet.is_truncated() || (u16(raw,2) & 512) != 0) { return core::result::Ok(Attempt::Truncated); }
+        // Copy to a final immutable owner before creating any retained view.
+        let copied = alloc::vec::from_view(raw); if (copied.is_err()) { return core::result::Err(Cause::AllocationFailed); }
+        return core::result::Ok(Attempt::Complete(copied.unwrap()));
+    }
+    return core::result::Err(Cause::Timeout);
+}
+fn tcp_read(s: &State, socket: &std::socket::Socket, output: core::slice::View<u8>, phase: Stage) -> core::result::Result<bool,Cause> {
+    let used: i32 = 0; s.stage = phase;
+    while (used < output.len()) {
+        let before = active(s); if (before.is_err()) { return before; }
+        let got = socket.receive_until(sub(output,used,output.len()),s.deadline);
+        let after = active(s); if (after.is_err()) { return after; }
+        if (got.is_err()) { return core::result::Err(Cause::Io(got.unwrap_err())); }
+        let count: i32 = got.unwrap(); if (count == 0) { return core::result::Err(Cause::UnexpectedEof(used)); }
+        if (count < 0 || count > output.len()-used) { return core::result::Err(Cause::Io(core::io::Error::InvalidCount)); }
+        let paid = received(s,count,false); if (paid.is_err()) { return paid; } used += count;
+    }
+    return core::result::Ok(true);
+}
+fn tcp(s: &State, socket: &std::socket::Socket, server: core::net::SocketAddr, wire: core::slice::View<u8>, q: Question, name: ext::dns::Name, selected: i32, buffer: &alloc::vec::Vec<u8>) -> core::result::Result<bool,Cause> {
+    let connected = connect(s,socket,server); if (connected.is_err()) { return connected; }
+    let frame: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (frame.try_resize(wire.len()+2,0 as u8).is_err()) { frame.destroy(); return core::result::Err(Cause::AllocationFailed); }
+    frame.set(0,(wire.len()/256) as u8).unwrap(); frame.set(1,wire.len() as u8).unwrap();
+    let index: i32 = 0; while (index < wire.len()) { frame.set(index+2,b(wire,index)).unwrap(); index += 1; }
+    let used: i32 = 0; s.stage = Stage::Send;
+    while (used < frame.len()) {
+        let before = active(s); if (before.is_err()) { frame.destroy(); return before; }
+        let sent = socket.send_until(sub(frame.as_view(),used,frame.len()),s.deadline);
+        let after = active(s); if (after.is_err()) { frame.destroy(); return after; }
+        if (sent.is_err()) { frame.destroy(); return core::result::Err(Cause::Io(sent.unwrap_err())); }
+        let count: i32 = sent.unwrap(); if (count <= 0 || count > frame.len()-used) { frame.destroy(); return core::result::Err(Cause::Io(core::io::Error::InvalidCount)); } used += count;
+    }
+    frame.destroy();
+    if (buffer.try_resize(2,0 as u8).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    let prefix = tcp_read(s,socket,buffer.as_view(),Stage::ReceivePrefix); if (prefix.is_err()) { return prefix; }
+    let length: i32 = u16(buffer.as_view(),0); if (length < 12) { return core::result::Err(Cause::FrameLength(length)); }
+    if (length > s.options.response_bytes) { return core::result::Err(Cause::ResponseLimit); }
+    if (buffer.try_resize(length,0 as u8).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    let body = tcp_read(s,socket,buffer.as_view(),Stage::ReceiveBody); if (body.is_err()) { return body; }
+    let matches = correlates(s,buffer.as_view(),name,selected,q.qtype,q.qclass); if (matches.is_err()) { return matches; }
+    if (!matches.unwrap()) { return core::result::Err(Cause::Correlation); }
+    return core::result::Ok(true);
+}
+fn finish(s: &State, socket: &std::socket::Socket, result: core::result::Result<bool,Cause>) -> core::result::Result<bool,Failure> {
+    let closed = socket.close();
+    if (result.is_err()) { let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); } return core::result::Err(failure(s,result.unwrap_err(),cleanup)); }
+    s.stage = Stage::Close; if (closed.is_err()) { return core::result::Err(failure(s,Cause::Io(closed.unwrap_err()),core::option::None())); }
+    let after = active(s); if (after.is_err()) { return core::result::Err(failure(s,after.unwrap_err(),core::option::None())); }
+    return core::result::Ok(true);
+}
+fn prepare(s: &State, q: Question, selected: i32) -> core::result::Result<alloc::vec::Vec<u8>,Cause> {
+    s.stage = Stage::Prepare; let paid = charge(s,s.options.wire.work as u64); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let made = ext::dns::query(selected,q.qtype,q.qclass,q.name,s.options.udp_payload,q.dnssec,s.options.wire);
+    if (made.is_err()) { return core::result::Err(Cause::Dns(made.unwrap_err())); }
+    return core::result::Ok(made.unwrap());
+}
+// On success only Response owns its byte storage. Its Message and all derived
+// names/records borrow that storage; destroy the response after their last use.
+pub fn query_until(server: core::net::SocketAddr, q: Question, options: Options, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+    let zero: core::time::Instant = core::time::instant(core::time::zero());
+    let state: State = State { options:options,deadline:deadline,last:zero,stage:Stage::Prepare,stats:Stats { attempts:0,datagrams:0,discarded:0,received_bytes:0,work:0 } };
+    if (!checked(options,q)) { return core::result::Err(failure(state.borrow(),Cause::InvalidOptions,core::option::None())); }
+    if (q.qtype == 251 || q.qtype == 252) { return core::result::Err(failure(state.borrow(),Cause::UnsupportedQuery,core::option::None())); }
+    if (q.name.start < 0 || q.name.length < 0 || q.name.length > 255 || q.name.start > 2147483647-q.name.length) { return core::result::Err(failure(state.borrow(),Cause::Dns(ext::dns::Error::Bounds),core::option::None())); }
+    let before = active(state.borrow()); if (before.is_err()) { return core::result::Err(failure(state.borrow(),before.unwrap_err(),core::option::None())); }
+    let paid = charge(state.borrow(),(q.name.len() as u64)+1); if (paid.is_err()) { return core::result::Err(failure(state.borrow(),paid.unwrap_err(),core::option::None())); }
+    let parsed_name = ext::dns::parse_name(q.name,options.wire); if (parsed_name.is_err()) { return core::result::Err(failure(state.borrow(),Cause::Dns(parsed_name.unwrap_err()),core::option::None())); }
+    let name: ext::dns::Name = parsed_name.unwrap();
+    let buffer: alloc::vec::Vec<u8> = alloc::vec::new(); let result_bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let direct: bool = match(options.mode) { Mode::TcpOnly -> true, _ -> false }; let use_tcp: bool = direct;
+    let query: alloc::vec::Vec<u8> = alloc::vec::new(); let selected: i32 = 0; let validated: core::option::Option<ext::dns::Message> = core::option::None();
+    while (state.stats.attempts < options.attempts) {
+        state.stats.attempts += 1; let chosen = id(state.borrow(),q.id);
+        if (chosen.is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(failure(state.borrow(),chosen.unwrap_err(),core::option::None())); } selected = chosen.unwrap();
+        let encoded = prepare(state.borrow(),q,selected); if (encoded.is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(failure(state.borrow(),encoded.unwrap_err(),core::option::None())); }
+        query.destroy(); query = encoded.unwrap(); if (direct) { break; }
+        let capacity: i32 = options.udp_payload; if (capacity == 0) { capacity = 512; }
+        if (buffer.try_resize(capacity,0 as u8).is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(failure(state.borrow(),Cause::AllocationFailed,core::option::None())); }
+        state.stage = Stage::Open; let opened = std::socket::create(family(server),std::socket::Kind::Udp,true);
+        if (opened.is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(failure(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
+        let socket: std::socket::Socket = opened.unwrap();
+        let attempt = udp(state.borrow(),socket.borrow(),server,query.as_view(),q,name,selected,buffer.borrow());
+        if (attempt.is_err()) { let done = finish(state.borrow(),socket.borrow(),core::result::Err(attempt.unwrap_err())); buffer.destroy(); query.destroy(); return core::result::Err(done.unwrap_err()); }
+        let outcome: Attempt = attempt.unwrap();
+        let complete: bool = match(outcome) { Attempt::Complete(v) -> true, _ -> false };
+        if (complete) {
+            let owner: alloc::vec::Vec<u8> = match(outcome) { Attempt::Complete(v) -> v, _ -> alloc::vec::new() };
+            let parsed = validate(state.borrow(),owner.as_view());
+            let status: core::result::Result<bool,Cause> = core::result::Ok(true); if (parsed.is_err()) { status = core::result::Err(parsed.unwrap_err()); }
+            let done = finish(state.borrow(),socket.borrow(),status);
+            if (done.is_err()) { owner.destroy(); buffer.destroy(); query.destroy(); return core::result::Err(done.unwrap_err()); }
+            validated = core::option::Some(parsed.unwrap()); result_bytes.destroy(); result_bytes = owner; break;
+        }
+        let truncated: bool = match(outcome) { Attempt::Truncated -> true, _ -> false };
+        let allowed: bool = match(options.mode) { Mode::UdpThenTcp -> true, _ -> false };
+        let settled: core::result::Result<bool,Cause> = core::result::Ok(true);
+        if (truncated && !allowed) { settled = core::result::Err(Cause::Truncated); }
+        if (!truncated && state.stats.attempts == options.attempts) { settled = core::result::Err(Cause::Timeout); }
+        let done = finish(state.borrow(),socket.borrow(),settled);
+        if (done.is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(done.unwrap_err()); }
+        if (truncated) { use_tcp = true; break; }
+    }
+    if (use_tcp) {
+        state.stage = Stage::Open; let opened = std::socket::create(family(server),std::socket::Kind::Tcp,true);
+        if (opened.is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(failure(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
+        let socket: std::socket::Socket = opened.unwrap();
+        let transferred = tcp(state.borrow(),socket.borrow(),server,query.as_view(),q,name,selected,buffer.borrow());
+        if (transferred.is_ok()) {
+            let parsed = validate(state.borrow(),buffer.as_view());
+            if (parsed.is_err()) { transferred = core::result::Err(parsed.unwrap_err()); }
+            else { if ((parsed.unwrap().header.flags & 512) != 0) { transferred = core::result::Err(Cause::Truncated); } else { validated = core::option::Some(parsed.unwrap()); } }
+        }
+        let done = finish(state.borrow(),socket.borrow(),transferred);
+        if (done.is_err()) { buffer.destroy(); query.destroy(); return core::result::Err(done.unwrap_err()); }
+        result_bytes.destroy(); result_bytes = buffer; buffer = alloc::vec::new();
+    }
+    buffer.destroy(); query.destroy();
+    if (result_bytes.is_empty()) { state.stage = Stage::Receive; result_bytes.destroy(); return core::result::Err(failure(state.borrow(),Cause::Timeout,core::option::None())); }
+    let after = active(state.borrow()); if (after.is_err()) { result_bytes.destroy(); return core::result::Err(failure(state.borrow(),after.unwrap_err(),core::option::None())); }
+    let transport: Transport = Transport::Udp; if (use_tcp) { transport = Transport::Tcp; }
+    return core::result::Ok(Response { bytes:result_bytes,validated:validated.unwrap(),transport:transport,stats:state.stats });
+}

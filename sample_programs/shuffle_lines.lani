@@ -1,0 +1,105 @@
+// Shuffle LF-delimited byte records from stdin; append LF to every output row.
+// --seed makes the permutation reproducible; otherwise seed from OS entropy.
+// Limits default to 1 MiB / 65536 rows. Exit 2 arguments/limits, 3 I/O/entropy,
+// 4 allocation. Retain one input buffer and borrowed row views until output ends.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::random;
+import core::result;
+import core::slice;
+import ext::cli;
+import std::args;
+import std::entropy;
+import std::io_checked;
+import std::stream;
+struct Options { seed: core::option::Option<u64>, take: i32, maximum_bytes: i32, maximum_lines: i32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn name(value: str, count: i32) -> core::slice::View<u8> {
+    let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 5) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    let number: core::result::Result<u64, core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(number)) { return false; } let value: u64 = core::result::unwrap(number);
+    if (item.id == 1) { options.seed = core::option::Some(value); return true; }
+    if (value > 2147483647 as u64) { return false; }
+    if (item.id == 2) { options.take = value as i32; }
+    if (item.id == 3) { options.maximum_bytes = value as i32; }
+    if (item.id == 4) { options.maximum_lines = value as i32; } return true;
+}
+fn input_error(error: core::io::Error) -> i32 { let result: i32 = match (error) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 }; return result; }
+fn add_row(rows: &alloc::vec::Vec<core::slice::View<u8>>, bytes: [u8], start: i32, count: i32, maximum: i32) -> i32 {
+    if (rows.len() == maximum) { return 2; }
+    let row: core::slice::View<u8> = core::slice::View { values: bytes, start: start, length: count };
+    if (core::result::is_err(rows.try_push(row))) { return 4; } return 0;
+}
+fn output_rows(rows: &alloc::vec::Vec<core::slice::View<u8>>, options: Options) -> i32 {
+    let count: i32 = rows.len(); if (options.take < count) { count = options.take; }
+    if (count == 0) { return 0; }
+    if (rows.len() > 1) {
+        let rng: core::random::Xoshiro256PlusPlus = core::random::from_seed(0);
+        if (core::option::is_some(options.seed)) { rng = core::random::from_seed(core::option::unwrap(options.seed)); }
+        else {
+            let acquired: core::result::Result<core::random::Xoshiro256PlusPlus, core::random::Error> = std::entropy::seeded();
+            if (core::result::is_err(acquired)) { return 3; } rng = core::result::unwrap(acquired);
+        }
+        if (core::result::is_err(core::random::shuffle(rng.borrow(),rows.as_view()))) { return 3; }
+    }
+    let newline: [u8; 1] = [10]; let sink: std::stream::Descriptor = std::stream::stdout(); let index: i32 = 0;
+    while (index < count) {
+        let row: core::slice::View<u8> = core::option::unwrap(rows.get(index));
+        if (core::result::is_err(core::io::write_all(sink.borrow(),row.values,row.start,row.len())) || core::result::is_err(core::io::write_all(sink.borrow(),newline,0,1))) { return 3; } index += 1;
+    }
+    return 0;
+}
+fn process(options: Options) -> i32 {
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(options.maximum_bytes)); let source: std::stream::Descriptor = std::stream::stdin();
+    let read: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    if (core::result::is_err(read)) { let failure: core::io::CopyFailure = core::result::unwrap_err(read); input.destroy(); return input_error(failure.cause); }
+    let rows: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); let bytes: [u8] = input.as_bytes(); let start: i32 = 0; let index: i32 = 0;
+    while (index < input.len()) {
+        if (bytes[index] == 10) {
+            let status: i32 = add_row(rows.borrow(),bytes,start,index-start,options.maximum_lines);
+            if (status != 0) { rows.destroy(); input.destroy(); return status; } start = index + 1;
+        }
+        index += 1;
+    }
+    if (start < input.len()) {
+        let status: i32 = add_row(rows.borrow(),bytes,start,input.len()-start,options.maximum_lines);
+        if (status != 0) { rows.destroy(); input.destroy(); return status; }
+    }
+    let status: i32 = output_rows(rows.borrow(),options); rows.destroy(); input.destroy(); return status;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,128,65536);
+    if (core::result::is_err(captured)) { let status: i32 = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; return status; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured);
+    let specs: [ext::cli::Spec; 5] = [
+        ext::cli::Spec { id: 1,long: name("seed",4),short: 115,arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2,long: name("count",5),short: 110,arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3,long: name("max-bytes",9),short: 0,arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4,long: name("max-lines",9),short: 0,arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5,long: name("help",4),short: 104,arity: ext::cli::Arity::Flag }
+    ];
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),core::result::unwrap(core::slice::view(specs,5)),ext::cli::Ordering::Intermixed));
+    let options: Options = Options { seed: core::option::None(),take: 2147483647,maximum_bytes: 1048576,maximum_lines: 65536,help: false };
+    while (true) {
+        let result: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(result)) { arguments.destroy(); return 2; } let event: core::option::Option<ext::cli::Event> = core::result::unwrap(result); if (core::option::is_none(event)) { break; }
+        let valid: bool = match (core::option::unwrap(event)) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> false };
+        if (!valid) { arguments.destroy(); return 2; }
+    }
+    arguments.destroy();
+    if (options.help) {
+        let usage: str = "Usage: shuffle-lines [-s SEED] [-n COUNT] [--max-bytes N] [--max-lines N]\n";
+        if (!std::io_checked::write_all_stdout(core::mem::string_data_ptr(usage),74)) { return 3; } return 0;
+    }
+    return process(options);
+}

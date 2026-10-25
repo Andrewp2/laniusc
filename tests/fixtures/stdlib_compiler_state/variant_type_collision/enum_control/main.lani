@@ -1,0 +1,1 @@
+module app::main; import app::a; import app::b; fn main() -> i32 { let result: app::b::Error = app::b::map(app::a::bad()); return match (result) { app::b::Error::InvalidUtf8(at) -> at, _ -> 0 }; }

@@ -1,0 +1,27 @@
+module app::main;
+import alloc::deque;
+import core::option;
+import core::result;
+import core::slice;
+struct Unit {}
+fn main() -> i32 {
+    let items: alloc::deque::Deque<Unit> = alloc::deque::new();
+    if (core::result::unwrap(items.try_reserve(1)) != 2147483647) { return 1; }
+    core::result::unwrap(items.try_push_front(Unit {})); core::result::unwrap(items.try_resize(65, Unit {}));
+    if (core::result::is_ok(items.try_reserve(2147483647))) { return 2; }
+    let view: core::slice::View<Unit> = core::result::unwrap(items.try_make_contiguous());
+    core::result::unwrap(items.try_extend_front(view));
+    core::result::unwrap(items.try_insert(64, Unit {})); core::result::unwrap(items.remove(2));
+    core::result::unwrap(items.rotate_left(23)); core::result::unwrap(items.rotate_right(17));
+    if (items.len() != 130 || core::result::unwrap(items.try_shrink_to_fit()) != 2147483647) { return 3; }
+    let clone: core::result::Result<alloc::deque::Deque<Unit>, alloc::deque::Error> = items.try_clone();
+    let copied: alloc::deque::Deque<Unit> = core::result::unwrap(clone); if (copied.len() != 130) { return 4; } copied.destroy();
+    let split: core::result::Result<alloc::deque::Deque<Unit>, alloc::deque::Error> = items.try_split_off(65);
+    let tail: alloc::deque::Deque<Unit> = core::result::unwrap(split); if (tail.len() != 65 || items.len() != 65) { return 5; } tail.destroy();
+    let cursor: alloc::deque::Cursor<Unit> = items.iter(); let count: i32 = 0;
+    while (core::option::is_some(cursor.next_back())) { count += 1; }
+    if (count != 65 || cursor.remaining() != 0) { return 6; }
+    count = 0; while (core::option::is_some(items.pop_front())) { count += 1; }
+    if (count != 65 || !items.is_empty()) { return 7; }
+    items.destroy(); if (items.capacity() != 0) { return 8; } return 0;
+}

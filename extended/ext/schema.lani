@@ -1,0 +1,462 @@
+// JSON Schema 2020-12, bounded supported profile. See docs/extended-schema.md.
+// Schema owns indexes and borrows an immutable, live JSON Document.
+module ext::schema;
+import alloc::vec;
+import core::decimal;
+import core::decimal_number;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json;
+
+pub struct Options { max_schema_nodes: i32, max_schema_depth: i32, max_validation_depth: i32, max_work: u64 }
+pub enum ErrorKind { Bounds, InvalidOptions, InvalidSchema, UnsupportedKeyword, UnsupportedDialect, InvalidReference, DuplicateKey, SchemaNodeLimit, DepthLimit, WorkLimit, Cycle, ScratchTooSmall, CapacityOverflow, AllocationFailed, Destroyed, ChangedDocument }
+pub struct Error { kind: ErrorKind, schema_node: i32, instance_node: i32 }
+pub struct Issue { keyword: Keyword, schema_node: i32, instance_node: i32, property_name: bool }
+pub struct Report { valid: bool, issue: core::option::Option<Issue>, work: u64 }
+pub struct Schema { document: &ext::json::Document, marks: alloc::vec::Vec<i32>, refs: alloc::vec::Vec<i32>, options: Options, required_scratch: i32, document_nodes: i32, live: bool }
+struct Budget { remaining: u64, used: u64, failure: core::option::Option<Error> }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn fail(&self, kind: ErrorKind, sn: i32, inn: i32) -> bool { if (core::option::is_none(self.failure)) { self.failure = core::option::Some(Error { kind: kind, schema_node: sn, instance_node: inn }); } return false; }
+    fn charge(&self, units: u64, sn: i32, inn: i32) -> bool {
+        if (core::option::is_some(self.failure)) { return false; }
+        if (units > self.remaining) { return self.fail(ErrorKind::WorkLimit,sn,inn); }
+        self.remaining -= units; self.used += units; return true;
+    }
+    fn good(&self) -> bool { return core::option::is_none(self.failure); }
+}
+pub fn default_options() -> Options { return Options { max_schema_nodes: 100000, max_schema_depth: 64, max_validation_depth: 64, max_work: 10000000 }; }
+fn err(kind: ErrorKind, sn: i32, inn: i32) -> Error { return Error { kind: kind, schema_node: sn, instance_node: inn }; }
+fn literal(value: str, count: i32) -> core::text::Text { return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),0,count); }
+fn kind(document: &ext::json::Document, node: i32) -> i32 { return match (core::result::unwrap(document.kind(node))) { Null -> 0, Boolean -> 1, Number -> 2, Text -> 3, Array -> 4, Object -> 5 }; }
+fn first(document: &ext::json::Document, node: i32) -> i32 { return core::option::unwrap_or(core::result::unwrap(document.first_child(node)),-1); }
+fn next(document: &ext::json::Document, node: i32) -> i32 { return core::option::unwrap_or(core::result::unwrap(document.next_sibling(node)),-1); }
+fn count(document: &ext::json::Document, node: i32) -> i32 { return core::result::unwrap(document.child_count(node)); }
+fn text(document: &ext::json::Document, node: i32) -> core::text::Text { return core::result::unwrap(document.string_view(node)); }
+fn key(document: &ext::json::Document, node: i32) -> core::text::Text { return core::result::unwrap(document.key_view(node)); }
+fn boolean(document: &ext::json::Document, node: i32) -> bool { return core::result::unwrap(document.boolean(node)); }
+fn bytes(value: core::text::Text) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view_range(value.bytes,value.start,value.length)); }
+fn eq_text(a: core::text::Text, b: core::text::Text, budget: &Budget, sn: i32, inn: i32) -> bool {
+    if (!budget.charge((a.length as u64)+(b.length as u64)+1,sn,inn)) { return false; } return a.equals(b);
+}
+fn member(document: &ext::json::Document, node: i32, name: core::text::Text, budget: &Budget, sn: i32, inn: i32) -> i32 {
+    let child: i32 = first(document,node); while (child >= 0) { if (!budget.charge(1,sn,inn)) { return -1; } if (eq_text(key(document,child),name,budget,sn,inn)) { return child; } child = next(document,child); } return -1;
+}
+fn duplicates(document: &ext::json::Document, budget: &Budget, schema: bool) -> bool {
+    let node: i32 = 0;
+    while (node < document.node_count()) {
+        let sn: i32 = -1; let inn: i32 = node; if (schema) { sn = node; inn = -1; }
+        if (!budget.charge(1,sn,inn)) { return false; }
+        if (kind(document,node) == 5) {
+            let a: i32 = first(document,node); while (a >= 0) { if (!budget.charge(1,sn,inn)) { return false; } let b: i32 = next(document,a);
+                while (b >= 0) { if (eq_text(key(document,a),key(document,b),budget,sn,inn)) { return budget.fail(ErrorKind::DuplicateKey,sn,inn); } if (!budget.good()) { return false; } b = next(document,b); } a = next(document,a);
+            }
+        } node += 1;
+    } return true;
+}
+fn number(document: &ext::json::Document, node: i32, budget: &Budget, sn: i32, inn: i32) -> core::decimal_number::Decimal {
+    let raw: core::slice::View<u8> = bytes(core::result::unwrap(document.number_view(node)));
+    if (!budget.charge(256*((raw.length as u64)+1),sn,inn)) { return core::result::unwrap(core::decimal_number::parse(bytes(literal("0",1)))); } return core::result::unwrap(core::decimal_number::parse(raw));
+}
+fn integer(value: core::decimal_number::Decimal, budget: &Budget, sn: i32, inn: i32) -> bool {
+    if (!budget.charge(256*((value.raw.length as u64)+1),sn,inn)) { return false; } return value.is_integer();
+}
+fn compare(a: core::decimal_number::Decimal, b: core::decimal_number::Decimal, budget: &Budget, sn: i32, inn: i32) -> i32 {
+    if (!budget.charge(256*((a.raw.length as u64)+(b.raw.length as u64)+1),sn,inn)) { return 0; } return a.compare(b);
+}
+fn count_compare(actual: i32, document: &ext::json::Document, bound: i32, budget: &Budget, sn: i32, inn: i32) -> i32 {
+    let buffer: [u8;11] = [0;11]; let length: i32 = core::result::unwrap(core::decimal::format_i32(buffer,0,11,actual));
+    if (!budget.charge(256*((length as u64)+1),sn,inn)) { return 0; }
+    let a: core::decimal_number::Decimal = core::result::unwrap(core::decimal_number::parse(core::result::unwrap(core::slice::view(buffer,length))));
+    let b: core::decimal_number::Decimal = number(document,bound,budget,sn,inn); return compare(a,b,budget,sn,inn);
+}
+
+pub enum Keyword { FalseSchema, Type, Const, Enum, Minimum, Maximum, ExclusiveMinimum, ExclusiveMaximum, MultipleOf, MinLength, MaxLength, MinItems, MaxItems, UniqueItems, Contains, MinContains, MaxContains, Required, DependentRequired, MinProperties, MaxProperties, AdditionalProperties, PropertyNames, AllOf, AnyOf, OneOf, Not, Items, PrefixItems, Properties, DependentSchemas, Ref, If, Then, Else }
+pub fn keyword_name(keyword: Keyword) -> str { return match (keyword) { FalseSchema -> "false", Type -> "type", Const -> "const", Enum -> "enum", Minimum -> "minimum", Maximum -> "maximum", ExclusiveMinimum -> "exclusiveMinimum", ExclusiveMaximum -> "exclusiveMaximum", MultipleOf -> "multipleOf", MinLength -> "minLength", MaxLength -> "maxLength", MinItems -> "minItems", MaxItems -> "maxItems", UniqueItems -> "uniqueItems", Contains -> "contains", MinContains -> "minContains", MaxContains -> "maxContains", Required -> "required", DependentRequired -> "dependentRequired", MinProperties -> "minProperties", MaxProperties -> "maxProperties", AdditionalProperties -> "additionalProperties", PropertyNames -> "propertyNames", AllOf -> "allOf", AnyOf -> "anyOf", OneOf -> "oneOf", Not -> "not", Items -> "items", PrefixItems -> "prefixItems", Properties -> "properties", DependentSchemas -> "dependentSchemas", Ref -> "$ref", If -> "if", Then -> "then", Else -> "else" }; }
+pub fn keyword_name_len(keyword: Keyword) -> i32 { return match (keyword) { FalseSchema -> 5, Type -> 4, Const -> 5, Enum -> 4, Minimum -> 7, Maximum -> 7, ExclusiveMinimum -> 16, ExclusiveMaximum -> 16, MultipleOf -> 10, MinLength -> 9, MaxLength -> 9, MinItems -> 8, MaxItems -> 8, UniqueItems -> 11, Contains -> 8, MinContains -> 11, MaxContains -> 11, Required -> 8, DependentRequired -> 17, MinProperties -> 13, MaxProperties -> 13, AdditionalProperties -> 20, PropertyNames -> 13, AllOf -> 5, AnyOf -> 5, OneOf -> 5, Not -> 3, Items -> 5, PrefixItems -> 11, Properties -> 10, DependentSchemas -> 16, Ref -> 4, If -> 2, Then -> 4, Else -> 4 }; }
+pub fn keyword_text(keyword: Keyword) -> core::text::Text { return literal(keyword_name(keyword),keyword_name_len(keyword)); }
+pub fn error_kind_text(value: ErrorKind) -> core::text::Text { return match (value) { Bounds -> literal("Bounds",6), InvalidOptions -> literal("InvalidOptions",14), InvalidSchema -> literal("InvalidSchema",13), UnsupportedKeyword -> literal("UnsupportedKeyword",18), UnsupportedDialect -> literal("UnsupportedDialect",18), InvalidReference -> literal("InvalidReference",16), DuplicateKey -> literal("DuplicateKey",12), SchemaNodeLimit -> literal("SchemaNodeLimit",15), DepthLimit -> literal("DepthLimit",10), WorkLimit -> literal("WorkLimit",9), Cycle -> literal("Cycle",5), ScratchTooSmall -> literal("ScratchTooSmall",15), CapacityOverflow -> literal("CapacityOverflow",16), AllocationFailed -> literal("AllocationFailed",16), Destroyed -> literal("Destroyed",9), ChangedDocument -> literal("ChangedDocument",15) }; }
+fn code(name: core::text::Text, budget: &Budget, sn: i32, inn: i32) -> i32 {
+ if (!budget.charge(64*((name.length as u64)+1),sn,inn)) { return -1; }
+ if (name.equals(literal("type",4))) { return 1; }
+ if (name.equals(literal("const",5))) { return 2; }
+ if (name.equals(literal("enum",4))) { return 3; }
+ if (name.equals(literal("minimum",7))) { return 4; }
+ if (name.equals(literal("maximum",7))) { return 5; }
+ if (name.equals(literal("exclusiveMinimum",16))) { return 6; }
+ if (name.equals(literal("exclusiveMaximum",16))) { return 7; }
+ if (name.equals(literal("multipleOf",10))) { return 8; }
+ if (name.equals(literal("minLength",9))) { return 9; }
+ if (name.equals(literal("maxLength",9))) { return 10; }
+ if (name.equals(literal("minItems",8))) { return 11; }
+ if (name.equals(literal("maxItems",8))) { return 12; }
+ if (name.equals(literal("uniqueItems",11))) { return 13; }
+ if (name.equals(literal("contains",8))) { return 14; }
+ if (name.equals(literal("minContains",11))) { return 15; }
+ if (name.equals(literal("maxContains",11))) { return 16; }
+ if (name.equals(literal("required",8))) { return 17; }
+ if (name.equals(literal("dependentRequired",17))) { return 18; }
+ if (name.equals(literal("minProperties",13))) { return 19; }
+ if (name.equals(literal("maxProperties",13))) { return 20; }
+ if (name.equals(literal("additionalProperties",20))) { return 21; }
+ if (name.equals(literal("propertyNames",13))) { return 22; }
+ if (name.equals(literal("allOf",5))) { return 23; }
+ if (name.equals(literal("anyOf",5))) { return 24; }
+ if (name.equals(literal("oneOf",5))) { return 25; }
+ if (name.equals(literal("not",3))) { return 26; }
+ if (name.equals(literal("items",5))) { return 27; }
+ if (name.equals(literal("prefixItems",11))) { return 28; }
+ if (name.equals(literal("properties",10))) { return 29; }
+ if (name.equals(literal("dependentSchemas",16))) { return 30; }
+ if (name.equals(literal("$ref",4))) { return 31; }
+ if (name.equals(literal("if",2))) { return 32; }
+ if (name.equals(literal("then",4))) { return 33; }
+ if (name.equals(literal("else",4))) { return 34; }
+ if (name.equals(literal("$defs",5))) { return 35; }
+ if (name.equals(literal("$schema",7))) { return 36; }
+ if (name.equals(literal("$comment",8))) { return 37; }
+ if (name.equals(literal("title",5))) { return 38; }
+ if (name.equals(literal("description",11))) { return 39; }
+ if (name.equals(literal("default",7))) { return 40; }
+ if (name.equals(literal("examples",8))) { return 41; }
+ if (name.equals(literal("deprecated",10))) { return 42; }
+ if (name.equals(literal("readOnly",8))) { return 43; }
+ if (name.equals(literal("writeOnly",9))) { return 44; }
+ return -1;
+}
+fn keyword(value: i32) -> Keyword { return match (value) { 0 -> Keyword::FalseSchema, 1 -> Keyword::Type, 2 -> Keyword::Const, 3 -> Keyword::Enum, 4 -> Keyword::Minimum, 5 -> Keyword::Maximum, 6 -> Keyword::ExclusiveMinimum, 7 -> Keyword::ExclusiveMaximum, 8 -> Keyword::MultipleOf, 9 -> Keyword::MinLength, 10 -> Keyword::MaxLength, 11 -> Keyword::MinItems, 12 -> Keyword::MaxItems, 13 -> Keyword::UniqueItems, 14 -> Keyword::Contains, 15 -> Keyword::MinContains, 16 -> Keyword::MaxContains, 17 -> Keyword::Required, 18 -> Keyword::DependentRequired, 19 -> Keyword::MinProperties, 20 -> Keyword::MaxProperties, 21 -> Keyword::AdditionalProperties, 22 -> Keyword::PropertyNames, 23 -> Keyword::AllOf, 24 -> Keyword::AnyOf, 25 -> Keyword::OneOf, 26 -> Keyword::Not, 27 -> Keyword::Items, 28 -> Keyword::PrefixItems, 29 -> Keyword::Properties, 30 -> Keyword::DependentSchemas, 31 -> Keyword::Ref, 32 -> Keyword::If, 33 -> Keyword::Then, 34 -> Keyword::Else, _ -> Keyword::FalseSchema }; }
+fn type_code(name: core::text::Text, budget: &Budget, sn: i32, inn: i32) -> i32 {
+    if (!budget.charge(16*((name.length as u64)+1),sn,inn)) { return -1; }
+    if (name.equals(literal("null",4))) { return 0; } if (name.equals(literal("boolean",7))) { return 1; }
+    if (name.equals(literal("number",6))) { return 2; } if (name.equals(literal("string",6))) { return 3; }
+    if (name.equals(literal("array",5))) { return 4; } if (name.equals(literal("object",6))) { return 5; }
+    if (name.equals(literal("integer",7))) { return 6; } return -1;
+}
+fn string_array(document: &ext::json::Document, node: i32, budget: &Budget, nonempty: bool) -> bool {
+    if (kind(document,node) != 4) { return budget.fail(ErrorKind::InvalidSchema,node,-1); }
+    if (nonempty && count(document,node) == 0) { return budget.fail(ErrorKind::InvalidSchema,node,-1); }
+    let a: i32 = first(document,node);
+    while (a >= 0) {
+        if (!budget.charge(1,a,-1)) { return false; }
+        if (kind(document,a) != 3) { return budget.fail(ErrorKind::InvalidSchema,a,-1); }
+        let b: i32 = next(document,a); while (b >= 0) {
+            if (kind(document,b) != 3) { return budget.fail(ErrorKind::InvalidSchema,b,-1); }
+            if (eq_text(text(document,a),text(document,b),budget,a,-1)) { return budget.fail(ErrorKind::InvalidSchema,b,-1); }
+            if (!budget.good()) { return false; } b = next(document,b);
+        } a = next(document,a);
+    } return true;
+}
+fn check_schema(schema: &Schema, node: i32, depth: i32, budget: &Budget) -> bool {
+    if (!budget.charge(1,node,-1)) { return false; }
+    if (depth > schema.options.max_schema_depth) { return budget.fail(ErrorKind::DepthLimit,node,-1); }
+    let document: &ext::json::Document = schema.document; let tag: i32 = kind(document,node);
+    if (tag != 1 && tag != 5) { return budget.fail(ErrorKind::InvalidSchema,node,-1); }
+    schema.marks.set(node,1); if (tag == 1) { return true; }
+    let child: i32 = first(document,node);
+    while (child >= 0) {
+        let id: i32 = code(key(document,child),budget,child,-1); if (!budget.good()) { return false; }
+        if (id < 0) { return budget.fail(ErrorKind::UnsupportedKeyword,child,-1); }
+        let ck: i32 = kind(document,child);
+        if (id == 1) {
+            if (ck == 3) { if (type_code(text(document,child),budget,child,-1) < 0) { return budget.fail(ErrorKind::InvalidSchema,child,-1); } }
+            else {
+                if (!string_array(document,child,budget,true)) { return false; }
+                let entry: i32 = first(document,child); while (entry >= 0) { if (type_code(text(document,entry),budget,entry,-1) < 0) { return budget.fail(ErrorKind::InvalidSchema,entry,-1); } entry = next(document,entry); }
+            }
+        }
+        if (id == 3 || id == 41) { if (ck != 4) { return budget.fail(ErrorKind::InvalidSchema,child,-1); } }
+        if (id >= 4 && id <= 8) {
+            if (ck != 2) { return budget.fail(ErrorKind::InvalidSchema,child,-1); }
+            if (id == 8) {
+                let value: core::decimal_number::Decimal = number(document,child,budget,child,-1); if (!budget.good()) { return false; }
+                if (value.is_zero() || value.is_negative()) { return budget.fail(ErrorKind::InvalidSchema,child,-1); }
+                let size: core::result::Result<i32,core::decimal_number::Error> = core::decimal_number::scratch_len(value);
+                if (core::result::is_err(size)) { return budget.fail(ErrorKind::CapacityOverflow,child,-1); }
+                let needed: i32 = core::result::unwrap(size); if (needed > schema.required_scratch) { schema.required_scratch = needed; }
+            }
+        }
+        if (id == 9 || id == 10 || id == 11 || id == 12 || id == 15 || id == 16 || id == 19 || id == 20) {
+            if (ck != 2) { return budget.fail(ErrorKind::InvalidSchema,child,-1); }
+            let value: core::decimal_number::Decimal = number(document,child,budget,child,-1);
+            if (!integer(value,budget,child,-1) || (value.is_negative() && !value.is_zero())) { if (!budget.good()) { return false; } return budget.fail(ErrorKind::InvalidSchema,child,-1); }
+        }
+        if (id == 13 || id >= 42) { if (ck != 1) { return budget.fail(ErrorKind::InvalidSchema,child,-1); } }
+        if (id == 17) { if (!string_array(document,child,budget,false)) { return false; } }
+        if (id == 18) {
+            if (ck != 5) { return budget.fail(ErrorKind::InvalidSchema,child,-1); } let entry: i32 = first(document,child);
+            while (entry >= 0) { if (!string_array(document,entry,budget,false)) { return false; } entry = next(document,entry); }
+        }
+        if (id == 23 || id == 24 || id == 25 || id == 28) {
+            if (ck != 4 || count(document,child) == 0) { return budget.fail(ErrorKind::InvalidSchema,child,-1); }
+            let entry: i32 = first(document,child); while (entry >= 0) { if (!check_schema(schema,entry,depth+1,budget)) { return false; } entry = next(document,entry); }
+        }
+        if (id == 14 || id == 21 || id == 22 || id == 26 || id == 27 || id == 32 || id == 33 || id == 34) {
+            if (!check_schema(schema,child,depth+1,budget)) { return false; }
+        }
+        if (id == 29 || id == 30 || id == 35) {
+            if (ck != 5) { return budget.fail(ErrorKind::InvalidSchema,child,-1); } let entry: i32 = first(document,child);
+            while (entry >= 0) { if (!check_schema(schema,entry,depth+1,budget)) { return false; } entry = next(document,entry); }
+        }
+        if (id == 31 || id == 36 || id == 37 || id == 38 || id == 39) { if (ck != 3) { return budget.fail(ErrorKind::InvalidSchema,child,-1); } }
+        if (id == 36) {
+            if (node != 0 || !eq_text(text(document,child),literal("https://json-schema.org/draft/2020-12/schema",44),budget,child,-1)) { if (!budget.good()) { return false; } return budget.fail(ErrorKind::UnsupportedDialect,child,-1); }
+        }
+        if (!budget.good()) { return false; } child = next(document,child);
+    } return true;
+}
+// URI fragment decoder. Delimiters are recognized after percent decoding,
+// while RFC 6901 tilde escaping is applied exactly once inside each token.
+struct Fragment { value: core::text::Text, at: i32, end: i32, good: bool }
+impl Fragment { fn borrow(&self) -> &Fragment { return self; } }
+fn hex(byte: u8) -> i32 { if (byte >= 48 && byte <= 57) { return (byte-48) as i32; } if (byte >= 65 && byte <= 70) { return (byte-55) as i32; } if (byte >= 97 && byte <= 102) { return (byte-87) as i32; } return -1; }
+fn fragment_byte(reader: &Fragment) -> i32 {
+    if (!reader.good || reader.at >= reader.end) { return -1; } let value: u8 = core::option::unwrap(reader.value.byte_at(reader.at)); reader.at += 1;
+    if (value == 37) { if (reader.end-reader.at < 2) { reader.good = false; return -1; } let a: i32 = hex(core::option::unwrap(reader.value.byte_at(reader.at))); let b: i32 = hex(core::option::unwrap(reader.value.byte_at(reader.at+1))); reader.at += 2; if (a < 0 || b < 0) { reader.good = false; return -1; } return a*16+b; }
+    let allowed: bool = (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57) || value == 45 || value == 46 || value == 95 || value == 126 || value == 33 || value == 36 || value == 38 || value == 39 || value == 40 || value == 41 || value == 42 || value == 43 || value == 44 || value == 59 || value == 61 || value == 58 || value == 64 || value == 47 || value == 63;
+    if (!allowed) { reader.good = false; return -1; } return value as i32;
+}
+fn token_byte(reader: &Fragment) -> i32 {
+    let value: i32 = fragment_byte(reader); if (value != 126) { return value; }
+    let escape: i32 = fragment_byte(reader); if (escape == 48) { return 126; } if (escape == 49) { return 47; } reader.good = false; return -1;
+}
+fn token_equal(value: core::text::Text, start: i32, end: i32, name: core::text::Text, budget: &Budget, sn: i32) -> bool {
+    if (!budget.charge(4*((end-start) as u64)+(name.length as u64)+1,sn,-1)) { return false; }
+    let reader: Fragment = Fragment { value: value, at: start, end: end, good: true }; let index: i32 = 0;
+    while (reader.at < reader.end && reader.good) { let byte: i32 = token_byte(reader.borrow()); if (byte < 0 || index >= name.length || byte != core::option::unwrap(name.byte_at(index)) as i32) { return false; } index += 1; }
+    return reader.good && index == name.length;
+}
+fn reference(schema: &Schema, node: i32, budget: &Budget) -> i32 {
+    let value: core::text::Text = text(schema.document,node); if (!budget.charge(8*((value.length as u64)+1),node,-1)) { return -1; }
+    if (value.length == 0) { return 0; } if (core::option::unwrap(value.byte_at(0)) != 35) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
+    let reader: Fragment = Fragment { value: value, at: 1, end: value.length, good: true }; let target: i32 = 0;
+    if (reader.at == reader.end) { return 0; }
+    if (fragment_byte(reader.borrow()) != 47) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
+    let done: bool = false;
+    while (!done) {
+        let start: i32 = reader.at; let end: i32 = start;
+        while (reader.at < reader.end && reader.good) { let before: i32 = reader.at; let byte: i32 = fragment_byte(reader.borrow()); if (byte == 47) { end = before; break; } end = reader.at; }
+        if (!reader.good) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; }
+        done = reader.at == reader.end && end == reader.end;
+        // A final slash denotes an empty final token, not end of pointer.
+        let tag: i32 = kind(schema.document,target); let found: i32 = -1;
+        if (tag == 5) {
+            let child: i32 = first(schema.document,target); while (child >= 0) { if (!budget.charge(1,node,-1)) { return -1; } if (token_equal(value,start,end,key(schema.document,child),budget,node)) { found = child; break; } if (!budget.good()) { return -1; } child = next(schema.document,child); }
+        }
+        if (tag == 4) {
+            let token: Fragment = Fragment { value: value, at: start, end: end, good: true }; let index: i32 = 0; let digits: i32 = 0; let leading: bool = false;
+            while (token.at < token.end && token.good) {
+                let digit: i32 = token_byte(token.borrow()); if (digit < 48 || digit > 57 || (digits > 0 && leading) || index > (2147483647-(digit-48))/10) { token.good = false; break; }
+                if (digits == 0) { leading = digit == 48; } index = index*10+digit-48; digits += 1;
+            }
+            if (token.good && digits > 0) { let child: i32 = first(schema.document,target); while (child >= 0 && index > 0) { if (!budget.charge(1,node,-1)) { return -1; } child = next(schema.document,child); index -= 1; } found = child; }
+        }
+        if (found < 0) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; } target = found;
+        if (!budget.charge(1,node,-1)) { return -1; }
+    }
+    if (schema.marks.at(target) != 1) { budget.fail(ErrorKind::InvalidReference,node,-1); return -1; } return target;
+}
+pub fn compile(document: &ext::json::Document, options: Options) -> core::result::Result<Schema,Error> {
+    if (options.max_schema_nodes < 0 || options.max_schema_depth < 0 || options.max_schema_depth > 128 || options.max_validation_depth < 0 || options.max_validation_depth > 128) { return core::result::Err(err(ErrorKind::InvalidOptions,-1,-1)); }
+    let nodes: i32 = document.node_count(); if (nodes == 0) { return core::result::Err(err(ErrorKind::InvalidSchema,-1,-1)); }
+    if (nodes > options.max_schema_nodes) { return core::result::Err(err(ErrorKind::SchemaNodeLimit,0,-1)); }
+    let budget: Budget = Budget { remaining: options.max_work, used: 0, failure: core::option::None() };
+    if (!duplicates(document,budget.borrow(),true) || !budget.charge(2*(nodes as u64),0,-1)) { return core::result::Err(core::option::unwrap(budget.failure)); }
+    let a: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(nodes);
+    if (core::result::is_err(a)) { return core::result::Err(err(ErrorKind::AllocationFailed,0,-1)); } let marks: alloc::vec::Vec<i32> = core::result::unwrap(a); marks.try_resize(nodes,0);
+    let b: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity<i32>(nodes);
+    if (core::result::is_err(b)) { marks.destroy(); return core::result::Err(err(ErrorKind::AllocationFailed,0,-1)); } let refs: alloc::vec::Vec<i32> = core::result::unwrap(b); refs.try_resize(nodes,-1);
+    let schema: Schema = Schema { document: document, marks: marks, refs: refs, options: options, required_scratch: 0, document_nodes: nodes, live: true };
+    if (!check_schema(schema.borrow(),0,0,budget.borrow())) { schema.destroy(); return core::result::Err(core::option::unwrap(budget.failure)); }
+    let node: i32 = 0;
+    while (node < nodes && budget.good()) {
+        if (!budget.charge(1,node,-1)) { break; }
+        if (marks.at(node) == 1 && kind(document,node) == 5) {
+            let ref_node: i32 = member(document,node,literal("$ref",4),budget.borrow(),node,-1);
+            if (ref_node >= 0) { let target: i32 = reference(schema.borrow(),ref_node,budget.borrow()); if (budget.good()) { refs.set(node,target); } }
+        } node += 1;
+    }
+    if (!budget.good()) { schema.destroy(); return core::result::Err(core::option::unwrap(budget.failure)); } return core::result::Ok(schema);
+}
+// Equality follows JSON's data model: mathematical numbers, ordered arrays,
+// unordered objects, exact Unicode scalar strings. Duplicate keys are rejected.
+fn equal(ad: &ext::json::Document, a: i32, ap: bool, bd: &ext::json::Document, b: i32, bp: bool, depth: i32, maximum: i32, budget: &Budget, sn: i32, inn: i32) -> bool {
+    if (!budget.charge(1,sn,inn)) { return false; } if (depth > maximum) { return budget.fail(ErrorKind::DepthLimit,sn,inn); }
+    let ak: i32 = 3; let bk: i32 = 3; if (!ap) { ak = kind(ad,a); } if (!bp) { bk = kind(bd,b); } if (ak != bk) { return false; }
+    if (ak == 0) { return true; } if (ak == 1) { return boolean(ad,a) == boolean(bd,b); }
+    if (ak == 2) { let av: core::decimal_number::Decimal = number(ad,a,budget,sn,inn); let bv: core::decimal_number::Decimal = number(bd,b,budget,sn,inn); return compare(av,bv,budget,sn,inn) == 0 && budget.good(); }
+    if (ak == 3) { let av: core::text::Text = literal("",0); let bv: core::text::Text = literal("",0); if (ap) { av = key(ad,a); } else { av = text(ad,a); } if (bp) { bv = key(bd,b); } else { bv = text(bd,b); } return eq_text(av,bv,budget,sn,inn); }
+    if (count(ad,a) != count(bd,b)) { return false; } let ac: i32 = first(ad,a); let bc: i32 = first(bd,b);
+    while (ac >= 0) {
+        if (!budget.charge(1,sn,inn)) { return false; }
+        if (ak == 5) { bc = member(bd,b,key(ad,ac),budget,sn,inn); if (bc < 0) { return false; } }
+        if (!equal(ad,ac,false,bd,bc,false,depth+1,maximum,budget,sn,inn)) { return false; }
+        ac = next(ad,ac); if (ak == 4) { bc = next(bd,bc); }
+    } return true;
+}
+struct State { schema: &Schema, instance: &ext::json::Document, budget: &Budget, scratch: core::slice::View<u8>, schemas: [i32], instances: [i32], names: [i32], issue: core::option::Option<Issue> }
+impl State {
+    fn borrow(&self) -> &State { return self; }
+    fn reject(&self, id: i32, sn: i32, inn: i32, property: bool) -> bool { self.issue = core::option::Some(Issue { keyword: keyword(id), schema_node: sn, instance_node: inn, property_name: property }); return false; }
+}
+fn rule(state: &State, node: i32, name: str, length: i32, inn: i32) -> i32 { return member(state.schema.document,node,literal(name,length),state.budget,node,inn); }
+fn scalar_length(value: core::text::Text, state: &State, sn: i32, inn: i32) -> i32 {
+    if (!state.budget.charge((value.length as u64)+1,sn,inn)) { return 0; } let length: i32 = 0; let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = core::option::unwrap(value.byte_at(index)); if ((byte & 192) != 128) { length += 1; } index += 1; } return length;
+}
+fn matches_type(state: &State, expected: i32, actual: i32, node: i32, sn: i32) -> bool {
+    if (expected != 6) { return expected == actual; } if (actual != 2) { return false; }
+    let value: core::decimal_number::Decimal = number(state.instance,node,state.budget,sn,node); return integer(value,state.budget,sn,node);
+}
+fn type_rule(state: &State, sn: i32, inn: i32, actual: i32, property: bool) -> bool {
+    let document: &ext::json::Document = state.schema.document;
+    if (kind(document,sn) == 3) { if (matches_type(state,type_code(text(document,sn),state.budget,sn,inn),actual,inn,sn)) { return true; } }
+    else {
+        let entry: i32 = first(document,sn); while (entry >= 0) { if (!state.budget.charge(1,sn,inn)) { return false; } if (matches_type(state,type_code(text(document,entry),state.budget,sn,inn),actual,inn,sn)) { return true; } if (!state.budget.good()) { return false; } entry = next(document,entry); }
+    } return state.reject(1,sn,inn,property);
+}
+fn count_rule(state: &State, id: i32, sn: i32, inn: i32, actual: i32, minimum: bool, property: bool) -> bool {
+    let ordering: i32 = count_compare(actual,state.schema.document,sn,state.budget,sn,inn); if (!state.budget.good()) { return false; }
+    if ((minimum && ordering < 0) || (!minimum && ordering > 0)) { return state.reject(id,sn,inn,property); } return true;
+}
+fn numeric_rule(state: &State, id: i32, sn: i32, inn: i32, property: bool) -> bool {
+    let value: core::decimal_number::Decimal = number(state.instance,inn,state.budget,sn,inn); let bound: core::decimal_number::Decimal = number(state.schema.document,sn,state.budget,sn,inn);
+    if (!state.budget.good()) { return false; }
+    if (id == 8) {
+        let checked: core::result::Result<core::decimal_number::Multiple,core::decimal_number::Error> = core::decimal_number::is_multiple_of_counted(value,bound,state.scratch,state.budget.remaining);
+        if (core::result::is_err(checked)) {
+            let error: core::decimal_number::Error = core::result::unwrap_err(checked);
+            let reason: ErrorKind = match (error.kind) { core::decimal_number::ErrorKind::WorkLimit -> ErrorKind::WorkLimit, core::decimal_number::ErrorKind::ScratchTooSmall -> ErrorKind::ScratchTooSmall, core::decimal_number::ErrorKind::CapacityOverflow -> ErrorKind::CapacityOverflow, _ -> ErrorKind::Bounds };
+            return state.budget.fail(reason,sn,inn);
+        }
+        let multiple: core::decimal_number::Multiple = core::result::unwrap(checked); if (!state.budget.charge(multiple.work,sn,inn)) { return false; }
+        if (!multiple.value) { return state.reject(id,sn,inn,property); } return true;
+    }
+    let ordering: i32 = compare(value,bound,state.budget,sn,inn); if (!state.budget.good()) { return false; }
+    if ((id == 4 && ordering < 0) || (id == 5 && ordering > 0) || (id == 6 && ordering <= 0) || (id == 7 && ordering >= 0)) { return state.reject(id,sn,inn,property); } return true;
+}
+fn required(state: &State, list: i32, inn: i32, keyword_id: i32, sn: i32) -> bool {
+    let child: i32 = first(state.schema.document,list); while (child >= 0) {
+        if (!state.budget.charge(1,sn,inn)) { return false; }
+        if (member(state.instance,inn,text(state.schema.document,child),state.budget,sn,inn) < 0) { if (!state.budget.good()) { return false; } return state.reject(keyword_id,sn,inn,false); } child = next(state.schema.document,child);
+    } return true;
+}
+fn object_rule(state: &State, id: i32, schema_node: i32, sn: i32, inn: i32, depth: i32) -> bool {
+    let document: &ext::json::Document = state.schema.document;
+    if (id == 19 || id == 20) { return count_rule(state,id,sn,inn,count(state.instance,inn),id == 19,false); }
+    if (id == 17) { return required(state,sn,inn,id,sn); }
+    if (id == 18 || id == 30) {
+        let dependency: i32 = first(document,sn); while (dependency >= 0) {
+            if (!state.budget.charge(1,sn,inn)) { return false; }
+            let present: i32 = member(state.instance,inn,key(document,dependency),state.budget,sn,inn);
+            if (!state.budget.good()) { return false; }
+            if (present >= 0) { if (id == 18) { if (!required(state,dependency,inn,id,sn)) { return false; } } else { if (!evaluate(state,dependency,inn,false,depth+1)) { return false; } } }
+            dependency = next(document,dependency);
+        } return true;
+    }
+    let properties: i32 = -1; if (id == 21) { properties = rule(state,schema_node,"properties",10,inn); if (!state.budget.good()) { return false; } }
+    let child: i32 = first(state.instance,inn);
+    while (child >= 0) {
+        if (!state.budget.charge(1,sn,inn)) { return false; }
+        if (id == 22) { if (!evaluate(state,sn,child,true,depth+1)) { return false; } }
+        if (id == 29) {
+            let subschema: i32 = member(document,sn,key(state.instance,child),state.budget,sn,inn); if (!state.budget.good()) { return false; }
+            if (subschema >= 0) { if (!evaluate(state,subschema,child,false,depth+1)) { return false; } }
+        }
+        if (id == 21) {
+            let subschema: i32 = -1; if (properties >= 0) { subschema = member(document,properties,key(state.instance,child),state.budget,sn,inn); }
+            if (!state.budget.good()) { return false; } if (subschema < 0) { if (!evaluate(state,sn,child,false,depth+1)) { return false; } }
+        }
+        child = next(state.instance,child);
+    } return true;
+}
+fn array_rule(state: &State, id: i32, schema_node: i32, sn: i32, inn: i32, depth: i32) -> bool {
+    let document: &ext::json::Document = state.schema.document;
+    if (id == 11 || id == 12) { return count_rule(state,id,sn,inn,count(state.instance,inn),id == 11,false); }
+    if (id == 13) {
+        if (!boolean(document,sn)) { return true; } let a: i32 = first(state.instance,inn);
+        while (a >= 0) { if (!state.budget.charge(1,sn,inn)) { return false; } let b: i32 = next(state.instance,a); while (b >= 0) {
+            if (equal(state.instance,a,false,state.instance,b,false,depth+1,state.schema.options.max_validation_depth,state.budget,sn,inn)) { return state.reject(id,sn,inn,false); } if (!state.budget.good()) { return false; } b = next(state.instance,b);
+        } a = next(state.instance,a); } return true;
+    }
+    if (id == 14) {
+        let matches: i32 = 0; let child: i32 = first(state.instance,inn); let saved: core::option::Option<Issue> = state.issue;
+        while (child >= 0) { if (!state.budget.charge(1,sn,inn)) { return false; } if (evaluate(state,sn,child,false,depth+1)) { matches += 1; } if (!state.budget.good()) { return false; } state.issue = saved; child = next(state.instance,child); }
+        let minimum: i32 = rule(state,schema_node,"minContains",11,inn); let maximum: i32 = rule(state,schema_node,"maxContains",11,inn); if (!state.budget.good()) { return false; }
+        if (minimum < 0) { if (matches == 0) { return state.reject(id,sn,inn,false); } }
+        else { if (!count_rule(state,15,minimum,inn,matches,true,false)) { return false; } }
+        if (maximum >= 0) { if (!count_rule(state,16,maximum,inn,matches,false,false)) { return false; } } return true;
+    }
+    let child: i32 = first(state.instance,inn);
+    if (id == 28) { let subschema: i32 = first(document,sn); while (child >= 0 && subschema >= 0) { if (!state.budget.charge(1,sn,inn)) { return false; } if (!evaluate(state,subschema,child,false,depth+1)) { return false; } child = next(state.instance,child); subschema = next(document,subschema); } return true; }
+    if (id == 27) {
+        let prefix: i32 = rule(state,schema_node,"prefixItems",11,inn); if (!state.budget.good()) { return false; } let skip: i32 = 0; if (prefix >= 0) { skip = count(document,prefix); }
+        while (child >= 0) { if (!state.budget.charge(1,sn,inn)) { return false; } if (skip > 0) { skip -= 1; } else { if (!evaluate(state,sn,child,false,depth+1)) { return false; } } child = next(state.instance,child); }
+    } return true;
+}
+fn logic_rule(state: &State, id: i32, schema_node: i32, sn: i32, inn: i32, property: bool, depth: i32) -> bool {
+    let saved: core::option::Option<Issue> = state.issue;
+    if (id == 26) { let success: bool = evaluate(state,sn,inn,property,depth+1); if (!state.budget.good()) { return false; } state.issue = saved; if (success) { return state.reject(id,sn,inn,property); } return true; }
+    if (id == 32) {
+        let success: bool = evaluate(state,sn,inn,property,depth+1); if (!state.budget.good()) { return false; } state.issue = saved;
+        let selected: i32 = -1; if (success) { selected = rule(state,schema_node,"then",4,inn); } else { selected = rule(state,schema_node,"else",4,inn); }
+        if (!state.budget.good()) { return false; } if (selected >= 0) { return evaluate(state,selected,inn,property,depth+1); } return true;
+    }
+    let child: i32 = first(state.schema.document,sn); let matches: i32 = 0;
+    while (child >= 0) {
+        if (!state.budget.charge(1,sn,inn)) { return false; } let success: bool = evaluate(state,child,inn,property,depth+1); if (!state.budget.good()) { return false; }
+        if (id == 23 && !success) { return false; } state.issue = saved;
+        if (success) { matches += 1; if (id == 24) { return true; } if (id == 25 && matches > 1) { return state.reject(id,sn,inn,property); } }
+        child = next(state.schema.document,child);
+    }
+    if ((id == 24 && matches == 0) || (id == 25 && matches != 1)) { return state.reject(id,sn,inn,property); } return true;
+}
+fn evaluate(state: &State, sn: i32, inn: i32, property: bool, depth: i32) -> bool {
+    if (!state.budget.charge(1,sn,inn)) { return false; } if (depth > state.schema.options.max_validation_depth) { return state.budget.fail(ErrorKind::DepthLimit,sn,inn); }
+    let flag: i32 = 0; if (property) { flag = 1; } let frame: i32 = 0;
+    while (frame < depth) { if (!state.budget.charge(1,sn,inn)) { return false; } if (state.schemas[frame] == sn && state.instances[frame] == inn && state.names[frame] == flag) { return state.budget.fail(ErrorKind::Cycle,sn,inn); } frame += 1; }
+    state.schemas[depth] = sn; state.instances[depth] = inn; state.names[depth] = flag;
+    let document: &ext::json::Document = state.schema.document;
+    if (kind(document,sn) == 1) { if (boolean(document,sn)) { return true; } return state.reject(0,sn,inn,property); }
+    let target: i32 = state.schema.refs.at(sn); if (target >= 0) { if (!evaluate(state,target,inn,property,depth+1)) { return false; } }
+    let actual: i32 = 3; if (!property) { actual = kind(state.instance,inn); } let child: i32 = first(document,sn);
+    while (child >= 0) {
+        let id: i32 = code(key(document,child),state.budget,child,inn); if (!state.budget.good()) { return false; }
+        if (id == 1) { if (!type_rule(state,child,inn,actual,property)) { return false; } }
+        if (id == 2) { if (!equal(document,child,false,state.instance,inn,property,depth,state.schema.options.max_validation_depth,state.budget,child,inn)) { if (!state.budget.good()) { return false; } return state.reject(id,child,inn,property); } }
+        if (id == 3) {
+            let entry: i32 = first(document,child); let found: bool = false;
+            while (entry >= 0) { if (!state.budget.charge(1,child,inn)) { return false; } if (equal(document,entry,false,state.instance,inn,property,depth,state.schema.options.max_validation_depth,state.budget,child,inn)) { found = true; break; } if (!state.budget.good()) { return false; } entry = next(document,entry); }
+            if (!found) { return state.reject(id,child,inn,property); }
+        }
+        if (actual == 2 && id >= 4 && id <= 8) { if (!numeric_rule(state,id,child,inn,property)) { return false; } }
+        if (actual == 3 && (id == 9 || id == 10)) {
+            let value: core::text::Text = literal("",0); if (property) { value = key(state.instance,inn); } else { value = text(state.instance,inn); }
+            let length: i32 = scalar_length(value,state,child,inn); if (!count_rule(state,id,child,inn,length,id == 9,property)) { return false; }
+        }
+        if (actual == 4 && (id == 11 || id == 12 || id == 13 || id == 14 || id == 27 || id == 28)) { if (!array_rule(state,id,sn,child,inn,depth)) { return false; } }
+        if (actual == 5 && (id == 17 || id == 18 || id == 19 || id == 20 || id == 21 || id == 22 || id == 29 || id == 30)) { if (!object_rule(state,id,sn,child,inn,depth)) { return false; } }
+        if (id == 23 || id == 24 || id == 25 || id == 26 || id == 32) { if (!logic_rule(state,id,sn,child,inn,property,depth)) { return false; } }
+        child = next(document,child);
+    } return state.budget.good();
+}
+pub impl Schema {
+    pub fn borrow(&self) -> &Schema { return self; }
+    pub fn scratch_len(&self) -> i32 { if (!self.live) { return 0; } return self.required_scratch; }
+    pub fn destroy(&self) { if (self.live) { self.marks.destroy(); self.refs.destroy(); self.live = false; } }
+    pub fn validate(&self, instance: &ext::json::Document, scratch: core::slice::View<u8>) -> core::result::Result<Report,Error> {
+        if (!self.live) { return core::result::Err(err(ErrorKind::Destroyed,-1,-1)); }
+        if (self.document.node_count() != self.document_nodes) { return core::result::Err(err(ErrorKind::ChangedDocument,-1,-1)); }
+        if (scratch.start < 0 || scratch.length < 0 || scratch.start > 2147483647-scratch.length) { return core::result::Err(err(ErrorKind::Bounds,-1,-1)); }
+        if (scratch.length < self.required_scratch) { return core::result::Err(err(ErrorKind::ScratchTooSmall,-1,-1)); }
+        if (instance.node_count() == 0) { return core::result::Err(err(ErrorKind::Bounds,-1,-1)); }
+        let budget: Budget = Budget { remaining: self.options.max_work, used: 0, failure: core::option::None() };
+        if (!duplicates(instance,budget.borrow(),false)) { return core::result::Err(core::option::unwrap(budget.failure)); }
+        let schemas: [i32;129] = [0;129]; let instances: [i32;129] = [0;129]; let names: [i32;129] = [0;129];
+        let state: State = State { schema: self, instance: instance, budget: budget.borrow(), scratch: scratch, schemas: schemas, instances: instances, names: names, issue: core::option::None() };
+        let valid: bool = evaluate(state.borrow(),0,0,false,0); if (!budget.good()) { return core::result::Err(core::option::unwrap(budget.failure)); }
+        return core::result::Ok(Report { valid: valid, issue: state.issue, work: budget.used });
+    }
+}

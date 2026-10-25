@@ -1,0 +1,14 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import ext::signal;
+fn complex_result(result: core::result::Result<alloc::vec::Vec<ext::signal::Complex>,ext::signal::Error>) { if (result.is_ok()) { let values: alloc::vec::Vec<ext::signal::Complex> = result.unwrap(); values.destroy(); } else { assert(match (result.unwrap_err()) { ext::signal::Error::AllocationFailed -> true, _ -> false }); } }
+fn real_result(result: core::result::Result<alloc::vec::Vec<f64>,ext::signal::Error>) { if (result.is_ok()) { let values: alloc::vec::Vec<f64> = result.unwrap(); values.destroy(); } else { assert(match (result.unwrap_err()) { ext::signal::Error::AllocationFailed -> true, _ -> false }); } }
+fn main() -> i32 {
+ let zero: ext::signal::Complex = ext::signal::Complex { re: 0.0,im: 0.0 }; let values: [ext::signal::Complex;4] = [zero;4]; values[1].re = 1.0; let complex: core::slice::View<ext::signal::Complex> = core::slice::view(values,4).unwrap();
+ let reals: [f64;4] = [1.0,2.0,3.0,4.0]; let real: core::slice::View<f64> = core::slice::view(reals,4).unwrap(); let limits: ext::signal::Limits = ext::signal::default_limits();
+ complex_result(ext::signal::fft(complex,ext::signal::Direction::Forward,limits)); complex_result(ext::signal::real_fft(real,8,ext::signal::Window::Hann,true,limits)); real_result(ext::signal::windowed(real,ext::signal::Window::Blackman,false,limits)); real_result(ext::signal::convolve(real,real,limits));
+ let result: core::result::Result<alloc::vec::Vec<ext::signal::Bin>,ext::signal::Error> = ext::signal::bins(complex,0.25,limits); if (result.is_ok()) { let bins: alloc::vec::Vec<ext::signal::Bin> = result.unwrap(); bins.destroy(); } else { assert(match (result.unwrap_err()) { ext::signal::Error::AllocationFailed -> true, _ -> false }); }
+ assert(values[1].re == 1.0 && reals[3] == 4.0); return 0;
+}

@@ -1,0 +1,18 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::result;
+import probe::owners;
+import probe::protocol;
+fn main() -> i32 {
+    let a: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("left"),4);
+    let b: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("R\0!"),3);
+    let left: alloc::string::String = alloc::string::from_utf8(a,4).unwrap();
+    let right: alloc::string::String = alloc::string::from_utf8(b,3).unwrap();
+    let bad: probe::owners::Pair = probe::owners::Pair { left:left,right:right,tag:102,fail:1 };
+    let result: core::result::Result<probe::owners::Pair,probe::owners::OwnerFailure> = probe::owners::Pair::try_clone_value(bad);
+    assert(result.is_err());
+    assert(match(result.unwrap_err()) { probe::owners::OwnerFailure::Injected(tag,phase,marker) -> tag == 102 && phase == 1 && marker == 18446744073709551610, _ -> false });
+    assert(left.byte_at(0).unwrap() == 108 && left.byte_len() == 4 && right.byte_at(1).unwrap() == 0 && right.byte_len() == 3);
+    left.destroy(); right.destroy(); return 0;
+}

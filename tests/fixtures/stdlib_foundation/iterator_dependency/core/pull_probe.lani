@@ -1,0 +1,8 @@
+module core::pull_probe;
+import core::option;
+pub trait Pull<T> { pub fn next(&self) -> core::option::Option<T>; }
+pub struct Cursor<T> { value: T }
+pub impl<T> Cursor<T> { pub fn borrow(&self) -> &Cursor<T> { return self; } }
+pub impl<T> Pull<T> for Cursor<T> {
+    pub fn next(&self) -> core::option::Option<T> { return core::option::Some(self.value); }
+}

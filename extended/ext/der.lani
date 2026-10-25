@@ -1,0 +1,370 @@
+// Borrowed X.690 DER framing and explicitly requested primitive validation.
+// No recursive/schema validation, allocation, SET ordering or owner retention.
+module ext::der;
+import core::calendar;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+pub enum Class { Universal, Application, Context, Private }
+pub struct Tag { class: Class, constructed: bool, number: u32 }
+pub enum ErrorKind {
+    Bounds, UnexpectedEnd, InvalidTag, TagOverflow, InvalidLength,
+    LengthOverflow, IndefiniteLength, NonCanonical, TrailingData,
+    UnexpectedTag, InvalidValue, IntegerOverflow, ArcOverflow, OutputTooSmall
+}
+// Reader offsets are relative to that reader's input. Typed helper offsets
+// are relative to Element.content; writer offsets are relative to the value
+// input (zero for metadata/capacity errors). All count logical u8 elements.
+pub struct Error { kind: ErrorKind, offset: i32 }
+pub struct Element { tag: Tag, encoded: core::slice::View<u8>, content: core::slice::View<u8> }
+pub struct Reader { input: core::slice::View<u8>, position: i32 }
+pub struct BitString { bytes: core::slice::View<u8>, unused_bits: u8 }
+pub struct Oid { bytes: core::slice::View<u8> }
+pub struct OidArcs { input: core::slice::View<u8>, position: i32, first: bool, pending: bool, second: u64 }
+pub struct X509Time { year: i32, month: i32, day: i32, hour: i32, minute: i32, second: i32 }
+
+fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
+fn valid(view: core::slice::View<u8>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length;
+}
+fn byte(view: core::slice::View<u8>, at: i32) -> u8 { return view.values[view.start + at]; }
+fn part(view: core::slice::View<u8>, at: i32, length: i32) -> core::slice::View<u8> {
+    return core::slice::View { values: view.values, start: view.start + at, length: length };
+}
+fn class_code(value: Class) -> u8 {
+    return match (value) { Class::Universal -> 0, Class::Application -> 1, Class::Context -> 2, Class::Private -> 3 };
+}
+fn class_from(code: u8) -> Class {
+    if (code == 0) { return Class::Universal; }
+    if (code == 1) { return Class::Application; }
+    if (code == 2) { return Class::Context; }
+    return Class::Private;
+}
+fn valid_tag(tag: Tag) -> bool { return class_code(tag.class) != 0 || tag.number != 0; }
+pub impl Tag {
+    pub fn matches(&self, class: Class, constructed: bool, number: u32) -> bool {
+        return class_code(self.class) == class_code(class) && self.constructed == constructed && self.number == number;
+    }
+}
+
+fn parse_at(input: core::slice::View<u8>, at: i32) -> core::result::Result<Element, Error> {
+    if (!valid(input) || at < 0 || at > input.length) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let cursor: i32 = at;
+    if (cursor == input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd, cursor)); }
+    let first: u8 = byte(input, cursor); cursor += 1;
+    let number: u32 = (first & 31) as u32;
+    if (number == 31) {
+        number = 0; let initial: bool = true;
+        while (true) {
+            if (cursor == input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd, cursor)); }
+            let value: u8 = byte(input, cursor); let digit: u32 = (value & 127) as u32;
+            if (initial && digit == 0) { return core::result::Err(error(ErrorKind::NonCanonical, cursor)); }
+            if (number > (4294967295 - digit) / 128) { return core::result::Err(error(ErrorKind::TagOverflow, cursor)); }
+            number = number * 128 + digit; cursor += 1; initial = false;
+            if (value < 128) { break; }
+        }
+        if (number < 31) { return core::result::Err(error(ErrorKind::NonCanonical, at)); }
+    }
+    let tag: Tag = Tag { class: class_from(first >> 6), constructed: (first & 32) != 0, number: number };
+    if (!valid_tag(tag)) { return core::result::Err(error(ErrorKind::InvalidTag, at)); }
+    if (cursor == input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd, cursor)); }
+    let length_at: i32 = cursor; let lead: u8 = byte(input, cursor); cursor += 1;
+    let length: i32 = lead as i32;
+    if (lead == 128) { return core::result::Err(error(ErrorKind::IndefiniteLength, length_at)); }
+    if (lead == 255) { return core::result::Err(error(ErrorKind::InvalidLength, length_at)); }
+    if (lead > 128) {
+        let count: i32 = (lead & 127) as i32;
+        if (count > input.length - cursor) { return core::result::Err(error(ErrorKind::UnexpectedEnd, input.length)); }
+        if (byte(input, cursor) == 0) { return core::result::Err(error(ErrorKind::NonCanonical, cursor)); }
+        if (count > 4) { return core::result::Err(error(ErrorKind::LengthOverflow, length_at)); }
+        let value: u32 = 0; let index: i32 = 0;
+        while (index < count) { value = (value << 8) | (byte(input, cursor) as u32); cursor += 1; index += 1; }
+        if (value < 128) { return core::result::Err(error(ErrorKind::NonCanonical, length_at)); }
+        if (value > 2147483647) { return core::result::Err(error(ErrorKind::LengthOverflow, length_at)); }
+        length = value as i32;
+    }
+    if (length > input.length - cursor) { return core::result::Err(error(ErrorKind::UnexpectedEnd, input.length)); }
+    return core::result::Ok(Element { tag: tag, encoded: part(input, at, cursor - at + length), content: part(input, cursor, length) });
+}
+pub fn reader(input: core::slice::View<u8>) -> core::result::Result<Reader, Error> {
+    if (!valid(input)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    return core::result::Ok(Reader { input: input, position: 0 });
+}
+pub fn parse_one(input: core::slice::View<u8>) -> core::result::Result<Element, Error> {
+    let result: core::result::Result<Element, Error> = parse_at(input, 0);
+    if (result.is_err()) { return result; }
+    let value: Element = result.unwrap();
+    if (value.encoded.length != input.length) { return core::result::Err(error(ErrorKind::TrailingData, value.encoded.length)); }
+    return core::result::Ok(value);
+}
+pub impl Reader {
+    pub fn borrow(&self) -> &Reader { return self; }
+    pub fn position(&self) -> i32 { return self.position; }
+    pub fn remaining(&self) -> i32 { return self.input.length - self.position; }
+    pub fn next(&self) -> core::result::Result<core::option::Option<Element>, Error> {
+        if (!valid(self.input) || self.position < 0 || self.position > self.input.length) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (self.position == self.input.length) { return core::result::Ok(core::option::None()); }
+        let parsed: core::result::Result<Element, Error> = parse_at(self.input, self.position);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+        let value: Element = parsed.unwrap(); self.position += value.encoded.length;
+        return core::result::Ok(core::option::Some(value));
+    }
+    pub fn finish(&self) -> core::result::Result<i32, Error> {
+        if (!valid(self.input) || self.position < 0 || self.position > self.input.length) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (self.position != self.input.length) { return core::result::Err(error(ErrorKind::TrailingData, self.position)); }
+        return core::result::Ok(self.position);
+    }
+}
+fn primitive(element: &Element, number: u32) -> core::result::Result<core::slice::View<u8>, Error> {
+    if (!valid(element.content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    if (!element.tag.matches(Class::Universal, false, number)) { return core::result::Err(error(ErrorKind::UnexpectedTag, 0)); }
+    return core::result::Ok(element.content);
+}
+fn integer(content: core::slice::View<u8>) -> core::result::Result<core::slice::View<u8>, Error> {
+    if (!valid(content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    if (content.length == 0) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+    if (content.length > 1) {
+        let first: u8 = byte(content, 0); let second: u8 = byte(content, 1);
+        if ((first == 0 && second < 128) || (first == 255 && second >= 128)) { return core::result::Err(error(ErrorKind::NonCanonical, 0)); }
+    }
+    return core::result::Ok(content);
+}
+fn oid_bytes(content: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    if (content.length == 0) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+    let at: i32 = 0; let initial: bool = true;
+    while (at < content.length) {
+        let value: u8 = byte(content, at);
+        if (initial && value == 128) { return core::result::Err(error(ErrorKind::NonCanonical, at)); }
+        initial = value < 128; at += 1;
+    }
+    if (!initial) { return core::result::Err(error(ErrorKind::UnexpectedEnd, content.length)); }
+    return core::result::Ok(content.length);
+}
+fn digits(content: core::slice::View<u8>, at: i32, count: i32) -> i32 {
+    let value: i32 = 0; let index: i32 = 0;
+    while (index < count) { let digit: u8 = byte(content, at + index); if (digit < 48 || digit > 57) { return -1; } value = value * 10 + (digit as i32) - 48; index += 1; }
+    return value;
+}
+pub impl Element {
+    pub fn children(&self) -> core::result::Result<Reader, Error> {
+        if (!valid(self.content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (!self.tag.constructed) { return core::result::Err(error(ErrorKind::UnexpectedTag, 0)); }
+        return reader(self.content);
+    }
+    pub fn as_sequence(&self) -> core::result::Result<Reader, Error> {
+        if (!valid(self.content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (!self.tag.matches(Class::Universal, true, 16)) { return core::result::Err(error(ErrorKind::UnexpectedTag, 0)); }
+        return self.children();
+    }
+    pub fn as_set(&self) -> core::result::Result<Reader, Error> {
+        if (!valid(self.content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (!self.tag.matches(Class::Universal, true, 17)) { return core::result::Err(error(ErrorKind::UnexpectedTag, 0)); }
+        return self.children();
+    }
+    pub fn as_boolean(&self) -> core::result::Result<bool, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 1);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let content: core::slice::View<u8> = checked.unwrap();
+        if (content.length != 1) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+        let value: u8 = byte(content, 0);
+        if (value != 0 && value != 255) { return core::result::Err(error(ErrorKind::NonCanonical, 0)); }
+        return core::result::Ok(value != 0);
+    }
+    pub fn as_integer(&self) -> core::result::Result<core::slice::View<u8>, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 2);
+        if (checked.is_err()) { return checked; } return integer(checked.unwrap());
+    }
+    pub fn as_i64(&self) -> core::result::Result<i64, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = self.as_integer();
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let content: core::slice::View<u8> = checked.unwrap();
+        if (content.length > 8) { return core::result::Err(error(ErrorKind::IntegerOverflow, 0)); }
+        let value: u64 = 0; let at: i32 = 0;
+        while (at < content.length) { value = (value << 8) | (byte(content, at) as u64); at += 1; }
+        if (byte(content, 0) >= 128 && content.length < 8) { value |= 18446744073709551615 << (content.length * 8); }
+        return core::result::Ok(value as i64);
+    }
+    pub fn as_u64(&self) -> core::result::Result<u64, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = self.as_integer();
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let content: core::slice::View<u8> = checked.unwrap();
+        if (byte(content, 0) >= 128 || content.length > 9 || (content.length == 9 && byte(content, 0) != 0)) { return core::result::Err(error(ErrorKind::IntegerOverflow, 0)); }
+        let value: u64 = 0; let at: i32 = 0;
+        while (at < content.length) { value = (value << 8) | (byte(content, at) as u64); at += 1; }
+        return core::result::Ok(value);
+    }
+    pub fn as_bit_string(&self) -> core::result::Result<BitString, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 3);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let content: core::slice::View<u8> = checked.unwrap();
+        if (content.length == 0) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+        let unused: u8 = byte(content, 0);
+        if (unused > 7 || (content.length == 1 && unused != 0)) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+        let mask: u8 = ((1 << (unused as i32)) - 1) as u8;
+        if (content.length > 1 && (byte(content, content.length - 1) & mask) != 0) { return core::result::Err(error(ErrorKind::NonCanonical, content.length - 1)); }
+        return core::result::Ok(BitString { bytes: part(content, 1, content.length - 1), unused_bits: unused });
+    }
+    pub fn as_octets(&self) -> core::result::Result<core::slice::View<u8>, Error> { return primitive(self, 4); }
+    pub fn as_null(&self) -> core::result::Result<i32, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 5);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        if (checked.unwrap().length != 0) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); } return core::result::Ok(0);
+    }
+    pub fn as_oid(&self) -> core::result::Result<Oid, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 6);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let content: core::slice::View<u8> = checked.unwrap(); let valid_content: core::result::Result<i32, Error> = oid_bytes(content);
+        if (valid_content.is_err()) { return core::result::Err(valid_content.unwrap_err()); } return core::result::Ok(Oid { bytes: content });
+    }
+    pub fn as_utf8(&self) -> core::result::Result<core::text::Text, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 12);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let content: core::slice::View<u8> = checked.unwrap();
+        let text: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8_range(content.values, content.start, content.length);
+        if (text.is_err()) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); } return core::result::Ok(text.unwrap());
+    }
+    pub fn as_printable(&self) -> core::result::Result<core::slice::View<u8>, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 19);
+        if (checked.is_err()) { return checked; }
+        let content: core::slice::View<u8> = checked.unwrap(); let at: i32 = 0;
+        while (at < content.length) {
+            let value: u8 = byte(content, at);
+            if (!((value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57) || value == 32 || value == 39 || value == 40 || value == 41 || value == 43 || value == 44 || value == 45 || value == 46 || value == 47 || value == 58 || value == 61 || value == 63)) { return core::result::Err(error(ErrorKind::InvalidValue, at)); }
+            at += 1;
+        }
+        return core::result::Ok(content);
+    }
+    pub fn as_ia5(&self) -> core::result::Result<core::slice::View<u8>, Error> {
+        let checked: core::result::Result<core::slice::View<u8>, Error> = primitive(self, 22);
+        if (checked.is_err()) { return checked; }
+        let content: core::slice::View<u8> = checked.unwrap(); let at: i32 = 0;
+        while (at < content.length) { if (byte(content, at) > 127) { return core::result::Err(error(ErrorKind::InvalidValue, at)); } at += 1; }
+        return core::result::Ok(content);
+    }
+    // RFC5280 second-precision profile with seconds 00..59; leap seconds
+    // require caller policy. Not general GeneralizedTime decoding.
+    // Does not enforce a certificate issuer's choice of time tag by year.
+    pub fn as_x509_time(&self) -> core::result::Result<X509Time, Error> {
+        if (!valid(self.content)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        let utc: bool = self.tag.matches(Class::Universal, false, 23);
+        if (!utc && !self.tag.matches(Class::Universal, false, 24)) { return core::result::Err(error(ErrorKind::UnexpectedTag, 0)); }
+        let content: core::slice::View<u8> = self.content; let width: i32 = 4; if (utc) { width = 2; }
+        if (content.length != width + 11 || byte(content, content.length - 1) != 90) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+        let year: i32 = digits(content, 0, width); if (year < 0) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+        if (utc) { if (year >= 50) { year += 1900; } else { year += 2000; } }
+        let month: i32 = digits(content, width, 2); let day: i32 = digits(content, width + 2, 2);
+        let hour: i32 = digits(content, width + 4, 2); let minute: i32 = digits(content, width + 6, 2); let second: i32 = digits(content, width + 8, 2);
+        if (year == 0 || second > 59 || core::calendar::date(year, month, day).is_err() || core::calendar::time_of_day(hour, minute, second, 0).is_err()) { return core::result::Err(error(ErrorKind::InvalidValue, 0)); }
+        return core::result::Ok(X509Time { year: year, month: month, day: day, hour: hour, minute: minute, second: second });
+    }
+}
+
+pub impl Oid {
+    pub fn arcs(&self) -> core::result::Result<OidArcs, Error> {
+        let checked: core::result::Result<i32, Error> = oid_bytes(self.bytes);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        return core::result::Ok(OidArcs { input: self.bytes, position: 0, first: true, pending: false, second: 0 });
+    }
+}
+pub impl OidArcs {
+    pub fn borrow(&self) -> &OidArcs { return self; }
+    pub fn position(&self) -> i32 { return self.position; }
+    pub fn next(&self) -> core::result::Result<core::option::Option<u64>, Error> {
+        if (!valid(self.input) || self.position < 0 || self.position > self.input.length) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+        if (self.pending) { self.pending = false; return core::result::Ok(core::option::Some(self.second)); }
+        if (self.position == self.input.length) { return core::result::Ok(core::option::None()); }
+        let at: i32 = self.position; let cursor: i32 = at; let low: u64 = 0; let high: u64 = 0;
+        while (true) {
+            if (cursor == self.input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd, cursor)); }
+            let value: u8 = byte(self.input, cursor);
+            if (cursor == at && value == 128) { return core::result::Err(error(ErrorKind::NonCanonical, cursor)); }
+            if (high != 0) { return core::result::Err(error(ErrorKind::ArcOverflow, cursor)); }
+            high = low >> 57; low = (low << 7) | ((value & 127) as u64);
+            if (high > 1 || (!self.first && high != 0) || (high == 1 && low > 79)) { return core::result::Err(error(ErrorKind::ArcOverflow, cursor)); }
+            cursor += 1; if (value < 128) { break; }
+        }
+        self.position = cursor;
+        if (self.first) {
+            let root: u64 = 2; let second: u64 = 0;
+            if (high == 1) { second = 18446744073709551536 + low; }
+            else { if (low < 40) { root = 0; second = low; } else { if (low < 80) { root = 1; second = low - 40; } else { second = low - 80; } } }
+            self.first = false; self.second = second; self.pending = true;
+            return core::result::Ok(core::option::Some(root));
+        }
+        return core::result::Ok(core::option::Some(low));
+    }
+}
+
+pub fn header_len(tag: Tag, length: i32) -> core::result::Result<i32, Error> {
+    if (!valid_tag(tag)) { return core::result::Err(error(ErrorKind::InvalidTag, 0)); }
+    if (length < 0) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let total: i32 = 2; let number: u32 = tag.number;
+    if (number >= 31) { while (number != 0) { total += 1; number >>= 7; } }
+    if (length >= 128) { let count: u32 = length as u32; while (count != 0) { total += 1; count >>= 8; } }
+    return core::result::Ok(total);
+}
+pub fn encoded_len(tag: Tag, length: i32) -> core::result::Result<i32, Error> {
+    let counted: core::result::Result<i32, Error> = header_len(tag, length);
+    if (counted.is_err()) { return counted; }
+    let header: i32 = counted.unwrap();
+    if (length > 2147483647 - header) { return core::result::Err(error(ErrorKind::LengthOverflow, 0)); }
+    return core::result::Ok(header + length);
+}
+fn put_header(tag: Tag, length: i32, output: core::slice::View<u8>) -> i32 {
+    let first: u8 = class_code(tag.class) << 6; if (tag.constructed) { first |= 32; }
+    let at: i32 = 0;
+    if (tag.number < 31) { output.values[output.start] = first | (tag.number as u8); at = 1; }
+    else {
+        output.values[output.start] = first | 31; at = 1;
+        let groups: i32 = 1; let rest: u32 = tag.number; while (rest >= 128) { groups += 1; rest >>= 7; }
+        let index: i32 = groups - 1;
+        while (index >= 0) { let value: u8 = ((tag.number >> (index * 7)) & 127) as u8; if (index != 0) { value |= 128; } output.values[output.start + at] = value; at += 1; index -= 1; }
+    }
+    if (length < 128) { output.values[output.start + at] = length as u8; return at + 1; }
+    let count: i32 = 1; let rest: u32 = length as u32; while (rest >= 256) { count += 1; rest >>= 8; }
+    output.values[output.start + at] = (128 + count) as u8; at += 1; let index: i32 = count - 1;
+    while (index >= 0) { output.values[output.start + at] = (((length as u32) >> (index * 8)) & 255) as u8; at += 1; index -= 1; }
+    return at;
+}
+pub fn write_header(tag: Tag, length: i32, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(output)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let counted: core::result::Result<i32, Error> = header_len(tag, length); if (counted.is_err()) { return counted; }
+    if (counted.unwrap() > output.length) { return core::result::Err(error(ErrorKind::OutputTooSmall, 0)); }
+    return core::result::Ok(put_header(tag, length, output));
+}
+// Output backing must be disjoint from content backing. Metadata, total
+// size and capacity are validated before the first output store.
+pub fn write_tlv(tag: Tag, content: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(content) || !valid(output)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let counted: core::result::Result<i32, Error> = encoded_len(tag, content.length); if (counted.is_err()) { return counted; }
+    if (counted.unwrap() > output.length) { return core::result::Err(error(ErrorKind::OutputTooSmall, 0)); }
+    let head: i32 = put_header(tag, content.length, output); let at: i32 = 0;
+    while (at < content.length) { output.values[output.start + head + at] = byte(content, at); at += 1; }
+    return counted;
+}
+pub fn write_boolean(value: bool, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    let bytes: [u8; 1] = [0]; if (value) { bytes[0] = 255; }
+    return write_tlv(Tag { class: Class::Universal, constructed: false, number: 1 }, core::slice::View { values: bytes, start: 0, length: 1 }, output);
+}
+pub fn write_integer(content: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(output)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    let checked: core::result::Result<core::slice::View<u8>, Error> = integer(content);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return write_tlv(Tag { class: Class::Universal, constructed: false, number: 2 }, content, output);
+}
+pub fn write_i64(value: i64, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    let bytes: [u8; 8] = [0; 8]; let raw: u64 = value as u64; let at: i32 = 0;
+    while (at < 8) { bytes[at] = ((raw >> ((7 - at) * 8)) & 255) as u8; at += 1; }
+    let start: i32 = 0;
+    while (start < 7 && ((bytes[start] == 0 && bytes[start + 1] < 128) || (bytes[start] == 255 && bytes[start + 1] >= 128))) { start += 1; }
+    return write_integer(core::slice::View { values: bytes, start: start, length: 8 - start }, output);
+}
+pub fn write_u64(value: u64, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    let bytes: [u8; 9] = [0; 9]; let at: i32 = 1;
+    while (at < 9) { bytes[at] = ((value >> ((8 - at) * 8)) & 255) as u8; at += 1; }
+    let start: i32 = 0; while (start < 8 && bytes[start] == 0 && bytes[start + 1] < 128) { start += 1; }
+    return write_integer(core::slice::View { values: bytes, start: start, length: 9 - start }, output);
+}

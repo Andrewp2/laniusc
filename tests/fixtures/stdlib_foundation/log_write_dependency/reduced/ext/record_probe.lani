@@ -1,0 +1,23 @@
+module ext::record_probe;
+import core::io;
+import core::fmt;
+import core::result;
+import core::option;
+import core::slice;
+import core::text;
+pub enum Value { Text(core::text::Text), Number(u64), Null }
+pub struct Field { key: core::text::Text, value: Value }
+pub enum Level { Trace, Debug, Info, Warn, Error }
+pub struct Record { level: Level, target: core::text::Text, message: core::text::Text, fields: core::slice::View<Field> }
+pub impl Record { pub fn borrow(&self) -> &Record { return self; } }
+pub enum Error { Format(core::fmt::Error) }
+fn render(record: &Record, output: &core::fmt::Formatter) -> core::result::Result<i32, core::fmt::Error> {
+    let field: Field = core::option::unwrap(record.fields.get(0)); return output.write_quoted(field.key);
+}
+pub fn count(record: &Record) -> core::result::Result<i32, Error> {
+    let output: core::fmt::Formatter = core::fmt::measure();
+    let result: core::result::Result<i32, core::fmt::Error> = render(record, output.borrow());
+    if (core::result::is_err(result)) { return core::result::Err(Error::Format(core::result::unwrap_err(result))); }
+    return core::result::Ok(core::result::unwrap(result));
+}
+pub fn forwarded<W>(unused: &W, record: &Record) -> core::result::Result<i32, Error> where W: core::io::Write { return count(record); }

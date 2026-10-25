@@ -1,142 +1,143 @@
 module app::main;
-import core::number_i32;
-import core::byte;
+import core::option;
+import core::i32;
+import core::u8;
 fn as_byte(value: u32) -> u8 {
     return value as u8;
 }
 fn main() -> i32 {
-    if (core::byte::MIN != 0 || core::byte::MAX != 255) {
+    if (core::u8::MIN != 0 || core::u8::MAX != 255) {
         return 14;
     }
-    let maximum: i32 = core::number_i32::MAX;
-    let minimum: i32 = core::number_i32::MIN;
-    if (core::number_i32::min(7, -3) != -3 || core::number_i32::max(7, -3) != 7) {
+    let maximum: i32 = core::i32::MAX;
+    let minimum: i32 = core::i32::MIN;
+    if (core::i32::min(7, -3) != -3 || core::i32::max(7, -3) != 7) {
         return 1;
     }
-    if (core::number_i32::clamp_or(9, 2, 6, -1) != 6 || core::number_i32::clamp_or(0, 2, 6, -1) != 2 || core::number_i32::clamp_or(4, 6, 2, -1) != -1) {
+    if (core::i32::clamp_or(9, 2, 6, -1) != 6 || core::i32::clamp_or(0, 2, 6, -1) != 2 || core::i32::clamp_or(4, 6, 2, -1) != -1) {
         return 2;
     }
-    if (core::number_i32::saturating_abs(-7) != 7 || core::number_i32::saturating_abs(minimum) != maximum) {
+    if (core::i32::saturating_abs(-7) != 7 || core::i32::saturating_abs(minimum) != maximum) {
         return 3;
     }
-    if (core::number_i32::gcd_or(54, -24, 99) != 6 || core::number_i32::gcd_or(-54, -24, 99) != 6 || core::number_i32::gcd_or(0, 7, 99) != 7 || core::number_i32::gcd_or(0, 0, 99) != 0 || core::number_i32::gcd_or(minimum, 0, 99) != 99 || core::number_i32::gcd_or(minimum, maximum, 99) != 1 || core::number_i32::gcd_or(minimum, -2, 99) != 2 || core::number_i32::gcd_or(-2, minimum, 99) != 2 || core::number_i32::gcd_or(minimum, minimum, 99) != 99) {
+    if (core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(54, -24)), 99) != 6 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(-54, -24)), 99) != 6 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(0, 7)), 99) != 7 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(0, 0)), 99) != 0 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(minimum, 0)), 99) != 99 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(minimum, maximum)), 99) != 1 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(minimum, -2)), 99) != 2 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(-2, minimum)), 99) != 2 || core::option::unwrap_or(core::i32::checked_from_u32(core::i32::gcd(minimum, minimum)), 99) != 99) {
         return 46;
     }
-    if (core::number_i32::lcm_or(12, -18, 99) != 36 || core::number_i32::lcm_or(-12, -18, 99) != 36 || core::number_i32::lcm_or(0, minimum, 99) != 0 || core::number_i32::lcm_or(minimum, 1, 99) != 99 || core::number_i32::lcm_or(minimum, minimum, 99) != 99 || core::number_i32::lcm_or(maximum, 1, 99) != maximum || core::number_i32::lcm_or(maximum, 2, 99) != 99 || core::number_i32::lcm_or(1073741824, 2, 99) != 1073741824) {
+    if (core::option::unwrap_or(core::i32::checked_lcm(12, -18), 99) != 36 || core::option::unwrap_or(core::i32::checked_lcm(-12, -18), 99) != 36 || core::option::unwrap_or(core::i32::checked_lcm(0, minimum), 99) != 0 || core::option::unwrap_or(core::i32::checked_lcm(minimum, 1), 99) != 99 || core::option::unwrap_or(core::i32::checked_lcm(minimum, minimum), 99) != 99 || core::option::unwrap_or(core::i32::checked_lcm(maximum, 1), 99) != maximum || core::option::unwrap_or(core::i32::checked_lcm(maximum, 2), 99) != 99 || core::option::unwrap_or(core::i32::checked_lcm(1073741824, 2), 99) != 1073741824) {
         return 47;
     }
-    if (core::number_i32::saturating_add(maximum, 1) != maximum || core::number_i32::saturating_add(minimum, -1) != minimum || core::number_i32::saturating_add(-3, 2) != -1) {
+    if (core::i32::saturating_add(maximum, 1) != maximum || core::i32::saturating_add(minimum, -1) != minimum || core::i32::saturating_add(-3, 2) != -1) {
         return 4;
     }
-    if (core::number_i32::saturating_sub(minimum, 1) != minimum || core::number_i32::saturating_sub(maximum, -1) != maximum || core::number_i32::saturating_sub(3, 2) != 1) {
+    if (core::i32::saturating_sub(minimum, 1) != minimum || core::i32::saturating_sub(maximum, -1) != maximum || core::i32::saturating_sub(3, 2) != 1) {
         return 5;
     }
-    if (core::number_i32::saturating_mul(6, -7) != -42 || core::number_i32::saturating_mul(0, minimum) != 0 || core::number_i32::saturating_mul(minimum, 1) != minimum || core::number_i32::saturating_mul(minimum, -1) != maximum || core::number_i32::saturating_mul(maximum, 2) != maximum || core::number_i32::saturating_mul(minimum, 2) != minimum || core::number_i32::saturating_mul(-46341, -46341) != maximum || core::number_i32::saturating_mul(-46340, -46340) != 2147395600 || core::number_i32::saturating_mul(-1073741824, 2) != minimum) {
+    if (core::i32::saturating_mul(6, -7) != -42 || core::i32::saturating_mul(0, minimum) != 0 || core::i32::saturating_mul(minimum, 1) != minimum || core::i32::saturating_mul(minimum, -1) != maximum || core::i32::saturating_mul(maximum, 2) != maximum || core::i32::saturating_mul(minimum, 2) != minimum || core::i32::saturating_mul(-46341, -46341) != maximum || core::i32::saturating_mul(-46340, -46340) != 2147395600 || core::i32::saturating_mul(-1073741824, 2) != minimum) {
         return 28;
     }
-    if (core::number_i32::wrapping_add(2, 3) != 5 || core::number_i32::wrapping_add(maximum, 1) != minimum || core::number_i32::wrapping_add(minimum, -1) != maximum) {
+    if (core::i32::wrapping_add(2, 3) != 5 || core::i32::wrapping_add(maximum, 1) != minimum || core::i32::wrapping_add(minimum, -1) != maximum) {
         return 48;
     }
-    if (core::number_i32::wrapping_sub(5, 2) != 3 || core::number_i32::wrapping_sub(minimum, 1) != maximum || core::number_i32::wrapping_sub(maximum, -1) != minimum) {
+    if (core::i32::wrapping_sub(5, 2) != 3 || core::i32::wrapping_sub(minimum, 1) != maximum || core::i32::wrapping_sub(maximum, -1) != minimum) {
         return 49;
     }
-    if (core::number_i32::wrapping_mul(-7, 9) != -63 || core::number_i32::wrapping_mul(maximum, 2) != -2 || core::number_i32::wrapping_mul(minimum, -1) != minimum || core::number_i32::wrapping_mul(65536, 65536) != 0) {
+    if (core::i32::wrapping_mul(-7, 9) != -63 || core::i32::wrapping_mul(maximum, 2) != -2 || core::i32::wrapping_mul(minimum, -1) != minimum || core::i32::wrapping_mul(65536, 65536) != 0) {
         return 50;
     }
-    if (core::number_i32::mul_or(6, -7, 99) != -42 || core::number_i32::mul_or(0, minimum, 99) != 0 || core::number_i32::mul_or(minimum, 1, 99) != minimum || core::number_i32::mul_or(minimum, -1, 99) != 99 || core::number_i32::mul_or(maximum, 2, 99) != 99 || core::number_i32::mul_or(minimum, 2, 99) != 99 || core::number_i32::mul_or(-46340, -46340, 99) != 2147395600) {
+    if (core::option::unwrap_or(core::i32::checked_mul(6, -7), 99) != -42 || core::option::unwrap_or(core::i32::checked_mul(0, minimum), 99) != 0 || core::option::unwrap_or(core::i32::checked_mul(minimum, 1), 99) != minimum || core::option::unwrap_or(core::i32::checked_mul(minimum, -1), 99) != 99 || core::option::unwrap_or(core::i32::checked_mul(maximum, 2), 99) != 99 || core::option::unwrap_or(core::i32::checked_mul(minimum, 2), 99) != 99 || core::option::unwrap_or(core::i32::checked_mul(-46340, -46340), 99) != 2147395600) {
         return 29;
     }
-    if (core::number_i32::saturating_mul(2, minimum) != minimum || core::number_i32::saturating_mul(-1, minimum) != maximum || core::number_i32::saturating_mul(2, -1073741824) != minimum || core::number_i32::saturating_mul(maximum, -1) != -2147483647) {
+    if (core::i32::saturating_mul(2, minimum) != minimum || core::i32::saturating_mul(-1, minimum) != maximum || core::i32::saturating_mul(2, -1073741824) != minimum || core::i32::saturating_mul(maximum, -1) != -2147483647) {
         return 30;
     }
-    if (core::number_i32::mul_or(2, minimum, 99) != 99 || core::number_i32::mul_or(-1, minimum, 99) != 99 || core::number_i32::mul_or(2, -1073741824, 99) != minimum || core::number_i32::mul_or(2, -1073741825, 99) != 99) {
+    if (core::option::unwrap_or(core::i32::checked_mul(2, minimum), 99) != 99 || core::option::unwrap_or(core::i32::checked_mul(-1, minimum), 99) != 99 || core::option::unwrap_or(core::i32::checked_mul(2, -1073741824), 99) != minimum || core::option::unwrap_or(core::i32::checked_mul(2, -1073741825), 99) != 99) {
         return 31;
     }
-    if (core::number_i32::pow_or(0, 0, 99) != 1 || core::number_i32::pow_or(0, 99, 99) != 0 || core::number_i32::pow_or(3, 5, 99) != 243 || core::number_i32::pow_or(-3, 5, 99) != -243 || core::number_i32::pow_or(-3, 4, 99) != 81 || core::number_i32::pow_or(2, 30, 99) != 1073741824 || core::number_i32::pow_or(2, 31, 99) != 99 || core::number_i32::pow_or(-2, 31, 99) != minimum || core::number_i32::pow_or(-2, 32, 99) != 99 || core::number_i32::pow_or(minimum, 1, 99) != minimum || core::number_i32::pow_or(minimum, 2, 99) != 99 || core::number_i32::pow_or(-1, 4294967295, 99) != -1) {
+    if (core::option::unwrap_or(core::i32::checked_pow(0, 0), 99) != 1 || core::option::unwrap_or(core::i32::checked_pow(0, 99), 99) != 0 || core::option::unwrap_or(core::i32::checked_pow(3, 5), 99) != 243 || core::option::unwrap_or(core::i32::checked_pow(-3, 5), 99) != -243 || core::option::unwrap_or(core::i32::checked_pow(-3, 4), 99) != 81 || core::option::unwrap_or(core::i32::checked_pow(2, 30), 99) != 1073741824 || core::option::unwrap_or(core::i32::checked_pow(2, 31), 99) != 99 || core::option::unwrap_or(core::i32::checked_pow(-2, 31), 99) != minimum || core::option::unwrap_or(core::i32::checked_pow(-2, 32), 99) != 99 || core::option::unwrap_or(core::i32::checked_pow(minimum, 1), 99) != minimum || core::option::unwrap_or(core::i32::checked_pow(minimum, 2), 99) != 99 || core::option::unwrap_or(core::i32::checked_pow(-1, 4294967295), 99) != -1) {
         return 32;
     }
-    if (core::number_i32::saturating_abs_diff(minimum, maximum) != maximum || core::number_i32::saturating_abs_diff(3, 7) != 4) {
+    if (core::i32::saturating_abs_diff(minimum, maximum) != maximum || core::i32::saturating_abs_diff(3, 7) != 4) {
         return 6;
     }
-    if (!core::number_i32::is_even(-4) || core::number_i32::is_even(-3) || !core::number_i32::is_power_of_two(1024) || core::number_i32::is_power_of_two(0) || core::number_i32::is_power_of_two(-2)) {
+    if (!core::i32::is_even(-4) || core::i32::is_even(-3) || !core::i32::is_power_of_two(1024) || core::i32::is_power_of_two(0) || core::i32::is_power_of_two(-2)) {
         return 7;
     }
-    if (!core::number_i32::is_odd(-3) || core::number_i32::is_odd(-4) || !core::number_i32::is_zero(0) || core::number_i32::is_zero(1)) {
+    if (!core::i32::is_odd(-3) || core::i32::is_odd(-4) || !core::i32::is_zero(0) || core::i32::is_zero(1)) {
         return 22;
     }
-    if (core::number_i32::signum(-7) != -1 || core::number_i32::signum(0) != 0 || core::number_i32::signum(7) != 1) {
+    if (core::i32::signum(-7) != -1 || core::i32::signum(0) != 0 || core::i32::signum(7) != 1) {
         return 23;
     }
-    if (!core::number_i32::is_multiple_of(minimum, -1) || !core::number_i32::is_multiple_of(12, 3) || core::number_i32::is_multiple_of(7, 3) || core::number_i32::is_multiple_of(7, 0)) {
+    if (!core::i32::is_multiple_of(minimum, -1) || !core::i32::is_multiple_of(12, 3) || core::i32::is_multiple_of(7, 3) || core::i32::is_multiple_of(7, 0)) {
         return 24;
     }
-    if (core::number_i32::div_or(-7, 3, 99) != -2 || core::number_i32::div_or(7, 0, 99) != 99 || core::number_i32::div_or(minimum, -1, 99) != 99) {
+    if (core::option::unwrap_or(core::i32::checked_div(-7, 3), 99) != -2 || core::option::unwrap_or(core::i32::checked_div(7, 0), 99) != 99 || core::option::unwrap_or(core::i32::checked_div(minimum, -1), 99) != 99) {
         return 25;
     }
-    if (core::number_i32::rem_or(-7, 3, 99) != -1 || core::number_i32::rem_or(7, 0, 99) != 99 || core::number_i32::rem_or(minimum, -1, 99) != 99) {
+    if (core::option::unwrap_or(core::i32::checked_rem(-7, 3), 99) != -1 || core::option::unwrap_or(core::i32::checked_rem(7, 0), 99) != 99 || core::option::unwrap_or(core::i32::checked_rem(minimum, -1), 99) != 99) {
         return 26;
     }
-    if (core::number_i32::div_euclid_or(7, 3, 99) != 2 || core::number_i32::div_euclid_or(-7, 3, 99) != -3 || core::number_i32::div_euclid_or(7, -3, 99) != -2 || core::number_i32::div_euclid_or(-7, -3, 99) != 3 || core::number_i32::div_euclid_or(-6, 3, 99) != -2 || core::number_i32::div_euclid_or(minimum, 3, 99) != -715827883 || core::number_i32::div_euclid_or(minimum, -3, 99) != 715827883 || core::number_i32::div_euclid_or(-1, minimum, 99) != 1 || core::number_i32::div_euclid_or(minimum, minimum, 99) != 1 || core::number_i32::div_euclid_or(7, 0, 99) != 99 || core::number_i32::div_euclid_or(minimum, -1, 99) != 99) {
+    if (core::option::unwrap_or(core::i32::checked_div_euclid(7, 3), 99) != 2 || core::option::unwrap_or(core::i32::checked_div_euclid(-7, 3), 99) != -3 || core::option::unwrap_or(core::i32::checked_div_euclid(7, -3), 99) != -2 || core::option::unwrap_or(core::i32::checked_div_euclid(-7, -3), 99) != 3 || core::option::unwrap_or(core::i32::checked_div_euclid(-6, 3), 99) != -2 || core::option::unwrap_or(core::i32::checked_div_euclid(minimum, 3), 99) != -715827883 || core::option::unwrap_or(core::i32::checked_div_euclid(minimum, -3), 99) != 715827883 || core::option::unwrap_or(core::i32::checked_div_euclid(-1, minimum), 99) != 1 || core::option::unwrap_or(core::i32::checked_div_euclid(minimum, minimum), 99) != 1 || core::option::unwrap_or(core::i32::checked_div_euclid(7, 0), 99) != 99 || core::option::unwrap_or(core::i32::checked_div_euclid(minimum, -1), 99) != 99) {
         return 39;
     }
-    if (core::number_i32::rem_euclid_or(7, 3, 99) != 1 || core::number_i32::rem_euclid_or(-7, 3, 99) != 2 || core::number_i32::rem_euclid_or(7, -3, 99) != 1 || core::number_i32::rem_euclid_or(-7, -3, 99) != 2 || core::number_i32::rem_euclid_or(-6, 3, 99) != 0 || core::number_i32::rem_euclid_or(minimum, 3, 99) != 1 || core::number_i32::rem_euclid_or(minimum, -3, 99) != 1 || core::number_i32::rem_euclid_or(-1, minimum, 99) != maximum || core::number_i32::rem_euclid_or(minimum, minimum, 99) != 0 || core::number_i32::rem_euclid_or(7, 0, 99) != 99 || core::number_i32::rem_euclid_or(minimum, -1, 99) != 99) {
+    if (core::option::unwrap_or(core::i32::checked_rem_euclid(7, 3), 99) != 1 || core::option::unwrap_or(core::i32::checked_rem_euclid(-7, 3), 99) != 2 || core::option::unwrap_or(core::i32::checked_rem_euclid(7, -3), 99) != 1 || core::option::unwrap_or(core::i32::checked_rem_euclid(-7, -3), 99) != 2 || core::option::unwrap_or(core::i32::checked_rem_euclid(-6, 3), 99) != 0 || core::option::unwrap_or(core::i32::checked_rem_euclid(minimum, 3), 99) != 1 || core::option::unwrap_or(core::i32::checked_rem_euclid(minimum, -3), 99) != 1 || core::option::unwrap_or(core::i32::checked_rem_euclid(-1, minimum), 99) != maximum || core::option::unwrap_or(core::i32::checked_rem_euclid(minimum, minimum), 99) != 0 || core::option::unwrap_or(core::i32::checked_rem_euclid(7, 0), 99) != 99 || core::option::unwrap_or(core::i32::checked_rem_euclid(minimum, -1), 99) != 99) {
         return 40;
     }
-    if (core::number_i32::next_power_of_two(0) != 1 || core::number_i32::next_power_of_two(7) != 8 || core::number_i32::next_power_of_two(1073741824) != 1073741824 || core::number_i32::next_power_of_two(maximum) != 0) {
+    if (core::option::unwrap_or(core::i32::checked_next_power_of_two(0), 0) != 1 || core::option::unwrap_or(core::i32::checked_next_power_of_two(7), 0) != 8 || core::option::unwrap_or(core::i32::checked_next_power_of_two(1073741824), 0) != 1073741824 || core::option::unwrap_or(core::i32::checked_next_power_of_two(maximum), 0) != 0) {
         return 27;
     }
-    if (core::byte::saturating_add(250, 10) != 255 || core::byte::saturating_add(2, 3) != 5 || core::byte::saturating_sub(0, 1) != 0 || core::byte::saturating_mul(200, 2) != 255 || core::byte::saturating_mul(3, 5) != 15 || core::byte::saturating_mul(0, 200) != 0) {
+    if (core::u8::saturating_add(250, 10) != 255 || core::u8::saturating_add(2, 3) != 5 || core::u8::saturating_sub(0, 1) != 0 || core::u8::saturating_mul(200, 2) != 255 || core::u8::saturating_mul(3, 5) != 15 || core::u8::saturating_mul(0, 200) != 0) {
         return 8;
     }
-    if (core::byte::wrapping_add(255, 1) != 0 || core::byte::wrapping_add(2, 3) != 5 || core::byte::wrapping_sub(0, 1) != 255 || core::byte::wrapping_sub(5, 2) != 3 || core::byte::abs_diff(0, 255) != 255) {
+    if (core::u8::wrapping_add(255, 1) != 0 || core::u8::wrapping_add(2, 3) != 5 || core::u8::wrapping_sub(0, 1) != 255 || core::u8::wrapping_sub(5, 2) != 3 || core::u8::abs_diff(0, 255) != 255) {
         return 9;
     }
-    if (core::byte::wrapping_mul(7, 9) != 63 || core::byte::wrapping_mul(200, 2) != 144 || core::byte::wrapping_mul(255, 255) != 1 || core::byte::wrapping_mul(0, 255) != 0 || core::byte::wrapping_mul(128, 2) != 0 || core::byte::wrapping_mul(17, 15) != 255 || core::byte::wrapping_mul(15, 17) != 255) {
+    if (core::u8::wrapping_mul(7, 9) != 63 || core::u8::wrapping_mul(200, 2) != 144 || core::u8::wrapping_mul(255, 255) != 1 || core::u8::wrapping_mul(0, 255) != 0 || core::u8::wrapping_mul(128, 2) != 0 || core::u8::wrapping_mul(17, 15) != 255 || core::u8::wrapping_mul(15, 17) != 255) {
         return 33;
     }
-    if (core::byte::high_nibble(171) != 10 || core::byte::low_nibble(171) != 11 || core::byte::high_nibble(255) != 15 || core::byte::low_nibble(255) != 15 || core::byte::high_nibble(0) != 0 || core::byte::low_nibble(0) != 0 || core::byte::join_nibbles_or(10, 11, 77) != 171 || core::byte::join_nibbles_or(0, 0, 77) != 0 || core::byte::join_nibbles_or(15, 15, 77) != 255 || core::byte::join_nibbles_or(16, 0, 77) != 77 || core::byte::join_nibbles_or(0, 16, 77) != 77) {
+    if (core::u8::high_nibble(171) != 10 || core::u8::low_nibble(171) != 11 || core::u8::high_nibble(255) != 15 || core::u8::low_nibble(255) != 15 || core::u8::high_nibble(0) != 0 || core::u8::low_nibble(0) != 0 || core::u8::join_nibbles_or(10, 11, 77) != 171 || core::u8::join_nibbles_or(0, 0, 77) != 0 || core::u8::join_nibbles_or(15, 15, 77) != 255 || core::u8::join_nibbles_or(16, 0, 77) != 77 || core::u8::join_nibbles_or(0, 16, 77) != 77) {
         return 34;
     }
-    if (core::byte::is_multiple_of(7, 0) || !core::byte::is_multiple_of(12, 3)) {
+    if (core::u8::is_multiple_of(7, 0) || !core::u8::is_multiple_of(12, 3)) {
         return 10;
     }
-    if (core::byte::div_or(7, 3, 99) != 2 || core::byte::div_or(0, 1, 99) != 0 || core::byte::div_or(255, 2, 99) != 127 || core::byte::div_or(7, 0, 99) != 99) {
+    if (core::option::unwrap_or(core::u8::checked_div(7, 3), 99) != 2 || core::option::unwrap_or(core::u8::checked_div(0, 1), 99) != 0 || core::option::unwrap_or(core::u8::checked_div(255, 2), 99) != 127 || core::option::unwrap_or(core::u8::checked_div(7, 0), 99) != 99) {
         return 41;
     }
-    if (core::byte::rem_or(7, 3, 99) != 1 || core::byte::rem_or(0, 1, 99) != 0 || core::byte::rem_or(255, 2, 99) != 1 || core::byte::rem_or(7, 0, 99) != 99) {
+    if (core::option::unwrap_or(core::u8::checked_rem(7, 3), 99) != 1 || core::option::unwrap_or(core::u8::checked_rem(0, 1), 99) != 0 || core::option::unwrap_or(core::u8::checked_rem(255, 2), 99) != 1 || core::option::unwrap_or(core::u8::checked_rem(7, 0), 99) != 99) {
         return 42;
     }
-    if (core::byte::gcd(54, 24) != 6 || core::byte::gcd(0, 7) != 7 || core::byte::gcd(255, 0) != 255 || core::byte::gcd(0, 0) != 0) {
+    if (core::u8::gcd(54, 24) != 6 || core::u8::gcd(0, 7) != 7 || core::u8::gcd(255, 0) != 255 || core::u8::gcd(0, 0) != 0) {
         return 43;
     }
-    if (core::byte::lcm_or(12, 18, 99) != 36 || core::byte::lcm_or(17, 17, 99) != 17 || core::byte::lcm_or(255, 1, 99) != 255 || core::byte::lcm_or(16, 17, 99) != 99 || core::byte::lcm_or(0, 255, 99) != 0) {
+    if (core::option::unwrap_or(core::u8::checked_lcm(12, 18), 99) != 36 || core::option::unwrap_or(core::u8::checked_lcm(17, 17), 99) != 17 || core::option::unwrap_or(core::u8::checked_lcm(255, 1), 99) != 255 || core::option::unwrap_or(core::u8::checked_lcm(16, 17), 99) != 99 || core::option::unwrap_or(core::u8::checked_lcm(0, 255), 99) != 0) {
         return 44;
     }
-    if (core::byte::pow_or(0, 0, 99) != 1 || core::byte::pow_or(0, 7, 99) != 0 || core::byte::pow_or(3, 5, 99) != 243 || core::byte::pow_or(2, 7, 99) != 128 || core::byte::pow_or(2, 8, 99) != 99 || core::byte::pow_or(255, 1, 99) != 255 || core::byte::pow_or(255, 2, 99) != 99 || core::byte::pow_or(1, 4294967295, 99) != 1) {
+    if (core::option::unwrap_or(core::u8::checked_pow(0, 0), 99) != 1 || core::option::unwrap_or(core::u8::checked_pow(0, 7), 99) != 0 || core::option::unwrap_or(core::u8::checked_pow(3, 5), 99) != 243 || core::option::unwrap_or(core::u8::checked_pow(2, 7), 99) != 128 || core::option::unwrap_or(core::u8::checked_pow(2, 8), 99) != 99 || core::option::unwrap_or(core::u8::checked_pow(255, 1), 99) != 255 || core::option::unwrap_or(core::u8::checked_pow(255, 2), 99) != 99 || core::option::unwrap_or(core::u8::checked_pow(1, 4294967295), 99) != 1) {
         return 45;
     }
-    if (!core::byte::is_ascii_digit(48) || !core::byte::is_ascii_digit(57) || core::byte::is_ascii_digit(47) || core::byte::is_ascii_digit(58)) {
+    if (!core::u8::is_ascii_digit(48) || !core::u8::is_ascii_digit(57) || core::u8::is_ascii_digit(47) || core::u8::is_ascii_digit(58)) {
         return 11;
     }
-    if (!core::byte::is_ascii_lowercase(97) || !core::byte::is_ascii_uppercase(90) || core::byte::to_ascii_lowercase(65) != 97 || core::byte::to_ascii_uppercase(122) != 90 || core::byte::to_ascii_lowercase(200) != 200) {
+    if (!core::u8::is_ascii_lowercase(97) || !core::u8::is_ascii_uppercase(90) || core::u8::to_ascii_lowercase(65) != 97 || core::u8::to_ascii_uppercase(122) != 90 || core::u8::to_ascii_lowercase(200) != 200) {
         return 12;
     }
-    if (!core::byte::is_ascii_hexdigit(70) || !core::byte::is_ascii_hexdigit(102) || core::byte::is_ascii_hexdigit(71) || core::byte::ascii_hexdigit_value_or(48, 99) != 0 || core::byte::ascii_hexdigit_value_or(70, 99) != 15 || core::byte::ascii_hexdigit_value_or(102, 99) != 15 || core::byte::ascii_hexdigit_value_or(71, 99) != 99) {
+    if (!core::u8::is_ascii_hexdigit(70) || !core::u8::is_ascii_hexdigit(102) || core::u8::is_ascii_hexdigit(71) || core::u8::ascii_hexdigit_value_or(48, 99) != 0 || core::u8::ascii_hexdigit_value_or(70, 99) != 15 || core::u8::ascii_hexdigit_value_or(102, 99) != 15 || core::u8::ascii_hexdigit_value_or(71, 99) != 99) {
         return 13;
     }
-    if (core::byte::ascii_lower_hex_digit_or(0, 255) != 48 || core::byte::ascii_lower_hex_digit_or(9, 255) != 57 || core::byte::ascii_lower_hex_digit_or(10, 255) != 97 || core::byte::ascii_lower_hex_digit_or(15, 255) != 102 || core::byte::ascii_lower_hex_digit_or(16, 255) != 255 || core::byte::ascii_lower_hex_digit_or(255, 77) != 77 || core::byte::ascii_upper_hex_digit_or(0, 255) != 48 || core::byte::ascii_upper_hex_digit_or(9, 255) != 57 || core::byte::ascii_upper_hex_digit_or(10, 255) != 65 || core::byte::ascii_upper_hex_digit_or(15, 255) != 70 || core::byte::ascii_upper_hex_digit_or(16, 255) != 255 || core::byte::ascii_upper_hex_digit_or(255, 77) != 77) {
+    if (core::u8::ascii_lower_hex_digit_or(0, 255) != 48 || core::u8::ascii_lower_hex_digit_or(9, 255) != 57 || core::u8::ascii_lower_hex_digit_or(10, 255) != 97 || core::u8::ascii_lower_hex_digit_or(15, 255) != 102 || core::u8::ascii_lower_hex_digit_or(16, 255) != 255 || core::u8::ascii_lower_hex_digit_or(255, 77) != 77 || core::u8::ascii_upper_hex_digit_or(0, 255) != 48 || core::u8::ascii_upper_hex_digit_or(9, 255) != 57 || core::u8::ascii_upper_hex_digit_or(10, 255) != 65 || core::u8::ascii_upper_hex_digit_or(15, 255) != 70 || core::u8::ascii_upper_hex_digit_or(16, 255) != 255 || core::u8::ascii_upper_hex_digit_or(255, 77) != 77) {
         return 35;
     }
     let left: u32 = 0;
     while (left<256) {
         let left_byte: u8 = as_byte(left);
-        if (core::byte::join_nibbles_or(core::byte::high_nibble(left_byte), core::byte::low_nibble(left_byte), 0) != left_byte) {
+        if (core::u8::join_nibbles_or(core::u8::high_nibble(left_byte), core::u8::low_nibble(left_byte), 0) != left_byte) {
             return 37;
         }
         let right: u32 = 0;
         while (right<256) {
             let expected: u8 = as_byte((left * right)&255);
-            if (core::byte::wrapping_mul(left_byte, as_byte(right)) != expected) {
+            if (core::u8::wrapping_mul(left_byte, as_byte(right)) != expected) {
                 return 36;
             }
             right += 1;
@@ -145,30 +146,30 @@ fn main() -> i32 {
     }
     let nibble: u8 = 0;
     while (nibble<16) {
-        if (core::byte::ascii_hexdigit_value_or(core::byte::ascii_lower_hex_digit_or(nibble, 255), 255) != nibble || core::byte::ascii_hexdigit_value_or(core::byte::ascii_upper_hex_digit_or(nibble, 255), 255) != nibble) {
+        if (core::u8::ascii_hexdigit_value_or(core::u8::ascii_lower_hex_digit_or(nibble, 255), 255) != nibble || core::u8::ascii_hexdigit_value_or(core::u8::ascii_upper_hex_digit_or(nibble, 255), 255) != nibble) {
             return 38;
         }
         nibble += 1;
     }
-    if (core::byte::min(7, 2) != 2 || core::byte::max(7, 2) != 7 || core::byte::clamp_or(1, 2, 6, 99) != 2 || core::byte::clamp_or(9, 2, 6, 99) != 6 || core::byte::clamp_or(4, 6, 2, 99) != 99) {
+    if (core::u8::min(7, 2) != 2 || core::u8::max(7, 2) != 7 || core::u8::clamp_or(1, 2, 6, 99) != 2 || core::u8::clamp_or(9, 2, 6, 99) != 6 || core::u8::clamp_or(4, 6, 2, 99) != 99) {
         return 15;
     }
-    if (!core::byte::is_zero(0) || core::byte::is_zero(1) || !core::byte::is_nonzero(1) || core::byte::is_nonzero(0) || !core::byte::is_even(254) || core::byte::is_even(255) || !core::byte::is_odd(255) || core::byte::is_odd(0)) {
+    if (!core::u8::is_zero(0) || core::u8::is_zero(1) || !core::u8::is_nonzero(1) || core::u8::is_nonzero(0) || !core::u8::is_even(254) || core::u8::is_even(255) || !core::u8::is_odd(255) || core::u8::is_odd(0)) {
         return 16;
     }
-    if (!core::byte::is_power_of_two(128) || core::byte::is_power_of_two(0) || core::byte::is_power_of_two(129) || core::byte::next_power_of_two(0) != 1 || core::byte::next_power_of_two(7) != 8 || core::byte::next_power_of_two(128) != 128 || core::byte::next_power_of_two(129) != 0) {
+    if (!core::u8::is_power_of_two(128) || core::u8::is_power_of_two(0) || core::u8::is_power_of_two(129) || core::option::unwrap_or(core::u8::checked_next_power_of_two(0), 0) != 1 || core::option::unwrap_or(core::u8::checked_next_power_of_two(7), 0) != 8 || core::option::unwrap_or(core::u8::checked_next_power_of_two(128), 0) != 128 || core::option::unwrap_or(core::u8::checked_next_power_of_two(129), 0) != 0) {
         return 17;
     }
-    if (!core::byte::is_ascii(127) || core::byte::is_ascii(128) || !core::byte::is_ascii_alphabetic(65) || !core::byte::is_ascii_alphabetic(122) || core::byte::is_ascii_alphabetic(48) || !core::byte::is_ascii_alphanumeric(48) || core::byte::is_ascii_alphanumeric(95) || !core::byte::is_ascii_word(95) || core::byte::is_ascii_word(45)) {
+    if (!core::u8::is_ascii(127) || core::u8::is_ascii(128) || !core::u8::is_ascii_alphabetic(65) || !core::u8::is_ascii_alphabetic(122) || core::u8::is_ascii_alphabetic(48) || !core::u8::is_ascii_alphanumeric(48) || core::u8::is_ascii_alphanumeric(95) || !core::u8::is_ascii_word(95) || core::u8::is_ascii_word(45)) {
         return 18;
     }
-    if (!core::byte::eq_ignore_ascii_case(65, 97) || !core::byte::eq_ignore_ascii_case(90, 122) || core::byte::eq_ignore_ascii_case(65, 98)) {
+    if (!core::u8::eq_ignore_ascii_case(65, 97) || !core::u8::eq_ignore_ascii_case(90, 122) || core::u8::eq_ignore_ascii_case(65, 98)) {
         return 19;
     }
-    if (!core::byte::is_ascii_whitespace(32) || !core::byte::is_ascii_whitespace(9) || core::byte::is_ascii_whitespace(11) || !core::byte::is_ascii_control(0) || !core::byte::is_ascii_control(127) || core::byte::is_ascii_control(32) || core::byte::is_ascii_control(128)) {
+    if (!core::u8::is_ascii_whitespace(32) || !core::u8::is_ascii_whitespace(9) || !core::u8::is_ascii_whitespace(11) || !core::u8::is_ascii_whitespace(12) || !core::u8::is_ascii_control(0) || !core::u8::is_ascii_control(127) || core::u8::is_ascii_control(32) || core::u8::is_ascii_control(128)) {
         return 20;
     }
-    if (!core::byte::is_ascii_graphic(33) || !core::byte::is_ascii_graphic(126) || core::byte::is_ascii_graphic(32) || !core::byte::is_ascii_printable(32) || core::byte::is_ascii_printable(127) || !core::byte::is_ascii_punctuation(95) || core::byte::is_ascii_punctuation(65) || core::byte::is_ascii_punctuation(32)) {
+    if (!core::u8::is_ascii_graphic(33) || !core::u8::is_ascii_graphic(126) || core::u8::is_ascii_graphic(32) || !core::u8::is_ascii_printable(32) || core::u8::is_ascii_printable(127) || !core::u8::is_ascii_punctuation(95) || core::u8::is_ascii_punctuation(65) || core::u8::is_ascii_punctuation(32)) {
         return 21;
     }
     return 0;

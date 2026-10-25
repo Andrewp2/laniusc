@@ -1,0 +1,120 @@
+// Native sequence/state model. Binary records are six little-endian u64 words:
+// (op,a,b,c,d,e). Replies are little-endian u64 words. No allocations.
+// op0: a..b slice, Take(c), Chain(-2..e), Take(d); drain and report state.
+// op1: slice length a, two copied Take(c) adapters; b calls chosen by bits d.
+// op2: i32 endpoints a,b, inclusive c; O(1) advance d, next, bounded advance e.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+import std::stream;
+
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8];
+    let index: i32 = 0;
+    while (index < 8) {
+        bytes[index] = ((value >> (index * 8)) & 255) as u8;
+        index += 1;
+    }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let status: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(status));
+}
+fn option_word(value: core::option::Option<i32>) {
+    if (core::option::is_none(value)) { word(0); word(0); }
+    else { word(1); word((core::option::unwrap(value) as i64) as u64); }
+}
+fn main() -> i32 {
+    let descriptor: std::stream::Descriptor = std::stream::stdin();
+    let record: [u8; 48] = [0; 48];
+    let backing: [i32; 10] = [0,1,2,3,4,5,6,7,8,9];
+    while (true) {
+        let received: core::result::Result<i32, core::io::Error> = descriptor.read(record, 0, 48);
+        if (core::result::is_err(received)) { return 3; }
+        let count: i32 = core::result::unwrap(received);
+        if (count == 0) { return 0; }
+        if (count < 48) {
+            let rest: core::result::Result<i32, core::io::Failure> = core::io::read_exact(descriptor.borrow(), record, count, 48 - count);
+            if (core::result::is_err(rest)) { return 4; }
+        }
+        let op: u64 = decode(record, 0);
+        let a: u64 = decode(record, 8);
+        let b: u64 = decode(record, 16);
+        let c: u64 = decode(record, 24);
+        let d: u64 = decode(record, 32);
+        let e: u64 = decode(record, 40);
+        if (op == 0) {
+            assert(a <= b && b <= 8);
+            let end: i32 = e as i32;
+            assert(end >= -2 && end <= 4);
+            let view: core::slice::View<i32> = core::result::unwrap(core::slice::view_range<i32>(backing, a as i32, (b - a) as i32));
+            let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_view<i32>(view));
+            let left: core::iter::Take<core::slice::Iter<i32>, i32> = core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), c);
+            let bounds: core::range::Range<i32> = core::range::range<i32>(-2, end);
+            let right: core::iter::RangeI32 = core::iter::range_i32(bounds);
+            let joined: core::iter::Chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32> =
+                core::iter::chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32>(left.borrow(), right.borrow());
+            let picked: core::iter::Take<core::iter::Chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32>, i32> =
+                core::iter::take<core::iter::Chain<core::iter::Take<core::slice::Iter<i32>, i32>, core::iter::RangeI32, i32>, i32>(joined.borrow(), d);
+            let saved: [i32; 16] = [0; 16];
+            let length: i32 = 0;
+            let value: core::option::Option<i32> = picked.next();
+            while (core::option::is_some(value)) {
+                assert(length < 16);
+                saved[length] = core::option::unwrap(value); length += 1;
+                value = picked.next();
+            }
+            word(length as u64);
+            let index: i32 = 0;
+            while (index < length) { word((saved[index] as i64) as u64); index += 1; }
+            word(source.remaining() as u64); word(left.remaining_limit()); word(right.remaining()); word(picked.remaining_limit());
+        } else { if (op == 1) {
+            assert(a <= 10 && b <= 32);
+            let source: core::slice::Iter<i32> = core::result::unwrap(core::iter::from_slice<i32>(backing, a as i32));
+            let first: core::iter::Take<core::slice::Iter<i32>, i32> = core::iter::take<core::slice::Iter<i32>, i32>(source.borrow(), c);
+            let second: core::iter::Take<core::slice::Iter<i32>, i32> = first;
+            word(b);
+            let index: i32 = 0;
+            while (index < (b as i32)) {
+                let value: core::option::Option<i32> = core::option::None();
+                if (((d >> index) & 1) == 0) { value = first.next(); } else { value = second.next(); }
+                option_word(value);
+                word(source.remaining() as u64); word(first.remaining_limit()); word(second.remaining_limit());
+                index += 1;
+            }
+        } else { if (op == 2) {
+            let start: i32 = a as i32;
+            let end: i32 = b as i32;
+            let bounds: core::range::Range<i32> = core::range::range<i32>(start, end);
+            let source: core::iter::RangeI32 = core::iter::range_i32(bounds);
+            if (c == 1) {
+                let inclusive: core::range::RangeInclusive<i32> = core::range::range_inclusive<i32>(start, end);
+                source = core::iter::range_i32_inclusive(inclusive);
+            }
+            word(source.remaining()); word(source.advance(d)); word(source.remaining());
+            let value: core::option::Option<i32> = source.next();
+            option_word(value);
+            // The protocol itself can accept any quota; this guard keeps a
+            // malformed test command from requesting billions of test calls.
+            assert(source.remaining() <= 64 || e <= 64);
+            let advanced: core::iter::Advance = core::iter::advance_up_to<core::iter::RangeI32, i32>(source.borrow(), e);
+            word(advanced.advanced);
+            if (advanced.exhausted) { word(1); } else { word(0); }
+            word(source.remaining());
+            let next_value: core::option::Option<i32> = source.next(); option_word(next_value);
+        } else { return 2; } } }
+    }
+    return 0;
+}

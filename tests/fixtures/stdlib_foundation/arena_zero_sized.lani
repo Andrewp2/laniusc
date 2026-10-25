@@ -1,0 +1,16 @@
+module app::main;
+import alloc::arena;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+struct Unit {}
+fn main() -> i32 {
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::Config { chunk_size: 1, max_retained: 0, max_chunks: 0 }));
+    let all: core::slice::View<Unit> = core::result::unwrap(alloc::arena::alloc_slice<Unit>(arena.borrow(),2147483647,Unit {})); assert(core::option::is_some(all.get(2147483646)));
+    let copied: core::slice::View<Unit> = core::result::unwrap(alloc::arena::copy_slice<Unit>(arena.borrow(),all)); assert(copied.length == all.length && core::mem::slice_stride(copied.values) == 0);
+    let empty: core::slice::View<i64> = core::result::unwrap(alloc::arena::alloc_slice<i64>(arena.borrow(),0,1)); assert(empty.length == 0);
+    let block: alloc::arena::Block = core::result::unwrap(arena.allocate(0,8)); assert(block.data != 0 && block.length == 0);
+    assert(arena.stats().retained == 0 && arena.stats().chunks == 0 && arena.stats().used == 0 && arena.stats().requested == 0 && arena.stats().allocations == 4);
+    core::result::unwrap(arena.reset()); assert(arena.stats().allocations == 0); arena.destroy(); return 0;
+}

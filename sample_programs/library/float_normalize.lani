@@ -1,0 +1,123 @@
+// Normalize newline-delimited decimal floats with bounded, stack-owned storage.
+// Exit 2: arguments/input/conversion, 3: I/O. Earlier lines may be emitted.
+module app::main;
+import core::f32;
+import core::f64;
+import core::float_decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::process;
+import std::stream;
+
+struct Options { narrow: bool, square_root: bool, finite_only: bool }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(raw,count));
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let at: i32 = 0; while (at < left.len()) {
+        if (core::option::unwrap(left.get(at)) != core::option::unwrap(right.get(at))) { return false; }
+        at += 1;
+    } return true;
+}
+fn record(input: core::slice::View<u8>, options: Options, scratch: core::slice::View<u32>) -> i32 {
+    let output: [u8;32] = [0;32];
+    let formatted: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(output,0,31));
+    let limits: core::float_decimal::Limits = core::float_decimal::default_limits();
+    if (options.narrow) {
+        let parsed: core::result::Result<f32,core::float_decimal::Error> = core::float_decimal::parse_f32(input,scratch,limits);
+        if (core::result::is_err(parsed)) { return 2; }
+        let value: f32 = core::result::unwrap(parsed);
+        if (options.square_root) { value = core::f32::sqrt(value); }
+        if (options.finite_only && !core::f32::is_finite(value)) { return 2; }
+        core::fmt::display(value,formatted.borrow());
+    } else {
+        let parsed: core::result::Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(input,scratch,limits);
+        if (core::result::is_err(parsed)) { return 2; }
+        let value: f64 = core::result::unwrap(parsed);
+        if (options.square_root) { value = core::f64::sqrt(value); }
+        if (options.finite_only && !core::f64::is_finite(value)) { return 2; }
+        core::fmt::display(value,formatted.borrow());
+    }
+    let result: core::result::Result<i32,core::fmt::Error> = formatted.finish();
+    if (core::result::is_err(result)) { return 2; }
+    let count: i32 = core::result::unwrap(result); output[count] = 10;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),output,0,count+1))) { return 3; }
+    return 0;
+}
+fn line(input: [u8], count: i32, options: Options, scratch: core::slice::View<u32>) -> i32 {
+    let length: i32 = count;
+    if (length > 0 && input[length-1] == 13) { length -= 1; }
+    if (length == 0 || length > 1024) { return 2; }
+    return record(core::result::unwrap(core::slice::view(input,length)),options,scratch);
+}
+fn stream(options: Options) -> i32 {
+    // Named array repeat counts are a documented compiler dependency.
+    let storage: [u32;864] = [0;864];
+    let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(storage,864));
+    let chunk_words: [i32;256] = [0;256]; let line_words: [i32;257] = [0;257];
+    let chunk: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(chunk_words),1024);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(line_words),1028);
+    let source: std::stream::Descriptor = std::stream::stdin(); let count: i32 = 0;
+    while (true) {
+        let read: core::result::Result<i32,core::io::Error> = source.read(chunk,0,1024);
+        if (core::result::is_err(read)) {
+            if (core::io::is_interrupted(core::result::unwrap_err(read))) { continue; }
+            return 3;
+        }
+        let amount: i32 = core::result::unwrap(read);
+        if (amount == 0) { if (count == 0) { return 0; } return line(input,count,options,scratch); }
+        let at: i32 = 0; while (at < amount) {
+            let value: u8 = chunk[at];
+            if (value == 10) {
+                let status: i32 = line(input,count,options,scratch); if (status != 0) { return status; }
+                count = 0;
+            } else {
+                if (count >= 1025 || (count == 1024 && value != 13)) { return 2; }
+                input[count] = value; count += 1;
+            }
+            at += 1;
+        }
+    }
+    return 0;
+}
+fn usage() -> i32 {
+    let text: core::slice::View<u8> = bytes("Usage: float-normalize [--f32] [--sqrt] [--finite-only]\n",56);
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),text.values,0,text.len()))) { return 3; }
+    return 0;
+}
+fn run() -> i32 {
+    let argc: i32 = std::process::argc(); let words: [i32;4] = [0;4];
+    let pointer: ptr = core::mem::i32_array_data_ptr(words); let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer,16);
+    let options: Options = Options { narrow: false, square_root: false, finite_only: false };
+    let at: i32 = 1; while (at < argc) {
+        let count: i32 = std::process::arg_len(at);
+        if (count < 1 || count > 13) { return 2; }
+        if (std::process::arg_read(at,pointer,count as usize) != count) { return 3; }
+        let value: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,count));
+        if (same(value,bytes("--help",6))) { if (argc != 2) { return 2; } return usage(); }
+        if (same(value,bytes("--f32",5))) { if (options.narrow) { return 2; } options.narrow = true; }
+        else { if (same(value,bytes("--sqrt",6))) { if (options.square_root) { return 2; } options.square_root = true; }
+        else { if (same(value,bytes("--finite-only",13))) { if (options.finite_only) { return 2; } options.finite_only = true; }
+        else { return 2; } } }
+        at += 1;
+    }
+    return stream(options);
+}
+fn main() -> i32 {
+    let status: i32 = run();
+    if (status != 0) {
+        let message: core::slice::View<u8> = bytes("float-normalize: invalid arguments, number or conversion limit\n",63);
+        if (status == 3) { message = bytes("float-normalize: I/O failed\n",28); }
+        let sink: std::stream::Descriptor = std::stream::stderr();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),message.values,0,message.len()))) { return 3; }
+    }
+    return status;
+}

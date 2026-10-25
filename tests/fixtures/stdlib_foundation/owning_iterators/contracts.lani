@@ -1,0 +1,189 @@
+// Each Owned is one true owner of its String and nested Vec allocation.
+// Views and diagnostic descriptor copies borrow only; yielded values move by
+// convention and are destroyed exactly once. No implicit/deep clone is used.
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Log { values: [i32], length: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, id: i32) { assert(self.length < 16); self.values[self.length] = id; self.length += 1; }
+    fn check(&self, expected: [i32], count: i32) {
+        assert(self.length == count); let index: i32 = 0;
+        while (index < count) { assert(self.values[index] == expected[index]); index += 1; }
+    }
+}
+fn log(values: [i32]) -> Log { return Log { values: values, length: 0 }; }
+enum Fault { Denied(i64, core::option::Option<bool>) }
+type Nested = core::option::Option<core::result::Result<[u64; 2], Fault>>;
+struct Owned { id: i32, wide: u64, cells: [i64; 2], nested: Nested, text: alloc::string::String, words: alloc::vec::Vec<u64>, log: &Log }
+
+fn make(id: i32, events: &Log) -> Owned {
+    let bytes: [u8; 4] = [(64 + id) as u8, 0, 195, 169];
+    let text: alloc::string::String = alloc::string::from_utf8(bytes, 4).unwrap();
+    let words: alloc::vec::Vec<u64> = alloc::vec::with_capacity<u64>(2).unwrap();
+    words.try_push(18446744073709551615 - (id as u64)).unwrap(); words.try_push(4294967297 + (id as u64)).unwrap();
+    let nested: Nested = core::option::None();
+    if (id % 3 == 0) {
+        let pair: [u64; 2] = [18446744073709551615 - (id as u64), 8589934593 + (id as u64)];
+        let good: core::result::Result<[u64; 2], Fault> = core::result::Ok(pair); nested = core::option::Some(good);
+    }
+    if (id % 3 == 1) {
+        let bad: core::result::Result<[u64; 2], Fault> = core::result::Err(Fault::Denied(-4294967297 - (id as i64), core::option::Some(false)));
+        nested = core::option::Some(bad);
+    }
+    let cells: [i64; 2] = [-8589934593 - (id as i64), -9223372036854775808];
+    return Owned { id: id, wide: 18446744073709551615 - (id as u64), cells: cells, nested: nested, text: text, words: words, log: events };
+}
+fn check(item: Owned, id: i32) {
+    assert(item.id == id && item.wide == 18446744073709551615 - (id as u64));
+    assert(item.cells[0] == -8589934593 - (id as i64) && item.cells[1] == -9223372036854775808);
+    assert(item.text.byte_len() == 4 && item.text.byte_at(0).unwrap() == (64 + id) as u8 && item.text.byte_at(1).unwrap() == 0 && item.text.byte_at(3).unwrap() == 169);
+    assert(item.words.len() == 2 && item.words.at(0) == item.wide && item.words.at(1) == 4294967297 + (id as u64));
+    if (id % 3 == 2) { assert(item.nested.is_none()); }
+    else {
+        let detail: core::result::Result<[u64; 2], Fault> = item.nested.unwrap();
+        if (id % 3 == 0) { let pair: [u64; 2] = detail.unwrap(); assert(pair[0] == item.wide && pair[1] == 8589934593 + (id as u64)); }
+        else { let fault: Fault = detail.unwrap_err(); assert(match (fault) { Fault::Denied(code, flag) -> code == -4294967297 - (id as i64) && !flag.unwrap() }); }
+    }
+}
+pub impl core::clone::Destroy<Owned> for Owned {
+    pub fn destroy_value(item: Owned) {
+        check(item, item.id); let events: &Log = item.log; events.add(item.id);
+        item.text.destroy(); item.words.destroy();
+    }
+}
+fn vec_remaining(error: alloc::vec::IntoIterError, count: i32) -> bool { return match (error) { alloc::vec::IntoIterError::Remaining(value) -> value == count }; }
+fn deque_remaining(error: alloc::deque::IntoIterError, count: i32) -> bool { return match (error) { alloc::deque::IntoIterError::Remaining(value) -> value == count }; }
+
+fn vector_owners() {
+    let storage: [i32; 16] = [0; 16]; let events: Log = log(storage);
+    let owner: alloc::vec::Vec<Owned> = alloc::vec::with_capacity<Owned>(5).unwrap(); let capacity: i32 = owner.capacity(); let backing: ptr = owner.storage;
+    let id: i32 = 1; while (id <= 5) { owner.try_push(make(id, events.borrow())).unwrap(); id += 1; }
+    assert(owner.at(0).text.bytes.storage != owner.at(1).text.bytes.storage && owner.at(0).words.storage != owner.at(1).words.storage);
+    let cursor: alloc::vec::IntoIter<Owned> = owner.take_iter();
+    assert(owner.is_empty() && owner.capacity() == 0 && cursor.remaining() == 5 && cursor.capacity() == capacity);
+    // The reset source gets independent backing while the cursor keeps its old
+    // allocation. Releasing the reused source cannot invalidate cursor values.
+    owner.try_reserve(1).unwrap(); owner.try_push(make(9, events.borrow())).unwrap(); assert(owner.storage != backing);
+    alloc::clone::destroy_vec<Owned>(owner.borrow()); assert(owner.is_empty() && owner.capacity() == 0);
+    let first: Owned = cursor.next().unwrap(); check(first, 1); Owned::destroy_value(first);
+    let last: Owned = cursor.next_back().unwrap(); check(last, 5); Owned::destroy_value(last);
+    let view: core::slice::View<Owned> = cursor.as_view(); assert(view.len() == 3);
+    check(view.get(0).unwrap(), 2); check(view.get(1).unwrap(), 3); check(view.get(2).unwrap(), 4);
+    assert(vec_remaining(cursor.try_finish().unwrap(), 3) && cursor.remaining() == 3 && cursor.capacity() == capacity);
+    // A rejected finish preserves even an already-borrowed view.
+    check(view.get(0).unwrap(), 2); check(view.get(2).unwrap(), 4);
+    let recovered: alloc::vec::Vec<Owned> = cursor.take_remaining();
+    assert(cursor.is_empty() && cursor.capacity() == 0 && recovered.len() == 3 && recovered.capacity() == capacity && recovered.storage == backing);
+    assert(cursor.try_finish().is_none() && cursor.try_finish().is_none() && cursor.next().is_none() && cursor.next_back().is_none());
+    check(recovered.at(0), 2); check(recovered.at(1), 3); check(recovered.at(2), 4);
+    let final: alloc::vec::IntoIter<Owned> = recovered.take_iter(); assert(recovered.is_empty() && recovered.capacity() == 0);
+    let back: Owned = final.next_back().unwrap(); check(back, 4); Owned::destroy_value(back);
+    alloc::clone::destroy_vec_iter<Owned>(final.borrow()); alloc::clone::destroy_vec_iter<Owned>(final.borrow());
+    assert(final.remaining() == 0 && final.capacity() == 0 && owner.capacity() == 0);
+    let order: [i32; 6] = [9, 1, 5, 4, 2, 3]; events.check(order, 6);
+}
+
+fn deque_owners() {
+    let storage: [i32; 16] = [0; 16]; let events: Log = log(storage);
+    let owner: alloc::deque::Deque<Owned> = alloc::deque::with_capacity<Owned>(4).unwrap(); let capacity: i32 = owner.capacity(); let backing: ptr = owner.storage;
+    // Starting at the last two slots makes the sequence wrap regardless of
+    // whether reserve reports exactly the requested capacity or a larger one.
+    owner.try_push_front(make(12, events.borrow())).unwrap(); owner.try_push_front(make(11, events.borrow())).unwrap();
+    owner.try_push_back(make(13, events.borrow())).unwrap(); owner.try_push_back(make(14, events.borrow())).unwrap();
+    let cursor: alloc::deque::IntoIter<Owned> = owner.take_iter();
+    assert(owner.is_empty() && owner.capacity() == 0 && cursor.remaining() == 4 && cursor.capacity() == capacity);
+    let views: alloc::deque::Views<Owned> = cursor.as_views(); assert(views.first.len() == 2 && views.second.len() == 2);
+    check(views.first.get(0).unwrap(), 11); check(views.first.get(1).unwrap(), 12); check(views.second.get(1).unwrap(), 14);
+    assert(deque_remaining(cursor.try_finish().unwrap(), 4) && cursor.remaining() == 4 && cursor.capacity() == capacity);
+    check(views.first.get(0).unwrap(), 11); check(views.second.get(0).unwrap(), 13);
+    owner.try_reserve(1).unwrap(); owner.try_push_front(make(19, events.borrow())).unwrap(); assert(owner.storage != backing);
+    let reused: alloc::deque::IntoIter<Owned> = owner.take_iter(); alloc::clone::destroy_deque_iter<Owned>(reused.borrow());
+    assert(owner.is_empty() && owner.capacity() == 0 && reused.capacity() == 0);
+    let last: Owned = cursor.next_back().unwrap(); check(last, 14); Owned::destroy_value(last);
+    let first: Owned = cursor.next().unwrap(); check(first, 11); Owned::destroy_value(first);
+    let recovered: alloc::deque::Deque<Owned> = cursor.take_remaining();
+    assert(cursor.is_empty() && cursor.capacity() == 0 && recovered.len() == 2 && recovered.capacity() == capacity && recovered.storage == backing);
+    assert(cursor.try_finish().is_none() && cursor.next().is_none() && cursor.next_back().is_none());
+    check(recovered.at(0), 12); check(recovered.at(1), 13);
+    let remainder_views: alloc::deque::Views<Owned> = recovered.as_views(); assert(remainder_views.first.len() == 1 && remainder_views.second.len() == 1);
+    let final: alloc::deque::IntoIter<Owned> = recovered.take_iter();
+    alloc::clone::destroy_deque_iter<Owned>(final.borrow()); alloc::clone::destroy_deque_iter<Owned>(final.borrow());
+    assert(final.remaining() == 0 && final.capacity() == 0 && recovered.capacity() == 0);
+    let order: [i32; 5] = [19, 14, 11, 12, 13]; events.check(order, 5);
+}
+
+enum Rejection { Stop(i32, Nested) }
+struct Checked { items: alloc::vec::Vec<Owned>, calls: i32 }
+impl Checked { fn borrow(&self) -> &Checked { return self; } }
+pub impl core::iter::TrySink<Owned, Rejection> for Checked {
+    pub fn try_accept(&self, item: Owned) -> core::option::Option<Rejection> {
+        self.calls += 1;
+        if (item.id == 22) { return core::option::Some(Rejection::Stop(item.id, item.nested)); }
+        self.items.try_push(item).unwrap(); return core::option::None();
+    }
+}
+fn rejection(error: Rejection) -> bool {
+    let id: i32 = match (error) { Rejection::Stop(value, detail) -> value };
+    let detail: Nested = match (error) { Rejection::Stop(value, nested) -> nested };
+    let fault: Fault = detail.unwrap().unwrap_err();
+    let valid: bool = match (fault) { Fault::Denied(code, flag) -> code == -4294967319 && !flag.unwrap() };
+    return id == 22 && valid;
+}
+
+fn transfer_owners() {
+    let storage: [i32; 16] = [0; 16]; let events: Log = log(storage);
+    let owner: alloc::vec::Vec<Owned> = alloc::vec::with_capacity<Owned>(3).unwrap();
+    owner.try_push(make(21, events.borrow())).unwrap(); owner.try_push(make(22, events.borrow())).unwrap(); owner.try_push(make(23, events.borrow())).unwrap();
+    let source_capacity: i32 = owner.capacity();
+    let rejected_text: ptr = owner.at(1).text.bytes.storage; let rejected_words: ptr = owner.at(1).words.storage;
+    let cursor: alloc::vec::IntoIter<Owned> = owner.take_iter();
+    let slots: alloc::vec::Vec<Owned> = alloc::vec::with_capacity<Owned>(3).unwrap(); let sink: Checked = Checked { items: slots, calls: 0 }; let capacity: i32 = sink.items.capacity();
+    let failed: core::iter::TransferError<Owned, Rejection> = core::iter::try_transfer_up_to<alloc::vec::IntoIter<Owned>, Checked, Owned, Rejection>(cursor.borrow(), sink.borrow(), 18446744073709551615).unwrap_err();
+    assert(failed.accepted == 1 && sink.calls == 2 && sink.items.len() == 1 && sink.items.capacity() == capacity && cursor.remaining() == 1);
+    assert(rejection(failed.error));
+    check(failed.rejected, 22); assert(failed.rejected.text.bytes.storage == rejected_text && failed.rejected.words.storage == rejected_words);
+    Owned::destroy_value(failed.rejected);
+    let resumed: core::iter::Transfer = core::iter::try_transfer_up_to<alloc::vec::IntoIter<Owned>, Checked, Owned, Rejection>(cursor.borrow(), sink.borrow(), 18446744073709551615).unwrap();
+    assert(resumed.accepted == 1 && resumed.exhausted && sink.calls == 3 && sink.items.len() == 2 && cursor.remaining() == 0 && cursor.capacity() == source_capacity);
+    assert(cursor.try_finish().is_none()); check(sink.items.at(0), 21); check(sink.items.at(1), 23);
+    let accepted: alloc::vec::IntoIter<Owned> = sink.items.take_iter(); alloc::clone::destroy_vec_iter<Owned>(accepted.borrow());
+    assert(sink.items.is_empty() && sink.items.capacity() == 0 && accepted.capacity() == 0);
+    let order: [i32; 3] = [22, 21, 23]; events.check(order, 3);
+}
+
+struct Unit {}
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(item: Unit) {} }
+fn empty_and_zero_sized() {
+    let empty: alloc::vec::Vec<Unit> = alloc::vec::new(); let vacant: alloc::vec::IntoIter<Unit> = empty.take_iter();
+    assert(vacant.is_empty() && vacant.capacity() == 0 && vacant.next().is_none() && vacant.next_back().is_none() && vacant.try_finish().is_none());
+    alloc::clone::destroy_vec_iter<Unit>(vacant.borrow());
+    let empty_ring: alloc::deque::Deque<Unit> = alloc::deque::new(); let vacant_ring: alloc::deque::IntoIter<Unit> = empty_ring.take_iter();
+    assert(vacant_ring.is_empty() && vacant_ring.capacity() == 0 && vacant_ring.try_finish().is_none()); alloc::clone::destroy_deque_iter<Unit>(vacant_ring.borrow());
+    let reserved: alloc::vec::Vec<u64> = alloc::vec::with_capacity<u64>(3).unwrap(); let capacity: i32 = reserved.capacity(); let backing: ptr = reserved.storage;
+    let unused: alloc::vec::IntoIter<u64> = reserved.take_iter(); assert(unused.is_empty() && unused.capacity() == capacity && unused.next().is_none());
+    let restored: alloc::vec::Vec<u64> = unused.take_remaining(); assert(restored.is_empty() && restored.capacity() == capacity && restored.storage == backing && unused.capacity() == 0); restored.destroy();
+    let reserved_ring: alloc::deque::Deque<u64> = alloc::deque::with_capacity<u64>(3).unwrap(); let ring_capacity: i32 = reserved_ring.capacity();
+    let unused_ring: alloc::deque::IntoIter<u64> = reserved_ring.take_iter(); assert(unused_ring.is_empty() && unused_ring.capacity() == ring_capacity);
+    assert(unused_ring.try_finish().is_none() && unused_ring.try_finish().is_none() && unused_ring.capacity() == 0);
+    let units: alloc::vec::Vec<Unit> = alloc::vec::with_capacity<Unit>(3).unwrap(); let unit_capacity: i32 = units.capacity();
+    units.try_push(Unit {}).unwrap(); units.try_push(Unit {}).unwrap(); units.try_push(Unit {}).unwrap();
+    let unit_cursor: alloc::vec::IntoIter<Unit> = units.take_iter(); assert(unit_cursor.remaining() == 3 && unit_cursor.capacity() == unit_capacity);
+    Unit::destroy_value(unit_cursor.next().unwrap()); Unit::destroy_value(unit_cursor.next_back().unwrap()); assert(vec_remaining(unit_cursor.try_finish().unwrap(), 1));
+    alloc::clone::destroy_vec_iter<Unit>(unit_cursor.borrow()); assert(unit_cursor.capacity() == 0);
+    let ring: alloc::deque::Deque<Unit> = alloc::deque::with_capacity<Unit>(3).unwrap(); let zst_ring_capacity: i32 = ring.capacity();
+    ring.try_push_front(Unit {}).unwrap(); ring.try_push_back(Unit {}).unwrap(); ring.try_push_back(Unit {}).unwrap();
+    let ring_cursor: alloc::deque::IntoIter<Unit> = ring.take_iter(); assert(ring_cursor.remaining() == 3 && ring_cursor.capacity() == zst_ring_capacity);
+    Unit::destroy_value(ring_cursor.next_back().unwrap()); assert(deque_remaining(ring_cursor.try_finish().unwrap(), 2));
+    alloc::clone::destroy_deque_iter<Unit>(ring_cursor.borrow()); assert(ring_cursor.capacity() == 0);
+}
+fn main() -> i32 { vector_owners(); deque_owners(); transfer_owners(); empty_and_zero_sized(); return 0; }

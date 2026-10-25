@@ -1,0 +1,110 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::unicode_normalize;
+import std::io;
+
+fn read(pointer: ptr, length: i32) -> bool {
+    let done: i32 = 0;
+    while (done < length) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (length - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+fn write(pointer: ptr, length: i32) {
+    let done: i32 = 0;
+    while (done < length) {
+        let count: i32 = std::io::write_stdout(pointer + (done as usize), (length - done) as usize);
+        assert(count > 0); done += count;
+    }
+}
+fn little(bytes: [u8], index: i32, width: i32) -> u64 {
+    let result: u64 = 0; let part: i32 = 0;
+    while (part < width) { result |= (bytes[index + part] as u64) << ((part * 8) as u64); part += 1; }
+    return result;
+}
+fn number(bytes: [u8], index: i32, value: u64, width: i32) {
+    let part: i32 = 0;
+    while (part < width) { bytes[index + part] = ((value >> ((part * 8) as u64)) & 255) as u8; part += 1; }
+}
+fn error_code(error: ext::unicode_normalize::Error) -> i32 {
+    return match(error) {
+        ext::unicode_normalize::Error::Bounds -> 1,
+        ext::unicode_normalize::Error::InvalidUtf8(position) -> 2,
+        ext::unicode_normalize::Error::SizeOverflow -> 3,
+        ext::unicode_normalize::Error::ScratchCapacity(required) -> 4,
+        ext::unicode_normalize::Error::OutputCapacity(required) -> 5,
+        ext::unicode_normalize::Error::WorkLimit(used) -> 6
+    };
+}
+fn error_detail(error: ext::unicode_normalize::Error) -> u64 {
+    return match(error) {
+        ext::unicode_normalize::Error::InvalidUtf8(position) -> position as u64,
+        ext::unicode_normalize::Error::ScratchCapacity(required) -> required as u64,
+        ext::unicode_normalize::Error::OutputCapacity(required) -> required as u64,
+        ext::unicode_normalize::Error::WorkLimit(used) -> used,
+        _ -> 0
+    };
+}
+fn main() -> i32 {
+    let header_words: [i32;4] = [0;4];
+    let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words);
+    let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,16);
+    let input_words: [i32;1024] = [0;1024];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,4096);
+    let output_words: [i32;1026] = [0;1026];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,4104);
+    let scratch_words: [i32;2052] = [0;2052];
+    let scratch: [u32] = core::mem::typed_slice_from_storage<u32>(core::mem::i32_array_data_ptr(scratch_words),1026);
+    let response_words: [i32;8] = [0;8];
+    let response_pointer: ptr = core::mem::i32_array_data_ptr(response_words);
+    let response: [u8] = core::mem::typed_slice_from_raw_parts(response_pointer,32);
+    while (read(header_pointer,16)) {
+        let form: ext::unicode_normalize::Form = match(header[0]) {
+            0 -> ext::unicode_normalize::Form::Nfc, 1 -> ext::unicode_normalize::Form::Nfd,
+            2 -> ext::unicode_normalize::Form::Nfkc, _ -> ext::unicode_normalize::Form::Nfkd
+        };
+        let operation: u8 = header[1];
+        let length: i32 = little(header,2,2) as i32;
+        let scratch_length: i32 = little(header,4,2) as i32;
+        let capacity: i32 = little(header,6,2) as i32;
+        let limit: u64 = little(header,8,8);
+        assert(length <= 4096 && scratch_length <= 1024 && capacity <= 4096);
+        if (length > 0) { assert(read(input_pointer,length)); }
+        let index: i32 = 0;
+        while (index < capacity + 6) { output[index] = 77; index += 1; }
+        index = 0; while (index < scratch_length + 2) { scratch[index] = 1234567; index += 1; }
+        let source: core::text::Text = core::text::Text { bytes:input,start:0,length:length };
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,3,capacity));
+        let workspace: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(scratch,1,scratch_length));
+        let code: i32 = 0; let detail: u64 = 0;
+        let normalized: ext::unicode_normalize::Normalized = ext::unicode_normalize::Normalized {bytes:0,scalars:0,scratch:0,work:0};
+        if (operation == 1) {
+            let checked: core::result::Result<bool,ext::unicode_normalize::Error> = ext::unicode_normalize::is_normalized(source,form,workspace,limit);
+            if (core::result::is_err(checked)) { let error: ext::unicode_normalize::Error = core::result::unwrap_err(checked); code = error_code(error); detail = error_detail(error); }
+            else { if (core::result::unwrap(checked)) { detail = 1; } }
+        } else {
+            let result: core::result::Result<ext::unicode_normalize::Normalized,ext::unicode_normalize::Error> = ext::unicode_normalize::normalize_into(source,form,destination,workspace,limit);
+            if (core::result::is_err(result)) { let error: ext::unicode_normalize::Error = core::result::unwrap_err(result); code = error_code(error); detail = error_detail(error); }
+            else { normalized = core::result::unwrap(result); }
+        }
+        index = 0;
+        while (index < capacity + 6) {
+            if (index < 3 || index >= 3 + normalized.bytes || code != 0 || operation == 1) { assert(output[index] == 77); }
+            index += 1;
+        }
+        assert(scratch[0] == 1234567 && scratch[scratch_length + 1] == 1234567);
+        number(response,0,code as u64,4); number(response,4,detail,8);
+        number(response,12,normalized.bytes as u64,4); number(response,16,normalized.scalars as u64,4);
+        number(response,20,normalized.scratch as u64,4); number(response,24,normalized.work,8);
+        write(response_pointer,32); write(output_pointer + 3,normalized.bytes);
+    }
+    return 0;
+}

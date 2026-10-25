@@ -1,0 +1,4 @@
+// Minimal compiler dependency for optional arena over-alignment. This program
+// is deliberately unsupported: ptr -> usize is LNC0072, not an executable API.
+module app::main;
+fn main() -> i32 { let pointer: ptr = 0; let address: usize = pointer as usize; return address as i32; }

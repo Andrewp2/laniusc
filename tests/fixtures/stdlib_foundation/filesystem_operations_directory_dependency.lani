@@ -1,0 +1,6 @@
+// Dependency reproduction, intentionally not an implemented library API.
+// A new host operation needs compiler/runtime binding support; declaring an
+// external function in Lanius alone cannot expose Linux directory enumeration.
+module app::main;
+extern "lanius_std" fn directory_read(handle: i32, buffer: ptr, count: usize) -> i32;
+fn main() -> i32 { return directory_read(0,0,0); }

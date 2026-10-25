@@ -1,0 +1,192 @@
+// Streaming UTF-8 words, owned batch cursors, and a sorted unique String set.
+// Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-unique-words.md.
+module app::main;
+import alloc::clone;
+import alloc::io;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import std::process;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 1048576;
+const BATCH_SIZE: i32 = 64;
+
+struct Words {
+    token: alloc::io::Buffer,
+    batch: alloc::vec::Vec<alloc::string::String>,
+    unique: alloc::tree_set::TreeSet<alloc::string::String>
+}
+impl Words { fn borrow(&self) -> &Words { return self; } }
+
+fn io_status(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 7, _ -> 3 };
+}
+
+fn flush_batch(words: &Words) -> i32 {
+    // take_iter resets the actual Vec owner to empty/capacity zero. The cursor
+    // now owns its backing and every String that transfer has not consumed.
+    let cursor: alloc::vec::IntoIter<alloc::string::String> = words.batch.take_iter();
+    while (true) {
+        let transferred: core::result::Result<core::iter::Transfer,core::iter::TransferError<alloc::string::String,alloc::tree_map::SinkError>> = core::iter::try_transfer_up_to<alloc::vec::IntoIter<alloc::string::String>,alloc::tree_set::TreeSet<alloc::string::String>,alloc::string::String,alloc::tree_map::SinkError>(cursor.borrow(),words.unique.borrow(),65);
+        if (transferred.is_err()) {
+            let failure: core::iter::TransferError<alloc::string::String,alloc::tree_map::SinkError> = transferred.unwrap_err();
+            // Both Duplicate and Storage return this independent input owner.
+            // A successful set insertion is the only ownership transfer.
+            let rejected: alloc::string::String = failure.rejected;
+            rejected.destroy();
+            let status: i32 = match (failure.error) {
+                alloc::tree_map::SinkError::Duplicate -> 0,
+                alloc::tree_map::SinkError::Storage(error) -> match (error) { alloc::tree_map::Error::AllocationFailed -> 4, _ -> 7 }
+            };
+            if (status == 0) { continue; }
+            alloc::clone::destroy_vec_iter<alloc::string::String>(cursor.borrow());
+            return status;
+        }
+        let report: core::iter::Transfer = transferred.unwrap();
+        // At most 64 batch items fit below quota 65, so success sees None.
+        if (!report.exhausted || cursor.remaining() != 0) {
+            alloc::clone::destroy_vec_iter<alloc::string::String>(cursor.borrow());
+            return 7;
+        }
+        // No allocation: restore the same empty backing/capacity for reuse.
+        // take_remaining disarms the cursor; the old Vec owner owns nothing.
+        words.batch = cursor.take_remaining();
+        return 0;
+    }
+    return 7;
+}
+
+fn finish_token(words: &Words) -> i32 {
+    if (words.token.len() == 0) { return 0; }
+    // A token may span chunks or contain a split UTF-8 sequence. Validate only
+    // after the whole token is present, then copy it to independent storage.
+    let made: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8(words.token.as_bytes(),words.token.len());
+    if (made.is_err()) {
+        return match (made.unwrap_err()) { alloc::string::Error::InvalidUtf8(offset) -> 6, alloc::string::Error::AllocationFailed -> 4, _ -> 7 };
+    }
+    let word: alloc::string::String = made.unwrap();
+    let added: core::result::Result<i32,alloc::vec::Error> = words.batch.try_push(word);
+    if (added.is_err()) {
+        word.destroy();
+        return match (added.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 7 };
+    }
+    words.token.clear();
+    if (words.batch.len() == BATCH_SIZE) { return flush_batch(words); }
+    return 0;
+}
+
+fn append_span(words: &Words, bytes: [u8], start: i32, count: i32) -> i32 {
+    if (count == 0) { return 0; }
+    let added: core::result::Result<i32,core::io::Error> = words.token.write(bytes,start,count);
+    if (added.is_err()) { return io_status(added.unwrap_err()); }
+    if (added.unwrap() != count) { return 3; }
+    return 0;
+}
+
+fn is_space(value: u8) -> bool {
+    return value == 32 || (value >= 9 && value <= 13);
+}
+
+fn collect(words: &Words) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let storage: [i32;256] = [0;256];
+    let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    let total: i32 = 0;
+    while (true) {
+        let request: i32 = MAX_INPUT - total;
+        if (request > 1024) { request = 1024; }
+        // A full bounded input still needs actual EOF, observed one byte at a
+        // time without admitting that byte to token or collection storage.
+        if (request == 0) { request = 1; }
+        let read: core::result::Result<i32,core::io::Error> = source.read(scratch,0,request);
+        if (read.is_err()) {
+            let error: core::io::Error = read.unwrap_err();
+            if (core::io::is_interrupted(error)) { continue; }
+            return io_status(error);
+        }
+        let received: i32 = read.unwrap();
+        if (received < 0 || received > request) { return 3; }
+        if (received == 0) {
+            let final_token: i32 = finish_token(words);
+            if (final_token != 0) { return final_token; }
+            if (words.batch.len() != 0) { return flush_batch(words); }
+            return 0;
+        }
+        if (received > MAX_INPUT - total) { return 7; }
+        total += received;
+        let start: i32 = 0;
+        let index: i32 = 0;
+        while (index < received) {
+            if (is_space(scratch[index])) {
+                let appended: i32 = append_span(words,scratch,start,index-start);
+                if (appended != 0) { return appended; }
+                let completed: i32 = finish_token(words);
+                if (completed != 0) { return completed; }
+                start = index + 1;
+            }
+            index += 1;
+        }
+        let appended: i32 = append_span(words,scratch,start,received-start);
+        if (appended != 0) { return appended; }
+    }
+    return 3;
+}
+
+fn destroy_set(words: &alloc::tree_set::TreeSet<alloc::string::String>) {
+    while (true) {
+        let next: core::option::Option<alloc::string::String> = words.pop_first();
+        if (next.is_none()) { break; }
+        let word: alloc::string::String = next.unwrap();
+        word.destroy();
+    }
+    words.destroy();
+}
+
+fn output(words: &alloc::tree_set::TreeSet<alloc::string::String>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let newline: [u8;1] = [10];
+    while (true) {
+        let next: core::option::Option<alloc::string::String> = words.pop_first();
+        if (next.is_none()) { return 0; }
+        let word: alloc::string::String = next.unwrap();
+        let body: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),word.as_bytes(),0,word.byte_len());
+        if (body.is_err()) { word.destroy(); return 3; }
+        let ending: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),newline,0,1);
+        word.destroy();
+        if (ending.is_err()) { return 3; }
+    }
+    return 3;
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let argc: i32 = std::process::argc();
+    if (argc < 0) { return 3; }
+    if (argc != 1) { return 2; }
+    let token_result: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(MAX_INPUT);
+    if (token_result.is_err()) { return io_status(token_result.unwrap_err()); }
+    let token: alloc::io::Buffer = token_result.unwrap();
+    let batch_result: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::vec::Error> = alloc::vec::with_capacity<alloc::string::String>(BATCH_SIZE);
+    if (batch_result.is_err()) { token.destroy(); return match (batch_result.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 7 }; }
+    let batch: alloc::vec::Vec<alloc::string::String> = batch_result.unwrap();
+    let unique: alloc::tree_set::TreeSet<alloc::string::String> = alloc::tree_set::new();
+    let words: Words = Words { token: token, batch: batch, unique: unique };
+    let status: i32 = collect(words.borrow());
+    // No input buffer is retained for publication: Strings own their bytes.
+    // This also destroys any unflushed partial batch on a collection error.
+    alloc::clone::destroy_vec<alloc::string::String>(words.batch.borrow());
+    words.token.destroy();
+    if (status == 0) { status = output(words.unique.borrow()); }
+    // output retires each popped current word. Drain any remaining keys after
+    // an error, then release the set backing even after successful emptying.
+    destroy_set(words.unique.borrow());
+    return status;
+}

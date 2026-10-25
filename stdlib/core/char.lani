@@ -198,7 +198,8 @@ pub fn is_ascii_hexdigit(value: char) -> bool {
     return is_ascii_digit(value) || value >= 'A' && value <= 'F' || value >= 'a' && value <= 'f';
 }
 pub fn is_ascii_whitespace(value: char) -> bool {
-    return value == ' ' || value == '\t' || value == '\n' || value == '\r';
+    let scalar: u32 = value as u32;
+    return scalar == 32 || scalar >= 9 && scalar <= 13;
 }
 pub fn is_ascii_punctuation(value: char) -> bool {
     if (value >= '!' && value <= '/') {

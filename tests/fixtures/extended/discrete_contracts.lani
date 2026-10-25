@@ -1,0 +1,42 @@
+module app::main;
+import core::f64;
+import core::random;
+import core::result;
+import ext::discrete_distributions;
+struct Source { word: u64,calls: u64,fail_at: u64 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::random::Source64 for Source {
+ pub fn draw(&self) -> core::result::Result<u64,core::random::Error> { self.calls += 1; if (self.calls == self.fail_at) { return core::result::Err(core::random::Error::Host(77)); } return core::result::Ok(self.word); }
+}
+fn main() -> i32 {
+ let source: Source = Source { word: 9223372036854775808,calls: 0,fail_at: 0 };
+ let fair = ext::discrete_distributions::bernoulli(0.5).unwrap(); let limit = ext::discrete_distributions::budget(10,100);
+ assert(ext::discrete_distributions::sample(source.borrow(),fair,limit.borrow()).unwrap() == 0); assert(source.calls == 1 && limit.draws() == 1 && limit.work() == 1);
+ let t = ext::discrete_distributions::tails(fair,0,limit.borrow()).unwrap(); assert(t.cdf == 0.5 && t.survival == 0.5 && limit.draws() == 1 && limit.work() == 2);
+ let forged: ext::discrete_distributions::Distribution = fair; forged.trials = 0;
+ assert(match (ext::discrete_distributions::sample(source.borrow(),forged,limit.borrow()).unwrap_err()) { ext::discrete_distributions::Error::InvalidParameter -> true, _ -> false }); assert(source.calls == 1 && limit.work() == 2);
+ assert(ext::discrete_distributions::tails(forged,0,limit.borrow()).is_err()); assert(ext::discrete_distributions::pmf(forged,0).is_err()); assert(limit.work() == 2);
+ let unavailable = ext::discrete_distributions::budget(0,0);
+ assert(ext::discrete_distributions::sample(source.borrow(),ext::discrete_distributions::bernoulli(0.0).unwrap(),unavailable.borrow()).unwrap() == 0);
+ assert(ext::discrete_distributions::sample(source.borrow(),ext::discrete_distributions::binomial(0,0.5).unwrap(),unavailable.borrow()).unwrap() == 0);
+ assert(ext::discrete_distributions::sample(source.borrow(),ext::discrete_distributions::binomial(4294967295,1.0).unwrap(),unavailable.borrow()).unwrap() == 4294967295);
+ assert(ext::discrete_distributions::sample(source.borrow(),ext::discrete_distributions::geometric(1.0).unwrap(),unavailable.borrow()).unwrap() == 0);
+ assert(ext::discrete_distributions::sample(source.borrow(),ext::discrete_distributions::poisson(0.0).unwrap(),unavailable.borrow()).unwrap() == 0); assert(source.calls == 1 && unavailable.work() == 0 && unavailable.draws() == 0);
+ assert(match (ext::discrete_distributions::sample(source.borrow(),fair,unavailable.borrow()).unwrap_err()) { ext::discrete_distributions::Error::WorkLimit -> true, _ -> false }); assert(source.calls == 1 && unavailable.work() == 0);
+ let no_draws = ext::discrete_distributions::budget(0,10); assert(match (ext::discrete_distributions::sample(source.borrow(),fair,no_draws.borrow()).unwrap_err()) { ext::discrete_distributions::Error::DrawLimit -> true, _ -> false }); assert(source.calls == 1 && no_draws.draws() == 0 && no_draws.work() == 1);
+ let failure: Source = Source { word: 0,calls: 0,fail_at: 16 }; let fail_limit = ext::discrete_distributions::budget(17,17);
+ assert(match (ext::discrete_distributions::sample(failure.borrow(),ext::discrete_distributions::bernoulli(core::f64::from_bits(1)).unwrap(),fail_limit.borrow()).unwrap_err()) { ext::discrete_distributions::Error::Random(cause) -> match (cause) { core::random::Error::Host(code) -> code == 77, _ -> false }, _ -> false }); assert(failure.calls == 16 && fail_limit.draws() == 16 && fail_limit.work() == 16);
+ let nested: Source = Source { word: 9223372036854775808,calls: 0,fail_at: 2 }; let nested_limit = ext::discrete_distributions::budget(10,10);
+ assert(match (ext::discrete_distributions::sample(nested.borrow(),ext::discrete_distributions::binomial(100,0.2).unwrap(),nested_limit.borrow()).unwrap_err()) { ext::discrete_distributions::Error::Random(cause) -> match (cause) { core::random::Error::Host(code) -> code == 77, _ -> false }, _ -> false }); assert(nested.calls == 2 && nested_limit.draws() == 2 && nested_limit.work() == 3);
+ let numerical = ext::discrete_distributions::budget(0,1); assert(match (ext::discrete_distributions::tails(ext::discrete_distributions::binomial(100,0.5).unwrap(),49,numerical.borrow()).unwrap_err()) { ext::discrete_distributions::Error::WorkLimit -> true, _ -> false }); assert(numerical.work() == 1 && numerical.draws() == 0);
+ let boundaries = ext::discrete_distributions::budget(0,10); let geometric = ext::discrete_distributions::geometric(0.5).unwrap();
+ assert(match (ext::discrete_distributions::tails(geometric,9007199254740992,boundaries.borrow()).unwrap_err()) { ext::discrete_distributions::Error::CountRange -> true, _ -> false }); assert(boundaries.work() == 0);
+ let outside = ext::discrete_distributions::tails(geometric,-9223372036854775807-1,boundaries.borrow()).unwrap(); assert(outside.cdf == 0.0 && outside.survival == 1.0 && boundaries.work() == 1);
+ assert(match (ext::discrete_distributions::tails(ext::discrete_distributions::poisson(1.0).unwrap(),9007199254740991,boundaries.borrow()).unwrap_err()) { ext::discrete_distributions::Error::Precision -> true, _ -> false }); assert(boundaries.work() == 2);
+ let maximum = ext::discrete_distributions::budget(18446744073709551615,18446744073709551615); assert(maximum.charge(18446744073709551615)); assert(!maximum.charge(1) && maximum.work() == 18446744073709551615 && maximum.remaining_work() == 0);
+ let stuck: Source = Source { word: 0,calls: 0,fail_at: 0 }; let bounded = ext::discrete_distributions::budget(2000000,3000000);
+ assert(match (ext::discrete_distributions::sample(stuck.borrow(),ext::discrete_distributions::binomial(100,0.2).unwrap(),bounded.borrow()).unwrap_err()) { ext::discrete_distributions::Error::NoConvergence -> true, _ -> false }); assert(stuck.calls == 2000000 && bounded.draws() == 2000000 && bounded.work() == 3000000);
+ stuck.calls = 0; let open_limit = ext::discrete_distributions::budget(1000000,1000000);
+ assert(match (ext::discrete_distributions::sample(stuck.borrow(),geometric,open_limit.borrow()).unwrap_err()) { ext::discrete_distributions::Error::NoConvergence -> true, _ -> false }); assert(stuck.calls == 1000000 && open_limit.work() == 1000000);
+ return 0;
+}

@@ -1,0 +1,39 @@
+module app::main;
+import std::linux;
+import core::mem;
+import core::result;
+import core::slice;
+fn system(error: std::linux::Error) -> i32 { let code: i32 = match (error) { std::linux::Error::System(number) -> number, _ -> 0 }; return code; }
+fn main() -> i32 {
+    let high: i64 = 4294967301; let negative: i64 = -4294967297;
+    let seek: [std::linux::Argument; 3] = [std::linux::Argument::Word(1), std::linux::Argument::Word(high), std::linux::Argument::Word(0)];
+    let seek_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(seek, 3));
+    if (core::result::unwrap(std::linux::call(8, seek_view)) != high) { return 1; }
+    seek[1] = std::linux::Argument::Word(negative);
+    let below: core::result::Result<i64, std::linux::Error> = std::linux::call(8, seek_view);
+    if (!core::result::is_err(below) || system(core::result::unwrap_err(below)) != 22) { return 2; }
+    let truncate: [std::linux::Argument; 2] = [std::linux::Argument::Word(1), std::linux::Argument::Word(high)];
+    let truncate_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(truncate, 2));
+    if (core::result::unwrap(std::linux::call(77, truncate_view)) != 0) { return 3; }
+    let empty: [i32; 1] = [0]; let info: [i32; 64] = [0; 64];
+    let stat: [std::linux::Argument; 5] = [std::linux::Argument::Word(1), std::linux::Argument::Address(core::mem::i32_array_data_ptr(empty)), std::linux::Argument::Word(4096), std::linux::Argument::Word(512), std::linux::Argument::Address(core::mem::i32_array_data_ptr(info))];
+    let stat_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(stat, 5));
+    if (core::result::unwrap(std::linux::call(332, stat_view)) != 0 || (info[0] & 512) == 0 || info[10] != 5 || info[11] != 1) { return 4; }
+    let body: [i32; 2] = [0; 2]; let address: [i32; 8] = [0; 8]; let address_length: [i32; 1] = [32];
+    let receive: [std::linux::Argument; 6] = [std::linux::Argument::Word(0), std::linux::Argument::Address(core::mem::i32_array_data_ptr(body)), std::linux::Argument::Word(8), std::linux::Argument::Word(0), std::linux::Argument::Address(core::mem::i32_array_data_ptr(address)), std::linux::Argument::Address(core::mem::i32_array_data_ptr(address_length))];
+    let receive_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(receive, 6));
+    if (core::result::unwrap(std::linux::call(45, receive_view)) != 3 || (body[0] & 16777215) != 6513249 || address_length[0] != 16 || (address[0] & 65535) != 2) { return 5; }
+    let offset: i64 = 4294967296;
+    let mapping: [std::linux::Argument; 6] = [std::linux::Argument::Word(offset), std::linux::Argument::Word(4096), std::linux::Argument::Word(1), std::linux::Argument::Word(2), std::linux::Argument::Word(1), std::linux::Argument::Word(offset)];
+    let count: i32 = 6;
+    while (count >= 5) {
+        let mapping_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(mapping, count));
+        let mapped: i64 = core::result::unwrap(std::linux::call(9, mapping_view));
+        if (mapped < offset) { return 6; }
+        let release: [std::linux::Argument; 2] = [std::linux::Argument::Word(mapped), std::linux::Argument::Word(4096)];
+        let release_view: core::slice::View<std::linux::Argument> = core::result::unwrap(core::slice::view(release, 2));
+        if (core::result::unwrap(std::linux::call(11, release_view)) != 0) { return 7; }
+        count -= 1;
+    }
+    return 0;
+}

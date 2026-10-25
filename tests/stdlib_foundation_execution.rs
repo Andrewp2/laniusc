@@ -593,76 +593,10 @@ fn portable_stdlib_helpers_execute_on_x86() {
             b"2\n",
         ),
         (
-            "vec_u8",
-            "tests/fixtures/stdlib_foundation/vec_u8.lani",
-            0,
-            b"",
-        ),
-        (
             "utf8_text_report",
             "sample_programs/utf8_text_report.lani",
             0,
             b"A\xc2\xa2A\xc2\xa2B5\n",
-        ),
-        (
-            "utf8_vec",
-            "tests/fixtures/stdlib_foundation/utf8_vec.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_edit",
-            "tests/fixtures/stdlib_foundation/utf8_vec_edit.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_replace",
-            "tests/fixtures/stdlib_foundation/utf8_vec_replace.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_codes",
-            "tests/fixtures/stdlib_foundation/utf8_vec_codes.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_bytes",
-            "tests/fixtures/stdlib_foundation/utf8_vec_bytes.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_splice_bytes",
-            "tests/fixtures/stdlib_foundation/utf8_vec_splice_bytes.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_splice_bytes_bounds",
-            "tests/fixtures/stdlib_foundation/utf8_vec_splice_bytes_bounds.lani",
-            101,
-            b"",
-        ),
-        (
-            "utf8_vec_insert_codes",
-            "tests/fixtures/stdlib_foundation/utf8_vec_insert_codes.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_remove_range",
-            "tests/fixtures/stdlib_foundation/utf8_vec_remove_range.lani",
-            0,
-            b"",
-        ),
-        (
-            "utf8_vec_splice_codes",
-            "tests/fixtures/stdlib_foundation/utf8_vec_splice_codes.lani",
-            0,
-            b"",
         ),
         (
             "vector_unsigned_checksum",
@@ -756,107 +690,34 @@ fn portable_stdlib_helpers_execute_on_x86() {
 }
 
 #[test]
-fn legacy_scalar_functions_execute_on_x86() {
-    let bool_source = include_str!("../stdlib/bool.lani");
-    let i32_source = include_str!("../stdlib/i32.lani");
-    let main_source = include_str!("fixtures/stdlib_foundation/legacy_scalars_main.lani");
-    for library in [bool_source, i32_source] {
-        for line in library.lines() {
-            let Some(tail) = line.trim_start().strip_prefix("pub fn ") else {
-                continue;
-            };
-            let name = tail
-                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .next()
-                .expect("public function has a name");
-            assert!(
-                main_source.contains(&format!("{name}(")),
-                "{name} lacks a runtime case"
-            );
-        }
-    }
-    let source = format!("{bool_source}\n{i32_source}\n{main_source}");
-    let bytes = common::run_gpu_codegen_with_timeout("legacy_scalars", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect("compile legacy scalar functions");
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output("legacy_scalars", "legacy_scalars", &bytes);
-        assert_eq!(output.status.code(), Some(0), "{output:?}");
-    }
-    #[cfg(not(all(unix, target_arch = "x86_64")))]
-    let _ = bytes;
-}
-
-#[test]
-fn legacy_i32x4_functions_execute_on_x86() {
-    let library = include_str!("../stdlib/array_i32_4.lani");
-    let main_source = include_str!("fixtures/stdlib_foundation/legacy_i32x4_main.lani");
-    for line in library.lines() {
-        let Some(tail) = line.trim_start().strip_prefix("pub fn ") else {
-            continue;
-        };
-        let name = tail
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .next()
-            .expect("public function has a name");
-        assert!(
-            main_source.contains(&format!("{name}(")),
-            "{name} lacks a runtime case"
-        );
-    }
-    let source = format!("{library}\n{main_source}");
-    let bytes = common::run_gpu_codegen_with_timeout("legacy_i32x4", move || {
-        pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-    })
-    .expect("compile legacy i32x4 functions");
-
-    #[cfg(all(unix, target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output("legacy_i32x4", "legacy_i32x4", &bytes);
-        assert_eq!(output.status.code(), Some(0), "{output:?}");
-    }
-    #[cfg(not(all(unix, target_arch = "x86_64")))]
-    let _ = bytes;
-}
-
-// Guard the runtime fixtures against a newly added public helper going
-// unexercised. The fixtures themselves still provide the behavior assertions.
-#[test]
 fn executable_core_function_surface_has_runtime_cases() {
+    let decimal_fixtures = format!(
+        "{}\n{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_decimal.lani"),
+        include_str!("fixtures/stdlib_foundation/core_decimal_native.lani"),
+        include_str!("fixtures/stdlib_foundation/decimal_parse_input.lani"),
+        include_str!("fixtures/stdlib_foundation/decimal_format_input.lani"),
+    );
+    let float_fixtures = format!(
+        "{}\n{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_f32.lani"),
+        include_str!("fixtures/stdlib_foundation/float_model.lani"),
+        include_str!("fixtures/stdlib_foundation/float_clamp_panic.lani"),
+        include_str!("fixtures/stdlib_foundation/float_bits.lani"),
+    );
+    let slice_fixtures = format!(
+        "{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_slice.lani"),
+        include_str!("fixtures/stdlib_foundation/core_slice_view.lani"),
+        include_str!("fixtures/stdlib_foundation/slice_view_model.lani"),
+    );
+    let bitset_fixtures = format!(
+        "{}\n{}\n{}",
+        include_str!("fixtures/stdlib_foundation/core_bitset.lani"),
+        include_str!("fixtures/stdlib_foundation/bitset_view_contracts.lani"),
+        include_str!("fixtures/stdlib_foundation/bitset_owned_smoke.lani"),
+    );
     let modules = [
-        (
-            "i32",
-            include_str!("../stdlib/core/i32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_i32_complete.lani"),
-        ),
-        (
-            "i16",
-            include_str!("../stdlib/core/i16.lani"),
-            include_str!("fixtures/stdlib_foundation/core_i16_complete.lani"),
-        ),
-        (
-            "i8",
-            include_str!("../stdlib/core/i8.lani"),
-            include_str!("fixtures/stdlib_foundation/core_i8_complete.lani"),
-        ),
-        (
-            "u8",
-            include_str!("../stdlib/core/u8.lani"),
-            include_str!("fixtures/stdlib_foundation/core_u8_complete.lani"),
-        ),
-        (
-            "u16",
-            include_str!("../stdlib/core/u16.lani"),
-            include_str!("fixtures/stdlib_foundation/core_u16_complete.lani"),
-        ),
-        (
-            "u32",
-            include_str!("../stdlib/core/u32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_u32_complete.lani"),
-        ),
         (
             "array_i32_4",
             include_str!("../stdlib/core/array_i32_4.lani"),
@@ -875,7 +736,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "bitset",
             include_str!("../stdlib/core/bitset.lani"),
-            include_str!("fixtures/stdlib_foundation/core_bitset.lani"),
+            bitset_fixtures.as_str(),
         ),
         (
             "base64",
@@ -910,42 +771,17 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "f32",
             include_str!("../stdlib/core/f32.lani"),
-            include_str!("fixtures/stdlib_foundation/core_f32.lani"),
+            float_fixtures.as_str(),
         ),
         (
-            "byte",
-            include_str!("../stdlib/core/byte.lani"),
-            include_str!("fixtures/stdlib_foundation/number_byte.lani"),
-        ),
-        (
-            "number_i32",
-            include_str!("../stdlib/core/number_i32.lani"),
-            include_str!("fixtures/stdlib_foundation/number_byte.lani"),
-        ),
-        (
-            "number_i8",
-            include_str!("../stdlib/core/number_i8.lani"),
-            include_str!("fixtures/stdlib_foundation/number_i8.lani"),
-        ),
-        (
-            "number_i16",
-            include_str!("../stdlib/core/number_i16.lani"),
-            include_str!("fixtures/stdlib_foundation/number_i16.lani"),
-        ),
-        (
-            "number_u16",
-            include_str!("../stdlib/core/number_u16.lani"),
-            include_str!("fixtures/stdlib_foundation/number_u16.lani"),
-        ),
-        (
-            "number_u32",
-            include_str!("../stdlib/core/number_u32.lani"),
-            include_str!("fixtures/stdlib_foundation/number_u32.lani"),
+            "f64",
+            include_str!("../stdlib/core/f64.lani"),
+            float_fixtures.as_str(),
         ),
         (
             "decimal",
             include_str!("../stdlib/core/decimal.lani"),
-            include_str!("fixtures/stdlib_foundation/core_decimal.lani"),
+            decimal_fixtures.as_str(),
         ),
         (
             "hex",
@@ -960,7 +796,7 @@ fn executable_core_function_surface_has_runtime_cases() {
         (
             "slice",
             include_str!("../stdlib/core/slice.lani"),
-            include_str!("fixtures/stdlib_foundation/core_slice.lani"),
+            slice_fixtures.as_str(),
         ),
     ];
 
@@ -974,8 +810,16 @@ fn executable_core_function_surface_has_runtime_cases() {
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                 .next()
                 .expect("public function has a name");
-            let call = format!("core::{module}::{name}(");
+            let call = if line.starts_with("pub fn ") {
+                format!("core::{module}::{name}(")
+            } else {
+                format!(".{name}(")
+            };
             let covered = fixture.contains(&call)
+                // Associated factories have no receiver dot. Their runtime
+                // fixtures call Type::factory rather than module::factory.
+                || !line.starts_with("pub fn ")
+                    && fixture.contains(&format!("::{name}("))
                 || module == "utf8"
                     && include_str!("fixtures/stdlib_foundation/core_utf8_bytes.lani")
                         .contains(&call)
@@ -1010,27 +854,13 @@ fn executable_core_function_surface_has_runtime_cases() {
             .next()
             .expect("range function has a name");
         let call = format!("{prefix}{name}(");
-        assert!(range_cases.contains(&call), "core::range {call} lacks a runtime case");
+        assert!(
+            range_cases.contains(&call),
+            "core::range {call} lacks a runtime case"
+        );
     }
     assert_eq!((range_functions, range_methods), (20, 15));
 
-    let number_byte = include_str!("fixtures/stdlib_foundation/number_byte.lani");
-    for module in ["byte", "number_i32"] {
-        for name in ["MIN", "MAX"] {
-            let reference = format!("core::{module}::{name}");
-            assert!(
-                number_byte.contains(&reference),
-                "{reference} lacks a runtime case"
-            );
-        }
-    }
-    for name in ["MIN", "MAX"] {
-        let reference = format!("core::number_u32::{name}");
-        assert!(
-            include_str!("fixtures/stdlib_foundation/number_u32.lani").contains(&reference),
-            "{reference} lacks a runtime case"
-        );
-    }
     assert!(
         include_str!("fixtures/stdlib_foundation/core_f32.lani").contains("core::f32::ZERO"),
         "core::f32::ZERO lacks a runtime case"
@@ -1110,15 +940,15 @@ fn executable_core_function_surface_has_runtime_cases() {
             "core::target",
             include_str!("../stdlib/core/target.lani"),
             include_str!("fixtures/stdlib_foundation/core_target_metadata.lani"),
-            18,
-            16,
+            19,
+            17,
         ),
         (
             "core::runtime",
             include_str!("../stdlib/core/runtime.lani"),
             include_str!("fixtures/stdlib_foundation/core_runtime_metadata.lani"),
-            62,
-            40,
+            63,
+            42,
         ),
         (
             "test::harness",
@@ -1238,38 +1068,10 @@ fn executable_core_function_surface_has_runtime_cases() {
             .expect("public vector function has a name");
         let call = format!("std::vec::{name}(");
         assert!(
-            vector_fixtures.iter().any(|fixture| fixture.contains(&call)),
+            vector_fixtures
+                .iter()
+                .any(|fixture| fixture.contains(&call)),
             "{call} lacks a runtime case"
         );
     }
-
-    let text_source = include_str!("../stdlib/std/utf8_vec.lani");
-    let text_fixture = include_str!("fixtures/stdlib_foundation/utf8_vec.lani");
-    let mut text_function_count = 0;
-    for line in text_source.lines() {
-        let Some(tail) = line.strip_prefix("pub fn ") else {
-            continue;
-        };
-        let name = tail
-            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .next()
-            .expect("public UTF-8 vector function has a name");
-        let call = format!("std::utf8_vec::{name}(");
-        let covered = text_fixture.contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_edit.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_replace.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_codes.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_bytes.lani").contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_splice_bytes.lani")
-                .contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_insert_codes.lani")
-                .contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_remove_range.lani")
-                .contains(&call)
-            || include_str!("fixtures/stdlib_foundation/utf8_vec_splice_codes.lani")
-                .contains(&call);
-        assert!(covered, "{call} lacks a runtime case");
-        text_function_count += 1;
-    }
-    assert_eq!(text_function_count, 30);
 }

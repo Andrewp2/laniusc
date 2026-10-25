@@ -1,0 +1,120 @@
+// Fixed binary protocol: count, then eight u64 words and payload per command.
+// Words: op, layout, mode, a, b, c, capacity, payload-length. Output is u64 words.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::der;
+import std::stream;
+struct Output { bytes: [u8], used: i32 }
+fn code(value: ext::der::ErrorKind) -> u64 {
+    return match (value) { ext::der::ErrorKind::Bounds -> 1, ext::der::ErrorKind::UnexpectedEnd -> 2, ext::der::ErrorKind::InvalidTag -> 3, ext::der::ErrorKind::TagOverflow -> 4, ext::der::ErrorKind::InvalidLength -> 5, ext::der::ErrorKind::LengthOverflow -> 6, ext::der::ErrorKind::IndefiniteLength -> 7, ext::der::ErrorKind::NonCanonical -> 8, ext::der::ErrorKind::TrailingData -> 9, ext::der::ErrorKind::UnexpectedTag -> 10, ext::der::ErrorKind::InvalidValue -> 11, ext::der::ErrorKind::IntegerOverflow -> 12, ext::der::ErrorKind::ArcOverflow -> 13, ext::der::ErrorKind::OutputTooSmall -> 14 };
+}
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), self.bytes, 0, self.used).is_ok()); self.used = 0; }
+    fn word(&self, value: u64) { if (self.used == 1024) { self.flush(); } let at: i32 = 0; while (at < 8) { self.bytes[self.used + at] = ((value >> (at * 8)) & 255) as u8; at += 1; } self.used += 8; }
+    fn ok(&self) { self.word(0); self.word(0); }
+    fn error(&self, error: ext::der::Error) { self.word(code(error.kind)); self.word(error.offset as u64); }
+    fn data(&self, data: core::slice::View<u8>) { self.word(data.length as u64); let at: i32 = 0; while (at < data.length) { self.word(data.values[data.start + at] as u64); at += 1; } }
+    fn element(&self, value: ext::der::Element, base: i32) {
+        self.word(match (value.tag.class) { ext::der::Class::Universal -> 0, ext::der::Class::Application -> 1, ext::der::Class::Context -> 2, ext::der::Class::Private -> 3 });
+        self.word(value.tag.constructed as u64); self.word(value.tag.number as u64); self.word(value.encoded.start as u64 - base as u64); self.word(value.encoded.length as u64); self.word(value.content.start as u64 - base as u64); self.data(value.content);
+    }
+    fn children(&self, result: core::result::Result<ext::der::Reader, ext::der::Error>) {
+        if (result.is_err()) { self.error(result.unwrap_err()); return; }
+        self.ok(); let cursor: ext::der::Reader = result.unwrap();
+        while (true) {
+            let before: i32 = cursor.position(); let next: core::result::Result<core::option::Option<ext::der::Element>, ext::der::Error> = cursor.next();
+            if (next.is_err()) { let error: ext::der::Error = next.unwrap_err(); self.error(error); self.word(before as u64); self.word(cursor.position() as u64); let repeated: ext::der::Error = cursor.next().unwrap_err(); assert(code(error.kind) == code(repeated.kind) && error.offset == repeated.offset && cursor.position() == before); break; }
+            let item: core::option::Option<ext::der::Element> = next.unwrap();
+            if (item.is_none()) { self.word(255); self.word(0); self.word(before as u64); self.word(cursor.position() as u64); assert(cursor.next().unwrap().is_none()); assert(cursor.finish().unwrap() == cursor.position()); break; }
+            self.ok(); self.word(before as u64); self.word(cursor.position() as u64); self.element(item.unwrap(), cursor.input.start);
+        }
+    }
+}
+fn decode(bytes: [u8], start: i32) -> u64 { let result: u64 = 0; let at: i32 = 0; while (at < 8) { result |= (bytes[start + at] as u64) << (at * 8); at += 1; } return result; }
+fn class(value: u64) -> ext::der::Class { if (value == 0) { return ext::der::Class::Universal; } if (value == 1) { return ext::der::Class::Application; } if (value == 2) { return ext::der::Class::Context; } return ext::der::Class::Private; }
+fn typed(mode: u64, element: ext::der::Element, output: &Output) {
+    if (mode == 0) { let r: core::result::Result<bool, ext::der::Error> = element.as_boolean(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); output.word(r.unwrap() as u64); } return; }
+    if (mode == 1) { let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = element.as_integer(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); output.data(r.unwrap()); } return; }
+    if (mode == 2) { let r: core::result::Result<i64, ext::der::Error> = element.as_i64(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); output.word(r.unwrap() as u64); } return; }
+    if (mode == 3) { let r: core::result::Result<u64, ext::der::Error> = element.as_u64(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); output.word(r.unwrap()); } return; }
+    if (mode == 4) { let r: core::result::Result<ext::der::BitString, ext::der::Error> = element.as_bit_string(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); let bits: ext::der::BitString = r.unwrap(); output.word(bits.unused_bits as u64); output.data(bits.bytes); } return; }
+    if (mode == 5 || mode == 9 || mode == 10) {
+        let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = element.as_octets(); if (mode == 9) { r = element.as_printable(); } if (mode == 10) { r = element.as_ia5(); }
+        if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); output.data(r.unwrap()); } return;
+    }
+    if (mode == 6) { let r: core::result::Result<i32, ext::der::Error> = element.as_null(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); output.word(r.unwrap() as u64); } return; }
+    if (mode == 7) {
+        let r: core::result::Result<ext::der::Oid, ext::der::Error> = element.as_oid(); if (r.is_err()) { output.error(r.unwrap_err()); return; }
+        output.ok(); output.data(r.unwrap().bytes); let arcs: ext::der::OidArcs = r.unwrap().arcs().unwrap();
+        while (true) {
+            let before: i32 = arcs.position(); let next: core::result::Result<core::option::Option<u64>, ext::der::Error> = arcs.next();
+            if (next.is_err()) { let error: ext::der::Error = next.unwrap_err(); output.error(error); output.word(before as u64); output.word(arcs.position() as u64); let repeated: ext::der::Error = arcs.next().unwrap_err(); assert(code(error.kind) == code(repeated.kind) && error.offset == repeated.offset && arcs.position() == before); break; }
+            if (next.unwrap().is_none()) { output.word(255); output.word(0); output.word(before as u64); output.word(arcs.position() as u64); assert(arcs.next().unwrap().is_none()); break; }
+            output.ok(); output.word(before as u64); output.word(arcs.position() as u64); output.word(next.unwrap().unwrap());
+        } return;
+    }
+    if (mode == 8) { let r: core::result::Result<core::text::Text, ext::der::Error> = element.as_utf8(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); let text: core::text::Text = r.unwrap(); output.data(core::slice::View { values: text.bytes, start: text.start, length: text.length }); } return; }
+    if (mode == 11) { let r: core::result::Result<ext::der::X509Time, ext::der::Error> = element.as_x509_time(); if (r.is_err()) { output.error(r.unwrap_err()); } else { output.ok(); let time: ext::der::X509Time = r.unwrap(); output.word(time.year as u64); output.word(time.month as u64); output.word(time.day as u64); output.word(time.hour as u64); output.word(time.minute as u64); output.word(time.second as u64); } return; }
+    if (mode == 12) { output.children(element.children()); } if (mode == 13) { output.children(element.as_sequence()); } if (mode == 14) { output.children(element.as_set()); }
+}
+fn contracts() {
+    let source: [u8; 12] = [48, 6, 2, 1, 7, 1, 1, 255, 0, 0, 0, 0];
+    let root: ext::der::Element = ext::der::parse_one(core::slice::View { values: source, start: 0, length: 8 }).unwrap();
+    let cursor: ext::der::Reader = root.as_sequence().unwrap(); let copy: ext::der::Reader = cursor;
+    let value: ext::der::Element = cursor.next().unwrap().unwrap(); assert(value.as_i64().unwrap() == 7 && copy.position() == 0);
+    assert(copy.next().unwrap().unwrap().as_i64().unwrap() == 7 && cursor.position() == 3);
+    source[4] = 9; assert(value.as_i64().unwrap() == 9); source[4] = 7;
+    assert(cursor.next().unwrap().unwrap().as_boolean().unwrap()); assert(cursor.finish().unwrap() == 6);
+    let bad: core::slice::View<u8> = root.content; bad.start = -1;
+    assert(code(ext::der::reader(bad).unwrap_err().kind) == 1 && code(ext::der::parse_one(bad).unwrap_err().kind) == 1);
+    bad.start = 2147483647; bad.length = 1; assert(code(ext::der::reader(bad).unwrap_err().kind) == 1);
+    bad.start = 0; bad.length = -1; assert(code(ext::der::reader(bad).unwrap_err().kind) == 1);
+    let forged: ext::der::Element = root; forged.content = bad;
+    assert(code(forged.as_boolean().unwrap_err().kind) == 1 && code(forged.as_sequence().unwrap_err().kind) == 1 && code(forged.children().unwrap_err().kind) == 1);
+    assert(code(ext::der::write_i64(7, bad).unwrap_err().kind) == 1);
+    let largest: ext::der::Tag = ext::der::Tag { class: ext::der::Class::Private, constructed: true, number: 4294967295 };
+    assert(ext::der::header_len(largest, 2147483647).unwrap() == 11);
+    assert(code(ext::der::encoded_len(largest, 2147483647).unwrap_err().kind) == 6);
+    let oid_bytes: [u8; 4] = [6, 2, 42, 3]; let oid: ext::der::Oid = ext::der::parse_one(core::slice::View { values: oid_bytes, start: 0, length: 4 }).unwrap().as_oid().unwrap();
+    let arcs: ext::der::OidArcs = oid.arcs().unwrap(); assert(arcs.next().unwrap().unwrap() == 1); let arc_copy: ext::der::OidArcs = arcs;
+    assert(arcs.next().unwrap().unwrap() == 2 && arc_copy.next().unwrap().unwrap() == 2 && arcs.next().unwrap().unwrap() == 3 && arc_copy.next().unwrap().unwrap() == 3);
+}
+fn run(op: u64, layout: u64, mode: u64, a: u64, b: u64, c: u64, capacity: i32, input: [u8], length: i32, output: &Output) {
+    let source_stack: [u8; 8224] = [0; 8224]; let target_stack: [u8; 8224] = [0; 8224]; let source_words: [i32; 2056] = [0; 2056]; let target_words: [i32; 2056] = [0; 2056];
+    let source: [u8] = source_stack; let target: [u8] = target_stack;
+    if (layout == 1) { source = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(source_words), 8224); target = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(target_words), 8224); }
+    let at: i32 = 0; while (at < 8224) { source[at] = 165; target[at] = 221; at += 1; }
+    at = 0; while (at < length) { source[3 + at] = input[at]; at += 1; }
+    let view: core::slice::View<u8> = core::slice::View { values: source, start: 3, length: length };
+    let destination: core::slice::View<u8> = core::slice::View { values: target, start: 5, length: capacity };
+    if (op == 0 || op == 1) {
+        let parsed: core::result::Result<ext::der::Element, ext::der::Error> = ext::der::parse_one(view);
+        if (parsed.is_err()) { output.error(parsed.unwrap_err()); }
+        else { if (op == 0) { output.ok(); output.element(parsed.unwrap(), view.start); } else { typed(mode, parsed.unwrap(), output); } }
+        if (op == 0) { output.children(ext::der::reader(view)); }
+    } else {
+        let tag: ext::der::Tag = ext::der::Tag { class: class(mode), constructed: a != 0, number: b as u32 };
+        let result: core::result::Result<i32, ext::der::Error> = core::result::Ok(0);
+        if (op == 2) { result = ext::der::write_header(tag, c as i32, destination); }
+        if (op == 3) { result = ext::der::write_tlv(tag, view, destination); }
+        if (op == 4) { result = ext::der::write_boolean(c != 0, destination); }
+        if (op == 5) { result = ext::der::write_integer(view, destination); }
+        if (op == 6) { result = ext::der::write_i64(c as i64, destination); }
+        if (op == 7) { result = ext::der::write_u64(c, destination); }
+        if (result.is_err()) { output.error(result.unwrap_err()); at = 0; while (at < 8224) { assert(target[at] == 221); at += 1; } }
+        else { output.ok(); let written: i32 = result.unwrap(); output.data(core::slice::View { values: target, start: 5, length: written }); at = 0; while (at < 8224) { if (at < 5 || at >= 5 + written) { assert(target[at] == 221); } at += 1; } }
+    }
+    at = 0; while (at < 8224) { if (at < 3 || at >= 3 + length) { assert(source[at] == 165); } else { assert(source[at] == input[at - 3]); } at += 1; }
+}
+fn main() -> i32 {
+    contracts(); let sink_bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: sink_bytes, used: 0 }; let source: std::stream::Descriptor = std::stream::stdin();
+    let header: [u8; 64] = [0; 64]; let payload: [u8; 8192] = [0; 8192]; assert(core::io::read_exact(source.borrow(), header, 0, 8).is_ok()); let count: u64 = decode(header, 0); assert(count <= 4096); let at: u64 = 0;
+    while (at < count) { assert(core::io::read_exact(source.borrow(), header, 0, 64).is_ok()); let length: u64 = decode(header, 56); let capacity: u64 = decode(header, 48); assert(length <= 8192 && capacity <= 8208 && decode(header, 0) <= 7 && decode(header, 8) <= 1); assert(core::io::read_exact(source.borrow(), payload, 0, length as i32).is_ok()); run(decode(header, 0), decode(header, 8), decode(header, 16), decode(header, 24), decode(header, 32), decode(header, 40), capacity as i32, payload, length as i32, output.borrow()); at += 1; }
+    output.flush(); return 0;
+}

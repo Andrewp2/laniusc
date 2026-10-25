@@ -1,0 +1,142 @@
+// Six u64 words: length, old-prefix length, two rejection keys, two quotas.
+// Nine actions per command include explicit rejected-item retries and resume.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Payload { key: i32, wide: u64, flag: core::option::Option<bool> }
+fn payload(key: i32) -> Payload {
+    if (key % 3 == 0) { return Payload { key: key, wide: 18446744073709551615 - (key as u64), flag: core::option::None() }; }
+    return Payload { key: key, wide: 18446744073709551615 - (key as u64), flag: core::option::Some(key % 2 == 0) };
+}
+struct Fault { code: i32, pending: Payload, before: [u64; 2] }
+struct Log { events: [i32], length: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, event: i32) { assert(self.length < 64); self.events[self.length] = event; self.length += 1; }
+}
+struct Source { length: i32, position: i32, calls: i32, log: &Log }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::iter::Iterator<Payload> for Source {
+    pub fn next(&self) -> core::option::Option<Payload> {
+        let log: &Log = self.log; log.add(1); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: Payload = payload(self.position); self.position += 1; return core::option::Some(value);
+    }
+}
+struct Sink { values: [Payload], length: i32, calls: i32, reject: i32, log: &Log }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::iter::TrySink<Payload, Fault> for Sink {
+    pub fn try_accept(&self, item: Payload) -> core::option::Option<Fault> {
+        let log: &Log = self.log; log.add(100 + item.key); self.calls += 1;
+        if (item.key == self.reject) {
+            return core::option::Some(Fault { code: 500 + self.reject, pending: item,
+                before: [self.length as u64, self.calls as u64] });
+        }
+        assert(self.length < 12); self.values[self.length] = item; self.length += 1;
+        return core::option::None();
+    }
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        let sent: core::result::Result<i32, core::io::Failure> = core::io::write_all(stdout.borrow(), self.bytes, 0, self.used);
+        assert(core::result::is_ok(sent)); self.used = 0;
+    }
+    fn word(&self, value: u64) {
+        if (self.used == 1024) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) { self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+        self.used += 8;
+    }
+    fn item(&self, value: Payload) {
+        self.word(value.key as u64); self.word(value.wide);
+        if (core::option::is_none(value.flag)) { self.word(0); }
+        else { if (core::option::unwrap(value.flag)) { self.word(2); } else { self.word(1); } }
+    }
+    fn error(&self, value: Fault) {
+        self.word(value.code as u64); self.item(value.pending);
+        self.word(value.before[0]); self.word(value.before[1]);
+    }
+    fn state(&self, source: &Source, sink: &Sink) {
+        self.word(source.position as u64); self.word(source.calls as u64);
+        self.word(sink.calls as u64);
+        if (sink.reject < 0) { self.word(18446744073709551615); } else { self.word(sink.reject as u64); }
+        self.word(sink.length as u64);
+        let index: i32 = 0;
+        while (index < sink.length) { self.item(sink.values[index]); index += 1; }
+    }
+}
+fn attempt(source: &Source, sink: &Sink, limit: u64, output: &Output) -> core::option::Option<Payload> {
+    let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, Fault>> =
+        core::iter::try_transfer_up_to<Source, Sink, Payload, Fault>(source, sink, limit);
+    if (core::result::is_ok(result)) {
+        let progress: core::iter::Transfer = core::result::unwrap(result);
+        output.word(0); output.word(progress.accepted);
+        if (progress.exhausted) { output.word(1); } else { output.word(0); }
+        return core::option::None();
+    }
+    let failed: core::iter::TransferError<Payload, Fault> = core::result::unwrap_err(result);
+    output.word(1); output.word(failed.accepted); output.item(failed.rejected); output.error(failed.error);
+    return core::option::Some(failed.rejected);
+}
+fn retry(sink: &Sink, pending: core::option::Option<Payload>, output: &Output) {
+    if (core::option::is_none(pending)) { output.word(0); return; }
+    let item: Payload = core::option::unwrap(pending);
+    let result: core::option::Option<Fault> = sink.try_accept(item);
+    if (core::option::is_none(result)) { output.word(1); output.item(item); return; }
+    output.word(2); output.item(item); output.error(core::option::unwrap(result));
+}
+fn run(length: i32, prefix: i32, first_reject: i32, second_reject: i32, first_limit: u64, second_limit: u64, output: &Output) {
+    let events: [i32; 64] = [0; 64]; let log: Log = Log { events: events, length: 0 };
+    let slots: [Payload; 12] = [payload(999); 12];
+    let sink: Sink = Sink { values: slots, length: prefix, calls: 0, reject: first_reject, log: log.borrow() };
+    let index: i32 = 0;
+    while (index < prefix) { slots[index] = payload(100 + index); index += 1; }
+    let source: Source = Source { length: length, position: 0, calls: 0, log: log.borrow() };
+    let first_pending: core::option::Option<Payload> = attempt(source.borrow(), sink.borrow(), first_limit, output);
+    output.state(source.borrow(), sink.borrow());
+    retry(sink.borrow(), first_pending, output); output.state(source.borrow(), sink.borrow());
+    sink.reject = -1;
+    retry(sink.borrow(), first_pending, output); output.state(source.borrow(), sink.borrow());
+    sink.reject = second_reject;
+    let second_pending: core::option::Option<Payload> = attempt(source.borrow(), sink.borrow(), second_limit, output);
+    output.state(source.borrow(), sink.borrow());
+    retry(sink.borrow(), second_pending, output); output.state(source.borrow(), sink.borrow());
+    sink.reject = -1;
+    retry(sink.borrow(), second_pending, output); output.state(source.borrow(), sink.borrow());
+    let final_pending: core::option::Option<Payload> = attempt(source.borrow(), sink.borrow(), 18446744073709551615, output);
+    assert(core::option::is_none(final_pending)); output.state(source.borrow(), sink.borrow());
+    let zero_pending: core::option::Option<Payload> = attempt(source.borrow(), sink.borrow(), 0, output);
+    assert(core::option::is_none(zero_pending)); output.state(source.borrow(), sink.borrow());
+    let exhausted_pending: core::option::Option<Payload> = attempt(source.borrow(), sink.borrow(), 1, output);
+    assert(core::option::is_none(exhausted_pending)); output.state(source.borrow(), sink.borrow());
+    output.word(log.length as u64); index = 0;
+    while (index < log.length) { output.word(events[index] as u64); index += 1; }
+    assert(sink.length == prefix + length);
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+fn main() -> i32 {
+    let bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: bytes, used: 0 };
+    let stdin: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 48] = [0; 48];
+    while (true) {
+        let first: core::result::Result<i32, core::io::Error> = stdin.read(record, 0, 48);
+        assert(core::result::is_ok(first)); let received: i32 = core::result::unwrap(first);
+        if (received == 0) { output.flush(); return 0; }
+        if (received < 48) { assert(core::result::is_ok(core::io::read_exact(stdin.borrow(), record, received, 48 - received))); }
+        let length: u64 = decode(record, 0); let prefix: u64 = decode(record, 8);
+        let first_reject: u64 = decode(record, 16); let second_reject: u64 = decode(record, 24);
+        assert(length <= 6 && prefix <= 2 && first_reject <= 7 && second_reject <= 7);
+        run(length as i32, prefix as i32, first_reject as i32, second_reject as i32, decode(record, 32), decode(record, 40), output.borrow());
+    }
+    return 0;
+}

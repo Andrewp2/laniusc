@@ -1,9 +1,9 @@
-// Unsigned 64-bit arithmetic represented as two u32 words. This module does
-// not use the native u64 arithmetic path, which currently loses high bits.
+// Unsigned 64-bit reference arithmetic represented explicitly as two u32 words.
+// Ordinary native-value consumers can use the executable core::u64 module.
 module core::wide_u64;
 import core::cmp;
 import core::ops;
-import core::number_u32;
+import core::u32;
 
 pub struct WideU64 {
     high: u32,
@@ -104,16 +104,16 @@ pub fn wrapping_mul(left: WideU64, right: WideU64) -> WideU64 {
     let a1: u32 = left.low >> 16;
     let b0: u32 = right.low & 65535;
     let b1: u32 = right.low >> 16;
-    let p0: u32 = core::number_u32::wrapping_mul(a0, b0);
-    let p1: u32 = core::number_u32::wrapping_mul(a1, b0);
-    let p2: u32 = core::number_u32::wrapping_mul(a0, b1);
-    let p3: u32 = core::number_u32::wrapping_mul(a1, b1);
+    let p0: u32 = core::u32::wrapping_mul(a0, b0);
+    let p1: u32 = core::u32::wrapping_mul(a1, b0);
+    let p2: u32 = core::u32::wrapping_mul(a0, b1);
+    let p3: u32 = core::u32::wrapping_mul(a1, b1);
     let middle: u32 = (p0 >> 16) + (p1 & 65535) + (p2 & 65535);
     let upper: u32 = p3 + (p1 >> 16) + (p2 >> 16) + (middle >> 16);
     let high: u32 = upper +
-        core::number_u32::wrapping_mul(left.high, right.low) +
-        core::number_u32::wrapping_mul(left.low, right.high);
-    let low: u32 = core::number_u32::wrapping_mul(left.low, right.low);
+        core::u32::wrapping_mul(left.high, right.low) +
+        core::u32::wrapping_mul(left.low, right.high);
+    let low: u32 = core::u32::wrapping_mul(left.low, right.low);
     return from_words(high, low);
 }
 
@@ -258,5 +258,22 @@ pub impl core::ops::SaturatingAdd<WideU64> for WideU64 {
         let total: WideU64 = wrapping_add(left, right);
         if (compare(total, left) < 0) { return max_value(); }
         return total;
+    }
+}
+
+pub impl core::cmp::PartialEq<WideU64> for WideU64 {
+    pub fn partial_eq(left: WideU64, right: WideU64) -> bool { return WideU64::eq(left, right); }
+    pub fn partial_ne(left: WideU64, right: WideU64) -> bool { return WideU64::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<WideU64> for WideU64 {
+    pub fn partial_lt(left: WideU64, right: WideU64) -> bool { return WideU64::lt(left, right); }
+    pub fn partial_le(left: WideU64, right: WideU64) -> bool { return WideU64::le(left, right); }
+    pub fn partial_gt(left: WideU64, right: WideU64) -> bool { return WideU64::gt(left, right); }
+    pub fn partial_ge(left: WideU64, right: WideU64) -> bool { return WideU64::ge(left, right); }
+    pub fn partial_cmp(left: WideU64, right: WideU64) -> core::cmp::PartialOrdering {
+        if (WideU64::lt(left, right)) { return core::cmp::Less; }
+        if (WideU64::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
     }
 }

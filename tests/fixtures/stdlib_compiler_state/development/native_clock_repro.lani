@@ -1,0 +1,18 @@
+module app::main;
+import core::result;
+import core::time;
+import std::clock;
+import test::bench;
+pub struct Work { calls: u32, checksum: u32, overflow: bool }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+pub impl test::bench::Work for Work {
+    pub fn iteration(&self, index: u32) -> u64 {
+        self.calls += 1; self.checksum = self.checksum * 1664525 + index + 1013904223;
+        if (self.overflow) { return 18446744073709551615; } return 3;
+    }
+}
+fn main() -> i32 {
+ let work: Work = Work { calls: 0, checksum: 0, overflow: false };
+ let value: test::bench::Measurement = core::result::unwrap(test::bench::native(work.borrow(),10000));
+ if (!test::bench::report(value)) { return 1; } return 0;
+}

@@ -1,0 +1,504 @@
+// Allocation-free byte/header predicates with explicitly mixed or Windows rules.
+// These do not implement the Unix Path component grammar in core::path.
+module core::path_rules;
+import core::utf8;
+
+pub type PathCapability = bool;
+pub type PathByte = u8;
+pub type PathComponentLength = u32;
+pub type PathSeparatorKind = u32;
+
+pub const PATH_SEPARATOR_NONE: PathSeparatorKind = 0;
+pub const PATH_SEPARATOR_UNIX_KIND: PathSeparatorKind = 1;
+pub const PATH_SEPARATOR_WINDOWS_KIND: PathSeparatorKind = 2;
+
+pub const PATH_SEPARATOR_UNIX: PathByte = 47;
+pub const PATH_SEPARATOR_WINDOWS: PathByte = 92;
+pub const PATH_EXTENSION_SEPARATOR: PathByte = 46;
+pub const PATH_DRIVE_SEPARATOR: PathByte = 58;
+pub const PATH_NUL: PathByte = 0;
+pub const PATH_ASCII_DELETE: PathByte = 127;
+pub const PATH_WINDOWS_RESERVED_DOUBLE_QUOTE: PathByte = 34;
+pub const PATH_WINDOWS_RESERVED_ASTERISK: PathByte = 42;
+pub const PATH_WINDOWS_RESERVED_LESS_THAN: PathByte = 60;
+pub const PATH_WINDOWS_RESERVED_GREATER_THAN: PathByte = 62;
+pub const PATH_WINDOWS_RESERVED_QUESTION_MARK: PathByte = 63;
+pub const PATH_WINDOWS_RESERVED_PIPE: PathByte = 124;
+
+pub const PATH_HAS_ALLOCATION_API: PathCapability = false;
+pub const PATH_HAS_HOST_NORMALIZATION: PathCapability = false;
+
+pub fn path_byte_is_unix_separator(value: PathByte) -> PathCapability {
+    return value == PATH_SEPARATOR_UNIX;
+}
+
+pub fn path_byte_is_windows_separator(value: PathByte) -> PathCapability {
+    return value == PATH_SEPARATOR_WINDOWS;
+}
+
+pub fn path_byte_is_separator(value: PathByte) -> PathCapability {
+    if (path_byte_is_unix_separator(value)) {
+        return true;
+    } else {
+        return path_byte_is_windows_separator(value);
+    }
+}
+
+pub fn path_separator_kind(value: PathByte) -> PathSeparatorKind {
+    if (path_byte_is_unix_separator(value)) {
+        return PATH_SEPARATOR_UNIX_KIND;
+    } else {
+        if (path_byte_is_windows_separator(value)) {
+            return PATH_SEPARATOR_WINDOWS_KIND;
+        } else {
+            return PATH_SEPARATOR_NONE;
+        }
+    }
+}
+
+pub fn path_byte_is_extension_separator(value: PathByte) -> PathCapability {
+    return value == PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_byte_is_drive_separator(value: PathByte) -> PathCapability {
+    return value == PATH_DRIVE_SEPARATOR;
+}
+
+pub fn path_byte_is_ascii_letter(value: PathByte) -> PathCapability {
+    return value >= 65 && value <= 90 || value >= 97 && value <= 122;
+}
+
+pub fn path_byte_is_windows_drive_letter(value: PathByte) -> PathCapability {
+    return path_byte_is_ascii_letter(value);
+}
+
+pub fn path_byte_is_ascii_digit(value: PathByte) -> PathCapability {
+    return value >= 48 && value <= 57;
+}
+
+pub fn path_byte_is_ascii_control(value: PathByte) -> PathCapability {
+    return value < 32 || value == PATH_ASCII_DELETE;
+}
+
+pub fn path_byte_is_windows_component_reserved_punctuation(value: PathByte) -> PathCapability {
+    return value == PATH_WINDOWS_RESERVED_DOUBLE_QUOTE
+        || value == PATH_WINDOWS_RESERVED_ASTERISK
+        || value == PATH_DRIVE_SEPARATOR
+        || value == PATH_WINDOWS_RESERVED_LESS_THAN
+        || value == PATH_WINDOWS_RESERVED_GREATER_THAN
+        || value == PATH_WINDOWS_RESERVED_QUESTION_MARK
+        || value == PATH_WINDOWS_RESERVED_PIPE;
+}
+
+pub fn path_byte_is_windows_component_reserved(value: PathByte) -> PathCapability {
+    if (path_byte_is_ascii_control(value)) {
+        return true;
+    } else {
+        if (path_byte_is_separator(value)) {
+            return true;
+        } else {
+            return path_byte_is_windows_component_reserved_punctuation(value);
+        }
+    }
+    return false;
+}
+
+pub fn path_byte_is_nul(value: PathByte) -> PathCapability {
+    return value == PATH_NUL;
+}
+
+pub fn path_component_is_current_dir(first: PathByte, length: PathComponentLength) -> PathCapability {
+    return length == 1 && first == PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_component_is_parent_dir(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    return length == 2 && first == PATH_EXTENSION_SEPARATOR && second == PATH_EXTENSION_SEPARATOR;
+}
+
+pub fn path_component_is_current_or_parent_dir(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (path_component_is_current_dir(first, length)) {
+        return true;
+    } else {
+        return path_component_is_parent_dir(first, second, length);
+    }
+}
+
+pub fn path_component_is_unix_hidden(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length <= 1) {
+        return false;
+    } else {
+        if (first != PATH_EXTENSION_SEPARATOR) {
+            return false;
+        } else {
+            return !path_component_is_parent_dir(first, second, length);
+        }
+    }
+    return false;
+}
+
+pub fn path_component_is_root_separator(first: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length != 1) {
+        return false;
+    } else {
+        return path_byte_is_separator(first);
+    }
+}
+
+pub fn path_component_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length != 2) {
+        return false;
+    } else {
+        if (!path_byte_is_windows_drive_letter(first)) {
+            return false;
+        } else {
+            return path_byte_is_drive_separator(second);
+        }
+    }
+    return false;
+}
+
+pub fn path_header_is_windows_drive_prefix(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length < 2) {
+        return false;
+    } else {
+        if (!path_byte_is_windows_drive_letter(first)) {
+            return false;
+        } else {
+            return path_byte_is_drive_separator(second);
+        }
+    }
+}
+
+pub fn path_header_is_windows_drive_root(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length < 3) {
+        return false;
+    } else {
+        if (!path_header_is_windows_drive_prefix(first, second, length)) {
+            return false;
+        } else {
+            return path_byte_is_separator(third);
+        }
+    }
+}
+
+pub fn path_header_is_lexically_rooted(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (path_byte_is_separator(first)) {
+            return true;
+        } else {
+            return path_header_is_windows_drive_root(first, second, third, length);
+        }
+    }
+}
+
+pub fn path_header_is_absolute(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (path_byte_is_unix_separator(first)) {
+            return true;
+        } else {
+            return path_header_is_windows_drive_root(first, second, third, length);
+        }
+    }
+}
+
+pub fn path_header_is_windows_drive_relative(first: PathByte, second: PathByte, third: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length <= 2) {
+        return false;
+    } else {
+        if (!path_header_is_windows_drive_prefix(first, second, length)) {
+            return false;
+        } else {
+            return path_byte_can_start_windows_component(third);
+        }
+    }
+}
+
+pub fn path_byte_is_component_boundary(value: PathByte) -> PathCapability {
+    if (path_byte_is_nul(value)) {
+        return true;
+    } else {
+        return path_byte_is_separator(value);
+    }
+}
+
+pub fn path_byte_can_start_relative_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_component_boundary(value);
+}
+
+pub fn path_byte_can_continue_relative_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_component_boundary(value);
+}
+
+pub fn path_byte_can_start_windows_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_windows_component_reserved(value);
+}
+
+pub fn path_byte_can_continue_windows_component(value: PathByte) -> PathCapability {
+    return !path_byte_is_windows_component_reserved(value);
+}
+
+// Only first and second are supplied. For length > 2 this checks the header,
+// not every byte of the component; callers must validate the remaining bytes.
+pub fn path_component_header_is_normal_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (!path_byte_can_start_relative_component(first)) {
+            return false;
+        } else {
+            if (length > 1) {
+                if (!path_byte_can_continue_relative_component(second)) {
+                    return false;
+                } else {
+                    if (path_component_is_current_or_parent_dir(first, second, length)) {
+                        return false;
+                    } else {
+                        return !path_component_is_windows_drive_prefix(first, second, length);
+                    }
+                }
+            } else {
+                if (path_component_is_current_or_parent_dir(first, second, length)) {
+                    return false;
+                } else {
+                    return !path_component_is_windows_drive_prefix(first, second, length);
+                }
+            }
+        }
+    }
+    return false;
+}
+
+pub fn path_component_header_is_normal_windows_relative(first: PathByte, second: PathByte, length: PathComponentLength) -> PathCapability {
+    if (length == 0) {
+        return false;
+    } else {
+        if (!path_byte_can_start_windows_component(first)) {
+            return false;
+        } else {
+            if (length > 1) {
+                if (!path_byte_can_continue_windows_component(second)) {
+                    return false;
+                } else {
+                    if (path_component_is_current_or_parent_dir(first, second, length)) {
+                        return false;
+                    } else {
+                        return !path_component_is_windows_drive_prefix(first, second, length);
+                    }
+                }
+            } else {
+                if (path_component_is_current_or_parent_dir(first, second, length)) {
+                    return false;
+                } else {
+                    return !path_component_is_windows_drive_prefix(first, second, length);
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// Check the complete caller-backed component under the portable relative
+// byte rules used by the header helper. Empty, negative-length, dot, parent,
+// exact drive-prefix, NUL, and either separator byte are rejected. The caller
+// must back length elements; an overclaim may trap on native indexing.
+pub fn path_component_is_normal_relative_bytes(bytes: [PathByte], length: i32) -> PathCapability {
+    if (length <= 0) {
+        return false;
+    }
+    let first: PathByte = bytes[0];
+    let second: PathByte = 0;
+    if (length > 1) {
+        second = bytes[1];
+    }
+    let width: PathComponentLength = length as PathComponentLength;
+    if (!path_component_header_is_normal_relative(first, second, width)) {
+        return false;
+    }
+    let index: i32 = 2;
+    while (index < length) {
+        if (!path_byte_can_continue_relative_component(bytes[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+// Apply the header rule and check every byte against the Windows reserved-byte
+// rule. This byte-level check permits reserved device names and trailing
+// spaces/dots; it is not a complete Windows filename validity check.
+// The caller must back length elements; an overclaim may trap on native indexing.
+pub fn path_component_matches_windows_relative_byte_rules(bytes: [PathByte], length: i32) -> PathCapability {
+    if (length <= 0) {
+        return false;
+    }
+    let first: PathByte = bytes[0];
+    let second: PathByte = 0;
+    if (length > 1) {
+        second = bytes[1];
+    }
+    let width: PathComponentLength = length as PathComponentLength;
+    if (!path_component_header_is_normal_windows_relative(first, second, width)) {
+        return false;
+    }
+    let index: i32 = 2;
+    while (index < length) {
+        if (!path_byte_can_continue_windows_component(bytes[index])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+
+fn path_ascii_upper(value: PathByte) -> PathByte {
+    if (value >= 97 && value <= 122) {
+        return value - 32;
+    }
+    return value;
+}
+
+fn path_windows_reserved_device_stem(bytes: [PathByte], end: i32) -> bool {
+    if (end < 3) { return false; }
+    let first: PathByte = path_ascii_upper(bytes[0]);
+    let second: PathByte = path_ascii_upper(bytes[1]);
+    let third: PathByte = path_ascii_upper(bytes[2]);
+    if (end == 3) {
+        return (first == 67 && second == 79 && third == 78) ||
+            (first == 80 && second == 82 && third == 78) ||
+            (first == 65 && second == 85 && third == 88) ||
+            (first == 78 && second == 85 && third == 76);
+    }
+    let port: bool = (first == 67 && second == 79 && third == 77) ||
+        (first == 76 && second == 80 && third == 84);
+    if (!port) { return false; }
+    if (end == 4) {
+        return bytes[3] >= 49 && bytes[3] <= 57;
+    }
+    // UTF-8 encodings of the superscript digits ¹, ², and ³.
+    return end == 5 && bytes[3] == 194 &&
+        (bytes[4] == 185 || bytes[4] == 178 || bytes[4] == 179);
+}
+
+// Validate a UTF-8 relative component against common user-facing Win32 name
+// restrictions: reserved bytes, trailing space or period, and device names
+// (including extensions and superscript port digits). This is a portable
+// lexical predicate, not a filesystem probe; a target volume can impose
+// further limits. An overclaimed physical view may trap on native indexing.
+// Reference: https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file
+pub fn path_component_is_windows_portable_utf8(bytes: [PathByte], length: i32) -> PathCapability {
+    if (!path_component_matches_windows_relative_byte_rules(bytes, length) ||
+        !core::utf8::bytes_are_valid(bytes, length)) { return false; }
+    let last: PathByte = bytes[length - 1];
+    if (last == 32 || last == PATH_EXTENSION_SEPARATOR) { return false; }
+
+    let stem_end: i32 = 0;
+    while (stem_end < length && bytes[stem_end] != PATH_EXTENSION_SEPARATOR) {
+        stem_end += 1;
+    }
+    // Treat spaces before an extension conservatively when checking a device
+    // stem, so a portable name does not resemble a reserved device.
+    while (stem_end > 0 && bytes[stem_end - 1] == 32) {
+        stem_end -= 1;
+    }
+    return !path_windows_reserved_device_stem(bytes, stem_end);
+}
+
+// Locate the last nonempty component in a caller-backed byte path. Both slash
+// and backslash separate components; trailing separators are ignored. An
+// empty path, a path of separators only, a negative length, or any NUL byte
+// returns fallback. The caller must back length bytes; an overclaim may trap.
+pub fn path_last_component_start_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    if (length <= 0) {
+        return fallback;
+    }
+    let start: i32 = -1;
+    let at_boundary: bool = true;
+    let index: i32 = 0;
+    while (index < length) {
+        let byte: PathByte = bytes[index];
+        if (path_byte_is_nul(byte)) {
+            return fallback;
+        }
+        if (path_byte_is_separator(byte)) {
+            at_boundary = true;
+        } else {
+            if (at_boundary) {
+                start = index;
+            }
+            at_boundary = false;
+        }
+        index += 1;
+    }
+    if (start < 0) {
+        return fallback;
+    }
+    return start;
+}
+
+// Return the exclusive end of the last nonempty component under the same
+// byte and failure rules as path_last_component_start_or.
+pub fn path_last_component_end_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    if (length <= 0) {
+        return fallback;
+    }
+    let end: i32 = -1;
+    let index: i32 = 0;
+    while (index < length) {
+        let byte: PathByte = bytes[index];
+        if (path_byte_is_nul(byte)) {
+            return fallback;
+        }
+        if (!path_byte_is_separator(byte)) {
+            end = index + 1;
+        }
+        index += 1;
+    }
+    if (end < 0) {
+        return fallback;
+    }
+    return end;
+}
+
+// Return the byte after the last interior dot in the final component.
+// A leading dot alone does not create an extension, and a trailing dot has
+// no nonempty extension. All failures from the component helpers return the
+// caller fallback. Bytes need not be UTF-8 or valid host filenames.
+pub fn path_extension_start_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    let start: i32 = path_last_component_start_or(bytes, length, -1);
+    if (start < 0) {
+        return fallback;
+    }
+    let end: i32 = path_last_component_end_or(bytes, length, -1);
+    let dot: i32 = -1;
+    let index: i32 = start + 1;
+    while (index < end - 1) {
+        if (path_byte_is_extension_separator(bytes[index])) {
+            dot = index;
+        }
+        index += 1;
+    }
+    if (dot < 0) {
+        return fallback;
+    }
+    return dot + 1;
+}
+
+// Return the exclusive stem end within the last component. With no nonempty
+// extension, the stem includes the whole component (including a trailing dot).
+pub fn path_stem_end_or(bytes: [PathByte], length: i32, fallback: i32) -> i32 {
+    let start: i32 = path_last_component_start_or(bytes, length, -1);
+    if (start < 0) {
+        return fallback;
+    }
+    let end: i32 = path_last_component_end_or(bytes, length, -1);
+    let extension: i32 = path_extension_start_or(bytes, length, -1);
+    if (extension < 0) {
+        return end;
+    }
+    return extension - 1;
+}

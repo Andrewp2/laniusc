@@ -1,0 +1,161 @@
+// Proposed allocation-free shared iteration. SOURCE-ONLY PROTOTYPE: no native
+// admission has run. The canonical predecessor is retained at
+// tests/fixtures/stdlib_foundation/iterator_dependency/prototype/core/iter.lani.
+//
+// Iterator implementations are fused: after None, every later next is None.
+// Items are shallow copies, with no implicit clone, move or destruction.
+// Cursors and backing storage must outlive all borrowed adapters. Copying a
+// leaf forks its position; copying an adapter shares its upstream references.
+module core::iter;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+
+pub trait Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T>;
+}
+
+// Delegate indexing and native-stride handling to the existing slice cursor.
+// Construct through from_slice/from_view; preserve the cursor's invariants.
+pub struct SliceIter<T> { cursor: core::slice::Iter<T> }
+pub struct RangeI32 { position: i64, end: i64 }
+pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
+pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
+pub struct Advance { advanced: u64, exhausted: bool }
+
+// Check logical metadata only. values must physically back count elements.
+pub fn from_slice<T>(values: [T], count: i32)
+    -> core::result::Result<SliceIter<T>, core::slice::ViewError> {
+    let checked: core::result::Result<core::slice::View<T>, core::slice::ViewError> =
+        core::slice::view<T>(values, count);
+    if (core::result::is_err(checked)) {
+        return core::result::Err(core::result::unwrap_err(checked));
+    }
+    let view: core::slice::View<T> = core::result::unwrap(checked);
+    return from_view<T>(view);
+}
+
+// Public View fields can be forged, so recheck their integer invariants before
+// constructing a cursor. This neither reads elements nor proves physical bounds.
+pub fn from_view<T>(view: core::slice::View<T>)
+    -> core::result::Result<SliceIter<T>, core::slice::ViewError> {
+    if (view.start < 0 || view.length < 0 || view.start > 2147483647 - view.length) {
+        return core::result::Err(core::slice::ViewError::Bounds);
+    }
+    let cursor: core::slice::Iter<T> = view.iter();
+    return core::result::Ok(SliceIter { cursor: cursor });
+}
+
+// Capture finite ascending unit-step bounds; reversed bounds are empty.
+pub fn range_i32(bounds: core::range::Range<i32>) -> RangeI32 {
+    let position: i64 = core::range::start(bounds) as i64;
+    let end: i64 = core::range::end(bounds) as i64;
+    if (position > end) { position = end; }
+    return RangeI32 { position: position, end: end };
+}
+
+pub fn range_i32_inclusive(bounds: core::range::RangeInclusive<i32>) -> RangeI32 {
+    let position: i64 = core::range::start_inclusive(bounds) as i64;
+    let last: i64 = core::range::end_inclusive(bounds) as i64;
+    // Widen before adding one: MAX + 1 is a valid i64 sentinel.
+    let end: i64 = last + 1;
+    if (position > end) { position = end; }
+    return RangeI32 { position: position, end: end };
+}
+
+pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T> {
+    return Take { source: source, remaining: count, done: false };
+}
+
+pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
+    where A: Iterator<T>, B: Iterator<T> {
+    return Chain { left: left, right: right, in_right: false, done: false };
+}
+
+// At most limit next calls; no probe when the quota is reached. exhausted says
+// a None was observed, rather than claiming the next item is definitely Some.
+// Each successful item is discarded as a shallow value; no Destroy is called.
+pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<T> {
+    let advanced: u64 = 0;
+    while (advanced < limit) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) {
+            return Advance { advanced: advanced, exhausted: true };
+        }
+        advanced += 1;
+    }
+    return Advance { advanced: advanced, exhausted: false };
+}
+
+pub impl<T> SliceIter<T> {
+    pub fn borrow(&self) -> &SliceIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.cursor.remaining(); }
+}
+
+pub impl<T> Iterator<T> for SliceIter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let item: core::option::Option<T> = self.cursor.next();
+        return item;
+    }
+}
+
+pub impl RangeI32 {
+    pub fn borrow(&self) -> &RangeI32 { return self; }
+    pub fn remaining(&self) -> u64 { return (self.end - self.position) as u64; }
+    // O(1). The clamp establishes skipped <= 2^32 before the u64-to-i64 cast.
+    pub fn advance(&self, count: u64) -> u64 {
+        let available: u64 = self.remaining();
+        let skipped: u64 = count;
+        if (skipped > available) { skipped = available; }
+        self.position += skipped as i64;
+        return skipped;
+    }
+}
+
+pub impl Iterator<i32> for RangeI32 {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.position == self.end) { return core::option::None(); }
+        let item: i32 = self.position as i32;
+        self.position += 1;
+        return core::option::Some(item);
+    }
+}
+
+pub impl<I, T> Take<I, T> {
+    pub fn borrow(&self) -> &Take<I, T> { return self; }
+    // This is a quota, not an exact upper-source cardinality.
+    pub fn remaining_limit(&self) -> u64 { return self.remaining; }
+}
+
+pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done || self.remaining == 0) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; return item; }
+        self.remaining -= 1;
+        return item;
+    }
+}
+
+pub impl<A, B, T> Chain<A, B, T> {
+    pub fn borrow(&self) -> &Chain<A, B, T> { return self; }
+}
+
+pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
+    where A: Iterator<T>, B: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        if (!self.in_right) {
+            let left: &A = self.left;
+            let item: core::option::Option<T> = left.next();
+            if (core::option::is_some(item)) { return item; }
+            self.in_right = true;
+        }
+        let right: &B = self.right;
+        let item: core::option::Option<T> = right.next();
+        if (core::option::is_none(item)) { self.done = true; }
+        return item;
+    }
+}

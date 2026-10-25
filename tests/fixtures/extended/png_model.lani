@@ -1,0 +1,63 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::image;
+import ext::png;
+import std::io;
+import std::stream;
+fn code(error: ext::png::Error) -> i32 {
+    let value: i32 = match (error) {
+        ext::png::Error::Bounds -> 1, ext::png::Error::InputLimit -> 2, ext::png::Error::PixelLimit -> 3,
+        ext::png::Error::InflatedLimit -> 4, ext::png::Error::ChunkLimit -> 5, ext::png::Error::OutputLimit -> 6,
+        ext::png::Error::AllocationFailed -> 7, ext::png::Error::SizeOverflow -> 8, ext::png::Error::Signature -> 9,
+        ext::png::Error::Truncated -> 10, ext::png::Error::ChunkType -> 11, ext::png::Error::ChunkOrder -> 12,
+        ext::png::Error::Crc -> 13, ext::png::Error::Header -> 14, ext::png::Error::Palette -> 15,
+        ext::png::Error::Transparency -> 16, ext::png::Error::UnknownCritical -> 17, ext::png::Error::DataSize -> 18,
+        ext::png::Error::Filter -> 19, ext::png::Error::TrailingData -> 20, ext::png::Error::Compression(value) -> 21
+    }; return value;
+}
+fn get32(bytes: [u8], start: i32) -> i32 { return ((bytes[start] as u32) | ((bytes[start+1] as u32) << 8) | ((bytes[start+2] as u32) << 16) | ((bytes[start+3] as u32) << 24)) as i32; }
+fn put32(bytes: [u8], start: i32, value: i32) {
+    let word: u32 = value as u32; bytes[start] = (word & 255) as u8; bytes[start+1] = ((word >> 8) & 255) as u8; bytes[start+2] = ((word >> 16) & 255) as u8; bytes[start+3] = ((word >> 24) & 255) as u8;
+}
+fn main() -> i32 {
+    let storage: [i32;262144] = [0;262144]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1048576);
+    let count: i32 = 0;
+    while (count < 1048576) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(1048576-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; } assert(count < 1048576);
+    let words: [i32;4] = [0;4]; let hp: ptr = core::mem::i32_array_data_ptr(words); let header: [u8] = core::mem::typed_slice_from_raw_parts(hp,16);
+    let sink: std::stream::Descriptor = std::stream::stdout(); let position: i32 = 0;
+    while (position < count) {
+        assert(count-position >= 33); let mode: u8 = input[position];
+        let limits: ext::png::Limits = ext::png::Limits { max_input: get32(input,position+1), max_pixels: get32(input,position+5), max_inflated: get32(input,position+9), max_chunks: get32(input,position+13) };
+        let maximum: i32 = get32(input,position+17); let width: i32 = get32(input,position+21); let height: i32 = get32(input,position+25); let length: i32 = get32(input,position+29); position += 33;
+        assert(length >= 0 && length <= count-position); let source: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input,position,length));
+        let image: core::result::Result<ext::image::Image,ext::png::Error> = core::result::Err(ext::png::Error::Bounds);
+        if (mode == 0) { image = ext::png::decode(source,limits); }
+        else {
+            let made: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::from_rgba(width,height,source);
+            if (core::result::is_ok(made)) { image = core::result::Ok(core::result::unwrap(made)); }
+            else { image = core::result::Err(ext::png::Error::AllocationFailed); }
+        }
+        let status: i32 = 0; let w: i32 = 0; let h: i32 = 0; let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+        if (core::result::is_err(image)) { status = code(core::result::unwrap_err(image)); }
+        else {
+            let value: ext::image::Image = core::result::unwrap(image); w = value.width(); h = value.height();
+            let copied: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = core::result::Err(alloc::vec::Error::AllocationFailed);
+            if (mode == 0) { copied = alloc::vec::from_view(value.rgba()); }
+            else {
+                let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::png::Error> = ext::png::encode(value.view(),maximum);
+                if (core::result::is_err(encoded)) { status = code(core::result::unwrap_err(encoded)); }
+                else { copied = core::result::Ok(core::result::unwrap(encoded)); }
+            }
+            value.destroy();
+            if (status == 0) { if (core::result::is_err(copied)) { status = 7; } else { bytes = core::result::unwrap(copied); } }
+        }
+        if (status != 0) { w = 0; h = 0; }
+        put32(header,0,status); put32(header,4,w); put32(header,8,h); put32(header,12,bytes.len()); assert(std::io::write_stdout(hp,16) == 16);
+        assert(core::result::is_ok(core::io::write_all(sink.borrow(),bytes.as_slice(),0,bytes.len()))); bytes.destroy(); position += length;
+    }
+    return 0;
+}

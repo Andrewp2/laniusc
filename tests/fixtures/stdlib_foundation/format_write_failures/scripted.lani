@@ -1,0 +1,112 @@
+// Input: u64 case count, then thirteen words per case: scratch capacity,
+// I/O budget, empty flag, script length, default action, eight actions.
+// Actions: positive short/full count, 0 zero, -1 EINTR, -2 WouldBlock,
+// -3 Host77, -4 negative count, -5 excessive count. No action allocates.
+module app::main;
+import core::format;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::stream;
+
+struct Script {
+    actions: [i32], length: i32, otherwise: i32, expected: [u8], filled: i32,
+    offsets: [i32], counts: [i32], calls: i32, flushes: i32, capacity: i32
+}
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::io::Write for Script {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        assert(self.calls < 64 && count > 0 && offset >= 2 && offset + count <= 2 + self.capacity);
+        assert(self.filled + count <= 17);
+        let index: i32 = 0;
+        while (index < count) { assert(source[offset + index] == self.expected[self.filled + index]); index += 1; }
+        let action: i32 = self.otherwise;
+        if (self.calls < self.length) { action = self.actions[self.calls]; }
+        self.offsets[self.calls] = offset; self.counts[self.calls] = count; self.calls += 1;
+        if (action == -1) { return core::result::Err(core::io::Error::Interrupted); }
+        if (action == -2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (action == -3) { return core::result::Err(core::io::Error::Host(77)); }
+        if (action == -4) { return core::result::Ok(-1); }
+        if (action == -5) { return core::result::Ok(count + 1); }
+        let accepted: i32 = action; if (accepted > count) { accepted = count; }
+        assert(accepted >= 0); self.filled += accepted; return core::result::Ok(accepted);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { self.flushes += 1; return core::result::Err(core::io::Error::Host(91)); }
+}
+fn word(bytes: [u8], at: i32) -> u64 {
+    let result: u64 = 0; let index: i32 = 0;
+    while (index < 8) { result |= (bytes[at + index] as u64) << (index * 8); index += 1; }
+    return result;
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        core::result::unwrap(core::io::write_all<std::stream::Descriptor>(stdout.borrow(), self.bytes, 0, self.used)); self.used = 0;
+    }
+    fn word(&self, value: u64) {
+        if (self.used == 2048) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) { self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+        self.used += 8;
+    }
+}
+fn host(code: i32) -> i32 { assert(code == 77); return 5; }
+fn io_cause(error: core::io::Error) -> i32 {
+    return match (error) {
+        core::io::Error::WriteZero -> 2, core::io::Error::InvalidCount -> 3,
+        core::io::Error::WouldBlock -> 4, core::io::Error::Host(code) -> host(code),
+        _ -> 102
+    };
+}
+fn cause(error: core::format::WriteError) -> i32 {
+    return match (error) {
+        core::format::WriteError::IoLimit -> 1,
+        core::format::WriteError::Format(detail) -> 100,
+        core::format::WriteError::Io(inner) -> io_cause(inner)
+    };
+}
+fn main() -> i32 {
+    let stdin: std::stream::Descriptor = std::stream::stdin();
+    let head: [u8; 8] = [0; 8]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), head, 0, 8));
+    let cases: u64 = word(head, 0); assert(cases <= 64);
+    let output_bytes: [u8; 2048] = [0; 2048]; let output: Output = Output { bytes: output_bytes, used: 0 };
+    let pattern_bytes: [u8; 11] = [104, 101, 97, 100, 123, 48, 125, 116, 97, 105, 108];
+    let saved_pattern: [u8; 11] = pattern_bytes;
+    let argument_bytes: [u8; 9] = [65, 0, 195, 169, 240, 159, 153, 130, 90];
+    let saved_argument: [u8; 9] = argument_bytes;
+    let expected: [u8; 17] = [104, 101, 97, 100, 65, 0, 195, 169, 240, 159, 153, 130, 90, 116, 97, 105, 108];
+    let arguments: [core::format::Argument; 1] = [core::format::Argument::Text(core::text::from_utf8_unchecked(argument_bytes, 0, 9))];
+    let names: [core::format::Named; 0] = [];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(arguments, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let case: u64 = 0;
+    while (case < cases) {
+        let frame: [u8; 104] = [0; 104]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), frame, 0, 104));
+        let capacity: i32 = word(frame, 0) as i32; let budget: u64 = word(frame, 8); let empty: bool = word(frame, 16) != 0;
+        let length: i32 = word(frame, 24) as i32; let otherwise: i32 = word(frame, 32) as i32;
+        assert(capacity > 0 && capacity <= 7 && budget <= 64 && length >= 0 && length <= 8);
+        let actions: [i32; 8] = [0; 8]; let index: i32 = 0;
+        while (index < 8) { actions[index] = word(frame, 40 + index * 8) as i32; index += 1; }
+        let offsets: [i32; 64] = [0; 64]; let counts: [i32; 64] = [0; 64];
+        let writer: Script = Script { actions: actions, length: length, otherwise: otherwise, expected: expected, filled: 0, offsets: offsets, counts: counts, calls: 0, flushes: 0, capacity: capacity };
+        let scratch: [u8; 12] = [110; 12]; let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(scratch, 2, capacity));
+        let pattern: core::text::Text = core::text::from_utf8_unchecked(pattern_bytes, 0, 11);
+        if (empty) { pattern = core::text::from_utf8_unchecked(pattern_bytes, 0, 0); }
+        let result: core::result::Result<i32, core::format::WriteFailure> = core::format::write<Script>(pattern, positional, named, writer.borrow(), view, core::format::WriteLimits { format: core::format::Limits { max_work: 10000, max_output: 17 }, max_io_calls: budget });
+        let status: i32 = 0; let completed: i32 = 0;
+        if (core::result::is_err(result)) { let failure: core::format::WriteFailure = core::result::unwrap_err(result); status = cause(failure.cause); completed = failure.completed; }
+        else { completed = core::result::unwrap(result); }
+        output.word(status as u64); output.word(completed as u64); output.word(writer.filled as u64); output.word(writer.calls as u64); output.word(writer.flushes as u64);
+        index = 0;
+        while (index < writer.calls) { output.word(offsets[index] as u64); output.word(counts[index] as u64); index += 1; }
+        index = 0; while (index < 12) { if (index < 2 || index >= 2 + capacity) { assert(scratch[index] == 110); } index += 1; }
+        index = 0; while (index < 11) { assert(pattern_bytes[index] == saved_pattern[index]); index += 1; }
+        index = 0; while (index < 9) { assert(argument_bytes[index] == saved_argument[index]); index += 1; }
+        assert(writer.flushes == 0); case += 1;
+    }
+    output.flush(); return 0;
+}

@@ -1,0 +1,56 @@
+// RFC 5869 extract-and-expand with HMAC-SHA-256 only. No allocation.
+// Output must be physically backed, writable and disjoint from every input.
+module ext::hkdf_sha256;
+import core::result;
+import core::sha256;
+import core::slice;
+import ext::hmac_sha256;
+
+pub enum Error { Bounds, PrkTooShort, OutputLimit, Hash(ext::hmac_sha256::Error) }
+pub const MAX_OUTPUT: i32 = 8160;
+fn valid(input: core::slice::View<u8>) -> bool {
+    return input.start >= 0 && input.length >= 0 && input.start <= 2147483647 - input.length;
+}
+// An empty salt has the same HMAC padded key as 32 zero bytes.
+pub fn extract(salt: core::slice::View<u8>, ikm: core::slice::View<u8>) -> core::result::Result<core::sha256::Digest, Error> {
+    if (!valid(salt) || !valid(ikm)) { return core::result::Err(Error::Bounds); }
+    let result: core::result::Result<core::sha256::Digest, ext::hmac_sha256::Error> = ext::hmac_sha256::authenticate(salt, ikm);
+    if (core::result::is_err(result)) { return core::result::Err(Error::Hash(core::result::unwrap_err(result))); }
+    return core::result::Ok(core::result::unwrap(result));
+}
+// Validate all logical ranges and limits before writing even one output byte.
+// A PRK of at least 32 bytes is required even for an empty requested output.
+pub fn expand(prk: core::slice::View<u8>, info: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(prk) || !valid(info) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (prk.len() < 32) { return core::result::Err(Error::PrkTooShort); }
+    if (output.len() > MAX_OUTPUT) { return core::result::Err(Error::OutputLimit); }
+    if (output.len() == 0) { return core::result::Ok(0); }
+    let made: core::result::Result<ext::hmac_sha256::State, ext::hmac_sha256::Error> = ext::hmac_sha256::new(prk);
+    if (core::result::is_err(made)) { return core::result::Err(Error::Hash(core::result::unwrap_err(made))); }
+    let state: ext::hmac_sha256::State = core::result::unwrap(made);
+    let zero: [u8; 32] = [0; 32]; let previous: core::sha256::Digest = core::sha256::Digest { bytes: zero, length: 32 };
+    let written: i32 = 0; let block: i32 = 1;
+    while (written < output.len()) {
+        state.reset();
+        // Per-block input is at most 32 + i32::MAX + 1 bytes, well within
+        // SHA-256's checked length domain. Every view here is already valid.
+        if (block > 1) { core::result::unwrap(state.update(core::slice::View { values: previous.bytes, start: 0, length: 32 })); }
+        core::result::unwrap(state.update(info));
+        let counter: [u8; 1] = [block as u8];
+        core::result::unwrap(state.update(core::slice::View { values: counter, start: 0, length: 1 }));
+        previous = state.finish();
+        let count: i32 = output.len() - written; if (count > 32) { count = 32; }
+        let index: i32 = 0;
+        while (index < count) { core::result::unwrap(output.try_set(written + index, previous.bytes[index])); index += 1; }
+        written += count; block += 1;
+    }
+    return core::result::Ok(written);
+}
+pub fn derive(salt: core::slice::View<u8>, ikm: core::slice::View<u8>, info: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(salt) || !valid(ikm) || !valid(info) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (output.len() > MAX_OUTPUT) { return core::result::Err(Error::OutputLimit); }
+    let extracted: core::result::Result<core::sha256::Digest, Error> = extract(salt, ikm);
+    if (core::result::is_err(extracted)) { return core::result::Err(core::result::unwrap_err(extracted)); }
+    let prk: core::sha256::Digest = core::result::unwrap(extracted);
+    return expand(core::slice::View { values: prk.bytes, start: 0, length: 32 }, info, output);
+}

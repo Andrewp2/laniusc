@@ -1,0 +1,43 @@
+// One request: op/layout/budget/offset/count/second-offset/second-count u64s.
+// Ops0/1 read/fill once,2/3 read/fill twice sharing the same borrowed Budget.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import std::entropy;
+import std::stream;
+struct Output { bytes:[u8], used:i32 }
+impl Output {
+    fn borrow(&self)->&Output{return self;}
+    fn flush(&self){let stdout:std::stream::Descriptor=std::stream::stdout();assert(core::io::write_all(stdout.borrow(),self.bytes,0,self.used).is_ok());self.used=0;}
+    fn word(&self,value:u64){if(self.used==1024){self.flush();}let i:i32=0;while(i<8){self.bytes[self.used+i]=((value>>(i*8))&255) as u8;i+=1;}self.used+=8;}
+}
+fn word(bytes:[u8],at:i32)->u64{let value:u64=0;let i:i32=0;while(i<8){value|=(bytes[at+i] as u64)<<(i*8);i+=1;}return value;}
+fn error(cause:std::entropy::Error)->u64{return match(cause){std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(code)->100+(code as u64)};}
+fn perform(fill:bool,calls:&std::entropy::Budget,bytes:[u8],offset:i32,count:i32,output:&Output){
+    if(fill){
+        let result:core::result::Result<i32,std::entropy::Failure> = std::entropy::fill_bounded(calls,bytes,offset,count);
+        if(result.is_ok()){output.word(0);output.word(result.unwrap() as u64);}
+        else{let failure:std::entropy::Failure=result.unwrap_err();output.word(error(failure.cause));output.word(failure.completed as u64);}
+    }else{
+        let result:core::result::Result<i32,std::entropy::Error> = std::entropy::read_some(calls,bytes,offset,count);
+        if(result.is_ok()){output.word(0);output.word(result.unwrap() as u64);}else{output.word(error(result.unwrap_err()));output.word(0);}
+    }
+    output.word(calls.remaining());
+    // Full output after each operation exposes successful prefix and rejection
+    // atomicity, including when a second operation uses the same storage.
+    let i:i32=0;while(i<1024){output.word(bytes[i] as u64);i+=1;}
+}
+fn main()->i32{
+    let request:[u8;56]=[0;56];let stdin:std::stream::Descriptor=std::stream::stdin();assert(core::io::read_exact(stdin.borrow(),request,0,56).is_ok());
+    let op:u64=word(request,0);let layout:u64=word(request,8);assert(op<=3&&layout<=1);
+    let calls:std::entropy::Budget=std::entropy::budget(word(request,16));
+    let offset:i32=word(request,24) as i32;let count:i32=word(request,32) as i32;let second_offset:i32=word(request,40) as i32;let second_count:i32=word(request,48) as i32;
+    let stack:[u8;1024]=[165;1024];let packed:[i32;256]=[0;256];let bytes:[u8]=stack;
+    if(layout==1){bytes=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed),1024);}
+    let i:i32=0;while(i<1024){bytes[i]=165;i+=1;}
+    let out:[u8;1024]=[0;1024];let output:Output=Output{bytes:out,used:0};
+    perform(op==1||op==3,calls.borrow(),bytes,offset,count,output.borrow());
+    if(op>=2){perform(op==3,calls.borrow(),bytes,second_offset,second_count,output.borrow());}
+    output.flush();return 0;
+}

@@ -1,0 +1,24 @@
+module app::main;
+import test::check;
+import test::property;
+pub struct Probe { calls: u32, first: u32, last: u32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl test::property::Property for Probe {
+    pub fn check(&self, input: u32, case_id: u32) -> test::check::Outcome {
+        if (case_id != self.calls) { return test::check::fail(test::check::literal("case ID sequence",16)); }
+        if (self.calls == 0) { self.first = input; } self.last = input; self.calls += 1; return test::check::pass();
+    }
+}
+fn main() -> i32 {
+    let probe: Probe = Probe { calls: 0, first: 0, last: 0 };
+    let zero: test::check::Outcome = test::property::run(probe.borrow(),0,0);
+    if (zero.status != 1 || probe.calls != 0) { return 1; }
+    let excessive: test::check::Outcome = test::property::run(probe.borrow(),0,10001);
+    if (excessive.status != 1 || probe.calls != 0) { return 2; }
+    let one: test::check::Outcome = test::property::run(probe.borrow(),0,1);
+    if (one.status != 0 || one.executed != 1 || probe.calls != 1 || probe.first != 1013904223) { return 3; }
+    probe.calls = 0;
+    let bound: test::check::Outcome = test::property::run(probe.borrow(),4294967295,10000);
+    if (bound.status != 0 || bound.executed != 10000 || probe.calls != 10000 || probe.first != 1012239698) { return 4; }
+    return 0;
+}

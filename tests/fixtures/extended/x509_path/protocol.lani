@@ -1,0 +1,93 @@
+// Host supplies bounded signed DER cases, never production decisions.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::ed25519;
+import ext::service_identity;
+import ext::x509;
+import ext::x509_path;
+import std::stream;
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), self.bytes, 0, self.used).is_ok()); self.used = 0; }
+    fn word(&self, n: u64) { if (self.used == 1024) { self.flush(); } let i: i32 = 0; while (i < 8) { self.bytes[self.used + i] = ((n >> (8 * i)) & 255) as u8; i += 1; } self.used += 8; }
+}
+fn code(k: ext::x509_path::ErrorKind) -> u64 { return match(k) {
+    ext::x509_path::ErrorKind::Bounds -> 1, ext::x509_path::ErrorKind::EmptyChain -> 2, ext::x509_path::ErrorKind::EmptyAnchors -> 3,
+    ext::x509_path::ErrorKind::ChainLimit -> 4, ext::x509_path::ErrorKind::AnchorLimit -> 5, ext::x509_path::ErrorKind::InputLimit -> 6,
+    ext::x509_path::ErrorKind::ScratchTooSmall -> 7, ext::x509_path::ErrorKind::InvalidTime -> 8, ext::x509_path::ErrorKind::Parse -> 9,
+    ext::x509_path::ErrorKind::ItemLimit -> 10, ext::x509_path::ErrorKind::WorkLimit -> 11, ext::x509_path::ErrorKind::SignatureLimit -> 12,
+    ext::x509_path::ErrorKind::Duplicate -> 13, ext::x509_path::ErrorKind::UnsupportedAlgorithm -> 14, ext::x509_path::ErrorKind::IssuerMismatch -> 15,
+    ext::x509_path::ErrorKind::Untrusted -> 16, ext::x509_path::ErrorKind::InvalidSignature -> 17, ext::x509_path::ErrorKind::Validity -> 18,
+    ext::x509_path::ErrorKind::CaRequired -> 19, ext::x509_path::ErrorKind::KeyUsage -> 20, ext::x509_path::ErrorKind::ExtendedKeyUsage -> 21,
+    ext::x509_path::ErrorKind::PathLength -> 22, ext::x509_path::ErrorKind::UnknownCritical -> 23, ext::x509_path::ErrorKind::UnsupportedConstraint -> 24,
+    ext::x509_path::ErrorKind::UnsupportedCritical -> 25, ext::x509_path::ErrorKind::Identity -> 26
+}; }
+fn decode(v: [u8], at: i32) -> u64 { let n: u64 = 0; let i: i32 = 0; while (i < 8) { n |= (v[at + i] as u64) << (8 * i); i += 1; } return n; }
+fn run(header: [u8], reference_bytes: [u8], input: [u8], lengths: [i32], length: i32, out: &Output) {
+    let count: i32 = decode(header, 96) as i32; let anchors: i32 = decode(header, 104) as i32;
+    let reference_length: i32 = decode(header, 88) as i32;
+    let r: core::slice::View<u8> = core::slice::View { values: reference_bytes, start: 0, length: reference_length };
+    let made: core::result::Result<ext::service_identity::Reference, ext::service_identity::Error> = ext::service_identity::dns_reference(r);
+    if (decode(header, 80) == 1) { made = ext::service_identity::ip_reference(r); }
+    let reference: ext::service_identity::Reference = made.unwrap();
+    let storage: [u8;32768] = [0;32768]; let packed: [i32;8192] = [0;8192]; let bytes: [u8] = storage;
+    if (decode(header, 0) == 1) { bytes = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 32768); }
+    let at: i32 = 0; while (at < 32768) { bytes[at] = 165; at += 1; } at = 0; while (at < length) { bytes[at + 3] = input[at]; at += 1; }
+    let empty: core::slice::View<u8> = core::slice::View { values: bytes, start: 3, length: 0 };
+    let descriptors: [core::slice::View<u8>;20] = [empty;20]; at = 0; let offset: i32 = 3;
+    while (at < count + anchors) { descriptors[at + 1] = core::slice::View { values: bytes, start: offset, length: lengths[at] }; offset += lengths[at]; at += 1; }
+    let chain: core::slice::View<core::slice::View<u8>> = core::slice::View { values: descriptors, start: 1, length: count };
+    let trust: core::slice::View<core::slice::View<u8>> = core::slice::View { values: descriptors, start: 1 + count, length: anchors };
+    let slots: [ext::x509_path::Slot;20] = [ext::x509_path::empty_slot();20];
+    let scratch: core::slice::View<ext::x509_path::Slot> = core::slice::View { values: slots, start: 1, length: count + anchors };
+    let mode: u64 = decode(header, 8);
+    if (mode == 1) { chain.start = -1; } if (mode == 2) { descriptors[1].start = 2147483647; descriptors[1].length = 1; }
+    if (mode == 3) { scratch.length -= 1; } if (mode == 4) { trust.length = 0; } if (mode == 5) { chain.length = 0; } if (mode == 6) { trust.start = -1; }
+    let limits: ext::x509_path::Limits = ext::x509_path::Limits { max_chain: decode(header, 16) as i32, max_anchors: decode(header, 24) as i32, max_input: decode(header, 32), max_signatures: decode(header, 40), max_work: decode(header, 48), parsing: ext::x509::Limits { max_input: 32768, max_items: decode(header, 56), max_work: decode(header, 64) } };
+    let budget: ext::x509_path::Budget = ext::x509_path::budget(limits).unwrap();
+    let result: core::result::Result<ext::x509_path::ValidatedServer, ext::x509_path::Error> = ext::x509_path::validate_server(chain, trust, reference, decode(header, 72) as i64, scratch, budget.borrow());
+    if (result.is_err()) { let e: ext::x509_path::Error = result.unwrap_err(); out.word(code(e.kind)); out.word((e.certificate + 1) as u64); out.word((e.anchor + 1) as u64); out.word(e.offset as u64); }
+    else { out.word(0); out.word(0); out.word(0); out.word(0); }
+    out.word(limits.max_signatures - budget.signatures_left); out.word(limits.max_work - budget.work_left); out.word(limits.parsing.max_items - budget.parsing.items_left); out.word(limits.parsing.max_work - budget.parsing.work_left);
+    if (result.is_ok()) {
+        let accepted: ext::x509_path::ValidatedServer = result.unwrap(); let saved: ext::ed25519::Key32 = accepted.public_key;
+        // Only inspect independent inline results while temporarily mutating
+        // borrowed backing. Restore before any checked borrowed helper reuse.
+        let leaf_bytes: core::slice::View<u8> = slots[1].certificate.unwrap().spki.key.bytes;
+        let original_first: u8 = accepted.public_key.bytes[0];
+        bytes[leaf_bytes.start] ^= 1; let copied: ext::ed25519::Key32 = accepted.public_key; copied.bytes[0] ^= 1;
+        assert(accepted.public_key.bytes[0] == original_first && saved.bytes[0] == original_first && copied.bytes[0] != original_first); bytes[leaf_bytes.start] ^= 1;
+        out.word(accepted.anchor_index as u64); out.word(accepted.chain_length as u64); at = 0; while (at < 32) { out.word(saved.bytes[at] as u64); at += 1; }
+        assert(budget.signatures_left < limits.max_signatures);
+        if (mode == 7) {
+            // This leaf has BC/KU/EKU/SAN and two DNS names. Reframing the
+            // four extensions costs 5+5+4+4 items; SAN helper consumes3,
+            // then the first matching returned name consumes1. The next
+            // name must still be attempted and fail, despite the match.
+            let short: ext::x509::Budget = ext::x509::budget(ext::x509::Limits { max_input: 32768, max_items: 22, max_work: 16777216 }).unwrap();
+            let leaf: ext::x509::Certificate = slots[1].certificate.unwrap();
+            let later: core::result::Result<bool, ext::service_identity::Error> = ext::service_identity::match_certificate(leaf, reference, short.borrow());
+            assert(later.is_err()); let limited: bool = match(later.unwrap_err()) { ext::service_identity::Error::X509(inner) -> match(inner.kind) { ext::x509::ErrorKind::ItemLimit -> true, _ -> false }, _ -> false };
+            assert(limited && short.items_left == 0);
+        }
+    }
+    assert(slots[0].certificate.is_none() && slots[19].certificate.is_none());
+    at = 0; while (at < 32768) { if (at < 3 || at >= length + 3) { assert(bytes[at] == 165); } else { assert(bytes[at] == input[at - 3]); } at += 1; }
+    if (mode >= 1 && mode <= 6) { assert(budget.signatures_left == limits.max_signatures && budget.work_left == limits.max_work && budget.parsing.items_left == limits.parsing.max_items && budget.parsing.work_left == limits.parsing.max_work && slots[1].certificate.is_none()); }
+}
+fn main() -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin(); let header: [u8;112] = [0;112]; let reference: [u8;253] = [0;253]; let input: [u8;32768] = [0;32768]; let lengths: [i32;16] = [0;16]; let output_bytes: [u8;1024] = [0;1024]; let out: Output = Output { bytes: output_bytes, used: 0 };
+    assert(core::io::read_exact(source.borrow(), header, 0, 8).is_ok()); let cases: u64 = decode(header, 0); assert(cases <= 512); let index: u64 = 0;
+    while (index < cases) {
+        assert(core::io::read_exact(source.borrow(), header, 0, 112).is_ok()); let n: i32 = decode(header, 96) as i32; let a: i32 = decode(header, 104) as i32; let r: i32 = decode(header, 88) as i32;
+        assert(n > 0 && n <= 8 && a > 0 && a <= 8 && r > 0 && r <= 253 && decode(header, 0) <= 1 && decode(header, 8) <= 7);
+        assert(core::io::read_exact(source.borrow(), reference, 0, r).is_ok()); let at: i32 = 0; let used: i32 = 0; let size: [u8;8] = [0;8];
+        while (at < n + a) { assert(core::io::read_exact(source.borrow(), size, 0, 8).is_ok()); let length: u64 = decode(size, 0); assert(length <= 8192 && length <= (32765 - used) as u64); lengths[at] = length as i32; assert(core::io::read_exact(source.borrow(), input, used, length as i32).is_ok()); used += length as i32; at += 1; }
+        run(header, reference, input, lengths, used, out.borrow()); index += 1;
+    } out.flush(); return 0;
+}

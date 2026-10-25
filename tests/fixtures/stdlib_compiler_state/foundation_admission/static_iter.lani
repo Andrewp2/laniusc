@@ -1,0 +1,8 @@
+module app::main;
+import core::admission_static_iter;
+import core::option;
+fn main() -> i32 {
+    let cursor: core::admission_static_iter::Cursor<i32> = core::admission_static_iter::Cursor { value: 42 };
+    let item: core::option::Option<i32> = core::admission_static_iter::pull<core::admission_static_iter::Cursor<i32>,i32>(cursor.borrow());
+    return core::option::unwrap_or(item,0) - 42;
+}

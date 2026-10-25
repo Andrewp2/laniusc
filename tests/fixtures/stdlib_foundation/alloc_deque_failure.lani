@@ -1,0 +1,62 @@
+module app::main;
+import alloc::deque;
+import core::option;
+import core::result;
+import core::slice;
+fn allocation(error: alloc::deque::Error) -> bool {
+    let yes: bool = match (error) { alloc::deque::Error::AllocationFailed -> true, _ -> false }; return yes;
+}
+fn main() -> i32 {
+    let operation: i32 = 0;
+    while (operation < 12) {
+        let made: core::result::Result<alloc::deque::Deque<i32>, alloc::deque::Error> = alloc::deque::with_capacity(4);
+        if (core::result::is_err(made)) { if (!allocation(core::result::unwrap_err(made))) { return 1; } return 0; }
+        let values: alloc::deque::Deque<i32> = core::result::unwrap(made); let index: i32 = 1;
+        while (index <= 4) { core::result::unwrap(values.try_push_back(index)); index += 1; }
+        values.pop_front(); values.pop_front(); core::result::unwrap(values.try_push_back(5)); core::result::unwrap(values.try_push_back(6));
+        if (operation == 10) { values.pop_back(); }
+        let before: alloc::deque::Views<i32> = values.as_views(); let cursor: alloc::deque::Cursor<i32> = values.iter();
+        let length: i32 = values.len(); let capacity: i32 = values.capacity();
+        assert(before.first.len() > 0 && before.second.len() > 0);
+        let edited: core::result::Result<i32, alloc::deque::Error> = core::result::Ok(0);
+        if (operation == 0) { edited = values.try_push_front(9); }
+        if (operation == 1) { edited = values.try_push_back(9); }
+        if (operation == 2) { edited = values.try_reserve(20); }
+        if (operation == 3) { edited = values.try_insert(2, 9); }
+        if (operation == 4) { edited = values.try_extend_front(before.first); }
+        if (operation == 5) { edited = values.try_extend_back(before.second); }
+        if (operation == 6) {
+            let contiguous: core::result::Result<core::slice::View<i32>, alloc::deque::Error> = values.try_make_contiguous();
+            if (core::result::is_err(contiguous)) { edited = core::result::Err(core::result::unwrap_err(contiguous)); }
+            else { let view: core::slice::View<i32> = core::result::unwrap(contiguous); assert(view.len() == 4 && core::option::unwrap(view.get(0)) == 3 && core::option::unwrap(view.get(3)) == 6); }
+        }
+        if (operation == 7 || operation == 8 || operation == 11) {
+            let owned: core::result::Result<alloc::deque::Deque<i32>, alloc::deque::Error> = core::result::Err(alloc::deque::Error::AllocationFailed);
+            if (operation == 7) { owned = values.try_clone(); }
+            if (operation == 8) { owned = values.try_split_off(2); }
+            if (operation == 11) { owned = alloc::deque::with_capacity(7); }
+            if (core::result::is_err(owned)) { edited = core::result::Err(core::result::unwrap_err(owned)); }
+            else {
+                let other: alloc::deque::Deque<i32> = core::result::unwrap(owned);
+                if (operation == 7) { assert(other.len() == 4 && other.at(0) == 3 && other.at(3) == 6); }
+                if (operation == 8) { assert(other.len() == 2 && other.at(0) == 5 && other.at(1) == 6 && values.len() == 2); }
+                other.destroy();
+            }
+        }
+        if (operation == 9) { edited = values.try_resize(10, 9); }
+        if (operation == 10) { edited = values.try_shrink_to_fit(); }
+        if (core::result::is_err(edited)) {
+            if (!allocation(core::result::unwrap_err(edited)) || values.len() != length || values.capacity() != capacity) { return 2; }
+            index = 0;
+            while (index < length) {
+                if (values.at(index) != index + 3 || core::option::unwrap(cursor.next()) != index + 3) { return 3; }
+                let held: i32 = 0;
+                if (index < before.first.len()) { held = core::option::unwrap(before.first.get(index)); }
+                else { held = core::option::unwrap(before.second.get(index - before.first.len())); }
+                if (held != index + 3) { return 4; } index += 1;
+            }
+        }
+        values.destroy(); operation += 1;
+    }
+    return 0;
+}

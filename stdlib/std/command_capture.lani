@@ -1,0 +1,127 @@
+// Bounded concurrent communication with the pipes of one std::command Child.
+// No implicit signal changes, cancellation, blocking wait, or detached child.
+module std::command_capture;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::command;
+import std::file;
+import std::file_ops;
+import std::linux;
+import std::poll;
+
+pub enum Stage { Validate, Policy, Allocate, Clock, Flags, Poll, Input, Output, ErrorOutput, Wait, Close }
+pub enum Error { Bounds, InputLimit, OutputLimit, ErrorLimit, WorkLimit, Deadline, InputUnavailable, SigpipeNotIgnored, AllocationFailed, InvalidResult, Io(core::io::Error), Poll(std::poll::Error), Clock(std::clock::Error), Wait(std::command::Failure) }
+pub enum InputState { NotAcquired, NotPiped, Sending, Sent, PeerClosed, ClosedOnError }
+pub enum StreamState { NotAcquired, NotPiped, Reading, Eof, ClosedOnError }
+pub enum Stream { Stdout, Stderr }
+pub struct Overflow { stream: Stream, byte: u8 }
+pub struct Limits { max_input_bytes: i32, max_stdout_bytes: i32, max_stderr_bytes: i32, max_operations: u64 }
+pub struct Progress { input_written: i32, stdout_read: u64, stderr_read: u64, operations: u64, input_state: InputState, stdout_state: StreamState, stderr_state: StreamState, status: core::option::Option<std::command::ExitStatus>, startup: std::command::Startup, acquired: bool }
+pub struct Output { stdout: alloc::vec::Vec<u8>, stderr: alloc::vec::Vec<u8>, status: std::command::ExitStatus, progress: Progress }
+pub struct Failure { cause: Error, stage: Stage, stdout: alloc::vec::Vec<u8>, stderr: alloc::vec::Vec<u8>, progress: Progress, overflow: core::option::Option<Overflow>, cleanup_error: core::option::Option<core::io::Error> }
+pub impl Output { pub fn borrow(&self) -> &Output { return self; } pub fn destroy(&self) { self.stdout.destroy(); self.stderr.destroy(); } }
+pub impl Failure { pub fn borrow(&self) -> &Failure { return self; } pub fn destroy(&self) { self.stdout.destroy(); self.stderr.destroy(); } }
+pub fn default_limits() -> Limits { return Limits { max_input_bytes: 16777216, max_stdout_bytes: 16777216, max_stderr_bytes: 16777216, max_operations: 1048576 }; }
+struct Session { input: core::option::Option<std::file::File>, out: core::option::Option<std::file::File>, err: core::option::Option<std::file::File>, poll: std::poll::PollSet, output: alloc::vec::Vec<u8>, error: alloc::vec::Vec<u8>, progress: Progress, overflow: core::option::Option<Overflow>, limits: Limits, deadline: core::time::Deadline, previous: core::time::Instant }
+impl Session { fn borrow(&self) -> &Session { return self; } }
+fn progress(child: &std::command::Child) -> Progress { return Progress { input_written: 0, stdout_read: 0, stderr_read: 0, operations: 0, input_state: InputState::NotAcquired, stdout_state: StreamState::NotAcquired, stderr_state: StreamState::NotAcquired, status: core::option::None(), startup: child.startup(), acquired: false }; }
+fn empty_failure(cause: Error, stage: Stage, progress: Progress) -> core::result::Result<Output,Failure> { let output: alloc::vec::Vec<u8> = alloc::vec::new(); let error: alloc::vec::Vec<u8> = alloc::vec::new(); return core::result::Err(Failure { cause: cause, stage: stage, stdout: output, stderr: error, progress: progress, overflow: core::option::None(), cleanup_error: core::option::None() }); }
+fn spend(progress: &Progress, maximum: u64) -> bool { if (progress.operations == maximum) { return false; } progress.operations += 1; return true; }
+impl Progress { fn borrow(&self) -> &Progress { return self; } }
+fn io_error(value: std::linux::Error) -> Error { return match(value) { std::linux::Error::System(n) -> Error::Io(core::io::Error::Host(n)), _ -> Error::InvalidResult }; }
+fn transient(error: core::io::Error) -> bool { return match(error) { core::io::Error::Interrupted -> true, core::io::Error::WouldBlock -> true, _ -> false }; }
+// Query only. Requiring SIG_IGN avoids the queued-signal hazards of accepting
+// a merely blocked SIGPIPE, and needs no process-wide disposition mutation.
+fn sigpipe_ignored() -> core::result::Result<i32,Error> {
+    let storage: [i32;8] = [0;8]; let zero: ptr = 0; let args: [std::linux::Argument;4] = [std::linux::Argument::Word(13),std::linux::Argument::Address(zero),std::linux::Argument::Address(core::mem::i32_array_data_ptr(storage)),std::linux::Argument::Word(8)];
+    let result: core::result::Result<i64,std::linux::Error> = std::linux::call(13,core::slice::view(args,4).unwrap()); if (result.is_err()) { return core::result::Err(io_error(result.unwrap_err())); } if (result.unwrap() != 0) { return core::result::Err(Error::InvalidResult); }
+    if (storage[0] != 1 || storage[1] != 0) { return core::result::Err(Error::SigpipeNotIgnored); } return core::result::Ok(0);
+}
+fn check(session: &Session) -> core::result::Result<i32,Error> {
+    if (!spend(session.progress.borrow(),session.limits.max_operations)) { return core::result::Err(Error::WorkLimit); }
+    let sampled: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (sampled.is_err()) { return core::result::Err(Error::Clock(sampled.unwrap_err())); } let now: core::time::Instant = sampled.unwrap();
+    if (now.compare(session.previous) < 0) { return core::result::Err(Error::Clock(std::clock::Error::ClockReversed)); } session.previous = now;
+    if (session.deadline.is_expired(now)) { return core::result::Err(Error::Deadline); } return core::result::Ok(0);
+}
+fn close_file(value: core::option::Option<std::file::File>) -> core::option::Option<core::io::Error> { if (core::option::is_none(value)) { return core::option::None(); } let result = core::option::unwrap(value).close(); if (result.is_err()) { return core::option::Some(result.unwrap_err()); } return core::option::None(); }
+fn close_input(session: &Session) -> core::option::Option<core::io::Error> { let value = session.input; session.input = core::option::None(); return close_file(value); }
+fn close_output(session: &Session, error: bool) -> core::option::Option<core::io::Error> { let value = session.out; if (error) { value = session.err; session.err = core::option::None(); } else { session.out = core::option::None(); } return close_file(value); }
+fn aborted(session: &Session, cause: Error, stage: Stage) -> core::result::Result<Output,Failure> {
+    let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (core::option::is_some(session.input)) { session.progress.input_state = InputState::ClosedOnError; } if (core::option::is_some(session.out)) { session.progress.stdout_state = StreamState::ClosedOnError; } if (core::option::is_some(session.err)) { session.progress.stderr_state = StreamState::ClosedOnError; }
+    cleanup = close_input(session); let next = close_output(session,false); if (core::option::is_none(cleanup)) { cleanup = next; } next = close_output(session,true); if (core::option::is_none(cleanup)) { cleanup = next; }
+    session.poll.destroy(); return core::result::Err(Failure { cause: cause, stage: stage, stdout: session.output, stderr: session.error, progress: session.progress, overflow: session.overflow, cleanup_error: cleanup });
+}
+fn flags(session: &Session, value: core::option::Option<std::file::File>) -> core::result::Result<i32,Error> {
+    if (core::option::is_none(value)) { return core::result::Ok(0); } let file = core::option::unwrap(value); let checked = check(session); if (checked.is_err()) { return checked; }
+    if (!spend(session.progress.borrow(),session.limits.max_operations)) { return core::result::Err(Error::WorkLimit); } let old = std::file_ops::status_flags(file.borrow()); if (old.is_err()) { return core::result::Err(Error::Io(old.unwrap_err())); }
+    let before = check(session); if (before.is_err()) { return before; } if (!spend(session.progress.borrow(),session.limits.max_operations)) { return core::result::Err(Error::WorkLimit); }
+    let changed = std::file_ops::set_status(file.borrow(),(old.unwrap() & 1024) != 0,true); if (changed.is_err()) { return core::result::Err(Error::Io(changed.unwrap_err())); } return check(session);
+}
+fn input(session: &Session, data: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    if (core::option::is_none(session.input)) { return core::result::Ok(0); } let checked = check(session); if (checked.is_err()) { return checked; } if (!spend(session.progress.borrow(),session.limits.max_operations)) { return core::result::Err(Error::WorkLimit); }
+    let amount: i32 = data.length-session.progress.input_written; if (amount > 1024) { amount = 1024; } let file = core::option::unwrap(session.input); let written = file.write(data.values,data.start+session.progress.input_written,amount);
+    if (written.is_err()) { let error = written.unwrap_err(); if (transient(error)) { return check(session); } let broken: bool = match(error) { core::io::Error::Host(n) -> n == 32, _ -> false }; if (!broken) { return core::result::Err(Error::Io(error)); } session.progress.input_state = InputState::PeerClosed; let closed = close_input(session); if (core::option::is_some(closed)) { return core::result::Err(Error::Io(core::option::unwrap(closed))); } return check(session); }
+    let n: i32 = written.unwrap(); if (n <= 0 || n > amount) { return core::result::Err(Error::InvalidResult); } session.progress.input_written += n;
+    if (session.progress.input_written == data.length) { session.progress.input_state = InputState::Sent; let closed = close_input(session); if (core::option::is_some(closed)) { return core::result::Err(Error::Io(core::option::unwrap(closed))); } } return check(session);
+}
+fn output(session: &Session, error: bool) -> core::result::Result<i32,Error> {
+    let owner = session.out; let bytes = session.output; let maximum: i32 = session.limits.max_stdout_bytes; if (error) { owner = session.err; bytes = session.error; maximum = session.limits.max_stderr_bytes; } if (core::option::is_none(owner)) { return core::result::Ok(0); }
+    let checked = check(session); if (checked.is_err()) { return checked; } if (!spend(session.progress.borrow(),session.limits.max_operations)) { return core::result::Err(Error::WorkLimit); }
+    let amount: i32 = maximum-bytes.len(); if (amount > 1024) { amount = 1024; } if (amount == 0) { amount = 1; } let storage: [i32;256] = [0;256]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let file = core::option::unwrap(owner); let received = file.read(raw,0,amount);
+    if (received.is_err()) { let cause = received.unwrap_err(); if (transient(cause)) { return check(session); } return core::result::Err(Error::Io(cause)); }
+    let n: i32 = received.unwrap(); if (n < 0 || n > amount) { return core::result::Err(Error::InvalidResult); }
+    if (n == 0) { if (error) { session.progress.stderr_state = StreamState::Eof; } else { session.progress.stdout_state = StreamState::Eof; } let closed = close_output(session,error); if (core::option::is_some(closed)) { return core::result::Err(Error::Io(core::option::unwrap(closed))); } return check(session); }
+    if (error) { session.progress.stderr_read += n as u64; } else { session.progress.stdout_read += n as u64; }
+    if (bytes.len() == maximum) { let stream: Stream = Stream::Stdout; if (error) { stream = Stream::Stderr; } session.overflow = core::option::Some(Overflow { stream: stream, byte: raw[0] }); if (error) { return core::result::Err(Error::ErrorLimit); } return core::result::Err(Error::OutputLimit); }
+    let i: i32 = 0; while (i < n) { bytes.try_push(raw[i]).unwrap(); i += 1; } if (error) { session.error = bytes; } else { session.output = bytes; } return check(session);
+}
+fn handle(value: core::option::Option<std::file::File>) -> i32 { if (core::option::is_none(value)) { return -1; } return core::option::unwrap(core::option::unwrap(value).raw_handle()); }
+fn timeout(session: &Session) -> i32 { let remaining: core::time::Duration = session.deadline.remaining(session.previous); if (remaining.seconds > 0) { return 50; } let n: u32 = (remaining.nanos+999999)/1000000; if (n > 50) { return 50; } return n as i32; }
+fn run(session: &Session, child: &std::command::Child, data: core::slice::View<u8>) -> core::result::Result<Output,Failure> {
+    let turn: i32 = 0;
+    while (true) {
+        let checked = check(session); if (checked.is_err()) { return aborted(session,checked.unwrap_err(),Stage::Clock); }
+        if (core::option::is_none(session.progress.status)) { if (!spend(session.progress.borrow(),session.limits.max_operations)) { return aborted(session,Error::WorkLimit,Stage::Wait); } let waited = child.try_wait(); if (waited.is_err()) { if (waited.unwrap_err().errno != 4) { return aborted(session,Error::Wait(waited.unwrap_err()),Stage::Wait); } } else { session.progress.status = waited.unwrap(); } }
+        let after_wait = check(session); if (after_wait.is_err()) { return aborted(session,after_wait.unwrap_err(),Stage::Clock); }
+        if (core::option::is_none(session.input) && core::option::is_none(session.out) && core::option::is_none(session.err) && core::option::is_some(session.progress.status)) { session.poll.destroy(); return core::result::Ok(Output { stdout: session.output, stderr: session.error, status: core::option::unwrap(session.progress.status), progress: session.progress }); }
+        let requests: [std::poll::Request;3] = [std::poll::Request { handle: handle(session.input), events: std::poll::WRITABLE },std::poll::Request { handle: handle(session.out), events: std::poll::READABLE },std::poll::Request { handle: handle(session.err), events: std::poll::READABLE }];
+        if (!spend(session.progress.borrow(),session.limits.max_operations)) { return aborted(session,Error::WorkLimit,Stage::Poll); } let polled = session.poll.poll_ms(core::slice::view(requests,3).unwrap(),timeout(session));
+        if (polled.is_err()) { let cause = polled.unwrap_err(); let interrupted: bool = match(cause) { std::poll::Error::Io(value) -> core::io::is_interrupted(value), _ -> false }; if (interrupted) { continue; } return aborted(session,Error::Poll(cause),Stage::Poll); }
+        let after = check(session); if (after.is_err()) { return aborted(session,after.unwrap_err(),Stage::Clock); }
+        let i: i32 = 0; while (i < 3) { let at: i32 = (i+turn)%3; let readiness = core::option::unwrap(session.poll.readiness(at)); if (readiness.invalid()) { return aborted(session,Error::InvalidResult,Stage::Poll); }
+            let action: core::result::Result<i32,Error> = core::result::Ok(0); let stage: Stage = Stage::Input;
+            if (at == 0 && (readiness.writable() || readiness.hangup() || readiness.error())) { action = input(session,data); }
+            if (at == 1 && (readiness.readable() || readiness.hangup() || readiness.error())) { stage = Stage::Output; action = output(session,false); }
+            if (at == 2 && (readiness.readable() || readiness.hangup() || readiness.error())) { stage = Stage::ErrorOutput; action = output(session,true); }
+            if (action.is_err()) { return aborted(session,action.unwrap_err(),stage); } i += 1;
+        } turn = (turn+1)%3;
+    }
+    return aborted(session,Error::InvalidResult,Stage::Poll);
+}
+// The input view/backing is immutable and valid for the whole call. All
+// preflight failures preserve the child's endpoints. After acquisition every
+// endpoint is consumed/closed on either outcome; errors are not resumable.
+pub fn communicate(child: &std::command::Child, data: core::slice::View<u8>, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Output,Failure> {
+    let state: Progress = progress(child);
+    if (!core::io::valid_range(data.start,data.length) || limits.max_input_bytes < 0 || limits.max_stdout_bytes < 0 || limits.max_stderr_bytes < 0 || deadline.instant.ticks.nanos >= 1000000000) { return empty_failure(Error::Bounds,Stage::Validate,state); }
+    if (data.length > limits.max_input_bytes) { return empty_failure(Error::InputLimit,Stage::Validate,state); } if (data.length > 0 && core::option::is_none(child.input)) { return empty_failure(Error::InputUnavailable,Stage::Validate,state); }
+    if ((limits.max_stdout_bytes as usize) > 2147483647/core::mem::size_of<u8>() || (limits.max_stderr_bytes as usize) > 2147483647/core::mem::size_of<u8>()) { return empty_failure(Error::Bounds,Stage::Validate,state); }
+    if (!spend(state.borrow(),limits.max_operations)) { return empty_failure(Error::WorkLimit,Stage::Clock,state); } let sampled: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (sampled.is_err()) { return empty_failure(Error::Clock(sampled.unwrap_err()),Stage::Clock,state); } let now: core::time::Instant = sampled.unwrap(); if (deadline.is_expired(now)) { return empty_failure(Error::Deadline,Stage::Clock,state); }
+    if (data.length > 0) { if (!spend(state.borrow(),limits.max_operations)) { return empty_failure(Error::WorkLimit,Stage::Policy,state); } let policy = sigpipe_ignored(); if (policy.is_err()) { return empty_failure(policy.unwrap_err(),Stage::Policy,state); } }
+    if (!spend(state.borrow(),limits.max_operations)) { return empty_failure(Error::WorkLimit,Stage::Allocate,state); } let poll = std::poll::new(3); if (poll.is_err()) { return empty_failure(Error::Poll(poll.unwrap_err()),Stage::Allocate,state); } let set = poll.unwrap();
+    if (!spend(state.borrow(),limits.max_operations)) { set.destroy(); return empty_failure(Error::WorkLimit,Stage::Allocate,state); } let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(limits.max_stdout_bytes); if (allocated.is_err()) { set.destroy(); return empty_failure(Error::AllocationFailed,Stage::Allocate,state); } let output = allocated.unwrap();
+    if (!spend(state.borrow(),limits.max_operations)) { output.destroy(); set.destroy(); return empty_failure(Error::WorkLimit,Stage::Allocate,state); } let second: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity<u8>(limits.max_stderr_bytes); if (second.is_err()) { output.destroy(); set.destroy(); return empty_failure(Error::AllocationFailed,Stage::Allocate,state); } let error = second.unwrap();
+    let session: Session = Session { input: core::option::None(), out: core::option::None(), err: core::option::None(), poll: set, output: output, error: error, progress: state, overflow: core::option::None(), limits: limits, deadline: deadline, previous: now };
+    let ready = check(session.borrow()); if (ready.is_err()) { session.output.destroy(); session.error.destroy(); session.poll.destroy(); return empty_failure(ready.unwrap_err(),Stage::Clock,session.progress); }
+    session.input = child.take_stdin(); session.out = child.take_stdout(); session.err = child.take_stderr(); session.progress.acquired = true; session.progress.input_state = InputState::NotPiped; session.progress.stdout_state = StreamState::NotPiped; session.progress.stderr_state = StreamState::NotPiped;
+    if (core::option::is_some(session.input)) { session.progress.input_state = InputState::Sending; } if (core::option::is_some(session.out)) { session.progress.stdout_state = StreamState::Reading; } if (core::option::is_some(session.err)) { session.progress.stderr_state = StreamState::Reading; }
+    if (data.length == 0 && core::option::is_some(session.input)) { session.progress.input_state = InputState::Sent; let closed = close_input(session.borrow()); if (core::option::is_some(closed)) { return aborted(session.borrow(),Error::Io(core::option::unwrap(closed)),Stage::Close); } }
+    let configured = flags(session.borrow(),session.input); if (configured.is_err()) { return aborted(session.borrow(),configured.unwrap_err(),Stage::Flags); } configured = flags(session.borrow(),session.out); if (configured.is_err()) { return aborted(session.borrow(),configured.unwrap_err(),Stage::Flags); } configured = flags(session.borrow(),session.err); if (configured.is_err()) { return aborted(session.borrow(),configured.unwrap_err(),Stage::Flags); }
+    return run(session.borrow(),child,data);
+}

@@ -1,0 +1,57 @@
+module app::main;
+import core::f32;
+import core::f64;
+import core::mem;
+import core::result;
+import std::io;
+struct Reply { bits: u64, status: i32 }
+fn get64(input: [u8], at: i32) -> u64 { let value: u64 = 0; let index: i32 = 0; while (index < 8) { value = value | ((input[at+index] as u64) << (index*8)); index += 1; } return value; }
+fn run32(op: i32, a_bits: u64, b_bits: u64, c_bits: u64, d_bits: u64) -> Reply {
+    let a: f32 = core::f32::from_bits(a_bits as u32); let b: f32 = core::f32::from_bits(b_bits as u32); let c: f32 = core::f32::from_bits(c_bits as u32); let d: f32 = core::f32::from_bits(d_bits as u32);
+    if (op == 17) { let result: core::result::Result<f32,core::f32::ClampError> = core::f32::try_clamp(a,b,c); if (core::result::is_err(result)) { return Reply { bits: 0, status: 1 }; } return Reply { bits: core::f32::to_bits(core::result::unwrap(result)) as u64, status: 0 }; }
+    if (op == 15) { let kind: i32 = match (core::f32::classify(a)) { core::f32::FpCategory::Nan -> 0, core::f32::FpCategory::Infinite -> 1, core::f32::FpCategory::Zero -> 2, core::f32::FpCategory::Subnormal -> 3, core::f32::FpCategory::Normal -> 4 }; return Reply { bits: kind as u64, status: 0 }; }
+    if (op == 16) { let flags: i32 = 0;
+        if (core::f32::is_nan(a)) { flags = flags | 1; } if (core::f32::is_infinite(a)) { flags = flags | 2; } if (core::f32::is_finite(a)) { flags = flags | 4; } if (core::f32::is_normal(a)) { flags = flags | 8; } if (core::f32::is_subnormal(a)) { flags = flags | 16; }
+        if (core::f32::is_sign_negative(a)) { flags = flags | 32; } if (core::f32::is_sign_positive(a)) { flags = flags | 64; } if (core::f32::is_negative(a)) { flags = flags | 128; } if (core::f32::is_positive(a)) { flags = flags | 256; } if (core::f32::is_zero(a)) { flags = flags | 512; } if (core::f32::is_nonzero(a)) { flags = flags | 1024; }
+        return Reply { bits: flags as u64, status: 0 };
+    }
+    if (op == 14) { return Reply { bits: (core::f32::total_cmp(a,b)+1) as u64, status: 0 }; }
+    if (op == 19) { let yes: u64 = 0; if (core::f32::between_exclusive(a,b,c)) { yes = 1; } return Reply { bits: yes, status: 0 }; }
+    if (op == 20) { let yes: u64 = 0; if (core::f32::between_inclusive(a,b,c)) { yes = 1; } return Reply { bits: yes, status: 0 }; }
+    let value: f32 = match (op) {
+        0 -> a, 1 -> core::f32::abs(a), 2 -> core::f32::copy_sign(a,b), 3 -> core::f32::signum(a), 4 -> core::f32::next_up(a), 5 -> core::f32::next_down(a),
+        6 -> core::f32::trunc(a), 7 -> core::f32::floor(a), 8 -> core::f32::ceil(a), 9 -> core::f32::round(a), 10 -> core::f32::round_ties_even(a), 11 -> core::f32::sqrt(a),
+        12 -> core::f32::min(a,b), 13 -> core::f32::max(a,b), 18 -> core::f32::clamp_or(a,b,c,d), 21 -> core::f32::sqrt_or(a,b),
+        22 -> core::f32::ZERO, 23 -> core::f32::ONE, 24 -> core::f32::EPSILON, 25 -> core::f32::MIN_POSITIVE, 26 -> core::f32::MAX, 27 -> core::f32::MIN,
+        28 -> core::f32::infinity(), 29 -> core::f32::neg_infinity(), 30 -> core::f32::nan(), _ -> core::f32::ZERO
+    }; return Reply { bits: core::f32::to_bits(value) as u64, status: 0 };
+}
+fn run64(op: i32, a_bits: u64, b_bits: u64, c_bits: u64, d_bits: u64) -> Reply {
+    let a: f64 = core::f64::from_bits(a_bits as u64); let b: f64 = core::f64::from_bits(b_bits as u64); let c: f64 = core::f64::from_bits(c_bits as u64); let d: f64 = core::f64::from_bits(d_bits as u64);
+    if (op == 17) { let result: core::result::Result<f64,core::f64::ClampError> = core::f64::try_clamp(a,b,c); if (core::result::is_err(result)) { return Reply { bits: 0, status: 1 }; } return Reply { bits: core::f64::to_bits(core::result::unwrap(result)) as u64, status: 0 }; }
+    if (op == 15) { let kind: i32 = match (core::f64::classify(a)) { core::f64::FpCategory::Nan -> 0, core::f64::FpCategory::Infinite -> 1, core::f64::FpCategory::Zero -> 2, core::f64::FpCategory::Subnormal -> 3, core::f64::FpCategory::Normal -> 4 }; return Reply { bits: kind as u64, status: 0 }; }
+    if (op == 16) { let flags: i32 = 0;
+        if (core::f64::is_nan(a)) { flags = flags | 1; } if (core::f64::is_infinite(a)) { flags = flags | 2; } if (core::f64::is_finite(a)) { flags = flags | 4; } if (core::f64::is_normal(a)) { flags = flags | 8; } if (core::f64::is_subnormal(a)) { flags = flags | 16; }
+        if (core::f64::is_sign_negative(a)) { flags = flags | 32; } if (core::f64::is_sign_positive(a)) { flags = flags | 64; } if (core::f64::is_negative(a)) { flags = flags | 128; } if (core::f64::is_positive(a)) { flags = flags | 256; } if (core::f64::is_zero(a)) { flags = flags | 512; } if (core::f64::is_nonzero(a)) { flags = flags | 1024; }
+        return Reply { bits: flags as u64, status: 0 };
+    }
+    if (op == 14) { return Reply { bits: (core::f64::total_cmp(a,b)+1) as u64, status: 0 }; }
+    if (op == 19) { let yes: u64 = 0; if (core::f64::between_exclusive(a,b,c)) { yes = 1; } return Reply { bits: yes, status: 0 }; }
+    if (op == 20) { let yes: u64 = 0; if (core::f64::between_inclusive(a,b,c)) { yes = 1; } return Reply { bits: yes, status: 0 }; }
+    let value: f64 = match (op) {
+        0 -> a, 1 -> core::f64::abs(a), 2 -> core::f64::copy_sign(a,b), 3 -> core::f64::signum(a), 4 -> core::f64::next_up(a), 5 -> core::f64::next_down(a),
+        6 -> core::f64::trunc(a), 7 -> core::f64::floor(a), 8 -> core::f64::ceil(a), 9 -> core::f64::round(a), 10 -> core::f64::round_ties_even(a), 11 -> core::f64::sqrt(a),
+        12 -> core::f64::min(a,b), 13 -> core::f64::max(a,b), 18 -> core::f64::clamp_or(a,b,c,d), 21 -> core::f64::sqrt_or(a,b),
+        22 -> core::f64::ZERO, 23 -> core::f64::ONE, 24 -> core::f64::EPSILON, 25 -> core::f64::MIN_POSITIVE, 26 -> core::f64::MAX, 27 -> core::f64::MIN,
+        28 -> core::f64::infinity(), 29 -> core::f64::neg_infinity(), 30 -> core::f64::nan(), _ -> core::f64::ZERO
+    }; return Reply { bits: core::f64::to_bits(value) as u64, status: 0 };
+}
+fn main() -> i32 {
+    let words: [i32;65536] = [0;65536]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,262144); let count: i32 = 0;
+    while (count < 262144) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(262144-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; } assert(count < 262144 && count%34 == 0);
+    let output_words: [i32;3] = [0;3]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words); let output: [i32] = core::mem::typed_slice_from_raw_parts(output_pointer,3); let position: i32 = 0;
+    while (position < count) { let op: i32 = input[position+1] as i32; let a: u64 = get64(input,position+2); let b: u64 = get64(input,position+10); let c: u64 = get64(input,position+18); let d: u64 = get64(input,position+26);
+        let reply: Reply = Reply { bits: 0, status: 0 }; if (input[position] == 32) { reply = run32(op,a,b,c,d); } else { reply = run64(op,a,b,c,d); }
+        output[0] = (reply.bits & 4294967295) as i32; output[1] = (reply.bits >> 32) as i32; output[2] = reply.status; assert(std::io::write_stdout(output_pointer,12) == 12); position += 34;
+    } return 0;
+}

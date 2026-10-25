@@ -1,0 +1,20 @@
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import std::file_ops;
+import std::stream;
+fn text(value:str,count:i32) -> core::text::Text { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::text::from_utf8(raw,count)); }
+fn main() -> i32 {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("input"),5); let path:core::path::Path=core::result::unwrap(core::path::from_bytes(raw,5));
+    let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata(); core::result::unwrap(std::file_ops::metadata_into(path,false,metadata.borrow())); assert(metadata.has(2047));
+    let storage:[i32;256]=[0;256]; let packed:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(packed,0,1024)); let comma:core::text::Text=text(",",1); let decimal:core::fmt::Integer=core::fmt::decimal();
+    f.write_unsigned(metadata.mode as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.uid as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.gid as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.links as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.inode,decimal); f.write_text(comma); f.write_unsigned(metadata.length.bytes,decimal); f.write_text(comma); f.write_unsigned(metadata.length.blocks,decimal); f.write_text(comma); f.write_unsigned(metadata.length.block_size as u64,decimal); f.write_text(comma);
+    f.write_signed(metadata.times.access.seconds,decimal); f.write_text(comma); f.write_unsigned(metadata.times.access.nanoseconds as u64,decimal); f.write_text(comma); f.write_signed(metadata.times.modified.seconds,decimal); f.write_text(comma); f.write_unsigned(metadata.times.modified.nanoseconds as u64,decimal); f.write_text(comma); f.write_signed(metadata.times.changed.seconds,decimal); f.write_text(comma); f.write_unsigned(metadata.times.changed.nanoseconds as u64,decimal); f.write_text(comma);
+    f.write_unsigned(metadata.identity.device_major as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.device_minor as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.rdev_major as u64,decimal); f.write_text(comma); f.write_unsigned(metadata.identity.rdev_minor as u64,decimal); f.write_text(text("\n",1));
+    let count:i32=core::result::unwrap(f.finish()); let output:std::stream::Descriptor=std::stream::stdout(); core::result::unwrap(core::io::write_all(output.borrow(),packed,0,count)); return 0;
+}

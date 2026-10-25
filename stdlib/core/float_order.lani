@@ -1,0 +1,90 @@
+// Float keys ordered by the IEEE total-order encoding used by total_cmp.
+// Equality and hashes use every encoding bit: -0 differs from +0; NaN signs,
+// signaling bits and payloads survive unchanged. See docs/stdlib-comparison.md.
+module core::float_order;
+import core::cmp;
+import core::hash;
+import core::f32;
+import core::f64;
+
+pub struct TotalF32 { bits: u32 }
+pub struct TotalF64 { bits: u64 }
+
+pub fn from_f32(value: f32) -> TotalF32 { return TotalF32 { bits: core::f32::to_bits(value) }; }
+pub fn from_f64(value: f64) -> TotalF64 { return TotalF64 { bits: core::f64::to_bits(value) }; }
+
+pub impl TotalF32 {
+    pub fn value(self) -> f32 { return core::f32::from_bits(self.bits); }
+    pub fn to_bits(self) -> u32 { return self.bits; }
+}
+
+pub impl core::cmp::Eq<TotalF32> for TotalF32 {
+    pub fn eq(left: TotalF32, right: TotalF32) -> bool { return left.bits == right.bits; }
+    pub fn ne(left: TotalF32, right: TotalF32) -> bool { return left.bits != right.bits; }
+}
+
+pub impl core::cmp::Ord<TotalF32> for TotalF32 {
+    pub fn lt(left: TotalF32, right: TotalF32) -> bool { return core::f32::total_cmp(left.value(), right.value()) < 0; }
+    pub fn le(left: TotalF32, right: TotalF32) -> bool { return core::f32::total_cmp(left.value(), right.value()) <= 0; }
+    pub fn gt(left: TotalF32, right: TotalF32) -> bool { return core::f32::total_cmp(left.value(), right.value()) > 0; }
+    pub fn ge(left: TotalF32, right: TotalF32) -> bool { return core::f32::total_cmp(left.value(), right.value()) >= 0; }
+}
+
+pub impl core::hash::Hash<TotalF32> for TotalF32 {
+    pub fn hash(value: TotalF32) -> u32 { return u32::hash(value.bits); }
+}
+
+pub impl core::cmp::PartialEq<TotalF32> for TotalF32 {
+    pub fn partial_eq(left: TotalF32, right: TotalF32) -> bool { return TotalF32::eq(left, right); }
+    pub fn partial_ne(left: TotalF32, right: TotalF32) -> bool { return TotalF32::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<TotalF32> for TotalF32 {
+    pub fn partial_lt(left: TotalF32, right: TotalF32) -> bool { return TotalF32::lt(left, right); }
+    pub fn partial_le(left: TotalF32, right: TotalF32) -> bool { return TotalF32::le(left, right); }
+    pub fn partial_gt(left: TotalF32, right: TotalF32) -> bool { return TotalF32::gt(left, right); }
+    pub fn partial_ge(left: TotalF32, right: TotalF32) -> bool { return TotalF32::ge(left, right); }
+    pub fn partial_cmp(left: TotalF32, right: TotalF32) -> core::cmp::PartialOrdering {
+        if (TotalF32::lt(left, right)) { return core::cmp::Less; }
+        if (TotalF32::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl TotalF64 {
+    pub fn value(self) -> f64 { return core::f64::from_bits(self.bits); }
+    pub fn to_bits(self) -> u64 { return self.bits; }
+}
+
+pub impl core::cmp::Eq<TotalF64> for TotalF64 {
+    pub fn eq(left: TotalF64, right: TotalF64) -> bool { return left.bits == right.bits; }
+    pub fn ne(left: TotalF64, right: TotalF64) -> bool { return left.bits != right.bits; }
+}
+
+pub impl core::cmp::Ord<TotalF64> for TotalF64 {
+    pub fn lt(left: TotalF64, right: TotalF64) -> bool { return core::f64::total_cmp(left.value(), right.value()) < 0; }
+    pub fn le(left: TotalF64, right: TotalF64) -> bool { return core::f64::total_cmp(left.value(), right.value()) <= 0; }
+    pub fn gt(left: TotalF64, right: TotalF64) -> bool { return core::f64::total_cmp(left.value(), right.value()) > 0; }
+    pub fn ge(left: TotalF64, right: TotalF64) -> bool { return core::f64::total_cmp(left.value(), right.value()) >= 0; }
+}
+
+pub impl core::hash::Hash<TotalF64> for TotalF64 {
+    pub fn hash(value: TotalF64) -> u32 { return u64::hash(value.bits); }
+}
+
+pub impl core::cmp::PartialEq<TotalF64> for TotalF64 {
+    pub fn partial_eq(left: TotalF64, right: TotalF64) -> bool { return TotalF64::eq(left, right); }
+    pub fn partial_ne(left: TotalF64, right: TotalF64) -> bool { return TotalF64::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<TotalF64> for TotalF64 {
+    pub fn partial_lt(left: TotalF64, right: TotalF64) -> bool { return TotalF64::lt(left, right); }
+    pub fn partial_le(left: TotalF64, right: TotalF64) -> bool { return TotalF64::le(left, right); }
+    pub fn partial_gt(left: TotalF64, right: TotalF64) -> bool { return TotalF64::gt(left, right); }
+    pub fn partial_ge(left: TotalF64, right: TotalF64) -> bool { return TotalF64::ge(left, right); }
+    pub fn partial_cmp(left: TotalF64, right: TotalF64) -> core::cmp::PartialOrdering {
+        if (TotalF64::lt(left, right)) { return core::cmp::Less; }
+        if (TotalF64::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

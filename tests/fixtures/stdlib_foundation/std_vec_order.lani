@@ -22,7 +22,7 @@ pub impl core::cmp::Ord<Score> for Score {
 // items holds one duplicate pair; sorted_first and sorted_last are the
 // extremes, needle is present and absent is not.
 fn check<T>(items: [T; 6], sorted_first: T, sorted_last: T, needle: T, absent: T) -> i32
-    where T: core::cmp::Ord<T>, T: core::cmp::Eq<T> {
+    where T: core::cmp::Ord<T>, T: core::cmp::Eq<T>, T: core::cmp::PartialEq<T> {
     let v: std::vec::Vec<T> = std::vec::new();
     v = std::vec::try_extend_from_slice(v, items, 6);
     if (std::vec::is_sorted(v)) { return 1; }
@@ -82,4 +82,9 @@ fn main() -> i32 {
     flags = std::vec::sort(flags);
     if (std::vec::at(flags, 0) || !std::vec::at(flags, 2) || std::vec::lower_bound(flags, true) != 1) { return 120; }
     return 0;
+}
+
+pub impl core::cmp::PartialEq<Score> for Score {
+    pub fn partial_eq(left: Score, right: Score) -> bool { return Score::eq(left, right); }
+    pub fn partial_ne(left: Score, right: Score) -> bool { return Score::ne(left, right); }
 }

@@ -1,0 +1,126 @@
+// Owned JSON configuration sources and borrowed shallow overlays. Later
+// sources replace complete top-level values. Missing keys fall back; null
+// masks earlier values. No implicit coercion, environment lookup or defaults.
+module ext::config;
+import alloc::io;
+import alloc::string;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::json;
+import std::file;
+import core::path;
+import std::stream;
+
+pub enum Error { Json(ext::json::Error), Text(alloc::string::Error), RootNotObject, InvalidLimit, InputLimit, AllocationFailed, Io(core::io::Error) }
+pub struct Config { document: ext::json::Document }
+pub struct Value { document: ext::json::Document, node: ext::json::NodeId, origin: i32 }
+pub struct Layers { sources: core::slice::View<Config> }
+pub struct Children { document: ext::json::Document, next_node: core::option::Option<ext::json::NodeId>, origin: i32 }
+
+// Source is borrowed and copied. Duplicate decoded keys are always rejected
+// throughout the document, regardless of the supplied JSON option flag.
+pub fn parse(text: alloc::string::String, options: ext::json::Options) -> core::result::Result<Config, Error> {
+    let strict: ext::json::Options = options; strict.reject_duplicate_keys = true;
+    let parsed: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(text, strict);
+    if (core::result::is_err(parsed)) { return core::result::Err(Error::Json(core::result::unwrap_err(parsed))); }
+    let document: ext::json::Document = core::result::unwrap(parsed);
+    let root: ext::json::NodeId = core::option::unwrap(document.root());
+    let object: bool = match (core::result::unwrap(document.kind(root))) { ext::json::Kind::Object -> true, _ -> false };
+    if (!object) { document.destroy(); return core::result::Err(Error::RootNotObject); }
+    return core::result::Ok(Config { document: document });
+}
+
+// Reads through the byte limit and closes the acquired File on every path.
+// A read failure takes priority over a simultaneous close failure.
+pub fn load(path: core::path::Path, maximum_bytes: i32, options: ext::json::Options) -> core::result::Result<Config, Error> {
+    if (maximum_bytes < 0) { return core::result::Err(Error::InvalidLimit); }
+    // Validate options before acquiring a host handle.
+    let checked: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::with_options(options);
+    if (core::result::is_err(checked)) { return core::result::Err(Error::Json(core::result::unwrap_err(checked))); }
+    let empty: ext::json::Document = core::result::unwrap(checked); empty.destroy();
+    let opened: core::result::Result<std::file::File, core::io::Error> = std::file::open(path, std::file::OpenMode::Read);
+    if (core::result::is_err(opened)) { return core::result::Err(Error::Io(core::result::unwrap_err(opened))); }
+    let file: std::file::File = core::result::unwrap(opened);
+    let bytes: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(maximum_bytes));
+    let copied: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(file.borrow(), bytes.borrow());
+    let closed: core::result::Result<i32, core::io::Error> = file.close();
+    if (core::result::is_err(copied)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(copied); bytes.destroy();
+        let kind: i32 = match (failure.cause) { core::io::Error::LimitExceeded -> 1, core::io::Error::AllocationFailed -> 2, _ -> 0 };
+        if (kind == 1) { return core::result::Err(Error::InputLimit); }
+        if (kind == 2) { return core::result::Err(Error::AllocationFailed); }
+        return core::result::Err(Error::Io(failure.cause));
+    }
+    if (core::result::is_err(closed)) { bytes.destroy(); return core::result::Err(Error::Io(core::result::unwrap_err(closed))); }
+    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes.as_bytes(), bytes.len()); bytes.destroy();
+    if (core::result::is_err(decoded)) { return core::result::Err(Error::Text(core::result::unwrap_err(decoded))); }
+    let text: alloc::string::String = core::result::unwrap(decoded); let result: core::result::Result<Config, Error> = parse(text, options); text.destroy(); return result;
+}
+
+// Classify allocation errors consistently across input, text and JSON stages.
+pub fn is_allocation_failure(error: Error) -> bool {
+    let result: bool = match (error) { Error::AllocationFailed -> true, Error::Text(cause) -> text_allocation(cause), Error::Json(cause) -> json_allocation(cause), _ -> false }; return result;
+}
+fn text_allocation(error: alloc::string::Error) -> bool { let result: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false }; return result; }
+fn json_allocation(error: ext::json::Error) -> bool { let result: bool = match (error.kind) { ext::json::ErrorKind::AllocationFailed -> true, _ -> false }; return result; }
+
+// Borrows existing owners and their order; no allocation or ownership transfer.
+pub fn layers(sources: core::slice::View<Config>) -> Layers { return Layers { sources: sources }; }
+
+pub impl Config {
+    pub fn root(&self) -> Value { return Value { document: self.document, node: core::option::unwrap(self.document.root()), origin: 0 }; }
+    pub fn get(&self, key: core::text::Text) -> core::option::Option<Value> {
+        let root: Value = self.root(); return core::result::unwrap(root.member(key));
+    }
+    pub fn destroy(&self) { self.document.destroy(); }
+}
+pub impl Layers {
+    pub fn len(&self) -> i32 { return self.sources.len(); }
+    pub fn get(&self, key: core::text::Text) -> core::option::Option<Value> {
+        let index: i32 = self.sources.len();
+        while (index > 0) {
+            index -= 1; let source: Config = core::option::unwrap(self.sources.get(index)); let found: core::option::Option<Value> = source.get(key);
+            if (core::option::is_some(found)) { let value: Value = core::option::unwrap(found); value.origin = index; return core::option::Some(value); }
+        }
+        return core::option::None();
+    }
+}
+pub impl Value {
+    pub fn source_index(&self) -> i32 { return self.origin; }
+    pub fn kind(&self) -> ext::json::Kind { return core::result::unwrap(self.document.kind(self.node)); }
+    pub fn is_null(&self) -> bool { let result: bool = match (self.kind()) { ext::json::Kind::Null -> true, _ -> false }; return result; }
+    fn resolved(&self, child: core::option::Option<ext::json::NodeId>) -> core::option::Option<Value> {
+        if (core::option::is_none(child)) { return core::option::None(); }
+        return core::option::Some(Value { document: self.document, node: core::option::unwrap(child), origin: self.origin });
+    }
+    pub fn member(&self, key: core::text::Text) -> core::result::Result<core::option::Option<Value>, ext::json::Error> {
+        let found: core::result::Result<core::option::Option<ext::json::NodeId>, ext::json::Error> = self.document.member_text(self.node, key);
+        if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); } return core::result::Ok(self.resolved(core::result::unwrap(found)));
+    }
+    pub fn element(&self, index: i32) -> core::result::Result<core::option::Option<Value>, ext::json::Error> {
+        let found: core::result::Result<core::option::Option<ext::json::NodeId>, ext::json::Error> = self.document.element(self.node, index);
+        if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); } return core::result::Ok(self.resolved(core::result::unwrap(found)));
+    }
+    pub fn len(&self) -> core::result::Result<i32, ext::json::Error> { return self.document.child_count(self.node); }
+    pub fn boolean(&self) -> core::result::Result<bool, ext::json::Error> { return self.document.boolean(self.node); }
+    pub fn text(&self) -> core::result::Result<core::text::Text, ext::json::Error> { return self.document.string_view(self.node); }
+    pub fn number_text(&self) -> core::result::Result<core::text::Text, ext::json::Error> { return self.document.number_view(self.node); }
+    pub fn key(&self) -> core::result::Result<core::text::Text, ext::json::Error> { return self.document.key_view(self.node); }
+    pub fn integer_i64(&self) -> core::result::Result<i64, ext::json::Error> { return self.document.integer_i64(self.node); }
+    pub fn integer_u64(&self) -> core::result::Result<u64, ext::json::Error> { return self.document.integer_u64(self.node); }
+    pub fn children(&self) -> core::result::Result<Children, ext::json::Error> {
+        let first: core::result::Result<core::option::Option<ext::json::NodeId>, ext::json::Error> = self.document.first_child(self.node);
+        if (core::result::is_err(first)) { return core::result::Err(core::result::unwrap_err(first)); }
+        return core::result::Ok(Children { document: self.document, next_node: core::result::unwrap(first), origin: self.origin });
+    }
+}
+pub impl Children {
+    pub fn next(&self) -> core::option::Option<Value> {
+        if (core::option::is_none(self.next_node)) { return core::option::None(); }
+        let id: ext::json::NodeId = core::option::unwrap(self.next_node); self.next_node = core::result::unwrap(self.document.next_sibling(id));
+        return core::option::Some(Value { document: self.document, node: id, origin: self.origin });
+    }
+}

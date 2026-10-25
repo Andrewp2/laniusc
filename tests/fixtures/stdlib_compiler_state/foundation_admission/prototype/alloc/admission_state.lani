@@ -1,0 +1,69 @@
+// Admission only: one existing HashMap engine; no copied hashing/storage code.
+// State is exclusively owned by exactly one typed facade. Its schema cannot
+// change. Typed temporary map views must not escape an operation. Each mutation
+// writes all owner fields back before returning; there is no automatic Drop.
+module alloc::admission_state;
+import alloc::hash_map;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::option;
+import core::result;
+
+struct Unit {}
+pub struct OwnerState {
+    storage: ptr, buckets: i32, length: i32, occupied: i32,
+    key_bytes: usize, value_bytes: usize
+}
+pub struct Map<K,V> { state: OwnerState }
+pub struct Set<T> { state: OwnerState }
+fn empty<K,V>() -> OwnerState {
+    let storage: ptr = 0;
+    return OwnerState { storage: storage, buckets: 0, length: 0, occupied: 0,
+        key_bytes: core::mem::size_of<K>(), value_bytes: core::mem::size_of<V>() };
+}
+fn view<K,V>(state: &OwnerState) -> alloc::hash_map::HashMap<K,V> {
+    assert(state.key_bytes == core::mem::size_of<K>() && state.value_bytes == core::mem::size_of<V>());
+    return alloc::hash_map::HashMap { storage: state.storage, buckets: state.buckets, length: state.length, occupied: state.occupied };
+}
+fn update<K,V>(state: &OwnerState, map: alloc::hash_map::HashMap<K,V>) {
+    state.storage = map.storage; state.buckets = map.buckets;
+    state.length = map.length; state.occupied = map.occupied;
+}
+fn insert<K,V>(state: &OwnerState, key: K, value: V)
+    -> core::result::Result<core::option::Option<alloc::hash_map::Entry<K,V>>,alloc::hash_map::Error>
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+    let map: alloc::hash_map::HashMap<K,V> = view<K,V>(state);
+    let result: core::result::Result<core::option::Option<alloc::hash_map::Entry<K,V>>,alloc::hash_map::Error> = map.try_insert(key,value);
+    update<K,V>(state,map); return result;
+}
+fn contains<K,V>(state: &OwnerState, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+    let map: alloc::hash_map::HashMap<K,V> = view<K,V>(state); return map.contains_key(key);
+}
+fn destroy<K,V>(state: &OwnerState) {
+    let map: alloc::hash_map::HashMap<K,V> = view<K,V>(state); map.destroy(); update<K,V>(state,map);
+}
+pub fn map<K,V>() -> Map<K,V> { return Map { state: empty<K,V>() }; }
+pub fn set<T>() -> Set<T> { return Set { state: empty<T,Unit>() }; }
+pub impl<K,V> Map<K,V> {
+    pub fn try_insert(&self, key: K, value: V)
+        -> core::result::Result<core::option::Option<alloc::hash_map::Entry<K,V>>,alloc::hash_map::Error>
+        where K: core::hash::Hash<K>, K: core::cmp::Eq<K> { return insert<K,V>(self.state.borrow(),key,value); }
+    pub fn contains(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K> { return contains<K,V>(self.state.borrow(),key); }
+    pub fn destroy(&self) { destroy<K,V>(self.state.borrow()); }
+}
+pub impl<T> Set<T> {
+    // Return the displaced key explicitly; no key owner is silently discarded.
+    pub fn try_insert(&self, key: T) -> core::result::Result<core::option::Option<T>,alloc::hash_map::Error>
+        where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+        let unit: Unit = Unit {};
+        let result: core::result::Result<core::option::Option<alloc::hash_map::Entry<T,Unit>>,alloc::hash_map::Error> = insert<T,Unit>(self.state.borrow(),key,unit);
+        if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+        let old: core::option::Option<alloc::hash_map::Entry<T,Unit>> = core::result::unwrap(result);
+        if (core::option::is_none(old)) { return core::result::Ok(core::option::None()); }
+        let displaced: alloc::hash_map::Entry<T,Unit> = core::option::unwrap(old); return core::result::Ok(core::option::Some(displaced.key));
+    }
+    pub fn contains(&self, key: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return contains<T,Unit>(self.state.borrow(),key); }
+    pub fn destroy(&self) { destroy<T,Unit>(self.state.borrow()); }
+}
+pub impl OwnerState { pub fn borrow(&self) -> &OwnerState { return self; } }

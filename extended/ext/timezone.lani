@@ -1,0 +1,291 @@
+// Portable TZif/POSIX-rule time zones on the POSIX Unix time scale.
+// Owners copy shallowly; views of designations borrow the one active Zone.
+module ext::timezone;
+import alloc::vec;
+import core::calendar;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+
+pub enum Error { InvalidView, InputLimit, TransitionLimit, TypeLimit, DesignationLimit, FooterLimit, CandidateLimit, WorkLimit, AllocationFailed, Truncated, Magic, Version, Counts, TransitionOrder, TypeIndex, Offset, Indicator, Designation, Footer, InvalidRule, MissingRule, InconsistentFooter, UnsupportedLeapScale, Unspecified, InvalidLocal, LeapSecond, YearRange, Overflow, Gap, Ambiguous, Destroyed, UnsupportedRule }
+pub struct Limits { max_input: i32, max_transitions: i32, max_types: i32, max_designations: i32, max_footer: i32, max_candidates: i32, max_work: u64 }
+pub struct Info { offset_seconds: i32, is_dst: bool, abbreviation: core::slice::View<u8> }
+pub struct Local { instant: core::time::SystemTime, civil: core::calendar::LocalDateTime, info: Info }
+pub struct Candidate { instant: core::time::SystemTime, info: Info }
+pub struct Transition { unix_seconds: i64, info: Info }
+pub enum Resolution { Reject, Earliest, Latest }
+struct Name { start: i32, length: i32 }
+struct Rule { kind: i32, a: i32, b: i32, c: i32, seconds: i32 }
+struct Tail { kind: i32, start: i32, length: i32, standard: Name, daylight: Name, standard_offset: i32, daylight_offset: i32, begin: Rule, end: Rule }
+struct Block { end: i32, width: i32, times: i32, indices: i32, types: i32, chars: i32, chars_len: i32, standard: i32, universal: i32, transitions: i32, type_count: i32, leaps: i32, standard_count: i32, universal_count: i32 }
+pub struct Zone { bytes: alloc::vec::Vec<u8>, block: Block, tail: Tail, format: i32, limits: Limits }
+struct Work { left: u64 }
+impl Work { fn borrow(&self) -> &Work { return self; } fn spend(&self, amount: u64) -> bool { if (amount > self.left) { return false; } self.left -= amount; return true; } }
+struct Parser { bytes: core::slice::View<u8>, at: i32, end: i32, version: i32 }
+impl Parser { fn borrow(&self) -> &Parser { return self; } }
+
+pub fn default_limits() -> Limits { return Limits { max_input: 4194304, max_transitions: 200000, max_types: 256, max_designations: 65536, max_footer: 4096, max_candidates: 258, max_work: 33554432 }; }
+fn valid_view(input: core::slice::View<u8>) -> bool { return input.start >= 0 && input.length >= 0 && input.start <= 2147483647-input.length; }
+fn byte(input: core::slice::View<u8>, at: i32) -> u8 { return input.values[input.start+at]; }
+fn big(input: core::slice::View<u8>, at: i32, count: i32) -> u64 { let value: u64 = 0; let i: i32 = 0; while (i < count) { value = (value << 8) | (byte(input,at+i) as u64); i += 1; } return value; }
+fn signed(input: core::slice::View<u8>, at: i32, width: i32) -> i64 { if (width == 4) { return (big(input,at,4) as i32) as i64; } return big(input,at,8) as i64; }
+fn section(input: core::slice::View<u8>, start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: input.values, start: input.start+start, length: length }; }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (byte(a,i) != byte(b,i)) { return false; } i += 1; } return true; }
+fn unspecified(info: Info) -> bool { return info.abbreviation.length == 3 && byte(info.abbreviation,0) == 45 && byte(info.abbreviation,1) == 48 && byte(info.abbreviation,2) == 48; }
+fn checked_add(value: i64, delta: i64) -> core::result::Result<i64,Error> { if ((delta > 0 && value > 9223372036854775807-delta) || (delta < 0 && value < -9223372036854775808-delta)) { return core::result::Err(Error::Overflow); } return core::result::Ok(value+delta); }
+fn version(input: core::slice::View<u8>, at: i32) -> core::result::Result<i32,Error> {
+    if (input.length-at < 44) { return core::result::Err(Error::Truncated); }
+    if (big(input,at,4) != 1415211366) { return core::result::Err(Error::Magic); }
+    let v: u8 = byte(input,at+4); if (v == 0) { return core::result::Ok(1); } if (v >= 50 && v <= 52) { return core::result::Ok((v-48) as i32); } return core::result::Err(Error::Version);
+}
+fn layout(input: core::slice::View<u8>, at: i32, width: i32, limits: Limits, authoritative: bool) -> core::result::Result<Block,Error> {
+    let ut: u64 = big(input,at+20,4); let std: u64 = big(input,at+24,4); let leaps: u64 = big(input,at+28,4); let times: u64 = big(input,at+32,4); let types: u64 = big(input,at+36,4); let chars: u64 = big(input,at+40,4);
+    // All counts are u32, so this whole-block arithmetic fits u64 before any
+    // narrowing. A modern reader skips legacy data rather than interpreting it.
+    let end: u64 = (at as u64)+44+times*((width+1) as u64)+types*6+chars+leaps*((width+4) as u64)+std+ut;
+    if (end > input.length as u64) { return core::result::Err(Error::Truncated); }
+    if (authoritative) {
+        if (types == 0 || chars == 0 || (std != 0 && std != types) || (ut != 0 && ut != types)) { return core::result::Err(Error::Counts); }
+        if (times > limits.max_transitions as u64) { return core::result::Err(Error::TransitionLimit); } if (types > limits.max_types as u64) { return core::result::Err(Error::TypeLimit); } if (chars > limits.max_designations as u64) { return core::result::Err(Error::DesignationLimit); }
+    }
+    let time_at: i32 = at+44; let index_at: i32 = time_at+(times*(width as u64)) as i32; let type_at: i32 = index_at+times as i32; let char_at: i32 = type_at+(types*6) as i32;
+    let std_at: i32 = char_at+chars as i32+(leaps*((width+4) as u64)) as i32;
+    return core::result::Ok(Block { end: end as i32, width: width, times: time_at, indices: index_at, types: type_at, chars: char_at, chars_len: chars as i32, standard: std_at, universal: std_at+std as i32, transitions: times as i32, type_count: types as i32, leaps: leaps as i32, standard_count: std as i32, universal_count: ut as i32 });
+}
+fn validate_block(input: core::slice::View<u8>, block: Block, work: &Work) -> core::result::Result<bool,Error> {
+    if (block.leaps != 0) { return core::result::Err(Error::UnsupportedLeapScale); }
+    if (byte(input,block.chars+block.chars_len-1) != 0) { return core::result::Err(Error::Designation); }
+    let i: i32 = 0; let previous: i64 = 0;
+    while (i < block.transitions) { if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); } let stamp: i64 = signed(input,block.times+i*block.width,block.width); if (i > 0 && stamp <= previous) { return core::result::Err(Error::TransitionOrder); } previous = stamp; if ((byte(input,block.indices+i) as i32) >= block.type_count) { return core::result::Err(Error::TypeIndex); } i += 1; }
+    i = 0; while (i < block.type_count) {
+        if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); }
+        let at: i32 = block.types+i*6; if (signed(input,at,4) == -2147483648) { return core::result::Err(Error::Offset); } if (byte(input,at+4) > 1) { return core::result::Err(Error::Indicator); }
+        let name: i32 = byte(input,at+5) as i32; if (name >= block.chars_len) { return core::result::Err(Error::Designation); }
+        let end: i32 = name; while (end < block.chars_len && byte(input,block.chars+end) != 0) { if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); } end += 1; } if (end == block.chars_len) { return core::result::Err(Error::Designation); }
+        let std: u8 = 0; let ut: u8 = 0; if (block.standard_count != 0) { std = byte(input,block.standard+i); } if (block.universal_count != 0) { ut = byte(input,block.universal+i); }
+        if (std > 1 || ut > 1 || (ut == 1 && std != 1)) { return core::result::Err(Error::Indicator); } i += 1;
+    } return core::result::Ok(true);
+}
+fn empty_rule() -> Rule { return Rule { kind: 0, a: 1, b: 0, c: 0, seconds: 7200 }; }
+fn empty_tail(start: i32, length: i32) -> Tail { let name: Name = Name { start: start, length: 0 }; let rules: Rule = empty_rule(); return Tail { kind: 0, start: start, length: length, standard: name, daylight: name, standard_offset: 0, daylight_offset: 0, begin: rules, end: rules }; }
+fn peek(parser: &Parser) -> u8 { if (parser.at >= parser.end) { return 0; } return byte(parser.bytes,parser.at); }
+fn digit(value: u8) -> bool { return value >= 48 && value <= 57; }
+fn alpha(value: u8) -> bool { return (value >= 65 && value <= 90) || (value >= 97 && value <= 122); }
+fn integer(parser: &Parser, maximum: i32) -> core::result::Result<i32,Error> {
+    if (!digit(peek(parser))) { return core::result::Err(Error::InvalidRule); } let result: i32 = 0;
+    while (digit(peek(parser))) { let d: i32 = (peek(parser)-48) as i32; if (result > maximum/10 || (result == maximum/10 && d > maximum%10)) { return core::result::Err(Error::InvalidRule); } result = result*10+d; parser.at += 1; } return core::result::Ok(result);
+}
+fn name(parser: &Parser) -> core::result::Result<Name,Error> {
+    let quoted: bool = peek(parser) == 60; if (quoted) { parser.at += 1; } let start: i32 = parser.at;
+    while (parser.at < parser.end) { let value: u8 = peek(parser); if (!(alpha(value) || (quoted && (digit(value) || value == 43 || value == 45)))) { break; } parser.at += 1; }
+    let length: i32 = parser.at-start; if (length < 3) { return core::result::Err(Error::InvalidRule); }
+    if (quoted) { if (peek(parser) != 62) { return core::result::Err(Error::InvalidRule); } parser.at += 1; }
+    return core::result::Ok(Name { start: start, length: length });
+}
+fn hms(parser: &Parser, transition: bool) -> core::result::Result<i32,Error> {
+    let sign: i32 = 1; let marker: u8 = peek(parser);
+    if (marker == 45 || marker == 43) { if (transition && parser.version < 3) { return core::result::Err(Error::InvalidRule); } if (marker == 45) { sign = -1; } parser.at += 1; }
+    let maximum: i32 = 24; if (transition && parser.version >= 3) { maximum = 167; }
+    let hours: core::result::Result<i32,Error> = integer(parser,maximum); if (hours.is_err()) { return hours; } let seconds: i32 = hours.unwrap()*3600;
+    if (peek(parser) == 58) { parser.at += 1; let minutes: core::result::Result<i32,Error> = integer(parser,59); if (minutes.is_err()) { return minutes; } seconds += minutes.unwrap()*60;
+        if (peek(parser) == 58) { parser.at += 1; let fraction: core::result::Result<i32,Error> = integer(parser,59); if (fraction.is_err()) { return fraction; } seconds += fraction.unwrap(); } }
+    return core::result::Ok(sign*seconds);
+}
+fn rule(parser: &Parser) -> core::result::Result<Rule,Error> {
+    let result: Rule = empty_rule(); let marker: u8 = peek(parser);
+    if (marker == 77) { result.kind = 2; parser.at += 1; let month: core::result::Result<i32,Error> = integer(parser,12); if (month.is_err() || month.unwrap_or(0) < 1) { return core::result::Err(Error::InvalidRule); } result.a = month.unwrap();
+        if (peek(parser) != 46) { return core::result::Err(Error::InvalidRule); } parser.at += 1; let week: core::result::Result<i32,Error> = integer(parser,5); if (week.is_err() || week.unwrap_or(0) < 1) { return core::result::Err(Error::InvalidRule); } result.b = week.unwrap();
+        if (peek(parser) != 46) { return core::result::Err(Error::InvalidRule); } parser.at += 1; let day: core::result::Result<i32,Error> = integer(parser,6); if (day.is_err()) { return core::result::Err(Error::InvalidRule); } result.c = day.unwrap();
+    } else { if (marker == 74) { result.kind = 0; parser.at += 1; } else { result.kind = 1; } let day: core::result::Result<i32,Error> = integer(parser,365); if (day.is_err() || (result.kind == 0 && day.unwrap_or(0) == 0)) { return core::result::Err(Error::InvalidRule); } result.a = day.unwrap(); }
+    if (peek(parser) == 47) { parser.at += 1; let time: core::result::Result<i32,Error> = hms(parser,true); if (time.is_err()) { return core::result::Err(Error::InvalidRule); } result.seconds = time.unwrap(); }
+    return core::result::Ok(result);
+}
+fn footer(input: core::slice::View<u8>, start: i32, end: i32, version: i32, limits: Limits) -> core::result::Result<Tail,Error> {
+    let length: i32 = end-start; if (length > limits.max_footer) { return core::result::Err(Error::FooterLimit); } if (length == 0) { return core::result::Ok(empty_tail(start,0)); }
+    let i: i32 = start; while (i < end) { let value: u8 = byte(input,i); if (value < 33 || value > 126) { return core::result::Err(Error::Footer); } i += 1; }
+    let parser: Parser = Parser { bytes: input, at: start, end: end, version: version }; let result: Tail = empty_tail(start,length);
+    let standard: core::result::Result<Name,Error> = name(parser.borrow()); if (standard.is_err()) { return core::result::Err(standard.unwrap_err()); } result.standard = standard.unwrap();
+    let offset: core::result::Result<i32,Error> = hms(parser.borrow(),false); if (offset.is_err()) { return core::result::Err(offset.unwrap_err()); } result.standard_offset = -offset.unwrap(); result.kind = 1;
+    if (parser.at == parser.end) { return core::result::Ok(result); }
+    let daylight: core::result::Result<Name,Error> = name(parser.borrow()); if (daylight.is_err()) { return core::result::Err(daylight.unwrap_err()); } result.daylight = daylight.unwrap(); result.daylight_offset = result.standard_offset+3600; result.kind = 2;
+    if (peek(parser.borrow()) != 44 && parser.at < parser.end) { let alternate: core::result::Result<i32,Error> = hms(parser.borrow(),false); if (alternate.is_err()) { return core::result::Err(alternate.unwrap_err()); } result.daylight_offset = -alternate.unwrap(); }
+    if (parser.at == parser.end) { return core::result::Err(Error::MissingRule); }
+    if (peek(parser.borrow()) != 44) { return core::result::Err(Error::InvalidRule); } parser.at += 1;
+    let begin: core::result::Result<Rule,Error> = rule(parser.borrow()); if (begin.is_err()) { return core::result::Err(begin.unwrap_err()); } result.begin = begin.unwrap();
+    if (peek(parser.borrow()) != 44) { return core::result::Err(Error::InvalidRule); } parser.at += 1;
+    let end_rule: core::result::Result<Rule,Error> = rule(parser.borrow()); if (end_rule.is_err()) { return core::result::Err(end_rule.unwrap_err()); } result.end = end_rule.unwrap();
+    if (parser.at != parser.end) { return core::result::Err(Error::InvalidRule); } return core::result::Ok(result);
+}
+fn type_info(input: core::slice::View<u8>, block: Block, index: i32) -> Info {
+    let at: i32 = block.types+index*6; let start: i32 = block.chars+(byte(input,at+5) as i32); let end: i32 = start; while (byte(input,end) != 0) { end += 1; }
+    return Info { offset_seconds: signed(input,at,4) as i32, is_dst: byte(input,at+4) == 1, abbreviation: section(input,start,end-start) };
+}
+fn rule_time(rule: Rule, year: i32, offset: i32) -> core::result::Result<i64,Error> {
+    let january: core::calendar::Date = core::calendar::date(year,1,1).unwrap(); let day: i64 = january.day_number();
+    if (rule.kind == 2) { let first: core::calendar::Date = core::calendar::date(year,rule.a,1).unwrap(); let weekday: i32 = first.weekday()%7; let selected: i32 = 1+(rule.c-weekday+7)%7+(rule.b-1)*7; let last: i32 = core::calendar::days_in_month(year,rule.a).unwrap(); if (selected > last) { selected -= 7; } day = first.day_number()+(selected as i64)-1; }
+    else { let ordinal: i32 = rule.a; if (rule.kind == 0) { ordinal -= 1; if (core::calendar::is_leap_year(year) && rule.a >= 60) { ordinal += 1; } } day += ordinal as i64; }
+    return core::result::Ok(day*86400+(rule.seconds as i64)-(offset as i64));
+}
+struct Annual { start: i64, end: i64, active: bool }
+fn annual(tail: Tail, year: i32) -> Annual {
+    let start: i64 = rule_time(tail.begin,year,tail.standard_offset).unwrap(); let end: i64 = rule_time(tail.end,year,tail.daylight_offset).unwrap();
+    let year_seconds: i64 = 31536000; if (core::calendar::is_leap_year(year)) { year_seconds += 86400; }
+    // IANA tzcode's annual event guard includes the perpetual-DST extension.
+    return Annual { start: start, end: end, active: end < start || (start < end && end-start < year_seconds) };
+}
+fn validate_cycle(tail: Tail, work: &Work) -> core::result::Result<bool,Error> {
+    if (tail.kind != 2) { return core::result::Ok(true); }
+    let year: i32 = 2000; let found: bool = false; let previous: i64 = 0;
+    // One full Gregorian cycle and its closing boundary. Reject exotic rules
+    // whose emitted annual pairs would cease to be strictly chronological.
+    while (year <= 2400) { if (!work.spend(2)) { return core::result::Err(Error::WorkLimit); } let events: Annual = annual(tail,year);
+        if (events.active) { let first: i64 = events.start; let last: i64 = events.end; if (last < first) { first = events.end; last = events.start; }
+            if (found && first <= previous) { return core::result::Err(Error::UnsupportedRule); } previous = last; found = true;
+        } year += 1;
+    } return core::result::Ok(found);
+}
+fn future_info(input: core::slice::View<u8>, tail: Tail, seconds: i64, work: &Work) -> core::result::Result<Info,Error> {
+    if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); }
+    let daylight: bool = tail.kind == 3;
+    if (tail.kind == 2) {
+        let utc: core::result::Result<core::calendar::OffsetDateTime,core::calendar::Error> = core::calendar::from_system_time(core::time::system_time(seconds,0).unwrap(),core::calendar::utc());
+        if (utc.is_err()) { return core::result::Err(Error::YearRange); } let year: i32 = utc.unwrap().local.date.year;
+        if (year < -2147483246 || year > 2147483645) { return core::result::Err(Error::YearRange); }
+        let found: bool = false; let latest: i64 = 0; let delta: i32 = -2;
+        // Signed transition hours can spill into an adjacent year. Expand the
+        // surrounding annual events in UTC, rather than comparing local dates.
+        while (delta <= 2) { if (!work.spend(2)) { return core::result::Err(Error::WorkLimit); } let events: Annual = annual(tail,year+delta);
+            if (events.active) {
+                if (events.end <= seconds && (!found || events.end > latest)) { latest = events.end; daylight = false; found = true; }
+                if (events.start <= seconds && (!found || events.start >= latest)) { latest = events.start; daylight = true; found = true; }
+            } delta += 1;
+        }
+        // Rare rules can omit an entire year's events. A Gregorian cycle
+        // distinguishes an older last event from the no-event/all-year case.
+        delta = -3; while (!found && delta >= -402) { if (!work.spend(2)) { return core::result::Err(Error::WorkLimit); } let events: Annual = annual(tail,year+delta);
+            if (events.active) {
+                if (events.end <= seconds) { latest = events.end; daylight = false; found = true; }
+                if (events.start <= seconds && (!found || events.start >= latest)) { latest = events.start; daylight = true; found = true; }
+            } delta -= 1;
+        }
+        if (!found) { daylight = true; }
+    }
+    let selected: Name = tail.standard; let offset: i32 = tail.standard_offset; if (daylight) { selected = tail.daylight; offset = tail.daylight_offset; }
+    return core::result::Ok(Info { offset_seconds: offset, is_dst: daylight, abbreviation: section(input,selected.start,selected.length) });
+}
+fn lookup(zone: &Zone, seconds: i64, work: &Work) -> core::result::Result<Info,Error> {
+    if (zone.bytes.len() == 0) { return core::result::Err(Error::Destroyed); } let input: core::slice::View<u8> = zone.bytes.as_view(); let block: Block = zone.block;
+    if (!work.spend((block.chars_len as u64)*2+1)) { return core::result::Err(Error::WorkLimit); }
+    let selected: Info = type_info(input,block,0);
+    if (block.transitions == 0) { if (zone.tail.kind != 0) { let value: core::result::Result<Info,Error> = future_info(input,zone.tail,seconds,work); if (value.is_err()) { return value; } selected = value.unwrap(); } }
+    else { let last: i64 = signed(input,block.times+(block.transitions-1)*block.width,block.width);
+        if (seconds >= last) { if (zone.tail.kind == 0) { return core::result::Err(Error::Unspecified); } let value: core::result::Result<Info,Error> = future_info(input,zone.tail,seconds,work); if (value.is_err()) { return value; } selected = value.unwrap(); }
+        else { let low: i32 = 0; let high: i32 = block.transitions; while (low < high) { if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); } let middle: i32 = low+(high-low)/2; if (signed(input,block.times+middle*block.width,block.width) <= seconds) { low = middle+1; } else { high = middle; } } if (low > 0) { selected = type_info(input,block,byte(input,block.indices+low-1) as i32); } }
+    }
+    if (unspecified(selected)) { return core::result::Err(Error::Unspecified); } return core::result::Ok(selected);
+}
+pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Zone,Error> {
+    if (!valid_view(input) || limits.max_input < 0 || limits.max_transitions < 0 || limits.max_types < 1 || limits.max_designations < 1 || limits.max_footer < 0 || limits.max_candidates < 0) { return core::result::Err(Error::InvalidView); }
+    if (input.length > limits.max_input) { return core::result::Err(Error::InputLimit); } let work: Work = Work { left: limits.max_work }; if (!work.spend(input.length as u64)) { return core::result::Err(Error::WorkLimit); }
+    let checked_version: core::result::Result<i32,Error> = version(input,0); if (checked_version.is_err()) { return core::result::Err(checked_version.unwrap_err()); } let format: i32 = checked_version.unwrap();
+    let legacy: core::result::Result<Block,Error> = layout(input,0,4,limits,format == 1); if (legacy.is_err()) { return core::result::Err(legacy.unwrap_err()); } let block: Block = legacy.unwrap(); let tail: Tail = empty_tail(block.end,0);
+    if (format == 1) { if (block.end != input.length) { return core::result::Err(Error::Footer); } }
+    else { let second: core::result::Result<i32,Error> = version(input,block.end); if (second.is_err()) { return core::result::Err(second.unwrap_err()); } if (second.unwrap() != format) { return core::result::Err(Error::Version); }
+        let modern: core::result::Result<Block,Error> = layout(input,block.end,8,limits,true); if (modern.is_err()) { return core::result::Err(modern.unwrap_err()); } block = modern.unwrap();
+        if (input.length-block.end < 2 || byte(input,block.end) != 10 || byte(input,input.length-1) != 10) { return core::result::Err(Error::Footer); }
+        let parsed_tail: core::result::Result<Tail,Error> = footer(input,block.end+1,input.length-1,format,limits); if (parsed_tail.is_err()) { return core::result::Err(parsed_tail.unwrap_err()); } tail = parsed_tail.unwrap();
+    }
+    let valid: core::result::Result<bool,Error> = validate_block(input,block,work.borrow()); if (valid.is_err()) { return core::result::Err(valid.unwrap_err()); }
+    let cycle: core::result::Result<bool,Error> = validate_cycle(tail,work.borrow()); if (cycle.is_err()) { return core::result::Err(cycle.unwrap_err()); } if (tail.kind == 2 && !cycle.unwrap()) { tail.kind = 3; }
+    if (block.transitions > 0 && tail.kind != 0) {
+        if (!work.spend(block.chars_len as u64)) { return core::result::Err(Error::WorkLimit); }
+        let last: i64 = signed(input,block.times+(block.transitions-1)*block.width,block.width); let actual: Info = type_info(input,block,byte(input,block.indices+block.transitions-1) as i32);
+        let future: core::result::Result<Info,Error> = future_info(input,tail,last,work.borrow()); if (future.is_err()) { return core::result::Err(future.unwrap_err()); } let expected: Info = future.unwrap();
+        if (actual.offset_seconds != expected.offset_seconds || actual.is_dst != expected.is_dst || !same(actual.abbreviation,expected.abbreviation)) { return core::result::Err(Error::InconsistentFooter); }
+    }
+    let allocated: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::from_view(input); if (allocated.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(Zone { bytes: allocated.unwrap(), block: block, tail: tail, format: format, limits: limits });
+}
+
+fn name_unspecified(input: core::slice::View<u8>, selected: Name) -> bool { return selected.length == 3 && byte(input,selected.start) == 45 && byte(input,selected.start+1) == 48 && byte(input,selected.start+2) == 48; }
+fn type_unspecified(input: core::slice::View<u8>, block: Block, index: i32) -> bool { let name: i32 = block.chars+(byte(input,block.types+index*6+5) as i32); return block.chars+block.chars_len-name >= 4 && byte(input,name) == 45 && byte(input,name+1) == 48 && byte(input,name+2) == 48 && byte(input,name+3) == 0; }
+fn local_seconds(civil: core::calendar::LocalDateTime) -> core::result::Result<i64,Error> {
+    let valid: core::result::Result<core::calendar::LocalDateTime,core::calendar::Error> = core::calendar::local_date_time(civil.date,civil.time); if (valid.is_err()) { return core::result::Err(Error::InvalidLocal); }
+    if (civil.time.second == 60) { return core::result::Err(Error::LeapSecond); }
+    let at: core::result::Result<core::time::SystemTime,core::calendar::Error> = core::calendar::to_system_time(core::calendar::OffsetDateTime { local: civil, offset: core::calendar::utc() });
+    if (at.is_err()) { return core::result::Err(Error::InvalidLocal); } return core::result::Ok(at.unwrap().unix_seconds());
+}
+// No gap/fold claim is made if an unspecified UTC interval could map into the
+// requested local second under any representable TZif offset. i32::MIN is
+// forbidden, so the complete possible UTC window is naive +/- i32::MAX.
+fn known_window(zone: &Zone, naive: i64, work: &Work) -> core::result::Result<bool,Error> {
+    let low: i64 = naive-2147483647; let high: i64 = naive+2147483647; let block: Block = zone.block; let input: core::slice::View<u8> = zone.bytes.as_view();
+    if (block.transitions == 0) {
+        if (zone.tail.kind == 0 && type_unspecified(input,block,0)) { return core::result::Err(Error::Unspecified); }
+    } else {
+        let first: i64 = signed(input,block.times,block.width); let last: i64 = signed(input,block.times+(block.transitions-1)*block.width,block.width);
+        if (low < first && type_unspecified(input,block,0)) { return core::result::Err(Error::Unspecified); }
+        if (high >= last && zone.tail.kind == 0) { return core::result::Err(Error::Unspecified); }
+        let i: i32 = 0; while (i < block.transitions-1) { if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); }
+            let begin: i64 = signed(input,block.times+i*block.width,block.width); let end: i64 = signed(input,block.times+(i+1)*block.width,block.width);
+            if (begin <= high && end > low && type_unspecified(input,block,byte(input,block.indices+i) as i32)) { return core::result::Err(Error::Unspecified); } i += 1; }
+    }
+    if (zone.tail.kind != 0) {
+        let relevant: bool = block.transitions == 0; if (block.transitions > 0) { relevant = high >= signed(input,block.times+(block.transitions-1)*block.width,block.width); }
+        if (relevant && (((zone.tail.kind == 1 || zone.tail.kind == 2) && name_unspecified(input,zone.tail.standard)) || ((zone.tail.kind == 2 || zone.tail.kind == 3) && name_unspecified(input,zone.tail.daylight)))) { return core::result::Err(Error::Unspecified); }
+    } return core::result::Ok(true);
+}
+fn consider(zone: &Zone, naive: i64, nanos: u32, offset: i32, values: &alloc::vec::Vec<Candidate>, work: &Work) -> core::result::Result<bool,Error> {
+    if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); }
+    let seconds: i64 = naive-(offset as i64); let result: core::result::Result<Info,Error> = lookup(zone,seconds,work); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } let info: Info = result.unwrap();
+    if (info.offset_seconds != offset) { return core::result::Ok(false); }
+    let i: i32 = 0; while (i < values.len()) { if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); } if (values.at(i).instant.unix_seconds() == seconds) { return core::result::Ok(false); } i += 1; }
+    if (values.len() >= zone.limits.max_candidates) { return core::result::Err(Error::CandidateLimit); }
+    let added: core::result::Result<i32,alloc::vec::Error> = values.try_push(Candidate { instant: core::time::system_time(seconds,nanos).unwrap(), info: info }); if (added.is_err()) { return core::result::Err(Error::AllocationFailed); }
+    i = values.len()-1; while (i > 0 && values.at(i-1).instant.unix_seconds() > values.at(i).instant.unix_seconds()) { if (!work.spend(1)) { return core::result::Err(Error::WorkLimit); } let previous: Candidate = values.at(i-1); values.set(i-1,values.at(i)).unwrap(); values.set(i,previous).unwrap(); i -= 1; }
+    return core::result::Ok(true);
+}
+pub impl Zone {
+    pub fn borrow(&self) -> &Zone { return self; }
+    pub fn version(&self) -> i32 { return self.format; }
+    pub fn transition_count(&self) -> i32 { return self.block.transitions; }
+    pub fn type_count(&self) -> i32 { return self.block.type_count; }
+    pub fn footer(&self) -> core::slice::View<u8> { return section(self.bytes.as_view(),self.tail.start,self.tail.length); }
+    pub fn type_at(&self, index: i32) -> core::result::Result<Info,Error> {
+        if (self.bytes.len() == 0) { return core::result::Err(Error::Destroyed); } if (index < 0 || index >= self.block.type_count) { return core::result::Err(Error::TypeIndex); }
+        if ((self.block.chars_len as u64) > self.limits.max_work) { return core::result::Err(Error::WorkLimit); } return core::result::Ok(type_info(self.bytes.as_view(),self.block,index));
+    }
+    pub fn transition_at(&self, index: i32) -> core::result::Result<Transition,Error> {
+        if (self.bytes.len() == 0) { return core::result::Err(Error::Destroyed); } if (index < 0 || index >= self.block.transitions) { return core::result::Err(Error::TypeIndex); }
+        let input: core::slice::View<u8> = self.bytes.as_view(); let selected: core::result::Result<Info,Error> = self.type_at(byte(input,self.block.indices+index) as i32); if (selected.is_err()) { return core::result::Err(selected.unwrap_err()); }
+        return core::result::Ok(Transition { unix_seconds: signed(input,self.block.times+index*self.block.width,self.block.width), info: selected.unwrap() });
+    }
+    pub fn offset_at(&self, seconds: i64) -> core::result::Result<Info,Error> { let work: Work = Work { left: self.limits.max_work }; return lookup(self,seconds,work.borrow()); }
+    pub fn to_local(&self, instant: core::time::SystemTime) -> core::result::Result<Local,Error> {
+        if (instant.subsec_nanos() >= 1000000000) { return core::result::Err(Error::InvalidLocal); }
+        let result: core::result::Result<Info,Error> = self.offset_at(instant.unix_seconds()); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } let info: Info = result.unwrap();
+        let shifted: core::result::Result<i64,Error> = checked_add(instant.unix_seconds(),info.offset_seconds as i64); if (shifted.is_err()) { return core::result::Err(shifted.unwrap_err()); }
+        let date: core::result::Result<core::calendar::OffsetDateTime,core::calendar::Error> = core::calendar::from_system_time(core::time::system_time(shifted.unwrap(),instant.subsec_nanos()).unwrap(),core::calendar::utc()); if (date.is_err()) { return core::result::Err(Error::YearRange); }
+        return core::result::Ok(Local { instant: instant, civil: date.unwrap().local, info: info });
+    }
+    pub fn candidates(&self, civil: core::calendar::LocalDateTime) -> core::result::Result<alloc::vec::Vec<Candidate>,Error> {
+        if (self.bytes.len() == 0) { return core::result::Err(Error::Destroyed); }
+        let converted: core::result::Result<i64,Error> = local_seconds(civil); if (converted.is_err()) { return core::result::Err(converted.unwrap_err()); } let naive: i64 = converted.unwrap();
+        let work: Work = Work { left: self.limits.max_work }; let known: core::result::Result<bool,Error> = known_window(self,naive,work.borrow()); if (known.is_err()) { return core::result::Err(known.unwrap_err()); }
+        let capacity: i32 = self.block.type_count+2; if (capacity > self.limits.max_candidates) { capacity = self.limits.max_candidates; }
+        let allocated: core::result::Result<alloc::vec::Vec<Candidate>,alloc::vec::Error> = alloc::vec::with_capacity<Candidate>(capacity); if (allocated.is_err()) { return core::result::Err(Error::AllocationFailed); } let values: alloc::vec::Vec<Candidate> = allocated.unwrap();
+        let input: core::slice::View<u8> = self.bytes.as_view(); let i: i32 = 0;
+        while (i < self.block.type_count) { let offset: i32 = signed(input,self.block.types+i*6,4) as i32; let attempted: core::result::Result<bool,Error> = consider(self,naive,civil.time.nanos,offset,values.borrow(),work.borrow()); if (attempted.is_err()) { values.destroy(); return core::result::Err(attempted.unwrap_err()); } i += 1; }
+        if (self.tail.kind == 1 || self.tail.kind == 2) { let attempted: core::result::Result<bool,Error> = consider(self,naive,civil.time.nanos,self.tail.standard_offset,values.borrow(),work.borrow()); if (attempted.is_err()) { values.destroy(); return core::result::Err(attempted.unwrap_err()); } }
+        if (self.tail.kind == 2 || self.tail.kind == 3) { let attempted: core::result::Result<bool,Error> = consider(self,naive,civil.time.nanos,self.tail.daylight_offset,values.borrow(),work.borrow()); if (attempted.is_err()) { values.destroy(); return core::result::Err(attempted.unwrap_err()); } }
+        return core::result::Ok(values);
+    }
+    pub fn resolve(&self, civil: core::calendar::LocalDateTime, policy: Resolution) -> core::result::Result<Candidate,Error> {
+        let result: core::result::Result<alloc::vec::Vec<Candidate>,Error> = self.candidates(civil); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } let values: alloc::vec::Vec<Candidate> = result.unwrap(); let n: i32 = values.len();
+        if (n == 0) { values.destroy(); return core::result::Err(Error::Gap); }
+        let reject: bool = match (policy) { Resolution::Reject -> true, _ -> false }; if (n > 1 && reject) { values.destroy(); return core::result::Err(Error::Ambiguous); }
+        let index: i32 = 0; let latest: bool = match (policy) { Resolution::Latest -> true, _ -> false }; if (latest) { index = n-1; } let value: Candidate = values.at(index); values.destroy(); return core::result::Ok(value);
+    }
+    pub fn destroy(&self) { self.bytes.destroy(); self.block.transitions = 0; self.block.type_count = 0; self.tail = empty_tail(0,0); self.format = 0; }
+}

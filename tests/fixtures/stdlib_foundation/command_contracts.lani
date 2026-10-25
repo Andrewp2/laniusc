@@ -1,0 +1,22 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::command;
+fn literal(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length); return core::slice::view(raw,length).unwrap(); }
+fn request(program: core::slice::View<u8>, args: core::slice::View<core::slice::View<u8>>) -> std::command::Request { let empty = core::slice::view(args.values,0).unwrap(); return std::command::Request { program: program, arguments: args, environment: empty, cwd: core::option::None(), search: std::command::Search::Exact, sigpipe: std::command::ChildSigpipe::Default, stdin: std::command::Stdio::Null, stdout: std::command::Stdio::Null, stderr: std::command::Stdio::Null, limits: std::command::default_limits() }; }
+fn check_child(child: std::command::Child) -> i32 {
+    let waited = child.wait(); if (waited.is_err()) { child.cancel_and_wait(); return 2; } let status = waited.unwrap(); if (core::option::unwrap_or(status.code,-1) != 23 || core::option::is_some(child.id())) { return 3; } if (core::option::unwrap_or(child.wait().unwrap().code,-1) != 23) { return 4; } if (child.signal(9).is_ok()) { return 5; } child.close_pipes(); return 0;
+}
+fn check_unknown(value: std::command::UnknownStart) -> i32 { value.child.cancel_and_wait(); return 6; }
+fn unexpected_child(value: std::command::Child) -> i32 { value.cancel_and_wait(); return 10; }
+fn check_failed(value: std::command::FailedStart) -> i32 { if (value.failure.errno != 2 || core::option::unwrap_or(value.status.code,-1) != 127) { return 9; } return 0; }
+fn main() -> i32 {
+    let args: [core::slice::View<u8>;3] = [literal("/bin/sh",7),literal("-c",2),literal("exit 23",7)]; let values = core::slice::view(args,3).unwrap(); let spec: std::command::Request = request(args[0],values);
+    let launched = std::command::spawn(spec); if (launched.is_err()) { return 1; }
+    let result: i32 = match(launched.unwrap()) { std::command::Spawn::Child(child) -> check_child(child), std::command::Spawn::Unknown(value) -> check_unknown(value), _ -> 7 }; if (result != 0) { return result; }
+    spec.program = literal("/no/such/command",16); let failed = std::command::spawn(spec); if (failed.is_err()) { return 8; }
+    let result: i32 = match(failed.unwrap()) { std::command::Spawn::Failed(value) -> check_failed(value), std::command::Spawn::Child(child) -> unexpected_child(child), std::command::Spawn::Unknown(value) -> check_unknown(value) }; if (result != 0) { return result; }
+    return 0;
+}

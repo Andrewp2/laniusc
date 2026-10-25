@@ -1,0 +1,24 @@
+module app::main;
+import core::calendar;
+import core::result;
+import core::slice;
+import core::time;
+import ext::timezone;
+fn main() -> i32 {
+    let raw: [u8;54] = [0;54]; raw[0] = 84; raw[1] = 90; raw[2] = 105; raw[3] = 102; raw[39] = 1; raw[43] = 4; raw[50] = 85; raw[51] = 84; raw[52] = 67;
+    let input: core::slice::View<u8> = core::slice::view(raw,54).unwrap();
+    let zone: ext::timezone::Zone = ext::timezone::parse(input,ext::timezone::default_limits()).unwrap();
+    assert(zone.version() == 1 && zone.transition_count() == 0 && zone.type_count() == 1);
+    let info: ext::timezone::Info = zone.offset_at(0).unwrap(); assert(info.offset_seconds == 0 && !info.is_dst && info.abbreviation.length == 3);
+    let local: ext::timezone::Local = zone.to_local(core::time::system_time(0,123).unwrap()).unwrap(); assert(local.civil.date.year == 1970 && local.civil.time.nanos == 123);
+    let candidates = zone.candidates(local.civil).unwrap(); assert(candidates.len() == 1 && candidates.at(0).instant.unix_seconds() == 0 && candidates.at(0).instant.subsec_nanos() == 123); candidates.destroy();
+    let chosen: ext::timezone::Candidate = zone.resolve(local.civil,ext::timezone::Resolution::Reject).unwrap(); assert(chosen.instant.unix_seconds() == 0);
+    raw[50] = 88; assert(info.abbreviation.values[info.abbreviation.start] == 85);
+    assert(zone.type_at(-1).is_err()); assert(zone.transition_at(0).is_err()); zone.destroy(); zone.destroy(); assert(zone.offset_at(0).is_err());
+    assert(zone.footer().length == 0 && zone.type_count() == 0 && zone.version() == 0);
+    input.start = 2147483640; assert(ext::timezone::parse(input,ext::timezone::default_limits()).is_err()); input.start = 0;
+    input.length = -1; assert(ext::timezone::parse(input,ext::timezone::default_limits()).is_err()); input.length = 54;
+    let limits: ext::timezone::Limits = ext::timezone::default_limits(); limits.max_input = -1; assert(ext::timezone::parse(input,limits).is_err());
+    input.start = -1; assert(ext::timezone::parse(input,ext::timezone::default_limits()).is_err());
+    return 0;
+}

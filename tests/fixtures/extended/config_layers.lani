@@ -1,0 +1,37 @@
+module app::main;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::config;
+import ext::json;
+import std::args;
+import std::io;
+import std::io_decimal;
+import core::path;
+fn number(value: i32) { assert(std::io_decimal::write_i32(1, value) > 0 && std::io::write_byte(1, 32) == 1); }
+fn text(value: core::text::Text) { number(value.byte_len()); let index: i32 = 0; while (index < value.byte_len()) { number(core::option::unwrap(value.byte_at(index)) as i32); index += 1; } }
+fn render(value: ext::config::Value) {
+    let kind: i32 = match (value.kind()) { ext::json::Kind::Null -> 0, ext::json::Kind::Boolean -> 1, ext::json::Kind::Number -> 2, ext::json::Kind::Text -> 3, ext::json::Kind::Array -> 4, ext::json::Kind::Object -> 5 };
+    number(kind); number(value.source_index());
+    if (kind == 1) { let bit: i32 = 0; if (core::result::unwrap(value.boolean())) { bit = 1; } number(bit); }
+    if (kind == 2) { text(core::result::unwrap(value.number_text())); } if (kind == 3) { text(core::result::unwrap(value.text())); }
+    if (kind >= 4) {
+        number(core::result::unwrap(value.len())); let children: ext::config::Children = core::result::unwrap(value.children());
+        while (true) { let next: core::option::Option<ext::config::Value> = children.next(); if (core::option::is_none(next)) { break; } let child: ext::config::Value = core::option::unwrap(next); if (kind == 5) { text(core::result::unwrap(child.key())); } render(child); }
+        assert(core::option::is_none(children.next()));
+    }
+}
+fn main() -> i32 {
+    let arguments: std::args::Arguments = core::result::unwrap(std::args::snapshot(1, 16, 65536)); assert(arguments.len() >= 1);
+    let sources: alloc::vec::Vec<ext::config::Config> = alloc::vec::new(); let index: i32 = 0;
+    while (index < arguments.len() - 1) {
+        let path: core::path::Path = core::result::unwrap(core::path::from_view(core::option::unwrap(arguments.get(index))));
+        let source: ext::config::Config = core::result::unwrap(ext::config::load(path, 1048576, ext::json::default_options())); core::result::unwrap(sources.try_push(source)); index += 1;
+    }
+    let query: core::slice::View<u8> = core::option::unwrap(arguments.get(index)); let key: core::text::Text = core::result::unwrap(core::text::from_utf8_range(query.values, query.start, query.len()));
+    let layers: ext::config::Layers = ext::config::layers(sources.as_view()); let found: core::option::Option<ext::config::Value> = layers.get(key);
+    if (core::option::is_none(found)) { number(-1); } else { render(core::option::unwrap(found)); } assert(std::io::write_byte(1, 10) == 1);
+    while (!sources.is_empty()) { let source: ext::config::Config = core::option::unwrap(sources.pop()); source.destroy(); } sources.destroy(); arguments.destroy(); return 0;
+}

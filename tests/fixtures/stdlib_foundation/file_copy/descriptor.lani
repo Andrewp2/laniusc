@@ -1,0 +1,104 @@
+// Driver interface: descriptor MODE LIMIT CAPACITY, all bounded decimal args.
+// Inherit source as fd 0 and destination as fd 1. Never open, close, seek or
+// edit flags outside copy_regular. One stderr record: CODE READ WRITTEN\n.
+// CODE: 0 success, 1 InvalidInput, 2 LimitExceeded, 3 Interrupted, 4 WouldBlock,
+// 5 InvalidCount, 6 WriteZero, 100+errno Host(errno), 90 any other error.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_copy;
+import std::process;
+import std::stream;
+
+fn argument(index: i32) -> u64 {
+    let count: i32 = std::process::arg_len(index);
+    assert(count > 0 && count <= 20);
+    let storage: [i32; 5] = [0; 5];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 20);
+    assert(std::process::arg_read(index, pointer, count as usize) == count);
+    return core::result::unwrap(core::decimal::parse_u64_range(bytes, 0, count));
+}
+
+fn code(error: core::io::Error) -> i32 {
+    return match (error) {
+        core::io::Error::InvalidInput -> 1,
+        core::io::Error::LimitExceeded -> 2,
+        core::io::Error::Interrupted -> 3,
+        core::io::Error::WouldBlock -> 4,
+        core::io::Error::InvalidCount -> 5,
+        core::io::Error::WriteZero -> 6,
+        core::io::Error::Host(value) -> 100 + value,
+        _ -> 90,
+    };
+}
+
+fn report(status: i32, read: u64, written: u64) -> i32 {
+    let output: [u8; 64] = [0; 64];
+    let used: i32 = core::result::unwrap(core::decimal::format_i32(output, 0, 64, status));
+    output[used] = 32; used += 1;
+    used += core::result::unwrap(core::decimal::format_u64(output, used, 64 - used, read));
+    output[used] = 32; used += 1;
+    used += core::result::unwrap(core::decimal::format_u64(output, used, 64 - used, written));
+    output[used] = 10; used += 1;
+    let stderr: std::stream::Descriptor = std::stream::stderr();
+    let sent: core::result::Result<i32, core::io::Error> = stderr.write(output, 0, used);
+    if (core::result::is_err(sent)) { return 20; }
+    if (core::result::unwrap(sent) != used) { return 21; }
+    return 0;
+}
+
+fn run(bytes: [u8], mode: i32, limit: u64, capacity: i32) -> i32 {
+    let index: i32 = 0;
+    while (index < 4100) { bytes[index] = 165; index += 1; }
+    let source: std::file::File = core::result::unwrap(std::file::from_owned_handle(0));
+    let destination: std::file::File = core::result::unwrap(std::file::from_owned_handle(1));
+    let scratch: core::slice::View<u8> = core::slice::View { values: bytes, start: 2, length: capacity };
+    if (mode == 2 || mode == 8) { scratch.length = 0; }
+    if (mode == 3) { scratch.start = -1; }
+    if (mode == 4) { scratch.length = -1; }
+    if (mode == 5) { scratch.start = 2147483647; scratch.length = 1; }
+    if (mode == 6 || mode == 8) { assert(core::option::unwrap(source.take_handle()) == 0); }
+    if (mode == 7) { assert(core::option::unwrap(destination.take_handle()) == 1); }
+    let copied: core::result::Result<u64, core::io::CopyFailure> =
+        std::file_copy::copy_regular(source.borrow(), destination.borrow(), scratch, limit);
+
+    // Return ownership without a close syscall. Inactive modes already did so.
+    let source_handle: core::option::Option<i32> = source.take_handle();
+    let destination_handle: core::option::Option<i32> = destination.take_handle();
+    if (mode == 6 || mode == 8) { assert(core::option::is_none(source_handle)); }
+    else { assert(core::option::unwrap(source_handle) == 0); }
+    if (mode == 7) { assert(core::option::is_none(destination_handle)); }
+    else { assert(core::option::unwrap(destination_handle) == 1); }
+    index = 0;
+    while (index < 4100) {
+        if (mode >= 2 || index < 2 || index >= 2 + capacity) { assert(bytes[index] == 165); }
+        index += 1;
+    }
+    if (core::result::is_ok(copied)) {
+        let count: u64 = core::result::unwrap(copied);
+        return report(0, count, count);
+    }
+    let failure: core::io::CopyFailure = core::result::unwrap_err(copied);
+    return report(code(failure.cause), failure.read, failure.written);
+}
+
+fn main() -> i32 {
+    assert(std::process::argc() == 4);
+    let mode: u64 = argument(1);
+    let limit: u64 = argument(2);
+    let capacity: u64 = argument(3);
+    assert(mode <= 8 && capacity > 0 && capacity <= 4096);
+    if (mode == 1) {
+        let storage: [i32; 1025] = [0; 1025];
+        let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage), 4100);
+        return run(bytes, mode as i32, limit, capacity as i32);
+    }
+    let storage: [u8; 4100] = [0; 4100];
+    return run(storage, mode as i32, limit, capacity as i32);
+}

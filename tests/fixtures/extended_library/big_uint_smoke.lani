@@ -1,0 +1,13 @@
+module app::main;
+import core::result;
+import ext::big_uint;
+fn main() -> i32 {
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    let a: ext::big_uint::BigUint = ext::big_uint::from_u64(18446744073709551615,limits).unwrap();
+    let b: ext::big_uint::BigUint = ext::big_uint::from_u64(4294967297,limits).unwrap();
+    let sum: ext::big_uint::BigUint = a.add(b.borrow(),limits).unwrap();
+    let product: ext::big_uint::BigUint = sum.mul(a.borrow(),limits).unwrap();
+    let pair: ext::big_uint::DivRem = product.div_rem(sum.borrow(),limits).unwrap();
+    assert(pair.quotient.compare(a.borrow()) == 0 && pair.remainder.is_zero());
+    pair.destroy(); product.destroy(); sum.destroy(); a.destroy(); b.destroy(); return 0;
+}

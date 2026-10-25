@@ -1,0 +1,225 @@
+module app::main;
+import core::iter;
+import core::vec;
+import core::set;
+import core::option;
+import core::result;
+import core::slice;
+import core::cmp;
+import core::mem;
+import alloc::vec;
+struct P {
+    x: i64,
+    tag: i32
+}
+struct Z {
+}
+pub impl core::cmp::Ord<P>for P {
+    pub fn lt(left: P, right: P) -> bool {
+        return left.x<right.x;
+    }
+    pub fn le(left: P, right: P) -> bool {
+        return left.x <= right.x;
+    }
+    pub fn gt(left: P, right: P) -> bool {
+        return left.x>right.x;
+    }
+    pub fn ge(left: P, right: P) -> bool {
+        return left.x >= right.x;
+    }
+}
+struct Borrowed {
+    values:[i64],
+    tag: i32
+}
+struct Owned {
+    key: i32,
+    owner: alloc::vec::Vec<i32>
+}
+pub impl core::cmp::Eq<Owned>for Owned {
+    pub fn eq(left: Owned, right: Owned) -> bool {
+        return left.key == right.key;
+    }
+    pub fn ne(left: Owned, right: Owned) -> bool {
+        return left.key != right.key;
+    }
+}
+fn main() -> i32 {
+    let a: core::vec::Vec<i8,
+    2> = core::vec::from_array([-128, 127]);
+    if (core::option::unwrap(core::vec::pop(a.borrow())) != 127 || core::result::unwrap(core::vec::try_set(a.borrow(), 0, -1 as i8)) != -128 || core::option::unwrap(core::vec::pop(a.borrow())) != -1) {
+        return 1;
+    }
+    let b: core::vec::Vec<u16,
+    2> = core::vec::from_array([65535, 32768]);
+    core::vec::sort(b.borrow());
+    if (core::option::unwrap(core::vec::first(b.borrow())) != 32768 || core::option::unwrap(core::vec::last(b.borrow())) != 65535) {
+        return 2;
+    }
+    let c: core::vec::Vec<i64,
+    2> = core::vec::from_array([-9223372036854775808, 9223372036854775807]);
+    if (core::result::unwrap(core::vec::try_remove(c.borrow(), 0)) != -9223372036854775808 || core::option::unwrap(core::vec::pop(c.borrow())) != 9223372036854775807) {
+        return 3;
+    }
+    let d: core::vec::Vec<u64,
+    2> = core::vec::from_array([18446744073709551615, 4294967297]);
+    core::vec::sort(d.borrow());
+    if (core::option::unwrap(core::vec::first(d.borrow())) != 4294967297 || core::option::unwrap(core::vec::last(d.borrow())) != 18446744073709551615) {
+        return 4;
+    }
+    let e: core::vec::Vec<f32,
+    2> = core::vec::from_storage([0.0, 0.0]);
+    core::result::unwrap(core::vec::try_push(e.borrow(), -3.5));
+    let f: core::vec::Vec<f64,
+    2> = core::vec::from_storage([0.0, 0.0]);
+    core::result::unwrap(core::vec::try_push(f.borrow(), 1.25));
+    if (core::option::unwrap(core::vec::pop(e.borrow())) != -3.5 || core::option::unwrap(core::vec::pop(f.borrow())) != 1.25) {
+        return 5;
+    }
+    let absent: core::option::Option<core::result::Result<P,
+    i64 >> = core::option::None();
+    let nested: core::vec::Vec<core::option::Option<core::result::Result<P,
+    i64 >>,
+    2> = core::vec::from_storage([absent, absent]);
+    core::result::unwrap(core::vec::try_push(nested.borrow(), core::option::Some(core::result::Ok(P {
+        x: 4294967297, tag: 17
+    }
+    ))));
+    core::result::unwrap(core::vec::try_push(nested.borrow(), core::option::Some(core::result::Err(-4294967297))));
+    let error: i64 = core::result::unwrap_err(core::option::unwrap(core::option::unwrap(core::vec::pop(nested.borrow()))));
+    let found: P = core::result::unwrap(core::option::unwrap(core::option::unwrap(core::vec::pop(nested.borrow()))));
+    if (error != -4294967297 || found.x != 4294967297 || found.tag != 17) {
+        return 6;
+    }
+    let p: P = P {
+        x: 0,
+        tag: 0
+    };
+    let sorted: core::vec::Vec<P,
+    4> = core::vec::from_array([P {
+        x: 2, tag: 1
+    }, P {
+        x: 1, tag: 2
+    }, P {
+        x: 2, tag: 3
+    }, P {
+        x: 1, tag: 4
+    }
+    ]);
+    core::vec::sort(sorted.borrow());
+    if (core::vec::get_or(sorted.borrow(), 0, p).tag != 2 || core::vec::get_or(sorted.borrow(), 1, p).tag != 4 || core::vec::get_or(sorted.borrow(), 2, p).tag != 1 || core::vec::get_or(sorted.borrow(), 3, p).tag != 3) {
+        return 7;
+    }
+    let view: core::slice::View<P> = core::vec::as_view(sorted.borrow());
+    let iter: core::slice::Iter<P> = core::vec::iter(sorted.borrow());
+    if (core::option::unwrap(view.get(3)).tag != 3 || core::option::unwrap(iter.next()).tag != 2 || core::option::unwrap(iter.next_back()).tag != 3) {
+        return 8;
+    }
+    let z: Z = Z {
+    };
+    let zero_sized: core::vec::Vec<Z,
+    2> = core::vec::from_storage([z, z]);
+    core::result::unwrap(core::vec::try_push(zero_sized.borrow(), z));
+    core::result::unwrap(core::vec::try_push(zero_sized.borrow(), z));
+    if (core::vec::len(zero_sized.borrow()) != 2 || core::option::is_none(core::vec::pop(zero_sized.borrow())) || core::vec::len(zero_sized.borrow()) != 1) {
+        return 9;
+    }
+    // Only live prefixes carry ownership. Filler and removed tail bits never do.
+    let filler: alloc::vec::Vec<i32> = alloc::vec::new();
+    let owners: core::vec::Vec<alloc::vec::Vec<i32>,
+    1> = core::vec::from_storage([filler]);
+    let original: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(original.try_push(17));
+    core::result::unwrap(core::vec::try_push(owners.borrow(), original));
+    let replacement: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(replacement.try_push(23));
+    let displaced: alloc::vec::Vec<i32> = core::result::unwrap(core::vec::try_set(owners.borrow(), 0, replacement));
+    if (displaced.get_or(0, 0) != 17) {
+        return 10;
+    }
+    displaced.destroy();
+    let rejected: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(rejected.try_push(31));
+    if (!core::result::is_err(core::vec::try_push(owners.borrow(), rejected)) || rejected.get_or(0, 0) != 31) {
+        return 11;
+    }
+    rejected.destroy();
+    let taken: alloc::vec::Vec<i32> = core::option::unwrap(core::vec::pop(owners.borrow()));
+    if (taken.get_or(0, 0) != 23 || !core::vec::is_empty(owners.borrow())) {
+        return 12;
+    }
+    taken.destroy();
+    filler.destroy();
+    let empty_owner: alloc::vec::Vec<i32> = alloc::vec::new();
+    let empty_record: Owned = Owned {
+        key: 0,
+        owner: empty_owner
+    };
+    let owned_set: core::set::Set<Owned,
+    1> = core::set::from_storage([empty_record]);
+    let first_owner: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(first_owner.try_push(41));
+    if (!core::result::unwrap(core::set::try_insert(owned_set.borrow(), Owned {
+        key: 1, owner: first_owner
+    }
+    ))) {
+        return 13;
+    }
+    let duplicate_owner: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(duplicate_owner.try_push(42));
+    if (core::result::unwrap(core::set::try_insert(owned_set.borrow(), Owned {
+        key: 1, owner: duplicate_owner
+    }
+    )) || duplicate_owner.get_or(0, 0) != 42) {
+        return 14;
+    }
+    duplicate_owner.destroy();
+    let full_owner: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(full_owner.try_push(43));
+    if (!core::result::is_err(core::set::try_insert(owned_set.borrow(), Owned {
+        key: 2, owner: full_owner
+    }
+    )) || full_owner.get_or(0, 0) != 43) {
+        return 15;
+    }
+    full_owner.destroy();
+    let stored: Owned = core::option::unwrap(core::set::remove(owned_set.borrow(), Owned {
+        key: 1, owner: empty_owner
+    }
+    ));
+    if (stored.owner.get_or(0, 0) != 41 || !core::set::is_empty(owned_set.borrow())) {
+        return 16;
+    }
+    stored.owner.destroy();
+    empty_owner.destroy();
+    let backing:[i64; 2] =[4294967297, -4294967297];
+    let slice:[i64] = backing;
+    let slices: core::vec::Vec<[i64],
+    2> = core::vec::from_storage([slice, slice]);
+    core::result::unwrap(core::vec::try_push(slices.borrow(), slice));
+    if (!core::result::is_err(core::vec::try_set(slices.borrow(), 2, slice))) {
+        return 17;
+    }
+    let sliced:[i64] = core::option::unwrap(core::vec::get(slices.borrow(), 0));
+    if (sliced[0] != 4294967297 || sliced[1] != -4294967297 || core::mem::slice_stride(sliced) != core::mem::slice_stride(slice)) {
+        return 18;
+    }
+    sliced[1] = 8589934593;
+    let popped_slice:[i64] = core::option::unwrap(core::vec::pop(slices.borrow()));
+    if (popped_slice[1] != 8589934593 || backing[1] != 8589934593) {
+        return 19;
+    }
+    let borrowed: Borrowed = Borrowed {
+        values: slice,
+        tag: 51
+    };
+    let borrowed_records: core::vec::Vec<Borrowed,
+    1> = core::vec::from_storage([borrowed]);
+    core::result::unwrap(core::vec::try_push(borrowed_records.borrow(), borrowed));
+    let taken_record: Borrowed = core::option::unwrap(core::vec::pop(borrowed_records.borrow()));
+    taken_record.values[0] = 17;
+    if (taken_record.tag != 51 || backing[0] != 17) {
+        return 20;
+    }
+    return 0;
+}

@@ -1,0 +1,131 @@
+// Unicode 17.0.0 default word boundaries (UAX #29 revision 47).
+// Every segment is returned, including punctuation and whitespace.
+module ext::unicode_words;
+import core::option;
+import core::result;
+import core::text;
+import core::utf8;
+import ext::unicode_words_data;
+
+pub enum Error { Bounds }
+pub struct Segment { start: i32, end: i32, text: core::text::Text }
+// Implementation state. Use cursor(); do not forge or change fields.
+// Copying a cursor forks its current position and all retained context.
+pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, ri_odd: bool }
+
+// Requires valid UTF-8 and live physical backing, established by
+// core::text::from_utf8[_range]. Only logical integer bounds are checked.
+pub fn cursor(text: core::text::Text) -> core::result::Result<Cursor, Error> {
+    if (text.start < 0 || text.length < 0 || text.length > 2147483647 - text.start) {
+        return core::result::Err(Error::Bounds);
+    }
+    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, ri_odd: false });
+}
+
+// Low five bits are Word_Break; bit 5 is Extended_Pictographic.
+// Other=0 CR=1 LF=2 Newline=3 Extend=4 ZWJ=5 RI=6 Format=7
+// Katakana=8 Hebrew_Letter=9 ALetter=10 Single_Quote=11 Double_Quote=12
+// MidNumLet=13 MidLetter=14 MidNum=15 Numeric=16 ExtendNumLet=17 WSegSpace=18.
+fn ignored(value: u32) -> bool { return value == 4 || value == 5 || value == 7; }
+fn newline(value: u32) -> bool { return value >= 1 && value <= 3; }
+fn letter(value: u32) -> bool { return value == 9 || value == 10; }
+fn letter_mid(value: u32) -> bool { return value == 11 || value == 13 || value == 14; }
+fn number_mid(value: u32) -> bool { return value == 11 || value == 13 || value == 15; }
+fn extender_base(value: u32) -> bool { return letter(value) || value == 8 || value == 16 || value == 17; }
+
+pub impl Cursor {
+    // Used only immediately after a punctuation candidate. Ignored runs can
+    // be visited once here and once during consumption, never once per mark.
+    fn following(&self, width: i32) -> u32 {
+        let at: i32 = self.position + width;
+        while (at < self.text.length) {
+            let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(at));
+            let value: u32 = ext::unicode_words_data::flags(scalar) & 31;
+            if (!ignored(value)) { return value; }
+            at += core::utf8::encoded_len_or(scalar, 0) as i32;
+        }
+        return 0;
+    }
+
+    fn breaks_before(&self, flags: u32, width: i32) -> bool {
+        let current: u32 = flags & 31;
+        if (self.raw == 1 && current == 2) { return false; } // WB3
+        if (newline(self.raw) || newline(current)) { return true; } // WB3a/b
+        if (self.raw == 5 && (flags & 32) != 0) { return false; } // WB3c
+        if (self.raw == 18 && current == 18) { return false; } // WB3d
+        if (ignored(current)) { return false; } // WB4
+        // WB4 replaces ignored properties only in rules following it. The
+        // raw-neighbor rules above must not see the reduced property stream.
+        if (letter(self.previous) && letter(current)) { return false; } // WB5
+        if (letter(self.previous) && letter_mid(current) && letter(self.following(width))) { return false; } // WB6
+        if (letter(self.before) && letter_mid(self.previous) && letter(current)) { return false; } // WB7
+        if (self.previous == 9 && current == 11) { return false; } // WB7a
+        if (self.previous == 9 && current == 12 && self.following(width) == 9) { return false; } // WB7b
+        if (self.before == 9 && self.previous == 12 && current == 9) { return false; } // WB7c
+        if (self.previous == 16 && current == 16) { return false; } // WB8
+        if (letter(self.previous) && current == 16) { return false; } // WB9
+        if (self.previous == 16 && letter(current)) { return false; } // WB10
+        if (self.before == 16 && number_mid(self.previous) && current == 16) { return false; } // WB11
+        if (self.previous == 16 && number_mid(current) && self.following(width) == 16) { return false; } // WB12
+        if (self.previous == 8 && current == 8) { return false; } // WB13
+        if (extender_base(self.previous) && current == 17) { return false; } // WB13a
+        if (self.previous == 17 && (letter(current) || current == 8 || current == 16)) { return false; } // WB13b
+        if (self.previous == 6 && current == 6 && self.ri_odd) { return false; } // WB15/16
+        return true; // WB999
+    }
+
+    fn consume(&self, flags: u32, width: i32) {
+        let current: u32 = flags & 31;
+        if (!ignored(current)) {
+            self.before = self.previous;
+            self.previous = current;
+            if (current == 6) { self.ri_odd = !self.ri_odd; }
+            else { self.ri_odd = false; }
+        }
+        self.raw = current;
+        self.position += width;
+    }
+
+    // Contiguous nonempty spans, in input-relative byte offsets. Returned
+    // Text views borrow the input owner. Exhaustion is permanent. A full scan
+    // examines each scalar at most three times: at most twice here (retry at
+    // a boundary) and once in punctuation lookahead. No prefix is rescanned.
+    pub fn next(&self) -> core::option::Option<Segment> {
+        if (self.position == self.text.length) { return core::option::None(); }
+        let start: i32 = self.position;
+        let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(self.position));
+        self.consume(ext::unicode_words_data::flags(scalar), core::utf8::encoded_len_or(scalar, 0) as i32);
+        while (self.position < self.text.length) {
+            let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(self.position));
+            let flags: u32 = ext::unicode_words_data::flags(scalar);
+            let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+            if (self.breaks_before(flags, width)) { break; }
+            self.consume(flags, width);
+        }
+        let part: core::text::Text = core::text::from_utf8_unchecked(self.text.bytes, self.text.start + start, self.position - start);
+        return core::option::Some(Segment { start: start, end: self.position, text: part });
+    }
+}
+
+pub fn count(text: core::text::Text) -> core::result::Result<i32, Error> {
+    let checked: core::result::Result<Cursor, Error> = cursor(text);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let scan: Cursor = core::result::unwrap(checked);
+    let total: i32 = 0;
+    while (core::option::is_some(scan.next())) { total += 1; }
+    return core::result::Ok(total);
+}
+
+// Scans from input start to retain all prefix context. Interior UTF-8 bytes
+// return false; positions outside 0..=byte_len return Error::Bounds.
+pub fn is_boundary(text: core::text::Text, index: i32) -> core::result::Result<bool, Error> {
+    let checked: core::result::Result<Cursor, Error> = cursor(text);
+    if (core::result::is_err(checked) || index < 0 || index > text.length) { return core::result::Err(Error::Bounds); }
+    if (index == 0 || index == text.length) { return core::result::Ok(true); }
+    let scan: Cursor = core::result::unwrap(checked);
+    while (true) {
+        let segment: Segment = core::option::unwrap(scan.next());
+        if (segment.end >= index) { return core::result::Ok(segment.end == index); }
+    }
+    return core::result::Ok(false);
+}

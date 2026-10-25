@@ -1,0 +1,15 @@
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::result;
+fn main() -> i32 {
+    let source: alloc::vec::Vec<alloc::string::String> = alloc::vec::new<alloc::string::String>();
+    let owner: alloc::vec::IntoIter<alloc::string::String> = source.take_iter();
+    let sink: alloc::vec::Vec<i32> = alloc::vec::new<i32>();
+    let rejected: core::result::Result<core::iter::Transfer, core::iter::TransferError<i32, alloc::vec::Error>> = core::iter::try_transfer_up_to<alloc::vec::IntoIter<alloc::string::String>, alloc::vec::Vec<i32>, i32, alloc::vec::Error>(owner.borrow(), sink.borrow(), 1);
+    return 0;
+}

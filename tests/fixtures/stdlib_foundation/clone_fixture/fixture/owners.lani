@@ -1,0 +1,44 @@
+module fixture::owners;
+import alloc::string;
+import core::clone;
+import core::mem;
+import core::result;
+
+pub enum Fault { Allocation(i32,i32,alloc::string::Error), Message(i32,i32,alloc::string::String), MessageAllocation(i32,i32,alloc::string::Error) }
+pub struct Pair { left: alloc::string::String, right: alloc::string::String, tag: i32, fail: i32 }
+pub fn text(value: str, count: i32) -> core::result::Result<alloc::string::String,alloc::string::Error> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return alloc::string::from_utf8(raw,count);
+}
+pub fn pair() -> core::result::Result<Pair,Fault> {
+    let a = text("left",4); if (a.is_err()) { return core::result::Err(Fault::Allocation(100,1,a.unwrap_err())); }
+    let left: alloc::string::String = a.unwrap();
+    let b = text("R\0é",4); if (b.is_err()) { left.destroy(); return core::result::Err(Fault::Allocation(100,2,b.unwrap_err())); }
+    return core::result::Ok(Pair { left:left,right:b.unwrap(),tag:100,fail:-1 });
+}
+fn failure(tag: i32, stage: i32) -> Fault {
+    let made = text("clone\0error",11);
+    if (made.is_err()) { return Fault::MessageAllocation(tag,stage,made.unwrap_err()); }
+    return Fault::Message(tag,stage,made.unwrap());
+}
+pub fn valid(source: Pair) -> bool {
+    if (source.left.byte_len() != 4 || source.right.byte_len() != 4) { return false; }
+    let a: [u8;4] = [108,101,102,116]; let b: [u8;4] = [82,0,195,169]; let i: i32 = 0;
+    while (i < 4) { if (source.left.byte_at(i).unwrap() != a[i] || source.right.byte_at(i).unwrap() != b[i]) { return false; } i += 1; } return true;
+}
+pub fn allocation(e: alloc::string::Error) -> bool { return match(e) { alloc::string::Error::AllocationFailed -> true, _ -> false }; }
+pub impl core::clone::TryClone<Pair,Fault> for Pair {
+    pub fn try_clone_value(source: Pair) -> core::result::Result<Pair,Fault> {
+        if (source.fail == 0) { return core::result::Err(failure(source.tag,0)); }
+        let a = source.left.try_clone(); if (a.is_err()) { return core::result::Err(Fault::Allocation(source.tag,1,a.unwrap_err())); }
+        let left: alloc::string::String = a.unwrap();
+        if (source.fail == 1) { left.destroy(); return core::result::Err(failure(source.tag,1)); }
+        let b = source.right.try_clone(); if (b.is_err()) { left.destroy(); return core::result::Err(Fault::Allocation(source.tag,2,b.unwrap_err())); }
+        let right: alloc::string::String = b.unwrap();
+        if (source.fail == 2) { right.destroy(); left.destroy(); return core::result::Err(failure(source.tag,2)); }
+        return core::result::Ok(Pair { left:left,right:right,tag:source.tag,fail:-1 });
+    }
+}
+pub impl core::clone::Destroy<Pair> for Pair {
+    pub fn destroy_value(owned: Pair) { owned.right.destroy(); owned.left.destroy(); }
+}

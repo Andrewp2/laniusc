@@ -1,0 +1,39 @@
+module app::main;
+import core::calendar;
+import core::mem;
+import core::result;
+import core::slice;
+import core::time;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn output(value: i64) { assert(std::io_decimal::write_i64(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn code(value: core::calendar::Error) -> i64 {
+    return match (value) {
+        core::calendar::Error::InvalidMonth -> 1, core::calendar::Error::InvalidDay -> 2,
+        core::calendar::Error::InvalidOrdinal -> 3,core::calendar::Error::InvalidWeek -> 4,core::calendar::Error::InvalidWeekday -> 5,
+        core::calendar::Error::InvalidHour -> 6,core::calendar::Error::InvalidMinute -> 7,core::calendar::Error::InvalidSecond -> 8,
+        core::calendar::Error::InvalidNanoseconds -> 9,core::calendar::Error::InvalidOffset -> 10,core::calendar::Error::Overflow -> 11,
+        core::calendar::Error::UnknownOffset -> 12,core::calendar::Error::LeapSecond -> 13,core::calendar::Error::InvalidSyntax -> 14,
+        core::calendar::Error::FractionPrecision -> 15,core::calendar::Error::PrecisionLoss -> 16,core::calendar::Error::YearOutOfRange -> 17,core::calendar::Error::BufferTooSmall -> 18
+    };
+}
+fn main() -> i32 {
+    let storage: [i32;32] = [0;32];let pointer: ptr = core::mem::i32_array_data_ptr(storage);let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,128);
+    let count: i32 = std::process::arg_len(1);assert(count >= 0 && count < 120);
+    assert(std::process::arg_read(1,pointer,count as usize) == count);
+    let view: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,count));
+    let parsed: core::result::Result<core::calendar::ParsedDateTime,core::calendar::ParseError> = core::calendar::parse_rfc3339(view);
+    if (core::result::is_err(parsed)) { let error: core::calendar::ParseError = core::result::unwrap_err(parsed);output(code(error.kind));output(error.position as i64);return 0; }
+    let actual: core::calendar::ParsedDateTime = core::result::unwrap(parsed);let value: core::calendar::OffsetDateTime = actual.value;
+    output(0);output(actual.fraction_digits as i64);output(value.local.time.nanos as i64);output(value.offset.known as i64);output(value.offset.minutes as i64);
+    let stamp: core::result::Result<core::time::SystemTime,core::calendar::Error> = value.to_system_time();
+    if (core::result::is_err(stamp)) { output(code(core::result::unwrap_err(stamp)));output(0); }
+    else { output(0);output(core::result::unwrap(stamp).unix_seconds()); }
+    let buffer: [u8;64] = [63;64];let target: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(buffer,3,58));
+    let written: i32 = core::result::unwrap(core::calendar::format_rfc3339(value,actual.fraction_digits,target));
+    let back: core::calendar::ParsedDateTime = core::result::unwrap(core::calendar::parse_rfc3339(core::result::unwrap(target.subview(0,written))));
+    assert(back.value.local.date.compare(value.local.date) == 0 && back.value.local.time.second == value.local.time.second && back.value.local.time.nanos == value.local.time.nanos && back.value.offset.known == value.offset.known && back.value.offset.minutes == value.offset.minutes && back.fraction_digits == actual.fraction_digits);
+    let i: i32 = 0;while (i < written) { assert(std::io::write_byte(1,buffer[3+i] as i32) == 1);i += 1; }assert(std::io::write_byte(1,10) == 1);
+    return 0;
+}

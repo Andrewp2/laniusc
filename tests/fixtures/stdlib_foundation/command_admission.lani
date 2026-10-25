@@ -1,0 +1,23 @@
+// Admission: fork returns on the copied stack; exec consumes ascending C argv.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import std::linux;
+fn address(at: ptr, value: ptr) { let slot: [ptr] = core::mem::typed_slice_from_raw_parts(at,1); slot[0] = value; }
+fn main() -> i32 {
+    let words: [i32;16] = [0;16]; let base: ptr = core::mem::i32_array_data_ptr(words); let raw: [u8] = core::mem::typed_slice_from_raw_parts(base,64);
+    let literal: ptr = core::mem::string_data_ptr("/bin/sh|-c|exit 23|"); let source: [u8] = core::mem::typed_slice_from_raw_parts(literal,19);
+    let i: i32 = 0; while (i < 19) { if (source[i] != 124) { raw[i] = source[i]; } i += 1; }
+    let table: [i32;8] = [0;8]; let argv: ptr = core::mem::i32_array_data_ptr(table); address(argv,base); address(argv+8,base+8); address(argv+16,base+11);
+    let env: [i32;2] = [0;2]; let status: [i32;1] = [0;1]; let zero: [i32;12] = [0;12];
+    let pid: i64 = std::linux::syscall6(57,core::mem::i32_array_data_ptr(zero)); if (pid < 0) { return 1; }
+    if (pid == 0) {
+        let execute: [std::linux::Argument;3] = [std::linux::Argument::Address(base),std::linux::Argument::Address(argv),std::linux::Argument::Address(core::mem::i32_array_data_ptr(env))];
+        let failed = std::linux::call(59,core::slice::view(execute,3).unwrap());
+        let stop: [std::linux::Argument;1] = [std::linux::Argument::Word(127)]; while (true) { std::linux::call(60,core::slice::view(stop,1).unwrap()); }
+    }
+    let wait: [std::linux::Argument;4] = [std::linux::Argument::Word(pid),std::linux::Argument::Address(core::mem::i32_array_data_ptr(status)),std::linux::Argument::Word(0),std::linux::Argument::Word(0)];
+    let waited = std::linux::call(61,core::slice::view(wait,4).unwrap()); if (waited.is_err() || waited.unwrap_or(-1) != pid) { return 2; }
+    if (status[0] != 5888) { return 3; } return 0;
+}

@@ -1,44 +1,34 @@
 // Count repeated unsigned readings, including values above i32::MAX.
 module app::main;
-import core::number_u32;
+import alloc::hash_map;
+import core::u32;
+import core::option;
+import core::result;
 import std::io;
 import std::io_decimal;
-import std::map;
 
 fn main() -> i32 {
     let high: u32 = 2147483648;
     let one: u32 = 1;
     let maximum: u32 = 4294967295;
     let readings: [u32; 6] = [high, one, high, maximum, one, high];
-    let counts: std::map::Map<u32, u32> = std::map::new();
+    let counts: alloc::hash_map::HashMap<u32, u32> = alloc::hash_map::new();
     let index: i32 = 0;
     while (index < 6) {
         let key: u32 = readings[index];
-        if (std::map::contains_key(counts, key)) {
-            let prior: u32 = std::map::get_or(counts, key, 0);
-            let next: u32 = core::number_u32::wrapping_add(prior, 1);
-            if (!std::map::try_set(counts, key, next)) {
-                std::map::destroy(counts);
-                return 1;
-            }
-        } else {
-            let before: i32 = std::map::len(counts);
-            counts = std::map::try_insert(counts, key, 1);
-            if (std::map::len(counts) != before + 1) {
-                std::map::destroy(counts);
-                return 2;
-            }
+        let prior: u32 = core::option::unwrap_or(counts.get(key), 0);
+        let next: u32 = core::u32::wrapping_add(prior, 1);
+        if (core::result::is_err(counts.try_insert(key, next))) {
+            counts.destroy(); return 2;
         }
         index += 1;
     }
-    let high_count: u32 = std::map::get_or(counts, high, 0);
-    let one_count: u32 = std::map::get_or(counts, one, 0);
-    let max_count: u32 = std::map::get_or(counts, maximum, 0);
-    std::map::destroy(counts);
+    let high_count: u32 = core::option::unwrap_or(counts.get(high), 0);
+    let one_count: u32 = core::option::unwrap_or(counts.get(one), 0);
+    let max_count: u32 = core::option::unwrap_or(counts.get(maximum), 0);
+    counts.destroy();
     if (std::io_decimal::write_u32(1, high_count) < 0 || std::io::write_byte(1, 32) != 1 ||
         std::io_decimal::write_u32(1, one_count) < 0 || std::io::write_byte(1, 32) != 1 ||
-        std::io_decimal::write_u32(1, max_count) < 0 || std::io::write_byte(1, 10) != 1) {
-        return 3;
-    }
+        std::io_decimal::write_u32(1, max_count) < 0 || std::io::write_byte(1, 10) != 1) { return 3; }
     return 0;
 }

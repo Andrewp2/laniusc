@@ -1,0 +1,138 @@
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import ext::geometry;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done<count) {
+        let n: i32 = std::io::read_stdin(pointer +(done as usize), (count - done) as usize);
+        assert(n >= 0);
+        if (n == 0) {
+            assert(eof && done == 0);
+            return false;
+        }
+        done += n;
+    }
+    return true;
+}
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done<count) {
+        let n: i32 = std::io::write_stdout(pointer +(done as usize), (count - done) as usize);
+        assert(n>0);
+        done += n;
+    }
+}
+fn get64(bytes:[u8], at: i32) -> u64 {
+    let v: u64 = 0;
+    let i: i32 = 0;
+    while (i<8) {
+        v = v|((bytes[at + i] as u64) <<(8 * i));
+        i += 1;
+    }
+    return v;
+}
+fn affine(x:[f64], at: i32) -> ext::geometry::Affine2 {
+    return ext::geometry::Affine2 {
+        xx: x[at],
+        xy: x[at + 1],
+        yx: x[at + 2],
+        yy: x[at + 3],
+        tx: x[at + 4],
+        ty: x[at + 5]
+    };
+}
+fn main() -> i32 {
+    let storage:[i32; 48] =[0; 48];
+    let ip: ptr = core::mem::i32_array_data_ptr(storage);
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(ip, 192);
+    let v:[f64; 24] =[0.0; 24];
+    let result:[f64; 33] =[0.0; 33];
+    let words:[i32; 66] =[0; 66];
+    let op: ptr = core::mem::i32_array_data_ptr(words);
+    let out:[i32] = core::mem::typed_slice_from_raw_parts(op, 66);
+    while (read_exact(ip, 192, true)) {
+        let i: i32 = 0;
+        while (i<24) {
+            v[i] = core::f64::from_bits(get64(bytes, i * 8));
+            result[i] = 0.0;
+            i += 1;
+        }
+        let a: ext::geometry::Vec2 = ext::geometry::Vec2 {
+            x: v[0],
+            y: v[1]
+        };
+        let b: ext::geometry::Vec2 = ext::geometry::Vec2 {
+            x: v[2],
+            y: v[3]
+        };
+        let x: ext::geometry::Vec2 = ext::geometry::add2(a, b).unwrap();
+        result[0] = x.x;
+        result[1] = x.y;
+        x = ext::geometry::sub2(a, b).unwrap();
+        result[2] = x.x;
+        result[3] = x.y;
+        x = ext::geometry::scale2(a, v[4]).unwrap();
+        result[4] = x.x;
+        result[5] = x.y;
+        result[6] = ext::geometry::dot2(a, b).unwrap();
+        result[7] = ext::geometry::cross2(a, b).unwrap();
+        result[8] = ext::geometry::length2(a).unwrap();
+        x = ext::geometry::normalize2(a).unwrap();
+        result[9] = x.x;
+        result[10] = x.y;
+        let c: ext::geometry::Vec3 = ext::geometry::Vec3 {
+            x: v[0],
+            y: v[1],
+            z: v[2]
+        };
+        let d: ext::geometry::Vec3 = ext::geometry::Vec3 {
+            x: v[3],
+            y: v[4],
+            z: v[5]
+        };
+        let y: ext::geometry::Vec3 = ext::geometry::cross3(c, d).unwrap();
+        result[11] = y.x;
+        result[12] = y.y;
+        result[13] = y.z;
+        result[14] = ext::geometry::dot3(c, d).unwrap();
+        result[15] = ext::geometry::length3(c).unwrap();
+        y = ext::geometry::normalize3(c).unwrap();
+        result[16] = y.x;
+        result[17] = y.y;
+        result[18] = y.z;
+        let first: ext::geometry::Affine2 = affine(v, 6);
+        let second: ext::geometry::Affine2 = affine(v, 12);
+        let combined: ext::geometry::Affine2 = ext::geometry::compose2(first, second).unwrap();
+        x = ext::geometry::transform2(combined, a).unwrap();
+        result[19] = x.x;
+        result[20] = x.y;
+        let middle: ext::geometry::Vec2 = ext::geometry::transform2(second, a).unwrap();
+        x = ext::geometry::transform2(first, middle).unwrap();
+        result[21] = x.x;
+        result[22] = x.y;
+        y = ext::geometry::add3(c, d).unwrap();
+        result[24] = y.x;
+        result[25] = y.y;
+        result[26] = y.z;
+        y = ext::geometry::sub3(c, d).unwrap();
+        result[27] = y.x;
+        result[28] = y.y;
+        result[29] = y.z;
+        y = ext::geometry::scale3(c, v[4]).unwrap();
+        result[30] = y.x;
+        result[31] = y.y;
+        result[32] = y.z;
+        i = 0;
+        while (i<33) {
+            let bits: u64 = core::f64::to_bits(result[i]);
+            out[i * 2] =(bits&4294967295) as i32;
+            out[i * 2 + 1] =(bits >> 32) as i32;
+            i += 1;
+        }
+        write_all(op, 264);
+    }
+    return 0;
+}

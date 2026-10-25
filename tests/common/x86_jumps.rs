@@ -8,7 +8,9 @@
 //! only because the bad edge was never taken.
 //!
 //! The executables have no symbols, so `objdump` disassembles the executable
-//! load segment linearly from the end of the program headers. The check walks
+//! load segment from the end of the program headers, restarting at the ELF
+//! entry point so preceding padding or data cannot swallow its first byte.
+//! Valid library code may precede the entry point. The check walks
 //! the code reachable from the entry point through direct jumps, calls and
 //! fallthrough, plus every `push %rbp; mov %rsp,%rbp` prologue. Bytes it
 //! never reaches, such as string data after the code, are never checked.
@@ -36,7 +38,7 @@ const ET_EXEC: u16 = 2;
 const EM_X86_64: u16 = 62;
 const PT_LOAD: u32 = 1;
 const PF_X: u32 = 1;
-const OBJDUMP_TIMEOUT: Duration = Duration::from_secs(120);
+const OBJDUMP_TIMEOUT: Duration = Duration::from_secs(45);
 const REPORTED_PROBLEMS: usize = 12;
 
 /// The executable load segment that holds the entry point.
@@ -79,6 +81,7 @@ struct Instruction {
     target: Option<u64>,
     bytes: Vec<u8>,
     text: String,
+    valid: bool,
 }
 
 /// What the check found in one executable.
@@ -91,15 +94,21 @@ pub struct JumpCheck {
 }
 
 fn read_u16(bytes: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(bytes.get(offset..offset + 2)?.try_into().ok()?))
+    Some(u16::from_le_bytes(
+        bytes.get(offset..offset + 2)?.try_into().ok()?,
+    ))
 }
 
 fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?))
+    Some(u32::from_le_bytes(
+        bytes.get(offset..offset + 4)?.try_into().ok()?,
+    ))
 }
 
 fn read_u64(bytes: &[u8], offset: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?))
+    Some(u64::from_le_bytes(
+        bytes.get(offset..offset + 8)?.try_into().ok()?,
+    ))
 }
 
 /// True for a little-endian ELF64 x86-64 executable (not an object file).
@@ -149,7 +158,9 @@ fn code_segment(elf: &[u8]) -> Result<CodeSegment<'_>, String> {
             code_start: vaddr + skipped,
         });
     }
-    Err(format!("no executable load segment holds the entry point {entry:#x}"))
+    Err(format!(
+        "no executable load segment holds the entry point {entry:#x}"
+    ))
 }
 
 fn parse_hex_address(token: &str) -> Option<u64> {
@@ -211,6 +222,7 @@ fn parse_line(line: &str) -> Option<(u64, Instruction)> {
     }
     let mut tokens = text.split_whitespace().skip_while(|token| is_prefix(token));
     let mnemonic = tokens.next().unwrap_or("");
+    let valid = !mnemonic.is_empty() && mnemonic != "(bad)" && !mnemonic.starts_with('.');
     let flow = flow_of(mnemonic);
     let target = match flow {
         Flow::Jump | Flow::Branch | Flow::Call => tokens.next().and_then(parse_hex_address),
@@ -224,49 +236,93 @@ fn parse_line(line: &str) -> Option<(u64, Instruction)> {
             target,
             bytes,
             text,
+            valid,
         },
     ))
 }
 
 fn disassemble(segment: &CodeSegment<'_>) -> Result<HashMap<u64, Instruction>, String> {
+    if !segment.contains_code(segment.entry) {
+        return Err(format!(
+            "the entry point {:#x} lies in the ELF headers",
+            segment.entry
+        ));
+    }
     // Not a TempArtifact: its write_bytes checks executables, and this file
     // is a raw segment image, never an executable.
     let image = super::temp_artifact_path("laniusc_jump_check", "segment", Some("bin"));
     fs::write(&image, segment.bytes)
         .map_err(|err| format!("write segment image {}: {err}", image.display()))?;
-    let mut command = Command::new("objdump");
-    command
-        .args(["-D", "-z", "-b", "binary", "-m", "i386:x86-64", "--insn-width=16"])
-        .arg(format!("--adjust-vma={:#x}", segment.vaddr))
-        .arg(format!("--start-address={:#x}", segment.code_start))
-        .arg(format!("--stop-address={:#x}", segment.end()))
-        .arg(&image);
-    let output = super::command_output_result_with_timeout(
-        "objdump for the x86 jump check",
-        &mut command,
-        OBJDUMP_TIMEOUT,
-        super::TimeoutDetails::default(),
-    );
-    let _ = fs::remove_file(&image);
-    let output = output.map_err(|err| {
-        format!(
-            "run objdump (GNU binutils), which the x86 jump check needs: {err}{}",
-            if err.kind() == io::ErrorKind::NotFound {
-                "; install binutils"
-            } else {
-                ""
+    let result = (|| {
+        let mut instructions = HashMap::new();
+        // ELF entry is an independent code root. Do not resynchronize at
+        // arbitrary branch targets: they must still match decoded boundaries.
+        let mut ranges = vec![(segment.entry, segment.end(), segment.end())];
+        if segment.code_start < segment.entry {
+            // At most 15 bytes finish a prefix instruction crossing entry.
+            // Retain its original start so reached overlap remains an error,
+            // while ignoring speculative prefix decoding beyond the new root.
+            ranges.insert(
+                0,
+                (
+                    segment.code_start,
+                    segment.entry.saturating_add(15).min(segment.end()),
+                    segment.entry,
+                ),
+            );
+        }
+        for (start, stop, retain_before) in ranges {
+            let mut command = Command::new("objdump");
+            command
+                .args([
+                    "-D",
+                    "-z",
+                    "-b",
+                    "binary",
+                    "-m",
+                    "i386:x86-64",
+                    "--insn-width=16",
+                ])
+                .arg(format!("--adjust-vma={:#x}", segment.vaddr))
+                .arg(format!("--start-address={start:#x}"))
+                .arg(format!("--stop-address={stop:#x}"))
+                .arg(&image);
+            let output = super::command_output_result_with_timeout(
+                "objdump for the x86 jump check",
+                &mut command,
+                OBJDUMP_TIMEOUT,
+                super::TimeoutDetails::default(),
+            )
+            .map_err(|err| {
+                format!(
+                    "run objdump (GNU binutils), which the x86 jump check needs: {err}{}",
+                    if err.kind() == io::ErrorKind::NotFound {
+                        "; install binutils"
+                    } else {
+                        ""
+                    }
+                )
+            })?;
+            if !output.status.success() {
+                return Err(format!(
+                    "objdump failed ({}): {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ));
             }
-        )
-    })?;
-    if !output.status.success() {
-        return Err(format!(
-            "objdump failed ({}): {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    Ok(text.lines().filter_map(parse_line).collect())
+            for (address, instruction) in String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter_map(parse_line)
+            {
+                if address < retain_before {
+                    instructions.insert(address, instruction);
+                }
+            }
+        }
+        Ok(instructions)
+    })();
+    let _ = fs::remove_file(&image);
+    result
 }
 
 /// Checks every reachable direct jump in `elf`. Returns `Ok(None)` when
@@ -308,6 +364,18 @@ pub fn check_x86_64_jumps(elf: &[u8]) -> Result<Option<JumpCheck>, String> {
             // code (the segment end).
             continue;
         };
+        if !instruction.valid
+            || instruction.length > 15
+            || address
+                .checked_add(instruction.length)
+                .is_none_or(|end| end > segment.end())
+        {
+            problems.push(format!(
+                "invalid or truncated instruction `{}` at {address:#x}",
+                instruction.text
+            ));
+            continue;
+        }
         if matches!(instruction.flow, Flow::Next | Flow::Branch | Flow::Call) {
             work.push(address + instruction.length);
         }
@@ -328,6 +396,22 @@ pub fn check_x86_64_jumps(elf: &[u8]) -> Result<Option<JumpCheck>, String> {
             starts.insert(target);
         }
         work.push(target);
+    }
+
+    let mut previous: Option<(u64, u64)> = None;
+    for &address in &reached {
+        let Some(instruction) = instructions.get(&address) else {
+            continue;
+        };
+        if let Some((start, end)) = previous {
+            if address < end {
+                problems.push(format!("reachable instruction at {address:#x} overlaps instruction [{start:#x}, {end:#x})"));
+            }
+        }
+        let end = address.saturating_add(instruction.length);
+        if previous.is_none_or(|(_, previous_end)| end > previous_end) {
+            previous = Some((address, end));
+        }
     }
 
     let starts = starts.into_iter().collect::<Vec<_>>();
@@ -406,8 +490,12 @@ pub fn assert_x86_64_jumps_stay_in_functions(context: impl fmt::Display, elf: &[
 /// it like [`assert_x86_64_jumps_stay_in_functions`].
 pub fn assert_x86_64_file_jumps_stay_in_functions(path: impl AsRef<Path>) {
     let path = path.as_ref();
-    let bytes = fs::read(path)
-        .unwrap_or_else(|err| panic!("read executable {} for the x86 jump check: {err}", path.display()));
+    let bytes = fs::read(path).unwrap_or_else(|err| {
+        panic!(
+            "read executable {} for the x86 jump check: {err}",
+            path.display()
+        )
+    });
     assert_x86_64_jumps_stay_in_functions(path.display(), &bytes);
 }
 

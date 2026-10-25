@@ -1,0 +1,9 @@
+module app::main;
+
+import std::io;
+
+fn main() -> i32 {
+    std::io::print_i32(34);
+    print_i32(55);
+    return 0;
+}

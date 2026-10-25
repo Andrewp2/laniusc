@@ -1,0 +1,3 @@
+module app::main;
+import std::command_raw;
+fn main() -> i32 { let pid = std::command_raw::word(39,0,0,0); std::command_raw::word(62,pid,13,0); return 42; }

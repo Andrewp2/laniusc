@@ -1,0 +1,10 @@
+// Deliberately violate the physical-backing precondition. Native slice
+// indexing must terminate with the bounds status rather than reading past it.
+module app::main;
+import core::result;
+import core::text;
+fn main() -> i32 {
+    let bytes: [u8; 2] = [65, 66];
+    let view: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 1, 2));
+    return view.byte_len();
+}

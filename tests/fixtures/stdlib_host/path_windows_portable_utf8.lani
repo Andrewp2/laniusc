@@ -1,5 +1,5 @@
 module app::main;
-import std::path;
+import core::path_rules;
 
 fn main() -> i32 {
     let b0: u8 = 0;
@@ -51,12 +51,12 @@ fn main() -> i32 {
     let com_zero: [u8; 4] = [b67, b79, b77, b48];
     let console: [u8; 7] = [b67, b79, b78, b83, b79, b76, b69];
     let com_ten: [u8; 5] = [b67, b79, b77, b49, b48];
-    if (!std::path::path_component_is_windows_portable_utf8(report, 10) ||
-        !std::path::path_component_is_windows_portable_utf8(unicode, 6) ||
-        !std::path::path_component_is_windows_portable_utf8(hidden, 7) ||
-        !std::path::path_component_is_windows_portable_utf8(com_zero, 4) ||
-        !std::path::path_component_is_windows_portable_utf8(console, 7) ||
-        !std::path::path_component_is_windows_portable_utf8(com_ten, 5)) { return 1; }
+    if (!core::path_rules::path_component_is_windows_portable_utf8(report, 10) ||
+        !core::path_rules::path_component_is_windows_portable_utf8(unicode, 6) ||
+        !core::path_rules::path_component_is_windows_portable_utf8(hidden, 7) ||
+        !core::path_rules::path_component_is_windows_portable_utf8(com_zero, 4) ||
+        !core::path_rules::path_component_is_windows_portable_utf8(console, 7) ||
+        !core::path_rules::path_component_is_windows_portable_utf8(com_ten, 5)) { return 1; }
 
     let con: [u8; 3] = [b67, b79, b78];
     let prn: [u8; 3] = [b112, b82, b110];
@@ -66,14 +66,14 @@ fn main() -> i32 {
     let lpt_nine_extension: [u8; 8] = [b76, b80, b84, b57, b46, b116, b120, b116];
     let com_superscript_one: [u8; 5] = [b67, b79, b77, b194, b185];
     let lpt_superscript_three_extension: [u8; 7] = [b108, b112, b116, b194, b179, b46, b120];
-    if (std::path::path_component_is_windows_portable_utf8(con, 3) ||
-        std::path::path_component_is_windows_portable_utf8(prn, 3) ||
-        std::path::path_component_is_windows_portable_utf8(aux, 3) ||
-        std::path::path_component_is_windows_portable_utf8(nul_extension, 7) ||
-        std::path::path_component_is_windows_portable_utf8(com_one, 4) ||
-        std::path::path_component_is_windows_portable_utf8(lpt_nine_extension, 8) ||
-        std::path::path_component_is_windows_portable_utf8(com_superscript_one, 5) ||
-        std::path::path_component_is_windows_portable_utf8(lpt_superscript_three_extension, 7)) {
+    if (core::path_rules::path_component_is_windows_portable_utf8(con, 3) ||
+        core::path_rules::path_component_is_windows_portable_utf8(prn, 3) ||
+        core::path_rules::path_component_is_windows_portable_utf8(aux, 3) ||
+        core::path_rules::path_component_is_windows_portable_utf8(nul_extension, 7) ||
+        core::path_rules::path_component_is_windows_portable_utf8(com_one, 4) ||
+        core::path_rules::path_component_is_windows_portable_utf8(lpt_nine_extension, 8) ||
+        core::path_rules::path_component_is_windows_portable_utf8(com_superscript_one, 5) ||
+        core::path_rules::path_component_is_windows_portable_utf8(lpt_superscript_three_extension, 7)) {
         return 2;
     }
 
@@ -87,17 +87,17 @@ fn main() -> i32 {
     let dot: [u8; 1] = [b46];
     let parent: [u8; 2] = [b46, b46];
     let drive: [u8; 2] = [b67, b58];
-    if (std::path::path_component_is_windows_portable_utf8(trailing_dot, 4) ||
-        std::path::path_component_is_windows_portable_utf8(trailing_space, 4) ||
-        std::path::path_component_is_windows_portable_utf8(spaced_device, 8) ||
-        std::path::path_component_is_windows_portable_utf8(malformed_utf8, 2) ||
-        std::path::path_component_is_windows_portable_utf8(reserved_punctuation, 2) ||
-        std::path::path_component_is_windows_portable_utf8(control, 2) ||
-        std::path::path_component_is_windows_portable_utf8(nul_byte, 2) ||
-        std::path::path_component_is_windows_portable_utf8(dot, 1) ||
-        std::path::path_component_is_windows_portable_utf8(parent, 2) ||
-        std::path::path_component_is_windows_portable_utf8(drive, 2) ||
-        std::path::path_component_is_windows_portable_utf8(report, 0) ||
-        std::path::path_component_is_windows_portable_utf8(report, -1)) { return 3; }
+    if (core::path_rules::path_component_is_windows_portable_utf8(trailing_dot, 4) ||
+        core::path_rules::path_component_is_windows_portable_utf8(trailing_space, 4) ||
+        core::path_rules::path_component_is_windows_portable_utf8(spaced_device, 8) ||
+        core::path_rules::path_component_is_windows_portable_utf8(malformed_utf8, 2) ||
+        core::path_rules::path_component_is_windows_portable_utf8(reserved_punctuation, 2) ||
+        core::path_rules::path_component_is_windows_portable_utf8(control, 2) ||
+        core::path_rules::path_component_is_windows_portable_utf8(nul_byte, 2) ||
+        core::path_rules::path_component_is_windows_portable_utf8(dot, 1) ||
+        core::path_rules::path_component_is_windows_portable_utf8(parent, 2) ||
+        core::path_rules::path_component_is_windows_portable_utf8(drive, 2) ||
+        core::path_rules::path_component_is_windows_portable_utf8(report, 0) ||
+        core::path_rules::path_component_is_windows_portable_utf8(report, -1)) { return 3; }
     return 0;
 }

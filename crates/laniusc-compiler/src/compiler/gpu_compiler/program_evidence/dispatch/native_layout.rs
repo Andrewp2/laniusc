@@ -77,6 +77,11 @@ impl GpuProgramEvidence {
         sources: &[[u32; 2]],
         limits: NativeLayoutWorkLimits,
     ) -> Result<Vec<MaterializedProofType>> {
+        ensure!(!self.query_scratch_poisoned, "a prior query did not complete its scratch readbacks");
+        ensure!(sources.len() <= 64, "native layout query exceeds 64 roots");
+        ensure!(limits.nodes <= 1024 && limits.edges <= 16384 && limits.groups <= 1024
+            && limits.payload_roots <= 16384 && limits.visits <= ROOT_VISITS as u32,
+            "native layout query exceeds the bounded production scratch policy");
         ensure!(
             !packet.poisoned
                 && Arc::ptr_eq(&self.gpu_owner, &packet.gpu_owner)
@@ -124,14 +129,13 @@ impl GpuProgramEvidence {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
+        while self.layout_query_slots.len() < plans.len() {
+            self.layout_query_slots.push(self.workspace.reserve("program_evidence.native_layout_job")?);
+        }
         let arenas = plans
-            .iter()
-            .map(|plan| {
-                Arena::from_words(
-                    &self.workspace,
-                    "program_evidence.native_layout_job",
-                    &plan.words,
-                )
+            .iter().zip(&self.layout_query_slots)
+            .map(|(plan, slot)| {
+                Arena::from_slot_words(slot, &plan.words)
             })
             .collect::<Result<Vec<_>>>()?;
         let mut encoder = self
@@ -157,6 +161,7 @@ impl GpuProgramEvidence {
             )?;
         }
         passes_core::flush_deferred_compute(&mut encoder);
+        self.query_scratch_poisoned = true;
         self.queue.submit(Some(encoder.finish()));
         let mut regions = Vec::with_capacity(plans.len() * 3);
         for (plan, arena) in plans.iter().zip(&arenas) {
@@ -190,6 +195,9 @@ impl GpuProgramEvidence {
             let header = words(&first[i * 3])?;
             let status = one_status(&first[i * 3 + 1])?;
             if status[0] != 1 {
+                // The successful receipt readback completed every submitted
+                // kernel. A semantic/resource failure may safely retry.
+                self.query_scratch_poisoned = false;
                 return Err(NativeLayoutFailure {
                     source: plan.source,
                     status,
@@ -259,6 +267,7 @@ impl GpuProgramEvidence {
                 "native semantic graph prefixes",
             )?
         };
+        self.query_scratch_poisoned = false;
         let mut results = Vec::with_capacity(plans.len());
         for ((plan, &(_, _, root, native_words)), indexes) in
             plans.iter().zip(&prefixes).zip(&region_indices)

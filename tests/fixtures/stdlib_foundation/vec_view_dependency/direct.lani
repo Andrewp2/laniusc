@@ -1,0 +1,12 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let items: alloc::vec::Vec<i32> = alloc::vec::new();
+    core::result::unwrap(items.try_push(7));
+    let view: core::slice::View<i32> = items.as_view();
+    core::result::unwrap(items.try_extend(view));
+    let correct: bool = items.len() == 2 && items.at(0) == 7 && items.at(1) == 7;
+    items.destroy(); if (!correct) { return 1; } return 0;
+}

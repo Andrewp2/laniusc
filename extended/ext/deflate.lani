@@ -1,0 +1,166 @@
+// Raw RFC 1951 encoder: greedy LZ77, fixed Huffman codes, or smaller stored
+// blocks. Caller-owned disjoint buffers; no allocation and no host services.
+// See docs/extended-deflate.md for ownership, limits and compression policy.
+module ext::deflate;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, ScratchTooSmall(i32), Capacity(i32), SizeOverflow }
+
+pub fn scratch_len() -> i32 { return 32768; }
+fn valid_bytes(view: core::slice::View<u8>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
+}
+fn valid_scratch(view: core::slice::View<i32>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
+}
+fn byte(input: core::slice::View<u8>, at: i32) -> i32 { return input.values[input.start+at] as i32; }
+fn hash(input: core::slice::View<u8>, at: i32) -> i32 {
+    return ((byte(input,at)*251+byte(input,at+1))*251+byte(input,at+2)) & 32767;
+}
+
+struct Code { symbol: i32, value: i32, width: i32 }
+fn length_code(length: i32) -> Code {
+    if (length <= 10) { return Code { symbol: length+254, value: 0, width: 0 }; }
+    if (length == 258) { return Code { symbol: 285, value: 0, width: 0 }; }
+    let symbol: i32 = 265; let base: i32 = 11; let width: i32 = 1; let span: i32 = 2;
+    while (length >= base+span) {
+        base += span; symbol += 1;
+        if ((symbol-265)%4 == 0) { width += 1; span *= 2; }
+    }
+    return Code { symbol: symbol, value: length-base, width: width };
+}
+fn distance_code(distance: i32) -> Code {
+    if (distance <= 4) { return Code { symbol: distance-1, value: 0, width: 0 }; }
+    let symbol: i32 = 4; let base: i32 = 5; let width: i32 = 1; let span: i32 = 2;
+    while (distance >= base+span) {
+        base += span; symbol += 1;
+        if (symbol%2 == 0) { width += 1; span *= 2; }
+    }
+    return Code { symbol: symbol, value: distance-base, width: width };
+}
+fn symbol_width(symbol: i32) -> i32 {
+    if (symbol < 144) { return 8; }
+    if (symbol < 256) { return 9; }
+    if (symbol < 280) { return 7; }
+    return 8;
+}
+fn reverse(value: i32, width: i32) -> i32 {
+    let reversed: i32 = 0; let bits: i32 = value; let remaining: i32 = width;
+    while (remaining > 0) { reversed = reversed*2+(bits & 1); bits = bits >> 1; remaining -= 1; }
+    return reversed;
+}
+struct Writer { output: core::slice::View<u8>, writing: bool, position: i32, pending: u32, width: i32, total: u64 }
+impl Writer {
+    fn borrow(&self) -> &Writer { return self; }
+    fn bits(&self, value: i32, width: i32) {
+        self.total += width as u64;
+        if (!self.writing) { return; }
+        self.pending = self.pending | ((value as u32) << self.width);
+        self.width += width;
+        while (self.width >= 8) {
+            self.output.values[self.output.start+self.position] = (self.pending & 255) as u8;
+            self.position += 1; self.pending = self.pending >> 8; self.width -= 8;
+        }
+    }
+    fn symbol(&self, symbol: i32) {
+        let value: i32 = 0; let width: i32 = symbol_width(symbol);
+        if (symbol < 144) { value = symbol+48; }
+        else { if (symbol < 256) { value = symbol+256; }
+        else { if (symbol < 280) { value = symbol-256; }
+        else { value = symbol-88; } } }
+        self.bits(reverse(value,width),width);
+    }
+    fn finish(&self) {
+        if (self.writing && self.width > 0) {
+            self.output.values[self.output.start+self.position] = self.pending as u8;
+        }
+    }
+}
+
+// Reset scratch for each pass. Search exactly the most recent matching hash,
+// verify its bytes, and insert every consumed position that has three bytes.
+fn fixed_pass(input: core::slice::View<u8>, scratch: core::slice::View<i32>, output: core::slice::View<u8>, writing: bool) -> u64 {
+    let index: i32 = 0;
+    while (index < 32768) { scratch.values[scratch.start+index] = -1; index += 1; }
+    let writer: Writer = Writer { output: output, writing: writing, position: 0, pending: 0, width: 0, total: 0 };
+    writer.bits(3,3); // BFINAL=1, BTYPE=01, in low-bit-first field order.
+    let position: i32 = 0;
+    while (position < input.length) {
+        let length: i32 = 0; let distance: i32 = 0;
+        if (input.length-position >= 3) {
+            let candidate: i32 = scratch.values[scratch.start+hash(input,position)];
+            if (candidate >= 0 && position-candidate <= 32768) {
+                distance = position-candidate;
+                let maximum: i32 = input.length-position; if (maximum > 258) { maximum = 258; }
+                while (length < maximum && byte(input,candidate+length) == byte(input,position+length)) { length += 1; }
+            }
+        }
+        if (length >= 3) {
+            let code: Code = length_code(length); let dist: Code = distance_code(distance);
+            let cost: i32 = symbol_width(code.symbol)+code.width+5+dist.width;
+            let literal_cost: i32 = 0; index = 0;
+            while (index < length && literal_cost <= cost) { literal_cost += symbol_width(byte(input,position+index)); index += 1; }
+            if (cost >= literal_cost) { length = 0; }
+        }
+        let consumed: i32 = 1;
+        if (length >= 3) {
+            let code: Code = length_code(length); let dist: Code = distance_code(distance);
+            writer.symbol(code.symbol); writer.bits(code.value,code.width);
+            writer.bits(reverse(dist.symbol,5),5); writer.bits(dist.value,dist.width);
+            consumed = length;
+        } else { writer.symbol(byte(input,position)); }
+        let end: i32 = position+consumed;
+        while (position < end) {
+            if (input.length-position >= 3) { scratch.values[scratch.start+hash(input,position)] = position; }
+            position += 1;
+        }
+    }
+    writer.symbol(256); writer.finish(); return writer.total;
+}
+fn stored_len(length: i32) -> u64 {
+    let blocks: u64 = ((length as u64)+65534)/65535; if (blocks == 0) { blocks = 1; }
+    return (length as u64)+blocks*5;
+}
+fn checked_size(fixed: u64, stored: u64) -> core::result::Result<i32, Error> {
+    let size: u64 = (fixed+7)/8; if (stored < size) { size = stored; }
+    if (size > 2147483647 as u64) { return core::result::Err(Error::SizeOverflow); }
+    return core::result::Ok(size as i32);
+}
+pub fn encoded_len(input: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error> {
+    if (!valid_bytes(input) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
+    if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
+    let fixed: u64 = fixed_pass(input,scratch,input,false);
+    return checked_size(fixed,stored_len(input.length));
+}
+fn stored_into(input: core::slice::View<u8>, output: core::slice::View<u8>) {
+    let position: i32 = 0; let target: i32 = 0;
+    while (true) {
+        let count: i32 = input.length-position; if (count > 65535) { count = 65535; }
+        let final: i32 = 0; if (count == input.length-position) { final = 1; }
+        output.values[output.start+target] = final as u8;
+        output.values[output.start+target+1] = (count & 255) as u8;
+        output.values[output.start+target+2] = (count >> 8) as u8;
+        let complement: i32 = 65535-count;
+        output.values[output.start+target+3] = (complement & 255) as u8;
+        output.values[output.start+target+4] = (complement >> 8) as u8;
+        target += 5; let end: i32 = position+count;
+        while (position < end) { output.values[output.start+target] = input.values[input.start+position]; position += 1; target += 1; }
+        if (final == 1) { return; }
+    }
+}
+
+// Validate all metadata, measure both encodings, then check exact capacity
+// before the first output write. Only scratch may change on failure.
+pub fn encode_into(input: core::slice::View<u8>, output: core::slice::View<u8>, scratch: core::slice::View<i32>) -> core::result::Result<i32, Error> {
+    if (!valid_bytes(input) || !valid_bytes(output) || !valid_scratch(scratch)) { return core::result::Err(Error::Bounds); }
+    if (scratch.length < scratch_len()) { return core::result::Err(Error::ScratchTooSmall(scratch_len())); }
+    let fixed: u64 = fixed_pass(input,scratch,input,false); let stored: u64 = stored_len(input.length);
+    let measured: core::result::Result<i32, Error> = checked_size(fixed,stored);
+    if (core::result::is_err(measured)) { return core::result::Err(core::result::unwrap_err(measured)); }
+    let size: i32 = core::result::unwrap(measured);
+    if (output.length < size) { return core::result::Err(Error::Capacity(size)); }
+    if (stored < (fixed+7)/8) { stored_into(input,output); }
+    else { fixed_pass(input,scratch,output,true); }
+    return core::result::Ok(size);
+}

@@ -1,0 +1,86 @@
+module probe::script;
+import core::io;
+import core::result;
+
+// Both storage and trace borrow fixed-size entry-owned arrays. Endpoint
+// implementations supply different owner markers despite identical layouts.
+pub struct State {
+    bytes: [u8], trace: [i32], cursor: i32, calls: i32, flushes: i32,
+    marker: i32, scripted: bool, fail: bool, flush_fail: bool
+}
+pub fn state(bytes: [u8], trace: [i32], scripted: bool, fail: bool, flush_fail: bool) -> State {
+    return State { bytes:bytes,trace:trace,cursor:0,calls:0,flushes:0,marker:0,
+        scripted:scripted,fail:fail,flush_fail:flush_fail };
+}
+pub impl State { pub fn borrow(&self) -> &State { return self; } }
+
+// A finite leaf script, not a second exact/all retry implementation. There is
+// exactly one transfer attempt per call. Interrupted/error steps transfer none.
+pub fn transfer(state: &State, bytes: [u8], offset: i32, count: i32, reading: bool, owner: i32)
+    -> core::result::Result<i32,core::io::Error> {
+    assert(offset >= 0 && count > 0 && offset <= 8-count);
+    let call: i32 = state.calls;
+    assert(call >= 0 && call < 4);
+    state.calls += 1;
+    state.marker = owner;
+    state.trace[call*3] = owner;
+    state.trace[call*3+1] = offset;
+    state.trace[call*3+2] = count;
+    if (state.scripted && call == 0) { return core::result::Err(core::io::Error::Interrupted); }
+    if (state.scripted && call == 3 && state.fail) {
+        return core::result::Err(core::io::Error::Host(owner+1000));
+    }
+    let amount: i32 = count;
+    if (state.scripted) {
+        amount = 2;
+        if (call == 1) { amount = 1; }
+        if (amount > count) { amount = count; }
+    }
+    assert(state.cursor >= 0 && state.cursor <= 7-amount);
+    let index: i32 = 0;
+    while (index < amount) {
+        if (reading) { bytes[offset+index] = state.bytes[1+state.cursor+index]; }
+        else { state.bytes[1+state.cursor+index] = bytes[offset+index]; }
+        index += 1;
+    }
+    state.cursor += amount;
+    return core::result::Ok(amount);
+}
+pub fn flush(state: &State, owner: i32) -> core::result::Result<i32,core::io::Error> {
+    state.flushes += 1;
+    state.marker = owner;
+    if (state.flush_fail) { return core::result::Err(core::io::Error::Host(owner+1000)); }
+    return core::result::Ok(0);
+}
+
+pub fn assert_pristine(state: &State) {
+    assert(state.cursor == 0 && state.calls == 0 && state.flushes == 0 && state.marker == 0);
+    let index: i32 = 0;
+    while (index < 12) { assert(state.trace[index] == -1); index += 1; }
+}
+pub fn assert_script(state: &State, owner: i32, completed: i32) {
+    assert(state.cursor == completed && state.calls == 4 && state.flushes == 0 && state.marker == owner);
+    // Independent fixed requests expected from the 0,1,2,2 transfer script.
+    assert(state.trace[0] == owner && state.trace[1] == 1 && state.trace[2] == 5);
+    assert(state.trace[3] == owner && state.trace[4] == 1 && state.trace[5] == 5);
+    assert(state.trace[6] == owner && state.trace[7] == 2 && state.trace[8] == 4);
+    assert(state.trace[9] == owner && state.trace[10] == 4 && state.trace[11] == 2);
+}
+pub fn assert_one_call(state: &State, owner: i32, completed: i32) {
+    assert(state.cursor == completed && state.calls == 1 && state.flushes == 0 && state.marker == owner);
+    assert(state.trace[0] == owner && state.trace[1] == 1 && state.trace[2] == completed);
+    let index: i32 = 3;
+    while (index < 12) { assert(state.trace[index] == -1); index += 1; }
+}
+pub fn assert_bytes(actual: [u8], expected: [u8]) {
+    let index: i32 = 0;
+    while (index < 8) { assert(actual[index] == expected[index]); index += 1; }
+}
+pub fn assert_failure(result: core::result::Result<i32,core::io::Failure>, completed: i32, host: i32) {
+    let failure: core::io::Failure = result.unwrap_err();
+    assert(failure.completed == completed);
+    assert(match (failure.cause) { core::io::Error::Host(code) -> code == host, _ -> false });
+}
+pub fn assert_host(result: core::result::Result<i32,core::io::Error>, host: i32) {
+    assert(match (result.unwrap_err()) { core::io::Error::Host(code) -> code == host, _ -> false });
+}

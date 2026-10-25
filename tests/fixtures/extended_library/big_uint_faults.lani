@@ -1,0 +1,41 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import ext::big_uint;
+fn failed(result: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error>) -> bool {
+    if (result.is_err()) { assert(match (result.unwrap_err()) { ext::big_uint::Error::AllocationFailed -> true, _ -> false }); return true; }
+    let value: ext::big_uint::BigUint = result.unwrap(); value.destroy(); return false;
+}
+fn attempt(a: &ext::big_uint::BigUint, b: &ext::big_uint::BigUint) {
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    if (failed(a.try_clone(limits))) { return; }
+    if (failed(a.add(b,limits))) { return; }
+    if (failed(a.sub(b,limits))) { return; }
+    if (failed(a.mul(b,limits))) { return; }
+    if (failed(a.shl(45,limits))) { return; }
+    if (failed(a.shr(17,limits))) { return; }
+    if (failed(a.bit_and(b,limits))) { return; }
+    if (failed(a.bit_or(b,limits))) { return; }
+    if (failed(a.bit_xor(b,limits))) { return; }
+    if (failed(a.pow(5,limits))) { return; }
+    if (failed(a.gcd(b,limits))) { return; }
+    let product_result: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = a.mul(b,limits); if (product_result.is_err()) { return; } let product: ext::big_uint::BigUint = product_result.unwrap();
+    let divided: core::result::Result<ext::big_uint::DivRem,ext::big_uint::Error> = product.div_rem(a,limits); product.destroy();
+    if (divided.is_err()) { assert(match (divided.unwrap_err()) { ext::big_uint::Error::AllocationFailed -> true, _ -> false }); return; } let pair: ext::big_uint::DivRem = divided.unwrap(); assert(pair.quotient.compare(b) == 0 && pair.remainder.is_zero()); pair.destroy();
+    let small_divided: core::result::Result<ext::big_uint::DivRem,ext::big_uint::Error> = a.div_rem(b,limits); if (small_divided.is_err()) { return; } let small_pair: ext::big_uint::DivRem = small_divided.unwrap(); small_pair.destroy();
+    let below_divided: core::result::Result<ext::big_uint::DivRem,ext::big_uint::Error> = b.div_rem(a,limits); if (below_divided.is_err()) { return; } let below_pair: ext::big_uint::DivRem = below_divided.unwrap(); below_pair.destroy();
+    let word_result: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = ext::big_uint::from_u64(37,limits); if (word_result.is_err()) { return; } let word: ext::big_uint::BigUint = word_result.unwrap();
+    let word_divided: core::result::Result<ext::big_uint::DivRem,ext::big_uint::Error> = a.div_rem(word.borrow(),limits); word.destroy(); if (word_divided.is_err()) { return; } let word_pair: ext::big_uint::DivRem = word_divided.unwrap(); word_pair.destroy();
+    let formatted: core::result::Result<alloc::vec::Vec<u8>,ext::big_uint::Error> = a.format_radix(10,limits); if (formatted.is_err()) { return; } let bytes: alloc::vec::Vec<u8> = formatted.unwrap(); bytes.destroy();
+    let storage: [u8;80] = [123;80]; let output: core::slice::View<u8> = core::slice::view_range(storage,1,78).unwrap();
+    let into: core::result::Result<i32,ext::big_uint::Error> = a.format_into(output,10,limits); if (into.is_err()) { let index: i32 = 0; while (index < 80) { assert(storage[index] == 123); index += 1; } }
+}
+fn main() -> i32 {
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    let ar: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = ext::big_uint::from_u64(18446744073709551615,limits); if (ar.is_err()) { return 0; } let a: ext::big_uint::BigUint = ar.unwrap();
+    let br: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = ext::big_uint::from_u64(4294967297,limits); if (br.is_err()) { a.destroy(); return 0; } let b: ext::big_uint::BigUint = br.unwrap();
+    attempt(a.borrow(),b.borrow()); assert(a.to_u64().unwrap() == 18446744073709551615 && b.to_u64().unwrap() == 4294967297); a.destroy(); b.destroy();
+    let text: [u8;44] = [57;44]; let parsed: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = ext::big_uint::parse(core::slice::view(text,44).unwrap(),10,limits); if (parsed.is_ok()) { let value: ext::big_uint::BigUint = parsed.unwrap(); value.destroy(); }
+    return 0;
+}

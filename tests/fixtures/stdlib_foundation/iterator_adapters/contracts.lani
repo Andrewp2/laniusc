@@ -1,0 +1,240 @@
+// Typed callback, borrowed state, composition and shallow owner contracts.
+module app::main;
+import alloc::string;
+import core::iter;
+import core::slice;
+import core::option;
+import core::pair;
+import core::range;
+import core::result;
+import core::text;
+
+struct Context { calls: i32, sum: i32, offset: i32 }
+impl Context { fn borrow(&self) -> &Context { return self; } }
+struct Probe { length: i32, position: i32, calls: i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let item: i32 = self.position; self.position += 1;
+        return core::option::Some(item);
+    }
+}
+struct Scale { state: &Context }
+impl Scale { fn borrow(&self) -> &Scale { return self; } }
+pub impl core::iter::Mapper<i32, i64> for Scale {
+    pub fn apply(&self, value: i32) -> i64 {
+        let state: &Context = self.state;
+        state.calls += 1; state.sum += value;
+        return (value as i64) * 3 + (state.offset as i64);
+    }
+}
+struct Wrapped<T> { item: T, stamp: u64 }
+struct Pack<T> { state: &Context }
+impl<T> Pack<T> { fn borrow(&self) -> &Pack<T> { return self; } }
+pub impl<T> core::iter::Mapper<T, Wrapped<T>> for Pack<T> {
+    pub fn apply(&self, value: T) -> Wrapped<T> {
+        let state: &Context = self.state; state.calls += 1;
+        return Wrapped { item: value, stamp: 18446744073709551615 - (state.calls as u64) };
+    }
+}
+struct Payload { wide: u64, cells: [i32; 2], flag: core::option::Option<bool> }
+struct Maybe { state: &Context }
+impl Maybe { fn borrow(&self) -> &Maybe { return self; } }
+pub impl core::iter::Mapper<i32, core::option::Option<i32>> for Maybe {
+    pub fn apply(&self, value: i32) -> core::option::Option<i32> {
+        let state: &Context = self.state; state.calls += 1;
+        if (value == 1) { return core::option::None(); }
+        return core::option::Some(value + 10);
+    }
+}
+enum Fault { Rejected(i32) }
+struct Fallible { state: &Context }
+impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
+pub impl core::iter::Mapper<i32, core::result::Result<[u64; 2], Fault>> for Fallible {
+    pub fn apply(&self, value: i32) -> core::result::Result<[u64; 2], Fault> {
+        let state: &Context = self.state; state.calls += 1;
+        if (value == 1) { return core::result::Err(Fault::Rejected(value)); }
+        let result: [u64; 2] = [18446744073709551615 - (value as u64), value as u64];
+        return core::result::Ok(result);
+    }
+}
+struct ArrayMap { marker: i32 }
+impl ArrayMap { fn borrow(&self) -> &ArrayMap { return self; } }
+pub impl core::iter::Mapper<i32, [u64; 2]> for ArrayMap {
+    pub fn apply(&self, value: i32) -> [u64; 2] { return [18446744073709551615, value as u64]; }
+}
+struct SumPair { state: &Context }
+impl SumPair { fn borrow(&self) -> &SumPair { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32, i32>, i64> for SumPair {
+    pub fn apply(&self, value: core::pair::Pair<i32, i32>) -> i64 {
+        let state: &Context = self.state; state.calls += 1;
+        return (value.first as i64) + (value.second as i64);
+    }
+}
+struct Alias { state: &Context }
+impl Alias { fn borrow(&self) -> &Alias { return self; } }
+pub impl core::iter::Mapper<alloc::string::String, alloc::string::String> for Alias {
+    pub fn apply(&self, value: alloc::string::String) -> alloc::string::String {
+        let state: &Context = self.state; state.calls += 1; return value;
+    }
+}
+fn mapped<I, M, T, U>(source: &I, mapper: &M) -> core::iter::Map<I, M, T, U>
+    where I: core::iter::Iterator<T>, M: core::iter::Mapper<T, U> {
+    return core::iter::map<I, M, T, U>(source, mapper);
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next(); return item;
+}
+fn shapes() {
+    let state: Context = Context { calls: 0, sum: 0, offset: 7 };
+    let payload: Payload = Payload { wide: 18446744073709551615, cells: [19, 23], flag: core::option::Some(false) };
+    let values: [Payload; 1] = [payload];
+    let source: core::slice::Iter<Payload> = core::result::unwrap(core::iter::from_slice<Payload>(values, 1));
+    let pack: Pack<Payload> = Pack { state: state.borrow() };
+    let boxed: core::iter::Map<core::slice::Iter<Payload>, Pack<Payload>, Payload, Wrapped<Payload>> =
+        mapped<core::slice::Iter<Payload>, Pack<Payload>, Payload, Wrapped<Payload>>(source.borrow(), pack.borrow());
+    assert(state.calls == 0 && source.remaining() == 1);
+    let result: core::option::Option<Wrapped<Payload>> = pull<core::iter::Map<core::slice::Iter<Payload>, Pack<Payload>, Payload, Wrapped<Payload>>, Wrapped<Payload>>(boxed.borrow());
+    let item: Wrapped<Payload> = core::option::unwrap(result);
+    assert(item.stamp == 18446744073709551614 && item.item.wide == 18446744073709551615 && item.item.cells[1] == 23 && !core::option::unwrap(item.item.flag));
+
+    let optional_source: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let maybe: Maybe = Maybe { state: state.borrow() };
+    let optional: core::iter::Map<Probe, Maybe, i32, core::option::Option<i32>> = mapped<Probe, Maybe, i32, core::option::Option<i32>>(optional_source.borrow(), maybe.borrow());
+    let a: core::option::Option<core::option::Option<i32>> = optional.next();
+    let b: core::option::Option<core::option::Option<i32>> = optional.next();
+    let c: core::option::Option<core::option::Option<i32>> = optional.next();
+    assert(core::option::unwrap(core::option::unwrap(a)) == 10 && core::option::is_some(b) && core::option::is_none(core::option::unwrap(b)) && core::option::unwrap(core::option::unwrap(c)) == 12);
+    let ended: core::iter::Advance = core::iter::advance_up_to<core::iter::Map<Probe, Maybe, i32, core::option::Option<i32>>, core::option::Option<i32>>(optional.borrow(), 3);
+    assert(ended.advanced == 0 && ended.exhausted && optional_source.calls == 4 && state.calls == 4);
+
+    let fallible_source: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let fallible: Fallible = Fallible { state: state.borrow() };
+    let results: core::iter::Map<Probe, Fallible, i32, core::result::Result<[u64; 2], Fault>> =
+        mapped<Probe, Fallible, i32, core::result::Result<[u64; 2], Fault>>(fallible_source.borrow(), fallible.borrow());
+    let r0: core::option::Option<core::result::Result<[u64; 2], Fault>> = results.next();
+    let r1: core::option::Option<core::result::Result<[u64; 2], Fault>> = results.next();
+    let r2: core::option::Option<core::result::Result<[u64; 2], Fault>> = results.next();
+    let ok0: [u64; 2] = core::result::unwrap(core::option::unwrap(r0));
+    let bad: Fault = core::result::unwrap_err(core::option::unwrap(r1));
+    let rejected: bool = match (bad) { Fault::Rejected(value) -> value == 1 };
+    let ok2: [u64; 2] = core::result::unwrap(core::option::unwrap(r2));
+    assert(ok0[0] == 18446744073709551615 && rejected && ok2[0] == 18446744073709551613 && ok2[1] == 2 && state.calls == 7);
+    let array_source: Probe = Probe { length: 1, position: 0, calls: 0 };
+    let array_mapper: ArrayMap = ArrayMap { marker: 0 };
+    let arrays: core::iter::Map<Probe, ArrayMap, i32, [u64; 2]> = mapped<Probe, ArrayMap, i32, [u64; 2]>(array_source.borrow(), array_mapper.borrow());
+    let array_result: core::option::Option<[u64; 2]> = pull<core::iter::Map<Probe, ArrayMap, i32, [u64; 2]>, [u64; 2]>(arrays.borrow());
+    let array: [u64; 2] = core::option::unwrap(array_result);
+    assert(array[0] == 18446744073709551615 && array[1] == 0);
+}
+fn state_and_composition() {
+    let state: Context = Context { calls: 0, sum: 0, offset: 7 };
+    let source: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let scale: Scale = Scale { state: state.borrow() };
+    let first: core::iter::Map<Probe, Scale, i32, i64> = mapped<Probe, Scale, i32, i64>(source.borrow(), scale.borrow());
+    let second: core::iter::Map<Probe, Scale, i32, i64> = first;
+    let zero: core::iter::Take<core::iter::Map<Probe, Scale, i32, i64>, i64> = core::iter::take<core::iter::Map<Probe, Scale, i32, i64>, i64>(first.borrow(), 0);
+    let none: core::option::Option<i64> = zero.next(); assert(core::option::is_none(none) && source.calls == 0 && state.calls == 0);
+    let a: core::option::Option<i64> = first.next(); let b: core::option::Option<i64> = second.next(); let c: core::option::Option<i64> = first.next();
+    assert(core::option::unwrap(a) == 7 && core::option::unwrap(b) == 10 && core::option::unwrap(c) == 13 && state.calls == 3 && state.sum == 3);
+    let end1: core::option::Option<i64> = first.next(); let end2: core::option::Option<i64> = second.next();
+    let again1: core::option::Option<i64> = first.next(); let again2: core::option::Option<i64> = second.next();
+    assert(core::option::is_none(end1) && core::option::is_none(end2) && core::option::is_none(again1) && core::option::is_none(again2) && source.calls == 5 && state.calls == 3);
+    let left: Probe = Probe { length: 2, position: 0, calls: 0 };
+    let right: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let joined: core::iter::Zip<Probe, Probe, i32, i32> = core::iter::zip<Probe, Probe, i32, i32>(left.borrow(), right.borrow());
+    let copied: core::iter::Zip<Probe, Probe, i32, i32> = joined;
+    let j0: core::option::Option<core::pair::Pair<i32, i32>> = joined.next();
+    let j1: core::option::Option<core::pair::Pair<i32, i32>> = copied.next();
+    assert(core::option::unwrap(j0).first == 0 && core::option::unwrap(j1).second == 1);
+    let je: core::option::Option<core::pair::Pair<i32, i32>> = joined.next();
+    let ce: core::option::Option<core::pair::Pair<i32, i32>> = copied.next();
+    let jagain: core::option::Option<core::pair::Pair<i32, i32>> = joined.next();
+    assert(core::option::is_none(je) && core::option::is_none(ce) && core::option::is_none(jagain) && left.calls == 4 && right.calls == 2);
+
+    let alias: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let self_zip: core::iter::Zip<Probe, Probe, i32, i32> = core::iter::zip<Probe, Probe, i32, i32>(alias.borrow(), alias.borrow());
+    let pair: core::option::Option<core::pair::Pair<i32, i32>> = self_zip.next();
+    let paired: core::pair::Pair<i32, i32> = core::option::unwrap(pair);
+    assert(paired.first == 0 && paired.second == 1);
+    let alias_end: core::option::Option<core::pair::Pair<i32, i32>> = self_zip.next();
+    let alias_again: core::option::Option<core::pair::Pair<i32, i32>> = self_zip.next();
+    assert(core::option::is_none(alias_end) && core::option::is_none(alias_again) && alias.position == 3 && alias.calls == 4);
+
+    let x: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let y: Probe = Probe { length: 4, position: 0, calls: 0 };
+    let zip: core::iter::Zip<Probe, Probe, i32, i32> = core::iter::zip<Probe, Probe, i32, i32>(x.borrow(), y.borrow());
+    let sum: SumPair = SumPair { state: state.borrow() };
+    let sums: core::iter::Map<core::iter::Zip<Probe, Probe, i32, i32>, SumPair, core::pair::Pair<i32, i32>, i64> =
+        mapped<core::iter::Zip<Probe, Probe, i32, i32>, SumPair, core::pair::Pair<i32, i32>, i64>(zip.borrow(), sum.borrow());
+    let numbered: core::iter::Enumerate<core::iter::Map<core::iter::Zip<Probe, Probe, i32, i32>, SumPair, core::pair::Pair<i32, i32>, i64>, i64> =
+        core::iter::enumerate<core::iter::Map<core::iter::Zip<Probe, Probe, i32, i32>, SumPair, core::pair::Pair<i32, i32>, i64>, i64>(sums.borrow());
+    let prefix: core::iter::Take<core::iter::Enumerate<core::iter::Map<core::iter::Zip<Probe, Probe, i32, i32>, SumPair, core::pair::Pair<i32, i32>, i64>, i64>, core::pair::Pair<u64, i64>> =
+        core::iter::take<core::iter::Enumerate<core::iter::Map<core::iter::Zip<Probe, Probe, i32, i32>, SumPair, core::pair::Pair<i32, i32>, i64>, i64>, core::pair::Pair<u64, i64>>(numbered.borrow(), 2);
+    let n0: core::option::Option<core::pair::Pair<u64, i64>> = prefix.next();
+    let n1: core::option::Option<core::pair::Pair<u64, i64>> = prefix.next();
+    let ne: core::option::Option<core::pair::Pair<u64, i64>> = prefix.next();
+    let row0: core::pair::Pair<u64, i64> = core::option::unwrap(n0); let row1: core::pair::Pair<u64, i64> = core::option::unwrap(n1);
+    assert(row0.first == 0 && row0.second == 0 && row1.first == 1 && row1.second == 2 && core::option::is_none(ne) && x.calls == 2 && y.calls == 2 && state.calls == 5);
+}
+fn enumerate_case(length: i32, first: u64) {
+    let source: Probe = Probe { length: length, position: 0, calls: 0 };
+    let numbered: core::iter::Enumerate<Probe, i32> = core::iter::enumerate_from<Probe, i32>(source.borrow(), first);
+    assert(source.calls == 0);
+    let index: i32 = 0;
+    while (index < length) {
+        let next: core::option::Option<core::pair::Pair<u64, i32>> = numbered.next();
+        let item: core::pair::Pair<u64, i32> = core::option::unwrap(next);
+        assert(item.first == first + (index as u64) && item.second == index); index += 1;
+    }
+    let end: core::option::Option<core::pair::Pair<u64, i32>> = numbered.next();
+    let again: core::option::Option<core::pair::Pair<u64, i32>> = numbered.next();
+    assert(core::option::is_none(end) && core::option::is_none(again) && source.calls == length + 1);
+}
+fn enumerate_edges() {
+    enumerate_case(0, 18446744073709551615); enumerate_case(1, 18446744073709551615);
+    enumerate_case(2, 18446744073709551614); enumerate_case(3, 0);
+    let source: Probe = Probe { length: 2, position: 0, calls: 0 };
+    let first: core::iter::Enumerate<Probe, i32> = core::iter::enumerate_from<Probe, i32>(source.borrow(), 7);
+    let second: core::iter::Enumerate<Probe, i32> = first;
+    let a: core::option::Option<core::pair::Pair<u64, i32>> = first.next();
+    let b: core::option::Option<core::pair::Pair<u64, i32>> = second.next();
+    let av: core::pair::Pair<u64, i32> = core::option::unwrap(a); let bv: core::pair::Pair<u64, i32> = core::option::unwrap(b);
+    assert(av.first == 7 && av.second == 0 && bv.first == 7 && bv.second == 1);
+    let bounded_source: Probe = Probe { length: 2, position: 0, calls: 0 };
+    let maximum: core::iter::Enumerate<Probe, i32> = core::iter::enumerate_from<Probe, i32>(bounded_source.borrow(), 18446744073709551615);
+    let selected: core::iter::Take<core::iter::Enumerate<Probe, i32>, core::pair::Pair<u64, i32>> = core::iter::take<core::iter::Enumerate<Probe, i32>, core::pair::Pair<u64, i32>>(maximum.borrow(), 1);
+    let value: core::option::Option<core::pair::Pair<u64, i32>> = selected.next();
+    let ended: core::option::Option<core::pair::Pair<u64, i32>> = selected.next();
+    assert(core::option::unwrap(value).first == 18446744073709551615 && core::option::is_none(ended) && bounded_source.calls == 1 && bounded_source.position == 1);
+}
+fn owned_aliases() {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let aliases: [alloc::string::String; 3] = [owner, owner, owner];
+    let source: core::slice::Iter<alloc::string::String> = core::result::unwrap(core::iter::from_slice<alloc::string::String>(aliases, 3));
+    let state: Context = Context { calls: 0, sum: 0, offset: 0 };
+    let mapper: Alias = Alias { state: state.borrow() };
+    let mapped_aliases: core::iter::Map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String> =
+        mapped<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String>(source.borrow(), mapper.borrow());
+    let bounds: core::range::Range<i32> = core::range::range<i32>(0, 1);
+    let right: core::iter::RangeI32 = core::iter::range_i32(bounds);
+    let joined: core::iter::Zip<core::iter::Map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String>, core::iter::RangeI32, alloc::string::String, i32> =
+        core::iter::zip<core::iter::Map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String>, core::iter::RangeI32, alloc::string::String, i32>(mapped_aliases.borrow(), right.borrow());
+    let next: core::option::Option<core::pair::Pair<alloc::string::String, i32>> = joined.next();
+    let item: core::pair::Pair<alloc::string::String, i32> = core::option::unwrap(next);
+    let borrowed: alloc::string::String = item.first;
+    let end: core::option::Option<core::pair::Pair<alloc::string::String, i32>> = joined.next();
+    let again: core::option::Option<core::pair::Pair<alloc::string::String, i32>> = joined.next();
+    assert(item.second == 0 && core::option::is_none(end) && core::option::is_none(again) && state.calls == 2 && source.remaining() == 1);
+    let rest: core::iter::Advance = core::iter::advance_up_to<core::iter::Map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String>, alloc::string::String>(mapped_aliases.borrow(), 8);
+    assert(rest.advanced == 1 && rest.exhausted && state.calls == 3 && owner.byte_len() == 4 && borrowed.byte_len() == 4);
+    let text: core::text::Text = borrowed.as_text();
+    let last: core::option::Option<u8> = text.byte_at(3); assert(core::option::unwrap(last) == 100);
+    // owner remains the sole release authority, including for the unpaired
+    // mapped left item discarded when Zip observed right EOF.
+    owner.destroy();
+}
+fn main() -> i32 { shapes(); state_and_composition(); enumerate_edges(); owned_aliases(); return 0; }

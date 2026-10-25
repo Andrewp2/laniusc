@@ -1,6 +1,6 @@
 module app::main;
 import core::char;
-import core::number_i32;
+import core::i32;
 import core::range;
 import core::slice;
 fn main() -> i32 {
@@ -22,7 +22,7 @@ fn main() -> i32 {
     while (index<6) {
         let letter: char = core::slice::get_or(letters, 6, index, a);
         if (matches.contains(index) && lowercase.contains(letter) && core::char::is_ascii_alphabetic(letter)) {
-            count = core::number_i32::saturating_add(count, 1);
+            count = core::i32::saturating_add(count, 1);
         }
         index += 1;
     }

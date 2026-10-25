@@ -1,0 +1,96 @@
+module app::main;
+import core::option;
+import core::random;
+import core::result;
+import core::slice;
+pub struct Script { values: [u64], length: i32, at: i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::random::Source64 for Script {
+    pub fn draw(&self) -> core::result::Result<u64, core::random::Error> {
+        if (self.at == self.length) { return core::result::Err(core::random::Error::Host(5)); }
+        let value: u64 = self.values[self.at]; self.at += 1; return core::result::Ok(value);
+    }
+}
+struct Pair { a: i64, b: bool }
+struct Empty {}
+fn bounds(error: core::random::Error) -> bool {
+    let result: bool = match (error) { core::random::Error::Bounds -> true, _ -> false }; return result;
+}
+fn source_error(error: core::random::Error) -> bool {
+    let result: bool = match (error) { core::random::Error::Host(code) -> code == 5, _ -> false }; return result;
+}
+fn main() -> i32 {
+    let zeros: core::random::State = core::random::State { s0: 0, s1: 0, s2: 0, s3: 0 };
+    assert(core::result::is_err(core::random::from_state(zeros)));
+    let rng: core::random::Xoshiro256PlusPlus = core::result::unwrap(core::random::from_state(core::random::State { s0: 1,s1: 2,s2: 3,s3: 4 }));
+    assert(rng.next_u64() == 41943041 as u64);
+    let copied: core::random::Xoshiro256PlusPlus = rng; let restored: core::random::Xoshiro256PlusPlus = core::result::unwrap(core::random::from_state(rng.snapshot()));
+    let index: i32 = 0; while (index < 32) { let value: u64 = rng.next_u64(); assert(copied.next_u64() == value && restored.next_u64() == value); index += 1; }
+    let states: [u64; 8] = [0,4,5,6,18446744073709551615,0,0x0706050403020100,0x0f0e0d0c0b0a0908];
+    let script: Script = Script { values: states, length: 8, at: 0 };
+    assert(core::result::is_err(core::random::below(script.borrow(),0)) && core::result::unwrap(core::random::below(script.borrow(),1)) == 0 as u64 && script.at == 0);
+    assert(core::result::is_err(core::random::inclusive_u64(script.borrow(),9,8)) && core::result::unwrap(core::random::inclusive_u64(script.borrow(),9,9)) == 9 as u64 && script.at == 0);
+    assert(core::result::unwrap(core::random::below(script.borrow(),10)) == 6 as u64 && script.at == 4);
+    let maximum: u64 = 18446744073709551615; assert(core::result::unwrap(core::random::inclusive_u64(script.borrow(),0,maximum)) == maximum);
+    let minimum: i64 = -9223372036854775807 - 1; let signed_max: i64 = 9223372036854775807;
+    assert(core::result::unwrap(core::random::inclusive_i64(script.borrow(),minimum,signed_max)) == minimum && script.at == 6);
+    let high_words: [u64; 6] = [18446744073709551615,18446744073709551615,0,18446744073709551615,0,1];
+    let extremes: Script = Script { values: high_words,length: 6,at: 0 };
+    assert(core::result::unwrap(core::random::inclusive_i64(extremes.borrow(),minimum,signed_max)) == signed_max);
+    assert(core::result::unwrap(core::random::inclusive_u64(extremes.borrow(),maximum-1,maximum)) == maximum);
+    assert(core::result::unwrap(core::random::inclusive_u64(extremes.borrow(),maximum-1,maximum)) == maximum-1);
+    assert(core::result::unwrap(core::random::inclusive_i64(extremes.borrow(),minimum,minimum+1)) == minimum+1);
+    assert(core::result::unwrap(core::random::inclusive_i64(extremes.borrow(),-1,0)) == -1 as i64);
+    assert(core::result::unwrap(core::random::inclusive_i64(extremes.borrow(),-1,0)) == 0 as i64 && extremes.at == 6);
+    assert(core::result::unwrap(core::random::inclusive_i64(extremes.borrow(),minimum,minimum)) == minimum && extremes.at == 6);
+    assert(core::result::is_err(core::random::inclusive_i64(extremes.borrow(),0,-1)) && extremes.at == 6);
+    let bytes: [u8; 20] = [99;20]; assert(core::result::unwrap(core::random::fill(script.borrow(),bytes,1,12)) == 12 && script.at == 8);
+    index = 0; while (index < 12) { assert(bytes[index+1] == index as u8); index += 1; } assert(bytes[0] == 99 && bytes[13] == 99);
+    let failed: core::random::Failure = core::result::unwrap_err(core::random::fill(script.borrow(),bytes,0,1)); assert(failed.completed == 0 && bytes[0] == 99);
+    assert(core::result::unwrap(core::random::fill(script.borrow(),bytes,0,0)) == 0 && core::result::is_err(core::random::fill(script.borrow(),bytes,-1,0)));
+    let invalid_fill: core::random::Failure = core::result::unwrap_err(core::random::fill(script.borrow(),bytes,2147483647,1));
+    assert(bounds(invalid_fill.cause) && invalid_fill.completed == 0 && bytes[0] == 99 && script.at == 8);
+    invalid_fill = core::result::unwrap_err(core::random::fill(script.borrow(),bytes,0,-1));
+    assert(bounds(invalid_fill.cause) && invalid_fill.completed == 0 && script.at == 8);
+    let numbers: [i32; 3] = [1,2,3]; let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(numbers,3));
+    let singleton: core::slice::View<i32> = core::result::unwrap(view.subview(1,2)); let empty: core::slice::View<i32> = core::result::unwrap(view.subview(0,0));
+    assert(core::result::unwrap(core::random::shuffle(script.borrow(),empty)) == 0 && core::result::unwrap(core::random::shuffle(script.borrow(),singleton)) == 0);
+    assert(core::option::is_none(core::result::unwrap(core::random::choose(script.borrow(),empty))) && core::option::unwrap(core::result::unwrap(core::random::choose(script.borrow(),singleton))) == 2);
+    assert(source_error(core::result::unwrap_err(core::random::choose(script.borrow(),view))));
+    let selected: [u64; 2] = [3,0]; let swaps: Script = Script { values: selected, length: 2, at: 0 };
+    assert(core::result::unwrap(core::random::shuffle(swaps.borrow(),view)) == 2 && numbers[0] == 2 && numbers[1] == 3 && numbers[2] == 1);
+    let guarded: [i32; 5] = [99,1,2,3,99]; swaps.at = 0;
+    core::result::unwrap(core::random::shuffle(swaps.borrow(),core::result::unwrap(core::slice::view_range(guarded,1,3)))); assert(guarded[0] == 99 && guarded[1] == 2 && guarded[2] == 3 && guarded[3] == 1 && guarded[4] == 99);
+    let masks: i32 = 0; let first: i32 = 0;
+    while (first < 3) {
+        let second: i32 = 0; while (second < 2) {
+            let sample: u64 = first as u64; if (first == 0) { sample = 3; }
+            let choices: [u64; 2] = [sample,second as u64]; let all: Script = Script { values: choices,length: 2,at: 0 }; let permutation: [i32; 3] = [1,2,3];
+            core::result::unwrap(core::random::shuffle(all.borrow(),core::result::unwrap(core::slice::view(permutation,3))));
+            let code: i32 = permutation[0]*100+permutation[1]*10+permutation[2];
+            let mask: i32 = match (code) { 123 -> 1,132 -> 2,213 -> 4,231 -> 8,312 -> 16,321 -> 32,_ -> 0 }; assert(mask != 0 && (masks & mask) == 0); masks |= mask; second += 1;
+        }
+        first += 1;
+    }
+    assert(masks == 63);
+    let pair_values: [Pair; 2] = [Pair { a: minimum, b: false },Pair { a: 7, b: true }];
+    swaps.at = 1; core::result::unwrap(core::random::shuffle(swaps.borrow(),core::result::unwrap(core::slice::view(pair_values,2)))); assert(pair_values[0].a == 7 as i64 && pair_values[0].b && pair_values[1].a == minimum && !pair_values[1].b);
+    let floats: [u64; 6] = [0,18446744073709551615,0,18446744073709551615,0,18446744073709551615]; let floating: Script = Script { values: floats, length: 6, at: 0 };
+    assert(!core::result::unwrap(core::random::boolean(floating.borrow())) && core::result::unwrap(core::random::boolean(floating.borrow())));
+    let a: f32 = core::result::unwrap(core::random::unit_f32(floating.borrow())); let b: f32 = core::result::unwrap(core::random::unit_f32(floating.borrow())); assert(a == 0.0 && b < 1.0 && b * 16777216.0 == 16777215.0);
+    let c: f64 = core::result::unwrap(core::random::unit_f64(floating.borrow())); let d: f64 = core::result::unwrap(core::random::unit_f64(floating.borrow())); assert(c == 0.0 && d < 1.0 && d * 9007199254740992.0 == 9007199254740991.0);
+    assert(core::result::is_err(core::random::boolean(floating.borrow())) && core::result::is_err(core::random::unit_f32(floating.borrow())) && core::result::is_err(core::random::unit_f64(floating.borrow())));
+    let partial_words: [u64; 1] = [0x0706050403020100]; let partial: Script = Script { values: partial_words,length: 1,at: 0 };
+    let untouched: [u8; 20] = [99;20]; let fill_failure: core::random::Failure = core::result::unwrap_err(core::random::fill(partial.borrow(),untouched,2,17));
+    assert(source_error(fill_failure.cause) && fill_failure.completed == 8 && untouched[1] == 99 && untouched[10] == 99); index = 0; while (index < 8) { assert(untouched[index+2] == index as u8); index += 1; }
+    let rejected_words: [u64; 1] = [0]; let rejected: Script = Script { values: rejected_words,length: 1,at: 0 }; assert(core::result::is_err(core::random::below(rejected.borrow(),10)) && rejected.at == 1);
+    let limited: Script = Script { values: selected,length: 1,at: 0 }; let permutation: [i32; 3] = [1,2,3];
+    let shuffle_failure: core::random::Failure = core::result::unwrap_err(core::random::shuffle(limited.borrow(),core::result::unwrap(core::slice::view(permutation,3))));
+    assert(source_error(shuffle_failure.cause) && shuffle_failure.completed == 1 && permutation[0] == 3 && permutation[1] == 2 && permutation[2] == 1);
+    let seeded: core::random::Xoshiro256PlusPlus = core::random::from_seed(0); let saved: core::random::State = seeded.snapshot(); assert((saved.s0 | saved.s1 | saved.s2 | saved.s3) != 0);
+    let empty_values: [Empty; 3] = [Empty {},Empty {},Empty {}]; assert(core::result::unwrap(core::random::shuffle(seeded.borrow(),core::result::unwrap(core::slice::view(empty_values,3)))) == 2);
+    assert(core::option::is_some(core::result::unwrap(core::random::choose(seeded.borrow(),core::result::unwrap(core::slice::view(empty_values,3))))));
+    let options: [core::option::Option<bool>; 2] = [core::option::None(),core::option::Some(false)]; swaps.at = 1;
+    core::result::unwrap(core::random::shuffle(swaps.borrow(),core::result::unwrap(core::slice::view(options,2)))); assert(core::option::is_some(options[0]) && !core::option::unwrap(options[0]) && core::option::is_none(options[1]));
+    assert(core::result::unwrap(core::random::below(seeded.borrow(),100)) < 100 as u64); seeded.jump(); seeded.long_jump(); return 0;
+}

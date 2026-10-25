@@ -1,0 +1,184 @@
+// Four-u64 commands: operation, hash/prefix/kind parameter, layout, length.
+// Sources/destinations are separate packed or strided caller storage.
+module app::main;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::tls_handshake;
+import std::stream;
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View<u8> { values: bytes, start: start, length: length }; }
+fn code(error: ext::tls_handshake::Error) -> u64 { return match (error) {
+    ext::tls_handshake::Error::Bounds -> 1, ext::tls_handshake::Error::Truncated -> 2,
+    ext::tls_handshake::Error::InvalidLength -> 3, ext::tls_handshake::Error::UnsupportedType -> 4,
+    ext::tls_handshake::Error::InvalidValue -> 5, ext::tls_handshake::Error::DuplicateExtension -> 6,
+    ext::tls_handshake::Error::MissingExtension -> 7, ext::tls_handshake::Error::BufferTooSmall -> 8 }; }
+fn roundtrip(input: core::slice::View<u8>, hash_length: i32, output: core::slice::View<u8>) -> core::result::Result<i32,ext::tls_handshake::Error> {
+    let parsed: core::result::Result<ext::tls_handshake::Frame,ext::tls_handshake::Error> = ext::tls_handshake::parse_frame(input);
+    if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); } let frame: ext::tls_handshake::Frame=parsed.unwrap();
+    if (frame.kind==1) {
+        let value: core::result::Result<ext::tls_handshake::ClientHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_client_hello(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_client_hello(value.unwrap(),output);
+    }
+    if (frame.kind==2) {
+        let value: core::result::Result<ext::tls_handshake::ServerHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_server_hello(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_server_hello(value.unwrap(),output);
+    }
+    if (frame.kind==8) {
+        let value: core::result::Result<ext::tls_handshake::EncryptedExtensions,ext::tls_handshake::Error> = ext::tls_handshake::parse_encrypted_extensions(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_encrypted_extensions(value.unwrap(),output);
+    }
+    if (frame.kind==13) {
+        let value: core::result::Result<ext::tls_handshake::CertificateRequest,ext::tls_handshake::Error> = ext::tls_handshake::parse_certificate_request(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_certificate_request(value.unwrap(),output);
+    }
+    if (frame.kind==11) {
+        let value: core::result::Result<ext::tls_handshake::Certificate,ext::tls_handshake::Error> = ext::tls_handshake::parse_certificate(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_certificate(value.unwrap(),output);
+    }
+    if (frame.kind==15) {
+        let value: core::result::Result<ext::tls_handshake::CertificateVerify,ext::tls_handshake::Error> = ext::tls_handshake::parse_certificate_verify(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_certificate_verify(value.unwrap(),output);
+    }
+    if (frame.kind==20) {
+        let value: core::result::Result<ext::tls_handshake::Finished,ext::tls_handshake::Error> = ext::tls_handshake::parse_finished(frame.body,hash_length);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_finished(value.unwrap(),hash_length,output);
+    }
+    if (frame.kind==24) {
+        let value: core::result::Result<ext::tls_handshake::KeyUpdate,ext::tls_handshake::Error> = ext::tls_handshake::parse_key_update(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_key_update(value.unwrap(),output);
+    }
+    if (frame.kind==4) {
+        let value: core::result::Result<ext::tls_handshake::NewSessionTicket,ext::tls_handshake::Error> = ext::tls_handshake::parse_new_session_ticket(frame.body);
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        return ext::tls_handshake::write_new_session_ticket(value.unwrap(),output);
+    }
+    let empty: core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::parse_end_of_early_data(frame.body);
+    if (empty.is_err()) { return core::result::Err(empty.unwrap_err()); } return ext::tls_handshake::write_end_of_early_data(output);
+}
+fn put(value: u64, width: i32, output: core::slice::View<u8>, at: i32) { let index: i32=0; while (index<width) { output.values[output.start+at+index]=((value>>((width-1-index)*8))&255) as u8; index+=1; } }
+fn run(op: i32, parameter: i32, input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32,ext::tls_handshake::Error> {
+    if (op==0 || op==2) { return roundtrip(input,parameter,output); }
+    if (op==6) { return ext::tls_handshake::write_frame(parameter as u8,input,output); }
+    let position: i32=0;
+    if (op==1) {
+        let parsed: core::result::Result<ext::tls_handshake::FrameCursor,ext::tls_handshake::Error> = ext::tls_handshake::frames(input);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); } let cursor: ext::tls_handshake::FrameCursor=parsed.unwrap();
+        while (true) { let item: core::option::Option<ext::tls_handshake::Frame> = cursor.next(); if (item.is_none()) { break; }
+            let frame: ext::tls_handshake::Frame=item.unwrap(); assert(frame.wire.length==4+frame.body.length);
+            position+=ext::tls_handshake::write_frame(frame.kind,frame.body,view(output.values,output.start+position,output.length-position)).unwrap(); }
+        assert(cursor.remaining_bytes()==0 && cursor.next().is_none() && cursor.next().is_none());
+    }
+    if (op==3) {
+        let maximum: i32=255; if (parameter==2) { maximum=65535; } if (parameter==3) { maximum=16777215; }
+        let parsed: core::result::Result<ext::tls_handshake::VectorCursor,ext::tls_handshake::Error> = ext::tls_handshake::vectors(input,parameter as u8,0,maximum);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); } let cursor: ext::tls_handshake::VectorCursor=parsed.unwrap();
+        while (true) { let item: core::option::Option<core::slice::View<u8>> = cursor.next(); if (item.is_none()) { break; } let data: core::slice::View<u8> = item.unwrap();
+            put(data.length as u64,parameter,output,position); position+=parameter; let index: i32=0; while (index<data.length) { output.values[output.start+position]=data.values[data.start+index]; position+=1; index+=1; } }
+        assert(cursor.remaining_bytes()==0 && cursor.next().is_none() && cursor.next().is_none());
+    }
+    if (op==4) {
+        let parsed: core::result::Result<ext::tls_handshake::ExtensionCursor,ext::tls_handshake::Error> = ext::tls_handshake::extensions(input);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); } let cursor: ext::tls_handshake::ExtensionCursor=parsed.unwrap();
+        while (true) { let item: core::option::Option<ext::tls_handshake::Extension> = cursor.next(); if (item.is_none()) { break; } let data: ext::tls_handshake::Extension=item.unwrap();
+            position+=ext::tls_handshake::write_extension(data.kind,data.data,view(output.values,output.start+position,output.length-position)).unwrap(); }
+        assert(cursor.remaining_bytes()==0 && cursor.next().is_none() && cursor.next().is_none());
+    }
+    if (op==5) {
+        let parsed: core::result::Result<ext::tls_handshake::CertificateCursor,ext::tls_handshake::Error> = ext::tls_handshake::certificate_entries(input);
+        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); } let cursor: ext::tls_handshake::CertificateCursor=parsed.unwrap();
+        while (true) { let item: core::option::Option<ext::tls_handshake::CertificateEntry> = cursor.next(); if (item.is_none()) { break; }
+            position+=ext::tls_handshake::write_certificate_entry(item.unwrap(),view(output.values,output.start+position,output.length-position)).unwrap(); }
+        assert(cursor.remaining_bytes()==0 && cursor.next().is_none() && cursor.next().is_none());
+    }
+    return core::result::Ok(position);
+}
+fn untouched(bytes: [u8], length: i32) { let index: i32=0; while (index<length) { assert(bytes[index]==165); index+=1; } }
+fn contracts() {
+    let bytes: [u8;256]=[0;256]; let output: [u8;512]=[165;512];
+    let random: core::slice::View<u8> = view(bytes,0,32); let empty: core::slice::View<u8> = view(bytes,0,0);
+    let suites: [u8;2]=[19,3]; let ch_ext: [u8;11]=[0,43,0,3,2,3,4,255,255,0,0]; let sh_ext: [u8;6]=[0,43,0,2,3,4];
+    let duplicate: [u8;8]=[255,255,0,0,255,255,0,0]; let bad: core::slice::View<u8> = view(bytes,-1,0); let target: core::slice::View<u8> = view(output,3,500);
+    let hello: ext::tls_handshake::ClientHello=ext::tls_handshake::ClientHello { random: view(bytes,0,31), session_id: empty, cipher_suites: view(suites,0,2), extensions: view(ch_ext,0,11) };
+    assert(code(ext::tls_handshake::write_client_hello(hello,target).unwrap_err())==3); untouched(output,512);
+    hello.random=random; hello.extensions=view(duplicate,0,8);
+    assert(code(ext::tls_handshake::write_client_hello(hello,target).unwrap_err())==6); untouched(output,512);
+    let server: ext::tls_handshake::ServerHello=ext::tls_handshake::ServerHello { random: random, session_id: bad, cipher_suite: 4867, extensions: view(sh_ext,0,6) };
+    assert(code(ext::tls_handshake::write_server_hello(server,target).unwrap_err())==1); untouched(output,512);
+    let encrypted: ext::tls_handshake::EncryptedExtensions=ext::tls_handshake::EncryptedExtensions { extensions: view(duplicate,0,8) };
+    assert(code(ext::tls_handshake::write_encrypted_extensions(encrypted,target).unwrap_err())==6); untouched(output,512);
+    let request: ext::tls_handshake::CertificateRequest=ext::tls_handshake::CertificateRequest { context: empty, extensions: view(duplicate,0,4) };
+    assert(code(ext::tls_handshake::write_certificate_request(request,target).unwrap_err())==7); untouched(output,512);
+    let certificate: ext::tls_handshake::Certificate=ext::tls_handshake::Certificate { context: view(bytes,0,256), entries: empty };
+    assert(code(ext::tls_handshake::write_certificate(certificate,target).unwrap_err())==3); untouched(output,512);
+    let verify: ext::tls_handshake::CertificateVerify=ext::tls_handshake::CertificateVerify { algorithm: 2052, signature: bad };
+    assert(code(ext::tls_handshake::write_certificate_verify(verify,target).unwrap_err())==1); untouched(output,512);
+    let finished: ext::tls_handshake::Finished=ext::tls_handshake::Finished { verify_data: empty };
+    assert(code(ext::tls_handshake::write_finished(finished,32,target).unwrap_err())==3); untouched(output,512);
+    let update: ext::tls_handshake::KeyUpdate=ext::tls_handshake::KeyUpdate { request_update: 2 };
+    assert(code(ext::tls_handshake::write_key_update(update,target).unwrap_err())==5); untouched(output,512);
+    let ticket: ext::tls_handshake::NewSessionTicket=ext::tls_handshake::NewSessionTicket { lifetime: 604801, age_add: 4294967295, nonce: empty, ticket: view(bytes,0,1), extensions: empty };
+    assert(code(ext::tls_handshake::write_new_session_ticket(ticket,target).unwrap_err())==5); untouched(output,512);
+    assert(code(ext::tls_handshake::write_end_of_early_data(view(output,0,3)).unwrap_err())==8); untouched(output,512);
+    assert(code(ext::tls_handshake::write_frame(254,empty,target).unwrap_err())==4); untouched(output,512);
+    assert(code(ext::tls_handshake::write_frame(254,bad,target).unwrap_err())==1); untouched(output,512);
+    assert(code(ext::tls_handshake::write_extension(65535,empty,view(output,0,3)).unwrap_err())==8); untouched(output,512);
+    let entry: ext::tls_handshake::CertificateEntry=ext::tls_handshake::CertificateEntry { data: empty, extensions: empty };
+    assert(code(ext::tls_handshake::write_certificate_entry(entry,target).unwrap_err())==3); untouched(output,512);
+    assert(code(ext::tls_handshake::vectors(empty,0,0,0).unwrap_err())==3);
+    assert(code(ext::tls_handshake::vectors(empty,1,0,256).unwrap_err())==3);
+    assert(code(ext::tls_handshake::vectors(empty,1,-1,255).unwrap_err())==3);
+    assert(code(ext::tls_handshake::vectors(bad,1,0,255).unwrap_err())==1);
+    assert(code(ext::tls_handshake::frames(bad).unwrap_err())==1 && code(ext::tls_handshake::extensions(bad).unwrap_err())==1 && code(ext::tls_handshake::certificate_entries(bad).unwrap_err())==1);
+    let kinds: [u8;8]=[0,63,0,64,255,255,0,1]; let extbuf: [u8;16]=[0;16]; let index: i32=0;
+    while (index<4) { extbuf[index*4]=kinds[index*2]; extbuf[index*4+1]=kinds[index*2+1]; index+=1; }
+    let cursor: ext::tls_handshake::ExtensionCursor=ext::tls_handshake::extensions(view(extbuf,0,16)).unwrap(); let fork: ext::tls_handshake::ExtensionCursor=cursor;
+    let limited: core::iter::Take<ext::tls_handshake::ExtensionCursor,ext::tls_handshake::Extension> = core::iter::take<ext::tls_handshake::ExtensionCursor,ext::tls_handshake::Extension>(cursor.borrow(),1);
+    assert(limited.next().unwrap().kind==63 && limited.next().is_none()); assert(fork.next().unwrap().kind==63 && cursor.next().unwrap().kind==64);
+    let found: core::option::Option<core::slice::View<u8>> = ext::tls_handshake::find_extension(view(extbuf,0,16),65535).unwrap(); assert(found.is_some() && found.unwrap().length==0);
+    assert(ext::tls_handshake::find_extension(view(extbuf,0,16),9).unwrap().is_none());
+    assert(code(ext::tls_handshake::find_extension(view(duplicate,0,8),65535).unwrap_err())==6);
+}
+fn decode(bytes: [u8], at: i32) -> u64 { let result: u64=0; let index: i32=0; while (index<8) { result|=(bytes[at+index] as u64)<<(index*8); index+=1; } return result; }
+fn emit(error: u64, count: i32, output: core::slice::View<u8>) {
+    let sink: std::stream::Descriptor=std::stream::stdout(); let header: [u8;16]=[0;16]; let index: i32=0;
+    while (index<8) { header[index]=((error>>(index*8))&255) as u8; header[8+index]=(((count as u64)>>(index*8))&255) as u8; index+=1; }
+    core::io::write_all(sink.borrow(),header,0,16).unwrap(); if (count>0) { core::io::write_all(sink.borrow(),output.values,output.start,count).unwrap(); }
+}
+fn main() -> i32 {
+    contracts(); let source: std::stream::Descriptor=std::stream::stdin(); let header: [u8;32]=[0;32];
+    let raw_input: [i32;2048]=[0;2048]; let raw_output: [i32;2048]=[0;2048];
+    let packed_input: [u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(raw_input),8192);
+    let packed_output: [u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(raw_output),8192);
+    let strided_input: [u8;8192]=[0;8192]; let strided_output: [u8;8192]=[0;8192];
+    while (true) {
+        let received: i32=source.read(header,0,32).unwrap(); if (received==0) { return 0; } if (received<32) { core::io::read_exact(source.borrow(),header,received,32-received).unwrap(); }
+        let op: u64=decode(header,0); let parameter: u64=decode(header,8); let layout: u64=decode(header,16); let length: u64=decode(header,24);
+        assert(op<=6 && parameter<=255 && layout<=3 && length<=4096); let count: i32=length as i32;
+        let index: i32=0; while (index<8192) { packed_input[index]=165; packed_output[index]=165; strided_input[index]=165; strided_output[index]=165; index+=1; }
+        core::io::read_exact(source.borrow(),packed_input,3,count).unwrap(); index=0; while (index<count) { strided_input[3+index]=packed_input[3+index]; index+=1; }
+        let input: core::slice::View<u8> = view(strided_input,3,count); let output: core::slice::View<u8> = view(strided_output,5,8187);
+        if ((layout&1)!=0) { input=view(packed_input,3,count); } if ((layout&2)!=0) { output=view(packed_output,5,8187); }
+        if (op==2) { output.length=count-1; }
+        let result: core::result::Result<i32,ext::tls_handshake::Error> = run(op as i32,parameter as i32,input,output); let written: i32=0;
+        if (result.is_err()) { emit(code(result.unwrap_err()),0,output); } else { written=result.unwrap(); emit(0,written,output); }
+        index=0; while (index<8192) {
+            assert(packed_input[index]==strided_input[index]);
+            if (index<3 || index>=3+count) { assert(packed_input[index]==165); }
+            if ((layout&2)==0 || index<5 || index>=5+written) { assert(packed_output[index]==165); }
+            if ((layout&2)!=0 || index<5 || index>=5+written) { assert(strided_output[index]==165); }
+            index+=1;
+        }
+    }
+    return 0;
+}

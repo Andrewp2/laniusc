@@ -1,0 +1,42 @@
+// expect: 1
+// Fail mmap 2 and later: expect 0. All failing edits preserve the first owner.
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+
+fn allocation_failed(error: alloc::string::Error) -> bool {
+    return match (error) { AllocationFailed -> true, _ -> false };
+}
+
+fn failed(result: core::result::Result<i32, alloc::string::Error>) -> bool {
+    return match (result) {
+        Ok(_) -> false, Err(error) -> allocation_failed(error),
+    };
+}
+
+fn main() -> i32 {
+    let text: alloc::string::String = alloc::string::new();
+    if (core::result::is_err(text.try_push_scalar(128578))) { return 2; }
+    if (!failed(text.try_push_scalar(65))) { text.destroy(); return 1; }
+    if (!failed(text.try_reserve(100))) { return 3; }
+    if (!failed(text.try_append(text))) { return 4; }
+    let clone_failed: bool = match (text.try_clone()) {
+        Ok(_) -> false, Err(error) -> allocation_failed(error),
+    };
+    if (!clone_failed || text.byte_len() != 4 || text.capacity() != 4) { return 5; }
+    if (core::option::unwrap_or(text.scalar_at_byte(0), 0) != 128578) { return 6; }
+    if (!failed(text.try_replace_range(0, 4, text))) { return 9; }
+    let substring_failed: bool = match (text.try_substring(0, 4)) {
+        Ok(_) -> false, Err(error) -> allocation_failed(error),
+    };
+    if (!substring_failed || text.byte_len() != 4) { return 10; }
+    // Validation needs no allocation and leaves the same owner valid.
+    if (!core::result::is_err(text.try_push_scalar(55296))) { return 7; }
+    // Removal is allocation-free, even when every later allocation fails.
+    if (core::result::is_err(text.try_remove_range(0, 4))) { return 11; }
+    text.clear();
+    if (core::result::is_err(text.try_push_scalar(66))) { return 8; }
+    text.destroy();
+    return 0;
+}

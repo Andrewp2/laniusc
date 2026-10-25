@@ -1,0 +1,53 @@
+module app::main;
+import probe::constant_application;
+import probe::constant_consumer;
+
+fn main() -> i32 {
+    let first_state: probe::constant_application::State = probe::constant_application::State { calls:0,stamp:0 };
+    let second_state: probe::constant_application::State = probe::constant_application::State { calls:0,stamp:0 };
+    let first_payload: probe::constant_application::Payload<i32> =
+        probe::constant_application::Payload<i32> { wide:18446744073709551610,narrow:-31,flag:false,extra:-37 };
+    let second_payload: probe::constant_application::Payload<probe::constant_application::Extra> =
+        probe::constant_application::Payload<probe::constant_application::Extra> {
+            wide:9223372036854775839,narrow:-41,flag:true,
+            extra:probe::constant_application::Extra { wide:18446744073709551608,narrow:-43 }
+        };
+    let first: probe::constant_application::Carrier<probe::constant_application::Payload<i32>,4294967297> =
+        probe::constant_application::Carrier<probe::constant_application::Payload<i32>,4294967297> {
+            item:first_payload,state:first_state.borrow()
+        };
+    let second: probe::constant_application::Carrier<probe::constant_application::Payload<probe::constant_application::Extra>,8589934593> =
+        probe::constant_application::Carrier<probe::constant_application::Payload<probe::constant_application::Extra>,8589934593> {
+            item:second_payload,state:second_state.borrow()
+        };
+
+    let first_result: probe::constant_consumer::Observation<probe::constant_application::Payload<i32>> =
+        probe::constant_consumer::observe(first.borrow());
+    assert(first_result.stamp == 4294967297);
+    assert(first_result.payload.wide == 18446744073709551610 && first_result.payload.narrow == -31);
+    assert(!first_result.payload.flag && first_result.payload.extra == -37);
+    assert(first_state.calls == 2 && first_state.stamp == 4294967297);
+    assert(second_state.calls == 0 && second_state.stamp == 0);
+
+    let second_result: probe::constant_consumer::Observation<probe::constant_application::Payload<probe::constant_application::Extra>> =
+        probe::constant_consumer::observe(second.borrow());
+    assert(second_result.stamp == 8589934593 && second_result.stamp != first_result.stamp);
+    assert(second_result.payload.wide == 9223372036854775839 && second_result.payload.narrow == -41);
+    assert(second_result.payload.flag && second_result.payload.extra.wide == 18446744073709551608);
+    assert(second_result.payload.extra.narrow == -43);
+    assert(second_state.calls == 2 && second_state.stamp == 8589934593);
+    assert(first_state.calls == 2 && first_state.stamp == 4294967297);
+
+    // Payloads return by value while their source's borrowed state retains
+    // identity. Editing either result must not mutate either source record.
+    first_result.payload.wide = 7;
+    first_result.payload.extra = 11;
+    second_result.payload.flag = false;
+    second_result.payload.extra.narrow = 13;
+    assert(first.item.wide == 18446744073709551610 && first.item.narrow == -31);
+    assert(!first.item.flag && first.item.extra == -37);
+    assert(second.item.wide == 9223372036854775839 && second.item.narrow == -41 && second.item.flag);
+    assert(second.item.extra.wide == 18446744073709551608 && second.item.extra.narrow == -43);
+    assert(first_state.calls == 2 && second_state.calls == 2);
+    return 0;
+}

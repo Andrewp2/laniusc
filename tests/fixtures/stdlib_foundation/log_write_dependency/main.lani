@@ -1,0 +1,22 @@
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::log;
+fn text(value: str, length: i32) -> core::text::Text { let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length); return core::text::from_utf8_unchecked(bytes, 0, length); }
+fn written(outcome: ext::log::Outcome) -> i32 { return match (outcome) { ext::log::Outcome::Written(count) -> count, ext::log::Outcome::Filtered -> -1 }; }
+fn main() -> i32 {
+    let fields: [ext::log::Field; 1] = [ext::log::Field { key: text("items", 5), value: ext::log::Value::Unsigned(42) }];
+    let record: ext::log::Record = ext::log::Record { level: ext::log::Level::Info, target: text("test", 4), message: text("hi", 2), fields: core::result::unwrap(core::slice::view(fields, 1)) };
+    let bytes: [u8; 240] = [88; 240]; let scratch: [u8; 240] = [88; 240];
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(bytes, 240));
+    let result: core::result::Result<ext::log::Outcome, ext::log::Error> = ext::log::write(sink.borrow(), ext::log::Filter::AtLeast(ext::log::Level::Trace), record.borrow(), scratch, 240);
+    let count: i32 = written(core::result::unwrap(result)); assert(count == sink.position() && count == core::result::unwrap(ext::log::encoded_len(record.borrow())));
+    assert(core::text::from_utf8_unchecked(bytes, 0, count).equals(text("{\"level\":\"info\",\"target\":\"test\",\"message\":\"hi\",\"fields\":{\"items\":42}}\n", 70)));
+    let skip: ext::log::Outcome = core::result::unwrap(ext::log::write(sink.borrow(), ext::log::Filter::Off, record.borrow(), scratch, -1)); assert(written(skip) == -1 && sink.position() == count);
+    return 0;
+}

@@ -48,6 +48,10 @@ StructuredBuffer<uint> visible_decl;
 StructuredBuffer<uint> member_result_ref_tag;
 StructuredBuffer<uint> member_result_ref_payload;
 StructuredBuffer<uint> call_fn_index;
+StructuredBuffer<uint> method_decl_method_row;
+StructuredBuffer<uint> method_decl_name_token;
+StructuredBuffer<uint> fn_hir_by_decl_token;
+StructuredBuffer<uint> predicate_method_contract_owner_hir;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
@@ -72,6 +76,9 @@ bool valid_token(uint token) { return token < gParams.n_tokens; }
 static const uint HIR_STMT = 7u;
 static const uint HIR_LET_STMT = 8u;
 static const uint HIR_RETURN_STMT = 9u;
+static const uint HIR_ITEM = 2u;
+static const uint HIR_ITEM_KIND_TRAIT = 10u;
+#include "../methods/local_required_member.slang"
 uint checked_type_capacity() { return mutable_type_capacity(); }
 #define CANONICAL_FIELD_EXPECTATION
 #include "../result_expression_context.slang"
@@ -158,6 +165,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint environment = CT_MATCH_FAILED;
     uint count_mask = 0u;
     uint3 interned = uint3(0u, INVALID, CT_NONE);
+    // A required member's checked predicate already owns its type arguments.
+    // Receiving types may constrain an ordinary generic call, but must agree
+    // with these bound arguments, including return-only parameters.
+    bool required = required_member_trait(function) != INVALID;
     // One interning site serves the result pattern, the receiving type and
     // each prior operand the publisher asks for.
     uint2 operand = uint2(fn_return_ref_tag[function], fn_return_ref_payload[function]);
@@ -188,7 +199,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         else interned = uint3(operand, id);
         uint3 words = ct_words(environment);
         outcome = ct_publish_context<CtNoClaims>(call, callee, environment, words.y, words.z,
-            count_mask, 0u, interned, operand);
+            count_mask, required ? CT_PUBLISH_TYPE_PRIORS : 0u, interned, operand);
         if (outcome != CT_PUBLISH_INTERN) break;
     }
     if (!ct_is_record(environment))
@@ -201,6 +212,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
     }
     // A row another lane is writing settles in a later round.
     if (outcome == CT_PUBLISH_BUSY) return;
+    if (required && outcome == CT_PUBLISH_REJECTED)
+    { record_result_mismatch(call); return; }
     if (outcome != CT_PUBLISHED)
     { record_min_token_error(status, compact_hir_core[call].token_start, 6u, 0x474e0001u); return; }
     call_context_owner_by_token[callee] = call;

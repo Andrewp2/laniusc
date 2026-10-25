@@ -1,0 +1,64 @@
+module app::main;
+import alloc::vec;
+import alloc::deque;
+import core::cmp;
+import core::f32;
+import core::f64;
+import core::option;
+import core::result;
+import core::range;
+import core::slice;
+
+// This generic consumer requires only the partial contracts: native IEEE
+// values can be searched and bounded without asserting total equality/order.
+fn floating<T>(zero: T, negative_zero: T, nan: T, one: T, two: T) -> bool
+    where T: core::cmp::PartialEq<T>, T: core::cmp::PartialOrd<T> {
+    let values: [T; 4] = [zero, nan, one, negative_zero];
+    if (!core::slice::contains(values,4,negative_zero) || core::slice::contains(values,4,nan) ||
+        core::slice::count(values,4,zero) != 2 || core::slice::index_of_or(values,4,nan,-1) != -1) { return false; }
+    let present: core::option::Option<T> = core::option::Some(nan);
+    let ordinary: core::option::Option<T> = core::option::Some(one);
+    let success: core::result::Result<T,T> = core::result::Ok(nan);
+    let failure: core::result::Result<T,T> = core::result::Err(nan);
+    if (present.contains(nan) || !ordinary.contains(one) || success.contains(nan) || failure.contains_err(nan)) { return false; }
+    let span: core::range::Range<T> = core::range::range(zero,two);
+    if (!span.contains(one) || span.contains(nan) || !core::range::range(nan,two).is_empty() ||
+        !core::range::range_inclusive(zero,nan).is_empty() || !core::range::range_full().contains(nan)) { return false; }
+    let vector: alloc::vec::Vec<T> = alloc::vec::new();
+    core::result::unwrap(vector.try_push(nan)); core::result::unwrap(vector.try_push(zero));
+    let queue: alloc::deque::Deque<T> = alloc::deque::new();
+    core::result::unwrap(queue.try_push_back(nan)); core::result::unwrap(queue.try_push_back(zero));
+    let correct: bool = !vector.contains(nan) && vector.contains(negative_zero) && vector.index_of(one) == -1 &&
+        !queue.contains(nan) && queue.contains(negative_zero) && queue.index_of(negative_zero) == 1;
+    vector.destroy(); queue.destroy(); return correct;
+}
+
+// Product order is partial: crossed coordinates are unordered.
+struct Point { x: i32, y: i32 }
+pub impl core::cmp::PartialEq<Point> for Point {
+    pub fn partial_eq(a: Point,b: Point) -> bool { return a.x == b.x && a.y == b.y; }
+    pub fn partial_ne(a: Point,b: Point) -> bool { return !Point::partial_eq(a,b); }
+}
+pub impl core::cmp::PartialOrd<Point> for Point {
+    pub fn partial_lt(a: Point,b: Point) -> bool { return a.x <= b.x && a.y <= b.y && Point::partial_ne(a,b); }
+    pub fn partial_le(a: Point,b: Point) -> bool { return a.x <= b.x && a.y <= b.y; }
+    pub fn partial_gt(a: Point,b: Point) -> bool { return Point::partial_lt(b,a); }
+    pub fn partial_ge(a: Point,b: Point) -> bool { return Point::partial_le(b,a); }
+    pub fn partial_cmp(a: Point,b: Point) -> core::cmp::PartialOrdering {
+        if (Point::partial_eq(a,b)) { return core::cmp::Equal; }
+        if (Point::partial_lt(a,b)) { return core::cmp::Less; }
+        if (Point::partial_gt(a,b)) { return core::cmp::Greater; }
+        return core::cmp::Unordered;
+    }
+}
+fn main() -> i32 {
+    if (!floating(0.0,-0.0,core::f32::nan(),1.0,2.0)) { return 1; }
+    let zero: f64 = 0.0; let negative_zero: f64 = -0.0; let one: f64 = 1.0; let two: f64 = 2.0;
+    if (!floating(zero,negative_zero,core::f64::nan(),one,two)) { return 2; }
+    let a: Point = Point { x: 0, y: 2 }; let b: Point = Point { x: 2, y: 0 };
+    let result: core::cmp::PartialOrdering = Point::partial_cmp(a,b);
+    let unordered: bool = match (result) { core::cmp::Unordered -> true, _ -> false };
+    let points: [Point; 2] = [a,b];
+    if (!unordered || !core::range::range(a,b).is_empty() || !core::slice::contains(points,2,a)) { return 3; }
+    return 0;
+}

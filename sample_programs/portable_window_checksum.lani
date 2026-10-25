@@ -1,13 +1,13 @@
 module app::main;
-import core::byte;
+import core::u8;
 import core::mem;
-import core::number_i32;
+import core::i32;
 import core::range;
 import core::slice;
 fn main() -> i32 {
     // A packet marker must be one ASCII hex digit before its readings count.
     let marker: u8 = 70;
-    if (!core::byte::is_ascii_hexdigit(marker)) {
+    if (!core::u8::is_ascii_hexdigit(marker)) {
         return 1;
     }
     let readings:[i32; 4] =[18, 42, 24, 30];
@@ -28,7 +28,7 @@ fn main() -> i32 {
     while (index<4) {
         if (core::range::contains(window, index)) {
             let reading: i32 = core::slice::get_or(view, 4, index, 0);
-            checksum = core::number_i32::saturating_add(checksum, reading);
+            checksum = core::i32::saturating_add(checksum, reading);
         }
         index += 1;
     }

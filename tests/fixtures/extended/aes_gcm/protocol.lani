@@ -1,0 +1,137 @@
+// Allocation-free AEAD protocol. Eleven LEu64 header words: operation (seal0,
+// open1, copied-key seal2/open3), layout (native0,packed1), in-place, key/nonce/AAD/input/tag lengths,
+// output capacity, malformed-view target (0none,1key,2nonce,3AAD,4input,5tag,
+// 6output), malformed variant (0negative start,1negative length,2end overflow).
+// Response: input/output strides,status,count,capacity,taglength,output,tag.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::aes_gcm;
+import std::stream;
+
+fn load(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        core::result::unwrap(core::io::write_all<std::stream::Descriptor>(stdout.borrow(), self.bytes, 0, self.used)); self.used = 0;
+    }
+    fn byte(&self, value: u8) { if (self.used == 2048) { self.flush(); } self.bytes[self.used] = value; self.used += 1; }
+    fn word(&self, value: u64) { let index: i32 = 0; while (index < 8) { self.byte(((value >> (index*8)) & 255) as u8); index += 1; } }
+}
+fn fill(bytes: [u8], count: i32) { let index: i32 = 0; while (index < count) { bytes[index] = 222; index += 1; } }
+fn copy(source: [u8], target: [u8], count: i32) { let index: i32 = 0; while (index < count) { target[index] = source[index]; index += 1; } }
+fn same(left: [u8], right: [u8], count: i32) { let index: i32 = 0; while (index < count) { assert(left[index] == right[index]); index += 1; } }
+fn bad(view: core::slice::View<u8>, variant: i32) -> core::slice::View<u8> {
+    let broken: core::slice::View<u8> = view;
+    if (variant == 0) { broken.start = -1; }
+    if (variant == 1) { broken.length = -1; }
+    if (variant == 2) { broken.start = 2147483647; broken.length = 1; }
+    return broken;
+}
+fn kind(error: ext::aes_gcm::Error) -> u64 {
+    return match (error) {
+        ext::aes_gcm::Error::Bounds -> 1,
+        ext::aes_gcm::Error::InvalidKeyLength -> 2,
+        ext::aes_gcm::Error::InvalidNonceLength -> 3,
+        ext::aes_gcm::Error::InvalidTagLength -> 4,
+        ext::aes_gcm::Error::BufferTooSmall -> 5,
+        ext::aes_gcm::Error::AuthenticationFailed -> 6,
+        ext::aes_gcm::Error::InputTooLong -> 7
+    };
+}
+fn call(operation: i32, key: core::slice::View<u8>, nonce: core::slice::View<u8>, aad: core::slice::View<u8>, input: core::slice::View<u8>, tag: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, ext::aes_gcm::Error> {
+    if (operation == 0) { return ext::aes_gcm::seal_into(key, nonce, aad, input, output, tag); }
+    if (operation == 1) { return ext::aes_gcm::open_into(key, nonce, aad, input, tag, output); }
+    // Constructed inline state survives source-key overwrite and reassignment
+    // of the original state; restore test-owned key storage after the call.
+    let made: core::result::Result<ext::aes_gcm::Key, ext::aes_gcm::Error> = ext::aes_gcm::new(key);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let original: ext::aes_gcm::Key = made.unwrap(); let copied: ext::aes_gcm::Key = original;
+    let zero_key: [u8; 32] = [0; 32];
+    original = ext::aes_gcm::new(core::slice::View { values: zero_key, start: 0, length: key.length }).unwrap();
+    let index: i32 = 0; while (index < key.length) { key.values[key.start+index] ^= 255; index += 1; }
+    let result: core::result::Result<i32, ext::aes_gcm::Error> = core::result::Ok(0);
+    if (operation == 2) { result = copied.seal_into(nonce, aad, input, output, tag); }
+    else { result = copied.open_into(nonce, aad, input, tag, output); }
+    index = 0; while (index < key.length) { key.values[key.start+index] ^= 255; index += 1; }
+    return result;
+}
+fn read(stdin: &std::stream::Descriptor, bytes: [u8], count: i32) {
+    core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin, bytes, 3, count));
+}
+fn main() -> i32 {
+    let stdin: std::stream::Descriptor = std::stream::stdin();
+    let count_bytes: [u8; 8] = [0; 8]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), count_bytes, 0, 8));
+    let count: u64 = load(count_bytes, 0); let record: u64 = 0;
+    let output_bytes: [u8; 2048] = [0; 2048]; let writer: Output = Output { bytes: output_bytes, used: 0 };
+    while (record < count) {
+        let header: [u8; 88] = [0; 88]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), header, 0, 88));
+        let operation: i32 = load(header, 0) as i32; let layout: i32 = load(header, 8) as i32; let inplace: bool = load(header, 16) != 0;
+        let klen: i32 = load(header, 24) as i32; let nlen: i32 = load(header, 32) as i32; let alen: i32 = load(header, 40) as i32;
+        let ilen: i32 = load(header, 48) as i32; let tlen: i32 = load(header, 56) as i32; let capacity: i32 = load(header, 64) as i32;
+        let target: i32 = load(header, 72) as i32; let variant: i32 = load(header, 80) as i32;
+        assert(operation >= 0 && operation <= 3 && layout >= 0 && layout <= 1);
+        assert(klen >= 0 && klen <= 40 && nlen >= 0 && nlen <= 160 && tlen >= 0 && tlen <= 24);
+        assert(alen >= 0 && alen <= 512 && ilen >= 0 && ilen <= 16384 && capacity >= 0 && capacity <= 16400);
+        let raw_key: [u8; 64] = [0; 64]; let raw_nonce: [u8; 180] = [0; 180]; let raw_tag: [u8; 40] = [0; 40];
+        let raw_aad: [u8; 600] = [0; 600]; let raw_input: [u8; 16500] = [0; 16500]; let raw_output: [u8; 16500] = [0; 16500];
+        fill(raw_key, 64); fill(raw_nonce, 180); fill(raw_tag, 40); fill(raw_aad, 600); fill(raw_input, 16500); fill(raw_output, 16500);
+        read(stdin.borrow(), raw_key, klen); read(stdin.borrow(), raw_nonce, nlen); read(stdin.borrow(), raw_aad, alen);
+        read(stdin.borrow(), raw_input, ilen); read(stdin.borrow(), raw_tag, tlen);
+        let saved_key: [u8; 64] = raw_key; let saved_nonce: [u8; 180] = raw_nonce; let saved_tag: [u8; 40] = raw_tag;
+        let saved_aad: [u8; 600] = raw_aad; let saved_input: [u8; 16500] = raw_input;
+        let key: [u8] = raw_key; let nonce: [u8] = raw_nonce; let aad: [u8] = raw_aad;
+        let input: [u8] = raw_input; let tag: [u8] = raw_tag; let output: [u8] = raw_output;
+        let key_words: [i32; 16] = [0; 16]; let nonce_words: [i32; 45] = [0; 45]; let tag_words: [i32; 10] = [0; 10];
+        let aad_words: [i32; 150] = [0; 150]; let input_words: [i32; 4125] = [0; 4125]; let output_words: [i32; 4125] = [0; 4125];
+        if (layout == 1) {
+            key = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(key_words), 64);
+            nonce = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(nonce_words), 180);
+            tag = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(tag_words), 40);
+            aad = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(aad_words), 600);
+            input = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input_words), 16500);
+            output = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words), 16500);
+            copy(raw_key, key, 64); copy(raw_nonce, nonce, 180); copy(raw_tag, tag, 40);
+            copy(raw_aad, aad, 600); copy(raw_input, input, 16500); fill(output, 16500);
+        }
+        if (inplace) { output = input; }
+        let kv: core::slice::View<u8> = core::slice::View { values: key, start: 3, length: klen };
+        let nv: core::slice::View<u8> = core::slice::View { values: nonce, start: 3, length: nlen };
+        let av: core::slice::View<u8> = core::slice::View { values: aad, start: 3, length: alen };
+        let iv: core::slice::View<u8> = core::slice::View { values: input, start: 3, length: ilen };
+        let tv: core::slice::View<u8> = core::slice::View { values: tag, start: 3, length: tlen };
+        let ov: core::slice::View<u8> = core::slice::View { values: output, start: 3, length: capacity };
+        if (target == 1) { kv = bad(kv, variant); } if (target == 2) { nv = bad(nv, variant); }
+        if (target == 3) { av = bad(av, variant); } if (target == 4) { iv = bad(iv, variant); }
+        if (target == 5) { tv = bad(tv, variant); } if (target == 6) { ov = bad(ov, variant); }
+        let result: core::result::Result<i32, ext::aes_gcm::Error> = call(operation, kv, nv, av, iv, tv, ov);
+        let status: u64 = 0; let written: i32 = 0;
+        if (core::result::is_err(result)) { status = kind(core::result::unwrap_err(result)); }
+        else { written = core::result::unwrap(result); assert(written == ilen); }
+        same(key, saved_key, 64); same(nonce, saved_nonce, 180); same(aad, saved_aad, 600);
+        if (!inplace) { same(input, saved_input, 16500); }
+        let index: i32 = 0;
+        while (index < 16500) {
+            if (index < 3 || index >= 3+written) {
+                if (inplace) { assert(output[index] == saved_input[index]); } else { assert(output[index] == 222); }
+            }
+            index += 1;
+        }
+        let tag_written: i32 = 0; if (operation%2 == 0 && status == 0) { tag_written = 16; }
+        index = 0; while (index < 40) { if (index < 3 || index >= 3+tag_written) { assert(tag[index] == saved_tag[index]); } index += 1; }
+        writer.word(core::mem::slice_stride(input) as u64); writer.word(core::mem::slice_stride(output) as u64);
+        writer.word(status); writer.word(written as u64); writer.word(capacity as u64); writer.word(tlen as u64);
+        index = 0; while (index < capacity) { writer.byte(output[3+index]); index += 1; }
+        index = 0; while (index < tlen) { writer.byte(tag[3+index]); index += 1; }
+        record += 1;
+    }
+    writer.flush(); return 0;
+}

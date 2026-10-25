@@ -29,11 +29,18 @@ impl Arena {
     }
 
     pub fn from_words(workspace: &WorkspaceLease, label: &str, words: &[u32]) -> Result<Self> {
-        let logical_words = u32::try_from(words.len())?;
         let slot = workspace.reserve(label)?;
+        Self::from_slot_words(&slot, words)
+    }
+
+    /// Reinitialize one controller-owned query role after its previous complete
+    /// readbacks. The caller owns exclusivity; other controllers reserve their
+    /// own roles even when retaining the same workspace lease.
+    pub fn from_slot_words(slot: &WorkspaceSlot, words: &[u32]) -> Result<Self> {
+        let logical_words = u32::try_from(words.len())?;
         let buffer = slot.buffer(logical_words, storage_usage(), Some(words))?;
         let capacity_words = u32::try_from(buffer.byte_size / 4)?;
-        Ok(Self { buffer, logical_words, capacity_words, slot })
+        Ok(Self { buffer, logical_words, capacity_words, slot: slot.clone() })
     }
 
     pub(super) fn workspace(&self) -> &WorkspaceLease { self.slot.lease() }

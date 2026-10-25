@@ -1,0 +1,26 @@
+// Ordinary RFC5903/RFC6979 consumer; no p256::Error projections.
+module app::main;
+import core::sha256;
+import core::slice;
+import ext::p256;
+fn view(bytes:[u8],n:i32)->core::slice::View<u8>{return core::slice::View<u8>{values:bytes,start:0,length:n};}
+fn equal(a:[u8],b:[u8],n:i32){let i:i32=0;while(i<n){assert(a[i]==b[i]);i+=1;}}
+fn main()->i32{
+ let private:[u8;32]=[201,175,169,216,69,186,117,22,107,92,33,87,103,177,214,147,78,80,195,219,54,232,155,18,123,138,98,43,18,15,103,33];
+ let expected:[u8;65]=[4,96,254,212,186,37,90,157,49,201,97,235,116,198,53,109,104,192,73,184,146,59,97,250,108,230,105,98,46,96,242,159,182,121,3,254,16,8,184,188,153,164,26,233,233,86,40,188,100,242,241,178,12,45,126,159,81,119,163,194,148,212,70,34,153];
+ let signature:[u8;64]=[239,212,139,42,172,182,168,253,17,64,221,156,212,94,129,214,157,44,135,123,86,170,249,145,195,77,14,168,78,175,55,22,247,203,28,148,45,101,124,65,212,54,199,161,182,226,159,101,243,233,0,219,185,175,244,6,77,196,171,47,132,58,205,168];
+ let der:[u8;72]=[48,70,2,33,0,239,212,139,42,172,182,168,253,17,64,221,156,212,94,129,214,157,44,135,123,86,170,249,145,195,77,14,168,78,175,55,22,2,33,0,247,203,28,148,45,101,124,65,212,54,199,161,182,226,159,101,243,233,0,219,185,175,244,6,77,196,171,47,132,58,205,168];
+ let dh_private:[u8;32]=[200,143,1,245,16,217,172,63,112,162,146,218,162,49,109,229,68,233,170,184,175,232,64,73,198,42,156,87,134,45,20,51];
+ let dh_peer:[u8;65]=[4,209,45,251,82,137,200,212,248,18,8,183,2,112,57,140,52,34,150,151,10,11,204,183,76,115,111,199,85,68,148,191,99,86,251,243,202,54,108,194,62,129,87,133,76,19,197,141,106,172,35,240,70,173,163,15,131,83,231,79,51,3,152,114,171];
+ let expected_secret:[u8;32]=[214,132,15,107,66,246,237,175,209,49,22,224,225,37,101,32,47,239,142,158,206,125,206,3,129,36,100,208,75,148,66,222];
+
+ let message:[u8;6]=[115,97,109,112,108,101];
+ let first:ext::p256::PublicKey=ext::p256::public_key(view(private,32)).unwrap();let retained:ext::p256::PublicKey=first;first.bytes[0]=0;private[0]^=1;
+ equal(retained.bytes,expected,65);assert(first.bytes[0]==0&&retained.bytes[0]==4);
+ let compressed:ext::p256::CompressedKey=ext::p256::compress_public_key(view(expected,65)).unwrap();let copy:ext::p256::CompressedKey=compressed;compressed.bytes[1]^=1;let restored:ext::p256::PublicKey=ext::p256::validate_public_key(view(copy.bytes,33)).unwrap();equal(restored.bytes,expected,65);equal(retained.bytes,expected,65);
+ let shared:ext::p256::SharedSecret=ext::p256::shared_secret(view(dh_private,32),view(dh_peer,65)).unwrap();let kept:ext::p256::SharedSecret=shared;shared.bytes[0]^=1;equal(kept.bytes,expected_secret,32);
+ let parsed:ext::p256::Signature=ext::p256::parse_der_signature(view(der,72)).unwrap();let saved:ext::p256::Signature=parsed;parsed.bytes[0]^=1;equal(saved.bytes,signature,64);
+ assert(ext::p256::verify_sha256(view(restored.bytes,65),view(message,6),view(saved.bytes,64)).unwrap());
+ let hashed:core::sha256::Digest=core::sha256::digest(view(message,6)).unwrap();assert(ext::p256::verify_digest(view(copy.bytes,33),view(hashed.bytes,32),view(signature,64)).unwrap());
+ message[0]^=1;assert(!ext::p256::verify_sha256(view(expected,65),view(message,6),view(signature,64)).unwrap());equal(retained.bytes,expected,65);equal(kept.bytes,expected_secret,32);equal(saved.bytes,signature,64);return 0;
+}

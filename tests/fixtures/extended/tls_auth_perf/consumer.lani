@@ -1,0 +1,174 @@
+// Current imported-library workload for examples/stdlib_gpu_perf.rs.
+// Fixed answers: RFC8032 section7.1 (1023-byte message), independent Python
+// hashlib/hmac label/transcript calculations. expected.bin is448 exact bytes.
+// This composes foundation APIs; it does not establish peer trust, perform
+// certificate authentication or implement the semantic TLS handshake machine.
+module app::main;
+import core::io;
+import core::sha256;
+import core::slice;
+import ext::der;
+import ext::ed25519;
+import ext::tls_handshake;
+import ext::tls_schedule;
+import ext::tls_transcript;
+import ext::tls_record;
+import std::stream;
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: start, length: length }; }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) { assert(a.length == b.length); let i:i32=0; while(i<a.length){assert(a.values[a.start+i]==b.values[b.start+i]);i+=1;} }
+fn emit(value: core::slice::View<u8>) { let stdout:std::stream::Descriptor=std::stream::stdout(); assert(core::io::write_all<std::stream::Descriptor>(stdout.borrow(),value.values,value.start,value.length).unwrap()==value.length); }
+fn main() -> i32 {
+    let seed: [u8; 32] = [
+        245,229,118,124,241,83,49,149,23,99,15,34,104,118,184,108,
+        129,96,204,88,59,192,19,116,76,107,242,85,245,204,14,229
+    ];
+    let known_public: [u8; 32] = [
+        39,129,23,252,20,76,114,52,15,103,208,242,49,110,131,134,
+        206,255,191,43,36,40,201,197,31,239,124,89,127,29,66,110
+    ];
+    let message: [u8; 1023] = [
+        8,184,178,183,51,66,66,67,118,15,228,38,164,181,73,8,
+        99,33,16,166,108,47,101,145,234,189,51,69,227,228,235,152,
+        250,110,38,75,240,158,254,18,238,80,248,245,78,159,119,177,
+        227,85,246,197,5,68,226,63,177,67,61,223,115,190,132,216,
+        121,222,124,0,70,220,73,150,217,231,115,244,188,158,254,87,
+        56,130,154,219,38,200,27,55,201,58,27,39,11,32,50,157,
+        101,134,117,252,110,165,52,224,129,10,68,50,130,107,245,140,
+        148,30,251,101,213,122,51,139,189,46,38,100,15,137,255,188,
+        26,133,142,252,184,85,14,227,165,225,153,139,209,119,233,58,
+        115,99,195,68,254,107,25,158,229,208,46,130,213,34,196,254,
+        186,21,69,47,128,40,138,130,26,87,145,22,236,109,173,43,
+        59,49,13,169,3,64,26,166,33,0,171,93,26,54,85,62,
+        6,32,59,51,137,12,201,184,50,247,158,248,5,96,204,185,
+        163,156,231,103,150,126,214,40,198,173,87,60,177,22,219,239,
+        239,215,84,153,218,150,189,104,168,169,123,146,138,139,188,16,
+        59,102,33,252,222,43,236,161,35,29,32,107,230,205,158,199,
+        175,246,246,201,79,205,114,4,237,52,85,198,140,131,244,164,
+        29,164,175,43,116,239,92,83,241,216,172,112,189,203,126,209,
+        133,206,129,189,132,53,157,68,37,77,149,98,158,152,85,169,
+        74,124,25,88,209,248,173,165,208,83,46,216,165,170,63,178,
+        209,123,167,14,182,36,142,89,78,26,34,151,172,187,179,157,
+        80,47,26,140,110,182,241,206,34,179,222,26,31,64,204,36,
+        85,65,25,168,49,169,170,214,7,156,173,136,66,93,230,189,
+        225,169,24,126,187,96,146,207,103,191,43,19,253,101,242,112,
+        136,215,139,126,136,60,135,89,210,196,245,198,90,219,117,83,
+        135,138,213,117,249,250,216,120,232,10,12,155,166,59,203,204,
+        39,50,230,148,133,187,201,201,11,251,214,36,129,217,8,155,
+        236,207,128,207,226,223,22,162,207,101,189,146,221,89,123,7,
+        7,224,145,122,244,139,187,117,254,212,19,210,56,245,85,90,
+        122,86,157,128,195,65,74,141,8,89,220,101,164,97,40,186,
+        178,122,248,122,113,49,79,49,140,120,43,35,235,254,128,139,
+        130,176,206,38,64,29,46,34,240,77,131,209,37,93,197,26,
+        221,211,183,90,43,26,224,120,69,4,223,84,58,248,150,155,
+        227,234,112,130,255,127,201,136,140,20,77,162,175,88,66,158,
+        201,96,49,219,202,211,218,217,175,13,203,170,175,38,140,184,
+        252,255,234,217,79,60,124,164,149,224,86,169,180,122,205,183,
+        81,251,115,230,102,198,198,85,173,232,41,114,151,208,122,209,
+        186,94,67,241,188,163,35,1,101,19,57,226,41,4,204,140,
+        66,245,140,48,192,74,175,219,3,141,218,8,71,221,152,141,
+        205,166,243,191,209,92,75,76,69,37,0,74,160,110,239,248,
+        202,97,120,58,172,236,87,251,61,31,146,176,254,47,209,168,
+        95,103,36,81,123,101,230,20,173,104,8,214,246,238,52,223,
+        247,49,15,220,130,174,191,217,4,176,30,29,197,75,41,39,
+        9,75,45,182,141,111,144,59,104,64,26,222,191,90,126,8,
+        215,143,244,239,93,99,101,58,101,4,12,249,191,212,172,167,
+        152,74,116,211,113,69,152,103,128,252,11,22,172,69,22,73,
+        222,97,136,167,219,223,25,31,100,181,252,94,42,180,123,87,
+        247,247,39,108,212,25,193,122,60,168,225,185,57,174,73,228,
+        136,172,186,107,150,86,16,181,72,1,9,200,177,123,128,225,
+        183,183,80,223,199,89,141,93,80,17,253,45,204,86,0,163,
+        46,245,181,42,30,204,130,14,48,138,163,66,114,26,172,9,
+        67,191,102,134,182,75,37,121,55,101,4,204,196,147,217,126,
+        106,237,63,176,249,205,113,164,61,212,151,240,31,23,192,226,
+        203,55,151,170,42,47,37,102,86,22,142,108,73,106,252,95,
+        185,50,70,246,177,17,99,152,163,70,241,166,65,243,176,65,
+        233,137,247,145,79,144,204,44,127,255,53,120,118,229,6,181,
+        13,51,75,167,124,34,91,195,7,186,83,113,82,243,241,97,
+        14,78,175,229,149,246,217,217,13,17,250,169,51,161,94,241,
+        54,149,70,134,138,127,58,69,169,103,104,212,15,217,208,52,
+        18,192,145,198,49,92,244,253,231,203,104,96,105,55,56,13,
+        178,234,170,112,123,76,65,133,195,46,221,205,211,6,112,94,
+        77,193,255,200,114,238,238,71,90,100,223,172,134,171,164,28,
+        6,24,152,63,135,65,197,239,104,211,161,1,232,163,184,202,
+        198,12,144,92,21,252,145,8,64,185,76,0,160,185,208
+    ];
+    let known_signature: [u8; 64] = [
+        10,171,76,144,5,1,179,226,77,124,223,70,99,50,106,58,
+        135,223,94,72,67,178,203,219,103,203,246,228,96,254,195,80,
+        170,83,113,177,80,143,159,69,40,236,234,35,196,54,217,75,
+        94,143,205,79,104,30,48,166,172,0,169,112,74,24,138,3
+    ];
+    let client_key: [u8; 32] = [
+        153,56,29,229,96,228,189,67,210,61,142,67,90,125,186,254,
+        179,192,110,81,193,60,174,77,84,19,105,30,82,154,175,44
+    ];
+    let server_key: [u8; 32] = [
+        201,130,136,118,17,32,149,254,102,118,43,219,247,198,114,225,
+        86,214,204,37,59,131,61,241,221,105,177,176,78,117,31,15
+    ];
+    let shared: [u8; 32] = [
+        139,212,5,79,181,91,157,99,253,251,172,249,240,75,159,13,
+        53,230,214,63,83,117,99,239,212,98,114,144,15,137,73,45
+    ];
+    // Long-form DER length, caller storage offsets and borrowed parsed payload.
+    let encoded: [u8; 1040] = [222; 1040];
+    let count:i32 = ext::der::write_tlv(ext::der::Tag { class:ext::der::Class::Universal, constructed:false, number:4 }, view(message,0,1023), view(encoded,3,1037)).unwrap();
+    assert(count==1027 && encoded[3]==4 && encoded[4]==130 && encoded[5]==3 && encoded[6]==255);
+    let element:ext::der::Element=ext::der::parse_one(view(encoded,3,count)).unwrap();
+    let payload:core::slice::View<u8> = element.as_octets().unwrap(); same(payload,view(message,0,1023));
+    let public:ext::ed25519::Key32=ext::ed25519::public_key(view(seed,0,32)).unwrap();
+    let signature:ext::ed25519::Signature64=ext::ed25519::sign(view(seed,0,32),payload).unwrap();
+    same(view(public.bytes,0,32),view(known_public,0,32));same(view(signature.bytes,0,64),view(known_signature,0,64));
+    assert(ext::ed25519::verify(view(public.bytes,0,32),payload,view(signature.bytes,0,64)).unwrap());
+    let encoded_hash:core::sha256::Digest=core::sha256::digest(view(encoded,3,count)).unwrap();
+
+    // Typed hello codecs with TLS1.3, X25519 and Ed25519 extension values.
+    // The already-known X25519 shared secret avoids measuring a second curve.
+    let client_random:[u8;32]=[0;32];let server_random:[u8;32]=[0;32];let i:i32=0;
+    while(i<32){client_random[i]=i as u8;server_random[i]=(i+32) as u8;i+=1;}
+    let suites:[u8;2]=[19,3];let client_versions:[u8;3]=[2,3,4];let server_versions:[u8;2]=[3,4];let algorithms:[u8;4]=[0,2,8,7];
+    let client_share:[u8;38]=[0;38];client_share[1]=36;client_share[3]=29;client_share[5]=32;
+    let server_share:[u8;36]=[0;36];server_share[1]=29;server_share[3]=32;i=0;while(i<32){client_share[6+i]=client_key[i];server_share[4+i]=server_key[i];i+=1;}
+    let client_extensions:[u8;80]=[222;80];let server_extensions:[u8;64]=[222;64];
+    let cn:i32=ext::tls_handshake::write_extension(43,view(client_versions,0,3),view(client_extensions,0,80)).unwrap();
+    cn+=ext::tls_handshake::write_extension(13,view(algorithms,0,4),view(client_extensions,cn,80-cn)).unwrap();
+    cn+=ext::tls_handshake::write_extension(51,view(client_share,0,38),view(client_extensions,cn,80-cn)).unwrap();
+    let sn:i32=ext::tls_handshake::write_extension(43,view(server_versions,0,2),view(server_extensions,0,64)).unwrap();
+    sn+=ext::tls_handshake::write_extension(51,view(server_share,0,36),view(server_extensions,sn,64-sn)).unwrap();assert(cn==57&&sn==46);
+    let client_hello:[u8;128]=[222;128];let server_hello:[u8;128]=[222;128];
+    let ch:i32=ext::tls_handshake::write_client_hello(ext::tls_handshake::ClientHello { random:view(client_random,0,32), session_id:view(message,0,0), cipher_suites:view(suites,0,2), extensions:view(client_extensions,0,cn) },view(client_hello,0,128)).unwrap();
+    let sh:i32=ext::tls_handshake::write_server_hello(ext::tls_handshake::ServerHello { random:view(server_random,0,32), session_id:view(message,0,0), cipher_suite:4867, extensions:view(server_extensions,0,sn) },view(server_hello,0,128)).unwrap();assert(ch==104&&sh==90);
+    let client_frame:ext::tls_handshake::Frame=ext::tls_handshake::parse_frame(view(client_hello,0,ch)).unwrap();
+    let parsed_client:ext::tls_handshake::ClientHello=ext::tls_handshake::parse_client_hello(client_frame.body).unwrap();assert(parsed_client.extensions.length==57&&parsed_client.cipher_suites.length==2);
+    let server_frame:ext::tls_handshake::Frame=ext::tls_handshake::parse_frame(view(server_hello,0,sh)).unwrap();
+    let parsed_server:ext::tls_handshake::ServerHello=ext::tls_handshake::parse_server_hello(server_frame.body).unwrap();assert(parsed_server.cipher_suite==4867&&!parsed_server.is_hello_retry_request());
+
+    let transcript:ext::tls_transcript::State=ext::tls_transcript::new();transcript.update(client_frame.wire).unwrap();transcript.update(server_frame.wire).unwrap();
+    let hello_hash:core::sha256::Digest=transcript.snapshot();let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk();
+    let handshake:ext::tls_schedule::Handshake=early.handshake(view(shared,0,32)).unwrap();
+    let server_hs:ext::tls_schedule::Secret=handshake.traffic(ext::tls_schedule::Side::Server,view(hello_hash.bytes,0,32)).unwrap();
+    let client_hs:ext::tls_schedule::Secret=handshake.traffic(ext::tls_schedule::Side::Client,view(hello_hash.bytes,0,32)).unwrap();
+    let server_finished:ext::tls_schedule::Secret=ext::tls_schedule::finished(server_hs.view(),view(hello_hash.bytes,0,32)).unwrap();
+    let server_finish_frame:[u8;40]=[222;40];let sf:i32=ext::tls_handshake::write_finished(ext::tls_handshake::Finished { verify_data:server_finished.view() },32,view(server_finish_frame,0,40)).unwrap();assert(sf==36);
+    let server_fin:ext::tls_handshake::Finished=ext::tls_handshake::parse_finished(ext::tls_handshake::parse_frame(view(server_finish_frame,0,sf)).unwrap().body,32).unwrap();
+    assert(ext::tls_schedule::verify_finished(server_hs.view(),view(hello_hash.bytes,0,32),server_fin.verify_data).unwrap());transcript.update(view(server_finish_frame,0,sf)).unwrap();
+    let server_checkpoint:core::sha256::Digest=transcript.snapshot();let master:ext::tls_schedule::Master=handshake.master();
+    let application:ext::tls_schedule::Secret=master.traffic(ext::tls_schedule::Side::Client,view(server_checkpoint.bytes,0,32)).unwrap();
+    let exporter:ext::tls_schedule::Exporter=master.exporter(view(server_checkpoint.bytes,0,32)).unwrap();
+    let label:[u8;15]=[112,101,114,102,32,116,114,97,110,115,99,114,105,112,116];let exported:[u8;64]=[222;64];assert(exporter.export(view(label,0,15),view(encoded,3,count),view(exported,0,64)).unwrap()==64);
+    let client_finished:ext::tls_schedule::Secret=ext::tls_schedule::finished(client_hs.view(),view(server_checkpoint.bytes,0,32)).unwrap();
+    let client_finish_frame:[u8;40]=[222;40];let cf:i32=ext::tls_handshake::write_finished(ext::tls_handshake::Finished { verify_data:client_finished.view() },32,view(client_finish_frame,0,40)).unwrap();assert(cf==36);transcript.update(view(client_finish_frame,0,cf)).unwrap();
+    let client_checkpoint:core::sha256::Digest=transcript.snapshot();let resumption:ext::tls_schedule::Resumption=master.resumption(view(client_checkpoint.bytes,0,32)).unwrap();
+    let ticket_nonce:[u8;11]=[112,101,114,102,32,116,105,99,107,101,116];let psk:ext::tls_schedule::Secret=resumption.ticket(view(ticket_nonce,0,11)).unwrap();
+
+    // Real record encryption/authentication, substantial payload and key update.
+    let sender:ext::tls_record::Sealer=ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, application.view()).unwrap();let receiver:ext::tls_record::Opener=ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, application.view()).unwrap();
+    let packet:[u8;1100]=[222;1100];let scratch:[u8;1100]=[222;1100];let wire:i32=sender.seal(view(encoded,3,count),23,11,view(packet,3,1097)).unwrap();assert(wire==1060);
+    let opened:ext::tls_record::Opened=receiver.open(view(packet,3,wire),view(scratch,3,1097)).unwrap();assert(opened.content_type==23);same(opened.content,view(encoded,3,count));
+    let delivered:ext::der::Element=ext::der::parse_one(opened.content).unwrap();same(delivered.as_octets().unwrap(),view(message,0,1023));let delivered_hash:core::sha256::Digest=core::sha256::digest(opened.content).unwrap();
+    assert(sender.sequence()==1&&receiver.sequence()==1);sender.key_update().unwrap();receiver.key_update().unwrap();assert(sender.sequence()==0&&receiver.sequence()==0);
+    let updated_wire:i32=sender.seal(view(message,0,0),23,3,view(packet,3,1097)).unwrap();assert(updated_wire==25);let empty:ext::tls_record::Opened=receiver.open(view(packet,3,updated_wire),view(scratch,3,1097)).unwrap();assert(empty.content_type==23&&empty.content.length==0&&sender.sequence()==1&&receiver.sequence()==1);
+    let updated:ext::tls_schedule::Secret=ext::tls_schedule::update_traffic(application.view()).unwrap();assert(transcript.messages()==4&&!transcript.used_hrr());
+    assert(encoded[0]==222&&encoded[2]==222&&encoded[1030]==222&&packet[2]==222&&packet[1063]==222&&scratch[2]==222&&scratch[1042]==222);
+    emit(view(public.bytes,0,32));emit(view(signature.bytes,0,64));emit(view(encoded_hash.bytes,0,32));emit(view(hello_hash.bytes,0,32));emit(server_hs.view());emit(server_finished.view());emit(application.view());emit(view(exported,0,64));emit(psk.view());emit(client_finished.view());emit(view(delivered_hash.bytes,0,32));emit(updated.view());return 0;
+}

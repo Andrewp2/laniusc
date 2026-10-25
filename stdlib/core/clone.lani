@@ -1,0 +1,22 @@
+// Explicit fallible value duplication and manual memory-owner release.
+// These contracts do not introduce implicit Clone, moves, or automatic Drop.
+module core::clone;
+import core::result;
+
+// source is a read-only borrowed shallow descriptor. Each Ok transfers a
+// separate owner with the same logical value/content, independent of source
+// and all other successful clones. Capacity/representation may differ.
+// Err preserves source and releases every partial result owned by this call.
+// E keeps its own ownership/lifetime contract. In particular it must not
+// borrow a partial destination which the caller will release on failure.
+pub trait TryClone<T,E> {
+    pub fn try_clone_value(source: T) -> core::result::Result<T,E>;
+}
+
+// Logically consumes one valid memory owner. This explicit operation must
+// finish without allocation, panic, or reportable failure. It is not a
+// protocol for files/sockets or other resources with fallible close.
+// A copied descriptor is not an extra owner; callers stop using it afterward.
+pub trait Destroy<T> {
+    pub fn destroy_value(owned: T);
+}

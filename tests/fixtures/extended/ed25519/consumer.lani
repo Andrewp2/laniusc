@@ -1,0 +1,38 @@
+// Ordinary use without ever projecting the Ed25519 Error enum.
+module app::main;
+import core::slice;
+import ext::ed25519;
+fn main() -> i32 {
+    // RFC 8032 section 7.1 TEST 1, fixed official answers with an empty message.
+    let rfc_seed:[u8;32]=[157,97,177,157,239,253,90,96,186,132,74,244,146,236,44,196,68,73,197,105,123,50,105,25,112,59,172,3,28,174,127,96]; let known_public:[u8;32]=[215,90,152,1,130,177,10,183,213,75,254,211,201,100,7,58,14,225,114,243,218,166,35,37,175,2,26,104,247,7,81,26];
+    let known_signature:[u8;64]=[229,86,67,0,195,96,172,114,144,134,226,204,128,110,130,138,132,135,127,30,184,229,217,116,216,115,224,101,34,73,1,85,95,184,130,21,144,163,59,172,198,30,57,112,28,249,180,107,210,91,245,240,89,91,190,36,101,81,65,67,142,122,16,11];let rfc_values:[u8]=rfc_seed;
+    let rfc_seed_view:core::slice::View<u8> = core::slice::View{values:rfc_values,start:0,length:32};
+    let empty:core::slice::View<u8> = core::slice::View{values:rfc_values,start:2147483647,length:0};
+    let rfc_public:ext::ed25519::Key32=ext::ed25519::public_key(rfc_seed_view).unwrap();
+    let rfc_signature:ext::ed25519::Signature64=ext::ed25519::sign(rfc_seed_view,empty).unwrap();let index:i32=0;
+    while(index<32){assert(rfc_public.bytes[index]==known_public[index]);index+=1;}index=0;while(index<64){assert(rfc_signature.bytes[index]==known_signature[index]);index+=1;}
+    let rfc_public_values:[u8]=rfc_public.bytes;let rfc_signature_values:[u8]=rfc_signature.bytes;
+    let rfc_public_view:core::slice::View<u8> = core::slice::View{values:rfc_public_values,start:0,length:32};
+    let rfc_signature_view:core::slice::View<u8> = core::slice::View{values:rfc_signature_values,start:0,length:64};
+    assert(ext::ed25519::verify(rfc_public_view,empty,rfc_signature_view).unwrap());
+    let seed:[u8;32]=[0;32]; let message:[u8;129]=[0;129]; let i:i32=0;
+    while(i<129){message[i]=((i*37+19)%256) as u8;i+=1;}
+    let seed_values:[u8]=seed; let message_values:[u8]=message;
+    let seed_view:core::slice::View<u8> = core::slice::View{values:seed_values,start:0,length:32};
+    let message_view:core::slice::View<u8> = core::slice::View{values:message_values,start:0,length:129};
+    let first:ext::ed25519::Key32=ext::ed25519::public_key(seed_view).unwrap();
+    let first_signature:ext::ed25519::Signature64=ext::ed25519::sign(seed_view,message_view).unwrap();
+    let public_values:[u8]=first.bytes;let signature_values:[u8]=first_signature.bytes;
+    let public_view:core::slice::View<u8> = core::slice::View{values:public_values,start:0,length:32};
+    let signature_view:core::slice::View<u8> = core::slice::View{values:signature_values,start:0,length:64};
+    assert(ext::ed25519::verify(public_view,message_view,signature_view).unwrap());
+    message[128]^=1;assert(!ext::ed25519::verify(public_view,message_view,signature_view).unwrap());message[128]^=1;
+    seed[7]=93;let second:ext::ed25519::Key32=ext::ed25519::public_key(seed_view).unwrap();
+    let second_signature:ext::ed25519::Signature64=ext::ed25519::sign(seed_view,message_view).unwrap();
+    let second_public_values:[u8]=second.bytes;let second_signature_values:[u8]=second_signature.bytes;
+    let second_public:core::slice::View<u8> = core::slice::View{values:second_public_values,start:0,length:32};
+    let second_signed:core::slice::View<u8> = core::slice::View{values:second_signature_values,start:0,length:64};
+    assert(ext::ed25519::verify(second_public,message_view,second_signed).unwrap());
+    assert(ext::ed25519::verify(public_view,message_view,signature_view).unwrap());
+    assert(!ext::ed25519::verify(second_public,message_view,signature_view).unwrap());return 0;
+}

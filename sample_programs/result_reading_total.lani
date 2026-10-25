@@ -1,8 +1,11 @@
 module app::main;
-import core::result;
+import core::decimal;
+import core::i32;
+import core::io;
 import core::range;
-import core::number_i32;
-import std::io;
+import core::result;
+import std::signal;
+import std::stream;
 
 fn checked_total(readings: [i32]) -> core::result::Result<i32, i32> {
     let allowed: core::range::Range<i32> = core::range::range(0, 101);
@@ -12,13 +15,25 @@ fn checked_total(readings: [i32]) -> core::result::Result<i32, i32> {
             let failure: core::result::Result<i32, i32> = core::result::Err(reading);
             return failure;
         }
-        total = core::number_i32::saturating_add(total, reading);
+        total = core::i32::saturating_add(total, reading);
     }
     let success: core::result::Result<i32, i32> = core::result::Ok(total);
     return success;
 }
 
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line(value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
+
 fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
     let valid: [i32; 3] = [0, 7, 13];
     let invalid: [i32; 3] = [7, -2, 13];
     let success: core::result::Result<i32, i32> = checked_total(valid);
@@ -27,7 +42,6 @@ fn main() -> i32 {
     if (!failure.is_err() || !core::result::contains_err(failure, -2)) { return 2; }
     let total: i32 = success.unwrap_or(-1);
     let rejected: i32 = failure.unwrap_err_or(0);
-    std::io::print_i32(total);
-    std::io::print_i32(rejected);
+    if (!write_i32_line(total) || !write_i32_line(rejected)) { return 3; }
     return 0;
 }

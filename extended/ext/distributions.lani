@@ -1,0 +1,243 @@
+// Portable continuous probability laws. No allocation, host probability service,
+// cached variate, or hidden generator. See docs/extended-distributions.md.
+module ext::distributions;
+import core::f64;
+import core::math;
+import core::random;
+import core::result;
+import ext::distributions_erfc;
+
+pub enum Family { Normal, Exponential, Gamma, Beta }
+pub struct Distribution { family: Family, first: f64, second: f64 }
+pub enum Error { InvalidParameter, NaN, NumericalFailure, Precision, WorkLimit, DrawLimit, Random(core::random::Error), NoConvergence }
+pub const MAX_ITERATIONS: i32 = 1000000;
+pub struct Tails { cdf: f64, survival: f64, log_cdf: f64, log_survival: f64 }
+// Treat fields as implementation state; construct through budget(). Draws
+// count attempted Source64 calls, including an attempt returning an error.
+pub struct Budget { draws_left: u64, work_left: u64, draws_used: u64, work_used: u64 }
+pub fn budget(draws: u64, work: u64) -> Budget { return Budget { draws_left: draws, work_left: work, draws_used: 0, work_used: 0 }; }
+pub impl Budget {
+    pub fn borrow(&self) -> &Budget { return self; }
+    pub fn remaining_draws(&self) -> u64 { return self.draws_left; }
+    pub fn remaining_work(&self) -> u64 { return self.work_left; }
+    pub fn draws(&self) -> u64 { return self.draws_used; }
+    pub fn work(&self) -> u64 { return self.work_used; }
+    pub fn charge(&self, amount: u64) -> bool { if (amount > self.work_left) { return false; } self.work_left -= amount; self.work_used += amount; return true; }
+    fn spend(&self) -> bool { return self.charge(1); }
+}
+fn valid(value: Distribution) -> bool {
+    if (!core::f64::is_finite(value.first) || !core::f64::is_finite(value.second)) { return false; }
+    return match (value.family) { Family::Normal -> value.second > 0.0, Family::Exponential -> value.first > 0.0, _ -> value.first > 0.0 && value.second > 0.0 };
+}
+fn create(family: Family, first: f64, second: f64) -> core::result::Result<Distribution,Error> { let value: Distribution = Distribution { family: family, first: first, second: second }; if (!valid(value)) { return core::result::Err(Error::InvalidParameter); } return core::result::Ok(value); }
+pub fn normal(mean: f64, standard_deviation: f64) -> core::result::Result<Distribution,Error> { return create(Family::Normal,mean,standard_deviation); }
+pub fn exponential(rate: f64) -> core::result::Result<Distribution,Error> { return create(Family::Exponential,rate,0.0); }
+pub fn gamma(shape: f64, scale: f64) -> core::result::Result<Distribution,Error> { return create(Family::Gamma,shape,scale); }
+pub fn beta(alpha: f64, beta_shape: f64) -> core::result::Result<Distribution,Error> { return create(Family::Beta,alpha,beta_shape); }
+const LOG_SQRT_TAU: f64 = 0.91893853320467274178032973640561764;
+const EULER: f64 = 0.57721566490153286060651209008240243;
+fn checked(value: f64) -> core::result::Result<f64,Error> { if (core::f64::is_nan(value)) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(value); }
+fn finite(value: f64) -> core::result::Result<f64,Error> { if (!core::f64::is_finite(value)) { return core::result::Err(Error::NumericalFailure); } return core::result::Ok(value); }
+fn minus_infinity() -> f64 { return -core::f64::infinity(); }
+// DLMF5.11.1: seven Bernoulli terms after recurrence to x>=8.
+fn stirling(x: f64) -> f64 { let r: f64 = 1.0/x; let z: f64 = r*r; return r*(1.0/12.0+z*(-1.0/360.0+z*(1.0/1260.0+z*(-1.0/1680.0+z*(1.0/1188.0+z*(-691.0/360360.0+z/156.0)))))); }
+fn log_gamma(x: f64) -> f64 { let y: f64 = x; let correction: f64 = 0.0; while (y < 8.0) { correction -= core::math::log(y); y += 1.0; } return correction+(y-0.5)*core::math::log(y)-y+LOG_SQRT_TAU+stirling(y); }
+// DLMF5.7.3. Crucial when 1+x rounds to1: logGamma(1+x) must
+// retain its first-order -Euler*x term for small-shape survival tails.
+fn log_gamma_one_plus_slope(x: f64) -> f64 {
+    if (x >= 0.125) { return log_gamma(1.0+x)/x; }
+    let coefficients: [f64;18] = [0.82246703342411321824,-0.40068563438653142847,0.27058080842778454788,-0.20738555102867398527,0.16955717699740818995,-0.14404989676884611812,0.12550966952474304242,-0.11133426586956469049,0.10009945751278180853,-0.09095401714582904223,0.08335384054610900402,-0.07693251641135219147,0.07143294629536133606,-0.06666870588242046803,0.06250095514121304074,-0.05882397865868458234,0.05555576762740361110,-0.05263167937961666073];
+    let value: f64 = coefficients[17]; let i: i32 = 16; while (i >= 0) { value = coefficients[i]+x*value; i -= 1; } return -EULER+x*value;
+}
+fn log_gamma_one_plus(x: f64) -> f64 { return x*log_gamma_one_plus_slope(x); }
+fn log1p_div(x: f64) -> f64 { if (core::f64::abs(x) < 1e-8) { return 1.0-x*0.5+x*x/3.0; } return core::math::log1p(x)/x; }
+fn expm1_div(x: f64) -> f64 { if (core::f64::abs(x) < 1e-8) { return 1.0+x*0.5+x*x/6.0; } return core::math::expm1(x)/x; }
+fn log_sum(a: f64, b: f64) -> f64 { let large: f64 = core::f64::max(a,b); let small: f64 = core::f64::min(a,b); return core::math::log(large)+core::math::log1p(small/large); }
+fn log_beta(a: f64, b: f64) -> f64 {
+    let x: f64 = a; let y: f64 = b; let correction: f64 = 0.0;
+    while (x < 8.0) { correction += log_sum(x,y)-core::math::log(x); x += 1.0; }
+    while (y < 8.0) { correction += log_sum(x,y)-core::math::log(y); y += 1.0; }
+    let total: f64 = x+y; let tail: f64 = 0.0; if (core::f64::is_finite(total)) { tail = stirling(total); }
+    return correction+(x-0.5)*(-core::math::log1p(y/x))+(y-0.5)*(-core::math::log1p(x/y))+LOG_SQRT_TAU-0.5*log_sum(x,y)+stirling(x)+stirling(y)-tail;
+}
+// logGamma(b+a)-logGamma(b), a<0.125. Recurrence plus a differenced
+// Stirling series avoids subtracting two near-equal logGamma values.
+fn log_gamma_ratio(b: f64, a: f64) -> f64 {
+    let y: f64 = b; let correction: f64 = 0.0;
+    while (y < 8.0) { let ratio: f64 = a/y; if (core::f64::is_finite(ratio)) { correction -= core::math::log1p(ratio); } else { correction -= log_sum(a,y)-core::math::log(y); } y += 1.0; }
+    let ratio: f64 = a/y; let logged: f64 = core::math::log1p(ratio); let coefficients: [f64;7] = [1.0/12.0,-1.0/360.0,1.0/1260.0,-1.0/1680.0,1.0/1188.0,-691.0/360360.0,1.0/156.0];
+    let inverse: f64 = 1.0/y; let power: f64 = inverse; let delta: f64 = 0.0; let i: i32 = 0;
+    while (i < 7) { delta += coefficients[i]*power*core::math::expm1(-((2*i+1) as f64)*logged); power *= inverse*inverse; i += 1; }
+    return correction+a*core::math::log(y)+(a-0.5)*ratio-(y+a-0.5)*log1pmx(ratio)+delta;
+}
+fn log_gamma_ratio_slope(b: f64, a: f64) -> f64 {
+    let y: f64 = b; let correction: f64 = 0.0;
+    while (y < 8.0) { let ratio: f64 = a/y; if (!core::f64::is_finite(ratio)) { return minus_infinity(); } correction -= log1p_div(ratio)/y; y += 1.0; }
+    let ratio: f64 = a/y; let logged: f64 = core::math::log1p(ratio); let coefficients: [f64;7] = [1.0/12.0,-1.0/360.0,1.0/1260.0,-1.0/1680.0,1.0/1188.0,-691.0/360360.0,1.0/156.0];
+    let inverse: f64 = 1.0/y; let power: f64 = inverse; let delta: f64 = 0.0; let i: i32 = 0;
+    while (i < 7) { let odd: f64 = (2*i+1) as f64; delta -= coefficients[i]*power*odd*expm1_div(-odd*logged)*log1p_div(ratio)/y; power *= inverse*inverse; i += 1; }
+    let divided: f64 = 0.0; if (ratio != 0.0) { divided = log1pmx(ratio)/ratio; }
+    return correction+core::math::log(y)+(a-0.5)/y-((y+a-0.5)/y)*divided+delta;
+}
+// x-log1p(x), with a convergent series around zero; never subtracts
+// nearly equal first-order values. Fixed bounded work, |x|<0.125.
+fn log1pmx(x: f64) -> f64 { if (core::f64::abs(x) >= 0.125) { return x-core::math::log1p(x); } let power: f64 = x*x; let sum: f64 = 0.5*power; let n: i32 = 3; while (n <= 30) { power *= -x; sum += power/(n as f64); n += 1; } return sum; }
+// Poisson deviance a*log(a/x)+x-a, stable at a≈x. Algebraically
+// equivalent to the odd atanh series, with no a+x overflow.
+fn deviance(a: f64, x: f64) -> f64 {
+    let delta: f64 = (x-a)/a;
+    if (core::f64::abs(delta) < 0.125) { return a*log1pmx(delta); }
+    return a*(core::math::log(a)-core::math::log(x))+x-a;
+}
+fn gamma_front(a: f64, x: f64) -> f64 { if (a >= 8.0) { return -deviance(a,x)+0.5*core::math::log(a)-LOG_SQRT_TAU-stirling(a); } return a*core::math::log(x)-x-log_gamma(a); }
+fn beta_front(a: f64, b: f64, x: f64) -> f64 {
+    if (a >= 8.0 && b >= 8.0) {
+        let p: f64 = 1.0/(1.0+b/a); let q: f64 = 1.0/(1.0+a/b); let delta: f64 = x-p; let divergence: f64 = 0.0;
+        if (core::f64::abs(delta) < 0.1*core::f64::min(p,q)) { divergence = a*log1pmx(delta/p)+b*log1pmx(-delta/q); }
+        else { divergence = a*(-core::math::log1p(b/a)-core::math::log(x))+b*(-core::math::log1p(a/b)-core::math::log1p(-x)); }
+        let sum: f64 = a+b; let tail: f64 = 0.0; if (core::f64::is_finite(sum)) { tail = stirling(sum); }
+        return -divergence+0.5*(core::math::log(a)+core::math::log(b)-log_sum(a,b))-LOG_SQRT_TAU-stirling(a)-stirling(b)+tail;
+    }
+    return a*core::math::log(x)+b*core::math::log1p(-x)-log_beta(a,b);
+}
+fn standardize(value: Distribution, x: f64) -> f64 {
+    let difference: f64 = x-value.first;
+    if (!core::f64::is_finite(difference) && core::f64::is_finite(x)) {
+        let left: f64 = x/value.second;
+        let right: f64 = value.first/value.second;
+        return left - right;
+    }
+    return difference/value.second;
+}
+pub fn log_pdf(value: Distribution, x: f64) -> core::result::Result<f64,Error> {
+    if (!valid(value)) { return core::result::Err(Error::InvalidParameter); } if (core::f64::is_nan(x)) { return core::result::Err(Error::NaN); }
+    let a: f64 = value.first; let b: f64 = value.second;
+    let family: i32 = match (value.family) { Family::Normal -> 0, Family::Exponential -> 1, Family::Gamma -> 2, Family::Beta -> 3 };
+    if (family == 0) { let z: f64 = standardize(value,x); return checked((-0.5*z)*z-core::math::log(b)-LOG_SQRT_TAU); }
+    if (family == 1) { if (x < 0.0) { return core::result::Ok(minus_infinity()); } return checked(core::math::log(a)-a*x); }
+    if (family == 2) { if (x < 0.0 || x == core::f64::infinity()) { return core::result::Ok(minus_infinity()); }
+            if (x == 0.0) { if (a < 1.0) { return core::result::Ok(core::f64::infinity()); } if (a == 1.0) { return core::result::Ok(-core::math::log(b)); } return core::result::Ok(minus_infinity()); }
+            let t: f64 = x/b; if (!core::f64::is_finite(t) || t == 0.0) { return core::result::Err(Error::NumericalFailure); } return checked(gamma_front(a,t)-core::math::log(t)-core::math::log(b)); }
+    if (family == 3) { if (x < 0.0 || x > 1.0) { return core::result::Ok(minus_infinity()); }
+            let shape: f64 = a; let other: f64 = b; if (x == 1.0) { shape = b; other = a; }
+            if (x == 0.0 || x == 1.0) { if (shape < 1.0) { return core::result::Ok(core::f64::infinity()); } if (shape > 1.0) { return core::result::Ok(minus_infinity()); } return core::result::Ok(core::math::log(other)); }
+            return checked(beta_front(a,b,x)-core::math::log(x)-core::math::log1p(-x)); }
+    return core::result::Err(Error::InvalidParameter);
+}
+pub fn pdf(value: Distribution, x: f64) -> core::result::Result<f64,Error> { let logged: core::result::Result<f64,Error> = log_pdf(value,x); if (logged.is_err()) { return logged; } return checked(core::math::exp(logged.unwrap())); }
+// Log complement retains information even when the ordinary probability
+// rounds to0 or1. Inputs outside the probability domain are errors.
+fn log_complement(logged: f64) -> f64 { if (logged < -core::math::LN_2) { return core::math::log1p(-core::math::exp(logged)); } return core::math::log(-core::math::expm1(logged)); }
+fn from_log(logged: f64, lower: bool) -> core::result::Result<Tails,Error> {
+    if (core::f64::is_nan(logged) || logged > 0.0) { return core::result::Err(Error::NumericalFailure); }
+    let complement: f64 = log_complement(logged); let p: f64 = core::math::exp(logged); let q: f64 = -core::math::expm1(logged);
+    if (lower) { return core::result::Ok(Tails { cdf: p, survival: q, log_cdf: logged, log_survival: complement }); } return core::result::Ok(Tails { cdf: q, survival: p, log_cdf: complement, log_survival: logged });
+}
+fn gamma_tails(a: f64, x: f64, limit: &Budget) -> core::result::Result<Tails,Error> {
+    if (a+1.0 == a) { return core::result::Err(Error::Precision); }
+    let logged: f64 = 0.0; let lower: bool = true;
+    // DLMF8.7.3, arranged as expm1 to retain a tiny upper tail when a<1.
+    if (a < 1.0 && x <= 1.0 && a*core::math::log(x)-log_gamma_one_plus(a) > -core::math::LN_2) {
+        let factor: f64 = 1.0; let sum: f64 = 0.0; let n: i32 = 1;
+        while (true) { if (n > MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.spend()) { return core::result::Err(Error::WorkLimit); } factor *= -x/(n as f64); let term: f64 = factor/(a+(n as f64)); sum += term; if (core::f64::abs(term) <= 0.00000000000000011102230246251565*core::f64::abs(sum)) { break; } n += 1; }
+        let slope: f64 = core::math::log(x)-log_gamma_one_plus_slope(a); let exponent: f64 = a*slope;
+        let factor: f64 = -slope*expm1_div(exponent)-core::math::exp(exponent)*sum;
+        if (!core::f64::is_finite(factor) || factor <= 0.0) { return core::result::Err(Error::NumericalFailure); } return from_log(core::math::log(a)+core::math::log(factor),false);
+    }
+    if (x <= a || x < 1.0) {
+        let term: f64 = 1.0; let sum: f64 = 1.0; let n: i32 = 1;
+        while (true) { if (n > MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.spend()) { return core::result::Err(Error::WorkLimit); } term *= x/(a+(n as f64)); sum += term; if (!core::f64::is_finite(sum)) { return core::result::Err(Error::NumericalFailure); } if (term <= 0.00000000000000011102230246251565*sum) { break; } n += 1; }
+        logged = gamma_front(a,x)-core::math::log(a)+core::math::log(sum);
+    } else {
+        // DLMF8.9.2, modified Lentz evaluation; coefficient ratios avoid
+        // gratuitous overflow. A zero denominator uses the standard tiny pivot.
+        lower = false; let b: f64 = (x-a)+1.0; let c: f64 = 1e300; let d: f64 = 1.0/b; let h: f64 = d; let i: i32 = 1;
+        while (true) { if (i > MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.spend()) { return core::result::Err(Error::WorkLimit); } let n: f64 = i as f64; let coefficient: f64 = n*(a-n); b += 2.0; d = coefficient*d+b; if (core::f64::abs(d) < 1e-300) { d = 1e-300; } c = b+coefficient/c; if (core::f64::abs(c) < 1e-300) { c = 1e-300; } d = 1.0/d; let change: f64 = d*c; h *= change; if (!core::f64::is_finite(h) || h <= 0.0) { return core::result::Err(Error::NumericalFailure); } if (core::f64::abs(change-1.0) <= 0.0000000000000004440892098500626) { break; } i += 1; }
+        logged = gamma_front(a,x)+core::math::log(h);
+    }
+    return from_log(logged,lower);
+}
+fn beta_small(a: f64, b: f64, x: f64, lower: bool, limit: &Budget) -> core::result::Result<Tails,Error> {
+    let product: f64 = 1.0; let sum: f64 = 0.0; let n: i32 = 1;
+    while (true) { if (n > MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.spend()) { return core::result::Err(Error::WorkLimit); }
+        product *= (((n as f64)-b)*x)/(n as f64); let term: f64 = product/(a+(n as f64)); sum += term;
+        if (core::f64::abs(term) <= 0.00000000000000011102230246251565*core::f64::abs(sum)) { break; } n += 1;
+    }
+    let ratio: f64 = log_gamma_ratio_slope(b,a);
+    if (core::f64::is_finite(ratio)) {
+        let slope: f64 = core::math::log(x)-log_gamma_one_plus_slope(a)+ratio+sum*log1p_div(a*sum); let exponent: f64 = a*slope;
+        if (exponent > -core::f64::MIN_POSITIVE && slope < 0.0) { return from_log(core::math::log(a)+core::math::log(-slope)+core::math::log(expm1_div(exponent)),!lower); }
+        return from_log(exponent,lower);
+    }
+    return from_log(a*core::math::log(x)-log_gamma_one_plus(a)+log_gamma_ratio(b,a)+core::math::log1p(a*sum),lower);
+}
+fn beta_tails(a: f64, b: f64, x: f64, limit: &Budget) -> core::result::Result<Tails,Error> {
+    // The symmetric density gives equal integrals on either side of1/2,
+    // even when a+b overflows or the iterative coefficients lose resolution.
+    if (a == b && x == 0.5) { return core::result::Ok(Tails { cdf: 0.5, survival: 0.5, log_cdf: -core::math::LN_2, log_survival: -core::math::LN_2 }); }
+    if (a == 1.0) { let logged: f64 = core::math::log1p(-x); let product: f64 = b*logged; if (product > -core::f64::MIN_POSITIVE) { return from_log(core::math::log(b)+core::math::log(-logged),true); } return from_log(product,false); }
+    if (b == 1.0) { let logged: f64 = core::math::log(x); let product: f64 = a*logged; if (product > -core::f64::MIN_POSITIVE) { return from_log(core::math::log(a)+core::math::log(-logged),false); } return from_log(product,true); }
+    let total: f64 = a+b; if (!core::f64::is_finite(total) || a+1.0 == a || b+1.0 == b) { return core::result::Err(Error::Precision); }
+    if (a < 0.125 && x <= 0.5 && b*x <= 1.0) { return beta_small(a,b,x,true,limit); }
+    if (b < 0.125 && x >= 0.5 && a*(1.0-x) <= 1.0) { return beta_small(b,a,1.0-x,false,limit); }
+    let left: f64 = a; let right: f64 = b; let at: f64 = x; let lower: bool = true;
+    if (x > (a+1.0)/(total+2.0)) { left = b; right = a; at = 1.0-x; lower = false; }
+    let c: f64 = 1.0; let d: f64 = 1.0-(total/(left+1.0))*at; if (core::f64::abs(d) < 1e-300) { d = 1e-300; } d = 1.0/d; let h: f64 = d; let i: i32 = 1;
+    while (true) {
+        if (i > MAX_ITERATIONS) { return core::result::Err(Error::NoConvergence); } if (!limit.spend()) { return core::result::Err(Error::WorkLimit); } let m: f64 = i as f64; let twice: f64 = 2.0*m;
+        let coefficient: f64 = (m/(left+twice))*((right-m)/(left-1.0+twice))*at;
+        d = 1.0+coefficient*d; if (core::f64::abs(d) < 1e-300) { d = 1e-300; } c = 1.0+coefficient/c; if (core::f64::abs(c) < 1e-300) { c = 1e-300; } d = 1.0/d; h *= d*c;
+        coefficient = -((left+m)/(left+twice))*((total+m)/(left+twice+1.0))*at;
+        d = 1.0+coefficient*d; if (core::f64::abs(d) < 1e-300) { d = 1e-300; } c = 1.0+coefficient/c; if (core::f64::abs(c) < 1e-300) { c = 1e-300; } d = 1.0/d; let change: f64 = d*c; h *= change;
+        if (!core::f64::is_finite(h) || h <= 0.0) { return core::result::Err(Error::NumericalFailure); }
+        if (core::f64::abs(change-1.0) <= 0.0000000000000004440892098500626) { break; } i += 1;
+    }
+    return from_log(beta_front(left,right,at)+core::math::log(h)-core::math::log(left),lower);
+}
+pub fn tails(value: Distribution, x: f64, limit: &Budget) -> core::result::Result<Tails,Error> {
+    if (!valid(value)) { return core::result::Err(Error::InvalidParameter); } if (core::f64::is_nan(x)) { return core::result::Err(Error::NaN); } if (!limit.spend()) { return core::result::Err(Error::WorkLimit); }
+    let family: i32 = match (value.family) { Family::Normal -> 0, Family::Exponential -> 1, Family::Gamma -> 2, Family::Beta -> 3 };
+    if (family == 0) { let z: f64 = standardize(value,x); let logged: f64 = minus_infinity(); if (core::f64::is_finite(z)) { logged = ext::distributions_erfc::log_erfc(core::f64::abs(z)*0.70710678118654752440084436210484904)-core::math::LN_2; } return from_log(logged,z < 0.0); }
+    if (family == 1) { if (x <= 0.0) { return from_log(minus_infinity(),true); } let product: f64 = value.first*x; if (product < core::f64::MIN_POSITIVE) { return from_log(core::math::log(value.first)+core::math::log(x),true); } return from_log(-product,false); }
+    if (family == 2) { if (x <= 0.0) { return from_log(minus_infinity(),true); } if (x == core::f64::infinity()) { return from_log(minus_infinity(),false); } let t: f64 = x/value.second; if (!core::f64::is_finite(t) || t == 0.0) { return core::result::Err(Error::NumericalFailure); } return gamma_tails(value.first,t,limit); }
+    if (family == 3) { if (x <= 0.0) { return from_log(minus_infinity(),true); } if (x >= 1.0) { return from_log(minus_infinity(),false); } return beta_tails(value.first,value.second,x,limit); }
+    return core::result::Err(Error::InvalidParameter);
+}
+fn unit<R>(source: &R, limit: &Budget, open: bool) -> core::result::Result<f64,Error> where R: core::random::Source64 {
+    while (true) { if (!limit.spend()) { return core::result::Err(Error::WorkLimit); } if (limit.draws_left == 0) { return core::result::Err(Error::DrawLimit); } limit.draws_left -= 1; limit.draws_used += 1;
+        let drawn: core::result::Result<f64,core::random::Error> = core::random::unit_f64(source); if (drawn.is_err()) { return core::result::Err(Error::Random(drawn.unwrap_err())); } let value: f64 = drawn.unwrap(); if (!open || value != 0.0) { return core::result::Ok(value); }
+    } return core::result::Err(Error::DrawLimit);
+}
+fn standard_normal<R>(source: &R, limit: &Budget) -> core::result::Result<f64,Error> where R: core::random::Source64 {
+    let radial: core::result::Result<f64,Error> = unit(source,limit,true); if (radial.is_err()) { return radial; } let angle: core::result::Result<f64,Error> = unit(source,limit,false); if (angle.is_err()) { return angle; }
+    return finite(core::f64::sqrt(-2.0*core::math::log(radial.unwrap()))*core::math::cos(core::math::TAU*angle.unwrap()));
+}
+struct GammaDraw { base: f64, log_base: f64, boost: f64 }
+fn gamma_draw<R>(source: &R, shape: f64, limit: &Budget) -> core::result::Result<GammaDraw,Error> where R: core::random::Source64 {
+    let raised: f64 = shape; if (shape < 1.0) { raised += 1.0; } let d: f64 = raised-1.0/3.0; let c: f64 = (1.0/core::f64::sqrt(d))/3.0;
+    while (true) {
+        if (!limit.spend()) { return core::result::Err(Error::WorkLimit); }
+        let normal: core::result::Result<f64,Error> = standard_normal(source,limit); if (normal.is_err()) { return core::result::Err(normal.unwrap_err()); } let x: f64 = normal.unwrap(); let linear: f64 = 1.0+c*x; if (linear <= 0.0) { continue; } let v: f64 = linear*linear*linear;
+        let uniform: core::result::Result<f64,Error> = unit(source,limit,true); if (uniform.is_err()) { return core::result::Err(uniform.unwrap_err()); } let u: f64 = uniform.unwrap(); let square: f64 = x*x;
+        if (u < 1.0-0.0331*square*square || core::math::log(u) < 0.5*square+d*(1.0-v+core::math::log(v))) {
+            let boost: f64 = 0.0; if (shape < 1.0) { let extra: core::result::Result<f64,Error> = unit(source,limit,true); if (extra.is_err()) { return core::result::Err(extra.unwrap_err()); } boost = core::math::log(extra.unwrap()); }
+            return core::result::Ok(GammaDraw { base: d*v, log_base: core::math::log(d)+3.0*core::math::log1p(c*x), boost: boost });
+        }
+    } return core::result::Err(Error::WorkLimit);
+}
+pub fn sample<R>(source: &R, value: Distribution, limit: &Budget) -> core::result::Result<f64,Error> where R: core::random::Source64 {
+    if (!valid(value)) { return core::result::Err(Error::InvalidParameter); }
+    let family: i32 = match (value.family) { Family::Normal -> 0, Family::Exponential -> 1, Family::Gamma -> 2, Family::Beta -> 3 };
+    if (family == 0) { let drawn: core::result::Result<f64,Error> = standard_normal(source,limit); if (drawn.is_err()) { return drawn; } return finite(value.first+value.second*drawn.unwrap()); }
+    if (family == 1) { let drawn: core::result::Result<f64,Error> = unit(source,limit,false); if (drawn.is_err()) { return drawn; } return finite(-core::math::log1p(-drawn.unwrap())/value.first); }
+    if (family == 2) { let drawn: core::result::Result<GammaDraw,Error> = gamma_draw(source,value.first,limit); if (drawn.is_err()) { return core::result::Err(drawn.unwrap_err()); } let result: GammaDraw = drawn.unwrap();
+            if (value.first < 1.0) { return finite(core::math::exp(result.log_base+core::math::log(value.second)+result.boost/value.first)); }
+            if (value.second < 1.0) { return finite((core::math::exp(result.log_base+core::math::log(value.second)))); } return finite(result.base*value.second); }
+    if (family == 3) { let left: core::result::Result<GammaDraw,Error> = gamma_draw(source,value.first,limit); if (left.is_err()) { return core::result::Err(left.unwrap_err()); } let right: core::result::Result<GammaDraw,Error> = gamma_draw(source,value.second,limit); if (right.is_err()) { return core::result::Err(right.unwrap_err()); } let a: GammaDraw = left.unwrap(); let b: GammaDraw = right.unwrap();
+            let small: f64 = core::f64::min(1.0,core::f64::min(value.first,value.second)); let boost: f64 = (small/value.first)*a.boost-(small/value.second)*b.boost;
+            // Cancel boosts before dividing, then add the unscaled base
+            // residual. An overflowing quotient has the correct logistic
+            // endpoint; a finite base cannot cancel its enormous magnitude.
+            let difference: f64 = (a.log_base-b.log_base)+boost/small; if (difference >= 0.0) { return finite(1.0/(1.0+core::math::exp(-difference))); } let e: f64 = core::math::exp(difference); return finite(e/(1.0+e)); }
+    return core::result::Err(Error::InvalidParameter);
+}

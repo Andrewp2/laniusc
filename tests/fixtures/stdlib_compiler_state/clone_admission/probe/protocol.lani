@@ -1,0 +1,15 @@
+// Admission prototype only. This is not a production ownership API.
+module probe::protocol;
+import core::result;
+
+// source is a read-only borrowed shallow descriptor. Ok transfers a separate
+// memory owner; Err releases the leaf's partial result and preserves source.
+pub trait TryClone<T,E> {
+    pub fn try_clone_value(source: T) -> core::result::Result<T,E>;
+}
+
+// Explicit release, not automatic Drop. For a valid memory owner this must
+// finish without allocation, a reportable failure, or panic. No FD owners.
+pub trait Destroy<T> {
+    pub fn destroy_value(owned: T);
+}

@@ -1,0 +1,20 @@
+running 1 test
+test directory_iteration_walk_limits_and_cleanup_execute ...
+thread 'directory_iteration_walk_limits_and_cleanup_execute' (571653) panicked at tests/stdlib_directory_execution.rs:23:25:
+tests/fixtures/stdlib_foundation/directory_contracts.lani: error[LNC0006]: type mismatch
+ --> /home/andrew-peterson/code/laniusc/stdlib/std/directory.lani:99:29
+   |
+99 |     let directory:Directory=core::result::unwrap(opened); let top:Level=Level { directory:directory,parent_length:0,depth:0 };
+   |                             ^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    directory_iteration_walk_limits_and_cleanup_execute
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 2.48s
+
+error: test failed, to rerun pass `--test stdlib_directory_execution`

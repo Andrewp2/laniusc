@@ -1,0 +1,60 @@
+module app::main;
+import alloc::binary_heap;
+import core::cmp;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Payload { priority:i64, present:core::option::Option<bool>, bytes:[u8;3], identity:i32 }
+pub impl core::cmp::Ord<Payload> for Payload {
+    pub fn lt(left:Payload,right:Payload) -> bool { return left.priority < right.priority; }
+    pub fn le(left:Payload,right:Payload) -> bool { return left.priority <= right.priority; }
+    pub fn gt(left:Payload,right:Payload) -> bool { return left.priority > right.priority; }
+    pub fn ge(left:Payload,right:Payload) -> bool { return left.priority >= right.priority; }
+}
+
+fn main() -> i32 {
+    let heap:alloc::binary_heap::BinaryHeap<i64> =alloc::binary_heap::new(alloc::binary_heap::Order::Min);
+    let empty:core::slice::View<i64> =heap.as_view();
+    if (empty.len()!=0 || !empty.is_empty() || core::option::is_some(empty.get(0))) { return 1; }
+    core::result::unwrap(heap.try_push(4294967297));
+    core::result::unwrap(heap.try_push(-4294967299));
+    core::result::unwrap(heap.try_push(17));
+    let values:core::slice::View<i64> =heap.as_view();
+    if (values.len()!=3 || values.is_empty() || core::option::is_some(values.get(-1)) || core::option::is_some(values.get(3))) { return 2; }
+    let index:i32=0; let sum:i64=0; let seen:i32=0;
+    while (index<values.len()) {
+        let value:i64=core::option::unwrap(values.get(index));
+        sum+=value;
+        if (value==4294967297) { seen|=1; }
+        if (value == -4294967299) { seen|=2; }
+        if (value==17) { seen|=4; }
+        index+=1;
+    }
+    if (sum!=15 || seen!=7) { return 3; }
+    heap.destroy();
+
+    let records:alloc::binary_heap::BinaryHeap<Payload> =alloc::binary_heap::new(alloc::binary_heap::Order::Max);
+    let none:core::slice::View<Payload> =records.as_view();
+    if (none.len()!=0 || core::option::is_some(none.get(0))) { return 4; }
+    let first:Payload=Payload { priority:4294967297,present:core::option::Some(true),bytes:[128,0,255],identity:1 };
+    let second:Payload=Payload { priority:-4294967299,present:core::option::Some(false),bytes:[255,128,1],identity:2 };
+    core::result::unwrap(records.try_push(first)); core::result::unwrap(records.try_push(second));
+    let selected:core::slice::View<Payload> =records.as_view();
+    if (selected.len()!=2 || core::option::is_some(selected.get(2))) { return 5; }
+    index=0; seen=0;
+    while (index<selected.len()) {
+        let item:Payload=core::option::unwrap(selected.get(index));
+        if (item.identity==1) {
+            if (item.priority!=4294967297 || !core::option::unwrap(item.present) || item.bytes[0]!=128 || item.bytes[1]!=0 || item.bytes[2]!=255) { return 6; }
+            seen|=1;
+        } else {
+            if (item.identity!=2 || item.priority != -4294967299 || core::option::unwrap(item.present) || item.bytes[0]!=255 || item.bytes[1]!=128 || item.bytes[2]!=1) { return 7; }
+            seen|=2;
+        }
+        index+=1;
+    }
+    records.destroy();
+    if (seen!=3) { return 8; }
+    return 0;
+}

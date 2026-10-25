@@ -1,0 +1,18 @@
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::result;
+struct Item {}
+pub impl core::clone::Destroy<i32> for Item {
+    pub fn destroy_value(value: i32) {}
+}
+fn main() -> i32 {
+    let source: alloc::deque::Deque<Item> = alloc::deque::new<Item>();
+    let owner: alloc::deque::IntoIter<Item> = source.take_iter();
+    alloc::clone::destroy_deque_iter<Item>(owner.borrow());
+    return 0;
+}

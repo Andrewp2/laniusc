@@ -1,0 +1,76 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::percent;
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(raw,count));
+}
+fn error_code(error: ext::percent::Error) -> i32 {
+    let code: i32 = match (error) {
+        ext::percent::Error::Bounds -> 1, ext::percent::Error::SizeOverflow -> 2,
+        ext::percent::Error::Capacity(required) -> 100 + required,
+        ext::percent::Error::InvalidEscape(index) -> 1000 + index
+    }; return code;
+}
+fn main() -> i32 {
+    assert(core::result::unwrap(ext::percent::encoded_capacity(0)) == 0);
+    assert(core::result::unwrap(ext::percent::encoded_capacity(715827882)) == 2147483646);
+    assert(error_code(core::result::unwrap_err(ext::percent::encoded_capacity(-1))) == 1);
+    assert(error_code(core::result::unwrap_err(ext::percent::encoded_capacity(715827883))) == 2);
+    assert(error_code(core::result::unwrap_err(ext::percent::encoded_capacity(2147483647))) == 2);
+    assert(ext::percent::is_unreserved(65) && ext::percent::is_unreserved(122) && ext::percent::is_unreserved(126));
+    assert(!ext::percent::is_unreserved(0) && !ext::percent::is_unreserved(47) && !ext::percent::is_unreserved(255));
+    let source: [u8; 8] = [77,65,32,47,0,255,126,77];
+    let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(source,1,6));
+    let storage: [u8; 20] = [77;20];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,2,16));
+    assert(core::result::unwrap(ext::percent::encoded_len(input)) == 14);
+    assert(core::result::unwrap(ext::percent::encode_into(input,output)) == 14);
+    let expected: core::slice::View<u8> = bytes("A%20%2F%00%FF~",14);
+    let index: i32 = 0;
+    while (index < 14) { assert(storage[index+2] == expected.values[index]); index += 1; }
+    assert(storage[0] == 77 && storage[1] == 77 && storage[16] == 77 && storage[19] == 77);
+    let encoded: core::slice::View<u8> = core::result::unwrap(output.subview(0,14));
+    assert(core::result::unwrap(ext::percent::decoded_len(encoded)) == 6);
+    // In-place native array shrinking and expansion retain their own stride.
+    assert(core::result::unwrap(ext::percent::decode_into(encoded,output)) == 6);
+    index = 0; while (index < 6) { assert(storage[index+2] == source[index+1]); index += 1; }
+    let prefix: core::slice::View<u8> = core::result::unwrap(output.subview(0,6));
+    assert(core::result::unwrap(ext::percent::encode_into(prefix,output)) == 14);
+    index = 0; while (index < 14) { assert(storage[index+2] == expected.values[index]); index += 1; }
+    output.fill(77);
+    let too_short: core::slice::View<u8> = core::result::unwrap(output.subview(0,13));
+    assert(error_code(core::result::unwrap_err(ext::percent::encode_into(input,too_short))) == 114);
+    let decode_short: core::slice::View<u8> = core::result::unwrap(output.subview(0,2));
+    assert(error_code(core::result::unwrap_err(ext::percent::decode_into(bytes("a%20b",5),decode_short))) == 103);
+    // Escape errors precede capacity; earlier valid bytes never get written.
+    assert(error_code(core::result::unwrap_err(ext::percent::decode_into(bytes("abc%20z%G1",10),decode_short))) == 1007);
+    assert(error_code(core::result::unwrap_err(ext::percent::decode_into(bytes("x%",2),output))) == 1001);
+    assert(error_code(core::result::unwrap_err(ext::percent::decoded_len(bytes("%0",2)))) == 1000);
+    assert(error_code(core::result::unwrap_err(ext::percent::decoded_len(bytes("%%0",3)))) == 1000);
+    let malformed: core::slice::View<u8> = input; malformed.start = -1;
+    assert(error_code(core::result::unwrap_err(ext::percent::encoded_len(malformed))) == 1);
+    assert(error_code(core::result::unwrap_err(ext::percent::decoded_len(malformed))) == 1);
+    assert(error_code(core::result::unwrap_err(ext::percent::encode_into(malformed,output))) == 1);
+    assert(error_code(core::result::unwrap_err(ext::percent::decode_into(malformed,output))) == 1);
+    malformed = output; malformed.length = -1;
+    assert(error_code(core::result::unwrap_err(ext::percent::encode_into(input,malformed))) == 1);
+    assert(error_code(core::result::unwrap_err(ext::percent::decode_into(bytes("%GG",3),malformed))) == 1);
+    malformed = input; malformed.start = 2147483647; malformed.length = 1;
+    assert(error_code(core::result::unwrap_err(ext::percent::encoded_len(malformed))) == 1);
+    assert(error_code(core::result::unwrap_err(ext::percent::decoded_len(malformed))) == 1);
+    index = 0; while (index < 20) { assert(storage[index] == 77); index += 1; }
+    let empty: core::slice::View<u8> = core::result::unwrap(output.subview(3,3));
+    assert(core::result::unwrap(ext::percent::encode_into(bytes("",0),empty)) == 0);
+    assert(core::result::unwrap(ext::percent::decode_into(bytes("",0),empty)) == 0);
+    let escaped_window: [u8; 7] = [37,120,37,48,48,121,37];
+    let window: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(escaped_window,1,5));
+    assert(core::result::unwrap(ext::percent::decode_into(window,output)) == 3);
+    assert(storage[2] == 120 && storage[3] == 0 && storage[4] == 121);
+    let bad_window: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(escaped_window,5,2));
+    assert(error_code(core::result::unwrap_err(ext::percent::decoded_len(bad_window))) == 1001);
+    return 0;
+}

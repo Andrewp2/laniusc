@@ -18,6 +18,10 @@ use crate::type_checker::{CheckedGenericCall, CheckedGenericTarget};
 #[cfg(test)]
 #[path = "packet_tests.rs"]
 mod tests;
+mod implementation_application;
+pub(super) use implementation_application::{
+    AdmittedImplementationApplication, AdmittedImplementationMethod, ImplApplicationRequest,
+};
 
 /// Results may only be copied after the orchestrator has observed successful
 /// GPU catalog, batch, context and call status for this exact Submission.

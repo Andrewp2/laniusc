@@ -289,21 +289,12 @@ fn dot(left: Vec3, right: Vec3) -> f32 {
     left.x * right.x + left.y * right.y + left.z * right.z
 }
 
-fn sqrt_approx(value: f32) -> f32 {
-    if value <= 0.0 {
-        return 0.0;
-    }
-    let mut estimate = value;
-    let mut step = 0;
-    while step < 8 {
-        estimate = 0.5 * (estimate + value / estimate);
-        step += 1;
-    }
-    estimate
+fn sqrt_reference(value: f32) -> f32 {
+    value.sqrt()
 }
 
 fn length(value: Vec3) -> f32 {
-    sqrt_approx(dot(value, value))
+    sqrt_reference(dot(value, value))
 }
 
 fn unit(value: Vec3) -> Vec3 {
@@ -342,7 +333,7 @@ fn hit_sphere(sphere: Sphere, ray: Ray, t_min: f32, t_max: f32) -> Hit {
         return miss();
     }
 
-    let sqrtd = sqrt_approx(discriminant);
+    let sqrtd = sqrt_reference(discriminant);
     let mut root = (-half_b - sqrtd) / a;
     if root < t_min || root > t_max {
         root = (-half_b + sqrtd) / a;
@@ -481,7 +472,7 @@ fn clamp01(value: f32) -> f32 {
 }
 
 fn linear_to_gamma(value: f32) -> f32 {
-    sqrt_approx(clamp01(value))
+    sqrt_reference(clamp01(value))
 }
 
 fn color_to_byte(value: f32) -> i32 {

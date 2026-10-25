@@ -1,0 +1,117 @@
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+import std::vec;
+
+struct Payload { wide: u64, optional: core::option::Option<bool>, cells: [i32; 2] }
+struct Unit {}
+
+fn main() -> i32 {
+    let values: [i32; 6] = [99, 2, 3, 4, 5, 88];
+    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view_range(values, 1, 4));
+    if (view.len() != 4 || view.is_empty() || core::option::unwrap(view.first()) != 2 || core::option::unwrap(view.last()) != 5) { return 1; }
+    if (core::option::is_some(view.get(-1)) || core::option::is_some(view.get(4)) || core::option::is_some(view.get(2147483647))) { return 2; }
+    if (core::result::is_ok(core::slice::view(values, -1)) || core::result::is_ok(core::slice::view_range(values, -1, 1)) ||
+        core::result::is_ok(core::slice::view_range(values, 2147483647, 1)) || core::result::is_ok(view.subview(3, 2)) ||
+        core::result::is_ok(view.subview(0, 5)) || core::result::is_ok(view.subview(-1, 0))) { return 3; }
+    let empty: core::slice::View<i32> = core::result::unwrap(view.subview(4, 4));
+    if (!empty.is_empty() || core::option::is_some(empty.first()) || core::option::is_some(empty.last()) || empty.reverse() != 0 ||
+        core::result::unwrap(empty.copy_within(0, 0, 0)) != 0 || empty.fill(10) != 0) { return 4; }
+    let copied: core::slice::View<i32> = view;
+    let middle: core::slice::View<i32> = core::result::unwrap(view.subview(1, 3));
+    if (core::result::unwrap(middle.try_set(0, 30)) != 3 || core::option::unwrap(copied.get(1)) != 30 ||
+        core::result::is_ok(middle.try_set(2, 40)) || core::result::is_ok(middle.try_set(-1, 40))) { return 5; }
+    let cursor: core::slice::Iter<i32> = view.iter();
+    let fork: core::slice::Iter<i32> = cursor;
+    if (core::option::unwrap(cursor.next()) != 2 || core::option::unwrap(cursor.next_back()) != 5 || cursor.remaining() != 2) { return 6; }
+    core::result::unwrap(view.try_set(1, 33));
+    if (core::option::unwrap(cursor.next()) != 33 || core::option::unwrap(cursor.next_back()) != 4 || cursor.remaining() != 0 ||
+        core::option::is_some(cursor.next()) || core::option::is_some(cursor.next_back()) || core::option::is_some(cursor.next())) { return 7; }
+    if (fork.remaining() != 4 || core::result::is_ok(fork.advance(-1)) || core::result::is_ok(fork.advance_back(-1)) || fork.remaining() != 4) { return 8; }
+    if (core::result::unwrap(fork.advance(1)) != 1 || core::result::unwrap(fork.advance_back(1)) != 1 ||
+        core::option::unwrap(fork.next()) != 33 || core::result::unwrap(fork.advance(2147483647)) != 1 || fork.remaining() != 0 ||
+        core::result::unwrap(fork.advance_back(5)) != 0) { return 9; }
+    let reverse_cursor: core::slice::Iter<i32> = view.iter();
+    if (core::result::unwrap(reverse_cursor.advance_back(2147483647)) != 4 || core::option::is_some(reverse_cursor.next())) { return 10; }
+    if (core::result::unwrap(view.copy_within(0, 3, 1)) != 3 || values[1] != 2 || values[2] != 2 || values[3] != 33 || values[4] != 4) { return 11; }
+    if (core::result::unwrap(view.copy_within(1, 4, 0)) != 3 || values[1] != 2 || values[2] != 33 || values[3] != 4 || values[4] != 4) { return 12; }
+    if (core::result::is_ok(view.copy_within(0, 3, 2)) || core::result::is_ok(view.copy_within(2, 1, 0)) ||
+        core::result::is_ok(view.copy_within(0, 0, 2147483647)) || core::result::is_ok(view.copy_within(-1, 1, 0))) { return 13; }
+    if (view.reverse() != 2 || values[1] != 4 || values[4] != 2 || values[0] != 99 || values[5] != 88) { return 14; }
+    if (middle.fill(7) != 2 || values[2] != 7 || values[3] != 7 || values[1] != 4 || values[4] != 2) { return 15; }
+    if (core::result::is_ok(view.chunks(0)) || core::result::is_ok(view.chunks(-1)) || core::result::is_ok(view.windows(0)) ||
+        core::result::is_ok(view.windows(-1))) { return 16; }
+    let chunks: core::slice::Chunks<i32> = core::result::unwrap(view.chunks(3));
+    let chunk_fork: core::slice::Chunks<i32> = chunks;
+    if (chunks.remaining() != 2 || core::option::unwrap(chunks.next()).len() != 3 || chunks.remaining() != 1 ||
+        core::option::unwrap(chunks.next()).len() != 1 || chunks.remaining() != 0 || core::option::is_some(chunks.next()) ||
+        core::option::is_some(chunks.next()) || chunk_fork.remaining() != 2) { return 17; }
+    let windows: core::slice::Windows<i32> = core::result::unwrap(view.windows(3));
+    let window_fork: core::slice::Windows<i32> = windows;
+    let first: core::slice::View<i32> = core::option::unwrap(windows.next());
+    let second: core::slice::View<i32> = core::option::unwrap(windows.next());
+    if (first.len() != 3 || second.len() != 3 || core::option::unwrap(first.first()) != 4 || core::option::unwrap(second.last()) != 2 ||
+        windows.remaining() != 0 || core::option::is_some(windows.next()) || core::option::is_some(windows.next()) || window_fork.remaining() != 2) { return 18; }
+    core::result::unwrap(first.try_set(1, 70));
+    if (core::option::unwrap(second.first()) != 70) { return 19; }
+    let empty_chunks: core::slice::Chunks<i32> = core::result::unwrap(empty.chunks(2147483647));
+    let huge_windows: core::slice::Windows<i32> = core::result::unwrap(view.windows(2147483647));
+    let huge_chunks: core::slice::Chunks<i32> = core::result::unwrap(view.chunks(2147483647));
+    if (empty_chunks.remaining() != 0 || core::option::is_some(empty_chunks.next()) || huge_windows.remaining() != 0 ||
+        core::option::is_some(huge_windows.next()) || huge_chunks.remaining() != 1 || core::option::unwrap(huge_chunks.next()).len() != 4) { return 20; }
+
+    // Packed ascending storage and native stack arrays have different strides.
+    let packed: std::vec::Vec<u8> = std::vec::new();
+    packed = std::vec::push(packed, 128); packed = std::vec::push(packed, 255); packed = std::vec::push(packed, 3);
+    let bytes: core::slice::View<u8> = core::result::unwrap(core::slice::view(std::vec::as_slice(packed), 3));
+    let replacement: u8 = 17;
+    if (bytes.reverse() != 1 || core::option::unwrap(bytes.last()) != 128 || core::result::unwrap(bytes.try_set(1, replacement)) != 255) { return 21; }
+    let byte_cursor: core::slice::Iter<u8> = bytes.iter();
+    if (core::option::unwrap(byte_cursor.next_back()) != 128 || core::option::unwrap(byte_cursor.next()) != 3) { return 22; }
+    if (core::result::unwrap(bytes.copy_within(0, 2, 1)) != 2 || core::option::unwrap(bytes.get(1)) != 3 || core::option::unwrap(bytes.last()) != 17) { return 27; }
+    std::vec::destroy(packed);
+    let words: std::vec::Vec<i32> = std::vec::new();
+    words = std::vec::push(words, -2147483648); words = std::vec::push(words, 2147483647);
+    let word_view: core::slice::View<i32> = core::result::unwrap(core::slice::view(std::vec::as_slice(words), 2));
+    word_view.reverse();
+    if (core::option::unwrap(word_view.first()) != 2147483647 || core::option::unwrap(word_view.last()) != -2147483648) { return 23; }
+    std::vec::destroy(words);
+
+    let maximum: u64 = 18446744073709551615;
+    let payload: Payload = Payload { wide: maximum, optional: core::option::Some(false), cells: [-7, 42] };
+    let records: [Payload; 2] = [payload, payload];
+    let record_view: core::slice::View<Payload> = core::result::unwrap(core::slice::view(records, 2));
+    let record_chunks: core::slice::Chunks<Payload> = core::result::unwrap(record_view.chunks(1));
+    let record_chunk: core::slice::View<Payload> = core::option::unwrap(record_chunks.next());
+    let record_cursor: core::slice::Iter<Payload> = record_chunk.iter();
+    let found: Payload = core::option::unwrap(record_cursor.next_back());
+    if (found.wide != maximum || core::option::unwrap(found.optional) || found.cells[0] != -7 || found.cells[1] != 42 ||
+        core::option::is_some(record_cursor.next())) { return 24; }
+    let units: [Unit; 3] = [Unit {}, Unit {}, Unit {}];
+    let unit_view: core::slice::View<Unit> = core::result::unwrap(core::slice::view(units, 3));
+    let unit_cursor: core::slice::Iter<Unit> = unit_view.iter();
+    if (core::option::is_none(unit_cursor.next()) || core::option::is_none(unit_cursor.next_back()) || unit_cursor.remaining() != 1) { return 25; }
+    // Zero-sized storage exercises i32 limit arithmetic without allocating or
+    // accessing billions of elements. Chunks must not use (len+width-1)/width.
+    let address: ptr = 0;
+    let many_units: [Unit] = core::mem::typed_slice_from_raw_parts(address, 2147483647);
+    let many: core::slice::View<Unit> = core::result::unwrap(core::slice::view(many_units, 2147483647));
+    let pairs: core::slice::Chunks<Unit> = core::result::unwrap(many.chunks(2));
+    let singles: core::slice::Windows<Unit> = core::result::unwrap(many.windows(1));
+    let skip: core::slice::Iter<Unit> = many.iter();
+    if (pairs.remaining() != 1073741824 || singles.remaining() != 2147483647 ||
+        core::option::unwrap(singles.next()).len() != 1 || singles.remaining() != 2147483646 ||
+        core::result::unwrap(skip.advance(2147483647)) != 2147483647 || core::option::is_some(skip.next())) { return 28; }
+    let end: core::slice::View<Unit> = core::result::unwrap(many.subview(2147483647, 2147483647));
+    if (!end.is_empty() || core::option::is_some(end.last()) || end.reverse() != 0) { return 29; }
+    let strings: [str; 2] = ["hello", "world"];
+    let string_view: core::slice::View<str> = core::result::unwrap(core::slice::view(strings, 2));
+    string_view.reverse();
+    let text: str = core::option::unwrap(string_view.first());
+    if (std::io::write_text(1, text) != 5) { return 26; }
+    return 0;
+}

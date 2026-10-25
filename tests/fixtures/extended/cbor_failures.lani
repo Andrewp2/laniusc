@@ -1,0 +1,49 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::cbor;
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn kind(error: ext::cbor::Error) -> i32 {
+    let code: i32 = match (error.kind) { ext::cbor::ErrorKind::Bounds -> 1, ext::cbor::ErrorKind::InputLimit -> 2, ext::cbor::ErrorKind::OutputLimit -> 3, ext::cbor::ErrorKind::ScratchTooSmall -> 4, ext::cbor::ErrorKind::DepthLimit -> 5, ext::cbor::ErrorKind::ItemLimit -> 6, ext::cbor::ErrorKind::StringLimit -> 7, ext::cbor::ErrorKind::WorkLimit -> 8, ext::cbor::ErrorKind::UnexpectedEnd -> 9, ext::cbor::ErrorKind::InvalidHead -> 10, ext::cbor::ErrorKind::InvalidSimple -> 11, ext::cbor::ErrorKind::InvalidUtf8 -> 12, ext::cbor::ErrorKind::UnexpectedBreak -> 13, ext::cbor::ErrorKind::ChunkType -> 14, ext::cbor::ErrorKind::OddMap -> 15, ext::cbor::ErrorKind::TrailingData -> 16, ext::cbor::ErrorKind::InvalidEvent -> 17 }; return code;
+}
+fn reject(values: core::slice::View<ext::cbor::Event>, limits: ext::cbor::Limits, code: i32, offset: i32) {
+    let stack: [ext::cbor::Frame;8] = [ext::cbor::empty_frame();8]; let frames: core::slice::View<ext::cbor::Frame> = core::result::unwrap(core::slice::view_range(stack,1,6));
+    let storage: [u8;64] = [199;64]; let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,2,60));
+    let counted: ext::cbor::Error = core::result::unwrap_err(ext::cbor::encoded_len(values,frames,limits)); assert(kind(counted) == code && counted.offset == offset);
+    let failed: ext::cbor::Error = core::result::unwrap_err(ext::cbor::encode_into(values,output,frames,limits)); assert(kind(failed) == code && failed.offset == offset);
+    let i: i32 = 0; while (i < 64) { assert(storage[i] == 199); i += 1; } assert(stack[0].kind == 0 && stack[7].kind == 0);
+}
+fn main() -> i32 {
+    let limits: ext::cbor::Limits = ext::cbor::default_limits(); limits.max_depth = 6;
+    let events: [ext::cbor::Event;4] = [ext::cbor::Event::Array(1),ext::cbor::Event::End,ext::cbor::Event::End,ext::cbor::Event::End];
+    let values: core::slice::View<ext::cbor::Event> = core::result::unwrap(core::slice::view(events,2)); reject(values,limits,13,1);
+    events[0] = ext::cbor::Event::Array(0); events[1] = ext::cbor::Event::Unsigned(0); reject(values,limits,17,1);
+    let first: core::slice::View<ext::cbor::Event> = core::result::unwrap(values.subview(0,1)); reject(first,limits,9,1);
+    events[0] = ext::cbor::Event::Unsigned(0); reject(values,limits,16,1);
+    events[0] = ext::cbor::Event::End; reject(first,limits,13,0);
+    events[0] = ext::cbor::Event::Tag(1); events[1] = ext::cbor::Event::End; reject(values,limits,13,1);
+    events[0] = ext::cbor::Event::Map(1); events[1] = ext::cbor::Event::Unsigned(1); events[2] = ext::cbor::Event::End;
+    let triple: core::slice::View<ext::cbor::Event> = core::result::unwrap(core::slice::view(events,3)); reject(triple,limits,13,2);
+    events[0] = ext::cbor::Event::BeginMap; reject(triple,limits,15,2);
+    events[0] = ext::cbor::Event::BeginBytes; events[1] = ext::cbor::Event::Text(bytes("",0)); reject(triple,limits,14,1);
+    events[0] = ext::cbor::Event::BeginText; events[1] = ext::cbor::Event::Bytes(bytes("",0)); reject(triple,limits,14,1);
+    events[0] = ext::cbor::Event::BeginBytes; events[1] = ext::cbor::Event::BeginBytes; reject(triple,limits,14,1);
+    events[0] = ext::cbor::Event::Simple(24); reject(first,limits,11,0); events[0] = ext::cbor::Event::Simple(31); reject(first,limits,11,0);
+    events[0] = ext::cbor::Event::Float16(65536); reject(first,limits,17,0);
+    let invalid: [u8;1] = [255]; events[0] = ext::cbor::Event::Text(core::result::unwrap(core::slice::view(invalid,1))); reject(first,limits,12,0);
+    let bad: core::slice::View<u8> = bytes("a",1); bad.start = -1; events[0] = ext::cbor::Event::Bytes(bad); reject(first,limits,1,0);
+    bad = bytes("a",1); bad.length = -1; events[0] = ext::cbor::Event::Text(bad); reject(first,limits,1,0);
+    events[0] = ext::cbor::Event::BeginText; events[1] = ext::cbor::Event::Text(bytes("a",1)); events[2] = ext::cbor::Event::Text(bytes("b",1)); events[3] = ext::cbor::Event::End;
+    let all: core::slice::View<ext::cbor::Event> = core::result::unwrap(core::slice::view(events,4)); limits.max_string_bytes = 1; reject(all,limits,7,2);
+    limits.max_string_bytes = 2; let stack: [ext::cbor::Frame;6] = [ext::cbor::empty_frame();6]; let frames: core::slice::View<ext::cbor::Frame> = core::result::unwrap(core::slice::view(stack,6));
+    assert(core::result::unwrap(ext::cbor::encoded_len(all,frames,limits)) == 6);
+    let wire: [u8;6] = [127,97,97,97,98,255]; let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(wire,6));
+    assert(core::result::unwrap(ext::cbor::validate(input,frames,limits)) == 6); limits.max_string_bytes = 1;
+    let failed: ext::cbor::Error = core::result::unwrap_err(ext::cbor::validate(input,frames,limits)); assert(kind(failed) == 7 && failed.offset == 3);
+    limits.max_string_bytes = 2; limits.max_input = 5; assert(kind(core::result::unwrap_err(ext::cbor::reader(input,frames,limits))) == 2); limits.max_input = 6;
+    let malformed: core::slice::View<u8> = input; malformed.start = 2147483647; assert(kind(core::result::unwrap_err(ext::cbor::validate(malformed,frames,limits))) == 1);
+    let invalid_frames: core::slice::View<ext::cbor::Frame> = frames; invalid_frames.start = -1; assert(kind(core::result::unwrap_err(ext::cbor::validate(input,invalid_frames,limits))) == 1);
+    limits.max_depth = -1; assert(kind(core::result::unwrap_err(ext::cbor::scratch_len(limits))) == 1);
+    return 0;
+}

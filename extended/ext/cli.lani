@@ -1,0 +1,122 @@
+// Allocation-free command-line parsing. Inputs and schema remain borrowed and
+// unchanged throughout iteration. No shell splitting or host access occurs.
+module ext::cli;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Arity { Flag, Required, Optional }
+pub enum Ordering { Intermixed, OptionsFirst }
+pub struct Spec { id: i32, long: core::slice::View<u8>, short: u8, arity: Arity }
+pub struct Location { argument: i32, byte: i32 }
+pub struct Argument { bytes: core::slice::View<u8>, at: Location }
+pub struct Occurrence { id: i32, at: Location, value: core::option::Option<Argument> }
+pub enum Event { Option(Occurrence), Operand(Argument) }
+pub enum Error { InvalidSpec(i32), DuplicateSpec(i32), UnknownOption(Location), MissingValue(Location), UnexpectedValue(Location) }
+pub struct Parser {
+    arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering,
+    index: i32, short_offset: i32, ended: bool, failure: core::option::Option<Error>,
+}
+
+fn byte(bytes: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(bytes.get(index)); }
+fn alphanumeric(value: u8) -> bool { return (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57); }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0; while (index < left.len()) { if (byte(left, index) != byte(right, index)) { return false; } index += 1; } return true;
+}
+fn part(bytes: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(bytes.subview(start, end)); }
+
+// Validate every schema entry before consuming arguments. id is nonnegative;
+// short=0 or an empty long name disables that spelling, but not both.
+pub fn parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering) -> core::result::Result<Parser, Error> {
+    let index: i32 = 0;
+    while (index < specs.len()) {
+        let spec: Spec = core::option::unwrap(specs.get(index));
+        if (spec.id < 0 || (spec.short == 0 && spec.long.is_empty()) || (spec.short != 0 && !alphanumeric(spec.short))) { return core::result::Err(Error::InvalidSpec(index)); }
+        let position: i32 = 0;
+        while (position < spec.long.len()) {
+            let value: u8 = byte(spec.long, position);
+            if (!alphanumeric(value) && (position == 0 || value != 45)) { return core::result::Err(Error::InvalidSpec(index)); }
+            position += 1;
+        }
+        position = 0;
+        while (position < index) {
+            let previous: Spec = core::option::unwrap(specs.get(position));
+            if (previous.id == spec.id || (spec.short != 0 && spec.short == previous.short) || (!spec.long.is_empty() && equal(spec.long, previous.long))) { return core::result::Err(Error::DuplicateSpec(index)); }
+            position += 1;
+        }
+        index += 1;
+    }
+    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, ended: false, failure: core::option::None() });
+}
+
+pub impl Parser {
+    fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Event>, Error> {
+        self.failure = core::option::Some(error); return core::result::Err(error);
+    }
+    fn emit(&self, spec: Spec, at: Location, value: core::option::Option<Argument>) -> core::result::Result<core::option::Option<Event>, Error> {
+        return core::result::Ok(core::option::Some(Event::Option(Occurrence { id: spec.id, at: at, value: value })));
+    }
+    // Required arguments consume the next token verbatim, even '-' or '--'.
+    // Optional values must be attached; they never consume the next token.
+    fn option_value(&self, spec: Spec, at: Location, attached: core::option::Option<Argument>) -> core::result::Result<core::option::Option<Event>, Error> {
+        let required: bool = match (spec.arity) { Arity::Required -> true, _ -> false };
+        if (core::option::is_some(attached)) { return self.emit(spec, at, attached); }
+        if (!required) { return self.emit(spec, at, core::option::None()); }
+        if (self.index == self.arguments.len()) { return self.fail(Error::MissingValue(at)); }
+        let value: core::slice::View<u8> = core::option::unwrap(self.arguments.get(self.index));
+        let argument: Argument = Argument { bytes: value, at: Location { argument: self.index, byte: 0 } }; self.index += 1;
+        return self.emit(spec, at, core::option::Some(argument));
+    }
+    fn short_option(&self, token: core::slice::View<u8>) -> core::result::Result<core::option::Option<Event>, Error> {
+        let at: Location = Location { argument: self.index, byte: self.short_offset }; let name: u8 = byte(token, self.short_offset);
+        let found: i32 = -1; let index: i32 = 0;
+        while (index < self.specs.len()) { let spec: Spec = core::option::unwrap(self.specs.get(index)); if (spec.short != 0 && spec.short == name) { found = index; break; } index += 1; }
+        if (found < 0) { return self.fail(Error::UnknownOption(at)); }
+        let spec: Spec = core::option::unwrap(self.specs.get(found)); self.short_offset += 1;
+        let flag: bool = match (spec.arity) { Arity::Flag -> true, _ -> false };
+        if (flag) {
+            if (self.short_offset == token.len()) { self.index += 1; self.short_offset = 0; }
+            return self.emit(spec, at, core::option::None());
+        }
+        let value: core::option::Option<Argument> = core::option::None();
+        if (self.short_offset < token.len()) {
+            value = core::option::Some(Argument { bytes: part(token, self.short_offset, token.len()), at: Location { argument: self.index, byte: self.short_offset } });
+        }
+        self.index += 1; self.short_offset = 0; return self.option_value(spec, at, value);
+    }
+    fn long_option(&self, token: core::slice::View<u8>) -> core::result::Result<core::option::Option<Event>, Error> {
+        let at: Location = Location { argument: self.index, byte: 2 }; let end: i32 = 2;
+        while (end < token.len() && byte(token, end) != 61) { end += 1; }
+        let name: core::slice::View<u8> = part(token, 2, end); let found: i32 = -1; let index: i32 = 0;
+        while (index < self.specs.len()) { let spec: Spec = core::option::unwrap(self.specs.get(index)); if (!spec.long.is_empty() && equal(spec.long, name)) { found = index; break; } index += 1; }
+        if (found < 0) { return self.fail(Error::UnknownOption(at)); }
+        let spec: Spec = core::option::unwrap(self.specs.get(found));
+        let flag: bool = match (spec.arity) { Arity::Flag -> true, _ -> false };
+        if (flag && end < token.len()) { return self.fail(Error::UnexpectedValue(Location { argument: self.index, byte: end })); }
+        let value: core::option::Option<Argument> = core::option::None();
+        if (end < token.len()) { value = core::option::Some(Argument { bytes: part(token, end + 1, token.len()), at: Location { argument: self.index, byte: end + 1 } }); }
+        self.index += 1; return self.option_value(spec, at, value);
+    }
+    // Errors are sticky; exhaustion is fused. Copies fork the parser position.
+    // Repetition and conflicts are application policy, so every occurrence emits.
+    pub fn next(&self) -> core::result::Result<core::option::Option<Event>, Error> {
+        if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        while (self.index < self.arguments.len()) {
+            let token: core::slice::View<u8> = core::option::unwrap(self.arguments.get(self.index));
+            if (self.short_offset > 0) { return self.short_option(token); }
+            if (!self.ended && token.len() >= 2 && byte(token, 0) == 45) {
+                if (byte(token, 1) == 45) {
+                    if (token.len() == 2) { self.ended = true; self.index += 1; }
+                    else { return self.long_option(token); }
+                } else { self.short_offset = 1; return self.short_option(token); }
+            } else {
+                let first: bool = match (self.ordering) { Ordering::OptionsFirst -> true, _ -> false };
+                if (first) { self.ended = true; }
+                let item: Argument = Argument { bytes: token, at: Location { argument: self.index, byte: 0 } }; self.index += 1;
+                return core::result::Ok(core::option::Some(Event::Operand(item)));
+            }
+        }
+        return core::result::Ok(core::option::None());
+    }
+}

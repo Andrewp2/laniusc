@@ -1,0 +1,136 @@
+// Owned raw-byte directory iteration and bounded, descriptor-anchored walks.
+module std::directory;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::linux;
+pub enum Error { Bounds, Limit, Malformed(i32), Closed, Failed, Changed, UnavailableMetadata, AllocationFailed, Io(core::io::Error) }
+pub struct Entry { name:core::slice::View<u8>, inode:u64, cookie:i64, kind:std::file_ops::Kind, consumed:i32 }
+pub struct Reader { file:std::file::File, buffer:alloc::vec::Vec<u8>, position:i32, filled:i32, eof:bool, failed:bool, work:u64 }
+pub struct Limits { max_depth:i32, max_entries:i32, max_path_bytes:i32, max_bytes:i32, max_work:u64, buffer_bytes:i32 }
+struct Row { start:i32, length:i32, depth:i32, metadata:std::file_ops::Metadata }
+struct Level { directory:Reader, parent_length:i32, depth:i32 }
+struct Budget { remaining:u64 }
+pub struct Snapshot { paths:alloc::vec::Vec<u8>, rows:alloc::vec::Vec<Row>, work:u64 }
+pub struct WalkEntry { path:core::slice::View<u8>, depth:i32, metadata:std::file_ops::Metadata }
+pub fn default_limits() -> Limits { return Limits { max_depth:64,max_entries:65536,max_path_bytes:4095,max_bytes:16777216,max_work:134217728,buffer_bytes:32768 }; }
+fn valid(view:core::slice::View<u8>) -> bool { return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length; }
+fn byte(view:core::slice::View<u8>,at:i32) -> u8 { return core::option::unwrap(view.get(at)); }
+fn integer(view:core::slice::View<u8>,at:i32,count:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<count) { value=value|((byte(view,at+i) as u64)<<(i*8)); i+=1; } return value; }
+fn hint(value:u8) -> std::file_ops::Kind { if(value==8) { return std::file_ops::Kind::Regular; } if(value==4) { return std::file_ops::Kind::Directory; } if(value==10) { return std::file_ops::Kind::Symlink; } if(value==1) { return std::file_ops::Kind::Fifo; } if(value==12) { return std::file_ops::Kind::Socket; } if(value==2) { return std::file_ops::Kind::Character; } if(value==6) { return std::file_ops::Kind::Block; } return std::file_ops::Kind::Unknown; }
+pub fn decode_entry(input:core::slice::View<u8>,offset:i32) -> core::result::Result<Entry,Error> {
+    if(!valid(input) || offset<0 || offset>input.len()) { return core::result::Err(Error::Bounds); }
+    if(offset%8!=0 || input.len()-offset<24) { return core::result::Err(Error::Malformed(offset)); }
+    let length:i32=integer(input,offset+16,2) as i32; if(length<24 || length%8!=0 || length>input.len()-offset) { return core::result::Err(Error::Malformed(offset+16)); }
+    let end:i32=offset+length; let name_end:i32=offset+19;
+    while(name_end<end && byte(input,name_end)!=0) { if(byte(input,name_end)==47) { return core::result::Err(Error::Malformed(name_end)); } name_end+=1; }
+    if(name_end==end || name_end==offset+19) { return core::result::Err(Error::Malformed(name_end)); }
+    let name:core::slice::View<u8> =core::result::unwrap(input.subview(offset+19,name_end));
+    return core::result::Ok(Entry { name:name,inode:integer(input,offset,8),cookie:integer(input,offset+8,8) as i64,kind:hint(byte(input,offset+18)),consumed:length });
+}
+fn linux_error(error:std::linux::Error) -> Error { return match(error) { std::linux::Error::System(value)->Error::Io(io_error(value)), _->Error::Bounds }; }
+fn io_error(value:i32) -> core::io::Error { if(value==4) { return core::io::Error::Interrupted; } if(value==11) { return core::io::Error::WouldBlock; } return core::io::Error::Host(value); }
+pub fn empty_directory() -> Reader { return Reader { file:std::file::File { handle:-1 },buffer:alloc::vec::new(),position:0,filled:0,eof:false,failed:false,work:0 }; }
+pub fn open_into(path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error> { return std::directory::open_at_into(std::file_ops::AT_FDCWD,path,buffer_bytes,output); }
+pub fn open_at_into(directory_fd:i32,path:core::path::Path,buffer_bytes:i32,output:&Reader) -> core::result::Result<i32,Error> {
+    let previous_file:std::file::File=output.file; let previous_buffer:alloc::vec::Vec<u8> =output.buffer; if(previous_file.is_open() || previous_buffer.capacity()!=0) { return core::result::Err(Error::Bounds); }
+    if(buffer_bytes<24 || buffer_bytes>1048576) { return core::result::Err(Error::Bounds); }
+    if(!valid(path.as_bytes())) { return core::result::Err(Error::Bounds); } if(path.byte_len()>4095) { return core::result::Err(Error::Io(core::io::Error::Host(36))); }
+    if(core::result::is_err(core::path::from_view(path.as_bytes()))) { return core::result::Err(Error::Io(core::io::Error::InvalidInput)); }
+    let made:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(buffer_bytes); if(core::result::is_err(made)) { return core::result::Err(Error::AllocationFailed); } let buffer:alloc::vec::Vec<u8> =core::result::unwrap(made); core::result::unwrap(buffer.try_resize(buffer_bytes,0));
+    let options:std::file_ops::OpenOptions=std::file_ops::options(); options.directory=true; options.no_follow=true;
+    let opened=std::file_ops::open_at(directory_fd,path,options); if(core::result::is_err(opened)) { buffer.destroy(); return core::result::Err(Error::Io(core::result::unwrap_err(opened))); }
+    output.file=core::result::unwrap(opened); output.buffer=buffer; output.position=0; output.filled=0; output.eof=false; output.failed=false; output.work=0; return core::result::Ok(0);
+}
+pub impl Reader {
+    pub fn borrow(&self) -> &Reader { return self; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { return self.file.raw_handle(); }
+    pub fn work_done(&self) -> u64 { return self.work; }
+    fn charge(&self,amount:u64) -> bool { if(amount>18446744073709551615-self.work) { self.failed=true; return false; } self.work+=amount; return true; }
+    pub fn next(&self) -> core::result::Result<core::option::Option<Entry>,Error> {
+        if(!self.file.is_open()) { return core::result::Err(Error::Closed); } if(self.failed) { return core::result::Err(Error::Failed); } let refills:i32=0;
+        while(true) {
+            if(self.position==self.filled) {
+                if(self.eof) { return core::result::Ok(core::option::None()); }
+                if(refills==3 || !self.charge(1)) { self.failed=true; return core::result::Err(Error::Limit); } refills+=1;
+                let args:[std::linux::Argument;3]=[std::linux::Argument::Word(core::option::unwrap(self.file.raw_handle()) as i64),std::linux::Argument::Address(self.buffer.storage),std::linux::Argument::Word(self.buffer.len() as i64)];
+                let result=std::linux::call(217,core::result::unwrap(core::slice::view(args,3)));
+                if(core::result::is_err(result)) { return core::result::Err(linux_error(core::result::unwrap_err(result))); }
+                let received:i64=core::result::unwrap(result);
+                if(received < 0) { self.failed=true; return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+                if(received > (self.buffer.len() as i64)) { self.failed=true; return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+                if(!self.charge(received as u64)) { return core::result::Err(Error::Limit); } self.position=0; self.filled=received as i32;
+                if(received==0) { self.eof=true; return core::result::Ok(core::option::None()); }
+            }
+            let input:core::slice::View<u8> =core::result::unwrap(self.buffer.as_view().subview(0,self.filled)); let parsed=decode_entry(input,self.position);
+            if(core::result::is_err(parsed)) { self.failed=true; return core::result::Err(core::result::unwrap_err(parsed)); } let entry:Entry=core::result::unwrap(parsed); self.position+=entry.consumed;
+            if(!self.charge((entry.consumed as u64)+1)) { return core::result::Err(Error::Limit); }
+            let dot:bool=entry.name.len()==1 && byte(entry.name,0)==46; let parent:bool=entry.name.len()==2 && byte(entry.name,0)==46 && byte(entry.name,1)==46;
+            if(!dot && !parent) { return core::result::Ok(core::option::Some(entry)); }
+        }
+        return core::result::Ok(core::option::None());
+    }
+    pub fn close(&self) -> core::result::Result<i32,Error> { self.buffer.destroy(); self.position=0; self.filled=0; self.eof=true; let result=self.file.close(); if(core::result::is_err(result)) { return core::result::Err(Error::Io(core::result::unwrap_err(result))); } return core::result::Ok(0); }
+}
+pub fn empty_entry() -> WalkEntry { let empty:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts(empty,0); return WalkEntry { path:core::result::unwrap(core::slice::view(bytes,0)),depth:0,metadata:std::file_ops::empty_metadata() }; }
+pub impl WalkEntry { pub fn borrow(&self) -> &WalkEntry { return self; } }
+pub impl Snapshot {
+    pub fn borrow(&self) -> &Snapshot { return self; }
+    pub fn len(&self) -> i32 { return self.rows.len(); }
+    pub fn byte_len(&self) -> i32 { return self.paths.len(); }
+    pub fn work_done(&self) -> u64 { return self.work; }
+    pub fn entry_into(&self,index:i32,output:&WalkEntry) -> core::result::Result<i32,Error> { if(index<0 || index>=self.rows.len()) { return core::result::Err(Error::Bounds); } let row:Row=self.rows.at(index); output.path=core::result::unwrap(self.paths.as_view().subview(row.start,row.start+row.length)); output.depth=row.depth; output.metadata=row.metadata; return core::result::Ok(0); }
+    pub fn destroy(&self) { self.paths.destroy(); self.rows.destroy(); }
+}
+fn reserve<T>(owner:&alloc::vec::Vec<T>,required:i32,maximum:i32) -> bool { if(required<=owner.capacity()) { return true; } let capacity:i32=maximum; if(owner.capacity()<=maximum/2) { capacity=owner.capacity()*2; } if(capacity<4 && maximum>=4) { capacity=4; } if(capacity<required) { capacity=required; } return core::result::is_ok(owner.try_reserve(capacity-owner.len())); }
+impl Budget { fn spend(&self,amount:u64) -> bool { if(amount>self.remaining) { return false; } self.remaining-=amount; return true; } }
+fn close_stack(stack:&alloc::vec::Vec<Level>) { while(!stack.is_empty()) { let level:Level=core::option::unwrap(stack.pop()); let directory:Reader=level.directory; let closed=directory.close(); } }
+fn valid_limits(value:Limits) -> bool { return value.max_depth>=0 && value.max_depth<=4096 && value.max_entries>=0 && (value.max_entries as usize)<=2147483647/core::mem::size_of<Row>() && value.max_path_bytes>=0 && value.max_bytes>=0 && value.buffer_bytes>=24 && value.buffer_bytes<=1048576; }
+pub fn walk(root:core::path::Path,depth:i32,limits:Limits) -> core::result::Result<Snapshot,Error> {
+    if(!valid_limits(limits) || depth<0 || depth>limits.max_depth || !valid(root.as_bytes())) { return core::result::Err(Error::Bounds); }
+    let paths:alloc::vec::Vec<u8> =alloc::vec::new(); let rows:alloc::vec::Vec<Row> =alloc::vec::new(); let stack:alloc::vec::Vec<Level> =alloc::vec::new(); let path:alloc::vec::Vec<u8> =alloc::vec::new();
+    let budget:Budget=Budget { remaining:limits.max_work }; let failure:core::option::Option<Error> =core::option::None();
+    if(!budget.spend((limits.buffer_bytes as u64)+(root.byte_len() as u64)+1)) { paths.destroy(); rows.destroy(); stack.destroy(); path.destroy(); return core::result::Err(Error::Limit); }
+    let directory:Reader=empty_directory(); let opened=std::directory::open_into(root,limits.buffer_bytes,directory.borrow()); if(core::result::is_err(opened)) { paths.destroy(); rows.destroy(); stack.destroy(); path.destroy(); return core::result::Err(core::result::unwrap_err(opened)); }
+    let top:Level=Level { directory:directory,parent_length:0,depth:0 };
+    if(core::result::is_err(stack.try_push(top))) { let closed=directory.close(); paths.destroy(); rows.destroy(); stack.destroy(); path.destroy(); return core::result::Err(Error::AllocationFailed); }
+    while(!stack.is_empty()) {
+        let index:i32=stack.len()-1; let level:Level=stack.at(index);
+        if(level.depth==depth) { let popped:Level=core::option::unwrap(stack.pop()); let directory:Reader=popped.directory; let closed=directory.close(); core::result::unwrap(path.truncate(popped.parent_length)); if(core::result::is_err(closed)) { failure=core::option::Some(core::result::unwrap_err(closed)); break; } continue; }
+        let current:Reader=level.directory; let before:u64=current.work_done(); let next=current.next(); level.directory=current; core::result::unwrap(stack.set(index,level)); let cost:u64=current.work_done()-before;
+        if(!budget.spend(cost+1)) { failure=core::option::Some(Error::Limit); break; }
+        if(core::result::is_err(next)) { failure=core::option::Some(core::result::unwrap_err(next)); break; }
+        let found:core::option::Option<Entry> =core::result::unwrap(next);
+        if(core::option::is_none(found)) { let popped:Level=core::option::unwrap(stack.pop()); let directory:Reader=popped.directory; let closed=directory.close(); core::result::unwrap(path.truncate(popped.parent_length)); if(core::result::is_err(closed)) { failure=core::option::Some(core::result::unwrap_err(closed)); break; } continue; }
+        let entry:Entry=core::option::unwrap(found); let old_length:i32=path.len(); let separator:i32=0; if(old_length>0) { separator=1; }
+        if(rows.len()==limits.max_entries || old_length>limits.max_path_bytes-separator || entry.name.len()>limits.max_path_bytes-separator-old_length) { failure=core::option::Some(Error::Limit); break; }
+        let length:i32=old_length+separator+entry.name.len();
+        if(length>limits.max_bytes-paths.len() || !budget.spend((length as u64)*2+1)) { failure=core::option::Some(Error::Limit); break; }
+        if(!reserve(path.borrow(),length,limits.max_path_bytes) || !reserve(paths.borrow(),paths.len()+length,limits.max_bytes) || !reserve(rows.borrow(),rows.len()+1,limits.max_entries)) { failure=core::option::Some(Error::AllocationFailed); break; }
+        if(separator==1) { core::result::unwrap(path.try_push(47)); } core::result::unwrap(path.try_extend(entry.name));
+        let name:core::path::Path=core::result::unwrap(core::path::from_view(entry.name)); let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata(); let fd:i32=core::option::unwrap(current.raw_handle());
+        if(!budget.spend((entry.name.len() as u64)+1)) { failure=core::option::Some(Error::Limit); break; } let queried=std::file_ops::metadata_at_into(fd,name,false,metadata.borrow());
+        if(core::result::is_err(queried)) { failure=core::option::Some(Error::Io(core::result::unwrap_err(queried))); break; }
+        if(!metadata.has(1)) { failure=core::option::Some(Error::UnavailableMetadata); break; }
+        let start:i32=paths.len(); core::result::unwrap(paths.try_extend(path.as_view())); core::result::unwrap(rows.try_push(Row { start:start,length:length,depth:level.depth+1,metadata:metadata }));
+        let descend:bool=match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Directory->level.depth+1<depth, _->false };
+        if(descend) {
+            if(!budget.spend((limits.buffer_bytes as u64)+(entry.name.len() as u64)+2)) { failure=core::option::Some(Error::Limit); break; }
+            let child:Reader=empty_directory(); let opened=std::directory::open_at_into(fd,name,limits.buffer_bytes,child.borrow()); if(core::result::is_err(opened)) { failure=core::option::Some(core::result::unwrap_err(opened)); break; }
+            let actual:std::file_ops::Metadata=std::file_ops::empty_metadata(); let child_file:std::file::File=child.file; let queried=std::file_ops::metadata_file_into(child_file.borrow(),actual.borrow());
+            if(core::result::is_err(queried)) { let closed=child.close(); failure=core::option::Some(Error::Io(core::result::unwrap_err(queried))); break; }
+            if(!metadata.has(256) || !actual.has(257)) { let closed=child.close(); failure=core::option::Some(Error::UnavailableMetadata); break; }
+            if(actual.identity.inode!=metadata.identity.inode || actual.identity.device_major!=metadata.identity.device_major || actual.identity.device_minor!=metadata.identity.device_minor) { let closed=child.close(); failure=core::option::Some(Error::Changed); break; }
+            let pushed=stack.try_push(Level { directory:child,parent_length:old_length,depth:level.depth+1 }); if(core::result::is_err(pushed)) { let closed=child.close(); failure=core::option::Some(Error::AllocationFailed); break; }
+        } else { core::result::unwrap(path.truncate(old_length)); }
+    }
+    close_stack(stack.borrow()); stack.destroy(); path.destroy();
+    if(core::option::is_some(failure)) { paths.destroy(); rows.destroy(); return core::result::Err(core::option::unwrap(failure)); }
+    return core::result::Ok(Snapshot { paths:paths,rows:rows,work:limits.max_work-budget.remaining });
+}

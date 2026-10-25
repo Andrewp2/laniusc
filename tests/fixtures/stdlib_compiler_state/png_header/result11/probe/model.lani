@@ -1,0 +1,6 @@
+module probe::model;
+import core::result;
+pub struct Header { f0: i32, f1: i32, f2: i32, f3: i32, f4: i32, f5: i32, f6: i32, f7: i32, f8: i32, f9: i32, f10: i32 }
+enum Error { Bad }
+fn parse() -> core::result::Result<Header,Error> { return core::result::Ok(Header { f0: 1, f1: 2, f2: 3, f3: 4, f4: 5, f5: 6, f6: 7, f7: 8, f8: 9, f9: 10, f10: 11 }); }
+pub fn value() -> i32 { let parsed: core::result::Result<Header,Error> = parse(); let header: Header = core::result::unwrap(parsed); return header.f10; }

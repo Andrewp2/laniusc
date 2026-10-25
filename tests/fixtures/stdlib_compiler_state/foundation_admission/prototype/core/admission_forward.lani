@@ -1,0 +1,16 @@
+// Keep the existing imported write_all consumer; change only the forwarding
+// body's member calls to explicit associated calls through its W witness.
+module core::admission_forward;
+import core::io;
+import core::result;
+pub struct Forward<W> { inner: &W }
+pub fn forward<W>(inner: &W) -> Forward<W> where W: core::io::Write { return Forward { inner: inner }; }
+pub impl<W> Forward<W> { pub fn borrow(&self) -> &Forward<W> { return self; } }
+pub impl<W> core::io::Write for Forward<W> where W: core::io::Write {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        let inner: &W = self.inner; return W::write(inner,bytes,offset,count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        let inner: &W = self.inner; return W::flush(inner);
+    }
+}

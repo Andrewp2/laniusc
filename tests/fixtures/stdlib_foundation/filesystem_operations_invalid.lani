@@ -1,0 +1,45 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::filesystem;
+
+fn code(result: core::result::Result<i32,core::io::Error>) -> i32 {
+    assert(core::result::is_err(result));
+    let error: core::io::Error = core::result::unwrap_err(result);
+    let value: i32 = match (error) { core::io::Error::InvalidInput -> 200, core::io::Error::Host(number) -> number, _ -> 201 };
+    return value;
+}
+fn rejected(path: core::path::Path, valid: core::path::Path, expected: i32) {
+    assert(code(std::filesystem::create_dir(path)) == expected);
+    assert(code(std::filesystem::remove_dir(path)) == expected);
+    assert(code(std::filesystem::remove_file(path)) == expected);
+    assert(code(std::filesystem::rename(path,valid)) == expected);
+    assert(code(std::filesystem::rename(valid,path)) == expected);
+}
+fn main() -> i32 {
+    let name: [u8;4] = [110,97,109,101];
+    let valid: core::path::Path = core::result::unwrap(core::path::from_bytes(name,4));
+    let short: [u8;1] = [97];
+    let view: core::slice::View<u8> = core::result::unwrap(core::slice::view(short,1));
+    view.start = -1;
+    rejected(core::path::Path { bytes: view },valid,200);
+    view.start = 0; view.length = -1;
+    rejected(core::path::Path { bytes: view },valid,200);
+    view.start = 2147483647; view.length = 1;
+    rejected(core::path::Path { bytes: view },valid,200);
+    let storage: [i32;1024] = [0;1024];
+    let large: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4096);
+    let index: i32 = 0;
+    while (index < 4096) { large[index] = 97; index += 1; }
+    let too_long: core::path::Path = core::result::unwrap(core::path::from_bytes(large,4096));
+    rejected(too_long,valid,36);
+    // Later NUL mutation must be checked at every host boundary.
+    let mutating: [u8;4] = [116,101,115,116];
+    let mutated: core::path::Path = core::result::unwrap(core::path::from_bytes(mutating,4));
+    mutating[0] = 0; rejected(mutated,valid,200);
+    mutating[0] = 116; mutating[3] = 0; rejected(mutated,valid,200);
+    return 0;
+}

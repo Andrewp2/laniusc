@@ -1,0 +1,35 @@
+module app::main;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::dns;
+import ext::dns_client;
+import std::args;
+import std::clock;
+fn main() -> i32 {
+    let args: std::args::Arguments = std::args::snapshot(1,1,128).unwrap();
+    let server: core::net::SocketAddr = core::net::parse_socket(args.get(0).unwrap()).unwrap();
+    // Native aggregate backing has a non-unit physical byte stride; counted
+    // constructor and nonzero logical start exercise the public View contract.
+    let backing: [u8;10] = [9,9,3,65,0,255,0,9,9,9];
+    let counted: core::slice::View<u8> = core::slice::view_range(backing,2,5).unwrap();
+    let q: ext::dns_client::Question = ext::dns_client::question(counted,1); q.id = ext::dns_client::Id::Fixed(42);
+    let options: ext::dns_client::Options = ext::dns_client::default_options();
+    let start: core::time::Instant = std::clock::monotonic_now().unwrap();
+    let shifted: core::time::Instant = start.checked_add(core::time::from_millis(1000)).unwrap();
+    let deadline: core::time::Deadline = core::time::deadline_at(shifted);
+    let got: core::result::Result<ext::dns_client::Response,ext::dns_client::Failure> = ext::dns_client::query_until(server,q,options,deadline);
+    assert(got.is_ok()); let response: ext::dns_client::Response = got.unwrap();
+    let message: ext::dns::Message = response.message(); assert(message.header.id == 42 && message.header.answers == 1 && response.stats.datagrams == 1);
+    assert(response.as_view().len() == message.raw.len());
+    let questions: ext::dns::Questions = message.questions(); let question: ext::dns::Question = questions.next().unwrap();
+    let expected: ext::dns::Name = ext::dns::parse_name(counted,options.wire).unwrap(); assert(ext::dns::equal_dns(question.name,expected));
+    let records: ext::dns::Records = message.records(1); let record: ext::dns::Record = records.next().unwrap();
+    let a: core::slice::View<u8> = match(ext::dns::data(record)) { ext::dns::Data::A(v) -> v, _ -> response.as_view() };
+    assert(a.len() == 4 && a.get(0).unwrap() == 192 && a.get(3).unwrap() == 17); response.destroy();
+    options.work = 0; let failed = ext::dns_client::query_until(server,q,options,deadline); assert(failed.is_err()); assert(match(failed.unwrap_err().cause) { ext::dns_client::Cause::WorkLimit -> true, _ -> false });
+    options = ext::dns_client::default_options(); options.attempts = 0; let invalid = ext::dns_client::query_until(server,q,options,deadline); assert(invalid.is_err()); assert(match(invalid.unwrap_err().cause) { ext::dns_client::Cause::InvalidOptions -> true, _ -> false });
+    args.destroy(); return 0;
+}

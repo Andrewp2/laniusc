@@ -1,0 +1,39 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cbor;
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn kind(error: ext::cbor::Error) -> i32 {
+    let code: i32 = match (error.kind) { ext::cbor::ErrorKind::Bounds -> 1, ext::cbor::ErrorKind::InputLimit -> 2, ext::cbor::ErrorKind::OutputLimit -> 3, ext::cbor::ErrorKind::ScratchTooSmall -> 4, ext::cbor::ErrorKind::DepthLimit -> 5, ext::cbor::ErrorKind::ItemLimit -> 6, ext::cbor::ErrorKind::StringLimit -> 7, ext::cbor::ErrorKind::WorkLimit -> 8, ext::cbor::ErrorKind::UnexpectedEnd -> 9, ext::cbor::ErrorKind::InvalidHead -> 10, ext::cbor::ErrorKind::InvalidSimple -> 11, ext::cbor::ErrorKind::InvalidUtf8 -> 12, ext::cbor::ErrorKind::UnexpectedBreak -> 13, ext::cbor::ErrorKind::ChunkType -> 14, ext::cbor::ErrorKind::OddMap -> 15, ext::cbor::ErrorKind::TrailingData -> 16, ext::cbor::ErrorKind::InvalidEvent -> 17 }; return code;
+}
+fn main() -> i32 {
+    let storage: [ext::cbor::Frame;6] = [ext::cbor::empty_frame();6];
+    let frames: core::slice::View<ext::cbor::Frame> = core::result::unwrap(core::slice::view_range(storage,1,4));
+    let limits: ext::cbor::Limits = ext::cbor::default_limits(); limits.max_depth = 4;
+    let events: [ext::cbor::Event;7] = [ext::cbor::Event::Map(1),ext::cbor::Event::Text(bytes("a",1)),ext::cbor::Event::Array(2),ext::cbor::Event::Unsigned(18446744073709551615),ext::cbor::Event::Float16(31745),ext::cbor::Event::End,ext::cbor::Event::End];
+    let values: core::slice::View<ext::cbor::Event> = core::result::unwrap(core::slice::view(events,7));
+    let target: [u8;32] = [211;32]; let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(target,3,24));
+    let size: i32 = core::result::unwrap(ext::cbor::encoded_len(values,frames,limits)); assert(size == 16);
+    assert(core::result::unwrap(ext::cbor::encode_into(values,output,frames,limits)) == size);
+    assert(target[0] == 211 && target[2] == 211 && target[3] == 161 && target[4] == 97 && target[5] == 97 && target[6] == 130 && target[7] == 27 && target[16] == 249 && target[17] == 124 && target[18] == 1 && target[19] == 211 && target[31] == 211);
+    let encoded: core::slice::View<u8> = core::result::unwrap(output.subview(0,size));
+    assert(core::result::unwrap(ext::cbor::validate(encoded,frames,limits)) == size);
+    let reader: ext::cbor::Reader = core::result::unwrap(ext::cbor::reader(encoded,frames,limits));
+    let count: i32 = 0; while (core::option::is_some(reader.next())) { count += 1; } assert(count == 7 && reader.position() == size && core::option::is_none(reader.next()));
+    output.fill(211); let short: core::slice::View<u8> = core::result::unwrap(output.subview(0,size-1));
+    let failed: ext::cbor::Error = core::result::unwrap_err(ext::cbor::encode_into(values,short,frames,limits)); assert(kind(failed) == 3 && failed.offset == 7);
+    let small: core::slice::View<ext::cbor::Frame> = core::result::unwrap(frames.subview(0,3));
+    assert(kind(core::result::unwrap_err(ext::cbor::encoded_len(values,small,limits))) == 4);
+    limits.max_depth = 1; assert(kind(core::result::unwrap_err(ext::cbor::encoded_len(values,frames,limits))) == 5); limits.max_depth = 4;
+    limits.max_items = 4; assert(kind(core::result::unwrap_err(ext::cbor::encoded_len(values,frames,limits))) == 6); limits.max_items = 5;
+    assert(core::result::unwrap(ext::cbor::encoded_len(values,frames,limits)) == size);
+    limits.max_work = 7; assert(kind(core::result::unwrap_err(ext::cbor::encoded_len(values,frames,limits))) == 8); limits.max_work = 8;
+    assert(core::result::unwrap(ext::cbor::encoded_len(values,frames,limits)) == size);
+    limits.max_output = 15; assert(kind(core::result::unwrap_err(ext::cbor::encode_into(values,output,frames,limits))) == 3); limits.max_output = 16;
+    let bad: core::slice::View<u8> = output; bad.start = -1; assert(kind(core::result::unwrap_err(ext::cbor::encode_into(values,bad,frames,limits))) == 1);
+    let index: i32 = 0; while (index < 32) { assert(target[index] == 211); index += 1; }
+    assert(storage[0].kind == 0 && storage[5].kind == 0);
+    return 0;
+}

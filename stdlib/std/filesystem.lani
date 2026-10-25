@@ -1,0 +1,93 @@
+// Checked Unix byte-path mutations over the existing x86_64 Linux bindings.
+// Each call makes at most one host attempt, with no implicit normalization,
+// allocation, recursive traversal or retries. See docs/stdlib-filesystem.md.
+module std::filesystem;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::fs;
+
+pub const MAX_PATH_BYTES: i32 = 4095;
+
+fn host_result(value: i32) -> core::result::Result<i32, core::io::Error> {
+    if (value == -4) { return core::result::Err(core::io::Error::Interrupted); }
+    if (value == -11) { return core::result::Err(core::io::Error::WouldBlock); }
+    if (value < 0) { return core::result::Err(core::io::Error::Host(0 - value)); }
+    return core::result::Ok(0);
+}
+
+// The destination is private packed stack storage covering MAX_PATH_BYTES.
+// Revalidate public Path/View fields and NULs before crossing the host boundary.
+fn stage(path: core::path::Path, destination: [u8]) -> core::result::Result<i32, core::io::Error> {
+    let view: core::slice::View<u8> = path.as_bytes();
+    if (view.start < 0 || view.length < 0 || view.start > 2147483647 - view.length) {
+        return core::result::Err(core::io::Error::InvalidInput);
+    }
+    let count: i32 = path.byte_len();
+    if (count > MAX_PATH_BYTES) { return core::result::Err(core::io::Error::Host(36)); }
+    let index: i32 = 0;
+    while (index < count) {
+        let byte: u8 = core::option::unwrap(path.byte_at(index));
+        if (byte == 0) { return core::result::Err(core::io::Error::InvalidInput); }
+        destination[index] = byte;
+        index += 1;
+    }
+    return core::result::Ok(count);
+}
+
+// Create one directory with host mode 0777 filtered by umask/default ACLs.
+// Existing paths and missing parents are errors. No parent directories are made.
+pub fn create_dir(path: core::path::Path) -> core::result::Result<i32, core::io::Error> {
+    let storage: [i32; 1024] = [0; 1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, MAX_PATH_BYTES);
+    let prepared: core::result::Result<i32, core::io::Error> = stage(path, packed);
+    if (core::result::is_err(prepared)) { return prepared; }
+    let count: i32 = core::result::unwrap(prepared);
+    return host_result(std::fs::create_dir(pointer, count as usize));
+}
+
+// Remove one empty directory. This never recursively deletes children.
+pub fn remove_dir(path: core::path::Path) -> core::result::Result<i32, core::io::Error> {
+    let storage: [i32; 1024] = [0; 1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, MAX_PATH_BYTES);
+    let prepared: core::result::Result<i32, core::io::Error> = stage(path, packed);
+    if (core::result::is_err(prepared)) { return prepared; }
+    let count: i32 = core::result::unwrap(prepared);
+    return host_result(std::fs::remove_dir(pointer, count as usize));
+}
+
+// Unlink one non-directory name. A final symlink is removed, not followed.
+// Open file handles remain live until their owners close them.
+pub fn remove_file(path: core::path::Path) -> core::result::Result<i32, core::io::Error> {
+    let storage: [i32; 1024] = [0; 1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, MAX_PATH_BYTES);
+    let prepared: core::result::Result<i32, core::io::Error> = stage(path, packed);
+    if (core::result::is_err(prepared)) { return prepared; }
+    let count: i32 = core::result::unwrap(prepared);
+    return host_result(std::fs::remove_file(pointer, count as usize));
+}
+
+// Rename a file, symlink or directory using Linux rename semantics, including
+// replacement of an existing compatible destination. Both paths are validated
+// before the one host attempt. Cross-filesystem moves report Host(18).
+pub fn rename(from: core::path::Path, to: core::path::Path) -> core::result::Result<i32, core::io::Error> {
+    let from_storage: [i32; 1024] = [0; 1024];
+    let from_pointer: ptr = core::mem::i32_array_data_ptr(from_storage);
+    let from_packed: [u8] = core::mem::typed_slice_from_raw_parts(from_pointer, MAX_PATH_BYTES);
+    let prepared_from: core::result::Result<i32, core::io::Error> = stage(from, from_packed);
+    if (core::result::is_err(prepared_from)) { return prepared_from; }
+    let to_storage: [i32; 1024] = [0; 1024];
+    let to_pointer: ptr = core::mem::i32_array_data_ptr(to_storage);
+    let to_packed: [u8] = core::mem::typed_slice_from_raw_parts(to_pointer, MAX_PATH_BYTES);
+    let prepared_to: core::result::Result<i32, core::io::Error> = stage(to, to_packed);
+    if (core::result::is_err(prepared_to)) { return prepared_to; }
+    let from_count: i32 = core::result::unwrap(prepared_from);
+    let to_count: i32 = core::result::unwrap(prepared_to);
+    return host_result(std::fs::rename(from_pointer, from_count as usize, to_pointer, to_count as usize));
+}

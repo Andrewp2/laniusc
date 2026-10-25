@@ -1,0 +1,20 @@
+module probe::alpha;
+import core::io;
+import core::result;
+import probe::script;
+
+pub struct Endpoint { state: &probe::script::State }
+pub impl Endpoint { pub fn borrow(&self) -> &Endpoint { return self; } }
+pub impl core::io::Write for Endpoint {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        return probe::script::transfer(self.state,bytes,offset,count,false,101);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        return probe::script::flush(self.state,103);
+    }
+}
+pub impl core::io::Read for Endpoint {
+    pub fn read(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        return probe::script::transfer(self.state,bytes,offset,count,true,102);
+    }
+}

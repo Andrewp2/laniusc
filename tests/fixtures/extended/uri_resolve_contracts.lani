@@ -1,0 +1,46 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::uri;
+import ext::uri_resolve;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn parsed(value: str, count: i32) -> ext::uri::Reference { return core::result::unwrap(ext::uri::parse(bytes(value,count))); }
+fn code(error: ext::uri_resolve::Error) -> i32 { let result: i32 = match (error) { ext::uri_resolve::Error::InvalidBase -> 1, ext::uri_resolve::Error::Bounds -> 2, ext::uri_resolve::Error::OutputLimit -> 3, ext::uri_resolve::Error::CapacityOverflow -> 4, ext::uri_resolve::Error::AllocationFailed -> 5 }; return result; }
+fn equal(actual: alloc::vec::Vec<u8>, expected: core::slice::View<u8>) {
+    assert(actual.len() == expected.len()); let index: i32 = 0; while (index < expected.len()) { assert(actual.at(index) == core::option::unwrap(expected.get(index))); index += 1; }
+}
+fn main() -> i32 {
+    let base: ext::uri::Reference = parsed("http://a/b/c/d;p?q",18); let relative: ext::uri::Reference = parsed("../../g?x#y",11);
+    let result: alloc::vec::Vec<u8> = core::result::unwrap(ext::uri_resolve::resolve(base,relative,100)); equal(result,bytes("http://a/g?x#y",14)); result.destroy();
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(parsed("x",1),relative,100))) == 1);
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(parsed("x:#",3),relative,100))) == 1);
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(base,relative,-1))) == 2);
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(base,relative,13))) == 3);
+    let exact: alloc::vec::Vec<u8> = core::result::unwrap(ext::uri_resolve::resolve(base,relative,14)); equal(exact,bytes("http://a/g?x#y",14)); exact.destroy();
+    let copied: alloc::vec::Vec<u8> = core::result::unwrap(ext::uri_resolve::recompose(base,18)); equal(copied,base.raw); copied.destroy();
+    assert(code(core::result::unwrap_err(ext::uri_resolve::recompose(base,17))) == 3);
+    assert(code(core::result::unwrap_err(ext::uri_resolve::recompose(base,-1))) == 2);
+    let empty: alloc::vec::Vec<u8> = core::result::unwrap(ext::uri_resolve::recompose(parsed("",0),0)); assert(empty.len() == 0 && empty.capacity() == 0); empty.destroy();
+    // Native strided source windows remain unchanged and the result owns a copy.
+    let native: [u8; 8] = [0,120,58,47,97,63,35,0]; let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native,1,6));
+    let borrowed: ext::uri::Reference = core::result::unwrap(ext::uri::parse(view));
+    let independent: alloc::vec::Vec<u8> = core::result::unwrap(ext::uri_resolve::recompose(borrowed,6)); native[4] = 98;
+    equal(independent,bytes("x:/a?#",6)); independent.destroy();
+    let invalid: ext::uri::Reference = base; invalid.path.start = -1;
+    assert(code(core::result::unwrap_err(ext::uri_resolve::recompose(invalid,100))) == 2);
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(invalid,relative,100))) == 2);
+    invalid = relative; invalid.path.length = -1;
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(base,invalid,100))) == 2);
+    invalid = base; let auth: ext::uri::Authority = core::option::unwrap(invalid.authority); auth.raw.start = 2147483647; auth.raw.length = 1; invalid.authority = core::option::Some(auth);
+    assert(code(core::result::unwrap_err(ext::uri_resolve::recompose(invalid,100))) == 2);
+    // Deliberately forged logical lengths exercise size preflight, which must
+    // reject overflowing totals before allocating or reading claimed bytes.
+    invalid = parsed("x:a",3); invalid.path.start = 0; invalid.path.length = 2147483647;
+    assert(code(core::result::unwrap_err(ext::uri_resolve::recompose(invalid,2147483647))) == 4);
+    invalid = parsed("a",1); invalid.path.length = 2147483647;
+    assert(code(core::result::unwrap_err(ext::uri_resolve::resolve(parsed("x://",4),invalid,2147483647))) == 4);
+    return 0;
+}

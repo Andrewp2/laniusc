@@ -1,0 +1,11 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let values: [i32; 1] = [42];
+    let view: core::slice::View<i32> = core::result::unwrap(core::slice::view(values, 2));
+    // An overstated physical count remains the caller's error. Native indexing
+    // must trap instead of permitting a read past the original slice.
+    return core::option::unwrap(view.get(1));
+}

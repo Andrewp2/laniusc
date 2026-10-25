@@ -1,0 +1,32 @@
+module alloc::arena;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+pub struct Config {}
+pub enum Error { AllocationFailed, Bounds }
+pub struct Block { data: ptr, length: usize }
+struct Chunk { next: ptr, capacity: usize, used: usize, allocated: usize }
+pub struct Arena { storage: ptr }
+pub fn default_config() -> Config { return Config {}; }
+pub fn new(config: Config) -> core::result::Result<Arena,Error> {
+ let storage: ptr = alloc::allocator::alloc(128,8); if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
+ let empty: ptr = 0; let slots: [Chunk] = core::mem::typed_slice_from_storage(storage,1); slots[0] = Chunk { next: empty, capacity: 96, used: 0, allocated: 128 };
+ return core::result::Ok(Arena { storage: storage });
+}
+pub impl Arena {
+ pub fn borrow(&self) -> &Arena { return self; }
+ fn allocate_pointer(&self, size: usize, alignment: usize) -> core::result::Result<ptr,Error> {
+  let slots: [Chunk] = core::mem::typed_slice_from_storage(self.storage,1); let chunk: Chunk = slots[0];
+  if (size > chunk.capacity) { return core::result::Err(Error::Bounds); }
+  return core::result::Ok(self.storage+32);
+ }
+ pub fn destroy(&self) { alloc::allocator::dealloc(self.storage,128,8); }
+}
+pub fn copy_slice<T>(arena: &Arena, input: core::slice::View<T>) -> core::result::Result<core::slice::View<T>,Error> {
+ let result: core::result::Result<ptr,Error> = arena.allocate_pointer(core::mem::size_of<T>()*(input.length as usize),8);
+ if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+ let pointer: ptr = core::result::unwrap(result); let values: [T] = core::mem::typed_slice_from_storage<T>(pointer,input.length);
+ let index: i32 = 0; while (index < input.length) { values[index] = input.values[input.start+index]; index += 1; }
+ return core::result::Ok(core::slice::View { values: values, start: 0, length: input.length });
+}

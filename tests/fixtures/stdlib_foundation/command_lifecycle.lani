@@ -1,0 +1,35 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::command;
+import std::command_raw;
+import std::file;
+import std::signal;
+fn literal(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length); return core::slice::view(raw,length).unwrap(); }
+fn take(result: std::command::Spawn) -> std::command::Child { return match(result) { std::command::Spawn::Child(value) -> value, std::command::Spawn::Unknown(value) -> value.child, _ -> panic_child() }; }
+fn panic_child() -> std::command::Child { assert(false); let argv: [core::slice::View<u8>;1] = [literal("/bin/true",9)]; return take(std::command::spawn(std::command::request(argv[0],core::slice::view(argv,1).unwrap(),core::slice::view(argv,0).unwrap())).unwrap()); }
+fn main() -> i32 {
+    let captured = std::args::snapshot(1,1,4096).unwrap(); let peer = core::option::unwrap(captured.get(0));
+    let argv: [core::slice::View<u8>;2] = [literal("/bin/cat",8),literal("60",2)]; let empty = core::slice::view(argv,0).unwrap(); let spec = std::command::request(argv[0],core::slice::view(argv,1).unwrap(),empty); spec.stdin = std::command::Stdio::Pipe; spec.stdout = std::command::Stdio::Pipe; spec.stderr = std::command::Stdio::Null;
+    let cat = take(std::command::spawn(spec).unwrap()); let input = core::option::unwrap(cat.take_stdin()); let output = core::option::unwrap(cat.take_stdout()); let data: [u8;4] = [65,0,255,10]; core::io::write_all(input.borrow(),data,0,4).unwrap(); input.close().unwrap(); let received: [u8;5] = [0;5]; core::io::read_exact(output.borrow(),received,0,4).unwrap(); assert(output.read(received,4,1).unwrap() == 0); output.close().unwrap(); let i: i32 = 0; while (i < 4) { assert(data[i] == received[i]); i += 1; } assert(core::option::unwrap(cat.wait().unwrap().code) == 0); cat.close_pipes().unwrap();
+    argv[0] = literal("/bin/sleep",10); spec = std::command::request(argv[0],core::slice::view(argv,2).unwrap(),empty); spec.stdin = std::command::Stdio::Null; spec.stdout = std::command::Stdio::Null; spec.stderr = std::command::Stdio::Null;
+    let sleeper = take(std::command::spawn(spec).unwrap()); assert(core::option::is_none(sleeper.try_wait().unwrap())); assert(sleeper.signal(0).is_ok()); assert(core::option::unwrap(sleeper.cancel_and_wait().unwrap().signal) == 9); assert(sleeper.signal(9).is_err()); assert(core::option::unwrap(sleeper.wait().unwrap().signal) == 9);
+    let snapshot = std::command::snapshot_environment(std::command::default_limits()).unwrap(); argv[0] = literal("sh",2); argv[1] = literal("-c",2); let command: [core::slice::View<u8>;3] = [argv[0],argv[1],literal("test \"$COMMAND_TEST\" = raw && test \"$PWD\" = /tmp",48)];
+    spec = std::command::request(command[0],core::slice::view(command,3).unwrap(),snapshot.as_view()); spec.search = std::command::Search::EnvironmentPath; spec.cwd = core::option::Some(literal("/tmp",4)); spec.stdin = std::command::Stdio::Null; spec.stdout = std::command::Stdio::Null; spec.stderr = std::command::Stdio::Null;
+    let environment_child = take(std::command::spawn(spec).unwrap()); snapshot.destroy(); assert(core::option::unwrap(environment_child.wait().unwrap().code) == 0); environment_child.close_pipes().unwrap();
+    // Explicit environments preserve entry order, duplicate values and raw
+    // bytes; argv[0] need not name the executable being opened.
+    let raw_entry: [u8;5] = [82,65,87,61,255]; let entries: [core::slice::View<u8>;3] = [literal("X=one",5),literal("X=two",5),core::slice::view(raw_entry,5).unwrap()]; argv[0] = literal("custom-argv-zero",16);
+    spec = std::command::request(literal("/usr/bin/env",12),core::slice::view(argv,1).unwrap(),core::slice::view(entries,3).unwrap()); spec.stdin = std::command::Stdio::Null; spec.stdout = std::command::Stdio::Pipe; spec.stderr = std::command::Stdio::Null;
+    let raw_environment = take(std::command::spawn(spec).unwrap()); let env_output = core::option::unwrap(raw_environment.take_stdout()); let env_received: [u8;19] = [0;19]; core::io::read_exact(env_output.borrow(),env_received,0,18).unwrap(); assert(env_output.read(env_received,18,1).unwrap() == 0); env_output.close().unwrap(); let expected = literal("X=one\nX=two\nRAW=",16); i = 0; while (i < 16) { assert(env_received[i] == expected.values[expected.start+i]); i += 1; } assert(env_received[16] == 255 && env_received[17] == 10); assert(core::option::unwrap(raw_environment.wait().unwrap().code) == 0); raw_environment.close_pipes().unwrap();
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap(); argv[0] = peer; spec = std::command::request(peer,core::slice::view(argv,1).unwrap(),empty); spec.stdin = std::command::Stdio::Null; spec.stdout = std::command::Stdio::Null; spec.stderr = std::command::Stdio::Null;
+    let normal = take(std::command::spawn(spec).unwrap()); assert(core::option::unwrap(normal.wait().unwrap().signal) == 13); normal.close_pipes().unwrap();
+    spec.sigpipe = std::command::ChildSigpipe::Inherit; let inherited = take(std::command::spawn(spec).unwrap()); assert(core::option::unwrap(inherited.wait().unwrap().code) == 42); inherited.close_pipes().unwrap();
+    std::signal::set_disposition(std::signal::Signal::Child,std::signal::Disposition::Ignore).unwrap(); argv[0] = literal("/bin/true",9); spec = std::command::request(argv[0],core::slice::view(argv,1).unwrap(),empty); spec.stdin = std::command::Stdio::Null; spec.stdout = std::command::Stdio::Null; spec.stderr = std::command::Stdio::Null;
+    let lost = take(std::command::spawn(spec).unwrap()); assert(lost.wait().is_err()); assert(core::option::is_none(lost.id()) && lost.signal(9).is_err()); lost.close_pipes().unwrap(); std::signal::set_disposition(std::signal::Signal::Child,std::signal::Disposition::Default).unwrap();
+    let status: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(status),true) == -10); captured.destroy(); return 0;
+}

@@ -1,0 +1,29 @@
+// Ordinary typed borrowed consumer, without projecting imported Error variants.
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import ext::tls_handshake;
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View<u8> { values: bytes, start: start, length: length }; }
+fn main() -> i32 {
+    let random: [u8;32]=[7;32]; let suites: [u8;2]=[19,3];
+    let ext: [u8;11]=[0,43,0,3,2,3,4,255,255,0,0]; let empty: core::slice::View<u8> = view(ext,0,0);
+    let hello: ext::tls_handshake::ClientHello=ext::tls_handshake::ClientHello { random: view(random,0,32), session_id: empty, cipher_suites: view(suites,0,2), extensions: view(ext,0,11) };
+    let output: [u8;128]=[165;128]; assert(ext::tls_handshake::write_client_hello(hello,view(output,3,120)).unwrap()==58);
+    let frame: ext::tls_handshake::Frame=ext::tls_handshake::parse_frame(view(output,3,58)).unwrap(); assert(frame.kind==1 && frame.body.length==54);
+    let parsed: ext::tls_handshake::ClientHello=ext::tls_handshake::parse_client_hello(frame.body).unwrap();
+    assert(parsed.random.start==9 && parsed.random.length==32 && parsed.session_id.length==0 && parsed.cipher_suites.length==2 && parsed.extensions.length==11);
+    let cursor: ext::tls_handshake::FrameCursor=ext::tls_handshake::frames(frame.wire).unwrap();
+    let limited: core::iter::Take<ext::tls_handshake::FrameCursor,ext::tls_handshake::Frame> = core::iter::take<ext::tls_handshake::FrameCursor,ext::tls_handshake::Frame>(cursor.borrow(),1);
+    assert(limited.next().unwrap().kind==1); assert(limited.next().is_none()); assert(limited.next().is_none());
+    assert(cursor.remaining_bytes()==0 && cursor.next().is_none() && cursor.next().is_none());
+    let extensions: ext::tls_handshake::ExtensionCursor=ext::tls_handshake::extensions(parsed.extensions).unwrap();
+    assert(extensions.next().unwrap().kind==43 && extensions.next().unwrap().kind==65535 && extensions.next().is_none() && extensions.next().is_none());
+    let retry_random: [u8;32]=ext::tls_handshake::hello_retry_random(); let versions: [u8;6]=[0,43,0,2,3,4];
+    let server: ext::tls_handshake::ServerHello=ext::tls_handshake::ServerHello { random: view(retry_random,0,32), session_id: empty, cipher_suite: 4867, extensions: view(versions,0,6) };
+    let other: [u8;64]=[165;64]; assert(ext::tls_handshake::write_server_hello(server,view(other,1,60)).unwrap()==50);
+    assert(ext::tls_handshake::parse_server_hello(ext::tls_handshake::parse_frame(view(other,1,50)).unwrap().body).unwrap().is_hello_retry_request());
+    assert(output[0]==165 && output[2]==165 && output[61]==165 && output[127]==165 && other[0]==165 && other[51]==165);
+    return 0;
+}

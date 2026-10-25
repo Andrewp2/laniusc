@@ -13,6 +13,8 @@ mod host_batch_tests;
 mod kernels;
 mod native_layout;
 pub(super) use native_layout::{MaterializedProofType, NativeLayoutFailure};
+mod implementation_application;
+pub(super) use implementation_application::{ImplProjectionLimits, ProjectedImplApplication};
 mod proof;
 #[cfg(test)]
 mod tests;
@@ -125,6 +127,12 @@ pub(super) struct GpuProgramEvidence {
     batch_kernels: Option<kernels::BatchKernels>,
     proof_kernels: Option<kernels::ProofKernels>,
     layout_kernel: Option<kernels::NativeLayoutKernel>,
+    implementation_application_kernel: Option<kernels::ImplementationApplicationKernel>,
+    /// Reserved once per controller, not once per call/root. Query methods
+    /// complete all readbacks before these exclusive roles can be reused.
+    layout_query_slots: Vec<workspace::WorkspaceSlot>,
+    implementation_query_slot: Option<workspace::WorkspaceSlot>,
+    query_scratch_poisoned: bool,
 }
 
 /// A host packet and precisely the GPU arenas that contain its row closure.
@@ -152,6 +160,10 @@ pub(super) struct GpuPacket {
     constant_admission_fault: std::cell::RefCell<Option<typed_constant_fault_tests::ConstantAdmissionFault>>,
 }
 impl GpuPacket {
+    #[cfg(test)]
+    pub(super) fn uploaded_retained_evidence_rows(&self) -> u32 {
+        self.completed_suffix_counts[17]
+    }
     fn proof_resources(&self, submission: &Submission) -> kernels::ProofResources<'_> {
         kernels::ProofResources {
             storage: &self.proof,
@@ -202,6 +214,7 @@ pub(in crate::compiler::gpu_compiler) fn prepare_kernels(device: &wgpu::Device) 
     kernels::BatchKernels::load(device)?;
     kernels::ProofKernels::load(device)?;
     kernels::NativeLayoutKernel::load(device)?;
+    kernels::ImplementationApplicationKernel::load(device)?;
     Ok(())
 }
 
@@ -294,6 +307,10 @@ impl GpuProgramEvidence {
             batch_kernels: None,
             proof_kernels: None,
             layout_kernel: None,
+            implementation_application_kernel: None,
+            layout_query_slots: Vec::new(),
+            implementation_query_slot: None,
+            query_scratch_poisoned: false,
         })
     }
 

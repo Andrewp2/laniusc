@@ -1,0 +1,121 @@
+// Bounded rectangular single-line tables. Borrow cells; return one owned buffer.
+module ext::table;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::terminal;
+
+pub enum Alignment { Left, Right, Center }
+pub struct Row { cells: core::slice::View<core::text::Text> }
+pub struct Options { width: ext::terminal::Options, borders: bool, max_cells: i32, max_columns: i32, max_width: i32, max_output: i32, max_work: i32 }
+pub enum Error { InvalidOptions, Bounds, Shape(i32), Cell(i32,ext::terminal::Error), CellLimit, ColumnLimit, WidthLimit, OutputLimit, WorkLimit, AllocationFailed }
+pub fn options() -> Options { return Options { width: ext::terminal::options(), borders: true, max_cells: 65536, max_columns: 64, max_width: 4096, max_output: 1048576, max_work: 16777216 }; }
+struct Budget { left: i32 }
+impl Budget { fn borrow(&self) -> &Budget { return self; } fn charge(&self, amount: i32) -> bool { if (amount < 0 || amount > self.left) { return false; } self.left -= amount; return true; } }
+fn valid_view(start: i32, length: i32) -> bool { return start >= 0 && length >= 0 && length <= 2147483647-start; }
+fn repeat(bytes: [u8], at: i32, count: i32, value: u8) -> i32 { let index: i32 = 0; while (index < count) { bytes[at+index] = value; index += 1; } return at+count; }
+fn border(bytes: [u8], at: i32, widths: &alloc::vec::Vec<i32>) -> i32 {
+    let position: i32 = repeat(bytes,at,1,43); let column: i32 = 0;
+    while (column < widths.len()) { position = repeat(bytes,position,widths.at(column)+2,45); position = repeat(bytes,position,1,43); column += 1; }
+    return repeat(bytes,position,1,10);
+}
+fn output(rows: core::slice::View<Row>, alignments: core::slice::View<Alignment>, policy: Options, widths: &alloc::vec::Vec<i32>, cells: &alloc::vec::Vec<i32>, byte_count: i32) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+    let created: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(byte_count);
+    if (core::result::is_err(created)) { return core::result::Err(Error::AllocationFailed); }
+    let result: alloc::vec::Vec<u8> = core::result::unwrap(created);
+    if (core::result::is_err(result.try_resize(byte_count,0))) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let bytes: [u8] = result.as_slice(); let position: i32 = 0;
+    if (policy.borders) { position = border(bytes,position,widths); }
+    let row: i32 = 0;
+    while (row < rows.len()) {
+        let record: Row = core::option::unwrap(rows.get(row)); let column: i32 = 0;
+        if (policy.borders) { position = repeat(bytes,position,1,124); }
+        while (column < alignments.len()) {
+            if (policy.borders) { position = repeat(bytes,position,1,32); }
+            else { if (column > 0) { position = repeat(bytes,position,2,32); } }
+            let cell: core::text::Text = core::option::unwrap(record.cells.get(column));
+            let padding: i32 = widths.at(column)-cells.at(row*alignments.len()+column);
+            let left: i32 = match (core::option::unwrap(alignments.get(column))) { Alignment::Left -> 0, Alignment::Right -> padding, Alignment::Center -> padding/2 };
+            position = repeat(bytes,position,left,32);
+            let index: i32 = 0; while (index < cell.length) { bytes[position] = cell.bytes[cell.start+index]; position += 1; index += 1; }
+            position = repeat(bytes,position,padding-left,32);
+            if (policy.borders) { position = repeat(bytes,position,1,32); position = repeat(bytes,position,1,124); }
+            column += 1;
+        }
+        position = repeat(bytes,position,1,10); row += 1;
+    }
+    if (policy.borders) { position = border(bytes,position,widths); }
+    assert(position == byte_count);
+    return core::result::Ok(result);
+}
+fn layout(rows: core::slice::View<Row>, alignments: core::slice::View<Alignment>, policy: Options, widths: &alloc::vec::Vec<i32>, cells: &alloc::vec::Vec<i32>, budget: &Budget) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    let input_bytes: i32 = 0; let row: i32 = 0;
+    while (row < rows.len()) {
+        let record: Row = core::option::unwrap(rows.get(row)); let column: i32 = 0;
+        while (column < alignments.len()) {
+            let cell: core::text::Text = core::option::unwrap(record.cells.get(column));
+            if (cell.start < 0 || cell.length < 0 || cell.length > 2147483647-cell.start) { return core::result::Err(Error::Cell(row*alignments.len()+column,ext::terminal::Error::Bounds)); }
+            if (cell.length > budget.left/6) { return core::result::Err(Error::WorkLimit); }
+            budget.charge(cell.length*6);
+            let measured: core::result::Result<i32,ext::terminal::Error> = ext::terminal::width(cell,policy.width);
+            if (core::result::is_err(measured)) { return core::result::Err(Error::Cell(row*alignments.len()+column,core::result::unwrap_err(measured))); }
+            let width: i32 = core::result::unwrap(measured);
+            if (width > policy.max_width) { return core::result::Err(Error::WidthLimit); }
+            if (width > widths.at(column)) { widths.set(column,width); }
+            cells.set(row*alignments.len()+column,width);
+            if (cell.length > policy.max_output-input_bytes) { return core::result::Err(Error::OutputLimit); }
+            input_bytes += cell.length; column += 1;
+        }
+        row += 1;
+    }
+    let line_width: i32 = 0; let padding: i32 = 0; let column: i32 = 0;
+    while (column < alignments.len()) {
+        let width: i32 = widths.at(column);
+        if (width > policy.max_width-line_width) { return core::result::Err(Error::WidthLimit); }
+        line_width += width; column += 1;
+    }
+    let separators: i32 = 0;
+    if (policy.borders) { if (alignments.len() > (policy.max_width-1)/3) { return core::result::Err(Error::WidthLimit); } separators = alignments.len()*3+1; }
+    else { if (alignments.len()-1 > policy.max_width/2) { return core::result::Err(Error::WidthLimit); } separators = (alignments.len()-1)*2; }
+    if (separators > policy.max_width-line_width) { return core::result::Err(Error::WidthLimit); }
+    line_width += separators;
+    let index: i32 = 0; while (index < cells.len()) { let amount: i32 = widths.at(index%alignments.len())-cells.at(index); if (amount > policy.max_output-padding) { return core::result::Err(Error::OutputLimit); } padding += amount; index += 1; }
+    let byte_count: i32 = input_bytes;
+    if (padding > policy.max_output-byte_count) { return core::result::Err(Error::OutputLimit); } byte_count += padding;
+    let per_row: i32 = separators+1;
+    if (rows.len() > (policy.max_output-byte_count)/per_row) { return core::result::Err(Error::OutputLimit); } byte_count += rows.len()*per_row;
+    if (policy.borders) { if (line_width+1 > (policy.max_output-byte_count)/2) { return core::result::Err(Error::OutputLimit); } byte_count += (line_width+1)*2; }
+    if (byte_count > budget.left/2) { return core::result::Err(Error::WorkLimit); } budget.charge(byte_count*2);
+    return output(rows,alignments,policy,widths,cells,byte_count);
+}
+// View/Text integer metadata is checked. The caller must physically back each
+// claimed range and keep every row/cell owner alive and unchanged until return.
+// Returned Vec is one owner: destroy exactly once. Errors free all temporaries.
+pub fn render(rows: core::slice::View<Row>, alignments: core::slice::View<Alignment>, policy: Options) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (policy.max_cells < 0 || policy.max_columns < 0 || policy.max_width < 1 || policy.max_width > 2147483646 || policy.max_output < 0 || policy.max_work < 0 || policy.width.max_work < 0) { return core::result::Err(Error::InvalidOptions); }
+    if (!valid_view(rows.start,rows.length) || !valid_view(alignments.start,alignments.length)) { return core::result::Err(Error::Bounds); }
+    if (alignments.len() > policy.max_columns) { return core::result::Err(Error::ColumnLimit); }
+    if (rows.is_empty()) { let empty: alloc::vec::Vec<u8> = alloc::vec::new(); return core::result::Ok(empty); }
+    if (alignments.is_empty()) { return core::result::Err(Error::Shape(0)); }
+    if (rows.len() > policy.max_cells/alignments.len()) { return core::result::Err(Error::CellLimit); }
+    let count: i32 = rows.len()*alignments.len();
+    let budget: Budget = Budget { left: policy.max_work };
+    if (!budget.charge(count) || !budget.charge(alignments.len()) || !budget.charge(count)) { return core::result::Err(Error::WorkLimit); }
+    let row: i32 = 0; while (row < rows.len()) {
+        let record: Row = core::option::unwrap(rows.get(row));
+        if (!valid_view(record.cells.start,record.cells.length)) { return core::result::Err(Error::Bounds); }
+        if (record.cells.len() != alignments.len()) { return core::result::Err(Error::Shape(row)); } row += 1;
+    }
+    let first: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity(alignments.len());
+    if (core::result::is_err(first)) { return core::result::Err(Error::AllocationFailed); }
+    let widths: alloc::vec::Vec<i32> = core::result::unwrap(first);
+    if (core::result::is_err(widths.try_resize(alignments.len(),0))) { widths.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let second: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity(count);
+    if (core::result::is_err(second)) { widths.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let cells: alloc::vec::Vec<i32> = core::result::unwrap(second);
+    if (core::result::is_err(cells.try_resize(count,0))) { cells.destroy(); widths.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let result: core::result::Result<alloc::vec::Vec<u8>,Error> = layout(rows,alignments,policy,widths.borrow(),cells.borrow(),budget.borrow());
+    cells.destroy(); widths.destroy(); return result;
+}

@@ -1,0 +1,10 @@
+module app::main;
+import core::io;
+import core::result;
+import std::signal;
+fn host_status(code: i32) -> i32 { if (code == 1) { return 71; } return 75; }
+fn main() -> i32 {
+    let result: core::result::Result<i32,core::io::Error> = std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore);
+    if (result.is_ok()) { if (result.unwrap() == 0) { return 0; } return 9; }
+    return match (result.unwrap_err()) { core::io::Error::Host(code) -> host_status(code), core::io::Error::Interrupted -> 72, core::io::Error::WouldBlock -> 73, core::io::Error::InvalidCount -> 74, _ -> 76 };
+}

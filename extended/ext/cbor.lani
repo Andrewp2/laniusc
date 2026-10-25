@@ -1,0 +1,225 @@
+// RFC 8949 generic wire events with borrowed strings and caller-owned stack.
+// All eight major types, exact float bits, definite/indefinite containers.
+// No allocation, recursive descent, implicit map deduplication or tag semantics.
+module ext::cbor;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+pub enum Event {
+    Unsigned(u64), Negative(u64), Bytes(core::slice::View<u8>), Text(core::slice::View<u8>),
+    Array(u64), Map(u64), Tag(u64), Simple(u8), Float16(u32), Float32(u32), Float64(u64),
+    BeginBytes, BeginText, BeginArray, BeginMap, End
+}
+pub enum ErrorKind { Bounds, InputLimit, OutputLimit, ScratchTooSmall, DepthLimit, ItemLimit, StringLimit, WorkLimit, UnexpectedEnd, InvalidHead, InvalidSimple, InvalidUtf8, UnexpectedBreak, ChunkType, OddMap, TrailingData, InvalidEvent }
+pub struct Error { kind: ErrorKind, offset: i32 }
+pub struct Limits { max_input: i32, max_output: i32, max_depth: i32, max_items: u64, max_string_bytes: i32, max_work: u64 }
+pub struct Frame { kind: i32, remaining: u64, odd: bool, bytes: u64 }
+pub fn empty_frame() -> Frame { return Frame { kind: 0, remaining: 0, odd: false, bytes: 0 }; }
+pub fn default_limits() -> Limits {
+    return Limits { max_input: 67108864, max_output: 67108864, max_depth: 128, max_items: 1000000, max_string_bytes: 16777216, max_work: 134217728 };
+}
+fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn empty() -> core::slice::View<u8> { let pointer: ptr = 0; let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer,0); return core::result::unwrap(core::slice::view(raw,0)); }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn valid_limits(limits: Limits) -> bool { return limits.max_input >= 0 && limits.max_output >= 0 && limits.max_depth >= 0 && limits.max_string_bytes >= 0; }
+fn frames_valid(frames: core::slice::View<Frame>) -> bool { return frames.start >= 0 && frames.length >= 0 && frames.start <= 2147483647-frames.length; }
+pub fn scratch_len(limits: Limits) -> core::result::Result<i32,Error> {
+    if (!valid_limits(limits)) { return core::result::Err(error(ErrorKind::Bounds,0)); } return core::result::Ok(limits.max_depth);
+}
+struct Info { kind: i32, argument: u64, data: core::slice::View<u8> }
+fn info(event: Event) -> Info {
+    let kind: i32 = match (event) { Event::Unsigned(value) -> 0, Event::Negative(value) -> 1, Event::Bytes(value) -> 2, Event::Text(value) -> 3, Event::Array(value) -> 4, Event::Map(value) -> 5, Event::Tag(value) -> 6, Event::Simple(value) -> 7, Event::Float16(value) -> 8, Event::Float32(value) -> 9, Event::Float64(value) -> 10, Event::BeginBytes -> 11, Event::BeginText -> 12, Event::BeginArray -> 13, Event::BeginMap -> 14, Event::End -> 15 };
+    let argument: u64 = match (event) { Event::Unsigned(value) -> value, Event::Negative(value) -> value, Event::Array(value) -> value, Event::Map(value) -> value, Event::Tag(value) -> value, Event::Simple(value) -> value as u64, Event::Float16(value) -> value as u64, Event::Float32(value) -> value as u64, Event::Float64(value) -> value, _ -> 0 };
+    let data: core::slice::View<u8> = empty();
+    if (kind == 2 || kind == 3) {
+        data = match (event) { Event::Bytes(value) -> value, Event::Text(value) -> value, _ -> empty() };
+        if (data.length >= 0) { argument = data.length as u64; }
+    }
+    return Info { kind: kind, argument: argument, data: data };
+}
+fn open(kind: i32) -> bool { return (kind >= 4 && kind <= 6) || (kind >= 11 && kind <= 14); }
+fn automatic(frame: Frame) -> bool { return (frame.kind == 4 || frame.kind == 5 || frame.kind == 6) && frame.remaining == 0 && !frame.odd; }
+struct Machine { frames: core::slice::View<Frame>, limits: Limits, depth: i32, root_done: bool, items: u64, work: u64 }
+fn machine(frames: core::slice::View<Frame>, limits: Limits) -> Machine { return Machine { frames: frames, limits: limits, depth: 0, root_done: false, items: 0, work: limits.max_work }; }
+impl Machine {
+    fn borrow(&self) -> &Machine { return self; }
+    fn top(&self) -> Frame { return self.frames.values[self.frames.start+self.depth-1]; }
+    fn set_top(&self, frame: Frame) { self.frames.values[self.frames.start+self.depth-1] = frame; }
+    fn complete(&self) {
+        if (self.depth == 0) { self.root_done = true; return; }
+        let frame: Frame = self.top();
+        if (frame.kind == 4 || frame.kind == 6) { frame.remaining -= 1; }
+        if (frame.kind == 5 || frame.kind == 14) {
+            if (frame.odd) { frame.odd = false; if (frame.kind == 5) { frame.remaining -= 1; } }
+            else { frame.odd = true; }
+        }
+        self.set_top(frame);
+    }
+    fn accept(&self, item: Info, at: i32) -> core::result::Result<i32,Error> {
+        if (self.root_done) { return core::result::Err(error(ErrorKind::TrailingData,at)); }
+        if (item.kind == 2 || item.kind == 3) {
+            if (!valid(item.data)) { return core::result::Err(error(ErrorKind::Bounds,at)); }
+            if (item.data.length > self.limits.max_string_bytes) { return core::result::Err(error(ErrorKind::StringLimit,at)); }
+        }
+        let cost: u64 = 1; if (item.kind == 2 || item.kind == 3) { cost += item.data.length as u64; }
+        if (cost > self.work) { return core::result::Err(error(ErrorKind::WorkLimit,at)); } self.work -= cost;
+        if (item.kind == 15) {
+            if (self.depth == 0) { return core::result::Err(error(ErrorKind::UnexpectedBreak,at)); }
+            let frame: Frame = self.top();
+            if (frame.kind == 14 && frame.odd) { return core::result::Err(error(ErrorKind::OddMap,at)); }
+            if (frame.kind < 11 && !automatic(frame)) { return core::result::Err(error(ErrorKind::UnexpectedBreak,at)); }
+            self.depth -= 1; self.complete(); return core::result::Ok(0);
+        }
+        if (self.depth > 0) {
+            let frame: Frame = self.top();
+            if (automatic(frame)) { return core::result::Err(error(ErrorKind::InvalidEvent,at)); }
+            if ((frame.kind == 11 && item.kind != 2) || (frame.kind == 12 && item.kind != 3)) { return core::result::Err(error(ErrorKind::ChunkType,at)); }
+            if (frame.kind == 11 || frame.kind == 12) {
+                if (item.argument > (self.limits.max_string_bytes as u64)-frame.bytes) { return core::result::Err(error(ErrorKind::StringLimit,at)); }
+                frame.bytes += item.argument; self.set_top(frame);
+            }
+        }
+        if (self.items == self.limits.max_items) { return core::result::Err(error(ErrorKind::ItemLimit,at)); } self.items += 1;
+        if (item.kind == 7 && item.argument >= 24 && item.argument <= 31) { return core::result::Err(error(ErrorKind::InvalidSimple,at)); }
+        if (item.kind == 8 && item.argument > 65535) { return core::result::Err(error(ErrorKind::InvalidEvent,at)); }
+        if (item.kind == 3 && core::result::is_err(core::text::from_utf8_range(item.data.values,item.data.start,item.data.length))) { return core::result::Err(error(ErrorKind::InvalidUtf8,at)); }
+        if (open(item.kind)) {
+            if (self.depth == self.limits.max_depth) { return core::result::Err(error(ErrorKind::DepthLimit,at)); }
+            let frame: Frame = Frame { kind: item.kind, remaining: item.argument, odd: false, bytes: 0 }; if (item.kind == 6) { frame.remaining = 1; }
+            self.frames.values[self.frames.start+self.depth] = frame; self.depth += 1;
+        } else { self.complete(); }
+        return core::result::Ok(0);
+    }
+}
+
+pub struct Reader { input: core::slice::View<u8>, state: Machine, position: i32 }
+fn unchecked_reader(input: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> Reader { return Reader { input: input, state: machine(frames,limits), position: 0 }; }
+impl Reader {
+    fn borrow(&self) -> &Reader { return self; }
+    fn step(&self) -> core::result::Result<core::option::Option<Event>,Error> {
+        let at: i32 = self.position;
+        if (self.state.depth > 0 && automatic(self.state.top())) {
+            let accepted: core::result::Result<i32,Error> = self.state.accept(info(Event::End),at);
+            if (core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); } return core::result::Ok(core::option::Some(Event::End));
+        }
+        if (self.state.root_done) {
+            if (at != self.input.length) { return core::result::Err(error(ErrorKind::TrailingData,at)); } return core::result::Ok(core::option::None());
+        }
+        if (at == self.input.length) { return core::result::Err(error(ErrorKind::UnexpectedEnd,at)); }
+        let first: i32 = byte(self.input,at) as i32; self.position += 1;
+        let major: i32 = first >> 5; let additional: i32 = first & 31;
+        if (additional >= 28 && additional <= 30) { return core::result::Err(error(ErrorKind::InvalidHead,at)); }
+        let argument: u64 = additional as u64;
+        if (additional >= 24 && additional <= 27) {
+            let width: i32 = 1 << (additional-24);
+            if (width > self.input.length-self.position) { return core::result::Err(error(ErrorKind::UnexpectedEnd,at)); }
+            argument = 0; let index: i32 = 0;
+            while (index < width) { argument = (argument << 8) | (byte(self.input,self.position) as u64); self.position += 1; index += 1; }
+        }
+        let event: Event = Event::End;
+        if (additional == 31) {
+            if (major == 0 || major == 1 || major == 6) { return core::result::Err(error(ErrorKind::InvalidHead,at)); }
+            if (major == 2) { event = Event::BeginBytes; }
+            if (major == 3) { event = Event::BeginText; }
+            if (major == 4) { event = Event::BeginArray; }
+            if (major == 5) { event = Event::BeginMap; }
+        } else {
+            if (major == 0) { event = Event::Unsigned(argument); }
+            if (major == 1) { event = Event::Negative(argument); }
+            if (major == 2 || major == 3) {
+                if (argument > self.state.limits.max_string_bytes as u64) { return core::result::Err(error(ErrorKind::StringLimit,at)); }
+                if (argument > (self.input.length-self.position) as u64) { return core::result::Err(error(ErrorKind::UnexpectedEnd,at)); }
+                let data: core::slice::View<u8> = core::result::unwrap(self.input.subview(self.position,self.position+(argument as i32))); self.position += argument as i32;
+                if (major == 2) { event = Event::Bytes(data); } else { event = Event::Text(data); }
+            }
+            if (major == 4) { event = Event::Array(argument); }
+            if (major == 5) { event = Event::Map(argument); }
+            if (major == 6) { event = Event::Tag(argument); }
+            if (major == 7) {
+                if (additional <= 24) { if (additional == 24 && argument < 32) { return core::result::Err(error(ErrorKind::InvalidSimple,at)); } event = Event::Simple(argument as u8); }
+                if (additional == 25) { event = Event::Float16(argument as u32); }
+                if (additional == 26) { event = Event::Float32(argument as u32); }
+                if (additional == 27) { event = Event::Float64(argument); }
+            }
+        }
+        let accepted: core::result::Result<i32,Error> = self.state.accept(info(event),at);
+        if (core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); } return core::result::Ok(core::option::Some(event));
+    }
+}
+fn storage(frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error> {
+    if (!valid_limits(limits) || !frames_valid(frames)) { return core::result::Err(error(ErrorKind::Bounds,0)); }
+    if (frames.length < limits.max_depth) { return core::result::Err(error(ErrorKind::ScratchTooSmall,0)); } return core::result::Ok(0);
+}
+pub fn validate(input: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error> {
+    if (!valid(input)) { return core::result::Err(error(ErrorKind::Bounds,0)); }
+    let checked: core::result::Result<i32,Error> = storage(frames,limits); if (core::result::is_err(checked)) { return checked; }
+    if (input.length > limits.max_input) { return core::result::Err(error(ErrorKind::InputLimit,0)); }
+    let cursor: Reader = unchecked_reader(input,frames,limits);
+    while (true) { let next: core::result::Result<core::option::Option<Event>,Error> = cursor.step(); if (core::result::is_err(next)) { return core::result::Err(core::result::unwrap_err(next)); } if (core::option::is_none(core::result::unwrap(next))) { return core::result::Ok(input.length); } }
+    return core::result::Ok(input.length);
+}
+pub fn reader(input: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<Reader,Error> {
+    let checked: core::result::Result<i32,Error> = validate(input,frames,limits); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    return core::result::Ok(unchecked_reader(input,frames,limits));
+}
+pub impl Reader {
+    pub fn next(&self) -> core::option::Option<Event> { return core::result::unwrap(self.step()); }
+    pub fn position(&self) -> i32 { return self.position; }
+}
+
+fn head_width(argument: u64) -> i32 { if (argument < 24) { return 1; } if (argument <= 255) { return 2; } if (argument <= 65535) { return 3; } if (argument <= 4294967295) { return 5; } return 9; }
+fn event_width(item: Info, closing: Frame) -> i32 {
+    if (item.kind <= 6) { return head_width(item.argument); }
+    if (item.kind == 7) { if (item.argument < 24) { return 1; } return 2; }
+    if (item.kind == 8) { return 3; } if (item.kind == 9) { return 5; } if (item.kind == 10) { return 9; }
+    if (item.kind == 15) { if (closing.kind >= 11) { return 1; } return 0; } return 1;
+}
+fn encoded_count(events: core::slice::View<Event>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error> {
+    if (events.start < 0 || events.length < 0 || events.start > 2147483647-events.length) { return core::result::Err(error(ErrorKind::Bounds,0)); }
+    let checked: core::result::Result<i32,Error> = storage(frames,limits); if (core::result::is_err(checked)) { return checked; }
+    let state: Machine = machine(frames,limits); let position: i32 = 0; let total: u64 = 0;
+    while (position < events.length) {
+        let item: Info = info(events.values[events.start+position]); let closing: Frame = empty_frame(); if (state.depth > 0) { closing = state.top(); }
+        let accepted: core::result::Result<i32,Error> = state.accept(item,position); if (core::result::is_err(accepted)) { return core::result::Err(core::result::unwrap_err(accepted)); }
+        total += event_width(item,closing) as u64; if (item.kind == 2 || item.kind == 3) { total += item.argument; }
+        if (total > limits.max_output as u64) { return core::result::Err(error(ErrorKind::OutputLimit,position)); } position += 1;
+    }
+    if (!state.root_done) { return core::result::Err(error(ErrorKind::UnexpectedEnd,events.length)); } return core::result::Ok(total as i32);
+}
+pub fn encoded_len(events: core::slice::View<Event>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error> { return encoded_count(events,frames,limits); }
+fn put_head(output: core::slice::View<u8>, at: i32, major: i32, argument: u64) -> i32 {
+    let width: i32 = head_width(argument); let additional: i32 = argument as i32;
+    if (width == 2) { additional = 24; } if (width == 3) { additional = 25; } if (width == 5) { additional = 26; } if (width == 9) { additional = 27; }
+    output.values[output.start+at] = (major*32+additional) as u8; let index: i32 = 1;
+    while (index < width) { let shift: i32 = (width-index-1)*8; output.values[output.start+at+index] = ((argument >> shift) & 255) as u8; index += 1; } return width;
+}
+// All event structure, UTF-8, limits and exact capacity are checked before
+// writing. Output errors are atomic; scratch is reusable but may be changed.
+pub fn encode_into(events: core::slice::View<Event>, output: core::slice::View<u8>, frames: core::slice::View<Frame>, limits: Limits) -> core::result::Result<i32,Error> {
+    if (!valid(output)) { return core::result::Err(error(ErrorKind::Bounds,0)); }
+    let counted: core::result::Result<i32,Error> = encoded_count(events,frames,limits); if (core::result::is_err(counted)) { return counted; }
+    let length: i32 = core::result::unwrap(counted); if (length > output.length) { return core::result::Err(error(ErrorKind::OutputLimit,events.length)); }
+    let state: Machine = machine(frames,limits); let position: i32 = 0; let target: i32 = 0;
+    while (position < events.length) {
+        let item: Info = info(events.values[events.start+position]); let closing: Frame = empty_frame(); if (state.depth > 0) { closing = state.top(); }
+        core::result::unwrap(state.accept(item,position));
+        if (item.kind <= 6) {
+            target += put_head(output,target,item.kind,item.argument);
+            if (item.kind == 2 || item.kind == 3) { let index: i32 = 0; while (index < item.data.length) { output.values[output.start+target] = byte(item.data,index); target += 1; index += 1; } }
+        } else {
+            if (item.kind == 7) { target += put_head(output,target,7,item.argument); }
+            if (item.kind >= 8 && item.kind <= 10) {
+                let width: i32 = 2; if (item.kind == 9) { width = 4; } if (item.kind == 10) { width = 8; }
+                output.values[output.start+target] = (241+item.kind) as u8; target += 1; let index: i32 = 0;
+                while (index < width) { let shift: i32 = (width-index-1)*8; output.values[output.start+target] = ((item.argument >> shift) & 255) as u8; target += 1; index += 1; }
+            }
+            if (item.kind >= 11 && item.kind <= 14) { output.values[output.start+target] = ((item.kind-9)*32+31) as u8; target += 1; }
+            if (item.kind == 15 && closing.kind >= 11) { output.values[output.start+target] = 255; target += 1; }
+        }
+        position += 1;
+    } return core::result::Ok(length);
+}

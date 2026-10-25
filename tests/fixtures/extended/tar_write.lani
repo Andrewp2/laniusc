@@ -1,0 +1,49 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::tar;
+import std::io;
+fn read(pointer: ptr, count: i32) -> i32 { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { return done; } done += got; } return done; }
+fn write(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn get(bytes: [u8], index: i32) -> i32 { return (bytes[index] as i32) | ((bytes[index+1] as i32) << 8) | ((bytes[index+2] as i32) << 16) | ((bytes[index+3] as i32) << 24); }
+fn get64(bytes: [u8], index: i32) -> u64 { return (get(bytes,index) as u32) as u64 | (((get(bytes,index+4) as u32) as u64) << 32); }
+fn number(bytes: [u8], index: i32, value: i32) { bytes[index] = (value & 255) as u8; bytes[index+1] = ((value >> 8) & 255) as u8; bytes[index+2] = ((value >> 16) & 255) as u8; bytes[index+3] = ((value >> 24) & 255) as u8; }
+fn wide(bytes: [u8], index: i32, value: u64) { number(bytes,index,value as i32); number(bytes,index+4,(value >> 32) as i32); }
+fn kind(value: ext::tar::Kind) -> i32 { return match (value) { ext::tar::Kind::Regular -> 0, ext::tar::Kind::HardLink -> 1, ext::tar::Kind::SymbolicLink -> 2, ext::tar::Kind::CharacterDevice -> 3, ext::tar::Kind::BlockDevice -> 4, ext::tar::Kind::Directory -> 5, ext::tar::Kind::Fifo -> 6, ext::tar::Kind::Contiguous -> 7 }; }
+fn to_kind(value: i32) -> ext::tar::Kind { return match (value) { 0 -> ext::tar::Kind::Regular, 1 -> ext::tar::Kind::HardLink, 2 -> ext::tar::Kind::SymbolicLink, 3 -> ext::tar::Kind::CharacterDevice, 4 -> ext::tar::Kind::BlockDevice, 5 -> ext::tar::Kind::Directory, 6 -> ext::tar::Kind::Fifo, _ -> ext::tar::Kind::Contiguous }; }
+fn code(error: ext::tar::Error) -> i32 { return match (error) { ext::tar::Error::Bounds -> 1, ext::tar::Error::UnexpectedEof -> 2, ext::tar::Error::MissingFooter -> 3, ext::tar::Error::InvalidChecksum -> 4, ext::tar::Error::UnsupportedFormat -> 5, ext::tar::Error::InvalidNumber -> 6, ext::tar::Error::NumberOverflow -> 7, ext::tar::Error::InvalidName -> 8, ext::tar::Error::UnsupportedType -> 9, ext::tar::Error::InvalidSize -> 10, ext::tar::Error::InvalidPadding -> 11, ext::tar::Error::TrailingData -> 12, ext::tar::Error::PathTooLong -> 13, ext::tar::Error::LinkTooLong -> 14, ext::tar::Error::NameTooLong -> 15, ext::tar::Error::CapacityOverflow -> 16, ext::tar::Error::OutputTooSmall -> 17, ext::tar::Error::Finished -> 18, ext::tar::Error::InvalidState -> 19 }; }
+fn main() -> i32 {
+    let input_words: [i32;65536] = [0;65536]; let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words); let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,262144);
+    let output_words: [i32;65538] = [0;65538]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words); let output: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,262152);
+    let header_words: [i32;3] = [0;3]; let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words); let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,12);
+    while (true) {
+        let got: i32 = read(header_pointer,4); if (got == 0) { break; } assert(got == 4); let count: i32 = get(header,0); assert(count >= 8 && count <= 262144); assert(read(input_pointer,count) == count);
+        let capacity: i32 = get(input,0); let members: i32 = get(input,4); assert(capacity >= 0 && capacity <= 262144 && members >= 0 && members <= 1024);
+        let index: i32 = 0; while (index < capacity+8) { output[index] = 77; index += 1; }
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,4,capacity)); let writer: ext::tar::Writer = core::result::unwrap(ext::tar::writer(destination));
+        let position: i32 = 8; let member: i32 = 0;
+        while (member < members) {
+            assert(count-position >= 68); let metadata_start: i32 = position;
+            let path_count: i32 = get(input,position+48); let link_count: i32 = get(input,position+52); let uname_count: i32 = get(input,position+56); let gname_count: i32 = get(input,position+60); let data_count: i32 = get(input,position+64); assert(path_count >= 0 && link_count >= 0 && uname_count >= 0 && gname_count >= 0 && data_count >= 0);
+            position += 68; let source: core::slice::View<u8> = core::result::unwrap(core::slice::view(input,count));
+            let path: core::slice::View<u8> = core::result::unwrap(source.subview(position,position+path_count)); position += path_count;
+            let link: core::slice::View<u8> = core::result::unwrap(source.subview(position,position+link_count)); position += link_count;
+            let uname: core::slice::View<u8> = core::result::unwrap(source.subview(position,position+uname_count)); position += uname_count;
+            let gname: core::slice::View<u8> = core::result::unwrap(source.subview(position,position+gname_count)); position += gname_count;
+            let data: core::slice::View<u8> = core::result::unwrap(source.subview(position,position+data_count)); position += data_count;
+            let meta: ext::tar::Metadata = ext::tar::metadata(path,to_kind(get(input,metadata_start))); meta.mode = get(input,metadata_start+4) as u32; meta.uid = get64(input,metadata_start+8); meta.gid = get64(input,metadata_start+16); meta.mtime = get64(input,metadata_start+24); meta.dev_major = get64(input,metadata_start+32); meta.dev_minor = get64(input,metadata_start+40); meta.link_name = link; meta.uname = uname; meta.gname = gname;
+            let before: i32 = writer.position(); let added: core::result::Result<i32,ext::tar::Error> = writer.add(meta,data); let error: i32 = 0;
+            if (core::result::is_err(added)) { error = code(core::result::unwrap_err(added)); assert(writer.position() == before); }
+            else { assert(core::result::unwrap(added) == writer.position()); }
+            number(header,0,error); number(header,4,writer.position()); write(header_pointer,8); member += 1;
+        }
+        assert(position == count); let before: i32 = writer.position(); let finished: core::result::Result<i32,ext::tar::Error> = writer.finish(); let error: i32 = 0;
+        if (core::result::is_err(finished)) { error = code(core::result::unwrap_err(finished)); assert(writer.position() == before && !writer.is_finished()); }
+        else { assert(core::result::unwrap(finished) == writer.position() && writer.is_finished()); }
+        number(header,0,error); number(header,4,writer.position()); write(header_pointer,8);
+        index = 0; while (index < 4) { assert(output[index] == 77 && output[capacity+4+index] == 77); index += 1; }
+        write(output_pointer+4,capacity);
+    } return 0;
+}

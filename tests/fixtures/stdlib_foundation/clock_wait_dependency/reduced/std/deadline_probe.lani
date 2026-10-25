@@ -1,0 +1,26 @@
+module std::deadline_probe;
+import core::result;
+import core::time;
+pub enum Error { Host(i32), Overflow }
+pub trait Clock { pub fn now(&self) -> core::result::Result<core::time::Instant,Error>; }
+pub fn after<C>(clock: &C, span: core::time::Duration)
+    -> core::result::Result<core::time::Instant,Error> where C: Clock {
+    let read: core::result::Result<core::time::Instant,Error> = clock.now();
+    if (core::result::is_err(read)) { return read; }
+    let initial: core::time::Instant = core::result::unwrap(read);
+    let deadline: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(initial,span);
+    if (core::result::is_err(deadline)) { return core::result::Err(Error::Overflow); }
+    let result: core::time::Deadline = core::result::unwrap(deadline);
+    return core::result::Ok(result.instant);
+}
+pub fn split<C>(clock: &C, span: core::time::Duration)
+    -> core::result::Result<core::time::Instant,Error> where C: Clock {
+    let read: core::result::Result<core::time::Instant,Error> = clock.now();
+    if (core::result::is_err(read)) { return read; }
+    let initial: core::time::Instant = core::result::unwrap(read);
+    let shifted: core::result::Result<core::time::Instant,core::time::Error> = initial.checked_add(span);
+    if (core::result::is_err(shifted)) { return core::result::Err(Error::Overflow); }
+    let at: core::time::Instant = core::result::unwrap(shifted);
+    let result: core::time::Deadline = core::time::deadline_at(at);
+    return core::result::Ok(result.instant);
+}

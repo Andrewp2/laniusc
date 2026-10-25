@@ -1,0 +1,169 @@
+// IEEE binary64 value utilities. Exact bits and integer algorithms;
+// no allocation, host math calls or assumed floating-point rounding mode.
+module core::f64;
+import core::mem;
+import core::result;
+
+pub const ZERO: f64 = 0.0;
+pub const ONE: f64 = 1.0;
+pub const EPSILON: f64 = 2.220446049250313e-16;
+pub const MIN_POSITIVE: f64 = 2.2250738585072014e-308;
+pub const MAX: f64 = 1.7976931348623157e308;
+pub const MIN: f64 = -1.7976931348623157e308;
+pub const SIGN_MASK: u64 = 9223372036854775808;
+pub const EXPONENT_MASK: u64 = 9218868437227405312;
+pub const FRACTION_MASK: u64 = 4503599627370495;
+pub const QUIET_MASK: u64 = 2251799813685248;
+pub const INFINITY_BITS: u64 = 9218868437227405312;
+pub const NAN_BITS: u64 = 9221120237041090560;
+const ONE_BITS: u64 = 4607182418800017408;
+const MAGNITUDE_MASK: u64 = 9223372036854775807;
+pub enum FpCategory { Nan, Infinite, Zero, Subnormal, Normal }
+pub enum ClampError { InvalidBounds }
+
+// Stack storage is 8-aligned and covers one native word. Both views use the
+// same complete extent; transfers preserve NaN payloads without arithmetic.
+pub fn to_bits(value: f64) -> u64 {
+    let words: [i32;2] = [0;2]; let storage: ptr = core::mem::i32_array_data_ptr(words);
+    let floats: [f64] = core::mem::typed_slice_from_storage<f64>(storage,1); floats[0] = value;
+    let integers: [u64] = core::mem::typed_slice_from_storage<u64>(storage,1); return integers[0];
+}
+pub fn from_bits(value: u64) -> f64 {
+    let words: [i32;2] = [0;2]; let storage: ptr = core::mem::i32_array_data_ptr(words);
+    let integers: [u64] = core::mem::typed_slice_from_storage<u64>(storage,1); integers[0] = value;
+    let floats: [f64] = core::mem::typed_slice_from_storage<f64>(storage,1); return floats[0];
+}
+pub fn infinity() -> f64 { return from_bits(INFINITY_BITS); }
+pub fn neg_infinity() -> f64 { return from_bits(INFINITY_BITS | SIGN_MASK); }
+pub fn nan() -> f64 { return from_bits(NAN_BITS); }
+pub fn classify(value: f64) -> FpCategory {
+    let magnitude: u64 = to_bits(value) & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS) { return FpCategory::Nan; }
+    if (magnitude == INFINITY_BITS) { return FpCategory::Infinite; }
+    if (magnitude == 0) { return FpCategory::Zero; }
+    if ((magnitude & EXPONENT_MASK) == 0) { return FpCategory::Subnormal; }
+    return FpCategory::Normal;
+}
+pub fn is_nan(value: f64) -> bool { return (to_bits(value) & MAGNITUDE_MASK) > INFINITY_BITS; }
+pub fn is_infinite(value: f64) -> bool { return (to_bits(value) & MAGNITUDE_MASK) == INFINITY_BITS; }
+pub fn is_finite(value: f64) -> bool { return (to_bits(value) & EXPONENT_MASK) != EXPONENT_MASK; }
+pub fn is_normal(value: f64) -> bool { let exponent: u64 = to_bits(value) & EXPONENT_MASK; return exponent != 0 && exponent != EXPONENT_MASK; }
+pub fn is_subnormal(value: f64) -> bool { let magnitude: u64 = to_bits(value) & MAGNITUDE_MASK; return magnitude != 0 && (magnitude & EXPONENT_MASK) == 0; }
+pub fn is_sign_negative(value: f64) -> bool { return (to_bits(value) & SIGN_MASK) != 0; }
+pub fn is_sign_positive(value: f64) -> bool { return (to_bits(value) & SIGN_MASK) == 0; }
+pub fn is_negative(value: f64) -> bool { let bits: u64 = to_bits(value); let magnitude: u64 = bits & MAGNITUDE_MASK; return (bits & SIGN_MASK) != 0 && magnitude != 0 && magnitude <= INFINITY_BITS; }
+pub fn is_positive(value: f64) -> bool { let bits: u64 = to_bits(value); let magnitude: u64 = bits & MAGNITUDE_MASK; return (bits & SIGN_MASK) == 0 && magnitude != 0 && magnitude <= INFINITY_BITS; }
+pub fn is_zero(value: f64) -> bool { return (to_bits(value) & MAGNITUDE_MASK) == 0; }
+pub fn is_nonzero(value: f64) -> bool { return (to_bits(value) & MAGNITUDE_MASK) != 0; }
+pub fn abs(value: f64) -> f64 { return from_bits(to_bits(value) & MAGNITUDE_MASK); }
+pub fn copy_sign(magnitude: f64, sign: f64) -> f64 { return from_bits((to_bits(magnitude) & MAGNITUDE_MASK) | (to_bits(sign) & SIGN_MASK)); }
+// Non-NaN values, including both zeros, return the sign's unit value.
+pub fn signum(value: f64) -> f64 { let bits: u64 = to_bits(value); if ((bits & MAGNITUDE_MASK) > INFINITY_BITS) { return from_bits(bits | QUIET_MASK); } return from_bits((bits & SIGN_MASK) | ONE_BITS); }
+// Ignore one NaN. Two NaNs return a quieted left payload. Signed-zero ties
+// are deterministic and independent of operand order.
+pub fn min(left: f64, right: f64) -> f64 {
+    let a: u64 = to_bits(left); let b: u64 = to_bits(right);
+    if ((a & MAGNITUDE_MASK) > INFINITY_BITS) { if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return from_bits(a | QUIET_MASK); } return right; }
+    if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return left; }
+    if ((a & MAGNITUDE_MASK) == 0 && (b & MAGNITUDE_MASK) == 0) { return from_bits(a | b); }
+    if (left < right) { return left; } return right;
+}
+pub fn max(left: f64, right: f64) -> f64 {
+    let a: u64 = to_bits(left); let b: u64 = to_bits(right);
+    if ((a & MAGNITUDE_MASK) > INFINITY_BITS) { if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return from_bits(a | QUIET_MASK); } return right; }
+    if ((b & MAGNITUDE_MASK) > INFINITY_BITS) { return left; }
+    if ((a & MAGNITUDE_MASK) == 0 && (b & MAGNITUDE_MASK) == 0) { return from_bits(a & b); }
+    if (left > right) { return left; } return right;
+}
+pub fn total_cmp(left: f64, right: f64) -> i32 {
+    let a: u64 = to_bits(left); let b: u64 = to_bits(right);
+    if ((a & SIGN_MASK) != 0) { a = a ^ 18446744073709551615; } else { a = a ^ SIGN_MASK; }
+    if ((b & SIGN_MASK) != 0) { b = b ^ 18446744073709551615; } else { b = b ^ SIGN_MASK; }
+    if (a < b) { return -1; } if (a > b) { return 1; } return 0;
+}
+pub fn next_up(value: f64) -> f64 {
+    let bits: u64 = to_bits(value); let magnitude: u64 = bits & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS || bits == INFINITY_BITS) { return value; }
+    if (magnitude == 0) { return from_bits(1); }
+    if ((bits & SIGN_MASK) != 0) { return from_bits(bits-1); } return from_bits(bits+1);
+}
+pub fn next_down(value: f64) -> f64 {
+    let bits: u64 = to_bits(value); let magnitude: u64 = bits & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS || bits == (INFINITY_BITS | SIGN_MASK)) { return value; }
+    if (magnitude == 0) { return from_bits(SIGN_MASK | 1); }
+    if ((bits & SIGN_MASK) != 0) { return from_bits(bits+1); } return from_bits(bits-1);
+}
+// Modes: truncate, floor, ceil, nearest/ties-away, nearest/ties-even. Only
+// integer bit operations are used, including for the signed-zero cases.
+fn integer_bits(bits: u64, mode: i32) -> u64 {
+    let magnitude: u64 = bits & MAGNITUDE_MASK; let sign: u64 = bits & SIGN_MASK;
+    if (magnitude >= INFINITY_BITS || magnitude == 0) { return bits; }
+    let exponent: i32 = (magnitude >> 52) as i32-1023;
+    if (exponent >= 52) { return bits; }
+    if (exponent < 0) {
+        let result: u64 = 0;
+        if ((mode == 1 && sign != 0) || (mode == 2 && sign == 0)) { result = ONE_BITS; }
+        if (mode >= 3) { let half: u64 = 4602678819172646912; if (magnitude > half || (magnitude == half && mode == 3)) { result = ONE_BITS; } }
+        return sign | result;
+    }
+    let unit: u64 = 1; unit = unit << (52-exponent); let mask: u64 = unit-1; let tail: u64 = magnitude & mask;
+    if (tail == 0) { return bits; }
+    let rounded: u64 = magnitude & (mask ^ 18446744073709551615);
+    let increase: bool = (mode == 1 && sign != 0) || (mode == 2 && sign == 0);
+    if (mode == 3 && tail >= (unit >> 1)) { increase = true; }
+    if (mode == 4 && (tail > (unit >> 1) || (tail == (unit >> 1) && (rounded & unit) != 0))) { increase = true; }
+    if (increase) { rounded += unit; } return sign | rounded;
+}
+pub fn trunc(value: f64) -> f64 { return from_bits(integer_bits(to_bits(value),0)); }
+pub fn floor(value: f64) -> f64 { return from_bits(integer_bits(to_bits(value),1)); }
+pub fn ceil(value: f64) -> f64 { return from_bits(integer_bits(to_bits(value),2)); }
+pub fn round(value: f64) -> f64 { return from_bits(integer_bits(to_bits(value),3)); }
+pub fn round_ties_even(value: f64) -> f64 { return from_bits(integer_bits(to_bits(value),4)); }
+
+// Restore one root bit from each radicand pair. The radicand has at most
+// 2*precision bits and is held in two u64 words. q and remainder fit u64.
+// After the final pair: N=q*q+remainder and 0<=remainder<2*q+1.
+fn root_significand(mantissa: u64) -> u64 {
+    let high: u64 = mantissa >> 12; let low: u64 = mantissa << 52;
+    let root: u64 = 0; let remainder: u64 = 0; let pair_index: i32 = 52;
+    while (pair_index >= 0) {
+        let pair: u64 = 0;
+        if (pair_index >= 32) { pair = (high >> ((pair_index-32)*2)) & 3; }
+        else { pair = (low >> (pair_index*2)) & 3; }
+        remainder = (remainder << 2) | pair; root = root << 1;
+        let trial: u64 = (root << 1) | 1;
+        if (remainder >= trial) { remainder -= trial; root += 1; }
+        pair_index -= 1;
+    }
+    // The half-way square is q*q+q+1/4 and N is integral, so exact ties
+    // cannot occur. A remainder above q rounds the root up by one unit.
+    if (remainder > root) { root += 1; } return root;
+}
+pub fn sqrt(value: f64) -> f64 {
+    let bits: u64 = to_bits(value); let magnitude: u64 = bits & MAGNITUDE_MASK;
+    if (magnitude > INFINITY_BITS) { return from_bits(bits | QUIET_MASK); }
+    if (magnitude == 0) { return value; }
+    if ((bits & SIGN_MASK) != 0) { return nan(); }
+    if (magnitude == INFINITY_BITS) { return value; }
+    let exponent: i32 = (magnitude >> 52) as i32-1023;
+    let mantissa: u64 = (magnitude & FRACTION_MASK) as u64;
+    if ((magnitude & EXPONENT_MASK) == 0) {
+        exponent = 1-1023; while (mantissa < 4503599627370496) { mantissa = mantissa << 1; exponent -= 1; }
+    } else { mantissa = mantissa | 4503599627370496; }
+    if (exponent % 2 != 0) { mantissa = mantissa << 1; exponent -= 1; }
+    let root_exponent: i32 = exponent/2; let root: u64 = root_significand(mantissa);
+    if (root == 9007199254740992) { root = root >> 1; root_exponent += 1; }
+    return from_bits((((root_exponent+1023) as u64) << 52) | ((root as u64) & FRACTION_MASK));
+}
+pub fn sqrt_or(value: f64, fallback: f64) -> f64 { if (is_nan(value) || is_negative(value)) { return fallback; } return sqrt(value); }
+pub fn try_clamp(value: f64, low: f64, high: f64) -> core::result::Result<f64,ClampError> {
+    if (is_nan(low) || is_nan(high) || low > high) { return core::result::Err(ClampError::InvalidBounds); }
+    if (is_nan(value)) { return core::result::Ok(value); }
+    if (value < low) { return core::result::Ok(low); } if (value > high) { return core::result::Ok(high); } return core::result::Ok(value);
+}
+pub fn clamp_or(value: f64, low: f64, high: f64, fallback: f64) -> f64 {
+    let result: core::result::Result<f64,ClampError> = try_clamp(value,low,high); if (core::result::is_err(result)) { return fallback; } return core::result::unwrap(result);
+}
+pub fn clamp(value: f64, low: f64, high: f64) -> f64 { return core::result::unwrap(try_clamp(value,low,high)); }
+pub fn between_exclusive(value: f64, low: f64, high: f64) -> bool { return value > low && value < high; }
+pub fn between_inclusive(value: f64, low: f64, high: f64) -> bool { return value >= low && value <= high; }

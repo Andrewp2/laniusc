@@ -1,0 +1,53 @@
+// True ZST logical owners: nine explicit Destroy calls, no allocation.
+module app::main;
+import alloc::clone;
+import alloc::deque;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import std::io;
+struct Unit {}
+pub impl core::clone::Destroy<Unit> for Unit {
+    pub fn destroy_value(value: Unit) { assert(std::io::write_byte(1, 90) == 1); }
+}
+fn main() -> i32 {
+    assert(core::mem::size_of<Unit>() == 0);
+    let values: alloc::vec::Vec<Unit> = alloc::vec::new<Unit>();
+    core::result::unwrap(values.try_reserve(2147483647));
+    core::result::unwrap(values.try_resize(5, Unit {}));
+    let capacity: i32 = values.capacity();
+    let cursor: alloc::vec::IntoIter<Unit> = values.take_iter();
+    assert(values.capacity() == 0 && cursor.capacity() == capacity);
+    Unit::destroy_value(core::option::unwrap(cursor.next())); Unit::destroy_value(core::option::unwrap(cursor.next_back()));
+    let refused: core::option::Option<alloc::vec::IntoIterError> = cursor.try_finish();
+    assert(match (core::option::unwrap(refused)) { alloc::vec::IntoIterError::Remaining(count) -> count == 3 });
+    let restored: alloc::vec::Vec<Unit> = cursor.take_remaining();
+    assert(restored.len() == 3 && restored.capacity() == capacity && cursor.capacity() == 0);
+    let reopened: alloc::vec::IntoIter<Unit> = restored.take_iter();
+    alloc::clone::destroy_vec_iter<Unit>(reopened.borrow()); assert(reopened.capacity() == 0);
+    let queue: alloc::deque::Deque<Unit> = alloc::deque::new<Unit>();
+    core::result::unwrap(queue.try_reserve(2147483647)); core::result::unwrap(queue.try_resize(4, Unit {}));
+    let deque_capacity: i32 = queue.capacity();
+    let owned: alloc::deque::IntoIter<Unit> = queue.take_iter();
+    Unit::destroy_value(core::option::unwrap(owned.next_back()));
+    let remainder: alloc::deque::Deque<Unit> = owned.take_remaining();
+    assert(remainder.len() == 3 && remainder.capacity() == deque_capacity && owned.capacity() == 0);
+    let again: alloc::deque::IntoIter<Unit> = remainder.take_iter();
+    alloc::clone::destroy_deque_iter<Unit>(again.borrow()); assert(again.capacity() == 0);
+    // Empty reserved ZSTs retain their reported capacity through restoration.
+    core::result::unwrap(values.try_reserve(2147483647));
+    let empty: alloc::vec::IntoIter<Unit> = values.take_iter(); let original: i32 = empty.capacity();
+    let empty_restored: alloc::vec::Vec<Unit> = empty.take_remaining();
+    assert(empty_restored.len() == 0 && empty_restored.capacity() == original);
+    let finish: alloc::vec::IntoIter<Unit> = empty_restored.take_iter(); assert(core::option::is_none(finish.try_finish()) && finish.capacity() == 0);
+    core::result::unwrap(queue.try_reserve(2147483647));
+    let empty_deque: alloc::deque::IntoIter<Unit> = queue.take_iter(); let old: i32 = empty_deque.capacity();
+    let queue_restored: alloc::deque::Deque<Unit> = empty_deque.take_remaining(); assert(queue_restored.len() == 0 && queue_restored.capacity() == old);
+    let finish_deque: alloc::deque::IntoIter<Unit> = queue_restored.take_iter(); assert(core::option::is_none(finish_deque.try_finish()) && finish_deque.capacity() == 0);
+    let ordinary: alloc::vec::Vec<i64> = alloc::vec::new<i64>(); let no_storage: alloc::vec::IntoIter<i64> = ordinary.take_iter(); assert(core::option::is_none(no_storage.try_finish()));
+    let ordinary_queue: alloc::deque::Deque<i64> = alloc::deque::new<i64>(); let no_queue_storage: alloc::deque::IntoIter<i64> = ordinary_queue.take_iter(); assert(core::option::is_none(no_queue_storage.try_finish()));
+    return 0;
+}

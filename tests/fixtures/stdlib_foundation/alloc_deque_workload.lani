@@ -1,0 +1,31 @@
+// No argument: 4,096 entries; extra argument: 65,536 entries.
+// Both perform 262,144 FIFO pop/push pairs without growing their allocation.
+module app::main;
+import alloc::deque;
+import core::option;
+import core::result;
+import std::args_checked;
+import std::io;
+import std::io_decimal;
+fn main() -> i32 {
+    let count: i32 = 4096; if (std::args_checked::argument_count_or(0) > 1) { count = 65536; }
+    let made: core::result::Result<alloc::deque::Deque<i64>, alloc::deque::Error> = alloc::deque::with_capacity(count);
+    if (core::result::is_err(made)) { return 4; }
+    let queue: alloc::deque::Deque<i64> = core::result::unwrap(made); let index: i32 = 0;
+    while (index < count) { core::result::unwrap(queue.try_push_back(index as i64)); index += 1; }
+    index = 0;
+    while (index < 262144) {
+        if (core::option::unwrap(queue.pop_front()) != index as i64) { return 1; }
+        core::result::unwrap(queue.try_push_back((index + count) as i64)); index += 1;
+    }
+    let cursor: alloc::deque::Cursor<i64> = queue.iter(); index = 0; let sum: i64 = 0;
+    while (index < count) {
+        let value: i64 = core::option::unwrap(cursor.next());
+        if (value != (262144 + index) as i64) { return 2; }
+        sum += value; index += 1;
+    }
+    if (queue.capacity() != count || core::option::is_some(cursor.next())) { return 3; }
+    queue.destroy();
+    if (std::io_decimal::write_i64(1, sum) < 0 || std::io::write_byte(1, 10) != 1) { return 5; }
+    return 0;
+}

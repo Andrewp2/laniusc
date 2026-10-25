@@ -1,0 +1,31 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::config;
+import ext::json;
+import std::args;
+import std::io;
+import std::io_decimal;
+import core::path;
+fn json_status(error: ext::json::Error) -> i32 {
+    let result: i32 = match (error.kind) { ext::json::ErrorKind::DuplicateKey -> 10, ext::json::ErrorKind::InvalidOptions -> 12, ext::json::ErrorKind::NodeLimit -> 13, ext::json::ErrorKind::DepthLimit -> 14, ext::json::ErrorKind::StringLimit -> 15, ext::json::ErrorKind::NumberLimit -> 16, _ -> 11 }; return result;
+}
+fn status(error: ext::config::Error) -> i32 {
+    if (ext::config::is_allocation_failure(error)) { return 4; }
+    let result: i32 = match (error) { ext::config::Error::Json(cause) -> json_status(cause), ext::config::Error::RootNotObject -> 20, ext::config::Error::Text(cause) -> 21, ext::config::Error::InputLimit -> 22, ext::config::Error::InvalidLimit -> 23, _ -> 3 }; return result;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments, std::args::Error> = std::args::snapshot(1, 3, 65536); if (core::result::is_err(captured)) { return 4; }
+    let arguments: std::args::Arguments = core::result::unwrap(captured); assert(arguments.len() == 3);
+    let path: core::path::Path = core::result::unwrap(core::path::from_view(core::option::unwrap(arguments.get(0))));
+    let bound_bytes: core::slice::View<u8> = core::option::unwrap(arguments.get(1)); let bound: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bound_bytes.values, bound_bytes.start, bound_bytes.len()));
+    let maximum: i32 = core::result::unwrap(bound.parse_i32()); let modes: core::slice::View<u8> = core::option::unwrap(arguments.get(2)); let mode: u8 = core::option::unwrap(modes.get(0));
+    let options: ext::json::Options = ext::json::default_options();
+    if (mode == 49) { options.max_depth = -1; } if (mode == 50) { options.max_nodes = 0; } if (mode == 51) { options.max_depth = 0; } if (mode == 52) { options.max_string_bytes = 0; } if (mode == 53) { options.max_number_bytes = 0; }
+    let loaded: core::result::Result<ext::config::Config, ext::config::Error> = ext::config::load(path, maximum, options); arguments.destroy();
+    if (core::result::is_err(loaded)) { return status(core::result::unwrap_err(loaded)); }
+    let config: ext::config::Config = core::result::unwrap(loaded); let root: ext::config::Value = config.root(); let count: i32 = core::result::unwrap(root.len());
+    config.destroy(); assert(std::io_decimal::write_i32(1, count) > 0 && std::io::write_byte(1, 10) == 1); return 0;
+}

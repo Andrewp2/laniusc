@@ -1,0 +1,22 @@
+module app::main;
+import core::result;
+import core::option;
+import ext::image;
+fn main() -> i32 {
+    let created: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::new(32,33,ext::image::Rgba {r:1,g:2,b:3,a:128});
+    if (core::result::is_err(created)) { return 7; }
+    let image: ext::image::Image = core::result::unwrap(created);
+    let cropped: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::crop(image.view(),1,1,30,31);
+    if (core::result::is_err(cropped)) { image.destroy(); return 7; }
+    let source: ext::image::Image = core::result::unwrap(cropped);
+    core::result::unwrap(ext::image::fill(source.view(),ext::image::Rgba {r:9,g:8,b:7,a:128}));
+    let turned: core::result::Result<ext::image::Image,ext::image::Error> = ext::image::rotate90(source.view());
+    if (core::result::is_err(turned)) { source.destroy(); image.destroy(); return 7; }
+    let rotated: ext::image::Image = core::result::unwrap(turned); rotated.destroy();
+    let copied: core::result::Result<i32,ext::image::Error> = ext::image::blit(image.view(),1,1,source.view());
+    if (core::result::is_err(copied)) { assert(core::option::unwrap(ext::image::get(image.view(),1,1)).r == 1); source.destroy(); image.destroy(); return 7; }
+    core::result::unwrap(ext::image::fill(source.view(),ext::image::Rgba {r:9,g:8,b:7,a:64}));
+    let blended: core::result::Result<i32,ext::image::Error> = ext::image::source_over(image.view(),1,1,source.view());
+    if (core::result::is_err(blended)) { assert(core::option::unwrap(ext::image::get(image.view(),1,1)).a == 128); source.destroy(); image.destroy(); return 7; }
+    source.destroy(); image.destroy(); return 0;
+}

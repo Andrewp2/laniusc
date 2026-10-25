@@ -1,181 +1,289 @@
-// Generic fixed-capacity vector stored inline in an [T; N] array.
-// Values are copied: every operation that changes a vector returns the new
-// vector and leaves its argument unchanged. A failed operation (full, or an
-// index out of range) returns the vector unchanged; compare len to detect it.
-// The caller supplies the backing array, because the language has no array
-// repeat expression and no size_of<T> for heap-backed generic storage. Slots
-// at and beyond len hold unspecified earlier values and are never read.
-// Searching and sorting need T: core::cmp::Eq or Ord. Their members are
-// static and their traits are imported, and neither dispatches through a bound
-// yet, so this module has no contains or sort; core::set searches through its
-// own Key trait. A const parameter cannot be a cast operand on x86 yet, so N
-// is bound to a local before its cast. tests/fixtures/generics_backlog/README.md
-// lists these gaps.
+// Inline fixed-capacity storage. Operations borrow and mutate the current owner;
+// by-value Vec copies own independent arrays, with shallow copies of T.
+// No operation allocates or destroys elements. See docs/stdlib-fixed-capacity.md.
 module core::vec;
+import core::cmp;
+import core::iter;
 import core::option;
-
+import core::panic;
+import core::result;
+import core::slice;
+pub enum Error {
+    Full,
+    Bounds
+}
 pub struct Vec<T, const N: usize> {
-    items: [T; N],
-    length: i32,
+    items:[T; N],
+    length: i32
 }
-
-// An empty vector over storage. Its contents are only filler.
-pub fn from_storage<T, const N: usize>(storage: [T; N]) -> Vec<T, N> {
-    return Vec { items: storage, length: 0 };
-}
-
-// A full vector holding items in order.
-pub fn from_array<T, const N: usize>(items: [T; N]) -> Vec<T, N> {
+// Filler is copied into spare slots; no filler element is logically owned.
+pub fn from_storage<T, const N: usize>(storage:[T; N]) -> Vec<T, N> {
     let count: usize = N;
-    return Vec { items: items, length: count as i32 };
+    if (count>2147483647) {
+        core::panic::panic();
+    }
+    return Vec {
+        items: storage,
+        length: 0
+    };
 }
-
-pub fn len<T, const N: usize>(value: Vec<T, N>) -> i32 {
+pub fn from_array<T, const N: usize>(items:[T; N]) -> Vec<T, N> {
+    let count: usize = N;
+    if (count>2147483647) {
+        core::panic::panic();
+    }
+    return Vec {
+        items: items,
+        length: count as i32
+    };
+}
+pub impl<T, const N: usize>Vec<T, N> {
+    pub fn borrow(&self) -> &Vec<T,
+    N> {
+        return self;
+    }
+}
+pub fn len<T, const N: usize>(value: &Vec<T, N>) -> i32 {
     return value.length;
 }
-
-pub fn capacity<T, const N: usize>(value: Vec<T, N>) -> i32 {
+pub fn capacity<T, const N: usize>(value: &Vec<T, N>) -> i32 {
     let count: usize = N;
     return count as i32;
 }
-
-pub fn is_empty<T, const N: usize>(value: Vec<T, N>) -> bool {
+pub fn is_empty<T, const N: usize>(value: &Vec<T, N>) -> bool {
     return value.length == 0;
 }
-
-pub fn is_full<T, const N: usize>(value: Vec<T, N>) -> bool {
-    return (value.length as usize) == N;
+pub fn is_full<T, const N: usize>(value: &Vec<T, N>) -> bool {
+    return(value.length as usize) == N;
 }
-
-pub fn try_push<T, const N: usize>(value: Vec<T, N>, item: T) -> Vec<T, N> {
-    if ((value.length as usize) == N) {
-        return value;
-    }
-    let next: Vec<T, N> = value;
-    next.items[next.length] = item;
-    next.length = next.length + 1;
-    return next;
-}
-
-// Remove the last item; an empty vector is returned unchanged. Read last
-// first when the removed item is needed.
-pub fn try_pop<T, const N: usize>(value: Vec<T, N>) -> Vec<T, N> {
-    if (value.length == 0) {
-        return value;
-    }
-    let next: Vec<T, N> = value;
-    next.length = next.length - 1;
-    return next;
-}
-
-pub fn get<T, const N: usize>(value: Vec<T, N>, index: i32) -> core::option::Option<T> {
-    if (index < 0 || index >= value.length) {
+pub fn get<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::option::Option<T> {
+    if (index<0 || index >= value.length) {
         return core::option::None();
     }
     return core::option::Some(value.items[index]);
 }
-
-pub fn get_or<T, const N: usize>(value: Vec<T, N>, index: i32, fallback: T) -> T {
-    if (index < 0 || index >= value.length) {
+pub fn get_or<T, const N: usize>(value: &Vec<T, N>, index: i32, fallback: T) -> T {
+    if (index<0 || index >= value.length) {
         return fallback;
     }
     return value.items[index];
 }
-
-// first and last repeat get's body: `laniusc check` of this module rejects
-// returning get's Option<T> result from another generic function (LNC0006),
-// although programs that call them compile.
-pub fn first<T, const N: usize>(value: Vec<T, N>) -> core::option::Option<T> {
+pub fn first<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T> {
+    return get(value, 0);
+}
+pub fn last<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T> {
+    return get(value, value.length - 1);
+}
+pub fn try_push<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::result::Result<i32, Error> {
+    if ((value.length as usize) == N) {
+        return core::result::Err(Error::Full);
+    }
+    value.items[value.length] = item;
+    value.length += 1;
+    return core::result::Ok(value.length);
+}
+// Acceptance changes the active prefix; end borrowed views/cursors first.
+pub impl<T, const N: usize> core::iter::TrySink<T, Error> for Vec<T, N> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = try_push<T, N>(self, item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
+}
+pub fn pop<T, const N: usize>(value: &Vec<T, N>) -> core::option::Option<T> {
     if (value.length == 0) {
         return core::option::None();
     }
-    return core::option::Some(value.items[0]);
+    value.length -= 1;
+    return core::option::Some(value.items[value.length]);
 }
-
-pub fn last<T, const N: usize>(value: Vec<T, N>) -> core::option::Option<T> {
-    if (value.length == 0) {
-        return core::option::None();
+// Return the displaced shallow value; nested ownership transfers explicitly.
+pub fn try_set<T, const N: usize>(value: &Vec<T, N>, index: i32, item: T) -> core::result::Result<T, Error> {
+    if (index<0 || index >= value.length) {
+        return core::result::Err(Error::Bounds);
     }
-    return core::option::Some(value.items[value.length - 1]);
+    let previous: T = value.items[index];
+    value.items[index] = item;
+    return core::result::Ok(previous);
 }
-
-pub fn try_set<T, const N: usize>(value: Vec<T, N>, index: i32, item: T) -> Vec<T, N> {
-    if (index < 0 || index >= value.length) {
-        return value;
+// Bounds precede fullness, even for zero capacity; errors never write.
+pub fn try_insert<T, const N: usize>(value: &Vec<T, N>, index: i32, item: T) -> core::result::Result<i32, Error> {
+    if (index<0 || index>value.length) {
+        return core::result::Err(Error::Bounds);
     }
-    let next: Vec<T, N> = value;
-    next.items[index] = item;
-    return next;
-}
-
-// Insert before index (0..=len), shifting later items up by one.
-pub fn try_insert<T, const N: usize>(value: Vec<T, N>, index: i32, item: T) -> Vec<T, N> {
-    if (index < 0 || index > value.length || (value.length as usize) == N) {
-        return value;
+    if ((value.length as usize) == N) {
+        return core::result::Err(Error::Full);
     }
-    let next: Vec<T, N> = value;
-    let cursor: i32 = next.length;
-    while (cursor > index) {
-        next.items[cursor] = next.items[cursor - 1];
+    let cursor: i32 = value.length;
+    while (cursor>index) {
+        value.items[cursor] = value.items[cursor - 1];
         cursor -= 1;
     }
-    next.items[index] = item;
-    next.length = next.length + 1;
-    return next;
+    value.items[index] = item;
+    value.length += 1;
+    return core::result::Ok(value.length);
 }
-
-// Remove the item at index, shifting later items down and keeping order.
-pub fn try_remove<T, const N: usize>(value: Vec<T, N>, index: i32) -> Vec<T, N> {
-    if (index < 0 || index >= value.length) {
-        return value;
+pub fn try_remove<T, const N: usize>(value: &Vec<T, N>, index: i32) -> core::result::Result<T, Error> {
+    if (index<0 || index >= value.length) {
+        return core::result::Err(Error::Bounds);
     }
-    let next: Vec<T, N> = value;
+    let removed: T = value.items[index];
     let cursor: i32 = index;
-    while (cursor + 1 < next.length) {
-        next.items[cursor] = next.items[cursor + 1];
+    while (cursor + 1<value.length) {
+        value.items[cursor] = value.items[cursor + 1];
         cursor += 1;
     }
-    next.length = next.length - 1;
-    return next;
+    value.length -= 1;
+    return core::result::Ok(removed);
 }
-
-pub fn try_swap<T, const N: usize>(value: Vec<T, N>, left: i32, right: i32) -> Vec<T, N> {
-    if (left < 0 || right < 0 || left >= value.length || right >= value.length) {
-        return value;
+pub fn try_swap<T, const N: usize>(value: &Vec<T, N>, left: i32, right: i32) -> core::result::Result<i32, Error> {
+    if (left<0 || right<0 || left >= value.length || right >= value.length) {
+        return core::result::Err(Error::Bounds);
     }
-    let next: Vec<T, N> = value;
-    let saved: T = next.items[left];
-    next.items[left] = next.items[right];
-    next.items[right] = saved;
-    return next;
+    let saved: T = value.items[left];
+    value.items[left] = value.items[right];
+    value.items[right] = saved;
+    return core::result::Ok(value.length);
 }
-
-pub fn reverse<T, const N: usize>(value: Vec<T, N>) -> Vec<T, N> {
-    let next: Vec<T, N> = value;
+pub fn reverse<T, const N: usize>(value: &Vec<T, N>) -> i32 {
     let low: i32 = 0;
-    let high: i32 = next.length - 1;
-    while (low < high) {
-        let saved: T = next.items[low];
-        next.items[low] = next.items[high];
-        next.items[high] = saved;
+    let high: i32 = value.length - 1;
+    while (low<high) {
+        let saved: T = value.items[low];
+        value.items[low] = value.items[high];
+        value.items[high] = saved;
         low += 1;
         high -= 1;
     }
-    return next;
+    return value.length;
 }
-
-// Keep at most new_len items. A longer or negative request changes nothing.
-pub fn truncate<T, const N: usize>(value: Vec<T, N>, new_len: i32) -> Vec<T, N> {
-    if (new_len < 0 || new_len >= value.length) {
-        return value;
+// Return the discarded count; no nested element is destroyed.
+pub fn truncate<T, const N: usize>(value: &Vec<T, N>, new_len: i32) -> core::result::Result<i32, Error> {
+    if (new_len<0 || new_len>value.length) {
+        return core::result::Err(Error::Bounds);
     }
-    let next: Vec<T, N> = value;
-    next.length = new_len;
-    return next;
+    let removed: i32 = value.length - new_len;
+    value.length = new_len;
+    return core::result::Ok(removed);
 }
-
-pub fn clear<T, const N: usize>(value: Vec<T, N>) -> Vec<T, N> {
-    let next: Vec<T, N> = value;
-    next.length = 0;
-    return next;
+pub fn clear<T, const N: usize>(value: &Vec<T, N>) -> i32 {
+    let removed: i32 = value.length;
+    value.length = 0;
+    return removed;
+}
+// Borrow the active prefix with its native signed stride. End views before
+// structural mutation or moving the owner.
+pub fn as_view<T, const N: usize>(value: &Vec<T, N>) -> core::slice::View<T> {
+    return core::slice::View {
+        values: value.items,
+        start: 0,
+        length: value.length
+    };
+}
+pub fn iter<T, const N: usize>(value: &Vec<T, N>) -> core::slice::Iter<T> {
+    return core::slice::Iter {
+        values: value.items,
+        front: 0,
+        back: value.length
+    };
+}
+pub fn contains<T, const N: usize>(value: &Vec<T, N>, item: T) -> bool
+where
+    T: core::cmp::Eq<T>
+{
+    let index: i32 = 0;
+    while (index<value.length) {
+        if (T::eq(value.items[index], item)) {
+            return true;
+        }
+        index += 1;
+    }
+    return false;
+}
+pub fn position<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::option::Option<i32>
+where
+    T: core::cmp::Eq<T>
+{
+    let index: i32 = 0;
+    while (index<value.length) {
+        if (T::eq(value.items[index], item)) {
+            return core::option::Some(index);
+        }
+        index += 1;
+    }
+    return core::option::None();
+}
+// Stable, allocation-free insertion sort, O(len^2), requiring lawful Ord.
+pub fn sort<T, const N: usize>(value: &Vec<T, N>) -> i32
+where
+    T: core::cmp::Ord<T>
+{
+    let index: i32 = 1;
+    while (index<value.length) {
+        let item: T = value.items[index];
+        let cursor: i32 = index;
+        while (cursor>0 && T::lt(item, value.items[cursor - 1])) {
+            value.items[cursor] = value.items[cursor - 1];
+            cursor -= 1;
+        }
+        value.items[cursor] = item;
+        index += 1;
+    }
+    return value.length;
+}
+pub fn is_sorted<T, const N: usize>(value: &Vec<T, N>) -> bool
+where
+    T: core::cmp::Ord<T>
+{
+    let index: i32 = 1;
+    while (index<value.length) {
+        if (T::lt(value.items[index], value.items[index - 1])) {
+            return false;
+        }
+        index += 1;
+    }
+    return true;
+}
+// Sorted input required for bounds and binary search.
+pub fn lower_bound<T, const N: usize>(value: &Vec<T, N>, item: T) -> i32
+where
+    T: core::cmp::Ord<T>
+{
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low<high) {
+        let middle: i32 = low +(high - low) / 2;
+        if (T::lt(value.items[middle], item)) {
+            low = middle + 1;
+        } else {
+            high = middle;
+        }
+    }
+    return low;
+}
+pub fn upper_bound<T, const N: usize>(value: &Vec<T, N>, item: T) -> i32
+where
+    T: core::cmp::Ord<T>
+{
+    let low: i32 = 0;
+    let high: i32 = value.length;
+    while (low<high) {
+        let middle: i32 = low +(high - low) / 2;
+        if (T::lt(item, value.items[middle])) {
+            high = middle;
+        } else {
+            low = middle + 1;
+        }
+    }
+    return low;
+}
+pub fn binary_search<T, const N: usize>(value: &Vec<T, N>, item: T) -> core::option::Option<i32>
+where
+    T: core::cmp::Ord<T>
+{
+    let index: i32 = lower_bound(value, item);
+    if (index<value.length && !T::lt(item, value.items[index])) {
+        return core::option::Some(index);
+    }
+    return core::option::None();
 }

@@ -1,0 +1,327 @@
+// Owned Linux nonblocking TCP transport for the portable TLS engine.
+// One active owner; copies cannot fork socket, buffers or record authority.
+module ext::tls_tcp;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::tls_connection;
+import ext::x509_path;
+import std::clock;
+import std::entropy;
+import std::linux;
+import std::poll;
+import std::socket;
+
+pub enum Error { Bounds, Allocation, NotTcp, Blocking, NotConnected, Closed, Deadline, CallLimit, Remaining, Clock(std::clock::Error), Io(core::io::Error), Poll(std::poll::Error), Entropy(std::entropy::Error), Engine(ext::tls_connection::Error) }
+pub struct HostBudget { remaining_calls: u64, last: core::option::Option<core::time::Instant> }
+pub fn host_budget(calls: u64) -> HostBudget { return HostBudget { remaining_calls: calls, last: core::option::None() }; }
+pub impl HostBudget {
+    pub fn borrow(&self) -> &HostBudget { return self; }
+    pub fn remaining(&self) -> u64 { return self.remaining_calls; }
+    // Reserve worst-case acquisition/cleanup calls before ownership changes.
+    // Unused prepaid credits are not refunded. Never replenish during a task.
+    pub fn reserve(&self, calls: u64) -> core::result::Result<i32, Error> {
+        if (calls > self.remaining_calls) { return core::result::Err(Error::CallLimit); }
+        self.remaining_calls -= calls; return core::result::Ok(0);
+    }
+    pub fn permit(&self) -> core::result::Result<i32, Error> { return self.reserve(1); }
+    pub fn now(&self) -> core::result::Result<core::time::Instant, Error> {
+        let paid: core::result::Result<i32, Error> = self.permit(); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+        let read: core::result::Result<core::time::Instant, std::clock::Error> = std::clock::monotonic_now();
+        if (read.is_err()) { return core::result::Err(Error::Clock(read.unwrap_err())); } let now: core::time::Instant = read.unwrap();
+        if (self.last.is_some() && now.compare(self.last.unwrap()) < 0) { return core::result::Err(Error::Clock(std::clock::Error::ClockReversed)); }
+        self.last = core::option::Some(now); return core::result::Ok(now);
+    }
+    pub fn check(&self, deadline: core::time::Deadline) -> core::result::Result<core::time::Instant, Error> {
+        if (deadline.instant.ticks.nanos >= 1000000000) { return core::result::Err(Error::Bounds); }
+        let read: core::result::Result<core::time::Instant, Error> = self.now(); if (read.is_err()) { return read; }
+        if (deadline.is_expired(read.unwrap())) { return core::result::Err(Error::Deadline); } return read;
+    }
+}
+pub struct Progress { sent: i32, received: i32, consumed: i32, pending_wire: i32, pending_input: i32, pending_plaintext: i32, established: bool, peer_closed: bool, local_closed: bool }
+pub struct CloseReport { primary: core::option::Option<Error>, close_error: core::option::Option<core::io::Error>, release_attempts: i32, cleanup_calls: u64 }
+pub struct Failure { cause: Error, progress: Progress, cleanup: core::option::Option<CloseReport> }
+fn empty_progress() -> Progress { return Progress { sent: 0, received: 0, consumed: 0, pending_wire: 0, pending_input: 0, pending_plaintext: 0, established: false, peer_closed: false, local_closed: false }; }
+fn failure(e: Error) -> Failure { return Failure { cause: e, progress: empty_progress(), cleanup: core::option::None() }; }
+fn valid(v: core::slice::View<u8>) -> bool { return v.start >= 0 && v.length >= 0 && v.start <= 2147483647 - v.length; }
+fn valid_deadline(deadline: core::time::Deadline) -> bool { return deadline.instant.ticks.nanos < 1000000000; }
+fn part(v: core::slice::View<u8>, at: i32, n: i32) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start + at, length: n }; }
+fn host(e: std::linux::Error) -> Error {
+    return match(e) { std::linux::Error::System(n) -> Error::Io(core::io::Error::Host(n)), _ -> Error::Io(core::io::Error::InvalidCount) };
+}
+// One checked getsockopt attempt. Neither metadata nor caller assertions about
+// Socket.kind are substituted for the kernel's type/protocol/domain values.
+fn socket_option(socket: &std::socket::Socket, option: i32, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Error> {
+    let before: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
+    let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
+    let output: [i32;1] = [0;1]; let length: [i32;1] = [4;1];
+    let args: [std::linux::Argument;5] = [std::linux::Argument::Word(socket.handle as i64),std::linux::Argument::Word(1),std::linux::Argument::Word(option as i64),std::linux::Argument::Address(core::mem::i32_array_data_ptr(output)),std::linux::Argument::Address(core::mem::i32_array_data_ptr(length))];
+    let result: core::result::Result<i64, std::linux::Error> = std::linux::call(55,core::slice::View { values: args, start: 0, length: 5 });
+    let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
+    if (result.is_err()) { return core::result::Err(host(result.unwrap_err())); }
+    if (result.unwrap() != 0 || length[0] != 4) { return core::result::Err(Error::Io(core::io::Error::InvalidCount)); }
+    if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(output[0]);
+}
+fn check_socket(socket: &std::socket::Socket, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Error> {
+    if (!socket.is_open()) { return core::result::Err(Error::Closed); }
+    if (socket.datagram || (socket.domain != 2 && socket.domain != 10)) { return core::result::Err(Error::NotTcp); }
+    let kind: core::result::Result<i32, Error> = socket_option(socket, 3, deadline, budget); if (kind.is_err()) { return kind; }
+    if (kind.unwrap() != 1) { return core::result::Err(Error::NotTcp); }
+    let protocol: core::result::Result<i32, Error> = socket_option(socket, 38, deadline, budget); if (protocol.is_err()) { return protocol; }
+    if (protocol.unwrap() != 6) { return core::result::Err(Error::NotTcp); }
+    let domain: core::result::Result<i32, Error> = socket_option(socket, 39, deadline, budget); if (domain.is_err()) { return domain; }
+    if (domain.unwrap() != socket.domain) { return core::result::Err(Error::NotTcp); }
+    let before: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
+    let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { return paid; }
+    let nonblocking: core::result::Result<bool, core::io::Error> = socket.is_nonblocking(); let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
+    if (nonblocking.is_err()) { return core::result::Err(Error::Io(nonblocking.unwrap_err())); } if (!nonblocking.unwrap()) { return core::result::Err(Error::Blocking); } if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+    let checked: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let charge: core::result::Result<i32, Error> = budget.permit(); if (charge.is_err()) { return charge; }
+    let connected: core::result::Result<core::net::SocketAddr, core::io::Error> = socket.peer_addr(); let end: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
+    if (connected.is_err()) { return core::result::Err(Error::Io(connected.unwrap_err())); } if (end.is_err()) { return core::result::Err(end.unwrap_err()); } return core::result::Ok(0);
+}
+// Exactly 64 fresh OS bytes; no seeded generator, fallback or caller entropy.
+fn fresh_entropy(bytes: [u8], deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Error> {
+    let filled: i32 = 0; let issue: core::option::Option<Error> = core::option::None();
+    while (filled < 64) {
+        let checked: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked.is_err()) { issue = core::option::Some(checked.unwrap_err()); break; }
+        let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { issue = core::option::Some(paid.unwrap_err()); break; }
+        let single: std::entropy::Budget = std::entropy::budget(1); let got: core::result::Result<i32, std::entropy::Error> = std::entropy::read_some(single.borrow(), bytes, filled, 64 - filled);
+        let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
+        if (got.is_ok()) { filled += got.unwrap(); }
+        if (after.is_err()) { issue = core::option::Some(after.unwrap_err()); break; }
+        if (got.is_err()) { let e: std::entropy::Error = got.unwrap_err(); let interrupted: bool = match(e) { std::entropy::Error::Host(n) -> n == 4, _ -> false };
+            if (!interrupted) { issue = core::option::Some(Error::Entropy(e)); break; }
+        }
+    }
+    if (issue.is_some()) { let i: i32 = 0; while (i < 64) { bytes[i] = 0; i += 1; } return core::result::Err(issue.unwrap()); } return core::result::Ok(64);
+}
+// Seven packed byte allocations (six engine regions plus retained raw input)
+// and one typed path workspace. None grows after attachment.
+struct Storage { bytes: [alloc::vec::Vec<i32>;7], path: alloc::vec::Vec<ext::x509_path::Slot>, sizes: ext::tls_connection::BufferSizes }
+fn storage(sizes: ext::tls_connection::BufferSizes) -> Storage { return Storage { bytes: [alloc::vec::new<i32>();7], path: alloc::vec::new<ext::x509_path::Slot>(), sizes: sizes }; }
+impl Storage {
+    fn borrow(&self) -> &Storage { return self; }
+    fn length(&self, i: i32) -> i32 { if (i == 0) { return self.sizes.record; } if (i == 1) { return self.sizes.decrypt; } if (i == 2) { return self.sizes.handshake; } if (i == 3) { return self.sizes.hello; } if (i == 4) { return self.sizes.pending_wire; } if (i == 5) { return self.sizes.application; } return 1024; }
+    fn allocate(&self, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Error> {
+        let i: i32 = 0; while (i < 7) { let checked: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); } let n: i32 = self.length(i); if (n <= 0 || n > 2147483644) { return core::result::Err(Error::Bounds); }
+            let made: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = alloc::vec::with_capacity((n + 3) / 4); if (made.is_err()) { return core::result::Err(Error::Allocation); } self.bytes[i] = made.unwrap();
+            let filled: core::result::Result<i32, alloc::vec::Error> = self.bytes[i].try_resize((n + 3) / 4, 0); if (filled.is_err()) { return core::result::Err(Error::Allocation); } i += 1;
+        }
+        let checked: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let allocated: core::result::Result<alloc::vec::Vec<ext::x509_path::Slot>, alloc::vec::Error> = alloc::vec::with_capacity(self.sizes.path); if (allocated.is_err()) { return core::result::Err(Error::Allocation); } self.path = allocated.unwrap();
+        let initialized: core::result::Result<i32, alloc::vec::Error> = self.path.try_resize(self.sizes.path, ext::x509_path::empty_slot()); if (initialized.is_err()) { return core::result::Err(Error::Allocation); } return core::result::Ok(0);
+    }
+    fn view(&self, i: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts(core::mem::i32_slice_data_ptr(self.bytes[i].as_slice()), self.length(i)), start: 0, length: self.length(i) }; }
+    fn buffers(&self) -> ext::tls_connection::Buffers { return ext::tls_connection::Buffers { record: self.view(0), decrypt: self.view(1), handshake: self.view(2), hello: self.view(3), pending_wire: self.view(4), application: self.view(5), path: self.path.as_view() }; }
+    fn release(&self) -> i32 { let n: i32 = 0; let i: i32 = 0; while (i < 7) { if (self.bytes[i].capacity() > 0) { n += 1; } self.bytes[i].destroy(); i += 1; } if (self.path.capacity() > 0) { n += 1; } self.path.destroy(); return n; }
+}
+pub struct Connection {
+    socket: std::socket::Socket, poll: std::poll::PollSet, storage: Storage,
+    engine: ext::tls_connection::Engine, active: bool,
+    handshake_deadline: core::time::Deadline, handshake_success: bool,
+    last: core::option::Option<core::time::Instant>, raw_at: i32, raw_length: i32,
+    pending_eof: bool, pending_error: core::option::Option<core::io::Error>,
+    write_shutdown: bool, primary: core::option::Option<Error>, report: core::option::Option<CloseReport>
+}
+fn acquired_failure(e: Error, owned: &Storage, poll: core::option::Option<std::poll::PollSet>, engine: core::option::Option<ext::tls_connection::Engine>) -> Failure {
+    if (engine.is_some()) { engine.unwrap().abort(); }
+    let released: i32 = owned.release(); if (poll.is_some()) { let p: std::poll::PollSet = poll.unwrap(); if (p.scratch.capacity() > 0) { released += 1; } if (p.results.capacity() > 0) { released += 1; } p.destroy(); }
+    return Failure { cause: e, progress: empty_progress(), cleanup: core::option::Some(CloseReport { primary: core::option::Some(e), close_error: core::option::None(), release_attempts: released, cleanup_calls: released as u64 }) };
+}
+fn attach(socket: &std::socket::Socket, client: core::option::Option<ext::tls_connection::ClientConfig>, server: core::option::Option<ext::tls_connection::ServerConfig>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure> {
+    let limits: ext::tls_connection::Limits = ext::tls_connection::default_limits(); if (client.is_some()) { limits = client.unwrap().limits; } else { limits = server.unwrap().limits; }
+    let sizes: core::result::Result<ext::tls_connection::BufferSizes, ext::tls_connection::Error> = ext::tls_connection::required_buffers(limits); if (sizes.is_err()) { return core::result::Err(failure(Error::Engine(sizes.unwrap_err()))); }
+    let checked: core::result::Result<i32, Error> = check_socket(socket, deadline, budget); if (checked.is_err()) { return core::result::Err(failure(checked.unwrap_err())); }
+    // Ten maximum allocations, ten releases and one invalidating socket close.
+    // The reserved cleanup portion remains authorized after expiry/exhaustion.
+    let reserved: core::result::Result<i32, Error> = budget.reserve(21); if (reserved.is_err()) { return core::result::Err(failure(reserved.unwrap_err())); }
+    let owned: Storage = storage(sizes.unwrap()); let allocated: core::result::Result<i32, Error> = owned.allocate(deadline, budget); if (allocated.is_err()) { return core::result::Err(acquired_failure(allocated.unwrap_err(), owned.borrow(), core::option::None(), core::option::None())); }
+    // Fixed one-request PollSet acquisition is explicit so both allocation
+    // attempts have separate deadline checks and rollback release accounting.
+    let before_poll: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (before_poll.is_err()) { return core::result::Err(acquired_failure(before_poll.unwrap_err(), owned.borrow(), core::option::None(), core::option::None())); }
+    let packed: core::result::Result<alloc::vec::Vec<i32>, alloc::vec::Error> = alloc::vec::with_capacity(2); if (packed.is_err()) { return core::result::Err(acquired_failure(Error::Poll(std::poll::Error::AllocationFailed), owned.borrow(), core::option::None(), core::option::None())); }
+    let poll: std::poll::PollSet = std::poll::PollSet { scratch: packed.unwrap(), results: alloc::vec::new<std::poll::Readiness>(), published: 0 };
+    let initialized: core::result::Result<i32, alloc::vec::Error> = poll.scratch.try_resize(2, 0); if (initialized.is_err()) { return core::result::Err(acquired_failure(Error::Poll(std::poll::Error::AllocationFailed), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    let between_poll: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (between_poll.is_err()) { return core::result::Err(acquired_failure(between_poll.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    let results: core::result::Result<alloc::vec::Vec<std::poll::Readiness>, alloc::vec::Error> = alloc::vec::with_capacity(1); if (results.is_err()) { return core::result::Err(acquired_failure(Error::Poll(std::poll::Error::AllocationFailed), owned.borrow(), core::option::Some(poll), core::option::None())); } poll.results = results.unwrap();
+    let filled: core::result::Result<i32, alloc::vec::Error> = poll.results.try_resize(1, std::poll::Readiness { bits: 0 }); if (filled.is_err()) { return core::result::Err(acquired_failure(Error::Poll(std::poll::Error::AllocationFailed), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    let checked_after_allocation: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked_after_allocation.is_err()) { return core::result::Err(acquired_failure(checked_after_allocation.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    let entropy: [u8;64] = [0;64]; let random: core::result::Result<i32, Error> = fresh_entropy(entropy, deadline, budget); if (random.is_err()) { return core::result::Err(acquired_failure(random.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    let random_view: core::slice::View<u8> = core::slice::View { values: entropy, start: 0, length: 64 };
+    let made: core::result::Result<ext::tls_connection::Engine, ext::tls_connection::Error> = core::result::Err(ext::tls_connection::Error::InvalidConfig);
+    if (client.is_some()) { made = ext::tls_connection::client(client.unwrap(), owned.buffers(), random_view); } else { made = ext::tls_connection::server(server.unwrap(), owned.buffers(), random_view); }
+    let i: i32 = 0; while (i < 64) { entropy[i] = 0; i += 1; }
+    let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
+    if (made.is_err()) { return core::result::Err(acquired_failure(Error::Engine(made.unwrap_err()), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    if (after.is_err()) { return core::result::Err(acquired_failure(after.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::Some(made.unwrap()))); }
+    let taken: core::option::Option<i32> = socket.take_handle(); if (taken.is_none()) { return core::result::Err(acquired_failure(Error::Closed, owned.borrow(), core::option::Some(poll), core::option::Some(made.unwrap()))); }
+    return core::result::Ok(Connection { socket: std::socket::Socket { handle: taken.unwrap(), domain: socket.domain, datagram: false }, poll: poll, storage: owned, engine: made.unwrap(), active: true, handshake_deadline: deadline, handshake_success: false, last: budget.last, raw_at: 0, raw_length: 0, pending_eof: false, pending_error: core::option::None(), write_shutdown: false, primary: core::option::None(), report: core::option::None() });
+}
+pub fn attach_client(socket: &std::socket::Socket, config: ext::tls_connection::ClientConfig, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure> { return attach(socket, core::option::Some(config), core::option::None(), deadline, budget); }
+pub fn attach_server(socket: &std::socket::Socket, config: ext::tls_connection::ServerConfig, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure> { return attach(socket, core::option::None(), core::option::Some(config), deadline, budget); }
+fn backpressure(e: ext::tls_connection::Error) -> bool { return match(e) { ext::tls_connection::Error::WantInput -> true, ext::tls_connection::Error::WantOutput -> true, ext::tls_connection::Error::WantRead -> true, _ -> false }; }
+fn transient(e: core::io::Error) -> bool { return match(e) { core::io::Error::Interrupted -> true, core::io::Error::WouldBlock -> true, _ -> false }; }
+fn timeout_ms(span: core::time::Duration) -> i32 { if (span.seconds > 2147483) { return 2147483647; } let n: u64 = span.seconds * 1000 + ((span.nanos as u64) + 999999) / 1000000; if (n > 2147483647) { return 2147483647; } return n as i32; }
+pub impl Connection {
+    pub fn borrow(&self) -> &Connection { return self; }
+    pub fn is_open(&self) -> bool { return self.active && self.socket.is_open(); }
+    pub fn established(&self) -> bool { return self.is_open() && self.handshake_success && self.engine.failure().is_none(); }
+    pub fn close_requested(&self) -> bool { return self.active && self.engine.close_requested(); }
+    pub fn progress(&self) -> Progress {
+        let p: Progress = empty_progress(); p.pending_input = self.raw_length - self.raw_at; p.established = self.established(); p.local_closed = self.write_shutdown;
+        if (self.active) { let e: ext::tls_connection::Engine = self.engine; p.pending_wire = e.outgoing().length; p.pending_plaintext = e.pending_plaintext(); p.peer_closed = e.peer_closed(); } return p;
+    }
+    fn deadline(&self, operation: core::time::Deadline) -> core::time::Deadline { if (!self.handshake_success && self.handshake_deadline.instant.compare(operation.instant) < 0) { return self.handshake_deadline; } return operation; }
+    fn checkpoint(&self, operation: core::time::Deadline, budget: &HostBudget) -> core::result::Result<core::time::Instant, Error> {
+        if (operation.instant.ticks.nanos >= 1000000000) { return core::result::Err(Error::Bounds); }
+        let read: core::result::Result<core::time::Instant, Error> = budget.now();
+        while (read.is_err()) { let interrupted: bool = match(read.unwrap_err()) { Error::Clock(inner) -> match(inner) { std::clock::Error::Host(n) -> n == 4, _ -> false }, _ -> false }; if (!interrupted) { return read; } read = budget.now(); }
+        let now: core::time::Instant = read.unwrap();
+        if (self.last.is_some() && now.compare(self.last.unwrap()) < 0) { return core::result::Err(Error::Clock(std::clock::Error::ClockReversed)); } self.last = core::option::Some(now);
+        if (self.deadline(operation).is_expired(now)) { return core::result::Err(Error::Deadline); }
+        // Never let an internal Established phase renew an expired handshake.
+        // Only a successful post-progress clock observation commits this flag.
+        if (self.active && self.engine.established()) { self.handshake_success = true; } return core::result::Ok(now);
+    }
+    pub fn destroy(&self) -> CloseReport {
+        if (self.report.is_some()) { return self.report.unwrap(); }
+        if (self.active) { self.engine.abort(); self.active = false; }
+        let had_socket: bool = self.socket.is_open(); let closed: core::result::Result<i32, core::io::Error> = self.socket.close(); let close_error: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { close_error = core::option::Some(closed.unwrap_err()); }
+        let released: i32 = self.storage.release(); if (self.poll.scratch.capacity() > 0) { released += 1; } if (self.poll.results.capacity() > 0) { released += 1; } self.poll.destroy();
+        self.raw_at = 0; self.raw_length = 0; self.pending_eof = false; self.pending_error = core::option::None();
+        let result: CloseReport = CloseReport { primary: self.primary, close_error: close_error, release_attempts: released, cleanup_calls: (released as u64) + (had_socket as u64) }; self.report = core::option::Some(result); return result;
+    }
+    pub fn abort(&self, cause: Error) -> CloseReport { if (self.report.is_some()) { return self.report.unwrap(); } if (self.primary.is_none()) { self.primary = core::option::Some(cause); } return self.destroy(); }
+    fn failed(&self, cause: Error, p: Progress, terminal: bool) -> Failure {
+        let snapshot: Progress = self.progress(); snapshot.sent = p.sent; snapshot.received = p.received; snapshot.consumed = p.consumed;
+        let cleanup: core::option::Option<CloseReport> = core::option::None(); if (terminal) { cleanup = core::option::Some(self.abort(cause)); }
+        return Failure { cause: cause, progress: snapshot, cleanup: cleanup };
+    }
+    fn stopped(&self, cause: Error, p: Progress) -> Failure { let resumable: bool = match(cause) { Error::Deadline -> true, Error::CallLimit -> true, _ -> false }; return self.failed(cause, p, !self.handshake_success || !resumable); }
+    fn fatal(&self, cause: Error, p: Progress, deadline: core::time::Deadline, budget: &HostBudget) -> Failure {
+        // Failed-engine outgoing is guaranteed to contain ONLY a new fatal
+        // alert. Never substitute an old pending sealed application record.
+        if (self.active && self.engine.fatal_alert_pending()) {
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget);
+            if (checked.is_ok()) { let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_ok()) {
+                let sent: core::result::Result<i32, core::io::Error> = self.socket.send(self.engine.outgoing());
+                if (sent.is_ok() && sent.unwrap() > 0) { p.sent += sent.unwrap(); let acknowledged: core::result::Result<i32, ext::tls_connection::Error> = self.engine.acknowledge_written(sent.unwrap()); }
+                let observed: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget);
+            } }
+        } return self.failed(cause, p, true);
+    }
+    pub fn try_finish(&self) -> core::result::Result<CloseReport, Error> {
+        if (self.report.is_some()) { return core::result::Ok(self.report.unwrap()); }
+        let p: Progress = self.progress(); if (!p.established || !p.peer_closed || !p.local_closed || p.pending_wire != 0 || p.pending_input != 0 || p.pending_plaintext != 0 || self.pending_eof || self.pending_error.is_some()) { return core::result::Err(Error::Remaining); }
+        return core::result::Ok(self.destroy());
+    }
+    pub fn read_plaintext(&self, output: core::slice::View<u8>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<ext::tls_connection::Read, Failure> {
+        if (!valid(output) || !valid_deadline(deadline)) { return core::result::Err(failure(Error::Bounds)); } if (!self.is_open()) { return core::result::Err(failure(Error::Closed)); }
+        let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), self.progress())); }
+        if (!self.handshake_success) { return core::result::Err(self.failed(Error::Engine(ext::tls_connection::Error::NotEstablished), self.progress(), false)); }
+        // The final clock check precedes publication. No later clock failure
+        // can turn an already-mutated destination into an atomic timeout.
+        let got: core::result::Result<ext::tls_connection::Read, ext::tls_connection::Error> = self.engine.read_plaintext(output); if (got.is_err()) { if (self.engine.failure().is_some()) { return core::result::Err(self.fatal(Error::Engine(got.unwrap_err()), self.progress(), deadline, budget)); } return core::result::Err(self.failed(Error::Engine(got.unwrap_err()), self.progress(), false)); } return core::result::Ok(got.unwrap());
+    }
+    pub fn queue_plaintext(&self, input: core::slice::View<u8>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Failure> {
+        if (!valid(input) || !valid_deadline(deadline)) { return core::result::Err(failure(Error::Bounds)); } if (!self.is_open()) { return core::result::Err(failure(Error::Closed)); }
+        let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), self.progress())); }
+        if (!self.handshake_success) { return core::result::Err(self.failed(Error::Engine(ext::tls_connection::Error::NotEstablished), self.progress(), false)); }
+        let queued: core::result::Result<i32, ext::tls_connection::Error> = self.engine.queue_plaintext(input); if (queued.is_err()) { if (self.engine.failure().is_some()) { return core::result::Err(self.fatal(Error::Engine(queued.unwrap_err()), self.progress(), deadline, budget)); } return core::result::Err(self.failed(Error::Engine(queued.unwrap_err()), self.progress(), false)); } return core::result::Ok(queued.unwrap());
+    }
+    pub fn begin_close(&self) -> core::result::Result<i32, Error> { if (!self.is_open()) { return core::result::Err(Error::Closed); } let got: core::result::Result<i32, ext::tls_connection::Error> = self.engine.begin_close(); if (got.is_err()) { return core::result::Err(Error::Engine(got.unwrap_err())); } return core::result::Ok(got.unwrap()); }
+    pub fn request_key_update(&self, request_peer: bool) -> core::result::Result<i32, Error> { if (!self.established()) { return core::result::Err(Error::Closed); } let got: core::result::Result<i32, ext::tls_connection::Error> = self.engine.request_key_update(request_peer); if (got.is_err()) { return core::result::Err(Error::Engine(got.unwrap_err())); } return core::result::Ok(got.unwrap()); }
+    pub fn negotiated(&self) -> core::option::Option<ext::tls_connection::Negotiated> { if (!self.established()) { return core::option::None(); } return self.engine.negotiated(); }
+    pub fn export(&self, label: core::slice::View<u8>, context: core::slice::View<u8>, output: core::slice::View<u8>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Failure> {
+        if (!valid(label) || !valid(context) || !valid(output) || !valid_deadline(deadline)) { return core::result::Err(failure(Error::Bounds)); } if (!self.is_open()) { return core::result::Err(failure(Error::Closed)); }
+        let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), self.progress())); }
+        if (!self.handshake_success) { return core::result::Err(self.failed(Error::Engine(ext::tls_connection::Error::NotEstablished), self.progress(), false)); }
+        let got: core::result::Result<i32, ext::tls_connection::Error> = self.engine.export(label, context, output); if (got.is_err()) { if (self.engine.failure().is_some()) { return core::result::Err(self.fatal(Error::Engine(got.unwrap_err()), self.progress(), deadline, budget)); } return core::result::Err(self.failed(Error::Engine(got.unwrap_err()), self.progress(), false)); } return core::result::Ok(got.unwrap());
+    }
+    fn snapshot(&self, p: &Progress) -> Progress { let result: Progress = self.progress(); result.sent = p.sent; result.received = p.received; result.consumed = p.consumed; return result; }
+    fn process_pending(&self, deadline: core::time::Deadline, budget: &HostBudget, p: &Progress) -> core::result::Result<bool, Failure> {
+        if (self.pending_error.is_some()) { return core::result::Err(self.failed(Error::Io(self.pending_error.unwrap()), self.snapshot(p), true)); }
+        if (self.raw_at < self.raw_length) {
+            let pending: i32 = self.raw_length - self.raw_at; let feed: core::result::Result<i32, ext::tls_connection::FeedFailure> = self.engine.feed_wire(part(self.storage.view(6), self.raw_at, pending));
+            let consumed: i32 = 0; if (feed.is_ok()) { consumed = feed.unwrap(); } else { consumed = feed.unwrap_err().consumed; }
+            if (consumed < 0 || consumed > pending) { return core::result::Err(self.failed(Error::Io(core::io::Error::InvalidCount), self.snapshot(p), true)); }
+            self.raw_at += consumed; p.consumed += consumed; if (self.raw_at == self.raw_length) { self.raw_at = 0; self.raw_length = 0; }
+            if (feed.is_err() && !backpressure(feed.unwrap_err().cause)) { return core::result::Err(self.fatal(Error::Engine(feed.unwrap_err().cause), self.snapshot(p), deadline, budget)); }
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), self.snapshot(p))); }
+            if (feed.is_err() || self.raw_at < self.raw_length) { return core::result::Ok(false); }
+        }
+        if (self.pending_eof) {
+            self.pending_eof = false; let ended: core::result::Result<i32, ext::tls_connection::Error> = self.engine.input_eof();
+            if (ended.is_err()) { return core::result::Err(self.fatal(Error::Engine(ended.unwrap_err()), self.snapshot(p), deadline, budget)); }
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), self.snapshot(p))); }
+        } return core::result::Ok(true);
+    }
+    // One ordinary send/receive/poll/write-shutdown maximum per turn. A fatal
+    // engine error may add one best-effort alert send before terminal cleanup.
+    pub fn step(&self, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Progress, Failure> {
+        if (!valid_deadline(deadline)) { return core::result::Err(failure(Error::Bounds)); }
+        if (!self.is_open()) { return core::result::Err(Failure { cause: core::option::unwrap_or(self.primary, Error::Closed), progress: self.progress(), cleanup: self.report }); }
+        let p: Progress = self.progress(); let before: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (before.is_err()) { return core::result::Err(self.stopped(before.unwrap_err(), p)); }
+        let pending: core::result::Result<bool, Failure> = self.process_pending(deadline, budget, p.borrow()); if (pending.is_err()) { return core::result::Err(pending.unwrap_err()); }
+        let pumped: core::result::Result<bool, ext::tls_connection::Error> = self.engine.pump(); if (pumped.is_err() && !backpressure(pumped.unwrap_err())) { return core::result::Err(self.fatal(Error::Engine(pumped.unwrap_err()), p, deadline, budget)); }
+        let after_pump: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (after_pump.is_err()) { return core::result::Err(self.stopped(after_pump.unwrap_err(), p)); }
+        let output: core::slice::View<u8> = self.engine.outgoing(); let write_wait: bool = false; let read_wait: bool = false;
+        if (output.length > 0) {
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), p)); }
+            let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { return core::result::Err(self.stopped(paid.unwrap_err(), p)); }
+            let sent: core::result::Result<i32, core::io::Error> = self.socket.send(output);
+            let ack_error: core::option::Option<ext::tls_connection::Error> = core::option::None();
+            // Confirm physical prefix progress before any fallible post-clock
+            // observation. A late completion never replays or reseals it.
+            if (sent.is_ok() && sent.unwrap() > 0) {
+                p.sent += sent.unwrap(); let ack: core::result::Result<i32, ext::tls_connection::Error> = self.engine.acknowledge_written(sent.unwrap());
+                if (ack.is_err()) { ack_error = core::option::Some(ack.unwrap_err()); }
+            } else { if (sent.is_ok()) { self.pending_error = core::option::Some(core::io::Error::WriteZero); } else { if (!transient(sent.unwrap_err())) { self.pending_error = core::option::Some(sent.unwrap_err()); } else { write_wait = true; } } }
+            let after: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget);
+            if (ack_error.is_some()) { return core::result::Err(self.failed(Error::Engine(ack_error.unwrap()), p, true)); }
+            if (self.pending_error.is_some()) { return core::result::Err(self.failed(Error::Io(self.pending_error.unwrap()), p, true)); }
+            if (after.is_err()) { return core::result::Err(self.stopped(after.unwrap_err(), p)); }
+        }
+        // Only read when the fixed raw slot is free and the engine can release
+        // its held application record. Output progress still happens above.
+        if (pending.unwrap() && self.raw_length == 0 && self.engine.pending_plaintext() == 0 && !self.engine.peer_closed()) {
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), p)); }
+            let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { return core::result::Err(self.stopped(paid.unwrap_err(), p)); }
+            let got: core::result::Result<i32, core::io::Error> = self.socket.receive(self.storage.view(6));
+            // Store the native event before checking time. Late bytes/EOF are
+            // not fed into TLS; an Established caller can resume them exactly.
+            if (got.is_ok()) { if (got.unwrap() > 0) { self.raw_length = got.unwrap(); self.raw_at = 0; p.received += got.unwrap(); } else { self.pending_eof = true; } }
+            else { if (!transient(got.unwrap_err())) { self.pending_error = core::option::Some(got.unwrap_err()); } else { read_wait = true; } }
+            let after: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget);
+            if (self.pending_error.is_some()) { return core::result::Err(self.failed(Error::Io(self.pending_error.unwrap()), p, true)); }
+            if (after.is_err()) { return core::result::Err(self.stopped(after.unwrap_err(), p)); }
+            let handled: core::result::Result<bool, Failure> = self.process_pending(deadline, budget, p.borrow()); if (handled.is_err()) { return core::result::Err(handled.unwrap_err()); }
+        }
+        if (self.engine.local_closed() && !self.write_shutdown) {
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), p)); }
+            let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { return core::result::Err(self.stopped(paid.unwrap_err(), p)); }
+            let ended: core::result::Result<i32, core::io::Error> = self.socket.shutdown(std::socket::Shutdown::Write); if (ended.is_ok()) { self.write_shutdown = true; }
+            let after: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget);
+            if (ended.is_err()) { return core::result::Err(self.failed(Error::Io(ended.unwrap_err()), p, true)); } if (after.is_err()) { return core::result::Err(self.stopped(after.unwrap_err(), p)); }
+        }
+        if (p.sent == 0 && p.received == 0 && p.consumed == 0 && self.engine.pending_plaintext() == 0 && (read_wait || write_wait)) {
+            let checked: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget); if (checked.is_err()) { return core::result::Err(self.stopped(checked.unwrap_err(), p)); }
+            let events: u32 = std::poll::READABLE; if (self.engine.outgoing().length > 0) { events |= std::poll::WRITABLE; }
+            let request: [std::poll::Request;1] = [std::poll::Request { handle: self.socket.handle, events: events }]; let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { return core::result::Err(self.stopped(paid.unwrap_err(), p)); }
+            let waited: core::result::Result<i32, std::poll::Error> = self.poll.poll_ms(core::slice::View { values: request, start: 0, length: 1 }, timeout_ms(self.deadline(deadline).remaining(checked.unwrap())));
+            let after: core::result::Result<core::time::Instant, Error> = self.checkpoint(deadline, budget);
+            if (waited.is_err()) { let e: std::poll::Error = waited.unwrap_err(); let interrupted: bool = match(e) { std::poll::Error::Io(inner) -> transient(inner), _ -> false }; if (!interrupted) { return core::result::Err(self.failed(Error::Poll(e), p, true)); } }
+            if (after.is_err()) { return core::result::Err(self.stopped(after.unwrap_err(), p)); }
+            if (waited.is_ok() && self.poll.readiness(0).unwrap().invalid()) { return core::result::Err(self.failed(Error::Io(core::io::Error::Host(9)), p, true)); }
+            // HUP/ERR/read_closed are advisory; the next single receive/send
+            // observes EOF or the actual error rather than inventing TLS EOF.
+        } return core::result::Ok(self.snapshot(p.borrow()));
+    }
+}
+pub impl Progress { pub fn borrow(&self) -> &Progress { return self; } }

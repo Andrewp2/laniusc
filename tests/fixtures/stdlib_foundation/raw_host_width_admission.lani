@@ -1,0 +1,9 @@
+// ENOMEM is forced by the test before mmap accesses/allocates this huge size.
+module app::main;
+import alloc::allocator;
+fn main() -> i32 {
+    let size:usize=4294971392;
+    let storage:ptr=alloc::allocator::alloc(size,8);
+    if(storage!=0) { alloc::allocator::dealloc(storage,size,8); return 1; }
+    return 0;
+}

@@ -1,0 +1,66 @@
+// One external String owner and one heap allocation. Stored aliases remain
+// borrowed; iteration, mapping and discarding create no new release authority.
+module app::main;
+import alloc::binary_heap;
+import alloc::string;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+
+struct Alias { calls: i32 }
+impl Alias { fn borrow(&self) -> &Alias { return self; } }
+pub impl core::iter::Mapper<alloc::string::String, alloc::string::String> for Alias {
+    pub fn apply(&self, value: alloc::string::String) -> alloc::string::String {
+        self.calls += 1; return value;
+    }
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    let item: core::option::Option<T> = source.next(); return item;
+}
+fn main() -> i32 {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let heap: alloc::binary_heap::BinaryHeap<alloc::string::String> =
+        core::result::unwrap(alloc::binary_heap::with_capacity<alloc::string::String>(3, alloc::binary_heap::Order::Min));
+    let index: i32 = 0;
+    while (index < 3) {
+        let added: core::result::Result<i32, alloc::binary_heap::Error> = heap.try_push(owner);
+        assert(core::result::is_ok(added)); index += 1;
+    }
+    let source: core::slice::Iter<alloc::string::String> = heap.iter();
+    let fork: core::slice::Iter<alloc::string::String> = source;
+    let selected: core::iter::Take<core::slice::Iter<alloc::string::String>, alloc::string::String> =
+        core::iter::take<core::slice::Iter<alloc::string::String>, alloc::string::String>(source.borrow(), 1);
+    let picked: core::option::Option<alloc::string::String> =
+        pull<core::iter::Take<core::slice::Iter<alloc::string::String>, alloc::string::String>, alloc::string::String>(selected.borrow());
+    let borrowed: alloc::string::String = core::option::unwrap(picked);
+    let selected_end: core::option::Option<alloc::string::String> = selected.next();
+    assert(core::option::is_none(selected_end) && source.remaining() == 2);
+
+    let mapper: Alias = Alias { calls: 0 };
+    let mapped: core::iter::Map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String> =
+        core::iter::map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String>(source.borrow(), mapper.borrow());
+    assert(mapper.calls == 0 && source.remaining() == 2);
+    let mapped_item: core::option::Option<alloc::string::String> = mapped.next();
+    let alias: alloc::string::String = core::option::unwrap(mapped_item);
+    let skipped: core::iter::Advance =
+        core::iter::advance_up_to<core::iter::Map<core::slice::Iter<alloc::string::String>, Alias, alloc::string::String, alloc::string::String>, alloc::string::String>(mapped.borrow(), 8);
+    let repeated: core::option::Option<alloc::string::String> = mapped.next();
+    assert(skipped.advanced == 1 && skipped.exhausted && core::option::is_none(repeated));
+    assert(mapper.calls == 2 && source.remaining() == 0 && fork.remaining() == 3 && heap.len() == 3);
+    let back: core::option::Option<alloc::string::String> = fork.next_back();
+    assert(core::option::unwrap(back).byte_len() == 4 && fork.remaining() == 2);
+    assert(owner.byte_len() == 4 && borrowed.byte_len() == 4 && alias.byte_len() == 4);
+
+    // End cursor use before releasing heap storage. The separately owned
+    // String continues to back all yielded descriptors until its sole release.
+    heap.destroy();
+    let text: core::text::Text = alias.as_text();
+    let first: core::option::Option<u8> = text.byte_at(0);
+    let last: core::option::Option<u8> = text.byte_at(3);
+    assert(core::option::unwrap(first) == 97 && core::option::unwrap(last) == 100 && owner.byte_len() == 4);
+    owner.destroy();
+    return 0;
+}

@@ -1,0 +1,153 @@
+// Select one whitespace column from bounded UTF-8 stdin, then checked-sum it.
+// Admitted x86_64 Linux ELF through the GPU compiler; see docs/stdlib-column-sum.md.
+module app::main;
+import alloc::io;
+import core::decimal;
+import core::i64;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::u64;
+import std::args;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 1048576;
+enum Error { MissingColumn(u64), Integer(core::decimal::ParseError), Arithmetic }
+struct Accumulator { count: u64, sum: i64 }
+struct DataLine {}
+struct Selection { column: u64 }
+struct Total {}
+impl DataLine { fn borrow(&self) -> &DataLine { return self; } }
+impl Selection { fn borrow(&self) -> &Selection { return self; } }
+impl Total { fn borrow(&self) -> &Total { return self; } }
+
+pub impl core::iter::Mapper<core::text::Text,bool> for DataLine {
+    pub fn apply(&self, value: core::text::Text) -> bool {
+        let trimmed: core::text::Text = value.trim_ascii();
+        if (trimmed.is_empty()) { return false; }
+        let first: core::option::Option<u8> = trimmed.byte_at(0);
+        return first.unwrap() != 35;
+    }
+}
+
+pub impl core::iter::Mapper<core::text::Text,core::result::Result<i64,Error>> for Selection {
+    pub fn apply(&self, value: core::text::Text) -> core::result::Result<i64,Error> {
+        let words: core::text::SplitAsciiWhitespace = value.split_ascii_whitespace();
+        let index: u64 = 1;
+        while (true) {
+            let next: core::option::Option<core::text::Text> = words.next();
+            if (next.is_none()) { return core::result::Err(Error::MissingColumn(self.column)); }
+            let word: core::text::Text = next.unwrap();
+            if (index == self.column) {
+                let parsed: core::result::Result<i64,core::decimal::ParseError> = word.parse_i64();
+                if (parsed.is_err()) { return core::result::Err(Error::Integer(parsed.unwrap_err())); }
+                return core::result::Ok(parsed.unwrap());
+            }
+            // At most MAX_INPUT nonempty fields are physically present.
+            index += 1;
+        }
+        return core::result::Err(Error::MissingColumn(self.column));
+    }
+}
+
+pub impl core::iter::TryFolder<Accumulator,core::result::Result<i64,Error>,Error> for Total {
+    pub fn try_apply(&self, accumulator: Accumulator, value: core::result::Result<i64,Error>)
+        -> core::result::Result<Accumulator,Error> {
+        if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+        let count: core::option::Option<u64> = core::u64::checked_add(accumulator.count,1);
+        let sum: core::option::Option<i64> = core::i64::checked_add(accumulator.sum,value.unwrap());
+        if (count.is_none() || sum.is_none()) { return core::result::Err(Error::Arithmetic); }
+        let next: Accumulator = Accumulator { count: count.unwrap(), sum: sum.unwrap() };
+        return core::result::Ok(next);
+    }
+}
+
+fn output(value: Accumulator) -> i32 {
+    // The whole u64/i64 decimal domains plus framing fit 52 packed bytes.
+    let storage: [i32;16] = [0;16];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),64);
+    bytes[0] = 99; bytes[1] = 111; bytes[2] = 117; bytes[3] = 110; bytes[4] = 116;
+    bytes[5] = 44; bytes[6] = 115; bytes[7] = 117; bytes[8] = 109; bytes[9] = 10;
+    let formatted_count: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_u64(bytes,10,54,value.count);
+    if (formatted_count.is_err()) { return 3; }
+    let comma: i32 = 10 + formatted_count.unwrap(); bytes[comma] = 44;
+    let start: i32 = comma + 1;
+    let formatted_sum: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_i64(bytes,start,63-start,value.sum);
+    if (formatted_sum.is_err()) { return 3; }
+    let newline: i32 = start + formatted_sum.unwrap(); bytes[newline] = 10;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),bytes,0,newline+1);
+    if (written.is_err()) { return 3; }
+    return 0;
+}
+
+fn summarize(input: &alloc::io::Buffer, column: u64) -> i32 {
+    // Validate the complete input, including comments and unselected fields,
+    // before filtering, parsing any selected value, or publishing output.
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(input.as_bytes(),input.len());
+    if (checked.is_err()) { return 6; }
+    let text: core::text::Text = checked.unwrap();
+    let separator_bytes: [u8;1] = [10];
+    let separator: core::text::Text = core::text::from_utf8_unchecked(separator_bytes,0,1);
+    let lines: core::text::Split = text.split(separator);
+    let predicate: DataLine = DataLine {};
+    let retained: core::iter::Filter<core::text::Split,DataLine,core::text::Text> = core::iter::filter<core::text::Split,DataLine,core::text::Text>(lines.borrow(),predicate.borrow());
+    let selection: Selection = Selection { column: column };
+    let values: core::iter::Map<core::iter::Filter<core::text::Split,DataLine,core::text::Text>,Selection,core::text::Text,core::result::Result<i64,Error>> = core::iter::map<core::iter::Filter<core::text::Split,DataLine,core::text::Text>,Selection,core::text::Text,core::result::Result<i64,Error>>(retained.borrow(),selection.borrow());
+    let initial: Accumulator = Accumulator { count: 0, sum: 0 };
+    let folder: Total = Total {};
+    let folded: core::result::Result<Accumulator,Error> = core::iter::try_fold<core::iter::Map<core::iter::Filter<core::text::Split,DataLine,core::text::Text>,Selection,core::text::Text,core::result::Result<i64,Error>>,Total,core::result::Result<i64,Error>,Accumulator,Error>(values.borrow(),initial,folder.borrow());
+    if (folded.is_err()) {
+        return match (folded.unwrap_err()) { Error::Arithmetic -> 5, _ -> 6 };
+    }
+    return output(folded.unwrap());
+}
+
+fn input_status(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 7, _ -> 3 };
+}
+
+fn read_and_sum(column: u64) -> i32 {
+    let initialized: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(MAX_INPUT);
+    if (initialized.is_err()) { return input_status(initialized.unwrap_err()); }
+    let input: alloc::io::Buffer = initialized.unwrap();
+    // Reserve the complete fixed bound once. Copy and iteration then allocate
+    // nothing, and the owner remains outside the callbacks and fold result.
+    let reserved: core::result::Result<i32,core::io::Error> = input.try_reserve(MAX_INPUT);
+    if (reserved.is_err()) { let status: i32 = input_status(reserved.unwrap_err()); input.destroy(); return status; }
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+    let status: i32 = 0;
+    if (copied.is_err()) { let failure: core::io::CopyFailure = copied.unwrap_err(); status = input_status(failure.cause); }
+    else { status = summarize(input.borrow(),column); }
+    input.destroy();
+    return status;
+}
+
+fn process(arguments: std::args::Arguments) -> i32 {
+    if (arguments.len() != 1) { return 2; }
+    let argument: core::option::Option<core::slice::View<u8>> = arguments.get(0);
+    let text: core::slice::View<u8> = argument.unwrap();
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(text.values,text.start,text.len());
+    if (parsed.is_err()) { return 2; }
+    let column: u64 = parsed.unwrap();
+    if (column == 0) { return 2; }
+    return read_and_sum(column);
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,1,32);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+    }
+    let arguments: std::args::Arguments = captured.unwrap();
+    let status: i32 = process(arguments);
+    arguments.destroy();
+    return status;
+}

@@ -1,0 +1,16 @@
+// Zero-sized protocol composition exercised by the focused native Rust gate.
+module app::main;
+import alloc::clone;
+import alloc::vec;
+import core::clone;
+import core::result;
+import core::slice;
+struct Unit {}
+enum Never { Unreachable }
+pub impl core::clone::TryClone<Unit,Never> for Unit { pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> { return core::result::Ok(source); } }
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(owned: Unit) {} }
+fn main() -> i32 {
+    let source: [Unit;3] = [Unit {},Unit {},Unit {}];
+    let result: core::result::Result<alloc::vec::Vec<Unit>,alloc::clone::Error<Never>> = alloc::clone::from_view<Unit,Never>(core::slice::view(source,3).unwrap());
+    let owner = result.unwrap(); assert(owner.len() == 3 && owner.capacity() == 2147483647); alloc::clone::destroy_vec<Unit>(owner.borrow()); return 0;
+}

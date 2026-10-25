@@ -1,0 +1,61 @@
+module app::main;
+import probe::library;
+import probe::protocol;
+import probe::values;
+
+fn empty() {}
+fn other_empty(source: probe::values::Item) {}
+fn nested_empty() { {} }
+fn explicit_empty() { return; }
+fn mutate_then_return(values: [i32]) {
+    values[0] = 31;
+}
+fn sentinel(source: probe::values::Item) -> probe::values::Item {
+    return probe::values::Item { word:source.word+17,signed:source.signed-19 };
+}
+
+// Entry-local empty definitions implement imported required declarations.
+pub impl probe::protocol::ClosedDestroy for probe::values::Item {
+    pub fn closed_destroy(source: probe::values::Item) {}
+}
+pub impl probe::protocol::Destroy<probe::values::Item> for probe::values::Item {
+    pub fn destroy_value(source: probe::values::Item) {}
+}
+
+fn local_destroy<T>(source: T) where T: probe::protocol::Destroy<T> {
+    T::destroy_value(source);
+    return;
+}
+
+fn main() -> i32 {
+    let source: probe::values::Item = probe::values::Item { word:9223372036854775831,signed:-61 };
+    empty();
+    nested_empty();
+    explicit_empty();
+    let mutated: [i32;2] = [-1,47];
+    mutate_then_return(mutated);
+    assert(mutated[0] == 31 && mutated[1] == 47);
+    let first: probe::values::Item = sentinel(source);
+    assert(first.word == 9223372036854775848 && first.signed == -80);
+    other_empty(source);
+    probe::library::imported_empty();
+    let second: probe::values::Item = probe::library::imported_sentinel(source);
+    assert(second.word == 9223372036854775842 && second.signed == -74);
+    probe::library::imported_other_empty(source);
+    probe::values::Item::empty_value(source);
+    source.empty_receiver();
+    let third: probe::values::Item = source.sentinel(23);
+    assert(third.word == 9223372036854775838 && third.signed == -38);
+
+    probe::values::Item::closed_destroy(source);
+    probe::values::Item::destroy_value(source);
+    local_destroy<probe::values::Item>(source);
+    probe::library::imported_destroy<probe::values::Item>(source);
+    probe::library::imported_closed<probe::values::Item>(source);
+    let fourth: probe::values::Item = sentinel(source);
+    assert(fourth.word == 9223372036854775848 && fourth.signed == -80);
+    assert(source.word == 9223372036854775831 && source.signed == -61);
+    empty();
+    probe::library::imported_empty();
+    return 0;
+}

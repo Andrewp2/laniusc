@@ -1,0 +1,155 @@
+module app::main;
+import alloc::hash_set;
+import alloc::tree_set;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::string;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+fn hash_allocation(error: alloc::hash_map::Error) -> bool { let yes: bool = match (error) { alloc::hash_map::Error::AllocationFailed -> true, _ -> false }; return yes; }
+fn hash_work() -> i32 {
+    let operation: i32 = 0;
+    while (operation < 15) {
+        let a: alloc::hash_set::HashSet<i32> = alloc::hash_set::new(); let b: alloc::hash_set::HashSet<i32> = alloc::hash_set::new();
+        let reserved: core::result::Result<i32, alloc::hash_map::Error> = a.try_reserve(8);
+        if (core::result::is_err(reserved)) { assert(hash_allocation(core::result::unwrap_err(reserved)) && a.is_empty() && a.capacity() == 0); a.destroy(); b.destroy(); return 0; }
+        let index: i32 = 0; while (index < 8) { core::result::unwrap(a.try_insert(index)); index += 1; }
+        reserved = b.try_reserve(8);
+        if (core::result::is_err(reserved)) { assert(hash_allocation(core::result::unwrap_err(reserved)) && a.len() == 8 && b.is_empty() && b.capacity() == 0); a.destroy(); b.destroy(); return 0; }
+        index = 4; while (index < 12) { core::result::unwrap(b.try_insert(index)); index += 1; }
+        if (operation != 0 && operation != 1) { a.remove(2); a.remove(5); }
+        let keys: [i32; 16] = [0; 16]; let bkeys: [i32; 16] = [0; 16];
+        let capture: alloc::hash_set::Iter<i32> = a.iter(); let bcapture: alloc::hash_set::Iter<i32> = b.iter(); index = 0;
+        while (index < a.len()) { keys[index] = core::option::unwrap(capture.next()); index += 1; }
+        index = 0; while (index < b.len()) { bkeys[index] = core::option::unwrap(bcapture.next()); index += 1; }
+        let before: alloc::hash_set::Iter<i32> = a.iter(); let bbefore: alloc::hash_set::Iter<i32> = b.iter();
+        let length: i32 = a.len(); let capacity: i32 = a.capacity(); let bcapacity: i32 = b.capacity();
+        let result: core::result::Result<i32, alloc::hash_map::Error> = core::result::Ok(0);
+        if (operation == 0 || operation == 1 || operation == 14) {
+            let added: core::result::Result<core::option::Option<i32>, alloc::hash_map::Error> = core::result::Ok(core::option::None());
+            if (operation == 0 || operation == 14) { added = a.try_insert(10); } else { added = a.try_replace(10); }
+            if (core::result::is_err(added)) { result = core::result::Err(core::result::unwrap_err(added)); }
+        }
+        if (operation == 2) { result = a.try_reserve(32); }
+        if (operation == 3) { result = a.try_shrink_to_fit(); }
+        if (operation >= 4 && operation < 14) {
+            let built: core::result::Result<alloc::hash_set::HashSet<i32>, alloc::hash_map::Error> = core::result::Err(alloc::hash_map::Error::AllocationFailed);
+            if (operation == 4) { built = a.try_clone(); }
+            if (operation == 5) { built = a.try_union(b.borrow()); }
+            if (operation == 6) { built = a.try_intersection(b.borrow()); }
+            if (operation == 7) { built = a.try_difference(b.borrow()); }
+            if (operation == 8) { built = a.try_symmetric_difference(b.borrow()); }
+            if (operation == 9) { built = a.try_union(a.borrow()); }
+            if (operation == 10) { built = a.try_intersection(a.borrow()); }
+            if (operation == 11) { built = a.try_difference(a.borrow()); }
+            if (operation == 12) { built = a.try_symmetric_difference(a.borrow()); }
+            if (operation == 13) { built = alloc::hash_set::with_capacity<i32>(32); }
+            if (core::result::is_err(built)) { result = core::result::Err(core::result::unwrap_err(built)); }
+            else { let copy: alloc::hash_set::HashSet<i32> = core::result::unwrap(built); copy.destroy(); }
+        }
+        if (core::result::is_err(result)) {
+            assert(hash_allocation(core::result::unwrap_err(result)) && a.len() == length && a.capacity() == capacity && b.len() == 8 && b.capacity() == bcapacity);
+            index = 0; while (index < length) { let key: i32 = core::option::unwrap(before.next()); assert(key == keys[index] && a.contains(key) && core::option::unwrap(a.get(key)) == key); index += 1; }
+            index = 0; while (index < 8) { let key: i32 = core::option::unwrap(bbefore.next()); assert(key == bkeys[index] && b.contains(key)); index += 1; }
+            assert(core::option::is_none(before.next()) && core::option::is_none(bbefore.next())); a.destroy(); b.destroy(); return 0;
+        }
+        a.destroy(); b.destroy(); operation += 1;
+    }
+    return 1;
+}
+fn tree_allocation(error: alloc::tree_map::Error) -> bool { let yes: bool = match (error) { alloc::tree_map::Error::AllocationFailed -> true, _ -> false }; return yes; }
+fn tree_work() -> i32 {
+    let operation: i32 = 0;
+    while (operation < 15) {
+        let a: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new(); let b: alloc::tree_set::TreeSet<i32> = alloc::tree_set::new();
+        let reserved: core::result::Result<i32, alloc::tree_map::Error> = a.try_reserve(8);
+        if (core::result::is_err(reserved)) { assert(tree_allocation(core::result::unwrap_err(reserved)) && a.is_empty() && a.capacity() == 0); a.destroy(); b.destroy(); return 0; }
+        let index: i32 = 0; while (index < 8) { core::result::unwrap(a.try_insert(index)); index += 1; }
+        reserved = b.try_reserve(8);
+        if (core::result::is_err(reserved)) { assert(tree_allocation(core::result::unwrap_err(reserved)) && a.len() == 8 && b.is_empty() && b.capacity() == 0); a.destroy(); b.destroy(); return 0; }
+        index = 4; while (index < 12) { core::result::unwrap(b.try_insert(index)); index += 1; }
+        if (operation != 0 && operation != 1) { a.remove(2); a.remove(5); }
+        let keys: [i32; 16] = [0; 16]; let bkeys: [i32; 16] = [0; 16];
+        let capture: alloc::tree_set::Cursor<i32> = a.iter(); let bcapture: alloc::tree_set::Cursor<i32> = b.iter(); index = 0;
+        while (index < a.len()) { keys[index] = core::option::unwrap(capture.next()); index += 1; }
+        index = 0; while (index < b.len()) { bkeys[index] = core::option::unwrap(bcapture.next()); index += 1; }
+        let before: alloc::tree_set::Cursor<i32> = a.iter(); let bbefore: alloc::tree_set::Cursor<i32> = b.iter();
+        let length: i32 = a.len(); let capacity: i32 = a.capacity(); let bcapacity: i32 = b.capacity();
+        let result: core::result::Result<i32, alloc::tree_map::Error> = core::result::Ok(0);
+        if (operation == 0 || operation == 1 || operation == 14) {
+            let added: core::result::Result<core::option::Option<i32>, alloc::tree_map::Error> = core::result::Ok(core::option::None());
+            if (operation == 0 || operation == 14) { added = a.try_insert(10); } else { added = a.try_replace(10); }
+            if (core::result::is_err(added)) { result = core::result::Err(core::result::unwrap_err(added)); }
+        }
+        if (operation == 2) { result = a.try_reserve(32); }
+        if (operation == 3) { result = a.try_shrink_to_fit(); }
+        if (operation >= 4 && operation < 14) {
+            let built: core::result::Result<alloc::tree_set::TreeSet<i32>, alloc::tree_map::Error> = core::result::Err(alloc::tree_map::Error::AllocationFailed);
+            if (operation == 4) { built = a.try_clone(); }
+            if (operation == 5) { built = a.try_union(b.borrow()); }
+            if (operation == 6) { built = a.try_intersection(b.borrow()); }
+            if (operation == 7) { built = a.try_difference(b.borrow()); }
+            if (operation == 8) { built = a.try_symmetric_difference(b.borrow()); }
+            if (operation == 9) { built = a.try_union(a.borrow()); }
+            if (operation == 10) { built = a.try_intersection(a.borrow()); }
+            if (operation == 11) { built = a.try_difference(a.borrow()); }
+            if (operation == 12) { built = a.try_symmetric_difference(a.borrow()); }
+            if (operation == 13) { built = alloc::tree_set::with_capacity<i32>(32); }
+            if (core::result::is_err(built)) { result = core::result::Err(core::result::unwrap_err(built)); }
+            else { let copy: alloc::tree_set::TreeSet<i32> = core::result::unwrap(built); copy.destroy(); }
+        }
+        if (core::result::is_err(result)) {
+            assert(tree_allocation(core::result::unwrap_err(result)) && a.len() == length && a.capacity() == capacity && b.len() == 8 && b.capacity() == bcapacity);
+            index = 0; while (index < length) { let key: i32 = core::option::unwrap(before.next()); assert(key == keys[index] && a.contains(key) && core::option::unwrap(a.get(key)) == key); index += 1; }
+            index = 0; while (index < 8) { let key: i32 = core::option::unwrap(bbefore.next()); assert(key == bkeys[index] && b.contains(key)); index += 1; }
+            assert(core::option::is_none(before.next()) && core::option::is_none(bbefore.next())); a.destroy(); b.destroy(); return 0;
+        }
+        a.destroy(); b.destroy(); operation += 1;
+    }
+    return 1;
+}
+struct Key { id: i32, owner: alloc::string::String }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(key: Key) -> u32 { return key.id as u32; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(a: Key, b: Key) -> bool { return a.id == b.id; }
+    pub fn ne(a: Key, b: Key) -> bool { return a.id != b.id; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a: Key, b: Key) -> bool { return a.id < b.id; }
+    pub fn le(a: Key, b: Key) -> bool { return a.id <= b.id; }
+    pub fn gt(a: Key, b: Key) -> bool { return a.id > b.id; }
+    pub fn ge(a: Key, b: Key) -> bool { return a.id >= b.id; }
+}
+fn hash_owner_input() -> i32 {
+    let set: alloc::hash_set::HashSet<Key> = alloc::hash_set::new(); let result: core::result::Result<i32, alloc::hash_map::Error> = set.try_reserve(8);
+    if (core::result::is_err(result)) { assert(hash_allocation(core::result::unwrap_err(result))); set.destroy(); return 0; }
+    let index: i32 = 0; while (index < 8) { let key: Key = Key { id: index, owner: alloc::string::new() }; core::result::unwrap(set.try_insert(key)); index += 1; }
+    let bytes: [u8; 3] = [97, 98, 99]; let made: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, 3);
+    if (core::result::is_err(made)) { let allocation: bool = match (core::result::unwrap_err(made)) { alloc::string::Error::AllocationFailed -> true, _ -> false }; assert(allocation && set.len() == 8); set.destroy(); return 0; }
+    let supplied: Key = Key { id: 9, owner: core::result::unwrap(made) }; let capacity: i32 = set.capacity();
+    let inserted: core::result::Result<core::option::Option<Key>, alloc::hash_map::Error> = set.try_insert(supplied);
+    if (core::result::is_err(inserted)) {
+        assert(hash_allocation(core::result::unwrap_err(inserted)) && set.len() == 8 && set.capacity() == capacity && supplied.owner.byte_len() == 3);
+        index = 0; while (index < 8) { let query: Key = Key { id: index, owner: alloc::string::new() }; assert(set.contains(query)); index += 1; }
+        supplied.owner.destroy(); set.destroy(); return 0;
+    }
+    let removed: Key = core::option::unwrap(set.remove(supplied)); assert(removed.owner.byte_len() == 3); removed.owner.destroy(); set.destroy(); return 1;
+}
+fn tree_owner_input() -> i32 {
+    let set: alloc::tree_set::TreeSet<Key> = alloc::tree_set::new(); let result: core::result::Result<i32, alloc::tree_map::Error> = set.try_reserve(8);
+    if (core::result::is_err(result)) { assert(tree_allocation(core::result::unwrap_err(result))); set.destroy(); return 0; }
+    let index: i32 = 0; while (index < 8) { let key: Key = Key { id: index, owner: alloc::string::new() }; core::result::unwrap(set.try_insert(key)); index += 1; }
+    let bytes: [u8; 3] = [97, 98, 99]; let made: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, 3);
+    if (core::result::is_err(made)) { let allocation: bool = match (core::result::unwrap_err(made)) { alloc::string::Error::AllocationFailed -> true, _ -> false }; assert(allocation && set.len() == 8); set.destroy(); return 0; }
+    let supplied: Key = Key { id: 9, owner: core::result::unwrap(made) }; let capacity: i32 = set.capacity();
+    let inserted: core::result::Result<core::option::Option<Key>, alloc::tree_map::Error> = set.try_insert(supplied);
+    if (core::result::is_err(inserted)) {
+        assert(tree_allocation(core::result::unwrap_err(inserted)) && set.len() == 8 && set.capacity() == capacity && supplied.owner.byte_len() == 3);
+        index = 0; while (index < 8) { let query: Key = Key { id: index, owner: alloc::string::new() }; assert(set.contains(query)); index += 1; }
+        supplied.owner.destroy(); set.destroy(); return 0;
+    }
+    let removed: Key = core::option::unwrap(set.remove(supplied)); assert(removed.owner.byte_len() == 3); removed.owner.destroy(); set.destroy(); return 1;
+}
+fn main() -> i32 { let status: i32 = hash_work(); if (status != 1) { return status; } status = tree_work(); if (status != 1) { return status; } status = hash_owner_input(); if (status != 1) { return status; } return tree_owner_input(); }

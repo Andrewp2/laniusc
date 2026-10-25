@@ -1,0 +1,162 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::geometry;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done<count) {
+        let n: i32 = std::io::read_stdin(pointer +(done as usize), (count - done) as usize);
+        assert(n >= 0);
+        if (n == 0) {
+            assert(eof && done == 0);
+            return false;
+        }
+        done += n;
+    }
+    return true;
+}
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done<count) {
+        let n: i32 = std::io::write_stdout(pointer +(done as usize), (count - done) as usize);
+        assert(n>0);
+        done += n;
+    }
+}
+fn code(e: ext::geometry::Error) -> i32 {
+    return match (e) {
+        InvalidView -> 1,
+        InvalidLimits -> 2,
+        PointLimit -> 3,
+        WorkLimit -> 4,
+        Overflow -> 5,
+        AllocationFailed -> 6,
+        NonFinite -> 7,
+        NumericalFailure -> 8,
+        ZeroLength -> 9
+    };
+}
+fn intersection(v: ext::geometry::Intersection) -> i32 {
+    return match (v) {
+        Disjoint -> 0,
+        Touch -> 1,
+        Proper -> 2,
+        Overlap -> 3
+    };
+}
+fn location(v: ext::geometry::Location) -> i32 {
+    return match (v) {
+        Outside -> 0,
+        Boundary -> 1,
+        Inside -> 2
+    };
+}
+fn main() -> i32 {
+    let header:[i32; 10] =[0; 10];
+    let hp: ptr = core::mem::i32_array_data_ptr(header);
+    let h:[i32] = core::mem::typed_slice_from_raw_parts(hp, 10);
+    let pair:[i32; 2] =[0; 2];
+    let pp: ptr = core::mem::i32_array_data_ptr(pair);
+    let xy:[i32] = core::mem::typed_slice_from_raw_parts(pp, 2);
+    let words:[i32; 10] =[0; 10];
+    let optr: ptr = core::mem::i32_array_data_ptr(words);
+    let out:[i32] = core::mem::typed_slice_from_raw_parts(optr, 10);
+    let limits: ext::geometry::Limits = ext::geometry::default_limits();
+    while (read_exact(hp, 40, true)) {
+        let op: i32 = h[0];
+        let n: i32 = h[1];
+        assert(n >= 0 && n <= 4096);
+        let points: alloc::vec::Vec<ext::geometry::Point> = alloc::vec::new();
+        let i: i32 = 0;
+        while (i<n) {
+            assert(read_exact(pp, 8, false));
+            points.try_push(ext::geometry::Point {
+                x: xy[0], y: xy[1]
+            }
+            ).unwrap();
+            i += 1;
+        }
+        i = 0;
+        while (i<10) {
+            out[i] = 0;
+            i += 1;
+        }
+        let view: core::slice::View<ext::geometry::Point> = points.as_view();
+        if (op == 0) {
+            out[1] = ext::geometry::orientation(points.at(0), points.at(1), points.at(2));
+        }
+        if (op == 1) {
+            out[1] = intersection(ext::geometry::classify_segments(points.at(0), points.at(1), points.at(2), points.at(3)));
+        }
+        if (op == 2) {
+            out[1] = location(ext::geometry::locate_in_ring(view, ext::geometry::Point {
+                x: h[2], y: h[3]
+            }, limits).unwrap());
+        }
+        if (op == 3) {
+            let hull: ext::geometry::Hull = ext::geometry::convex_hull(view, limits).unwrap();
+            view = hull.view();
+            out[2] = hull.len();
+            let area: core::result::Result<i64,
+            ext::geometry::Error> = ext::geometry::signed_area2(view, limits);
+            if (area.is_err()) {
+                out[0] = code(area.unwrap_err());
+            } else {
+                let a: u64 = area.unwrap() as u64;
+                out[8] =(a&4294967295) as i32;
+                out[9] =(a >> 32) as i32;
+            }
+            let box: core::option::Option<ext::geometry::Bounds> = ext::geometry::bounding_box(view, limits).unwrap();
+            if (box.is_some()) {
+                out[3] = 1;
+                let b: ext::geometry::Bounds = core::option::unwrap(box);
+                let low: ext::geometry::Point = b.min;
+                let high: ext::geometry::Point = b.max;
+                out[4] = low.x;
+                out[5] = low.y;
+                out[6] = high.x;
+                out[7] = high.y;
+            }
+            write_all(optr, 40);
+            i = 0;
+            while (i<hull.len()) {
+                let p: ext::geometry::Point = hull.get(i).unwrap();
+                xy[0] = p.x;
+                xy[1] = p.y;
+                write_all(pp, 8);
+                i += 1;
+            }
+            hull.destroy();
+        } else {
+            if (op == 2) {
+                let area: core::result::Result<i64,
+                ext::geometry::Error> = ext::geometry::signed_area2(view, limits);
+                if (area.is_err()) {
+                    out[0] = code(area.unwrap_err());
+                } else {
+                    let a: u64 = area.unwrap() as u64;
+                    out[8] =(a&4294967295) as i32;
+                    out[9] =(a >> 32) as i32;
+                }
+                let box: core::option::Option<ext::geometry::Bounds> = ext::geometry::bounding_box(view, limits).unwrap();
+                if (box.is_some()) {
+                    out[3] = 1;
+                    let b: ext::geometry::Bounds = core::option::unwrap(box);
+                    let low: ext::geometry::Point = b.min;
+                    let high: ext::geometry::Point = b.max;
+                    out[4] = low.x;
+                    out[5] = low.y;
+                    out[6] = high.x;
+                    out[7] = high.y;
+                }
+            }
+            write_all(optr, 40);
+        }
+        points.destroy();
+    }
+    return 0;
+}

@@ -1,0 +1,16 @@
+module app::main;
+import core::vec;
+import core::option;
+import core::result;
+fn inspect<T, const N: usize>(value: &core::vec::Vec<T, N>, item: T) -> i32 {
+    let n: i32 = core::vec::len(value);
+    core::result::unwrap(core::vec::try_push(value, item));
+    let got: T = core::option::unwrap(core::vec::get(value, 0));
+    let taken: T = core::option::unwrap(core::vec::pop(value));
+    return core::vec::len(value) - n;
+}
+fn main() -> i32 {
+    let v: core::vec::Vec<i64,
+    2> = core::vec::from_storage([0, 0]);
+    return inspect(v.borrow(), 4294967297);
+}

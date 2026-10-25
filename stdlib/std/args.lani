@@ -1,0 +1,68 @@
+// Owned snapshots of host arguments, including arbitrary non-UTF-8 bytes.
+// Copies alias one owner. Views borrow it; destroy once after the final view.
+module std::args;
+import alloc::allocator;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::process;
+
+pub enum Error { Bounds, CountLimit, ByteLimit, AllocationFailed, HostRead(i32) }
+pub struct Arguments { storage: ptr, size: i32, entries: alloc::vec::Vec<core::slice::View<u8>> }
+
+// Snapshot [first, argc). first=1 omits the executable; first=0 includes it.
+// Limits count selected arguments and their bytes, excluding trailing NULs.
+pub fn snapshot(first: i32, maximum_count: i32, maximum_bytes: i32) -> core::result::Result<Arguments, Error> {
+    if (first < 0 || maximum_count < 0 || maximum_bytes < 0) { return core::result::Err(Error::Bounds); }
+    let argc: i32 = std::process::argc();
+    if (argc < 0) { return core::result::Err(Error::HostRead(-1)); }
+    if (first > argc) { return core::result::Err(Error::Bounds); }
+    let count: i32 = argc - first;
+    if (count > maximum_count) { return core::result::Err(Error::CountLimit); }
+    if ((count as usize) > 2147483647 / core::mem::size_of<core::slice::View<u8>>()) { return core::result::Err(Error::CountLimit); }
+    let size: i32 = 0; let index: i32 = first;
+    while (index < argc) {
+        let length: i32 = std::process::arg_len(index);
+        if (length < 0) { return core::result::Err(Error::HostRead(index)); }
+        if (length > maximum_bytes - size) { return core::result::Err(Error::ByteLimit); }
+        size += length; index += 1;
+    }
+    let entries: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new();
+    if (core::result::is_err(entries.try_reserve(count))) { return core::result::Err(Error::AllocationFailed); }
+    let storage: ptr = 0;
+    if (size > 0) {
+        storage = alloc::allocator::alloc(size as usize, 8);
+        if (storage == 0) { entries.destroy(); return core::result::Err(Error::AllocationFailed); }
+    }
+    let owner: Arguments = Arguments { storage: storage, size: size, entries: entries };
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(storage, size);
+    let offset: i32 = 0; index = first;
+    while (index < argc) {
+        let length: i32 = std::process::arg_len(index);
+        if (length < 0 || length > size - offset) { owner.destroy(); return core::result::Err(Error::HostRead(index)); }
+        if (length > 0) {
+            if (std::process::arg_read(index, storage + (offset as usize), length as usize) != length) {
+                owner.destroy(); return core::result::Err(Error::HostRead(index));
+            }
+        }
+        let part: core::slice::View<u8> = core::slice::View { values: bytes, start: offset, length: length };
+        core::result::unwrap(owner.entries.try_push(part)); offset += length; index += 1;
+    }
+    if (offset != size) { owner.destroy(); return core::result::Err(Error::HostRead(-1)); }
+    return core::result::Ok(owner);
+}
+
+pub impl Arguments {
+    pub fn len(&self) -> i32 { return self.entries.len(); }
+    pub fn is_empty(&self) -> bool { return self.entries.is_empty(); }
+    pub fn byte_len(&self) -> i32 { return self.size; }
+    pub fn get(&self, index: i32) -> core::option::Option<core::slice::View<u8>> { return self.entries.get(index); }
+    pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>> { return self.entries.as_view(); }
+    pub fn destroy(&self) {
+        self.entries.destroy();
+        if (self.size > 0) { alloc::allocator::dealloc(self.storage, self.size as usize, 8); }
+        let empty: ptr = 0; self.storage = empty; self.size = 0;
+    }
+}

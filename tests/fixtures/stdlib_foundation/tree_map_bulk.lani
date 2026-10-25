@@ -1,0 +1,49 @@
+// Sorted construction versus individually inserting the same ordered entries.
+module app::main;
+import alloc::tree_map;
+import alloc::vec;
+import core::cmp;
+import core::option;
+import core::result;
+import std::args_checked;
+import std::io;
+import std::io_decimal;
+struct Counter { calls: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+struct Key { order: i32, counter: &Counter }
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left: Key, right: Key) -> bool { let counter: &Counter = left.counter; counter.calls += 1; return left.order < right.order; }
+    pub fn le(left: Key, right: Key) -> bool { return left.order <= right.order; }
+    pub fn gt(left: Key, right: Key) -> bool { return left.order > right.order; }
+    pub fn ge(left: Key, right: Key) -> bool { return left.order >= right.order; }
+}
+fn main() -> i32 {
+    let count: i32 = 65536; let counter: Counter = Counter { calls: 0 };
+    let entries: alloc::vec::Vec<alloc::tree_map::Entry<Key, i32>> = alloc::vec::new(); core::result::unwrap(entries.try_reserve(count));
+    let index: i32 = 0;
+    while (index < count) {
+        let key: Key = Key { order: index, counter: counter.borrow() };
+        let item: alloc::tree_map::Entry<Key, i32> = alloc::tree_map::Entry { key: key, value: index * 3 };
+        core::result::unwrap(entries.try_push(item)); index += 1;
+    }
+    let map: alloc::tree_map::TreeMap<Key, i32> = alloc::tree_map::new();
+    if (std::args_checked::argument_count_or(0) == 1) {
+        let built: core::result::Result<alloc::tree_map::TreeMap<Key, i32>, alloc::tree_map::Error> = alloc::tree_map::from_sorted(entries.as_view());
+        map = core::result::unwrap(built); assert(counter.calls == count - 1);
+    } else {
+        core::result::unwrap(map.try_reserve(count)); index = 0;
+        while (index < count) { let item: alloc::tree_map::Entry<Key, i32> = entries.at(index); core::result::unwrap(map.try_insert(item.key, item.value)); index += 1; }
+        assert(counter.calls <= 2 * count * 17);
+    }
+    let comparisons: i32 = counter.calls; entries.destroy(); counter.calls = 0;
+    let cursor: alloc::tree_map::Cursor<Key, i32> = map.iter(); index = 0;
+    while (index < count) {
+        let item: alloc::tree_map::Entry<Key, i32> = core::option::unwrap(cursor.next()); assert(item.key.order == index && item.value == index * 3); index += 1;
+    }
+    assert(cursor.is_empty() && map.len() == count && counter.calls == 0);
+    let first: alloc::tree_map::Entry<Key, i32> = core::option::unwrap(map.pop_first());
+    let last: alloc::tree_map::Entry<Key, i32> = core::option::unwrap(map.pop_last());
+    assert(first.key.order == 0 && last.key.order == count - 1);
+    let middle: Key = Key { order: count / 2, counter: counter.borrow() }; assert(core::option::unwrap(map.get(middle)) == (count / 2) * 3);
+    map.destroy(); assert(std::io_decimal::write_i32(1, comparisons) > 0 && std::io::write_byte(1, 10) == 1); return 0;
+}

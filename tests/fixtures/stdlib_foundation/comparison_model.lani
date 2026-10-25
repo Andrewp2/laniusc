@@ -1,0 +1,68 @@
+// Binary pairs are test input; all comparison behavior comes from the stdlib.
+module app::main;
+import core::cmp;
+import core::f32;
+import core::f64;
+import core::float_order;
+import core::hash;
+import core::mem;
+import std::io;
+
+fn partial_flags<T>(a: T, b: T) -> i32 where T: core::cmp::PartialEq<T>, T: core::cmp::PartialOrd<T> {
+    let flags: i32 = 0;
+    if (T::partial_eq(a,b)) { flags = flags | 1; }
+    if (T::partial_ne(a,b)) { flags = flags | 2; }
+    if (T::partial_lt(a,b)) { flags = flags | 4; }
+    if (T::partial_le(a,b)) { flags = flags | 8; }
+    if (T::partial_gt(a,b)) { flags = flags | 16; }
+    if (T::partial_ge(a,b)) { flags = flags | 32; }
+    return flags;
+}
+fn total_flags<T>(a: T, b: T) -> i32 where T: core::cmp::Eq<T>, T: core::cmp::Ord<T> {
+    let flags: i32 = 0;
+    if (T::eq(a,b)) { flags = flags | 1; }
+    if (T::ne(a,b)) { flags = flags | 2; }
+    if (T::lt(a,b)) { flags = flags | 4; }
+    if (T::le(a,b)) { flags = flags | 8; }
+    if (T::gt(a,b)) { flags = flags | 16; }
+    if (T::ge(a,b)) { flags = flags | 32; }
+    return flags;
+}
+fn relation<T>(a: T, b: T) -> i32 where T: core::cmp::PartialOrd<T> {
+    let result: core::cmp::PartialOrdering = T::partial_cmp(a,b);
+    return match (result) { core::cmp::Less -> -1, core::cmp::Equal -> 0, core::cmp::Greater -> 1, core::cmp::Unordered -> 2 };
+}
+fn get64(input: [u8], start: i32) -> u64 {
+    let result: u64 = 0; let index: i32 = 0;
+    while (index < 8) { result = result | ((input[start+index] as u64) << ((index*8) as u64)); index += 1; }
+    return result;
+}
+fn main() -> i32 {
+    let backing: [i32; 65536] = [0; 65536]; let pointer: ptr = core::mem::i32_array_data_ptr(backing);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 262144); let length: i32 = 0;
+    while (length < 262144) { let count: i32 = std::io::read_stdin(pointer+(length as usize),(262144-length) as usize); assert(count >= 0); if (count == 0) { break; } length += count; }
+    assert(length < 262144 && length%17 == 0);
+    let storage: [i32; 7] = [0; 7]; let address: ptr = core::mem::i32_array_data_ptr(storage); let output: [i32] = core::mem::typed_slice_from_raw_parts(address,7);
+    let index: i32 = 0;
+    while (index < length) {
+        let first: u64 = get64(input,index+1); let second: u64 = get64(input,index+9); let roundtrip: u64 = 0;
+        if (input[index] == 32) {
+            let a: f32 = core::f32::from_bits(first as u32); let b: f32 = core::f32::from_bits(second as u32);
+            let left: core::float_order::TotalF32 = core::float_order::from_f32(a); let right: core::float_order::TotalF32 = core::float_order::from_f32(b);
+            output[0] = partial_flags(a,b); output[1] = relation(a,b); output[2] = total_flags(left,right);
+            assert(output[2] == partial_flags(left,right));
+            output[3] = core::float_order::TotalF32::hash(left) as i32; output[4] = core::float_order::TotalF32::hash(right) as i32;
+            roundtrip = core::f32::to_bits(left.value()) as u64; assert(roundtrip == left.to_bits() as u64);
+        } else {
+            let a: f64 = core::f64::from_bits(first); let b: f64 = core::f64::from_bits(second);
+            let left: core::float_order::TotalF64 = core::float_order::from_f64(a); let right: core::float_order::TotalF64 = core::float_order::from_f64(b);
+            output[0] = partial_flags(a,b); output[1] = relation(a,b); output[2] = total_flags(left,right);
+            assert(output[2] == partial_flags(left,right));
+            output[3] = core::float_order::TotalF64::hash(left) as i32; output[4] = core::float_order::TotalF64::hash(right) as i32;
+            roundtrip = core::f64::to_bits(left.value()); assert(roundtrip == left.to_bits());
+        }
+        output[5] = roundtrip as i32; output[6] = (roundtrip >> 32) as i32;
+        assert(std::io::write_stdout(address,28) == 28); index += 17;
+    }
+    return 0;
+}

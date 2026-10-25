@@ -1,0 +1,178 @@
+module app::main;
+import alloc::string;
+import core::calendar;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::toml;
+
+fn bounds(error: ext::toml::Error) { assert(match (error.kind) { ext::toml::ErrorKind::Bounds -> true, _ -> false }); }
+fn wrong(error: ext::toml::Error) { assert(match (error.kind) { ext::toml::ErrorKind::WrongKind -> true, _ -> false }); }
+fn name(kind: ext::toml::ErrorKind, expected: str, length: i32) {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(expected), length);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(raw, length));
+    let actual: core::text::Text = ext::toml::error_kind_text(kind);
+    assert(actual.equals(text));
+}
+fn diagnostics() {
+    name(ext::toml::ErrorKind::UnexpectedEnd, "unexpected end", 14);
+    name(ext::toml::ErrorKind::UnexpectedByte, "unexpected byte", 15);
+    name(ext::toml::ErrorKind::InvalidUtf8, "invalid utf-8", 13);
+    name(ext::toml::ErrorKind::InvalidEscape, "invalid escape", 14);
+    name(ext::toml::ErrorKind::InvalidNumber, "invalid number", 14);
+    name(ext::toml::ErrorKind::InvalidDateTime, "invalid date/time", 17);
+    name(ext::toml::ErrorKind::NumberOutOfRange, "number out of range", 19);
+    name(ext::toml::ErrorKind::DuplicateKey, "duplicate key", 13);
+    name(ext::toml::ErrorKind::TableRedefinition, "table redefinition", 18);
+    name(ext::toml::ErrorKind::InputLimit, "input limit", 11);
+    name(ext::toml::ErrorKind::NodeLimit, "node limit", 10);
+    name(ext::toml::ErrorKind::DepthLimit, "depth limit", 11);
+    name(ext::toml::ErrorKind::StringLimit, "string limit", 12);
+    name(ext::toml::ErrorKind::NumberLimit, "number limit", 12);
+    name(ext::toml::ErrorKind::OutputLimit, "output limit", 12);
+    name(ext::toml::ErrorKind::WorkLimit, "work limit", 10);
+    name(ext::toml::ErrorKind::AllocationFailed, "allocation failed", 17);
+    name(ext::toml::ErrorKind::InvalidOptions, "invalid options", 15);
+    name(ext::toml::ErrorKind::Bounds, "bounds", 6);
+    name(ext::toml::ErrorKind::WrongKind, "wrong kind", 10);
+}
+fn temporal_fields() {
+    let literal: str = "odt=2016-12-31T23:59:60.123456789987-00:00\nldt=0000-02-29t07:32\nld=2000-02-29\nlt=07:32:00.001230000000\n";
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(literal), 103);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(raw, 103));
+    let document: ext::toml::Document = core::result::unwrap(ext::toml::parse_text(text, ext::toml::default_options()));
+    let offset: ext::toml::Temporal = core::result::unwrap(document.temporal(1));
+    let date: core::calendar::Date = core::option::unwrap(offset.date);
+    let time: core::calendar::TimeOfDay = core::option::unwrap(offset.time);
+    let zone: core::calendar::UtcOffset = core::option::unwrap(offset.offset);
+    assert(date.year == 2016 && date.month == 12 && date.day == 31);
+    assert(time.hour == 23 && time.minute == 59 && time.second == 60 && time.nanos == 123456789);
+    assert(!zone.known && zone.minutes == 0 && offset.fraction.byte_len() == 12);
+    assert(core::option::unwrap(offset.fraction.byte_at(9)) == 57 && core::option::unwrap(offset.fraction.byte_at(11)) == 55);
+    let local: ext::toml::Temporal = core::result::unwrap(document.temporal(2));
+    date = core::option::unwrap(local.date); time = core::option::unwrap(local.time);
+    assert(date.year == 0 && date.month == 2 && date.day == 29);
+    assert(time.hour == 7 && time.minute == 32 && time.second == 0 && time.nanos == 0);
+    assert(core::option::is_none(local.offset) && local.fraction.byte_len() == 0);
+    let day: ext::toml::Temporal = core::result::unwrap(document.temporal(3));
+    date = core::option::unwrap(day.date);
+    assert(date.year == 2000 && date.month == 2 && date.day == 29 && core::option::is_none(day.time) && core::option::is_none(day.offset));
+    let clock: ext::toml::Temporal = core::result::unwrap(document.temporal(4));
+    time = core::option::unwrap(clock.time);
+    assert(core::option::is_none(clock.date) && core::option::is_none(clock.offset));
+    assert(time.hour == 7 && time.minute == 32 && time.second == 0 && time.nanos == 1230000 && clock.fraction.byte_len() == 12);
+    document.destroy();
+}
+fn work_atomicity() {
+    let literal: str = "a=1\n";
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(literal), 4);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(raw, 4));
+    let words: [i32; 8] = [0; 8];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 32);
+    let target: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 4, 24));
+    let budget: u64 = 0; let failed: bool = false; let succeeded: bool = false;
+    while (budget <= 128) {
+        let options: ext::toml::Options = ext::toml::default_options(); options.max_work = budget;
+        let parsed: core::result::Result<ext::toml::Document, ext::toml::Error> = ext::toml::parse_text(text, options);
+        if (core::result::is_err(parsed)) {
+            let issue: ext::toml::Error = core::result::unwrap_err(parsed);
+            assert(match (issue.kind) { ext::toml::ErrorKind::WorkLimit -> true, _ -> false });
+            budget += 1; continue;
+        }
+        let document: ext::toml::Document = core::result::unwrap(parsed);
+        let index: i32 = 0; while (index < 32) { bytes[index] = 77; index += 1; }
+        let encoded: core::result::Result<i32, ext::toml::Error> = ext::toml::encode_into(document, target);
+        if (core::result::is_err(encoded)) {
+            let issue: ext::toml::Error = core::result::unwrap_err(encoded);
+            assert(match (issue.kind) { ext::toml::ErrorKind::WorkLimit -> true, _ -> false });
+            index = 0; while (index < 32) { assert(bytes[index] == 77); index += 1; }
+            failed = true;
+        } else {
+            assert(core::result::unwrap(encoded) == 6 && bytes[3] == 77 && bytes[10] == 77);
+            succeeded = true;
+        }
+        document.destroy(); budget += 1;
+    }
+    assert(failed && succeeded);
+}
+fn main() -> i32 {
+    diagnostics(); temporal_fields(); work_atomicity();
+    let raw: [u8; 65] = [97,61,49,10,98,61,45,48,46,48,10,99,61,39,104,101,108,108,111,39,10,100,61,49,57,55,57,45,48,53,45,50,55,84,48,55,58,51,50,45,48,48,58,48,48,10,101,61,91,123,120,61,49,125,44,116,114,117,101,93,10,102,61,123,125];
+    let input: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(raw, 65));
+    let document: ext::toml::Document = core::result::unwrap(ext::toml::parse(input, ext::toml::default_options()));
+    input.destroy();
+    let root: i32 = core::option::unwrap(document.root());
+    assert(root == 0 && core::result::unwrap(document.child_count(root)) == 6);
+    bounds(core::result::unwrap_err(document.kind(-1)));
+    bounds(core::result::unwrap_err(document.kind(document.node_count())));
+    bounds(core::result::unwrap_err(document.first_child(-1)));
+    bounds(core::result::unwrap_err(document.next_sibling(document.node_count())));
+    bounds(core::result::unwrap_err(document.element(root, -1)));
+    wrong(core::result::unwrap_err(document.element(root, 0)));
+    wrong(core::result::unwrap_err(document.key_view(root)));
+    wrong(core::result::unwrap_err(document.child_count(1)));
+    wrong(core::result::unwrap_err(document.string_view(1)));
+    wrong(core::result::unwrap_err(document.float64(1)));
+    wrong(core::result::unwrap_err(document.integer_i64(2)));
+    wrong(core::result::unwrap_err(document.boolean(3)));
+    wrong(core::result::unwrap_err(document.temporal_view(3)));
+    wrong(core::result::unwrap_err(document.temporal(1)));
+    assert(core::result::unwrap(document.integer_i64(1)) == 1);
+    assert(core::f64::to_bits(core::result::unwrap(document.float64(2))) == 9223372036854775808);
+    let array: i32 = 5;
+    assert(core::result::unwrap(document.child_count(array)) == 2);
+    let first: i32 = core::option::unwrap(core::result::unwrap(document.element(array, 0)));
+    wrong(core::result::unwrap_err(document.key_view(first)));
+    wrong(core::result::unwrap_err(document.member_text(array, core::result::unwrap(document.key_view(1)))));
+    assert(core::option::is_none(core::result::unwrap(document.element(array, 2))));
+    let empty: [u8; 1] = [0];
+    let empty_text: core::text::Text = core::result::unwrap(core::text::from_utf8(empty, 0));
+    assert(core::option::is_none(core::result::unwrap(document.member_text(root, empty_text))));
+    let key: alloc::string::String = core::result::unwrap(document.copy_key(3));
+    let string: alloc::string::String = core::result::unwrap(document.copy_string(3));
+    let number: alloc::string::String = core::result::unwrap(document.copy_number(2));
+    let temporal: alloc::string::String = core::result::unwrap(document.copy_temporal(4));
+    let encoded: alloc::string::String = core::result::unwrap(ext::toml::encode(document));
+    let needed: i32 = core::result::unwrap(ext::toml::measure(document));
+    assert(needed == encoded.byte_len() && needed > 0 && needed < 1024);
+    let words: [i32; 258] = [0; 258];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 1032);
+    let index: i32 = 0; while (index < 1032) { bytes[index] = 77; index += 1; }
+    let short: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 4, needed - 1));
+    assert(core::result::is_err(ext::toml::encode_into(document, short)));
+    index = 0; while (index < 1032) { assert(bytes[index] == 77); index += 1; }
+    let exact: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 4, needed));
+    assert(core::result::unwrap(ext::toml::encode_into(document, exact)) == needed);
+    index = 0; while (index < needed) { assert(bytes[index + 4] == core::option::unwrap(encoded.byte_at(index))); index += 1; }
+    assert(bytes[3] == 77 && bytes[needed + 4] == 77);
+    let invalid: core::slice::View<u8> = core::slice::View<u8> { values: bytes, start: -1, length: 1 };
+    bounds(core::result::unwrap_err(ext::toml::encode_into(document, invalid)));
+    let invalid_key_start: core::text::Text = core::text::Text { bytes: bytes, start: -1, length: 1 };
+    bounds(core::result::unwrap_err(document.member_text(root, invalid_key_start)));
+    let invalid_key_length: core::text::Text = core::text::Text { bytes: bytes, start: 0, length: -1 };
+    bounds(core::result::unwrap_err(document.member_text(root, invalid_key_length)));
+    let invalid_key_overflow: core::text::Text = core::text::Text { bytes: bytes, start: 2147483647, length: 1 };
+    bounds(core::result::unwrap_err(document.member_text(root, invalid_key_overflow)));
+    assert(document.node_count() > 6 && core::result::unwrap(document.integer_i64(1)) == 1);
+    document.destroy(); document.destroy();
+    assert(document.node_count() == 0 && core::option::is_none(document.root()));
+    bounds(core::result::unwrap_err(document.kind(0)));
+    assert(key.byte_len() == 1 && core::option::unwrap(key.byte_at(0)) == 99);
+    assert(string.byte_len() == 5 && core::option::unwrap(string.byte_at(0)) == 104);
+    assert(number.byte_len() == 4 && core::option::unwrap(number.byte_at(0)) == 45);
+    assert(temporal.byte_len() == 22 && core::option::unwrap(temporal.byte_at(16)) == 45);
+    key.destroy(); string.destroy(); number.destroy(); temporal.destroy(); encoded.destroy();
+    let bad_utf8: [u8; 5] = [97, 61, 39, 255, 39];
+    let bad_view: [u8] = bad_utf8;
+    let unchecked: core::text::Text = core::text::Text { bytes: bad_view, start: 0, length: 5 };
+    let issue: ext::toml::Error = core::result::unwrap_err(ext::toml::parse_text(unchecked, ext::toml::default_options()));
+    assert(match (issue.kind) { ext::toml::ErrorKind::InvalidUtf8 -> true, _ -> false }); assert(issue.offset == 3);
+    let bad_start: core::text::Text = core::text::Text { bytes: bad_view, start: -1, length: 1 };
+    bounds(core::result::unwrap_err(ext::toml::parse_text(bad_start, ext::toml::default_options())));
+    let overflow: core::text::Text = core::text::Text { bytes: bad_view, start: 2147483647, length: 1 };
+    bounds(core::result::unwrap_err(ext::toml::parse_text(overflow, ext::toml::default_options())));
+    return 0;
+}

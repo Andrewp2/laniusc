@@ -1,0 +1,29 @@
+module app::main;
+import alloc::io;
+import alloc::string;
+import core::option;
+import core::result;
+import ext::json;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn error_tag(error: ext::json::Error) -> i32 { let result: i32 = match (error.kind) { ext::json::ErrorKind::NotInteger -> 1, ext::json::ErrorKind::NumberOutOfRange -> 2, ext::json::ErrorKind::WrongKind -> 3, _ -> 4 }; assert(error.offset == -1); return result; }
+fn space() { assert(std::io::write_byte(1, 32) == 1); }
+fn main() -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin(); let bytes: alloc::io::Buffer = alloc::io::new(); core::result::unwrap(std::stream::copy(source.borrow(), bytes.borrow()));
+    let text: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes.as_bytes(), bytes.len())); bytes.destroy();
+    let document: ext::json::Document = core::result::unwrap(ext::json::parse(text, ext::json::default_options())); text.destroy();
+    let root: i32 = core::option::unwrap(document.root()); let current: core::option::Option<i32> = core::result::unwrap(document.first_child(root));
+    while (core::option::is_some(current)) {
+        let id: i32 = core::option::unwrap(current);
+        let signed: core::result::Result<i64, ext::json::Error> = document.integer_i64(id); let unsigned: core::result::Result<u64, ext::json::Error> = document.integer_u64(id);
+        let signed_tag: i32 = 0; if (core::result::is_err(signed)) { signed_tag = error_tag(core::result::unwrap_err(signed)); }
+        let unsigned_tag: i32 = 0; if (core::result::is_err(unsigned)) { unsigned_tag = error_tag(core::result::unwrap_err(unsigned)); }
+        assert(std::io_decimal::write_i32(1, signed_tag) > 0); space();
+        let signed_value: i64 = 0; if (signed_tag == 0) { signed_value = core::result::unwrap(signed); } assert(std::io_decimal::write_i64(1, signed_value) > 0); space();
+        assert(std::io_decimal::write_i32(1, unsigned_tag) > 0); space();
+        let unsigned_value: u64 = 0; if (unsigned_tag == 0) { unsigned_value = core::result::unwrap(unsigned); } assert(std::io_decimal::write_u64(1, unsigned_value) > 0 && std::io::write_byte(1, 10) == 1);
+        current = core::result::unwrap(document.next_sibling(id));
+    }
+    document.destroy(); return 0;
+}

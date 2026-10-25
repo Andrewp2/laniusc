@@ -1,0 +1,164 @@
+// Test-only binary transport: no host TOML parser or production bridge.
+module app::main;
+import alloc::string;
+import core::f64;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::toml;
+import std::io;
+
+fn read(pointer: ptr, count: i32) -> i32 {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { return done; }
+        done += got;
+    }
+    return done;
+}
+fn write(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+fn get(bytes: [u8], index: i32) -> i32 {
+    return (bytes[index] as i32) | ((bytes[index + 1] as i32) << 8) | ((bytes[index + 2] as i32) << 16) | ((bytes[index + 3] as i32) << 24);
+}
+fn word(value: u32) {
+    let words: [i32; 1] = [0; 1];
+    let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 4);
+    bytes[0] = (value & 255) as u8;
+    bytes[1] = ((value >> 8) & 255) as u8;
+    bytes[2] = ((value >> 16) & 255) as u8;
+    bytes[3] = ((value >> 24) & 255) as u8;
+    write(pointer, 4);
+}
+fn wide(value: u64) { word(value as u32); word((value >> 32) as u32); }
+fn text(value: core::text::Text) {
+    word(value.byte_len() as u32);
+    let words: [i32; 256] = [0; 256];
+    let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 1024);
+    let at: i32 = 0;
+    while (at < value.byte_len()) {
+        let count: i32 = value.byte_len() - at;
+        if (count > 1024) { count = 1024; }
+        let index: i32 = 0;
+        while (index < count) { bytes[index] = core::option::unwrap(value.byte_at(at + index)); index += 1; }
+        write(pointer, count);
+        at += count;
+    }
+}
+fn kind_code(kind: ext::toml::Kind) -> u32 {
+    return match (kind) {
+        ext::toml::Kind::Table -> 0, ext::toml::Kind::Array -> 1,
+        ext::toml::Kind::String -> 2, ext::toml::Kind::Integer -> 3,
+        ext::toml::Kind::Float -> 4, ext::toml::Kind::Boolean -> 5,
+        ext::toml::Kind::OffsetDateTime -> 6, ext::toml::Kind::LocalDateTime -> 7,
+        ext::toml::Kind::LocalDate -> 8, ext::toml::Kind::LocalTime -> 9
+    };
+}
+fn node(document: ext::toml::Document, id: i32) {
+    let tag: u32 = kind_code(core::result::unwrap(document.kind(id)));
+    word(tag);
+    if (tag <= 1) {
+        let count: i32 = core::result::unwrap(document.child_count(id));
+        word(count as u32);
+        let child: core::option::Option<i32> = core::result::unwrap(document.first_child(id));
+        let index: i32 = 0;
+        while (core::option::is_some(child)) {
+            let current: i32 = core::option::unwrap(child);
+            if (tag == 0) {
+                let key: core::text::Text = core::result::unwrap(document.key_view(current));
+                assert(core::option::unwrap(core::result::unwrap(document.member_text(id, key))) == current);
+                text(key);
+            } else {
+                assert(core::option::unwrap(core::result::unwrap(document.element(id, index))) == current);
+            }
+            node(document, current);
+            child = core::result::unwrap(document.next_sibling(current));
+            index += 1;
+        }
+        assert(index == count);
+        return;
+    }
+    if (tag == 2) { text(core::result::unwrap(document.string_view(id))); return; }
+    if (tag == 3) { wide(core::result::unwrap(document.integer_i64(id)) as u64); return; }
+    if (tag == 4) { wide(core::f64::to_bits(core::result::unwrap(document.float64(id)))); return; }
+    if (tag == 5) {
+        let value: bool = core::result::unwrap(document.boolean(id));
+        if (value) { word(1); } else { word(0); }
+        return;
+    }
+    text(core::result::unwrap(document.temporal_view(id)));
+}
+fn failed(stage: u32, error: ext::toml::Error) {
+    word(stage);
+    let code: u32 = match (error.kind) {
+        ext::toml::ErrorKind::UnexpectedEnd -> 0, ext::toml::ErrorKind::UnexpectedByte -> 1,
+        ext::toml::ErrorKind::InvalidUtf8 -> 2, ext::toml::ErrorKind::InvalidEscape -> 3,
+        ext::toml::ErrorKind::InvalidNumber -> 4, ext::toml::ErrorKind::InvalidDateTime -> 5,
+        ext::toml::ErrorKind::NumberOutOfRange -> 6, ext::toml::ErrorKind::DuplicateKey -> 7,
+        ext::toml::ErrorKind::TableRedefinition -> 8, ext::toml::ErrorKind::InputLimit -> 9,
+        ext::toml::ErrorKind::NodeLimit -> 10, ext::toml::ErrorKind::DepthLimit -> 11,
+        ext::toml::ErrorKind::StringLimit -> 12, ext::toml::ErrorKind::NumberLimit -> 13,
+        ext::toml::ErrorKind::OutputLimit -> 14, ext::toml::ErrorKind::WorkLimit -> 15,
+        ext::toml::ErrorKind::AllocationFailed -> 16, ext::toml::ErrorKind::InvalidOptions -> 17,
+        ext::toml::ErrorKind::Bounds -> 18, ext::toml::ErrorKind::WrongKind -> 19
+    };
+    word(code);
+    word(error.offset as u32);
+}
+fn main() -> i32 {
+    let words: [i32; 65536] = [0; 65536];
+    let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 262144);
+    let header_words: [i32; 10] = [0; 10];
+    let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words);
+    let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer, 40);
+    while (true) {
+        let received: i32 = read(header_pointer, 40);
+        if (received == 0) { break; }
+        assert(received == 40);
+        let length: i32 = get(header, 0);
+        assert(length >= 0 && length <= 262144);
+        assert(read(pointer, length) == length);
+        let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, length);
+        if (core::result::is_err(decoded)) { word(3); word(2); word(0); continue; }
+        let source: alloc::string::String = core::result::unwrap(decoded);
+        let options: ext::toml::Options = ext::toml::default_options();
+        options.max_input_bytes = get(header, 4); options.max_nodes = get(header, 8);
+        options.max_depth = get(header, 12); options.max_string_bytes = get(header, 16);
+        options.max_number_bytes = get(header, 20); options.max_output_bytes = get(header, 24);
+        options.max_work = ((get(header, 28) as u32) as u64) | (((get(header, 32) as u32) as u64) << 32);
+        let parsed: core::result::Result<ext::toml::Document, ext::toml::Error> = ext::toml::parse(source, options);
+        if (get(header, 36) == 1) {
+            // Destroy the first successful owner before exercising the alternate entry.
+            if (core::result::is_ok(parsed)) { let old: ext::toml::Document = core::result::unwrap(parsed); old.destroy(); }
+            parsed = ext::toml::parse_text(source.as_text(), options);
+        }
+        source.destroy();
+        if (core::result::is_err(parsed)) { failed(1, core::result::unwrap_err(parsed)); continue; }
+        let document: ext::toml::Document = core::result::unwrap(parsed);
+        let count: i32 = document.node_count();
+        let encoded: core::result::Result<alloc::string::String, ext::toml::Error> = ext::toml::encode(document);
+        assert(document.node_count() == count);
+        if (core::result::is_err(encoded)) { failed(2, core::result::unwrap_err(encoded)); document.destroy(); continue; }
+        let output: alloc::string::String = core::result::unwrap(encoded);
+        assert(core::result::unwrap(ext::toml::measure(document)) == output.byte_len());
+        word(0);
+        node(document, core::option::unwrap(document.root()));
+        text(output.as_text());
+        output.destroy();
+        document.destroy(); document.destroy();
+        assert(document.node_count() == 0 && core::option::is_none(document.root()));
+    }
+    return 0;
+}

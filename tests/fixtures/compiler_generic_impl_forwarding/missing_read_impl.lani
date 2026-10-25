@@ -1,0 +1,20 @@
+module app::main;
+import core::io;
+import core::result;
+import probe::forward;
+
+struct WriteOnly { marker: i32 }
+pub impl WriteOnly { pub fn borrow(&self) -> &WriteOnly { return self; } }
+pub impl core::io::Write for WriteOnly {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        return core::result::Ok(0);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn main() -> i32 {
+    let leaf: WriteOnly = WriteOnly { marker:19 };
+    let adapter: probe::forward::Forward<WriteOnly> = probe::forward::forward(leaf.borrow());
+    let destination: [u8;3] = [77;3];
+    let rejected: core::result::Result<i32,core::io::Failure> = core::io::read_exact(adapter.borrow(),destination,0,3);
+    return 0;
+}

@@ -1,0 +1,57 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::deflate;
+fn bytes(text: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count);
+    return core::result::unwrap(core::slice::view(raw,count));
+}
+fn code(error: ext::deflate::Error) -> i32 {
+    let value: i32 = match (error) { ext::deflate::Error::Bounds -> 1, ext::deflate::Error::ScratchTooSmall(count) -> count+10, ext::deflate::Error::Capacity(count) -> count+100000, ext::deflate::Error::SizeOverflow -> 2 };
+    return value;
+}
+fn main() -> i32 {
+    assert(ext::deflate::scratch_len() == 32768);
+    let table: [i32;32772] = [777;32772];
+    let scratch: core::slice::View<i32> = core::result::unwrap(core::slice::view_range(table,2,32768));
+    let storage: [u8;40] = [211;40];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,3,30));
+    assert(core::result::unwrap(ext::deflate::encoded_len(bytes("",0),scratch)) == 2);
+    assert(core::result::unwrap(ext::deflate::encode_into(bytes("",0),output,scratch)) == 2);
+    assert(storage[3] == 3 && storage[4] == 0 && storage[5] == 211);
+    output.fill(211);
+    let source: [u8;12] = [9,97,98,99,97,98,99,97,98,99,8,7];
+    let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(source,1,9));
+    let size: i32 = core::result::unwrap(ext::deflate::encoded_len(input,scratch)); assert(size < 9);
+    assert(core::result::unwrap(ext::deflate::encode_into(input,output,scratch)) == size);
+    let index: i32 = 0; while (index < 3) { assert(storage[index] == 211); index += 1; }
+    index = 3+size; while (index < 40) { assert(storage[index] == 211); index += 1; }
+    assert(table[0] == 777 && table[1] == 777 && table[32770] == 777 && table[32771] == 777);
+    output.fill(211);
+    let short: core::slice::View<u8> = core::result::unwrap(output.subview(0,size-1));
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(input,short,scratch))) == size+100000);
+    let zeros: core::slice::View<u8> = core::result::unwrap(output.subview(0,0));
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(bytes("",0),zeros,scratch))) == 100002);
+    let unique: [u8;32] = [0;32]; index = 0;
+    while (index < 32) { unique[index] = (144+index) as u8; index += 1; }
+    let unique_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(unique,32));
+    // Nine-bit literals would take 38 bytes; stored encoding needs exactly 37.
+    assert(core::result::unwrap(ext::deflate::encoded_len(unique_view,scratch)) == 37);
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(unique_view,output,scratch))) == 100037);
+    let bad: core::slice::View<u8> = input; bad.start = -1;
+    assert(code(core::result::unwrap_err(ext::deflate::encoded_len(bad,scratch))) == 1);
+    bad = input; bad.length = -1;
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(bad,output,scratch))) == 1);
+    bad = output; bad.start = 2147483647; bad.length = 1;
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(input,bad,scratch))) == 1);
+    let short_table: core::slice::View<i32> = core::result::unwrap(scratch.subview(0,32767));
+    assert(code(core::result::unwrap_err(ext::deflate::encoded_len(input,short_table))) == 32778);
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(input,output,short_table))) == 32778);
+    let bad_table: core::slice::View<i32> = scratch; bad_table.start = -1;
+    assert(code(core::result::unwrap_err(ext::deflate::encoded_len(input,bad_table))) == 1);
+    bad_table = scratch; bad_table.start = 2147483647;
+    assert(code(core::result::unwrap_err(ext::deflate::encode_into(input,output,bad_table))) == 1);
+    index = 0; while (index < 40) { assert(storage[index] == 211); index += 1; }
+    return 0;
+}

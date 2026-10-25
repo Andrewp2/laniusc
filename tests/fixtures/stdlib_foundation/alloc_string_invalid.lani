@@ -1,0 +1,53 @@
+// expect: 0
+module app::main;
+import alloc::string;
+import core::result;
+
+fn utf8_error_at(error: alloc::string::Error, offset: i32) -> bool {
+    return match (error) { InvalidUtf8(index) -> index == offset, _ -> false };
+}
+
+fn overflow_error(error: alloc::string::Error) -> bool {
+    return match (error) { CapacityOverflow -> true, _ -> false };
+}
+
+fn invalid_at(bytes: [u8], count: i32, offset: i32) -> bool {
+    let result: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(bytes, count);
+    return match (result) {
+        Ok(value) -> false,
+        Err(error) -> utf8_error_at(error, offset),
+    };
+}
+
+fn main() -> i32 {
+    let continuation: [u8; 2] = [65, 128];
+    let overlong: [u8; 2] = [192, 128];
+    let overlong_three: [u8; 3] = [224, 128, 128];
+    let overlong_four: [u8; 4] = [240, 128, 128, 128];
+    let surrogate: [u8; 3] = [237, 160, 128];
+    let too_high: [u8; 4] = [244, 144, 128, 128];
+    let bad_tail: [u8; 3] = [226, 65, 172];
+    let truncated: [u8; 3] = [65, 240, 159];
+    if (!invalid_at(continuation, 2, 1)) { return 1; }
+    if (!invalid_at(overlong, 2, 0)) { return 2; }
+    if (!invalid_at(overlong_three, 3, 0)) { return 3; }
+    if (!invalid_at(overlong_four, 4, 0)) { return 4; }
+    if (!invalid_at(surrogate, 3, 0)) { return 5; }
+    if (!invalid_at(too_high, 4, 0)) { return 6; }
+    if (!invalid_at(bad_tail, 3, 0)) { return 7; }
+    if (!invalid_at(truncated, 3, 1)) { return 8; }
+    if (!core::result::is_err(alloc::string::from_utf8(continuation, -1))) { return 9; }
+    let text: alloc::string::String = alloc::string::new();
+    let pushed: core::result::Result<i32, alloc::string::Error> = text.try_push_scalar(42);
+    if (core::result::is_err(pushed)) { return 10; }
+    if (!core::result::is_err(text.try_append_utf8(bad_tail, 3))) { return 11; }
+    if (text.byte_len() != 1 || text.scalar_count() != 1) { return 12; }
+    if (!core::result::is_err(text.try_append_utf8(continuation, -1))) { return 13; }
+    // Overflow rejects before indexing the deliberately short source view.
+    let overflow: bool = match (text.try_append_utf8(continuation, 2147483647)) {
+        Ok(_) -> false, Err(error) -> overflow_error(error),
+    };
+    if (!overflow || text.byte_len() != 1) { return 14; }
+    text.destroy();
+    return 0;
+}

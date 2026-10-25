@@ -10,7 +10,7 @@
 #define LANIUS_FILE_CONTINUATIONS
 #include "../type/instances/body_impl_bindings.slang"
 
-static const uint BODY_CONTINUATION_ROW = BODY_IMPL_BINDING_ROW + 1u + BODY_MAX_IMPL_BINDINGS * 2u;
+static const uint BODY_CONTINUATION_ROW = BODY_IMPL_ARGUMENT_ROW + BODY_MAX_IMPL_ARGUMENTS;
 static const uint BODY_MAX_CONTINUATION_FILES = 1024u;
 
 uint body_continuation_count()

@@ -1,0 +1,42 @@
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import core::text;
+fn allocation(error: alloc::string::Error) -> bool {
+    let yes: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false }; return yes;
+}
+fn main() -> i32 {
+    let minimum: i64 = -9223372036854775808;
+    let maximum: u64 = 18446744073709551615;
+    let signed_result: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_i64(minimum);
+    if (core::result::is_err(signed_result)) { if (!allocation(core::result::unwrap_err(signed_result))) { return 1; } return 77; }
+    let signed: alloc::string::String = core::result::unwrap(signed_result);
+    if (signed.byte_len() != 20 || core::result::unwrap(signed.as_text().parse_i64()) != minimum) { return 2; }
+    let unsigned_result: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_u64(maximum);
+    if (core::result::is_err(unsigned_result)) { signed.destroy(); if (!allocation(core::result::unwrap_err(unsigned_result))) { return 3; } return 77; }
+    let unsigned: alloc::string::String = core::result::unwrap(unsigned_result);
+    if (unsigned.byte_len() != 20 || core::result::unwrap(unsigned.as_text().parse_u64()) != maximum) { return 4; }
+    let borrowed: core::text::Text = signed.as_text();
+    let capacity: i32 = signed.capacity();
+    let appended: core::result::Result<i32, alloc::string::Error> = signed.try_append_u64(maximum);
+    if (core::result::is_err(appended)) {
+        if (!allocation(core::result::unwrap_err(appended)) || signed.byte_len() != 20 || signed.capacity() != capacity ||
+            core::result::unwrap(borrowed.parse_i64()) != minimum) { return 5; }
+        signed.destroy(); unsigned.destroy(); return 77;
+    }
+    if (core::result::unwrap(appended) != 40 || core::result::unwrap(core::result::unwrap(signed.as_text().slice(20, 40)).parse_u64()) != maximum) { return 6; }
+    let again: core::result::Result<i32, alloc::string::Error> = unsigned.try_append_i64(minimum);
+    if (core::result::is_err(again)) {
+        if (!allocation(core::result::unwrap_err(again)) || unsigned.byte_len() != 20 || core::result::unwrap(unsigned.as_text().parse_u64()) != maximum) { return 7; }
+        signed.destroy(); unsigned.destroy(); return 77;
+    }
+    if (core::result::unwrap(again) != 40 || core::result::unwrap(core::result::unwrap(unsigned.as_text().slice(20, 40)).parse_i64()) != minimum) { return 8; }
+    // Capacity is reused; successful no-growth appends retain the prefix.
+    let reserved: core::result::Result<i32, alloc::string::Error> = signed.try_reserve(80);
+    if (core::result::is_err(reserved)) { signed.destroy(); unsigned.destroy(); return 77; }
+    let prefix: core::text::Text = core::result::unwrap(signed.as_text().slice(0, 20));
+    if (core::result::unwrap(signed.try_append_i64(-1)) != 42 || core::result::unwrap(prefix.parse_i64()) != minimum ||
+        core::result::unwrap(signed.try_append_u64(0)) != 43 || core::option::unwrap(signed.byte_at(42)) != 48) { return 9; }
+    signed.destroy(); unsigned.destroy(); return 0;
+}

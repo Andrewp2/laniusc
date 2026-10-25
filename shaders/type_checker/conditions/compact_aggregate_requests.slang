@@ -247,8 +247,12 @@ void validate_struct_literal_fields(uint node)
         expression_ref(field.value, actual_tag, actual_payload);
         if (expected_tag != TYPE_REF_INSTANCE || actual_tag == TYPE_REF_INVALID ||
             !checked_row_is_closed(expected_payload)) continue;
+        bool array_borrow = actual_tag == TYPE_REF_INSTANCE &&
+            array_borrow_matches(expected_payload, actual_payload);
+        if (array_borrow)
+            semantic_argument_mode_by_hir[field.value] = 4u;
         if (!checked_types_equal(CheckedSlots(), expected_tag, expected_payload, actual_tag, actual_payload, false) &&
-            !(actual_tag == TYPE_REF_INSTANCE && array_borrow_matches(expected_payload, actual_payload)))
+            !array_borrow)
             record_min_token_error(status, field.name_token, ERR_ASSIGN_MISMATCH, 0u);
     }
 }
@@ -333,9 +337,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         resolved_dependency_call(expression_node))
         return;
 
-    // Let, assignment and return borrow an array as a slice view; codegen
-    // captures the descriptor at the value node. Record fields build the
-    // view inside the aggregate constructor instead.
+    // As for record fields above, let, assignment and return capture the
+    // borrowed slice descriptor at the array value's completion point.
     if (expected_tag == TYPE_REF_INSTANCE && actual_tag == TYPE_REF_INSTANCE &&
         expected_payload != actual_payload && valid_hir(expression_node) &&
         array_borrow_matches(expected_payload, actual_payload))

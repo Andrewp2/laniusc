@@ -1,0 +1,566 @@
+// Portable numeric network values. No name lookup, sockets or host ABI.
+module core::net;
+import core::cmp;
+import core::hash;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, InvalidLength, InvalidIpv4, InvalidIpv6, InvalidScope, InvalidPort, InvalidSocket, InvalidPrefix, HostBitsSet, OutputTooSmall }
+pub struct Ipv4Addr { bits: u32 }
+pub struct Ipv6Addr { high: u64, low: u64 }
+pub enum IpAddr { V4(Ipv4Addr), V6(Ipv6Addr) }
+pub struct ScopedIpv6Addr { address: Ipv6Addr, scope: u32 }
+pub struct SocketAddrV4 { address: Ipv4Addr, port: u16 }
+pub struct SocketAddrV6 { address: Ipv6Addr, port: u16, scope: u32 }
+pub enum SocketAddr { V4(SocketAddrV4), V6(SocketAddrV6) }
+pub struct Ipv4Net { address: Ipv4Addr, prefix: u8 }
+pub struct Ipv6Net { address: Ipv6Addr, prefix: u8 }
+pub enum IpNet { V4(Ipv4Net), V6(Ipv6Net) }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn window(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn hex(value: u8) -> i32 { if (value >= 48 && value <= 57) { return (value-48) as i32; } if (value >= 65 && value <= 70) { return (value-55) as i32; } if (value >= 97 && value <= 102) { return (value-87) as i32; } return -1; }
+fn decimal(view: core::slice::View<u8>, maximum: u32) -> core::option::Option<u32> {
+    if (view.length == 0) { return core::option::None(); } let value: u32 = 0; let index: i32 = 0;
+    while (index < view.length) { let digit: u8 = byte(view,index); if (digit < 48 || digit > 57 || value > (maximum-(digit-48) as u32)/10) { return core::option::None(); } value = value*10+(digit-48) as u32; index += 1; } return core::option::Some(value);
+}
+pub fn ipv4(a: u8, b: u8, c: u8, d: u8) -> Ipv4Addr { return Ipv4Addr { bits: ((a as u32) << 24) | ((b as u32) << 16) | ((c as u32) << 8) | (d as u32) }; }
+pub fn ipv6(a: u16, b: u16, c: u16, d: u16, e: u16, f: u16, g: u16, h: u16) -> Ipv6Addr {
+    return Ipv6Addr { high: ((a as u64) << 48) | ((b as u64) << 32) | ((c as u64) << 16) | (d as u64), low: ((e as u64) << 48) | ((f as u64) << 32) | ((g as u64) << 16) | (h as u64) };
+}
+pub fn ipv4_from_octets(input: core::slice::View<u8>) -> core::result::Result<Ipv4Addr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length != 4) { return core::result::Err(Error::InvalidLength); } return core::result::Ok(ipv4(byte(input,0),byte(input,1),byte(input,2),byte(input,3)));
+}
+pub fn ipv6_from_octets(input: core::slice::View<u8>) -> core::result::Result<Ipv6Addr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length != 16) { return core::result::Err(Error::InvalidLength); }
+    let high: u64 = 0; let low: u64 = 0; let index: i32 = 0; while (index < 8) { high = (high << 8) | byte(input,index) as u64; low = (low << 8) | byte(input,index+8) as u64; index += 1; } return core::result::Ok(Ipv6Addr { high: high, low: low });
+}
+pub fn parse_ipv4(input: core::slice::View<u8>) -> core::result::Result<Ipv4Addr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length < 7 || input.length > 15) { return core::result::Err(Error::InvalidIpv4); }
+    let position: i32 = 0; let part: i32 = 0; let bits: u32 = 0;
+    while (part < 4) {
+        let start: i32 = position; while (position < input.length && byte(input,position) >= 48 && byte(input,position) <= 57) { position += 1; }
+        if (position == start || position-start > 3 || (position-start > 1 && byte(input,start) == 48)) { return core::result::Err(Error::InvalidIpv4); }
+        let value: core::option::Option<u32> = decimal(window(input,start,position),255); if (core::option::is_none(value)) { return core::result::Err(Error::InvalidIpv4); }
+        bits = (bits << 8) | core::option::unwrap(value); part += 1;
+        if (part < 4) { if (position == input.length || byte(input,position) != 46) { return core::result::Err(Error::InvalidIpv4); } position += 1; }
+    }
+    if (position != input.length) { return core::result::Err(Error::InvalidIpv4); } return core::result::Ok(Ipv4Addr { bits: bits });
+}
+pub fn parse_ipv6(input: core::slice::View<u8>) -> core::result::Result<Ipv6Addr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length < 2 || input.length > 45) { return core::result::Err(Error::InvalidIpv6); }
+    let pieces: [i32;8] = [0;8]; let count: i32 = 0; let position: i32 = 0; let compressed: i32 = -1;
+    if (byte(input,0) == 58) { if (byte(input,1) != 58) { return core::result::Err(Error::InvalidIpv6); } position = 2; compressed = 0; }
+    while (position < input.length) {
+        if (count == 8) { return core::result::Err(Error::InvalidIpv6); }
+        let start: i32 = position; let dotted: bool = false; while (position < input.length && byte(input,position) != 58) { if (byte(input,position) == 46) { dotted = true; } position += 1; }
+        if (dotted) {
+            if (position != input.length || count > 6) { return core::result::Err(Error::InvalidIpv6); }
+            let v4: core::result::Result<Ipv4Addr,Error> = parse_ipv4(window(input,start,position)); if (core::result::is_err(v4)) { return core::result::Err(Error::InvalidIpv6); }
+            let bits: u32 = core::result::unwrap(v4).bits; pieces[count] = (bits >> 16) as i32; pieces[count+1] = (bits & 65535) as i32; count += 2;
+        } else {
+            if (position == start || position-start > 4) { return core::result::Err(Error::InvalidIpv6); }
+            let value: i32 = 0; let index: i32 = start; while (index < position) { let digit: i32 = hex(byte(input,index)); if (digit < 0) { return core::result::Err(Error::InvalidIpv6); } value = value*16+digit; index += 1; }
+            pieces[count] = value; count += 1;
+        }
+        if (position < input.length) {
+            position += 1; if (position < input.length && byte(input,position) == 58) { if (compressed >= 0) { return core::result::Err(Error::InvalidIpv6); } compressed = count; position += 1; }
+            else { if (position == input.length) { return core::result::Err(Error::InvalidIpv6); } }
+        }
+    }
+    if (compressed >= 0) {
+        if (count == 8) { return core::result::Err(Error::InvalidIpv6); } let extra: i32 = 8-count; let index: i32 = count-1;
+        while (index >= compressed) { pieces[index+extra] = pieces[index]; index -= 1; } index = compressed; while (index < compressed+extra) { pieces[index] = 0; index += 1; }
+    } else { if (count != 8) { return core::result::Err(Error::InvalidIpv6); } }
+    return core::result::Ok(ipv6(pieces[0] as u16,pieces[1] as u16,pieces[2] as u16,pieces[3] as u16,pieces[4] as u16,pieces[5] as u16,pieces[6] as u16,pieces[7] as u16));
+}
+pub fn parse_ip(input: core::slice::View<u8>) -> core::result::Result<IpAddr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } let index: i32 = 0;
+    while (index < input.length) { if (byte(input,index) == 58) { let parsed: core::result::Result<Ipv6Addr,Error> = parse_ipv6(input); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); } return core::result::Ok(IpAddr::V6(core::result::unwrap(parsed))); } index += 1; }
+    let parsed: core::result::Result<Ipv4Addr,Error> = parse_ipv4(input); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); } return core::result::Ok(IpAddr::V4(core::result::unwrap(parsed)));
+}
+pub fn parse_scoped_ipv6(input: core::slice::View<u8>) -> core::result::Result<ScopedIpv6Addr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length > 56) { return core::result::Err(Error::InvalidScope); }
+    let split: i32 = 0; while (split < input.length && byte(input,split) != 37) { split += 1; }
+    let address: core::result::Result<Ipv6Addr,Error> = parse_ipv6(window(input,0,split)); if (core::result::is_err(address)) { return core::result::Err(core::result::unwrap_err(address)); }
+    let scope: u32 = 0;
+    if (split < input.length) { let parsed: core::option::Option<u32> = decimal(window(input,split+1,input.length),4294967295); if (core::option::is_none(parsed)) { return core::result::Err(Error::InvalidScope); } scope = core::option::unwrap(parsed); }
+    return core::result::Ok(ScopedIpv6Addr { address: core::result::unwrap(address), scope: scope });
+}
+pub fn parse_socket(input: core::slice::View<u8>) -> core::result::Result<SocketAddr,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length < 3 || input.length > 64) { return core::result::Err(Error::InvalidSocket); }
+    if (byte(input,0) == 91) {
+        let split: i32 = 1; while (split < input.length && byte(input,split) != 93) { split += 1; }
+        if (split+1 >= input.length || byte(input,split+1) != 58) { return core::result::Err(Error::InvalidSocket); }
+        let address: core::result::Result<ScopedIpv6Addr,Error> = parse_scoped_ipv6(window(input,1,split)); if (core::result::is_err(address)) { return core::result::Err(core::result::unwrap_err(address)); }
+        let port: core::option::Option<u32> = decimal(window(input,split+2,input.length),65535); if (core::option::is_none(port)) { return core::result::Err(Error::InvalidPort); }
+        let scoped: ScopedIpv6Addr = core::result::unwrap(address); return core::result::Ok(SocketAddr::V6(SocketAddrV6 { address: scoped.address, scope: scoped.scope, port: core::option::unwrap(port) as u16 }));
+    }
+    let split: i32 = 0; while (split < input.length && byte(input,split) != 58) { split += 1; } if (split == input.length) { return core::result::Err(Error::InvalidSocket); }
+    let address: core::result::Result<Ipv4Addr,Error> = parse_ipv4(window(input,0,split)); if (core::result::is_err(address)) { return core::result::Err(core::result::unwrap_err(address)); }
+    let port: core::option::Option<u32> = decimal(window(input,split+1,input.length),65535); if (core::option::is_none(port)) { return core::result::Err(Error::InvalidPort); }
+    return core::result::Ok(SocketAddr::V4(SocketAddrV4 { address: core::result::unwrap(address), port: core::option::unwrap(port) as u16 }));
+}
+
+fn emit_number(output: [u8], position: i32, value: u32, radix: u32) -> i32 {
+    let reversed: [u8;10] = [0;10]; let count: i32 = 0; let rest: u32 = value;
+    while (true) { let digit: u32 = rest % radix; let value: u8 = 48+digit as u8; if (digit >= 10) { value = 87+digit as u8; } reversed[count] = value; count += 1; rest = rest/radix; if (rest == 0) { break; } }
+    let index: i32 = count-1; let next: i32 = position; while (index >= 0) { output[next] = reversed[index]; next += 1; index -= 1; } return next;
+}
+fn emit_v4(output: [u8], position: i32, address: Ipv4Addr) -> i32 { let next: i32 = position; let index: i32 = 0; while (index < 4) { if (index > 0) { output[next] = 46; next += 1; } next = emit_number(output,next,(address.bits >> ((3-index)*8)) & 255,10); index += 1; } return next; }
+fn segment(address: Ipv6Addr, index: i32) -> u16 { if (index < 4) { return ((address.high >> ((3-index)*16)) & 65535) as u16; } return ((address.low >> ((7-index)*16)) & 65535) as u16; }
+fn emit_v6(output: [u8], position: i32, address: Ipv6Addr) -> i32 {
+    let next: i32 = position;
+    if (address.high == 0 && address.low >> 32 == 65535) { output[next] = 58; output[next+1] = 58; output[next+2] = 102; output[next+3] = 102; output[next+4] = 102; output[next+5] = 102; output[next+6] = 58; return emit_v4(output,next+7,Ipv4Addr { bits: address.low as u32 }); }
+    let best_start: i32 = -1; let best_length: i32 = 1; let index: i32 = 0;
+    while (index < 8) { if (segment(address,index) == 0) { let start: i32 = index; while (index < 8 && segment(address,index) == 0) { index += 1; } if (index-start > best_length) { best_start = start; best_length = index-start; } } else { index += 1; } }
+    index = 0;
+    while (index < 8) { if (index == best_start) { output[next] = 58; output[next+1] = 58; next += 2; index += best_length; } else { if (next > position && output[next-1] != 58) { output[next] = 58; next += 1; } next = emit_number(output,next,segment(address,index) as u32,16); index += 1; } } return next;
+}
+fn finish_format(bytes: [u8], count: i32, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { if (!valid(output)) { return core::result::Err(Error::Bounds); } if (output.length < count) { return core::result::Err(Error::OutputTooSmall); } let index: i32 = 0; while (index < count) { output.values[output.start+index] = bytes[index]; index += 1; } return core::result::Ok(count); }
+pub impl Ipv4Addr {
+    pub fn to_bits(&self) -> u32 { return self.bits; }
+    pub fn octet(&self, index: i32) -> core::option::Option<u8> { if (index < 0 || index >= 4) { return core::option::None(); } return core::option::Some(((self.bits >> ((3-index)*8)) & 255) as u8); }
+    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;4] = [0;4]; let index: i32 = 0; while (index < 4) { bytes[index] = core::option::unwrap(self.octet(index)); index += 1; } return finish_format(bytes,4,output); }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; return finish_format(bytes,emit_v4(bytes,0,Ipv4Addr { bits: self.bits }),output); }
+    pub fn to_ipv6_mapped(&self) -> Ipv6Addr { return Ipv6Addr { high: 0, low: (65535 as u64) << 32 | self.bits as u64 }; }
+    pub fn is_unspecified(&self) -> bool { return self.bits == 0; }
+    pub fn is_loopback(&self) -> bool { return self.bits >> 24 == 127; }
+    pub fn is_multicast(&self) -> bool { return self.bits >> 28 == 14; }
+    pub fn is_link_local(&self) -> bool { return self.bits >> 16 == 43518; }
+    pub fn is_private(&self) -> bool { return self.bits >> 24 == 10 || self.bits >> 20 == 2753 || self.bits >> 16 == 49320; }
+    pub fn is_broadcast(&self) -> bool { return self.bits == 4294967295; }
+}
+pub impl Ipv6Addr {
+    pub fn segment(&self, index: i32) -> core::option::Option<u16> { if (index < 0 || index >= 8) { return core::option::None(); } return core::option::Some(segment(Ipv6Addr { high: self.high, low: self.low },index)); }
+    pub fn octet(&self, index: i32) -> core::option::Option<u8> { if (index < 0 || index >= 16) { return core::option::None(); } let part: u16 = segment(Ipv6Addr { high: self.high, low: self.low },index/2); if (index % 2 == 0) { return core::option::Some((part >> 8) as u8); } return core::option::Some((part & 255) as u8); }
+    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;16] = [0;16]; let index: i32 = 0; while (index < 16) { bytes[index] = core::option::unwrap(self.octet(index)); index += 1; } return finish_format(bytes,16,output); }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; return finish_format(bytes,emit_v6(bytes,0,Ipv6Addr { high: self.high, low: self.low }),output); }
+    pub fn to_ipv4_mapped(&self) -> core::option::Option<Ipv4Addr> { if (self.high == 0 && self.low >> 32 == 65535) { return core::option::Some(Ipv4Addr { bits: self.low as u32 }); } return core::option::None(); }
+    pub fn is_unspecified(&self) -> bool { return self.high == 0 && self.low == 0; }
+    pub fn is_loopback(&self) -> bool { return self.high == 0 && self.low == 1; }
+    pub fn is_multicast(&self) -> bool { return self.high >> 56 == 255; }
+    pub fn is_link_local(&self) -> bool { return self.high >> 54 == 1018; }
+    pub fn is_private(&self) -> bool { return self.high >> 57 == 126; }
+}
+pub impl IpAddr {
+    pub fn version(&self) -> i32 { return match (self) { IpAddr::V4(value) -> 4, IpAddr::V6(value) -> 6 }; }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { return match (self) { IpAddr::V4(value) -> value.format_into(output), IpAddr::V6(value) -> value.format_into(output) }; }
+    pub fn write_octets(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { return match (self) { IpAddr::V4(value) -> value.write_octets(output), IpAddr::V6(value) -> value.write_octets(output) }; }
+}
+pub impl ScopedIpv6Addr {
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; let count: i32 = emit_v6(bytes,0,self.address); if (self.scope != 0) { bytes[count] = 37; count = emit_number(bytes,count+1,self.scope,10); } return finish_format(bytes,count,output); }
+}
+pub impl SocketAddrV4 {
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; let count: i32 = emit_v4(bytes,0,self.address); bytes[count] = 58; count = emit_number(bytes,count+1,self.port as u32,10); return finish_format(bytes,count,output); }
+}
+pub impl SocketAddrV6 {
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; bytes[0] = 91; let count: i32 = emit_v6(bytes,1,self.address); if (self.scope != 0) { bytes[count] = 37; count = emit_number(bytes,count+1,self.scope,10); } bytes[count] = 93; bytes[count+1] = 58; count = emit_number(bytes,count+2,self.port as u32,10); return finish_format(bytes,count,output); }
+}
+pub impl SocketAddr {
+    pub fn address(&self) -> IpAddr { return match (self) { SocketAddr::V4(value) -> IpAddr::V4(value.address), SocketAddr::V6(value) -> IpAddr::V6(value.address) }; }
+    pub fn port(&self) -> u16 { return match (self) { SocketAddr::V4(value) -> value.port, SocketAddr::V6(value) -> value.port }; }
+    pub fn scope_id(&self) -> u32 { return match (self) { SocketAddr::V4(value) -> 0, SocketAddr::V6(value) -> value.scope }; }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { return match (self) { SocketAddr::V4(value) -> value.format_into(output), SocketAddr::V6(value) -> value.format_into(output) }; }
+}
+
+fn mask32(prefix: i32) -> u32 { if (prefix == 0) { return 0; } return 4294967295 << (32-prefix); }
+fn mask64(prefix: i32) -> u64 { let all: u64 = 18446744073709551615; if (prefix == 0) { return 0; } return all << (64-prefix); }
+fn v6mask(prefix: i32) -> Ipv6Addr { if (prefix <= 64) { return Ipv6Addr { high: mask64(prefix), low: 0 }; } let all: u64 = 18446744073709551615; return Ipv6Addr { high: all, low: mask64(prefix-64) }; }
+pub fn ipv4_net_truncate(address: Ipv4Addr, prefix: i32) -> core::result::Result<Ipv4Net,Error> { if (prefix < 0 || prefix > 32) { return core::result::Err(Error::InvalidPrefix); } return core::result::Ok(Ipv4Net { address: Ipv4Addr { bits: address.bits & mask32(prefix) }, prefix: prefix as u8 }); }
+pub fn ipv6_net_truncate(address: Ipv6Addr, prefix: i32) -> core::result::Result<Ipv6Net,Error> { if (prefix < 0 || prefix > 128) { return core::result::Err(Error::InvalidPrefix); } let mask: Ipv6Addr = v6mask(prefix); return core::result::Ok(Ipv6Net { address: Ipv6Addr { high: address.high & mask.high, low: address.low & mask.low }, prefix: prefix as u8 }); }
+pub fn ipv4_net(address: Ipv4Addr, prefix: i32) -> core::result::Result<Ipv4Net,Error> { let result: core::result::Result<Ipv4Net,Error> = ipv4_net_truncate(address,prefix); if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value: Ipv4Net = core::result::unwrap(result); if (value.address.bits != address.bits) { return core::result::Err(Error::HostBitsSet); } return result; }
+pub fn ipv6_net(address: Ipv6Addr, prefix: i32) -> core::result::Result<Ipv6Net,Error> { let result: core::result::Result<Ipv6Net,Error> = ipv6_net_truncate(address,prefix); if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value: Ipv6Net = core::result::unwrap(result); if (value.address.high != address.high || value.address.low != address.low) { return core::result::Err(Error::HostBitsSet); } return result; }
+fn prefix_parse(input: core::slice::View<u8>, truncate: bool) -> core::result::Result<IpNet,Error> {
+    if (!valid(input)) { return core::result::Err(Error::Bounds); } if (input.length > 49) { return core::result::Err(Error::InvalidPrefix); }
+    let split: i32 = 0; while (split < input.length && byte(input,split) != 47) { split += 1; } if (split == input.length) { return core::result::Err(Error::InvalidPrefix); }
+    let address: core::result::Result<IpAddr,Error> = parse_ip(window(input,0,split)); if (core::result::is_err(address)) { return core::result::Err(core::result::unwrap_err(address)); }
+    let prefix: core::option::Option<u32> = decimal(window(input,split+1,input.length),128); if (core::option::is_none(prefix)) { return core::result::Err(Error::InvalidPrefix); }
+    let bits: i32 = core::option::unwrap(prefix) as i32;
+    return match (core::result::unwrap(address)) { IpAddr::V4(value) -> net4_result(value,bits,truncate), IpAddr::V6(value) -> net6_result(value,bits,truncate) };
+}
+fn net4_result(address: Ipv4Addr, prefix: i32, truncate: bool) -> core::result::Result<IpNet,Error> { let result: core::result::Result<Ipv4Net,Error> = ipv4_net(address,prefix); if (truncate) { result = ipv4_net_truncate(address,prefix); } if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } return core::result::Ok(IpNet::V4(core::result::unwrap(result))); }
+fn net6_result(address: Ipv6Addr, prefix: i32, truncate: bool) -> core::result::Result<IpNet,Error> { let result: core::result::Result<Ipv6Net,Error> = ipv6_net(address,prefix); if (truncate) { result = ipv6_net_truncate(address,prefix); } if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } return core::result::Ok(IpNet::V6(core::result::unwrap(result))); }
+pub fn parse_prefix(input: core::slice::View<u8>) -> core::result::Result<IpNet,Error> { return prefix_parse(input,false); }
+pub fn parse_prefix_truncate(input: core::slice::View<u8>) -> core::result::Result<IpNet,Error> { return prefix_parse(input,true); }
+pub impl Ipv4Net {
+    pub fn network(&self) -> Ipv4Addr { return self.address; }
+    pub fn prefix_len(&self) -> i32 { return self.prefix as i32; }
+    pub fn netmask(&self) -> Ipv4Addr { return Ipv4Addr { bits: mask32(self.prefix as i32) }; }
+    pub fn hostmask(&self) -> Ipv4Addr { return Ipv4Addr { bits: mask32(self.prefix as i32) ^ 4294967295 }; }
+    pub fn last(&self) -> Ipv4Addr { return Ipv4Addr { bits: self.address.bits | self.hostmask().bits }; }
+    pub fn contains(&self, address: Ipv4Addr) -> bool { return (address.bits & mask32(self.prefix as i32)) == self.address.bits; }
+    pub fn contains_network(&self, other: Ipv4Net) -> bool { return self.prefix <= other.prefix && self.contains(other.address); }
+    pub fn overlaps(&self, other: Ipv4Net) -> bool { return self.contains(other.address) || other.contains(self.address); }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; let count: i32 = emit_v4(bytes,0,self.address); bytes[count] = 47; count = emit_number(bytes,count+1,self.prefix as u32,10); return finish_format(bytes,count,output); }
+}
+pub impl Ipv6Net {
+    pub fn network(&self) -> Ipv6Addr { return self.address; }
+    pub fn prefix_len(&self) -> i32 { return self.prefix as i32; }
+    pub fn netmask(&self) -> Ipv6Addr { return v6mask(self.prefix as i32); }
+    pub fn hostmask(&self) -> Ipv6Addr { let mask: Ipv6Addr = v6mask(self.prefix as i32); let all: u64 = 18446744073709551615; return Ipv6Addr { high: mask.high ^ all, low: mask.low ^ all }; }
+    pub fn last(&self) -> Ipv6Addr { let host: Ipv6Addr = self.hostmask(); return Ipv6Addr { high: self.address.high | host.high, low: self.address.low | host.low }; }
+    pub fn contains(&self, address: Ipv6Addr) -> bool { let mask: Ipv6Addr = v6mask(self.prefix as i32); return (address.high & mask.high) == self.address.high && (address.low & mask.low) == self.address.low; }
+    pub fn contains_network(&self, other: Ipv6Net) -> bool { return self.prefix <= other.prefix && self.contains(other.address); }
+    pub fn overlaps(&self, other: Ipv6Net) -> bool { return self.contains(other.address) || other.contains(self.address); }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { let bytes: [u8;80] = [0;80]; let count: i32 = emit_v6(bytes,0,self.address); bytes[count] = 47; count = emit_number(bytes,count+1,self.prefix as u32,10); return finish_format(bytes,count,output); }
+}
+pub impl IpNet {
+    pub fn network(&self) -> IpAddr { return match (self) { IpNet::V4(value) -> IpAddr::V4(value.network()), IpNet::V6(value) -> IpAddr::V6(value.network()) }; }
+    pub fn last(&self) -> IpAddr { return match (self) { IpNet::V4(value) -> IpAddr::V4(value.last()), IpNet::V6(value) -> IpAddr::V6(value.last()) }; }
+    pub fn prefix_len(&self) -> i32 { return match (self) { IpNet::V4(value) -> value.prefix_len(), IpNet::V6(value) -> value.prefix_len() }; }
+    pub fn netmask(&self) -> IpAddr { return match (self) { IpNet::V4(value) -> IpAddr::V4(value.netmask()), IpNet::V6(value) -> IpAddr::V6(value.netmask()) }; }
+    pub fn hostmask(&self) -> IpAddr { return match (self) { IpNet::V4(value) -> IpAddr::V4(value.hostmask()), IpNet::V6(value) -> IpAddr::V6(value.hostmask()) }; }
+    pub fn contains_network(&self, other: IpNet) -> bool { return match (self) { IpNet::V4(value) -> contains_net4(value,other), IpNet::V6(value) -> contains_net6(value,other) }; }
+    pub fn overlaps(&self, other: IpNet) -> bool { return match (self) { IpNet::V4(value) -> overlaps4(value,other), IpNet::V6(value) -> overlaps6(value,other) }; }
+    pub fn contains(&self, address: IpAddr) -> bool { return match (self) { IpNet::V4(value) -> contains4(value,address), IpNet::V6(value) -> contains6(value,address) }; }
+    pub fn format_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32,Error> { return match (self) { IpNet::V4(value) -> value.format_into(output), IpNet::V6(value) -> value.format_into(output) }; }
+}
+fn contains4(net: Ipv4Net, address: IpAddr) -> bool { return match (address) { IpAddr::V4(value) -> net.contains(value), IpAddr::V6(value) -> false }; }
+fn contains6(net: Ipv6Net, address: IpAddr) -> bool { return match (address) { IpAddr::V4(value) -> false, IpAddr::V6(value) -> net.contains(value) }; }
+fn contains_net4(net: Ipv4Net, other: IpNet) -> bool { return match (other) { IpNet::V4(value) -> net.contains_network(value), IpNet::V6(value) -> false }; }
+fn contains_net6(net: Ipv6Net, other: IpNet) -> bool { return match (other) { IpNet::V4(value) -> false, IpNet::V6(value) -> net.contains_network(value) }; }
+fn overlaps4(net: Ipv4Net, other: IpNet) -> bool { return match (other) { IpNet::V4(value) -> net.overlaps(value), IpNet::V6(value) -> false }; }
+fn overlaps6(net: Ipv6Net, other: IpNet) -> bool { return match (other) { IpNet::V4(value) -> false, IpNet::V6(value) -> net.overlaps(value) }; }
+
+pub fn compare_ipv4(left: Ipv4Addr, right: Ipv4Addr) -> i32 { if (left.bits < right.bits) { return -1; } if (left.bits > right.bits) { return 1; } return 0; }
+pub fn compare_ipv6(left: Ipv6Addr, right: Ipv6Addr) -> i32 { if (left.high < right.high) { return -1; } if (left.high > right.high) { return 1; } if (left.low < right.low) { return -1; } if (left.low > right.low) { return 1; } return 0; }
+fn ip4_compare(left: Ipv4Addr, right: IpAddr) -> i32 { return match (right) { IpAddr::V4(value) -> compare_ipv4(left,value), IpAddr::V6(value) -> -1 }; }
+fn ip6_compare(left: Ipv6Addr, right: IpAddr) -> i32 { return match (right) { IpAddr::V4(value) -> 1, IpAddr::V6(value) -> compare_ipv6(left,value) }; }
+pub fn compare_ip(left: IpAddr, right: IpAddr) -> i32 { return match (left) { IpAddr::V4(value) -> ip4_compare(value,right), IpAddr::V6(value) -> ip6_compare(value,right) }; }
+fn compare_u32(left: u32, right: u32) -> i32 { if (left < right) { return -1; } if (left > right) { return 1; } return 0; }
+pub fn compare_scoped(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> i32 { let cmp: i32 = compare_ipv6(left.address,right.address); if (cmp != 0) { return cmp; } return compare_u32(left.scope,right.scope); }
+pub fn compare_socket4(left: SocketAddrV4, right: SocketAddrV4) -> i32 { let cmp: i32 = compare_ipv4(left.address,right.address); if (cmp != 0) { return cmp; } return compare_u32(left.port as u32,right.port as u32); }
+pub fn compare_socket6(left: SocketAddrV6, right: SocketAddrV6) -> i32 { let cmp: i32 = compare_ipv6(left.address,right.address); if (cmp != 0) { return cmp; } cmp = compare_u32(left.port as u32,right.port as u32); if (cmp != 0) { return cmp; } return compare_u32(left.scope,right.scope); }
+fn socket4_compare(left: SocketAddrV4, right: SocketAddr) -> i32 { return match (right) { SocketAddr::V4(value) -> compare_socket4(left,value), SocketAddr::V6(value) -> -1 }; }
+fn socket6_compare(left: SocketAddrV6, right: SocketAddr) -> i32 { return match (right) { SocketAddr::V4(value) -> 1, SocketAddr::V6(value) -> compare_socket6(left,value) }; }
+pub fn compare_socket(left: SocketAddr, right: SocketAddr) -> i32 { return match (left) { SocketAddr::V4(value) -> socket4_compare(value,right), SocketAddr::V6(value) -> socket6_compare(value,right) }; }
+pub fn compare_net4(left: Ipv4Net, right: Ipv4Net) -> i32 { let cmp: i32 = compare_ipv4(left.address,right.address); if (cmp != 0) { return cmp; } return compare_u32(left.prefix as u32,right.prefix as u32); }
+pub fn compare_net6(left: Ipv6Net, right: Ipv6Net) -> i32 { let cmp: i32 = compare_ipv6(left.address,right.address); if (cmp != 0) { return cmp; } return compare_u32(left.prefix as u32,right.prefix as u32); }
+fn net4_compare(left: Ipv4Net, right: IpNet) -> i32 { return match (right) { IpNet::V4(value) -> compare_net4(left,value), IpNet::V6(value) -> -1 }; }
+fn net6_compare(left: Ipv6Net, right: IpNet) -> i32 { return match (right) { IpNet::V4(value) -> 1, IpNet::V6(value) -> compare_net6(left,value) }; }
+pub fn compare_prefix(left: IpNet, right: IpNet) -> i32 { return match (left) { IpNet::V4(value) -> net4_compare(value,right), IpNet::V6(value) -> net6_compare(value,right) }; }
+fn hash_word(state: u32, word: u32) -> u32 { let index: i32 = 3; let next: u32 = state; while (index >= 0) { next = core::hash::fnv1a_step(next,((word >> (index*8)) & 255) as u8); index -= 1; } return next; }
+pub fn hash_ipv4(value: Ipv4Addr) -> u32 { return hash_word(core::hash::FNV1A_OFFSET_BASIS,value.bits); }
+fn hash6(initial: u32, value: Ipv6Addr) -> u32 { let state: u32 = hash_word(initial,(value.high >> 32) as u32); state = hash_word(state,value.high as u32); state = hash_word(state,(value.low >> 32) as u32); return hash_word(state,value.low as u32); }
+pub fn hash_ipv6(value: Ipv6Addr) -> u32 { return hash6(core::hash::FNV1A_OFFSET_BASIS,value); }
+pub fn hash_ip(value: IpAddr) -> u32 { return match (value) { IpAddr::V4(address) -> hash_word(core::hash::fnv1a_step(core::hash::FNV1A_OFFSET_BASIS,4),address.bits), IpAddr::V6(address) -> hash6(core::hash::fnv1a_step(core::hash::FNV1A_OFFSET_BASIS,6),address) }; }
+pub fn hash_scoped(value: ScopedIpv6Addr) -> u32 { return hash_word(hash_ipv6(value.address),value.scope); }
+pub fn hash_socket4(value: SocketAddrV4) -> u32 { return hash_word(hash_ipv4(value.address),value.port as u32); }
+pub fn hash_socket6(value: SocketAddrV6) -> u32 { return hash_word(hash_word(hash_ipv6(value.address),value.port as u32),value.scope); }
+pub fn hash_socket(value: SocketAddr) -> u32 { return match (value) { SocketAddr::V4(address) -> core::hash::fnv1a_step(hash_socket4(address),4), SocketAddr::V6(address) -> core::hash::fnv1a_step(hash_socket6(address),6) }; }
+pub fn hash_net4(value: Ipv4Net) -> u32 { return core::hash::fnv1a_step(hash_ipv4(value.address),value.prefix); }
+pub fn hash_net6(value: Ipv6Net) -> u32 { return core::hash::fnv1a_step(hash_ipv6(value.address),value.prefix); }
+pub fn hash_prefix(value: IpNet) -> u32 { return match (value) { IpNet::V4(net) -> core::hash::fnv1a_step(hash_net4(net),4), IpNet::V6(net) -> core::hash::fnv1a_step(hash_net6(net),6) }; }
+
+pub impl core::cmp::Eq<Ipv4Addr> for Ipv4Addr {
+    pub fn eq(left: Ipv4Addr, right: Ipv4Addr) -> bool { return compare_ipv4(left,right) == 0; }
+    pub fn ne(left: Ipv4Addr, right: Ipv4Addr) -> bool { return compare_ipv4(left,right) != 0; }
+}
+pub impl core::cmp::Ord<Ipv4Addr> for Ipv4Addr {
+    pub fn lt(left: Ipv4Addr, right: Ipv4Addr) -> bool { return compare_ipv4(left,right) < 0; }
+    pub fn le(left: Ipv4Addr, right: Ipv4Addr) -> bool { return compare_ipv4(left,right) <= 0; }
+    pub fn gt(left: Ipv4Addr, right: Ipv4Addr) -> bool { return compare_ipv4(left,right) > 0; }
+    pub fn ge(left: Ipv4Addr, right: Ipv4Addr) -> bool { return compare_ipv4(left,right) >= 0; }
+}
+pub impl core::hash::Hash<Ipv4Addr> for Ipv4Addr {
+    pub fn hash(value: Ipv4Addr) -> u32 { return hash_ipv4(value); }
+}
+
+pub impl core::cmp::Eq<Ipv6Addr> for Ipv6Addr {
+    pub fn eq(left: Ipv6Addr, right: Ipv6Addr) -> bool { return compare_ipv6(left,right) == 0; }
+    pub fn ne(left: Ipv6Addr, right: Ipv6Addr) -> bool { return compare_ipv6(left,right) != 0; }
+}
+pub impl core::cmp::Ord<Ipv6Addr> for Ipv6Addr {
+    pub fn lt(left: Ipv6Addr, right: Ipv6Addr) -> bool { return compare_ipv6(left,right) < 0; }
+    pub fn le(left: Ipv6Addr, right: Ipv6Addr) -> bool { return compare_ipv6(left,right) <= 0; }
+    pub fn gt(left: Ipv6Addr, right: Ipv6Addr) -> bool { return compare_ipv6(left,right) > 0; }
+    pub fn ge(left: Ipv6Addr, right: Ipv6Addr) -> bool { return compare_ipv6(left,right) >= 0; }
+}
+pub impl core::hash::Hash<Ipv6Addr> for Ipv6Addr {
+    pub fn hash(value: Ipv6Addr) -> u32 { return hash_ipv6(value); }
+}
+
+pub impl core::cmp::Eq<IpAddr> for IpAddr {
+    pub fn eq(left: IpAddr, right: IpAddr) -> bool { return compare_ip(left,right) == 0; }
+    pub fn ne(left: IpAddr, right: IpAddr) -> bool { return compare_ip(left,right) != 0; }
+}
+pub impl core::cmp::Ord<IpAddr> for IpAddr {
+    pub fn lt(left: IpAddr, right: IpAddr) -> bool { return compare_ip(left,right) < 0; }
+    pub fn le(left: IpAddr, right: IpAddr) -> bool { return compare_ip(left,right) <= 0; }
+    pub fn gt(left: IpAddr, right: IpAddr) -> bool { return compare_ip(left,right) > 0; }
+    pub fn ge(left: IpAddr, right: IpAddr) -> bool { return compare_ip(left,right) >= 0; }
+}
+pub impl core::hash::Hash<IpAddr> for IpAddr {
+    pub fn hash(value: IpAddr) -> u32 { return hash_ip(value); }
+}
+
+pub impl core::cmp::Eq<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn eq(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return compare_scoped(left,right) == 0; }
+    pub fn ne(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return compare_scoped(left,right) != 0; }
+}
+pub impl core::cmp::Ord<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn lt(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return compare_scoped(left,right) < 0; }
+    pub fn le(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return compare_scoped(left,right) <= 0; }
+    pub fn gt(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return compare_scoped(left,right) > 0; }
+    pub fn ge(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return compare_scoped(left,right) >= 0; }
+}
+pub impl core::hash::Hash<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn hash(value: ScopedIpv6Addr) -> u32 { return hash_scoped(value); }
+}
+
+pub impl core::cmp::Eq<SocketAddrV4> for SocketAddrV4 {
+    pub fn eq(left: SocketAddrV4, right: SocketAddrV4) -> bool { return compare_socket4(left,right) == 0; }
+    pub fn ne(left: SocketAddrV4, right: SocketAddrV4) -> bool { return compare_socket4(left,right) != 0; }
+}
+pub impl core::cmp::Ord<SocketAddrV4> for SocketAddrV4 {
+    pub fn lt(left: SocketAddrV4, right: SocketAddrV4) -> bool { return compare_socket4(left,right) < 0; }
+    pub fn le(left: SocketAddrV4, right: SocketAddrV4) -> bool { return compare_socket4(left,right) <= 0; }
+    pub fn gt(left: SocketAddrV4, right: SocketAddrV4) -> bool { return compare_socket4(left,right) > 0; }
+    pub fn ge(left: SocketAddrV4, right: SocketAddrV4) -> bool { return compare_socket4(left,right) >= 0; }
+}
+pub impl core::hash::Hash<SocketAddrV4> for SocketAddrV4 {
+    pub fn hash(value: SocketAddrV4) -> u32 { return hash_socket4(value); }
+}
+
+pub impl core::cmp::Eq<SocketAddrV6> for SocketAddrV6 {
+    pub fn eq(left: SocketAddrV6, right: SocketAddrV6) -> bool { return compare_socket6(left,right) == 0; }
+    pub fn ne(left: SocketAddrV6, right: SocketAddrV6) -> bool { return compare_socket6(left,right) != 0; }
+}
+pub impl core::cmp::Ord<SocketAddrV6> for SocketAddrV6 {
+    pub fn lt(left: SocketAddrV6, right: SocketAddrV6) -> bool { return compare_socket6(left,right) < 0; }
+    pub fn le(left: SocketAddrV6, right: SocketAddrV6) -> bool { return compare_socket6(left,right) <= 0; }
+    pub fn gt(left: SocketAddrV6, right: SocketAddrV6) -> bool { return compare_socket6(left,right) > 0; }
+    pub fn ge(left: SocketAddrV6, right: SocketAddrV6) -> bool { return compare_socket6(left,right) >= 0; }
+}
+pub impl core::hash::Hash<SocketAddrV6> for SocketAddrV6 {
+    pub fn hash(value: SocketAddrV6) -> u32 { return hash_socket6(value); }
+}
+
+pub impl core::cmp::Eq<SocketAddr> for SocketAddr {
+    pub fn eq(left: SocketAddr, right: SocketAddr) -> bool { return compare_socket(left,right) == 0; }
+    pub fn ne(left: SocketAddr, right: SocketAddr) -> bool { return compare_socket(left,right) != 0; }
+}
+pub impl core::cmp::Ord<SocketAddr> for SocketAddr {
+    pub fn lt(left: SocketAddr, right: SocketAddr) -> bool { return compare_socket(left,right) < 0; }
+    pub fn le(left: SocketAddr, right: SocketAddr) -> bool { return compare_socket(left,right) <= 0; }
+    pub fn gt(left: SocketAddr, right: SocketAddr) -> bool { return compare_socket(left,right) > 0; }
+    pub fn ge(left: SocketAddr, right: SocketAddr) -> bool { return compare_socket(left,right) >= 0; }
+}
+pub impl core::hash::Hash<SocketAddr> for SocketAddr {
+    pub fn hash(value: SocketAddr) -> u32 { return hash_socket(value); }
+}
+
+pub impl core::cmp::Eq<Ipv4Net> for Ipv4Net {
+    pub fn eq(left: Ipv4Net, right: Ipv4Net) -> bool { return compare_net4(left,right) == 0; }
+    pub fn ne(left: Ipv4Net, right: Ipv4Net) -> bool { return compare_net4(left,right) != 0; }
+}
+pub impl core::cmp::Ord<Ipv4Net> for Ipv4Net {
+    pub fn lt(left: Ipv4Net, right: Ipv4Net) -> bool { return compare_net4(left,right) < 0; }
+    pub fn le(left: Ipv4Net, right: Ipv4Net) -> bool { return compare_net4(left,right) <= 0; }
+    pub fn gt(left: Ipv4Net, right: Ipv4Net) -> bool { return compare_net4(left,right) > 0; }
+    pub fn ge(left: Ipv4Net, right: Ipv4Net) -> bool { return compare_net4(left,right) >= 0; }
+}
+pub impl core::hash::Hash<Ipv4Net> for Ipv4Net {
+    pub fn hash(value: Ipv4Net) -> u32 { return hash_net4(value); }
+}
+
+pub impl core::cmp::Eq<Ipv6Net> for Ipv6Net {
+    pub fn eq(left: Ipv6Net, right: Ipv6Net) -> bool { return compare_net6(left,right) == 0; }
+    pub fn ne(left: Ipv6Net, right: Ipv6Net) -> bool { return compare_net6(left,right) != 0; }
+}
+pub impl core::cmp::Ord<Ipv6Net> for Ipv6Net {
+    pub fn lt(left: Ipv6Net, right: Ipv6Net) -> bool { return compare_net6(left,right) < 0; }
+    pub fn le(left: Ipv6Net, right: Ipv6Net) -> bool { return compare_net6(left,right) <= 0; }
+    pub fn gt(left: Ipv6Net, right: Ipv6Net) -> bool { return compare_net6(left,right) > 0; }
+    pub fn ge(left: Ipv6Net, right: Ipv6Net) -> bool { return compare_net6(left,right) >= 0; }
+}
+pub impl core::hash::Hash<Ipv6Net> for Ipv6Net {
+    pub fn hash(value: Ipv6Net) -> u32 { return hash_net6(value); }
+}
+
+pub impl core::cmp::Eq<IpNet> for IpNet {
+    pub fn eq(left: IpNet, right: IpNet) -> bool { return compare_prefix(left,right) == 0; }
+    pub fn ne(left: IpNet, right: IpNet) -> bool { return compare_prefix(left,right) != 0; }
+}
+pub impl core::cmp::Ord<IpNet> for IpNet {
+    pub fn lt(left: IpNet, right: IpNet) -> bool { return compare_prefix(left,right) < 0; }
+    pub fn le(left: IpNet, right: IpNet) -> bool { return compare_prefix(left,right) <= 0; }
+    pub fn gt(left: IpNet, right: IpNet) -> bool { return compare_prefix(left,right) > 0; }
+    pub fn ge(left: IpNet, right: IpNet) -> bool { return compare_prefix(left,right) >= 0; }
+}
+pub impl core::hash::Hash<IpNet> for IpNet {
+    pub fn hash(value: IpNet) -> u32 { return hash_prefix(value); }
+}
+
+pub impl core::cmp::PartialEq<Ipv4Addr> for Ipv4Addr {
+    pub fn partial_eq(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::eq(left, right); }
+    pub fn partial_ne(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv4Addr> for Ipv4Addr {
+    pub fn partial_lt(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::lt(left, right); }
+    pub fn partial_le(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::le(left, right); }
+    pub fn partial_gt(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::gt(left, right); }
+    pub fn partial_ge(left: Ipv4Addr, right: Ipv4Addr) -> bool { return Ipv4Addr::ge(left, right); }
+    pub fn partial_cmp(left: Ipv4Addr, right: Ipv4Addr) -> core::cmp::PartialOrdering {
+        if (Ipv4Addr::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv4Addr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Ipv6Addr> for Ipv6Addr {
+    pub fn partial_eq(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::eq(left, right); }
+    pub fn partial_ne(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv6Addr> for Ipv6Addr {
+    pub fn partial_lt(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::lt(left, right); }
+    pub fn partial_le(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::le(left, right); }
+    pub fn partial_gt(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::gt(left, right); }
+    pub fn partial_ge(left: Ipv6Addr, right: Ipv6Addr) -> bool { return Ipv6Addr::ge(left, right); }
+    pub fn partial_cmp(left: Ipv6Addr, right: Ipv6Addr) -> core::cmp::PartialOrdering {
+        if (Ipv6Addr::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv6Addr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<IpAddr> for IpAddr {
+    pub fn partial_eq(left: IpAddr, right: IpAddr) -> bool { return IpAddr::eq(left, right); }
+    pub fn partial_ne(left: IpAddr, right: IpAddr) -> bool { return IpAddr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<IpAddr> for IpAddr {
+    pub fn partial_lt(left: IpAddr, right: IpAddr) -> bool { return IpAddr::lt(left, right); }
+    pub fn partial_le(left: IpAddr, right: IpAddr) -> bool { return IpAddr::le(left, right); }
+    pub fn partial_gt(left: IpAddr, right: IpAddr) -> bool { return IpAddr::gt(left, right); }
+    pub fn partial_ge(left: IpAddr, right: IpAddr) -> bool { return IpAddr::ge(left, right); }
+    pub fn partial_cmp(left: IpAddr, right: IpAddr) -> core::cmp::PartialOrdering {
+        if (IpAddr::lt(left, right)) { return core::cmp::Less; }
+        if (IpAddr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn partial_eq(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::eq(left, right); }
+    pub fn partial_ne(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<ScopedIpv6Addr> for ScopedIpv6Addr {
+    pub fn partial_lt(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::lt(left, right); }
+    pub fn partial_le(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::le(left, right); }
+    pub fn partial_gt(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::gt(left, right); }
+    pub fn partial_ge(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> bool { return ScopedIpv6Addr::ge(left, right); }
+    pub fn partial_cmp(left: ScopedIpv6Addr, right: ScopedIpv6Addr) -> core::cmp::PartialOrdering {
+        if (ScopedIpv6Addr::lt(left, right)) { return core::cmp::Less; }
+        if (ScopedIpv6Addr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SocketAddrV4> for SocketAddrV4 {
+    pub fn partial_eq(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::eq(left, right); }
+    pub fn partial_ne(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SocketAddrV4> for SocketAddrV4 {
+    pub fn partial_lt(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::lt(left, right); }
+    pub fn partial_le(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::le(left, right); }
+    pub fn partial_gt(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::gt(left, right); }
+    pub fn partial_ge(left: SocketAddrV4, right: SocketAddrV4) -> bool { return SocketAddrV4::ge(left, right); }
+    pub fn partial_cmp(left: SocketAddrV4, right: SocketAddrV4) -> core::cmp::PartialOrdering {
+        if (SocketAddrV4::lt(left, right)) { return core::cmp::Less; }
+        if (SocketAddrV4::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SocketAddrV6> for SocketAddrV6 {
+    pub fn partial_eq(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::eq(left, right); }
+    pub fn partial_ne(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SocketAddrV6> for SocketAddrV6 {
+    pub fn partial_lt(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::lt(left, right); }
+    pub fn partial_le(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::le(left, right); }
+    pub fn partial_gt(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::gt(left, right); }
+    pub fn partial_ge(left: SocketAddrV6, right: SocketAddrV6) -> bool { return SocketAddrV6::ge(left, right); }
+    pub fn partial_cmp(left: SocketAddrV6, right: SocketAddrV6) -> core::cmp::PartialOrdering {
+        if (SocketAddrV6::lt(left, right)) { return core::cmp::Less; }
+        if (SocketAddrV6::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<SocketAddr> for SocketAddr {
+    pub fn partial_eq(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::eq(left, right); }
+    pub fn partial_ne(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<SocketAddr> for SocketAddr {
+    pub fn partial_lt(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::lt(left, right); }
+    pub fn partial_le(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::le(left, right); }
+    pub fn partial_gt(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::gt(left, right); }
+    pub fn partial_ge(left: SocketAddr, right: SocketAddr) -> bool { return SocketAddr::ge(left, right); }
+    pub fn partial_cmp(left: SocketAddr, right: SocketAddr) -> core::cmp::PartialOrdering {
+        if (SocketAddr::lt(left, right)) { return core::cmp::Less; }
+        if (SocketAddr::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Ipv4Net> for Ipv4Net {
+    pub fn partial_eq(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::eq(left, right); }
+    pub fn partial_ne(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv4Net> for Ipv4Net {
+    pub fn partial_lt(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::lt(left, right); }
+    pub fn partial_le(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::le(left, right); }
+    pub fn partial_gt(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::gt(left, right); }
+    pub fn partial_ge(left: Ipv4Net, right: Ipv4Net) -> bool { return Ipv4Net::ge(left, right); }
+    pub fn partial_cmp(left: Ipv4Net, right: Ipv4Net) -> core::cmp::PartialOrdering {
+        if (Ipv4Net::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv4Net::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<Ipv6Net> for Ipv6Net {
+    pub fn partial_eq(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::eq(left, right); }
+    pub fn partial_ne(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<Ipv6Net> for Ipv6Net {
+    pub fn partial_lt(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::lt(left, right); }
+    pub fn partial_le(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::le(left, right); }
+    pub fn partial_gt(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::gt(left, right); }
+    pub fn partial_ge(left: Ipv6Net, right: Ipv6Net) -> bool { return Ipv6Net::ge(left, right); }
+    pub fn partial_cmp(left: Ipv6Net, right: Ipv6Net) -> core::cmp::PartialOrdering {
+        if (Ipv6Net::lt(left, right)) { return core::cmp::Less; }
+        if (Ipv6Net::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}
+
+pub impl core::cmp::PartialEq<IpNet> for IpNet {
+    pub fn partial_eq(left: IpNet, right: IpNet) -> bool { return IpNet::eq(left, right); }
+    pub fn partial_ne(left: IpNet, right: IpNet) -> bool { return IpNet::ne(left, right); }
+}
+
+pub impl core::cmp::PartialOrd<IpNet> for IpNet {
+    pub fn partial_lt(left: IpNet, right: IpNet) -> bool { return IpNet::lt(left, right); }
+    pub fn partial_le(left: IpNet, right: IpNet) -> bool { return IpNet::le(left, right); }
+    pub fn partial_gt(left: IpNet, right: IpNet) -> bool { return IpNet::gt(left, right); }
+    pub fn partial_ge(left: IpNet, right: IpNet) -> bool { return IpNet::ge(left, right); }
+    pub fn partial_cmp(left: IpNet, right: IpNet) -> core::cmp::PartialOrdering {
+        if (IpNet::lt(left, right)) { return core::cmp::Less; }
+        if (IpNet::gt(left, right)) { return core::cmp::Greater; }
+        return core::cmp::Equal;
+    }
+}

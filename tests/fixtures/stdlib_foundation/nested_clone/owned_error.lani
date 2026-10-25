@@ -1,0 +1,71 @@
+// Accepted native Linux x86-64: owned E survives source/destination release.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+import fixture::leaf;
+import alloc::clone_vec;
+
+fn leaf_error(error: fixture::leaf::Fault, outer: i32, inner: i32) -> i32 {
+    return match(error) {
+        fixture::leaf::Fault::Allocation(ignored) -> 4,
+        fixture::leaf::Fault::Injected(message) -> check_message(message,outer,inner)
+    };
+}
+fn check_message(message: alloc::string::String, outer: i32, inner: i32) -> i32 {
+    let valid: bool = outer==1 && inner==1 && message.byte_len()==5
+        && message.byte_at(0).unwrap()==69 && message.byte_at(1).unwrap()==0
+        && message.byte_at(4).unwrap()==33;
+    message.destroy(); // Caller releases E, after destination and source cleanup.
+    if (!valid) { return 1; } return 0;
+}
+fn row_error(error: alloc::clone::Error<fixture::leaf::Fault>, outer: i32) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Element(inner,error) -> leaf_error(error,outer,inner),
+        alloc::clone::Error::Storage(ignored) -> 4,
+        alloc::clone::Error::Bounds -> 1
+    };
+}
+fn grid_error(error: alloc::clone::Error<alloc::clone::Error<fixture::leaf::Fault>>) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Element(outer,error) -> row_error(error,outer),
+        alloc::clone::Error::Storage(ignored) -> 4,
+        alloc::clone::Error::Bounds -> 1
+    };
+}
+fn main() -> i32 {
+    let bytes: [u8;4] = [83,0,195,169];
+    let made = alloc::string::from_utf8(bytes,4);
+    if (made.is_err()) { return 4; }
+    let original: alloc::string::String = made.unwrap();
+    // These source descriptors all borrow one active String owner. None is
+    // passed to Destroy; only independently cloned destination leaves are.
+    let good: fixture::leaf::Leaf = fixture::leaf::Leaf { text:original,fail:false };
+    let bad: fixture::leaf::Leaf = fixture::leaf::Leaf { text:original,fail:true };
+    let a: [fixture::leaf::Leaf;2] = [good,good];
+    let b: [fixture::leaf::Leaf;2] = [good,bad];
+    let first = alloc::vec::from_view(core::slice::view(a,2).unwrap());
+    if (first.is_err()) { original.destroy(); return 4; }
+    let row0: alloc::vec::Vec<fixture::leaf::Leaf> = first.unwrap();
+    let second = alloc::vec::from_view(core::slice::view(b,2).unwrap());
+    if (second.is_err()) { row0.destroy(); original.destroy(); return 4; }
+    let row1: alloc::vec::Vec<fixture::leaf::Leaf> = second.unwrap();
+    let rows: [alloc::vec::Vec<fixture::leaf::Leaf>;2] = [row0,row1];
+    let outer = alloc::vec::from_view(core::slice::view(rows,2).unwrap());
+    if (outer.is_err()) { row1.destroy(); row0.destroy(); original.destroy(); return 4; }
+    let source: alloc::vec::Vec<alloc::vec::Vec<fixture::leaf::Leaf>> = outer.unwrap();
+    let cloned: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<fixture::leaf::Leaf>>,alloc::clone::Error<alloc::clone::Error<fixture::leaf::Fault>>> =
+        alloc::clone_vec::try_clone<alloc::vec::Vec<fixture::leaf::Leaf>,alloc::clone::Error<fixture::leaf::Fault>>(source.borrow());
+    let preserved: bool = original.byte_len()==4 && original.byte_at(0).unwrap()==83
+        && row0.len()==2 && row1.len()==2 && source.len()==2;
+    source.destroy(); row1.destroy(); row0.destroy(); original.destroy();
+    if (cloned.is_ok()) {
+        let unexpected = cloned.unwrap();
+        alloc::clone::destroy_vec<alloc::vec::Vec<fixture::leaf::Leaf>>(unexpected.borrow());
+        return 1;
+    }
+    let status: i32 = grid_error(cloned.unwrap_err());
+    if (!preserved) { return 1; } return status;
+}

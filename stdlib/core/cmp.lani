@@ -1,18 +1,43 @@
-// Core comparison traits and portable value entry points.
-
+// Comparison contracts. Eq is reflexive equality; Ord is a total order.
+// PartialEq permits non-reflexive values; PartialOrd permits unordered pairs.
+// Native floats implement only partial IEEE comparisons. Use core::float_order
+// when a float encoding must be a collection key or sorted element.
 module core::cmp;
 
-
+// Symmetric and transitive equality, with ne == !eq. Every value equals itself.
 pub trait Eq<T> {
     pub fn eq(left: T, right: T) -> bool;
     pub fn ne(left: T, right: T) -> bool;
 }
 
+// Exactly one of lt, equality, gt holds. le == !gt and ge == !lt.
+// Equality induced by neither lt direction agrees with Eq, and is reflexive.
+// The ordering is transitive. Implement PartialEq/PartialOrd consistently too.
 pub trait Ord<T> {
     pub fn lt(left: T, right: T) -> bool;
     pub fn le(left: T, right: T) -> bool;
     pub fn gt(left: T, right: T) -> bool;
     pub fn ge(left: T, right: T) -> bool;
+}
+
+// A symmetric, transitive partial equivalence relation. ne == !eq.
+pub trait PartialEq<T> {
+    pub fn partial_eq(left: T, right: T) -> bool;
+    pub fn partial_ne(left: T, right: T) -> bool;
+}
+
+// Kept here to avoid a dependency cycle through core::option or ordering.
+pub enum PartialOrdering { Less, Equal, Greater, Unordered }
+
+// All predicates agree with partial_cmp; Unordered makes each predicate false.
+// Equal agrees with PartialEq. Ordered relations are transitive and reverse
+// when the operands are exchanged.
+pub trait PartialOrd<T> {
+    pub fn partial_lt(left: T, right: T) -> bool;
+    pub fn partial_le(left: T, right: T) -> bool;
+    pub fn partial_gt(left: T, right: T) -> bool;
+    pub fn partial_ge(left: T, right: T) -> bool;
+    pub fn partial_cmp(left: T, right: T) -> PartialOrdering;
 }
 
 pub impl Eq<i32> for i32 {
@@ -175,24 +200,253 @@ pub impl Ord<usize> for usize {
     pub fn ge(left: usize, right: usize) -> bool { return left >= right; }
 }
 
-// IEEE comparisons: NaN equals nothing, itself included, and 0.0 equals
-// -0.0. Every ordering with a NaN operand is false, so f32 is only partially
-// ordered: ranges built from lt and le treat NaN as outside, while sorting
-// a sequence that holds NaN gives an unspecified order.
-pub impl Eq<f32> for f32 {
-    pub fn eq(left: f32, right: f32) -> bool { return left == right; }
-    pub fn ne(left: f32, right: f32) -> bool { return left != right; }
-}
-
-pub impl Ord<f32> for f32 {
-    pub fn lt(left: f32, right: f32) -> bool { return left < right; }
-    pub fn le(left: f32, right: f32) -> bool { return left <= right; }
-    pub fn gt(left: f32, right: f32) -> bool { return left > right; }
-    pub fn ge(left: f32, right: f32) -> bool { return left >= right; }
-}
-
 // Address equality.
 pub impl Eq<ptr> for ptr {
     pub fn eq(left: ptr, right: ptr) -> bool { return left == right; }
     pub fn ne(left: ptr, right: ptr) -> bool { return left != right; }
+}
+
+pub impl PartialEq<i32> for i32 {
+    pub fn partial_eq(left: i32, right: i32) -> bool { return i32::eq(left, right); }
+    pub fn partial_ne(left: i32, right: i32) -> bool { return i32::ne(left, right); }
+}
+
+pub impl PartialOrd<i32> for i32 {
+    pub fn partial_lt(left: i32, right: i32) -> bool { return i32::lt(left, right); }
+    pub fn partial_le(left: i32, right: i32) -> bool { return i32::le(left, right); }
+    pub fn partial_gt(left: i32, right: i32) -> bool { return i32::gt(left, right); }
+    pub fn partial_ge(left: i32, right: i32) -> bool { return i32::ge(left, right); }
+    pub fn partial_cmp(left: i32, right: i32) -> PartialOrdering {
+        if (i32::lt(left, right)) { return Less; }
+        if (i32::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<u32> for u32 {
+    pub fn partial_eq(left: u32, right: u32) -> bool { return u32::eq(left, right); }
+    pub fn partial_ne(left: u32, right: u32) -> bool { return u32::ne(left, right); }
+}
+
+pub impl PartialOrd<u32> for u32 {
+    pub fn partial_lt(left: u32, right: u32) -> bool { return u32::lt(left, right); }
+    pub fn partial_le(left: u32, right: u32) -> bool { return u32::le(left, right); }
+    pub fn partial_gt(left: u32, right: u32) -> bool { return u32::gt(left, right); }
+    pub fn partial_ge(left: u32, right: u32) -> bool { return u32::ge(left, right); }
+    pub fn partial_cmp(left: u32, right: u32) -> PartialOrdering {
+        if (u32::lt(left, right)) { return Less; }
+        if (u32::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<bool> for bool {
+    pub fn partial_eq(left: bool, right: bool) -> bool { return bool::eq(left, right); }
+    pub fn partial_ne(left: bool, right: bool) -> bool { return bool::ne(left, right); }
+}
+
+pub impl PartialOrd<bool> for bool {
+    pub fn partial_lt(left: bool, right: bool) -> bool { return bool::lt(left, right); }
+    pub fn partial_le(left: bool, right: bool) -> bool { return bool::le(left, right); }
+    pub fn partial_gt(left: bool, right: bool) -> bool { return bool::gt(left, right); }
+    pub fn partial_ge(left: bool, right: bool) -> bool { return bool::ge(left, right); }
+    pub fn partial_cmp(left: bool, right: bool) -> PartialOrdering {
+        if (bool::lt(left, right)) { return Less; }
+        if (bool::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<char> for char {
+    pub fn partial_eq(left: char, right: char) -> bool { return char::eq(left, right); }
+    pub fn partial_ne(left: char, right: char) -> bool { return char::ne(left, right); }
+}
+
+pub impl PartialOrd<char> for char {
+    pub fn partial_lt(left: char, right: char) -> bool { return char::lt(left, right); }
+    pub fn partial_le(left: char, right: char) -> bool { return char::le(left, right); }
+    pub fn partial_gt(left: char, right: char) -> bool { return char::gt(left, right); }
+    pub fn partial_ge(left: char, right: char) -> bool { return char::ge(left, right); }
+    pub fn partial_cmp(left: char, right: char) -> PartialOrdering {
+        if (char::lt(left, right)) { return Less; }
+        if (char::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<i8> for i8 {
+    pub fn partial_eq(left: i8, right: i8) -> bool { return i8::eq(left, right); }
+    pub fn partial_ne(left: i8, right: i8) -> bool { return i8::ne(left, right); }
+}
+
+pub impl PartialOrd<i8> for i8 {
+    pub fn partial_lt(left: i8, right: i8) -> bool { return i8::lt(left, right); }
+    pub fn partial_le(left: i8, right: i8) -> bool { return i8::le(left, right); }
+    pub fn partial_gt(left: i8, right: i8) -> bool { return i8::gt(left, right); }
+    pub fn partial_ge(left: i8, right: i8) -> bool { return i8::ge(left, right); }
+    pub fn partial_cmp(left: i8, right: i8) -> PartialOrdering {
+        if (i8::lt(left, right)) { return Less; }
+        if (i8::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<i16> for i16 {
+    pub fn partial_eq(left: i16, right: i16) -> bool { return i16::eq(left, right); }
+    pub fn partial_ne(left: i16, right: i16) -> bool { return i16::ne(left, right); }
+}
+
+pub impl PartialOrd<i16> for i16 {
+    pub fn partial_lt(left: i16, right: i16) -> bool { return i16::lt(left, right); }
+    pub fn partial_le(left: i16, right: i16) -> bool { return i16::le(left, right); }
+    pub fn partial_gt(left: i16, right: i16) -> bool { return i16::gt(left, right); }
+    pub fn partial_ge(left: i16, right: i16) -> bool { return i16::ge(left, right); }
+    pub fn partial_cmp(left: i16, right: i16) -> PartialOrdering {
+        if (i16::lt(left, right)) { return Less; }
+        if (i16::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<i64> for i64 {
+    pub fn partial_eq(left: i64, right: i64) -> bool { return i64::eq(left, right); }
+    pub fn partial_ne(left: i64, right: i64) -> bool { return i64::ne(left, right); }
+}
+
+pub impl PartialOrd<i64> for i64 {
+    pub fn partial_lt(left: i64, right: i64) -> bool { return i64::lt(left, right); }
+    pub fn partial_le(left: i64, right: i64) -> bool { return i64::le(left, right); }
+    pub fn partial_gt(left: i64, right: i64) -> bool { return i64::gt(left, right); }
+    pub fn partial_ge(left: i64, right: i64) -> bool { return i64::ge(left, right); }
+    pub fn partial_cmp(left: i64, right: i64) -> PartialOrdering {
+        if (i64::lt(left, right)) { return Less; }
+        if (i64::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<isize> for isize {
+    pub fn partial_eq(left: isize, right: isize) -> bool { return isize::eq(left, right); }
+    pub fn partial_ne(left: isize, right: isize) -> bool { return isize::ne(left, right); }
+}
+
+pub impl PartialOrd<isize> for isize {
+    pub fn partial_lt(left: isize, right: isize) -> bool { return isize::lt(left, right); }
+    pub fn partial_le(left: isize, right: isize) -> bool { return isize::le(left, right); }
+    pub fn partial_gt(left: isize, right: isize) -> bool { return isize::gt(left, right); }
+    pub fn partial_ge(left: isize, right: isize) -> bool { return isize::ge(left, right); }
+    pub fn partial_cmp(left: isize, right: isize) -> PartialOrdering {
+        if (isize::lt(left, right)) { return Less; }
+        if (isize::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<u8> for u8 {
+    pub fn partial_eq(left: u8, right: u8) -> bool { return u8::eq(left, right); }
+    pub fn partial_ne(left: u8, right: u8) -> bool { return u8::ne(left, right); }
+}
+
+pub impl PartialOrd<u8> for u8 {
+    pub fn partial_lt(left: u8, right: u8) -> bool { return u8::lt(left, right); }
+    pub fn partial_le(left: u8, right: u8) -> bool { return u8::le(left, right); }
+    pub fn partial_gt(left: u8, right: u8) -> bool { return u8::gt(left, right); }
+    pub fn partial_ge(left: u8, right: u8) -> bool { return u8::ge(left, right); }
+    pub fn partial_cmp(left: u8, right: u8) -> PartialOrdering {
+        if (u8::lt(left, right)) { return Less; }
+        if (u8::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<u16> for u16 {
+    pub fn partial_eq(left: u16, right: u16) -> bool { return u16::eq(left, right); }
+    pub fn partial_ne(left: u16, right: u16) -> bool { return u16::ne(left, right); }
+}
+
+pub impl PartialOrd<u16> for u16 {
+    pub fn partial_lt(left: u16, right: u16) -> bool { return u16::lt(left, right); }
+    pub fn partial_le(left: u16, right: u16) -> bool { return u16::le(left, right); }
+    pub fn partial_gt(left: u16, right: u16) -> bool { return u16::gt(left, right); }
+    pub fn partial_ge(left: u16, right: u16) -> bool { return u16::ge(left, right); }
+    pub fn partial_cmp(left: u16, right: u16) -> PartialOrdering {
+        if (u16::lt(left, right)) { return Less; }
+        if (u16::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<u64> for u64 {
+    pub fn partial_eq(left: u64, right: u64) -> bool { return u64::eq(left, right); }
+    pub fn partial_ne(left: u64, right: u64) -> bool { return u64::ne(left, right); }
+}
+
+pub impl PartialOrd<u64> for u64 {
+    pub fn partial_lt(left: u64, right: u64) -> bool { return u64::lt(left, right); }
+    pub fn partial_le(left: u64, right: u64) -> bool { return u64::le(left, right); }
+    pub fn partial_gt(left: u64, right: u64) -> bool { return u64::gt(left, right); }
+    pub fn partial_ge(left: u64, right: u64) -> bool { return u64::ge(left, right); }
+    pub fn partial_cmp(left: u64, right: u64) -> PartialOrdering {
+        if (u64::lt(left, right)) { return Less; }
+        if (u64::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<usize> for usize {
+    pub fn partial_eq(left: usize, right: usize) -> bool { return usize::eq(left, right); }
+    pub fn partial_ne(left: usize, right: usize) -> bool { return usize::ne(left, right); }
+}
+
+pub impl PartialOrd<usize> for usize {
+    pub fn partial_lt(left: usize, right: usize) -> bool { return usize::lt(left, right); }
+    pub fn partial_le(left: usize, right: usize) -> bool { return usize::le(left, right); }
+    pub fn partial_gt(left: usize, right: usize) -> bool { return usize::gt(left, right); }
+    pub fn partial_ge(left: usize, right: usize) -> bool { return usize::ge(left, right); }
+    pub fn partial_cmp(left: usize, right: usize) -> PartialOrdering {
+        if (usize::lt(left, right)) { return Less; }
+        if (usize::gt(left, right)) { return Greater; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<ptr> for ptr {
+    pub fn partial_eq(left: ptr, right: ptr) -> bool { return ptr::eq(left, right); }
+    pub fn partial_ne(left: ptr, right: ptr) -> bool { return ptr::ne(left, right); }
+}
+
+pub impl PartialEq<f32> for f32 {
+    pub fn partial_eq(left: f32, right: f32) -> bool { return left == right; }
+    pub fn partial_ne(left: f32, right: f32) -> bool { return left != right; }
+}
+
+pub impl PartialOrd<f32> for f32 {
+    pub fn partial_lt(left: f32, right: f32) -> bool { return left < right; }
+    pub fn partial_le(left: f32, right: f32) -> bool { return left <= right; }
+    pub fn partial_gt(left: f32, right: f32) -> bool { return left > right; }
+    pub fn partial_ge(left: f32, right: f32) -> bool { return left >= right; }
+    pub fn partial_cmp(left: f32, right: f32) -> PartialOrdering {
+        if (left < right) { return Less; }
+        if (left > right) { return Greater; }
+        if (left != right) { return Unordered; }
+        return Equal;
+    }
+}
+
+pub impl PartialEq<f64> for f64 {
+    pub fn partial_eq(left: f64, right: f64) -> bool { return left == right; }
+    pub fn partial_ne(left: f64, right: f64) -> bool { return left != right; }
+}
+
+pub impl PartialOrd<f64> for f64 {
+    pub fn partial_lt(left: f64, right: f64) -> bool { return left < right; }
+    pub fn partial_le(left: f64, right: f64) -> bool { return left <= right; }
+    pub fn partial_gt(left: f64, right: f64) -> bool { return left > right; }
+    pub fn partial_ge(left: f64, right: f64) -> bool { return left >= right; }
+    pub fn partial_cmp(left: f64, right: f64) -> PartialOrdering {
+        if (left < right) { return Less; }
+        if (left > right) { return Greater; }
+        if (left != right) { return Unordered; }
+        return Equal;
+    }
 }

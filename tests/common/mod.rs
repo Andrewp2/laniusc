@@ -307,11 +307,21 @@ pub fn short_process_output_with_timeout(
     context: impl fmt::Display,
     command: &mut Command,
 ) -> Output {
+    process_output_with_timeout(context, command, process_test_timeout())
+}
+
+/// An explicit bound for instrumented native programs. This does not acquire
+/// the GPU lock or change timeouts for other tests.
+pub fn process_output_with_timeout(
+    context: impl fmt::Display,
+    command: &mut Command,
+    timeout: Duration,
+) -> Output {
     let context = context.to_string();
     command_output_result_with_timeout(
         &context,
         command,
-        process_test_timeout(),
+        timeout,
         TimeoutDetails::default(),
     )
     .unwrap_or_else(|err| {

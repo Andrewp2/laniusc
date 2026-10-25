@@ -1,0 +1,20 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::text;
+import ext::unicode_lines;
+fn text(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::text::from_utf8_unchecked(bytes,0,count); }
+fn main() -> i32 {
+ let input: core::text::Text = text("ab cd\nx",7); let limits: ext::unicode_lines::Limits = ext::unicode_lines::default_limits(); let scan: ext::unicode_lines::Cursor = ext::unicode_lines::cursor(input,limits).unwrap();
+ let first: ext::unicode_lines::Opportunity = core::option::unwrap(scan.next()); assert(first.offset == 3); assert(match (first.kind) { ext::unicode_lines::Kind::Allowed -> true, _ -> false });
+ let fork: ext::unicode_lines::Cursor = scan; assert(core::option::unwrap(scan.next()).offset == 6); let same: ext::unicode_lines::Opportunity = core::option::unwrap(fork.next()); assert(same.offset == 6); assert(match (same.kind) { ext::unicode_lines::Kind::Mandatory -> true, _ -> false }); assert(core::option::unwrap(scan.next()).offset == 7); assert(core::option::is_none(scan.next()) && core::option::is_none(scan.next())); assert(input.bytes[0] == 97 && input.bytes[5] == 10);
+ assert(core::option::is_none(ext::unicode_lines::opportunity_at(input,0,limits).unwrap())); assert(core::option::is_some(ext::unicode_lines::opportunity_at(input,3,limits).unwrap()));
+ let cjk: core::text::Text = text("一二",6); assert(core::option::is_none(ext::unicode_lines::opportunity_at(cjk,1,limits).unwrap())); assert(core::option::is_some(ext::unicode_lines::opportunity_at(cjk,3,limits).unwrap())); assert(ext::unicode_lines::opportunity_at(cjk,7,limits).is_err());
+ limits.max_bytes = 6; assert(match (ext::unicode_lines::cursor(input,limits).unwrap_err()) { ext::unicode_lines::Error::ByteLimit -> true, _ -> false }); limits.max_bytes = 7; limits.max_scalars = 6;
+ assert(match (ext::unicode_lines::cursor(input,limits).unwrap_err()) { ext::unicode_lines::Error::ScalarLimit -> true, _ -> false }); limits.max_scalars = 7; limits.max_work = ext::unicode_lines::work(7).unwrap()-1;
+ assert(match (ext::unicode_lines::cursor(input,limits).unwrap_err()) { ext::unicode_lines::Error::WorkLimit -> true, _ -> false }); limits.max_work += 1; assert(ext::unicode_lines::cursor(input,limits).is_ok());
+ limits.max_bytes = -1; assert(match (ext::unicode_lines::cursor(input,limits).unwrap_err()) { ext::unicode_lines::Error::InvalidLimits -> true, _ -> false }); limits = ext::unicode_lines::default_limits(); let bad: core::text::Text = input; bad.start = 2147483647;
+ assert(match (ext::unicode_lines::cursor(bad,limits).unwrap_err()) { ext::unicode_lines::Error::Bounds -> true, _ -> false });
+ let bytes: [u8;3] = [97,255,98]; let invalid: core::text::Text = core::text::from_utf8_unchecked(bytes,0,3); assert(match (ext::unicode_lines::cursor(invalid,limits).unwrap_err()) { ext::unicode_lines::Error::InvalidUtf8(at) -> at == 1, _ -> false });
+ let empty: ext::unicode_lines::Cursor = ext::unicode_lines::cursor(text("",0),limits).unwrap(); let end: ext::unicode_lines::Opportunity = core::option::unwrap(empty.next()); assert(end.offset == 0); assert(match (end.kind) { ext::unicode_lines::Kind::Mandatory -> true, _ -> false }); assert(core::option::is_none(empty.next())); return 0;
+}

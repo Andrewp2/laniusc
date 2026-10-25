@@ -1,0 +1,134 @@
+// Five-u64 commands: map copies, zip copies, aliased zip, enumerate copies.
+// Return every item/state observation and the exact source/callback event log.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+import std::stream;
+
+struct Log { events: [i32], length: i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, event: i32) { assert(self.length < 32); self.events[self.length] = event; self.length += 1; }
+}
+struct Probe { length: i32, position: i32, base: i32, calls: i32, tag: i32, log: &Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        let log: &Log = self.log; log.add(self.tag); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.base + self.position; self.position += 1;
+        return core::option::Some(value);
+    }
+}
+struct Scale { calls: i32, offset: i32, log: &Log }
+impl Scale { fn borrow(&self) -> &Scale { return self; } }
+pub impl core::iter::Mapper<i32, i64> for Scale {
+    pub fn apply(&self, value: i32) -> i64 {
+        let log: &Log = self.log; log.add(3); self.calls += 1;
+        return (value as i64) * 3 + (self.offset as i64);
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+fn word(value: u64) {
+    let bytes: [u8; 8] = [0; 8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index * 8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let result: core::result::Result<i32, core::io::Failure> = core::io::write_all(output.borrow(), bytes, 0, 8);
+    assert(core::result::is_ok(result));
+}
+fn scalar(value: core::option::Option<i64>) {
+    if (core::option::is_none(value)) { word(0); word(0); }
+    else { word(1); word(core::option::unwrap(value) as u64); }
+}
+fn pair(value: core::option::Option<core::pair::Pair<i32, i32>>) {
+    if (core::option::is_none(value)) { word(0); word(0); word(0); }
+    else {
+        let item: core::pair::Pair<i32, i32> = core::option::unwrap(value);
+        word(1); word(item.first as u64); word(item.second as u64);
+    }
+}
+fn indexed(value: core::option::Option<core::pair::Pair<u64, i32>>) {
+    if (core::option::is_none(value)) { word(0); word(0); word(0); }
+    else {
+        let item: core::pair::Pair<u64, i32> = core::option::unwrap(value);
+        word(1); word(item.first); word(item.second as u64);
+    }
+}
+fn events(log: &Log) {
+    word(log.length as u64); let index: i32 = 0;
+    while (index < log.length) { word(log.events[index] as u64); index += 1; }
+}
+fn map_case(length: i32, calls: i32, pattern: u64, offset: i32) {
+    let trace: [i32; 32] = [0; 32]; let log: Log = Log { events: trace, length: 0 };
+    let source: Probe = Probe { length: length, position: 0, base: 0, calls: 0, tag: 1, log: log.borrow() };
+    let mapper: Scale = Scale { calls: 0, offset: offset, log: log.borrow() };
+    let first: core::iter::Map<Probe, Scale, i32, i64> = core::iter::map<Probe, Scale, i32, i64>(source.borrow(), mapper.borrow());
+    let second: core::iter::Map<Probe, Scale, i32, i64> = first;
+    assert(source.calls == 0 && mapper.calls == 0 && log.length == 0);
+    let index: i32 = 0;
+    while (index < calls) {
+        let item: core::option::Option<i64> = core::option::None();
+        if (((pattern >> index) & 1) == 0) { item = first.next(); } else { item = second.next(); }
+        scalar(item); word(source.position as u64); word(source.calls as u64); word(mapper.calls as u64); index += 1;
+    }
+    events(log.borrow());
+}
+fn zip_case(left_length: i32, right_length: i32, calls: i32, pattern: u64, aliased: bool) {
+    let trace: [i32; 32] = [0; 32]; let log: Log = Log { events: trace, length: 0 };
+    let left: Probe = Probe { length: left_length, position: 0, base: 0, calls: 0, tag: 1, log: log.borrow() };
+    let right: Probe = Probe { length: right_length, position: 0, base: 100, calls: 0, tag: 2, log: log.borrow() };
+    let right_ref: &Probe = right.borrow(); if (aliased) { right_ref = left.borrow(); }
+    let first: core::iter::Zip<Probe, Probe, i32, i32> = core::iter::zip<Probe, Probe, i32, i32>(left.borrow(), right_ref);
+    let second: core::iter::Zip<Probe, Probe, i32, i32> = first;
+    assert(left.calls == 0 && right.calls == 0 && log.length == 0);
+    let index: i32 = 0;
+    while (index < calls) {
+        let item: core::option::Option<core::pair::Pair<i32, i32>> = core::option::None();
+        if (((pattern >> index) & 1) == 0) { item = first.next(); } else { item = second.next(); }
+        pair(item); word(left.position as u64);
+        if (!aliased) { word(right.position as u64); }
+        word(left.calls as u64); if (!aliased) { word(right.calls as u64); } index += 1;
+    }
+    events(log.borrow());
+}
+fn enumerate_case(length: i32, calls: i32, pattern: u64, offset: u64) {
+    let trace: [i32; 32] = [0; 32]; let log: Log = Log { events: trace, length: 0 };
+    let source: Probe = Probe { length: length, position: 0, base: 0, calls: 0, tag: 1, log: log.borrow() };
+    let first: core::iter::Enumerate<Probe, i32> = core::iter::enumerate_from<Probe, i32>(source.borrow(), offset);
+    let second: core::iter::Enumerate<Probe, i32> = first;
+    assert(source.calls == 0 && log.length == 0);
+    let index: i32 = 0;
+    while (index < calls) {
+        let item: core::option::Option<core::pair::Pair<u64, i32>> = core::option::None();
+        if (((pattern >> index) & 1) == 0) { item = first.next(); } else { item = second.next(); }
+        indexed(item); word(source.position as u64); word(source.calls as u64); index += 1;
+    }
+    events(log.borrow());
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8; 40] = [0; 40];
+    while (true) {
+        let received: core::result::Result<i32, core::io::Error> = input.read(record, 0, 40);
+        if (core::result::is_err(received)) { return 1; }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { return 0; }
+        if (count < 40) {
+            let rest: core::result::Result<i32, core::io::Failure> = core::io::read_exact(input.borrow(), record, count, 40 - count);
+            if (core::result::is_err(rest)) { return 2; }
+        }
+        let op: u64 = decode(record, 0); let a: u64 = decode(record, 8); let b: u64 = decode(record, 16);
+        let c: u64 = decode(record, 24); let d: u64 = decode(record, 32);
+        if (op == 0) { assert(a <= 4 && b <= 7 && d <= 29); map_case(a as i32, b as i32, c, d as i32); }
+        else { if (op == 1) { assert(a <= 4 && b <= 4 && c <= 7); zip_case(a as i32, b as i32, c as i32, d, false); }
+        else { if (op == 2) { assert(a <= 6 && b <= 7); zip_case(a as i32, 0, b as i32, c, true); }
+        else { if (op == 3) { assert(a <= 4 && b <= 7 && d <= 29); enumerate_case(a as i32, b as i32, c, d); }
+        else { return 3; } } } }
+    }
+    return 0;
+}

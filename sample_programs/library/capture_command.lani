@@ -1,0 +1,84 @@
+// Stage bounded stdin, communicate concurrently, then publish both captures.
+module app::main;
+import alloc::io;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::clock;
+import std::command;
+import std::command_capture;
+import std::poll;
+import std::signal;
+import std::stream;
+struct Options { first: i32, milliseconds: u64, cleanup: u64, limits: std::command_capture::Limits, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Detail { stage: i32, reason: i32, errno: i32, written: i32, out: u64, err: u64, cleanup_pid: i32, cleanup_errno: i32 }
+impl Detail { fn borrow(&self) -> &Detail { return self; } }
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn text(value: str, n: i32) -> core::text::Text { let raw = bytes(value,n); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.length); }
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn parse(args: std::args::Arguments, options: &Options) -> bool {
+    let i: i32 = 0; let seen: u32 = 0;
+    while (i < args.len()) { let value = core::option::unwrap(args.get(i)); if (equal(value,bytes("--",2))) { i += 1; break; } if (value.length == 0 || value.values[value.start] != 45 || equal(value,bytes("-",1))) { break; }
+        if (equal(value,bytes("--help",6))) { options.help = true; i += 1; continue; } let id: i32 = 0;
+        if (equal(value,bytes("--timeout-ms",12))) { id = 1; } if (equal(value,bytes("--cleanup-ms",12))) { id = 2; } if (equal(value,bytes("--max-input-bytes",17))) { id = 3; } if (equal(value,bytes("--max-stdout-bytes",18))) { id = 4; } if (equal(value,bytes("--max-stderr-bytes",18))) { id = 5; } if (equal(value,bytes("--max-operations",16))) { id = 6; }
+        if (id == 0 || i+1 >= args.len()) { return false; } let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen = seen | bit;
+        let raw = core::option::unwrap(args.get(i+1)); let parsed = core::decimal::parse_u64_range(raw.values,raw.start,raw.length); if (parsed.is_err()) { return false; } let n: u64 = parsed.unwrap();
+        if (id <= 2) { if (n > 86400000) { return false; } if (id == 1) { options.milliseconds = n; } else { options.cleanup = n; } }
+        else { if (id == 6) { if (n > 1000000000) { return false; } options.limits.max_operations = n; } else { if (n > 67108864) { return false; } if (id == 3) { options.limits.max_input_bytes = n as i32; } if (id == 4) { options.limits.max_stdout_bytes = n as i32; } if (id == 5) { options.limits.max_stderr_bytes = n as i32; } } } i += 2;
+    } options.first = i; if (options.help) { return args.len() == 1; } return i < args.len();
+}
+fn cause(value: std::command_capture::Error) -> i32 { return match(value) { std::command_capture::Error::Bounds -> 1, std::command_capture::Error::InputLimit -> 2, std::command_capture::Error::OutputLimit -> 3, std::command_capture::Error::ErrorLimit -> 4, std::command_capture::Error::WorkLimit -> 5, std::command_capture::Error::Deadline -> 6, std::command_capture::Error::InputUnavailable -> 7, std::command_capture::Error::SigpipeNotIgnored -> 8, std::command_capture::Error::AllocationFailed -> 9, std::command_capture::Error::InvalidResult -> 10, std::command_capture::Error::Io(error) -> 11, std::command_capture::Error::Poll(error) -> 12, std::command_capture::Error::Clock(error) -> 13, std::command_capture::Error::Wait(error) -> 14 }; }
+fn io_errno(value: core::io::Error) -> i32 { return match(value) { core::io::Error::Host(n) -> n, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> 0 }; }
+fn clock_errno(value: std::clock::Error) -> i32 { return match(value) { std::clock::Error::Host(n) -> n, _ -> 0 }; }
+fn poll_errno(value: std::poll::Error) -> i32 { return match(value) { std::poll::Error::Io(error) -> io_errno(error), std::poll::Error::Clock(error) -> clock_errno(error), _ -> 0 }; }
+fn capture_errno(value: std::command_capture::Error) -> i32 { return match(value) { std::command_capture::Error::Io(error) -> io_errno(error), std::command_capture::Error::Clock(error) -> clock_errno(error), std::command_capture::Error::Poll(error) -> poll_errno(error), std::command_capture::Error::Wait(error) -> error.errno, _ -> 0 }; }
+fn cleanup_error(detail: &Detail, errno: i32) { if (detail.cleanup_errno == 0) { detail.cleanup_errno = errno; if (errno == 0) { detail.cleanup_errno = 5; } } }
+fn cleanup(child: &std::command::Child, milliseconds: u64, detail: &Detail) {
+    let closed = child.close_pipes(); if (closed.is_err()) { cleanup_error(detail,closed.unwrap_err().errno); } if (core::option::is_none(child.id())) { return; }
+    let killed = child.signal(9); if (killed.is_err() && killed.unwrap_err().errno != 3) { cleanup_error(detail,killed.unwrap_err().errno); }
+    let sampled: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (sampled.is_err()) { cleanup_error(detail,clock_errno(sampled.unwrap_err())); detail.cleanup_pid = core::option::unwrap(child.id()); return; } let now: core::time::Instant = sampled.unwrap(); let deadline = core::time::deadline_after(now,core::time::from_millis(milliseconds)).unwrap(); let empty: [std::poll::Request;0] = []; let poll = std::poll::new(0).unwrap(); let attempts: i32 = 0;
+    while (attempts < 10000) { let waited = child.try_wait(); if (waited.is_ok() && core::option::is_some(waited.unwrap())) { break; } if (waited.is_err() && waited.unwrap_err().errno != 4) { cleanup_error(detail,waited.unwrap_err().errno); } if (core::option::is_none(child.id())) { break; }
+        let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (read.is_err()) { cleanup_error(detail,clock_errno(read.unwrap_err())); break; } let after: core::time::Instant = read.unwrap(); if (after.compare(now) < 0) { cleanup_error(detail,5); break; } if (deadline.is_expired(after)) { break; } now = after;
+        let left = deadline.remaining(now); let delay: i32 = 10; if (left.seconds == 0 && left.nanos < 10000000) { delay = ((left.nanos+999999)/1000000) as i32; } let polled = poll.poll_ms(core::slice::view(empty,0).unwrap(),delay); if (polled.is_err()) { let number: i32 = poll_errno(polled.unwrap_err()); if (number != 4) { cleanup_error(detail,number); } } attempts += 1;
+    } poll.destroy(); if (core::option::is_some(child.id())) { detail.cleanup_pid = core::option::unwrap(child.id()); }
+}
+fn completed(value: std::command_capture::Output, detail: &Detail) -> i32 {
+    detail.written = value.progress.input_written; detail.out = value.progress.stdout_read; detail.err = value.progress.stderr_read;
+    let sink = std::stream::stdout(); let error_sink = std::stream::stderr(); let first = core::io::write_all(sink.borrow(),value.stdout.as_slice(),0,value.stdout.len()); let second = core::io::write_all(error_sink.borrow(),value.stderr.as_slice(),0,value.stderr.len()); let status = value.status; value.destroy();
+    if (first.is_err() || second.is_err()) { detail.stage = 5; detail.reason = 11; if (first.is_err()) { detail.errno = io_errno(first.unwrap_err().cause); } else { detail.errno = io_errno(second.unwrap_err().cause); } return 125; } if (core::option::is_some(status.code)) { return core::option::unwrap(status.code); } return 128+core::option::unwrap(status.signal);
+}
+fn capture(child: std::command::Child, input: &alloc::io::Buffer, options: Options, detail: &Detail) -> i32 {
+    let sampled: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (sampled.is_err()) { detail.errno = clock_errno(sampled.unwrap_err()); cleanup(child.borrow(),options.cleanup,detail); detail.stage = 4; detail.reason = 13; return 125; } let now: core::time::Instant = sampled.unwrap(); let deadline = core::time::deadline_after(now,core::time::from_millis(options.milliseconds)).unwrap();
+    let captured = std::command_capture::communicate(child.borrow(),core::slice::view(input.as_bytes(),input.len()).unwrap(),options.limits,deadline); if (captured.is_ok()) { return completed(captured.unwrap(),detail); }
+    let failure = captured.unwrap_err(); detail.stage = 4; detail.reason = cause(failure.cause); detail.errno = capture_errno(failure.cause); detail.written = failure.progress.input_written; detail.out = failure.progress.stdout_read; detail.err = failure.progress.stderr_read; if (core::option::is_some(failure.cleanup_error)) { cleanup_error(detail,io_errno(core::option::unwrap(failure.cleanup_error))); } failure.destroy(); cleanup(child.borrow(),options.cleanup,detail); if (detail.reason == 6) { return 124; } return 125;
+}
+fn rejected(value: std::command::FailedStart, detail: &Detail) -> i32 { detail.stage = 3; detail.errno = value.failure.errno; detail.reason = 15; if (value.failure.errno == 2 || value.failure.errno == 20) { return 127; } return 126; }
+fn unknown(value: std::command::UnknownStart, options: Options, detail: &Detail) -> i32 { detail.stage = 3; detail.reason = 16; detail.errno = value.failure.errno; cleanup(value.child.borrow(),options.cleanup,detail); return 125; }
+fn launch(args: std::args::Arguments, input: &alloc::io::Buffer, options: Options, detail: &Detail) -> i32 {
+    let snapshot = std::command::snapshot_environment(std::command::default_limits()); if (snapshot.is_err()) { detail.stage = 3; detail.errno = snapshot.unwrap_err().errno; return 125; } let environment = snapshot.unwrap(); let all = args.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+options.first, length: all.length-options.first };
+    let request = std::command::request(core::option::unwrap(args.get(options.first)),tail,environment.as_view()); request.search = std::command::Search::EnvironmentPath; request.stdin = std::command::Stdio::Pipe; request.stdout = std::command::Stdio::Pipe; request.stderr = std::command::Stdio::Pipe;
+    let spawned = std::command::spawn(request); environment.destroy(); if (spawned.is_err()) { detail.stage = 3; detail.errno = spawned.unwrap_err().errno; return 125; } return match(spawned.unwrap()) { std::command::Spawn::Child(child) -> capture(child,input,options,detail), std::command::Spawn::Failed(value) -> rejected(value,detail), std::command::Spawn::Unknown(value) -> unknown(value,options,detail) };
+}
+fn process(args: std::args::Arguments, detail: &Detail) -> i32 {
+    let options = Options { first: 0, milliseconds: 10000, cleanup: 1000, limits: std::command_capture::default_limits(), help: false }; if (!parse(args,options.borrow())) { detail.stage = 1; detail.reason = 1; return 125; }
+    if (options.help) { let help = bytes("Usage: capture-command [--timeout-ms N] [--cleanup-ms N] [--max-input-bytes N] [--max-stdout-bytes N] [--max-stderr-bytes N] [--max-operations N] -- PROGRAM [ARG...]\n",166); let sink = std::stream::stdout(); let written = core::io::write_all(sink.borrow(),help.values,help.start,help.length); if (written.is_err()) { detail.stage = 5; detail.reason = 11; detail.errno = io_errno(written.unwrap_err().cause); return 125; } return 0; }
+    let input = alloc::io::with_limit(options.limits.max_input_bytes).unwrap(); let source = std::stream::stdin(); let copied = std::stream::copy(source.borrow(),input.borrow()); if (copied.is_err()) { input.destroy(); detail.stage = 2; detail.reason = 11; detail.errno = io_errno(copied.unwrap_err().cause); return 125; }
+    let result: i32 = launch(args,input.borrow(),options,detail); input.destroy(); return result;
+}
+fn diagnostic(detail: Detail) -> bool {
+    let raw: [u8;240] = [0;240]; let formatter = core::fmt::buffer(raw,0,240).unwrap(); formatter.write_text(text("capture-command: stage=",23)); formatter.write_signed(detail.stage as i64,core::fmt::decimal()); formatter.write_text(text(" reason=",8)); formatter.write_signed(detail.reason as i64,core::fmt::decimal()); formatter.write_text(text(" errno=",7)); formatter.write_signed(detail.errno as i64,core::fmt::decimal()); formatter.write_text(text(" input-written=",15)); formatter.write_signed(detail.written as i64,core::fmt::decimal()); formatter.write_text(text(" stdout-read=",13)); formatter.write_unsigned(detail.out,core::fmt::decimal()); formatter.write_text(text(" stderr-read=",13)); formatter.write_unsigned(detail.err,core::fmt::decimal());
+    if (detail.cleanup_pid > 0) { formatter.write_text(text(" cleanup-incomplete pid=",24)); formatter.write_signed(detail.cleanup_pid as i64,core::fmt::decimal()); } if (detail.cleanup_errno != 0) { formatter.write_text(text(" cleanup-errno=",15)); formatter.write_signed(detail.cleanup_errno as i64,core::fmt::decimal()); } formatter.write_text(text("\n",1)); let sink = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,formatter.finish().unwrap()).is_ok();
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 125; } let detail = Detail { stage: 0, reason: 0, errno: 0, written: 0, out: 0, err: 0, cleanup_pid: 0, cleanup_errno: 0 }; let args = std::args::snapshot(1,4120,1048576); let result: i32 = 125;
+    if (args.is_ok()) { let captured = args.unwrap(); result = process(captured,detail.borrow()); captured.destroy(); } else { detail.stage = 1; detail.reason = 9; }
+    if (detail.stage != 0 && !diagnostic(detail)) { return 125; } return result;
+}

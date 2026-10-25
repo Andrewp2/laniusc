@@ -8,7 +8,7 @@ fn main() -> i32 {
         !core::target::HAS_STDIO || !core::target::HAS_CLOCK ||
         !core::target::HAS_SECURE_RNG || !core::target::HAS_PROCESS ||
         !core::target::HAS_ENV || core::target::HAS_THREADS ||
-        core::target::HAS_NETWORK || core::target::HAS_PANIC_HOOK ||
+        !core::target::HAS_NETWORK || core::target::HAS_PANIC_HOOK ||
         core::target::HAS_HOST_SERVICES || core::target::HAS_GPU ||
         core::target::HAS_TEST_HARNESS || core::target::HAS_RUNTIME_SERVICES) {
         return 1;
@@ -18,7 +18,7 @@ fn main() -> i32 {
         !core::target::has_stdio() || !core::target::has_clock() ||
         !core::target::has_secure_rng() || !core::target::has_process() ||
         !core::target::has_env() || core::target::has_threads() ||
-        core::target::has_network() || core::target::has_panic_hook() ||
+        !core::target::has_network() || core::target::has_panic_hook() ||
         core::target::has_host_services() || core::target::has_gpu() ||
         core::target::has_test_harness() || core::target::has_runtime_services() ||
         !core::target::runtime_services_are_blocked() ||
@@ -32,9 +32,15 @@ fn main() -> i32 {
         core::target::has_secure_rng() != core::runtime::has_secure_rng() ||
         core::target::has_process() != core::runtime::has_process() ||
         core::target::has_env() != core::runtime::has_env() ||
-        core::target::has_network() != core::runtime::has_network() ||
         core::target::has_gpu() != core::runtime::has_gpu()) {
         return 3;
+    }
+    // Library sockets are implemented over syscall service 14; old service 5
+    // is still unavailable and must not be advertised as a direct binding.
+    if (!core::target::HAS_LINUX_SYSCALLS || !core::target::has_linux_syscalls() ||
+        !core::runtime::has_linux_syscalls() || core::runtime::has_network() ||
+        core::runtime::service_is_available(core::runtime::SERVICE_NETWORK_ID)) {
+        return 4;
     }
     return 0;
 }

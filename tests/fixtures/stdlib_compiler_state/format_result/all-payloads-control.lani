@@ -1,0 +1,53 @@
+module app::main;
+import alloc::format;
+import alloc::string;
+import alloc::vec;
+import core::fmt;
+import core::format;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+struct Point {
+    x: i64,
+    y: i64
+}
+pub impl core::fmt::Display<Point>for Point {
+    pub fn format(value: Point, output: &core::fmt::Formatter) -> core::result::Result<i32,
+    core::fmt::Error> {
+        output.write_scalar(40);
+        output.write_signed(value.x, core::fmt::decimal());
+        output.write_scalar(44);
+        output.write_signed(value.y, core::fmt::decimal());
+        output.write_scalar(41);
+        return output.finish();
+    }
+}
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length);
+    return core::text::from_utf8_unchecked(bytes, 0, length);
+}
+fn verify<T>(value:T,expected:core::text::Text) where T:core::fmt::Display<T> {
+    let owner:alloc::string::String=core::result::unwrap(alloc::format::display(value,100));assert(owner.as_text().equals(expected));owner.destroy();
+}
+fn main() -> i32 {
+    let args:[core::format::Argument; 1] =[core::format::Argument::Signed(-42)];
+    let names:[core::format::Named; 0] =[];
+    let positional: core::slice::View<core::format::Argument> = core::result::unwrap(core::slice::view(args, 1));
+    let named: core::slice::View<core::format::Named> = core::result::unwrap(core::slice::view(names, 0));
+    let result: alloc::string::String = core::result::unwrap(alloc::format::format(text("value={:+06d}", 13), positional, named, core::format::default_limits()));
+    assert(result.as_text().equals(text("value=-00042", 12)));
+    result.destroy();
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(alloc::format::format_bytes(text("{}", 2), positional, named, core::format::default_limits()));
+    assert(bytes.len() == 3);
+    bytes.destroy();
+    let point: alloc::string::String = core::result::unwrap(alloc::format::display(Point {
+        x: -42, y: 7
+    }, 100));
+    assert(point.as_text().equals(text("(-42,7)", 7)));
+    point.destroy();
+    verify(-8 as i8,text("-8",2));verify(-16 as i16,text("-16",3));verify(-32 as i32,text("-32",3));verify(-64 as i64,text("-64",3));verify(-64 as isize,text("-64",3));
+    verify(8 as u8,text("8",1));verify(16 as u16,text("16",2));verify(32 as u32,text("32",2));verify(64 as u64,text("64",2));verify(64 as usize,text("64",2));
+    verify(1.5 as f32,text("1.5",3));verify(1.5 as f64,text("1.5",3));verify(true,text("true",4));verify('🙂',text("🙂",4));verify(text("é🙂",6),text("é🙂",6));verify(Point{x:-42,y:7},text("(-42,7)",7));
+    return 0;
+}

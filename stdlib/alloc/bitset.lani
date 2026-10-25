@@ -1,0 +1,145 @@
+// Owned bitsets with manual unique ownership. Copies alias one allocation;
+// retain one active owner. Methods borrow and update it. destroy resets it.
+// Storage uses the native typed u32 layout, not packed C u32 words.
+module alloc::bitset;
+import alloc::vec;
+import core::bitset;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, InvalidCapacity, CapacityOverflow, AllocationFailed, SizeMismatch }
+pub struct BitSet { words: alloc::vec::Vec<u32>, length: i32 }
+pub const MAX_BITS: i32 = 2147483647;
+
+pub fn new() -> BitSet { let words: alloc::vec::Vec<u32> = alloc::vec::new(); return BitSet { words: words, length: 0 }; }
+pub fn with_capacity(bit_capacity: i32) -> core::result::Result<BitSet, Error> {
+    let value: BitSet = new(); let status: core::result::Result<i32, Error> = value.try_reserve(bit_capacity);
+    if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
+    return core::result::Ok(value);
+}
+pub fn with_len(bit_len: i32, fill: bool) -> core::result::Result<BitSet, Error> {
+    let value: BitSet = new(); let status: core::result::Result<i32, Error> = value.try_resize(bit_len, fill);
+    if (core::result::is_err(status)) { return core::result::Err(core::result::unwrap_err(status)); }
+    return core::result::Ok(value);
+}
+pub fn from_view(view: core::bitset::BitView) -> core::result::Result<BitSet, Error> {
+    let built: core::result::Result<BitSet, Error> = with_len(view.len(), false);
+    if (core::result::is_err(built)) { return built; }
+    let value: BitSet = core::result::unwrap(built); let words: [u32] = value.words.as_slice(); let index: i32 = 0;
+    while (index < value.words.len()) { words[index] = core::option::unwrap(view.word(index)); index += 1; }
+    return core::result::Ok(value);
+}
+fn vec_error(error: alloc::vec::Error) -> Error {
+    return match (error) { alloc::vec::Error::Bounds -> Error::Bounds, alloc::vec::Error::InvalidCapacity -> Error::InvalidCapacity, alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow, _ -> Error::AllocationFailed };
+}
+fn mapped(status: core::result::Result<i32, alloc::vec::Error>) -> core::result::Result<i32, Error> {
+    return match (status) { Ok(value) -> core::result::Ok(value), Err(error) -> core::result::Err(vec_error(error)) };
+}
+pub impl BitSet {
+    pub fn borrow(&self) -> &BitSet { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    // Rounded up to a word, capped at the logical i32 length limit.
+    pub fn capacity(&self) -> i32 {
+        let words: i32 = self.words.capacity(); if (words > MAX_BITS / 32) { return MAX_BITS; } return words * 32;
+    }
+    pub fn as_view(&self) -> core::bitset::BitView {
+        let words: core::slice::View<u32> = self.words.as_view();
+        return core::result::unwrap(core::bitset::BitView::from_words(words, self.length));
+    }
+    pub fn get(&self, index: i32) -> core::option::Option<bool> { let view: core::bitset::BitView = self.as_view(); return view.get(index); }
+    pub fn set(&self, index: i32) -> core::result::Result<bool, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.set(index); }
+    pub fn clear(&self, index: i32) -> core::result::Result<bool, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.clear(index); }
+    pub fn assign(&self, index: i32, value: bool) -> core::result::Result<bool, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.assign(index, value); }
+    pub fn toggle(&self, index: i32) -> core::result::Result<bool, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.toggle(index); }
+    pub fn set_range(&self, start: i32, end: i32) -> core::result::Result<i32, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.set_range(start, end); }
+    pub fn clear_range(&self, start: i32, end: i32) -> core::result::Result<i32, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.clear_range(start, end); }
+    pub fn toggle_range(&self, start: i32, end: i32) -> core::result::Result<i32, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.toggle_range(start, end); }
+    pub fn fill(&self, value: bool) -> i32 { let view: core::bitset::BitView = self.as_view(); return view.fill(value); }
+    pub fn count_ones(&self) -> i32 { let view: core::bitset::BitView = self.as_view(); return view.count_ones(); }
+    pub fn any(&self) -> bool { let view: core::bitset::BitView = self.as_view(); return view.any(); }
+    pub fn all(&self) -> bool { let view: core::bitset::BitView = self.as_view(); return view.all(); }
+    pub fn first_set(&self) -> core::option::Option<i32> { let view: core::bitset::BitView = self.as_view(); return view.first_set(); }
+    pub fn last_set(&self) -> core::option::Option<i32> { let view: core::bitset::BitView = self.as_view(); return view.last_set(); }
+    pub fn next_set(&self, start: i32) -> core::result::Result<core::option::Option<i32>, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.next_set(start); }
+    pub fn next_clear(&self, start: i32) -> core::result::Result<core::option::Option<i32>, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.next_clear(start); }
+    pub fn iter_ones(&self) -> core::bitset::Ones { let view: core::bitset::BitView = self.as_view(); return view.iter_ones(); }
+    pub fn equal(&self, other: core::bitset::BitView) -> bool { let view: core::bitset::BitView = self.as_view(); return view.equal(other); }
+    pub fn hash(&self) -> u32 { let view: core::bitset::BitView = self.as_view(); return view.hash(); }
+    pub fn is_subset(&self, other: core::bitset::BitView) -> core::result::Result<bool, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.is_subset(other); }
+    pub fn is_disjoint(&self, other: core::bitset::BitView) -> core::result::Result<bool, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.is_disjoint(other); }
+    pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::result::Result<i32, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.copy_within(start, end, destination); }
+    pub fn shift_left(&self, count: i32) -> core::result::Result<i32, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.shift_left(count); }
+    pub fn shift_right(&self, count: i32) -> core::result::Result<i32, core::bitset::ViewError> { let view: core::bitset::BitView = self.as_view(); return view.shift_right(count); }
+    // Exact additional capacity in logical bits, rounded to whole words.
+    // Every error preserves allocation, capacity, length, bits, and views.
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
+        if (additional < 0) { return core::result::Err(Error::InvalidCapacity); }
+        if (additional > MAX_BITS - self.length) { return core::result::Err(Error::CapacityOverflow); }
+        let count: i32 = core::bitset::word_count_or(self.length + additional, -1);
+        let status: core::result::Result<i32, Error> = mapped(self.words.try_reserve(count - self.words.len()));
+        if (core::result::is_err(status)) { return status; }
+        return core::result::Ok(self.capacity());
+    }
+    fn canonicalize(&self) {
+        let count: i32 = self.words.len();
+        if (count > 0 && self.length % 32 != 0) {
+            let view: core::bitset::BitView = self.as_view(); let last: u32 = core::option::unwrap(view.word(count - 1));
+            let words: [u32] = self.words.as_slice(); words[count - 1] = last;
+        }
+    }
+    pub fn try_resize(&self, length: i32, fill: bool) -> core::result::Result<i32, Error> {
+        if (length < 0) { return core::result::Err(Error::Bounds); }
+        let count: i32 = core::bitset::word_count_or(length, -1); let zero: u32 = 0;
+        let status: core::result::Result<i32, Error> = mapped(self.words.try_resize(count, zero));
+        if (core::result::is_err(status)) { return status; }
+        let previous: i32 = self.length; self.length = length;
+        if (length > previous) { let view: core::bitset::BitView = self.as_view(); view.assign_range(previous, length, fill); }
+        self.canonicalize(); return core::result::Ok(length);
+    }
+    pub fn try_push(&self, bit: bool) -> core::result::Result<i32, Error> {
+        if (self.length == MAX_BITS) { return core::result::Err(Error::CapacityOverflow); }
+        // Geometric reserve keeps repeated pushes amortized linear.
+        if (self.length == self.capacity()) {
+            let additional: i32 = self.capacity(); if (additional == 0) { additional = 32; }
+            if (additional > MAX_BITS - self.length) { additional = MAX_BITS - self.length; }
+            let status: core::result::Result<i32, Error> = self.try_reserve(additional);
+            if (core::result::is_err(status)) { return status; }
+        }
+        return self.try_resize(self.length + 1, bit);
+    }
+    pub fn pop(&self) -> core::option::Option<bool> {
+        if (self.length == 0) { return core::option::None(); }
+        let previous: core::option::Option<bool> = self.get(self.length - 1); self.try_resize(self.length - 1, false); return previous;
+    }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
+        let status: core::result::Result<i32, Error> = mapped(self.words.try_shrink_to_fit());
+        if (core::result::is_err(status)) { return status; } return core::result::Ok(self.capacity());
+    }
+    pub fn try_clone(&self) -> core::result::Result<BitSet, Error> { return from_view(self.as_view()); }
+    pub fn destroy(&self) { self.words.destroy(); self.length = 0; }
+    // All algebra requires equal lengths. Read all inputs into independent
+    // storage before replacing the owner: exact and displaced aliases work.
+    // Allocation failure and SizeMismatch leave both inputs and owner intact.
+    pub fn try_union(&self, other: core::bitset::BitView) -> core::result::Result<i32, Error> { return self.combine(other, 0); }
+    pub fn try_intersection(&self, other: core::bitset::BitView) -> core::result::Result<i32, Error> { return self.combine(other, 1); }
+    pub fn try_difference(&self, other: core::bitset::BitView) -> core::result::Result<i32, Error> { return self.combine(other, 2); }
+    pub fn try_xor(&self, other: core::bitset::BitView) -> core::result::Result<i32, Error> { return self.combine(other, 3); }
+    fn combine(&self, other: core::bitset::BitView, operation: i32) -> core::result::Result<i32, Error> {
+        if (self.length != other.len()) { return core::result::Err(Error::SizeMismatch); }
+        if (self.length == 0) { return core::result::Ok(0); }
+        let staged: core::result::Result<BitSet, Error> = with_capacity(self.capacity());
+        if (core::result::is_err(staged)) { return core::result::Err(core::result::unwrap_err(staged)); }
+        let copy: BitSet = core::result::unwrap(staged); copy.try_resize(self.length, false);
+        let destination: [u32] = copy.words.as_slice(); let view: core::bitset::BitView = self.as_view(); let index: i32 = 0;
+        while (index < self.words.len()) {
+            let left: u32 = core::option::unwrap(view.word(index)); let right: u32 = core::option::unwrap(other.word(index)); let combined: u32 = left | right;
+            if (operation == 1) { combined = left & right; }
+            if (operation == 2) { combined = left & (right ^ 4294967295); }
+            if (operation == 3) { combined = left ^ right; }
+            destination[index] = combined; index += 1;
+        }
+        self.words.destroy(); self.words = copy.words; return core::result::Ok(self.length);
+    }
+}

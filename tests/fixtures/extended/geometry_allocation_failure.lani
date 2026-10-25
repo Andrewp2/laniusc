@@ -1,0 +1,30 @@
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import ext::geometry;
+fn p(x: i32, y: i32) -> ext::geometry::Point {
+    return ext::geometry::Point {
+        x: x,
+        y: y
+    };
+}
+fn main() -> i32 {
+    let values:[ext::geometry::Point; 8] =[p(0, 0), p(5, 0), p(5, 5), p(0, 5), p(2, 2), p(0, 0), p(-1, 2), p(3, 3)];
+    let input: core::slice::View<ext::geometry::Point> = core::slice::view(values, 8).unwrap();
+    let made: core::result::Result<ext::geometry::Hull,
+    ext::geometry::Error> = ext::geometry::convex_hull(input, ext::geometry::default_limits());
+    if (made.is_ok()) {
+        let hull: ext::geometry::Hull = made.unwrap();
+        assert(hull.len() == 5);
+        hull.destroy();
+    } else {
+        assert(match (made.unwrap_err()) {
+            ext::geometry::Error::AllocationFailed -> true, _ -> false
+        }
+        );
+    }
+    assert(ext::geometry::equal(core::option::unwrap(input.get(0)), p(0, 0)));
+    assert(ext::geometry::equal(core::option::unwrap(input.get(4)), p(2, 2)));
+    return 0;
+}

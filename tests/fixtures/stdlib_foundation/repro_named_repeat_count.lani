@@ -1,0 +1,7 @@
+// expect: 0
+module app::main;
+const COUNT: usize = 8;
+fn main() -> i32 {
+    let bytes: [u8; COUNT] = [0; COUNT];
+    return bytes[7] as i32;
+}

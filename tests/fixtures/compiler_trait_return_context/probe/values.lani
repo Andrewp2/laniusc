@@ -1,0 +1,22 @@
+module probe::values;
+import core::option;
+import core::result;
+import probe::protocol;
+
+pub struct Item { word: u64, signed: i32 }
+pub enum Fault { Rejected(i32,u64), Other(i32) }
+
+pub impl probe::protocol::Produce<Item,Fault> for Item {
+    pub fn produce(source: Item, fail: bool) -> core::result::Result<Item,Fault> {
+        if (fail) { return core::result::Err(Fault::Rejected(-41,18446744073709551610)); }
+        return core::result::Ok(source);
+    }
+}
+
+pub impl probe::protocol::Nested<Item,Fault> for Item {
+    pub fn nested(source: Item, mode: i32) -> core::result::Result<core::option::Option<Item>,Fault> {
+        if (mode == 1) { return core::result::Ok(core::option::None()); }
+        if (mode == 2) { return core::result::Err(Fault::Rejected(-43,18446744073709551608)); }
+        return core::result::Ok(core::option::Some(source));
+    }
+}

@@ -1,0 +1,41 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::tar;
+import std::io;
+fn read(pointer: ptr, count: i32) -> i32 { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { return done; } done += got; } return done; }
+fn write(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn get(bytes: [u8], index: i32) -> i32 { return (bytes[index] as i32) | ((bytes[index+1] as i32) << 8) | ((bytes[index+2] as i32) << 16) | ((bytes[index+3] as i32) << 24); }
+fn get64(bytes: [u8], index: i32) -> u64 { return (get(bytes,index) as u32) as u64 | (((get(bytes,index+4) as u32) as u64) << 32); }
+fn number(bytes: [u8], index: i32, value: i32) { bytes[index] = (value & 255) as u8; bytes[index+1] = ((value >> 8) & 255) as u8; bytes[index+2] = ((value >> 16) & 255) as u8; bytes[index+3] = ((value >> 24) & 255) as u8; }
+fn wide(bytes: [u8], index: i32, value: u64) { number(bytes,index,value as i32); number(bytes,index+4,(value >> 32) as i32); }
+fn kind(value: ext::tar::Kind) -> i32 { return match (value) { ext::tar::Kind::Regular -> 0, ext::tar::Kind::HardLink -> 1, ext::tar::Kind::SymbolicLink -> 2, ext::tar::Kind::CharacterDevice -> 3, ext::tar::Kind::BlockDevice -> 4, ext::tar::Kind::Directory -> 5, ext::tar::Kind::Fifo -> 6, ext::tar::Kind::Contiguous -> 7 }; }
+fn to_kind(value: i32) -> ext::tar::Kind { return match (value) { 0 -> ext::tar::Kind::Regular, 1 -> ext::tar::Kind::HardLink, 2 -> ext::tar::Kind::SymbolicLink, 3 -> ext::tar::Kind::CharacterDevice, 4 -> ext::tar::Kind::BlockDevice, 5 -> ext::tar::Kind::Directory, 6 -> ext::tar::Kind::Fifo, _ -> ext::tar::Kind::Contiguous }; }
+fn code(error: ext::tar::Error) -> i32 { return match (error) { ext::tar::Error::Bounds -> 1, ext::tar::Error::UnexpectedEof -> 2, ext::tar::Error::MissingFooter -> 3, ext::tar::Error::InvalidChecksum -> 4, ext::tar::Error::UnsupportedFormat -> 5, ext::tar::Error::InvalidNumber -> 6, ext::tar::Error::NumberOverflow -> 7, ext::tar::Error::InvalidName -> 8, ext::tar::Error::UnsupportedType -> 9, ext::tar::Error::InvalidSize -> 10, ext::tar::Error::InvalidPadding -> 11, ext::tar::Error::TrailingData -> 12, ext::tar::Error::PathTooLong -> 13, ext::tar::Error::LinkTooLong -> 14, ext::tar::Error::NameTooLong -> 15, ext::tar::Error::CapacityOverflow -> 16, ext::tar::Error::OutputTooSmall -> 17, ext::tar::Error::Finished -> 18, ext::tar::Error::InvalidState -> 19 }; }
+fn main() -> i32 {
+    let input_words: [i32;65536] = [0;65536]; let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words); let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,262144);
+    let header_words: [i32;21] = [0;21]; let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words); let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,84);
+    let path_words: [i32;64] = [0;64]; let path_pointer: ptr = core::mem::i32_array_data_ptr(path_words); let path: [u8] = core::mem::typed_slice_from_raw_parts(path_pointer,256); let path_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(path,256));
+    while (true) {
+        let got: i32 = read(header_pointer,4); if (got == 0) { break; } assert(got == 4); let count: i32 = get(header,0); assert(count >= 0 && count <= 262144); assert(read(input_pointer,count) == count);
+        let source: core::slice::View<u8> = core::result::unwrap(core::slice::view(input,count)); let reader: ext::tar::Reader = core::result::unwrap(ext::tar::reader(source));
+        let ended: bool = false; let error: i32 = 0;
+        while (!ended) {
+            let before: i32 = reader.position(); let next: core::result::Result<core::option::Option<ext::tar::Entry>,ext::tar::Error> = reader.next();
+            if (core::result::is_err(next)) { assert(reader.position() == before && !reader.is_finished()); error = code(core::result::unwrap_err(next)); ended = true; }
+            else {
+                let item: core::option::Option<ext::tar::Entry> = core::result::unwrap(next);
+                if (core::option::is_none(item)) { ended = true; assert(reader.is_finished()); }
+                else {
+                    let entry: ext::tar::Entry = core::option::unwrap(item); let path_len: i32 = core::result::unwrap(entry.copy_path(path_view)); assert(path_len == entry.path_len());
+                    number(header,0,1); number(header,4,kind(entry.kind)); number(header,8,entry.mode as i32); wide(header,12,entry.uid); wide(header,20,entry.gid); wide(header,28,entry.size); wide(header,36,entry.mtime); wide(header,44,entry.dev_major); wide(header,52,entry.dev_minor); number(header,60,entry.offset);
+                    number(header,64,path_len); number(header,68,entry.link_name.length); number(header,72,entry.uname.length); number(header,76,entry.gname.length); number(header,80,entry.data.length); write(header_pointer,84); write(path_pointer,path_len);
+                    write(input_pointer+(entry.link_name.start as usize),entry.link_name.length); write(input_pointer+(entry.uname.start as usize),entry.uname.length); write(input_pointer+(entry.gname.start as usize),entry.gname.length); write(input_pointer+(entry.data.start as usize),entry.data.length);
+                }
+            }
+        }
+        number(header,0,0); number(header,4,error); number(header,8,reader.position()); let finished: i32 = 0; if (reader.is_finished()) { finished = 1; } number(header,12,finished); write(header_pointer,16);
+    } return 0;
+}

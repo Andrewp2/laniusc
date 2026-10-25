@@ -1,0 +1,16 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::http;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn main() -> i32 {
+ let f: ext::http::Field = ext::http::Field { raw: bytes("",0), name: bytes("Host",4), value: bytes("example.test",12), offset: 0 };
+ let headers: [ext::http::Field;1] = [f]; let body: [u8;127] = [255;127];
+ let result = ext::http::encode_request(bytes("POST / HTTP/1.1",15),core::result::unwrap(core::slice::view(headers,1)),core::result::unwrap(core::slice::view(body,127)),ext::http::default_limits());
+ if (core::result::is_err(result)) { return match (core::result::unwrap_err(result)) { ext::http::Error::AllocationFailed -> 4, _ -> 2 }; }
+ let owner: alloc::vec::Vec<u8> = core::result::unwrap(result); let parsed = ext::http::parse_request(owner.as_view(),false,ext::http::default_limits());
+ assert(core::result::unwrap(parsed).decoded_length == 127); owner.destroy(); return 0;
+}

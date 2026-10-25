@@ -1,0 +1,544 @@
+// Allocation-free shared iteration. Native x86_64 Linux contracts execute via
+// the GPU compiler; see docs/stdlib-iterators.md. The predecessor is retained at
+// tests/fixtures/stdlib_foundation/iterator_dependency/prototype/core/iter.lani.
+//
+// Iterator implementations are fused: after None, every later next is None.
+// Items are shallow copies; source APIs can explicitly transfer cleanup
+// authority, but the protocol never clones or destroys them automatically.
+// Cursors and backing storage must outlive borrowed adapters. Borrowed leaf
+// copies fork position; owning cursors require one active handle. Adapter
+// copies share upstream references. Discarded transferred owners can leak;
+// owning-cursor Destroy helpers cannot recover items no longer in the source.
+module core::iter;
+import core::option;
+import core::pair;
+import core::panic;
+import core::range;
+import core::result;
+import core::slice;
+
+pub trait Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T>;
+}
+
+// A source-defined callback, with ordinary shallow input/output values. The
+// caller keeps the mapper and any borrowed mutable context alive. Output
+// cleanup authority remains with the application; no Destroy is implied.
+pub trait Mapper<T, U> {
+    pub fn apply(&self, value: T) -> U;
+}
+
+// Left-fold callbacks receive the accumulator first. Replaced accumulators
+// and consumed items are shallow values; keep their cleanup authority outside
+// the fold when a callback omits them from its returned value.
+pub trait Folder<A, T> {
+    pub fn apply(&self, accumulator: A, value: T) -> A;
+}
+
+// Err stops after the current item, without another source call or rollback.
+// The error need not contain the old accumulator; no Destroy is implicit.
+pub trait TryFolder<A, T, E> {
+    pub fn try_apply(&self, accumulator: A, value: T) -> core::result::Result<A, E>;
+}
+
+// A fallible destination for one shallow item. None accepts the item; Some
+// rejects it with an error. On rejection the sink must not retain the item or
+// publish a partial insertion. Instrumentation may record the failed attempt.
+// Acceptance never implies an implicit clone or destruction of nested owners.
+pub trait TrySink<T, E> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<E>;
+}
+
+// A transfer stops at the quota without probing again. exhausted means an
+// actual None was observed, not that a quota-ending source is known nonempty.
+pub struct Transfer { accepted: u64, exhausted: bool }
+
+// The source has consumed rejected, but the sink has not retained it. Recover
+// or release it before resuming the source; the accepted prefix remains in the
+// destination. accepted counts only this call, not the sink's earlier entries.
+pub struct TransferError<T, E> { accepted: u64, rejected: T, error: E }
+
+pub struct RangeI32 { position: i64, end: i64 }
+pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
+pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
+pub struct Map<I, M, T, U> { source: &I, mapper: &M, done: bool }
+pub struct Zip<A, B, T, U> { left: &A, right: &B, done: bool }
+pub struct Enumerate<I, T> { source: &I, next_index: u64, max_used: bool, done: bool }
+pub struct Filter<I, P, T> { source: &I, predicate: &P, done: bool }
+pub struct FilterMap<I, M, T, U> { source: &I, mapper: &M, done: bool }
+pub struct Skip<I, T> { source: &I, remaining: u64, done: bool }
+pub struct TakeWhile<I, P, T> { source: &I, predicate: &P, done: bool }
+pub struct SkipWhile<I, P, T> { source: &I, predicate: &P, skipping: bool, done: bool }
+pub struct Advance { advanced: u64, exhausted: bool }
+
+// Check logical metadata only. values must physically back count elements.
+pub fn from_slice<T>(values: [T], count: i32)
+    -> core::result::Result<core::slice::Iter<T>, core::slice::ViewError> {
+    let view: core::slice::View<T> = core::slice::View { values: values, start: 0, length: count };
+    return from_view<T>(view);
+}
+
+// Public View fields can be forged, so recheck their integer invariants before
+// constructing a cursor. This neither reads elements nor proves physical bounds.
+pub fn from_view<T>(view: core::slice::View<T>)
+    -> core::result::Result<core::slice::Iter<T>, core::slice::ViewError> {
+    if (view.start < 0 || view.length < 0 || view.start > 2147483647 - view.length) {
+        return core::result::Err(core::slice::ViewError::Bounds);
+    }
+    let cursor: core::slice::Iter<T> = view.iter();
+    return core::result::Ok(cursor);
+}
+
+// Capture finite ascending unit-step bounds; reversed bounds are empty.
+pub fn range_i32(bounds: core::range::Range<i32>) -> RangeI32 {
+    let position: i64 = core::range::start(bounds) as i64;
+    let end: i64 = core::range::end(bounds) as i64;
+    if (position > end) { position = end; }
+    return RangeI32 { position: position, end: end };
+}
+
+pub fn range_i32_inclusive(bounds: core::range::RangeInclusive<i32>) -> RangeI32 {
+    let position: i64 = core::range::start_inclusive(bounds) as i64;
+    let last: i64 = core::range::end_inclusive(bounds) as i64;
+    // Widen before adding one: MAX + 1 is a valid i64 sentinel.
+    let end: i64 = last + 1;
+    if (position > end) { position = end; }
+    return RangeI32 { position: position, end: end };
+}
+
+pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T> {
+    return Take { source: source, remaining: count, done: false };
+}
+
+pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
+    where A: Iterator<T>, B: Iterator<T> {
+    return Chain { left: left, right: right, in_right: false, done: false };
+}
+
+pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
+    where I: Iterator<T>, M: Mapper<T, U> {
+    return Map { source: source, mapper: mapper, done: false };
+}
+
+// Selection callbacks reuse Mapper: bool selects an original shallow item,
+// Option<U> either skips it or yields U. A next call can scan arbitrarily many
+// source items; put Take upstream to bound source pulls. Construction is lazy.
+pub fn filter<I, P, T>(source: &I, predicate: &P) -> Filter<I, P, T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    return Filter { source: source, predicate: predicate, done: false };
+}
+
+pub fn filter_map<I, M, T, U>(source: &I, mapper: &M) -> FilterMap<I, M, T, U>
+    where I: Iterator<T>, M: Mapper<T, core::option::Option<U>> {
+    return FilterMap { source: source, mapper: mapper, done: false };
+}
+
+// Skip exactly count successful items before yielding. No integer narrowing
+// or count+1 is needed, even for MAX. A finite short source ends on one None.
+pub fn skip<I, T>(source: &I, count: u64) -> Skip<I, T> where I: Iterator<T> {
+    return Skip { source: source, remaining: count, done: false };
+}
+
+// The first false item is consumed. TakeWhile then latches None permanently.
+pub fn take_while<I, P, T>(source: &I, predicate: &P) -> TakeWhile<I, P, T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    return TakeWhile { source: source, predicate: predicate, done: false };
+}
+
+// Yield the first false item; after that, never query the predicate again.
+pub fn skip_while<I, P, T>(source: &I, predicate: &P) -> SkipWhile<I, P, T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    return SkipWhile { source: source, predicate: predicate, skipping: true, done: false };
+}
+
+// Pull left before right. If right ends, the successful left value has already
+// been consumed and receives no implicit destruction. Keep an application
+// cleanup authority for owner handles that can pass through either source.
+pub fn zip<A, B, T, U>(left: &A, right: &B) -> Zip<A, B, T, U>
+    where A: Iterator<T>, B: Iterator<U> {
+    return Zip { left: left, right: right, done: false };
+}
+
+pub fn enumerate<I, T>(source: &I) -> Enumerate<I, T> where I: Iterator<T> {
+    return enumerate_from<I, T>(source, 0);
+}
+
+// first_index labels the first item; it does not skip source items. MAX is a
+// valid last index. A later Some is consumed and then panics; a later None is
+// ordinary exhaustion. The extra flag avoids forming MAX + 1.
+pub fn enumerate_from<I, T>(source: &I, first_index: u64) -> Enumerate<I, T>
+    where I: Iterator<T> {
+    return Enumerate { source: source, next_index: first_index, max_used: false, done: false };
+}
+
+// Searches consume their matching item and make no extra EOF probe. No match
+// requires exhausting the source. Callbacks receive ordinary shallow values.
+pub fn find<I, P, T>(source: &I, predicate: &P) -> core::option::Option<T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { return item; }
+        let value: T = core::option::unwrap(item);
+        let selected: bool = predicate.apply(value);
+        if (selected) { return item; }
+    }
+    return core::option::None();
+}
+
+pub fn find_map<I, M, T, U>(source: &I, mapper: &M) -> core::option::Option<U>
+    where I: Iterator<T>, M: Mapper<T, core::option::Option<U>> {
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { return core::option::None(); }
+        let value: T = core::option::unwrap(item);
+        let mapped: core::option::Option<U> = mapper.apply(value);
+        if (core::option::is_some(mapped)) { return mapped; }
+    }
+    return core::option::None();
+}
+
+// Empty identities are false for any and true for all. A decisive predicate
+// result consumes its item and returns immediately, leaving the rest untouched.
+pub fn any<I, P, T>(source: &I, predicate: &P) -> bool
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { return false; }
+        let value: T = core::option::unwrap(item);
+        let selected: bool = predicate.apply(value);
+        if (selected) { return true; }
+    }
+    return false;
+}
+
+pub fn all<I, P, T>(source: &I, predicate: &P) -> bool
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { return true; }
+        let value: T = core::option::unwrap(item);
+        let selected: bool = predicate.apply(value);
+        if (!selected) { return false; }
+    }
+    return true;
+}
+
+// Fold left in source order. Arithmetic and callback errors are callback
+// policy; ordinary fold introduces no arithmetic, clones or destruction.
+pub fn fold<I, F, T, A>(source: &I, initial: A, folder: &F) -> A
+    where I: Iterator<T>, F: Folder<A, T> {
+    let accumulator: A = initial;
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { return accumulator; }
+        let value: T = core::option::unwrap(item);
+        accumulator = folder.apply(accumulator, value);
+    }
+    return accumulator;
+}
+
+pub fn try_fold<I, F, T, A, E>(source: &I, initial: A, folder: &F)
+    -> core::result::Result<A, E> where I: Iterator<T>, F: TryFolder<A, T, E> {
+    let accumulator: A = initial;
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { return core::result::Ok(accumulator); }
+        let value: T = core::option::unwrap(item);
+        let step: core::result::Result<A, E> = folder.try_apply(accumulator, value);
+        if (core::result::is_err(step)) { return step; }
+        accumulator = core::result::unwrap(step);
+    }
+    return core::result::Ok(accumulator);
+}
+
+// At most limit source.next calls, each Some followed by one sink attempt.
+// A zero quota touches neither object. An error stops immediately and returns
+// the rejected item; successful earlier insertions are not rolled back. The
+// source and sink must not invalidate each other's storage or borrowed views.
+// A next or callback can do unbounded work internally; quota counts calls only.
+pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
+    -> core::result::Result<Transfer, TransferError<T, E>>
+    where I: Iterator<T>, S: TrySink<T, E> {
+    let accepted: u64 = 0;
+    while (accepted < limit) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) {
+            return core::result::Ok(Transfer { accepted: accepted, exhausted: true });
+        }
+        let value: T = core::option::unwrap(item);
+        let failed: core::option::Option<E> = sink.try_accept(value);
+        if (core::option::is_some(failed)) {
+            let error: E = core::option::unwrap(failed);
+            return core::result::Err(TransferError { accepted: accepted, rejected: value, error: error });
+        }
+        // accepted < limit <= u64::MAX, so this increment cannot overflow.
+        accepted += 1;
+    }
+    return core::result::Ok(Transfer { accepted: accepted, exhausted: false });
+}
+
+// At most limit next calls; no probe when the quota is reached. exhausted says
+// a None was observed, rather than claiming the next item is definitely Some.
+// Each successful item is discarded as a shallow value; no Destroy is called.
+// An owning source has already transferred that item's cleanup authority;
+// retaining or destroying only its remainder cannot recover discarded owners.
+pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<T> {
+    let advanced: u64 = 0;
+    while (advanced < limit) {
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) {
+            return Advance { advanced: advanced, exhausted: true };
+        }
+        advanced += 1;
+    }
+    return Advance { advanced: advanced, exhausted: false };
+}
+
+// Forward slice cursor bodies retain native descriptors, stride and bounds.
+// Keeping these impls here avoids a core::slice -> core::iter import cycle.
+pub impl<T> Iterator<T> for core::slice::Iter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let value: T = self.values[self.front]; self.front += 1;
+        return core::option::Some(value);
+    }
+}
+
+pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let count: i32 = self.end - self.position;
+        if (count > self.width) { count = self.width; }
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: count };
+        self.position += count; return core::option::Some(result);
+    }
+}
+
+pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.end - self.position < self.width) { return core::option::None(); }
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: self.width };
+        self.position += 1; return core::option::Some(result);
+    }
+}
+
+pub impl RangeI32 {
+    pub fn borrow(&self) -> &RangeI32 { return self; }
+    pub fn remaining(&self) -> u64 { return (self.end - self.position) as u64; }
+    // O(1). The clamp establishes skipped <= 2^32 before the u64-to-i64 cast.
+    pub fn advance(&self, count: u64) -> u64 {
+        let available: u64 = self.remaining();
+        let skipped: u64 = count;
+        if (skipped > available) { skipped = available; }
+        self.position += skipped as i64;
+        return skipped;
+    }
+}
+
+pub impl Iterator<i32> for RangeI32 {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.position == self.end) { return core::option::None(); }
+        let item: i32 = self.position as i32;
+        self.position += 1;
+        return core::option::Some(item);
+    }
+}
+
+pub impl<I, T> Take<I, T> {
+    pub fn borrow(&self) -> &Take<I, T> { return self; }
+    // This is a quota, not an exact upper-source cardinality.
+    pub fn remaining_limit(&self) -> u64 { return self.remaining; }
+}
+
+pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done || self.remaining == 0) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; return item; }
+        self.remaining -= 1;
+        return item;
+    }
+}
+
+pub impl<A, B, T> Chain<A, B, T> {
+    pub fn borrow(&self) -> &Chain<A, B, T> { return self; }
+}
+
+pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
+    where A: Iterator<T>, B: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        if (!self.in_right) {
+            let left: &A = self.left;
+            let item: core::option::Option<T> = left.next();
+            if (core::option::is_some(item)) { return item; }
+            self.in_right = true;
+        }
+        let right: &B = self.right;
+        let item: core::option::Option<T> = right.next();
+        if (core::option::is_none(item)) { self.done = true; }
+        return item;
+    }
+}
+
+pub impl<I, M, T, U> Map<I, M, T, U> {
+    pub fn borrow(&self) -> &Map<I, M, T, U> { return self; }
+}
+
+pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
+    where I: Iterator<T>, M: Mapper<T, U> {
+    pub fn next(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; return core::option::None(); }
+        let value: T = core::option::unwrap(item);
+        let mapper: &M = self.mapper;
+        let mapped: U = mapper.apply(value);
+        return core::option::Some(mapped);
+    }
+}
+
+pub impl<A, B, T, U> Zip<A, B, T, U> {
+    pub fn borrow(&self) -> &Zip<A, B, T, U> { return self; }
+}
+
+pub impl<A, B, T, U> Iterator<core::pair::Pair<T, U>> for Zip<A, B, T, U>
+    where A: Iterator<T>, B: Iterator<U> {
+    pub fn next(&self) -> core::option::Option<core::pair::Pair<T, U>> {
+        if (self.done) { return core::option::None(); }
+        let left: &A = self.left;
+        let first: core::option::Option<T> = left.next();
+        if (core::option::is_none(first)) { self.done = true; return core::option::None(); }
+        let right: &B = self.right;
+        let second: core::option::Option<U> = right.next();
+        if (core::option::is_none(second)) { self.done = true; return core::option::None(); }
+        let a: T = core::option::unwrap(first);
+        let b: U = core::option::unwrap(second);
+        let item: core::pair::Pair<T, U> = core::pair::Pair { first: a, second: b };
+        return core::option::Some(item);
+    }
+}
+
+pub impl<I, T> Enumerate<I, T> {
+    pub fn borrow(&self) -> &Enumerate<I, T> { return self; }
+}
+
+pub impl<I, T> Iterator<core::pair::Pair<u64, T>> for Enumerate<I, T>
+    where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<core::pair::Pair<u64, T>> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let value: core::option::Option<T> = source.next();
+        if (core::option::is_none(value)) { self.done = true; return core::option::None(); }
+        if (self.max_used) { core::panic::panic(); }
+        let item: T = core::option::unwrap(value);
+        let indexed: core::pair::Pair<u64, T> = core::pair::Pair { first: self.next_index, second: item };
+        if (self.next_index == 18446744073709551615) { self.max_used = true; }
+        else { self.next_index += 1; }
+        return core::option::Some(indexed);
+    }
+}
+
+pub impl<I, P, T> Filter<I, P, T> {
+    pub fn borrow(&self) -> &Filter<I, P, T> { return self; }
+}
+
+pub impl<I, P, T> Iterator<T> for Filter<I, P, T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let predicate: &P = self.predicate;
+        while (true) {
+            let item: core::option::Option<T> = source.next();
+            if (core::option::is_none(item)) { self.done = true; return item; }
+            let value: T = core::option::unwrap(item);
+            let selected: bool = predicate.apply(value);
+            if (selected) { return item; }
+        }
+        return core::option::None();
+    }
+}
+
+pub impl<I, M, T, U> FilterMap<I, M, T, U> {
+    pub fn borrow(&self) -> &FilterMap<I, M, T, U> { return self; }
+}
+
+pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
+    where I: Iterator<T>, M: Mapper<T, core::option::Option<U>> {
+    pub fn next(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let mapper: &M = self.mapper;
+        while (true) {
+            let item: core::option::Option<T> = source.next();
+            if (core::option::is_none(item)) { self.done = true; return core::option::None(); }
+            let value: T = core::option::unwrap(item);
+            let mapped: core::option::Option<U> = mapper.apply(value);
+            if (core::option::is_some(mapped)) { return mapped; }
+        }
+        return core::option::None();
+    }
+}
+
+pub impl<I, T> Skip<I, T> {
+    pub fn borrow(&self) -> &Skip<I, T> { return self; }
+}
+
+pub impl<I, T> Iterator<T> for Skip<I, T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        while (self.remaining > 0) {
+            let skipped: core::option::Option<T> = source.next();
+            if (core::option::is_none(skipped)) { self.done = true; return skipped; }
+            self.remaining -= 1;
+        }
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; }
+        return item;
+    }
+}
+
+pub impl<I, P, T> TakeWhile<I, P, T> {
+    pub fn borrow(&self) -> &TakeWhile<I, P, T> { return self; }
+}
+
+pub impl<I, P, T> Iterator<T> for TakeWhile<I, P, T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; return item; }
+        let value: T = core::option::unwrap(item);
+        let predicate: &P = self.predicate;
+        let selected: bool = predicate.apply(value);
+        if (!selected) { self.done = true; return core::option::None(); }
+        return item;
+    }
+}
+
+pub impl<I, P, T> SkipWhile<I, P, T> {
+    pub fn borrow(&self) -> &SkipWhile<I, P, T> { return self; }
+}
+
+pub impl<I, P, T> Iterator<T> for SkipWhile<I, P, T>
+    where I: Iterator<T>, P: Mapper<T, bool> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let predicate: &P = self.predicate;
+        while (true) {
+            let item: core::option::Option<T> = source.next();
+            if (core::option::is_none(item)) { self.done = true; return item; }
+            if (!self.skipping) { return item; }
+            let value: T = core::option::unwrap(item);
+            let selected: bool = predicate.apply(value);
+            if (!selected) { self.skipping = false; return item; }
+        }
+        return core::option::None();
+    }
+}

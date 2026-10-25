@@ -1,0 +1,21 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::progress;
+import std::stream;
+fn unsigned(bytes: [u8], at: i32, size: i32) -> u64 { let result: u64 = 0; let index: i32 = size; while (index > 0) { index -= 1; result = (result<<8)|(bytes[at+index] as u64); } return result; }
+fn main() -> i32 {
+ let header: [u8;24] = [0;24]; let words: [i32;1050] = [0;1050]; let output: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),4200); let source: std::stream::Descriptor = std::stream::stdin(); let sink: std::stream::Descriptor = std::stream::stdout();
+ while (true) {
+  if (core::result::unwrap(source.read(header,0,1)) == 0) { return 0; } core::result::unwrap(core::io::read_exact(source.borrow(),header,1,23));
+  let state: ext::progress::State = ext::progress::State { current: unsigned(header,0,8),total: core::option::None() };
+  if (header[20] == 1) { state.total = core::option::Some(unsigned(header,8,8)); }
+  let policy: ext::progress::Options = ext::progress::options(); policy.bar_width = unsigned(header,16,4) as i32; policy.max_output = 4200;
+  let length: i32 = core::result::unwrap(ext::progress::render_into(state,core::result::unwrap(core::slice::view(output,4200)),policy));
+  core::result::unwrap(core::io::write_all(sink.borrow(),output,0,length));
+ }
+ return 0;
+}

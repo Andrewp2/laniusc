@@ -1,0 +1,197 @@
+// Unicode 17 full string casing and the SpecialCasing tr/az/lt tailorings.
+// Allocation-free; every returned error leaves output untouched. Selected
+// storage must be backed, alive and disjoint; input is immutable for the call.
+module ext::unicode_case;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::unicode;
+import core::utf8;
+import ext::unicode_case_data;
+import ext::unicode_words;
+
+pub enum Kind { Lower, Upper, Title, Fold }
+pub enum Locale { Root, Turkic, Lithuanian }
+pub enum Error { Bounds, InvalidUtf8(i32), SizeOverflow, OutputCapacity(i32), WorkLimit(u64) }
+pub struct Report { bytes: i32, scalars: i32, work: u64 }
+struct Budget { used: u64, limit: u64, reserve: bool }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn charge(&self, amount: u64) -> bool {
+        if (!self.reserve) { return true; }
+        if (amount > self.limit - self.used) { return false; }
+        self.used += amount; return true;
+    }
+}
+// These suffix states refer exclusively to original input, across word edges.
+struct Prefix { cased: bool, soft: bool, capital_i: bool }
+impl Prefix {
+    fn borrow(&self) -> &Prefix { return self; }
+    fn consume(&self, value: u32, locale: u32) {
+        let properties: core::unicode::Properties = core::unicode::properties(value);
+        // Possessive Case_Ignorable* takes precedence over Cased (U+0345).
+        if ((properties.flags & core::unicode::CASE_IGNORABLE) == 0) { self.cased = (properties.flags & core::unicode::CASED) != 0; }
+        let ccc: u32 = properties.combining_class;
+        if (ccc == 0 || ccc == 230) { self.soft = false; self.capital_i = false; }
+        if (value == 73) { self.capital_i = true; }
+        if (locale == 1 && ext::unicode_case_data::soft_dotted(value)) { self.soft = true; }
+    }
+}
+fn valid(start: i32, length: i32) -> bool {
+    return start >= 0 && length >= 0 && start <= 2147483647 - length;
+}
+fn kind_number(kind: Kind) -> i32 {
+    return match(kind) { Kind::Lower -> 0, Kind::Title -> 1, Kind::Upper -> 2, Kind::Fold -> 3 };
+}
+fn locale_number(locale: Locale) -> u32 {
+    return match(locale) { Locale::Root -> 0, Locale::Lithuanian -> 1, Locale::Turkic -> 2 };
+}
+fn validate(input: core::text::Text, budget: &Budget) -> core::result::Result<i32, Error> {
+    let index: i32 = 0; let count: i32 = 0;
+    while (index < input.length) {
+        if (!budget.charge(1)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let at: i32 = input.start + index;
+        let first: u8 = input.bytes[at];
+        let width: u32 = core::utf8::sequence_len_or(first, 0);
+        if (width == 0 || (width as i32) > input.length - index) { return core::result::Err(Error::InvalidUtf8(index)); }
+        let second: u8 = 0; let third: u8 = 0; let fourth: u8 = 0;
+        if (width > 1) { second = input.bytes[at + 1]; }
+        if (width > 2) { third = input.bytes[at + 2]; }
+        if (width > 3) { fourth = input.bytes[at + 3]; }
+        if (core::utf8::decode_or(first, second, third, fourth, width, 4294967295) == 4294967295) {
+            return core::result::Err(Error::InvalidUtf8(index));
+        }
+        index += width as i32; count += 1;
+    }
+    return core::result::Ok(count);
+}
+// Forward conditions stop at the first relevant scalar. Prefix conditions
+// are carried in constant space. Every scanned scalar reserves both passes.
+fn context_matches(context: u32, input: core::text::Text, after: i32, prefix: &Prefix, budget: &Budget) -> core::result::Result<bool, Error> {
+    if (context == 0) { return core::result::Ok(true); }
+    if (context == 2) { return core::result::Ok(prefix.soft); }
+    if (context == 5) { return core::result::Ok(prefix.capital_i); }
+    if (context == 1 && !prefix.cased) { return core::result::Ok(false); }
+    let position: i32 = after;
+    while (position < input.length) {
+        if (!budget.charge(2)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let value: u32 = core::option::unwrap(input.scalar_at_byte(position));
+        position += core::utf8::encoded_len_or(value, 0) as i32;
+        if (context == 1) {
+            if (!core::unicode::is_case_ignorable(value)) { return core::result::Ok(!core::unicode::is_cased(value)); }
+        } else {
+            let ccc: u32 = core::unicode::canonical_combining_class(value);
+            if (context == 3 && ccc == 230) { return core::result::Ok(true); }
+            if ((context == 4 || context == 6) && value == 775) { return core::result::Ok(context == 4); }
+            if (ccc == 0 || ccc == 230) { return core::result::Ok(context == 6); }
+        }
+    }
+    return core::result::Ok(context == 1 || context == 6);
+}
+fn mapping(value: u32, kind: i32, locale: u32, input: core::text::Text, after: i32, prefix: &Prefix, budget: &Budget) -> core::result::Result<ext::unicode_case_data::Mapping, Error> {
+    let mapped: ext::unicode_case_data::Mapping = ext::unicode_case_data::Mapping { length: 1, first: value, second: 0, third: 0 };
+    if (kind == 4) { return core::result::Ok(mapped); }
+    if (kind == 3) {
+        let folded: core::unicode::CaseFolding = core::result::unwrap(core::unicode::case_folding(value, locale == 2));
+        mapped.length = folded.length as i32; mapped.first = folded.first; mapped.second = folded.second; mapped.third = folded.third;
+        return core::result::Ok(mapped);
+    }
+    let simple: core::unicode::SimpleMappings = core::result::unwrap(core::unicode::simple_mappings(value));
+    if (kind == 0) { mapped.first = simple.lowercase; }
+    if (kind == 1) { mapped.first = simple.titlecase; }
+    if (kind == 2) { mapped.first = simple.uppercase; }
+    let row: i32 = ext::unicode_case_data::find(value);
+    while (row >= 0 && row < ext::unicode_case_data::ROWS && ext::unicode_case_data::key(row) == value) {
+        let selected: u32 = ext::unicode_case_data::locale(row);
+        if (selected == 0 || selected == locale) {
+            let condition: core::result::Result<bool, Error> = context_matches(ext::unicode_case_data::context(row), input, after, prefix, budget);
+            if (core::result::is_err(condition)) { return core::result::Err(core::result::unwrap_err(condition)); }
+            if (core::result::unwrap(condition)) {
+                mapped = ext::unicode_case_data::mapping(row, kind);
+                if (selected != 0 || ext::unicode_case_data::context(row) != 0) { return core::result::Ok(mapped); }
+            }
+        }
+        row += 1;
+    }
+    return core::result::Ok(mapped);
+}
+fn part(mapped: ext::unicode_case_data::Mapping, index: i32) -> u32 {
+    if (index == 0) { return mapped.first; }
+    if (index == 1) { return mapped.second; }
+    return mapped.third;
+}
+fn scan(input: core::text::Text, kind: i32, locale: u32, output: core::slice::View<u8>, commit: bool, budget: &Budget) -> core::result::Result<Report, Error> {
+    let words: ext::unicode_words::Cursor = core::result::unwrap(ext::unicode_words::cursor(input));
+    let prefix: Prefix = Prefix { cased: false, soft: false, capital_i: false };
+    let position: i32 = 0; let end: i32 = input.length;
+    let bytes: i32 = 0; let scalars: i32 = 0; let have_cased: bool = false;
+    while (position < input.length) {
+        if (kind == 1 && (position == 0 || position == end)) {
+            end = core::option::unwrap(words.next()).end; have_cased = false;
+        }
+        if (!budget.charge(2)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+        let value: u32 = core::option::unwrap(input.scalar_at_byte(position));
+        position += core::utf8::encoded_len_or(value, 0) as i32;
+        let operation: i32 = kind;
+        if (kind == 1) {
+            operation = 4;
+            if (have_cased) { operation = 0; }
+            else { if (core::unicode::is_cased(value)) { operation = 1; have_cased = true; } }
+        }
+        let selected: core::result::Result<ext::unicode_case_data::Mapping, Error> = mapping(value, operation, locale, input, position, prefix.borrow(), budget);
+        if (core::result::is_err(selected)) { return core::result::Err(core::result::unwrap_err(selected)); }
+        let mapped: ext::unicode_case_data::Mapping = core::result::unwrap(selected);
+        if (kind != 3) { prefix.consume(value, locale); }
+        if (scalars > 2147483647 - mapped.length) { return core::result::Err(Error::SizeOverflow); }
+        scalars += mapped.length;
+        let index: i32 = 0;
+        while (index < mapped.length) {
+            let scalar: u32 = part(mapped, index);
+            let width: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+            if (bytes > 2147483647 - width) { return core::result::Err(Error::SizeOverflow); }
+            if (!budget.charge(2 + (width as u64))) { return core::result::Err(Error::WorkLimit(budget.used)); }
+            if (commit) {
+                let byte: i32 = 0;
+                while (byte < width) {
+                    output.values[output.start + bytes + byte] = core::utf8::encoded_byte_or(scalar, byte as u32, 0);
+                    byte += 1;
+                }
+            }
+            bytes += width; index += 1;
+        }
+    }
+    return core::result::Ok(Report { bytes: bytes, scalars: scalars, work: budget.used });
+}
+fn prepare(input: core::text::Text, kind: Kind, locale: Locale, budget: &Budget) -> core::result::Result<Report, Error> {
+    if (!valid(input.start, input.length)) { return core::result::Err(Error::Bounds); }
+    let checked: core::result::Result<i32, Error> = validate(input, budget);
+    if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    let operation: i32 = kind_number(kind);
+    // The word cursor examines each scalar at most three times per pass.
+    // Reserve in advance so even one long segment cannot exceed the budget.
+    if (operation == 1 && !budget.charge((input.length as u64) * 6)) { return core::result::Err(Error::WorkLimit(budget.used)); }
+    let unused: core::slice::View<u8> = core::result::unwrap(core::slice::view(input.bytes, 0));
+    return scan(input, operation, locale_number(locale), unused, false, budget);
+}
+// Exact output counts. Work includes the reserved transform commit, so the
+// same budget suffices for measure and transform_into on the same input.
+pub fn measure(input: core::text::Text, kind: Kind, locale: Locale, work_limit: u64) -> core::result::Result<Report, Error> {
+    let budget: Budget = Budget { used: 0, limit: work_limit, reserve: true };
+    return prepare(input, kind, locale, budget.borrow());
+}
+// No NUL is appended. The unused output suffix and guards stay untouched.
+pub fn transform_into(input: core::text::Text, kind: Kind, locale: Locale, output: core::slice::View<u8>, work_limit: u64) -> core::result::Result<Report, Error> {
+    if (!valid(output.start, output.length)) { return core::result::Err(Error::Bounds); }
+    let budget: Budget = Budget { used: 0, limit: work_limit, reserve: true };
+    let prepared: core::result::Result<Report, Error> = prepare(input, kind, locale, budget.borrow());
+    if (core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let report: Report = core::result::unwrap(prepared);
+    if (output.length < report.bytes) { return core::result::Err(Error::OutputCapacity(report.bytes)); }
+    // Immutable original input makes this repeat deterministic. All work and
+    // counts were checked before the first store; this pass cannot return Err.
+    let reserved: Budget = Budget { used: 0, limit: 0, reserve: false };
+    let committed: core::result::Result<Report, Error> = scan(input, kind_number(kind), locale_number(locale), output, true, reserved.borrow());
+    assert(core::result::is_ok(committed));
+    return core::result::Ok(report);
+}

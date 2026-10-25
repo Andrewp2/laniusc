@@ -1,0 +1,68 @@
+// expect: 1
+// The harness fails every allocation after the initial input and checks cleanup.
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import ext::json;
+
+fn failure(error: ext::json::Error) -> i32 {
+    let status: i32 = match (error.kind) { ext::json::ErrorKind::AllocationFailed -> 0, _ -> 2 };
+    return status;
+}
+fn copied(value: core::result::Result<alloc::string::String, ext::json::Error>, expected_length: i32) -> i32 {
+    if (core::result::is_err(value)) { return failure(core::result::unwrap_err(value)); }
+    let text: alloc::string::String = core::result::unwrap(value);
+    let valid: bool = text.byte_len() == expected_length;
+    text.destroy();
+    if (valid) { return 1; }
+    return 3;
+}
+fn finish(document: ext::json::Document, status: i32) -> i32 {
+    document.destroy();
+    return status;
+}
+// Consumes the owner: insertion may replace the node allocation.
+fn exercise(document: ext::json::Document, input: alloc::string::String) -> i32 {
+    if (document.node_count() != 13 || core::result::unwrap(document.child_count(0)) != 2) { return finish(document, 4); }
+    let encoded: core::result::Result<alloc::string::String, ext::json::Error> = ext::json::encode(document);
+    if (document.node_count() != 13 || core::result::unwrap(document.child_count(0)) != 2) { return finish(document, 5); }
+    if (core::result::is_err(encoded)) { return finish(document, failure(core::result::unwrap_err(encoded))); }
+    let output: alloc::string::String = core::result::unwrap(encoded);
+    let valid: bool = output.byte_len() > 0;
+    output.destroy();
+    if (!valid) { return finish(document, 6); }
+    let status: i32 = copied(document.copy_string(3), 5);
+    if (status != 1) { return finish(document, status); }
+    status = copied(document.copy_key(1), 1);
+    if (status != 1) { return finish(document, status); }
+    status = copied(document.copy_number(2), 1);
+    if (status != 1) { return finish(document, status); }
+    let index: i32 = 0;
+    while (index < 10) {
+        let before: i32 = document.node_count();
+        let added: core::result::Result<i32, ext::json::Error> = document.add_string(ext::json::At::Member(0, input), input);
+        if (core::result::is_err(added)) {
+            if (document.node_count() != before || core::result::unwrap(document.child_count(0)) != 2 + index) { return finish(document, 7); }
+            return finish(document, failure(core::result::unwrap_err(added)));
+        }
+        if (document.node_count() != before + 1 || core::result::unwrap(document.child_count(0)) != 3 + index) { return finish(document, 8); }
+        index += 1;
+    }
+    return finish(document, 1);
+}
+fn run(input: alloc::string::String) -> i32 {
+    let parsed: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(input, ext::json::default_options());
+    if (core::result::is_err(parsed)) { return failure(core::result::unwrap_err(parsed)); }
+    let document: ext::json::Document = core::result::unwrap(parsed);
+    return exercise(document, input);
+}
+fn main() -> i32 {
+    let bytes: [u8; 62] = [123, 34, 97, 34, 58, 91, 49, 44, 34, 104, 101, 108, 108, 111, 34, 44, 116, 114, 117, 101, 44, 110, 117, 108, 108, 44, 123, 34, 98, 34, 58, 91, 91, 91, 91, 34, 92, 117, 68, 56, 51, 68, 92, 117, 68, 69, 52, 50, 34, 93, 93, 93, 93, 125, 93, 44, 34, 97, 34, 58, 50, 125];
+    let input: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 62));
+    let status: i32 = run(input);
+    if (input.byte_len() != 62 || core::option::unwrap_or(input.byte_at(61), 0) != 125) { return 9; }
+    input.destroy();
+    return status;
+}
+

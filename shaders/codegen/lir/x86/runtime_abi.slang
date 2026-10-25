@@ -2,54 +2,60 @@
 //
 // Call sites always emit the same `call rel32` shape. Service-specific bytes
 // live once in this block, so adding calls does not multiply byte fragments.
+// Width-sensitive arrays have readable assembly in runtime_raw_width.s;
+// raw_host_width_tables.py verifies those bytes and contiguous base offsets.
 
 import codegen.lowering_ir;
 
 static const uint X86_RUNTIME_INVALID = 0xffffffffu;
-static const uint X86_RUNTIME_ARG_READ_OFFSET = 78u;
-static const uint X86_RUNTIME_ALLOC_OFFSET = 134u;
-static const uint X86_RUNTIME_DEALLOC_OFFSET = 173u;
-static const uint X86_RUNTIME_REALLOC_OFFSET = 181u;
-static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 202u;
-static const uint X86_RUNTIME_PRINT_I32_OFFSET = 215u;
-static const uint X86_RUNTIME_MONOTONIC_READ_OFFSET = 299u;
-static const uint X86_RUNTIME_SYSTEM_READ_OFFSET = 325u;
-static const uint X86_RUNTIME_SLEEP_MS_I32_OFFSET = 351u;
-static const uint X86_RUNTIME_OPEN_READ_OFFSET = 406u;
-static const uint X86_RUNTIME_OPEN_WRITE_OFFSET = 418u;
-static const uint X86_RUNTIME_OPEN_APPEND_OFFSET = 436u;
-static const uint X86_RUNTIME_REMOVE_FILE_OFFSET = 454u;
-static const uint X86_RUNTIME_CREATE_DIR_OFFSET = 462u;
-static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 475u;
-static const uint X86_RUNTIME_RENAME_OFFSET = 483u;
-static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 493u;
-static const uint X86_RUNTIME_WRITE_I32_OFFSET = 501u;
-static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 613u;
-static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 641u;
-static const uint X86_RUNTIME_READ_I32_OFFSET = 669u;
-static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 844u;
-static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 920u;
-static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 996u;
-static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1072u;
-static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1140u;
-static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1162u;
-static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1249u;
-static const uint X86_RUNTIME_VAR_READ_OFFSET = 1330u;
-static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1432u;
-static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1459u;
-static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1469u;
-static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1513u;
-static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1522u;
-static const uint X86_RUNTIME_PATH_COPY_OFFSET = 1562u;
-static const uint X86_RUNTIME_PATH_OPEN_READ_OFFSET = 1629u;
-static const uint X86_RUNTIME_PATH_OPEN_WRITE_OFFSET = 1670u;
-static const uint X86_RUNTIME_PATH_OPEN_APPEND_OFFSET = 1717u;
-static const uint X86_RUNTIME_PATH_REMOVE_FILE_OFFSET = 1764u;
-static const uint X86_RUNTIME_PATH_CREATE_DIR_OFFSET = 1801u;
-static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1843u;
-static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1880u;
-static const uint X86_RUNTIME_ASSERT_OFFSET = 1974u;
-static const uint X86_RUNTIME_LENGTH = 1981u;
+static const uint X86_RUNTIME_STDOUT_OFFSET = 33u;
+static const uint X86_RUNTIME_STDERR_OFFSET = 51u;
+static const uint X86_RUNTIME_STDIN_OFFSET = 69u;
+static const uint X86_RUNTIME_ARG_READ_OFFSET = 81u;
+static const uint X86_RUNTIME_ALLOC_OFFSET = 135u;
+static const uint X86_RUNTIME_DEALLOC_OFFSET = 200u;
+static const uint X86_RUNTIME_REALLOC_OFFSET = 208u;
+static const uint X86_RUNTIME_ALLOC_FAILED_OFFSET = 264u;
+static const uint X86_RUNTIME_PRINT_I32_OFFSET = 277u;
+static const uint X86_RUNTIME_MONOTONIC_READ_OFFSET = 361u;
+static const uint X86_RUNTIME_SYSTEM_READ_OFFSET = 388u;
+static const uint X86_RUNTIME_SLEEP_MS_I32_OFFSET = 415u;
+static const uint X86_RUNTIME_OPEN_READ_OFFSET = 470u;
+static const uint X86_RUNTIME_OPEN_WRITE_OFFSET = 482u;
+static const uint X86_RUNTIME_OPEN_APPEND_OFFSET = 500u;
+static const uint X86_RUNTIME_REMOVE_FILE_OFFSET = 518u;
+static const uint X86_RUNTIME_CREATE_DIR_OFFSET = 526u;
+static const uint X86_RUNTIME_REMOVE_DIR_OFFSET = 539u;
+static const uint X86_RUNTIME_RENAME_OFFSET = 547u;
+static const uint X86_RUNTIME_WRITE_TEXT_OFFSET = 557u;
+static const uint X86_RUNTIME_WRITE_I32_OFFSET = 565u;
+static const uint X86_RUNTIME_WRITE_BYTE_OFFSET = 677u;
+static const uint X86_RUNTIME_WRITE_NEWLINE_OFFSET = 705u;
+static const uint X86_RUNTIME_READ_I32_OFFSET = 733u;
+static const uint X86_RUNTIME_OPEN_READ_NUL_OFFSET = 908u;
+static const uint X86_RUNTIME_OPEN_WRITE_NUL_OFFSET = 984u;
+static const uint X86_RUNTIME_OPEN_APPEND_NUL_OFFSET = 1060u;
+static const uint X86_RUNTIME_VAR_KEY_LEN_OFFSET = 1136u;
+static const uint X86_RUNTIME_VAR_COUNT_OFFSET = 1204u;
+static const uint X86_RUNTIME_VAR_KEY_READ_OFFSET = 1226u;
+static const uint X86_RUNTIME_VAR_LEN_OFFSET = 1313u;
+static const uint X86_RUNTIME_VAR_READ_OFFSET = 1403u;
+static const uint X86_RUNTIME_CURRENT_DIR_READ_OFFSET = 1515u;
+static const uint X86_RUNTIME_UNIX_SECONDS_OFFSET = 1541u;
+static const uint X86_RUNTIME_SECURE_U32_OFFSET = 1551u;
+static const uint X86_RUNTIME_FILL_SECURE_BYTES_OFFSET = 1595u;
+static const uint X86_RUNTIME_ARG_LEN_OFFSET = 1604u;
+static const uint X86_RUNTIME_PATH_COPY_OFFSET = 1644u;
+static const uint X86_RUNTIME_PATH_OPEN_READ_OFFSET = 1711u;
+static const uint X86_RUNTIME_PATH_OPEN_WRITE_OFFSET = 1752u;
+static const uint X86_RUNTIME_PATH_OPEN_APPEND_OFFSET = 1799u;
+static const uint X86_RUNTIME_PATH_REMOVE_FILE_OFFSET = 1846u;
+static const uint X86_RUNTIME_PATH_CREATE_DIR_OFFSET = 1883u;
+static const uint X86_RUNTIME_PATH_REMOVE_DIR_OFFSET = 1925u;
+static const uint X86_RUNTIME_PATH_RENAME_OFFSET = 1962u;
+static const uint X86_RUNTIME_ASSERT_OFFSET = 2056u;
+static const uint X86_RUNTIME_LINUX_SYSCALL6_OFFSET = 2063u;
+static const uint X86_RUNTIME_LENGTH = 2095u;
 
 uint x86_runtime_service_offset(uint service)
 {
@@ -58,9 +64,9 @@ uint x86_runtime_service_offset(uint service)
     if (service == HOST_SERVICE_CLOSE_FILE || service == HOST_SERVICE_CLOSE) return 12u;
     if (service == HOST_SERVICE_READ) return 20u;
     if (service == HOST_SERVICE_WRITE) return 25u;
-    if (service == HOST_SERVICE_WRITE_STDOUT) return 33u;
-    if (service == HOST_SERVICE_WRITE_STDERR) return 50u;
-    if (service == HOST_SERVICE_READ_STDIN) return 67u;
+    if (service == HOST_SERVICE_WRITE_STDOUT) return X86_RUNTIME_STDOUT_OFFSET;
+    if (service == HOST_SERVICE_WRITE_STDERR) return X86_RUNTIME_STDERR_OFFSET;
+    if (service == HOST_SERVICE_READ_STDIN) return X86_RUNTIME_STDIN_OFFSET;
     if (service == HOST_SERVICE_ARG_READ) return X86_RUNTIME_ARG_READ_OFFSET;
     if (service == HOST_SERVICE_ALLOC) return X86_RUNTIME_ALLOC_OFFSET;
     if (service == HOST_SERVICE_DEALLOC) return X86_RUNTIME_DEALLOC_OFFSET;
@@ -93,6 +99,7 @@ uint x86_runtime_service_offset(uint service)
     if (service == HOST_SERVICE_SECURE_U32) return X86_RUNTIME_SECURE_U32_OFFSET;
     if (service == HOST_SERVICE_FILL_SECURE_BYTES) return X86_RUNTIME_FILL_SECURE_BYTES_OFFSET;
     if (service == HOST_SERVICE_ARG_LEN) return X86_RUNTIME_ARG_LEN_OFFSET;
+    if (service == HOST_SERVICE_LINUX_SYSCALL6) return X86_RUNTIME_LINUX_SYSCALL6_OFFSET;
     return X86_RUNTIME_INVALID;
 }
 
@@ -128,36 +135,33 @@ uint x86_runtime_byte(uint pos)
         {0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u};
     if (pos < 33u) return write_bytes[pos - 25u];
 
-    static const uint stdout_bytes[17] = {
-        0x89u, 0xf2u, 0x57u, 0x5eu, 0xbfu, 1u, 0u, 0u, 0u,
-        0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u
+    static const uint stdout_bytes[18] = {
+        0x48u, 0x89u, 0xf2u, 0x57u, 0x5eu, 0xbfu, 0x01u, 0x00u, 0x00u, 0x00u,
+        0xb8u, 0x01u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u, 0xc3u,
     };
-    if (pos < 50u) return stdout_bytes[pos - 33u];
+    if (pos < X86_RUNTIME_STDERR_OFFSET) return stdout_bytes[pos - X86_RUNTIME_STDOUT_OFFSET];
 
-    static const uint stderr_bytes[17] = {
-        0x89u, 0xf2u, 0x57u, 0x5eu, 0xbfu, 2u, 0u, 0u, 0u,
-        0xb8u, 1u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u
+    static const uint stderr_bytes[18] = {
+        0x48u, 0x89u, 0xf2u, 0x57u, 0x5eu, 0xbfu, 0x02u, 0x00u, 0x00u, 0x00u,
+        0xb8u, 0x01u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u, 0xc3u,
     };
-    if (pos < 67u) return stderr_bytes[pos - 50u];
+    if (pos < X86_RUNTIME_STDIN_OFFSET) return stderr_bytes[pos - X86_RUNTIME_STDERR_OFFSET];
 
-    static const uint stdin_bytes[11] = {
-        0x89u, 0xf2u, 0x57u, 0x5eu, 0x31u, 0xffu,
-        0x31u, 0xc0u, 0x0fu, 0x05u, 0xc3u
+    static const uint stdin_bytes[12] = {
+        0x48u, 0x89u, 0xf2u, 0x57u, 0x5eu, 0x31u, 0xffu, 0x31u, 0xc0u, 0x0fu,
+        0x05u, 0xc3u,
     };
-    if (pos < X86_RUNTIME_ARG_READ_OFFSET) return stdin_bytes[pos - 67u];
+    if (pos < X86_RUNTIME_ARG_READ_OFFSET) return stdin_bytes[pos - X86_RUNTIME_STDIN_OFFSET];
 
     // Copy argv[index] into the caller's bounded allocation and
     // return the number of bytes copied, excluding the terminating NUL.
-    static const uint arg_read_bytes[56] = {
-        // Reject negative and out-of-range indices before reading argv.
-        0x85u, 0xffu, 0x78u, 0x2eu, 0x41u, 0x8bu, 0x07u, 0x39u,
-        0xc7u, 0x73u, 0x27u,
-        0x56u, 0x41u, 0x58u, 0x41u, 0x89u, 0xd1u, 0x89u, 0xf8u,
-        0xffu, 0xc0u, 0x49u, 0x8bu, 0x34u, 0xc7u, 0x31u, 0xc0u,
-        0x44u, 0x39u, 0xc8u, 0x73u, 0x11u, 0x80u, 0x3cu, 0x06u,
-        0u, 0x74u, 0x0bu, 0x8au, 0x0cu, 0x06u, 0x41u, 0x88u,
-        0x0cu, 0u, 0xffu, 0xc0u, 0xebu, 0xeau, 0xc3u,
-        0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u
+    static const uint arg_read_bytes[54] = {
+        0x85u, 0xffu, 0x78u, 0x2cu, 0x41u, 0x3bu, 0x3fu, 0x73u, 0x27u, 0x49u,
+        0x89u, 0xf0u, 0x49u, 0x89u, 0xd1u, 0x89u, 0xf8u, 0xffu, 0xc0u, 0x49u,
+        0x8bu, 0x34u, 0xc7u, 0x31u, 0xc0u, 0x4cu, 0x39u, 0xc8u, 0x73u, 0x11u,
+        0x80u, 0x3cu, 0x06u, 0x00u, 0x74u, 0x0bu, 0x8au, 0x0cu, 0x06u, 0x41u,
+        0x88u, 0x0cu, 0x00u, 0xffu, 0xc0u, 0xebu, 0xeau, 0xc3u, 0xb8u, 0xffu,
+        0xffu, 0xffu, 0xffu, 0xc3u,
     };
     if (pos < X86_RUNTIME_ALLOC_OFFSET)
         return arg_read_bytes[pos - X86_RUNTIME_ARG_READ_OFFSET];
@@ -167,12 +171,14 @@ uint x86_runtime_byte(uint pos)
     // so storage may come from anywhere in the address space (MAP_32BIT capped
     // a process at 1 GiB). A negative Linux syscall result is an error; return
     // null so callers can test it.
-    static const uint alloc_bytes[39] = {
-        0x89u, 0xfeu, 0x31u, 0xffu, 0xbau, 3u, 0u, 0u, 0u,
-        0x41u, 0xbau, 0x22u, 0u, 0u, 0u, 0x41u, 0xb8u, 0xffu, 0xffu,
-        0xffu, 0xffu, 0x45u, 0x31u, 0xc9u, 0xb8u, 9u, 0u, 0u, 0u,
-        0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u, 0x79u, 0x02u,
-        0x31u, 0xc0u, 0xc3u
+    static const uint alloc_bytes[65] = {
+        0x48u, 0x85u, 0xffu, 0x74u, 0x39u, 0x48u, 0x83u, 0xfeu, 0x08u, 0x77u,
+        0x33u, 0x48u, 0x85u, 0xf6u, 0x74u, 0x2eu, 0x48u, 0x8du, 0x46u, 0xffu,
+        0x48u, 0x85u, 0xf0u, 0x75u, 0x25u, 0x48u, 0x89u, 0xfeu, 0x31u, 0xffu,
+        0xbau, 0x03u, 0x00u, 0x00u, 0x00u, 0x41u, 0xbau, 0x22u, 0x00u, 0x00u,
+        0x00u, 0x41u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0x45u, 0x31u, 0xc9u,
+        0xb8u, 0x09u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u,
+        0x79u, 0x02u, 0x31u, 0xc0u, 0xc3u,
     };
     if (pos < X86_RUNTIME_DEALLOC_OFFSET)
         return alloc_bytes[pos - X86_RUNTIME_ALLOC_OFFSET];
@@ -184,10 +190,13 @@ uint x86_runtime_byte(uint pos)
 
     // mremap leaves the original mapping intact on failure and returns null
     // to the caller instead of exposing the negative syscall result as ptr.
-    static const uint realloc_bytes[21] = {
-        0x41u, 0xbau, 1u, 0u, 0u, 0u, 0xb8u, 25u, 0u, 0u, 0u,
-        0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u, 0x79u, 0x02u,
-        0x31u, 0xc0u, 0xc3u
+    static const uint realloc_bytes[56] = {
+        0x48u, 0x85u, 0xffu, 0x74u, 0x30u, 0x48u, 0x85u, 0xf6u, 0x74u, 0x2bu,
+        0x48u, 0x85u, 0xd2u, 0x74u, 0x26u, 0x48u, 0x83u, 0xf9u, 0x08u, 0x77u,
+        0x20u, 0x48u, 0x85u, 0xc9u, 0x74u, 0x1bu, 0x48u, 0x8du, 0x41u, 0xffu,
+        0x48u, 0x85u, 0xc8u, 0x75u, 0x12u, 0x41u, 0xbau, 0x01u, 0x00u, 0x00u,
+        0x00u, 0xb8u, 0x19u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u, 0x48u, 0x85u,
+        0xc0u, 0x79u, 0x02u, 0x31u, 0xc0u, 0xc3u,
     };
     if (pos < X86_RUNTIME_ALLOC_FAILED_OFFSET)
         return realloc_bytes[pos - X86_RUNTIME_REALLOC_OFFSET];
@@ -219,24 +228,22 @@ uint x86_runtime_byte(uint pos)
         0xc4u, 0x18u, 0xc3u
     };
     if (pos >= X86_RUNTIME_MONOTONIC_READ_OFFSET &&
-        pos < X86_RUNTIME_MONOTONIC_READ_OFFSET + 26u)
+        pos < X86_RUNTIME_MONOTONIC_READ_OFFSET + 27u)
     {
-        static const uint monotonic_read_bytes[26] = {
-            0x83u, 0xfeu, 0x10u, 0x72u, 0x0fu,
-            0x57u, 0x5eu, 0xbfu, 1u, 0u, 0u, 0u,
-            0xb8u, 228u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u,
-            0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u
+        static const uint monotonic_read_bytes[27] = {
+            0x48u, 0x83u, 0xfeu, 0x10u, 0x72u, 0x0fu, 0x57u, 0x5eu, 0xbfu, 0x01u,
+            0x00u, 0x00u, 0x00u, 0xb8u, 0xe4u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u,
+            0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u,
         };
         return monotonic_read_bytes[pos - X86_RUNTIME_MONOTONIC_READ_OFFSET];
     }
     if (pos >= X86_RUNTIME_SYSTEM_READ_OFFSET &&
-        pos < X86_RUNTIME_SYSTEM_READ_OFFSET + 26u)
+        pos < X86_RUNTIME_SYSTEM_READ_OFFSET + 27u)
     {
-        static const uint system_read_bytes[26] = {
-            0x83u, 0xfeu, 0x10u, 0x72u, 0x0fu,
-            0x57u, 0x5eu, 0xbfu, 0u, 0u, 0u, 0u,
-            0xb8u, 228u, 0u, 0u, 0u, 0x0fu, 0x05u, 0xc3u,
-            0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u
+        static const uint system_read_bytes[27] = {
+            0x48u, 0x83u, 0xfeu, 0x10u, 0x72u, 0x0fu, 0x57u, 0x5eu, 0xbfu, 0x00u,
+            0x00u, 0x00u, 0x00u, 0xb8u, 0xe4u, 0x00u, 0x00u, 0x00u, 0x0fu, 0x05u,
+            0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u,
         };
         return system_read_bytes[pos - X86_RUNTIME_SYSTEM_READ_OFFSET];
     }
@@ -465,63 +472,57 @@ uint x86_runtime_byte(uint pos)
     if (pos >= X86_RUNTIME_VAR_KEY_READ_OFFSET && pos < X86_RUNTIME_VAR_KEY_READ_OFFSET + 87u)
     {
         static const uint var_key_read_bytes[87] = {
-            0x4du, 0x8bu, 0x07u, 0x4fu, 0x8du, 0x44u, 0xc7u, 0x10u,
-            0x41u, 0x89u, 0xf9u, 0x45u, 0x85u, 0xc9u, 0x78u, 0x41u,
-            0x4du, 0x89u, 0xc2u, 0x4du, 0x8bu, 0x1au, 0x4du, 0x85u,
-            0xdbu, 0x74u, 0x36u, 0x45u, 0x85u, 0xc9u, 0x74u, 0x09u,
-            0x49u, 0x83u, 0xc2u, 0x08u, 0x41u, 0xffu, 0xc9u, 0xebu,
-            0xeau, 0x56u, 0x41u, 0x5au, 0x41u, 0x89u, 0xd1u, 0x31u,
-            0xc0u, 0x45u, 0x85u, 0xc9u, 0x74u, 0x1au, 0x45u, 0x8au,
-            0x04u, 0x03u, 0x45u, 0x84u, 0xc0u, 0x74u, 0x11u, 0x41u,
-            0x80u, 0xf8u, 0x3du, 0x74u, 0x0bu, 0x45u, 0x88u, 0x04u,
-            0x02u, 0xffu, 0xc0u, 0x41u, 0xffu, 0xc9u, 0xebu, 0xe1u,
-            0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u
+            0x4du, 0x8bu, 0x07u, 0x4fu, 0x8du, 0x44u, 0xc7u, 0x10u, 0x41u, 0x89u,
+            0xf9u, 0x45u, 0x85u, 0xc9u, 0x78u, 0x41u, 0x4du, 0x89u, 0xc2u, 0x4du,
+            0x8bu, 0x1au, 0x4du, 0x85u, 0xdbu, 0x74u, 0x36u, 0x45u, 0x85u, 0xc9u,
+            0x74u, 0x09u, 0x49u, 0x83u, 0xc2u, 0x08u, 0x41u, 0xffu, 0xc9u, 0xebu,
+            0xeau, 0x49u, 0x89u, 0xf2u, 0x49u, 0x89u, 0xd1u, 0x31u, 0xc0u, 0x4du,
+            0x85u, 0xc9u, 0x74u, 0x1au, 0x45u, 0x8au, 0x04u, 0x03u, 0x45u, 0x84u,
+            0xc0u, 0x74u, 0x11u, 0x41u, 0x80u, 0xf8u, 0x3du, 0x74u, 0x0bu, 0x45u,
+            0x88u, 0x04u, 0x02u, 0xffu, 0xc0u, 0x49u, 0xffu, 0xc9u, 0xebu, 0xe1u,
+            0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u,
         };
         return var_key_read_bytes[pos - X86_RUNTIME_VAR_KEY_READ_OFFSET];
     }
-    if (pos >= X86_RUNTIME_VAR_LEN_OFFSET && pos < X86_RUNTIME_VAR_LEN_OFFSET + 81u)
+    if (pos >= X86_RUNTIME_VAR_LEN_OFFSET && pos < X86_RUNTIME_VAR_LEN_OFFSET + 90u)
     {
-        static const uint var_len_bytes[81] = {
-            0x57u, 0x41u, 0x5au, 0x41u, 0x89u, 0xf1u, 0x4du, 0x8bu,
-            0x07u, 0x4fu, 0x8du, 0x44u, 0xc7u, 0x10u, 0x4du, 0x8bu,
-            0x18u, 0x4du, 0x85u, 0xdbu, 0x74u, 0x35u, 0x31u, 0xc0u,
-            0x44u, 0x39u, 0xc8u, 0x73u, 0x0eu, 0x41u, 0x8au, 0x14u,
-            0x02u, 0x41u, 0x38u, 0x14u, 0x03u, 0x75u, 0x1du, 0xffu,
-            0xc0u, 0xebu, 0xedu, 0x41u, 0x80u, 0x3cu, 0x03u, 0x3du,
-            0x75u, 0x12u, 0x4du, 0x8du, 0x5cu, 0x03u, 0x01u, 0x31u,
-            0xc0u, 0x41u, 0x80u, 0x3cu, 0x03u, 0x00u, 0x74u, 0x0au,
-            0xffu, 0xc0u, 0xebu, 0xf5u, 0x49u, 0x83u, 0xc0u, 0x08u,
-            0xebu, 0xc4u, 0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu,
-            0xc3u
+        static const uint var_len_bytes[90] = {
+            0x49u, 0x89u, 0xfau, 0x49u, 0x89u, 0xf1u, 0x4du, 0x8bu, 0x07u, 0x4fu,
+            0x8du, 0x44u, 0xc7u, 0x10u, 0x4du, 0x8bu, 0x18u, 0x4du, 0x85u, 0xdbu,
+            0x74u, 0x3eu, 0x31u, 0xc0u, 0x4cu, 0x39u, 0xc8u, 0x73u, 0x17u, 0x41u,
+            0x8au, 0x14u, 0x03u, 0x84u, 0xd2u, 0x74u, 0x28u, 0x80u, 0xfau, 0x3du,
+            0x74u, 0x23u, 0x41u, 0x3au, 0x14u, 0x02u, 0x75u, 0x1du, 0xffu, 0xc0u,
+            0xebu, 0xe4u, 0x41u, 0x80u, 0x3cu, 0x03u, 0x3du, 0x75u, 0x12u, 0x4du,
+            0x8du, 0x5cu, 0x03u, 0x01u, 0x31u, 0xc0u, 0x41u, 0x80u, 0x3cu, 0x03u,
+            0x00u, 0x74u, 0x0au, 0xffu, 0xc0u, 0xebu, 0xf5u, 0x49u, 0x83u, 0xc0u,
+            0x08u, 0xebu, 0xbbu, 0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u,
         };
         return var_len_bytes[pos - X86_RUNTIME_VAR_LEN_OFFSET];
     }
-    if (pos >= X86_RUNTIME_VAR_READ_OFFSET && pos < X86_RUNTIME_VAR_READ_OFFSET + 102u)
+    if (pos >= X86_RUNTIME_VAR_READ_OFFSET && pos < X86_RUNTIME_VAR_READ_OFFSET + 112u)
     {
-        static const uint var_read_bytes[102] = {
-            0x57u, 0x41u, 0x5au, 0x52u, 0x5fu, 0x41u, 0x89u, 0xf1u,
-            0x4du, 0x8bu, 0x07u, 0x4fu, 0x8du, 0x44u, 0xc7u, 0x10u,
-            0x4du, 0x8bu, 0x18u, 0x4du, 0x85u, 0xdbu, 0x74u, 0x48u,
-            0x31u, 0xc0u, 0x44u, 0x39u, 0xc8u, 0x73u, 0x0eu, 0x41u,
-            0x8au, 0x14u, 0x02u, 0x41u, 0x38u, 0x14u, 0x03u, 0x75u,
-            0x31u, 0xffu, 0xc0u, 0xebu, 0xedu, 0x41u, 0x80u, 0x3cu,
-            0x03u, 0x3du, 0x75u, 0x26u, 0x4du, 0x8du, 0x5cu, 0x03u,
-            0x01u, 0x57u, 0x41u, 0x5au, 0x41u, 0x89u, 0xc9u, 0x31u,
-            0xc0u, 0x45u, 0x85u, 0xc9u, 0x74u, 0x13u, 0x41u, 0x8au,
-            0x14u, 0x03u, 0x84u, 0xd2u, 0x74u, 0x0bu, 0x41u, 0x88u,
-            0x14u, 0x02u, 0xffu, 0xc0u, 0x41u, 0xffu, 0xc9u, 0xebu,
-            0xe8u, 0xc3u, 0x49u, 0x83u, 0xc0u, 0x08u, 0xebu, 0xb0u,
-            0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u
+        static const uint var_read_bytes[112] = {
+            0x49u, 0x89u, 0xfau, 0x48u, 0x89u, 0xd7u, 0x49u, 0x89u, 0xf1u, 0x4du,
+            0x8bu, 0x07u, 0x4fu, 0x8du, 0x44u, 0xc7u, 0x10u, 0x4du, 0x8bu, 0x18u,
+            0x4du, 0x85u, 0xdbu, 0x74u, 0x51u, 0x31u, 0xc0u, 0x4cu, 0x39u, 0xc8u,
+            0x73u, 0x17u, 0x41u, 0x8au, 0x14u, 0x03u, 0x84u, 0xd2u, 0x74u, 0x3bu,
+            0x80u, 0xfau, 0x3du, 0x74u, 0x36u, 0x41u, 0x3au, 0x14u, 0x02u, 0x75u,
+            0x30u, 0xffu, 0xc0u, 0xebu, 0xe4u, 0x41u, 0x80u, 0x3cu, 0x03u, 0x3du,
+            0x75u, 0x25u, 0x4du, 0x8du, 0x5cu, 0x03u, 0x01u, 0x49u, 0x89u, 0xfau,
+            0x49u, 0x89u, 0xc9u, 0x31u, 0xc0u, 0x4du, 0x85u, 0xc9u, 0x74u, 0x19u,
+            0x41u, 0x8au, 0x14u, 0x03u, 0x84u, 0xd2u, 0x74u, 0x11u, 0x41u, 0x88u,
+            0x14u, 0x02u, 0xffu, 0xc0u, 0x49u, 0xffu, 0xc9u, 0xebu, 0xe8u, 0x49u,
+            0x83u, 0xc0u, 0x08u, 0xebu, 0xa8u, 0xc3u, 0xb8u, 0xffu, 0xffu, 0xffu,
+            0xffu, 0xc3u,
         };
         return var_read_bytes[pos - X86_RUNTIME_VAR_READ_OFFSET];
     }
-    if (pos >= X86_RUNTIME_CURRENT_DIR_READ_OFFSET && pos < X86_RUNTIME_CURRENT_DIR_READ_OFFSET + 27u)
+    if (pos >= X86_RUNTIME_CURRENT_DIR_READ_OFFSET && pos < X86_RUNTIME_CURRENT_DIR_READ_OFFSET + 26u)
     {
-        static const uint current_dir_read_bytes[27] = {
-            0x85u, 0xf6u, 0x74u, 0x11u, 0x89u, 0xf2u, 0xb8u, 0x4fu,
-            0x00u, 0x00u, 0x00u, 0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u,
-            0x78u, 0x03u, 0xffu, 0xc8u, 0xc3u, 0xb8u, 0xffu, 0xffu,
-            0xffu, 0xffu, 0xc3u
+        static const uint current_dir_read_bytes[26] = {
+            0x48u, 0x85u, 0xf6u, 0x74u, 0x0fu, 0xb8u, 0x4fu, 0x00u, 0x00u, 0x00u,
+            0x0fu, 0x05u, 0x48u, 0x85u, 0xc0u, 0x78u, 0x03u, 0xffu, 0xc8u, 0xc3u,
+            0xb8u, 0xffu, 0xffu, 0xffu, 0xffu, 0xc3u,
         };
         return current_dir_read_bytes[pos - X86_RUNTIME_CURRENT_DIR_READ_OFFSET];
     }
@@ -624,12 +625,23 @@ uint x86_runtime_byte(uint pos)
     }
     // Called with the asserted bool in EDI. A false value raises SIGILL;
     // a true value returns to the caller without changing its state.
-    if (pos >= X86_RUNTIME_ASSERT_OFFSET && pos < X86_RUNTIME_LENGTH)
+    if (pos >= X86_RUNTIME_ASSERT_OFFSET && pos < X86_RUNTIME_LINUX_SYSCALL6_OFFSET)
     {
         static const uint assert_bytes[7] = {
             0x85u, 0xffu, 0x75u, 0x02u, 0x0fu, 0x0bu, 0xc3u
         };
         return assert_bytes[pos - X86_RUNTIME_ASSERT_OFFSET];
+    }
+    // Raw Linux x86-64 syscall bridge; see runtime_linux_syscall.s.
+    if (pos >= X86_RUNTIME_LINUX_SYSCALL6_OFFSET && pos < X86_RUNTIME_LENGTH)
+    {
+        static const uint linux_syscall6_bytes[32] = {
+            0x48u, 0x89u, 0xf8u, 0x49u, 0x89u, 0xf3u, 0x49u, 0x8bu,
+            0x3bu, 0x49u, 0x8bu, 0x73u, 0x08u, 0x49u, 0x8bu, 0x53u,
+            0x10u, 0x4du, 0x8bu, 0x53u, 0x18u, 0x4du, 0x8bu, 0x43u,
+            0x20u, 0x4du, 0x8bu, 0x4bu, 0x28u, 0x0fu, 0x05u, 0xc3u,
+        };
+        return linux_syscall6_bytes[pos - X86_RUNTIME_LINUX_SYSCALL6_OFFSET];
     }
     return pos < X86_RUNTIME_LENGTH
         ? print_i32_bytes[pos - X86_RUNTIME_PRINT_I32_OFFSET] : 0u;

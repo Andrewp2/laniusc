@@ -1,0 +1,54 @@
+// Synthetic capacities cover a short known source only, with tiny canaried
+// destinations. This is not evidence of physically huge caller allocations.
+module app::main;
+import alloc::allocator;
+import core::mem;
+import core::result;
+import core::slice;
+import std::env;
+import std::linux;
+import std::process;
+fn main() -> i32 {
+    assert(std::process::argc()==2 && (std::process::arg_len(1)==5 || std::process::arg_len(1)==1));
+    let malformed:bool=std::process::arg_len(1)==1;
+    assert(std::env::var_count()==1 && std::env::var_key_len(0)==3);
+    let cells:[i32;4]=[0;4]; let p:ptr=core::mem::i32_array_data_ptr(cells);
+    let destination:[u8]=core::mem::typed_slice_from_raw_parts(p,16);
+    let capacities:[usize;4]=[2,4294967296,4294967297,18446744073709551615];
+    let i:i32=0;
+    while(i<4 && !malformed) {
+        let j:i32=0; while(j<16) { destination[j]=204; j+=1; }
+        let count:i32=std::process::arg_read(1,p+1,capacities[i]); let expected:i32=5; if(i==0) { expected=2; }
+        assert(count==expected && destination[0]==204 && destination[expected+1]==204);
+        j=0; while(j<expected) { assert(destination[j+1]==(97+j) as u8); j+=1; }
+        j=0; while(j<16) { destination[j]=204; j+=1; }
+        let key:i32=std::env::var_key_read(0,p+1,capacities[i]); expected=3; if(i==0) { expected=2; }
+        assert(key==expected && destination[0]==204 && destination[expected+1]==204);
+        j=0; while(j<expected) { assert(destination[j+1]==(65+j) as u8); j+=1; }
+        let name:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("ABC"),3);
+        let namep:ptr=core::mem::string_data_ptr("ABC");
+        assert(std::env::var_len(namep,3)==5);
+        j=0; while(j<16) { destination[j]=204; j+=1; }
+        let value:i32=std::env::var_read(namep,3,p+1,capacities[i]); expected=5; if(i==0) { expected=2; }
+        assert(value==expected && destination[0]==204 && destination[expected+1]==204);
+        let text:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("value"),5);
+        j=0; while(j<expected) { assert(destination[j+1]==text[j]); j+=1; }
+        i+=1;
+    }
+    // Place the three-byte key immediately before an unreadable page. Huge
+    // declared lengths must reject at the finite environment '=' before ever
+    // reading a fourth key byte, including the high-word/nonzero-lowword case.
+    let mapping:ptr=alloc::allocator::alloc(8192,8); assert(mapping!=0);
+    let key:ptr=mapping+4093; let bytes:[u8]=core::mem::typed_slice_from_raw_parts(key,3); bytes[0]=65; bytes[1]=66; bytes[2]=67;
+    let protect:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+4096),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
+    assert(core::result::unwrap(std::linux::call(10,core::result::unwrap(core::slice::view(protect,3))))==0);
+    let lengths:[usize;4]=[4294967296,4294967297,4294967299,18446744073709551615]; i=0;
+    while(i<4) {
+        assert(std::env::var_len(key,lengths[i])==-1);
+        destination[0]=204; destination[1]=204;
+        assert(std::env::var_read(key,lengths[i],p,1)==-1 && destination[0]==204 && destination[1]==204); i+=1;
+    }
+    alloc::allocator::dealloc(mapping,8192,8);
+    assert(std::process::arg_read(-1,p,4294967296)==-1 && std::env::var_key_read(-1,p,4294967296)==-1);
+    return 0;
+}

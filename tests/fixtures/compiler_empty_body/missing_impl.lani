@@ -1,0 +1,10 @@
+module app::main;
+import probe::library;
+import probe::protocol;
+
+struct Missing { word: u64 }
+
+fn main() -> i32 {
+    probe::library::imported_destroy<Missing>(Missing { word:18446744073709551610 });
+    return 0;
+}

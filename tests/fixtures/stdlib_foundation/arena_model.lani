@@ -1,0 +1,31 @@
+module app::main;
+import alloc::arena;
+import core::mem;
+import core::result;
+import std::io;
+struct Saved { data: ptr, length: i32, mark: u8 }
+fn code(error: alloc::arena::Error) -> i32 { let value: i32 = match (error) { alloc::arena::Error::InvalidConfig -> 1, alloc::arena::Error::InvalidAlignment -> 2, alloc::arena::Error::Bounds -> 3, alloc::arena::Error::SizeOverflow -> 4, alloc::arena::Error::RetainedLimit -> 5, alloc::arena::Error::ChunkLimit -> 6, alloc::arena::Error::AllocationFailed -> 7, alloc::arena::Error::Destroyed -> 8, alloc::arena::Error::UnsupportedAlignment -> 9 }; return value; }
+fn get32(bytes: [u8], index: i32) -> i32 { return ((bytes[index] as u32) | ((bytes[index+1] as u32) << 8) | ((bytes[index+2] as u32) << 16) | ((bytes[index+3] as u32) << 24)) as i32; }
+fn word(value: i32) { let words: [i32;1] = [value]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(words),4) == 4); }
+fn main() -> i32 {
+    let words: [i32;8192] = [0;8192]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32768); let count: i32 = 0;
+    while (count < 32768) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(32768-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; } assert(count >= 12 && count < 32768 && (count-12)%9 == 0);
+    let config: alloc::arena::Config = alloc::arena::Config { chunk_size: get32(input,0) as usize, max_retained: get32(input,4) as usize, max_chunks: get32(input,8) };
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(config)); let blank: ptr = 0;
+    let saved: [Saved;2048] = [Saved { data: blank, length: 0, mark: 0 };2048]; let live: i32 = 0; let position: i32 = 12; let serial: i32 = 0;
+    while (position < count) {
+        let action: u8 = input[position]; let size: i32 = get32(input,position+1); let align: i32 = get32(input,position+5); let result_code: i32 = 0;
+        if (action == 0) {
+            let allocated: core::result::Result<alloc::arena::Block,alloc::arena::Error> = arena.allocate(size as usize,align as usize);
+            if (core::result::is_err(allocated)) { result_code = code(core::result::unwrap_err(allocated)); }
+            else { let block: alloc::arena::Block = core::result::unwrap(allocated); assert(size >= 0 && size <= 4096); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(block.data,size); let index: i32 = 0; let mark: u8 = serial as u8; while (index < size) { bytes[index] = mark; index += 1; } assert(live < 2048); saved[live] = Saved { data: block.data, length: size, mark: mark }; live += 1; }
+        }
+        if (action == 1) { let result: core::result::Result<bool,alloc::arena::Error> = arena.reset(); if (core::result::is_err(result)) { result_code = code(core::result::unwrap_err(result)); } else { live = 0; } }
+        if (action == 2) { let result: core::result::Result<bool,alloc::arena::Error> = arena.clear(); if (core::result::is_err(result)) { result_code = code(core::result::unwrap_err(result)); } else { live = 0; } }
+        if (action == 3) { arena.destroy(); live = 0; }
+        let slot: i32 = 0; while (slot < live) { let item: Saved = saved[slot]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(item.data,item.length); let index: i32 = 0; while (index < item.length) { assert(bytes[index] == item.mark); index += 1; } slot += 1; }
+        let stats: alloc::arena::Stats = arena.stats(); word(result_code); word(stats.retained as i32); word(stats.chunks); word(stats.used as i32); word(stats.requested as i32); word(stats.allocations as i32);
+        position += 9; serial += 1;
+    }
+    arena.destroy(); return 0;
+}

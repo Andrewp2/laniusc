@@ -1,0 +1,105 @@
+// Accepted native Linux x86-64: three levels, aliases, edits and transfer.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::result;
+import core::slice;
+import fixture::consumer;
+import alloc::clone_vec;
+import fixture::zst;
+
+fn strings() -> i32 {
+    let bytes: [u8;4] = [65,0,195,169];
+    let original: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let values: [alloc::string::String;2] = [original,original];
+    let row: alloc::vec::Vec<alloc::string::String> = alloc::vec::from_view(core::slice::view(values,2).unwrap()).unwrap();
+    let empty: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    let rows: [alloc::vec::Vec<alloc::string::String>;3] = [empty,row,row];
+    let matrix: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = alloc::vec::from_view(core::slice::view(rows,3).unwrap()).unwrap();
+    let matrices: [alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>;2] = [matrix,matrix];
+    let source: alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>> = alloc::vec::from_view(core::slice::view(matrices,2).unwrap()).unwrap();
+    let result: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>,alloc::clone::Error<alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>>> =
+        fixture::consumer::duplicate<alloc::vec::Vec<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>,alloc::clone::Error<alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>>>(source);
+    assert(original.byte_len()==4 && source.len()==2 && matrix.len()==3 && row.len()==2);
+    // Every source entry is borrowed; release only these four backing owners
+    // and the one original String. Recursive source release would be invalid.
+    source.destroy(); matrix.destroy(); row.destroy(); empty.destroy(); original.destroy();
+    let copy = result.unwrap();
+    assert(copy.len()==2);
+    let m: i32 = 0;
+    while (m<2) {
+        let current: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = copy.at(m);
+        assert(current.len()==3);
+        let r: i32 = 0;
+        while (r<3) {
+            let current_row: alloc::vec::Vec<alloc::string::String> = current.at(r);
+            let expected: i32 = 2; if (r==0) { expected=0; }
+            assert(current_row.len()==expected);
+            let c: i32 = 0;
+            while (c<expected) {
+                let value: alloc::string::String = current_row.at(c);
+                assert(value.byte_len()==4 && value.byte_at(0).unwrap()==65 && value.byte_at(1).unwrap()==0
+                    && value.byte_at(2).unwrap()==195 && value.byte_at(3).unwrap()==169);
+                c+=1;
+            }
+            r+=1;
+        }
+        m+=1;
+    }
+    let a: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = copy.remove(0).unwrap();
+    let b: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = copy.at(0);
+    assert(a.len()==3 && b.len()==3);
+    let zero: alloc::vec::Vec<alloc::string::String> = a.at(0);
+    let row_a: alloc::vec::Vec<alloc::string::String> = a.remove(1).unwrap();
+    let repeated: alloc::vec::Vec<alloc::string::String> = a.at(1);
+    let row_b: alloc::vec::Vec<alloc::string::String> = b.at(1);
+    assert(zero.is_empty() && zero.capacity()==0 && row_a.len()==2 && repeated.len()==2 && row_b.len()==2);
+    let first: alloc::string::String = row_a.remove(0).unwrap();
+    let edited = first.try_push_scalar(88);
+    let sibling: alloc::string::String = row_a.at(0);
+    let repeated_value: alloc::string::String = repeated.at(0);
+    let other_matrix_value: alloc::string::String = row_b.at(0);
+    // Restore every transferred owner through capacity just vacated by remove.
+    // This also runs on edit Err: the unchanged String is still owned by first.
+    row_a.try_insert(0,first).unwrap();
+    a.try_insert(1,row_a).unwrap();
+    copy.try_insert(0,a).unwrap();
+    if (edited.is_err()) {
+        alloc::clone::destroy_vec<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>(copy.borrow());
+        return 4;
+    }
+    assert(first.byte_len()==5 && first.byte_at(4).unwrap()==88);
+    assert(sibling.byte_len()==4 && repeated_value.byte_len()==4 && other_matrix_value.byte_len()==4);
+    // pop transfers one deep owner. Releasing the remaining cube must not
+    // invalidate the transferred matrix or its strings.
+    let transferred: alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>> = copy.pop().unwrap();
+    assert(copy.len()==1);
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>(copy.borrow());
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>(copy.borrow());
+    let saved_row: alloc::vec::Vec<alloc::string::String> = transferred.at(1);
+    let saved: alloc::string::String = saved_row.at(0);
+    assert(copy.is_empty() && copy.capacity()==0 && transferred.len()==3 && saved.byte_at(1).unwrap()==0);
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(transferred.borrow());
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(transferred.borrow());
+    assert(transferred.is_empty() && transferred.capacity()==0);
+    return 0;
+}
+
+fn zero_sized_rows() {
+    let values: [fixture::zst::Unit;3] = [fixture::zst::Unit {},fixture::zst::Unit {},fixture::zst::Unit {}];
+    let row: alloc::vec::Vec<fixture::zst::Unit> = alloc::clone::from_view<fixture::zst::Unit,fixture::zst::Never>(core::slice::view(values,3).unwrap()).unwrap();
+    let rows: [alloc::vec::Vec<fixture::zst::Unit>;2] = [row,row];
+    let source: alloc::vec::Vec<alloc::vec::Vec<fixture::zst::Unit>> = alloc::vec::from_view(core::slice::view(rows,2).unwrap()).unwrap();
+    let result: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<fixture::zst::Unit>>,alloc::clone::Error<alloc::clone::Error<fixture::zst::Never>>> =
+        alloc::clone_vec::try_clone<alloc::vec::Vec<fixture::zst::Unit>,alloc::clone::Error<fixture::zst::Never>>(source.borrow());
+    source.destroy(); row.destroy();
+    let copy = result.unwrap();
+    let transferred: alloc::vec::Vec<fixture::zst::Unit> = copy.pop().unwrap();
+    assert(copy.len()==1 && transferred.len()==3 && transferred.capacity()==2147483647);
+    alloc::clone::destroy_vec<alloc::vec::Vec<fixture::zst::Unit>>(copy.borrow());
+    assert(transferred.len()==3 && transferred.pop().is_some());
+    alloc::clone::destroy_vec<fixture::zst::Unit>(transferred.borrow());
+    assert(copy.is_empty() && transferred.is_empty() && transferred.capacity()==0);
+}
+fn main() -> i32 { let status: i32 = strings(); if (status!=0) { return status; } zero_sized_rows(); return 0; }

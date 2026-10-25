@@ -1,6 +1,6 @@
-// Checked binary file input and output for NUL-terminated path storage.
-// Raw filesystem path calls currently ignore their declared length; callers
-// should use string literals until the host path ABI is repaired.
+// Checked binary file input and output over counted paths on x86_64 Linux.
+// Host path calls copy the supplied bytes and append their own NUL. Embedded
+// NUL bytes and paths longer than 4,095 bytes return a host error.
 module std::file_binary;
 import core::binary;
 import core::mem;

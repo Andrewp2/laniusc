@@ -1,0 +1,227 @@
+// Exact byte line shortest edit scripts. See docs/extended-diff.md.
+module ext::diff;
+import alloc::vec;
+import core::slice;
+import core::option;
+import core::result;
+import core::mem;
+
+pub struct Limits { max_lines: i32, max_work: u64, max_trace: i32, max_edits: i32, max_output: i32 }
+pub fn default_limits() -> Limits { return Limits { max_lines: 1000000, max_work: 100000000, max_trace: 4000000, max_edits: 2000000, max_output: 67108864 }; }
+pub enum Error { InvalidLimits, Bounds, LineLimit, WorkLimit, TraceLimit, EditLimit, OutputLimit, InvalidLine, InvalidHeader, AllocationFailed }
+pub struct Lines { values: alloc::vec::Vec<core::slice::View<u8>> }
+pub struct Step { kind: i32, before: i32, after: i32 }
+pub struct Script { old: Lines, new: Lines, steps: alloc::vec::Vec<Step>, cost: i32 }
+// One active borrowed budget charges every byte comparison and search state.
+struct Budget { used: u64, maximum: u64 }
+fn diff_charge(budget: &Budget, amount: u64) -> bool { if (amount > budget.maximum - budget.used) { return false; } budget.used += amount; return true; }
+fn diff_valid(limits: Limits) -> bool { return limits.max_lines >= 0 && limits.max_trace >= 0 && limits.max_edits >= 0 && limits.max_output >= 0; }
+fn diff_view_valid<T>(value:core::slice::View<T>) -> bool { return value.start>=0 && value.length>=0 && value.start<=2147483647-value.length; }
+fn diff_empty_lines() -> Lines { return Lines { values: alloc::vec::new() }; }
+pub impl Lines {
+    pub fn len(&self) -> i32 { return self.values.len(); }
+    pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>> { return self.values.as_view(); }
+    pub fn line(&self, index: i32) -> core::result::Result<core::slice::View<u8>, Error> { if (index < 0 || index >= self.values.len()) { return core::result::Err(Error::Bounds); } return core::result::Ok(self.values.at(index)); }
+    pub fn destroy(&self) { self.values.destroy(); self.values = alloc::vec::new(); }
+}
+fn diff_split(input: core::slice::View<u8>, limits: Limits, budget: &Budget) -> core::result::Result<Lines, Error> {
+    if (!diff_view_valid(input)) { return core::result::Err(Error::Bounds); }
+    let result: Lines = diff_empty_lines(); let start: i32 = 0; let at: i32 = 0;
+    while (at < input.len()) {
+        if (!diff_charge(budget, 1)) { result.destroy(); return core::result::Err(Error::WorkLimit); }
+        let byte: u8 = core::option::unwrap(input.get(at)); at += 1;
+        if (byte == 10 || at == input.len()) {
+            if (result.len() >= limits.max_lines) { result.destroy(); return core::result::Err(Error::LineLimit); }
+            let line: core::slice::View<u8> = core::result::unwrap(input.subview(start, at));
+            if (core::result::is_err(result.values.try_push(line))) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+            start = at;
+        }
+    }
+    return core::result::Ok(result);
+}
+pub fn split(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Lines, Error> {
+    if (!diff_valid(limits)) { return core::result::Err(Error::InvalidLimits); }
+    let budget: Budget = Budget { used: 0, maximum: limits.max_work }; return diff_split(input, limits, budget.borrow());
+}
+fn diff_copy_lines(input: core::slice::View<core::slice::View<u8>>, limits: Limits, budget: &Budget) -> core::result::Result<Lines, Error> {
+    if (!diff_view_valid(input)) { return core::result::Err(Error::Bounds); }
+    if (input.len() > limits.max_lines) { return core::result::Err(Error::LineLimit); }
+    let result: Lines = diff_empty_lines(); let i: i32 = 0;
+    while (i < input.len()) {
+        let line: core::slice::View<u8> = core::option::unwrap(input.get(i));
+        if (!diff_view_valid(line)) { result.destroy(); return core::result::Err(Error::Bounds); }
+        if (!diff_charge(budget, 1)) { result.destroy(); return core::result::Err(Error::WorkLimit); }
+        if (core::result::is_err(result.values.try_push(line))) { result.destroy(); return core::result::Err(Error::AllocationFailed); }
+        i += 1;
+    }
+    return core::result::Ok(result);
+}
+// Return -1 when the byte comparison exhausted the budget.
+fn diff_equal(a: core::slice::View<u8>, b: core::slice::View<u8>, budget: &Budget) -> i32 {
+    if (!diff_charge(budget, 1)) { return -1; }
+    if (a.len() != b.len()) { return 0; } let i: i32 = 0;
+    while (i < a.len()) { if (!diff_charge(budget, 1)) { return -1; } if (core::option::unwrap(a.get(i)) != core::option::unwrap(b.get(i))) { return 0; } i += 1; } return 1;
+}
+fn diff_fail(old: Lines, new: Lines, trace: alloc::vec::Vec<i32>, steps: alloc::vec::Vec<Step>, error: Error) -> core::result::Result<Script, Error> { old.destroy(); new.destroy(); trace.destroy(); steps.destroy(); return core::result::Err(error); }
+fn diff_build(old: Lines, new: Lines, limits: Limits, budget: &Budget) -> core::result::Result<Script, Error> {
+    let trace: alloc::vec::Vec<i32> = alloc::vec::new(); let steps: alloc::vec::Vec<Step> = alloc::vec::new();
+    let n: i32 = old.len(); let m: i32 = new.len();
+    if (n > 1073741822 - m) { return diff_fail(old,new,trace,steps,Error::LineLimit); }
+    // Row d stores endpoints for k=-d,-d+2,...,d. Rows are packed.
+    let distance: i32 = 0; let found: bool = false; let row: i32 = 0; let previous: i32 = 0;
+    while (!found && distance <= n + m) {
+        if (distance > limits.max_edits) { return diff_fail(old,new,trace,steps,Error::EditLimit); }
+        row = trace.len(); let j: i32 = 0;
+        while (j <= distance) {
+            if (trace.len() >= limits.max_trace) { return diff_fail(old,new,trace,steps,Error::TraceLimit); }
+            if (!diff_charge(budget, 1)) { return diff_fail(old,new,trace,steps,Error::WorkLimit); }
+            // Match the paper: deletion wins when both predecessors reach x.
+            let k: i32 = 2*j - distance; let x: i32 = 0;
+            if (distance > 0) {
+                if (j == 0) { x = trace.at(previous); }
+                else { if (j == distance) { x = trace.at(previous+j-1)+1; }
+                    else { if (trace.at(previous+j-1) < trace.at(previous+j)) { x = trace.at(previous+j); } else { x = trace.at(previous+j-1)+1; } } }
+            }
+            let y: i32 = x-k;
+            let matching: bool = true;
+            while (matching && x >= 0 && y >= 0 && x < n && y < m) {
+                let same: i32 = diff_equal(old.values.at(x),new.values.at(y),budget);
+                if (same < 0) { return diff_fail(old,new,trace,steps,Error::WorkLimit); }
+                if (same == 0) { matching = false; } else { x += 1; y += 1; }
+            }
+            if (core::result::is_err(trace.try_push(x))) { return diff_fail(old,new,trace,steps,Error::AllocationFailed); }
+            if (x >= n && y >= m) { found = true; break; } j += 1;
+        }
+        if (!found) { previous = row; distance += 1; }
+    }
+    let x: i32 = n; let y: i32 = m; let d: i32 = distance;
+    while (d > 0) {
+        if (!diff_charge(budget,1)) { return diff_fail(old,new,trace,steps,Error::WorkLimit); }
+        // Previous compact row begins d entries before the current row.
+        let prev: i32 = row-d; let k: i32 = x-y; let j: i32 = (k+d)/2; let insertion: bool = j == 0;
+        if (j > 0 && j < d) { insertion = trace.at(prev+j-1) < trace.at(prev+j); }
+        let px: i32 = 0; let py: i32 = 0;
+        if (insertion) { px = trace.at(prev+j); py = px-(k+1); }
+        else { px = trace.at(prev+j-1); py = px-(k-1); }
+        while (x > px && y > py) {
+            if (!diff_charge(budget,1)) { return diff_fail(old,new,trace,steps,Error::WorkLimit); }
+            x -= 1; y -= 1;
+            if (steps.len() >= limits.max_edits) { return diff_fail(old,new,trace,steps,Error::EditLimit); }
+            if (core::result::is_err(steps.try_push(Step { kind: 0, before: x, after: y }))) { return diff_fail(old,new,trace,steps,Error::AllocationFailed); }
+        }
+        if (steps.len() >= limits.max_edits) { return diff_fail(old,new,trace,steps,Error::EditLimit); }
+        if (insertion) { y -= 1; if (core::result::is_err(steps.try_push(Step {kind:2,before:x,after:y}))) { return diff_fail(old,new,trace,steps,Error::AllocationFailed); } }
+        else { x -= 1; if (core::result::is_err(steps.try_push(Step {kind:1,before:x,after:y}))) { return diff_fail(old,new,trace,steps,Error::AllocationFailed); } }
+        row = prev; d -= 1;
+    }
+    while (x > 0 && y > 0) {
+        if (!diff_charge(budget,1)) { return diff_fail(old,new,trace,steps,Error::WorkLimit); }
+        x -= 1; y -= 1;
+        if (steps.len() >= limits.max_edits) { return diff_fail(old,new,trace,steps,Error::EditLimit); }
+        if (core::result::is_err(steps.try_push(Step {kind:0,before:x,after:y}))) { return diff_fail(old,new,trace,steps,Error::AllocationFailed); }
+    }
+    steps.as_view().reverse(); trace.destroy(); return core::result::Ok(Script {old:old,new:new,steps:steps,cost:distance});
+}
+pub fn compare_bytes(before: core::slice::View<u8>, after: core::slice::View<u8>, limits: Limits) -> core::result::Result<Script, Error> {
+    if (!diff_valid(limits)) { return core::result::Err(Error::InvalidLimits); }
+    let budget: Budget = Budget {used:0,maximum:limits.max_work}; let first: core::result::Result<Lines,Error> = diff_split(before,limits,budget.borrow());
+    if (core::result::is_err(first)) { return core::result::Err(core::result::unwrap_err(first)); } let old: Lines = core::result::unwrap(first);
+    let second: core::result::Result<Lines,Error> = diff_split(after,limits,budget.borrow()); if (core::result::is_err(second)) { old.destroy(); return core::result::Err(core::result::unwrap_err(second)); }
+    return diff_build(old,core::result::unwrap(second),limits,budget.borrow());
+}
+pub fn compare_lines(before: core::slice::View<core::slice::View<u8>>, after: core::slice::View<core::slice::View<u8>>, limits: Limits) -> core::result::Result<Script, Error> {
+    if (!diff_valid(limits)) { return core::result::Err(Error::InvalidLimits); }
+    let budget: Budget = Budget {used:0,maximum:limits.max_work}; let first: core::result::Result<Lines,Error> = diff_copy_lines(before,limits,budget.borrow());
+    if (core::result::is_err(first)) { return core::result::Err(core::result::unwrap_err(first)); } let old: Lines = core::result::unwrap(first);
+    let second: core::result::Result<Lines,Error> = diff_copy_lines(after,limits,budget.borrow()); if (core::result::is_err(second)) { old.destroy(); return core::result::Err(core::result::unwrap_err(second)); }
+    return diff_build(old,core::result::unwrap(second),limits,budget.borrow());
+}
+pub impl Script {
+    pub fn borrow(&self) -> &Script { return self; }
+    pub fn len(&self) -> i32 { return self.steps.len(); }
+    pub fn distance(&self) -> i32 { return self.cost; }
+    pub fn before_len(&self) -> i32 { return self.old.len(); }
+    pub fn after_len(&self) -> i32 { return self.new.len(); }
+    pub fn before_line(&self,index:i32) -> core::result::Result<core::slice::View<u8>,Error> { return self.old.line(index); }
+    pub fn after_line(&self,index:i32) -> core::result::Result<core::slice::View<u8>,Error> { return self.new.line(index); }
+    pub fn step(&self,index:i32) -> core::result::Result<Step,Error> { if (index < 0 || index >= self.steps.len()) { return core::result::Err(Error::Bounds); } return core::result::Ok(self.steps.at(index)); }
+    pub fn destroy(&self) { self.old.destroy(); self.new.destroy(); self.steps.destroy(); self.steps = alloc::vec::new(); self.cost = 0; }
+}
+
+struct Writer { bytes: alloc::vec::Vec<u8>, limit: i32, budget: Budget, error: Error }
+fn diff_byte(writer: &Writer, byte: u8) -> bool {
+    if (writer.bytes.len() >= writer.limit) { writer.error = Error::OutputLimit; return false; }
+    if (!diff_charge(writer.budget.borrow(),1)) { writer.error = Error::WorkLimit; return false; }
+    if (core::result::is_err(writer.bytes.try_push(byte))) { writer.error = Error::AllocationFailed; return false; } return true;
+}
+fn diff_bytes(writer: &Writer, bytes: core::slice::View<u8>) -> bool { let i:i32=0; while(i<bytes.len()) { if(!diff_byte(writer,core::option::unwrap(bytes.get(i)))) { return false; } i+=1; } return true; }
+fn diff_literal(writer: &Writer, text: str, count: i32) -> bool { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count); let i:i32=0; while(i<count) { if(!diff_byte(writer,raw[i])) { return false; } i+=1; } return true; }
+fn diff_number(writer: &Writer, number: i32) -> bool {
+    let digits:[u8;10]=[0;10]; let count:i32=0; let value:i32=number;
+    if(value==0) { return diff_byte(writer,48); }
+    while(value>0) { digits[count]=(48+value%10) as u8; count+=1; value/=10; }
+    while(count>0) { count-=1; if(!diff_byte(writer,digits[count])) { return false; } } return true;
+}
+fn diff_label(label:core::slice::View<u8>,budget:&Budget) -> i32 {
+    if(label.len()==0) { return 0; } let i:i32=0;
+    while(i<label.len()) { if(!diff_charge(budget,1)) { return -1; } let b:u8=core::option::unwrap(label.get(i)); if(b==0 || b==9 || b==13 || b==10) { return 0; } i+=1; } return 1;
+}
+fn diff_file_lines(lines:Lines,budget:&Budget) -> i32 {
+    let i:i32=0; while(i<lines.len()) { let line:core::slice::View<u8> = lines.values.at(i); if(line.len()==0) { return 0; } let j:i32=0;
+        while(j<line.len()) { if(!diff_charge(budget,1)) { return -1; } let b:u8=core::option::unwrap(line.get(j)); if(b==10 && j+1!=line.len()) { return 0; } j+=1; }
+        if(i+1<lines.len() && core::option::unwrap(line.get(line.len()-1))!=10) { return 0; } i+=1; } return 1;
+}
+fn diff_range(writer:&Writer,start:i32,count:i32) -> bool { let position:i32=start; if(count>0) { position+=1; } return diff_number(writer,position) && diff_byte(writer,44) && diff_number(writer,count); }
+fn diff_write_line(writer:&Writer,tag:u8,line:core::slice::View<u8>) -> bool {
+    if(!diff_byte(writer,tag) || !diff_bytes(writer,line)) { return false; }
+    if(core::option::unwrap(line.get(line.len()-1))!=10) { return diff_literal(writer,"\n\\ No newline at end of file\n",29); } return true;
+}
+fn diff_step_line(script:&Script,step:Step) -> core::slice::View<u8> {
+    if (step.kind == 2) { return script.new.values.at(step.after); }
+    return script.old.values.at(step.before);
+}
+fn diff_encode_fail(writer:Writer) -> core::result::Result<alloc::vec::Vec<u8>,Error> { writer.bytes.destroy(); return core::result::Err(writer.error); }
+pub fn encode_unified(script:&Script,old_name:core::slice::View<u8>,new_name:core::slice::View<u8>,context:i32,limits:Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if(!diff_valid(limits) || context<0 || context>1073741822) { return core::result::Err(Error::InvalidLimits); }
+    if (!diff_view_valid(old_name) || !diff_view_valid(new_name)) { return core::result::Err(Error::Bounds); }
+    let writer:Writer=Writer {bytes:alloc::vec::new(),limit:limits.max_output,budget:Budget {used:0,maximum:limits.max_work},error:Error::AllocationFailed};
+    let a:i32=diff_label(old_name,writer.budget.borrow()); let b:i32=diff_label(new_name,writer.budget.borrow());
+    if(a<0 || b<0) { writer.error=Error::WorkLimit; return diff_encode_fail(writer); }
+    if(a==0 || b==0) { writer.error=Error::InvalidHeader; return diff_encode_fail(writer); }
+    let old_valid:i32=diff_file_lines(script.old,writer.budget.borrow()); let new_valid:i32=diff_file_lines(script.new,writer.budget.borrow());
+    if(old_valid<0 || new_valid<0) { writer.error=Error::WorkLimit; return diff_encode_fail(writer); }
+    if(old_valid==0 || new_valid==0) { writer.error=Error::InvalidLine; return diff_encode_fail(writer); }
+    if(script.old.len()>limits.max_lines || script.new.len()>limits.max_lines) { writer.error=Error::LineLimit; return diff_encode_fail(writer); }
+    if(script.cost==0) { return core::result::Ok(writer.bytes); }
+    if(!diff_literal(writer.borrow(),"--- ",4) || !diff_bytes(writer.borrow(),old_name) || !diff_literal(writer.borrow(),"\n+++ ",5) || !diff_bytes(writer.borrow(),new_name) || !diff_byte(writer.borrow(),10)) { return diff_encode_fail(writer); }
+    let search:i32=0;
+    while(search<script.steps.len()) {
+        if(!diff_charge(writer.budget.borrow(),1)) { writer.error=Error::WorkLimit; return diff_encode_fail(writer); }
+        if(script.steps.at(search).kind==0) { search+=1; }
+        else {
+            let start:i32=search-context; if(start<0) { start=0; }
+            let last:i32=search; let scan:i32=search+1;
+            while(scan<script.steps.len()) {
+                if(!diff_charge(writer.budget.borrow(),1)) { writer.error=Error::WorkLimit; return diff_encode_fail(writer); }
+                if(script.steps.at(scan).kind!=0) { if(scan-last-1>2*context) { break; } last=scan; }
+                else { if(scan-last>2*context+1) { break; } }
+                scan+=1;
+            }
+            let end:i32=script.steps.len(); if(context<script.steps.len()-last-1) { end=last+context+1; }
+            let old_count:i32=0; let new_count:i32=0; let at:i32=start;
+            while(at<end) { let step:Step=script.steps.at(at); if(step.kind!=2) { old_count+=1; } if(step.kind!=1) { new_count+=1; } at+=1; }
+            let first:Step=script.steps.at(start);
+            if(!diff_literal(writer.borrow(),"@@ -",4) || !diff_range(writer.borrow(),first.before,old_count) || !diff_literal(writer.borrow()," +",2) || !diff_range(writer.borrow(),first.after,new_count) || !diff_literal(writer.borrow()," @@\n",4)) { return diff_encode_fail(writer); }
+            at=start; while(at<end) { let step:Step=script.steps.at(at); let line:core::slice::View<u8> = diff_step_line(script,step); let tag:u8=32;
+                if(step.kind==1) { tag=45; } if(step.kind==2) { tag=43; }
+                if(!diff_write_line(writer.borrow(),tag,line)) { return diff_encode_fail(writer); } at+=1;
+            }
+            search=end;
+        }
+    }
+    return core::result::Ok(writer.bytes);
+}
+
+impl Budget { fn borrow(&self) -> &Budget { return self; } }
+
+impl Writer { fn borrow(&self) -> &Writer { return self; } }

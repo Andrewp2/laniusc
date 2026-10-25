@@ -1,0 +1,30 @@
+// Ordinary imported consumer: no Error projection or decoder field access.
+module app::main;
+import core::result;
+import core::slice;
+import ext::tls_framing;
+fn main() -> i32 {
+    let record_bytes: [u8;14]=[22,3,3,0,9,8,0,0,0,253,0,0,1,7];
+    let record_storage: [u8;14]=[0;14]; let handshake_storage: [u8;5]=[0;5];
+    let record: ext::tls_framing::RecordDecoder=core::result::unwrap(ext::tls_framing::record_decoder(core::slice::View { values: record_storage, start: 0, length: 14 },9));
+    let handshake: ext::tls_framing::HandshakeDecoder=core::result::unwrap(ext::tls_framing::handshake_decoder(core::slice::View { values: handshake_storage, start: 0, length: 5 },1));
+    let first: ext::tls_framing::Progress=core::result::unwrap(record.feed(core::slice::View { values: record_bytes, start: 0, length: 2 }));
+    assert(first.consumed == 2 && !first.ready);
+    let second: ext::tls_framing::Progress=core::result::unwrap(record.feed(core::slice::View { values: record_bytes, start: 2, length: 12 }));
+    assert(second.consumed == 12 && second.ready);
+    let frame: ext::tls_framing::RecordFrame=core::result::unwrap(record.frame());
+    assert(frame.content_type == 22 && frame.legacy_version == 771 && frame.payload.length == 9);
+    let one: ext::tls_framing::Progress=core::result::unwrap(handshake.feed(frame.payload));
+    assert(one.consumed == 4 && one.ready);
+    let empty: ext::tls_framing::HandshakeFrame=core::result::unwrap(handshake.frame());
+    assert(empty.kind == 8 && empty.body.length == 0 && empty.wire.length == 4);
+    assert(core::result::unwrap(handshake.consume()) == 4);
+    let tail: core::slice::View<u8> = core::result::unwrap(frame.payload.subview(one.consumed,frame.payload.length));
+    let two: ext::tls_framing::Progress=core::result::unwrap(handshake.feed(tail));
+    assert(two.consumed == 5 && two.ready);
+    let unknown: ext::tls_framing::HandshakeFrame=core::result::unwrap(handshake.frame());
+    assert(unknown.kind == 253 && unknown.body.length == 1 && unknown.body.values[unknown.body.start] == 7);
+    assert(core::result::unwrap(handshake.consume()) == 5 && handshake.reset() == 0);
+    assert(core::result::unwrap(record.consume()) == 14 && record.reset() == 0);
+    return 0;
+}

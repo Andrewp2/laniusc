@@ -527,19 +527,35 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         DiagnosticPrimaryLabelPolicy::Required,
     ),
     DiagnosticCodeInfo::error(
-        "LNC0070", "invalid floating literal", "type checking",
+        "LNC0070",
+        "invalid floating literal",
+        "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
     DiagnosticCodeInfo::error(
-        "LNC0071", "computed floating constant is not supported", "type checking",
+        "LNC0071",
+        "computed floating constant is not supported",
+        "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
     DiagnosticCodeInfo::error(
-        "LNC0072", "invalid cast", "type checking",
+        "LNC0072",
+        "invalid cast",
+        "type checking",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
-    DiagnosticCodeInfo::error("LNC0073", "generic instantiation depth exceeded", "type checking", DiagnosticPrimaryLabelPolicy::Required),
-    DiagnosticCodeInfo::error("LNC0075", "private type in public interface", "name resolution", DiagnosticPrimaryLabelPolicy::Required),
+    DiagnosticCodeInfo::error(
+        "LNC0073",
+        "generic instantiation depth exceeded",
+        "type checking",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
+    DiagnosticCodeInfo::error(
+        "LNC0075",
+        "private type in public interface",
+        "name resolution",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
 ];
 
 /// Stable diagnostic categories used by registry and category metadata output.
@@ -1069,6 +1085,18 @@ pub const RUNTIME_SERVICE_BOUNDARY_DIAGNOSTICS: &[RuntimeServiceBoundaryDiagnost
         current_status: "known-unbound",
         executable: false,
     },
+    RuntimeServiceBoundaryDiagnosticInfo {
+        diagnostic_code: "LNC0038",
+        service_id: 14,
+        service_name: "Linux syscalls",
+        module_path: "std::linux",
+        capability_constant: "LINUX_SYSCALL_HAS_RUNTIME_BINDING",
+        status_probe: "linux_syscall_service_status()",
+        binding_probe: "linux_syscall_requires_runtime_binding()",
+        accepted_selector_kinds: RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS,
+        current_status: "executable",
+        executable: true,
+    },
 ];
 
 const fn runtime_bound_api(
@@ -1182,6 +1210,7 @@ const fn runtime_service_capability_constant(service_id: u32) -> &'static str {
         11 => "PROCESS_HAS_RUNTIME_BINDING",
         12 => "ENV_HAS_RUNTIME_BINDING",
         13 => "TEST_HARNESS_HAS_RUNTIME_BINDING",
+        14 => "LINUX_SYSCALL_HAS_RUNTIME_BINDING",
         _ => "UNKNOWN_RUNTIME_SERVICE_HAS_RUNTIME_BINDING",
     }
 }
@@ -1201,6 +1230,7 @@ const fn runtime_service_module_path(service_id: u32) -> &'static str {
         11 => "std::process",
         12 => "std::env",
         13 => "test::harness",
+        14 => "std::linux",
         _ => "unknown::runtime_service",
     }
 }
@@ -1220,6 +1250,7 @@ const fn runtime_service_status_probe(service_id: u32) -> &'static str {
         11 => "process_service_status()",
         12 => "env_service_status()",
         13 => "test_harness_service_status()",
+        14 => "linux_syscall_service_status()",
         _ => "unknown_runtime_service_status()",
     }
 }
@@ -1239,20 +1270,21 @@ const fn runtime_service_binding_probe(service_id: u32) -> &'static str {
         11 => "process_requires_runtime_binding()",
         12 => "env_requires_runtime_binding()",
         13 => "test_harness_requires_runtime_binding()",
+        14 => "linux_syscall_requires_runtime_binding()",
         _ => "unknown_runtime_service_requires_runtime_binding()",
     }
 }
 
 const fn runtime_service_current_status(service_id: u32) -> &'static str {
     match service_id {
-        1 | 2 | 3 | 4 | 9 | 11 | 12 => "executable",
+        1 | 2 | 3 | 4 | 9 | 11 | 12 | 14 => "executable",
         1..=13 => "known-unbound",
         _ => "unknown",
     }
 }
 
 const fn runtime_service_executable(service_id: u32) -> bool {
-    matches!(service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12)
+    matches!(service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
 }
 
 const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
@@ -1261,6 +1293,7 @@ const fn runtime_service_extern_abi(service_id: u32) -> &'static str {
         2 | 3 | 4 | 5 | 8 | 9 | 10 | 11 | 12 => "lanius_std",
         6 => "lanius_panic",
         13 => "lanius_test",
+        14 => "lanius_linux",
         _ => "unknown_runtime_service_abi",
     }
 }
@@ -1585,7 +1618,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "udp_api_is_executable()",
         "udp_api_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         6,
         "panic hook",
         "core::panic",
@@ -1593,7 +1626,7 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "panic_is_executable()",
         "panic_requires_runtime_binding()",
     ),
-    runtime_bound_api(
+    executable_stdlib_api(
         6,
         "panic hook",
         "core::panic",
@@ -1788,6 +1821,23 @@ pub const RUNTIME_BOUND_API_DIAGNOSTICS: &[RuntimeBoundApiDiagnosticInfo] = &[
         "lanius_std",
         "current_dir_read_is_executable()",
         "current_dir_read_requires_runtime_binding()",
+    ),
+    executable_runtime_api(
+        14,
+        "Linux syscalls",
+        "std::linux",
+        "std::linux::syscall6",
+        "lanius_linux",
+        "linux_syscall_is_executable()",
+        "linux_syscall_requires_runtime_binding()",
+    ),
+    executable_stdlib_api(
+        14,
+        "Linux syscalls",
+        "std::linux",
+        "std::linux::call",
+        "linux_syscall_is_executable()",
+        "linux_syscall_requires_runtime_binding()",
     ),
 ];
 
@@ -2319,9 +2369,16 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source(
 ) -> super::CompileError {
     if let Some(message) = failure.ll1().integer_literal_rejection() {
         let mut diagnostic = Diagnostic::error("LNC0069", "invalid integer literal");
-        if let Ok(token) = read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos) {
+        if let Ok(token) =
+            read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos)
+        {
             diagnostic = diagnostic.with_primary_label(diagnostic_label_from_source_span(
-                diagnostic_path, source, token.start, token.len, message));
+                diagnostic_path,
+                source,
+                token.start,
+                token.len,
+                message,
+            ));
         }
         return super::CompileError::Diagnostic(diagnostic.with_note(message));
     }
@@ -3299,11 +3356,18 @@ pub(in crate::compiler) fn parser_failure_to_compile_error_for_source_pack(
 ) -> super::CompileError {
     if let Some(message) = failure.ll1().integer_literal_rejection() {
         let mut diagnostic = Diagnostic::error("LNC0069", "invalid integer literal");
-        if let Ok(token) = read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos) {
+        if let Ok(token) =
+            read_single_token_from_buffer(device, queue, token_buffer, failure.ll1().error_pos)
+        {
             if let Some(file) = source_pack_file_for_global_span(diagnostic_files, token.start) {
                 let local_token = source_pack_local_token(&token, file);
                 diagnostic = diagnostic.with_primary_label(diagnostic_label_from_source_span(
-                    &file.path, &file.source, local_token.start, local_token.len, message));
+                    &file.path,
+                    &file.source,
+                    local_token.start,
+                    local_token.len,
+                    message,
+                ));
             }
         }
         return super::CompileError::Diagnostic(diagnostic.with_note(message));
@@ -4294,7 +4358,12 @@ mod tests {
     fn api_info_has_expected_status(api: &RuntimeBoundApiDiagnosticInfo) -> bool {
         if matches!(
             api.api_name,
-            "std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len"
+            "std::io::flush_stdout"
+                | "std::io::flush_stderr"
+                | "std::env::current_dir_len"
+                | "std::linux::call"
+                | "core::panic::panic"
+                | "core::panic::unreachable"
         ) {
             return api.extern_abi == "lanius_stdlib"
                 && api.current_status == "executable-stdlib"
@@ -4327,6 +4396,8 @@ mod tests {
                 | "std::time::sleep_ms_i32"
         ) {
             Some("compiler_host_clock")
+        } else if api.api_name == "std::linux::syscall6" {
+            Some("lanius_linux")
         } else if api.api_name == "std::process::exit" {
             Some("lanius_std")
         } else if api.api_name == "std::process::argc" {
@@ -4355,7 +4426,14 @@ mod tests {
     fn api_json_has_expected_status(api: &serde_json::Value) -> bool {
         if matches!(
             api["api_name"].as_str(),
-            Some("std::io::flush_stdout" | "std::io::flush_stderr" | "std::env::current_dir_len")
+            Some(
+                "std::io::flush_stdout"
+                    | "std::io::flush_stderr"
+                    | "std::env::current_dir_len"
+                    | "std::linux::call"
+                    | "core::panic::panic"
+                    | "core::panic::unreachable"
+            )
         ) {
             return api["extern_abi"] == "lanius_stdlib"
                 && api["current_status"] == "executable-stdlib"
@@ -4398,6 +4476,8 @@ mod tests {
             )
         ) {
             Some("compiler_host_clock")
+        } else if api["api_name"] == "std::linux::syscall6" {
+            Some("lanius_linux")
         } else if api["api_name"] == "std::process::exit" {
             Some("lanius_std")
         } else if api["api_name"] == "std::process::argc" {
@@ -4689,10 +4769,22 @@ mod tests {
             ("LNC0068", "invalid assignment target", "type checking"),
             ("LNC0069", "invalid integer literal", "type checking"),
             ("LNC0070", "invalid floating literal", "type checking"),
-            ("LNC0071", "computed floating constant is not supported", "type checking"),
+            (
+                "LNC0071",
+                "computed floating constant is not supported",
+                "type checking",
+            ),
             ("LNC0072", "invalid cast", "type checking"),
-            ("LNC0073", "generic instantiation depth exceeded", "type checking"),
-            ("LNC0075", "private type in public interface", "name resolution"),
+            (
+                "LNC0073",
+                "generic instantiation depth exceeded",
+                "type checking",
+            ),
+            (
+                "LNC0075",
+                "private type in public interface",
+                "name resolution",
+            ),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());
@@ -4764,7 +4856,7 @@ mod tests {
                 entry.accepted_selector_kinds,
                 RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS
             );
-            if matches!(entry.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12) {
+            if matches!(entry.service_id, 1 | 2 | 3 | 4 | 9 | 11 | 12 | 14) {
                 assert_eq!(entry.current_status, "executable");
                 assert!(entry.executable);
             } else {
@@ -4997,7 +5089,7 @@ mod tests {
                     == serde_json::json!(RUNTIME_SERVICE_BOUNDARY_SELECTOR_KINDS)
                 && if matches!(
                     service["service_id"].as_u64(),
-                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12)
+                    Some(1 | 2 | 3 | 4 | 9 | 11 | 12 | 14)
                 ) {
                     service["current_status"] == "executable" && service["executable"] == true
                 } else {
@@ -5210,11 +5302,20 @@ mod tests {
         assert_eq!(diagnostic.help.as_deref(), Some(GENERIC_ARGUMENT_TAIL_HELP));
         // A comparison, a called application and nested `>>` stay unannotated.
         let compare = "let c: bool = a < b;\n";
-        assert!(!generic_arguments_without_tail_before(compare, compare.find(';').unwrap()));
+        assert!(!generic_arguments_without_tail_before(
+            compare,
+            compare.find(';').unwrap()
+        ));
         let called = "let v: i32 = id<i32>(1) +;\n";
-        assert!(!generic_arguments_without_tail_before(called, called.find(';').unwrap()));
+        assert!(!generic_arguments_without_tail_before(
+            called,
+            called.find(';').unwrap()
+        ));
         let nested = "let v = id<Pair<i32>>;\n";
-        assert!(generic_arguments_without_tail_before(nested, nested.find(';').unwrap()));
+        assert!(generic_arguments_without_tail_before(
+            nested,
+            nested.find(';').unwrap()
+        ));
     }
 
     #[test]
@@ -5553,8 +5654,11 @@ mod tests {
             "`!` (as a return type)"
         );
         assert_eq!(
-            expected_syntax_terminal_list(&[TokenKind::TypeIdent as u32, TokenKind::ReturnNever as u32])
-                .as_deref(),
+            expected_syntax_terminal_list(&[
+                TokenKind::TypeIdent as u32,
+                TokenKind::ReturnNever as u32
+            ])
+            .as_deref(),
             Some("identifier or `!` (as a return type)")
         );
     }

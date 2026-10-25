@@ -1,0 +1,53 @@
+module app::main;
+import core::decimal;
+import core::option;
+import core::result;
+import core::text;
+import std::vec;
+
+fn bounds(error: core::decimal::FormatError) -> bool {
+    let yes: bool = match (error) { core::decimal::FormatError::Bounds -> true, _ -> false }; return yes;
+}
+fn missing(error: core::decimal::ParseError, offset: i32) -> bool {
+    let yes: bool = match (error.kind) { core::decimal::ParseErrorKind::MissingDigits -> true, _ -> false };
+    return yes && error.offset == offset;
+}
+fn main() -> i32 {
+    let buffer: [u8; 24] = [211; 24];
+    let minimum: i64 = -9223372036854775808;
+    let maximum: u64 = 18446744073709551615;
+    if (!bounds(core::result::unwrap_err(core::decimal::format_i64(buffer, -1, 20, minimum))) ||
+        !bounds(core::result::unwrap_err(core::decimal::format_u64(buffer, 0, -1, maximum))) ||
+        !bounds(core::result::unwrap_err(core::decimal::format_u64(buffer, 2147483647, 1, maximum)))) { return 1; }
+    let index: i32 = 0;
+    while (index < 24) { if (buffer[index] != 211) { return 2; } index += 1; }
+    if (core::result::unwrap(core::decimal::format_i64(buffer, 2, 20, minimum)) != 20 || buffer[0] != 211 || buffer[1] != 211 || buffer[22] != 211 || buffer[23] != 211) { return 3; }
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8_range(buffer, 2, 20));
+    if (core::result::unwrap(text.parse_i64()) != minimum || (core::result::unwrap(text.parse_isize()) as i64) != minimum) { return 4; }
+    // The exact error index is relative to the selected range, including sign.
+    let sign: core::text::Text = core::result::unwrap(text.slice(0, 1));
+    if (!missing(core::result::unwrap_err(sign.parse_i64()), 1) || !missing(core::result::unwrap_err(sign.parse_isize()), 1)) { return 5; }
+    let positive: core::text::Text = core::result::unwrap(text.slice(1, 20));
+    if (core::result::unwrap(positive.parse_u64()) != 9223372036854775808 ||
+        (core::result::unwrap(positive.parse_usize()) as u64) != 9223372036854775808) { return 6; }
+    let bad: core::decimal::ParseError = core::result::unwrap_err(core::decimal::parse_u64_range(buffer, 2147483647, 1));
+    let is_bounds: bool = match (bad.kind) { core::decimal::ParseErrorKind::Bounds -> true, _ -> false };
+    if (!is_bounds || bad.offset != -1 || core::result::is_ok(core::decimal::parse_isize_range(buffer, -1, 0)) ||
+        core::result::is_ok(core::decimal::parse_i64(buffer, -1)) || core::result::is_ok(core::decimal::parse_usize(buffer, 0))) { return 7; }
+    // Packed byte storage must behave identically to the strided stack array.
+    let packed: std::vec::Vec<u8> = std::vec::new();
+    packed = std::vec::reserve(packed, 24);
+    let sentinel: u8 = 211;
+    index = 0; while (index < 24) { packed = std::vec::push(packed, sentinel); index += 1; }
+    let bytes: [u8] = std::vec::as_slice(packed);
+    if (core::result::unwrap(core::decimal::format_u64(bytes, 1, 21, maximum)) != 20 || bytes[0] != 211 || bytes[21] != 211) { return 8; }
+    if (core::result::unwrap(core::decimal::parse_u64_range(bytes, 1, 20)) != maximum ||
+        (core::result::unwrap(core::decimal::parse_usize_range(bytes, 1, 20)) as u64) != maximum) { return 9; }
+    let packed_text: core::text::Text = core::result::unwrap(core::text::from_utf8_range(bytes, 1, 20));
+    if (core::result::unwrap(packed_text.parse_u64()) != maximum || (core::result::unwrap(packed_text.parse_usize()) as u64) != maximum) { return 10; }
+    std::vec::destroy(packed);
+    let digits: [u8; 2] = [52, 50];
+    if (core::result::unwrap(core::decimal::parse_i64(digits, 2)) != 42 || core::result::unwrap(core::decimal::parse_u64(digits, 2)) != 42 ||
+        core::result::unwrap(core::decimal::parse_isize(digits, 2)) != 42 || core::result::unwrap(core::decimal::parse_usize(digits, 2)) != 42) { return 11; }
+    return 0;
+}

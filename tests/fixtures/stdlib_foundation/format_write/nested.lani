@@ -1,0 +1,52 @@
+module app::main;
+import alloc::buffered;
+import core::format;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import std::stream;
+fn text(value: str, count: i32) -> core::text::Text { return core::text::from_utf8_unchecked(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), count), 0, count); }
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let stdout: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(stdout.borrow(), self.bytes, 0, self.used).is_ok()); self.used = 0; }
+    fn word(&self, value: u64) { if (self.used == 1024) { self.flush(); } let index: i32 = 0; while (index < 8) { self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8; index += 1; } self.used += 8; }
+    fn view(&self, view: core::slice::View<u8>) { self.word(view.len() as u64); let index: i32 = 0; while (index < view.len()) { self.word(view.get(index).unwrap() as u64); index += 1; } }
+}
+struct Leaf { bytes: [u8], length: i32, calls: i32, flushes: i32 }
+impl Leaf { fn borrow(&self) -> &Leaf { return self; } }
+pub impl core::io::Write for Leaf {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        assert(core::io::valid_range(offset, count)); self.calls += 1;
+        let sent: i32 = count; if (sent > 2) { sent = 2; } assert(self.length + sent <= 128);
+        let index: i32 = 0; while (index < sent) { self.bytes[self.length + index] = bytes[offset + index]; index += 1; }
+        self.length += sent; return core::result::Ok(sent);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> { self.flushes += 1; return core::result::Ok(0); }
+}
+fn run(packed: bool, output: &Output) {
+    let data: [u8; 128] = [165; 128]; let leaf: Leaf = Leaf { bytes: data, length: 0, calls: 0, flushes: 0 };
+    let inner: alloc::buffered::Writer<Leaf> = alloc::buffered::writer<Leaf>(leaf.borrow(), 5).unwrap();
+    let outer: alloc::buffered::Writer<alloc::buffered::Writer<Leaf>> = alloc::buffered::writer<alloc::buffered::Writer<Leaf>>(inner.borrow(), 3).unwrap();
+    let stack: [u8; 16] = [221; 16]; let words: [i32; 4] = [0; 4]; let bytes: [u8] = stack;
+    if (packed) { bytes = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 16); }
+    let index: i32 = 0; while (index < 16) { bytes[index] = 221; index += 1; }
+    let args: [core::format::Argument; 1] = [core::format::Argument::Text(text("é🙂漢abc", 12))];
+    let names: [core::format::Named; 1] = [core::format::Named { name: text("unused", 6), value: core::format::Argument::Bool(false) }];
+    let count: i32 = core::format::write<alloc::buffered::Writer<alloc::buffered::Writer<Leaf>>>(text("{0:🙂^12.3s}", 14), core::slice::view(args, 1).unwrap(), core::slice::view(names, 0).unwrap(), outer.borrow(),
+        core::slice::View { values: bytes, start: 2, length: 7 }, core::format::WriteLimits { format: core::format::default_limits(), max_io_calls: 1000 }).unwrap();
+    output.word(count as u64); output.word(leaf.flushes as u64);
+    output.view(core::slice::View { values: data, start: 0, length: leaf.length }); output.view(inner.pending()); output.view(outer.pending());
+    assert(leaf.flushes == 0 && inner.is_active() && outer.is_active());
+    assert(outer.finish().unwrap() == 0 && !outer.is_active() && inner.is_active() && inner.pending().is_empty());
+    output.word(leaf.flushes as u64); assert(inner.finish().unwrap() == 0 && !inner.is_active()); output.word(leaf.flushes as u64);
+    output.view(core::slice::View { values: data, start: 0, length: leaf.length });
+    index = 0; while (index < 16) { if (index < 2 || index >= 9) { assert(bytes[index] == 221); } index += 1; }
+    index = leaf.length; while (index < 128) { assert(data[index] == 165); index += 1; }
+}
+fn main() -> i32 {
+    let bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: bytes, used: 0 };
+    run(false, output.borrow()); run(true, output.borrow()); output.flush(); return 0;
+}

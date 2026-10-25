@@ -1,0 +1,16 @@
+// Retain the original imported Forward -> imported write_all topology.
+module app::main;
+import core::io;
+import core::result;
+import probe::forward;
+
+fn main() -> i32 {
+    let bytes: [u8;3] = [1,2,3];
+    let output: [u8;3] = [0;3];
+    let sink: core::io::SliceWriter = core::io::slice_writer(output,3).unwrap();
+    let adapter: probe::forward::Forward<core::io::SliceWriter> = probe::forward::forward(sink.borrow());
+    let result: core::result::Result<i32,core::io::Failure> = core::io::write_all(adapter.borrow(),bytes,0,3);
+    assert(result.unwrap() == 3 && sink.position() == 3);
+    assert(output[0] == 1 && output[1] == 2 && output[2] == 3);
+    return 0;
+}

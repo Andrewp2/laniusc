@@ -1,0 +1,222 @@
+// Linux x86_64 subprocesses. One manual owner per child and descriptor.
+// Single-threaded callers only; see docs/stdlib-command.md for signal/FD rules.
+module std::command;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::command_raw;
+import std::env;
+import std::file;
+import std::signal;
+
+pub enum Error { Bounds, Nul, InvalidInput, MissingPath, Limit, AllocationFailed, Host, StartupUnknown, LostChild, AlreadyReaped, EnvironmentChanged }
+pub enum Stage { Validate, Allocate, Descriptors, Fork, CloseRange, Redirect, Directory, Exec, StartupRead, StartupProtocol, Wait, Signal, Close, Environment }
+pub struct Failure { kind: Error, stage: Stage, errno: i32 }
+pub struct Limits { max_args: i32, max_env: i32, max_string: i32, max_bytes: i32, max_paths: i32 }
+pub enum Search { Exact, EnvironmentPath }
+pub enum ChildSigpipe { Default, Inherit }
+pub enum Stdio { Inherit, Closed, Null, Pipe, Borrowed(i32) }
+pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
+pub enum Startup { Unconfirmed, Unknown }
+pub struct ExitStatus { raw: i32, code: core::option::Option<i32>, signal: core::option::Option<i32>, core_dumped: bool }
+pub struct Child { pid: i32, input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>, startup_state: Startup, cached: core::option::Option<ExitStatus> }
+pub struct FailedStart { failure: Failure, status: ExitStatus }
+pub struct UnknownStart { child: Child, failure: Failure }
+pub enum Spawn { Child(Child), Failed(FailedStart), Unknown(UnknownStart) }
+struct Prepared { bytes: alloc::vec::Vec<i32>, pointers: alloc::vec::Vec<i32>, paths: alloc::vec::Vec<i32>, cwd: i32, env_at: i32 }
+impl Prepared { fn destroy(&self) { self.bytes.destroy(); self.pointers.destroy(); self.paths.destroy(); } }
+pub fn default_limits() -> Limits { return Limits { max_args: 4096, max_env: 4096, max_string: 65536, max_bytes: 1048576, max_paths: 256 }; }
+fn failure(kind: Error, stage: Stage, errno: i32) -> Failure { return Failure { kind: kind, stage: stage, errno: errno }; }
+fn host(stage: Stage, n: i64) -> Failure { return failure(Error::Host,stage,(0-n) as i32); }
+fn valid(start: i32, length: i32) -> bool { return start >= 0 && length >= 0 && start <= 2147483647-length; }
+fn at(bytes: core::slice::View<u8>, index: i32) -> u8 { return bytes.values[bytes.start+index]; }
+fn checked(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32,Failure> {
+    if (!valid(bytes.start,bytes.length)) { return core::result::Err(failure(Error::Bounds,Stage::Validate,0)); } if (bytes.length > limits.max_string || bytes.length > limits.max_bytes) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); }
+    let i: i32 = 0; while (i < bytes.length) { if (at(bytes,i) == 0) { return core::result::Err(failure(Error::Nul,Stage::Validate,0)); } i += 1; } return core::result::Ok(bytes.length);
+}
+fn put(raw: [u8], offset: i32, value: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < value.length) { raw[offset+i] = at(value,i); i += 1; } raw[offset+i] = 0; return offset+i+1; }
+fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
+    let limits: Limits = request.limits; let args = request.arguments; let env = request.environment;
+    if (limits.max_args < 0 || limits.max_env < 0 || limits.max_string < 0 || limits.max_bytes < 0 || limits.max_paths < 1 || !valid(args.start,args.length) || !valid(env.start,env.length)) { return core::result::Err(failure(Error::Bounds,Stage::Validate,0)); }
+    if (args.length == 0) { return core::result::Err(failure(Error::InvalidInput,Stage::Validate,0)); }
+    if (args.length > limits.max_args || env.length > limits.max_env) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); }
+    let program = checked(request.program,limits); if (program.is_err()) { return core::result::Err(program.unwrap_err()); }
+    if (program.unwrap() == 0) { return core::result::Err(failure(Error::InvalidInput,Stage::Validate,0)); }
+    let total: u64 = (program.unwrap() as u64)+1; if (total > limits.max_bytes as u64) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } let slash: bool = false; let i: i32 = 0; while (i < request.program.length) { if (at(request.program,i) == 47) { slash = true; } i += 1; }
+    i = 0; while (i < args.length) { let value = checked(args.values[args.start+i],limits); if (value.is_err()) { return core::result::Err(value.unwrap_err()); } total += (value.unwrap() as u64)+1; if (total > limits.max_bytes as u64) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } i += 1; }
+    let path = core::slice::View<u8> { values: request.program.values, start: request.program.start, length: 0 }; let found_path: bool = false;
+    i = 0; while (i < env.length) { let value = env.values[env.start+i]; let size = checked(value,limits); if (size.is_err()) { return core::result::Err(size.unwrap_err()); }
+        let equal: i32 = 0; while (equal < value.length && at(value,equal) != 61) { equal += 1; } if (equal == 0 || equal == value.length) { return core::result::Err(failure(Error::InvalidInput,Stage::Validate,0)); }
+        if (!found_path && equal == 4 && at(value,0) == 80 && at(value,1) == 65 && at(value,2) == 84 && at(value,3) == 72) { path = core::slice::View { values: value.values, start: value.start+5, length: value.length-5 }; found_path = true; }
+        total += (size.unwrap() as u64)+1; if (total > limits.max_bytes as u64) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } i += 1;
+    }
+    if (core::option::is_some(request.cwd)) { let value = checked(core::option::unwrap(request.cwd),limits); if (value.is_err()) { return core::result::Err(value.unwrap_err()); } if (value.unwrap() == 0) { return core::result::Err(failure(Error::InvalidInput,Stage::Validate,0)); } total += (value.unwrap() as u64)+1; if (total > limits.max_bytes as u64) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } }
+    let search: bool = !slash && match(request.search) { Search::EnvironmentPath -> true, _ -> false }; let paths: i32 = 1;
+    if (search) { if (!found_path) { return core::result::Err(failure(Error::MissingPath,Stage::Validate,0)); } let start: i32 = 0; i = 0;
+        while (i <= path.length) { if (i == path.length || at(path,i) == 58) { if (paths > limits.max_paths) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } let size: u64 = (i-start) as u64; if (size != 0) { size += 1; } size += (request.program.length as u64)+1; if (size-1 > limits.max_string as u64) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } total += size; if (total > limits.max_bytes as u64) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); } paths += 1; start = i+1; } i += 1; }
+        paths -= 1;
+    }
+    let pointer_words: u64 = ((args.length as u64)+(env.length as u64)+2)*2; let byte_words: u64 = (total+3)/4;
+    if (paths > limits.max_paths || paths > 536870911 || total > limits.max_bytes as u64 || byte_words > 536870911 || pointer_words > 536870911) { return core::result::Err(failure(Error::Limit,Stage::Validate,0)); }
+    let bytes_allocated = alloc::vec::with_capacity<i32>(byte_words as i32); if (bytes_allocated.is_err()) { return core::result::Err(failure(Error::AllocationFailed,Stage::Allocate,0)); } let bytes = bytes_allocated.unwrap(); bytes.try_resize(byte_words as i32,0).unwrap();
+    let pointers_allocated = alloc::vec::with_capacity<i32>(pointer_words as i32); if (pointers_allocated.is_err()) { bytes.destroy(); return core::result::Err(failure(Error::AllocationFailed,Stage::Allocate,0)); } let pointers = pointers_allocated.unwrap(); pointers.try_resize(pointer_words as i32,0).unwrap();
+    let paths_allocated = alloc::vec::with_capacity<i32>(paths); if (paths_allocated.is_err()) { bytes.destroy(); pointers.destroy(); return core::result::Err(failure(Error::AllocationFailed,Stage::Allocate,0)); } let path_offsets = paths_allocated.unwrap();
+    let base = core::mem::i32_slice_data_ptr(bytes.as_slice()); let raw: [u8] = core::mem::typed_slice_from_raw_parts(base,total as i32); let table = core::mem::i32_slice_data_ptr(pointers.as_slice()); let offset: i32 = put(raw,0,request.program); let cwd: i32 = -1;
+    i = 0; while (i < args.length) { std::command_raw::store_pointer(table+(i as usize)*8,base+(offset as usize)); offset = put(raw,offset,args.values[args.start+i]); i += 1; }
+    let env_at: i32 = (args.length+1)*8; i = 0; while (i < env.length) { std::command_raw::store_pointer(table+(env_at as usize)+(i as usize)*8,base+(offset as usize)); offset = put(raw,offset,env.values[env.start+i]); i += 1; }
+    if (core::option::is_some(request.cwd)) { cwd = offset; offset = put(raw,offset,core::option::unwrap(request.cwd)); }
+    if (search) { let start: i32 = 0; i = 0; while (i <= path.length) { if (i == path.length || at(path,i) == 58) { path_offsets.try_push(offset).unwrap(); let j: i32 = start; while (j < i) { raw[offset] = at(path,j); offset += 1; j += 1; } if (i > start) { raw[offset] = 47; offset += 1; } offset = put(raw,offset,request.program); start = i+1; } i += 1; } }
+    else { path_offsets.try_push(0).unwrap(); } assert(offset as u64 == total);
+    return core::result::Ok(Prepared { bytes: bytes, pointers: pointers, paths: path_offsets, cwd: cwd, env_at: env_at });
+}
+fn owned(fd: i32) -> core::option::Option<std::file::File> { if (fd < 0) { return core::option::None(); } return core::option::Some(std::file::from_owned_handle(fd).unwrap()); }
+fn make_child(pid: i32, fds: [i32], state: Startup) -> Child { return Child { pid: pid, input: owned(fds[0]), output: owned(fds[1]), error: owned(fds[2]), startup_state: state, cached: core::option::None() }; }
+fn close_fds(fds: [i32]) { let i: i32 = 0; while (i < 3) { std::command_raw::close(fds[i]); fds[i] = -1; i += 1; } }
+fn child_failure(fd: i32, stage: i32, errno: i32) {
+    let packet: [i32;4] = [0;4]; packet[0] = 1279479108; packet[1] = stage; packet[2] = errno; packet[3] = packet[0] ^ stage ^ errno;
+    let p = core::mem::i32_array_data_ptr(packet); let done: i32 = 0;
+    while (done < 16) { let n: i64 = std::command_raw::pointer(1,fd as i64,p+(done as usize),(16-done) as i64); if (n == -4) { continue; } if (n <= 0 || n > (16-done) as i64) { break; } done += n as i32; }
+    std::command_raw::terminate();
+}
+fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe) {
+    let n: i64 = -4; while (n == -4) { n = std::command_raw::word(436,3,4294967295,4); } if (n < 0) { child_failure(error_fd,1,(0-n) as i32); }
+    let i: i32 = 0; while (i < 3) {
+        if (fds[i] < 0) { n = std::command_raw::close(i) as i64; if (n < 0 && n != -9) { child_failure(error_fd,2,(0-n) as i32); } }
+        else { n = -4; while (n == -4) { n = std::command_raw::word(292,fds[i] as i64,i as i64,0); } if (n < 0) { child_failure(error_fd,2,(0-n) as i32); } } i += 1;
+    }
+    let reset: bool = match(sigpipe) { ChildSigpipe::Default -> true, _ -> false };
+    if (reset) { let changed = std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Default); if (changed.is_err()) { let error = changed.unwrap_err(); let errno: i32 = match(error) { core::io::Error::Host(code) -> code, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> 5 }; child_failure(error_fd,5,errno); } }
+    let base = core::mem::i32_slice_data_ptr(prepared.bytes.as_slice()); let pointers = core::mem::i32_slice_data_ptr(prepared.pointers.as_slice());
+    if (prepared.cwd >= 0) { n = std::command_raw::change_dir(base+(prepared.cwd as usize)); if (n < 0) { child_failure(error_fd,3,(0-n) as i32); } }
+    let denied: bool = false; let last: i32 = 2; i = 0;
+    while (i < prepared.paths.len()) { n = std::command_raw::execute(base+(prepared.paths.at(i) as usize),pointers,pointers+(prepared.env_at as usize));
+        if (n >= 0) { child_failure(error_fd,4,5); } let errno: i32 = (0-n) as i32;
+        if (errno == 13) { denied = true; } else { if (errno != 2 && errno != 20) { child_failure(error_fd,4,errno); } last = errno; } i += 1;
+    }
+    if (denied) { last = 13; } child_failure(error_fd,4,last); std::command_raw::terminate();
+}
+fn report_stage(stage: i32) -> Stage { if (stage == 1) { return Stage::CloseRange; } if (stage == 2) { return Stage::Redirect; } if (stage == 3) { return Stage::Directory; } if (stage == 5) { return Stage::Signal; } return Stage::Exec; }
+// Err is possible only before fork succeeds, after all owned resources close.
+// Post-fork unknown outcomes always retain the child in Spawn::Unknown.
+pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure> {
+    let prepared_result = prepare(request); if (prepared_result.is_err()) { return core::result::Err(prepared_result.unwrap_err()); } let prepared = prepared_result.unwrap();
+    let child_fds: [i32;3] = [-1;3]; let parent_fds: [i32;3] = [-1;3]; let i: i32 = 0;
+    // Validate every caller-owned source before creating internal descriptors:
+    // an invalid borrowed number must not accidentally name a new null/pipe FD.
+    while (i < 3) { let setting: Stdio = request.stdin; if (i == 1) { setting = request.stdout; } if (i == 2) { setting = request.stderr; }
+        let borrowed: core::option::Option<i32> = match(setting) { Stdio::Borrowed(fd) -> core::option::Some(fd), _ -> core::option::None() };
+        if (core::option::is_some(borrowed)) { let fd: i32 = core::option::unwrap(borrowed); let n: i64 = -4; while (n == -4) { n = std::command_raw::word(72,fd as i64,1,0); } if (n < 0) { prepared.destroy(); return core::result::Err(host(Stage::Descriptors,n)); } } i += 1;
+    }
+    i = 0; while (i < 3) { let setting: Stdio = request.stdin; if (i == 1) { setting = request.stdout; } if (i == 2) { setting = request.stderr; }
+        let inherited: bool = match(setting) { Stdio::Inherit -> true, _ -> false };
+        let source: i32 = match(setting) {
+            Stdio::Inherit -> std::command_raw::duplicate(i), Stdio::Closed -> -1,
+            Stdio::Null -> std::command_raw::null_fd(i != 0), Stdio::Borrowed(fd) -> std::command_raw::duplicate(fd),
+            Stdio::Pipe -> -1
+        };
+        let piped: bool = match(setting) { Stdio::Pipe -> true, _ -> false }; let closed: bool = match(setting) { Stdio::Closed -> true, _ -> false };
+        if (piped) { let pair: [i32;2] = [-1;2]; let made: i32 = std::command_raw::make_pipe(pair);
+            if (made < 0) { close_fds(child_fds); close_fds(parent_fds); prepared.destroy(); return core::result::Err(host(Stage::Descriptors,made as i64)); }
+            if (i == 0) { child_fds[i] = pair[0]; parent_fds[i] = pair[1]; } else { child_fds[i] = pair[1]; parent_fds[i] = pair[0]; }
+        } else { if (source < 0 && !closed && !(inherited && source == -9)) { close_fds(child_fds); close_fds(parent_fds); prepared.destroy(); return core::result::Err(host(Stage::Descriptors,source as i64)); } if (source >= 0) { child_fds[i] = source; } }
+        i += 1;
+    }
+    let channel: [i32;2] = [-1;2]; let made: i32 = std::command_raw::make_pipe(channel); if (made < 0) { close_fds(child_fds); close_fds(parent_fds); prepared.destroy(); return core::result::Err(host(Stage::Descriptors,made as i64)); }
+    let pid: i64 = std::command_raw::fork(); if (pid < 0) { close_fds(child_fds); close_fds(parent_fds); std::command_raw::close(channel[0]); std::command_raw::close(channel[1]); prepared.destroy(); return core::result::Err(host(Stage::Fork,pid)); }
+    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe); std::command_raw::terminate(); }
+    close_fds(child_fds); std::command_raw::close(channel[1]); prepared.destroy(); let child: Child = make_child(pid as i32,parent_fds,Startup::Unconfirmed);
+    let packet: [i32;4] = [0;4]; let p = core::mem::i32_array_data_ptr(packet); let done: i32 = 0; let read_error: i32 = 0;
+    while (done < 16) { let n: i64 = std::command_raw::pointer(0,channel[0] as i64,p+(done as usize),(16-done) as i64); if (n == -4) { continue; } if (n < 0) { read_error = (0-n) as i32; break; } if (n == 0) { break; } if (n > (16-done) as i64) { read_error = 5; break; } done += n as i32; }
+    std::command_raw::close(channel[0]);
+    if (done == 0 && read_error == 0) { return core::result::Ok(Spawn::Child(child)); }
+    if (read_error != 0 || done != 16 || packet[0] != 1279479108 || packet[1] < 1 || packet[1] > 5 || packet[2] < 1 || packet[2] > 4095 || packet[3] != (packet[0] ^ packet[1] ^ packet[2])) {
+        child.startup_state = Startup::Unknown; let stage: Stage = Stage::StartupProtocol; if (read_error != 0) { stage = Stage::StartupRead; }
+        return core::result::Ok(Spawn::Unknown(UnknownStart { child: child, failure: failure(Error::StartupUnknown,stage,read_error) }));
+    }
+    let failed: Failure = host(report_stage(packet[1]),0-(packet[2] as i64)); child.close_pipes(); let waited = child.wait();
+    if (waited.is_err()) { child.startup_state = Startup::Unknown; return core::result::Ok(Spawn::Unknown(UnknownStart { child: child, failure: waited.unwrap_err() })); }
+    return core::result::Ok(Spawn::Failed(FailedStart { failure: failed, status: waited.unwrap() }));
+}
+fn io_failure(error: core::io::Error) -> Failure { let errno: i32 = match(error) { core::io::Error::Host(n) -> n, core::io::Error::Interrupted -> 4, _ -> 5 }; return failure(Error::Host,Stage::Close,errno); }
+pub impl Child {
+    pub fn borrow(&self) -> &Child { return self; }
+    pub fn id(&self) -> core::option::Option<i32> { if (self.pid <= 0) { return core::option::None(); } return core::option::Some(self.pid); }
+    pub fn startup(&self) -> Startup { return self.startup_state; }
+    pub fn take_stdin(&self) -> core::option::Option<std::file::File> { let value = self.input; self.input = core::option::None(); return value; }
+    pub fn take_stdout(&self) -> core::option::Option<std::file::File> { let value = self.output; self.output = core::option::None(); return value; }
+    pub fn take_stderr(&self) -> core::option::Option<std::file::File> { let value = self.error; self.error = core::option::None(); return value; }
+    pub fn close_pipes(&self) -> core::result::Result<i32,Failure> {
+        let error: core::option::Option<Failure> = core::option::None(); let i: i32 = 0;
+        while (i < 3) { let value: core::option::Option<std::file::File> = core::option::None(); if (i == 0) { value = self.take_stdin(); } if (i == 1) { value = self.take_stdout(); } if (i == 2) { value = self.take_stderr(); }
+            if (core::option::is_some(value)) { let fd = core::option::unwrap(value); let closed = fd.close(); if (closed.is_err() && core::option::is_none(error)) { error = core::option::Some(io_failure(closed.unwrap_err())); } } i += 1;
+        }
+        if (core::option::is_some(error)) { return core::result::Err(core::option::unwrap(error)); } return core::result::Ok(0);
+    }
+    pub fn try_wait(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
+        if (core::option::is_some(self.cached)) { return core::result::Ok(self.cached); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+        let status: [i32;1] = [0;1]; let n = std::command_raw::wait(self.pid,core::mem::i32_array_data_ptr(status),true); if (n == 0) { return core::result::Ok(core::option::None()); }
+        return self.record_wait(n,status[0]);
+    }
+    fn record_wait(&self, n: i64, raw: i32) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
+        if (n < 0) { if (n == -10) { self.pid = 0; return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); } return core::result::Err(host(Stage::Wait,n)); }
+        if (n != self.pid as i64 || (raw & 127) == 127) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        let code: core::option::Option<i32> = core::option::None(); let signal: core::option::Option<i32> = core::option::None(); let dumped: bool = false;
+        if ((raw & 127) == 0) { code = core::option::Some((raw >> 8) & 255); } else { signal = core::option::Some(raw & 127); dumped = (raw & 128) != 0; }
+        let status: ExitStatus = ExitStatus { raw: raw, code: code, signal: signal, core_dumped: dumped }; self.cached = core::option::Some(status); self.pid = 0; return core::result::Ok(self.cached);
+    }
+    pub fn wait(&self) -> core::result::Result<ExitStatus,Failure> {
+        let input = self.take_stdin(); if (core::option::is_some(input)) { core::option::unwrap(input).close(); }
+        if (core::option::is_some(self.cached)) { return core::result::Ok(core::option::unwrap(self.cached)); } if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+        let status: [i32;1] = [0;1]; let n = std::command_raw::wait(self.pid,core::mem::i32_array_data_ptr(status),false); let result = self.record_wait(n,status[0]); if (result.is_err()) { return core::result::Err(result.unwrap_err()); } return core::result::Ok(core::option::unwrap(result.unwrap()));
+    }
+    pub fn signal(&self, signal: i32) -> core::result::Result<i32,Failure> {
+        if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); } if (self.pid <= 0 || core::option::is_some(self.cached)) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
+        let n = std::command_raw::word(62,self.pid as i64,signal as i64,0); if (n < 0) { return core::result::Err(host(Stage::Signal,n)); } return core::result::Ok(0);
+    }
+    pub fn cancel_and_wait(&self) -> core::result::Result<ExitStatus,Failure> {
+        self.close_pipes(); if (self.pid > 0) { let n = std::command_raw::word(62,self.pid as i64,9,0); if (n < 0 && n != -3) { return core::result::Err(host(Stage::Signal,n)); } } return self.wait();
+    }
+}
+
+pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>) -> Request {
+    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
+}
+pub struct Environment { bytes: alloc::vec::Vec<i32>, values: alloc::vec::Vec<core::slice::View<u8>> }
+pub impl Environment {
+    pub fn as_view(&self) -> core::slice::View<core::slice::View<u8>> { return self.values.as_view(); }
+    pub fn destroy(&self) { self.values.destroy(); self.bytes.destroy(); }
+}
+fn environment_failure() -> Failure { return failure(Error::EnvironmentChanged,Stage::Environment,0); }
+fn snapshot_failed(keys: alloc::vec::Vec<i32>, lengths: alloc::vec::Vec<i32>, bytes: alloc::vec::Vec<i32>, values: alloc::vec::Vec<core::slice::View<u8>>, cause: Failure) -> core::result::Result<Environment,Failure> { keys.destroy(); lengths.destroy(); values.destroy(); bytes.destroy(); return core::result::Err(cause); }
+// Snapshot the variable map exposed by std::env. No environment mutation is
+// permitted during this operation. Explicit Request environments preserve
+// supplied entry order/duplicates; the host variable API resolves duplicate
+// keys to their first visible value when constructing this convenience map.
+pub fn snapshot_environment(limits: Limits) -> core::result::Result<Environment,Failure> {
+    if (limits.max_env < 0 || limits.max_bytes < 0 || limits.max_string < 0) { return core::result::Err(failure(Error::Bounds,Stage::Environment,0)); }
+    let count: i32 = std::env::var_count(); if (count < 0) { return core::result::Err(environment_failure()); } if (count > limits.max_env || count > 268435455) { return core::result::Err(failure(Error::Limit,Stage::Environment,0)); }
+    if (count == 0) { let empty_bytes: alloc::vec::Vec<i32> = alloc::vec::new(); let empty_values: alloc::vec::Vec<core::slice::View<u8>> = alloc::vec::new(); return core::result::Ok(Environment { bytes: empty_bytes, values: empty_values }); }
+    let lengths_allocated = alloc::vec::with_capacity<i32>(count*2); if (lengths_allocated.is_err()) { return core::result::Err(failure(Error::AllocationFailed,Stage::Environment,0)); } let lengths = lengths_allocated.unwrap(); lengths.try_resize(count*2,0).unwrap(); let maximum: i32 = 0; let i: i32 = 0;
+    while (i < count) { let n: i32 = std::env::var_key_len(i); if (n <= 0) { lengths.destroy(); return core::result::Err(environment_failure()); } if (n > limits.max_string || n > limits.max_bytes) { lengths.destroy(); return core::result::Err(failure(Error::Limit,Stage::Environment,0)); } lengths.set(i*2,n).unwrap(); if (n > maximum) { maximum = n; } i += 1; }
+    let key_words: u64 = ((maximum as u64)+3)/4; if (key_words > 536870911) { lengths.destroy(); return core::result::Err(failure(Error::Limit,Stage::Environment,0)); }
+    let keys_allocated = alloc::vec::with_capacity<i32>(key_words as i32); if (keys_allocated.is_err()) { lengths.destroy(); return core::result::Err(failure(Error::AllocationFailed,Stage::Environment,0)); } let keys = keys_allocated.unwrap(); keys.try_resize(key_words as i32,0).unwrap(); let key_pointer = core::mem::i32_slice_data_ptr(keys.as_slice());
+    let total: u64 = 0; i = 0; while (i < count) { let key_length: i32 = lengths.at(i*2);
+        if (std::env::var_key_read(i,key_pointer,key_length as usize) != key_length) { keys.destroy(); lengths.destroy(); return core::result::Err(environment_failure()); }
+        let value_length: i32 = std::env::var_len(key_pointer,key_length as usize); if (value_length < 0) { keys.destroy(); lengths.destroy(); return core::result::Err(environment_failure()); }
+        let size: u64 = (key_length as u64)+1+(value_length as u64); total += size; if (size > limits.max_string as u64 || total > limits.max_bytes as u64) { keys.destroy(); lengths.destroy(); return core::result::Err(failure(Error::Limit,Stage::Environment,0)); } lengths.set(i*2+1,value_length).unwrap(); i += 1;
+    }
+    let words: u64 = (total+3)/4; if (words > 536870911) { keys.destroy(); lengths.destroy(); return core::result::Err(failure(Error::Limit,Stage::Environment,0)); }
+    let bytes_allocated = alloc::vec::with_capacity<i32>(words as i32); if (bytes_allocated.is_err()) { keys.destroy(); lengths.destroy(); return core::result::Err(failure(Error::AllocationFailed,Stage::Environment,0)); } let bytes = bytes_allocated.unwrap(); bytes.try_resize(words as i32,0).unwrap();
+    let values_allocated = alloc::vec::with_capacity<core::slice::View<u8>>(count); if (values_allocated.is_err()) { keys.destroy(); lengths.destroy(); bytes.destroy(); return core::result::Err(failure(Error::AllocationFailed,Stage::Environment,0)); } let values = values_allocated.unwrap(); let base = core::mem::i32_slice_data_ptr(bytes.as_slice()); let raw: [u8] = core::mem::typed_slice_from_raw_parts(base,total as i32); let key_raw: [u8] = core::mem::typed_slice_from_raw_parts(key_pointer,maximum); let offset: i32 = 0; i = 0;
+    while (i < count) { let key_length: i32 = lengths.at(i*2); let value_length: i32 = lengths.at(i*2+1); let size: i32 = key_length+1+value_length;
+        if (std::env::var_key_len(i) != key_length || std::env::var_key_read(i,key_pointer,key_length as usize) != key_length || std::env::var_len(key_pointer,key_length as usize) != value_length) { return snapshot_failed(keys,lengths,bytes,values,environment_failure()); }
+        let j: i32 = 0; while (j < key_length) { if (key_raw[j] == 0 || key_raw[j] == 61) { return snapshot_failed(keys,lengths,bytes,values,environment_failure()); } raw[offset+j] = key_raw[j]; j += 1; } raw[offset+key_length] = 61;
+        if (std::env::var_read(key_pointer,key_length as usize,base+((offset+key_length+1) as usize),value_length as usize) != value_length) { return snapshot_failed(keys,lengths,bytes,values,environment_failure()); }
+        j = key_length+1; while (j < size) { if (raw[offset+j] == 0) { return snapshot_failed(keys,lengths,bytes,values,environment_failure()); } j += 1; }
+        let entry: core::slice::View<u8> = core::slice::view_range(raw,offset,size).unwrap(); values.try_push(entry).unwrap(); offset += size; i += 1;
+    }
+    keys.destroy(); lengths.destroy(); return core::result::Ok(Environment { bytes: bytes, values: values });
+}

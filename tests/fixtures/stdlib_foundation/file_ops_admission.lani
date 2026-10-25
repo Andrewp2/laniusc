@@ -1,0 +1,16 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::fs;
+import std::linux;
+fn main() -> i32 {
+    let path:[i32;1]=[46]; let name:ptr=core::mem::i32_array_data_ptr(path);
+    let args:[std::linux::Argument;4]=[std::linux::Argument::Word(-100),std::linux::Argument::Address(name),std::linux::Argument::Word(589824),std::linux::Argument::Word(0)];
+    let opened=std::linux::call(257,core::result::unwrap(core::slice::view(args,4))); let fd:i64=core::result::unwrap(opened); assert(fd>=0 && fd<=2147483647);
+    let empty:[i32;1]=[0]; let output:[i32;64]=[0;64]; let data:ptr=core::mem::i32_array_data_ptr(output);
+    let query:[std::linux::Argument;5]=[std::linux::Argument::Word(fd),std::linux::Argument::Address(core::mem::i32_array_data_ptr(empty)),std::linux::Argument::Word(4096),std::linux::Argument::Word(4095),std::linux::Argument::Address(data)];
+    let observed=std::linux::call(332,core::result::unwrap(core::slice::view(query,5))); let closed:i32=std::fs::close(fd as i32); assert(closed==0); assert(core::result::unwrap(observed)==0);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(data,256); assert((packed[0]&1)==1 && ((packed[29] as i32)&240)==64); return 0;
+}

@@ -1,0 +1,176 @@
+// Raw RFC 1951 DEFLATE, with caller-owned output and no heap allocation.
+// Input and output must be backed, live, and disjoint. Completed output is
+// retained on error. Logical metadata is checked before reading or writing.
+module ext::inflate;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, UnexpectedEof, InvalidBlockType, InvalidStoredLength, InvalidCodeLengths, InvalidSymbol, InvalidDistance, OutputTooSmall }
+pub struct Progress { read: i32, written: i32 }
+pub struct Failure { error: Error, read: i32, written: i32 }
+struct State { input: core::slice::View<u8>, output: core::slice::View<u8>, position: i32, written: i32, buffer: i32, available: i32 }
+impl State { fn borrow(&self) -> &State { return self; } }
+struct Tree { counts: [i32], symbols: [i32], maximum: i32 }
+
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn fail(state: State, error: Error) -> core::result::Result<Progress,Failure> {
+    return core::result::Err(Failure { error: error, read: state.position, written: state.written });
+}
+// Only load bytes actually needed; at most seven unconsumed bits remain.
+fn bits(state: &State, need: i32) -> i32 {
+    while (state.available < need) {
+        if (state.position == state.input.length) { return -1; }
+        state.buffer = state.buffer | ((byte(state.input,state.position) as i32) << state.available);
+        state.position += 1; state.available += 8;
+    }
+    let value: i32 = state.buffer & ((1 << need)-1);
+    state.buffer = state.buffer >> need; state.available -= need; return value;
+}
+// Canonical length counts and symbols sorted by (length,symbol). Return
+// unused leaves at depth 15, or -1 for over-subscribed lengths.
+fn construct(lengths: [i32], start: i32, count: i32, counts: [i32], symbols: [i32]) -> i32 {
+    let index: i32 = 0; while (index < 16) { counts[index] = 0; index += 1; }
+    index = 0; while (index < count) { let size: i32 = lengths[start+index]; counts[size] += 1; index += 1; }
+    let left: i32 = 1; index = 1;
+    while (index <= 15) { left = left*2-counts[index]; if (left < 0) { return -1; } index += 1; }
+    let offsets: [i32;16] = [0;16]; index = 1;
+    while (index < 15) { offsets[index+1] = offsets[index]+counts[index]; index += 1; }
+    index = 0;
+    while (index < count) {
+        let size: i32 = lengths[start+index];
+        if (size != 0) { symbols[offsets[size]] = index; offsets[size] += 1; }
+        index += 1;
+    }
+    return left;
+}
+fn maximum(counts: [i32]) -> i32 {
+    let size: i32 = 15; while (size > 0 && counts[size] == 0) { size -= 1; } return size;
+}
+// -1 means input exhausted; -2 means an unused/invalid code.
+fn decode(state: &State, tree: Tree) -> i32 {
+    let code: i32 = 0; let first: i32 = 0; let offset: i32 = 0; let size: i32 = 1;
+    while (size <= tree.maximum) {
+        let bit: i32 = bits(state,1); if (bit < 0) { return -1; }
+        code = code*2+bit; let count: i32 = tree.counts[size];
+        if (code >= first && code-first < count) { return tree.symbols[offset+code-first]; }
+        offset += count; first = (first+count)*2; size += 1;
+    }
+    return -2;
+}
+fn length_base(symbol: i32) -> i32 {
+    let bases: [i32;29] = [3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258];
+    return bases[symbol-257];
+}
+fn length_extra(symbol: i32) -> i32 { if (symbol <= 264 || symbol == 285) { return 0; } return (symbol-261)/4; }
+fn distance_extra(symbol: i32) -> i32 { if (symbol < 4) { return 0; } return symbol/2-1; }
+fn distance_base(symbol: i32) -> i32 { if (symbol < 4) { return symbol+1; } let extra: i32 = distance_extra(symbol); return ((2+(symbol & 1)) << extra)+1; }
+
+pub fn decode_into(input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<Progress,Failure> { return decode_into_window(input,output,32768); }
+// Container formats may advertise a smaller history window. The raw default
+// accepts the full 32768 bytes. Only powers of two from 256 through 32768.
+pub fn decode_into_window(input: core::slice::View<u8>, output: core::slice::View<u8>, max_distance: i32) -> core::result::Result<Progress,Failure> {
+    if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length || output.start < 0 || output.length < 0 || output.start > 2147483647-output.length || max_distance < 256 || max_distance > 32768 || (max_distance & (max_distance-1)) != 0) {
+        return core::result::Err(Failure { error: Error::Bounds, read: 0, written: 0 });
+    }
+    let state: State = State { input: input, output: output, position: 0, written: 0, buffer: 0, available: 0 };
+    let lengths: [i32;320] = [0;320];
+    let literal_counts: [i32;16] = [0;16]; let literal_symbols: [i32;288] = [0;288];
+    let distance_counts: [i32;16] = [0;16]; let distance_symbols: [i32;32] = [0;32];
+    let code_counts: [i32;16] = [0;16]; let code_symbols: [i32;19] = [0;19];
+    let order: [i32;19] = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+    let final_block: i32 = 0;
+    while (final_block == 0) {
+        final_block = bits(state.borrow(),1); let kind: i32 = bits(state.borrow(),2);
+        if (final_block < 0 || kind < 0) { return fail(state,Error::UnexpectedEof); }
+        if (kind == 3) { return fail(state,Error::InvalidBlockType); }
+        if (kind == 0) {
+            state.buffer = 0; state.available = 0;
+            let length: i32 = bits(state.borrow(),16); let inverted: i32 = bits(state.borrow(),16);
+            if (length < 0 || inverted < 0) { return fail(state,Error::UnexpectedEof); }
+            if ((length ^ inverted) != 65535) { return fail(state,Error::InvalidStoredLength); }
+            let copied: i32 = 0;
+            while (copied < length) {
+                if (state.position == input.length) { return fail(state,Error::UnexpectedEof); }
+                if (state.written == output.length) { return fail(state,Error::OutputTooSmall); }
+                output.values[output.start+state.written] = byte(input,state.position);
+                state.position += 1; state.written += 1; copied += 1;
+            }
+        } else {
+            let literal_count: i32 = 288; let distance_count: i32 = 32; let index: i32 = 0;
+            if (kind == 1) {
+                while (index < 144) { lengths[index] = 8; index += 1; }
+                while (index < 256) { lengths[index] = 9; index += 1; }
+                while (index < 280) { lengths[index] = 7; index += 1; }
+                while (index < 288) { lengths[index] = 8; index += 1; }
+                while (index < 320) { lengths[index] = 5; index += 1; }
+            } else {
+                let lit_bits: i32 = bits(state.borrow(),5); let dist_bits: i32 = bits(state.borrow(),5); let code_bits: i32 = bits(state.borrow(),4);
+                if (lit_bits < 0 || dist_bits < 0 || code_bits < 0) { return fail(state,Error::UnexpectedEof); }
+                literal_count = lit_bits+257; distance_count = dist_bits+1;
+                if (literal_count > 286) { return fail(state,Error::InvalidCodeLengths); }
+                index = 0; while (index < 19) { lengths[index] = 0; index += 1; }
+                index = 0;
+                while (index < code_bits+4) {
+                    let value: i32 = bits(state.borrow(),3); if (value < 0) { return fail(state,Error::UnexpectedEof); }
+                    lengths[order[index]] = value; index += 1;
+                }
+                if (construct(lengths,0,19,code_counts,code_symbols) != 0) { return fail(state,Error::InvalidCodeLengths); }
+                let codes: Tree = Tree { counts: code_counts, symbols: code_symbols, maximum: maximum(code_counts) };
+                index = 0;
+                while (index < literal_count+distance_count) {
+                    let symbol: i32 = decode(state.borrow(),codes);
+                    if (symbol == -1) { return fail(state,Error::UnexpectedEof); }
+                    if (symbol < 0) { return fail(state,Error::InvalidCodeLengths); }
+                    if (symbol < 16) { lengths[index] = symbol; index += 1; }
+                    else {
+                        let value: i32 = 0; let repeat: i32 = 0;
+                        if (symbol == 16) {
+                            if (index == 0) { return fail(state,Error::InvalidCodeLengths); }
+                            value = lengths[index-1]; repeat = bits(state.borrow(),2); if (repeat < 0) { return fail(state,Error::UnexpectedEof); } repeat += 3;
+                        } else {
+                            if (symbol == 17) { repeat = bits(state.borrow(),3); if (repeat < 0) { return fail(state,Error::UnexpectedEof); } repeat += 3; }
+                            else { repeat = bits(state.borrow(),7); if (repeat < 0) { return fail(state,Error::UnexpectedEof); } repeat += 11; }
+                        }
+                        if (repeat > literal_count+distance_count-index) { return fail(state,Error::InvalidCodeLengths); }
+                        let end: i32 = index+repeat; while (index < end) { lengths[index] = value; index += 1; }
+                    }
+                }
+                if (lengths[256] == 0) { return fail(state,Error::InvalidCodeLengths); }
+            }
+            let literal_left: i32 = construct(lengths,0,literal_count,literal_counts,literal_symbols);
+            if (literal_left < 0 || (kind == 2 && literal_left != 0 && literal_count-literal_counts[0] != literal_counts[1])) { return fail(state,Error::InvalidCodeLengths); }
+            let distance_left: i32 = construct(lengths,literal_count,distance_count,distance_counts,distance_symbols);
+            if (distance_left < 0 || (kind == 2 && distance_left != 0 && distance_count-distance_counts[0] != distance_counts[1])) { return fail(state,Error::InvalidCodeLengths); }
+            let literals: Tree = Tree { counts: literal_counts, symbols: literal_symbols, maximum: maximum(literal_counts) };
+            let distances: Tree = Tree { counts: distance_counts, symbols: distance_symbols, maximum: maximum(distance_counts) };
+            let ended: bool = false;
+            while (!ended) {
+                let symbol: i32 = decode(state.borrow(),literals);
+                if (symbol == -1) { return fail(state,Error::UnexpectedEof); }
+                if (symbol < 0 || symbol > 285) { return fail(state,Error::InvalidSymbol); }
+                if (symbol < 256) {
+                    if (state.written == output.length) { return fail(state,Error::OutputTooSmall); }
+                    output.values[output.start+state.written] = symbol as u8; state.written += 1;
+                } else {
+                    if (symbol == 256) { ended = true; }
+                    else {
+                        let extra: i32 = bits(state.borrow(),length_extra(symbol)); if (extra < 0) { return fail(state,Error::UnexpectedEof); }
+                        let length: i32 = length_base(symbol)+extra; let distance_symbol: i32 = decode(state.borrow(),distances);
+                        if (distance_symbol == -1) { return fail(state,Error::UnexpectedEof); }
+                        if (distance_symbol < 0 || distance_symbol >= 30) { return fail(state,Error::InvalidSymbol); }
+                        let distance_bits: i32 = bits(state.borrow(),distance_extra(distance_symbol)); if (distance_bits < 0) { return fail(state,Error::UnexpectedEof); }
+                        let distance: i32 = distance_base(distance_symbol)+distance_bits;
+                        if (distance > state.written || distance > max_distance) { return fail(state,Error::InvalidDistance); }
+                        let copied: i32 = 0;
+                        while (copied < length) {
+                            if (state.written == output.length) { return fail(state,Error::OutputTooSmall); }
+                            output.values[output.start+state.written] = byte(output,state.written-distance);
+                            state.written += 1; copied += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return core::result::Ok(Progress { read: state.position, written: state.written });
+}

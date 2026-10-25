@@ -25,7 +25,7 @@ pub impl core::cmp::Eq<Score> for Score {
 }
 
 // `value` and `other` must differ.
-fn option_checks<T>(value: T, other: T) -> i32 where T: core::cmp::Eq<T> {
+fn option_checks<T>(value: T, other: T) -> i32 where T: core::cmp::PartialEq<T> {
     let some: core::option::Option<T> = core::option::Some(value);
     let different: core::option::Option<T> = core::option::Some(other);
     let none: core::option::Option<T> = core::option::None();
@@ -38,9 +38,9 @@ fn option_checks<T>(value: T, other: T) -> i32 where T: core::cmp::Eq<T> {
     if (!some.contains(value) || some.contains(other) || none.contains(value)) { return 6; }
     // The unwrap methods run from main: from a generic body with a record
     // payload they crash (tests/fixtures/generics_backlog/b17).
-    if (!T::eq(core::option::unwrap(some), value)) { return 7; }
-    if (!T::eq(core::option::unwrap_or(none, other), other)) { return 8; }
-    if (!T::eq(some.unwrap_or(other), value) || !T::eq(none.unwrap_or(other), other)) { return 9; }
+    if (!T::partial_eq(core::option::unwrap(some), value)) { return 7; }
+    if (!T::partial_eq(core::option::unwrap_or(none, other), other)) { return 8; }
+    if (!T::partial_eq(some.unwrap_or(other), value) || !T::partial_eq(none.unwrap_or(other), other)) { return 9; }
 
     // or keeps a present left value; and gives the right one after it.
     if (!core::option::or(some, different).contains(value)) { return 10; }
@@ -86,7 +86,7 @@ fn option_checks<T>(value: T, other: T) -> i32 where T: core::cmp::Eq<T> {
 
 // `value` and `other` must differ, and so must `error` and `other_error`.
 fn result_checks<T, E>(value: T, other: T, error: E, other_error: E) -> i32
-    where T: core::cmp::Eq<T>, E: core::cmp::Eq<E> {
+    where T: core::cmp::PartialEq<T>, E: core::cmp::PartialEq<E> {
     let ok: core::result::Result<T, E> = core::result::Ok(value);
     let ok_other: core::result::Result<T, E> = core::result::Ok(other);
     let err: core::result::Result<T, E> = core::result::Err(error);
@@ -105,13 +105,13 @@ fn result_checks<T, E>(value: T, other: T, error: E, other_error: E) -> i32
     if (!err.contains_err(error) || err.contains_err(other_error) || ok.contains_err(error)) {
         return 9;
     }
-    if (!T::eq(core::result::unwrap(ok), value)) { return 10; }
-    if (!E::eq(core::result::unwrap_err(err), error)) { return 11; }
-    if (!T::eq(core::result::unwrap_or(err, other), other)) { return 12; }
-    if (!T::eq(ok.unwrap_or(other), value) || !T::eq(err.unwrap_or(other), other)) { return 13; }
-    if (!E::eq(core::result::unwrap_err_or(ok, other_error), other_error)) { return 14; }
-    if (!E::eq(err.unwrap_err_or(other_error), error)) { return 15; }
-    if (!E::eq(ok.unwrap_err_or(other_error), other_error)) { return 16; }
+    if (!T::partial_eq(core::result::unwrap(ok), value)) { return 10; }
+    if (!E::partial_eq(core::result::unwrap_err(err), error)) { return 11; }
+    if (!T::partial_eq(core::result::unwrap_or(err, other), other)) { return 12; }
+    if (!T::partial_eq(ok.unwrap_or(other), value) || !T::partial_eq(err.unwrap_or(other), other)) { return 13; }
+    if (!E::partial_eq(core::result::unwrap_err_or(ok, other_error), other_error)) { return 14; }
+    if (!E::partial_eq(err.unwrap_err_or(other_error), error)) { return 15; }
+    if (!E::partial_eq(ok.unwrap_err_or(other_error), other_error)) { return 16; }
 
     // or keeps a success and otherwise takes the fallback, error included.
     if (!core::result::or(ok, ok_other).contains(value)) { return 17; }
@@ -136,7 +136,7 @@ fn row(index: i32, code: i32) -> i32 {
     return index;
 }
 
-fn both<T>(index: i32, value: T, other: T) -> i32 where T: core::cmp::Eq<T> {
+fn both<T>(index: i32, value: T, other: T) -> i32 where T: core::cmp::PartialEq<T> {
     let code: i32 = row(index, option_checks(value, other));
     if (code != 0) { return code; }
     return row(index + 1, result_checks(value, other, other, value));
@@ -199,4 +199,9 @@ fn main() -> i32 {
         index += 1;
     }
     return 0;
+}
+
+pub impl core::cmp::PartialEq<Score> for Score {
+    pub fn partial_eq(left: Score, right: Score) -> bool { return Score::eq(left, right); }
+    pub fn partial_ne(left: Score, right: Score) -> bool { return Score::ne(left, right); }
 }

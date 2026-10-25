@@ -1,0 +1,10 @@
+module probe::constant_consumer;
+import probe::constant_application;
+
+pub struct Observation<T> { stamp: u64, payload: T }
+pub fn observe<W,T>(source: &W) -> Observation<T>
+    where W: probe::constant_application::Inspect<T> {
+    let payload: T = source.payload();
+    let echoed: T = W::echo(payload);
+    return Observation { stamp:source.stamp(),payload:echoed };
+}

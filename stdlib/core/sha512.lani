@@ -1,0 +1,148 @@
+// FIPS 180-4 SHA-512, SHA-384, SHA-512/224 and SHA-512/256.
+// No allocation or retained input view. See docs/stdlib-sha512.md for the
+// manual state, physical input backing, and disjoint immutable input contracts.
+module core::sha512;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, LengthOverflow, Finished }
+pub struct Digest { bytes: [u8; 64], length: i32 }
+pub struct State {
+    h0: u64, h1: u64, h2: u64, h3: u64, h4: u64, h5: u64, h6: u64, h7: u64,
+    byte_low: u64, byte_high: u64, used: i32, block: [u8; 128],
+    finished: bool, output_length: i32
+}
+const MAX_BYTE_HIGH: u64 = 2305843009213693951;
+
+fn initial(length: i32) -> State {
+    let h0: u64 = 0x6a09e667f3bcc908; let h1: u64 = 0xbb67ae8584caa73b;
+    let h2: u64 = 0x3c6ef372fe94f82b; let h3: u64 = 0xa54ff53a5f1d36f1;
+    let h4: u64 = 0x510e527fade682d1; let h5: u64 = 0x9b05688c2b3e6c1f;
+    let h6: u64 = 0x1f83d9abfb41bd6b; let h7: u64 = 0x5be0cd19137e2179;
+    if (length == 48) {
+        h0=0xcbbb9d5dc1059ed8; h1=0x629a292a367cd507; h2=0x9159015a3070dd17; h3=0x152fecd8f70e5939;
+        h4=0x67332667ffc00b31; h5=0x8eb44a8768581511; h6=0xdb0c2e0d64f98fa7; h7=0x47b5481dbefa4fa4;
+    }
+    if (length == 28) {
+        h0=0x8c3d37c819544da2; h1=0x73e1996689dcd4d6; h2=0x1dfab7ae32ff9c82; h3=0x679dd514582f9fcf;
+        h4=0x0f6d2b697bd44da8; h5=0x77e36f7304c48942; h6=0x3f9d85a86a1d36c8; h7=0x1112e6ad91d692a1;
+    }
+    if (length == 32) {
+        h0=0x22312194fc2bf72c; h1=0x9f555fa3c84c64c2; h2=0x2393b86b6f53b151; h3=0x963877195940eabd;
+        h4=0x96283ee2a88effe3; h5=0xbe5e1e2553863992; h6=0x2b0199fc2c85b8aa; h7=0x0eb72ddc81c52ca2;
+    }
+    let block: [u8; 128] = [0; 128];
+    return State { h0:h0, h1:h1, h2:h2, h3:h3, h4:h4, h5:h5, h6:h6, h7:h7,
+        byte_low:0, byte_high:0, used:0, block:block, finished:false, output_length:length };
+}
+pub fn new() -> State { return initial(64); }
+pub fn new384() -> State { return initial(48); }
+pub fn new512_224() -> State { return initial(28); }
+pub fn new512_256() -> State { return initial(32); }
+
+// Internal counts are fixed in 1..63; no shift by the word width occurs.
+fn rotate(value: u64, count: u32) -> u64 { return (value >> count) | (value << (64-count)); }
+fn small0(value: u64) -> u64 { return rotate(value,1) ^ rotate(value,8) ^ (value >> 7); }
+fn small1(value: u64) -> u64 { return rotate(value,19) ^ rotate(value,61) ^ (value >> 6); }
+fn big0(value: u64) -> u64 { return rotate(value,28) ^ rotate(value,34) ^ rotate(value,39); }
+fn big1(value: u64) -> u64 { return rotate(value,14) ^ rotate(value,18) ^ rotate(value,41); }
+
+pub impl State {
+    pub fn borrow(&self) -> &State { return self; }
+    fn compress(&self) {
+        // FIPS 180-4 section 4.2.3, in round order. All compression additions
+        // deliberately use native u64 arithmetic modulo 2^64.
+        let k: [u64; 80] = [
+            0x428a2f98d728ae22,0x7137449123ef65cd,0xb5c0fbcfec4d3b2f,0xe9b5dba58189dbbc,
+            0x3956c25bf348b538,0x59f111f1b605d019,0x923f82a4af194f9b,0xab1c5ed5da6d8118,
+            0xd807aa98a3030242,0x12835b0145706fbe,0x243185be4ee4b28c,0x550c7dc3d5ffb4e2,
+            0x72be5d74f27b896f,0x80deb1fe3b1696b1,0x9bdc06a725c71235,0xc19bf174cf692694,
+            0xe49b69c19ef14ad2,0xefbe4786384f25e3,0x0fc19dc68b8cd5b5,0x240ca1cc77ac9c65,
+            0x2de92c6f592b0275,0x4a7484aa6ea6e483,0x5cb0a9dcbd41fbd4,0x76f988da831153b5,
+            0x983e5152ee66dfab,0xa831c66d2db43210,0xb00327c898fb213f,0xbf597fc7beef0ee4,
+            0xc6e00bf33da88fc2,0xd5a79147930aa725,0x06ca6351e003826f,0x142929670a0e6e70,
+            0x27b70a8546d22ffc,0x2e1b21385c26c926,0x4d2c6dfc5ac42aed,0x53380d139d95b3df,
+            0x650a73548baf63de,0x766a0abb3c77b2a8,0x81c2c92e47edaee6,0x92722c851482353b,
+            0xa2bfe8a14cf10364,0xa81a664bbc423001,0xc24b8b70d0f89791,0xc76c51a30654be30,
+            0xd192e819d6ef5218,0xd69906245565a910,0xf40e35855771202a,0x106aa07032bbd1b8,
+            0x19a4c116b8d2d0c8,0x1e376c085141ab53,0x2748774cdf8eeb99,0x34b0bcb5e19b48a8,
+            0x391c0cb3c5c95a63,0x4ed8aa4ae3418acb,0x5b9cca4f7763e373,0x682e6ff3d6b2b8a3,
+            0x748f82ee5defb2fc,0x78a5636f43172f60,0x84c87814a1f0ab72,0x8cc702081a6439ec,
+            0x90befffa23631e28,0xa4506cebde82bde9,0xbef9a3f7b2c67915,0xc67178f2e372532b,
+            0xca273eceea26619c,0xd186b8c721c0c207,0xeada7dd6cde0eb1e,0xf57d4f7fee6ed178,
+            0x06f067aa72176fba,0x0a637dc5a2c898a6,0x113f9804bef90dae,0x1b710b35131c471b,
+            0x28db77f523047d84,0x32caab7b40c72493,0x3c9ebe0a15c9bebc,0x431d67c49c100d4c,
+            0x4cc5d4becb3e42b6,0x597f299cfc657e2a,0x5fcb6fab3ad6faec,0x6c44198c4a475817
+        ];
+        let w: [u64; 80] = [0; 80]; let i: i32 = 0;
+        while (i < 16) {
+            let value: u64 = 0; let j: i32 = 0;
+            while (j < 8) { value = (value << 8) | (self.block[i*8+j] as u64); j += 1; }
+            w[i] = value; i += 1;
+        }
+        while (i < 80) { w[i] = small1(w[i-2]) + w[i-7] + small0(w[i-15]) + w[i-16]; i += 1; }
+        let a: u64=self.h0; let b: u64=self.h1; let c: u64=self.h2; let d: u64=self.h3;
+        let e: u64=self.h4; let f: u64=self.h5; let g: u64=self.h6; let h: u64=self.h7; i=0;
+        while (i < 80) {
+            let choose: u64 = (e & f) ^ ((e ^ 18446744073709551615) & g);
+            let majority: u64 = (a & b) ^ (a & c) ^ (b & c);
+            let first: u64 = h + big1(e) + choose + k[i] + w[i];
+            let second: u64 = big0(a) + majority;
+            h=g; g=f; f=e; e=d+first; d=c; c=b; b=a; a=first+second; i += 1;
+        }
+        self.h0+=a; self.h1+=b; self.h2+=c; self.h3+=d;
+        self.h4+=e; self.h5+=f; self.h6+=g; self.h7+=h; self.used=0;
+    }
+    // Logical metadata, lifecycle and the entire 128-bit byte count are checked
+    // before mutation. The caller backs the physical slice and keeps it immutable
+    // and disjoint from this State throughout the call. Input is not retained.
+    pub fn update(&self, input: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (input.start < 0 || input.length < 0 || input.start > 2147483647-input.length) { return core::result::Err(Error::Bounds); }
+        if (self.finished) { return core::result::Err(Error::Finished); }
+        let low: u64 = self.byte_low + (input.length as u64); // Intentional wrapping carry calculation.
+        let carry: u64 = 0; if (low < self.byte_low) { carry=1; }
+        if (self.byte_high > MAX_BYTE_HIGH || carry > MAX_BYTE_HIGH-self.byte_high) { return core::result::Err(Error::LengthOverflow); }
+        let high: u64 = self.byte_high + carry; let i: i32 = 0;
+        while (i < input.length) {
+            self.block[self.used] = input.values[input.start+i]; self.used += 1;
+            if (self.used == 128) { self.compress(); } i += 1;
+        }
+        self.byte_low=low; self.byte_high=high; return core::result::Ok(i);
+    }
+    // Idempotent finalization, with a copied digest and a zero unused tail.
+    // Byte counters record only message bytes, never padding.
+    pub fn finish(&self) -> Digest {
+        if (!self.finished) {
+            let high: u64 = (self.byte_high << 3) | (self.byte_low >> 61);
+            let low: u64 = self.byte_low << 3;
+            self.block[self.used]=128; self.used+=1;
+            if (self.used > 112) { while (self.used < 128) { self.block[self.used]=0; self.used+=1; } self.compress(); }
+            while (self.used < 112) { self.block[self.used]=0; self.used+=1; }
+            let i: i32=0;
+            while (i < 8) {
+                let shift: u32 = ((7-i)*8) as u32;
+                self.block[112+i]=((high >> shift) & 255) as u8;
+                self.block[120+i]=((low >> shift) & 255) as u8; i+=1;
+            }
+            self.compress(); self.finished=true;
+        }
+        let words: [u64; 8] = [self.h0,self.h1,self.h2,self.h3,self.h4,self.h5,self.h6,self.h7];
+        let bytes: [u8; 64] = [0; 64]; let i: i32=0;
+        while (i < self.output_length) { bytes[i]=((words[i/8] >> (((7-i%8)*8) as u32)) & 255) as u8; i+=1; }
+        return Digest { bytes:bytes, length:self.output_length };
+    }
+    pub fn reset(&self) {
+        let seed: State = initial(self.output_length);
+        self.h0=seed.h0; self.h1=seed.h1; self.h2=seed.h2; self.h3=seed.h3;
+        self.h4=seed.h4; self.h5=seed.h5; self.h6=seed.h6; self.h7=seed.h7;
+        self.byte_low=0; self.byte_high=0; self.used=0; self.block=seed.block; self.finished=false;
+    }
+}
+fn hash(input: core::slice::View<u8>, length: i32) -> core::result::Result<Digest, Error> {
+    let state: State = initial(length); let result: core::result::Result<i32, Error> = state.update(input);
+    if (result.is_err()) { return core::result::Err(result.unwrap_err()); } return core::result::Ok(state.finish());
+}
+pub fn digest(input: core::slice::View<u8>) -> core::result::Result<Digest, Error> { return hash(input,64); }
+pub fn digest384(input: core::slice::View<u8>) -> core::result::Result<Digest, Error> { return hash(input,48); }
+pub fn digest512_224(input: core::slice::View<u8>) -> core::result::Result<Digest, Error> { return hash(input,28); }
+pub fn digest512_256(input: core::slice::View<u8>) -> core::result::Result<Digest, Error> { return hash(input,32); }

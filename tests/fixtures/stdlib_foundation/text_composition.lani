@@ -1,0 +1,95 @@
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::vec;
+
+fn kind(error: alloc::string::Error) -> i32 {
+    let tag: i32 = match (error) { alloc::string::Error::Bounds -> 1, alloc::string::Error::CapacityOverflow -> 2, _ -> 0 };
+    return tag;
+}
+
+fn main() -> i32 {
+    let bytes: [u8; 9] = [97, 195, 169, 0, 240, 159, 153, 130, 122];
+    let whole: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes, 9));
+    let empty: core::text::Text = core::result::unwrap(whole.slice(0, 0));
+    let accent: core::text::Text = core::result::unwrap(whole.slice(1, 3));
+    let nul: core::text::Text = core::result::unwrap(whole.slice(3, 4));
+    let emoji: core::text::Text = core::result::unwrap(whole.slice(4, 8));
+    let parts: [core::text::Text; 5] = [whole, accent, empty, emoji, whole];
+    let selected: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view_range(parts, 1, 3));
+    let joined: alloc::string::String = core::result::unwrap(alloc::string::join(selected, nul));
+    let expected_bytes: [u8; 8] = [195, 169, 0, 0, 240, 159, 153, 130];
+    let expected: core::text::Text = core::result::unwrap(core::text::from_utf8(expected_bytes, 8));
+    if (!joined.as_text().equals(expected)) { return 1; }
+    // An independent result remains unchanged when the original storage changes.
+    bytes[1] = 194;
+    if (!joined.as_text().equals(expected)) { return 2; }
+    bytes[1] = 195;
+    joined.destroy();
+    let no_parts: core::slice::View<core::text::Text> = core::result::unwrap(selected.subview(0, 0));
+    let nothing: alloc::string::String = core::result::unwrap(alloc::string::join(no_parts, whole));
+    if (!nothing.is_empty() || nothing.capacity() != 0) { return 3; }
+    nothing.destroy();
+    let single: core::slice::View<core::text::Text> = core::result::unwrap(selected.subview(0, 1));
+    let only: alloc::string::String = core::result::unwrap(alloc::string::join(single, whole));
+    if (!only.as_text().equals(accent)) { return 4; }
+    only.destroy();
+    let repeated: alloc::string::String = core::result::unwrap(alloc::string::repeat(emoji, 3));
+    if (repeated.byte_len() != 12 || repeated.scalar_count() != 3) { return 5; }
+    if (kind(core::result::unwrap_err(alloc::string::repeat(accent, -1))) != 1 || kind(core::result::unwrap_err(alloc::string::repeat(accent, 2147483647))) != 2) { return 6; }
+    let zero: alloc::string::String = core::result::unwrap(alloc::string::repeat(emoji, 0));
+    let empty_many: alloc::string::String = core::result::unwrap(alloc::string::repeat(empty, 2147483647));
+    if (!zero.is_empty() || zero.capacity() != 0 || !empty_many.is_empty() || empty_many.capacity() != 0) { return 7; }
+    zero.destroy(); empty_many.destroy(); repeated.destroy();
+
+    // Parts and separator all borrow the owner. Exercise growth, then reserved
+    // capacity. Capture the expected result before either mutation.
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_text(whole));
+    let owned: core::text::Text = owner.as_text();
+    let owned_accent: core::text::Text = core::result::unwrap(owned.slice(1, 3));
+    let owned_emoji: core::text::Text = core::result::unwrap(owned.slice(4, 8));
+    let owned_nul: core::text::Text = core::result::unwrap(owned.slice(3, 4));
+    let aliases: [core::text::Text; 2] = [owned_emoji, owned_accent];
+    let alias_view: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(aliases, 2));
+    if (core::result::unwrap(owner.try_append_joined(alias_view, owned_nul)) != 16) { return 8; }
+    let result: core::text::Text = owner.as_text();
+    if (!core::result::unwrap(result.slice(0, 9)).equals(whole) || !core::result::unwrap(result.slice(9, 13)).equals(emoji) || core::option::unwrap(result.byte_at(13)) != 0 || !core::result::unwrap(result.slice(14, 16)).equals(accent)) { return 9; }
+    owner.try_reserve(64);
+    let alias: core::text::Text = core::result::unwrap(owner.as_text().slice(1, 3));
+    if (core::result::unwrap(owner.try_append_repeated(alias, 3)) != 22) { return 10; }
+    let suffix: core::text::Text = core::result::unwrap(owner.as_text().slice(16, 22));
+    if (suffix.scalar_count() != 3 || core::option::unwrap(suffix.byte_at(4)) != 195) { return 11; }
+    if (core::result::unwrap(owner.try_append_joined(no_parts, whole)) != 22 || core::result::unwrap(owner.try_append_repeated(whole, 0)) != 22) { return 12; }
+    if (kind(core::result::unwrap_err(owner.try_append_repeated(accent, 2147483647))) != 2 || owner.byte_len() != 22) { return 13; }
+    owner.destroy();
+
+    // Real, small inputs whose conceptual concatenation exceeds i32::MAX.
+    // Reuse one 64-KiB text 32768 times: no giant string allocation is needed.
+    let block: alloc::string::String = core::result::unwrap(alloc::string::repeat(nul, 65536));
+    let references: std::vec::Vec<core::text::Text> = std::vec::new();
+    let index: i32 = 0;
+    while (index < 32768) { references = std::vec::push(references, block.as_text()); index += 1; }
+    let refs: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(std::vec::as_slice(references), 32768));
+    if (kind(core::result::unwrap_err(alloc::string::join(refs, empty))) != 2) { return 14; }
+    // Overflow entirely from separators as well as from summing part lengths.
+    let refs_more: std::vec::Vec<core::text::Text> = std::vec::new();
+    index = 0;
+    while (index < 32769) { refs_more = std::vec::push(refs_more, empty); index += 1; }
+    let many: core::slice::View<core::text::Text> = core::result::unwrap(core::slice::view(std::vec::as_slice(refs_more), 32769));
+    if (kind(core::result::unwrap_err(alloc::string::join(many, block.as_text()))) != 2) { return 15; }
+    std::vec::destroy(refs_more); std::vec::destroy(references); block.destroy();
+
+    let words_bytes: [u8; 15] = [9, 97, 11, 12, 195, 169, 32, 13, 10, 0, 194, 160, 122, 32, 9];
+    let words_text: core::text::Text = core::result::unwrap(core::text::from_utf8(words_bytes, 15));
+    let words: core::text::SplitAsciiWhitespace = words_text.split_ascii_whitespace();
+    if (!core::option::unwrap(words.next()).equals(core::result::unwrap(words_text.slice(1, 2)))) { return 16; }
+    let fork: core::text::SplitAsciiWhitespace = words;
+    if (!core::option::unwrap(words.next()).equals(accent) || !core::option::unwrap(fork.next()).equals(accent)) { return 17; }
+    let last: core::text::Text = core::option::unwrap(words.next());
+    if (!last.equals(core::result::unwrap(words_text.slice(9, 13)))) { return 18; }
+    if (!core::option::is_none(words.next()) || !core::option::is_none(words.next())) { return 19; }
+    return 0;
+}

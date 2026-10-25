@@ -1,0 +1,55 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::text;
+import core::time;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> u64 {
+    let count: i32 = std::process::arg_len(index); assert(count >= 1 && count <= 32);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    let text: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes,count)); return core::result::unwrap(text.parse_u64());
+}
+fn output(value: u64) { assert(std::io_decimal::write_u64(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn code(error: core::time::Error) -> u64 {
+    let result: u64 = match (error) { core::time::Error::Overflow -> 1, core::time::Error::Negative -> 2, core::time::Error::DivisionByZero -> 3, core::time::Error::InvalidNanoseconds -> 4 }; return result;
+}
+fn duration(value: core::time::Duration) { output(0);output(value.as_secs());output(value.subsec_nanos() as u64); }
+fn result(value: core::result::Result<core::time::Duration,core::time::Error>) {
+    if (core::result::is_err(value)) { output(code(core::result::unwrap_err(value)));output(0);output(0); }
+    else { duration(core::result::unwrap(value)); }
+}
+fn number(value: core::result::Result<u64,core::time::Error>) {
+    if (core::result::is_err(value)) { output(code(core::result::unwrap_err(value)));output(0); }
+    else { output(0);output(core::result::unwrap(value)); }
+}
+fn stamp(value: core::result::Result<core::time::SystemTime,core::time::Error>) {
+    if (core::result::is_err(value)) { output(code(core::result::unwrap_err(value)));output(0);output(0); }
+    else { let actual: core::time::SystemTime = core::result::unwrap(value);output(0);output(actual.unix_seconds() as u64);output(actual.subsec_nanos() as u64); }
+}
+fn instant(value: core::result::Result<core::time::Instant,core::time::Error>) {
+    if (core::result::is_err(value)) { output(code(core::result::unwrap_err(value)));output(0);output(0); }
+    else { let actual: core::time::Instant = core::result::unwrap(value);duration(actual.ticks); }
+}
+fn main() -> i32 {
+    let storage: [i32; 8] = [0;8];let pointer: ptr = core::mem::i32_array_data_ptr(storage);let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let seconds: u64 = argument(1,pointer,bytes);let nanos: u32 = argument(2,pointer,bytes) as u32;
+    let second: u64 = argument(3,pointer,bytes);let fraction: u32 = argument(4,pointer,bytes) as u32;
+    let factor: u32 = argument(5,pointer,bytes) as u32;assert(nanos < 1000000000 && fraction < 1000000000);
+    let a: core::time::Duration = core::result::unwrap(core::time::duration(seconds,nanos));
+    let b: core::time::Duration = core::result::unwrap(core::time::duration(second,fraction));
+    result(core::time::duration(seconds,factor));
+    result(a.checked_add(b));result(a.checked_sub(b));result(a.checked_mul(factor));result(a.checked_div(factor));
+    duration(a.saturating_add(b));duration(a.saturating_sub(b));duration(a.saturating_mul(factor));
+    number(a.as_millis());number(a.as_micros());number(a.as_nanos());
+    duration(core::time::from_secs(seconds));duration(core::time::from_millis(seconds));duration(core::time::from_micros(seconds));duration(core::time::from_nanos(seconds));
+    output((a.compare(b) + 1) as u64);
+    let first: core::time::Instant = core::time::instant(a);let later: core::time::Instant = core::time::instant(b);
+    result(first.duration_since(later));duration(first.saturating_duration_since(later));instant(first.checked_add(b));instant(first.checked_sub(b));
+    let deadline: core::time::Deadline = core::time::deadline_at(first);duration(deadline.remaining(later));output(deadline.is_expired(later) as u64);
+    let system: core::time::SystemTime = core::result::unwrap(core::time::system_time(seconds as i64,nanos));
+    let other: core::time::SystemTime = core::result::unwrap(core::time::system_time(second as i64,fraction));
+    result(system.duration_since(other));stamp(system.checked_add(b));stamp(system.checked_sub(b));output((system.compare(other)+1) as u64);
+    return 0;
+}

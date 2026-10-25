@@ -1,0 +1,23 @@
+// RFC8439 section2.3.2 through ordinary imported results, no Error projection.
+module app::main;
+import core::chacha20;
+import core::result;
+import core::slice;
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View<u8> { values: bytes, start: start, length: length }; }
+fn main() -> i32 {
+    let key: [u8;32] = [0;32]; let index: i32 = 0; while (index < 32) { key[index] = index as u8; index += 1; }
+    let nonce: [u8;12] = [0,0,0,9,0,0,0,74,0,0,0,0];
+    let expected: [u8;64] = [16, 241, 231, 228, 209, 59, 89, 21, 80, 15, 221, 31, 163, 32, 113, 196, 199, 209, 244, 199, 51, 192, 104, 3, 4, 34, 170, 154, 195, 212, 108, 78, 210, 130, 100, 70, 7, 159, 170, 9, 20, 194, 215, 5, 217, 139, 2, 162, 181, 18, 156, 209, 222, 22, 78, 185, 203, 208, 131, 232, 162, 80, 60, 78];
+    let output: [u8;67] = [165;67];
+    assert(core::chacha20::block(view(key,0,32),view(nonce,0,12),1,view(output,1,65)).unwrap() == 64);
+    index = 0; while (index < 64) { assert(output[index+1] == expected[index]); index += 1; }
+    assert(output[0] == 165 && output[65] == 165 && output[66] == 165);
+    let zero: [u8;64] = [0;64]; let streamed: [u8;64] = [0;64];
+    let state: core::chacha20::State = core::chacha20::new(view(key,0,32),view(nonce,0,12),1).unwrap();
+    assert(state.xor_into(view(zero,0,1),view(streamed,0,1)).unwrap() == 1);
+    assert(state.xor_into(view(zero,1,63),view(streamed,1,63)).unwrap() == 63);
+    index = 0; while (index < 64) { assert(streamed[index] == expected[index]); index += 1; }
+    assert(core::chacha20::xor_in_place(view(key,0,32),view(nonce,0,12),1,view(streamed,0,64)).unwrap() == 64);
+    index = 0; while (index < 64) { assert(streamed[index] == 0); index += 1; }
+    return 0;
+}

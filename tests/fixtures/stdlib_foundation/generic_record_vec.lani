@@ -1,108 +1,169 @@
-// User generics over core::vec::Vec<T, N> with record elements. Each user
-// generic's instance calls core::vec on its own, so every core::vec body below
-// is replayed with a type argument from this module. Exit 0 on success; each
-// failed check returns its own code.
+// User generics forward borrowed inline storage with symbolic T and N.
 module app::main;
 import core::option;
+import core::result;
 import core::pair;
 import core::vec;
-
-struct P { x: i32, y: i32 }
-struct Q { p: P, tag: i32 }
-
+struct P {
+    x: i32,
+    y: i32
+}
+struct Q {
+    p: P,
+    tag: i32
+}
 trait Score {
     fn score(self) -> i32;
 }
-
 impl Score for P {
     fn score(self) -> i32 {
         return self.x + self.y;
     }
 }
-
 struct Queue<T> {
-    items: core::vec::Vec<T, 2>,
+    items: core::vec::Vec<T,
+    2>
 }
-
-impl<T> Queue<T> {
+impl<T>Queue<T> {
     fn front_or(&self, fallback: T) -> T {
-        return core::vec::get_or(self.items, 0, fallback);
+        return core::vec::get_or(self.items.borrow(), 0, fallback);
     }
 }
-
-fn count<T, const N: usize>(items: core::vec::Vec<T, N>) -> i32 {
+fn count<T, const N: usize>(items: &core::vec::Vec<T, N>) -> i32 {
     return core::vec::len(items);
 }
-
-fn first_or<T, const N: usize>(items: core::vec::Vec<T, N>, fallback: T) -> T {
+fn first_or<T, const N: usize>(items: &core::vec::Vec<T, N>, fallback: T) -> T {
     return core::vec::get_or(items, 0, fallback);
 }
-
-fn last_or<T, const N: usize>(items: core::vec::Vec<T, N>, fallback: T) -> T {
+fn last_or<T, const N: usize>(items: &core::vec::Vec<T, N>, fallback: T) -> T {
     return core::vec::get_or(items, core::vec::len(items) - 1, fallback);
 }
-
-fn pushed<T, const N: usize>(items: core::vec::Vec<T, N>, item: T) -> core::vec::Vec<T, N> {
+fn pushed<T, const N: usize>(items: &core::vec::Vec<T, N>, item: T) -> core::result::Result<i32, core::vec::Error> {
     return core::vec::try_push(items, item);
 }
-
-// Two user generics before the library call.
-fn push_then_first<T, const N: usize>(items: core::vec::Vec<T, N>, item: T) -> T {
-    return first_or(pushed(items, item), item);
+fn push_then_first<T, const N: usize>(items: &core::vec::Vec<T, N>, item: T) -> T {
+    core::result::unwrap(pushed(items, item));
+    return first_or(items, item);
 }
-
-fn total<T, const N: usize>(items: core::vec::Vec<T, N>, fallback: T) -> i32 where T: Score {
+fn total<T, const N: usize>(items: &core::vec::Vec<T, N>, fallback: T) -> i32
+where
+    T: Score
+{
     let item: T = core::vec::get_or(items, 0, fallback);
     return item.score();
 }
-
-fn first_score<T, const N: usize>(items: core::vec::Vec<T, N>) -> i32 where T: Score {
+fn first_score<T, const N: usize>(items: &core::vec::Vec<T, N>) -> i32
+where
+    T: Score
+{
     let found: core::option::Option<T> = core::vec::get(items, 0);
-    let result: i32 = match (found) {
+    return match (found) {
         core::option::Some(inner) -> inner.score(),
-        core::option::None -> -1,
+        core::option::None -> -1
     };
-    return result;
 }
-
 fn main() -> i32 {
-    let blank: P = P { x: 0, y: 0 };
-    let empty: core::vec::Vec<P, 2> = core::vec::from_storage([blank, blank]);
-    let v: core::vec::Vec<P, 2> = pushed(empty, P { x: 40, y: 2 });
-    if (count(v) != 1 || count(empty) != 0) { return 1; }
-    let p: P = first_or(v, blank);
-    if (p.x != 40 || p.y != 2) { return 2; }
-    v = pushed(v, P { x: 3, y: 4 });
-    let last: P = last_or(v, blank);
-    if (last.x != 3 || last.y != 4 || count(pushed(v, blank)) != 2) { return 3; }
-    let q: Queue<P> = Queue { items: v };
-    if (q.front_or(blank).x != 40) { return 4; }
-    if (total(v, blank) != 42 || first_score(v) != 42 || first_score(empty) != -1) { return 5; }
-    let early: P = push_then_first(empty, P { x: 5, y: 6 });
-    if (early.x != 5 || early.y != 6) { return 6; }
-
-    // Element types that hold P: an array, an imported enum, a nested record
-    // and an imported record.
-    let low: [P; 2] = [blank, blank];
-    let rows: core::vec::Vec<[P; 2], 2> = core::vec::from_storage([low, low]);
-    rows = pushed(rows, [P { x: 7, y: 8 }, P { x: 9, y: 10 }]);
-    let row: [P; 2] = first_or(rows, low);
-    if (row[0].x != 7 || row[1].y != 10) { return 7; }
+    let blank: P = P {
+        x: 0,
+        y: 0
+    };
+    let empty: core::vec::Vec<P,
+    2> = core::vec::from_storage([blank, blank]);
+    let v: core::vec::Vec<P,
+    2> = empty;
+    core::result::unwrap(pushed(v.borrow(), P {
+        x: 40, y: 2
+    }
+    ));
+    if (count(v.borrow()) != 1 || count(empty.borrow()) != 0) {
+        return 1;
+    }
+    let p: P = first_or(v.borrow(), blank);
+    if (p.x != 40 || p.y != 2) {
+        return 2;
+    }
+    core::result::unwrap(pushed(v.borrow(), P {
+        x: 3, y: 4
+    }
+    ));
+    let last: P = last_or(v.borrow(), blank);
+    if (last.x != 3 || last.y != 4 || !core::result::is_err(pushed(v.borrow(), blank)) || count(v.borrow()) != 2) {
+        return 3;
+    }
+    let q: Queue<P> = Queue {
+        items: v
+    };
+    if (q.front_or(blank).x != 40) {
+        return 4;
+    }
+    if (total(v.borrow(), blank) != 42 || first_score(v.borrow()) != 42 || first_score(empty.borrow()) != -1) {
+        return 5;
+    }
+    let early: P = push_then_first(empty.borrow(), P {
+        x: 5, y: 6
+    }
+    );
+    if (early.x != 5 || early.y != 6) {
+        return 6;
+    }
+    let low:[P; 2] =[blank, blank];
+    let rows: core::vec::Vec<[P; 2],
+    2> = core::vec::from_storage([low, low]);
+    core::result::unwrap(pushed(rows.borrow(), [P {
+        x: 7, y: 8
+    }, P {
+        x: 9, y: 10
+    }
+    ]));
+    let row:[P; 2] = first_or(rows.borrow(), low);
+    if (row[0].x != 7 || row[1].y != 10) {
+        return 7;
+    }
     let none: core::option::Option<P> = core::option::None();
-    let options: core::vec::Vec<core::option::Option<P>, 2> = core::vec::from_storage([none, none]);
-    options = pushed(options, core::option::Some(P { x: 11, y: 12 }));
-    let some: P = core::option::unwrap_or(first_or(options, none), blank);
-    if (some.x != 11 || some.y != 12) { return 8; }
-    let plain: Q = Q { p: blank, tag: 0 };
-    let nested: core::vec::Vec<Q, 3> = core::vec::from_storage([plain, plain, plain]);
-    nested = pushed(nested, Q { p: P { x: 13, y: 14 }, tag: 15 });
-    nested = pushed(nested, Q { p: P { x: 16, y: 17 }, tag: 18 });
-    let deep: Q = last_or(nested, plain);
-    if (count(nested) != 2 || deep.p.x != 16 || deep.p.y != 17 || deep.tag != 18) { return 9; }
-    let zero: core::pair::Pair<P, i32> = core::pair::new(blank, 0);
-    let pairs: core::vec::Vec<core::pair::Pair<P, i32>, 2> = core::vec::from_storage([zero, zero]);
-    pairs = pushed(pairs, core::pair::new(P { x: 19, y: 20 }, 21));
-    let pair: core::pair::Pair<P, i32> = first_or(pairs, zero);
-    if (core::pair::first(pair).y != 20 || core::pair::second(pair) != 21) { return 10; }
+    let options: core::vec::Vec<core::option::Option<P>,
+    2> = core::vec::from_storage([none, none]);
+    core::result::unwrap(pushed(options.borrow(), core::option::Some(P {
+        x: 11, y: 12
+    }
+    )));
+    let some: P = core::option::unwrap_or(first_or(options.borrow(), none), blank);
+    if (some.x != 11 || some.y != 12) {
+        return 8;
+    }
+    let plain: Q = Q {
+        p: blank,
+        tag: 0
+    };
+    let nested: core::vec::Vec<Q,
+    3> = core::vec::from_storage([plain, plain, plain]);
+    core::result::unwrap(pushed(nested.borrow(), Q {
+        p: P {
+            x: 13, y: 14
+        }, tag: 15
+    }
+    ));
+    core::result::unwrap(pushed(nested.borrow(), Q {
+        p: P {
+            x: 16, y: 17
+        }, tag: 18
+    }
+    ));
+    let deep: Q = last_or(nested.borrow(), plain);
+    if (count(nested.borrow()) != 2 || deep.p.x != 16 || deep.p.y != 17 || deep.tag != 18) {
+        return 9;
+    }
+    let zero: core::pair::Pair<P,
+    i32> = core::pair::new(blank, 0);
+    let pairs: core::vec::Vec<core::pair::Pair<P,
+    i32>,
+    2> = core::vec::from_storage([zero, zero]);
+    core::result::unwrap(pushed(pairs.borrow(), core::pair::new(P {
+        x: 19, y: 20
+    }, 21)));
+    let pair: core::pair::Pair<P,
+    i32> = first_or(pairs.borrow(), zero);
+    if (core::pair::first(pair).y != 20 || core::pair::second(pair) != 21) {
+        return 10;
+    }
     return 0;
 }

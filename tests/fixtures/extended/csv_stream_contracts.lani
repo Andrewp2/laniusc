@@ -1,0 +1,76 @@
+// expect: 0
+module app::main;
+import alloc::string;
+import core::option;
+import core::result;
+import core::text;
+import ext::csv;
+
+fn main() -> i32 {
+    let bytes: [u8; 12] = [34, 195, 169, 34, 44, 34, 34, 34, 34, 13, 10, 255];
+    let parser: ext::csv::Decoder = core::result::unwrap(ext::csv::decoder(ext::csv::default_options()));
+    if (parser.has_record() || core::option::is_some(parser.field_count()) || core::result::is_ok(parser.field(0)) ||
+        core::option::is_some(parser.take_record())) { return 1; }
+    let first: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, 0, 10));
+    if (first.record || first.consumed != 10 || parser.byte_offset() != 10 || parser.records_read() != 0) { return 2; }
+    let last: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, 10, 2));
+    if (!last.record || last.consumed != 1 || parser.byte_offset() != 11 || parser.records_read() != 1) { return 3; }
+    if (core::option::unwrap(parser.field_count()) != 2 || core::result::is_ok(parser.field(-1)) || core::result::is_ok(parser.field(2))) { return 4; }
+    let field: core::text::Text = core::result::unwrap(parser.field(0));
+    if (field.byte_len() != 2 || core::option::unwrap(field.scalar_at_byte(0)) != 233 ||
+        core::option::unwrap(core::result::unwrap(parser.field(1)).byte_at(0)) != 34) { return 5; }
+    // Invalid logical ranges must not consume or invalidate the ready record.
+    if (core::result::is_ok(parser.feed(bytes, -1, 1)) || core::result::is_ok(parser.feed(bytes, 2147483647, 1)) ||
+        !parser.has_record() || parser.byte_offset() != 11 || field.byte_len() != 2) { return 6; }
+    let record: ext::csv::Record = core::option::unwrap(parser.take_record());
+    if (parser.has_record() || parser.byte_capacity() != 0 || parser.field_capacity() != 0 || record.byte_len() != 3 ||
+        record.field_count() != 2 || record.byte_capacity() < 3 || record.field_capacity() < 2) { return 7; }
+    if (core::result::unwrap(parser.finish())) { return 8; }
+    parser.destroy();
+    if (core::option::unwrap(field.scalar_at_byte(0)) != 233) { return 21; }
+    if (core::result::is_ok(record.field(-1)) || core::result::is_ok(record.try_field(2))) { return 9; }
+    let copied: alloc::string::String = core::result::unwrap(record.try_field(0));
+    let encoded: alloc::string::String = core::result::unwrap(ext::csv::encode_record(record));
+    let expected: core::text::Text = core::result::unwrap(core::text::from_utf8(bytes, 11));
+    if (!encoded.as_text().equals(expected)) { return 10; }
+    encoded.destroy();
+    let cap: i32 = record.byte_capacity(); let fields: i32 = record.field_capacity();
+    record.clear();
+    if (record.byte_len() != 0 || record.field_count() != 0 || record.byte_capacity() != cap || record.field_capacity() != fields) { return 11; }
+    let empty: alloc::string::String = core::result::unwrap(ext::csv::encode_record(record));
+    if (!empty.is_empty()) { return 12; } empty.destroy();
+    record.destroy(); record.destroy();
+    if (copied.scalar_count() != 1 || core::option::unwrap(copied.scalar_at_byte(0)) != 233) { return 13; }
+    copied.destroy();
+    // Error recovery and EOF recovery retain storage but reset parsing state.
+    let invalid: [u8; 4] = [97, 98, 34, 99];
+    if (core::result::is_ok(parser.feed(invalid, 0, 4)) || parser.byte_offset() != 2) { return 14; }
+    let retained: i32 = parser.byte_capacity();
+    parser.reset();
+    if (parser.byte_offset() != 0 || parser.records_read() != 0 || parser.byte_capacity() != retained || parser.has_record()) { return 15; }
+    let progress: ext::csv::Progress = core::result::unwrap(parser.feed(bytes, 0, 9));
+    if (progress.record || !core::result::unwrap(parser.finish()) || core::result::unwrap(parser.finish())) { return 16; }
+    if (core::option::unwrap(parser.field_count()) != 2) { return 17; }
+    parser.reset();
+    if (core::result::unwrap(parser.finish())) { return 18; }
+    parser.reset();
+    let partial_utf8: [u8; 3] = [34, 240, 159];
+    core::result::unwrap(parser.feed(partial_utf8, 0, 3));
+    if (core::result::is_ok(parser.finish())) { return 22; }
+    parser.reset();
+    if (!core::result::unwrap(parser.feed(bytes, 0, 11)).record) { return 23; }
+    parser.reset();
+    let cr: [u8; 1] = [13];
+    core::result::unwrap(parser.feed(cr, 0, 1));
+    if (core::result::is_ok(parser.finish())) { return 24; }
+    parser.reset();
+    if (!core::result::unwrap(parser.feed(bytes, 0, 11)).record) { return 25; }
+    parser.destroy();
+    // The whole-range API shares UTF-8 validation and offsets with the decoder.
+    let framed: [u8; 5] = [255, 97, 44, 98, 255];
+    let table: ext::csv::Table = core::result::unwrap(ext::csv::parse_bytes(framed, 1, 3, ext::csv::default_options()));
+    if (table.row_count() != 1 || core::option::unwrap(table.field_count(0)) != 2) { return 19; }
+    table.destroy();
+    if (core::result::is_ok(ext::csv::parse_bytes(framed, -1, 2, ext::csv::default_options()))) { return 20; }
+    return 0;
+}

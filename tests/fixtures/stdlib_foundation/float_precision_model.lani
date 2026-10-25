@@ -1,0 +1,30 @@
+module app::main;
+import core::decimal;
+import core::f32;
+import core::f64;
+import core::float_decimal;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import std::process;
+fn main() -> i32 {
+    let input_words: [i32;32] = [0;32]; let pointer: ptr = core::mem::i32_array_data_ptr(input_words); let raw: [u8] = core::mem::typed_slice_from_raw_parts(pointer,128);
+    assert(std::process::argc() >= 6); assert(std::process::arg_read(1,pointer,3) == 3); let single: bool = raw[1] == 51;
+    assert(std::process::arg_read(2,pointer,1) == 1); let style: core::float_decimal::PrecisionStyle = core::float_decimal::PrecisionStyle::Fixed;
+    if (raw[0] == 101) { style = core::float_decimal::PrecisionStyle::Scientific; } if (raw[0] == 103) { style = core::float_decimal::PrecisionStyle::General; }
+    let n: i32 = std::process::arg_len(3); assert(n > 0 && n < 16 && std::process::arg_read(3,pointer,n as usize) == n); let precision: i32 = core::result::unwrap(core::decimal::parse_i32_range(raw,0,n));
+    assert(std::process::arg_read(4,pointer,1) == 1); let alternate: bool = raw[0] == 49; assert(std::process::arg_read(5,pointer,1) == 1); let uppercase: bool = raw[0] == 49;
+    let options: core::float_decimal::PrecisionOptions = core::float_decimal::PrecisionOptions { style: style, precision: precision, alternate: alternate, uppercase: uppercase };
+    let stack: [u32;864] = [0;864]; let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(stack,864));
+    let output_words: [i32;512] = [0;512]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words); let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,2048); let output: core::slice::View<u8> = core::result::unwrap(core::slice::view(output_bytes,2048));
+    let index: i32 = 6;
+    while (index < std::process::argc()) {
+        let count: i32 = std::process::arg_len(index); assert(count > 0 && count < 128 && std::process::arg_read(index,pointer,count as usize) == count);
+        let bits: u64 = core::result::unwrap(core::decimal::parse_u64_range(raw,0,count)); let size: i32 = 0; let measured: i32 = 0;
+        if (single) { let value: f32 = core::f32::from_bits(bits as u32); measured = core::result::unwrap(core::float_decimal::format_f32_precision_len(value,options,scratch,1000000)); size = core::result::unwrap(core::float_decimal::format_f32_precision_into(value,output,options,scratch,1000000)); }
+        else { let value: f64 = core::f64::from_bits(bits); measured = core::result::unwrap(core::float_decimal::format_f64_precision_len(value,options,scratch,1000000)); size = core::result::unwrap(core::float_decimal::format_f64_precision_into(value,output,options,scratch,1000000)); }
+        assert(size == measured && std::io::write_stdout(output_pointer,size as usize) == size && std::io::write_byte(1,10) == 1); index += 1;
+    }
+    return 0;
+}

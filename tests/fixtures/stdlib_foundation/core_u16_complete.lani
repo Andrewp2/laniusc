@@ -9,7 +9,7 @@ fn main() -> i32 {
         core::u16::BITS != 16 || core::u16::BYTES != 2 ||
         core::u16::min(high, 7) != 7 || core::u16::max(high, 7) != high ||
         core::u16::clamp(12, 2, 10) != 10 ||
-        core::u16::clamp(5, 10, 3) != 5) {
+        core::u16::clamp_or(5, 10, 3, 5) != 5) {
         return 1;
     }
     if (core::u16::wrapping_add(maximum, 1) != zero ||
@@ -46,7 +46,7 @@ fn main() -> i32 {
         core::u16::is_power_of_two(zero) ||
         core::u16::next_power_of_two(zero) != 1 ||
         core::u16::next_power_of_two(7) != 8 ||
-        core::u16::next_power_of_two(maximum) != zero) {
+        !core::option::is_none(core::u16::checked_next_power_of_two(maximum))) {
         return 5;
     }
     if (!core::option::contains(core::u16::checked_next_power_of_two(7), 8) ||
@@ -59,10 +59,10 @@ fn main() -> i32 {
         core::u16::is_aligned(17, 8) ||
         core::u16::is_aligned(17, zero) ||
         core::u16::align_up(17, 8) != 24 ||
-        core::u16::align_up(maximum, 8) != zero ||
-        core::u16::align_up(17, zero) != zero ||
+        !core::option::is_none(core::u16::checked_align_up(maximum, 8)) ||
+        !core::option::is_none(core::u16::checked_align_up(17, zero)) ||
         core::u16::align_down(26, 8) != 24 ||
-        core::u16::align_down(17, zero) != zero) {
+        !core::option::is_none(core::u16::checked_align_down(17, zero))) {
         return 7;
     }
     return 0;

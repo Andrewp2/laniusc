@@ -1,0 +1,108 @@
+// x86_64 Linux OS entropy over the existing getrandom binding. No allocator.
+module std::entropy;
+import core::mem;
+import core::random;
+import core::result;
+import core::slice;
+import std::linux;
+import std::random;
+
+pub struct OsRandom {}
+pub fn os_random() -> OsRandom { return OsRandom {}; }
+pub impl OsRandom { pub fn borrow(&self) -> &OsRandom { return self; } }
+
+// Packed staging adapts arbitrary byte strides. Each successful host read is
+// copied before requesting more. Errors preserve the copied prefix length.
+pub fn fill(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::random::Failure> {
+    if (offset < 0 || count < 0 || offset > 2147483647 - count) {
+        return core::result::Err(core::random::Failure { cause: core::random::Error::Bounds, completed: 0 });
+    }
+    let storage: [i32; 64] = [0;64]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,256); let completed: i32 = 0;
+    while (completed < count) {
+        let amount: i32 = count - completed; if (amount > 256) { amount = 256; }
+        let received: i32 = std::random::fill_secure_bytes(pointer, amount as usize);
+        if (received == -4) { continue; }
+        if (received < 0) { return core::result::Err(core::random::Failure { cause: core::random::Error::Host(0 - received), completed: completed }); }
+        if (received == 0) { return core::result::Err(core::random::Failure { cause: core::random::Error::NoProgress, completed: completed }); }
+        if (received > amount) { return core::result::Err(core::random::Failure { cause: core::random::Error::InvalidCount, completed: completed }); }
+        let index: i32 = 0; while (index < received) { bytes[offset + completed + index] = packed[index]; index += 1; }
+        completed += received;
+    }
+    return core::result::Ok(completed);
+}
+fn word_at(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+pub fn secure_u64() -> core::result::Result<u64, core::random::Error> {
+    let bytes: [u8; 8] = [0;8]; let filled: core::result::Result<i32, core::random::Failure> = fill(bytes,0,8);
+    if (core::result::is_err(filled)) { let failure: core::random::Failure = core::result::unwrap_err(filled); return core::result::Err(failure.cause); }
+    return core::result::Ok(word_at(bytes,0));
+}
+pub impl core::random::Source64 for OsRandom {
+    pub fn draw(&self) -> core::result::Result<u64, core::random::Error> { return secure_u64(); }
+}
+// Seed all 256 state bits. An all-zero draw returns ZeroState; there is no
+// fixed fallback seed or silent conversion of a host failure to success.
+pub fn seeded() -> core::result::Result<core::random::Xoshiro256PlusPlus, core::random::Error> {
+    let bytes: [u8; 32] = [0;32]; let filled: core::result::Result<i32, core::random::Failure> = fill(bytes,0,32);
+    if (core::result::is_err(filled)) { let failure: core::random::Failure = core::result::unwrap_err(filled); return core::result::Err(failure.cause); }
+    return core::random::from_state(core::random::State { s0: word_at(bytes,0), s1: word_at(bytes,8), s2: word_at(bytes,16), s3: word_at(bytes,24) });
+}
+
+// Separate nonblocking API. Existing fill/OsRandom retain their flags-zero
+// initialization-waiting contract. Every new host call uses GRND_NONBLOCK.
+pub enum Error { Bounds, Host(i32), NoProgress, InvalidCount, CallLimit }
+pub struct Failure { cause: Error, completed: i32 }
+pub struct Budget { remaining_calls: u64 }
+pub fn budget(calls: u64) -> Budget { return Budget { remaining_calls: calls }; }
+pub impl Budget {
+    pub fn borrow(&self) -> &Budget { return self; }
+    pub fn remaining(&self) -> u64 { return self.remaining_calls; }
+}
+
+// At most one getrandom(256-byte-or-smaller, GRND_NONBLOCK) attempt. EINTR is
+// reported as Host(4), never retried here. A failed attempt still spends budget.
+// Logical metadata precedes empty handling, which precedes budget/host access.
+// Caller backs the full requested logical range; output must not alias Budget.
+pub fn read_some(calls: &Budget, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, Error> {
+    if (offset < 0 || count < 0 || offset > 2147483647-count) { return core::result::Err(Error::Bounds); }
+    if (count == 0) { return core::result::Ok(0); }
+    if (calls.remaining_calls == 0) { return core::result::Err(Error::CallLimit); }
+    let amount: i32 = count; if (amount > 256) { amount=256; }
+    let storage: [i32;64] = [0;64]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,256);
+    let arguments: [std::linux::Argument;3] = [std::linux::Argument::Address(pointer),std::linux::Argument::Word(amount as i64),std::linux::Argument::Word(1)];
+    let values: [std::linux::Argument] = arguments;
+    calls.remaining_calls-=1;
+    let received: core::result::Result<i64,std::linux::Error> = std::linux::call(318,core::slice::View { values:values,start:0,length:3 });
+    if (received.is_err()) {
+        let cause: std::linux::Error = received.unwrap_err();
+        return core::result::Err(match(cause) { std::linux::Error::System(code)->Error::Host(code), _->Error::InvalidCount });
+    }
+    let count_received: i64 = received.unwrap();
+    if (count_received == 0) { return core::result::Err(Error::NoProgress); }
+    if (count_received < 0 || count_received > amount as i64) { return core::result::Err(Error::InvalidCount); }
+    let completed: i32 = count_received as i32; let index: i32 = 0;
+    while (index < completed) { bytes[offset+index]=packed[index]; index+=1; }
+    return core::result::Ok(completed);
+}
+
+// Exact fill under one shared attempt budget. Positive partial progress is
+// copied; only EINTR retries. EAGAIN and every other error return immediately.
+// Failure.completed counts exactly the copied prefix, never a failed staging.
+pub fn fill_bounded(calls: &Budget, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, Failure> {
+    if (offset < 0 || count < 0 || offset > 2147483647-count) { return core::result::Err(Failure { cause:Error::Bounds,completed:0 }); }
+    if (count == 0) { return core::result::Ok(0); }
+    let completed: i32 = 0;
+    while (completed < count) {
+        let read: core::result::Result<i32,Error> = read_some(calls,bytes,offset+completed,count-completed);
+        if (read.is_err()) {
+            let cause: Error = read.unwrap_err(); let interrupted: bool = match(cause) { Error::Host(code)->code==4, _->false };
+            if (!interrupted) { return core::result::Err(Failure { cause:cause,completed:completed }); }
+        } else { completed+=read.unwrap(); }
+    }
+    return core::result::Ok(completed);
+}

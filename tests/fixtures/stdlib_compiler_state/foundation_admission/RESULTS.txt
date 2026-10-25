@@ -1,0 +1,13 @@
+source_head=5174a14d6651ce012a0f7cca1c5ca3a283ba5161
+compiler_sha256=662b2ffeeb8b773bcfc57942ca4abc20f1533c856e0c466d3ed2a2953e32d9af
+
+shared-state-control compile=0 run=0
+shared-state compile=0 run=0
+static-iter-control compile=0 run=0
+static-iter compile=1 run=not-run
+forward-control compile=0 run=0
+forward compile=1 run=not-run
+
+Shared-state candidate was recompiled after correcting explicit literal types.
+The final native run returned zero. The two negative candidates were not run.
+No timeout or lock failure is classified as a compiler rejection.

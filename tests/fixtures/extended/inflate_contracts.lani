@@ -1,0 +1,45 @@
+module app::main;
+import core::result;
+import core::slice;
+import ext::inflate;
+
+fn code(error: ext::inflate::Error) -> i32 {
+    return match (error) { ext::inflate::Error::Bounds -> 1, ext::inflate::Error::UnexpectedEof -> 2, ext::inflate::Error::InvalidBlockType -> 3, ext::inflate::Error::InvalidStoredLength -> 4, ext::inflate::Error::InvalidCodeLengths -> 5, ext::inflate::Error::InvalidSymbol -> 6, ext::inflate::Error::InvalidDistance -> 7, ext::inflate::Error::OutputTooSmall -> 8 };
+}
+fn main() -> i32 {
+    // Stored block: ignored alignment bits, raw NUL and non-UTF8, trailer.
+    let source: [u8;13] = [99,249,5,0,250,255,0,255,65,128,10,88,99];
+    let input: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(source,1,11));
+    let storage: [u8;12] = [77;12];
+    let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,3,6));
+    let done: ext::inflate::Progress = core::result::unwrap(ext::inflate::decode_into(input,output));
+    assert(done.read == 10 && done.written == 5);
+    assert(storage[3] == 0 && storage[4] == 255 && storage[5] == 65 && storage[6] == 128 && storage[7] == 10);
+    assert(storage[0] == 77 && storage[2] == 77 && storage[8] == 77 && storage[11] == 77);
+    output.fill(77);
+    let short: core::slice::View<u8> = core::result::unwrap(output.subview(0,3));
+    let failure: ext::inflate::Failure = core::result::unwrap_err(ext::inflate::decode_into(input,short));
+    assert(code(failure.error) == 8 && failure.read == 8 && failure.written == 3);
+    assert(storage[3] == 0 && storage[4] == 255 && storage[5] == 65 && storage[6] == 77);
+    output.fill(77);
+    let malformed: core::slice::View<u8> = input; malformed.start = -1;
+    failure = core::result::unwrap_err(ext::inflate::decode_into(malformed,output));
+    assert(code(failure.error) == 1 && failure.read == 0 && failure.written == 0);
+    malformed = input; malformed.length = -1;
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into(malformed,output)).error) == 1);
+    malformed = output; malformed.start = 2147483647; malformed.length = 1;
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into(input,malformed)).error) == 1);
+    malformed = output; malformed.start = -1;
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into(input,malformed)).error) == 1);
+    let index: i32 = 0; while (index < 12) { assert(storage[index] == 77); index += 1; }
+    let empty_bytes: [u8;4] = [3,0,99,99];
+    let empty: core::slice::View<u8> = core::result::unwrap(core::slice::view(empty_bytes,4));
+    let zero: core::slice::View<u8> = core::result::unwrap(output.subview(0,0));
+    done = core::result::unwrap(ext::inflate::decode_into(empty,zero)); assert(done.read == 2 && done.written == 0);
+    index = 256; while (index <= 32768) { assert(core::result::unwrap(ext::inflate::decode_into_window(empty,zero,index)).read == 2); index *= 2; }
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into_window(empty,zero,0)).error) == 1);
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into_window(empty,zero,255)).error) == 1);
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into_window(empty,zero,257)).error) == 1);
+    assert(code(core::result::unwrap_err(ext::inflate::decode_into_window(empty,zero,65536)).error) == 1);
+    return 0;
+}

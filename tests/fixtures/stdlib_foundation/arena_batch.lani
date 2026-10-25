@@ -1,0 +1,26 @@
+module app::main;
+import alloc::arena;
+import core::decimal;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io_decimal;
+import std::process;
+struct Record { count: u64, flag: core::option::Option<bool>, bytes: [u8;3] }
+fn main() -> i32 {
+    let words: [i32;8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32); let n: i32 = std::process::arg_read(1,pointer,32); assert(n > 0);
+    let count: i32 = core::result::unwrap(core::decimal::parse_i32_range(input,0,n)); assert(count >= 0 && count <= 524288);
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::Config { chunk_size: 65536, max_retained: 67108864, max_chunks: 1024 }));
+    let first: core::slice::View<Record> = core::result::unwrap(alloc::arena::alloc<Record>(arena.borrow(),Record { count: 4294967297, flag: core::option::Some(true), bytes: [7,128,255] }));
+    let phase: i32 = 0; let expected_retained: usize = 0; let expected_chunks: i32 = 0;
+    while (phase < 2) {
+        let index: i32 = 0;
+        while (index < count) { let record: core::slice::View<Record> = core::result::unwrap(alloc::arena::alloc<Record>(arena.borrow(),Record { count: index as u64, flag: core::option::Some(index%2 == 0), bytes: [index as u8,128,255] })); let actual: Record = core::option::unwrap(record.get(0)); assert(actual.count == index as u64 && actual.bytes[2] == 255); index += 1; }
+        let stats: alloc::arena::Stats = arena.stats();
+        if (phase == 0) { let original: Record = core::option::unwrap(first.get(0)); assert(original.count == 4294967297 && core::option::unwrap(original.flag) && original.bytes[0] == 7); expected_retained = stats.retained; expected_chunks = stats.chunks; core::result::unwrap(arena.reset()); }
+        else { assert(stats.retained == expected_retained && stats.chunks == expected_chunks); }
+        phase += 1;
+    }
+    assert(std::io_decimal::write_i32(1,expected_chunks) > 0); arena.destroy(); return 0;
+}

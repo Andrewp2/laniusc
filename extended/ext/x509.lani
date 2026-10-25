@@ -1,0 +1,367 @@
+// Borrowed certificate structure/schema parsing. No signature, trust, path,
+// hostname or clock validation. Unknown algorithms and extensions stay borrowed.
+module ext::x509;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::utf8;
+import ext::der;
+
+pub enum ErrorKind { Bounds, InputLimit, ItemLimit, WorkLimit, Der, Schema, Version, Serial, Algorithm, Name, Validity, Spki, Extension, DuplicateExtension, NonCanonical }
+pub struct Error { kind: ErrorKind, offset: i32 }
+pub struct Limits { max_input: i32, max_items: u64, max_work: u64 }
+pub struct Budget { max_input: i32, items_left: u64, work_left: u64 }
+pub struct AlgorithmIdentifier { encoded: core::slice::View<u8>, oid: ext::der::Oid, parameters: core::option::Option<ext::der::Element> }
+pub struct Name { root: core::slice::View<u8>, element: ext::der::Element }
+pub struct Rdns { root: core::slice::View<u8>, cursor: ext::der::Reader }
+pub struct Rdn { root: core::slice::View<u8>, element: ext::der::Element }
+pub struct Attributes { root: core::slice::View<u8>, cursor: ext::der::Reader }
+pub struct Attribute { oid: ext::der::Oid, value: ext::der::Element, encoded: core::slice::View<u8> }
+pub struct Validity { encoded: core::slice::View<u8>, not_before: ext::der::X509Time, not_after: ext::der::X509Time }
+pub struct SubjectPublicKeyInfo { encoded: core::slice::View<u8>, algorithm: AlgorithmIdentifier, key: ext::der::BitString }
+pub enum ExtensionKind { Other, SubjectAltName, BasicConstraints, KeyUsage, ExtendedKeyUsage }
+pub struct Extension { root: core::slice::View<u8>, encoded: core::slice::View<u8>, oid: ext::der::Oid, critical: bool, value: core::slice::View<u8> }
+pub struct Extensions { root: core::slice::View<u8>, cursor: ext::der::Reader }
+pub struct BasicConstraints { ca: bool, path_length: core::option::Option<ext::der::Element> }
+pub struct KeyUsage { bits: u32 }
+pub struct Oids { root: core::slice::View<u8>, cursor: ext::der::Reader }
+pub struct GeneralName { root: core::slice::View<u8>, element: ext::der::Element }
+pub struct GeneralNames { root: core::slice::View<u8>, cursor: ext::der::Reader, opaque_count: u64 }
+pub struct Certificate {
+    encoded: core::slice::View<u8>, tbs: core::slice::View<u8>, version: i32,
+    serial: core::slice::View<u8>, signature_algorithm: AlgorithmIdentifier,
+    issuer: Name, validity: Validity, subject: Name, spki: SubjectPublicKeyInfo,
+    issuer_unique_id: core::option::Option<ext::der::BitString>, subject_unique_id: core::option::Option<ext::der::BitString>,
+    extension_content: core::slice::View<u8>, signature: ext::der::BitString,
+    unknown_critical_count: u64
+}
+fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
+fn valid(v: core::slice::View<u8>) -> bool { return v.start >= 0 && v.length >= 0 && v.start <= 2147483647 - v.length; }
+fn byte(v: core::slice::View<u8>, i: i32) -> u8 { return v.values[v.start + i]; }
+fn empty(v: core::slice::View<u8>) -> core::slice::View<u8> { return core::slice::View { values: v.values, start: v.start, length: 0 }; }
+fn dummy(v: core::slice::View<u8>) -> ext::der::Element { return ext::der::Element { tag: ext::der::Tag { class: ext::der::Class::Universal, constructed: false, number: 5 }, encoded: empty(v), content: empty(v) }; }
+fn cursor(v: core::slice::View<u8>) -> ext::der::Reader { return ext::der::Reader { input: v, position: 0 }; }
+pub fn default_limits() -> Limits { return Limits { max_input: 1048576, max_items: 100000, max_work: 16777216 }; }
+pub fn budget(limits: Limits) -> core::result::Result<Budget, Error> {
+    if (limits.max_input < 0) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    return core::result::Ok(Budget { max_input: limits.max_input, items_left: limits.max_items, work_left: limits.max_work });
+}
+pub impl Budget { pub fn borrow(&self) -> &Budget { return self; } }
+// Context only borrows a live caller budget during one call. Returned values
+// retain input views, never Context or Budget. Work is not rolled back on error.
+struct Context { root: core::slice::View<u8>, budget: &Budget, failed: bool, issue: Error }
+fn context(root: core::slice::View<u8>, budget: &Budget) -> Context {
+    let p: Context = Context { root: root, budget: budget, failed: false, issue: error(ErrorKind::Schema, 0) };
+    if (!valid(root)) { p.failed = true; p.issue = error(ErrorKind::Bounds, 0); }
+    else { if (root.length > budget.max_input) { p.failed = true; p.issue = error(ErrorKind::InputLimit, 0); } }
+    return p;
+}
+impl Context {
+    fn borrow(&self) -> &Context { return self; }
+    fn fail(&self, kind: ErrorKind, at: i32) { if (!self.failed) { self.failed = true; self.issue = error(kind, at); } }
+    fn at(&self, v: core::slice::View<u8>) -> i32 { return v.start - self.root.start; }
+    fn der_error(&self, e: ext::der::Error, input: core::slice::View<u8>) { self.fail(ErrorKind::Der, self.at(input) + e.offset); }
+    fn work(&self, n: u64, at: i32) -> bool {
+        if (self.failed) { return false; }
+        if (n > self.budget.work_left) { self.fail(ErrorKind::WorkLimit, at); return false; }
+        self.budget.work_left -= n; return true;
+    }
+    fn item(&self, value: ext::der::Element) -> bool {
+        if (self.failed) { return false; }
+        if (self.budget.items_left == 0) { self.fail(ErrorKind::ItemLimit, self.at(value.encoded)); return false; }
+        self.budget.items_left -= 1; return self.work((value.encoded.length as u64) + 1, self.at(value.encoded));
+    }
+    fn one(&self, input: core::slice::View<u8>) -> ext::der::Element {
+        if (self.failed) { return dummy(self.root); }
+        if (!self.work(11, self.at(input))) { return dummy(self.root); }
+        let r: core::result::Result<ext::der::Element, ext::der::Error> = ext::der::parse_one(input);
+        if (r.is_err()) { self.der_error(r.unwrap_err(), input); return dummy(self.root); }
+        let value: ext::der::Element = r.unwrap(); self.item(value); return value;
+    }
+    fn next(&self, source: &ext::der::Reader) -> core::option::Option<ext::der::Element> {
+        if (self.failed) { return core::option::None(); }
+        if (source.position == source.input.length) { return core::option::None(); }
+        if (!self.work(11, self.at(source.input) + source.position)) { return core::option::None(); }
+        let copy: ext::der::Reader = ext::der::Reader { input: source.input, position: source.position };
+        let r: core::result::Result<core::option::Option<ext::der::Element>, ext::der::Error> = copy.next();
+        if (r.is_err()) { self.der_error(r.unwrap_err(), source.input); return core::option::None(); }
+        let value: core::option::Option<ext::der::Element> = r.unwrap();
+        if (value.is_some() && !self.item(value.unwrap())) { return core::option::None(); }
+        source.position = copy.position; return value;
+    }
+    fn take(&self, source: &ext::der::Reader) -> ext::der::Element {
+        let next: core::option::Option<ext::der::Element> = self.next(source);
+        if (next.is_none()) { self.fail(ErrorKind::Schema, self.at(source.input) + source.position); return dummy(self.root); } return next.unwrap();
+    }
+    fn end(&self, source: &ext::der::Reader) { if (!self.failed && source.remaining() != 0) { self.fail(ErrorKind::Schema, self.at(source.input) + source.position); } }
+    fn seq(&self, value: ext::der::Element) -> ext::der::Reader {
+        if (self.failed) { return cursor(empty(self.root)); }
+        let r: core::result::Result<ext::der::Reader, ext::der::Error> = value.as_sequence();
+        if (r.is_err()) { self.der_error(r.unwrap_err(), value.content); return cursor(empty(self.root)); } return r.unwrap();
+    }
+    fn oid(&self, value: ext::der::Element) -> ext::der::Oid {
+        if (!self.failed) { let r: core::result::Result<ext::der::Oid, ext::der::Error> = value.as_oid(); if (r.is_ok()) { return r.unwrap(); } self.der_error(r.unwrap_err(), value.content); }
+        return ext::der::Oid { bytes: empty(self.root) };
+    }
+    fn integer(&self, value: ext::der::Element, positive: bool, kind: ErrorKind) -> core::slice::View<u8> {
+        if (!self.failed) {
+            let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = value.as_integer();
+            if (r.is_err()) { self.der_error(r.unwrap_err(), value.content); }
+            else { let data: core::slice::View<u8> = r.unwrap(); if (byte(data, 0) >= 128 || (positive && data.length == 1 && byte(data, 0) == 0)) { self.fail(kind, self.at(data)); } return data; }
+        } return empty(self.root);
+    }
+    fn bits(&self, value: ext::der::Element) -> ext::der::BitString {
+        if (!self.failed) { let r: core::result::Result<ext::der::BitString, ext::der::Error> = value.as_bit_string(); if (r.is_ok()) { return r.unwrap(); } self.der_error(r.unwrap_err(), value.content); }
+        return ext::der::BitString { bytes: empty(self.root), unused_bits: 0 };
+    }
+    fn same(&self, left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+        if (left.length != right.length) { return false; }
+        if (!self.work((left.length as u64) + 1, self.at(right))) { return false; }
+        let i: i32 = 0; while (i < left.length) { if (byte(left, i) != byte(right, i)) { return false; } i += 1; } return true;
+    }
+}
+fn safe_curve(oid: ext::der::Oid) -> i32 {
+    let b: core::slice::View<u8> = oid.bytes;
+    if (b.length == 3 && byte(b, 0) == 43 && byte(b, 1) == 101 && byte(b, 2) >= 110 && byte(b, 2) <= 113) { return byte(b, 2) as i32; } return 0;
+}
+fn any(value: ext::der::Element, p: &Context) {
+    if (p.failed) { return; }
+    let number: u32 = value.tag.number;
+    // Known universal forms only: opaque constructed contents stay unwalked.
+    let must_construct: bool = number == 8 || number == 11 || number == 16 || number == 17 || number == 29;
+    let known: bool = number <= 36;
+    if (known && value.tag.matches(ext::der::Class::Universal, !must_construct, number)) { p.fail(ErrorKind::NonCanonical, p.at(value.encoded)); return; }
+    if (value.tag.matches(ext::der::Class::Universal, false, 15) || value.tag.matches(ext::der::Class::Universal, true, 15)) { p.fail(ErrorKind::Schema, p.at(value.encoded)); return; }
+    if (value.tag.matches(ext::der::Class::Universal, false, 1)) { let r: core::result::Result<bool, ext::der::Error> = value.as_boolean(); if (r.is_err()) { p.der_error(r.unwrap_err(), value.content); } }
+    if (value.tag.matches(ext::der::Class::Universal, false, 2)) { let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = value.as_integer(); if (r.is_err()) { p.der_error(r.unwrap_err(), value.content); } }
+    if (value.tag.matches(ext::der::Class::Universal, false, 3)) { p.bits(value); }
+    if (value.tag.matches(ext::der::Class::Universal, false, 5)) { let r: core::result::Result<i32, ext::der::Error> = value.as_null(); if (r.is_err()) { p.der_error(r.unwrap_err(), value.content); } }
+    if (value.tag.matches(ext::der::Class::Universal, false, 6)) { p.oid(value); }
+    if (value.tag.matches(ext::der::Class::Universal, false, 12)) { let r: core::result::Result<core::text::Text, ext::der::Error> = value.as_utf8(); if (r.is_err()) { p.der_error(r.unwrap_err(), value.content); } }
+    if (value.tag.matches(ext::der::Class::Universal, false, 19)) { let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = value.as_printable(); if (r.is_err()) { p.der_error(r.unwrap_err(), value.content); } }
+    if (value.tag.matches(ext::der::Class::Universal, false, 22)) { let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = value.as_ia5(); if (r.is_err()) { p.der_error(r.unwrap_err(), value.content); } }
+    if (value.tag.matches(ext::der::Class::Universal, false, 28) || value.tag.matches(ext::der::Class::Universal, false, 30)) {
+        let width: i32 = 2; if (number == 28) { width = 4; }
+        if (value.content.length % width != 0) { p.fail(ErrorKind::Name, p.at(value.content)); return; }
+        let at: i32 = 0; while (at < value.content.length && !p.failed) { let scalar: u32 = 0; let j: i32 = 0; while (j < width) { scalar = (scalar << 8) | (byte(value.content, at + j) as u32); j += 1; } if (!core::utf8::is_scalar(scalar)) { p.fail(ErrorKind::Name, p.at(value.content) + at); } at += width; }
+    }
+}
+fn algorithm(value: ext::der::Element, p: &Context) -> AlgorithmIdentifier {
+    let c: ext::der::Reader = p.seq(value); let oid: ext::der::Oid = p.oid(p.take(c.borrow())); let parameters: core::option::Option<ext::der::Element> = p.next(c.borrow()); p.end(c.borrow());
+    if (parameters.is_some()) { any(parameters.unwrap(), p); if (safe_curve(oid) != 0) { p.fail(ErrorKind::Algorithm, p.at(value.encoded)); } }
+    return AlgorithmIdentifier { encoded: value.encoded, oid: oid, parameters: parameters };
+}
+fn attribute(value: ext::der::Element, p: &Context) -> Attribute {
+    let c: ext::der::Reader = p.seq(value); let oid: ext::der::Oid = p.oid(p.take(c.borrow())); let v: ext::der::Element = p.take(c.borrow()); p.end(c.borrow()); any(v, p);
+    return Attribute { oid: oid, value: v, encoded: value.encoded };
+}
+fn rdn(value: ext::der::Element, p: &Context) -> Rdn {
+    if (!p.failed && !value.tag.matches(ext::der::Class::Universal, true, 17)) { p.fail(ErrorKind::Name, p.at(value.encoded)); }
+    let c: ext::der::Reader = cursor(value.content); let previous: core::slice::View<u8> = empty(value.content);
+    if (!p.failed && c.remaining() == 0) { p.fail(ErrorKind::Name, p.at(value.content)); }
+    while (c.remaining() > 0 && !p.failed) {
+        let v: ext::der::Element = p.take(c.borrow()); attribute(v, p);
+        if (previous.length > 0 && !p.failed) {
+            let n: i32 = previous.length; if (v.encoded.length < n) { n = v.encoded.length; }
+            if (p.work((n as u64) + 1, p.at(v.encoded))) { let j: i32 = 0; while (j < n && byte(previous, j) == byte(v.encoded, j)) { j += 1; } if ((j < n && byte(previous, j) > byte(v.encoded, j)) || (j == n && previous.length > v.encoded.length)) { p.fail(ErrorKind::NonCanonical, p.at(v.encoded)); } }
+        }
+        previous = v.encoded;
+    } return Rdn { root: p.root, element: value };
+}
+fn name(value: ext::der::Element, p: &Context) -> Name {
+    let c: ext::der::Reader = p.seq(value); while (c.remaining() > 0 && !p.failed) { rdn(p.take(c.borrow()), p); } return Name { root: p.root, element: value };
+}
+fn time(value: ext::der::Element, p: &Context) -> ext::der::X509Time {
+    if (!p.failed) { let r: core::result::Result<ext::der::X509Time, ext::der::Error> = value.as_x509_time(); if (r.is_ok()) { return r.unwrap(); } p.der_error(r.unwrap_err(), value.content); }
+    return ext::der::X509Time { year: 1, month: 1, day: 1, hour: 0, minute: 0, second: 0 };
+}
+fn validity(value: ext::der::Element, p: &Context) -> Validity { let c: ext::der::Reader = p.seq(value); let a: ext::der::X509Time = time(p.take(c.borrow()), p); let b: ext::der::X509Time = time(p.take(c.borrow()), p); p.end(c.borrow()); return Validity { encoded: value.encoded, not_before: a, not_after: b }; }
+fn spki(value: ext::der::Element, p: &Context) -> SubjectPublicKeyInfo {
+    let c: ext::der::Reader = p.seq(value); let a: AlgorithmIdentifier = algorithm(p.take(c.borrow()), p); let key: ext::der::BitString = p.bits(p.take(c.borrow())); p.end(c.borrow());
+    let curve: i32 = safe_curve(a.oid); let expected: i32 = 32; if (curve == 111) { expected = 56; } if (curve == 113) { expected = 57; }
+    if (curve != 0 && (key.unused_bits != 0 || key.bytes.length != expected)) { p.fail(ErrorKind::Spki, p.at(value.content)); }
+    return SubjectPublicKeyInfo { encoded: value.encoded, algorithm: a, key: key };
+}
+fn implicit_bits(value: ext::der::Element, p: &Context) -> ext::der::BitString { let v: ext::der::Element = value; v.tag = ext::der::Tag { class: ext::der::Class::Universal, constructed: false, number: 3 }; return p.bits(v); }
+fn ext_kind(oid: ext::der::Oid) -> i32 { let b: core::slice::View<u8> = oid.bytes; if (b.length != 3 || byte(b, 0) != 85 || byte(b, 1) != 29) { return 0; } if (byte(b, 2) == 17) { return 1; } if (byte(b, 2) == 19) { return 2; } if (byte(b, 2) == 15) { return 3; } if (byte(b, 2) == 37) { return 4; } return 0; }
+fn extension(value: ext::der::Element, p: &Context) -> Extension {
+    let c: ext::der::Reader = p.seq(value); let oid: ext::der::Oid = p.oid(p.take(c.borrow())); let v: ext::der::Element = p.take(c.borrow()); let critical: bool = false;
+    if (v.tag.matches(ext::der::Class::Universal, false, 1) && !p.failed) { let r: core::result::Result<bool, ext::der::Error> = v.as_boolean(); if (r.is_err()) { p.der_error(r.unwrap_err(), v.content); } else { critical = r.unwrap(); if (!critical) { p.fail(ErrorKind::NonCanonical, p.at(v.encoded)); } } v = p.take(c.borrow()); }
+    let data: core::slice::View<u8> = empty(p.root);
+    if (!p.failed) { let r: core::result::Result<core::slice::View<u8>, ext::der::Error> = v.as_octets(); if (r.is_err()) { p.der_error(r.unwrap_err(), v.content); } else { data = r.unwrap(); } }
+    p.end(c.borrow()); if (!p.failed) { any(p.one(data), p); }
+    return Extension { root: p.root, encoded: value.encoded, oid: oid, critical: critical, value: data };
+}
+fn bc(ext: &Extension, p: &Context) -> BasicConstraints {
+    if (ext_kind(ext.oid) != 2) { p.fail(ErrorKind::Extension, p.at(ext.encoded)); }
+    let root: ext::der::Element = p.one(ext.value); let c: ext::der::Reader = p.seq(root); let v: core::option::Option<ext::der::Element> = p.next(c.borrow()); let ca: bool = false;
+    if (v.is_some() && v.unwrap().tag.matches(ext::der::Class::Universal, false, 1) && !p.failed) { let e: ext::der::Element = v.unwrap(); let r: core::result::Result<bool, ext::der::Error> = e.as_boolean(); if (r.is_err()) { p.der_error(r.unwrap_err(), e.content); } else { ca = r.unwrap(); if (!ca) { p.fail(ErrorKind::NonCanonical, p.at(e.encoded)); } } v = p.next(c.borrow()); }
+    if (v.is_some()) { p.integer(v.unwrap(), false, ErrorKind::Extension); if (!ca) { p.fail(ErrorKind::Extension, p.at(v.unwrap().encoded)); } }
+    p.end(c.borrow()); return BasicConstraints { ca: ca, path_length: v };
+}
+fn ku(ext: &Extension, p: &Context) -> KeyUsage {
+    if (ext_kind(ext.oid) != 3) { p.fail(ErrorKind::Extension, p.at(ext.encoded)); }
+    let e: ext::der::Element = p.one(ext.value); let bits: ext::der::BitString = p.bits(e); let value: u32 = 0;
+    if (!p.failed) {
+        if (bits.bytes.length == 0 || bits.bytes.length > 2 || (bits.bytes.length == 2 && bits.unused_bits != 7)) { p.fail(ErrorKind::Extension, p.at(e.content)); }
+        else {
+            let last: u8 = byte(bits.bytes, bits.bytes.length - 1);
+            if ((last & ((1 << (bits.unused_bits as i32)) as u8)) == 0) { p.fail(ErrorKind::NonCanonical, p.at(bits.bytes) + bits.bytes.length - 1); }
+            let i: i32 = 0; while (i < 9) { if (i / 8 < bits.bytes.length && (byte(bits.bytes, i / 8) & ((128 >> (i % 8)) as u8)) != 0) { value |= 1 << i; } i += 1; }
+        }
+    } return KeyUsage { bits: value };
+}
+fn eku(ext: &Extension, p: &Context) -> Oids {
+    if (ext_kind(ext.oid) != 4) { p.fail(ErrorKind::Extension, p.at(ext.encoded)); }
+    let root: ext::der::Element = p.one(ext.value); let c: ext::der::Reader = p.seq(root); if (!p.failed && c.remaining() == 0) { p.fail(ErrorKind::Extension, p.at(root.content)); }
+    while (c.remaining() > 0 && !p.failed) { p.oid(p.take(c.borrow())); }
+    return Oids { root: p.root, cursor: cursor(root.content) };
+}
+fn directory_string(value: ext::der::Element, p: &Context) {
+    let n: u32 = value.tag.number;
+    if (!value.tag.matches(ext::der::Class::Universal, false, n) || (n != 12 && n != 19 && n != 20 && n != 28 && n != 30) || value.content.length == 0) { p.fail(ErrorKind::Name, p.at(value.encoded)); } any(value, p);
+}
+fn general_name(value: ext::der::Element, p: &Context) -> GeneralName {
+    let n: u32 = value.tag.number; let constructed: bool = n == 0 || n == 3 || n == 4 || n == 5;
+    if (!value.tag.matches(ext::der::Class::Context, constructed, n) || n > 8) { p.fail(ErrorKind::Extension, p.at(value.encoded)); }
+    if (!p.failed && (n == 1 || n == 2 || n == 6)) { if (value.content.length == 0) { p.fail(ErrorKind::Extension, p.at(value.content)); } let v: ext::der::Element = value; v.tag = ext::der::Tag { class: ext::der::Class::Universal, constructed: false, number: 22 }; any(v, p); }
+    if (!p.failed && n == 7 && value.content.length != 4 && value.content.length != 16) { p.fail(ErrorKind::Extension, p.at(value.content)); }
+    if (!p.failed && n == 8) { let v: ext::der::Element = value; v.tag = ext::der::Tag { class: ext::der::Class::Universal, constructed: false, number: 6 }; p.oid(v); }
+    if (!p.failed && n == 4) { name(p.one(value.content), p); }
+    if (!p.failed && n == 0) {
+        let c: ext::der::Reader = cursor(value.content); p.oid(p.take(c.borrow())); let wrapped: ext::der::Element = p.take(c.borrow()); p.end(c.borrow());
+        if (!wrapped.tag.matches(ext::der::Class::Context, true, 0)) { p.fail(ErrorKind::Extension, p.at(wrapped.encoded)); } any(p.one(wrapped.content), p);
+    }
+    if (!p.failed && n == 5) {
+        let c: ext::der::Reader = cursor(value.content); let v: ext::der::Element = p.take(c.borrow());
+        if (v.tag.matches(ext::der::Class::Context, true, 0)) { directory_string(p.one(v.content), p); v = p.take(c.borrow()); }
+        if (!v.tag.matches(ext::der::Class::Context, true, 1)) { p.fail(ErrorKind::Extension, p.at(v.encoded)); }
+        directory_string(p.one(v.content), p); p.end(c.borrow());
+    }
+    // x400Address is preserved as an opaque constructed ORAddress encoding.
+    return GeneralName { root: p.root, element: value };
+}
+fn san(ext: &Extension, p: &Context) -> GeneralNames {
+    if (ext_kind(ext.oid) != 1) { p.fail(ErrorKind::Extension, p.at(ext.encoded)); }
+    let root: ext::der::Element = p.one(ext.value); let c: ext::der::Reader = p.seq(root); let opaque: u64 = 0;
+    if (!p.failed && c.remaining() == 0) { p.fail(ErrorKind::Extension, p.at(root.content)); }
+    while (c.remaining() > 0 && !p.failed) { let v: GeneralName = general_name(p.take(c.borrow()), p); if (v.element.tag.number == 3) { opaque += 1; } }
+    return GeneralNames { root: p.root, cursor: cursor(root.content), opaque_count: opaque };
+}
+
+pub fn parse(input: core::slice::View<u8>, budget: &Budget) -> core::result::Result<Certificate, Error> {
+    if (!valid(input)) { return core::result::Err(error(ErrorKind::Bounds, 0)); }
+    if (input.length > budget.max_input) { return core::result::Err(error(ErrorKind::InputLimit, 0)); }
+    let p: Context = context(input, budget); let outer: ext::der::Element = p.one(input); let fields: ext::der::Reader = p.seq(outer);
+    let tbs: ext::der::Element = p.take(fields.borrow()); let sig_alg: AlgorithmIdentifier = algorithm(p.take(fields.borrow()), p.borrow()); let signature: ext::der::BitString = p.bits(p.take(fields.borrow())); p.end(fields.borrow());
+    let c: ext::der::Reader = p.seq(tbs); let first: ext::der::Element = p.take(c.borrow()); let version: i32 = 0;
+    if (first.tag.matches(ext::der::Class::Context, true, 0) && !p.failed) {
+        let v: ext::der::Element = p.one(first.content); let number: core::result::Result<u64, ext::der::Error> = v.as_u64();
+        if (number.is_err()) { p.der_error(number.unwrap_err(), v.content); }
+        else { if (number.unwrap() == 0) { p.fail(ErrorKind::NonCanonical, p.at(first.encoded)); } else { if (number.unwrap() > 2) { p.fail(ErrorKind::Version, p.at(v.content)); } else { version = number.unwrap() as i32; } } }
+        first = p.take(c.borrow());
+    }
+    let serial: core::slice::View<u8> = p.integer(first, true, ErrorKind::Serial);
+    let inner_alg: AlgorithmIdentifier = algorithm(p.take(c.borrow()), p.borrow());
+    if (!p.failed && !p.same(inner_alg.encoded, sig_alg.encoded)) { p.fail(ErrorKind::Algorithm, p.at(sig_alg.encoded)); }
+    let issuer: Name = name(p.take(c.borrow()), p.borrow()); if (!p.failed && issuer.element.content.length == 0) { p.fail(ErrorKind::Name, p.at(issuer.element.content)); }
+    let dates: Validity = validity(p.take(c.borrow()), p.borrow()); let subject: Name = name(p.take(c.borrow()), p.borrow()); let key: SubjectPublicKeyInfo = spki(p.take(c.borrow()), p.borrow());
+    let issuer_id: core::option::Option<ext::der::BitString> = core::option::None(); let subject_id: core::option::Option<ext::der::BitString> = core::option::None();
+    let ext_content: core::slice::View<u8> = empty(input); let last: u32 = 0;
+    while (c.remaining() > 0 && !p.failed) {
+        let v: ext::der::Element = p.take(c.borrow()); let n: u32 = v.tag.number;
+        if (n < 1 || n > 3 || n <= last || !v.tag.matches(ext::der::Class::Context, n == 3, n)) { p.fail(ErrorKind::Schema, p.at(v.encoded)); break; }
+        last = n;
+        if (n <= 2) { if (version == 0) { p.fail(ErrorKind::Version, p.at(v.encoded)); } let bits: ext::der::BitString = implicit_bits(v, p.borrow()); if (n == 1) { issuer_id = core::option::Some(bits); } else { subject_id = core::option::Some(bits); } }
+        else { if (version != 2) { p.fail(ErrorKind::Version, p.at(v.encoded)); } let e: ext::der::Element = p.one(v.content); let ec: ext::der::Reader = p.seq(e); ext_content = ec.input; if (!p.failed && ext_content.length == 0) { p.fail(ErrorKind::Extension, p.at(ext_content)); } }
+    }
+    let ec: ext::der::Reader = cursor(ext_content); let unknown: u64 = 0; let subject_san: bool = false;
+    while (ec.remaining() > 0 && !p.failed) {
+        let start: i32 = ec.position; let ext: Extension = extension(p.take(ec.borrow()), p.borrow());
+        let prior: ext::der::Reader = cursor(ext_content);
+        while (prior.position < start && !p.failed) { let previous: Extension = extension(p.take(prior.borrow()), p.borrow()); if (p.same(previous.oid.bytes, ext.oid.bytes)) { p.fail(ErrorKind::DuplicateExtension, p.at(ext.encoded)); } }
+        let kind: i32 = ext_kind(ext.oid);
+        if (kind == 0 && ext.critical) { unknown += 1; }
+        if (kind == 1) { san(ext.borrow(), p.borrow()); if (ext.critical) { subject_san = true; } }
+        if (kind == 2) { bc(ext.borrow(), p.borrow()); }
+        if (kind == 3) { ku(ext.borrow(), p.borrow()); }
+        if (kind == 4) { eku(ext.borrow(), p.borrow()); }
+    }
+    if (!p.failed && subject.element.content.length == 0 && !subject_san) { p.fail(ErrorKind::Name, p.at(subject.element.content)); }
+    let curve: i32 = safe_curve(sig_alg.oid);
+    if ((curve == 110 || curve == 111) && !p.failed) { p.fail(ErrorKind::Algorithm, p.at(sig_alg.encoded)); }
+    if (((curve == 112 && signature.bytes.length != 64) || (curve == 113 && signature.bytes.length != 114) || signature.unused_bits != 0) && !p.failed) { p.fail(ErrorKind::Algorithm, p.at(sig_alg.encoded)); }
+    if (p.failed) { return core::result::Err(p.issue); }
+    return core::result::Ok(Certificate { encoded: input, tbs: tbs.encoded, version: version, serial: serial, signature_algorithm: sig_alg, issuer: issuer, validity: dates, subject: subject, spki: key, issuer_unique_id: issuer_id, subject_unique_id: subject_id, extension_content: ext_content, signature: signature, unknown_critical_count: unknown });
+}
+
+pub impl Certificate {
+    pub fn extensions(&self) -> Extensions { return Extensions { root: self.encoded, cursor: cursor(self.extension_content) }; }
+}
+pub impl Name { pub fn rdns(&self) -> Rdns { return Rdns { root: self.root, cursor: cursor(self.element.content) }; } }
+pub impl Rdn { pub fn attributes(&self) -> Attributes { return Attributes { root: self.root, cursor: cursor(self.element.content) }; } }
+pub impl Rdns {
+    pub fn borrow(&self) -> &Rdns { return self; }
+    pub fn position(&self) -> i32 { return self.cursor.position; }
+    pub fn next(&self, budget: &Budget) -> core::result::Result<core::option::Option<Rdn>, Error> {
+        let p: Context = context(self.root, budget); let c: ext::der::Reader = ext::der::Reader { input: self.cursor.input, position: self.cursor.position };
+        let v: core::option::Option<ext::der::Element> = p.next(c.borrow()); let result: core::option::Option<Rdn> = core::option::None(); if (v.is_some()) { result = core::option::Some(rdn(v.unwrap(), p.borrow())); }
+        if (p.failed) { return core::result::Err(p.issue); } self.cursor.position = c.position; return core::result::Ok(result);
+    }
+}
+pub impl Attributes {
+    pub fn borrow(&self) -> &Attributes { return self; }
+    pub fn position(&self) -> i32 { return self.cursor.position; }
+    pub fn next(&self, budget: &Budget) -> core::result::Result<core::option::Option<Attribute>, Error> {
+        let p: Context = context(self.root, budget); let c: ext::der::Reader = ext::der::Reader { input: self.cursor.input, position: self.cursor.position };
+        let v: core::option::Option<ext::der::Element> = p.next(c.borrow()); let result: core::option::Option<Attribute> = core::option::None(); if (v.is_some()) { result = core::option::Some(attribute(v.unwrap(), p.borrow())); }
+        if (p.failed) { return core::result::Err(p.issue); } self.cursor.position = c.position; return core::result::Ok(result);
+    }
+}
+pub impl Extensions {
+    pub fn borrow(&self) -> &Extensions { return self; }
+    pub fn position(&self) -> i32 { return self.cursor.position; }
+    pub fn next(&self, budget: &Budget) -> core::result::Result<core::option::Option<Extension>, Error> {
+        let p: Context = context(self.root, budget); let c: ext::der::Reader = ext::der::Reader { input: self.cursor.input, position: self.cursor.position };
+        let v: core::option::Option<ext::der::Element> = p.next(c.borrow()); let result: core::option::Option<Extension> = core::option::None(); if (v.is_some()) { result = core::option::Some(extension(v.unwrap(), p.borrow())); }
+        if (p.failed) { return core::result::Err(p.issue); } self.cursor.position = c.position; return core::result::Ok(result);
+    }
+}
+pub impl Extension {
+    pub fn borrow(&self) -> &Extension { return self; }
+    pub fn kind(&self) -> ExtensionKind { let n: i32 = ext_kind(self.oid); if (n == 1) { return ExtensionKind::SubjectAltName; } if (n == 2) { return ExtensionKind::BasicConstraints; } if (n == 3) { return ExtensionKind::KeyUsage; } if (n == 4) { return ExtensionKind::ExtendedKeyUsage; } return ExtensionKind::Other; }
+    pub fn basic_constraints(&self, budget: &Budget) -> core::result::Result<BasicConstraints, Error> { let p: Context = context(self.root, budget); let value: BasicConstraints = bc(self, p.borrow()); if (p.failed) { return core::result::Err(p.issue); } return core::result::Ok(value); }
+    pub fn key_usage(&self, budget: &Budget) -> core::result::Result<KeyUsage, Error> { let p: Context = context(self.root, budget); let value: KeyUsage = ku(self, p.borrow()); if (p.failed) { return core::result::Err(p.issue); } return core::result::Ok(value); }
+    pub fn extended_key_usage(&self, budget: &Budget) -> core::result::Result<Oids, Error> { let p: Context = context(self.root, budget); let value: Oids = eku(self, p.borrow()); if (p.failed) { return core::result::Err(p.issue); } return core::result::Ok(value); }
+    pub fn subject_alt_names(&self, budget: &Budget) -> core::result::Result<GeneralNames, Error> { let p: Context = context(self.root, budget); let value: GeneralNames = san(self, p.borrow()); if (p.failed) { return core::result::Err(p.issue); } return core::result::Ok(value); }
+}
+pub impl Oids {
+    pub fn borrow(&self) -> &Oids { return self; }
+    pub fn position(&self) -> i32 { return self.cursor.position; }
+    pub fn next(&self, budget: &Budget) -> core::result::Result<core::option::Option<ext::der::Oid>, Error> {
+        let p: Context = context(self.root, budget); let c: ext::der::Reader = ext::der::Reader { input: self.cursor.input, position: self.cursor.position };
+        let v: core::option::Option<ext::der::Element> = p.next(c.borrow()); let result: core::option::Option<ext::der::Oid> = core::option::None(); if (v.is_some()) { result = core::option::Some(p.oid(v.unwrap())); }
+        if (p.failed) { return core::result::Err(p.issue); } self.cursor.position = c.position; return core::result::Ok(result);
+    }
+}
+pub impl GeneralNames {
+    pub fn borrow(&self) -> &GeneralNames { return self; }
+    pub fn position(&self) -> i32 { return self.cursor.position; }
+    pub fn next(&self, budget: &Budget) -> core::result::Result<core::option::Option<GeneralName>, Error> {
+        let p: Context = context(self.root, budget); let c: ext::der::Reader = ext::der::Reader { input: self.cursor.input, position: self.cursor.position };
+        let v: core::option::Option<ext::der::Element> = p.next(c.borrow()); let result: core::option::Option<GeneralName> = core::option::None(); if (v.is_some()) { result = core::option::Some(general_name(v.unwrap(), p.borrow())); }
+        if (p.failed) { return core::result::Err(p.issue); } self.cursor.position = c.position; return core::result::Ok(result);
+    }
+}
+pub impl GeneralName {
+    pub fn directory_name(&self, budget: &Budget) -> core::result::Result<Name, Error> {
+        let p: Context = context(self.root, budget); if (!self.element.tag.matches(ext::der::Class::Context, true, 4)) { p.fail(ErrorKind::Name, p.at(self.element.encoded)); }
+        let value: Name = name(p.one(self.element.content), p.borrow()); if (p.failed) { return core::result::Err(p.issue); } return core::result::Ok(value);
+    }
+    pub fn registered_id(&self, budget: &Budget) -> core::result::Result<ext::der::Oid, Error> {
+        let p: Context = context(self.root, budget); if (!self.element.tag.matches(ext::der::Class::Context, false, 8)) { p.fail(ErrorKind::Name, p.at(self.element.encoded)); }
+        let value: ext::der::Element = self.element; p.item(value); value.tag = ext::der::Tag { class: ext::der::Class::Universal, constructed: false, number: 6 };
+        let oid: ext::der::Oid = p.oid(value); if (p.failed) { return core::result::Err(p.issue); } return core::result::Ok(oid);
+    }
+}

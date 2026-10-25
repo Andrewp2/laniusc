@@ -1,0 +1,314 @@
+// Exact decimal CSV ledger. See docs/extended-decimal-ledger.md.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::decimal;
+import std::args;
+import std::stream;
+
+struct Options {
+    scale: i32, rounding: ext::decimal::Rounding, header: bool, help: bool,
+    max_rows: i32, max_field: i32, max_input: u64, limits: ext::decimal::Limits,
+}
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { status: i32, reason: i32, row: i32, field: i32, argument: i32, offset: i32, input_offset: core::option::Option<u64> }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+struct Ledger { output: alloc::vec::Vec<u8>, total: ext::decimal::Decimal }
+impl Ledger {
+    fn borrow(&self) -> &Ledger { return self; }
+    fn destroy(&self) { self.output.destroy(); self.total.destroy(); }
+}
+struct Amounts {
+    quantity: ext::decimal::Decimal, price: ext::decimal::Decimal, rate: ext::decimal::Decimal,
+    product: ext::decimal::Decimal, subtotal: ext::decimal::Decimal, raw_tax: ext::decimal::Decimal,
+    tax: ext::decimal::Decimal, total: ext::decimal::Decimal, running: ext::decimal::Decimal,
+}
+impl Amounts {
+    fn borrow(&self) -> &Amounts { return self; }
+    fn destroy(&self) {
+        self.quantity.destroy(); self.price.destroy(); self.rate.destroy(); self.product.destroy();
+        self.subtotal.destroy(); self.raw_tax.destroy(); self.tax.destroy(); self.total.destroy(); self.running.destroy();
+    }
+}
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value,count);
+    return core::text::from_utf8_unchecked(bytes.values,bytes.start,count);
+}
+fn equal(value: core::slice::View<u8>, name: str, length: i32) -> bool {
+    if (value.len() != length) { return false; }
+    let expected: core::slice::View<u8> = literal(name,length); let index: i32 = 0;
+    while (index < length) { if (value.values[value.start+index] != expected.values[expected.start+index]) { return false; } index += 1; }
+    return true;
+}
+fn fail(diagnostic: &Diagnostic, status: i32, reason: i32) -> i32 { diagnostic.status = status; diagnostic.reason = reason; return status; }
+fn vector_error(error: alloc::vec::Error, diagnostic: &Diagnostic) -> i32 {
+    let allocation: bool = match (error) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return fail(diagnostic,5,8); } return fail(diagnostic,3,7);
+}
+fn decimal_error(error: ext::decimal::Error, diagnostic: &Diagnostic) -> i32 {
+    let reason: i32 = match (error) {
+        ext::decimal::Error::AllocationFailed -> 8, ext::decimal::Error::WorkLimit -> 6,
+        ext::decimal::Error::OutputLimit -> 7, ext::decimal::Error::LimbLimit -> 5,
+        ext::decimal::Error::DigitLimit -> 5, ext::decimal::Error::ScaleLimit -> 5,
+        ext::decimal::Error::Inexact -> 10, _ -> 3,
+    };
+    let status: i32 = 2;
+    if (reason == 5 || reason == 7) { status = 3; } if (reason == 6) { status = 4; } if (reason == 8) { status = 5; }
+    return fail(diagnostic,status,reason);
+}
+fn csv_error(error: ext::csv::Error, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.input_offset = match (error) {
+        ext::csv::Error::UnexpectedQuote(at) -> core::option::Some(at),
+        ext::csv::Error::UnclosedQuote(at) -> core::option::Some(at),
+        ext::csv::Error::TrailingText(at) -> core::option::Some(at),
+        ext::csv::Error::InvalidLineEnding(at) -> core::option::Some(at),
+        ext::csv::Error::InvalidCharacter(at) -> core::option::Some(at),
+        ext::csv::Error::InvalidUtf8(at) -> core::option::Some(at),
+        ext::csv::Error::LimitExceeded(at) -> core::option::Some(at),
+        _ -> core::option::None(),
+    };
+    let reason: i32 = match (error) { ext::csv::Error::AllocationFailed -> 8, ext::csv::Error::LimitExceeded(at) -> 4, _ -> 1 };
+    if (reason == 8) { return fail(diagnostic,5,8); } if (reason == 4) { return fail(diagnostic,3,4); }
+    return fail(diagnostic,2,1);
+}
+fn append(output: &alloc::vec::Vec<u8>, value: core::slice::View<u8>, options: Options, diagnostic: &Diagnostic) -> bool {
+    if (value.len() > options.limits.max_output-output.len()) { fail(diagnostic,3,7); return false; }
+    let result: core::result::Result<i32,alloc::vec::Error> = output.try_extend(value);
+    if (core::result::is_err(result)) { vector_error(core::result::unwrap_err(result),diagnostic); return false; }
+    return true;
+}
+fn push(output: &alloc::vec::Vec<u8>, value: u8, options: Options, diagnostic: &Diagnostic) -> bool {
+    if (output.len() == options.limits.max_output) { fail(diagnostic,3,7); return false; }
+    let result: core::result::Result<i32,alloc::vec::Error> = output.try_push(value);
+    if (core::result::is_err(result)) { vector_error(core::result::unwrap_err(result),diagnostic); return false; }
+    return true;
+}
+// The input decoder has validated UTF-8; decimal spellings are ASCII. Quote
+// every field and double quotes while retaining all decoded label bytes.
+fn field(output: &alloc::vec::Vec<u8>, value: core::slice::View<u8>, last: bool, options: Options, diagnostic: &Diagnostic) -> bool {
+    let needed: i64 = (value.len() as i64)+3; let index: i32 = 0;
+    while (index < value.len()) { if (value.values[value.start+index] == 34) { needed += 1; } index += 1; }
+    if (last) { needed += 1; }
+    if (needed > (options.limits.max_output-output.len()) as i64) { fail(diagnostic,3,7); return false; }
+    if (!push(output,34,options,diagnostic)) { return false; } index = 0;
+    while (index < value.len()) {
+        let current: u8 = value.values[value.start+index];
+        if (current == 34 && !push(output,34,options,diagnostic)) { return false; }
+        if (!push(output,current,options,diagnostic)) { return false; } index += 1;
+    }
+    if (!push(output,34,options,diagnostic)) { return false; }
+    if (last) { return append(output,literal("\r\n",2),options,diagnostic); }
+    return push(output,44,options,diagnostic);
+}
+fn decimal_field(output: &alloc::vec::Vec<u8>, amount: &ext::decimal::Decimal, last: bool, options: Options, diagnostic: &Diagnostic) -> bool {
+    let formatted: core::result::Result<alloc::vec::Vec<u8>,ext::decimal::Error> = amount.format(options.limits);
+    if (core::result::is_err(formatted)) { decimal_error(core::result::unwrap_err(formatted),diagnostic); return false; }
+    let bytes: alloc::vec::Vec<u8> = core::result::unwrap(formatted);
+    let status: bool = field(output,bytes.as_view(),last,options,diagnostic); bytes.destroy(); return status;
+}
+fn evaluate(amounts: &Amounts, parser: &ext::csv::Decoder, previous: &ext::decimal::Decimal, options: Options, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.field = 2;
+    let quantity: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ext::decimal::parse_text(core::result::unwrap(parser.field(1)),options.limits);
+    if (core::result::is_err(quantity)) { return decimal_error(core::result::unwrap_err(quantity),diagnostic); } amounts.quantity = core::result::unwrap(quantity);
+    diagnostic.field = 3;
+    let price: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ext::decimal::parse_text(core::result::unwrap(parser.field(2)),options.limits);
+    if (core::result::is_err(price)) { return decimal_error(core::result::unwrap_err(price),diagnostic); } amounts.price = core::result::unwrap(price);
+    diagnostic.field = 4;
+    let rate: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ext::decimal::parse_text(core::result::unwrap(parser.field(3)),options.limits);
+    if (core::result::is_err(rate)) { return decimal_error(core::result::unwrap_err(rate),diagnostic); } amounts.rate = core::result::unwrap(rate);
+    diagnostic.field = 0;
+    let product: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = amounts.quantity.mul(amounts.price.borrow(),options.limits);
+    if (core::result::is_err(product)) { return decimal_error(core::result::unwrap_err(product),diagnostic); } amounts.product = core::result::unwrap(product);
+    let subtotal: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = amounts.product.rescale(-options.scale,options.rounding,options.limits);
+    if (core::result::is_err(subtotal)) { return decimal_error(core::result::unwrap_err(subtotal),diagnostic); } amounts.subtotal = core::result::unwrap(subtotal);
+    let raw_tax: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = amounts.subtotal.mul(amounts.rate.borrow(),options.limits);
+    if (core::result::is_err(raw_tax)) { return decimal_error(core::result::unwrap_err(raw_tax),diagnostic); } amounts.raw_tax = core::result::unwrap(raw_tax);
+    let tax: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = amounts.raw_tax.rescale(-options.scale,options.rounding,options.limits);
+    if (core::result::is_err(tax)) { return decimal_error(core::result::unwrap_err(tax),diagnostic); } amounts.tax = core::result::unwrap(tax);
+    let total: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = amounts.subtotal.add(amounts.tax.borrow(),options.limits);
+    if (core::result::is_err(total)) { return decimal_error(core::result::unwrap_err(total),diagnostic); } amounts.total = core::result::unwrap(total);
+    let running: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = previous.add(amounts.total.borrow(),options.limits);
+    if (core::result::is_err(running)) { return decimal_error(core::result::unwrap_err(running),diagnostic); } amounts.running = core::result::unwrap(running);
+    return 0;
+}
+fn header(parser: &ext::csv::Decoder) -> bool {
+    return core::result::unwrap(parser.field(0)).equals(text("label",5)) && core::result::unwrap(parser.field(1)).equals(text("quantity",8)) &&
+        core::result::unwrap(parser.field(2)).equals(text("unit_price",10)) && core::result::unwrap(parser.field(3)).equals(text("tax_rate",8));
+}
+fn record(ledger: &Ledger, parser: &ext::csv::Decoder, options: Options, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.row = parser.records_read(); diagnostic.field = 0;
+    if (core::option::unwrap_or(parser.field_count(),0) != 4) { return fail(diagnostic,2,2); }
+    if (options.header && diagnostic.row == 1) { if (!header(parser)) { return fail(diagnostic,2,2); } return 0; }
+    let amounts: Amounts = Amounts { quantity: ext::decimal::zero(), price: ext::decimal::zero(), rate: ext::decimal::zero(),
+        product: ext::decimal::zero(), subtotal: ext::decimal::zero(), raw_tax: ext::decimal::zero(), tax: ext::decimal::zero(), total: ext::decimal::zero(), running: ext::decimal::zero() };
+    let status: i32 = evaluate(amounts.borrow(),parser,ledger.total.borrow(),options,diagnostic);
+    if (status == 0) {
+        let staged: bool = field(ledger.output.borrow(),literal("line",4),false,options,diagnostic); let column: i32 = 0;
+        while (staged && column < 4) {
+            let original: core::text::Text = core::result::unwrap(parser.field(column));
+            staged = field(ledger.output.borrow(),core::slice::View { values: original.bytes, start: original.start, length: original.length },false,options,diagnostic); column += 1;
+        }
+        if (staged) { staged = decimal_field(ledger.output.borrow(),amounts.subtotal.borrow(),false,options,diagnostic); }
+        if (staged) { staged = decimal_field(ledger.output.borrow(),amounts.tax.borrow(),false,options,diagnostic); }
+        if (staged) { staged = decimal_field(ledger.output.borrow(),amounts.total.borrow(),false,options,diagnostic); }
+        if (staged) { staged = decimal_field(ledger.output.borrow(),amounts.running.borrow(),true,options,diagnostic); }
+        if (!staged) { status = diagnostic.status; }
+        if (status == 0) { ledger.total.destroy(); ledger.total = amounts.running; amounts.running = ext::decimal::zero(); }
+    }
+    amounts.destroy(); return status;
+}
+fn read_input(ledger: &Ledger, parser: &ext::csv::Decoder, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let storage: [i32;256] = [0;256]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    let source: std::stream::Descriptor = std::stream::stdin(); let total: u64 = 0;
+    while (true) {
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
+        if (core::result::is_err(received)) { if (core::io::is_interrupted(core::result::unwrap_err(received))) { continue; } return fail(diagnostic,6,9); }
+        let count: i32 = core::result::unwrap(received);
+        if (count == 0) {
+            let ended: core::result::Result<bool,ext::csv::Error> = parser.finish();
+            if (core::result::is_err(ended)) { diagnostic.row = parser.records_read()+1; return csv_error(core::result::unwrap_err(ended),diagnostic); }
+            if (core::result::unwrap(ended)) { let status: i32 = record(ledger,parser,options,diagnostic); if (status != 0) { return status; } }
+            if (options.header && parser.records_read() == 0) { return fail(diagnostic,2,2); } return 0;
+        }
+        if ((count as u64) > options.max_input-total) { return fail(diagnostic,3,4); } total += count as u64;
+        let index: i32 = 0;
+        while (index < count) {
+            let fed: core::result::Result<ext::csv::Progress,ext::csv::Error> = parser.feed(bytes,index,count-index);
+            if (core::result::is_err(fed)) { diagnostic.row = parser.records_read()+1; return csv_error(core::result::unwrap_err(fed),diagnostic); }
+            let progress: ext::csv::Progress = core::result::unwrap(fed); index += progress.consumed;
+            if (progress.record) { let status: i32 = record(ledger,parser,options,diagnostic); if (status != 0) { return status; } }
+        }
+    } return 0;
+}
+fn calculate(options: Options, diagnostic: &Diagnostic) -> i32 {
+    let csv_options: ext::csv::Options = ext::csv::default_options();
+    csv_options.max_records = options.max_rows; if (options.header) { csv_options.max_records += 1; }
+    csv_options.max_fields = 4; csv_options.max_field_bytes = options.max_field; csv_options.max_record_bytes = options.max_field*4;
+    let parser: ext::csv::Decoder = core::result::unwrap(ext::csv::decoder(csv_options));
+    let ledger: Ledger = Ledger { output: alloc::vec::new(), total: ext::decimal::zero() };
+    let status: i32 = 0;
+    // Establish the requested quantum even for an empty ledger.
+    let initial: core::result::Result<ext::decimal::Decimal,ext::decimal::Error> = ledger.total.rescale(-options.scale,options.rounding,options.limits);
+    if (core::result::is_err(initial)) { status = decimal_error(core::result::unwrap_err(initial),diagnostic); } else { ledger.total = core::result::unwrap(initial); }
+    if (status == 0 && !append(ledger.output.borrow(),literal("kind,label,quantity,unit_price,tax_rate,subtotal,tax,total,running_total\r\n",74),options,diagnostic)) { status = diagnostic.status; }
+    if (status == 0) { status = read_input(ledger.borrow(),parser.borrow(),options,diagnostic); }
+    parser.destroy();
+    if (status == 0) {
+        diagnostic.row = 0; diagnostic.field = 0;
+        let staged: bool = field(ledger.output.borrow(),literal("total",5),false,options,diagnostic); let column: i32 = 0;
+        while (staged && column < 7) { staged = field(ledger.output.borrow(),literal("",0),false,options,diagnostic); column += 1; }
+        if (staged) { staged = decimal_field(ledger.output.borrow(),ledger.total.borrow(),true,options,diagnostic); }
+        if (!staged) { status = diagnostic.status; }
+    }
+    if (status == 0) {
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),ledger.output.as_slice(),0,ledger.output.len()))) { status = fail(diagnostic,6,9); }
+    }
+    ledger.destroy(); return status;
+}
+fn rounding(value: core::slice::View<u8>, options: &Options) -> bool {
+    if (equal(value,"down",4)) { options.rounding = ext::decimal::Rounding::Down; return true; }
+    if (equal(value,"up",2)) { options.rounding = ext::decimal::Rounding::Up; return true; }
+    if (equal(value,"floor",5)) { options.rounding = ext::decimal::Rounding::Floor; return true; }
+    if (equal(value,"ceiling",7)) { options.rounding = ext::decimal::Rounding::Ceiling; return true; }
+    if (equal(value,"half-up",7)) { options.rounding = ext::decimal::Rounding::HalfUp; return true; }
+    if (equal(value,"half-down",9)) { options.rounding = ext::decimal::Rounding::HalfDown; return true; }
+    if (equal(value,"half-even",9)) { options.rounding = ext::decimal::Rounding::HalfEven; return true; }
+    if (equal(value,"unnecessary",11)) { options.rounding = ext::decimal::Rounding::Unnecessary; return true; } return false;
+}
+fn option(options: &Options, item: ext::cli::Occurrence, diagnostic: &Diagnostic) -> bool {
+    if (item.id == 12) { options.header = true; return true; } if (item.id == 13) { options.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value); diagnostic.argument = value.at.argument; diagnostic.offset = value.at.byte;
+    if (item.id == 2) { return rounding(value.bytes,options); }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let number: u64 = core::result::unwrap(parsed);
+    if (item.id == 6) { options.max_input = number; return true; } if (item.id == 10) { options.limits.max_work = number; return true; }
+    if (number > 2147483646 as u64) { return false; }
+    if (item.id == 1) { options.scale = number as i32; } if (item.id == 3) { options.max_rows = number as i32; }
+    if (item.id == 4) { if (number > 536870911) { return false; } options.max_field = number as i32; }
+    if (item.id == 7) { if (number > 536870911) { return false; } options.limits.max_limbs = number as i32; }
+    if (item.id == 8) { if (number < 1 || number > 1000000000) { return false; } options.limits.max_digits = number as i32; } if (item.id == 9) { if (number > 1000000000) { return false; } options.limits.max_scale = number as i32; }
+    if (item.id == 11) { options.limits.max_output = number as i32; } return true;
+}
+fn unexpected(item: ext::cli::Argument, diagnostic: &Diagnostic) -> bool { diagnostic.argument = item.at.argument; diagnostic.offset = item.at.byte; return false; }
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;12] = [
+        ext::cli::Spec { id: 1, long: literal("scale",5), short: 115, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("round",5), short: 114, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-rows",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-field",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("max-limbs",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("max-digits",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("max-scale",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 11, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 12, long: literal("header",6), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 13, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,12));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { scale: 2, rounding: ext::decimal::Rounding::HalfEven, header: false, help: false,
+        max_rows: 10000, max_field: 65536, max_input: 16777216,
+        limits: ext::decimal::Limits { max_limbs: 4096, max_digits: 10000, max_scale: 10000, max_work: 100000000, max_output: 16777216 } };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) {
+            let location: ext::cli::Location = match (core::result::unwrap_err(event)) {
+                ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at,
+                ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: -1, byte: -1 },
+            };
+            diagnostic.argument = location.argument; diagnostic.offset = location.byte; return fail(diagnostic,2,0);
+        }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) {
+            ext::cli::Event::Option(item) -> option(options.borrow(),item,diagnostic), ext::cli::Event::Operand(item) -> unexpected(item,diagnostic),
+        };
+        if (!valid) { return fail(diagnostic,2,0); }
+    }
+    diagnostic.argument = -1; diagnostic.offset = -1;
+    if (options.scale > options.limits.max_scale) { return fail(diagnostic,2,0); }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: decimal_ledger [--header] [--scale N] [--round MODE] [--max-rows N] [--max-field N] [--max-input N] [--max-limbs N] [--max-digits N] [--max-scale N] [--max-work N] [--max-output N]\nstdin CSV: label,quantity,unit_price,tax_rate\nround: down up floor ceiling half-up half-down half-even unnecessary\n",303);
+        let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(diagnostic,6,9); } return 0;
+    }
+    return calculate(options,diagnostic);
+}
+fn write_diagnostic(diagnostic: Diagnostic) -> bool {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256)); format.write_text(text("decimal_ledger: ",16));
+    if (diagnostic.reason == 0) { format.write_text(text("invalid-arguments",17)); } if (diagnostic.reason == 1) { format.write_text(text("invalid-csv",11)); }
+    if (diagnostic.reason == 2) { format.write_text(text("expected-four-column-record",27)); } if (diagnostic.reason == 3) { format.write_text(text("invalid-decimal",15)); }
+    if (diagnostic.reason == 4) { format.write_text(text("input-limit",11)); } if (diagnostic.reason == 5) { format.write_text(text("decimal-limit",13)); }
+    if (diagnostic.reason == 6) { format.write_text(text("work-limit",10)); } if (diagnostic.reason == 7) { format.write_text(text("output-limit",12)); }
+    if (diagnostic.reason == 8) { format.write_text(text("allocation-failure",18)); } if (diagnostic.reason == 9) { format.write_text(text("io-failure",10)); }
+    if (diagnostic.reason == 10) { format.write_text(text("rounding-required",17)); }
+    if (diagnostic.row > 0) { format.write_text(text(" record=",8)); format.write_signed(diagnostic.row as i64,core::fmt::decimal()); }
+    if (diagnostic.field > 0) { format.write_text(text(" field=",7)); format.write_signed(diagnostic.field as i64,core::fmt::decimal()); }
+    if (diagnostic.argument >= 0) { format.write_text(text(" argument=",10)); format.write_signed(diagnostic.argument as i64,core::fmt::decimal()); }
+    if (core::option::is_some(diagnostic.input_offset)) { format.write_text(text(" byte=",6)); format.write_unsigned(core::option::unwrap(diagnostic.input_offset),core::fmt::decimal()); }
+    else { if (diagnostic.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(diagnostic.offset as i64,core::fmt::decimal()); } }
+    format.write_text(text("\n",1)); let size: core::result::Result<i32,core::fmt::Error> = format.finish(); if (core::result::is_err(size)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(size)));
+}
+fn main() -> i32 {
+    let diagnostic: Diagnostic = Diagnostic { status: 0, reason: 0, row: 0, field: 0, argument: -1, offset: -1, input_offset: core::option::None() };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,40,8192); let status: i32 = 0;
+    if (core::result::is_err(captured)) {
+        status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(diagnostic.borrow(),5,8), std::args::Error::HostRead(at) -> fail(diagnostic.borrow(),6,9), _ -> fail(diagnostic.borrow(),2,0) };
+    } else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,diagnostic.borrow()); arguments.destroy(); }
+    if (status != 0 && !write_diagnostic(diagnostic)) { return 6; } return status;
+}

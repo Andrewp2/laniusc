@@ -1,0 +1,42 @@
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::statistics;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, eof: bool) -> bool { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { assert(eof && done == 0); return false; } done += got; } return true; }
+fn write_all(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let n: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(n > 0); done += n; } }
+fn get64(bytes:[u8],at:i32) -> u64 { let v:u64=0; let i:i32=0; while(i<8) { v=v|((bytes[at+i] as u64)<<(8*i)); i+=1; } return v; }
+fn code(error: ext::statistics::Error) -> i32 { return match (error.kind) { Empty -> 1, InsufficientData -> 2, NonFiniteInput -> 3, Overflow -> 4, CountLimit -> 5, Bounds -> 6, InvalidProbability -> 7, InvalidQuantileType -> 8, NotSorted -> 9, ScratchTooSmall -> 10, WorkLimit -> 11, Degenerate -> 12 }; }
+fn put(result: core::result::Result<f64,ext::statistics::Error>, values: [f64], index: i32) -> i32 { if (result.is_err()) { values[index] = 0.0; return 1 << index; } values[index] = result.unwrap(); return 0; }
+fn main() -> i32 {
+ let header_words: [i32;6] = [0;6]; let header_ptr: ptr = core::mem::i32_array_data_ptr(header_words); let ints: [i32] = core::mem::typed_slice_from_raw_parts(header_ptr,6); let header_bytes: [u8] = core::mem::typed_slice_from_raw_parts(header_ptr,24);
+ let input_words: [i32;2048] = [0;2048]; let input_ptr: ptr = core::mem::i32_array_data_ptr(input_words); let input_bytes: [u8] = core::mem::typed_slice_from_raw_parts(input_ptr,8192); let incoming: [f64;1024] = [0.0;1024];
+ let output_words: [i32;20] = [0;20]; let output_ptr: ptr = core::mem::i32_array_data_ptr(output_words); let output_ints: [i32] = core::mem::typed_slice_from_raw_parts(output_ptr,20); let output_values: [f64;8] = [0.0;8];
+ let x: [f64;516] = [0.0;516]; let scratch: [f64;516] = [0.0;516];
+ while (read_exact(header_ptr,24,true)) {
+  let op: i32 = ints[0]; let n: i32 = ints[1]; let split: i32 = ints[2]; let kind: i32 = ints[3]; assert(n >= 0 && n <= 512 && split >= 0 && split <= n); assert(read_exact(input_ptr,n*16,false));
+  let p: f64 = core::f64::from_bits(get64(header_bytes,16)); let i: i32 = 0; while (i < n*2) { incoming[i] = core::f64::from_bits(get64(input_bytes,i*8)); i += 1; } i = 0; while (i < n) { x[i+2] = incoming[i*2]; i += 1; } let view: core::slice::View<f64> = core::slice::view_range(x,2,n).unwrap();
+  let status: i32 = 0; let mask: i32 = 0; let count: u64 = 0; i = 0; while (i < 8) { output_values[i] = 0.0; i += 1; }
+  if (op <= 1) {
+   let a: ext::statistics::Moments = ext::statistics::moments(); let b: ext::statistics::Moments = ext::statistics::moments();
+   i = 0; while (i < n && status == 0) { let r: core::result::Result<bool,ext::statistics::Error> = core::result::Ok(true); if (op == 1 && i >= split) { r = b.push(x[i+2]); } else { r = a.push(x[i+2]); } if (r.is_err()) { status = code(r.unwrap_err()); } i += 1; }
+   if (op == 1 && status == 0) { let r: core::result::Result<bool,ext::statistics::Error> = a.merge(b); if (r.is_err()) { status = code(r.unwrap_err()); } }
+   count = a.count(); mask = put(a.mean(),output_values,0)|put(a.minimum(),output_values,1)|put(a.maximum(),output_values,2)|put(a.m2(),output_values,3)|put(a.population_variance(),output_values,4)|put(a.sample_variance(),output_values,5)|put(a.population_stddev(),output_values,6)|put(a.sample_stddev(),output_values,7);
+  }
+  if (op == 2 || op == 3) {
+   let a: ext::statistics::PairedMoments = ext::statistics::paired_moments(); let b: ext::statistics::PairedMoments = ext::statistics::paired_moments(); i = 0;
+   while (i < n && status == 0) { let r: core::result::Result<bool,ext::statistics::Error> = core::result::Ok(true); if (op == 3 && i >= split) { r = b.push(incoming[i*2],incoming[i*2+1]); } else { r = a.push(incoming[i*2],incoming[i*2+1]); } if (r.is_err()) { status = code(r.unwrap_err()); } i += 1; }
+   if (op == 3 && status == 0) { let r: core::result::Result<bool,ext::statistics::Error> = a.merge(b); if (r.is_err()) { status = code(r.unwrap_err()); } }
+   count = a.count(); mask = put(a.mean_x(),output_values,0)|put(a.mean_y(),output_values,1)|put(a.population_covariance(),output_values,2)|put(a.sample_covariance(),output_values,3)|put(a.correlation(),output_values,4); let fit: core::result::Result<ext::statistics::LinearFit,ext::statistics::Error> = a.linear_fit(); if (fit.is_err()) { mask = mask|224; } else { let line: ext::statistics::LinearFit = fit.unwrap(); output_values[5] = line.slope; output_values[6] = line.intercept; output_values[7] = line.r_squared; }
+  }
+  if (op == 4) { let a: ext::statistics::CompensatedSum = ext::statistics::sum(); i = 0; while (i < n && status == 0) { let r: core::result::Result<bool,ext::statistics::Error> = a.push(x[i+2]); if (r.is_err()) { status = code(r.unwrap_err()); } i += 1; } count = a.count(); mask = put(a.value(),output_values,0); }
+  if (op == 5) { let a: ext::statistics::ScaledNorm = ext::statistics::scaled_norm(); i = 0; while (i < n && status == 0) { let r: core::result::Result<bool,ext::statistics::Error> = a.push(x[i+2]); if (r.is_err()) { status = code(r.unwrap_err()); } i += 1; } count = a.count(); mask = put(a.value(),output_values,0); }
+  if (op == 6) {
+   let sorted: core::result::Result<ext::statistics::SortedSample,ext::statistics::Error> = ext::statistics::sorted_copy(view,core::slice::view_range(scratch,3,n).unwrap(),1000000);
+   if (sorted.is_err()) { status = code(sorted.unwrap_err()); } else { let t: core::result::Result<ext::statistics::QuantileType,ext::statistics::Error> = ext::statistics::quantile_type(kind); if (t.is_err()) { status = code(t.unwrap_err()); } else { let result: core::result::Result<f64,ext::statistics::Error> = sorted.unwrap().quantile(p,t.unwrap()); if (result.is_err()) { status = code(result.unwrap_err()); } else { output_values[0] = result.unwrap(); } } }
+  }
+  output_ints[0] = status; output_ints[1] = mask; output_ints[2] = (count & 4294967295) as i32; output_ints[3] = (count >> 32) as i32; i = 0; while (i < 8) { let bits: u64 = core::f64::to_bits(output_values[i]); output_ints[4+i*2] = (bits & 4294967295) as i32; output_ints[5+i*2] = (bits >> 32) as i32; i += 1; } write_all(output_ptr,80);
+ } return 0;
+}

@@ -1,0 +1,11 @@
+module app::main;
+import core::path;
+import core::slice;
+import core::result;
+fn main() -> i32 {
+    let raw: [u8; 1] = [97];
+    let bad: core::slice::View<u8> = core::result::unwrap(core::slice::view(raw,1));
+    bad.start = -1;
+    assert(core::result::is_err(core::path::from_view(bad)));
+    return 0;
+}

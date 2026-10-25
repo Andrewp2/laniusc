@@ -1,0 +1,23 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::websocket;
+fn bytes(value:str,count:i32) -> core::slice::View<u8> { let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn view(value:[u8],count:i32) -> core::slice::View<u8> { return core::result::unwrap(core::slice::view(value,count)); }
+fn allocation(error:ext::websocket::Error) -> bool { return match(error) { ext::websocket::Error::AllocationFailed->true, _->false }; }
+fn main() -> i32 {
+    let c:ext::websocket::Connection=core::result::unwrap(ext::websocket::connection(ext::websocket::Role::Client,ext::websocket::default_limits())); let key:[u8;4]=[1,2,3,4]; let failed:bool=false;
+    let first=c.send(false,1,bytes("ab",2),key); if(core::result::is_err(first)) { assert(allocation(core::result::unwrap_err(first)) && !c.close_sent() && !c.is_failed()); failed=true; first=c.send(false,1,bytes("ab",2),key); }
+    let owner:alloc::vec::Vec<u8> =core::result::unwrap(first); owner.destroy(); if(failed) { c.destroy(); return 4; }
+    let final=c.send(true,0,bytes("cd",2),key); if(core::result::is_err(final)) { assert(allocation(core::result::unwrap_err(final)) && !c.close_sent() && !c.is_failed()); failed=true; final=c.send(true,0,bytes("cd",2),key); }
+    let owner:alloc::vec::Vec<u8> =core::result::unwrap(final); owner.destroy(); if(failed) { c.destroy(); return 4; }
+    let one:[u8;4]=[1,2,97,98]; let two:[u8;8]=[128,6,99,100,101,102,103,104]; let ping:[u8;5]=[137,3,120,121,122];
+    let received=c.receive(view(one,4)); if(core::result::is_err(received)) { assert(allocation(core::result::unwrap_err(received)) && !c.is_failed()); failed=true; received=c.receive(view(one,4)); } assert(core::result::is_ok(received)); if(failed) { c.destroy(); return 4; }
+    let received=c.receive(view(ping,5)); if(core::result::is_err(received)) { assert(allocation(core::result::unwrap_err(received)) && !c.is_failed()); failed=true; received=c.receive(view(ping,5)); } assert(core::result::unwrap(received).payload.len()==3); if(failed) { c.destroy(); return 4; }
+    let received=c.receive(view(two,8)); if(core::result::is_err(received)) { assert(allocation(core::result::unwrap_err(received)) && !c.is_failed()); failed=true; received=c.receive(view(two,8)); }
+    let complete:ext::websocket::Step=core::result::unwrap(received); assert(complete.payload.len()==8); let expected:core::slice::View<u8> =bytes("abcdefgh",8); let i:i32=0; while(i<8) { assert(core::option::unwrap(complete.payload.get(i))==core::option::unwrap(expected.get(i))); i+=1; }
+    c.destroy(); if(failed) { return 4; } return 0;
+}

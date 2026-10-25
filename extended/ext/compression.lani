@@ -1,0 +1,183 @@
+// Owned raw DEFLATE, zlib and gzip containers. All errors destroy partial
+// output; a successful result owns one Vec that the caller must destroy.
+module ext::compression;
+import alloc::vec;
+import core::adler32;
+import core::crc32;
+import core::result;
+import core::slice;
+import ext::deflate;
+import ext::inflate;
+
+pub enum Format { RawDeflate, Zlib, Gzip }
+pub struct Limits { max_input: i32, max_output: i32, max_members: i32 }
+pub enum Error { Bounds, InputLimit, OutputLimit, MemberLimit, AllocationFailed, CapacityOverflow, Truncated, Header, UnsupportedMethod, UnsupportedWindow, UnsupportedDictionary, Checksum, SizeMismatch, TrailingData, Deflate(ext::inflate::Error), Encode(ext::deflate::Error) }
+pub const DEFAULT_MAX_INPUT: i32 = 16777216;
+pub const DEFAULT_MAX_OUTPUT: i32 = 67108864;
+pub const DEFAULT_MAX_MEMBERS: i32 = 1024;
+pub fn default_limits() -> Limits { return Limits { max_input: DEFAULT_MAX_INPUT, max_output: DEFAULT_MAX_OUTPUT, max_members: DEFAULT_MAX_MEMBERS }; }
+
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return view.values[view.start+index]; }
+fn part(view: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(view.subview(start,end)); }
+fn vector_error(error: alloc::vec::Error) -> Error {
+    let mapped: Error = match (error) { alloc::vec::Error::AllocationFailed -> Error::AllocationFailed, alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow, _ -> Error::Bounds }; return mapped;
+}
+fn resize(output: &alloc::vec::Vec<u8>, length: i32) -> core::result::Result<i32,Error> {
+    let result: core::result::Result<i32,alloc::vec::Error> = output.try_resize(length,0);
+    if (core::result::is_err(result)) { return core::result::Err(vector_error(core::result::unwrap_err(result))); } return core::result::Ok(length);
+}
+fn crc(view: core::slice::View<u8>) -> u32 {
+    let state: u32 = core::crc32::INITIAL; let index: i32 = 0;
+    while (index < view.length) { state = core::crc32::update_byte(state,byte(view,index)); index += 1; } return core::crc32::finish(state);
+}
+fn little16(view: core::slice::View<u8>, start: i32) -> i32 { return (byte(view,start) as i32) | ((byte(view,start+1) as i32) << 8); }
+fn little32(view: core::slice::View<u8>, start: i32) -> u32 { return (byte(view,start) as u32) | ((byte(view,start+1) as u32) << 8) | ((byte(view,start+2) as u32) << 16) | ((byte(view,start+3) as u32) << 24); }
+fn big32(view: core::slice::View<u8>, start: i32) -> u32 { return ((byte(view,start) as u32) << 24) | ((byte(view,start+1) as u32) << 16) | ((byte(view,start+2) as u32) << 8) | (byte(view,start+3) as u32); }
+fn put_little32(view: core::slice::View<u8>, start: i32, value: u32) {
+    view.values[view.start+start] = (value & 255) as u8; view.values[view.start+start+1] = ((value >> 8) & 255) as u8;
+    view.values[view.start+start+2] = ((value >> 16) & 255) as u8; view.values[view.start+start+3] = ((value >> 24) & 255) as u8;
+}
+fn put_big32(view: core::slice::View<u8>, start: i32, value: u32) {
+    view.values[view.start+start] = ((value >> 24) & 255) as u8; view.values[view.start+start+1] = ((value >> 16) & 255) as u8;
+    view.values[view.start+start+2] = ((value >> 8) & 255) as u8; view.values[view.start+start+3] = (value & 255) as u8;
+}
+
+// Fixed strategy; output has no timestamps, names, comments or OS dependency.
+pub fn encode(input: core::slice::View<u8>, format: Format, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (!valid(input) || max_output < 0) { return core::result::Err(Error::Bounds); }
+    let prefix: i32 = match (format) { Format::RawDeflate -> 0, Format::Zlib -> 2, Format::Gzip -> 10 };
+    let trailer: i32 = match (format) { Format::RawDeflate -> 0, Format::Zlib -> 4, Format::Gzip -> 8 };
+    if (max_output < prefix+trailer) { return core::result::Err(Error::OutputLimit); }
+    let scratch: alloc::vec::Vec<i32> = alloc::vec::new();
+    let grown: core::result::Result<i32,alloc::vec::Error> = scratch.try_resize(ext::deflate::scratch_len(),0);
+    if (core::result::is_err(grown)) { scratch.destroy(); return core::result::Err(vector_error(core::result::unwrap_err(grown))); }
+    let measured: core::result::Result<i32,ext::deflate::Error> = ext::deflate::encoded_len(input,scratch.as_view());
+    if (core::result::is_err(measured)) { scratch.destroy(); return core::result::Err(Error::Encode(core::result::unwrap_err(measured))); }
+    let body_length: i32 = core::result::unwrap(measured);
+    if (body_length > max_output-prefix-trailer) { scratch.destroy(); return core::result::Err(Error::OutputLimit); }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let allocated: core::result::Result<i32,Error> = resize(output.borrow(),prefix+body_length+trailer);
+    if (core::result::is_err(allocated)) { scratch.destroy(); output.destroy(); return core::result::Err(core::result::unwrap_err(allocated)); }
+    let bytes: core::slice::View<u8> = output.as_view();
+    let encoded: core::result::Result<i32,ext::deflate::Error> = ext::deflate::encode_into(input,part(bytes,prefix,prefix+body_length),scratch.as_view());
+    scratch.destroy();
+    if (core::result::is_err(encoded)) { output.destroy(); return core::result::Err(Error::Encode(core::result::unwrap_err(encoded))); }
+    if (core::result::unwrap(encoded) != body_length) { output.destroy(); return core::result::Err(Error::CapacityOverflow); }
+    if (prefix == 2) {
+        bytes.values[bytes.start] = 120; bytes.values[bytes.start+1] = 1;
+        put_big32(bytes,prefix+body_length,core::result::unwrap(core::adler32::checksum(input)));
+    }
+    if (prefix == 10) {
+        bytes.values[bytes.start] = 31; bytes.values[bytes.start+1] = 139; bytes.values[bytes.start+2] = 8;
+        bytes.values[bytes.start+9] = 255;
+        put_little32(bytes,prefix+body_length,crc(input)); put_little32(bytes,prefix+body_length+4,input.length as u32);
+    }
+    return core::result::Ok(output);
+}
+
+// Retry a member with geometric storage growth. Views are rebuilt after every
+// resize and each retry starts at the member output boundary (fresh history).
+fn inflate_member(input: core::slice::View<u8>, output: &alloc::vec::Vec<u8>, max_output: i32, window: i32) -> core::result::Result<ext::inflate::Progress,Error> {
+    let start: i32 = output.len(); let capacity: i32 = max_output-start;
+    if (capacity > 256) { capacity = 256; }
+    while (true) {
+        let grown: core::result::Result<i32,Error> = resize(output,start+capacity);
+        if (core::result::is_err(grown)) { return core::result::Err(core::result::unwrap_err(grown)); }
+        let decoded: core::result::Result<ext::inflate::Progress,ext::inflate::Failure> = ext::inflate::decode_into_window(input,part(output.as_view(),start,start+capacity),window);
+        if (core::result::is_ok(decoded)) {
+            let progress: ext::inflate::Progress = core::result::unwrap(decoded);
+            output.truncate(start+progress.written); return core::result::Ok(progress);
+        }
+        let failure: ext::inflate::Failure = core::result::unwrap_err(decoded);
+        let full: bool = match (failure.error) { ext::inflate::Error::OutputTooSmall -> true, _ -> false };
+        if (!full) {
+            let truncated: bool = match (failure.error) { ext::inflate::Error::UnexpectedEof -> true, _ -> false };
+            if (truncated) { return core::result::Err(Error::Truncated); }
+            return core::result::Err(Error::Deflate(failure.error));
+        }
+        if (capacity == max_output-start) { return core::result::Err(Error::OutputLimit); }
+        if (capacity > (max_output-start)/2) { capacity = max_output-start; }
+        else { capacity *= 2; if (capacity == 0) { capacity = 1; } }
+    }
+    return core::result::Err(Error::OutputLimit);
+}
+
+fn zlib_decode(input: core::slice::View<u8>, output: &alloc::vec::Vec<u8>, limits: Limits) -> core::result::Result<bool,Error> {
+    if (input.length < 2) { return core::result::Err(Error::Truncated); }
+    let cmf: i32 = byte(input,0) as i32; let flags: i32 = byte(input,1) as i32;
+    if ((cmf & 15) != 8) { return core::result::Err(Error::UnsupportedMethod); }
+    if ((cmf >> 4) > 7) { return core::result::Err(Error::UnsupportedWindow); }
+    if (((cmf << 8) | flags) % 31 != 0) { return core::result::Err(Error::Header); }
+    if ((flags & 32) != 0) { if (input.length < 6) { return core::result::Err(Error::Truncated); } return core::result::Err(Error::UnsupportedDictionary); }
+    if (limits.max_members == 0) { return core::result::Err(Error::MemberLimit); }
+    let window: i32 = 1 << ((cmf >> 4)+8);
+    let decoded: core::result::Result<ext::inflate::Progress,Error> = inflate_member(part(input,2,input.length),output,limits.max_output,window);
+    if (core::result::is_err(decoded)) { return core::result::Err(core::result::unwrap_err(decoded)); }
+    let end: i32 = 2+core::result::unwrap(decoded).read;
+    if (input.length-end < 4) { return core::result::Err(Error::Truncated); }
+    if (big32(input,end) != core::result::unwrap(core::adler32::checksum(output.as_view()))) { return core::result::Err(Error::Checksum); }
+    if (end+4 != input.length) { return core::result::Err(Error::TrailingData); } return core::result::Ok(true);
+}
+fn gzip_header(input: core::slice::View<u8>, start: i32) -> core::result::Result<i32,Error> {
+    if (input.length-start < 10) { return core::result::Err(Error::Truncated); }
+    if (byte(input,start) != 31 || byte(input,start+1) != 139) { return core::result::Err(Error::Header); }
+    if (byte(input,start+2) != 8) { return core::result::Err(Error::UnsupportedMethod); }
+    let flags: i32 = byte(input,start+3) as i32;
+    if ((flags & 224) != 0) { return core::result::Err(Error::Header); }
+    let position: i32 = start+10;
+    if ((flags & 4) != 0) {
+        if (input.length-position < 2) { return core::result::Err(Error::Truncated); }
+        let length: i32 = little16(input,position); position += 2;
+        if (length > input.length-position) { return core::result::Err(Error::Truncated); } position += length;
+    }
+    let bit: i32 = 8;
+    while (bit <= 16) {
+        if ((flags & bit) != 0) {
+            while (position < input.length && byte(input,position) != 0) { position += 1; }
+            if (position == input.length) { return core::result::Err(Error::Truncated); } position += 1;
+        }
+        bit *= 2;
+    }
+    if ((flags & 2) != 0) {
+        if (input.length-position < 2) { return core::result::Err(Error::Truncated); }
+        if (little16(input,position) != (crc(part(input,start,position)) & 65535) as i32) { return core::result::Err(Error::Checksum); } position += 2;
+    }
+    return core::result::Ok(position);
+}
+fn gzip_decode(input: core::slice::View<u8>, output: &alloc::vec::Vec<u8>, limits: Limits) -> core::result::Result<bool,Error> {
+    if (input.length == 0) { return core::result::Err(Error::Truncated); }
+    let position: i32 = 0; let members: i32 = 0;
+    while (position < input.length) {
+        if (members > 0) { if (byte(input,position) != 31 || (input.length-position >= 2 && byte(input,position+1) != 139)) { return core::result::Err(Error::TrailingData); } }
+        if (members == limits.max_members) { return core::result::Err(Error::MemberLimit); }
+        let header: core::result::Result<i32,Error> = gzip_header(input,position);
+        if (core::result::is_err(header)) { return core::result::Err(core::result::unwrap_err(header)); } position = core::result::unwrap(header);
+        let output_start: i32 = output.len();
+        let decoded: core::result::Result<ext::inflate::Progress,Error> = inflate_member(part(input,position,input.length),output,limits.max_output,32768);
+        if (core::result::is_err(decoded)) { return core::result::Err(core::result::unwrap_err(decoded)); }
+        let progress: ext::inflate::Progress = core::result::unwrap(decoded); position += progress.read;
+        if (input.length-position < 8) { return core::result::Err(Error::Truncated); }
+        if (little32(input,position) != crc(part(output.as_view(),output_start,output.len()))) { return core::result::Err(Error::Checksum); }
+        if (little32(input,position+4) != progress.written as u32) { return core::result::Err(Error::SizeMismatch); }
+        position += 8; members += 1;
+    }
+    return core::result::Ok(true);
+}
+pub fn decode(input: core::slice::View<u8>, format: Format, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (!valid(input) || limits.max_input < 0 || limits.max_output < 0 || limits.max_members < 0) { return core::result::Err(Error::Bounds); }
+    if (input.length > limits.max_input) { return core::result::Err(Error::InputLimit); }
+    let output: alloc::vec::Vec<u8> = alloc::vec::new(); let decoded: core::result::Result<bool,Error> = core::result::Ok(true);
+    let kind: i32 = match (format) { Format::RawDeflate -> 0, Format::Zlib -> 1, Format::Gzip -> 2 };
+    if (kind == 0) {
+        if (limits.max_members == 0) { decoded = core::result::Err(Error::MemberLimit); }
+        else {
+            let result: core::result::Result<ext::inflate::Progress,Error> = inflate_member(input,output.borrow(),limits.max_output,32768);
+            if (core::result::is_err(result)) { decoded = core::result::Err(core::result::unwrap_err(result)); }
+            else { if (core::result::unwrap(result).read != input.length) { decoded = core::result::Err(Error::TrailingData); } }
+        }
+    }
+    if (kind == 1) { decoded = zlib_decode(input,output.borrow(),limits); }
+    if (kind == 2) { decoded = gzip_decode(input,output.borrow(),limits); }
+    if (core::result::is_err(decoded)) { output.destroy(); return core::result::Err(core::result::unwrap_err(decoded)); } return core::result::Ok(output);
+}

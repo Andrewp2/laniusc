@@ -1,0 +1,86 @@
+// Linux host clocks and deadline waits over the existing native bindings.
+module std::clock;
+import core::mem;
+import core::result;
+import core::time;
+import std::time;
+
+pub enum Error { Host(i32), InvalidTimestamp, InvalidStatus, InvalidDuration, Overflow, ClockReversed }
+pub struct NativeClock {}
+pub fn native() -> NativeClock { return NativeClock {}; }
+pub impl NativeClock { pub fn borrow(&self) -> &NativeClock { return self; } }
+// A clock has a stable origin. pause_ms returns the requested count on success;
+// Host(4) means interrupted. It must never silently skip the requested wait.
+pub trait Monotonic {
+    pub fn now(&self) -> core::result::Result<core::time::Instant, Error>;
+    pub fn pause_ms(&self, milliseconds: i32) -> core::result::Result<i32, Error>;
+}
+fn read(system: bool) -> core::result::Result<core::time::SystemTime, Error> {
+    let words: [i32; 4] = [0;4]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    let status: i32 = 0;
+    if (system) { status = std::time::system_read(pointer,16); }
+    else { status = std::time::monotonic_read(pointer,16); }
+    if (status < 0) { return core::result::Err(Error::Host(0-status)); }
+    if (status != 0) { return core::result::Err(Error::InvalidStatus); }
+    if (words[3] != 0 || words[2] < 0 || words[2] >= 1000000000) { return core::result::Err(Error::InvalidTimestamp); }
+    let seconds: i64 = (((words[1] as u32) as u64) << 32 | ((words[0] as u32) as u64)) as i64;
+    if (!system && seconds < 0) { return core::result::Err(Error::InvalidTimestamp); }
+    return core::result::Ok(core::time::SystemTime { seconds: seconds, nanos: words[2] as u32 });
+}
+pub fn monotonic_now() -> core::result::Result<core::time::Instant, Error> {
+    let result: core::result::Result<core::time::SystemTime, Error> = read(false);
+    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+    let value: core::time::SystemTime = core::result::unwrap(result);
+    return core::result::Ok(core::time::instant(core::time::Duration { seconds: value.seconds as u64, nanos: value.nanos }));
+}
+pub fn system_now() -> core::result::Result<core::time::SystemTime, Error> { return read(true); }
+pub impl Monotonic for NativeClock {
+    pub fn now(&self) -> core::result::Result<core::time::Instant, Error> { return monotonic_now(); }
+    pub fn pause_ms(&self, milliseconds: i32) -> core::result::Result<i32, Error> {
+        if (milliseconds < 0) { return core::result::Err(Error::InvalidDuration); }
+        if (milliseconds == 0) { return core::result::Ok(0); }
+        let status: i32 = std::time::sleep_ms_i32(milliseconds);
+        if (status < 0) { return core::result::Err(Error::Host(0-status)); }
+        if (status != 0) { return core::result::Err(Error::InvalidStatus); }
+        return core::result::Ok(milliseconds);
+    }
+}
+fn interrupted(error: Error) -> bool {
+    let result: bool = match (error) { Error::Host(code) -> code == 4, _ -> false }; return result;
+}
+// Round up fractional milliseconds, then cap each host request at i32::MAX.
+fn chunk(span: core::time::Duration) -> i32 {
+    if (span.seconds > 2147483 as u64) { return 2147483647; }
+    let milliseconds: u64 = span.seconds * 1000 + (((span.nanos as u64) + 999999) / 1000000);
+    if (milliseconds > 2147483647 as u64) { return 2147483647; }
+    return milliseconds as i32;
+}
+fn wait<C>(clock: &C, deadline: core::time::Deadline, initial: core::time::Instant) -> core::result::Result<core::time::Instant, Error> where C: Monotonic {
+    let current: core::time::Instant = initial;
+    while (!deadline.is_expired(current)) {
+        let milliseconds: i32 = chunk(deadline.remaining(current));
+        let slept: core::result::Result<i32, Error> = clock.pause_ms(milliseconds);
+        if (core::result::is_err(slept)) {
+            let error: Error = core::result::unwrap_err(slept); if (!interrupted(error)) { return core::result::Err(error); }
+        } else { if (core::result::unwrap(slept) != milliseconds) { return core::result::Err(Error::InvalidStatus); } }
+        let read: core::result::Result<core::time::Instant, Error> = clock.now();
+        if (core::result::is_err(read)) { return read; }
+        let next: core::time::Instant = core::result::unwrap(read);
+        if (next.compare(current) < 0) { return core::result::Err(Error::ClockReversed); }
+        current = next;
+    }
+    return core::result::Ok(current);
+}
+pub fn sleep_until<C>(clock: &C, deadline: core::time::Deadline) -> core::result::Result<core::time::Instant, Error> where C: Monotonic {
+    let now: core::result::Result<core::time::Instant, Error> = clock.now();
+    if (core::result::is_err(now)) { return now; }
+    return wait(clock,deadline,core::result::unwrap(now));
+}
+pub fn sleep_for<C>(clock: &C, span: core::time::Duration) -> core::result::Result<core::time::Instant, Error> where C: Monotonic {
+    let now: core::result::Result<core::time::Instant, Error> = clock.now();
+    if (core::result::is_err(now)) { return now; }
+    let initial: core::time::Instant = core::result::unwrap(now);
+    let deadline: core::result::Result<core::time::Deadline, core::time::Error> = core::time::deadline_after(initial,span);
+    if (core::result::is_err(deadline)) { return core::result::Err(Error::Overflow); }
+    return wait(clock,core::result::unwrap(deadline),initial);
+}

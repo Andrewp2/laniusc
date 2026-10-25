@@ -1,0 +1,310 @@
+// Borrowed typed configuration across native JSON, TOML and explicit bindings.
+// Every source is borrowed. This module never destroys a source or its storage.
+module ext::settings;
+import core::mem;
+import core::decimal;
+import core::decimal_number;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::config;
+import ext::json;
+import ext::toml;
+
+pub enum Kind { Null, Boolean, Text, Array, Table, ExactDecimal, Integer, UnsignedInteger, Float64, OffsetDateTime, LocalDateTime, LocalDate, LocalTime }
+pub enum Error { InvalidLimits, Bounds, SourceLimit, BindingLimit, NodeLimit, DepthLimit, KeyLimit, TextLimit, PathLimit, WorkLimit, DuplicateKey(i32), WrongKind, NumberOutOfRange, NotInteger, InvalidScalar, Json(ext::json::Error), Toml(ext::toml::Error) }
+pub struct Limits { max_sources: i32, max_bindings: i32, max_nodes: i32, max_depth: i32, max_key_bytes: i32, max_text_bytes: i32, max_path: i32 }
+pub struct Budget { remaining: u64 }
+pub enum Scalar { Null, Boolean(bool), Text(core::text::Text), Integer(i64), UnsignedInteger(u64), Float64(f64), ExactDecimal(core::text::Text) }
+pub struct TomlValue { document: ext::toml::Document, node: ext::toml::NodeId }
+pub enum Data { Json(ext::config::Value), Toml(TomlValue), Scalar(Scalar) }
+pub struct Value { data: Data }
+pub struct Binding { key: core::text::Text, value: Value }
+pub enum Source { Json(ext::config::Config), Toml(ext::toml::Document), Bindings(core::slice::View<Binding>) }
+pub struct Layers { sources: core::slice::View<Source>, limits: Limits }
+pub struct Resolved { value: Value, source_index: i32 }
+pub enum ChildState { Json(ext::config::Children), Toml(TomlChildren), Empty }
+pub struct TomlChildren { document: ext::toml::Document, next_node: core::option::Option<ext::toml::NodeId> }
+pub struct Children { state: ChildState }
+
+pub fn default_limits() -> Limits { return Limits { max_sources:64, max_bindings:256, max_nodes:1000000, max_depth:128, max_key_bytes:65536, max_text_bytes:16777216, max_path:128 }; }
+pub fn budget(max_work: u64) -> Budget { return Budget { remaining:max_work }; }
+pub impl Budget { pub fn borrow(&self) -> &Budget { return self; } pub fn remaining_work(&self) -> u64 { return self.remaining; } pub fn charge(&self, amount: u64) -> core::result::Result<bool,Error> { if (!pay(self,amount)) { return core::result::Err(Error::WorkLimit); } return core::result::Ok(true); } }
+fn pay(work: &Budget, amount: u64) -> bool { if (amount > work.remaining) { work.remaining = 0; return false; } work.remaining -= amount; return true; }
+pub fn scalar(value: Scalar) -> Value { return Value { data:Data::Scalar(value) }; }
+pub fn json(value: ext::config::Value) -> Value { return Value { data:Data::Json(value) }; }
+pub fn toml(document: ext::toml::Document, node: ext::toml::NodeId) -> core::result::Result<Value,Error> {
+    let checked = document.kind(node); if (core::result::is_err(checked)) { return core::result::Err(Error::Toml(core::result::unwrap_err(checked))); }
+    return core::result::Ok(Value { data:Data::Toml(TomlValue { document:document,node:node }) });
+}
+pub impl Value {
+    pub fn kind(&self) -> Kind {
+        return match (self.data) {
+            Data::Json(value) -> json_kind(value.kind()),
+            Data::Toml(value) -> toml_kind(core::result::unwrap(value.document.kind(value.node))),
+            Data::Scalar(value) -> scalar_kind(value)
+        };
+    }
+}
+fn json_kind(kind: ext::json::Kind) -> Kind { return match (kind) { ext::json::Kind::Null -> Kind::Null, ext::json::Kind::Boolean -> Kind::Boolean, ext::json::Kind::Number -> Kind::ExactDecimal, ext::json::Kind::Text -> Kind::Text, ext::json::Kind::Array -> Kind::Array, ext::json::Kind::Object -> Kind::Table }; }
+fn toml_kind(kind: ext::toml::Kind) -> Kind { return match (kind) { ext::toml::Kind::Table -> Kind::Table, ext::toml::Kind::Array -> Kind::Array, ext::toml::Kind::String -> Kind::Text, ext::toml::Kind::Integer -> Kind::Integer, ext::toml::Kind::Float -> Kind::Float64, ext::toml::Kind::Boolean -> Kind::Boolean, ext::toml::Kind::OffsetDateTime -> Kind::OffsetDateTime, ext::toml::Kind::LocalDateTime -> Kind::LocalDateTime, ext::toml::Kind::LocalDate -> Kind::LocalDate, ext::toml::Kind::LocalTime -> Kind::LocalTime }; }
+fn scalar_kind(value: Scalar) -> Kind { return match (value) { Scalar::Null -> Kind::Null, Scalar::Boolean(v) -> Kind::Boolean, Scalar::Text(v) -> Kind::Text, Scalar::Integer(v) -> Kind::Integer, Scalar::UnsignedInteger(v) -> Kind::UnsignedInteger, Scalar::Float64(v) -> Kind::Float64, Scalar::ExactDecimal(v) -> Kind::ExactDecimal }; }
+
+
+pub fn kind_text(value: Kind) -> core::text::Text {
+    return match (value) { Kind::Null -> literal("null",4), Kind::Boolean -> literal("boolean",7), Kind::Text -> literal("text",4), Kind::Array -> literal("array",5), Kind::Table -> literal("table",5), Kind::ExactDecimal -> literal("decimal",7), Kind::Integer -> literal("integer",7), Kind::UnsignedInteger -> literal("unsigned",8), Kind::Float64 -> literal("float64",7), Kind::OffsetDateTime -> literal("offset-date-time",16), Kind::LocalDateTime -> literal("local-date-time",15), Kind::LocalDate -> literal("local-date",10), Kind::LocalTime -> literal("local-time",10) };
+}
+fn literal(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::text::from_utf8_unchecked(bytes,0,count); }
+fn tag(value: Kind) -> i32 { return match(value) { Kind::Null -> 0, Kind::Boolean -> 1, Kind::Text -> 2, Kind::Array -> 3, Kind::Table -> 4, Kind::ExactDecimal -> 5, Kind::Integer -> 6, Kind::UnsignedInteger -> 7, Kind::Float64 -> 8, Kind::OffsetDateTime -> 9, Kind::LocalDateTime -> 10, Kind::LocalDate -> 11, Kind::LocalTime -> 12 }; }
+fn valid_view(start: i32, length: i32) -> bool { return start >= 0 && length >= 0 && length <= 2147483647-start; }
+fn check_text(value: core::text::Text, maximum: i32, key: bool, work: &Budget) -> core::result::Result<bool,Error> {
+    if (!valid_view(value.start,value.length)) { return core::result::Err(Error::Bounds); }
+    if (value.byte_len() > maximum) { if (key) { return core::result::Err(Error::KeyLimit); } return core::result::Err(Error::TextLimit); }
+    if (!pay(work,(value.byte_len() as u64)+1)) { return core::result::Err(Error::WorkLimit); }
+    if (core::result::is_err(core::text::from_utf8_range(value.bytes,value.start,value.length))) { return core::result::Err(Error::InvalidScalar); }
+    return core::result::Ok(true);
+}
+fn same(a: core::text::Text, b: core::text::Text, work: &Budget) -> core::result::Result<bool,Error> {
+    if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); }
+    if (a.byte_len() != b.byte_len()) { return core::result::Ok(false); }
+    if (!pay(work,a.byte_len() as u64)) { return core::result::Err(Error::WorkLimit); }
+    return core::result::Ok(a.equals(b));
+}
+
+pub impl Value {
+    pub fn is_null(&self) -> bool { return tag(self.kind()) == 0; }
+    pub fn boolean(&self) -> core::result::Result<bool,Error> {
+        if (tag(self.kind()) != 1) { return core::result::Err(Error::WrongKind); }
+        return core::result::Ok(match(self.data) { Data::Json(v) -> core::result::unwrap(v.boolean()), Data::Toml(v) -> core::result::unwrap(v.document.boolean(v.node)), Data::Scalar(v) -> scalar_boolean(v) });
+    }
+    pub fn text(&self) -> core::result::Result<core::text::Text,Error> {
+        if (tag(self.kind()) != 2) { return core::result::Err(Error::WrongKind); }
+        return core::result::Ok(match(self.data) { Data::Json(v) -> core::result::unwrap(v.text()), Data::Toml(v) -> core::result::unwrap(v.document.string_view(v.node)), Data::Scalar(v) -> scalar_text(v) });
+    }
+    // Exact JSON decimal spelling, never TOML floating-point display text.
+    pub fn decimal_text(&self) -> core::result::Result<core::text::Text,Error> {
+        if (tag(self.kind()) != 5) { return core::result::Err(Error::WrongKind); }
+        return core::result::Ok(match(self.data) { Data::Json(v) -> core::result::unwrap(v.number_text()), Data::Scalar(v) -> scalar_decimal(v), _ -> literal("",0) });
+    }
+    pub fn float64(&self) -> core::result::Result<f64,Error> {
+        if (tag(self.kind()) != 8) { return core::result::Err(Error::WrongKind); }
+        return core::result::Ok(match(self.data) { Data::Toml(v) -> core::result::unwrap(v.document.float64(v.node)), Data::Scalar(v) -> scalar_float(v), _ -> 0.0 });
+    }
+    pub fn temporal_text(&self) -> core::result::Result<core::text::Text,Error> {
+        if (tag(self.kind()) < 9) { return core::result::Err(Error::WrongKind); }
+        return match(self.data) { Data::Toml(v) -> core::result::Ok(core::result::unwrap(v.document.temporal_view(v.node))), _ -> core::result::Err(Error::WrongKind) };
+    }
+    pub fn temporal(&self, work: &Budget) -> core::result::Result<ext::toml::Temporal,Error> {
+        if (tag(self.kind()) < 9) { return core::result::Err(Error::WrongKind); }
+        if (!pay(work,(core::result::unwrap(self.temporal_text()).byte_len() as u64)+1)) { return core::result::Err(Error::WorkLimit); }
+        return match(self.data) { Data::Toml(v) -> core::result::Ok(core::result::unwrap(v.document.temporal(v.node))), _ -> core::result::Err(Error::WrongKind) };
+    }
+    pub fn key(&self) -> core::result::Result<core::text::Text,Error> {
+        return match(self.data) { Data::Json(v) -> key_json(v), Data::Toml(v) -> key_toml(v), _ -> core::result::Err(Error::WrongKind) };
+    }
+    pub fn len(&self) -> core::result::Result<i32,Error> {
+        let k: i32 = tag(self.kind()); if (k != 3 && k != 4) { return core::result::Err(Error::WrongKind); }
+        return core::result::Ok(match(self.data) { Data::Json(v) -> core::result::unwrap(v.len()), Data::Toml(v) -> core::result::unwrap(v.document.child_count(v.node)), _ -> 0 });
+    }
+    pub fn children(&self) -> core::result::Result<Children,Error> {
+        let k: i32 = tag(self.kind()); if (k != 3 && k != 4) { return core::result::Err(Error::WrongKind); }
+        let state: ChildState = match(self.data) { Data::Json(v) -> ChildState::Json(core::result::unwrap(v.children())), Data::Toml(v) -> ChildState::Toml(TomlChildren { document:v.document,next_node:core::result::unwrap(v.document.first_child(v.node)) }), _ -> ChildState::Empty };
+        return core::result::Ok(Children { state:state });
+    }
+    pub fn member(&self, key: core::text::Text, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error> {
+        if (tag(self.kind()) != 4) { return core::result::Err(Error::WrongKind); }
+        let checked = check_text(key,2147483647,true,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let children: Children = core::result::unwrap(self.children());
+        while (true) {
+            let next = children.next(work); if (core::result::is_err(next)) { return core::result::Err(core::result::unwrap_err(next)); }
+            let child: core::option::Option<Value> = core::result::unwrap(next); if (core::option::is_none(child)) { return core::result::Ok(core::option::None()); }
+            let value: Value = core::option::unwrap(child); let equal = same(core::result::unwrap(value.key()),key,work);
+            if (core::result::is_err(equal)) { return core::result::Err(core::result::unwrap_err(equal)); }
+            if (core::result::unwrap(equal)) { return core::result::Ok(core::option::Some(value)); }
+        }
+        return core::result::Ok(core::option::None());
+    }
+    pub fn element(&self, index: i32, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error> {
+        if (tag(self.kind()) != 3) { return core::result::Err(Error::WrongKind); }
+        if (index < 0) { return core::result::Err(Error::Bounds); }
+        let children: Children = core::result::unwrap(self.children()); let position: i32 = 0;
+        while (position <= index) {
+            let next = children.next(work); if (core::result::is_err(next)) { return next; }
+            let child: core::option::Option<Value> = core::result::unwrap(next);
+            if (core::option::is_none(child) || position == index) { return core::result::Ok(child); } position += 1;
+        }
+        return core::result::Ok(core::option::None());
+    }
+    pub fn integer_i64(&self, work: &Budget) -> core::result::Result<i64,Error> {
+        if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); }
+        let k: i32 = tag(self.kind());
+        if (k == 6) { return core::result::Ok(match(self.data) { Data::Toml(v) -> core::result::unwrap(v.document.integer_i64(v.node)), Data::Scalar(v) -> scalar_integer(v), _ -> 0 }); }
+        if (k == 7) { let value: u64 = scalar_unsigned_data(self.data); if (value > 9223372036854775807) { return core::result::Err(Error::NumberOutOfRange); } return core::result::Ok(value as i64); }
+        if (k != 5) { return core::result::Err(Error::WrongKind); }
+        let text: core::text::Text = core::result::unwrap(self.decimal_text()); let checked = exact_decimal(text,2147483647,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let negative: bool = core::option::unwrap(text.byte_at(0)) == 45; let limit: u64 = 9223372036854775807; if (negative) { limit += 1; }
+        let magnitude = exact_magnitude(text,limit,work); if (core::result::is_err(magnitude)) { return core::result::Err(core::result::unwrap_err(magnitude)); }
+        let value: u64 = core::result::unwrap(magnitude); if (negative) { if (value == 9223372036854775808) { let minimum: i64 = -9223372036854775808; return core::result::Ok(minimum); } return core::result::Ok(0-(value as i64)); } return core::result::Ok(value as i64);
+    }
+    pub fn integer_u64(&self, work: &Budget) -> core::result::Result<u64,Error> {
+        if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); }
+        let k: i32 = tag(self.kind());
+        if (k == 7) { return core::result::Ok(scalar_unsigned_data(self.data)); }
+        if (k == 6) { let result = self.integer_i64(work); if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value: i64 = core::result::unwrap(result); if (value < 0) { return core::result::Err(Error::NumberOutOfRange); } return core::result::Ok(value as u64); }
+        if (k != 5) { return core::result::Err(Error::WrongKind); }
+        let text: core::text::Text = core::result::unwrap(self.decimal_text()); let checked = exact_decimal(text,2147483647,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } let result = exact_magnitude(text,18446744073709551615,work);
+        if (core::result::is_err(result)) { return result; } let value: u64 = core::result::unwrap(result);
+        if (value != 0 && core::option::unwrap(text.byte_at(0)) == 45) { return core::result::Err(Error::NumberOutOfRange); } return core::result::Ok(value);
+    }
+}
+fn scalar_boolean(value: Scalar) -> bool { return match(value) { Scalar::Boolean(v) -> v, _ -> false }; }
+fn scalar_text(value: Scalar) -> core::text::Text { return match(value) { Scalar::Text(v) -> v, _ -> literal("",0) }; }
+fn scalar_decimal(value: Scalar) -> core::text::Text { return match(value) { Scalar::ExactDecimal(v) -> v, _ -> literal("",0) }; }
+fn scalar_float(value: Scalar) -> f64 { return match(value) { Scalar::Float64(v) -> v, _ -> 0.0 }; }
+fn scalar_integer(value: Scalar) -> i64 { return match(value) { Scalar::Integer(v) -> v, _ -> 0 }; }
+fn scalar_unsigned_data(value: Data) -> u64 { return match(value) { Data::Scalar(v) -> scalar_unsigned(v), _ -> 0 }; }
+fn scalar_unsigned(value: Scalar) -> u64 { return match(value) { Scalar::UnsignedInteger(v) -> v, _ -> 0 }; }
+fn key_json(value: ext::config::Value) -> core::result::Result<core::text::Text,Error> { let r = value.key(); if (core::result::is_err(r)) { return core::result::Err(Error::WrongKind); } return core::result::Ok(core::result::unwrap(r)); }
+fn key_toml(value: TomlValue) -> core::result::Result<core::text::Text,Error> { let r = value.document.key_view(value.node); if (core::result::is_err(r)) { return core::result::Err(Error::WrongKind); } return core::result::Ok(core::result::unwrap(r)); }
+
+pub impl Children {
+    // On WorkLimit the cursor stays put. Exhaustion is fused and costs one unit.
+    pub fn next(&self, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error> {
+        if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); }
+        return match(self.state) {
+            ChildState::Empty -> core::result::Ok(core::option::None()),
+            ChildState::Json(cursor) -> self.next_json(cursor),
+            ChildState::Toml(cursor) -> self.next_toml(cursor)
+        };
+    }
+    fn next_json(&self, cursor: ext::config::Children) -> core::result::Result<core::option::Option<Value>,Error> {
+        let next: core::option::Option<ext::config::Value> = cursor.next(); self.state = ChildState::Json(cursor);
+        if (core::option::is_none(next)) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(json(core::option::unwrap(next))));
+    }
+    fn next_toml(&self, cursor: TomlChildren) -> core::result::Result<core::option::Option<Value>,Error> {
+        if (core::option::is_none(cursor.next_node)) { return core::result::Ok(core::option::None()); }
+        let node: ext::toml::NodeId = core::option::unwrap(cursor.next_node); let value: Value = core::result::unwrap(toml(cursor.document,node));
+        cursor.next_node = core::result::unwrap(cursor.document.next_sibling(node)); self.state = ChildState::Toml(cursor); return core::result::Ok(core::option::Some(value));
+    }
+}
+
+// Validate a strict number token without constructing a JSON document.
+pub fn exact_decimal(text: core::text::Text, maximum_bytes: i32, work: &Budget) -> core::result::Result<Value,Error> {
+    if (maximum_bytes < 0) { return core::result::Err(Error::InvalidLimits); }
+    let checked = check_text(text,maximum_bytes,false,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (!pay(work,2*(text.byte_len() as u64)+1)) { return core::result::Err(Error::WorkLimit); }
+    let raw: core::slice::View<u8> = core::slice::View<u8> { values:text.bytes,start:text.start,length:text.length };
+    if (core::result::is_err(core::decimal_number::parse(raw))) { return core::result::Err(Error::InvalidScalar); }
+    return core::result::Ok(scalar(Scalar::ExactDecimal(text)));
+}
+pub fn parse_boolean(text: core::text::Text, work: &Budget) -> core::result::Result<Value,Error> {
+    let checked = check_text(text,5,false,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (!pay(work,5)) { return core::result::Err(Error::WorkLimit); }
+    if (text.equals(literal("true",4))) { return core::result::Ok(scalar(Scalar::Boolean(true))); } if (text.equals(literal("false",5))) { return core::result::Ok(scalar(Scalar::Boolean(false))); } return core::result::Err(Error::InvalidScalar);
+}
+pub fn parse_integer(text: core::text::Text, work: &Budget) -> core::result::Result<Value,Error> {
+    let checked = check_text(text,20,false,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+    if (!pay(work,text.byte_len() as u64)) { return core::result::Err(Error::WorkLimit); }
+    let parsed = text.parse_i64(); if (core::result::is_err(parsed)) { let overflow: bool = match(core::result::unwrap_err(parsed).kind) { core::decimal::ParseErrorKind::Overflow -> true, _ -> false }; if (overflow) { return core::result::Err(Error::NumberOutOfRange); } return core::result::Err(Error::InvalidScalar); }
+    return core::result::Ok(scalar(Scalar::Integer(core::result::unwrap(parsed))));
+}
+
+// Same exact integral interpretation as ext::json, charged before every scan.
+// Exponent saturation cannot affect a result fitting 20 significant digits.
+fn exact_magnitude(text: core::text::Text, limit: u64, work: &Budget) -> core::result::Result<u64,Error> {
+    if (!pay(work,3*(text.byte_len() as u64)+21)) { return core::result::Err(Error::WorkLimit); }
+    let start: i32 = 0; if (core::option::unwrap(text.byte_at(0)) == 45) { start = 1; }
+    let end: i32 = start; let digits: i32 = 0; let fraction: i32 = 0; let fractional: bool = false;
+    let first: i32 = -1; let last: i32 = -1; let first_byte: i32 = -1; let last_byte: i32 = -1;
+    while (end < text.byte_len()) { let byte: u8 = core::option::unwrap(text.byte_at(end)); if (byte == 101 || byte == 69) { break; } if (byte == 46) { fractional = true; } else { if (byte != 48) { if (first < 0) { first = digits; first_byte = end; } last = digits; last_byte = end; } digits += 1; if (fractional) { fraction += 1; } } end += 1; }
+    if (first < 0) { return core::result::Ok(0); }
+    let exponent: i64 = 0; let negative: bool = false; let index: i32 = end; if (index < text.byte_len()) { index += 1; }
+    if (index < text.byte_len()) { let sign: u8 = core::option::unwrap(text.byte_at(index)); if (sign == 43 || sign == 45) { negative = sign == 45; index += 1; } }
+    while (index < text.byte_len()) { if (exponent < 4294967296) { exponent = exponent*10+((core::option::unwrap(text.byte_at(index))-48) as i64); if (exponent > 4294967296) { exponent = 4294967296; } } index += 1; }
+    if (negative) { exponent = 0-exponent; } let scale: i64 = exponent-(fraction as i64)+((digits-last-1) as i64);
+    if (scale < 0) { return core::result::Err(Error::NotInteger); } if (((last-first+1) as i64)+scale > 20) { return core::result::Err(Error::NumberOutOfRange); }
+    let value: u64 = 0; index = first_byte;
+    while (index <= last_byte) { let byte: u8 = core::option::unwrap(text.byte_at(index)); if (byte != 46) { let digit: u64 = (byte-48) as u64; if (value > limit/10 || (value == limit/10 && digit > limit%10)) { return core::result::Err(Error::NumberOutOfRange); } value = value*10+digit; } index += 1; }
+    while (scale > 0) { if (value > limit/10) { return core::result::Err(Error::NumberOutOfRange); } value *= 10; scale -= 1; } return core::result::Ok(value);
+}
+
+fn validate_value(value: Value, depth: i32, nodes: &Count, limits: Limits, work: &Budget) -> core::result::Result<bool,Error> {
+    if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); }
+    if (nodes.value >= limits.max_nodes) { return core::result::Err(Error::NodeLimit); } nodes.value += 1;
+    if (depth > limits.max_depth) { return core::result::Err(Error::DepthLimit); }
+    let k: i32 = tag(value.kind());
+    if (k == 2 || k == 5 || k >= 9) {
+        let text: core::text::Text = literal("",0); if (k == 2) { text = core::result::unwrap(value.text()); } if (k == 5) { text = core::result::unwrap(value.decimal_text()); } if (k >= 9) { text = core::result::unwrap(value.temporal_text()); }
+        let checked = check_text(text,limits.max_text_bytes,false,work); if (core::result::is_err(checked)) { return checked; }
+        if (k == 5) { let decimal = exact_decimal(text,limits.max_text_bytes,work); if (core::result::is_err(decimal)) { return core::result::Err(core::result::unwrap_err(decimal)); } }
+    }
+    if (k == 3 || k == 4) {
+        let children: Children = core::result::unwrap(value.children());
+        while (true) {
+            let next = children.next(work); if (core::result::is_err(next)) { return core::result::Err(core::result::unwrap_err(next)); }
+            let child: core::option::Option<Value> = core::result::unwrap(next); if (core::option::is_none(child)) { break; } let item: Value = core::option::unwrap(child);
+            if (k == 4) { let checked = check_text(core::result::unwrap(item.key()),limits.max_key_bytes,true,work); if (core::result::is_err(checked)) { return checked; } }
+            let checked = validate_value(item,depth+1,nodes,limits,work); if (core::result::is_err(checked)) { return checked; }
+        }
+    }
+    return core::result::Ok(true);
+}
+struct Count { value: i32 }
+impl Count { fn borrow(&self) -> &Count { return self; } }
+pub fn layers(sources: core::slice::View<Source>, limits: Limits, work: &Budget) -> core::result::Result<Layers,Error> {
+    if (limits.max_sources < 0 || limits.max_bindings < 0 || limits.max_nodes < 0 || limits.max_depth < 0 || limits.max_depth > 256 || limits.max_key_bytes < 0 || limits.max_text_bytes < 0 || limits.max_path < 0) { return core::result::Err(Error::InvalidLimits); }
+    if (!valid_view(sources.start,sources.length)) { return core::result::Err(Error::Bounds); }
+    if (sources.len() > limits.max_sources) { return core::result::Err(Error::SourceLimit); }
+    let nodes: Count = Count { value:0 }; let index: i32 = 0;
+    while (index < sources.len()) {
+        if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); }
+        let source: Source = core::option::unwrap(sources.get(index)); let checked: core::result::Result<bool,Error> = match(source) { Source::Json(v) -> validate_value(json(v.root()),0,nodes.borrow(),limits,work), Source::Toml(v) -> validate_toml(v,nodes.borrow(),limits,work), Source::Bindings(v) -> validate_bindings(v,nodes.borrow(),limits,work) };
+        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } index += 1;
+    }
+    return core::result::Ok(Layers { sources:sources,limits:limits });
+}
+fn validate_toml(document: ext::toml::Document, nodes: &Count, limits: Limits, work: &Budget) -> core::result::Result<bool,Error> {
+    let root: core::option::Option<ext::toml::NodeId> = document.root(); if (core::option::is_none(root)) { return core::result::Err(Error::Bounds); }
+    return validate_value(core::result::unwrap(toml(document,core::option::unwrap(root))),0,nodes,limits,work);
+}
+fn validate_bindings(bindings: core::slice::View<Binding>, nodes: &Count, limits: Limits, work: &Budget) -> core::result::Result<bool,Error> {
+    if (!valid_view(bindings.start,bindings.length)) { return core::result::Err(Error::Bounds); }
+    if (bindings.len() > limits.max_bindings) { return core::result::Err(Error::BindingLimit); }
+    let index: i32 = 0;
+    while (index < bindings.len()) {
+        let binding: Binding = core::option::unwrap(bindings.get(index)); let checked = check_text(binding.key,limits.max_key_bytes,true,work); if (core::result::is_err(checked)) { return checked; }
+        let checked = validate_value(binding.value,1,nodes,limits,work); if (core::result::is_err(checked)) { return checked; }
+        let previous: i32 = 0; while (previous < index) { let earlier: Binding = core::option::unwrap(bindings.get(previous)); let equal = same(earlier.key,binding.key,work); if (core::result::is_err(equal)) { return core::result::Err(core::result::unwrap_err(equal)); } if (core::result::unwrap(equal)) { return core::result::Err(Error::DuplicateKey(index)); } previous += 1; } index += 1;
+    }
+    return core::result::Ok(true);
+}
+pub impl Layers {
+    pub fn len(&self) -> i32 { return self.sources.len(); }
+    pub fn get(&self, key: core::text::Text, work: &Budget) -> core::result::Result<core::option::Option<Resolved>,Error> {
+        let checked = check_text(key,self.limits.max_key_bytes,true,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let index: i32 = self.sources.len();
+        while (index > 0) {
+            if (!pay(work,1)) { return core::result::Err(Error::WorkLimit); } index -= 1;
+            let source: Source = core::option::unwrap(self.sources.get(index)); let result: core::result::Result<core::option::Option<Value>,Error> = match(source) { Source::Json(v) -> json(v.root()).member(key,work), Source::Toml(v) -> toml_root_member(v,key,work), Source::Bindings(v) -> binding_member(v,key,work) };
+            if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
+            let found: core::option::Option<Value> = core::result::unwrap(result); if (core::option::is_some(found)) { return core::result::Ok(core::option::Some(Resolved { value:core::option::unwrap(found),source_index:index })); }
+        }
+        return core::result::Ok(core::option::None());
+    }
+    // The first component selects a whole winning subtree before descent.
+    pub fn lookup(&self, path: core::slice::View<core::text::Text>, work: &Budget) -> core::result::Result<core::option::Option<Resolved>,Error> {
+        if (!valid_view(path.start,path.length) || path.len() == 0) { return core::result::Err(Error::Bounds); }
+        if (path.len() > self.limits.max_path) { return core::result::Err(Error::PathLimit); }
+        let index: i32 = 0; while (index < path.len()) { let checked = check_text(core::option::unwrap(path.get(index)),self.limits.max_key_bytes,true,work); if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); } index += 1; }
+        let result = self.get(core::option::unwrap(path.get(0)),work); if (core::result::is_err(result)) { return result; }
+        let found: core::option::Option<Resolved> = core::result::unwrap(result); if (core::option::is_none(found)) { return core::result::Ok(found); }
+        let resolved: Resolved = core::option::unwrap(found); index = 1;
+        while (index < path.len()) { let next = resolved.value.member(core::option::unwrap(path.get(index)),work); if (core::result::is_err(next)) { return core::result::Err(core::result::unwrap_err(next)); } let child: core::option::Option<Value> = core::result::unwrap(next); if (core::option::is_none(child)) { return core::result::Ok(core::option::None()); } resolved.value = core::option::unwrap(child); index += 1; }
+        return core::result::Ok(core::option::Some(resolved));
+    }
+}
+fn toml_root_member(document: ext::toml::Document, key: core::text::Text, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error> { let value: Value = core::result::unwrap(toml(document,core::option::unwrap(document.root()))); return value.member(key,work); }
+fn binding_member(bindings: core::slice::View<Binding>, key: core::text::Text, work: &Budget) -> core::result::Result<core::option::Option<Value>,Error> {
+    let index: i32 = 0; while (index < bindings.len()) { let binding: Binding = core::option::unwrap(bindings.get(index)); let equal = same(binding.key,key,work); if (core::result::is_err(equal)) { return core::result::Err(core::result::unwrap_err(equal)); } if (core::result::unwrap(equal)) { return core::result::Ok(core::option::Some(binding.value)); } index += 1; } return core::result::Ok(core::option::None());
+}

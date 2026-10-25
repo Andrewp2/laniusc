@@ -1,0 +1,158 @@
+// Single-shot growth denial. The String and initial sink reserve are the only
+// two setup allocations. Every later allocation belongs to sink growth.
+// Each transfer uses independent source backing and one item; failed insertion
+// preserves the complete prefix, capacity and views captured before that call.
+module app::main;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::args_checked;
+import std::io;
+struct Fault { code: i64, flag: core::option::Option<bool> }
+struct Payload {
+    id: i32, wide: i64, bytes: [u8; 3],
+    nested: core::option::Option<core::result::Result<[u64; 2], Fault>>,
+    text: alloc::string::String
+}
+fn payload(id: i32, text: alloc::string::String) -> Payload {
+    let nested: core::option::Option<core::result::Result<[u64; 2], Fault>> = core::option::None();
+    if (id % 3 == 0) {
+        let pair: [u64; 2] = [18446744073709551615, 4294967297 + (id as u64)];
+        let good: core::result::Result<[u64; 2], Fault> = core::result::Ok(pair);
+        nested = core::option::Some(good);
+    }
+    if (id % 3 == 1) {
+        let flag: core::option::Option<bool> = core::option::Some(false);
+        let bad: core::result::Result<[u64; 2], Fault> = core::result::Err(Fault { code: -4294967297 - (id as i64), flag: flag });
+        nested = core::option::Some(bad);
+    }
+    let bytes: [u8; 3] = [id as u8, 128, 255];
+    return Payload { id: id, wide: -8589934593 - (id as i64), bytes: bytes, nested: nested, text: text };
+}
+fn check(item: Payload, id: i32) {
+    assert(item.id == id && item.wide == -8589934593 - (id as i64));
+    assert(item.bytes[0] == id as u8 && item.bytes[1] == 128 && item.bytes[2] == 255);
+    if (id % 3 == 2) { assert(core::option::is_none(item.nested)); }
+    else {
+        let nested: core::result::Result<[u64; 2], Fault> = core::option::unwrap(item.nested);
+        if (id % 3 == 0) {
+            let pair: [u64; 2] = core::result::unwrap(nested);
+            assert(pair[0] == 18446744073709551615 && pair[1] == 4294967297 + (id as u64));
+        } else {
+            let error: Fault = core::result::unwrap_err(nested);
+            assert(error.code == -4294967297 - (id as i64) && !core::option::unwrap(error.flag));
+        }
+    }
+    let text: core::text::Text = item.text.as_text();
+    assert(text.byte_len() == 4 && core::option::unwrap(text.byte_at(0)) == 97 && core::option::unwrap(text.byte_at(3)) == 100);
+}
+struct Probe { position: i32, calls: i32, owner: alloc::string::String }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<Payload> for Probe {
+    pub fn next(&self) -> core::option::Option<Payload> {
+        self.calls += 1;
+        if (self.position == 17) { return core::option::None(); }
+        let id: i32 = self.position; self.position += 1;
+        return core::option::Some(payload(id, self.owner));
+    }
+}
+fn expected_id(index: i32) -> i32 {
+    if (index < 2) { return index + 31; }
+    return index - 2;
+}
+fn vector(owner: alloc::string::String) -> u8 {
+    let sink: alloc::vec::Vec<Payload> = core::result::unwrap(alloc::vec::with_capacity<Payload>(2));
+    core::result::unwrap(sink.try_push(payload(31, owner)));
+    core::result::unwrap(sink.try_push(payload(32, owner)));
+    let source: Probe = Probe { position: 0, calls: 0, owner: owner };
+    let index: i32 = 0; let failures: u8 = 0;
+    while (index < 17) {
+        let before: core::slice::View<Payload> = sink.as_view();
+        let old_len: i32 = sink.len(); let old_capacity: i32 = sink.capacity();
+        let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, alloc::vec::Error>> = core::iter::try_transfer_up_to<Probe, alloc::vec::Vec<Payload>, Payload, alloc::vec::Error>(source.borrow(), sink.borrow(), 1);
+        assert(source.position == index + 1 && source.calls == index + 1);
+        if (core::result::is_err(result)) {
+            failures += 1;
+            let rejected: core::iter::TransferError<Payload, alloc::vec::Error> = core::result::unwrap_err(result);
+            assert(rejected.accepted == 0 && sink.len() == old_len && sink.capacity() == old_capacity);
+            assert(match (rejected.error) { alloc::vec::Error::AllocationFailed -> true, _ -> false });
+            check(rejected.rejected, index);
+            let previous: i32 = 0;
+            while (previous < old_len) {
+                check(sink.at(previous), expected_id(previous));
+                check(core::option::unwrap(before.get(previous)), expected_id(previous)); previous += 1;
+            }
+            // The rejected shallow item is recovered before source resumption.
+            let retried: core::option::Option<alloc::vec::Error> = sink.try_accept(rejected.rejected);
+            assert(core::option::is_none(retried));
+        } else {
+            let transferred: core::iter::Transfer = core::result::unwrap(result);
+            assert(transferred.accepted == 1 && !transferred.exhausted);
+        }
+        assert(sink.len() == index + 3);
+        let previous: i32 = 0;
+        while (previous < sink.len()) { check(sink.at(previous), expected_id(previous)); previous += 1; }
+        index += 1;
+    }
+    let end: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<Probe, alloc::vec::Vec<Payload>, Payload, alloc::vec::Error>(source.borrow(), sink.borrow(), 2));
+    assert(end.accepted == 0 && end.exhausted && source.calls == 18 && sink.len() == 19);
+    sink.destroy(); check(payload(0, owner), 0); return failures;
+}
+fn deque(owner: alloc::string::String) -> u8 {
+    let sink: alloc::deque::Deque<Payload> = core::result::unwrap(alloc::deque::with_capacity<Payload>(2));
+    core::result::unwrap(sink.try_push_back(payload(30, owner)));
+    core::result::unwrap(sink.try_push_back(payload(31, owner)));
+    check(core::option::unwrap(sink.pop_front()), 30);
+    core::result::unwrap(sink.try_push_back(payload(32, owner)));
+    let wrapped: alloc::deque::Views<Payload> = sink.as_views();
+    assert(wrapped.first.len() == 1 && wrapped.second.len() == 1);
+    let source: Probe = Probe { position: 0, calls: 0, owner: owner };
+    let index: i32 = 0; let failures: u8 = 0;
+    while (index < 17) {
+        let before: alloc::deque::Views<Payload> = sink.as_views();
+        let old_len: i32 = sink.len(); let old_capacity: i32 = sink.capacity();
+        let result: core::result::Result<core::iter::Transfer, core::iter::TransferError<Payload, alloc::deque::Error>> = core::iter::try_transfer_up_to<Probe, alloc::deque::Deque<Payload>, Payload, alloc::deque::Error>(source.borrow(), sink.borrow(), 1);
+        assert(source.position == index + 1 && source.calls == index + 1);
+        if (core::result::is_err(result)) {
+            failures += 1;
+            let rejected: core::iter::TransferError<Payload, alloc::deque::Error> = core::result::unwrap_err(result);
+            assert(rejected.accepted == 0 && sink.len() == old_len && sink.capacity() == old_capacity);
+            assert(match (rejected.error) { alloc::deque::Error::AllocationFailed -> true, _ -> false });
+            check(rejected.rejected, index);
+            let previous: i32 = 0;
+            while (previous < old_len) {
+                check(sink.at(previous), expected_id(previous));
+                if (previous < before.first.len()) { check(core::option::unwrap(before.first.get(previous)), expected_id(previous)); }
+                else { check(core::option::unwrap(before.second.get(previous - before.first.len())), expected_id(previous)); }
+                previous += 1;
+            }
+            let retried: core::option::Option<alloc::deque::Error> = sink.try_accept(rejected.rejected);
+            assert(core::option::is_none(retried));
+        } else {
+            let transferred: core::iter::Transfer = core::result::unwrap(result);
+            assert(transferred.accepted == 1 && !transferred.exhausted);
+        }
+        assert(sink.len() == index + 3);
+        let previous: i32 = 0;
+        while (previous < sink.len()) { check(sink.at(previous), expected_id(previous)); previous += 1; }
+        index += 1;
+    }
+    let end: core::iter::Transfer = core::result::unwrap(core::iter::try_transfer_up_to<Probe, alloc::deque::Deque<Payload>, Payload, alloc::deque::Error>(source.borrow(), sink.borrow(), 2));
+    assert(end.accepted == 0 && end.exhausted && source.calls == 18 && sink.len() == 19);
+    sink.destroy(); check(payload(0, owner), 0); return failures;
+}
+fn main() -> i32 {
+    let bytes: [u8; 4] = [97, 194, 162, 100];
+    let owner: alloc::string::String = core::result::unwrap(alloc::string::from_utf8(bytes, 4));
+    let failures: u8 = 0;
+    if (std::args_checked::argument_count_or(0) == 1) { failures = vector(owner); }
+    else { failures = deque(owner); }
+    owner.destroy();
+    assert(std::io::write_byte(1, failures as i32) == 1);
+    return 0;
+}

@@ -1,0 +1,42 @@
+module app::main;
+import core::adler32;
+import core::mem;
+import core::result;
+import core::slice;
+fn code(error: core::adler32::Error) -> i32 { let value: i32 = match (error) { core::adler32::Error::Bounds -> 1, core::adler32::Error::InvalidState -> 2 }; return value; }
+fn main() -> i32 {
+    assert(core::adler32::INITIAL == 1 && core::adler32::MODULUS == 65521);
+    let native: [u8; 11] = [0,87,105,107,105,112,101,100,105,97,255];
+    let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native,1,9));
+    assert(core::result::unwrap(core::adler32::checksum(view)) == 300286872);
+    let empty: core::slice::View<u8> = core::result::unwrap(view.subview(0,0));
+    assert(core::result::unwrap(core::adler32::checksum(empty)) == 1);
+    let state: u32 = 4293984240;
+    assert(core::adler32::valid_state(state) && core::adler32::valid_state(0));
+    assert(!core::adler32::valid_state(65521) && !core::adler32::valid_state(4294967295));
+    assert(core::result::unwrap(core::adler32::update(state,empty)) == state);
+    assert(code(core::result::unwrap_err(core::adler32::update(65521,empty))) == 2);
+    assert(code(core::result::unwrap_err(core::adler32::update_byte(4294967295,255))) == 2);
+    let malformed: core::slice::View<u8> = view; malformed.start = -1;
+    assert(code(core::result::unwrap_err(core::adler32::checksum(malformed))) == 1);
+    assert(code(core::result::unwrap_err(core::adler32::update(65521,malformed))) == 1);
+    malformed = view; malformed.length = -1; assert(code(core::result::unwrap_err(core::adler32::checksum(malformed))) == 1);
+    malformed = view; malformed.start = 2147483647; malformed.length = 1; assert(code(core::result::unwrap_err(core::adler32::checksum(malformed))) == 1);
+    let backing: [i32; 4164] = [0;4164];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing),16656);
+    let index: i32 = 0; while (index < 16656) { packed[index] = 255; index += 1; }
+    let large: core::slice::View<u8> = core::result::unwrap(core::slice::view(packed,16656));
+    let slow: u32 = state; index = 0;
+    while (index < large.len()) { slow = core::result::unwrap(core::adler32::update_byte(slow,packed[index])); index += 1; }
+    assert(core::result::unwrap(core::adler32::update(state,large)) == slow);
+    let split: i32 = 0;
+    while (split <= 16656) {
+        let first: core::slice::View<u8> = core::result::unwrap(large.subview(0,split));
+        let rest: core::slice::View<u8> = core::result::unwrap(large.subview(split,large.len()));
+        let part: u32 = core::result::unwrap(core::adler32::update(state,first));
+        assert(core::result::unwrap(core::adler32::update(part,rest)) == slow);
+        split += 5552;
+    }
+    assert(native[0] == 0 && native[10] == 255 && packed[0] == 255 && packed[16655] == 255);
+    return 0;
+}

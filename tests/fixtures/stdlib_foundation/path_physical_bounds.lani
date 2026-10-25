@@ -1,0 +1,8 @@
+// A false physical backing claim must trap, rather than read adjacent storage.
+module app::main;
+import core::path;
+fn main() -> i32 {
+    let bytes: [u8; 1] = [97];
+    core::path::from_bytes(bytes, 2);
+    return 0;
+}

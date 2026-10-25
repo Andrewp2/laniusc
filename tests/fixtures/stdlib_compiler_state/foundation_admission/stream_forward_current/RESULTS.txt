@@ -1,0 +1,10 @@
+source_head=66e966d3111aa72e34184eca3700addfd7d34e7c
+compiler_sha256=51704757e738dfbf37d7ed3bc33fc976f7bf8348ab340d1f4068efbed58abfcf
+shader_digest=a1a3dc017ab72950
+stdlib_manifest_sha256=0cc494b5c7538b2444dcce261b97d7ce57ed3fe9048dfdffcd3e50396094884c
+
+imported compile=1
+direct compile=0 run=0
+local compile=0 run=0
+local_impl compile=1
+associated compile=1

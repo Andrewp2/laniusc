@@ -1,0 +1,56 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::tar;
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn code(error: ext::tar::Error) -> i32 { return match (error) { ext::tar::Error::Bounds -> 1, ext::tar::Error::UnexpectedEof -> 2, ext::tar::Error::MissingFooter -> 3, ext::tar::Error::InvalidChecksum -> 4, ext::tar::Error::UnsupportedFormat -> 5, ext::tar::Error::InvalidNumber -> 6, ext::tar::Error::NumberOverflow -> 7, ext::tar::Error::InvalidName -> 8, ext::tar::Error::UnsupportedType -> 9, ext::tar::Error::InvalidSize -> 10, ext::tar::Error::InvalidPadding -> 11, ext::tar::Error::TrailingData -> 12, ext::tar::Error::PathTooLong -> 13, ext::tar::Error::LinkTooLong -> 14, ext::tar::Error::NameTooLong -> 15, ext::tar::Error::CapacityOverflow -> 16, ext::tar::Error::OutputTooSmall -> 17, ext::tar::Error::Finished -> 18, ext::tar::Error::InvalidState -> 19 }; }
+fn main() -> i32 {
+    // Strided native byte views retain offsets in both directions.
+    let words: [i32;1028] = [77;1028]; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),4112);
+    let storage: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(raw,4,4096)); storage.fill(77);
+    let output: core::slice::View<u8> = core::result::unwrap(storage.subview(0,2047));
+    let writer: ext::tar::Writer = core::result::unwrap(ext::tar::writer(output));
+    let native: [u8;6] = [77,0,255,128,65,77]; let data: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native,1,4));
+    let meta: ext::tar::Metadata = ext::tar::metadata(bytes("dir/a",5),ext::tar::Kind::Regular); meta.uid = 2097151; meta.gid = 123; meta.mtime = 8589934591; meta.uname = bytes("owner",5); meta.gname = bytes("group",5);
+    assert(core::result::unwrap(writer.add(meta,data)) == 1024);
+    assert(code(core::result::unwrap_err(writer.finish())) == 17 && writer.position() == 1024 && !writer.is_finished());
+    let index: i32 = 1024; while (index < 4096) { assert(raw[index+4] == 77); index += 1; }
+    let replacement_words: [i32;1024] = [0;1024]; let replacement_bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(replacement_words),4096);
+    let replacement: core::slice::View<u8> = core::result::unwrap(core::slice::view(replacement_bytes,4096));
+    assert(code(core::result::unwrap_err(writer.rebind(replacement))) == 19 && writer.position() == 1024);
+    assert(core::result::unwrap(writer.rebind(storage)));
+    assert(core::result::unwrap(writer.finish()) == 2048 && writer.is_finished()); assert(core::result::unwrap(writer.finish()) == 2048);
+    assert(code(core::result::unwrap_err(writer.add(meta,data))) == 18);
+    let input: core::slice::View<u8> = core::result::unwrap(storage.subview(0,2048));
+    let reader: ext::tar::Reader = core::result::unwrap(ext::tar::reader(input));
+    let entry: ext::tar::Entry = core::option::unwrap(core::result::unwrap(reader.next()));
+    assert(entry.offset == 0 && entry.size == 4 && entry.uid == 2097151 && entry.gid == 123 && entry.mtime == 8589934591 && entry.mode == 420);
+    assert(entry.data.length == 4 && entry.data.values[entry.data.start] == 0 && entry.data.values[entry.data.start+1] == 255 && entry.data.values[entry.data.start+2] == 128);
+    let path_buffer: [u8;8] = [77;8]; let path_output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(path_buffer,1,5));
+    assert(entry.path_len() == 5 && core::result::unwrap(entry.copy_path(path_output)) == 5);
+    assert(path_buffer[0] == 77 && path_buffer[1] == 100 && path_buffer[4] == 47 && path_buffer[5] == 97 && path_buffer[6] == 77);
+    path_output.fill(77); let path_short: core::slice::View<u8> = core::result::unwrap(path_output.subview(0,4));
+    assert(code(core::result::unwrap_err(entry.copy_path(path_short))) == 17); index = 0; while (index < 8) { assert(path_buffer[index] == 77); index += 1; }
+    assert(core::option::is_none(core::result::unwrap(reader.next())) && reader.position() == 2048 && reader.is_finished());
+    assert(core::option::is_none(core::result::unwrap(reader.next())));
+    let retry: ext::tar::Reader = core::result::unwrap(ext::tar::reader(input)); raw[4] = 88;
+    assert(code(core::result::unwrap_err(retry.next())) == 4 && retry.position() == 0 && !retry.is_finished()); raw[4] = 100;
+    assert(core::option::is_some(core::result::unwrap(retry.next())) && retry.position() == 1024);
+    let malformed: core::slice::View<u8> = input; malformed.start = -1;
+    assert(code(core::result::unwrap_err(ext::tar::reader(malformed))) == 1); assert(code(core::result::unwrap_err(ext::tar::writer(malformed))) == 1);
+    malformed = input; malformed.start = 2147483647; malformed.length = 1;
+    assert(code(core::result::unwrap_err(ext::tar::reader(malformed))) == 1);
+    let short: core::slice::View<u8> = core::result::unwrap(storage.subview(2048,2559));
+    let fresh: ext::tar::Writer = core::result::unwrap(ext::tar::writer(short));
+    assert(code(core::result::unwrap_err(fresh.add(meta,data))) == 17 && fresh.position() == 0);
+    meta.mode = 4096; assert(code(core::result::unwrap_err(fresh.add(meta,data))) == 7); meta.mode = 420;
+    meta.path = bytes("",0); assert(code(core::result::unwrap_err(fresh.add(meta,data))) == 8); meta.path = bytes("a",1);
+    meta.kind = ext::tar::Kind::Directory; assert(code(core::result::unwrap_err(fresh.add(meta,data))) == 10);
+    meta.kind = ext::tar::Kind::SymbolicLink; assert(code(core::result::unwrap_err(fresh.add(meta,bytes("",0)))) == 8);
+    meta.kind = ext::tar::Kind::Regular; meta.path = malformed; assert(code(core::result::unwrap_err(fresh.add(meta,data))) == 1);
+    index = 2048; while (index < 4096) { assert(raw[index+4] == 77); index += 1; }
+    return 0;
+}

@@ -1,10 +1,25 @@
 module app::main;
-
 import alloc::allocator;
-import std::io;
+import core::decimal;
+import core::io;
 import std::random;
+import std::signal;
+import std::stream;
+
+
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line(value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
     let len: usize = 16;
     let align: usize = 4;
     let ptr: ptr = alloc::allocator::alloc(len, align);
@@ -16,6 +31,6 @@ fn main() -> i32 {
     if (filled != 16) {
         return 2;
     }
-    std::io::print_i32(91);
+    if (!write_i32_line(91)) { return 3; }
     return 0;
 }

@@ -1,0 +1,30 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::table;
+import ext::terminal;
+fn text(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::text::from_utf8_unchecked(bytes,0,count); }
+fn same(bytes: &alloc::vec::Vec<u8>, expected: core::text::Text) -> bool { return core::result::unwrap(core::text::from_utf8(bytes.as_slice(),bytes.len())).equals(expected); }
+fn main() -> i32 {
+ let a: [core::text::Text;2] = [text("a",1),text("界",3)]; let b: [core::text::Text;2] = [text("long",4),text("x",1)];
+ let rows: [ext::table::Row;2] = [ext::table::Row { cells: core::result::unwrap(core::slice::view(a,2)) },ext::table::Row { cells: core::result::unwrap(core::slice::view(b,2)) }];
+ let view: core::slice::View<ext::table::Row> = core::result::unwrap(core::slice::view(rows,2));
+ let align: [ext::table::Alignment;2] = [ext::table::Alignment::Center,ext::table::Alignment::Right]; let columns: core::slice::View<ext::table::Alignment> = core::result::unwrap(core::slice::view(align,2));
+ let policy: ext::table::Options = ext::table::options(); policy.borders = false;
+ let result: alloc::vec::Vec<u8> = core::result::unwrap(ext::table::render(view,columns,policy));
+ assert(same(result.borrow(),text(" a    界\nlong   x\n",19))); result.destroy();
+ policy.max_cells = 3; assert(core::result::is_err(ext::table::render(view,columns,policy))); policy.max_cells = 4;
+ policy.max_columns = 1; assert(core::result::is_err(ext::table::render(view,columns,policy))); policy.max_columns = 2;
+ policy.max_width = 7; assert(core::result::is_err(ext::table::render(view,columns,policy))); policy.max_width = 8;
+ policy.max_output = 18; assert(core::result::is_err(ext::table::render(view,columns,policy))); policy.max_output = 19;
+ policy.max_work = 101; assert(core::result::is_err(ext::table::render(view,columns,policy))); policy.max_work = 102;
+ let okay: alloc::vec::Vec<u8> = core::result::unwrap(ext::table::render(view,columns,policy)); okay.destroy();
+ a[0].length = -1; let bad_text: ext::table::Error = core::result::unwrap_err(ext::table::render(view,columns,policy)); let bounds: bool = match (bad_text) { ext::table::Error::Cell(at,error) -> match (error) { ext::terminal::Error::Bounds -> at == 0, _ -> false }, _ -> false }; assert(bounds); a[0] = text("\n",1); assert(core::result::is_err(ext::table::render(view,columns,policy))); a[0] = text("a",1);
+ rows[0].cells.length = 1; assert(core::result::is_err(ext::table::render(view,columns,policy))); rows[0].cells.length = 2;
+ let bad: core::slice::View<ext::table::Row> = view; bad.start = -1; assert(core::result::is_err(ext::table::render(bad,columns,policy)));
+ assert(a[0].equals(text("a",1))); assert(b[0].equals(text("long",4))); return 0;
+}

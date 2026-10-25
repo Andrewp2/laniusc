@@ -1,0 +1,80 @@
+// Deterministic Unicode 17 cell policy, not terminal/font discovery.
+// Single-line only; controls, bidi controls and ANSI escapes are rejected.
+module ext::terminal;
+import core::option;
+import core::result;
+import core::text;
+import core::utf8;
+import ext::terminal_data;
+import ext::unicode_graphemes;
+
+pub enum Mode { Scalars, Graphemes }
+pub struct Options { mode: Mode, ambiguous_wide: bool, max_work: i32 }
+pub enum Error { Bounds, InvalidUtf8(i32), Control(i32), WorkLimit, Overflow }
+pub fn options() -> Options { return Options { mode: Mode::Graphemes, ambiguous_wide: false, max_work: 1048576 }; }
+fn scalar_columns(value: u32, flags: u32, ambiguous: bool) -> i32 {
+    if ((flags & 1) != 0) { return 0; }
+    if ((flags & 2) != 0 || (ambiguous && (flags & 4) != 0)) { return 2; }
+    return 1;
+}
+fn cluster_width(text: core::text::Text, ambiguous: bool) -> i32 {
+    let position: i32 = 0; let maximum: i32 = 0; let regional: i32 = 0;
+    let keycap: bool = false;
+    while (position < text.length) {
+        let value: u32 = core::option::unwrap(text.scalar_at_byte(position));
+        let flags: u32 = ext::terminal_data::flags(value);
+        let step: i32 = core::utf8::encoded_len_or(value,0) as i32;
+        let columns: i32 = scalar_columns(value,flags,ambiguous);
+        if ((flags & 32) != 0 && position + step < text.length) {
+            let next: u32 = core::option::unwrap(text.scalar_at_byte(position + step));
+            if (next == 65038) { columns = 1; }
+            if (next == 65039) { columns = 2; }
+        }
+        if (value >= 127462 && value <= 127487) { regional += 1; }
+        if (position == 0 && (value == 35 || value == 42 || (value >= 48 && value <= 57))) { keycap = true; }
+        if (value == 8419 && keycap) { columns = 2; }
+        if (columns > maximum) { maximum = columns; }
+        position += step;
+    }
+    if (regional == 2) { return 2; }
+    return maximum;
+}
+// The policy budget charges six logical units per selected input byte before
+// scanning. It is not a count of decoder reads or machine instructions; scalar
+// decoding/lookahead can revisit bytes and property lookups use static ranges.
+// The inherited grapheme cursor checks metadata but has no separate budget;
+// this preflight bounds the complete input passed to it.
+pub fn width(text: core::text::Text, policy: Options) -> core::result::Result<i32, Error> {
+    if (text.start < 0 || text.length < 0 || text.length > 2147483647 - text.start || policy.max_work < 0) { return core::result::Err(Error::Bounds); }
+    if (text.length > policy.max_work / 6) { return core::result::Err(Error::WorkLimit); }
+    let valid: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(text.bytes,text.start,text.length);
+    if (core::result::is_err(valid)) {
+        let error: Error = match (core::result::unwrap_err(valid)) { core::text::Error::InvalidUtf8(at) -> Error::InvalidUtf8(at), _ -> Error::Bounds };
+        return core::result::Err(error);
+    }
+    let position: i32 = 0; let total: i32 = 0;
+    while (position < text.length) {
+        let value: u32 = core::option::unwrap(text.scalar_at_byte(position));
+        let flags: u32 = ext::terminal_data::flags(value);
+        if ((flags & 64) != 0) { return core::result::Err(Error::Control(position)); }
+        let scalar_mode: bool = match (policy.mode) { Mode::Scalars -> true, _ -> false };
+        if (scalar_mode) {
+            let columns: i32 = scalar_columns(value,flags,policy.ambiguous_wide);
+            if (columns > 2147483647 - total) { return core::result::Err(Error::Overflow); }
+            total += columns;
+        }
+        position += core::utf8::encoded_len_or(value,0) as i32;
+    }
+    let grapheme_mode: bool = match (policy.mode) { Mode::Graphemes -> true, _ -> false };
+    if (grapheme_mode) {
+        let scan: ext::unicode_graphemes::Cursor = core::result::unwrap(ext::unicode_graphemes::cursor(text));
+        while (true) {
+            let next: core::option::Option<ext::unicode_graphemes::Cluster> = scan.next();
+            if (core::option::is_none(next)) { break; }
+            let columns: i32 = cluster_width(core::option::unwrap(next).text,policy.ambiguous_wide);
+            if (columns > 2147483647 - total) { return core::result::Err(Error::Overflow); }
+            total += columns;
+        }
+    }
+    return core::result::Ok(total);
+}

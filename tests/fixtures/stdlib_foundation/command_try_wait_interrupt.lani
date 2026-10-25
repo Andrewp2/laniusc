@@ -1,0 +1,16 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::slice;
+import std::command;
+import std::command_raw;
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn owned(value: std::command::Spawn) -> std::command::Child { return match(value) { std::command::Spawn::Child(child) -> child, std::command::Spawn::Unknown(value) -> invalid(value.child), _ -> impossible() }; }
+fn invalid(child: std::command::Child) -> std::command::Child { child.cancel_and_wait(); assert(false); return child; }
+fn impossible() -> std::command::Child { assert(false); let args: [core::slice::View<u8>;1] = [bytes("/bin/true",9)]; return owned(std::command::spawn(std::command::request(args[0],core::slice::view(args,1).unwrap(),core::slice::view(args,0).unwrap())).unwrap()); }
+fn main() -> i32 { let args: [core::slice::View<u8>;2] = [bytes("/bin/sleep",10),bytes("60",2)]; let request = std::command::request(args[0],core::slice::view(args,2).unwrap(),core::slice::view(args,0).unwrap()); request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
+    let child = owned(std::command::spawn(request).unwrap()); let pid: i32 = core::option::unwrap(child.id()); let result = child.try_wait(); let code: i32 = 40;
+    if (result.is_err()) { assert(result.unwrap_err().errno == 4); code = 41; } else { assert(core::option::is_none(result.unwrap())); }
+    assert(core::option::unwrap(child.id()) == pid && core::option::is_none(child.cached)); child.signal(0).unwrap(); assert(core::option::unwrap(child.cancel_and_wait().unwrap().signal) == 9); assert(core::option::is_none(child.id()) && child.signal(9).is_err()); assert(core::option::is_some(child.try_wait().unwrap()));
+    let status: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(status),true) == -10); return code;
+}

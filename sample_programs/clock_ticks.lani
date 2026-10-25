@@ -1,0 +1,73 @@
+// Usage: clock-ticks [COUNT [INTERVAL_MS]], defaults 3 / 10. No allocations.
+// Emit JSON records on a fixed monotonic schedule; wall time is informational.
+// Exit 2 for invalid arguments, 3 for clock, arithmetic or output failure.
+module app::main;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::result;
+import core::text;
+import core::time;
+import std::clock;
+import std::process;
+import std::stream;
+fn argument(index: i32, fallback: i32, maximum: u64) -> i32 {
+    if (std::process::argc() <= index) { return fallback; }
+    let count: i32 = std::process::arg_len(index); if (count < 1 || count > 32) { return -1; }
+    let words: [i32; 8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+    if (std::process::arg_read(index,pointer,count as usize) != count) { return -1; }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,count);
+    let text: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8(bytes,count);
+    if (core::result::is_err(text)) { return -1; }
+    let value: core::text::Text = core::result::unwrap(text);
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = value.parse_u64();
+    if (core::result::is_err(parsed)) { return -1; }
+    let number: u64 = core::result::unwrap(parsed); if (number > maximum) { return -1; } return number as i32;
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::text::from_utf8_unchecked(bytes,0,count);
+}
+fn emit(index: i32, system: core::time::SystemTime, elapsed: u64, late: u64) -> i32 {
+    let words: [i32; 64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),256);
+    let output: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,256));
+    let decimal: core::fmt::Integer = core::fmt::decimal();
+    output.write_text(text("{\"tick\":",8));output.write_unsigned(index as u64,decimal);
+    output.write_text(text(",\"unix_seconds\":",16));output.write_signed(system.unix_seconds(),decimal);
+    output.write_text(text(",\"nanoseconds\":",15));output.write_unsigned(system.subsec_nanos() as u64,decimal);
+    output.write_text(text(",\"elapsed_ns\":",14));output.write_unsigned(elapsed,decimal);
+    output.write_text(text(",\"late_ns\":",11));output.write_unsigned(late,decimal);output.write_text(text("}\n",2));
+    let done: core::result::Result<i32,core::fmt::Error> = output.finish(); if (core::result::is_err(done)) { return 3; }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(done)))) { return 3; }
+    return 0;
+}
+fn main() -> i32 {
+    if (std::process::argc() > 3) { return 2; }
+    let count: i32 = argument(1,3,1000);let milliseconds: i32 = argument(2,10,60000);
+    if (count < 0 || milliseconds < 0) { return 2; } if (count == 0) { return 0; }
+    let clock: std::clock::NativeClock = std::clock::native();
+    let initial: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (core::result::is_err(initial)) { return 3; } let start: core::time::Instant = core::result::unwrap(initial);
+    let interval: core::time::Duration = core::time::from_millis(milliseconds as u64);let index: i32 = 0;
+    while (index < count) {
+        let offset: core::time::Duration = core::result::unwrap(interval.checked_mul(index as u32));
+        let made: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(start,offset);
+        if (core::result::is_err(made)) { return 3; } let deadline: core::time::Deadline = core::result::unwrap(made);
+        let waiting: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::sleep_until(clock.borrow(),deadline);
+        if (core::result::is_err(waiting)) { return 3; } let now: core::time::Instant = core::result::unwrap(waiting);
+        let reading: core::result::Result<core::time::SystemTime,std::clock::Error> = std::clock::system_now();
+        if (core::result::is_err(reading)) { return 3; }
+        let elapsed: core::result::Result<core::time::Duration,core::time::Error> = now.duration_since(start);
+        if (core::result::is_err(elapsed)) { return 3; }
+        let span: core::time::Duration = core::result::unwrap(elapsed);
+        let lateness: core::time::Duration = now.saturating_duration_since(deadline.instant);
+        let nanoseconds: core::result::Result<u64,core::time::Error> = span.as_nanos();
+        let late: core::result::Result<u64,core::time::Error> = lateness.as_nanos();
+        if (core::result::is_err(nanoseconds) || core::result::is_err(late)) { return 3; }
+        let status: i32 = emit(index,core::result::unwrap(reading),core::result::unwrap(nanoseconds),core::result::unwrap(late));
+        if (status != 0) { return status; } index += 1;
+    }
+    return 0;
+}

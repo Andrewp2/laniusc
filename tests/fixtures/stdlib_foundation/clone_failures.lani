@@ -1,0 +1,59 @@
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::result;
+import core::slice;
+import fixture::owners;
+fn storage(e: alloc::vec::Error) -> i32 { assert(match(e) { alloc::vec::Error::AllocationFailed -> true, _ -> false }); return 0; }
+fn allocated(index: i32, tag: i32, field: i32, inner: alloc::string::Error, stop: i32, stage: i32) -> i32 {
+    assert(index >= 0 && index < 4 && index <= stop && tag == 100+index && (field == 1 || field == 2) && (index < stop || field <= stage) && fixture::owners::allocation(inner)); return 0;
+}
+fn message(index: i32, tag: i32, field: i32, owned: alloc::string::String, stop: i32, stage: i32) -> i32 {
+    assert(index == stop && tag == 100+stop && field == stage);
+    // Prefix cleanup has finished. This String must remain owned by E.
+    assert(owned.byte_len() == 11 && owned.byte_at(0).unwrap() == 99 && owned.byte_at(5).unwrap() == 0 && owned.byte_at(10).unwrap() == 114);
+    owned.destroy(); return 1;
+}
+fn message_allocation(index: i32, tag: i32, field: i32, inner: alloc::string::Error, stop: i32, stage: i32) -> i32 {
+    assert(index == stop && tag == 100+stop && field == stage && fixture::owners::allocation(inner)); return 0;
+}
+fn impossible() -> i32 { assert(false); return 0; }
+fn checked(error: alloc::clone::Error<fixture::owners::Fault>, stop: i32, stage: i32) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Storage(e) -> storage(e),
+        alloc::clone::Error::Element(index,e) -> match(e) {
+            fixture::owners::Fault::Allocation(tag,field,inner) -> allocated(index,tag,field,inner,stop,stage),
+            fixture::owners::Fault::Message(tag,field,owned) -> message(index,tag,field,owned,stop,stage),
+            fixture::owners::Fault::MessageAllocation(tag,field,inner) -> message_allocation(index,tag,field,inner,stop,stage)
+        },
+        _ -> impossible()
+    };
+}
+fn main() -> i32 {
+    let made = fixture::owners::pair(); if (made.is_err()) { return 2; }
+    let source = made.unwrap(); let values: [fixture::owners::Pair;4] = [source,source,source,source];
+    let j: i32 = 0; while (j < 4) { values[j] = fixture::owners::Pair { left:source.left,right:source.right,tag:100+j,fail:-1 }; j += 1; }
+    let success: core::result::Result<alloc::vec::Vec<fixture::owners::Pair>,alloc::clone::Error<fixture::owners::Fault>> = alloc::clone::from_view<fixture::owners::Pair,fixture::owners::Fault>(core::slice::view(values,4).unwrap());
+    if (success.is_ok()) { let copy = success.unwrap(); assert(copy.len() == 4); alloc::clone::destroy_vec<fixture::owners::Pair>(copy.borrow()); }
+    else { assert(checked(success.unwrap_err(),4,3) == 0); }
+    assert(fixture::owners::valid(source));
+    let payloads: i32 = 0; let index: i32 = 0;
+    while (index < 4) {
+        let stage: i32 = 0;
+        while (stage < 3) {
+            values[index] = fixture::owners::Pair { left:source.left,right:source.right,tag:100+index,fail:stage };
+            let result: core::result::Result<alloc::vec::Vec<fixture::owners::Pair>,alloc::clone::Error<fixture::owners::Fault>> = alloc::clone::from_view<fixture::owners::Pair,fixture::owners::Fault>(core::slice::view(values,4).unwrap());
+            assert(result.is_err() && fixture::owners::valid(source));
+            // In the last case, also destroy source owners before using E.
+            let last: bool = index == 3 && stage == 2;
+            if (last) { fixture::owners::Pair::destroy_value(source); }
+            payloads += checked(result.unwrap_err(),index,stage);
+            if (!last) { values[index] = fixture::owners::Pair { left:source.left,right:source.right,tag:100+index,fail:-1 }; }
+            stage += 1;
+        }
+        index += 1;
+    }
+    if (payloads != 12) { return 1; } return 0;
+}

@@ -1,0 +1,174 @@
+// Linux x86-64 readiness over borrowed descriptors. PollSet is a manual,
+// shallow owner: keep one active copy and destroy it explicitly. See the guide
+// for invariant, alias, descriptor lifetime, deadline and advisory-I/O rules.
+module std::poll;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::linux;
+
+pub const READABLE: u32 = 1;
+pub const PRIORITY: u32 = 2;
+pub const WRITABLE: u32 = 4;
+pub const ERROR: u32 = 8;
+pub const HANGUP: u32 = 16;
+pub const INVALID: u32 = 32;
+pub const READ_CLOSED: u32 = 8192;
+pub const MAX_CAPACITY: i32 = 1048576;
+const REQUEST_BITS: u32 = 8199;
+
+pub struct Request { handle: i32, events: u32 }
+pub struct Readiness { bits: u32 }
+pub enum Error { Bounds, Capacity, AllocationFailed, InvalidResult, Limit, Io(core::io::Error), Clock(std::clock::Error) }
+pub struct PollSet { scratch: alloc::vec::Vec<i32>, results: alloc::vec::Vec<Readiness>, published: i32 }
+
+pub impl Readiness {
+    pub fn any(&self) -> bool { return self.bits != 0; }
+    pub fn readable(&self) -> bool { return (self.bits & READABLE) != 0; }
+    pub fn priority(&self) -> bool { return (self.bits & PRIORITY) != 0; }
+    pub fn writable(&self) -> bool { return (self.bits & WRITABLE) != 0; }
+    pub fn error(&self) -> bool { return (self.bits & ERROR) != 0; }
+    pub fn hangup(&self) -> bool { return (self.bits & HANGUP) != 0; }
+    pub fn invalid(&self) -> bool { return (self.bits & INVALID) != 0; }
+    pub fn read_closed(&self) -> bool { return (self.bits & READ_CLOSED) != 0; }
+}
+
+// No implicit growth. Both buffers are initialized once; waits never allocate.
+pub fn new(capacity: i32) -> core::result::Result<PollSet, Error> {
+    if (capacity < 0 || capacity > MAX_CAPACITY) { return core::result::Err(Error::Capacity); }
+    let packed: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity(capacity * 2);
+    if (core::result::is_err(packed)) { return core::result::Err(Error::AllocationFailed); }
+    let scratch: alloc::vec::Vec<i32> = core::result::unwrap(packed);
+    let initialized: core::result::Result<i32,alloc::vec::Error> = scratch.try_resize(capacity * 2,0);
+    if (core::result::is_err(initialized)) { scratch.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let allocated: core::result::Result<alloc::vec::Vec<Readiness>,alloc::vec::Error> = alloc::vec::with_capacity(capacity);
+    if (core::result::is_err(allocated)) { scratch.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let results: alloc::vec::Vec<Readiness> = core::result::unwrap(allocated);
+    let filled: core::result::Result<i32,alloc::vec::Error> = results.try_resize(capacity,Readiness { bits: 0 });
+    if (core::result::is_err(filled)) { scratch.destroy(); results.destroy(); return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(PollSet { scratch: scratch, results: results, published: 0 });
+}
+
+fn io_error(error: std::linux::Error) -> Error {
+    let number: i32 = match (error) { System(value) -> value, _ -> 0 };
+    if (number == 4) { return Error::Io(core::io::Error::Interrupted); }
+    if (number == 11) { return Error::Io(core::io::Error::WouldBlock); }
+    if (number > 0) { return Error::Io(core::io::Error::Host(number)); }
+    return Error::InvalidResult;
+}
+fn interrupted(error: Error) -> bool {
+    let value: bool = match (error) { Io(cause) -> core::io::is_interrupted(cause), _ -> false }; return value;
+}
+fn timeout_ms(remaining: core::time::Duration) -> i32 {
+    if (remaining.seconds >= 2147484) { return 2147483647; }
+    let milliseconds: u64 = remaining.seconds * 1000 + ((remaining.nanos as u64) + 999999) / 1000000;
+    if (milliseconds > 2147483647) { return 2147483647; }
+    return milliseconds as i32;
+}
+
+pub impl PollSet {
+    pub fn borrow(&self) -> &PollSet { return self; }
+    pub fn capacity(&self) -> i32 { return self.results.len(); }
+    pub fn len(&self) -> i32 { return self.published; }
+    // Requested backing bytes, excluding allocator/OS overhead; no assumed
+    // record stride is used for the generic publication buffer.
+    pub fn requested_bytes(&self) -> usize {
+        return (self.scratch.capacity() as usize) * core::mem::size_of<i32>() + (self.results.capacity() as usize) * core::mem::size_of<Readiness>();
+    }
+    pub fn readiness(&self, index: i32) -> core::option::Option<Readiness> {
+        if (index < 0 || index >= self.published) { return core::option::None(); }
+        return self.results.get(index);
+    }
+    pub fn as_view(&self) -> core::slice::View<Readiness> {
+        return core::slice::View { values: self.results.as_slice(), start: 0, length: self.published };
+    }
+    fn validate(&self, requests: core::slice::View<Request>) -> core::result::Result<i32,Error> {
+        if (!core::io::valid_range(requests.start,requests.length)) { return core::result::Err(Error::Bounds); }
+        if (requests.length > self.capacity()) { return core::result::Err(Error::Capacity); }
+        let index: i32 = 0;
+        while (index < requests.length) {
+            let events: u32 = requests.values[requests.start + index].events;
+            if ((events & REQUEST_BITS) != events) { return core::result::Err(Error::Bounds); }
+            index += 1;
+        }
+        return core::result::Ok(requests.length);
+    }
+    // A pollfd is exactly fd:i32/events:u16/revents:u16 in ascending bytes.
+    // Vec<i32> uses packed ascending 4-byte cells on this target.
+    fn attempt(&self, requests: core::slice::View<Request>, milliseconds: i32) -> core::result::Result<i32,Error> {
+        let cells: [i32] = self.scratch.as_slice(); let index: i32 = 0;
+        while (index < requests.length) {
+            let request: Request = requests.values[requests.start + index];
+            cells[index * 2] = request.handle; cells[index * 2 + 1] = request.events as i32; index += 1;
+        }
+        let args: [std::linux::Argument;3] = [std::linux::Argument::Address(core::mem::i32_slice_data_ptr(cells)),std::linux::Argument::Word(requests.length as i64),std::linux::Argument::Word(milliseconds as i64)];
+        let called: core::result::Result<i64,std::linux::Error> = std::linux::call(7,core::result::unwrap(core::slice::view(args,3)));
+        if (core::result::is_err(called)) { return core::result::Err(io_error(core::result::unwrap_err(called))); }
+        let count: i64 = core::result::unwrap(called);
+        if (count < 0) { return core::result::Err(Error::InvalidResult); }
+        if (count > requests.length as i64) { return core::result::Err(Error::InvalidResult); }
+        let observed: i32 = 0; index = 0;
+        while (index < requests.length) {
+            let request: Request = requests.values[requests.start + index];
+            let packed: u32 = cells[index * 2 + 1] as u32; let bits: u32 = packed >> 16;
+            if (cells[index * 2] != request.handle || (packed & 65535) != request.events || (request.handle < 0 && bits != 0)) { return core::result::Err(Error::InvalidResult); }
+            if (bits != 0) { observed += 1; } index += 1;
+        }
+        if (observed != (count as i32)) { return core::result::Err(Error::InvalidResult); }
+        return core::result::Ok(observed);
+    }
+    // Called only after every fallible operation/validation has completed.
+    fn publish(&self, length: i32, zero: bool) -> i32 {
+        let cells: [i32] = self.scratch.as_slice(); let index: i32 = 0;
+        while (index < length) {
+            let bits: u32 = 0; if (!zero) { bits = (cells[index * 2 + 1] as u32) >> 16; }
+            let changed: core::result::Result<Readiness,alloc::vec::Error> = self.results.set(index,Readiness { bits: bits });
+            index += 1;
+        }
+        self.published = length; return length;
+    }
+    // Exactly one poll syscall. -1 blocks indefinitely; 0 probes; positive is
+    // a relative millisecond timeout. EINTR is returned, never hidden here.
+    pub fn poll_ms(&self, requests: core::slice::View<Request>, milliseconds: i32) -> core::result::Result<i32,Error> {
+        if (milliseconds < -1) { return core::result::Err(Error::Bounds); }
+        let checked: core::result::Result<i32,Error> = self.validate(requests);
+        if (core::result::is_err(checked)) { return checked; }
+        let attempted: core::result::Result<i32,Error> = self.attempt(requests,milliseconds);
+        if (core::result::is_err(attempted)) { return attempted; }
+        let published: i32 = self.publish(requests.length,false);
+        return attempted;
+    }
+    // Only CLOCK_MONOTONIC. The original absolute deadline survives EINTR and
+    // timeout chunks. All completed calls count against maximum_attempts.
+    // Read the clock after poll and discard late readiness at observed expiry.
+    pub fn poll_until(&self, requests: core::slice::View<Request>, deadline: core::time::Deadline, maximum_attempts: u32) -> core::result::Result<i32,Error> {
+        let checked: core::result::Result<i32,Error> = self.validate(requests);
+        if (core::result::is_err(checked)) { return checked; }
+        if (deadline.instant.ticks.nanos >= 1000000000) { return core::result::Err(Error::Bounds); }
+        let initial: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+        if (core::result::is_err(initial)) { return core::result::Err(Error::Clock(core::result::unwrap_err(initial))); }
+        let now: core::time::Instant = core::result::unwrap(initial); let attempts: u32 = 0;
+        while (true) {
+            if (deadline.is_expired(now)) { let published: i32 = self.publish(requests.length,true); return core::result::Ok(0); }
+            if (attempts == maximum_attempts) { return core::result::Err(Error::Limit); }
+            let attempted: core::result::Result<i32,Error> = self.attempt(requests,timeout_ms(deadline.remaining(now))); attempts += 1;
+            if (core::result::is_err(attempted) && !interrupted(core::result::unwrap_err(attempted))) { return attempted; }
+            let after: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+            if (core::result::is_err(after)) { return core::result::Err(Error::Clock(core::result::unwrap_err(after))); }
+            let observed: core::time::Instant = core::result::unwrap(after);
+            if (observed.compare(now) < 0) { return core::result::Err(Error::Clock(std::clock::Error::ClockReversed)); }
+            now = observed;
+            if (deadline.is_expired(now)) { let published: i32 = self.publish(requests.length,true); return core::result::Ok(0); }
+            if (core::result::is_ok(attempted) && core::result::unwrap(attempted) > 0) {
+                let published: i32 = self.publish(requests.length,false); return attempted;
+            }
+        }
+        return core::result::Err(Error::Limit);
+    }
+    pub fn destroy(&self) { self.scratch.destroy(); self.results.destroy(); self.published = 0; }
+}

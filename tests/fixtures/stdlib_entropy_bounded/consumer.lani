@@ -1,0 +1,14 @@
+// Ordinary bounded entropy calls without projecting either new error type.
+module app::main;
+import core::io;
+import std::entropy;
+import std::stream;
+fn main()->i32{
+    let calls:std::entropy::Budget=std::entropy::budget(3);
+    let bytes:[u8;282]=[165;282];assert(std::entropy::fill_bounded(calls.borrow(),bytes,3,257).unwrap()==257);
+    assert(calls.remaining()==1);assert(std::entropy::read_some(calls.borrow(),bytes,260,17).unwrap()==17);assert(calls.remaining()==0);
+    assert(std::entropy::fill_bounded(calls.borrow(),bytes,0,1).is_err());
+    assert(std::entropy::read_some(calls.borrow(),bytes,2147483647,0).unwrap()==0);
+    assert(bytes[0]==165&&bytes[1]==165&&bytes[2]==165);let i:i32=277;while(i<282){assert(bytes[i]==165);i+=1;}
+    let stdout:std::stream::Descriptor=std::stream::stdout();assert(core::io::write_all(stdout.borrow(),bytes,3,274).is_ok());return 0;
+}

@@ -1,0 +1,16 @@
+module app::main;
+import core::option;
+trait Pull<T> { fn next(&self) -> core::option::Option<T>; }
+struct Cursor<T> { value: T }
+impl<T> Cursor<T> { fn borrow(&self) -> &Cursor<T> { return self; } }
+impl<T> Pull<T> for Cursor<T> {
+    fn next(&self) -> core::option::Option<T> { return core::option::Some(self.value); }
+}
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: Pull<T> {
+    return source.next();
+}
+fn main() -> i32 {
+    let source: Cursor<i32> = Cursor { value: 42 };
+    let value: core::option::Option<i32> = pull(source.borrow());
+    return core::option::unwrap(value) - 42;
+}

@@ -1,0 +1,235 @@
+// Compiled byte globs. No filesystem lookup or implicit path normalization.
+// Pattern owns its tokens; matching uses caller scratch and allocates nothing.
+module ext::glob;
+import alloc::vec;
+import core::option;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+
+pub struct Options { pathname: bool, literal_leading_dot: bool, escape: bool, ascii_case_insensitive: bool, globstar: bool }
+pub struct Limits { max_pattern_bytes: i32, max_tokens: i32 }
+pub enum Error { Bounds, PatternLimit, TokenLimit, Nul(i32), InvalidEscape(i32), UnclosedClass(i32), InvalidRange(i32), UnknownClass(i32), UnsupportedClass(i32), CapacityOverflow, AllocationFailed, ScratchTooSmall(i32), WorkLimit, Destroyed }
+struct Token { kind: i32, a: u64, b: u64, c: u64, d: u64 }
+struct Class { token: Token, end: i32 }
+struct Atom { value: u8, end: i32 }
+pub struct Pattern { tokens: alloc::vec::Vec<Token>, options: Options, live: bool }
+pub const DEFAULT_WORK_LIMIT: u64 = 67108864;
+const LITERAL: i32 = 0;
+const ANY: i32 = 1;
+const STAR: i32 = 2;
+const CLASS: i32 = 3;
+const RECURSIVE: i32 = 4;
+const DIRECTORIES: i32 = 5;
+
+pub fn default_options() -> Options { return Options { pathname: true, literal_leading_dot: true, escape: true, ascii_case_insensitive: false, globstar: true }; }
+pub fn default_limits() -> Limits { return Limits { max_pattern_bytes: 16384, max_tokens: 4096 }; }
+fn valid(view: core::slice::View<u8>) -> bool { return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length; }
+fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn fold(value: u8, enabled: bool) -> u8 { if (enabled && value >= 65 && value <= 90) { return value + 32; } return value; }
+fn token(kind: i32) -> Token { return Token { kind: kind, a: 0, b: 0, c: 0, d: 0 }; }
+fn allocation_error(error: alloc::vec::Error) -> Error {
+    let mapped: Error = match (error) { alloc::vec::Error::Bounds -> Error::Bounds, alloc::vec::Error::InvalidCapacity -> Error::Bounds, alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow, alloc::vec::Error::AllocationFailed -> Error::AllocationFailed }; return mapped;
+}
+impl Token {
+    fn borrow(&self) -> &Token { return self; }
+    fn add(&self, value: u8) {
+        let bit: u64 = (1 as u64) << ((value as u32) & 63);
+        if (value < 64) { self.a |= bit; } else { if (value < 128) { self.b |= bit; } else { if (value < 192) { self.c |= bit; } else { self.d |= bit; } } }
+    }
+    fn contains(&self, value: u8) -> bool {
+        let word: u64 = self.d; if (value < 64) { word = self.a; } else { if (value < 128) { word = self.b; } else { if (value < 192) { word = self.c; } } }
+        return (word & ((1 as u64) << ((value as u32) & 63))) != 0 as u64;
+    }
+    fn add_case(&self, value: u8, insensitive: bool) {
+        self.add(value);
+        if (insensitive && value >= 65 && value <= 90) { self.add(value+32); }
+        if (insensitive && value >= 97 && value <= 122) { self.add(value-32); }
+    }
+    fn invert(&self) { let all: u64 = 18446744073709551615; self.a ^= all; self.b ^= all; self.c ^= all; self.d ^= all; }
+}
+fn atom(pattern: core::slice::View<u8>, index: i32, escape: bool) -> core::result::Result<Atom, Error> {
+    let at: i32 = index;
+    if (escape && byte(pattern,at) == 92) { at += 1; if (at == pattern.len()) { return core::result::Err(Error::InvalidEscape(index)); } }
+    return core::result::Ok(Atom { value: byte(pattern,at), end: at+1 });
+}
+fn name_is(pattern: core::slice::View<u8>, start: i32, end: i32, name: str, count: i32) -> bool {
+    if (end-start != count) { return false; }
+    let expected: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(name),count);
+    let index: i32 = 0; while (index < count) { if (byte(pattern,start+index) != expected[index]) { return false; } index += 1; } return true;
+}
+fn named_class(pattern: core::slice::View<u8>, start: i32, end: i32) -> i32 {
+    // Stable ASCII names; no host locale or Unicode property tables involved.
+    if (name_is(pattern,start,end,"alnum",5)) { return 1; }
+    if (name_is(pattern,start,end,"alpha",5)) { return 2; }
+    if (name_is(pattern,start,end,"blank",5)) { return 3; }
+    if (name_is(pattern,start,end,"cntrl",5)) { return 4; }
+    if (name_is(pattern,start,end,"digit",5)) { return 5; }
+    if (name_is(pattern,start,end,"graph",5)) { return 6; }
+    if (name_is(pattern,start,end,"lower",5)) { return 7; }
+    if (name_is(pattern,start,end,"print",5)) { return 8; }
+    if (name_is(pattern,start,end,"punct",5)) { return 9; }
+    if (name_is(pattern,start,end,"space",5)) { return 10; }
+    if (name_is(pattern,start,end,"upper",5)) { return 11; }
+    if (name_is(pattern,start,end,"xdigit",6)) { return 12; }
+    return 0;
+}
+fn class_member(kind: i32, value: u8) -> bool {
+    let lower: bool = value >= 97 && value <= 122; let upper: bool = value >= 65 && value <= 90; let digit: bool = value >= 48 && value <= 57;
+    if (kind == 1) { return lower || upper || digit; } if (kind == 2) { return lower || upper; }
+    if (kind == 3) { return value == 9 || value == 32; } if (kind == 4) { return value < 32 || value == 127; }
+    if (kind == 5) { return digit; } if (kind == 6) { return value >= 33 && value <= 126; }
+    if (kind == 7) { return lower; } if (kind == 8) { return value >= 32 && value <= 126; }
+    if (kind == 9) { return value >= 33 && value <= 126 && !lower && !upper && !digit; }
+    if (kind == 10) { return (value >= 9 && value <= 13) || value == 32; } if (kind == 11) { return upper; }
+    return digit || (value >= 65 && value <= 70) || (value >= 97 && value <= 102);
+}
+fn bracket(pattern: core::slice::View<u8>, start: i32, options: Options) -> core::result::Result<Class, Error> {
+    let selected: Token = token(CLASS); let index: i32 = start+1; let negate: bool = false; let first: bool = true;
+    if (index < pattern.len() && (byte(pattern,index) == 33 || byte(pattern,index) == 94)) { negate = true; index += 1; }
+    while (index < pattern.len()) {
+        if (byte(pattern,index) == 93 && !first) { if (negate) { selected.invert(); } return core::result::Ok(Class { token: selected, end: index+1 }); }
+        if (byte(pattern,index) == 91 && index+1 < pattern.len()) {
+            let marker: u8 = byte(pattern,index+1);
+            if (marker == 46 || marker == 61) { return core::result::Err(Error::UnsupportedClass(index)); }
+            if (marker == 58) {
+                let end: i32 = index+2;
+                while (end+1 < pattern.len() && !(byte(pattern,end) == 58 && byte(pattern,end+1) == 93)) { end += 1; }
+                if (end+1 >= pattern.len()) { return core::result::Err(Error::UnclosedClass(start)); }
+                let kind: i32 = named_class(pattern,index+2,end); if (kind == 0) { return core::result::Err(Error::UnknownClass(index)); }
+                let value: i32 = 0; while (value < 256) { if (class_member(kind,value as u8)) { selected.add(value as u8); } value += 1; }
+                index = end+2; first = false;
+                if (index+1 < pattern.len() && byte(pattern,index) == 45 && byte(pattern,index+1) != 93) { return core::result::Err(Error::InvalidRange(index)); }
+                continue;
+            }
+        }
+        let parsed: core::result::Result<Atom, Error> = atom(pattern,index,options.escape); if (core::result::is_err(parsed)) { return core::result::Err(core::result::unwrap_err(parsed)); }
+        let begin: Atom = core::result::unwrap(parsed); index = begin.end; let last: u8 = begin.value;
+        if (index+1 < pattern.len() && byte(pattern,index) == 45 && byte(pattern,index+1) != 93) {
+            let dash: i32 = index; index += 1;
+            if (index+1 < pattern.len() && byte(pattern,index) == 91 && (byte(pattern,index+1) == 58 || byte(pattern,index+1) == 46 || byte(pattern,index+1) == 61)) { return core::result::Err(Error::InvalidRange(dash)); }
+            let parsed_end: core::result::Result<Atom, Error> = atom(pattern,index,options.escape); if (core::result::is_err(parsed_end)) { return core::result::Err(core::result::unwrap_err(parsed_end)); }
+            let ending: Atom = core::result::unwrap(parsed_end); last = ending.value; index = ending.end;
+            if (fold(last,options.ascii_case_insensitive) < fold(begin.value,options.ascii_case_insensitive)) { return core::result::Err(Error::InvalidRange(dash)); }
+        }
+        let value: i32 = fold(begin.value,options.ascii_case_insensitive) as i32;
+        let end_value: i32 = fold(last,options.ascii_case_insensitive) as i32;
+        while (value <= end_value) { selected.add_case(value as u8,options.ascii_case_insensitive); value += 1; }
+        first = false;
+    }
+    return core::result::Err(Error::UnclosedClass(start));
+}
+
+pub fn compile(bytes: core::slice::View<u8>, options: Options, limits: Limits) -> core::result::Result<Pattern, Error> {
+    if (!valid(bytes) || limits.max_pattern_bytes < 0 || limits.max_tokens < 0 || limits.max_tokens > 1073741822) { return core::result::Err(Error::Bounds); }
+    if (bytes.len() > limits.max_pattern_bytes) { return core::result::Err(Error::PatternLimit); }
+    let index: i32 = 0; while (index < bytes.len()) { if (byte(bytes,index) == 0) { return core::result::Err(Error::Nul(index)); } index += 1; }
+    let capacity: i32 = bytes.len(); if (capacity > limits.max_tokens) { capacity = limits.max_tokens; }
+    let allocated: core::result::Result<alloc::vec::Vec<Token>, alloc::vec::Error> = alloc::vec::with_capacity<Token>(capacity);
+    if (core::result::is_err(allocated)) { return core::result::Err(allocation_error(core::result::unwrap_err(allocated))); }
+    let output: Pattern = Pattern { tokens: core::result::unwrap(allocated), options: options, live: true };
+    index = 0; let boundary: bool = true;
+    while (index < bytes.len()) {
+        if (output.tokens.len() == limits.max_tokens) { output.destroy(); return core::result::Err(Error::TokenLimit); }
+        let value: u8 = byte(bytes,index); let item: Token = token(LITERAL);
+        if (value == 42) {
+            let end: i32 = index+1; while (end < bytes.len() && byte(bytes,end) == 42) { end += 1; }
+            // Quoting a slash preserves its separator identity, including the
+            // zero-directory branch of a whole-component globstar.
+            let separator: i32 = 0;
+            if (end < bytes.len()) {
+                if (byte(bytes,end) == 47) { separator = 1; }
+                else { if (options.escape && byte(bytes,end) == 92 && end+1 < bytes.len() && byte(bytes,end+1) == 47) { separator = 2; } }
+            }
+            let recursive: bool = options.pathname && options.globstar && boundary && end-index == 2 && (end == bytes.len() || separator > 0);
+            item.kind = STAR;
+            if (recursive) { item.kind = RECURSIVE; if (end < bytes.len()) { item.kind = DIRECTORIES; end += separator; } }
+            boundary = item.kind == DIRECTORIES; index = end;
+        } else {
+            if (value == 63) { item.kind = ANY; index += 1; boundary = false; }
+            else {
+                if (value == 91) {
+                    let parsed: core::result::Result<Class, Error> = bracket(bytes,index,options);
+                    if (core::result::is_err(parsed)) { output.destroy(); return core::result::Err(core::result::unwrap_err(parsed)); }
+                    let group: Class = core::result::unwrap(parsed); item = group.token; index = group.end; boundary = false;
+                } else {
+                    let parsed: core::result::Result<Atom, Error> = atom(bytes,index,options.escape);
+                    if (core::result::is_err(parsed)) { output.destroy(); return core::result::Err(core::result::unwrap_err(parsed)); }
+                    let literal: Atom = core::result::unwrap(parsed); item.a = fold(literal.value,options.ascii_case_insensitive) as u64;
+                    boundary = literal.value == 47; index = literal.end;
+                }
+            }
+        }
+        let pushed: core::result::Result<i32, alloc::vec::Error> = output.tokens.try_push(item);
+        if (core::result::is_err(pushed)) { output.destroy(); return core::result::Err(allocation_error(core::result::unwrap_err(pushed))); }
+    }
+    return core::result::Ok(output);
+}
+
+pub impl Pattern {
+    pub fn borrow(&self) -> &Pattern { return self; }
+    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn token_count(&self) -> i32 { return self.tokens.len(); }
+    pub fn scratch_len(&self) -> i32 { return (self.tokens.len()+1)*2; }
+    pub fn destroy(&self) { self.tokens.destroy(); self.live = false; }
+    pub fn try_clone(&self) -> core::result::Result<Pattern, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        let copied: core::result::Result<alloc::vec::Vec<Token>, alloc::vec::Error> = self.tokens.try_clone();
+        if (core::result::is_err(copied)) { return core::result::Err(allocation_error(core::result::unwrap_err(copied))); }
+        return core::result::Ok(Pattern { tokens: core::result::unwrap(copied), options: self.options, live: true });
+    }
+    pub fn new_scratch(&self) -> core::result::Result<alloc::vec::Vec<u8>, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        let storage: alloc::vec::Vec<u8> = alloc::vec::new(); let resized: core::result::Result<i32, alloc::vec::Error> = storage.try_resize(self.scratch_len(),0);
+        if (core::result::is_err(resized)) { return core::result::Err(allocation_error(core::result::unwrap_err(resized))); }
+        return core::result::Ok(storage);
+    }
+    // Bound on loop slots: initial clear, epsilon scans, destination clears and
+    // transitions. All i32 input/token counts fit these products in u64.
+    pub fn work_bound(&self, input_bytes: i32) -> core::result::Result<u64, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); } if (input_bytes < 0) { return core::result::Err(Error::Bounds); }
+        let m: u64 = self.tokens.len() as u64; let n: u64 = input_bytes as u64; let width: u64 = m+1;
+        return core::result::Ok(2*width + (2*n+1)*m + n*width);
+    }
+    pub fn matches(&self, path: core::path::Path, scratch: core::slice::View<u8>, max_work: u64) -> core::result::Result<bool, Error> {
+        if (!self.live) { return core::result::Err(Error::Destroyed); }
+        let input: core::slice::View<u8> = path.as_bytes(); if (!valid(input) || !valid(scratch)) { return core::result::Err(Error::Bounds); }
+        if (scratch.len() < self.scratch_len()) { return core::result::Err(Error::ScratchTooSmall(self.scratch_len())); }
+        let bound: u64 = core::result::unwrap(self.work_bound(input.len())); if (bound > max_work) { return core::result::Err(Error::WorkLimit); }
+        let count: i32 = self.tokens.len(); let width: i32 = count+1; let storage: [u8] = scratch.values; let base: i32 = scratch.start;
+        let index: i32 = 0; while (index < width*2) { storage[base+index] = 0; index += 1; }
+        let current: i32 = base; let next: i32 = base+width; storage[current] = 1; let position: i32 = 0;
+        while (true) {
+            let boundary: bool = position == 0; if (position > 0 && self.options.pathname && byte(input,position-1) == 47) { boundary = true; }
+            let protected: bool = false; if (position < input.len()) { protected = self.options.literal_leading_dot && boundary && byte(input,position) == 46; }
+            index = 0;
+            while (index < count) {
+                if (storage[current+index] != 0) {
+                    let item: Token = self.tokens.at(index); let skip: bool = (item.kind == STAR || item.kind == RECURSIVE) && !protected;
+                    if (item.kind == DIRECTORIES && boundary) { skip = true; }
+                    if (skip) { storage[current+index+1] = 1; }
+                }
+                index += 1;
+            }
+            if (position == input.len()) { return core::result::Ok(storage[current+count] != 0); }
+            index = 0; while (index < width) { storage[next+index] = 0; index += 1; }
+            let value: u8 = byte(input,position); let folded: u8 = fold(value,self.options.ascii_case_insensitive); index = 0;
+            while (index < count) {
+                if (storage[current+index] != 0) {
+                    let item: Token = self.tokens.at(index); let accepts: bool = false;
+                    if (item.kind == LITERAL) { accepts = item.a == folded as u64; }
+                    else {
+                        if (!protected && (!self.options.pathname || value != 47 || item.kind == RECURSIVE || item.kind == DIRECTORIES)) {
+                            if (item.kind == CLASS) { accepts = item.contains(value); } else { accepts = true; }
+                        }
+                    }
+                    if (accepts) { let destination: i32 = index+1; if (item.kind == STAR || item.kind == RECURSIVE || item.kind == DIRECTORIES) { destination = index; } storage[next+destination] = 1; }
+                }
+                index += 1;
+            }
+            let held: i32 = current; current = next; next = held; position += 1;
+        }
+        return core::result::Ok(false);
+    }
+}

@@ -1,0 +1,20 @@
+module app::main;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::log;
+fn text(value: str, length: i32) -> core::text::Text { let pointer: ptr = core::mem::string_data_ptr(value); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer, length); return core::text::from_utf8_unchecked(bytes, 0, length); }
+fn written(outcome: ext::log::Outcome) -> i32 { return match (outcome) { ext::log::Outcome::Written(count) -> count, ext::log::Outcome::Filtered -> -1 }; }
+fn main() -> i32 {
+    let fields: [ext::log::Field; 1] = [ext::log::Field { key: text("items", 5), value: ext::log::Value::Unsigned(42) }];
+    let record: ext::log::Record = ext::log::Record { level: ext::log::Level::Info, target: text("test", 4), message: text("hi", 2), fields: core::result::unwrap(core::slice::view(fields, 1)) };
+    let bytes: [u8; 240] = [88; 240]; let scratch: [u8; 240] = [88; 240];
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(bytes, 240));
+    let count: i32 = core::result::unwrap(ext::log::encode(record.borrow(), scratch, 0, 240));
+    assert(count == 70 && core::result::unwrap(core::io::write_all(sink.borrow(),scratch,0,count)) == count);
+    assert(sink.position() == count && bytes[0] == 123 && bytes[count-1] == 10); return 0;
+}

@@ -1,0 +1,37 @@
+module app::main;
+import core::cmp;
+import core::hash;
+import core::result;
+import core::time;
+fn main() -> i32 {
+    let zero: core::time::Duration = core::time::zero(); let maximum: core::time::Duration = core::time::max_duration();
+    let normalized: core::time::Duration = core::result::unwrap(core::time::duration(3,4294967295));
+    assert(normalized.as_secs() == 7 as u64 && normalized.subsec_nanos() == 294967295);
+    assert(core::result::is_err(core::time::duration(18446744073709551615,1000000000)));
+    assert(core::result::is_err(maximum.checked_add(core::time::from_nanos(1))));
+    assert(core::result::is_err(zero.checked_sub(core::time::from_nanos(1))));
+    assert(core::result::unwrap(maximum.checked_mul(0)).is_zero());
+    assert(core::result::unwrap(maximum.checked_div(1)).compare(maximum) == 0);
+    assert(core::result::is_err(zero.checked_div(0)));
+    let half: core::time::Duration = core::result::unwrap(core::time::duration(1,500000000));
+    assert(half.as_secs_f64() == 1.5 && half.subsec_millis() == 500 && half.subsec_micros() == 500000);
+    assert(core::result::unwrap(half.as_nanos()) == 1500000000 as u64);
+    assert(core::time::Duration::eq(half,core::time::from_millis(1500)));
+    assert(core::time::Duration::hash(half) == core::time::Duration::hash(core::time::from_millis(1500)));
+    assert(core::time::Duration::ne(half,zero) && core::time::Duration::lt(zero,half) && core::time::Duration::le(half,half) && core::time::Duration::gt(half,zero) && core::time::Duration::ge(half,half));
+    let instant: core::time::Instant = core::time::instant(half); let start: core::time::Instant = core::time::instant(zero);
+    assert(core::time::Instant::eq(instant,instant) && core::time::Instant::ne(instant,start) && core::time::Instant::lt(start,instant) && core::time::Instant::le(instant,instant) && core::time::Instant::gt(instant,start) && core::time::Instant::ge(instant,instant));
+    assert(core::time::Instant::hash(instant) == core::time::Instant::hash(core::time::instant(core::time::from_micros(1500000))));
+    let epoch: core::time::SystemTime = core::time::unix_epoch();
+    let before: core::time::SystemTime = core::result::unwrap(epoch.checked_sub(core::time::from_nanos(1)));
+    assert(before.unix_seconds() == -1 as i64 && before.subsec_nanos() == 999999999);
+    assert(core::result::unwrap(before.checked_add(core::time::from_nanos(1))).compare(epoch) == 0);
+    assert(core::result::is_err(core::time::system_time(0,1000000000)));
+    assert(core::time::SystemTime::eq(epoch,epoch) && core::time::SystemTime::ne(before,epoch) && core::time::SystemTime::lt(before,epoch) && core::time::SystemTime::le(epoch,epoch) && core::time::SystemTime::gt(epoch,before) && core::time::SystemTime::ge(epoch,epoch));
+    assert(core::time::SystemTime::hash(before) == core::time::SystemTime::hash(core::result::unwrap(core::time::system_time(-1,999999999))));
+    let deadline: core::time::Deadline = core::result::unwrap(core::time::deadline_after(start,half));
+    assert(!deadline.is_expired(start) && deadline.is_expired(instant) && deadline.remaining(instant).is_zero());
+    assert(deadline.remaining(start).compare(half) == 0);
+    assert(core::result::is_err(core::time::deadline_after(core::time::instant(maximum),core::time::from_nanos(1))));
+    return 0;
+}

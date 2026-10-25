@@ -1,0 +1,80 @@
+module app::main;
+import alloc::vec;
+import alloc::tree_map;
+import alloc::hash_map;
+import core::cmp;
+import core::hash;
+import core::f32;
+import core::f64;
+import core::float_order;
+import core::option;
+import core::result;
+
+fn collections<T>(keys: [T], count: i32) -> bool
+    where T: core::cmp::Eq<T>, T: core::cmp::Ord<T>, T: core::cmp::PartialEq<T>, T: core::hash::Hash<T> {
+    let vector: alloc::vec::Vec<T> = alloc::vec::new();
+    let ordered: alloc::tree_map::TreeMap<T,i32> = alloc::tree_map::new();
+    let hashed: alloc::hash_map::HashMap<T,i32> = alloc::hash_map::new();
+    let index: i32 = count;
+    while (index > 0) {
+        index -= 1; let key: T = keys[index];
+        core::result::unwrap(vector.try_push(key));
+        assert(core::option::is_none(core::result::unwrap(ordered.try_insert(key,index))));
+        assert(core::option::is_none(core::result::unwrap(hashed.try_insert(key,index))));
+    }
+    assert(ordered.len() == count && hashed.len() == count);
+    vector.sort(); assert(vector.is_sorted()); index = 0;
+    while (index < count) {
+        let key: T = keys[index];
+        let sorted: [T] = vector.as_slice(); let found: T = sorted[index];
+        assert(T::eq(found,key) && vector.binary_search(key) == index && vector.contains(key));
+        assert(core::option::unwrap(ordered.get(key)) == index && core::option::unwrap(hashed.get(key)) == index);
+        // Reinsert each exact encoding: identity remains stable, including NaNs.
+        let old: alloc::tree_map::Entry<T,i32> = core::option::unwrap(core::result::unwrap(ordered.try_insert(key,index+100)));
+        assert(old.value == index && T::eq(old.key,key));
+        let hash_old: alloc::hash_map::Entry<T,i32> = core::option::unwrap(core::result::unwrap(hashed.try_insert(key,index+100)));
+        assert(hash_old.value == index && T::eq(hash_old.key,key));
+        index += 1;
+    }
+    assert(ordered.len() == count && hashed.len() == count);
+    index = 0;
+    while (index < count) {
+        let item: alloc::tree_map::Entry<T,i32> = core::option::unwrap(ordered.pop_first());
+        assert(T::eq(item.key,keys[index]) && item.value == index+100);
+        assert(core::option::unwrap(hashed.remove(keys[index])).value == index+100);
+        index += 1;
+    }
+    assert(ordered.is_empty() && hashed.is_empty());
+    vector.destroy(); ordered.destroy(); hashed.destroy(); return true;
+}
+fn main() -> i32 {
+    let keys32: [core::float_order::TotalF32; 11] = [
+        core::float_order::from_f32(core::f32::from_bits(4290772994)),
+        core::float_order::from_f32(core::f32::from_bits(4286578689)),
+        core::float_order::from_f32(core::f32::from_bits(4286578688)),
+        core::float_order::from_f32(core::f32::from_bits(3212836864)),
+        core::float_order::from_f32(core::f32::from_bits(2147483648)),
+        core::float_order::from_f32(core::f32::from_bits(0)),
+        core::float_order::from_f32(core::f32::from_bits(1065353216)),
+        core::float_order::from_f32(core::f32::from_bits(2139095040)),
+        core::float_order::from_f32(core::f32::from_bits(2139095041)),
+        core::float_order::from_f32(core::f32::from_bits(2143289345)),
+        core::float_order::from_f32(core::f32::from_bits(2143289346)),
+    ];
+    assert(collections(keys32,11));
+    let keys64: [core::float_order::TotalF64; 11] = [
+        core::float_order::from_f64(core::f64::from_bits(18444492273895866370)),
+        core::float_order::from_f64(core::f64::from_bits(18442240474082181121)),
+        core::float_order::from_f64(core::f64::from_bits(18442240474082181120)),
+        core::float_order::from_f64(core::f64::from_bits(13830554455654793216)),
+        core::float_order::from_f64(core::f64::from_bits(9223372036854775808)),
+        core::float_order::from_f64(core::f64::from_bits(0)),
+        core::float_order::from_f64(core::f64::from_bits(4607182418800017408)),
+        core::float_order::from_f64(core::f64::from_bits(9218868437227405312)),
+        core::float_order::from_f64(core::f64::from_bits(9218868437227405313)),
+        core::float_order::from_f64(core::f64::from_bits(9221120237041090561)),
+        core::float_order::from_f64(core::f64::from_bits(9221120237041090562)),
+    ];
+    assert(collections(keys64,11));
+    return 0;
+}

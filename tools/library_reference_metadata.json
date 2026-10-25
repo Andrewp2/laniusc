@@ -1,0 +1,1160 @@
+{
+  "modules": {
+    "alloc::allocator": {
+      "guides": [
+        "docs/stdlib-raw-host-width.md",
+        "docs/library-host-operation-support.md"
+      ]
+    },
+    "alloc::arena": {
+      "guides": [
+        "docs/stdlib-arena.md"
+      ]
+    },
+    "alloc::binary_heap": {
+      "guides": [
+        "docs/stdlib-binary-heap.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-heap-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
+      ]
+    },
+    "alloc::bitset": {
+      "guides": [
+        "docs/stdlib-bitset-owned.md"
+      ]
+    },
+    "alloc::buffered": {
+      "guides": [
+        "docs/stdlib-buffered.md",
+        "docs/stdlib-format-write.md"
+      ]
+    },
+    "alloc::clone": {
+      "guides": [
+        "docs/stdlib-clone.md",
+        "docs/stdlib-owning-iterators.md"
+      ]
+    },
+    "alloc::clone_vec": {
+      "guides": [
+        "docs/stdlib-nested-clone.md"
+      ]
+    },
+    "alloc::deque": {
+      "guides": [
+        "docs/stdlib-deque.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-owning-iterators.md"
+      ]
+    },
+    "alloc::format": {
+      "guides": [
+        "docs/stdlib-format-strings.md"
+      ]
+    },
+    "alloc::hash_map": {
+      "guides": [
+        "docs/stdlib-hash-collections.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
+      ]
+    },
+    "alloc::hash_set": {
+      "guides": [
+        "docs/stdlib-owned-sets.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
+      ]
+    },
+    "alloc::io": {
+      "guides": [
+        "docs/stdlib-streams.md"
+      ]
+    },
+    "alloc::path": {
+      "guides": [
+        "docs/stdlib-paths.md"
+      ]
+    },
+    "alloc::string": {
+      "guides": [
+        "docs/stdlib-string.md",
+        "docs/stdlib-clone.md"
+      ]
+    },
+    "alloc::tree_map": {
+      "guides": [
+        "docs/stdlib-tree-map.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
+      ]
+    },
+    "alloc::tree_set": {
+      "guides": [
+        "docs/stdlib-owned-sets.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-collection-sinks.md"
+      ]
+    },
+    "alloc::vec": {
+      "guides": [
+        "docs/stdlib-vec.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-owning-iterators.md"
+      ]
+    },
+    "core::adler32": {
+      "guides": [
+        "docs/stdlib-adler32.md"
+      ]
+    },
+    "core::aes": {
+      "guides": [
+        "docs/core-aes.md"
+      ]
+    },
+    "core::base64": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::binary": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::bits": {
+      "guides": [
+        "docs/stdlib-boolean-bits.md"
+      ]
+    },
+    "core::bitset": {
+      "guides": [
+        "docs/stdlib-bitset-owned.md",
+        "docs/stdlib-collection-iterators.md"
+      ]
+    },
+    "core::bool": {
+      "guides": [
+        "docs/stdlib-boolean-bits.md"
+      ]
+    },
+    "core::calendar": {
+      "guides": [
+        "docs/stdlib-calendar.md"
+      ]
+    },
+    "core::chacha20": {
+      "guides": [
+        "docs/stdlib-chacha20.md"
+      ]
+    },
+    "core::char": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ]
+    },
+    "core::clone": {
+      "guides": [
+        "docs/stdlib-clone.md"
+      ]
+    },
+    "core::cmp": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::crc32": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::decimal": {
+      "guides": [
+        "docs/stdlib-decimal.md"
+      ]
+    },
+    "core::decimal_number": {
+      "guides": [
+        "docs/stdlib-decimal-number.md"
+      ]
+    },
+    "core::endian": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::f32": {
+      "guides": [
+        "docs/stdlib-floats.md"
+      ]
+    },
+    "core::f64": {
+      "guides": [
+        "docs/stdlib-floats.md"
+      ]
+    },
+    "core::float_decimal": {
+      "guides": [
+        "docs/stdlib-float-decimal.md",
+        "docs/stdlib-float-precision.md"
+      ]
+    },
+    "core::float_order": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::fmt": {
+      "guides": [
+        "docs/stdlib-formatting.md"
+      ]
+    },
+    "core::format": {
+      "guides": [
+        "docs/stdlib-format-strings.md",
+        "docs/stdlib-format-write.md"
+      ]
+    },
+    "core::hash": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::hex": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::i16": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::i32": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::i64": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::i8": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::io": {
+      "guides": [
+        "docs/stdlib-streams.md",
+        "docs/stdlib-format-write.md"
+      ]
+    },
+    "core::isize": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::iter": {
+      "guides": [
+        "docs/stdlib-iterators.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-iterator-adapters.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-iterator-selection.md",
+        "docs/compiler-iterator-assignment-context.md",
+        "docs/stdlib-iterator-transfer.md",
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-iterators.md"
+      ]
+    },
+    "core::math": {
+      "guides": [
+        "docs/stdlib-math.md"
+      ]
+    },
+    "core::mem": {
+      "guides": [
+        "docs/stdlib-memory.md"
+      ]
+    },
+    "core::net": {
+      "guides": [
+        "docs/stdlib-net.md"
+      ]
+    },
+    "core::option": {
+      "guides": [
+        "docs/stdlib-option.md"
+      ]
+    },
+    "core::ordering": {
+      "guides": [
+        "docs/stdlib-comparison.md"
+      ]
+    },
+    "core::panic": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "note": "panic and unreachable execute traps. The panic-hook capability/status helpers describe an unavailable hook service; they do not install a hook."
+    },
+    "core::path": {
+      "guides": [
+        "docs/stdlib-paths.md"
+      ]
+    },
+    "core::path_rules": {
+      "guides": [
+        "docs/stdlib-paths.md"
+      ]
+    },
+    "core::poly1305": {
+      "guides": [
+        "docs/stdlib-poly1305.md"
+      ]
+    },
+    "core::random": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "core::range": {
+      "guides": [
+        "docs/stdlib-ranges.md"
+      ]
+    },
+    "core::result": {
+      "guides": [
+        "docs/stdlib-result.md"
+      ]
+    },
+    "core::runtime": {
+      "guides": [
+        "docs/library-host-prerequisites.md",
+        "docs/library-host-operation-support.md"
+      ]
+    },
+    "core::set": {
+      "guides": [
+        "docs/stdlib-fixed-capacity.md",
+        "docs/stdlib-cursor-integration.md"
+      ]
+    },
+    "core::sha256": {
+      "guides": [
+        "docs/stdlib-sha256.md",
+        "docs/stdlib-hash-bytes.md"
+      ]
+    },
+    "core::sha512": {
+      "guides": [
+        "docs/stdlib-sha512.md",
+        "docs/stdlib-hash-bytes.md"
+      ]
+    },
+    "core::slice": {
+      "guides": [
+        "docs/stdlib-slice-views.md",
+        "docs/stdlib-slice.md",
+        "docs/stdlib-cursor-integration.md"
+      ]
+    },
+    "core::target": {
+      "guides": [
+        "docs/library-host-prerequisites.md",
+        "docs/library-host-operation-support.md"
+      ]
+    },
+    "core::text": {
+      "guides": [
+        "docs/stdlib-text.md",
+        "docs/stdlib-text-composition.md",
+        "docs/stdlib-collection-iterators.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-text-split-iterators.md"
+      ]
+    },
+    "core::time": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "core::transcode": {
+      "guides": [
+        "docs/stdlib-utf-codecs.md"
+      ]
+    },
+    "core::u16": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::u32": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::u64": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::u8": {
+      "guides": [
+        "docs/stdlib-narrow-integers.md"
+      ]
+    },
+    "core::unicode": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ]
+    },
+    "core::unicode_case_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::unicode_fold_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::unicode_properties_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::unicode_table": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Private static-table decoder shared by the Unicode data modules; caller-backed bounds and generated uppercase-hex data are its source preconditions."
+    },
+    "core::unicode_turkic_data": {
+      "guides": [
+        "docs/stdlib-unicode.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "core::usize": {
+      "guides": [
+        "docs/stdlib-native-integers.md"
+      ]
+    },
+    "core::utf16": {
+      "guides": [
+        "docs/stdlib-utf-codecs.md"
+      ]
+    },
+    "core::utf16_bytes": {
+      "guides": [
+        "docs/stdlib-utf-codecs.md"
+      ]
+    },
+    "core::utf8": {
+      "guides": [
+        "docs/stdlib-utf-codecs.md"
+      ]
+    },
+    "core::utf8_view": {
+      "guides": [
+        "docs/stdlib-utf-codecs.md"
+      ]
+    },
+    "core::varint": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::varint_i32": {
+      "guides": [
+        "docs/stdlib-byte-codecs.md"
+      ]
+    },
+    "core::vec": {
+      "guides": [
+        "docs/stdlib-fixed-capacity.md",
+        "docs/stdlib-cursor-integration.md",
+        "docs/stdlib-iterator-transfer.md"
+      ]
+    },
+    "ext::aes_gcm": {
+      "guides": [
+        "docs/extended-aes-gcm.md"
+      ]
+    },
+    "ext::audio": {
+      "guides": [
+        "docs/extended-audio.md"
+      ]
+    },
+    "ext::big_int": {
+      "guides": [
+        "docs/extended-big-int.md"
+      ]
+    },
+    "ext::big_uint": {
+      "guides": [
+        "docs/extended-big-uint.md"
+      ]
+    },
+    "ext::cbor": {
+      "guides": [
+        "docs/extended-cbor.md"
+      ]
+    },
+    "ext::chacha20_poly1305": {
+      "guides": [
+        "docs/extended-chacha20-poly1305.md",
+        "docs/extended-seal-bytes.md"
+      ]
+    },
+    "ext::cli": {
+      "guides": [
+        "docs/extended-cli.md"
+      ]
+    },
+    "ext::compression": {
+      "guides": [
+        "docs/extended-compression.md"
+      ]
+    },
+    "ext::config": {
+      "guides": [
+        "docs/extended-config.md"
+      ]
+    },
+    "ext::csv": {
+      "guides": [
+        "docs/extended-csv.md"
+      ]
+    },
+    "ext::decimal": {
+      "guides": [
+        "docs/extended-decimal.md"
+      ]
+    },
+    "ext::deflate": {
+      "guides": [
+        "docs/extended-deflate.md"
+      ]
+    },
+    "ext::der": {
+      "guides": [
+        "docs/extended-der.md"
+      ]
+    },
+    "ext::diff": {
+      "guides": [
+        "docs/extended-diff.md"
+      ]
+    },
+    "ext::discrete_distributions": {
+      "guides": [
+        "docs/extended-discrete-distributions.md"
+      ]
+    },
+    "ext::distributions": {
+      "guides": [
+        "docs/extended-distributions.md"
+      ]
+    },
+    "ext::distributions_erfc": {
+      "guides": [
+        "docs/extended-distributions.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::dns": {
+      "guides": [
+        "docs/extended-dns.md"
+      ]
+    },
+    "ext::dns_client": {
+      "guides": [
+        "docs/extended-dns-client.md"
+      ]
+    },
+    "ext::ed25519": {
+      "guides": [
+        "docs/extended-ed25519.md",
+        "docs/extended-sign-bytes.md"
+      ]
+    },
+    "ext::geometry": {
+      "guides": [
+        "docs/extended-geometry.md"
+      ]
+    },
+    "ext::glob": {
+      "guides": [
+        "docs/extended-glob.md"
+      ]
+    },
+    "ext::hkdf_sha256": {
+      "guides": [
+        "docs/extended-hmac-hkdf.md",
+        "docs/extended-derive-key.md"
+      ]
+    },
+    "ext::hmac_sha256": {
+      "guides": [
+        "docs/extended-hmac-hkdf.md",
+        "docs/extended-derive-key.md"
+      ]
+    },
+    "ext::http": {
+      "guides": [
+        "docs/extended-http.md",
+        "docs/extended-http-cursor.md"
+      ]
+    },
+    "ext::http_client": {
+      "guides": [
+        "docs/extended-http-client.md"
+      ]
+    },
+    "ext::http_server": {
+      "guides": [
+        "docs/extended-http-server.md"
+      ]
+    },
+    "ext::image": {
+      "guides": [
+        "docs/extended-image.md"
+      ]
+    },
+    "ext::inflate": {
+      "guides": [
+        "docs/extended-inflate.md"
+      ]
+    },
+    "ext::json": {
+      "guides": [
+        "docs/extended-json.md"
+      ]
+    },
+    "ext::kv": {
+      "guides": [
+        "docs/extended-kv.md"
+      ]
+    },
+    "ext::linalg": {
+      "guides": [
+        "docs/extended-linalg.md"
+      ]
+    },
+    "ext::log": {
+      "guides": [
+        "docs/extended-log.md"
+      ]
+    },
+    "ext::p256": {
+      "guides": [
+        "docs/extended-p256.md"
+      ]
+    },
+    "ext::parse": {
+      "guides": [
+        "docs/extended-parse.md"
+      ]
+    },
+    "ext::patch": {
+      "guides": [
+        "docs/extended-patch.md"
+      ]
+    },
+    "ext::percent": {
+      "guides": [
+        "docs/extended-percent.md"
+      ]
+    },
+    "ext::png": {
+      "guides": [
+        "docs/extended-png.md"
+      ]
+    },
+    "ext::progress": {
+      "guides": [
+        "docs/extended-progress.md"
+      ]
+    },
+    "ext::regex": {
+      "guides": [
+        "docs/extended-regex.md"
+      ]
+    },
+    "ext::schema": {
+      "guides": [
+        "docs/extended-schema.md"
+      ]
+    },
+    "ext::service_identity": {
+      "guides": [
+        "docs/extended-service-identity.md"
+      ]
+    },
+    "ext::settings": {
+      "guides": [
+        "docs/extended-settings.md"
+      ]
+    },
+    "ext::settings_env": {
+      "guides": [
+        "docs/extended-settings.md"
+      ]
+    },
+    "ext::signal": {
+      "guides": [
+        "docs/extended-signal.md"
+      ]
+    },
+    "ext::statistics": {
+      "guides": [
+        "docs/extended-statistics.md"
+      ]
+    },
+    "ext::table": {
+      "guides": [
+        "docs/extended-table.md"
+      ]
+    },
+    "ext::tar": {
+      "guides": [
+        "docs/extended-tar.md"
+      ]
+    },
+    "ext::terminal": {
+      "guides": [
+        "docs/extended-terminal.md"
+      ]
+    },
+    "ext::terminal_data": {
+      "guides": [
+        "docs/extended-terminal.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::timezone": {
+      "guides": [
+        "docs/extended-timezone.md"
+      ]
+    },
+    "ext::tls_authentication": {
+      "guides": [
+        "docs/extended-tls-authentication.md"
+      ]
+    },
+    "ext::tls_connection": {
+      "guides": [
+        "docs/extended-tls-connection.md",
+        "docs/tls-connection-contract.md"
+      ]
+    },
+    "ext::tls_framing": {
+      "guides": [
+        "docs/extended-tls-framing.md"
+      ]
+    },
+    "ext::tls_handshake": {
+      "guides": [
+        "docs/extended-tls-handshake.md",
+        "docs/extended-tls-auth-foundation.md"
+      ]
+    },
+    "ext::tls_negotiation": {
+      "guides": [
+        "docs/extended-tls-negotiation.md"
+      ]
+    },
+    "ext::tls_record": {
+      "guides": [
+        "docs/extended-tls-record.md"
+      ]
+    },
+    "ext::tls_schedule": {
+      "guides": [
+        "docs/extended-tls-schedule.md"
+      ]
+    },
+    "ext::tls_tcp": {
+      "guides": [
+        "docs/extended-tls-tcp.md",
+        "docs/extended-tls-exchange.md"
+      ]
+    },
+    "ext::tls_transcript": {
+      "guides": [
+        "docs/extended-tls-schedule.md"
+      ]
+    },
+    "ext::toml": {
+      "guides": [
+        "docs/extended-toml.md"
+      ]
+    },
+    "ext::unicode_case": {
+      "guides": [
+        "docs/extended-unicode-case.md"
+      ]
+    },
+    "ext::unicode_case_data": {
+      "guides": [
+        "docs/extended-unicode-case.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_graphemes": {
+      "guides": [
+        "docs/extended-unicode-graphemes.md"
+      ]
+    },
+    "ext::unicode_graphemes_data": {
+      "guides": [
+        "docs/extended-unicode-graphemes.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_lines": {
+      "guides": [
+        "docs/extended-unicode-lines.md"
+      ]
+    },
+    "ext::unicode_lines_data": {
+      "guides": [
+        "docs/extended-unicode-lines.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_lines_wrap": {
+      "guides": [
+        "docs/extended-text-wrap.md"
+      ]
+    },
+    "ext::unicode_normalize": {
+      "guides": [
+        "docs/extended-unicode-normalize.md"
+      ]
+    },
+    "ext::unicode_normalize_data": {
+      "guides": [
+        "docs/extended-unicode-normalize.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_sentences": {
+      "guides": [
+        "docs/extended-unicode-sentences.md"
+      ]
+    },
+    "ext::unicode_sentences_data": {
+      "guides": [
+        "docs/extended-unicode-sentences.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::unicode_words": {
+      "guides": [
+        "docs/extended-unicode-words.md"
+      ]
+    },
+    "ext::unicode_words_data": {
+      "guides": [
+        "docs/extended-unicode-words.md"
+      ],
+      "role": "support",
+      "note": "Implementation support/data module. Its declarations are inventoried for discovery; the linked family guide defines the supported public workflow."
+    },
+    "ext::uri": {
+      "guides": [
+        "docs/extended-uri.md"
+      ]
+    },
+    "ext::uri_resolve": {
+      "guides": [
+        "docs/extended-uri-resolve.md"
+      ]
+    },
+    "ext::wave": {
+      "guides": [
+        "docs/extended-wave.md"
+      ]
+    },
+    "ext::websocket": {
+      "guides": [
+        "docs/extended-websocket.md"
+      ]
+    },
+    "ext::x25519": {
+      "guides": [
+        "docs/extended-x25519.md"
+      ]
+    },
+    "ext::x509": {
+      "guides": [
+        "docs/extended-x509.md",
+        "docs/extended-certificate-info.md"
+      ]
+    },
+    "ext::x509_path": {
+      "guides": [
+        "docs/extended-x509-path.md",
+        "docs/extended-verify-certificate.md"
+      ]
+    },
+    "ext::zip": {
+      "guides": [
+        "docs/extended-zip.md"
+      ]
+    },
+    "std::args": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::args_checked": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::clock": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "std::command": {
+      "guides": [
+        "docs/stdlib-command.md"
+      ]
+    },
+    "std::command_capture": {
+      "guides": [
+        "docs/stdlib-command-capture.md"
+      ]
+    },
+    "std::command_raw": {
+      "guides": [
+        "docs/stdlib-command.md"
+      ],
+      "role": "support",
+      "note": "Internal syscall support for std::command. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise."
+    },
+    "std::directory": {
+      "guides": [
+        "docs/stdlib-directory.md"
+      ]
+    },
+    "std::entropy": {
+      "guides": [
+        "docs/stdlib-randomness.md",
+        "docs/stdlib-entropy-bounded.md"
+      ]
+    },
+    "std::env": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::env_checked": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::file": {
+      "guides": [
+        "docs/stdlib-files.md"
+      ]
+    },
+    "std::file_copy": {
+      "guides": [
+        "docs/stdlib-file-copy.md",
+        "docs/stdlib-copy-file.md"
+      ]
+    },
+    "std::file_ops": {
+      "guides": [
+        "docs/stdlib-file-operations.md",
+        "docs/stdlib-file-resize.md"
+      ]
+    },
+    "std::filesystem": {
+      "guides": [
+        "docs/stdlib-filesystem.md"
+      ]
+    },
+    "std::fs": {
+      "guides": [
+        "docs/stdlib-filesystem.md"
+      ]
+    },
+    "std::gpu": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Unbound host declarations",
+      "note": "User buffer/dispatch extern declarations have no runtime binding. Compiler use of a GPU does not establish user GPU execution."
+    },
+    "std::host": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Metadata only",
+      "note": "Descriptor/status helpers describe an unavailable host service; this module supplies no host operation."
+    },
+    "std::io": {
+      "guides": [
+        "docs/stdlib-checked-sample-migration.md",
+        "docs/library-remaining-api-audit.md"
+      ]
+    },
+    "std::linux": {
+      "guides": [
+        "docs/stdlib-linux.md"
+      ]
+    },
+    "std::net": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Unbound host declarations",
+      "note": "The direct legacy network service declarations are unbound. Metadata helpers describe that unavailable service; executable owned sockets use std::socket over std::linux separately."
+    },
+    "std::poll": {
+      "guides": [
+        "docs/stdlib-poll.md"
+      ]
+    },
+    "std::process": {
+      "guides": [
+        "docs/stdlib-process-context.md"
+      ]
+    },
+    "std::random": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::random_checked": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::random_wide": {
+      "guides": [
+        "docs/stdlib-randomness.md"
+      ]
+    },
+    "std::signal": {
+      "guides": [
+        "docs/stdlib-signals.md"
+      ]
+    },
+    "std::socket": {
+      "guides": [
+        "docs/stdlib-sockets.md"
+      ]
+    },
+    "std::stream": {
+      "guides": [
+        "docs/stdlib-streams.md"
+      ]
+    },
+    "std::thread": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Unbound host declarations",
+      "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads."
+    },
+    "std::time": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ],
+      "profile": "Mixed host bindings",
+      "note": "Counted monotonic/system clock reads, unix_seconds and i32 sleep use native bindings. The three i64-return/read or i64-sleep extern declarations noted below remain unbound; their presence does not establish executable clock support.",
+      "declarations": {
+        "monotonic_now_ns": "Unbound legacy i64 host declaration. Use the checked std::clock/std::time_checked API and its linked target contract.",
+        "system_now_unix_ms": "Unbound legacy i64 host declaration. Use the checked std::clock/std::time_checked API and its linked target contract.",
+        "sleep_ms": "Unbound legacy i64 host declaration. Use the checked std::clock/std::time_checked API and its linked target contract."
+      }
+    },
+    "std::time_checked": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "std::time_wide": {
+      "guides": [
+        "docs/stdlib-time.md"
+      ]
+    },
+    "std::vec": {
+      "guides": [
+        "docs/stdlib-legacy-collections.md",
+        "docs/stdlib-checked-sample-migration.md"
+      ],
+      "profile": "Protected legacy",
+      "note": "Protected extraction identity and a remaining binary-heap backing dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise."
+    },
+    "test::assert": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::bench": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::check": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::harness": {
+      "guides": [
+        "docs/library-remaining-api-audit.md",
+        "docs/library-host-prerequisites.md"
+      ],
+      "profile": "Metadata only",
+      "note": "Descriptor/status metadata supplies no registration, discovery or runner. Explicit source testing is implemented separately by test::suite, test::check, test::property and test::bench."
+    },
+    "test::property": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    },
+    "test::suite": {
+      "guides": [
+        "docs/stdlib-development.md"
+      ]
+    }
+  }
+}

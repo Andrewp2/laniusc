@@ -1,0 +1,59 @@
+// stdin UTF-8 -> UAX #14 opportunities -> terminal policy -> staged wrapped text.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::terminal;
+import ext::unicode_lines_wrap;
+import std::args;
+import std::signal;
+import std::stream;
+struct Options { policy: ext::unicode_lines_wrap::Options, limits: ext::unicode_lines_wrap::Limits, seen: u32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn same(value: core::slice::View<u8>, literal: str, count: i32) -> bool { if (value.length != count) { return false; } let other: core::slice::View<u8> = bytes(literal,count); let i: i32 = 0; while (i < count) { if (value.values[value.start+i] != other.values[i]) { return false; } i += 1; } return true; }
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+ let flag: u32 = (1 as u32)<<item.id; if ((options.seen & flag) != 0) { return false; } options.seen = options.seen|flag;
+ if (item.id == 1) { options.help = true; return true; } if (item.id == 3) { options.policy.ambiguous_wide = true; return true; } if (item.id == 4) { options.policy.mode = ext::terminal::Mode::Scalars; return true; }
+ let value: ext::cli::Argument = core::option::unwrap(item.value);
+ if (item.id == 5) { if (same(value.bytes,"overflow",8)) { options.policy.overlong = ext::unicode_lines_wrap::Overlong::Overflow; return true; } if (same(value.bytes,"error",5)) { options.policy.overlong = ext::unicode_lines_wrap::Overlong::Reject; return true; } return false; }
+ let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.length); if (parsed.is_err()) { return false; } let count: u64 = parsed.unwrap();
+ if (item.id == 10) { options.limits.max_work = count; return true; } if (count > 67108864) { return false; }
+ if (item.id == 2) { if (count == 0) { return false; } options.policy.columns = count as i32; }
+ if (item.id == 6) { options.limits.max_bytes = count as i32; } if (item.id == 7) { options.limits.max_scalars = count as i32; } if (item.id == 8) { options.limits.max_output_bytes = count as i32; } if (item.id == 9) { options.limits.max_lines = count as i32; } return true;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+ let specs: [ext::cli::Spec;10] = [
+ ext::cli::Spec { id: 1,long: bytes("help",4),short: 104,arity: ext::cli::Arity::Flag },
+ ext::cli::Spec { id: 2,long: bytes("columns",7),short: 99,arity: ext::cli::Arity::Required },
+ ext::cli::Spec { id: 3,long: bytes("ambiguous-wide",14),short: 0,arity: ext::cli::Arity::Flag },
+ ext::cli::Spec { id: 4,long: bytes("scalar-width",12),short: 0,arity: ext::cli::Arity::Flag },
+ ext::cli::Spec { id: 5,long: bytes("overlong",8),short: 0,arity: ext::cli::Arity::Required },
+ ext::cli::Spec { id: 6,long: bytes("max-input-bytes",15),short: 0,arity: ext::cli::Arity::Required },
+ ext::cli::Spec { id: 7,long: bytes("max-scalars",11),short: 0,arity: ext::cli::Arity::Required },
+ ext::cli::Spec { id: 8,long: bytes("max-output-bytes",16),short: 0,arity: ext::cli::Arity::Required },
+ ext::cli::Spec { id: 9,long: bytes("max-lines",9),short: 0,arity: ext::cli::Arity::Required },
+ ext::cli::Spec { id: 10,long: bytes("max-work",8),short: 0,arity: ext::cli::Arity::Required } ];
+ let options: Options = Options { policy: ext::unicode_lines_wrap::options(), limits: ext::unicode_lines_wrap::default_limits(), seen: 0, help: false };
+ let parser: ext::cli::Parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,10).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+ while (true) { let item: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (item.is_err()) { return 2; } let event: core::option::Option<ext::cli::Event> = item.unwrap(); if (core::option::is_none(event)) { break; } let okay: bool = match (core::option::unwrap(event)) { ext::cli::Event::Option(value) -> option(options.borrow(),value), _ -> false }; if (!okay) { return 2; } }
+ if (options.help) { if (arguments.len() != 1) { return 2; } let sink: std::stream::Descriptor = std::stream::stdout(); let help: core::slice::View<u8> = bytes("Usage: text-wrap [--columns N] [--ambiguous-wide] [--scalar-width] [--overlong overflow|error] [--max-input-bytes N] [--max-scalars N] [--max-output-bytes N] [--max-lines N] [--max-work N]\n",189); if (core::io::write_all(sink.borrow(),help.values,help.start,help.length).is_err()) { return 3; } return 0; }
+ let input: alloc::io::Buffer = alloc::io::with_limit(options.limits.max_bytes).unwrap(); let source: std::stream::Descriptor = std::stream::stdin(); let received: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(source.borrow(),input.borrow());
+ if (received.is_err()) { input.destroy(); return match (received.unwrap_err().cause) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3 }; }
+ let text: core::text::Text = core::text::from_utf8_unchecked(input.as_bytes(),0,input.len()); let result: core::result::Result<alloc::vec::Vec<u8>,ext::unicode_lines_wrap::Error> = ext::unicode_lines_wrap::wrap(text,options.policy,options.limits); input.destroy();
+ if (result.is_err()) { return match (result.unwrap_err()) { ext::unicode_lines_wrap::Error::AllocationFailed -> 4, _ -> 2 }; }
+ let output: alloc::vec::Vec<u8> = result.unwrap(); let sink: std::stream::Descriptor = std::stream::stdout(); let written: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),output.as_slice(),0,output.len()); output.destroy(); if (written.is_err()) { return 3; } return 0;
+}
+fn main() -> i32 {
+ if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+ let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,4096); let status: i32 = 0;
+ if (captured.is_err()) { status = match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; } else { let arguments: std::args::Arguments = captured.unwrap(); status = process(arguments); arguments.destroy(); }
+ if (status != 0) { let message: core::slice::View<u8> = bytes("text-wrap: invalid input or resource limit\n",43); if (status == 3) { message = bytes("text-wrap: I/O failure\n",23); } if (status == 4) { message = bytes("text-wrap: allocation failed\n",29); } let sink: std::stream::Descriptor = std::stream::stderr(); if (core::io::write_all(sink.borrow(),message.values,message.start,message.length).is_err()) { return 3; } } return status;
+}

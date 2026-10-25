@@ -1,0 +1,102 @@
+// IETF ChaCha20: RFC 8439 sections 2.1-2.4, with a 32-bit block counter.
+// https://www.rfc-editor.org/rfc/rfc8439.html
+module core::chacha20;
+import core::result;
+import core::slice;
+import core::u32;
+
+pub enum Error { Bounds, InvalidKeyLength, InvalidNonceLength, BufferTooSmall, CounterOverflow }
+// Inline storage. Before a call: used is in 0..=64; next is in 0..=2^32.
+// When used<64, block[used..64] is the unused suffix of counter next-1.
+// Copies retain stream position but do not create fresh nonce authority.
+// Use new; arbitrary field mutations are outside the state contract.
+pub struct State { words: [u32; 16], block: [u8; 64], used: i32, next: u64 }
+
+fn valid(value: core::slice::View<u8>) -> bool {
+    return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length;
+}
+fn load(value: core::slice::View<u8>, offset: i32) -> u32 {
+    let at: i32 = value.start+offset;
+    return ((value.values[at] as u64) | ((value.values[at+1] as u64) << 8) |
+        ((value.values[at+2] as u64) << 16) | ((value.values[at+3] as u64) << 24)) as u32;
+}
+fn setup(key: core::slice::View<u8>, nonce: core::slice::View<u8>, counter: u32) -> State {
+    let words: [u32; 16] = [0; 16];
+    words[0] = 1634760805; words[1] = 857760878; words[2] = 2036477234; words[3] = 1797285236;
+    let index: i32 = 0; while (index < 8) { words[4+index] = load(key, index*4); index += 1; }
+    words[12] = counter; index = 0; while (index < 3) { words[13+index] = load(nonce, index*4); index += 1; }
+    let block: [u8; 64] = [0; 64]; return State { words: words, block: block, used: 64, next: counter as u64 };
+}
+// Every index/round count is public and fixed; arithmetic is explicitly mod2^32.
+fn quarter(words: [u32], a: i32, b: i32, c: i32, d: i32) {
+    words[a] = core::u32::wrapping_add(words[a], words[b]); words[d] = core::u32::rotate_left(words[d] ^ words[a], 16);
+    words[c] = core::u32::wrapping_add(words[c], words[d]); words[b] = core::u32::rotate_left(words[b] ^ words[c], 12);
+    words[a] = core::u32::wrapping_add(words[a], words[b]); words[d] = core::u32::rotate_left(words[d] ^ words[a], 8);
+    words[c] = core::u32::wrapping_add(words[c], words[d]); words[b] = core::u32::rotate_left(words[b] ^ words[c], 7);
+}
+pub fn new(key: core::slice::View<u8>, nonce: core::slice::View<u8>, counter: u32) -> core::result::Result<State, Error> {
+    if (!valid(key) || !valid(nonce)) { return core::result::Err(Error::Bounds); }
+    if (key.length != 32) { return core::result::Err(Error::InvalidKeyLength); }
+    if (nonce.length != 12) { return core::result::Err(Error::InvalidNonceLength); }
+    return core::result::Ok(setup(key, nonce, counter));
+}
+pub impl State {
+    pub fn borrow(&self) -> &State { return self; }
+    fn generate(&self) {
+        assert(self.next < 4294967296); self.words[12] = self.next as u32;
+        let work: [u32; 16] = [0; 16]; let index: i32 = 0;
+        while (index < 16) { work[index] = self.words[index]; index += 1; }
+        let round: i32 = 0;
+        while (round < 10) {
+            quarter(work, 0, 4, 8, 12); quarter(work, 1, 5, 9, 13); quarter(work, 2, 6, 10, 14); quarter(work, 3, 7, 11, 15);
+            quarter(work, 0, 5, 10, 15); quarter(work, 1, 6, 11, 12); quarter(work, 2, 7, 8, 13); quarter(work, 3, 4, 9, 14);
+            round += 1;
+        }
+        index = 0;
+        while (index < 16) {
+            let word: u32 = core::u32::wrapping_add(work[index], self.words[index]); let byte: i32 = 0;
+            while (byte < 4) { self.block[index*4+byte] = (((word as u64) >> (byte*8)) & 255) as u8; byte += 1; }
+            index += 1;
+        }
+        self.next += 1; self.used = 0;
+    }
+    // Full preflight precedes all writes/state changes. Callers supply physical
+    // backing and keep input/output disjoint from self. Output must not alias
+    // key/nonce storage. Input/output may name exactly the same logical cells
+    // or be disjoint; partial overlap is unsupported.
+    pub fn xor_into(&self, input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (!valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
+        if (output.length < input.length) { return core::result::Err(Error::BufferTooSmall); }
+        let available: u64 = (4294967296-self.next)*64 + ((64-self.used) as u64);
+        if ((input.length as u64) > available) { return core::result::Err(Error::CounterOverflow); }
+        let index: i32 = 0;
+        while (index < input.length) {
+            if (self.used == 64) { self.generate(); }
+            let source: u8 = input.values[input.start+index];
+            output.values[output.start+index] = source ^ self.block[self.used]; self.used += 1; index += 1;
+        }
+        return core::result::Ok(index);
+    }
+    pub fn xor_in_place(&self, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error> { return self.xor_into(bytes, bytes); }
+}
+// Write exactly 64 bytes, preserving any larger output suffix.
+pub fn block(key: core::slice::View<u8>, nonce: core::slice::View<u8>, counter: u32, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(key) || !valid(nonce) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (key.length != 32) { return core::result::Err(Error::InvalidKeyLength); }
+    if (nonce.length != 12) { return core::result::Err(Error::InvalidNonceLength); }
+    if (output.length < 64) { return core::result::Err(Error::BufferTooSmall); }
+    let state: State = setup(key, nonce, counter); state.generate(); let index: i32 = 0;
+    while (index < 64) { output.values[output.start+index] = state.block[index]; index += 1; }
+    return core::result::Ok(64);
+}
+pub fn xor_into(key: core::slice::View<u8>, nonce: core::slice::View<u8>, counter: u32, input: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(key) || !valid(nonce) || !valid(input) || !valid(output)) { return core::result::Err(Error::Bounds); }
+    if (key.length != 32) { return core::result::Err(Error::InvalidKeyLength); }
+    if (nonce.length != 12) { return core::result::Err(Error::InvalidNonceLength); }
+    if (output.length < input.length) { return core::result::Err(Error::BufferTooSmall); }
+    if ((input.length as u64) > (4294967296-(counter as u64))*64) { return core::result::Err(Error::CounterOverflow); }
+    let state: State = setup(key, nonce, counter); return state.xor_into(input, output);
+}
+pub fn xor_in_place(key: core::slice::View<u8>, nonce: core::slice::View<u8>, counter: u32, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    return xor_into(key, nonce, counter, bytes, bytes);
+}

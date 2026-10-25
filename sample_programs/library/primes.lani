@@ -1,0 +1,125 @@
+// Bounded Eratosthenes sieve using an owned dynamic bitset.
+// Exit 2: arguments/output limit; 3: I/O; 4: allocation.
+module app::main;
+import alloc::bitset;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import std::args;
+import std::stream;
+
+struct Options { limit: i32, have_limit: bool, list: bool, output: i32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { reason: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text {
+    let bytes: core::slice::View<u8> = literal(value,count);
+    return core::text::from_utf8_unchecked(bytes.values,bytes.start,count);
+}
+fn fail(diagnostic: &Diagnostic, status: i32, reason: i32) -> i32 { diagnostic.reason = reason; return status; }
+fn number(argument: ext::cli::Argument) -> core::result::Result<u64,core::decimal::ParseError> {
+    let bytes: core::slice::View<u8> = argument.bytes;
+    return core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 1) { options.list = true; return true; }
+    if (item.id == 3) { options.help = true; return true; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = number(core::option::unwrap(item.value));
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (value > 67108864 as u64) { return false; } options.output = value as i32; return true;
+}
+fn operand(options: &Options, argument: ext::cli::Argument) -> bool {
+    if (options.have_limit) { return false; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = number(argument);
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (value > 20000000 as u64) { return false; } options.limit = value as i32; options.have_limit = true; return true;
+}
+fn emit(value: i32) -> bool {
+    let storage: [i32;8] = [0;8]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),32);
+    let format: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(bytes,0,32));
+    format.write_signed(value as i64,core::fmt::decimal()); format.write_text(text("\n",1));
+    let size: i32 = core::result::unwrap(format.finish()); let sink: std::stream::Descriptor = std::stream::stdout();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,size));
+}
+fn report(flags: &alloc::bitset::BitSet, options: Options, diagnostic: &Diagnostic) -> i32 {
+    if (!options.list) {
+        let count: i32 = flags.count_ones();
+        if ((core::decimal::len_i32(count) as i32)+1 > options.output) { return fail(diagnostic,2,1); }
+        if (!emit(count)) { return fail(diagnostic,3,2); } return 0;
+    }
+    // Preflight the entire listing before the first write. Both cursors borrow
+    // the unchanged bitset and are allocation-free.
+    let cursor = flags.iter_ones(); let count: i32 = 0;
+    while (true) {
+        let item: core::option::Option<i32> = cursor.next(); if (core::option::is_none(item)) { break; }
+        let size: i32 = (core::decimal::len_i32(core::option::unwrap(item)) as i32)+1;
+        if (size > options.output-count) { return fail(diagnostic,2,1); } count += size;
+    }
+    let listing = flags.iter_ones();
+    while (true) { let item: core::option::Option<i32> = listing.next(); if (core::option::is_none(item)) { break; } if (!emit(core::option::unwrap(item))) { return fail(diagnostic,3,2); } }
+    return 0;
+}
+fn sieve(options: Options, diagnostic: &Diagnostic) -> i32 {
+    let allocated: core::result::Result<alloc::bitset::BitSet,alloc::bitset::Error> = alloc::bitset::with_len(options.limit+1,true);
+    if (core::result::is_err(allocated)) { return fail(diagnostic,4,3); }
+    let flags: alloc::bitset::BitSet = core::result::unwrap(allocated);
+    core::result::unwrap(flags.clear(0)); if (options.limit > 0) { core::result::unwrap(flags.clear(1)); }
+    let prime: i32 = 2;
+    // A composite below p*p already has a smaller prime factor. Avoid an
+    // overflowing square in the loop condition by comparing p <= limit/p.
+    while (prime <= options.limit/prime) {
+        if (core::option::unwrap(flags.get(prime))) {
+            let multiple: i32 = prime*prime;
+            while (true) { core::result::unwrap(flags.clear(multiple)); if (multiple > options.limit-prime) { break; } multiple += prime; }
+        }
+        prime += 1;
+    }
+    let status: i32 = report(flags.borrow(),options,diagnostic); flags.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;3] = [
+        ext::cli::Spec { id: 1, long: literal("list",4), short: 108, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,3));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { limit: 0, have_limit: false, list: false, output: 16777216, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return fail(diagnostic,2,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item) };
+        if (!valid) { return fail(diagnostic,2,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: primes [-l|--list] [--max-output-bytes N] LIMIT\n",55); let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(diagnostic,3,2); } return 0;
+    }
+    if (!options.have_limit) { return fail(diagnostic,2,0); } return sieve(options,diagnostic);
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let message: core::slice::View<u8> = literal("primes: invalid-arguments\n",26);
+    if (detail.reason == 1) { message = literal("primes: output-limit\n",21); }
+    if (detail.reason == 2) { message = literal("primes: io-failure\n",19); }
+    if (detail.reason == 3) { message = literal("primes: allocation-failure\n",27); }
+    let sink: std::stream::Descriptor = std::stream::stderr();
+    return core::result::is_ok(core::io::write_all(sink.borrow(),message.values,message.start,message.len()));
+}
+fn main() -> i32 {
+    let detail: Diagnostic = Diagnostic { reason: 0 };
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,16,4096); let status: i32 = 0;
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,3), std::args::Error::HostRead(index) -> fail(detail.borrow(),3,2), _ -> fail(detail.borrow(),2,0) }; }
+    else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 3; } return status;
+}

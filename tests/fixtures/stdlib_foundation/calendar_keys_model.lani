@@ -1,0 +1,29 @@
+module app::main;
+import core::calendar;
+import core::cmp;
+import core::hash;
+import core::mem;
+import core::result;
+import core::text;
+import std::io;
+import std::io_decimal;
+import std::process;
+fn argument(index: i32, pointer: ptr, bytes: [u8]) -> i64 {
+    let count: i32 = std::process::arg_len(index);assert(count >= 1 && count <= 32);
+    assert(std::process::arg_read(index,pointer,count as usize) == count);
+    return core::result::unwrap(core::result::unwrap(core::text::from_utf8(bytes,count)).parse_i64());
+}
+fn output(value: i64) { assert(std::io_decimal::write_i64(1,value) > 0 && std::io::write_byte(1,10) == 1); }
+fn main() -> i32 {
+    let storage: [i32;8] = [0;8];let pointer: ptr = core::mem::i32_array_data_ptr(storage);let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+    let ay: i32 = argument(1,pointer,bytes) as i32;let am: i32 = argument(2,pointer,bytes) as i32;let ad: i32 = argument(3,pointer,bytes) as i32;
+    let ah: i32 = argument(4,pointer,bytes) as i32;let ai: i32 = argument(5,pointer,bytes) as i32;let asecond: i32 = argument(6,pointer,bytes) as i32;let an: u32 = argument(7,pointer,bytes) as u32;
+    let by: i32 = argument(8,pointer,bytes) as i32;let bm: i32 = argument(9,pointer,bytes) as i32;let bd: i32 = argument(10,pointer,bytes) as i32;
+    let bh: i32 = argument(11,pointer,bytes) as i32;let bi: i32 = argument(12,pointer,bytes) as i32;let bs: i32 = argument(13,pointer,bytes) as i32;let bn: u32 = argument(14,pointer,bytes) as u32;
+    let a: core::calendar::Date = core::result::unwrap(core::calendar::date(ay,am,ad));let b: core::calendar::Date = core::result::unwrap(core::calendar::date(by,bm,bd));
+    let ta: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(ah,ai,asecond,an));let tb: core::calendar::TimeOfDay = core::result::unwrap(core::calendar::time_of_day(bh,bi,bs,bn));
+    let la: core::calendar::LocalDateTime = core::result::unwrap(core::calendar::local_date_time(a,ta));let lb: core::calendar::LocalDateTime = core::result::unwrap(core::calendar::local_date_time(b,tb));
+    output(a.compare(b) as i64);output(ta.compare(tb) as i64);output(la.compare(lb) as i64);
+    output(core::calendar::Date::eq(a,b) as i64);output(core::calendar::TimeOfDay::eq(ta,tb) as i64);output(core::calendar::LocalDateTime::eq(la,lb) as i64);
+    return 0;
+}

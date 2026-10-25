@@ -1,0 +1,676 @@
+// Exact full-i32 planar predicates and bounded owning convex hulls.
+// Float utilities below use finite binary64 arithmetic; they are not predicates.
+module ext::geometry;
+import alloc::vec;
+import core::f64;
+import core::option;
+import core::result;
+import core::slice;
+pub struct Point {
+    x: i32,
+    y: i32
+}
+pub struct Bounds {
+    min: Point,
+    max: Point
+}
+pub enum Intersection {
+    Disjoint,
+    Touch,
+    Proper,
+    Overlap
+}
+pub enum Location {
+    Outside,
+    Boundary,
+    Inside
+}
+pub enum Error {
+    InvalidView,
+    InvalidLimits,
+    PointLimit,
+    WorkLimit,
+    Overflow,
+    AllocationFailed,
+    NonFinite,
+    NumericalFailure,
+    ZeroLength
+}
+pub struct Limits {
+    max_points: i32,
+    max_work: u64
+}
+pub struct Hull {
+    points: alloc::vec::Vec<Point>
+}
+pub fn default_limits() -> Limits {
+    return Limits {
+        max_points: 1048576,
+        max_work: 100000000
+    };
+}
+pub fn equal(a: Point, b: Point) -> bool {
+    return a.x == b.x && a.y == b.y;
+}
+fn less(a: Point, b: Point) -> bool {
+    return a.x<b.x ||(a.x == b.x && a.y<b.y);
+}
+fn magnitude(value: i64) -> u64 {
+    if (value<0) {
+        return(-value) as u64;
+    }
+    return value as u64;
+}
+// Differences are in [-4294967295,4294967295], so each magnitude product
+// fits u64. Compare signed products instead of forming their difference.
+pub fn orientation(a: Point, b: Point, c: Point) -> i32 {
+    let dx: i64 =(b.x as i64) - (a.x as i64);
+    let dy: i64 =(b.y as i64) - (a.y as i64);
+    let ex: i64 =(c.x as i64) - (a.x as i64);
+    let ey: i64 =(c.y as i64) - (a.y as i64);
+    let p: u64 = magnitude(dx) * magnitude(ey);
+    let q: u64 = magnitude(dy) * magnitude(ex);
+    let pn: bool = p != 0 &&((dx<0) !=(ey<0));
+    let qn: bool = q != 0 &&((dy<0) !=(ex<0));
+    if (pn != qn) {
+        if (pn) {
+            return -1;
+        }
+        return 1;
+    }
+    if (p == q) {
+        return 0;
+    }
+    let sign: i32 = 1;
+    if (p<q) {
+        sign = -1;
+    }
+    if (pn) {
+        sign = -sign;
+    }
+    return sign;
+}
+pub fn segment_bounds(a: Point, b: Point) -> Bounds {
+    let lo: Point = a;
+    let hi: Point = b;
+    if (b.x<a.x) {
+        lo.x = b.x;
+        hi.x = a.x;
+    }
+    if (b.y<a.y) {
+        lo.y = b.y;
+        hi.y = a.y;
+    }
+    return Bounds {
+        min: lo,
+        max: hi
+    };
+}
+pub fn bounds_valid(box: Bounds) -> bool {
+    let low: Point = box.min;
+    let high: Point = box.max;
+    return low.x <= high.x && low.y <= high.y;
+}
+pub fn bounds_contains(box: Bounds, p: Point) -> bool {
+    let low: Point = box.min;
+    let high: Point = box.max;
+    return bounds_valid(box) && p.x >= low.x && p.x <= high.x && p.y >= low.y && p.y <= high.y;
+}
+pub fn bounds_intersect(a: Bounds, b: Bounds) -> bool {
+    let amin: Point = a.min;
+    let amax: Point = a.max;
+    let bmin: Point = b.min;
+    let bmax: Point = b.max;
+    return bounds_valid(a) && bounds_valid(b) && amin.x <= bmax.x && bmin.x <= amax.x && amin.y <= bmax.y && bmin.y <= amax.y;
+}
+pub fn on_segment(a: Point, b: Point, p: Point) -> bool {
+    return bounds_contains(segment_bounds(a, b), p) && orientation(a, b, p) == 0;
+}
+pub fn classify_segments(a: Point, b: Point, c: Point, d: Point) -> Intersection {
+    if (!bounds_intersect(segment_bounds(a, b), segment_bounds(c, d))) {
+        return Intersection::Disjoint;
+    }
+    let u: i32 = orientation(a, b, c);
+    let v: i32 = orientation(a, b, d);
+    let w: i32 = orientation(c, d, a);
+    let z: i32 = orientation(c, d, b);
+    if (u == 0 && v == 0 && w == 0 && z == 0) {
+        let p: Point = a;
+        let q: Point = b;
+        let r: Point = c;
+        let s: Point = d;
+        if (less(q, p)) {
+            p = b;
+            q = a;
+        }
+        if (less(s, r)) {
+            r = d;
+            s = c;
+        }
+        let low: Point = p;
+        if (less(low, r)) {
+            low = r;
+        }
+        let high: Point = q;
+        if (less(s, high)) {
+            high = s;
+        }
+        if (less(high, low)) {
+            return Intersection::Disjoint;
+        }
+        if (equal(low, high)) {
+            return Intersection::Touch;
+        }
+        return Intersection::Overlap;
+    }
+    if (u * v<0 && w * z<0) {
+        return Intersection::Proper;
+    }
+    if ((u == 0 && on_segment(a, b, c)) ||(v == 0 && on_segment(a, b, d)) ||(w == 0 && on_segment(c, d, a)) ||(z == 0 && on_segment(c, d, b))) {
+        return Intersection::Touch;
+    }
+    return Intersection::Disjoint;
+}
+fn validate(points: core::slice::View<Point>, limits: Limits, cost: u64) -> core::result::Result<i32, Error> {
+    if (limits.max_points<0) {
+        return core::result::Err(Error::InvalidLimits);
+    }
+    if (points.start<0 || points.length<0 || points.start>2147483647 - points.length) {
+        return core::result::Err(Error::InvalidView);
+    }
+    if (points.length>limits.max_points) {
+        return core::result::Err(Error::PointLimit);
+    }
+    if ((points.length as u64)>limits.max_work / cost) {
+        return core::result::Err(Error::WorkLimit);
+    }
+    return core::result::Ok(points.length);
+}
+fn point(points: core::slice::View<Point>, index: i32) -> Point {
+    return points.values[points.start + index];
+}
+pub fn bounding_box(points: core::slice::View<Point>, limits: Limits) -> core::result::Result<core::option::Option<Bounds>, Error> {
+    let n: core::result::Result<i32,
+    Error> = validate(points, limits, 1);
+    if (n.is_err()) {
+        return core::result::Err(n.unwrap_err());
+    }
+    if (n.unwrap() == 0) {
+        return core::result::Ok(core::option::None());
+    }
+    let low: Point = point(points, 0);
+    let high: Point = point(points, 0);
+    let i: i32 = 1;
+    while (i<n.unwrap()) {
+        let p: Point = point(points, i);
+        if (p.x<low.x) {
+            low.x = p.x;
+        }
+        if (p.y<low.y) {
+            low.y = p.y;
+        }
+        if (p.x>high.x) {
+            high.x = p.x;
+        }
+        if (p.y>high.y) {
+            high.y = p.y;
+        }
+        i += 1;
+    }
+    return core::result::Ok(core::option::Some(Bounds {
+        min: low, max: high
+    }
+    ));
+}
+// Algebraic twice-area of the implicitly closed ring. Exact on success;
+// A two-word signed accumulator is exact for every i32 view length. Overflow
+// reports only an unrepresentable final result, independent of cancellation.
+pub fn signed_area2(points: core::slice::View<Point>, limits: Limits) -> core::result::Result<i64, Error> {
+    let n: core::result::Result<i32,
+    Error> = validate(points, limits, 1);
+    if (n.is_err()) {
+        return core::result::Err(n.unwrap_err());
+    }
+    let lo: u64 = 0;
+    let hi: i64 = 0;
+    let i: i32 = 0;
+    while (i<n.unwrap()) {
+        let j: i32 = i + 1;
+        if (j == n.unwrap()) {
+            j = 0;
+        }
+        let a: Point = point(points, i);
+        let b: Point = point(points, j);
+        let term: i64 =(a.x as i64) *(b.y as i64) - (a.y as i64) *(b.x as i64);
+        let old: u64 = lo;
+        lo += term as u64;
+        if (lo<old) {
+            hi += 1;
+        }
+        if (term<0) {
+            hi -= 1;
+        }
+        i += 1;
+    }
+    let maximum: u64 = 9223372036854775807;
+    let signbit: u64 = 9223372036854775808;
+    if ((hi == 0 && lo <= maximum) ||(hi == -1 && lo >= signbit)) {
+        return core::result::Ok(lo as i64);
+    }
+    return core::result::Err(Error::Overflow);
+}
+// Even-odd fill; works for either winding and repeated/explicit closing points.
+// A one-point or collinear ring has boundary points but no interior.
+pub fn locate_in_ring(points: core::slice::View<Point>, p: Point, limits: Limits) -> core::result::Result<Location, Error> {
+    let n: core::result::Result<i32,
+    Error> = validate(points, limits, 1);
+    if (n.is_err()) {
+        return core::result::Err(n.unwrap_err());
+    }
+    let inside: bool = false;
+    let i: i32 = 0;
+    while (i<n.unwrap()) {
+        let j: i32 = i + 1;
+        if (j == n.unwrap()) {
+            j = 0;
+        }
+        let a: Point = point(points, i);
+        let b: Point = point(points, j);
+        if (on_segment(a, b, p)) {
+            return core::result::Ok(Location::Boundary);
+        }
+        if ((a.y>p.y) !=(b.y>p.y)) {
+            let turn: i32 = orientation(a, b, p);
+            if ((b.y>a.y && turn>0) ||(b.y<a.y && turn<0)) {
+                inside = !inside;
+            }
+        }
+        i += 1;
+    }
+    if (inside) {
+        return core::result::Ok(Location::Inside);
+    }
+    return core::result::Ok(Location::Outside);
+}
+// A conservative deterministic work bound: copy, two merge passes per level,
+// duplicate filtering and both linear chains. Empty input costs zero.
+pub fn hull_work_bound(count: i32) -> core::result::Result<u64, Error> {
+    if (count<0) {
+        return core::result::Err(Error::InvalidView);
+    }
+    let levels: u64 = 0;
+    let width: u64 = 1;
+    while (width<count as u64) {
+        width *= 2;
+        levels += 1;
+    }
+    return core::result::Ok((count as u64) *(12 + 2 * levels));
+}
+fn sort_points(values:[Point], scratch:[Point], n: i32) {
+    let width: i32 = 1;
+    while (width<n) {
+        let base: i32 = 0;
+        while (base<n) {
+            let mid: i32 = base + width;
+            if (mid>n) {
+                mid = n;
+            }
+            let end: i32 = mid + width;
+            if (end>n) {
+                end = n;
+            }
+            let a: i32 = base;
+            let b: i32 = mid;
+            let out: i32 = base;
+            while (out<end) {
+                if (a<mid &&(b == end || !less(values[b], values[a]))) {
+                    scratch[out] = values[a];
+                    a += 1;
+                } else {
+                    scratch[out] = values[b];
+                    b += 1;
+                }
+                out += 1;
+            }
+            base = end;
+        }
+        let i: i32 = 0;
+        while (i<n) {
+            values[i] = scratch[i];
+            i += 1;
+        }
+        if (width>n / 2) {
+            width = n;
+        } else {
+            width *= 2;
+        }
+    }
+}
+pub fn convex_hull(points: core::slice::View<Point>, limits: Limits) -> core::result::Result<Hull, Error> {
+    let n: core::result::Result<i32,
+    Error> = validate(points, limits, 1);
+    if (n.is_err()) {
+        return core::result::Err(n.unwrap_err());
+    }
+    let count: i32 = n.unwrap();
+    if (hull_work_bound(count).unwrap()>limits.max_work) {
+        return core::result::Err(Error::WorkLimit);
+    }
+    // Point is 8 bytes. Keep every allocation and the 2*n chain within Vec's
+    // signed byte capacity. No input read/allocation happens before this check.
+    if (count>134217727) {
+        return core::result::Err(Error::Overflow);
+    }
+    let copied: core::result::Result<alloc::vec::Vec<Point>,
+    alloc::vec::Error> = alloc::vec::from_view(points);
+    if (copied.is_err()) {
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let sorted: alloc::vec::Vec<Point> = copied.unwrap();
+    let made: core::result::Result<alloc::vec::Vec<Point>,
+    alloc::vec::Error> = alloc::vec::with_capacity<Point>(count);
+    if (made.is_err()) {
+        sorted.destroy();
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let scratch: alloc::vec::Vec<Point> = made.unwrap();
+    let zero: Point = Point {
+        x: 0,
+        y: 0
+    };
+    if (scratch.try_resize(count, zero).is_err()) {
+        scratch.destroy();
+        sorted.destroy();
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let values:[Point] = sorted.as_slice();
+    sort_points(values, scratch.as_slice(), count);
+    scratch.destroy();
+    let unique: i32 = 0;
+    let i: i32 = 0;
+    while (i<count) {
+        if (unique == 0 || !equal(values[i], values[unique - 1])) {
+            values[unique] = values[i];
+            unique += 1;
+        }
+        i += 1;
+    }
+    let output: core::result::Result<alloc::vec::Vec<Point>,
+    alloc::vec::Error> = alloc::vec::with_capacity<Point>(unique * 2);
+    if (output.is_err()) {
+        sorted.destroy();
+        return core::result::Err(Error::AllocationFailed);
+    }
+    let hull: alloc::vec::Vec<Point> = output.unwrap();
+    i = 0;
+    while (i<unique) {
+        while (hull.len() >= 2 && orientation(hull.at(hull.len() - 2), hull.at(hull.len() - 1), values[i]) <= 0) {
+            hull.pop();
+        }
+        if (hull.try_push(values[i]).is_err()) {
+            hull.destroy();
+            sorted.destroy();
+            return core::result::Err(Error::AllocationFailed);
+        }
+        i += 1;
+    }
+    let floor: i32 = hull.len() + 1;
+    i = unique - 2;
+    while (i >= 0) {
+        while (hull.len() >= floor && orientation(hull.at(hull.len() - 2), hull.at(hull.len() - 1), values[i]) <= 0) {
+            hull.pop();
+        }
+        if (hull.try_push(values[i]).is_err()) {
+            hull.destroy();
+            sorted.destroy();
+            return core::result::Err(Error::AllocationFailed);
+        }
+        i -= 1;
+    }
+    if (unique>1) {
+        hull.pop();
+    }
+    sorted.destroy();
+    return core::result::Ok(Hull {
+        points: hull
+    }
+    );
+}
+pub impl Hull {
+    pub fn borrow(&self) -> &Hull {
+        return self;
+    }
+    pub fn len(&self) -> i32 {
+        return self.points.len();
+    }
+    pub fn view(&self) -> core::slice::View<Point> {
+        return self.points.as_view();
+    }
+    pub fn get(&self, index: i32) -> core::option::Option<Point> {
+        return self.points.get(index);
+    }
+    pub fn destroy(&self) {
+        self.points.destroy();
+    }
+}
+// Finite approximate coordinates. These utilities never choose topology.
+pub struct Vec2 {
+    x: f64,
+    y: f64
+}
+pub struct Vec3 {
+    x: f64,
+    y: f64,
+    z: f64
+}
+pub struct Affine2 {
+    xx: f64,
+    xy: f64,
+    yx: f64,
+    yy: f64,
+    tx: f64,
+    ty: f64
+}
+fn finite2(v: Vec2) -> bool {
+    return core::f64::is_finite(v.x) && core::f64::is_finite(v.y);
+}
+fn finite3(v: Vec3) -> bool {
+    return core::f64::is_finite(v.x) && core::f64::is_finite(v.y) && core::f64::is_finite(v.z);
+}
+fn result2(v: Vec2) -> core::result::Result<Vec2, Error> {
+    if (!finite2(v)) {
+        return core::result::Err(Error::NumericalFailure);
+    }
+    return core::result::Ok(v);
+}
+fn result3(v: Vec3) -> core::result::Result<Vec3, Error> {
+    if (!finite3(v)) {
+        return core::result::Err(Error::NumericalFailure);
+    }
+    return core::result::Ok(v);
+}
+fn scalar(v: f64) -> core::result::Result<f64, Error> {
+    if (!core::f64::is_finite(v)) {
+        return core::result::Err(Error::NumericalFailure);
+    }
+    return core::result::Ok(v);
+}
+pub fn add2(a: Vec2, b: Vec2) -> core::result::Result<Vec2, Error> {
+    if (!finite2(a) || !finite2(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result2(Vec2 {
+        x: a.x + b.x, y: a.y + b.y
+    }
+    );
+}
+pub fn sub2(a: Vec2, b: Vec2) -> core::result::Result<Vec2, Error> {
+    if (!finite2(a) || !finite2(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result2(Vec2 {
+        x: a.x - b.x, y: a.y - b.y
+    }
+    );
+}
+pub fn scale2(a: Vec2, factor: f64) -> core::result::Result<Vec2, Error> {
+    if (!finite2(a) || !core::f64::is_finite(factor)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result2(Vec2 {
+        x: a.x * factor, y: a.y * factor
+    }
+    );
+}
+pub fn dot2(a: Vec2, b: Vec2) -> core::result::Result<f64, Error> {
+    if (!finite2(a) || !finite2(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return scalar(a.x * b.x + a.y * b.y);
+}
+pub fn cross2(a: Vec2, b: Vec2) -> core::result::Result<f64, Error> {
+    if (!finite2(a) || !finite2(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return scalar(a.x * b.y - a.y * b.x);
+}
+pub fn length2(a: Vec2) -> core::result::Result<f64, Error> {
+    if (!finite2(a)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    let m: f64 = core::f64::max(core::f64::abs(a.x), core::f64::abs(a.y));
+    if (m == 0.0) {
+        return core::result::Ok(0.0);
+    }
+    let x: f64 = a.x / m;
+    let y: f64 = a.y / m;
+    return scalar(m * core::f64::sqrt(x * x + y * y));
+}
+pub fn normalize2(a: Vec2) -> core::result::Result<Vec2, Error> {
+    if (!finite2(a)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    let m: f64 = core::f64::max(core::f64::abs(a.x), core::f64::abs(a.y));
+    if (m == 0.0) {
+        return core::result::Err(Error::ZeroLength);
+    }
+    let x: f64 = a.x / m;
+    let y: f64 = a.y / m;
+    let n: f64 = core::f64::sqrt(x * x + y * y);
+    return result2(Vec2 {
+        x: x / n, y: y / n
+    }
+    );
+}
+pub fn add3(a: Vec3, b: Vec3) -> core::result::Result<Vec3, Error> {
+    if (!finite3(a) || !finite3(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result3(Vec3 {
+        x: a.x + b.x, y: a.y + b.y, z: a.z + b.z
+    }
+    );
+}
+pub fn sub3(a: Vec3, b: Vec3) -> core::result::Result<Vec3, Error> {
+    if (!finite3(a) || !finite3(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result3(Vec3 {
+        x: a.x - b.x, y: a.y - b.y, z: a.z - b.z
+    }
+    );
+}
+pub fn scale3(a: Vec3, factor: f64) -> core::result::Result<Vec3, Error> {
+    if (!finite3(a) || !core::f64::is_finite(factor)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result3(Vec3 {
+        x: a.x * factor, y: a.y * factor, z: a.z * factor
+    }
+    );
+}
+pub fn dot3(a: Vec3, b: Vec3) -> core::result::Result<f64, Error> {
+    if (!finite3(a) || !finite3(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return scalar(a.x * b.x + a.y * b.y + a.z * b.z);
+}
+pub fn cross3(a: Vec3, b: Vec3) -> core::result::Result<Vec3, Error> {
+    if (!finite3(a) || !finite3(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result3(Vec3 {
+        x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x
+    }
+    );
+}
+pub fn length3(a: Vec3) -> core::result::Result<f64, Error> {
+    if (!finite3(a)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    let m: f64 = core::f64::max(core::f64::max(core::f64::abs(a.x), core::f64::abs(a.y)), core::f64::abs(a.z));
+    if (m == 0.0) {
+        return core::result::Ok(0.0);
+    }
+    let x: f64 = a.x / m;
+    let y: f64 = a.y / m;
+    let z: f64 = a.z / m;
+    return scalar(m * core::f64::sqrt(x * x + y * y + z * z));
+}
+pub fn normalize3(a: Vec3) -> core::result::Result<Vec3, Error> {
+    if (!finite3(a)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    let m: f64 = core::f64::max(core::f64::max(core::f64::abs(a.x), core::f64::abs(a.y)), core::f64::abs(a.z));
+    if (m == 0.0) {
+        return core::result::Err(Error::ZeroLength);
+    }
+    let x: f64 = a.x / m;
+    let y: f64 = a.y / m;
+    let z: f64 = a.z / m;
+    let n: f64 = core::f64::sqrt(x * x + y * y + z * z);
+    return result3(Vec3 {
+        x: x / n, y: y / n, z: z / n
+    }
+    );
+}
+pub fn identity2() -> Affine2 {
+    return Affine2 {
+        xx: 1.0,
+        xy: 0.0,
+        yx: 0.0,
+        yy: 1.0,
+        tx: 0.0,
+        ty: 0.0
+    };
+}
+fn finite_affine(a: Affine2) -> bool {
+    return core::f64::is_finite(a.xx) && core::f64::is_finite(a.xy) && core::f64::is_finite(a.yx) && core::f64::is_finite(a.yy) && core::f64::is_finite(a.tx) && core::f64::is_finite(a.ty);
+}
+pub fn transform2(a: Affine2, v: Vec2) -> core::result::Result<Vec2, Error> {
+    if (!finite_affine(a) || !finite2(v)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    return result2(Vec2 {
+        x: a.xx * v.x + a.xy * v.y + a.tx, y: a.yx * v.x + a.yy * v.y + a.ty
+    }
+    );
+}
+// compose2(a,b) applies b first, then a.
+pub fn compose2(a: Affine2, b: Affine2) -> core::result::Result<Affine2, Error> {
+    if (!finite_affine(a) || !finite_affine(b)) {
+        return core::result::Err(Error::NonFinite);
+    }
+    let out: Affine2 = Affine2 {
+        xx: a.xx * b.xx + a.xy * b.yx,
+        xy: a.xx * b.xy + a.xy * b.yy,
+        yx: a.yx * b.xx + a.yy * b.yx,
+        yy: a.yx * b.xy + a.yy * b.yy,
+        tx: a.xx * b.tx + a.xy * b.ty + a.tx,
+        ty: a.yx * b.tx + a.yy * b.ty + a.ty
+    };
+    if (!finite_affine(out)) {
+        return core::result::Err(Error::NumericalFailure);
+    }
+    return core::result::Ok(out);
+}

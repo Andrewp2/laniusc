@@ -1,0 +1,3 @@
+fc60e8ac82d165252b5dc29ae4f754b7e783cb20da1a2cab749819fa17b4cc4f  tests/fixtures/stdlib_foundation/iterators/admission.lani
+7560ff743ccdfe3c788d992830a1ade92c62dd69efaad4ca6c32870902f43e55  stdlib/core/iter.lani
+8a1b7662582f2c89fec330edfb77e97fe1cb031f0b58c638d051c097cf00602c  target/stdlib-work/iterator-admission/imported-public-impl.log

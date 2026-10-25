@@ -1,0 +1,3 @@
+module app::main;
+import app::b;
+fn main() -> i32 { let error:app::b::Error=app::b::Overlong::Error; return 0; }

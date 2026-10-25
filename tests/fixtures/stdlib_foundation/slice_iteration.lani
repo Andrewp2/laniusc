@@ -1,7 +1,7 @@
 module app::main;
 import core::mem;
 import core::option;
-import core::number_i32;
+import core::i32;
 import core::range;
 
 struct Readings { values: [i32], valid: bool }
@@ -9,7 +9,7 @@ struct Readings { values: [i32], valid: bool }
 fn sum(values: [i32]) -> i32 {
     let total: i32 = 0;
     for value in values {
-        total = core::number_i32::saturating_add(total, value);
+        total = core::i32::saturating_add(total, value);
     }
     return total;
 }

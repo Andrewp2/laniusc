@@ -248,6 +248,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint path_i = linear_thread_id(dtid);
     if (path_i >= active_path_count())
         return;
+    // Type rows also have value-resolution candidates. A same-spelled unit
+    // variant must not replace the checked reference of a type annotation.
+    if (path_kind[path_i] != PATH_RECORD_KIND_HIR_PATH_EXPR)
+        return;
     uint owner_token = path_owner_token[path_i];
     if (owner_token >= gParams.n_tokens)
         return;

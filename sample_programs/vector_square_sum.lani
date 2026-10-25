@@ -1,17 +1,30 @@
 // Build a growable sequence of the first ten squares and print their sum.
 module app::main;
-import std::vec;
-import core::number_i32;
-import std::io;
+import alloc::vec;
+import core::decimal;
+import core::i32;
+import core::io;
+import std::signal;
+import std::stream;
+
+// Format into caller storage, then deliver digits and LF through the shared
+// complete-write loop. Errors may leave a prefix; Interrupted is retried.
+fn write_i32_line(value: i32) -> bool {
+    let bytes: [u8; 12] = [0;12];
+    let formatted = core::decimal::format_i32(bytes,0,11,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout();
+    return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
 
 fn main() -> i32 {
-    let squares: std::vec::Vec<i32> = std::vec::new();
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 2; }
+    let squares: alloc::vec::Vec<i32> = alloc::vec::new();
     let number: i32 = 0;
     while (number < 10) {
-        let before: i32 = std::vec::len(squares);
-        squares = std::vec::try_push(squares, number * number);
-        if (std::vec::len(squares) != before + 1) {
-            std::vec::destroy(squares);
+        if (squares.try_push(number * number).is_err()) {
+            squares.destroy();
             return 1;
         }
         number = number + 1;
@@ -19,12 +32,12 @@ fn main() -> i32 {
 
     let sum: i32 = 0;
     let index: i32 = 0;
-    while (index < std::vec::len(squares)) {
-        sum = core::number_i32::saturating_add(
-            sum, std::vec::get_or(squares, index, 0));
+    while (index < squares.len()) {
+        sum = core::i32::saturating_add(
+            sum, squares.at(index));
         index = index + 1;
     }
-    std::vec::destroy(squares);
-    std::io::print_i32(sum);
+    squares.destroy();
+    if (!write_i32_line(sum)) { return 2; }
     return 0;
 }

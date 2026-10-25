@@ -1,0 +1,401 @@
+// Owned ring storage. Keep one active owner; nested resources copy shallowly.
+// Errors preserve the owner, contents, capacity and borrowed views.
+module alloc::deque;
+import alloc::allocator;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub enum IntoIterError { Remaining(i32) }
+pub struct Deque<T> { storage: ptr, length: i32, reserved: i32, head: i32 }
+// One active owner of the backing allocation and unconsumed item cleanup.
+// Copies alias that owner; they cannot fork its cleanup authority.
+pub struct IntoIter<T> { storage: ptr, reserved: i32, head: i32, front: i32, back: i32 }
+pub struct Views<T> { first: core::slice::View<T>, second: core::slice::View<T> }
+pub struct Cursor<T> { first: core::slice::View<T>, second: core::slice::View<T>, front: i32, back: i32 }
+pub const MAX_CAPACITY: i32 = 2147483647;
+const ALIGN: usize = 8;
+
+pub fn new<T>() -> Deque<T> {
+    let empty: ptr = 0;
+    return Deque { storage: empty, length: 0, reserved: 0, head: 0 };
+}
+pub fn with_capacity<T>(capacity: i32) -> core::result::Result<Deque<T>, Error> {
+    let value: Deque<T> = new();
+    let reserved: core::result::Result<i32, Error> = value.try_reserve(capacity);
+    if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+    return core::result::Ok(value);
+}
+pub fn from_view<T>(values: core::slice::View<T>) -> core::result::Result<Deque<T>, Error> {
+    let value: Deque<T> = new();
+    let added: core::result::Result<i32, Error> = value.try_extend_back(values);
+    if (core::result::is_err(added)) { return core::result::Err(core::result::unwrap_err(added)); }
+    return core::result::Ok(value);
+}
+fn capacity_limit<T>() -> i32 {
+    let size: usize = core::mem::size_of<T>();
+    if (size == 0) { return MAX_CAPACITY; }
+    return (2147483647 / size) as i32;
+}
+// Requires 0 <= ordinal < capacity and 0 <= head < capacity.
+// Avoid forming head + ordinal until the sum is known to fit.
+fn physical(head: i32, capacity: i32, ordinal: i32) -> i32 {
+    let before_end: i32 = capacity - head;
+    if (ordinal >= before_end) { return ordinal - before_end; }
+    return head + ordinal;
+}
+
+pub impl<T> Deque<T> {
+    pub fn borrow(&self) -> &Deque<T> { return self; }
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn capacity(&self) -> i32 { return self.reserved; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    fn slots(&self) -> [T] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
+    fn index(&self, ordinal: i32) -> i32 { return physical(self.head, self.reserved, ordinal); }
+    pub fn get(&self, ordinal: i32) -> core::option::Option<T> {
+        if (ordinal < 0 || ordinal >= self.length) { return core::option::None(); }
+        let values: [T] = self.slots(); return core::option::Some(values[self.index(ordinal)]);
+    }
+    pub fn get_or(&self, ordinal: i32, fallback: T) -> T { return core::option::unwrap_or(self.get(ordinal), fallback); }
+    pub fn at(&self, ordinal: i32) -> T {
+        if (ordinal < 0 || ordinal >= self.length) { core::panic::panic(); }
+        let values: [T] = self.slots(); return values[self.index(ordinal)];
+    }
+    pub fn front(&self) -> core::option::Option<T> { return self.get(0); }
+    pub fn back(&self) -> core::option::Option<T> { return self.get(self.length - 1); }
+    pub fn as_views(&self) -> Views<T> {
+        let first_len: i32 = self.length;
+        if (first_len > self.reserved - self.head) { first_len = self.reserved - self.head; }
+        let values: [T] = self.slots();
+        let first: core::slice::View<T> = core::slice::View { values: values, start: self.head, length: first_len };
+        let second: core::slice::View<T> = core::slice::View { values: values, start: 0, length: self.length - first_len };
+        return Views { first: first, second: second };
+    }
+    pub fn iter(&self) -> Cursor<T> {
+        let views: Views<T> = self.as_views();
+        return Cursor { first: views.first, second: views.second, front: 0, back: self.length };
+    }
+    // Transfer storage and item cleanup authority, leaving this owner reusable.
+    // End source views/cursors first; by-value owner aliases must stay inactive.
+    pub fn take_iter(&self) -> IntoIter<T> {
+        let cursor: IntoIter<T> = IntoIter { storage: self.storage, reserved: self.reserved, head: self.head, front: 0, back: self.length };
+        let empty: ptr = 0; self.storage = empty; self.length = 0; self.reserved = 0; self.head = 0;
+        return cursor;
+    }
+    // Capacity affects physical layout; copy typed entries in logical order.
+    fn relocate(&self, capacity: i32) -> core::result::Result<i32, Error> {
+        let size: usize = core::mem::size_of<T>();
+        if (size == 0) { self.reserved = MAX_CAPACITY; self.head = 0; return core::result::Ok(self.reserved); }
+        let storage: ptr = alloc::allocator::alloc(size * (capacity as usize), ALIGN);
+        if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
+        let source: [T] = self.slots();
+        let target: [T] = core::mem::typed_slice_from_storage(storage, capacity);
+        let ordinal: i32 = 0;
+        while (ordinal < self.length) { target[ordinal] = source[self.index(ordinal)]; ordinal += 1; }
+        if (self.reserved > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        self.storage = storage; self.reserved = capacity; self.head = 0;
+        return core::result::Ok(capacity);
+    }
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
+        if (additional < 0) { return core::result::Err(Error::InvalidCapacity); }
+        if (additional > capacity_limit<T>() - self.length) { return core::result::Err(Error::CapacityOverflow); }
+        let needed: i32 = self.length + additional;
+        if (needed <= self.reserved) { return core::result::Ok(self.reserved); }
+        return self.relocate(needed);
+    }
+    fn growth_capacity(&self, needed: i32) -> i32 {
+        let limit: i32 = capacity_limit<T>(); let target: i32 = limit;
+        if (self.reserved <= limit / 2) { target = self.reserved * 2; }
+        if (target < 4 && limit >= 4) { target = 4; }
+        if (target < needed) { target = needed; }
+        return target;
+    }
+    fn grow_for_one(&self) -> core::result::Result<i32, Error> {
+        if (self.length == capacity_limit<T>()) { return core::result::Err(Error::CapacityOverflow); }
+        if (self.length < self.reserved) { return core::result::Ok(self.reserved); }
+        return self.try_reserve(self.growth_capacity(self.length + 1) - self.length);
+    }
+    pub fn try_push_back(&self, item: T) -> core::result::Result<i32, Error> {
+        let grown: core::result::Result<i32, Error> = self.grow_for_one();
+        if (core::result::is_err(grown)) { return grown; }
+        let values: [T] = self.slots(); values[self.index(self.length)] = item;
+        self.length += 1; return core::result::Ok(self.length);
+    }
+    pub fn try_push_front(&self, item: T) -> core::result::Result<i32, Error> {
+        let grown: core::result::Result<i32, Error> = self.grow_for_one();
+        if (core::result::is_err(grown)) { return grown; }
+        if (self.head == 0) { self.head = self.reserved; }
+        self.head -= 1;
+        let values: [T] = self.slots(); values[self.head] = item;
+        self.length += 1; return core::result::Ok(self.length);
+    }
+    pub fn pop_front(&self) -> core::option::Option<T> {
+        if (self.length == 0) { return core::option::None(); }
+        let values: [T] = self.slots(); let removed: T = values[self.head];
+        self.length -= 1; self.head += 1;
+        if (self.head == self.reserved || self.length == 0) { self.head = 0; }
+        return core::option::Some(removed);
+    }
+    pub fn pop_back(&self) -> core::option::Option<T> {
+        if (self.length == 0) { return core::option::None(); }
+        let values: [T] = self.slots(); self.length -= 1;
+        let removed: T = values[self.index(self.length)];
+        if (self.length == 0) { self.head = 0; }
+        return core::option::Some(removed);
+    }
+    pub fn set(&self, ordinal: i32, item: T) -> core::result::Result<T, Error> {
+        if (ordinal < 0 || ordinal >= self.length) { return core::result::Err(Error::Bounds); }
+        let values: [T] = self.slots(); let index: i32 = self.index(ordinal);
+        let previous: T = values[index]; values[index] = item; return core::result::Ok(previous);
+    }
+    pub fn swap(&self, left: i32, right: i32) -> core::result::Result<bool, Error> {
+        if (left < 0 || right < 0 || left >= self.length || right >= self.length) { return core::result::Err(Error::Bounds); }
+        let values: [T] = self.slots(); let a: i32 = self.index(left); let b: i32 = self.index(right);
+        let held: T = values[a]; values[a] = values[b]; values[b] = held; return core::result::Ok(true);
+    }
+    pub fn try_insert(&self, ordinal: i32, item: T) -> core::result::Result<i32, Error> {
+        if (ordinal < 0 || ordinal > self.length) { return core::result::Err(Error::Bounds); }
+        let grown: core::result::Result<i32, Error> = self.grow_for_one();
+        if (core::result::is_err(grown)) { return grown; }
+        let values: [T] = self.slots();
+        if (ordinal < self.length - ordinal) {
+            if (self.head == 0) { self.head = self.reserved; }
+            self.head -= 1;
+            let index: i32 = 0;
+            while (index < ordinal) { values[self.index(index)] = values[self.index(index + 1)]; index += 1; }
+        } else {
+            let index: i32 = self.length;
+            while (index > ordinal) { values[self.index(index)] = values[self.index(index - 1)]; index -= 1; }
+        }
+        values[self.index(ordinal)] = item; self.length += 1; return core::result::Ok(self.length);
+    }
+    pub fn remove(&self, ordinal: i32) -> core::result::Result<T, Error> {
+        if (ordinal < 0 || ordinal >= self.length) { return core::result::Err(Error::Bounds); }
+        let values: [T] = self.slots(); let removed: T = values[self.index(ordinal)];
+        if (ordinal < self.length - 1 - ordinal) {
+            let index: i32 = ordinal;
+            while (index > 0) { values[self.index(index)] = values[self.index(index - 1)]; index -= 1; }
+            self.head += 1; if (self.head == self.reserved) { self.head = 0; }
+        } else {
+            let index: i32 = ordinal;
+            while (index < self.length - 1) { values[self.index(index)] = values[self.index(index + 1)]; index += 1; }
+        }
+        self.length -= 1; if (self.length == 0) { self.head = 0; }
+        return core::result::Ok(removed);
+    }
+    pub fn swap_remove_front(&self, ordinal: i32) -> core::result::Result<T, Error> {
+        if (ordinal < 0 || ordinal >= self.length) { return core::result::Err(Error::Bounds); }
+        let values: [T] = self.slots(); let removed: T = values[self.index(ordinal)];
+        values[self.index(ordinal)] = values[self.head]; self.pop_front(); return core::result::Ok(removed);
+    }
+    pub fn swap_remove_back(&self, ordinal: i32) -> core::result::Result<T, Error> {
+        if (ordinal < 0 || ordinal >= self.length) { return core::result::Err(Error::Bounds); }
+        let values: [T] = self.slots(); let removed: T = values[self.index(ordinal)];
+        values[self.index(ordinal)] = values[self.index(self.length - 1)]; self.pop_back(); return core::result::Ok(removed);
+    }
+    // Preserve the input view's order at either end. On growth keep the old
+    // allocation alive through all copies, including aliased input views.
+    fn extend(&self, input: core::slice::View<T>, front: bool) -> core::result::Result<i32, Error> {
+        let count: i32 = input.len();
+        if (count > capacity_limit<T>() - self.length) { return core::result::Err(Error::CapacityOverflow); }
+        if (count == 0) { return core::result::Ok(self.length); }
+        let needed: i32 = self.length + count; let size: usize = core::mem::size_of<T>();
+        let storage: ptr = self.storage; let capacity: i32 = self.reserved; let head: i32 = self.head;
+        let grows: bool = needed > capacity;
+        if (grows) {
+            capacity = self.growth_capacity(needed); head = 0;
+            if (size == 0) { capacity = MAX_CAPACITY; }
+            else {
+                storage = alloc::allocator::alloc(size * (capacity as usize), ALIGN);
+                if (storage == 0) { return core::result::Err(Error::AllocationFailed); }
+            }
+        } else {
+            if (front) {
+                if (count > head) { head = capacity - (count - head); }
+                else { head -= count; }
+            }
+        }
+        let target: [T] = core::mem::typed_slice_from_storage(storage, capacity);
+        let index: i32 = 0;
+        if (grows) {
+            let source: [T] = self.slots(); let offset: i32 = 0;
+            if (front) { offset = count; }
+            while (index < self.length) { target[offset + index] = source[self.index(index)]; index += 1; }
+        }
+        let offset: i32 = self.length; if (front) { offset = 0; }
+        index = 0;
+        while (index < count) { target[physical(head, capacity, offset + index)] = core::option::unwrap(input.get(index)); index += 1; }
+        if (grows && self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        self.storage = storage; self.reserved = capacity; self.head = head; self.length = needed;
+        return core::result::Ok(needed);
+    }
+    pub fn try_extend_back(&self, input: core::slice::View<T>) -> core::result::Result<i32, Error> { return self.extend(input, false); }
+    pub fn try_extend_front(&self, input: core::slice::View<T>) -> core::result::Result<i32, Error> { return self.extend(input, true); }
+    pub fn truncate(&self, length: i32) -> core::result::Result<i32, Error> {
+        if (length < 0) { return core::result::Err(Error::Bounds); }
+        if (length < self.length) { self.length = length; }
+        if (self.length == 0) { self.head = 0; }
+        return core::result::Ok(self.length);
+    }
+    pub fn clear(&self) { self.length = 0; self.head = 0; }
+    pub fn try_resize(&self, length: i32, fill: T) -> core::result::Result<i32, Error> {
+        if (length < 0) { return core::result::Err(Error::Bounds); }
+        if (length <= self.length) { return self.truncate(length); }
+        let reserved: core::result::Result<i32, Error> = self.try_reserve(length - self.length);
+        if (core::result::is_err(reserved)) { return reserved; }
+        let values: [T] = self.slots(); let index: i32 = self.length;
+        while (index < length) { values[self.index(index)] = fill; index += 1; }
+        self.length = length; return core::result::Ok(length);
+    }
+    pub fn rotate_left(&self, count: i32) -> core::result::Result<i32, Error> {
+        if (count < 0 || count > self.length) { return core::result::Err(Error::Bounds); }
+        if (count == 0 || count == self.length) { return core::result::Ok(self.length); }
+        if (self.length == self.reserved) { self.head = self.index(count); return core::result::Ok(self.length); }
+        let index: i32 = 0;
+        if (count <= self.length / 2) {
+            while (index < count) { let item: T = core::option::unwrap(self.pop_front()); core::result::unwrap(self.try_push_back(item)); index += 1; }
+        } else {
+            let steps: i32 = self.length - count;
+            while (index < steps) { let item: T = core::option::unwrap(self.pop_back()); core::result::unwrap(self.try_push_front(item)); index += 1; }
+        }
+        return core::result::Ok(self.length);
+    }
+    pub fn rotate_right(&self, count: i32) -> core::result::Result<i32, Error> {
+        if (count < 0 || count > self.length) { return core::result::Err(Error::Bounds); }
+        return self.rotate_left(self.length - count);
+    }
+    pub fn reverse(&self) {
+        let left: i32 = 0; let right: i32 = self.length - 1;
+        while (left < right) { core::result::unwrap(self.swap(left, right)); left += 1; right -= 1; }
+    }
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
+        if (core::mem::size_of<T>() == 0 || self.length == self.reserved) { return core::result::Ok(self.reserved); }
+        if (self.length == 0) { self.destroy(); return core::result::Ok(0); }
+        return self.relocate(self.length);
+    }
+    // Wrapped storage may allocate. Already contiguous contents stay in place.
+    pub fn try_make_contiguous(&self) -> core::result::Result<core::slice::View<T>, Error> {
+        if (self.length > self.reserved - self.head) {
+            let moved: core::result::Result<i32, Error> = self.relocate(self.reserved);
+            if (core::result::is_err(moved)) { return core::result::Err(core::result::unwrap_err(moved)); }
+        }
+        let view: core::slice::View<T> = core::slice::View { values: self.slots(), start: self.head, length: self.length };
+        return core::result::Ok(view);
+    }
+    pub fn try_clone(&self) -> core::result::Result<Deque<T>, Error> {
+        let copy: Deque<T> = new();
+        let reserved: core::result::Result<i32, Error> = copy.try_reserve(self.length);
+        if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+        let source: [T] = self.slots(); let target: [T] = copy.slots(); let index: i32 = 0;
+        while (index < self.length) { target[index] = source[self.index(index)]; index += 1; }
+        copy.length = self.length; return core::result::Ok(copy);
+    }
+    pub fn try_split_off(&self, ordinal: i32) -> core::result::Result<Deque<T>, Error> {
+        if (ordinal < 0 || ordinal > self.length) { return core::result::Err(Error::Bounds); }
+        let tail: Deque<T> = new(); let count: i32 = self.length - ordinal;
+        let reserved: core::result::Result<i32, Error> = tail.try_reserve(count);
+        if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+        let source: [T] = self.slots(); let target: [T] = tail.slots(); let index: i32 = 0;
+        while (index < count) { target[index] = source[self.index(ordinal + index)]; index += 1; }
+        tail.length = count; self.truncate(ordinal); return core::result::Ok(tail);
+    }
+    pub fn index_of(&self, item: T) -> i32 where T: core::cmp::PartialEq<T> {
+        let values: [T] = self.slots(); let index: i32 = 0;
+        while (index < self.length) { if (T::partial_eq(values[self.index(index)], item)) { return index; } index += 1; }
+        return -1;
+    }
+    pub fn contains(&self, item: T) -> bool where T: core::cmp::PartialEq<T> { return self.index_of(item) >= 0; }
+    pub fn destroy(&self) {
+        let size: usize = core::mem::size_of<T>();
+        if (self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        let empty: ptr = 0; self.storage = empty; self.length = 0; self.reserved = 0; self.head = 0;
+    }
+}
+
+pub impl<T> IntoIter<T> {
+    pub fn borrow(&self) -> &IntoIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.back - self.front; }
+    pub fn capacity(&self) -> i32 { return self.reserved; }
+    pub fn is_empty(&self) -> bool { return self.front == self.back; }
+    fn slots(&self) -> [T] { return core::mem::typed_slice_from_storage(self.storage, self.reserved); }
+    fn disarm(&self) {
+        let empty: ptr = 0; self.storage = empty; self.reserved = 0; self.head = 0; self.front = 0; self.back = 0;
+    }
+    // Borrow only initialized remainder. End views before consuming, recovering
+    // or successfully finishing; rejected finish preserves existing views.
+    pub fn as_views(&self) -> Views<T> {
+        let count: i32 = self.remaining(); let start: i32 = 0;
+        if (count > 0) { start = physical(self.head, self.reserved, self.front); }
+        let first_len: i32 = count;
+        if (first_len > self.reserved - start) { first_len = self.reserved - start; }
+        let slots: [T] = self.slots();
+        let first: core::slice::View<T> = core::slice::View { values: slots, start: start, length: first_len };
+        let second: core::slice::View<T> = core::slice::View { values: slots, start: 0, length: count - first_len };
+        return Views { first: first, second: second };
+    }
+    // Each successful pull transfers that item's cleanup authority to caller.
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; let slots: [T] = self.slots();
+        return core::option::Some(slots[physical(self.head, self.reserved, self.back)]);
+    }
+    // Refuse to release unconsumed owners. Exhaustion alone never frees storage.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let count: i32 = self.remaining();
+        if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
+        let size: usize = core::mem::size_of<T>();
+        if (self.reserved > 0 && size > 0) { alloc::allocator::dealloc(self.storage, size * (self.reserved as usize), ALIGN); }
+        self.disarm(); return core::option::None();
+    }
+    // Transfer remainder and allocation in O(1), retaining the ring's capacity.
+    // Empty recovered owners normalize their head. No nested destruction.
+    pub fn take_remaining(&self) -> Deque<T> {
+        let count: i32 = self.remaining(); let head: i32 = 0;
+        if (count > 0) { head = physical(self.head, self.reserved, self.front); }
+        let value: Deque<T> = Deque { storage: self.storage, length: count, reserved: self.reserved, head: head };
+        self.disarm(); return value;
+    }
+}
+
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
+    // Remove the front item before handing its cleanup authority to caller.
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let slots: [T] = self.slots(); let item: T = slots[physical(self.head, self.reserved, self.front)]; self.front += 1;
+        return core::option::Some(item);
+    }
+}
+
+// Acceptance has try_push_back's shallow ownership and view invalidation rules.
+pub impl<T> core::iter::TrySink<T, Error> for Deque<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
+        let pushed: core::result::Result<i32, Error> = self.try_push_back(item);
+        if (core::result::is_err(pushed)) { return core::option::Some(core::result::unwrap_err(pushed)); }
+        return core::option::None();
+    }
+}
+
+pub impl<T> Cursor<T> {
+    pub fn borrow(&self) -> &Cursor<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.back - self.front; }
+    fn get(&self, ordinal: i32) -> core::option::Option<T> {
+        if (ordinal < self.first.len()) { return self.first.get(ordinal); }
+        return self.second.get(ordinal - self.first.len());
+    }
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; return self.get(self.back);
+    }
+}
+
+pub impl<T> core::iter::Iterator<T> for Cursor<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        let ordinal: i32 = self.front; self.front += 1; return self.get(ordinal);
+    }
+}

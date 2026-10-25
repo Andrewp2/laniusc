@@ -1,0 +1,88 @@
+// One bounded cleartext HTTP exchange, explicit numeric endpoint + Host.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import ext::http;
+import ext::http_client;
+import std::args;
+import std::clock;
+import std::fs;
+import std::signal;
+import std::stream;
+struct Output { bytes: alloc::vec::Vec<u8>, maximum: i32, failure: i32 }
+impl Output { fn borrow(&self) -> &Output { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn text(value: str, count: i32) -> core::text::Text { let raw: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(raw.values,raw.start,raw.len()); }
+fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool { let other: core::slice::View<u8> = literal(s,n); if (v.len() != n) { return false; } let i: i32 = 0; while (i < n) { if (core::option::unwrap(v.get(i)) != core::option::unwrap(other.get(i))) { return false; } i += 1; } return true; }
+fn write(v: core::slice::View<u8>, descriptor: i32) -> bool { let sink: std::stream::Descriptor = std::stream::from_handle(descriptor); return core::result::is_ok(core::io::write_all(sink.borrow(),v.values,v.start,v.len())); }
+fn add(out: &Output, v: core::slice::View<u8>) -> bool { if (out.failure != 0) { return false; } if (v.len() > out.maximum-out.bytes.len()) { out.failure = 3; return false; } if (core::result::is_err(out.bytes.try_extend(v))) { out.failure = 4; return false; } return true; }
+fn word(out: &Output, s: str, n: i32) -> bool { return add(out,literal(s,n)); }
+fn number(out: &Output, n: u64) -> bool { let scratch: [u8;32] = [0;32]; let f: core::fmt::Formatter = core::result::unwrap(core::fmt::buffer(scratch,0,32)); f.write_unsigned(n,core::fmt::decimal()); let count: i32 = core::result::unwrap(f.finish()); return add(out,core::result::unwrap(core::slice::view(scratch,count))); }
+fn hex_digit(n: u8) -> u8 { if (n < 10) { return n+48; } return n+87; }
+fn hex(out: &Output, v: core::slice::View<u8>) -> bool { let i: i32 = 0; while (i < v.len()) { let c: u8 = core::option::unwrap(v.get(i)); let pair: [u8;2] = [hex_digit(c/16),hex_digit(c%16)]; if (!add(out,core::result::unwrap(core::slice::view(pair,2)))) { return false; } i += 1; } return true; }
+fn number_arg(value: core::slice::View<u8>, maximum: u32) -> core::option::Option<i32> { let parsed = core::decimal::parse_u32_range(value.values,value.start,value.len()); if (parsed.is_err() || value.is_empty()) { return core::option::None(); } let n: u32 = parsed.unwrap(); if (n > maximum) { return core::option::None(); } return core::option::Some(n as i32); }
+fn read_body(path: core::slice::View<u8>, owner: &alloc::vec::Vec<u8>, maximum: i32) -> i32 {
+    let handle: i32 = 0; let opened: bool = false;
+    if (!eq(path,"-",1)) {
+        let i: i32 = 0; while (i < path.len()) { if (path.get(i).unwrap() == 0) { return 2; } i += 1; }
+        let packed = alloc::vec::from_view(path); if (packed.is_err()) { return 4; } let bytes: alloc::vec::Vec<u8> = packed.unwrap(); handle = std::fs::open_read(bytes.storage,bytes.len() as usize); bytes.destroy(); if (handle < 0) { return 5; } opened = true;
+    }
+    let stream: std::stream::Descriptor = std::stream::from_handle(handle); let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let status: i32 = 0;
+    while (true) { let got = stream.read(scratch,0,1024); if (got.is_err()) { if (core::io::is_interrupted(got.unwrap_err())) { continue; } status = 5; break; } let count: i32 = got.unwrap(); if (count == 0) { break; } if (count > maximum-owner.len()) { status = 3; break; } if (owner.try_extend(core::slice::view(scratch,count).unwrap()).is_err()) { status = 4; break; } }
+    if (opened && std::fs::close(handle) != 0 && status == 0) { status = 5; } return status;
+}
+fn reason(cause: ext::http_client::Cause) -> core::text::Text { return match(cause) {
+ ext::http_client::Cause::InvalidOptions -> text("invalid-options",15), ext::http_client::Cause::UnsupportedRequest -> text("unsupported-request",19), ext::http_client::Cause::UnsupportedHeader(n) -> text("unsupported-header",18), ext::http_client::Cause::UnsupportedUpgrade -> text("unsupported-upgrade",19), ext::http_client::Cause::AllocationFailed -> text("allocation-failure",18), ext::http_client::Cause::Timeout -> text("timeout",7), ext::http_client::Cause::Clock(e) -> text("clock",5), ext::http_client::Cause::Io(e) -> text("socket",6), ext::http_client::Cause::Http(e) -> match(e) { ext::http::Error::Incomplete(n) -> text("incomplete",10), ext::http::Error::Malformed(n) -> text("malformed",9), ext::http::Error::Limit(n) -> text("limit",5), ext::http::Error::Unsupported(n) -> text("unsupported",11), ext::http::Error::AllocationFailed -> text("allocation-failure",18), _ -> text("invalid-state",13) }, ext::http_client::Cause::RequestLimit -> text("request-limit",13), ext::http_client::Cause::ResponseLimit -> text("response-limit",14), ext::http_client::Cause::BodyLimit -> text("body-limit",10), ext::http_client::Cause::InterimLimit -> text("interim-limit",13), ext::http_client::Cause::IoLimit -> text("io-limit",8), ext::http_client::Cause::WorkLimit -> text("work-limit",10), ext::http_client::Cause::BoundaryMismatch -> text("boundary-mismatch",17) }; }
+fn diagnostic(failure: ext::http_client::Failure) -> i32 {
+    let status: i32 = match(failure.cause) { ext::http_client::Cause::AllocationFailed -> 4, ext::http_client::Cause::Http(e) -> match(e) { ext::http::Error::AllocationFailed -> 4, _ -> 3 }, _ -> 3 };
+    let scratch: [u8;255] = [0;255]; let out: core::fmt::Formatter = core::fmt::buffer(scratch,0,255).unwrap();
+    out.write_text(text("http-fetch: ",12)); out.write_text(reason(failure.cause)); out.write_text(text(" stage=",7));
+    out.write_text(match(failure.stage) { ext::http_client::Stage::Prepare -> text("prepare",7), ext::http_client::Stage::Open -> text("open",4), ext::http_client::Stage::Connect -> text("connect",7), ext::http_client::Stage::Send -> text("send",4), ext::http_client::Stage::Receive -> text("receive",7), ext::http_client::Stage::Shutdown -> text("shutdown",8), ext::http_client::Stage::Validate -> text("validate",8), ext::http_client::Stage::Decode -> text("decode",6), ext::http_client::Stage::Close -> text("close",5), ext::http_client::Stage::Publish -> text("publish",7) });
+    out.write_text(text(" sent=",6)); out.write_unsigned(failure.stats.request_sent as u64,core::fmt::decimal()); out.write_text(text(" received=",10)); out.write_unsigned(failure.stats.response_received,core::fmt::decimal()); out.write_text(text(" stopped=",9)); out.write_unsigned(failure.stats.upload_stopped as u64,core::fmt::decimal()); out.write_text(text(" shutdown=",10)); out.write_unsigned(failure.stats.write_shutdown as u64,core::fmt::decimal()); out.write_text(text(" io=",4)); out.write_unsigned(failure.stats.io_calls,core::fmt::decimal()); if (failure.cleanup.is_some()) { out.write_text(text(" cleanup-error",14)); } out.write_text(text("\n",1)); let count: i32 = out.finish().unwrap(); if (!write(core::slice::view(scratch,count).unwrap(),2)) { return 5; } return status;
+}
+fn report(out: &Output, response: ext::http_client::Response) -> bool {
+    let message: ext::http::Message = response.message(); let kind: i32 = match(message.head.kind) { ext::http::BodyKind::Empty -> 0, ext::http::BodyKind::Fixed -> 1, ext::http::BodyKind::Chunked -> 2, ext::http::BodyKind::Close -> 3, ext::http::BodyKind::Tunnel -> 4 };
+    return word(out,"version=",8) && number(out,message.head.version as u64) && word(out," status=",8) && number(out,message.head.status as u64) && word(out," headers=",9) && number(out,message.head.field_count as u64) && word(out," framing=",9) && number(out,kind as u64) && word(out," body=",6) && number(out,message.decoded_length as u64) && word(out," trailers=",10) && number(out,message.trailer_count as u64) && word(out," consumed=",10) && number(out,message.consumed as u64) && word(out," interims=",10) && number(out,response.informational().len() as u64) && word(out," sent=",6) && number(out,response.stats.request_sent as u64) && word(out," request=",9) && number(out,response.stats.request_bytes as u64) && word(out," stopped=",9) && number(out,response.stats.upload_stopped as u64) && word(out," shutdown=",10) && number(out,response.stats.write_shutdown as u64) && word(out," received=",10) && number(out,response.stats.response_received) && word(out," discarded=",11) && number(out,response.stats.discarded_bytes as u64) && word(out," work=",6) && number(out,response.stats.work) && word(out," io=",4) && number(out,response.stats.io_calls) && word(out,"\n",1);
+}
+fn exchange(args: std::args::Arguments, headers: &alloc::vec::Vec<ext::http::Field>) -> i32 {
+    if (args.len() == 1 && eq(args.get(0).unwrap(),"--help",6)) { if (!write(literal("Usage: http-fetch ADDRESS AUTHORITY TARGET [OPTIONS]\nOptions: --method M --body FILE|- --header NAME:VALUE --timeout MS\n         --raw | --report; --max-request N --max-response N --max-body N\n         --max-interims N --max-interim-bytes N --max-io N --max-work N\n         --max-head N --max-line N --max-headers N --max-trailers N\n         --max-trailer-bytes N --max-chunks N --max-output N\n",394),1)) { return 5; } return 0; }
+    if (args.len() < 3) { return 2; } let endpoint = core::net::parse_socket(args.get(0).unwrap()); if (endpoint.is_err()) { return 2; }
+    let method: core::slice::View<u8> = literal("GET",3); let path: core::option::Option<core::slice::View<u8>> = core::option::None(); let options: ext::http_client::Options = ext::http_client::default_options(); let mode: i32 = 0; let timeout: i32 = 5000; let max_output: i32 = 18874368; let i: i32 = 3;
+    while (i < args.len()) {
+        let key: core::slice::View<u8> = args.get(i).unwrap(); i += 1;
+        if (eq(key,"--raw",5) || eq(key,"--report",8)) { if (mode != 0) { return 2; } mode = 1; if (eq(key,"--report",8)) { mode = 2; } continue; }
+        if (i == args.len()) { return 2; } let value: core::slice::View<u8> = args.get(i).unwrap(); i += 1;
+        if (eq(key,"--method",8)) { method = value; continue; } if (eq(key,"--body",6)) { path = core::option::Some(value); continue; }
+        if (eq(key,"--header",8)) { let at: i32 = 0; while (at < value.len() && value.get(at).unwrap() != 58) { at += 1; } if (at == 0 || at == value.len()) { return 2; } let field: ext::http::Field = ext::http::Field { raw:literal("",0),name:value.subview(0,at).unwrap(),value:value.subview(at+1,value.len()).unwrap(),offset:0 }; if (headers.try_push(field).is_err()) { return 4; } continue; }
+        let parsed = number_arg(value,2147483647); if (parsed.is_none()) { return 2; } let n: i32 = parsed.unwrap();
+        if (eq(key,"--timeout",9)) { if (n > 60000) { return 2; } timeout = n; continue; }
+        if (eq(key,"--max-work",10)) { options.work = n as u64; continue; } if (eq(key,"--max-io",8)) { options.io_calls = n as u64; continue; }
+        if (n > 67108864) { return 2; }
+        if (eq(key,"--max-request",13)) { options.request_bytes = n; continue; } if (eq(key,"--max-response",14)) { options.response_bytes = n; continue; } if (eq(key,"--max-body",10)) { options.wire.body_bytes = n; continue; } if (eq(key,"--max-head",10)) { options.wire.head_bytes = n; continue; } if (eq(key,"--max-line",10)) { options.wire.line_bytes = n; continue; } if (eq(key,"--max-headers",13)) { options.wire.headers = n; continue; } if (eq(key,"--max-trailers",14)) { options.wire.trailers = n; continue; } if (eq(key,"--max-trailer-bytes",19)) { options.wire.trailer_bytes = n; continue; } if (eq(key,"--max-chunks",12)) { options.wire.chunks = n; continue; } if (eq(key,"--max-interims",14)) { options.interim_count = n; continue; } if (eq(key,"--max-interim-bytes",19)) { options.interim_bytes = n; continue; } if (eq(key,"--max-output",12)) { max_output = n; continue; } return 2;
+    }
+    let input: alloc::vec::Vec<u8> = alloc::vec::new(); let status: i32 = 0;
+    if (path.is_some()) { let maximum: i32 = options.wire.body_bytes; if (options.request_bytes < maximum) { maximum = options.request_bytes; } status = read_body(path.unwrap(),input.borrow(),maximum); if (status != 0) { input.destroy(); return status; } }
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now(); if (now.is_err()) { input.destroy(); return 3; }
+    let shifted: core::result::Result<core::time::Instant,core::time::Error> = now.unwrap().checked_add(core::time::from_millis(timeout as u64)); if (shifted.is_err()) { input.destroy(); return 3; }
+    let deadline: core::time::Deadline = core::time::deadline_at(shifted.unwrap());
+    let request: ext::http_client::Request = ext::http_client::Request { method:method,target:args.get(2).unwrap(),authority:args.get(1).unwrap(),headers:headers.as_view(),body:input.as_view() };
+    let result = ext::http_client::exchange_until(endpoint.unwrap(),request,options,deadline); input.destroy(); if (result.is_err()) { return diagnostic(result.unwrap_err()); }
+    let response: ext::http_client::Response = result.unwrap(); let output: Output = Output { bytes:alloc::vec::new(),maximum:max_output,failure:0 };
+    if (mode == 2) { if (!report(output.borrow(),response)) { status = output.failure; } if (status == 0 && !write(output.bytes.as_view(),1)) { status = 5; } }
+    else { let bytes: core::slice::View<u8> = response.body(); if (mode == 1) { bytes = response.as_view(); } if (bytes.len() > max_output) { status = 3; } else { if (!write(bytes,1)) { status = 5; } } }
+    output.bytes.destroy(); response.destroy(); return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let got = std::args::snapshot(1,64,16384); if (got.is_err()) { return match(got.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(n) -> 5, _ -> 2 }; }
+    let args: std::args::Arguments = got.unwrap(); let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new(); let status: i32 = exchange(args,headers.borrow()); headers.destroy(); args.destroy(); return status;
+}

@@ -1,0 +1,16 @@
+// expect: 42
+// Compiler dependency: the nested wildcard arm currently reports LNC0005.
+module app::main;
+import core::result;
+enum Error { InvalidScalar, Other }
+fn inspect(value: core::result::Result<i32, Error>) -> bool {
+    return match (value) {
+        Ok(_) -> false,
+        Err(error) -> match (error) { InvalidScalar -> true, _ -> false },
+    };
+}
+fn main() -> i32 {
+    let value: core::result::Result<i32, Error> = core::result::Err(Error::InvalidScalar);
+    if (inspect(value)) { return 42; }
+    return 1;
+}

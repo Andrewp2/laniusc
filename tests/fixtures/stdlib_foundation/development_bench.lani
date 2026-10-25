@@ -1,0 +1,55 @@
+module app::main;
+import core::result;
+import core::time;
+import std::clock;
+import test::bench;
+pub struct Clock { reads: i32, failed: i32, reversed: bool }
+impl Clock { fn borrow(&self) -> &Clock { return self; } }
+pub impl std::clock::Monotonic for Clock {
+    pub fn now(&self) -> core::result::Result<core::time::Instant,std::clock::Error> {
+        self.reads += 1;
+        if (self.reads == self.failed) { return core::result::Err(std::clock::Error::Host(5)); }
+        let tick: u64 = self.reads as u64;
+        if (self.reversed) { tick = 3 - tick; }
+        return core::result::Ok(core::time::instant(core::time::from_nanos(tick * 13)));
+    }
+    pub fn pause_ms(&self, milliseconds: i32) -> core::result::Result<i32,std::clock::Error> { return core::result::Ok(milliseconds); }
+}
+pub struct Work { calls: u32, checksum: u32, overflow: bool }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+pub impl test::bench::Work for Work {
+    pub fn iteration(&self, index: u32) -> u64 {
+        self.calls += 1; self.checksum = self.checksum * 1664525 + index + 1013904223;
+        if (self.overflow) { return 18446744073709551615; } return 3;
+    }
+}
+fn error_code(result: core::result::Result<test::bench::Measurement,test::bench::Error>) -> i32 {
+    return match (core::result::unwrap_err(result)) {
+        test::bench::Error::InvalidIterations -> 1,
+        test::bench::Error::ClockReversed -> 2,
+        test::bench::Error::WorkOverflow -> 3,
+        test::bench::Error::Clock(cause) -> match (cause) { std::clock::Error::Host(code) -> 100 + code, _ -> 199 }
+    };
+}
+fn main() -> i32 {
+    let clock: Clock = Clock { reads: 0, failed: 0, reversed: false };
+    let work: Work = Work { calls: 0, checksum: 0, overflow: false };
+    if (error_code(test::bench::measure(clock.borrow(),work.borrow(),0)) != 1) { return 1; }
+    if (error_code(test::bench::measure(clock.borrow(),work.borrow(),1000001)) != 1) { return 2; }
+    if (clock.reads != 0 || work.calls != 0) { return 3; }
+    let value: test::bench::Measurement = core::result::unwrap(test::bench::measure(clock.borrow(),work.borrow(),7));
+    if (value.iterations != 7 || value.work != 21 || value.elapsed.seconds != 0 || value.elapsed.nanos != 13 || clock.reads != 2 || work.calls != 7) { return 4; }
+    clock.reads = 0; clock.failed = 1; work.calls = 0;
+    if (error_code(test::bench::measure(clock.borrow(),work.borrow(),7)) != 105 || work.calls != 0) { return 5; }
+    clock.reads = 0; clock.failed = 2;
+    if (error_code(test::bench::measure(clock.borrow(),work.borrow(),7)) != 105 || work.calls != 7) { return 6; }
+    clock.reads = 0; clock.failed = 0; clock.reversed = true;
+    if (error_code(test::bench::measure(clock.borrow(),work.borrow(),7)) != 2) { return 7; }
+    clock.reads = 0; clock.reversed = false; work.calls = 0; work.overflow = true;
+    if (error_code(test::bench::measure(clock.borrow(),work.borrow(),2)) != 3 || work.calls != 2 || clock.reads != 1) { return 8; }
+    work.overflow = false; work.calls = 0; work.checksum = 0;
+    let native: test::bench::Measurement = core::result::unwrap(test::bench::native(work.borrow(),10000));
+    if (native.work != 30000 || native.iterations != 10000 || work.calls != 10000 || work.checksum == 0) { return 9; }
+    if (!test::bench::report(native)) { return 10; }
+    return 0;
+}

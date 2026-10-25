@@ -1,0 +1,128 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::http;
+fn bytes(s: str, n: i32) -> core::slice::View<u8> { let data: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(s),n); return core::result::unwrap(core::slice::view(data,n)); }
+fn prefix(v: core::slice::View<u8>, n: i32) -> core::slice::View<u8> { return v.subview(0,n).unwrap(); }
+fn code(e: ext::http::Error) -> i32 { return match(e) { ext::http::Error::Bounds -> 0, ext::http::Error::Incomplete(at) -> 1, ext::http::Error::Malformed(at) -> 2, ext::http::Error::Limit(at) -> 3, ext::http::Error::Unsupported(at) -> 4, _ -> 5 }; }
+fn kind(value: ext::http::BodyKind) -> i32 { return match(value) { ext::http::BodyKind::Empty -> 0, ext::http::BodyKind::Fixed -> 1, ext::http::BodyKind::Chunked -> 2, ext::http::BodyKind::Close -> 3, ext::http::BodyKind::Tunnel -> 4 }; }
+fn point(e: ext::http::Error) -> i32 { return match(e) { ext::http::Error::Incomplete(at) -> at, ext::http::Error::Malformed(at) -> at, ext::http::Error::Limit(at) -> at, ext::http::Error::Unsupported(at) -> at, _ -> -1 }; }
+fn step(c: &ext::http::Cursor, wire: core::slice::View<u8>, method: core::slice::View<u8>, eof: bool) -> ext::http::Scan {
+    let event: ext::http::Scan = c.advance(wire,method,eof).unwrap();
+    let is_head: bool = match(event) { ext::http::Scan::HeadReady(h) -> true, _ -> false };
+    if (is_head) { event = c.advance(wire,method,eof).unwrap(); assert(!match(event) { ext::http::Scan::HeadReady(h) -> true, _ -> false }); }
+    return event;
+}
+fn check(event: ext::http::Scan, consumed: i32, decoded: i32) -> bool {
+    let done: bool = match(event) { ext::http::Scan::Boundary(b) -> true, _ -> false };
+    if (done) { let b: ext::http::FrameBoundary = match(event) { ext::http::Scan::Boundary(v) -> v, _ -> ext::http::FrameBoundary { consumed: -1, decoded_length: -1 } }; assert(b.consumed == consumed && b.decoded_length == decoded); }
+    return done;
+}
+fn partitions(wire: core::slice::View<u8>, method: core::slice::View<u8>, request: bool, close: bool) -> bool {
+    let limits = ext::http::default_limits(); let mode = ext::http::CursorMode::Response; if (request) { mode = ext::http::CursorMode::Request; }
+    let parsed = ext::http::parse_response(wire,method,close,limits); if (request) { parsed = ext::http::parse_request(wire,close,limits); }
+    assert(parsed.is_ok()); let expected = parsed.unwrap();
+    let baseline = ext::http::cursor(mode,limits,expected.consumed,1000000).unwrap();
+    let head = baseline.advance(wire,method,close).unwrap();
+    let h: ext::http::HeadInfo = match(head) { ext::http::Scan::HeadReady(v) -> v, _ -> ext::http::HeadInfo { status: -1, version: -1, kind: ext::http::BodyKind::Empty, content_length: -1, head_end: -1 } };
+    assert(h.head_end == expected.head.raw.len() && h.version == expected.head.version && h.status == expected.head.status && h.content_length == expected.head.content_length && kind(h.kind) == kind(expected.head.kind));
+    let head_work: u64 = (h.head_end as u64)*2; if (!request) { head_work += method.len() as u64; } assert(baseline.work() == head_work);
+    assert(check(step(baseline.borrow(),wire,method,close),expected.consumed,expected.decoded_length));
+    let total: u64 = baseline.work(); assert(total <= (expected.consumed as u64)*2+(method.len() as u64));
+    // Terminal events ignore even invalid arguments and add no work.
+    let invalid = wire; invalid.start = -1; assert(check(baseline.advance(invalid,invalid,!close).unwrap(),expected.consumed,expected.decoded_length)); assert(baseline.work() == total);
+    let split: i32 = 0;
+    while (split <= wire.len()) {
+        let c = ext::http::cursor(mode,limits,expected.consumed,1000000).unwrap();
+        let first = step(c.borrow(),prefix(wire,split),method,false); check(first,expected.consumed,expected.decoded_length);
+        assert(check(step(c.borrow(),wire,method,close),expected.consumed,expected.decoded_length)); assert(c.work() == total); split += 1;
+    }
+    // Literal storage is packed. These counted native arrays have the native
+    // element stride and nonzero starts; alternate allocations on every call.
+    let a: [u8;240] = [91;240]; let b: [u8;240] = [92;240]; let i: i32 = 0;
+    while (i < wire.len()) { a[i+2] = wire.get(i).unwrap(); b[i+3] = wire.get(i).unwrap(); i += 1; }
+    let c = ext::http::cursor(mode,limits,expected.consumed,1000000).unwrap(); i = 0; let heads: i32 = 0;
+    while (i <= wire.len()) {
+        let view = core::slice::view_range(a,2,i).unwrap(); if (i%2 != 0) { view = core::slice::view_range(b,3,i).unwrap(); }
+        let event = c.advance(view,method,false).unwrap(); if (match(event) { ext::http::Scan::HeadReady(h) -> true, _ -> false }) { heads += 1; event = c.advance(view,method,false).unwrap(); }
+        check(event,expected.consumed,expected.decoded_length);
+        let used: u64 = c.work(); check(step(c.borrow(),view,method,false),expected.consumed,expected.decoded_length); assert(c.work() == used); i += 1;
+    }
+    assert(check(step(c.borrow(),wire,method,close),expected.consumed,expected.decoded_length)); assert(c.work() == total && heads == 1);
+    let exact = ext::http::cursor(mode,limits,expected.consumed,total).unwrap(); assert(check(step(exact.borrow(),wire,method,close),expected.consumed,expected.decoded_length)); assert(exact.work() == total);
+    assert(baseline.work() == total && h.head_end == expected.head.raw.len() && h.status == expected.head.status);
+    return true;
+}
+fn rejected(wire: core::slice::View<u8>, request: bool, method: core::slice::View<u8>, limits: ext::http::Limits, rawcap: i32, maximum_work: u64, error: i32) -> bool {
+    let mode = ext::http::CursorMode::Response; if (request) { mode = ext::http::CursorMode::Request; }
+    let fragmented: i32 = 0;
+    while (fragmented < 2) {
+        let c = ext::http::cursor(mode,limits,rawcap,maximum_work).unwrap(); let n: i32 = wire.len(); if (fragmented == 1) { n = 0; } let done: bool = false; let failure = ext::http::Error::Bounds;
+        while (!done) {
+            let got = c.advance(prefix(wire,n),method,n == wire.len());
+            if (got.is_err()) { failure = got.unwrap_err(); assert(code(failure) == error); done = true; }
+            else { assert(!match(got.unwrap()) { ext::http::Scan::Boundary(b) -> true, _ -> false }); let head: bool = match(got.unwrap()) { ext::http::Scan::HeadReady(h) -> true, _ -> false }; if (!head && n < wire.len()) { n += 1; } }
+        }
+        let used: u64 = c.work(); let invalid = wire; invalid.length = -1; let again = c.advance(invalid,invalid,false).unwrap_err(); assert(code(again) == error && point(again) == point(failure)); assert(c.work() == used && used <= maximum_work); fragmented += 1;
+    }
+    return true;
+}
+fn main() -> i32 {
+    let limits = ext::http::default_limits(); let get = bytes("GET",3);
+    assert(partitions(bytes("POST /x?y HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\nabcTAIL",57),bytes("GET",3),true,false));
+    assert(partitions(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n3; a=\"q\\\"x\";b=t\r\nabc\r\n2\r\nxy\r\n00\r\nX-Check: yes\r\n\r\nTAIL",109),bytes("GET",3),true,false));
+    assert(partitions(bytes("GET / HTTP/1.1\r\nHost: x\r\n\r\nTAIL",31),bytes("GET",3),true,false));
+    assert(partitions(bytes("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabcTAIL",45),bytes("GET",3),false,false));
+    assert(partitions(bytes("HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\n\r\nTAIL",49),bytes("HEAD",4),false,false));
+    assert(partitions(bytes("HTTP/1.1 304 OK\r\nContent-Length: 99\r\n\r\nTAIL",43),bytes("GET",3),false,false));
+    assert(partitions(bytes("HTTP/1.1 204 OK\r\n\r\nTAIL",23),bytes("GET",3),false,false));
+    assert(partitions(bytes("HTTP/1.1 100 Continue\r\n\r\nTAIL",29),bytes("GET",3),false,false));
+    assert(partitions(bytes("HTTP/1.1 103 Early Hints\r\nLink: x\r\n\r\nTAIL",41),bytes("GET",3),false,false));
+    assert(partitions(bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: x\r\n\r\nTAIL",52),bytes("GET",3),false,false));
+    assert(partitions(bytes("HTTP/1.1 200 Tunnel\r\nContent-Length: nonsense\r\nTransfer-Encoding: gzip\r\n\r\nTAIL",78),bytes("CONNECT",7),false,false));
+    assert(partitions(bytes("HTTP/1.0 200 OK\r\n\r\nabc",22),bytes("GET",3),false,true));
+    assert(partitions(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\nTAIL",56),bytes("GET",3),false,false));
+    let wire = bytes("POST /x?y HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\nabc",53); let n: i32 = 0; while (n < wire.len()) { assert(rejected(prefix(wire,n),true,get,limits,1000,1000000,1)); n += 1; }
+    let wire = bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n3; a=\"q\\\"x\";b=t\r\nabc\r\n2\r\nxy\r\n00\r\nX-Check: yes\r\n\r\n",105); let n: i32 = 0; while (n < wire.len()) { assert(rejected(prefix(wire,n),true,get,limits,1000,1000000,1)); n += 1; }
+    assert(rejected(bytes("GET / HTTP/1.1\r\nHost: x\r\nContent-Length: 2, 2\r\n\r\nab",51),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("GET / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\nContent-Length: 0\r\n\r\n0\r\n\r\n",79),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("GET / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: gzip\r\n\r\n",52),true,get,limits,1000,1000000,4));
+    assert(rejected(bytes("GET / HTTP/1.1\nHost: x\n\n",24),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("GET / HTTP/1.1\rX",16),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("GET / HTTP/1.1\r\nHost: x\r\n X: y\r\n\r\n",34),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("GET /bad%2 HTTP/1.1\r\nHost: x\r\n\r\n",32),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\ng\r\n",59),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n1;\r\na\r\n0\r\n\r\n",68),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n1;v=\"x\r\na\r\n0\r\n\r\n",72),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n80000000\r\n",66),true,get,limits,1000,1000000,3));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n1\r\naX",61),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\rX",62),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nBad : x\r\n\r\n",70),true,get,limits,1000,1000000,2));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nHost: x\r\n\r\n",70),true,get,limits,1000,1000000,2));
+    let wire = bytes("GET / HTTP/1.1\r\nHost: x\r\n\r\n",27);
+    let cap = limits; cap.head_bytes = 27; cap.line_bytes = 14; cap.headers = 1;
+    assert(check(step(ext::http::cursor(ext::http::CursorMode::Request,cap,27,1000).unwrap().borrow(),wire,get,false),27,0));
+    cap.head_bytes = 26; assert(rejected(wire,true,get,cap,1000,1000,3)); cap = limits; cap.line_bytes = 13; assert(rejected(wire,true,get,cap,1000,1000,3)); cap = limits; cap.headers = 0; assert(rejected(wire,true,get,cap,1000,1000,3));
+    assert(rejected(wire,true,get,limits,26,1000,3)); assert(rejected(wire,true,get,limits,0,1000,3)); assert(rejected(wire,true,get,limits,1000,0,3)); assert(rejected(wire,true,get,limits,1000,53,3));
+    cap = limits; cap.head_bytes = -1; assert(ext::http::cursor(ext::http::CursorMode::Request,cap,100,1000).is_err()); assert(ext::http::cursor(ext::http::CursorMode::Request,limits,-1,1000).is_err());
+    let fixed = bytes("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 3\r\n\r\nabc",50); cap = limits; cap.body_bytes = 2; assert(rejected(fixed,true,get,cap,1000,1000000,3)); assert(rejected(fixed,true,get,limits,1000,96,3));
+    let chunk = bytes("POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n1\r\nb\r\n0\r\nX: y\r\n\r\n",79); cap = limits; cap.chunks = 1; assert(rejected(chunk,true,get,cap,1000,1000000,3)); cap = limits; cap.trailers = 0; assert(rejected(chunk,true,get,cap,1000,1000000,3)); cap = limits; cap.trailer_bytes = 8; assert(partitions(chunk,get,true,false)); assert(check(step(ext::http::cursor(ext::http::CursorMode::Request,cap,1000,1000000).unwrap().borrow(),chunk,get,false),chunk.len(),2)); cap.trailer_bytes = 7; assert(rejected(chunk,true,get,cap,1000,1000000,3));
+    // Close at both exact caps waits for true EOF without additional work.
+    let close = bytes("HTTP/1.0 200 OK\r\n\r\nabc",22); cap = limits; cap.body_bytes = 3;
+    let c = ext::http::cursor(ext::http::CursorMode::Response,cap,22,1000).unwrap(); assert(!check(step(c.borrow(),close,get,false),22,3)); let used = c.work(); assert(check(step(c.borrow(),close,get,true),22,3)); assert(c.work() == used);
+    let c = ext::http::cursor(ext::http::CursorMode::Response,cap,22,1000).unwrap(); step(c.borrow(),close,get,false); assert(code(c.advance(bytes("HTTP/1.0 200 OK\r\n\r\nabcd",23),get,true).unwrap_err()) == 3);
+    // Sticky EOF through HeadReady and prefix length guards.
+    let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,1000).unwrap(); assert(match(c.advance(wire,get,true).unwrap()) { ext::http::Scan::HeadReady(h) -> true, _ -> false }); assert(check(step(c.borrow(),wire,get,false),27,0));
+    let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,1000).unwrap(); c.advance(prefix(wire,2),get,false).unwrap(); assert(code(c.advance(prefix(wire,1),get,false).unwrap_err()) == 0);
+    let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,1000).unwrap(); c.advance(wire,get,true).unwrap(); assert(code(c.advance(bytes("GET / HTTP/1.1\r\nHost: x\r\n\r\nx",28),get,false).unwrap_err()) == 0);
+    let bad = wire; bad.start = -1; let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,1000).unwrap(); assert(code(c.advance(bad,get,false).unwrap_err()) == 0);
+    let bad = wire; bad.length = -1; let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,1000).unwrap(); assert(code(c.advance(bad,get,false).unwrap_err()) == 0);
+    let bad = wire; bad.start = 2147483647; let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,1000).unwrap(); assert(code(c.advance(bad,get,false).unwrap_err()) == 0);
+    let nominated = bytes("POST / HTTP/1.1\r\nHost: x\r\nConnection: X-Secret\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-Secret: x\r\n\r\n",96); let c = ext::http::cursor(ext::http::CursorMode::Request,limits,1000,10000).unwrap(); assert(check(step(c.borrow(),nominated,get,false),nominated.len(),0)); assert(ext::http::parse_request(nominated,false,limits).is_err());
+    assert(rejected(bytes("HTTP/1.1 200 OK\r\n\r\n",19),false,bytes("",0),limits,1000,1000,0));
+    cap = ext::http::default_limits(); cap.body_bytes = 2; assert(rejected(bytes("HTTP/1.0 200 OK\r\n\r\nabc",22),false,get,cap,1000,1000,3));
+    assert(rejected(bytes("POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 2147483648\r\n\r\n",56),true,get,limits,1000,1000,3));
+    return 0;
+}

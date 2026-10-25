@@ -4,14 +4,130 @@
 // indexing traps if it reaches beyond the view. Functions below specify
 // whether a negative length is treated as empty or rejected without mutation.
 //
-// Searching needs core::cmp::Eq and ordering needs core::cmp::Ord. Ordered
-// functions only call lt and le, so for f32 a NaN is never below or above
-// anything: min_or and max_or skip it unless it comes first, and sorting or
-// searching a view that holds NaN gives an unspecified order.
+// Searching needs core::cmp::PartialEq and ordering needs core::cmp::Ord. Ordered
+// functions require a lawful total order. Native float membership follows IEEE
+// equality; sorting float encodings needs core::float_order wrappers.
 module core::slice;
 
 import core::cmp;
 import core::ops;
+import core::option;
+import core::result;
+
+// Length-bearing borrowed views. Construction checks logical bounds; until
+// slice length projection exists, the caller must supply backed elements.
+// Copies alias the same elements. No allocation, cloning or destruction occurs.
+// See docs/stdlib-slice-views.md for contracts, lifetime rules and evidence.
+pub enum ViewError { Bounds, InvalidSize }
+pub struct View<T> { values: [T], start: i32, length: i32 }
+pub struct Iter<T> { values: [T], front: i32, back: i32 }
+pub struct Chunks<T> { values: [T], position: i32, end: i32, width: i32 }
+pub struct Windows<T> { values: [T], position: i32, end: i32, width: i32 }
+
+pub fn view<T>(values: [T], count: i32) -> core::result::Result<View<T>, ViewError> {
+    return view_range(values, 0, count);
+}
+
+pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Result<View<T>, ViewError> {
+    if (start < 0 || count < 0 || start > 2147483647 - count) {
+        return core::result::Err(ViewError::Bounds);
+    }
+    return core::result::Ok(View { values: values, start: start, length: count });
+}
+
+pub impl<T> View<T> {
+    pub fn len(&self) -> i32 { return self.length; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    pub fn get(&self, index: i32) -> core::option::Option<T> {
+        if (index < 0 || index >= self.length) { return core::option::None(); }
+        return core::option::Some(self.values[self.start + index]);
+    }
+    pub fn first(&self) -> core::option::Option<T> { return self.get(0); }
+    pub fn last(&self) -> core::option::Option<T> { return self.get(self.length - 1); }
+    // Half-open indices relative to this view. Empty subviews are valid.
+    pub fn subview(&self, start: i32, end: i32) -> core::result::Result<View<T>, ViewError> {
+        if (start < 0 || end < start || end > self.length) { return core::result::Err(ViewError::Bounds); }
+        return core::result::Ok(View { values: self.values, start: self.start + start, length: end - start });
+    }
+    // Return the displaced shallow value. Invalid indices leave storage intact.
+    pub fn try_set(&self, index: i32, value: T) -> core::result::Result<T, ViewError> {
+        if (index < 0 || index >= self.length) { return core::result::Err(ViewError::Bounds); }
+        let previous: T = self.values[self.start + index];
+        self.values[self.start + index] = value;
+        return core::result::Ok(previous);
+    }
+    // Copy within this view, including overlap. Return the number copied.
+    pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::result::Result<i32, ViewError> {
+        if (start < 0 || end < start || end > self.length || destination < 0) {
+            return core::result::Err(ViewError::Bounds);
+        }
+        let count: i32 = end - start;
+        if (destination > self.length - count) { return core::result::Err(ViewError::Bounds); }
+        copy_within(self.values, self.start + self.length, self.start + start, self.start + end, self.start + destination);
+        return core::result::Ok(count);
+    }
+    // Returns the number of swaps. Only this view's elements are modified.
+    pub fn reverse(&self) -> i32 { return reverse_segment(self.values, self.start, self.start + self.length); }
+    pub fn fill(&self, value: T) -> i32 {
+        let index: i32 = 0;
+        while (index < self.length) { self.values[self.start + index] = value; index += 1; }
+        return self.length;
+    }
+    pub fn iter(&self) -> Iter<T> { return Iter { values: self.values, front: self.start, back: self.start + self.length }; }
+    // Consecutive nonoverlapping chunks; a final short chunk is included.
+    pub fn chunks(&self, width: i32) -> core::result::Result<Chunks<T>, ViewError> {
+        if (width <= 0) { return core::result::Err(ViewError::InvalidSize); }
+        return core::result::Ok(Chunks { values: self.values, position: self.start, end: self.start + self.length, width: width });
+    }
+    // All overlapping windows of exactly width elements, advancing by one.
+    pub fn windows(&self, width: i32) -> core::result::Result<Windows<T>, ViewError> {
+        if (width <= 0) { return core::result::Err(ViewError::InvalidSize); }
+        return core::result::Ok(Windows { values: self.values, position: self.start, end: self.start + self.length, width: width });
+    }
+}
+
+// Cursors are fused and can be copied to fork their positions. Forward next
+// implements core::iter::Iterator in core::iter; import that module to use it.
+// next/next_back read current backing values, not a snapshot of the elements.
+pub impl<T> Iter<T> {
+    pub fn borrow(&self) -> &Iter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.back - self.front; }
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; return core::option::Some(self.values[self.back]);
+    }
+    // Discard up to count elements without reading them; return actual progress.
+    // Negative counts fail without changing the cursor.
+    pub fn advance(&self, count: i32) -> core::result::Result<i32, ViewError> {
+        if (count < 0) { return core::result::Err(ViewError::Bounds); }
+        let skipped: i32 = count;
+        if (skipped > self.back - self.front) { skipped = self.back - self.front; }
+        self.front += skipped; return core::result::Ok(skipped);
+    }
+    pub fn advance_back(&self, count: i32) -> core::result::Result<i32, ViewError> {
+        if (count < 0) { return core::result::Err(ViewError::Bounds); }
+        let skipped: i32 = count;
+        if (skipped > self.back - self.front) { skipped = self.back - self.front; }
+        self.back -= skipped; return core::result::Ok(skipped);
+    }
+}
+pub impl<T> Chunks<T> {
+    pub fn borrow(&self) -> &Chunks<T> { return self; }
+    pub fn remaining(&self) -> i32 {
+        let count: i32 = self.end - self.position;
+        let full: i32 = count / self.width;
+        if (count % self.width != 0) { full += 1; }
+        return full;
+    }
+}
+pub impl<T> Windows<T> {
+    pub fn borrow(&self) -> &Windows<T> { return self; }
+    pub fn remaining(&self) -> i32 {
+        let count: i32 = self.end - self.position;
+        if (count < self.width) { return 0; }
+        return count - self.width + 1;
+    }
+}
 
 fn nonnegative_len(len: i32) -> i32 {
     if (len <= 0) {
@@ -232,10 +348,10 @@ pub fn push<T>(values: [T], len: i32, capacity: i32, value: T) -> bool {
     return insert(values, len, capacity, len, value);
 }
 
-pub fn contains<T>(values: [T], len: i32, needle: T) -> bool where T: core::cmp::Eq<T> {
+pub fn contains<T>(values: [T], len: i32, needle: T) -> bool where T: core::cmp::PartialEq<T> {
     let index: i32 = 0;
     while (index < len) {
-        if (T::eq(values[index], needle)) {
+        if (T::partial_eq(values[index], needle)) {
             return true;
         }
         index += 1;
@@ -243,11 +359,11 @@ pub fn contains<T>(values: [T], len: i32, needle: T) -> bool where T: core::cmp:
     return false;
 }
 
-pub fn count<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Eq<T> {
+pub fn count<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::PartialEq<T> {
     let index: i32 = 0;
     let total: i32 = 0;
     while (index < len) {
-        if (T::eq(values[index], needle)) {
+        if (T::partial_eq(values[index], needle)) {
             total += 1;
         }
         index += 1;
@@ -257,10 +373,10 @@ pub fn count<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Eq<
 
 // Returns the first matching index or the caller's fallback.
 pub fn index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let index: i32 = 0;
     while (index < len) {
-        if (T::eq(values[index], needle)) {
+        if (T::partial_eq(values[index], needle)) {
             return index;
         }
         index += 1;
@@ -270,13 +386,13 @@ pub fn index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
 
 // Returns the last matching index or the caller's fallback.
 pub fn last_index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     if (len <= 0) {
         return fallback;
     }
     let index: i32 = len - 1;
     while (index >= 0) {
-        if (T::eq(values[index], needle)) {
+        if (T::partial_eq(values[index], needle)) {
             return index;
         }
         index -= 1;
@@ -286,7 +402,7 @@ pub fn last_index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i
 
 // Negative lengths count as empty. An empty prefix matches every view.
 pub fn starts_with<T>(values: [T], len: i32, prefix: [T], prefix_len: i32) -> bool
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let total: i32 = nonnegative_len(len);
     let prefix_total: i32 = nonnegative_len(prefix_len);
     if (prefix_total > total) {
@@ -294,7 +410,7 @@ pub fn starts_with<T>(values: [T], len: i32, prefix: [T], prefix_len: i32) -> bo
     }
     let index: i32 = 0;
     while (index < prefix_total) {
-        if (!T::eq(values[index], prefix[index])) {
+        if (!T::partial_eq(values[index], prefix[index])) {
             return false;
         }
         index += 1;
@@ -304,7 +420,7 @@ pub fn starts_with<T>(values: [T], len: i32, prefix: [T], prefix_len: i32) -> bo
 
 // Negative lengths count as empty. An empty suffix matches every view.
 pub fn ends_with<T>(values: [T], len: i32, suffix: [T], suffix_len: i32) -> bool
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let total: i32 = nonnegative_len(len);
     let suffix_total: i32 = nonnegative_len(suffix_len);
     if (suffix_total > total) {
@@ -313,7 +429,7 @@ pub fn ends_with<T>(values: [T], len: i32, suffix: [T], suffix_len: i32) -> bool
     let offset: i32 = total - suffix_total;
     let index: i32 = 0;
     while (index < suffix_total) {
-        if (!T::eq(values[offset + index], suffix[index])) {
+        if (!T::partial_eq(values[offset + index], suffix[index])) {
             return false;
         }
         index += 1;
@@ -323,7 +439,7 @@ pub fn ends_with<T>(values: [T], len: i32, suffix: [T], suffix_len: i32) -> bool
 
 // Negative lengths count as empty; equal-length views compare elementwise.
 pub fn equals<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> bool
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     if (nonnegative_len(left_len) != nonnegative_len(right_len)) {
         return false;
     }
@@ -331,10 +447,10 @@ pub fn equals<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> bool
 }
 
 fn matches_at<T>(values: [T], start: i32, needle: [T], needle_len: i32) -> bool
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let offset: i32 = 0;
     while (offset < needle_len) {
-        if (!T::eq(values[start + offset], needle[offset])) {
+        if (!T::partial_eq(values[start + offset], needle[offset])) {
             return false;
         }
         offset += 1;
@@ -345,7 +461,7 @@ fn matches_at<T>(values: [T], start: i32, needle: [T], needle_len: i32) -> bool
 // Returns the first start index of a contiguous needle, or -1 if absent.
 // Negative lengths count as empty; an empty needle matches at zero.
 pub fn index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32) -> i32
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let total: i32 = nonnegative_len(len);
     let needle_total: i32 = nonnegative_len(needle_len);
     let start: i32 = 0;
@@ -361,7 +477,7 @@ pub fn index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32)
 // The last match of an empty needle is at the end of the logical view.
 // Returns -1 when the needle is absent.
 pub fn last_index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32) -> i32
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let total: i32 = nonnegative_len(len);
     let needle_total: i32 = nonnegative_len(needle_len);
     let start: i32 = total - needle_total;
@@ -377,7 +493,7 @@ pub fn last_index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len:
 // Keep the first element of each adjacent run, preserving order. Returns the
 // new logical length; elements at or beyond it are unspecified. A nonpositive
 // len returns zero without writing.
-pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::Eq<T> {
+pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::PartialEq<T> {
     if (len <= 0) {
         return 0;
     }
@@ -385,7 +501,7 @@ pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::Eq<T>
     let read: i32 = 1;
     while (read < len) {
         let current: T = values[read];
-        if (!T::eq(current, values[write - 1])) {
+        if (!T::partial_eq(current, values[write - 1])) {
             values[write] = current;
             write += 1;
         }
@@ -398,12 +514,12 @@ pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::Eq<T>
 // order of retained values. Returns the new length; the tail is unspecified.
 // A nonpositive len returns zero without writing.
 pub fn retain_not_equal<T>(values: [T], len: i32, needle: T) -> i32
-    where T: core::cmp::Eq<T> {
+    where T: core::cmp::PartialEq<T> {
     let read: i32 = 0;
     let write: i32 = 0;
     while (read < len) {
         let current: T = values[read];
-        if (!T::eq(current, needle)) {
+        if (!T::partial_eq(current, needle)) {
             values[write] = current;
             write += 1;
         }
@@ -414,7 +530,7 @@ pub fn retain_not_equal<T>(values: [T], len: i32, needle: T) -> i32
 
 // Returns -1, 0, or 1 for lexicographic order. Negative lengths count as
 // empty; the first unequal element decides before the lengths are compared.
-// Two elements neither below nor above each other (NaN) count as equal.
+// Elements use a total order; native floats need core::float_order wrappers.
 pub fn compare_lexicographic<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> i32
     where T: core::cmp::Ord<T> {
     let left_total: i32 = nonnegative_len(left_len);
@@ -486,7 +602,7 @@ pub fn is_sorted<T>(values: [T], len: i32) -> bool where T: core::cmp::Ord<T> {
 
 fn sift_down<T>(values: [T], heap_len: i32, start: i32) where T: core::cmp::Ord<T> {
     let root: i32 = start;
-    while (root * 2 + 1 < heap_len) {
+    while (root < heap_len / 2) {
         let child: i32 = root * 2 + 1;
         let largest: i32 = root;
         if (T::lt(values[largest], values[child])) {

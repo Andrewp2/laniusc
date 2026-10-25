@@ -1,0 +1,42 @@
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::signal;
+fn main() -> i32 {
+ let zero: ext::signal::Complex = ext::signal::Complex { re: 0.0,im: 0.0 }; let values: [ext::signal::Complex;8] = [zero;8]; values[1].re = 1.0;
+ let policy: ext::signal::Limits = ext::signal::default_limits(); let input: core::slice::View<ext::signal::Complex> = core::slice::view_range(values,1,4).unwrap();
+ let output: alloc::vec::Vec<ext::signal::Complex> = ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap();
+ let i: i32 = 0; while (i < 4) { assert(output.at(i).re == 1.0 && output.at(i).im == 0.0); i += 1; }
+ let inverse: alloc::vec::Vec<ext::signal::Complex> = ext::signal::fft(output.as_view(),ext::signal::Direction::Inverse,policy).unwrap(); assert(inverse.at(0).re == 1.0 && inverse.at(1).re == 0.0); inverse.destroy(); output.destroy(); assert(values[1].re == 1.0 && values[2].re == 0.0);
+ let empty: core::slice::View<ext::signal::Complex> = core::slice::view(values,0).unwrap(); let e: alloc::vec::Vec<ext::signal::Complex> = ext::signal::fft(empty,ext::signal::Direction::Forward,policy).unwrap(); assert(e.len() == 0); e.destroy();
+ assert(match (ext::signal::fft(core::slice::view(values,3).unwrap(),ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::Size -> true, _ -> false });
+ policy.max_work = ext::signal::fft_work(4).unwrap()-1; assert(match (ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::WorkLimit -> true, _ -> false }); policy.max_work += 1;
+ let exact: alloc::vec::Vec<ext::signal::Complex> = ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap(); exact.destroy();
+ policy.max_output_bytes = 63; assert(match (ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::OutputLimit -> true, _ -> false }); policy.max_output_bytes = 64;
+ policy.max_len = 3; assert(match (ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::LengthLimit -> true, _ -> false }); policy = ext::signal::default_limits();
+ policy.max_len = -1; assert(match (ext::signal::fft(empty,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::InvalidLimits -> true, _ -> false }); policy.max_len = ext::signal::MAX_LENGTH+1;
+ assert(match (ext::signal::next_size(0,policy).unwrap_err()) { ext::signal::Error::InvalidLimits -> true, _ -> false }); policy = ext::signal::default_limits(); policy.max_output_bytes = -1;
+ assert(match (ext::signal::fft(empty,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::InvalidLimits -> true, _ -> false }); policy = ext::signal::default_limits(); policy.max_len = 5;
+ assert(match (ext::signal::next_size(5,policy).unwrap_err()) { ext::signal::Error::LengthLimit -> true, _ -> false }); policy = ext::signal::default_limits();
+ let bad: core::slice::View<ext::signal::Complex> = input; bad.start = 2147483647; assert(match (ext::signal::fft(bad,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::Bounds -> true, _ -> false });
+ values[4].re = core::f64::nan(); assert(match (ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::NonFinite -> true, _ -> false }); values[4].re = 0.0;
+ values[1].re = core::f64::MAX; values[2].re = core::f64::MAX; assert(match (ext::signal::fft(input,ext::signal::Direction::Forward,policy).unwrap_err()) { ext::signal::Error::NumericalFailure -> true, _ -> false }); assert(values[1].re == core::f64::MAX && values[2].re == core::f64::MAX);
+ let x: ext::signal::Complex = ext::signal::complex(3.0,4.0).unwrap(); let y: ext::signal::Complex = ext::signal::complex(-2.0,1.0).unwrap();
+ let z: ext::signal::Complex = ext::signal::add(x,y).unwrap(); assert(z.re == 1.0 && z.im == 5.0); z = ext::signal::sub(x,y).unwrap(); assert(z.re == 5.0 && z.im == 3.0);
+ z = ext::signal::mul(x,y).unwrap(); assert(z.re == -10.0 && z.im == -5.0); z = ext::signal::scale(x,1.5).unwrap(); assert(z.re == 4.5 && z.im == 6.0); z = ext::signal::conjugate(x).unwrap(); assert(z.re == 3.0 && z.im == -4.0); assert(ext::signal::power(x).unwrap() == 25.0);
+ assert(ext::signal::magnitude(ext::signal::Complex { re: 3e300,im: 4e300 }).unwrap() == 5e300); assert(ext::signal::power(ext::signal::Complex { re: 1e300,im: 0.0 }).is_err());
+ // Each separately rounded square vanishes; the combined power is minsub.
+ let component: f64 = 1.3336552496910464e-162; let minimum: f64 = core::f64::from_bits(1);
+ assert(component*component == 0.0); assert(ext::signal::power(ext::signal::Complex { re: component,im: component }).unwrap() == minimum);
+ assert(ext::signal::magnitude(ext::signal::Complex { re: 3.0*minimum,im: 4.0*minimum }).unwrap() == 5.0*minimum);
+ assert(ext::signal::mul(ext::signal::Complex { re: core::f64::MAX,im: 1.0 },ext::signal::Complex { re: 2.0,im: 0.0 }).is_err()); assert(ext::signal::complex(core::f64::infinity(),0.0).is_err());
+ assert(ext::signal::window_value(ext::signal::Window::Hann,false,0,1).unwrap() == 1.0); assert(ext::signal::window_value(ext::signal::Window::Hann,false,0,4).unwrap() == 0.0); assert(ext::signal::window_value(ext::signal::Window::Hann,false,3,4).unwrap() == 0.0);
+ let a: [f64;3] = [1e16,1.0,-1e16]; let b: [f64;3] = [1.0;3]; let av: core::slice::View<f64> = core::slice::view(a,3).unwrap(); let bv: core::slice::View<f64> = core::slice::view(b,3).unwrap();
+ let convolution: alloc::vec::Vec<f64> = ext::signal::convolve(av,bv,policy).unwrap(); assert(convolution.at(2) == 1.0); convolution.destroy();
+ a[2] = core::f64::MAX; b[2] = 2.0; assert(ext::signal::convolve(av,bv,policy).is_err()); assert(a[0] == 1e16 && b[2] == 2.0);
+ policy.max_work = ext::signal::convolve_work(3,3).unwrap()-1; assert(match (ext::signal::convolve(av,bv,policy).unwrap_err()) { ext::signal::Error::WorkLimit -> true, _ -> false });
+ a[2] = -1e16; b[2] = 1.0; policy.max_work += 1; let c: alloc::vec::Vec<f64> = ext::signal::convolve(av,bv,policy).unwrap(); assert(c.at(2) == 1.0); c.destroy();
+ return 0;
+}

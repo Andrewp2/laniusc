@@ -566,9 +566,14 @@ void validate_dependency_result(
             else if (ct_is_record(environment))
             {
                 uint3 words = ct_words(environment);
+                // Receiving types can infer unbound slots, but cannot replace
+                // explicit, receiver or trait-bound facts already accepted for
+                // this call. Argument claims alone do not cover a bound member
+                // such as Iterator<i64>::next(), which has no value arguments.
+                uint flags = CT_PUBLISH_ADMIT | CT_PUBLISH_TYPE_PRIORS |
+                    (step == 0u ? 0u : CT_PUBLISH_CLAIMS);
                 outcome = ct_publish_context<ResultClaims>(call_node, callee_token, environment,
-                    words.y, words.z, count_mask, step == 0u ? CT_PUBLISH_ADMIT : CT_PUBLISH_ADMIT | CT_PUBLISH_CLAIMS,
-                    interned, operand);
+                    words.y, words.z, count_mask, flags, interned, operand);
                 if (outcome == CT_PUBLISH_INTERN) continue;
                 if (outcome == CT_PUBLISHED) publish_result_owner(call_node, callee_token);
             }

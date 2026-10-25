@@ -1,0 +1,127 @@
+// Unicode 17.0.0 UAX #14 revision 55 default line break opportunities.
+// Line fitting, glyph widths, hyphen insertion and shaping are separate.
+module ext::unicode_lines;
+import core::option;
+import core::result;
+import core::text;
+import core::utf8;
+import ext::unicode_lines_data;
+
+pub enum Kind { Allowed, Mandatory }
+pub struct Opportunity { offset: i32, kind: Kind }
+pub struct Limits { max_bytes: i32, max_scalars: i32, max_work: u64 }
+pub enum Error { Bounds, InvalidLimits, ByteLimit, ScalarLimit, WorkLimit, InvalidUtf8(i32) }
+pub const MAX_BYTES: i32 = 67108864;
+pub fn default_limits() -> Limits { return Limits { max_bytes: 4194304, max_scalars: 1048576, max_work: 134217729 }; }
+pub fn work(bytes: i32) -> core::result::Result<u64,Error> { if (bytes < 0 || bytes > MAX_BYTES) { return core::result::Err(Error::Bounds); } return core::result::Ok((bytes as u64)*32+1); }
+// Implementation state. Construct with cursor(); copying forks the position.
+// Never modify fields or mutate/expire the physically backed borrowed Text.
+pub struct Cursor { text: core::text::Text, position: i32, raw: u32, previous: u32, before: u32, nonspace: u32, initial_quote: bool, numeric: bool, before_numeric: bool, ri_odd: bool, ended: bool }
+const AL: u32 = 1; const BK: u32 = 2; const CR: u32 = 3; const LF: u32 = 4; const NL: u32 = 5; const SP: u32 = 6; const ZW: u32 = 7; const ZWJ: u32 = 8; const CM: u32 = 9; const WJ: u32 = 10; const GL: u32 = 11; const BA: u32 = 12; const HY: u32 = 13; const HH: u32 = 14; const CL: u32 = 15; const CP: u32 = 16; const EX: u32 = 17; const SY: u32 = 18; const OP: u32 = 19; const QU: u32 = 20; const IS: u32 = 21; const NS: u32 = 22; const B2: u32 = 23; const CB: u32 = 24; const BB: u32 = 25; const HL: u32 = 26; const IN: u32 = 27; const NU: u32 = 28; const PR: u32 = 29; const PO: u32 = 30; const ID: u32 = 31; const EB: u32 = 32; const EM: u32 = 33; const JL: u32 = 34; const JV: u32 = 35; const JT: u32 = 36; const H2: u32 = 37; const H3: u32 = 38; const AP: u32 = 39; const AK: u32 = 40; const AS: u32 = 41; const VF: u32 = 42; const VI: u32 = 43;
+fn hard(value: u32) -> bool { return value >= BK && value <= NL; }
+fn excluded(value: u32) -> bool { return value == 0 || hard(value) || value == SP || value == ZW; }
+fn mark(value: u32) -> bool { return value == CM || value == ZWJ; }
+fn letter(value: u32) -> bool { return value == AL || value == HL; }
+fn hangul(value: u32) -> bool { return value >= JL && value <= H3; }
+fn aksara(flags: u32) -> bool { return (flags & 63) == AK || (flags & 63) == AS || (flags & 1024) != 0; }
+fn east(flags: u32) -> bool { return (flags & 64) != 0; }
+fn quote_context(value: u32) -> bool { return excluded(value) || value == OP || value == QU || value == GL; }
+pub fn cursor(text: core::text::Text, limits: Limits) -> core::result::Result<Cursor,Error> {
+    if (limits.max_bytes < 0 || limits.max_bytes > MAX_BYTES || limits.max_scalars < 0 || limits.max_scalars > MAX_BYTES) { return core::result::Err(Error::InvalidLimits); }
+    if (text.start < 0 || text.length < 0 || text.length > 2147483647-text.start) { return core::result::Err(Error::Bounds); }
+    if (text.length > limits.max_bytes) { return core::result::Err(Error::ByteLimit); } if (work(text.length).unwrap() > limits.max_work) { return core::result::Err(Error::WorkLimit); }
+    let checked: core::result::Result<core::text::Text,core::text::Error> = core::text::from_utf8_range(text.bytes,text.start,text.length);
+    if (checked.is_err()) { return core::result::Err(match (checked.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> Error::InvalidUtf8(at), _ -> Error::Bounds }); }
+    let position: i32 = 0; let count: i32 = 0;
+    while (position < text.length) { if (count == limits.max_scalars) { return core::result::Err(Error::ScalarLimit); } let scalar: u32 = core::option::unwrap(text.scalar_at_byte(position)); position += core::utf8::encoded_len_or(scalar,0) as i32; count += 1; }
+    return core::result::Ok(Cursor { text: text, position: 0, raw: 0, previous: 0, before: 0, nonspace: 0, initial_quote: false, numeric: false, before_numeric: false, ri_odd: false, ended: false });
+}
+pub impl Cursor {
+    pub fn borrow(&self) -> &Cursor { return self; }
+    // Called only after a non-excluded base. At most three significant tokens
+    // ahead are requested; each intervening mark run can be visited by at most
+    // three preceding significant bases, independent of mark-run length.
+    fn following(&self, at: i32, ordinal: i32) -> u32 {
+        let position: i32 = at; let left: i32 = ordinal;
+        while (position < self.text.length) { let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(position)); let flags: u32 = ext::unicode_lines_data::flags(scalar); position += core::utf8::encoded_len_or(scalar,0) as i32;
+            if (!mark(flags & 63)) { left -= 1; if (left == 0) { return flags; } }
+        } return 0;
+    }
+    // 0=no break, 1=allowed, 2=mandatory. Rule order is normative.
+    fn decision(&self, flags: u32, after: i32) -> i32 {
+        let raw: u32 = flags & 63; let a: u32 = self.previous & 63; let b: u32 = raw; let prior: u32 = self.before & 63; let anchor: u32 = self.nonspace & 63;
+        if (self.raw == BK) { return 2; } // LB4
+        if (self.raw == CR && raw == LF) { return 0; } if (hard(self.raw)) { return 2; } // LB5
+        if (hard(raw)) { return 0; } // LB6
+        if (raw == SP || raw == ZW) { return 0; } // LB7
+        if (anchor == ZW) { return 1; } // LB8: retained SP* context
+        if (self.raw == ZWJ) { return 0; } // LB8a
+        if (mark(raw) && !excluded(a)) { return 0; } // LB9
+        if (mark(raw)) { flags = AL; b = AL; } // LB10, including auxiliary properties
+        if (a == WJ || b == WJ) { return 0; } // LB11
+        if (a == GL) { return 0; } // LB12
+        if (b == GL && a != SP && a != BA && a != HY && a != HH) { return 0; } // LB12a
+        if (b == CL || b == CP || b == EX || b == SY) { return 0; } // LB13
+        if (anchor == OP) { return 0; } // LB14
+        if (anchor == QU && self.initial_quote) { return 0; } // LB15a
+        if (b == QU && (flags & 256) != 0) { let next: u32 = self.following(after,1) & 63; if (next == 0 || next == SP || next == GL || next == WJ || next == CL || next == QU || next == CP || next == EX || next == IS || next == SY || hard(next) || next == ZW) { return 0; } } // LB15b
+        if (a == SP && b == IS && (self.following(after,1) & 63) == NU) { return 1; } // LB15c
+        if (b == IS) { return 0; } // LB15d
+        if ((anchor == CL || anchor == CP) && b == NS) { return 0; } // LB16
+        if (anchor == B2 && b == B2) { return 0; } // LB17
+        if (a == SP) { return 1; } // LB18
+        if ((b == QU && (flags & 128) == 0) || (a == QU && (self.previous & 256) == 0)) { return 0; } // LB19
+        if (b == QU && (!east(self.previous) || !east(self.following(after,1)))) { return 0; }
+        if (a == QU && (!east(flags) || !east(self.before))) { return 0; } // LB19a
+        if (a == CB || b == CB) { return 1; } // LB20
+        if ((a == HY || a == HH) && letter(b) && (excluded(prior) || prior == CB || prior == GL)) { return 0; } // LB20a
+        if (b == BA || b == HH || b == HY || b == NS || a == BB) { return 0; } // LB21
+        if (prior == HL && (a == HY || a == HH) && b != HL) { return 0; } // LB21a
+        if (a == SY && b == HL) { return 0; } // LB21b
+        if (b == IN) { return 0; } // LB22
+        if ((letter(a) && b == NU) || (a == NU && letter(b))) { return 0; } // LB23
+        if ((a == PR && (b == ID || b == EB || b == EM)) || ((a == ID || a == EB || a == EM) && b == PO)) { return 0; } // LB23a
+        if (((a == PR || a == PO) && letter(b)) || (letter(a) && (b == PR || b == PO))) { return 0; } // LB24
+        if ((b == PO || b == PR) && (self.numeric || ((a == CL || a == CP) && self.before_numeric))) { return 0; }
+        if (a == PO || a == PR) { if (b == NU) { return 0; } if (b == OP) { let next: u32 = self.following(after,1) & 63; if (next == NU || (next == IS && (self.following(after,2) & 63) == NU)) { return 0; } } }
+        if (b == NU && (a == HY || a == IS || self.numeric)) { return 0; } // LB25
+        if (a == JL && (b == JL || b == JV || b == H2 || b == H3)) { return 0; }
+        if ((a == JV || a == H2) && (b == JV || b == JT)) { return 0; } if ((a == JT || a == H3) && b == JT) { return 0; } // LB26
+        if ((hangul(a) && b == PO) || (a == PR && hangul(b))) { return 0; } // LB27
+        if (letter(a) && letter(b)) { return 0; } // LB28
+        if ((a == AP && aksara(flags)) || (aksara(self.previous) && (b == VF || b == VI))) { return 0; }
+        if (aksara(self.before) && a == VI && (b == AK || (flags & 1024) != 0)) { return 0; }
+        if (aksara(self.previous) && aksara(flags) && (self.following(after,1) & 63) == VF) { return 0; } // LB28a
+        if (a == IS && letter(b)) { return 0; } // LB29
+        if (((letter(a) || a == NU) && b == OP && !east(flags)) || (a == CP && !east(self.previous) && (letter(b) || b == NU))) { return 0; } // LB30
+        if (a == RI && b == RI && self.ri_odd) { return 0; } // LB30a
+        if ((a == EB || (self.previous & 512) != 0) && b == EM) { return 0; } // LB30b
+        return 1; // LB31
+    }
+    fn consume(&self, flags: u32, after: i32) {
+        let raw: u32 = flags & 63; let a: u32 = self.previous & 63;
+        if (!mark(raw) || excluded(a)) {
+            if (mark(raw)) { flags = AL; } let current: u32 = flags & 63;
+            self.before_numeric = self.numeric; self.numeric = current == NU || ((current == IS || current == SY) && self.numeric);
+            if (current == RI) { if (a == RI) { self.ri_odd = !self.ri_odd; } else { self.ri_odd = true; } } else { self.ri_odd = false; }
+            if (current != SP) { self.initial_quote = current == QU && (flags & 128) != 0 && quote_context(a); self.nonspace = flags; }
+            self.before = self.previous; self.previous = flags;
+        }
+        self.raw = raw; self.position = after;
+    }
+    pub fn next(&self) -> core::option::Option<Opportunity> {
+        if (self.ended) { return core::option::None(); }
+        while (self.position < self.text.length) {
+            let offset: i32 = self.position; let scalar: u32 = core::option::unwrap(self.text.scalar_at_byte(offset)); let flags: u32 = ext::unicode_lines_data::flags(scalar); let after: i32 = offset+core::utf8::encoded_len_or(scalar,0) as i32;
+            let decision: i32 = 0; if (offset != 0) { decision = self.decision(flags,after); } self.consume(flags,after);
+            if (decision != 0) { let kind: Kind = Kind::Allowed; if (decision == 2) { kind = Kind::Mandatory; } return core::option::Some(Opportunity { offset: offset, kind: kind }); }
+        }
+        self.ended = true; return core::option::Some(Opportunity { offset: self.text.length, kind: Kind::Mandatory }); // LB3, also empty text
+    }
+}
+const RI: u32 = 44;
+// At most one complete scan; an interior UTF-8 byte is not an opportunity.
+pub fn opportunity_at(text: core::text::Text, offset: i32, limits: Limits) -> core::result::Result<core::option::Option<Kind>,Error> {
+    if (offset < 0 || offset > text.length) { return core::result::Err(Error::Bounds); } let made: core::result::Result<Cursor,Error> = cursor(text,limits); if (made.is_err()) { return core::result::Err(made.unwrap_err()); } let scan: Cursor = made.unwrap();
+    while (true) { let next: core::option::Option<Opportunity> = scan.next(); if (core::option::is_none(next)) { return core::result::Ok(core::option::None()); } let point: Opportunity = core::option::unwrap(next); if (point.offset == offset) { return core::result::Ok(core::option::Some(point.kind)); } if (point.offset > offset) { return core::result::Ok(core::option::None()); } } return core::result::Ok(core::option::None());
+}

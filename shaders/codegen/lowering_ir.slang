@@ -540,7 +540,10 @@ static const uint HOST_SERVICE_ALLOC_FAILED = 62u;
 // IR_OPCODE
 static const uint HOST_SERVICE_FIRST = 20u;
 // IR_OPCODE
-static const uint HOST_SERVICE_END = 63u;
+static const uint HOST_SERVICE_END = 75u;
+// Slots 63..73 remain language names/types/intrinsics, not host services.
+// IR_OPCODE
+static const uint HOST_SERVICE_LINUX_SYSCALL6 = 74u;
 
 // Semantic rows are never silently discarded merely because a target does
 // not implement them yet.  The lowering diagnostic reduction treats this as

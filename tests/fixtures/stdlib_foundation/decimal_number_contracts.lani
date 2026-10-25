@@ -1,0 +1,31 @@
+module app::main;
+import core::decimal_number;
+import core::mem;
+import core::result;
+import core::slice;
+fn number(value: str, count: i32) -> core::decimal_number::Decimal {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::decimal_number::parse(core::result::unwrap(core::slice::view(raw,count))));
+}
+fn main() -> i32 {
+    let zero: core::decimal_number::Decimal = number("-0.000e999999999999999999999999999999999",40);
+    assert(zero.is_zero() && zero.is_negative() && zero.is_integer());
+    assert(zero.equal(number("0",1)) && zero.compare(number("-1",2)) == 1);
+    let a: core::decimal_number::Decimal = number("9007199254740993",16);
+    let b: core::decimal_number::Decimal = number("9007199254740992",16);
+    assert(a.compare(b) == 1 && !a.equal(b));
+    assert(number("1.20",4).equal(number("12e-1",5)));
+    assert(number("1.01",4).compare(number("1.1",3)) == -1);
+    assert(number("-10",3).compare(number("-2",2)) == -1);
+    assert(number("1200e-2",7).is_integer() && !number("1200e-3",7).is_integer());
+    assert(number("1e1000000000000000000",21).compare(number("10e999999999999999999",21)) == 0);
+    assert(number("1e-1000000000000000000",22).compare(number("0.1e-999999999999999999",23)) == 0);
+    let storage: [u8;32] = [77;32];
+    let scratch: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(storage,1,30));
+    assert(core::result::unwrap(core::decimal_number::is_multiple_of(number("0.3",3),number("0.1",3),scratch,100000)));
+    assert(!core::result::unwrap(core::decimal_number::is_multiple_of(number("0.3",3),number("0.2",3),scratch,100000)));
+    assert(core::result::unwrap(core::decimal_number::is_multiple_of(number("1e99999999999999999999999",25),number("128",3),scratch,100000)));
+    assert(!core::result::unwrap(core::decimal_number::is_multiple_of(number("1e99999999999999999999999",25),number("3",1),scratch,100000)));
+    assert(storage[0] == 77 && storage[31] == 77);
+    return 0;
+}

@@ -1,0 +1,62 @@
+module app::main;
+import alloc::tree_map;
+import core::option;
+import core::result;
+import core::slice;
+fn allocation(error: alloc::tree_map::Error) -> bool {
+    let yes: bool = match (error) { alloc::tree_map::Error::AllocationFailed -> true, _ -> false }; return yes;
+}
+fn main() -> i32 {
+    let operation: i32 = 0;
+    while (operation < 6) {
+        let map: alloc::tree_map::TreeMap<i32, i32> = alloc::tree_map::new();
+        let reserved: core::result::Result<i32, alloc::tree_map::Error> = map.try_reserve(8);
+        if (core::result::is_err(reserved)) { assert(allocation(core::result::unwrap_err(reserved))); map.destroy(); return 0; }
+        let index: i32 = 0;
+        while (index < 8) { core::result::unwrap(map.try_insert(index, index * 11)); index += 1; }
+        map.remove(2); map.remove(5);
+        if (operation == 0) { core::result::unwrap(map.try_insert(8, 88)); core::result::unwrap(map.try_insert(9, 99)); }
+        let keys: [i32; 16] = [0; 16]; let vals: [i32; 16] = [0; 16];
+        let capture: alloc::tree_map::Cursor<i32, i32> = map.iter(); index = 0;
+        while (!capture.is_empty()) { let entry: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(capture.next()); keys[index] = entry.key; vals[index] = entry.value; index += 1; }
+        let before: alloc::tree_map::Cursor<i32, i32> = map.iter(); let reverse: alloc::tree_map::Cursor<i32, i32> = map.iter();
+        let length: i32 = map.len(); let capacity: i32 = map.capacity();
+        let result: core::result::Result<i32, alloc::tree_map::Error> = core::result::Ok(0);
+        if (operation == 0) {
+            let added: core::result::Result<core::option::Option<alloc::tree_map::Entry<i32, i32>>, alloc::tree_map::Error> = map.try_insert(10, 110);
+            if (core::result::is_err(added)) { result = core::result::Err(core::result::unwrap_err(added)); } else { assert(core::option::is_none(core::result::unwrap(added))); }
+        }
+        if (operation == 1) { result = map.try_reserve(32); }
+        if (operation == 3) { result = map.try_shrink_to_fit(); }
+        if (operation == 2 || operation == 4 || operation == 5) {
+            let built: core::result::Result<alloc::tree_map::TreeMap<i32, i32>, alloc::tree_map::Error> = core::result::Err(alloc::tree_map::Error::AllocationFailed);
+            if (operation == 2) { built = map.try_clone(); }
+            if (operation == 4) {
+                let a: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: 0, value: 7 };
+                let b: alloc::tree_map::Entry<i32, i32> = alloc::tree_map::Entry { key: 1, value: 8 };
+                let entries: [alloc::tree_map::Entry<i32, i32>; 2] = [a, b];
+                let view: core::slice::View<alloc::tree_map::Entry<i32, i32>> = core::result::unwrap(core::slice::view(entries, 2)); built = alloc::tree_map::from_sorted(view);
+            }
+            if (operation == 5) { built = alloc::tree_map::with_capacity(32); }
+            if (core::result::is_err(built)) { result = core::result::Err(core::result::unwrap_err(built)); }
+            else {
+                let copy: alloc::tree_map::TreeMap<i32, i32> = core::result::unwrap(built);
+                if (operation == 2) { assert(copy.len() == length); core::result::unwrap(copy.try_insert(0, 42)); assert(core::option::unwrap(map.get(0)) == 0); }
+                copy.destroy();
+            }
+        }
+        if (core::result::is_err(result)) {
+            assert(allocation(core::result::unwrap_err(result)) && map.len() == length && map.capacity() == capacity);
+            index = 0;
+            while (index < length) {
+                let forward: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(before.next());
+                let backward: alloc::tree_map::Entry<i32, i32> = core::option::unwrap(reverse.next_back());
+                assert(forward.key == keys[index] && forward.value == vals[index] && core::option::unwrap(map.get(keys[index])) == vals[index]);
+                assert(backward.key == keys[length - index - 1] && backward.value == vals[length - index - 1]); index += 1;
+            }
+            assert(before.is_empty() && reverse.is_empty());
+        }
+        map.destroy(); operation += 1;
+    }
+    return 0;
+}

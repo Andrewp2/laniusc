@@ -1,0 +1,205 @@
+// Stream byte words into one reusable buffer and retain distinct keys in an
+// arena. Emit count<TAB>word<LF> in unsigned byte order after input validation.
+// Exit 2: arguments/limits, 3: I/O, 4: allocation; stderr carries a diagnostic.
+module app::main;
+import alloc::arena;
+import alloc::tree_map;
+import alloc::vec;
+import core::cmp;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::cli;
+import std::args;
+import std::stream;
+
+struct Key { bytes: core::slice::View<u8> }
+fn compare(left: Key, right: Key) -> i32 {
+    let index: i32 = 0; let count: i32 = left.bytes.len();
+    if (right.bytes.len() < count) { count = right.bytes.len(); }
+    while (index < count) {
+        let a: u8 = left.bytes.values[left.bytes.start+index];
+        let b: u8 = right.bytes.values[right.bytes.start+index];
+        if (a < b) { return -1; } if (a > b) { return 1; } index += 1;
+    }
+    if (left.bytes.len() < right.bytes.len()) { return -1; }
+    if (left.bytes.len() > right.bytes.len()) { return 1; } return 0;
+}
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return compare(left,right) == 0; }
+    pub fn ne(left: Key, right: Key) -> bool { return compare(left,right) != 0; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left: Key, right: Key) -> bool { return compare(left,right) < 0; }
+    pub fn le(left: Key, right: Key) -> bool { return compare(left,right) <= 0; }
+    pub fn gt(left: Key, right: Key) -> bool { return compare(left,right) > 0; }
+    pub fn ge(left: Key, right: Key) -> bool { return compare(left,right) >= 0; }
+}
+struct Options { maximum_input: i32, maximum_word: i32, maximum_unique: i32, arena_bytes: i32, maximum_output: i32, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Output { bytes: [u8], length: i32 }
+impl Output { fn borrow(&self) -> &Output { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn option(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 6) { options.help = true; return true; }
+    let argument: ext::cli::Argument = core::option::unwrap(item.value); let bytes: core::slice::View<u8> = argument.bytes;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let value: u64 = core::result::unwrap(parsed);
+    if (value > 1073741824 as u64) { return false; }
+    if (item.id == 1) { options.maximum_input = value as i32; }
+    if (item.id == 2) { if (value > 1048576 as u64) { return false; } options.maximum_word = value as i32; }
+    if (item.id == 3) { if (value > 1000000 as u64) { return false; } options.maximum_unique = value as i32; }
+    if (item.id == 4) { options.arena_bytes = value as i32; }
+    if (item.id == 5) { options.maximum_output = value as i32; } return true;
+}
+fn arena_error(error: alloc::arena::Error) -> i32 {
+    let status: i32 = match (error) { alloc::arena::Error::AllocationFailed -> 4, _ -> 2 }; return status;
+}
+fn remember(map: &alloc::tree_map::TreeMap<Key,u64>, arena: &alloc::arena::Arena, word: &alloc::vec::Vec<u8>, maximum: i32) -> i32 {
+    if (word.is_empty()) { return 0; }
+    let key: Key = Key { bytes: word.as_view() };
+    let found: core::option::Option<alloc::tree_map::Entry<Key,u64>> = map.get_entry(key);
+    let count: u64 = 1;
+    if (core::option::is_some(found)) {
+        let old: alloc::tree_map::Entry<Key,u64> = core::option::unwrap(found);
+        let greatest: u64 = 18446744073709551615;
+        if (old.value == greatest) { return 2; }
+        count = old.value+1; key = old.key;
+    } else {
+        if (map.len() == maximum) { return 2; }
+        let copied: core::result::Result<core::slice::View<u8>,alloc::arena::Error> = alloc::arena::copy_slice<u8>(arena,word.as_view());
+        if (core::result::is_err(copied)) { return arena_error(core::result::unwrap_err(copied)); }
+        key = Key { bytes: core::result::unwrap(copied) };
+    }
+    let inserted: core::result::Result<core::option::Option<alloc::tree_map::Entry<Key,u64>>,alloc::tree_map::Error> = map.try_insert(key,count);
+    if (core::result::is_err(inserted)) {
+        let status: i32 = match (core::result::unwrap_err(inserted)) { alloc::tree_map::Error::AllocationFailed -> 4, _ -> 2 }; return status;
+    }
+    word.clear(); return 0;
+}
+fn read_words(map: &alloc::tree_map::TreeMap<Key,u64>, arena: &alloc::arena::Arena, word: &alloc::vec::Vec<u8>, options: Options) -> i32 {
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let storage: [i32;256] = [0;256]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+    let total: i32 = 0;
+    while (true) {
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
+        if (core::result::is_err(received)) {
+            let error: core::io::Error = core::result::unwrap_err(received); if (core::io::is_interrupted(error)) { continue; } return 3;
+        }
+        let count: i32 = core::result::unwrap(received);
+        if (count == 0) { return remember(map,arena,word,options.maximum_unique); }
+        if (count > options.maximum_input-total) { return 2; } total += count;
+        let index: i32 = 0;
+        while (index < count) {
+            let byte: u8 = bytes[index];
+            if (byte == 32 || (byte >= 9 && byte <= 13)) {
+                let status: i32 = remember(map,arena,word,options.maximum_unique); if (status != 0) { return status; }
+            } else {
+                if (word.len() == options.maximum_word) { return 2; }
+                if (core::result::is_err(word.try_push(byte))) { return 4; }
+            }
+            index += 1;
+        }
+    }
+    return 0;
+}
+fn flush(output: &Output) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::result::is_err(core::io::write_all(sink.borrow(),output.bytes,0,output.length))) { return 3; }
+    output.length = 0; return 0;
+}
+fn append_byte(output: &Output, byte: u8) -> i32 {
+    if (output.length == 4096) { let status: i32 = flush(output); if (status != 0) { return status; } }
+    output.bytes[output.length] = byte; output.length += 1; return 0;
+}
+fn append(output: &Output, view: core::slice::View<u8>) -> i32 {
+    let index: i32 = 0;
+    while (index < view.len()) {
+        let status: i32 = append_byte(output,view.values[view.start+index]); if (status != 0) { return status; } index += 1;
+    }
+    return 0;
+}
+fn emit(map: &alloc::tree_map::TreeMap<Key,u64>, maximum: i32) -> i32 {
+    let scan: alloc::tree_map::Cursor<Key,u64> = map.iter(); let length: i32 = 0;
+    while (true) {
+        let next: core::option::Option<alloc::tree_map::Entry<Key,u64>> = scan.next(); if (core::option::is_none(next)) { break; }
+        let item: alloc::tree_map::Entry<Key,u64> = core::option::unwrap(next);
+        let digits: i32 = core::decimal::len_u64(item.value) as i32;
+        let row: i32 = digits+item.key.bytes.len()+2;
+        if (row > maximum-length) { return 2; } length += row;
+    }
+    let storage: [i32;1024] = [0;1024]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4096);
+    let output: Output = Output { bytes: bytes, length: 0 };
+    let number_storage: [u8;20] = [0;20];
+    let cursor: alloc::tree_map::Cursor<Key,u64> = map.iter();
+    while (true) {
+        let next: core::option::Option<alloc::tree_map::Entry<Key,u64>> = cursor.next(); if (core::option::is_none(next)) { break; }
+        let item: alloc::tree_map::Entry<Key,u64> = core::option::unwrap(next);
+        let count: i32 = core::result::unwrap(core::decimal::format_u64(number_storage,0,20,item.value));
+        let number: core::slice::View<u8> = core::result::unwrap(core::slice::view(number_storage,count));
+        let status: i32 = append(output.borrow(),number); if (status != 0) { return status; }
+        status = append_byte(output.borrow(),9); if (status != 0) { return status; }
+        status = append(output.borrow(),item.key.bytes); if (status != 0) { return status; }
+        status = append_byte(output.borrow(),10); if (status != 0) { return status; }
+    }
+    return flush(output.borrow());
+}
+fn count(options: Options) -> i32 {
+    let config: alloc::arena::Config = alloc::arena::Config { chunk_size: 4096, max_retained: options.arena_bytes as usize, max_chunks: 262144 };
+    let created: core::result::Result<alloc::arena::Arena,alloc::arena::Error> = alloc::arena::new(config);
+    if (core::result::is_err(created)) { return arena_error(core::result::unwrap_err(created)); }
+    let arena: alloc::arena::Arena = core::result::unwrap(created);
+    let map: alloc::tree_map::TreeMap<Key,u64> = alloc::tree_map::new<Key,u64>();
+    let word: alloc::vec::Vec<u8> = alloc::vec::new<u8>();
+    let status: i32 = read_words(map.borrow(),arena.borrow(),word.borrow(),options);
+    if (status == 0) { status = emit(map.borrow(),options.maximum_output); }
+    word.destroy(); map.destroy(); arena.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;6] = [
+        ext::cli::Spec { id: 1, long: literal("max-input-bytes",15), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("max-word-bytes",14), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-unique",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("arena-bytes",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-output-bytes",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,6));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { maximum_input: 16777216, maximum_word: 65536, maximum_unique: 100000, arena_bytes: 67108864, maximum_output: 33554432, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next();
+        if (core::result::is_err(event)) { return 2; } let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event);
+        if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item), ext::cli::Event::Operand(item) -> false };
+        if (!valid) { return 2; }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: arena-words [--max-input-bytes N] [--max-word-bytes N] [--max-unique N] [--arena-bytes N] [--max-output-bytes N]\n",120);
+        let sink: std::stream::Descriptor = std::stream::stdout();
+        if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return 3; } return 0;
+    }
+    return count(options);
+}
+fn diagnostic(status: i32) {
+    let message: core::slice::View<u8> = literal("arena-words: invalid arguments or resource limit exceeded\n",58);
+    if (status == 3) { message = literal("arena-words: I/O failed\n",24); }
+    if (status == 4) { message = literal("arena-words: allocation failed\n",31); }
+    let sink: std::stream::Descriptor = std::stream::stderr(); core::io::write_all(sink.borrow(),message.values,message.start,message.len());
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    let status: i32 = 0;
+    if (core::result::is_err(captured)) {
+        status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+    } else {
+        let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments); arguments.destroy();
+    }
+    if (status != 0) { diagnostic(status); } return status;
+}

@@ -1,0 +1,441 @@
+// Owned IPv4/IPv6 Linux sockets. Copies alias one descriptor; close once or
+// transfer it explicitly. See docs/stdlib-sockets.md for lifetime and I/O rules.
+module std::socket;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import std::clock;
+import std::fs;
+import std::linux;
+
+pub enum Family { Ipv4, Ipv6 }
+pub enum Kind { Tcp, Udp }
+pub enum Connection { Connected, InProgress }
+pub enum Shutdown { Read, Write, Both }
+pub enum Setting { ReuseAddress, KeepAlive, NoDelay, ReceiveBuffer, SendBuffer, Ipv6Only }
+pub struct Socket { handle: i32, domain: i32, datagram: bool }
+pub struct Accepted { socket: Socket, peer: core::net::SocketAddr }
+// Peer decoding can fail after accept allocated an owner. Its one cleanup
+// attempt is separate from the original error and never returns that owner.
+pub struct AcceptFailure { cause: core::io::Error, cleanup_attempted: bool, cleanup_error: core::option::Option<core::io::Error> }
+pub struct Datagram { peer: core::net::SocketAddr, copied: i32, full_length: i32 }
+pub struct Ready { readable: bool, writable: bool, hangup: bool, error: bool, timed_out: bool }
+pub const MAX_DATAGRAM: i32 = 65507;
+
+fn word(value: i64) -> std::linux::Argument { return std::linux::Argument::Word(value); }
+fn address(value: ptr) -> std::linux::Argument { return std::linux::Argument::Address(value); }
+fn null() -> ptr { let value: ptr = 0; return value; }
+fn host_error(code: i32) -> core::io::Error {
+    if (code == 4) { return core::io::Error::Interrupted; }
+    if (code == 11) { return core::io::Error::WouldBlock; }
+    return core::io::Error::Host(code);
+}
+fn invoke(number: i64, arguments: [std::linux::Argument]) -> core::result::Result<i64,core::io::Error> {
+    let view: core::slice::View<std::linux::Argument> = core::slice::view(arguments,6).unwrap();
+    let result: core::result::Result<i64,std::linux::Error> = std::linux::call(number,view);
+    if (result.is_ok()) { return core::result::Ok(result.unwrap()); }
+    let error: std::linux::Error = result.unwrap_err();
+    let mapped: core::io::Error = match (error) {
+        std::linux::Error::System(code) -> host_error(code),
+        _ -> core::io::Error::InvalidInput,
+    };
+    return core::result::Err(mapped);
+}
+fn status(result: core::result::Result<i64,core::io::Error>) -> core::result::Result<i32,core::io::Error> {
+    if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    if (result.unwrap() != 0) { return core::result::Err(core::io::Error::InvalidCount); }
+    return core::result::Ok(0);
+}
+fn valid(view: core::slice::View<u8>) -> bool {
+    return view.start >= 0 && view.length >= 0 && view.start <= 2147483647-view.length;
+}
+fn socket_result(result: core::result::Result<i64,core::io::Error>, domain: i32, datagram: bool) -> core::result::Result<Socket,core::io::Error> {
+    if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let handle: i64 = result.unwrap();
+    if (handle < 0 || handle > 2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
+    return core::result::Ok(Socket { handle: handle as i32, domain: domain, datagram: datagram });
+}
+pub fn create(family: Family, kind: Kind, nonblocking: bool) -> core::result::Result<Socket,core::io::Error> {
+    let domain: i32 = match (family) { Family::Ipv4 -> 2, Family::Ipv6 -> 10 };
+    let datagram: bool = match (kind) { Kind::Tcp -> false, Kind::Udp -> true };
+    let flags: i64 = 524289;
+    if (datagram) { flags = 524290; }
+    if (nonblocking) { flags = flags | 2048; }
+    let args: [std::linux::Argument;6] = [word(domain as i64),word(flags),word(0),word(0),word(0),word(0)];
+    return socket_result(invoke(41,args),domain,datagram);
+}
+// The caller exclusively owns a live socket descriptor with this family/kind.
+// Metadata is a caller precondition; this does not validate an arbitrary FD.
+pub fn from_owned_handle(handle: i32, family: Family, kind: Kind) -> core::result::Result<Socket,core::io::Error> {
+    if (handle < 0) { return core::result::Err(core::io::Error::InvalidInput); }
+    let domain: i32 = match (family) { Family::Ipv4 -> 2, Family::Ipv6 -> 10 };
+    let datagram: bool = match (kind) { Kind::Tcp -> false, Kind::Udp -> true };
+    return core::result::Ok(Socket { handle: handle, domain: domain, datagram: datagram });
+}
+fn encode_v4(value: core::net::SocketAddrV4, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
+    if (expected_domain != 2) { return core::result::Err(core::io::Error::InvalidInput); }
+    bytes[0] = 2; let index: i32 = 0;
+    while (index < 4) { bytes[4+index] = value.address.octet(index).unwrap(); index += 1; }
+    return core::result::Ok(16);
+}
+fn encode_v6(value: core::net::SocketAddrV6, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
+    if (expected_domain != 10) { return core::result::Err(core::io::Error::InvalidInput); }
+    bytes[0] = 10; let index: i32 = 0;
+    while (index < 16) { let half: u16 = value.address.segment(index/2).unwrap(); let shift: i32 = 8; if (index%2 == 1) { shift = 0; } bytes[8+index] = (half >> shift) as u8; index += 1; }
+    index = 0; while (index < 4) { bytes[24+index] = (value.scope >> (index*8)) as u8; index += 1; }
+    return core::result::Ok(28);
+}
+fn encode(endpoint: core::net::SocketAddr, expected_domain: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Error> {
+    let index: i32 = 0; while (index < 32) { bytes[index] = 0; index += 1; }
+    bytes[2] = (endpoint.port() >> 8) as u8; bytes[3] = endpoint.port() as u8;
+    return match (endpoint) {
+        core::net::SocketAddr::V4(value) -> encode_v4(value,expected_domain,bytes),
+        core::net::SocketAddr::V6(value) -> encode_v6(value,expected_domain,bytes),
+    };
+}
+fn decode(bytes: [u8], count: i32, domain: i32) -> core::result::Result<core::net::SocketAddr,core::io::Error> {
+    if (count < 2 || count > 32 || (bytes[0] as i32)+(bytes[1] as i32)*256 != domain) { return core::result::Err(core::io::Error::InvalidCount); }
+    let port: u16 = (bytes[2] as u16) << 8 | bytes[3] as u16;
+    if (domain == 2 && count == 16) {
+        let ip: core::net::Ipv4Addr = core::net::ipv4(bytes[4],bytes[5],bytes[6],bytes[7]);
+        return core::result::Ok(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: ip, port: port }));
+    }
+    if (domain == 10 && count == 28) {
+        let full: core::slice::View<u8> = core::slice::view(bytes,32).unwrap();
+        let ip_bytes: core::slice::View<u8> = full.subview(8,24).unwrap();
+        let ip: core::net::Ipv6Addr = core::net::ipv6_from_octets(ip_bytes).unwrap();
+        let scope: u32 = (bytes[24] as u32) | ((bytes[25] as u32) << 8) | ((bytes[26] as u32) << 16) | ((bytes[27] as u32) << 24);
+        return core::result::Ok(core::net::SocketAddr::V6(core::net::SocketAddrV6 { address: ip, port: port, scope: scope }));
+    }
+    return core::result::Err(core::io::Error::InvalidCount);
+}
+
+struct OptionCode { level: i64, name: i64, boolean: bool }
+fn option_code(setting: Setting) -> OptionCode {
+    return match (setting) {
+        Setting::ReuseAddress -> OptionCode { level: 1, name: 2, boolean: true },
+        Setting::KeepAlive -> OptionCode { level: 1, name: 9, boolean: true },
+        Setting::NoDelay -> OptionCode { level: 6, name: 1, boolean: true },
+        Setting::ReceiveBuffer -> OptionCode { level: 1, name: 8, boolean: false },
+        Setting::SendBuffer -> OptionCode { level: 1, name: 7, boolean: false },
+        Setting::Ipv6Only -> OptionCode { level: 41, name: 26, boolean: true },
+    };
+}
+fn clock_error(error: std::clock::Error) -> core::io::Error {
+    let value: core::io::Error = match (error) { std::clock::Error::Host(code) -> host_error(code), _ -> core::io::Error::InvalidCount }; return value;
+}
+pub impl Socket {
+    fn option_valid(&self, setting: Setting) -> bool {
+        let valid: bool = match (setting) { Setting::NoDelay -> !self.datagram, Setting::KeepAlive -> !self.datagram, Setting::Ipv6Only -> self.domain == 10, _ -> true }; return valid;
+    }
+    fn get_option(&self, level: i64, name: i64) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let words: [i32;2] = [0,4]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(level),word(name),address(pointer),address(pointer+4),word(0)];
+        let result: core::result::Result<i32,core::io::Error> = status(invoke(55,args));
+        if (result.is_err()) { return result; }
+        if (words[1] != 4) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(words[0]);
+    }
+    pub fn option(&self, setting: Setting) -> core::result::Result<i32,core::io::Error> {
+        if (!self.option_valid(setting)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let code: OptionCode = option_code(setting); let result: core::result::Result<i32,core::io::Error> = self.get_option(code.level,code.name);
+        if (result.is_err()) { return result; }
+        let value: i32 = result.unwrap();
+        if ((code.boolean && value != 0 && value != 1) || (!code.boolean && value <= 0)) { return core::result::Err(core::io::Error::InvalidCount); }
+        return result;
+    }
+    pub fn set_option(&self, setting: Setting, value: i32) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let code: OptionCode = option_code(setting);
+        if (!self.option_valid(setting) || (code.boolean && value != 0 && value != 1) || (!code.boolean && value <= 0)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let words: [i32;1] = [value]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(code.level),word(code.name),address(pointer),word(4),word(0)];
+        return status(invoke(54,args));
+    }
+    // SO_ERROR is consumed/reset by the kernel; successful None means no error.
+    pub fn take_error(&self) -> core::result::Result<core::option::Option<i32>,core::io::Error> {
+        let result: core::result::Result<i32,core::io::Error> = self.get_option(1,4);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        let code: i32 = result.unwrap();
+        if (code < 0) { return core::result::Err(core::io::Error::InvalidCount); }
+        if (code == 0) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(code));
+    }
+    pub fn is_nonblocking(&self) -> core::result::Result<bool,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(3),word(0),word(0),word(0),word(0)];
+        let result: core::result::Result<i64,core::io::Error> = invoke(72,args);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        if (result.unwrap() < 0 || result.unwrap() > 2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok((result.unwrap() & 2048) != 0);
+    }
+    // Duplicated handles share status flags, including nonblocking state.
+    pub fn set_nonblocking(&self, enabled: bool) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(3),word(0),word(0),word(0),word(0)];
+        let read: core::result::Result<i64,core::io::Error> = invoke(72,args);
+        if (read.is_err()) { return core::result::Err(read.unwrap_err()); }
+        if (read.unwrap() < 0 || read.unwrap() > 2147483647) { return core::result::Err(core::io::Error::InvalidCount); }
+        let flags: i64 = read.unwrap() & -2049; if (enabled) { flags = flags | 2048; }
+        args[1] = word(4); args[2] = word(flags); return status(invoke(72,args));
+    }
+    // One poll attempt. -1 waits indefinitely; zero performs a readiness probe.
+    pub fn wait_ms(&self, readable: bool, writable: bool, milliseconds: i32) -> core::result::Result<Ready,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (milliseconds < -1) { return core::result::Err(core::io::Error::InvalidInput); }
+        let events: i32 = 0; if (readable) { events = events | 1; } if (writable) { events = events | 4; }
+        let words: [i32;2] = [self.handle,events]; let pointer: ptr = core::mem::i32_array_data_ptr(words);
+        let args: [std::linux::Argument;6] = [address(pointer),word(1),word(milliseconds as i64),word(0),word(0),word(0)];
+        let result: core::result::Result<i64,core::io::Error> = invoke(7,args);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        let count: i64 = result.unwrap(); if (count < 0 || count > 1) { return core::result::Err(core::io::Error::InvalidCount); }
+        let ready: u32 = (words[1] as u32) >> 16;
+        if ((ready & 32) != 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if ((count == 0 && ready != 0) || (count == 1 && ready == 0)) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(Ready { readable: (ready & 1) != 0, writable: (ready & 4) != 0, hangup: (ready & 16) != 0, error: (ready & 8) != 0, timed_out: count == 0 });
+    }
+    // Interrupts and long-duration chunks preserve the original absolute deadline.
+    pub fn wait_until(&self, readable: bool, writable: bool, deadline: core::time::Deadline) -> core::result::Result<Ready,core::io::Error> {
+        let previous: core::option::Option<core::time::Instant> = core::option::None();
+        while (true) {
+            let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+            if (read.is_err()) { return core::result::Err(clock_error(read.unwrap_err())); }
+            let now: core::time::Instant = read.unwrap();
+            if (previous.is_some() && now.compare(previous.unwrap()) < 0) { return core::result::Err(core::io::Error::InvalidCount); }
+            previous = core::option::Some(now);
+            if (deadline.is_expired(now)) { return core::result::Ok(Ready { readable: false, writable: false, hangup: false, error: false, timed_out: true }); }
+            let remaining: core::time::Duration = deadline.remaining(now);
+            let milliseconds: i32 = 2147483647;
+            if (remaining.seconds <= 2147483 as u64) {
+                let amount: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000;
+                if (amount < 2147483647 as u64) { milliseconds = amount as i32; }
+            }
+            let result: core::result::Result<Ready,core::io::Error> = self.wait_ms(readable,writable,milliseconds);
+            if (result.is_err()) { let error: core::io::Error = result.unwrap_err(); let retry: bool = match (error) { core::io::Error::Interrupted -> true, _ -> false }; if (retry) { continue; } return core::result::Err(error); }
+            let ready: Ready = result.unwrap(); if (!ready.timed_out) { return core::result::Ok(ready); }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+    // Requires a nonblocking socket. Readiness alone is not connection success;
+    // finish with SO_ERROR. On timeout close this owner to cancel pending connect.
+    pub fn connect_until(&self, endpoint: core::net::SocketAddr, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        let mode: core::result::Result<bool,core::io::Error> = self.is_nonblocking();
+        if (mode.is_err()) { return core::result::Err(mode.unwrap_err()); }
+        if (!mode.unwrap()) { return core::result::Err(core::io::Error::InvalidInput); }
+        let started: core::result::Result<Connection,core::io::Error> = self.connect(endpoint);
+        if (started.is_err()) { return core::result::Err(started.unwrap_err()); }
+        let done: bool = match (started.unwrap()) { Connection::Connected -> true, Connection::InProgress -> false };
+        if (done) { return core::result::Ok(0); }
+        let waited: core::result::Result<Ready,core::io::Error> = self.wait_until(false,true,deadline);
+        if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); }
+        if (waited.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+        let error: core::result::Result<core::option::Option<i32>,core::io::Error> = self.take_error();
+        if (error.is_err()) { return core::result::Err(error.unwrap_err()); }
+        if (error.unwrap().is_some()) { return core::result::Err(host_error(error.unwrap().unwrap())); }
+        // A repeated completion call must not mistake a consumed SO_ERROR for success.
+        let peer: core::result::Result<core::net::SocketAddr,core::io::Error> = self.peer_addr();
+        if (peer.is_err()) { return core::result::Err(peer.unwrap_err()); }
+        return core::result::Ok(0);
+    }
+}
+
+pub impl Socket {
+    fn send_bytes(&self, input: core::slice::View<u8>, nonblocking: bool) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (self.datagram || !valid(input)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (input.length == 0) { return core::result::Ok(0); }
+        let count: i32 = input.length; if (count > 1024) { count = 1024; }
+        let storage: [i32;256] = [0;256]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1024);
+        let index: i32 = 0; while (index < count) { packed[index] = input.values[input.start+index]; index += 1; }
+        let flags: i64 = 16384; if (nonblocking) { flags = flags | 64; }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(count as i64),word(flags),address(null()),word(0)];
+        let result: core::result::Result<i64,core::io::Error> = invoke(44,args);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        let sent: i64 = result.unwrap(); if (sent < 0 || sent > count as i64) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(sent as i32);
+    }
+    fn receive_bytes(&self, output: core::slice::View<u8>, nonblocking: bool) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (self.datagram || !valid(output)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (output.length == 0) { return core::result::Ok(0); }
+        let count: i32 = output.length; if (count > 1024) { count = 1024; }
+        let storage: [i32;256] = [0;256]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1024);
+        let flags: i64 = 0; if (nonblocking) { flags = 64; }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(count as i64),word(flags),address(null()),address(null())];
+        let result: core::result::Result<i64,core::io::Error> = invoke(45,args);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        let received: i64 = result.unwrap(); if (received < 0 || received > count as i64) { return core::result::Err(core::io::Error::InvalidCount); }
+        let index: i32 = 0; while (index < received as i32) { output.values[output.start+index] = packed[index]; index += 1; }
+        return core::result::Ok(received as i32);
+    }
+    pub fn send(&self, input: core::slice::View<u8>) -> core::result::Result<i32,core::io::Error> { return self.send_bytes(input,false); }
+    pub fn receive(&self, output: core::slice::View<u8>) -> core::result::Result<i32,core::io::Error> { return self.receive_bytes(output,false); }
+    pub fn send_until(&self, input: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        while (true) {
+            let result: core::result::Result<i32,core::io::Error> = self.send_bytes(input,true);
+            if (result.is_ok()) { return result; }
+            let error: core::io::Error = result.unwrap_err();
+            let retry: bool = match (error) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, _ -> false };
+            if (!retry) { return core::result::Err(error); }
+            let ready: core::result::Result<Ready,core::io::Error> = self.wait_until(false,true,deadline);
+            if (ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
+            if (ready.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+    pub fn receive_until(&self, output: core::slice::View<u8>, deadline: core::time::Deadline) -> core::result::Result<i32,core::io::Error> {
+        while (true) {
+            let result: core::result::Result<i32,core::io::Error> = self.receive_bytes(output,true);
+            if (result.is_ok()) { return result; }
+            let error: core::io::Error = result.unwrap_err();
+            let retry: bool = match (error) { core::io::Error::WouldBlock -> true, core::io::Error::Interrupted -> true, _ -> false };
+            if (!retry) { return core::result::Err(error); }
+            let ready: core::result::Result<Ready,core::io::Error> = self.wait_until(true,false,deadline);
+            if (ready.is_err()) { return core::result::Err(ready.unwrap_err()); }
+            if (ready.unwrap().timed_out) { return core::result::Err(core::io::Error::Host(110)); }
+        }
+        return core::result::Err(core::io::Error::InvalidCount);
+    }
+    // UDP calls stage one whole datagram; errors never publish a partial buffer.
+    pub fn send_to(&self, input: core::slice::View<u8>, endpoint: core::net::SocketAddr) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (!self.datagram || !valid(input)) { return core::result::Err(core::io::Error::InvalidInput); }
+        if (input.length > MAX_DATAGRAM) { return core::result::Err(core::io::Error::LimitExceeded); }
+        let addr_storage: [i32;8] = [0;8]; let addr_ptr: ptr = core::mem::i32_array_data_ptr(addr_storage); let addr_bytes: [u8] = core::mem::typed_slice_from_raw_parts(addr_ptr,32);
+        let encoded: core::result::Result<i32,core::io::Error> = encode(endpoint,self.domain,addr_bytes);
+        if (encoded.is_err()) { return encoded; }
+        let storage: [i32;16384] = [0;16384]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,65536);
+        let index: i32 = 0; while (index < input.length) { packed[index] = input.values[input.start+index]; index += 1; }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(input.length as i64),word(16384),address(addr_ptr),word(encoded.unwrap() as i64)];
+        let result: core::result::Result<i64,core::io::Error> = invoke(44,args);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        if (result.unwrap() != input.length as i64) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(input.length);
+    }
+    // MSG_TRUNC reports full size, even for a zero-capacity destination. Exactly
+    // one datagram is consumed; zero length is a real datagram, not stream EOF.
+    pub fn receive_from(&self, output: core::slice::View<u8>) -> core::result::Result<Datagram,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (!self.datagram || !valid(output)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let count: i32 = output.length; if (count > MAX_DATAGRAM) { count = MAX_DATAGRAM; }
+        let addr_storage: [i32;9] = [0;9]; let addr_ptr: ptr = core::mem::i32_array_data_ptr(addr_storage); let addr_bytes: [u8] = core::mem::typed_slice_from_raw_parts(addr_ptr,32);
+        let length: [i32] = core::mem::typed_slice_from_raw_parts(addr_ptr+32,1); length[0] = 32;
+        let storage: [i32;16384] = [0;16384]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,65536);
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(count as i64),word(32),address(addr_ptr),address(addr_ptr+32)];
+        let result: core::result::Result<i64,core::io::Error> = invoke(45,args);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        let received: i64 = result.unwrap(); if (received < 0 || received > 65535) { return core::result::Err(core::io::Error::InvalidCount); }
+        let peer: core::result::Result<core::net::SocketAddr,core::io::Error> = decode(addr_bytes,length[0],self.domain);
+        if (peer.is_err()) { return core::result::Err(peer.unwrap_err()); }
+        let copied: i32 = received as i32; if (copied > count) { copied = count; }
+        let index: i32 = 0; while (index < copied) { output.values[output.start+index] = packed[index]; index += 1; }
+        return core::result::Ok(Datagram { peer: peer.unwrap(), copied: copied, full_length: received as i32 });
+    }
+}
+pub impl Datagram { pub fn is_truncated(&self) -> bool { return self.copied < self.full_length; } }
+pub impl core::io::Read for Socket {
+    pub fn read(&self, output: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let full: core::slice::View<u8> = core::slice::view(output,offset+count).unwrap(); let selected: core::slice::View<u8> = full.subview(offset,offset+count).unwrap(); return self.receive(selected);
+    }
+}
+pub impl core::io::Write for Socket {
+    pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        if (!core::io::valid_range(offset,count)) { return core::result::Err(core::io::Error::InvalidInput); }
+        let full: core::slice::View<u8> = core::slice::view(input,offset+count).unwrap(); let selected: core::slice::View<u8> = full.subview(offset,offset+count).unwrap(); return self.send(selected);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (self.datagram) { return core::result::Err(core::io::Error::InvalidInput); }
+        // There is no library buffer. This promises neither peer delivery nor ACK.
+        return core::result::Ok(0);
+    }
+}
+fn connected_error(error: core::io::Error) -> bool {
+    let progress: bool = match (error) { core::io::Error::Host(code) -> code == 115 || code == 114, _ -> false }; return progress;
+}
+pub impl Socket {
+    pub fn borrow(&self) -> &Socket { return self; }
+    pub fn is_open(&self) -> bool { return self.handle >= 0; }
+    pub fn family(&self) -> Family { if (self.domain == 10) { return Family::Ipv6; } return Family::Ipv4; }
+    pub fn kind(&self) -> Kind { if (self.datagram) { return Kind::Udp; } return Kind::Tcp; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { if (self.handle < 0) { return core::option::None(); } return core::option::Some(self.handle); }
+    pub fn take_handle(&self) -> core::option::Option<i32> { let result: core::option::Option<i32> = self.raw_handle(); self.handle = -1; return result; }
+    pub fn close(&self) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Ok(0); }
+        let handle: i32 = self.handle; self.handle = -1;
+        let result: i32 = std::fs::close(handle);
+        if (result < 0) { return core::result::Err(host_error(0-result)); }
+        if (result != 0) { return core::result::Err(core::io::Error::InvalidCount); }
+        return core::result::Ok(0);
+    }
+    pub fn try_clone(&self) -> core::result::Result<Socket,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(1030),word(0),word(0),word(0),word(0)];
+        return socket_result(invoke(72,args),self.domain,self.datagram);
+    }
+    pub fn bind(&self, endpoint: core::net::SocketAddr) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let storage: [i32;8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+        let encoded: core::result::Result<i32,core::io::Error> = encode(endpoint,self.domain,bytes);
+        if (encoded.is_err()) { return encoded; }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(encoded.unwrap() as i64),word(0),word(0),word(0)];
+        return status(invoke(49,args));
+    }
+    // Nonblocking progress remains owned by this socket; timeout does not cancel it.
+    pub fn connect(&self, endpoint: core::net::SocketAddr) -> core::result::Result<Connection,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let storage: [i32;8] = [0;8]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+        let encoded: core::result::Result<i32,core::io::Error> = encode(endpoint,self.domain,bytes);
+        if (encoded.is_err()) { return core::result::Err(encoded.unwrap_err()); }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),word(encoded.unwrap() as i64),word(0),word(0),word(0)];
+        let result: core::result::Result<i32,core::io::Error> = status(invoke(42,args));
+        if (result.is_err()) { let error: core::io::Error = result.unwrap_err(); if (connected_error(error)) { return core::result::Ok(Connection::InProgress); } return core::result::Err(error); }
+        return core::result::Ok(Connection::Connected);
+    }
+    pub fn listen(&self, backlog: i32) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        if (self.datagram || backlog < 0) { return core::result::Err(core::io::Error::InvalidInput); }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(backlog as i64),word(0),word(0),word(0),word(0)];
+        return status(invoke(50,args));
+    }
+    pub fn accept(&self, nonblocking: bool) -> core::result::Result<Accepted,AcceptFailure> {
+        if (self.handle < 0) { return core::result::Err(AcceptFailure { cause:core::io::Error::Host(9),cleanup_attempted:false,cleanup_error:core::option::None() }); }
+        if (self.datagram) { return core::result::Err(AcceptFailure { cause:core::io::Error::InvalidInput,cleanup_attempted:false,cleanup_error:core::option::None() }); }
+        let storage: [i32;9] = [0;9]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+        let length: [i32] = core::mem::typed_slice_from_raw_parts(pointer+32,1); length[0] = 32;
+        let flags: i64 = 524288; if (nonblocking) { flags = flags | 2048; }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),address(pointer+32),word(flags),word(0),word(0)];
+        let accepted: core::result::Result<Socket,core::io::Error> = socket_result(invoke(288,args),self.domain,false);
+        if (accepted.is_err()) { return core::result::Err(AcceptFailure { cause:accepted.unwrap_err(),cleanup_attempted:false,cleanup_error:core::option::None() }); }
+        let socket: Socket = accepted.unwrap(); let peer: core::result::Result<core::net::SocketAddr,core::io::Error> = decode(bytes,length[0],self.domain);
+        if (peer.is_err()) {
+            let closed: core::result::Result<i32,core::io::Error> = socket.close();
+            let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); }
+            return core::result::Err(AcceptFailure { cause:peer.unwrap_err(),cleanup_attempted:true,cleanup_error:cleanup });
+        }
+        return core::result::Ok(Accepted { socket: socket, peer: peer.unwrap() });
+    }
+    fn endpoint(&self, peer: bool) -> core::result::Result<core::net::SocketAddr,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let storage: [i32;9] = [0;9]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,32);
+        let length: [i32] = core::mem::typed_slice_from_raw_parts(pointer+32,1); length[0] = 32;
+        let number: i64 = 51; if (peer) { number = 52; }
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),address(pointer),address(pointer+32),word(0),word(0),word(0)];
+        let result: core::result::Result<i32,core::io::Error> = status(invoke(number,args));
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        return decode(bytes,length[0],self.domain);
+    }
+    pub fn local_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::Error> { return self.endpoint(false); }
+    pub fn peer_addr(&self) -> core::result::Result<core::net::SocketAddr,core::io::Error> { return self.endpoint(true); }
+    pub fn shutdown(&self, direction: Shutdown) -> core::result::Result<i32,core::io::Error> {
+        if (self.handle < 0) { return core::result::Err(core::io::Error::Host(9)); }
+        let how: i64 = match (direction) { Shutdown::Read -> 0, Shutdown::Write -> 1, Shutdown::Both -> 2 };
+        let args: [std::linux::Argument;6] = [word(self.handle as i64),word(how),word(0),word(0),word(0),word(0)]; return status(invoke(48,args));
+    }
+}

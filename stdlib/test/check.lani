@@ -1,0 +1,26 @@
+// Nontrapping checks. A language assert/panic still terminates the process.
+module test::check;
+import core::mem;
+
+// Counted, borrowed bytes. Keep their backing alive through report emission.
+// literal() requires the exact UTF-8 byte count of the static string literal.
+pub struct Label { bytes: [u8], length: i32 }
+pub fn literal(value: str, length: i32) -> Label {
+    assert(length >= 0);
+    return Label { bytes: core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length), length: length };
+}
+pub struct Outcome {
+    status: i32, detail: Label, has_values: bool, expected: i64, actual: i64,
+    seed: u32, case_id: i32, input: u32, executed: u32
+}
+pub fn pass() -> Outcome {
+    return Outcome { status: 0, detail: literal("",0), has_values: false, expected: 0, actual: 0, seed: 0, case_id: -1, input: 0, executed: 0 };
+}
+pub fn fail(detail: Label) -> Outcome { let result: Outcome = pass(); result.status = 1; result.detail = detail; return result; }
+pub fn skip(reason: Label) -> Outcome { let result: Outcome = pass(); result.status = 2; result.detail = reason; return result; }
+pub fn truth(condition: bool, detail: Label) -> Outcome { if (condition) { return pass(); } return fail(detail); }
+pub fn equal_i64(actual: i64, expected: i64, detail: Label) -> Outcome {
+    if (actual == expected) { return pass(); }
+    let result: Outcome = fail(detail); result.has_values = true; result.expected = expected; result.actual = actual; return result;
+}
+pub fn is_pass(result: Outcome) -> bool { return result.status == 0; }

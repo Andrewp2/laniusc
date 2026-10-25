@@ -1,345 +1,216 @@
+#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
+use std::{
+    collections::VecDeque,
+    process::{Command, Stdio},
+};
 
-use std::{collections::VecDeque, fmt::Write};
-
-use laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib;
-
-#[derive(Clone, Copy)]
-enum Kind {
-    Bool,
-    I8,
-    I16,
-    U8,
-    U16,
-    I32,
-    U32,
-    WideU64,
-    WideI64,
-}
-
-impl Kind {
-    fn deque_type(self) -> String {
-        format!("Deque<{}>", self.value_type())
-    }
-
-    fn value_type(self) -> &'static str {
-        match self {
-            Self::Bool => "bool",
-            Self::I8 => "i8",
-            Self::I16 => "i16",
-            Self::U8 => "u8",
-            Self::U16 => "u16",
-            Self::I32 => "i32",
-            Self::U32 => "u32",
-            Self::WideU64 => "core::wide_u64::WideU64",
-            Self::WideI64 => "core::wide_i64::WideI64",
-        }
-    }
-
-    fn literal(self, bits: u64) -> String {
-        match self {
-            Self::Bool => (bits & 1 == 1).to_string(),
-            Self::I8 => (bits as i8).to_string(),
-            Self::I16 => (bits as i16).to_string(),
-            Self::U8 => (bits as u8).to_string(),
-            Self::U16 => (bits as u16).to_string(),
-            Self::I32 => (bits as i32).to_string(),
-            Self::U32 => (bits as u32).to_string(),
-            Self::WideU64 => format!(
-                "core::wide_u64::from_words({}, {})",
-                (bits >> 32) as u32,
-                bits as u32
-            ),
-            Self::WideI64 => format!(
-                "core::wide_i64::from_words({}, {})",
-                (bits >> 32) as u32,
-                bits as u32
-            ),
-        }
-    }
-
-    fn equal(self, left: &str, right: &str) -> String {
-        match self {
-            Self::Bool | Self::I8 | Self::I16 | Self::U8 | Self::U16 | Self::I32 | Self::U32 => {
-                format!("{left} == {right}")
-            }
-            Self::WideU64 => format!("core::wide_u64::eq({left}, {right})"),
-            Self::WideI64 => format!("core::wide_i64::eq({left}, {right})"),
-        }
-    }
-}
-
-const VALUES: [u64; 10] = [
-    0,
-    1,
-    2,
-    3,
-    0x8000_0000,
-    0xffff_ffff,
-    0x1_0000_0000,
-    0x8000_0000_0000_0000,
-    0xffff_ffff_ffff_ffff,
-    0x7fff_ffff_ffff_ffff,
-];
-
-fn next(seed: &mut u64) -> u64 {
-    *seed ^= *seed << 13;
-    *seed ^= *seed >> 7;
-    *seed ^= *seed << 17;
-    *seed
-}
-
-fn generate(kind: Kind) -> String {
-    let module = "deque";
-    let ty = kind.deque_type();
-    let item_type = kind.value_type();
-    let mut source = format!("module app::main;\nimport std::{module};\n");
-    if matches!(kind, Kind::WideU64) {
-        source.push_str("import core::wide_u64;\n");
-    }
-    if matches!(kind, Kind::WideI64) {
-        source.push_str("import core::wide_i64;\n");
-    }
-    source.push_str("fn main() -> i32 {\n");
-    for (index, bits) in VALUES.into_iter().enumerate() {
-        writeln!(
-            source,
-            "    let v{index}: {item_type} = {};",
-            kind.literal(bits)
+#[test]
+fn mixed_ring_edits_match_an_independent_deque_model() {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let entry = root.join("tests/fixtures/stdlib_foundation/alloc_deque_model.lani");
+    let stdlib = root.join("stdlib");
+    let bytes = common::run_gpu_codegen_with_timeout("deque model", move || {
+        pollster::block_on(
+            laniusc_compiler::compiler::compile_entry_to_x86_64_with_stdlib(&entry, &stdlib),
         )
-        .unwrap();
-    }
-    writeln!(
-        source,
-        "    let value: std::{module}::{ty} = std::{module}::new();"
-    )
-    .unwrap();
-    let mut reference = VecDeque::<usize>::new();
-    let mut seed = 0xd00d_feed_cafe_babe_u64;
-    for step in 0..48 {
-        let draw = next(&mut seed);
-        let item = ((draw >> 8) as usize) % VALUES.len();
-        let operation = match step {
-            0..=2 => 0,
-            3 => 4,
-            4 => 0,
-            5 => 2,
-            6 => 6,
-            7 => 2,
-            8 => 5,
-            9 => 7,
-            10 => 10,
-            _ => (draw % 11) as u32,
-        };
-        match operation {
-            0 | 1 => {
-                writeln!(
-                    source,
-                    "    value = std::{module}::try_push_back(value, v{item});"
-                )
-                .unwrap();
-                reference.push_back(item);
-            }
-            2 | 3 => {
-                writeln!(
-                    source,
-                    "    value = std::{module}::try_push_front(value, v{item});"
-                )
-                .unwrap();
-                reference.push_front(item);
-            }
+    })
+    .expect("compile deque model");
+    let exe = common::TempArtifact::new("laniusc_deque", "model", None);
+    exe.write_bytes(&bytes);
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(exe.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let input = common::TempArtifact::new("laniusc_deque", "input", None);
+    let mut seed = 0xdec0_2026_u32;
+    let mut random = || {
+        seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+        seed
+    };
+    let mut model = VecDeque::<i32>::new();
+    let mut data = Vec::new();
+    let mut expected = Vec::new();
+    let mut covered = [false; 29];
+    for step in 0..6000 {
+        let mut op = (random() % 29) as u8;
+        if step % 17 < 6 {
+            op = (step % 2) as u8;
+        }
+        if step % 193 == 0 {
+            op = 27;
+        }
+        if (op == 20 || op == 21) && model.len() > 128 {
+            op = 2;
+        }
+        let mut index = (random() % (model.len() as u32 + 3)) as i32 - 1;
+        let mut value = random() as i32;
+        if step % 7 == 0 {
+            value = 7;
+        }
+        if step % 17 == 0 {
+            value = i32::MIN;
+        }
+        if step % 23 == 0 {
+            value = i32::MAX;
+        }
+        if op == 9 {
+            value = (random() % (model.len() as u32 + 3)) as i32 - 1;
+        }
+        if op == 10 {
+            index = (random() % 42) as i32 - 2;
+        }
+        if op == 12 {
+            index = match step % 5 {
+                0 => -1,
+                1 => i32::MAX,
+                _ => (random() % 129) as i32,
+            };
+        }
+        covered[op as usize] = true;
+        data.push(op);
+        data.extend_from_slice(&index.to_le_bytes());
+        data.extend_from_slice(&value.to_le_bytes());
+        let mut tag = 0;
+        let mut answer = 0;
+        let mut removed = None;
+        let valid = index >= 0 && (index as usize) < model.len();
+        match op {
+            0 => model.push_back(value),
+            1 => model.push_front(value),
+            2 => removed = model.pop_front(),
+            3 => removed = model.pop_back(),
             4 => {
-                writeln!(source, "    value = std::{module}::try_pop_front(value);").unwrap();
-                reference.pop_front();
+                if valid {
+                    removed = Some(std::mem::replace(&mut model[index as usize], value));
+                } else {
+                    tag = 2;
+                }
             }
             5 => {
-                writeln!(source, "    value = std::{module}::try_pop_back(value);").unwrap();
-                reference.pop_back();
+                if index >= 0 && index as usize <= model.len() {
+                    model.insert(index as usize, value);
+                } else {
+                    tag = 2;
+                }
             }
             6 => {
-                writeln!(
-                    source,
-                    "    let requested_{step}: i32 = std::{module}::capacity(value) + 1;"
-                )
-                .unwrap();
-                writeln!(
-                    source,
-                    "    value = std::{module}::try_reserve(value, requested_{step});"
-                )
-                .unwrap();
-                writeln!(
-                    source,
-                    "    if (std::{module}::capacity(value) != requested_{step}) {{ return {}; }}",
-                    step + 1
-                )
-                .unwrap();
+                if valid {
+                    removed = model.remove(index as usize);
+                } else {
+                    tag = 2;
+                }
             }
             7 => {
-                writeln!(
-                    source,
-                    "    value = std::{module}::try_shrink_to_fit(value);"
-                )
-                .unwrap();
-                writeln!(
-                    source,
-                    "    if (std::{module}::capacity(value) != std::{module}::len(value)) {{ return {}; }}",
-                    step + 1
-                )
-                .unwrap();
+                if valid {
+                    removed = model.swap_remove_front(index as usize);
+                } else {
+                    tag = 2;
+                }
             }
             8 => {
-                if reference.is_empty() {
-                    writeln!(
-                        source,
-                        "    if (std::{module}::try_set(value, -1, v{item})) {{ return {}; }}",
-                        step + 1
-                    )
-                    .unwrap();
+                if valid {
+                    removed = model.swap_remove_back(index as usize);
                 } else {
-                    let index = ((draw >> 16) as usize) % reference.len();
-                    writeln!(
-                        source,
-                        "    if (!std::{module}::try_set(value, {index}, v{item})) {{ return {}; }}",
-                        step + 1
-                    )
-                    .unwrap();
-                    reference[index] = item;
+                    tag = 2;
                 }
             }
             9 => {
-                if reference.len() < 2 {
-                    writeln!(
-                        source,
-                        "    if (std::{module}::try_swap(value, -1, 0)) {{ return {}; }}",
-                        step + 1
-                    )
-                    .unwrap();
+                if valid && value >= 0 && (value as usize) < model.len() {
+                    model.swap(index as usize, value as usize);
                 } else {
-                    let last = reference.len() - 1;
-                    writeln!(
-                        source,
-                        "    if (!std::{module}::try_swap(value, 0, {last})) {{ return {}; }}",
-                        step + 1
-                    )
-                    .unwrap();
-                    reference.swap(0, last);
+                    tag = 2;
                 }
             }
-            _ => {
-                writeln!(
-                    source,
-                    "    let copy_{step}: std::{module}::{ty} = std::{module}::try_clone(value);"
-                )
-                .unwrap();
-                writeln!(
-                    source,
-                    "    if (std::{module}::len(copy_{step}) != {}) {{ return {}; }}",
-                    reference.len(),
-                    step + 1
-                )
-                .unwrap();
-                for (index, value_index) in reference.iter().enumerate() {
-                    let observed = format!("std::{module}::at_or(copy_{step}, {index}, v0)");
-                    let equality = kind.equal(&observed, &format!("v{value_index}"));
-                    writeln!(source, "    if (!({equality})) {{ return {}; }}", step + 1).unwrap();
+            10 => {
+                if index < 0 {
+                    tag = 2;
+                } else {
+                    model.resize(index as usize, value);
                 }
-                writeln!(source, "    std::{module}::destroy(copy_{step});").unwrap();
             }
+            11 => {
+                if index < 0 {
+                    tag = 2;
+                } else {
+                    model.truncate(index as usize);
+                }
+            }
+            12 => {
+                if index < 0 {
+                    tag = 3;
+                } else if index == i32::MAX {
+                    tag = 4;
+                }
+            }
+            13 | 26 | 28 => {}
+            14 => model = model.into_iter().rev().collect(),
+            15 | 16 => {
+                if index < 0 || index as usize > model.len() {
+                    tag = 2;
+                } else if op == 15 {
+                    model.rotate_left(index as usize);
+                } else {
+                    model.rotate_right(index as usize);
+                }
+            }
+            17 | 27 => model.clear(),
+            18 => {
+                for entry in [value / 2, 0, value] {
+                    model.push_front(entry);
+                }
+            }
+            19 => model.extend([value, 0, value / 2]),
+            20 | 21 => model.extend(model.clone()),
+            22 => removed = model.front().copied(),
+            23 => {
+                if index < 0 || index as usize > model.len() {
+                    tag = 2;
+                } else {
+                    removed = model.split_off(index as usize).pop_front();
+                }
+            }
+            24 => {
+                if valid {
+                    removed = Some(model[index as usize]);
+                }
+            }
+            25 => {
+                removed = Some(
+                    model
+                        .iter()
+                        .position(|n| *n == value)
+                        .map_or(-1, |i| i as i32),
+                )
+            }
+            _ => unreachable!(),
         }
-        writeln!(
-            source,
-            "    if (std::{module}::len(value) != {}) {{ return {}; }}",
-            reference.len(),
-            step + 1
-        )
-        .unwrap();
-        writeln!(
-            source,
-            "    if (std::{module}::capacity(value) < std::{module}::len(value)) {{ return {}; }}",
-            step + 1
-        )
-        .unwrap();
-        for (index, value_index) in reference.iter().enumerate() {
-            let observed = format!("std::{module}::at_or(value, {index}, v0)");
-            let equality = kind.equal(&observed, &format!("v{value_index}"));
-            writeln!(source, "    if (!({equality})) {{ return {}; }}", step + 1).unwrap();
+        if let Some(value) = removed {
+            tag = 1;
+            answer = value;
         }
+        let mut row = vec![tag, answer, model.len() as i32];
+        row.extend(model.iter());
+        expected.push(row);
     }
-    writeln!(source, "    std::{module}::destroy(value);").unwrap();
-    source.push_str("    return 0;\n}\n");
-    source
-}
-
-fn run(kind: Kind) {
-    let label = kind.value_type().replace("::", "_");
-    let name = label.as_str();
-    let source = generate(kind);
-    let entry = common::TempArtifact::new("laniusc_deque", name, Some("lani"));
-    entry.write_str(&source);
-    let path = entry.path().to_path_buf();
-    let stdlib_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("stdlib");
-    let bytes = common::run_gpu_codegen_with_timeout(name, move || {
-        pollster::block_on(compile_entry_to_x86_64_with_stdlib(&path, &stdlib_root))
-    })
-    .unwrap_or_else(|error| panic!("{name}: compile: {error}"));
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    {
-        let output = common::run_x86_64_elf_output(name, "stateful", &bytes);
-        assert_eq!(
-            output.status.code(),
-            Some(0),
-            "{name}: {output:?}\n{source}"
-        );
-        assert!(
-            output.stdout.is_empty() && output.stderr.is_empty(),
-            "{output:?}"
-        );
+    assert!(covered.into_iter().all(|hit| hit));
+    input.write_bytes(&data);
+    let output = common::process_output_with_timeout(
+        "deque model complete states",
+        Command::new(exe.path()).stdin(Stdio::from(std::fs::File::open(input.path()).unwrap())),
+        std::time::Duration::from_secs(10),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty());
+    let actual: Vec<Vec<i32>> = std::str::from_utf8(&output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            line.split_ascii_whitespace()
+                .map(|n| n.parse().unwrap())
+                .collect()
+        })
+        .collect();
+    assert_eq!(actual.len(), expected.len());
+    for (step, (actual, expected)) in actual.iter().zip(&expected).enumerate() {
+        assert_eq!(actual, expected, "seed=0xdec02026 step={step}");
     }
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = bytes;
-}
-
-#[test]
-fn boolean_deque_matches_reference() {
-    run(Kind::Bool);
-}
-
-#[test]
-fn signed_byte_deque_matches_reference() {
-    run(Kind::I8);
-}
-
-#[test]
-fn signed_halfword_deque_matches_reference() {
-    run(Kind::I16);
-}
-
-#[test]
-fn byte_deque_matches_reference() {
-    run(Kind::U8);
-}
-
-#[test]
-fn unsigned_halfword_deque_matches_reference() {
-    run(Kind::U16);
-}
-
-#[test]
-fn signed_scalar_deque_matches_reference() {
-    run(Kind::I32);
-}
-
-#[test]
-fn unsigned_scalar_deque_matches_reference() {
-    run(Kind::U32);
-}
-
-#[test]
-fn unsigned_two_word_deque_matches_reference() {
-    run(Kind::WideU64);
-}
-
-#[test]
-fn signed_two_word_deque_matches_reference() {
-    run(Kind::WideI64);
 }

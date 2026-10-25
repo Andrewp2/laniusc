@@ -1,0 +1,10 @@
+// Compare an explicit associated witness call with the member-call repro.
+module core::admission_static_iter;
+import core::option;
+pub trait Pull<I,T> { pub fn pull(source: &I) -> core::option::Option<T>; }
+pub struct Cursor<T> { value: T }
+pub impl<T> Cursor<T> { pub fn borrow(&self) -> &Cursor<T> { return self; } }
+pub impl<T> Pull<Cursor<T>,T> for Cursor<T> {
+    pub fn pull(source: &Cursor<T>) -> core::option::Option<T> { return core::option::Some(source.value); }
+}
+pub fn pull<I,T>(source: &I) -> core::option::Option<T> where I: Pull<I,T> { return I::pull(source); }

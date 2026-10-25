@@ -1,5 +1,5 @@
 module app::main;
-import std::path;
+import core::path_rules;
 
 fn main() -> i32 {
     let a: u8 = 97;
@@ -25,51 +25,51 @@ fn main() -> i32 {
     let high: u8 = 255;
 
     let unix: [u8; 12] = [d, i, r, slash, f, i, l, e, period, t, x, t];
-    if (std::path::path_last_component_start_or(unix, 12, -9) != 4 ||
-        std::path::path_last_component_end_or(unix, 12, -9) != 12 ||
-        std::path::path_extension_start_or(unix, 12, -9) != 9 ||
-        std::path::path_stem_end_or(unix, 12, -9) != 8) { return 1; }
+    if (core::path_rules::path_last_component_start_or(unix, 12, -9) != 4 ||
+        core::path_rules::path_last_component_end_or(unix, 12, -9) != 12 ||
+        core::path_rules::path_extension_start_or(unix, 12, -9) != 9 ||
+        core::path_rules::path_stem_end_or(unix, 12, -9) != 8) { return 1; }
     let windows: [u8; 11] = [capital_c, colon, backslash, f, o, o, period, b, a, r, backslash];
-    if (std::path::path_last_component_start_or(windows, 11, -9) != 3 ||
-        std::path::path_last_component_end_or(windows, 11, -9) != 10 ||
-        std::path::path_extension_start_or(windows, 11, -9) != 7 ||
-        std::path::path_stem_end_or(windows, 11, -9) != 6) { return 2; }
+    if (core::path_rules::path_last_component_start_or(windows, 11, -9) != 3 ||
+        core::path_rules::path_last_component_end_or(windows, 11, -9) != 10 ||
+        core::path_rules::path_extension_start_or(windows, 11, -9) != 7 ||
+        core::path_rules::path_stem_end_or(windows, 11, -9) != 6) { return 2; }
     let hidden: [u8; 8] = [slash, period, c, o, n, f, i, g];
-    if (std::path::path_last_component_start_or(hidden, 8, -9) != 1 ||
-        std::path::path_last_component_end_or(hidden, 8, -9) != 8 ||
-        std::path::path_extension_start_or(hidden, 8, -9) != -9 ||
-        std::path::path_stem_end_or(hidden, 8, -9) != 8) { return 3; }
+    if (core::path_rules::path_last_component_start_or(hidden, 8, -9) != 1 ||
+        core::path_rules::path_last_component_end_or(hidden, 8, -9) != 8 ||
+        core::path_rules::path_extension_start_or(hidden, 8, -9) != -9 ||
+        core::path_rules::path_stem_end_or(hidden, 8, -9) != 8) { return 3; }
     let compound: [u8; 6] = [a, period, b, period, c, slash];
-    if (std::path::path_last_component_start_or(compound, 6, -9) != 0 ||
-        std::path::path_last_component_end_or(compound, 6, -9) != 5 ||
-        std::path::path_extension_start_or(compound, 6, -9) != 4 ||
-        std::path::path_stem_end_or(compound, 6, -9) != 3) { return 4; }
+    if (core::path_rules::path_last_component_start_or(compound, 6, -9) != 0 ||
+        core::path_rules::path_last_component_end_or(compound, 6, -9) != 5 ||
+        core::path_rules::path_extension_start_or(compound, 6, -9) != 4 ||
+        core::path_rules::path_stem_end_or(compound, 6, -9) != 3) { return 4; }
     let trailing_dot: [u8; 2] = [a, period];
     let separators: [u8; 2] = [slash, backslash];
-    if (std::path::path_extension_start_or(trailing_dot, 2, -9) != -9 ||
-        std::path::path_stem_end_or(trailing_dot, 2, -9) != 2 ||
-        std::path::path_last_component_start_or(separators, 2, -9) != -9 ||
-        std::path::path_last_component_end_or(separators, 2, -9) != -9 ||
-        std::path::path_extension_start_or(separators, 2, -9) != -9 ||
-        std::path::path_stem_end_or(separators, 2, -9) != -9) { return 5; }
+    if (core::path_rules::path_extension_start_or(trailing_dot, 2, -9) != -9 ||
+        core::path_rules::path_stem_end_or(trailing_dot, 2, -9) != 2 ||
+        core::path_rules::path_last_component_start_or(separators, 2, -9) != -9 ||
+        core::path_rules::path_last_component_end_or(separators, 2, -9) != -9 ||
+        core::path_rules::path_extension_start_or(separators, 2, -9) != -9 ||
+        core::path_rules::path_stem_end_or(separators, 2, -9) != -9) { return 5; }
     let mixed: [u8; 6] = [a, slash, slash, b, backslash, slash];
-    if (std::path::path_last_component_start_or(mixed, 6, -9) != 3 ||
-        std::path::path_last_component_end_or(mixed, 6, -9) != 4 ||
-        std::path::path_extension_start_or(mixed, 6, -9) != -9 ||
-        std::path::path_stem_end_or(mixed, 6, -9) != 4) { return 6; }
+    if (core::path_rules::path_last_component_start_or(mixed, 6, -9) != 3 ||
+        core::path_rules::path_last_component_end_or(mixed, 6, -9) != 4 ||
+        core::path_rules::path_extension_start_or(mixed, 6, -9) != -9 ||
+        core::path_rules::path_stem_end_or(mixed, 6, -9) != 4) { return 6; }
     let invalid: [u8; 4] = [a, slash, b, nul];
-    if (std::path::path_last_component_start_or(invalid, 4, -9) != -9 ||
-        std::path::path_last_component_end_or(invalid, 4, -9) != -9 ||
-        std::path::path_extension_start_or(invalid, 4, -9) != -9 ||
-        std::path::path_stem_end_or(invalid, 4, -9) != -9) { return 7; }
+    if (core::path_rules::path_last_component_start_or(invalid, 4, -9) != -9 ||
+        core::path_rules::path_last_component_end_or(invalid, 4, -9) != -9 ||
+        core::path_rules::path_extension_start_or(invalid, 4, -9) != -9 ||
+        core::path_rules::path_stem_end_or(invalid, 4, -9) != -9) { return 7; }
     let raw: [u8; 1] = [high];
-    if (std::path::path_last_component_start_or(raw, 1, -9) != 0 ||
-        std::path::path_last_component_end_or(raw, 1, -9) != 1 ||
-        std::path::path_extension_start_or(raw, 1, -9) != -9 ||
-        std::path::path_stem_end_or(raw, 1, -9) != 1) { return 8; }
-    if (std::path::path_last_component_start_or(raw, 0, -9) != -9 ||
-        std::path::path_last_component_end_or(raw, -1, -9) != -9 ||
-        std::path::path_extension_start_or(raw, 0, -9) != -9 ||
-        std::path::path_stem_end_or(raw, -1, -9) != -9) { return 9; }
+    if (core::path_rules::path_last_component_start_or(raw, 1, -9) != 0 ||
+        core::path_rules::path_last_component_end_or(raw, 1, -9) != 1 ||
+        core::path_rules::path_extension_start_or(raw, 1, -9) != -9 ||
+        core::path_rules::path_stem_end_or(raw, 1, -9) != 1) { return 8; }
+    if (core::path_rules::path_last_component_start_or(raw, 0, -9) != -9 ||
+        core::path_rules::path_last_component_end_or(raw, -1, -9) != -9 ||
+        core::path_rules::path_extension_start_or(raw, 0, -9) != -9 ||
+        core::path_rules::path_stem_end_or(raw, -1, -9) != -9) { return 9; }
     return 0;
 }

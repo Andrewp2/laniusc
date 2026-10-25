@@ -1,0 +1,27 @@
+module app::main;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn main() -> i32 {
+    let v4: core::net::Ipv4Addr = core::result::unwrap(core::net::parse_ipv4(bytes("192.0.2.129",11))); assert(v4.bits == 3221226113);
+    let v6: core::net::Ipv6Addr = core::result::unwrap(core::net::parse_ipv6(bytes("2001:db8::ffff:192.0.2.129",26))); assert(v6.high == 2306139568115548160 && v6.low == 281473902969473);
+    let output: [u8;80] = [77;80]; let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(output,2,75));
+    assert(core::result::unwrap(v4.format_into(view)) == 11);
+    let mapped: core::net::Ipv6Addr = v4.to_ipv6_mapped(); assert(core::net::Ipv4Addr::eq(core::option::unwrap(mapped.to_ipv4_mapped()),v4));
+    assert(core::result::unwrap(mapped.format_into(view)) == 18);
+    let n4: core::net::Ipv4Net = core::result::unwrap(core::net::ipv4_net_truncate(v4,24)); assert(n4.network().bits == 3221225984 && n4.last().bits == 3221226239 && n4.contains(v4));
+    let n6: core::net::Ipv6Net = core::result::unwrap(core::net::ipv6_net_truncate(v6,64)); assert(n6.network().high == v6.high && n6.network().low == 0 && n6.contains(v6));
+    let zero6: core::net::Ipv6Net = core::result::unwrap(core::net::ipv6_net_truncate(v6,0)); let all: u64 = 18446744073709551615; assert(zero6.network().high == 0 && zero6.last().high == all && zero6.last().low == all);
+    let full6: core::net::Ipv6Net = core::result::unwrap(core::net::ipv6_net(v6,128)); assert(core::net::Ipv6Addr::eq(full6.network(),full6.last()));
+    let socket: core::net::SocketAddr = core::result::unwrap(core::net::parse_socket(bytes("[fe80::1%00042]:65535",21))); assert(core::result::unwrap(socket.format_into(view)) == 18);
+    view.fill(77); let short: core::slice::View<u8> = core::result::unwrap(view.subview(0,10)); assert(core::result::is_err(v4.format_into(short))); let index: i32 = 0; while (index < 80) { assert(output[index] == 77); index += 1; }
+    let invalid: core::slice::View<u8> = view; invalid.start = -1; assert(core::result::is_err(core::net::parse_ip(invalid))); assert(core::result::is_err(v6.format_into(invalid)));
+    assert(core::net::ipv4(127,2,3,4).is_loopback() && core::net::ipv4(169,254,1,2).is_link_local() && core::net::ipv4(172,31,1,2).is_private() && !core::net::ipv4(172,32,1,2).is_private());
+    assert(core::result::unwrap(core::net::parse_ipv6(bytes("fe80::1",7))).is_link_local()); assert(core::result::unwrap(core::net::parse_ipv6(bytes("fc00::1",7))).is_private());
+    let native: [u8;6] = [77,192,0,2,129,77]; let wire: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(native,1,4)); assert(core::net::Ipv4Addr::eq(core::result::unwrap(core::net::ipv4_from_octets(wire)),v4));
+    let copy: [u8;6] = [77;6]; let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(copy,1,4)); assert(core::result::unwrap(v4.write_octets(destination)) == 4); index = 0; while (index < 6) { assert(copy[index] == native[index]); index += 1; }
+    return 0;
+}

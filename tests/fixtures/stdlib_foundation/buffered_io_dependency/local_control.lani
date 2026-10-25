@@ -1,0 +1,33 @@
+module app::main;
+import core::io;
+import core::result;
+pub struct Forward<W> { inner: &W }
+pub fn forward<W>(inner: &W) -> Forward<W> where W: core::io::Write {
+    return Forward { inner: inner };
+}
+pub impl<W> Forward<W> {
+    pub fn borrow(&self) -> &Forward<W> { return self; }
+}
+pub impl<W> core::io::Write for Forward<W> where W: core::io::Write {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> {
+        let inner: &W = self.inner;
+        return inner.write(bytes, offset, count);
+    }
+    pub fn flush(&self) -> core::result::Result<i32, core::io::Error> {
+        let inner: &W = self.inner;
+        return inner.flush();
+    }
+}
+
+fn send<W>(writer: &W, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, core::io::Error> where W: core::io::Write {
+    return writer.write(bytes, offset, count);
+}
+fn main() -> i32 {
+    let bytes: [u8; 3] = [1, 2, 3];
+    let output: [u8; 3] = [0; 3];
+    let sink: core::io::SliceWriter = core::result::unwrap(core::io::slice_writer(output, 3));
+    let adapter: Forward<core::io::SliceWriter> = forward(sink.borrow());
+    let result: core::result::Result<i32, core::io::Error> = send(adapter.borrow(), bytes, 0, 3);
+    if (core::result::unwrap(result) != 3 || sink.position() != 3 || output[2] != 3) { return 1; }
+    return 0;
+}

@@ -1,0 +1,14 @@
+module app::main;
+import core::result;
+import probe::protocol;
+import probe::values;
+
+fn wrong_source<T,E>(source: i32) -> core::result::Result<T,E>
+    where T: probe::protocol::Produce<T,E> {
+    return T::produce(source,false);
+}
+fn main() -> i32 {
+    let rejected: core::result::Result<probe::values::Item,probe::values::Fault> =
+        wrong_source<probe::values::Item,probe::values::Fault>(17);
+    return 0;
+}

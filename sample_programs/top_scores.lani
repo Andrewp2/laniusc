@@ -1,0 +1,78 @@
+// First line: K (0..4096). Remaining lines: at most 100000 signed i64 scores.
+// Output the largest K scores in descending order, retaining duplicates.
+// Complete input is validated before output. Input limit is 1 MiB.
+module app::main;
+import alloc::binary_heap;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::option;
+import core::result;
+import core::text;
+import std::signal;
+import std::stream;
+
+fn write_score(value: i64) -> bool {
+    let bytes: [u8; 21] = [0;21]; let formatted = core::decimal::format_i64(bytes,0,20,value);
+    if (formatted.is_err()) { return false; }
+    let length: i32 = formatted.unwrap(); bytes[length] = 10;
+    let sink = std::stream::stdout(); return core::io::write_all(sink.borrow(),bytes,0,length+1).is_ok();
+}
+
+fn select(text: core::text::Text) -> i32 {
+    let newline: [u8; 1] = [10];
+    let separator: core::text::Text = core::result::unwrap(core::text::from_utf8(newline, 1));
+    let lines: core::text::Split = text.split(separator);
+    let header: core::text::Text = core::option::unwrap(lines.next());
+    let parsed_k: core::result::Result<i32, core::decimal::ParseError> = header.trim_ascii().parse_i32();
+    if (core::result::is_err(parsed_k)) { return 2; }
+    let k: i32 = core::result::unwrap(parsed_k);
+    if (k < 0 || k > 4096) { return 2; }
+    let heap: alloc::binary_heap::BinaryHeap<i64> = alloc::binary_heap::new(alloc::binary_heap::Order::Min);
+    let count: i32 = 0;
+    let next: core::option::Option<core::text::Text> = lines.next();
+    while (core::option::is_some(next)) {
+        let line: core::text::Text = core::option::unwrap(next); next = lines.next();
+        if (line.is_empty() && core::option::is_none(next)) { break; }
+        let parsed: core::result::Result<i64, core::decimal::ParseError> = line.trim_ascii().parse_i64();
+        if (core::result::is_err(parsed) || count == 100000) { heap.destroy(); return 2; }
+        let value: i64 = core::result::unwrap(parsed);
+        if (heap.len() < k) {
+            if (core::result::is_err(heap.try_push(value))) { heap.destroy(); return 4; }
+        } else {
+            // Scores are plain integers; the displaced/rejected value has no
+            // nested resource to release. Duplicate scores remain in the heap.
+            let discarded: i64 = heap.push_pop(value);
+        }
+        count += 1;
+    }
+    // Reserve the entire destination before transferring any retained score.
+    // The min-heap's existing pop operation yields ascending scores.
+    let scores: alloc::vec::Vec<i64> = alloc::vec::new();
+    if (scores.try_reserve(heap.len()).is_err()) { scores.destroy(); heap.destroy(); return 4; }
+    while (!heap.is_empty()) {
+        let value: i64 = core::option::unwrap(heap.pop());
+        if (scores.try_push(value).is_err()) { scores.destroy(); heap.destroy(); return 4; }
+    }
+    heap.destroy(); let index: i32 = scores.len(); let status: i32 = 0;
+    while (index > 0) {
+        index -= 1;
+        if (!write_score(scores.at(index))) { status = 3; break; }
+    }
+    scores.destroy(); return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let buffer: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(1048576));
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let read: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(input.borrow(), buffer.borrow());
+    if (core::result::is_err(read)) {
+        let failure: core::io::CopyFailure = core::result::unwrap_err(read);
+        let status: i32 = match (failure.cause) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 };
+        buffer.destroy(); return status;
+    }
+    let text: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(buffer.as_bytes(), buffer.len());
+    if (core::result::is_err(text)) { buffer.destroy(); return 2; }
+    let status: i32 = select(core::result::unwrap(text)); buffer.destroy(); return status;
+}

@@ -1,0 +1,26 @@
+module app::main;
+import core::mem;
+import core::result;
+import ext::linalg;
+import std::io;
+fn read_exact(pointer: ptr,count: i32,eof: bool) -> bool { let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { assert(eof && done == 0); return false; } done += got; } return true; }
+fn write_all(pointer: ptr,count: i32) { let done: i32 = 0; while (done < count) { let got: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got > 0); done += got; } }
+fn emit(value: ext::linalg::Matrix) { let header: [i32;2] = [value.rows,value.cols]; write_all(core::mem::i32_array_data_ptr(header),8); write_all(value.data.storage,8*value.rows*value.cols); value.destroy(); }
+fn scalar(value: f64) { let output: [i32;2] = [0;2]; let pointer: ptr = core::mem::i32_array_data_ptr(output); let floats: [f64] = core::mem::typed_slice_from_storage<f64>(pointer,1); floats[0] = value; write_all(pointer,8); }
+fn main() -> i32 {
+ let storage: [i32;4096] = [0;4096]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let limits: ext::linalg::Limits = ext::linalg::default_limits();
+ while (read_exact(pointer,16,true)) {
+  let op: i32 = storage[0]; let m: i32 = storage[1]; let n: i32 = storage[2]; let p: i32 = storage[3]; assert(m > 0 && n > 0 && p > 0 && m <= 16 && n <= 16 && p <= 16);
+  let acount: i32 = m*n; let bcount: i32 = n*p; if (op == 1 || op == 3) { bcount = m*p; } if (op == 2 || op == 4 || op == 5 || op == 6) { bcount = 0; }
+  assert(read_exact(pointer+16,8*(acount+bcount),false)); let floats: [f64] = core::mem::typed_slice_from_storage<f64>(pointer+16,acount+bcount);
+  let a: ext::linalg::MatrixView = core::result::unwrap(ext::linalg::row_major(floats,acount,m,n)); let b: ext::linalg::MatrixView = core::result::unwrap(ext::linalg::row_major(floats,acount,0,0)); if (op == 0) { b = core::result::unwrap(ext::linalg::strided(floats,acount+bcount,acount,n,p,p,1)); } if (op == 1 || op == 3) { b = core::result::unwrap(ext::linalg::strided(floats,acount+bcount,acount,m,p,p,1)); } if (bcount == 0) { b = core::result::unwrap(ext::linalg::row_major(floats,acount,0,0)); }
+  if (op == 0) { emit(core::result::unwrap(ext::linalg::matmul(a,b,limits))); }
+  if (op == 1) { emit(core::result::unwrap(ext::linalg::solve(a,b,0.000000000001,limits))); }
+  if (op == 2) { emit(core::result::unwrap(ext::linalg::inverse(a,0.000000000001,limits))); }
+  if (op == 3) { emit(core::result::unwrap(ext::linalg::least_squares(a,b,0.000000000001,limits))); }
+  if (op == 4) { scalar(core::result::unwrap(ext::linalg::determinant(a,0.000000000001,limits))); }
+  if (op == 5) { scalar(core::result::unwrap(ext::linalg::norm(a,limits))); }
+  if (op == 6) { let q: ext::linalg::Qr = core::result::unwrap(ext::linalg::qr(a,0.000000000001,limits)); let unit: ext::linalg::Matrix = core::result::unwrap(ext::linalg::identity(m,limits)); emit(core::result::unwrap(q.apply_q(unit.view(),limits))); unit.destroy(); let packed: ext::linalg::MatrixView = q.packed(); let r: ext::linalg::Matrix = core::result::unwrap(ext::linalg::zeros(m,n,limits)); let i: i32 = 0; while (i < n) { let j: i32 = i; while (j < n) { core::result::unwrap(r.set(i,j,core::result::unwrap(packed.get(i,j)))); j += 1; } i += 1; } emit(r); q.destroy(); }
+ }
+ return 0;
+}

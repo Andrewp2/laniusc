@@ -1,0 +1,3 @@
+module app::fields;
+
+pub struct Borrowed<T> { before: u64, values: [T], after: u64 }

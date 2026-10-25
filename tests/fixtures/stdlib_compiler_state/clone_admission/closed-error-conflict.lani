@@ -1,0 +1,16 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::result;
+import probe::owners;
+import probe::protocol;
+fn clone<T>(source: T) -> core::result::Result<T,i64> where T: probe::protocol::TryClone<T,alloc::string::Error> {
+    return T::try_clone_value(source);
+}
+fn main() -> i32 {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr("data"),4);
+    let source: alloc::string::String = alloc::string::from_utf8(raw,4).unwrap();
+    let cloned: core::result::Result<alloc::string::String,i64> = clone<alloc::string::String>(source);
+    source.destroy(); let copy: alloc::string::String = cloned.unwrap(); assert(copy.byte_at(3).unwrap() == 97);
+    alloc::string::String::destroy_value(copy); return 0;
+}

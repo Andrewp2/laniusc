@@ -1,0 +1,9 @@
+module app::main;
+import app::fields;
+struct Alpha { value: i32 }
+struct Beta { value: i32 }
+fn main() -> i32 {
+    let values: [Beta; 1] = [Beta { value: 7 }];
+    let invalid: app::fields::Borrowed<Alpha> = app::fields::Borrowed<Alpha> { before: 0, values: values, after: 0 };
+    return 0;
+}

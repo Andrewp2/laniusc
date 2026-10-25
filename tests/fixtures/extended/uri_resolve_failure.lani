@@ -1,0 +1,22 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::uri;
+import ext::uri_resolve;
+fn parsed(value: str, count: i32) -> ext::uri::Reference { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(ext::uri::parse(core::result::unwrap(core::slice::view(raw,count)))); }
+fn allocation(error: ext::uri_resolve::Error) -> bool { let value: bool = match (error) { ext::uri_resolve::Error::AllocationFailed -> true, _ -> false }; return value; }
+fn main() -> i32 {
+    let base: ext::uri::Reference = parsed("http://a/b/c/d;p?q",18); let source: ext::uri::Reference = parsed("../../g?x#y",11);
+    let resolved: core::result::Result<alloc::vec::Vec<u8>, ext::uri_resolve::Error> = ext::uri_resolve::resolve(base,source,100);
+    if (core::result::is_err(resolved)) { assert(allocation(core::result::unwrap_err(resolved))); assert(core::option::unwrap(source.path.get(0)) == 46 && base.path.len() == 8); return 4; }
+    let first: alloc::vec::Vec<u8> = core::result::unwrap(resolved);
+    let recomposed: core::result::Result<alloc::vec::Vec<u8>, ext::uri_resolve::Error> = ext::uri_resolve::recompose(base,100);
+    if (core::result::is_err(recomposed)) { assert(allocation(core::result::unwrap_err(recomposed))); assert(first.len() == 14 && first.at(7) == 97); first.destroy(); return 4; }
+    let second: alloc::vec::Vec<u8> = core::result::unwrap(recomposed);
+    let inherited: core::result::Result<alloc::vec::Vec<u8>, ext::uri_resolve::Error> = ext::uri_resolve::resolve(base,parsed("",0),100);
+    if (core::result::is_err(inherited)) { assert(allocation(core::result::unwrap_err(inherited))); assert(first.len() == 14 && second.len() == 18); first.destroy(); second.destroy(); return 4; }
+    let third: alloc::vec::Vec<u8> = core::result::unwrap(inherited); assert(third.len() == 18); third.destroy(); first.destroy(); second.destroy(); return 0;
+}

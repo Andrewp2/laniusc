@@ -1,0 +1,84 @@
+// Pending reducer: compare a bound Option result with conditional assignment
+// through both copies of the same imported generic Filter cursor type.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Counter { calls: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+struct Probe { length: i32, position: i32, calls: i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i64> for Probe {
+    pub fn next(&self) -> core::option::Option<i64> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.position; self.position += 1;
+        return core::option::Some(value as i64);
+    }
+}
+struct Predicate { counter: &Counter }
+impl Predicate { fn borrow(&self) -> &Predicate { return self; } }
+pub impl core::iter::Mapper<i64, bool> for Predicate {
+    pub fn apply(&self, value: i64) -> bool {
+        let counter: &Counter = self.counter; counter.calls += 1;
+        return true;
+    }
+}
+fn directly_bound_none<I>(first: I) -> bool where I: core::iter::Iterator<i64> {
+    let item: core::option::Option<i64> = first.next();
+    return core::option::is_none(item);
+}
+fn assigned_none<I>(first: I, schedule: u64) -> bool where I: core::iter::Iterator<i64> {
+    let second: I = first;
+    let item: core::option::Option<i64> = core::option::None();
+    if ((schedule & 1) == 0) { item = first.next(); }
+    else { item = second.next(); }
+    return core::option::is_none(item);
+}
+fn marker(value: u8) -> bool {
+    let bytes: [u8; 1] = [value];
+    let output: std::stream::Descriptor = std::stream::stdout();
+    let sent: core::result::Result<i32, core::io::Error> = output.write(bytes, 0, 1);
+    if (core::result::is_err(sent)) { return false; }
+    let count: i32 = core::result::unwrap(sent);
+    return count == 1;
+}
+fn main() -> i32 {
+    let first_count: Counter = Counter { calls: 0 };
+    let second_count: Counter = Counter { calls: 0 };
+    let some_count: Counter = Counter { calls: 0 };
+    let empty_first: Probe = Probe { length: 0, position: 0, calls: 0 };
+    let empty_second: Probe = Probe { length: 0, position: 0, calls: 0 };
+    let some_source: Probe = Probe { length: 1, position: 0, calls: 0 };
+    let first_predicate: Predicate = Predicate { counter: first_count.borrow() };
+    let second_predicate: Predicate = Predicate { counter: second_count.borrow() };
+    let some_predicate: Predicate = Predicate { counter: some_count.borrow() };
+
+    if (!marker(65)) { return 1; }
+    let direct_cursor: core::iter::Filter<Probe, Predicate, i64> = core::iter::filter<Probe, Predicate, i64>(empty_first.borrow(), first_predicate.borrow());
+    let direct: bool = directly_bound_none<core::iter::Filter<Probe, Predicate, i64>>(direct_cursor);
+    if (!marker(direct as u8)) { return 1; }
+    if (!marker(66)) { return 1; }
+    let first_cursor: core::iter::Filter<Probe, Predicate, i64> = core::iter::filter<Probe, Predicate, i64>(empty_first.borrow(), first_predicate.borrow());
+    let first: bool = assigned_none<core::iter::Filter<Probe, Predicate, i64>>(first_cursor, 0);
+    if (!marker(first as u8)) { return 1; }
+    if (!marker(67)) { return 1; }
+    let second_cursor: core::iter::Filter<Probe, Predicate, i64> = core::iter::filter<Probe, Predicate, i64>(empty_second.borrow(), second_predicate.borrow());
+    let second: bool = assigned_none<core::iter::Filter<Probe, Predicate, i64>>(second_cursor, 1);
+    if (!marker(second as u8)) { return 1; }
+    if (!marker(68)) { return 1; }
+    let some_cursor: core::iter::Filter<Probe, Predicate, i64> = core::iter::filter<Probe, Predicate, i64>(some_source.borrow(), some_predicate.borrow());
+    let some: bool = assigned_none<core::iter::Filter<Probe, Predicate, i64>>(some_cursor, 1);
+    if (!marker(some as u8)) { return 1; }
+
+    if (!marker(empty_first.calls as u8)) { return 1; }
+    if (!marker(empty_second.calls as u8)) { return 1; }
+    if (!marker(some_source.calls as u8)) { return 1; }
+    if (!marker(first_count.calls as u8)) { return 1; }
+    if (!marker(second_count.calls as u8)) { return 1; }
+    if (!marker(some_count.calls as u8)) { return 1; }
+    return 0;
+}

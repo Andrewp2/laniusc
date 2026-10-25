@@ -1,0 +1,77 @@
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::percent;
+import std::io;
+
+fn write(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let written: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize);
+        assert(written > 0); done += written;
+    }
+}
+fn number(bytes: [u8], index: i32, value: i32) {
+    let part: u32 = value as u32;
+    bytes[index] = (part & 255) as u8;
+    bytes[index+1] = ((part >> 8) & 255) as u8;
+    bytes[index+2] = ((part >> 16) & 255) as u8;
+    bytes[index+3] = ((part >> 24) & 255) as u8;
+}
+fn main() -> i32 {
+    let input_words: [i32;16384] = [0;16384];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer,65536);
+    let count: i32 = 0;
+    while (count < 65536) {
+        let got: i32 = std::io::read_stdin(input_pointer+(count as usize),(65536-count) as usize);
+        assert(got >= 0); if (got == 0) { break; } count += got;
+    }
+    assert(count < 65536);
+    let work_words: [i32;4096] = [0;4096];
+    let work_pointer: ptr = core::mem::i32_array_data_ptr(work_words);
+    let work: [u8] = core::mem::typed_slice_from_raw_parts(work_pointer,16384);
+    let header_words: [i32;3] = [0;3];
+    let header_pointer: ptr = core::mem::i32_array_data_ptr(header_words);
+    let header: [u8] = core::mem::typed_slice_from_raw_parts(header_pointer,12);
+    let position: i32 = 0;
+    while (position < count) {
+        assert(count-position >= 6);
+        let mode: u8 = input[position];
+        let length: i32 = (input[position+1] as i32) + (input[position+2] as i32)*256;
+        let capacity: i32 = (input[position+3] as i32) + (input[position+4] as i32)*256;
+        let in_place: bool = input[position+5] == 1;
+        position += 6; assert(length <= 4096 && capacity <= 12288 && length <= count-position);
+        let index: i32 = 0; while (index < 16384) { work[index] = 77; index += 1; }
+        let source: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input,position,length));
+        if (in_place) {
+            index = 0; while (index < length) { work[index+3] = input[position+index]; index += 1; }
+            source = core::result::unwrap(core::slice::view_range(work,3,length));
+        }
+        let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(work,3,capacity));
+        let result: core::result::Result<i32,ext::percent::Error> = core::result::Ok(0);
+        if (mode == 1) { result = ext::percent::decode_into(source,destination); }
+        else { result = ext::percent::encode_into(source,destination); }
+        let code: i32 = 0; let detail: i32 = 0; let written: i32 = 0;
+        if (core::result::is_err(result)) {
+            let error: ext::percent::Error = core::result::unwrap_err(result);
+            code = match (error) { ext::percent::Error::Bounds -> 1, ext::percent::Error::SizeOverflow -> 2, ext::percent::Error::Capacity(required) -> 3, ext::percent::Error::InvalidEscape(index) -> 4 };
+            detail = match (error) { ext::percent::Error::Capacity(required) -> required, ext::percent::Error::InvalidEscape(index) -> index, _ -> 0 };
+        } else { written = core::result::unwrap(result); }
+        // Error atomicity and untouched tail/guards for both alias modes.
+        index = 0;
+        while (index < 16384) {
+            if (index < 3 || index >= 3+written || code != 0) {
+                let expected: u8 = 77;
+                if (in_place && index >= 3 && index < 3+length) { expected = input[position+index-3]; }
+                assert(work[index] == expected);
+            }
+            index += 1;
+        }
+        number(header,0,code); number(header,4,detail); number(header,8,written); write(header_pointer,12);
+        write(work_pointer+3,written);
+        position += length;
+    }
+    return 0;
+}

@@ -1,0 +1,29 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::slice;
+import std::command;
+import std::command_raw;
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn bad_view(raw: [u8], start: i32, n: i32) -> core::slice::View<u8> { return core::slice::View { values: raw, start: start, length: n }; }
+fn invalid(request: std::command::Request, code: i32) { let result = std::command::spawn(request); assert(result.is_err()); let error = result.unwrap_err(); let actual: i32 = match(error.kind) { std::command::Error::Bounds -> 1, std::command::Error::Nul -> 2, std::command::Error::InvalidInput -> 3, std::command::Error::MissingPath -> 4, std::command::Error::Limit -> 5, std::command::Error::Host -> error.errno, _ -> 99 }; assert(actual == code); }
+fn main() -> i32 {
+    let name = bytes("/bin/true",9); let args: [core::slice::View<u8>;1] = [name]; let empty: [core::slice::View<u8>;0] = []; let args_view = core::slice::view(args,1).unwrap(); let env = core::slice::view(empty,0).unwrap(); let request = std::command::request(name,args_view,env);
+    request.program = bytes("",0); invalid(request,3); request.program = name;
+    request.arguments = env; invalid(request,3); request.arguments = args_view;
+    request.limits.max_args = -1; invalid(request,1); request.limits = std::command::default_limits();
+    request.limits.max_args = 0; invalid(request,5); request.limits = std::command::default_limits();
+    request.limits.max_bytes = 0; invalid(request,5); request.limits = std::command::default_limits();
+    request.limits.max_string = 8; invalid(request,5); request.limits = std::command::default_limits();
+    let zero: [u8;3] = [65,0,66]; request.program = core::slice::view(zero,3).unwrap(); invalid(request,2); request.program = name;
+    request.cwd = core::option::Some(bytes("",0)); invalid(request,3); request.cwd = core::option::Some(core::slice::view(zero,3).unwrap()); invalid(request,2); request.cwd = core::option::None();
+    request.program = bad_view(zero,-1,1); invalid(request,1); request.program = bad_view(zero,2147483647,1); invalid(request,1); request.program = name;
+    let invalid_env: [core::slice::View<u8>;1] = [bytes("NOVALUE",7)]; request.environment = core::slice::view(invalid_env,1).unwrap(); invalid(request,3);
+    invalid_env[0] = bytes("=empty",6); invalid(request,3); invalid_env[0] = core::slice::view(zero,3).unwrap(); invalid(request,2); request.environment = env;
+    request.program = bytes("true",4); request.search = std::command::Search::EnvironmentPath; invalid(request,4);
+    invalid_env[0] = bytes("PATH=/bin:/usr/bin",18); request.environment = core::slice::view(invalid_env,1).unwrap(); request.limits.max_paths = 1; invalid(request,5); request.limits = std::command::default_limits(); request.program = name; request.environment = env;
+    // A closed borrowed FD must not alias the /dev/null opened for stdin.
+    std::command_raw::close(3); request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Borrowed(3); invalid(request,9);
+    request.stdout = std::command::Stdio::Borrowed(-1); invalid(request,9);
+    let status: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(status),true) == -10); return 0;
+}

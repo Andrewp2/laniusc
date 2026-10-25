@@ -1,0 +1,35 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::kv;
+import std::io;
+import std::stream;
+fn code(error: ext::kv::Error) -> i32 {
+    let n: i32 = match (error) { ext::kv::Error::Bounds -> 1,ext::kv::Error::EntryLimit -> 2,ext::kv::Error::KeyLimit -> 3,ext::kv::Error::ValueLimit -> 4,ext::kv::Error::ByteLimit -> 5,ext::kv::Error::SnapshotLimit -> 6,ext::kv::Error::WorkLimit -> 7,ext::kv::Error::AllocationFailed -> 8,ext::kv::Error::SizeOverflow -> 9,ext::kv::Error::Truncated -> 10,ext::kv::Error::Signature -> 11,ext::kv::Error::Version -> 12,ext::kv::Error::Header -> 13,ext::kv::Error::Checksum -> 14,ext::kv::Error::Order -> 15,ext::kv::Error::DuplicateKey -> 16,ext::kv::Error::TrailingData -> 17 }; return n;
+}
+fn get32(bytes: [u8], at: i32) -> u32 { return (bytes[at] as u32) | ((bytes[at+1] as u32) << 8) | ((bytes[at+2] as u32) << 16) | ((bytes[at+3] as u32) << 24); }
+fn put32(bytes: [u8], at: i32, value: i32) { let n: u32 = value as u32; bytes[at] = (n & 255) as u8; bytes[at+1] = ((n >> 8) & 255) as u8; bytes[at+2] = ((n >> 16) & 255) as u8; bytes[at+3] = (n >> 24) as u8; }
+fn main() -> i32 {
+    let storage: [i32;262144] = [0;262144]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,1048576); let count: i32 = 0;
+    while (count < 1048576) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(1048576-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; } assert(count < 1048576);
+    let header_storage: [i32;3] = [0;3]; let hp: ptr = core::mem::i32_array_data_ptr(header_storage); let header: [u8] = core::mem::typed_slice_from_raw_parts(hp,12); let sink: std::stream::Descriptor = std::stream::stdout();
+    let store: ext::kv::Store = ext::kv::new(); let position: i32 = 0;
+    while (position < count) {
+        assert(count-position >= 37); let mode: u8 = input[position]; let work: u64 = (get32(input,position+21) as u64) | ((get32(input,position+25) as u64) << 32);
+        let limits: ext::kv::Limits = ext::kv::Limits { max_entries: get32(input,position+1) as i32,max_key: get32(input,position+5) as i32,max_value: get32(input,position+9) as i32,max_bytes: get32(input,position+13) as i32,max_snapshot: get32(input,position+17) as i32,max_work: work };
+        let kl: i32 = get32(input,position+29) as i32; let vl: i32 = get32(input,position+33) as i32; position += 37; assert(kl >= 0 && vl >= 0 && kl <= count-position && vl <= count-position-kl);
+        let key: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input,position,kl)); let value: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input,position+kl,vl));
+        let status: i32 = 0; let detail: i32 = 0; let owned: alloc::vec::Vec<u8> = alloc::vec::new(); let output: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(input,0,0));
+        if (mode == 0) { let result: core::result::Result<ext::kv::Put,ext::kv::Error> = store.put(key,value,limits); if (core::result::is_err(result)) { status = code(core::result::unwrap_err(result)); } else { detail = match (core::result::unwrap(result)) { ext::kv::Put::Inserted -> 1,ext::kv::Put::Replaced -> 2 }; } }
+        if (mode == 1) { let result: core::result::Result<bool,ext::kv::Error> = store.remove(key,work); if (core::result::is_err(result)) { status = code(core::result::unwrap_err(result)); } else { if (core::result::unwrap(result)) { detail = 1; } } }
+        if (mode == 2) { let result: core::result::Result<core::option::Option<core::slice::View<u8>>,ext::kv::Error> = store.get(key,work); if (core::result::is_err(result)) { status = code(core::result::unwrap_err(result)); } else { let found: core::option::Option<core::slice::View<u8>> = core::result::unwrap(result); if (core::option::is_some(found)) { detail = 1; output = core::option::unwrap(found); } } }
+        if (mode == 3) { let result: core::result::Result<alloc::vec::Vec<u8>,ext::kv::Error> = ext::kv::encode(store.borrow(),limits.max_snapshot,work); if (core::result::is_err(result)) { status = code(core::result::unwrap_err(result)); } else { owned = core::result::unwrap(result); output = owned.as_view(); detail = store.len(); } }
+        if (mode == 4) { let result: core::result::Result<ext::kv::Store,ext::kv::Error> = ext::kv::decode(value,limits); if (core::result::is_err(result)) { status = code(core::result::unwrap_err(result)); } else { store.destroy(); store = core::result::unwrap(result); detail = store.len(); } }
+        put32(header,0,status); put32(header,4,detail); put32(header,8,output.length); assert(std::io::write_stdout(hp,12) == 12); assert(core::result::is_ok(core::io::write_all(sink.borrow(),output.values,output.start,output.length))); owned.destroy(); position += kl+vl;
+    }
+    store.destroy(); return 0;
+}

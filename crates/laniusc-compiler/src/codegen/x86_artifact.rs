@@ -53,6 +53,7 @@ pub(crate) struct GpuX86ArtifactStage {
     clear: ComputeOperation,
     safety_emits: Vec<ComputeOperation>,
     emits: Vec<ComputeOperation>,
+    runtime_dispatch_args: ComputeOperation,
     runtime_emit: ComputeOperation,
     byte_scan: GpuResidentExclusiveScan,
     _params: Vec<LaniusBuffer<X86ArtifactParams>>,
@@ -105,6 +106,7 @@ impl GpuX86ArtifactStage {
             .map_err(anyhow::Error::msg)?;
         let length = alias_u32("artifact.x86.length", 1)?;
         let words = alias_u32("artifact.x86.bytes", artifact_capacity.div_ceil(4))?;
+        let runtime_dispatch_args_buffer = alias_u32("lir.x86.runtime_dispatch_args", 3)?;
         let token_capacity = capacities.declaration_capacity();
         let function_capacity = capacities.hir_nodes.max(1);
         let params = (0..emit_capacity.div_ceil(TARGET_LIR_PAGE_ROWS))
@@ -162,6 +164,11 @@ impl GpuX86ArtifactStage {
             kernels,
             "lir.x86.runtime.emit",
             "codegen/lir/x86/runtime_emit",
+        )?;
+        let runtime_dispatch_args_pass = load(
+            kernels,
+            "lir.x86.runtime.dispatch_args",
+            "codegen/lir/x86/runtime_dispatch_args",
         )?;
         let graph_bindings = workspace.bindings(graph).map_err(anyhow::Error::msg)?;
         let mut resources = ResourceMap::new();
@@ -308,14 +315,24 @@ impl GpuX86ArtifactStage {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        let runtime_emit = ComputeOperation::direct_with_uniform(
+        let runtime_dispatch_args = ComputeOperation::direct_with_uniform(
             device,
             &context,
             &resources,
+            "lir.x86.runtime.dispatch_args",
+            &runtime_dispatch_args_pass,
+            fixed_params,
+            1,
+        )?;
+        let mut runtime_resources = resources.clone();
+        runtime_resources.buffer("gParams", fixed_params);
+        let runtime_emit = ComputeOperation::indirect(
+            device,
+            &context,
+            &runtime_resources,
             "lir.x86.runtime.emit",
             &runtime_emit_pass,
-            fixed_params,
-            2048,
+            &runtime_dispatch_args_buffer,
         )?;
 
         let length_readback = readback_bytes(device, "artifact.x86.length.readback", 4, 4);
@@ -350,6 +367,7 @@ impl GpuX86ArtifactStage {
             clear,
             safety_emits,
             emits,
+            runtime_dispatch_args,
             runtime_emit,
             byte_scan,
             _params: params,
@@ -431,6 +449,7 @@ impl GpuX86ArtifactStage {
         for emit in &self.emits[first_page..] {
             emit.record(encoder)?;
         }
+        self.runtime_dispatch_args.record(encoder)?;
         self.runtime_emit.record(encoder)?;
         Ok(())
     }
@@ -489,6 +508,10 @@ fn load(kernels: &KernelRegistry, _label: &str, shader: &str) -> Result<PassData
 }
 
 #[cfg(test)]
+#[path = "x86_runtime_dispatch_tests.rs"]
+mod runtime_dispatch_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
@@ -540,7 +563,7 @@ mod tests {
             parameters: 1,
             aggregate_elements: 1,
             target_instructions: 12,
-            artifact_bytes: 2048,
+            artifact_bytes: 4096,
         };
         let graph = lowering_compiler_graph_for_artifact(
             capacities,

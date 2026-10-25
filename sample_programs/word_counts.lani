@@ -1,0 +1,70 @@
+// Count ASCII-whitespace-delimited UTF-8 words and emit word<TAB>count<LF>
+// in byte-lexicographic order. Optional arguments select [lower, upper).
+// Limits: 1 MiB input, 65536 distinct words, 256 bytes per range argument.
+// Exit 2 invalid input/limit, 3 I/O, 4 allocation. Validation precedes output.
+module app::main;
+import alloc::io;
+import alloc::tree_map;
+import core::decimal;
+import core::i32;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import std::args_checked;
+import std::stream;
+fn input_status(error: core::io::Error) -> i32 {
+    let status: i32 = match (error) { core::io::Error::LimitExceeded -> 2, core::io::Error::AllocationFailed -> 4, _ -> 3 }; return status;
+}
+fn main() -> i32 {
+    let arguments: i32 = std::args_checked::argument_count_or(0);
+    if (arguments != 1 && arguments != 3) { return 2; }
+    let lower_storage: [i32; 64] = [0; 64]; let upper_storage: [i32; 64] = [0; 64];
+    let lower_ptr: ptr = core::mem::i32_array_data_ptr(lower_storage); let upper_ptr: ptr = core::mem::i32_array_data_ptr(upper_storage);
+    let lower_bytes: [u8] = core::mem::typed_slice_from_raw_parts(lower_ptr, 256); let upper_bytes: [u8] = core::mem::typed_slice_from_raw_parts(upper_ptr, 256);
+    let lower: core::text::Text = core::text::from_utf8_unchecked(lower_bytes, 0, 0);
+    let upper: core::text::Text = core::text::from_utf8_unchecked(upper_bytes, 0, 0);
+    if (arguments == 3) {
+        let left_length: i32 = std::args_checked::argument_len_or(1, -1); let right_length: i32 = std::args_checked::argument_len_or(2, -1);
+        if (left_length < 0 || right_length < 0 || left_length > 256 || right_length > 256) { return 2; }
+        if (!std::args_checked::read_exact_into(1, lower_ptr, 256) || !std::args_checked::read_exact_into(2, upper_ptr, 256)) { return 2; }
+        let left: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(lower_bytes, left_length);
+        let right: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(upper_bytes, right_length);
+        if (core::result::is_err(left) || core::result::is_err(right)) { return 2; }
+        lower = core::result::unwrap(left); upper = core::result::unwrap(right);
+        if (lower.compare(upper) > 0) { return 2; }
+    }
+    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(1048576));
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let received: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), input.borrow());
+    if (core::result::is_err(received)) { let failure: core::io::CopyFailure = core::result::unwrap_err(received); input.destroy(); return input_status(failure.cause); }
+    let validated: core::result::Result<core::text::Text, core::text::Error> = core::text::from_utf8(input.as_bytes(), input.len());
+    if (core::result::is_err(validated)) { input.destroy(); return 2; }
+    let text: core::text::Text = core::result::unwrap(validated); let words: core::text::SplitAsciiWhitespace = text.split_ascii_whitespace();
+    // Keys borrow the input, which remains alive until the map is destroyed.
+    let counts: alloc::tree_map::TreeMap<core::text::Text, i32> = alloc::tree_map::new();
+    while (true) {
+        let next: core::option::Option<core::text::Text> = words.next(); if (core::option::is_none(next)) { break; }
+        let word: core::text::Text = core::option::unwrap(next); let old: core::option::Option<i32> = counts.get(word);
+        if (core::option::is_none(old) && counts.len() == 65536) { counts.destroy(); input.destroy(); return 2; }
+        let increased: core::option::Option<i32> = core::i32::checked_add(core::option::unwrap_or(old, 0), 1);
+        if (core::option::is_none(increased)) { counts.destroy(); input.destroy(); return 2; }
+        let inserted: core::result::Result<core::option::Option<alloc::tree_map::Entry<core::text::Text, i32>>, alloc::tree_map::Error> = counts.try_insert(word, core::option::unwrap(increased));
+        if (core::result::is_err(inserted)) { counts.destroy(); input.destroy(); return 4; }
+    }
+    let cursor: alloc::tree_map::Cursor<core::text::Text, i32> = counts.iter();
+    if (arguments == 3) { cursor = core::result::unwrap(counts.range(lower, upper)); }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let tab: [u8; 1] = [9]; let newline: [u8; 1] = [10]; let digits: [u8; 20] = [0; 20];
+    let failed: bool = false;
+    while (!cursor.is_empty()) {
+        let entry: alloc::tree_map::Entry<core::text::Text, i32> = core::option::unwrap(cursor.next()); let word: core::text::Text = entry.key;
+        let length: i32 = core::result::unwrap(core::decimal::format_i32(digits, 0, 20, entry.value));
+        if (core::result::is_err(core::io::write_all(sink.borrow(), word.bytes, word.start, word.byte_len())) ||
+            core::result::is_err(core::io::write_all(sink.borrow(), tab, 0, 1)) ||
+            core::result::is_err(core::io::write_all(sink.borrow(), digits, 0, length)) ||
+            core::result::is_err(core::io::write_all(sink.borrow(), newline, 0, 1))) { failed = true; break; }
+    }
+    counts.destroy(); input.destroy(); if (failed) { return 3; } return 0;
+}

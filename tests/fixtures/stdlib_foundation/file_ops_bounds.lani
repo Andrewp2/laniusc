@@ -1,0 +1,24 @@
+module app::main;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file_ops;
+fn main() -> i32 {
+    let storage:[i32;65]=[0;65]; let pointer:ptr=core::mem::i32_array_data_ptr(storage); let raw:[u8]=core::mem::typed_slice_from_raw_parts(pointer,260);
+    let input:core::slice::View<u8> =core::result::unwrap(core::slice::view_range(raw,4,256));
+    let output:std::file_ops::Metadata=std::file_ops::empty_metadata(); output.mode=77;
+    let short:core::slice::View<u8> =core::result::unwrap(input.subview(0,255)); assert(core::result::is_err(std::file_ops::decode_statx_into(short,output.borrow())) && output.mode==77);
+    raw[4]=64; raw[4+119]=128; raw[4+120]=0; raw[4+121]=202; raw[4+122]=154; raw[4+123]=59;
+    assert(core::result::is_err(std::file_ops::decode_statx_into(input,output.borrow())) && output.mode==77);
+    raw[4+120]=255; raw[4+121]=201; core::result::unwrap(std::file_ops::decode_statx_into(input,output.borrow()));
+    assert(output.mask==64 && output.mode==0 && output.times.modified.seconds==-9223372036854775807-1 && output.times.modified.nanoseconds==999999999);
+    let bad:core::slice::View<u8> =core::slice::View { values:raw,start:2147483647,length:1 };
+    assert(core::result::is_err(std::file_ops::decode_statx_into(bad,output.borrow())) && output.mask==64);
+    let path:core::path::Path=core::path::Path { bytes:bad }; assert(core::result::is_err(std::file_ops::open(path,std::file_ops::options())));
+    let zero:core::slice::View<u8> =core::result::unwrap(core::slice::view(raw,1)); let path:core::path::Path=core::path::Path { bytes:zero }; assert(core::result::is_err(std::file_ops::open(path,std::file_ops::options())));
+    raw[0]=97; let options:std::file_ops::OpenOptions=std::file_ops::options(); options.exclusive=true; assert(core::result::is_err(std::file_ops::open(path,options)));
+    let long:[i32;1024]=[0;1024]; let packed:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(long),4096); let i:i32=0; while(i<4096) { packed[i]=97; i+=1; }
+    let path:core::path::Path=core::result::unwrap(core::path::from_bytes(packed,4096)); assert(core::result::is_err(std::file_ops::open(path,std::file_ops::options())));
+    return 0;
+}

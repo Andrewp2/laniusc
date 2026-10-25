@@ -1,0 +1,124 @@
+// Bounded DER certificate schema inspection, not trust or signature validation.
+// No arguments; complete input and report preparation precede publication.
+module app::main;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::sha256;
+import core::slice;
+import ext::der;
+import ext::x509;
+import std::args;
+import std::signal;
+import std::stream;
+
+const MAX_INPUT: i32 = 1048576;
+const MAX_OUTPUT: i32 = 8192;
+struct IoBudget { remaining: i32 }
+impl IoBudget {
+    fn borrow(&self) -> &IoBudget { return self; }
+    fn charge(&self) -> bool { if (self.remaining==0) { return false; } self.remaining-=1; return true; }
+}
+fn io_status(error: core::io::Error) -> i32 { return match (error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 7, _ -> 3 }; }
+fn schema_status(error: ext::x509::Error) -> i32 {
+    return match (error.kind) { ext::x509::ErrorKind::InputLimit -> 7, ext::x509::ErrorKind::ItemLimit -> 7, ext::x509::ErrorKind::WorkLimit -> 7, _ -> 5 };
+}
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View<u8> { values: bytes, start: start, length: length }; }
+fn read_input(input: &alloc::io::Buffer, budget: &IoBudget) -> i32 {
+    let source: std::stream::Descriptor=std::stream::stdin(); let storage: [i32;256]=[0;256];
+    let bytes: [u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let total: i32=0;
+    while (true) {
+        let request: i32=MAX_INPUT-total; if (request>1024) { request=1024; } if (request==0) { request=1; }
+        if (!budget.charge()) { return 7; }
+        let read: core::result::Result<i32,core::io::Error> = source.read(bytes,0,request);
+        if (read.is_err()) { if (core::io::is_interrupted(read.unwrap_err())) { continue; } return 3; }
+        let count: i32=read.unwrap(); if (count<0 || count>request) { return 3; } if (count==0) { return 0; }
+        if (count>MAX_INPUT-total) { return 7; }
+        let appended: core::result::Result<i32,core::io::Error> = input.write(bytes,0,count);
+        if (appended.is_err()) { return io_status(appended.unwrap_err()); } if (appended.unwrap()!=count) { return 3; } total+=count;
+    }
+    return 3;
+}
+struct Report { bytes: [u8], length: i32, failed: bool }
+impl Report {
+    fn borrow(&self) -> &Report { return self; }
+    fn byte(&self, value: u8) { if (self.failed) { return; } if (self.length==MAX_OUTPUT) { self.failed=true; return; } self.bytes[self.length]=value; self.length+=1; }
+    fn literal(&self, value: str, count: i32) {
+        if (self.failed) { return; } if (count>MAX_OUTPUT-self.length) { self.failed=true; return; }
+        let raw: [u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); let index: i32=0;
+        while (index<count) { self.bytes[self.length]=raw[index]; self.length+=1; index+=1; }
+    }
+    fn number(&self, value: u64) {
+        if (self.failed) { return; } let digits: [u8;20]=[0;20]; let count: i32=0; let remaining: u64=value;
+        while (true) { digits[count]=(48+remaining%10) as u8; count+=1; remaining/=10; if (remaining==0) { break; } }
+        if (count>MAX_OUTPUT-self.length) { self.failed=true; return; }
+        while (count>0) { count-=1; self.byte(digits[count]); }
+    }
+    fn hex(&self, value: core::slice::View<u8>) {
+        if (self.failed) { return; } if (value.length>(MAX_OUTPUT-self.length)/2) { self.failed=true; return; }
+        let index: i32=0; while (index<value.length) { let item: u8=value.values[value.start+index]; self.byte(nibble((item as i32)/16)); self.byte(nibble((item as i32)%16)); index+=1; }
+    }
+    fn number_line(&self, label: str, count: i32, value: u64) { self.literal(label,count); self.number(value); self.byte(10); }
+    fn hex_line(&self, label: str, count: i32, value: core::slice::View<u8>) { self.literal(label,count); self.hex(value); self.byte(10); }
+    fn fixed(&self, value: i32, width: i32) { let divisor: i32=10; if (width==4) { divisor=1000; } let remaining: i32=value; let count: i32=0; while (count<width) { self.byte((48+remaining/divisor) as u8); remaining=remaining%divisor; divisor/=10; count+=1; } }
+    fn date_line(&self, label: str, count: i32, value: ext::der::X509Time) {
+        self.literal(label,count); self.fixed(value.year,4); self.byte(45); self.fixed(value.month,2); self.byte(45); self.fixed(value.day,2); self.byte(84);
+        self.fixed(value.hour,2); self.byte(58); self.fixed(value.minute,2); self.byte(58); self.fixed(value.second,2); self.byte(90); self.byte(10);
+    }
+}
+fn nibble(value: i32) -> u8 { if (value<10) { return (48+value) as u8; } return (87+value) as u8; }
+fn rdn_count(name: ext::x509::Name, budget: &ext::x509::Budget) -> core::result::Result<u64,ext::x509::Error> {
+    let cursor: ext::x509::Rdns=name.rdns(); let count: u64=0;
+    while (true) { let item: core::result::Result<core::option::Option<ext::x509::Rdn>,ext::x509::Error> = cursor.next(budget);
+        if (item.is_err()) { return core::result::Err(item.unwrap_err()); } if (item.unwrap().is_none()) { return core::result::Ok(count); } count+=1; }
+    return core::result::Ok(count);
+}
+fn inspect(input: core::slice::View<u8>, report: &Report) -> i32 {
+    let made: core::result::Result<ext::x509::Budget,ext::x509::Error> = ext::x509::budget(ext::x509::default_limits());
+    if (made.is_err()) { return schema_status(made.unwrap_err()); } let budget: ext::x509::Budget=made.unwrap();
+    let parsed: core::result::Result<ext::x509::Certificate,ext::x509::Error> = ext::x509::parse(input,budget.borrow());
+    if (parsed.is_err()) { return schema_status(parsed.unwrap_err()); } let certificate: ext::x509::Certificate=parsed.unwrap();
+    let issuer: core::result::Result<u64,ext::x509::Error> = rdn_count(certificate.issuer,budget.borrow()); if (issuer.is_err()) { return schema_status(issuer.unwrap_err()); }
+    let subject: core::result::Result<u64,ext::x509::Error> = rdn_count(certificate.subject,budget.borrow()); if (subject.is_err()) { return schema_status(subject.unwrap_err()); }
+    let extensions: ext::x509::Extensions=certificate.extensions(); let extension_count: u64=0;
+    while (true) { let item: core::result::Result<core::option::Option<ext::x509::Extension>,ext::x509::Error> = extensions.next(budget.borrow());
+        if (item.is_err()) { return schema_status(item.unwrap_err()); } if (item.unwrap().is_none()) { break; } extension_count+=1; }
+    let hashed: core::result::Result<core::sha256::Digest,core::sha256::Error> = core::sha256::digest(input); if (hashed.is_err()) { return 7; } let digest: core::sha256::Digest=hashed.unwrap();
+    let serial: core::slice::View<u8> = certificate.serial; if (serial.length>1 && serial.values[serial.start]==0) { serial.start+=1; serial.length-=1; }
+    report.literal("inspection=parse-schema-only\n",29);
+    report.hex_line("certificate_sha256=",19,view(digest.bytes,0,32));
+    report.number_line("version=",8,(certificate.version+1) as u64);
+    report.hex_line("serial_hex=",11,serial);
+    report.date_line("not_before_utc=",15,certificate.validity.not_before); report.date_line("not_after_utc=",14,certificate.validity.not_after);
+    report.hex_line("signature_oid_encoded_content_hex=",34,certificate.signature_algorithm.oid.bytes);
+    report.hex_line("spki_oid_encoded_content_hex=",29,certificate.spki.algorithm.oid.bytes);
+    report.number_line("issuer_rdns=",12,issuer.unwrap()); report.number_line("subject_rdns=",13,subject.unwrap());
+    report.number_line("extensions=",11,extension_count); report.number_line("unknown_critical_extensions=",28,certificate.unknown_critical_count);
+    if (report.failed) { return 7; } return 0;
+}
+fn publish(report: &Report, budget: &IoBudget) -> i32 {
+    let sink: std::stream::Descriptor=std::stream::stdout(); let completed: i32=0;
+    while (completed<report.length) {
+        if (!budget.charge()) { return 7; }
+        let result: core::result::Result<i32,core::io::Error> = sink.write(report.bytes,completed,report.length-completed);
+        if (result.is_err()) { if (core::io::is_interrupted(result.unwrap_err())) { continue; } return 3; }
+        let count: i32=result.unwrap(); if (count<=0 || count>report.length-completed) { return 3; } completed+=count;
+    }
+    return 0;
+}
+fn main() -> i32 {
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,0,0);
+    if (captured.is_err()) { return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }; }
+    let arguments: std::args::Arguments=captured.unwrap(); arguments.destroy();
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let made: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(MAX_INPUT); if (made.is_err()) { return io_status(made.unwrap_err()); }
+    let input: alloc::io::Buffer=made.unwrap(); let reserved: core::result::Result<i32,core::io::Error> = input.try_reserve(MAX_INPUT);
+    if (reserved.is_err()) { let status: i32=io_status(reserved.unwrap_err()); input.destroy(); return status; }
+    let budget: IoBudget=IoBudget { remaining: 131072 }; let storage: [u8;8192]=[0;8192]; let report: Report=Report { bytes: storage, length: 0, failed: false };
+    let status: i32=read_input(input.borrow(),budget.borrow()); if (status==0) { status=inspect(view(input.as_bytes(),0,input.len()),report.borrow()); }
+    // No borrowed certificate field escapes inspect. Retire the sole input
+    // owner before publication, including every parse/limit/error exit.
+    input.destroy(); if (status==0) { status=publish(report.borrow(),budget.borrow()); } return status;
+}

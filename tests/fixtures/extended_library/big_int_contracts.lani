@@ -1,0 +1,54 @@
+module app::main;
+import alloc::vec;
+import core::result;
+import core::slice;
+import core::cmp;
+import ext::big_int;
+import ext::big_uint;
+fn main() -> i32 {
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    let z: ext::big_int::BigInt = ext::big_int::zero(); assert(z.sign() == 0);
+    let low: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_i64(-9223372036854775807 - 1, limits));
+    assert(core::result::unwrap(low.to_i64()) == -9223372036854775807 - 1); assert(core::result::is_err(low.to_u64()));
+    let high: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_u64(18446744073709551615, limits));
+    assert(core::result::unwrap(high.to_u64()) == 18446744073709551615); assert(core::result::is_err(high.to_i64()));
+    let bytes: [u8;6] = [45,48,48,48,48,48]; let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,6));
+    let parsed: ext::big_int::BigInt = core::result::unwrap(ext::big_int::parse(input,10,limits)); assert(parsed.sign() == 0);
+    let negzero: ext::big_int::BigInt = core::result::unwrap(parsed.neg(limits)); assert(negzero.sign() == 0);
+    let same: ext::big_int::BigInt = core::result::unwrap(low.sub(low.borrow(),limits)); assert(same.sign() == 0);
+    assert(ext::big_int::BigInt::eq(same,z)); assert(ext::big_int::BigInt::lt(low,high));
+    assert(ext::big_int::BigInt::partial_eq(same,z)); assert(ext::big_int::BigInt::partial_gt(high,low));
+    assert(match (ext::big_int::BigInt::partial_cmp(low,high)) { core::cmp::PartialOrdering::Less -> true, _ -> false });
+    let bad: [u8;2] = [45,43]; let badview: core::slice::View<u8> = core::result::unwrap(core::slice::view(bad,2));
+    assert(core::result::is_err(ext::big_int::parse(badview,10,limits)));
+    let bare: core::slice::View<u8> = core::result::unwrap(core::slice::view(bad,1)); assert(core::result::is_err(ext::big_int::parse(bare,10,limits)));
+    assert(core::result::is_err(ext::big_int::parse(input,1,limits))); assert(core::result::is_err(ext::big_int::parse(input,37,limits)));
+    let invalid: [u8;16] = [32,49,49,32,49,95,48,120,43,43,45,45,43,45,45,43];
+    let cursor: i32 = 0; while (cursor < 16) { assert(core::result::is_err(ext::big_int::parse(core::result::unwrap(core::slice::view_range(invalid,cursor,2)),10,limits))); cursor += 2; }
+    let signedhex: [u8;5] = [99,43,70,102,99]; let hex: ext::big_int::BigInt = core::result::unwrap(ext::big_int::parse(core::result::unwrap(core::slice::view_range(signedhex,1,3)),16,limits)); assert(core::result::unwrap(hex.to_u64()) == 255); hex.destroy();
+    assert(core::result::is_err(low.div_rem(z.borrow(),limits)));
+    let tight: ext::big_uint::Limits = limits; tight.max_limbs = 0; assert(core::result::is_err(low.try_clone(tight)));
+    tight = limits; tight.max_work = 0; assert(core::result::is_err(low.mul(high.borrow(),tight)));
+    tight = limits; tight.max_output = 1; assert(core::result::is_err(low.format_radix(10,tight)));
+    tight = limits; tight.max_limbs = -1; assert(core::result::is_err(low.abs(tight)));
+    tight = limits; tight.max_output = -1; assert(core::result::is_err(low.format_radix(10,tight)));
+    let out: [u8;4] = [91;4]; let view: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(out,1,2));
+    assert(core::result::is_err(low.format_into(view,10,limits))); assert(out[0] == 91 && out[1] == 91 && out[2] == 91 && out[3] == 91);
+    let minusone: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_i64(-1,limits)); tight = limits; tight.max_output = 2;
+    assert(core::result::unwrap(minusone.format_into(view,10,tight)) == 2); assert(out[0] == 91 && out[1] == 45 && out[2] == 49 && out[3] == 91); minusone.destroy();
+    let invalidview: core::slice::View<u8> = view; invalidview.start = 2147483647;
+    assert(core::result::is_err(low.format_into(invalidview,10,limits))); assert(core::result::is_err(ext::big_int::parse(invalidview,10,limits)));
+    invalidview.start = -1; assert(core::result::is_err(ext::big_int::parse(invalidview,10,limits)));
+    invalidview.start = 0; invalidview.length = -1; assert(core::result::is_err(low.format_into(invalidview,10,limits)));
+    let output: alloc::vec::Vec<u8> = core::result::unwrap(negzero.format_radix(10,limits)); assert(output.len() == 1 && output.at(0) == 48); output.destroy();
+    // Carry a real owned state across 25 arithmetic chains; every new result
+    // replaces a destroyed previous owner and agrees with bounded native i64.
+    let current: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_i64(-13,limits)); let expected: i64 = -13;
+    let seventeen: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_i64(17,limits)); let three: ext::big_int::BigInt = core::result::unwrap(ext::big_int::from_i64(3,limits));
+    let step: i32 = 0; while (step < 25) {
+        let sum: ext::big_int::BigInt = core::result::unwrap(current.add(seventeen.borrow(),limits)); let next: ext::big_int::BigInt = core::result::unwrap(sum.mul(three.borrow(),limits)); sum.destroy(); current.destroy(); current = next;
+        expected = (expected + 17)*3; assert(core::result::unwrap(current.to_i64()) == expected); step += 1;
+    }
+    current.destroy(); seventeen.destroy(); three.destroy();
+    low.destroy(); high.destroy(); parsed.destroy(); negzero.destroy(); same.destroy(); z.destroy(); return 0;
+}

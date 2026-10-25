@@ -1,0 +1,87 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::parse;
+import std::io;
+fn literal(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::text::from_utf8_unchecked(bytes,0,count); }
+fn write(pointer: ptr, count: i32) {
+    let done: i32 = 0; while (done < count) { let amount: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(amount > 0); done += amount; }
+}
+fn number(bytes: [u8], index: i32, value: i32) {
+    let part: u32 = value as u32; bytes[index] = (part & 255) as u8; bytes[index+1] = ((part >> 8) & 255) as u8; bytes[index+2] = ((part >> 16) & 255) as u8; bytes[index+3] = ((part >> 24) & 255) as u8;
+}
+fn get(bytes: [u8], index: i32) -> i32 {
+    return ((bytes[index] as u32) | ((bytes[index+1] as u32) << 8) | ((bytes[index+2] as u32) << 16) | ((bytes[index+3] as u32) << 24)) as i32;
+}
+fn code(kind: ext::parse::ErrorKind) -> i32 { return match (kind) { Bounds -> 1, InvalidUtf8 -> 2, UnexpectedEnd -> 3, Expected -> 4, InvalidNumber -> 5, Overflow -> 6, ScanLimit -> 7, WorkLimit -> 8, ForeignCheckpoint -> 9 }; }
+fn main() -> i32 {
+    let input_words: [i32;32768] = [0;32768]; let pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(pointer,131072); let count: i32 = 0;
+    while (count < 131072) { let got: i32 = std::io::read_stdin(pointer+(count as usize),(131072-count) as usize); assert(got >= 0); if (got == 0) { break; } count += got; }
+    assert(count < 131072);
+    let output_words: [i32;12] = [0;12]; let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output: [u8] = core::mem::typed_slice_from_raw_parts(output_pointer,48);
+    let position: i32 = 0;
+    while (position < count) {
+        assert(count-position >= 16);
+        let length: i32 = get(input,position); let maximum: i32 = get(input,position+4); let work: u64 = get(input,position+8) as u64; let commands: i32 = get(input,position+12); position += 16;
+        assert(length >= 0 && length <= 1024 && commands >= 0 && commands <= 1024 && length <= count-position);
+        let created: core::result::Result<ext::parse::Cursor,ext::parse::Error> = ext::parse::from_utf8_range(input,position,length,ext::parse::Limits { max_scan_bytes: maximum, max_work: work }); position += length;
+        if (core::result::is_err(created)) {
+            let failure: ext::parse::Error = core::result::unwrap_err(created); let i: i32 = 0; while (i < 48) { output[i] = 0; i += 1; }
+            number(output,0,code(failure.kind)); number(output,4,failure.location.offset); number(output,8,failure.location.line); number(output,12,failure.location.column); write(output_pointer,48);
+            assert(commands == 0);
+        } else {
+            let cursor: ext::parse::Cursor = core::result::unwrap(created); let mark: ext::parse::Checkpoint = cursor.checkpoint();
+            let foreign: ext::parse::Cursor = core::result::unwrap(ext::parse::new(literal("foreign",7),ext::parse::default_limits()));
+            let command: i32 = 0;
+            while (command < commands) {
+                assert(count-position >= 5); let mode: u8 = input[position]; let argument: i32 = get(input,position+1); position += 5; command += 1;
+                let start: ext::parse::Location = cursor.location(); let failure: core::option::Option<ext::parse::Error> = core::option::None(); let value: i64 = 0; let span_start: i32 = -1; let span_end: i32 = -1; let hash: u32 = 0;
+                if (mode == 0 || mode == 1) {
+                    let scalar: core::result::Result<core::option::Option<u32>,ext::parse::Error> = core::result::Ok(core::option::None());
+                    if (mode == 0) { scalar = cursor.take_scalar(); } else { scalar = cursor.peek_scalar(); }
+                    if (core::result::is_err(scalar)) { failure = core::option::Some(core::result::unwrap_err(scalar)); }
+                    else { value = core::option::unwrap_or(core::result::unwrap(scalar),4294967295) as i64; }
+                } else {
+                    if (mode == 8) {
+                        let parsed: core::result::Result<i64,ext::parse::Error> = cursor.integer_i64();
+                        if (core::result::is_err(parsed)) { failure = core::option::Some(core::result::unwrap_err(parsed)); } else { value = core::result::unwrap(parsed); }
+                    } else {
+                        if (mode == 9) { mark = cursor.checkpoint(); value = cursor.position() as i64; }
+                        else {
+                            if (mode == 10 || mode == 14) {
+                                let saved: ext::parse::Checkpoint = mark; if (mode == 14) { saved = foreign.checkpoint(); }
+                                let reset: core::result::Result<i32,ext::parse::Error> = cursor.restore(saved);
+                                if (core::result::is_err(reset)) { failure = core::option::Some(core::result::unwrap_err(reset)); } else { value = core::result::unwrap(reset) as i64; }
+                            } else {
+                                let token: core::result::Result<ext::parse::Span,ext::parse::Error> = core::result::Err(ext::parse::Error { kind: ext::parse::ErrorKind::Bounds, location: start });
+                                if (mode == 2) { token = cursor.take_byte(argument as u8); }
+                                if (mode == 3) { token = cursor.whitespace(); }
+                                if (mode == 4) { token = cursor.identifier(); }
+                                if (mode == 5) { token = cursor.digits(); }
+                                if (mode == 6) { token = cursor.integer(); }
+                                if (mode == 7) { token = cursor.decimal(); }
+                                if (mode == 11) { token = cursor.take_text(argument); }
+                                if (mode == 12) { token = cursor.scan_until(argument as u32); }
+                                if (mode == 13) { let tag: core::text::Text = literal("ab\r\nλ",6); if (argument == 1) { tag = literal("",0); } token = cursor.tag(tag); }
+                                if (core::result::is_err(token)) { failure = core::option::Some(core::result::unwrap_err(token)); }
+                                else {
+                                    let span: ext::parse::Span = core::result::unwrap(token); span_start = span.start.offset; span_end = span.end.offset; value = span.byte_len() as i64;
+                                    let i: i32 = 0; while (i < span.byte_len()) { hash = hash*31+(core::option::unwrap(span.text.byte_at(i)) as u32); i += 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                let i: i32 = 0; while (i < 48) { output[i] = 0; i += 1; }
+                if (core::option::is_some(failure)) { let detail: ext::parse::Error = core::option::unwrap(failure); number(output,0,code(detail.kind)); number(output,4,detail.location.offset); number(output,8,detail.location.line); number(output,12,detail.location.column); }
+                let at: ext::parse::Location = cursor.location(); number(output,16,at.offset); number(output,20,at.line); number(output,24,at.column);
+                let bits: u64 = value as u64; number(output,28,(bits & 4294967295) as i32); number(output,32,(bits >> 32) as i32); number(output,36,span_start); number(output,40,span_end); number(output,44,hash as i32); write(output_pointer,48);
+            }
+        }
+    }
+    return 0;
+}

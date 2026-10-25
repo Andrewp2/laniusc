@@ -1,0 +1,198 @@
+// Owned generic priority queue. Nested values copy shallowly; keep one owner
+// of the backing vector and manage nested resources explicitly. Comparisons
+// must define a consistent order that cannot change while values are stored.
+module alloc::binary_heap;
+import core::cmp;
+import core::option;
+import core::result;
+import core::slice;
+import alloc::vec;
+
+pub enum Order { Min, Max }
+pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub struct BinaryHeap<T> { items: alloc::vec::Vec<T>, order: Order }
+
+pub fn new<T>(order: Order) -> BinaryHeap<T> {
+    let items: alloc::vec::Vec<T> = alloc::vec::new();
+    return BinaryHeap { items: items, order: order };
+}
+
+fn vector_error(error: alloc::vec::Error) -> Error {
+    let result: Error = match (error) {
+        alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow,
+        alloc::vec::Error::AllocationFailed -> Error::AllocationFailed,
+        _ -> Error::InvalidCapacity,
+    };
+    return result;
+}
+
+fn higher<T>(left: T, right: T, order: Order) -> bool where T: core::cmp::Ord<T> {
+    let result: bool = match (order) { Order::Min -> T::lt(left, right), Order::Max -> T::lt(right, left) };
+    return result;
+}
+
+fn sift_up<T>(items: [T], index: i32, order: Order) where T: core::cmp::Ord<T> {
+    let child: i32 = index;
+    while (child > 0) {
+        let parent: i32 = (child - 1) / 2;
+        if (!higher(items[child], items[parent], order)) { return; }
+        let saved: T = items[parent]; items[parent] = items[child]; items[child] = saved;
+        child = parent;
+    }
+}
+
+fn sift_down<T>(items: [T], start: i32, count: i32, order: Order) where T: core::cmp::Ord<T> {
+    let parent: i32 = start;
+    // Check for a child before multiplication, including counts near i32::MAX.
+    while (parent < count / 2) {
+        let child: i32 = parent * 2 + 1;
+        if (child + 1 < count && higher(items[child + 1], items[child], order)) { child += 1; }
+        if (!higher(items[child], items[parent], order)) { return; }
+        let saved: T = items[parent]; items[parent] = items[child]; items[child] = saved;
+        parent = child;
+    }
+}
+
+fn heapify<T>(items: [T], count: i32, order: Order) where T: core::cmp::Ord<T> {
+    let parent: i32 = count / 2;
+    while (parent > 0) { parent -= 1; sift_down(items, parent, count, order); }
+}
+
+// Consume the vector's backing storage and heapify in O(n), without allocation.
+// The caller must stop using the old vector and any views into it.
+pub fn from_vec<T>(items: alloc::vec::Vec<T>, order: Order) -> BinaryHeap<T> where T: core::cmp::Ord<T> {
+    heapify(items.as_slice(), items.len(), order);
+    return BinaryHeap { items: items, order: order };
+}
+
+pub fn with_capacity<T>(capacity: i32, order: Order) -> core::result::Result<BinaryHeap<T>, Error> {
+    let heap: BinaryHeap<T> = new(order);
+    let reserved: core::result::Result<i32, Error> = heap.try_reserve(capacity);
+    if (core::result::is_err(reserved)) { return core::result::Err(core::result::unwrap_err(reserved)); }
+    return core::result::Ok(heap);
+}
+
+// Copy values into independent backing storage, then heapify in O(n).
+pub fn from_view<T>(values: core::slice::View<T>, order: Order) -> core::result::Result<BinaryHeap<T>, Error> where T: core::cmp::Ord<T> {
+    let heap: BinaryHeap<T> = new(order);
+    let extended: core::result::Result<i32, Error> = heap.try_extend(values);
+    if (core::result::is_err(extended)) { return core::result::Err(core::result::unwrap_err(extended)); }
+    return core::result::Ok(heap);
+}
+
+pub impl<T> BinaryHeap<T> {
+    pub fn borrow(&self) -> &BinaryHeap<T> { return self; }
+    pub fn len(&self) -> i32 { return self.items.len(); }
+    pub fn capacity(&self) -> i32 { return self.items.capacity(); }
+    pub fn is_empty(&self) -> bool { return self.len() == 0; }
+    pub fn order(&self) -> Order { return self.order; }
+
+    // Shallow borrowed copies, in unspecified heap order. Treat the view and
+    // ordering-relevant nested state as read-only. Mutation invalidates views.
+    pub fn as_view(&self) -> core::slice::View<T> {
+        return self.items.as_view();
+    }
+    pub fn peek(&self) -> core::option::Option<T> { return self.items.first(); }
+
+    // Reserve space for additional entries. Errors leave every entry and the
+    // capacity unchanged. Zero-sized values require no allocation.
+    pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error> {
+        let reserved: core::result::Result<i32, alloc::vec::Error> = self.items.try_reserve(additional);
+        if (core::result::is_err(reserved)) { return core::result::Err(vector_error(core::result::unwrap_err(reserved))); }
+        return core::result::Ok(self.capacity());
+    }
+
+    // Success stores value and returns the new length. On Err the caller keeps
+    // value; the heap and its existing borrowed views remain unchanged.
+    pub fn try_push(&self, value: T) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+        let length: i32 = self.len();
+        let pushed: core::result::Result<i32, alloc::vec::Error> = self.items.try_push(value);
+        if (core::result::is_err(pushed)) { return core::result::Err(vector_error(core::result::unwrap_err(pushed))); }
+        sift_up(self.items.as_slice(), length, self.order);
+        return core::result::Ok(length + 1);
+    }
+
+    // All-or-nothing bulk append, including an aliased view of this heap.
+    // Retain the old allocation during growth and copy all inputs before the
+    // first reorder. After copying, bottom-up heapification takes O(n + m).
+    pub fn try_extend(&self, values: core::slice::View<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T> {
+        let count: i32 = values.len();
+        if (count == 0) { return core::result::Ok(self.len()); }
+        let extended: core::result::Result<i32, alloc::vec::Error> = self.items.try_extend(values);
+        if (core::result::is_err(extended)) { return core::result::Err(vector_error(core::result::unwrap_err(extended))); }
+        heapify(self.items.as_slice(), self.len(), self.order);
+        return core::result::Ok(self.len());
+    }
+
+    // Transfer the highest-priority value, or None if empty. No allocation.
+    pub fn pop(&self) -> core::option::Option<T> where T: core::cmp::Ord<T> {
+        let length: i32 = self.len();
+        if (length == 0) { return core::option::None(); }
+        let items: [T] = self.items.as_slice();
+        let value: T = items[0];
+        if (length > 1) { items[0] = items[length - 1]; }
+        self.items.pop();
+        sift_down(items, 0, length - 1, self.order);
+        return core::option::Some(value);
+    }
+
+    // Replace the root and return its previous value. Empty returns None and
+    // does not insert value; the caller retains it. No allocation.
+    pub fn replace_top(&self, value: T) -> core::option::Option<T> where T: core::cmp::Ord<T> {
+        if (self.is_empty()) { return core::option::None(); }
+        let items: [T] = self.items.as_slice();
+        let previous: T = items[0]; items[0] = value;
+        sift_down(items, 0, self.len(), self.order);
+        return core::option::Some(previous);
+    }
+
+    // Equivalent multiset to push then pop, without growing. Empty returns
+    // value. If value ties or outranks the root, return value unchanged.
+    pub fn push_pop(&self, value: T) -> T where T: core::cmp::Ord<T> {
+        if (self.is_empty()) { return value; }
+        let root: T = self.items.at(0);
+        if (!higher(root, value, self.order)) { return value; }
+        return core::option::unwrap(self.replace_top(value));
+    }
+
+    // Independent backing storage; stored values and nested resources are
+    // shallow copies, not deep clones.
+    pub fn try_clone(&self) -> core::result::Result<BinaryHeap<T>, Error> {
+        let cloned: core::result::Result<alloc::vec::Vec<T>, alloc::vec::Error> = self.items.try_clone();
+        if (core::result::is_err(cloned)) { return core::result::Err(vector_error(core::result::unwrap_err(cloned))); }
+        let copy: alloc::vec::Vec<T> = core::result::unwrap(cloned);
+        return core::result::Ok(BinaryHeap { items: copy, order: self.order });
+    }
+
+    pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error> {
+        let shrunk: core::result::Result<i32, alloc::vec::Error> = self.items.try_shrink_to_fit();
+        if (core::result::is_err(shrunk)) { return core::result::Err(vector_error(core::result::unwrap_err(shrunk))); }
+        return core::result::Ok(self.capacity());
+    }
+
+    // Transfer the vector, leaving this heap empty and reusable in the same
+    // order. Values are in heap order, not sorted. No allocation.
+    pub fn take_vec(&self) -> alloc::vec::Vec<T> {
+        let items: alloc::vec::Vec<T> = self.items;
+        self.items = alloc::vec::new();
+        return items;
+    }
+
+    // Transfer the vector sorted in pop order (Min ascending, Max descending).
+    // In-place heapsort, O(n log n), no allocation, not stable for equal keys.
+    pub fn take_sorted_vec(&self) -> alloc::vec::Vec<T> where T: core::cmp::Ord<T> {
+        let values: [T] = self.items.as_slice();
+        let end: i32 = self.len();
+        while (end > 1) {
+            end -= 1;
+            let held: T = values[0]; values[0] = values[end]; values[end] = held;
+            sift_down(values, 0, end, self.order);
+        }
+        let items: alloc::vec::Vec<T> = self.take_vec();
+        items.reverse(); return items;
+    }
+
+    // Clear/destroy do not invoke destructors for nested owned values.
+    pub fn clear(&self) { self.items.clear(); }
+    pub fn destroy(&self) { self.items.destroy(); self.items = alloc::vec::new(); }
+}

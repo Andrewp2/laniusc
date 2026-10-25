@@ -1,0 +1,814 @@
+// Runtime format strings. See docs/stdlib-format-strings.md for the grammar,
+// resource accounting, alias rules and complete-output atomicity contract.
+module core::format;
+import core::float_decimal;
+import core::fmt;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::utf8;
+pub enum Argument {
+    Text(core::text::Text),
+    Signed(i64),
+    Unsigned(u64),
+    Bool(bool),
+    Char(char),
+    F32(f32),
+    F64(f64)
+}
+pub struct Named {
+    name: core::text::Text,
+    value: Argument
+}
+pub struct Limits {
+    max_work: u64,
+    max_output: i32
+}
+pub enum Error {
+    Bounds,
+    Syntax(i32),
+    MissingArgument(i32),
+    InvalidArgument(i32),
+    DuplicateName(i32),
+    InvalidSpec(i32),
+    TypeMismatch(i32),
+    WorkLimit(i32),
+    OutputLimit(i32),
+    BufferTooSmall(i32),
+    Float(i32, core::float_decimal::Error)
+}
+pub fn default_limits() -> Limits {
+    return Limits {
+        max_work: 64000000,
+        max_output: 2147483647
+    };
+}
+struct Spec {
+    fill: u32,
+    align: u8,
+    sign: u8,
+    alternate: bool,
+    zero: bool,
+    width: i32,
+    precision: i32,
+    kind: u8
+}
+struct Output {
+    bytes: core::slice::View<u8>,
+    writing: bool,
+    length: i32,
+    work: u64,
+    limits: Limits,
+    failure: core::option::Option<Error>
+}
+struct Measured {
+    length: i32,
+    work: u64
+}
+fn byte(value: core::text::Text, at: i32) -> u8 {
+    return core::option::unwrap(value.byte_at(at));
+}
+fn digit(value: u8) -> bool {
+    return value >= 48 && value <= 57;
+}
+fn ident_start(value: u8) -> bool {
+    return(value >= 65 && value <= 90) ||(value >= 97 && value <= 122) || value == 95;
+}
+fn ident(value: u8) -> bool {
+    return ident_start(value) || digit(value);
+}
+fn alignment(value: u8) -> bool {
+    return value == 60 || value == 62 || value == 94;
+}
+fn spec() -> Spec {
+    return Spec {
+        fill: 32,
+        align: 0,
+        sign: 0,
+        alternate: false,
+        zero: false,
+        width: 0,
+        precision: -1,
+        kind: 0
+    };
+}
+pub impl Output {
+    fn borrow(&self) -> &Output {
+        return self;
+    }
+    fn fail(&self, error: Error) {
+        if (core::option::is_none(self.failure)) {
+            self.failure = core::option::Some(error);
+        }
+    }
+    fn charge(&self, amount: u64, offset: i32) -> bool {
+        if (core::option::is_some(self.failure)) {
+            return false;
+        }
+        if (amount>self.limits.max_work - self.work) {
+            self.fail(Error::WorkLimit(offset));
+            return false;
+        }
+        self.work += amount;
+        return true;
+    }
+    fn reserve(&self, count: i32, offset: i32) -> bool {
+        if (count<0 || count>self.limits.max_output - self.length) {
+            self.fail(Error::OutputLimit(offset));
+            return false;
+        }
+        return self.charge(count as u64, offset);
+    }
+    fn write(&self, value: core::text::Text, offset: i32) {
+        let count: i32 = value.byte_len();
+        if (!self.reserve(count, offset)) {
+            return;
+        }
+        if (self.writing) {
+            let at: i32 = 0;
+            while (at<count) {
+                core::result::unwrap(self.bytes.try_set(self.length + at, byte(value, at)));
+                at += 1;
+            }
+        }
+        self.length += count;
+    }
+    fn scalar(&self, value: u32, offset: i32) {
+        let count: i32 = core::utf8::encoded_len_or(value, 0) as i32;
+        if (count == 0) {
+            self.fail(Error::InvalidArgument(offset));
+            return;
+        }
+        if (!self.reserve(count, offset)) {
+            return;
+        }
+        if (self.writing) {
+            let at: i32 = 0;
+            while (at<count) {
+                core::result::unwrap(self.bytes.try_set(self.length + at, core::utf8::encoded_byte_or(value, at as u32, 0)));
+                at += 1;
+            }
+        }
+        self.length += count;
+    }
+    fn padding(&self, scalar: u32, count: i32, offset: i32) {
+        if (count <= 0) {
+            return;
+        }
+        let size: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+        if (count>2147483647 / size) {
+            self.fail(Error::OutputLimit(offset));
+            return;
+        }
+        if (!self.reserve(count * size, offset)) {
+            return;
+        }
+        if (self.writing) {
+            let at: i32 = 0;
+            while (at<count) {
+                let part: i32 = 0;
+                while (part<size) {
+                    core::result::unwrap(self.bytes.try_set(self.length + at * size + part, core::utf8::encoded_byte_or(scalar, part as u32, 0)));
+                    part += 1;
+                }
+                at += 1;
+            }
+        }
+        self.length += count * size;
+    }
+}
+fn parse_spec(pattern: core::text::Text, start: i32, end: i32) -> core::result::Result<Spec, Error> {
+    let value: Spec = spec();
+    let at: i32 = start;
+    if (at<end) {
+        let width: i32 = core::utf8::sequence_len_or(byte(pattern, at), 0) as i32;
+        if (at + width<end && alignment(byte(pattern, at + width))) {
+            value.fill = core::option::unwrap(pattern.scalar_at_byte(at));
+            value.align = byte(pattern, at + width);
+            at += width + 1;
+        } else {
+            if (alignment(byte(pattern, at))) {
+                value.align = byte(pattern, at);
+                at += 1;
+            }
+        }
+    }
+    if (at<end &&(byte(pattern, at) == 43 || byte(pattern, at) == 45 || byte(pattern, at) == 32)) {
+        value.sign = byte(pattern, at);
+        at += 1;
+    }
+    if (at<end && byte(pattern, at) == 35) {
+        value.alternate = true;
+        at += 1;
+    }
+    if (at<end && byte(pattern, at) == 48) {
+        value.zero = true;
+        at += 1;
+    }
+    while (at<end && digit(byte(pattern, at))) {
+        let next: i32 =(byte(pattern, at) - 48) as i32;
+        if (value.width>(2147483647 - next) / 10) {
+            return core::result::Err(Error::InvalidSpec(at));
+        }
+        value.width = value.width * 10 + next;
+        at += 1;
+    }
+    if (at<end && byte(pattern, at) == 46) {
+        at += 1;
+        value.precision = 0;
+        if (at == end || !digit(byte(pattern, at))) {
+            return core::result::Err(Error::InvalidSpec(at));
+        }
+        while (at<end && digit(byte(pattern, at))) {
+            let next: i32 =(byte(pattern, at) - 48) as i32;
+            if (value.precision>(2147483647 - next) / 10) {
+                return core::result::Err(Error::InvalidSpec(at));
+            }
+            value.precision = value.precision * 10 + next;
+            at += 1;
+        }
+    }
+    if (at<end) {
+        value.kind = byte(pattern, at);
+        at += 1;
+    }
+    if (at != end) {
+        return core::result::Err(Error::InvalidSpec(at));
+    }
+    if (value.zero && value.align != 0) {
+        return core::result::Err(Error::InvalidSpec(start));
+    }
+    return core::result::Ok(value);
+}
+fn padded(body: core::text::Text, count: i32, options: Spec, numeric: bool, prefix: i32, output: &Output, offset: i32) {
+    let padding: i32 = options.width - count;
+    if (padding<0) {
+        padding = 0;
+    }
+    let align: u8 = options.align;
+    if (align == 0) {
+        align = 60;
+        if (numeric) {
+            align = 62;
+        }
+    }
+    if (options.zero) {
+        output.write(core::result::unwrap(body.slice(0, prefix)), offset);
+        output.padding(48, padding, offset);
+        output.write(core::result::unwrap(body.slice(prefix, body.byte_len())), offset);
+        return;
+    }
+    let left: i32 = 0;
+    if (align == 62) {
+        left = padding;
+    }
+    if (align == 94) {
+        left = padding / 2;
+    }
+    output.padding(options.fill, left, offset);
+    output.write(body, offset);
+    output.padding(options.fill, padding - left, offset);
+}
+fn text_field(value: core::text::Text, options: Spec, output: &Output, offset: i32) {
+    if (value.start<0 || value.length<0 || value.start>2147483647 - value.length) {
+        output.fail(Error::Bounds);
+        return;
+    }
+    if ((options.kind != 0 && options.kind != 115) || options.sign != 0 || options.alternate || options.zero) {
+        output.fail(Error::TypeMismatch(offset));
+        return;
+    }
+    let at: i32 = 0;
+    let count: i32 = 0;
+    while (at<value.byte_len() &&(options.precision<0 || count<options.precision)) {
+        let width: i32 = core::utf8::sequence_len_or(byte(value, at), 0) as i32;
+        if (!output.charge(width as u64, offset)) {
+            return;
+        }
+        at += width;
+        count += 1;
+    }
+    padded(core::result::unwrap(value.slice(0, at)), count, options, false, 0, output, offset);
+}
+fn integer_field(value: u64, negative: bool, options: Spec, output: &Output, offset: i32) {
+    let radix: u64 = 10;
+    let upper: bool = options.kind == 88;
+    if (options.kind == 120 || options.kind == 88) {
+        radix = 16;
+    } else {
+        if (options.kind == 98) {
+            radix = 2;
+        } else {
+            if (options.kind == 111) {
+                radix = 8;
+            } else {
+                if (options.kind != 0 && options.kind != 100) {
+                    output.fail(Error::TypeMismatch(offset));
+                    return;
+                }
+            }
+        }
+    }
+    if (options.precision >= 0 ||(options.alternate && radix == 10)) {
+        output.fail(Error::TypeMismatch(offset));
+        return;
+    }
+    let bytes:[u8; 68] =[0; 68];
+    let at: i32 = 0;
+    if (negative) {
+        bytes[at] = 45;
+        at += 1;
+    } else {
+        if (options.sign == 43 || options.sign == 32) {
+            bytes[at] = options.sign;
+            at += 1;
+        }
+    }
+    if (options.alternate) {
+        bytes[at] = 48;
+        at += 1;
+        bytes[at] = options.kind;
+        at += 1;
+    }
+    let prefix: i32 = at;
+    let remaining: u64 = value;
+    let digits: i32 = 1;
+    while (remaining >= radix) {
+        remaining /= radix;
+        digits += 1;
+    }
+    let end: i32 = at + digits;
+    remaining = value;
+    at = end;
+    while (at>prefix) {
+        at -= 1;
+        let part: u8 =(remaining % radix) as u8;
+        let code: u8 = 48 + part;
+        if (part >= 10) {
+            code = 97 + part - 10;
+            if (upper) {
+                code = 65 + part - 10;
+            }
+        }
+        bytes[at] = code;
+        remaining /= radix;
+    }
+    padded(core::text::from_utf8_unchecked(bytes, 0, end), end, options, true, prefix, output, offset);
+}
+fn signed_field(value: i64, options: Spec, output: &Output, offset: i32) {
+    let magnitude: u64 = value as u64;
+    if (value<0) {
+        magnitude =(-(value + 1) as u64) + 1;
+    }
+    integer_field(magnitude, value<0, options, output, offset);
+}
+fn float_field(value: f64, narrow: bool, options: Spec, output: &Output, offset: i32) {
+    let explicit: bool = options.kind != 0 || options.precision >= 0;
+    if ((options.kind != 0 && options.kind != 102 && options.kind != 70 && options.kind != 101 && options.kind != 69 && options.kind != 103 && options.kind != 71) ||(!explicit && options.alternate)) {
+        output.fail(Error::TypeMismatch(offset));
+        return;
+    }
+    if (options.precision>768) {
+        output.fail(Error::InvalidSpec(offset));
+        return;
+    }
+    // Reserve a conservative complete conversion allowance per occurrence.
+    if (!output.charge(1000000, offset)) {
+        return;
+    }
+    let storage:[u32; 864] =[0; 864];
+    let scratch: core::slice::View<u32> = core::result::unwrap(core::slice::view(storage, 864));
+    let words:[i32; 300] =[0; 300];
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words), 1200);
+    let target: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(bytes, 1, 1199));
+    let converted: core::result::Result<i32,
+    core::float_decimal::Error> = core::result::Ok(0);
+    if (explicit) {
+        let precision: i32 = options.precision;
+        if (precision<0) {
+            precision = 6;
+        }
+        let style: core::float_decimal::PrecisionStyle = core::float_decimal::PrecisionStyle::Fixed;
+        if (options.kind == 101 || options.kind == 69) {
+            style = core::float_decimal::PrecisionStyle::Scientific;
+        }
+        if (options.kind == 103 || options.kind == 71) {
+            style = core::float_decimal::PrecisionStyle::General;
+        }
+        let settings: core::float_decimal::PrecisionOptions = core::float_decimal::PrecisionOptions {
+            style: style,
+            precision: precision,
+            alternate: options.alternate,
+            uppercase: options.kind == 70 || options.kind == 69 || options.kind == 71
+        };
+        if (narrow) {
+            converted = core::float_decimal::format_f32_precision_into(value as f32, target, settings, scratch, 1000000);
+        } else {
+            converted = core::float_decimal::format_f64_precision_into(value, target, settings, scratch, 1000000);
+        }
+    } else {
+        if (narrow) {
+            converted = core::float_decimal::format_f32_into(value as f32, target, scratch, 1000000);
+        } else {
+            converted = core::float_decimal::format_f64_into(value, target, scratch, 1000000);
+        }
+    }
+    if (core::result::is_err(converted)) {
+        output.fail(Error::Float(offset, core::result::unwrap_err(converted)));
+        return;
+    }
+    let count: i32 = core::result::unwrap(converted);
+    let start: i32 = 1;
+    let prefix: i32 = 0;
+    if (bytes[1] == 45) {
+        prefix = 1;
+    } else {
+        if (options.sign == 43 || options.sign == 32) {
+            bytes[0] = options.sign;
+            start = 0;
+            count += 1;
+            prefix = 1;
+        }
+    }
+    padded(core::text::from_utf8_unchecked(bytes, start, count), count, options, true, prefix, output, offset);
+}
+fn field(value: Argument, options: Spec, output: &Output, offset: i32) {
+    let tag: i32 = match (value) {
+        Argument::Text(_) -> 0,
+        Argument::Signed(_) -> 1,
+        Argument::Unsigned(_) -> 2,
+        Argument::Bool(_) -> 3,
+        Argument::Char(_) -> 4,
+        Argument::F32(_) -> 5,
+        Argument::F64(_) -> 6
+    };
+    if (tag == 0) {
+        let empty:[u8; 0] =[];
+        let blank: core::text::Text = core::text::from_utf8_unchecked(empty, 0, 0);
+        let selected: core::text::Text = match (value) {
+            Argument::Text(payload) -> payload,
+            Argument::Signed(_) -> blank,
+            Argument::Unsigned(_) -> blank,
+            Argument::Bool(_) -> blank,
+            Argument::Char(_) -> blank,
+            Argument::F32(_) -> blank,
+            Argument::F64(_) -> blank
+        };
+        text_field(selected, options, output, offset);
+        return;
+    }
+    if (tag == 1) {
+        let number: i64 = match (value) {
+            Argument::Text(_) -> 0,
+            Argument::Signed(number) -> number,
+            Argument::Unsigned(_) -> 0,
+            Argument::Bool(_) -> 0,
+            Argument::Char(_) -> 0,
+            Argument::F32(_) -> 0,
+            Argument::F64(_) -> 0
+        };
+        signed_field(number, options, output, offset);
+        return;
+    }
+    if (tag == 2) {
+        let number: u64 = match (value) {
+            Argument::Text(_) -> 0,
+            Argument::Signed(_) -> 0,
+            Argument::Unsigned(number) -> number,
+            Argument::Bool(_) -> 0,
+            Argument::Char(_) -> 0,
+            Argument::F32(_) -> 0,
+            Argument::F64(_) -> 0
+        };
+        integer_field(number, false, options, output, offset);
+        return;
+    }
+    if (tag == 3) {
+        let boolean: bool = match (value) {
+            Argument::Text(_) -> false,
+            Argument::Signed(_) -> false,
+            Argument::Unsigned(_) -> false,
+            Argument::Bool(boolean) -> boolean,
+            Argument::Char(_) -> false,
+            Argument::F32(_) -> false,
+            Argument::F64(_) -> false
+        };
+        let bytes:[u8; 5] =[102, 97, 108, 115, 101];
+        let length: i32 = 5;
+        if (boolean) {
+            bytes[0] = 116;
+            bytes[1] = 114;
+            bytes[2] = 117;
+            bytes[3] = 101;
+            length = 4;
+        }
+        text_field(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
+        return;
+    }
+    if (tag == 4) {
+        let character: char = match (value) {
+            Argument::Text(_) -> ' ',
+            Argument::Signed(_) -> ' ',
+            Argument::Unsigned(_) -> ' ',
+            Argument::Bool(_) -> ' ',
+            Argument::Char(character) -> character,
+            Argument::F32(_) -> ' ',
+            Argument::F64(_) -> ' '
+        };
+        let scalar: u32 = character as u32;
+        let bytes:[u8; 4] =[0; 4];
+        let length: i32 = core::utf8::encoded_len_or(scalar, 0) as i32;
+        if (length == 0) {
+            output.fail(Error::InvalidArgument(offset));
+            return;
+        }
+        let at: i32 = 0;
+        while (at<length) {
+            bytes[at] = core::utf8::encoded_byte_or(scalar, at as u32, 0);
+            at += 1;
+        }
+        text_field(core::text::from_utf8_unchecked(bytes, 0, length), options, output, offset);
+        return;
+    }
+    if (tag == 5) {
+        let number: f32 = match (value) {
+            Argument::Text(_) -> 0.0,
+            Argument::Signed(_) -> 0.0,
+            Argument::Unsigned(_) -> 0.0,
+            Argument::Bool(_) -> 0.0,
+            Argument::Char(_) -> 0.0,
+            Argument::F32(number) -> number,
+            Argument::F64(_) -> 0.0
+        };
+        float_field(number as f64, true, options, output, offset);
+        return;
+    }
+    let number: f64 = match (value) {
+        Argument::Text(_) -> 0.0,
+        Argument::Signed(_) -> 0.0,
+        Argument::Unsigned(_) -> 0.0,
+        Argument::Bool(_) -> 0.0,
+        Argument::Char(_) -> 0.0,
+        Argument::F32(_) -> 0.0,
+        Argument::F64(number) -> number
+    };
+    float_field(number, false, options, output, offset);
+}
+fn run(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, output: &Output) {
+    if (!output.charge(pattern.byte_len() as u64, 0)) {
+        return;
+    }
+    let n: i32 = 0;
+    while (n<named.len()) {
+        let entry: Named = core::option::unwrap(named.get(n));
+        if (entry.name.start<0 || entry.name.length<0 || entry.name.start>2147483647 - entry.name.length) {
+            output.fail(Error::Bounds);
+            return;
+        }
+        if (!output.charge(entry.name.byte_len() as u64, 0)) {
+            return;
+        }
+        if (entry.name.byte_len() == 0 || !ident_start(byte(entry.name, 0))) {
+            output.fail(Error::InvalidArgument(n));
+            return;
+        }
+        let at: i32 = 1;
+        while (at<entry.name.byte_len()) {
+            if (!ident(byte(entry.name, at))) {
+                output.fail(Error::InvalidArgument(n));
+                return;
+            }
+            at += 1;
+        }
+        let previous: i32 = 0;
+        while (previous<n) {
+            let other: Named = core::option::unwrap(named.get(previous));
+            if (!output.charge(other.name.byte_len() as u64, 0)) {
+                return;
+            }
+            if (entry.name.equals(other.name)) {
+                output.fail(Error::DuplicateName(n));
+                return;
+            }
+            previous += 1;
+        }
+        n += 1;
+    }
+    let at: i32 = 0;
+    let implicit: i32 = 0;
+    while (at<pattern.byte_len() && core::option::is_none(output.failure)) {
+        let code: u8 = byte(pattern, at);
+        if (code == 123 || code == 125) {
+            if (at + 1<pattern.byte_len() && byte(pattern, at + 1) == code) {
+                output.scalar(code as u32, at);
+                at += 2;
+            } else {
+                if (code == 125) {
+                    output.fail(Error::Syntax(at));
+                    return;
+                }
+                let open: i32 = at;
+                let end: i32 = at + 1;
+                while (end<pattern.byte_len() && byte(pattern, end) != 125) {
+                    if (byte(pattern, end) == 123) {
+                        output.fail(Error::Syntax(end));
+                        return;
+                    }
+                    end += 1;
+                }
+                if (end == pattern.byte_len()) {
+                    output.fail(Error::Syntax(open));
+                    return;
+                }
+                at += 1;
+                let selector: i32 = at;
+                while (at<end && byte(pattern, at) != 58) {
+                    at += 1;
+                }
+                let stop: i32 = at;
+                let options: Spec = spec();
+                if (at<end) {
+                    let parsed: core::result::Result<Spec,
+                    Error> = parse_spec(pattern, at + 1, end);
+                    if (core::result::is_err(parsed)) {
+                        output.fail(core::result::unwrap_err(parsed));
+                        return;
+                    }
+                    options = core::result::unwrap(parsed);
+                }
+                let argument: Argument = Argument::Bool(false);
+                if (selector == stop || digit(byte(pattern, selector))) {
+                    let index: i32 = 0;
+                    if (selector == stop) {
+                        index = implicit;
+                        if (implicit == 2147483647) {
+                            output.fail(Error::MissingArgument(open));
+                            return;
+                        }
+                        implicit += 1;
+                    } else {
+                        let cursor: i32 = selector;
+                        while (cursor<stop) {
+                            let code: u8 = byte(pattern, cursor);
+                            if (!digit(code) || index>(2147483647 - ((code - 48) as i32)) / 10) {
+                                output.fail(Error::Syntax(cursor));
+                                return;
+                            }
+                            index = index * 10 +((code - 48) as i32);
+                            cursor += 1;
+                        }
+                    }
+                    if (index >= positional.len()) {
+                        output.fail(Error::MissingArgument(open));
+                        return;
+                    }
+                    argument = core::option::unwrap(positional.get(index));
+                } else {
+                    if (!ident_start(byte(pattern, selector))) {
+                        output.fail(Error::Syntax(selector));
+                        return;
+                    }
+                    let cursor: i32 = selector + 1;
+                    while (cursor<stop) {
+                        if (!ident(byte(pattern, cursor))) {
+                            output.fail(Error::Syntax(cursor));
+                            return;
+                        }
+                        cursor += 1;
+                    }
+                    let name: core::text::Text = core::result::unwrap(pattern.slice(selector, stop));
+                    let found: bool = false;
+                    let index: i32 = 0;
+                    while (index<named.len()) {
+                        let entry: Named = core::option::unwrap(named.get(index));
+                        if (!output.charge(entry.name.byte_len() as u64, open)) {
+                            return;
+                        }
+                        if (name.equals(entry.name)) {
+                            argument = entry.value;
+                            found = true;
+                        }
+                        index += 1;
+                    }
+                    if (!found) {
+                        output.fail(Error::MissingArgument(open));
+                        return;
+                    }
+                }
+                field(argument, options, output, open);
+                at = end + 1;
+            }
+        } else {
+            let start: i32 = at;
+            while (at<pattern.byte_len() && byte(pattern, at) != 123 && byte(pattern, at) != 125) {
+                at += 1;
+            }
+            output.write(core::result::unwrap(pattern.slice(start, at)), start);
+        }
+    }
+}
+fn preflight(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, limits: Limits) -> core::result::Result<Measured, Error> {
+    if (limits.max_output<0 || pattern.start<0 || pattern.length<0 || pattern.start>2147483647 - pattern.length || positional.start<0 || positional.length<0 || positional.start>2147483647 - positional.length || named.start<0 || named.length<0 || named.start>2147483647 - named.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    let empty:[u8; 0] =[];
+    let output: Output = Output {
+        bytes: core::result::unwrap(core::slice::view(empty, 0)),
+        writing: false,
+        length: 0,
+        work: 0,
+        limits: Limits {
+            max_work: limits.max_work / 2,
+            max_output: limits.max_output
+        },
+        failure: core::option::None()
+    };
+    run(pattern, positional, named, output.borrow());
+    if (core::option::is_some(output.failure)) {
+        return core::result::Err(core::option::unwrap(output.failure));
+    }
+    return core::result::Ok(Measured {
+        length: output.length, work: output.work
+    }
+    );
+}
+// Measurement reserves the work of both preflight and a deterministic commit.
+pub fn measure(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, limits: Limits) -> core::result::Result<i32, Error> {
+    let measured: core::result::Result<Measured,
+    Error> = preflight(pattern, positional, named, limits);
+    if (core::result::is_err(measured)) {
+        return core::result::Err(core::result::unwrap_err(measured));
+    }
+    return core::result::Ok(core::result::unwrap(measured).length);
+}
+// Inputs must remain immutable and disjoint from output during this call.
+// Every recoverable error leaves all output bytes unchanged.
+pub fn format_into(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, destination: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32, Error> {
+    if (destination.start<0 || destination.length<0 || destination.start>2147483647 - destination.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    let measured: core::result::Result<Measured,
+    Error> = preflight(pattern, positional, named, limits);
+    if (core::result::is_err(measured)) {
+        return core::result::Err(core::result::unwrap_err(measured));
+    }
+    let count: i32 = core::result::unwrap(measured).length;
+    if (count>destination.len()) {
+        return core::result::Err(Error::BufferTooSmall(count));
+    }
+    let output: Output = Output {
+        bytes: destination,
+        writing: true,
+        length: 0,
+        work: 0,
+        limits: Limits {
+            max_work: limits.max_work / 2,
+            max_output: limits.max_output
+        },
+        failure: core::option::None()
+    };
+    run(pattern, positional, named, output.borrow());
+    return core::result::Ok(count);
+}
+// Staging must be disjoint from inputs and destination. Destination may alias
+// pattern or argument text; its capacity is checked before staging is touched.
+pub fn format_into_staged(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, destination: core::slice::View<u8>, staging: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32, Error> {
+    if (destination.start<0 || destination.length<0 || destination.start>2147483647 - destination.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    let measured: core::result::Result<Measured,
+    Error> = preflight(pattern, positional, named, limits);
+    if (core::result::is_err(measured)) {
+        return core::result::Err(core::result::unwrap_err(measured));
+    }
+    let count: i32 = core::result::unwrap(measured).length;
+    if (staging.start<0 || staging.length<0 || staging.start>2147483647 - staging.length) {
+        return core::result::Err(Error::Bounds);
+    }
+    if ((count as u64)>limits.max_work - core::result::unwrap(measured).work * 2) {
+        return core::result::Err(Error::WorkLimit(0));
+    }
+    if (count>destination.len() || count>staging.len()) {
+        return core::result::Err(Error::BufferTooSmall(count));
+    }
+    let output: Output = Output {
+        bytes: staging,
+        writing: true,
+        length: 0,
+        work: 0,
+        limits: Limits {
+            max_work: limits.max_work / 2,
+            max_output: limits.max_output
+        },
+        failure: core::option::None()
+    };
+    run(pattern, positional, named, output.borrow());
+    let at: i32 = 0;
+    while (at<count) {
+        core::result::unwrap(destination.try_set(at, core::option::unwrap(staging.get(at))));
+        at += 1;
+    }
+    return core::result::Ok(count);
+}

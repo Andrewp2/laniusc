@@ -1,0 +1,78 @@
+// Accepted native Linux x86-64: ten exact mmap attempts and every reached OOM.
+// Output two size_of values, then a semantic success/error path tag. The tag
+// is decoded from the actual typed error, never inferred from an injection.
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import alloc::clone_vec;
+import std::io;
+import std::io_decimal;
+import std::signal;
+
+fn allocation(error: alloc::vec::Error) -> bool {
+    return match(error) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+}
+fn leaf(error: alloc::string::Error) -> bool {
+    return match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+}
+fn row_storage(error: alloc::vec::Error, outer: i32) -> i32 { assert(allocation(error)); return 20+outer; }
+fn leaf_error(error: alloc::string::Error, outer: i32, inner: i32) -> i32 { assert(leaf(error) && inner>=0 && inner<2); return 100+2*outer+inner; }
+fn row_error(error: alloc::clone::Error<alloc::string::Error>, outer: i32) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Storage(error) -> row_storage(error,outer),
+        alloc::clone::Error::Element(index,error) -> leaf_error(error,outer,index),
+        alloc::clone::Error::Bounds -> -1
+    };
+}
+fn outer_storage(error: alloc::vec::Error) -> i32 { assert(allocation(error)); return 10; }
+fn inner_error(error: alloc::clone::Error<alloc::string::Error>, outer: i32) -> i32 { assert(outer>=0 && outer<2); return row_error(error,outer); }
+fn grid_error(error: alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>) -> i32 {
+    return match(error) {
+        alloc::clone::Error::Storage(error) -> outer_storage(error),
+        alloc::clone::Error::Element(index,error) -> inner_error(error,index),
+        alloc::clone::Error::Bounds -> -1
+    };
+}
+fn finish(tag: i32, status: i32) -> i32 {
+    if (std::io_decimal::write_i32(1,tag)<0 || std::io::write_byte(1,10)!=1) { return 5; }
+    return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    if (std::io_decimal::write_usize(1,core::mem::size_of<alloc::string::String>())<0 || std::io::write_byte(1,10)!=1) { return 5; }
+    if (std::io_decimal::write_usize(1,core::mem::size_of<alloc::vec::Vec<alloc::string::String>>())<0 || std::io::write_byte(1,10)!=1) { return 5; }
+    let data: [u8;4] = [65,0,195,169];
+    let made = alloc::string::from_utf8(data,4);
+    if (made.is_err()) { assert(leaf(made.unwrap_err())); return finish(1,4); }
+    let text: alloc::string::String = made.unwrap();
+    let row_made: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::vec::Error> = alloc::vec::with_capacity<alloc::string::String>(2);
+    if (row_made.is_err()) { assert(allocation(row_made.unwrap_err()) && text.byte_len()==4 && text.byte_at(1).unwrap()==0); text.destroy(); return finish(2,4); }
+    let row = row_made.unwrap(); row.try_push(text).unwrap(); row.try_push(text).unwrap();
+    let source_made: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>,alloc::vec::Error> = alloc::vec::with_capacity<alloc::vec::Vec<alloc::string::String>>(2);
+    if (source_made.is_err()) { assert(allocation(source_made.unwrap_err()) && row.len()==2 && row.capacity()==2 && text.byte_len()==4 && text.byte_at(1).unwrap()==0); row.destroy(); text.destroy(); return finish(3,4); }
+    let source = source_made.unwrap(); source.try_push(row).unwrap(); source.try_push(row).unwrap();
+    let bytes: [u8] = text.as_bytes();
+    let saved_row: core::slice::View<alloc::string::String> = row.as_view();
+    let saved_source: core::slice::View<alloc::vec::Vec<alloc::string::String>> = source.as_view();
+    let result: core::result::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>,alloc::clone::Error<alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone_vec::try_clone<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>>(source.borrow());
+    let old_text: alloc::string::String = saved_row.get(0).unwrap();
+    let old_row: alloc::vec::Vec<alloc::string::String> = saved_source.get(1).unwrap();
+    assert(text.byte_len()==4 && bytes[0]==65 && bytes[1]==0 && old_text.byte_at(3).unwrap()==169);
+    assert(row.len()==2 && row.capacity()==2 && source.len()==2 && source.capacity()==2 && old_row.len()==2);
+    // Borrowed row/leaf handles: only these three source allocations are owned.
+    source.destroy(); row.destroy(); text.destroy();
+    if (result.is_err()) { return finish(grid_error(result.unwrap_err()),4); }
+    let copy = result.unwrap();
+    assert(copy.len()==2);
+    let a: alloc::vec::Vec<alloc::string::String> = copy.at(0);
+    let b: alloc::vec::Vec<alloc::string::String> = copy.at(1);
+    let x: alloc::string::String = a.at(0); let y: alloc::string::String = b.at(1);
+    assert(a.len()==2 && b.len()==2 && x.byte_at(1).unwrap()==0 && y.byte_at(3).unwrap()==169);
+    alloc::clone::destroy_vec<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    return finish(0,0);
+}

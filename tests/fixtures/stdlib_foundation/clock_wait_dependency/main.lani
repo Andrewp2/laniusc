@@ -1,0 +1,9 @@
+module app::main;
+import core::result;
+import core::time;
+import std::clock;
+fn main() -> i32 {
+    let clock: std::clock::NativeClock = std::clock::native();
+    let done: core::time::Instant = core::result::unwrap(std::clock::sleep_for(clock.borrow(),core::time::zero()));
+    assert(done.ticks.subsec_nanos() < 1000000000); return 0;
+}

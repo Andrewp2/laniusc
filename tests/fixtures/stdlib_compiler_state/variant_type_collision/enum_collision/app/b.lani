@@ -1,0 +1,1 @@
+module app::b; import app::a; pub enum Overlong { Overflow, Error } pub enum Error { Bounds, InvalidUtf8(i32), Other } pub fn map(value: app::a::Error) -> Error { let mapped: Error = match (value) { app::a::Error::Bounds -> Error::Bounds, app::a::Error::InvalidUtf8(at) -> Error::InvalidUtf8(at) }; return mapped; }

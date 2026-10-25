@@ -1,0 +1,18 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::slice;
+import core::time;
+import std::clock;
+import std::command;
+import std::command_capture;
+import std::command_raw;
+import std::signal;
+fn bytes(value: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),n); return core::slice::view(raw,n).unwrap(); }
+fn code(stage: std::command_capture::Stage) -> i32 { return match(stage) { std::command_capture::Stage::Validate -> 80, std::command_capture::Stage::Policy -> 81, std::command_capture::Stage::Allocate -> 82, std::command_capture::Stage::Clock -> 83, std::command_capture::Stage::Flags -> 84, std::command_capture::Stage::Poll -> 85, std::command_capture::Stage::Input -> 86, std::command_capture::Stage::Output -> 87, std::command_capture::Stage::ErrorOutput -> 88, std::command_capture::Stage::Wait -> 89, std::command_capture::Stage::Close -> 90 }; }
+fn finish(child: std::command::Child, result: i32) -> i32 { child.cancel_and_wait().unwrap(); child.close_pipes(); let status: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(status),true) == -10); return result; }
+fn run(child: std::command::Child) -> i32 { let sampled: core::time::Instant = std::clock::monotonic_now().unwrap(); let until = core::time::deadline_after(sampled,core::time::from_secs(3)).unwrap(); let limits = std::command_capture::default_limits(); limits.max_stdout_bytes = 8; limits.max_stderr_bytes = 8; let captured = std::command_capture::communicate(child.borrow(),bytes("DATA",4),limits,until);
+    if (captured.is_ok()) { let output = captured.unwrap(); assert(output.stdout.len() == 4 && output.stderr.len() == 0 && core::option::unwrap(output.status.code) == 0); output.destroy(); return finish(child,0); } let failed = captured.unwrap_err(); let result: i32 = code(failed.stage); if (!failed.progress.acquired) { assert(core::option::is_some(child.input) && core::option::is_some(child.output) && core::option::is_some(child.error)); } else { assert(core::option::is_none(child.input) && core::option::is_none(child.output) && core::option::is_none(child.error)); } failed.destroy(); return finish(child,result);
+}
+fn unknown(value: std::command::UnknownStart) -> i32 { return finish(value.child,72); }
+fn main() -> i32 { if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 73; } let args: [core::slice::View<u8>;1] = [bytes("/bin/cat",8)]; let request = std::command::request(args[0],core::slice::view(args,1).unwrap(),core::slice::view(args,0).unwrap()); request.stdin = std::command::Stdio::Pipe; request.stdout = std::command::Stdio::Pipe; request.stderr = std::command::Stdio::Pipe; let spawned = std::command::spawn(request); if (spawned.is_err()) { return 70; } return match(spawned.unwrap()) { std::command::Spawn::Child(child) -> run(child), std::command::Spawn::Failed(value) -> 71, std::command::Spawn::Unknown(value) -> unknown(value) }; }

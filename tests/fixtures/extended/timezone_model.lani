@@ -1,0 +1,41 @@
+module app::main;
+import alloc::vec;
+import core::calendar;
+import core::mem;
+import core::result;
+import core::slice;
+import core::time;
+import ext::timezone;
+import std::io;
+fn read(p: ptr, count: i32, eof: bool) -> bool { let done: i32 = 0; while (done < count) { let n: i32 = std::io::read_stdin(p+(done as usize),(count-done) as usize); assert(n >= 0); if (n == 0) { assert(eof && done == 0); return false; } done += n; } return true; }
+fn write(p: ptr, count: i32) { let done: i32 = 0; while (done < count) { let n: i32 = std::io::write_stdout(p+(done as usize),(count-done) as usize); assert(n > 0); done += n; } }
+fn word(value: i32) { let raw: [i32;1] = [0;1]; raw[0] = value; write(core::mem::i32_array_data_ptr(raw),4); }
+fn wide(bytes: [u8], at: i32) -> u64 { let v: u64 = 0; let i: i32 = 0; while (i < 8) { v = v | ((bytes[at+i] as u64) << (8*i)); i += 1; } return v; }
+fn view(bytes: core::slice::View<u8>) { let storage: [i32;256] = [0;256]; let p: ptr = core::mem::i32_array_data_ptr(storage); let raw: [u8] = core::mem::typed_slice_from_raw_parts(p,1024); let at: i32 = 0; while (at < bytes.length) { let n: i32 = bytes.length-at; if (n > 1024) { n = 1024; } let i: i32 = 0; while (i < n) { raw[i] = bytes.values[bytes.start+at+i]; i += 1; } write(p,n); at += n; } }
+fn code(e: ext::timezone::Error) -> i32 { return match(e) { ext::timezone::Error::InvalidView -> 1, ext::timezone::Error::InputLimit -> 2, ext::timezone::Error::TransitionLimit -> 3, ext::timezone::Error::TypeLimit -> 4, ext::timezone::Error::DesignationLimit -> 5, ext::timezone::Error::FooterLimit -> 6, ext::timezone::Error::CandidateLimit -> 7, ext::timezone::Error::WorkLimit -> 8, ext::timezone::Error::AllocationFailed -> 9, ext::timezone::Error::Truncated -> 10, ext::timezone::Error::Magic -> 11, ext::timezone::Error::Version -> 12, ext::timezone::Error::Counts -> 13, ext::timezone::Error::TransitionOrder -> 14, ext::timezone::Error::TypeIndex -> 15, ext::timezone::Error::Offset -> 16, ext::timezone::Error::Indicator -> 17, ext::timezone::Error::Designation -> 18, ext::timezone::Error::Footer -> 19, ext::timezone::Error::InvalidRule -> 20, ext::timezone::Error::MissingRule -> 21, ext::timezone::Error::InconsistentFooter -> 22, ext::timezone::Error::UnsupportedLeapScale -> 23, ext::timezone::Error::Unspecified -> 24, ext::timezone::Error::InvalidLocal -> 25, ext::timezone::Error::LeapSecond -> 26, ext::timezone::Error::YearRange -> 27, ext::timezone::Error::Overflow -> 28, ext::timezone::Error::Gap -> 29, ext::timezone::Error::Ambiguous -> 30, ext::timezone::Error::UnsupportedRule -> 32, ext::timezone::Error::Destroyed -> 31 }; }
+fn row(value: ext::timezone::Local) {
+    let raw: [i32;12] = [0;12]; let seconds: u64 = value.instant.unix_seconds() as u64; raw[0] = seconds as i32; raw[1] = (seconds >> 32) as i32; raw[2] = value.instant.subsec_nanos() as i32;
+    raw[3] = value.civil.date.year; raw[4] = value.civil.date.month; raw[5] = value.civil.date.day; raw[6] = value.civil.time.hour; raw[7] = value.civil.time.minute; raw[8] = value.civil.time.second; raw[9] = value.info.offset_seconds; if (value.info.is_dst) { raw[10] = 1; } raw[11] = value.info.abbreviation.length; write(core::mem::i32_array_data_ptr(raw),48); view(value.info.abbreviation);
+}
+fn query(zone: &ext::timezone::Zone, words: [i32], raw: [u8]) {
+    let op: i32 = words[0]; let seconds: i64 = wide(raw,4) as i64; let nanos: u32 = words[3] as u32;
+    if (op == 0 || op == 5) { let instant: core::time::SystemTime = core::time::SystemTime { seconds: seconds, nanos: nanos };
+        if (op == 0) { let result: core::result::Result<ext::timezone::Local,ext::timezone::Error> = zone.to_local(instant); if (result.is_err()) { word(code(result.unwrap_err())); return; } word(0); word(1); row(result.unwrap()); return; }
+        let result: core::result::Result<ext::timezone::Info,ext::timezone::Error> = zone.offset_at(seconds); if (result.is_err()) { word(code(result.unwrap_err())); return; } word(0); word(1); let date: core::calendar::Date = core::calendar::Date { year: 0, month: 0, day: 0 }; let time: core::calendar::TimeOfDay = core::calendar::TimeOfDay { hour: 0, minute: 0, second: 0, nanos: 0 }; let civil: core::calendar::LocalDateTime = core::calendar::LocalDateTime { date: date, time: time }; let value: ext::timezone::Local = ext::timezone::Local { instant: instant, civil: civil, info: result.unwrap() }; row(value); return;
+    }
+    let date: core::calendar::Date = core::calendar::Date { year: words[4], month: words[5], day: words[6] }; let time: core::calendar::TimeOfDay = core::calendar::TimeOfDay { hour: words[7], minute: words[8], second: words[9], nanos: nanos }; let civil: core::calendar::LocalDateTime = core::calendar::LocalDateTime { date: date, time: time };
+    if (op != 1) { let policy: ext::timezone::Resolution = ext::timezone::Resolution::Reject; if (op == 2) { policy = ext::timezone::Resolution::Earliest; } if (op == 3) { policy = ext::timezone::Resolution::Latest; } let result: core::result::Result<ext::timezone::Candidate,ext::timezone::Error> = zone.resolve(civil,policy); if (result.is_err()) { word(code(result.unwrap_err())); return; } let candidate: ext::timezone::Candidate = result.unwrap(); word(0); word(1); let value: ext::timezone::Local = ext::timezone::Local { instant: candidate.instant, civil: civil, info: candidate.info }; row(value); return; }
+    let result: core::result::Result<alloc::vec::Vec<ext::timezone::Candidate>,ext::timezone::Error> = zone.candidates(civil); if (result.is_err()) { word(code(result.unwrap_err())); return; } let values: alloc::vec::Vec<ext::timezone::Candidate> = result.unwrap(); word(0); word(values.len()); let i: i32 = 0; while (i < values.len()) { let candidate: ext::timezone::Candidate = values.at(i); let value: ext::timezone::Local = ext::timezone::Local { instant: candidate.instant, civil: civil, info: candidate.info }; row(value); i += 1; } values.destroy();
+}
+fn main() -> i32 {
+    let header: [i32;10] = [0;10]; let hp: ptr = core::mem::i32_array_data_ptr(header); let hb: [u8] = core::mem::typed_slice_from_raw_parts(hp,40); let q: [i32;10] = [0;10]; let qp: ptr = core::mem::i32_array_data_ptr(q); let qb: [u8] = core::mem::typed_slice_from_raw_parts(qp,40);
+    let storage: [i32;1024] = [0;1024]; let p: ptr = core::mem::i32_array_data_ptr(storage); let raw: [u8] = core::mem::typed_slice_from_raw_parts(p,4096);
+    while (read(hp,40,true)) {
+        let n: i32 = header[0]; let requests: i32 = header[9]; assert(n >= 0 && n <= 4000000 && requests >= 0 && requests <= 100000); let input: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(n+4).unwrap(); input.try_resize(n+4,0).unwrap(); let at: i32 = 0;
+        while (at < n) { let count: i32 = n-at; if (count > 4096) { count = 4096; } assert(read(p,count,false)); let i: i32 = 0; while (i < count) { input.set(at+i+2,raw[i]).unwrap(); i += 1; } at += count; }
+        let limits: ext::timezone::Limits = ext::timezone::Limits { max_input: header[1], max_transitions: header[2], max_types: header[3], max_designations: header[4], max_footer: header[5], max_candidates: header[6], max_work: wide(hb,28) };
+        let parsed: core::result::Result<ext::timezone::Zone,ext::timezone::Error> = ext::timezone::parse(core::slice::view_range(input.as_slice(),2,n).unwrap(),limits); input.destroy();
+        if (parsed.is_err()) { word(code(parsed.unwrap_err())); let i: i32 = 0; while (i < requests) { assert(read(qp,40,false)); i += 1; } continue; }
+        let zone: ext::timezone::Zone = parsed.unwrap(); word(0); word(zone.version()); word(zone.transition_count()); word(zone.type_count()); word(zone.footer().length); view(zone.footer()); let i: i32 = 0; while (i < requests) { assert(read(qp,40,false)); query(zone.borrow(),q,qb); i += 1; } zone.destroy();
+    } return 0;
+}

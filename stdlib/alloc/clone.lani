@@ -1,0 +1,80 @@
+// Fallible element-wise cloning with explicit partial-result cleanup.
+module alloc::clone;
+import alloc::deque;
+import alloc::vec;
+import core::clone;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Error<E> { Bounds, Storage(alloc::vec::Error), Element(i32,E) }
+
+// Consume each initialized entry, release backing storage, and reset the
+// actual Vec owner. Every entry must be one valid owner under Destroy<T>.
+// Outstanding views/borrowed entry copies become invalid. No Clone bound.
+pub fn destroy_vec<T>(owner: &alloc::vec::Vec<T>) where T: core::clone::Destroy<T> {
+    while (true) {
+        let next: core::option::Option<T> = owner.pop();
+        if (next.is_none()) { break; }
+        T::destroy_value(next.unwrap());
+    }
+    owner.destroy();
+}
+
+// Consume the remaining entries front-to-back, then release and disarm the
+// cursor. Every remaining entry must be one valid owner under Destroy<T>.
+// Yielded entries belong to their callers. Views/borrowed copies become invalid.
+// No Clone bound or implicit duplication; a finished cursor may be reused here.
+pub fn destroy_vec_iter<T>(owner: &alloc::vec::IntoIter<T>) where T: core::clone::Destroy<T> {
+    while (true) {
+        let next: core::option::Option<T> = owner.next();
+        if (next.is_none()) { break; }
+        T::destroy_value(next.unwrap());
+    }
+    let empty: alloc::vec::Vec<T> = owner.take_remaining();
+    assert(empty.is_empty());
+    empty.destroy();
+}
+
+// The deque cursor owns its remaining logical interval, including wrapped
+// storage. Destroy each entry in front-to-back order and release backing once.
+pub fn destroy_deque_iter<T>(owner: &alloc::deque::IntoIter<T>) where T: core::clone::Destroy<T> {
+    while (true) {
+        let next: core::option::Option<T> = owner.next();
+        if (next.is_none()) { break; }
+        T::destroy_value(next.unwrap());
+    }
+    let empty: alloc::deque::Deque<T> = owner.take_remaining();
+    assert(empty.is_empty());
+    empty.destroy();
+}
+
+// Metadata is checked before allocation or leaf calls. Input storage must
+// remain physically backed and immutable; duplicate borrowed handles are OK.
+// Reserve outer storage first. E transfers unchanged on leaf failure and
+// must not borrow the completed prefix which is released before returning.
+pub fn from_view<T,E>(source: core::slice::View<T>) -> core::result::Result<alloc::vec::Vec<T>,Error<E>> where T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    if (source.start < 0 || source.length < 0 || source.start > 2147483647-source.length) { return core::result::Err(Error::Bounds()); }
+    let made: core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> = alloc::vec::with_capacity<T>(source.len());
+    if (made.is_err()) { return core::result::Err(Error::Storage(made.unwrap_err())); }
+    let output: alloc::vec::Vec<T> = made.unwrap();
+    let index: i32 = 0;
+    while (index < source.len()) {
+        let borrowed: T = source.get(index).unwrap();
+        let cloned: core::result::Result<T,E> = T::try_clone_value(borrowed);
+        if (cloned.is_err()) {
+            let error: E = cloned.unwrap_err();
+            destroy_vec<T>(output.borrow());
+            return core::result::Err(Error::Element(index,error));
+        }
+        let value: T = cloned.unwrap();
+        let added: core::result::Result<i32,alloc::vec::Error> = output.try_push(value);
+        if (added.is_err()) {
+            T::destroy_value(value); destroy_vec<T>(output.borrow());
+            return core::result::Err(Error::Storage(added.unwrap_err()));
+        }
+        index += 1;
+    }
+    return core::result::Ok(output);
+}

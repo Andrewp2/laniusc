@@ -1,0 +1,219 @@
+// Checked, bounded integer expressions. See docs/extended-expr-calc.md.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::format;
+import core::i64;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::vec;
+import ext::cli;
+import ext::parse;
+import std::args;
+import std::stream;
+
+struct Options { max_input: i32, max_line: i32, max_output: i32, max_stack: i32, max_work: u64, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Diagnostic { status: i32, reason: i32, line: u64, byte: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+struct Evaluation { values: core::vec::Vec<i64,256>, operators: core::vec::Vec<i32,256>, positions: core::vec::Vec<i32,256>, work: u64 }
+impl Evaluation { fn borrow(&self) -> &Evaluation { return self; } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::result::unwrap(core::slice::view(bytes,count));
+}
+fn text(value: str, count: i32) -> core::text::Text { let view: core::slice::View<u8> = literal(value,count); return core::text::from_utf8_unchecked(view.values,view.start,count); }
+fn fail(diagnostic: &Diagnostic, status: i32, reason: i32) -> i32 { diagnostic.status = status; diagnostic.reason = reason; return status; }
+fn vec_error(error: alloc::vec::Error, diagnostic: &Diagnostic) -> i32 {
+    let allocation: bool = match (error) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+    if (allocation) { return fail(diagnostic,5,8); } return fail(diagnostic,3,4);
+}
+fn parse_error(error: ext::parse::Error, diagnostic: &Diagnostic) -> i32 {
+    diagnostic.byte = error.location.offset;
+    let reason: i32 = match (error.kind) { ext::parse::ErrorKind::WorkLimit -> 7, ext::parse::ErrorKind::ScanLimit -> 4, ext::parse::ErrorKind::InvalidUtf8 -> 3, ext::parse::ErrorKind::Overflow -> 10, _ -> 1 };
+    if (reason == 7) { return fail(diagnostic,4,7); } if (reason == 4) { return fail(diagnostic,3,4); } if (reason == 10) { return fail(diagnostic,7,10); } return fail(diagnostic,2,reason);
+}
+fn spend(evaluation: &Evaluation, options: Options, diagnostic: &Diagnostic) -> bool {
+    if (evaluation.work == options.max_work) { fail(diagnostic,4,7); return false; } evaluation.work += 1; return true;
+}
+fn push_value(evaluation: &Evaluation, value: i64, options: Options, diagnostic: &Diagnostic) -> bool {
+    if (core::vec::len(evaluation.values.borrow()) == options.max_stack) { fail(diagnostic,3,6); return false; }
+    if (core::result::is_err(core::vec::try_push(evaluation.values.borrow(),value))) { fail(diagnostic,3,6); return false; } return true;
+}
+fn push_operator(evaluation: &Evaluation, kind: i32, at: i32, options: Options, diagnostic: &Diagnostic) -> bool {
+    if (core::vec::len(evaluation.operators.borrow()) == options.max_stack) { fail(diagnostic,3,6); return false; }
+    if (core::result::is_err(core::vec::try_push(evaluation.operators.borrow(),kind))) { fail(diagnostic,3,6); return false; }
+    core::result::unwrap(core::vec::try_push(evaluation.positions.borrow(),at)); return true;
+}
+fn precedence(kind: i32) -> i32 { if (kind >= 6) { return 3; } if (kind >= 3) { return 2; } if (kind > 0) { return 1; } return 0; }
+fn reduce(evaluation: &Evaluation, options: Options, diagnostic: &Diagnostic) -> bool {
+    let kind: i32 = core::option::unwrap(core::vec::pop(evaluation.operators.borrow())); diagnostic.byte = core::option::unwrap(core::vec::pop(evaluation.positions.borrow()));
+    if (!spend(evaluation,options,diagnostic)) { return false; }
+    let right: i64 = core::option::unwrap(core::vec::pop(evaluation.values.borrow())); let result: core::option::Option<i64> = core::option::None();
+    if (kind == 6) { result = core::option::Some(right); }
+    if (kind == 7) { result = core::i64::checked_sub(0,right); }
+    if (kind < 6) {
+        let left: i64 = core::option::unwrap(core::vec::pop(evaluation.values.borrow()));
+        if (kind == 1) { result = core::i64::checked_add(left,right); }
+        if (kind == 2) { result = core::i64::checked_sub(left,right); }
+        if (kind == 3) {
+            result = core::i64::checked_mul(left,right);
+        }
+        if (kind == 4 || kind == 5) {
+            if (right == 0) { fail(diagnostic,7,9); return false; }
+            if (!(left == core::i64::MIN && right == -1)) {
+                if (kind == 4) { result = core::option::Some(left/right); } else { result = core::option::Some(left%right); }
+            }
+        }
+    }
+    if (core::option::is_none(result)) { fail(diagnostic,7,10); return false; }
+    return push_value(evaluation,core::option::unwrap(result),options,diagnostic);
+}
+fn reduce_unary(evaluation: &Evaluation, options: Options, diagnostic: &Diagnostic) -> bool {
+    while (!core::vec::is_empty(evaluation.operators.borrow()) && core::option::unwrap(core::vec::last(evaluation.operators.borrow())) >= 6) { if (!reduce(evaluation,options,diagnostic)) { return false; } } return true;
+}
+fn append_result(output: &alloc::vec::Vec<u8>, value: i64, options: Options, diagnostic: &Diagnostic) -> i32 {
+    let bytes: [u8;32] = [0;32];
+    let arguments: [core::format::Argument;1] = [core::format::Argument::Signed(value)]; let named: [core::format::Named;0] = [];
+    let formatted: core::result::Result<i32,core::format::Error> = core::format::format_into(text("{}\n",3),core::result::unwrap(core::slice::view(arguments,1)),core::result::unwrap(core::slice::view(named,0)),core::result::unwrap(core::slice::view(bytes,32)),core::format::default_limits());
+    if (core::result::is_err(formatted)) { return fail(diagnostic,3,5); } let length: i32 = core::result::unwrap(formatted);
+    if (length > options.max_output-output.len()) { return fail(diagnostic,3,5); }
+    let part: core::slice::View<u8> = core::result::unwrap(core::slice::view(bytes,length));
+    let appended: core::result::Result<i32,alloc::vec::Error> = output.try_extend(part);
+    if (core::result::is_err(appended)) { return vec_error(core::result::unwrap_err(appended),diagnostic); } return 0;
+}
+fn record(bytes: core::slice::View<u8>, options: Options, output: &alloc::vec::Vec<u8>, diagnostic: &Diagnostic) -> i32 {
+    let initialized: core::result::Result<ext::parse::Cursor,ext::parse::Error> = ext::parse::from_utf8_range(bytes.values,bytes.start,bytes.len(),ext::parse::Limits { max_scan_bytes: options.max_line, max_work: options.max_work });
+    if (core::result::is_err(initialized)) { return parse_error(core::result::unwrap_err(initialized),diagnostic); }
+    let cursor: ext::parse::Cursor = core::result::unwrap(initialized);
+    let values: [i64;256] = [0;256]; let operators: [i32;256] = [0;256]; let positions: [i32;256] = [0;256];
+    let evaluation: Evaluation = Evaluation { values: core::vec::from_storage(values), operators: core::vec::from_storage(operators), positions: core::vec::from_storage(positions), work: 0 };
+    let expecting: bool = true; let seen: bool = false;
+    while (!cursor.is_eof()) {
+        diagnostic.byte = cursor.position(); let current: u8 = core::option::unwrap(cursor.peek_byte());
+        if (current == 32 || current == 9 || current == 11 || current == 12) {
+            let skipped: core::result::Result<ext::parse::Span,ext::parse::Error> = cursor.take_byte(current);
+            if (core::result::is_err(skipped)) { return parse_error(core::result::unwrap_err(skipped),diagnostic); } continue;
+        }
+        if (!spend(evaluation.borrow(),options,diagnostic)) { return diagnostic.status; } seen = true;
+        if (current >= 48 && current <= 57) {
+            if (!expecting) { return fail(diagnostic,2,1); }
+            let at: i32 = cursor.position(); let scanned: core::result::Result<ext::parse::Span,ext::parse::Error> = cursor.digits();
+            if (core::result::is_err(scanned)) { return parse_error(core::result::unwrap_err(scanned),diagnostic); }
+            let parsed: core::result::Result<u64,core::decimal::ParseError> = core::result::unwrap(scanned).text.parse_u64(); diagnostic.byte = at;
+            if (core::result::is_err(parsed)) { return fail(diagnostic,7,10); }
+            let magnitude: u64 = core::result::unwrap(parsed); let number: i64 = magnitude as i64;
+            if (magnitude > 9223372036854775807) {
+                if (magnitude != 9223372036854775808 || core::vec::is_empty(evaluation.operators.borrow()) || core::option::unwrap(core::vec::last(evaluation.operators.borrow())) != 7) { return fail(diagnostic,7,10); }
+                core::vec::pop(evaluation.operators.borrow()); core::vec::pop(evaluation.positions.borrow()); number = core::i64::MIN;
+            }
+            if (!push_value(evaluation.borrow(),number,options,diagnostic) || !reduce_unary(evaluation.borrow(),options,diagnostic)) { return diagnostic.status; } expecting = false; continue;
+        }
+        let kind: i32 = 0;
+        if (current == 43) { kind = 1; } if (current == 45) { kind = 2; } if (current == 42) { kind = 3; } if (current == 47) { kind = 4; } if (current == 37) { kind = 5; }
+        if (current == 40) {
+            if (!expecting) { return fail(diagnostic,2,1); } if (!push_operator(evaluation.borrow(),0,cursor.position(),options,diagnostic)) { return diagnostic.status; }
+        } else { if (current == 41) {
+            if (expecting) { return fail(diagnostic,2,1); }
+            while (!core::vec::is_empty(evaluation.operators.borrow()) && core::option::unwrap(core::vec::last(evaluation.operators.borrow())) != 0) { if (!reduce(evaluation.borrow(),options,diagnostic)) { return diagnostic.status; } }
+            diagnostic.byte = cursor.position(); if (core::vec::is_empty(evaluation.operators.borrow())) { return fail(diagnostic,2,2); }
+            core::vec::pop(evaluation.operators.borrow()); core::vec::pop(evaluation.positions.borrow()); if (!reduce_unary(evaluation.borrow(),options,diagnostic)) { return diagnostic.status; }
+        } else {
+            if (kind == 0 || (expecting && kind > 2)) { return fail(diagnostic,2,1); }
+            if (expecting) { kind += 5; } else {
+                while (!core::vec::is_empty(evaluation.operators.borrow()) && precedence(core::option::unwrap(core::vec::last(evaluation.operators.borrow()))) >= precedence(kind)) { if (!reduce(evaluation.borrow(),options,diagnostic)) { return diagnostic.status; } }
+            }
+            diagnostic.byte = cursor.position(); if (!push_operator(evaluation.borrow(),kind,cursor.position(),options,diagnostic)) { return diagnostic.status; } expecting = true;
+        } }
+        let consumed: core::result::Result<ext::parse::Span,ext::parse::Error> = cursor.take_byte(current);
+        if (core::result::is_err(consumed)) { return parse_error(core::result::unwrap_err(consumed),diagnostic); }
+    }
+    diagnostic.byte = cursor.position(); if (!seen) { return 0; } if (expecting) { return fail(diagnostic,2,1); }
+    while (!core::vec::is_empty(evaluation.operators.borrow())) {
+        if (core::option::unwrap(core::vec::last(evaluation.operators.borrow())) == 0) { diagnostic.byte = core::option::unwrap(core::vec::last(evaluation.positions.borrow())); return fail(diagnostic,2,2); }
+        if (!reduce(evaluation.borrow(),options,diagnostic)) { return diagnostic.status; }
+    }
+    return append_result(output,core::option::unwrap(core::vec::pop(evaluation.values.borrow())),options,diagnostic);
+}
+fn calculate(options: Options, diagnostic: &Diagnostic) -> i32 {
+    let line: alloc::vec::Vec<u8> = alloc::vec::new(); let output: alloc::vec::Vec<u8> = alloc::vec::new(); let storage: [i32;256] = [0;256];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024); let source: std::stream::Descriptor = std::stream::stdin();
+    let total: i32 = 0; let status: i32 = 0; diagnostic.line = 1;
+    while (status == 0) {
+        let received: core::result::Result<i32,core::io::Error> = source.read(bytes,0,1024);
+        if (core::result::is_err(received)) { if (core::io::is_interrupted(core::result::unwrap_err(received))) { continue; } status = fail(diagnostic,6,11); break; }
+        let count: i32 = core::result::unwrap(received); if (count == 0) { status = record(line.as_view(),options,output.borrow(),diagnostic); break; }
+        let index: i32 = 0;
+        while (index < count && status == 0) {
+            diagnostic.byte = line.len(); if (total == options.max_input) { status = fail(diagnostic,3,12); break; } total += 1;
+            let current: u8 = bytes[index];
+            if (current == 10) {
+                let length: i32 = line.len(); if (length > 0 && core::option::unwrap(line.get(length-1)) == 13) { line.pop(); }
+                status = record(line.as_view(),options,output.borrow(),diagnostic); line.clear(); if (status == 0) { diagnostic.line += 1; }
+            } else {
+                if (line.len() == options.max_line) { status = fail(diagnostic,3,4); break; }
+                let pushed: core::result::Result<i32,alloc::vec::Error> = line.try_push(current); if (core::result::is_err(pushed)) { status = vec_error(core::result::unwrap_err(pushed),diagnostic); }
+            } index += 1;
+        }
+    }
+    if (status == 0) { let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),output.as_slice(),0,output.len()))) { status = fail(diagnostic,6,11); } }
+    output.destroy(); line.destroy(); return status;
+}
+fn option(options: &Options, item: ext::cli::Occurrence, diagnostic: &Diagnostic) -> bool {
+    if (item.id == 6) { options.help = true; return true; }
+    let value: ext::cli::Argument = core::option::unwrap(item.value); diagnostic.byte = value.at.byte;
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.bytes.values,value.bytes.start,value.bytes.len());
+    if (core::result::is_err(parsed)) { return false; } let number: u64 = core::result::unwrap(parsed);
+    if (item.id == 5) { options.max_work = number; return true; } if (number > 2147483647 as u64) { return false; }
+    if (item.id == 1) { options.max_input = number as i32; } if (item.id == 2) { options.max_line = number as i32; } if (item.id == 3) { options.max_output = number as i32; }
+    if (item.id == 4) { if (number > 256) { return false; } options.max_stack = number as i32; } return true;
+}
+fn process(arguments: std::args::Arguments, diagnostic: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;6] = [
+        ext::cli::Spec { id: 1, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: literal("max-line",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-stack",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::result::unwrap(core::slice::view(specs,6));
+    let parser: ext::cli::Parser = core::result::unwrap(ext::cli::parser(arguments.as_view(),schema,ext::cli::Ordering::Intermixed));
+    let options: Options = Options { max_input: 1048576, max_line: 65536, max_output: 1048576, max_stack: 256, max_work: 1000000, help: false };
+    while (true) {
+        let event: core::result::Result<core::option::Option<ext::cli::Event>,ext::cli::Error> = parser.next(); if (core::result::is_err(event)) { return fail(diagnostic,2,0); }
+        let next: core::option::Option<ext::cli::Event> = core::result::unwrap(event); if (core::option::is_none(next)) { break; }
+        let valid: bool = match (core::option::unwrap(next)) { ext::cli::Event::Option(item) -> option(options.borrow(),item,diagnostic), ext::cli::Event::Operand(item) -> false };
+        if (!valid) { return fail(diagnostic,2,0); }
+    }
+    if (options.help) {
+        let usage: core::slice::View<u8> = literal("Usage: expr_calc [--max-input N] [--max-line N] [--max-output N] [--max-stack N] [--max-work N]\nstdin: checked i64 expressions with + - * / % ( ) and unary + -.\n",161);
+        let sink: std::stream::Descriptor = std::stream::stdout(); if (core::result::is_err(core::io::write_all(sink.borrow(),usage.values,usage.start,usage.len()))) { return fail(diagnostic,6,11); } return 0;
+    }
+    return calculate(options,diagnostic);
+}
+fn write_diagnostic(diagnostic: Diagnostic) -> bool {
+    let reason: core::text::Text = text("invalid-arguments",17);
+    if (diagnostic.reason == 1) { reason = text("syntax",6); } if (diagnostic.reason == 2) { reason = text("parenthesis",11); }
+    if (diagnostic.reason == 3) { reason = text("invalid-utf8",12); } if (diagnostic.reason == 4) { reason = text("line-limit",10); }
+    if (diagnostic.reason == 5) { reason = text("output-limit",12); } if (diagnostic.reason == 6) { reason = text("stack-limit",11); }
+    if (diagnostic.reason == 7) { reason = text("work-limit",10); } if (diagnostic.reason == 8) { reason = text("allocation-failure",18); }
+    if (diagnostic.reason == 9) { reason = text("division-by-zero",16); } if (diagnostic.reason == 10) { reason = text("overflow",8); }
+    if (diagnostic.reason == 11) { reason = text("io-failure",10); } if (diagnostic.reason == 12) { reason = text("input-limit",11); }
+    let bytes: [u8;192] = [0;192]; let arguments: [core::format::Argument;3] = [core::format::Argument::Text(reason),core::format::Argument::Unsigned(diagnostic.line),core::format::Argument::Signed(diagnostic.byte as i64)];
+    let named: [core::format::Named;0] = [];
+    let finished: core::result::Result<i32,core::format::Error> = core::format::format_into(text("expr_calc: {} line={} byte={}\n",30),core::result::unwrap(core::slice::view(arguments,3)),core::result::unwrap(core::slice::view(named,0)),core::result::unwrap(core::slice::view(bytes,192)),core::format::default_limits());
+    if (core::result::is_err(finished)) { return false; }
+    let sink: std::stream::Descriptor = std::stream::stderr(); return core::result::is_ok(core::io::write_all(sink.borrow(),bytes,0,core::result::unwrap(finished)));
+}
+fn main() -> i32 {
+    let diagnostic: Diagnostic = Diagnostic { status: 0, reason: 0, line: 0, byte: 0 }; let status: i32 = 0;
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> fail(diagnostic.borrow(),5,8), std::args::Error::HostRead(index) -> fail(diagnostic.borrow(),6,11), _ -> fail(diagnostic.borrow(),2,0) }; }
+    else { let arguments: std::args::Arguments = core::result::unwrap(captured); status = process(arguments,diagnostic.borrow()); arguments.destroy(); }
+    if (status != 0 && !write_diagnostic(diagnostic)) { return 6; } return status;
+}

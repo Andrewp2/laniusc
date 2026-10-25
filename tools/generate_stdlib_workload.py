@@ -1,52 +1,23 @@
 #!/usr/bin/env python3
-"""Generate a deterministic Lanius benchmark program that uses the stdlib generics.
+"""Generate deterministic native workloads using the actual stdlib generics.
 
-tools/generate_generic_workload.py brings its own small generic library. This
-program instead uses the standard library's generic containers the way user
-code does: `core::vec::Vec<T, N>` and `core::set::Set<T, N>` over i32, record
-and nested element types, `core::pair::Pair<A, B>`, `core::option::Option<T>`
-and `core::result::Result<T, E>` through both their free functions and their
-methods, and matches on `core::option::Some(..)` and `core::result::Err(..)`.
-The user side adds generic functions with trait bounds (`fn checked_score<T>(item:
-T, limit: i32) -> core::result::Result<i32, i32> where T: Score`), generic
-helpers that build Option and Result values, record types implementing the
-user traits Score and Weight, and, behind `--backlog` until x86 handles them
-(see below), bounded generics over stdlib containers (`fn vec_total<T, const
-N: usize>(items: core::vec::Vec<T, N>, ...) where T: Score`) and a generic user
-type wrapping a stdlib one (`Queue<T>` over `core::vec::Vec<T, 4>`).
+Programs exercise core::vec::Vec<T,N>, core::set::Set<T,N>, Pair, Option and
+Result over scalars, records and nested types. Containers use the canonical
+borrowed free APIs. Every expected successful mutation unwraps its Result;
+intentional invalid replacement checks the error outcome before continuing.
+The independent Python model predicts complete checksum stdout.
 
-The areas, leaves, record types, step-count bands and the 30% share of plain
-scalar steps come from tools/generate_generic_workload.py, so seeds, sizes and
-`--type-pool` mean the same in both generators. Every value is an i32 kept in
-[0, 4095] by masking, and the generator models the stdlib containers (value
-semantics, the unchanged-on-failure rules of try_push, try_insert,
-try_remove, truncate and the set operations), so it knows the exact stdout:
-one checksum line per area, then the total. `main` returns 0.
+The optional --record-generics mix contains the historical record-generic probes:
+full-record Eq sets, borrowed symbolic-capacity helpers and Queue<T>. The name
+identifies the historical mix; support is established by native execution,
+not by the old compiler-failure descriptions. Default presets retain their
+step weights so workload changes can be attributed to the API migration.
 
-The program needs the stdlib API of core::vec, core::set and core::pair
-(branch p2-stdlib-generics until it merges). Point the compiler at that
-stdlib with `--stdlib-root`; `tools/lanius_perf.py --stdlib-root` does the
-same for the presets.
-
-`--backlog` adds steps that need features that do not work yet:
-* a user record implementing the stdlib trait core::set::Key, so records can
-  be set items (tests/fixtures/generics_backlog/b12);
-* user generics over vectors of records: the bounded helpers vec_total,
-  heaviest and first_odd, and the generic Queue<T>. Their bodies take a
-  record T back from core::vec::get_or, and x86 rejects that today ("x86
-  callee function lost its checked aggregate result layout").
-Until those work, the default mix exercises trait bounds through
-score_of and checked_score (records passed in directly) and generic user
-helpers through some_if and ok_if.
-
-`--probes DIR` writes one small program per step kind, plus one mixing all of
-them, with a matrix-style `// expect: N` first line (N is the checksum modulo
-128, returned from main), for `tools/generics_matrix.py --stdlib DIR --probes
-DIR`.
-
-Only the single-file layout exists: a project layout would implement the user
-traits in other modules than the one declaring them, which is a separate
-gap (see tools/generate_generic_workload.py).
+Seeds, areas, leaves, type-pool size and the plain scalar share follow
+generate_generic_workload.py. --probes writes small matrix programs with an
+expected checksum exit code, while ordinary programs print area totals.
+--target-bytes pads a single source to an exact byte size for the existing
+import-focused stdlib_gpu_perf.rs measurements. Compile with --stdlib-root stdlib.
 """
 
 from __future__ import annotations
@@ -103,14 +74,11 @@ STEP_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
     "result_match": (4, ("result", "ok_if"), True),
     "result_score": (3, ("result", "checked_score"), True),
 }
-# Steps that need features the compiler does not have yet.
-BACKLOG_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
-    # A user record implementing core::set::Key (generics_backlog/b12).
-    "set_rec": (4, ("set", "record_keys"), True),
-    # User generics over core::vec::Vec<T, N> of records: bounded helpers and
-    # a generic Queue<T>. Their bodies take a record T back from a stdlib
-    # generic (get_or), which x86 rejects today ("x86 callee function lost its
-    # checked aggregate result layout").
+# Historical record-generic workload mix, checked against current native output.
+RECORD_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
+    # User record equality uses every field through core::cmp::Eq<T>.
+    "set_rec": (4, ("set", "record_equality"), True),
+    # Borrowed symbolic-capacity helpers and a value-semantic Queue<T>.
     "vec_total": (5, ("vec", "vec_total"), True),
     "vec_heaviest": (4, ("vec", "heaviest"), True),
     "vec_first_odd": (3, ("vec", "first_odd"), True),
@@ -118,7 +86,7 @@ BACKLOG_KINDS: dict[str, tuple[int, tuple[str, ...], bool]] = {
 }
 
 # Stdlib modules; "option" is always imported, since Vec and Set return Options.
-IMPORTS = ("option", "pair", "result", "set", "vec")
+IMPORTS = ("option", "pair", "result", "set", "vec", "cmp")
 
 USER_LIBRARY = {
     "Score": "trait Score {\n    fn score(self) -> i32;\n}\n",
@@ -147,7 +115,7 @@ USER_LIBRARY = {
         "    return core::result::Ok(score);\n}\n"
     ),
     "vec_total": (
-        "fn vec_total<T, const N: usize>(items: core::vec::Vec<T, N>, fallback: T, seed: i32) -> i32 where T: Score {\n"
+        "fn vec_total<T, const N: usize>(items: &core::vec::Vec<T, N>, fallback: T, seed: i32) -> i32 where T: Score {\n"
         "    let acc: i32 = seed;\n    let i: i32 = 0;\n"
         "    while (i < core::vec::len(items)) {\n"
         "        let item: T = core::vec::get_or(items, i, fallback);\n"
@@ -157,7 +125,7 @@ USER_LIBRARY = {
     ),
     "heaviest": (
         "// The first of the heaviest items; None for an empty vector.\n"
-        "fn heaviest<T, const N: usize>(items: core::vec::Vec<T, N>, fallback: T) -> core::option::Option<T> where T: Weight {\n"
+        "fn heaviest<T, const N: usize>(items: &core::vec::Vec<T, N>, fallback: T) -> core::option::Option<T> where T: Weight {\n"
         "    if (core::vec::is_empty(items)) {\n        return core::option::None();\n    }\n"
         "    let best: T = core::vec::get_or(items, 0, fallback);\n"
         "    let i: i32 = 1;\n"
@@ -169,7 +137,7 @@ USER_LIBRARY = {
     ),
     "first_odd": (
         "// The index of the first item with an odd score.\n"
-        "fn first_odd<T, const N: usize>(items: core::vec::Vec<T, N>, fallback: T) -> core::option::Option<i32> where T: Score {\n"
+        "fn first_odd<T, const N: usize>(items: &core::vec::Vec<T, N>, fallback: T) -> core::option::Option<i32> where T: Score {\n"
         "    let i: i32 = 0;\n"
         "    while (i < core::vec::len(items)) {\n"
         "        let item: T = core::vec::get_or(items, i, fallback);\n"
@@ -178,18 +146,18 @@ USER_LIBRARY = {
         "    return core::option::None();\n}\n"
     ),
     "Queue": (
-        "// A first-in, first-out queue over a stdlib vector.\n"
+        "// A value-semantic first-in, first-out queue over a stdlib vector.\n"
         "struct Queue<T> {\n    items: core::vec::Vec<T, 4>,\n    served: i32,\n}\n\n"
         "impl<T> Queue<T> {\n"
         "    fn enqueue(self, item: T) -> Queue<T> {\n"
-        "        let items: core::vec::Vec<T, 4> = core::vec::try_push(self.items, item);\n"
-        "        return Queue { items: items, served: self.served };\n    }\n\n"
+        "        core::result::unwrap(core::vec::try_push(self.items.borrow(), item));\n"
+        "        return self;\n    }\n\n"
         "    fn dequeue(self) -> Queue<T> {\n"
-        "        let items: core::vec::Vec<T, 4> = core::vec::try_remove(self.items, 0);\n"
-        "        return Queue { items: items, served: self.served + 1 };\n    }\n\n"
-        "    fn size(&self) -> i32 {\n        return core::vec::len(self.items);\n    }\n\n"
+        "        core::result::unwrap(core::vec::try_remove(self.items.borrow(), 0));\n"
+        "        self.served += 1;\n        return self;\n    }\n\n"
+        "    fn size(&self) -> i32 {\n        return core::vec::len(self.items.borrow());\n    }\n\n"
         "    fn front_or(&self, fallback: T) -> T {\n"
-        "        return core::vec::get_or(self.items, 0, fallback);\n    }\n}\n"
+        "        return core::vec::get_or(self.items.borrow(), 0, fallback);\n    }\n}\n"
     ),
 }
 USER_LIBRARY_ORDER = tuple(USER_LIBRARY)
@@ -346,16 +314,14 @@ class Vec:
 
 
 class Set:
-    """core::set::Set<T, N>: items are equal when their keys are; insertion order."""
+    """Reference insertion-ordered set using complete value equality."""
 
-    def __init__(self, capacity: int, key=lambda item: item, items: list | None = None):
+    def __init__(self, capacity: int, items: list | None = None):
         self.capacity = capacity
-        self.key = key
         self.items = list(items or [])
 
     def position_or(self, item, fallback: int) -> int:
-        wanted = self.key(item)
-        return next((i for i, current in enumerate(self.items) if self.key(current) == wanted), fallback)
+        return next((i for i, current in enumerate(self.items) if current == item), fallback)
 
     def contains(self, item) -> bool:
         return self.position_or(item, -1) >= 0
@@ -363,13 +329,13 @@ class Set:
     def try_insert(self, item) -> "Set":
         if len(self.items) == self.capacity or self.contains(item):
             return self
-        return Set(self.capacity, self.key, [*self.items, item])
+        return Set(self.capacity, [*self.items, item])
 
     def try_remove(self, item) -> "Set":
         found = self.position_or(item, -1)
         if found < 0:
             return self
-        return Set(self.capacity, self.key, self.items[:found] + self.items[found + 1:])
+        return Set(self.capacity, self.items[:found] + self.items[found + 1:])
 
     def is_subset(self, other: "Set") -> bool:
         return all(other.contains(item) for item in self.items)
@@ -381,9 +347,6 @@ class Set:
         found = self.get(ordinal)
         return fallback if found is None else found
 
-
-def record_key(values: tuple[int, ...]) -> int:
-    return values[0] * 4096 + values[1]
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +502,7 @@ def evaluate_step(step: Step, value: int, x: int) -> int:
         score = r.score(row_values(r, step, ROWS[0], value, x))
         return (b + (score - a) + x) & M if score > a else (score + x) & M
     if kind == "set_rec":
-        s = Set(4, record_key)
+        s = Set(4)
         first = row_values(r, step, ROWS[0], value, x)
         second = row_values(r, step, ROWS[1], value, x)
         for item in (first, second, first):
@@ -592,40 +555,41 @@ def render_step(area: Area, step: Step, n: int) -> list[str]:
     if kind in PLAIN_KINDS:
         return base.render_step(Names(), area, step, n)
     if kind == "vec_push":
-        pushes = [f"    v{n} = {VEC}try_push(v{n}, {item});" for item in ("value", "x", str(a))[: 1 + c % 3]]
+        pushes = [f"    {RES}unwrap({VEC}try_push(v{n}.borrow(), {item}));" for item in ("value", "x", str(a))[: 1 + c % 3]]
         return [
             f"    let v{n}: {VEC}Vec<i32, 8> = {VEC}from_storage({zeros(8)});",
             *pushes,
-            f"    value = ({VEC}get_or(v{n}, {(c >> 2) % 4}, {b}) + {VEC}len(v{n})) {MASK};",
+            f"    value = ({VEC}get_or(v{n}.borrow(), {(c >> 2) % 4}, {b}) + {VEC}len(v{n}.borrow())) {MASK};",
         ]
     if kind == "vec_edit":
         return [
             f"    let e{n}: {VEC}Vec<i32, 4> = {VEC}from_array([value, x, {a}, {b}]);",
-            f"    e{n} = {VEC}try_remove(e{n}, {c % 4});",
-            f"    e{n} = {VEC}try_insert(e{n}, {(c >> 2) % 4}, (value + x) {MASK});",
-            f"    e{n} = {VEC}try_swap(e{n}, {(c >> 4) % 4}, {(c >> 6) % 4});",
-            f"    e{n} = {VEC}try_set(e{n}, {(c >> 8) % 4}, (x ^ {a}) {MASK});",
-            f"    value = ({VEC}get_or(e{n}, {(c >> 10) % 4}, 0) * 2 + {VEC}get_or(e{n}, 0, 0) + {VEC}len(e{n})) {MASK};",
+            f"    {RES}unwrap({VEC}try_remove(e{n}.borrow(), {c % 4}));",
+            f"    {RES}unwrap({VEC}try_insert(e{n}.borrow(), {(c >> 2) % 4}, (value + x) {MASK}));",
+            f"    {RES}unwrap({VEC}try_swap(e{n}.borrow(), {(c >> 4) % 4}, {(c >> 6) % 4}));",
+            f"    {RES}unwrap({VEC}try_set(e{n}.borrow(), {(c >> 8) % 4}, (x ^ {a}) {MASK}));",
+            f"    value = ({VEC}get_or(e{n}.borrow(), {(c >> 10) % 4}, 0) * 2 + {VEC}get_or(e{n}.borrow(), 0, 0) + {VEC}len(e{n}.borrow())) {MASK};",
         ]
     if kind == "vec_reverse":
         return [
             f"    let r{n}: {VEC}Vec<i32, 8> = {VEC}from_storage({zeros(8)});",
-            f"    r{n} = {VEC}try_push(r{n}, value);",
-            f"    r{n} = {VEC}try_push(r{n}, x);",
-            f"    r{n} = {VEC}try_push(r{n}, {a});",
-            f"    r{n} = {VEC}truncate({VEC}reverse(r{n}), {c % 4});",
-            f"    value = ({OPT}unwrap_or({VEC}last(r{n}), {b}) + {VEC}len(r{n})) {MASK};",
+            f"    {RES}unwrap({VEC}try_push(r{n}.borrow(), value));",
+            f"    {RES}unwrap({VEC}try_push(r{n}.borrow(), x));",
+            f"    {RES}unwrap({VEC}try_push(r{n}.borrow(), {a}));",
+            f"    {VEC}reverse(r{n}.borrow());",
+            f"    {RES}unwrap({VEC}truncate(r{n}.borrow(), {c % 4}));",
+            f"    value = ({OPT}unwrap_or({VEC}last(r{n}.borrow()), {b}) + {VEC}len(r{n}.borrow())) {MASK};",
         ]
     if kind == "vec_pop":
         return [
             f"    let s{n}: {VEC}Vec<i32, 3> = {VEC}from_array([value, x, {a}]);",
-            *[f"    s{n} = {VEC}try_pop(s{n});" for _ in range(c % 4)],
-            f"    if ({VEC}is_empty(s{n})) {{",
+            *[f"    {OPT}unwrap({VEC}pop(s{n}.borrow()));" for _ in range(c % 4)],
+            f"    if ({VEC}is_empty(s{n}.borrow())) {{",
             f"        value = {b};",
             "    } else {",
-            f"        value = ({OPT}unwrap_or({VEC}last(s{n}), 0) + {VEC}capacity(s{n})) {MASK};",
+            f"        value = ({OPT}unwrap_or({VEC}last(s{n}.borrow()), 0) + {VEC}capacity(s{n}.borrow())) {MASK};",
             "    }",
-            f"    if ({VEC}is_full(s{n})) {{",
+            f"    if ({VEC}is_full(s{n}.borrow())) {{",
             f"        value = (value + 1) {MASK};",
             "    }",
         ]
@@ -633,31 +597,31 @@ def render_step(area: Area, step: Step, n: int) -> list[str]:
         return [
             f"    let none{n}: {OPT}Option<i32> = {OPT}None();",
             f"    let m{n}: {VEC}Vec<{OPT}Option<i32>, 4> = {VEC}from_storage({repeated(f'none{n}', 4)});",
-            f"    m{n} = {VEC}try_push(m{n}, some_if((value & {bit(c)}) != 0, x));",
-            f"    m{n} = {VEC}try_push(m{n}, {OPT}Some({a}));",
-            f"    value = (value + {OPT}unwrap_or({VEC}get_or(m{n}, {(c >> 4) % 3}, none{n}), {b})) {MASK};",
+            f"    {RES}unwrap({VEC}try_push(m{n}.borrow(), some_if((value & {bit(c)}) != 0, x)));",
+            f"    {RES}unwrap({VEC}try_push(m{n}.borrow(), {OPT}Some({a})));",
+            f"    value = (value + {OPT}unwrap_or({VEC}get_or(m{n}.borrow(), {(c >> 4) % 3}, none{n}), {b})) {MASK};",
         ]
     if kind == "vec_pair":
         pairs = [f"{PAIR}new(value, x)", f"{PAIR}new({a}, {b})"][: 1 + c % 2]
         return [
             f"    let blank{n}: {PAIR}Pair<i32, i32> = {PAIR}new(0, 0);",
             f"    let t{n}: {VEC}Vec<{PAIR}Pair<i32, i32>, 4> = {VEC}from_storage({repeated(f'blank{n}', 4)});",
-            *[f"    t{n} = {VEC}try_push(t{n}, {pair});" for pair in pairs],
-            f"    let f{n}: {PAIR}Pair<i32, i32> = {OPT}unwrap_or({VEC}first(t{n}), blank{n});",
-            f"    let l{n}: {PAIR}Pair<i32, i32> = {OPT}unwrap_or({VEC}last(t{n}), blank{n});",
+            *[f"    {RES}unwrap({VEC}try_push(t{n}.borrow(), {pair}));" for pair in pairs],
+            f"    let f{n}: {PAIR}Pair<i32, i32> = {OPT}unwrap_or({VEC}first(t{n}.borrow()), blank{n});",
+            f"    let l{n}: {PAIR}Pair<i32, i32> = {OPT}unwrap_or({VEC}last(t{n}.borrow()), blank{n});",
             f"    value = ({PAIR}first(f{n}) + {PAIR}second(l{n}) + {PAIR}second(f{n})) {MASK};",
         ]
     if kind in ("vec_total", "vec_first_odd"):
         lines = [
             f"    let blank{n}: {r.name} = {blank_literal(r)};",
             f"    let w{n}: {VEC}Vec<{r.name}, 4> = {VEC}from_storage({repeated(f'blank{n}', 4)});",
-            *[f"    w{n} = {VEC}try_push(w{n}, {row_literal(r, step, row)});" for row in ROWS[: rows(step)]],
+            *[f"    {RES}unwrap({VEC}try_push(w{n}.borrow(), {row_literal(r, step, row)}));" for row in ROWS[: rows(step)]],
         ]
         if kind == "vec_total":
-            return [*lines, f"    value = vec_total(w{n}, blank{n}, value);"]
+            return [*lines, f"    value = vec_total(w{n}.borrow(), blank{n}, value);"]
         return [
             *lines,
-            f"    let o{n}: {OPT}Option<i32> = first_odd(w{n}, blank{n});",
+            f"    let o{n}: {OPT}Option<i32> = first_odd(w{n}.borrow(), blank{n});",
             f"    value = (value + o{n}.unwrap_or(5) * 3 + x) {MASK};",
         ]
     if kind == "vec_heaviest":
@@ -665,8 +629,8 @@ def render_step(area: Area, step: Step, n: int) -> list[str]:
             f"    let h{n}: {VEC}Vec<{r.name}, 4> = {VEC}from_array([",
             *[f"        {row_literal(r, step, row)}," for row in ROWS],
             "    ]);",
-            f"    h{n} = {VEC}truncate(h{n}, {c % 5});",
-            f"    let best{n}: {OPT}Option<{r.name}> = heaviest(h{n}, {blank_literal(r)});",
+            f"    {RES}unwrap({VEC}truncate(h{n}.borrow(), {c % 5}));",
+            f"    let best{n}: {OPT}Option<{r.name}> = heaviest(h{n}.borrow(), {blank_literal(r)});",
             f"    value = match (best{n}) {{",
             f"        {OPT}Some(top{n}) -> top{n}.f0 + top{n}.f1,",
             f"        {OPT}None -> {b},",
@@ -678,8 +642,9 @@ def render_step(area: Area, step: Step, n: int) -> list[str]:
             f"    let g{n}: {VEC}Vec<{r.name}, 4> = {VEC}from_array([",
             *[f"        {row_literal(r, step, row)}," for row in ROWS],
             "    ]);",
-            f"    g{n} = {VEC}try_set(g{n}, {(c >> 3) % 5}, {row_literal(r, step, ('x', 'a', 'b'))});",
-            f"    let o{n}: {OPT}Option<{r.name}> = {VEC}get(g{n}, {c % 6});",
+            f"    let changed{n}: {RES}Result<{r.name}, {VEC}Error> = {VEC}try_set(g{n}.borrow(), {(c >> 3) % 5}, {row_literal(r, step, ('x', 'a', 'b'))});",
+            f"    assert({RES}is_ok(changed{n}) == {str((c >> 3) % 5 < 4).lower()});",
+            f"    let o{n}: {OPT}Option<{r.name}> = {VEC}get(g{n}.borrow(), {c % 6});",
             f"    let r{n}: {r.name} = {OPT}unwrap_or(o{n}, {row_literal(r, step, ('b', 'x', 'value'))});",
             f"    value = (r{n}.f0 + r{n}.f1 * 2) {MASK};",
         ]
@@ -699,22 +664,24 @@ def render_step(area: Area, step: Step, n: int) -> list[str]:
         probe = (c >> 2) % 8
         return [
             f"    let k{n}: {SET}Set<i32, 8> = {SET}from_storage({zeros(8)});",
-            *[f"    k{n} = {SET}try_insert(k{n}, {item});" for item in ("value & 7", "x & 7", str(a & 7), "(value + x) & 7")],
-            f"    if ({SET}contains(k{n}, {probe})) {{",
-            f"        value = (value + {SET}position_or(k{n}, {probe}, 0) + 1) {MASK};",
+            *[f"    {RES}unwrap({SET}try_insert(k{n}.borrow(), {item}));" for item in ("value & 7", "x & 7", str(a & 7), "(value + x) & 7")],
+            f"    if ({SET}contains(k{n}.borrow(), {probe})) {{",
+            f"        value = (value + {SET}position_or(k{n}.borrow(), {probe}, 0) + 1) {MASK};",
             "    } else {",
-            f"        value = (value + {SET}len(k{n}) * {c % 7 + 1}) {MASK};",
+            f"        value = (value + {SET}len(k{n}.borrow()) * {c % 7 + 1}) {MASK};",
             "    }",
         ]
     if kind == "set_remove":
         return [
             f"    let u{n}: {SET}Set<i32, 4> = {SET}from_storage({zeros(4)});",
-            *[f"    u{n} = {SET}try_insert(u{n}, {item});" for item in ("x & 3", "value & 3", str(a & 3))],
-            f"    let v{n}: {SET}Set<i32, 4> = {SET}try_remove(u{n}, {c % 4});",
-            f"    if ({SET}is_subset(u{n}, v{n})) {{",
-            f"        value = (value + {SET}at_or(v{n}, 0, {b})) {MASK};",
+            *[f"    {RES}unwrap({SET}try_insert(u{n}.borrow(), {item}));" for item in ("x & 3", "value & 3", str(a & 3))],
+            f"    let v{n}: {SET}Set<i32, 4> = u{n};",
+            f"    let removed{n}: {OPT}Option<i32> = {SET}remove(v{n}.borrow(), {c % 4});",
+            f"    assert({OPT}is_some(removed{n}) == {SET}contains(u{n}.borrow(), {c % 4}));",
+            f"    if ({SET}is_subset(u{n}.borrow(), v{n}.borrow())) {{",
+            f"        value = (value + {SET}at_or(v{n}.borrow(), 0, {b})) {MASK};",
             "    }",
-            f"    value = (value + {OPT}unwrap_or({SET}get(u{n}, {(c >> 2) % 4}), 5) + {SET}len(v{n})) {MASK};",
+            f"    value = (value + {OPT}unwrap_or({SET}get(u{n}.borrow(), {(c >> 2) % 4}), 5) + {SET}len(v{n}.borrow())) {MASK};",
         ]
     if kind == "pair_swap":
         return [
@@ -802,8 +769,8 @@ def render_step(area: Area, step: Step, n: int) -> list[str]:
         return [
             f"    let blank{n}: {r.name} = {blank_literal(r)};",
             f"    let k{n}: {SET}Set<{r.name}, 4> = {SET}from_storage({repeated(f'blank{n}', 4)});",
-            *[f"    k{n} = {SET}try_insert(k{n}, {item});" for item in (first, second, first)],
-            f"    value = (value + {SET}len(k{n}) + {SET}position_or(k{n}, {second}, 9)) {MASK};",
+            *[f"    {RES}unwrap({SET}try_insert(k{n}.borrow(), {item}));" for item in (first, second, first)],
+            f"    value = (value + {SET}len(k{n}.borrow()) + {SET}position_or(k{n}.borrow(), {second}, 9)) {MASK};",
         ]
     raise ValueError(f"unknown step kind {kind}")
 
@@ -832,10 +799,13 @@ def render_record(record: Record, keyed: bool) -> str:
         f"        return (self.f0 + self.f1 * {record.weight_factor}) {MASK};\n    }}\n}}\n\n"
     )
     if keyed:
+        comparison = " && ".join(f"left.f{i} == right.f{i}" for i in range(record.fields))
         text += (
-            f"pub impl core::set::Key for {record.name} {{\n"
-            "    pub fn key(self) -> u32 {\n"
-            "        return (self.f0 * 4096 + self.f1) as u32;\n    }\n}\n\n"
+            f"pub impl core::cmp::Eq<{record.name}> for {record.name} {{\n"
+            f"    pub fn eq(left: {record.name}, right: {record.name}) -> bool {{\n"
+            f"        return {comparison};\n    }}\n"
+            f"    pub fn ne(left: {record.name}, right: {record.name}) -> bool {{\n"
+            f"        return !{record.name}::eq(left, right);\n    }}\n}}\n\n"
         )
     return text
 
@@ -871,6 +841,10 @@ def render_single_file(workload: Workload, target_bytes: int | None = None, matr
     header = ""
     if matrix_probe:
         header = f"// expect: {int(expected_stdout(workload).split()[-1]) & 127}\n"
+    if {"vec", "set"} & items:
+        items.add("result")  # every emitted mutation checks its Result
+    if "record_equality" in items:
+        items.add("cmp")
     imports = "".join(f"import core::{name};\n" for name in IMPORTS if name in items)
     library = "".join(
         (STRING_LIBRARY.get(name, USER_LIBRARY[name]) if STRING_HELPERS else USER_LIBRARY[name]) + "\n"
@@ -880,7 +854,7 @@ def render_single_file(workload: Workload, target_bytes: int | None = None, matr
     if STRING_HELPERS:
         library = STRING_PRELUDE + library
     prefix = f"{header}module bench::stdlib_generic;\n\n{imports}\n// user library\n\n{library}"
-    body = "".join(render_area_body(area, "record_keys" in items) for area in workload.areas)
+    body = "".join(render_area_body(area, "record_equality" in items) for area in workload.areas)
     suffix = base.render_main(Names(), workload, "total & 127" if matrix_probe else "0")
     source = prefix + body + suffix
     if target_bytes is None:
@@ -899,7 +873,7 @@ def render_single_file(workload: Workload, target_bytes: int | None = None, matr
 
 
 def step_specializations(step: Step) -> list[str]:
-    """Concrete generic bodies a step needs (stdlib and user functions per type arguments)."""
+    """Step-based specialization estimate, excluding complete transitive compiler instantiations."""
     r = step.record.name if step.record else ""
     pii = "Pair<i32,i32>"
     table = {
@@ -908,7 +882,7 @@ def step_specializations(step: Step) -> list[str]:
                      "vec::try_swap<i32,4>", "vec::try_set<i32,4>", "vec::get_or<i32,4>", "vec::len<i32,4>"],
         "vec_reverse": ["vec::from_storage<i32,8>", "vec::try_push<i32,8>", "vec::reverse<i32,8>",
                         "vec::truncate<i32,8>", "vec::last<i32,8>", "option::unwrap_or<i32>", "vec::len<i32,8>"],
-        "vec_pop": ["vec::from_array<i32,3>", "vec::try_pop<i32,3>", "vec::is_empty<i32,3>", "vec::last<i32,3>",
+        "vec_pop": ["vec::from_array<i32,3>", "vec::pop<i32,3>", "vec::is_empty<i32,3>", "vec::last<i32,3>",
                     "option::unwrap_or<i32>", "vec::capacity<i32,3>", "vec::is_full<i32,3>"],
         "vec_option": ["vec::from_storage<Option<i32>,4>", "vec::try_push<Option<i32>,4>",
                        "vec::get_or<Option<i32>,4>", "some_if<i32>", "option::unwrap_or<i32>"],
@@ -928,7 +902,7 @@ def step_specializations(step: Step) -> list[str]:
         + ([f"Queue<{r}>::dequeue", f"vec::try_remove<{r},4>"] if (step.c >> 4) & 1 else []),
         "set_insert": ["set::from_storage<i32,8>", "set::try_insert<i32,8>", "set::contains<i32,8>",
                        "set::position_or<i32,8>", "set::len<i32,8>"],
-        "set_remove": ["set::from_storage<i32,4>", "set::try_insert<i32,4>", "set::try_remove<i32,4>",
+        "set_remove": ["set::from_storage<i32,4>", "set::try_insert<i32,4>", "set::remove<i32,4>",
                        "set::is_subset<i32,4,4>", "set::at_or<i32,4>", "set::get<i32,4>", "set::len<i32,4>",
                        "set::position_or<i32,4>", "option::unwrap_or<i32>"],
         "pair_swap": ["pair::new<i32,i32>", "pair::swap<i32,i32>", "pair::first<i32,i32>", "pair::second<i32,i32>"],
@@ -986,10 +960,10 @@ def statistics(source: str, workload: Workload) -> dict[str, object]:
 # Command line
 
 
-def kinds_for(backlog: bool, without: list[str] | None = None) -> dict[str, tuple[int, tuple[str, ...], bool]]:
+def kinds_for(record_generics: bool, without: list[str] | None = None) -> dict[str, tuple[int, tuple[str, ...], bool]]:
     kinds = dict(STEP_KINDS)
-    if backlog:
-        kinds.update(BACKLOG_KINDS)
+    if record_generics:
+        kinds.update(RECORD_KINDS)
     for kind in without or []:
         if kind not in kinds:
             raise SystemExit(f"unknown step kind {kind!r}; known: {', '.join(sorted(kinds))}")
@@ -1030,12 +1004,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--layout", choices=("single-file",), default="single-file",
-                        help="only single-file (accepted for tools/lanius_perf.py)")
+                        help="only single-file output is implemented")
     parser.add_argument("--target-bytes", type=int, default=1_000_000, help="exact program size")
     parser.add_argument("--seed", type=int, default=20)
     parser.add_argument("--leaves", type=int, help="force the number of leaf functions (no padding)")
-    parser.add_argument("--backlog", action="store_true",
-                        help="also emit steps that need features in tests/fixtures/generics_backlog")
+    parser.add_argument("--record-generics", action="store_true",
+                        help="include the historical record-generic workload mix")
     parser.add_argument("--type-pool", type=int, metavar="N",
                         help="use only the first N record types as type arguments (fewer specializations)")
     parser.add_argument("--without", action="append", default=[], metavar="KIND",
@@ -1052,7 +1026,7 @@ def main() -> int:
     global STRING_HELPERS
     STRING_HELPERS = args.string_helpers
 
-    kinds = kinds_for(args.backlog, args.without)
+    kinds = kinds_for(args.record_generics, args.without)
     if args.probes:
         write_probes(args.out, args.seed, kinds)
         return 0
@@ -1070,7 +1044,7 @@ def main() -> int:
         "generator": "tools/generate_stdlib_workload.py",
         "layout": "single-file",
         "seed": args.seed,
-        "backlog": args.backlog,
+        "record_generics": args.record_generics,
         "without": sorted(args.without),
         "type_pool": args.type_pool,
         **({"string_helpers": args.string_helpers} if args.string_helpers else {}),

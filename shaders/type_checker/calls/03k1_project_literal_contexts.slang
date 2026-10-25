@@ -289,6 +289,9 @@ uint checked_literal_context(uint literal)
         HirPayload value = compact_hir_payload[parent];
         if (core.kind == HIR_ARRAY_EXPR)
         {
+            // A repeat count is an extent, not an element value.
+            if (!floating && hir_array_is_repeat(core, value) && value.b == current)
+                return SCALAR_U32;
             mode = QUERY_ARRAY; array_node = parent; query = parent;
             continue;
         }

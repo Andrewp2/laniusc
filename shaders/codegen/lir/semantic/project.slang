@@ -65,24 +65,6 @@ static const uint IMPORTED_UNIT_VARIANT_PRESENT = 0x40000000u;
 
 bool valid_token(uint token) { return token != INVALID && token < gParams.n_tokens; }
 
-uint local_function_hir(uint start, uint count)
-{
-    uint lo = 0u;
-    uint hi = count;
-    while (lo < hi)
-    {
-        uint mid = lo + (hi - lo) / 2u;
-        if (compact_hir_core[mid].token_start < start) lo = mid + 1u;
-        else hi = mid;
-    }
-    while (lo < count && compact_hir_core[lo].token_start == start)
-    {
-        if (compact_hir_core[lo].kind == 3u) return lo;
-        lo++;
-    }
-    return INVALID;
-}
-
 uint unit_variant_ordinal(uint declaration_token)
 {
     uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);

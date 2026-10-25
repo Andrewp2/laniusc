@@ -1,0 +1,28 @@
+// Counts are extents for zero and nonzero repeats, regardless of element width.
+fn main() -> i32 {
+    let zero255: [u8; 255] = [0; 255];
+    let full255: [u8; 255] = [255; 255];
+    let zero256: [u8; 256] = [0; 256];
+    let full256: [u8; 256] = [255; 256];
+    let zero4100: [u8; 4100] = [0; 4100];
+    let full4100: [u8; 4100] = [23; 4100];
+    if (zero255[0] != 0 || zero255[254] != 0 || full255[0] != 255 || full255[254] != 255) { return 1; }
+    if (zero256[0] != 0 || zero256[255] != 0 || full256[0] != 255 || full256[255] != 255) { return 2; }
+    if (zero4100[0] != 0 || zero4100[4099] != 0 || full4100[0] != 23 || full4100[4099] != 23) { return 3; }
+    zero4100[4099] = 165;
+    if (zero4100[0] != 0 || zero4100[4098] != 0 || zero4100[4099] != 165) { return 4; }
+
+    let minimum: [i8; 128] = [-128; 128];
+    if (minimum[0] != -128 || minimum[127] != -128) { return 5; }
+    let off: [bool; 256] = [false; 256];
+    let on: [bool; 256] = [true; 256];
+    if (off[0] || off[255] || !on[0] || !on[255]) { return 6; }
+
+    let nested: [[u8; 256]; 2] = [[9; 256]; 2];
+    if (nested[0][0] != 9 || nested[0][255] != 9 || nested[1][0] != 9 || nested[1][255] != 9) { return 7; }
+    let ordinary: [u8; 3] = [255, 0, 17];
+    let signed: [i8; 4] = [-128, -1, 0, 127];
+    if (ordinary[0] != 255 || ordinary[1] != 0 || ordinary[2] != 17) { return 8; }
+    if (signed[0] != -128 || signed[1] != -1 || signed[2] != 0 || signed[3] != 127) { return 9; }
+    return 0;
+}

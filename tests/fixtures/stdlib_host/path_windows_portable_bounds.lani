@@ -1,11 +1,11 @@
 module app::main;
-import std::path;
+import core::path_rules;
 
 fn main() -> i32 {
     let a: u8 = 97;
     let b: u8 = 98;
     let short: [u8; 2] = [a, b];
-    if (std::path::path_component_is_windows_portable_utf8(short, 3)) {
+    if (core::path_rules::path_component_is_windows_portable_utf8(short, 3)) {
         return 0;
     }
     return 1;

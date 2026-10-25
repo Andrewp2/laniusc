@@ -1,0 +1,53 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::big_uint;
+import std::io;
+fn read_exact(pointer: ptr, count: i32, eof: bool) -> bool {
+    let done: i32 = 0; while (done < count) { let got: i32 = std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got >= 0); if (got == 0) { assert(eof && done == 0); return false; } done += got; } return true;
+}
+fn write_all(pointer: ptr, count: i32) { let done: i32 = 0; while (done < count) { let n: i32 = std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(n > 0); done += n; } }
+fn word(bytes: [u8], at: i32) -> i32 { return (bytes[at] as i32)|((bytes[at+1] as i32)<<8)|((bytes[at+2] as i32)<<16)|((bytes[at+3] as i32)<<24); }
+fn code(error: ext::big_uint::Error) -> i32 { return match (error) { ext::big_uint::Error::Bounds -> 1, ext::big_uint::Error::LimbLimit -> 2, ext::big_uint::Error::WorkLimit -> 3, ext::big_uint::Error::OutputLimit -> 4, ext::big_uint::Error::AllocationFailed -> 5, ext::big_uint::Error::InvalidRadix -> 6, ext::big_uint::Error::InvalidDigit -> 7, ext::big_uint::Error::Empty -> 8, ext::big_uint::Error::Underflow -> 9, ext::big_uint::Error::DivisionByZero -> 10, ext::big_uint::Error::Overflow -> 11 }; }
+fn header(status: i32, first: i32, second: i32) {
+    let words: [i32;3] = [status,first,second]; let storage: [i32;3] = [0;3]; let pointer: ptr = core::mem::i32_array_data_ptr(storage); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,12); let i: i32 = 0;
+    while (i < 3) { let j: i32 = 0; while (j < 4) { bytes[i*4+j] = ((words[i] >> (j*8)) & 255) as u8; j += 1; } i += 1; } write_all(pointer,12);
+}
+fn main() -> i32 {
+    let words: [i32;32773] = [0;32773]; let pointer: ptr = core::mem::i32_array_data_ptr(words); let bytes: [u8] = core::mem::typed_slice_from_raw_parts(pointer,131092);
+    let limits: ext::big_uint::Limits = ext::big_uint::default_limits();
+    while (read_exact(pointer,20,true)) {
+        let op: i32 = word(bytes,0); let radix: i32 = word(bytes,4); let argument: i32 = word(bytes,8); let alen: i32 = word(bytes,12); let blen: i32 = word(bytes,16); assert(alen >= 0 && blen >= 0 && alen+blen <= 131072);
+        assert(read_exact(pointer+20,alen+blen,false));
+        let av: core::slice::View<u8> = core::slice::view_range(bytes,20,alen).unwrap(); let bv: core::slice::View<u8> = core::slice::view_range(bytes,20+alen,blen).unwrap();
+        let ar: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = ext::big_uint::parse(av,radix,limits);
+        if (ar.is_err()) { header(code(ar.unwrap_err()),0,0); continue; } let a: ext::big_uint::BigUint = ar.unwrap();
+        let br: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = ext::big_uint::parse(bv,radix,limits);
+        if (br.is_err()) { a.destroy(); header(code(br.unwrap_err()),0,0); continue; } let b: ext::big_uint::BigUint = br.unwrap();
+        assert(a.bit_length() == 0 || a.bit(a.bit_length()-1)); assert(!a.bit(a.bit_length()));
+        let result: core::result::Result<ext::big_uint::BigUint,ext::big_uint::Error> = core::result::Ok(ext::big_uint::zero()); let remainder: ext::big_uint::BigUint = ext::big_uint::zero();
+        if (op == 0) { result = a.try_clone(limits); }
+        if (op == 1) { result = a.add(b.borrow(),limits); }
+        if (op == 2) { result = a.sub(b.borrow(),limits); }
+        if (op == 3) { result = a.mul(b.borrow(),limits); }
+        if (op == 4) { let divided: core::result::Result<ext::big_uint::DivRem,ext::big_uint::Error> = a.div_rem(b.borrow(),limits); if (divided.is_err()) { result = core::result::Err(divided.unwrap_err()); } else { let pair: ext::big_uint::DivRem = divided.unwrap(); result = core::result::Ok(pair.quotient); remainder = pair.remainder; } }
+        if (op == 5) { result = a.shl(argument as u64,limits); }
+        if (op == 6) { result = a.shr(argument as u64,limits); }
+        if (op == 7) { result = a.bit_and(b.borrow(),limits); }
+        if (op == 8) { result = a.bit_or(b.borrow(),limits); }
+        if (op == 9) { result = a.bit_xor(b.borrow(),limits); }
+        if (op == 10) { result = a.gcd(b.borrow(),limits); }
+        if (op == 11) { result = a.pow(argument as u32,limits); }
+        if (op == 12) { result = a.add(a.borrow(),limits); }
+        if (op == 13) { result = a.mul(a.borrow(),limits); }
+        if (op == 14) { let divided: core::result::Result<ext::big_uint::DivRem,ext::big_uint::Error> = a.div_rem(a.borrow(),limits); if (divided.is_err()) { result = core::result::Err(divided.unwrap_err()); } else { let pair: ext::big_uint::DivRem = divided.unwrap(); result = core::result::Ok(pair.quotient); remainder = pair.remainder; } }
+        if (op == 15) { let converted: core::result::Result<u64,ext::big_uint::Error> = a.to_u64(); if (converted.is_err()) { result = core::result::Err(converted.unwrap_err()); } else { result = ext::big_uint::from_u64(converted.unwrap(),limits); } }
+        if (result.is_err()) { header(code(result.unwrap_err()),0,0); } else {
+            let value: ext::big_uint::BigUint = result.unwrap(); let first: alloc::vec::Vec<u8> = value.format_radix(radix,limits).unwrap(); let second: alloc::vec::Vec<u8> = remainder.format_radix(radix,limits).unwrap();
+            header(0,first.len(),second.len()); write_all(first.storage,first.len()); write_all(second.storage,second.len()); first.destroy(); second.destroy(); value.destroy();
+        }
+        remainder.destroy(); a.destroy(); b.destroy();
+    } return 0;
+}

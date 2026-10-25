@@ -1,0 +1,189 @@
+// One allocation-free protocol ELF. Header: operation, layout, A/B/C byte
+// lengths, requested output length, streaming chunk (seven little-endian u64s),
+// followed by A/B/C. Response: input/output strides, status, byte length, bytes.
+// Operations: 0 HMAC, 1 extract, 2 expand, 3 derive, 4 state ownership, 5 bounds.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::sha256;
+import core::slice;
+import ext::hmac_sha256;
+import ext::hkdf_sha256;
+import std::stream;
+
+fn load(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset + index] as u64) << (index * 8); index += 1; }
+    return value;
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor = std::stream::stdout();
+        core::result::unwrap(core::io::write_all<std::stream::Descriptor>(stdout.borrow(), self.bytes, 0, self.used)); self.used = 0;
+    }
+    fn byte(&self, value: u8) { if (self.used == 2048) { self.flush(); } self.bytes[self.used] = value; self.used += 1; }
+    fn word(&self, value: u64) { let index: i32 = 0; while (index < 8) { self.byte(((value >> (index * 8)) & 255) as u8); index += 1; } }
+    fn digest(&self, value: core::sha256::Digest) { assert(value.length == 32); let index: i32 = 0; while (index < 32) { self.byte(value.bytes[index]); index += 1; } }
+}
+fn equal(left: core::sha256::Digest, right: core::sha256::Digest) {
+    assert(left.length == 32 && right.length == 32); let index: i32 = 0;
+    while (index < 32) { assert(left.bytes[index] == right.bytes[index]); index += 1; }
+}
+fn bad(view: core::slice::View<u8>, variant: i32) -> core::slice::View<u8> {
+    let broken: core::slice::View<u8> = view;
+    if (variant == 0) { broken.start = -1; }
+    if (variant == 1) { broken.length = -1; }
+    if (variant == 2) { broken.start = 2147483647; broken.length = 1; }
+    return broken;
+}
+fn hbounds(error: ext::hmac_sha256::Error) { assert(match (error) { ext::hmac_sha256::Error::Bounds -> true, _ -> false }); }
+fn hk_kind(error: ext::hkdf_sha256::Error) -> u64 {
+    return match (error) {
+        ext::hkdf_sha256::Error::Bounds -> 1, ext::hkdf_sha256::Error::PrkTooShort -> 2,
+        ext::hkdf_sha256::Error::OutputLimit -> 3, ext::hkdf_sha256::Error::Hash(detail) -> 4
+    };
+}
+fn untouched(bytes: [u8], count: i32) { let index: i32 = 0; while (index < count) { assert(bytes[index] == 222); index += 1; } }
+fn state_contracts(output: &Output) {
+    let key_a: [u8; 20] = [11; 20]; let key_b: [u8; 4] = [74, 101, 102, 101];
+    let message_a: [u8; 8] = [72, 105, 32, 84, 104, 101, 114, 101];
+    let message_b: [u8; 28] = [119, 104, 97, 116, 32, 100, 111, 32, 121, 97, 32, 119, 97, 110, 116, 32, 102, 111, 114, 32, 110, 111, 116, 104, 105, 110, 103, 63];
+    let ka: core::slice::View<u8> = core::result::unwrap(core::slice::view(key_a, 20));
+    let kb: core::slice::View<u8> = core::result::unwrap(core::slice::view(key_b, 4));
+    let ma: core::slice::View<u8> = core::result::unwrap(core::slice::view(message_a, 8));
+    let mb: core::slice::View<u8> = core::result::unwrap(core::slice::view(message_b, 28));
+    let a: ext::hmac_sha256::State = core::result::unwrap(ext::hmac_sha256::new(ka));
+    let b: ext::hmac_sha256::State = core::result::unwrap(ext::hmac_sha256::new(kb));
+    core::result::unwrap(a.update(core::result::unwrap(ma.subview(0, 3))));
+    core::result::unwrap(b.update(core::result::unwrap(mb.subview(0, 5))));
+    let fork: ext::hmac_sha256::State = a;
+    // Completed constructor/update calls retain no borrow of their source bytes.
+    let index: i32 = 0; while (index < 20) { key_a[index] = 12; index += 1; }
+    message_a[0] = 88; message_a[1] = 89; message_a[2] = 90;
+    hbounds(core::result::unwrap_err(a.update(bad(ma, 1))));
+    core::result::unwrap(a.update(core::result::unwrap(ma.subview(3, 8))));
+    let kept_a: core::sha256::Digest = a.finish(); equal(kept_a, a.finish());
+    hbounds(core::result::unwrap_err(a.update(bad(ma, 0))));
+    let empty: core::slice::View<u8> = core::result::unwrap(ma.subview(0, 0));
+    assert(match (core::result::unwrap_err(a.update(empty))) { ext::hmac_sha256::Error::Finished -> true, _ -> false });
+    let unrelated: core::sha256::Digest = core::result::unwrap(ext::hmac_sha256::authenticate(kb, empty));
+    message_a[0] = 72; message_a[1] = 105; message_a[2] = 32;
+    a.reset(); core::result::unwrap(a.update(ma)); let reset_a: core::sha256::Digest = a.finish(); equal(reset_a, kept_a);
+    core::result::unwrap(b.update(core::result::unwrap(mb.subview(5, 28)))); let kept_b: core::sha256::Digest = b.finish();
+    let suffix: [u8; 1] = [33]; core::result::unwrap(fork.update(core::result::unwrap(core::slice::view(suffix, 1)))); let forked: core::sha256::Digest = fork.finish();
+    let poisoned: core::sha256::Digest = kept_a; poisoned.bytes[0] ^= 255;
+    assert(poisoned.bytes[0] != kept_a.bytes[0]); equal(a.finish(), kept_a); equal(b.finish(), kept_b); equal(fork.finish(), forked);
+    // All five independent results are checked against Python, including the
+    // copied partial state after its sibling was finished and reset.
+    output.word(0); output.word(160); output.digest(kept_a); output.digest(kept_b); output.digest(forked); output.digest(reset_a); output.digest(unrelated);
+}
+fn bounds_contracts(a: core::slice::View<u8>, b: core::slice::View<u8>, c: core::slice::View<u8>, storage: [u8], output: &Output) {
+    assert(a.len() >= 32);
+    let reference: core::sha256::Digest = core::result::unwrap(ext::hmac_sha256::authenticate(a, b));
+    let variant: i32 = 0;
+    while (variant < 3) {
+        hbounds(core::result::unwrap_err(ext::hmac_sha256::new(bad(a, variant))));
+        hbounds(core::result::unwrap_err(ext::hmac_sha256::authenticate(bad(a, variant), b)));
+        hbounds(core::result::unwrap_err(ext::hmac_sha256::authenticate(a, bad(b, variant))));
+        let state: ext::hmac_sha256::State = core::result::unwrap(ext::hmac_sha256::new(a));
+        let prefix: i32 = b.len() / 2; core::result::unwrap(state.update(core::result::unwrap(b.subview(0, prefix))));
+        hbounds(core::result::unwrap_err(state.update(bad(b, variant))));
+        core::result::unwrap(state.update(core::result::unwrap(b.subview(prefix, b.len())))); equal(reference, state.finish());
+        hbounds(core::result::unwrap_err(state.update(bad(b, variant)))); equal(reference, state.finish());
+        assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::extract(bad(a, variant), b))) == 1);
+        assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::extract(a, bad(b, variant)))) == 1);
+        let zero: i32 = 0;
+        while (zero < 2) {
+            let count: i32 = 32; if (zero == 1) { count = 0; }
+            let target: core::slice::View<u8> = core::slice::View { values: storage, start: 3, length: count };
+            assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::expand(bad(a, variant), b, target))) == 1);
+            assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::expand(a, bad(b, variant), target))) == 1);
+            assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::expand(a, b, bad(target, variant)))) == 1);
+            let role: i32 = 0;
+            while (role < 4) {
+                let salt: core::slice::View<u8> = a; let ikm: core::slice::View<u8> = b; let info: core::slice::View<u8> = c; let destination: core::slice::View<u8> = target;
+                if (role == 0) { salt = bad(a, variant); } if (role == 1) { ikm = bad(b, variant); }
+                if (role == 2) { info = bad(c, variant); } if (role == 3) { destination = bad(target, variant); }
+                assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::derive(salt, ikm, info, destination))) == 1);
+                untouched(storage, 8192); role += 1;
+            }
+            let short: core::slice::View<u8> = core::result::unwrap(a.subview(0, 31));
+            assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::expand(short, b, target))) == 2);
+            untouched(storage, 8192); zero += 1;
+        }
+        variant += 1;
+    }
+    let excessive: core::slice::View<u8> = core::slice::View { values: storage, start: 3, length: 8161 };
+    assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::expand(a, b, excessive))) == 3);
+    assert(hk_kind(core::result::unwrap_err(ext::hkdf_sha256::derive(a, b, c, excessive))) == 3);
+    untouched(storage, 8192); output.word(0); output.word(32); output.digest(reference);
+}
+fn run(operation: i32, a: core::slice::View<u8>, b: core::slice::View<u8>, c: core::slice::View<u8>, destination: core::slice::View<u8>, chunk: i32, output: &Output) -> i32 {
+    if (operation == 0) {
+        let direct: core::sha256::Digest = core::result::unwrap(ext::hmac_sha256::authenticate(a, b));
+        let state: ext::hmac_sha256::State = core::result::unwrap(ext::hmac_sha256::new(a));
+        let at: i32 = 0;
+        while (at < b.len()) { let count: i32 = b.len() - at; if (count > chunk) { count = chunk; } assert(core::result::unwrap(state.update(core::result::unwrap(b.subview(at, at + count)))) == count); at += count; }
+        equal(direct, state.finish()); equal(direct, state.finish());
+        let empty: core::slice::View<u8> = core::result::unwrap(b.subview(0, 0));
+        assert(match (core::result::unwrap_err(state.update(empty))) { ext::hmac_sha256::Error::Finished -> true, _ -> false });
+        state.reset(); core::result::unwrap(state.update(b)); equal(direct, state.finish());
+        output.word(0); output.word(32); output.digest(direct); return 0;
+    }
+    if (operation == 1) {
+        let value: core::sha256::Digest = core::result::unwrap(ext::hkdf_sha256::extract(a, b)); output.word(0); output.word(32); output.digest(value); return 0;
+    }
+    if (operation == 4) { state_contracts(output); return 0; }
+    if (operation == 5) { bounds_contracts(a, b, c, destination.values, output); return 0; }
+    assert(operation == 2 || operation == 3);
+    let result: core::result::Result<i32, ext::hkdf_sha256::Error> = core::result::Ok(0);
+    if (operation == 2) { result = ext::hkdf_sha256::expand(a, b, destination); }
+    else { result = ext::hkdf_sha256::derive(a, b, c, destination); }
+    if (core::result::is_err(result)) { output.word(hk_kind(core::result::unwrap_err(result))); output.word(0); return 0; }
+    let count: i32 = core::result::unwrap(result); output.word(0); output.word(count as u64);
+    let index: i32 = 0; while (index < count) { output.byte(core::option::unwrap(destination.get(index))); index += 1; } return count;
+}
+fn main() -> i32 {
+    let stdin: std::stream::Descriptor = std::stream::stdin();
+    let head: [u8; 8] = [0; 8]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), head, 0, 8)); let cases: u64 = load(head, 0); assert(cases <= 1024);
+    let output_bytes: [u8; 2048] = [0; 2048]; let output: Output = Output { bytes: output_bytes, used: 0 };
+    let case: u64 = 0;
+    while (case < cases) {
+        let frame: [u8; 56] = [0; 56]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), frame, 0, 56));
+        let operation: i32 = load(frame, 0) as i32; let layout: i32 = load(frame, 8) as i32;
+        let alen: i32 = load(frame, 16) as i32; let blen: i32 = load(frame, 24) as i32; let clen: i32 = load(frame, 32) as i32;
+        let length: i32 = load(frame, 40) as i32; let chunk: i32 = load(frame, 48) as i32;
+        assert(layout >= 0 && layout <= 1 && alen >= 0 && alen <= 256 && blen >= 0 && blen <= 2048 && clen >= 0 && clen <= 256 && length >= 0 && length <= 8161 && chunk > 0);
+        let raw_a: [u8; 512] = [165; 512]; let raw_b: [u8; 4096] = [166; 4096]; let raw_c: [u8; 512] = [167; 512]; let raw_out: [u8; 8192] = [222; 8192];
+        core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_a, 3, alen));
+        core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_b, 3, blen));
+        core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_c, 3, clen));
+        let saved_a: [u8; 512] = raw_a; let saved_b: [u8; 4096] = raw_b; let saved_c: [u8; 512] = raw_c;
+        let words_a: [i32; 128] = [0; 128]; let words_b: [i32; 1024] = [0; 1024]; let words_c: [i32; 128] = [0; 128]; let words_out: [i32; 2048] = [0; 2048];
+        let a: [u8] = raw_a; let b: [u8] = raw_b; let c: [u8] = raw_c; let destination: [u8] = raw_out;
+        if (layout == 1) {
+            a = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_a), 512);
+            b = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_b), 4096);
+            c = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_c), 512);
+            destination = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_out), 8192);
+            let index: i32 = 0; while (index < 512) { a[index] = raw_a[index]; c[index] = raw_c[index]; index += 1; }
+            index = 0; while (index < 4096) { b[index] = raw_b[index]; index += 1; }
+            index = 0; while (index < 8192) { destination[index] = 222; index += 1; }
+        }
+        output.word(core::mem::slice_stride(a) as u64); output.word(core::mem::slice_stride(destination) as u64);
+        let av: core::slice::View<u8> = core::slice::View { values: a, start: 3, length: alen };
+        let bv: core::slice::View<u8> = core::slice::View { values: b, start: 3, length: blen };
+        let cv: core::slice::View<u8> = core::slice::View { values: c, start: 3, length: clen };
+        let target: core::slice::View<u8> = core::slice::View { values: destination, start: 3, length: length };
+        let allowed: i32 = run(operation, av, bv, cv, target, chunk, output.borrow());
+        let index: i32 = 0; while (index < 512) { assert(a[index] == saved_a[index] && c[index] == saved_c[index]); index += 1; }
+        index = 0; while (index < 4096) { assert(b[index] == saved_b[index]); index += 1; }
+        index = 0; while (index < 8192) { if (index < 3 || index >= 3 + allowed) { assert(destination[index] == 222); } index += 1; }
+        case += 1;
+    }
+    output.flush(); return 0;
+}

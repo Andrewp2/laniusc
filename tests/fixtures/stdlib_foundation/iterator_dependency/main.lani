@@ -1,0 +1,11 @@
+module app::main;
+import core::option;
+import core::pull_probe;
+fn pull<I, T>(source: &I) -> core::option::Option<T> where I: core::pull_probe::Pull<T> {
+    return source.next();
+}
+fn main() -> i32 {
+    let source: core::pull_probe::Cursor<i32> = core::pull_probe::Cursor { value: 42 };
+    let result: core::option::Option<i32> = pull(source.borrow());
+    return core::option::unwrap(result) - 42;
+}

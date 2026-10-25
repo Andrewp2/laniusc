@@ -1,0 +1,66 @@
+module app::main;
+import alloc::bitset;
+import core::bitset;
+import core::option;
+import core::result;
+import core::slice;
+import core::mem;
+fn main() -> i32 {
+    assert(core::result::is_err(alloc::bitset::with_len(-1, false)) && core::result::is_err(alloc::bitset::with_capacity(-1)));
+    let bits: alloc::bitset::BitSet = alloc::bitset::new(); let length: i32 = 0;
+    while (length <= 130) {
+        core::result::unwrap(bits.try_resize(length, true)); bits.fill(true);
+        assert(bits.count_ones() == length && bits.all());
+        let at: i32 = 0; while (at < length) { if (at % 3 == 0) { bits.clear(at); } at += 1; }
+        let copy: alloc::bitset::BitSet = core::result::unwrap(bits.try_clone()); let before_hash: u32 = bits.hash();
+        assert(core::result::is_err(bits.try_resize(-1, false)) && core::result::is_err(bits.try_reserve(-1)));
+        if (length > 0) { assert(core::result::is_err(bits.try_reserve(2147483647))); }
+        let mismatch: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::with_len(length + 1, false));
+        assert(core::result::is_err(bits.try_union(mismatch.as_view())) && core::result::is_err(bits.try_intersection(mismatch.as_view())) && core::result::is_err(bits.try_difference(mismatch.as_view())) && core::result::is_err(bits.try_xor(mismatch.as_view())));
+        assert(bits.hash() == before_hash && bits.equal(copy.as_view())); mismatch.destroy();
+        core::result::unwrap(bits.try_union(bits.as_view())); assert(bits.equal(copy.as_view()));
+        core::result::unwrap(bits.try_intersection(bits.as_view())); assert(bits.equal(copy.as_view()));
+        core::result::unwrap(bits.try_difference(bits.as_view())); assert(bits.count_ones() == 0);
+        core::result::unwrap(bits.try_resize(0, false)); core::result::unwrap(bits.try_resize(length, false)); assert(bits.count_ones() == 0);
+        // Access representation only in this invariant test: clients keep
+        // fields opaque. Counted mutable views never expose padding writes.
+        let words: [u32] = bits.words.as_slice(); let count: i32 = core::bitset::word_count_or(length, -1);
+        if (count > 0) { assert(words[count - 1] == 0); }
+        bits.fill(true); if (length % 32 != 0) { assert(words[count - 1] == (1 << ((length % 32) as u32)) - 1); }
+        core::result::unwrap(bits.try_resize(length / 2, false)); core::result::unwrap(bits.try_resize(length, false));
+        at = length / 2; while (at < length) { assert(!core::option::unwrap(bits.get(at))); at += 1; }
+        copy.destroy(); length += 1;
+    }
+    bits.destroy(); assert(bits.pop().is_none()); bits.destroy();
+    // Displaced aliases with unequal logical lengths reject before writing.
+    let alias: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::with_len(65, true)); let original: u32 = alias.hash();
+    let source_words: core::slice::View<u32> = alias.words.as_view();
+    let displaced: core::slice::View<u32> = core::result::unwrap(source_words.subview(1, 3));
+    let source: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(displaced, 33));
+    assert(core::result::is_err(alias.try_union(source)) && alias.hash() == original);
+    alias.destroy();
+    // Equal-length displaced source shares the destination allocation. A spare
+    // capacity word is explicitly initialized before constructing the view.
+    let operation: i32 = 0;
+    while (operation < 4) {
+        let owner: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::with_len(65, false));
+        core::result::unwrap(owner.try_reserve(63)); owner.set(0); owner.set(31); owner.set(32); owner.set(64);
+        let slots: [u32] = core::mem::typed_slice_from_storage(owner.words.storage, owner.words.reserved); slots[3] = 1;
+        let backing: core::slice::View<u32> = core::result::unwrap(core::slice::view_range(slots, 1, 3));
+        let shared: core::bitset::BitView = core::result::unwrap(core::bitset::BitView::from_words(backing, 65));
+        let left: alloc::bitset::BitSet = core::result::unwrap(owner.try_clone());
+        let right: alloc::bitset::BitSet = core::result::unwrap(alloc::bitset::from_view(shared));
+        if (operation == 0) { core::result::unwrap(owner.try_union(shared)); }
+        if (operation == 1) { core::result::unwrap(owner.try_intersection(shared)); }
+        if (operation == 2) { core::result::unwrap(owner.try_difference(shared)); }
+        if (operation == 3) { core::result::unwrap(owner.try_xor(shared)); }
+        let index: i32 = 0;
+        while (index < 65) {
+            let l: bool = core::option::unwrap(left.get(index)); let r: bool = core::option::unwrap(right.get(index)); let expected: bool = l || r;
+            if (operation == 1) { expected = l && r; } if (operation == 2) { expected = l && !r; } if (operation == 3) { expected = l != r; }
+            assert(core::option::unwrap(owner.get(index)) == expected); index += 1;
+        }
+        left.destroy(); right.destroy(); owner.destroy(); operation += 1;
+    }
+    return 0;
+}

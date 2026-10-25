@@ -1,34 +1,34 @@
 module app::main;
-import std::path;
+import core::path_rules;
 fn main() -> i32 {
-    if (!std::path::path_byte_is_unix_separator(47) || std::path::path_byte_is_unix_separator(92) || !std::path::path_byte_is_windows_separator(92) || std::path::path_byte_is_windows_separator(47)) {
+    if (!core::path_rules::path_byte_is_unix_separator(47) || core::path_rules::path_byte_is_unix_separator(92) || !core::path_rules::path_byte_is_windows_separator(92) || core::path_rules::path_byte_is_windows_separator(47)) {
         return 2;
     }
-    if (!std::path::path_byte_is_separator(47) || !std::path::path_byte_is_separator(92) || std::path::path_byte_is_separator(65)) {
+    if (!core::path_rules::path_byte_is_separator(47) || !core::path_rules::path_byte_is_separator(92) || core::path_rules::path_byte_is_separator(65)) {
         return 3;
     }
-    if (!std::path::path_byte_is_extension_separator(46) || std::path::path_byte_is_extension_separator(47) || !std::path::path_byte_is_drive_separator(58) || std::path::path_byte_is_drive_separator(46)) {
+    if (!core::path_rules::path_byte_is_extension_separator(46) || core::path_rules::path_byte_is_extension_separator(47) || !core::path_rules::path_byte_is_drive_separator(58) || core::path_rules::path_byte_is_drive_separator(46)) {
         return 4;
     }
-    if (!std::path::path_byte_is_ascii_letter(65) || !std::path::path_byte_is_ascii_letter(122) || std::path::path_byte_is_ascii_letter(48) || !std::path::path_byte_is_windows_drive_letter(67) || std::path::path_byte_is_windows_drive_letter(49)) {
+    if (!core::path_rules::path_byte_is_ascii_letter(65) || !core::path_rules::path_byte_is_ascii_letter(122) || core::path_rules::path_byte_is_ascii_letter(48) || !core::path_rules::path_byte_is_windows_drive_letter(67) || core::path_rules::path_byte_is_windows_drive_letter(49)) {
         return 5;
     }
-    if (!std::path::path_byte_is_ascii_digit(48) || !std::path::path_byte_is_ascii_digit(57) || std::path::path_byte_is_ascii_digit(58) || !std::path::path_byte_is_ascii_control(0) || !std::path::path_byte_is_ascii_control(127) || std::path::path_byte_is_ascii_control(32)) {
+    if (!core::path_rules::path_byte_is_ascii_digit(48) || !core::path_rules::path_byte_is_ascii_digit(57) || core::path_rules::path_byte_is_ascii_digit(58) || !core::path_rules::path_byte_is_ascii_control(0) || !core::path_rules::path_byte_is_ascii_control(127) || core::path_rules::path_byte_is_ascii_control(32)) {
         return 6;
     }
-    if (!std::path::path_byte_is_windows_component_reserved_punctuation(42) || !std::path::path_byte_is_windows_component_reserved_punctuation(124) || std::path::path_byte_is_windows_component_reserved_punctuation(65)) {
+    if (!core::path_rules::path_byte_is_windows_component_reserved_punctuation(42) || !core::path_rules::path_byte_is_windows_component_reserved_punctuation(124) || core::path_rules::path_byte_is_windows_component_reserved_punctuation(65)) {
         return 7;
     }
-    if (!std::path::path_byte_is_windows_component_reserved(47) || !std::path::path_byte_is_windows_component_reserved(92) || !std::path::path_byte_is_windows_component_reserved(58) || std::path::path_byte_is_windows_component_reserved(65)) {
+    if (!core::path_rules::path_byte_is_windows_component_reserved(47) || !core::path_rules::path_byte_is_windows_component_reserved(92) || !core::path_rules::path_byte_is_windows_component_reserved(58) || core::path_rules::path_byte_is_windows_component_reserved(65)) {
         return 8;
     }
-    if (!std::path::path_byte_is_nul(0) || std::path::path_byte_is_nul(1) || !std::path::path_byte_is_component_boundary(0) || !std::path::path_byte_is_component_boundary(47) || std::path::path_byte_is_component_boundary(65)) {
+    if (!core::path_rules::path_byte_is_nul(0) || core::path_rules::path_byte_is_nul(1) || !core::path_rules::path_byte_is_component_boundary(0) || !core::path_rules::path_byte_is_component_boundary(47) || core::path_rules::path_byte_is_component_boundary(65)) {
         return 9;
     }
-    if (!std::path::path_byte_can_start_relative_component(65) || std::path::path_byte_can_start_relative_component(47) || !std::path::path_byte_can_continue_relative_component(46) || std::path::path_byte_can_continue_relative_component(0)) {
+    if (!core::path_rules::path_byte_can_start_relative_component(65) || core::path_rules::path_byte_can_start_relative_component(47) || !core::path_rules::path_byte_can_continue_relative_component(46) || core::path_rules::path_byte_can_continue_relative_component(0)) {
         return 10;
     }
-    if (!std::path::path_byte_can_start_windows_component(65) || std::path::path_byte_can_start_windows_component(42) || !std::path::path_byte_can_continue_windows_component(46) || std::path::path_byte_can_continue_windows_component(58)) {
+    if (!core::path_rules::path_byte_can_start_windows_component(65) || core::path_rules::path_byte_can_start_windows_component(42) || !core::path_rules::path_byte_can_continue_windows_component(46) || core::path_rules::path_byte_can_continue_windows_component(58)) {
         return 11;
     }
     return 0;

@@ -1,9 +1,0 @@
-module app::main;
-import std::set_i8;
-
-fn main() -> i32 {
-    let zero: u32 = 0;
-    let too_short: [u32; 7] = [zero, zero, zero, zero, zero, zero, zero];
-    std::set_i8::clear(too_short);
-    return 0;
-}

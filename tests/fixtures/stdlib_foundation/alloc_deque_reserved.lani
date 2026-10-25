@@ -1,0 +1,29 @@
+module app::main;
+import alloc::deque;
+import core::option;
+import core::result;
+fn main() -> i32 {
+    let made: core::result::Result<alloc::deque::Deque<i32>, alloc::deque::Error> = alloc::deque::with_capacity(32);
+    let values: alloc::deque::Deque<i32> = core::result::unwrap(made); let index: i32 = 0;
+    while (index < 4) { core::result::unwrap(values.try_push_back(index)); index += 1; }
+    core::result::unwrap(values.try_push_front(9));
+    let a: alloc::deque::Views<i32> = values.as_views(); core::result::unwrap(values.try_extend_back(a.second));
+    let b: alloc::deque::Views<i32> = values.as_views(); core::result::unwrap(values.try_extend_front(b.second));
+    if (values.len() != 17 || values.capacity() != 32) { return 1; }
+    let before: alloc::deque::Cursor<i32> = values.iter();
+    if (core::result::is_ok(values.try_insert(-1, 0)) || core::result::is_ok(values.try_insert(18, 0)) || core::result::is_ok(values.remove(17))) { return 2; }
+    if (core::result::is_ok(values.set(17, 0)) || core::result::is_ok(values.swap(-1, 0)) || core::result::is_ok(values.swap_remove_front(17)) || core::result::is_ok(values.swap_remove_back(-1))) { return 3; }
+    if (core::result::is_ok(values.try_resize(-1, 0)) || core::result::is_ok(values.truncate(-1)) || core::result::is_ok(values.try_reserve(-1)) || core::result::is_ok(values.try_reserve(2147483647))) { return 4; }
+    if (core::result::is_ok(values.rotate_left(18)) || core::result::is_ok(values.rotate_right(-1)) || core::result::is_ok(values.try_split_off(-1)) || core::result::is_ok(values.try_split_off(18))) { return 5; }
+    index = 0;
+    while (index < 17) {
+        let expected: i32 = index % 4; if (index == 8) { expected = 9; } else { if (index > 8) { expected = (index - 9) % 4; } }
+        if (values.at(index) != expected || core::option::unwrap(before.next()) != expected) { return 6; } index += 1;
+    }
+    core::result::unwrap(values.try_resize(23, 7)); core::result::unwrap(values.truncate(17));
+    core::result::unwrap(values.try_insert(0, 42)); if (core::result::unwrap(values.remove(0)) != 42) { return 7; }
+    core::result::unwrap(values.try_insert(17, 42)); if (core::option::unwrap(values.pop_back()) != 42) { return 8; }
+    core::result::unwrap(values.rotate_left(15)); core::result::unwrap(values.rotate_right(15)); values.reverse(); values.reverse();
+    if (values.len() != 17 || values.at(0) != 0 || values.at(8) != 9 || values.at(16) != 3 || values.capacity() != 32) { return 9; }
+    values.destroy(); return 0;
+}
