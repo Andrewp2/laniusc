@@ -31,9 +31,10 @@ const TIMEOUT_MS:u64=5000;
 struct Outcome { primary:i32,stage:i32,cause:core::option::Option<ext::tls_tcp::Error>,cleanup:core::option::Option<core::io::Error>,diagnostics:bool }
 fn outcome()->Outcome{return Outcome{primary:0,stage:0,cause:core::option::None(),cleanup:core::option::None(),diagnostics:false};}
 fn io_status(error:core::io::Error)->i32{return match(error){core::io::Error::AllocationFailed->4,core::io::Error::LimitExceeded->7,core::io::Error::CountOverflow->7,_->3};}
+fn engine_status(error:ext::tls_connection::Error)->i32{if(ext::tls_connection::is_resource_limit(error)){return 7;}return 5;}
 fn error_status(error:ext::tls_tcp::Error)->i32{
     return match(error){ext::tls_tcp::Error::Allocation->4,ext::tls_tcp::Error::Deadline->7,ext::tls_tcp::Error::CallLimit->7,
-        ext::tls_tcp::Error::Io(inner)->io_status(inner),ext::tls_tcp::Error::Engine(inner)->{if(ext::tls_connection::is_resource_limit(inner)){return 7;}return 5;},
+        ext::tls_tcp::Error::Io(inner)->io_status(inner),ext::tls_tcp::Error::Engine(inner)->engine_status(inner),
         ext::tls_tcp::Error::Poll(inner)->match(inner){std::poll::Error::AllocationFailed->4,std::poll::Error::Limit->7,_->3},_->3};
 }
 impl Outcome {
@@ -282,14 +283,23 @@ struct Diagnostic { bytes:[u8],length:i32 }
 impl Diagnostic {
     fn borrow(&self)->&Diagnostic{return self;}
     fn literal(&self,text:str,count:i32){let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count);let i:i32=0;while(i<count&&self.length<256){self.bytes[self.length]=raw[i];self.length+=1;i+=1;}}
-    fn number(&self,value:i32){let wide:i64=value;if(wide<0){self.literal("-",1);wide=0-wide;}let remaining:u64=wide as u64;let digits:[u8;20]=[0;20];let count:i32=0;while(true){digits[count]=(48+remaining%10) as u8;count+=1;remaining/=10;if(remaining==0){break;}}while(count>0&&self.length<256){count-=1;self.bytes[self.length]=digits[count];self.length+=1;}}
+    fn number(&self,value:i32){let wide:i64=value as i64;if(wide<0){self.literal("-",1);wide=0-wide;}let remaining:u64=wide as u64;let digits:[u8;20]=[0;20];let count:i32=0;while(true){digits[count]=(48+remaining%10) as u8;count+=1;remaining/=10;if(remaining==0){break;}}while(count>0&&self.length<256){count-=1;self.bytes[self.length]=digits[count];self.length+=1;}}
 }
 fn io_errno(error:core::io::Error)->i32{return match(error){core::io::Error::Host(code)->code,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,_->0};}
+fn describe_clock(error:std::clock::Error,d:&Diagnostic){d.literal("clock",5);let code:i32=match(error){std::clock::Error::Host(value)->value,_->0};d.literal(" errno=",7);d.number(code);}
+fn describe_io(error:core::io::Error,d:&Diagnostic){d.literal("io errno=",9);d.number(io_errno(error));}
+fn describe_entropy(error:std::entropy::Error,d:&Diagnostic){d.literal("entropy errno=",14);let code:i32=match(error){std::entropy::Error::Host(value)->value,_->0};d.number(code);}
+fn describe_alert(value:u8,d:&Diagnostic){d.literal(" alert=",7);d.number(value as i32);}
+fn describe_nothing(){return;}
+fn describe_engine(error:ext::tls_connection::Error,d:&Diagnostic){
+    d.literal("tls",3);if(ext::tls_connection::is_resource_limit(error)){d.literal("-limit",6);}
+    match(error){ext::tls_connection::Error::PeerAlert(value)->describe_alert(value,d),ext::tls_connection::Error::Authentication(value)->d.literal("-authentication",15),ext::tls_connection::Error::Credential->d.literal("-credential",11),ext::tls_connection::Error::Truncated->d.literal("-truncated",10),_->describe_nothing()};
+}
 fn describe(error:ext::tls_tcp::Error,d:&Diagnostic){
-    match(error){ext::tls_tcp::Error::Clock(inner)->{d.literal("clock",5);let code:i32=match(inner){std::clock::Error::Host(value)->value,_->0};d.literal(" errno=",7);d.number(code);},
-        ext::tls_tcp::Error::Io(inner)->{d.literal("io errno=",9);d.number(io_errno(inner));},ext::tls_tcp::Error::Deadline->d.literal("deadline",8),ext::tls_tcp::Error::CallLimit->d.literal("call-limit",10),
-        ext::tls_tcp::Error::Allocation->d.literal("allocation",10),ext::tls_tcp::Error::Entropy(inner)->{d.literal("entropy errno=",14);let code:i32=match(inner){std::entropy::Error::Host(value)->value,_->0};d.number(code);},
-        ext::tls_tcp::Error::Engine(inner)->{d.literal("tls",3);if(ext::tls_connection::is_resource_limit(inner)){d.literal("-limit",6);}match(inner){ext::tls_connection::Error::PeerAlert(value)->{d.literal(" alert=",7);d.number(value as i32);},ext::tls_connection::Error::Authentication(value)->d.literal("-authentication",15),ext::tls_connection::Error::Credential->d.literal("-credential",11),ext::tls_connection::Error::Truncated->d.literal("-truncated",10),_-> {}}},
+    match(error){ext::tls_tcp::Error::Clock(inner)->describe_clock(inner,d),
+        ext::tls_tcp::Error::Io(inner)->describe_io(inner,d),ext::tls_tcp::Error::Deadline->d.literal("deadline",8),ext::tls_tcp::Error::CallLimit->d.literal("call-limit",10),
+        ext::tls_tcp::Error::Allocation->d.literal("allocation",10),ext::tls_tcp::Error::Entropy(inner)->describe_entropy(inner,d),
+        ext::tls_tcp::Error::Engine(inner)->describe_engine(inner,d),
         ext::tls_tcp::Error::Poll(inner)->d.literal("poll",4),_->d.literal("transport",9)};
 }
 fn diagnose(out:&Outcome){

@@ -112,7 +112,8 @@ handshakes, both retry forms, long certificate flights and 46 boundary cases.
 The [TCP adapter](docs/extended-tls-tcp.md) passes 18 real OpenSSL exchanges,
 37 fault/ownership cases, two 1 MiB pressure streams and six deadline/budget
 resumption cases, including actual partial-send and retained-input witnesses.
-The [exchange application](docs/extended-tls-exchange.md) remains under admission.
+The [exchange application](docs/extended-tls-exchange.md) passes 74 native cases
+for duplex transfers, explicit trust, file/input limits, I/O and owner failures.
 The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)

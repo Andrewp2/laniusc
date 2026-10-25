@@ -7,10 +7,11 @@ adapter run in Lanius. It composes
 [`ext::tls_connection`](../extended/ext/tls_connection.lani) and
 [`ext::tls_tcp`](../extended/ext/tls_tcp.lani).
 
-**Runtime admission is pending.** The source, focused driver, and independent
-peer fixture are prepared for serialized compilation and native execution.
-No runtime success, throughput, constant-time property, or portable target
-coverage is claimed here before those gates run.
+**All three runtime gates passed** on x86_64 Linux: **74 native CLI cases
+across three independently compiled strict ELFs**. Interoperability passed
+11 cases in 28.90 seconds, preflight/file/I/O passed 26 in 27.62 seconds, and
+owners/faults/budget passed 37 in 29.86 seconds. This acceptance covers the
+stated bounded profile and target.
 
 ## CLI and trust
 
@@ -61,6 +62,44 @@ constraints fail. There is no certificate fetching, general PKIX policy,
 revocation service, PSK, resumption, early data, or client certificate
 authentication in this program. The server deliberately accepts anonymous
 clients; its output does not identify a client principal.
+
+## Compile and run
+
+From the repository root, with an already built current compiler at
+`target/stdlib-build/debug/laniusc`:
+
+```sh
+timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s env RUST_MIN_STACK=16777216 \
+  target/stdlib-build/debug/laniusc --emit x86_64 --stdlib-root stdlib \
+  --source-root extended sample_programs/library/tls_exchange.lani \
+  -o target/tls-exchange
+```
+
+The option syntax is checked against the local
+[`CLI argument parser`](../crates/laniusc-compiler/src/cli/args/parse.rs) and
+[`entry compiler`](../crates/laniusc-compiler/src/cli/compile/entry.rs).
+The CLI marks emitted native output executable on Unix. This usage command
+is distinct from the admitted driver invocations below; it was not run as
+another gate.
+
+Given a provisioned seed, its matching ordered DER chain, an independently
+chosen trust anchor, and a binary message, start the server and then promptly
+start the client in another terminal:
+
+```sh
+timeout --kill-after=1s 10s target/tls-exchange serve 127.0.0.1:8443 \
+  server-seed.bin server-chain.der > server-received.bin
+```
+
+```sh
+timeout --kill-after=1s 10s target/tls-exchange client 127.0.0.1:8443 \
+  dns path.example trusted-root.der < message.bin > client-received.bin
+```
+
+Each role retains its original five-second operation deadline. Check both
+exit statuses. The server's certificate must match `path.example` under the
+chosen anchor; the numeric transport address does not replace that identity.
 
 ## Exchange and output
 
@@ -224,11 +263,80 @@ Interrupted and invalid-count injections likewise exercise returned results;
 ordinary loopback transfers, EOF probes, and closed-pipe EPIPE use real host
 behavior. The reusable TCP suite owns the broader transport/protocol matrix.
 
-## Pending admission commands
+## Pre-admission source corrections
 
-The parent serializes these bounded commands. No build or runtime command
-below has been run by the app author. Logs and emitted artifacts belong in
-ignored `target/stdlib-work/` storage and are not checked in.
+The first exact interoperability selection failed before ELF emission in
+4.32 seconds. Its parser stack-effect error was followed by a misleading
+source-text fallback diagnostic pointing at the imported handshake cursor's
+nested `Iterator<View<u8>>` implementation. The same public implementation
+was already admitted in other controls and remains unchanged.
+
+Ignored diagnostic probes narrowed the failure to application match-arm
+blocks. The language's current
+[`match_arm` grammar](../grammar/lanius.bnf) requires an expression after the
+arrow; it has no block-expression alternative. A tiny source without TLS
+imports reproduced rejection with one block arm in 2.36 seconds. Replacing
+that arm with a typed helper call compiled and returned native exit 0 twice
+in a 2.44-second harness invocation. Those are diagnostic executions, not
+application interoperability or performance results. A separate scaffold
+probe parsed successfully and exposed an i32-to-i64 assignment requiring an
+explicit cast in diagnostic decimal formatting.
+
+The app now uses ordinary typed helpers for the arm bodies, terminates
+standalone match expressions, and performs that explicit cast. Status
+mapping, diagnostic bytes, I/O allowances, cleanup, and the library's public
+iterator contracts are preserved. No compiler or library workaround was
+introduced. The original probes and logs remain under ignored
+`target/stdlib-work/tls-connection-admission/app-parser-probes/`; the first
+failure is retained as `exchange-interop-first.log` in its parent directory.
+They are not checked in. The corrected application has since passed all
+three real executable gates below.
+
+## Admission evidence and commands
+
+The exact selection
+`tls_exchange_cli_interoperates_with_openssl_in_both_directions` passed in
+**28.90 seconds**, compiling **one strict ELF** and executing **11 native
+CLI cases**. It covers client and server exchanges with binary, empty, and
+1 MiB payloads, explicit DNS/IP identity, wrong anchor and name rejection,
+a raw bad peer, and an authenticated output prefix followed by truncation.
+Successful peer receipts check the actual OpenSSL version, TLS 1.3 cipher,
+fresh session, exact duplex bytes, and clean `unwrap`.
+
+The accepted source hashes begin `737a6952` (application), `bf9bf55a`
+(driver), and `ed919ef6` (peer). The ignored log is
+`target/stdlib-work/tls-connection-admission/exchange-interop-match-helpers.log`.
+The initial parser rejection is excluded from accepted ELF/native counts.
+
+The separate exact selection
+`tls_exchange_cli_preflight_files_caps_and_io_failures` passed **26 native
+cases in 27.62 seconds** using **one independently compiled strict ELF** and
+the same frozen source hashes. It checks CLI rejection before host activity,
+seed/chain shapes, actual EOF/excess probes and 1 MiB caps, file and cleanup
+errors, Interrupted retries, the explicitly synthetic reported-short-write
+control, and real closed-pipe EPIPE. Its ignored log is
+`target/stdlib-work/tls-connection-admission/exchange-preflight-first.log`.
+
+The final exact selection
+`tls_exchange_cli_releases_owners_preserves_errors_and_bounds_host_attempts`
+passed **37 native cases in 29.86 seconds** with **one independently compiled
+strict ELF**. It denies every setup allocation reached in successful client
+and server baselines, checks exact memory and fd retirement, requires one
+actual realtime sample, exercises clock/entropy/socket faults, preserves
+primary TLS rejection alongside cleanup failure, and exhausts the shared
+131,072 host credits. Its ignored log is
+`target/stdlib-work/tls-connection-admission/exchange-owners-first.log`.
+
+Together the three accepted exact selections account for **74 native cases
+and three independently compiled strict ELFs**. The source hashes are
+unchanged across all three. The test driver binary used was
+`target/stdlib-build/debug/deps/extended_tls_exchange_execution-fddc1c0b16b27aa4`.
+
+The parent serializes these bounded application commands. The app author ran
+only the explicitly authorized diagnostic probes described above. Logs and
+emitted artifacts belong in ignored `target/stdlib-work/` storage and are not
+checked in. The commands below reproduce the selections; they do not request
+a repeat of the accepted gates.
 
 ```sh
 timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
@@ -238,11 +346,12 @@ timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lo
   cargo test --test extended_tls_exchange_execution --no-run
 ```
 
-After that build, set `TLS_EXCHANGE_TEST` to its actual emitted test-binary
-path. Each invocation below is a separate bounded gate; do not combine all
-three into one unbounded shell loop.
+After a fresh build, use its actual emitted test-binary path. The accepted
+binary and separate bounded selections were:
 
 ```sh
+TLS_EXCHANGE_TEST=target/stdlib-build/debug/deps/extended_tls_exchange_execution-fddc1c0b16b27aa4
+
 tls_exchange_gate() {
   timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
     timeout --kill-after=2s 60s env RUST_MIN_STACK=16777216 \

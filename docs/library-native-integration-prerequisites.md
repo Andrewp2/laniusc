@@ -44,8 +44,8 @@ executes ordered path/CertificateVerify/Finished checks. The
 record epochs, the actual trust decision and client-Finished transmission.
 Its paired/fragment/retry and 46 boundary cases pass. The
 [TCP adapter](extended-tls-tcp.md) passes both-role OpenSSL, 1 MiB pressure,
-ownership/fault and operation-resumption gates; the
-[exchange application](extended-tls-exchange.md) remain under admission.
+ownership/fault and operation-resumption gates. The
+[exchange application](extended-tls-exchange.md) passes 74 native cases.
 The [connection contract](tls-connection-contract.md) retains the broader
 mandatory-algorithm and PKIX requirements.
 

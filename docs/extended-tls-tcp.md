@@ -349,8 +349,9 @@ evidence for partial-record progress.
 
 Python/OpenSSL setup and fragmentation are loopback-only test plumbing, not
 production TLS. Each harness case and host peer has a finite timeout. The
-evidence above covers all four adapter gates. The separate application's
-parser admission is independent of these adapter results. No security
+evidence above covers all four adapter gates. The separate
+[application guide](extended-tls-exchange.md) records its 74 accepted cases
+and earlier parser/source corrections. No security
 certification claim follows from these focused gates. General PKIX, mandatory
 TLS algorithm coverage and the remaining [whole connection
 contract](tls-connection-contract.md) remain open.

@@ -4,10 +4,11 @@ This is the implementation and acceptance contract for reusable TLS connections.
 The [portable engine](extended-tls-connection.md) now passes paired handshakes,
 fragmentation, retry and boundary gates. The [TCP adapter](extended-tls-tcp.md)
 passes real OpenSSL exchanges, 1 MiB pressure streams, ownership/fault gates and
-deadline/budget resumption. The [real program](extended-tls-exchange.md) remains
-under admission. The guides distinguish accepted snapshots from pending
-work. Production protocol, cryptography and certificate validation stay in
-Lanius; OpenSSL is an independent test peer. The broader algorithm and PKIX
+deadline/budget resumption. The [real program](extended-tls-exchange.md) passes
+74 interoperability, I/O, ownership and budget cases. The guides distinguish
+accepted snapshots from pending work. Production protocol, cryptography and
+certificate validation stay in Lanius; OpenSSL is an independent test peer.
+The broader algorithm and PKIX
 requirements below remain open.
 
 ## Existing boundaries and remaining work

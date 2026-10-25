@@ -473,8 +473,9 @@ integration and the other remaining families still need their own evidence.
   retained wire progress, matching releases and one socket close attempt.
   Six operation-resumption cases also pass: actual acknowledged sends and
   retained unfed receives survive budget renewal without repeated bytes.
-  The [real TLS exchange program](extended-tls-exchange.md) remains under
-  admission. These are
+  The [real TLS exchange program](extended-tls-exchange.md) passes 74 cases
+  across both-role interoperability, CLI/files/I/O, ownership and shared host
+  budgets. These are
   x86_64 Linux native results through the GPU compiler; they do not establish
   user GPU kernels or other targets.
 - Further TLS work includes broader certificate policy and mandatory algorithms,
