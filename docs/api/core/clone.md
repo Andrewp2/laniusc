@@ -11,6 +11,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [stdlib-clone](../../stdlib-clone.md)
+- [stdlib-clone-values](../../stdlib-clone-values.md)
 
 Declaration counts: trait: 2; trait member: 2.
 

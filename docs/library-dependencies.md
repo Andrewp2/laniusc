@@ -29,7 +29,11 @@ remain explicit. The [TLS stream/HTTPS application](extended-https-fetch.md)
 also executes: 62 cases across four groups cover stream progress,
 verification/HTTP failures, limits and binary framing on Linux x86_64. It uses
 numeric endpoints, explicit trust/identity, deadlines and manual owner cleanup.
-Server TLS remains separate work. C `f32`/`f64` calls also pass
+[Server TLS](extended-openssl-tls-server.md) also passes six native groups and
+53 cases; mandatory client trust/identity rejection still passes after the
+shared session gained an explicit role. Its server policy does not authenticate
+clients. Mutual TLS and broader security policies remain work.
+C `f32`/`f64` calls also pass
 exact IEEE transport, independent SSE/GPR banks, mixed 32-parameter stack/alignment and imported generic replay
 gates. An owned [SQLite adapter](extended-sqlite.md) and its
 [persistent binary key/value application](extended-sqlite-kv.md) execute on
@@ -60,6 +64,11 @@ five native groups after the two general compiler corrections recorded below.
 Its contract group passes in 9.83 seconds and the other four active groups in
 13.47 seconds; the manual diagnostic probe is ignored. These receipts do not
 revalidate the unrelated generic replay failures in this list.
+[Opt-in deep HashSet](stdlib-clone-hash-set.md) and
+[TreeSet](stdlib-clone-tree-set.md) cloning also execute through the existing
+shared map engines. Their three and five focused native groups pass with
+typed errors, independent owners, bounded models and allocation-failure cleanup.
+These additions require no compiler or ABI changes.
 
 The 2026-10-23 bitset/calendar integration, finite decimal, statistics and matrix
 milestone executes over the existing interfaces without additional compiler or
@@ -96,6 +105,7 @@ distribution uses the compiler's existing package resolver.
 
 | Dependency | Evidence | Affected APIs | Status |
 | --- | --- | --- | --- |
+| Resolved: a defined empty enum was treated as missing layout | [Empty-enum contract and reductions](compiler-empty-enum-layout.md); [scalar and structural clone gate](stdlib-clone-values.md) | True empty `Infallible` errors, scalar cloning and nested Option/Result/Pair/Vec clone results | Three GPU producers now preserve the existing one-word enum discriminant for an exact checked zero-variant enum. Local source-token lookup, complete retained payloads or an admitted recipe establish completeness; unknown metadata still rejects. All six paired reductions, explicit eight-byte size assertions, five clone groups, four inhabited structural controls and the neighboring zero-sized regression pass. Existing materializer/recipe rejection and recovery tests also pass. The compact materializer remains below its enforced instruction budget. No fake variant, call-site width fallback, host layout computation, IR/ABI change or proof edit was introduced. This closes these reproduced failures, not the unrelated entries below. |
 | Resolved: public nominal replay lacked its local layout declaration | [TreeMap clone execution and reductions](stdlib-clone-tree-map.md); `tree-clone-layout-dump-run.log`, `clone-tree-map-contracts-fixed.log`, `clone-tree-map-failures-current.log` under `target/stdlib-work/` | Native layout derivation when a portable public nominal returns to its defining source unit during generic replay | The original direct String clone failed LNC0047 detail 6. Its `Vec<Entry<String,String>>` replay root lacked both a width witness and a source-local token, while Entry already had a complete six-word layout. Explicit local annotations did not repair it. The native-width producer function `local_nominal_owner` now resolves an absent raw token through the completed canonical ID, whose existing exact unit/declaration identity mapping supplies the local token. Existing token/HIR-kind checks and checked field/variant layout derivation remain authoritative; no Vec-specific width, host layout calculation or cross-source raw token transport was added. The direct probe and all five production groups now execute. Other missing-layout reproductions remain unvalidated. |
 | Resolved: constructor field count widened a checked zero-sized payload | [TreeMap clone zero-sized contract](../tests/fixtures/stdlib_foundation/clone_tree_map/zero_sized.lani); the same two accepted execution logs above | Native copies of aggregate constructors whose zero-sized fields make field count exceed machine-word width | `Node<Unit,Unit>` has six fields but occupies five checked words because its Entry payload is empty. The x86 `x86_aggregate_value_word_count` helper incorrectly took the maximum of that width and the six syntactic fields. A six-qword indexed copy then started eight bytes before its 40-byte allocation; retained native code and GDB confirmed the mismatch. The helper now preserves the checked value width, including zero. Constructor storage, copies and native size agree without an IR, ABI or artifact-version change. The previously crashing unchanged zero-sized fixture passes within the 9.83-second contract group. The independent `compiler_generic_types_execution::zero_sized_compositions_preserve_neighbors_and_array_bounds` regression also passes in 4.11 seconds (`target/stdlib-work/generic-zero-size-constructor-regression.log`), covering generic empty members/arrays, neighboring values, effects, nominal distinctions and four bounds traps. |
 | Resolved: array repetition/copy target capacity | [Independent nonzero-repeat fixture](../tests/fixtures/stdlib_foundation/dependencies/nonzero_array_repeat_target_capacity.lani) and [focused compiler driver](../tests/compiler_array_repeat_context_execution.rs) | Native lowering of fixed-array repetition and local copies | The minimal fixture originally failed LNC0057 with required target capacity 49,273 versus 36,864 available (flags `0x2`). Host orchestration now grows from measured demand with bounded monotonic full-graph retries; the large fixture and a subsequent tiny program pass using the same compiler. Shaders, IR records/opcodes, ABI and proofs are unchanged. |

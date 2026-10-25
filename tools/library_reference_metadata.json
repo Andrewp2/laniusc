@@ -54,11 +54,23 @@
       ],
       "note": "Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy."
     },
+    "alloc::clone_hash_set": {
+      "guides": [
+        "docs/stdlib-clone-hash-set.md"
+      ],
+      "note": "Opt-in deep HashSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Three focused groups pass, including 557 sequence/failure/identity cases, six owned errors, all 39 reached allocation failures, independent String owners, empty and zero-sized keys. Ordinary inherent set methods retain their shallow policy."
+    },
     "alloc::clone_tree_map": {
       "guides": [
         "docs/stdlib-clone-tree-map.md"
       ],
       "note": "Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate."
+    },
+    "alloc::clone_tree_set": {
+      "guides": [
+        "docs/stdlib-clone-tree-set.md"
+      ],
+      "note": "Opt-in deep TreeSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Five focused groups pass, including independent String owners, a 512-state ordered model, observable O(n log n) construction, nine reached allocation failures, typed owned errors and changed-key checks. Ordinary inherent set methods retain their shallow policy."
     },
     "alloc::clone_vec": {
       "guides": [
@@ -174,8 +186,16 @@
     },
     "core::clone": {
       "guides": [
-        "docs/stdlib-clone.md"
+        "docs/stdlib-clone.md",
+        "docs/stdlib-clone-values.md"
       ]
+    },
+    "core::clone_values": {
+      "guides": [
+        "docs/stdlib-clone-values.md",
+        "docs/compiler-empty-enum-layout.md"
+      ],
+      "note": "Opt-in scalar and structural cloning executes on Linux x86_64 through the GPU compiler. Five native groups pass: fourteen exact scalar types with true empty Infallible errors, active-only Option/Result cloning, Pair rollback, nested String/Vec owners, minimal bounds, eighteen callback cases, fourteen owned errors, all 45 reached allocation failures and four source rejections. Scalar Destroy does nothing because scalars own no resource; wrapper Destroy releases only active owners. No implicit moves, Drop or pointer/view owner implementations."
     },
     "core::cmp": {
       "guides": [
@@ -492,6 +512,12 @@
         "docs/stdlib-iterator-transfer.md"
       ]
     },
+    "ext::archive_index": {
+      "guides": [
+        "docs/extended-archive-index.md"
+      ],
+      "note": "Persistent immutable ZIP snapshots and ordinal catalogs execute through SQLite on Linux x86_64/glibc. Seven focused native groups cover binary duplicate names and keys, all-entry CRC preflight, independent owners, pinned read consistency, explicit transaction uncertainty, native faults and 29 import plus 23 read allocation failures. The real archive-index program imports, lists, reads and exports a measured 1,024-entry, 8 MiB expanded archive."
+    },
     "ext::audio": {
       "guides": [
         "docs/extended-audio.md"
@@ -646,9 +672,10 @@
     "ext::openssl_tls": {
       "guides": [
         "docs/extended-openssl-tls.md",
+        "docs/extended-openssl-tls-server.md",
         "docs/library-native-c.md"
       ],
-      "note": "Client TLS with peer verification executes through OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc, with 34 cases across four groups covering explicit trust/identity, binary transfers, closure/truncation and stable retries. Context and Session are manual owners over borrowed connected nonblocking sockets; callers provide deadlines, SIGPIPE policy and cleanup. Server TLS, callbacks and broader certificate/security APIs remain separate work."
+      "note": "Client and server TLS execute through OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. The server's six native groups pass 53 cases for credentials, noninteractive encrypted keys, binary transfers, closure/truncation, retry stability and native/allocation cleanup. Mandatory client trust/identity rejection also passes after adding explicit session roles. Manual contexts/sessions borrow connected nonblocking sockets; callers provide deadlines and SIGPIPE policy. Server client authentication is explicitly Unauthenticated; mTLS, callbacks and broader security APIs remain separate work."
     },
     "ext::parse": {
       "guides": [
@@ -744,9 +771,11 @@
     "ext::tls_stream": {
       "guides": [
         "docs/extended-https-fetch.md",
-        "docs/extended-openssl-tls.md"
+        "docs/extended-openssl-tls.md",
+        "docs/extended-https-server.md",
+        "docs/extended-openssl-tls-server.md"
       ],
-      "note": "Buffered TLS stream and HTTPS GET execute on Linux x86_64 through OpenSSL 3: 62 cases across four groups cover stream progress, verification/HTTP failures, limits and binary response framing. The supported application profile uses numeric endpoints, explicit trust/peer identity, deadlines and manual socket/TLS/buffer ownership. TLS and sensitive operations remain in OpenSSL; server TLS, automatic resolution, redirects and broader protocol policies remain separate work."
+      "note": "Shared buffered client/server TLS streams execute on Linux x86_64 through OpenSSL 3. HTTPS GET passes 62 cases across four groups after the context ownership change; the bounded HTTPS health/echo service passes 106 cases across four groups. Server construction consumes its socket on every result and retains a native context reference; streams own only their optional client context. Deadlines, byte/call budgets and manual cleanup are explicit. TLS and sensitive operations remain in OpenSSL; mutual TLS, automatic resolution, redirects, keepalive and concurrent scheduling remain separate work."
     },
     "ext::toml": {
       "guides": [

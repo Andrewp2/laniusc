@@ -1,0 +1,77 @@
+module fixture::leaf;
+import alloc::string;
+import core::clone;
+import core::result;
+
+pub struct Payload { tag: i32, stage: i32, wide: u64, cells: [i32;2], message: alloc::string::String }
+pub enum FirstFault { Allocation(alloc::string::Error), Rejected(Payload) }
+pub enum SecondFault { Allocation(alloc::string::Error), Rejected(Payload) }
+pub struct First { text: alloc::string::String, tag: i32, fail: i32, log: [i32] }
+pub struct Second { text: alloc::string::String, tag: i32, fail: i32, log: [i32] }
+// No Destroy implementation. A successful RightOnly owns no resource.
+pub struct RightOnly { tag: i32, fail: i32, log: [i32] }
+
+fn payload(tag: i32, stage: i32) -> core::result::Result<Payload,alloc::string::Error> {
+    let bytes: [u8;5] = [69,0,(40+tag) as u8,(60+stage) as u8,85];
+    let made = alloc::string::from_utf8(bytes,5);
+    if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let cells: [i32;2] = [tag,stage];
+    return core::result::Ok(Payload { tag:tag,stage:stage,wide:18446744073709551615-(tag as u64),cells:cells,message:made.unwrap() });
+}
+fn first_error(tag: i32, stage: i32) -> FirstFault {
+    let made = payload(tag,stage);
+    if (made.is_err()) { return FirstFault::Allocation(made.unwrap_err()); }
+    return FirstFault::Rejected(made.unwrap());
+}
+fn second_error(tag: i32, stage: i32) -> SecondFault {
+    let made = payload(tag,stage);
+    if (made.is_err()) { return SecondFault::Allocation(made.unwrap_err()); }
+    return SecondFault::Rejected(made.unwrap());
+}
+pub impl core::clone::TryClone<First,FirstFault> for First {
+    pub fn try_clone_value(source: First) -> core::result::Result<First,FirstFault> {
+        source.log[0]+=1; source.log[4]=source.log[4]*10+1;
+        if (source.fail==0) { return core::result::Err(first_error(source.tag,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(FirstFault::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.fail==1) { let error: FirstFault = first_error(source.tag,1); partial.destroy(); return core::result::Err(error); }
+        return core::result::Ok(First { text:partial,tag:source.tag,fail:-1,log:source.log });
+    }
+}
+pub impl core::clone::Destroy<First> for First {
+    pub fn destroy_value(owned: First) {
+        assert(owned.text.byte_len()==4 && owned.text.byte_at(1).unwrap()==0);
+        owned.log[2]+=1; owned.log[4]=owned.log[4]*10+3; owned.text.destroy();
+    }
+}
+pub impl core::clone::TryClone<Second,SecondFault> for Second {
+    pub fn try_clone_value(source: Second) -> core::result::Result<Second,SecondFault> {
+        source.log[1]+=1; source.log[4]=source.log[4]*10+2;
+        if (source.fail==0) { return core::result::Err(second_error(source.tag,0)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(SecondFault::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.fail==1) { let error: SecondFault = second_error(source.tag,1); partial.destroy(); return core::result::Err(error); }
+        return core::result::Ok(Second { text:partial,tag:source.tag,fail:-1,log:source.log });
+    }
+}
+pub impl core::clone::Destroy<Second> for Second {
+    pub fn destroy_value(owned: Second) {
+        assert(owned.text.byte_len()==4 && owned.text.byte_at(1).unwrap()==0);
+        owned.log[3]+=1; owned.log[4]=owned.log[4]*10+4; owned.text.destroy();
+    }
+}
+pub impl core::clone::TryClone<RightOnly,SecondFault> for RightOnly {
+    pub fn try_clone_value(source: RightOnly) -> core::result::Result<RightOnly,SecondFault> {
+        source.log[1]+=1; source.log[4]=source.log[4]*10+2;
+        if (source.fail==0) { return core::result::Err(second_error(source.tag,0)); }
+        if (source.fail==1) {
+            let bytes: [u8;4] = [82,0,80,33]; let made = alloc::string::from_utf8(bytes,4);
+            if (made.is_err()) { return core::result::Err(SecondFault::Allocation(made.unwrap_err())); }
+            let partial: alloc::string::String = made.unwrap();
+            let error: SecondFault = second_error(source.tag,1); partial.destroy(); return core::result::Err(error);
+        }
+        return core::result::Ok(source);
+    }
+}

@@ -182,8 +182,12 @@ execution have no support claim from these gates.
 `libssl.so.3` and `libcrypto.so.3`, including peer trust/identity checks, stable
 WANT retries and authenticated closure/truncation. Sessions manually borrow a
 connected nonblocking descriptor; callers supply polling/deadlines and process
-SIGPIPE policy. Server TLS, standalone encryption/signature APIs and general
-certificate trust APIs remain work. The
+SIGPIPE policy. [Server TLS](extended-openssl-tls-server.md) now passes six
+native groups and 53 cases through the same native libraries, with explicit
+unauthenticated-client policy and shared session I/O. The mandatory client
+trust/identity rejection gate also passes after introducing session roles.
+Mutual TLS, standalone encryption/signature APIs and general certificate
+trust APIs remain work. The
 [native integration prerequisites](library-native-integration-prerequisites.md)
 record ownership, policy, callback and concurrency requirements. The
 [complete library roadmap](library-roadmap.md) remains open.
@@ -212,6 +216,11 @@ handling separately:
 | [`extended_openssl_tls_execution`](../tests/extended_openssl_tls_execution.rs) | 34 cases pass across four groups; the [TLS guide](extended-openssl-tls.md#native-linking-and-verification-status) separates the verified matrix, rejection rerun and close/retry receipts, including the corrected peer fixture | `target/stdlib-work/openssl-tls-matrix-first.log`, `target/stdlib-work/openssl-tls-errors-retries.log`, `target/stdlib-work/openssl-tls-verification-current.log` |
 | [`extended_https_fetch_execution`](../tests/extended_https_fetch_execution.rs) | 4 groups pass in 14.44 s: 4 buffered TLS stream cases, 14 verification/HTTP failures, 26 limit cases and 18 binary/framing matrix cases; [profile and ownership](extended-https-fetch.md) remain explicit | `target/stdlib-work/https-fetch-execution-current.log` |
 | HTTPS after the two layout repairs | The 18-case binary/framing matrix passes again in 9.01 s | `target/stdlib-work/https-fetch-final-regression.log` |
+| [`extended_openssl_tls_server_execution`](../tests/extended_openssl_tls_server_execution.rs) | Six groups pass 53 cases in 5.98 s: verified peers, credentials, binary transfers, closure, retries and native/allocation cleanup; explicit unauthenticated-client server policy | `target/stdlib-work/openssl-tls-server-native-current.log` |
+| Mandatory client policy after server roles | Nine trust/identity/protocol rejections pass in 5.98 s | `target/stdlib-work/openssl-tls-client-policy-server-regression.log` |
+| HTTPS client after shared context ownership | All four groups and 62 cases pass in 13.90 s | `target/stdlib-work/https-fetch-server-context-regression.log` |
+| [`extended_https_server_execution`](../tests/extended_https_server_execution.rs) | All four groups pass 106 cases: 28 verified exchanges in 7.17 s and 78 limits/failures/stream cases in 10.87 s | `target/stdlib-work/https-server-matrix-vec-corrected.log`, `target/stdlib-work/https-server-limits-failures-stream.log` |
+| [`extended_archive_index_execution`](../tests/extended_archive_index_execution.rs) | Seven groups pass: the 56-case ownership matrix in 8.27 s and six remaining groups in 17.16 s, including native/transaction errors, allocation failures and a measured 1,024-entry workload | `target/stdlib-work/archive-index-matrix.log`, `target/stdlib-work/archive-index-failures-workload.log` |
 | [`extended_openssl_digest_execution`](../tests/extended_openssl_digest_execution.rs) | 4 groups pass in 8.11 s: 2,124 digest cases and 12 native failure modes | `target/stdlib-work/openssl-digest-execution-first.log` |
 | [`extended_openssl_hash_execution`](../tests/extended_openssl_hash_execution.rs) | 3 groups pass in 10.11 s: real binary stdin, CLI bounds, short transfers and native failure cleanup | `target/stdlib-work/openssl-hash-execution-first.log` |
 

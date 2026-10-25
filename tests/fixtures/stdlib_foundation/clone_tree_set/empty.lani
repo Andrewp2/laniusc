@@ -1,0 +1,14 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::string;
+import alloc::tree_set;
+import core::result;
+fn main() -> i32 {
+    let source: alloc::tree_set::TreeSet<alloc::string::String> = alloc::tree_set::new();
+    let result: core::result::Result<alloc::tree_set::TreeSet<alloc::string::String>,alloc::clone_tree_set::Error<alloc::string::Error>> =
+        alloc::clone_tree_set::try_clone<alloc::string::String,alloc::string::Error>(source.borrow());
+    let copy = result.unwrap(); assert(copy.is_empty() && copy.capacity()==0 && source.capacity()==0);
+    alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(copy.borrow());
+    alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(copy.borrow());
+    source.destroy(); return 0;
+}

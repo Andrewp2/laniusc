@@ -1,0 +1,12 @@
+module fixture::consumer;
+import alloc::clone_hash_set;
+import alloc::hash_set;
+import core::clone;
+import core::result;
+
+pub fn duplicate<T,E>(source: T) -> core::result::Result<T,E>
+    where T: core::clone::TryClone<T,E> { return T::try_clone_value(source); }
+pub fn release<T>(owned: T) where T: core::clone::Destroy<T> { T::destroy_value(owned); }
+pub fn reset<T>(owner: &alloc::hash_set::HashSet<T>) where T: core::clone::Destroy<T> {
+    alloc::clone_hash_set::destroy_hash_set<T>(owner);
+}

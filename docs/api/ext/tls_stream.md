@@ -8,14 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Buffered TLS stream and HTTPS GET execute on Linux x86_64 through OpenSSL 3: 62 cases across four groups cover stream progress, verification/HTTP failures, limits and binary response framing. The supported application profile uses numeric endpoints, explicit trust/peer identity, deadlines and manual socket/TLS/buffer ownership. TLS and sensitive operations remain in OpenSSL; server TLS, automatic resolution, redirects and broader protocol policies remain separate work.
+Shared buffered client/server TLS streams execute on Linux x86_64 through OpenSSL 3. HTTPS GET passes 62 cases across four groups after the context ownership change; the bounded HTTPS health/echo service passes 106 cases across four groups. Server construction consumes its socket on every result and retains a native context reference; streams own only their optional client context. Deadlines, byte/call budgets and manual cleanup are explicit. TLS and sensitive operations remain in OpenSSL; mutual TLS, automatic resolution, redirects, keepalive and concurrent scheduling remain separate work.
 
 ## Contract and evidence guides
 
 - [extended-https-fetch](../../extended-https-fetch.md)
 - [extended-openssl-tls](../../extended-openssl-tls.md)
+- [extended-https-server](../../extended-https-server.md)
+- [extended-openssl-tls-server](../../extended-openssl-tls-server.md)
 
-Declaration counts: enum: 2; field: 23; function: 2; impl: 3; method: 10; struct: 4; variant: 19.
+Declaration counts: enum: 2; field: 23; function: 3; impl: 3; method: 10; struct: 4; variant: 20.
 
 ## Declared imports
 
@@ -154,6 +156,14 @@ Open
 
 ```lanius
 Connect
+```
+
+#### variant: Accept
+
+[Source line 17](../../../extended/ext/tls_stream.lani#L17)
+
+```lanius
+Accept
 ```
 
 #### variant: Handshake
@@ -345,7 +355,7 @@ pub struct Stream
 [Source line 24](../../../extended/ext/tls_stream.lani#L24)
 
 ```lanius
-context: ext::openssl_tls::Context
+context: core::option::Option<ext::openssl_tls::Context>
 ```
 
 #### field: session
@@ -439,11 +449,20 @@ pub fn connect_until(endpoint: core::net::SocketAddr, trust: ext::openssl_tls::T
     -> core::result::Result<Stream,Failure>
 ```
 
+### function: accept_connected_until
+
+[Source line 130](../../../extended/ext/tls_stream.lani#L130)
+
+```lanius
+pub fn accept_connected_until(socket: std::socket::Socket, server: &ext::openssl_tls::ServerContext, limits: Limits, deadline: core::time::Deadline)
+    -> core::result::Result<Stream,Failure>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 136
+### impl at line 176
 
-[Source line 136](../../../extended/ext/tls_stream.lani#L136)
+[Source line 176](../../../extended/ext/tls_stream.lani#L176)
 
 ```lanius
 pub impl Stream
@@ -451,7 +470,7 @@ pub impl Stream
 
 #### method: borrow
 
-[Source line 137](../../../extended/ext/tls_stream.lani#L137)
+[Source line 177](../../../extended/ext/tls_stream.lani#L177)
 
 ```lanius
 pub fn borrow(&self) -> &Stream
@@ -459,7 +478,7 @@ pub fn borrow(&self) -> &Stream
 
 #### method: is_open
 
-[Source line 138](../../../extended/ext/tls_stream.lani#L138)
+[Source line 178](../../../extended/ext/tls_stream.lani#L178)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -467,7 +486,7 @@ pub fn is_open(&self) -> bool
 
 #### method: stats
 
-[Source line 139](../../../extended/ext/tls_stream.lani#L139)
+[Source line 179](../../../extended/ext/tls_stream.lani#L179)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -475,7 +494,7 @@ pub fn stats(&self) -> Stats
 
 #### method: last_failure
 
-[Source line 140](../../../extended/ext/tls_stream.lani#L140)
+[Source line 180](../../../extended/ext/tls_stream.lani#L180)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Failure>
@@ -483,7 +502,7 @@ pub fn last_failure(&self) -> core::option::Option<Failure>
 
 #### method: check
 
-[Source line 153](../../../extended/ext/tls_stream.lani#L153)
+[Source line 197](../../../extended/ext/tls_stream.lani#L197)
 
 ```lanius
 pub fn check(&self) -> core::result::Result<i32,Failure>
@@ -491,7 +510,7 @@ pub fn check(&self) -> core::result::Result<i32,Failure>
 
 #### method: shutdown
 
-[Source line 214](../../../extended/ext/tls_stream.lani#L214)
+[Source line 258](../../../extended/ext/tls_stream.lani#L258)
 
 ```lanius
 pub fn shutdown(&self) -> core::result::Result<i32,Failure>
@@ -499,15 +518,15 @@ pub fn shutdown(&self) -> core::result::Result<i32,Failure>
 
 #### method: close
 
-[Source line 231](../../../extended/ext/tls_stream.lani#L231)
+[Source line 275](../../../extended/ext/tls_stream.lani#L275)
 
 ```lanius
 pub fn close(&self) -> core::result::Result<i32,Failure>
 ```
 
-### impl at line 242
+### impl at line 286
 
-[Source line 242](../../../extended/ext/tls_stream.lani#L242)
+[Source line 286](../../../extended/ext/tls_stream.lani#L286)
 
 ```lanius
 pub impl core::io::Read for Stream
@@ -515,15 +534,15 @@ pub impl core::io::Read for Stream
 
 #### method: read
 
-[Source line 243](../../../extended/ext/tls_stream.lani#L243)
+[Source line 287](../../../extended/ext/tls_stream.lani#L287)
 
 ```lanius
 pub fn read(&self, output: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
 ```
 
-### impl at line 273
+### impl at line 317
 
-[Source line 273](../../../extended/ext/tls_stream.lani#L273)
+[Source line 317](../../../extended/ext/tls_stream.lani#L317)
 
 ```lanius
 pub impl core::io::Write for Stream
@@ -531,7 +550,7 @@ pub impl core::io::Write for Stream
 
 #### method: write
 
-[Source line 276](../../../extended/ext/tls_stream.lani#L276)
+[Source line 320](../../../extended/ext/tls_stream.lani#L320)
 
 ```lanius
 pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
@@ -539,7 +558,7 @@ pub fn write(&self, input: [u8], offset: i32, count: i32) -> core::result::Resul
 
 #### method: flush
 
-[Source line 294](../../../extended/ext/tls_stream.lani#L294)
+[Source line 338](../../../extended/ext/tls_stream.lani#L338)
 
 ```lanius
 pub fn flush(&self) -> core::result::Result<i32,core::io::Error>

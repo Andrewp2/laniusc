@@ -1,0 +1,24 @@
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::pair;
+import core::result;
+import probe::protocol;
+import probe::shape;
+
+fn relay<T,E>(source: T) -> core::result::Result<T,E>
+    where T: probe::protocol::Transfer<T,E> {
+    return T::transfer(source);
+}
+fn main() -> i32 {
+    let index: i32 = 0;
+    while (index<2) {
+        let source = probe::shape::make(index==1);
+        let result: core::result::Result<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,probe::shape::ResultFault<probe::shape::PairFault<alloc::string::Error,alloc::clone::Error<probe::shape::LeafFault>>,alloc::string::Error>> =
+            relay<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,probe::shape::ResultFault<probe::shape::PairFault<alloc::string::Error,alloc::clone::Error<probe::shape::LeafFault>>,alloc::string::Error>>(source);
+        probe::shape::consume(result.unwrap(),index==1); index+=1;
+    }
+    return 0;
+}

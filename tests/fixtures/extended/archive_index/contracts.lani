@@ -1,0 +1,42 @@
+// Appended to the actual CLI source with its main renamed. The first operand
+// is a real database path; stdin supplies a fully valid replacement ZIP.
+fn main() -> i32 {
+    let values: std::args::Arguments = std::args::snapshot(1,4,8192).unwrap();
+    assert(values.len() == 1);
+    let path: core::slice::View<u8> = values.as_view().get(0).unwrap();
+    let source: std::stream::Descriptor = std::stream::stdin();
+    let budget: Budget = Budget { remaining: 65536 };
+    let input: alloc::vec::Vec<u8> = read_input(source.borrow(),8388608,budget.borrow()).unwrap();
+    let limits: ext::archive_index::Limits = ext::archive_index::default_limits();
+    let store: ext::archive_index::Store = ext::archive_index::open(path,ext::sqlite::Mode::ReadWrite,limits).unwrap();
+    assert(store.is_open() && !store.is_poisoned());
+    let stack: [u8;5] = [33,107,0,255,44];
+    let key: core::slice::View<u8> = core::slice::View { values: stack, start: 1, length: 3 };
+    let malformed: core::slice::View<u8> = core::slice::View { values: stack, start: -1, length: 3 };
+    assert(store.replace(malformed,input.as_view()).is_err());
+    assert(store.load(malformed).is_err());
+    let saved: i32 = store.replace(key,input.as_view()).unwrap(); assert(saved == 3);
+    input.destroy();
+    let snapshot: ext::archive_index::Snapshot = store.load(key).unwrap();
+    assert(snapshot.is_open() && snapshot.len() == 3 && snapshot.verify().unwrap() == 3);
+    // Store closure does not end the independently owned snapshot lifetime.
+    assert(store.close().unwrap() == 0 && !store.is_open());
+    assert(store.close().unwrap() == 0 && store.load(key).is_err());
+    let bytes: core::slice::View<u8> = snapshot.bytes().unwrap(); assert(bytes.len() > 22);
+    let left: ext::zip::Cursor = snapshot.cursor().unwrap(); let right: ext::zip::Cursor = snapshot.cursor().unwrap();
+    assert(equal(left.next().unwrap().name,right.next().unwrap().name));
+    assert(left.remaining() == 2 && right.remaining() == 2);
+    assert(snapshot.get(-1).is_err() && snapshot.get(3).is_err());
+    let first: alloc::vec::Vec<u8> = snapshot.get(0).unwrap();
+    let second: alloc::vec::Vec<u8> = snapshot.get(1).unwrap();
+    assert(equal(first.as_view(),literal("first",5)) && equal(second.as_view(),literal("second",6)));
+    first.set(0,255); assert(second.at(0) == 115); first.destroy(); second.destroy();
+    snapshot.destroy(); snapshot.destroy();
+    assert(!snapshot.is_open() && snapshot.len() == 0);
+    assert(snapshot.bytes().is_err() && snapshot.cursor().is_err() && snapshot.verify().is_err() && snapshot.get(0).is_err());
+    let readonly: ext::archive_index::Store = ext::archive_index::open(path,ext::sqlite::Mode::ReadOnly,limits).unwrap();
+    let closed: ext::archive_index::Snapshot = readonly.load(key).unwrap();
+    let rejected = readonly.replace(key,closed.bytes().unwrap());
+    assert(rejected.is_err()); assert(match (rejected.unwrap_err().cause) { ext::archive_index::Cause::ReadOnly -> true, _ -> false });
+    closed.destroy(); readonly.close().unwrap(); values.destroy(); return 0;
+}

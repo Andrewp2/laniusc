@@ -1,0 +1,41 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::string;
+import alloc::tree_set;
+import core::iter;
+import core::result;
+import fixture::leaf;
+fn id(index:i32)->i32 {if(index==0){return 10;}if(index==1){return 30;}return 40;}
+fn inspect(error:fixture::leaf::Fault,index:i32,stage:i32)->i32 {
+    return match(error){fixture::leaf::Fault::Allocation(ignored)->4,fixture::leaf::Fault::Injected(identity,at,owned)->message(owned,identity,at,index,stage)};
+}
+fn message(owned:alloc::string::String,identity:i32,at:i32,index:i32,stage:i32)->i32 {
+    assert(identity==id(index)&&at==stage&&owned.byte_len()==5&&owned.byte_at(0).unwrap()==69&&owned.byte_at(1).unwrap()==0
+        &&owned.byte_at(2).unwrap()==(identity as u8)&&owned.byte_at(3).unwrap()==(at as u8)&&owned.byte_at(4).unwrap()==85);
+    owned.destroy();return 0;
+}
+fn element(index:i32,error:fixture::leaf::Fault,expected:i32,stage:i32)->i32 {assert(index==expected&&stage<2);return inspect(error,index,stage);}
+fn changed(index:i32,expected:i32,stage:i32)->i32 {assert(index==expected&&stage>=2);return 0;}
+fn run(index:i32,stage:i32)->i32 {
+    let bytes:[u8;4]=[83,0,195,169];let original=alloc::string::from_utf8(bytes,4).unwrap();
+    let trace:[i32;16]=[0;16];let source=alloc::tree_set::with_capacity<fixture::leaf::Leaf>(6).unwrap();
+    let order:[i32;4]=[30,10,20,40];let i:i32=0;
+    while(i<4){let key:i32=order[i];let fail:i32=-1;if(key==id(index)){fail=stage;}
+        source.try_insert(fixture::leaf::Leaf {identity:key,order:key,text:original,fail:fail,trace:trace}).unwrap();i+=1;}
+    let lookup=fixture::leaf::Leaf {identity:20,order:20,text:original,fail:-1,trace:trace};source.remove(lookup).unwrap();
+    let saved=source.iter();let saved_bytes=original.as_bytes();
+    let result:core::result::Result<alloc::tree_set::TreeSet<fixture::leaf::Leaf>,alloc::clone_tree_set::Error<fixture::leaf::Fault>> =
+        alloc::clone_tree_set::try_clone<fixture::leaf::Leaf,fixture::leaf::Fault>(source.borrow());
+    assert(result.is_err()&&trace[0]==index+1&&trace[1]==0);
+    let destroyed:i32=index;if(stage>=2){destroyed+=1;}assert(trace[2]==destroyed);
+    i=0;while(i<=index){assert(trace[8+i]==id(i));i+=1;}
+    assert(source.len()==3&&source.capacity()==6&&saved_bytes[1]==0&&saved_bytes[3]==169);
+    i=0;while(i<3){let item=saved.next().unwrap();let expected_fail:i32=-1;if(i==index){expected_fail=stage;}
+        assert(item.identity==id(i)&&item.order==id(i)&&item.fail==expected_fail&&item.text.byte_len()==4);i+=1;}
+    assert(saved.next().is_none());source.destroy();original.destroy();
+    return match(result.unwrap_err()){
+        alloc::clone_tree_set::Error::Element(at,error)->element(at,error,index,stage),
+        alloc::clone_tree_set::Error::ChangedKey(at)->changed(at,index,stage),
+        alloc::clone_tree_set::Error::Storage(ignored)->4};
+}
+fn main()->i32 {let index:i32=0;while(index<3){let stage:i32=0;while(stage<4){let status=run(index,stage);if(status!=0){return status;}stage+=1;}index+=1;}return 0;}

@@ -12,8 +12,9 @@ with OpenSSL 3.0.13 audited locally. The dedicated native execution gates pass
 34 cases across four groups: verified identity and binary transfers, rejection
 policy, authenticated closure/truncation, and stable nonblocking retries.
 The receipts and the corrected test-peer fixture are recorded below. These
-results cover this client profile; server TLS and the full security family
-remain separate work.
+results cover this client profile. [Server TLS](extended-openssl-tls-server.md)
+has separate passing native gates with an explicit unauthenticated-client
+policy; mutual TLS and the full security family remain work.
 
 ## Trust and identity
 
@@ -245,7 +246,10 @@ These cases use `Trust::CaFile`. `Trust::DefaultPaths` follows the installed
 OpenSSL configuration; these receipts do not establish the contents or behavior
 of every host trust store. They also do not establish server TLS, client
 certificates, callbacks, ALPN, revocation/pinning policy, foreign-thread use,
-other platforms or complete security-family coverage. The
+other platforms or complete security-family coverage. The separate
+[server TLS guide](extended-openssl-tls-server.md) records six passing groups
+and the mandatory client-policy regression after introducing session roles.
+The
 [`ext::tls_stream`/HTTPS guide](extended-https-fetch.md) records a separate
 accepted adapter/application gate: 62 cases across four groups pass in 14.44 s,
 covering stream progress, verification/HTTP failures, limits and binary framing

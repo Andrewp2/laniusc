@@ -1,0 +1,22 @@
+module fixture::model_key;
+import core::clone;
+import core::cmp;
+import core::result;
+// Counts is borrowed test instrumentation, not an owned resource. Keys own no
+// nested allocation; every clone preserves both representative fields.
+pub struct Key { number:i32,stamp:i32,counts:[i32] }
+pub enum Never { Unreachable }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(a:Key,b:Key)->bool{a.counts[1]+=1;return a.number==b.number;}
+    pub fn ne(a:Key,b:Key)->bool{return a.number!=b.number;}
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a:Key,b:Key)->bool{a.counts[0]+=1;return a.number<b.number;}
+    pub fn le(a:Key,b:Key)->bool{return a.number<=b.number;}
+    pub fn gt(a:Key,b:Key)->bool{return a.number>b.number;}
+    pub fn ge(a:Key,b:Key)->bool{return a.number>=b.number;}
+}
+pub impl core::clone::TryClone<Key,Never> for Key {
+    pub fn try_clone_value(source:Key)->core::result::Result<Key,Never>{source.counts[2]+=1;return core::result::Ok(source);}
+}
+pub impl core::clone::Destroy<Key> for Key {pub fn destroy_value(owned:Key){owned.counts[3]+=1;}}

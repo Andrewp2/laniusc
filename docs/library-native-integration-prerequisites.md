@@ -23,7 +23,12 @@ cryptographic operations run in the established native library.
 DNS/IP identity, binary transfers, closure/truncation and stable WANT retries.
 The caller supplies a connected nonblocking socket, readiness/deadline policy,
 manual owner cleanup and process SIGPIPE policy. The TLS guide records the
-separate passing receipts and corrected legacy test-peer fixture. Server TLS,
+separate passing receipts and corrected legacy test-peer fixture.
+[Server TLS](extended-openssl-tls-server.md) now passes six native groups and
+53 cases, including certificate/key validation, encrypted passphrases without
+prompts, context retention, stable retries and native/allocation cleanup.
+Its explicit policy does not authenticate clients. Mandatory client trust and
+identity rejection still passes after introducing session roles. Mutual TLS,
 standalone encryption/signature APIs and certificate trust APIs outside TLS
 remain work. The [TLS stream/HTTPS application](extended-https-fetch.md)
 executes 62 cases across four groups on Linux x86_64, with a numeric endpoint,

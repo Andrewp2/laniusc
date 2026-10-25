@@ -1,0 +1,9 @@
+module app::main;
+import core::clone_values;
+import core::result;
+import fixture::consumer;
+fn main() -> i32 {
+    let result: core::result::Result<i32,core::clone_values::Infallible> =
+        fixture::consumer::duplicate<i32,core::clone_values::Infallible>(37);
+    assert(result.unwrap()==37); return 0;
+}

@@ -1,0 +1,60 @@
+module app::main;
+import alloc::string;
+import core::clone;
+import core::clone_values;
+import core::option;
+import core::pair;
+import core::result;
+import fixture::consumer;
+
+pub enum Never { Unexpected }
+pub struct Poison {}
+pub struct CloneOnly { value: i32, log: [i32] }
+pub struct DestroyOnly { text: alloc::string::String, index: i32, log: [i32] }
+pub impl core::clone::TryClone<Poison,Never> for Poison {
+    pub fn try_clone_value(source: Poison) -> core::result::Result<Poison,Never> { assert(false); return core::result::Ok(source); }
+}
+pub impl core::clone::Destroy<Poison> for Poison {
+    pub fn destroy_value(owned: Poison) { assert(false); }
+}
+// Intentionally no Destroy: Option and Result cloning must not demand it.
+pub impl core::clone::TryClone<CloneOnly,Never> for CloneOnly {
+    pub fn try_clone_value(source: CloneOnly) -> core::result::Result<CloneOnly,Never> { source.log[8]+=1; return core::result::Ok(source); }
+}
+// Intentionally no TryClone, comparison, or ordering implementation.
+pub impl core::clone::Destroy<DestroyOnly> for DestroyOnly {
+    pub fn destroy_value(owned: DestroyOnly) {
+        assert(owned.text.byte_len()==4 && owned.text.byte_at(1).unwrap()==0);
+        owned.log[owned.index]+=1; owned.text.destroy();
+    }
+}
+fn owned(index: i32, log: [i32]) -> DestroyOnly {
+    let bytes: [u8;4] = [68,0,69,70];
+    return DestroyOnly { text:alloc::string::from_utf8(bytes,4).unwrap(),index:index,log:log };
+}
+fn main() -> i32 {
+    let log: [i32;9] = [0;9];
+    let absent: core::option::Option<Poison> = core::option::None();
+    assert(core::clone_values::try_clone_option<Poison,Never>(absent).unwrap().is_none());
+    assert(fixture::consumer::duplicate<core::option::Option<Poison>,Never>(absent).unwrap().is_none());
+    fixture::consumer::release<core::option::Option<Poison>>(absent);
+    let leaf: CloneOnly = CloneOnly { value:731,log:log };
+    let present: core::option::Option<CloneOnly> = core::option::Some(leaf);
+    assert(core::clone_values::try_clone_option<CloneOnly,Never>(present).unwrap().unwrap().value==731);
+    let left: core::result::Result<CloneOnly,Poison> = core::result::Ok(leaf);
+    let right: core::result::Result<Poison,CloneOnly> = core::result::Err(leaf);
+    let copied_left = fixture::consumer::duplicate<core::result::Result<CloneOnly,Poison>,core::clone_values::ResultError<Never,Never>>(left).unwrap();
+    let copied_right = core::clone_values::try_clone_result<Poison,CloneOnly,Never,Never>(right).unwrap();
+    assert(copied_left.is_ok() && copied_left.unwrap().value==731 && copied_right.is_err() && copied_right.unwrap_err().value==731 && log[8]==3);
+    let first: core::option::Option<DestroyOnly> = core::option::Some(owned(0,log));
+    fixture::consumer::release<core::option::Option<DestroyOnly>>(first);
+    let second: core::result::Result<DestroyOnly,Poison> = core::result::Ok(owned(1,log));
+    fixture::consumer::release<core::result::Result<DestroyOnly,Poison>>(second);
+    let third: core::result::Result<Poison,DestroyOnly> = core::result::Err(owned(2,log));
+    fixture::consumer::release<core::result::Result<Poison,DestroyOnly>>(third);
+    let pair: core::pair::Pair<DestroyOnly,DestroyOnly> = core::pair::new<DestroyOnly,DestroyOnly>(owned(3,log),owned(4,log));
+    fixture::consumer::release<core::pair::Pair<DestroyOnly,DestroyOnly>>(pair);
+    let index: i32 = 0; while (index<5) { assert(log[index]==1); index+=1; }
+    assert(log[5]==0 && log[6]==0 && log[7]==0 && log[8]==3);
+    return 0;
+}

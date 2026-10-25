@@ -1,0 +1,115 @@
+// Records: packed four-bit set operations, operation count, rejected key id
+// (u64::MAX means none), mode. Observe iteration order; do not model buckets.
+module app::main;
+import alloc::clone_hash_set;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct State { log: [i32], calls: i32, drops: i32, mask: u32, reject: i32, mode: i32, queries: i32 }
+impl State { fn borrow(&self) -> &State { return self; } }
+struct Token { id: i32, representative: i32, origin: i32, hash_code: u32, owned: bool, state: &State }
+enum Fault { Rejected(i32,i32) }
+pub impl core::cmp::Eq<Token> for Token {
+    pub fn eq(left: Token, right: Token) -> bool {
+        let state: &State = left.state;
+        // Deliberately unlawful modes exercise defensive duplicate cleanup.
+        // Ordinary model cases use stable identity and one constant hash.
+        if (left.owned && right.owned && (state.mode == 3 || (state.mode == 4 && state.queries >= 3))) { return true; }
+        return left.id == right.id;
+    }
+    pub fn ne(left: Token, right: Token) -> bool { return !Token::eq(left,right); }
+}
+pub impl core::hash::Hash<Token> for Token {
+    pub fn hash(value: Token) -> u32 {
+        if (value.owned) { let state: &State = value.state; state.queries += 1; }
+        return value.hash_code;
+    }
+}
+pub impl core::clone::TryClone<Token,Fault> for Token {
+    pub fn try_clone_value(source: Token) -> core::result::Result<Token,Fault> {
+        assert(!source.owned); let state: &State = source.state; let log: [i32] = state.log;
+        log[2*state.calls] = source.id; log[2*state.calls+1] = source.representative; state.calls += 1; state.queries = 0;
+        if (state.mode == 0 && source.id == state.reject) { return core::result::Err(Fault::Rejected(source.id,source.representative)); }
+        let id: i32 = source.id; let hash_code: u32 = source.hash_code;
+        if (source.id == state.reject && state.mode == 1) { id += 10; }
+        if (source.id == state.reject && state.mode == 2) { hash_code += 1; }
+        return core::result::Ok(Token { id: id, representative: source.representative, origin: source.id, hash_code: hash_code, owned: true, state: state });
+    }
+}
+pub impl core::clone::Destroy<Token> for Token {
+    pub fn destroy_value(owned: Token) {
+        assert(owned.owned); let state: &State = owned.state; let bit: u32 = 1 << owned.origin;
+        assert((state.mask & bit) == 0); state.mask |= bit; state.drops += 1;
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; } return value;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn entries(set: &alloc::hash_set::HashSet<Token>) {
+    word(set.len() as u64); let cursor: alloc::hash_set::Iter<Token> = set.iter();
+    while (true) {
+        let next: core::option::Option<Token> = cursor.next(); if (next.is_none()) { break; }
+        let token: Token = next.unwrap(); word(token.id as u64); word(token.representative as u64);
+    }
+}
+fn rejected(error: Fault) { match(error) { Fault::Rejected(id,representative) -> word(representative as u64) }; }
+fn element(index: i32, error: Fault) { word(2); word(index as u64); rejected(error); }
+fn changed(index: i32) { word(3); word(index as u64); word(0); }
+fn failure(error: alloc::clone_hash_set::Error<Fault>) {
+    match(error) {
+        alloc::clone_hash_set::Error::Storage(ignored) -> assert(false),
+        alloc::clone_hash_set::Error::Element(index,error) -> element(index,error),
+        alloc::clone_hash_set::Error::ChangedKey(index) -> changed(index)
+    };
+}
+fn run(packed: u64, count: i32, reject: i32, mode: i32) {
+    let log: [i32;4] = [0;4]; let state: State = State { log: log, calls: 0, drops: 0, mask: 0, reject: reject, mode: mode, queries: 0 };
+    let source: alloc::hash_set::HashSet<Token> = alloc::hash_set::new(); let index: i32 = 0;
+    while (index < count) {
+        let op: i32 = ((packed >> (4*index)) & 15) as i32; assert(op <= 5);
+        let id: i32 = op % 2;
+        let token: Token = Token { id: id, representative: 100+index, origin: id, hash_code: 17, owned: false, state: state.borrow() };
+        if (op < 2) { source.try_insert(token).unwrap(); }
+        else { if (op < 4) { source.try_replace(token).unwrap(); } else { source.remove(token); } }
+        index += 1;
+    }
+    let capacity: i32 = source.capacity(); word(capacity as u64); entries(source.borrow());
+    let result: core::result::Result<alloc::hash_set::HashSet<Token>,alloc::clone_hash_set::Error<Fault>> = alloc::clone_hash_set::try_clone<Token,Fault>(source.borrow());
+    if (result.is_ok()) {
+        word(1); word(0); word(0); let copy = result.unwrap(); entries(copy.borrow());
+        alloc::clone_hash_set::destroy_hash_set<Token>(copy.borrow());
+        alloc::clone_hash_set::destroy_hash_set<Token>(copy.borrow()); assert(copy.is_empty() && copy.capacity() == 0);
+    } else { failure(result.unwrap_err()); word(0); }
+    word(state.calls as u64); index = 0;
+    while (index < state.calls) { word(log[2*index] as u64); word(log[2*index+1] as u64); index += 1; }
+    word(state.drops as u64); word(state.mask as u64); word(source.capacity() as u64); entries(source.borrow());
+    // Tokens in source are borrowed observations, not active leaf owners.
+    source.destroy();
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8;32] = [0;32];
+    while (true) {
+        let received: core::result::Result<i32,core::io::Error> = input.read(record,0,32);
+        if (received.is_err()) { return 1; } let count: i32 = received.unwrap(); if (count == 0) { return 0; }
+        if (count < 32) { if (core::io::read_exact(input.borrow(),record,count,32-count).is_err()) { return 2; } }
+        let packed: u64 = decode(record,0); let commands: u64 = decode(record,8); let target: u64 = decode(record,16); let mode: u64 = decode(record,24);
+        assert(commands <= 3 && (target <= 1 || target == 18446744073709551615) && mode <= 4);
+        let reject: i32 = -1; if (target != 18446744073709551615) { reject = target as i32; }
+        run(packed,commands as i32,reject,mode as i32);
+    }
+    return 0;
+}

@@ -1,0 +1,11 @@
+module probe::relay;
+import core::result;
+import probe::protocol;
+
+pub fn plain<T,E>(source: T) -> core::result::Result<T,E> {
+    return core::result::Ok(source);
+}
+pub fn checked<T,E>(source: T) -> core::result::Result<T,E>
+    where T: probe::protocol::Transfer<T,E> {
+    return T::transfer(source);
+}

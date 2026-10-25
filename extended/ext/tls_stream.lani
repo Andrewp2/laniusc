@@ -1,4 +1,4 @@
-// Verified, nonblocking TLS over one owned numeric-endpoint socket.
+// Nonblocking client/server TLS over one owned connected socket.
 // Pending SSL operations are retried exclusively; every error is terminal.
 module ext::tls_stream;
 import alloc::vec;
@@ -14,14 +14,14 @@ import std::socket;
 
 pub struct Limits { io_calls: u64, tls_calls: u64, read_bytes: u64, written_bytes: u64 }
 pub struct Stats { io_calls: u64, tls_calls: u64, read_bytes: u64, accepted_bytes: u64, written_bytes: u64 }
-pub enum Stage { Configure, Open, Connect, Handshake, Read, Write, Shutdown, Close }
+pub enum Stage { Configure, Open, Connect, Accept, Handshake, Read, Write, Shutdown, Close }
 pub enum Cause { InvalidLimits, AllocationFailed, Closed, Timeout, Clock(std::clock::Error), Io(core::io::Error), Tls(ext::openssl_tls::Error), IoLimit, TlsLimit, ReadLimit, WriteLimit }
 pub struct Failure { cause: Cause, stage: Stage, stats: Stats, cleanup: core::option::Option<core::io::Error> }
 struct State { limits: Limits, deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, stats: Stats }
 impl State { fn borrow(&self) -> &State { return self; } }
 // One active manual owner. Copies alias all native resources and stay inactive.
 // The socket alone owns its fd. TLS session is freed before socket/context.
-pub struct Stream { context: ext::openssl_tls::Context, session: ext::openssl_tls::Session, socket: std::socket::Socket, queue: alloc::vec::Vec<u8>, state: State, maximum_io: i32, eof: bool, stopped: bool, closed: bool, failure: core::option::Option<Failure> }
+pub struct Stream { context: core::option::Option<ext::openssl_tls::Context>, session: ext::openssl_tls::Session, socket: std::socket::Socket, queue: alloc::vec::Vec<u8>, state: State, maximum_io: i32, eof: bool, stopped: bool, closed: bool, failure: core::option::Option<Failure> }
 
 pub fn default_limits() -> Limits { return Limits { io_calls: 65536, tls_calls: 32768, read_bytes: 18874369, written_bytes: 16384 }; }
 fn active(state: &State) -> core::result::Result<i32,Cause> {
@@ -115,10 +115,50 @@ pub fn connect_until(endpoint: core::net::SocketAddr, trust: ext::openssl_tls::T
     if (before.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),context.borrow(),before.unwrap_err())); }
     let made = context.session(socket.raw_handle().unwrap(),identity);
     if (made.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),context.borrow(),Cause::Tls(made.unwrap_err()))); }
-    let session: ext::openssl_tls::Session = made.unwrap();
-    let allocated = alloc::vec::with_capacity<u8>(tls_limits.io_bytes);
-    if (allocated.is_err()) { session.destroy(); return core::result::Err(close_before_session(state.borrow(),socket.borrow(),context.borrow(),Cause::AllocationFailed)); }
-    let stream: Stream = Stream { context: context, session: session, socket: socket, queue: allocated.unwrap(), state: state, maximum_io: tls_limits.io_bytes, eof: false, stopped: false, closed: false, failure: core::option::None() };
+    return stream_from_session(state,core::option::Some(context),made.unwrap(),socket,tls_limits.io_bytes);
+}
+fn close_accepted(state: &State, socket: &std::socket::Socket, cause: Cause) -> Failure {
+    let closed = socket.close(); let cleanup: core::option::Option<core::io::Error> = core::option::None();
+    if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); }
+    return failure(state,cause,cleanup);
+}
+// Consumes the socket on EVERY outcome, including invalid configuration.
+// All aliases become inactive at entry. The fd must already be connected,
+// nonblocking TCP; accept/poll time must use this same absolute deadline.
+// ServerContext is borrowed only to make a native-reference-retaining Session.
+// It may be destroyed after this returns without invalidating the stream.
+pub fn accept_connected_until(socket: std::socket::Socket, server: &ext::openssl_tls::ServerContext, limits: Limits, deadline: core::time::Deadline)
+    -> core::result::Result<Stream,Failure> {
+    let state: State = State { limits: limits, deadline: deadline, last: core::time::instant(core::time::zero()), stage: Stage::Accept, stats: Stats { io_calls: 0, tls_calls: 0, read_bytes: 0, accepted_bytes: 0, written_bytes: 0 } };
+    if (limits.io_calls == 0 || limits.tls_calls == 0) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::InvalidLimits)); }
+    if (!socket.is_open()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Closed)); }
+    let tcp: bool = match (socket.kind()) { std::socket::Kind::Tcp -> true, _ -> false };
+    if (!tcp) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Io(core::io::Error::InvalidInput))); }
+    let before = call(state.borrow(),false); if (before.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),before.unwrap_err())); }
+    let nonblocking = socket.is_nonblocking();
+    let after = active(state.borrow()); if (after.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),after.unwrap_err())); }
+    if (nonblocking.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Io(nonblocking.unwrap_err()))); }
+    if (!nonblocking.unwrap()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Io(core::io::Error::InvalidInput))); }
+    let before = call(state.borrow(),false); if (before.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),before.unwrap_err())); }
+    let peer = socket.peer_addr();
+    let after = active(state.borrow()); if (after.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),after.unwrap_err())); }
+    if (peer.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Io(peer.unwrap_err()))); }
+    state.stage = Stage::Handshake;
+    let before = call(state.borrow(),false); if (before.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),before.unwrap_err())); }
+    let made = server.session(socket.raw_handle().unwrap());
+    if (made.is_err()) { return core::result::Err(close_accepted(state.borrow(),socket.borrow(),Cause::Tls(made.unwrap_err()))); }
+    return stream_from_session(state,core::option::None(),made.unwrap(),socket,server.io_bytes());
+}
+fn stream_from_session(state: State, context: core::option::Option<ext::openssl_tls::Context>, session: ext::openssl_tls::Session, socket: std::socket::Socket, maximum_io: i32)
+    -> core::result::Result<Stream,Failure> {
+    let allocated = alloc::vec::with_capacity<u8>(maximum_io);
+    if (allocated.is_err()) {
+        session.destroy(); let closed = socket.close();
+        let owner = context; context = core::option::None(); if (owner.is_some()) { let active = owner.unwrap(); active.destroy(); }
+        let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); }
+        return core::result::Err(failure(state.borrow(),Cause::AllocationFailed,cleanup));
+    }
+    let stream: Stream = Stream { context: context, session: session, socket: socket, queue: allocated.unwrap(), state: state, maximum_io: maximum_io, eof: false, stopped: false, closed: false, failure: core::option::None() };
     let handshaken = stream.handshake();
     if (handshaken.is_err()) { return core::result::Err(handshaken.unwrap_err()); }
     return core::result::Ok(stream);
@@ -138,10 +178,14 @@ pub impl Stream {
     pub fn is_open(&self) -> bool { return !self.closed && !self.stopped; }
     pub fn stats(&self) -> Stats { return self.state.stats; }
     pub fn last_failure(&self) -> core::option::Option<Failure> { return self.failure; }
+    fn destroy_context(&self) {
+        let owner = self.context; self.context = core::option::None();
+        if (owner.is_some()) { let context = owner.unwrap(); context.destroy(); }
+    }
     fn abort(&self, cause: Cause) -> Failure {
         if (self.failure.is_some()) { return self.failure.unwrap(); }
         self.session.destroy();
-        let closed = self.socket.close(); self.context.destroy(); self.queue.destroy(); self.closed = true;
+        let closed = self.socket.close(); self.destroy_context(); self.queue.destroy(); self.closed = true;
         let cleanup: core::option::Option<core::io::Error> = core::option::None();
         if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); }
         let error: Failure = failure(self.state.borrow(),cause,cleanup);
@@ -231,7 +275,7 @@ pub impl Stream {
     pub fn close(&self) -> core::result::Result<i32,Failure> {
         if (self.closed) { return core::result::Ok(0); }
         self.state.stage = Stage::Close;
-        self.session.destroy(); let closed = self.socket.close(); self.context.destroy(); self.queue.destroy(); self.closed = true;
+        self.session.destroy(); let closed = self.socket.close(); self.destroy_context(); self.queue.destroy(); self.closed = true;
         if (closed.is_err()) {
             let error: Failure = failure(self.state.borrow(),Cause::Io(closed.unwrap_err()),core::option::None());
             self.failure = core::option::Some(error); return core::result::Err(error);

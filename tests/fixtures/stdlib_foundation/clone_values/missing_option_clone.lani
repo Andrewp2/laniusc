@@ -1,0 +1,12 @@
+module app::main;
+import core::clone;
+import core::clone_values;
+import core::option;
+struct Only {}
+enum Never { Unexpected }
+pub impl core::clone::Destroy<Only> for Only { pub fn destroy_value(owned: Only) {} }
+fn main() -> i32 {
+    let source: core::option::Option<Only> = core::option::None();
+    core::clone_values::try_clone_option<Only,Never>(source);
+    return 0;
+}

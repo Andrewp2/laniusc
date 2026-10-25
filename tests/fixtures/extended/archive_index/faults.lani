@@ -1,0 +1,23 @@
+// The observer injects a native failure only during replacement (not open).
+// Expected exit 0: rollback established old content; 7: poisoned/uncertain.
+fn main() -> i32 {
+    let values: std::args::Arguments = std::args::snapshot(1,4,8192).unwrap();
+    assert(values.len() == 1);
+    let path: core::slice::View<u8> = values.as_view().get(0).unwrap();
+    let source: std::stream::Descriptor = std::stream::stdin(); let budget: Budget = Budget { remaining: 65536 };
+    let input: alloc::vec::Vec<u8> = read_input(source.borrow(),8388608,budget.borrow()).unwrap();
+    let store: ext::archive_index::Store = ext::archive_index::open(path,ext::sqlite::Mode::ReadWrite,ext::archive_index::default_limits()).unwrap();
+    let replaced = store.replace(literal("key",3),input.as_view()); input.destroy();
+    assert(replaced.is_err()); let error: ext::archive_index::Error = replaced.unwrap_err();
+    assert(error.database.is_some() && error.database.unwrap().code == 10);
+    let uncertain: bool = match (error.outcome) { ext::archive_index::Outcome::Uncertain -> true, _ -> false };
+    if (uncertain) {
+        assert(store.is_poisoned()); let rejected = store.load(literal("key",3)); assert(rejected.is_err());
+        assert(match (rejected.unwrap_err().cause) { ext::archive_index::Cause::Poisoned -> true, _ -> false });
+        store.close().unwrap(); values.destroy(); return 7;
+    }
+    assert(!store.is_poisoned() && error.rollback.is_none());
+    let snapshot: ext::archive_index::Snapshot = store.load(literal("key",3)).unwrap();
+    let payload: alloc::vec::Vec<u8> = snapshot.get(0).unwrap(); assert(equal(payload.as_view(),literal("old",3)));
+    payload.destroy(); snapshot.destroy(); store.close().unwrap(); values.destroy(); return 0;
+}

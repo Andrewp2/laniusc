@@ -124,6 +124,12 @@ boundary. `connect_until` owns the nonblocking socket, OpenSSL context/session
 and one fixed write queue. It returns only after certificate verification.
 Use one active manual owner; all by-value copies remain inactive.
 
+The same Read/Write and deadline engine now supports
+[`accept_connected_until`](extended-https-server.md#socket-and-tls-ownership).
+It consumes an accepted socket on every result and retains the server's native
+context through its Session. A Stream owns an optional client Context; server
+streams do not own the caller's ServerContext.
+
 The adapter implements `core::io::Read` and `Write` with buffered acceptance.
 `write` first drains a previous accepted queue, then copies a bounded prefix of
 new input into its queue and returns the accepted count. It does not send that
@@ -150,7 +156,7 @@ stage, confirmed counters and any socket cleanup error.
 `shutdown()` sends the local closure alert and stops at Sent or Complete.
 Afterward both reads and new write acceptance are closed; `check` and `close`
 remain available. `close()` is an explicit abortive release: it discards queued
-data, frees SSL, closes the sole socket owner, frees the context and releases
+data, frees SSL, closes the sole socket owner, frees any owned client context and releases
 the queue. It never performs a hidden flush. The application establishes an
 explicit process SIGPIPE-ignore policy before using OpenSSL's socket BIO.
 
@@ -187,6 +193,9 @@ and four buffered-stream cases, totaling 62 cases. The linked ELF's generated
 function boundaries and its OpenSSL 3 native dependencies also passed their
 checks. The local execution receipt is
 `target/stdlib-work/https-fetch-execution-current.log`.
+After sharing the engine with server streams and making the client Context
+optional, all four groups and 62 cases pass again in 13.90 seconds:
+`target/stdlib-work/https-fetch-server-context-regression.log`.
 
 These results cover native CPU execution through OpenSSL 3. Other operating
 systems and GPU-kernel execution have not been verified.

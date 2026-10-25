@@ -1,0 +1,50 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::tree_set;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::model_key;
+import std::io;
+import std::io_decimal;
+fn key(number:i32,stamp:i32,counts:[i32])->fixture::model_key::Key{return fixture::model_key::Key {number:number,stamp:stamp,counts:counts};}
+fn check(source:&alloc::tree_set::TreeSet<fixture::model_key::Key>,present:[bool],stamps:[i32],step:i32)->u64{
+    let cursor=source.iter();let index:i32=0;let count:i32=0;let digest:u64=0;
+    while(index<64){if(present[index]){let actual=cursor.next().unwrap();assert(actual.number==index&&actual.stamp==stamps[index]);
+        digest+=(step as u64+1)*(index as u64+1)*(stamps[index] as u64);count+=1;}index+=1;}
+    assert(cursor.next().is_none()&&source.len()==count);return digest;
+}
+fn duplicate(source:&alloc::tree_set::TreeSet<fixture::model_key::Key>,present:[bool],stamps:[i32],counts:[i32],step:i32){
+    let before:i32=counts[2];let destroyed:i32=counts[3];
+    let result:core::result::Result<alloc::tree_set::TreeSet<fixture::model_key::Key>,alloc::clone_tree_set::Error<fixture::model_key::Never>> =
+        alloc::clone_tree_set::try_clone<fixture::model_key::Key,fixture::model_key::Never>(source);
+    let copy=result.unwrap();assert(check(copy.borrow(),present,stamps,step)==check(source,present,stamps,step));
+    assert(counts[2]-before==source.len());alloc::clone_tree_set::destroy_tree_set<fixture::model_key::Key>(copy.borrow());
+    assert(counts[3]-destroyed==source.len()&&copy.capacity()==0);
+}
+fn main()->i32{
+    let counts:[i32;4]=[0;4];let present:[bool;64]=[false;64];let stamps:[i32;64]=[0;64];
+    let source:alloc::tree_set::TreeSet<fixture::model_key::Key> = alloc::tree_set::new();let step:i32=0;let state:i32=113;
+    while(step<512){state=(state*73+41)%997;let number:i32=state%64;let op:i32=step%7;let stamp:i32=100+step;
+        if(step<64){number=step;op=0;}
+        if(step==255){source.clear();let i:i32=0;while(i<64){present[i]=false;i+=1;}}
+        else{if(step==383){source.try_reserve(16).unwrap();}
+        else{if(op==0){let result=source.try_insert(key(number,stamp,counts)).unwrap();
+            if(present[number]){let rejected=result.unwrap();assert(rejected.number==number&&rejected.stamp==stamp);}
+            else{assert(result.is_none());present[number]=true;stamps[number]=stamp;}}
+        else{if(op==1){let result=source.try_replace(key(number,stamp,counts)).unwrap();
+            if(present[number]){let old=result.unwrap();assert(old.number==number&&old.stamp==stamps[number]);}else{assert(result.is_none());}
+            present[number]=true;stamps[number]=stamp;}
+        else{if(op==2){let removed=source.remove(key(number,stamp,counts));if(present[number]){let old=removed.unwrap();assert(old.number==number&&old.stamp==stamps[number]);present[number]=false;}else{assert(removed.is_none());}}
+        else{if(op==3){assert(source.contains(key(number,stamp,counts))==present[number]);let expected:i32=number;while(expected<64&&!present[expected]){expected+=1;}
+            let lower=source.lower_bound(key(number,stamp,counts));if(expected<64){assert(lower.unwrap().number==expected);}else{assert(lower.is_none());}}
+        else{if(op==5){let expected:i32=0;let removed:core::option::Option<fixture::model_key::Key> = core::option::None();
+            if(step%2==0){while(expected<64&&!present[expected]){expected+=1;}removed=source.pop_first();}
+            else{expected=63;while(expected>=0&&!present[expected]){expected-=1;}removed=source.pop_last();}
+            if(expected>=0&&expected<64){let old=removed.unwrap();assert(old.number==expected&&old.stamp==stamps[expected]);present[expected]=false;}else{assert(removed.is_none());}}
+        else{duplicate(source.borrow(),present,stamps,counts,step);}}}}}}}
+        let digest:u64=check(source.borrow(),present,stamps,step);assert(std::io_decimal::write_i32(1,source.len())>0&&std::io::write_byte(1,10)==1);
+        assert(std::io_decimal::write_u64(1,digest)>0&&std::io::write_byte(1,10)==1);step+=1;
+    }
+    source.destroy();return 0;
+}

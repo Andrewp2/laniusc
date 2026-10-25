@@ -1,4 +1,4 @@
-// Verified OpenSSL 3 client TLS over a borrowed connected nonblocking socket.
+// OpenSSL 3 client/server TLS over a borrowed connected nonblocking socket.
 // The caller owns polling, deadlines, SIGPIPE policy and socket cleanup.
 module ext::openssl_tls;
 import alloc::allocator;
@@ -9,23 +9,27 @@ import core::text;
 
 pub enum Trust { DefaultPaths, CaFile(core::slice::View<u8>) }
 pub enum Identity { Dns(core::slice::View<u8>), Ip(core::slice::View<u8>) }
+pub enum Role { Client, Server }
+pub enum ClientAuthentication { Unauthenticated }
 pub enum State { Handshake, Open, PeerClosed, Closing, Closed, Failed }
 pub enum Handshake { Complete, WantRead, WantWrite }
 pub enum Read { Data(i32), Closed, WantRead, WantWrite }
 pub enum Write { Complete(i32), WantRead, WantWrite }
 pub enum Shutdown { Complete, Sent, WantRead, WantWrite }
-pub enum Phase { Context, Trust, Policy, Session, Identity, Attach, Handshake, Read, Write, Shutdown }
+pub enum Phase { Context, Trust, Policy, Session, Identity, Attach, Handshake, Read, Write, Shutdown, Certificate, PrivateKey, Passphrase, KeyMatch }
 pub enum Cause { Bounds, InvalidLimits, Limit, Closed, InvalidState, Identity, Utf8, Nul, AllocationFailed, Native, Verification, PeerCertificate, PeerClosed, Truncated, UnexpectedNative }
 pub struct Limits { path_bytes: i32, identity_bytes: i32, io_bytes: i32, verify_depth: i32 }
 pub struct Error { cause: Cause, phase: Phase, ssl_error: i32, code: u64, verify_code: i64, system: i32 }
 // One active owner of this SSL_CTX reference. SSL_new retains its own native
 // context reference, so destroy() does not invalidate existing sessions.
 pub struct Context { handle: ptr, limits: Limits }
+pub struct ServerContext { handle: ptr, limits: Limits }
 // One active manual owner. No owner-field edits, copies or concurrent calls.
 // reader/writer/counts remain allocated at fixed addresses through retries.
-pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, current: State, reading: i32, writing: i32 }
+pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, current: State, reading: i32, writing: i32, endpoint_role: Role }
 struct Packed { storage: ptr, length: i32 }
 
+pub const MAX_PASSPHRASE_BYTES: i32 = 1023;
 pub fn default_limits() -> Limits { return Limits { path_bytes: 4096, identity_bytes: 253, io_bytes: 16384, verify_depth: 16 }; }
 fn valid(bytes: core::slice::View<u8>) -> bool { return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647 - bytes.length; }
 fn valid_limits(limits: Limits) -> bool { return limits.path_bytes > 0 && limits.path_bytes <= 1048576 && limits.identity_bytes > 0 && limits.identity_bytes <= 253 && limits.io_bytes > 0 && limits.io_bytes <= 65536 && limits.verify_depth >= 0 && limits.verify_depth <= 64; }
@@ -61,14 +65,35 @@ fn packed(bytes: core::slice::View<u8>, phase: Phase) -> core::result::Result<Pa
 }
 impl Packed {
     fn destroy(&self) { if (self.storage != 0) { alloc::allocator::dealloc(self.storage, (self.length as usize) + 1, 8); } }
+    fn cleanse_destroy(&self) { if (self.storage != 0) { OPENSSL_cleanse(self.storage, (self.length as usize) + 1); self.destroy(); } }
 }
-fn checked_path(path: core::slice::View<u8>, maximum: i32) -> core::result::Result<i32, Error> {
-    if (!valid(path)) { return core::result::Err(local(Cause::Bounds, Phase::Trust)); }
-    if (path.length == 0) { return core::result::Err(local(Cause::Bounds, Phase::Trust)); }
-    if (path.length > maximum) { return core::result::Err(local(Cause::Limit, Phase::Trust)); }
+fn checked_path(path: core::slice::View<u8>, maximum: i32, phase: Phase) -> core::result::Result<i32, Error> {
+    if (!valid(path)) { return core::result::Err(local(Cause::Bounds, phase)); }
+    if (path.length == 0) { return core::result::Err(local(Cause::Bounds, phase)); }
+    if (path.length > maximum) { return core::result::Err(local(Cause::Limit, phase)); }
     let index: i32 = 0;
-    while (index < path.length) { if (path.values[path.start + index] == 0) { return core::result::Err(local(Cause::Nul, Phase::Trust)); } index += 1; }
-    if (core::text::from_utf8_range(path.values, path.start, path.length).is_err()) { return core::result::Err(local(Cause::Utf8, Phase::Trust)); }
+    while (index < path.length) { if (path.values[path.start + index] == 0) { return core::result::Err(local(Cause::Nul, phase)); } index += 1; }
+    if (core::text::from_utf8_range(path.values, path.start, path.length).is_err()) { return core::result::Err(local(Cause::Utf8, phase)); }
+    return core::result::Ok(0);
+}
+fn checked_passphrase(passphrase: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(passphrase)) { return core::result::Err(local(Cause::Bounds, Phase::Passphrase)); }
+    if (passphrase.length > MAX_PASSPHRASE_BYTES) { return core::result::Err(local(Cause::Limit, Phase::Passphrase)); }
+    let index: i32 = 0;
+    while (index < passphrase.length) { if (passphrase.values[passphrase.start + index] == 0) { return core::result::Err(local(Cause::Nul, Phase::Passphrase)); } index += 1; }
+    return core::result::Ok(0);
+}
+fn context_policy(handle: ptr) -> core::result::Result<i32, Error> {
+    let nowhere: ptr = 0;
+    ERR_clear_error();
+    let minimum: i64 = SSL_CTX_ctrl(handle, 123, 771, nowhere);
+    if (minimum != 1) { return core::result::Err(queued(Phase::Policy, 0, 0, 0)); }
+    // Compression and renegotiation are disabled. Never normalize missing
+    // close_notify to EOF, even if global OpenSSL configuration requested it.
+    let required: u64 = 1073872896;
+    let options: u64 = SSL_CTX_set_options(handle, required);
+    let strict: u64 = SSL_CTX_clear_options(handle, 128);
+    if ((options & required) != required || (strict & 128) != 0) { return core::result::Err(local(Cause::UnexpectedNative, Phase::Policy)); }
     return core::result::Ok(0);
 }
 
@@ -79,7 +104,7 @@ pub fn new(trust: Trust, limits: Limits) -> core::result::Result<Context, Error>
     let nowhere: ptr = 0;
     let file: Packed = Packed { storage: nowhere, length: 0 };
     if (custom) {
-        let checked = checked_path(path, limits.path_bytes);
+        let checked = checked_path(path, limits.path_bytes, Phase::Trust);
         if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
         let allocated = packed(path, Phase::Trust);
         if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
@@ -95,15 +120,8 @@ pub fn new(trust: Trust, limits: Limits) -> core::result::Result<Context, Error>
     // No callback can override chain verification. TLS1.2 is the fixed floor.
     SSL_CTX_set_verify(handle, 1, nowhere);
     SSL_CTX_set_verify_depth(handle, limits.verify_depth);
-    ERR_clear_error();
-    let minimum: i64 = SSL_CTX_ctrl(handle, 123, 771, nowhere);
-    if (minimum != 1) { let error: Error = queued(Phase::Policy, 0, 0, 0); owner.destroy(); file.destroy(); return core::result::Err(error); }
-    // Compression and renegotiation are disabled. Never normalize missing
-    // close_notify to EOF, even if global OpenSSL configuration requested it.
-    let required: u64 = 1073872896;
-    let options: u64 = SSL_CTX_set_options(handle, required);
-    let strict: u64 = SSL_CTX_clear_options(handle, 128);
-    if ((options & required) != required || (strict & 128) != 0) { owner.destroy(); file.destroy(); return core::result::Err(local(Cause::UnexpectedNative, Phase::Policy)); }
+    let policy = context_policy(handle);
+    if (policy.is_err()) { let error: Error = policy.unwrap_err(); owner.destroy(); file.destroy(); return core::result::Err(error); }
     ERR_clear_error();
     let loaded: i32 = 0;
     if (custom) { loaded = SSL_CTX_load_verify_locations(handle, file.storage, nowhere); }
@@ -111,6 +129,67 @@ pub fn new(trust: Trust, limits: Limits) -> core::result::Result<Context, Error>
     if (loaded != 1) { let error: Error = queued(Phase::Trust, 0, 0, 0); owner.destroy(); file.destroy(); return core::result::Err(error); }
     file.destroy();
     return core::result::Ok(owner);
+}
+
+// Clear native userdata before freeing staging: SSL_new copies these settings.
+// The explicit empty string also suppresses PEM's interactive password UI.
+fn release_credentials(handle: ptr, certificate: Packed, key: Packed, passphrase: Packed) {
+    let nowhere: ptr = 0;
+    if (handle != 0) { SSL_CTX_set_default_passwd_cb_userdata(handle, nowhere); }
+    passphrase.cleanse_destroy(); key.destroy(); certificate.destroy();
+}
+fn credential_failure(handle: ptr, certificate: Packed, key: Packed, passphrase: Packed, error: Error) -> Error {
+    release_credentials(handle, certificate, key, passphrase);
+    if (handle != 0) { SSL_CTX_free(handle); }
+    return error;
+}
+
+// Server authentication only: this explicit policy never requests a client
+// certificate. Application authorization is the caller's responsibility.
+pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::slice::View<u8>, passphrase: core::slice::View<u8>, client_authentication: ClientAuthentication, limits: Limits) -> core::result::Result<ServerContext, Error> {
+    if (!valid_limits(limits)) { return core::result::Err(local(Cause::InvalidLimits, Phase::Context)); }
+    let checked_certificate = checked_path(certificate_chain, limits.path_bytes, Phase::Certificate);
+    if (checked_certificate.is_err()) { return core::result::Err(checked_certificate.unwrap_err()); }
+    let checked_key = checked_path(private_key, limits.path_bytes, Phase::PrivateKey);
+    if (checked_key.is_err()) { return core::result::Err(checked_key.unwrap_err()); }
+    let checked_password = checked_passphrase(passphrase);
+    if (checked_password.is_err()) { return core::result::Err(checked_password.unwrap_err()); }
+    let allocated_certificate = packed(certificate_chain, Phase::Certificate);
+    if (allocated_certificate.is_err()) { return core::result::Err(allocated_certificate.unwrap_err()); }
+    let certificate: Packed = allocated_certificate.unwrap();
+    let allocated_key = packed(private_key, Phase::PrivateKey);
+    if (allocated_key.is_err()) { certificate.destroy(); return core::result::Err(allocated_key.unwrap_err()); }
+    let key: Packed = allocated_key.unwrap();
+    // Even a zero-length password owns a non-null, terminated native string.
+    let allocated_password = packed(passphrase, Phase::Passphrase);
+    if (allocated_password.is_err()) { key.destroy(); certificate.destroy(); return core::result::Err(allocated_password.unwrap_err()); }
+    let password: Packed = allocated_password.unwrap();
+    let nowhere: ptr = 0;
+    ERR_clear_error();
+    let method: ptr = TLS_server_method();
+    if (method == 0) { let error: Error = queued(Phase::Context, 0, 0, 0); return core::result::Err(credential_failure(nowhere, certificate, key, password, error)); }
+    ERR_clear_error();
+    let handle: ptr = SSL_CTX_new(method);
+    if (handle == 0) { let error: Error = queued(Phase::Context, 0, 0, 0); return core::result::Err(credential_failure(nowhere, certificate, key, password, error)); }
+    let verify_mode: i32 = match (client_authentication) { ClientAuthentication::Unauthenticated -> 0 };
+    SSL_CTX_set_verify(handle, verify_mode, nowhere);
+    let policy = context_policy(handle);
+    if (policy.is_err()) { return core::result::Err(credential_failure(handle, certificate, key, password, policy.unwrap_err())); }
+    // PEM's documented default callback consumes non-null userdata directly,
+    // without invoking a password dialog. It applies to both PEM file loads.
+    SSL_CTX_set_default_passwd_cb(handle, nowhere);
+    SSL_CTX_set_default_passwd_cb_userdata(handle, password.storage);
+    ERR_clear_error();
+    let loaded_certificate: i32 = SSL_CTX_use_certificate_chain_file(handle, certificate.storage);
+    if (loaded_certificate != 1) { let error: Error = queued(Phase::Certificate, 0, 0, 0); return core::result::Err(credential_failure(handle, certificate, key, password, error)); }
+    ERR_clear_error();
+    let loaded_key: i32 = SSL_CTX_use_PrivateKey_file(handle, key.storage, 1);
+    if (loaded_key != 1) { let error: Error = queued(Phase::PrivateKey, 0, 0, 0); return core::result::Err(credential_failure(handle, certificate, key, password, error)); }
+    ERR_clear_error();
+    let matched: i32 = SSL_CTX_check_private_key(handle);
+    if (matched != 1) { let error: Error = queued(Phase::KeyMatch, 0, 0, 0); return core::result::Err(credential_failure(handle, certificate, key, password, error)); }
+    release_credentials(handle, certificate, key, password);
+    return core::result::Ok(ServerContext { handle: handle, limits: limits });
 }
 
 fn identity_bytes(identity: Identity) -> core::slice::View<u8> { return match (identity) { Identity::Dns(bytes) -> bytes, Identity::Ip(bytes) -> bytes }; }
@@ -154,6 +233,28 @@ fn checked_identity(identity: Identity, limits: Limits) -> core::result::Result<
     return core::result::Ok(0);
 }
 
+fn client_role(role: Role) -> bool { return match (role) { Role::Client -> true, Role::Server -> false }; }
+fn allocate_session(context: ptr, limits: Limits, role: Role) -> core::result::Result<Session, Error> {
+    ERR_clear_error();
+    let handle: ptr = SSL_new(context);
+    if (handle == 0) { return core::result::Err(queued(Phase::Session, 0, 0, 0)); }
+    let nowhere: ptr = 0;
+    let owner: Session = Session { handle: handle, reader: nowhere, writer: nowhere, counts: nowhere, limits: limits, current: State::Handshake, reading: 0, writing: 0, endpoint_role: role };
+    owner.reader = alloc::allocator::alloc(limits.io_bytes as usize, 8);
+    if (owner.reader != 0) { owner.writer = alloc::allocator::alloc(limits.io_bytes as usize, 8); }
+    if (owner.writer != 0) { owner.counts = alloc::allocator::alloc(16, 8); }
+    if (owner.reader == 0 || owner.writer == 0 || owner.counts == 0) { owner.destroy(); return core::result::Err(local(Cause::AllocationFailed, Phase::Session)); }
+    return core::result::Ok(owner);
+}
+fn attach_session(owner: &Session, fd: i32) -> core::result::Result<i32, Error> {
+    ERR_clear_error();
+    let attached: i32 = SSL_set_fd(owner.handle, fd);
+    if (attached != 1) { return core::result::Err(queued(Phase::Attach, 0, 0, 0)); }
+    if (client_role(owner.endpoint_role)) { SSL_set_connect_state(owner.handle); }
+    else { SSL_set_accept_state(owner.handle); }
+    return core::result::Ok(0);
+}
+
 pub impl Context {
     pub fn borrow(&self) -> &Context { return self; }
     pub fn is_open(&self) -> bool { return self.handle != 0; }
@@ -172,15 +273,10 @@ pub impl Context {
         let allocated = packed(identity_bytes(identity), Phase::Identity);
         if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
         let name: Packed = allocated.unwrap();
-        ERR_clear_error();
-        let handle: ptr = SSL_new(self.handle);
-        if (handle == 0) { let error: Error = queued(Phase::Session, 0, 0, 0); name.destroy(); return core::result::Err(error); }
-        let nowhere: ptr = 0;
-        let owner: Session = Session { handle: handle, reader: nowhere, writer: nowhere, counts: nowhere, limits: self.limits, current: State::Handshake, reading: 0, writing: 0 };
-        owner.reader = alloc::allocator::alloc(self.limits.io_bytes as usize, 8);
-        if (owner.reader != 0) { owner.writer = alloc::allocator::alloc(self.limits.io_bytes as usize, 8); }
-        if (owner.writer != 0) { owner.counts = alloc::allocator::alloc(16, 8); }
-        if (owner.reader == 0 || owner.writer == 0 || owner.counts == 0) { owner.destroy(); name.destroy(); return core::result::Err(local(Cause::AllocationFailed, Phase::Session)); }
+        let allocated_session = allocate_session(self.handle, self.limits, Role::Client);
+        if (allocated_session.is_err()) { name.destroy(); return core::result::Err(allocated_session.unwrap_err()); }
+        let owner: Session = allocated_session.unwrap();
+        let handle: ptr = owner.handle;
         // These flags require SAN identity and exclude partial-label wildcards.
         SSL_set_hostflags(handle, 36);
         let configured: i32 = 0;
@@ -200,10 +296,31 @@ pub impl Context {
             if (configured != 1) { let error: Error = queued(Phase::Identity, 0, 0, 0); error.cause = Cause::Identity; owner.destroy(); name.destroy(); return core::result::Err(error); }
         }
         name.destroy();
-        ERR_clear_error();
-        let attached: i32 = SSL_set_fd(handle, fd);
-        if (attached != 1) { let error: Error = queued(Phase::Attach, 0, 0, 0); owner.destroy(); return core::result::Err(error); }
-        SSL_set_connect_state(handle);
+        let attached = attach_session(owner.borrow(), fd);
+        if (attached.is_err()) { let error: Error = attached.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+        return core::result::Ok(owner);
+    }
+}
+
+pub impl ServerContext {
+    pub fn borrow(&self) -> &ServerContext { return self; }
+    pub fn is_open(&self) -> bool { return self.handle != 0; }
+    pub fn io_bytes(&self) -> i32 { return self.limits.io_bytes; }
+    pub fn destroy(&self) {
+        let handle: ptr = self.handle;
+        let nowhere: ptr = 0; self.handle = nowhere;
+        if (handle != 0) { SSL_CTX_free(handle); }
+    }
+    // The caller accepts and keeps this connected nonblocking socket alive.
+    // SSL_new retains the native context; no client certificate is requested.
+    pub fn session(&self, fd: i32) -> core::result::Result<Session, Error> {
+        if (fd < 0) { return core::result::Err(local(Cause::Bounds, Phase::Attach)); }
+        if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Session)); }
+        let allocated = allocate_session(self.handle, self.limits, Role::Server);
+        if (allocated.is_err()) { return core::result::Err(allocated.unwrap_err()); }
+        let owner: Session = allocated.unwrap();
+        let attached = attach_session(owner.borrow(), fd);
+        if (attached.is_err()) { let error: Error = attached.unwrap_err(); owner.destroy(); return core::result::Err(error); }
         return core::result::Ok(owner);
     }
 }
@@ -222,6 +339,7 @@ pub impl Session {
     pub fn borrow(&self) -> &Session { return self; }
     pub fn is_open(&self) -> bool { return self.handle != 0; }
     pub fn state(&self) -> State { return self.current; }
+    pub fn role(&self) -> Role { return self.endpoint_role; }
     pub fn pending_read_bytes(&self) -> i32 { return self.reading; }
     pub fn pending_write_bytes(&self) -> i32 { return self.writing; }
     // Abandon without an implicit SSL_shutdown. Invalidate before native frees;
@@ -252,10 +370,12 @@ pub impl Session {
         let result: i32 = SSL_do_handshake(self.handle);
         let system: i32 = system_cell[0];
         if (result == 1) {
-            let verification: i64 = SSL_get_verify_result(self.handle);
-            if (verification != 0) { let error: Error = queued(Phase::Handshake, 0, system, result); error.cause = Cause::Verification; error.verify_code = verification; return core::result::Err(failed(self, error)); }
-            let certificate: ptr = SSL_get0_peer_certificate(self.handle);
-            if (certificate == 0) { return core::result::Err(failed(self, local(Cause::PeerCertificate, Phase::Handshake))); }
+            if (client_role(self.endpoint_role)) {
+                let verification: i64 = SSL_get_verify_result(self.handle);
+                if (verification != 0) { let error: Error = queued(Phase::Handshake, 0, system, result); error.cause = Cause::Verification; error.verify_code = verification; return core::result::Err(failed(self, error)); }
+                let certificate: ptr = SSL_get0_peer_certificate(self.handle);
+                if (certificate == 0) { return core::result::Err(failed(self, local(Cause::PeerCertificate, Phase::Handshake))); }
+            }
             self.current = State::Open;
             return core::result::Ok(Handshake::Complete);
         }
@@ -264,8 +384,10 @@ pub impl Session {
         if (ssl_error == 2) { return core::result::Ok(Handshake::WantRead); }
         if (ssl_error == 3) { return core::result::Ok(Handshake::WantWrite); }
         let error: Error = queued(Phase::Handshake, ssl_error, system, result);
-        error.verify_code = SSL_get_verify_result(self.handle);
-        if (error.verify_code != 0) { error.cause = Cause::Verification; }
+        if (client_role(self.endpoint_role)) {
+            error.verify_code = SSL_get_verify_result(self.handle);
+            if (error.verify_code != 0) { error.cause = Cause::Verification; }
+        }
         return core::result::Err(failed(self, error));
     }
     // A pending read retains its original requested size and staging pointer.
@@ -374,6 +496,7 @@ pub impl Session {
 // OpenSSL 3 declarations: all TLS, identity verification, records and wiping
 // execute in the native library. Null callback parameters never export code.
 pub extern "C" fn TLS_client_method() -> ptr;
+pub extern "C" fn TLS_server_method() -> ptr;
 pub extern "C" fn SSL_CTX_new(method: ptr) -> ptr;
 pub extern "C" fn SSL_CTX_free(context: ptr);
 pub extern "C" fn SSL_CTX_set_verify(context: ptr, mode: i32, callback: ptr);
@@ -383,6 +506,11 @@ pub extern "C" fn SSL_CTX_set_options(context: ptr, options: u64) -> u64;
 pub extern "C" fn SSL_CTX_clear_options(context: ptr, options: u64) -> u64;
 pub extern "C" fn SSL_CTX_set_default_verify_paths(context: ptr) -> i32;
 pub extern "C" fn SSL_CTX_load_verify_locations(context: ptr, file: ptr, directory: ptr) -> i32;
+pub extern "C" fn SSL_CTX_set_default_passwd_cb(context: ptr, callback: ptr);
+pub extern "C" fn SSL_CTX_set_default_passwd_cb_userdata(context: ptr, userdata: ptr);
+pub extern "C" fn SSL_CTX_use_certificate_chain_file(context: ptr, file: ptr) -> i32;
+pub extern "C" fn SSL_CTX_use_PrivateKey_file(context: ptr, file: ptr, format: i32) -> i32;
+pub extern "C" fn SSL_CTX_check_private_key(context: ptr) -> i32;
 pub extern "C" fn SSL_new(context: ptr) -> ptr;
 pub extern "C" fn SSL_free(session: ptr);
 pub extern "C" fn SSL_set_hostflags(session: ptr, flags: u32);
@@ -392,6 +520,7 @@ pub extern "C" fn SSL_get0_param(session: ptr) -> ptr;
 pub extern "C" fn X509_VERIFY_PARAM_set1_ip_asc(parameters: ptr, ip: ptr) -> i32;
 pub extern "C" fn SSL_set_fd(session: ptr, fd: i32) -> i32;
 pub extern "C" fn SSL_set_connect_state(session: ptr);
+pub extern "C" fn SSL_set_accept_state(session: ptr);
 pub extern "C" fn SSL_do_handshake(session: ptr) -> i32;
 pub extern "C" fn SSL_get_error(session: ptr, result: i32) -> i32;
 pub extern "C" fn SSL_get_verify_result(session: ptr) -> i64;

@@ -23,6 +23,14 @@ native groups, including priority models and nested/owned-error failure cleanup.
 [Opt-in deep TreeMap cloning](stdlib-clone-tree-map.md) also passes all five
 native groups, including sorted staging, independent nested owners, typed
 key/value rollback, allocation failures and zero-sized keys and values.
+[Opt-in deep HashSet cloning](stdlib-clone-hash-set.md) and
+[TreeSet cloning](stdlib-clone-tree-set.md) also execute with independent
+String owners, representative-preserving models, typed failures and complete
+cleanup at every allocation position reached by their focused fixtures.
+[Scalar and structural clone implementations](stdlib-clone-values.md) compose
+Option, Result and pairs with Strings and vectors, preserving exact scalar bits,
+active payloads and typed rollback. Their five native groups pass after the
+[empty-enum layout correction](compiler-empty-enum-layout.md).
 The [shared iterator protocol](stdlib-iterators.md) connects ranges, views,
 collections and text with borrowed adapters. A checked
 [range dot-product program](stdlib-range-dot.md) composes zip, take, map
@@ -60,7 +68,11 @@ An owned [SQLite adapter](extended-sqlite.md) and
 a [persistent binary key/value program](extended-sqlite-kv.md) execute
 through system SQLite on Linux x86_64/glibc, including typed values, transactions,
 persistence, locking and failure tests. Their guides record the execution
-evidence and measured bulk workload. [Client TLS with peer verification](extended-openssl-tls.md)
+evidence and measured bulk workload. [Persistent indexed ZIP snapshots](extended-archive-index.md)
+compose ZIP and SQLite with atomic catalog replacement, independent snapshot
+owners, binary names/keys and explicit uncertain transaction outcomes. The
+application passes all seven native groups, including allocation/native faults
+and a measured 1,024-entry workload. [Client TLS with peer verification](extended-openssl-tls.md)
 executes through OpenSSL 3 `libssl`/`libcrypto`, with 34 cases across four groups
 covering peer identity/trust, binary transfers, closure/truncation and stable
 nonblocking retries. It uses manual context/session owners and a borrowed
@@ -69,9 +81,15 @@ nonblocking socket with explicit caller deadlines and SIGPIPE policy. The
 62 cases across four groups on Linux x86_64, covering stream progress,
 verification/HTTP failures, limits and binary response framing. The application
 uses a numeric endpoint, explicit trust/peer identity, bounded deadlines and
-manual socket/TLS/buffer cleanup. Server TLS, standalone encryption/signature
-APIs and certificate trust APIs outside TLS remain work; the
-[remaining native prerequisites](library-native-integration-prerequisites.md)
+manual socket/TLS/buffer cleanup. [Server TLS](extended-openssl-tls-server.md)
+also passes six native groups and 53 cases, including credential validation,
+stable retries and native/allocation cleanup. Its explicit server policy does
+not authenticate clients; the existing client trust/identity rejection gate
+still passes. Mutual TLS, standalone encryption/signature APIs and certificate
+trust APIs outside TLS remain work. The
+[bounded HTTPS health/echo service](extended-https-server.md) passes 106 cases
+across four groups using the shared TLS stream and canonical HTTP codec.
+The [remaining native prerequisites](library-native-integration-prerequisites.md)
 record those boundaries. Native linking now spools opaque original/replay
 sections and supports source packs above one resident unit, while source
 snapshots and global metadata still grow with the program. TCP/UDP sockets and

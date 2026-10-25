@@ -115,6 +115,36 @@ uint local_enum_owner(uint tag, uint payload)
 uint local_struct_owner(uint tag, uint payload)
 { return local_nominal_owner(tag, payload, HIR_STRUCT_ITEM); }
 
+bool known_empty_enum(uint tag, uint payload)
+{
+    uint owner = local_enum_owner(tag, payload);
+    if (owner != INVALID)
+    {
+        HirCore declaration = compact_hir_core[owner];
+        if (declaration.token_start >= declaration.token_end ||
+            declaration.token_end > gParams.n_tokens) return false;
+        // canonical/variants/mark and scatter compact by name-token anchor,
+        // not owner ID. Search that source order within this exact declaration.
+        uint count = min(compact_variant_count[0u], gParams.n_hir_nodes);
+        uint lo = 0u; uint hi = count;
+        while (lo < hi)
+        {
+            uint mid = lo + (hi - lo) / 2u;
+            if (compact_variants[mid].name_token < declaration.token_start) lo = mid + 1u;
+            else hi = mid;
+        }
+        // An owned row outside the declaration span cannot prove emptiness.
+        if (lo != 0u && compact_variants[lo - 1u].owner == owner) return false;
+        if (lo < count && (compact_variants[lo].owner == owner ||
+            compact_variants[lo].name_token < declaration.token_end)) return false;
+        return true;
+    }
+    // A complete retained enum with no variant groups is distinct from an
+    // unavailable declaration page or a provisional projected width of zero.
+    return tag == TYPE_REF_INSTANCE && valid_instance(payload) &&
+        retained_layout_kind(payload) == 7u && imported_layout_group_count[payload] == 0u;
+}
+
 bool native_array_count(uint instance, out uint count)
 {
     count = 0u;
@@ -128,6 +158,10 @@ public struct CheckedConcreteValueLayout : IConcreteValueLayout
 {
     public static uint leaf_words(uint tag, uint payload)
     {
+        // The enum ABI retains its discriminant word even with no legal tag.
+        // Bare local replay nominals use tag 1, so recognize them before the
+        // nominal scalar path falls through to payload expansion.
+        if (known_empty_enum(tag, payload)) return 1u;
         if (tag == 1u)
         {
             if (scalar_is_known(payload)) return payload == SCALAR_STR ? 2u : 1u;

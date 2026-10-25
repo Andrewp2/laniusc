@@ -39,7 +39,9 @@ error and [staging allocation](extended-sqlite-allocation.md) gates pass; the
 module guide records the exact receipts and bounded bulk-workload measurement.
 [Client TLS with peer verification](extended-openssl-tls.md) and the
 [TLS stream/HTTPS application](extended-https-fetch.md) execute through OpenSSL 3.
-Server TLS and broader security wrappers remain library work. Callbacks,
+[Server TLS](extended-openssl-tls-server.md) also executes through OpenSSL with
+an explicit unauthenticated-client policy. Mutual TLS and broader security
+wrappers remain library work. Callbacks,
 variadics, aggregate C layouts and foreign thread entry need separate compiler
 contracts.
 [Subprocess support](stdlib-command.md) now executes over same-stack

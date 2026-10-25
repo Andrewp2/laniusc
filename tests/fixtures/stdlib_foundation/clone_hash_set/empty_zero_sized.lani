@@ -1,0 +1,58 @@
+module app::main;
+import alloc::clone_hash_set;
+import alloc::hash_set;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::result;
+import fixture::consumer;
+import std::io;
+
+enum Never { Unexpected }
+struct Poison {}
+struct ReleaseOnly {}
+struct Unit {}
+pub impl core::hash::Hash<Poison> for Poison { pub fn hash(value: Poison) -> u32 { assert(false); return 0; } }
+pub impl core::cmp::Eq<Poison> for Poison {
+    pub fn eq(left: Poison, right: Poison) -> bool { assert(false); return true; }
+    pub fn ne(left: Poison, right: Poison) -> bool { assert(false); return false; }
+}
+pub impl core::clone::TryClone<Poison,Never> for Poison {
+    pub fn try_clone_value(source: Poison) -> core::result::Result<Poison,Never> { assert(false); return core::result::Ok(source); }
+}
+pub impl core::clone::Destroy<Poison> for Poison { pub fn destroy_value(owned: Poison) { assert(false); } }
+pub impl core::clone::Destroy<ReleaseOnly> for ReleaseOnly { pub fn destroy_value(owned: ReleaseOnly) { assert(false); } }
+pub impl core::hash::Hash<Unit> for Unit { pub fn hash(value: Unit) -> u32 { return 7; } }
+pub impl core::cmp::Eq<Unit> for Unit {
+    pub fn eq(left: Unit, right: Unit) -> bool { return true; }
+    pub fn ne(left: Unit, right: Unit) -> bool { return false; }
+}
+pub impl core::clone::TryClone<Unit,Never> for Unit {
+    pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> {
+        assert(std::io::write_byte(1,99) == 1); return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<Unit> for Unit {
+    pub fn destroy_value(owned: Unit) { assert(std::io::write_byte(1,100) == 1); }
+}
+fn main() -> i32 {
+    let empty: alloc::hash_set::HashSet<Poison> = alloc::hash_set::new();
+    let copy: alloc::hash_set::HashSet<Poison> = alloc::clone_hash_set::try_clone<Poison,Never>(empty.borrow()).unwrap();
+    assert(copy.is_empty() && copy.capacity() == 0);
+    alloc::clone_hash_set::destroy_hash_set<Poison>(empty.borrow());
+    alloc::clone_hash_set::destroy_hash_set<Poison>(copy.borrow());
+    // No Eq, Hash or TryClone implementation exists for this leaf. Both the
+    // helper and opt-in Destroy must be selectable using only Destroy.
+    let release_only: alloc::hash_set::HashSet<ReleaseOnly> = alloc::hash_set::new();
+    fixture::consumer::reset<ReleaseOnly>(release_only.borrow());
+    fixture::consumer::release<alloc::hash_set::HashSet<ReleaseOnly>>(release_only);
+    let source: alloc::hash_set::HashSet<Unit> = alloc::hash_set::new();
+    assert(source.try_insert(Unit {}).unwrap().is_none());
+    let cloned: alloc::hash_set::HashSet<Unit> = alloc::clone_hash_set::try_clone<Unit,Never>(source.borrow()).unwrap();
+    assert(source.len() == 1 && cloned.len() == 1 && source.capacity() > 0 && cloned.capacity() > 0);
+    alloc::clone_hash_set::destroy_hash_set<Unit>(source.borrow());
+    assert(cloned.contains(Unit {}));
+    alloc::clone_hash_set::destroy_hash_set<Unit>(cloned.borrow());
+    alloc::clone_hash_set::destroy_hash_set<Unit>(cloned.borrow());
+    assert(source.capacity() == 0 && cloned.capacity() == 0); return 0;
+}

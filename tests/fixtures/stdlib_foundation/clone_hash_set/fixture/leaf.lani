@@ -1,0 +1,45 @@
+module fixture::leaf;
+import alloc::string;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::result;
+
+pub struct State { reject: i32, stage: i32, calls: i32, drops: i32, mask: u32 }
+pub impl State { pub fn borrow(&self) -> &State { return self; } }
+pub struct Leaf { id: i32, representative: i32, text: alloc::string::String, state: &State, owned: bool }
+pub struct Payload { wide: u64, cells: [i32;2], text: alloc::string::String }
+pub enum Fault<P> { Allocation(alloc::string::Error), Rejected(i32,i32,P) }
+
+fn failure(source: Leaf) -> Fault<Payload> {
+    let state: &State = source.state;
+    let bytes: [u8;5] = [69,0,source.id as u8,state.stage as u8,90];
+    let made = alloc::string::from_utf8(bytes,5);
+    if (made.is_err()) { return Fault::Allocation(made.unwrap_err()); }
+    let cells: [i32;2] = [source.id,source.representative];
+    return Fault::Rejected(source.id,state.stage,Payload { wide: 18446744073709551615-(source.id as u64), cells: cells, text: made.unwrap() });
+}
+pub impl core::cmp::Eq<Leaf> for Leaf {
+    pub fn eq(left: Leaf, right: Leaf) -> bool { return left.id == right.id; }
+    pub fn ne(left: Leaf, right: Leaf) -> bool { return left.id != right.id; }
+}
+pub impl core::hash::Hash<Leaf> for Leaf { pub fn hash(value: Leaf) -> u32 { return 17; } }
+pub impl core::clone::TryClone<Leaf,Fault<Payload>> for Leaf {
+    pub fn try_clone_value(source: Leaf) -> core::result::Result<Leaf,Fault<Payload>> {
+        assert(!source.owned); let state: &State = source.state; state.calls += 1;
+        if (source.id == state.reject && state.stage == 0) { return core::result::Err(failure(source)); }
+        let made = source.text.try_clone();
+        if (made.is_err()) { return core::result::Err(Fault::Allocation(made.unwrap_err())); }
+        let partial: alloc::string::String = made.unwrap();
+        if (source.id == state.reject && state.stage == 1) {
+            let error: Fault<Payload> = failure(source); partial.destroy(); return core::result::Err(error);
+        }
+        return core::result::Ok(Leaf { id: source.id, representative: source.representative, text: partial, state: state, owned: true });
+    }
+}
+pub impl core::clone::Destroy<Leaf> for Leaf {
+    pub fn destroy_value(owned: Leaf) {
+        assert(owned.owned); let state: &State = owned.state; let bit: u32 = 1 << owned.id;
+        assert((state.mask & bit) == 0); state.mask |= bit; state.drops += 1; owned.text.destroy();
+    }
+}

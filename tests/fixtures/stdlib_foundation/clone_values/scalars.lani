@@ -1,0 +1,51 @@
+module app::main;
+import core::char;
+import core::clone;
+import core::clone_values;
+import core::f32;
+import core::f64;
+import core::result;
+import fixture::consumer;
+
+fn copied<T>(value: T) -> T where T: core::clone::TryClone<T,core::clone_values::Infallible> {
+    return fixture::consumer::duplicate<T,core::clone_values::Infallible>(value).unwrap();
+}
+fn main() -> i32 {
+    assert(!copied<bool>(false) && copied<bool>(true));
+    assert(copied<char>('\0')=='\0' && copied<char>('Ω')=='Ω' && copied<char>('😀')=='😀');
+    let last: char = core::char::from_u32_or(1114111,'?'); assert(copied<char>(last)==last);
+    let low8: i8 = -128; let high8: i8 = 127;
+    let low16: i16 = -32768; let high16: i16 = 32767;
+    let low32: i32 = -2147483648; let high32: i32 = 2147483647;
+    let low64: i64 = -9223372036854775808; let high64: i64 = 9223372036854775807;
+    let low_size: isize = -9223372036854775808; let high_size: isize = 9223372036854775807;
+    assert(copied<i8>(low8)==low8 && copied<i8>(high8)==high8 && copied<i8>(-1)==-1);
+    assert(copied<i16>(low16)==low16 && copied<i16>(high16)==high16 && copied<i16>(-1)==-1);
+    assert(copied<i32>(low32)==low32 && copied<i32>(high32)==high32 && copied<i32>(0)==0);
+    assert(copied<i64>(low64)==low64 && copied<i64>(high64)==high64 && copied<i64>(-1)==-1);
+    assert(copied<isize>(low_size)==low_size && copied<isize>(high_size)==high_size && copied<isize>(0)==0);
+    let max8: u8 = 255; let max16: u16 = 65535; let max32: u32 = 4294967295;
+    let max64: u64 = 18446744073709551615; let max_size: usize = 18446744073709551615;
+    assert(copied<u8>(max8)==max8 && copied<u8>(0)==0 && copied<u8>(128)==128);
+    assert(copied<u16>(max16)==max16 && copied<u16>(0)==0 && copied<u16>(32768)==32768);
+    assert(copied<u32>(max32)==max32 && copied<u32>(0)==0 && copied<u32>(2147483648)==2147483648);
+    assert(copied<u64>(max64)==max64 && copied<u64>(0)==0 && copied<u64>(9223372036854775808)==9223372036854775808);
+    assert(copied<usize>(max_size)==max_size && copied<usize>(0)==0 && copied<usize>(9223372036854775808)==9223372036854775808);
+    // Identity copying must not quiet NaNs, canonicalize zeros or narrow bits.
+    let bits32: [u32;12] = [0,2147483648,1,2147483649,8388607,8388608,2139095039,2139095040,4286578688,2143363909,2139095041,4290773281];
+    let bits64: [u64;12] = [0,9223372036854775808,1,9223372036854775809,4503599627370495,4503599627370496,9218868437227405311,9218868437227405312,18442240474082181120,9221140253039434428,9218868437227405313,18444492273895866369];
+    let index: i32 = 0;
+    while (index<12) {
+        let first: f32 = copied<f32>(core::f32::from_bits(bits32[index]));
+        let second: f64 = copied<f64>(core::f64::from_bits(bits64[index]));
+        assert(core::f32::to_bits(first)==bits32[index] && core::f64::to_bits(second)==bits64[index]);
+        fixture::consumer::release<f32>(first); fixture::consumer::release<f64>(second); index+=1;
+    }
+    // Select every scalar Destroy through an imported generic consumer.
+    fixture::consumer::release<bool>(false); fixture::consumer::release<char>(last);
+    fixture::consumer::release<i8>(low8); fixture::consumer::release<i16>(low16);
+    fixture::consumer::release<i32>(low32); fixture::consumer::release<i64>(low64); fixture::consumer::release<isize>(low_size);
+    fixture::consumer::release<u8>(max8); fixture::consumer::release<u16>(max16); fixture::consumer::release<u32>(max32);
+    fixture::consumer::release<u64>(max64); fixture::consumer::release<usize>(max_size);
+    return 0;
+}

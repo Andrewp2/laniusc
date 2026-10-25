@@ -1,0 +1,119 @@
+module app::main;
+import alloc::string;
+import core::clone_values;
+import core::option;
+import core::pair;
+import core::result;
+import fixture::consumer;
+import fixture::leaf;
+
+fn allocation(error: alloc::string::Error) -> i32 {
+    assert(match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false }); return 4;
+}
+fn payload(value: fixture::leaf::Payload, tag: i32, stage: i32) -> i32 {
+    // Read E only after the original owner and every fresh/partial clone have
+    // gone. Its binary message, high bits and inline array must be unchanged.
+    assert(value.tag==tag && value.stage==stage && value.wide==18446744073709551615-(tag as u64));
+    assert(value.cells[0]==tag && value.cells[1]==stage && value.message.byte_len()==5);
+    assert(value.message.byte_at(0).unwrap()==69 && value.message.byte_at(1).unwrap()==0 && value.message.byte_at(2).unwrap()==((40+tag) as u8));
+    assert(value.message.byte_at(3).unwrap()==((60+stage) as u8) && value.message.byte_at(4).unwrap()==85);
+    value.message.destroy(); return 0;
+}
+fn first_error(error: fixture::leaf::FirstFault, stage: i32) -> i32 {
+    return match(error) { fixture::leaf::FirstFault::Allocation(value) -> allocation(value), fixture::leaf::FirstFault::Rejected(value) -> payload(value,3,stage) };
+}
+fn second_error(error: fixture::leaf::SecondFault, stage: i32) -> i32 {
+    return match(error) { fixture::leaf::SecondFault::Allocation(value) -> allocation(value), fixture::leaf::SecondFault::Rejected(value) -> payload(value,7,stage) };
+}
+fn original() -> core::result::Result<alloc::string::String,alloc::string::Error> {
+    let bytes: [u8;4] = [83,0,195,169]; return alloc::string::from_utf8(bytes,4);
+}
+fn source_ok(text: alloc::string::String) { assert(text.byte_len()==4 && text.byte_at(1).unwrap()==0 && text.byte_at(3).unwrap()==169); }
+
+fn run_option(mode: i32) -> i32 {
+    let made = original(); if (made.is_err()) { return allocation(made.unwrap_err()); } let text: alloc::string::String = made.unwrap();
+    let log: [i32;5] = [0;5];
+    let leaf: fixture::leaf::First = fixture::leaf::First { text:text,tag:3,fail:mode,log:log };
+    let source: core::option::Option<fixture::leaf::First> = core::option::Some(leaf);
+    let result: core::result::Result<core::option::Option<fixture::leaf::First>,fixture::leaf::FirstFault> = core::clone_values::try_clone_option<fixture::leaf::First,fixture::leaf::FirstFault>(source);
+    source_ok(text); assert(source.unwrap().fail==mode && source.unwrap().tag==3 && log[0]==1 && log[1]==0 && log[2]==0 && log[3]==0 && log[4]==1);
+    if (result.is_ok()) {
+        assert(mode==-1); let copy: core::option::Option<fixture::leaf::First> = result.unwrap();
+        assert(copy.is_some() && copy.unwrap().text.bytes.storage!=text.bytes.storage);
+        fixture::consumer::release<core::option::Option<fixture::leaf::First>>(copy);
+        assert(log[2]==1 && log[3]==0 && log[4]==13); text.destroy(); return 0;
+    }
+    text.destroy(); return first_error(result.unwrap_err(),mode);
+}
+fn result_error(error: core::clone_values::ResultError<fixture::leaf::FirstFault,fixture::leaf::SecondFault>, left: bool, stage: i32) -> i32 {
+    return match(error) { core::clone_values::ResultError::Value(value) -> value_error(value,left,stage), core::clone_values::ResultError::Error(value) -> error_error(value,left,stage) };
+}
+fn value_error(error: fixture::leaf::FirstFault, left: bool, stage: i32) -> i32 { assert(left); return first_error(error,stage); }
+fn error_error(error: fixture::leaf::SecondFault, left: bool, stage: i32) -> i32 { assert(!left); return second_error(error,stage); }
+fn clone_result(source: core::result::Result<fixture::leaf::First,fixture::leaf::Second>, mode: i32) -> core::result::Result<core::result::Result<fixture::leaf::First,fixture::leaf::Second>,core::clone_values::ResultError<fixture::leaf::FirstFault,fixture::leaf::SecondFault>> {
+    if (mode==1) { return fixture::consumer::duplicate<core::result::Result<fixture::leaf::First,fixture::leaf::Second>,core::clone_values::ResultError<fixture::leaf::FirstFault,fixture::leaf::SecondFault>>(source); }
+    return core::clone_values::try_clone_result<fixture::leaf::First,fixture::leaf::Second,fixture::leaf::FirstFault,fixture::leaf::SecondFault>(source);
+}
+fn run_result(left: bool, mode: i32) -> i32 {
+    let made = original(); if (made.is_err()) { return allocation(made.unwrap_err()); } let text: alloc::string::String = made.unwrap();
+    let log: [i32;5] = [0;5];
+    let a: fixture::leaf::First = fixture::leaf::First { text:text,tag:3,fail:mode,log:log };
+    let b: fixture::leaf::Second = fixture::leaf::Second { text:text,tag:7,fail:mode,log:log };
+    let source: core::result::Result<fixture::leaf::First,fixture::leaf::Second> = core::result::Err(b);
+    if (left) { source=core::result::Ok(a); }
+    let result = clone_result(source,mode);
+    source_ok(text); assert(source.is_ok()==left && log[2]==0 && log[3]==0);
+    if (left) { assert(log[0]==1 && log[1]==0 && log[4]==1 && source.unwrap().fail==mode); }
+    else { assert(log[0]==0 && log[1]==1 && log[4]==2 && source.unwrap_err().fail==mode); }
+    if (result.is_ok()) {
+        assert(mode==-1); let copy: core::result::Result<fixture::leaf::First,fixture::leaf::Second> = result.unwrap(); assert(copy.is_ok()==left);
+        if (left) { assert(copy.unwrap().text.bytes.storage!=text.bytes.storage); }
+        else { assert(copy.unwrap_err().text.bytes.storage!=text.bytes.storage); }
+        fixture::consumer::release<core::result::Result<fixture::leaf::First,fixture::leaf::Second>>(copy);
+        if (left) { assert(log[2]==1 && log[3]==0 && log[4]==13); }
+        else { assert(log[2]==0 && log[3]==1 && log[4]==24); }
+        text.destroy(); return 0;
+    }
+    text.destroy(); return result_error(result.unwrap_err(),left,mode);
+}
+fn pair_error(error: core::clone_values::PairError<fixture::leaf::FirstFault,fixture::leaf::SecondFault>, first_mode: i32, second_mode: i32, log: [i32]) -> i32 {
+    return match(error) { core::clone_values::PairError::First(value) -> pair_first_error(value,first_mode,log), core::clone_values::PairError::Second(value) -> pair_second_error(value,second_mode,log) };
+}
+fn pair_first_error(error: fixture::leaf::FirstFault, stage: i32, log: [i32]) -> i32 {
+    assert(log[0]==1 && log[1]==0 && log[2]==0 && log[3]==0 && log[4]==1); return first_error(error,stage);
+}
+fn pair_second_error(error: fixture::leaf::SecondFault, stage: i32, log: [i32]) -> i32 {
+    // Second owns E; the freshly cloned first has been released exactly once.
+    assert(log[0]==1 && log[1]==1 && log[2]==1 && log[3]==0 && log[4]==123); return second_error(error,stage);
+}
+fn clone_pair(source: core::pair::Pair<fixture::leaf::First,fixture::leaf::RightOnly>, via_trait: bool) -> core::result::Result<core::pair::Pair<fixture::leaf::First,fixture::leaf::RightOnly>,core::clone_values::PairError<fixture::leaf::FirstFault,fixture::leaf::SecondFault>> {
+    if (via_trait) { return fixture::consumer::duplicate<core::pair::Pair<fixture::leaf::First,fixture::leaf::RightOnly>,core::clone_values::PairError<fixture::leaf::FirstFault,fixture::leaf::SecondFault>>(source); }
+    return core::clone_values::try_clone_pair<fixture::leaf::First,fixture::leaf::RightOnly,fixture::leaf::FirstFault,fixture::leaf::SecondFault>(source);
+}
+fn run_pair(first_mode: i32, second_mode: i32, via_trait: bool) -> i32 {
+    let made = original(); if (made.is_err()) { return allocation(made.unwrap_err()); } let text: alloc::string::String = made.unwrap();
+    let log: [i32;5] = [0;5];
+    let a: fixture::leaf::First = fixture::leaf::First { text:text,tag:3,fail:first_mode,log:log };
+    let b: fixture::leaf::RightOnly = fixture::leaf::RightOnly { tag:7,fail:second_mode,log:log };
+    let source: core::pair::Pair<fixture::leaf::First,fixture::leaf::RightOnly> = core::pair::new<fixture::leaf::First,fixture::leaf::RightOnly>(a,b);
+    let result = clone_pair(source,via_trait);
+    source_ok(text); assert(source.first.tag==3 && source.first.fail==first_mode && source.second.tag==7 && source.second.fail==second_mode);
+    if (result.is_ok()) {
+        assert(first_mode==-1 && second_mode==-1 && log[0]==1 && log[1]==1 && log[2]==0 && log[3]==0 && log[4]==12);
+        let copy: core::pair::Pair<fixture::leaf::First,fixture::leaf::RightOnly> = result.unwrap(); assert(copy.first.text.bytes.storage!=text.bytes.storage && copy.second.tag==7);
+        // RightOnly deliberately has no Destroy and owns no resource. The
+        // Pair clone still admits both the helper and the imported trait.
+        fixture::consumer::release<fixture::leaf::First>(copy.first);
+        assert(log[2]==1 && log[3]==0 && log[4]==123); text.destroy(); return 0;
+    }
+    text.destroy(); return pair_error(result.unwrap_err(),first_mode,second_mode,log);
+}
+fn main() -> i32 {
+    let mode: i32 = -1;
+    while (mode<2) { let status: i32 = run_option(mode); if (status!=0) { return status; } mode+=1; }
+    let side: i32 = 0;
+    while (side<2) { mode=-1; while (mode<2) { let status: i32 = run_result(side==0,mode); if (status!=0) { return status; } mode+=1; } side+=1; }
+    let first: i32 = -1;
+    while (first<2) { let second: i32 = -1; while (second<2) { let status: i32 = run_pair(first,second,(first+second)%2==0); if (status!=0) { return status; } second+=1; } first+=1; }
+    return 0;
+}

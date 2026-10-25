@@ -1,0 +1,107 @@
+module app::main;
+import alloc::clone_hash_set;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::string;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::leaf;
+import std::io;
+import std::io_decimal;
+
+fn allocation(error: alloc::string::Error) { assert(match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false }); }
+fn storage(error: alloc::hash_map::Error) { assert(match(error) { alloc::hash_map::Error::AllocationFailed -> true, _ -> false }); }
+fn payload(value: fixture::leaf::Payload, id: i32, stage: i32, index: i32, wanted: i32, expected_id: i32, expected_stage: i32) -> i32 {
+    let text: alloc::string::String = value.text;
+    assert(index == wanted && id == expected_id && stage == expected_stage
+        && value.wide == 18446744073709551615-(id as u64) && value.cells[0] == id && value.cells[1] == 100+id
+        && text.byte_len() == 5 && text.byte_at(0).unwrap() == 69 && text.byte_at(1).unwrap() == 0
+        && text.byte_at(2).unwrap() == (id as u8) && text.byte_at(3).unwrap() == (stage as u8) && text.byte_at(4).unwrap() == 90);
+    text.destroy(); return 0;
+}
+fn leaf_allocation(error: alloc::string::Error, index: i32) -> i32 { allocation(error); return 100+index; }
+fn leaf_error(error: fixture::leaf::Fault<fixture::leaf::Payload>, index: i32, wanted: i32, expected_id: i32, stage: i32, calls: i32) -> i32 {
+    assert(index == calls-1);
+    return match(error) {
+        fixture::leaf::Fault::Allocation(error) -> leaf_allocation(error,index),
+        fixture::leaf::Fault::Rejected(id,actual_stage,value) -> payload(value,id,actual_stage,index,wanted,expected_id,stage)
+    };
+}
+fn outer_storage(error: alloc::hash_map::Error, calls: i32) -> i32 { storage(error); assert(calls == 0); return 10; }
+fn changed(index: i32) -> i32 { assert(false); return -1; }
+fn clone_error(error: alloc::clone_hash_set::Error<fixture::leaf::Fault<fixture::leaf::Payload>>, wanted: i32, id: i32, stage: i32, calls: i32) -> i32 {
+    return match(error) {
+        alloc::clone_hash_set::Error::Storage(error) -> outer_storage(error,calls),
+        alloc::clone_hash_set::Error::Element(index,error) -> leaf_error(error,index,wanted,id,stage,calls),
+        alloc::clone_hash_set::Error::ChangedKey(index) -> changed(index)
+    };
+}
+fn item(id: i32, original: alloc::string::String, state: &fixture::leaf::State) -> fixture::leaf::Leaf {
+    return fixture::leaf::Leaf { id: id, representative: 100+id, text: original, state: state, owned: false };
+}
+fn run_case(wanted: i32, stage: i32) -> i32 {
+    let bytes: [u8;7] = [83,0,195,169,33,90,78];
+    let made = alloc::string::from_utf8(bytes,7);
+    if (made.is_err()) { allocation(made.unwrap_err()); return 1; }
+    let original: alloc::string::String = made.unwrap();
+    let state: fixture::leaf::State = fixture::leaf::State { reject: -1, stage: stage, calls: 0, drops: 0, mask: 0 };
+    let reserved: core::result::Result<alloc::hash_set::HashSet<fixture::leaf::Leaf>,alloc::hash_map::Error> = alloc::hash_set::with_capacity<fixture::leaf::Leaf>(4);
+    if (reserved.is_err()) { storage(reserved.unwrap_err()); original.destroy(); return 2; }
+    let source = reserved.unwrap(); let index: i32 = 0;
+    while (index < 4) { assert(source.try_insert(item(index,original,state.borrow())).unwrap().is_none()); index += 1; }
+    assert(source.remove(item(1,original,state.borrow())).unwrap().representative == 101);
+    let capacity: i32 = source.capacity();
+    let ids: [i32;3] = [0;3]; let cursor: alloc::hash_set::Iter<fixture::leaf::Leaf> = source.iter(); index = 0;
+    while (true) {
+        let next: core::option::Option<fixture::leaf::Leaf> = cursor.next(); if (next.is_none()) { break; }
+        let leaf: fixture::leaf::Leaf = next.unwrap(); ids[index] = leaf.id;
+        if (index == wanted) { state.reject = leaf.id; } index += 1;
+    }
+    assert(index == 3 && source.len() == 3);
+    let result: core::result::Result<alloc::hash_set::HashSet<fixture::leaf::Leaf>,alloc::clone_hash_set::Error<fixture::leaf::Fault<fixture::leaf::Payload>>> =
+        alloc::clone_hash_set::try_clone<fixture::leaf::Leaf,fixture::leaf::Fault<fixture::leaf::Payload>>(source.borrow());
+    assert(source.len() == 3 && source.capacity() == capacity && original.byte_len() == 7 && original.byte_at(1).unwrap() == 0);
+    let after: alloc::hash_set::Iter<fixture::leaf::Leaf> = source.iter(); index = 0;
+    while (true) {
+        let next: core::option::Option<fixture::leaf::Leaf> = after.next(); if (next.is_none()) { break; }
+        let leaf: fixture::leaf::Leaf = next.unwrap();
+        assert(leaf.id == ids[index] && leaf.representative == 100+leaf.id && !leaf.owned && leaf.text.byte_at(6).unwrap() == 78); index += 1;
+    }
+    assert(index == 3);
+    if (result.is_err()) {
+        let completed: i32 = 0; if (state.calls > 0) { completed = state.calls-1; }
+        let mask: u32 = 0; index = 0; while (index < completed) { mask |= 1 << ids[index]; index += 1; }
+        assert(state.drops == completed && state.mask == mask);
+        // Source keys repeat a borrowed String. Only these actual source
+        // owners are released; failed destination cleanup has already run.
+        source.destroy(); original.destroy();
+        return clone_error(result.unwrap_err(),wanted,state.reject,stage,state.calls);
+    }
+    assert(wanted == -1 && state.calls == 3 && state.drops == 0);
+    let copy = result.unwrap(); assert(copy.len() == 3);
+    source.destroy(); original.destroy();
+    let copied: alloc::hash_set::Iter<fixture::leaf::Leaf> = copy.iter(); index = 0;
+    while (true) {
+        let next: core::option::Option<fixture::leaf::Leaf> = copied.next(); if (next.is_none()) { break; }
+        let leaf: fixture::leaf::Leaf = next.unwrap();
+        assert(leaf.id != 1 && leaf.representative == 100+leaf.id && leaf.owned && leaf.text.byte_at(1).unwrap() == 0); index += 1;
+    }
+    assert(index == 3);
+    alloc::clone_hash_set::destroy_hash_set<fixture::leaf::Leaf>(copy.borrow());
+    alloc::clone_hash_set::destroy_hash_set<fixture::leaf::Leaf>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity() == 0 && state.drops == 3 && state.mask == 13); return 0;
+}
+fn finish(tag: i32) -> i32 {
+    if (std::io_decimal::write_i32(1,tag) < 0 || std::io::write_byte(1,10) != 1) { return 5; }
+    if (tag != 0) { return 4; } return 0;
+}
+fn main() -> i32 {
+    let index: i32 = 0;
+    while (index < 3) {
+        let stage: i32 = 0;
+        while (stage < 2) { let tag: i32 = run_case(index,stage); if (tag != 0) { return finish(tag); } stage += 1; }
+        index += 1;
+    }
+    return finish(run_case(-1,-1));
+}

@@ -1,0 +1,418 @@
+// Immutable ZIP snapshots and ordinal metadata in a dedicated SQLite database.
+// ZIP and SQLite supply all archive and storage behavior. One active owner.
+module ext::archive_index;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::sqlite;
+import ext::zip;
+
+pub enum Cause { Bounds, Limit, AllocationFailed, NotFound, Ordinal, Corrupt, Closed, Poisoned, ReadOnly, Database, Archive }
+// Uncertain means an error did not establish that the previous commit survives.
+// The Store is poisoned and must close; callers may reopen and inspect it.
+pub enum Outcome { Unchanged, Uncertain }
+pub struct Error { cause: Cause, database: core::option::Option<ext::sqlite::Error>, archive: core::option::Option<ext::zip::Error>, rollback: core::option::Option<ext::sqlite::Error>, outcome: Outcome }
+pub struct Limits { zip: ext::zip::Limits, key_bytes: i32 }
+pub struct Store { database: ext::sqlite::Database, limits: Limits, writable: bool, poisoned: bool }
+// The directory borrows storage. Never modify fields or use inactive copies.
+pub struct Snapshot { storage: alloc::vec::Vec<u8>, directory: ext::zip::Archive, limits: Limits, live: bool }
+
+pub fn default_limits() -> Limits {
+    let zip: ext::zip::Limits = ext::zip::default_limits();
+    zip.max_archive = 8388608; zip.max_entry = 8388608; zip.max_total = 33554432;
+    return Limits { zip: zip, key_bytes: 1024 };
+}
+fn literal(text: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+fn failure(cause: Cause) -> Error {
+    return Error { cause: cause, database: core::option::None(), archive: core::option::None(), rollback: core::option::None(), outcome: Outcome::Unchanged };
+}
+fn database_error(error: ext::sqlite::Error) -> Error {
+    let result: Error = failure(Cause::Database); result.database = core::option::Some(error); return result;
+}
+fn archive_error(error: ext::zip::Error) -> Error {
+    let result: Error = failure(Cause::Archive); result.archive = core::option::Some(error); return result;
+}
+fn valid(bytes: core::slice::View<u8>) -> bool { return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647 - bytes.length; }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start + index] != right.values[right.start + index]) { return false; } index += 1; }
+    return true;
+}
+fn done(step: ext::sqlite::Step) -> bool { return match (step) { ext::sqlite::Step::Done -> true, _ -> false }; }
+fn key_checked(key: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32,Error> {
+    if (!valid(key)) { return core::result::Err(failure(Cause::Bounds)); }
+    if (key.length > limits.key_bytes) { return core::result::Err(failure(Cause::Limit)); }
+    return core::result::Ok(0);
+}
+fn finish(statement: &ext::sqlite::Statement, result: core::result::Result<i32,Error>) -> core::result::Result<i32,Error> {
+    let ended: core::result::Result<i32,ext::sqlite::Error> = statement.finalize();
+    if (result.is_err()) { return result; }
+    if (ended.is_err()) { return core::result::Err(database_error(ended.unwrap_err())); }
+    return result;
+}
+fn step_done(statement: &ext::sqlite::Statement) -> core::result::Result<i32,Error> {
+    let stepped: core::result::Result<ext::sqlite::Step,ext::sqlite::Error> = statement.step();
+    if (stepped.is_err()) { return core::result::Err(database_error(stepped.unwrap_err())); }
+    if (!done(stepped.unwrap())) { return core::result::Err(failure(Cause::Corrupt)); }
+    return core::result::Ok(0);
+}
+fn execute(database: &ext::sqlite::Database, sql: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let prepared: core::result::Result<ext::sqlite::Statement,ext::sqlite::Error> = database.prepare(sql);
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    return finish(statement.borrow(),step_done(statement.borrow()));
+}
+fn archives_sql() -> core::slice::View<u8> { return literal("CREATE TABLE archive_index_archives(key BLOB NOT NULL PRIMARY KEY,snapshot BLOB NOT NULL,entries INTEGER NOT NULL CHECK(entries>=0)) WITHOUT ROWID",146); }
+fn entries_sql() -> core::slice::View<u8> { return literal("CREATE TABLE archive_index_entries(key BLOB NOT NULL,ordinal INTEGER NOT NULL CHECK(ordinal>=0),name BLOB NOT NULL,method INTEGER NOT NULL,flags INTEGER NOT NULL,crc32 INTEGER NOT NULL,csize INTEGER NOT NULL,usize INTEGER NOT NULL,local_offset INTEGER NOT NULL,local_end INTEGER NOT NULL,PRIMARY KEY(key,ordinal)) WITHOUT ROWID",327); }
+fn meta_sql() -> core::slice::View<u8> { return literal("CREATE TABLE archive_index_meta(id INTEGER PRIMARY KEY CHECK(id=1),version INTEGER NOT NULL CHECK(version=1))",109); }
+
+fn copy_column(statement: &ext::sqlite::Statement, column: i32, text: bool, maximum: i32, output: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+    let length: core::result::Result<i32,ext::sqlite::Error> = core::result::Ok(0);
+    if (text) { length = statement.column_text_len(column); }
+    else { length = statement.column_blob_len(column); }
+    if (length.is_err()) { return core::result::Err(database_error(length.unwrap_err())); }
+    let count: i32 = length.unwrap();
+    if (count < 0 || count > maximum) { return core::result::Err(failure(Cause::Corrupt)); }
+    if (output.try_resize(count,0).is_err()) { return core::result::Err(failure(Cause::AllocationFailed)); }
+    let copied: core::result::Result<i32,ext::sqlite::Error> = core::result::Ok(0);
+    if (text) { copied = statement.column_text_copy(column,output.as_view()); }
+    else { copied = statement.column_blob_copy(column,output.as_view()); }
+    if (copied.is_err()) { return core::result::Err(database_error(copied.unwrap_err())); }
+    if (copied.unwrap() != count) { return core::result::Err(failure(Cause::Corrupt)); }
+    return core::result::Ok(count);
+}
+fn text_matches(statement: &ext::sqlite::Statement, column: i32, expected: core::slice::View<u8>, scratch: &alloc::vec::Vec<u8>) -> core::result::Result<i32,Error> {
+    let copied = copy_column(statement,column,true,4096,scratch);
+    if (copied.is_err()) { return copied; }
+    if (!equal(expected,scratch.as_view())) { return core::result::Err(failure(Cause::Corrupt)); }
+    return core::result::Ok(0);
+}
+// A dedicated schema admits exactly these three user objects, with no triggers
+// or views. The SQL strings are this module's versioned persistent format.
+fn schema_rows(statement: &ext::sqlite::Statement) -> core::result::Result<i32,Error> {
+    let scratch: alloc::vec::Vec<u8> = alloc::vec::new();
+    let index: i32 = 0;
+    while (index < 3) {
+        let stepped: core::result::Result<ext::sqlite::Step,ext::sqlite::Error> = statement.step();
+        if (stepped.is_err()) { scratch.destroy(); return core::result::Err(database_error(stepped.unwrap_err())); }
+        if (done(stepped.unwrap())) { scratch.destroy(); if (index == 0) { return core::result::Ok(0); } return core::result::Err(failure(Cause::Corrupt)); }
+        let name: core::slice::View<u8> = literal("archive_index_archives",22);
+        let sql: core::slice::View<u8> = archives_sql();
+        if (index == 1) { name = literal("archive_index_entries",21); sql = entries_sql(); }
+        if (index == 2) { name = literal("archive_index_meta",18); sql = meta_sql(); }
+        let checked = text_matches(statement,0,name,scratch.borrow());
+        if (checked.is_err()) { scratch.destroy(); return checked; }
+        checked = text_matches(statement,1,sql,scratch.borrow());
+        if (checked.is_err()) { scratch.destroy(); return checked; }
+        index += 1;
+    }
+    scratch.destroy();
+    let ended = step_done(statement);
+    if (ended.is_err()) { return ended; }
+    return core::result::Ok(3);
+}
+fn schema(database: &ext::sqlite::Database) -> core::result::Result<i32,Error> {
+    let prepared = database.prepare(literal("SELECT name,sql FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY name",79));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    return finish(statement.borrow(),schema_rows(statement.borrow()));
+}
+fn version(database: &ext::sqlite::Database) -> core::result::Result<i32,Error> {
+    let prepared = database.prepare(literal("SELECT id,version FROM archive_index_meta",41));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    let stepped = statement.step();
+    if (stepped.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(stepped.unwrap_err()))); }
+    if (done(stepped.unwrap())) { return finish(statement.borrow(),core::result::Err(failure(Cause::Corrupt))); }
+    let id = statement.column_i64(0); let value = statement.column_i64(1);
+    if (id.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(id.unwrap_err()))); }
+    if (value.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(value.unwrap_err()))); }
+    if (id.unwrap() != 1 || value.unwrap() != 1) { return finish(statement.borrow(),core::result::Err(failure(Cause::Corrupt))); }
+    return finish(statement.borrow(),step_done(statement.borrow()));
+}
+
+// All statements have been finalized before recovery. A failed COMMIT with
+// autocommit already restored cannot establish which durable version survived.
+fn recover(store: &Store, error: Error, committing: bool) -> Error {
+    let state = store.database.autocommit();
+    if (state.is_err()) { store.poisoned = true; error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(state.unwrap_err()); return error; }
+    if (state.unwrap()) {
+        if (committing) { store.poisoned = true; error.outcome = Outcome::Uncertain; }
+        return error;
+    }
+    let rolled = store.database.rollback();
+    if (rolled.is_err()) { store.poisoned = true; error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(rolled.unwrap_err()); return error; }
+    let ended = store.database.autocommit();
+    if (ended.is_err()) { store.poisoned = true; error.outcome = Outcome::Uncertain; error.rollback = core::option::Some(ended.unwrap_err()); }
+    else { if (!ended.unwrap()) { store.poisoned = true; error.outcome = Outcome::Uncertain; } }
+    return error;
+}
+fn initialize(store: &Store, create: bool) -> core::result::Result<i32,Error> {
+    let begun = store.database.begin(ext::sqlite::Transaction::Immediate);
+    if (begun.is_err()) { return core::result::Err(recover(store,database_error(begun.unwrap_err()),false)); }
+    let found = schema(store.database.borrow());
+    if (found.is_err()) { return core::result::Err(recover(store,found.unwrap_err(),false)); }
+    if (found.unwrap() == 0) {
+        if (!create) { return core::result::Err(recover(store,failure(Cause::Corrupt),false)); }
+        let created = execute(store.database.borrow(),archives_sql());
+        if (created.is_ok()) { created = execute(store.database.borrow(),entries_sql()); }
+        if (created.is_ok()) { created = execute(store.database.borrow(),meta_sql()); }
+        if (created.is_ok()) { created = execute(store.database.borrow(),literal("INSERT INTO archive_index_meta(id,version) VALUES(1,1)",54)); }
+        if (created.is_err()) { return core::result::Err(recover(store,created.unwrap_err(),false)); }
+    } else {
+        let checked = version(store.database.borrow());
+        if (checked.is_err()) { return core::result::Err(recover(store,checked.unwrap_err(),false)); }
+    }
+    let committed = store.database.commit();
+    if (committed.is_err()) { return core::result::Err(recover(store,database_error(committed.unwrap_err()),true)); }
+    return core::result::Ok(0);
+}
+
+pub fn open(path: core::slice::View<u8>, mode: ext::sqlite::Mode, limits: Limits) -> core::result::Result<Store,Error> {
+    if (!valid(path)) { return core::result::Err(failure(Cause::Bounds)); }
+    if (limits.key_bytes < 0 || limits.key_bytes > 4096 || limits.zip.max_archive < 0 || limits.zip.max_archive > 16777216 || limits.zip.max_entries < 0 || limits.zip.max_entries > 65534 || limits.zip.max_entry < 0) { return core::result::Err(failure(Cause::Limit)); }
+    if (path.length == 0 || equal(path,literal(":memory:",8))) { return core::result::Err(failure(Cause::Bounds)); }
+    if (path.length >= 5 && equal(path.subview(0,5).unwrap(),literal("file:",5))) { return core::result::Err(failure(Cause::Bounds)); }
+    let opened = ext::sqlite::open(path,mode,ext::sqlite::default_limits());
+    if (opened.is_err()) { return core::result::Err(database_error(opened.unwrap_err())); }
+    let database: ext::sqlite::Database = opened.unwrap();
+    let writable: bool = match (mode) { ext::sqlite::Mode::ReadOnly -> false, _ -> true };
+    let store: Store = Store { database: database, limits: limits, writable: writable, poisoned: false };
+    let checked: core::result::Result<i32,Error> = core::result::Ok(0);
+    if (writable) { let create: bool = match (mode) { ext::sqlite::Mode::Create -> true, _ -> false }; checked = initialize(store.borrow(),create); }
+    else {
+        checked = schema(store.database.borrow());
+        if (checked.is_ok()) { if (checked.unwrap() != 3) { checked = core::result::Err(failure(Cause::Corrupt)); } else { checked = version(store.database.borrow()); } }
+    }
+    if (checked.is_err()) { let error: Error = checked.unwrap_err(); store.database.close(); return core::result::Err(error); }
+    return core::result::Ok(store);
+}
+fn verify_archive(archive: ext::zip::Archive, limits: Limits) -> core::result::Result<i32,Error> {
+    let cursor: ext::zip::Cursor = archive.cursor();
+    let index: i32 = 0;
+    while (index < archive.len()) {
+        let next = cursor.next();
+        if (next.is_none()) { return core::result::Err(failure(Cause::Corrupt)); }
+        let extracted = ext::zip::extract(next.unwrap(),limits.zip.max_entry);
+        if (extracted.is_err()) { return core::result::Err(archive_error(extracted.unwrap_err())); }
+        let payload: alloc::vec::Vec<u8> = extracted.unwrap(); payload.destroy(); index += 1;
+    }
+    return core::result::Ok(index);
+}
+fn delete_entries(database: &ext::sqlite::Database, key: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+    let prepared = database.prepare(literal("DELETE FROM archive_index_entries WHERE key=?1",46));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    let bound = statement.bind_blob(1,key);
+    if (bound.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(bound.unwrap_err()))); }
+    return finish(statement.borrow(),step_done(statement.borrow()));
+}
+fn save_archive(database: &ext::sqlite::Database, key: core::slice::View<u8>, archive: ext::zip::Archive) -> core::result::Result<i32,Error> {
+    let prepared = database.prepare(literal("INSERT INTO archive_index_archives(key,snapshot,entries) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET snapshot=excluded.snapshot,entries=excluded.entries",156));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    let bound = statement.bind_blob(1,key);
+    if (bound.is_ok()) { bound = statement.bind_blob(2,archive.source); }
+    if (bound.is_ok()) { bound = statement.bind_i64(3,archive.len() as i64); }
+    if (bound.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(bound.unwrap_err()))); }
+    return finish(statement.borrow(),step_done(statement.borrow()));
+}
+fn save_entries(database: &ext::sqlite::Database, key: core::slice::View<u8>, archive: ext::zip::Archive) -> core::result::Result<i32,Error> {
+    let prepared = database.prepare(literal("INSERT INTO archive_index_entries(key,ordinal,name,method,flags,crc32,csize,usize,local_offset,local_end) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",144));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    let bound = statement.bind_blob(1,key);
+    if (bound.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(bound.unwrap_err()))); }
+    let cursor: ext::zip::Cursor = archive.cursor(); let index: i32 = 0;
+    while (index < archive.len()) {
+        let next = cursor.next();
+        if (next.is_none()) { return finish(statement.borrow(),core::result::Err(failure(Cause::Corrupt))); }
+        let entry: ext::zip::Entry = next.unwrap();
+        let method: i64 = match (entry.method) { ext::zip::Method::Stored -> 0, ext::zip::Method::Deflate -> 8 };
+        bound = statement.bind_i64(2,index as i64);
+        if (bound.is_ok()) { bound = statement.bind_blob(3,entry.name); }
+        if (bound.is_ok()) { bound = statement.bind_i64(4,method); }
+        if (bound.is_ok()) { bound = statement.bind_i64(5,entry.flags as i64); }
+        if (bound.is_ok()) { bound = statement.bind_i64(6,entry.crc32 as i64); }
+        if (bound.is_ok()) { bound = statement.bind_i64(7,entry.compressed_size as i64); }
+        if (bound.is_ok()) { bound = statement.bind_i64(8,entry.uncompressed_size as i64); }
+        if (bound.is_ok()) { bound = statement.bind_i64(9,entry.local_offset as i64); }
+        if (bound.is_ok()) { bound = statement.bind_i64(10,entry.local_end as i64); }
+        if (bound.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(bound.unwrap_err()))); }
+        let stepped = step_done(statement.borrow());
+        if (stepped.is_err()) { return finish(statement.borrow(),stepped); }
+        let reset = statement.reset();
+        if (reset.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(reset.unwrap_err()))); }
+        index += 1;
+    }
+    return finish(statement.borrow(),core::result::Ok(index));
+}
+
+pub impl Store {
+    pub fn borrow(&self) -> &Store { return self; }
+    pub fn is_open(&self) -> bool { return self.database.is_open(); }
+    pub fn is_poisoned(&self) -> bool { return self.poisoned; }
+    pub fn close(&self) -> core::result::Result<i32,Error> {
+        let closed = self.database.close(); if (closed.is_err()) { return core::result::Err(database_error(closed.unwrap_err())); } return core::result::Ok(0);
+    }
+    fn ready(&self) -> core::result::Result<i32,Error> {
+        if (!self.is_open()) { return core::result::Err(failure(Cause::Closed)); }
+        if (self.poisoned) { return core::result::Err(failure(Cause::Poisoned)); }
+        return core::result::Ok(0);
+    }
+    // Validation and ALL payload CRCs precede the first replacement write.
+    pub fn replace(&self, key: core::slice::View<u8>, bytes: core::slice::View<u8>) -> core::result::Result<i32,Error> {
+        let checked = key_checked(key,self.limits); if (checked.is_err()) { return checked; }
+        checked = self.ready(); if (checked.is_err()) { return checked; }
+        if (!self.writable) { return core::result::Err(failure(Cause::ReadOnly)); }
+        let parsed = ext::zip::parse(bytes,self.limits.zip);
+        if (parsed.is_err()) { return core::result::Err(archive_error(parsed.unwrap_err())); }
+        let archive: ext::zip::Archive = parsed.unwrap();
+        let verified = verify_archive(archive,self.limits);
+        if (verified.is_err()) { return verified; }
+        let begun = self.database.begin(ext::sqlite::Transaction::Immediate);
+        if (begun.is_err()) { return core::result::Err(recover(self,database_error(begun.unwrap_err()),false)); }
+        let saved = schema(self.database.borrow());
+        if (saved.is_ok()) { if (saved.unwrap() != 3) { saved = core::result::Err(failure(Cause::Corrupt)); } }
+        if (saved.is_ok()) { saved = version(self.database.borrow()); }
+        if (saved.is_ok()) { saved = delete_entries(self.database.borrow(),key); }
+        if (saved.is_ok()) { saved = save_archive(self.database.borrow(),key,archive); }
+        if (saved.is_ok()) { saved = save_entries(self.database.borrow(),key,archive); }
+        if (saved.is_err()) { return core::result::Err(recover(self,saved.unwrap_err(),false)); }
+        let committed = self.database.commit();
+        if (committed.is_err()) { return core::result::Err(recover(self,database_error(committed.unwrap_err()),true)); }
+        return core::result::Ok(archive.len());
+    }
+    pub fn load(&self, key: core::slice::View<u8>) -> core::result::Result<Snapshot,Error> {
+        let checked = key_checked(key,self.limits);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        checked = self.ready(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let begun = self.database.begin(ext::sqlite::Transaction::Deferred);
+        if (begun.is_err()) { return core::result::Err(recover(self,database_error(begun.unwrap_err()),false)); }
+        let format = schema(self.database.borrow());
+        if (format.is_ok()) { if (format.unwrap() != 3) { format = core::result::Err(failure(Cause::Corrupt)); } }
+        if (format.is_ok()) { format = version(self.database.borrow()); }
+        if (format.is_err()) { return core::result::Err(recover(self,format.unwrap_err(),false)); }
+        let loaded = load_snapshot(self.database.borrow(),key,self.limits);
+        if (loaded.is_err()) { return core::result::Err(recover(self,loaded.unwrap_err(),false)); }
+        let snapshot: Snapshot = loaded.unwrap();
+        let committed = self.database.commit();
+        if (committed.is_err()) { snapshot.destroy(); return core::result::Err(recover(self,database_error(committed.unwrap_err()),false)); }
+        return core::result::Ok(snapshot);
+    }
+}
+
+fn selected_archive(statement: &ext::sqlite::Statement, limits: Limits) -> core::result::Result<Snapshot,Error> {
+    let stepped = statement.step();
+    if (stepped.is_err()) { return core::result::Err(database_error(stepped.unwrap_err())); }
+    if (done(stepped.unwrap())) { return core::result::Err(failure(Cause::NotFound)); }
+    let entries = statement.column_i64(1);
+    if (entries.is_err()) { return core::result::Err(database_error(entries.unwrap_err())); }
+    if (entries.unwrap() < 0 || entries.unwrap() > limits.zip.max_entries as i64) { return core::result::Err(failure(Cause::Corrupt)); }
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let copied = copy_column(statement,0,false,limits.zip.max_archive,bytes.borrow());
+    if (copied.is_err()) { bytes.destroy(); return core::result::Err(copied.unwrap_err()); }
+    let parsed = ext::zip::parse(bytes.as_view(),limits.zip);
+    if (parsed.is_err()) { bytes.destroy(); return core::result::Err(archive_error(parsed.unwrap_err())); }
+    let archive: ext::zip::Archive = parsed.unwrap();
+    if (archive.len() as i64 != entries.unwrap()) { bytes.destroy(); return core::result::Err(failure(Cause::Corrupt)); }
+    let ended = step_done(statement);
+    if (ended.is_err()) { bytes.destroy(); return core::result::Err(ended.unwrap_err()); }
+    return core::result::Ok(Snapshot { storage: bytes, directory: archive, limits: limits, live: true });
+}
+fn integer_matches(statement: &ext::sqlite::Statement, column: i32, value: i64) -> core::result::Result<i32,Error> {
+    let read = statement.column_i64(column);
+    if (read.is_err()) { return core::result::Err(database_error(read.unwrap_err())); }
+    if (read.unwrap() != value) { return core::result::Err(failure(Cause::Corrupt)); }
+    return core::result::Ok(0);
+}
+fn metadata_rows(statement: &ext::sqlite::Statement, archive: ext::zip::Archive) -> core::result::Result<i32,Error> {
+    let scratch: alloc::vec::Vec<u8> = alloc::vec::new();
+    let cursor: ext::zip::Cursor = archive.cursor(); let index: i32 = 0;
+    while (index < archive.len()) {
+        let stepped = statement.step();
+        if (stepped.is_err()) { scratch.destroy(); return core::result::Err(database_error(stepped.unwrap_err())); }
+        if (done(stepped.unwrap())) { scratch.destroy(); return core::result::Err(failure(Cause::Corrupt)); }
+        let next = cursor.next();
+        if (next.is_none()) { scratch.destroy(); return core::result::Err(failure(Cause::Corrupt)); }
+        let entry: ext::zip::Entry = next.unwrap();
+        let checked = integer_matches(statement,0,index as i64);
+        if (checked.is_ok()) { checked = copy_column(statement,1,false,65535,scratch.borrow()); }
+        if (checked.is_ok()) { if (!equal(entry.name,scratch.as_view())) { checked = core::result::Err(failure(Cause::Corrupt)); } }
+        let method: i64 = match (entry.method) { ext::zip::Method::Stored -> 0, ext::zip::Method::Deflate -> 8 };
+        if (checked.is_ok()) { checked = integer_matches(statement,2,method); }
+        if (checked.is_ok()) { checked = integer_matches(statement,3,entry.flags as i64); }
+        if (checked.is_ok()) { checked = integer_matches(statement,4,entry.crc32 as i64); }
+        if (checked.is_ok()) { checked = integer_matches(statement,5,entry.compressed_size as i64); }
+        if (checked.is_ok()) { checked = integer_matches(statement,6,entry.uncompressed_size as i64); }
+        if (checked.is_ok()) { checked = integer_matches(statement,7,entry.local_offset as i64); }
+        if (checked.is_ok()) { checked = integer_matches(statement,8,entry.local_end as i64); }
+        if (checked.is_err()) { scratch.destroy(); return checked; }
+        index += 1;
+    }
+    scratch.destroy(); return step_done(statement);
+}
+fn check_metadata(database: &ext::sqlite::Database, key: core::slice::View<u8>, archive: ext::zip::Archive) -> core::result::Result<i32,Error> {
+    let prepared = database.prepare(literal("SELECT ordinal,name,method,flags,crc32,csize,usize,local_offset,local_end FROM archive_index_entries WHERE key=?1 ORDER BY ordinal",130));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap(); let bound = statement.bind_blob(1,key);
+    if (bound.is_err()) { return finish(statement.borrow(),core::result::Err(database_error(bound.unwrap_err()))); }
+    return finish(statement.borrow(),metadata_rows(statement.borrow(),archive));
+}
+fn load_snapshot(database: &ext::sqlite::Database, key: core::slice::View<u8>, limits: Limits) -> core::result::Result<Snapshot,Error> {
+    let prepared = database.prepare(literal("SELECT snapshot,entries FROM archive_index_archives WHERE key=?1",64));
+    if (prepared.is_err()) { return core::result::Err(database_error(prepared.unwrap_err())); }
+    let statement: ext::sqlite::Statement = prepared.unwrap(); let bound = statement.bind_blob(1,key);
+    if (bound.is_err()) { statement.finalize(); return core::result::Err(database_error(bound.unwrap_err())); }
+    let selected = selected_archive(statement.borrow(),limits);
+    let finalized = statement.finalize();
+    if (selected.is_err()) { return selected; }
+    let snapshot: Snapshot = selected.unwrap();
+    if (finalized.is_err()) { snapshot.destroy(); return core::result::Err(database_error(finalized.unwrap_err())); }
+    let checked = check_metadata(database,key,snapshot.directory);
+    if (checked.is_err()) { snapshot.destroy(); return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(snapshot);
+}
+
+pub impl Snapshot {
+    pub fn borrow(&self) -> &Snapshot { return self; }
+    pub fn is_open(&self) -> bool { return self.live; }
+    pub fn len(&self) -> i32 { if (!self.live) { return 0; } return self.directory.len(); }
+    pub fn cursor(&self) -> core::result::Result<ext::zip::Cursor,Error> {
+        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        return core::result::Ok(self.directory.cursor());
+    }
+    // bytes() exposes the exact stored ZIP, whose structure/index were checked.
+    // Call verify() before exporting if payload corruption must be rejected.
+    pub fn bytes(&self) -> core::result::Result<core::slice::View<u8>,Error> {
+        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        return core::result::Ok(self.storage.as_view());
+    }
+    pub fn verify(&self) -> core::result::Result<i32,Error> {
+        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        return verify_archive(self.directory,self.limits);
+    }
+    pub fn get(&self, ordinal: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+        if (!self.live) { return core::result::Err(failure(Cause::Closed)); }
+        if (ordinal < 0 || ordinal >= self.directory.len()) { return core::result::Err(failure(Cause::Ordinal)); }
+        let cursor: ext::zip::Cursor = self.directory.cursor(); let index: i32 = 0;
+        while (index <= ordinal) {
+            let next = cursor.next();
+            if (next.is_none()) { return core::result::Err(failure(Cause::Corrupt)); }
+            if (index == ordinal) {
+                let extracted = ext::zip::extract(next.unwrap(),self.limits.zip.max_entry);
+                if (extracted.is_err()) { return core::result::Err(archive_error(extracted.unwrap_err())); }
+                return core::result::Ok(extracted.unwrap());
+            }
+            index += 1;
+        }
+        return core::result::Err(failure(Cause::Ordinal));
+    }
+    pub fn destroy(&self) { if (self.live) { self.live = false; self.storage.destroy(); } }
+}

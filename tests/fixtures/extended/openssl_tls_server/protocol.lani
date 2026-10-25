@@ -1,0 +1,252 @@
+// Test-only native server over one inherited, connected nonblocking descriptor.
+// Args: fd, certificate-chain, private-key, passphrase(-=empty), mode, bytes,
+// layout(0=stack,1=Vec,2=packed), native fault. Output: 15 little-endian u64s.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::openssl_tls;
+import std::args;
+import std::signal;
+import std::stream;
+
+extern "C" fn tls_server_test_start(mode: i32);
+extern "C" fn tls_server_test_wait(fd: i32, writing: i32) -> i32;
+extern "C" fn tls_server_test_fd_open(fd: i32) -> i32;
+extern "C" fn tls_server_test_fd_nonblocking(fd: i32) -> i32;
+extern "C" fn tls_server_test_close_fd(fd: i32) -> i32;
+extern "C" fn tls_server_test_dirty_queue();
+extern "C" fn tls_server_test_context_owners() -> i32;
+extern "C" fn tls_server_test_session_owners() -> i32;
+extern "C" fn tls_server_test_invalid_frees() -> i32;
+extern "C" fn tls_server_test_calls() -> i32;
+extern "C" fn tls_server_test_io_calls() -> i32;
+extern "C" fn tls_server_test_fault_hits() -> i32;
+
+struct Stats { outcome: i32, cause: i32, phase: i32, ssl: i32, code: u64, system: i32, reads: i32, writes: i32, sent: i32, received: i32, closed: i32, terminal: i32, calls: i32, guards: i32, retries: i32 }
+impl Stats {
+    fn borrow(&self) -> &Stats { return self; }
+    fn failure(&self, outcome: i32, error: ext::openssl_tls::Error) {
+        self.outcome = outcome; self.cause = cause(error.cause); self.phase = phase(error.phase);
+        self.ssl = error.ssl_error; self.code = error.code; self.system = error.system;
+    }
+    fn charge(&self) -> bool { self.calls += 1; if (self.calls > 100000) { self.outcome = 3; return false; } return true; }
+}
+fn cause(value: ext::openssl_tls::Cause) -> i32 {
+    return match (value) {
+        ext::openssl_tls::Cause::Bounds -> 1, ext::openssl_tls::Cause::InvalidLimits -> 2,
+        ext::openssl_tls::Cause::Limit -> 3, ext::openssl_tls::Cause::Closed -> 4,
+        ext::openssl_tls::Cause::InvalidState -> 5, ext::openssl_tls::Cause::Identity -> 6,
+        ext::openssl_tls::Cause::Utf8 -> 7, ext::openssl_tls::Cause::Nul -> 8,
+        ext::openssl_tls::Cause::AllocationFailed -> 9, ext::openssl_tls::Cause::Native -> 10,
+        ext::openssl_tls::Cause::Verification -> 11, ext::openssl_tls::Cause::PeerCertificate -> 12,
+        ext::openssl_tls::Cause::PeerClosed -> 13, ext::openssl_tls::Cause::Truncated -> 14,
+        ext::openssl_tls::Cause::UnexpectedNative -> 15
+    };
+}
+fn phase(value: ext::openssl_tls::Phase) -> i32 {
+    return match (value) {
+        ext::openssl_tls::Phase::Context -> 1, ext::openssl_tls::Phase::Trust -> 2,
+        ext::openssl_tls::Phase::Policy -> 3, ext::openssl_tls::Phase::Session -> 4,
+        ext::openssl_tls::Phase::Identity -> 5, ext::openssl_tls::Phase::Attach -> 6,
+        ext::openssl_tls::Phase::Handshake -> 7, ext::openssl_tls::Phase::Read -> 8,
+        ext::openssl_tls::Phase::Write -> 9, ext::openssl_tls::Phase::Shutdown -> 10,
+        ext::openssl_tls::Phase::Certificate -> 11, ext::openssl_tls::Phase::PrivateKey -> 12,
+        ext::openssl_tls::Phase::Passphrase -> 13, ext::openssl_tls::Phase::KeyMatch -> 14
+    };
+}
+fn state(value: ext::openssl_tls::State) -> i32 {
+    return match (value) { ext::openssl_tls::State::Handshake -> 1, ext::openssl_tls::State::Open -> 2,
+        ext::openssl_tls::State::PeerClosed -> 3, ext::openssl_tls::State::Closing -> 4,
+        ext::openssl_tls::State::Closed -> 5, ext::openssl_tls::State::Failed -> 6 };
+}
+fn view(bytes: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: start, length: length }; }
+fn number(bytes: core::slice::View<u8>) -> i32 { return core::decimal::parse_u32_range(bytes.values, bytes.start, bytes.length).unwrap() as i32; }
+fn byte(index: i32) -> u8 { return (((index as u64) * 73 + 11) ^ ((index as u64) / 251)) as u8; }
+fn signal(value: u8) { let bytes: [u8; 2] = [value, 10]; let sink: std::stream::Descriptor = std::stream::stderr(); assert(core::io::write_all(sink.borrow(), bytes, 0, 2).is_ok()); }
+fn wait(fd: i32, writing: bool, stats: &Stats) -> bool {
+    if (writing) { stats.writes += 1; } else { stats.reads += 1; }
+    if (!stats.charge()) { return false; }
+    let direction: i32 = 0; if (writing) { direction = 1; }
+    if (tls_server_test_wait(fd, direction) == 0) { stats.outcome = 3; return false; }
+    return true;
+}
+fn handshake(session: &ext::openssl_tls::Session, fd: i32, stats: &Stats) -> bool {
+    while (true) {
+        if (!stats.charge()) { return false; }
+        tls_server_test_dirty_queue();
+        let result = session.handshake();
+        if (result.is_err()) { stats.failure(1, result.unwrap_err()); assert(state(session.state()) == 6 && !session.is_open()); return false; }
+        let action: i32 = match (result.unwrap()) { ext::openssl_tls::Handshake::Complete -> 0, ext::openssl_tls::Handshake::WantRead -> 1, ext::openssl_tls::Handshake::WantWrite -> 2 };
+        if (action == 0) { assert(state(session.state()) == 2 && session.is_open()); return true; }
+        if (!wait(fd, action == 2, stats)) { return false; }
+    }
+    return false;
+}
+fn write_all(session: &ext::openssl_tls::Session, fd: i32, source: [u8], length: i32, mode: i32, stats: &Stats) -> bool {
+    let notified: bool = false; let scratch: [u8; 8] = [177; 8];
+    while (stats.sent < length) {
+        let amount: i32 = length - stats.sent; if (amount > 1024) { amount = 1024; }
+        let index: i32 = 0; while (index < amount) { source[3 + index] = byte(stats.sent + index) ^ 90; index += 1; }
+        if (!stats.charge()) { return false; }
+        tls_server_test_dirty_queue(); let result = session.write(view(source, 3, amount));
+        let done: bool = false;
+        while (!done) {
+            if (result.is_err()) { stats.failure(4, result.unwrap_err()); return false; }
+            let action: i32 = match (result.unwrap()) { ext::openssl_tls::Write::Complete(value) -> value, ext::openssl_tls::Write::WantRead -> -1, ext::openssl_tls::Write::WantWrite -> -2 };
+            if (action >= 0) { assert(action == amount && session.pending_write_bytes() == 0); stats.sent += action; done = true; }
+            else {
+                assert(session.pending_write_bytes() == amount && session.pending_read_bytes() == 0);
+                let before: i32 = tls_server_test_io_calls();
+                assert(cause(session.handshake().unwrap_err().cause) == 5);
+                assert(cause(session.read_into(view(scratch, 0, 8)).unwrap_err().cause) == 5);
+                assert(cause(session.write(view(source, 3, amount)).unwrap_err().cause) == 5);
+                assert(cause(session.shutdown().unwrap_err().cause) == 5);
+                assert(tls_server_test_io_calls() == before); stats.guards += 1;
+                // OpenSSL must retry the stable staged copy, not this changed source.
+                index = 0; while (index < amount) { source[3 + index] = 238; index += 1; }
+                if (mode == 2 && action == -2 && !notified) { signal(87); notified = true; }
+                if (!wait(fd, action == -2, stats) || !stats.charge()) { return false; }
+                tls_server_test_dirty_queue(); result = session.retry_write();
+            }
+        }
+    }
+    return true;
+}
+fn read_all(session: &ext::openssl_tls::Session, fd: i32, length: i32, mode: i32, stats: &Stats) -> bool {
+    let native: [u8; 1040] = [205; 1040]; let packed: [i32; 260] = [0; 260];
+    let second: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 1040);
+    let target: [u8] = native; let requested: i32 = 0; let notified: bool = false;
+    while (true) {
+        let index: i32 = 0; while (index < 1040) { target[index] = 205; index += 1; }
+        if (requested == 0) { requested = length - stats.received; if (requested <= 0 || requested > 1024) { requested = 1024; } }
+        if (!stats.charge()) { return false; }
+        tls_server_test_dirty_queue(); let result = session.read_into(view(target, 5, requested));
+        if (result.is_err()) {
+            stats.failure(2, result.unwrap_err()); assert(state(session.state()) == 6 && !session.is_open());
+            index = 0; while (index < 1040) { assert(target[index] == 205); index += 1; }
+            return false;
+        }
+        let action: i32 = match (result.unwrap()) { ext::openssl_tls::Read::Data(value) -> value, ext::openssl_tls::Read::Closed -> -3, ext::openssl_tls::Read::WantRead -> -1, ext::openssl_tls::Read::WantWrite -> -2 };
+        if (action >= 0) {
+            assert(action > 0 && action <= requested && stats.received <= length - action && session.pending_read_bytes() == 0);
+            index = 0; while (index < action) { assert(target[5 + index] == byte(stats.received + index)); index += 1; }
+            index = 0; while (index < 1040) { if (index < 5 || index >= 5 + action) { assert(target[index] == 205); } index += 1; }
+            stats.received += action; requested = 0;
+            if (stats.received == length && mode != 3 && mode != 4 && mode != 5) { return true; }
+        } else {
+            index = 0; while (index < 1040) { assert(target[index] == 205); index += 1; }
+            if (action == -3) { assert(stats.received == length && state(session.state()) == 3); stats.closed += 1; return true; }
+            assert(session.pending_read_bytes() == requested);
+            let before: i32 = tls_server_test_io_calls();
+            assert(cause(session.read_into(view(target, 5, requested - 1)).unwrap_err().cause) == 1);
+            assert(cause(session.write(view(target, 0, 0)).unwrap_err().cause) == 5);
+            assert(cause(session.handshake().unwrap_err().cause) == 5);
+            assert(cause(session.shutdown().unwrap_err().cause) == 5);
+            assert(tls_server_test_io_calls() == before); stats.retries += 1;
+            if (mode == 2 && !notified) { signal(82); notified = true; }
+            target = native; if (stats.retries % 2 == 1) { target = second; }
+            if (!wait(fd, action == -2, stats)) { return false; }
+        }
+    }
+    return false;
+}
+fn shutdown(session: &ext::openssl_tls::Session, fd: i32, stats: &Stats) -> bool {
+    while (true) {
+        if (!stats.charge()) { return false; }
+        tls_server_test_dirty_queue(); let result = session.shutdown();
+        if (result.is_err()) { stats.failure(5, result.unwrap_err()); return false; }
+        let action: i32 = match (result.unwrap()) { ext::openssl_tls::Shutdown::Complete -> 0, ext::openssl_tls::Shutdown::Sent -> 3, ext::openssl_tls::Shutdown::WantRead -> 1, ext::openssl_tls::Shutdown::WantWrite -> 2 };
+        if (action == 0) { assert(state(session.state()) == 5 && !session.is_open()); return true; }
+        if (!wait(fd, action == 2, stats)) { return false; }
+    }
+    return false;
+}
+fn local_contracts(certificate: core::slice::View<u8>, key: core::slice::View<u8>) {
+    let bytes: [u8; 2] = [255, 0]; let empty = view(bytes, 0, 0);
+    let limits = ext::openssl_tls::default_limits(); let invalid = limits; invalid.io_bytes = 0;
+    let auth = ext::openssl_tls::ClientAuthentication::Unauthenticated;
+    let before: i32 = tls_server_test_calls();
+    let error = ext::openssl_tls::new_server(view(bytes,-1,1), key, empty, auth, invalid).unwrap_err();
+    assert(cause(error.cause) == 2 && phase(error.phase) == 1);
+    let error = ext::openssl_tls::new_server(view(bytes,-1,1), key, empty, auth, limits).unwrap_err();
+    assert(cause(error.cause) == 1 && phase(error.phase) == 11);
+    let error = ext::openssl_tls::new_server(empty, key, empty, auth, limits).unwrap_err();
+    assert(cause(error.cause) == 1 && phase(error.phase) == 11);
+    let error = ext::openssl_tls::new_server(view(bytes,0,1), key, empty, auth, limits).unwrap_err();
+    assert(cause(error.cause) == 7 && phase(error.phase) == 11);
+    let error = ext::openssl_tls::new_server(view(bytes,1,1), key, empty, auth, limits).unwrap_err();
+    assert(cause(error.cause) == 8 && phase(error.phase) == 11);
+    let error = ext::openssl_tls::new_server(certificate, view(bytes,-1,1), empty, auth, limits).unwrap_err();
+    assert(cause(error.cause) == 1 && phase(error.phase) == 12);
+    let error = ext::openssl_tls::new_server(certificate, view(bytes,0,1), empty, auth, limits).unwrap_err();
+    assert(cause(error.cause) == 7 && phase(error.phase) == 12);
+    let error = ext::openssl_tls::new_server(certificate, key, view(bytes,-1,1), auth, limits).unwrap_err();
+    assert(cause(error.cause) == 1 && phase(error.phase) == 13);
+    let error = ext::openssl_tls::new_server(certificate, key, view(bytes,0,1024), auth, limits).unwrap_err();
+    assert(cause(error.cause) == 3 && phase(error.phase) == 13);
+    let error = ext::openssl_tls::new_server(certificate, key, view(bytes,1,1), auth, limits).unwrap_err();
+    assert(cause(error.cause) == 8 && phase(error.phase) == 13);
+    assert(tls_server_test_calls() == before && tls_server_test_context_owners() == 0 && tls_server_test_session_owners() == 0);
+}
+fn publish(stats: &Stats) {
+    let values: [u64; 15] = [stats.outcome as u64, stats.cause as u64, stats.phase as u64, stats.ssl as u64, stats.code, stats.system as u64, stats.reads as u64, stats.writes as u64, stats.sent as u64, stats.received as u64, stats.closed as u64, stats.terminal as u64, stats.calls as u64, stats.guards as u64, stats.retries as u64];
+    let bytes: [u8; 120] = [0; 120]; let index: i32 = 0;
+    while (index < 15) { let part: i32 = 0; while (part < 8) { bytes[index * 8 + part] = (values[index] >> (part * 8)) as u8; part += 1; } index += 1; }
+    let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), bytes, 0, 120).is_ok());
+}
+fn main() -> i32 {
+    assert(std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore).is_ok());
+    let arguments = std::args::snapshot(1, 8, 16384).unwrap(); assert(arguments.len() == 8);
+    let fd: i32 = number(arguments.get(0).unwrap()); let certificate = arguments.get(1).unwrap(); let key = arguments.get(2).unwrap(); let password = arguments.get(3).unwrap();
+    if (password.length == 1 && password.values[password.start] == 45) { password.length = 0; }
+    let mode: i32 = number(arguments.get(4).unwrap()); let length: i32 = number(arguments.get(5).unwrap()); let layout: i32 = number(arguments.get(6).unwrap()); let fault: i32 = number(arguments.get(7).unwrap());
+    assert(mode >= 0 && mode <= 9 && length >= 0 && length <= 1048576 && layout >= 0 && layout <= 2);
+    assert(tls_server_test_fd_open(fd) == 1 && tls_server_test_fd_nonblocking(fd) == 1);
+    tls_server_test_start(fault);
+    let stats = Stats { outcome: 0, cause: 0, phase: 0, ssl: 0, code: 0, system: 0, reads: 0, writes: 0, sent: 0, received: 0, closed: 0, terminal: 0, calls: 0, guards: 0, retries: 0 };
+    if (mode == 0) { signal(65); }
+    if (mode == 8) { local_contracts(certificate,key); }
+    else {
+        let limits = ext::openssl_tls::default_limits(); limits.io_bytes = 1024;
+        tls_server_test_dirty_queue();
+        let created = ext::openssl_tls::new_server(certificate,key,password,ext::openssl_tls::ClientAuthentication::Unauthenticated,limits);
+        if (created.is_err()) { stats.failure(6,created.unwrap_err()); }
+        else {
+            let context = created.unwrap(); assert(context.is_open() && tls_server_test_context_owners() == 1);
+            if (mode != 6) {
+                let before: i32 = tls_server_test_calls();
+                assert(cause(context.session(-1).unwrap_err().cause) == 1 && tls_server_test_calls() == before);
+                let connected = context.session(fd);
+                if (connected.is_err()) { stats.failure(7,connected.unwrap_err()); }
+                else {
+                    let session = connected.unwrap();
+                    // The native SSL reference keeps credentials/context alive.
+                    context.destroy(); context.destroy(); assert(!context.is_open() && tls_server_test_context_owners() == 0 && tls_server_test_session_owners() == 1);
+                    assert(cause(context.session(fd).unwrap_err().cause) == 4);
+                    if ((mode != 0 && mode != 7) || fault == 9) {
+                        if (handshake(session.borrow(),fd,stats.borrow())) {
+                            let native: [u8; 1040] = [0; 1040]; let packed: [i32; 260] = [0; 260]; let vector: alloc::vec::Vec<u8> = alloc::vec::new(); assert(vector.try_resize(1040,0).is_ok());
+                            let source: [u8] = native; if (layout == 1) { source = vector.as_slice(); } if (layout == 2) { source = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed),1040); }
+                            let okay: bool = true;
+                            if (mode == 2) { okay = write_all(session.borrow(),fd,source,length,mode,stats.borrow()); if (okay) { okay = read_all(session.borrow(),fd,length,mode,stats.borrow()); } }
+                            else { if (mode != 9) { if (length > 0 || mode == 3 || mode == 4 || mode == 5) { okay = read_all(session.borrow(),fd,length,mode,stats.borrow()); } if (okay && mode != 3 && mode != 4 && mode != 5) { okay = write_all(session.borrow(),fd,source,length,mode,stats.borrow()); } } }
+                            if (okay) { shutdown(session.borrow(),fd,stats.borrow()); }
+                            vector.destroy();
+                        }
+                    }
+                    stats.terminal = state(session.state()); session.destroy(); session.destroy(); assert(!session.is_open());
+                }
+            }
+            context.destroy(); context.destroy(); assert(!context.is_open());
+        }
+    }
+    assert(tls_server_test_context_owners() == 0 && tls_server_test_session_owners() == 0 && tls_server_test_invalid_frees() == 0);
+    if (mode == 0) { signal(66); }
+    if (fault != 0) { assert(tls_server_test_fault_hits() == 1); }
+    assert(tls_server_test_fd_open(fd) == 1); assert(tls_server_test_close_fd(fd) == 0);
+    arguments.destroy(); publish(stats.borrow()); return 0;
+}

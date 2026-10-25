@@ -1,0 +1,49 @@
+module probe::shape;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::pair;
+import core::result;
+import probe::protocol;
+
+// Every enum in this reduction has a constructible variant. No module imports
+// core::clone_values, so the separate empty-Infallible issue is absent.
+pub enum LeafFault { Rejected }
+pub enum PairFault<A,B> { First(A), Second(B) }
+pub enum ResultFault<A,B> { Value(A), Error(B) }
+
+pub fn make(error_payload: bool) -> core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>> {
+    let bytes: [u8;4] = [65,0,195,169];
+    let text: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let value: core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String> = core::result::Err(text);
+    if (!error_payload) {
+        let numbers: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(2).unwrap();
+        numbers.try_push(-2147483648).unwrap(); numbers.try_push(2147483647).unwrap();
+        value = core::result::Ok(core::pair::new<alloc::string::String,alloc::vec::Vec<i32>>(text,numbers));
+    }
+    return core::option::Some(value);
+}
+
+pub fn consume(value: core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>, error_payload: bool) {
+    assert(value.is_some());
+    let inner: core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String> = value.unwrap();
+    assert(inner.is_err()==error_payload);
+    let text: alloc::string::String = inner.unwrap_err_or(alloc::string::new());
+    if (!error_payload) {
+        let pair: core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>> = inner.unwrap();
+        text = pair.first;
+        assert(pair.second.len()==2 && pair.second.at(0)==-2147483648 && pair.second.at(1)==2147483647);
+        pair.second.destroy();
+    }
+    assert(text.byte_len()==4 && text.byte_at(0).unwrap()==65 && text.byte_at(1).unwrap()==0 && text.byte_at(2).unwrap()==195 && text.byte_at(3).unwrap()==169);
+    text.destroy();
+}
+
+pub impl probe::protocol::Transfer<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,ResultFault<PairFault<alloc::string::Error,alloc::clone::Error<LeafFault>>,alloc::string::Error>>
+    for core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>> {
+    pub fn transfer(source: core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>)
+        -> core::result::Result<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,ResultFault<PairFault<alloc::string::Error,alloc::clone::Error<LeafFault>>,alloc::string::Error>> {
+        return core::result::Ok(source);
+    }
+}

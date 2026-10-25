@@ -1,0 +1,15 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::tree_set;
+import core::result;
+import fixture::zst;
+fn main() -> i32 {
+    let source: alloc::tree_set::TreeSet<fixture::zst::Unit> = alloc::tree_set::new();
+    source.try_insert(fixture::zst::Unit {}).unwrap();
+    let result: core::result::Result<alloc::tree_set::TreeSet<fixture::zst::Unit>,alloc::clone_tree_set::Error<fixture::zst::Never>> =
+        alloc::clone_tree_set::try_clone<fixture::zst::Unit,fixture::zst::Never>(source.borrow());
+    let copy = result.unwrap(); assert(copy.len()==1 && source.len()==1);
+    alloc::clone_tree_set::destroy_tree_set<fixture::zst::Unit>(copy.borrow());
+    alloc::clone_tree_set::destroy_tree_set<fixture::zst::Unit>(source.borrow());
+    assert(copy.is_empty() && copy.capacity()==0 && source.is_empty()); return 0;
+}

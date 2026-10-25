@@ -1,0 +1,303 @@
+// Persist immutable ZIP snapshots; get/export write raw bytes, list hex names.
+// Exit 2 limits/arguments, 3 I/O, 4 database/allocation, 5 missing ordinal/key,
+// 6 archive/catalog integrity, 7 uncertain replacement outcome.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::archive_index;
+import ext::cli;
+import ext::sqlite;
+import ext::zip;
+import std::args;
+import std::stream;
+
+enum Command { Missing, Import, Count, List, Get, Export }
+enum AppError { Arguments, InputLimit, OutputLimit, CallLimit, InputIo, OutputIo, Allocation, Database, NotFound, Archive, Uncertain }
+struct Budget { remaining: i32 }
+impl Budget { fn borrow(&self) -> &Budget { return self; } }
+struct Options { database: core::slice::View<u8>, command: Command, key: core::slice::View<u8>, ordinal: i32, operands: i32, help: bool, max_input: i32, max_output: i32, max_io_calls: i32, limits: ext::archive_index::Limits }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+fn literal(text: str, count: i32) -> core::slice::View<u8> {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text),count);
+    return core::slice::View { values: bytes, start: 0, length: count };
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len() != right.len()) { return false; }
+    let index: i32 = 0;
+    while (index < left.len()) { if (left.values[left.start + index] != right.values[right.start + index]) { return false; } index += 1; }
+    return true;
+}
+fn archive_limited(error: ext::zip::Error) -> bool {
+    return match (error) { ext::zip::Error::ArchiveLimit -> true, ext::zip::Error::EntryLimit -> true, ext::zip::Error::TotalLimit -> true, ext::zip::Error::WorkLimit -> true, ext::zip::Error::OutputLimit -> true, ext::zip::Error::SizeOverflow -> true, _ -> false };
+}
+fn index_error(error: ext::archive_index::Error) -> AppError {
+    let uncertain: bool = match (error.outcome) { ext::archive_index::Outcome::Uncertain -> true, _ -> false };
+    if (uncertain) { return AppError::Uncertain; }
+    return match (error.cause) {
+        ext::archive_index::Cause::Bounds -> AppError::Arguments,
+        ext::archive_index::Cause::Limit -> AppError::InputLimit,
+        ext::archive_index::Cause::AllocationFailed -> AppError::Allocation,
+        ext::archive_index::Cause::NotFound -> AppError::NotFound,
+        ext::archive_index::Cause::Ordinal -> AppError::NotFound,
+        ext::archive_index::Cause::Corrupt -> AppError::Archive,
+        ext::archive_index::Cause::Archive -> archive_error(core::option::unwrap(error.archive)),
+        _ -> AppError::Database
+    };
+}
+fn archive_error(error: ext::zip::Error) -> AppError {
+    if (archive_limited(error)) { return AppError::InputLimit; }
+    return match (error) { ext::zip::Error::AllocationFailed -> AppError::Allocation, _ -> AppError::Archive };
+}
+fn write_bounded<W>(writer: &W, bytes: core::slice::View<u8>, budget: &Budget) -> core::result::Result<i32,AppError>
+    where W: core::io::Write {
+    let completed: i32 = 0;
+    while (completed < bytes.len()) {
+        if (budget.remaining == 0) { return core::result::Err(AppError::CallLimit); }
+        budget.remaining -= 1;
+        let attempt: core::result::Result<i32,core::io::Error> = writer.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (core::result::is_err(attempt)) {
+            if (core::io::is_interrupted(core::result::unwrap_err(attempt))) { continue; }
+            return core::result::Err(AppError::OutputIo);
+        }
+        let written: i32 = core::result::unwrap(attempt);
+        if (written <= 0 || written > bytes.len() - completed) { return core::result::Err(AppError::OutputIo); }
+        completed += written;
+    }
+    return core::result::Ok(completed);
+}
+// A one-byte EOF probe distinguishes an exact limit from excess input. Every
+// attempt spends budget, including EINTR. Errors destroy the partial value.
+fn read_input<R>(reader: &R, maximum: i32, budget: &Budget) -> core::result::Result<alloc::vec::Vec<u8>,AppError>
+    where R: core::io::Read {
+    let value: alloc::vec::Vec<u8> = alloc::vec::new();
+    let scratch: [u8; 1024] = [0; 1024];
+    while (true) {
+        if (budget.remaining == 0) { value.destroy(); return core::result::Err(AppError::CallLimit); }
+        budget.remaining -= 1;
+        let amount: i32 = 1024;
+        if (maximum - value.len() < 1024) { amount = maximum - value.len() + 1; }
+        let attempt: core::result::Result<i32,core::io::Error> = reader.read(scratch,0,amount);
+        if (core::result::is_err(attempt)) {
+            if (core::io::is_interrupted(core::result::unwrap_err(attempt))) { continue; }
+            value.destroy(); return core::result::Err(AppError::InputIo);
+        }
+        let received: i32 = core::result::unwrap(attempt);
+        if (received < 0 || received > amount) { value.destroy(); return core::result::Err(AppError::InputIo); }
+        if (received == 0) { return core::result::Ok(value); }
+        if (received > maximum - value.len()) { value.destroy(); return core::result::Err(AppError::InputLimit); }
+        let chunk: core::slice::View<u8> = core::result::unwrap(core::slice::view(scratch,received));
+        if (core::result::is_err(value.try_extend(chunk))) { value.destroy(); return core::result::Err(AppError::Allocation); }
+    }
+    return core::result::Ok(value);
+}
+
+fn report(status: i32, message: core::slice::View<u8>) -> i32 {
+    let sink: std::stream::Descriptor = std::stream::stderr(); let budget: Budget = Budget { remaining: 8 };
+    write_bounded(sink.borrow(),message,budget.borrow()); return status;
+}
+fn report_error(error: AppError) -> i32 {
+    return match (error) {
+        AppError::Arguments -> report(2,literal("archive-index: invalid arguments\n",33)),
+        AppError::InputLimit -> report(2,literal("archive-index: input/archive limit exceeded\n",44)),
+        AppError::OutputLimit -> report(2,literal("archive-index: output limit exceeded\n",37)),
+        AppError::CallLimit -> report(2,literal("archive-index: I/O call limit exceeded\n",39)),
+        AppError::InputIo -> report(3,literal("archive-index: input I/O failed\n",32)),
+        AppError::OutputIo -> report(3,literal("archive-index: output I/O failed\n",33)),
+        AppError::Allocation -> report(4,literal("archive-index: allocation failed\n",33)),
+        AppError::Database -> report(4,literal("archive-index: database operation failed\n",41)),
+        AppError::NotFound -> report(5,literal("archive-index: archive key or ordinal not found\n",48)),
+        AppError::Archive -> report(6,literal("archive-index: archive/catalog integrity failed\n",48)),
+        AppError::Uncertain -> report(7,literal("archive-index: replacement outcome uncertain; reopen and inspect\n",65))
+    };
+}
+fn append(output: &alloc::vec::Vec<u8>, bytes: core::slice::View<u8>, maximum: i32) -> core::result::Result<i32,AppError> {
+    if (bytes.len() > maximum - output.len()) { return core::result::Err(AppError::OutputLimit); }
+    if (output.try_extend(bytes).is_err()) { return core::result::Err(AppError::Allocation); }
+    return core::result::Ok(output.len());
+}
+fn number(output: &alloc::vec::Vec<u8>, value: u64, maximum: i32) -> core::result::Result<i32,AppError> {
+    let count: i32 = core::decimal::len_u64(value) as i32;
+    if (count > maximum - output.len()) { return core::result::Err(AppError::OutputLimit); }
+    let index: i32 = 0;
+    while (index < count) {
+        if (output.try_push(core::decimal::byte_at_or_u64(value,index as u32,0)).is_err()) { return core::result::Err(AppError::Allocation); }
+        index += 1;
+    }
+    return core::result::Ok(count);
+}
+fn hex(value: u8) -> u8 { if (value < 10) { return 48 + value; } return 87 + value; }
+fn list(snapshot: &ext::archive_index::Snapshot, output: &alloc::vec::Vec<u8>, maximum: i32) -> core::result::Result<i32,AppError> {
+    let cursor: ext::zip::Cursor = snapshot.cursor().unwrap(); let ordinal: i32 = 0;
+    while (ordinal < snapshot.len()) {
+        let entry: ext::zip::Entry = cursor.next().unwrap();
+        let written = number(output,ordinal as u64,maximum);
+        if (written.is_ok()) { written = append(output,literal("\t",1),maximum); }
+        let method: u64 = match (entry.method) { ext::zip::Method::Stored -> 0, ext::zip::Method::Deflate -> 8 };
+        if (written.is_ok()) { written = number(output,method,maximum); }
+        if (written.is_ok()) { written = append(output,literal("\t",1),maximum); }
+        if (written.is_ok()) { written = number(output,entry.flags as u64,maximum); }
+        if (written.is_ok()) { written = append(output,literal("\t",1),maximum); }
+        if (written.is_ok()) { written = number(output,entry.crc32 as u64,maximum); }
+        if (written.is_ok()) { written = append(output,literal("\t",1),maximum); }
+        if (written.is_ok()) { written = number(output,entry.compressed_size as u64,maximum); }
+        if (written.is_ok()) { written = append(output,literal("\t",1),maximum); }
+        if (written.is_ok()) { written = number(output,entry.uncompressed_size as u64,maximum); }
+        if (written.is_ok()) { written = append(output,literal("\t",1),maximum); }
+        if (written.is_err()) { return written; }
+        if (entry.name.len() > (maximum - output.len()) / 2) { return core::result::Err(AppError::OutputLimit); }
+        let index: i32 = 0;
+        while (index < entry.name.len()) {
+            let value: u8 = entry.name.get(index).unwrap();
+            if (output.try_push(hex(value / 16)).is_err()) { return core::result::Err(AppError::Allocation); }
+            if (output.try_push(hex(value % 16)).is_err()) { return core::result::Err(AppError::Allocation); }
+            index += 1;
+        }
+        written = append(output,literal("\n",1),maximum); if (written.is_err()) { return written; }
+        ordinal += 1;
+    }
+    return core::result::Ok(output.len());
+}
+fn render(snapshot: &ext::archive_index::Snapshot, options: &Options) -> core::result::Result<alloc::vec::Vec<u8>,AppError> {
+    let output: alloc::vec::Vec<u8> = alloc::vec::new();
+    let counted: bool = match (options.command) { Command::Count -> true, _ -> false };
+    let listing: bool = match (options.command) { Command::List -> true, _ -> false };
+    let getting: bool = match (options.command) { Command::Get -> true, _ -> false };
+    if (counted || listing) {
+        let written: core::result::Result<i32,AppError> = core::result::Ok(0);
+        if (counted) { written = number(output.borrow(),snapshot.len() as u64,options.max_output); if (written.is_ok()) { written = append(output.borrow(),literal("\n",1),options.max_output); } }
+        else { written = list(snapshot,output.borrow(),options.max_output); }
+        if (written.is_err()) { output.destroy(); return core::result::Err(written.unwrap_err()); }
+        return core::result::Ok(output);
+    }
+    if (getting) {
+        let cursor: ext::zip::Cursor = snapshot.cursor().unwrap(); let index: i32 = 0;
+        if (options.ordinal >= snapshot.len()) { return core::result::Err(AppError::NotFound); }
+        while (index < options.ordinal) { cursor.next(); index += 1; }
+        let entry: ext::zip::Entry = cursor.next().unwrap();
+        if (entry.uncompressed_size > options.max_output) { return core::result::Err(AppError::OutputLimit); }
+        let extracted = snapshot.get(options.ordinal);
+        if (extracted.is_err()) { return core::result::Err(index_error(extracted.unwrap_err())); }
+        return core::result::Ok(extracted.unwrap());
+    }
+    let bytes: core::slice::View<u8> = snapshot.bytes().unwrap();
+    if (bytes.len() > options.max_output) { return core::result::Err(AppError::OutputLimit); }
+    let verified = snapshot.verify();
+    if (verified.is_err()) { return core::result::Err(index_error(verified.unwrap_err())); }
+    if (output.try_extend(bytes).is_err()) { output.destroy(); return core::result::Err(AppError::Allocation); }
+    return core::result::Ok(output);
+}
+fn operation(store: &ext::archive_index::Store, options: &Options, input: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8>,AppError> {
+    let importing: bool = match (options.command) { Command::Import -> true, _ -> false };
+    if (importing) {
+        let replaced = store.replace(options.key,input);
+        if (replaced.is_err()) { return core::result::Err(index_error(replaced.unwrap_err())); }
+        let empty: alloc::vec::Vec<u8> = alloc::vec::new(); return core::result::Ok(empty);
+    }
+    let loaded = store.load(options.key);
+    if (loaded.is_err()) { return core::result::Err(index_error(loaded.unwrap_err())); }
+    let snapshot: ext::archive_index::Snapshot = loaded.unwrap();
+    let result = render(snapshot.borrow(),options); snapshot.destroy(); return result;
+}
+fn process(options: &Options) -> i32 {
+    let budget: Budget = Budget { remaining: options.max_io_calls };
+    let input: alloc::vec::Vec<u8> = alloc::vec::new();
+    let importing: bool = match (options.command) { Command::Import -> true, _ -> false };
+    if (importing) {
+        let source: std::stream::Descriptor = std::stream::stdin();
+        let captured = read_input(source.borrow(),options.max_input,budget.borrow());
+        if (captured.is_err()) { return report_error(captured.unwrap_err()); } input = captured.unwrap();
+    }
+    let mode: ext::sqlite::Mode = ext::sqlite::Mode::ReadOnly;
+    if (importing) { mode = ext::sqlite::Mode::Create; }
+    let opened = ext::archive_index::open(options.database,mode,options.limits);
+    if (opened.is_err()) { input.destroy(); return report_error(index_error(opened.unwrap_err())); }
+    let store: ext::archive_index::Store = opened.unwrap();
+    let result = operation(store.borrow(),options,input.as_view()); input.destroy();
+    let closed = store.close();
+    if (result.is_err()) { return report_error(result.unwrap_err()); }
+    let output: alloc::vec::Vec<u8> = result.unwrap();
+    if (closed.is_err()) { output.destroy(); return report_error(index_error(closed.unwrap_err())); }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written = write_bounded(sink.borrow(),output.as_view(),budget.borrow()); output.destroy();
+    if (written.is_err()) { return report_error(written.unwrap_err()); } return 0;
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 1) { options.help = true; return true; }
+    let bytes: core::slice::View<u8> = item.value.unwrap().bytes;
+    let parsed = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (parsed.is_err()) { return false; } let value: u64 = parsed.unwrap();
+    if (item.id == 8) { options.limits.zip.max_total = value; return true; }
+    if (item.id == 9) { options.limits.zip.max_work = value; return true; }
+    if (value > 2147483647 as u64) { return false; }
+    if (item.id == 2) { if (value > 16777216 as u64) { return false; } options.max_input = value as i32; options.limits.zip.max_archive = value as i32; }
+    if (item.id == 3) { if (value > 67108864 as u64) { return false; } options.max_output = value as i32; }
+    if (item.id == 4) { options.max_io_calls = value as i32; }
+    if (item.id == 5) { if (value > 65534 as u64) { return false; } options.limits.zip.max_entries = value as i32; }
+    if (item.id == 6) { if (value > 67108864 as u64) { return false; } options.limits.zip.max_entry = value as i32; }
+    if (item.id == 7) { if (value > 4096 as u64) { return false; } options.limits.key_bytes = value as i32; }
+    return true;
+}
+fn operand(options: &Options, bytes: core::slice::View<u8>) -> bool {
+    if (options.operands == 0) { options.database = bytes; }
+    if (options.operands == 1) {
+        if (equal(bytes,literal("import",6))) { options.command = Command::Import; }
+        else { if (equal(bytes,literal("count",5))) { options.command = Command::Count; }
+        else { if (equal(bytes,literal("list",4))) { options.command = Command::List; }
+        else { if (equal(bytes,literal("get",3))) { options.command = Command::Get; }
+        else { if (equal(bytes,literal("export",6))) { options.command = Command::Export; }
+        else { return false; } } } } }
+    }
+    if (options.operands == 2) { options.key = bytes; }
+    if (options.operands == 3) {
+        let getting: bool = match (options.command) { Command::Get -> true, _ -> false }; if (!getting) { return false; }
+        let parsed = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+        if (parsed.is_err()) { return false; } let value: u64 = parsed.unwrap(); if (value > 2147483647 as u64) { return false; } options.ordinal = value as i32;
+    }
+    if (options.operands >= 4) { return false; } options.operands += 1; return true;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;9] = [
+        ext::cli::Spec { id: 1, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 2, long: literal("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: literal("max-io-calls",12), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: literal("max-entries",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: literal("max-entry",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: literal("max-key",7), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: literal("max-total",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required }
+    ];
+    let schema: core::slice::View<ext::cli::Spec> = core::slice::view(specs,9).unwrap();
+    let parser: ext::cli::Parser = ext::cli::parser(values.as_view(),schema,ext::cli::Ordering::Intermixed).unwrap();
+    let options: Options = Options { database: literal("",0), command: Command::Missing, key: literal("",0), ordinal: 0, operands: 0, help: false, max_input: 8388608, max_output: 16777216, max_io_calls: 65536, limits: ext::archive_index::default_limits() };
+    while (true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return report_error(AppError::Arguments); }
+        let next: core::option::Option<ext::cli::Event> = parsed.unwrap(); if (next.is_none()) { break; }
+        let accepted: bool = match (next.unwrap()) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item.bytes) };
+        if (!accepted) { return report_error(AppError::Arguments); }
+    }
+    if (options.help) {
+        let usage = literal("Usage: archive-index DB import|count|list|export KEY | archive-index DB get KEY ORDINAL\nOptions: --max-input N --max-output N --max-io-calls N --max-entries N --max-entry N --max-key N --max-total N --max-work N\n",212);
+        let sink: std::stream::Descriptor = std::stream::stdout(); let budget: Budget = Budget { remaining: options.max_io_calls };
+        let written = write_bounded(sink.borrow(),usage,budget.borrow()); if (written.is_err()) { return report_error(written.unwrap_err()); } return 0;
+    }
+    let needed: i32 = 3; let getting: bool = match (options.command) { Command::Get -> true, _ -> false }; if (getting) { needed = 4; }
+    let uri: bool = false; if (options.database.len() >= 5) { uri = equal(options.database.subview(0,5).unwrap(),literal("file:",5)); }
+    if (options.operands != needed || options.database.len() == 0 || options.database.len() > 4096 || options.key.len() > options.limits.key_bytes || uri || equal(options.database,literal(":memory:",8))) { return report_error(AppError::Arguments); }
+    if (core::text::from_utf8_range(options.database.values,options.database.start,options.database.len()).is_err()) { return report_error(AppError::Arguments); }
+    return process(options.borrow());
+}
+fn main() -> i32 {
+    let captured = std::args::snapshot(1,32,16384);
+    if (captured.is_err()) {
+        let status: i32 = match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+        return report(status,literal("archive-index: cannot capture arguments\n",40));
+    }
+    let values: std::args::Arguments = captured.unwrap(); let status: i32 = arguments(values); values.destroy(); return status;
+}
