@@ -337,7 +337,7 @@ cleanup: core::option::Option<CloseReport>
 
 ### struct: Connection
 
-[Source line 124](../../../extended/ext/tls_tcp.lani#L124)
+[Source line 126](../../../extended/ext/tls_tcp.lani#L126)
 
 ```lanius
 pub struct Connection
@@ -345,7 +345,7 @@ pub struct Connection
 
 #### field: socket
 
-[Source line 125](../../../extended/ext/tls_tcp.lani#L125)
+[Source line 127](../../../extended/ext/tls_tcp.lani#L127)
 
 ```lanius
 socket: std::socket::Socket
@@ -353,7 +353,7 @@ socket: std::socket::Socket
 
 #### field: poll
 
-[Source line 125](../../../extended/ext/tls_tcp.lani#L125)
+[Source line 127](../../../extended/ext/tls_tcp.lani#L127)
 
 ```lanius
 poll: std::poll::PollSet
@@ -361,7 +361,7 @@ poll: std::poll::PollSet
 
 #### field: storage
 
-[Source line 125](../../../extended/ext/tls_tcp.lani#L125)
+[Source line 127](../../../extended/ext/tls_tcp.lani#L127)
 
 ```lanius
 storage: Storage
@@ -369,7 +369,7 @@ storage: Storage
 
 #### field: engine
 
-[Source line 126](../../../extended/ext/tls_tcp.lani#L126)
+[Source line 128](../../../extended/ext/tls_tcp.lani#L128)
 
 ```lanius
 engine: ext::tls_connection::Engine
@@ -377,7 +377,7 @@ engine: ext::tls_connection::Engine
 
 #### field: active
 
-[Source line 126](../../../extended/ext/tls_tcp.lani#L126)
+[Source line 128](../../../extended/ext/tls_tcp.lani#L128)
 
 ```lanius
 active: bool
@@ -385,7 +385,7 @@ active: bool
 
 #### field: handshake_deadline
 
-[Source line 127](../../../extended/ext/tls_tcp.lani#L127)
+[Source line 129](../../../extended/ext/tls_tcp.lani#L129)
 
 ```lanius
 handshake_deadline: core::time::Deadline
@@ -393,7 +393,7 @@ handshake_deadline: core::time::Deadline
 
 #### field: handshake_success
 
-[Source line 127](../../../extended/ext/tls_tcp.lani#L127)
+[Source line 129](../../../extended/ext/tls_tcp.lani#L129)
 
 ```lanius
 handshake_success: bool
@@ -401,7 +401,7 @@ handshake_success: bool
 
 #### field: last
 
-[Source line 128](../../../extended/ext/tls_tcp.lani#L128)
+[Source line 130](../../../extended/ext/tls_tcp.lani#L130)
 
 ```lanius
 last: core::option::Option<core::time::Instant>
@@ -409,7 +409,7 @@ last: core::option::Option<core::time::Instant>
 
 #### field: raw_at
 
-[Source line 128](../../../extended/ext/tls_tcp.lani#L128)
+[Source line 130](../../../extended/ext/tls_tcp.lani#L130)
 
 ```lanius
 raw_at: i32
@@ -417,7 +417,7 @@ raw_at: i32
 
 #### field: raw_length
 
-[Source line 128](../../../extended/ext/tls_tcp.lani#L128)
+[Source line 130](../../../extended/ext/tls_tcp.lani#L130)
 
 ```lanius
 raw_length: i32
@@ -425,7 +425,7 @@ raw_length: i32
 
 #### field: pending_eof
 
-[Source line 129](../../../extended/ext/tls_tcp.lani#L129)
+[Source line 131](../../../extended/ext/tls_tcp.lani#L131)
 
 ```lanius
 pending_eof: bool
@@ -433,7 +433,7 @@ pending_eof: bool
 
 #### field: pending_error
 
-[Source line 129](../../../extended/ext/tls_tcp.lani#L129)
+[Source line 131](../../../extended/ext/tls_tcp.lani#L131)
 
 ```lanius
 pending_error: core::option::Option<core::io::Error>
@@ -441,7 +441,7 @@ pending_error: core::option::Option<core::io::Error>
 
 #### field: write_shutdown
 
-[Source line 130](../../../extended/ext/tls_tcp.lani#L130)
+[Source line 132](../../../extended/ext/tls_tcp.lani#L132)
 
 ```lanius
 write_shutdown: bool
@@ -449,7 +449,7 @@ write_shutdown: bool
 
 #### field: primary
 
-[Source line 130](../../../extended/ext/tls_tcp.lani#L130)
+[Source line 132](../../../extended/ext/tls_tcp.lani#L132)
 
 ```lanius
 primary: core::option::Option<Error>
@@ -457,7 +457,7 @@ primary: core::option::Option<Error>
 
 #### field: report
 
-[Source line 130](../../../extended/ext/tls_tcp.lani#L130)
+[Source line 132](../../../extended/ext/tls_tcp.lani#L132)
 
 ```lanius
 report: core::option::Option<CloseReport>
@@ -475,7 +475,7 @@ pub fn host_budget(calls: u64) -> HostBudget
 
 ### function: attach_client
 
-[Source line 166](../../../extended/ext/tls_tcp.lani#L166)
+[Source line 179](../../../extended/ext/tls_tcp.lani#L179)
 
 ```lanius
 pub fn attach_client(socket: &std::socket::Socket, config: ext::tls_connection::ClientConfig, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure>
@@ -483,7 +483,7 @@ pub fn attach_client(socket: &std::socket::Socket, config: ext::tls_connection::
 
 ### function: attach_server
 
-[Source line 167](../../../extended/ext/tls_tcp.lani#L167)
+[Source line 180](../../../extended/ext/tls_tcp.lani#L180)
 
 ```lanius
 pub fn attach_server(socket: &std::socket::Socket, config: ext::tls_connection::ServerConfig, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure>
@@ -547,9 +547,9 @@ pub fn now(&self) -> core::result::Result<core::time::Instant, Error>
 pub fn check(&self, deadline: core::time::Deadline) -> core::result::Result<core::time::Instant, Error>
 ```
 
-### impl at line 171
+### impl at line 184
 
-[Source line 171](../../../extended/ext/tls_tcp.lani#L171)
+[Source line 184](../../../extended/ext/tls_tcp.lani#L184)
 
 ```lanius
 pub impl Connection
@@ -557,7 +557,7 @@ pub impl Connection
 
 #### method: borrow
 
-[Source line 172](../../../extended/ext/tls_tcp.lani#L172)
+[Source line 185](../../../extended/ext/tls_tcp.lani#L185)
 
 ```lanius
 pub fn borrow(&self) -> &Connection
@@ -565,7 +565,7 @@ pub fn borrow(&self) -> &Connection
 
 #### method: is_open
 
-[Source line 173](../../../extended/ext/tls_tcp.lani#L173)
+[Source line 186](../../../extended/ext/tls_tcp.lani#L186)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -573,7 +573,7 @@ pub fn is_open(&self) -> bool
 
 #### method: established
 
-[Source line 174](../../../extended/ext/tls_tcp.lani#L174)
+[Source line 187](../../../extended/ext/tls_tcp.lani#L187)
 
 ```lanius
 pub fn established(&self) -> bool
@@ -581,7 +581,7 @@ pub fn established(&self) -> bool
 
 #### method: close_requested
 
-[Source line 175](../../../extended/ext/tls_tcp.lani#L175)
+[Source line 188](../../../extended/ext/tls_tcp.lani#L188)
 
 ```lanius
 pub fn close_requested(&self) -> bool
@@ -589,7 +589,7 @@ pub fn close_requested(&self) -> bool
 
 #### method: progress
 
-[Source line 176](../../../extended/ext/tls_tcp.lani#L176)
+[Source line 189](../../../extended/ext/tls_tcp.lani#L189)
 
 ```lanius
 pub fn progress(&self) -> Progress
@@ -597,7 +597,7 @@ pub fn progress(&self) -> Progress
 
 #### method: destroy
 
-[Source line 192](../../../extended/ext/tls_tcp.lani#L192)
+[Source line 205](../../../extended/ext/tls_tcp.lani#L205)
 
 ```lanius
 pub fn destroy(&self) -> CloseReport
@@ -605,7 +605,7 @@ pub fn destroy(&self) -> CloseReport
 
 #### method: abort
 
-[Source line 200](../../../extended/ext/tls_tcp.lani#L200)
+[Source line 213](../../../extended/ext/tls_tcp.lani#L213)
 
 ```lanius
 pub fn abort(&self, cause: Error) -> CloseReport
@@ -613,7 +613,7 @@ pub fn abort(&self, cause: Error) -> CloseReport
 
 #### method: try_finish
 
-[Source line 219](../../../extended/ext/tls_tcp.lani#L219)
+[Source line 232](../../../extended/ext/tls_tcp.lani#L232)
 
 ```lanius
 pub fn try_finish(&self) -> core::result::Result<CloseReport, Error>
@@ -621,7 +621,7 @@ pub fn try_finish(&self) -> core::result::Result<CloseReport, Error>
 
 #### method: read_plaintext
 
-[Source line 224](../../../extended/ext/tls_tcp.lani#L224)
+[Source line 237](../../../extended/ext/tls_tcp.lani#L237)
 
 ```lanius
 pub fn read_plaintext(&self, output: core::slice::View<u8>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<ext::tls_connection::Read, Failure>
@@ -629,7 +629,7 @@ pub fn read_plaintext(&self, output: core::slice::View<u8>, deadline: core::time
 
 #### method: queue_plaintext
 
-[Source line 232](../../../extended/ext/tls_tcp.lani#L232)
+[Source line 245](../../../extended/ext/tls_tcp.lani#L245)
 
 ```lanius
 pub fn queue_plaintext(&self, input: core::slice::View<u8>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Failure>
@@ -637,7 +637,7 @@ pub fn queue_plaintext(&self, input: core::slice::View<u8>, deadline: core::time
 
 #### method: begin_close
 
-[Source line 238](../../../extended/ext/tls_tcp.lani#L238)
+[Source line 251](../../../extended/ext/tls_tcp.lani#L251)
 
 ```lanius
 pub fn begin_close(&self) -> core::result::Result<i32, Error>
@@ -645,7 +645,7 @@ pub fn begin_close(&self) -> core::result::Result<i32, Error>
 
 #### method: request_key_update
 
-[Source line 239](../../../extended/ext/tls_tcp.lani#L239)
+[Source line 252](../../../extended/ext/tls_tcp.lani#L252)
 
 ```lanius
 pub fn request_key_update(&self, request_peer: bool) -> core::result::Result<i32, Error>
@@ -653,7 +653,7 @@ pub fn request_key_update(&self, request_peer: bool) -> core::result::Result<i32
 
 #### method: negotiated
 
-[Source line 240](../../../extended/ext/tls_tcp.lani#L240)
+[Source line 253](../../../extended/ext/tls_tcp.lani#L253)
 
 ```lanius
 pub fn negotiated(&self) -> core::option::Option<ext::tls_connection::Negotiated>
@@ -661,7 +661,7 @@ pub fn negotiated(&self) -> core::option::Option<ext::tls_connection::Negotiated
 
 #### method: export
 
-[Source line 241](../../../extended/ext/tls_tcp.lani#L241)
+[Source line 254](../../../extended/ext/tls_tcp.lani#L254)
 
 ```lanius
 pub fn export(&self, label: core::slice::View<u8>, context: core::slice::View<u8>, output: core::slice::View<u8>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Failure>
@@ -669,15 +669,15 @@ pub fn export(&self, label: core::slice::View<u8>, context: core::slice::View<u8
 
 #### method: step
 
-[Source line 267](../../../extended/ext/tls_tcp.lani#L267)
+[Source line 280](../../../extended/ext/tls_tcp.lani#L280)
 
 ```lanius
 pub fn step(&self, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Progress, Failure>
 ```
 
-### impl at line 327
+### impl at line 340
 
-[Source line 327](../../../extended/ext/tls_tcp.lani#L327)
+[Source line 340](../../../extended/ext/tls_tcp.lani#L340)
 
 ```lanius
 pub impl Progress
@@ -685,7 +685,7 @@ pub impl Progress
 
 #### method: borrow
 
-[Source line 327](../../../extended/ext/tls_tcp.lani#L327)
+[Source line 340](../../../extended/ext/tls_tcp.lani#L340)
 
 ```lanius
 pub fn borrow(&self) -> &Progress

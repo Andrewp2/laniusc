@@ -81,7 +81,9 @@ all six algorithms with explicit input and I/O limits.
 [X25519](docs/extended-x25519.md) have focused native Linux execution evidence.
 [P-256](docs/extended-p256.md) also passes 1,288 independent protocol cases
 for SEC1 public keys, ECDH and ECDSA/SHA-256 verification, plus an ordinary
-consumer, without allocation. Its TLS integration remains separate work.
+consumer, without allocation. [TLS group integration](docs/tls-group-integration-plan.md)
+now executes X25519/P-256 policy selection, independent keys and bounded retries;
+ECDSA certificate/signature integration remains separate work.
 [HMAC/HKDF-SHA-384](docs/extended-hmac-hkdf-sha384.md) passes 930 protocol
 commands and an ordinary composition program, including streaming/reset,
 copied state and full output through HKDF counter 255.
@@ -117,18 +119,21 @@ work.
 that path decision to ordered CertificateVerify and Finished checks, with
 110 protocol cases and 340 state observations. The
 [connection engine](docs/extended-tls-connection.md) composes it with negotiation,
-directional epochs and client-Finished acknowledgement, passing paired
-handshakes, both retry forms, long certificate flights and 46 boundary cases.
+directional epochs and client-Finished acknowledgement, passing 114 scripted
+cases plus an ordinary consumer across both groups, retry forms, long
+certificate flights and error/entropy/work boundaries.
 The [TCP adapter](docs/extended-tls-tcp.md) passes 18 real OpenSSL exchanges,
 37 fault/ownership cases, two 1 MiB pressure streams and six deadline/budget
 resumption cases, including actual partial-send and retained-input witnesses.
-The [exchange application](docs/extended-tls-exchange.md) passes 74 native cases
+Another 28 cases cover P-256 peers, both group policies and bounded scalar
+rejection, for 91 transport cases in total.
+The [exchange application](docs/extended-tls-exchange.md) passes 76 native cases
 for duplex transfers, explicit trust, file/input limits, I/O and owner failures.
 The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
 records the measured crypto and large-library workloads. These connections use
-the explicit X25519/Ed25519/SHA-256 profile; P-256/ECDSA and RSA integration and
+X25519 or P-256 with Ed25519/SHA-256; ECDSA and RSA signature integration and
 broader PKIX support remain part of the full TLS work.
 
 Optional modules use the [`extended` source root](extended/README.md).

@@ -1,7 +1,7 @@
 # TLS 1.3 negotiation helpers
 
 `ext::tls_negotiation` validates the meaning of borrowed TLS handshake fields and writes checked
-extension lists. It implements a full DHE profile using X25519 (`0x001d`), Ed25519 (`0x0807`),
+extension lists. It implements a full DHE profile using X25519 (`0x001d`) or secp256r1 (`0x0017`), Ed25519 (`0x0807`),
 SHA256, and either AES128GCM (`0x1301`) or ChaCha20Poly1305 (`0x1303`).
 
 The source follows [RFC 8446 sections 4 and
@@ -11,17 +11,29 @@ The source follows [RFC 8446 sections 4 and
 does not implement all mandatory algorithms of RFC 8446 section 9.1 and does not claim general
 TLS algorithm conformance.
 
+## Migration status
+
+The typed-group negotiation migration is accepted on x86_64 Linux at production
+`3f089664`. Its four focused exact gates passed with empty allocation traces.
+The exact shared schema, entropy and HRR contract is in
+[the integration plan](tls-group-integration-plan.md). Internal callers migrated directly;
+there are no X25519-specific compatibility aliases. This receipt covers negotiation
+helpers; the engine and transport have their own admission evidence.
+
 ## API
 
 | Operation | Result |
 | --- | --- |
 | `budget(Limits { max_message, max_work })` | `Result<Budget, Error>` |
 | `inspect_client_hello(ClientHello, &Budget)` | Validated `Offer` |
-| `choose(Offer, preferred_suite, &Budget)` | Offered implemented `Selection`, possibly requiring HRR |
+| `choose(Offer, preferred_suite, GroupPolicy, &Budget)` | `Decision::Selected(Selection)` or `Decision::Retry(Retry)` |
 | `check_server_hello(Offer, ServerHello, Option<Retry>, &Budget)` | Checked normal selection or HRR |
 | `check_second_client_hello(first, Retry, second, &Budget)` | Checked CH2 `Offer` |
 | `select_alpn(Offer, preferred, required, &Budget)` | Offered protocol or empty optional selection |
 | `check_encrypted_extensions(Offer, EncryptedExtensions, required_alpn, &Budget)` | `NegotiatedExtensions` |
+| `key_share(Offer, Group, &Budget)` | Canonically validated `Option<KeyShare>` |
+| `group_id(Group)` / `group_from_id(u16)` | Typed group / wire-ID conversion |
+| `validate_policy(GroupPolicy)` / `default_groups()` | Distinct one/two-group policy / X25519 then P-256 default |
 | `record_suite(u16)` | Explicit `tls_record::Suite` mapping |
 
 `Budget.borrow()` supplies the shared reference. Default limits are 262144 logical field bytes
@@ -30,17 +42,21 @@ fields; it does not sum repeated stages or represent the encoded frame size. For
 checking first inspects CH under that cap and then caps the SH fields separately. `max_work` is
 shared across all stages of the operation. No host calls or allocations occur.
 
-`Offer` retains `hello`, decoded groups/signature lists, key shares, the X25519 share, SNI, ALPN
+`Offer` retains `hello`, decoded groups/signature lists, raw key shares, SNI, ALPN
 and cookie views. Its fields describe the parsed offer. Consuming functions derive the fields
 again from `Offer.hello`; fabricated descriptive fields cannot authorize a selection. The caller
 must keep all backing alive and immutable. Copying an Offer copies borrowed descriptors, with no
 ownership transfer or independent backing. Physical array backing and disjoint mutable
 budget/output storage are manual contracts.
 
-`Selection` contains `suite`, `group`, `signature`, `retry`, `peer_key`, and `cookie`. `Retry`
-contains `suite`, `group`, and `cookie`; group zero denotes cookie-only HRR, group 29 requests
-X25519. Cookies are unprefixed content, not the encoded u16 length. `NegotiatedExtensions`
-contains one unprefixed ALPN view and `server_name_ack`.
+`Group` is `X25519` or `Secp256r1`. `GroupPolicy` contains `preferred` and
+`fallback: Option<Group>`; repeated groups are invalid. `KeyShare` contains a typed
+`group` and borrowed `data`. `Selection` contains `suite`, typed `group`, `signature`
+and `peer_key`. `Retry` contains `suite`, `requested: Option<Group>` and `cookie`.
+`requested=None` denotes cookie-only HRR. `Decision` distinguishes the two results;
+there is no placeholder peer key or retry boolean in a successful selection. Cookies
+are unprefixed content, not the encoded u16 length. `NegotiatedExtensions` contains
+one unprefixed ALPN view and `server_name_ack`.
 
 Errors distinguish metadata bounds, input/work limits, nested codec failures,
 malformed/missing/duplicate extension data, unsupported features, absent implemented
@@ -55,14 +71,17 @@ ClientHello requires TLS 1.3 supported_versions, nonempty supported_groups and
 signature_algorithms, and key_share. A missing-share attempt uses a present **empty key_share
 vector**. Groups cannot repeat. Shares cannot repeat, must belong to supported_groups, and must
 follow its relative order. Membership/order validation advances one group cursor, avoiding a
-shares-times-groups search. X25519 shares must contain 32 bytes; other offered groups remain
-opaque and cannot be selected by this profile.
+shares-times-groups search. X25519 shares must contain 32 bytes. P-256 shares must contain exactly 65 bytes with
+prefix `04`; compressed SEC1 points are rejected. This module validates wire shape; the
+engine calls the P-256 primitive to validate the actual point before scalar multiplication.
+Other groups remain opaque and cannot be selected by this profile.
 
 Ed25519 must appear in signature_algorithms and the effective certificate-signature list. Absent
 signature_algorithms_cert falls back to signature_algorithms. Server preference is one of the
 two implemented suite IDs; the other is considered only when the preferred suite was not
-offered. An offered X25519 group without its share produces a valid requested-group HRR
-selection.
+offered. The server chooses the first group in its policy that the client advertised. If its
+share is absent, selection returns a requested-group HRR even when a less preferred
+mutual group already has a share. Group preference does not depend on suite preference.
 
 Unknown ClientHello extension types are ignored after complete framing and duplicate-ID
 validation. A well-framed psk_key_exchange_modes extension (45) alone is accepted and ignored;
@@ -82,10 +101,10 @@ u8-prefixed list is bounded and fully scanned. Duplicate ALPN strings are permit
 ## HRR, CH2 and EncryptedExtensions
 
 ServerHello checks session echo, offered implemented suite, selected TLS 1.3 version, one
-offered X25519 share, and extension placement. HRR admits only supported_versions, cookie and
+offered implemented-group share, and extension placement. HRR admits only supported_versions, cookie and
 requested key_share. A requested group must be offered and not already shared. A second HRR,
 empty/no-change HRR, or unsupported request is rejected. Cookie-only HRR requires a nonempty
-cookie and an existing X25519 share, so this profile can finish without a second retry. Initial
+cookie and an existing implemented-group share, so this profile can finish without a second retry. Initial
 CH cookies are rejected.
 
 CH2 must retain random, session and cipher-suite bytes, and every unchanged extension's data and
@@ -114,20 +133,21 @@ publication of success.
 All four writers return the length of a **raw extension list**, with no outer u16 list prefix.
 The existing `tls_handshake` ClientHello/ServerHello/EE writers add their enclosing lengths.
 
-- `write_client_extensions(share32_or_empty, server_name, alpn_list, cookie, output, &Budget)`
+- `write_client_extensions(GroupPolicy, Option<KeyShare>, server_name, alpn_list, cookie, output, &Budget)`
   emits versions, groups, CV and certificate signature algorithms, key share, and optional
   SNI/ALPN/cookie.
-- `write_server_extensions(share32, output, &Budget)` emits TLS 1.3 version and X25519 share.
-- `write_retry_extensions(group_zero_or_29, cookie, output, &Budget)` emits version and
+- `write_server_extensions(KeyShare, output, &Budget)` emits TLS 1.3 version and its typed share.
+- `write_retry_extensions(Option<Group>, cookie, output, &Budget)` emits version and
   requested group and/or cookie.
 - `write_encrypted_extensions(selected_alpn, server_name_ack, output, &Budget)` emits the
   requested acknowledgement and/or one selected protocol.
 
 Client ALPN is a concatenated u8-prefixed list. Selected ALPN is one unprefixed protocol. Empty
-optional views omit their extensions, except empty client share emits the required empty
+optional views omit their extensions; `share=None` emits the required empty
 key_share vector. Cookie content is 1–65533 bytes when present; session IDs are 0–32 bytes in
-the codec. The client writer's fixed list is 37 bytes with no share or 73 with a 32-byte share,
-before optional extensions.
+the codec. A one-group client list is 37 bytes with no share, 73 with an X25519 share, or 106
+with a P-256 share. A two-group policy adds two bytes. Optional extensions add their
+framing and contents. A supplied share must belong to the policy.
 
 Writers validate all metadata, shape, output capacity, resource allowance and semantic inputs
 before their first output store. Failures preserve the entire output, including bytes inside its
@@ -153,7 +173,53 @@ manual backing contract.
 
 ## Focused verification
 
-All four focused gates passed on x86_64 Linux in **four separate exact invocations**, each
+The typed-group gates passed in four separate exact invocations, compiling four
+strict x86_64 Linux ELFs and running 30 native processes, all with empty
+`mmap/mremap/munmap/brk` traces. The model gates checked **1,540 wire commands
+and 72 exact/one-less quota probes (1,612 total)**; the ordinary gate exercised
+six flows. Production remained `3f089664` throughout.
+
+| Gate | Commands / flows | Native processes | Runtime |
+| --- | --- | --- | --- |
+| Ordinary consumer | Six streams | 1 | 9.55 s |
+| Final offers model | 616 commands + 24 quota probes | 11 | 12.10 s |
+| Server / HRR / CH2 / EE | 586 commands + 24 quota probes | 11 | 12.01 s |
+| Atomic writers | 338 commands + 24 quota probes | 7 | 11.74 s |
+
+The final offers receipt uses model `37c50e14`. The server and writer receipts
+used `9d6dabe3`; their case-generation and expectation functions did not change
+in the later offers-only revision. The protocol is `af0f5233`, ordinary fixture
+`5d7d299c`, and Rust driver `6d936699`. The earlier two-target Rust build took
+1.70 s (`group-build-first.log`); the frozen joint four-target build took 1.75 s
+(`group-build-frozen.log`). The binary is
+`extended_tls_negotiation_execution-b5ff2330e3937816`.
+
+Current coverage includes both group orders, strict preference with a missing
+preferred share, P-only and dual policies, duplicate policies, exact P-256 wire
+shape, requested-P HRR/CH2, final retry pins, canonical typed share lookup and
+writer capacities. Actual valid two-share X/P offers in both supported-group
+orders are paired with reversed, otherwise valid share lists. Both server
+preference orders and lookup of each returned key are checked. The independent
+protocol hashes the actual returned views and preserves all input/guard bytes.
+
+Logs are under `target/stdlib-work/tls-connection-admission/`:
+
+- `group-negotiation-ordinary-first.log`;
+- `group-negotiation-offer-multishare.log`;
+- `group-negotiation-retry-first.log`;
+- `group-negotiation-writers-first.log`.
+
+The original migrated offers model (`9d6dabe3`) also passed 576 commands plus
+24 probes in 11.55 s (`group-negotiation-offer-first.log`). Review then added the
+valid two-share/reversed-order cases, adding 40 layout commands. This was a
+coverage improvement, not a failed gate or production fix; the 616-command
+receipt above admits the final offers model. Root performed all serialized
+compiler/native runs. Author-side checks were Python syntax parsing, targeted
+Rust formatting and whitespace/static review; the author ran no test process.
+
+### Earlier X25519-only receipts
+
+The earlier X25519-only four focused gates passed on x86_64 Linux in **four separate exact invocations**, each
 compiling a strict ELF. The accepted evidence comprises four ELFs and 25 native processes, all
 with empty allocation traces. This is not a single full-suite invocation.
 
@@ -216,6 +282,7 @@ gate name from the list above. The revised runtime binary is
 
 ```sh
 RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 \
   timeout --kill-after=2s 100s flock -E 75 -w 35 \
   target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
   target/stdlib-build/debug/deps/extended_tls_negotiation_execution-b5ff2330e3937816 \

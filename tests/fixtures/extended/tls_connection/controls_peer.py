@@ -63,7 +63,7 @@ def frame(kind, content):
 
 
 def inputs(op):
-    cpub, spub, shared = wire.shared_key()
+    cpub, spub, shared = wire.shared_key(29, (29,), (29,))
     ext = b'\0\x2b\0\x02\x03\x04'+b'\0\x33\0\x24\0\x1d\0\x20'+spub
     sh = frame(2, b'\x03\x03'+wire.SERVER_ENTROPY[:32]+b'\0\x13\x03\0'+U16(len(ext))+ext)
     ccs = plain(20, b'\x01')

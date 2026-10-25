@@ -1,11 +1,11 @@
 # Portable TLS connection engine
 
 `ext::tls_connection` composes the Lanius negotiation, framing, transcript,
-X25519, key schedule, record and server-authentication layers. It implements
+X25519/P-256, key schedule, record and server-authentication layers. It implements
 client and server roles in one allocation-free engine. Socket ownership,
 nonblocking calls, entropy acquisition and deadlines belong to `ext::tls_tcp`.
 
-The supported profile is TLS 1.3 with X25519, SHA-256, Ed25519 certificates and
+The supported profile is TLS 1.3 with X25519 or secp256r1 ECDHE, SHA-256, Ed25519 certificates and
 CertificateVerify, and either AES-128-GCM (`1301`) or ChaCha20-Poly1305 (`1303`).
 The server authenticates; its client is explicitly anonymous. There is no PSK
 resumption, early data, client certificate authentication or post-handshake
@@ -25,10 +25,28 @@ See [the connection contract](tls-connection-contract.md),
 ## Construction and storage
 
 `client(config, buffers, entropy)` and `server(config, buffers, entropy)` return
-an `Engine`. The pure-engine entropy argument must contain 64 fresh OS
-cryptographic bytes: 32 for the hello random and 32 for X25519 private input.
+an `Engine`. `ClientConfig` supplies a typed `groups: GroupPolicy` and
+`initial_share: Option<Group>`; `ServerConfig` supplies `groups`. Policies contain
+one or two distinct groups. The server chooses its first mutual group and requests
+HRR when that share is missing. The application default is X25519 then P-256,
+with an initial X25519 share. `Negotiated` reports the selected typed `group`.
+
+Call `entropy_layout(groups)` for the sole slot-layout authority. Its `EntropyLayout`
+returns exact `length`, `x25519_offset: Option<i32>` and `p256_offset: Option<i32>`.
+Random always occupies the first 32 bytes. X-only and P-only use 64 bytes. Dual
+policy uses 96 bytes with X at offset32 and P at offset64, independently of
+preference order. Every enabled slot requires independent fresh cryptographic OS
+bytes. P-256 is derived first; zero or out-of-range scalar returns
+`InvalidEphemeralScalar` before X derivation or caller-buffer writes. The engine
+caches each enabled public key once and reuses the appropriate independent state
+on HRR. P-256 TLS shares are exactly 65-byte uncompressed points; point validation
+precedes scalar multiplication. The full 32-byte shared x coordinate, including
+leading zeros, is input to the existing SHA256 key schedule.
 Production callers use `tls_tcp`, which acquires this input through bounded
-nonblocking OS entropy calls. Fixed entropy appears only in test fixtures.
+nonblocking OS entropy calls. It allows eight total P-scalar candidates, refilling only
+the P slot at most seven times on `InvalidEphemeralScalar`, under the original deadline
+and HostBudget. There is no modular reduction or deterministic fallback. Fixed entropy
+appears only in test fixtures. See the exact [group integration contract](tls-group-integration-plan.md).
 The engine copies entropy and the server signing seed; their original inputs
 may be overwritten after construction. This is not a secure-erasure guarantee.
 
@@ -177,9 +195,102 @@ Subsequent peer input is ignored as required by
 Raw transport EOF before peer close_notify, including incomplete framing, is
 sticky `Truncated`; it is never clean TLS EOF.
 
+## Group-specific work
+
+X-only construction retains 1,048,576 work units, and its exchange/schedule retains
+1,179,648. Each P-256 public derivation or exchange reserves 67,108,864 before the
+expensive call; P-256 schedule work adds 131,072. Dual construction reserves both
+public derivations. The [source-counted envelope](tls-group-integration-plan.md#work-accounting)
+is conservative abstract admission work, not executed instructions or an elapsed-time
+bound. Rejected scalar admissions run fixed decode/range checks and are separately
+bounded by the adapter's eight-candidate cap. Default engine work remains 256 Mi;
+large certificate/record workloads still need explicit sufficient session/path limits.
+
 ## Admission status
 
-The portable paired selected profile is accepted on x86_64 Linux. The four
+The typed-group/P-256 portable engine migration is accepted on x86_64 Linux at
+engine `eaf51c4c` and negotiation `3f089664`. Six separate exact invocations each
+compiled one strict ELF and ran one native process. They checked **114 scripted
+cases plus the ordinary consumer**.
+
+| Exact gate | Accepted cases | Elapsed |
+| --- | --- | --- |
+| `ordinary_connection_storage_and_pending_wire_consumer_executes` | Ordinary constructor/pending-wire consumer | 17.37 s |
+| `paired_connections_match_independent_wire_epochs_and_authentication` | 4 X25519 flights: both suites × both layouts | 21.40 s |
+| `fragmented_long_certificate_and_both_hello_retry_modes_execute` | 4 X25519 flows: both HRR forms and long eight-certificate flights | 26.49 s |
+| `p256_and_dual_group_connections_match_independent_openssl_ecdh` | 8 P-only/dual flights, both suites/layouts and both requested-group directions | 21.14 s |
+| `connection_error_atomicity_and_record_epoch_boundaries_execute` | 46: 23 controls × both layouts | 20.18 s |
+| `group_entropy_scalar_encoding_and_work_admission_boundaries_execute` | 52: 26 admissions × both layouts | 21.07 s |
+
+The ordinary, control and admission processes had empty
+`mmap/munmap/mremap/brk` traces. Each of the three pair/fragment/P-group processes
+owned one explicit 3,520,000-byte caller arena, with exact allocator flags and a
+matching address-and-size munmap. The engine did not allocate, resize or release
+that storage. This is six ELFs/six native processes, not one whole-target run.
+
+Final pair/fragment/P-group protocol `b21543b6` and peer `c9fe9ebf` serialize both
+client and server `Negotiated.group` IDs. The independent peer checks each against
+its first-mutual policy selection and the actual authenticated flight's wire
+selection. Controls used fixture `f8ad669a` and peer `ece7e979`. Admission fixture
+`4652bbf0` and peer `410ae4f5`, ordinary fixture `86a19948`, and driver `a2b1e879`
+remained frozen for their receipts. The initial two-target Rust build took 1.70 s;
+the final four-target build took 1.75 s. Binary:
+`extended_tls_connection_execution-45bdd3cf3691412b`.
+
+Every exact gate used the serialized 100 s outer / 35 s lock-wait / 60 s inner
+wrapper, `RUST_MIN_STACK=16777216`, `LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000`,
+`LANIUS_DEBUG_STAGE_ERRORS=1` and `--exact GATE --nocapture --test-threads=1`.
+
+Logs are under `target/stdlib-work/tls-connection-admission/`:
+
+- `group-engine-ordinary-first.log`;
+- `group-engine-pairs-final.log`;
+- `group-engine-fragments-final.log`;
+- `group-engine-p256-publication.log`;
+- `group-engine-controls-helper-fixed.log`;
+- `group-admission-first.log`;
+- `group-build-first.log` and `group-build-frozen.log`.
+
+The initial P-group receipt passed eight cases in 22.66 s using protocol
+`3a96ba67` and peer `3c39f52c` (`group-pairs-first.log`). Review strengthened the
+published-group assertions from client/server equality to two independent wire
+comparisons. The final 21.14 s receipt admits that stronger fixture. This was a
+coverage improvement, not a production fix.
+
+The first migrated controls attempt compiled its ELF, then failed in CPU oracle
+input preparation before native launch: the helper still called `shared_key()`
+without the new explicit group/policy arguments. That attempt took 20.81 s
+(`group-engine-controls-first.log`). The one-line test-oracle migration now passes
+X25519 and two X-only policies explicitly. CPU-only preparation then constructed
+46 cases/3,170 bytes; the final 20.18 s native receipt above admits the repaired
+oracle. Production and the Lanius controls fixture did not change for this repair.
+
+The existing ordinary, pair, long/HRR and 46-control fixtures now select X-only
+explicitly and preserve their original entropy and policy meaning. The added gate
+`p256_and_dual_group_connections_match_independent_openssl_ecdh` checks eight paired
+flights across both suites/layouts, both group HRRs and P cookie-only HRR.
+`group_entropy_scalar_encoding_and_work_admission_boundaries_execute` checks 52
+layout cases: exact entropy slots/length, zero/order/oversized scalars,
+duplicate/unoffered policy, malformed/compressed/off-curve peer shares, exact and
+one-less P exchange work, and no caller-buffer mutation on the tested early
+admission rejections.
+It uses public entry points and fixed test entropy; no private authenticated phase
+is manufactured. Source fixtures preserve no-auth/publication, source/guard and
+manual owner contracts. The P peer cross-checks affine bigint public/ECDH values
+against raw OpenSSL in both directions before checking emitted record bytes.
+
+Root performed all serialized compiler/native admission. Author-side checks were
+Python syntax parsing, targeted Rust formatting, whitespace/static review, and
+the explicitly authorized CPU-only controls-input preparation after its helper
+migration omission. No author-side Cargo, compiler/GPU or native fixture run
+occurred. These receipts cover the portable selected profile. TCP/OpenSSL and
+application acceptance have separate evidence in their respective guides; this
+module still supports the documented Ed25519/SHA256 credential profile and does
+not claim the complete mandatory TLS algorithm set or general PKIX validation.
+
+### Earlier X25519-only receipts
+
+The earlier portable paired selected profile was accepted on x86_64 Linux. The four
 independent exact invocations below each compiled one strict ELF and ran one
 native process. Production remains allocation-free: the ordinary and controls
 fixtures have empty memory traces; each paired fixture process intentionally
@@ -288,7 +399,7 @@ Its frozen sources were production `b26122db`, controls `2f3fd0e2`, peer
 `extended_tls_connection_execution-45bdd3cf3691412b`. Logs:
 `target/stdlib-work/tls-connection-admission/connection-controls46.log` and
 `build-connection-controls46.log` in the same directory.
-The current portable selected profile is accepted. Real TCP/OpenSSL and
+The earlier X25519 portable selected profile was accepted. Real TCP/OpenSSL and
 application admission remains separate; general TLS compliance is not claimed.
 These tests do not establish constant-time generated code or general TLS/PKIX
 compliance. TCP/OpenSSL peer evidence belongs to the adapter/application gates.

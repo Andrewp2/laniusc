@@ -640,6 +640,36 @@ fn tls_exchange_cli_interoperates_with_openssl_in_both_directions() {
     eprintln!("tls_exchange interop:one shared strictELF,{count} native CLI cases,actual OpenSSL-backed TLS1.3 peers both directions including binary/empty/1MiB,explicit trust and close_notify; full protocol matrix belongs tls_tcp");
 }
 #[test]
+fn tls_exchange_dual_policy_interoperates_with_p256_only_openssl_peers() {
+    for role in ["client", "serve"] {
+        let input = payload(1025);
+        let args = if role == "client" {
+            client_arguments("@ENDPOINT@", "path.example", "root.der")
+        } else {
+            server_arguments("@ENDPOINT@", "seed.bin", "chain.der")
+        };
+        let observed = run(&input, args, &[], Some(role), false, 12, "p256");
+        checked(&observed, 0, &input);
+        independent_peer(&observed, &input);
+        let entropy = calls(&observed.events, "getrandom");
+        assert!(!entropy.is_empty());
+        let first: usize = fields(entropy[0], "getrandom")
+            .0
+            .rsplit(',')
+            .nth(1)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            first, 96,
+            "application dual policy uses independent canonical slots"
+        );
+    }
+    eprintln!("tls_exchange P-256:2 real independent peers,default dual policy with initial X share,forced P fallback/requested-group retry,exact binary/authenticated publication and owner ledgers");
+}
+
+#[test]
 fn tls_exchange_cli_preflight_files_caps_and_io_failures() {
     let mut count = 0;
     for args in [

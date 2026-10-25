@@ -57,11 +57,11 @@ def write_receipt(receipt, status, output, errors):
         target.write(struct.pack('<I', len(field)) + field)
 
 
-def context(directory, server):
+def context(directory, server, p256=False):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER if server else ssl.PROTOCOL_TLS_CLIENT)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_3
     ctx.maximum_version = ssl.TLSVersion.TLSv1_3
-    ctx.set_ecdh_curve('X25519')
+    ctx.set_ecdh_curve('prime256v1' if p256 else 'X25519')
     if server:
         ctx.num_tickets = 0
         ctx.load_cert_chain(directory / 'server-chain.pem', directory / 'key.pem')
@@ -181,7 +181,7 @@ def main():
                     raw.sendall(b'not a TLS record')
                     raw.close()
                     return
-                connection = context(directory, True).wrap_socket(raw, server_side=True)
+                connection = context(directory, True, spec['peer'] == 'p256').wrap_socket(raw, server_side=True)
             else:
                 while not stop.is_set():
                     try:
@@ -194,7 +194,7 @@ def main():
                 if raw is None:
                     return
                 raw.settimeout(5)
-                connection = context(directory, False).wrap_socket(raw, server_hostname='path.example')
+                connection = context(directory, False, spec['peer'] == 'p256').wrap_socket(raw, server_hostname='path.example')
             receipt['version'] = connection.version()
             receipt['cipher'] = connection.cipher()[0]
             receipt['reused'] = connection.session_reused

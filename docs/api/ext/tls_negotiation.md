@@ -12,7 +12,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-tls-negotiation](../../extended-tls-negotiation.md)
 
-Declaration counts: enum: 1; field: 26; function: 13; impl: 1; method: 1; struct: 6; variant: 18.
+Declaration counts: enum: 3; field: 27; function: 18; impl: 1; method: 1; struct: 8; variant: 22.
 
 ## Declared imports
 
@@ -231,9 +231,81 @@ max_message:i32
 work_left:u64
 ```
 
-### struct: Offer
+### enum: Group
 
 [Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+
+```lanius
+pub enum Group
+```
+
+#### variant: X25519
+
+[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+
+```lanius
+X25519
+```
+
+#### variant: Secp256r1
+
+[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+
+```lanius
+Secp256r1
+```
+
+### struct: GroupPolicy
+
+[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+
+```lanius
+pub struct GroupPolicy
+```
+
+#### field: preferred
+
+[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+
+```lanius
+preferred:Group
+```
+
+#### field: fallback
+
+[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+
+```lanius
+fallback:core::option::Option<Group>
+```
+
+### struct: KeyShare
+
+[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+
+```lanius
+pub struct KeyShare
+```
+
+#### field: group
+
+[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+
+```lanius
+group:Group
+```
+
+#### field: data
+
+[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+
+```lanius
+data:core::slice::View<u8>
+```
+
+### struct: Offer
+
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 pub struct Offer
@@ -241,7 +313,7 @@ pub struct Offer
 
 #### field: hello
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 hello:ext::tls_handshake::ClientHello
@@ -249,7 +321,7 @@ hello:ext::tls_handshake::ClientHello
 
 #### field: groups
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 groups:core::slice::View<u8>
@@ -257,7 +329,7 @@ groups:core::slice::View<u8>
 
 #### field: signatures
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 signatures:core::slice::View<u8>
@@ -265,7 +337,7 @@ signatures:core::slice::View<u8>
 
 #### field: certificate_signatures
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 certificate_signatures:core::slice::View<u8>
@@ -273,23 +345,15 @@ certificate_signatures:core::slice::View<u8>
 
 #### field: key_shares
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 key_shares:core::slice::View<u8>
 ```
 
-#### field: x25519
-
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
-
-```lanius
-x25519:core::slice::View<u8>
-```
-
 #### field: server_name
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 server_name:core::slice::View<u8>
@@ -297,7 +361,7 @@ server_name:core::slice::View<u8>
 
 #### field: alpn
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 alpn:core::slice::View<u8>
@@ -305,7 +369,7 @@ alpn:core::slice::View<u8>
 
 #### field: cookie
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 cookie:core::slice::View<u8>
@@ -313,7 +377,7 @@ cookie:core::slice::View<u8>
 
 #### field: has_server_name
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 has_server_name:bool
@@ -321,7 +385,7 @@ has_server_name:bool
 
 #### field: has_alpn
 
-[Source line 16](../../../extended/ext/tls_negotiation.lani#L16)
+[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
 
 ```lanius
 has_alpn:bool
@@ -329,7 +393,7 @@ has_alpn:bool
 
 ### struct: Selection
 
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+[Source line 20](../../../extended/ext/tls_negotiation.lani#L20)
 
 ```lanius
 pub struct Selection
@@ -337,7 +401,7 @@ pub struct Selection
 
 #### field: suite
 
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+[Source line 20](../../../extended/ext/tls_negotiation.lani#L20)
 
 ```lanius
 suite:u16
@@ -345,47 +409,31 @@ suite:u16
 
 #### field: group
 
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+[Source line 20](../../../extended/ext/tls_negotiation.lani#L20)
 
 ```lanius
-group:u16
+group:Group
 ```
 
 #### field: signature
 
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+[Source line 20](../../../extended/ext/tls_negotiation.lani#L20)
 
 ```lanius
 signature:u16
 ```
 
-#### field: retry
-
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
-
-```lanius
-retry:bool
-```
-
 #### field: peer_key
 
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
+[Source line 20](../../../extended/ext/tls_negotiation.lani#L20)
 
 ```lanius
 peer_key:core::slice::View<u8>
 ```
 
-#### field: cookie
-
-[Source line 17](../../../extended/ext/tls_negotiation.lani#L17)
-
-```lanius
-cookie:core::slice::View<u8>
-```
-
 ### struct: Retry
 
-[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+[Source line 21](../../../extended/ext/tls_negotiation.lani#L21)
 
 ```lanius
 pub struct Retry
@@ -393,31 +441,55 @@ pub struct Retry
 
 #### field: suite
 
-[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+[Source line 21](../../../extended/ext/tls_negotiation.lani#L21)
 
 ```lanius
 suite:u16
 ```
 
-#### field: group
+#### field: requested
 
-[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+[Source line 21](../../../extended/ext/tls_negotiation.lani#L21)
 
 ```lanius
-group:u16
+requested:core::option::Option<Group>
 ```
 
 #### field: cookie
 
-[Source line 18](../../../extended/ext/tls_negotiation.lani#L18)
+[Source line 21](../../../extended/ext/tls_negotiation.lani#L21)
 
 ```lanius
 cookie:core::slice::View<u8>
 ```
 
+### enum: Decision
+
+[Source line 22](../../../extended/ext/tls_negotiation.lani#L22)
+
+```lanius
+pub enum Decision
+```
+
+#### variant: Selected
+
+[Source line 22](../../../extended/ext/tls_negotiation.lani#L22)
+
+```lanius
+Selected(Selection)
+```
+
+#### variant: Retry
+
+[Source line 22](../../../extended/ext/tls_negotiation.lani#L22)
+
+```lanius
+Retry(Retry)
+```
+
 ### struct: NegotiatedExtensions
 
-[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
+[Source line 29](../../../extended/ext/tls_negotiation.lani#L29)
 
 ```lanius
 pub struct NegotiatedExtensions
@@ -425,7 +497,7 @@ pub struct NegotiatedExtensions
 
 #### field: alpn
 
-[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
+[Source line 29](../../../extended/ext/tls_negotiation.lani#L29)
 
 ```lanius
 alpn:core::slice::View<u8>
@@ -433,7 +505,7 @@ alpn:core::slice::View<u8>
 
 #### field: server_name_ack
 
-[Source line 19](../../../extended/ext/tls_negotiation.lani#L19)
+[Source line 29](../../../extended/ext/tls_negotiation.lani#L29)
 
 ```lanius
 server_name_ack:bool
@@ -441,9 +513,41 @@ server_name_ack:bool
 
 ## Free functions and extern declarations
 
+### function: group_id
+
+[Source line 23](../../../extended/ext/tls_negotiation.lani#L23)
+
+```lanius
+pub fn group_id(group:Group)->u16
+```
+
+### function: group_from_id
+
+[Source line 24](../../../extended/ext/tls_negotiation.lani#L24)
+
+```lanius
+pub fn group_from_id(id:u16)->core::result::Result<Group,Error>
+```
+
+### function: default_groups
+
+[Source line 25](../../../extended/ext/tls_negotiation.lani#L25)
+
+```lanius
+pub fn default_groups()->GroupPolicy
+```
+
+### function: validate_policy
+
+[Source line 26](../../../extended/ext/tls_negotiation.lani#L26)
+
+```lanius
+pub fn validate_policy(policy:GroupPolicy)->core::result::Result<i32,Error>
+```
+
 ### function: default_limits
 
-[Source line 20](../../../extended/ext/tls_negotiation.lani#L20)
+[Source line 30](../../../extended/ext/tls_negotiation.lani#L30)
 
 ```lanius
 pub fn default_limits()->Limits
@@ -451,7 +555,7 @@ pub fn default_limits()->Limits
 
 ### function: budget
 
-[Source line 21](../../../extended/ext/tls_negotiation.lani#L21)
+[Source line 31](../../../extended/ext/tls_negotiation.lani#L31)
 
 ```lanius
 pub fn budget(limits:Limits)->core::result::Result<Budget,Error>
@@ -459,7 +563,7 @@ pub fn budget(limits:Limits)->core::result::Result<Budget,Error>
 
 ### function: inspect_client_hello
 
-[Source line 89](../../../extended/ext/tls_negotiation.lani#L89)
+[Source line 99](../../../extended/ext/tls_negotiation.lani#L99)
 
 ```lanius
 pub fn inspect_client_hello(hello:ext::tls_handshake::ClientHello,b:&Budget)->core::result::Result<Offer,Error>
@@ -467,31 +571,39 @@ pub fn inspect_client_hello(hello:ext::tls_handshake::ClientHello,b:&Budget)->co
 
 ### function: record_suite
 
-[Source line 93](../../../extended/ext/tls_negotiation.lani#L93)
+[Source line 103](../../../extended/ext/tls_negotiation.lani#L103)
 
 ```lanius
 pub fn record_suite(id:u16)->core::result::Result<ext::tls_record::Suite,Error>
 ```
 
-### function: choose
+### function: key_share
 
-[Source line 94](../../../extended/ext/tls_negotiation.lani#L94)
+[Source line 107](../../../extended/ext/tls_negotiation.lani#L107)
 
 ```lanius
-pub fn choose(offer:Offer,preferred_suite:u16,b:&Budget)->core::result::Result<Selection,Error>
+pub fn key_share(offer:Offer,group:Group,b:&Budget)->core::result::Result<core::option::Option<KeyShare>,Error>
+```
+
+### function: choose
+
+[Source line 108](../../../extended/ext/tls_negotiation.lani#L108)
+
+```lanius
+pub fn choose(offer:Offer,preferred_suite:u16,policy:GroupPolicy,b:&Budget)->core::result::Result<Decision,Error>
 ```
 
 ### function: check_server_hello
 
-[Source line 101](../../../extended/ext/tls_negotiation.lani#L101)
+[Source line 117](../../../extended/ext/tls_negotiation.lani#L117)
 
 ```lanius
-pub fn check_server_hello(offer:Offer,hello:ext::tls_handshake::ServerHello,prior:core::option::Option<Retry>,b:&Budget)->core::result::Result<Selection,Error>
+pub fn check_server_hello(offer:Offer,hello:ext::tls_handshake::ServerHello,prior:core::option::Option<Retry>,b:&Budget)->core::result::Result<Decision,Error>
 ```
 
 ### function: check_second_client_hello
 
-[Source line 122](../../../extended/ext/tls_negotiation.lani#L122)
+[Source line 138](../../../extended/ext/tls_negotiation.lani#L138)
 
 ```lanius
 pub fn check_second_client_hello(first:Offer,retry:Retry,second:ext::tls_handshake::ClientHello,b:&Budget)->core::result::Result<Offer,Error>
@@ -499,7 +611,7 @@ pub fn check_second_client_hello(first:Offer,retry:Retry,second:ext::tls_handsha
 
 ### function: select_alpn
 
-[Source line 134](../../../extended/ext/tls_negotiation.lani#L134)
+[Source line 150](../../../extended/ext/tls_negotiation.lani#L150)
 
 ```lanius
 pub fn select_alpn(offer:Offer,preferred:core::slice::View<u8>,required:bool,b:&Budget)->core::result::Result<core::slice::View<u8>,Error>
@@ -507,7 +619,7 @@ pub fn select_alpn(offer:Offer,preferred:core::slice::View<u8>,required:bool,b:&
 
 ### function: check_encrypted_extensions
 
-[Source line 140](../../../extended/ext/tls_negotiation.lani#L140)
+[Source line 156](../../../extended/ext/tls_negotiation.lani#L156)
 
 ```lanius
 pub fn check_encrypted_extensions(offer:Offer,hello:ext::tls_handshake::EncryptedExtensions,required_alpn:core::slice::View<u8>,b:&Budget)->core::result::Result<NegotiatedExtensions,Error>
@@ -515,31 +627,31 @@ pub fn check_encrypted_extensions(offer:Offer,hello:ext::tls_handshake::Encrypte
 
 ### function: write_client_extensions
 
-[Source line 161](../../../extended/ext/tls_negotiation.lani#L161)
+[Source line 177](../../../extended/ext/tls_negotiation.lani#L177)
 
 ```lanius
-pub fn write_client_extensions(share:core::slice::View<u8>,server_name_value:core::slice::View<u8>,alpn:core::slice::View<u8>,cookie:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
+pub fn write_client_extensions(policy:GroupPolicy,share:core::option::Option<KeyShare>,server_name_value:core::slice::View<u8>,alpn:core::slice::View<u8>,cookie:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
 ```
 
 ### function: write_server_extensions
 
-[Source line 177](../../../extended/ext/tls_negotiation.lani#L177)
+[Source line 193](../../../extended/ext/tls_negotiation.lani#L193)
 
 ```lanius
-pub fn write_server_extensions(share:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
+pub fn write_server_extensions(share:KeyShare,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
 ```
 
 ### function: write_retry_extensions
 
-[Source line 181](../../../extended/ext/tls_negotiation.lani#L181)
+[Source line 197](../../../extended/ext/tls_negotiation.lani#L197)
 
 ```lanius
-pub fn write_retry_extensions(group:u16,cookie:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
+pub fn write_retry_extensions(requested:core::option::Option<Group>,cookie:core::slice::View<u8>,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
 ```
 
 ### function: write_encrypted_extensions
 
-[Source line 185](../../../extended/ext/tls_negotiation.lani#L185)
+[Source line 201](../../../extended/ext/tls_negotiation.lani#L201)
 
 ```lanius
 pub fn write_encrypted_extensions(selected_alpn:core::slice::View<u8>,server_name_ack:bool,output:core::slice::View<u8>,b:&Budget)->core::result::Result<i32,Error>
@@ -547,9 +659,9 @@ pub fn write_encrypted_extensions(selected_alpn:core::slice::View<u8>,server_nam
 
 ## Implementation blocks and public methods
 
-### impl at line 22
+### impl at line 32
 
-[Source line 22](../../../extended/ext/tls_negotiation.lani#L22)
+[Source line 32](../../../extended/ext/tls_negotiation.lani#L32)
 
 ```lanius
 pub impl Budget
@@ -557,7 +669,7 @@ pub impl Budget
 
 #### method: borrow
 
-[Source line 22](../../../extended/ext/tls_negotiation.lani#L22)
+[Source line 32](../../../extended/ext/tls_negotiation.lani#L32)
 
 ```lanius
 pub fn borrow(&self)->&Budget

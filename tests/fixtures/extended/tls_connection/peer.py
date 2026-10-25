@@ -30,6 +30,9 @@ ZERO = bytes(32)
 HRR = bytes.fromhex('cf21ad74e59a6111be1d8c021e65b891c2a211167abb8c5e079e09e2c8a8339c')
 CLIENT_ENTROPY = bytes(range(1, 65))
 SERVER_ENTROPY = bytes(range(101, 165))
+P_SPEC = importlib.util.spec_from_file_location("p256_affine", HERE.parent/"p256"/"model.py")
+P256 = importlib.util.module_from_spec(P_SPEC)
+P_SPEC.loader.exec_module(P256)
 PAYLOAD = bytes((i*71+9) % 256 for i in range(113))
 
 
@@ -132,28 +135,70 @@ def hello(frame, server=False):
     return dict(random=random, session=session, suite=suite, extensions=extensions(body[at:]))
 
 
-def shared_key():
-    client_public, server_public, shared = [ctypes.create_string_buffer(32) for _ in range(3)]
-    sodium = material.SODIUM
-    assert sodium.crypto_scalarmult_curve25519_base(client_public, CLIENT_ENTROPY[32:]) == 0
-    assert sodium.crypto_scalarmult_curve25519_base(server_public, SERVER_ENTROPY[32:]) == 0
-    assert sodium.crypto_scalarmult_curve25519(shared, CLIENT_ENTROPY[32:], server_public) == 0
-    reverse = ctypes.create_string_buffer(32)
-    assert sodium.crypto_scalarmult_curve25519(reverse, SERVER_ENTROPY[32:], client_public) == 0
-    assert reverse.raw == shared.raw
-    return client_public.raw, server_public.raw, shared.raw
+def entropy(policy, server=False):
+    length = 96 if len(policy) == 2 else 64
+    return bytes(range(101, 101+length)) if server else bytes(range(1, length+1))
+
+
+def scalar(policy, group, server=False):
+    data = entropy(policy, server)
+    at = 64 if group == 23 and 29 in policy else 32
+    return data[at:at+32]
+
+
+def shared_key(group, client_policy, server_policy):
+    a, b = scalar(client_policy, group), scalar(server_policy, group, True)
+    if group == 29:
+        client_public, server_public, shared = [ctypes.create_string_buffer(32) for _ in range(3)]
+        sodium = material.SODIUM
+        assert sodium.crypto_scalarmult_curve25519_base(client_public, a) == 0
+        assert sodium.crypto_scalarmult_curve25519_base(server_public, b) == 0
+        assert sodium.crypto_scalarmult_curve25519(shared, a, server_public) == 0
+        reverse = ctypes.create_string_buffer(32)
+        assert sodium.crypto_scalarmult_curve25519(reverse, b, client_public) == 0
+        assert reverse.raw == shared.raw
+        return client_public.raw, server_public.raw, shared.raw
+    # Independent affine bigint peer, with every selected pair cross-checked
+    # against OpenSSL public-key derivation and bidirectional raw ECDH.
+    da, db = P256.private(a), P256.private(b)
+    qa, qb = P256.encode(P256.mul(da)), P256.encode(P256.mul(db))
+    shared = P256.be(P256.mul(da, P256.decode(qb))[0])
+    assert shared == P256.be(P256.mul(db, P256.decode(qa))[0])
+    prefix = bytes.fromhex('3059301306072a8648ce3d020106082a8648ce3d030107034200')
+    with tempfile.TemporaryDirectory(prefix='tls_p256_peer_') as directory:
+        base = pathlib.Path(directory)
+        for private, public, peer in [(a, qa, qb), (b, qb, qa)]:
+            key = b'\x30\x31\x02\x01\x01\x04\x20'+private+bytes.fromhex('a00a06082a8648ce3d030107')
+            (base/'key.der').write_bytes(key)
+            (base/'peer.der').write_bytes(prefix+peer)
+            def call(args):
+                return subprocess.run(['openssl', *args], check=True, capture_output=True, timeout=8).stdout
+            assert call(['pkey','-inform','DER','-in',str(base/'key.der'),'-pubout','-outform','DER']) == prefix+public
+            assert call(['pkeyutl','-derive','-inkey',str(base/'key.der'),'-keyform','DER','-peerkey',str(base/'peer.der'),'-peerform','DER']) == shared
+    return qa, qb, shared
+
+
+def public_key(policy, group):
+    key = scalar(policy, group)
+    if group == 23:
+        return P256.encode(P256.mul(P256.private(key)))
+    public = ctypes.create_string_buffer(32)
+    assert material.SODIUM.crypto_scalarmult_curve25519_base(public, key) == 0
+    return public.raw
 
 
 class Peer:
-    def __init__(self, chain, suite, retry):
+    def __init__(self, chain, suite, retry, client_policy, server_policy, initial):
         self.chain, self.suite, self.retry = chain, suite, retry
+        self.client_policy, self.server_policy, self.initial = client_policy, server_policy, initial
+        self.group = next(g for g in server_policy if g in client_policy)
         self.transcript, self.frames = b'', []
         self.partial = [b'', b'']
         self.secrets, self.sequences = [None, None], [0, 0]
         self.generations = [0, 0]
         self.records, self.messages = [0, 0], [[], []]
         self.closed, self.data = [False, False], [b'', b'']
-        self.client_public, self.server_public, self.shared = shared_key()
+        self.client_public, self.server_public, self.shared = shared_key(self.group, client_policy, server_policy)
         self.ch1, self.ch2, self.hrr = None, None, None
         self.finished = [False, False]
 
@@ -170,20 +215,26 @@ class Peer:
             expected = b'\x13\x03\x13\x01' if self.suite == 0 else b'\x13\x01\x13\x03'
             assert ch['suite'] == expected
             ext = ch['extensions']
-            assert ext[43] == b'\x02\x03\x04' and ext[10] == b'\0\x02\0\x1d'
+            assert ext[43] == b'\x02\x03\x04' and ext[10] == U16(2*len(self.client_policy))+b''.join(U16(g) for g in self.client_policy)
             assert ext[13] == ext[50] == b'\0\x02\x08\x07'
             assert ext[16] == b'\0\x03\x02h2' and ext[0].endswith(b'server.example')
             if self.ch1 is None:
                 assert 44 not in ext
                 self.ch1 = ch
-                assert ext[51] == (b'\0\0' if self.retry == 1 else b'\0\x24\0\x1d\0\x20'+self.client_public)
+                if self.initial == 0:
+                    assert ext[51] == b'\0\0'
+                else:
+                    first_public = self.client_public if self.initial == self.group else public_key(self.client_policy, self.initial)
+                    entry = U16(self.initial)+U16(len(first_public))+first_public
+                    assert ext[51] == U16(len(entry))+entry
             else:
                 assert self.ch2 is None and self.hrr is not None
                 self.ch2 = ch
                 for key, value in self.ch1['extensions'].items():
                     if key != 51:
                         assert ext[key] == value
-                assert ext[51] == b'\0\x24\0\x1d\0\x20'+self.client_public
+                entry = U16(self.group)+U16(len(self.client_public))+self.client_public
+                assert ext[51] == U16(len(entry))+entry
                 assert ext.get(44, b'') == self.hrr['extensions'].get(44, b'')
             self.transcript += frame
         elif kind == 2:
@@ -195,13 +246,13 @@ class Peer:
                 assert self.retry in (1, 2) and self.hrr is None and self.ch2 is None
                 self.hrr = sh
                 if self.retry == 1:
-                    assert sh['extensions'][51] == b'\0\x1d'
+                    assert sh['extensions'][51] == U16(self.group)
                 else:
                     assert 51 not in sh['extensions'] and sh['extensions'][44] == b'\0\x20'+SERVER_ENTROPY[:32]
                 self.transcript = bytes([254])+U24(32)+H(self.transcript)+frame
             else:
                 assert sh['random'] == SERVER_ENTROPY[:32]
-                assert sh['extensions'][51] == b'\0\x1d\0\x20'+self.server_public
+                assert sh['extensions'][51] == U16(self.group)+U16(len(self.server_public))+self.server_public
                 assert (self.retry == 0) == (self.hrr is None)
                 self.transcript += frame
                 early = MAC(ZERO, ZERO)
@@ -293,10 +344,11 @@ class Peer:
         else:
             raise AssertionError(('unexpected inner type', kind))
 
-    def finish(self, key, exporter, stats, witness):
+    def finish(self, key, exporter, published_groups, stats, witness):
         assert self.finished == self.closed == [True, True]
         assert self.partial == [b'', b''] and self.generations == [2, 2]
         assert self.data == [PAYLOAD+PAYLOAD[:31], PAYLOAD+PAYLOAD[:17]]
+        assert published_groups == [self.group, self.group], (published_groups, self.group)
         assert key == material.PUBLIC
         derived = expand(self.exporter, b'exchange', EMPTY)
         assert exporter == expand(derived, b'exporter', H(b'\0\xff\x01'))
@@ -310,18 +362,22 @@ def run(mode, executable):
         base = pathlib.Path(temp)
         short = material.Chain(base/'short', 2)
         if mode == 'pairs':
-            cases = [(short, suite, 0, layout, 0) for suite in (0, 1) for layout in (0, 1)]
+            cases = [(short, suite, 0, layout, 0, (29,), (29,), 29) for suite in (0, 1) for layout in (0, 1)]
         elif mode == 'fragments':
             long = material.Chain(base/'long', 8, True)
-            cases = [(short, 0, 1, 0, 1), (short, 1, 2, 1, 1), (long, 0, 0, 0, 1), (long, 1, 0, 1, 1)]
+            cases = [(short, 0, 1, 0, 1, (29,), (29,), 0), (short, 1, 2, 1, 1, (29,), (29,), 29), (long, 0, 0, 0, 1, (29,), (29,), 29), (long, 1, 0, 1, 1, (29,), (29,), 29)]
+        elif mode == 'groups':
+            cases = [(short, suite, 0, layout, 1, (23,), (23,), 23) for suite in (0, 1) for layout in (0, 1)]
+            cases += [(short, 0, 1, 0, 1, (29, 23), (23, 29), 29), (short, 1, 1, 1, 1, (23, 29), (29, 23), 23)]
+            cases += [(short, 0, 2, 1, 1, (23,), (23,), 23), (short, 1, 2, 0, 1, (23, 29), (23, 29), 23)]
         else:
             raise AssertionError(mode)
         source = Q(len(cases))
-        for chain, suite, retry, layout, split in cases:
-            source += Q(layout, suite, retry, split, chain.now, len(chain.root), len(chain.chain), int(chain is not short))
+        for chain, suite, retry, layout, split, cp, sp, initial in cases:
+            source += Q(layout, suite, retry, split, chain.now, len(chain.root), len(chain.chain), int(chain is not short), cp[0], cp[1] if len(cp)>1 else 0, sp[0], sp[1] if len(sp)>1 else 0, initial)
             source += chain.root+b''.join(Q(len(cert))+cert for cert in chain.chain)
         trace = base/'memory.trace'
-        result = subprocess.run(['strace', '-qq', '-o', str(trace), '-e', 'trace=mmap,munmap,mremap,brk', '-e', 'signal=none', executable], input=source, capture_output=True, timeout=35)
+        result = subprocess.run(['strace', '-qq', '-o', str(trace), '-e', 'trace=mmap,munmap,mremap,brk', '-e', 'signal=none', executable], input=source, capture_output=True, timeout=45)
         assert result.returncode == 0 and result.stderr == b'', (result.returncode, len(result.stdout), result.stdout[-64:].hex(), result.stderr)
         # Exactly one explicit caller arena owner. Engine lifecycle may not
         # add allocations or release/resize that owner. Match address AND size.
@@ -334,9 +390,9 @@ def run(mode, executable):
         released = re.fullmatch(r'munmap\((0x[0-9a-f]+), (\d+)\)\s+= 0', lines[1])
         assert released and released[1] == allocated[3] and released[2] == allocated[1], lines
         reader = Reader(result.stdout)
-        for number, (chain, suite, retry, layout, split) in enumerate(cases):
+        for number, (chain, suite, retry, layout, split, cp, sp, initial) in enumerate(cases):
             assert reader.word() == 10 and reader.word() == number
-            peer, witness = Peer(chain, suite, retry), 0
+            peer, witness = Peer(chain, suite, retry, cp, sp, initial), 0
             while True:
                 tag = reader.word()
                 if tag == 1:
@@ -349,9 +405,10 @@ def run(mode, executable):
                 else:
                     assert tag == 0
                     key, exporter = reader.block(), reader.block()
+                    published_groups = [reader.word(), reader.word()]
                     stats = [reader.word() for _ in range(6)]
                     assert reader.word() == witness
-                    peer.finish(key, exporter, stats, witness)
+                    peer.finish(key, exporter, published_groups, stats, witness)
                     break
         assert reader.at == len(reader.data)
     print(f'tls connection {mode}: accepted')

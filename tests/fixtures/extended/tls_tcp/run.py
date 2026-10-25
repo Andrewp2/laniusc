@@ -55,10 +55,11 @@ def proxy(left, right, fragment, threads):
         thread.start()
         threads.append(thread)
 
-def run(binary, directory, role, suite, length, mode, fault, fragment, transport, expected, root_name='root.der', exporter=False):
+def run(binary, directory, role, suite, length, mode, fault, fragment, transport, expected, root_name, exporter, group, peer_groups, calls):
     directory = pathlib.Path(directory)
     cipher = ['TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256'][suite]
-    common = ['-tls1_3', '-groups', 'X25519', '-sigalgs', 'ed25519', '-ciphersuites', cipher]
+    assert group in range(4) and peer_groups in ['X25519', 'P-256', 'X25519:P-256']
+    common = ['-tls1_3', '-groups', peer_groups, '-sigalgs', 'ed25519', '-ciphersuites', cipher]
     peer = None
     resources, threads = [], []
     small = length >= 65537
@@ -115,8 +116,8 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
     if small: native.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2048)
     native.setblocking(transport == 'blocking')
     trace = directory / f'trace-{role}-{suite}-{mode}-{time.monotonic_ns()}.txt'
-    argv = [str(binary), str(role), str(suite), (directory / root_name).read_bytes().hex(), (directory / 'chain.der').read_bytes().hex(), (directory / 'seed.bin').read_bytes().hex(), str(length), str(mode), '1000000', '0' if mode == 4 else '12000', str(int(expected))]
-    command = ['strace', '-qq', '-o', str(trace), '-s', '64', '-e', 'trace=mmap,mremap,munmap,brk,close,sendto,recvfrom,getrandom,fcntl,getsockopt,poll,clock_gettime,shutdown', '-e', 'signal=none']
+    argv = [str(binary), str(role), str(suite), (directory / root_name).read_bytes().hex(), (directory / 'chain.der').read_bytes().hex(), (directory / 'seed.bin').read_bytes().hex(), str(length), str(mode), str(calls), '0' if mode == 4 else '12000', str(int(expected)), str(group)]
+    command = ['strace', '-qq', '-o', str(trace), '-s', '64', '-e', 'trace=mmap,mremap,munmap,brk,close,sendto,recvfrom,getrandom,fcntl,getsockopt,getpeername,poll,clock_gettime,shutdown', '-e', 'signal=none']
     if fault != '-': command += ['-e', 'inject=' + fault]
     command += argv
     native_process = subprocess.Popen(command, stdin=native, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -191,5 +192,5 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
     sys.stdout.buffer.write(b''.join(struct.pack('<Q', len(value)) + value for value in fields))
 
 if __name__ == '__main__':
-    assert len(sys.argv) in [12, 13]
-    run(sys.argv[1], sys.argv[2], *(int(value) for value in sys.argv[3:7]), sys.argv[7], int(sys.argv[8]), sys.argv[9], bool(int(sys.argv[10])), sys.argv[11], bool(int(sys.argv[12])) if len(sys.argv) == 13 else False)
+    assert len(sys.argv) == 16
+    run(sys.argv[1], sys.argv[2], *(int(value) for value in sys.argv[3:7]), sys.argv[7], int(sys.argv[8]), sys.argv[9], bool(int(sys.argv[10])), sys.argv[11], bool(int(sys.argv[12])), int(sys.argv[13]), sys.argv[14], int(sys.argv[15]))

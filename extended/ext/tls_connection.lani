@@ -17,13 +17,14 @@ import ext::tls_record;
 import ext::tls_schedule;
 import ext::tls_transcript;
 import ext::x25519;
+import ext::p256;
 import ext::x509;
 import ext::x509_path;
 
 pub enum Role { Client, Server }
 pub enum Phase { ClientHello, ServerHello, ServerFlight, ClientFinished, Established, Failed, Closed }
 pub enum Error {
-    Bounds, InvalidConfig, BufferTooSmall, EntropyLength, Credential,
+    Bounds, InvalidConfig, BufferTooSmall, EntropyLength, InvalidEphemeralScalar, Credential,
     NotEstablished, WantInput, WantOutput, WantRead, InvalidAcknowledgement,
     Closed, Aborted, Limit, Truncated, UnexpectedMessage, InvalidRecord,
     InvalidAlert, PeerAlert(u8), Negotiation(ext::tls_negotiation::Error),
@@ -48,16 +49,16 @@ pub struct ClientConfig {
     reference:ext::service_identity::Reference, unix_time:i64,
     server_name:core::slice::View<u8>, alpn:core::slice::View<u8>,
     require_alpn:bool, prefer_suite:ext::tls_record::Suite,
-    send_key_share:bool, limits:Limits
+    groups:ext::tls_negotiation::GroupPolicy, initial_share:core::option::Option<ext::tls_negotiation::Group>, limits:Limits
 }
 pub struct ServerConfig {
     chain:core::slice::View<core::slice::View<u8>>, seed:core::slice::View<u8>,
     alpn:core::slice::View<u8>, require_alpn:bool,
-    prefer_suite:ext::tls_record::Suite, require_cookie:bool, limits:Limits
+    prefer_suite:ext::tls_record::Suite, groups:ext::tls_negotiation::GroupPolicy, require_cookie:bool, limits:Limits
 }
 pub struct Read { written:i32, eof:bool }
 pub struct FeedFailure { cause:Error, consumed:i32 }
-pub struct Negotiated { suite:ext::tls_record::Suite, alpn:[u8;255], alpn_length:i32 }
+pub struct Negotiated { suite:ext::tls_record::Suite, group:ext::tls_negotiation::Group, alpn:[u8;255], alpn_length:i32 }
 pub struct Stats {
     received_records:u64, sent_records:u64, controls:u64, handshake_bytes:u64,
     send_generation:u64, receive_generation:u64, send_sequence:u64, receive_sequence:u64,
@@ -75,12 +76,12 @@ pub struct Engine {
     received:u64, sent:u64, controls:u64, handshake_bytes:u64,
     failed:bool, issue:Error, abandoned:bool, first_hello:bool, peer_finished:bool,
     peer_close:bool, close_intent:bool, close_sent:bool,
-    random:[u8;32], scalar:[u8;32], public:[u8;32], seed:[u8;32],
+    random:[u8;32], scalar:[u8;32], public:[u8;32], p_scalar:[u8;32], p_public:[u8;65], seed:[u8;32],
     transcript:ext::tls_transcript::State,
     first_offer:core::option::Option<ext::tls_negotiation::Offer>,
     offer:core::option::Option<ext::tls_negotiation::Offer>,
     retry:core::option::Option<ext::tls_negotiation::Retry>,
-    selected:ext::tls_record::Suite, alpn:[u8;255], alpn_length:i32,
+    selected:ext::tls_record::Suite, selected_group:ext::tls_negotiation::Group, peer_share:core::slice::View<u8>, alpn:[u8;255], alpn_length:i32,
     handshake_client:ext::tls_schedule::Secret, handshake_server:ext::tls_schedule::Secret,
     master:ext::tls_schedule::Master, application_client:ext::tls_schedule::Secret,
     application_server:ext::tls_schedule::Secret, exporter:ext::tls_schedule::Exporter,
@@ -131,20 +132,42 @@ fn descriptors(values:core::slice::View<core::slice::View<u8>>,maximum:i32,limit
     let sum:u64=0; let i:i32=0; while(i<values.length) { let v:core::slice::View<u8> = values.values[values.start+i]; if(!valid(v)) { return core::result::Err(Error::Bounds); } if(v.length==0) { return core::result::Err(Error::InvalidConfig); } sum+=v.length as u64; if(sum>limit) { return core::result::Err(Error::Limit); } i+=1; }
     return core::result::Ok(0);
 }
-fn make(side:Role,buffers:Buffers,limits:Limits,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error> {
-    if(!valid(entropy)) { return core::result::Err(Error::Bounds); } if(entropy.length!=64) { return core::result::Err(Error::EntropyLength); }
+// Canonical random/X/P slots; policy preference never changes their offsets.
+pub struct EntropyLayout { length:i32, x25519_offset:core::option::Option<i32>, p256_offset:core::option::Option<i32> }
+pub fn entropy_layout(policy:ext::tls_negotiation::GroupPolicy)->core::result::Result<EntropyLayout,Error> {
+    let checked:core::result::Result<i32,ext::tls_negotiation::Error> = ext::tls_negotiation::validate_policy(policy); if(checked.is_err()) { return core::result::Err(Error::InvalidConfig); }
+    let x:bool=ext::tls_negotiation::group_id(policy.preferred)==29; let p:bool=!x;
+    if(policy.fallback.is_some()) { if(ext::tls_negotiation::group_id(policy.fallback.unwrap())==29) { x=true; } else { p=true; } }
+    let length:i32=32; let xo:core::option::Option<i32> = core::option::None(); let po:core::option::Option<i32> = core::option::None();
+    if(x) { xo=core::option::Some(length); length+=32; } if(p) { po=core::option::Some(length); length+=32; }
+    return core::result::Ok(EntropyLayout { length:length,x25519_offset:xo,p256_offset:po });
+}
+// Source-counted conservative admission units; see tls-group-integration-plan.
+// P-256 shared-secret bound: 8712*6144 + 256*32768 + 65536 < 64 Mi.
+const P256_WORK:u64=67108864;
+fn make(side:Role,buffers:Buffers,limits:Limits,policy:ext::tls_negotiation::GroupPolicy,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error> {
+    if(!valid(entropy)) { return core::result::Err(Error::Bounds); }
+    let layout:core::result::Result<EntropyLayout,Error> = entropy_layout(policy); if(layout.is_err()) { return core::result::Err(layout.unwrap_err()); } let slots:EntropyLayout=layout.unwrap();
+    if(entropy.length!=slots.length) { return core::result::Err(Error::EntropyLength); }
     let storage:core::result::Result<Buffers,Error> = checked_buffers(buffers,limits); if(storage.is_err()) { return core::result::Err(storage.unwrap_err()); }
-    if(limits.max_work<1048576) { return core::result::Err(Error::Limit); }
-    let b:Buffers=storage.unwrap(); let random:[u8;32]=[0;32]; let scalar:[u8;32]=[0;32]; let i:i32=0;
-    while(i<32) { random[i]=byte(entropy,i); scalar[i]=byte(entropy,32+i); i+=1; }
-    let public:core::result::Result<ext::x25519::Key,ext::x25519::Error> = ext::x25519::public_key(core::slice::View { values:scalar,start:0,length:32 }); if(public.is_err()) { return core::result::Err(Error::Crypto); }
+    let cost:u64=0; if(slots.p256_offset.is_some()) { cost+=P256_WORK; } if(slots.x25519_offset.is_some()) { cost+=1048576; }
+    if(limits.max_work<cost) { return core::result::Err(Error::Limit); }
+    let b:Buffers=storage.unwrap(); let random:[u8;32]=[0;32]; let scalar:[u8;32]=[0;32]; let p_scalar:[u8;32]=[0;32]; let public:[u8;32]=[0;32]; let p_public:[u8;65]=[0;65]; let i:i32=0;
+    while(i<32) { random[i]=byte(entropy,i); if(slots.x25519_offset.is_some()) { scalar[i]=byte(entropy,slots.x25519_offset.unwrap()+i); } if(slots.p256_offset.is_some()) { p_scalar[i]=byte(entropy,slots.p256_offset.unwrap()+i); } i+=1; }
+    // Invalid P scalars fail in the primitive's fixed scalar admission, before
+    // point multiplication, X derivation, or any caller-buffer writes.
+    if(slots.p256_offset.is_some()) {
+        let derived:core::result::Result<ext::p256::PublicKey,ext::p256::Error> = ext::p256::public_key(core::slice::View { values:p_scalar,start:0,length:32 });
+        if(derived.is_err()) { return core::result::Err(match(derived.unwrap_err()) { ext::p256::Error::InvalidScalar -> Error::InvalidEphemeralScalar, _ -> Error::Crypto }); } p_public=derived.unwrap().bytes;
+    }
+    if(slots.x25519_offset.is_some()) { let derived:core::result::Result<ext::x25519::Key,ext::x25519::Error> = ext::x25519::public_key(core::slice::View { values:scalar,start:0,length:32 }); if(derived.is_err()) { return core::result::Err(Error::Crypto); } public=derived.unwrap().bytes; }
     let step:i32=0; if(match(side) { Role::Client -> false, Role::Server -> true }) { step=10; }
     let empty:core::slice::View<u8> = region(b.handshake,0,0);
-    return core::result::Ok(Engine { side:side,step:step,buffers:b,limits:limits,client_config:core::option::None(),server_config:core::option::None(),path_budget:ext::x509_path::budget(limits.path).unwrap(),negotiation_budget:ext::tls_negotiation::budget(limits.negotiation).unwrap(),records_left:limits.max_records,controls_left:limits.max_controls,handshake_left:limits.max_handshake_bytes,updates_left:limits.max_key_updates,work_left:limits.max_work-1048576,received:0,sent:0,controls:0,handshake_bytes:0,failed:false,issue:Error::Internal,abandoned:false,first_hello:false,peer_finished:false,peer_close:false,close_intent:false,close_sent:false,random:random,scalar:scalar,public:public.unwrap().bytes,seed:[0;32],transcript:ext::tls_transcript::new(),first_offer:core::option::None(),offer:core::option::None(),retry:core::option::None(),selected:ext::tls_record::Suite::ChaCha20Poly1305Sha256,alpn:[0;255],alpn_length:0,handshake_client:zero(),handshake_server:zero(),master:ext::tls_schedule::Master { secret:zero() },application_client:zero(),application_server:zero(),exporter:ext::tls_schedule::Exporter { secret:zero() },authentication:core::option::None(),leaf:ext::ed25519::Key32 { bytes:[0;32] },sender:core::option::None(),receiver:core::option::None(),send_generation:0,receive_generation:0,send_sequence:0,receive_sequence:0,record:ext::tls_framing::record_decoder(b.record,16640).unwrap(),handshake:ext::tls_framing::handshake_decoder(b.handshake,limits.max_handshake_body).unwrap(),content:empty,content_at:0,content_kind:0,content_active:false,content_epoch:0,partial_epoch:0,tx:empty,tx_at:0,tx_action:0,tx_protected:false,pending_length:0,pending_at:0,pending_action:0,pending_fatal:false,app_length:0,app_at:0,update_intent:false,update_request:false,update_response:false });
+    return core::result::Ok(Engine { side:side,step:step,buffers:b,limits:limits,client_config:core::option::None(),server_config:core::option::None(),path_budget:ext::x509_path::budget(limits.path).unwrap(),negotiation_budget:ext::tls_negotiation::budget(limits.negotiation).unwrap(),records_left:limits.max_records,controls_left:limits.max_controls,handshake_left:limits.max_handshake_bytes,updates_left:limits.max_key_updates,work_left:limits.max_work-cost,received:0,sent:0,controls:0,handshake_bytes:0,failed:false,issue:Error::Internal,abandoned:false,first_hello:false,peer_finished:false,peer_close:false,close_intent:false,close_sent:false,random:random,scalar:scalar,public:public,p_scalar:p_scalar,p_public:p_public,seed:[0;32],transcript:ext::tls_transcript::new(),first_offer:core::option::None(),offer:core::option::None(),retry:core::option::None(),selected:ext::tls_record::Suite::ChaCha20Poly1305Sha256,selected_group:policy.preferred,peer_share:empty,alpn:[0;255],alpn_length:0,handshake_client:zero(),handshake_server:zero(),master:ext::tls_schedule::Master { secret:zero() },application_client:zero(),application_server:zero(),exporter:ext::tls_schedule::Exporter { secret:zero() },authentication:core::option::None(),leaf:ext::ed25519::Key32 { bytes:[0;32] },sender:core::option::None(),receiver:core::option::None(),send_generation:0,receive_generation:0,send_sequence:0,receive_sequence:0,record:ext::tls_framing::record_decoder(b.record,16640).unwrap(),handshake:ext::tls_framing::handshake_decoder(b.handshake,limits.max_handshake_body).unwrap(),content:empty,content_at:0,content_kind:0,content_active:false,content_epoch:0,partial_epoch:0,tx:empty,tx_at:0,tx_action:0,tx_protected:false,pending_length:0,pending_at:0,pending_action:0,pending_fatal:false,app_length:0,app_at:0,update_intent:false,update_request:false,update_response:false });
 }
 
-// Pure-engine seam: entropy MUST be 64 fresh OS cryptographic bytes per engine.
-// Production callers use tls_tcp, which obtains them from std::entropy.
+// Pure-engine seam: entropy MUST match entropy_layout and contain independent
+// fresh OS cryptographic slots. Production callers obtain them via tls_tcp.
 pub fn client(config:ClientConfig,buffers:Buffers,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error> {
     if(!valid(config.server_name) || !valid(config.alpn)) { return core::result::Err(Error::Bounds); }
     let anchors:core::result::Result<i32,Error> = descriptors(config.anchors,8,config.limits.path.max_input); if(anchors.is_err()) { return core::result::Err(anchors.unwrap_err()); }
@@ -154,7 +177,8 @@ pub fn client(config:ClientConfig,buffers:Buffers,entropy:core::slice::View<u8>)
     if(match(config.reference.kind) { ext::service_identity::Kind::Dns -> true, ext::service_identity::Kind::Ip -> false }) { reference=ext::service_identity::dns_reference(refbytes); }
     else { reference=ext::service_identity::ip_reference(refbytes); }
     if(reference.is_err() || config.anchors.length>config.limits.path.max_anchors || (config.require_alpn && config.alpn.length==0)) { return core::result::Err(Error::InvalidConfig); }
-    let made:core::result::Result<Engine,Error> = make(Role::Client,buffers,config.limits,entropy); if(made.is_err()) { return made; }
+    if(config.initial_share.is_some()) { let g:u16=ext::tls_negotiation::group_id(config.initial_share.unwrap()); if(g!=ext::tls_negotiation::group_id(config.groups.preferred) && (config.groups.fallback.is_none() || g!=ext::tls_negotiation::group_id(config.groups.fallback.unwrap()))) { return core::result::Err(Error::InvalidConfig); } }
+    let made:core::result::Result<Engine,Error> = make(Role::Client,buffers,config.limits,config.groups,entropy); if(made.is_err()) { return made; }
     let engine:Engine=made.unwrap(); engine.client_config=core::option::Some(config); engine.selected=config.prefer_suite;
     let prepared:core::result::Result<i32,Error> = engine.prepare_client_hello(false); if(prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
     return core::result::Ok(engine);
@@ -163,7 +187,7 @@ pub fn server(config:ServerConfig,buffers:Buffers,entropy:core::slice::View<u8>)
     if(!valid(config.seed) || !valid(config.alpn)) { return core::result::Err(Error::Bounds); }
     let chain:core::result::Result<i32,Error> = descriptors(config.chain,8,config.limits.path.max_input); if(chain.is_err()) { return core::result::Err(chain.unwrap_err()); }
     if(config.seed.length!=32 || config.chain.length>config.limits.path.max_chain || config.alpn.length>255 || (config.require_alpn && config.alpn.length==0)) { return core::result::Err(Error::InvalidConfig); }
-    let made:core::result::Result<Engine,Error> = make(Role::Server,buffers,config.limits,entropy); if(made.is_err()) { return made; }
+    let made:core::result::Result<Engine,Error> = make(Role::Server,buffers,config.limits,config.groups,entropy); if(made.is_err()) { return made; }
     let engine:Engine=made.unwrap(); engine.server_config=core::option::Some(config); engine.selected=config.prefer_suite;
     let i:i32=0; while(i<32) { engine.seed[i]=byte(config.seed,i); i+=1; }
     let charged:core::result::Result<i32,Error> = engine.work(1048576); if(charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
@@ -211,9 +235,11 @@ impl Engine {
     }
     fn prepare_client_hello(&self,second:bool)->core::result::Result<i32,Error> {
         let config:ClientConfig=self.client_config.unwrap(); let empty:core::slice::View<u8> = region(self.buffers.handshake,0,0);
-        let share:core::slice::View<u8> = empty; if(config.send_key_share || second) { share=core::slice::View { values:self.public,start:0,length:32 }; }
+        let selected:core::option::Option<ext::tls_negotiation::Group> = config.initial_share;
+        if(second && self.retry.unwrap().requested.is_some()) { selected=self.retry.unwrap().requested; }
+        let share:core::option::Option<ext::tls_negotiation::KeyShare> = core::option::None(); if(selected.is_some()) { share=core::option::Some(self.local_share(selected.unwrap())); }
         let cookie:core::slice::View<u8> = empty; if(second) { cookie=self.retry.unwrap().cookie; }
-        let extensions:core::result::Result<i32,ext::tls_negotiation::Error> = ext::tls_negotiation::write_client_extensions(share,config.server_name,config.alpn,cookie,self.buffers.handshake,self.negotiation_budget.borrow());
+        let extensions:core::result::Result<i32,ext::tls_negotiation::Error> = ext::tls_negotiation::write_client_extensions(config.groups,share,config.server_name,config.alpn,cookie,self.buffers.handshake,self.negotiation_budget.borrow());
         if(extensions.is_err()) { return core::result::Err(Error::Negotiation(extensions.unwrap_err())); }
         let suites:[u8;4]=[19,3,19,1]; if(suite_number(config.prefer_suite)==4865) { suites=[19,1,19,3]; }
         let hello:ext::tls_handshake::ClientHello=ext::tls_handshake::ClientHello { random:core::slice::View { values:self.random,start:0,length:32 },session_id:empty,cipher_suites:core::slice::View { values:suites,start:0,length:4 },extensions:region(self.buffers.handshake,0,extensions.unwrap()) };
@@ -227,11 +253,26 @@ impl Engine {
         self.offer=core::option::Some(offer.unwrap()); if(!second) { self.first_offer=self.offer; }
         return self.start_tx(frame,false,1,true);
     }
+    // Temporary views into inline key material are used only by immediate
+    // writers/crypto calls; retained Offer views always use hello backing.
+    fn local_share(&self,group:ext::tls_negotiation::Group)->ext::tls_negotiation::KeyShare {
+        if(ext::tls_negotiation::group_id(group)==29) { return ext::tls_negotiation::KeyShare { group:group,data:core::slice::View { values:self.public,start:0,length:32 } }; }
+        return ext::tls_negotiation::KeyShare { group:group,data:core::slice::View { values:self.p_public,start:0,length:65 } };
+    }
     fn derive_handshake(&self,peer:core::slice::View<u8>)->core::result::Result<i32,Error> {
-        let charged:core::result::Result<i32,Error> = self.work(1179648); if(charged.is_err()) { return charged; }
-        let shared:core::result::Result<ext::x25519::Key,ext::x25519::Error> = ext::x25519::shared_secret(core::slice::View { values:self.scalar,start:0,length:32 },peer); if(shared.is_err()) { return core::result::Err(Error::Crypto); }
-        let key:ext::x25519::Key=shared.unwrap(); let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk();
-        let schedule:ext::tls_schedule::Handshake=early.handshake(core::slice::View { values:key.bytes,start:0,length:32 }).unwrap(); let hash:core::sha256::Digest=self.transcript.snapshot();
+        let key:[u8;32]=[0;32];
+        if(ext::tls_negotiation::group_id(self.selected_group)==29) {
+            let charged:core::result::Result<i32,Error> = self.work(1179648); if(charged.is_err()) { return charged; }
+            let shared:core::result::Result<ext::x25519::Key,ext::x25519::Error> = ext::x25519::shared_secret(core::slice::View { values:self.scalar,start:0,length:32 },peer); if(shared.is_err()) { return core::result::Err(Error::Crypto); } key=shared.unwrap().bytes;
+        } else {
+            // TLS permits only the exact uncompressed P-256 wire shape. The
+            // primitive validates finite on-curve coordinates before multiply.
+            if(peer.length!=65 || byte(peer,0)!=4) { return core::result::Err(Error::Crypto); }
+            let charged:core::result::Result<i32,Error> = self.work(P256_WORK+131072); if(charged.is_err()) { return charged; }
+            let shared:core::result::Result<ext::p256::SharedSecret,ext::p256::Error> = ext::p256::shared_secret(core::slice::View { values:self.p_scalar,start:0,length:32 },peer); if(shared.is_err()) { return core::result::Err(Error::Crypto); } key=shared.unwrap().bytes;
+        }
+        let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk();
+        let schedule:ext::tls_schedule::Handshake=early.handshake(core::slice::View { values:key,start:0,length:32 }).unwrap(); let hash:core::sha256::Digest=self.transcript.snapshot();
         let digest:core::slice::View<u8> = core::slice::View { values:hash.bytes,start:0,length:32 };
         self.handshake_client=schedule.traffic(ext::tls_schedule::Side::Client,digest).unwrap(); self.handshake_server=schedule.traffic(ext::tls_schedule::Side::Server,digest).unwrap(); self.master=schedule.master();
         let receiving:ext::tls_schedule::Secret=self.handshake_client; if(self.is_client()) { receiving=self.handshake_server; }
@@ -256,8 +297,8 @@ impl Engine {
         let storage:[u8;128]=[0;128]; let extensions:core::slice::View<u8> = core::slice::View { values:storage,start:0,length:128 };
         let written:core::result::Result<i32,ext::tls_negotiation::Error> = core::result::Err(ext::tls_negotiation::Error::Retry);
         let random:[u8;32]=self.random;
-        if(retry) { let choice:ext::tls_negotiation::Retry=self.retry.unwrap(); written=ext::tls_negotiation::write_retry_extensions(choice.group,choice.cookie,extensions,self.negotiation_budget.borrow()); random=ext::tls_handshake::hello_retry_random(); }
-        else { written=ext::tls_negotiation::write_server_extensions(core::slice::View { values:self.public,start:0,length:32 },extensions,self.negotiation_budget.borrow()); }
+        if(retry) { let choice:ext::tls_negotiation::Retry=self.retry.unwrap(); written=ext::tls_negotiation::write_retry_extensions(choice.requested,choice.cookie,extensions,self.negotiation_budget.borrow()); random=ext::tls_handshake::hello_retry_random(); }
+        else { written=ext::tls_negotiation::write_server_extensions(self.local_share(self.selected_group),extensions,self.negotiation_budget.borrow()); }
         if(written.is_err()) { return core::result::Err(Error::Negotiation(written.unwrap_err())); }
         let hello:ext::tls_handshake::ServerHello=ext::tls_handshake::ServerHello { random:core::slice::View { values:random,start:0,length:32 },session_id:self.offer.unwrap().hello.session_id,cipher_suite:suite_number(self.selected),extensions:region(extensions,0,written.unwrap()) };
         let encoded:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_server_hello(hello,self.buffers.handshake); if(encoded.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(encoded.unwrap_err()))); }
@@ -267,7 +308,7 @@ impl Engine {
             return self.start_tx(frame,false,2,false);
         }
         let started:core::result::Result<i32,Error> = self.start_tx(frame,false,3,true); if(started.is_err()) { return started; }
-        return self.derive_handshake(self.offer.unwrap().x25519);
+        return self.derive_handshake(self.peer_share);
     }
     fn prepare_ee(&self)->core::result::Result<i32,Error> {
         let storage:[u8;512]=[0;512]; let extensions:core::slice::View<u8> = core::slice::View { values:storage,start:0,length:512 };
@@ -334,7 +375,7 @@ fn negotiation_alert(e:ext::tls_negotiation::Error)->u8 { return match(e) { ext:
 fn answer_alert(e:Error)->bool { return match(e) { Error::PeerAlert(description) -> false, Error::Truncated -> false, Error::Aborted -> false, _ -> true }; }
 impl Engine {
     fn forget_keys(&self) {
-        self.scalar=[0;32]; self.seed=[0;32]; self.handshake_client=zero(); self.handshake_server=zero(); self.application_client=zero(); self.application_server=zero(); self.master=ext::tls_schedule::Master { secret:zero() }; self.exporter=ext::tls_schedule::Exporter { secret:zero() }; self.authentication=core::option::None(); self.leaf=ext::ed25519::Key32 { bytes:[0;32] }; self.sender=core::option::None(); self.receiver=core::option::None();
+        self.scalar=[0;32]; self.p_scalar=[0;32]; self.seed=[0;32]; self.handshake_client=zero(); self.handshake_server=zero(); self.application_client=zero(); self.application_server=zero(); self.master=ext::tls_schedule::Master { secret:zero() }; self.exporter=ext::tls_schedule::Exporter { secret:zero() }; self.authentication=core::option::None(); self.leaf=ext::ed25519::Key32 { bytes:[0;32] }; self.sender=core::option::None(); self.receiver=core::option::None();
     }
     fn fail(&self,e:Error)->Error {
         if(self.failed) { return self.issue; }
@@ -368,17 +409,21 @@ impl Engine {
     fn client_server_hello(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
         let parsed:core::result::Result<ext::tls_handshake::ServerHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_server_hello(region(frame,4,frame.length-4)); if(parsed.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(parsed.unwrap_err()))); }
         let hello:ext::tls_handshake::ServerHello=parsed.unwrap();
-        let checked:core::result::Result<ext::tls_negotiation::Selection,ext::tls_negotiation::Error> = ext::tls_negotiation::check_server_hello(self.offer.unwrap(),hello,self.retry,self.negotiation_budget.borrow()); if(checked.is_err()) { return core::result::Err(Error::Negotiation(checked.unwrap_err())); }
-        let selection:ext::tls_negotiation::Selection=checked.unwrap(); self.selected=ext::tls_negotiation::record_suite(selection.suite).unwrap();
-        if(selection.retry) {
-            if(selection.cookie.length>self.cookie_part().length) { return core::result::Err(Error::Limit); }
-            copy(selection.cookie,self.cookie_part()); self.retry=core::option::Some(ext::tls_negotiation::Retry { suite:selection.suite,group:selection.group,cookie:region(self.cookie_part(),0,selection.cookie.length) });
+        let checked:core::result::Result<ext::tls_negotiation::Decision,ext::tls_negotiation::Error> = ext::tls_negotiation::check_server_hello(self.offer.unwrap(),hello,self.retry,self.negotiation_budget.borrow()); if(checked.is_err()) { return core::result::Err(Error::Negotiation(checked.unwrap_err())); }
+        let decision:ext::tls_negotiation::Decision=checked.unwrap();
+        let selection:core::option::Option<ext::tls_negotiation::Selection> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::Some(value), ext::tls_negotiation::Decision::Retry(value) -> core::option::None() };
+        let request:core::option::Option<ext::tls_negotiation::Retry> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::None(), ext::tls_negotiation::Decision::Retry(value) -> core::option::Some(value) };
+        if(request.is_some()) {
+            let retry:ext::tls_negotiation::Retry=request.unwrap(); self.selected=ext::tls_negotiation::record_suite(retry.suite).unwrap();
+            if(retry.cookie.length>self.cookie_part().length) { return core::result::Err(Error::Limit); }
+            copy(retry.cookie,self.cookie_part()); self.retry=core::option::Some(ext::tls_negotiation::Retry { suite:retry.suite,requested:retry.requested,cookie:region(self.cookie_part(),0,retry.cookie.length) });
             let rewritten:core::result::Result<i32,ext::tls_transcript::Error> = self.transcript.rewrite_for_hrr(frame); if(rewritten.is_err()) { return core::result::Err(Error::Crypto); }
             // Build CH2 only after releasing the RX frame in process_content().
             self.step=0; return core::result::Ok(0);
         }
+        let selected:ext::tls_negotiation::Selection=selection.unwrap(); self.selected=ext::tls_negotiation::record_suite(selected.suite).unwrap(); self.selected_group=selected.group;
         let appended:core::result::Result<i32,Error> = self.append(frame); if(appended.is_err()) { return appended; }
-        let derived:core::result::Result<i32,Error> = self.derive_handshake(selection.peer_key); if(derived.is_err()) { return derived; }
+        let derived:core::result::Result<i32,Error> = self.derive_handshake(selected.peer_key); if(derived.is_err()) { return derived; }
         self.step=2; return core::result::Ok(0);
     }
     fn server_client_hello(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
@@ -391,15 +436,20 @@ impl Engine {
         if(offer.is_err()) { return core::result::Err(Error::Negotiation(offer.unwrap_err())); }
         self.offer=core::option::Some(offer.unwrap()); if(!second) { self.first_offer=self.offer; }
         let preferred:u16=suite_number(self.server_config.unwrap().prefer_suite); if(second) { preferred=self.retry.unwrap().suite; }
-        let chosen:core::result::Result<ext::tls_negotiation::Selection,ext::tls_negotiation::Error> = ext::tls_negotiation::choose(offer.unwrap(),preferred,self.negotiation_budget.borrow()); if(chosen.is_err()) { return core::result::Err(Error::Negotiation(chosen.unwrap_err())); }
-        let selection:ext::tls_negotiation::Selection=chosen.unwrap(); if(second && (selection.retry || selection.suite!=self.retry.unwrap().suite)) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Retry)); }
-        self.selected=ext::tls_negotiation::record_suite(selection.suite).unwrap();
+        let chosen:core::result::Result<ext::tls_negotiation::Decision,ext::tls_negotiation::Error> = ext::tls_negotiation::choose(offer.unwrap(),preferred,self.server_config.unwrap().groups,self.negotiation_budget.borrow()); if(chosen.is_err()) { return core::result::Err(Error::Negotiation(chosen.unwrap_err())); }
+        let requested:core::option::Option<ext::tls_negotiation::Group> = core::option::None(); let selected_suite:u16=0; let group:ext::tls_negotiation::Group=self.selected_group;
+        let decision:ext::tls_negotiation::Decision=chosen.unwrap();
+        let selection:core::option::Option<ext::tls_negotiation::Selection> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::Some(value), ext::tls_negotiation::Decision::Retry(value) -> core::option::None() };
+        let request:core::option::Option<ext::tls_negotiation::Retry> = match(decision) { ext::tls_negotiation::Decision::Selected(value) -> core::option::None(), ext::tls_negotiation::Decision::Retry(value) -> core::option::Some(value) };
+        if(selection.is_some()) { let value:ext::tls_negotiation::Selection=selection.unwrap(); selected_suite=value.suite; group=value.group; self.peer_share=value.peer_key; }
+        else { let value:ext::tls_negotiation::Retry=request.unwrap(); selected_suite=value.suite; requested=value.requested; group=value.requested.unwrap(); }
+        if(second && (requested.is_some() || selected_suite!=self.retry.unwrap().suite || ext::tls_negotiation::group_id(group)!=ext::tls_negotiation::group_id(self.selected_group))) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Retry)); }
+        self.selected=ext::tls_negotiation::record_suite(selected_suite).unwrap(); self.selected_group=group;
         let config:ServerConfig=self.server_config.unwrap(); let alpn:core::result::Result<core::slice::View<u8>,ext::tls_negotiation::Error> = ext::tls_negotiation::select_alpn(offer.unwrap(),config.alpn,config.require_alpn,self.negotiation_budget.borrow()); if(alpn.is_err()) { return core::result::Err(Error::Negotiation(alpn.unwrap_err())); } self.set_alpn(alpn.unwrap());
         let appended:core::result::Result<i32,Error> = self.append(frame); if(appended.is_err()) { return appended; } self.first_hello=true;
-        if(!second && (selection.retry || config.require_cookie)) {
-            let group:u16=0; if(selection.retry) { group=29; }
+        if(!second && (requested.is_some() || config.require_cookie)) {
             let cookie:core::slice::View<u8> = region(self.cookie_part(),0,0); if(config.require_cookie) { copy(core::slice::View { values:self.random,start:0,length:32 },self.cookie_part()); cookie=region(self.cookie_part(),0,32); }
-            self.retry=core::option::Some(ext::tls_negotiation::Retry { suite:selection.suite,group:group,cookie:cookie }); self.step=11;
+            self.retry=core::option::Some(ext::tls_negotiation::Retry { suite:selected_suite,requested:requested,cookie:cookie }); self.step=11;
         } else { self.step=13; }
         return core::result::Ok(0);
     }
@@ -592,7 +642,7 @@ pub impl Engine {
         if(self.step==1 || self.step==11 || self.step==13) { return Phase::ServerHello; } if(self.step==3 || self.step==18) { return Phase::ClientFinished; } return Phase::ServerFlight;
     }
     pub fn peer_key(&self)->core::option::Option<ext::ed25519::Key32> { if(self.established() && self.is_client()) { return core::option::Some(self.leaf); } return core::option::None(); }
-    pub fn negotiated(&self)->core::option::Option<Negotiated> { if(!self.established()) { return core::option::None(); } return core::option::Some(Negotiated { suite:self.selected,alpn:self.alpn,alpn_length:self.alpn_length }); }
+    pub fn negotiated(&self)->core::option::Option<Negotiated> { if(!self.established()) { return core::option::None(); } return core::option::Some(Negotiated { suite:self.selected,group:self.selected_group,alpn:self.alpn,alpn_length:self.alpn_length }); }
     pub fn stats(&self)->Stats { return Stats { received_records:self.received,sent_records:self.sent,controls:self.controls,handshake_bytes:self.handshake_bytes,send_generation:self.send_generation,receive_generation:self.receive_generation,send_sequence:self.send_sequence,receive_sequence:self.receive_sequence,pending_wire:self.pending_length-self.pending_at,pending_plaintext:self.app_length-self.app_at,handshake_buffered:self.handshake.buffered(),retained_content:self.content.length-self.content_at,records_left:self.records_left,controls_left:self.controls_left,handshake_bytes_left:self.handshake_left,key_updates_left:self.updates_left,work_left:self.work_left,signatures_left:self.path_budget.signatures_left }; }
     // Borrow expires at the next mutating engine call. No call reseals a retry.
     // In Failed, only the optional prepared fatal alert is exposed.

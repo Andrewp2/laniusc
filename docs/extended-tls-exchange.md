@@ -7,11 +7,12 @@ adapter run in Lanius. It composes
 [`ext::tls_connection`](../extended/ext/tls_connection.lani) and
 [`ext::tls_tcp`](../extended/ext/tls_tcp.lani).
 
-**All three runtime gates passed** on x86_64 Linux: **74 native CLI cases
-across three independently compiled strict ELFs**. Interoperability passed
-11 cases in 28.90 seconds, preflight/file/I/O passed 26 in 27.62 seconds, and
-owners/faults/budget passed 37 in 29.86 seconds. This acceptance covers the
-stated bounded profile and target.
+**All four application group-migration gates passed** on x86_64 Linux:
+**76 native CLI cases across four independently compiled strict ELFs**.
+Source enables X25519
+with secp256r1 fallback and independent OS scalar slots, following the
+[shared group contract](tls-group-integration-plan.md). Current receipts and
+the preceding 74-case X25519 checkpoint are recorded separately below.
 
 ## CLI and trust
 
@@ -53,9 +54,10 @@ The engine checks that the seed's public key matches the actual leaf SPKI
 before emitting a handshake flight. Provisioning and protecting that seed
 remain the caller's responsibility.
 
-The supported connection profile is TLS 1.3 with X25519, Ed25519 server
+The supported connection profile is TLS 1.3 with X25519 or secp256r1 ECDHE, Ed25519 server
 authentication, SHA-256, and AES-128-GCM or ChaCha20-Poly1305. The application
-prefers ChaCha20-Poly1305, sends a client key share, requests no ALPN, and
+prefers ChaCha20-Poly1305, sets the ordered groups to X25519 then secp256r1,
+sends an initial X25519 client share, requests no ALPN, and
 uses the engine's bounded ordered Ed25519 certificate-path profile with
 explicit trust and SAN identity checks. Unsupported algorithms or path
 constraints fail. There is no certificate fetching, general PKIX policy,
@@ -175,7 +177,12 @@ process timeout.
 The TCP adapter obtains fresh ephemeral material from OS nonblocking
 entropy after allocating its connection storage; there is no deterministic
 production fallback. The provisioned server signing seed is separate from
-that fresh ephemeral entropy. The app does not copy an active connection
+that fresh ephemeral entropy. Its dual policy requests the engine's canonical
+96-byte layout: 32 bytes each for ClientHello random, X25519 scalar and
+P-256 scalar. Only a checked invalid P-256 scalar permits the adapter to
+refill that slot, with eight candidates total under the same original
+deadline and shared host budget. No clamping, reduction or group fallback
+repairs a rejected scalar. The app does not copy an active connection
 owner or treat copied key/state handles as independent cleanup authority.
 
 Cleanup credits are reserved before acquisition, so expiry or an exhausted
@@ -221,7 +228,8 @@ each compile one independent app ELF.
 The test-only
 [`peer.py`](../tests/fixtures/extended/tls_exchange/peer.py) uses Python
 [`ssl`, backed by OpenSSL](https://docs.python.org/3/library/ssl.html), as an
-independent loopback peer in both directions. It fixes TLS 1.3 and X25519,
+independent loopback peer in both directions. It fixes TLS 1.3 and X25519
+for the retained cases; the new P-256 selection pins `prime256v1` instead,
 uses an Ed25519 certificate chain, disables server tickets, and records the
 actual OpenSSL version, TLS version, selected cipher, session reuse, received
 bytes, and clean `unwrap` outcome. Its client requires certificate validation,
@@ -231,12 +239,23 @@ application server. Shared signed certificate fixtures come from
 [`tls_tcp/peers.py`](../tests/fixtures/extended/tls_tcp/peers.py); their public
 deterministic test seeds are not production entropy.
 
+The exact selection
+`tls_exchange_dual_policy_interoperates_with_p256_only_openssl_peers` adds
+two binary 1,025-byte application cases, one in each role. Restricting each
+independent peer to P-256 requires the application's real dual-group path;
+the native client must handle the requested-group retry from its initial
+X share. Both cases retain explicit trust/identity checks, exact authenticated
+output, clean closure and descriptor/allocation ledgers, and assert an
+initial 96-byte OS entropy request. Together with the retained 74 cases,
+the four accepted selections total **76 native cases** at the migrated
+source.
+
 Rust and Python exchange a bounded binary request and receipt: fixed scalar
 fields plus length-prefixed raw paths, payloads, and metadata. There is no
 JSON transport or compatibility path. Python/OpenSSL orchestration and Rust
 trace checking are test-only; neither implements a production TLS backend.
 
-The three focused selections are:
+The three retained focused selections are:
 
 - `tls_exchange_cli_interoperates_with_openssl_in_both_directions`: binary,
   empty, and 1 MiB exchanges, DNS/IP identity, wrong trust/name, raw bad peers,
@@ -262,6 +281,34 @@ omits that byte. It is not evidence that the kernel delivered one byte.
 Interrupted and invalid-count injections likewise exercise returned results;
 ordinary loopback transfers, EOF probes, and closed-pipe EPIPE use real host
 behavior. The reusable TCP suite owns the broader transport/protocol matrix.
+
+## Current group-migration admission
+
+All four exact selections passed on the unchanged migrated sources. Each
+invocation compiled one strict ELF with the GPU compiler and reused it for
+that selection's native application processes: **four strict ELFs and 76
+native processes total**. Application and TLS execution were native x86_64
+Linux, not GPU kernels. Source versions were application `41e04c7f`, Rust
+driver `1165d6af`, peer helper `34a700bd`, adapter `b5125b31`, portable
+engine `eaf51c4c` and negotiation `3f089664`.
+
+Receipts are under `target/stdlib-work/tls-connection-admission/`:
+
+| Exact selection | Native cases | Elapsed | Receipt |
+| --- | ---: | ---: | --- |
+| `tls_exchange_dual_policy_interoperates_with_p256_only_openssl_peers` | 2 | 28.51 s | `group-app-p256-first.log` |
+| `tls_exchange_cli_interoperates_with_openssl_in_both_directions` | 11 | 35.08 s | `group-app-interop-first.log` |
+| `tls_exchange_cli_preflight_files_caps_and_io_failures` | 26 | 29.71 s | `group-app-preflight-first.log` |
+| `tls_exchange_cli_releases_owners_preserves_errors_and_bounds_host_attempts` | 37 | 34.63 s | `group-app-owners-first.log` |
+
+The joint Rust build of four targets took **1.75 s**
+(`group-build-frozen.log`), separately from GPU compilation and native
+execution inside those gates. No application, library, fixture or driver
+changes, and no additional failures, occurred during this admission. The
+96-byte initial entropy layout and eight-candidate maximum remain part of
+the documented adapter contract; passing these gates does not add a scalar
+fallback, repair or fresh operation budget. Historical parser and harness
+failures below remain excluded from these accepted counts.
 
 ## Pre-admission source corrections
 
@@ -292,7 +339,7 @@ failure is retained as `exchange-interop-first.log` in its parent directory.
 They are not checked in. The corrected application has since passed all
 three real executable gates below.
 
-## Admission evidence and commands
+## Admission evidence and commands for the preceding X25519 checkpoint
 
 The exact selection
 `tls_exchange_cli_interoperates_with_openssl_in_both_directions` passed in

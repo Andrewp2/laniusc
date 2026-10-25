@@ -77,6 +77,9 @@ struct Case {
     expected: u64,
     root: &'static str,
     exporter: bool,
+    group: u32,
+    peer_groups: &'static str,
+    calls: u64,
 }
 fn case(role: u32, suite: u32, length: usize) -> Case {
     Case {
@@ -90,6 +93,9 @@ fn case(role: u32, suite: u32, length: usize) -> Case {
         expected: 0,
         root: "root.der",
         exporter: false,
+        group: 0,
+        peer_groups: "X25519",
+        calls: 1_000_000,
     }
 }
 struct Actual {
@@ -125,7 +131,10 @@ fn run(directory: &Directory, c: &Case) -> Actual {
             .arg(c.transport)
             .arg(u32::from(c.expected != 0).to_string())
             .arg(c.root)
-            .arg(u32::from(c.exporter).to_string()),
+            .arg(u32::from(c.exporter).to_string())
+            .arg(c.group.to_string())
+            .arg(c.peer_groups)
+            .arg(c.calls.to_string()),
         Duration::from_secs(30),
     );
     assert!(
@@ -497,4 +506,176 @@ fn established_deadline_and_budget_stops_resume_actual_wire_and_pending_input() 
         }
     }
     eprintln!("TLS TCP resume cases: {count}");
+}
+
+fn entropy_requests(trace: &str) -> Vec<usize> {
+    trace
+        .lines()
+        .filter(|line| line.starts_with("getrandom("))
+        .map(|line| {
+            line.rsplit_once(" = ")
+                .unwrap()
+                .0
+                .trim_end()
+                .strip_suffix(')')
+                .unwrap()
+                .rsplit(',')
+                .nth(1)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn p256_openssl_peers_cover_single_dual_requested_groups_and_entropy_retry() {
+    let directory = Directory::new();
+    let mut count = 0;
+    for role in 0..2 {
+        for suite in 0..2 {
+            for group in [1, 2] {
+                let mut c = case(role, suite, 257);
+                c.group = group;
+                c.peer_groups = "P-256";
+                c.fragment = 7;
+                check(&c, &run(&directory, &c));
+                count += 1;
+            }
+        }
+    }
+    // The server prefers P although the independent client initially shares X.
+    // The dual-policy client/P-only-server cases above force the opposite HRR.
+    for suite in 0..2 {
+        let mut c = case(1, suite, 33);
+        c.group = 3;
+        c.peer_groups = "X25519:P-256";
+        check(&c, &run(&directory, &c));
+        count += 1;
+    }
+    for role in 0..2 {
+        for group in [1, 2] {
+            let layout = if group == 1 { 64 } else { 96 };
+            let mut c = case(role, 0, 17);
+            c.group = group;
+            c.peer_groups = "P-256";
+            // A suppressed first entropy call leaves the std entropy staging
+            // buffer zero. This deliberately supplies an invalid P scalar;
+            // its positive injected count is never claimed as real OS entropy.
+            c.fault = format!("getrandom:retval={layout}:when=1");
+            let a = run(&directory, &c);
+            check(&c, &a);
+            let requests = entropy_requests(&a.trace);
+            assert_eq!(requests[0], layout);
+            assert!(requests.len() >= 2 && requests[1..].iter().all(|n| *n <= 32));
+            let fresh: i64 = a
+                .trace
+                .lines()
+                .filter(|line| line.starts_with("getrandom(") && !line.contains("INJECTED"))
+                .map(result)
+                .filter(|n| *n > 0)
+                .sum();
+            assert!(fresh >= 32 && fresh <= 7 * 32 && fresh % 32 == 0);
+            count += 1;
+        }
+    }
+    assert_eq!(count, 14);
+    eprintln!("P-256 TCP:{count} real peer cases; P-only/dual/both suites, requested-group HRR both directions, scalar rejection followed only by fresh OS P-slot bytes");
+}
+
+#[test]
+fn p256_entropy_rejection_cap_refill_failure_and_shared_budget_preserve_socket() {
+    let directory = Directory::new();
+    let mut count = 0;
+    for role in 0..2 {
+        for group in [1, 2] {
+            let layout = if group == 1 { 64 } else { 96 };
+            let initial = layout / 32;
+            let mut c = case(role, 0, 0);
+            c.group = group;
+            c.peer_groups = "P-256";
+            c.mode = 11;
+            c.expected = 14;
+            c.fault = "getrandom:retval=32:when=1+".into();
+            let a = run(&directory, &c);
+            check(&c, &a);
+            let requests = entropy_requests(&a.trace);
+            let mut expected: Vec<_> = (0..initial).map(|i| layout - i * 32).collect();
+            expected.extend([32; 7]);
+            assert_eq!(
+                requests, expected,
+                "initial candidate plus exactly seven refills"
+            );
+            assert_eq!(
+                &a.report[6..8],
+                &[10, 10],
+                "input socket retained until caller closes it"
+            );
+            count += 1;
+
+            // Derive a stop immediately after the first actual refill attempt
+            // from the observed charged host prefix, including the initial
+            // clock and the adapter's documented21 prepaid acquisition credits.
+            let mut charged = 21;
+            let mut random_calls = 0;
+            for line in a.trace.lines() {
+                if [
+                    "clock_gettime(",
+                    "getsockopt(",
+                    "fcntl(",
+                    "getpeername(",
+                    "getrandom(",
+                ]
+                .iter()
+                .any(|name| line.starts_with(name))
+                {
+                    charged += 1;
+                }
+                if line.starts_with("getrandom(") {
+                    random_calls += 1;
+                    if random_calls == initial + 1 {
+                        break;
+                    }
+                }
+            }
+            c.mode = 0;
+            c.expected = 8;
+            c.calls = charged;
+            let stopped = run(&directory, &c);
+            check(&c, &stopped);
+            assert_eq!(entropy_requests(&stopped.trace), expected[..initial + 1]);
+            assert_eq!(&stopped.report[6..8], &[10, 10]);
+            assert!(!stopped
+                .trace
+                .lines()
+                .any(|line| line.starts_with("sendto(")));
+            count += 1;
+
+            c.calls = 1_000_000;
+            c.expected = 13;
+            c.fault = format!("getrandom:retval={layout}:when=1+");
+            let failed = run(&directory, &c);
+            check(&c, &failed);
+            assert_eq!(entropy_requests(&failed.trace), [layout, 32]);
+            assert_eq!(&failed.report[6..8], &[10, 10]);
+            count += 1;
+        }
+        let mut c = case(role, 0, 0);
+        c.group = 1;
+        c.peer_groups = "P-256";
+        c.mode = 10;
+        c.expected = 14;
+        c.fault = "getrandom:retval=64:when=1".into();
+        let a = run(&directory, &c);
+        check(&c, &a);
+        assert_eq!(
+            entropy_requests(&a.trace),
+            [64],
+            "non-scalar constructor error never retries"
+        );
+        count += 1;
+    }
+    assert_eq!(count, 14);
+    eprintln!("P-256 entropy:{count} cases; eight-candidate cap, only P-slot32 refills, invalid-refill count stops, original shared budget stops and caller socket retained");
 }

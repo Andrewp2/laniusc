@@ -4,7 +4,8 @@
 module app::main;
 import alloc::allocator;
 import core::io; import core::mem; import core::option; import core::result; import core::sha256; import core::slice;
-import ext::ed25519; import ext::service_identity; import ext::tls_connection; import ext::tls_record; import ext::x509_path;
+import ext::ed25519; import ext::service_identity; import ext::tls_connection;
+import ext::tls_negotiation; import ext::tls_record; import ext::x509_path;
 import std::stream;
 fn view(bytes:[u8],at:i32,n:i32)->core::slice::View<u8> { return core::slice::View { values:bytes,start:at,length:n }; }
 fn part(v:core::slice::View<u8>,at:i32,n:i32)->core::slice::View<u8> { return view(v.values,v.start+at,n); }
@@ -71,12 +72,17 @@ fn connected(client:&ext::tls_connection::Engine,server:&ext::tls_connection::En
  }
  assert(trace.finish_witness==1 && client.peer_key().is_some() && server.peer_key().is_none());
 }
+fn group_option(id:u16)->core::option::Option<ext::tls_negotiation::Group> { if(id==0) { return core::option::None(); } return core::option::Some(ext::tls_negotiation::group_from_id(id).unwrap()); }
 fn exercise(backing:ptr)->i32 {
  let input:std::stream::Descriptor=std::stream::stdin(); let output:std::stream::Descriptor=std::stream::stdout(); let raw:[u8;8]=[0;8]; read(input.borrow(),raw,0,8); let cases:u64=load(raw,0); assert(cases>0 && cases<=32); let turn:u64=0;
  while(turn<cases) {
-  let header:[u8;64]=[0;64]; read(input.borrow(),header,0,64);
+  let header:[u8;104]=[0;104]; read(input.borrow(),header,0,104);
   let layout:i32=load(header,0) as i32; let suite:u64=load(header,8); let retry:u64=load(header,16); let split:i32=load(header,24) as i32;
   let now:i64=load(header,32) as i64; let root_length:i32=load(header,40) as i32; let count:i32=load(header,48) as i32; let large:u64=load(header,56);
+  let client_groups:ext::tls_negotiation::GroupPolicy=ext::tls_negotiation::GroupPolicy { preferred:ext::tls_negotiation::group_from_id(load(header,64) as u16).unwrap(),fallback:group_option(load(header,72) as u16) };
+  let server_groups:ext::tls_negotiation::GroupPolicy=ext::tls_negotiation::GroupPolicy { preferred:ext::tls_negotiation::group_from_id(load(header,80) as u16).unwrap(),fallback:group_option(load(header,88) as u16) };
+  let initial:core::option::Option<ext::tls_negotiation::Group> = group_option(load(header,96) as u16);
+  let client_layout:ext::tls_connection::EntropyLayout=ext::tls_connection::entropy_layout(client_groups).unwrap(); let server_layout:ext::tls_connection::EntropyLayout=ext::tls_connection::entropy_layout(server_groups).unwrap();
   assert(layout>=0 && layout<=1 && suite<=1 && retry<=2 && root_length>0 && root_length<=16384 && count>0 && count<=8);
   // The two layouts reuse the sole caller allocation only after both previous
   // engines have been disarmed. No huge fixed-array type/aggregate is needed.
@@ -88,20 +94,20 @@ fn exercise(backing:ptr)->i32 {
   let source_hash:core::sha256::Digest=core::sha256::digest(view(bytes,0,110000)).unwrap();
   let anchors:[core::slice::View<u8>;1]=[root]; let name:[u8;14]=[115,101,114,118,101,114,46,101,120,97,109,112,108,101]; let reference:ext::service_identity::Reference=ext::service_identity::dns_reference(view(name,0,14)).unwrap();
   let alpn:[u8;3]=[2,104,50]; let seed:[u8;32]=[157,97,177,157,239,253,90,96,186,132,74,244,146,236,44,196,68,73,197,105,123,50,105,25,112,59,172,3,28,174,127,96];
-  let client_entropy:[u8;64]=[0;64]; let server_entropy:[u8;64]=[0;64]; i=0; while(i<64) { client_entropy[i]=(i+1) as u8; server_entropy[i]=(i+101) as u8; i+=1; }
+  let client_entropy:[u8;96]=[0;96]; let server_entropy:[u8;96]=[0;96]; i=0; while(i<96) { client_entropy[i]=(i+1) as u8; server_entropy[i]=(i+101) as u8; i+=1; }
   let limits:ext::tls_connection::Limits=ext::tls_connection::default_limits(); limits.max_handshake_body=8192; limits.max_hello_frame=1024; limits.max_application_hold=23; limits.path.max_work=67108864;
   if(large!=0) { limits.max_handshake_body=98304; }
   let sizes:ext::tls_connection::BufferSizes=ext::tls_connection::required_buffers(limits).unwrap(); let pool:Pool=Pool { bytes:view(bytes,110000,330000),at:0 };
   let slots:[ext::x509_path::Slot;36]=[ext::x509_path::empty_slot();36]; let cb:ext::tls_connection::Buffers=pool.buffers(sizes,core::slice::View { values:slots,start:1,length:16 }); let sb:ext::tls_connection::Buffers=pool.buffers(sizes,core::slice::View { values:slots,start:19,length:16 });
   let selected:ext::tls_record::Suite=ext::tls_record::Suite::ChaCha20Poly1305Sha256; if(suite==1) { selected=ext::tls_record::Suite::Aes128GcmSha256; }
-  let first:ext::tls_connection::Engine=ext::tls_connection::client(ext::tls_connection::ClientConfig { anchors:core::slice::View { values:anchors,start:0,length:1 },reference:reference,unix_time:now,server_name:view(name,0,14),alpn:view(alpn,0,3),require_alpn:true,prefer_suite:selected,send_key_share:retry!=1,limits:limits },cb,view(client_entropy,0,64)).unwrap();
+  let first:ext::tls_connection::Engine=ext::tls_connection::client(ext::tls_connection::ClientConfig { anchors:core::slice::View { values:anchors,start:0,length:1 },reference:reference,unix_time:now,server_name:view(name,0,14),alpn:view(alpn,0,3),require_alpn:true,prefer_suite:selected,groups:client_groups,initial_share:initial,limits:limits },cb,view(client_entropy,0,client_layout.length)).unwrap();
   // Sole-owner value handoff. The old value is never driven again.
   let client:ext::tls_connection::Engine=first;
-  let server:ext::tls_connection::Engine=ext::tls_connection::server(ext::tls_connection::ServerConfig { chain:core::slice::View { values:chain,start:0,length:count },seed:view(seed,0,32),alpn:view(alpn,1,2),require_alpn:true,prefer_suite:selected,require_cookie:retry==2,limits:limits },sb,view(server_entropy,0,64)).unwrap();
-  fill(view(client_entropy,0,64),166); fill(view(server_entropy,0,64),167); fill(view(seed,0,32),168);
+  let server:ext::tls_connection::Engine=ext::tls_connection::server(ext::tls_connection::ServerConfig { chain:core::slice::View { values:chain,start:0,length:count },seed:view(seed,0,32),alpn:view(alpn,1,2),require_alpn:true,prefer_suite:selected,groups:server_groups,require_cookie:retry==2,limits:limits },sb,view(server_entropy,0,server_layout.length)).unwrap();
+  fill(view(client_entropy,0,96),166); fill(view(server_entropy,0,96),167); fill(view(seed,0,32),168);
   let trace:Trace=Trace { out:output,client:0,server:0,turn:0,split:split,finish_witness:0 }; word(output.borrow(),10); word(output.borrow(),turn);
   assert(client.peer_key().is_none() && server.peer_key().is_none()); connected(client.borrow(),server.borrow(),trace.borrow());
-  let cn:ext::tls_connection::Negotiated=client.negotiated().unwrap(); let sn:ext::tls_connection::Negotiated=server.negotiated().unwrap(); assert(cn.alpn_length==2 && sn.alpn_length==2 && cn.alpn[0]==104 && cn.alpn[1]==50);
+  let cn:ext::tls_connection::Negotiated=client.negotiated().unwrap(); let sn:ext::tls_connection::Negotiated=server.negotiated().unwrap(); assert(ext::tls_negotiation::group_id(cn.group)==ext::tls_negotiation::group_id(sn.group)); assert(cn.alpn_length==2 && sn.alpn_length==2 && cn.alpn[0]==104 && cn.alpn[1]==50);
   let label:[u8;8]=[101,120,99,104,97,110,103,101]; let context:[u8;3]=[0,255,1]; let ce:[u8;32]=[0;32]; let se:[u8;32]=[0;32]; client.export(view(label,0,8),view(context,0,3),view(ce,0,32)).unwrap(); server.export(view(label,0,8),view(context,0,3),view(se,0,32)).unwrap(); assert(equal(view(ce,0,32),view(se,0,32)));
   let payload:[u8;113]=[0;113]; i=0; while(i<113) { payload[i]=((i*71+9)%256) as u8; i+=1; } let received:[u8;128]=[0;128];
   assert(client.queue_plaintext(view(payload,0,113)).unwrap()==113); trace.transfer(client.borrow(),server.borrow(),0); drain(server.borrow(),received,3,view(payload,0,113));
@@ -114,7 +120,7 @@ fn exercise(backing:ptr)->i32 {
   server.begin_close().unwrap(); trace.transfer(server.borrow(),client.borrow(),1); assert(server.local_closed() && client.peer_closed()); client.input_eof().unwrap(); server.input_eof().unwrap();
   let eof:ext::tls_connection::Read=client.read_plaintext(view(received,3,1)).unwrap(); assert(eof.written==0 && eof.eof); assert(server.feed_wire(view(payload,0,113)).unwrap()==113);
   let final_hash:core::sha256::Digest=core::sha256::digest(view(bytes,0,110000)).unwrap(); assert(equal(view(source_hash.bytes,0,32),view(final_hash.bytes,0,32))); buffer_guards(cb); buffer_guards(sb); assert(slots[0].certificate.is_none() && slots[17].certificate.is_none() && slots[18].certificate.is_none() && slots[35].certificate.is_none());
-  let key:ext::ed25519::Key32=client.peer_key().unwrap(); word(output.borrow(),0); block(output.borrow(),view(key.bytes,0,32)); block(output.borrow(),view(ce,0,32)); let cs:ext::tls_connection::Stats=client.stats(); let ss:ext::tls_connection::Stats=server.stats(); word(output.borrow(),cs.sent_records); word(output.borrow(),ss.sent_records); word(output.borrow(),cs.send_generation); word(output.borrow(),cs.receive_generation); word(output.borrow(),ss.send_generation); word(output.borrow(),ss.receive_generation); word(output.borrow(),trace.finish_witness);
+  let key:ext::ed25519::Key32=client.peer_key().unwrap(); word(output.borrow(),0); block(output.borrow(),view(key.bytes,0,32)); block(output.borrow(),view(ce,0,32)); word(output.borrow(),ext::tls_negotiation::group_id(cn.group) as u64); word(output.borrow(),ext::tls_negotiation::group_id(sn.group) as u64); let cs:ext::tls_connection::Stats=client.stats(); let ss:ext::tls_connection::Stats=server.stats(); word(output.borrow(),cs.sent_records); word(output.borrow(),ss.sent_records); word(output.borrow(),cs.send_generation); word(output.borrow(),cs.receive_generation); word(output.borrow(),ss.send_generation); word(output.borrow(),ss.receive_generation); word(output.borrow(),trace.finish_witness);
   client.abort(); server.abort(); turn+=1;
  }
  return 0;

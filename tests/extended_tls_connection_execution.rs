@@ -88,6 +88,11 @@ fn fragmented_long_certificate_and_both_hello_retry_modes_execute() {
 }
 
 #[test]
+fn p256_and_dual_group_connections_match_independent_openssl_ecdh() {
+    peer("groups");
+}
+
+#[test]
 fn connection_error_atomicity_and_record_epoch_boundaries_execute() {
     let exe = compile("controls");
     let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -99,4 +104,21 @@ fn connection_error_atomicity_and_record_epoch_boundaries_execute() {
     );
     checked(&result);
     assert_eq!(result.stdout, b"tls connection controls: 46 accepted\n");
+}
+
+#[test]
+fn group_entropy_scalar_encoding_and_work_admission_boundaries_execute() {
+    let exe = compile("groups");
+    let script = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/extended/tls_connection/groups_peer.py");
+    let result = common::process_output_with_timeout(
+        "TLS group constructor and selected-share admission",
+        Command::new("python3").arg(script).arg(exe.path()),
+        Duration::from_secs(45),
+    );
+    checked(&result);
+    assert_eq!(
+        result.stdout,
+        b"tls connection group admissions: 52 accepted\n"
+    );
 }

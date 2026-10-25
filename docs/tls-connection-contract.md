@@ -5,7 +5,7 @@ The [portable engine](extended-tls-connection.md) now passes paired handshakes,
 fragmentation, retry and boundary gates. The [TCP adapter](extended-tls-tcp.md)
 passes real OpenSSL exchanges, 1 MiB pressure streams, ownership/fault gates and
 deadline/budget resumption. The [real program](extended-tls-exchange.md) passes
-74 interoperability, I/O, ownership and budget cases. The guides distinguish
+76 interoperability, I/O, ownership and budget cases. The guides distinguish
 accepted snapshots from pending work. Production protocol, cryptography and
 certificate validation stay in Lanius; OpenSSL is an independent test peer.
 The broader algorithm and PKIX
@@ -24,9 +24,9 @@ requirements below remain open.
 | [std::socket](../stdlib/std/socket.lani), [std::poll](../stdlib/std/poll.lani), [core::io](../stdlib/core/io.lani) | Own transport lifetime, retained partial records, bounded progress and deadlines. TCP lives in `std::socket`; `std::net` is legacy host-ABI surface. |
 | [std::entropy](../stdlib/std/entropy.lani), [std::random](../stdlib/std/random.lani), [std::clock](../stdlib/std/clock.lani), [calendar](../stdlib/core/calendar.lani) | Bound entropy attempts, separate monotonic deadlines from certificate wall time, and propagate every host failure. |
 
-## First executable profile and the full TLS requirement
+## Executable profile and the full TLS requirement
 
-The first connected profile is TLS 1.3, X25519, Ed25519 certificate signatures
+The connected profile is TLS 1.3, X25519 or P-256, Ed25519 certificate signatures
 and CertificateVerify, `TLS_AES_128_GCM_SHA256` and
 `TLS_CHACHA20_POLY1305_SHA256`, server authentication,
 and explicit application-supplied trust anchors. Its client and server must
@@ -43,8 +43,10 @@ P-256 key exchange, RSA-PSS/RSAE/SHA-256 and ECDSA/P-256/SHA-256 signatures,
 and RSA-PKCS1/SHA-256 certificate verification. AES, AES-GCM and explicit
 AES-128-GCM/SHA-256 record integration now have native admission.
 [P-256 public keys, ECDH and ECDSA/SHA-256 verification](extended-p256.md)
-also pass their independent native gates, but group negotiation and
-certificate/CertificateVerify integration remain.
+also pass their independent native gates.
+[Group negotiation and exchange](tls-group-integration-plan.md) now execute
+through the engine, TCP adapter and application; ECDSA certificate and
+CertificateVerify integration remain.
 [Bounded RSA verification](extended-rsa.md) now passes independent native
 gates for RSAE keys and SHA-256 PKCS#1/PSS signatures; certificate and
 CertificateVerify integration remain. The SHA-256 and SHA-384 hashes and
@@ -99,12 +101,13 @@ validator and proof-of-possession checks advance private session state.
 | Established | Publish no application data until server authentication succeeded and the client's Finished was committed to the transport. Retain already-received authenticated server application data within a fixed bound until that point. |
 
 The server performs the mirror: validate CH, choose only an offered supported
-profile, optionally send one HRR for a missing X25519 share/cookie policy, send
+profile, optionally send one HRR for a missing selected-group share/cookie policy, send
 SH, encrypted EE/Certificate/CV/Finished, then verify client Finished before
 publishing client data or accepting application writes. Its default peer is
 **anonymous client**, not an authenticated client identity. A future mutual-TLS
 mode must require and validate the client's Certificate and CV before Finished.
-Check version `0304`, group `001d` with a 32-byte X25519 share, suite `1301` or `1303`
+Check version `0304`, group `001d` with a 32-byte X25519 share or `0017`
+with a 65-byte uncompressed P-256 share, suite `1301` or `1303`
 and offered Ed25519 scheme `0807`, including certificate-signature offers when
 present. ALPN must select one offered protocol; a required absent/mismatched
 selection fails. DNS SNI and the expected certificate identity remain distinct
@@ -214,8 +217,15 @@ the TLS engine; DNS resolution is a separate bounded operation and never
 changes the expected certificate identity.
 
 Each new handshake needs OS cryptographic entropy for its 32-byte random and
-32-byte X25519 private input; server signing credentials are separately
-provisioned. Use `x25519::shared_secret`'s low-order/all-zero rejection. Never
+one independent 32-byte scalar per enabled group. `entropy_layout` defines
+exactly 64 bytes for either single group and 96 for both, with canonical
+random/X25519/P-256 slot order. Server signing credentials are separately
+provisioned. Use X25519's low-order/all-zero rejection and P-256's scalar and
+on-curve checks; a valid zero P-256 x coordinate is not an X25519 rejection.
+Only `InvalidEphemeralScalar` permits a fresh P-slot refill, at most seven
+after the initial candidate, under the same deadline and host budget.
+See the [group contract](tls-group-integration-plan.md) for exact storage and
+work limits. Never
 use xoshiro, time, a fixed fallback, or caller-selected deterministic `Source64`
 as production entropy. Discard partial entropy on failure. The existing
 `std::entropy::fill` retries EINTR without a limit. The now-admitted

@@ -13,6 +13,13 @@ connection establishment, a listener, implicit trust anchors or client
 certificate authentication. Numeric connect and accept can happen outside
 attachment using single-attempt socket methods and the shared host budget.
 
+**All six group-migration gates passed:** 91 native cases on x86_64 Linux.
+Current source supports X25519,
+secp256r1 or an ordered policy containing both, following the
+[shared group contract](tls-group-integration-plan.md). The accepted
+group-migration and preceding X25519 checkpoint receipts below identify their
+exact source snapshots.
+
 ## Attachment and ownership
 
 ```lanius
@@ -51,8 +58,10 @@ All allocations precede entropy and engine construction:
   explicit so each allocation has a deadline check and partial acquisition
   cleanup is counted.
 
-The ten owners never grow after attachment. The adapter then obtains exactly
-64 fresh OS bytes, constructs the actual engine, and checks the original
+The ten owners never grow after attachment. The adapter asks
+`tls_connection::entropy_layout(config.groups)` for its exact 64-byte
+single-group or 96-byte dual-group layout, obtains fresh OS bytes, constructs
+the actual engine, and checks the original
 deadline again. Only success calls the input socket's `take_handle()` and
 transfers ownership. Returned connection copies do not create a second valid
 socket, memory or nonce owner. Use one active value and its `borrow()` method.
@@ -93,6 +102,25 @@ buffer is cleared. There is no xoshiro, timestamp, fixed seed or caller
 entropy fallback. This does not claim optimizer-resistant secret erasure.
 [Linux getrandom semantics](https://man7.org/linux/man-pages/man2/getrandom.2.html)
 explain why nonblocking entropy is needed for this attempt/deadline contract.
+
+The engine's `EntropyLayout` is the only slot-layout authority. ClientHello
+random occupies the first 32 bytes; a single enabled group's scalar follows.
+With both groups enabled, X25519 occupies `[32,64)` and P-256 `[64,96)`,
+independently of preference order. Policy validation precedes host access.
+Before and after each constructor admission, the adapter charges a fresh
+clock check under the original deadline and shared `HostBudget`.
+
+Only `Engine(InvalidEphemeralScalar)` admits a retry. The engine guarantees
+that this rejection precedes X25519 derivation and caller-buffer writes.
+The adapter draws at most seven further 32-byte fills into the indicated
+P-256 slot, for **eight P-256 candidates total**. Random and X25519 slots
+stay unchanged; there is no reduction, clamping, deterministic repair or
+group fallback. An eighth rejection returns that original engine error.
+Other constructor errors and entropy failures stop immediately. Partial
+fills and Interrupted retries consume the same host allowance and original
+deadline. All 96 temporary bytes are cleared on every outcome, without a
+secure-erasure claim. A successful late constructor is aborted and its new
+owners released before the input socket can transfer.
 
 Every connection keeps monotonic history independently of the supplied
 operation budget. Renewing an Established operation budget cannot hide clock
@@ -216,7 +244,58 @@ send before cleanup. Existing pending sealed data suppresses that alert;
 failure never transmits stale application output or rolls back a spent nonce.
 Alert, clock and close failures do not replace the original engine cause.
 
-## Verification
+## Group migration admission
+
+The driver retains the preceding 63 cases with an explicit X25519-only
+policy and adds two focused selections totaling 28 cases:
+
+- `p256_openssl_peers_cover_single_dual_requested_groups_and_entropy_retry`:
+  14 real-peer cases cover P-256 alone, dual policies, both record suites,
+  requested-group HRR in both role directions, and an initially rejected
+  scalar followed only by fresh OS fills of the P slot. The fixture checks
+  the actual negotiated group before accepting application output.
+- `p256_entropy_rejection_cap_refill_failure_and_shared_budget_preserve_socket`:
+  14 cases cover eight rejected candidates, exact P-slot refill requests,
+  an invalid refill count, shared-budget exhaustion immediately after a
+  refill attempt, and non-scalar constructor errors without retry. The
+  fixture retains and closes the original socket on every attachment failure.
+
+These entropy faults deliberately suppress selected `getrandom` calls;
+the entropy adapter's zero-initialized staging then supplies a known invalid
+scalar. Injected positive counts are test controls, not evidence of fresh
+OS randomness. Successful recovery cases require real later OS P-slot bytes
+and independent OpenSSL agreement. The cap cases accept no engine and send
+no handshake bytes. Budget-stop credits derive from the observed charged
+host prefix plus the documented acquisition reserve; no allowance resets.
+All six selections passed, totaling **91 native cases and six independently
+compiled strict ELFs**. Each ELF was reused within its exact gate. GPU
+compilation produced x86_64 Linux native executables; TLS processing runs
+natively. The frozen sources were adapter `b5125b31`, engine `eaf51c4c`,
+negotiation `3f089664`, Rust driver `77a309c1`, fixture `610970bc` and helper
+`a384f802`. The joint Rust build of four targets took 1.75 s
+(`group-build-frozen.log`); that is separate from compilation/execution inside
+the focused gates. Receipts are under
+`target/stdlib-work/tls-connection-admission/`:
+
+| Gate | Native cases | Elapsed | Receipt |
+| --- | ---: | ---: | --- |
+| P-256 interoperability/recovery | 14 | 28.40 s | `group-tcp-interop-first.log` |
+| P-256 entropy rejection/limits | 14 | 25.79 s | `group-tcp-entropy-first.log` |
+| Retained X25519 interoperability | 18 | 31.69 s | `group-tcp-x-interop-first.log` |
+| Constructor, fault and cleanup | 37 | 30.02 s | `group-tcp-faults-first.log` |
+| 1 MiB pressure streams | 2 | 29.28 s | `group-tcp-pressure-first.log` |
+| Established deadline/budget resume | 6 | 30.74 s | `group-tcp-resume-first.log` |
+
+All binary-output, progress, resource-ledger and closure assertions passed.
+The current pressure gate again observed one **real kernel positive short
+send** in the native client, with 67 EAGAIN events; the native server
+observed zero positive short sends and 263 EAGAIN events. Successful
+attachments retain ten pre-handshake allocation owners; failed acquisition
+retains and releases only the actual acquired prefix. The original caller
+socket remains live on failed attachment. The root ran all current gates;
+there were no author-side executions for the group migration.
+
+## Verification of the preceding X25519 checkpoint
 
 All four focused gates passed on **x86_64 Linux**, totaling **63 native
 cases**. Each gate was invoked separately: four strict ELFs were generated
@@ -349,9 +428,9 @@ evidence for partial-record progress.
 
 Python/OpenSSL setup and fragmentation are loopback-only test plumbing, not
 production TLS. Each harness case and host peer has a finite timeout. The
-evidence above covers all four adapter gates. The separate
-[application guide](extended-tls-exchange.md) records its 74 accepted cases
-and earlier parser/source corrections. No security
+evidence above covers all six current adapter gates and the earlier
+checkpoint. The separate [application guide](extended-tls-exchange.md)
+tracks application admission and its earlier parser/source corrections. No security
 certification claim follows from these focused gates. General PKIX, mandatory
 TLS algorithm coverage and the remaining [whole connection
 contract](tls-connection-contract.md) remain open.

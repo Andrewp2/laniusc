@@ -45,7 +45,11 @@ record epochs, the actual trust decision and client-Finished transmission.
 Its paired/fragment/retry and 46 boundary cases pass. The
 [TCP adapter](extended-tls-tcp.md) passes both-role OpenSSL, 1 MiB pressure,
 ownership/fault and operation-resumption gates. The
-[exchange application](extended-tls-exchange.md) passes 74 native cases.
+[exchange application](extended-tls-exchange.md) passes 76 native cases.
+The [group migration](tls-group-integration-plan.md) adds P-256 alongside
+X25519, with exact 64/96-byte entropy layouts and bounded P-scalar retries;
+the adapter now passes 91 cases. Signature authentication remains Ed25519
+with SHA-256 record suites.
 The [connection contract](tls-connection-contract.md) retains the broader
 mandatory-algorithm and PKIX requirements.
 

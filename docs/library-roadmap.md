@@ -28,7 +28,7 @@ package distribution is a separate deliverable.
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols and String implementations execute with typed errors and manual memory-owner release. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
 | Byte digests | Incremental SHA-2, checked message lengths, copied results and reset | SHA-224/256 and SHA-384/512/512-224/512-256 execute without allocation, including variant-specific initial values, padding and full length encoding. Independent models cover streaming layouts, state/digest copies, finalization and rejection atomicity. The stdin hash program exercises all six algorithms, EOF, byte/call limits and I/O failures on native Linux |
-| Cryptographic byte primitives | Stream cipher, block cipher, one-time authentication, authenticated encryption, key exchange and record protection | [ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md), [AES-128/192/256](core-aes.md), optional [ChaCha20-Poly1305](extended-chacha20-poly1305.md), [AES-GCM](extended-aes-gcm.md), [X25519](extended-x25519.md) and [TLS record protection](extended-tls-record.md) pass focused native Linux gates. Records support explicit AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites with directional key-use limits. [Performance evidence](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration) includes the changed import closure and output size. [Ed25519](extended-ed25519.md), [P-256](extended-p256.md) and [HMAC/HKDF-SHA-384](extended-hmac-hkdf-sha384.md) also execute. The [portable connection](extended-tls-connection.md) and [TCP adapter](extended-tls-tcp.md) execute a restricted X25519/Ed25519/SHA-256 profile; remaining mandatory TLS algorithms and their integration remain |
+| Cryptographic byte primitives | Stream cipher, block cipher, one-time authentication, authenticated encryption, key exchange and record protection | [ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md), [AES-128/192/256](core-aes.md), optional [ChaCha20-Poly1305](extended-chacha20-poly1305.md), [AES-GCM](extended-aes-gcm.md), [X25519](extended-x25519.md) and [TLS record protection](extended-tls-record.md) pass focused native Linux gates. Records support explicit AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites with directional key-use limits. [Performance evidence](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration) includes the changed import closure and output size. [Ed25519](extended-ed25519.md), [P-256](extended-p256.md) and [HMAC/HKDF-SHA-384](extended-hmac-hkdf-sha384.md) also execute. The [portable connection](extended-tls-connection.md) and [TCP adapter](extended-tls-tcp.md) execute X25519 or P-256 with an explicit Ed25519/SHA-256 profile; remaining mandatory TLS algorithms and their integration remain |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque cursors transfer cleanup authority and recover their original storage, with explicit nested cleanup and a streaming unique-word application. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
@@ -439,7 +439,9 @@ integration and the other remaining families still need their own evidence.
   computes public keys and raw ECDH, verifies ECDSA/SHA-256 and parses strict
   signature DER. Published NIST/RFC data, affine/OpenSSL comparisons, exceptional
   group cases, mutations and metadata/range failures check exact bytes in both
-  buffer layouts. TLS/certificate integration and the remaining mandatory
+  buffer layouts. Group exchange now has separate
+  [connection evidence](extended-tls-connection.md); certificate/signature
+  integration and the remaining mandatory
   algorithms are separate work; machine constant-time behavior remains unproven.
 - [HMAC/HKDF-SHA-384](extended-hmac-hkdf-sha384.md) passes 930 independent
   commands and an ordinary composition program across four strict ELFs and
@@ -465,14 +467,16 @@ integration and the other remaining families still need their own evidence.
   records a 4.1% higher warmed compilation median and 36.6% larger ELF for the
   existing authentication workload; no compiler source changed. The portable
   connection and transport layers now have separate evidence below.
-- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,222 wire-model
+- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,540 wire-model
   commands and 72 exact/one-less shared-budget probes, plus a six-flow ordinary
   consumer covering both suites, direct handshakes and two retry forms.
   Selection re-derives borrowed Offer descriptions, pins retry cookies and
   suites, preserves unchanged CH2 fields and extension order, and enforces
   offered SNI/ALPN responses. Independent byte witnesses check returned views;
   writer snapshots check complete error atomicity. Four strict ELFs run in
-  25 native processes with empty allocation traces. These helpers add no
+  30 native processes with empty allocation traces. Typed group policy supports
+  X25519/P-256, strict first mutual preference and ordered dual shares.
+  These helpers add no
   authentication or connected-transport claim.
 - [Server-flight authentication](extended-tls-authentication.md) passes
   110 protocol cases with 340 state observations and an ordinary consumer.
@@ -485,18 +489,23 @@ integration and the other remaining families still need their own evidence.
   client's Finished to be committed to the transport.
 - [Portable TLS connection state](extended-tls-connection.md) passes paired
   client/server handshakes for both suites and buffer layouts, both retry forms,
-  long eight-certificate flights and 46 error/publication/epoch boundary cases.
+  long eight-certificate flights, 46 error/publication/epoch boundaries and
+  52 group/entropy/scalar/work admissions. Eight new paired P-256/dual-group
+  flights bring the scripted total to 114 plus the ordinary consumer.
   The engine uses caller storage without allocation, holds application bytes
   until client Finished is acknowledged, and retains exact pending wire prefixes.
-  Two paired native processes each own one explicitly accounted test arena;
-  the ordinary and boundary consumers have empty allocation traces.
+  Three paired native processes each own one explicitly accounted test arena;
+  ordinary, control and group-admission consumers have empty allocation traces.
+  Both published groups are independently compared with actual wire selection.
 - [Owned TLS over TCP](extended-tls-tcp.md) passes 18 independent OpenSSL
   exchanges in both roles and suites, 37 ownership/fault cases, and two exact
   1 MiB pressure streams. Actual syscall traces include one positive short send,
   retained wire progress, matching releases and one socket close attempt.
-  Six operation-resumption cases also pass: actual acknowledged sends and
-  retained unfed receives survive budget renewal without repeated bytes.
-  The [real TLS exchange program](extended-tls-exchange.md) passes 74 cases
+  Fourteen P-256 interoperability and fourteen bounded entropy/failure cases
+  bring the transport total to 91. Six operation-resumption cases also pass:
+  actual acknowledged sends and retained unfed receives survive budget renewal
+  without repeated bytes.
+  The [real TLS exchange program](extended-tls-exchange.md) passes 76 cases
   across both-role interoperability, CLI/files/I/O, ownership and shared host
   budgets. These are
   x86_64 Linux native results through the GPU compiler; they do not establish

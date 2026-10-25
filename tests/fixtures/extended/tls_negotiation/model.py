@@ -9,6 +9,7 @@ ext=lambda k,b:u16(k)+vec(b)
 words=lambda ns:b''.join(u16(n) for n in ns)
 ALPN=b'\x02h2\x08http/1.1'
 SHARE=bytes(range(32))
+P_SHARE=bytes.fromhex("046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5")
 class Failure(Exception):
  def __init__(self,code):self.code=code
 
@@ -22,10 +23,10 @@ def extensions(raw):
   result.append((kind,raw[pos:pos+n]));pos+=n
  return result
 
-def base_extensions(share=SHARE,groups=(29,),sigs=(2055,),cert=(2055,),sni=b'example.com',alpn=ALPN,cookie=b'',extra=()):
+def base_extensions(share=SHARE,groups=(29,),sigs=(2055,),cert=(2055,),sni=b'example.com',alpn=ALPN,cookie=b'',extra=(),share_group=29):
  result=[(43,b'\x02\x03\x04'),(10,vec(words(groups))),(13,vec(words(sigs)))]
  if cert is not None:result.append((50,vec(words(cert))))
- result.append((51,vec(b'' if share is None else u16(29)+vec(share))))
+ result.append((51,vec(b'' if share is None else u16(share_group)+vec(share))))
  if sni is not None:result.append((0,vec(b'\x00'+vec(sni))))
  if alpn is not None:result.append((16,vec(alpn)))
  if cookie:result.append((44,vec(cookie)))
@@ -79,6 +80,7 @@ def inspect(p,allow_cookie=False):
   require(len(d)>=4,5);g,n=struct.unpack_from('!HH',d);d=d[4:];require(n>0 and n<=len(d),5);require(g not in keys,6);keys[g]=d[:n];shares.append(g);d=d[n:]
  require(all(g in groups for g in shares),12);require([groups.index(g) for g in shares]==sorted(groups.index(g) for g in shares),12)
  if 29 in keys:require(len(keys[29])==32,5)
+ if 23 in keys:require(len(keys[23])==65 and keys[23][:1]==b"\x04",5)
  server_name=b''
  if 0 in m:
   d=m[0];require(len(d)>=5 and int.from_bytes(d[:2],'big')==len(d)-2,15);d=d[2:];seen=set()
@@ -96,17 +98,17 @@ def inspect(p,allow_cookie=False):
  if 21 in m:require(not any(m[21]),5)
  return dict(p,groups=groups,sigs=sigs,cert=cert,keys=keys,shares=shares,keybytes=m[51][2:],sni=server_name,alpn=alpn,cookie=cookie)
 def witness(b):return list(struct.unpack('<4Q',hashlib.sha256(b).digest()))
-def offer_summary(p):return [0,0,0,0,0,len(p['keys'].get(29,b'')),len(p['cookie']),len(p['sni']),len(p['alpn']),0,W,0]+witness(p['keys'].get(29,b''))+witness(p['cookie'])+witness(p['sni'])+witness(p['alpn'])
+def offer_summary(p,group=29):return [0,0,0,0,0,len(p['keys'].get(group,b'')),len(p['cookie']),len(p['sni']),len(p['alpn']),0,W,0]+witness(p['keys'].get(group,b''))+witness(p['cookie'])+witness(p['sni'])+witness(p['alpn'])
 def selection(suite,group,retry,key=b'',cookie=b''):return [0,suite,group,2055,int(retry),len(key),len(cookie),0,0,0,W,0]+witness(key)+witness(cookie)+[0]*8
-def writer(sub,group,flag,a,b,c,d):
+def writer(sub,group,flag,a,b,c,d,policy=(29,),share_group=29):
  if sub==0:
-  require(len(a) in (0,32) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
+  require(len(set(policy))==len(policy),5);require((not a or (share_group in policy and share_shape(share_group,a))) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
   if b:host(b)
   if c:protocols(c)
-  es=base_extensions(a or None,sni=b or None,alpn=c or None,cookie=d)
- elif sub==1:require(len(a)==32,5);es=[(43,b'\x03\x04'),(51,u16(29)+vec(a))]
+  es=base_extensions(a or None,groups=policy,sni=b or None,alpn=c or None,cookie=d,share_group=share_group)
+ elif sub==1:require(share_shape(share_group,a),5);es=[(43,b'\x03\x04'),(51,u16(share_group)+vec(a))]
  elif sub==2:
-  require(group in (0,29) and len(d)<=65533 and (group or d),13);es=[(43,b'\x03\x04')]
+  require(group in (0,23,29) and len(d)<=65533 and (group or d),13);es=[(43,b'\x03\x04')]
   if group:es.append((51,u16(group)))
   if d:es.append((44,vec(d)))
  else:
@@ -114,48 +116,52 @@ def writer(sub,group,flag,a,b,c,d):
   if flag:es.append((0,b''))
   if c:es.append((16,vec(bytes([len(c)])+c)))
  return b''.join(ext(k,d) for k,d in es)
+def share_shape(group,data):return (group==29 and len(data)==32) or (group==23 and len(data)==65 and data[:1]==b'\x04')
 def expected(h,blobs):
- op,layout,mode,pref,group,flag,limit,work,capacity,*_=h;a,b,c,d=blobs;result=[0]*28;result[10]=W;extra=[]
+ op,layout,mode,pref,group,flag,limit,work,capacity,*_=h;policy=tuple(g for g in h[13:15] if g);share_group=h[15];a,b,c,d=blobs;result=[0]*28;result[10]=W;extra=[]
  try:
   if op==6:
    require(mode!=3 and not(mode==1 and pref in (0,1)) and not(mode==2 and pref==0),1)
    # Capacity precedes detailed syntax and work in writer preflight. Shape
    # failures are checked before total/capacity, as documented publicly.
-   n={0:37+(36 if a else 0)+(9+len(b) if b else 0)+(6+len(c) if c else 0)+(6+len(d) if d else 0),1:46,2:6+(6 if group else 0)+(6+len(d) if d else 0),3:(4 if flag else 0)+(7+len(c) if c else 0)}[pref]
-   if pref==0:require(len(a) in (0,32) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
-   if pref==1:require(len(a)==32,5)
-   if pref==2:require(group in (0,29) and len(d)<=65533 and (group or d),13)
+   n={0:35+2*len(policy)+(4+len(a) if a else 0)+(9+len(b) if b else 0)+(6+len(c) if c else 0)+(6+len(d) if d else 0),1:14+len(a),2:6+(6 if group else 0)+(6+len(d) if d else 0),3:(4 if flag else 0)+(7+len(c) if c else 0)}[pref]
+   if pref==0:require(len(set(policy))==len(policy),5);require((not a or (share_group in policy and share_shape(share_group,a))) and len(b)<=253 and len(c)<=65533 and len(d)<=65533,5)
+   if pref==1:require(share_shape(share_group,a),5)
+   if pref==2:require(group in (0,23,29) and len(d)<=65533 and (group or d),13)
    if pref==3:require(len(c)<=255,14)
    require(n<=65535,5);require(capacity>=n,17);require(mode!=5,1);require(n<=limit,2);require(work>=8*n+8,3)
-   wire=writer(pref,group,flag,a,b,c,d);assert len(wire)==n;result[11]=n
+   wire=writer(pref,group,flag,a,b,c,d,policy,share_group);assert len(wire)==n;result[11]=n
   else:
    require(mode!=1,101);p=parse_ch(a);require(mode!=3,1);require(mode!=5,1)
    require(len(p['random'])+len(p['session'])+len(p['suitebytes'])+len(p['es'])<=limit,2);require(work>=4096+8*(32+len(p['session'])+len(p['suitebytes'])+len(p['es'])),3)
    p=inspect(p,mode==6)
-   if op==0:result=offer_summary(p)
+   if op==0:result=offer_summary(p,share_group)
+   if op==7:result[5]=len(p["keys"].get(share_group,b""));result[12:16]=witness(p["keys"].get(share_group,b""))
    if op==1:
-    require(pref in (4865,4867),8);suite=pref if pref in p['suites'] else (4867 if pref==4865 else 4865);require(suite in p['suites'],8);require(29 in p['groups'],9);require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(suite,29,29 not in p['keys'],p['keys'].get(29,b''))
+    require(len(set(policy))==len(policy),5);require(pref in (4865,4867),8);suite=pref if pref in p['suites'] else (4867 if pref==4865 else 4865);require(suite in p['suites'],8)
+    mutual=[g for g in policy if g in p['groups']];require(mutual,9);g=mutual[0];require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(suite,g,g not in p['keys'],p['keys'].get(g,b''))
    if op==2:
     require(mode!=2,101);s=parse_sh(b);require(s['session']==p['session'],11);require(s['suite'] in (4865,4867) and s['suite'] in p['suites'],12);retry=s['random']==HRR
     require(flag or not p['cookie'],13)
-    if flag:require(not retry and pref==s['suite'] and group in (0,29) and len(c)<=65533 and (group or c) and c==p['cookie'],13)
+    if flag:require(not retry and pref==s['suite'] and group in (0,23,29) and len(c)<=65533 and (group or c) and c==p['cookie'],13)
     m=dict(s['items']);require(not(set(m)&{41,42}),7);bad=set(m)-{43,51}-({44} if retry else set())
     if bad:raise Failure(12 if any(k not in dict(p['items']) for k in bad) else 5)
     g=0;key=b'';cookie=b''
     if 51 in m:
-     if retry:require(len(m[51])==2,5);g=int.from_bytes(m[51],'big');require(g==29 and g in p['groups'] and 29 not in p['keys'],13)
-     else:require(len(m[51])==36 and m[51][:4]==b'\x00\x1d\x00\x20' and 29 in p['keys'],12);g=29;key=m[51][4:]
+     if retry:require(len(m[51])==2,5);g=int.from_bytes(m[51],'big');require(g in (23,29) and g in p['groups'] and g not in p['keys'],13)
+     else:
+      require(len(m[51])>=4,12);g,n=struct.unpack_from('!HH',m[51]);key=m[51][4:];require(n==len(key) and share_shape(g,key) and g in p['keys'],12)
     if retry and 44 in m:require(len(m[44])>=3 and int.from_bytes(m[44][:2],'big')==len(m[44])-2,5);cookie=m[44][2:]
-    if retry:require(g or cookie,13);require(g or 29 in p['keys'],9)
-    else:require(g==29,4);require(not flag or not group or group==g,13)
+    if retry:require(g or cookie,13);require(g or bool(set(p['keys'])&{23,29}),9)
+    else:require(g in (23,29),4);require(not flag or not group or group==g,13)
     require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(s['suite'],g,retry,key,cookie)
    if op==3:
-    require(group in (0,29) and pref in (4865,4867) and len(c)<=65533,13);require(mode!=2,101);q=inspect(parse_ch(b),True)
-    require(pref in p['suites'] and (group or (c and 29 in p['keys'])) and (group!=29 or (29 in p['groups'] and 29 not in p['keys'])),13)
+    require(group in (0,23,29) and pref in (4865,4867) and len(c)<=65533,13);require(mode!=2,101);q=inspect(parse_ch(b),True)
+    require(pref in p['suites'] and (group or (c and bool(set(p['keys'])&{23,29}))) and (not group or (group in p['groups'] and group not in p['keys'])),13)
     require(all(p[k]==q[k] for k in ('random','session','suitebytes')) and q['cookie']==c,16)
-    require(group!=29 or (len(q['keybytes'])==36 and len(q['keys'].get(29,b''))==32),16)
+    require(not group or (group in q['keys'] and len(q['keybytes'])==4+len(q['keys'][group])),16)
     filter_es=lambda x:[(k,None if group and k==51 else d) for k,d in x['items'] if k not in {21,44}]
-    require(filter_es(p)==filter_es(q),16);result=offer_summary(q)
+    require(filter_es(p)==filter_es(q),16);result=offer_summary(q,share_group)
    if op==4:
     require(mode!=2,101);r=Reader(b);es=r.vector(2);r.done();items=extensions(es);m=dict(items);require(not(set(m)&{41,42}),7)
     for k,d in items:
@@ -175,10 +181,10 @@ def expected(h,blobs):
  return result+extra
 
 CASES=[]
-def add(op=0,a=None,b=b'',c=b'',d=b'',pref=4867,group=0,flag=0,mode=0,limit=262144,work=16777216,capacity=1016,layouts=(0,1)):
+def add(op=0,a=None,b=b'',c=b'',d=b'',pref=4867,group=0,flag=0,mode=0,limit=262144,work=16777216,capacity=1016,layouts=(0,1),policy=(29,),share_group=29):
  if a is None:a=ch()
  for layout in layouts:
-  h=[op,layout,mode,pref,group,flag,limit,work,capacity,len(a),len(b),len(c),len(d)];blobs=[a,b,c,d];wire=struct.pack('<13Q',*h)+b''.join(blobs);CASES.append((wire,expected(h,blobs)))
+  h=[op,layout,mode,pref,group,flag,limit,work,capacity,len(a),len(b),len(c),len(d),policy[0],policy[1] if len(policy)>1 else 0,share_group];blobs=[a,b,c,d];wire=struct.pack('<16Q',*h)+b''.join(blobs);CASES.append((wire,expected(h,blobs)))
 def replace(es,k,d):return [(t,d if t==k else b) for t,b in es]
 def omit(es,k):return [(t,b) for t,b in es if t!=k]
 def offers():
@@ -193,6 +199,15 @@ def offers():
   add(0,ch(base_extensions(sni=sni)))
  for groups,shares in [([23,29],[(23,b'p'),(29,SHARE)]),([23,29],[(29,SHARE),(23,b'p')]),([23,24,29],[(23,b'p'),(29,SHARE)]),([29],[])]:
   es=replace(base_extensions(groups=groups),51,vec(b''.join(u16(k)+vec(d) for k,d in shares)));add(0,ch(es));add(1,ch(es))
+ # Actual two-share offers exercise both RFC supported-groups orders. A
+ # reversed share sequence changes only order, retaining valid key encodings.
+ for groups in [(29,23),(23,29)]:
+  entries=[(g,SHARE if g==29 else P_SHARE) for g in groups]
+  for shares in [entries,list(reversed(entries))]:
+   es=replace(base_extensions(groups=groups),51,vec(b''.join(u16(g)+vec(key) for g,key in shares)))
+   a=ch(es);add(0,a)
+   for policy in [(29,23),(23,29)]:add(1,a,policy=policy)
+   for selected in (29,23):add(7,a,share_group=selected,mode=4)
  add(0,ch(base_extensions(alpn=b'\x02h2\x02h2')))
  add(0,ch(base_extensions(cookie=b'unsolicited')))
  add(0,ch(replace(base_extensions(),0,vec(b'\x01'+vec(b'opaque')))))
@@ -204,6 +219,13 @@ def offers():
  for work in (0,1,4095):add(0,work=work)
  for n in (0,1,2,10,40,len(ch())-1):add(0,ch()[:n])
  add(0,ch(base_extensions(extra=[(13,vec(words([2055])))])))
+ for groups in [(23,),(29,23),(23,29)]:
+  for share_group,key in [(23,P_SHARE),(29,SHARE)]:
+   if share_group not in groups:continue
+   for policy in [(29,),(23,),(29,23),(23,29),(23,23)]:
+    a=ch(base_extensions(key,groups=groups,share_group=share_group));add(0,a,share_group=share_group);add(1,a,policy=policy,share_group=share_group);add(7,a,share_group=share_group,mode=4)
+ for key in [P_SHARE[:33],b'\x02'+P_SHARE[1:33],b'\x03'+P_SHARE[1:33],b'\x00'+P_SHARE[1:],P_SHARE[:-1],P_SHARE+b'\0']:
+  add(0,ch(base_extensions(key,groups=(23,),share_group=23)),share_group=23)
 def servers():
  for first_share in (None,SHARE):
   a=ch(base_extensions(first_share))
@@ -230,6 +252,20 @@ def servers():
  add(4,b=ee([(0,b''),(0,b'')]))
  add(4,ch(base_extensions(sni=None)),ee([(0,b'')]))
  add(4,ch(base_extensions(alpn=None)),ee([(16,vec(b'\x02h2'))]))
+ for g,key in [(23,P_SHARE),(29,SHARE)]:
+  for suite in (4865,4867):
+   a=ch(base_extensions(key,groups=(23,29),share_group=g))
+   add(2,a,sh([(43,b'\x03\x04'),(51,u16(g)+vec(key))],suite=suite),share_group=g)
+   missing=ch(base_extensions(None,groups=(23,29)))
+   request=sh([(43,b'\x03\x04'),(51,u16(g)),(44,vec(b'cookie'))],HRR,suite=suite)
+   add(2,missing,request,share_group=g)
+   second=ch(base_extensions(key,groups=(23,29),share_group=g,cookie=b'cookie'))
+   add(3,missing,second,b'cookie',group=g,pref=suite,share_group=g)
+   # Final SH must pin the HRR group and reject a second HRR.
+   add(2,second,sh([(43,b'\x03\x04'),(51,u16(g)+vec(key))],suite=suite),b'cookie',group=g,pref=suite,flag=1,mode=6,share_group=g)
+   add(2,second,request,b'cookie',group=g,pref=suite,flag=1,mode=6,share_group=g)
+  for wrong in [P_SHARE[:33],b'\x02'+P_SHARE[1:33],b'\x00'+P_SHARE[1:]]:
+   add(2,ch(base_extensions(P_SHARE,groups=(23,),share_group=23)),sh([(43,b'\x03\x04'),(51,u16(23)+vec(wrong))]),share_group=23)
 def writers():
  for share in (b'',SHARE,b'x',b'x'*33):
   for name in (b'',b'example.com',b'example.com.',b'127.0.0.1'):
@@ -249,6 +285,11 @@ def writers():
  for alpn in (b'',b'\0',b'x'*255,b'x'*256):
   for flag in (0,1):add(6,a=b'',c=alpn,pref=3,flag=flag)
  add(6,a=SHARE,c=b'\xff'+b'X'*255,pref=0)
+ for policy in [(23,),(29,23),(23,29),(23,23)]:
+  for key in [b'',P_SHARE,P_SHARE[:33],b'\x02'+P_SHARE[1:33]]:
+   add(6,a=key,pref=0,policy=policy,share_group=23)
+  add(6,a=P_SHARE,pref=1,policy=policy,share_group=23)
+  for cap in [13+65,14+65,15+65]:add(6,a=P_SHARE,pref=1,policy=policy,share_group=23,capacity=cap)
 
 def main():
  mode=sys.argv[1]

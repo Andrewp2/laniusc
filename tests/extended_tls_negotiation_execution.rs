@@ -85,7 +85,7 @@ fn cases(group: &str) -> Vec<Case> {
     for _ in 0..count {
         let n = word(&bytes, at) as usize;
         at += 8;
-        assert!((104..=32872).contains(&n));
+        assert!((128..=32896).contains(&n));
         let wire = bytes[at..at + n].to_vec();
         at += n;
         let n = word(&bytes, at) as usize;

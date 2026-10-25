@@ -85,13 +85,15 @@ fn check_socket(socket: &std::socket::Socket, deadline: core::time::Deadline, bu
     let connected: core::result::Result<core::net::SocketAddr, core::io::Error> = socket.peer_addr(); let end: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
     if (connected.is_err()) { return core::result::Err(Error::Io(connected.unwrap_err())); } if (end.is_err()) { return core::result::Err(end.unwrap_err()); } return core::result::Ok(0);
 }
-// Exactly 64 fresh OS bytes; no seeded generator, fallback or caller entropy.
-fn fresh_entropy(bytes: [u8], deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Error> {
+fn clear_entropy(bytes: [u8]) { let i: i32 = 0; while (i < 96) { bytes[i] = 0; i += 1; } }
+// Exact OS fill of the engine-selected region; P retries replace only its
+// independent scalar slot. No seeded generator, fallback or caller entropy.
+fn fresh_entropy(bytes: [u8], start: i32, length: i32, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<i32, Error> {
     let filled: i32 = 0; let issue: core::option::Option<Error> = core::option::None();
-    while (filled < 64) {
+    while (filled < length) {
         let checked: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked.is_err()) { issue = core::option::Some(checked.unwrap_err()); break; }
         let paid: core::result::Result<i32, Error> = budget.permit(); if (paid.is_err()) { issue = core::option::Some(paid.unwrap_err()); break; }
-        let single: std::entropy::Budget = std::entropy::budget(1); let got: core::result::Result<i32, std::entropy::Error> = std::entropy::read_some(single.borrow(), bytes, filled, 64 - filled);
+        let single: std::entropy::Budget = std::entropy::budget(1); let got: core::result::Result<i32, std::entropy::Error> = std::entropy::read_some(single.borrow(), bytes, start + filled, length - filled);
         let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
         if (got.is_ok()) { filled += got.unwrap(); }
         if (after.is_err()) { issue = core::option::Some(after.unwrap_err()); break; }
@@ -99,7 +101,7 @@ fn fresh_entropy(bytes: [u8], deadline: core::time::Deadline, budget: &HostBudge
             if (!interrupted) { issue = core::option::Some(Error::Entropy(e)); break; }
         }
     }
-    if (issue.is_some()) { let i: i32 = 0; while (i < 64) { bytes[i] = 0; i += 1; } return core::result::Err(issue.unwrap()); } return core::result::Ok(64);
+    if (issue.is_some()) { clear_entropy(bytes); return core::result::Err(issue.unwrap()); } return core::result::Ok(length);
 }
 // Seven packed byte allocations (six engine regions plus retained raw input)
 // and one typed path workspace. None grows after attachment.
@@ -135,6 +137,9 @@ fn acquired_failure(e: Error, owned: &Storage, poll: core::option::Option<std::p
     return Failure { cause: e, progress: empty_progress(), cleanup: core::option::Some(CloseReport { primary: core::option::Some(e), close_error: core::option::None(), release_attempts: released, cleanup_calls: released as u64 }) };
 }
 fn attach(socket: &std::socket::Socket, client: core::option::Option<ext::tls_connection::ClientConfig>, server: core::option::Option<ext::tls_connection::ServerConfig>, deadline: core::time::Deadline, budget: &HostBudget) -> core::result::Result<Connection, Failure> {
+    let layout: core::result::Result<ext::tls_connection::EntropyLayout, ext::tls_connection::Error> = core::result::Err(ext::tls_connection::Error::InvalidConfig);
+    if (client.is_some()) { layout = ext::tls_connection::entropy_layout(client.unwrap().groups); } else { layout = ext::tls_connection::entropy_layout(server.unwrap().groups); }
+    if (layout.is_err()) { return core::result::Err(failure(Error::Engine(layout.unwrap_err()))); }
     let limits: ext::tls_connection::Limits = ext::tls_connection::default_limits(); if (client.is_some()) { limits = client.unwrap().limits; } else { limits = server.unwrap().limits; }
     let sizes: core::result::Result<ext::tls_connection::BufferSizes, ext::tls_connection::Error> = ext::tls_connection::required_buffers(limits); if (sizes.is_err()) { return core::result::Err(failure(Error::Engine(sizes.unwrap_err()))); }
     let checked: core::result::Result<i32, Error> = check_socket(socket, deadline, budget); if (checked.is_err()) { return core::result::Err(failure(checked.unwrap_err())); }
@@ -152,14 +157,22 @@ fn attach(socket: &std::socket::Socket, client: core::option::Option<ext::tls_co
     let results: core::result::Result<alloc::vec::Vec<std::poll::Readiness>, alloc::vec::Error> = alloc::vec::with_capacity(1); if (results.is_err()) { return core::result::Err(acquired_failure(Error::Poll(std::poll::Error::AllocationFailed), owned.borrow(), core::option::Some(poll), core::option::None())); } poll.results = results.unwrap();
     let filled: core::result::Result<i32, alloc::vec::Error> = poll.results.try_resize(1, std::poll::Readiness { bits: 0 }); if (filled.is_err()) { return core::result::Err(acquired_failure(Error::Poll(std::poll::Error::AllocationFailed), owned.borrow(), core::option::Some(poll), core::option::None())); }
     let checked_after_allocation: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (checked_after_allocation.is_err()) { return core::result::Err(acquired_failure(checked_after_allocation.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
-    let entropy: [u8;64] = [0;64]; let random: core::result::Result<i32, Error> = fresh_entropy(entropy, deadline, budget); if (random.is_err()) { return core::result::Err(acquired_failure(random.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
-    let random_view: core::slice::View<u8> = core::slice::View { values: entropy, start: 0, length: 64 };
+    let entropy: [u8;96] = [0;96]; let random: core::result::Result<i32, Error> = fresh_entropy(entropy, 0, layout.unwrap().length, deadline, budget); if (random.is_err()) { return core::result::Err(acquired_failure(random.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    let random_view: core::slice::View<u8> = core::slice::View { values: entropy, start: 0, length: layout.unwrap().length };
     let made: core::result::Result<ext::tls_connection::Engine, ext::tls_connection::Error> = core::result::Err(ext::tls_connection::Error::InvalidConfig);
-    if (client.is_some()) { made = ext::tls_connection::client(client.unwrap(), owned.buffers(), random_view); } else { made = ext::tls_connection::server(server.unwrap(), owned.buffers(), random_view); }
-    let i: i32 = 0; while (i < 64) { entropy[i] = 0; i += 1; }
-    let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
-    if (made.is_err()) { return core::result::Err(acquired_failure(Error::Engine(made.unwrap_err()), owned.borrow(), core::option::Some(poll), core::option::None())); }
-    if (after.is_err()) { return core::result::Err(acquired_failure(after.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::Some(made.unwrap()))); }
+    let candidates: i32 = 0;
+    while (candidates < 8) {
+        let before: core::result::Result<core::time::Instant, Error> = budget.check(deadline); if (before.is_err()) { clear_entropy(entropy); return core::result::Err(acquired_failure(before.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+        if (client.is_some()) { made = ext::tls_connection::client(client.unwrap(), owned.buffers(), random_view); } else { made = ext::tls_connection::server(server.unwrap(), owned.buffers(), random_view); }
+        candidates += 1; let after: core::result::Result<core::time::Instant, Error> = budget.check(deadline);
+        if (made.is_ok()) { clear_entropy(entropy); if (after.is_err()) { return core::result::Err(acquired_failure(after.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::Some(made.unwrap()))); } break; }
+        let rejected: bool = match(made.unwrap_err()) { ext::tls_connection::Error::InvalidEphemeralScalar -> true, _ -> false };
+        if (!rejected || layout.unwrap().p256_offset.is_none() || candidates == 8) { clear_entropy(entropy); return core::result::Err(acquired_failure(Error::Engine(made.unwrap_err()), owned.borrow(), core::option::Some(poll), core::option::None())); }
+        if (after.is_err()) { clear_entropy(entropy); return core::result::Err(acquired_failure(after.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+        // The engine rejects this scalar before X derivation/backing writes.
+        // Preserve ClientHello random and any independent X25519 slot.
+        let refill: core::result::Result<i32, Error> = fresh_entropy(entropy, layout.unwrap().p256_offset.unwrap(), 32, deadline, budget); if (refill.is_err()) { return core::result::Err(acquired_failure(refill.unwrap_err(), owned.borrow(), core::option::Some(poll), core::option::None())); }
+    }
     let taken: core::option::Option<i32> = socket.take_handle(); if (taken.is_none()) { return core::result::Err(acquired_failure(Error::Closed, owned.borrow(), core::option::Some(poll), core::option::Some(made.unwrap()))); }
     return core::result::Ok(Connection { socket: std::socket::Socket { handle: taken.unwrap(), domain: socket.domain, datagram: false }, poll: poll, storage: owned, engine: made.unwrap(), active: true, handshake_deadline: deadline, handshake_success: false, last: budget.last, raw_at: 0, raw_length: 0, pending_eof: false, pending_error: core::option::None(), write_shutdown: false, primary: core::option::None(), report: core::option::None() });
 }
