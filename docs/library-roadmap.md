@@ -441,8 +441,17 @@ other remaining families above still need their own executable evidence.
   [source comparison](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration)
   records a 4.1% higher warmed compilation median and 36.6% larger ELF for the
   existing authentication workload; no compiler source changed. The portable
-  connection engine, semantic negotiation, owned TCP adapter and real TLS
-  exchange application are now being implemented; they are not yet admitted.
+  connection engine, owned TCP adapter and real TLS exchange application are
+  now being implemented; they are not yet admitted.
+- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,222 wire-model
+  commands and 72 exact/one-less shared-budget probes, plus a six-flow ordinary
+  consumer covering both suites, direct handshakes and two retry forms.
+  Selection re-derives borrowed Offer descriptions, pins retry cookies and
+  suites, preserves unchanged CH2 fields and extension order, and enforces
+  offered SNI/ALPN responses. Independent byte witnesses check returned views;
+  writer snapshots check complete error atomicity. Four strict ELFs run in
+  25 native processes with empty allocation traces. These helpers add no
+  authentication or connected-transport claim.
 - [Server-flight authentication](extended-tls-authentication.md) passes
   110 protocol cases with 340 state observations and an ordinary consumer.
   Its strict EE/Certificate/CV/Finished order calls the real path validator,

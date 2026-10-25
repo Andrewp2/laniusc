@@ -769,6 +769,11 @@
         "docs/extended-tls-auth-foundation.md"
       ]
     },
+    "ext::tls_negotiation": {
+      "guides": [
+        "docs/extended-tls-negotiation.md"
+      ]
+    },
     "ext::tls_record": {
       "guides": [
         "docs/extended-tls-record.md"

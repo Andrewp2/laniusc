@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **240 modules**, **10552 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **241 modules**, **10618 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -243,6 +243,7 @@ Inventory: **240 modules**, **10552 declaration/member entries**. Counts include
 | [ext::tls_authentication](ext/tls_authentication.md) | [source](../../extended/ext/tls_authentication.lani#L3) | 56 | Source inventory | [extended-tls-authentication](../extended-tls-authentication.md) |
 | [ext::tls_framing](ext/tls_framing.md) | [source](../../extended/ext/tls_framing.lani#L3) | 47 | Source inventory | [extended-tls-framing](../extended-tls-framing.md) |
 | [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md), [extended-tls-auth-foundation](../extended-tls-auth-foundation.md) |
+| [ext::tls_negotiation](ext/tls_negotiation.md) | [source](../../extended/ext/tls_negotiation.lani#L3) | 66 | Source inventory | [extended-tls-negotiation](../extended-tls-negotiation.md) |
 | [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 48 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
 | [ext::tls_schedule](ext/tls_schedule.md) | [source](../../extended/ext/tls_schedule.lani#L2) | 57 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
 | [ext::tls_transcript](ext/tls_transcript.md) | [source](../../extended/ext/tls_transcript.lani#L2) | 20 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |

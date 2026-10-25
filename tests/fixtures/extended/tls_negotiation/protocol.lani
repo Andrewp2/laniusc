@@ -1,0 +1,49 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::sha256;
+import ext::tls_handshake;
+import ext::tls_negotiation;
+import std::stream;
+struct Output{bytes:[u8],used:i32}
+impl Output{fn borrow(&self)->&Output{return self;}fn flush(&self){let fd:std::stream::Descriptor=std::stream::stdout();assert(core::io::write_all(fd.borrow(),self.bytes,0,self.used).is_ok());self.used=0;}fn word(&self,n:u64){if(self.used==1024){self.flush();}let i:i32=0;while(i<8){self.bytes[self.used+i]=(n>>(i*8)) as u8;i+=1;}self.used+=8;}}
+fn word(bytes:[u8],at:i32)->u64{let n:u64=0;let i:i32=0;while(i<8){n|=(bytes[at+i] as u64)<<(i*8);i+=1;}return n;}
+fn codec(e:ext::tls_handshake::Error)->u64{return match(e){ext::tls_handshake::Error::Bounds->101,ext::tls_handshake::Error::Truncated->102,ext::tls_handshake::Error::InvalidLength->103,ext::tls_handshake::Error::UnsupportedType->104,ext::tls_handshake::Error::InvalidValue->105,ext::tls_handshake::Error::DuplicateExtension->106,ext::tls_handshake::Error::MissingExtension->107,ext::tls_handshake::Error::BufferTooSmall->108};}
+fn code(e:ext::tls_negotiation::Error)->u64{return match(e){ext::tls_negotiation::Error::Bounds->1,ext::tls_negotiation::Error::InputLimit->2,ext::tls_negotiation::Error::WorkLimit->3,ext::tls_negotiation::Error::Codec(e)->codec(e),ext::tls_negotiation::Error::MissingExtension->4,ext::tls_negotiation::Error::InvalidExtension->5,ext::tls_negotiation::Error::DuplicateValue->6,ext::tls_negotiation::Error::UnsupportedFeature->7,ext::tls_negotiation::Error::NoSuite->8,ext::tls_negotiation::Error::NoGroup->9,ext::tls_negotiation::Error::NoSignature->10,ext::tls_negotiation::Error::SessionMismatch->11,ext::tls_negotiation::Error::Unoffered->12,ext::tls_negotiation::Error::Retry->13,ext::tls_negotiation::Error::Alpn->14,ext::tls_negotiation::Error::Sni->15,ext::tls_negotiation::Error::ChangedClientHello->16,ext::tls_negotiation::Error::BufferTooSmall->17};}
+fn view(bytes:[u8],at:i32,n:i32)->core::slice::View<u8>{return core::slice::View<u8>{values:bytes,start:at,length:n};}
+fn witness(v:core::slice::View<u8>,result:[u64],at:i32){let hashed:core::sha256::Digest=core::sha256::digest(v).unwrap();let i:i32=0;while(i<4){let n:u64=0;let j:i32=0;while(j<8){n|=(hashed.bytes[i*8+j] as u64)<<(j*8);j+=1;}result[at+i]=n;i+=1;}}
+fn offer_fields(o:ext::tls_negotiation::Offer,result:[u64]){result[5]=o.x25519.length as u64;result[6]=o.cookie.length as u64;result[7]=o.server_name.length as u64;result[8]=o.alpn.length as u64;witness(o.x25519,result,12);witness(o.cookie,result,16);witness(o.server_name,result,20);witness(o.alpn,result,24);}
+fn selection_fields(s:ext::tls_negotiation::Selection,result:[u64]){result[1]=s.suite as u64;result[2]=s.group as u64;result[3]=s.signature as u64;result[4]=0;if(s.retry){result[4]=1;}result[5]=s.peer_key.length as u64;result[6]=s.cookie.length as u64;witness(s.peer_key,result,12);witness(s.cookie,result,16);}
+fn run(h:[u8],input:[u8],out:&Output){
+ let op:i32=word(h,0) as i32;let layout:i32=word(h,8) as i32;let mode:i32=word(h,16) as i32;let preferred:u16=word(h,24) as u16;let group:u16=word(h,32) as u16;let prior_flag:i32=word(h,40) as i32;let cap:i32=word(h,64) as i32;
+ let an:i32=word(h,72) as i32;let bn:i32=word(h,80) as i32;let cn:i32=word(h,88) as i32;let dn:i32=word(h,96) as i32;let total:i32=an+bn+cn+dn;
+ let stack:[u8;32776]=[165;32776];let packed:[i32;8194]=[0;8194];let bytes:[u8]=stack;if(layout==1){bytes=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed),32776);}let i:i32=0;while(i<32776){bytes[i]=165;i+=1;}i=0;while(i<total){bytes[3+i]=input[i];i+=1;}
+ let a:core::slice::View<u8> = view(bytes,3,an);let b:core::slice::View<u8> = view(bytes,3+an,bn);let c:core::slice::View<u8> = view(bytes,3+an+bn,cn);let d:core::slice::View<u8> = view(bytes,3+an+bn+cn,dn);if(mode==1){a.start=-1;}if(mode==2){b.start=2147483647;b.length=1;}
+ let budget:ext::tls_negotiation::Budget=ext::tls_negotiation::budget(ext::tls_negotiation::Limits{max_message:word(h,48) as i32,max_work:word(h,56)}).unwrap();if(mode==5){budget.max_message=-1;}
+ let result:[u64;28]=[0;28];let error:u64=0;
+ let os:[u8;1024]=[165;1024];let ow:[i32;256]=[0;256];let ob:[u8]=os;if(layout==1){ob=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(ow),1024);}i=0;while(i<1024){ob[i]=165;i+=1;}
+ if(op==6){let written:core::result::Result<i32,ext::tls_negotiation::Error> = core::result::Ok(0);let output:core::slice::View<u8> = view(ob,3,cap);if(mode==3){output.length=-1;}
+   if(preferred==0){written=ext::tls_negotiation::write_client_extensions(a,b,c,d,output,budget.borrow());}if(preferred==1){written=ext::tls_negotiation::write_server_extensions(a,output,budget.borrow());}if(preferred==2){written=ext::tls_negotiation::write_retry_extensions(group,d,output,budget.borrow());}if(preferred==3){written=ext::tls_negotiation::write_encrypted_extensions(c,prior_flag!=0,output,budget.borrow());}
+   if(written.is_err()){error=code(written.unwrap_err());}else{result[11]=written.unwrap() as u64;}
+ }else{
+   let parsed:core::result::Result<ext::tls_handshake::ClientHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_client_hello(a);
+   if(parsed.is_err()){error=codec(parsed.unwrap_err());}else{let hello:ext::tls_handshake::ClientHello=parsed.unwrap();if(mode==3){hello.random.start=-1;}
+     let empty:core::slice::View<u8> = view(bytes,3,0);let manual:ext::tls_negotiation::Offer=ext::tls_negotiation::Offer{hello:hello,groups:empty,signatures:empty,certificate_signatures:empty,key_shares:empty,x25519:empty,server_name:empty,alpn:empty,cookie:d,has_server_name:false,has_alpn:false};let checked:core::result::Result<ext::tls_negotiation::Offer,ext::tls_negotiation::Error> = core::result::Ok(manual);if(mode!=6){checked=ext::tls_negotiation::inspect_client_hello(hello,budget.borrow());}
+     if(checked.is_err()){error=code(checked.unwrap_err());}else{let offer:ext::tls_negotiation::Offer=checked.unwrap();let retained:ext::tls_negotiation::Offer=offer;if(mode==4){offer.x25519.length=-1;offer.groups.start=-1;offer.has_alpn=false;assert(retained.x25519.length>=0&&retained.groups.start>=0);}
+       if(op==0){offer_fields(offer,result);}
+       if(op==1){let selected:core::result::Result<ext::tls_negotiation::Selection,ext::tls_negotiation::Error> = ext::tls_negotiation::choose(offer,preferred,budget.borrow());if(selected.is_err()){error=code(selected.unwrap_err());}else{selection_fields(selected.unwrap(),result);}}
+       if(op==2){let server:core::result::Result<ext::tls_handshake::ServerHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_server_hello(b);if(server.is_err()){error=codec(server.unwrap_err());}else{let prior:core::option::Option<ext::tls_negotiation::Retry> = core::option::None();if(prior_flag!=0){prior=core::option::Some(ext::tls_negotiation::Retry{suite:preferred,group:group,cookie:c});}let selected:core::result::Result<ext::tls_negotiation::Selection,ext::tls_negotiation::Error> = ext::tls_negotiation::check_server_hello(offer,server.unwrap(),prior,budget.borrow());if(selected.is_err()){error=code(selected.unwrap_err());}else{selection_fields(selected.unwrap(),result);}}}
+       if(op==3){let second:core::result::Result<ext::tls_handshake::ClientHello,ext::tls_handshake::Error> = ext::tls_handshake::parse_client_hello(b);if(second.is_err()){error=codec(second.unwrap_err());}else{let selected:core::result::Result<ext::tls_negotiation::Offer,ext::tls_negotiation::Error> = ext::tls_negotiation::check_second_client_hello(offer,ext::tls_negotiation::Retry{suite:preferred,group:group,cookie:c},second.unwrap(),budget.borrow());if(selected.is_err()){error=code(selected.unwrap_err());}else{offer_fields(selected.unwrap(),result);}}}
+       if(op==4){let ee:core::result::Result<ext::tls_handshake::EncryptedExtensions,ext::tls_handshake::Error> = ext::tls_handshake::parse_encrypted_extensions(b);if(ee.is_err()){error=codec(ee.unwrap_err());}else{let selected:core::result::Result<ext::tls_negotiation::NegotiatedExtensions,ext::tls_negotiation::Error> = ext::tls_negotiation::check_encrypted_extensions(offer,ee.unwrap(),c,budget.borrow());if(selected.is_err()){error=code(selected.unwrap_err());}else{let e:ext::tls_negotiation::NegotiatedExtensions=selected.unwrap();result[8]=e.alpn.length as u64;witness(e.alpn,result,24);if(e.server_name_ack){result[9]=1;}}}}
+       if(op==5){let selected:core::result::Result<core::slice::View<u8>,ext::tls_negotiation::Error> = ext::tls_negotiation::select_alpn(offer,c,prior_flag!=0,budget.borrow());if(selected.is_err()){error=code(selected.unwrap_err());}else{result[8]=selected.unwrap().length as u64;witness(selected.unwrap(),result,24);}}
+     }
+   }
+ }
+ result[0]=error;result[10]=budget.work_left;i=0;while(i<28){out.word(result[i]);i+=1;}
+ if(op==6){i=0;while(i<1024){let n:u64=0;let j:i32=0;while(j<8){n|=(ob[i+j] as u64)<<(j*8);j+=1;}out.word(n);i+=8;}}
+ i=0;while(i<32776){let expected:u8=165;if(i>=3&&i<3+total){expected=input[i-3];}assert(bytes[i]==expected);i+=1;}
+}
+fn main()->i32{let header:[u8;104]=[0;104];let input:[u8;32768]=[0;32768];let output_bytes:[u8;1024]=[0;1024];let output:Output=Output{bytes:output_bytes,used:0};let fd:std::stream::Descriptor=std::stream::stdin();assert(core::io::read_exact(fd.borrow(),header,0,8).is_ok());let count:u64=word(header,0);assert(count<=4096);let i:u64=0;while(i<count){assert(core::io::read_exact(fd.borrow(),header,0,104).is_ok());let n:u64=word(header,72)+word(header,80)+word(header,88)+word(header,96);assert(n<=32768&&word(header,0)<=6&&word(header,8)<=1&&word(header,16)<=6&&word(header,64)<=1016);assert(core::io::read_exact(fd.borrow(),input,0,n as i32).is_ok());run(header,input,output.borrow());i+=1;}output.flush();return 0;}
