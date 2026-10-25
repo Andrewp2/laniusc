@@ -26,13 +26,14 @@ ext::openssl_tls::new_server(
 ) -> Result<ext::openssl_tls::ServerContext,ext::openssl_tls::Error>
 ```
 
-The required policy is `ClientAuthentication::Unauthenticated`. The server
-does not request a client certificate and makes no claim about the client's
-identity. Application authentication and authorization remain separate.
-Required client certificates, optional client certificates and mutual TLS
-are not implemented in this profile. This choice is available only through
-the server factory; the client `Context` still requires trust, DNS/IP identity
-verification and a peer certificate.
+Choose `ClientAuthentication::Unauthenticated` for a public server that does
+not request a client certificate. Choose `Required(Trust)` to require a client
+certificate verified against the supplied trust policy. The
+[mutual-TLS guide](extended-openssl-mutual-tls.md) records its fresh-authentication
+policy, exact native checks and separate execution receipts. Application
+identity and authorization remain explicit application decisions. Optional
+client certificates are not implemented. The client `Context` always requires
+trust, DNS/IP identity verification and a peer certificate.
 
 Supply a PEM certificate-chain path and PEM private-key path. The chain file
 starts with the server leaf certificate followed by its intermediate issuers.
@@ -85,7 +86,7 @@ are not admitted.
 
 This server profile loads one credential pair per factory call. It offers no
 SNI-based credential selection, application verification/password callbacks,
-ALPN negotiation, client-certificate policy, live credential mutation or
+ALPN negotiation, optional client certificates, live credential mutation or
 foreign-thread entry. Native OpenSSL configuration and session-resumption
 behavior are not replaced by a custom TLS implementation. Broader server and
 certificate-trust policy remains separate work.
@@ -93,9 +94,10 @@ certificate-trust policy remains separate work.
 The existing `Limits` shape is shared with client sessions. `path_bytes` bounds
 each staged path and `io_bytes` bounds each stable session I/O buffer.
 `identity_bytes` and `verify_depth` retain their existing validation ranges,
-but this server policy performs no client identity or certificate-chain
-verification. They do not enable client authentication. The passphrase cap
-is separate and fixed.
+but `Unauthenticated` performs no client identity or certificate-chain
+verification. `Required(Trust)` applies the configured verification depth and
+native client-certificate purpose, with the separate policy described above.
+The passphrase cap is separate and fixed.
 
 These caps do not limit PEM file size, native credential parsing, handshake
 memory/work or elapsed time in a native call. Credential loading can perform

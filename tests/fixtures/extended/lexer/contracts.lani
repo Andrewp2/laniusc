@@ -1,0 +1,80 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::result;
+import core::slice;
+import core::text;
+import ext::lexer;
+import ext::regex;
+fn text(value: str, count: i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn options() -> ext::regex::Options { let value = ext::regex::options(); value.max_work = 10000; return value; }
+fn span(found: ext::regex::Match, group: i32, start: i32, end: i32) { let selected = found.span(group).unwrap(); assert(selected.start == start && selected.end == end); }
+fn prefix(pattern: core::text::Text, input: core::text::Text, ordinary: i32, longest: i32) {
+    let regex = ext::regex::compile(pattern,options()).unwrap();
+    let first = regex.find(input).unwrap().unwrap(); span(first,0,0,ordinary); first.destroy();
+    let found = regex.longest_prefix(input).unwrap().unwrap(); span(found,0,0,longest); found.destroy();
+    let validated = ext::regex::input(input).unwrap(); let found = regex.longest_prefix_in(validated,0).unwrap().unwrap(); span(found,0,0,longest); found.destroy(); regex.destroy();
+}
+fn longest_contracts() {
+    prefix(text("a|ab",4),text("ab",2),1,2);
+    prefix(text("a+?",3),text("aaa",3),1,3);
+    prefix(text("a??",3),text("a",1),0,1);
+    prefix(text("(?:|a)*",7),text("aa",2),0,2);
+    let regex = ext::regex::compile(text("(a|aa)(a?)",10),options()).unwrap();
+    let found = regex.longest_prefix(text("aa",2)).unwrap().unwrap(); span(found,0,0,2); span(found,1,0,1); span(found,2,1,2); found.destroy(); regex.destroy();
+    let regex = ext::regex::compile(text("a",1),options()).unwrap(); let input = text("ba",2);
+    assert(regex.longest_prefix(input).unwrap().is_none()); let found = regex.find(input).unwrap().unwrap(); span(found,0,1,2); found.destroy();
+    let found = regex.longest_prefix_from(input,1).unwrap().unwrap(); span(found,0,1,2); found.destroy(); regex.destroy();
+    let absolute = ext::regex::compile(text("\\Aa",3),options()).unwrap(); assert(absolute.longest_prefix_from(input,1).unwrap().is_none()); absolute.destroy();
+    let boundary = ext::regex::compile(text("\\ba",3),options()).unwrap(); assert(boundary.longest_prefix_from(input,1).unwrap().is_none()); boundary.destroy();
+    let end = ext::regex::compile(text("a$",2),options()).unwrap(); assert(end.longest_prefix(text("aX",2)).unwrap().is_none());
+    let found = end.longest_prefix_from(input,1).unwrap().unwrap(); span(found,0,1,2); found.destroy(); end.destroy();
+    let config = options(); config.multiline = true; let line = ext::regex::compile(text("^a$",3),config).unwrap();
+    let found = line.longest_prefix_from(text("x\na\nz",5),2).unwrap().unwrap(); span(found,0,2,3); found.destroy(); line.destroy();
+    let storage: [u8;9] = [88,195,169,240,159,153,130,0,89]; let selected = core::text::from_utf8_range(storage,1,7).unwrap();
+    let scalar = ext::regex::compile(text(".",1),options()).unwrap(); let validated = ext::regex::input(selected).unwrap();
+    let found = scalar.longest_prefix_in(validated,2).unwrap().unwrap(); span(found,0,2,6); found.destroy();
+    assert(match(scalar.longest_prefix_in(validated,1).unwrap_err()) { ext::regex::Error::Bounds -> true, _ -> false });
+    assert(match(scalar.longest_prefix_in(validated,-1).unwrap_err()) { ext::regex::Error::Bounds -> true, _ -> false });
+    assert(match(scalar.longest_prefix_in(validated,8).unwrap_err()) { ext::regex::Error::Bounds -> true, _ -> false }); scalar.destroy();
+    let invalid: [u8;1] = [255]; let malformed = core::text::Text { bytes: invalid, start: 0, length: 1 };
+    assert(match(ext::regex::input(malformed).unwrap_err()) { ext::regex::Error::InvalidUtf8(at) -> at == 0, _ -> false });
+    let alternate = ext::regex::compile(text("|a",2),options()).unwrap(); let cursor = alternate.find_iter(text("a",1)).unwrap();
+    let found = cursor.next().unwrap().unwrap(); span(found,0,0,0); found.destroy(); let found = cursor.next().unwrap().unwrap(); span(found,0,1,1); found.destroy(); assert(cursor.next().unwrap().is_none()); cursor.destroy(); alternate.destroy();
+}
+fn build(rules: [ext::lexer::Rule], count: i32) -> ext::lexer::Lexer { return ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,count).unwrap(),options(),ext::lexer::default_build_limits()).unwrap(); }
+fn token(cursor: &ext::lexer::Cursor, rule: i32, id: i32, start: i32, end: i32, value: core::text::Text) -> ext::lexer::Token {
+    let item = cursor.next().unwrap().unwrap(); assert(item.rule == rule && item.id == id && item.span.start == start && item.span.end == end && item.text.equals(value)); return item;
+}
+fn done(cursor: &ext::lexer::Cursor) { let before = cursor.usage(); assert(cursor.next().unwrap().is_none()); assert(cursor.next().unwrap().is_none()); assert(cursor.usage().calls == before.calls && cursor.usage().reserved_work == before.reserved_work); cursor.destroy(); cursor.destroy(); }
+fn token_contracts() {
+    let rules: [ext::lexer::Rule;4] = [ext::lexer::Rule { id: -5, pattern: text(" +",2), skip: true },ext::lexer::Rule { id: 10, pattern: text("if",2), skip: false },ext::lexer::Rule { id: 10, pattern: text("[a-z]+",6), skip: false },ext::lexer::Rule { id: 3, pattern: text("=|==",4), skip: false }];
+    let lexer = build(rules,4); let input = text("if iff==x",9); let cursor = lexer.scan(input,ext::lexer::default_scan_limits()).unwrap();
+    let held = token(cursor.borrow(),1,10,0,2,text("if",2)); token(cursor.borrow(),2,10,3,6,text("iff",3)); token(cursor.borrow(),3,3,6,8,text("==",2)); token(cursor.borrow(),2,10,8,9,text("x",1));
+    assert(cursor.position() == 9 && cursor.usage().steps == 5 && cursor.usage().tokens == 4 && cursor.usage().calls == 20 && cursor.usage().reserved_work == 200000); done(cursor.borrow()); lexer.destroy(); lexer.destroy(); assert(held.text.equals(text("if",2)) && input.equals(text("if iff==x",9)));
+    let owner = alloc::string::from_text(text("a+?",3)).unwrap(); let rules: [ext::lexer::Rule;1] = [ext::lexer::Rule { id: 77, pattern: owner.as_text(), skip: false }]; let lexer = build(rules,1); owner.destroy();
+    let input = alloc::string::from_text(text("aaa",3)).unwrap(); let cursor = lexer.scan(input.as_text(),ext::lexer::default_scan_limits()).unwrap(); let held = token(cursor.borrow(),0,77,0,3,text("aaa",3)); done(cursor.borrow()); lexer.destroy(); assert(held.text.equals(input.as_text())); input.destroy();
+    let rules: [ext::lexer::Rule;2] = [ext::lexer::Rule { id: 0, pattern: text("",0), skip: false },ext::lexer::Rule { id: 1, pattern: text("a",1), skip: false }];
+    let lexer = build(rules,2); let cursor = lexer.scan(text("a!",2),ext::lexer::default_scan_limits()).unwrap(); token(cursor.borrow(),1,1,0,1,text("a",1));
+    assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::EmptyMatch(rule,at) -> rule == 0 && at == 1, _ -> false }); assert(cursor.position() == 1 && cursor.usage().calls == 4); done(cursor.borrow());
+    let zero = ext::lexer::ScanLimits { max_input_bytes: 0, max_steps: 0, max_tokens: 0, max_calls: 0, max_work: 0 }; let cursor = lexer.scan(text("",0),zero).unwrap(); done(cursor.borrow()); assert(cursor.usage().calls == 0); lexer.destroy();
+    let rules: [ext::lexer::Rule;1] = [ext::lexer::Rule { id: 0, pattern: text("\\b",2), skip: true }]; let lexer = build(rules,1); let cursor = lexer.scan(text("x",1),ext::lexer::default_scan_limits()).unwrap();
+    assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::EmptyMatch(rule,at) -> rule == 0 && at == 0, _ -> false }); assert(cursor.position() == 0 && cursor.usage().steps == 0); done(cursor.borrow()); lexer.destroy();
+}
+fn budgets() {
+    let rules: [ext::lexer::Rule;2] = [ext::lexer::Rule { id: 0, pattern: text(" ",1), skip: true },ext::lexer::Rule { id: 1, pattern: text("a",1), skip: false }]; let lexer = build(rules,2); let limits = ext::lexer::default_scan_limits();
+    limits.max_calls = 1; let cursor = lexer.scan(text("a",1),limits).unwrap(); assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::SearchCallLimit(rule,at) -> rule == 1 && at == 0, _ -> false }); assert(cursor.usage().calls == 1 && cursor.position() == 0); done(cursor.borrow());
+    limits.max_calls = 2; limits.max_work = 19999; let cursor = lexer.scan(text("a",1),limits).unwrap(); assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::SearchWorkLimit(rule,at) -> rule == 1 && at == 0, _ -> false }); assert(cursor.usage().calls == 1 && cursor.usage().reserved_work == 10000); done(cursor.borrow());
+    limits.max_work = 20000; let cursor = lexer.scan(text("a",1),limits).unwrap(); token(cursor.borrow(),1,1,0,1,text("a",1)); done(cursor.borrow());
+    limits = ext::lexer::default_scan_limits(); limits.max_steps = 1; let cursor = lexer.scan(text(" a",2),limits).unwrap(); assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::StepLimit(at) -> at == 1, _ -> false }); assert(cursor.position() == 1 && cursor.usage().steps == 1 && cursor.usage().tokens == 0 && cursor.usage().calls == 2); done(cursor.borrow());
+    limits = ext::lexer::default_scan_limits(); limits.max_tokens = 0; let cursor = lexer.scan(text(" a",2),limits).unwrap(); assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::TokenLimit(at) -> at == 1, _ -> false }); assert(cursor.position() == 1 && cursor.usage().steps == 1 && cursor.usage().calls == 4); done(cursor.borrow());
+    let cursor = lexer.scan(text("  ",2),limits).unwrap(); assert(cursor.next().unwrap().is_none()); assert(cursor.position() == 2 && cursor.usage().steps == 2 && cursor.usage().tokens == 0 && cursor.usage().calls == 4); done(cursor.borrow());
+    limits = ext::lexer::default_scan_limits(); let cursor = lexer.scan(text(" ?",2),limits).unwrap(); assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::NoMatch(at) -> at == 1, _ -> false }); assert(cursor.position() == 1 && cursor.usage().steps == 1 && cursor.usage().calls == 4); done(cursor.borrow());
+    limits = ext::lexer::default_scan_limits(); let cursor = lexer.scan(text("?",1),limits).unwrap(); assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::NoMatch(at) -> at == 0, _ -> false }); assert(cursor.position() == 0 && cursor.usage().calls == 2); done(cursor.borrow()); lexer.destroy();
+    let options = options(); options.max_work = 1; let lexer = ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,2).unwrap(),options,ext::lexer::default_build_limits()).unwrap(); let cursor = lexer.scan(text("a",1),ext::lexer::default_scan_limits()).unwrap();
+    assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::Search(rule,at,cause) -> rule == 0 && at == 0 && match(cause) { ext::regex::Error::WorkLimit -> true, _ -> false }, _ -> false }); assert(cursor.usage().calls == 1 && cursor.usage().reserved_work == 1 && cursor.position() == 0); done(cursor.borrow()); lexer.destroy();
+    let rules: [ext::lexer::Rule;2] = [ext::lexer::Rule { id: 0, pattern: text("a",1), skip: false },ext::lexer::Rule { id: 1, pattern: text("a|a|a|a|a|a",11), skip: false }]; let options = options(); options.max_work = 8;
+    let lexer = ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,2).unwrap(),options,ext::lexer::default_build_limits()).unwrap(); let cursor = lexer.scan(text("a",1),ext::lexer::default_scan_limits()).unwrap();
+    assert(match(cursor.next().unwrap_err()) { ext::lexer::Error::Search(rule,at,cause) -> rule == 1 && at == 0 && match(cause) { ext::regex::Error::WorkLimit -> true, _ -> false }, _ -> false }); assert(cursor.usage().calls == 2 && cursor.usage().reserved_work == 16 && cursor.position() == 0 && cursor.usage().tokens == 0); done(cursor.borrow()); lexer.destroy();
+}
+fn main() -> i32 { longest_contracts(); token_contracts(); budgets(); return 0; }

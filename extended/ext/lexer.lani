@@ -1,0 +1,129 @@
+// Maximal-munch UTF-8 tokens over the canonical anchored Pike matcher.
+module ext::lexer;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::regex;
+
+pub struct Rule { id: i32, pattern: core::text::Text, skip: bool }
+pub struct BuildLimits { max_rules: i32, max_pattern_bytes: i32, max_states: i32 }
+pub struct ScanLimits { max_input_bytes: i32, max_steps: i32, max_tokens: i32, max_calls: i32, max_work: i64 }
+pub struct Usage { steps: i32, tokens: i32, calls: i32, reserved_work: i64 }
+pub struct Token { rule: i32, id: i32, span: ext::regex::Span, text: core::text::Text }
+pub enum Error {
+    Bounds, InvalidLimits, RuleLimit, PatternLimit(i32), StateLimit(i32), InputLimit,
+    AllocationFailed, Pattern(i32,ext::regex::Error), Input(ext::regex::Error),
+    Search(i32,i32,ext::regex::Error), NoMatch(i32), EmptyMatch(i32,i32),
+    StepLimit(i32), TokenLimit(i32), SearchCallLimit(i32,i32), SearchWorkLimit(i32,i32)
+}
+// Internal descriptors are public only because fields are not opaque. Do not
+// forge/mutate them. Copying Lexer aliases its single manual owner.
+pub struct CompiledRule { id: i32, skip: bool, regex: ext::regex::Regex }
+pub struct Lexer { rules: alloc::vec::Vec<CompiledRule>, states: i32 }
+// One active cursor handle borrows Lexer and validated immutable input. It
+// retains no allocation between calls; copies must not advance independently.
+pub struct Cursor { rules: alloc::vec::Vec<CompiledRule>, input: ext::regex::Input, limits: ScanLimits, used: Usage, at: i32, done: bool }
+
+pub fn default_build_limits() -> BuildLimits { return BuildLimits { max_rules: 128, max_pattern_bytes: 1048576, max_states: 65536 }; }
+pub fn default_scan_limits() -> ScanLimits {
+    let work: i64 = 1000000;
+    return ScanLimits { max_input_bytes: 16777216, max_steps: 1000000, max_tokens: 1000000, max_calls: 4000000, max_work: work * work };
+}
+fn valid_build(limits: BuildLimits) -> bool {
+    return limits.max_rules >= 0 && limits.max_rules <= 1024 && limits.max_pattern_bytes >= 0 && limits.max_pattern_bytes <= 16777216 && limits.max_states >= 0 && limits.max_states <= 1048576;
+}
+fn valid_scan(limits: ScanLimits) -> bool {
+    return limits.max_input_bytes >= 0 && limits.max_steps >= 0 && limits.max_tokens >= 0 && limits.max_calls >= 0 && limits.max_work >= 0;
+}
+fn empty_usage() -> Usage { return Usage { steps: 0, tokens: 0, calls: 0, reserved_work: 0 }; }
+
+pub fn compile(rules: core::slice::View<Rule>, options: ext::regex::Options, limits: BuildLimits) -> core::result::Result<Lexer,Error> {
+    if (!valid_build(limits)) { return core::result::Err(Error::InvalidLimits); }
+    if (rules.start < 0 || rules.length < 0 || rules.start > 2147483647 - rules.length) { return core::result::Err(Error::Bounds); }
+    if (rules.length == 0 || rules.length > limits.max_rules) { return core::result::Err(Error::RuleLimit); }
+    // Cap aggregate pattern bytes before any UTF-8 scan or owned allocation.
+    let total: i32 = 0; let index: i32 = 0;
+    while (index < rules.length) {
+        let pattern = rules.values[rules.start + index].pattern;
+        if (pattern.start < 0 || pattern.length < 0 || pattern.start > 2147483647 - pattern.length) { return core::result::Err(Error::Pattern(index,ext::regex::Error::Bounds)); }
+        if (pattern.length > limits.max_pattern_bytes - total) { return core::result::Err(Error::PatternLimit(index)); }
+        total += pattern.length; index += 1;
+    }
+    let output = Lexer { rules: alloc::vec::new(), states: 0 };
+    // Reserve the complete outer owner before compiling any rule leaves.
+    if (output.rules.try_reserve(rules.length).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    index = 0;
+    while (index < rules.length) {
+        let rule: Rule = rules.values[rules.start + index];
+        let made = ext::regex::compile(rule.pattern,options);
+        if (made.is_err()) { let error = made.unwrap_err(); output.destroy(); return core::result::Err(Error::Pattern(index,error)); }
+        let regex = made.unwrap();
+        if (regex.state_count() > limits.max_states - output.states) { regex.destroy(); output.destroy(); return core::result::Err(Error::StateLimit(index)); }
+        let states: i32 = regex.state_count();
+        if (output.rules.try_push(CompiledRule { id: rule.id, skip: rule.skip, regex: regex }).is_err()) { regex.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }
+        output.states += states; index += 1;
+    }
+    return core::result::Ok(output);
+}
+pub impl Lexer {
+    pub fn borrow(&self) -> &Lexer { return self; }
+    pub fn rule_count(&self) -> i32 { return self.rules.len(); }
+    pub fn state_count(&self) -> i32 { return self.states; }
+    pub fn destroy(&self) {
+        let rules = self.rules.as_slice(); let index: i32 = 0;
+        while (index < self.rules.len()) { rules[index].regex.destroy(); index += 1; }
+        self.rules.destroy(); self.states = 0;
+    }
+    pub fn scan(&self, text: core::text::Text, limits: ScanLimits) -> core::result::Result<Cursor,Error> {
+        if (!valid_scan(limits)) { return core::result::Err(Error::InvalidLimits); }
+        if (text.start < 0 || text.length < 0 || text.start > 2147483647 - text.length) { return core::result::Err(Error::Input(ext::regex::Error::Bounds)); }
+        if (text.length > limits.max_input_bytes) { return core::result::Err(Error::InputLimit); }
+        let checked = ext::regex::input(text);
+        if (checked.is_err()) { return core::result::Err(Error::Input(checked.unwrap_err())); }
+        return core::result::Ok(Cursor { rules: self.rules, input: checked.unwrap(), limits: limits, used: empty_usage(), at: 0, done: false });
+    }
+}
+pub impl Cursor {
+    pub fn borrow(&self) -> &Cursor { return self; }
+    pub fn position(&self) -> i32 { return self.at; }
+    pub fn usage(&self) -> Usage { return self.used; }
+    pub fn destroy(&self) { self.done = true; }
+    fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Token>,Error> { self.destroy(); return core::result::Err(error); }
+    pub fn next(&self) -> core::result::Result<core::option::Option<Token>,Error> {
+        if (self.done) { return core::result::Ok(core::option::None()); }
+        let text = self.input.text; let rules = self.rules.as_slice();
+        while (true) {
+            // EOF has no synthetic token and consumes no search allowance.
+            if (self.at == text.length) { self.destroy(); return core::result::Ok(core::option::None()); }
+            if (self.used.steps == self.limits.max_steps) { return self.fail(Error::StepLimit(self.at)); }
+            let winner: i32 = -1; let end: i32 = self.at; let index: i32 = 0;
+            while (index < self.rules.len()) {
+                let rule: CompiledRule = rules[index]; let allowance: i64 = rule.regex.search_work_limit() as i64;
+                if (self.used.calls == self.limits.max_calls) { return self.fail(Error::SearchCallLimit(index,self.at)); }
+                if (allowance > self.limits.max_work - self.used.reserved_work) { return self.fail(Error::SearchWorkLimit(index,self.at)); }
+                self.used.calls += 1; self.used.reserved_work += allowance;
+                let result = rule.regex.longest_prefix_in(self.input,self.at);
+                if (result.is_err()) { return self.fail(Error::Search(index,self.at,result.unwrap_err())); }
+                let found = result.unwrap();
+                if (found.is_some()) {
+                    let matched = found.unwrap(); let span = matched.span(0).unwrap();
+                    matched.destroy();
+                    if (winner < 0 || span.end > end) { winner = index; end = span.end; }
+                }
+                index += 1;
+            }
+            if (winner < 0) { return self.fail(Error::NoMatch(self.at)); }
+            if (end == self.at) { return self.fail(Error::EmptyMatch(winner,self.at)); }
+            let selected: CompiledRule = rules[winner];
+            if (!selected.skip && self.used.tokens == self.limits.max_tokens) { return self.fail(Error::TokenLimit(self.at)); }
+            let start: i32 = self.at; self.at = end; self.used.steps += 1;
+            if (!selected.skip) {
+                self.used.tokens += 1;
+                return core::result::Ok(core::option::Some(Token { rule: winner, id: selected.id, span: ext::regex::Span { start: start, end: end }, text: text.slice(start,end).unwrap() }));
+            }
+        }
+        return core::result::Ok(core::option::None());
+    }
+}

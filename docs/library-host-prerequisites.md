@@ -40,8 +40,10 @@ module guide records the exact receipts and bounded bulk-workload measurement.
 [Client TLS with peer verification](extended-openssl-tls.md) and the
 [TLS stream/HTTPS application](extended-https-fetch.md) execute through OpenSSL 3.
 [Server TLS](extended-openssl-tls-server.md) also executes through OpenSSL with
-an explicit unauthenticated-client policy. Mutual TLS and broader security
-wrappers remain library work. Callbacks,
+an explicit unauthenticated-client policy.
+[Required-client mutual TLS](extended-openssl-mutual-tls.md) also executes
+through OpenSSL with shared credential owners and fresh required authentication.
+Broader security wrappers remain library work. Callbacks,
 variadics, aggregate C layouts and foreign thread entry need separate compiler
 contracts.
 [Subprocess support](stdlib-command.md) now executes over same-stack

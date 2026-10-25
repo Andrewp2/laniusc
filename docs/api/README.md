@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **234 modules**, **10694 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **235 modules**, **10801 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -52,7 +52,7 @@ Inventory: **234 modules**, **10694 declaration/member entries**. Counts include
 | [core::i8](core/i8.md) | [source](../../stdlib/core/i8.lani#L5) | 137 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [core::isize](core/isize.md) | [source](../../stdlib/core/isize.lani#L5) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
-| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L12) | 175 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-iterator-sources](../stdlib-iterator-sources.md) |
+| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L12) | 198 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-iterator-sources](../stdlib-iterator-sources.md), [stdlib-iterator-lookahead](../stdlib-iterator-lookahead.md), [stdlib-column-extrema](../stdlib-column-extrema.md) |
 | [core::math](core/math.md) | [source](../../stdlib/core/math.lani#L27) | 18 | Source inventory | [stdlib-math](../stdlib-math.md) |
 | [core::mem](core/mem.md) | [source](../../stdlib/core/mem.lani#L5) | 14 | Source inventory | [stdlib-memory](../stdlib-memory.md) |
 | [core::net](core/net.md) | [source](../../stdlib/core/net.lani#L2) | 334 | Source inventory | [stdlib-net](../stdlib-net.md) |
@@ -220,16 +220,17 @@ Inventory: **234 modules**, **10694 declaration/member entries**. Counts include
 | [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 18 | Source inventory | [extended-inflate](../extended-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 79 | Source inventory | [extended-json](../extended-json.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md) |
+| [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 70 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md) |
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
 | [ext::openssl_digest](ext/openssl_digest.md) | [source](../../extended/ext/openssl_digest.lani#L3) | 46 | Source inventory | [extended-openssl-digest](../extended-openssl-digest.md), [library-native-c](../library-native-c.md), [extended-openssl-hash](../extended-openssl-hash.md) |
-| [ext::openssl_tls](ext/openssl_tls.md) | [source](../../extended/ext/openssl_tls.lani#L3) | 160 | Source inventory | [extended-openssl-tls](../extended-openssl-tls.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [library-native-c](../library-native-c.md) |
+| [ext::openssl_tls](ext/openssl_tls.md) | [source](../../extended/ext/openssl_tls.lani#L3) | 167 | Source inventory | [extended-openssl-tls](../extended-openssl-tls.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md), [library-native-c](../library-native-c.md) |
 | [ext::parse](ext/parse.md) | [source](../../extended/ext/parse.lani#L3) | 68 | Source inventory | [extended-parse](../extended-parse.md) |
 | [ext::patch](ext/patch.md) | [source](../../extended/ext/patch.lani#L2) | 32 | Source inventory | [extended-patch](../extended-patch.md) |
 | [ext::percent](ext/percent.md) | [source](../../extended/ext/percent.lani#L5) | 11 | Source inventory | [extended-percent](../extended-percent.md) |
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
-| [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 68 | Source inventory | [extended-regex](../extended-regex.md), [extended-regex-text](../extended-regex-text.md) |
+| [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 74 | Source inventory | [extended-regex](../extended-regex.md), [extended-regex-text](../extended-regex-text.md), [extended-lexer](../extended-lexer.md) |
 | [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
@@ -241,7 +242,7 @@ Inventory: **234 modules**, **10694 declaration/member entries**. Counts include
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
-| [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 65 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md) |
+| [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 66 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 83 | Source inventory | [extended-toml](../extended-toml.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |

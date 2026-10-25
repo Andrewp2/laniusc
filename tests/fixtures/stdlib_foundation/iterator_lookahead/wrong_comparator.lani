@@ -1,0 +1,14 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::ordering;
+struct Compare {}
+impl Compare { fn borrow(&self) -> &Compare { return self; } }
+pub impl core::iter::Comparator<u64> for Compare {
+    pub fn compare(&self,a: u64,b: u64) -> core::ordering::Ordering { return core::ordering::Ordering::Equal; }
+}
+fn main() -> i32 {
+    let source: core::iter::Once<i32> =core::iter::once<i32>(1); let comparator: Compare=Compare {};
+    let value: core::option::Option<i32> =core::iter::min_by<core::iter::Once<i32>,Compare,i32>(source.borrow(),comparator.borrow());
+    return 0;
+}

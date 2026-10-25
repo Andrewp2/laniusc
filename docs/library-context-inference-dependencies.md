@@ -1,11 +1,11 @@
-# Compiler dependencies from owning cursors and CSV
+# Compiler dependencies from library composition
 
-The owning hash cursor, CSV and regex application work exposed three compiler inference
-limitations. Their library implementations and accepted fixtures use explicit
+The owning hash cursor, CSV, regex and lexer application work exposed compiler
+inference limitations. Their library implementations and accepted fixtures use explicit
 declared result types. The original expressions remain reduced reproductions;
 the compiler has not been changed to accept them.
 
-All three inference pairs were compiled with the current GPU compiler on Linux x86_64 on
+The inference pairs below were compiled with the current GPU compiler on Linux x86_64 on
 2026-10-25. Each unannotated source failed during type checking. Each annotated
 control compiled and its generated native executable exited successfully.
 These are execution controls, not type-check-only acceptance.
@@ -51,6 +51,24 @@ The [CSV writer](extended-csv-write.md) and
 explicitly. Their runtime acceptance remains recorded in their own guides.
 An analogous unannotated generic `flush()` result failed in the application;
 the minimal pair above establishes the simpler Write case.
+
+The lexer CLI encountered the analogous Read shape: its original
+`let read = reader.read(...)` inside `R: core::io::Read` failed with `LNC0027`
+at `read.is_err()` during the first real-app group. Receipt:
+`target/stdlib-work/lex-scan-real-model-first.log` (3.62 seconds; no native
+execution). The app now gives read/write result locals the exact declared
+`Result<i32,core::io::Error>` contract, as `core::io::read_exact` and
+`write_all` already do. The retained
+[untyped Read reduction](../tests/fixtures/extended/lex_scan/read_inference_untyped.lani)
+and [typed control](../tests/fixtures/extended/lex_scan/read_inference_typed.lani)
+establish the reduced distinction: the untyped form rejects with `LNC0027` at
+`read.is_err()`, while the typed form compiles and exits 0, verifying the byte
+and reader position. Receipts are `lex-read-context-untyped.log`,
+`lex-read-context-typed.log` and `lex-read-context-typed-native.log` in
+`target/stdlib-work/`. The full app's typed real-model group also passes in
+8.40 seconds (`lex-scan-real-model-explicit-io.log`). These results establish
+the reduced source distinction, not a proven common compiler cause or a
+compiler repair. Other app acceptance remains in its own guide.
 
 ## Nested generic slice construction
 

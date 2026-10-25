@@ -13,8 +13,9 @@ with OpenSSL 3.0.13 audited locally. The dedicated native execution gates pass
 policy, authenticated closure/truncation, and stable nonblocking retries.
 The receipts and the corrected test-peer fixture are recorded below. These
 results cover this client profile. [Server TLS](extended-openssl-tls-server.md)
-has separate passing native gates with an explicit unauthenticated-client
-policy; mutual TLS and the full security family remain work.
+has separate passing native gates. [Mutual TLS](extended-openssl-mutual-tls.md)
+also passes six groups and 107 cases with explicit client credentials and
+required server-side client verification. The full security family remains work.
 
 ## Trust and identity
 
@@ -25,6 +26,12 @@ UTF-8 byte view without NUL, bounded by `limits.path_bytes`. The wrapper copies
 and terminates it before passing it to OpenSSL. Default trust follows the
 linked OpenSSL configuration and environment; selecting defaults does not
 guarantee the machine has a populated trust store.
+
+`new_with_credentials(trust,chain,key,passphrase,limits)` creates the same
+verified client context with one native PEM credential pair. Its shared
+credential loader, passphrase policy, exact cleanup and mutual-TLS evidence
+are documented in the guide above. The client still requires service trust
+and DNS/IP identity checks.
 
 Every context requires `SSL_VERIFY_PEER`, with no application verification
 callback, and a minimum protocol version of TLS 1.2. OpenSSL's configured

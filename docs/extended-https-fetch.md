@@ -42,6 +42,16 @@ or expose an option to disable verification. Final HTTP statuses, including
 4xx and 5xx, return their body normally. HTTP status handling belongs to the
 caller; exit zero means the verified exchange and output completed.
 
+For a service that requires a client certificate, add both
+`--client-cert CLIENT_CHAIN` and `--client-key CLIENT_KEY`. Both values must be
+nonempty, or both options must be absent. The chain is PEM with the client leaf
+first, followed by its intermediate issuers; the key must match. The app supplies
+an explicit empty passphrase and never prompts. A key requiring a nonempty
+password fails; the reusable TLS factory accepts explicit secret input.
+Credential failure never falls back to a client without credentials. See the
+[mutual TLS guide](extended-https-mutual-tls.md) for both applications and their
+independent service/client trust roles.
+
 ## Verification and framing
 
 The TLS wrapper requires certificate-chain verification, an authenticated peer
@@ -49,6 +59,13 @@ certificate and DNS/IP identity verification. DNS matching uses SAN names and
 rejects Common Name fallback and partial wildcards. TLS 1.2 is the minimum
 version. No HTTP request bytes are submitted until the verified TLS handshake
 has completed.
+
+Client credentials preserve every service trust and identity check. In TLS 1.3,
+local client handshake completion does not prove that the service accepted the
+client certificate; a later read can receive a rejection alert. The app still
+requires a complete validated HTTP response before publishing its body. A
+certificate's acceptance by the service also does not establish application
+account or route authorization.
 
 The application emits a bounded GET with `Connection: close`. It supports
 fixed-length, chunked and close-delimited response bodies, and at most eight
@@ -81,9 +98,9 @@ Unexpected EOF is never globally ignored.
 | `--max-work N` | 64 MiB work units | `i32::MAX` |
 | `--max-stdout-calls N` | 65,536 | `i32::MAX` |
 
-All values are unsigned decimal integers; signs, missing values and overflow
-are errors. Zero is accepted and exercises the corresponding bound. Options
-can appear before or after operands, with separate or `=` values. Repeated
+All numeric values are unsigned decimal integers; signs, missing values and
+overflow are errors. Zero is accepted and exercises the corresponding bound.
+Options can appear before or after operands, with separate or `=` values. Repeated
 options use the last value. Argument capture permits 32 arguments and 16,384
 bytes. The request is capped at 16,384 bytes. HTTP limits are 16,384 head
 bytes, 8,192 line bytes, 64 headers, 16,384 trailer bytes, 16 trailers and
@@ -91,10 +108,10 @@ bytes, 8,192 line bytes, 64 headers, 16,384 trailer bytes, 16 trailers and
 At an exact response byte limit, one extra plaintext byte may be consumed to
 distinguish authenticated EOF from excess input; excess bytes are never output.
 
-The TLS profile bounds trust-file paths to 4,096 UTF-8 bytes, peer identities
-to 253 ASCII bytes, each native plaintext I/O buffer to 16,384 bytes and
-certificate verification depth to 16. The stream's owned write queue has that
-same 16,384-byte capacity.
+The TLS profile bounds trust and credential paths to 4,096 UTF-8 bytes each,
+peer identities to 253 ASCII bytes, each native plaintext I/O buffer to 16,384
+bytes and certificate verification depth to 16. The stream's owned write queue
+has that same 16,384-byte capacity.
 
 One absolute monotonic deadline covers connection establishment, TLS handshake,
 request transmission, response reads, parsing checks and local TLS shutdown.
@@ -106,10 +123,18 @@ while a TLS operation is pending aborts that TLS session and closes the socket.
 `--max-io` counts setup operations, socket calls, poll attempts, buffered write
 acceptance and TLS I/O attempts. Each TLS I/O attempt also spends `--max-tls`.
 Clock checks and OpenSSL's internal helper calls are not individual counted
-operations. Native OpenSSL setup and cryptographic calls are synchronous;
+operations. Native TLS setup and cryptographic calls are synchronous;
 deadline checks surround them rather than preempting a call. Cleanup is
 unconditional even after a budget is exhausted. Parser work and plaintext
 byte limits are independent bounds, not a process-memory quota.
+
+With client credentials, the app creates that same absolute deadline before
+calling `new_with_credentials`. Credential loading is synchronous and precedes
+the prepared connector's first deadline check; it is not preempted and does
+not spend connector I/O counters. Its elapsed time still spends the existing
+deadline. The connector then charges configuration once and carries the same
+counters and deadline through connection and handshake. Path caps do not bound
+PEM file size, native parsing, allocations or cryptographic work.
 
 The deadline applies to network processing. Stdout has its own byte and call
 limits; a blocking stdout descriptor can still block inside a write. Short
@@ -124,11 +149,27 @@ boundary. `connect_until` owns the nonblocking socket, OpenSSL context/session
 and one fixed write queue. It returns only after certificate verification.
 Use one active manual owner; all by-value copies remain inactive.
 
+The credential branch prepares an `openssl_tls::Context` and calls:
+
+```text
+connect_with_context_until(endpoint, &Context, identity, limits, deadline)
+    -> Result<Stream, Failure>
+```
+
+This factory borrows the Context on success and every error; it never destroys
+the caller's owner. A successful Session retains its own native context
+reference. The app destroys its Context after either result, and a successful
+stream remains valid. The stream derives both its write-queue capacity and
+native read cap from `Context.io_bytes()`. Both client factories pass one
+charged State through the shared connection core without resetting counters or
+the absolute deadline.
+
 The same Read/Write and deadline engine now supports
 [`accept_connected_until`](extended-https-server.md#socket-and-tls-ownership).
 It consumes an accepted socket on every result and retains the server's native
-context through its Session. A Stream owns an optional client Context; server
-streams do not own the caller's ServerContext.
+context through its Session. Streams created by `connect_until` own a client
+Context in `Some`; prepared client streams and server streams store `None`.
+They do not own the caller's Context or ServerContext.
 
 The adapter implements `core::io::Read` and `Write` with buffered acceptance.
 `write` first drains a previous accepted queue, then copies a bounded prefix of
@@ -187,15 +228,36 @@ are generated by the OpenSSL CLI into temporary storage. The tests cover:
 - Buffered acceptance, copied input, implicit drain before read, confirmed
   counters, pending-operation timeout/backpressure, and terminal shutdown.
 
-All four groups passed on Linux x86_64 in 14.44 seconds: 18 verified HTTP
+The original four groups passed on Linux x86_64 in 14.44 seconds: 18 verified HTTP
 matrix cases, 14 certificate/HTTP failure cases, 26 deadline/limit/output cases
 and four buffered-stream cases, totaling 62 cases. The linked ELF's generated
 function boundaries and its OpenSSL 3 native dependencies also passed their
 checks. The local execution receipt is
 `target/stdlib-work/https-fetch-execution-current.log`.
 After sharing the engine with server streams and making the client Context
-optional, all four groups and 62 cases pass again in 13.90 seconds:
+optional, all four groups and 62 cases passed again in 13.90 seconds:
 `target/stdlib-work/https-fetch-server-context-regression.log`.
+
+The mutual TLS and prepared Context additions passed four separate focused
+groups in
+[`tests/extended_https_mutual_tls_execution.rs`](../tests/extended_https_mutual_tls_execution.rs):
+35 matrix, 34 rejection and 32 limit cases passed together in 15.23 seconds
+(`target/stdlib-work/https-mutual-app-groups.log`); eight prepared-Context cases
+passed in 6.21 seconds (`target/stdlib-work/https-mutual-prepared-first.log`).
+These 109 cases count both applications and the prepared consumer; each native
+application pair counts two processes. They cover mandatory service identity,
+required client certificates, TLS 1.3 alerts, configured queue limits, borrowed
+context lifetime and shared deadline/counter continuity. They are separate
+from the earlier 62-case receipts above. The
+[mutual TLS guide](extended-https-mutual-tls.md#focused-execution-gates) records
+the exact group scope; these are selected invocations, not a whole-suite run.
+
+On this source, the existing client buffered ownership/error group passed all
+four cases in 7.01 seconds
+(`target/stdlib-work/https-prepared-client-stream-regression.log`). The existing
+server socket/context/buffer group passed its nine cases in 6.73 seconds
+(`target/stdlib-work/https-prepared-server-stream-regression.log`). These
+focused stream regressions did not rerun the other earlier application groups.
 
 These results cover native CPU execution through OpenSSL 3. Other operating
 systems and GPU-kernel execution have not been verified.

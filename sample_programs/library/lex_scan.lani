@@ -1,0 +1,264 @@
+// Bounded CSV rules and UTF-8 stdin -> maximal-munch spans or per-kind counts.
+// Stage all output before publication; I/O failure can leave a confirmed prefix.
+module app::main;
+import alloc::hash_map;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::format;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::lexer;
+import ext::regex;
+import std::args;
+import std::file;
+import std::signal;
+import std::stream;
+
+const RULE_BYTES: i32 = 65536;
+const MAX_RULES: i32 = 64;
+const IO_CALLS: i32 = 16384;
+const OUTPUT_CALLS: i32 = 65536;
+struct Config { input: i32, output: i32, tokens: i32, calls: i32, call_work: i32, work: i64, seen: u32, help: bool, operands: i32, counts: bool }
+impl Config { fn borrow(&self) -> &Config { return self; } }
+struct Detail { stage: i32, rule: i32, offset: i32 }
+impl Detail { fn borrow(&self) -> &Detail { return self; } }
+struct Kind { id: i32, skip: bool }
+struct Plan { lexer: ext::lexer::Lexer, kinds: alloc::vec::Vec<Kind>, counts: alloc::hash_map::HashMap<i32,u64> }
+impl Plan {
+    fn borrow(&self) -> &Plan { return self; }
+    fn destroy(&self) { self.lexer.destroy(); self.kinds.destroy(); self.counts.destroy(); }
+}
+enum ReadError { Io(core::io::Error), Calls, Limit, Allocation }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let part = bytes(value,count); return core::text::from_utf8_unchecked(part.values,part.start,part.length); }
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let at: i32 = 0;
+    while (at < left.length) { if (left.values[left.start+at] != right.values[right.start+at]) { return false; } at += 1; } return true;
+}
+fn fail(detail: &Detail, status: i32, stage: i32) -> i32 { detail.stage = stage; return status; }
+fn number(value: core::slice::View<u8>) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let at: i32 = 0;
+    while (at < value.length) { let byte: u8 = value.values[value.start+at]; if (byte < 48 || byte > 57) { return core::option::None(); } at += 1; }
+    let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length); if (parsed.is_err()) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+fn argument(config: &Config, option: ext::cli::Occurrence) -> bool {
+    let bit: u32 = (1 as u32) << option.id; if ((config.seen & bit) != 0) { return false; } config.seen |= bit;
+    if (option.id == 7) { config.help = true; return true; }
+    let parsed = number(option.value.unwrap().bytes); if (parsed.is_none()) { return false; } let value: u64 = parsed.unwrap();
+    if (option.id == 6) { if (value > 1125899906842624) { return false; } config.work = value as i64; return true; }
+    if (option.id == 1) { if (value > 4194304) { return false; } config.input = value as i32; }
+    if (option.id == 2) { if (value > 1000000) { return false; } config.tokens = value as i32; }
+    if (option.id == 3) { if (value > 16777216) { return false; } config.output = value as i32; }
+    if (option.id == 4) { if (value > 16777216) { return false; } config.calls = value as i32; }
+    if (option.id == 5) { if (value == 0 || value > 16777216) { return false; } config.call_work = value as i32; }
+    return true;
+}
+fn operand(config: &Config, values: [core::slice::View<u8>], value: ext::cli::Argument) -> bool {
+    if (config.operands == 2) { return false; } values[config.operands] = value.bytes; config.operands += 1; return true;
+}
+
+// Each host call, including EINTR, consumes the budget. A full input bound
+// still requires an actual EOF probe; the extra byte is never admitted.
+fn read_bounded<R>(reader: &R, output: &alloc::io::Buffer, maximum_calls: i32) -> core::result::Result<i32,ReadError>
+    where R: core::io::Read {
+    let scratch: [u8;1024] = [0;1024]; let calls: i32 = 0;
+    while (true) {
+        if (calls >= maximum_calls) { return core::result::Err(ReadError::Calls); } calls += 1;
+        let left: i32 = output.limit()-output.len(); let amount: i32 = left; if (amount > 1024) { amount = 1024; } if (amount == 0) { amount = 1; }
+        let read: core::result::Result<i32,core::io::Error> = reader.read(scratch,0,amount);
+        if (read.is_err()) { let error = read.unwrap_err(); if (core::io::is_interrupted(error)) { continue; } return core::result::Err(ReadError::Io(error)); }
+        let received: i32 = read.unwrap(); if (received < 0 || received > amount) { return core::result::Err(ReadError::Io(core::io::Error::InvalidCount)); }
+        if (received == 0) { return core::result::Ok(output.len()); }
+        if (received > left) { return core::result::Err(ReadError::Limit); }
+        let appended: core::result::Result<i32,core::io::Error> = output.write(scratch,0,received);
+        if (appended.is_err()) {
+            let error = appended.unwrap_err();
+            return match(error) { core::io::Error::AllocationFailed -> core::result::Err(ReadError::Allocation), core::io::Error::LimitExceeded -> core::result::Err(ReadError::Limit), _ -> core::result::Err(ReadError::Io(error)) };
+        }
+    }
+    return core::result::Err(ReadError::Calls);
+}
+// Positive successful counts are the only committed prefix. No flush, replay
+// or implicit retry of WouldBlock/zero progress is performed.
+fn publish<W>(writer: &W, source: [u8], count: i32, maximum_calls: i32) -> core::result::Result<i32,core::io::Failure>
+    where W: core::io::Write {
+    let completed: i32 = 0; let calls: i32 = 0;
+    while (completed < count) {
+        if (calls >= maximum_calls) { return core::result::Err(core::io::Failure { cause: core::io::Error::LimitExceeded, completed: completed }); } calls += 1;
+        let written: core::result::Result<i32,core::io::Error> = writer.write(source,completed,count-completed);
+        if (written.is_err()) { let error = written.unwrap_err(); if (core::io::is_interrupted(error)) { continue; } return core::result::Err(core::io::Failure { cause: error, completed: completed }); }
+        let accepted: i32 = written.unwrap();
+        if (accepted <= 0 || accepted > count-completed) { return core::result::Err(core::io::Failure { cause: core::io::Error::InvalidCount, completed: completed }); }
+        completed += accepted;
+    }
+    return core::result::Ok(completed);
+}
+fn read_status(error: ReadError) -> i32 { return match(error) { ReadError::Allocation -> 4, ReadError::Limit -> 2, _ -> 3 }; }
+fn io_status(error: core::io::Error) -> i32 { return match(error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 3 }; }
+fn regex_status(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn regex_offset(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::Syntax(at) -> at, ext::regex::Error::Unsupported(at) -> at, ext::regex::Error::InvalidUtf8(at) -> at, _ -> -1 }; }
+fn lexer_status(error: ext::lexer::Error, detail: &Detail) -> i32 {
+    detail.rule = match(error) {
+        ext::lexer::Error::Pattern(rule,value) -> rule, ext::lexer::Error::PatternLimit(rule) -> rule, ext::lexer::Error::StateLimit(rule) -> rule,
+        ext::lexer::Error::Search(rule,at,value) -> rule, ext::lexer::Error::EmptyMatch(rule,at) -> rule,
+        ext::lexer::Error::SearchCallLimit(rule,at) -> rule, ext::lexer::Error::SearchWorkLimit(rule,at) -> rule, _ -> -1
+    };
+    detail.offset = match(error) {
+        ext::lexer::Error::Pattern(rule,value) -> regex_offset(value), ext::lexer::Error::Input(value) -> regex_offset(value),
+        ext::lexer::Error::Search(rule,at,value) -> at, ext::lexer::Error::EmptyMatch(rule,at) -> at, ext::lexer::Error::NoMatch(at) -> at,
+        ext::lexer::Error::StepLimit(at) -> at, ext::lexer::Error::TokenLimit(at) -> at,
+        ext::lexer::Error::SearchCallLimit(rule,at) -> at, ext::lexer::Error::SearchWorkLimit(rule,at) -> at, _ -> -1
+    };
+    return match(error) { ext::lexer::Error::AllocationFailed -> 4, ext::lexer::Error::Pattern(rule,value) -> regex_status(value), ext::lexer::Error::Input(value) -> regex_status(value), ext::lexer::Error::Search(rule,at,value) -> regex_status(value), _ -> 2 };
+}
+fn csv_status(error: ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+
+fn prepare(table: ext::csv::Table, config: Config, detail: &Detail) -> core::result::Result<Plan,i32> {
+    if (table.row_count() < 2 || table.row_count() > MAX_RULES+1 || table.field_count(0).unwrap() != 3) { return core::result::Err(fail(detail,2,2)); }
+    if (!table.field(0,0).unwrap().equals(text("id",2)) || !table.field(0,1).unwrap().equals(text("pattern",7)) || !table.field(0,2).unwrap().equals(text("skip",4))) { return core::result::Err(fail(detail,2,2)); }
+    let count: i32 = table.row_count()-1;
+    let rules: alloc::vec::Vec<ext::lexer::Rule> = alloc::vec::new(); let kinds: alloc::vec::Vec<Kind> = alloc::vec::new(); let counts: alloc::hash_map::HashMap<i32,u64> = alloc::hash_map::new();
+    if (rules.try_reserve(count).is_err() || kinds.try_reserve(count).is_err() || counts.try_reserve(count).is_err()) { rules.destroy(); kinds.destroy(); counts.destroy(); return core::result::Err(fail(detail,4,2)); }
+    let status: i32 = 0; let index: i32 = 0;
+    while (index < count) {
+        detail.rule = index;
+        if (table.field_count(index+1).unwrap() != 3) { status = 2; break; }
+        let id_text = table.field(index+1,0).unwrap(); let skip_text = table.field(index+1,2).unwrap(); let pattern = table.field(index+1,1).unwrap();
+        let parsed = number(core::slice::View { values: id_text.bytes, start: id_text.start, length: id_text.length });
+        if (parsed.is_none()) { status = 2; break; } let id: u64 = parsed.unwrap(); if (id > 2147483647 || counts.contains_key(id as i32)) { status = 2; break; }
+        if (skip_text.length != 1 || (skip_text.byte_at(0).unwrap() != 48 && skip_text.byte_at(0).unwrap() != 49) || pattern.length > 1024) { status = 2; break; }
+        let skip: bool = skip_text.byte_at(0).unwrap() == 49; let initial: u64 = 0;
+        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32,u64>>,alloc::hash_map::Error> = counts.try_insert(id as i32,initial);
+        if (inserted.is_err()) { status = 4; break; }
+        if (rules.try_push(ext::lexer::Rule { id: id as i32, pattern: pattern, skip: skip }).is_err() || kinds.try_push(Kind { id: id as i32, skip: skip }).is_err()) { status = 4; break; }
+        index += 1;
+    }
+    if (status != 0) { rules.destroy(); kinds.destroy(); counts.destroy(); return core::result::Err(fail(detail,status,2)); }
+    detail.rule = -1;
+    let options = ext::regex::options(); options.max_pattern_bytes = 1024; options.max_states = 256; options.max_depth = 32; options.max_captures = 16; options.max_repeat = 1000; options.max_work = config.call_work;
+    let limits = ext::lexer::default_build_limits(); limits.max_rules = MAX_RULES; limits.max_pattern_bytes = RULE_BYTES; limits.max_states = 16384;
+    let compiled = ext::lexer::compile(rules.as_view(),options,limits); rules.destroy();
+    if (compiled.is_err()) { let code: i32 = lexer_status(compiled.unwrap_err(),detail); kinds.destroy(); counts.destroy(); return core::result::Err(fail(detail,code,3)); }
+    return core::result::Ok(Plan { lexer: compiled.unwrap(), kinds: kinds, counts: counts });
+}
+fn append(output: &alloc::io::Buffer, part: core::slice::View<u8>) -> i32 {
+    let added = output.write(part.values,part.start,part.length); if (added.is_err()) { return io_status(added.unwrap_err()); } return 0;
+}
+fn row(output: &alloc::io::Buffer, id: i32, first: u64, second: u64, counts: bool) -> i32 {
+    let values: [core::format::Argument;3] = [core::format::Argument::Signed(id as i64),core::format::Argument::Unsigned(first),core::format::Argument::Unsigned(second)];
+    let names: [core::format::Named;0] = []; let scratch: [u8;128] = [0;128];
+    let pattern = text("{0},{1},{2}\n",12); if (counts) { pattern = text("{0},{1}\n",8); }
+    let formatted = core::format::format_into(pattern,core::slice::view(values,3).unwrap(),core::slice::view(names,0).unwrap(),core::slice::view(scratch,128).unwrap(),core::format::Limits { max_work: 8192, max_output: 128 });
+    if (formatted.is_err()) { return 2; }
+    return append(output,core::slice::view(scratch,formatted.unwrap()).unwrap());
+}
+fn scan(plan: &Plan, config: Config, input: core::text::Text, output: &alloc::io::Buffer, detail: &Detail) -> i32 {
+    let limits = ext::lexer::default_scan_limits(); limits.max_input_bytes = config.input; limits.max_steps = 1000000; limits.max_tokens = config.tokens; limits.max_calls = config.calls; limits.max_work = config.work;
+    let made = plan.lexer.scan(input,limits); if (made.is_err()) { return fail(detail,lexer_status(made.unwrap_err(),detail),5); }
+    let cursor = made.unwrap(); let status: i32 = 0;
+    if (config.counts) { status = append(output,bytes("id,count\n",9)); } else { status = append(output,bytes("id,start,end\n",13)); }
+    while (status == 0) {
+        let next = cursor.next(); if (next.is_err()) { status = fail(detail,lexer_status(next.unwrap_err(),detail),5); break; }
+        let found = next.unwrap(); if (found.is_none()) { break; } let token = found.unwrap();
+        if (config.counts) {
+            let previous = plan.counts.get(token.id); if (previous.is_none() || previous.unwrap() == 18446744073709551615) { status = 2; break; }
+            let value: u64 = previous.unwrap()+1;
+            let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32,u64>>,alloc::hash_map::Error> = plan.counts.try_insert(token.id,value);
+            if (inserted.is_err()) { status = 4; break; }
+        } else { status = row(output,token.id,token.span.start as u64,token.span.end as u64,false); }
+    }
+    cursor.destroy();
+    if (status != 0) { if (detail.stage != 5) { detail.stage = 6; } return status; }
+    if (config.counts) {
+        let index: i32 = 0; while (index < plan.kinds.len()) {
+            let kind: Kind = plan.kinds.at(index); if (!kind.skip) { status = row(output,kind.id,plan.counts.get(kind.id).unwrap(),0,true); if (status != 0) { return fail(detail,status,6); } } index += 1;
+        }
+    }
+    return 0;
+}
+fn execute(plan: &Plan, config: Config, detail: &Detail) -> i32 {
+    let input = alloc::io::with_limit(config.input).unwrap(); let source = std::stream::stdin();
+    let received = read_bounded<std::stream::Descriptor>(source.borrow(),input.borrow(),IO_CALLS);
+    if (received.is_err()) { let status: i32 = read_status(received.unwrap_err()); input.destroy(); return fail(detail,status,4); }
+    let selected = core::text::from_utf8(input.as_bytes(),input.len());
+    if (selected.is_err()) { detail.offset = match(selected.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 }; input.destroy(); return fail(detail,2,4); }
+    let output = alloc::io::with_limit(config.output).unwrap(); let status: i32 = scan(plan,config,selected.unwrap(),output.borrow(),detail);
+    // All token views have ended; staged output contains only scalar numbers.
+    input.destroy();
+    if (status == 0) { let sink = std::stream::stdout(); if (publish<std::stream::Descriptor>(sink.borrow(),output.as_bytes(),output.len(),OUTPUT_CALLS).is_err()) { status = fail(detail,3,7); } }
+    output.destroy(); return status;
+}
+fn rules_file(path: core::path::Path, config: Config, detail: &Detail) -> i32 {
+    let input = alloc::io::with_limit(RULE_BYTES).unwrap(); let opened = std::file::open(path,std::file::OpenMode::Read);
+    if (opened.is_err()) { input.destroy(); return fail(detail,3,1); } let file = opened.unwrap();
+    let received = read_bounded<std::file::File>(file.borrow(),input.borrow(),IO_CALLS); let closed = file.close();
+    if (closed.is_err()) { input.destroy(); return fail(detail,3,1); }
+    if (received.is_err()) { let status: i32 = read_status(received.unwrap_err()); input.destroy(); return fail(detail,status,1); }
+    let dialect = ext::csv::default_options(); dialect.max_records = MAX_RULES+1; dialect.max_fields = 3; dialect.max_field_bytes = 1024; dialect.max_record_bytes = 1035;
+    let parsed = ext::csv::parse_bytes(input.as_bytes(),0,input.len(),dialect); input.destroy();
+    if (parsed.is_err()) { return fail(detail,csv_status(parsed.unwrap_err()),2); } let table = parsed.unwrap();
+    let prepared = prepare(table,config,detail); table.destroy();
+    if (prepared.is_err()) { return prepared.unwrap_err(); } let plan = prepared.unwrap();
+    let status: i32 = execute(plan.borrow(),config,detail); plan.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments, detail: &Detail) -> i32 {
+    let specs: [ext::cli::Spec;7] = [
+        ext::cli::Spec { id: 1, long: bytes("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: bytes("max-tokens",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: bytes("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: bytes("max-calls",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: bytes("max-call-work",13), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: bytes("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: bytes("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,7).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    let config = Config { input: 1048576, output: 4194304, tokens: 100000, calls: 1048576, call_work: 1048576, work: 1099511627776, seen: 0, help: false, operands: 0, counts: false };
+    let empty = bytes("",0); let values: [core::slice::View<u8>;2] = [empty;2];
+    while (true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return fail(detail,2,0); } let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let valid: bool = match(next.unwrap()) { ext::cli::Event::Option(option) -> argument(config.borrow(),option), ext::cli::Event::Operand(value) -> operand(config.borrow(),values,value) };
+        if (!valid) { return fail(detail,2,0); }
+    }
+    if (config.help) {
+        if (arguments.len() != 1) { return fail(detail,2,0); }
+        let usage = bytes("Usage: lex-scan spans|counts RULES.csv [--max-input N] [--max-tokens N] [--max-output N] [--max-calls N] [--max-call-work N] [--max-work N]\n",140);
+        let sink = std::stream::stdout(); if (publish<std::stream::Descriptor>(sink.borrow(),usage.values,usage.length,OUTPUT_CALLS).is_err()) { return fail(detail,3,7); } return 0;
+    }
+    if (config.operands != 2 || values[1].length == 0 || values[1].length > 4095) { return fail(detail,2,0); }
+    config.counts = same(values[0],bytes("counts",6)); if (!config.counts && !same(values[0],bytes("spans",5))) { return fail(detail,2,0); }
+    let path = core::path::from_view(values[1]); if (path.is_err()) { return fail(detail,2,0); }
+    return rules_file(path.unwrap(),config,detail);
+}
+fn diagnostic(detail: Detail, status: i32) -> bool {
+    let message = text("invalid arguments or limit",26);
+    if (detail.stage == 1) { message = text("rule file read or close failed",30); }
+    if (detail.stage == 2) { message = text("invalid rule CSV or definition",30); }
+    if (detail.stage == 3) { message = text("pattern compilation failed",26); }
+    if (detail.stage == 4) { message = text("input read, UTF-8 or limit failed",33); }
+    if (detail.stage == 5) { message = text("scan or resource limit failed",29); }
+    if (detail.stage == 6) { message = text("output limit or format failed",29); }
+    if (detail.stage == 7) { message = text("output I/O failed",17); }
+    if (status == 4) { message = text("allocation failed",17); }
+    let scratch: [u8;256] = [0;256]; let formatted = core::fmt::buffer(scratch,0,256).unwrap();
+    formatted.write_text(text("lex-scan: ",10)); formatted.write_text(message);
+    if (detail.rule >= 0) { formatted.write_text(text(" rule=",6)); formatted.write_signed(detail.rule as i64,core::fmt::decimal()); }
+    if (detail.offset >= 0) { formatted.write_text(text(" byte=",6)); formatted.write_signed(detail.offset as i64,core::fmt::decimal()); }
+    formatted.write_text(text("\n",1)); let finished = formatted.finish(); if (finished.is_err()) { return false; }
+    let sink = std::stream::stderr(); return publish<std::stream::Descriptor>(sink.borrow(),scratch,finished.unwrap(),OUTPUT_CALLS).is_ok();
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let detail = Detail { stage: 0, rule: -1, offset: -1 }; let captured = std::args::snapshot(1,32,8192); let status: i32 = 0;
+    if (captured.is_err()) { status = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; }
+    else { let arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail,status)) { return 3; } return status;
+}

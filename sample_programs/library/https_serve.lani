@@ -23,7 +23,7 @@ import std::socket;
 import std::stream;
 
 enum Error { Arguments, Limit, Allocation, Clock, Timeout, Io(core::io::Error), Http(ext::http::Error), Tls(ext::openssl_tls::Error), Transport(ext::tls_stream::Failure), Output }
-struct Options { endpoint: core::slice::View<u8>, certificate: core::slice::View<u8>, key: core::slice::View<u8>, operands: i32, help: bool, report: bool, requests: i32, timeout: i32, max_request: i32, max_body: i32, max_response: i32, max_head: i32, max_headers: i32, max_chunks: i32, max_io: u64, max_tls: u64, max_work: u64 }
+struct Options { endpoint: core::slice::View<u8>, certificate: core::slice::View<u8>, key: core::slice::View<u8>, client_ca: core::option::Option<core::slice::View<u8>>, operands: i32, help: bool, report: bool, requests: i32, timeout: i32, max_request: i32, max_body: i32, max_response: i32, max_head: i32, max_headers: i32, max_chunks: i32, max_io: u64, max_tls: u64, max_work: u64 }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 struct Work { used: u64, maximum: u64, response: i32 }
 impl Work { fn borrow(&self) -> &Work { return self; } }
@@ -232,7 +232,10 @@ fn serve_one(listener: &std::socket::Socket, server: &ext::openssl_tls::ServerCo
 }
 fn service(options: &Options) -> core::result::Result<i32,Error> {
     let endpoint = core::net::parse_socket(options.endpoint); if (endpoint.is_err() || options.certificate.is_empty() || options.key.is_empty()) { return core::result::Err(Error::Arguments); }
-    let created = ext::openssl_tls::new_server(options.certificate,options.key,literal("",0),ext::openssl_tls::ClientAuthentication::Unauthenticated,ext::openssl_tls::default_limits());
+    if (options.client_ca.is_some() && options.client_ca.unwrap().is_empty()) { return core::result::Err(Error::Arguments); }
+    let authentication: ext::openssl_tls::ClientAuthentication = ext::openssl_tls::ClientAuthentication::Unauthenticated;
+    if (options.client_ca.is_some()) { authentication = ext::openssl_tls::ClientAuthentication::Required(ext::openssl_tls::Trust::CaFile(options.client_ca.unwrap())); }
+    let created = ext::openssl_tls::new_server(options.certificate,options.key,literal("",0),authentication,ext::openssl_tls::default_limits());
     if (created.is_err()) { return core::result::Err(Error::Tls(created.unwrap_err())); } let server = created.unwrap();
     let family = match (endpoint.unwrap()) { core::net::SocketAddr::V4(v) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(v) -> std::socket::Family::Ipv6 };
     let opened = std::socket::create(family,std::socket::Kind::Tcp,true); if (opened.is_err()) { server.destroy(); return core::result::Err(Error::Io(opened.unwrap_err())); } let listener = opened.unwrap();
@@ -251,6 +254,7 @@ fn service(options: &Options) -> core::result::Result<i32,Error> {
 }
 fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
     if (item.id == 1) { options.help = true; return true; } if (item.id == 2) { options.report = true; return true; }
+    if (item.id == 14) { options.client_ca = core::option::Some(item.value.unwrap().bytes); return true; }
     let bytes = item.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
     if (parsed.is_err() || bytes.is_empty() || parsed.unwrap() > 2147483647 as u64) { return false; } let value: u64 = parsed.unwrap();
     if (item.id == 3) { if (value < 1 || value > 64) { return false; } options.requests = value as i32; }
@@ -267,20 +271,21 @@ fn operand(options: &Options, bytes: core::slice::View<u8>) -> bool {
     options.operands += 1; return options.operands <= 3;
 }
 fn arguments(values: std::args::Arguments) -> i32 {
-    let specs: [ext::cli::Spec;13] = [
+    let specs: [ext::cli::Spec;14] = [
         ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag }, ext::cli::Spec { id:2,long:literal("report",6),short:0,arity:ext::cli::Arity::Flag },
         ext::cli::Spec { id:3,long:literal("requests",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:4,long:literal("timeout",7),short:0,arity:ext::cli::Arity::Required },
         ext::cli::Spec { id:5,long:literal("max-request",11),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:6,long:literal("max-body",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:7,long:literal("max-response",12),short:0,arity:ext::cli::Arity::Required },
         ext::cli::Spec { id:8,long:literal("max-io",6),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:9,long:literal("max-tls",7),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:10,long:literal("max-work",8),short:0,arity:ext::cli::Arity::Required },
-        ext::cli::Spec { id:11,long:literal("max-head",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:12,long:literal("max-headers",11),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:13,long:literal("max-chunks",10),short:0,arity:ext::cli::Arity::Required }
+        ext::cli::Spec { id:11,long:literal("max-head",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:12,long:literal("max-headers",11),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:13,long:literal("max-chunks",10),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:14,long:literal("require-client-ca",17),short:0,arity:ext::cli::Arity::Required }
     ];
-    let options: Options = Options { endpoint:literal("",0),certificate:literal("",0),key:literal("",0),operands:0,help:false,report:false,requests:1,timeout:5000,max_request:2097152,max_body:1048576,max_response:2097152,max_head:16384,max_headers:64,max_chunks:65536,max_io:65536,max_tls:32768,max_work:67108864 };
-    let parser = ext::cli::parser(values.as_view(),core::slice::view(specs,13).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    let options: Options = Options { endpoint:literal("",0),certificate:literal("",0),key:literal("",0),client_ca:core::option::None(),operands:0,help:false,report:false,requests:1,timeout:5000,max_request:2097152,max_body:1048576,max_response:2097152,max_head:16384,max_headers:64,max_chunks:65536,max_io:65536,max_tls:32768,max_work:67108864 };
+    let parser = ext::cli::parser(values.as_view(),core::slice::view(specs,14).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
     while (true) {
         let parsed = parser.next(); if (parsed.is_err()) { return error(Error::Arguments); } let next = parsed.unwrap(); if (next.is_none()) { break; }
         let valid: bool = match (next.unwrap()) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item.bytes) }; if (!valid) { return error(Error::Arguments); }
     }
-    if (options.help) { if (!write_output(literal("Usage: https-serve ADDRESS CERT_CHAIN KEY [OPTIONS]\nOptions: --requests N --timeout MS --max-request N --max-body N --max-response N\n         --max-io N --max-tls N --max-work N --max-head N --max-headers N\n         --max-chunks N --report\n",240),1)) { return error(Error::Output); } return 0; }
+    if (options.help) { if (!write_output(literal("Usage: https-serve ADDRESS CERT_CHAIN KEY [OPTIONS]\nOptions: --requests N --timeout MS --max-request N --max-body N --max-response N\n         --max-io N --max-tls N --max-work N --max-head N --max-headers N\n         --max-chunks N --report --require-client-ca FILE\n",265),1)) { return error(Error::Output); } return 0; }
     if (options.operands != 3) { return error(Error::Arguments); } let result = service(options.borrow()); if (result.is_err()) { return error(result.unwrap_err()); } return 0;
 }
 fn main() -> i32 {

@@ -1,0 +1,38 @@
+// Borrowed-context adapter checks independent of the HTTP applications.
+module app::main;
+import core::io;
+import core::net;
+import core::slice;
+import core::time;
+import ext::openssl_tls;
+import ext::tls_stream;
+import std::args;
+import std::clock;
+import std::signal;
+fn main() -> i32 {
+    assert(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_ok());
+    let args = std::args::snapshot(1,5,16384).unwrap(); assert(args.len() == 5);
+    let endpoint = core::net::parse_socket(args.get(0).unwrap()).unwrap(); let mode: u8 = args.get(4).unwrap().get(0).unwrap();
+    let empty: [u8;1] = [0;1]; let configured = ext::openssl_tls::default_limits(); configured.io_bytes = 3;
+    let context = ext::openssl_tls::new_with_credentials(ext::openssl_tls::Trust::CaFile(args.get(1).unwrap()),args.get(2).unwrap(),args.get(3).unwrap(),core::slice::view(empty,0).unwrap(),configured).unwrap();
+    assert(context.io_bytes() == 3); let limits = ext::tls_stream::default_limits(); limits.written_bytes = 7;
+    let now = std::clock::monotonic_now().unwrap(); let milliseconds: u64 = 3000; if (mode == 53) { milliseconds = 150; } if (mode == 51) { milliseconds = 0; }
+    let deadline = core::time::deadline_after(now,core::time::from_millis(milliseconds)).unwrap();
+    let local: [u8;9] = [108,111,99,97,108,104,111,115,116]; let wrong: [u8;13] = [119,114,111,110,103,46,105,110,118,97,108,105,100];
+    let name = core::slice::view(local,9).unwrap(); if (mode == 49) { name = core::slice::view(wrong,13).unwrap(); }
+    if (mode == 50) { limits.io_calls = 1; } if (mode == 55) { limits.io_calls = 0; } if (mode == 52) { context.destroy(); }
+    let result = ext::tls_stream::connect_with_context_until(endpoint,context.borrow(),ext::openssl_tls::Identity::Dns(name),limits,deadline);
+    if (mode != 48) {
+        assert(result.is_err()); assert(context.is_open() == (mode != 52)); let error = result.unwrap_err();
+        if (mode == 50) { let stage: bool = match(error.stage) { ext::tls_stream::Stage::Open -> true, _ -> false }; assert(stage && error.stats.io_calls == 1); }
+        if (mode == 51 || mode == 55) { assert(error.stats.io_calls == 0); }
+        context.destroy(); context.destroy(); args.destroy(); return 0;
+    }
+    assert(result.is_ok() && context.is_open()); let stream = result.unwrap(); context.destroy(); assert(!context.is_open());
+    let data: [u8;7] = [97,98,0,255,10,0,120]; assert(stream.write(data,0,7).unwrap() == 3);
+    assert(stream.stats().accepted_bytes == 3 && stream.stats().written_bytes == 0); data[0] = 0; data[1] = 0; data[2] = 0;
+    assert(core::io::write_all(stream.borrow(),data,3,4).is_ok() && stream.flush().is_ok());
+    assert(stream.stats().accepted_bytes == 7 && stream.stats().written_bytes == 7);
+    let answer: [u8;3] = [0;3]; assert(core::io::read_exact(stream.borrow(),answer,0,3).is_ok()); assert(answer[0] == 65 && answer[1] == 67 && answer[2] == 75);
+    assert(stream.check().is_ok() && stream.shutdown().is_ok() && stream.close().is_ok() && stream.close().is_ok()); args.destroy(); return 0;
+}

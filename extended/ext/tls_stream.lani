@@ -82,8 +82,12 @@ fn connect(state: &State, socket: &std::socket::Socket, endpoint: core::net::Soc
     if (peer.is_err()) { return core::result::Err(Cause::Io(peer.unwrap_err())); }
     return core::result::Ok(0);
 }
-fn close_before_session(state: &State, socket: &std::socket::Socket, context: &ext::openssl_tls::Context, cause: Cause) -> Failure {
-    let closed = socket.close(); context.destroy();
+fn destroy_owner(owner: core::option::Option<ext::openssl_tls::Context>) {
+    let retained = owner; owner = core::option::None();
+    if (retained.is_some()) { let context = retained.unwrap(); context.destroy(); }
+}
+fn close_before_session(state: &State, socket: &std::socket::Socket, owner: core::option::Option<ext::openssl_tls::Context>, cause: Cause) -> Failure {
+    let closed = socket.close(); destroy_owner(owner);
     let cleanup: core::option::Option<core::io::Error> = core::option::None();
     if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); }
     return failure(state,cause,cleanup);
@@ -102,20 +106,36 @@ pub fn connect_until(endpoint: core::net::SocketAddr, trust: ext::openssl_tls::T
     let created = ext::openssl_tls::new(trust,tls_limits);
     if (created.is_err()) { return core::result::Err(failure(state.borrow(),Cause::Tls(created.unwrap_err()),core::option::None())); }
     let context: ext::openssl_tls::Context = created.unwrap();
+    return connect_context(endpoint,context.borrow(),core::option::Some(context),identity,state);
+}
+// The caller retains Context ownership on EVERY outcome. Session's native
+// reference keeps it alive after success; the caller may then destroy its
+// Context owner. All socket/session cleanup remains owned by this factory.
+// The configured Context's io_bytes bounds both the queue and TLS read size.
+pub fn connect_with_context_until(endpoint: core::net::SocketAddr, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, limits: Limits, deadline: core::time::Deadline)
+    -> core::result::Result<Stream,Failure> {
+    let state: State = State { limits: limits, deadline: deadline, last: core::time::instant(core::time::zero()), stage: Stage::Configure, stats: Stats { io_calls: 0, tls_calls: 0, read_bytes: 0, accepted_bytes: 0, written_bytes: 0 } };
+    if (limits.io_calls == 0 || limits.tls_calls == 0) { return core::result::Err(failure(state.borrow(),Cause::InvalidLimits,core::option::None())); }
+    if (!context.is_open()) { return core::result::Err(failure(state.borrow(),Cause::Closed,core::option::None())); }
+    let before = call(state.borrow(),false); if (before.is_err()) { return core::result::Err(failure(state.borrow(),before.unwrap_err(),core::option::None())); }
+    return connect_context(endpoint,context,core::option::None(),identity,state);
+}
+fn connect_context(endpoint: core::net::SocketAddr, context: &ext::openssl_tls::Context, owner: core::option::Option<ext::openssl_tls::Context>, identity: ext::openssl_tls::Identity, state: State)
+    -> core::result::Result<Stream,Failure> {
     state.stage = Stage::Open;
-    let before = call(state.borrow(),false); if (before.is_err()) { context.destroy(); return core::result::Err(failure(state.borrow(),before.unwrap_err(),core::option::None())); }
+    let before = call(state.borrow(),false); if (before.is_err()) { destroy_owner(owner); return core::result::Err(failure(state.borrow(),before.unwrap_err(),core::option::None())); }
     let family: std::socket::Family = match (endpoint) { core::net::SocketAddr::V4(v) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(v) -> std::socket::Family::Ipv6 };
     let opened = std::socket::create(family,std::socket::Kind::Tcp,true);
-    if (opened.is_err()) { context.destroy(); return core::result::Err(failure(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
+    if (opened.is_err()) { destroy_owner(owner); return core::result::Err(failure(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
     let socket: std::socket::Socket = opened.unwrap(); state.stage = Stage::Connect;
     let connected = connect(state.borrow(),socket.borrow(),endpoint);
-    if (connected.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),context.borrow(),connected.unwrap_err())); }
+    if (connected.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),owner,connected.unwrap_err())); }
     state.stage = Stage::Handshake;
     let before = call(state.borrow(),false);
-    if (before.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),context.borrow(),before.unwrap_err())); }
+    if (before.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),owner,before.unwrap_err())); }
     let made = context.session(socket.raw_handle().unwrap(),identity);
-    if (made.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),context.borrow(),Cause::Tls(made.unwrap_err()))); }
-    return stream_from_session(state,core::option::Some(context),made.unwrap(),socket,tls_limits.io_bytes);
+    if (made.is_err()) { return core::result::Err(close_before_session(state.borrow(),socket.borrow(),owner,Cause::Tls(made.unwrap_err()))); }
+    return stream_from_session(state,owner,made.unwrap(),socket,context.io_bytes());
 }
 fn close_accepted(state: &State, socket: &std::socket::Socket, cause: Cause) -> Failure {
     let closed = socket.close(); let cleanup: core::option::Option<core::io::Error> = core::option::None();

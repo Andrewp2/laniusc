@@ -27,9 +27,13 @@ separate passing receipts and corrected legacy test-peer fixture.
 [Server TLS](extended-openssl-tls-server.md) now passes six native groups and
 53 cases, including certificate/key validation, encrypted passphrases without
 prompts, context retention, stable retries and native/allocation cleanup.
-Its explicit policy does not authenticate clients. Mandatory client trust and
-identity rejection still passes after introducing session roles. Mutual TLS,
-standalone encryption/signature APIs and certificate trust APIs outside TLS
+Its `Unauthenticated` policy leaves client authentication to the application.
+[Required-client mutual TLS](extended-openssl-mutual-tls.md) now passes six
+groups and 107 cases, using OpenSSL for client credentials, chain/purpose/time
+checks and required peer presence. Required servers disable resumption for
+fresh authentication; verified chains do not grant application authorization.
+The existing client trust/identity and ordinary server regression gates pass.
+Standalone encryption/signature APIs and certificate trust APIs outside TLS
 remain work. The [TLS stream/HTTPS application](extended-https-fetch.md)
 executes 62 cases across four groups on Linux x86_64, with a numeric endpoint,
 explicit trust/identity, deadline/resource limits and manual owner cleanup.

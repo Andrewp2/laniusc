@@ -321,8 +321,11 @@
         "docs/stdlib-iterator-transfer.md",
         "docs/stdlib-iterator-collection-sinks.md",
         "docs/stdlib-owning-iterators.md",
-        "docs/stdlib-iterator-sources.md"
-      ]
+        "docs/stdlib-iterator-sources.md",
+        "docs/stdlib-iterator-lookahead.md",
+        "docs/stdlib-column-extrema.md"
+      ],
+      "note": "Peekable borrows its upstream cursor and exposes borrowed shallow observations. For owning sources, cached-item recovery transfers that item's cleanup authority; finish rejects a populated cache or closes only the adapter without polling upstream. Position search uses relative checked u64 indices; minimum keeps the first tied representative and maximum the last. Reductions retain the existing caller-managed ownership policy; the guides define source resumption, callback order, overflow and focused native evidence."
     },
     "core::math": {
       "guides": [
@@ -676,6 +679,13 @@
         "docs/extended-kv.md"
       ]
     },
+    "ext::lexer": {
+      "guides": [
+        "docs/extended-lexer.md",
+        "docs/extended-lex-scan.md"
+      ],
+      "note": "Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-prefix search. The longest byte span wins, with declaration order resolving ties; skip rules consume input and empty winners or unmatched input are terminal errors. Cursors borrow the compiled Lexer and validated immutable input, and tokens borrow input bytes. Construction, input, step, token, search-call and reserved VM-allowance limits are explicit; the guides define allocation costs, work-counter scope and the current execution evidence."
+    },
     "ext::linalg": {
       "guides": [
         "docs/extended-linalg.md"
@@ -698,9 +708,11 @@
       "guides": [
         "docs/extended-openssl-tls.md",
         "docs/extended-openssl-tls-server.md",
+        "docs/extended-openssl-mutual-tls.md",
+        "docs/extended-https-mutual-tls.md",
         "docs/library-native-c.md"
       ],
-      "note": "Client and server TLS execute through OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. The server's six native groups pass 53 cases for credentials, noninteractive encrypted keys, binary transfers, closure/truncation, retry stability and native/allocation cleanup. Mandatory client trust/identity rejection also passes after adding explicit session roles. Manual contexts/sessions borrow connected nonblocking sockets; callers provide deadlines and SIGPIPE policy. Server client authentication is explicitly Unauthenticated; mTLS, callbacks and broader security APIs remain separate work."
+      "note": "Client, server and mutual TLS use OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Client credentials preserve mandatory server chain and DNS/IP verification. Server policy explicitly selects Unauthenticated or Required trust; required sessions check native client purpose, verification success and certificate presence, with session caching and tickets disabled. Certificate admission does not assign an application principal or authorize routes. Both roles share noninteractive credential loading and native passphrase cleansing. Manual sessions borrow connected nonblocking sockets; callers supply deadlines and SIGPIPE policy. Linked guides define later-alert handling, native resource bounds and separate execution receipts."
     },
     "ext::parse": {
       "guides": [
@@ -730,9 +742,10 @@
     "ext::regex": {
       "guides": [
         "docs/extended-regex.md",
-        "docs/extended-regex-text.md"
+        "docs/extended-regex-text.md",
+        "docs/extended-lexer.md"
       ],
-      "note": "The read-only search_work_limit accessor exposes the existing per-search VM allowance for aggregate adapters. Bounded split/replacement reuse the canonical Matches cursor; no new matcher or capture engine is introduced."
+      "note": "The read-only search_work_limit accessor exposes the existing per-search VM allowance for aggregate adapters. Validated Input and anchored longest-prefix methods reuse the existing ordered Pike engine while preserving full-input assertions and capture priority on equal endpoints; ordinary find and Matches retain leftmost-first behavior. The lexer guide defines endpoint selection and borrowed input lifetime. Bounded split/replacement continue to reuse the canonical Matches cursor."
     },
     "ext::regex_text": {
       "guides": [
@@ -806,9 +819,11 @@
         "docs/extended-https-fetch.md",
         "docs/extended-openssl-tls.md",
         "docs/extended-https-server.md",
-        "docs/extended-openssl-tls-server.md"
+        "docs/extended-openssl-tls-server.md",
+        "docs/extended-openssl-mutual-tls.md",
+        "docs/extended-https-mutual-tls.md"
       ],
-      "note": "Shared buffered client/server TLS streams execute on Linux x86_64 through OpenSSL 3. HTTPS GET passes 62 cases across four groups after the context ownership change; the bounded HTTPS health/echo service passes 106 cases across four groups. Server construction consumes its socket on every result and retains a native context reference; streams own only their optional client context. Deadlines, byte/call budgets and manual cleanup are explicit. TLS and sensitive operations remain in OpenSSL; mutual TLS, automatic resolution, redirects, keepalive and concurrent scheduling remain separate work."
+      "note": "Shared buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_context_until borrows a prepared client Context on every outcome, derives queue/read caps from that Context and retains a native reference through a successful Session. The ordinary connector owns its optional client Context; accepted server construction consumes its socket on every result and retains a native context reference. One absolute deadline and explicit byte/call budgets cover connection and handshake. Linked guides define buffered acceptance, stable retries, manual cleanup, mutual TLS policy and separate application/prepared-context execution receipts; TLS and sensitive operations remain in OpenSSL."
     },
     "ext::toml": {
       "guides": [

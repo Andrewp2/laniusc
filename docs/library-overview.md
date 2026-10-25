@@ -41,6 +41,10 @@ and enumeration, including arithmetic and output failures.
 [Selection, searches and folds](stdlib-iterator-selection.md) add lazy
 filtering and typed short circuits. The [column-sum program](stdlib-column-sum.md)
 combines text splitting, filtering, Result items and checked reduction.
+[Lookahead and extrema](stdlib-iterator-lookahead.md) add a recoverable one-item
+cache, relative position searches and explicit minimum/maximum tie policies.
+The [column extrema program](stdlib-column-extrema.md) reports checked counts,
+values and physical source rows, including input, allocation and output failures.
 [Fallible collection](stdlib-iterator-transfer.md) transfers items into
 vectors and deques with explicit progress and rejected-item recovery. The
 [word sorter](stdlib-sort-words.md) collects borrowed text before sorting.
@@ -90,12 +94,19 @@ verification/HTTP failures, limits and binary response framing. The application
 uses a numeric endpoint, explicit trust/peer identity, bounded deadlines and
 manual socket/TLS/buffer cleanup. [Server TLS](extended-openssl-tls-server.md)
 also passes six native groups and 53 cases, including credential validation,
-stable retries and native/allocation cleanup. Its explicit server policy does
-not authenticate clients; the existing client trust/identity rejection gate
-still passes. Mutual TLS, standalone encryption/signature APIs and certificate
-trust APIs outside TLS remain work. The
+stable retries and native/allocation cleanup. The explicit unauthenticated
+server policy remains available. [Mutual TLS](extended-openssl-mutual-tls.md)
+adds required client-chain verification and client credentials through OpenSSL,
+with 107 cases across six groups. Required authentication disables resumption
+and checks each fresh peer; certificate verification does not assign an
+application principal or authorization. Standalone encryption/signature APIs
+and certificate trust APIs outside TLS remain work. The
 [bounded HTTPS health/echo service](extended-https-server.md) passes 106 cases
 across four groups using the shared TLS stream and canonical HTTP codec.
+[Prepared client contexts and mutual-TLS HTTPS modes](extended-https-mutual-tls.md)
+add 109 process cases across four groups. The client can present an explicit
+certificate/key pair while still verifying the server; the service can require
+client certificates from an explicit CA file before processing HTTP.
 The [remaining native prerequisites](library-native-integration-prerequisites.md)
 record those boundaries. Native linking now spools opaque original/replay
 sections and supports source packs above one resident unit, while source
@@ -125,6 +136,19 @@ reference cases, Unicode and empty-match tables, every reached allocation
 failure and a binary stdin/stdout rewrite program. Search work is a
 conservative reservation of per-search VM allowances, not a total CPU or I/O
 budget.
+
+[Reusable lexical scanning](extended-lexer.md) selects the longest anchored
+regex span at each position, with declaration-order ties, borrowed UTF-8
+tokens and explicit progress, call and work limits. It shares the canonical
+regex engine and validates each input once. Five native groups pass through
+separate receipts, including 576 independent model cases, 63 edge tables and
+all 120 allocation failures reached by the focused fixtures. Probes still
+allocate matcher scratch, and competing patterns can rescan input; this is
+not an allocation-free or whole-input linear-time claim.
+The [CSV-rules lexer program](extended-lex-scan.md) emits staged token spans or
+per-kind counts through bounded native I/O. Its five groups pass, including
+124 grammar inputs in both modes, all 60 allocation-failure positions across
+the two output modes, injected I/O failures and a measured 4,096-token run.
 
 The [CSV report application](csv-report.md) combines streams, UTF-8 text,
 checked decimal parsing, generic collections, CSV and JSON to validate and

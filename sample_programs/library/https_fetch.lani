@@ -18,8 +18,8 @@ import std::clock;
 import std::signal;
 import std::stream;
 
-enum Error { Arguments, Limit, Allocation, Clock, Http(ext::http::Error), Transport(ext::tls_stream::Failure), Output }
-struct Options { endpoint: core::slice::View<u8>, peer: core::slice::View<u8>, ca: core::slice::View<u8>, target: core::slice::View<u8>, operands: i32, help: bool, timeout: i32, max_response: i32, max_body: i32, max_output: i32, max_io: u64, max_tls: u64, max_work: u64, stdout_calls: i32 }
+enum Error { Arguments, Limit, Allocation, Clock, Http(ext::http::Error), Tls(ext::openssl_tls::Error), Transport(ext::tls_stream::Failure), Output }
+struct Options { endpoint: core::slice::View<u8>, peer: core::slice::View<u8>, ca: core::slice::View<u8>, target: core::slice::View<u8>, client_cert: core::option::Option<core::slice::View<u8>>, client_key: core::option::Option<core::slice::View<u8>>, operands: i32, help: bool, timeout: i32, max_response: i32, max_body: i32, max_output: i32, max_io: u64, max_tls: u64, max_work: u64, stdout_calls: i32 }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 struct Work { used: u64, maximum: u64 }
 impl Work { fn borrow(&self) -> &Work { return self; } }
@@ -39,6 +39,20 @@ fn write_stdout(bytes: core::slice::View<u8>, calls: i32, handle: i32) -> bool {
     return true;
 }
 fn report(status: i32, text: core::slice::View<u8>) -> i32 { write_stdout(text,8,2); return status; }
+fn native_tls_error(error: ext::openssl_tls::Error) -> i32 {
+    return match (error.cause) {
+        ext::openssl_tls::Cause::Verification -> report(3,literal("https-fetch: certificate verification failed\n",45)),
+        ext::openssl_tls::Cause::PeerCertificate -> report(3,literal("https-fetch: peer certificate missing\n",38)),
+        ext::openssl_tls::Cause::Truncated -> report(3,literal("https-fetch: truncated TLS stream\n",34)),
+        ext::openssl_tls::Cause::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)),
+        ext::openssl_tls::Cause::Identity -> report(2,literal("https-fetch: invalid peer identity\n",35)),
+        ext::openssl_tls::Cause::Utf8 -> report(2,literal("https-fetch: invalid TLS path or identity\n",42)),
+        ext::openssl_tls::Cause::Limit -> report(2,literal("https-fetch: invalid TLS configuration\n",39)),
+        ext::openssl_tls::Cause::InvalidLimits -> report(2,literal("https-fetch: invalid TLS configuration\n",39)),
+        ext::openssl_tls::Cause::Nul -> report(2,literal("https-fetch: invalid TLS configuration\n",39)),
+        _ -> report(3,literal("https-fetch: TLS operation failed\n",34))
+    };
+}
 fn tls_error(failure: ext::tls_stream::Failure) -> i32 {
     return match (failure.cause) {
         ext::tls_stream::Cause::InvalidLimits -> report(2,literal("https-fetch: invalid limits\n",28)),
@@ -48,18 +62,7 @@ fn tls_error(failure: ext::tls_stream::Failure) -> i32 {
         ext::tls_stream::Cause::TlsLimit -> report(2,literal("https-fetch: TLS call limit exceeded\n",37)),
         ext::tls_stream::Cause::ReadLimit -> report(2,literal("https-fetch: response limit exceeded\n",37)),
         ext::tls_stream::Cause::WriteLimit -> report(2,literal("https-fetch: request limit exceeded\n",36)),
-        ext::tls_stream::Cause::Tls(error) -> match (error.cause) {
-            ext::openssl_tls::Cause::Verification -> report(3,literal("https-fetch: certificate verification failed\n",45)),
-            ext::openssl_tls::Cause::PeerCertificate -> report(3,literal("https-fetch: peer certificate missing\n",38)),
-            ext::openssl_tls::Cause::Truncated -> report(3,literal("https-fetch: truncated TLS stream\n",34)),
-            ext::openssl_tls::Cause::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)),
-            ext::openssl_tls::Cause::Identity -> report(2,literal("https-fetch: invalid peer identity\n",35)),
-            ext::openssl_tls::Cause::Utf8 -> report(2,literal("https-fetch: invalid TLS path or identity\n",42)),
-            ext::openssl_tls::Cause::Limit -> report(2,literal("https-fetch: invalid TLS configuration\n",39)),
-            ext::openssl_tls::Cause::InvalidLimits -> report(2,literal("https-fetch: invalid TLS configuration\n",39)),
-            ext::openssl_tls::Cause::Nul -> report(2,literal("https-fetch: invalid TLS configuration\n",39)),
-            _ -> report(3,literal("https-fetch: TLS operation failed\n",34))
-        },
+        ext::tls_stream::Cause::Tls(error) -> native_tls_error(error),
         _ -> report(3,literal("https-fetch: network operation failed\n",38))
     };
 }
@@ -69,6 +72,7 @@ fn error(error: Error) -> i32 { return match (error) {
     Error::Allocation -> report(4,literal("https-fetch: allocation failed\n",31)),
     Error::Clock -> report(3,literal("https-fetch: monotonic clock failed\n",36)),
     Error::Http(detail) -> match (detail) { ext::http::Error::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)), ext::http::Error::Limit(n) -> report(2,literal("https-fetch: HTTP limit exceeded\n",33)), _ -> report(3,literal("https-fetch: invalid or incomplete HTTP response\n",49)) },
+    Error::Tls(detail) -> native_tls_error(detail),
     Error::Transport(failure) -> tls_error(failure),
     Error::Output -> report(5,literal("https-fetch: output I/O or call limit failed\n",45))
 }; }
@@ -171,7 +175,20 @@ fn receive(stream: &ext::tls_stream::Stream, options: &Options, limits: ext::htt
     }
     return core::result::Err(Error::Arguments);
 }
+fn connect_profile(options: &Options, endpoint: core::net::SocketAddr, identity: ext::openssl_tls::Identity, limits: ext::tls_stream::Limits, deadline: core::time::Deadline) -> core::result::Result<ext::tls_stream::Stream,Error> {
+    if (options.client_cert.is_none()) {
+        let connected: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::connect_until(endpoint,ext::openssl_tls::Trust::CaFile(options.ca),identity,ext::openssl_tls::default_limits(),limits,deadline);
+        if (connected.is_err()) { return core::result::Err(Error::Transport(connected.unwrap_err())); } return core::result::Ok(connected.unwrap());
+    }
+    let created: core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> = ext::openssl_tls::new_with_credentials(ext::openssl_tls::Trust::CaFile(options.ca),options.client_cert.unwrap(),options.client_key.unwrap(),literal("",0),ext::openssl_tls::default_limits());
+    if (created.is_err()) { return core::result::Err(Error::Tls(created.unwrap_err())); } let context = created.unwrap();
+    let connected: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::connect_with_context_until(endpoint,context.borrow(),identity,limits,deadline);
+    context.destroy();
+    if (connected.is_err()) { return core::result::Err(Error::Transport(connected.unwrap_err())); } return core::result::Ok(connected.unwrap());
+}
 fn fetch(options: &Options) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (options.client_cert.is_some() != options.client_key.is_some()) { return core::result::Err(Error::Arguments); }
+    if (options.client_cert.is_some() && (options.client_cert.unwrap().is_empty() || options.client_key.unwrap().is_empty())) { return core::result::Err(Error::Arguments); }
     let endpoint = core::net::parse_socket(options.endpoint); if (endpoint.is_err() || endpoint.unwrap().port() == 0 || options.peer.is_empty() || options.ca.is_empty()) { return core::result::Err(Error::Arguments); }
     let limits: ext::http::Limits = ext::http::default_limits(); limits.head_bytes = 16384; limits.headers = 64; limits.trailers = 16; limits.body_bytes = options.max_body;
     let encoded = request(options,endpoint.unwrap(),limits); if (encoded.is_err()) { return encoded; }
@@ -183,8 +200,8 @@ fn fetch(options: &Options) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
     let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Dns(options.peer);
     if (core::net::parse_ip(options.peer).is_ok()) { identity = ext::openssl_tls::Identity::Ip(options.peer); }
     let transport: ext::tls_stream::Limits = ext::tls_stream::Limits { io_calls: options.max_io, tls_calls: options.max_tls, read_bytes: (options.max_response as u64) + 1, written_bytes: request.len() as u64 };
-    let connected = ext::tls_stream::connect_until(endpoint.unwrap(),ext::openssl_tls::Trust::CaFile(options.ca),identity,ext::openssl_tls::default_limits(),transport,shifted.unwrap());
-    if (connected.is_err()) { request.destroy(); return core::result::Err(Error::Transport(connected.unwrap_err())); }
+    let connected: core::result::Result<ext::tls_stream::Stream,Error> = connect_profile(options,endpoint.unwrap(),identity,transport,shifted.unwrap());
+    if (connected.is_err()) { request.destroy(); return core::result::Err(connected.unwrap_err()); }
     let stream: ext::tls_stream::Stream = connected.unwrap();
     let sent = core::io::write_all(stream.borrow(),request.as_slice(),0,request.len()); request.destroy();
     if (sent.is_err() || stream.flush().is_err()) { let failed: Error = stream_error(stream.borrow()); stream.close(); return core::result::Err(failed); }
@@ -199,6 +216,8 @@ fn fetch(options: &Options) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
 fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
     if (item.id == 1) { options.help = true; return true; }
     let argument: ext::cli::Argument = item.value.unwrap(); let bytes: core::slice::View<u8> = argument.bytes;
+    if (item.id == 10) { options.client_cert = core::option::Some(bytes); return true; }
+    if (item.id == 11) { options.client_key = core::option::Some(bytes); return true; }
     let parsed = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
     if (parsed.is_err() || parsed.unwrap() > 2147483647 as u64) { return false; } let value: u64 = parsed.unwrap();
     if (item.id == 2) { if (value > 60000 as u64) { return false; } options.timeout = value as i32; }
@@ -213,7 +232,7 @@ fn operand(options: &Options, bytes: core::slice::View<u8>) -> bool {
     options.operands += 1; return options.operands <= 4;
 }
 fn arguments(values: std::args::Arguments) -> i32 {
-    let specs: [ext::cli::Spec; 9] = [
+    let specs: [ext::cli::Spec; 11] = [
         ext::cli::Spec { id: 1, long: literal("help",4), short: 104, arity: ext::cli::Arity::Flag },
         ext::cli::Spec { id: 2, long: literal("timeout",7), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 3, long: literal("max-response",12), short: 0, arity: ext::cli::Arity::Required },
@@ -222,10 +241,12 @@ fn arguments(values: std::args::Arguments) -> i32 {
         ext::cli::Spec { id: 6, long: literal("max-tls",7), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 7, long: literal("max-work",8), short: 0, arity: ext::cli::Arity::Required },
         ext::cli::Spec { id: 8, long: literal("max-output",10), short: 0, arity: ext::cli::Arity::Required },
-        ext::cli::Spec { id: 9, long: literal("max-stdout-calls",16), short: 0, arity: ext::cli::Arity::Required }
+        ext::cli::Spec { id: 9, long: literal("max-stdout-calls",16), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: literal("client-cert",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 11, long: literal("client-key",10), short: 0, arity: ext::cli::Arity::Required }
     ];
-    let parser = ext::cli::parser(values.as_view(),core::slice::view(specs,9).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
-    let options: Options = Options { endpoint: literal("",0), peer: literal("",0), ca: literal("",0), target: literal("",0), operands: 0, help: false, timeout: 5000, max_response: 2097152, max_body: 1048576, max_output: 1048576, max_io: 65536, max_tls: 32768, max_work: 67108864, stdout_calls: 65536 };
+    let parser = ext::cli::parser(values.as_view(),core::slice::view(specs,11).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    let options: Options = Options { endpoint: literal("",0), peer: literal("",0), ca: literal("",0), target: literal("",0), client_cert:core::option::None(),client_key:core::option::None(),operands: 0, help: false, timeout: 5000, max_response: 2097152, max_body: 1048576, max_output: 1048576, max_io: 65536, max_tls: 32768, max_work: 67108864, stdout_calls: 65536 };
     while (true) {
         let parsed = parser.next(); if (parsed.is_err()) { return error(Error::Arguments); }
         let next: core::option::Option<ext::cli::Event> = parsed.unwrap(); if (next.is_none()) { break; }
@@ -233,7 +254,7 @@ fn arguments(values: std::args::Arguments) -> i32 {
         if (!valid) { return error(Error::Arguments); }
     }
     if (options.help) {
-        let usage: core::slice::View<u8> = literal("Usage: https-fetch ADDRESS PEER CA_FILE TARGET [OPTIONS]\nOptions: --timeout MS --max-response N --max-body N --max-io N --max-tls N\n         --max-work N --max-output N --max-stdout-calls N\n",190);
+        let usage: core::slice::View<u8> = literal("Usage: https-fetch ADDRESS PEER CA_FILE TARGET [OPTIONS]\nOptions: --timeout MS --max-response N --max-body N --max-io N --max-tls N\n         --max-work N --max-output N --max-stdout-calls N\n         --client-cert CHAIN --client-key KEY\n",236);
         if (!write_stdout(usage,options.stdout_calls,1)) { return error(Error::Output); } return 0;
     }
     if (options.operands != 4) { return error(Error::Arguments); }

@@ -12,6 +12,8 @@ pub enum Error { Syntax(i32), Unsupported(i32), Limit(i32), AllocationFailed, Bo
 pub struct Options { multiline: bool, dot_matches_newline: bool, max_pattern_bytes: i32, max_states: i32, max_depth: i32, max_captures: i32, max_repeat: i32, max_work: i32 }
 pub struct Span { start: i32, end: i32 }
 pub struct Match { captures: alloc::vec::Vec<i32> }
+// Validated borrowed text. Keep backing alive and unchanged; do not forge fields.
+pub struct Input { text: core::text::Text }
 // Internal storage is public only because the language has no opaque fields.
 // Do not forge/mutate these records. Copies alias a single explicit owner.
 pub struct Regex { code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, entry: i32, groups: i32, config: Options }
@@ -36,6 +38,11 @@ fn validate(text: core::text::Text) -> core::result::Result<core::text::Text, Er
     return match (result) { core::result::Ok(value) -> core::result::Ok(value), core::result::Err(error) -> match (error) {
         core::text::Error::InvalidUtf8(at) -> core::result::Err(Error::InvalidUtf8(at)), _ -> core::result::Err(Error::Bounds)
     } };
+}
+pub fn input(text: core::text::Text) -> core::result::Result<Input, Error> {
+    let checked = validate(text);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(Input { text: checked.unwrap() });
 }
 fn literal_node(value: u32) -> Node { return Node { op: 1, left: 0, right: 0, a: value as i32, b: 0, flag: false }; }
 fn simple_node(op: i32) -> Node { return Node { op: op, left: 0, right: 0, a: 0, b: 0, flag: false }; }
@@ -473,7 +480,7 @@ pub impl Regex {
         if (inst.flag) { return !found; }
         return found;
     }
-    fn search(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
+    fn search(&self, text: core::text::Text, start: i32, longest_prefix: bool) -> core::result::Result<core::option::Option<Match>, Error> {
         let allocated: core::result::Result<Scratch, Error> = scratch(self.code.len(), self.groups * 2, self.config.max_work);
         if (core::result::is_err(allocated)) { return core::result::Err(core::result::unwrap_err(allocated)); }
         let scratch: Scratch = core::result::unwrap(allocated); let current_count: i32 = 0; let position: i32 = start; let matched: bool = false;
@@ -482,7 +489,7 @@ pub impl Regex {
             let current: [i32] = scratch.current.as_slice(); let current_caps: [i32] = scratch.current_caps.as_slice();
             let next: [i32] = scratch.next.as_slice(); let next_caps: [i32] = scratch.next_caps.as_slice();
             let temp: [i32] = scratch.temporary.as_slice(); let candidate: [i32] = scratch.candidate.as_slice();
-            if (!matched) {
+            if ((!longest_prefix && !matched) || (longest_prefix && position == start)) {
                 let i: i32 = 0; while (i < scratch.slots) { temp[i] = -1; i += 1; }
                 current_count = self.closure(scratch.borrow(), self.entry, temp, 0, current, current_caps, current_count, text, position);
             }
@@ -493,7 +500,14 @@ pub impl Regex {
             if (position < text.length) { following += core::utf8::encoded_len_or(scalar, 0) as i32; }
             while (i < current_count && !scratch.failed) {
                 let inst: Inst = code[current[i]];
-                if (inst.op == 13) { copy_slots(current_caps, i * scratch.slots, candidate, 0, scratch.slots); matched = true; break; }
+                if (inst.op == 13) {
+                    if (!longest_prefix || !matched || position > candidate[1]) { copy_slots(current_caps, i * scratch.slots, candidate, 0, scratch.slots); }
+                    matched = true;
+                    if (!longest_prefix) { break; }
+                    // Longest mode keeps lower-priority consuming threads alive.
+                    // Equal endpoints retain the first ordered Pike captures.
+                    i += 1; continue;
+                }
                 if (!scratch.tick()) { break; }
                 if (position < text.length && self.consumes(inst, scalar, scratch.borrow())) {
                     next_count = self.closure(scratch.borrow(), inst.x, current_caps, i * scratch.slots, next, next_caps, next_count, text, following);
@@ -501,7 +515,7 @@ pub impl Regex {
                 i += 1;
             }
             if (scratch.failed) { scratch.destroy(); return core::result::Err(Error::WorkLimit); }
-            if ((matched && next_count == 0) || position == text.length) { break; }
+            if (((longest_prefix || matched) && next_count == 0) || position == text.length) { break; }
             scratch.swap_lists(); current_count = next_count; position = following;
         }
         if (!matched) { scratch.destroy(); return core::result::Ok(core::option::None()); }
@@ -513,8 +527,21 @@ pub impl Regex {
         let checked: core::result::Result<core::text::Text, Error> = validate(text);
         if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
         if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return core::result::Err(Error::Bounds); }
-        return self.search(text, start);
+        return self.search(text, start, false);
     }
+    // Anchored at start, with the longest endpoint and ordinary Pike capture
+    // priority on ties. Assertions retain the complete validated input context.
+    pub fn longest_prefix_in(&self, input: Input, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
+        let text = input.text;
+        if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return core::result::Err(Error::Bounds); }
+        return self.search(text, start, true);
+    }
+    pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
+        let checked = input(text);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        return self.longest_prefix_in(checked.unwrap(),start);
+    }
+    pub fn longest_prefix(&self, text: core::text::Text) -> core::result::Result<core::option::Option<Match>, Error> { return self.longest_prefix_from(text,0); }
     pub fn find(&self, text: core::text::Text) -> core::result::Result<core::option::Option<Match>, Error> { return self.find_from(text, 0); }
     pub fn is_match(&self, text: core::text::Text) -> core::result::Result<bool, Error> {
         let found: core::result::Result<core::option::Option<Match>, Error> = self.find(text);
@@ -543,7 +570,7 @@ pub impl Match {
 pub impl Matches {
     pub fn next(&self) -> core::result::Result<core::option::Option<Match>, Error> {
         if (self.done) { return core::result::Ok(core::option::None()); }
-        let result: core::result::Result<core::option::Option<Match>, Error> = self.regex.search(self.text, self.position);
+        let result: core::result::Result<core::option::Option<Match>, Error> = self.regex.search(self.text, self.position, false);
         if (core::result::is_err(result)) { self.done = true; return result; }
         let found: core::option::Option<Match> = core::result::unwrap(result);
         if (core::option::is_none(found)) { self.done = true; return result; }
