@@ -1,0 +1,63 @@
+// RFC2104 HMAC with SHA-384. Full48-byte tags,128-byte pads; no allocation.
+// Digest uses core::sha512's owned64-byte storage, length48 and a zero tail.
+module ext::hmac_sha384;
+import core::result;
+import core::sha512;
+import core::slice;
+
+pub enum Error { Bounds, LengthOverflow, Finished }
+pub struct State {
+    inner:core::sha512::State, inner_seed:core::sha512::State,
+    outer_seed:core::sha512::State, finished:bool, result:core::sha512::Digest
+}
+fn valid(v:core::slice::View<u8>)->bool { return v.start>=0 && v.length>=0 && v.start<=2147483647-v.length; }
+fn view(bytes:[u8],count:i32)->core::slice::View<u8> { return core::slice::View { values:bytes,start:0,length:count }; }
+fn hash_error(error:core::sha512::Error)->Error {
+    return match(error) { core::sha512::Error::Bounds->Error::Bounds, core::sha512::Error::LengthOverflow->Error::LengthOverflow, core::sha512::Error::Finished->Error::Finished };
+}
+// Key bytes are copied into owned keyed seeds; no input borrow survives.
+pub fn new(key:core::slice::View<u8>)->core::result::Result<State,Error> {
+    if(!valid(key)) { return core::result::Err(Error::Bounds); }
+    let block:[u8;128]=[0;128]; let i:i32=0;
+    if(key.length>128) {
+        let hashed:core::result::Result<core::sha512::Digest,core::sha512::Error> = core::sha512::digest384(key);
+        if(hashed.is_err()) { return core::result::Err(hash_error(hashed.unwrap_err())); }
+        let shortened:core::sha512::Digest=hashed.unwrap();
+        while(i<48) { block[i]=shortened.bytes[i]; i+=1; }
+    } else { while(i<key.length) { block[i]=key.values[key.start+i]; i+=1; } }
+    let inner_pad:[u8;128]=[0;128]; let outer_pad:[u8;128]=[0;128]; i=0;
+    while(i<128) { inner_pad[i]=block[i]^54; outer_pad[i]=block[i]^92; i+=1; }
+    let inner:core::sha512::State=core::sha512::new384(); let outer:core::sha512::State=core::sha512::new384();
+    inner.update(view(inner_pad,128)).unwrap(); outer.update(view(outer_pad,128)).unwrap();
+    let result:core::sha512::Digest=core::sha512::Digest { bytes:[0;64],length:48 };
+    return core::result::Ok(State { inner:inner,inner_seed:inner,outer_seed:outer,finished:false,result:result });
+}
+pub impl State {
+    pub fn borrow(&self)->&State { return self; }
+    // Metadata, lifecycle and the complete SHA-384 byte count are checked
+    // before mutation. The count includes the128-byte inner pad.
+    pub fn update(&self,input:core::slice::View<u8>)->core::result::Result<i32,Error> {
+        if(!valid(input)) { return core::result::Err(Error::Bounds); }
+        if(self.finished) { return core::result::Err(Error::Finished); }
+        let updated:core::result::Result<i32,core::sha512::Error> = self.inner.update(input);
+        if(updated.is_err()) { return core::result::Err(hash_error(updated.unwrap_err())); }
+        return core::result::Ok(updated.unwrap());
+    }
+    // Idempotent finalization returns independent owned digest bytes.
+    pub fn finish(&self)->core::sha512::Digest {
+        if(!self.finished) {
+            let middle:core::sha512::Digest=self.inner.finish(); let outer:core::sha512::State=self.outer_seed;
+            outer.update(view(middle.bytes,48)).unwrap(); self.result=outer.finish(); self.finished=true;
+        }
+        return self.result;
+    }
+    pub fn reset(&self) { self.inner=self.inner_seed; self.finished=false; }
+}
+pub fn authenticate(key:core::slice::View<u8>,message:core::slice::View<u8>)->core::result::Result<core::sha512::Digest,Error> {
+    if(!valid(key)||!valid(message)) { return core::result::Err(Error::Bounds); }
+    let made:core::result::Result<State,Error> = new(key);
+    if(made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let state:State=made.unwrap(); let updated:core::result::Result<i32,Error> = state.update(message);
+    if(updated.is_err()) { return core::result::Err(updated.unwrap_err()); }
+    return core::result::Ok(state.finish());
+}

@@ -1,0 +1,77 @@
+// Bounded binary protocol for independent RSA peers; no allocation.
+// Block header10 LEu64: keyformat(0raw/1PKCS1/2SPKI/3algorithm/4budget),
+// layout,exponent,keylen,maxMessage,work,badView,badVariant,copied,actionCount.
+// Actions8 words: digestMode,scheme,messageLen,sigLen,maxMessage,work,badView,variant.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::rsa;
+import std::stream;
+fn view(v:[u8],start:i32,n:i32)->core::slice::View<u8>{return core::slice::View{values:v,start:start,length:n};}
+fn word(v:[u8],start:i32)->u64{let n:u64=0;let i:i32=0;while(i<8){n|=(v[start+i] as u64)<<(i*8);i+=1;}return n;}
+fn fill(v:[u8],n:i32,value:u8){let i:i32=0;while(i<n){v[i]=value;i+=1;}}
+fn copy(a:[u8],b:[u8],n:i32){let i:i32=0;while(i<n){b[i]=a[i];i+=1;}}
+fn same(a:[u8],b:[u8],n:i32){let i:i32=0;while(i<n){assert(a[i]==b[i]);i+=1;}}
+fn bad(v:core::slice::View<u8>,which:i32)->core::slice::View<u8>{let b:core::slice::View<u8> =v;if(which==0){b.start=-1;}if(which==1){b.length=-1;}if(which==2){b.start=2147483647;b.length=1;}return b;}
+fn code(e:ext::rsa::Error)->u64{return match(e){ext::rsa::Error::Bounds->1,ext::rsa::Error::InvalidLimits->2,ext::rsa::Error::InputLimit->3,ext::rsa::Error::WorkLimit->4,ext::rsa::Error::InvalidModulusEncoding->5,ext::rsa::Error::UnsupportedModulus->6,ext::rsa::Error::InvalidExponent->7,ext::rsa::Error::InvalidKeyEncoding->8,ext::rsa::Error::UnsupportedAlgorithm->9,ext::rsa::Error::InvalidParameters->10,ext::rsa::Error::InvalidDigestLength->11,ext::rsa::Error::InvalidSignatureLength->12};}
+struct Output{bytes:[u8],used:i32}
+impl Output{
+ fn borrow(&self)->&Output{return self;}
+ fn flush(&self){let out:std::stream::Descriptor=std::stream::stdout();core::io::write_all<std::stream::Descriptor>(out.borrow(),self.bytes,0,self.used).unwrap();self.used=0;}
+ fn byte(&self,b:u8){if(self.used==2048){self.flush();}self.bytes[self.used]=b;self.used+=1;}
+ fn number(&self,n:u64){let i:i32=0;while(i<8){self.byte(((n>>(i*8))&255) as u8);i+=1;}}
+}
+fn main()->i32{
+ let input:std::stream::Descriptor=std::stream::stdin();let head:[u8;8]=[0;8];core::io::read_exact<std::stream::Descriptor>(input.borrow(),head,0,8).unwrap();let blocks:u64=word(head,0);assert(blocks<=1024);
+ let outgoing:[u8;2048]=[0;2048];let output:Output=Output{bytes:outgoing,used:0};let block:u64=0;
+ while(block<blocks){
+  let header:[u8;80]=[0;80];core::io::read_exact<std::stream::Descriptor>(input.borrow(),header,0,80).unwrap();
+  let format:i32=word(header,0) as i32;let layout:i32=word(header,8) as i32;let exponent:u64=word(header,16);let length:i32=word(header,24) as i32;
+  let max_message:i32=word(header,32) as i32;let work:u64=word(header,40);let target:i32=word(header,48) as i32;let variant:i32=word(header,56) as i32;let copied:bool=word(header,64)!=0;let actions:u64=word(header,72);
+  assert(format>=0&&format<=4&&layout>=0&&layout<=1&&length>=0&&length<=1100&&exponent<=4294967295&&actions<=2048);
+  let raw:[u8;1200]=[165;1200];core::io::read_exact<std::stream::Descriptor>(input.borrow(),raw,3,length).unwrap();let saved:[u8;1200]=raw;
+  let packed:[i32;300]=[0;300];let key_bytes:[u8]=raw;
+  if(layout==1){key_bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),1200);copy(raw,key_bytes,1200);assert(core::mem::slice_stride(key_bytes)==1);}else{assert(core::mem::slice_stride(key_bytes)<0);}
+  let key_view:core::slice::View<u8> =view(key_bytes,3,length);if(target!=0){key_view=bad(key_view,variant);}
+  let limits:ext::rsa::Limits=ext::rsa::Limits{max_message:max_message,max_work:work};
+  let credits:ext::rsa::Budget=ext::rsa::Budget{message_limit:max_message,work_left:work};
+  let made:core::result::Result<ext::rsa::PublicKey,ext::rsa::Error> =core::result::Err(ext::rsa::Error::InvalidKeyEncoding);
+  let status:u64=0;let bits:u64=0;let size:u64=0;let observed_exponent:u64=0;
+  if(format==4){let checked:core::result::Result<ext::rsa::Budget,ext::rsa::Error> =ext::rsa::budget(limits);if(checked.is_err()){status=code(checked.unwrap_err());}else{assert(checked.unwrap().work_left==work);}}
+  if(format==3){let scheme:core::result::Result<ext::rsa::Scheme,ext::rsa::Error> =ext::rsa::signature_scheme(key_view,credits.borrow());if(scheme.is_err()){status=code(scheme.unwrap_err());}else{bits=match(scheme.unwrap()){ext::rsa::Scheme::Pkcs1v15Sha256->1,ext::rsa::Scheme::PssSha256Salt32->2};}}
+  if(format<3){
+   if(format==0){made=ext::rsa::from_components(key_view,exponent as u32,credits.borrow());}
+   if(format==1){made=ext::rsa::parse_pkcs1_public_key(key_view,credits.borrow());}
+   if(format==2){made=ext::rsa::parse_rsae_spki(key_view,credits.borrow());}
+   if(made.is_err()){status=code(made.unwrap_err());}else{let key:ext::rsa::PublicKey=made.unwrap();bits=key.modulus_bits() as u64;size=key.signature_length() as u64;observed_exponent=key.exponent() as u64;}
+  }
+  output.number(status);output.number(credits.work_left);output.number(bits);output.number(size);output.number(observed_exponent);
+  if(actions>0){
+   assert(format<3&&made.is_ok());let original:ext::rsa::PublicKey=made.unwrap();let key:ext::rsa::PublicKey=original;
+   if(copied){original.modulus.limbs[0]^=2;original.r2.limbs[0]^=4;original.one.limbs[0]^=8;let i:i32=0;while(i<length){key_bytes[3+i]^=255;i+=1;}}
+   let action:u64=0;
+   while(action<actions){
+    let request:[u8;64]=[0;64];core::io::read_exact<std::stream::Descriptor>(input.borrow(),request,0,64).unwrap();
+    let digest:bool=word(request,0)!=0;let scheme_value:u64=word(request,8);let message_len:i32=word(request,16) as i32;let signature_len:i32=word(request,24) as i32;
+    let max_input:i32=word(request,32) as i32;let available:u64=word(request,40);let broken:i32=word(request,48) as i32;let alteration:i32=word(request,56) as i32;
+    assert(scheme_value<=1&&message_len>=0&&message_len<=17000&&signature_len>=0&&signature_len<=600);
+    let message_raw:[u8;17100]=[166;17100];let signature_raw:[u8;640]=[167;640];
+    core::io::read_exact<std::stream::Descriptor>(input.borrow(),message_raw,3,message_len).unwrap();core::io::read_exact<std::stream::Descriptor>(input.borrow(),signature_raw,3,signature_len).unwrap();
+    let message_saved:[u8;17100]=message_raw;let signature_saved:[u8;640]=signature_raw;
+    let message_words:[i32;4275]=[0;4275];let signature_words:[i32;160]=[0;160];let message:[u8]=message_raw;let signature:[u8]=signature_raw;
+    if(layout==1){message=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(message_words),17100);signature=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(signature_words),640);copy(message_raw,message,17100);copy(signature_raw,signature,640);assert(core::mem::slice_stride(message)==1&&core::mem::slice_stride(signature)==1);}else{assert(core::mem::slice_stride(message)<0&&core::mem::slice_stride(signature)<0);}
+    let mv:core::slice::View<u8> =view(message,3,message_len);let sv:core::slice::View<u8> =view(signature,3,signature_len);if(broken==1){mv=bad(mv,alteration);}if(broken==2){sv=bad(sv,alteration);}
+    let scheme:ext::rsa::Scheme=ext::rsa::Scheme::Pkcs1v15Sha256;if(scheme_value==1){scheme=ext::rsa::Scheme::PssSha256Salt32;}
+    let remaining:ext::rsa::Budget=ext::rsa::Budget{message_limit:max_input,work_left:available};let result:core::result::Result<bool,ext::rsa::Error> =core::result::Ok(false);
+    if(digest){result=key.verify_digest(scheme,mv,sv,remaining.borrow());}else{result=key.verify_sha256(scheme,mv,sv,remaining.borrow());}
+    let issue:u64=0;let accepted:u64=0;if(result.is_err()){issue=code(result.unwrap_err());}else{if(result.unwrap()){accepted=1;}}
+    output.number(issue);output.number(accepted);output.number(remaining.work_left);same(message,message_saved,17100);same(signature,signature_saved,640);action+=1;
+   }
+   if(copied){let i:i32=0;while(i<length){key_bytes[3+i]^=255;i+=1;}}
+  }
+  same(key_bytes,saved,1200);block+=1;
+ }
+ output.flush();return 0;
+}

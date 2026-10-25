@@ -1,0 +1,62 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::sha512;
+import core::slice;
+import ext::hmac_sha384;
+import ext::hkdf_sha384;
+import std::stream;
+struct Output{bytes:[u8],used:i32}
+impl Output{fn borrow(&self)->&Output{return self;}fn flush(&self){let fd:std::stream::Descriptor=std::stream::stdout();assert(core::io::write_all(fd.borrow(),self.bytes,0,self.used).is_ok());self.used=0;}fn word(&self,n:u64){if(self.used==1024){self.flush();}let i:i32=0;while(i<8){self.bytes[self.used+i]=(n>>(i*8)) as u8;i+=1;}self.used+=8;}fn digest(&self,d:core::sha512::Digest){self.word(0);self.word(d.length as u64);let i:i32=0;while(i<64){self.word(d.bytes[i] as u64);i+=1;}}fn error(&self,code:u64){self.word(code);self.word(0);}}
+fn hcode(e:ext::hmac_sha384::Error)->u64{return match(e){ext::hmac_sha384::Error::Bounds->1,ext::hmac_sha384::Error::LengthOverflow->2,ext::hmac_sha384::Error::Finished->3};}
+fn kcode(e:ext::hkdf_sha384::Error)->u64{return match(e){ext::hkdf_sha384::Error::Bounds->11,ext::hkdf_sha384::Error::PrkTooShort->12,ext::hkdf_sha384::Error::OutputLimit->13,ext::hkdf_sha384::Error::Hash(e)->20+hcode(e)};}
+fn word(bytes:[u8],at:i32)->u64{let n:u64=0;let i:i32=0;while(i<8){n|=(bytes[at+i] as u64)<<(i*8);i+=1;}return n;}
+fn bit(b:bool)->u64{if(b){return 1;}return 0;}
+fn view(bytes:[u8],at:i32,n:i32)->core::slice::View<u8>{return core::slice::View<u8>{values:bytes,start:at,length:n};}
+fn region(v:core::slice::View<u8>,at:i32,n:i32)->core::slice::View<u8>{return core::slice::View<u8>{values:v.values,start:v.start+at,length:n};}
+fn capture_sha(s:core::sha512::State,words:[u64],at:i32){
+ words[at]=s.h0;words[at+1]=s.h1;words[at+2]=s.h2;words[at+3]=s.h3;words[at+4]=s.h4;words[at+5]=s.h5;words[at+6]=s.h6;words[at+7]=s.h7;words[at+8]=s.byte_low;words[at+9]=s.byte_high;words[at+10]=s.used as u64;words[at+11]=bit(s.finished);words[at+12]=s.output_length as u64;let i:i32=0;while(i<128){words[at+13+i]=s.block[i] as u64;i+=1;}
+}
+fn capture(s:&ext::hmac_sha384::State,words:[u64]){capture_sha(s.inner,words,0);capture_sha(s.inner_seed,words,141);capture_sha(s.outer_seed,words,282);words[423]=bit(s.finished);words[424]=s.result.length as u64;let i:i32=0;while(i<64){words[425+i]=s.result.bytes[i] as u64;i+=1;}}
+fn unchanged(s:&ext::hmac_sha384::State,before:[u64]){let after:[u64;489]=[0;489];capture(s,after);let i:i32=0;while(i<489){assert(after[i]==before[i]);i+=1;}}
+fn run(h:[u8],input:[u8],out:&Output){
+ let op:i32=word(h,0) as i32;let layout:i32=word(h,8) as i32;let mode:i32=word(h,16) as i32;let param:i32=word(h,24) as i32;let output_length:i32=word(h,32) as i32;let an:i32=word(h,40) as i32;let bn:i32=word(h,48) as i32;let cn:i32=word(h,56) as i32;
+ let stack:[u8;4096]=[165;4096];let packed:[i32;1024]=[0;1024];let bytes:[u8]=stack;if(layout==1){bytes=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed),4096);}let i:i32=0;while(i<4096){bytes[i]=165;i+=1;}
+ i=0;while(i<an){bytes[3+i]=input[i];i+=1;}i=0;while(i<bn){bytes[1031+i]=input[an+i];i+=1;}i=0;while(i<cn){bytes[2059+i]=input[an+bn+i];i+=1;}
+ let a:core::slice::View<u8> = view(bytes,3,an);let b:core::slice::View<u8> = view(bytes,1031,bn);let c:core::slice::View<u8> = view(bytes,2059,cn);
+ if(mode==1){a.start=-1;}if(mode==2){a.length=-1;}if(mode==3){a.start=2147483647;a.length=1;}if(mode==4){b.start=-1;}if(mode==5){b.length=-1;}if(mode==6){c.start=-1;}
+ if(op==0){let tag:core::result::Result<core::sha512::Digest,ext::hmac_sha384::Error> = ext::hmac_sha384::authenticate(a,b);if(tag.is_err()){out.error(hcode(tag.unwrap_err()));}else{out.digest(tag.unwrap());}}
+ if(op==1){
+  let state:ext::hmac_sha384::State=ext::hmac_sha384::new(a).unwrap();let split:i32=bn/2;assert(state.update(region(b,0,split)).unwrap()==split);let fork:ext::hmac_sha384::State=state;
+  i=0;while(i<an){bytes[3+i]^=255;i+=1;}i=0;while(i<split){bytes[1031+i]^=255;i+=1;}
+  let at:i32=split;while(at<bn){let n:i32=param;if(n>bn-at){n=bn-at;}assert(state.update(region(b,at,n)).unwrap()==n);let j:i32=0;while(j<n){bytes[1031+at+j]^=255;j+=1;}at+=n;}
+  let tag:core::sha512::Digest=state.finish();let retained:core::sha512::Digest=tag;let changed:core::sha512::Digest=tag;changed.bytes[0]^=128;changed.bytes[63]^=1;out.digest(tag);out.digest(state.finish());
+  let before:[u64;489]=[0;489];capture(state.borrow(),before);let ended:core::result::Result<i32,ext::hmac_sha384::Error> = state.update(region(b,0,0));assert(ended.is_err());out.error(hcode(ended.unwrap_err()));unchanged(state.borrow(),before);let bad:core::slice::View<u8> = b;bad.start=-1;let rejected:core::result::Result<i32,ext::hmac_sha384::Error> = state.update(bad);assert(rejected.is_err());out.error(hcode(rejected.unwrap_err()));unchanged(state.borrow(),before);
+  assert(fork.update(c).unwrap()==cn);out.digest(fork.finish());i=0;while(i<bn){bytes[1031+i]^=255;i+=1;}
+  state.reset();out.digest(state.finish());state.reset();assert(state.update(b).unwrap()==bn);out.digest(state.finish());let other:core::sha512::Digest=ext::hmac_sha384::authenticate(c,b).unwrap();out.digest(other);out.digest(retained);out.digest(changed);
+  i=0;while(i<an){bytes[3+i]^=255;i+=1;}
+ }
+ if(op==6){let made:core::result::Result<ext::hmac_sha384::State,ext::hmac_sha384::Error> = ext::hmac_sha384::new(a);if(made.is_err()){out.error(hcode(made.unwrap_err()));}else{let state:ext::hmac_sha384::State=made.unwrap();out.digest(state.finish());}}
+ if(op==2){let tag:core::result::Result<core::sha512::Digest,ext::hkdf_sha384::Error> = ext::hkdf_sha384::extract(a,b);if(tag.is_err()){out.error(kcode(tag.unwrap_err()));}else{out.digest(tag.unwrap());}}
+ if(op==3||op==4){
+  let os:[u8;12256]=[165;12256];let ow:[i32;3064]=[0;3064];let ob:[u8]=os;if(layout==1){ob=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(ow),12256);}i=0;while(i<12256){ob[i]=165;i+=1;}
+  let output:core::slice::View<u8> = view(ob,5,output_length);if(mode==7){output.start=-1;}if(mode==8){output.length=-1;}if(mode==9){output.start=2147483647;output.length=1;}
+  let result:core::result::Result<i32,ext::hkdf_sha384::Error> = core::result::Ok(0);if(op==3){result=ext::hkdf_sha384::expand(a,b,output);}else{result=ext::hkdf_sha384::derive(a,b,c,output);}if(result.is_err()){out.error(kcode(result.unwrap_err()));}else{out.word(0);out.word(result.unwrap() as u64);}
+  i=0;while(i<12256){let n:u64=0;let j:i32=0;while(j<8){n|=(ob[i+j] as u64)<<(j*8);j+=1;}out.word(n);i+=8;}
+ }
+ if(op==5){
+  // Explicit private-counter seam. These are fabricated historical counts,
+  // not hashes/MACs of huge messages. Never finalize the fabricated state.
+  let state:ext::hmac_sha384::State=ext::hmac_sha384::new(a).unwrap();let high:u64=2305843009213693951;state.inner.byte_low=18446744073709551615;state.inner.byte_high=high;state.inner.used=127;
+  if(param==1){state.inner.byte_high=0;}if(param==2){state.inner.byte_low=0;state.inner.byte_high=2305843009213693952;state.inner.used=0;}if(param==3){state.inner.byte_high=2305843009213693950;}if(param==4){state.inner.byte_low=18446744073709551614;state.inner.used=126;}if(param==6){state.finished=true;}
+  let before:[u64;489]=[0;489];capture(state.borrow(),before);let update:core::slice::View<u8> = region(b,0,1);if(param==2){update=region(b,0,0);}if(param==5){update.start=-1;}
+  let result:core::result::Result<i32,ext::hmac_sha384::Error> = state.update(update);let first:i32=0;if(result.is_ok()){first=result.unwrap();}else{unchanged(state.borrow(),before);}
+  if(param==4){capture(state.borrow(),before);result=state.update(update);assert(result.is_err());unchanged(state.borrow(),before);}
+  if(result.is_ok()){out.word(0);out.word(result.unwrap() as u64);}else{out.error(hcode(result.unwrap_err()));}out.word(first as u64);out.word(state.inner.byte_low);out.word(state.inner.byte_high);out.word(state.inner.used as u64);
+  let after:[u64;489]=[0;489];capture(state.borrow(),after);i=141;while(i<489){assert(before[i]==after[i]);i+=1;}
+  state.reset();assert(state.inner.byte_low==128&&state.inner.byte_high==0&&state.inner.used==0&&!state.finished);assert(state.update(b).unwrap()==bn);out.digest(state.finish());
+ }
+ i=0;while(i<4096){let expected:u8=165;if(i>=3&&i<3+an){expected=input[i-3];}if(i>=1031&&i<1031+bn){expected=input[an+i-1031];}if(i>=2059&&i<2059+cn){expected=input[an+bn+i-2059];}assert(bytes[i]==expected);i+=1;}
+}
+fn main()->i32{let header:[u8;64]=[0;64];let input:[u8;3072]=[0;3072];let output_bytes:[u8;1024]=[0;1024];let output:Output=Output{bytes:output_bytes,used:0};let fd:std::stream::Descriptor=std::stream::stdin();assert(core::io::read_exact(fd.borrow(),header,0,8).is_ok());let count:u64=word(header,0);assert(count<=4096);let i:u64=0;while(i<count){assert(core::io::read_exact(fd.borrow(),header,0,64).is_ok());let an:u64=word(header,40);let bn:u64=word(header,48);let cn:u64=word(header,56);assert(word(header,0)<=6&&word(header,8)<=1&&word(header,16)<=9&&an<=1024&&bn<=1024&&cn<=1024&&word(header,32)<=12241);if(word(header,0)==1){assert(word(header,24)>=1);}if(word(header,0)==5){assert(bn>=1&&word(header,24)<=6);}assert(core::io::read_exact(fd.borrow(),input,0,(an+bn+cn) as i32).is_ok());run(header,input,output.borrow());i+=1;}output.flush();return 0;}

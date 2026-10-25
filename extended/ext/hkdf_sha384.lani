@@ -1,0 +1,50 @@
+// RFC5869 extract/expand with HMAC-SHA-384. Caller-owned output; no allocation.
+// Writable output must be physically backed and disjoint from all inputs.
+module ext::hkdf_sha384;
+import core::result;
+import core::sha512;
+import core::slice;
+import ext::hmac_sha384;
+
+pub enum Error { Bounds, PrkTooShort, OutputLimit, Hash(ext::hmac_sha384::Error) }
+pub const MAX_OUTPUT:i32=12240;
+fn valid(v:core::slice::View<u8>)->bool { return v.start>=0 && v.length>=0 && v.start<=2147483647-v.length; }
+fn view(bytes:[u8],count:i32)->core::slice::View<u8> { return core::slice::View { values:bytes,start:0,length:count }; }
+// Empty salt and48zero bytes have the same HMAC key block.
+pub fn extract(salt:core::slice::View<u8>,ikm:core::slice::View<u8>)->core::result::Result<core::sha512::Digest,Error> {
+    if(!valid(salt)||!valid(ikm)) { return core::result::Err(Error::Bounds); }
+    let extracted:core::result::Result<core::sha512::Digest,ext::hmac_sha384::Error> = ext::hmac_sha384::authenticate(salt,ikm);
+    if(extracted.is_err()) { return core::result::Err(Error::Hash(extracted.unwrap_err())); }
+    return core::result::Ok(extracted.unwrap());
+}
+// All metadata and limits are checked before output mutation. Even empty
+// output requires a PRK of at least48bytes. At most255blocks are generated.
+pub fn expand(prk:core::slice::View<u8>,info:core::slice::View<u8>,output:core::slice::View<u8>)->core::result::Result<i32,Error> {
+    if(!valid(prk)||!valid(info)||!valid(output)) { return core::result::Err(Error::Bounds); }
+    if(prk.length<48) { return core::result::Err(Error::PrkTooShort); }
+    if(output.length>MAX_OUTPUT) { return core::result::Err(Error::OutputLimit); }
+    if(output.length==0) { return core::result::Ok(0); }
+    let made:core::result::Result<ext::hmac_sha384::State,ext::hmac_sha384::Error> = ext::hmac_sha384::new(prk);
+    if(made.is_err()) { return core::result::Err(Error::Hash(made.unwrap_err())); }
+    let state:ext::hmac_sha384::State=made.unwrap();
+    let previous:core::sha512::Digest=core::sha512::Digest { bytes:[0;64],length:48 };
+    let written:i32=0; let block:i32=1;
+    while(written<output.length) {
+        state.reset();
+        // Fresh seeded SHA-384 accepts at most128+48+i32MAX+1 bytes here,
+        // so these validated per-block updates cannot overflow its counter.
+        if(block>1) { state.update(view(previous.bytes,48)).unwrap(); }
+        state.update(info).unwrap(); let counter:[u8;1]=[block as u8]; state.update(view(counter,1)).unwrap(); previous=state.finish();
+        let count:i32=output.length-written; if(count>48) { count=48; }
+        let i:i32=0; while(i<count) { output.values[output.start+written+i]=previous.bytes[i]; i+=1; }
+        written+=count; block+=1;
+    }
+    return core::result::Ok(written);
+}
+pub fn derive(salt:core::slice::View<u8>,ikm:core::slice::View<u8>,info:core::slice::View<u8>,output:core::slice::View<u8>)->core::result::Result<i32,Error> {
+    if(!valid(salt)||!valid(ikm)||!valid(info)||!valid(output)) { return core::result::Err(Error::Bounds); }
+    if(output.length>MAX_OUTPUT) { return core::result::Err(Error::OutputLimit); }
+    let extracted:core::result::Result<core::sha512::Digest,Error> = extract(salt,ikm);
+    if(extracted.is_err()) { return core::result::Err(extracted.unwrap_err()); }
+    let prk:core::sha512::Digest=extracted.unwrap(); return expand(view(prk.bytes,48),info,output);
+}
