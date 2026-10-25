@@ -437,7 +437,7 @@ def main():
 
     heap_size = 1 << args.heap_log2
     native = Native(max(1 << 22, len(image) + 4096), heap_size)
-    room = 1 << 22
+    room = 1 << 24  # output words: the fixpoint image is about 11M bytes
 
     # laniusc's build of the same driver.
     imports = 'import alloc::allocator;\nimport std::io_byte;\n'
