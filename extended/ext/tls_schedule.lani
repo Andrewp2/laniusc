@@ -1,5 +1,5 @@
 // RFC8446 sections4.4.4,7.1,7.2,7.5. Selected SHA256/SHA384, no allocation.
-// Stable owned Secret/Digest locals back borrowed views. Admission pending.
+// Stable owned Secret/Digest locals back borrowed views; see the module guide.
 module ext::tls_schedule;
 import core::result;
 import core::sha256;

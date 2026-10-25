@@ -20,6 +20,7 @@ fn compile(stem: &str) -> common::TempArtifact {
         )
     })
     .unwrap_or_else(|error| panic!("TLS record {stem}: {error}"));
+    assert!(common::x86_jumps::is_x86_64_executable(&bytes));
     let exe = common::TempArtifact::new("laniusc_tls_record", stem, None);
     exe.write_bytes(bytes);
     std::fs::set_permissions(exe.path(), std::fs::Permissions::from_mode(0o700)).unwrap();

@@ -1,12 +1,16 @@
 # Portable TLS connection engine
 
 `ext::tls_connection` composes the Lanius negotiation, framing, transcript,
-X25519/P-256, key schedule, record and server-authentication layers. It implements
+X25519/P-256, selected hash, key schedule, record and server-authentication layers. It implements
 client and server roles in one allocation-free engine. Socket ownership,
 nonblocking calls, entropy acquisition and deadlines belong to `ext::tls_tcp`.
 
-The supported profile is TLS 1.3 with X25519 or secp256r1 ECDHE, SHA-256, Ed25519 certificates and
-CertificateVerify, and either AES-128-GCM (`1301`) or ChaCha20-Poly1305 (`1303`).
+The source profile is TLS 1.3 with X25519 or secp256r1 ECDHE, Ed25519 certificates
+and CertificateVerify, and an explicit suite policy: AES-128-GCM/SHA256 (`1301`),
+AES-256-GCM/SHA384 (`1302`), or ChaCha20-Poly1305/SHA256 (`1303`).
+The SHA384 migration is accepted on x86_64 Linux at engine `635898ed`.
+All eight focused gates passed in two serialized invocations. The current
+receipts and earlier pinned milestones are recorded separately below.
 The server authenticates; its client is explicitly anonymous. There is no PSK
 resumption, early data, client certificate authentication or post-handshake
 authentication. Received NewSessionTicket messages are structurally validated
@@ -41,7 +45,7 @@ bytes. P-256 is derived first; zero or out-of-range scalar returns
 caches each enabled public key once and reuses the appropriate independent state
 on HRR. P-256 TLS shares are exactly 65-byte uncompressed points; point validation
 precedes scalar multiplication. The full 32-byte shared x coordinate, including
-leading zeros, is input to the existing SHA256 key schedule.
+leading zeros, is input to the actually selected SHA256/SHA384 key schedule.
 Production callers use `tls_tcp`, which acquires this input through bounded
 nonblocking OS entropy calls. It allows eight total P-scalar candidates, refilling only
 the P slot at most seven times on `InvalidEphemeralScalar`, under the original deadline
@@ -195,6 +199,93 @@ Subsequent peer input is ignored as required by
 Raw transport EOF before peer close_notify, including incomplete framing, is
 sticky `Truncated`; it is never clean TLS EOF.
 
+## Suite policy, late binding and SHA384 work
+
+Both configurations now own `suites: tls_suite::Policy`, containing one to three
+unique ordered suites. Constructors revalidate its public fields before ephemeral
+operations or caller-buffer writes. ClientHello emits exactly that active order;
+the server selects its first permitted offered suite. There is no implicit suite
+fallback outside the policy. The default order is ChaCha20, AES128, AES256.
+`Negotiated.suite` uses the shared `tls_suite::Suite` authority.
+
+Selection, transcript, phase secrets, master and exporter are absent before an
+actual validated suite decision. CH1 stays in its caller-owned hello region; its
+frame length and handshake-byte debit are recorded once. On the client's validated
+SH/HRR, its actual suite hash binds and hashes those exact retained bytes once.
+The server binds after checked CH1 selection. HRR never rebinds, including to a
+different suite with the same hash. The synthetic HRR frame is 36 or 52 bytes.
+CH1 remains immutable while CH2 comparison borrows it; the CH2 and cookie ranges
+remain disjoint. SHA384 still consumes the raw 32-byte X/P ECDHE secret.
+
+Typed secrets/digests own 48-byte maximum storage. Finished uses exactly 32/48
+active bytes; the shared CertificateVerify helper uses 130/146. Snapshot and
+secret results are bound to stable locals before borrowing views. The final
+client-Finished ACK, server client-Finished verification, traffic epoch switches,
+one pending wire cursor and fatal-alert-before-key-retirement ordering are
+preserved. Exporters use the bound hash and permit at most 8160/12240 bytes.
+
+Default `max_work` is **68,719,476,736 (64 Gi) abstract credits**. This finite
+policy allows the existing normally chunked 1 MiB echo program to use AES256's
+larger admitted charges; record/control/byte and host deadline limits remain
+independent. It is neither 64 Gi instructions nor an elapsed-time guarantee.
+Earlier SHA256 charges remain legacy weights, not a universal source-action
+bound. Existing SHA256 operation and group tariffs retain their values.
+
+For the new SHA384 branch, set `C=16384`, `B(n)=ceil((n+17)/128)` and
+`N=ceil(o/48)`. Private checked-at-use helpers implement these source-counted
+compression, wrapper and byte-traversal envelopes:
+
+```text
+Hash(n) = C*B(n) + 8192 + 32*(n+48)
+HMAC(n) = C*(3+B(n)) + 12288 + 32*(1024+n)       # TLS key<=128
+E(l,c,0) = 8192 + 32*(1024+l+c)   # encoded-info staging; no compression
+E(l,c,o>0) = C*(2 + B(11+l+c)+1
+                  + (N-1)*(B(59+l+c)+1))
+              + 4096*(N+2)
+              + 32*(1024+l+c + N*(10+l+c+97) + o)
+Stream(n) = C*(ceil(n/128)+1) + 16384 + 32*(n+256)
+Snapshot = 2*C + 12288 + 32*(128+48)
+Rewrite(n) = Snapshot + 12288 + Stream(n+52) + 4096 + 32*52
+```
+
+`C` covers the fixed SHA512-family loading, schedule and 80 rounds with a
+conservative source-action margin. Copies include state-wrapper allowances of
+4096 per node and 32 credits per traversed byte. Stream reserves a compression
+upper bound independent of current residue. Snapshot reserves two padding blocks.
+These envelopes do not claim compiler constant-time behavior or exact machine
+instruction counts.
+
+| Actual operation | Additional SHA384 work, before the call |
+| --- | --- |
+| Bind selected transcript | 12,288 initialization/copy credits |
+| Append retained CH1 or another transcript frame | `Stream(frame_length)`; no second byte quota debit |
+| HRR rewrite | `Rewrite(hrr_length)` |
+| No-PSK handshake schedule through two HS secrets and master | `2*HMAC(48)+HMAC(32)+2*Hash(0)+2*E(7,48,48)+2*E(12,48,48)` (30 compressions), plus separate snapshot |
+| App client/server secrets and exporter master | `2*E(12,48,48)+E(10,48,48)` (12), plus separate snapshot |
+| Finished generation/verification | `E(8,0,48)+HMAC(48)` (8), plus separate snapshot |
+| Shared CV input | `4096+32*146`, plus separate snapshot and unchanged Ed25519/signature allowance |
+| Each record owner | `E(3,0,32)+E(2,0,12)+196608` (8 plus AES setup increment) |
+| Actual KeyUpdate installation | `E(11,0,48)+record_owner` (12 plus AES setup increment) |
+| Export(label,context,output) | `Hash(0)+E(label_length,48,48)+Hash(context_length)+E(8,48,output_length)` |
+
+AES256 adds four rounds to the existing AES128 path. Four rounds execute
+`4*16*11*8=5632` fixed GF-multiplication iterations; at most 16 source actions
+per iteration plus round bookkeeping fits **131,072 additional credits per AES
+block**. Protected record charging adds
+`131072*(1+floor((charged_length+16)/16))`, covering the encrypted inner/type and
+tag AES block. Incoming wire length safely dominates inner length. Plain CH/SH
+and ignored CCS do not pay this fee. A cached AES256 setup adds **196,608**:
+131,072 for the extra four hash-subkey encryption rounds plus 65,536 for extra
+key expansion. AES128 and ChaCha record fees are unchanged.
+
+All debits check before subtraction and before the operation they own. Already
+spent parsing or earlier stage work remains spent on failure. Label/context
+lengths are <=249/255, output<=12240 and N<=255; raw context/frame lengths fit
+validated i32 domains. Even their largest multiplication/addition stays far below
+u64 maximum, and the accumulated allowance never increases at HRR or KeyUpdate.
+Authentication has its own shared path/signature work account; this table does
+not replace that module's debits.
+
 ## Group-specific work
 
 X-only construction retains 1,048,576 work units, and its exchange/schedule retains
@@ -203,10 +294,106 @@ expensive call; P-256 schedule work adds 131,072. Dual construction reserves bot
 public derivations. The [source-counted envelope](tls-group-integration-plan.md#work-accounting)
 is conservative abstract admission work, not executed instructions or an elapsed-time
 bound. Rejected scalar admissions run fixed decode/range checks and are separately
-bounded by the adapter's eight-candidate cap. Default engine work remains 256 Mi;
+bounded by the adapter's eight-candidate cap. Default engine work is 64 Gi;
 large certificate/record workloads still need explicit sufficient session/path limits.
 
-## Admission status
+## Current verification scope
+
+The current eight exact filters retain the six earlier filter names and add:
+
+- `sha384_only_suite_both_groups_and_publication_execute`: four singleton-AES256
+  flights across X/P and native/packed storage;
+- `sha384_late_binding_cross_hash_retry_and_cookie_execute`: four requested-group
+  or cookie-only HRR flights whose actual AES256 selection differs from the
+  client's preferred SHA256 suite.
+
+The existing pair, long/HRR and P-group modes keep explicit prior two-suite
+SHA256 policies. Their wire peer now requires an explicit hash and suite at
+helper boundaries. The independent peer checks both published suite IDs against
+its own first-policy-intersection selection and the actual wire, in addition to
+both published group IDs. It verifies complete SHA384 CV/Finished, HRR synthetic
+hash, schedule, records, exporters and directional KeyUpdate bytes through
+OpenSSL/hashlib/hmac. Wire-feed fragmentation does not by itself mean that one
+small handshake frame spans multiple protected records.
+
+The public-constructor/admission mode now has 80 layout cases: the previous 52
+plus suite-policy validation, unbound pre-SH state, actual SHA384 transcript
+snapshots, exact/one-less selected-hash handshake charges and HRR suite/history
+rejections. Constructor metadata/policy failures preserve the full caller arena.
+Initial CH pumping and every partial ACK retain absent suite/transcript state;
+a validated SH/HRR binds the actual hash, without a second CH1 byte debit.
+
+After a real authenticated SHA384 handshake, the paired fixture checks the full
+12,240-byte exporter against independent HKDF, rejects 12,241 before any output
+or work change, and checks zero-output export's nonzero exact charge and all
+sentinels. After both close alerts drain, a labeled private `work_left` seam
+lowers each of two independent real endpoints once: exact zero-output allowance
+succeeds and reaches zero; one less fails terminally without output/publication.
+It does not manufacture authenticated/nonce state, replenish credit, or claim
+that a public API can reset the account. Public KeyUpdate's observed work delta
+is checked separately against the old SHA256 fee or the complete SHA384/KU/AES
+fee; exporters remain unchanged after traffic updates.
+
+These are test-only diagnostic protocols that expose test-derived secrets and
+wire bytes. The paired processes explicitly own their sole caller arena; the
+engine still allocates nothing. The control mode adds two isolated SHA384
+Finished cases per layout (50 total controls): a valid 48-byte Finished and a mismatched tag each span two separately
+EVP-authenticated records. The first fragment leaves the transcript/epoch
+unchanged; only valid completion appends the frame and installs the application
+opener. Mismatch retains the old receive generation, withholds publication and
+produces the independently checked fatal alert. These labeled private phase/keys
+seams test reassembly and Finished verification, not certificate authentication.
+
+## SHA384 admission
+
+All eight engine gates passed against production `635898ed`, with negotiation
+`b3044892`, driver `44df5a19`, and frozen protocol/peer `4879ee72`/`83c63d68`.
+Root ran two disjoint filter invocations of the same driver binary:
+
+| Invocation | Gates and accepted cases | ELFs / native processes | Elapsed |
+| --- | --- | --- | --- |
+| Paired protocols | X pairs 4; long/HRR 4; P groups 8; SHA384-only 4; cross-hash/cookie HRR 4 | 1 / 5 | 32.65 s |
+| Boundaries and ordinary | Controls 50; admissions 80; ordinary consumer | 3 / 3 | 50.63 s |
+
+This is **154 scripted cases plus the ordinary consumer, four compiled strict
+ELFs and eight native processes**. The five paired gates share one protocol
+compilation through `OnceLock` within their invocation. Each paired process
+has exactly one explicit 3,520,000-byte caller arena mmap and its matching
+address/size munmap; the oracle rejects any other allocation event. Controls,
+admissions and the ordinary consumer have empty mmap/mremap/munmap/brk traces.
+Controls used `302afb1c`/`2dacff2d`, admissions `2375f1f7`/`81ec6c10`, and ordinary
+fixture `0d3e703b`. The joint engine/negotiation Rust build passed in 1.24 s.
+
+Evidence under `target/stdlib-work/`:
+
+- `tls-sha384-engine-paired-first.log`;
+- `tls-sha384-engine-boundaries-first.log`;
+- `tls-sha384-engine-negotiation-build-first.log`.
+
+Both runtime invocations used `RUST_MIN_STACK=16777216`,
+`LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000`, `LANIUS_DEBUG_STAGE_ERRORS=1`, a 100 s
+outer timeout, 35 s lock wait and 90 s inner timeout, with `--nocapture
+--test-threads=1`. Binary:
+`target/stdlib-build/debug/deps/extended_tls_connection_execution-45bdd3cf3691412b`.
+The paired invocation skipped the ordinary, controls and admissions filters;
+the second skipped the five paired filters. No test was repeated between them.
+
+Before these engine gates, a separate AES256 application entry compilation
+correctly rejected the all-literal snapshot-cost expression as i32 where u64 was
+required (`LNC0006`, 4.08 s, `tls-sha384-app-interop-fresh.log`). Root added one
+explicit `as u64` to that return expression. Its value remains 50,176 abstract
+credits; no compiler, API, protocol, oracle or expectation changed. The admitted
+engine hash above includes that cast. There was no failed engine gate.
+
+Root performed all compiler/native admission. Author-side checks were Python
+AST parsing, targeted Rust formatting and static/whitespace review; the author
+ran no Cargo, GPU/compiler, native or cryptographic oracle process for this
+migration. These receipts admit the portable scripted profile, not a general
+certificate policy or the complete RFC mandatory algorithm set. Transport and
+real-peer application evidence remains in their own guides. Earlier receipts
+below apply only to their pinned source versions.
+
+## Earlier SHA256 typed-group admission
 
 The typed-group/P-256 portable engine migration is accepted on x86_64 Linux at
 engine `eaf51c4c` and negotiation `3f089664`. Six separate exact invocations each

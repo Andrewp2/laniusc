@@ -116,6 +116,7 @@ fn blob(bytes: &[u8], at: &mut usize) -> Vec<u8> {
     result
 }
 fn run(directory: &Directory, c: &Case) -> Actual {
+    let scale = c.suite == 2 && c.length == 1048576 && c.mode == 0;
     let output = common::process_output_with_timeout(
         "bounded real TLS TCP/OpenSSL peer",
         Command::new("python3")
@@ -135,7 +136,7 @@ fn run(directory: &Directory, c: &Case) -> Actual {
             .arg(c.group.to_string())
             .arg(c.peer_groups)
             .arg(c.calls.to_string()),
-        Duration::from_secs(30),
+        Duration::from_secs(if scale { 45 } else { 30 }),
     );
     assert!(
         output.status.success() && output.stderr.is_empty(),
@@ -723,6 +724,16 @@ fn aes256_sha384_openssl_peers_cover_groups_hrr_key_updates_and_exporters() {
     }
     assert_eq!(count, 14);
     eprintln!("AES256/SHA384 TCP:{count} real OpenSSL cases; singleton suite, both roles/groups, fragmented app records, requested-group HRR both directions, confirmed KU generations and exporter agreement");
+}
+
+#[test]
+fn aes256_sha384_real_tcp_pressure_preserves_default_one_megabyte_streams_in_both_roles() {
+    let directory = Directory::new();
+    for role in 0..2 {
+        let c = sha384_case(role, 0, 1048576);
+        check(&c, &run(&directory, &c));
+    }
+    eprintln!("AES256/SHA384 TCP pressure:2 real1MiB duplex streams,both roles,default64Gi engine work,no counter seam;actual short/EAGAIN observations and exact bytes/progress/close/owner ledgers");
 }
 
 #[test]

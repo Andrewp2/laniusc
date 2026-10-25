@@ -4,7 +4,7 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../extended/ext/tls_schedule.lani#L2)
+[All modules](../README.md) · [Source](../../../extended/ext/tls_schedule.lani#L3)
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
@@ -12,17 +12,21 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-tls-schedule](../../extended-tls-schedule.md)
 
-Declaration counts: enum: 3; field: 7; function: 7; impl: 7; method: 14; struct: 7; variant: 12.
+Declaration counts: enum: 3; field: 8; function: 9; impl: 7; method: 14; struct: 7; variant: 12.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result](../core/result.md) · [source](../../../extended/ext/tls_schedule.lani#L3)
-- [core::sha256](../core/sha256.md) · [source](../../../extended/ext/tls_schedule.lani#L4)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_schedule.lani#L5)
-- [ext::hkdf_sha256](hkdf_sha256.md) · [source](../../../extended/ext/tls_schedule.lani#L6)
-- [ext::hmac_sha256](hmac_sha256.md) · [source](../../../extended/ext/tls_schedule.lani#L7)
+- [core::result](../core/result.md) · [source](../../../extended/ext/tls_schedule.lani#L4)
+- [core::sha256](../core/sha256.md) · [source](../../../extended/ext/tls_schedule.lani#L5)
+- [core::sha512](../core/sha512.md) · [source](../../../extended/ext/tls_schedule.lani#L6)
+- [ext::tls_hash](tls_hash.md) · [source](../../../extended/ext/tls_schedule.lani#L7)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_schedule.lani#L8)
+- [ext::hkdf_sha256](hkdf_sha256.md) · [source](../../../extended/ext/tls_schedule.lani#L9)
+- [ext::hmac_sha256](hmac_sha256.md) · [source](../../../extended/ext/tls_schedule.lani#L10)
+- [ext::hkdf_sha384](hkdf_sha384.md) · [source](../../../extended/ext/tls_schedule.lani#L11)
+- [ext::hmac_sha384](hmac_sha384.md) · [source](../../../extended/ext/tls_schedule.lani#L12)
 
 ## Types, fields and variants
 
@@ -30,7 +34,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 pub enum Error
@@ -38,7 +42,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 Bounds
@@ -46,23 +50,23 @@ Bounds
 
 #### variant: InvalidSecretLength
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 InvalidSecretLength
 ```
 
-#### variant: InvalidHashLength
+#### variant: HashMismatch
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
-InvalidHashLength
+HashMismatch
 ```
 
 #### variant: InvalidLabelLength
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 InvalidLabelLength
@@ -70,7 +74,7 @@ InvalidLabelLength
 
 #### variant: ContextLimit
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 ContextLimit
@@ -78,7 +82,7 @@ ContextLimit
 
 #### variant: OutputLimit
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 OutputLimit
@@ -86,7 +90,7 @@ OutputLimit
 
 #### variant: InvalidVerifyLength
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 InvalidVerifyLength
@@ -94,7 +98,7 @@ InvalidVerifyLength
 
 #### variant: Derivation
 
-[Source line 8](../../../extended/ext/tls_schedule.lani#L8)
+[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
 
 ```lanius
 Derivation
@@ -102,7 +106,7 @@ Derivation
 
 ### enum: Side
 
-[Source line 9](../../../extended/ext/tls_schedule.lani#L9)
+[Source line 14](../../../extended/ext/tls_schedule.lani#L14)
 
 ```lanius
 pub enum Side
@@ -110,7 +114,7 @@ pub enum Side
 
 #### variant: Client
 
-[Source line 9](../../../extended/ext/tls_schedule.lani#L9)
+[Source line 14](../../../extended/ext/tls_schedule.lani#L14)
 
 ```lanius
 Client
@@ -118,7 +122,7 @@ Client
 
 #### variant: Server
 
-[Source line 9](../../../extended/ext/tls_schedule.lani#L9)
+[Source line 14](../../../extended/ext/tls_schedule.lani#L14)
 
 ```lanius
 Server
@@ -126,7 +130,7 @@ Server
 
 ### enum: BinderKind
 
-[Source line 10](../../../extended/ext/tls_schedule.lani#L10)
+[Source line 15](../../../extended/ext/tls_schedule.lani#L15)
 
 ```lanius
 pub enum BinderKind
@@ -134,7 +138,7 @@ pub enum BinderKind
 
 #### variant: External
 
-[Source line 10](../../../extended/ext/tls_schedule.lani#L10)
+[Source line 15](../../../extended/ext/tls_schedule.lani#L15)
 
 ```lanius
 External
@@ -142,7 +146,7 @@ External
 
 #### variant: Resumption
 
-[Source line 10](../../../extended/ext/tls_schedule.lani#L10)
+[Source line 15](../../../extended/ext/tls_schedule.lani#L15)
 
 ```lanius
 Resumption
@@ -150,23 +154,31 @@ Resumption
 
 ### struct: Secret
 
-[Source line 11](../../../extended/ext/tls_schedule.lani#L11)
+[Source line 16](../../../extended/ext/tls_schedule.lani#L16)
 
 ```lanius
 pub struct Secret
 ```
 
-#### field: bytes
+#### field: algorithm
 
-[Source line 11](../../../extended/ext/tls_schedule.lani#L11)
+[Source line 16](../../../extended/ext/tls_schedule.lani#L16)
 
 ```lanius
-bytes: [u8; 32]
+algorithm: ext::tls_hash::Algorithm
+```
+
+#### field: bytes
+
+[Source line 16](../../../extended/ext/tls_schedule.lani#L16)
+
+```lanius
+bytes: [u8; 48]
 ```
 
 ### struct: Early
 
-[Source line 12](../../../extended/ext/tls_schedule.lani#L12)
+[Source line 17](../../../extended/ext/tls_schedule.lani#L17)
 
 ```lanius
 pub struct Early
@@ -174,7 +186,7 @@ pub struct Early
 
 #### field: secret
 
-[Source line 12](../../../extended/ext/tls_schedule.lani#L12)
+[Source line 17](../../../extended/ext/tls_schedule.lani#L17)
 
 ```lanius
 secret: Secret
@@ -182,7 +194,7 @@ secret: Secret
 
 ### struct: Handshake
 
-[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
+[Source line 18](../../../extended/ext/tls_schedule.lani#L18)
 
 ```lanius
 pub struct Handshake
@@ -190,7 +202,7 @@ pub struct Handshake
 
 #### field: secret
 
-[Source line 13](../../../extended/ext/tls_schedule.lani#L13)
+[Source line 18](../../../extended/ext/tls_schedule.lani#L18)
 
 ```lanius
 secret: Secret
@@ -198,7 +210,7 @@ secret: Secret
 
 ### struct: Master
 
-[Source line 14](../../../extended/ext/tls_schedule.lani#L14)
+[Source line 19](../../../extended/ext/tls_schedule.lani#L19)
 
 ```lanius
 pub struct Master
@@ -206,7 +218,7 @@ pub struct Master
 
 #### field: secret
 
-[Source line 14](../../../extended/ext/tls_schedule.lani#L14)
+[Source line 19](../../../extended/ext/tls_schedule.lani#L19)
 
 ```lanius
 secret: Secret
@@ -214,7 +226,7 @@ secret: Secret
 
 ### struct: EarlyExporter
 
-[Source line 15](../../../extended/ext/tls_schedule.lani#L15)
+[Source line 20](../../../extended/ext/tls_schedule.lani#L20)
 
 ```lanius
 pub struct EarlyExporter
@@ -222,7 +234,7 @@ pub struct EarlyExporter
 
 #### field: secret
 
-[Source line 15](../../../extended/ext/tls_schedule.lani#L15)
+[Source line 20](../../../extended/ext/tls_schedule.lani#L20)
 
 ```lanius
 secret: Secret
@@ -230,7 +242,7 @@ secret: Secret
 
 ### struct: Exporter
 
-[Source line 16](../../../extended/ext/tls_schedule.lani#L16)
+[Source line 21](../../../extended/ext/tls_schedule.lani#L21)
 
 ```lanius
 pub struct Exporter
@@ -238,7 +250,7 @@ pub struct Exporter
 
 #### field: secret
 
-[Source line 16](../../../extended/ext/tls_schedule.lani#L16)
+[Source line 21](../../../extended/ext/tls_schedule.lani#L21)
 
 ```lanius
 secret: Secret
@@ -246,7 +258,7 @@ secret: Secret
 
 ### struct: Resumption
 
-[Source line 17](../../../extended/ext/tls_schedule.lani#L17)
+[Source line 22](../../../extended/ext/tls_schedule.lani#L22)
 
 ```lanius
 pub struct Resumption
@@ -254,7 +266,7 @@ pub struct Resumption
 
 #### field: secret
 
-[Source line 17](../../../extended/ext/tls_schedule.lani#L17)
+[Source line 22](../../../extended/ext/tls_schedule.lani#L22)
 
 ```lanius
 secret: Secret
@@ -262,67 +274,83 @@ secret: Secret
 
 ## Free functions and extern declarations
 
-### function: expand_label
+### function: max_output
 
-[Source line 22](../../../extended/ext/tls_schedule.lani#L22)
+[Source line 29](../../../extended/ext/tls_schedule.lani#L29)
 
 ```lanius
-pub fn expand_label(base: core::slice::View<u8>, label: core::slice::View<u8>, context: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
+pub fn max_output(algorithm: ext::tls_hash::Algorithm) -> i32
+```
+
+### function: secret_from_view
+
+[Source line 32](../../../extended/ext/tls_schedule.lani#L32)
+
+```lanius
+pub fn secret_from_view(algorithm: ext::tls_hash::Algorithm, input: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+```
+
+### function: expand_label
+
+[Source line 42](../../../extended/ext/tls_schedule.lani#L42)
+
+```lanius
+pub fn expand_label(base: Secret, label: core::slice::View<u8>, context: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
 ```
 
 ### function: derive_secret
 
-[Source line 36](../../../extended/ext/tls_schedule.lani#L36)
+[Source line 60](../../../extended/ext/tls_schedule.lani#L60)
 
 ```lanius
-pub fn derive_secret(base: Secret, label: core::slice::View<u8>, transcript_hash: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+pub fn derive_secret(base: Secret, label: core::slice::View<u8>, transcript_hash: ext::tls_hash::Digest) -> core::result::Result<Secret, Error>
 ```
 
 ### function: early
 
-[Source line 60](../../../extended/ext/tls_schedule.lani#L60)
+[Source line 101](../../../extended/ext/tls_schedule.lani#L101)
 
 ```lanius
-pub fn early(psk: core::slice::View<u8>) -> core::result::Result<Early, Error>
+pub fn early(algorithm: ext::tls_hash::Algorithm, psk: core::slice::View<u8>) -> core::result::Result<Early, Error>
 ```
 
 ### function: no_psk
 
-[Source line 64](../../../extended/ext/tls_schedule.lani#L64)
+[Source line 105](../../../extended/ext/tls_schedule.lani#L105)
 
 ```lanius
-pub fn no_psk() -> Early
+pub fn no_psk(algorithm: ext::tls_hash::Algorithm) -> Early
 ```
 
 ### function: update_traffic
 
-[Source line 121](../../../extended/ext/tls_schedule.lani#L121)
+[Source line 162](../../../extended/ext/tls_schedule.lani#L162)
 
 ```lanius
-pub fn update_traffic(base: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+pub fn update_traffic(base: Secret) -> core::result::Result<Secret, Error>
 ```
 
 ### function: finished
 
-[Source line 126](../../../extended/ext/tls_schedule.lani#L126)
+[Source line 167](../../../extended/ext/tls_schedule.lani#L167)
 
 ```lanius
-pub fn finished(base: core::slice::View<u8>, transcript_hash: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+pub fn finished(base: Secret, transcript_hash: ext::tls_hash::Digest) -> core::result::Result<Secret, Error>
 ```
 
 ### function: verify_finished
 
-[Source line 134](../../../extended/ext/tls_schedule.lani#L134)
+[Source line 173](../../../extended/ext/tls_schedule.lani#L173)
 
 ```lanius
-pub fn verify_finished(base: core::slice::View<u8>, transcript_hash: core::slice::View<u8>, received: core::slice::View<u8>) -> core::result::Result<bool, Error>
+pub fn verify_finished(base: Secret, transcript_hash: ext::tls_hash::Digest, received: core::slice::View<u8>) -> core::result::Result<bool, Error>
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 19
+### impl at line 24
 
-[Source line 19](../../../extended/ext/tls_schedule.lani#L19)
+[Source line 24](../../../extended/ext/tls_schedule.lani#L24)
 
 ```lanius
 pub impl Secret
@@ -330,15 +358,15 @@ pub impl Secret
 
 #### method: view
 
-[Source line 19](../../../extended/ext/tls_schedule.lani#L19)
+[Source line 27](../../../extended/ext/tls_schedule.lani#L27)
 
 ```lanius
 pub fn view(&self) -> core::slice::View<u8>
 ```
 
-### impl at line 65
+### impl at line 106
 
-[Source line 65](../../../extended/ext/tls_schedule.lani#L65)
+[Source line 106](../../../extended/ext/tls_schedule.lani#L106)
 
 ```lanius
 pub impl Early
@@ -346,7 +374,7 @@ pub impl Early
 
 #### method: binder
 
-[Source line 66](../../../extended/ext/tls_schedule.lani#L66)
+[Source line 107](../../../extended/ext/tls_schedule.lani#L107)
 
 ```lanius
 pub fn binder(&self, kind: BinderKind) -> Secret
@@ -354,23 +382,23 @@ pub fn binder(&self, kind: BinderKind) -> Secret
 
 #### method: traffic
 
-[Source line 70](../../../extended/ext/tls_schedule.lani#L70)
+[Source line 111](../../../extended/ext/tls_schedule.lani#L111)
 
 ```lanius
-pub fn traffic(&self, client_hello_hash: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+pub fn traffic(&self, client_hello_hash: ext::tls_hash::Digest) -> core::result::Result<Secret, Error>
 ```
 
 #### method: exporter
 
-[Source line 71](../../../extended/ext/tls_schedule.lani#L71)
+[Source line 112](../../../extended/ext/tls_schedule.lani#L112)
 
 ```lanius
-pub fn exporter(&self, client_hello_hash: core::slice::View<u8>) -> core::result::Result<EarlyExporter, Error>
+pub fn exporter(&self, client_hello_hash: ext::tls_hash::Digest) -> core::result::Result<EarlyExporter, Error>
 ```
 
 #### method: handshake
 
-[Source line 75](../../../extended/ext/tls_schedule.lani#L75)
+[Source line 116](../../../extended/ext/tls_schedule.lani#L116)
 
 ```lanius
 pub fn handshake(&self, shared: core::slice::View<u8>) -> core::result::Result<Handshake, Error>
@@ -378,15 +406,15 @@ pub fn handshake(&self, shared: core::slice::View<u8>) -> core::result::Result<H
 
 #### method: handshake_no_dhe
 
-[Source line 80](../../../extended/ext/tls_schedule.lani#L80)
+[Source line 121](../../../extended/ext/tls_schedule.lani#L121)
 
 ```lanius
 pub fn handshake_no_dhe(&self) -> Handshake
 ```
 
-### impl at line 82
+### impl at line 123
 
-[Source line 82](../../../extended/ext/tls_schedule.lani#L82)
+[Source line 123](../../../extended/ext/tls_schedule.lani#L123)
 
 ```lanius
 pub impl Handshake
@@ -394,23 +422,23 @@ pub impl Handshake
 
 #### method: traffic
 
-[Source line 83](../../../extended/ext/tls_schedule.lani#L83)
+[Source line 124](../../../extended/ext/tls_schedule.lani#L124)
 
 ```lanius
-pub fn traffic(&self, side: Side, server_hello_hash: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+pub fn traffic(&self, side: Side, server_hello_hash: ext::tls_hash::Digest) -> core::result::Result<Secret, Error>
 ```
 
 #### method: master
 
-[Source line 86](../../../extended/ext/tls_schedule.lani#L86)
+[Source line 127](../../../extended/ext/tls_schedule.lani#L127)
 
 ```lanius
 pub fn master(&self) -> Master
 ```
 
-### impl at line 91
+### impl at line 132
 
-[Source line 91](../../../extended/ext/tls_schedule.lani#L91)
+[Source line 132](../../../extended/ext/tls_schedule.lani#L132)
 
 ```lanius
 pub impl Master
@@ -418,31 +446,31 @@ pub impl Master
 
 #### method: traffic
 
-[Source line 92](../../../extended/ext/tls_schedule.lani#L92)
+[Source line 133](../../../extended/ext/tls_schedule.lani#L133)
 
 ```lanius
-pub fn traffic(&self, side: Side, server_finished_hash: core::slice::View<u8>) -> core::result::Result<Secret, Error>
+pub fn traffic(&self, side: Side, server_finished_hash: ext::tls_hash::Digest) -> core::result::Result<Secret, Error>
 ```
 
 #### method: exporter
 
-[Source line 95](../../../extended/ext/tls_schedule.lani#L95)
+[Source line 136](../../../extended/ext/tls_schedule.lani#L136)
 
 ```lanius
-pub fn exporter(&self, server_finished_hash: core::slice::View<u8>) -> core::result::Result<Exporter, Error>
+pub fn exporter(&self, server_finished_hash: ext::tls_hash::Digest) -> core::result::Result<Exporter, Error>
 ```
 
 #### method: resumption
 
-[Source line 99](../../../extended/ext/tls_schedule.lani#L99)
+[Source line 140](../../../extended/ext/tls_schedule.lani#L140)
 
 ```lanius
-pub fn resumption(&self, client_finished_hash: core::slice::View<u8>) -> core::result::Result<Resumption, Error>
+pub fn resumption(&self, client_finished_hash: ext::tls_hash::Digest) -> core::result::Result<Resumption, Error>
 ```
 
-### impl at line 112
+### impl at line 153
 
-[Source line 112](../../../extended/ext/tls_schedule.lani#L112)
+[Source line 153](../../../extended/ext/tls_schedule.lani#L153)
 
 ```lanius
 pub impl EarlyExporter
@@ -450,15 +478,15 @@ pub impl EarlyExporter
 
 #### method: export
 
-[Source line 112](../../../extended/ext/tls_schedule.lani#L112)
+[Source line 153](../../../extended/ext/tls_schedule.lani#L153)
 
 ```lanius
 pub fn export(&self, label: core::slice::View<u8>, context: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 113
+### impl at line 154
 
-[Source line 113](../../../extended/ext/tls_schedule.lani#L113)
+[Source line 154](../../../extended/ext/tls_schedule.lani#L154)
 
 ```lanius
 pub impl Exporter
@@ -466,15 +494,15 @@ pub impl Exporter
 
 #### method: export
 
-[Source line 113](../../../extended/ext/tls_schedule.lani#L113)
+[Source line 154](../../../extended/ext/tls_schedule.lani#L154)
 
 ```lanius
 pub fn export(&self, label: core::slice::View<u8>, context: core::slice::View<u8>, output: core::slice::View<u8>) -> core::result::Result<i32, Error>
 ```
 
-### impl at line 114
+### impl at line 155
 
-[Source line 114](../../../extended/ext/tls_schedule.lani#L114)
+[Source line 155](../../../extended/ext/tls_schedule.lani#L155)
 
 ```lanius
 pub impl Resumption
@@ -482,7 +510,7 @@ pub impl Resumption
 
 #### method: ticket
 
-[Source line 115](../../../extended/ext/tls_schedule.lani#L115)
+[Source line 156](../../../extended/ext/tls_schedule.lani#L156)
 
 ```lanius
 pub fn ticket(&self, nonce: core::slice::View<u8>) -> core::result::Result<Secret, Error>

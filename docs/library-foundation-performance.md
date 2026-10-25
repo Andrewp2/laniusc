@@ -858,3 +858,26 @@ and 220-command AES oracle, each with an ordinary consumer, passed their
 [record admission](extended-tls-record.md#suiteaes-integration-admission).
 Supported execution remains x86_64 Linux native output from GPU compilation;
 user GPU kernels and other execution targets remain unverified.
+
+## Typed TLS caller migration: correctness receipts
+
+On 2026-10-25, the two retained performance callers were migrated to explicit
+SHA-256 typed secrets and digests and the shared suite identity. Their payloads
+and expected output remain unchanged. Each caller passed one fresh entry
+compilation and native execution through the existing `stdlib_gpu_perf`
+harness with `LANIUS_PERF_REBUILD_ENTRY=1`, zero warmups and one iteration.
+The generic harness now permits zero warmups while still requiring at least
+one iteration and verifying every emitted executable outside the compiler timer.
+
+| Entry | Compile sample (ms) | ELF bytes | Native output check |
+| --- | ---: | ---: | --- |
+| `tests/fixtures/extended/tls_crypto_perf.lani` | 5,290.720 | 1,978,913 | In-source assertions, exit zero, empty stdout/stderr |
+| `tests/fixtures/extended/tls_auth_perf/consumer.lani` | 4,776.581 | 2,926,441 | Exit zero, empty stderr, exact unchanged 448-byte stdout |
+
+These two single samples establish caller correctness on x86_64 Linux through
+GPU compilation. They establish no warmed timing comparison or cross-compiler
+ratio. The earlier measured comparisons above remain historical snapshots.
+The authentication output SHA-256 remains
+`e833f50ab084aa24a19d34a2cdacff813e3bba7325947ac8c75b9de959a33223`.
+Local receipts are `target/stdlib-work/tls-sha384-crypto-caller-single.log` and
+`target/stdlib-work/tls-sha384-auth-caller-single.log`.

@@ -13,12 +13,15 @@ connection establishment, a listener, implicit trust anchors or client
 certificate authentication. Numeric connect and accept can happen outside
 attachment using single-attempt socket methods and the shared host budget.
 
-**All six group-migration gates passed:** 91 native cases on x86_64 Linux.
-Current source supports X25519,
-secp256r1 or an ordered policy containing both, following the
-[shared group contract](tls-group-integration-plan.md). The accepted
-group-migration and preceding X25519 checkpoint receipts below identify their
-exact source snapshots.
+**SHA-384 suite-migration admission passed all 122 native cases.** Nine
+focused selections ran across three shared strict protocol ELFs and three
+driver invocations. Current source uses the
+owned [`tls_suite::Policy`](../extended/ext/tls_suite.lani) contract for
+ChaCha20-Poly1305/SHA-256, AES-128-GCM/SHA-256 and AES-256-GCM/SHA-384.
+X25519 and secp256r1 remain independent group choices under the
+[group contract](tls-group-integration-plan.md). The accepted 91-case group
+checkpoint and earlier receipts below identify their exact historical
+snapshots separately from this migration.
 
 ## Attachment and ownership
 
@@ -45,6 +48,12 @@ then `is_nonblocking()` and the connected peer address. Socket metadata alone
 cannot establish these properties. A blocking socket, UDP descriptor, wrong
 family or unconnected descriptor fails before entropy or handshake I/O.
 Attachment never changes descriptor flags, connects or duplicates the socket.
+The adapter validates the owned suite policy before host access or
+acquisition. `ClientConfig.suites` and `ServerConfig.suites` replace the
+former preferred-suite field; no implicit fallback may escape the active
+policy. The engine owns selected-hash binding, transcript state, key
+derivation and exporter limits. The adapter does not infer a hash from a
+group or reinterpret a 32-byte shared secret as a 48-byte secret.
 
 All allocations precede entropy and engine construction:
 
@@ -244,7 +253,128 @@ send before cleanup. Existing pending sealed data suppresses that alert;
 failure never transmits stale application output or rolls back a spent nonce.
 Alert, clock and close failures do not replace the original engine cause.
 
-## Group migration admission
+## SHA-384 migration coverage and admission
+
+The six retained selections still contain 91 cases. Their native fixture
+explicitly uses only the preceding two SHA-256 suites, with the original
+268,435,456 abstract work credits. Three new exact selections add 31 cases:
+
+- `aes256_sha384_openssl_peers_cover_groups_hrr_key_updates_and_exporters`:
+  14 singleton-AES-256 cases cover both roles and groups, fragmented binary
+  application bytes, requested-group HRR in both directions, real KeyUpdate
+  generation changes and independent OpenSSL exporter agreement.
+- `aes256_sha384_tcp_limits_faults_prefixes_and_full_exporter_cap`:
+  15 cases compare all 12,240 maximum exporter bytes with the independent
+  CLI result, reject 12,241 without changing output or guards, retain six
+  real deadline/budget prefix witnesses across both groups, and check
+  trust/name/time, EPIPE, terminal work exhaustion and pre-host invalid
+  policy rejection. The cap fixture's stdout carries test exporter bytes,
+  with zero application bytes accepted; it is not application-data evidence.
+- `aes256_sha384_real_tcp_pressure_preserves_default_one_megabyte_streams_in_both_roles`:
+  two real 1 MiB duplex streams reuse the exact byte/progress/trace/closure
+  and owner-ledger oracle in both roles. They require the untouched default
+  64 Gi engine allowance, with no live work-counter mutation or exhaustion
+  seam, and retain the small real socket buffers. Actual positive short
+  sends and EAGAIN are observed rather than fabricated or required flakily.
+
+Every successful fixture checks the actual negotiated suite ID and group.
+OpenSSL CLI peers pin their TLS 1.3 cipher with `-ciphersuites`, so AES-256
+cases cannot silently negotiate a SHA-256 alternative. All nine selections
+passed, totaling **122 native cases**. The 64/96-byte entropy layouts,
+eight-candidate maximum, single owner, original deadlines, shared host
+allowance and exact pending
+wire/raw-input cursors retain their preceding contracts.
+
+The engine's enlarged default work allowance is 64 Gi abstract credits,
+allowing bounded 1 MiB duplex traffic under the conservative AES-256
+per-block tariff described in the [hash integration
+plan](tls-hash-integration-plan.md). It grants no extra records, bytes,
+signature attempts, host calls or wall time, and is not an instruction count
+or performance guarantee. The focused AES-256 work-exhaustion fixture instead
+uses an explicit 512 Mi credits and maximum-size public exporter requests;
+the original SHA-256 exhaustion seam retains 256 Mi credits. No test edits
+the live engine's remaining work to manufacture that error.
+
+The first AES-256 pressure attempt is **not admitted**. Its first role
+stopped after publishing 524,288 bytes: a post-processing monotonic check
+observed 12.1314 s against the fixture's original 12-second deadline. The
+expected-success fixture then asserted rather than accepting partial data.
+This is evidence of the production deadline being enforced, not a byte
+mismatch. The retained failure is
+`target/stdlib-work/tls-sha384-tcp-pressure-first.log` (38.68 s including
+compilation and orchestration). Its full extracted capture is in ignored
+`target/stdlib-work/tls-sha384-pressure-extract/`.
+
+Only the new AES-256 1 MiB pressure cases now receive **one shared 35-second
+operation deadline**, never renewed between steps. Their process watchdog
+is 45 seconds including bounded cleanup; the helper reserves four seconds
+for kill/reap and clips its waits to its case bound. All preceding cases
+retain their 12-second fixture deadlines. Production and application
+deadlines, 1 MiB/default-work/byte/progress/ownership assertions are unchanged.
+This test allowance reflects unoptimized software AES and is not a throughput
+claim. The root uses a separate bounded pressure-gate command with a
+90-second inner and 100-second outer timeout; GPU compilation retains its
+45-second limit. The corrected two-case scale component passed as recorded
+below.
+
+Failure diagnostics now print only statuses, lengths, SHA-256 digests,
+32-byte prefixes/suffixes and bounded peer/trace tails. Full failure captures
+are written only under ignored `target/stdlib-work/tls-tcp-failures/`;
+gate output no longer embeds megabytes of escaped plaintext and syscalls.
+
+### Accepted AES-256 scale component
+
+The corrected exact selection
+`aes256_sha384_real_tcp_pressure_preserves_default_one_megabyte_streams_in_both_roles`
+passed in **73.39 s**, compiling one strict x86_64 Linux ELF and running two
+native processes. Both roles completed the full independent 1 MiB duplex
+byte oracle, actual-progress accounting, clean close and owner ledger under
+the untouched default 64 Gi work allowance and one original 35-second
+operation deadline per case. The trace observed **zero positive short
+sends in either role**, with 63 EAGAIN events in role 0 and eight in role 1.
+This receipt makes no positive-short-send or throughput claim.
+
+The focused Rust rebuild took 1.27 s. Receipts are
+`target/stdlib-work/tls-sha384-tcp-pressure-deadline-build.log` and
+`target/stdlib-work/tls-sha384-tcp-pressure-deadline-fixed.log`. The frozen
+versions were adapter `cfeed85a`, engine `635898ed`, Rust driver `d03638a3`,
+fixture `c3b6daba` and helper `7dcdec45`; production and test assertions
+were unchanged by this admission. The root used the same 45-second GPU compilation timeout,
+`RUST_MIN_STACK=16777216`, a 100-second outer timeout, a 35-second lock wait
+and a 90-second inner timeout, selecting this test with `--exact`,
+`--nocapture` and `--test-threads=1`.
+
+### Accepted complete current migration
+
+The other eight selections passed in two disjoint filter groups, each
+reusing one strict protocol ELF for all its native processes. Together with
+the scale selection, the accepted migration comprises **three strict ELFs,
+122 native processes and three driver invocations** on the frozen sources
+above. Receipts are under `target/stdlib-work/`:
+
+| Driver selection | Native cases | Elapsed | Receipt |
+| --- | ---: | ---: | --- |
+| AES-256 1 MiB pressure | 2 | 73.39 s | `tls-sha384-tcp-pressure-deadline-fixed.log` |
+| AES-256 interop 14, retained X25519 interop 18, P-256 interop 14 | 46 | 40.09 s | `tls-sha384-tcp-interop-first.log` |
+| AES-256 limits 15, resume 6, P-256 entropy 14, retained pressure 2, faults 37 | 74 | 42.65 s | `tls-sha384-tcp-boundaries-first.log` |
+
+The latter two invocations used disjoint `--skip` filters with the same
+100-second outer timeout, 35-second lock wait, 90-second inner timeout,
+45-second GPU compilation timeout and stack setting stated above. TLS
+execution was native x86_64 Linux. All full-byte, actual-prefix, cleanup and
+owner-ledger assertions passed. The retained SHA-256 cases kept their
+12-second operation deadlines and explicit preceding suite/work policies.
+No case was repeated apart from the classified AES-256 pressure deadline
+correction above.
+
+The retained SHA-256 pressure cases observed one real positive short send
+and 65 EAGAIN events in role 0; role 1 observed zero positive short sends
+and 263 EAGAIN events. This is separate from the AES-256 scale receipt's
+zero positive short sends in both roles. Elapsed gate times include
+compilation and orchestration and make no throughput claim. Historical
+receipts below apply only to their recorded snapshots.
+
+## Admission of the preceding group checkpoint
 
 The driver retains the preceding 63 cases with an explicit X25519-only
 policy and adds two focused selections totaling 28 cases:

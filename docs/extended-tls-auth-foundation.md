@@ -7,8 +7,14 @@ server-authentication flight. Its profile is X25519, Ed25519, SHA-256 and
 `TLS_CHACHA20_POLY1305_SHA256`, with no PSK, early data, HelloRetryRequest or
 client certificate.
 
-Accepted on 2026-10-24 for native x86_64 Linux output from GPU compilation:
-both integration gates passed. User GPU kernels and other execution targets
+The retained fixture now selects `tls_hash::Algorithm::Sha256` explicitly,
+passes tagged `tls_hash::Digest` checkpoints and `tls_schedule::Secret` values,
+and selects the record suite through `tls_suite::Suite`. This caller migration
+passed both gates on **2026-10-25** for GPU-compiled native x86_64 Linux output.
+Its independent SHA-256 peer and all 40 wire fields retain their original
+expectations; the profile and certificate-policy scope remain as described
+above. The earlier 2026-10-24 receipt is kept below as historical evidence.
+User GPU kernels and other execution targets
 remain unverified. This is a test executable, not a connection API or
 certificate trust validator.
 
@@ -18,7 +24,7 @@ certificate trust validator.
 | --- | --- | --- |
 | [Handshake codecs](extended-tls-handshake.md) | Encode and parse framed messages and borrowed vectors | Negotiate a profile, enforce message ordering, retain backing storage |
 | [X25519](extended-x25519.md) | Public shares and checked shared-secret calculation | Supply appropriate ephemeral scalar material and authenticate the exchange |
-| [Transcript and schedule](extended-tls-schedule.md) | SHA-256 frame hashing, typed schedule stages, Finished, exporters and ticket derivation | Select the correct complete-message checkpoint and directional secret |
+| [Transcript and schedule](extended-tls-schedule.md) | Selected-hash frame hashing, tagged schedule stages, Finished, exporters and ticket derivation | Select SHA-256 for this fixture, the correct complete-message checkpoint and directional secret |
 | [DER](extended-der.md) | Canonical elements, OIDs, BIT STRINGs and borrowed traversal | Interpret certificate structures and apply X.509 validation policy |
 | [Ed25519](extended-ed25519.md) | Detached signature generation and verification | Select an authenticated public key, permitted scheme and exact signed context |
 | [Protected records](extended-tls-record.md) | Directional keys, sequence numbers, AEAD protection and inner framing | Install established secrets, preserve nonce authority, process higher-level state and transport |
@@ -124,7 +130,14 @@ not an application-data interface.
 
 The valid flight runs with both native strided arrays and packed bytes. All
 arena views have nonzero offsets. Inline digest and key values remain alive
-while their borrowed views are consumed. Certificate/SPKI/frame views borrow
+while their borrowed views are consumed. The migration checks the SHA-256 tag,
+32-byte active view and every zero tail byte at indices 32 through 47 for
+emitted digests and schedule secrets, Finished values, and receiver checkpoints.
+Only the active 32 bytes enter wire fields or CertificateVerify input; the
+48-byte backing does not change the 130-byte signed context or 32-byte
+Finished framing. `view(&self)` receivers are stable local values whose inline
+backing remains unchanged during each immediate read. No borrowed view escapes
+a temporary digest or secret. Certificate/SPKI/frame views borrow
 source or record scratch storage; that backing remains alive and unchanged
 for their use. Record inputs, scratch buffers, publication storage and state
 are disjoint. One authoritative state owns each sending direction; no Sealer
@@ -161,7 +174,72 @@ Finished computed over the modified CV frame. The CV check must therefore
 reject it at the signature checkpoint. Finished mutations also retain valid
 record authentication, separating handshake verification from AEAD checks.
 
-## Admission
+## Accepted typed caller migration: 2026-10-25
+
+The direct migration removes `tls_record::Suite`, raw secret and checkpoint
+arguments, implicit transcript construction, and implicit `no_psk()`. It keeps
+both layouts, the valid flight, all eight rejection variants, the independent
+peer, complete field comparisons, allocation tracing and process limits. The
+Rust driver changes only its profile documentation. No production module or
+compatibility layer is added.
+
+The focused target remains `extended_tls_auth_integration`, with these gates:
+
+- `composed_tls13_authentication_flight_matches_independent_peer`: two layout
+  cases and 80 complete byte fields.
+- `tampered_authentication_checkpoints_reject_before_publication`: 16 layout
+  cases and 640 complete byte fields.
+
+The whole-target invocation passed both gates in **14.41 s**, covering **18
+cases and 720 complete byte fields**. `OnceLock` shared one strict protocol ELF
+between the two tests, which launched two native processes. Each native
+allocation trace was empty for `mmap`, `munmap`, `mremap` and `brk`. Native,
+certificate-generation and peer timeouts remain 30, 10 and 15 seconds. The
+fresh Rust driver build took **1.17 s**. These are correctness gate timings,
+not TLS or cryptographic throughput measurements.
+
+The fixture, driver and unchanged independent peer matched these executed
+source hashes:
+
+| Source | SHA-256 |
+| --- | --- |
+| `tests/fixtures/extended/tls_auth_integration/flight.lani` | `63015e3144ca34f2373a52654f311f7084806dddef1e8db13bb02dd088db6638` |
+| `tests/extended_tls_auth_integration.rs` | `a276f36ee06d1eecb44340a639fd5d0c274b8fe9cae456f95e8719b1a1739a5e` |
+| `tests/fixtures/extended/tls_auth_integration/peer.py` | `7a94c97016e072dc8cfccc36cb55c2f4b7e277a885e78190decfb896bd84f70d` |
+
+Ignored local evidence is in
+`target/stdlib-work/tls-sha384-retained-flight-first.log` and
+`target/stdlib-work/tls-sha384-retained-flight-build.log`. The build emitted
+`target/stdlib-build/debug/deps/extended_tls_auth_integration-f0db9a8ba28825a5`.
+An equivalent bounded rebuild from the repository root is:
+
+```sh
+timeout --kill-after=2s 100s flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s env \
+  CARGO_TARGET_DIR=/home/andrew-peterson/code/laniusc/target/stdlib-build \
+  CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+  cargo test --test extended_tls_auth_integration --no-run \
+  > target/stdlib-work/tls-sha384-retained-flight-build.log 2>&1
+```
+
+The accepted runtime command selected the whole target without filters, with
+a 90-second inner limit:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 90s \
+  target/stdlib-build/debug/deps/extended_tls_auth_integration-f0db9a8ba28825a5 \
+  --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-sha384-retained-flight-first.log 2>&1
+```
+
+A fresh build may emit another executable basename. This receipt verifies the
+retained SHA-256/ChaCha20-Poly1305/X25519/Ed25519 composition and its existing
+rejection checkpoints.
+
+## Historical admission: 2026-10-24
 
 | Test | Cases | Compared byte fields |
 | --- | ---: | ---: |

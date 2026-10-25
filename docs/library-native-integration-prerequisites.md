@@ -12,8 +12,8 @@ byte/socket interfaces. Hashes, HMAC/HKDF, [ChaCha20](stdlib-chacha20.md),
 [Poly1305](stdlib-poly1305.md),
 [ChaCha20-Poly1305](extended-chacha20-poly1305.md) and
 [X25519](extended-x25519.md) pass focused native gates. The
-[TLS record layer](extended-tls-record.md) passes its ordinary consumer and
-308 protocol commands after a
+[TLS record layer](extended-tls-record.md) passes two ordinary consumers and
+748 protocol commands across ChaCha20, AES-128 and AES-256/SHA-384 after a
 [host capacity repair](tls-record-lowering-dependency.md). The
 [seal-bytes program](extended-seal-bytes.md)
 passes 137 native cases, including full 1 MiB seal/open and failure cleanup;
@@ -22,7 +22,7 @@ records measured workloads and limits.
 
 [Ed25519](extended-ed25519.md), [DER framing](extended-der.md),
 [TLS handshake codecs](extended-tls-handshake.md) and the
-[SHA-256 schedule/transcript](extended-tls-schedule.md) now pass focused native
+[SHA-256/SHA-384 schedule and transcript](extended-tls-schedule.md) now pass focused native
 execution gates as well. These provide primitives and wire contracts; the
 broader certificate policy remains work. Negotiated state, authentication
 checkpoints and bounded transport now have their own evidence below.
@@ -42,14 +42,18 @@ primitives and through explicit TLS record suites. The
 executes ordered path/CertificateVerify/Finished checks. The
 [portable connection](extended-tls-connection.md) composes negotiation,
 record epochs, the actual trust decision and client-Finished transmission.
-Its paired/fragment/retry and 46 boundary cases pass. The
+Its paired/fragment/retry, 50 control and 80 admission cases pass. The
 [TCP adapter](extended-tls-tcp.md) passes both-role OpenSSL, 1 MiB pressure,
 ownership/fault and operation-resumption gates. The
-[exchange application](extended-tls-exchange.md) passes 76 native cases.
+[exchange application](extended-tls-exchange.md) passes 80 native cases.
 The [group migration](tls-group-integration-plan.md) adds P-256 alongside
 X25519, with exact 64/96-byte entropy layouts and bounded P-scalar retries;
-the adapter now passes 91 cases. Signature authentication remains Ed25519
-with SHA-256 record suites.
+the adapter now passes 122 cases, including both-role AES-256 one-megabyte
+streams under one explicit deadline each. Signature authentication remains
+Ed25519; the three record suites select SHA-256 or SHA-384 independently of
+the group. The [shared signature verifier](extended-signature.md) separately
+passes 719 protocol commands for owned Ed25519/P-256/RSAE keys; path and TLS
+signature dispatch integration remain work.
 The [connection contract](tls-connection-contract.md) retains the broader
 mandatory-algorithm and PKIX requirements.
 

@@ -36,8 +36,17 @@ P_SPEC.loader.exec_module(P256)
 PAYLOAD = bytes((i*71+9) % 256 for i in range(113))
 
 
-def expand(secret, label, context=b'', length=32):
-    return material.expand(secret, label, context, length)
+def expand(secret, label, context=b'', length=None, *, algorithm):
+    digest = getattr(hashlib, algorithm)
+    if length is None:
+        length = digest().digest_size
+    info = U16(length)+bytes([len(label)+6])+b'tls13 '+label+bytes([len(context)])+context
+    result, previous, counter = b'', b'', 1
+    while len(result) < length:
+        previous = hmac.new(secret, previous+info+bytes([counter]), digest).digest()
+        result += previous
+        counter += 1
+    return result[:length]
 
 
 crypto = ctypes.CDLL(ctypes.util.find_library('crypto'))
@@ -57,14 +66,16 @@ for direction in ('Encrypt', 'Decrypt'):
     final.argtypes = [P, P, ctypes.POINTER(I)]
     final.restype = I
 crypto.EVP_aes_128_gcm.restype = P
+crypto.EVP_aes_256_gcm.restype = P
 crypto.EVP_chacha20_poly1305.restype = P
 
 
-def aead(key, nonce, aad, message, tag, chacha):
+def aead(key, nonce, aad, message, tag, suite):
     ctx = crypto.EVP_CIPHER_CTX_new()
     assert ctx
     try:
-        cipher = crypto.EVP_chacha20_poly1305() if chacha else crypto.EVP_aes_128_gcm()
+        assert suite in (4865, 4866, 4867)
+        cipher = {4865: crypto.EVP_aes_128_gcm, 4866: crypto.EVP_aes_256_gcm, 4867: crypto.EVP_chacha20_poly1305}[suite]()
         assert crypto.EVP_DecryptInit_ex(ctx, cipher, None, None, None) == 1
         assert crypto.EVP_CIPHER_CTX_ctrl(ctx, 9, len(nonce), None) == 1
         assert crypto.EVP_DecryptInit_ex(ctx, None, None, key, nonce) == 1
@@ -82,6 +93,16 @@ def aead(key, nonce, aad, message, tag, chacha):
         return out.raw[:total]
     finally:
         crypto.EVP_CIPHER_CTX_free(ctx)
+
+
+# Independent resource-policy arithmetic; these are finite credit formulas,
+# separate from the byte-level hashlib/OpenSSL cryptographic oracle.
+def sha384_hash_cost(n): return 16384*((n+144)//128)+8192+32*(n+48)
+def sha384_hmac_cost(n): return 16384*(3+(n+144)//128)+12288+32*(1024+n)
+def sha384_expansion_cost(label, context, output):
+    count = (output+47)//48
+    compressions = 0 if count == 0 else 2+(11+label+context+144)//128+1+(count-1)*((59+label+context+144)//128+1)
+    return 16384*compressions+4096*(count+2)+32*(1024+label+context+count*(10+label+context+97)+output)
 
 
 class Reader:
@@ -188,8 +209,16 @@ def public_key(policy, group):
 
 
 class Peer:
-    def __init__(self, chain, suite, retry, client_policy, server_policy, initial):
-        self.chain, self.suite, self.retry = chain, suite, retry
+    def __init__(self, chain, suite, retry, client_policy, server_policy, initial, client_suites, server_suites):
+        self.chain, self.retry = chain, retry
+        self.client_suites, self.server_suites = client_suites, server_suites
+        self.suite = next(s for s in server_suites if s in client_suites)
+        assert self.suite == (4867, 4865, 4866)[suite]
+        self.algorithm = 'sha384' if self.suite == 4866 else 'sha256'
+        self.hashlen = 48 if self.suite == 4866 else 32
+        self.H = lambda b: getattr(hashlib, self.algorithm)(b).digest()
+        self.MAC = lambda k, b: hmac.new(k, b, getattr(hashlib, self.algorithm)).digest()
+        self.EMPTY, self.ZERO = self.H(b''), bytes(self.hashlen)
         self.client_policy, self.server_policy, self.initial = client_policy, server_policy, initial
         self.group = next(g for g in server_policy if g in client_policy)
         self.transcript, self.frames = b'', []
@@ -202,6 +231,9 @@ class Peer:
         self.ch1, self.ch2, self.hrr = None, None, None
         self.finished = [False, False]
 
+    def expand(self, secret, label, context=b'', length=None):
+        return expand(secret, label, context, length, algorithm=self.algorithm)
+
     def handshake(self, side, frame, at_record_end):
         kind, n = frame[0], int.from_bytes(frame[1:4], 'big')
         assert n == len(frame)-4
@@ -212,7 +244,7 @@ class Peer:
             assert side == 0
             ch = hello(frame)
             assert ch['random'] == CLIENT_ENTROPY[:32] and ch['session'] == b''
-            expected = b'\x13\x03\x13\x01' if self.suite == 0 else b'\x13\x01\x13\x03'
+            expected = b''.join(U16(s) for s in self.client_suites)
             assert ch['suite'] == expected
             ext = ch['extensions']
             assert ext[43] == b'\x02\x03\x04' and ext[10] == U16(2*len(self.client_policy))+b''.join(U16(g) for g in self.client_policy)
@@ -240,7 +272,7 @@ class Peer:
         elif kind == 2:
             assert side == 1
             sh = hello(frame, True)
-            assert sh['session'] == b'' and sh['suite'] == (4867 if self.suite == 0 else 4865)
+            assert sh['session'] == b'' and sh['suite'] == self.suite
             assert sh['extensions'][43] == b'\x03\x04'
             if sh['random'] == HRR:
                 assert self.retry in (1, 2) and self.hrr is None and self.ch2 is None
@@ -249,16 +281,16 @@ class Peer:
                     assert sh['extensions'][51] == U16(self.group)
                 else:
                     assert 51 not in sh['extensions'] and sh['extensions'][44] == b'\0\x20'+SERVER_ENTROPY[:32]
-                self.transcript = bytes([254])+U24(32)+H(self.transcript)+frame
+                self.transcript = bytes([254])+U24(self.hashlen)+self.H(self.transcript)+frame
             else:
                 assert sh['random'] == SERVER_ENTROPY[:32]
                 assert sh['extensions'][51] == U16(self.group)+U16(len(self.server_public))+self.server_public
                 assert (self.retry == 0) == (self.hrr is None)
                 self.transcript += frame
-                early = MAC(ZERO, ZERO)
-                hs = MAC(expand(early, b'derived', EMPTY), self.shared)
-                self.hs = [expand(hs, b'c hs traffic', H(self.transcript)), expand(hs, b's hs traffic', H(self.transcript))]
-                self.master = MAC(expand(hs, b'derived', EMPTY), ZERO)
+                early = self.MAC(self.ZERO, self.ZERO)
+                hs = self.MAC(self.expand(early, b'derived', self.EMPTY), self.shared)
+                self.hs = [self.expand(hs, b'c hs traffic', self.H(self.transcript)), self.expand(hs, b's hs traffic', self.H(self.transcript))]
+                self.master = self.MAC(self.expand(hs, b'derived', self.EMPTY), self.ZERO)
                 self.secrets = list(self.hs)
                 self.sequences = [0, 0]
         elif kind == 8:
@@ -282,17 +314,17 @@ class Peer:
             self.transcript += frame
         elif kind == 15:
             assert side == 1 and body[:4] == b'\x08\x07\0\x40' and len(body) == 68
-            signed = b' '*64+b'TLS 1.3, server CertificateVerify\0'+H(self.transcript)
-            assert len(signed) == 130 and material.verify(material.PUBLIC, signed, body[4:])
+            signed = b' '*64+b'TLS 1.3, server CertificateVerify\0'+self.H(self.transcript)
+            assert len(signed) == 98+self.hashlen and material.verify(material.PUBLIC, signed, body[4:])
             self.transcript += frame
         elif kind == 20:
             assert not self.finished[side] and (side == 1 or self.finished[1])
-            assert body == MAC(expand(self.hs[side], b'finished'), H(self.transcript))
+            assert body == self.MAC(self.expand(self.hs[side], b'finished'), self.H(self.transcript))
             self.transcript += frame
             self.finished[side] = True
             if side == 1:
-                self.app = [expand(self.master, b'c ap traffic', H(self.transcript)), expand(self.master, b's ap traffic', H(self.transcript))]
-                self.exporter = expand(self.master, b'exp master', H(self.transcript))
+                self.app = [self.expand(self.master, b'c ap traffic', self.H(self.transcript)), self.expand(self.master, b's ap traffic', self.H(self.transcript))]
+                self.exporter = self.expand(self.master, b'exp master', self.H(self.transcript))
             self.secrets[side] = self.app[side]
             self.sequences[side] = 0
             self.generations[side] = 1
@@ -300,7 +332,7 @@ class Peer:
             assert self.finished[side] and len(body) == 1 and body[0] in (0, 1)
             expected = 1 if side == 0 else 0
             assert body[0] == expected
-            self.secrets[side] = expand(self.secrets[side], b'traffic upd')
+            self.secrets[side] = self.expand(self.secrets[side], b'traffic upd')
             self.sequences[side] = 0
             self.generations[side] += 1
         else:
@@ -315,10 +347,10 @@ class Peer:
         kind, content = packet[0], packet[5:]
         if self.secrets[side] is not None:
             assert kind == 23 and packet[1:3] == b'\x03\x03'
-            key = expand(self.secrets[side], b'key', length=32 if self.suite == 0 else 16)
-            iv = expand(self.secrets[side], b'iv', length=12)
+            key = self.expand(self.secrets[side], b'key', length=16 if self.suite == 4865 else 32)
+            iv = self.expand(self.secrets[side], b'iv', length=12)
             nonce = bytes(a ^ b for a, b in zip(iv, bytes(4)+self.sequences[side].to_bytes(8, 'big')))
-            content = aead(key, nonce, packet[:5], packet[5:-16], packet[-16:], self.suite == 0)
+            content = aead(key, nonce, packet[:5], packet[5:-16], packet[-16:], self.suite)
             self.sequences[side] += 1
             at = len(content)-1
             while at >= 0 and content[at] == 0:
@@ -344,14 +376,24 @@ class Peer:
         else:
             raise AssertionError(('unexpected inner type', kind))
 
-    def finish(self, key, exporter, published_groups, stats, witness):
+    def finish(self, key, exporter, published_groups, published_suites, maximum_export, update_cost, zero_cost, quota_rejected, stats, witness):
         assert self.finished == self.closed == [True, True]
         assert self.partial == [b'', b''] and self.generations == [2, 2]
         assert self.data == [PAYLOAD+PAYLOAD[:31], PAYLOAD+PAYLOAD[:17]]
         assert published_groups == [self.group, self.group], (published_groups, self.group)
+        assert published_suites == [self.suite, self.suite], (published_suites, self.suite)
         assert key == material.PUBLIC
-        derived = expand(self.exporter, b'exchange', EMPTY)
-        assert exporter == expand(derived, b'exporter', H(b'\0\xff\x01'))
+        derived = self.expand(self.exporter, b'exchange', self.EMPTY)
+        assert exporter == self.expand(derived, b'exporter', self.H(b'\0\xff\x01'), length=32)
+        expected_update_cost = 4096+32*5+1024+8*5+32768
+        if self.hashlen == 48:
+            expected_update_cost += 2*131072+sha384_expansion_cost(11,0,48)+sha384_expansion_cost(3,0,32)+sha384_expansion_cost(2,0,12)+196608
+            assert maximum_export == self.expand(derived, b'exporter', self.H(b'\0\xff\x01'), length=12240)
+            assert zero_cost == 32768+128*3+sha384_hash_cost(0)+sha384_expansion_cost(8,48,48)+sha384_hash_cost(3)+sha384_expansion_cost(8,48,0), zero_cost
+            assert quota_rejected == 1
+        else:
+            assert maximum_export == b'' and zero_cost == quota_rejected == 0
+        assert update_cost == expected_update_cost, (update_cost, expected_update_cost)
         assert stats == self.records+[2, 2, 2, 2] and witness == 1
         assert self.messages[0] == ([1, 20, 24] if self.retry == 0 else [1, 1, 20, 24])
         assert self.messages[1] == ([2, 8, 11, 15, 20, 24] if self.retry == 0 else [2, 2, 8, 11, 15, 20, 24])
@@ -370,11 +412,18 @@ def run(mode, executable):
             cases = [(short, suite, 0, layout, 1, (23,), (23,), 23) for suite in (0, 1) for layout in (0, 1)]
             cases += [(short, 0, 1, 0, 1, (29, 23), (23, 29), 29), (short, 1, 1, 1, 1, (23, 29), (29, 23), 23)]
             cases += [(short, 0, 2, 1, 1, (23,), (23,), 23), (short, 1, 2, 0, 1, (23, 29), (23, 29), 23)]
+        elif mode == 'hashes':
+            cases = [(short,2,0,layout,1,(group,),(group,),group,(4866,),(4866,)) for group in (29,23) for layout in (0,1)]
+        elif mode == 'hash-retries':
+            # Client preference deliberately has a different hash from actual SH.
+            cases = [(short,2,1,layout,1,(29,23),(23,29),29,(4867,4866,4865),(4866,)) for layout in (0,1)]
+            cases += [(short,2,2,layout,1,(group,),(group,),group,(4865,4866),(4866,4865)) for layout,group in [(0,29),(1,23)]]
         else:
             raise AssertionError(mode)
+        cases = [(*case, ((4867, 4865) if case[1] == 0 else (4865, 4867)), ((4867, 4865) if case[1] == 0 else (4865, 4867))) if len(case)==8 else case for case in cases]
         source = Q(len(cases))
-        for chain, suite, retry, layout, split, cp, sp, initial in cases:
-            source += Q(layout, suite, retry, split, chain.now, len(chain.root), len(chain.chain), int(chain is not short), cp[0], cp[1] if len(cp)>1 else 0, sp[0], sp[1] if len(sp)>1 else 0, initial)
+        for chain, suite, retry, layout, split, cp, sp, initial, cs, ss in cases:
+            source += Q(layout, suite, retry, split, chain.now, len(chain.root), len(chain.chain), int(chain is not short), cp[0], cp[1] if len(cp)>1 else 0, sp[0], sp[1] if len(sp)>1 else 0, initial, *(cs+(4867,)*3)[:3], len(cs), *(ss+(4867,)*3)[:3], len(ss))
             source += chain.root+b''.join(Q(len(cert))+cert for cert in chain.chain)
         trace = base/'memory.trace'
         result = subprocess.run(['strace', '-qq', '-o', str(trace), '-e', 'trace=mmap,munmap,mremap,brk', '-e', 'signal=none', executable], input=source, capture_output=True, timeout=45)
@@ -390,9 +439,9 @@ def run(mode, executable):
         released = re.fullmatch(r'munmap\((0x[0-9a-f]+), (\d+)\)\s+= 0', lines[1])
         assert released and released[1] == allocated[3] and released[2] == allocated[1], lines
         reader = Reader(result.stdout)
-        for number, (chain, suite, retry, layout, split, cp, sp, initial) in enumerate(cases):
+        for number, (chain, suite, retry, layout, split, cp, sp, initial, cs, ss) in enumerate(cases):
             assert reader.word() == 10 and reader.word() == number
-            peer, witness = Peer(chain, suite, retry, cp, sp, initial), 0
+            peer, witness = Peer(chain, suite, retry, cp, sp, initial, cs, ss), 0
             while True:
                 tag = reader.word()
                 if tag == 1:
@@ -406,9 +455,11 @@ def run(mode, executable):
                     assert tag == 0
                     key, exporter = reader.block(), reader.block()
                     published_groups = [reader.word(), reader.word()]
+                    published_suites = [reader.word(), reader.word()]
+                    maximum_export, update_cost, zero_cost, quota_rejected = reader.block(), reader.word(), reader.word(), reader.word()
                     stats = [reader.word() for _ in range(6)]
                     assert reader.word() == witness
-                    peer.finish(key, exporter, published_groups, stats, witness)
+                    peer.finish(key, exporter, published_groups, published_suites, maximum_export, update_cost, zero_cost, quota_rejected, stats, witness)
                     break
         assert reader.at == len(reader.data)
     print(f'tls connection {mode}: accepted')

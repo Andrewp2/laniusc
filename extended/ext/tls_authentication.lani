@@ -167,11 +167,16 @@ pub impl State {
         let cost: u64=4096+256*(frame.length as u64);
         // SHA384's selected branch precharges complete update blocks under any
         // prior residue, at most two snapshot blocks, and eight Finished MAC
-        // blocks. Fixed staging/copy/padding work has a separate allowance.
+        // blocks. Fixed staging/copy/padding work has a separate allowance;
+        // CV reserves the owned146-byte input and Finished reserves both the
+        // HKDF-label expansion and HMAC wrappers. Credits are abstract units,
+        // not an instruction count or elapsed-time guarantee.
         if (match(self.hash.algorithm()) { ext::tls_hash::Algorithm::Sha256 -> false, ext::tls_hash::Algorithm::Sha384 -> true }) {
             let blocks: u64=((frame.length as u64)+127)/128;
-            if (self.step==2) { blocks+=2; } if (self.step==3) { blocks+=10; }
-            cost+=8192+16384*blocks;
+            let copies: u64=8192;
+            if (self.step==2) { blocks+=2; copies+=32768; }
+            if (self.step==3) { blocks+=10; copies+=131072; }
+            cost+=copies+16384*blocks;
         }
         if (cost > budget.work_left) { return self.poison(Error::WorkLimit); }
         budget.work_left-=cost;

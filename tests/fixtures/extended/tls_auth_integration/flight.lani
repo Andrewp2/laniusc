@@ -1,19 +1,22 @@
 // Composed test flight, not a connection state machine or trust validator.
 // stdin: LEu64 certificate length, real DER certificate, LEu64 case count,
 // then layout/variant LEu64 pairs. stdout:40 numbered byte fields per case.
+// Explicit SHA256 typed caller migration; admission status in
+// docs/extended-tls-auth-foundation.md. Wire fields retain their original lengths.
 module app::main;
 import core::io;
 import core::iter;
 import core::mem;
 import core::option;
 import core::result;
-import core::sha256;
 import core::slice;
 import ext::der;
 import ext::ed25519;
 import ext::tls_handshake;
+import ext::tls_hash;
 import ext::tls_record;
 import ext::tls_schedule;
+import ext::tls_suite;
 import ext::tls_transcript;
 import ext::x25519;
 import std::stream;
@@ -23,7 +26,11 @@ fn copy(source: core::slice::View<u8>, target: core::slice::View<u8>) { assert(t
 fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) { assert(a.length==b.length);let i:i32=0;while(i<a.length){assert(a.values[a.start+i]==b.values[b.start+i]);i+=1;} }
 fn sentinel(value: core::slice::View<u8>, written: i32) { let i:i32=written;while(i<value.length){assert(value.values[value.start+i]==222);i+=1;} }
 // Dynamic slice parameters are borrowed descriptors into caller-owned arrays.
-fn digest(bytes: [u8]) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: 0, length: 32 }; }
+fn bytes32(bytes: [u8]) -> core::slice::View<u8> { return core::slice::View { values: bytes, start: 0, length: 32 }; }
+fn sha256_algorithm(value:ext::tls_hash::Algorithm){assert(match(value){ext::tls_hash::Algorithm::Sha256->true,ext::tls_hash::Algorithm::Sha384->false});}
+fn check_digest(value:ext::tls_hash::Digest){sha256_algorithm(value.algorithm);assert(value.view().length==32);let i:i32=32;while(i<48){assert(value.bytes[i]==0);i+=1;}}
+fn check_secret(value:ext::tls_schedule::Secret){sha256_algorithm(value.algorithm);assert(value.view().length==32);let i:i32=32;while(i<48){assert(value.bytes[i]==0);i+=1;}}
+fn same_digest(a:ext::tls_hash::Digest,b:ext::tls_hash::Digest){check_digest(a);check_digest(b);same(a.view(),b.view());}
 struct Output { bytes:[u8], used:i32 }
 impl Output {
  fn borrow(&self)->&Output{return self;}
@@ -31,6 +38,9 @@ impl Output {
  fn byte(&self,b:u8){if(self.used==2048){self.flush();}self.bytes[self.used]=b;self.used+=1;}
  fn word(&self,w:u64){let i:i32=0;while(i<8){self.byte(((w>>(8*i))&255) as u8);i+=1;}}
  fn data(&self,id:u64,bytes:core::slice::View<u8>){self.word(id);self.word(bytes.length as u64);let i:i32=0;while(i<bytes.length){self.byte(bytes.values[bytes.start+i]);i+=1;}}
+ // Value parameters own stable inline backing until data consumes their view.
+ fn digest(&self,id:u64,value:ext::tls_hash::Digest){check_digest(value);self.data(id,value.view());}
+ fn secret(&self,id:u64,value:ext::tls_schedule::Secret){check_secret(value);self.data(id,value.view());}
 }
 fn next(reader: &ext::der::Reader) -> ext::der::Element { return core::option::unwrap(core::result::unwrap(reader.next())); }
 fn algorithm(element: ext::der::Element) {
@@ -53,15 +63,17 @@ fn certificate_key(encoded:core::slice::View<u8>)->core::slice::View<u8>{
  while(fields.remaining()>0){let extension:ext::der::Element=next(fields.borrow());assert(extension.tag.matches(ext::der::Class::Context,true,3));}core::result::unwrap(fields.finish());
  assert(core::result::unwrap(ext::ed25519::verify(key.bytes,tbs.encoded,signature.bytes)));return key.bytes;
 }
-fn cv_input(hash: [u8], target:core::slice::View<u8>)->core::slice::View<u8>{
+fn cv_input(hash:ext::tls_hash::Digest, target:core::slice::View<u8>)->core::slice::View<u8>{
+ check_digest(hash);
  let context:[u8;33]=[84,76,83,32,49,46,51,44,32,115,101,114,118,101,114,32,67,101,114,116,105,102,105,99,97,116,101,86,101,114,105,102,121];
- let i:i32=0;while(i<64){target.values[target.start+i]=32;i+=1;}i=0;while(i<33){target.values[target.start+64+i]=context[i];i+=1;}target.values[target.start+97]=0;copy(digest(hash),part(target,98,32));return part(target,0,130);
+ let i:i32=0;while(i<64){target.values[target.start+i]=32;i+=1;}i=0;while(i<33){target.values[target.start+64+i]=context[i];i+=1;}target.values[target.start+97]=0;copy(hash.view(),part(target,98,32));return part(target,0,130);
 }
 fn frame(value:core::slice::View<u8>,kind:u8)->ext::tls_handshake::Frame{let result:ext::tls_handshake::Frame=core::result::unwrap(ext::tls_handshake::parse_frame(value));assert(result.kind==kind);return result;}
 fn receive(arena:[u8],variant:i32,ch:core::slice::View<u8>,sh:core::slice::View<u8>,server_record:core::slice::View<u8>,client_record:core::slice::View<u8>,server_app:core::slice::View<u8>,client_app:core::slice::View<u8>,ticket_record:core::slice::View<u8>,client_hs:ext::tls_schedule::Secret,server_hs:ext::tls_schedule::Secret,client_secret:ext::tls_schedule::Secret,server_secret:ext::tls_schedule::Secret,resumption:ext::tls_schedule::Resumption,expected_psk:ext::tls_schedule::Secret,output:&Output){
- let rx:ext::tls_transcript::State=ext::tls_transcript::new();core::result::unwrap(ext::tls_handshake::parse_client_hello(frame(ch,1).body));core::result::unwrap(ext::tls_handshake::parse_server_hello(frame(sh,2).body));core::result::unwrap(rx.update(ch));core::result::unwrap(rx.update(sh));
- let hs_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, server_hs.view()));let client_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, client_hs.view()));
- let server_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, server_secret.view()));let app_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, client_secret.view()));
+ check_secret(client_hs);check_secret(server_hs);check_secret(client_secret);check_secret(server_secret);check_secret(resumption.secret);check_secret(expected_psk);
+ let rx:ext::tls_transcript::State=ext::tls_transcript::new(ext::tls_hash::Algorithm::Sha256);sha256_algorithm(rx.algorithm());core::result::unwrap(ext::tls_handshake::parse_client_hello(frame(ch,1).body));core::result::unwrap(ext::tls_handshake::parse_server_hello(frame(sh,2).body));core::result::unwrap(rx.update(ch));core::result::unwrap(rx.update(sh));
+ let hs_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, server_hs));let client_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, client_hs));
+ let server_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, server_secret));let app_open:ext::tls_record::Opener=core::result::unwrap(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, client_secret));
  let status:u64=0;let publication:core::slice::View<u8> =v(arena,24208,128);let published:i32=0;
  let opened:core::result::Result<ext::tls_record::Opened,ext::tls_record::Error> =hs_open.open(server_record,v(arena,18704,4608));
  if(opened.is_err()){assert(variant==4&&hs_open.is_poisoned());sentinel(v(arena,18704,4608),0);status=4;}
@@ -72,29 +84,29 @@ fn receive(arena:[u8],variant:i32,ch:core::slice::View<u8>,sh:core::slice::View<
   let entries:ext::tls_handshake::CertificateCursor=core::result::unwrap(ext::tls_handshake::certificate_entries(parsed.entries));let entry:ext::tls_handshake::CertificateEntry=core::option::unwrap(entries.next());assert(core::option::is_none(entries.next())&&entry.extensions.length==0);
   let public:core::slice::View<u8> =certificate_key(entry.data);core::result::unwrap(rx.update(cert.wire));
   let cv:ext::tls_handshake::Frame=core::option::unwrap(frames.next());assert(cv.kind==15);let parsed_cv:ext::tls_handshake::CertificateVerify=core::result::unwrap(ext::tls_handshake::parse_certificate_verify(cv.body));assert(parsed_cv.algorithm==2055&&parsed_cv.signature.length==64);
-  let before:core::sha256::Digest=rx.snapshot();let signed:core::slice::View<u8> =cv_input(before.bytes,v(arena,25600,160));sentinel(v(arena,25600,160),130);
-  if(!core::result::unwrap(ext::ed25519::verify(public,signed,parsed_cv.signature))){assert(variant==1);status=1;let after:core::sha256::Digest=rx.snapshot();same(digest(before.bytes),digest(after.bytes));assert(rx.messages()==4);}
+  let before:ext::tls_hash::Digest=rx.snapshot();let signed:core::slice::View<u8> =cv_input(before,v(arena,25600,160));sentinel(v(arena,25600,160),130);
+  if(!core::result::unwrap(ext::ed25519::verify(public,signed,parsed_cv.signature))){assert(variant==1);status=1;let after:ext::tls_hash::Digest=rx.snapshot();same_digest(before,after);assert(rx.messages()==4);}
   else{
-   core::result::unwrap(rx.update(cv.wire));let finish:ext::tls_handshake::Frame=core::option::unwrap(frames.next());assert(finish.kind==20);let verify:ext::tls_handshake::Finished=core::result::unwrap(ext::tls_handshake::parse_finished(finish.body,32));let checkpoint:core::sha256::Digest=rx.snapshot();
-   if(!core::result::unwrap(ext::tls_schedule::verify_finished(server_hs.view(),digest(checkpoint.bytes),verify.verify_data))){assert(variant==2);status=2;let after:core::sha256::Digest=rx.snapshot();same(digest(checkpoint.bytes),digest(after.bytes));assert(rx.messages()==5);}
+   core::result::unwrap(rx.update(cv.wire));let finish:ext::tls_handshake::Frame=core::option::unwrap(frames.next());assert(finish.kind==20);let verify:ext::tls_handshake::Finished=core::result::unwrap(ext::tls_handshake::parse_finished(finish.body,32));let checkpoint:ext::tls_hash::Digest=rx.snapshot();check_digest(checkpoint);
+   if(!core::result::unwrap(ext::tls_schedule::verify_finished(server_hs,checkpoint,verify.verify_data))){assert(variant==2);status=2;let after:ext::tls_hash::Digest=rx.snapshot();same_digest(checkpoint,after);assert(rx.messages()==5);}
    else{core::result::unwrap(rx.update(finish.wire));assert(core::option::is_none(frames.next()));}
   }
  }
  if(status==0){
   let incoming:core::result::Result<ext::tls_record::Opened,ext::tls_record::Error> =client_open.open(client_record,v(arena,23440,128));
   if(incoming.is_err()){assert(variant==5&&client_open.is_poisoned());sentinel(v(arena,23440,128),0);status=5;}
-  else{let message:ext::tls_record::Opened=incoming.unwrap();sentinel(v(arena,23440,128),client_record.length-21);assert(message.content_type==22);let fin:ext::tls_handshake::Frame=frame(message.content,20);let parsed:ext::tls_handshake::Finished=core::result::unwrap(ext::tls_handshake::parse_finished(fin.body,32));let before:core::sha256::Digest=rx.snapshot();
-   if(!core::result::unwrap(ext::tls_schedule::verify_finished(client_hs.view(),digest(before.bytes),parsed.verify_data))){assert(variant==3);status=3;assert(rx.messages()==6);let after:core::sha256::Digest=rx.snapshot();same(digest(before.bytes),digest(after.bytes));}
+  else{let message:ext::tls_record::Opened=incoming.unwrap();sentinel(v(arena,23440,128),client_record.length-21);assert(message.content_type==22);let fin:ext::tls_handshake::Frame=frame(message.content,20);let parsed:ext::tls_handshake::Finished=core::result::unwrap(ext::tls_handshake::parse_finished(fin.body,32));let before:ext::tls_hash::Digest=rx.snapshot();check_digest(before);
+   if(!core::result::unwrap(ext::tls_schedule::verify_finished(client_hs,before,parsed.verify_data))){assert(variant==3);status=3;assert(rx.messages()==6);let after:ext::tls_hash::Digest=rx.snapshot();same_digest(before,after);}
    else{core::result::unwrap(rx.update(fin.wire));}
   }
  }
  let from_server:core::slice::View<u8> =v(arena,0,0);let from_client:core::slice::View<u8> =v(arena,0,0);let ticket_nonce:core::slice::View<u8> =v(arena,0,0);
  if(status==0){let result:core::result::Result<ext::tls_record::Opened,ext::tls_record::Error> =server_open.open(server_app,v(arena,23952,128));if(result.is_err()){assert(variant==6&&server_open.is_poisoned());sentinel(v(arena,23952,128),0);status=6;}else{let opened:ext::tls_record::Opened=result.unwrap();sentinel(v(arena,23952,128),server_app.length-21);assert(opened.content_type==23);from_server=opened.content;}}
  if(status==0){let result:core::result::Result<ext::tls_record::Opened,ext::tls_record::Error> =app_open.open(client_app,v(arena,25800,128));if(result.is_err()){assert(variant==7&&app_open.is_poisoned());sentinel(v(arena,25800,128),0);status=7;}else{let opened:ext::tls_record::Opened=result.unwrap();sentinel(v(arena,25800,128),client_app.length-21);assert(opened.content_type==23);from_client=opened.content;}}
- if(status==0){let result:core::result::Result<ext::tls_record::Opened,ext::tls_record::Error> =server_open.open(ticket_record,v(arena,24080,128));if(result.is_err()){assert(variant==8&&server_open.is_poisoned());sentinel(v(arena,24080,128),0);status=8;}else{let opened:ext::tls_record::Opened=result.unwrap();sentinel(v(arena,24080,128),ticket_record.length-21);assert(opened.content_type==22);let parsed:ext::tls_handshake::NewSessionTicket=core::result::unwrap(ext::tls_handshake::parse_new_session_ticket(frame(opened.content,4).body));ticket_nonce=parsed.nonce;let psk:ext::tls_schedule::Secret=core::result::unwrap(resumption.ticket(ticket_nonce));same(psk.view(),expected_psk.view());}}
+ if(status==0){let result:core::result::Result<ext::tls_record::Opened,ext::tls_record::Error> =server_open.open(ticket_record,v(arena,24080,128));if(result.is_err()){assert(variant==8&&server_open.is_poisoned());sentinel(v(arena,24080,128),0);status=8;}else{let opened:ext::tls_record::Opened=result.unwrap();sentinel(v(arena,24080,128),ticket_record.length-21);assert(opened.content_type==22);let parsed:ext::tls_handshake::NewSessionTicket=core::result::unwrap(ext::tls_handshake::parse_new_session_ticket(frame(opened.content,4).body));ticket_nonce=parsed.nonce;let psk:ext::tls_schedule::Secret=core::result::unwrap(resumption.ticket(ticket_nonce));check_secret(psk);same(psk.view(),expected_psk.view());}}
  if(status==0){copy(from_server,publication);published=from_server.length;copy(from_client,part(publication,published,from_client.length));published+=from_client.length;copy(ticket_nonce,part(publication,published,ticket_nonce.length));published+=ticket_nonce.length;assert(rx.messages()==7);}
  else{sentinel(publication,0);}
- sentinel(publication,published);let final_hash:core::sha256::Digest=rx.snapshot();output.data(38,digest(final_hash.bytes));output.data(39,publication);
+ sentinel(publication,published);let final_hash:ext::tls_hash::Digest=rx.snapshot();output.digest(38,final_hash);output.data(39,publication);
  let summary:[u8;64]=[0;64];let words:[u64;8]=[status,rx.messages(),hs_open.sequence(),client_open.sequence(),server_open.sequence(),app_open.sequence(),0,published as u64];
  if(hs_open.is_poisoned()){words[6]|=1;}if(client_open.is_poisoned()){words[6]|=2;}if(server_open.is_poisoned()){words[6]|=4;}if(app_open.is_poisoned()){words[6]|=8;}
  let i:i32=0;while(i<8){let j:i32=0;while(j<8){summary[i*8+j]=((words[i]>>(j*8))&255) as u8;j+=1;}i+=1;}output.data(40,core::slice::View{values:summary,start:0,length:64});
@@ -106,7 +118,7 @@ fn run(layout:i32,variant:i32,certificate:core::slice::View<u8>,output:&Output){
  i=0;while(i<32){arena[3+i]=((i*7+3)&255) as u8;arena[35+i]=((i*11+17)&255) as u8;arena[67+i]=seed[i];i+=1;}copy(certificate,v(arena,96,certificate.length));
  let saved:[u8;4096]=[0;4096];copy(v(arena,0,96+certificate.length),core::slice::View{values:saved,start:0,length:96+certificate.length});
  let cp:ext::x25519::Key=core::result::unwrap(ext::x25519::public_key(v(arena,0,32)));let sp:ext::x25519::Key=core::result::unwrap(ext::x25519::public_key(v(arena,32,32)));
- output.word(layout as u64);output.word(variant as u64);output.word(core::mem::slice_stride(arena) as u64);output.data(1,digest(cp.bytes));output.data(2,digest(sp.bytes));
+ output.word(layout as u64);output.word(variant as u64);output.word(core::mem::slice_stride(arena) as u64);output.data(1,bytes32(cp.bytes));output.data(2,bytes32(sp.bytes));
  let ce:core::slice::View<u8> =v(arena,24496,160);let se:core::slice::View<u8> =v(arena,24656,128);
  let versions:[u8;3]=[2,3,4];let algorithms:[u8;4]=[0,2,8,7];let groups:[u8;4]=[0,2,0,29];let server_version:[u8;2]=[3,4];
  let ce_len:i32=core::result::unwrap(ext::tls_handshake::write_extension(43,core::slice::View{values:versions,start:0,length:3},ce));
@@ -123,26 +135,26 @@ fn run(layout:i32,variant:i32,certificate:core::slice::View<u8>,output:&Output){
  let sh_len:i32=core::result::unwrap(ext::tls_handshake::write_server_hello(ext::tls_handshake::ServerHello{random:v(arena,24848,32),session_id:sid,cipher_suite:4867,extensions:part(se,0,se_len)},v(arena,4352,256)));
  sentinel(v(arena,4096,256),ch_len);sentinel(v(arena,4352,256),sh_len);let ch:core::slice::View<u8> =v(arena,4096,ch_len);let sh:core::slice::View<u8> =v(arena,4352,sh_len);
  let parsed_ch:ext::tls_handshake::ClientHello=core::result::unwrap(ext::tls_handshake::parse_client_hello(frame(ch,1).body));let parsed_sh:ext::tls_handshake::ServerHello=core::result::unwrap(ext::tls_handshake::parse_server_hello(frame(sh,2).body));assert(parsed_sh.cipher_suite==4867&&!parsed_sh.is_hello_retry_request());same(parsed_ch.session_id,parsed_sh.session_id);
- let client_share:core::slice::View<u8> =core::option::unwrap(core::result::unwrap(ext::tls_handshake::find_extension(parsed_ch.extensions,51)));let server_share:core::slice::View<u8> =core::option::unwrap(core::result::unwrap(ext::tls_handshake::find_extension(parsed_sh.extensions,51)));assert(client_share.length==38&&server_share.length==36);same(part(client_share,6,32),digest(cp.bytes));same(part(server_share,4,32),digest(sp.bytes));
- let shared_client:ext::x25519::Key=core::result::unwrap(ext::x25519::shared_secret(v(arena,0,32),part(server_share,4,32)));let shared_server:ext::x25519::Key=core::result::unwrap(ext::x25519::shared_secret(v(arena,32,32),part(client_share,6,32)));same(digest(shared_client.bytes),digest(shared_server.bytes));output.data(3,digest(shared_client.bytes));output.data(4,digest(shared_server.bytes));
- let tx:ext::tls_transcript::State=ext::tls_transcript::new();core::result::unwrap(tx.update(ch));let hch:core::sha256::Digest=tx.snapshot();output.data(5,ch);output.data(6,digest(hch.bytes));core::result::unwrap(tx.update(sh));let hsh:core::sha256::Digest=tx.snapshot();output.data(7,sh);output.data(8,digest(hsh.bytes));
- let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk();let hs:ext::tls_schedule::Handshake=core::result::unwrap(early.handshake(digest(shared_client.bytes)));let client_hs:ext::tls_schedule::Secret=core::result::unwrap(hs.traffic(ext::tls_schedule::Side::Client,digest(hsh.bytes)));let server_hs:ext::tls_schedule::Secret=core::result::unwrap(hs.traffic(ext::tls_schedule::Side::Server,digest(hsh.bytes)));let master:ext::tls_schedule::Master=hs.master();output.data(9,early.secret.view());output.data(10,hs.secret.view());output.data(11,client_hs.view());output.data(12,server_hs.view());output.data(13,master.secret.view());
- let empty:core::slice::View<u8> =v(arena,0,0);let ee_len:i32=core::result::unwrap(ext::tls_handshake::write_encrypted_extensions(ext::tls_handshake::EncryptedExtensions{extensions:empty},v(arena,4608,64)));let ee:core::slice::View<u8> =v(arena,4608,ee_len);sentinel(v(arena,4608,64),ee_len);core::result::unwrap(tx.update(ee));let hee:core::sha256::Digest=tx.snapshot();output.data(14,ee);output.data(15,digest(hee.bytes));
+ let client_share:core::slice::View<u8> =core::option::unwrap(core::result::unwrap(ext::tls_handshake::find_extension(parsed_ch.extensions,51)));let server_share:core::slice::View<u8> =core::option::unwrap(core::result::unwrap(ext::tls_handshake::find_extension(parsed_sh.extensions,51)));assert(client_share.length==38&&server_share.length==36);same(part(client_share,6,32),bytes32(cp.bytes));same(part(server_share,4,32),bytes32(sp.bytes));
+ let shared_client:ext::x25519::Key=core::result::unwrap(ext::x25519::shared_secret(v(arena,0,32),part(server_share,4,32)));let shared_server:ext::x25519::Key=core::result::unwrap(ext::x25519::shared_secret(v(arena,32,32),part(client_share,6,32)));same(bytes32(shared_client.bytes),bytes32(shared_server.bytes));output.data(3,bytes32(shared_client.bytes));output.data(4,bytes32(shared_server.bytes));
+ let tx:ext::tls_transcript::State=ext::tls_transcript::new(ext::tls_hash::Algorithm::Sha256);sha256_algorithm(tx.algorithm());core::result::unwrap(tx.update(ch));let hch:ext::tls_hash::Digest=tx.snapshot();output.data(5,ch);output.digest(6,hch);core::result::unwrap(tx.update(sh));let hsh:ext::tls_hash::Digest=tx.snapshot();output.data(7,sh);output.digest(8,hsh);
+ let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk(ext::tls_hash::Algorithm::Sha256);let hs:ext::tls_schedule::Handshake=core::result::unwrap(early.handshake(bytes32(shared_client.bytes)));let client_hs:ext::tls_schedule::Secret=core::result::unwrap(hs.traffic(ext::tls_schedule::Side::Client,hsh));let server_hs:ext::tls_schedule::Secret=core::result::unwrap(hs.traffic(ext::tls_schedule::Side::Server,hsh));let master:ext::tls_schedule::Master=hs.master();output.secret(9,early.secret);output.secret(10,hs.secret);output.secret(11,client_hs);output.secret(12,server_hs);output.secret(13,master.secret);
+ let empty:core::slice::View<u8> =v(arena,0,0);let ee_len:i32=core::result::unwrap(ext::tls_handshake::write_encrypted_extensions(ext::tls_handshake::EncryptedExtensions{extensions:empty},v(arena,4608,64)));let ee:core::slice::View<u8> =v(arena,4608,ee_len);sentinel(v(arena,4608,64),ee_len);core::result::unwrap(tx.update(ee));let hee:ext::tls_hash::Digest=tx.snapshot();output.data(14,ee);output.digest(15,hee);
  let entry_len:i32=core::result::unwrap(ext::tls_handshake::write_certificate_entry(ext::tls_handshake::CertificateEntry{data:v(arena,96,certificate.length),extensions:empty},v(arena,26112,4096)));sentinel(v(arena,26112,4096),entry_len);
- let cert_len:i32=core::result::unwrap(ext::tls_handshake::write_certificate(ext::tls_handshake::Certificate{context:empty,entries:v(arena,26112,entry_len)},v(arena,4672,4096)));let cert:core::slice::View<u8> =v(arena,4672,cert_len);sentinel(v(arena,4672,4096),cert_len);core::result::unwrap(tx.update(cert));let hcert:core::sha256::Digest=tx.snapshot();output.data(16,cert);output.data(17,digest(hcert.bytes));
- let public:core::slice::View<u8> =certificate_key(v(arena,96,certificate.length));let signing_public:ext::ed25519::Key32=core::result::unwrap(ext::ed25519::public_key(v(arena,64,32)));same(public,digest(signing_public.bytes));output.data(18,public);
- let signed:core::slice::View<u8> =cv_input(hcert.bytes,v(arena,24336,160));sentinel(v(arena,24336,160),130);output.data(19,signed);let signature:ext::ed25519::Signature64=core::result::unwrap(ext::ed25519::sign(v(arena,64,32),signed));assert(core::result::unwrap(ext::ed25519::verify(public,signed,core::slice::View{values:signature.bytes,start:0,length:64})));if(variant==1){signature.bytes[17]^=1;}
- let cv_len:i32=core::result::unwrap(ext::tls_handshake::write_certificate_verify(ext::tls_handshake::CertificateVerify{algorithm:2055,signature:core::slice::View{values:signature.bytes,start:0,length:64}},v(arena,8768,128)));let cv:core::slice::View<u8> =v(arena,8768,cv_len);sentinel(v(arena,8768,128),cv_len);core::result::unwrap(tx.update(cv));let hcv:core::sha256::Digest=tx.snapshot();output.data(20,cv);output.data(21,digest(hcv.bytes));
- let sverify:ext::tls_schedule::Secret=core::result::unwrap(ext::tls_schedule::finished(server_hs.view(),digest(hcv.bytes)));if(variant==2){sverify.bytes[11]^=1;}
- let sf_len:i32=core::result::unwrap(ext::tls_handshake::write_finished(ext::tls_handshake::Finished{verify_data:sverify.view()},32,v(arena,8896,64)));let sf:core::slice::View<u8> =v(arena,8896,sf_len);sentinel(v(arena,8896,64),sf_len);core::result::unwrap(tx.update(sf));let hsf:core::sha256::Digest=tx.snapshot();output.data(22,sf);output.data(23,digest(hsf.bytes));
- let client_secret:ext::tls_schedule::Secret=core::result::unwrap(master.traffic(ext::tls_schedule::Side::Client,digest(hsf.bytes)));let server_secret:ext::tls_schedule::Secret=core::result::unwrap(master.traffic(ext::tls_schedule::Side::Server,digest(hsf.bytes)));let exporter:ext::tls_schedule::Exporter=core::result::unwrap(master.exporter(digest(hsf.bytes)));output.data(24,client_secret.view());output.data(25,server_secret.view());output.data(26,exporter.secret.view());
+ let cert_len:i32=core::result::unwrap(ext::tls_handshake::write_certificate(ext::tls_handshake::Certificate{context:empty,entries:v(arena,26112,entry_len)},v(arena,4672,4096)));let cert:core::slice::View<u8> =v(arena,4672,cert_len);sentinel(v(arena,4672,4096),cert_len);core::result::unwrap(tx.update(cert));let hcert:ext::tls_hash::Digest=tx.snapshot();output.data(16,cert);output.digest(17,hcert);
+ let public:core::slice::View<u8> =certificate_key(v(arena,96,certificate.length));let signing_public:ext::ed25519::Key32=core::result::unwrap(ext::ed25519::public_key(v(arena,64,32)));same(public,bytes32(signing_public.bytes));output.data(18,public);
+ let signed:core::slice::View<u8> =cv_input(hcert,v(arena,24336,160));sentinel(v(arena,24336,160),130);output.data(19,signed);let signature:ext::ed25519::Signature64=core::result::unwrap(ext::ed25519::sign(v(arena,64,32),signed));assert(core::result::unwrap(ext::ed25519::verify(public,signed,core::slice::View{values:signature.bytes,start:0,length:64})));if(variant==1){signature.bytes[17]^=1;}
+ let cv_len:i32=core::result::unwrap(ext::tls_handshake::write_certificate_verify(ext::tls_handshake::CertificateVerify{algorithm:2055,signature:core::slice::View{values:signature.bytes,start:0,length:64}},v(arena,8768,128)));let cv:core::slice::View<u8> =v(arena,8768,cv_len);sentinel(v(arena,8768,128),cv_len);core::result::unwrap(tx.update(cv));let hcv:ext::tls_hash::Digest=tx.snapshot();output.data(20,cv);output.digest(21,hcv);
+ let sverify:ext::tls_schedule::Secret=core::result::unwrap(ext::tls_schedule::finished(server_hs,hcv));if(variant==2){sverify.bytes[11]^=1;}check_secret(sverify);
+ let sf_len:i32=core::result::unwrap(ext::tls_handshake::write_finished(ext::tls_handshake::Finished{verify_data:sverify.view()},32,v(arena,8896,64)));let sf:core::slice::View<u8> =v(arena,8896,sf_len);sentinel(v(arena,8896,64),sf_len);core::result::unwrap(tx.update(sf));let hsf:ext::tls_hash::Digest=tx.snapshot();output.data(22,sf);output.digest(23,hsf);
+ let client_secret:ext::tls_schedule::Secret=core::result::unwrap(master.traffic(ext::tls_schedule::Side::Client,hsf));let server_secret:ext::tls_schedule::Secret=core::result::unwrap(master.traffic(ext::tls_schedule::Side::Server,hsf));let exporter:ext::tls_schedule::Exporter=core::result::unwrap(master.exporter(hsf));output.secret(24,client_secret);output.secret(25,server_secret);output.secret(26,exporter.secret);
  let label:[u8;11]=[116,101,115,116,32,101,120,112,111,114,116];let context:[u8;7]=[99,111,110,116,101,120,116];core::result::unwrap(exporter.export(core::slice::View{values:label,start:0,length:11},core::slice::View{values:context,start:0,length:7},v(arena,25040,48)));output.data(27,v(arena,25040,48));
- let cverify:ext::tls_schedule::Secret=core::result::unwrap(ext::tls_schedule::finished(client_hs.view(),digest(hsf.bytes)));if(variant==3){cverify.bytes[13]^=1;}
- let cf_len:i32=core::result::unwrap(ext::tls_handshake::write_finished(ext::tls_handshake::Finished{verify_data:cverify.view()},32,v(arena,8960,64)));let cf:core::slice::View<u8> =v(arena,8960,cf_len);sentinel(v(arena,8960,64),cf_len);core::result::unwrap(tx.update(cf));let hcf:core::sha256::Digest=tx.snapshot();output.data(28,cf);output.data(29,digest(hcf.bytes));
- let resumption:ext::tls_schedule::Resumption=core::result::unwrap(master.resumption(digest(hcf.bytes)));let nonce:[u8;3]=[1,2,3];let ticket:[u8;6]=[116,105,99,107,101,116];let psk:ext::tls_schedule::Secret=core::result::unwrap(resumption.ticket(core::slice::View{values:nonce,start:0,length:3}));output.data(30,resumption.secret.view());output.data(31,psk.view());
+ let cverify:ext::tls_schedule::Secret=core::result::unwrap(ext::tls_schedule::finished(client_hs,hsf));if(variant==3){cverify.bytes[13]^=1;}check_secret(cverify);
+ let cf_len:i32=core::result::unwrap(ext::tls_handshake::write_finished(ext::tls_handshake::Finished{verify_data:cverify.view()},32,v(arena,8960,64)));let cf:core::slice::View<u8> =v(arena,8960,cf_len);sentinel(v(arena,8960,64),cf_len);core::result::unwrap(tx.update(cf));let hcf:ext::tls_hash::Digest=tx.snapshot();output.data(28,cf);output.digest(29,hcf);
+ let resumption:ext::tls_schedule::Resumption=core::result::unwrap(master.resumption(hcf));let nonce:[u8;3]=[1,2,3];let ticket:[u8;6]=[116,105,99,107,101,116];let psk:ext::tls_schedule::Secret=core::result::unwrap(resumption.ticket(core::slice::View{values:nonce,start:0,length:3}));output.secret(30,resumption.secret);output.secret(31,psk);
  let nt_len:i32=core::result::unwrap(ext::tls_handshake::write_new_session_ticket(ext::tls_handshake::NewSessionTicket{lifetime:3600,age_add:305419896,nonce:core::slice::View{values:nonce,start:0,length:3},ticket:core::slice::View{values:ticket,start:0,length:6},extensions:empty},v(arena,9024,256)));let nt:core::slice::View<u8> =v(arena,9024,nt_len);sentinel(v(arena,9024,256),nt_len);output.data(32,nt);
  let plain:core::slice::View<u8> =v(arena,9280,4608);let used:i32=0;copy(ee,part(plain,used,ee.length));used+=ee.length;copy(cert,part(plain,used,cert.length));used+=cert.length;copy(cv,part(plain,used,cv.length));used+=cv.length;copy(sf,part(plain,used,sf.length));used+=sf.length;sentinel(plain,used);
- let hs_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, server_hs.view()));let cr_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, client_hs.view()));let sa_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, server_secret.view()));let ca_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, client_secret.view()));
+ let hs_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, server_hs));let cr_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, client_hs));let sa_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, server_secret));let ca_seal:ext::tls_record::Sealer=core::result::unwrap(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, client_secret));
  let sr_len:i32=core::result::unwrap(hs_seal.seal(part(plain,0,used),22,3,v(arena,13968,4736)));let cr_len:i32=core::result::unwrap(cr_seal.seal(cf,22,1,v(arena,23312,128)));
  let sbody:[u8;24]=[115,101,114,118,101,114,32,97,112,112,108,105,99,97,116,105,111,110,32,98,121,116,101,115];let cbody:[u8;24]=[99,108,105,101,110,116,32,97,112,112,108,105,99,97,116,105,111,110,32,98,121,116,101,115];
  let sa_len:i32=core::result::unwrap(sa_seal.seal(core::slice::View{values:sbody,start:0,length:24},23,2,v(arena,23568,128)));let ca_len:i32=core::result::unwrap(ca_seal.seal(core::slice::View{values:cbody,start:0,length:24},23,0,v(arena,23696,128)));let tr_len:i32=core::result::unwrap(sa_seal.seal(nt,22,0,v(arena,23824,128)));

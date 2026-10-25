@@ -1,8 +1,9 @@
 # TLS 1.3 negotiation helpers
 
 `ext::tls_negotiation` validates the meaning of borrowed TLS handshake fields and writes checked
-extension lists. It implements a full DHE profile using X25519 (`0x001d`) or secp256r1 (`0x0017`), Ed25519 (`0x0807`),
-SHA256, and either AES128GCM (`0x1301`) or ChaCha20Poly1305 (`0x1303`).
+extension lists. It implements a full DHE profile using X25519 (`0x001d`) or secp256r1 (`0x0017`), Ed25519 (`0x0807`), and
+an explicit shared suite policy: AES128GCM/SHA256 (`0x1301`), AES256GCM/SHA384
+(`0x1302`), or ChaCha20Poly1305/SHA256 (`0x1303`).
 
 The source follows [RFC 8446 sections 4 and
 9](https://www.rfc-editor.org/rfc/rfc8446.html#section-4), [RFC 6066 section
@@ -13,7 +14,13 @@ TLS algorithm conformance.
 
 ## Migration status
 
-The typed-group negotiation migration is accepted on x86_64 Linux at production
+The shared-suite/SHA384 migration is accepted on x86_64 Linux at production
+`b3044892`. All four gates passed in one invocation with empty allocation traces.
+Source and focused fixtures use `tls_suite` as the single suite authority and
+migrate callers directly, with no old suite-mapping alias. Current and earlier
+pinned receipts are recorded separately below.
+
+The typed-group negotiation migration was accepted on x86_64 Linux at production
 `3f089664`. Its four focused exact gates passed with empty allocation traces.
 The exact shared schema, entropy and HRR contract is in
 [the integration plan](tls-group-integration-plan.md). Internal callers migrated directly;
@@ -26,7 +33,7 @@ helpers; the engine and transport have their own admission evidence.
 | --- | --- |
 | `budget(Limits { max_message, max_work })` | `Result<Budget, Error>` |
 | `inspect_client_hello(ClientHello, &Budget)` | Validated `Offer` |
-| `choose(Offer, preferred_suite, GroupPolicy, &Budget)` | `Decision::Selected(Selection)` or `Decision::Retry(Retry)` |
+| `choose(Offer, tls_suite::Policy, GroupPolicy, &Budget)` | `Decision::Selected(Selection)` or `Decision::Retry(Retry)` |
 | `check_server_hello(Offer, ServerHello, Option<Retry>, &Budget)` | Checked normal selection or HRR |
 | `check_second_client_hello(first, Retry, second, &Budget)` | Checked CH2 `Offer` |
 | `select_alpn(Offer, preferred, required, &Budget)` | Offered protocol or empty optional selection |
@@ -34,7 +41,7 @@ helpers; the engine and transport have their own admission evidence.
 | `key_share(Offer, Group, &Budget)` | Canonically validated `Option<KeyShare>` |
 | `group_id(Group)` / `group_from_id(u16)` | Typed group / wire-ID conversion |
 | `validate_policy(GroupPolicy)` / `default_groups()` | Distinct one/two-group policy / X25519 then P-256 default |
-| `record_suite(u16)` | Explicit `tls_record::Suite` mapping |
+| `tls_suite::from_id(u16)` | Shared checked suite conversion (separate module) |
 
 `Budget.borrow()` supplies the shared reference. Default limits are 262144 logical field bytes
 and 16777216 abstract work units. `max_message` limits each prepared stage's aggregate logical
@@ -77,9 +84,11 @@ engine calls the P-256 primitive to validate the actual point before scalar mult
 Other groups remain opaque and cannot be selected by this profile.
 
 Ed25519 must appear in signature_algorithms and the effective certificate-signature list. Absent
-signature_algorithms_cert falls back to signature_algorithms. Server preference is one of the
-two implemented suite IDs; the other is considered only when the preferred suite was not
-offered. The server chooses the first group in its policy that the client advertised. If its
+signature_algorithms_cert falls back to signature_algorithms. Server preference is an owned `tls_suite::Policy` with one to three distinct
+active entries. Selection revalidates the public policy and chooses its first
+offered entry. A singleton does not permit fallback to another implemented suite.
+The shared default orders ChaCha20, AES128, then AES256. Invalid empty, duplicate
+or oversized policies reject; inactive slots grant no authority. The server chooses the first group in its policy that the client advertised. If its
 share is absent, selection returns a requested-group HRR even when a less preferred
 mutual group already has a share. Group preference does not depend on suite preference.
 
@@ -171,7 +180,60 @@ allocation. Valid returned views remain borrowed and require immutable backing t
 last use. Inputs with valid logical metadata but insufficient physical storage violate the
 manual backing contract.
 
-## Focused verification
+## Current verification scope
+
+The ordinary six-flow fixture retains an explicit two-suite SHA256 policy. The
+independent offer model adds singleton SHA384, all three ordered suites, both
+server preference orders, invalid policies and disjoint/no-fallback cases. It
+retains valid ordered X/P share pairs and reversed-share rejection. The server
+model adds SHA384 normal and HRR selections, cross-hash and same-hash suite
+changes after HRR, and CH2 history checks. The writer model remains the same
+extension-list contract; cipher-suite lists belong to the enclosing hello codec.
+
+`protocol.lani` transports all three active policy entries and the active length;
+the Python peer selects from its own policy/list intersection. All returned
+views, source bytes, guards and existing exact/one-less work probes remain
+checked. The four Rust filters retain their names listed below.
+
+## SHA384 admission
+
+All four gates passed in one unfiltered invocation, **13.14 s**, against production
+`b3044892`, driver `da50c181`, model `2cdb56b6`, protocol `d922cf63` and ordinary
+fixture `0cf50bed`. The ordinary filter's `two_suites` name accurately describes
+its six retained SHA256 flows; the protocol model supplies the new three-suite
+policy and SHA384 coverage.
+
+| Gate | Commands / flows | Native processes |
+| --- | --- | --- |
+| Atomic writers | 338 wire commands + 24 exact/one-less probes | 7 |
+| Client offers | 666 wire commands + 24 exact/one-less probes | 12 |
+| Server / HRR / CH2 / EE | 616 wire commands + 24 exact/one-less probes | 11 |
+| Ordinary consumer | Six flows | 1 |
+
+The total is **1,620 wire commands plus 72 quota probes (1,692 commands), and the
+six-flow ordinary consumer**. The protocol's `OnceLock` shares one strict ELF
+across its three gates; the ordinary consumer compiles a second ELF. There are
+31 native processes, all with empty mmap/mremap/munmap/brk traces. This is one
+whole-target run, two compiled ELFs and 31 processes, not four compilations.
+
+Root's joint engine/negotiation Rust build passed in 1.24 s. Evidence under
+`target/stdlib-work/`:
+
+- `tls-sha384-negotiation-first.log`;
+- `tls-sha384-engine-negotiation-build-first.log`.
+
+Runtime used `RUST_MIN_STACK=16777216`,
+`LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000`, `LANIUS_DEBUG_STAGE_ERRORS=1`, a 100 s
+outer timeout, 35 s lock wait and 90 s inner timeout. Binary
+`target/stdlib-build/debug/deps/extended_tls_negotiation_execution-b5ff2330e3937816`
+received `--nocapture --test-threads=1`, with no filter or skips. No migrated
+negotiation gate failed. Root performed compiler/native admission; author-side
+checks were Python AST parsing, targeted Rust formatting and static/whitespace
+review. No author-side Cargo, GPU/compiler, native or oracle execution occurred
+for this migration. These helpers validate negotiation fields; authentication,
+connection and transport retain their separate contracts and evidence.
+
+## Earlier SHA256 typed-group verification
 
 The typed-group gates passed in four separate exact invocations, compiling four
 strict x86_64 Linux ELFs and running 30 native processes, all with empty

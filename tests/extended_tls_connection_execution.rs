@@ -103,7 +103,7 @@ fn connection_error_atomicity_and_record_epoch_boundaries_execute() {
         Duration::from_secs(40),
     );
     checked(&result);
-    assert_eq!(result.stdout, b"tls connection controls: 46 accepted\n");
+    assert_eq!(result.stdout, b"tls connection controls: 50 accepted\n");
 }
 
 #[test]
@@ -119,6 +119,15 @@ fn group_entropy_scalar_encoding_and_work_admission_boundaries_execute() {
     checked(&result);
     assert_eq!(
         result.stdout,
-        b"tls connection group admissions: 52 accepted\n"
+        b"tls connection group admissions: 80 accepted\n"
     );
+}
+
+#[test]
+fn sha384_only_suite_both_groups_and_publication_execute() {
+    peer("hashes");
+}
+#[test]
+fn sha384_late_binding_cross_hash_retry_and_cookie_execute() {
+    peer("hash-retries");
 }

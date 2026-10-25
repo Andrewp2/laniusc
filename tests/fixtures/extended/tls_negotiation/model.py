@@ -118,7 +118,7 @@ def writer(sub,group,flag,a,b,c,d,policy=(29,),share_group=29):
  return b''.join(ext(k,d) for k,d in es)
 def share_shape(group,data):return (group==29 and len(data)==32) or (group==23 and len(data)==65 and data[:1]==b'\x04')
 def expected(h,blobs):
- op,layout,mode,pref,group,flag,limit,work,capacity,*_=h;policy=tuple(g for g in h[13:15] if g);share_group=h[15];a,b,c,d=blobs;result=[0]*28;result[10]=W;extra=[]
+ op,layout,mode,pref,group,flag,limit,work,capacity,*_=h;policy=tuple(g for g in h[13:15] if g);share_group=h[15];suite_length=h[19];suite_policy=tuple(h[16:19][:suite_length]);a,b,c,d=blobs;result=[0]*28;result[10]=W;extra=[]
  try:
   if op==6:
    require(mode!=3 and not(mode==1 and pref in (0,1)) and not(mode==2 and pref==0),1)
@@ -138,10 +138,10 @@ def expected(h,blobs):
    if op==0:result=offer_summary(p,share_group)
    if op==7:result[5]=len(p["keys"].get(share_group,b""));result[12:16]=witness(p["keys"].get(share_group,b""))
    if op==1:
-    require(len(set(policy))==len(policy),5);require(pref in (4865,4867),8);suite=pref if pref in p['suites'] else (4867 if pref==4865 else 4865);require(suite in p['suites'],8)
+    require(len(set(policy))==len(policy),5);require(1<=suite_length<=3 and len(set(suite_policy))==suite_length,8);mutual_suites=[s for s in suite_policy if s in p['suites']];require(mutual_suites,8);suite=mutual_suites[0]
     mutual=[g for g in policy if g in p['groups']];require(mutual,9);g=mutual[0];require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(suite,g,g not in p['keys'],p['keys'].get(g,b''))
    if op==2:
-    require(mode!=2,101);s=parse_sh(b);require(s['session']==p['session'],11);require(s['suite'] in (4865,4867) and s['suite'] in p['suites'],12);retry=s['random']==HRR
+    require(mode!=2,101);s=parse_sh(b);require(s['session']==p['session'],11);require(s['suite'] in (4865,4866,4867) and s['suite'] in p['suites'],12);retry=s['random']==HRR
     require(flag or not p['cookie'],13)
     if flag:require(not retry and pref==s['suite'] and group in (0,23,29) and len(c)<=65533 and (group or c) and c==p['cookie'],13)
     m=dict(s['items']);require(not(set(m)&{41,42}),7);bad=set(m)-{43,51}-({44} if retry else set())
@@ -156,7 +156,7 @@ def expected(h,blobs):
     else:require(g in (23,29),4);require(not flag or not group or group==g,13)
     require(2055 in p['sigs'] and 2055 in p['cert'],10);result=selection(s['suite'],g,retry,key,cookie)
    if op==3:
-    require(group in (0,23,29) and pref in (4865,4867) and len(c)<=65533,13);require(mode!=2,101);q=inspect(parse_ch(b),True)
+    require(group in (0,23,29) and pref in (4865,4866,4867) and len(c)<=65533,13);require(mode!=2,101);q=inspect(parse_ch(b),True)
     require(pref in p['suites'] and (group or (c and bool(set(p['keys'])&{23,29}))) and (not group or (group in p['groups'] and group not in p['keys'])),13)
     require(all(p[k]==q[k] for k in ('random','session','suitebytes')) and q['cookie']==c,16)
     require(not group or (group in q['keys'] and len(q['keybytes'])==4+len(q['keys'][group])),16)
@@ -181,10 +181,13 @@ def expected(h,blobs):
  return result+extra
 
 CASES=[]
-def add(op=0,a=None,b=b'',c=b'',d=b'',pref=4867,group=0,flag=0,mode=0,limit=262144,work=16777216,capacity=1016,layouts=(0,1),policy=(29,),share_group=29):
+def add(op=0,a=None,b=b'',c=b'',d=b'',pref=4867,group=0,flag=0,mode=0,limit=262144,work=16777216,capacity=1016,layouts=(0,1),policy=(29,),share_group=29,suite_policy=None,suite_length=None):
  if a is None:a=ch()
+ if suite_policy is None:suite_policy=(pref,4867 if pref==4865 else 4865) if op==1 else (4867,4865)
+ if suite_length is None:suite_length=len(suite_policy)
+ suite_slots=(*suite_policy,4867,4867,4867)[:3]
  for layout in layouts:
-  h=[op,layout,mode,pref,group,flag,limit,work,capacity,len(a),len(b),len(c),len(d),policy[0],policy[1] if len(policy)>1 else 0,share_group];blobs=[a,b,c,d];wire=struct.pack('<16Q',*h)+b''.join(blobs);CASES.append((wire,expected(h,blobs)))
+  h=[op,layout,mode,pref,group,flag,limit,work,capacity,len(a),len(b),len(c),len(d),policy[0],policy[1] if len(policy)>1 else 0,share_group,*suite_slots,suite_length];blobs=[a,b,c,d];wire=struct.pack('<20Q',*h)+b''.join(blobs);CASES.append((wire,expected(h,blobs)))
 def replace(es,k,d):return [(t,d if t==k else b) for t,b in es]
 def omit(es,k):return [(t,b) for t,b in es if t!=k]
 def offers():
@@ -226,6 +229,11 @@ def offers():
     a=ch(base_extensions(key,groups=groups,share_group=share_group));add(0,a,share_group=share_group);add(1,a,policy=policy,share_group=share_group);add(7,a,share_group=share_group,mode=4)
  for key in [P_SHARE[:33],b'\x02'+P_SHARE[1:33],b'\x03'+P_SHARE[1:33],b'\x00'+P_SHARE[1:],P_SHARE[:-1],P_SHARE+b'\0']:
   add(0,ch(base_extensions(key,groups=(23,),share_group=23)),share_group=23)
+ # Explicit suite policy authority: singleton384, all3 order, and no implicit fallback.
+ for offered in [(4866,),(4865,4866,4867),(4867,),(4865,)]:
+  for suites in [(4866,),(4867,4865),(4866,4867,4865),(4865,4867,4866),(4866,4866),()]:
+   add(1,ch(suites=offered),suite_policy=suites)
+ add(1,suite_policy=(4866,4867,4865),suite_length=4)
 def servers():
  for first_share in (None,SHARE):
   a=ch(base_extensions(first_share))
@@ -266,6 +274,14 @@ def servers():
    add(2,second,request,b'cookie',group=g,pref=suite,flag=1,mode=6,share_group=g)
   for wrong in [P_SHARE[:33],b'\x02'+P_SHARE[1:33],b'\x00'+P_SHARE[1:]]:
    add(2,ch(base_extensions(P_SHARE,groups=(23,),share_group=23)),sh([(43,b'\x03\x04'),(51,u16(23)+vec(wrong))]),share_group=23)
+ # SHA384 SH/HRR pins are exact suite pins, even across equal-hash alternatives.
+ for chosen in (4865,4866,4867):
+  first=ch(base_extensions(None),suites=(4867,4865,4866))
+  second=ch(base_extensions(SHARE,cookie=b'cookie'),suites=(4867,4865,4866))
+  add(2,first,sh([(43,b'\x03\x04'),(51,u16(29)),(44,vec(b'cookie'))],HRR,suite=chosen))
+  for final in (4865,4866,4867):
+   add(2,second,sh(suite=final),b'cookie',pref=chosen,group=29,flag=1,mode=6)
+  add(3,first,second,b'cookie',pref=chosen,group=29)
 def writers():
  for share in (b'',SHARE,b'x',b'x'*33):
   for name in (b'',b'example.com',b'example.com.',b'127.0.0.1'):

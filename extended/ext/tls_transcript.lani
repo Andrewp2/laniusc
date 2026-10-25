@@ -1,5 +1,5 @@
 // RFC8446 section4.4.1, explicit SHA256/SHA384. Complete handshake frames.
-// Selected-hash migration admission pending; owned snapshots retain no input.
+// Selected-hash transcripts; owned snapshots retain no input backing.
 module ext::tls_transcript;
 import core::result;
 import ext::tls_hash;

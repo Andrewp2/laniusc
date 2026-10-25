@@ -1,8 +1,9 @@
 # TLS 1.3 protected records
 
 `ext::tls_record` provides the TLS 1.3 protected-record layer with explicit
-selection of `TLS_AES_128_GCM_SHA256` or `TLS_CHACHA20_POLY1305_SHA256`.
-It derives keys and IVs from 32-byte SHA-256 traffic secrets, constructs and
+selection of `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384`, or
+`TLS_CHACHA20_POLY1305_SHA256`. It derives keys and IVs from typed
+SHA-256/SHA-384 traffic secrets, constructs and
 authenticates record headers, encodes inner content types and padding,
 maintains independent directional sequence numbers, and derives the next
 application traffic secret. AES traffic state owns a cached, immutable
@@ -11,16 +12,17 @@ an unused AES key. All state is inline, with no allocation or host service.
 
 The previous ChaCha-only implementation was accepted on 2026-10-24 for
 native x86_64 Linux output from GPU compilation: an ordinary consumer and
-308 protocol commands. The current Suite/AES integration is also accepted
-on that target: the unchanged 308-command ChaCha regression and new
+308 protocol commands. The prior explicit-suite/AES-128 integration was also
+accepted on that target: the unchanged 308-command ChaCha regression and
 220-command AES model, each with an ordinary consumer, passed. Its AES and
 AES-GCM primitive dependencies have
 separate accepted [block](core-aes.md) and [AEAD](extended-aes-gcm.md) gates;
-that evidence does not establish the new record integration. User GPU
-kernels and other execution targets remain unverified.
+that earlier evidence is separate from the now accepted typed-secret/AES-256
+migration below. User GPU kernels and other execution targets remain
+unverified.
 
 Key/IV label encoding and traffic-secret updates now use the shared
-[SHA-256 schedule](extended-tls-schedule.md): `expand_label` for `key`/`iv`
+[selected-hash schedule](extended-tls-schedule.md): `expand_label` for `key`/`iv`
 and `update_traffic` for `traffic upd`. Factories require an explicit suite;
 record methods retain their failure and publication contracts.
 
@@ -28,19 +30,18 @@ This is a protocol prerequisite, not a TLS connection. Handshake negotiation,
 traffic-secret establishment, peer authentication, certificates, trust policy,
 transcript validation, handshake fragmentation/reassembly, alerts/closure,
 KeyUpdate message processing, transports and other cipher suites remain outside
-this layer. AES-256-GCM/SHA-384 is not declared here: its SHA-384 TLS schedule
-is a separate dependency, although the general AES-GCM primitive supports
-256-bit keys. The caller must establish the correct directional traffic secret
+this layer. The caller must establish the correct directional traffic secret
 and obey the higher-level TLS state machine.
 
 ## API
 
-All byte arguments are `core::slice::View<u8>`.
+Byte arguments are `core::slice::View<u8>`. Constructors take an owned
+`ext::tls_schedule::Secret` and an `ext::tls_suite::Suite`.
 
 | API | Result |
 | --- | --- |
-| `sealer(suite: Suite, secret)` | `Result<Sealer, Error>` |
-| `opener(suite: Suite, secret)` | `Result<Opener, Error>` |
+| `sealer(suite: tls_suite::Suite, secret: tls_schedule::Secret)` | `Result<Sealer, Error>` |
+| `opener(suite: tls_suite::Suite, secret: tls_schedule::Secret)` | `Result<Opener, Error>` |
 | `Sealer.seal(content, content_type: u8, padding: i32, destination)` | `Result<i32, Error>`; full framed length |
 | `Opener.open(record, scratch)` | `Result<Opened, Error>` |
 | `Sealer.key_update()` / `Opener.key_update()` | `Result<i32, Error>`; zero on success |
@@ -51,11 +52,13 @@ All byte arguments are `core::slice::View<u8>`.
 | `Opener.is_poisoned()` | Whether a fatal record error was observed |
 | `borrow()` | A reference to the same directional state |
 
-`Suite` has exactly `Aes128GcmSha256` (wire ID `0x1301`) and
-`ChaCha20Poly1305Sha256` (`0x1303`). Negotiation validates wire selections
-before choosing this enum. There is no implicit/default suite constructor.
-All in-repository callers of the former one-argument factories now pass the
-explicit ChaCha variant; their expected wire bytes are unchanged.
+The canonical [suite type](extended-tls-hash.md) has `Aes128GcmSha256` (wire
+ID `0x1301`), `Aes256GcmSha384` (`0x1302`), and `ChaCha20Poly1305Sha256`
+(`0x1303`). Negotiation validates wire selections before choosing this enum.
+There is no record-local suite enum, raw-secret constructor, or implicit
+suite/hash default. Use `tls_schedule::secret_from_view(algorithm, input)`
+to validate and copy exactly 32 or 48 secret bytes. Record constructors reject
+a secret whose hash differs from the selected suite with `HashMismatch`.
 
 `Opened { content, content_type }` borrows authenticated content in scratch.
 It remains valid only while the scratch storage remains alive and unchanged;
@@ -127,9 +130,11 @@ fresh verification budget under the same state.
 
 Key and IV derivation use
 [HKDF-Expand-Label](https://www.rfc-editor.org/rfc/rfc8446.html#section-7.1)
-with labels `key` and `iv`, empty context, and output lengths 16/12 for AES
-or 32/12 for ChaCha.
-`key_update` uses label `traffic upd`, empty context and output length 32, then
+with labels `key` and `iv`, empty context, and output lengths 16/12 for
+AES-128, 32/12 for AES-256, or 32/12 for ChaCha. AES-256 uses SHA-384;
+the other suites use SHA-256.
+`key_update` uses label `traffic upd`, empty context and the selected hash's
+32- or 48-byte output length, then
 rederives the key and IV, preserves the suite, replaces cached AES state when
 selected, and resets the sequence/record count to zero. These labels include
 the `tls13 ` prefix in their encoded HKDF labels, with no trailing NUL. All
@@ -153,12 +158,14 @@ connection state.
 
 ## Failure and storage behavior
 
-Errors are `Bounds`, `InvalidSecretLength`, `InvalidType`,
+Errors are `Bounds`, `HashMismatch`, `InvalidType`,
 `InvalidContentLength`, `InvalidPadding`, `RecordOverflow`, `BufferTooSmall`,
 `Exhausted`, `Poisoned`, `InvalidRecord`, `Authentication`, `InvalidInner`, and
 `Derivation`.
 
-Constructors check logical bounds before exact secret length. `seal` checks,
+Typed secret construction checks logical bounds before exact secret length.
+Record construction checks hash compatibility before derivation and preserves
+the supplied owned secret on error. `seal` checks,
 in order: both logical views, exhaustion, content type, content length,
 padding/full-inner length, and destination capacity. Every returned sealing
 error preserves the entire destination and state. The content must be disjoint
@@ -201,9 +208,113 @@ this module nor its tests prove constant-time generated machine code, compiler
 side-channel properties or secure erasure. This foundation has not received an
 independent cryptographic security audit.
 
-## Suite/AES integration admission
+## Typed secret / AES-256 migration: accepted x86_64 Linux evidence
 
-The current source changes the canonical factory signature rather than
+The focused sources now use `tls_schedule::Secret` and the canonical
+`tls_suite::Suite`. The existing ChaCha corpus retains its 308 commands and
+independent hashlib/HMAC/libsodium wire expectations. The AES driver retains
+the original 86/32/102 AES-128 commands and applies those same meaningful
+record/limit/failure cases to AES-256/SHA-384 in three new exact gates.
+
+| Accepted exact gate | Protocol commands |
+| --- | ---: |
+| `aes256_sha384_tls13_records_match_openssl_full_bytes_and_strides` | 86 |
+| `aes256_sha384_record_limits_and_selected_hash_key_updates` | 32 |
+| `aes256_sha384_record_errors_poison_bounds_and_hash_mismatch_are_atomic` | 102 |
+
+AES label expansion and updates are independently computed with Python
+`hmac`/`hashlib`, selecting SHA-384 from the 48-byte secret domain, and record
+encryption/decryption uses actual OpenSSL EVP AES-256-GCM. Expectations cover
+the complete header, ciphertext, tag, authenticated content, and scratch
+suffix. They follow RFC 8446's label/framing/nonce rules; these generated
+AES-256 records are not claimed to be published RFC 8448 vectors. The existing
+AES-128 and ChaCha expected wire values are preserved.
+
+Both physical byte layouts, nonzero offsets, full guards, malformed records,
+authentication-before-publication, poison persistence, retryable metadata and
+capacity errors remain covered. Constructor checks now exercise typed secret
+factory bounds/length errors and both directions of suite/hash mismatch,
+including unchanged supplied secret bytes/tag. Private sequence seams still
+reach exact key-use limits without implying a public restoration API. The
+last old-key slot carries a complete KeyUpdate frame before sequence reset.
+
+The ordinary AES consumer now exercises both AES suites and emits four
+independently expected records. It mutates both the original byte source and
+the supplied typed secret after construction, then verifies owned traffic
+state and selected-hash updates without Error projections or private Traffic
+access. The ordinary ChaCha consumer preserves its two-record expectations.
+
+The frozen migration passed in two complete focused-target invocations:
+
+| Accepted target invocation | Tests | Protocol commands | Ordinary records | Strict ELFs | Native processes | Whole invocation |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `extended_tls_record_aes_execution` | 7 | 440 | 4 | 2 | 7 | 20.63 s |
+| `extended_tls_record_execution` | 3 | 308 | 2 | 2 | 3 | 14.00 s |
+
+The AES target ran the three AES-256 gates above, the corresponding unchanged
+86/32/102-command AES-128 gates, and its ordinary consumer. The ChaCha target
+ran its 212-command vectors gate, 96-command failures gate, and ordinary
+consumer. Protocol compilation was shared by `OnceLock` within each target;
+each ordinary consumer compiled separately. In total, these invocations
+accepted **748 protocol commands, two ordinary programs, four strict ELFs,
+and ten native processes**. Every native `mmap/munmap/mremap/brk` trace was
+empty. Timings include compilation and orchestration and are not AEAD
+throughput measurements.
+
+The initial joint Rust build stopped on `E0308` in the unrelated signature
+diagnostic driver: a helper expected `&mut Command` and received `Command`.
+That Rust control was corrected, and the joint three-target rebuild passed
+in **1.14 s**. No record production, fixture, driver, expected-byte, or
+compiler change was needed for these runtime gates. Evidence is retained at:
+
+- `target/stdlib-work/signature-record-build-frozen.log` (initial Rust build error)
+- `target/stdlib-work/signature-record-build-control-fixed.log` (accepted rebuild)
+- `target/stdlib-work/tls-sha384-record-aes-first.log` (all seven AES tests)
+- `target/stdlib-work/tls-sha384-record-chacha-first.log` (all three ChaCha tests)
+
+Accepted production SHA-256:
+`4ca2fee2b8bd3de06f0d7eb0accd8c2058d40dce30b822db3448e8deac969779`.
+The unchanged AES driver is
+`12c9f456a0b5ef3876d41e26edc9ba20e399a3b48e7c0ecc95b9e01af29d2569`;
+the unchanged ChaCha driver is
+`ed25156d0dca8210489109066d117a22f50792ba2dfb9051e5e926bda45072a2`.
+Fixture hashes are:
+
+| Fixture | SHA-256 |
+| --- | --- |
+| `tls_record_aes/plain.lani` | `198a2f56afcd46655107b82ffdaf8695e6add488a4758ce39f7b2b48205037ef` |
+| `tls_record_aes/protocol.lani` | `a46d45b7e9b0fb83488a9d58103306254b3d052a88c1d5e3b9e57dc0fe92f92f` |
+| `tls_record/plain.lani` | `18f5263de394eb5767def61339a392d89f7729304121cb6dac2f1d5388edbcb0` |
+| `tls_record/protocol.lani` | `eb2fae7b5828c913664895cef4c155054b285e53d6f1056a9a12c83b375feb53` |
+
+Both accepted invocations used the focused binaries without an exact-test
+filter. Reproduction commands for the accepted source are:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_tls_record_aes_execution-281831baaa9a8bc4 \
+  --nocapture --test-threads=1
+
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_tls_record_execution-ece0ab2532f0d157 \
+  --nocapture --test-threads=1
+```
+
+Binary suffixes identify these local builds and may change after a fresh
+build. This evidence is for native x86_64 Linux output from GPU compilation;
+it proves neither user GPU-kernel behavior nor compiled constant time or
+secure erasure. The tables and timings below remain historical evidence for
+earlier record sources.
+
+## Prior explicit-suite/AES-128 integration admission
+
+That integration changed the canonical factory signature rather than
 adding a legacy default wrapper. The unchanged expectations in
 [extended_tls_record_execution.rs](../tests/extended_tls_record_execution.rs)
 remain the 308-command ChaCha regression, with only explicit suite arguments

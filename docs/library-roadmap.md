@@ -448,8 +448,15 @@ integration and the other remaining families still need their own evidence.
   32 native processes with empty allocation traces. Published HMAC vectors,
   Python/OpenSSL byte comparisons, streaming/reset/copies, full 12,240-byte
   HKDF output and atomic metadata/counter rejection execute. The fabricated
-  counter-limit tests do not claim huge-message hashing. SHA-384 TLS integration
-  and machine constant-time verification remain separate work.
+  counter-limit tests do not claim huge-message hashing. Selected-hash TLS
+  integration executes as described below; machine constant-time verification
+  remains separate work.
+- [TLS hash and suite foundations](extended-tls-hash.md) pass 1,634 protocol
+  commands and an ordinary composition consumer across four strict ELFs and
+  28 native processes, with empty allocation traces. Selected SHA-256/SHA-384
+  streaming states, independent owned snapshots, explicit count/metadata
+  failures, all three TLS 1.3 suite identities and copied ordered policies
+  execute. The connected SHA-384 migration also passes the gates below.
 - [RSA public verification](extended-rsa.md) passes 620 protocol commands
   and an ordinary consumer across five x86_64 executables/native processes,
   with empty allocation traces. NIST/OpenSSL comparisons, exact padding,
@@ -458,28 +465,45 @@ integration and the other remaining families still need their own evidence.
   PKCS#1 v1.5 or PSS/salt32. Three malformed source records remain pinned
   separately from the 69 original byte-vector anchors. Signing, other hash
   profiles and certificate/TLS integration remain separate work.
-- Explicit TLS record suites: the unchanged 308-command ChaCha regression and
-  a new 220-command OpenSSL AES-GCM model pass, each with an ordinary consumer.
+- [Owned public signature dispatch](extended-signature.md) passes 719 protocol
+  commands across 164 input blocks and a four-vector ordinary consumer. Two
+  strict ELFs run in five native processes with empty allocation traces.
+  Ed25519, P-256/SHA-256, and RSAE/SHA-256 verification share explicit work and
+  attempt allowances, strict SPKI/algorithm parsing and certificate-versus-CV
+  scheme rules. OpenSSL supplies independent verification results. Certificate
+  path and TLS signature dispatch integration remain work; a reduced compiler
+  match dependency is preserved separately from the executable implementation.
+- Explicit TLS record suites: 308 ChaCha commands, 220 AES-128 commands and
+  220 AES-256/SHA-384 commands pass with two ordinary consumers. Typed secrets
+  reject suite/hash mismatch before derivation; independent OpenSSL/HMAC peers
+  check complete records, key updates, limits and failure atomicity. Four strict
+  ELFs execute in ten native processes with empty allocation traces.
   AES uses a cached owned key and a conservative `2^24` record cap, with a
-  signal to reserve the final old-key record for KeyUpdate. Four strict ELFs
-  execute in seven native processes with empty allocation traces. The
+  signal to reserve the final old-key record for KeyUpdate. The earlier
   [source comparison](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration)
   records a 4.1% higher warmed compilation median and 36.6% larger ELF for the
   existing authentication workload; no compiler source changed. The portable
   connection and transport layers now have separate evidence below.
-- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,540 wire-model
+- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,620 wire-model
   commands and 72 exact/one-less shared-budget probes, plus a six-flow ordinary
-  consumer covering both suites, direct handshakes and two retry forms.
+  consumer covering the original two suites, direct handshakes and two retry forms.
   Selection re-derives borrowed Offer descriptions, pins retry cookies and
   suites, preserves unchanged CH2 fields and extension order, and enforces
   offered SNI/ALPN responses. Independent byte witnesses check returned views;
-  writer snapshots check complete error atomicity. Four strict ELFs run in
-  30 native processes with empty allocation traces. Typed group policy supports
+  writer snapshots check complete error atomicity. Two strict ELFs run in
+  31 native processes with empty allocation traces. Ordered policies support
+  all three suites independently of the group choice. Typed group policy supports
   X25519/P-256, strict first mutual preference and ordered dual shares.
   These helpers add no
   authentication or connected-transport claim.
+- [Selected-hash TLS schedules and transcripts](extended-tls-schedule.md)
+  pass 232 protocol commands with 1,040 transcript actions, 12 unchanged RFC
+  anchors and an ordinary consumer. Typed SHA-256/SHA-384 secrets and digests,
+  full 12,240-byte output, HRR rewriting, independent snapshots and atomic
+  mismatch/metadata rejection execute without allocation.
 - [Server-flight authentication](extended-tls-authentication.md) passes
-  110 protocol cases with 340 state observations and an ordinary consumer.
+  232 protocol cases with 716 state observations and four ordinary flows
+  across SHA-256/SHA-384 and both byte layouts.
   Its strict EE/Certificate/CV/Finished order calls the real path validator,
   checks both transcript proofs and withholds the peer key until success.
   Copies, cleared prior input, retryable metadata/scratch failures, shared
@@ -488,24 +512,25 @@ integration and the other remaining families still need their own evidence.
   allowance. This authenticates the server; Established still requires the
   client's Finished to be committed to the transport.
 - [Portable TLS connection state](extended-tls-connection.md) passes paired
-  client/server handshakes for both suites and buffer layouts, both retry forms,
-  long eight-certificate flights, 46 error/publication/epoch boundaries and
-  52 group/entropy/scalar/work admissions. Eight new paired P-256/dual-group
-  flights bring the scripted total to 114 plus the ordinary consumer.
+  client/server handshakes for all three suites and both buffer layouts,
+  cross-hash retry, long eight-certificate flights, 50 error/publication/epoch
+  boundaries and 80 group/entropy/scalar/work admissions. Twenty-four paired
+  flights bring the scripted total to 154 plus the ordinary consumer.
   The engine uses caller storage without allocation, holds application bytes
   until client Finished is acknowledged, and retains exact pending wire prefixes.
-  Three paired native processes each own one explicitly accounted test arena;
+  Five paired native processes each own one explicitly accounted test arena;
   ordinary, control and group-admission consumers have empty allocation traces.
   Both published groups are independently compared with actual wire selection.
-- [Owned TLS over TCP](extended-tls-tcp.md) passes 18 independent OpenSSL
-  exchanges in both roles and suites, 37 ownership/fault cases, and two exact
-  1 MiB pressure streams. Actual syscall traces include one positive short send,
-  retained wire progress, matching releases and one socket close attempt.
-  Fourteen P-256 interoperability and fourteen bounded entropy/failure cases
-  bring the transport total to 91. Six operation-resumption cases also pass:
-  actual acknowledged sends and retained unfed receives survive budget renewal
-  without repeated bytes.
-  The [real TLS exchange program](extended-tls-exchange.md) passes 76 cases
+- [Owned TLS over TCP](extended-tls-tcp.md) passes 122 native cases: 46 OpenSSL
+  exchanges across both roles, three suites and both groups; 37 ownership/fault
+  cases; four exact 1 MiB pressure streams; 14 bounded P-256 entropy/failure
+  cases; 15 SHA-384 limit cases; and six operation-budget resumption cases.
+  Actual syscall traces include one positive short send in the older pressure
+  gate, retained wire progress, matching releases and one socket close attempt.
+  Acknowledged sends and retained unfed receives survive budget renewal without
+  repeated bytes. The two AES-256 pressure cases use a 35-second test deadline;
+  production deadline behavior remains unchanged.
+  The [real TLS exchange program](extended-tls-exchange.md) passes 80 cases
   across both-role interoperability, CLI/files/I/O, ownership and shared host
   budgets. These are
   x86_64 Linux native results through the GPU compiler; they do not establish
@@ -517,10 +542,10 @@ integration and the other remaining families still need their own evidence.
   certificate trust decision separately. The new authentication bridge enforces
   CertificateVerify and server Finished; the new engine enforces the client
   Finished checkpoint, partial I/O progress, alerts and closure in its selected
-  profile. Other cipher/signature suites, resumption and early-data
+  profile. Broader signature schemes and certificate policies, session resumption and early-data
   policy remain part of the broader TLS work. The complete library goal still
   includes threads, SQLite and the other families above.
-- Current crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
+- Earlier crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
   [Poly1305](stdlib-poly1305.md), their
   [authenticated-encryption construction](extended-chacha20-poly1305.md) and
   [X25519 key exchange](extended-x25519.md) pass focused native Linux gates
@@ -531,10 +556,10 @@ integration and the other remaining families still need their own evidence.
   totaling 137 native cases across ordinary messages, owner/I/O failures,
   1 MiB boundaries and call budgets. The
   [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-  records before/after evidence and limits. TLS handshake, peer authentication,
-  certificates, trust policy and transport integration remain required after
-  this layer. The full goal still includes threads, SQLite and the other
-  families above.
+  records before/after evidence and limits. The selected handshake, peer
+  authentication and transport profile now has the separate evidence above.
+  The full goal still includes broader certificate policy, threads, SQLite and
+  the other families above.
 - Previous hash milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
   SHA-384, SHA-512, SHA-512/224 and SHA-512/256), followed by HMAC-SHA-256
   and HKDF-SHA-256. Allocation-free Lanius implementations and native admission
@@ -542,8 +567,8 @@ integration and the other remaining families still need their own evidence.
   errors, primary-specification vectors and 3,362 independent model commands.
   The streaming stdin hashing and key-derivation applications pass 136 and 51
   native cases respectively. The whole library goal remains open. This supplies
-  prerequisites for protocol work; TLS still needs handshake/certificate/trust
-  policy and its transport state machine.
+  prerequisites for the protocol work described above; broader certificate and
+  trust policy remain open.
 - Previous milestone: runtime formatting to generic byte writers, using the
   existing parser/renderer, bounded scratch, complete preflight before output,
   exact confirmed failure progress and explicit call budgets. Independent

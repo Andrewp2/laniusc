@@ -1,4 +1,7 @@
 //! One composed TLS1.3 authentication flight, independently checked at every boundary.
+//! Explicit SHA-256 profile; typed caller migration admission is recorded in
+//! docs/extended-tls-auth-foundation.md. The independent peer and 40 wire fields
+//! retain their original expectations.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{

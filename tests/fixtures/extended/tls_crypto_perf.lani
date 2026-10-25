@@ -8,6 +8,9 @@ import core::slice;
 import ext::chacha20_poly1305;
 import ext::x25519;
 import ext::tls_record;
+import ext::tls_hash;
+import ext::tls_schedule;
+import ext::tls_suite;
 fn view(data: [u8], length: i32) -> core::slice::View<u8> {
     return core::slice::View { values: data, start: 0, length: length };
 }
@@ -40,8 +43,9 @@ fn main() {
     verify(cipher,expected_cipher,114); verify(tag,expected_tag,16);
     assert(ext::chacha20_poly1305::open_into(view(key,32),view(nonce,12),view(aad,12),view(cipher,114),view(tag,16),view(plain,114)).unwrap() == 114);
     verify(plain,message,114);
-    let sender: ext::tls_record::Sealer = ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, view(secret,32)).unwrap();
-    let receiver: ext::tls_record::Opener = ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, view(secret,32)).unwrap();
+    let traffic:ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(ext::tls_hash::Algorithm::Sha256,view(secret,32)).unwrap();
+    let sender: ext::tls_record::Sealer = ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, traffic).unwrap();
+    let receiver: ext::tls_record::Opener = ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, traffic).unwrap();
     let packet: [u8;64] = [0;64]; let scratch: [u8;64] = [0;64];
     let count: i32 = sender.seal(view(hello,5),23,3,view(packet,64)).unwrap();
     assert(count == 30); verify(packet,expected_record,count);

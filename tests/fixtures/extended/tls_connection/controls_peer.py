@@ -3,6 +3,8 @@ Private high-counter/phase inputs in controls.lani are not authentication proof.
 """
 import ctypes
 import importlib.util
+import hashlib
+import hmac
 import pathlib
 import subprocess
 import sys
@@ -14,13 +16,16 @@ wire = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(wire)
 Q, U16, U24, H = wire.Q, wire.U16, wire.U24, wire.H
 KEY = bytes(range(33, 65))
+KEY384 = bytes(range(33,81))
+INITIAL = b"\x01\0\0\0"
 LIMIT = 16777216
-UPDATED = wire.expand(KEY, b'traffic upd')
+UPDATED = wire.expand(KEY, b'traffic upd', algorithm='sha256')
 DATA = b'\xaa\0\xff'
 
 
-def seal(secret, seq, kind, content):
-    key, iv = wire.expand(secret, b'key', length=16), wire.expand(secret, b'iv', length=12)
+def seal(secret, seq, kind, content, *, algorithm='sha256'):
+    key_length = 32 if algorithm == 'sha384' else 16
+    key, iv = wire.expand(secret, b'key', length=key_length, algorithm=algorithm), wire.expand(secret, b'iv', length=12, algorithm=algorithm)
     nonce = bytes(a ^ b for a, b in zip(iv, bytes(4)+seq.to_bytes(8, 'big')))
     plain = content+bytes([kind])
     header = b'\x17\x03\x03'+U16(len(plain)+16)
@@ -28,7 +33,8 @@ def seal(secret, seq, kind, content):
     ctx = c.EVP_CIPHER_CTX_new()
     assert ctx
     try:
-        assert c.EVP_EncryptInit_ex(ctx, c.EVP_aes_128_gcm(), None, None, None) == 1
+        cipher = c.EVP_aes_256_gcm if algorithm == 'sha384' else c.EVP_aes_128_gcm
+        assert c.EVP_EncryptInit_ex(ctx, cipher(), None, None, None) == 1
         assert c.EVP_CIPHER_CTX_ctrl(ctx, 9, 12, None) == 1
         assert c.EVP_EncryptInit_ex(ctx, None, None, key, nonce) == 1
         n = I()
@@ -46,12 +52,12 @@ def seal(secret, seq, kind, content):
         c.EVP_CIPHER_CTX_free(ctx)
 
 
-def decode(packet, secret, sequence):
+def decode(packet, secret, sequence, *, algorithm='sha256'):
     assert packet[:3] == b'\x17\x03\x03'
-    key = wire.expand(secret, b'key', length=16)
-    iv = wire.expand(secret, b'iv', length=12)
+    key = wire.expand(secret, b'key', length=32 if algorithm == 'sha384' else 16, algorithm=algorithm)
+    iv = wire.expand(secret, b'iv', length=12, algorithm=algorithm)
     nonce = bytes(a ^ b for a, b in zip(iv, bytes(4)+sequence.to_bytes(8, 'big')))
-    return wire.aead(key, nonce, packet[:5], packet[5:-16], packet[-16:], False)
+    return wire.aead(key, nonce, packet[:5], packet[5:-16], packet[-16:], 4866 if algorithm == 'sha384' else 4865)
 
 
 def plain(kind, content, version=b'\xff\xff'):
@@ -62,7 +68,18 @@ def frame(kind, content):
     return bytes([kind])+U24(len(content))+content
 
 
+def finished384(tamper=False):
+    key = wire.expand(KEY384, b'finished', algorithm='sha384')
+    tag = hmac.new(key, hashlib.sha384(INITIAL).digest(), hashlib.sha384).digest()
+    if tamper:
+        tag = tag[:-1]+bytes([tag[-1]^1])
+    return frame(20, tag)
+
+
 def inputs(op):
+    if op in (23,24):
+        finished = finished384(op == 24)
+        return seal(KEY384,0,22,finished[:20],algorithm='sha384'), seal(KEY384,1,22,finished[20:],algorithm='sha384')
     cpub, spub, shared = wire.shared_key(29, (29,), (29,))
     ext = b'\0\x2b\0\x02\x03\x04'+b'\0\x33\0\x24\0\x1d\0\x20'+spub
     sh = frame(2, b'\x03\x03'+wire.SERVER_ENTROPY[:32]+b'\0\x13\x03\0'+U16(len(ext))+ext)
@@ -117,12 +134,12 @@ def check(op, a, b, first, second, words, result, outgoing):
         16: (0, len(a), 0, len(b)), 17: (0, len(a), 10, len(b)),
         18: (0, len(a), 0, len(b)), 19: (9, len(a), 9, 0),
         20: (0, len(a), 6, len(b)), 21: (0, len(a), 5, 0),
-        22: (6, len(a), 6, 0),
+        22: (6, len(a), 6, 0), 23: (0,len(a),0,len(b)), 24: (0,len(a),16,len(b)),
     }[op]
     assert (sa, ca, sb, cb) == expected, (op, words, expected)
     assert eof == int(op in (11, 18)) and peerclose == int(op in (11, 18))
     assert localclose == int(op == 16)
-    assert failed == int(op not in (2, 11, 12, 13, 16, 18))
+    assert failed == int(op not in (2, 11, 12, 13, 16, 18, 23))
     assert held == 0 and rawheld == (3 if op == 17 else 0)
     if op == 10:
         assert rx == LIMIT and received == 2 and rg == 1
@@ -141,6 +158,15 @@ def check(op, a, b, first, second, words, result, outgoing):
         assert decode(first, KEY, 0) == frame(24, b'\x01')+b'\x16'
         assert decode(second, UPDATED, 0) == b'\x01\0\x15'
         assert hs == 0 and sg == 2 and ss == 1 and rg == 1 and rx == 2 and outgoing == b''
+    elif op in (23,24):
+        assert first == hashlib.sha384(INITIAL).digest()
+        assert second == (hashlib.sha384(INITIAL+finished384()).digest() if op == 23 else b'')
+        assert received == 2 and rg == (1 if op == 23 else 0) and rx == (0 if op == 23 else 2)
+        assert sg == 0 and held == 0 and hs == (0 if op == 23 else 52)
+        if op == 23:
+            assert outgoing == b'' and ss == sent == 0
+        else:
+            assert ss == sent == 1 and decode(outgoing,KEY384,0,algorithm='sha384') == b'\x02\x33\x15'
     else:
         assert first == second == b''
     if op == 0:
@@ -158,7 +184,7 @@ def check(op, a, b, first, second, words, result, outgoing):
 
 
 def run(executable):
-    cases = [(op, layout, *inputs(op)) for op in range(23) for layout in (0, 1)]
+    cases = [(op, layout, *inputs(op)) for op in range(25) for layout in (0, 1)]
     source = Q(len(cases))+b''.join(Q(op, layout, len(a), len(b))+a+b for op, layout, a, b in cases)
     with tempfile.TemporaryDirectory(prefix='laniusc_connection_controls_') as temp:
         trace = pathlib.Path(temp)/'memory'
@@ -173,7 +199,7 @@ def run(executable):
         observed, outgoing = reader.block(), reader.block()
         check(op, a, b, first, second, words, observed, outgoing)
     assert reader.at == len(reader.data)
-    print('tls connection controls: 46 accepted')
+    print('tls connection controls: 50 accepted')
 
 
 if __name__ == '__main__':

@@ -1,12 +1,20 @@
-# TLS hash and cipher-suite integration proposal
+# TLS hash and cipher-suite integration design record
 
-**Proposal only; implementation and runtime admission are pending.** This
-read-only audit used source checkpoint
+**Implemented and tested on x86_64 Linux.** The selected-hash foundation,
+schedule/transcript, record, authentication, negotiation, engine, TCP adapter
+and exchange program now have executable admission. The linked
+[hash/suite](extended-tls-hash.md), [schedule](extended-tls-schedule.md),
+[record](extended-tls-record.md), [engine](extended-tls-connection.md),
+[TCP](extended-tls-tcp.md) and [program](extended-tls-exchange.md) guides
+define the current APIs, exact receipts and target limits. This document
+retains the original design and its rationale; design notation below is not
+a second API specification.
+
+The original read-only audit used source checkpoint
 `31afe5ab15e21c0b3521e153c837b3f66908e73c` plus the in-progress P-256 group
-migration inspected on 2026-10-25. Group negotiation and connection ownership
-remain with that milestone's author. Reconcile this plan against its admitted
-snapshot before changing code. No source, fixture, compiler, proof, or ABI
-work was performed for this proposal.
+migration inspected on 2026-10-25. Implementation followed that admitted
+group milestone. The original audit changed no source; subsequent library
+implementation and admission did not change compiler, proof or ABI code.
 
 ## Decision
 

@@ -107,7 +107,7 @@ fn negotiation_resource(e:ext::tls_negotiation::Error)->bool { return match(e) {
 fn certificate_resource(e:ext::x509::Error)->bool { return match(e.kind) { ext::x509::ErrorKind::InputLimit -> true, ext::x509::ErrorKind::ItemLimit -> true, ext::x509::ErrorKind::WorkLimit -> true, _ -> false }; }
 fn framing_resource(e:ext::tls_framing::Error)->bool { return match(e) { ext::tls_framing::Error::TooLarge -> true, ext::tls_framing::Error::BufferTooSmall -> true, _ -> false }; }
 pub fn is_resource_limit(e:Error)->bool { return match(e) { Error::Limit -> true, Error::BufferTooSmall -> true, Error::Negotiation(detail) -> negotiation_resource(detail), Error::Authentication(detail) -> auth_resource(detail), Error::Certificate(detail) -> certificate_resource(detail), Error::Framing(detail) -> framing_resource(detail), _ -> false }; }
-pub fn default_limits()->Limits { return Limits { max_handshake_body:1048576,max_hello_frame:16384,max_application_hold:16384,max_records:100000,max_controls:4096,max_handshake_bytes:4194304,max_key_updates:64,max_work:268435456,path:ext::x509_path::default_limits(),negotiation:ext::tls_negotiation::default_limits() }; }
+pub fn default_limits()->Limits { return Limits { max_handshake_body:1048576,max_hello_frame:16384,max_application_hold:16384,max_records:100000,max_controls:4096,max_handshake_bytes:4194304,max_key_updates:64,max_work:68719476736,path:ext::x509_path::default_limits(),negotiation:ext::tls_negotiation::default_limits() }; }
 // Sizes count logical elements. Checked also for packed i32-backed byte owners.
 pub fn required_buffers(limits:Limits)->core::result::Result<BufferSizes,Error> {
     if(limits.max_handshake_body<124 || limits.max_handshake_body>16777215 || limits.max_hello_frame<128 || limits.max_hello_frame>limits.max_handshake_body+4 || limits.max_application_hold<1 || limits.max_application_hold>2147483644) { return core::result::Err(Error::InvalidConfig); }
@@ -144,15 +144,26 @@ pub fn entropy_layout(policy:ext::tls_negotiation::GroupPolicy)->core::result::R
 // Source-counted conservative admission units; see tls-group-integration-plan.
 // P-256 shared-secret bound: 8712*6144 + 256*32768 + 65536 < 64 Mi.
 const P256_WORK:u64=67108864;
-// SHA384 fresh finalization and HKDF expansion. Callers preflight label<=249,
-// context<=255/output<=12240; external context is bounded by i32 metadata.
+// Conservative SHA384 compression/copy credits. Each argument is preflighted
+// to i32 bytes, <=249/255 label/context, or <=12240 output (255 blocks).
+// Thus even the largest context hash/linear-copy sum is far below u64MAX.
 fn sha384_blocks(n:u64)->u64 { return (n+144)/128; }
+fn sha384_hash_work(n:u64)->u64 { return 16384*sha384_blocks(n)+8192+32*(n+48); }
+fn sha384_hmac_work(n:u64)->u64 { return 16384*(3+sha384_blocks(n))+12288+32*(1024+n); }
 fn sha384_expand_work(label:i32,context:i32,output:i32)->u64 {
-    if(output==0) { return 0; }
+    if(output==0) { return 8192+32*(1024+(label as u64)+(context as u64)); }
     let blocks:u64=((output as u64)+47)/48; let info:u64=10+(label as u64)+(context as u64);
     let compressions:u64=2+sha384_blocks(info+1)+1+(blocks-1)*(sha384_blocks(info+49)+1);
-    return 16384*compressions+8192+4096*blocks+8*((output as u64)+info*blocks);
+    return 16384*compressions+4096*(blocks+2)+32*(1024+(label as u64)+(context as u64)+blocks*(info+97)+(output as u64));
 }
+fn sha384_handshake_work()->u64 { return 2*sha384_hmac_work(48)+sha384_hmac_work(32)+2*sha384_hash_work(0)+2*sha384_expand_work(7,48,48)+2*sha384_expand_work(12,48,48); }
+fn sha384_application_work()->u64 { return 2*sha384_expand_work(12,48,48)+sha384_expand_work(10,48,48); }
+fn sha384_finished_work()->u64 { return sha384_expand_work(8,0,48)+sha384_hmac_work(48); }
+fn sha384_record_owner_work()->u64 { return sha384_expand_work(3,0,32)+sha384_expand_work(2,0,12)+196608; }
+fn sha384_update_work()->u64 { return sha384_expand_work(11,0,48)+sha384_record_owner_work(); }
+fn sha384_stream_work(n:u64)->u64 { return 16384*((n+127)/128+1)+16384+32*(n+256); }
+fn sha384_snapshot_work()->u64 { return (2*16384+12288+32*(128+48)) as u64; }
+fn sha384_rewrite_work(n:u64)->u64 { return sha384_snapshot_work()+12288+sha384_stream_work(n+52)+4096+32*52; }
 
 fn make(side:Role,buffers:Buffers,limits:Limits,policy:ext::tls_negotiation::GroupPolicy,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error> {
     if(!valid(entropy)) { return core::result::Err(Error::Bounds); }
@@ -227,8 +238,8 @@ impl Engine {
     // See the source-counted SHA384/AES256 table in the connection guide.
     // Callers bound all counts to i32 frame lengths or <=255 HKDF blocks;
     // products/sums below therefore remain well inside u64.
-    fn hash_work(&self,compressions:u64,copies:u64)->core::result::Result<i32,Error> { if(!self.sha384()) { return core::result::Ok(0); } return self.work(16384*compressions+copies); }
-    fn record_owner_work(&self)->core::result::Result<i32,Error> { if(!self.sha384()) { return core::result::Ok(0); } return self.work(8*16384+32768+196608); }
+    fn selected_hash_work(&self,cost:u64)->core::result::Result<i32,Error> { if(!self.sha384()) { return core::result::Ok(0); } return self.work(cost); }
+    fn record_owner_work(&self)->core::result::Result<i32,Error> { return self.selected_hash_work(sha384_record_owner_work()); }
     fn charge_record(&self,length:i32,sending:bool,protected:bool)->core::result::Result<i32,Error> {
         if(self.records_left==0) { return core::result::Err(Error::Limit); }
         let cost:u64=1024+8*(length as u64);
@@ -245,7 +256,7 @@ impl Engine {
     }
     fn bind_suite(&self,suite:ext::tls_suite::Suite)->core::result::Result<i32,Error> {
         if(self.selected.is_some()) { if(ext::tls_suite::id(self.selected.unwrap())!=ext::tls_suite::id(suite)) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Retry)); } if(self.transcript.is_none()) { return core::result::Err(Error::Internal); } return core::result::Ok(0); }
-        if(ext::tls_hash::hash_length(ext::tls_suite::hash(suite))==48) { let charged:core::result::Result<i32,Error> = self.work(4096); if(charged.is_err()) { return charged; } }
+        if(ext::tls_hash::hash_length(ext::tls_suite::hash(suite))==48) { let charged:core::result::Result<i32,Error> = self.work(12288); if(charged.is_err()) { return charged; } }
         let transcript:ext::tls_transcript::State=ext::tls_transcript::new(ext::tls_suite::hash(suite)); self.selected=core::option::Some(suite); self.transcript=core::option::Some(transcript); return core::result::Ok(0);
     }
     fn bind_client_suite(&self,suite:ext::tls_suite::Suite)->core::result::Result<i32,Error> {
@@ -256,17 +267,17 @@ impl Engine {
     }
     fn append(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
         if(self.transcript.is_none()) { return core::result::Err(Error::Internal); }
-        let charged:core::result::Result<i32,Error> = self.hash_work(((frame.length as u64)+127)/128+1,4096+8*(frame.length as u64)); if(charged.is_err()) { return charged; }
+        let charged:core::result::Result<i32,Error> = self.selected_hash_work(sha384_stream_work(frame.length as u64)); if(charged.is_err()) { return charged; }
         let transcript:ext::tls_transcript::State=self.transcript.unwrap(); let updated:core::result::Result<i32,ext::tls_transcript::Error> = transcript.update(frame); if(updated.is_err()) { return core::result::Err(Error::Crypto); } self.transcript=core::option::Some(transcript); return core::result::Ok(frame.length);
     }
     fn snapshot(&self)->core::result::Result<ext::tls_hash::Digest,Error> {
         if(self.transcript.is_none()) { return core::result::Err(Error::Internal); }
-        let charged:core::result::Result<i32,Error> = self.hash_work(2,4096); if(charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+        let charged:core::result::Result<i32,Error> = self.selected_hash_work(sha384_snapshot_work()); if(charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
         let transcript:ext::tls_transcript::State=self.transcript.unwrap(); return core::result::Ok(transcript.snapshot());
     }
     fn rewrite_hrr(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
         if(self.transcript.is_none()) { return core::result::Err(Error::Internal); }
-        let charged:core::result::Result<i32,Error> = self.hash_work(2+((52+(frame.length as u64))+127)/128+1,8192+8*(52+(frame.length as u64))); if(charged.is_err()) { return charged; }
+        let charged:core::result::Result<i32,Error> = self.selected_hash_work(sha384_rewrite_work(frame.length as u64)); if(charged.is_err()) { return charged; }
         let transcript:ext::tls_transcript::State=self.transcript.unwrap(); let rewritten:core::result::Result<i32,ext::tls_transcript::Error> = transcript.rewrite_for_hrr(frame); if(rewritten.is_err()) { return core::result::Err(Error::Crypto); } self.transcript=core::option::Some(transcript); return core::result::Ok(frame.length);
     }
     fn hello_part(&self,second:bool)->core::slice::View<u8> { let at:i32=0; if(second) { at=self.limits.max_hello_frame; } return region(self.buffers.hello,at,self.limits.max_hello_frame); }
@@ -317,7 +328,7 @@ impl Engine {
             let charged:core::result::Result<i32,Error> = self.work(P256_WORK+131072); if(charged.is_err()) { return charged; }
             let shared:core::result::Result<ext::p256::SharedSecret,ext::p256::Error> = ext::p256::shared_secret(core::slice::View { values:self.p_scalar,start:0,length:32 },peer); if(shared.is_err()) { return core::result::Err(Error::Crypto); } key=shared.unwrap().bytes;
         }
-        let hashed:core::result::Result<i32,Error> = self.hash_work(30,65536); if(hashed.is_err()) { return hashed; }
+        let hashed:core::result::Result<i32,Error> = self.selected_hash_work(sha384_handshake_work()); if(hashed.is_err()) { return hashed; }
         let early:ext::tls_schedule::Early=ext::tls_schedule::no_psk(ext::tls_suite::hash(self.selected.unwrap()));
         let schedule:ext::tls_schedule::Handshake=early.handshake(core::slice::View { values:key,start:0,length:32 }).unwrap(); let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap();
 
@@ -336,7 +347,7 @@ impl Engine {
     }
     fn derive_application(&self)->core::result::Result<i32,Error> {
         let charged:core::result::Result<i32,Error> = self.work(131072); if(charged.is_err()) { return charged; }
-        let hashed:core::result::Result<i32,Error> = self.hash_work(12,49152); if(hashed.is_err()) { return hashed; }
+        let hashed:core::result::Result<i32,Error> = self.selected_hash_work(sha384_application_work()); if(hashed.is_err()) { return hashed; }
         let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap();
         let master:ext::tls_schedule::Master=self.master.unwrap(); self.application_client=core::option::Some(master.traffic(ext::tls_schedule::Side::Client,hash).unwrap()); self.application_server=core::option::Some(master.traffic(ext::tls_schedule::Side::Server,hash).unwrap()); self.exporter=core::option::Some(master.exporter(hash).unwrap());
         return core::result::Ok(0);
@@ -378,8 +389,9 @@ impl Engine {
     fn prepare_cv(&self)->core::result::Result<i32,Error> {
         if(self.path_budget.signatures_left==0) { return core::result::Err(Error::Limit); }
         let charged:core::result::Result<i32,Error> = self.work(1048576); if(charged.is_err()) { return charged; } self.path_budget.signatures_left-=1;
-        let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap(); let signed:ext::tls_authentication::CVInput=ext::tls_authentication::certificate_verify_input(ext::tls_schedule::Side::Server,hash);
-        let copied:core::result::Result<i32,Error> = self.hash_work(0,8192); if(copied.is_err()) { return copied; }
+        let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap();
+        let copied:core::result::Result<i32,Error> = self.selected_hash_work(4096+32*146); if(copied.is_err()) { return copied; }
+        let signed:ext::tls_authentication::CVInput=ext::tls_authentication::certificate_verify_input(ext::tls_schedule::Side::Server,hash);
         let signature:core::result::Result<ext::ed25519::Signature64,ext::ed25519::Error> = ext::ed25519::sign(core::slice::View { values:self.seed,start:0,length:32 },signed.view()); if(signature.is_err()) { return core::result::Err(Error::Crypto); }
         let proof:ext::ed25519::Signature64=signature.unwrap();
         let written:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_certificate_verify(ext::tls_handshake::CertificateVerify { algorithm:2055,signature:core::slice::View { values:proof.bytes,start:0,length:64 } },self.buffers.handshake); if(written.is_err()) { return core::result::Err(Error::Internal); }
@@ -387,7 +399,7 @@ impl Engine {
     }
     fn prepare_finished(&self)->core::result::Result<i32,Error> {
         let charged:core::result::Result<i32,Error> = self.work(32768); if(charged.is_err()) { return charged; }
-        let hashed:core::result::Result<i32,Error> = self.hash_work(8,32768); if(hashed.is_err()) { return hashed; }
+        let hashed:core::result::Result<i32,Error> = self.selected_hash_work(sha384_finished_work()); if(hashed.is_err()) { return hashed; }
         let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap(); let secret:ext::tls_schedule::Secret=self.handshake_server.unwrap(); if(self.is_client()) { secret=self.handshake_client.unwrap(); }
         let verify:ext::tls_schedule::Secret=ext::tls_schedule::finished(secret,hash).unwrap();
         let written:core::result::Result<i32,ext::tls_handshake::Error> = ext::tls_handshake::write_finished(ext::tls_handshake::Finished { verify_data:verify.view() },ext::tls_hash::hash_length(verify.algorithm),self.buffers.handshake); if(written.is_err()) { return core::result::Err(Error::Internal); }
@@ -449,7 +461,7 @@ impl Engine {
         if(action==9) {
             if(self.send_generation==18446744073709551615 || self.sender.is_none()) { return core::result::Err(Error::Limit); }
             let charged:core::result::Result<i32,Error> = self.work(32768); if(charged.is_err()) { return charged; }
-            let extra:core::result::Result<i32,Error> = self.hash_work(12,49152+196608); if(extra.is_err()) { return extra; }
+            let extra:core::result::Result<i32,Error> = self.selected_hash_work(sha384_update_work()); if(extra.is_err()) { return extra; }
             let sender:ext::tls_record::Sealer=self.sender.unwrap(); let updated:core::result::Result<i32,ext::tls_record::Error> = sender.key_update(); self.sender=core::option::Some(sender);
             if(updated.is_err()) { return core::result::Err(Error::Record(updated.unwrap_err())); } self.send_generation+=1; self.send_sequence=0;
         }
@@ -522,7 +534,7 @@ impl Engine {
     }
     fn server_client_finished(&self,frame:core::slice::View<u8>)->core::result::Result<i32,Error> {
         let parsed:core::result::Result<ext::tls_handshake::Finished,ext::tls_handshake::Error> = ext::tls_handshake::parse_finished(region(frame,4,frame.length-4),self.hash_length()); if(parsed.is_err()) { return core::result::Err(Error::Authentication(ext::tls_authentication::Error::Handshake(parsed.unwrap_err()))); }
-        let hashed:core::result::Result<i32,Error> = self.hash_work(8,32768); if(hashed.is_err()) { return hashed; }
+        let hashed:core::result::Result<i32,Error> = self.selected_hash_work(sha384_finished_work()); if(hashed.is_err()) { return hashed; }
         let snapshot:core::result::Result<ext::tls_hash::Digest,Error> = self.snapshot(); if(snapshot.is_err()) { return core::result::Err(snapshot.unwrap_err()); } let hash:ext::tls_hash::Digest=snapshot.unwrap(); let verified:core::result::Result<bool,ext::tls_schedule::Error> = ext::tls_schedule::verify_finished(self.handshake_client.unwrap(),hash,parsed.unwrap().verify_data);
         if(verified.is_err()) { return core::result::Err(Error::Crypto); } if(!verified.unwrap()) { return core::result::Err(Error::Authentication(ext::tls_authentication::Error::Finished)); }
         let appended:core::result::Result<i32,Error> = self.append(frame); if(appended.is_err()) { return appended; }
@@ -542,7 +554,7 @@ impl Engine {
             if(self.updates_left==0 || self.receive_generation==18446744073709551615) { return core::result::Err(Error::Limit); }
             let update:core::result::Result<ext::tls_handshake::KeyUpdate,ext::tls_handshake::Error> = ext::tls_handshake::parse_key_update(region(frame,4,frame.length-4)); if(update.is_err()) { return core::result::Err(Error::Negotiation(ext::tls_negotiation::Error::Codec(update.unwrap_err()))); }
             let charged:core::result::Result<i32,Error> = self.work(32768); if(charged.is_err()) { return charged; }
-            let extra:core::result::Result<i32,Error> = self.hash_work(12,49152+196608); if(extra.is_err()) { return extra; }
+            let extra:core::result::Result<i32,Error> = self.selected_hash_work(sha384_update_work()); if(extra.is_err()) { return extra; }
             let receiver:ext::tls_record::Opener=self.receiver.unwrap(); let changed:core::result::Result<i32,ext::tls_record::Error> = receiver.key_update(); self.receiver=core::option::Some(receiver); if(changed.is_err()) { return core::result::Err(Error::Record(changed.unwrap_err())); }
             self.updates_left-=1; self.receive_generation+=1; self.receive_sequence=0;
             if(update.unwrap().request_update==1) { self.update_response=true; }
@@ -780,7 +792,7 @@ pub impl Engine {
         if(label.length<1 || label.length>249 || output.length>ext::tls_schedule::max_output(ext::tls_suite::hash(self.selected.unwrap()))) { return core::result::Err(Error::InvalidConfig); }
         let charged:core::result::Result<i32,Error> = self.work(32768+128*((context.length as u64)+(output.length as u64))); if(charged.is_err()) { return core::result::Err(self.fail(charged.unwrap_err())); }
         if(self.sha384()) {
-            let cost:u64=16384*(1+sha384_blocks(context.length as u64))+8192+8*(context.length as u64)+sha384_expand_work(label.length,48,48)+sha384_expand_work(8,48,output.length);
+            let cost:u64=sha384_hash_work(0)+sha384_expand_work(label.length,48,48)+sha384_hash_work(context.length as u64)+sha384_expand_work(8,48,output.length);
             let extra:core::result::Result<i32,Error> = self.work(cost); if(extra.is_err()) { return core::result::Err(self.fail(extra.unwrap_err())); }
         }
         let exporter:ext::tls_schedule::Exporter=self.exporter.unwrap(); let exported:core::result::Result<i32,ext::tls_schedule::Error> = exporter.export(label,context,output); if(exported.is_err()) { return core::result::Err(self.fail(Error::Crypto)); } return core::result::Ok(exported.unwrap());

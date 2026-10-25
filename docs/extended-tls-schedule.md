@@ -1,159 +1,316 @@
-# TLS SHA-256 transcript and key schedule
+# TLS selected-hash transcript and key schedule
 
 `ext::tls_transcript` hashes complete framed handshake messages.
-`ext::tls_schedule` implements the TLS 1.3 SHA-256 key schedule, checked
-HKDF-Expand-Label, Finished, exporters and ticket PSKs. Both are Lanius code
-with fixed local storage and no allocation. Accepted on 2026-10-24 for native
-x86_64 Linux output from GPU compilation. User GPU kernels and other execution
-targets remain unverified.
+`ext::tls_schedule` implements the TLS 1.3 SHA-256/SHA-384 schedule,
+HKDF-Expand-Label, Finished, exporters and ticket PSKs. Both use fixed local
+storage without allocation or host services. **The selected-hash migration
+passed runtime admission on 2026-10-25 for GPU-compiled native x86_64 Linux
+output.** Four separate exact invocations passed 232 protocol commands plus
+one ordinary consumer. User GPU execution, other targets and throughput are
+not established. Earlier SHA-256-only receipts remain separate below.
 
-The algorithms follow [RFC 8446 sections 4.4.1, 4.4.4 and 7](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.4.1),
-with published intermediate anchors from [RFC 8448 section 3](https://www.rfc-editor.org/rfc/rfc8448.html#section-3).
-These modules do not establish a TLS connection, authenticate a peer, validate
-certificates or enforce the semantic handshake state machine. SHA-384 cipher
-suites are outside their scope. The caller selects the correct directional
-secrets and transcript checkpoints.
+The algorithm follows [RFC 8446 sections 4.4.1, 4.4.4 and
+7](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.4.1). These components
+supply hash/schedule mechanics, not semantic handshake sequencing, negotiated
+suite provenance, certificate authentication or a TLS connection. The caller
+selects the suite hash and the correct directional secrets/checkpoints.
+ECDHE input length is independent: current X25519/P-256 shared secrets are
+32 bytes even when SHA-384 produces 48-byte schedule values.
+
+## Owned selected-hash values
+
+```text
+Secret { algorithm: ext::tls_hash::Algorithm, bytes: [u8;48] }
+secret_from_view(algorithm, bytes: View<u8>) -> Result<Secret, Error>
+Secret.view(&self) -> View<u8>
+max_output(algorithm) -> i32
+```
+
+The two `Algorithm` variants are `Sha256` and `Sha384`. Use
+`ext::tls_hash::hash_length(algorithm)` for 32 or 48. `secret_from_view` checks
+logical metadata, then exact selected length, copies the active bytes, and
+zeros the inactive tail. SHA-256 secrets own 48-byte storage with a canonical
+16-byte zero tail; SHA-384 uses all 48. Returned derivations keep that
+canonical form. The hash is never inferred from a supplied array width.
+
+Transcript checkpoints use the separate owned
+`ext::tls_hash::Digest { algorithm, bytes:[u8;48] }`. Import a raw checkpoint
+with the hash module's checked `digest_from_view`, not a fabricated length.
+The digest constructor reports its own `InvalidLength`; the schedule reports
+`InvalidSecretLength` for raw secret construction. Public implementation
+fields are not a validated restoration or serialization format.
+
+`Secret.view` and `Digest.view` borrow stable `&self` receivers. Their active
+views remain valid only while the same referent stays live, unchanged and at
+the same location. Bind returned results to owned locals before borrowing;
+never retain a view obtained from a copied receiver or chained temporary.
+Schedule phase results, snapshots and durable outputs remain owned values.
+The implementations retain no borrow of supplied PSKs, ECDHE inputs, hashes,
+labels or contexts. Phase/digest copies have independent inline storage.
 
 ## Checked label derivation
 
-All byte arguments are `core::slice::View<u8>`:
+Here `View`, `Result` and `Digest` abbreviate `core::slice::View`,
+`core::result::Result` and `ext::tls_hash::Digest`.
 
 ```text
-expand_label(base, label, context, output) -> Result<i32, Error>
-derive_secret(base: Secret, label, transcript_hash) -> Result<Secret, Error>
-finished(base, transcript_hash) -> Result<Secret, Error>
-verify_finished(base, transcript_hash, received) -> Result<bool, Error>
-update_traffic(base) -> Result<Secret, Error>
+expand_label(base: Secret, label: View<u8>, context: View<u8>, output: View<u8>)
+    -> Result<i32, Error>
+derive_secret(base: Secret, label: View<u8>, hash: Digest)
+    -> Result<Secret, Error>
+finished(base: Secret, hash: Digest) -> Result<Secret, Error>
+verify_finished(base: Secret, hash: Digest, received: View<u8>)
+    -> Result<bool, Error>
+update_traffic(base: Secret) -> Result<Secret, Error>
 ```
 
-`Secret { bytes: [u8; 32] }` owns its bytes; `Secret.view()` borrows them.
-`expand_label` requires an exact 32-byte base, a raw label of 1 through 249
-bytes, context of at most 255 bytes, and requested output of 0 through 8160
-bytes. It adds the six-byte `tls13 ` prefix and encodes the two-byte output
-length, one-byte prefixed-label length, label, one-byte context length and
-context. No NUL terminator is added. The output view's length is the requested
-length, including zero. Binary labels/context are preserved exactly; application
-protocols enforce any registered-label restrictions themselves.
+`expand_label` takes a raw label of 1..249 bytes, encoded context of at most
+255 bytes, and requested output of 0..`max_output(base.algorithm)`. The caps
+are 8160 for SHA-256 and 12240 for SHA-384, exactly 255 HKDF blocks. It adds
+`tls13 ` and encodes the output length, prefixed-label length, label, context
+length and context. No NUL terminator is added. The output view's length is
+the requested length, including zero; binary labels/context are preserved.
 
-Logical bounds for all arguments precede semantic limits. `expand_label` then
-checks base length, label length, context length and output length, in that
-order. Its errors are `Bounds`, `InvalidSecretLength`, `InvalidHashLength`,
-`InvalidLabelLength`, `ContextLimit`, `OutputLimit`, `InvalidVerifyLength` and
-`Derivation`. Derive-Secret requires an exact 32-byte supplied transcript hash;
-it does not hash that hash again. Its logical bounds precede hash length and
-label validation. All returned errors preserve caller output. Output must be
-writable, physically backed and disjoint from every input and the source state.
+All supplied view metadata is checked before semantic limits or writes.
+`expand_label` then checks label, context and output lengths, in that order.
+`derive_secret` checks label metadata, digest/secret hash agreement, then
+label semantics through `expand_label`; it does not rehash the checkpoint.
+`verify_finished` checks received metadata, hash agreement, then exact received
+length. Hash mismatch returns `HashMismatch` before cryptographic work.
+All returned errors preserve caller output. Views need actual backing;
+writable output must be disjoint from every input and source state.
 
-## Typed phases
+The schedule errors are `Bounds`, `InvalidSecretLength`, `HashMismatch`,
+`InvalidLabelLength`, `ContextLimit`, `OutputLimit`, `InvalidVerifyLength`
+and `Derivation`. The old raw-checkpoint `InvalidHashLength` API is removed;
+checkpoint construction now belongs to `tls_hash`. No SHA-256 default or
+compatibility overload remains.
 
-| API | Meaning |
+## Typed phases and checkpoints
+
+```text
+early(algorithm, psk: View<u8>) -> Result<Early, Error>
+no_psk(algorithm) -> Early
+```
+
+Each phase wrapper owns one tagged `Secret`. Methods derive independent
+values without consuming or mutating the phase; the receiver carries the
+algorithm, so methods take no second hash selector.
+
+| API | Label or operation |
 | --- | --- |
-| `no_psk() -> Early` | Extract 32 zero IKM bytes using the zero salt |
-| `early(psk) -> Result<Early, Error>` | Extract the supplied PSK bytes, including a supplied empty PSK |
 | `Early.binder(BinderKind::{External,Resumption}) -> Secret` | `ext binder` / `res binder`, with Hash(empty) |
-| `Early.traffic(client_hello_hash) -> Result<Secret, Error>` | `c e traffic` |
-| `Early.exporter(client_hello_hash) -> Result<EarlyExporter, Error>` | `e exp master` |
-| `Early.handshake(shared) -> Result<Handshake, Error>` | Extract supplied DHE bytes using Derive-Secret(`derived`, Hash(empty)) as salt |
-| `Early.handshake_no_dhe() -> Handshake` | The same extraction with 32 zero IKM bytes |
-| `Handshake.traffic(Side::{Client,Server}, server_hello_hash) -> Result<Secret, Error>` | `c hs traffic` / `s hs traffic` |
-| `Handshake.master() -> Master` | Derive `derived` with Hash(empty), then Extract 32 zero IKM bytes |
-| `Master.traffic(side, server_finished_hash) -> Result<Secret, Error>` | `c ap traffic` / `s ap traffic` generation zero |
-| `Master.exporter(server_finished_hash) -> Result<Exporter, Error>` | `exp master` |
-| `Master.resumption(client_finished_hash) -> Result<Resumption, Error>` | `res master` |
-| `Resumption.ticket(ticket_nonce) -> Result<Secret, Error>` | Expand label `resumption`, nonce context of 0 through 255 bytes |
+| `Early.traffic(client_hello: Digest) -> Result<Secret, Error>` | `c e traffic` |
+| `Early.exporter(client_hello: Digest) -> Result<EarlyExporter, Error>` | `e exp master` |
+| `Early.handshake(shared: View<u8>) -> Result<Handshake, Error>` | Derive `derived`, then Extract actual ECDHE bytes |
+| `Early.handshake_no_dhe() -> Handshake` | The same extraction with HashLen zero bytes |
+| `Handshake.traffic(side, server_hello: Digest) -> Result<Secret, Error>` | `c hs traffic` / `s hs traffic` |
+| `Handshake.master() -> Master` | Derive `derived`, then Extract HashLen zero bytes |
+| `Master.traffic(side, server_finished: Digest) -> Result<Secret, Error>` | `c ap traffic` / `s ap traffic` |
+| `Master.exporter(server_finished: Digest) -> Result<Exporter, Error>` | `exp master` |
+| `Master.resumption(client_finished: Digest) -> Result<Resumption, Error>` | `res master` |
+| `Resumption.ticket(nonce: View<u8>) -> Result<Secret, Error>` | Expand `resumption`, nonce context 0..255 bytes |
 
-Phase methods derive independent values; they do not consume or mutate the
-phase. Copies retain independent secret bytes. They retain no borrow of PSKs,
-shared secrets or transcript hashes. Use constructors and methods; public
-implementation fields are not a validated serialized state format. The
-explicit no-PSK/no-DHE path uses **32 zero bytes**, which is different from an
-explicitly supplied empty input message. A PSK-only protocol may call the
-no-DHE path only where its negotiation permits it.
+`Side` is Client or Server. Explicit no-PSK/no-DHE/master paths use **32 or
+48 zero IKM bytes**, according to the receiver's algorithm. An explicitly
+supplied empty PSK/shared message remains distinct. Actual ECDHE inputs are
+not padded or truncated to HashLen. A PSK-only protocol must separately ensure
+its negotiation permits the no-DHE helper.
 
-The hash named `server_finished_hash` includes the server's Finished frame.
-The resumption hash includes the client's Finished frame. A Finished value is
-computed using the hash **before** its own frame is appended. PSK binder
-Finished generation uses the separately derived binder key as its base and a
-correctly truncated ClientHello transcript hash supplied by the caller.
-CertificateVerify signature context construction and validation remain the
-handshake implementation's responsibility; this module performs no signature
-operation.
+Application/exporter checkpoints include server Finished; resumption includes
+client Finished. A Finished value uses the checkpoint before its own frame is
+appended. Binder computation needs the caller's correctly truncated ClientHello
+checkpoint. CertificateVerify and negotiation belong to their own layers.
+`finished` derives the selected-length key and authenticates the selected
+checkpoint; verification compares every active byte before returning a mismatch.
+That is a source-level contract, not a constant-time compiler claim.
 
-`finished` expands `finished` with empty context and HMACs the supplied
-32-byte transcript hash. `verify_finished` checks all three logical ranges,
-base length, hash length and exact 32-byte received value before computation.
-It compares every byte, with no early mismatch return; a mismatch returns
-`Ok(false)`. The caller must make a failed verification terminal at the TLS
-connection layer. `update_traffic` derives `traffic upd` with empty context.
-
-## Exporters
-
-`Exporter.export(label, raw_context, output)` and
-`EarlyExporter.export(label, raw_context, output)` have distinct receiver types
-and both return `Result<i32, Error>`. They compute:
-
-```text
-derived = Derive-Secret(exporter_master, label, Hash(empty))
-output = HKDF-Expand-Label(derived, "exporter", Hash(raw_context), output.length)
-```
-
-Raw context can exceed 255 bytes because its 32-byte hash is the HKDF label
-context. Empty context represents both absent and empty application context.
-Bounds, label length and output length are checked before hashing or writing.
-Callers use the regular exporter unless their protocol explicitly selects the
-early exporter. No API conflates those master secrets.
+`Exporter.export(label, raw_context, output)` and `EarlyExporter.export` keep
+distinct receiver types. They derive with the selected Hash(empty), hash the
+raw context with the same algorithm, then expand `exporter` to output.length.
+Raw contexts can exceed 255 bytes because their digest becomes the encoded
+context. Absence and empty context coincide. Bounds, label semantics and
+selected output cap precede hashing or mutation. Traffic updates derive
+`traffic upd` without changing the exporter master secret.
 
 ## Complete handshake transcripts
 
-`tls_transcript::new()` returns a State. `State.update(frame)` requires exactly
-one complete handshake frame: one type byte, a big-endian 24-bit body length,
-and exactly that many body bytes. Record headers, fragmented input and
-concatenated frames are not accepted. Unknown real message types are hashed
-without interpreting their bodies. Synthetic `message_hash` type 254 is
-reserved for the explicit HRR operation and rejected by ordinary update.
+`tls_transcript::new(algorithm)` creates an owned state. `algorithm()`,
+`messages()`, `used_hrr()` and `borrow()` observe it. `snapshot()` returns an
+independent tagged Digest by finishing a copy; the original remains open.
+State copies fork their progress and retain no input borrow.
 
-`State.snapshot()` finishes a copy of the running SHA state and returns an
-independent `core::sha256::Digest`; the original remains open for updates.
-State copies fork transcripts. `messages()` counts original handshake messages,
-including ClientHello1 after a rewrite, and `used_hrr()` reports whether the
-special operation occurred. `borrow()` supplies a reference. Construct a new
-state for a separate handshake; no implicit reset occurs.
+`update(frame)` requires exactly one type/u24-length/body handshake frame,
+including its four-byte header. It accepts no record header, concatenated
+frames or fragments. Unknown real types are hashed without interpreting
+bodies. Ordinary update rejects synthetic type 254. Metadata, framing,
+synthetic-type rejection, message-count overflow and aggregate byte limit
+precede commit. The shared byte ceiling is `2^61-1` for either hash; the
+message counter is u64 and a body uses the encoded 24-bit length.
 
-`State.rewrite_for_hrr(hrr_frame)` accepts only an exactly framed ServerHello
-large enough to contain the full RFC HelloRetryRequest magic random, whose
-32 bytes at frame offset six must match. The state must contain exactly one
-prior message, that message must be a ClientHello type 1, and no previous
-rewrite may have occurred. It replaces the running transcript with:
+`rewrite_for_hrr(hrr_frame)` requires a completely framed ServerHello with the
+32-byte HRR magic random at frame offset 6. It needs exactly one prior
+ClientHello and no previous rewrite. The replacement hashes the synthetic
+`message_hash` frame and then HRR. Synthetic staging owns 52 bytes but hashes
+exactly 36 for SHA-256 or 52 for SHA-384: header `fe 00 00 20` or `fe 00 00 30`,
+then the active CH1 digest. It never hashes an inactive tail. Success reports
+two messages and permits CH2; all returned errors leave the original state
+unchanged. The caller validates the remaining HRR schema and negotiation.
+
+Transcript errors remain `Bounds`, `InvalidFrame`, `SyntheticMessage`,
+`InvalidHrrState`, `LengthOverflow` and `Hash`. Input must be immutable,
+physically backed and disjoint from State throughout each call. No call
+allocates or uses a host service, and no secure-erasure guarantee is made.
+
+## SHA-384 cost composition for budget owners
+
+The schedule itself exposes **no public costing API**. Engine/authentication
+owners charge their cumulative work budget before calls. SHA-256 tariffs stay
+unchanged where work is unchanged. The selected SHA-384 branch uses the
+reviewed compression unit `C=16384`, plus conservative copy/state allowances:
+4096 per wrapper setup/state node and 32 per traversed logical byte. These are
+source-based abstract work units, not ABI widths, instructions or time.
+
+For the actual source call tree define:
 
 ```text
-254 || 00 00 20 || SHA256(ClientHello1) || HelloRetryRequest
+B(n) = ceil((n+17)/128)
+N = ceil(o/48), info = 10+l+c
+EC(l,c,o) = 0                                  if o=0
+EC(l,c,o) = 2 + sum(i=1..N)[B(info+1+(i>1?48:0))+1] otherwise
+H(n) = C*B(n) + 8192 + 32*(n+48)
+M(n) = C*(3+B(n)) + 12288 + 32*(1024+n)
+E(l,c,o) = C*EC(l,c,o) + 4096*(N+2)
+           + 32*(1024+l+c+N*(info+97)+o)
 ```
 
-The caller validates the rest of the ServerHello schema, negotiation,
-extensions and legal HRR timing. An ordinary ServerHello cannot pass the
-magic check. A successful rewrite reports two messages and leaves the state
-open for ClientHello2. Its synthetic header is hashed once.
+`H` covers a fresh hash including finalization. `M` covers HMAC with a key no
+longer than 128 bytes; all TLS SHA-384 secret keys are 48 bytes. `E` covers
+ExpandLabel, including label staging even for zero output. HKDF seeds two pad
+blocks once; each output block resets the owned state, hashes previous output
+when present, info and counter, then the outer digest. The 97-byte term allows
+48 previous bytes, one counter and 48 outer-digest bytes. State copying,
+fixed 514-byte staging and canonicalization are covered by the node/fixed
+allowance. Charge additional phase-wrapper bookkeeping consistently where a
+budget owner includes it; these formulas do not reset or refund budgets.
 
-Transcript errors are `Bounds`, `InvalidFrame`, `SyntheticMessage`,
-`InvalidHrrState`, `LengthOverflow` and `Hash`. Update checks logical bounds,
-exact framing, synthetic-type rejection, frame-count overflow and SHA total
-length before committing state. Rewrite checks logical bounds, exact framing,
-type/magic, then prior-state conditions. Every returned error leaves all state
-unchanged. Inputs must be immutable, physically backed and disjoint from the
-state. No input borrow survives a completed call. Aggregate SHA byte length is
-limited to `2^61 - 1`; a single body is limited by its 24-bit encoded length.
+| Operation | Composed allowance | SHA-384 compressions |
+| --- | --- | ---: |
+| `no_psk` | `M(48)` | 4 |
+| `Early.handshake(shared32)` | `H(0)+E(7,48,48)+M(32)` | 9 |
+| `Handshake.master` | `H(0)+E(7,48,48)+M(48)` | 9 |
+| One handshake traffic value | `E(12,48,48)` | 4 |
+| Complete handshake schedule, excluding snapshots/record owners | `2*M(48)+M(32)+2*H(0)+2*E(7,48,48)+2*E(12,48,48)` | 30 |
+| Two application traffic values plus exporter master | `2*E(12,48,48)+E(10,48,48)` | 12 |
+| Finished or verification | `E(8,0,48)+M(48)` | 8 |
+| One record key32 / IV12 setup | `E(3,0,32)+E(2,0,12)` | 8 |
+| Record KeyUpdate including new key/IV | `E(11,0,48)+E(3,0,32)+E(2,0,12)` | 12 |
+| Export(label length l, context length n, output length o) | `H(0)+E(l,48,48)+H(n)+E(8,48,o)` | Formula above |
 
-## Resource and security limits
+For exporter expansion with positive output, `EC(8,48,o)=3*N+1`; the later
+blocks cross the SHA-384 padding boundary. At maximum label/context lengths,
+encoded info is 514 bytes and each block costs at most five inner plus one
+outer compression. Output cannot exceed 255 blocks. Add the actual transcript
+snapshots separately: one final compression for residue below 112, else two.
+An update adds `floor((residue+input_length)/128)` compressions. HRR needs the
+CH1 snapshot and hashing of its 52-byte synthetic prefix plus HRR. Use checked
+quota arithmetic and reject before mutation when a debit cannot be admitted.
 
-No call allocates or uses a host service. Work is linear in message/context
-bytes plus HKDF's requested output block count; no wall-clock bound is
-provided. Hash/phase/digest copies are ordinary value copies. Secret buffers
-are not securely erased, and generated machine code has not been proven
-constant time. Full-byte Finished comparison is a source-level contract.
-Transcript parsing branches on public framing bytes. These modules are not a
-substitute for a complete TLS handshake or a cryptographic security audit.
+These operation formulas track the current source and bound copies/traversals
+without depending on physical View width. They do not establish performance
+or a wall-clock bound. Exact and one-short budget tests belong to the consuming
+engine/authentication gates.
 
-## Admission
+## Accepted selected-hash verification
+
+The current [driver](../tests/extended_tls_schedule_execution.rs) and
+[fixtures/model](../tests/fixtures/extended/tls_schedule/) passed all four exact
+gates on frozen sources, without a failed gate or source change in this cohort:
+
+| Exact test | Accepted cases | Elapsed |
+| --- | ---: | ---: |
+| `labels_phases_finished_exporters_and_rfc8448_anchors_match_independent_peer` | 84 protocol commands, including 12 unchanged SHA-256 RFC8448 anchors | 8.10 s |
+| `checked_label_lengths_bounds_and_output_limits_preserve_all_output` | 92 protocol commands | 7.42 s |
+| `complete_transcripts_snapshots_copies_hrr_and_error_atomicity_match_hashlib` | 56 protocol commands / 1040 transcript actions | 7.81 s |
+| `ordinary_imported_schedule_and_transcript_consumer_has_no_error_projection` | One native consumer exercising both hashes | 5.99 s |
+
+The protocol total is 232 commands. The independent Python model uses
+`hashlib`/`hmac` and binary transport, and selects its hash explicitly for each
+command. Every observation compares complete active output bytes. Tests retain
+packed/strided nonzero-start inputs, unchanged source regions and output
+sentinels, all 32/48 Finished mismatch positions, mismatch error precedence,
+secret copy independence, zero tails, exporter/HKDF output caps, HRR 36/52,
+transcript forks/snapshots and error atomicity. Test-only counter changes reach
+overflow without adding an arbitrary-state public constructor. Boundary actions
+cover selected block/padding sizes and mutate returned snapshot copies.
+
+`OnceLock` can share the protocol ELF within one driver process. These accepted
+gates used **four separate exact invocations, four independently compiled
+strict ELFs and four native processes**, rather than one whole-target run.
+Every native mmap/munmap/mremap/brk trace was empty. The joint fresh Rust driver
+build, which also included authentication, took **1.24 s**; it was not an
+isolated application compilation measurement. Its ignored local log is
+`target/stdlib-work/tls-sha384-schedule-auth-build-first.log`.
+
+| Exact test selection | Ignored local runtime log |
+| --- | --- |
+| Ordinary consumer | `target/stdlib-work/tls-sha384-schedule-ordinary-first.log` |
+| Labels/phases | `target/stdlib-work/tls-sha384-schedule-labels-first.log` |
+| Bounds | `target/stdlib-work/tls-sha384-schedule-bounds-first.log` |
+| Transcript | `target/stdlib-work/tls-sha384-transcript-first.log` |
+
+The verified frozen SHA-256 source hashes are:
+
+| Source | SHA-256 |
+| --- | --- |
+| `extended/ext/tls_schedule.lani` | `2fcd8958ab4b50157ef57fa6890307a3080e84ba7c50e77a17397ed248bf54bc` |
+| `extended/ext/tls_transcript.lani` | `dd19a14e978c0949052a484c3fee4cc4b28865879c3117ae5084ed46e9cb2c5b` |
+| `tests/extended_tls_schedule_execution.rs` | `0818edd1b95509ca9d0686a61f9ffbfc65b8c211e95678b79a05453ad6efdae9` |
+| `tests/fixtures/extended/tls_schedule/plain.lani` | `9b24bcfbc0fc86252b61fb1d8b4d6eb961a9bffc7f9fe2b5a58ed8508ed1a40e` |
+| `tests/fixtures/extended/tls_schedule/protocol.lani` | `6b1be549d0ae55ba1cf49f1c7d5170d7240baae216d44db58cd78ef15ea1a43c` |
+| `tests/fixtures/extended/tls_schedule/model.py` | `63574667bebc375bd8f18500f94e0106c9fa7289881c04578e860df9a7e638a8` |
+
+After admission, only the two module header comments changed to stable
+ownership wording; executable code and line numbers are unchanged, and the
+hashes above continue to identify the executed versions.
+
+The source base was `e32b2fbfb77fa25ec0e5b0a83905d5c9c34faff3` with the
+frozen integration additions. An equivalent bounded joint rebuild command is:
+
+```sh
+timeout --kill-after=2s 100s flock -E 75 -w 35 \
+  target/stdlib-work/library-gpu.lock timeout --kill-after=2s 60s \
+  env CARGO_TARGET_DIR=/home/andrew-peterson/code/laniusc/target/stdlib-build \
+  CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 \
+  cargo test --test extended_tls_schedule_execution \
+  --test extended_tls_authentication_execution --no-run \
+  > target/stdlib-work/tls-sha384-schedule-auth-build-first.log 2>&1
+```
+
+Each exact runtime selection used this wrapper with the name and log above;
+the example records the ordinary consumer. Repeat it separately for the other
+three exact names in the table, rather than dropping `--exact`:
+
+```sh
+test_name=ordinary_imported_schedule_and_transcript_consumer_has_no_error_projection
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_tls_schedule_execution-5d5de7218a67902b \
+  --exact "$test_name" --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-sha384-schedule-ordinary-first.log 2>&1
+```
+
+These are correctness, copy/error atomicity, interoperability and native
+allocation observations. They do not establish a full connected TLS profile,
+other targets or isolated performance.
+
+## Historical SHA-256-only admission
+
+These receipts describe the earlier SHA-256-only source and raw-view API.
+They remain historical evidence; they do not admit the current selected-hash
+implementation; its separate accepted gates are recorded above.
 
 [extended_tls_schedule_execution.rs](../tests/extended_tls_schedule_execution.rs)
 compiles a protocol fixture and a separate ordinary consumer. The protocol uses

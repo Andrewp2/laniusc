@@ -1,6 +1,8 @@
 //! Focused warmed GPU compiler benchmark for a real source entry and its imports.
 //! Use identical inputs and separate compiled shader sets for paired comparisons.
 //! LANIUS_PERF_REBUILD_ENTRY=1 forces an entry cache miss through a private copy.
+//! WARMUPS=0 ITERS=1 selects a single compile plus native output verification;
+//! that correctness-only selection is not a warmed performance comparison.
 use std::{
     env,
     fs,
@@ -41,8 +43,8 @@ async fn run() -> Result<(), String> {
         .parse()
         .map_err(|error| format!("warmups: {error}"))?;
     let iters: usize = args[4].parse().map_err(|error| format!("iters: {error}"))?;
-    if warmups == 0 || iters == 0 {
-        return Err("warmups and iterations must both be positive".into());
+    if iters == 0 {
+        return Err("iterations must be positive".into());
     }
     let rebuild_entry = env::var("LANIUS_PERF_REBUILD_ENTRY").as_deref() == Ok("1");
     let mut input_copy = InputCopy(None);

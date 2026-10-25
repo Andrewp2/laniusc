@@ -7,12 +7,14 @@ adapter run in Lanius. It composes
 [`ext::tls_connection`](../extended/ext/tls_connection.lani) and
 [`ext::tls_tcp`](../extended/ext/tls_tcp.lani).
 
-**All four application group-migration gates passed** on x86_64 Linux:
-**76 native CLI cases across four independently compiled strict ELFs**.
-Source enables X25519
-with secp256r1 fallback and independent OS scalar slots, following the
-[shared group contract](tls-group-integration-plan.md). Current receipts and
-the preceding 74-case X25519 checkpoint are recorded separately below.
+**SHA-384 suite-migration admission passed all 80 native cases.** The five
+focused selections ran across three compiled strict ELFs and three driver
+invocations. Current source offers
+ChaCha20-Poly1305/SHA-256, AES-128-GCM/SHA-256 and AES-256-GCM/SHA-384 in
+that order, with X25519 then secp256r1 as its independent group policy.
+The preceding group checkpoint passed 76 native CLI cases across four
+strict ELFs; those receipts and the earlier 74-case X25519 checkpoint are
+recorded separately below as historical evidence.
 
 ## CLI and trust
 
@@ -54,9 +56,10 @@ The engine checks that the seed's public key matches the actual leaf SPKI
 before emitting a handshake flight. Provisioning and protecting that seed
 remain the caller's responsibility.
 
-The supported connection profile is TLS 1.3 with X25519 or secp256r1 ECDHE, Ed25519 server
-authentication, SHA-256, and AES-128-GCM or ChaCha20-Poly1305. The application
-prefers ChaCha20-Poly1305, sets the ordered groups to X25519 then secp256r1,
+The supported connection profile is TLS 1.3 with X25519 or secp256r1 ECDHE,
+Ed25519 server authentication, and the three suites listed above. The
+application uses the owned `tls_suite::default_policy()` without CLI
+implementation flags, sets the ordered groups to X25519 then secp256r1,
 sends an initial X25519 client share, requests no ALPN, and
 uses the engine's bounded ordered Ed25519 certificate-path profile with
 explicit trust and SAN identity checks. Unsupported algorithms or path
@@ -185,6 +188,13 @@ deadline and shared host budget. No clamping, reduction or group fallback
 repairs a rejected scalar. The app does not copy an active connection
 owner or treat copied key/state handles as independent cleanup authority.
 
+The migrated engine default is 64 Gi abstract work credits, so the
+conservative AES-256 record tariff can cover the existing bounded 1 MiB
+duplex operation. This does not expand the 1 MiB input cap, original
+deadline or 131,072 shared host attempts. Credits are logical resource
+accounting, not CPU instructions or a timing promise. The adapter's scalar
+retry cap and exact ownership-transfer boundary remain unchanged.
+
 Cleanup credits are reserved before acquisition, so expiry or an exhausted
 operation budget still permits bounded retirement. The application closes
 files/sockets and releases owned buffers on every exit. Connection teardown
@@ -282,7 +292,63 @@ Interrupted and invalid-count injections likewise exercise returned results;
 ordinary loopback transfers, EOF probes, and closed-pipe EPIPE use real host
 behavior. The reusable TCP suite owns the broader transport/protocol matrix.
 
-## Current group-migration admission
+## SHA-384 migration coverage and admission
+
+The four retained selections keep their 76 cases and require the preceding
+SHA-256 cipher alternatives from their independent peers. The new exact
+selection
+`tls_exchange_default_policy_interoperates_with_aes256_sha384_only_peers`
+adds four 1,025-byte binary exchanges: both application roles against both
+X25519-only and P-256-only peers. Each peer permits only AES-256-GCM/SHA-384;
+its actual negotiated cipher, trust/identity, exact duplex bytes, clean close
+and owner ledgers must all agree. The P-only server also forces HRR from the
+application's initial X25519 share. All five selections passed, totaling
+**80 native cases**, including the retained owner, syscall-failure and real
+1 MiB application cases.
+
+Python's `set_ciphers` does not select TLS 1.3 ciphers. Test peer processes
+therefore receive a fixture-local `OPENSSL_CONF` using the documented
+[`system_default` SSL configuration](https://docs.openssl.org/3.0/man5/config/)
+and [`CipherSuites` setting](https://docs.openssl.org/3.0/man3/SSL_CONF_cmd/).
+Retained cases enable exactly the two preceding SHA-256 suites; new cases
+enable only AES-256/SHA-384. Each context checks its complete TLS 1.3 cipher
+set before connecting, and receipts check the actual selected cipher.
+This is test-only peer configuration, not an application option, private
+Python object access or a production foreign TLS backend.
+
+### Accepted current migration
+
+On application `7e66f3ea`, the four-case exact AES-256-only peer selection
+passed in **27.38 s**. All four role/group combinations required the actual
+AES-256/SHA-384 cipher, exact binary duplex output, authenticated peer
+identity where configured, clean close and the owner ledger. The receipt is
+`target/stdlib-work/tls-sha384-app-interop-cost-type-fixed.log`.
+
+The 11 retained ordinary interop cases and two P-256-only interop cases
+also passed in one invocation, **31.93 s**, reusing one compiled application
+ELF for 13 native processes. Its receipt is
+`target/stdlib-work/tls-sha384-app-regression-interop-first.log`. These
+components ran as x86_64 Linux native programs produced by the GPU compiler.
+
+The remaining 26 preflight and 37 owner/fault cases passed together in
+**36.05 s**, reusing one application ELF for 63 native processes. The receipt
+is `target/stdlib-work/tls-sha384-app-regression-errors-first.log`. Thus the
+complete current migration comprises **three strict ELFs, 80 native
+processes and three driver invocations**. Application `7e66f3ea`, Rust driver
+`ce7206b5` and peer helper `abf0f9ef` stayed unchanged across these gates.
+Actual byte, owner-ledger and host-failure assertions remained intact;
+these elapsed times include compilation and orchestration and make no
+throughput claim.
+
+An earlier AES-256 attempt stopped before an ELF in **4.08 s** because an
+engine cost helper needed an explicit `u64` return cast. The root corrected
+that engine source before the accepted peer gate; application source was
+unchanged. This is a separate pre-execution compiler rejection, not an
+application runtime failure or an accepted case. The application retains
+its five-second deadline, 96-byte dual-group initial entropy and
+eight-candidate scalar admission bound.
+
+## Admission of the preceding group checkpoint
 
 All four exact selections passed on the unchanged migrated sources. Each
 invocation compiled one strict ELF with the GPU compiler and reused it for

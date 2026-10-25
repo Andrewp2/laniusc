@@ -1,10 +1,12 @@
 # TLS certificate and proof signature integration
 
-**Proposal; integration and runtime evidence pending.** RSA and P-256
-primitives are executable foundations. The current path validator,
+**Integration proposal; the standalone dispatch foundation is executable.**
+The [owned signature module](extended-signature.md) passes 719 protocol
+commands and a four-vector consumer. RSA and P-256 primitives also execute.
+The current path validator,
 CertificateVerify receiver and local credential signer still use Ed25519.
-This document proposes their integration; it adds no public declarations or
-new trust decision. The overall standard-library/TLS goal remains open.
+This document proposes their integration; it adds no new trust decision.
+The overall standard-library/TLS goal remains open.
 
 ## Current boundaries
 
@@ -19,13 +21,14 @@ new trust decision. The overall standard-library/TLS goal remains open.
 
 ## One executable verification boundary
 
-Add one small `ext::signature` module above the existing primitives. Proposed
-types/signatures below are design notation, **not implemented APIs**:
+`ext::signature` now supplies the shared verification boundary above the
+existing primitives. The notation below describes its roles; the
+[module guide](extended-signature.md) and [source](../extended/ext/signature.lani)
+define the admitted signatures and ownership contract. `PublicKey` is an
+owned wrapper with private tagged storage, rather than a public enum:
 
 ```text
-PublicKey = Ed25519(ed25519::Key32)
-          | P256(p256::PublicKey)
-          | Rsae(rsa::PublicKey)
+PublicKey = owned Ed25519, P256 or Rsae key material
 Scheme    = Ed25519 | EcdsaP256Sha256 | RsaPkcs1Sha256 | RsaPssRsaeSha256
 Use       = Certificate | CertificateVerify
 Limits    = { max_message: i32, max_signatures: u64, max_work: u64 }

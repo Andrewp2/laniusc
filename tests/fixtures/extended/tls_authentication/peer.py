@@ -234,6 +234,17 @@ def constructor(c):
 class State:
     def __init__(self,c): self.step=0; self.error=0; self.prefix=c.prefix
 
+def frame_tariff(algorithm, step, length):
+    # Public quota policy, independent of certificate parsing/signature work.
+    debit = 4096 + 256 * length
+    if algorithm == 1:
+        blocks = (length + 127) // 128
+        copies = 8192
+        if step == 2: blocks += 2; copies += 32768
+        if step == 3: blocks += 10; copies += 131072
+        debit += copies + 16384 * blocks
+    return debit
+
 def observe(c,s,status,signatures,work):
     auth=s.error==0 and s.step==4
     words=[status,5 if s.error else s.step,int(bool(s.error)),int(auth),int(auth),int(auth),signatures,work]
@@ -254,7 +265,7 @@ def oracle(c):
             elif s.step==4: status=12
             elif len(frame)>min(c.maximum,c.max_input): status=8
             else:
-                debit=4096+256*len(frame); rule=2
+                debit=frame_tariff(c.algorithm,s.step,len(frame)); rule=2
                 # Work stops are intentionally isolated before any path debit.
                 prior_known=c.work-sum(x[2] for x in observations if x[1]==2)
                 if prior_known<debit: status=9; rule=1; debit=0
@@ -324,6 +335,12 @@ def cases(material, mode, long=None, algorithm=0):
             c=Case(material,algorithm=algorithm); f=c.frames()
             for frame in f: c.feed(frame,fault=fault).feed(frame)
             add(c)
+        # Exact first-frame work seams avoid depending on X.509 parser costs.
+        for delta in (-1,0,1):
+            c=Case(material,algorithm=algorithm); first=c.frames()[0]
+            c.work=frame_tariff(algorithm,0,len(first))+delta
+            c.feed(first).feed(first,fault=1).feed(first)
+            add(c)
         for scratch in (1,2,3,4):
             c=Case(material,algorithm=algorithm); f=c.frames()
             c.feed(f[0]).feed(f[1],scratch=scratch).feed(f[1]).feed(f[2]).feed(f[3]); add(c)
@@ -365,7 +382,7 @@ def cases(material, mode, long=None, algorithm=0):
                 for frame in f: c.feed(frame)
             elif kind=='work': c.work=0; c.feed(f[0]).feed(f[0])
             elif kind=='frame_limit': c.maximum=5; c.feed(f[0])
-            elif kind=='certificate_work': c.work=sum(4096+256*len(x) for x in f[:2])-1; c.feed(f[0]).feed(f[1]).feed(f[1])
+            elif kind=='certificate_work': c.work=sum(frame_tariff(algorithm,i,len(x)) for i,x in enumerate(f[:2]))-1; c.feed(f[0]).feed(f[1]).feed(f[1])
             elif kind=='after_complete':
                 for frame in f: c.feed(frame)
                 c.feed(f[0]).feed(f[3])
@@ -388,12 +405,18 @@ if __name__=='__main__':
     with tempfile.TemporaryDirectory(prefix='laniusc_tls_authentication_') as temp:
         base=pathlib.Path(temp); material=Chain(base/'short',2)
         if mode=='ordinary':
-            c=Case(material); frames=c.frames(); source=Q(2)
-            for layout in (0,1):
-                source+=Q(layout,c.now,len(c.anchor),len(c.ch),len(c.sh),*(len(x) for x in frames))
-                source+=c.anchor+c.ch+c.sh+c.secret+b''.join(frames)
-            expected=(PUBLIC+H(c.prefix+b''.join(frames)))*2
+            source=Q(4); expected=b''
+            for algorithm in (0,1):
+                c=Case(material,algorithm=algorithm); frames=c.frames()
+                digest=H(c.prefix+b''.join(frames),algorithm)
+                server_input=(b' '*64+b'TLS 1.3, server CertificateVerify\0'+digest).ljust(146,b'\0')
+                client_input=(b' '*64+b'TLS 1.3, client CertificateVerify\0'+digest).ljust(146,b'\0')
+                assert len(server_input)==len(client_input)==146
+                for layout in (0,1):
+                    source+=Q(layout,c.now,len(c.anchor),len(c.ch),len(c.sh),*(len(x) for x in frames),algorithm)
+                    source+=c.anchor+c.ch+c.sh+c.secret+b''.join(frames)+server_input+client_input
+                    expected+=PUBLIC+digest
             sys.stdout.buffer.write(Q(len(source))+source+Q(len(expected))+expected)
         else:
             long=Chain(base/'long',8,True) if mode=='positive' else None
-            emit(cases(material,mode,long))
+            emit([c for algorithm in (0,1) for c in cases(material,mode,long,algorithm)])

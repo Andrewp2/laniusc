@@ -5,7 +5,7 @@ The [portable engine](extended-tls-connection.md) now passes paired handshakes,
 fragmentation, retry and boundary gates. The [TCP adapter](extended-tls-tcp.md)
 passes real OpenSSL exchanges, 1 MiB pressure streams, ownership/fault gates and
 deadline/budget resumption. The [real program](extended-tls-exchange.md) passes
-76 interoperability, I/O, ownership and budget cases. The guides distinguish
+80 interoperability, I/O, ownership and budget cases. The guides distinguish
 accepted snapshots from pending work. Production protocol, cryptography and
 certificate validation stay in Lanius; OpenSSL is an independent test peer.
 The broader algorithm and PKIX
@@ -20,14 +20,14 @@ requirements below remain open.
 | [tls_negotiation](../extended/ext/tls_negotiation.lani) | Reuse the admitted suite/share/signature, HRR/CH2, SNI/ALPN checks and extension writers. Retain CH1/CH2 backing and validated retry history; semantic success alone is not a transcript or authentication checkpoint. |
 | [x509_path](../extended/ext/x509_path.lani), [service_identity](../extended/ext/service_identity.lani), [x509](../extended/ext/x509.lani), [Ed25519](../extended/ext/ed25519.lani) | Use the admitted explicit-anchor ordered Ed25519/offline profile, then enforce proof of possession. Extend normalized names, path building, name constraints, certificate policies and revocation before claiming general PKIX support. Parsing alone establishes no trust decision. |
 | [tls_authentication](../extended/ext/tls_authentication.lani) | Reuse the admitted EE/Certificate/CV/Finished server-authentication checkpoint. The engine must validate CH/SH and EE negotiation, bind traffic secrets/epochs, and commit client Finished before releasing application data. |
-| [AES](../stdlib/core/aes.lani), [AES-GCM](../extended/ext/aes_gcm.lani) | The record layer now admits explicit AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites. The connection must negotiate one, preserve it through key updates, and honor directional key-use limits. |
+| [AES](../stdlib/core/aes.lani), [AES-GCM](../extended/ext/aes_gcm.lani), [suite policy](../extended/ext/tls_suite.lani) | The record layer admits AES-128-GCM/SHA-256, AES-256-GCM/SHA-384 and ChaCha20-Poly1305/SHA-256. The engine negotiates an explicitly offered policy member, preserves it through key updates, and honors directional key-use limits. |
 | [std::socket](../stdlib/std/socket.lani), [std::poll](../stdlib/std/poll.lani), [core::io](../stdlib/core/io.lani) | Own transport lifetime, retained partial records, bounded progress and deadlines. TCP lives in `std::socket`; `std::net` is legacy host-ABI surface. |
 | [std::entropy](../stdlib/std/entropy.lani), [std::random](../stdlib/std/random.lani), [std::clock](../stdlib/std/clock.lani), [calendar](../stdlib/core/calendar.lani) | Bound entropy attempts, separate monotonic deadlines from certificate wall time, and propagate every host failure. |
 
 ## Executable profile and the full TLS requirement
 
 The connected profile is TLS 1.3, X25519 or P-256, Ed25519 certificate signatures
-and CertificateVerify, `TLS_AES_128_GCM_SHA256` and
+and CertificateVerify, `TLS_AES_128_GCM_SHA256`, `TLS_AES_256_GCM_SHA384` and
 `TLS_CHACHA20_POLY1305_SHA256`, server authentication,
 and explicit application-supplied trust anchors. Its client and server must
 exchange real application bytes with independently configured OpenSSL peers.
@@ -55,8 +55,10 @@ AES-256-GCM/SHA-384 and X25519
 also have the RFC's recommended status; supporting X25519/ChaCha/Ed25519 does
 not satisfy the mandatory set. The [section 9.2 extension requirements](https://www.rfc-editor.org/rfc/rfc8446.html#section-9.2)
 also require semantic implementations, beyond the existing generic codecs.
-These remain explicit work after the first profile, not exceptions to the
-full-library objective.
+The [shared signature verifier](extended-signature.md) now provides the
+three key families and certificate-versus-proof scheme rules independently.
+Connecting it to path validation, proof negotiation and local credentials
+remains explicit work toward the full-library objective.
 
 ## Types, storage and ownership
 

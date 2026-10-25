@@ -35,7 +35,7 @@ fn main() -> i32 {
     let role: u64 = number(args,arg(1,args_pointer)); let suite_number: u64 = number(args,arg(2,args_pointer)); let root: [u8;4096] = [0;4096]; let chain_bytes: [u8;4096] = [0;4096]; let seed: [u8;4096] = [0;4096];
     let root_length: i32 = hex(args,arg(3,args_pointer),root); let chain_length: i32 = hex(args,arg(4,args_pointer),chain_bytes); let seed_length: i32 = hex(args,arg(5,args_pointer),seed);
     let length: u64 = number(args,arg(6,args_pointer)); let mode: u64 = number(args,arg(7,args_pointer)); let calls: u64 = number(args,arg(8,args_pointer)); let milliseconds: u64 = number(args,arg(9,args_pointer)); let expect_failure: bool = number(args,arg(10,args_pointer)) != 0;
-    let group: u64 = number(args,arg(11,args_pointer)); assert(role <= 1 && suite_number <= 2 && length <= 1048576 && mode <= 13 && group <= 3 && milliseconds <= 20000);
+    let group: u64 = number(args,arg(11,args_pointer)); assert(role <= 1 && suite_number <= 2 && length <= 1048576 && mode <= 13 && group <= 3 && milliseconds <= 40000);
     let empty: core::slice::View<u8> = view(chain_bytes,0); let chain: [core::slice::View<u8>;8] = [empty;8]; let reader: ext::der::Reader = ext::der::reader(view(chain_bytes,chain_length)).unwrap(); let count: i32 = 0;
     while (true) { let next: core::option::Option<ext::der::Element> = reader.next().unwrap(); if (next.is_none()) { break; } assert(count < 8); chain[count] = next.unwrap().encoded; count += 1; }
     let anchor: [core::slice::View<u8>;1] = [view(root,root_length);1]; let dns: [u8;12] = [112,97,116,104,46,101,120,97,109,112,108,101];
@@ -47,6 +47,10 @@ fn main() -> i32 {
     let host: ext::tls_tcp::HostBudget = ext::tls_tcp::host_budget(calls); let start: core::time::Instant = host.now().unwrap(); let deadline: core::time::Deadline = core::time::deadline_at(start.checked_add(core::time::from_millis(milliseconds)).unwrap());
     let socket: std::socket::Socket = std::socket::from_owned_handle(0,std::socket::Family::Ipv4,std::socket::Kind::Tcp).unwrap(); let made: core::result::Result<ext::tls_tcp::Connection,ext::tls_tcp::Failure> = core::result::Err(ext::tls_tcp::Failure { cause: ext::tls_tcp::Error::Closed, progress: ext::tls_tcp::Progress { sent:0,received:0,consumed:0,pending_wire:0,pending_input:0,pending_plaintext:0,established:false,peer_closed:false,local_closed:false }, cleanup: core::option::None() });
     let limits: ext::tls_connection::Limits = ext::tls_connection::default_limits();
+    // Preserve every accepted SHA256 regression's original hard work bound.
+    // The SHA384 exporter-failure seam has a separate finite allowance.
+    if (suite_number < 2) { limits.max_work = 268435456; } if (suite_number == 2 && mode == 9) { limits.max_work = 536870912; }
+    if (suite_number == 2 && mode == 0 && length == 1048576) { assert(limits.max_work == 68719476736); }
     let groups: ext::tls_negotiation::GroupPolicy = ext::tls_negotiation::GroupPolicy { preferred: ext::tls_negotiation::Group::X25519, fallback: core::option::None() }; let initial: core::option::Option<ext::tls_negotiation::Group> = core::option::Some(ext::tls_negotiation::Group::X25519);
     if (group == 1) { groups.preferred = ext::tls_negotiation::Group::Secp256r1; initial = core::option::Some(ext::tls_negotiation::Group::Secp256r1); } if (group == 2) { groups = ext::tls_negotiation::default_groups(); } if (group == 3) { groups.preferred = ext::tls_negotiation::Group::Secp256r1; groups.fallback = core::option::Some(ext::tls_negotiation::Group::X25519); }
     if (mode == 10) { assert(group == 1); initial = core::option::Some(ext::tls_negotiation::Group::X25519); }
@@ -69,13 +73,15 @@ fn main() -> i32 {
         if (mode == 9) {
             // Exhaust only through the public exporter, with no fabricated
             // state/counter mutation. Each successful call costs >=32768 work.
+            let work_words: [i32;3062] = [0;3062]; let work_bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(work_words),12248); let at: i32 = 0; while (at < 12248) { work_bytes[at] = 165; at += 1; }
+            let work_output: core::slice::View<u8> = view(exported,32); if (suite_number == 2) { work_output = core::slice::View {values:work_bytes,start:3,length:12240}; }
             let maximum: u64 = limits.max_work / 32768 + 2; let attempt: u64 = 0;
-            while (attempt < maximum && issue.is_none()) { let i: i32 = 0; while (i < 32) { exported[i] = 165; i += 1; }
-                let result: core::result::Result<i32,ext::tls_tcp::Failure> = connection.export(view(label,15),empty,view(exported,32),deadline,host.borrow());
+            while (attempt < maximum && issue.is_none()) { let i: i32 = 0; while (i < work_output.length) { work_output.values[work_output.start + i] = 165; i += 1; }
+                let result: core::result::Result<i32,ext::tls_tcp::Failure> = connection.export(view(label,15),empty,work_output,deadline,host.borrow());
                 if (result.is_err()) { let e: ext::tls_tcp::Failure = result.unwrap_err(); let work_limit: bool = match(e.cause) { ext::tls_tcp::Error::Engine(inner) -> match(inner) { ext::tls_connection::Error::Limit -> true, _ -> false }, _ -> false };
-                    assert(work_limit && e.cleanup.is_some() && !connection.is_open() && e.cleanup.unwrap().release_attempts == 10 && e.cleanup.unwrap().cleanup_calls == 11); i = 0; while (i < 32) { assert(exported[i] == 165); i += 1; } sent += e.progress.sent as u64; native_received += e.progress.received as u64; consumed += e.progress.consumed as u64; issue = core::option::Some(e.cause);
+                    assert(work_limit && e.cleanup.is_some() && !connection.is_open() && e.cleanup.unwrap().release_attempts == 10 && e.cleanup.unwrap().cleanup_calls == 11); i = 0; while (i < work_output.length) { assert(work_output.values[work_output.start + i] == 165); i += 1; } sent += e.progress.sent as u64; native_received += e.progress.received as u64; consumed += e.progress.consumed as u64; issue = core::option::Some(e.cause);
                 } attempt += 1;
-            } assert(issue.is_some());
+            } assert(issue.is_some()); if (suite_number == 2) { at = 0; while (at < 3) { assert(work_bytes[at] == 165); at += 1; } at = 12243; while (at < 12248) { assert(work_bytes[at] == 165); at += 1; } }
         }
         if (mode == 2) { while (connection.progress().pending_plaintext == 0) { let step: ext::tls_tcp::Progress = connection.step(deadline,host.borrow()).unwrap(); sent += step.sent as u64; native_received += step.received as u64; consumed += step.consumed as u64; }
             let at: i32 = 0; while (at < 1024) { read_bytes[at] = 165; at += 1; } let before: ext::tls_tcp::Progress = connection.progress(); assert(before.pending_plaintext > 0); let expired: core::time::Deadline = core::time::deadline_at(host.now().unwrap()); let result: core::result::Result<ext::tls_connection::Read,ext::tls_tcp::Failure> = connection.read_plaintext(view(read_bytes,1024),expired,host.borrow()); assert(result.is_err() && code(result.unwrap_err().cause) == 7 && result.unwrap_err().cleanup.is_none() && connection.is_open()); let after: ext::tls_tcp::Progress = connection.progress(); assert(before.pending_wire == after.pending_wire && before.pending_input == after.pending_input && before.pending_plaintext == after.pending_plaintext); at = 0; while (at < 1024) { assert(read_bytes[at] == 165); at += 1; } }

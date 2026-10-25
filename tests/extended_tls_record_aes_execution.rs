@@ -22,6 +22,7 @@ fn compile(stem: &str) -> common::TempArtifact {
         )
     })
     .unwrap_or_else(|error| panic!("TLS record {stem}: {error}"));
+    assert!(common::x86_jumps::is_x86_64_executable(&bytes));
     let exe = common::TempArtifact::new("laniusc_tls_record_aes", stem, None);
     exe.write_bytes(bytes);
     std::fs::set_permissions(exe.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -40,7 +41,8 @@ struct Case {
     sequence: u64,
     variant: u64,
     capacity: usize,
-    secret: [u8; 32],
+    suite: u64,
+    secret: [u8; 48],
     data: Vec<u8>,
 }
 fn case(operation: u64, length: usize) -> Case {
@@ -56,6 +58,7 @@ fn case(operation: u64, length: usize) -> Case {
         } else {
             length + 4
         },
+        suite: 0x1301,
         secret: std::array::from_fn(|index| (index * 7 + 3) as u8),
         data: (0..length).map(|index| (index * 73 + 11) as u8).collect(),
     }
@@ -79,6 +82,7 @@ fn input(cases: &[Case]) -> Vec<u8> {
             case.variant,
             case.data.len() as u64,
             case.capacity as u64,
+            case.suite,
         ] {
             bytes.extend(word.to_le_bytes());
         }
@@ -127,10 +131,11 @@ def crypt(key,nonce,aad,message,tag=None,chacha=False):
  finally: s.EVP_CIPHER_CTX_free(ctx)
 def expand(secret,label,length):
  label=b'tls13 '+label; info=struct.pack('>H',length)+bytes([len(label)])+label+b'\0'
- # All TLS labels here request at most one SHA256 block.
- return hmac.new(secret,info+b'\1',hashlib.sha256).digest()[:length]
+ # Each requested label fits one selected hash block.
+ algorithm=hashlib.sha384 if len(secret)==48 else hashlib.sha256
+ return hmac.new(secret,info+b'\1',algorithm).digest()[:length]
 def keys(secret,sequence,chacha=False):
- key=expand(secret,b'key',32 if chacha else 16); iv=expand(secret,b'iv',12)
+ key=expand(secret,b'key',32 if chacha or len(secret)==48 else 16); iv=expand(secret,b'iv',12)
  nonce=bytes(a^b for a,b in zip(iv,bytes(4)+sequence.to_bytes(8,'big'))); return key,nonce
 def record(secret,sequence,plain,chacha=False):
  key,nonce=keys(secret,sequence,chacha); header=b'\x17\x03\x03'+struct.pack('>H',len(plain)+16)
@@ -149,7 +154,8 @@ def take(n):
  value=source[at:at+n]; assert len(value)==n; at+=n; return value
 count,=words(1); native=q(count); expected=b''
 for _ in range(count):
- operation,layout,kind,padding,sequence,variant,length,capacity=words(8); secret=take(32); data=take(length)
+ operation,layout,kind,padding,sequence,variant,length,capacity,suite=words(9); stored=take(48); secret=stored[:48 if suite==0x1302 else 32]; data=take(length)
+ assert suite in (0x1301,0x1302)
  signed_padding=padding if padding<2**63 else padding-2**64
  observed=b''; result=b''; result_kind=0; status=0; after=sequence; exhausted=sequence>=2**24 or (variant==4 if operation in (0,3) else variant==30); poisoned=False
  packet=data
@@ -184,7 +190,7 @@ for _ in range(count):
   if variant==8: packet=b'\x17\x03\x03'+struct.pack('>H',16641)
   if variant==17: packet=b'\x17\x03\x03\x00\x10'+bytes(16)
   if variant==18: packet=packet[:4]
-  if variant==19: packet=record(secret,sequence,plain,True)
+  if variant==19: packet=record(secret[:32],sequence,plain,True)
   if variant==20: packet=record(secret,sequence^1,plain)
   if variant==21: packet=record(bytes([secret[0]^1])+secret[1:],sequence,plain)
   observed=bytes([222])*capacity
@@ -211,18 +217,18 @@ for _ in range(count):
  elif operation==2:
   current=secret; result=b''
   for step in range(4):
-   if step>=2: current=expand(current,b'traffic upd',32)
+   if step>=2: current=expand(current,b'traffic upd',len(current))
    seq=1 if step==1 else 0; rec=record(current,seq,data+b'\x17'+bytes(step*3)); result+=q(len(rec))+rec
  elif operation==5:
   current=secret; result=b''
   for step in range(4):
-   if step==2: current=expand(current,b'traffic upd',32)
+   if step==2: current=expand(current,b'traffic upd',len(current))
    seq=2**24-2+step if step<2 else step-2
    payload=b'\x18\x00\x00\x01\x00' if step==1 else data
    kind_value=22 if step==1 else 23; pad=3 if step==2 else 0
    rec=record(current,seq,payload+bytes([kind_value])+bytes(pad)); result+=q(len(rec))+rec
  else: raise AssertionError(operation)
- native+=q(operation,layout,kind,padding,sequence,variant,len(packet),capacity)+secret+packet
+ native+=q(operation,layout,kind,padding,sequence,variant,len(packet),capacity,suite)+stored+packet
  if operation in (2,5): expected+=result
  else: expected+=q(status,after,int(exhausted),int(poisoned),result_kind,len(result),len(observed))+result+observed
 assert at==len(source)
@@ -331,10 +337,10 @@ fn compare(cases: Vec<Case>) {
     assert_eq!(expected_at, expected.len(), "no trailing peer output");
     eprintln!("AES TLS record protocol commands={}", cases.len());
 }
-#[test]
-fn ordinary_aes_record_consumer_owns_secret_and_updates_cached_key() {
+fn ordinary_expected(suite: u64) -> Vec<u8> {
     let mut first = case(0, 5);
-    first.secret = [0; 32];
+    first.suite = suite;
+    first.secret = [0; 48];
     first.data = b"hello".to_vec();
     first.padding = 7;
     let (_, reference) = peer(&[first]);
@@ -345,13 +351,17 @@ fn ordinary_aes_record_consumer_owns_secret_and_updates_cached_key() {
     let length = word(&reference, &mut at) as usize;
     word(&reference, &mut at);
     let mut expected = reference[at..at + length].to_vec();
-    // Derive the updated secret independently, then use the AEAD peer with
-    // that secret to produce the generation1/sequence0 empty record.
-    let secret = common::process_output_with_timeout("independent traffic update", Command::new("python3").args(["-c", "import hashlib,hmac,sys; label=b'tls13 traffic upd'; info=b'\\x00\\x20'+bytes([len(label)])+label+b'\\0'; sys.stdout.buffer.write(hmac.new(bytes(32),info+b'\\1',hashlib.sha256).digest())"]), Duration::from_secs(5));
+    let secret = common::process_output_with_timeout(
+        "independent selected-hash traffic update",
+        Command::new("python3").args(["-c", "import hashlib,hmac,sys; n=int(sys.argv[1]); label=b'tls13 traffic upd'; info=n.to_bytes(2,'big')+bytes([len(label)])+label+b'\\0'; sys.stdout.buffer.write(hmac.new(bytes(n),info+b'\\1',hashlib.sha384 if n==48 else hashlib.sha256).digest())", if suite == 0x1302 { "48" } else { "32" }]),
+        Duration::from_secs(5));
     checked(&secret);
-    assert_eq!(secret.stdout.len(), 32);
+    let n = if suite == 0x1302 { 48 } else { 32 };
+    assert_eq!(secret.stdout.len(), n);
     let mut second = case(0, 0);
-    second.secret.copy_from_slice(&secret.stdout);
+    second.suite = suite;
+    second.secret = [0; 48];
+    second.secret[..n].copy_from_slice(&secret.stdout);
     let (_, reference) = peer(&[second]);
     let mut at = 0;
     for _ in 0..5 {
@@ -360,23 +370,28 @@ fn ordinary_aes_record_consumer_owns_secret_and_updates_cached_key() {
     let n = word(&reference, &mut at) as usize;
     word(&reference, &mut at);
     expected.extend(&reference[at..at + n]);
+    expected
+}
+#[test]
+fn ordinary_aes_record_consumer_owns_secret_and_updates_cached_key() {
+    let mut expected = ordinary_expected(0x1301);
+    expected.extend(ordinary_expected(0x1302));
     let exe = compile("plain");
     let trace = common::TempArtifact::new("laniusc_tls_record_aes", "plain_memory", None);
     let output = common::process_output_with_timeout(
-        "ordinary TLS record consumer",
+        "ordinary AES128/SHA256 and AES256/SHA384 record consumer",
         Command::new("strace")
             .args(["-qq", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap,mremap,brk"])
             .arg(exe.path()),
-        Duration::from_secs(10),
+        Duration::from_secs(15),
     );
     checked(&output);
     assert_eq!(output.stdout, expected);
     assert!(std::fs::read_to_string(trace.path()).unwrap().is_empty());
 }
-#[test]
-fn aes_tls13_records_match_openssl_over_types_sizes_padding_and_strides() {
+fn vector_cases(suite: u64) -> Vec<Case> {
     let mut cases = Vec::new();
     for length in [0, 1, 2, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 1024] {
         for operation in [0, 1] {
@@ -410,10 +425,16 @@ fn aes_tls13_records_match_openssl_over_types_sizes_padding_and_strides() {
         layouts(value, &mut cases);
     }
     assert_eq!(cases.len(), 86);
-    compare(cases);
+    for value in &mut cases {
+        value.suite = suite;
+    }
+    cases
 }
 #[test]
-fn aes_record_limits_reserve_old_keyupdate_slot_and_reset_only_with_new_key() {
+fn aes_tls13_records_match_openssl_over_types_sizes_padding_and_strides() {
+    compare(vector_cases(0x1301));
+}
+fn limit_cases(suite: u64) -> Vec<Case> {
     let mut cases = Vec::new();
     for sequence in [
         255,
@@ -437,10 +458,16 @@ fn aes_record_limits_reserve_old_keyupdate_slot_and_reset_only_with_new_key() {
         layouts(value, &mut cases);
     }
     assert_eq!(cases.len(), 32);
-    compare(cases);
+    for value in &mut cases {
+        value.suite = suite;
+    }
+    cases
 }
 #[test]
-fn aes_record_failures_poison_without_publishing_and_retry_metadata_atomically() {
+fn aes_record_limits_reserve_old_keyupdate_slot_and_reset_only_with_new_key() {
+    compare(limit_cases(0x1301));
+}
+fn failure_cases(suite: u64) -> Vec<Case> {
     let mut cases = vec![];
     for variant in [1, 2, 5, 6, 4] {
         let mut value = case(0, 5);
@@ -495,5 +522,25 @@ fn aes_record_failures_poison_without_publishing_and_retry_metadata_atomically()
         layouts(value, &mut cases);
     }
     assert_eq!(cases.len(), 102);
-    compare(cases);
+    for value in &mut cases {
+        value.suite = suite;
+    }
+    cases
+}
+#[test]
+fn aes_record_failures_poison_without_publishing_and_retry_metadata_atomically() {
+    compare(failure_cases(0x1301));
+}
+
+#[test]
+fn aes256_sha384_tls13_records_match_openssl_full_bytes_and_strides() {
+    compare(vector_cases(0x1302));
+}
+#[test]
+fn aes256_sha384_record_limits_and_selected_hash_key_updates() {
+    compare(limit_cases(0x1302));
+}
+#[test]
+fn aes256_sha384_record_errors_poison_bounds_and_hash_mismatch_are_atomic() {
+    compare(failure_cases(0x1302));
 }

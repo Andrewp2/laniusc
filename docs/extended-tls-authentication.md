@@ -2,7 +2,9 @@
 
 `ext::tls_authentication` verifies a TLS 1.3 server authentication flight in strict order: EncryptedExtensions, Certificate, CertificateVerify, Finished. Certificate processing calls the actual [bounded X.509 path validator](extended-x509-path.md) with explicit anchors, expected service identity, and time. CV proves possession of that validated leaf key; Finished binds it to the supplied handshake secret and transcript. The implementation is [tls_authentication.lani](../extended/ext/tls_authentication.lani).
 
-The authentication checkpoints and signature context follow [RFC 8446 sections 4.4.1–4.4.4](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.4). This module supports the SHA-256/Ed25519, X.509 server-authentication profile. It has no allocation, IO, foreign TLS backend, or caller-supplied trust flag/key shortcut.
+The authentication checkpoints and signature context follow [RFC 8446 sections 4.4.1–4.4.4](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.4). This module implements selected SHA-256/SHA-384 with the Ed25519, X.509 server-authentication profile. It has no allocation, IO, foreign TLS backend, or caller-supplied trust flag/key shortcut.
+
+**The selected-hash migration passed runtime admission on 2026-10-25 for GPU-compiled native x86_64 Linux output.** Three separate exact gates passed 232 protocol layout cases / 716 observations plus four ordinary flows. Earlier SHA-256-only receipts remain separate below. User GPU execution, other targets and isolated throughput remain unverified.
 
 **Authenticated means server Certificate, CV, and server Finished have been verified. It does not mean the connection is Established.** A full client engine must still commit its own Finished to the transport before releasing application data, as specified by the [connection contract](tls-connection-contract.md). This component exposes a validated peer key and transcript, and has no application-data API.
 
@@ -19,7 +21,7 @@ pub struct Config {
 }
 pub fn server(
     transcript: ext::tls_transcript::State,
-    server_handshake_secret: View<u8>,
+    server_handshake_secret: ext::tls_schedule::Secret,
     offered_signature_schemes: View<u16>,
     config: Config
 ) -> Result<State, Error>;
@@ -30,13 +32,15 @@ pub enum Phase {
 }
 ```
 
-The caller supplies a transcript through **already checked CH/SH negotiation**, and the corresponding 32-byte server handshake traffic secret. Construction copies both, plus the reference identity and time. It retains only the immutable anchor descriptors/backing. Changing the original secret bytes, reference object, offer list, or transcript afterward does not change this State.
+The caller supplies a transcript through **already checked CH/SH negotiation**, and the corresponding owned, tagged server handshake traffic secret. Its algorithm must match `transcript.algorithm()`: SHA-256 uses 32 active bytes and SHA-384 uses 48. Construction copies both values, plus the reference identity and time. It retains only the immutable anchor descriptors/backing. Changing the original secret, reference object, offer list, or transcript afterward does not change this State.
+
+Import raw secret bytes with `tls_schedule::secret_from_view(algorithm, bytes)` before calling this constructor. Raw metadata and exact 32/48-byte length validation belong to that factory. Authentication no longer has an `InvalidSecretLength` constructor branch; a mismatched typed secret returns `HashMismatch`.
 
 The transcript shape must be two messages without HRR, or four messages with HRR rewrite applied. This catches an incorrect checkpoint shape; it does not establish transcript provenance or negotiate CH/SH. The caller must have checked versions, cipher/hash/group, shares, session echo, HRR restrictions, extensions, and the selected X.509 profile. Use the checked transcript and service-identity constructors rather than fabricated state/fields.
 
 The offered signature list has 1 through 32767 `u16` entries and must contain Ed25519 (`0x0807`). It covers the **CV offer**. The caller must separately ensure certificate Ed25519 signatures are permitted by the CH `signature_algorithms_cert` policy, or its `signature_algorithms` fallback. Path algorithm support alone does not check those offers.
 
-Anchors must contain 1 through 8 logically valid DER views. `max_frame` is a complete handshake-frame limit, including its four-byte header, from 4 through 16777219. Construction checks descriptor metadata before indexing, with the anchor-count bound checked before nested descriptors. It then checks the limit, secret length, bounded offers, and transcript shape. No constructor parses an anchor or accepts a peer key. Explicit anchor/path/reference/time validation occurs during Certificate.
+Anchors must contain 1 through 8 logically valid DER views. `max_frame` is a complete handshake-frame limit, including its four-byte header, from 4 through 16777219. Construction checks offer/anchor-list metadata, bounds the anchor count before nested indexing, and checks every permitted anchor descriptor's metadata. Only then does it check transcript/secret hash agreement, followed by the frame limit, bounded offers, and transcript shape. `HashMismatch` precedes State construction or work/cryptographic progress; malformed supplied metadata takes precedence. No constructor parses an anchor or accepts a peer key. Explicit anchor/path/reference/time validation occurs during Certificate.
 
 ## Feeding complete frames
 
@@ -59,13 +63,26 @@ Each feed requires exactly one complete handshake frame. It accepts no fragments
 | EncryptedExtensions | Exact expected kind and complete EE schema; caller has checked extension meaning |
 | Certificate | Empty server request context, nonempty list, at most eight entries, no CertificateEntry extensions, then actual path/identity/time validation |
 | CertificateVerify | Scheme `0x0807`, exactly 64 signature bytes, one available shared signature attempt, and valid Ed25519 proof using the validated leaf key |
-| Finished | Exactly 32 verify bytes and correct MAC using the copied server handshake secret and current transcript hash |
+| Finished | Exactly 32 SHA-256 or 48 SHA-384 verify bytes and correct selected-hash MAC using the copied server handshake secret and current transcript hash |
 
 Certificate entries are DER X.509 certificates. Raw public keys and every nonempty CertificateEntry extension are explicitly unsupported. This includes OCSP and SCT extensions; the bridge does not silently ignore their meaning or claim revocation/CT verification. A server Certificate context must be empty and its list nonempty. Path order, supported certificate algorithms, constraints, anchor handling, DNS/IP identity, and inclusive explicit UTC time checks follow the validator's documented bounded offline profile. The bridge inherits that profile's limitations; it does not add general path building or revocation policy.
 
 The bridge collects at most eight small DER-view descriptors locally. Parsed certificate records use caller-provided Slot workspace; no inline array of parsed certificates is created inside State. On Certificate, scratch must have at least `presented_entry_count + configured_anchor_count` slots. No scratch is required for EE, CV, or Finished: the argument is ignored in those phases. Scratch is never retained by State.
 
-The CV signed input is exactly 130 bytes: 64 spaces, `TLS 1.3, server CertificateVerify`, one zero byte, and the SHA-256 transcript through Certificate. CV is appended only after successful verification. Finished is checked against the transcript through CV and appended only after successful verification. The leaf key is committed internally only after complete path success and Certificate transcript append; it remains unavailable through both getters until Finished succeeds.
+The CV signed input uses the selected transcript through Certificate: 130 bytes for SHA-256 or 146 for SHA-384. Ed25519 remains the signature scheme in either case, with a 64-byte signature. CV is appended only after successful verification. Finished is checked against the selected transcript through CV and appended only after successful verification. The leaf key is committed internally only after complete path success and Certificate transcript append; it remains unavailable through both getters until Finished succeeds.
+
+## Owned CertificateVerify input
+
+```text
+CVInput { bytes: [u8;146], length: i32 }
+certificate_verify_input(side: ext::tls_schedule::Side,
+                         hash: ext::tls_hash::Digest) -> CVInput
+CVInput.view(&self) -> View<u8>
+```
+
+The shared helper builds either RFC context: 64 spaces, `TLS 1.3, server CertificateVerify` or `TLS 1.3, client CertificateVerify` (33 bytes each), an explicit zero separator at offset 97, then the active transcript digest at offset 98. Its active length is `98 + HashLen`. It initializes all 146 owned bytes; the 16 inactive SHA-256 bytes are zero. The server verifier uses the server context. Callers of the client helper must still enforce their own permitted authentication flow.
+
+The result copies the digest and retains no transcript/digest borrow. Bind it to a stable owned local before calling `.view()`. That borrowed `&self` view is valid only while the same CVInput remains live and unchanged at the same location; a copied receiver or chained temporary must not let inline-array backing escape. Durable outputs remain owned CVInput values. Mutating a returned input or source digest cannot alter another owned input or transcript.
 
 `peer_key()` and `transcript()` return `None` before authentication or after any terminal failure. Successful returns own independent inline bytes. They do not borrow Certificate frames, scratch, anchors, or State. The returned transcript is the through-server-Finished checkpoint for later application/exporter derivation and client Finished processing. No resumption or client-Finished state is implemented here.
 
@@ -77,7 +94,7 @@ An undersized Certificate scratch view returns retryable `ScratchTooSmall`. Hash
 
 Every wire/schema, order, size/work/signature budget, path, CV, Finished, or transcript failure is terminal. The first error is latched and `phase()` becomes Failed. Later valid feeds return that same error without further progress or budget use. A later malformed frame still returns transient Bounds first, while the latched failure is preserved. There is no reset or resume method after terminal failure. Unexpected optional CertificateRequest, missing/skipped stages, replay, or any feed after Authenticated is terminal `UnexpectedMessage`.
 
-The error categories are `Bounds`, constructor limits/secret/transcript/anchor/offer errors, `FrameLimit`, `WorkLimit`, `SignatureLimit`, `ScratchTooSmall`, `UnexpectedMessage`, `Handshake(codec_error)`, Certificate context/list/count/extension errors, `Path(path_error)`, `CertificateVerify`, `Finished`, and `Transcript`. Path diagnostics retain the validator's kind and certificate/anchor/offset coordinates. A caller maps failures to connection abort/alerts under its own bounded transport policy.
+The error categories are `Bounds`, constructor limits/hash/transcript/anchor/offer errors (including `HashMismatch`), `FrameLimit`, `WorkLimit`, `SignatureLimit`, `ScratchTooSmall`, `UnexpectedMessage`, `Handshake(codec_error)`, Certificate context/list/count/extension errors, `Path(path_error)`, `CertificateVerify`, `Finished`, and `Transcript`. Path diagnostics retain the validator's kind and certificate/anchor/offset coordinates. A caller maps failures to connection abort/alerts under its own bounded transport policy.
 
 A failure can withhold future getters but cannot revoke a key/transcript copy returned earlier. The owner of a full connection must treat later fatal protocol errors as terminal and stop using that connection. Public implementation fields are not a supported way to manufacture an authentication decision.
 
@@ -85,9 +102,20 @@ A failure can withhold future getters but cannot revoke a key/transcript copy re
 
 Create `x509_path::Budget` with its checked factory and pass the same live budget throughout the flight. Do not reset/replenish it between Certificate and CV. Path certificate signatures and CV consume the **same** `signatures_left`; CV debits one before expensive verification, including a failed proof. Shared parsing/work use the validator's existing counters as well.
 
-Before any eager TLS parser scans a frame, feed checks both `Config.max_frame` and `Budget.limits.max_input`. It then charges **4096 + 256 × complete_frame_bytes** from `work_left`. This conservative logical tariff covers frame/hash copying and both eager Certificate-list passes, including possible 1024-word duplicate-extension bitmap clears. Path parsing/policy work is additional. A rejected work debit does not modify the remaining counter; it makes State terminal. These are logical resource limits, not instruction counts or an elapsed-time bound.
+Before any eager TLS parser scans a frame, feed checks both `Config.max_frame` and `Budget.limits.max_input`. Let `n` be complete-frame bytes and `b = ceil(n/128)`. The exact bridge precharges from `work_left` are:
 
-The path defaults include a 1 MiB input ceiling and 16 MiB shared work. Those limits are independent: the bridge tariff means the default work allowance admits **less than roughly 64 KiB of total frame bytes**, with further path costs. Raising `max_frame` alone does not admit a larger flight. The accepted test includes a real eight-certificate flight of roughly 80 KiB (the peer asserts it exceeds 64 KiB): default work rejects before Certificate parsing, while an explicitly raised shared work allowance admits it. Applications must choose coherent frame, parser, path, work, signature, and storage limits.
+| Selected hash / expected phase | Feed debit |
+| --- | --- |
+| SHA-256, every phase | `4096 + 256*n` |
+| SHA-384, EE or Certificate | `4096 + 256*n + 8192 + 16384*b` |
+| SHA-384, CertificateVerify | `4096 + 256*n + 8192 + 32768 + 16384*(b+2)` |
+| SHA-384, Finished | `4096 + 256*n + 8192 + 131072 + 16384*(b+10)` |
+
+The original SHA-256 tariff covers frame/hash copying and both eager Certificate-list passes, including possible 1024-word duplicate-extension bitmap clears. SHA-384 adds the update-block bound for any prior residue plus fixed copy/setup allowances. CV reserves two snapshot compressions and 32,768 copy units for the owned 146-byte input. Finished reserves two snapshot, four ExpandLabel, and four HMAC compressions, plus 131,072 copy units. These conservative allowances use 16,384 per SHA-384 compression, 4,096 per setup/state node, and 32 per traversed logical byte as the source-accounting basis; they do not reinterpret the legacy SHA-256 tariff as an instruction count. See the [schedule cost composition](extended-tls-schedule.md#sha-384-cost-composition-for-budget-owners).
+
+Path parsing/policy work is additional. A rejected work debit leaves the remaining counter unchanged and makes State terminal. The expected phase determines its reserve even when the incoming kind will later be rejected. Already admitted parser/retry work is not refunded. These are abstract resource limits, with no generated-instruction, physical-layout, elapsed-time or throughput guarantee.
+
+The path defaults include a 1 MiB input ceiling and 16 MiB shared work. Those limits are independent: even the legacy tariff admits **less than roughly 64 KiB of total frame bytes**, with additional path and selected SHA-384 costs. Raising `max_frame` alone does not admit a larger flight. The historical accepted SHA-256 test used a real eight-certificate flight of roughly 80 KiB: default work rejected before Certificate parsing, while an explicitly raised shared allowance admitted it. The accepted both-hash peer also checked that distinction for the new branch. Applications must choose coherent frame, parser, path, work, signature, and storage limits.
 
 ## Backing and state copies
 
@@ -97,7 +125,69 @@ Frame, scratch, anchors, State, and Budget must be mutually disjoint where any i
 
 State value copies fork their inline transcript, pending key, secret, phase, and error. They share only immutable anchor backing. They can progress independently with appropriate caller workspace, but shared Budget charges remain cumulative. Copies do not clone owners or acquire cleanup authority. There is no secure-erasure or constant-time compiler claim.
 
-## Accepted verification
+## Accepted selected-hash verification
+
+The [driver](../tests/extended_tls_authentication_execution.rs) keeps three exact groups: `server_flight_authentication_matches_real_chain_signature_and_finished_peer`, `server_authentication_retries_budgets_and_terminal_failures_withhold_peer`, and `ordinary_server_authentication_consumer_executes_without_error_projection`. All three passed separately on the frozen selected-hash source and fixtures, without a failed gate or an authentication-specific compiler change.
+
+The independent peer emits both SHA-256 and SHA-384 cases for positive and negative protocol groups, selecting hashlib/HMAC and Finished lengths from the explicit algorithm. It retains real certificate-path/identity/time checks and independent Ed25519 CV verification; suite hash does not change the certificate signature algorithm. Final publication compares all active digest bytes and canonical 48-byte observation storage, including zero tails.
+
+The ordinary consumer passed four flows: both algorithms in both packed/native-strided layouts. It checks both owned RFC contexts against complete independent 146-byte backing, including inactive zero tails; mutates a CVInput copy and source digest; and verifies that another owned input and transcript snapshot remain unchanged. The positive/negative fixtures retain source-frame clearing and guard checks.
+
+New first-frame work cases provide the exact expected bridge allowance minus one, exactly that allowance, and plus one for each algorithm/layout. These seams avoid depending on X.509 parser costs. They check rejection without a debit when insufficient, exact spending on admission, later metadata precedence and terminal behavior. The driver continues to distinguish exact bridge debits from nonnegative additional path charges. The accepted gates exercised these assertions under the exact tariffs above.
+
+The exact accepted evidence is:
+
+| Gate | Accepted cases/observations | Elapsed | Ignored local log |
+| --- | --- | ---: | --- |
+| `ordinary_server_authentication_consumer_executes_without_error_projection` | Four flows: both algorithms/layouts and both owned CV contexts | 10.29 s | `target/stdlib-work/tls-sha384-auth-ordinary-first.log` |
+| `server_flight_authentication_matches_real_chain_signature_and_finished_peer` | 20 layout cases / 108 observations | 17.31 s | `target/stdlib-work/tls-sha384-auth-positive-first.log` |
+| `server_authentication_retries_budgets_and_terminal_failures_withhold_peer` | 212 layout cases / 608 observations | 21.90 s | `target/stdlib-work/tls-sha384-auth-negative-first.log` |
+
+The protocol total is **232 layout cases / 716 observations**, in addition to
+four ordinary flows. These were **three separate exact invocations, three
+independently compiled strict ELFs and three native processes**, rather than
+one whole-target run. All native mmap/munmap/mremap/brk traces were empty.
+The shared Rust resume build, also including the schedule driver, took
+**1.24 s**; this is not an isolated authentication compilation measurement.
+Its ignored local log is
+`target/stdlib-work/tls-sha384-schedule-auth-build-first.log`; the
+[bounded joint rebuild command](extended-tls-schedule.md#accepted-selected-hash-verification)
+is recorded with the schedule receipts.
+
+Current frozen source SHA-256 hashes, checked after execution, are:
+
+| Source | SHA-256 |
+| --- | --- |
+| `extended/ext/tls_authentication.lani` | `6db96e4c7c3caf89e83f2a37c4b573ebada7fce23a4f920a63f4ab874b5573ed` |
+| `tests/extended_tls_authentication_execution.rs` | `2a83ca5be78948c34d976a2dac07f449f9dca1cd5d9d638498d8584fb5ef3b8f` |
+| `tests/fixtures/extended/tls_authentication/plain.lani` | `e0391188072b9b8f70e2c2baa6170502c13b98e1675df9cc0d1a1145e9a99f54` |
+| `tests/fixtures/extended/tls_authentication/protocol.lani` | `f5fbbd51821514c90e39f7b535273769c1fd1780870619a4e9ebf10521a82541` |
+| `tests/fixtures/extended/tls_authentication/peer.py` | `c9e8e95c1020dadbabc8984e37e39a084492a8520e25398e86628eb0da621a36` |
+
+The source base was `e32b2fbfb77fa25ec0e5b0a83905d5c9c34faff3` with the
+frozen integration additions. Each runtime selection used this exact wrapper
+with its name and log from the table; the example selects the ordinary flow.
+Repeat separately for positive and negative selections:
+
+```sh
+test_name=ordinary_server_authentication_consumer_executes_without_error_projection
+RUST_MIN_STACK=16777216 LANIUS_GPU_CODEGEN_TEST_TIMEOUT_MS=45000 \
+  LANIUS_DEBUG_STAGE_ERRORS=1 timeout --kill-after=2s 100s \
+  flock -E 75 -w 35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/deps/extended_tls_authentication_execution-4d6cb46e73acfb4f \
+  --exact "$test_name" --nocapture --test-threads=1 \
+  > target/stdlib-work/tls-sha384-auth-ordinary-first.log 2>&1
+```
+
+These results admit the exercised authentication boundary on native x86_64
+Linux. They do not establish connected TLS interoperability, other targets,
+user GPU execution, constant-time generated code or throughput. Authenticated
+still does not mean Established.
+
+## Historical SHA-256-only verification
+
+The following receipts predate the typed-secret/SHA-384/CVInput migration. They establish the earlier SHA-256-only source; the current implementation has the separate accepted receipts above.
 
 All three focused gates passed on **Linux x86-64** with GPU-compiled native output. The driver is [extended_tls_authentication_execution.rs](../tests/extended_tls_authentication_execution.rs), with [protocol, ordinary consumer, and independent peer](../tests/fixtures/extended/tls_authentication/).
 

@@ -5,6 +5,7 @@ to strace and never fabricates successful short-send data. Fragmentation uses
 real TCP forwarding; its copies are test plumbing, not a TLS implementation.
 """
 import pathlib
+import hashlib
 import socket
 import struct
 import subprocess
@@ -57,6 +58,13 @@ def proxy(left, right, fragment, threads):
 
 def run(binary, directory, role, suite, length, mode, fault, fragment, transport, expected, root_name, exporter, group, peer_groups, calls):
     directory = pathlib.Path(directory)
+    scale = suite == 2 and length == 1048576 and mode == 0
+    # The software AES256 scale case has one35s operation deadline. Keep a
+    # separate whole-helper bound with four seconds reserved for kill/reap.
+    case_end = time.monotonic() + 40 if scale else None
+    def remaining(ceiling):
+        return ceiling if case_end is None else max(0.001, min(ceiling, case_end - time.monotonic()))
+    peer_wait = 38 if scale else 12
     cipher = ['TLS_CHACHA20_POLY1305_SHA256', 'TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384'][suite]
     export_length = 12240 if mode == 12 else 32
     assert group in range(4) and peer_groups in ['X25519', 'P-256', 'X25519:P-256']
@@ -117,7 +125,7 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
     if small: native.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2048)
     native.setblocking(transport == 'blocking')
     trace = directory / f'trace-{role}-{suite}-{mode}-{time.monotonic_ns()}.txt'
-    argv = [str(binary), str(role), str(suite), (directory / root_name).read_bytes().hex(), (directory / 'chain.der').read_bytes().hex(), (directory / 'seed.bin').read_bytes().hex(), str(length), str(mode), str(calls), '0' if mode == 4 else '12000', str(int(expected)), str(group)]
+    argv = [str(binary), str(role), str(suite), (directory / root_name).read_bytes().hex(), (directory / 'chain.der').read_bytes().hex(), (directory / 'seed.bin').read_bytes().hex(), str(length), str(mode), str(calls), '0' if mode == 4 else ('35000' if scale else '12000'), str(int(expected)), str(group)]
     command = ['strace', '-qq', '-o', str(trace), '-s', '64', '-e', 'trace=mmap,mremap,munmap,brk,close,sendto,recvfrom,getrandom,fcntl,getsockopt,getpeername,poll,clock_gettime,shutdown', '-e', 'signal=none']
     if fault != '-': command += ['-e', 'inject=' + fault]
     command += argv
@@ -158,9 +166,9 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
                 # The independent client closes only after receiving its echo;
                 # stdin EOF must not terminate it before bidirectional data.
                 if role == 1:
-                    if exporter: export_ready.wait(12)
-                    else: delivered.wait(12)
-                else: native_finished.wait(18)
+                    if exporter: export_ready.wait(peer_wait)
+                    else: delivered.wait(peer_wait)
+                else: native_finished.wait(38 if scale else 18)
             except (OSError, BrokenPipeError): pass
             finally:
                 try: peer.stdin.close()
@@ -169,12 +177,12 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
         thread.start()
         threads.append(thread)
     try:
-        native_out, native_err = native_process.communicate(timeout=18)
+        native_out, native_err = native_process.communicate(timeout=remaining(38) if scale else 18)
         native_finished.set()
         delivered.set()
         if peer is not None:
-            peer.wait(timeout=5)
-            for thread in threads: thread.join(timeout=1)
+            peer.wait(timeout=remaining(3) if scale else 5)
+            for thread in threads: thread.join(timeout=remaining(1))
             peer_out, peer_err = b''.join(peer_stdout), b''.join(peer_stderr)
             peer_status = peer.returncode
         else: peer_out, peer_err, peer_status = b'', b'', 0
@@ -187,8 +195,25 @@ def run(binary, directory, role, suite, length, mode, fault, fragment, transport
         raise
     finally:
         for sock in resources: sock.close()
+    # Preserve full diagnostics only in ignored storage. Assertions must not
+    # turn a scale failure into megabytes of escaped stdout/trace in the gate.
+    if native_process.returncode != 0:
+        failure = pathlib.Path(__file__).resolve().parents[4] / 'target' / 'stdlib-work' / 'tls-tcp-failures' / trace.stem
+        failure.mkdir(parents=True, exist_ok=False)
+        captures = {'native.stdout': native_out, 'native.stderr': native_err,
+                    'peer.stdout': peer_out, 'peer.stderr': peer_err,
+                    'native.trace': trace.read_bytes()}
+        for name, data in captures.items(): (failure / name).write_bytes(data)
+        (failure / 'argv.txt').write_text(repr(argv) + '\n')
+        def brief(data):
+            return dict(length=len(data), sha256=hashlib.sha256(data).hexdigest(),
+                        first32=data[:32].hex(), last32=data[-32:].hex())
+        raise AssertionError(dict(native_status=native_process.returncode, peer_status=peer_status,
+                                  native_stdout=brief(native_out), native_stderr=brief(native_err),
+                                  peer_stdout=brief(peer_out), peer_stderr_tail=peer_err[-1500:],
+                                  trace_tail='\n'.join(trace.read_text().splitlines()[-40:])[-6000:],
+                                  full_capture=str(failure)))
     # Success includes fixture assertions, not merely the TLS peer's exit.
-    assert native_process.returncode == 0, (native_process.returncode, native_out, native_err, peer_err, trace.read_text())
     fields = [struct.pack('<q', peer_status), native_out, native_err, peer_out, peer_err, trace.read_bytes()]
     sys.stdout.buffer.write(b''.join(struct.pack('<Q', len(value)) + value for value in fields))
 

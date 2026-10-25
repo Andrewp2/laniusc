@@ -4,7 +4,7 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../extended/ext/tls_transcript.lani#L2)
+[All modules](../README.md) · [Source](../../../extended/ext/tls_transcript.lani#L3)
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
@@ -12,15 +12,15 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 
 - [extended-tls-schedule](../../extended-tls-schedule.md)
 
-Declaration counts: enum: 1; field: 4; function: 1; impl: 1; method: 6; struct: 1; variant: 6.
+Declaration counts: enum: 1; field: 4; function: 1; impl: 1; method: 7; struct: 1; variant: 6.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result](../core/result.md) · [source](../../../extended/ext/tls_transcript.lani#L3)
-- [core::sha256](../core/sha256.md) · [source](../../../extended/ext/tls_transcript.lani#L4)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_transcript.lani#L5)
+- [core::result](../core/result.md) · [source](../../../extended/ext/tls_transcript.lani#L4)
+- [ext::tls_hash](tls_hash.md) · [source](../../../extended/ext/tls_transcript.lani#L5)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_transcript.lani#L6)
 
 ## Types, fields and variants
 
@@ -28,7 +28,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Error
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 pub enum Error
@@ -36,7 +36,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 Bounds
@@ -44,7 +44,7 @@ Bounds
 
 #### variant: InvalidFrame
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 InvalidFrame
@@ -52,7 +52,7 @@ InvalidFrame
 
 #### variant: SyntheticMessage
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 SyntheticMessage
@@ -60,7 +60,7 @@ SyntheticMessage
 
 #### variant: InvalidHrrState
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 InvalidHrrState
@@ -68,7 +68,7 @@ InvalidHrrState
 
 #### variant: LengthOverflow
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 LengthOverflow
@@ -76,7 +76,7 @@ LengthOverflow
 
 #### variant: Hash
 
-[Source line 6](../../../extended/ext/tls_transcript.lani#L6)
+[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
 
 ```lanius
 Hash
@@ -84,7 +84,7 @@ Hash
 
 ### struct: State
 
-[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
+[Source line 8](../../../extended/ext/tls_transcript.lani#L8)
 
 ```lanius
 pub struct State
@@ -92,15 +92,15 @@ pub struct State
 
 #### field: hash
 
-[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
+[Source line 8](../../../extended/ext/tls_transcript.lani#L8)
 
 ```lanius
-hash: core::sha256::State
+hash: ext::tls_hash::State
 ```
 
 #### field: count
 
-[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
+[Source line 8](../../../extended/ext/tls_transcript.lani#L8)
 
 ```lanius
 count: u64
@@ -108,7 +108,7 @@ count: u64
 
 #### field: first
 
-[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
+[Source line 8](../../../extended/ext/tls_transcript.lani#L8)
 
 ```lanius
 first: u8
@@ -116,7 +116,7 @@ first: u8
 
 #### field: hrr
 
-[Source line 7](../../../extended/ext/tls_transcript.lani#L7)
+[Source line 8](../../../extended/ext/tls_transcript.lani#L8)
 
 ```lanius
 hrr: bool
@@ -126,17 +126,17 @@ hrr: bool
 
 ### function: new
 
-[Source line 15](../../../extended/ext/tls_transcript.lani#L15)
+[Source line 16](../../../extended/ext/tls_transcript.lani#L16)
 
 ```lanius
-pub fn new() -> State
+pub fn new(algorithm: ext::tls_hash::Algorithm) -> State
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 16
+### impl at line 17
 
-[Source line 16](../../../extended/ext/tls_transcript.lani#L16)
+[Source line 17](../../../extended/ext/tls_transcript.lani#L17)
 
 ```lanius
 pub impl State
@@ -144,15 +144,23 @@ pub impl State
 
 #### method: borrow
 
-[Source line 17](../../../extended/ext/tls_transcript.lani#L17)
+[Source line 18](../../../extended/ext/tls_transcript.lani#L18)
 
 ```lanius
 pub fn borrow(&self) -> &State
 ```
 
+#### method: algorithm
+
+[Source line 19](../../../extended/ext/tls_transcript.lani#L19)
+
+```lanius
+pub fn algorithm(&self) -> ext::tls_hash::Algorithm
+```
+
 #### method: messages
 
-[Source line 18](../../../extended/ext/tls_transcript.lani#L18)
+[Source line 20](../../../extended/ext/tls_transcript.lani#L20)
 
 ```lanius
 pub fn messages(&self) -> u64
@@ -160,7 +168,7 @@ pub fn messages(&self) -> u64
 
 #### method: used_hrr
 
-[Source line 19](../../../extended/ext/tls_transcript.lani#L19)
+[Source line 21](../../../extended/ext/tls_transcript.lani#L21)
 
 ```lanius
 pub fn used_hrr(&self) -> bool
@@ -168,15 +176,15 @@ pub fn used_hrr(&self) -> bool
 
 #### method: snapshot
 
-[Source line 21](../../../extended/ext/tls_transcript.lani#L21)
+[Source line 23](../../../extended/ext/tls_transcript.lani#L23)
 
 ```lanius
-pub fn snapshot(&self) -> core::sha256::Digest
+pub fn snapshot(&self) -> ext::tls_hash::Digest
 ```
 
 #### method: update
 
-[Source line 24](../../../extended/ext/tls_transcript.lani#L24)
+[Source line 26](../../../extended/ext/tls_transcript.lani#L26)
 
 ```lanius
 pub fn update(&self, message: core::slice::View<u8>) -> core::result::Result<i32, Error>
@@ -184,7 +192,7 @@ pub fn update(&self, message: core::slice::View<u8>) -> core::result::Result<i32
 
 #### method: rewrite_for_hrr
 
-[Source line 38](../../../extended/ext/tls_transcript.lani#L38)
+[Source line 40](../../../extended/ext/tls_transcript.lani#L40)
 
 ```lanius
 pub fn rewrite_for_hrr(&self, hrr: core::slice::View<u8>) -> core::result::Result<i32, Error>

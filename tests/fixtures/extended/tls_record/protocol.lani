@@ -5,6 +5,9 @@ import core::mem;
 import core::result;
 import core::slice;
 import ext::tls_record;
+import ext::tls_hash;
+import ext::tls_schedule;
+import ext::tls_suite;
 import std::stream;
 fn load(bytes: [u8], offset: i32) -> u64 {
     let value: u64 = 0; let index: i32 = 0;
@@ -20,7 +23,7 @@ impl Output {
 }
 fn kind(error: ext::tls_record::Error) -> u64 {
     return match (error) {
-        ext::tls_record::Error::Bounds -> 1, ext::tls_record::Error::InvalidSecretLength -> 2,
+        ext::tls_record::Error::Bounds -> 1, ext::tls_record::Error::HashMismatch -> 2,
         ext::tls_record::Error::InvalidType -> 3, ext::tls_record::Error::InvalidContentLength -> 4,
         ext::tls_record::Error::InvalidPadding -> 5, ext::tls_record::Error::RecordOverflow -> 6,
         ext::tls_record::Error::BufferTooSmall -> 7, ext::tls_record::Error::Exhausted -> 8,
@@ -44,22 +47,30 @@ fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) {
 fn header(output: &Output, status: u64, sequence: u64, exhausted: bool, poisoned: bool, content_type: u8, length: i32, observed: i32) {
     output.word(status); output.word(sequence); output.word(flag(exhausted)); output.word(flag(poisoned)); output.word(content_type as u64); output.word(length as u64); output.word(observed as u64);
 }
+fn stored(secret: core::slice::View<u8>) -> ext::tls_schedule::Secret {
+    return ext::tls_schedule::secret_from_view(ext::tls_suite::hash(ext::tls_suite::Suite::ChaCha20Poly1305Sha256),secret).unwrap();
+}
 fn constructors(secret: core::slice::View<u8>) {
-    let variant: i32 = 0; while (variant < 3) {
-        assert(kind(core::result::unwrap_err(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, bad(secret, variant)))) == 1);
-        assert(kind(core::result::unwrap_err(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, bad(secret, variant)))) == 1); variant += 1;
+    let algorithm: ext::tls_hash::Algorithm=ext::tls_suite::hash(ext::tls_suite::Suite::ChaCha20Poly1305Sha256);
+    let variant: i32=0; while(variant<3) {
+        let rejected: core::result::Result<ext::tls_schedule::Secret,ext::tls_schedule::Error> = ext::tls_schedule::secret_from_view(algorithm,bad(secret,variant));
+        let bounds: bool=match(rejected.unwrap_err()) { ext::tls_schedule::Error::Bounds->true,_ ->false }; assert(bounds); variant+=1;
     }
-    let count: i32 = 0; while (count < 34) {
-        if (count != 32) {
-            let short: core::slice::View<u8> = core::slice::View { values: secret.values, start: secret.start, length: count };
-            assert(kind(core::result::unwrap_err(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, short))) == 2);
-            assert(kind(core::result::unwrap_err(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, short))) == 2);
-        } count += 1;
+    let count: i32=0; while(count<34) {
+        if(count!=ext::tls_hash::hash_length(algorithm)) {
+            let candidate: core::slice::View<u8> = core::slice::View { values:secret.values,start:secret.start,length:count };
+            let rejected: core::result::Result<ext::tls_schedule::Secret,ext::tls_schedule::Error> = ext::tls_schedule::secret_from_view(algorithm,candidate);
+            let length_error: bool=match(rejected.unwrap_err()) { ext::tls_schedule::Error::InvalidSecretLength->true,_ ->false }; assert(length_error);
+        } count+=1;
     }
+    let other: ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha384; if(ext::tls_hash::hash_length(algorithm)==48) { other=ext::tls_hash::Algorithm::Sha256; }
+    let source: [u8;48]=[91;48]; let wrong: ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(other,core::slice::View { values:source,start:0,length:ext::tls_hash::hash_length(other) }).unwrap();
+    assert(kind(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256,wrong).unwrap_err())==2); assert(kind(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256,wrong).unwrap_err())==2);
+    assert(ext::tls_hash::hash_length(wrong.algorithm)==ext::tls_hash::hash_length(other)); count=0; while(count<48) { let expected:u8=91; if(count>=ext::tls_hash::hash_length(other)) { expected=0; } assert(wrong.bytes[count]==expected && source[count]==91); count+=1; }
 }
 fn run_seal(operation: i32, secret: core::slice::View<u8>, content: core::slice::View<u8>, kind_value: u8, padding: i32, sequence: u64, variant: i32, destination: core::slice::View<u8>, output: &Output) -> i32 {
     if (operation == 3) { constructors(secret); }
-    let state: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, secret));
+    let state: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, stored(secret)));
     // Whitebox reachability only: no public import/resume/raw-key API exists.
     state.traffic.next = sequence; if (variant == 4) { state.traffic.exhausted = true; }
     let source: core::slice::View<u8> = content; let target: core::slice::View<u8> = destination;
@@ -82,7 +93,7 @@ fn run_seal(operation: i32, secret: core::slice::View<u8>, content: core::slice:
     return count;
 }
 fn run_open(operation: i32, secret: core::slice::View<u8>, record: core::slice::View<u8>, sequence: u64, variant: i32, scratch: core::slice::View<u8>, output: &Output) -> i32 {
-    let state: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, secret)); state.traffic.next = sequence;
+    let state: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, stored(secret))); state.traffic.next = sequence;
     if (variant == 30) { state.traffic.exhausted = true; }
     if (operation == 4) {
         let broken: i32 = 0; while (broken < 3) {
@@ -127,8 +138,8 @@ fn run_open(operation: i32, secret: core::slice::View<u8>, record: core::slice::
     return record.length - 21;
 }
 fn lifecycle(secret: core::slice::View<u8>, content: core::slice::View<u8>, destination: core::slice::View<u8>, scratch: core::slice::View<u8>, output: &Output) {
-    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::ChaCha20Poly1305Sha256, secret));
-    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::ChaCha20Poly1305Sha256, secret));
+    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, stored(secret)));
+    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_suite::Suite::ChaCha20Poly1305Sha256, stored(secret)));
     let step: i32 = 0; while (step < 4) {
         if (step >= 2) { assert(core::result::unwrap(send.key_update()) == 0 && core::result::unwrap(receive.key_update()) == 0); assert(send.sequence() == 0 && receive.sequence() == 0); }
         let size: i32 = core::result::unwrap(send.seal(content, 23, step * 3, destination));

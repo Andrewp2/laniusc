@@ -126,3 +126,27 @@ fn ordinary_consumer_imports_owns_classifies_and_verifies_all_families() {
     assert!(out.stdout.is_empty());
     assert!(std::fs::read_to_string(trace.path()).unwrap().is_empty());
 }
+
+// A positive control, never an expected compiler error. Select the other
+// semantically identical source forms explicitly while diagnosing admission.
+#[test]
+fn signature_match_arm_control() {
+    let stem = std::env::var("LANIUS_SIGNATURE_MATCH_CONTROL")
+        .unwrap_or_else(|_| "match_explicit".to_owned());
+    assert!(matches!(
+        stem.as_str(),
+        "match_explicit"
+            | "match_wildcard_spaced"
+            | "match_wildcard_unspaced"
+            | "match_material_records_wildcard"
+            | "match_material_records_explicit"
+    ));
+    let exe = compile(&stem);
+    let out = common::process_output_with_timeout(
+        "signature match-arm control",
+        &mut Command::new(exe.path()),
+        Duration::from_secs(10),
+    );
+    checked(&out);
+    assert!(out.stdout.is_empty());
+}

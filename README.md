@@ -90,12 +90,18 @@ copied state and full output through HKDF counter 255.
 [RSA public verification](docs/extended-rsa.md) passes 620 protocol commands
 and an ordinary consumer for its explicit SHA-256 PKCS#1/PSS profile,
 including the 2049-bit PSS boundary. Both foundations execute without allocation;
-their TLS/certificate integrations remain separate work.
+their certificate-signature integrations remain separate work.
+[Owned public signature dispatch](docs/extended-signature.md) passes 719
+protocol commands and a four-vector consumer across Ed25519, P-256 and RSAE,
+with strict encodings, copied keys and shared verification allowances.
+[TLS hash and suite foundations](docs/extended-tls-hash.md) pass 1,634 commands
+and an ordinary consumer for selected SHA-256/SHA-384 streams, owned snapshots
+and ordered three-suite policies.
 [AES-128/192/256](docs/core-aes.md) and
 [AES-GCM](docs/extended-aes-gcm.md) also execute without allocation, with
 independent block/AEAD models and authentication-before-output checks.
 The [TLS record layer](docs/extended-tls-record.md) passes ordinary
-consumers, 308 ChaCha commands and 220 AES-GCM commands after a
+consumers, 308 ChaCha commands, 220 AES-128 and 220 AES-256/SHA-384 commands after a
 [host capacity repair](docs/tls-record-lowering-dependency.md).
 [Ed25519 signatures](docs/extended-ed25519.md),
 [borrowed DER](docs/extended-der.md),
@@ -117,23 +123,24 @@ cases. This offline profile rejects unsupported policies; general PKIX remains
 work.
 [Server-flight authentication](docs/extended-tls-authentication.md) now joins
 that path decision to ordered CertificateVerify and Finished checks, with
-110 protocol cases and 340 state observations. The
+232 protocol cases and 716 state observations across SHA-256/SHA-384. The
 [connection engine](docs/extended-tls-connection.md) composes it with negotiation,
-directional epochs and client-Finished acknowledgement, passing 114 scripted
+directional epochs and client-Finished acknowledgement, passing 154 scripted
 cases plus an ordinary consumer across both groups, retry forms, long
 certificate flights and error/entropy/work boundaries.
 The [TCP adapter](docs/extended-tls-tcp.md) passes 18 real OpenSSL exchanges,
 37 fault/ownership cases, two 1 MiB pressure streams and six deadline/budget
 resumption cases, including actual partial-send and retained-input witnesses.
 Another 28 cases cover P-256 peers, both group policies and bounded scalar
-rejection, for 91 transport cases in total.
-The [exchange application](docs/extended-tls-exchange.md) passes 76 native cases
+rejection. AES-256/SHA-384 adds 31 interoperability, failure, full-exporter and
+one-megabyte pressure cases, for 122 transport cases in total.
+The [exchange application](docs/extended-tls-exchange.md) passes 80 native cases
 for duplex transfers, explicit trust, file/input limits, I/O and owner failures.
 The [seal-bytes program](docs/extended-seal-bytes.md) passes 137 native cases,
 including allocation/I/O failures and the full 1 MiB boundary. The
 [pinned compiler comparison](docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
 records the measured crypto and large-library workloads. These connections use
-X25519 or P-256 with Ed25519/SHA-256; ECDSA and RSA signature integration and
+X25519 or P-256 with Ed25519 and SHA-256/SHA-384; ECDSA and RSA signature integration and
 broader PKIX support remain part of the full TLS work.
 
 Optional modules use the [`extended` source root](extended/README.md).

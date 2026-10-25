@@ -5,6 +5,9 @@ import core::mem;
 import core::result;
 import core::slice;
 import ext::tls_record;
+import ext::tls_hash;
+import ext::tls_schedule;
+import ext::tls_suite;
 import std::stream;
 fn load(bytes: [u8], offset: i32) -> u64 {
     let value: u64 = 0; let index: i32 = 0;
@@ -20,7 +23,7 @@ impl Output {
 }
 fn kind(error: ext::tls_record::Error) -> u64 {
     return match (error) {
-        ext::tls_record::Error::Bounds -> 1, ext::tls_record::Error::InvalidSecretLength -> 2,
+        ext::tls_record::Error::Bounds -> 1, ext::tls_record::Error::HashMismatch -> 2,
         ext::tls_record::Error::InvalidType -> 3, ext::tls_record::Error::InvalidContentLength -> 4,
         ext::tls_record::Error::InvalidPadding -> 5, ext::tls_record::Error::RecordOverflow -> 6,
         ext::tls_record::Error::BufferTooSmall -> 7, ext::tls_record::Error::Exhausted -> 8,
@@ -44,26 +47,34 @@ fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) {
 fn header(output: &Output, status: u64, sequence: u64, exhausted: bool, poisoned: bool, content_type: u8, length: i32, observed: i32) {
     output.word(status); output.word(sequence); output.word(flag(exhausted)); output.word(flag(poisoned)); output.word(content_type as u64); output.word(length as u64); output.word(observed as u64);
 }
-fn constructors(secret: core::slice::View<u8>) {
-    let variant: i32 = 0; while (variant < 3) {
-        assert(kind(core::result::unwrap_err(ext::tls_record::sealer(ext::tls_record::Suite::Aes128GcmSha256, bad(secret, variant)))) == 1);
-        assert(kind(core::result::unwrap_err(ext::tls_record::opener(ext::tls_record::Suite::Aes128GcmSha256, bad(secret, variant)))) == 1); variant += 1;
-    }
-    let count: i32 = 0; while (count < 34) {
-        if (count != 32) {
-            let short: core::slice::View<u8> = core::slice::View { values: secret.values, start: secret.start, length: count };
-            assert(kind(core::result::unwrap_err(ext::tls_record::sealer(ext::tls_record::Suite::Aes128GcmSha256, short))) == 2);
-            assert(kind(core::result::unwrap_err(ext::tls_record::opener(ext::tls_record::Suite::Aes128GcmSha256, short))) == 2);
-        } count += 1;
-    }
+fn stored(secret: core::slice::View<u8>, selected: ext::tls_suite::Suite) -> ext::tls_schedule::Secret {
+    return ext::tls_schedule::secret_from_view(ext::tls_suite::hash(selected),secret).unwrap();
 }
-fn run_seal(operation: i32, secret: core::slice::View<u8>, content: core::slice::View<u8>, kind_value: u8, padding: i32, sequence: u64, variant: i32, destination: core::slice::View<u8>, output: &Output) -> i32 {
-    if (operation == 3) { constructors(secret); }
-    let state: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::Aes128GcmSha256, secret));
+fn constructors(secret: core::slice::View<u8>, selected: ext::tls_suite::Suite) {
+    let algorithm: ext::tls_hash::Algorithm=ext::tls_suite::hash(selected);
+    let variant: i32=0; while(variant<3) {
+        let rejected: core::result::Result<ext::tls_schedule::Secret,ext::tls_schedule::Error> = ext::tls_schedule::secret_from_view(algorithm,bad(secret,variant));
+        let bounds: bool=match(rejected.unwrap_err()) { ext::tls_schedule::Error::Bounds->true,_ ->false }; assert(bounds); variant+=1;
+    }
+    let count: i32=0; while(count<50) {
+        if(count!=ext::tls_hash::hash_length(algorithm)) {
+            let candidate: core::slice::View<u8> = core::slice::View { values:secret.values,start:secret.start,length:count };
+            let rejected: core::result::Result<ext::tls_schedule::Secret,ext::tls_schedule::Error> = ext::tls_schedule::secret_from_view(algorithm,candidate);
+            let length_error: bool=match(rejected.unwrap_err()) { ext::tls_schedule::Error::InvalidSecretLength->true,_ ->false }; assert(length_error);
+        } count+=1;
+    }
+    let other: ext::tls_hash::Algorithm=ext::tls_hash::Algorithm::Sha384; if(ext::tls_hash::hash_length(algorithm)==48) { other=ext::tls_hash::Algorithm::Sha256; }
+    let source: [u8;48]=[91;48]; let wrong: ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(other,core::slice::View { values:source,start:0,length:ext::tls_hash::hash_length(other) }).unwrap();
+    assert(kind(ext::tls_record::sealer(selected,wrong).unwrap_err())==2); assert(kind(ext::tls_record::opener(selected,wrong).unwrap_err())==2);
+    assert(ext::tls_hash::hash_length(wrong.algorithm)==ext::tls_hash::hash_length(other)); count=0; while(count<48) { let expected:u8=91; if(count>=ext::tls_hash::hash_length(other)) { expected=0; } assert(wrong.bytes[count]==expected && source[count]==91); count+=1; }
+}
+fn run_seal(selected: ext::tls_suite::Suite, operation: i32, secret: core::slice::View<u8>, content: core::slice::View<u8>, kind_value: u8, padding: i32, sequence: u64, variant: i32, destination: core::slice::View<u8>, output: &Output) -> i32 {
+    if (operation == 3) { constructors(secret,selected); }
+    let state: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(selected, stored(secret,selected)));
     // Whitebox reachability only: no public import/resume/raw-key API exists.
     state.traffic.next = sequence; if (variant == 4) { state.traffic.exhausted = true; }
     assert(state.key_update_due() == (sequence >= ext::tls_record::AES_GCM_RECORD_LIMIT-1 || variant == 4));
-    let selected: bool = match (state.suite()) { ext::tls_record::Suite::Aes128GcmSha256 -> true, _ -> false }; assert(selected);
+    assert(ext::tls_suite::id(state.suite())==ext::tls_suite::id(selected));
     let source: core::slice::View<u8> = content; let target: core::slice::View<u8> = destination;
     if (variant == 1) { source = bad(content, 0); } if (variant == 2) { target = bad(destination, 0); }
     if (variant == 5) { source = bad(content, 2); } if (variant == 6) { source = bad(content, 1); }
@@ -83,11 +94,11 @@ fn run_seal(operation: i32, secret: core::slice::View<u8>, content: core::slice:
     }
     return count;
 }
-fn run_open(operation: i32, secret: core::slice::View<u8>, record: core::slice::View<u8>, sequence: u64, variant: i32, scratch: core::slice::View<u8>, output: &Output) -> i32 {
-    let state: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::Aes128GcmSha256, secret)); state.traffic.next = sequence;
+fn run_open(selected: ext::tls_suite::Suite, operation: i32, secret: core::slice::View<u8>, record: core::slice::View<u8>, sequence: u64, variant: i32, scratch: core::slice::View<u8>, output: &Output) -> i32 {
+    let state: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(selected, stored(secret,selected))); state.traffic.next = sequence;
     if (variant == 30) { state.traffic.exhausted = true; }
     assert(state.key_update_due() == (sequence >= ext::tls_record::AES_GCM_RECORD_LIMIT-1 || variant == 30));
-    let selected: bool = match (state.suite()) { ext::tls_record::Suite::Aes128GcmSha256 -> true, _ -> false }; assert(selected);
+    assert(ext::tls_suite::id(state.suite())==ext::tls_suite::id(selected));
     if (operation == 4) {
         let broken: i32 = 0; while (broken < 3) {
             assert(kind(core::result::unwrap_err(state.open(bad(record, broken), scratch))) == 1);
@@ -130,9 +141,9 @@ fn run_open(operation: i32, secret: core::slice::View<u8>, record: core::slice::
     }
     return record.length - 21;
 }
-fn lifecycle(secret: core::slice::View<u8>, content: core::slice::View<u8>, destination: core::slice::View<u8>, scratch: core::slice::View<u8>, output: &Output) {
-    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::Aes128GcmSha256, secret));
-    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::Aes128GcmSha256, secret));
+fn lifecycle(selected: ext::tls_suite::Suite, secret: core::slice::View<u8>, content: core::slice::View<u8>, destination: core::slice::View<u8>, scratch: core::slice::View<u8>, output: &Output) {
+    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(selected, stored(secret,selected)));
+    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(selected, stored(secret,selected)));
     let step: i32 = 0; while (step < 4) {
         if (step >= 2) { assert(core::result::unwrap(send.key_update()) == 0 && core::result::unwrap(receive.key_update()) == 0); assert(send.sequence() == 0 && receive.sequence() == 0); }
         let size: i32 = core::result::unwrap(send.seal(content, 23, step * 3, destination));
@@ -141,9 +152,9 @@ fn lifecycle(secret: core::slice::View<u8>, content: core::slice::View<u8>, dest
         assert(send.sequence() == receive.sequence() && !receive.is_poisoned()); output.word(size as u64); output.view(record); step += 1;
     }
 }
-fn limit_lifecycle(secret: core::slice::View<u8>, content: core::slice::View<u8>, destination: core::slice::View<u8>, scratch: core::slice::View<u8>, output: &Output) {
-    let send: ext::tls_record::Sealer = ext::tls_record::sealer(ext::tls_record::Suite::Aes128GcmSha256, secret).unwrap();
-    let receive: ext::tls_record::Opener = ext::tls_record::opener(ext::tls_record::Suite::Aes128GcmSha256, secret).unwrap();
+fn limit_lifecycle(selected: ext::tls_suite::Suite, secret: core::slice::View<u8>, content: core::slice::View<u8>, destination: core::slice::View<u8>, scratch: core::slice::View<u8>, output: &Output) {
+    let send: ext::tls_record::Sealer = ext::tls_record::sealer(selected, stored(secret,selected)).unwrap();
+    let receive: ext::tls_record::Opener = ext::tls_record::opener(selected, stored(secret,selected)).unwrap();
     // Private seam for reachable boundary coverage, never a public resume API.
     send.traffic.next = ext::tls_record::AES_GCM_RECORD_LIMIT-2; receive.traffic.next = ext::tls_record::AES_GCM_RECORD_LIMIT-2;
     let update_frame: [u8; 5] = [24,0,0,1,0]; let step: i32 = 0;
@@ -167,7 +178,7 @@ fn limit_lifecycle(secret: core::slice::View<u8>, content: core::slice::View<u8>
         let record: core::slice::View<u8> = core::slice::View { values: destination.values, start: destination.start, length: size };
         let opened: ext::tls_record::Opened = receive.open(record, scratch).unwrap(); equal(opened.content, bytes); assert(opened.content_type == kind_value);
         assert(send.sequence() == receive.sequence());
-        let selected: bool = match (send.suite()) { ext::tls_record::Suite::Aes128GcmSha256 -> true, _ -> false }; assert(selected);
+        assert(ext::tls_suite::id(send.suite())==ext::tls_suite::id(selected));
         output.word(size as u64); output.view(record); step += 1;
     }
 }
@@ -176,33 +187,33 @@ fn main() -> i32 {
     core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), head, 0, 8)); let cases: u64 = load(head, 0); assert(cases <= 1024);
     let output_bytes: [u8; 2048] = [0; 2048]; let output: Output = Output { bytes: output_bytes, used: 0 }; let case: u64 = 0;
     while (case < cases) {
-        let frame: [u8; 64] = [0; 64]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), frame, 0, 64));
+        let frame: [u8; 72] = [0; 72]; core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), frame, 0, 72));
         let operation: i32 = load(frame, 0) as i32; let layout: i32 = load(frame, 8) as i32; let content_type: u8 = load(frame, 16) as u8;
         let padding: i32 = load(frame, 24) as i32; let sequence: u64 = load(frame, 32); let variant: i32 = load(frame, 40) as i32;
-        let length: i32 = load(frame, 48) as i32; let capacity: i32 = load(frame, 56) as i32;
+        let length: i32 = load(frame, 48) as i32; let capacity: i32 = load(frame, 56) as i32; let selected: ext::tls_suite::Suite=ext::tls_suite::from_id(load(frame,64) as u16).unwrap(); let secret_length:i32=ext::tls_hash::hash_length(ext::tls_suite::hash(selected));
         assert(operation >= 0 && operation <= 5 && layout >= 0 && layout <= 1 && length >= 0 && length <= 16650 && capacity >= 0 && capacity <= 16650);
-        let raw_secret: [u8; 40] = [165; 40]; let raw_data: [u8; 16700] = [166; 16700]; let raw_destination: [u8; 16700] = [221; 16700]; let raw_scratch: [u8; 16700] = [222; 16700];
-        core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_secret, 3, 32)); core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_data, 3, length));
-        let saved_secret: [u8; 40] = raw_secret; let saved_data: [u8; 16700] = raw_data;
-        let words_secret: [i32; 10] = [0; 10]; let words_data: [i32; 4175] = [0; 4175]; let words_destination: [i32; 4175] = [0; 4175]; let words_scratch: [i32; 4175] = [0; 4175];
+        let raw_secret: [u8; 56] = [165; 56]; let raw_data: [u8; 16700] = [166; 16700]; let raw_destination: [u8; 16700] = [221; 16700]; let raw_scratch: [u8; 16700] = [222; 16700];
+        core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_secret, 3, 48)); core::result::unwrap(core::io::read_exact<std::stream::Descriptor>(stdin.borrow(), raw_data, 3, length));
+        let saved_secret: [u8; 56] = raw_secret; let saved_data: [u8; 16700] = raw_data;
+        let words_secret: [i32; 14] = [0; 14]; let words_data: [i32; 4175] = [0; 4175]; let words_destination: [i32; 4175] = [0; 4175]; let words_scratch: [i32; 4175] = [0; 4175];
         let secret: [u8] = raw_secret; let data: [u8] = raw_data; let destination: [u8] = raw_destination; let scratch: [u8] = raw_scratch;
         if (layout == 1) {
-            secret = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_secret), 40); data = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_data), 16700);
+            secret = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_secret), 56); data = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_data), 16700);
             destination = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_destination), 16700); scratch = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words_scratch), 16700);
-            let index: i32 = 0; while (index < 40) { secret[index] = raw_secret[index]; index += 1; }
+            let index: i32 = 0; while (index < 56) { secret[index] = raw_secret[index]; index += 1; }
             index = 0; while (index < 16700) { data[index] = raw_data[index]; destination[index] = 221; scratch[index] = 222; index += 1; }
         }
-        let sv: core::slice::View<u8> = core::slice::View { values: secret, start: 3, length: 32 };
+        let sv: core::slice::View<u8> = core::slice::View { values: secret, start: 3, length: secret_length };
         let dv: core::slice::View<u8> = core::slice::View { values: data, start: 3, length: length };
         let target: core::slice::View<u8> = core::slice::View { values: destination, start: 3, length: capacity };
         let work: core::slice::View<u8> = core::slice::View { values: scratch, start: 3, length: capacity };
         output.word(core::mem::slice_stride(data) as u64); output.word(core::mem::slice_stride(destination) as u64);
         let allowed_destination: i32 = 0; let allowed_scratch: i32 = 0;
-        if (operation == 0 || operation == 3) { allowed_destination = run_seal(operation, sv, dv, content_type, padding, sequence, variant, target, output.borrow()); }
-        if (operation == 1 || operation == 4) { allowed_scratch = run_open(operation, sv, dv, sequence, variant, work, output.borrow()); }
-        if (operation == 2) { lifecycle(sv, dv, target, work, output.borrow()); allowed_destination = length + 31; allowed_scratch = length + 10; }
-        if (operation == 5) { limit_lifecycle(sv, dv, target, work, output.borrow()); allowed_destination = length + 31; allowed_scratch = length + 10; }
-        let index: i32 = 0; while (index < 40) { assert(secret[index] == saved_secret[index]); index += 1; }
+        if (operation == 0 || operation == 3) { allowed_destination = run_seal(selected, operation, sv, dv, content_type, padding, sequence, variant, target, output.borrow()); }
+        if (operation == 1 || operation == 4) { allowed_scratch = run_open(selected, operation, sv, dv, sequence, variant, work, output.borrow()); }
+        if (operation == 2) { lifecycle(selected, sv, dv, target, work, output.borrow()); allowed_destination = length + 31; allowed_scratch = length + 10; }
+        if (operation == 5) { limit_lifecycle(selected, sv, dv, target, work, output.borrow()); allowed_destination = length + 31; allowed_scratch = length + 10; }
+        let index: i32 = 0; while (index < 56) { assert(secret[index] == saved_secret[index]); index += 1; }
         index = 0; while (index < 16700) {
             assert(data[index] == saved_data[index]);
             if (index < 3 || index >= 3 + allowed_destination) { assert(destination[index] == 221); }

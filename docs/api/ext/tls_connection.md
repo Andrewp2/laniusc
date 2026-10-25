@@ -13,7 +13,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 - [extended-tls-connection](../../extended-tls-connection.md)
 - [tls-connection-contract](../../tls-connection-contract.md)
 
-Declaration counts: enum: 3; field: 146; function: 6; impl: 1; method: 24; struct: 11; variant: 35.
+Declaration counts: enum: 3; field: 147; function: 6; impl: 1; method: 24; struct: 11; variant: 35.
 
 ## Declared imports
 
@@ -23,21 +23,22 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::mem](../core/mem.md) · [source](../../../extended/ext/tls_connection.lani#L5)
 - [core::option](../core/option.md) · [source](../../../extended/ext/tls_connection.lani#L6)
 - [core::result](../core/result.md) · [source](../../../extended/ext/tls_connection.lani#L7)
-- [core::sha256](../core/sha256.md) · [source](../../../extended/ext/tls_connection.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_connection.lani#L9)
-- [ext::ed25519](ed25519.md) · [source](../../../extended/ext/tls_connection.lani#L10)
-- [ext::service_identity](service_identity.md) · [source](../../../extended/ext/tls_connection.lani#L11)
-- [ext::tls_authentication](tls_authentication.md) · [source](../../../extended/ext/tls_connection.lani#L12)
-- [ext::tls_framing](tls_framing.md) · [source](../../../extended/ext/tls_connection.lani#L13)
-- [ext::tls_handshake](tls_handshake.md) · [source](../../../extended/ext/tls_connection.lani#L14)
-- [ext::tls_negotiation](tls_negotiation.md) · [source](../../../extended/ext/tls_connection.lani#L15)
-- [ext::tls_record](tls_record.md) · [source](../../../extended/ext/tls_connection.lani#L16)
-- [ext::tls_schedule](tls_schedule.md) · [source](../../../extended/ext/tls_connection.lani#L17)
-- [ext::tls_transcript](tls_transcript.md) · [source](../../../extended/ext/tls_connection.lani#L18)
-- [ext::x25519](x25519.md) · [source](../../../extended/ext/tls_connection.lani#L19)
-- [ext::p256](p256.md) · [source](../../../extended/ext/tls_connection.lani#L20)
-- [ext::x509](x509.md) · [source](../../../extended/ext/tls_connection.lani#L21)
-- [ext::x509_path](x509_path.md) · [source](../../../extended/ext/tls_connection.lani#L22)
+- [ext::tls_hash](tls_hash.md) · [source](../../../extended/ext/tls_connection.lani#L8)
+- [ext::tls_suite](tls_suite.md) · [source](../../../extended/ext/tls_connection.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/tls_connection.lani#L10)
+- [ext::ed25519](ed25519.md) · [source](../../../extended/ext/tls_connection.lani#L11)
+- [ext::service_identity](service_identity.md) · [source](../../../extended/ext/tls_connection.lani#L12)
+- [ext::tls_authentication](tls_authentication.md) · [source](../../../extended/ext/tls_connection.lani#L13)
+- [ext::tls_framing](tls_framing.md) · [source](../../../extended/ext/tls_connection.lani#L14)
+- [ext::tls_handshake](tls_handshake.md) · [source](../../../extended/ext/tls_connection.lani#L15)
+- [ext::tls_negotiation](tls_negotiation.md) · [source](../../../extended/ext/tls_connection.lani#L16)
+- [ext::tls_record](tls_record.md) · [source](../../../extended/ext/tls_connection.lani#L17)
+- [ext::tls_schedule](tls_schedule.md) · [source](../../../extended/ext/tls_connection.lani#L18)
+- [ext::tls_transcript](tls_transcript.md) · [source](../../../extended/ext/tls_connection.lani#L19)
+- [ext::x25519](x25519.md) · [source](../../../extended/ext/tls_connection.lani#L20)
+- [ext::p256](p256.md) · [source](../../../extended/ext/tls_connection.lani#L21)
+- [ext::x509](x509.md) · [source](../../../extended/ext/tls_connection.lani#L22)
+- [ext::x509_path](x509_path.md) · [source](../../../extended/ext/tls_connection.lani#L23)
 
 ## Types, fields and variants
 
@@ -45,7 +46,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Role
 
-[Source line 24](../../../extended/ext/tls_connection.lani#L24)
+[Source line 25](../../../extended/ext/tls_connection.lani#L25)
 
 ```lanius
 pub enum Role
@@ -53,7 +54,7 @@ pub enum Role
 
 #### variant: Client
 
-[Source line 24](../../../extended/ext/tls_connection.lani#L24)
+[Source line 25](../../../extended/ext/tls_connection.lani#L25)
 
 ```lanius
 Client
@@ -61,7 +62,7 @@ Client
 
 #### variant: Server
 
-[Source line 24](../../../extended/ext/tls_connection.lani#L24)
+[Source line 25](../../../extended/ext/tls_connection.lani#L25)
 
 ```lanius
 Server
@@ -69,7 +70,7 @@ Server
 
 ### enum: Phase
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 pub enum Phase
@@ -77,7 +78,7 @@ pub enum Phase
 
 #### variant: ClientHello
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 ClientHello
@@ -85,7 +86,7 @@ ClientHello
 
 #### variant: ServerHello
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 ServerHello
@@ -93,7 +94,7 @@ ServerHello
 
 #### variant: ServerFlight
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 ServerFlight
@@ -101,7 +102,7 @@ ServerFlight
 
 #### variant: ClientFinished
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 ClientFinished
@@ -109,7 +110,7 @@ ClientFinished
 
 #### variant: Established
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 Established
@@ -117,7 +118,7 @@ Established
 
 #### variant: Failed
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 Failed
@@ -125,7 +126,7 @@ Failed
 
 #### variant: Closed
 
-[Source line 25](../../../extended/ext/tls_connection.lani#L25)
+[Source line 26](../../../extended/ext/tls_connection.lani#L26)
 
 ```lanius
 Closed
@@ -133,7 +134,7 @@ Closed
 
 ### enum: Error
 
-[Source line 26](../../../extended/ext/tls_connection.lani#L26)
+[Source line 27](../../../extended/ext/tls_connection.lani#L27)
 
 ```lanius
 pub enum Error
@@ -141,7 +142,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 27](../../../extended/ext/tls_connection.lani#L27)
+[Source line 28](../../../extended/ext/tls_connection.lani#L28)
 
 ```lanius
 Bounds
@@ -149,7 +150,7 @@ Bounds
 
 #### variant: InvalidConfig
 
-[Source line 27](../../../extended/ext/tls_connection.lani#L27)
+[Source line 28](../../../extended/ext/tls_connection.lani#L28)
 
 ```lanius
 InvalidConfig
@@ -157,7 +158,7 @@ InvalidConfig
 
 #### variant: BufferTooSmall
 
-[Source line 27](../../../extended/ext/tls_connection.lani#L27)
+[Source line 28](../../../extended/ext/tls_connection.lani#L28)
 
 ```lanius
 BufferTooSmall
@@ -165,7 +166,7 @@ BufferTooSmall
 
 #### variant: EntropyLength
 
-[Source line 27](../../../extended/ext/tls_connection.lani#L27)
+[Source line 28](../../../extended/ext/tls_connection.lani#L28)
 
 ```lanius
 EntropyLength
@@ -173,7 +174,7 @@ EntropyLength
 
 #### variant: InvalidEphemeralScalar
 
-[Source line 27](../../../extended/ext/tls_connection.lani#L27)
+[Source line 28](../../../extended/ext/tls_connection.lani#L28)
 
 ```lanius
 InvalidEphemeralScalar
@@ -181,7 +182,7 @@ InvalidEphemeralScalar
 
 #### variant: Credential
 
-[Source line 27](../../../extended/ext/tls_connection.lani#L27)
+[Source line 28](../../../extended/ext/tls_connection.lani#L28)
 
 ```lanius
 Credential
@@ -189,7 +190,7 @@ Credential
 
 #### variant: NotEstablished
 
-[Source line 28](../../../extended/ext/tls_connection.lani#L28)
+[Source line 29](../../../extended/ext/tls_connection.lani#L29)
 
 ```lanius
 NotEstablished
@@ -197,7 +198,7 @@ NotEstablished
 
 #### variant: WantInput
 
-[Source line 28](../../../extended/ext/tls_connection.lani#L28)
+[Source line 29](../../../extended/ext/tls_connection.lani#L29)
 
 ```lanius
 WantInput
@@ -205,7 +206,7 @@ WantInput
 
 #### variant: WantOutput
 
-[Source line 28](../../../extended/ext/tls_connection.lani#L28)
+[Source line 29](../../../extended/ext/tls_connection.lani#L29)
 
 ```lanius
 WantOutput
@@ -213,7 +214,7 @@ WantOutput
 
 #### variant: WantRead
 
-[Source line 28](../../../extended/ext/tls_connection.lani#L28)
+[Source line 29](../../../extended/ext/tls_connection.lani#L29)
 
 ```lanius
 WantRead
@@ -221,7 +222,7 @@ WantRead
 
 #### variant: InvalidAcknowledgement
 
-[Source line 28](../../../extended/ext/tls_connection.lani#L28)
+[Source line 29](../../../extended/ext/tls_connection.lani#L29)
 
 ```lanius
 InvalidAcknowledgement
@@ -229,7 +230,7 @@ InvalidAcknowledgement
 
 #### variant: Closed
 
-[Source line 29](../../../extended/ext/tls_connection.lani#L29)
+[Source line 30](../../../extended/ext/tls_connection.lani#L30)
 
 ```lanius
 Closed
@@ -237,7 +238,7 @@ Closed
 
 #### variant: Aborted
 
-[Source line 29](../../../extended/ext/tls_connection.lani#L29)
+[Source line 30](../../../extended/ext/tls_connection.lani#L30)
 
 ```lanius
 Aborted
@@ -245,7 +246,7 @@ Aborted
 
 #### variant: Limit
 
-[Source line 29](../../../extended/ext/tls_connection.lani#L29)
+[Source line 30](../../../extended/ext/tls_connection.lani#L30)
 
 ```lanius
 Limit
@@ -253,7 +254,7 @@ Limit
 
 #### variant: Truncated
 
-[Source line 29](../../../extended/ext/tls_connection.lani#L29)
+[Source line 30](../../../extended/ext/tls_connection.lani#L30)
 
 ```lanius
 Truncated
@@ -261,7 +262,7 @@ Truncated
 
 #### variant: UnexpectedMessage
 
-[Source line 29](../../../extended/ext/tls_connection.lani#L29)
+[Source line 30](../../../extended/ext/tls_connection.lani#L30)
 
 ```lanius
 UnexpectedMessage
@@ -269,7 +270,7 @@ UnexpectedMessage
 
 #### variant: InvalidRecord
 
-[Source line 29](../../../extended/ext/tls_connection.lani#L29)
+[Source line 30](../../../extended/ext/tls_connection.lani#L30)
 
 ```lanius
 InvalidRecord
@@ -277,7 +278,7 @@ InvalidRecord
 
 #### variant: InvalidAlert
 
-[Source line 30](../../../extended/ext/tls_connection.lani#L30)
+[Source line 31](../../../extended/ext/tls_connection.lani#L31)
 
 ```lanius
 InvalidAlert
@@ -285,7 +286,7 @@ InvalidAlert
 
 #### variant: PeerAlert
 
-[Source line 30](../../../extended/ext/tls_connection.lani#L30)
+[Source line 31](../../../extended/ext/tls_connection.lani#L31)
 
 ```lanius
 PeerAlert(u8)
@@ -293,7 +294,7 @@ PeerAlert(u8)
 
 #### variant: Negotiation
 
-[Source line 30](../../../extended/ext/tls_connection.lani#L30)
+[Source line 31](../../../extended/ext/tls_connection.lani#L31)
 
 ```lanius
 Negotiation(ext::tls_negotiation::Error)
@@ -301,7 +302,7 @@ Negotiation(ext::tls_negotiation::Error)
 
 #### variant: Authentication
 
-[Source line 31](../../../extended/ext/tls_connection.lani#L31)
+[Source line 32](../../../extended/ext/tls_connection.lani#L32)
 
 ```lanius
 Authentication(ext::tls_authentication::Error)
@@ -309,7 +310,7 @@ Authentication(ext::tls_authentication::Error)
 
 #### variant: Certificate
 
-[Source line 31](../../../extended/ext/tls_connection.lani#L31)
+[Source line 32](../../../extended/ext/tls_connection.lani#L32)
 
 ```lanius
 Certificate(ext::x509::Error)
@@ -317,7 +318,7 @@ Certificate(ext::x509::Error)
 
 #### variant: Record
 
-[Source line 32](../../../extended/ext/tls_connection.lani#L32)
+[Source line 33](../../../extended/ext/tls_connection.lani#L33)
 
 ```lanius
 Record(ext::tls_record::Error)
@@ -325,7 +326,7 @@ Record(ext::tls_record::Error)
 
 #### variant: Framing
 
-[Source line 32](../../../extended/ext/tls_connection.lani#L32)
+[Source line 33](../../../extended/ext/tls_connection.lani#L33)
 
 ```lanius
 Framing(ext::tls_framing::Error)
@@ -333,7 +334,7 @@ Framing(ext::tls_framing::Error)
 
 #### variant: Crypto
 
-[Source line 32](../../../extended/ext/tls_connection.lani#L32)
+[Source line 33](../../../extended/ext/tls_connection.lani#L33)
 
 ```lanius
 Crypto
@@ -341,7 +342,7 @@ Crypto
 
 #### variant: Internal
 
-[Source line 32](../../../extended/ext/tls_connection.lani#L32)
+[Source line 33](../../../extended/ext/tls_connection.lani#L33)
 
 ```lanius
 Internal
@@ -349,7 +350,7 @@ Internal
 
 ### struct: Limits
 
-[Source line 34](../../../extended/ext/tls_connection.lani#L34)
+[Source line 35](../../../extended/ext/tls_connection.lani#L35)
 
 ```lanius
 pub struct Limits
@@ -357,7 +358,7 @@ pub struct Limits
 
 #### field: max_handshake_body
 
-[Source line 35](../../../extended/ext/tls_connection.lani#L35)
+[Source line 36](../../../extended/ext/tls_connection.lani#L36)
 
 ```lanius
 max_handshake_body:i32
@@ -365,7 +366,7 @@ max_handshake_body:i32
 
 #### field: max_hello_frame
 
-[Source line 35](../../../extended/ext/tls_connection.lani#L35)
+[Source line 36](../../../extended/ext/tls_connection.lani#L36)
 
 ```lanius
 max_hello_frame:i32
@@ -373,7 +374,7 @@ max_hello_frame:i32
 
 #### field: max_application_hold
 
-[Source line 35](../../../extended/ext/tls_connection.lani#L35)
+[Source line 36](../../../extended/ext/tls_connection.lani#L36)
 
 ```lanius
 max_application_hold:i32
@@ -381,7 +382,7 @@ max_application_hold:i32
 
 #### field: max_records
 
-[Source line 36](../../../extended/ext/tls_connection.lani#L36)
+[Source line 37](../../../extended/ext/tls_connection.lani#L37)
 
 ```lanius
 max_records:u64
@@ -389,7 +390,7 @@ max_records:u64
 
 #### field: max_controls
 
-[Source line 36](../../../extended/ext/tls_connection.lani#L36)
+[Source line 37](../../../extended/ext/tls_connection.lani#L37)
 
 ```lanius
 max_controls:u64
@@ -397,7 +398,7 @@ max_controls:u64
 
 #### field: max_handshake_bytes
 
-[Source line 36](../../../extended/ext/tls_connection.lani#L36)
+[Source line 37](../../../extended/ext/tls_connection.lani#L37)
 
 ```lanius
 max_handshake_bytes:u64
@@ -405,7 +406,7 @@ max_handshake_bytes:u64
 
 #### field: max_key_updates
 
-[Source line 37](../../../extended/ext/tls_connection.lani#L37)
+[Source line 38](../../../extended/ext/tls_connection.lani#L38)
 
 ```lanius
 max_key_updates:u64
@@ -413,7 +414,7 @@ max_key_updates:u64
 
 #### field: max_work
 
-[Source line 37](../../../extended/ext/tls_connection.lani#L37)
+[Source line 38](../../../extended/ext/tls_connection.lani#L38)
 
 ```lanius
 max_work:u64
@@ -421,7 +422,7 @@ max_work:u64
 
 #### field: path
 
-[Source line 38](../../../extended/ext/tls_connection.lani#L38)
+[Source line 39](../../../extended/ext/tls_connection.lani#L39)
 
 ```lanius
 path:ext::x509_path::Limits
@@ -429,7 +430,7 @@ path:ext::x509_path::Limits
 
 #### field: negotiation
 
-[Source line 38](../../../extended/ext/tls_connection.lani#L38)
+[Source line 39](../../../extended/ext/tls_connection.lani#L39)
 
 ```lanius
 negotiation:ext::tls_negotiation::Limits
@@ -437,7 +438,7 @@ negotiation:ext::tls_negotiation::Limits
 
 ### struct: BufferSizes
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 pub struct BufferSizes
@@ -445,7 +446,7 @@ pub struct BufferSizes
 
 #### field: record
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 record:i32
@@ -453,7 +454,7 @@ record:i32
 
 #### field: decrypt
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 decrypt:i32
@@ -461,7 +462,7 @@ decrypt:i32
 
 #### field: handshake
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 handshake:i32
@@ -469,7 +470,7 @@ handshake:i32
 
 #### field: hello
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 hello:i32
@@ -477,7 +478,7 @@ hello:i32
 
 #### field: pending_wire
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 pending_wire:i32
@@ -485,7 +486,7 @@ pending_wire:i32
 
 #### field: application
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 application:i32
@@ -493,7 +494,7 @@ application:i32
 
 #### field: path
 
-[Source line 40](../../../extended/ext/tls_connection.lani#L40)
+[Source line 41](../../../extended/ext/tls_connection.lani#L41)
 
 ```lanius
 path:i32
@@ -501,7 +502,7 @@ path:i32
 
 ### struct: Buffers
 
-[Source line 41](../../../extended/ext/tls_connection.lani#L41)
+[Source line 42](../../../extended/ext/tls_connection.lani#L42)
 
 ```lanius
 pub struct Buffers
@@ -509,7 +510,7 @@ pub struct Buffers
 
 #### field: record
 
-[Source line 42](../../../extended/ext/tls_connection.lani#L42)
+[Source line 43](../../../extended/ext/tls_connection.lani#L43)
 
 ```lanius
 record:core::slice::View<u8>
@@ -517,7 +518,7 @@ record:core::slice::View<u8>
 
 #### field: decrypt
 
-[Source line 42](../../../extended/ext/tls_connection.lani#L42)
+[Source line 43](../../../extended/ext/tls_connection.lani#L43)
 
 ```lanius
 decrypt:core::slice::View<u8>
@@ -525,7 +526,7 @@ decrypt:core::slice::View<u8>
 
 #### field: handshake
 
-[Source line 43](../../../extended/ext/tls_connection.lani#L43)
+[Source line 44](../../../extended/ext/tls_connection.lani#L44)
 
 ```lanius
 handshake:core::slice::View<u8>
@@ -533,7 +534,7 @@ handshake:core::slice::View<u8>
 
 #### field: hello
 
-[Source line 43](../../../extended/ext/tls_connection.lani#L43)
+[Source line 44](../../../extended/ext/tls_connection.lani#L44)
 
 ```lanius
 hello:core::slice::View<u8>
@@ -541,7 +542,7 @@ hello:core::slice::View<u8>
 
 #### field: pending_wire
 
-[Source line 44](../../../extended/ext/tls_connection.lani#L44)
+[Source line 45](../../../extended/ext/tls_connection.lani#L45)
 
 ```lanius
 pending_wire:core::slice::View<u8>
@@ -549,7 +550,7 @@ pending_wire:core::slice::View<u8>
 
 #### field: application
 
-[Source line 44](../../../extended/ext/tls_connection.lani#L44)
+[Source line 45](../../../extended/ext/tls_connection.lani#L45)
 
 ```lanius
 application:core::slice::View<u8>
@@ -557,7 +558,7 @@ application:core::slice::View<u8>
 
 #### field: path
 
-[Source line 45](../../../extended/ext/tls_connection.lani#L45)
+[Source line 46](../../../extended/ext/tls_connection.lani#L46)
 
 ```lanius
 path:core::slice::View<ext::x509_path::Slot>
@@ -565,7 +566,7 @@ path:core::slice::View<ext::x509_path::Slot>
 
 ### struct: ClientConfig
 
-[Source line 47](../../../extended/ext/tls_connection.lani#L47)
+[Source line 48](../../../extended/ext/tls_connection.lani#L48)
 
 ```lanius
 pub struct ClientConfig
@@ -573,7 +574,7 @@ pub struct ClientConfig
 
 #### field: anchors
 
-[Source line 48](../../../extended/ext/tls_connection.lani#L48)
+[Source line 49](../../../extended/ext/tls_connection.lani#L49)
 
 ```lanius
 anchors:core::slice::View<core::slice::View<u8>>
@@ -581,7 +582,7 @@ anchors:core::slice::View<core::slice::View<u8>>
 
 #### field: reference
 
-[Source line 49](../../../extended/ext/tls_connection.lani#L49)
+[Source line 50](../../../extended/ext/tls_connection.lani#L50)
 
 ```lanius
 reference:ext::service_identity::Reference
@@ -589,7 +590,7 @@ reference:ext::service_identity::Reference
 
 #### field: unix_time
 
-[Source line 49](../../../extended/ext/tls_connection.lani#L49)
+[Source line 50](../../../extended/ext/tls_connection.lani#L50)
 
 ```lanius
 unix_time:i64
@@ -597,7 +598,7 @@ unix_time:i64
 
 #### field: server_name
 
-[Source line 50](../../../extended/ext/tls_connection.lani#L50)
+[Source line 51](../../../extended/ext/tls_connection.lani#L51)
 
 ```lanius
 server_name:core::slice::View<u8>
@@ -605,7 +606,7 @@ server_name:core::slice::View<u8>
 
 #### field: alpn
 
-[Source line 50](../../../extended/ext/tls_connection.lani#L50)
+[Source line 51](../../../extended/ext/tls_connection.lani#L51)
 
 ```lanius
 alpn:core::slice::View<u8>
@@ -613,23 +614,23 @@ alpn:core::slice::View<u8>
 
 #### field: require_alpn
 
-[Source line 51](../../../extended/ext/tls_connection.lani#L51)
+[Source line 52](../../../extended/ext/tls_connection.lani#L52)
 
 ```lanius
 require_alpn:bool
 ```
 
-#### field: prefer_suite
+#### field: suites
 
-[Source line 51](../../../extended/ext/tls_connection.lani#L51)
+[Source line 52](../../../extended/ext/tls_connection.lani#L52)
 
 ```lanius
-prefer_suite:ext::tls_record::Suite
+suites:ext::tls_suite::Policy
 ```
 
 #### field: groups
 
-[Source line 52](../../../extended/ext/tls_connection.lani#L52)
+[Source line 53](../../../extended/ext/tls_connection.lani#L53)
 
 ```lanius
 groups:ext::tls_negotiation::GroupPolicy
@@ -637,7 +638,7 @@ groups:ext::tls_negotiation::GroupPolicy
 
 #### field: initial_share
 
-[Source line 52](../../../extended/ext/tls_connection.lani#L52)
+[Source line 53](../../../extended/ext/tls_connection.lani#L53)
 
 ```lanius
 initial_share:core::option::Option<ext::tls_negotiation::Group>
@@ -645,7 +646,7 @@ initial_share:core::option::Option<ext::tls_negotiation::Group>
 
 #### field: limits
 
-[Source line 52](../../../extended/ext/tls_connection.lani#L52)
+[Source line 53](../../../extended/ext/tls_connection.lani#L53)
 
 ```lanius
 limits:Limits
@@ -653,7 +654,7 @@ limits:Limits
 
 ### struct: ServerConfig
 
-[Source line 54](../../../extended/ext/tls_connection.lani#L54)
+[Source line 55](../../../extended/ext/tls_connection.lani#L55)
 
 ```lanius
 pub struct ServerConfig
@@ -661,7 +662,7 @@ pub struct ServerConfig
 
 #### field: chain
 
-[Source line 55](../../../extended/ext/tls_connection.lani#L55)
+[Source line 56](../../../extended/ext/tls_connection.lani#L56)
 
 ```lanius
 chain:core::slice::View<core::slice::View<u8>>
@@ -669,7 +670,7 @@ chain:core::slice::View<core::slice::View<u8>>
 
 #### field: seed
 
-[Source line 55](../../../extended/ext/tls_connection.lani#L55)
+[Source line 56](../../../extended/ext/tls_connection.lani#L56)
 
 ```lanius
 seed:core::slice::View<u8>
@@ -677,7 +678,7 @@ seed:core::slice::View<u8>
 
 #### field: alpn
 
-[Source line 56](../../../extended/ext/tls_connection.lani#L56)
+[Source line 57](../../../extended/ext/tls_connection.lani#L57)
 
 ```lanius
 alpn:core::slice::View<u8>
@@ -685,23 +686,23 @@ alpn:core::slice::View<u8>
 
 #### field: require_alpn
 
-[Source line 56](../../../extended/ext/tls_connection.lani#L56)
+[Source line 57](../../../extended/ext/tls_connection.lani#L57)
 
 ```lanius
 require_alpn:bool
 ```
 
-#### field: prefer_suite
+#### field: suites
 
-[Source line 57](../../../extended/ext/tls_connection.lani#L57)
+[Source line 58](../../../extended/ext/tls_connection.lani#L58)
 
 ```lanius
-prefer_suite:ext::tls_record::Suite
+suites:ext::tls_suite::Policy
 ```
 
 #### field: groups
 
-[Source line 57](../../../extended/ext/tls_connection.lani#L57)
+[Source line 58](../../../extended/ext/tls_connection.lani#L58)
 
 ```lanius
 groups:ext::tls_negotiation::GroupPolicy
@@ -709,7 +710,7 @@ groups:ext::tls_negotiation::GroupPolicy
 
 #### field: require_cookie
 
-[Source line 57](../../../extended/ext/tls_connection.lani#L57)
+[Source line 58](../../../extended/ext/tls_connection.lani#L58)
 
 ```lanius
 require_cookie:bool
@@ -717,7 +718,7 @@ require_cookie:bool
 
 #### field: limits
 
-[Source line 57](../../../extended/ext/tls_connection.lani#L57)
+[Source line 58](../../../extended/ext/tls_connection.lani#L58)
 
 ```lanius
 limits:Limits
@@ -725,7 +726,7 @@ limits:Limits
 
 ### struct: Read
 
-[Source line 59](../../../extended/ext/tls_connection.lani#L59)
+[Source line 60](../../../extended/ext/tls_connection.lani#L60)
 
 ```lanius
 pub struct Read
@@ -733,7 +734,7 @@ pub struct Read
 
 #### field: written
 
-[Source line 59](../../../extended/ext/tls_connection.lani#L59)
+[Source line 60](../../../extended/ext/tls_connection.lani#L60)
 
 ```lanius
 written:i32
@@ -741,7 +742,7 @@ written:i32
 
 #### field: eof
 
-[Source line 59](../../../extended/ext/tls_connection.lani#L59)
+[Source line 60](../../../extended/ext/tls_connection.lani#L60)
 
 ```lanius
 eof:bool
@@ -749,7 +750,7 @@ eof:bool
 
 ### struct: FeedFailure
 
-[Source line 60](../../../extended/ext/tls_connection.lani#L60)
+[Source line 61](../../../extended/ext/tls_connection.lani#L61)
 
 ```lanius
 pub struct FeedFailure
@@ -757,7 +758,7 @@ pub struct FeedFailure
 
 #### field: cause
 
-[Source line 60](../../../extended/ext/tls_connection.lani#L60)
+[Source line 61](../../../extended/ext/tls_connection.lani#L61)
 
 ```lanius
 cause:Error
@@ -765,7 +766,7 @@ cause:Error
 
 #### field: consumed
 
-[Source line 60](../../../extended/ext/tls_connection.lani#L60)
+[Source line 61](../../../extended/ext/tls_connection.lani#L61)
 
 ```lanius
 consumed:i32
@@ -773,7 +774,7 @@ consumed:i32
 
 ### struct: Negotiated
 
-[Source line 61](../../../extended/ext/tls_connection.lani#L61)
+[Source line 62](../../../extended/ext/tls_connection.lani#L62)
 
 ```lanius
 pub struct Negotiated
@@ -781,15 +782,15 @@ pub struct Negotiated
 
 #### field: suite
 
-[Source line 61](../../../extended/ext/tls_connection.lani#L61)
+[Source line 62](../../../extended/ext/tls_connection.lani#L62)
 
 ```lanius
-suite:ext::tls_record::Suite
+suite:ext::tls_suite::Suite
 ```
 
 #### field: group
 
-[Source line 61](../../../extended/ext/tls_connection.lani#L61)
+[Source line 62](../../../extended/ext/tls_connection.lani#L62)
 
 ```lanius
 group:ext::tls_negotiation::Group
@@ -797,7 +798,7 @@ group:ext::tls_negotiation::Group
 
 #### field: alpn
 
-[Source line 61](../../../extended/ext/tls_connection.lani#L61)
+[Source line 62](../../../extended/ext/tls_connection.lani#L62)
 
 ```lanius
 alpn:[u8;255]
@@ -805,7 +806,7 @@ alpn:[u8;255]
 
 #### field: alpn_length
 
-[Source line 61](../../../extended/ext/tls_connection.lani#L61)
+[Source line 62](../../../extended/ext/tls_connection.lani#L62)
 
 ```lanius
 alpn_length:i32
@@ -813,7 +814,7 @@ alpn_length:i32
 
 ### struct: Stats
 
-[Source line 62](../../../extended/ext/tls_connection.lani#L62)
+[Source line 63](../../../extended/ext/tls_connection.lani#L63)
 
 ```lanius
 pub struct Stats
@@ -821,7 +822,7 @@ pub struct Stats
 
 #### field: received_records
 
-[Source line 63](../../../extended/ext/tls_connection.lani#L63)
+[Source line 64](../../../extended/ext/tls_connection.lani#L64)
 
 ```lanius
 received_records:u64
@@ -829,7 +830,7 @@ received_records:u64
 
 #### field: sent_records
 
-[Source line 63](../../../extended/ext/tls_connection.lani#L63)
+[Source line 64](../../../extended/ext/tls_connection.lani#L64)
 
 ```lanius
 sent_records:u64
@@ -837,7 +838,7 @@ sent_records:u64
 
 #### field: controls
 
-[Source line 63](../../../extended/ext/tls_connection.lani#L63)
+[Source line 64](../../../extended/ext/tls_connection.lani#L64)
 
 ```lanius
 controls:u64
@@ -845,7 +846,7 @@ controls:u64
 
 #### field: handshake_bytes
 
-[Source line 63](../../../extended/ext/tls_connection.lani#L63)
+[Source line 64](../../../extended/ext/tls_connection.lani#L64)
 
 ```lanius
 handshake_bytes:u64
@@ -853,7 +854,7 @@ handshake_bytes:u64
 
 #### field: send_generation
 
-[Source line 64](../../../extended/ext/tls_connection.lani#L64)
+[Source line 65](../../../extended/ext/tls_connection.lani#L65)
 
 ```lanius
 send_generation:u64
@@ -861,7 +862,7 @@ send_generation:u64
 
 #### field: receive_generation
 
-[Source line 64](../../../extended/ext/tls_connection.lani#L64)
+[Source line 65](../../../extended/ext/tls_connection.lani#L65)
 
 ```lanius
 receive_generation:u64
@@ -869,7 +870,7 @@ receive_generation:u64
 
 #### field: send_sequence
 
-[Source line 64](../../../extended/ext/tls_connection.lani#L64)
+[Source line 65](../../../extended/ext/tls_connection.lani#L65)
 
 ```lanius
 send_sequence:u64
@@ -877,7 +878,7 @@ send_sequence:u64
 
 #### field: receive_sequence
 
-[Source line 64](../../../extended/ext/tls_connection.lani#L64)
+[Source line 65](../../../extended/ext/tls_connection.lani#L65)
 
 ```lanius
 receive_sequence:u64
@@ -885,7 +886,7 @@ receive_sequence:u64
 
 #### field: pending_wire
 
-[Source line 65](../../../extended/ext/tls_connection.lani#L65)
+[Source line 66](../../../extended/ext/tls_connection.lani#L66)
 
 ```lanius
 pending_wire:i32
@@ -893,7 +894,7 @@ pending_wire:i32
 
 #### field: pending_plaintext
 
-[Source line 65](../../../extended/ext/tls_connection.lani#L65)
+[Source line 66](../../../extended/ext/tls_connection.lani#L66)
 
 ```lanius
 pending_plaintext:i32
@@ -901,7 +902,7 @@ pending_plaintext:i32
 
 #### field: handshake_buffered
 
-[Source line 65](../../../extended/ext/tls_connection.lani#L65)
+[Source line 66](../../../extended/ext/tls_connection.lani#L66)
 
 ```lanius
 handshake_buffered:i32
@@ -909,7 +910,7 @@ handshake_buffered:i32
 
 #### field: retained_content
 
-[Source line 65](../../../extended/ext/tls_connection.lani#L65)
+[Source line 66](../../../extended/ext/tls_connection.lani#L66)
 
 ```lanius
 retained_content:i32
@@ -917,7 +918,7 @@ retained_content:i32
 
 #### field: records_left
 
-[Source line 66](../../../extended/ext/tls_connection.lani#L66)
+[Source line 67](../../../extended/ext/tls_connection.lani#L67)
 
 ```lanius
 records_left:u64
@@ -925,7 +926,7 @@ records_left:u64
 
 #### field: controls_left
 
-[Source line 66](../../../extended/ext/tls_connection.lani#L66)
+[Source line 67](../../../extended/ext/tls_connection.lani#L67)
 
 ```lanius
 controls_left:u64
@@ -933,7 +934,7 @@ controls_left:u64
 
 #### field: handshake_bytes_left
 
-[Source line 66](../../../extended/ext/tls_connection.lani#L66)
+[Source line 67](../../../extended/ext/tls_connection.lani#L67)
 
 ```lanius
 handshake_bytes_left:u64
@@ -941,7 +942,7 @@ handshake_bytes_left:u64
 
 #### field: key_updates_left
 
-[Source line 67](../../../extended/ext/tls_connection.lani#L67)
+[Source line 68](../../../extended/ext/tls_connection.lani#L68)
 
 ```lanius
 key_updates_left:u64
@@ -949,7 +950,7 @@ key_updates_left:u64
 
 #### field: work_left
 
-[Source line 67](../../../extended/ext/tls_connection.lani#L67)
+[Source line 68](../../../extended/ext/tls_connection.lani#L68)
 
 ```lanius
 work_left:u64
@@ -957,7 +958,7 @@ work_left:u64
 
 #### field: signatures_left
 
-[Source line 67](../../../extended/ext/tls_connection.lani#L67)
+[Source line 68](../../../extended/ext/tls_connection.lani#L68)
 
 ```lanius
 signatures_left:u64
@@ -965,7 +966,7 @@ signatures_left:u64
 
 ### struct: Engine
 
-[Source line 71](../../../extended/ext/tls_connection.lani#L71)
+[Source line 72](../../../extended/ext/tls_connection.lani#L72)
 
 ```lanius
 pub struct Engine
@@ -973,7 +974,7 @@ pub struct Engine
 
 #### field: side
 
-[Source line 72](../../../extended/ext/tls_connection.lani#L72)
+[Source line 73](../../../extended/ext/tls_connection.lani#L73)
 
 ```lanius
 side:Role
@@ -981,7 +982,7 @@ side:Role
 
 #### field: step
 
-[Source line 72](../../../extended/ext/tls_connection.lani#L72)
+[Source line 73](../../../extended/ext/tls_connection.lani#L73)
 
 ```lanius
 step:i32
@@ -989,7 +990,7 @@ step:i32
 
 #### field: buffers
 
-[Source line 72](../../../extended/ext/tls_connection.lani#L72)
+[Source line 73](../../../extended/ext/tls_connection.lani#L73)
 
 ```lanius
 buffers:Buffers
@@ -997,7 +998,7 @@ buffers:Buffers
 
 #### field: limits
 
-[Source line 72](../../../extended/ext/tls_connection.lani#L72)
+[Source line 73](../../../extended/ext/tls_connection.lani#L73)
 
 ```lanius
 limits:Limits
@@ -1005,7 +1006,7 @@ limits:Limits
 
 #### field: client_config
 
-[Source line 73](../../../extended/ext/tls_connection.lani#L73)
+[Source line 74](../../../extended/ext/tls_connection.lani#L74)
 
 ```lanius
 client_config:core::option::Option<ClientConfig>
@@ -1013,7 +1014,7 @@ client_config:core::option::Option<ClientConfig>
 
 #### field: server_config
 
-[Source line 73](../../../extended/ext/tls_connection.lani#L73)
+[Source line 74](../../../extended/ext/tls_connection.lani#L74)
 
 ```lanius
 server_config:core::option::Option<ServerConfig>
@@ -1021,7 +1022,7 @@ server_config:core::option::Option<ServerConfig>
 
 #### field: path_budget
 
-[Source line 74](../../../extended/ext/tls_connection.lani#L74)
+[Source line 75](../../../extended/ext/tls_connection.lani#L75)
 
 ```lanius
 path_budget:ext::x509_path::Budget
@@ -1029,7 +1030,7 @@ path_budget:ext::x509_path::Budget
 
 #### field: negotiation_budget
 
-[Source line 74](../../../extended/ext/tls_connection.lani#L74)
+[Source line 75](../../../extended/ext/tls_connection.lani#L75)
 
 ```lanius
 negotiation_budget:ext::tls_negotiation::Budget
@@ -1037,7 +1038,7 @@ negotiation_budget:ext::tls_negotiation::Budget
 
 #### field: records_left
 
-[Source line 75](../../../extended/ext/tls_connection.lani#L75)
+[Source line 76](../../../extended/ext/tls_connection.lani#L76)
 
 ```lanius
 records_left:u64
@@ -1045,7 +1046,7 @@ records_left:u64
 
 #### field: controls_left
 
-[Source line 75](../../../extended/ext/tls_connection.lani#L75)
+[Source line 76](../../../extended/ext/tls_connection.lani#L76)
 
 ```lanius
 controls_left:u64
@@ -1053,7 +1054,7 @@ controls_left:u64
 
 #### field: handshake_left
 
-[Source line 75](../../../extended/ext/tls_connection.lani#L75)
+[Source line 76](../../../extended/ext/tls_connection.lani#L76)
 
 ```lanius
 handshake_left:u64
@@ -1061,7 +1062,7 @@ handshake_left:u64
 
 #### field: updates_left
 
-[Source line 75](../../../extended/ext/tls_connection.lani#L75)
+[Source line 76](../../../extended/ext/tls_connection.lani#L76)
 
 ```lanius
 updates_left:u64
@@ -1069,7 +1070,7 @@ updates_left:u64
 
 #### field: work_left
 
-[Source line 75](../../../extended/ext/tls_connection.lani#L75)
+[Source line 76](../../../extended/ext/tls_connection.lani#L76)
 
 ```lanius
 work_left:u64
@@ -1077,7 +1078,7 @@ work_left:u64
 
 #### field: received
 
-[Source line 76](../../../extended/ext/tls_connection.lani#L76)
+[Source line 77](../../../extended/ext/tls_connection.lani#L77)
 
 ```lanius
 received:u64
@@ -1085,7 +1086,7 @@ received:u64
 
 #### field: sent
 
-[Source line 76](../../../extended/ext/tls_connection.lani#L76)
+[Source line 77](../../../extended/ext/tls_connection.lani#L77)
 
 ```lanius
 sent:u64
@@ -1093,7 +1094,7 @@ sent:u64
 
 #### field: controls
 
-[Source line 76](../../../extended/ext/tls_connection.lani#L76)
+[Source line 77](../../../extended/ext/tls_connection.lani#L77)
 
 ```lanius
 controls:u64
@@ -1101,7 +1102,7 @@ controls:u64
 
 #### field: handshake_bytes
 
-[Source line 76](../../../extended/ext/tls_connection.lani#L76)
+[Source line 77](../../../extended/ext/tls_connection.lani#L77)
 
 ```lanius
 handshake_bytes:u64
@@ -1109,7 +1110,7 @@ handshake_bytes:u64
 
 #### field: failed
 
-[Source line 77](../../../extended/ext/tls_connection.lani#L77)
+[Source line 78](../../../extended/ext/tls_connection.lani#L78)
 
 ```lanius
 failed:bool
@@ -1117,7 +1118,7 @@ failed:bool
 
 #### field: issue
 
-[Source line 77](../../../extended/ext/tls_connection.lani#L77)
+[Source line 78](../../../extended/ext/tls_connection.lani#L78)
 
 ```lanius
 issue:Error
@@ -1125,7 +1126,7 @@ issue:Error
 
 #### field: abandoned
 
-[Source line 77](../../../extended/ext/tls_connection.lani#L77)
+[Source line 78](../../../extended/ext/tls_connection.lani#L78)
 
 ```lanius
 abandoned:bool
@@ -1133,7 +1134,7 @@ abandoned:bool
 
 #### field: first_hello
 
-[Source line 77](../../../extended/ext/tls_connection.lani#L77)
+[Source line 78](../../../extended/ext/tls_connection.lani#L78)
 
 ```lanius
 first_hello:bool
@@ -1141,7 +1142,7 @@ first_hello:bool
 
 #### field: peer_finished
 
-[Source line 77](../../../extended/ext/tls_connection.lani#L77)
+[Source line 78](../../../extended/ext/tls_connection.lani#L78)
 
 ```lanius
 peer_finished:bool
@@ -1149,7 +1150,7 @@ peer_finished:bool
 
 #### field: peer_close
 
-[Source line 78](../../../extended/ext/tls_connection.lani#L78)
+[Source line 79](../../../extended/ext/tls_connection.lani#L79)
 
 ```lanius
 peer_close:bool
@@ -1157,7 +1158,7 @@ peer_close:bool
 
 #### field: close_intent
 
-[Source line 78](../../../extended/ext/tls_connection.lani#L78)
+[Source line 79](../../../extended/ext/tls_connection.lani#L79)
 
 ```lanius
 close_intent:bool
@@ -1165,7 +1166,7 @@ close_intent:bool
 
 #### field: close_sent
 
-[Source line 78](../../../extended/ext/tls_connection.lani#L78)
+[Source line 79](../../../extended/ext/tls_connection.lani#L79)
 
 ```lanius
 close_sent:bool
@@ -1173,7 +1174,7 @@ close_sent:bool
 
 #### field: random
 
-[Source line 79](../../../extended/ext/tls_connection.lani#L79)
+[Source line 80](../../../extended/ext/tls_connection.lani#L80)
 
 ```lanius
 random:[u8;32]
@@ -1181,7 +1182,7 @@ random:[u8;32]
 
 #### field: scalar
 
-[Source line 79](../../../extended/ext/tls_connection.lani#L79)
+[Source line 80](../../../extended/ext/tls_connection.lani#L80)
 
 ```lanius
 scalar:[u8;32]
@@ -1189,7 +1190,7 @@ scalar:[u8;32]
 
 #### field: public
 
-[Source line 79](../../../extended/ext/tls_connection.lani#L79)
+[Source line 80](../../../extended/ext/tls_connection.lani#L80)
 
 ```lanius
 public:[u8;32]
@@ -1197,7 +1198,7 @@ public:[u8;32]
 
 #### field: p_scalar
 
-[Source line 79](../../../extended/ext/tls_connection.lani#L79)
+[Source line 80](../../../extended/ext/tls_connection.lani#L80)
 
 ```lanius
 p_scalar:[u8;32]
@@ -1205,7 +1206,7 @@ p_scalar:[u8;32]
 
 #### field: p_public
 
-[Source line 79](../../../extended/ext/tls_connection.lani#L79)
+[Source line 80](../../../extended/ext/tls_connection.lani#L80)
 
 ```lanius
 p_public:[u8;65]
@@ -1213,7 +1214,7 @@ p_public:[u8;65]
 
 #### field: seed
 
-[Source line 79](../../../extended/ext/tls_connection.lani#L79)
+[Source line 80](../../../extended/ext/tls_connection.lani#L80)
 
 ```lanius
 seed:[u8;32]
@@ -1221,15 +1222,23 @@ seed:[u8;32]
 
 #### field: transcript
 
-[Source line 80](../../../extended/ext/tls_connection.lani#L80)
+[Source line 81](../../../extended/ext/tls_connection.lani#L81)
 
 ```lanius
-transcript:ext::tls_transcript::State
+transcript:core::option::Option<ext::tls_transcript::State>
+```
+
+#### field: first_hello_length
+
+[Source line 81](../../../extended/ext/tls_connection.lani#L81)
+
+```lanius
+first_hello_length:i32
 ```
 
 #### field: first_offer
 
-[Source line 81](../../../extended/ext/tls_connection.lani#L81)
+[Source line 82](../../../extended/ext/tls_connection.lani#L82)
 
 ```lanius
 first_offer:core::option::Option<ext::tls_negotiation::Offer>
@@ -1237,7 +1246,7 @@ first_offer:core::option::Option<ext::tls_negotiation::Offer>
 
 #### field: offer
 
-[Source line 82](../../../extended/ext/tls_connection.lani#L82)
+[Source line 83](../../../extended/ext/tls_connection.lani#L83)
 
 ```lanius
 offer:core::option::Option<ext::tls_negotiation::Offer>
@@ -1245,7 +1254,7 @@ offer:core::option::Option<ext::tls_negotiation::Offer>
 
 #### field: retry
 
-[Source line 83](../../../extended/ext/tls_connection.lani#L83)
+[Source line 84](../../../extended/ext/tls_connection.lani#L84)
 
 ```lanius
 retry:core::option::Option<ext::tls_negotiation::Retry>
@@ -1253,15 +1262,15 @@ retry:core::option::Option<ext::tls_negotiation::Retry>
 
 #### field: selected
 
-[Source line 84](../../../extended/ext/tls_connection.lani#L84)
+[Source line 85](../../../extended/ext/tls_connection.lani#L85)
 
 ```lanius
-selected:ext::tls_record::Suite
+selected:core::option::Option<ext::tls_suite::Suite>
 ```
 
 #### field: selected_group
 
-[Source line 84](../../../extended/ext/tls_connection.lani#L84)
+[Source line 85](../../../extended/ext/tls_connection.lani#L85)
 
 ```lanius
 selected_group:ext::tls_negotiation::Group
@@ -1269,7 +1278,7 @@ selected_group:ext::tls_negotiation::Group
 
 #### field: peer_share
 
-[Source line 84](../../../extended/ext/tls_connection.lani#L84)
+[Source line 85](../../../extended/ext/tls_connection.lani#L85)
 
 ```lanius
 peer_share:core::slice::View<u8>
@@ -1277,7 +1286,7 @@ peer_share:core::slice::View<u8>
 
 #### field: alpn
 
-[Source line 84](../../../extended/ext/tls_connection.lani#L84)
+[Source line 85](../../../extended/ext/tls_connection.lani#L85)
 
 ```lanius
 alpn:[u8;255]
@@ -1285,7 +1294,7 @@ alpn:[u8;255]
 
 #### field: alpn_length
 
-[Source line 84](../../../extended/ext/tls_connection.lani#L84)
+[Source line 85](../../../extended/ext/tls_connection.lani#L85)
 
 ```lanius
 alpn_length:i32
@@ -1293,55 +1302,55 @@ alpn_length:i32
 
 #### field: handshake_client
 
-[Source line 85](../../../extended/ext/tls_connection.lani#L85)
+[Source line 86](../../../extended/ext/tls_connection.lani#L86)
 
 ```lanius
-handshake_client:ext::tls_schedule::Secret
+handshake_client:core::option::Option<ext::tls_schedule::Secret>
 ```
 
 #### field: handshake_server
 
-[Source line 85](../../../extended/ext/tls_connection.lani#L85)
+[Source line 86](../../../extended/ext/tls_connection.lani#L86)
 
 ```lanius
-handshake_server:ext::tls_schedule::Secret
+handshake_server:core::option::Option<ext::tls_schedule::Secret>
 ```
 
 #### field: master
 
-[Source line 86](../../../extended/ext/tls_connection.lani#L86)
+[Source line 87](../../../extended/ext/tls_connection.lani#L87)
 
 ```lanius
-master:ext::tls_schedule::Master
+master:core::option::Option<ext::tls_schedule::Master>
 ```
 
 #### field: application_client
 
-[Source line 86](../../../extended/ext/tls_connection.lani#L86)
+[Source line 87](../../../extended/ext/tls_connection.lani#L87)
 
 ```lanius
-application_client:ext::tls_schedule::Secret
+application_client:core::option::Option<ext::tls_schedule::Secret>
 ```
 
 #### field: application_server
 
-[Source line 87](../../../extended/ext/tls_connection.lani#L87)
+[Source line 88](../../../extended/ext/tls_connection.lani#L88)
 
 ```lanius
-application_server:ext::tls_schedule::Secret
+application_server:core::option::Option<ext::tls_schedule::Secret>
 ```
 
 #### field: exporter
 
-[Source line 87](../../../extended/ext/tls_connection.lani#L87)
+[Source line 88](../../../extended/ext/tls_connection.lani#L88)
 
 ```lanius
-exporter:ext::tls_schedule::Exporter
+exporter:core::option::Option<ext::tls_schedule::Exporter>
 ```
 
 #### field: authentication
 
-[Source line 88](../../../extended/ext/tls_connection.lani#L88)
+[Source line 89](../../../extended/ext/tls_connection.lani#L89)
 
 ```lanius
 authentication:core::option::Option<ext::tls_authentication::State>
@@ -1349,7 +1358,7 @@ authentication:core::option::Option<ext::tls_authentication::State>
 
 #### field: leaf
 
-[Source line 88](../../../extended/ext/tls_connection.lani#L88)
+[Source line 89](../../../extended/ext/tls_connection.lani#L89)
 
 ```lanius
 leaf:ext::ed25519::Key32
@@ -1357,7 +1366,7 @@ leaf:ext::ed25519::Key32
 
 #### field: sender
 
-[Source line 89](../../../extended/ext/tls_connection.lani#L89)
+[Source line 90](../../../extended/ext/tls_connection.lani#L90)
 
 ```lanius
 sender:core::option::Option<ext::tls_record::Sealer>
@@ -1365,7 +1374,7 @@ sender:core::option::Option<ext::tls_record::Sealer>
 
 #### field: receiver
 
-[Source line 89](../../../extended/ext/tls_connection.lani#L89)
+[Source line 90](../../../extended/ext/tls_connection.lani#L90)
 
 ```lanius
 receiver:core::option::Option<ext::tls_record::Opener>
@@ -1373,7 +1382,7 @@ receiver:core::option::Option<ext::tls_record::Opener>
 
 #### field: send_generation
 
-[Source line 90](../../../extended/ext/tls_connection.lani#L90)
+[Source line 91](../../../extended/ext/tls_connection.lani#L91)
 
 ```lanius
 send_generation:u64
@@ -1381,7 +1390,7 @@ send_generation:u64
 
 #### field: receive_generation
 
-[Source line 90](../../../extended/ext/tls_connection.lani#L90)
+[Source line 91](../../../extended/ext/tls_connection.lani#L91)
 
 ```lanius
 receive_generation:u64
@@ -1389,7 +1398,7 @@ receive_generation:u64
 
 #### field: send_sequence
 
-[Source line 90](../../../extended/ext/tls_connection.lani#L90)
+[Source line 91](../../../extended/ext/tls_connection.lani#L91)
 
 ```lanius
 send_sequence:u64
@@ -1397,7 +1406,7 @@ send_sequence:u64
 
 #### field: receive_sequence
 
-[Source line 90](../../../extended/ext/tls_connection.lani#L90)
+[Source line 91](../../../extended/ext/tls_connection.lani#L91)
 
 ```lanius
 receive_sequence:u64
@@ -1405,7 +1414,7 @@ receive_sequence:u64
 
 #### field: record
 
-[Source line 91](../../../extended/ext/tls_connection.lani#L91)
+[Source line 92](../../../extended/ext/tls_connection.lani#L92)
 
 ```lanius
 record:ext::tls_framing::RecordDecoder
@@ -1413,7 +1422,7 @@ record:ext::tls_framing::RecordDecoder
 
 #### field: handshake
 
-[Source line 91](../../../extended/ext/tls_connection.lani#L91)
+[Source line 92](../../../extended/ext/tls_connection.lani#L92)
 
 ```lanius
 handshake:ext::tls_framing::HandshakeDecoder
@@ -1421,7 +1430,7 @@ handshake:ext::tls_framing::HandshakeDecoder
 
 #### field: content
 
-[Source line 92](../../../extended/ext/tls_connection.lani#L92)
+[Source line 93](../../../extended/ext/tls_connection.lani#L93)
 
 ```lanius
 content:core::slice::View<u8>
@@ -1429,7 +1438,7 @@ content:core::slice::View<u8>
 
 #### field: content_at
 
-[Source line 92](../../../extended/ext/tls_connection.lani#L92)
+[Source line 93](../../../extended/ext/tls_connection.lani#L93)
 
 ```lanius
 content_at:i32
@@ -1437,7 +1446,7 @@ content_at:i32
 
 #### field: content_kind
 
-[Source line 92](../../../extended/ext/tls_connection.lani#L92)
+[Source line 93](../../../extended/ext/tls_connection.lani#L93)
 
 ```lanius
 content_kind:u8
@@ -1445,7 +1454,7 @@ content_kind:u8
 
 #### field: content_active
 
-[Source line 92](../../../extended/ext/tls_connection.lani#L92)
+[Source line 93](../../../extended/ext/tls_connection.lani#L93)
 
 ```lanius
 content_active:bool
@@ -1453,7 +1462,7 @@ content_active:bool
 
 #### field: content_epoch
 
-[Source line 93](../../../extended/ext/tls_connection.lani#L93)
+[Source line 94](../../../extended/ext/tls_connection.lani#L94)
 
 ```lanius
 content_epoch:u64
@@ -1461,7 +1470,7 @@ content_epoch:u64
 
 #### field: partial_epoch
 
-[Source line 93](../../../extended/ext/tls_connection.lani#L93)
+[Source line 94](../../../extended/ext/tls_connection.lani#L94)
 
 ```lanius
 partial_epoch:u64
@@ -1469,7 +1478,7 @@ partial_epoch:u64
 
 #### field: tx
 
-[Source line 94](../../../extended/ext/tls_connection.lani#L94)
+[Source line 95](../../../extended/ext/tls_connection.lani#L95)
 
 ```lanius
 tx:core::slice::View<u8>
@@ -1477,7 +1486,7 @@ tx:core::slice::View<u8>
 
 #### field: tx_at
 
-[Source line 94](../../../extended/ext/tls_connection.lani#L94)
+[Source line 95](../../../extended/ext/tls_connection.lani#L95)
 
 ```lanius
 tx_at:i32
@@ -1485,7 +1494,7 @@ tx_at:i32
 
 #### field: tx_action
 
-[Source line 94](../../../extended/ext/tls_connection.lani#L94)
+[Source line 95](../../../extended/ext/tls_connection.lani#L95)
 
 ```lanius
 tx_action:i32
@@ -1493,7 +1502,7 @@ tx_action:i32
 
 #### field: tx_protected
 
-[Source line 94](../../../extended/ext/tls_connection.lani#L94)
+[Source line 95](../../../extended/ext/tls_connection.lani#L95)
 
 ```lanius
 tx_protected:bool
@@ -1501,7 +1510,7 @@ tx_protected:bool
 
 #### field: pending_length
 
-[Source line 95](../../../extended/ext/tls_connection.lani#L95)
+[Source line 96](../../../extended/ext/tls_connection.lani#L96)
 
 ```lanius
 pending_length:i32
@@ -1509,7 +1518,7 @@ pending_length:i32
 
 #### field: pending_at
 
-[Source line 95](../../../extended/ext/tls_connection.lani#L95)
+[Source line 96](../../../extended/ext/tls_connection.lani#L96)
 
 ```lanius
 pending_at:i32
@@ -1517,7 +1526,7 @@ pending_at:i32
 
 #### field: pending_action
 
-[Source line 95](../../../extended/ext/tls_connection.lani#L95)
+[Source line 96](../../../extended/ext/tls_connection.lani#L96)
 
 ```lanius
 pending_action:i32
@@ -1525,7 +1534,7 @@ pending_action:i32
 
 #### field: pending_fatal
 
-[Source line 95](../../../extended/ext/tls_connection.lani#L95)
+[Source line 96](../../../extended/ext/tls_connection.lani#L96)
 
 ```lanius
 pending_fatal:bool
@@ -1533,7 +1542,7 @@ pending_fatal:bool
 
 #### field: app_length
 
-[Source line 96](../../../extended/ext/tls_connection.lani#L96)
+[Source line 97](../../../extended/ext/tls_connection.lani#L97)
 
 ```lanius
 app_length:i32
@@ -1541,7 +1550,7 @@ app_length:i32
 
 #### field: app_at
 
-[Source line 96](../../../extended/ext/tls_connection.lani#L96)
+[Source line 97](../../../extended/ext/tls_connection.lani#L97)
 
 ```lanius
 app_at:i32
@@ -1549,7 +1558,7 @@ app_at:i32
 
 #### field: update_intent
 
-[Source line 96](../../../extended/ext/tls_connection.lani#L96)
+[Source line 97](../../../extended/ext/tls_connection.lani#L97)
 
 ```lanius
 update_intent:bool
@@ -1557,7 +1566,7 @@ update_intent:bool
 
 #### field: update_request
 
-[Source line 96](../../../extended/ext/tls_connection.lani#L96)
+[Source line 97](../../../extended/ext/tls_connection.lani#L97)
 
 ```lanius
 update_request:bool
@@ -1565,7 +1574,7 @@ update_request:bool
 
 #### field: update_response
 
-[Source line 96](../../../extended/ext/tls_connection.lani#L96)
+[Source line 97](../../../extended/ext/tls_connection.lani#L97)
 
 ```lanius
 update_response:bool
@@ -1573,7 +1582,7 @@ update_response:bool
 
 ### struct: EntropyLayout
 
-[Source line 136](../../../extended/ext/tls_connection.lani#L136)
+[Source line 135](../../../extended/ext/tls_connection.lani#L135)
 
 ```lanius
 pub struct EntropyLayout
@@ -1581,7 +1590,7 @@ pub struct EntropyLayout
 
 #### field: length
 
-[Source line 136](../../../extended/ext/tls_connection.lani#L136)
+[Source line 135](../../../extended/ext/tls_connection.lani#L135)
 
 ```lanius
 length:i32
@@ -1589,7 +1598,7 @@ length:i32
 
 #### field: x25519_offset
 
-[Source line 136](../../../extended/ext/tls_connection.lani#L136)
+[Source line 135](../../../extended/ext/tls_connection.lani#L135)
 
 ```lanius
 x25519_offset:core::option::Option<i32>
@@ -1597,7 +1606,7 @@ x25519_offset:core::option::Option<i32>
 
 #### field: p256_offset
 
-[Source line 136](../../../extended/ext/tls_connection.lani#L136)
+[Source line 135](../../../extended/ext/tls_connection.lani#L135)
 
 ```lanius
 p256_offset:core::option::Option<i32>
@@ -1607,7 +1616,7 @@ p256_offset:core::option::Option<i32>
 
 ### function: is_resource_limit
 
-[Source line 110](../../../extended/ext/tls_connection.lani#L110)
+[Source line 109](../../../extended/ext/tls_connection.lani#L109)
 
 ```lanius
 pub fn is_resource_limit(e:Error)->bool
@@ -1615,7 +1624,7 @@ pub fn is_resource_limit(e:Error)->bool
 
 ### function: default_limits
 
-[Source line 111](../../../extended/ext/tls_connection.lani#L111)
+[Source line 110](../../../extended/ext/tls_connection.lani#L110)
 
 ```lanius
 pub fn default_limits()->Limits
@@ -1623,7 +1632,7 @@ pub fn default_limits()->Limits
 
 ### function: required_buffers
 
-[Source line 113](../../../extended/ext/tls_connection.lani#L113)
+[Source line 112](../../../extended/ext/tls_connection.lani#L112)
 
 ```lanius
 pub fn required_buffers(limits:Limits)->core::result::Result<BufferSizes,Error>
@@ -1631,7 +1640,7 @@ pub fn required_buffers(limits:Limits)->core::result::Result<BufferSizes,Error>
 
 ### function: entropy_layout
 
-[Source line 137](../../../extended/ext/tls_connection.lani#L137)
+[Source line 136](../../../extended/ext/tls_connection.lani#L136)
 
 ```lanius
 pub fn entropy_layout(policy:ext::tls_negotiation::GroupPolicy)->core::result::Result<EntropyLayout,Error>
@@ -1639,7 +1648,7 @@ pub fn entropy_layout(policy:ext::tls_negotiation::GroupPolicy)->core::result::R
 
 ### function: client
 
-[Source line 171](../../../extended/ext/tls_connection.lani#L171)
+[Source line 191](../../../extended/ext/tls_connection.lani#L191)
 
 ```lanius
 pub fn client(config:ClientConfig,buffers:Buffers,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error>
@@ -1647,7 +1656,7 @@ pub fn client(config:ClientConfig,buffers:Buffers,entropy:core::slice::View<u8>)
 
 ### function: server
 
-[Source line 186](../../../extended/ext/tls_connection.lani#L186)
+[Source line 207](../../../extended/ext/tls_connection.lani#L207)
 
 ```lanius
 pub fn server(config:ServerConfig,buffers:Buffers,entropy:core::slice::View<u8>)->core::result::Result<Engine,Error>
@@ -1655,9 +1664,9 @@ pub fn server(config:ServerConfig,buffers:Buffers,entropy:core::slice::View<u8>)
 
 ## Implementation blocks and public methods
 
-### impl at line 629
+### impl at line 694
 
-[Source line 629](../../../extended/ext/tls_connection.lani#L629)
+[Source line 694](../../../extended/ext/tls_connection.lani#L694)
 
 ```lanius
 pub impl Engine
@@ -1665,7 +1674,7 @@ pub impl Engine
 
 #### method: borrow
 
-[Source line 630](../../../extended/ext/tls_connection.lani#L630)
+[Source line 695](../../../extended/ext/tls_connection.lani#L695)
 
 ```lanius
 pub fn borrow(&self)->&Engine
@@ -1673,7 +1682,7 @@ pub fn borrow(&self)->&Engine
 
 #### method: role
 
-[Source line 631](../../../extended/ext/tls_connection.lani#L631)
+[Source line 696](../../../extended/ext/tls_connection.lani#L696)
 
 ```lanius
 pub fn role(&self)->Role
@@ -1681,7 +1690,7 @@ pub fn role(&self)->Role
 
 #### method: established
 
-[Source line 632](../../../extended/ext/tls_connection.lani#L632)
+[Source line 697](../../../extended/ext/tls_connection.lani#L697)
 
 ```lanius
 pub fn established(&self)->bool
@@ -1689,7 +1698,7 @@ pub fn established(&self)->bool
 
 #### method: peer_closed
 
-[Source line 633](../../../extended/ext/tls_connection.lani#L633)
+[Source line 698](../../../extended/ext/tls_connection.lani#L698)
 
 ```lanius
 pub fn peer_closed(&self)->bool
@@ -1697,7 +1706,7 @@ pub fn peer_closed(&self)->bool
 
 #### method: local_closed
 
-[Source line 634](../../../extended/ext/tls_connection.lani#L634)
+[Source line 699](../../../extended/ext/tls_connection.lani#L699)
 
 ```lanius
 pub fn local_closed(&self)->bool
@@ -1705,7 +1714,7 @@ pub fn local_closed(&self)->bool
 
 #### method: close_requested
 
-[Source line 635](../../../extended/ext/tls_connection.lani#L635)
+[Source line 700](../../../extended/ext/tls_connection.lani#L700)
 
 ```lanius
 pub fn close_requested(&self)->bool
@@ -1713,7 +1722,7 @@ pub fn close_requested(&self)->bool
 
 #### method: pending_plaintext
 
-[Source line 636](../../../extended/ext/tls_connection.lani#L636)
+[Source line 701](../../../extended/ext/tls_connection.lani#L701)
 
 ```lanius
 pub fn pending_plaintext(&self)->i32
@@ -1721,7 +1730,7 @@ pub fn pending_plaintext(&self)->i32
 
 #### method: fatal_alert_pending
 
-[Source line 637](../../../extended/ext/tls_connection.lani#L637)
+[Source line 702](../../../extended/ext/tls_connection.lani#L702)
 
 ```lanius
 pub fn fatal_alert_pending(&self)->bool
@@ -1729,7 +1738,7 @@ pub fn fatal_alert_pending(&self)->bool
 
 #### method: failure
 
-[Source line 638](../../../extended/ext/tls_connection.lani#L638)
+[Source line 703](../../../extended/ext/tls_connection.lani#L703)
 
 ```lanius
 pub fn failure(&self)->core::option::Option<Error>
@@ -1737,7 +1746,7 @@ pub fn failure(&self)->core::option::Option<Error>
 
 #### method: phase
 
-[Source line 639](../../../extended/ext/tls_connection.lani#L639)
+[Source line 704](../../../extended/ext/tls_connection.lani#L704)
 
 ```lanius
 pub fn phase(&self)->Phase
@@ -1745,7 +1754,7 @@ pub fn phase(&self)->Phase
 
 #### method: peer_key
 
-[Source line 644](../../../extended/ext/tls_connection.lani#L644)
+[Source line 709](../../../extended/ext/tls_connection.lani#L709)
 
 ```lanius
 pub fn peer_key(&self)->core::option::Option<ext::ed25519::Key32>
@@ -1753,7 +1762,7 @@ pub fn peer_key(&self)->core::option::Option<ext::ed25519::Key32>
 
 #### method: negotiated
 
-[Source line 645](../../../extended/ext/tls_connection.lani#L645)
+[Source line 710](../../../extended/ext/tls_connection.lani#L710)
 
 ```lanius
 pub fn negotiated(&self)->core::option::Option<Negotiated>
@@ -1761,7 +1770,7 @@ pub fn negotiated(&self)->core::option::Option<Negotiated>
 
 #### method: stats
 
-[Source line 646](../../../extended/ext/tls_connection.lani#L646)
+[Source line 711](../../../extended/ext/tls_connection.lani#L711)
 
 ```lanius
 pub fn stats(&self)->Stats
@@ -1769,7 +1778,7 @@ pub fn stats(&self)->Stats
 
 #### method: outgoing
 
-[Source line 649](../../../extended/ext/tls_connection.lani#L649)
+[Source line 714](../../../extended/ext/tls_connection.lani#L714)
 
 ```lanius
 pub fn outgoing(&self)->core::slice::View<u8>
@@ -1777,7 +1786,7 @@ pub fn outgoing(&self)->core::slice::View<u8>
 
 #### method: acknowledge_written
 
-[Source line 650](../../../extended/ext/tls_connection.lani#L650)
+[Source line 715](../../../extended/ext/tls_connection.lani#L715)
 
 ```lanius
 pub fn acknowledge_written(&self,n:i32)->core::result::Result<i32,Error>
@@ -1785,7 +1794,7 @@ pub fn acknowledge_written(&self,n:i32)->core::result::Result<i32,Error>
 
 #### method: pump
 
-[Source line 660](../../../extended/ext/tls_connection.lani#L660)
+[Source line 725](../../../extended/ext/tls_connection.lani#L725)
 
 ```lanius
 pub fn pump(&self)->core::result::Result<bool,Error>
@@ -1793,7 +1802,7 @@ pub fn pump(&self)->core::result::Result<bool,Error>
 
 #### method: feed_wire
 
-[Source line 667](../../../extended/ext/tls_connection.lani#L667)
+[Source line 732](../../../extended/ext/tls_connection.lani#L732)
 
 ```lanius
 pub fn feed_wire(&self,input:core::slice::View<u8>)->core::result::Result<i32,FeedFailure>
@@ -1801,7 +1810,7 @@ pub fn feed_wire(&self,input:core::slice::View<u8>)->core::result::Result<i32,Fe
 
 #### method: queue_plaintext
 
-[Source line 695](../../../extended/ext/tls_connection.lani#L695)
+[Source line 760](../../../extended/ext/tls_connection.lani#L760)
 
 ```lanius
 pub fn queue_plaintext(&self,input:core::slice::View<u8>)->core::result::Result<i32,Error>
@@ -1809,7 +1818,7 @@ pub fn queue_plaintext(&self,input:core::slice::View<u8>)->core::result::Result<
 
 #### method: read_plaintext
 
-[Source line 705](../../../extended/ext/tls_connection.lani#L705)
+[Source line 770](../../../extended/ext/tls_connection.lani#L770)
 
 ```lanius
 pub fn read_plaintext(&self,output:core::slice::View<u8>)->core::result::Result<Read,Error>
@@ -1817,7 +1826,7 @@ pub fn read_plaintext(&self,output:core::slice::View<u8>)->core::result::Result<
 
 #### method: request_key_update
 
-[Source line 713](../../../extended/ext/tls_connection.lani#L713)
+[Source line 778](../../../extended/ext/tls_connection.lani#L778)
 
 ```lanius
 pub fn request_key_update(&self,request_peer:bool)->core::result::Result<i32,Error>
@@ -1825,7 +1834,7 @@ pub fn request_key_update(&self,request_peer:bool)->core::result::Result<i32,Err
 
 #### method: begin_close
 
-[Source line 717](../../../extended/ext/tls_connection.lani#L717)
+[Source line 782](../../../extended/ext/tls_connection.lani#L782)
 
 ```lanius
 pub fn begin_close(&self)->core::result::Result<i32,Error>
@@ -1833,7 +1842,7 @@ pub fn begin_close(&self)->core::result::Result<i32,Error>
 
 #### method: input_eof
 
-[Source line 721](../../../extended/ext/tls_connection.lani#L721)
+[Source line 786](../../../extended/ext/tls_connection.lani#L786)
 
 ```lanius
 pub fn input_eof(&self)->core::result::Result<i32,Error>
@@ -1841,7 +1850,7 @@ pub fn input_eof(&self)->core::result::Result<i32,Error>
 
 #### method: export
 
-[Source line 725](../../../extended/ext/tls_connection.lani#L725)
+[Source line 790](../../../extended/ext/tls_connection.lani#L790)
 
 ```lanius
 pub fn export(&self,label:core::slice::View<u8>,context:core::slice::View<u8>,output:core::slice::View<u8>)->core::result::Result<i32,Error>
@@ -1849,7 +1858,7 @@ pub fn export(&self,label:core::slice::View<u8>,context:core::slice::View<u8>,ou
 
 #### method: abort
 
-[Source line 732](../../../extended/ext/tls_connection.lani#L732)
+[Source line 801](../../../extended/ext/tls_connection.lani#L801)
 
 ```lanius
 pub fn abort(&self)->i32

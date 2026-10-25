@@ -128,9 +128,35 @@ is no JSON/Wasm transport or Rust/Python production hashing backend.
 
 ## Admission status
 
-Runtime admission is pending. No native/GPU test execution or oracle run has
-been performed by the test author. Parent-coordinated admission should build
-the focused Rust target, then run each exact gate separately, for example:
+All four exact gates passed on x86_64 Linux through the GPU compiler and
+native execution. Each was invoked separately, compiling four strict x86_64
+ELFs. The protocol covered **1,634 commands** across **27 native batches**;
+the ordinary consumer added one native process. All 28 allocation traces were
+empty.
+
+| Gate | Commands / native processes | Elapsed |
+| --- | --- | --- |
+| Ordinary composition | One consumer / 1 | 4.48 s |
+| Hash streams and snapshots | 356 / 6 | 6.06 s |
+| Factories, metadata and count seams | 820 / 13 | 5.99 s |
+| Suite mappings and policies | 458 / 8 | 6.12 s |
+
+Production hashes were `tls_hash` SHA-256 `71416493…e18ef52` and
+`tls_suite` `c65e3aa9…004e2`. Driver `816aee41`, protocol `cd4a526e`, plain
+consumer `76c1b7f3`, and independent model `e8f99c06` identify the reviewed
+sources. Independent source and oracle review found no blockers. No gate
+failed or required a production change.
+
+The focused Rust build completed in 1.21 s and also built the separate
+signature test driver. Local logs are
+`target/stdlib-work/hash-signature-build-first.log`,
+`tls-hash-ordinary-first.log`, `tls-hash-streams-first.log`,
+`tls-hash-limits-first.log`, and `tls-suite-policy-first.log`, with the latter
+four under `target/stdlib-work/`. They are ignored execution receipts, not
+checked-in captures. Timings measure those test invocations, not hashing
+throughput or a compiler comparison.
+
+To rebuild the focused Rust target and run each gate separately:
 
 ```sh
 CARGO_TARGET_DIR=target/stdlib-build CARGO_INCREMENTAL=0 \

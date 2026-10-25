@@ -1,7 +1,6 @@
 // Owned public signature dispatch; strict X.509/TLS encodings, no trust/signing.
 module ext::signature;
 import core::option;
-import core::panic;
 import core::result;
 import core::slice;
 import ext::der;
@@ -124,7 +123,7 @@ pub fn verify(key:&PublicKey,use:Use,scheme:Scheme,message:core::slice::View<u8>
     // RSA preflight/debit remains authoritative; after full wrapper preflight
     // only WorkLimit can prevent its positive reservation. No fresh allowance.
     if(family==2){
-        let owned:ext::rsa::PublicKey=match(key.material){Material::Rsae(v)->v,_->core::panic::panic()};
+        let selected:core::option::Option<ext::rsa::PublicKey> = match (key.material) { Material::Rsae(v) -> core::option::Some(v), Material::Ed25519(_) -> core::option::None(), Material::P256(_) -> core::option::None() };let owned:ext::rsa::PublicKey=selected.unwrap();
         if(signature.length!=owned.signature_length()){return core::result::Err(Error::InvalidSignatureEncoding);}if(b.signatures_left==0){return core::result::Err(Error::SignatureLimit);}
         let local:ext::rsa::Budget=rsa_budget(b);let before:u64=local.work_left;let algorithm:ext::rsa::Scheme=ext::rsa::Scheme::Pkcs1v15Sha256;if(id==3){algorithm=ext::rsa::Scheme::PssSha256Salt32;}
         let got:core::result::Result<bool,ext::rsa::Error> =owned.verify_sha256(algorithm,message,signature,local.borrow());b.work_left=local.work_left;
@@ -136,7 +135,7 @@ pub fn verify(key:&PublicKey,use:Use,scheme:Scheme,message:core::slice::View<u8>
     if(family==1){if(!charge(b,(signature.length as u64)+128)){return core::result::Err(Error::WorkLimit);}let parsed:core::result::Result<ext::p256::Signature,ext::p256::Error> =ext::p256::parse_der_signature(signature);if(parsed.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}raw=parsed.unwrap();}
     if(b.signatures_left==0){return core::result::Err(Error::SignatureLimit);}let cost:u64=P256_VERIFY_WORK+hash_work(message.length as u64,false);
     if(family==0){cost=ED25519_VERIFY_WORK+hash_work((message.length as u64)+64,true);}if(!charge(b,cost)){return core::result::Err(Error::WorkLimit);}b.signatures_left-=1;
-    if(family==0){let owned:ext::ed25519::Key32=match(key.material){Material::Ed25519(v)->v,_->core::panic::panic()};let got:core::result::Result<bool,ext::ed25519::Error> =ext::ed25519::verify(view(owned.bytes,32),message,signature);if(got.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}return core::result::Ok(got.unwrap());}
-    let owned:ext::p256::PublicKey=match(key.material){Material::P256(v)->v,_->core::panic::panic()};let got:core::result::Result<bool,ext::p256::Error> =ext::p256::verify_sha256(view(owned.bytes,65),message,view(raw.bytes,64));
+    if(family==0){let selected:core::option::Option<ext::ed25519::Key32> = match (key.material) { Material::Ed25519(v) -> core::option::Some(v), Material::Rsae(_) -> core::option::None(), Material::P256(_) -> core::option::None() };let owned:ext::ed25519::Key32=selected.unwrap();let got:core::result::Result<bool,ext::ed25519::Error> =ext::ed25519::verify(view(owned.bytes,32),message,signature);if(got.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}return core::result::Ok(got.unwrap());}
+    let selected:core::option::Option<ext::p256::PublicKey> = match (key.material) { Material::P256(v) -> core::option::Some(v), Material::Ed25519(_) -> core::option::None(), Material::Rsae(_) -> core::option::None() };let owned:ext::p256::PublicKey=selected.unwrap();let got:core::result::Result<bool,ext::p256::Error> =ext::p256::verify_sha256(view(owned.bytes,65),message,view(raw.bytes,64));
     if(got.is_err()){return core::result::Err(Error::InvalidSignatureEncoding);}return core::result::Ok(got.unwrap());
 }

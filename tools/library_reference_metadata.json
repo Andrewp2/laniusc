@@ -741,6 +741,11 @@
         "docs/extended-signal.md"
       ]
     },
+    "ext::signature": {
+      "guides": [
+        "docs/extended-signature.md"
+      ]
+    },
     "ext::statistics": {
       "guides": [
         "docs/extended-statistics.md"
@@ -795,6 +800,11 @@
         "docs/extended-tls-auth-foundation.md"
       ]
     },
+    "ext::tls_hash": {
+      "guides": [
+        "docs/extended-tls-hash.md"
+      ]
+    },
     "ext::tls_negotiation": {
       "guides": [
         "docs/extended-tls-negotiation.md"
@@ -808,6 +818,11 @@
     "ext::tls_schedule": {
       "guides": [
         "docs/extended-tls-schedule.md"
+      ]
+    },
+    "ext::tls_suite": {
+      "guides": [
+        "docs/extended-tls-hash.md"
       ]
     },
     "ext::tls_tcp": {

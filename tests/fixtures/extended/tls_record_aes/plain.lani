@@ -4,15 +4,20 @@ import core::io;
 import core::result;
 import core::slice;
 import ext::tls_record;
+import ext::tls_hash;
+import ext::tls_schedule;
+import ext::tls_suite;
 import std::stream;
-fn main() -> i32 {
-    let secret: [u8; 32] = [0; 32]; let secret_view: core::slice::View<u8> = core::slice::View { values: secret, start: 0, length: 32 };
-    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(ext::tls_record::Suite::Aes128GcmSha256, secret_view));
-    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(ext::tls_record::Suite::Aes128GcmSha256, secret_view));
+fn exercise(selected:ext::tls_suite::Suite) {
+    let secret: [u8; 48] = [0; 48]; let secret_view: core::slice::View<u8> = core::slice::View { values: secret, start: 0, length: ext::tls_hash::hash_length(ext::tls_suite::hash(selected)) };
+    let owned:ext::tls_schedule::Secret=ext::tls_schedule::secret_from_view(ext::tls_suite::hash(selected),secret_view).unwrap();
+    let send: ext::tls_record::Sealer = core::result::unwrap(ext::tls_record::sealer(selected, owned));
+    let receive: ext::tls_record::Opener = core::result::unwrap(ext::tls_record::opener(selected, owned));
     assert(!send.key_update_due() && !receive.key_update_due());
-    let selected: bool = match (send.suite()) { ext::tls_record::Suite::Aes128GcmSha256 -> true, _ -> false }; assert(selected);
+    assert(ext::tls_suite::id(send.suite())==ext::tls_suite::id(selected));
     // Both constructors own their key material; no borrow of secret survives.
-    let index: i32 = 0; while (index < 32) { secret[index] = 255; index += 1; }
+    owned.bytes[0]=1; owned.bytes[47]=1; owned.algorithm=ext::tls_hash::Algorithm::Sha256;
+    let index: i32 = 0; while (index < 48) { secret[index] = 255; index += 1; }
     let message: [u8; 5] = [104, 101, 108, 108, 111]; let record: [u8; 64] = [165; 64]; let scratch: [u8; 64] = [166; 64];
     let content: core::slice::View<u8> = core::slice::View { values: message, start: 0, length: 5 };
     let target: core::slice::View<u8> = core::slice::View { values: record, start: 3, length: 61 };
@@ -31,5 +36,6 @@ fn main() -> i32 {
     let decoded: ext::tls_record::Opened = core::result::unwrap(receive.open(next, work)); assert(decoded.content.length == 0 && decoded.content_type == 23);
     core::result::unwrap(core::io::write_all<std::stream::Descriptor>(stdout.borrow(), record, 3, second));
     assert(record[0] == 165 && record[1] == 165 && record[2] == 165 && record[37] == 165);
-    assert(scratch[0] == 166 && scratch[1] == 166 && scratch[2] == 166 && scratch[16] == 166); return 0;
+    assert(scratch[0] == 166 && scratch[1] == 166 && scratch[2] == 166 && scratch[16] == 166);
 }
+fn main()->i32 { exercise(ext::tls_suite::Suite::Aes128GcmSha256); exercise(ext::tls_suite::Suite::Aes256GcmSha384); return 0; }
