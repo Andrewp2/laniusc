@@ -30,7 +30,7 @@ package distribution is a separate deliverable.
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols, String implementations and opt-in exact scalar/Option/Result/Pair compositions execute with typed errors and manual memory-owner release. True empty Infallible errors retain the existing enum tag layout; nested owners and typed rollback pass executable tests. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
-| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque cursors transfer cleanup authority and recover their original storage, with explicit nested cleanup and a streaming unique-word application. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
+| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque/hash/tree map/set and heap cursors transfer cleanup authority, retain exhausted backing until explicit finish, and recover valid remaining collections in O(1), with explicit nested cleanup. Hash traversal is unordered; tree and heap priority pulls use O(log n) removal. The unique-word application now publishes through the TreeSet owning cursor. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Runtime formats also render to generic byte writers through bounded caller scratch, with preflight validation, exact accepted-prefix failures and a direct-call limit. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Opt-in deep HashMap cloning executes with independent nested owners and typed key/value failure cleanup; opt-in recursive deque cloning also executes with logical ring and owned-error rollback coverage. Opt-in deep heap cloning also executes with Min/Max priority and nested/owned-error failure coverage. Opt-in deep TreeMap cloning also executes with sorted staging, independent nested owners, typed key/value rollback and empty/zero-sized coverage. Existing inherent collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. Opt-in deep HashSet and TreeSet cloning also execute with typed rollback and representative-preserving models. The protected std::vec/heap migration, additional owner compositions and automatic ownership remain |
@@ -180,7 +180,13 @@ using ordered Pike matching, with captures, greedy/lazy repetition, scalar
 classes and Unicode 17 properties. Unsupported syntax fails explicitly. A
 [streaming search program](extended-text-grep.md) compiles once and processes
 bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax,
-replacement/split conveniences and lexers remain. [Text parsing cursors](extended-parse.md)
+lexers and additional replacement interfaces remain.
+[Bounded splitting and replacement](extended-regex-text.md) now provide
+borrowed fields, independent literal/numeric-template output and conservative
+aggregate VM allowances through the existing matcher. Six focused native
+groups pass, including 288 independent reference cases, 89 edge tables,
+allocation-failure cleanup and a binary rewrite CLI.
+[Text parsing cursors](extended-parse.md)
 provide checked locations, spans, checkpoints and atomic bounded scanners.
 The [integer expression calculator](extended-expr-calc.md) combines them with
 inline stacks, checked arithmetic and runtime formatting.
@@ -411,6 +417,26 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- [Regex split/replacement adapters and stdin rewrite CLI](extended-regex-text.md)
+  pass six focused groups through separate GPU-compile/native receipts. The
+  existing Matches cursor supplies captures and empty-match progress. Tests
+  cover 288 independent nonempty reference cases across checked axes and three
+  layouts, 89 explicit edge tables, all 77 reached library allocation failures,
+  24 CLI cases, all 43 reached CLI allocation failures and four I/O schedules.
+  Output owners and borrowed fields have explicit manual lifetimes; aggregate
+  search work reserves VM allowances rather than counting all CPU work.
+- [Reusable CSV construction and bounded stream writing](extended-csv-write.md)
+  execute through the shared canonical encoder, with complete preflight,
+  accepted-prefix errors and explicit output/write-attempt limits. All five
+  groups pass via separate receipts, including six staged-growth allocation
+  failures and 4,096 allocation-free record reuses. The
+  [column rewrite program](extended-csv-rewrite.md) also passes five groups:
+  62 independent output cases, 88 limit cases, 11 real I/O cases, scripted
+  production-helper scenarios and allocation/resource controls. Its 4,096-row
+  run retains the one-row allocation count and peak storage. The
+  [compiler dependencies](library-context-inference-dependencies.md) preserve
+  failing unannotated result contexts and nested/literal matching beside
+  passing controls; no compiler source changed in this batch.
 - Accepted client TLS profile: [ext::openssl_tls](extended-openssl-tls.md) uses
   OpenSSL 3 `libssl`/`libcrypto` for all TLS and sensitive operations. Fifteen
   verified transfer/identity cases pass in 18.56 s; seven closure/truncation
@@ -762,7 +788,11 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
   controls. Preparing records and then calling write_all executes.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
-  See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.
+  See [extended-csv.md](extended-csv.md). Incremental decoding shares the same
+  parser; [reusable row construction and bounded stream writing](extended-csv-write.md)
+  now execute through the same canonical byte cursor. The
+  [column rewrite application](extended-csv-rewrite.md) composes those pieces
+  with explicit global input/output/work/call bounds and manual cleanup.
 - Shared I/O: portable Read/Write traits, exact/all/copy operations, slice
   cursors, owned byte buffers and native descriptor adapters have execution
   coverage. CSV uses these streams. See [stdlib-streams.md](stdlib-streams.md).
@@ -890,6 +920,18 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
   batch allocation across 126 native cases, including 79 allocation denials.
   A reduced finish-result replay dependency remains recorded; helpers use
   canonical empty-owner recovery and destruction. No compiler source changed.
+- [Owning hash map/set](stdlib-owning-hash.md),
+  [ordered map/set](stdlib-owning-tree.md) and [heap](stdlib-owning-heap.md)
+  cursors now transfer cleanup authority and recover their canonical remaining
+  collection in O(1). Exhaustion retains backing until explicit finish or
+  cleanup; deep helpers release only remaining owners with minimal Destroy
+  bounds. Independent native models cover 5,368 hash cases, 192 paired ordered
+  steps and 32 snapshots per engine, and 144 priority cases. Address/length
+  ledgers check actual owner release. Tree and heap pulls use their existing
+  O(log n) removal engines. The word deduplicator now publishes through the
+  TreeSet owning cursor and still passes its 126 native cases. Explicit types
+  avoid a [reproduced hash insertion context dependency](library-context-inference-dependencies.md);
+  the original expression remains a compiler dependency.
 - [Streaming runtime formatting](stdlib-format-write.md) now writes through
   generic byte writers using bounded scratch and the existing format grammar.
   Complete preflight precedes output; failures preserve confirmed progress and

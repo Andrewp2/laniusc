@@ -1,0 +1,10 @@
+// Confirmed 2026-10-25: compile exit 1, LNC0047 generic-instantiation boundary
+// detail 3. The paired typed shape changes both the intermediate and generic
+// arguments; it does not establish a narrower cause or a compiler fix.
+module app::main;
+import core::mem;
+import core::slice;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    return core::slice::view(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count),count).unwrap();
+}
+fn main() -> i32 { let value = bytes("x",1); assert(value.get(0).unwrap() == 120); return 0; }

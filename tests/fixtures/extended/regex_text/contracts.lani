@@ -1,0 +1,92 @@
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::regex;
+import ext::regex_text;
+
+fn text(value: str, count: i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn regex(pattern: core::text::Text) -> ext::regex::Regex { let options = ext::regex::options(); options.max_work = 10000; return ext::regex::compile(pattern,options).unwrap(); }
+fn next(cursor: &ext::regex_text::Split, expected: core::text::Text) { let value = cursor.next().unwrap().unwrap(); assert(value.equals(expected)); }
+fn done(cursor: &ext::regex_text::Split) { let before = cursor.usage(); assert(cursor.next().unwrap().is_none()); assert(cursor.next().unwrap().is_none()); let after = cursor.usage(); assert(before.calls == after.calls && before.reserved_work == after.reserved_work); cursor.destroy(); cursor.destroy(); }
+fn split_contracts() {
+    let comma = regex(text(",",1)); let input = text(",a,,",4);
+    let cursor = ext::regex_text::split(comma.borrow(),input,ext::regex_text::default_search_limits()).unwrap();
+    next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("a",1)); next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("",0));
+    assert(cursor.usage().matches == 3 && cursor.usage().calls == 4 && cursor.usage().reserved_work == 40000); done(cursor.borrow());
+    assert(input.equals(text(",a,,",4)) && comma.is_match(input).unwrap()); comma.destroy();
+    let bytes: [u8;8] = [88,195,169,240,159,153,130,89]; let selected = core::text::from_utf8_range(bytes,1,6).unwrap();
+    let empty = regex(text("",0)); let cursor = ext::regex_text::split(empty.borrow(),selected,ext::regex_text::default_search_limits()).unwrap();
+    next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("é",2)); next(cursor.borrow(),text("🙂",4)); next(cursor.borrow(),text("",0));
+    assert(cursor.usage().matches == 3 && cursor.usage().calls == 3); done(cursor.borrow());
+    let cursor = ext::regex_text::split(empty.borrow(),text("",0),ext::regex_text::default_search_limits()).unwrap();
+    next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("",0)); assert(cursor.usage().calls == 1); done(cursor.borrow()); empty.destroy();
+    let nullable = regex(text("a*",2)); let cursor = ext::regex_text::split(nullable.borrow(),text("a",1),ext::regex_text::default_search_limits()).unwrap();
+    next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("",0)); assert(cursor.usage().calls == 2); done(cursor.borrow()); nullable.destroy();
+    let alternate = regex(text("|a",2)); let cursor = ext::regex_text::split(alternate.borrow(),text("a",1),ext::regex_text::default_search_limits()).unwrap();
+    next(cursor.borrow(),text("",0)); next(cursor.borrow(),text("a",1)); next(cursor.borrow(),text("",0)); done(cursor.borrow()); alternate.destroy();
+    let comma = regex(text("(,)",3)); let limit = ext::regex_text::SearchLimits { max_matches: 1, max_calls: 1, max_work: 10000 };
+    let cursor = ext::regex_text::split(comma.borrow(),text("a,b,c",5),limit).unwrap();
+    next(cursor.borrow(),text("a",1)); next(cursor.borrow(),text("b,c",3)); done(cursor.borrow());
+    let zero = ext::regex_text::SearchLimits { max_matches: 0, max_calls: 0, max_work: 0 };
+    let cursor = ext::regex_text::split(comma.borrow(),input,zero).unwrap(); next(cursor.borrow(),input); assert(cursor.usage().calls == 0); done(cursor.borrow());
+    let limited = ext::regex_text::SearchLimits { max_matches: 2, max_calls: 1, max_work: 10000 };
+    let cursor = ext::regex_text::split(comma.borrow(),text("a,b",3),limited).unwrap(); let borrowed = cursor.next().unwrap().unwrap();
+    assert(match(cursor.next().unwrap_err()) { ext::regex_text::Error::SearchCallLimit -> true, _ -> false });
+    assert(borrowed.equals(text("a",1))); done(cursor.borrow()); comma.destroy();
+}
+fn replacement_contracts() {
+    let pattern = regex(text("(a)(b)?",7)); let limits = ext::regex_text::default_replace_limits();
+    let value = ext::regex_text::replace_template(pattern.borrow(),text("a",1),text("$$:$0:${01}:$2",14),limits).unwrap();
+    assert(value.output.as_text().equals(text("$:a:a:",6)) && value.usage.matches == 1 && value.usage.calls == 2);
+    value.destroy(); value.destroy(); assert(value.output.byte_len() == 0 && value.output.capacity() == 0);
+    let zero = limits; zero.search = ext::regex_text::SearchLimits { max_matches: 0, max_calls: 0, max_work: 0 };
+    let value = ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("$1\\",3),zero).unwrap();
+    assert(value.output.as_text().equals(text("a",1)) && value.usage.calls == 0); value.destroy();
+    let value = ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("$1\\",3),limits).unwrap();
+    assert(value.output.as_text().equals(text("$1\\",3))); value.destroy();
+    for_templates(pattern.borrow(),zero);
+    let short = limits; short.max_output_bytes = 1;
+    assert(match(ext::regex_text::replace_template(pattern.borrow(),text("za",2),text("$$$0",4),short).unwrap_err()) { ext::regex_text::Error::OutputLimit -> true, _ -> false });
+    assert(pattern.is_match(text("a",1)).unwrap()); pattern.destroy();
+    let alternate = regex(text("|a",2)); let value = ext::regex_text::replace_literal(alternate.borrow(),text("a",1),text("X",1),limits).unwrap();
+    assert(value.output.as_text().equals(text("XaX",3))); value.destroy(); alternate.destroy();
+    let owner = alloc::string::from_text(text("é\0🙂",7)).unwrap(); let pattern = regex(text(".",1));
+    let value = ext::regex_text::replace_template(pattern.borrow(),owner.as_text(),text("<$0>",4),limits).unwrap();
+    owner.destroy(); pattern.destroy(); assert(value.output.as_text().equals(text("<é><\0><🙂>",13)));
+    value.output.try_push_scalar(33).unwrap(); assert(value.output.byte_len() == 14); value.destroy(); value.destroy();
+}
+fn for_templates(pattern: &ext::regex::Regex, limits: ext::regex_text::ReplaceLimits) {
+    let invalid: [core::text::Text;7] = [text("$",1),text("$x",2),text("${}",3),text("${1",3),text("${-1}",5),text("${1x}",5),text("$2147483648",11)];
+    let index: i32 = 0; while (index < 7) {
+        assert(match(ext::regex_text::replace_template(pattern,text("a",1),invalid[index],limits).unwrap_err()) { ext::regex_text::Error::Template(at) -> at == 0, _ -> false }); index += 1;
+    }
+    assert(match(ext::regex_text::replace_template(pattern,text("a",1),text("é$9",4),limits).unwrap_err()) { ext::regex_text::Error::Capture(at,group) -> at == 2 && group == 9, _ -> false });
+    let bytes: [u8;1] = [255]; let malformed = core::text::Text { bytes: bytes, start: 0, length: 1 };
+    assert(match(ext::regex_text::replace_literal(pattern,malformed,text("",0),limits).unwrap_err()) { ext::regex_text::Error::Text(error) -> match(error) { core::text::Error::InvalidUtf8(at) -> at == 0, _ -> false }, _ -> false });
+    assert(match(ext::regex_text::replace_literal(pattern,text("",0),malformed,limits).unwrap_err()) { ext::regex_text::Error::Text(error) -> match(error) { core::text::Error::InvalidUtf8(at) -> at == 0, _ -> false }, _ -> false });
+    assert(match(ext::regex_text::split(pattern,malformed,limits.search).unwrap_err()) { ext::regex_text::Error::Text(error) -> match(error) { core::text::Error::InvalidUtf8(at) -> at == 0, _ -> false }, _ -> false });
+    let broken = core::text::Text { bytes: bytes, start: -1, length: 0 };
+    assert(match(ext::regex_text::split(pattern,broken,limits.search).unwrap_err()) { ext::regex_text::Error::Text(error) -> match(error) { core::text::Error::Bounds -> true, _ -> false }, _ -> false });
+}
+fn budgets() {
+    let pattern = regex(text("a",1)); let limits = ext::regex_text::default_replace_limits();
+    limits.search = ext::regex_text::SearchLimits { max_matches: 1, max_calls: 1, max_work: 10000 };
+    let value = ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),limits).unwrap(); assert(value.usage.calls == 1 && value.usage.reserved_work == 10000); value.destroy();
+    limits.search.max_matches = 2;
+    assert(match(ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),limits).unwrap_err()) { ext::regex_text::Error::SearchCallLimit -> true, _ -> false });
+    limits.search.max_calls = 2;
+    assert(match(ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),limits).unwrap_err()) { ext::regex_text::Error::SearchWorkLimit -> true, _ -> false });
+    limits.search.max_work = 20000;
+    let value = ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),limits).unwrap(); assert(value.usage.calls == 2 && value.usage.matches == 1 && value.usage.reserved_work == 20000); value.destroy();
+    limits.search.max_work = 9999;
+    assert(match(ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),limits).unwrap_err()) { ext::regex_text::Error::SearchWorkLimit -> true, _ -> false });
+    limits.search.max_calls = -1;
+    assert(match(ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),limits).unwrap_err()) { ext::regex_text::Error::InvalidLimits -> true, _ -> false });
+    pattern.destroy();
+    let options = ext::regex::options(); options.max_work = 1; let pattern = ext::regex::compile(text("a",1),options).unwrap();
+    assert(match(ext::regex_text::replace_literal(pattern.borrow(),text("a",1),text("X",1),ext::regex_text::default_replace_limits()).unwrap_err()) { ext::regex_text::Error::Regex(error) -> match(error) { ext::regex::Error::WorkLimit -> true, _ -> false }, _ -> false }); pattern.destroy();
+}
+fn main() -> i32 { split_contracts(); replacement_contracts(); budgets(); return 0; }

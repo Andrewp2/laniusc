@@ -37,6 +37,14 @@ pub fn destroy_tree_map<K,V>(owner: &alloc::tree_map::TreeMap<K,V>)
     owner.destroy();
 }
 
+// Recover and disarm the owning cursor, then use canonical deep release.
+// Yielded pairs belong to their callers and are never released here.
+pub fn destroy_tree_map_iter<K,V>(owner: &alloc::tree_map::IntoIter<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    let remaining: alloc::tree_map::TreeMap<K,V> = owner.take_remaining();
+    destroy_tree_map<K,V>(remaining.borrow());
+}
+
 // Source structure and borrowed leaves must remain live, lawful and immutable
 // for the call. Reserve both container allocations before invoking any leaf.
 // Clone in sorted logical order, key before value. KE/VE transfer unchanged

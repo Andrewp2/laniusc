@@ -1,0 +1,63 @@
+module app::main;
+import alloc::clone_tree_map;
+import alloc::clone_tree_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::iter;
+import core::result;
+import fixture::consumer;
+import fixture::types;
+fn key(order:i32,stamp:i32)->fixture::types::Key{return fixture::types::Key {order:order,stamp:stamp};}
+fn map_count(error:alloc::tree_map::IntoIterError)->i32{return match(error){alloc::tree_map::IntoIterError::Remaining(count)->count};}
+fn set_count(error:alloc::tree_set::IntoIterError)->i32{return match(error){alloc::tree_set::IntoIterError::Remaining(count)->count};}
+fn maps(){
+    let source=alloc::tree_map::with_capacity<fixture::types::Key,i64>(32).unwrap();let i:i32=0;
+    while(i<16){source.try_insert(key(15-i,100+15-i),1000+(15-i) as i64).unwrap();i+=1;}
+    source.remove(key(3,0)).unwrap();source.remove(key(8,0)).unwrap();
+    let replaced=source.try_insert(key(5,505),9005).unwrap().unwrap();assert(replaced.key.stamp==105&&replaced.value==1005);
+    let cursor=source.take_iter();assert(source.len()==0&&source.capacity()==0&&cursor.remaining()==14&&cursor.capacity()==32);
+    source.try_insert(key(99,999),9999).unwrap();assert(source.len()==1&&cursor.remaining()==14);source.destroy();
+    assert(map_count(cursor.try_finish().unwrap())==14&&cursor.capacity()==32);
+    let first=fixture::consumer::map_front<fixture::types::Key,i64>(cursor.borrow()).unwrap();let last=cursor.next_back().unwrap();
+    assert(first.key.order==0&&first.key.stamp==100&&first.value==1000&&last.key.order==15&&last.key.stamp==115&&last.value==1015);
+    assert(map_count(cursor.try_finish().unwrap())==12&&cursor.remaining()==12&&cursor.capacity()==32);
+    let recovered=cursor.take_remaining();assert(cursor.is_empty()&&cursor.capacity()==0&&cursor.next().is_none()&&cursor.next_back().is_none());
+    assert(cursor.try_finish().is_none()&&cursor.try_finish().is_none());let empty=cursor.take_remaining();assert(empty.is_empty()&&empty.capacity()==0);empty.destroy();
+    assert(recovered.len()==12&&recovered.capacity()==32&&recovered.get(key(5,0)).unwrap()==9005);
+    // Reuse free holes, insert new extrema and remove a node before retaking.
+    recovered.try_insert(key(3,303),3003).unwrap();recovered.try_insert(key(8,808),8008).unwrap();recovered.try_insert(key(20,2020),2020).unwrap();
+    recovered.remove(key(7,0)).unwrap();let again=recovered.take_iter();assert(recovered.is_empty()&&recovered.capacity()==0);
+    let previous:i32=-1;while(true){let next=again.next();if(next.is_none()){break;}let item=next.unwrap();assert(item.key.order>previous);previous=item.key.order;}
+    assert(previous==20&&again.remaining()==0&&again.capacity()==32&&again.next_back().is_none());
+    let backing=again.take_remaining();assert(backing.is_empty()&&backing.capacity()==32&&again.capacity()==0);backing.try_insert(key(1,7001),71).unwrap();assert(backing.get(key(1,0)).unwrap()==71);backing.destroy();
+    assert(again.try_finish().is_none());recovered.destroy();
+}
+fn sets(){
+    let source=alloc::tree_set::with_capacity<fixture::types::Key>(24).unwrap();let i:i32=0;
+    while(i<10){source.try_insert(key(9-i,200+9-i)).unwrap();i+=1;}
+    source.remove(key(4,0)).unwrap();let supplied=source.try_insert(key(5,999)).unwrap().unwrap();assert(supplied.stamp==999&&source.get(key(5,0)).unwrap().stamp==205);
+    let cursor=source.take_iter();assert(source.is_empty()&&source.capacity()==0&&cursor.remaining()==9&&cursor.capacity()==24);
+    source.try_insert(key(88,888)).unwrap();source.destroy();assert(set_count(cursor.try_finish().unwrap())==9);
+    let first=fixture::consumer::set_front<fixture::types::Key>(cursor.borrow()).unwrap();let last=cursor.next_back().unwrap();assert(first.order==0&&first.stamp==200&&last.order==9&&last.stamp==209);
+    let remaining=cursor.take_remaining();assert(cursor.remaining()==0&&cursor.capacity()==0&&remaining.len()==7&&remaining.capacity()==24);
+    remaining.try_replace(key(5,555)).unwrap();remaining.try_insert(key(4,444)).unwrap();remaining.remove(key(6,0)).unwrap();
+    assert(remaining.get(key(5,0)).unwrap().stamp==555);let again=remaining.take_iter();let previous:i32=100;
+    while(true){let next=again.next_back();if(next.is_none()){break;}let item=next.unwrap();assert(item.order<previous);previous=item.order;}
+    assert(previous==1&&again.capacity()==24&&again.try_finish().is_none()&&again.capacity()==0&&again.try_finish().is_none());
+    assert(again.take_remaining().is_empty()&&cursor.try_finish().is_none());remaining.destroy();
+}
+fn edge_cases(){
+    let map=alloc::tree_map::with_capacity<fixture::types::NoOrder,fixture::types::NoOrder>(3).unwrap();let cursor=map.take_iter();
+    assert(fixture::consumer::map_front<fixture::types::NoOrder,fixture::types::NoOrder>(cursor.borrow()).is_none()&&cursor.next_back().is_none()&&cursor.capacity()==3);
+    alloc::clone_tree_map::destroy_tree_map_iter<fixture::types::NoOrder,fixture::types::NoOrder>(cursor.borrow());assert(cursor.capacity()==0);map.destroy();
+    let set=alloc::tree_set::with_capacity<fixture::types::NoOrder>(3).unwrap();let keys=set.take_iter();
+    assert(fixture::consumer::set_front<fixture::types::NoOrder>(keys.borrow()).is_none()&&keys.next_back().is_none()&&keys.capacity()==3);
+    alloc::clone_tree_set::destroy_tree_set_iter<fixture::types::NoOrder>(keys.borrow());assert(keys.capacity()==0);set.destroy();
+    let unit=fixture::types::Unit {};let units=alloc::tree_map::with_capacity<fixture::types::Unit,fixture::types::Unit>(2).unwrap();units.try_insert(unit,unit).unwrap();
+    let cursor=units.take_iter();assert(cursor.next_back().is_some()&&cursor.next().is_none()&&cursor.capacity()==2&&cursor.try_finish().is_none());units.destroy();
+    let set=alloc::tree_set::with_capacity<fixture::types::Unit>(2).unwrap();set.try_insert(unit).unwrap();let cursor=set.take_iter();
+    assert(cursor.next().is_some()&&cursor.next_back().is_none()&&cursor.capacity()==2&&cursor.try_finish().is_none());set.destroy();
+    let empty:alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::new();let cursor=empty.take_iter();assert(cursor.is_empty()&&cursor.capacity()==0&&cursor.try_finish().is_none());empty.destroy();
+    let empty:alloc::tree_set::TreeSet<i32> = alloc::tree_set::new();let cursor=empty.take_iter();assert(cursor.is_empty()&&cursor.capacity()==0&&cursor.try_finish().is_none());empty.destroy();
+}
+fn main()->i32{maps();sets();edge_cases();return 0;}

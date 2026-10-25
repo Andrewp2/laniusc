@@ -49,9 +49,16 @@ rejected items and stored representatives. The
 [identifier index](stdlib-index-words.md) rejects duplicates and prints
 ordered identifiers with their original positions.
 [Owning Vec and Deque cursors](stdlib-owning-iterators.md) transfer items,
-recover unconsumed storage and provide explicit nested cleanup. The
+recover unconsumed storage and provide explicit nested cleanup.
+[Hash map/set](stdlib-owning-hash.md), [ordered map/set](stdlib-owning-tree.md)
+and [priority heap](stdlib-owning-heap.md) owning cursors now provide the same
+explicit transfer, recovery and remaining-owner cleanup. Hash traversal is
+unordered; ordered-tree and priority-heap pulls use the canonical removal
+engines and take O(log n) per item. Their focused native models and owner
+ledgers pass through the GPU compiler. The
 [streaming word deduplicator](stdlib-unique-words.md) moves independent
-Strings into an ordered set while reusing its batch allocation.
+Strings into an ordered set while reusing its batch allocation, then transfers
+them through the set's owning cursor for publication and failure cleanup.
 [Runtime formatting to byte writers](stdlib-format-write.md) validates
 before publication and uses bounded scratch with explicit partial progress.
 The [CSV report program](stdlib-format-report.md) composes it with numeric
@@ -102,6 +109,22 @@ Optional modules use the [`extended` source root](../extended/README.md).
 [`ext::csv`](extended-csv.md) and [`ext::json`](extended-json.md)
 include executable normalizers, generated round trips and allocation-failure
 coverage.
+[Reusable CSV records and bounded stream writing](extended-csv-write.md)
+share the canonical encoder, preflight the complete record and retain exact
+accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)
+selects, repeats and reorders fields while reusing decoder and record storage;
+its five native groups cover independent output models, limits, I/O and
+allocation failures, plus a 4,096-row resource control. The
+[reduced compiler dependencies](library-context-inference-dependencies.md)
+retain original failing expressions beside native passing controls.
+
+[Regex splitting and replacement](extended-regex-text.md) reuse the existing
+matcher and capture cursor, with borrowed fields, owned literal/template
+output and explicit search/output bounds. Six native groups cover independent
+reference cases, Unicode and empty-match tables, every reached allocation
+failure and a binary stdin/stdout rewrite program. Search work is a
+conservative reservation of per-search VM allowances, not a total CPU or I/O
+budget.
 
 The [CSV report application](csv-report.md) combines streams, UTF-8 text,
 checked decimal parsing, generic collections, CSV and JSON to validate and

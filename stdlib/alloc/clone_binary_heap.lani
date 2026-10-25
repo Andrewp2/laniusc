@@ -70,6 +70,14 @@ pub fn destroy_heap<T>(owner: &alloc::binary_heap::BinaryHeap<T>) where T: core:
     release_storage<T>(owner.take_vec());
 }
 
+// Reset the actual cursor before releasing its remaining active owners.
+// Already-yielded values belong to the caller. Recovery and physical-storage
+// cleanup need only Destroy<T>, without Ord<T> or TryClone<T,E>.
+pub fn destroy_binary_heap_iter<T>(owner: &alloc::binary_heap::IntoIter<T>) where T: core::clone::Destroy<T> {
+    let remaining: alloc::binary_heap::BinaryHeap<T> = owner.take_remaining();
+    destroy_heap<T>(remaining.borrow());
+}
+
 pub impl<T,E> core::clone::TryClone<alloc::binary_heap::BinaryHeap<T>,Error<E>>
     for alloc::binary_heap::BinaryHeap<T>
     where T: core::cmp::Ord<T>, T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {

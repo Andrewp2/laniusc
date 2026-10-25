@@ -10,12 +10,16 @@ import core::option;
 import core::result;
 
 pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub enum IntoIterError { Remaining(i32) }
 // Sink insertion rejects existing keys instead of replacing their entries.
 pub enum SinkError { Duplicate, Storage(Error) }
 pub struct Entry<K, V> { key: K, value: V }
 enum Slot<K, V> { Empty, Deleted, Full(u32, Entry<K, V>) }
 pub struct HashMap<K, V> { storage: ptr, buckets: i32, length: i32, occupied: i32 }
 pub struct Iter<K, V> { storage: ptr, buckets: i32, position: i32 }
+// One owner of table storage and every unconsumed entry's cleanup authority.
+// Descriptor copies alias this owner and cannot fork that authority.
+pub struct IntoIter<K, V> { storage: ptr, buckets: i32, length: i32, occupied: i32, position: i32 }
 const MAX_BYTES: usize = 2147483647;
 const MAX_BUCKETS: i32 = 1073741824;
 
@@ -199,6 +203,13 @@ pub impl<K, V> HashMap<K, V> {
     pub fn iter(&self) -> Iter<K, V> {
         return Iter { storage: self.storage, buckets: self.buckets, position: 0 };
     }
+    // Transfer the table and entry cleanup authority; reset the actual source.
+    // End borrowed entry/cursor use first. Old shallow aliases stay inactive.
+    pub fn take_iter(&self) -> IntoIter<K, V> {
+        let cursor: IntoIter<K, V> = IntoIter { storage: self.storage, buckets: self.buckets, length: self.length, occupied: self.occupied, position: 0 };
+        self.storage = 0; self.buckets = 0; self.length = 0; self.occupied = 0;
+        return cursor;
+    }
     // Clears entries without destroying resources nested in keys/values.
     pub fn clear(&self) {
         let slots: [Slot<K, V>] = self.slots();
@@ -272,6 +283,48 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Iter<K, V> {
     }
 }
 
+pub impl<K, V> IntoIter<K, V> {
+    pub fn borrow(&self) -> &IntoIter<K, V> { return self; }
+    pub fn remaining(&self) -> i32 { return self.length; }
+    pub fn capacity(&self) -> i32 { return self.buckets / 2; }
+    pub fn is_empty(&self) -> bool { return self.length == 0; }
+    fn disarm(&self) {
+        self.storage = 0; self.buckets = 0; self.length = 0; self.occupied = 0; self.position = 0;
+    }
+    // Rejection preserves the cursor. Exhaustion alone never frees its table.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        if (self.length > 0) { return core::option::Some(IntoIterError::Remaining(self.length)); }
+        if (self.buckets > 0) {
+            let size: usize = core::mem::size_of<Slot<K, V>>();
+            alloc::allocator::dealloc(self.storage, size * (self.buckets as usize), 8);
+        }
+        self.disarm(); return core::option::None();
+    }
+    // Transfer the same table in O(1), retaining its spare capacity, original
+    // tombstones and newly consumed Deleted slots. No key comparison/rehash.
+    pub fn take_remaining(&self) -> HashMap<K, V> {
+        let owner: HashMap<K, V> = HashMap { storage: self.storage, buckets: self.buckets, length: self.length, occupied: self.occupied };
+        self.disarm(); return owner;
+    }
+}
+
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V> {
+    // Each successful pull removes one initialized entry before transferring
+    // it. Deleted preserves probe chains if the remainder is later recovered.
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.length == 0) { return core::option::None(); }
+        let slots: [Slot<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.buckets);
+        while (self.position < self.buckets) {
+            let index: i32 = self.position; self.position += 1;
+            let found: core::option::Option<Entry<K, V>> = entry(slots[index]);
+            if (found.is_some()) {
+                slots[index] = Slot::Deleted(); self.length -= 1; return found;
+            }
+        }
+        assert(false); return core::option::None();
+    }
+}
+
 // Internal set-storage boundary. One typed facade owns each state; temporary
 // typed map/cursor views never escape. Width checks are layout guards, not
 // permission to reinterpret a different key schema. The map above remains the
@@ -279,8 +332,10 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Iter<K, V> {
 struct KeyUnit {}
 pub struct KeyStorage { storage: ptr, buckets: i32, length: i32, occupied: i32, key_bytes: usize }
 pub struct KeyCursor { storage: ptr, buckets: i32, position: i32, key_bytes: usize }
+pub struct KeyIntoIter { storage: ptr, buckets: i32, length: i32, occupied: i32, position: i32, key_bytes: usize }
 pub impl KeyStorage { pub fn borrow(&self) -> &KeyStorage { return self; } }
 pub impl KeyCursor { pub fn borrow(&self) -> &KeyCursor { return self; } }
+pub impl KeyIntoIter { pub fn borrow(&self) -> &KeyIntoIter { return self; } }
 pub fn key_storage<T>() -> KeyStorage {
     let storage: ptr = 0;
     return KeyStorage { storage: storage, buckets: 0, length: 0, occupied: 0, key_bytes: core::mem::size_of<T>() };
@@ -315,6 +370,34 @@ pub fn key_next<T>(cursor: &KeyCursor) -> core::option::Option<T> {
     cursor.storage = view.storage; cursor.buckets = view.buckets; cursor.position = view.position;
     if (core::option::is_none(result)) { return core::option::None(); }
     let entry: Entry<T, KeyUnit> = core::option::unwrap(result); return core::option::Some(entry.key);
+}
+fn key_into_view<T>(cursor: &KeyIntoIter) -> IntoIter<T, KeyUnit> {
+    assert(cursor.key_bytes == core::mem::size_of<T>());
+    return IntoIter { storage: cursor.storage, buckets: cursor.buckets, length: cursor.length, occupied: cursor.occupied, position: cursor.position };
+}
+fn key_into_update<T>(cursor: &KeyIntoIter, view: IntoIter<T, KeyUnit>) {
+    cursor.storage = view.storage; cursor.buckets = view.buckets; cursor.length = view.length;
+    cursor.occupied = view.occupied; cursor.position = view.position;
+}
+pub fn key_take_iter<T>(owner: &KeyStorage) -> KeyIntoIter {
+    let map: HashMap<T, KeyUnit> = key_view<T>(owner);
+    let cursor: IntoIter<T, KeyUnit> = map.take_iter(); key_update<T>(owner,map);
+    return KeyIntoIter { storage: cursor.storage, buckets: cursor.buckets, length: cursor.length, occupied: cursor.occupied, position: cursor.position, key_bytes: owner.key_bytes };
+}
+pub fn key_into_next<T>(cursor: &KeyIntoIter) -> core::option::Option<T> {
+    let view: IntoIter<T, KeyUnit> = key_into_view<T>(cursor);
+    let next: core::option::Option<Entry<T, KeyUnit>> = view.next(); key_into_update<T>(cursor,view);
+    if (next.is_none()) { return core::option::None(); }
+    return core::option::Some(next.unwrap().key);
+}
+pub fn key_into_finish<T>(cursor: &KeyIntoIter) -> core::option::Option<IntoIterError> {
+    let view: IntoIter<T, KeyUnit> = key_into_view<T>(cursor);
+    let failure: core::option::Option<IntoIterError> = view.try_finish(); key_into_update<T>(cursor,view); return failure;
+}
+pub fn key_take_remaining<T>(cursor: &KeyIntoIter) -> KeyStorage {
+    let view: IntoIter<T, KeyUnit> = key_into_view<T>(cursor);
+    let map: HashMap<T, KeyUnit> = view.take_remaining(); key_into_update<T>(cursor,view);
+    let owner: KeyStorage = key_storage<T>(); key_update<T>(owner.borrow(),map); return owner;
 }
 pub fn key_destroy<T>(owner: &KeyStorage) {
     let map: HashMap<T, KeyUnit> = key_view<T>(owner); map.destroy(); key_update<T>(owner, map);

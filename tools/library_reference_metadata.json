@@ -16,8 +16,10 @@
         "docs/stdlib-binary-heap.md",
         "docs/stdlib-cursor-integration.md",
         "docs/stdlib-heap-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-heap.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::bitset": {
       "guides": [
@@ -38,9 +40,10 @@
     },
     "alloc::clone_binary_heap": {
       "guides": [
-        "docs/stdlib-clone-binary-heap.md"
+        "docs/stdlib-clone-binary-heap.md",
+        "docs/stdlib-owning-heap.md"
       ],
-      "note": "Opt-in recursive heap cloning and explicit destruction execute on Linux x86_64 through the GPU compiler and preserve Min/Max order. All five focused groups pass, covering independent nested owners, priority multiplicities, empty/zero-sized values, 13 typed allocation failures, 16 owned-error paths and all 96 reached owned-error allocations. Ordinary inherent collection methods retain their documented shallow policy."
+      "note": "Opt-in recursive heap cloning and explicit destruction execute on Linux x86_64 through the GPU compiler and preserve Min/Max order. All five focused groups pass, covering independent nested owners, priority multiplicities, empty/zero-sized values, 13 typed allocation failures, 16 owned-error paths and all 96 reached owned-error allocations. Ordinary inherent collection methods retain their documented shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::clone_deque": {
       "guides": [
@@ -50,27 +53,31 @@
     },
     "alloc::clone_hash_map": {
       "guides": [
-        "docs/stdlib-clone-hash-map.md"
+        "docs/stdlib-clone-hash-map.md",
+        "docs/stdlib-owning-hash.md"
       ],
-      "note": "Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy."
+      "note": "Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::clone_hash_set": {
       "guides": [
-        "docs/stdlib-clone-hash-set.md"
+        "docs/stdlib-clone-hash-set.md",
+        "docs/stdlib-owning-hash.md"
       ],
-      "note": "Opt-in deep HashSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Three focused groups pass, including 557 sequence/failure/identity cases, six owned errors, all 39 reached allocation failures, independent String owners, empty and zero-sized keys. Ordinary inherent set methods retain their shallow policy."
+      "note": "Opt-in deep HashSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Three focused groups pass, including 557 sequence/failure/identity cases, six owned errors, all 39 reached allocation failures, independent String owners, empty and zero-sized keys. Ordinary inherent set methods retain their shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::clone_tree_map": {
       "guides": [
-        "docs/stdlib-clone-tree-map.md"
+        "docs/stdlib-clone-tree-map.md",
+        "docs/stdlib-owning-tree.md"
       ],
-      "note": "Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate."
+      "note": "Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::clone_tree_set": {
       "guides": [
-        "docs/stdlib-clone-tree-set.md"
+        "docs/stdlib-clone-tree-set.md",
+        "docs/stdlib-owning-tree.md"
       ],
-      "note": "Opt-in deep TreeSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Five focused groups pass, including independent String owners, a 512-state ordered model, observable O(n log n) construction, nine reached allocation failures, typed owned errors and changed-key checks. Ordinary inherent set methods retain their shallow policy."
+      "note": "Opt-in deep TreeSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Five focused groups pass, including independent String owners, a 512-state ordered model, observable O(n log n) construction, nine reached allocation failures, typed owned errors and changed-key checks. Ordinary inherent set methods retain their shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::clone_vec": {
       "guides": [
@@ -94,15 +101,19 @@
       "guides": [
         "docs/stdlib-hash-collections.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-hash.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::hash_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-hash.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::io": {
       "guides": [
@@ -124,15 +135,19 @@
       "guides": [
         "docs/stdlib-tree-map.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-tree.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::tree_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-tree.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::vec": {
       "guides": [
@@ -555,8 +570,18 @@
     },
     "ext::csv": {
       "guides": [
-        "docs/extended-csv.md"
-      ]
+        "docs/extended-csv.md",
+        "docs/extended-csv-write.md",
+        "docs/extended-csv-rewrite.md"
+      ],
+      "note": "Reusable record construction, complete preflight and the shared canonical encoding cursor execute through the GPU compiler on Linux x86_64. Staged growth preserves contents, capacities and borrowed views on allocation failure, including self-alias append. Legacy materializing encoders share the same quoting cursor; their focused regression groups pass."
+    },
+    "ext::csv_write": {
+      "guides": [
+        "docs/extended-csv-write.md",
+        "docs/extended-csv-rewrite.md"
+      ],
+      "note": "Bounded generic stream writing executes on Linux x86_64 with complete preflight, a fixed 1,024-element byte scratch buffer, explicit output/call limits, exact confirmed partial progress and no implicit flush. All five focused groups pass through separate receipts, including six staged allocation failures and 4,096 allocation-free record reuses. The real column rewrite program also passes all five groups. Explicit result types avoid documented compiler inference dependencies."
     },
     "ext::decimal": {
       "guides": [
@@ -704,8 +729,16 @@
     },
     "ext::regex": {
       "guides": [
-        "docs/extended-regex.md"
-      ]
+        "docs/extended-regex.md",
+        "docs/extended-regex-text.md"
+      ],
+      "note": "The read-only search_work_limit accessor exposes the existing per-search VM allowance for aggregate adapters. Bounded split/replacement reuse the canonical Matches cursor; no new matcher or capture engine is introduced."
+    },
+    "ext::regex_text": {
+      "guides": [
+        "docs/extended-regex-text.md"
+      ],
+      "note": "Borrowed split fields and independent owned literal/numeric-template replacement execute through the GPU compiler on Linux x86_64. All six focused groups pass through separate receipts: direct contracts, 288 independent nonempty reference cases, 89 explicit zero-width/template/budget cases, all 77 reached library allocation failures, 24 CLI cases, and all 43 reached CLI allocation failures plus four I/O schedules. Search budgets reserve complete configured VM allowances; they do not count every CPU instruction or I/O call. Other targets remain unverified."
     },
     "ext::schema": {
       "guides": [

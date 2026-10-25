@@ -1,0 +1,12 @@
+module app::main;
+import alloc::binary_heap;
+import core::iter;
+import core::option;
+struct Item {}
+fn pull<I>(source: &I) -> core::option::Option<Item> where I: core::iter::Iterator<Item> { return source.next(); }
+fn main() -> i32 {
+    let heap: alloc::binary_heap::BinaryHeap<Item> =alloc::binary_heap::new<Item>(alloc::binary_heap::Order::Min);
+    let cursor: alloc::binary_heap::IntoIter<Item> =heap.take_iter();
+    let value: core::option::Option<Item> =pull<alloc::binary_heap::IntoIter<Item>>(cursor.borrow());
+    return 0;
+}

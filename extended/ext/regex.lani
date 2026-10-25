@@ -426,6 +426,9 @@ pub impl Regex {
     pub fn borrow(&self) -> &Regex { return self; }
     pub fn group_count(&self) -> i32 { return self.groups; }
     pub fn state_count(&self) -> i32 { return self.code.len(); }
+    // Public admission allowance for bounded convenience operations. This is
+    // the configured per-search VM cap, not measured work or all CPU cost.
+    pub fn search_work_limit(&self) -> i32 { return self.config.max_work; }
     pub fn destroy(&self) { self.code.destroy(); self.terms.destroy(); }
     // Expand epsilon instructions in DFS priority order, retaining only the
     // first thread at each PC. Pending branches use explicit bounded storage.

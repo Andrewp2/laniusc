@@ -1,0 +1,20 @@
+module fixture::types;
+import core::clone;
+import core::cmp;
+pub struct Key { order: i32, stamp: i32 }
+pub struct NoOrder { value: i32 }
+pub struct Unit {}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a: Key,b: Key)->bool{return a.order<b.order;}
+    pub fn le(a: Key,b: Key)->bool{return a.order<=b.order;}
+    pub fn gt(a: Key,b: Key)->bool{return a.order>b.order;}
+    pub fn ge(a: Key,b: Key)->bool{return a.order>=b.order;}
+}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(a: Unit,b: Unit)->bool{return false;}
+    pub fn le(a: Unit,b: Unit)->bool{return true;}
+    pub fn gt(a: Unit,b: Unit)->bool{return false;}
+    pub fn ge(a: Unit,b: Unit)->bool{return true;}
+}
+pub impl core::clone::Destroy<NoOrder> for NoOrder {pub fn destroy_value(owned: NoOrder){}}
+pub impl core::clone::Destroy<Unit> for Unit {pub fn destroy_value(owned: Unit){}}

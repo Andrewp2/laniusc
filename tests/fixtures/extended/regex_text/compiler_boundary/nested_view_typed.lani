@@ -1,0 +1,11 @@
+// Confirmed 2026-10-25: compile 0/native 0, observing byte 120. This paired
+// control changes both an explicit intermediate slice and generic arguments;
+// no exact-cause isolation or compiler fix is claimed.
+module app::main;
+import core::mem;
+import core::slice;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view<u8>(raw,count).unwrap();
+}
+fn main() -> i32 { let value = bytes("x",1); assert(value.get(0).unwrap() == 120); return 0; }

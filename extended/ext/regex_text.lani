@@ -1,0 +1,211 @@
+// Bounded split and replacement over the canonical ext::regex Matches cursor.
+// No matcher, capture storage, or empty-match policy is implemented here.
+module ext::regex_text;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::text;
+import ext::regex;
+
+pub struct SearchLimits { max_matches: i32, max_calls: i32, max_work: i64 }
+pub struct ReplaceLimits { search: SearchLimits, max_output_bytes: i32, max_replacement_bytes: i32 }
+pub struct Usage { matches: i32, calls: i32, reserved_work: i64 }
+pub enum Error { InvalidLimits, Text(core::text::Error), Regex(ext::regex::Error), Template(i32), Capture(i32,i32), SearchCallLimit, SearchWorkLimit, OutputLimit, ReplacementLimit, AllocationFailed }
+// One active cursor borrows the Regex and input backing. Copies must not be
+// advanced independently; no allocation or Match is retained between calls.
+pub struct Split { search: Search, text: core::text::Text, field_start: i32, done: bool }
+// One owner of independent String bytes. Old copies are inactive aliases.
+pub struct Replacement { output: alloc::string::String, usage: Usage }
+struct Search { cursor: ext::regex::Matches, limits: SearchLimits, used: Usage, allowance: i64, text_length: i32, terminal: bool }
+struct Token { start: i32, end: i32, group: i32, next: i32 }
+struct Output { value: alloc::string::String }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn destroy(&self) { self.value.destroy(); }
+}
+
+pub fn default_search_limits() -> SearchLimits {
+    let per_call: i64 = 10000000;
+    return SearchLimits { max_matches: 1024, max_calls: 1025, max_work: per_call * 1025 };
+}
+pub fn default_replace_limits() -> ReplaceLimits {
+    return ReplaceLimits { search: default_search_limits(), max_output_bytes: 16777216, max_replacement_bytes: 1048576 };
+}
+fn empty_usage() -> Usage { return Usage { matches: 0, calls: 0, reserved_work: 0 }; }
+fn valid_search(limits: SearchLimits) -> bool {
+    return limits.max_matches >= 0 && limits.max_matches <= 1000000 && limits.max_calls >= 0 && limits.max_calls <= 1000001 && limits.max_work >= 0;
+}
+fn valid_replace(limits: ReplaceLimits) -> bool {
+    return valid_search(limits.search) && limits.max_output_bytes >= 0 && limits.max_replacement_bytes >= 0 && limits.max_replacement_bytes <= 1048576;
+}
+fn checked(text: core::text::Text) -> core::result::Result<core::text::Text,Error> {
+    let result = core::text::from_utf8_range(text.bytes,text.start,text.length);
+    if (result.is_err()) { return core::result::Err(Error::Text(result.unwrap_err())); }
+    return core::result::Ok(result.unwrap());
+}
+fn search(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLimits) -> core::result::Result<Search,Error> {
+    let result = regex.find_iter(text);
+    if (result.is_err()) { return core::result::Err(Error::Regex(result.unwrap_err())); }
+    return core::result::Ok(Search { cursor: result.unwrap(), limits: limits, used: empty_usage(), allowance: regex.search_work_limit() as i64, text_length: text.length, terminal: false });
+}
+impl Search {
+    fn borrow(&self) -> &Search { return self; }
+    fn destroy(&self) { self.terminal = true; self.cursor.destroy(); }
+    fn next(&self) -> core::result::Result<core::option::Option<ext::regex::Match>,Error> {
+        if (self.terminal) { return core::result::Ok(core::option::None()); }
+        if (self.used.matches == self.limits.max_matches) { self.destroy(); return core::result::Ok(core::option::None()); }
+        if (self.used.calls == self.limits.max_calls) { self.destroy(); return core::result::Err(Error::SearchCallLimit); }
+        if (self.allowance > self.limits.max_work - self.used.reserved_work) { self.destroy(); return core::result::Err(Error::SearchWorkLimit); }
+        // Reserve a full per-search allowance before the attempted call,
+        // including a no-match, allocation error, or per-search WorkLimit.
+        self.used.calls += 1; self.used.reserved_work += self.allowance;
+        let result = self.cursor.next();
+        if (result.is_err()) { self.destroy(); return core::result::Err(Error::Regex(result.unwrap_err())); }
+        let found = result.unwrap();
+        if (found.is_none()) { self.destroy(); return core::result::Ok(core::option::None()); }
+        let matched: ext::regex::Match = found.unwrap();
+        let span: ext::regex::Span = matched.span(0).unwrap();
+        self.used.matches += 1;
+        // Matches is already fused after its final empty match. Do not charge
+        // another search merely to discover that fused state.
+        if (span.start == span.end && span.end == self.text_length) { self.destroy(); }
+        return core::result::Ok(core::option::Some(matched));
+    }
+}
+
+// max_matches is a normal delimiter count: zero returns the whole validated
+// input once, with no search. Capture groups are never inserted into fields.
+pub fn split(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLimits) -> core::result::Result<Split,Error> {
+    if (!valid_search(limits)) { return core::result::Err(Error::InvalidLimits); }
+    let validated = checked(text); if (validated.is_err()) { return core::result::Err(validated.unwrap_err()); }
+    let made = search(regex,validated.unwrap(),limits); if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    return core::result::Ok(Split { search: made.unwrap(), text: validated.unwrap(), field_start: 0, done: false });
+}
+pub impl Split {
+    pub fn borrow(&self) -> &Split { return self; }
+    pub fn usage(&self) -> Usage { return self.search.used; }
+    pub fn destroy(&self) { self.done = true; self.search.destroy(); }
+    pub fn next(&self) -> core::result::Result<core::option::Option<core::text::Text>,Error> {
+        if (self.done) { return core::result::Ok(core::option::None()); }
+        let result = self.search.next();
+        if (result.is_err()) { self.destroy(); return core::result::Err(result.unwrap_err()); }
+        let found = result.unwrap();
+        if (found.is_none()) {
+            self.destroy();
+            return core::result::Ok(core::option::Some(self.text.slice(self.field_start,self.text.length).unwrap()));
+        }
+        let matched: ext::regex::Match = found.unwrap(); let span = matched.span(0).unwrap();
+        let part = self.text.slice(self.field_start,span.start).unwrap();
+        self.field_start = span.end; matched.destroy();
+        return core::result::Ok(core::option::Some(part));
+    }
+}
+pub impl Replacement {
+    pub fn borrow(&self) -> &Replacement { return self; }
+    pub fn destroy(&self) { self.output.destroy(); self.usage = empty_usage(); }
+}
+
+// Tokens only select already validated template ranges or capture numbers.
+// Decimal references are greedy and permit leading zeros. '\' is literal.
+fn token(template: core::text::Text, at: i32, groups: i32) -> core::result::Result<Token,Error> {
+    if (template.byte_at(at).unwrap() != 36) {
+        let end: i32 = at + 1;
+        while (end < template.length && template.byte_at(end).unwrap() != 36) { end += 1; }
+        return core::result::Ok(Token { start: at, end: end, group: -1, next: end });
+    }
+    if (at + 1 == template.length) { return core::result::Err(Error::Template(at)); }
+    let next: u8 = template.byte_at(at + 1).unwrap();
+    if (next == 36) { return core::result::Ok(Token { start: at, end: at + 1, group: -1, next: at + 2 }); }
+    let braced: bool = next == 123; let position: i32 = at + 1;
+    if (braced) { position += 1; }
+    let first: i32 = position; let group: i32 = 0;
+    while (position < template.length) {
+        let byte: u8 = template.byte_at(position).unwrap();
+        if (byte < 48 || byte > 57) { break; }
+        let digit: i32 = byte as i32 - 48;
+        if (group > (2147483647 - digit) / 10) { return core::result::Err(Error::Template(at)); }
+        group = group * 10 + digit; position += 1;
+    }
+    if (position == first) { return core::result::Err(Error::Template(at)); }
+    if (braced) {
+        if (position == template.length || template.byte_at(position).unwrap() != 125) { return core::result::Err(Error::Template(at)); }
+        position += 1;
+    }
+    if (group >= groups) { return core::result::Err(Error::Capture(at,group)); }
+    return core::result::Ok(Token { start: at, end: position, group: group, next: position });
+}
+fn compile_template(template: core::text::Text, groups: i32) -> core::result::Result<alloc::vec::Vec<Token>,Error> {
+    // Validate the entire grammar and every group before allocating tokens or
+    // output. A malformed template remains an error even with no matches.
+    let count: i32 = 0; let at: i32 = 0;
+    while (at < template.length) {
+        let result = token(template,at,groups); if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        at = result.unwrap().next; count += 1;
+    }
+    let tokens: alloc::vec::Vec<Token> = alloc::vec::new();
+    if (tokens.try_reserve(count).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    at = 0;
+    while (at < template.length) {
+        let part = token(template,at,groups).unwrap();
+        if (tokens.try_push(part).is_err()) { tokens.destroy(); return core::result::Err(Error::AllocationFailed); }
+        at = part.next;
+    }
+    return core::result::Ok(tokens);
+}
+fn append(output: &Output, text: core::text::Text, maximum: i32) -> core::result::Result<i32,Error> {
+    if (text.length > maximum - output.value.byte_len()) { return core::result::Err(Error::OutputLimit); }
+    if (output.value.try_append_text(text).is_err()) { return core::result::Err(Error::AllocationFailed); }
+    return core::result::Ok(0);
+}
+fn expansion(output: &Output, text: core::text::Text, replacement: core::text::Text, matched: ext::regex::Match, tokens: &alloc::vec::Vec<Token>, maximum: i32) -> core::result::Result<i32,Error> {
+    let parts: [Token] = tokens.as_slice(); let index: i32 = 0;
+    while (index < tokens.len()) {
+        let part: Token = parts[index]; let selected = replacement.slice(part.start,part.end).unwrap();
+        if (part.group >= 0) {
+            let span = matched.span(part.group);
+            if (span.is_none()) { selected = text.slice(0,0).unwrap(); }
+            else { let range = span.unwrap(); selected = text.slice(range.start,range.end).unwrap(); }
+        }
+        let result = append(output,selected,maximum); if (result.is_err()) { return result; }
+        index += 1;
+    }
+    return core::result::Ok(0);
+}
+fn replace(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits, templated: bool) -> core::result::Result<Replacement,Error> {
+    if (!valid_replace(limits)) { return core::result::Err(Error::InvalidLimits); }
+    let source = checked(text); if (source.is_err()) { return core::result::Err(source.unwrap_err()); }
+    if (replacement.start < 0 || replacement.length < 0 || replacement.start > 2147483647 - replacement.length) { return core::result::Err(Error::Text(core::text::Error::Bounds)); }
+    if (replacement.length > limits.max_replacement_bytes) { return core::result::Err(Error::ReplacementLimit); }
+    let value = checked(replacement); if (value.is_err()) { return core::result::Err(value.unwrap_err()); }
+    let tokens: alloc::vec::Vec<Token> = alloc::vec::new();
+    if (templated) { let made = compile_template(replacement,regex.group_count()); if (made.is_err()) { return core::result::Err(made.unwrap_err()); } tokens = made.unwrap(); }
+    let made = search(regex,text,limits.search); if (made.is_err()) { tokens.destroy(); return core::result::Err(made.unwrap_err()); }
+    let cursor: Search = made.unwrap(); let output = Output { value: alloc::string::new() }; let end: i32 = 0;
+    while (true) {
+        let result = cursor.next();
+        if (result.is_err()) { let error = result.unwrap_err(); cursor.destroy(); tokens.destroy(); output.destroy(); return core::result::Err(error); }
+        let found = result.unwrap(); if (found.is_none()) { break; }
+        let matched: ext::regex::Match = found.unwrap(); let span = matched.span(0).unwrap();
+        let status = append(output.borrow(),text.slice(end,span.start).unwrap(),limits.max_output_bytes);
+        if (status.is_ok()) {
+            if (templated) { status = expansion(output.borrow(),text,replacement,matched,tokens.borrow(),limits.max_output_bytes); }
+            else { status = append(output.borrow(),replacement,limits.max_output_bytes); }
+        }
+        end = span.end; matched.destroy();
+        if (status.is_err()) { let error = status.unwrap_err(); cursor.destroy(); tokens.destroy(); output.destroy(); return core::result::Err(error); }
+    }
+    let status = append(output.borrow(),text.slice(end,text.length).unwrap(),limits.max_output_bytes);
+    let used: Usage = cursor.used; cursor.destroy(); tokens.destroy();
+    if (status.is_err()) { output.destroy(); return core::result::Err(status.unwrap_err()); }
+    return core::result::Ok(Replacement { output: output.value, usage: used });
+}
+// Literal replacement gives '$' and '\' no special meaning.
+pub fn replace_literal(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits) -> core::result::Result<Replacement,Error> {
+    return replace(regex,text,replacement,limits,false);
+}
+// Numeric captures: $0, $1.., ${N}; $$ is one literal dollar. No names,
+// backslash escapes, defaults, conditionals, or callbacks are interpreted.
+pub fn replace_template(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits) -> core::result::Result<Replacement,Error> {
+    return replace(regex,text,replacement,limits,true);
+}

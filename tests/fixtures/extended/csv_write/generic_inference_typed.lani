@@ -1,0 +1,15 @@
+// Typed control for generic_inference_untyped. The known Write return contract
+// is explicit, matching core::io::write_all and the CSV writer call site.
+module app::main;
+import core::io;
+import core::result;
+fn send<W>(writer: &W) -> bool where W: core::io::Write {
+    let source: [u8;1] = [120];
+    let attempt: core::result::Result<i32,core::io::Error> = writer.write(source,0,1);
+    return attempt.is_err();
+}
+fn main() -> i32 {
+    let bytes: [u8;1] = [0];
+    let writer: core::io::SliceWriter = core::io::slice_writer(bytes,1).unwrap();
+    assert(!send(writer.borrow())); assert(bytes[0] == 120); return 0;
+}

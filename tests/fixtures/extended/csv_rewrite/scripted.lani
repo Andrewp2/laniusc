@@ -1,0 +1,77 @@
+// Appended after the production helpers, replacing only main().
+struct Source { bytes:core::slice::View<u8>,position:i32,calls:u64,step:i32,interrupts:i32,error_after:i32,invalid:i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::io::Read for Source {
+    pub fn read(&self, bytes:[u8], start:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.invalid != 0) { if (self.invalid == 1) { return core::result::Ok(count+1); } return core::result::Ok(-1); }
+        if (self.error_after >= 0 && self.position >= self.error_after) { return core::result::Err(core::io::Error::Host(5)); }
+        let amount:i32 = self.bytes.len()-self.position; if (amount > count) { amount = count; } if (amount > self.step) { amount = self.step; }
+        let index:i32 = 0; while (index < amount) { bytes[start+index] = self.bytes.get(self.position+index).unwrap(); index += 1; } self.position += amount; return core::result::Ok(amount);
+    }
+}
+struct Sink { expected:core::slice::View<u8>,position:i32,calls:u64,step:i32,interrupts:i32,fail_after:i32,behavior:i32,flush_calls:u64,flush_interrupts:i32,flush_error:bool,flush_invalid:bool }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::io::Write for Sink {
+    pub fn write(&self, bytes:[u8], start:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.behavior == 1) { return core::result::Ok(0); } if (self.behavior == 2) { return core::result::Ok(count+1); } if (self.behavior == 3) { return core::result::Ok(-1); }
+        if (self.fail_after >= 0 && self.position == self.fail_after) { if (self.behavior == 4) { return core::result::Err(core::io::Error::WouldBlock); } return core::result::Err(core::io::Error::Host(5)); }
+        let amount:i32 = count; if (amount > self.step) { amount = self.step; } if (self.fail_after >= 0 && amount > self.fail_after-self.position) { amount = self.fail_after-self.position; }
+        assert(amount > 0 && amount <= self.expected.len()-self.position);
+        let index:i32 = 0; while (index < amount) { assert(bytes[start+index] == self.expected.get(self.position+index).unwrap()); index += 1; } self.position += amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        self.flush_calls += 1; if (self.flush_interrupts > 0) { self.flush_interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.flush_error) { return core::result::Err(core::io::Error::Host(5)); } if (self.flush_invalid) { return core::result::Ok(1); } return core::result::Ok(0);
+    }
+}
+fn source(bytes:core::slice::View<u8>) -> Source { return Source { bytes:bytes,position:0,calls:0,step:4096,interrupts:0,error_after:-1,invalid:0 }; }
+fn sink(bytes:core::slice::View<u8>) -> Sink { return Sink { expected:bytes,position:0,calls:0,step:1024,interrupts:0,fail_after:-1,behavior:0,flush_calls:0,flush_interrupts:0,flush_error:false,flush_invalid:false }; }
+fn main() -> i32 {
+    let input = literal("a,b\r\n\"c,d\",\"é\"\"x\"\n",19); let expected = literal("\"b\",\"a\",\"b\"\r\n\"é\"\"x\",\"c,d\",\"é\"\"x\"\r\n",36);
+    let indices:[i32;3] = [1,0,1]; let columns = core::slice::view(indices,3).unwrap();
+    let step:i32 = 1;
+    while (step <= input.len()+1) {
+        let output_step:i32 = 1;
+        while (output_step <= 7) {
+            let reader = source(input); reader.step = step; reader.interrupts = 2;
+            let writer = sink(expected); writer.step = output_step; writer.interrupts = 3; writer.flush_interrupts = 2;
+            let result: core::result::Result<Stats,Failure> = rewrite(reader.borrow(),writer.borrow(),columns,defaults()); assert(result.is_ok()); let stats = result.unwrap();
+            assert(writer.position == expected.len() && stats.output == expected.len() as u64 && stats.rows == 2 && stats.input == input.len() as u64 && stats.consumed == input.len() as u64);
+            assert(stats.read_calls == reader.calls && stats.write_calls == writer.calls+writer.flush_calls && writer.flush_calls == 3); output_step += 1;
+        }
+        step += 1;
+    }
+    let mode:i32 = 0;
+    while (mode < 13) {
+        let reader = source(input); let writer = sink(expected); let options = defaults(); let expected_status:i32 = 3;
+        if (mode == 0) { reader.interrupts = 100; options.max_read_calls = 3; expected_status = 2; }
+        if (mode == 1) { writer.interrupts = 100; options.max_write_calls = 4; expected_status = 2; }
+        if (mode == 2) { writer.fail_after = 5; }
+        if (mode == 3) { writer.fail_after = 17; writer.behavior = 4; }
+        if (mode >= 4 && mode <= 6) { writer.behavior = mode-3; }
+        if (mode == 7) { reader.invalid = 1; } if (mode == 8) { reader.invalid = 2; }
+        if (mode == 9) { reader.step = 5; reader.error_after = 5; }
+        if (mode == 10) { writer.flush_error = true; } if (mode == 11) { writer.flush_invalid = true; }
+        if (mode == 12) { writer.flush_interrupts = 100; options.max_write_calls = 4; expected_status = 2; }
+        let result: core::result::Result<Stats,Failure> = rewrite(reader.borrow(),writer.borrow(),columns,options); assert(result.is_err()); let failure = result.unwrap_err(); assert(status(failure.cause) == expected_status);
+        assert(failure.stats.output == writer.position as u64 && failure.stats.read_calls == reader.calls && failure.stats.write_calls == writer.calls+writer.flush_calls);
+        if (mode == 0) { assert(reader.calls == 3 && writer.position == 0); }
+        if (mode == 1) { assert(writer.calls == 4 && writer.position == 0); }
+        if (mode == 2) { assert(writer.position == 5 && failure.stats.rows == 0); }
+        if (mode == 3) { assert(writer.position == 17 && failure.stats.rows == 1); }
+        if (mode == 9) { assert(failure.stats.rows == 1 && writer.position == 13); }
+        if (mode >= 10) { assert(failure.stats.rows == 2 && writer.position == expected.len()); }
+        mode += 1;
+    }
+    let options = defaults(); options.max_input = input.len() as u64;
+    let reader = source(input); let writer = sink(expected); assert(rewrite(reader.borrow(),writer.borrow(),columns,options).is_ok());
+    let extra = literal("a,b\r\nx",6); let reader = source(extra); let writer = sink(expected); options.max_input = 5;
+    let limited = rewrite(reader.borrow(),writer.borrow(),columns,options); assert(limited.is_err() && reader.position == 6 && writer.position == 13 && limited.unwrap_err().stats.consumed == 5);
+    let empty = literal("",0); let reader = source(empty); let writer = sink(empty); options = defaults(); options.max_input = 0; options.max_output = 0; options.max_records = 0; options.max_write_calls = 0;
+    assert(rewrite(reader.borrow(),writer.borrow(),columns,options).is_ok() && reader.calls == 1 && writer.calls == 0 && writer.flush_calls == 0);
+    return 0;
+}

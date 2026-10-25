@@ -1,0 +1,18 @@
+// No caller finish-result projection: only deep cursor helpers own cleanup.
+module app::main;
+import alloc::clone_tree_map;
+import alloc::clone_tree_set;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::result;
+fn text(first:u8)->alloc::string::String{let bytes:[u8;4]=[first,0,195,169];return alloc::string::from_utf8(bytes,4).unwrap();}
+fn main()->i32{
+    let map=alloc::tree_map::with_capacity<alloc::string::String,alloc::string::String>(3).unwrap();
+    map.try_insert(text(65),text(97)).unwrap();map.try_insert(text(66),text(98)).unwrap();map.try_insert(text(67),text(99)).unwrap();
+    let pairs=map.take_iter();alloc::clone_tree_map::destroy_tree_map_iter<alloc::string::String,alloc::string::String>(pairs.borrow());
+    assert(map.is_empty()&&map.capacity()==0&&pairs.is_empty()&&pairs.capacity()==0);map.destroy();
+    let set=alloc::tree_set::with_capacity<alloc::string::String>(3).unwrap();set.try_insert(text(65)).unwrap();set.try_insert(text(66)).unwrap();set.try_insert(text(67)).unwrap();
+    let keys=set.take_iter();alloc::clone_tree_set::destroy_tree_set_iter<alloc::string::String>(keys.borrow());
+    assert(set.is_empty()&&set.capacity()==0&&keys.is_empty()&&keys.capacity()==0);set.destroy();return 0;
+}

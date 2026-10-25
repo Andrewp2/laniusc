@@ -1,0 +1,15 @@
+// Diagnostic control for the existing generic trait-call result inference
+// limitation. Not an acceptance fixture: compare with generic_inference_typed.
+module app::main;
+import core::io;
+import core::result;
+fn send<W>(writer: &W) -> bool where W: core::io::Write {
+    let source: [u8;1] = [120];
+    let attempt = writer.write(source,0,1);
+    return attempt.is_err();
+}
+fn main() -> i32 {
+    let bytes: [u8;1] = [0];
+    let writer: core::io::SliceWriter = core::io::slice_writer(bytes,1).unwrap();
+    assert(!send(writer.borrow())); assert(bytes[0] == 120); return 0;
+}

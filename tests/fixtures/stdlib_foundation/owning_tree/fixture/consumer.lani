@@ -1,0 +1,15 @@
+module fixture::consumer;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::iter;
+import core::option;
+pub fn pull<I,T>(cursor: &I)->core::option::Option<T> where I:core::iter::Iterator<T> {
+    return cursor.next();
+}
+// No K/V ordering, clone or release bound: ownership transfer itself needs none.
+pub fn map_front<K,V>(cursor: &alloc::tree_map::IntoIter<K,V>)->core::option::Option<alloc::tree_map::Entry<K,V>> {
+    return pull<alloc::tree_map::IntoIter<K,V>,alloc::tree_map::Entry<K,V>>(cursor);
+}
+pub fn set_front<T>(cursor: &alloc::tree_set::IntoIter<T>)->core::option::Option<T> {
+    return pull<alloc::tree_set::IntoIter<T>,T>(cursor);
+}

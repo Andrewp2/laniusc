@@ -36,6 +36,7 @@ releases those allocations; it is not automatic or compiler-enforced.
 | `Regex.borrow() -> &Regex` | Borrow the compiled owner for helper calls. |
 | `Regex.group_count() -> i32` | Number of captures **including group 0**. |
 | `Regex.state_count() -> i32` | Number of compiled NFA instructions. |
+| `Regex.search_work_limit() -> i32` | Configured per-search `Options.max_work`; used by aggregate-budget adapters. |
 | `Regex.find(Text) -> Result<Option<Match>, Error>` | First match, or ordinary absence. |
 | `Regex.find_from(Text, i32) -> Result<Option<Match>, Error>` | Search at or after a scalar boundary; anchors retain the whole input context. |
 | `Regex.is_match(Text) -> Result<bool, Error>` | Search and release temporary capture storage. |
@@ -45,6 +46,10 @@ releases those allocations; it is not automatic or compiler-enforced.
 | `Matches.next() -> Result<Option<Match>, Error>` | Transfer a newly owned capture set to the caller, or return None/error. |
 | `Regex.destroy()`, `Match.destroy()` | Release the owned allocations. |
 | `Matches.destroy()` | Fuse the cursor; it retains no allocation between calls. |
+
+[Bounded splitting and replacement](extended-regex-text.md) consume the same
+Matches cursor. Their guide defines borrowed fields, numeric replacement
+templates, owned output and conservative aggregate search accounting.
 
 Spans are half-open **byte** offsets relative to the supplied input Text, not
 its underlying allocation. Every endpoint is a Unicode scalar boundary. Group

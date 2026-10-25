@@ -1,0 +1,10 @@
+module fixture::key;
+import core::cmp;
+import core::hash;
+pub struct Key { id: i32, representative: i32 }
+pub fn make(id: i32, representative: i32) -> Key { return Key { id: id, representative: representative }; }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(key: Key) -> u32 { return 15; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.id == right.id; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.id != right.id; }
+}

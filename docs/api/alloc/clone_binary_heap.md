@@ -8,13 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Opt-in recursive heap cloning and explicit destruction execute on Linux x86_64 through the GPU compiler and preserve Min/Max order. All five focused groups pass, covering independent nested owners, priority multiplicities, empty/zero-sized values, 13 typed allocation failures, 16 owned-error paths and all 96 reached owned-error allocations. Ordinary inherent collection methods retain their documented shallow policy.
+Opt-in recursive heap cloning and explicit destruction execute on Linux x86_64 through the GPU compiler and preserve Min/Max order. All five focused groups pass, covering independent nested owners, priority multiplicities, empty/zero-sized values, 13 typed allocation failures, 16 owned-error paths and all 96 reached owned-error allocations. Ordinary inherent collection methods retain their documented shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
 
 ## Contract and evidence guides
 
 - [stdlib-clone-binary-heap](../../stdlib-clone-binary-heap.md)
+- [stdlib-owning-heap](../../stdlib-owning-heap.md)
 
-Declaration counts: enum: 1; function: 2; impl: 2; method: 2; variant: 2.
+Declaration counts: enum: 1; function: 3; impl: 2; method: 2; variant: 2.
 
 ## Declared imports
 
@@ -76,11 +77,19 @@ pub fn try_clone<T,E>(source: &alloc::binary_heap::BinaryHeap<T>)
 pub fn destroy_heap<T>(owner: &alloc::binary_heap::BinaryHeap<T>) where T: core::clone::Destroy<T>
 ```
 
+### function: destroy_binary_heap_iter
+
+[Source line 76](../../../stdlib/alloc/clone_binary_heap.lani#L76)
+
+```lanius
+pub fn destroy_binary_heap_iter<T>(owner: &alloc::binary_heap::IntoIter<T>) where T: core::clone::Destroy<T>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 73
+### impl at line 81
 
-[Source line 73](../../../stdlib/alloc/clone_binary_heap.lani#L73)
+[Source line 81](../../../stdlib/alloc/clone_binary_heap.lani#L81)
 
 ```lanius
 pub impl<T,E> core::clone::TryClone<alloc::binary_heap::BinaryHeap<T>,Error<E>>
@@ -90,16 +99,16 @@ pub impl<T,E> core::clone::TryClone<alloc::binary_heap::BinaryHeap<T>,Error<E>>
 
 #### method: try_clone_value
 
-[Source line 76](../../../stdlib/alloc/clone_binary_heap.lani#L76)
+[Source line 84](../../../stdlib/alloc/clone_binary_heap.lani#L84)
 
 ```lanius
 pub fn try_clone_value(source: alloc::binary_heap::BinaryHeap<T>)
         -> core::result::Result<alloc::binary_heap::BinaryHeap<T>,Error<E>>
 ```
 
-### impl at line 83
+### impl at line 91
 
-[Source line 83](../../../stdlib/alloc/clone_binary_heap.lani#L83)
+[Source line 91](../../../stdlib/alloc/clone_binary_heap.lani#L91)
 
 ```lanius
 pub impl<T> core::clone::Destroy<alloc::binary_heap::BinaryHeap<T>>
@@ -108,7 +117,7 @@ pub impl<T> core::clone::Destroy<alloc::binary_heap::BinaryHeap<T>>
 
 #### method: destroy_value
 
-[Source line 85](../../../stdlib/alloc/clone_binary_heap.lani#L85)
+[Source line 93](../../../stdlib/alloc/clone_binary_heap.lani#L93)
 
 ```lanius
 pub fn destroy_value(owned: alloc::binary_heap::BinaryHeap<T>)

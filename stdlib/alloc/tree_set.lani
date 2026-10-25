@@ -9,6 +9,9 @@ import core::result;
 
 pub struct TreeSet<T> { state: alloc::tree_map::KeyStorage }
 pub struct Cursor<T> { state: alloc::tree_map::KeyCursor }
+pub enum IntoIterError { Remaining(i32) }
+// One active typed facade over the canonical remaining key-storage owner.
+pub struct IntoIter<T> { state: alloc::tree_map::KeyStorage }
 
 pub fn new<T>() -> TreeSet<T> { return TreeSet { state: alloc::tree_map::key_storage<T>() }; }
 pub fn with_capacity<T>(capacity: i32) -> core::result::Result<TreeSet<T>, alloc::tree_map::Error> {
@@ -22,6 +25,12 @@ pub impl<T> TreeSet<T> {
     pub fn len(&self) -> i32 { return self.state.length; }
     pub fn is_empty(&self) -> bool { return self.state.length == 0; }
     pub fn capacity(&self) -> i32 { return self.state.reserved; }
+    // Transfer the owner; end borrowed cursors/keys before taking it. Other
+    // shallow set descriptors stay inactive and acquire no cleanup authority.
+    pub fn take_iter(&self) -> IntoIter<T> {
+        let cursor: IntoIter<T> = IntoIter { state: self.state };
+        self.state = alloc::tree_map::key_storage<T>(); return cursor;
+    }
     pub fn contains(&self, key: T) -> bool where T: core::cmp::Ord<T> { return alloc::tree_map::key_contains<T>(self.state.borrow(), key); }
     // Returned copies borrow nested key resources; lookups do not transfer them.
     pub fn get(&self, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T> { return alloc::tree_map::key_get<T>(self.state.borrow(), key); }
@@ -140,4 +149,30 @@ pub impl<T> Cursor<T> {
 
 pub impl<T> core::iter::Iterator<T> for Cursor<T> {
     pub fn next(&self) -> core::option::Option<T> { return alloc::tree_map::key_next<T>(self.state.borrow()); }
+}
+
+pub impl<T> IntoIter<T> {
+    pub fn borrow(&self) -> &IntoIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.state.length; }
+    pub fn capacity(&self) -> i32 { return self.state.reserved; }
+    pub fn is_empty(&self) -> bool { return self.state.length == 0; }
+    // Canonical endpoint removal: O(log n), no leaf bounds or allocation.
+    pub fn next_back(&self) -> core::option::Option<T> {
+        return alloc::tree_map::key_pop<T>(self.state.borrow(), true);
+    }
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let count: i32 = self.remaining();
+        if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
+        alloc::tree_map::key_destroy<T>(self.state.borrow()); return core::option::None();
+    }
+    // Transfer all current canonical state in O(1) and disarm this cursor.
+    pub fn take_remaining(&self) -> TreeSet<T> {
+        let owner: TreeSet<T> = TreeSet { state: self.state };
+        self.state = alloc::tree_map::key_storage<T>(); return owner;
+    }
+}
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        return alloc::tree_map::key_pop<T>(self.state.borrow(), false);
+    }
 }

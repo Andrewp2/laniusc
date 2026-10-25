@@ -8,13 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate.
+Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
 
 ## Contract and evidence guides
 
 - [stdlib-clone-tree-map](../../stdlib-clone-tree-map.md)
+- [stdlib-owning-tree](../../stdlib-owning-tree.md)
 
-Declaration counts: enum: 2; function: 2; impl: 2; method: 2; variant: 6.
+Declaration counts: enum: 2; function: 3; impl: 2; method: 2; variant: 6.
 
 ## Declared imports
 
@@ -108,9 +109,18 @@ pub fn destroy_tree_map<K,V>(owner: &alloc::tree_map::TreeMap<K,V>)
     where K: core::clone::Destroy<K>, V: core::clone::Destroy<V>
 ```
 
+### function: destroy_tree_map_iter
+
+[Source line 42](../../../stdlib/alloc/clone_tree_map.lani#L42)
+
+```lanius
+pub fn destroy_tree_map_iter<K,V>(owner: &alloc::tree_map::IntoIter<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V>
+```
+
 ### function: try_clone
 
-[Source line 44](../../../stdlib/alloc/clone_tree_map.lani#L44)
+[Source line 52](../../../stdlib/alloc/clone_tree_map.lani#L52)
 
 ```lanius
 pub fn try_clone<K,V,KE,VE>(source: &alloc::tree_map::TreeMap<K,V>)
@@ -122,9 +132,9 @@ pub fn try_clone<K,V,KE,VE>(source: &alloc::tree_map::TreeMap<K,V>)
 
 ## Implementation blocks and public methods
 
-### impl at line 97
+### impl at line 105
 
-[Source line 97](../../../stdlib/alloc/clone_tree_map.lani#L97)
+[Source line 105](../../../stdlib/alloc/clone_tree_map.lani#L105)
 
 ```lanius
 pub impl<K,V,KE,VE> core::clone::TryClone<alloc::tree_map::TreeMap<K,V>,Error<KE,VE>>
@@ -136,16 +146,16 @@ pub impl<K,V,KE,VE> core::clone::TryClone<alloc::tree_map::TreeMap<K,V>,Error<KE
 
 #### method: try_clone_value
 
-[Source line 102](../../../stdlib/alloc/clone_tree_map.lani#L102)
+[Source line 110](../../../stdlib/alloc/clone_tree_map.lani#L110)
 
 ```lanius
 pub fn try_clone_value(source: alloc::tree_map::TreeMap<K,V>)
         -> core::result::Result<alloc::tree_map::TreeMap<K,V>,Error<KE,VE>>
 ```
 
-### impl at line 107
+### impl at line 115
 
-[Source line 107](../../../stdlib/alloc/clone_tree_map.lani#L107)
+[Source line 115](../../../stdlib/alloc/clone_tree_map.lani#L115)
 
 ```lanius
 pub impl<K,V> core::clone::Destroy<alloc::tree_map::TreeMap<K,V>> for alloc::tree_map::TreeMap<K,V>
@@ -154,7 +164,7 @@ pub impl<K,V> core::clone::Destroy<alloc::tree_map::TreeMap<K,V>> for alloc::tre
 
 #### method: destroy_value
 
-[Source line 109](../../../stdlib/alloc/clone_tree_map.lani#L109)
+[Source line 117](../../../stdlib/alloc/clone_tree_map.lani#L117)
 
 ```lanius
 pub fn destroy_value(owned: alloc::tree_map::TreeMap<K,V>)

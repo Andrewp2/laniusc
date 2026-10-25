@@ -8,11 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+The read-only search_work_limit accessor exposes the existing per-search VM allowance for aggregate adapters. Bounded split/replacement reuse the canonical Matches cursor; no new matcher or capture engine is introduced.
+
 ## Contract and evidence guides
 
 - [extended-regex](../../extended-regex.md)
+- [extended-regex-text](../../extended-regex-text.md)
 
-Declaration counts: enum: 1; field: 30; function: 2; impl: 7; method: 13; struct: 7; variant: 7.
+Declaration counts: enum: 1; field: 30; function: 2; impl: 7; method: 14; struct: 7; variant: 7.
 
 ## Declared imports
 
@@ -466,9 +469,17 @@ pub fn group_count(&self) -> i32
 pub fn state_count(&self) -> i32
 ```
 
+#### method: search_work_limit
+
+[Source line 431](../../../extended/ext/regex.lani#L431)
+
+```lanius
+pub fn search_work_limit(&self) -> i32
+```
+
 #### method: destroy
 
-[Source line 429](../../../extended/ext/regex.lani#L429)
+[Source line 432](../../../extended/ext/regex.lani#L432)
 
 ```lanius
 pub fn destroy(&self)
@@ -476,7 +487,7 @@ pub fn destroy(&self)
 
 #### method: find_from
 
-[Source line 509](../../../extended/ext/regex.lani#L509)
+[Source line 512](../../../extended/ext/regex.lani#L512)
 
 ```lanius
 pub fn find_from(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error>
@@ -484,7 +495,7 @@ pub fn find_from(&self, text: core::text::Text, start: i32) -> core::result::Res
 
 #### method: find
 
-[Source line 515](../../../extended/ext/regex.lani#L515)
+[Source line 518](../../../extended/ext/regex.lani#L518)
 
 ```lanius
 pub fn find(&self, text: core::text::Text) -> core::result::Result<core::option::Option<Match>, Error>
@@ -492,7 +503,7 @@ pub fn find(&self, text: core::text::Text) -> core::result::Result<core::option:
 
 #### method: is_match
 
-[Source line 516](../../../extended/ext/regex.lani#L516)
+[Source line 519](../../../extended/ext/regex.lani#L519)
 
 ```lanius
 pub fn is_match(&self, text: core::text::Text) -> core::result::Result<bool, Error>
@@ -500,23 +511,23 @@ pub fn is_match(&self, text: core::text::Text) -> core::result::Result<bool, Err
 
 #### method: find_iter
 
-[Source line 523](../../../extended/ext/regex.lani#L523)
+[Source line 526](../../../extended/ext/regex.lani#L526)
 
 ```lanius
 pub fn find_iter(&self, text: core::text::Text) -> core::result::Result<Matches, Error>
 ```
 
-### impl at line 529
+### impl at line 532
 
-[Source line 529](../../../extended/ext/regex.lani#L529)
+[Source line 532](../../../extended/ext/regex.lani#L532)
 
 ```lanius
 pub impl Scratch
 ```
 
-### impl at line 530
+### impl at line 533
 
-[Source line 530](../../../extended/ext/regex.lani#L530)
+[Source line 533](../../../extended/ext/regex.lani#L533)
 
 ```lanius
 pub impl Match
@@ -524,7 +535,7 @@ pub impl Match
 
 #### method: group_count
 
-[Source line 531](../../../extended/ext/regex.lani#L531)
+[Source line 534](../../../extended/ext/regex.lani#L534)
 
 ```lanius
 pub fn group_count(&self) -> i32
@@ -532,7 +543,7 @@ pub fn group_count(&self) -> i32
 
 #### method: span
 
-[Source line 532](../../../extended/ext/regex.lani#L532)
+[Source line 535](../../../extended/ext/regex.lani#L535)
 
 ```lanius
 pub fn span(&self, group: i32) -> core::option::Option<Span>
@@ -540,15 +551,15 @@ pub fn span(&self, group: i32) -> core::option::Option<Span>
 
 #### method: destroy
 
-[Source line 538](../../../extended/ext/regex.lani#L538)
+[Source line 541](../../../extended/ext/regex.lani#L541)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 540
+### impl at line 543
 
-[Source line 540](../../../extended/ext/regex.lani#L540)
+[Source line 543](../../../extended/ext/regex.lani#L543)
 
 ```lanius
 pub impl Matches
@@ -556,7 +567,7 @@ pub impl Matches
 
 #### method: next
 
-[Source line 541](../../../extended/ext/regex.lani#L541)
+[Source line 544](../../../extended/ext/regex.lani#L544)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Match>, Error>
@@ -564,7 +575,7 @@ pub fn next(&self) -> core::result::Result<core::option::Option<Match>, Error>
 
 #### method: destroy
 
-[Source line 556](../../../extended/ext/regex.lani#L556)
+[Source line 559](../../../extended/ext/regex.lani#L559)
 
 ```lanius
 pub fn destroy(&self)

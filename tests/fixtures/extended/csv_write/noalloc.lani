@@ -1,0 +1,29 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::text;
+import ext::csv;
+import ext::csv_write;
+import std::stream;
+struct Counter { calls: u64, written: u64, flushes: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+pub impl core::io::Write for Counter {
+    pub fn write(&self, data: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> { self.calls += 1; self.written += count as u64; return core::result::Ok(count); }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { self.flushes += 1; return core::result::Ok(0); }
+}
+fn literal(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::text::from_utf8(bytes,count).unwrap(); }
+fn main() -> i32 {
+    let row: ext::csv::Record = ext::csv::new(); row.try_push_field(literal("é\"x",4)).unwrap(); row.try_push_field(literal("",0)).unwrap();
+    let bc: i32 = row.byte_capacity(); let fc: i32 = row.field_capacity(); let count: u64 = row.encoded_len().unwrap();
+    let marker: [u8;1] = [66]; let output: std::stream::Descriptor = std::stream::stdout(); output.write(marker,0,1).unwrap();
+    let writer: Counter = Counter { calls: 0, written: 0, flushes: 0 }; let index: i32 = 0;
+    while (index < 4096) {
+        row.clear(); row.try_push_field(literal("é\"x",4)).unwrap(); row.try_push_field(literal("",0)).unwrap();
+        assert(row.byte_capacity() == bc && row.field_capacity() == fc);
+        let progress = ext::csv_write::write_record(writer.borrow(),row.borrow(),ext::csv_write::Limits { max_output: count, max_write_calls: 1 }).unwrap();
+        assert(progress.written == count && progress.write_calls == 1); index += 1;
+    }
+    assert(writer.calls == 4096 && writer.written == 4096 * count && writer.flushes == 0);
+    marker[0] = 69; output.write(marker,0,1).unwrap(); row.destroy(); return 0;
+}

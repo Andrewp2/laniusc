@@ -1,0 +1,108 @@
+// Fifteen setup mappings: three tables and twelve independent Strings.
+// Every cursor/transfer/cleanup operation after setup must allocate nothing.
+module app::main;
+import alloc::clone_hash_map;
+import alloc::clone_hash_set;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::string;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::consumer;
+
+struct Log { released: u32, count: i32, compare: bool }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn release(&self, id: i32) { let bit: u32 = 1 << id; assert((self.released & bit) == 0); self.released |= bit; self.count += 1; }
+}
+struct Key { id: i32, text: alloc::string::String, log: &Log }
+struct Value { id: i32, text: alloc::string::String, log: &Log }
+fn key(id: i32, log: &Log) -> Key {
+    let bytes: [u8;4] = [(65+id) as u8,0,195,169];
+    return Key { id: id, text: alloc::string::from_utf8(bytes,4).unwrap(), log: log };
+}
+fn value(id: i32, log: &Log) -> Value {
+    let bytes: [u8;6] = [86,id as u8,0,195,169,90];
+    return Value { id: id, text: alloc::string::from_utf8(bytes,6).unwrap(), log: log };
+}
+fn check_key(owned: Key) { assert(owned.text.byte_len() == 4 && owned.text.byte_at(0).unwrap() == ((65+owned.id) as u8) && owned.text.byte_at(1).unwrap() == 0 && owned.text.byte_at(3).unwrap() == 169); }
+fn check_value(owned: Value) { assert(owned.text.byte_len() == 6 && owned.text.byte_at(1).unwrap() == (owned.id as u8) && owned.text.byte_at(2).unwrap() == 0 && owned.text.byte_at(5).unwrap() == 90); }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value: Key) -> u32 { assert(value.log.compare); return 15; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { assert(left.log.compare && right.log.compare); return left.id == right.id; }
+    pub fn ne(left: Key, right: Key) -> bool { return !Key::eq(left,right); }
+}
+pub impl core::clone::Destroy<Key> for Key {
+    pub fn destroy_value(owned: Key) { check_key(owned); let log: &Log = owned.log; log.release(owned.id); owned.text.destroy(); }
+}
+pub impl core::clone::Destroy<Value> for Value {
+    pub fn destroy_value(owned: Value) { check_value(owned); let log: &Log = owned.log; log.release(owned.id); owned.text.destroy(); }
+}
+fn map_owners(owner: &alloc::hash_map::HashMap<Key,Value>) {
+    let backing: ptr = owner.storage; let capacity: i32 = owner.capacity(); let occupied: i32 = owner.occupied;
+    let cursor = owner.take_iter(); assert(owner.is_empty() && owner.capacity() == 0 && cursor.remaining() == 3);
+    assert(match(cursor.try_finish().unwrap()) { alloc::hash_map::IntoIterError::Remaining(count) -> count == 3 });
+    let first = fixture::consumer::pull<alloc::hash_map::IntoIter<Key,Value>,alloc::hash_map::Entry<Key,Value>>(cursor.borrow()).unwrap();
+    check_key(first.key); check_value(first.value); assert(first.value.id == first.key.id+12);
+    let recovered = cursor.take_remaining();
+    assert(cursor.is_empty() && cursor.capacity() == 0 && cursor.next().is_none() && cursor.try_finish().is_none());
+    assert(recovered.len() == 2 && recovered.capacity() == capacity && recovered.storage == backing && recovered.occupied == occupied);
+    let remaining = recovered.take_iter();
+    alloc::clone_hash_map::destroy_hash_map_iter<Key,Value>(remaining.borrow());
+    alloc::clone_hash_map::destroy_hash_map_iter<Key,Value>(remaining.borrow());
+    assert(remaining.is_empty() && remaining.capacity() == 0);
+    // Yielded owners outlive both the original table and remaining entries.
+    check_key(first.key); check_value(first.value); Key::destroy_value(first.key); Value::destroy_value(first.value);
+}
+fn set_owners(owner: &alloc::hash_set::HashSet<Key>) {
+    let capacity: i32 = owner.capacity(); let occupied: i32 = owner.state.occupied; let backing: ptr = owner.state.storage;
+    let cursor = owner.take_iter(); assert(owner.is_empty() && owner.capacity() == 0 && cursor.remaining() == 3);
+    assert(match(cursor.try_finish().unwrap()) { alloc::hash_set::IntoIterError::Remaining(count) -> count == 3 });
+    let first = cursor.next().unwrap(); check_key(first);
+    let recovered = cursor.take_remaining(); assert(recovered.len() == 2 && recovered.capacity() == capacity && recovered.state.storage == backing && recovered.state.occupied == occupied);
+    let remaining = recovered.take_iter();
+    alloc::clone_hash_set::destroy_hash_set_iter<Key>(remaining.borrow()); alloc::clone_hash_set::destroy_hash_set_iter<Key>(remaining.borrow());
+    assert(remaining.capacity() == 0 && cursor.capacity() == 0 && cursor.try_finish().is_none());
+    check_key(first); Key::destroy_value(first);
+}
+enum Rejection { Denied(u64,bool) }
+struct Sink { items: [core::option::Option<Key>], accepted: i32, calls: i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::iter::TrySink<Key,Rejection> for Sink {
+    pub fn try_accept(&self, item: Key) -> core::option::Option<Rejection> {
+        self.calls += 1; check_key(item);
+        if (self.calls == 2) { return core::option::Some(Rejection::Denied(18446744073709551615,false)); }
+        self.items[self.accepted] = core::option::Some(item); self.accepted += 1; return core::option::None();
+    }
+}
+fn transfer(owner: &alloc::hash_set::HashSet<Key>) {
+    let capacity: i32 = owner.capacity(); let cursor = owner.take_iter();
+    let items: [core::option::Option<Key>;3] = [core::option::None();3]; let sink: Sink = Sink { items: items, accepted: 0, calls: 0 };
+    let failed: core::iter::TransferError<Key,Rejection> = core::iter::try_transfer_up_to<alloc::hash_set::IntoIter<Key>,Sink,Key,Rejection>(cursor.borrow(),sink.borrow(),18446744073709551615).unwrap_err();
+    assert(failed.accepted == 1 && sink.accepted == 1 && sink.calls == 2 && cursor.remaining() == 1 && cursor.capacity() == capacity);
+    assert(match(failed.error) { Rejection::Denied(code,flag) -> code == 18446744073709551615 && !flag });
+    check_key(failed.rejected); Key::destroy_value(failed.rejected);
+    let resumed: core::iter::Transfer = core::iter::try_transfer_up_to<alloc::hash_set::IntoIter<Key>,Sink,Key,Rejection>(cursor.borrow(),sink.borrow(),18446744073709551615).unwrap();
+    assert(resumed.accepted == 1 && resumed.exhausted && sink.accepted == 2 && sink.calls == 3 && cursor.is_empty() && cursor.capacity() == capacity);
+    assert(cursor.try_finish().is_none() && cursor.try_finish().is_none());
+    let index: i32 = 0; while (index < sink.accepted) { let owned: Key = items[index].unwrap(); check_key(owned); Key::destroy_value(owned); index += 1; }
+    alloc::clone_hash_set::destroy_hash_set_iter<Key>(cursor.borrow());
+}
+fn main() -> i32 {
+    let log: Log = Log { released: 0, count: 0, compare: true };
+    let map: alloc::hash_map::HashMap<Key,Value> = alloc::hash_map::new(); map.try_reserve(8).unwrap();
+    let id: i32 = 0; while (id < 3) { map.try_insert(key(id,log.borrow()),value(id+12,log.borrow())).unwrap(); id += 1; }
+    let set: alloc::hash_set::HashSet<Key> = alloc::hash_set::with_capacity<Key>(8).unwrap();
+    id = 3; while (id < 6) { set.try_insert(key(id,log.borrow())).unwrap(); id += 1; }
+    let source: alloc::hash_set::HashSet<Key> = alloc::hash_set::with_capacity<Key>(8).unwrap();
+    id = 6; while (id < 9) { source.try_insert(key(id,log.borrow())).unwrap(); id += 1; }
+    // Hash/Eq now trap, so no cursor or recursive cleanup may consult them.
+    log.compare = false;
+    map_owners(map.borrow()); set_owners(set.borrow()); transfer(source.borrow());
+    assert(log.count == 12 && log.released == 29183 && map.capacity() == 0 && set.capacity() == 0 && source.capacity() == 0);
+    return 0;
+}

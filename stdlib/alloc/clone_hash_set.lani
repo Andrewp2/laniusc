@@ -30,6 +30,14 @@ pub fn destroy_hash_set<T>(owner: &alloc::hash_set::HashSet<T>)
     owner.destroy();
 }
 
+// Release only the unconsumed keys and table, retaining caller authority for
+// yielded owners. Disarm before callbacks; never compare a released key.
+pub fn destroy_hash_set_iter<T>(owner: &alloc::hash_set::IntoIter<T>)
+    where T: core::clone::Destroy<T> {
+    let remaining: alloc::hash_set::HashSet<T> = owner.take_remaining();
+    destroy_hash_set<T>(remaining.borrow());
+}
+
 // Source owners and representatives remain immutable. Reserve the complete
 // destination table before cloning leaves. Eq/Hash must be lawful and stable;
 // callbacks must not reenter/mutate either set. The checks below detect changed

@@ -1,5 +1,11 @@
 # Standard library execution audit and portable foundation
 
+The later [library overview](library-overview.md) and
+[roadmap](library-roadmap.md) record the 2026-10-25 owning map/set/heap cursors,
+reusable CSV construction and stream writing, and regex split/replacement
+execution milestones. Their dedicated guides own current receipts and target
+limits. The checkpoint below retains its earlier audit history.
+
 **Current native host and extended-library checkpoint (2026-10-24):**
 [The Linux syscall boundary](stdlib-linux.md),
 [owned TCP/UDP sockets](stdlib-sockets.md),

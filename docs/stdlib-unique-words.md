@@ -9,6 +9,10 @@ Accepted on **2026-10-24** for x86_64 Linux native execution of an ELF built
 through the GPU compiler. One strict ELF passed 126 native cases, including
 all 79 observed representative allocation denials. The application executes
 on the CPU. This is functional acceptance; no throughput result is claimed.
+After switching publication to the owning TreeSet cursor, the same 126-case
+gate passes in 8.15 seconds, including all 79 representative allocation
+denials. The current receipt is
+`target/stdlib-work/unique-words-owning-tree-execution.log`.
 
 ## Build and use
 
@@ -112,12 +116,15 @@ No output occurs before actual EOF, successful validation of every word, and
 the final successful flush. Input, validation, limit, and collection allocation
 failures therefore leave stdout empty. Stderr is unused.
 
-Publication repeatedly calls the sorted set's `pop_first`, transferring the
-current String to the application. It checks `write_all` for the word bytes
-and LF, then destroys that String. On either write error, it destroys the
-current word and drains and destroys every remaining set word before releasing
-set storage. Success also releases the empty set backing. No allocation occurs
-during publication.
+Publication calls the sorted set's `take_iter()`, resetting the actual set to
+empty with zero capacity. The [owning tree cursor](stdlib-owning-tree.md)
+transfers each String in ascending order through the shared Iterator protocol.
+The application checks `write_all` for the word bytes and LF, then destroys
+that String. On either write error it destroys the current word and calls
+`destroy_tree_set_iter` to release only the unconsumed keys and node storage.
+The same helper releases empty backing after successful exhaustion. Collection
+errors use the canonical deep set helper before ownership has transferred.
+No allocation occurs during publication.
 
 `write_all` advances after short writes and retries Interrupted. A later
 output failure can leave a prefix, including a word without LF. Stdin and
@@ -216,8 +223,10 @@ This keeps the public API and ownership contract. It required no compiler or
 shader edits and no further application-body changes. The accepted source
 base was `f867a59606127508110208986318bb5eaaa82192` plus the canonical cleanup
 helper release, named payload correction, and driver EOF/reuse checks. The
-application body and driver stayed frozen after acceptance; only this guide
-and the application's admission comment were updated.
+application body and driver stayed frozen for that acceptance. The later
+publication migration uses the owning TreeSet cursor and canonical deep cleanup;
+the unchanged driver passes again with the current receipt above. That
+migration introduces no compiler or runtime changes.
 
 | Evidence | Accepted result |
 | --- | --- |

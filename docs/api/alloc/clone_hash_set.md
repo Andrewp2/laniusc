@@ -8,13 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Opt-in deep HashSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Three focused groups pass, including 557 sequence/failure/identity cases, six owned errors, all 39 reached allocation failures, independent String owners, empty and zero-sized keys. Ordinary inherent set methods retain their shallow policy.
+Opt-in deep HashSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Three focused groups pass, including 557 sequence/failure/identity cases, six owned errors, all 39 reached allocation failures, independent String owners, empty and zero-sized keys. Ordinary inherent set methods retain their shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
 
 ## Contract and evidence guides
 
 - [stdlib-clone-hash-set](../../stdlib-clone-hash-set.md)
+- [stdlib-owning-hash](../../stdlib-owning-hash.md)
 
-Declaration counts: enum: 1; function: 2; impl: 2; method: 2; variant: 3.
+Declaration counts: enum: 1; function: 3; impl: 2; method: 2; variant: 3.
 
 ## Declared imports
 
@@ -76,9 +77,18 @@ pub fn destroy_hash_set<T>(owner: &alloc::hash_set::HashSet<T>)
     where T: core::clone::Destroy<T>
 ```
 
+### function: destroy_hash_set_iter
+
+[Source line 35](../../../stdlib/alloc/clone_hash_set.lani#L35)
+
+```lanius
+pub fn destroy_hash_set_iter<T>(owner: &alloc::hash_set::IntoIter<T>)
+    where T: core::clone::Destroy<T>
+```
+
 ### function: try_clone
 
-[Source line 37](../../../stdlib/alloc/clone_hash_set.lani#L37)
+[Source line 45](../../../stdlib/alloc/clone_hash_set.lani#L45)
 
 ```lanius
 pub fn try_clone<T,E>(source: &alloc::hash_set::HashSet<T>)
@@ -89,9 +99,9 @@ pub fn try_clone<T,E>(source: &alloc::hash_set::HashSet<T>)
 
 ## Implementation blocks and public methods
 
-### impl at line 83
+### impl at line 91
 
-[Source line 83](../../../stdlib/alloc/clone_hash_set.lani#L83)
+[Source line 91](../../../stdlib/alloc/clone_hash_set.lani#L91)
 
 ```lanius
 pub impl<T,E> core::clone::TryClone<alloc::hash_set::HashSet<T>,Error<E>>
@@ -102,16 +112,16 @@ pub impl<T,E> core::clone::TryClone<alloc::hash_set::HashSet<T>,Error<E>>
 
 #### method: try_clone_value
 
-[Source line 87](../../../stdlib/alloc/clone_hash_set.lani#L87)
+[Source line 95](../../../stdlib/alloc/clone_hash_set.lani#L95)
 
 ```lanius
 pub fn try_clone_value(source: alloc::hash_set::HashSet<T>)
         -> core::result::Result<alloc::hash_set::HashSet<T>,Error<E>>
 ```
 
-### impl at line 95
+### impl at line 103
 
-[Source line 95](../../../stdlib/alloc/clone_hash_set.lani#L95)
+[Source line 103](../../../stdlib/alloc/clone_hash_set.lani#L103)
 
 ```lanius
 pub impl<T> core::clone::Destroy<alloc::hash_set::HashSet<T>> for alloc::hash_set::HashSet<T>
@@ -120,7 +130,7 @@ pub impl<T> core::clone::Destroy<alloc::hash_set::HashSet<T>> for alloc::hash_se
 
 #### method: destroy_value
 
-[Source line 97](../../../stdlib/alloc/clone_hash_set.lani#L97)
+[Source line 105](../../../stdlib/alloc/clone_hash_set.lani#L105)
 
 ```lanius
 pub fn destroy_value(owned: alloc::hash_set::HashSet<T>)

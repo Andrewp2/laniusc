@@ -26,6 +26,14 @@ pub fn destroy_tree_set<T>(owner: &alloc::tree_set::TreeSet<T>)
     owner.destroy();
 }
 
+// Recover and disarm the owning cursor, then release only its unconsumed keys.
+// Yielded/rejected keys remain their callers' separate ownership obligation.
+pub fn destroy_tree_set_iter<T>(owner: &alloc::tree_set::IntoIter<T>)
+    where T: core::clone::Destroy<T> {
+    let remaining: alloc::tree_set::TreeSet<T> = owner.take_remaining();
+    destroy_tree_set<T>(remaining.borrow());
+}
+
 // Reserve final node storage before leaf calls. Visit live keys in sorted
 // logical order, excluding holes. Stable lawful Eq/Ord and read-only source
 // aliases are required. Each successful clone is an independent key owner.

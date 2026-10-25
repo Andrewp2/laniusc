@@ -2,6 +2,7 @@
 // Accepted on x86_64 Linux native ELF via the GPU compiler; see docs/stdlib-unique-words.md.
 module app::main;
 import alloc::clone;
+import alloc::clone_tree_set;
 import alloc::io;
 import alloc::string;
 import alloc::tree_map;
@@ -141,29 +142,28 @@ fn collect(words: &Words) -> i32 {
 }
 
 fn destroy_set(words: &alloc::tree_set::TreeSet<alloc::string::String>) {
-    while (true) {
-        let next: core::option::Option<alloc::string::String> = words.pop_first();
-        if (next.is_none()) { break; }
-        let word: alloc::string::String = next.unwrap();
-        word.destroy();
-    }
-    words.destroy();
+    alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(words);
 }
 
 fn output(words: &alloc::tree_set::TreeSet<alloc::string::String>) -> i32 {
     let sink: std::stream::Descriptor = std::stream::stdout();
     let newline: [u8;1] = [10];
+    // The actual set is reset at entry. Each pull transfers one String;
+    // explicit cursor cleanup releases only the unconsumed suffix and nodes.
+    let cursor: alloc::tree_set::IntoIter<alloc::string::String> = words.take_iter();
+    let status: i32 = 0;
     while (true) {
-        let next: core::option::Option<alloc::string::String> = words.pop_first();
-        if (next.is_none()) { return 0; }
+        let next: core::option::Option<alloc::string::String> = cursor.next();
+        if (next.is_none()) { break; }
         let word: alloc::string::String = next.unwrap();
         let body: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),word.as_bytes(),0,word.byte_len());
-        if (body.is_err()) { word.destroy(); return 3; }
+        if (body.is_err()) { word.destroy(); status = 3; break; }
         let ending: core::result::Result<i32,core::io::Failure> = core::io::write_all(sink.borrow(),newline,0,1);
         word.destroy();
-        if (ending.is_err()) { return 3; }
+        if (ending.is_err()) { status = 3; break; }
     }
-    return 3;
+    alloc::clone_tree_set::destroy_tree_set_iter<alloc::string::String>(cursor.borrow());
+    return status;
 }
 
 fn main() -> i32 {
@@ -185,8 +185,8 @@ fn main() -> i32 {
     alloc::clone::destroy_vec<alloc::string::String>(words.batch.borrow());
     words.token.destroy();
     if (status == 0) { status = output(words.unique.borrow()); }
-    // output retires each popped current word. Drain any remaining keys after
-    // an error, then release the set backing even after successful emptying.
+    // Collection errors still own the set. Publication transfers it to its
+    // cursor and cleans it there, leaving this actual set empty and reusable.
     destroy_set(words.unique.borrow());
     return status;
 }

@@ -37,6 +37,15 @@ pub fn destroy_hash_map<K,V>(owner: &alloc::hash_map::HashMap<K,V>)
     owner.destroy();
 }
 
+// Release only the cursor's unconsumed owners and table. Already yielded
+// entries remain the caller's responsibility. Recovery disarms the actual
+// cursor before callbacks run; no released key is compared or hashed.
+pub fn destroy_hash_map_iter<K,V>(owner: &alloc::hash_map::IntoIter<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    let remaining: alloc::hash_map::HashMap<K,V> = owner.take_remaining();
+    destroy_hash_map<K,V>(remaining.borrow());
+}
+
 // Source entries are borrowed and remain unchanged. Reserve the complete table
 // before any leaf clone. Successful keys must retain Eq/Hash identity; those
 // traits must be lawful, stable and free of reentrant map mutation. Detection

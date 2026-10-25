@@ -1,0 +1,17 @@
+// Confirmed reduction: current CLI reports LNC0057 lowering flags=0x400.
+// Receipt: target/stdlib-work/csv-nested-literal.log. The bound control changes
+// both match nesting and payload spelling, so it does not isolate which caused it.
+module app::main;
+import core::io;
+import ext::csv_write;
+fn classify(cause: ext::csv_write::Cause) -> i32 {
+    return match (cause) {
+        ext::csv_write::Cause::Io(error) -> match (error) { core::io::Error::Host(7) -> 1, core::io::Error::WouldBlock -> 2, core::io::Error::WriteZero -> 3, core::io::Error::InvalidCount -> 4, _ -> 0 },
+        ext::csv_write::Cause::CallLimit -> 6, _ -> 0
+    };
+}
+fn main() -> i32 {
+    assert(classify(ext::csv_write::Cause::Io(core::io::Error::Host(7))) == 1);
+    assert(classify(ext::csv_write::Cause::Io(core::io::Error::Host(8))) == 0);
+    assert(classify(ext::csv_write::Cause::CallLimit) == 6); return 0;
+}

@@ -8,13 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy.
+Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
 
 ## Contract and evidence guides
 
 - [stdlib-clone-hash-map](../../stdlib-clone-hash-map.md)
+- [stdlib-owning-hash](../../stdlib-owning-hash.md)
 
-Declaration counts: enum: 1; function: 2; impl: 2; method: 2; variant: 4.
+Declaration counts: enum: 1; function: 3; impl: 2; method: 2; variant: 4.
 
 ## Declared imports
 
@@ -83,9 +84,18 @@ pub fn destroy_hash_map<K,V>(owner: &alloc::hash_map::HashMap<K,V>)
     where K: core::clone::Destroy<K>, V: core::clone::Destroy<V>
 ```
 
+### function: destroy_hash_map_iter
+
+[Source line 43](../../../stdlib/alloc/clone_hash_map.lani#L43)
+
+```lanius
+pub fn destroy_hash_map_iter<K,V>(owner: &alloc::hash_map::IntoIter<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V>
+```
+
 ### function: try_clone
 
-[Source line 44](../../../stdlib/alloc/clone_hash_map.lani#L44)
+[Source line 53](../../../stdlib/alloc/clone_hash_map.lani#L53)
 
 ```lanius
 pub fn try_clone<K,V,KE,VE>(source: &alloc::hash_map::HashMap<K,V>)
@@ -97,9 +107,9 @@ pub fn try_clone<K,V,KE,VE>(source: &alloc::hash_map::HashMap<K,V>)
 
 ## Implementation blocks and public methods
 
-### impl at line 101
+### impl at line 110
 
-[Source line 101](../../../stdlib/alloc/clone_hash_map.lani#L101)
+[Source line 110](../../../stdlib/alloc/clone_hash_map.lani#L110)
 
 ```lanius
 pub impl<K,V,KE,VE> core::clone::TryClone<alloc::hash_map::HashMap<K,V>,Error<KE,VE>>
@@ -111,16 +121,16 @@ pub impl<K,V,KE,VE> core::clone::TryClone<alloc::hash_map::HashMap<K,V>,Error<KE
 
 #### method: try_clone_value
 
-[Source line 106](../../../stdlib/alloc/clone_hash_map.lani#L106)
+[Source line 115](../../../stdlib/alloc/clone_hash_map.lani#L115)
 
 ```lanius
 pub fn try_clone_value(source: alloc::hash_map::HashMap<K,V>)
         -> core::result::Result<alloc::hash_map::HashMap<K,V>,Error<KE,VE>>
 ```
 
-### impl at line 114
+### impl at line 123
 
-[Source line 114](../../../stdlib/alloc/clone_hash_map.lani#L114)
+[Source line 123](../../../stdlib/alloc/clone_hash_map.lani#L123)
 
 ```lanius
 pub impl<K,V> core::clone::Destroy<alloc::hash_map::HashMap<K,V>>
@@ -130,7 +140,7 @@ pub impl<K,V> core::clone::Destroy<alloc::hash_map::HashMap<K,V>>
 
 #### method: destroy_value
 
-[Source line 117](../../../stdlib/alloc/clone_hash_map.lani#L117)
+[Source line 126](../../../stdlib/alloc/clone_hash_map.lani#L126)
 
 ```lanius
 pub fn destroy_value(owned: alloc::hash_map::HashMap<K,V>)

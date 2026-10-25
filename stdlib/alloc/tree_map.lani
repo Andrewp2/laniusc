@@ -12,10 +12,13 @@ import core::slice;
 pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed, InvalidOrder, InvalidRange, NotEmpty }
 // Sink insertion rejects existing keys instead of replacing their entries.
 pub enum SinkError { Duplicate, Storage(Error) }
+pub enum IntoIterError { Remaining(i32) }
 pub struct Entry<K, V> { key: K, value: V }
 struct Node<K, V> { item: Entry<K, V>, left: i32, right: i32, parent: i32, height: i32, next_free: i32 }
 pub struct TreeMap<K, V> { storage: ptr, reserved: i32, used: i32, length: i32, root: i32, free: i32 }
 pub struct Cursor<K, V> { storage: ptr, reserved: i32, front: i32, back: i32 }
+// One active owner of a valid current tree and every unconsumed pair.
+pub struct IntoIter<K, V> { owner: TreeMap<K, V> }
 const ALIGN: usize = 8;
 
 pub fn new<K, V>() -> TreeMap<K, V> {
@@ -71,6 +74,16 @@ pub impl<K, V> TreeMap<K, V> {
     pub fn len(&self) -> i32 { return self.length; }
     pub fn capacity(&self) -> i32 { return self.reserved; }
     pub fn is_empty(&self) -> bool { return self.length == 0; }
+    fn take_owner(&self) -> TreeMap<K, V> {
+        let owner: TreeMap<K, V> = TreeMap { storage: self.storage, reserved: self.reserved, used: self.used, length: self.length, root: self.root, free: self.free };
+        let empty: ptr = 0; self.storage = empty; self.reserved = 0; self.clear();
+        return owner;
+    }
+    // Transfer backing, live pairs and free-list state. End all borrowed views
+    // first; shallow aliases cannot become additional cleanup authorities.
+    pub fn take_iter(&self) -> IntoIter<K, V> {
+        return IntoIter { owner: self.take_owner() };
+    }
     // Initialize an empty actual owner from strictly increasing entries.
     // Input must be physically backed and must not alias this map's storage.
     // Shallow copies transfer no nested cleanup automatically. All validation
@@ -353,6 +366,33 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
         if (self.front == self.back) { self.front = -1; self.back = -1; }
         else { self.front = adjacent(nodes, self.front, false); }
         return core::option::Some(node.item);
+    }
+}
+
+pub impl<K, V> IntoIter<K, V> {
+    pub fn borrow(&self) -> &IntoIter<K, V> { return self; }
+    pub fn remaining(&self) -> i32 { return self.owner.len(); }
+    pub fn capacity(&self) -> i32 { return self.owner.capacity(); }
+    pub fn is_empty(&self) -> bool { return self.owner.is_empty(); }
+    // Endpoint removal preserves the canonical AVL tree and transfers a pair
+    // without comparison, cloning, release or allocation. O(log n) per pop.
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
+        return self.owner.pop_last();
+    }
+    // Exhaustion retains backing. Rejecting finish preserves the exact owner;
+    // successful finish frees backing and disarms it, repeatably.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let count: i32 = self.remaining();
+        if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
+        self.owner.destroy(); return core::option::None();
+    }
+    // O(1) handoff of the valid remaining tree, including holes, capacity and
+    // its current free list. No compaction, allocation or nested destruction.
+    pub fn take_remaining(&self) -> TreeMap<K, V> { return self.owner.take_owner(); }
+}
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V> {
+    pub fn next(&self) -> core::option::Option<Entry<K, V>> {
+        return self.owner.pop_first();
     }
 }
 
