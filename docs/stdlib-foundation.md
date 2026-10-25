@@ -248,6 +248,18 @@ preflight, failure, nested buffering and plain-consumer gates. The
 including all 23 representative allocation denials and the exact output cap.
 Existing buffer atomicity and owned formatting retain their contracts.
 
+[SHA-224/256](stdlib-sha256.md) and the [SHA-512 family](stdlib-sha512.md)
+now supply all six byte-oriented SHA-2 variants with incremental state,
+copied results and explicit length/finalization errors. The
+[HMAC/HKDF modules](extended-hmac-hkdf.md) provide keyed state and bounded
+extract/expand output. Native models exercise 3,362 commands, official known
+answers, state/digest independence, layouts and rejection atomicity. The
+[stdin hashing](stdlib-hash-bytes.md) and [key-derivation](extended-derive-key.md)
+programs pass 136 and 51 native cases, including EOF, quota, I/O failure and
+actual partial-write behavior. No compiler, runtime, shader, IR, ABI or proof
+source changed. Supported execution is x86_64 Linux output from GPU compilation;
+TLS and the other recorded native integration dependencies remain separate.
+
 [Checked file lengths](stdlib-file-resize.md) execute shrink, zero extension,
 sparse lengths above 4 GiB and unchanged duplicated offsets, with explicit
 one-attempt failures. [Bounded regular-file copying](stdlib-file-copy.md) checks
@@ -266,7 +278,7 @@ Compiler failures retain
 [reproductions and successful controls](library-dependencies.md).
 
 The [generated declaration reference](library-api-reference.md) inventories
-219 source modules with signatures, bounds, fields and exact source links.
+223 source modules with signatures, bounds, fields and exact source links.
 The original twenty focused CPU tests passed; the current regenerated-output
 check also passes without changes to the generator. This is
 documentation extraction, not runtime verification; semantic guide gaps remain

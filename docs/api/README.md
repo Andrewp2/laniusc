@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **219 modules**, **9656 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **223 modules**, **9747 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -68,6 +68,8 @@ Inventory: **219 modules**, **9656 declaration/member entries**. Counts include 
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
 | [core::sha1](core/sha1.md) | [source](../../stdlib/core/sha1.lani#L3) | 22 | Source inventory | **Unregistered** |
+| [core::sha256](core/sha256.md) | [source](../../stdlib/core/sha256.lani#L4) | 30 | Source inventory | [stdlib-sha256](../stdlib-sha256.md), [stdlib-hash-bytes](../stdlib-hash-bytes.md) |
+| [core::sha512](core/sha512.md) | [source](../../stdlib/core/sha512.lani#L4) | 35 | Source inventory | [stdlib-sha512](../stdlib-sha512.md), [stdlib-hash-bytes](../stdlib-hash-bytes.md) |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L10) | 87 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
 | [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 86 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-text-split-iterators](../stdlib-text-split-iterators.md) |
@@ -204,6 +206,8 @@ Inventory: **219 modules**, **9656 declaration/member entries**. Counts include 
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
+| [ext::hkdf_sha256](ext/hkdf_sha256.md) | [source](../../extended/ext/hkdf_sha256.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
+| [ext::hmac_sha256](ext/hmac_sha256.md) | [source](../../extended/ext/hmac_sha256.lani#L3) | 17 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
 | [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 74 | Source inventory | [extended-http-client](../extended-http-client.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 128 | Source inventory | [extended-http-server](../extended-http-server.md) |

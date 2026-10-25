@@ -18,6 +18,12 @@ callbacks, general native FFI, TLS or SQLite. The
 separates checked entries, concurrent memory ordering and static/dynamic foreign
 ABI support; thread local storage is conditional on the chosen
 worker/foreign-library profile. Network TLS remains a separate integration.
+The [SHA-2 modules](stdlib-sha512.md) and
+[HMAC/HKDF](extended-hmac-hkdf.md) now execute entirely in Lanius over existing
+interfaces. They add no compiler/runtime dependency. TLS still needs its other
+cryptographic algorithms, handshake and certificate/trust policy; native
+foreign-library integration remains a distinct prerequisite for the proposed
+SQLite and foreign-library profiles.
 The [host prerequisite audit](library-host-prerequisites.md) distinguishes the
 historical missing operations from the remaining code-entry/memory-model work.
 Current [memory/view contracts](stdlib-memory.md) and

@@ -1,0 +1,139 @@
+// SHA-224/SHA-256: FIPS 180-4 sections 4.1.2, 4.2.2, 5 and 6.2-6.3.
+// https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf
+// Manual state, immutable disjoint input, byte-oriented and allocation-free.
+module core::sha256;
+import core::option;
+import core::result;
+import core::slice;
+import core::u32;
+
+pub enum Error { Bounds, LengthOverflow, Finished }
+pub struct Digest { bytes: [u8; 32], length: i32 }
+// Before finish: count<=2^61-1, used=count%64, block[0..used] is the
+// uncompressed suffix and h0..h7 are the preceding blocks' chaining words.
+// Use constructors/reset; public fields do not validate fabricated states.
+pub struct State {
+    h0: u32, h1: u32, h2: u32, h3: u32, h4: u32, h5: u32, h6: u32, h7: u32,
+    count: u64, used: i32, block: [u8; 64], finished: bool, is224: bool
+}
+
+pub fn new() -> State {
+    let block: [u8; 64] = [0; 64];
+    return State { h0: 1779033703, h1: 3144134277, h2: 1013904242, h3: 2773480762,
+        h4: 1359893119, h5: 2600822924, h6: 528734635, h7: 1541459225,
+        count: 0, used: 0, block: block, finished: false, is224: false };
+}
+pub fn new224() -> State { let value: State = new(); value.is224 = true; value.reset(); return value; }
+
+// Four/five canonical 32-bit terms sum below 2^34/2^35 in u64. Mask before
+// narrowing, so every schedule/round word is explicitly reduced modulo 2^32.
+fn add4(a: u32, b: u32, c: u32, d: u32) -> u32 {
+    return (((a as u64) + (b as u64) + (c as u64) + (d as u64)) & 4294967295) as u32;
+}
+fn add5(a: u32, b: u32, c: u32, d: u32, e: u32) -> u32 {
+    return (((a as u64) + (b as u64) + (c as u64) + (d as u64) + (e as u64)) & 4294967295) as u32;
+}
+fn small0(value: u32) -> u32 { return core::u32::rotate_right(value, 7) ^ core::u32::rotate_right(value, 18) ^ core::u32::shr(value, 3); }
+fn small1(value: u32) -> u32 { return core::u32::rotate_right(value, 17) ^ core::u32::rotate_right(value, 19) ^ core::u32::shr(value, 10); }
+fn big0(value: u32) -> u32 { return core::u32::rotate_right(value, 2) ^ core::u32::rotate_right(value, 13) ^ core::u32::rotate_right(value, 22); }
+fn big1(value: u32) -> u32 { return core::u32::rotate_right(value, 6) ^ core::u32::rotate_right(value, 11) ^ core::u32::rotate_right(value, 25); }
+
+pub impl State {
+    pub fn borrow(&self) -> &State { return self; }
+    fn compress(&self) {
+        // Decimal spellings of the 64 FIPS 180-4 section 4.2.2 hex words.
+        let constants: [u32; 64] = [
+            1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221,
+            3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580,
+            3835390401, 4022224774, 264347078, 604807628, 770255983, 1249150122, 1555081692, 1996064986,
+            2554220882, 2821834349, 2952996808, 3210313671, 3336571891, 3584528711, 113926993, 338241895,
+            666307205, 773529912, 1294757372, 1396182291, 1695183700, 1986661051, 2177026350, 2456956037,
+            2730485921, 2820302411, 3259730800, 3345764771, 3516065817, 3600352804, 4094571909, 275423344,
+            430227734, 506948616, 659060556, 883997877, 958139571, 1322822218, 1537002063, 1747873779,
+            1955562222, 2024104815, 2227730452, 2361852424, 2428436474, 2756734187, 3204031479, 3329325298
+        ];
+        let schedule: [u32; 64] = [0; 64]; let index: i32 = 0;
+        while (index < 16) {
+            let at: i32 = index * 4;
+            let word: u64 = ((self.block[at] as u64) << 24) | ((self.block[at+1] as u64) << 16) |
+                ((self.block[at+2] as u64) << 8) | (self.block[at+3] as u64);
+            schedule[index] = word as u32; index += 1;
+        }
+        while (index < 64) {
+            schedule[index] = add4(small1(schedule[index-2]), schedule[index-7], small0(schedule[index-15]), schedule[index-16]);
+            index += 1;
+        }
+        let a: u32 = self.h0; let b: u32 = self.h1; let c: u32 = self.h2; let d: u32 = self.h3;
+        let e: u32 = self.h4; let f: u32 = self.h5; let g: u32 = self.h6; let h: u32 = self.h7;
+        index = 0;
+        while (index < 64) {
+            let choice: u32 = (e & f) ^ ((e ^ 4294967295) & g);
+            let majority: u32 = (a & b) ^ (a & c) ^ (b & c);
+            let first: u32 = add5(h, big1(e), choice, constants[index], schedule[index]);
+            let second: u32 = core::u32::wrapping_add(big0(a), majority);
+            h = g; g = f; f = e; e = core::u32::wrapping_add(d, first);
+            d = c; c = b; b = a; a = core::u32::wrapping_add(first, second); index += 1;
+        }
+        self.h0 = core::u32::wrapping_add(self.h0, a); self.h1 = core::u32::wrapping_add(self.h1, b);
+        self.h2 = core::u32::wrapping_add(self.h2, c); self.h3 = core::u32::wrapping_add(self.h3, d);
+        self.h4 = core::u32::wrapping_add(self.h4, e); self.h5 = core::u32::wrapping_add(self.h5, f);
+        self.h6 = core::u32::wrapping_add(self.h6, g); self.h7 = core::u32::wrapping_add(self.h7, h);
+        self.used = 0;
+    }
+    // Check logical metadata, finish state and total length before any read or
+    // mutation. Input must be physically backed, immutable and disjoint from self.
+    pub fn update(&self, input: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+        if (input.start < 0 || input.length < 0 || input.start > 2147483647 - input.length) { return core::result::Err(Error::Bounds); }
+        if (self.finished) { return core::result::Err(Error::Finished); }
+        if ((input.length as u64) > 2305843009213693951 - self.count) { return core::result::Err(Error::LengthOverflow); }
+        let index: i32 = 0;
+        while (index < input.length) {
+            self.block[self.used] = core::option::unwrap(input.get(index)); self.used += 1;
+            if (self.used == 64) { self.compress(); } index += 1;
+        }
+        self.count += input.length as u64; return core::result::Ok(index);
+    }
+    // Pad once using the original byte count. The digest owns its inline bytes;
+    // repeated finish is idempotent, and updates reject until reset.
+    pub fn finish(&self) -> Digest {
+        if (!self.finished) {
+            let bits: u64 = self.count * 8;
+            self.block[self.used] = 128; self.used += 1;
+            if (self.used > 56) {
+                while (self.used < 64) { self.block[self.used] = 0; self.used += 1; }
+                self.compress();
+            }
+            while (self.used < 56) { self.block[self.used] = 0; self.used += 1; }
+            let index: i32 = 0;
+            while (index < 8) { self.block[56+index] = ((bits >> ((7-index)*8)) & 255) as u8; index += 1; }
+            self.compress(); self.finished = true;
+        }
+        let words: [u32; 8] = [self.h0, self.h1, self.h2, self.h3, self.h4, self.h5, self.h6, self.h7];
+        let bytes: [u8; 32] = [0; 32]; let length: i32 = 32; if (self.is224) { length = 28; }
+        let index: i32 = 0;
+        while (index < length) { bytes[index] = (((words[index/4] as u64) >> ((3-index%4)*8)) & 255) as u8; index += 1; }
+        return Digest { bytes: bytes, length: length };
+    }
+    // Keep the selected variant. Clear the pending buffer as well as counters;
+    // this is state reset, not a guarantee of secure erasure by the compiler.
+    pub fn reset(&self) {
+        self.h0 = 1779033703; self.h1 = 3144134277; self.h2 = 1013904242; self.h3 = 2773480762;
+        self.h4 = 1359893119; self.h5 = 2600822924; self.h6 = 528734635; self.h7 = 1541459225;
+        if (self.is224) {
+            self.h0 = 3238371032; self.h1 = 914150663; self.h2 = 812702999; self.h3 = 4144912697;
+            self.h4 = 4290775857; self.h5 = 1750603025; self.h6 = 1694076839; self.h7 = 3204075428;
+        }
+        self.count = 0; self.used = 0; self.finished = false;
+        let index: i32 = 0; while (index < 64) { self.block[index] = 0; index += 1; }
+    }
+}
+pub fn digest(input: core::slice::View<u8>) -> core::result::Result<Digest, Error> {
+    let state: State = new(); let updated: core::result::Result<i32, Error> = state.update(input);
+    if (core::result::is_err(updated)) { return core::result::Err(core::result::unwrap_err(updated)); }
+    return core::result::Ok(state.finish());
+}
+pub fn digest224(input: core::slice::View<u8>) -> core::result::Result<Digest, Error> {
+    let state: State = new224(); let updated: core::result::Result<i32, Error> = state.update(input);
+    if (core::result::is_err(updated)) { return core::result::Err(core::result::unwrap_err(updated)); }
+    return core::result::Ok(state.finish());
+}

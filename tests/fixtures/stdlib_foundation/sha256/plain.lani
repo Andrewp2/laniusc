@@ -1,0 +1,21 @@
+// Ordinary consumer: no matching or projecting any imported Error variant.
+module app::main;
+import core::result;
+import core::sha256;
+import core::slice;
+fn main() -> i32 {
+    let bytes: [u8; 3] = [97, 98, 99];
+    let input: core::slice::View<u8> = core::slice::View<u8> { values: bytes, start: 0, length: 3 };
+    let full: core::sha256::Digest = core::result::unwrap(core::sha256::digest(input));
+    let short: core::sha256::Digest = core::result::unwrap(core::sha256::digest224(input));
+    let expected: [u8; 32] = [186, 120, 22, 191, 143, 1, 207, 234, 65, 65, 64, 222, 93, 174, 34, 35, 176, 3, 97, 163, 150, 23, 122, 156, 180, 16, 255, 97, 242, 0, 21, 173];
+    let expected224: [u8; 32] = [35, 9, 125, 34, 52, 5, 216, 34, 134, 66, 164, 119, 189, 162, 85, 179, 42, 173, 188, 228, 189, 160, 179, 247, 227, 108, 157, 167, 0, 0, 0, 0];
+    assert(full.length == 32 && short.length == 28);
+    let index: i32 = 0;
+    while (index < 32) { assert(full.bytes[index] == expected[index]); assert(short.bytes[index] == expected224[index]); index += 1; }
+    let state: core::sha256::State = core::sha256::new();
+    assert(core::result::unwrap(state.update(input)) == 3);
+    let streamed: core::sha256::Digest = state.finish();
+    index = 0; while (index < 32) { assert(streamed.bytes[index] == expected[index]); index += 1; }
+    return 0;
+}

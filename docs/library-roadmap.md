@@ -27,6 +27,7 @@ package distribution is a separate deliverable.
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols and String implementations execute with typed errors and manual memory-owner release. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
+| Byte digests | Incremental SHA-2, checked message lengths, copied results and reset | SHA-224/256 and SHA-384/512/512-224/512-256 execute without allocation, including variant-specific initial values, padding and full length encoding. Independent models cover streaming layouts, state/digest copies, finalization and rejection atomicity. The stdin hash program exercises all six algorithms, EOF, byte/call limits and I/O failures on native Linux |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
 | Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque cursors transfer cleanup authority and recover their original storage, with explicit nested cleanup and a streaming unique-word application. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
@@ -338,6 +339,16 @@ Families can proceed independently once their dependencies have working
 contracts. A compiler defect should have a minimal reproduction and an affected
 API list; unrelated library work can continue.
 
+[SHA-224/256](stdlib-sha256.md) and the [SHA-512 family](stdlib-sha512.md)
+provide the six byte-oriented SHA-2 algorithms with incremental state and
+allocation-free digest values. [HMAC-SHA-256 and HKDF-SHA-256](extended-hmac-hkdf.md)
+add keyed state and extract/expand operations, checked against RFC vectors
+and independent models. Their applications [hash stdin](stdlib-hash-bytes.md)
+and [derive keys from binary stdin](extended-derive-key.md) with explicit byte
+and I/O-call limits. This is a prerequisite milestone for protocol work;
+TLS, certificate handling, native foreign-library integration and the other
+remaining families above still need their own executable evidence.
+
 ## Completion requirements
 
 - Public APIs perform their documented work. Unsupported operations fail
@@ -361,7 +372,16 @@ API list; unrelated library work can continue.
 ## Current work
 
 - Branch: `codex/stdlib`, based on `441e66f9`.
-- Current milestone: runtime formatting to generic byte writers, using the
+- Current milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
+  SHA-384, SHA-512, SHA-512/224 and SHA-512/256), followed by HMAC-SHA-256
+  and HKDF-SHA-256. Allocation-free Lanius implementations and native admission
+  are complete, with incremental state, explicit bounds/length/finalization
+  errors, primary-specification vectors and 3,362 independent model commands.
+  The streaming stdin hashing and key-derivation applications pass 136 and 51
+  native cases respectively. The whole library goal remains open. This supplies
+  prerequisites for protocol work; TLS still needs its other algorithms,
+  certificate policy and transport state machine.
+- Previous milestone: runtime formatting to generic byte writers, using the
   existing parser/renderer, bounded scratch, complete preflight before output,
   exact confirmed failure progress and explicit call budgets. Independent
   models, preflight/failure/nested-buffering gates and the real

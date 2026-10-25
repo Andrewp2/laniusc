@@ -72,6 +72,10 @@ Strings into an ordered set while reusing its batch allocation.
 before publication and uses bounded scratch with explicit partial progress.
 The [CSV report program](docs/stdlib-format-report.md) composes it with numeric
 parsing and buffered output.
+[SHA-224/256](docs/stdlib-sha256.md) and the
+[SHA-512 family](docs/stdlib-sha512.md) provide allocation-free incremental
+byte digests. The [stdin hashing program](docs/stdlib-hash-bytes.md) exercises
+all six algorithms with explicit input and I/O limits.
 
 Optional modules use the [`extended` source root](extended/README.md).
 [`ext::csv`](docs/extended-csv.md) and [`ext::json`](docs/extended-json.md)

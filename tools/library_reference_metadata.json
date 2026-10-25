@@ -333,6 +333,18 @@
         "docs/stdlib-cursor-integration.md"
       ]
     },
+    "core::sha256": {
+      "guides": [
+        "docs/stdlib-sha256.md",
+        "docs/stdlib-hash-bytes.md"
+      ]
+    },
+    "core::sha512": {
+      "guides": [
+        "docs/stdlib-sha512.md",
+        "docs/stdlib-hash-bytes.md"
+      ]
+    },
     "core::slice": {
       "guides": [
         "docs/stdlib-slice-views.md",
@@ -557,6 +569,18 @@
     "ext::glob": {
       "guides": [
         "docs/extended-glob.md"
+      ]
+    },
+    "ext::hkdf_sha256": {
+      "guides": [
+        "docs/extended-hmac-hkdf.md",
+        "docs/extended-derive-key.md"
+      ]
+    },
+    "ext::hmac_sha256": {
+      "guides": [
+        "docs/extended-hmac-hkdf.md",
+        "docs/extended-derive-key.md"
       ]
     },
     "ext::http": {

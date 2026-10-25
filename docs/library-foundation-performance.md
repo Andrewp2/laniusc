@@ -582,3 +582,57 @@ under that admission directory. A separate [native scale gate](stdlib-format-wri
 renders one MiB with 256-byte scratch and checks every output byte through an
 independent hash. Its timings include startup and hashing and measure a
 different workload from these compilation samples.
+
+## SHA-2, HMAC and HKDF
+
+On 2026-10-24 the unchanged `stdlib_gpu_perf` harness compiled the
+[combined consumer](../tests/fixtures/extended/sha2_crypto_perf.lani) with
+the new SHA-2, HMAC-SHA-256 and HKDF-SHA-256 modules. It checks complete
+expected digests for all six hash variants and the RFC 5869 case-1 PRK/output.
+The harness executed every emitted ELF outside the compiler timer, requiring
+exact empty stdout/stderr and exit zero.
+
+| Workload | Compiler samples (ms) | Median (ms) | ELF bytes |
+| --- | --- | ---: | ---: |
+| Six SHA-2 variants, HMAC and HKDF | 229.515, 211.419, 211.746 | 211.746 | 377,636 |
+
+There was one warmup and three measured private entry rebuilds, with warm
+imports and an uncontrolled desktop. This is a current library workload;
+there is no baseline implementation or cross-compiler comparison. The exact
+serialized command, after a fresh build of the example, was:
+
+```sh
+RUST_MIN_STACK=16777216 LANIUS_PERF_REBUILD_ENTRY=1 \
+  timeout --kill-after=2s 100s \
+  flock -E75 -w35 target/stdlib-work/library-gpu.lock \
+  timeout --kill-after=2s 60s \
+  target/stdlib-build/debug/examples/stdlib_gpu_perf \
+  tests/fixtures/extended/sha2_crypto_perf.lani stdlib - 1 3 extended
+```
+
+The independent [stdin hashing application](stdlib-hash-bytes.md) also
+processed exactly one MiB for each algorithm and compared full output with
+Python hashlib. Observed case wall times were:
+
+| Algorithm | Case wall (ms) |
+| --- | ---: |
+| SHA-224 | 201.502 |
+| SHA-256 | 189.622 |
+| SHA-384 | 89.378 |
+| SHA-512 | 98.241 |
+| SHA-512/224 | 121.628 |
+| SHA-512/256 | 104.298 |
+
+Each value includes input-file setup, strace, native process startup and trace
+parsing. Compilation and the independent oracle run are outside that interval.
+These single-case observations do not isolate hash throughput or establish a
+stable performance ratio. The same application passed its separate exact
+16-MiB input cap, one-byte excess probe and persistent-interruption call budget.
+
+Ignored local evidence is under `target/stdlib-work/sha2-admission/`:
+`build-perf.log`, `perf-current.log` and `hash-bytes-scale.log`. An earlier
+performance-fixture attempt omitted its required module declaration and
+failed before execution; `perf-fixture-syntax.log` preserves it. The successful
+workload adds that declaration without changing any algorithm or expected byte.
+No compiler, runtime, shader, IR, ABI or proof source changed. Supported
+execution remains x86_64 Linux output from GPU compilation.

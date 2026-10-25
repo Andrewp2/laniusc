@@ -1,0 +1,83 @@
+// Small complete SHA-2/HMAC/HKDF consumer for the existing compiler perf harness.
+// Expected bytes are independent hashlib/hmac test vectors; implementation is Lanius.
+module test::sha2_crypto_perf;
+import core::sha256;
+import core::sha512;
+import core::slice;
+import core::result;
+import ext::hmac_sha256;
+import ext::hkdf_sha256;
+fn main() {
+    let abc: [u8;3] = [97,98,99];
+    let input: core::slice::View<u8> = core::result::unwrap(core::slice::view(abc,3));
+    let digest0: core::sha256::Digest = core::result::unwrap(core::sha256::digest224(input));
+    let expected0: [u8;28] = [35,9,125,34,52,5,216,34,134,66,164,119,189,162,85,179,42,173,188,228,189,160,179,247,227,108,157,167];
+    assert(digest0.length == 28);
+    let at0: i32 = 0;
+    while (at0 < 32) {
+        if (at0 < 28) { assert(digest0.bytes[at0] == expected0[at0]); }
+        else { assert(digest0.bytes[at0] == 0); }
+        at0 += 1;
+    }
+    let digest1: core::sha256::Digest = core::result::unwrap(core::sha256::digest(input));
+    let expected1: [u8;32] = [186,120,22,191,143,1,207,234,65,65,64,222,93,174,34,35,176,3,97,163,150,23,122,156,180,16,255,97,242,0,21,173];
+    assert(digest1.length == 32);
+    let at1: i32 = 0;
+    while (at1 < 32) {
+        if (at1 < 32) { assert(digest1.bytes[at1] == expected1[at1]); }
+        else { assert(digest1.bytes[at1] == 0); }
+        at1 += 1;
+    }
+    let digest2: core::sha512::Digest = core::result::unwrap(core::sha512::digest384(input));
+    let expected2: [u8;48] = [203,0,117,63,69,163,94,139,181,160,61,105,154,198,80,7,39,44,50,171,14,222,209,99,26,139,96,90,67,255,91,237,128,134,7,43,161,231,204,35,88,186,236,161,52,200,37,167];
+    assert(digest2.length == 48);
+    let at2: i32 = 0;
+    while (at2 < 64) {
+        if (at2 < 48) { assert(digest2.bytes[at2] == expected2[at2]); }
+        else { assert(digest2.bytes[at2] == 0); }
+        at2 += 1;
+    }
+    let digest3: core::sha512::Digest = core::result::unwrap(core::sha512::digest(input));
+    let expected3: [u8;64] = [221,175,53,161,147,97,122,186,204,65,115,73,174,32,65,49,18,230,250,78,137,169,126,162,10,158,238,230,75,85,211,154,33,146,153,42,39,79,193,168,54,186,60,35,163,254,235,189,69,77,68,35,100,60,232,14,42,154,201,79,165,76,164,159];
+    assert(digest3.length == 64);
+    let at3: i32 = 0;
+    while (at3 < 64) {
+        if (at3 < 64) { assert(digest3.bytes[at3] == expected3[at3]); }
+        else { assert(digest3.bytes[at3] == 0); }
+        at3 += 1;
+    }
+    let digest4: core::sha512::Digest = core::result::unwrap(core::sha512::digest512_224(input));
+    let expected4: [u8;28] = [70,52,39,15,112,123,106,84,218,174,117,48,70,8,66,226,14,55,237,38,92,238,233,164,62,137,36,170];
+    assert(digest4.length == 28);
+    let at4: i32 = 0;
+    while (at4 < 64) {
+        if (at4 < 28) { assert(digest4.bytes[at4] == expected4[at4]); }
+        else { assert(digest4.bytes[at4] == 0); }
+        at4 += 1;
+    }
+    let digest5: core::sha512::Digest = core::result::unwrap(core::sha512::digest512_256(input));
+    let expected5: [u8;32] = [83,4,142,38,129,148,30,249,155,46,41,183,107,76,125,171,228,194,208,198,52,252,109,70,224,226,241,49,7,231,175,35];
+    assert(digest5.length == 32);
+    let at5: i32 = 0;
+    while (at5 < 64) {
+        if (at5 < 32) { assert(digest5.bytes[at5] == expected5[at5]); }
+        else { assert(digest5.bytes[at5] == 0); }
+        at5 += 1;
+    }
+    let key: [u8;22] = [11;22];
+    let salt: [u8;13] = [0,1,2,3,4,5,6,7,8,9,10,11,12];
+    let info: [u8;10] = [240,241,242,243,244,245,246,247,248,249];
+    let key_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(key,22));
+    let salt_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(salt,13));
+    let info_view: core::slice::View<u8> = core::result::unwrap(core::slice::view(info,10));
+    let tag: core::sha256::Digest = core::result::unwrap(ext::hmac_sha256::authenticate(salt_view,key_view));
+    let extracted: core::sha256::Digest = core::result::unwrap(ext::hkdf_sha256::extract(salt_view,key_view));
+    let expected_tag: [u8;32] = [7,119,9,54,44,46,50,223,13,220,63,13,196,123,186,99,144,182,199,59,181,15,156,49,34,236,132,74,215,194,179,229];
+    let at: i32 = 0;
+    while (at < 32) { assert(tag.bytes[at] == expected_tag[at]); assert(extracted.bytes[at] == expected_tag[at]); at += 1; }
+    let output: [u8;42] = [0;42];
+    let destination: core::slice::View<u8> = core::result::unwrap(core::slice::view(output,42));
+    assert(core::result::unwrap(ext::hkdf_sha256::derive(salt_view,key_view,info_view,destination)) == 42);
+    let expected_output: [u8;42] = [60,178,95,37,250,172,213,122,144,67,79,100,208,54,47,42,45,45,10,144,207,26,90,76,93,176,45,86,236,196,197,191,52,0,114,8,213,184,135,24,88,101];
+    at = 0; while (at < 42) { assert(output[at] == expected_output[at]); at += 1; }
+}

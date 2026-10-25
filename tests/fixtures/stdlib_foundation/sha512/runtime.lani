@@ -1,0 +1,140 @@
+// Batched binary SHA-512-family oracle consumer. Fixed caller storage only.
+// Fabricated counters below test count arithmetic and final length encoding;
+// their chaining words do not represent actually processed enormous messages.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::sha512;
+import core::slice;
+import std::stream;
+
+fn view(bytes: [u8], start: i32, count: i32) -> core::slice::View<u8> { return core::slice::view_range(bytes,start,count).unwrap(); }
+fn state(variant: i32) -> core::sha512::State {
+    if (variant == 0) { return core::sha512::new(); }
+    if (variant == 1) { return core::sha512::new384(); }
+    if (variant == 2) { return core::sha512::new512_224(); }
+    assert(variant == 3); return core::sha512::new512_256();
+}
+fn one_shot(variant: i32, input: core::slice::View<u8>) -> core::result::Result<core::sha512::Digest,core::sha512::Error> {
+    if (variant == 0) { return core::sha512::digest(input); }
+    if (variant == 1) { return core::sha512::digest384(input); }
+    if (variant == 2) { return core::sha512::digest512_224(input); }
+    assert(variant == 3); return core::sha512::digest512_256(input);
+}
+fn code(error: core::sha512::Error) -> i32 { return match (error) { core::sha512::Error::Bounds -> 1, core::sha512::Error::LengthOverflow -> 2, core::sha512::Error::Finished -> 3 }; }
+fn equal(left: core::sha512::Digest, right: core::sha512::Digest) {
+    assert(left.length == right.length); let i: i32=0;
+    while (i < 64) { assert(left.bytes[i] == right.bytes[i]); if (i >= left.length) { assert(left.bytes[i] == 0); } i+=1; }
+}
+fn emit(sink: &std::stream::Descriptor, digest: core::sha512::Digest) {
+    let length: [u8;1] = [digest.length as u8]; core::io::write_all(sink,length,0,1).unwrap();
+    core::io::write_all(sink,digest.bytes,0,64).unwrap();
+}
+
+// Capture numeric scalar values and every block byte independently of State
+// copying. Comparing only two State handles could miss an aliased-buffer bug.
+fn snapshot(value: &core::sha512::State, saved: [u64]) {
+    saved[0]=value.h0; saved[1]=value.h1; saved[2]=value.h2; saved[3]=value.h3;
+    saved[4]=value.h4; saved[5]=value.h5; saved[6]=value.h6; saved[7]=value.h7;
+    saved[8]=value.byte_low; saved[9]=value.byte_high; saved[10]=value.used as u64;
+    saved[11]=0; if (value.finished) { saved[11]=1; } saved[12]=value.output_length as u64;
+    let i: i32=0; while (i < 128) { saved[13+i]=value.block[i] as u64; i+=1; }
+}
+fn unchanged(value: &core::sha512::State, saved: [u64]) {
+    let after: [u64;141] = [0;141]; snapshot(value,after); let i: i32=0;
+    while (i < 141) { assert(after[i] == saved[i]); i+=1; }
+}
+fn padding(sink: &std::stream::Descriptor, value: &core::sha512::State) { core::io::write_all(sink,value.block,112,16).unwrap(); }
+fn contracts(sink: &std::stream::Descriptor) {
+    let data: [u8;3] = [97,98,99]; let input: core::slice::View<u8> = view(data,0,3); let empty: core::slice::View<u8> = view(data,1,0);
+    let current: core::sha512::State = core::sha512::new(); current.update(input).unwrap();
+    let saved: [u64;141] = [0;141]; snapshot(current.borrow(),saved);
+    let malformed: core::slice::View<u8> = input; malformed.start=-1;
+    assert(code(current.update(malformed).unwrap_err()) == 1); unchanged(current.borrow(),saved);
+    malformed=input; malformed.length=-1; assert(code(current.update(malformed).unwrap_err()) == 1); unchanged(current.borrow(),saved);
+    malformed=input; malformed.start=2147483647; malformed.length=1;
+    assert(code(current.update(malformed).unwrap_err()) == 1); unchanged(current.borrow(),saved);
+    let variant: i32=0; while (variant < 4) { assert(code(one_shot(variant,malformed).unwrap_err()) == 1); variant+=1; }
+    current.finish(); snapshot(current.borrow(),saved);
+    assert(code(current.update(malformed).unwrap_err()) == 1); unchanged(current.borrow(),saved);
+    assert(code(current.update(empty).unwrap_err()) == 3); unchanged(current.borrow(),saved);
+    current.reset(); assert(current.byte_low == 0 && current.byte_high == 0 && current.used == 0 && !current.finished);
+    let i: i32=0; while (i < 128) { assert(current.block[i] == 0); i+=1; }
+
+    // Max legal whole-byte length is 2^125-1; one more byte must fail before
+    // changing chaining words, block bytes, count, lifecycle or variant.
+    current.byte_high=2305843009213693951; current.byte_low=18446744073709551615; current.used=127;
+    i=0; while (i < 128) { current.block[i]=(i*17) as u8; i+=1; }
+    snapshot(current.borrow(),saved);
+    assert(code(current.update(view(data,0,1)).unwrap_err()) == 2); unchanged(current.borrow(),saved);
+    assert(code(current.update(malformed).unwrap_err()) == 1); unchanged(current.borrow(),saved);
+    assert(current.update(empty).unwrap() == 0); unchanged(current.borrow(),saved);
+    current.finish(); padding(sink,current.borrow());
+
+    // The low counter carries into high while processing a block boundary.
+    current.reset(); current.byte_high=7; current.byte_low=18446744073709551614; current.used=126;
+    assert(current.update(input).unwrap() == 3 && current.byte_high == 8 && current.byte_low == 1 && current.used == 1 && current.block[0] == 99);
+    current.finish(); padding(sink,current.borrow());
+    current.reset(); current.byte_high=0x0123456789abcdef; current.byte_low=0xe123456789abcde0; current.used=96;
+    current.finish(); padding(sink,current.borrow());
+
+    // A fabricated out-of-invariant high counter is rejected defensively,
+    // including zero-byte updates, and cannot wrap back into the valid range.
+    current.reset(); current.byte_high=2305843009213693952; snapshot(current.borrow(),saved);
+    assert(code(current.update(empty).unwrap_err()) == 2); unchanged(current.borrow(),saved);
+}
+
+fn feed(value: &core::sha512::State, input: core::slice::View<u8>, schedule: i32) {
+    let widths: [i32;8] = [1,7,111,112,127,128,129,3]; let position: i32=0; let step: i32=0;
+    while (position < input.len()) {
+        let count: i32=input.len()-position;
+        if (schedule == 1) { count=1; }
+        if (schedule == 2 && count > widths[step%8]) { count=widths[step%8]; }
+        if (schedule == 3 && count > 128) { count=128; }
+        assert(value.update(input.subview(position,position+count).unwrap()).unwrap() == count);
+        assert(value.update(input.subview(position,position).unwrap()).unwrap() == 0);
+        position+=count; step+=1;
+    }
+}
+fn check_case(sink: &std::stream::Descriptor, variant: i32, schedule: i32, input: core::slice::View<u8>) {
+    let reference: core::sha512::Digest=one_shot(variant,input).unwrap();
+    let main: core::sha512::State=state(variant); let split: i32=input.len(); if (split > 73) { split=73; }
+    main.update(input.subview(0,split).unwrap()).unwrap();
+    // These States own independent fixed arrays: both receive divergent
+    // updates before either finishes, including a nonempty partial block.
+    let fork: core::sha512::State=main;
+    feed(main.borrow(),input.subview(split,input.len()).unwrap(),schedule);
+    let alternative: [u8;3]=[255,0,17]; let extension: core::slice::View<u8> = view(alternative,0,3);
+    fork.update(extension).unwrap();
+    let actual: core::sha512::Digest=main.finish(); let forked: core::sha512::Digest=fork.finish(); let again: core::sha512::Digest=main.finish();
+    equal(actual,reference); equal(actual,again);
+    let first: u8=actual.bytes[0]; reference.bytes[0] ^= 255;
+    assert(actual.bytes[0] == first && again.bytes[0] == first && main.finish().bytes[0] == first);
+    let retained: core::sha512::Digest=actual;
+    main.reset(); assert(main.byte_low == 0 && main.byte_high == 0 && main.used == 0 && !main.finished);
+    feed(main.borrow(),input,schedule); let reset: core::sha512::Digest=main.finish(); equal(reset,actual); equal(retained,actual);
+    let other: core::sha512::Digest=one_shot(variant,extension).unwrap(); assert(other.length == actual.length);
+    retained.bytes[1] ^= 255; assert(actual.bytes[1] == reset.bytes[1] && again.bytes[1] == reset.bytes[1]);
+    let empty: core::slice::View<u8> = input.subview(0,0).unwrap(); assert(code(main.update(empty).unwrap_err()) == 3);
+    // Retained copies survive reset, unrelated one-shots, stack reuse and
+    // mutation of different Digest copies before publication to the oracle.
+    emit(sink,actual); emit(sink,forked); emit(sink,again);
+}
+fn word(bytes: [u8], offset: i32) -> u32 { return (bytes[offset] as u32) | ((bytes[offset+1] as u32)<<8) | ((bytes[offset+2] as u32)<<16) | ((bytes[offset+3] as u32)<<24); }
+fn main() -> i32 {
+    let source: std::stream::Descriptor=std::stream::stdin(); let sink: std::stream::Descriptor=std::stream::stdout(); contracts(sink.borrow());
+    let header: [u8;8]=[0;8]; core::io::read_exact(source.borrow(),header,0,4).unwrap(); let cases: u32=word(header,0); let case: u32=0;
+    let backing: [i32;2056]=[0;2056]; let packed: [u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(backing),8224);
+    let strided: [u8;8208]=[0;8208];
+    while (case < cases) {
+        core::io::read_exact(source.borrow(),header,0,8).unwrap(); let variant: i32=header[0] as i32; let layout: i32=header[1] as i32; let schedule: i32=header[2] as i32; let length: i32=word(header,4) as i32;
+        assert(variant >= 0 && variant < 4 && layout >= 0 && layout < 2 && schedule >= 0 && schedule < 4 && length >= 0 && length <= 8192);
+        packed[10]=165; packed[11+length]=90; core::io::read_exact(source.borrow(),packed,11,length).unwrap();
+        strided[4]=165; strided[5+length]=90; let i: i32=0; while (i < length) { strided[5+i]=packed[11+i]; i+=1; }
+        let input: core::slice::View<u8> = view(packed,11,length); if (layout == 1) { input=view(strided,5,length); }
+        check_case(sink.borrow(),variant,schedule,input);
+        assert(packed[10] == 165 && packed[11+length] == 90 && strided[4] == 165 && strided[5+length] == 90); case+=1;
+    }
+    assert(source.read(header,0,1).unwrap() == 0); return 0;
+}
