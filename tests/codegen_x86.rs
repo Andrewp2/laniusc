@@ -11471,6 +11471,12 @@ fn x86_executes_stdlib_helper_from_source_pack() {
 fn x86_executes_stdlib_f32_sqrt_from_source_pack() {
     let sources = [
         include_str!("../stdlib/core/f32.lani"),
+        // core::f32 imports core::mem and core::result (which imports
+        // core::cmp and core::panic).
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         r#"
 module app::main;
 
@@ -11517,6 +11523,12 @@ fn main() {
 fn x86_executes_source_pack_camera_sky_with_stdlib_sqrt() {
     let sources = [
         include_str!("../stdlib/core/f32.lani"),
+        // core::f32 imports core::mem and core::result (which imports
+        // core::cmp and core::panic).
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         r#"
 module app::main;
 
@@ -11815,7 +11827,14 @@ fn x86_executes_raytracer_first_pixel_from_source_pack() {
 }
 "#,
     );
-    let sources = vec![include_str!("../stdlib/core/f32.lani").to_string(), source];
+    let sources = vec![
+        include_str!("../stdlib/core/f32.lani").to_string(),
+        include_str!("../stdlib/core/mem.lani").to_string(),
+        include_str!("../stdlib/core/result.lani").to_string(),
+        include_str!("../stdlib/core/cmp.lani").to_string(),
+        include_str!("../stdlib/core/panic.lani").to_string(),
+        source,
+    ];
     let bytes =
         common::run_gpu_codegen_with_timeout("x86 source pack raytracer first pixel", move || {
             let source_refs = sources.iter().map(String::as_str).collect::<Vec<_>>();
@@ -11837,6 +11856,12 @@ fn x86_executes_raytracer_first_pixel_from_source_pack() {
 fn x86_executes_raytracer_ppm_from_source_pack() {
     let sources = [
         include_str!("../stdlib/core/f32.lani"),
+        // core::f32 imports core::mem and core::result (which imports
+        // core::cmp and core::panic).
+        include_str!("../stdlib/core/mem.lani"),
+        include_str!("../stdlib/core/result.lani"),
+        include_str!("../stdlib/core/cmp.lani"),
+        include_str!("../stdlib/core/panic.lani"),
         include_str!("fixtures/raytracer_ppm/raytracer.lani"),
     ];
     let bytes = common::run_gpu_codegen_with_timeout("x86 source pack raytracer PPM", move || {

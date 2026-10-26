@@ -61,8 +61,21 @@ Implementation:
 A `let` without an annotation takes the type of its initializer, including
 a `?` expression or a generic call (`let h = half(x)?;`).
 
-A generic function's type arguments are inferred from its value arguments
-and from the type the call's result must have, so calls need no turbofish.
+A generic call's type arguments come from three sources, so most calls need
+no turbofish:
+- its value arguments;
+- the type its result must have (a `let` annotation, a parameter, a return);
+- its bounds. If a type parameter `P: Tr<A>` is bound to a closed type and
+  exactly one implementation of `Tr` matches that type, the implementation's
+  trait arguments bind `A`. So `core::iter::map(it.borrow(), m.borrow())`
+  infers its item types from the iterator and mapper impls. Zero or several matching
+  impls infer nothing. The rule and its limits (imported free functions only)
+  are in `docs/compiler-generic-types.md`, "Bound-directed generic call
+  inference".
+
+Every source must agree. A binding that contradicts an explicit turbofish or
+annotation is `LNC0008`.
+
 Inference is local to one call and its direct context. It does not flow
 forward from later uses. A `let` whose type only a later statement could
 decide needs an annotation, e.g. `let v: Vec<i32> = Vec::new();`.

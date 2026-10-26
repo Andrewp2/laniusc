@@ -24,21 +24,19 @@ struct GeneratedX86Case {
 struct GeneratedX86RejectionCase {
     name: &'static str,
     source: String,
-    expected_parameter: &'static str,
+    expected_exit: i32,
 }
 
 struct GeneratedX86ShortCircuitRejectionCase {
     name: &'static str,
     source: String,
-    expected_line: String,
-    callee: &'static str,
+    expected_exit: i32,
 }
 
 struct GeneratedX86ShortCircuitTrappingRejectionCase {
     name: &'static str,
     source: String,
-    expected_line: String,
-    operand_fragment: String,
+    expected_exit: i32,
 }
 
 struct GeneratedX86SourcePackCase {
@@ -2229,7 +2227,7 @@ fn main() {{
     GeneratedX86RejectionCase {
         name,
         source,
-        expected_parameter: params[6],
+        expected_exit: 1 + 2 + 3 + 4 + 5 + 6 + 7,
     }
 }
 
@@ -2278,11 +2276,11 @@ fn main() -> bool {{
         expected_line = expected_line,
     );
 
+    // `false && _` and `true || _` both yield the left value.
     GeneratedX86ShortCircuitRejectionCase {
         name,
         source,
-        expected_line,
-        callee,
+        expected_exit: left_value as i32,
     }
 }
 
@@ -2338,11 +2336,11 @@ fn main() -> bool {{
         argument_value = argument_value,
     );
 
+    // The left value decides; the RHS would trap if evaluated.
     GeneratedX86ShortCircuitTrappingRejectionCase {
         name,
         source,
-        expected_line,
-        operand_fragment: rhs_expr,
+        expected_exit: left_value as i32,
     }
 }
 
@@ -2804,176 +2802,74 @@ fn generated_x86_source_pack_parameter_indexed_assignments_match_reference_model
 }
 
 #[test]
-fn generated_x86_parameter_register_count_rejections_are_name_independent() {
+fn generated_x86_seven_parameter_calls_pass_the_last_on_the_stack() {
+    // x86 once rejected these; imported stack arguments and conditional RHS
+    // lowering now execute them.
     for case in generated_x86_call_arg_count_rejection_cases() {
-        let name = case.name;
-        let source = case.source;
-        let err = common::run_gpu_codegen_with_timeout(name, move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err("seven-parameter functions should exceed the supported SysV register ABI");
+        let bytes = compile_source(case.name, &case.source);
+        assert_x86_64_elf_header(&bytes);
 
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                let message = diagnostic.render();
-                assert_eq!(
-                    diagnostic.code, "LNC0017",
-                    "parameter-count rejection should use the stable backend diagnostic: {message}"
-                );
-                assert_eq!(
-                    diagnostic.category, "native codegen",
-                    "parameter-count rejection should stay in native codegen: {message}"
-                );
-                assert!(
-                    diagnostic
-                        .message
-                        .contains("unsupported x86 parameter register count")
-                        && message.contains("native x86 backend"),
-                    "diagnostic should identify the SysV scalar register boundary: {message}"
-                );
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("x86 diagnostic should include a primary source label");
-                let source_line = label
-                    .source_line
-                    .as_deref()
-                    .expect("x86 diagnostic should include the direct-call source line");
-                assert!(
-                    label.line > 0
-                        && label.column > 0
-                        && source_line.contains(case.expected_parameter)
-                        && source_line.contains(": i32"),
-                    "diagnostic should point at the first unsupported parameter: {message}"
-                );
-            }
-            CompileError::GpuCodegen(message) => {
-                panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-            }
-            other => panic!("expected x86 parameter-count rejection, got {other:?}"),
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(case.name, case.name, &bytes);
+            assert_eq!(
+                output.status.code(),
+                Some(case.expected_exit),
+                "{} should exit with the seven-argument sum",
+                case.name,
+            );
         }
+
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = case.expected_exit;
     }
 }
 
 #[test]
-fn generated_x86_short_circuit_rhs_call_rejections_are_name_and_operator_independent() {
+fn generated_x86_short_circuit_rhs_calls_execute_only_when_needed() {
+    // x86 once rejected these; imported stack arguments and conditional RHS
+    // lowering now execute them.
     for case in generated_x86_short_circuit_rhs_call_rejection_cases() {
-        let name = case.name;
-        let source = case.source;
-        let err = common::run_gpu_codegen_with_timeout(name, move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err("short-circuit RHS calls should fail until conditional call lowering exists");
+        let bytes = compile_source(case.name, &case.source);
+        assert_x86_64_elf_header(&bytes);
 
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                let message = diagnostic.render();
-                assert_eq!(
-                    diagnostic.code, "LNC0017",
-                    "short-circuit call rejection should use the stable backend diagnostic: {message}"
-                );
-                assert_eq!(
-                    diagnostic.category, "native codegen",
-                    "short-circuit call rejection should stay in native codegen: {message}"
-                );
-                assert!(
-                    diagnostic
-                        .message
-                        .contains("unsupported x86 short-circuit call operand")
-                        && message.contains("native x86 backend"),
-                    "diagnostic should identify the short-circuit call boundary: {message}"
-                );
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("x86 diagnostic should include a primary source label");
-                let source_line = label
-                    .source_line
-                    .as_deref()
-                    .expect("x86 diagnostic should include the short-circuit source line");
-                assert_eq!(
-                    source_line, case.expected_line,
-                    "diagnostic should point at the generated short-circuit expression: {message}"
-                );
-                let call_start_column = case
-                    .expected_line
-                    .find(case.callee)
-                    .map(|column| column + 1)
-                    .expect("fixture should contain the generated callee name");
-                let call_end_column = case
-                    .expected_line
-                    .find(");")
-                    .map(|column| column + 2)
-                    .expect("fixture should contain the generated RHS call expression");
-                assert!(
-                    (call_start_column..=call_end_column).contains(&label.column),
-                    "diagnostic column should fall inside the generated RHS call: {message}"
-                );
-            }
-            CompileError::GpuCodegen(message) => {
-                panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-            }
-            other => panic!("expected x86 short-circuit call rejection, got {other:?}"),
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(case.name, case.name, &bytes);
+            assert_eq!(
+                output.status.code(),
+                Some(case.expected_exit),
+                "{} should exit with the short-circuit result",
+                case.name,
+            );
         }
+
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = case.expected_exit;
     }
 }
 
 #[test]
-fn generated_x86_short_circuit_trapping_rejections_are_name_and_shape_independent() {
+fn generated_x86_short_circuit_skips_trapping_rhs_operands() {
+    // x86 once rejected these; imported stack arguments and conditional RHS
+    // lowering now execute them.
     for case in generated_x86_short_circuit_trapping_rejection_cases() {
-        let name = case.name;
-        let source = case.source;
-        let err = common::run_gpu_codegen_with_timeout(name, move || {
-            pollster::block_on(compile_source_to_x86_64_with_gpu_codegen(&source))
-        })
-        .expect_err("trap-sensitive RHS operands should fail until conditional lowering exists");
+        let bytes = compile_source(case.name, &case.source);
+        assert_x86_64_elf_header(&bytes);
 
-        match err {
-            CompileError::Diagnostic(diagnostic) => {
-                let message = diagnostic.render();
-                assert_eq!(
-                    diagnostic.code, "LNC0017",
-                    "short-circuit trapping rejection should use the stable backend diagnostic: {message}"
-                );
-                assert_eq!(
-                    diagnostic.category, "native codegen",
-                    "short-circuit trapping rejection should stay in native codegen: {message}"
-                );
-                assert!(
-                    diagnostic
-                        .message
-                        .contains("unsupported x86 short-circuit trapping operand")
-                        && message.contains("native x86 backend"),
-                    "diagnostic should identify the conditional trap-lowering boundary: {message}"
-                );
-                let label = diagnostic
-                    .primary_label
-                    .as_ref()
-                    .expect("x86 diagnostic should include a primary source label");
-                let source_line = label
-                    .source_line
-                    .as_deref()
-                    .expect("x86 diagnostic should include the short-circuit source line");
-                assert_eq!(
-                    source_line, case.expected_line,
-                    "diagnostic should point at the generated short-circuit expression: {message}"
-                );
-                let operand_start = case
-                    .expected_line
-                    .find(&case.operand_fragment)
-                    .map(|column| column + 1)
-                    .expect("fixture should contain the generated RHS operand");
-                let operand_end = operand_start + case.operand_fragment.len();
-                assert!(
-                    (operand_start..=operand_end).contains(&label.column),
-                    "diagnostic column should fall inside the generated RHS trapping operand: {message}"
-                );
-            }
-            CompileError::GpuCodegen(message) => {
-                panic!("expected source-spanned x86 diagnostic, got GPU codegen error: {message}")
-            }
-            other => panic!("expected x86 short-circuit trapping rejection, got {other:?}"),
+        #[cfg(all(unix, target_arch = "x86_64"))]
+        {
+            let output = common::run_x86_64_elf_output(case.name, case.name, &bytes);
+            assert_eq!(
+                output.status.code(),
+                Some(case.expected_exit),
+                "{} should exit with the short-circuit result without evaluating the trapping operand",
+                case.name,
+            );
         }
+
+        #[cfg(not(all(unix, target_arch = "x86_64")))]
+        let _ = case.expected_exit;
     }
 }
 
