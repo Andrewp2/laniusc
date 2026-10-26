@@ -160,6 +160,9 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) contextual_result_requests: ComputeOperation,
     pub(in crate::type_checker) clear_generic_claim_type_args: ComputeOperation,
     pub(in crate::type_checker) apply_row_args: ComputeOperation,
+    /// Bound-directed inference (calls/03l*): clear, the resident page's
+    /// implementations and bounds, this unit's implementations, inference.
+    pub(in crate::type_checker) bound_inference: Option<BoundInferenceOperations>,
     pub(in crate::type_checker) bind_method_receiver_environment: Option<ComputeOperation>,
     pub(in crate::type_checker) materialize_return_types: Option<ComputeOperation>,
     /// The field closure of the call results and argument contexts.
@@ -192,6 +195,14 @@ pub(in crate::type_checker) struct CallBindGroups {
     pub(in crate::type_checker) mark_array_args: ComputeOperation,
     pub(in crate::type_checker) project_result_instances: ComputeOperation,
     pub(in crate::type_checker) erase_generic_params: ComputeOperation,
+}
+
+/// The passes of bound-directed generic call inference.
+pub(in crate::type_checker) struct BoundInferenceOperations {
+    pub(in crate::type_checker) clear: ComputeOperation,
+    pub(in crate::type_checker) collect_dependency: ComputeOperation,
+    pub(in crate::type_checker) collect_local: ComputeOperation,
+    pub(in crate::type_checker) infer: ComputeOperation,
 }
 
 /// A complete method selection transaction over one frozen receiver snapshot.

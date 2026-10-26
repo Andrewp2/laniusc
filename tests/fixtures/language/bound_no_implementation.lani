@@ -1,0 +1,14 @@
+// Plain implements no Iterator: nothing binds T.
+module app::main;
+import core::iter;
+
+struct Plain { n: i32 }
+impl Plain {
+    fn borrow(&self) -> &Plain { return self; }
+}
+
+fn main() -> i32 {
+    let plain = Plain { n: 1 };
+    let indexed = core::iter::enumerate_from(plain.borrow(), 0);
+    return 0;
+}

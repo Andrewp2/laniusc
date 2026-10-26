@@ -298,6 +298,8 @@ fn force_minimum_complex_artifact_optimization(artifact_key: &str) -> bool {
             | "type_checker/calls/03a8_validate_explicit_applications"
             | "type_checker/calls/03c_validate_array_results"
             | "type_checker/calls/03d_bind_method_receiver_environment"
+            | "type_checker/calls/03l2_collect_local_implementations"
+            | "type_checker/calls/03l3_infer_bound_generics"
             | "type_checker/calls/03d_mark_array_args"
             | "type_checker/calls/03f_infer_return_bindings"
             | "type_checker/calls/03g_project_expression_types"

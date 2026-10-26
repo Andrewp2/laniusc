@@ -1,0 +1,23 @@
+// Wrap<i32> implements Iterator<i32> and, through the generic
+// implementation, Iterator<i64>: no implementation is unique, so T stays
+// unbound.
+module app::main;
+import core::iter;
+import core::option;
+
+struct Wrap<T> { value: T }
+impl<T> Wrap<T> {
+    fn borrow(&self) -> &Wrap<T> { return self; }
+}
+pub impl core::iter::Iterator<i32> for Wrap<i32> {
+    pub fn next(&self) -> core::option::Option<i32> { return core::option::None(); }
+}
+pub impl<T> core::iter::Iterator<i64> for Wrap<T> {
+    pub fn next(&self) -> core::option::Option<i64> { return core::option::None(); }
+}
+
+fn main() -> i32 {
+    let wrap = Wrap { value: 1 };
+    let indexed = core::iter::enumerate_from(wrap.borrow(), 0);
+    return 0;
+}

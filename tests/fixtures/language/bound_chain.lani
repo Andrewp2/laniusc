@@ -1,0 +1,55 @@
+// A chain: enumerate_from's and map's inferred results are the next calls'
+// sources, whose item types follow from the stdlib Iterator implementations
+// of Enumerate and Map in later rounds.
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+
+struct Counter { n: i32, end: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+}
+pub impl core::iter::Iterator<i32> for Counter {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.n >= self.end) { return core::option::None(); }
+        let value: i32 = self.n;
+        self.n = self.n + 1;
+        return core::option::Some(value);
+    }
+}
+
+struct Weigh {}
+impl Weigh {
+    fn borrow(&self) -> &Weigh { return self; }
+}
+pub impl core::iter::Mapper<core::pair::Pair<u64,i32>, i64> for Weigh {
+    pub fn apply(&self, value: core::pair::Pair<u64,i32>) -> i64 {
+        return (value.first as i64) * (value.second as i64);
+    }
+}
+
+enum Full { Limit }
+struct Total { sum: i64 }
+impl Total {
+    fn borrow(&self) -> &Total { return self; }
+}
+pub impl core::iter::TrySink<i64, Full> for Total {
+    pub fn try_accept(&self, item: i64) -> core::option::Option<Full> {
+        if (item > 1000) { return core::option::Some(Full::Limit()); }
+        self.sum = self.sum + item;
+        return core::option::None();
+    }
+}
+
+fn main() -> i32 {
+    let counter = Counter { n: 1, end: 4 };
+    let indexed = core::iter::enumerate_from(counter.borrow(), 2);
+    let weigh = Weigh {};
+    let weighed = core::iter::map(indexed.borrow(), weigh.borrow());
+    let total = Total { sum: 0 };
+    let moved = core::iter::try_transfer_up_to(weighed.borrow(), total.borrow(), 10);
+    if (moved.is_err()) { return 1; }
+    return total.sum as i32;
+}

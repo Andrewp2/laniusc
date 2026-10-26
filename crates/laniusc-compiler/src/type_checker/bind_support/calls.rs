@@ -214,6 +214,17 @@ pub(in crate::type_checker) fn create_call_bind_groups(
         contextual_result_requests: indirect(CALLS_CONTEXTUAL_RESULT_REQUESTS)?,
         clear_generic_claim_type_args: indirect(CALLS_GENERIC_CLAIM_CLEAR)?,
         apply_row_args: indirect(CALLS_APPLY_ARGUMENTS)?,
+        bound_inference: if has_dependency_interfaces {
+            Some(BoundInferenceOperations {
+                clear: direct(CALLS_BOUND_TABLES_CLEAR, 4)?,
+                // 03l1 strides the page with this many lanes.
+                collect_dependency: direct(CALLS_BOUND_DEPENDENCY_COLLECT, 4096)?,
+                collect_local: indirect(CALLS_BOUND_LOCAL_COLLECT)?,
+                infer: indirect(CALLS_BOUND_INFER)?,
+            })
+        } else {
+            None
+        },
         bind_method_receiver_environment: inference(
             compiler_graph::CALLS_BIND_METHOD_RECEIVER_ENVIRONMENT_PASS,
             "type_checker/calls/03d_bind_method_receiver_environment",
