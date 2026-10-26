@@ -1,0 +1,155 @@
+// Test-only caller-controlled Protocol/plain Exchange owner.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_server;
+import std::args;
+import std::clock;
+import std::poll;
+import std::signal;
+import std::socket;
+import std::stream;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn number(value: core::slice::View<u8>) -> u64 { let n: u64 = 0; let index: i32 = 0; while (index < value.len()) { let byte: u8 = value.get(index).unwrap(); assert(byte >= 48 && byte <= 57); n = n*10+(byte-48) as u64; index += 1; } return n; }
+fn io(error: core::io::Error) -> i32 { return match(error) { core::io::Error::Host(value) -> value, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> -1 }; }
+fn state(value: ext::http_server::Status) -> i32 { return match(value) { ext::http_server::Status::Active -> 0, ext::http_server::Status::Complete -> 1, ext::http_server::Status::Failed -> 2, ext::http_server::Status::Aborted -> 3 }; }
+fn cause(value: ext::http_server::Cause) -> i32 { return match(value) { ext::http_server::Cause::InvalidOptions -> 1, ext::http_server::Cause::InvalidState -> 2, ext::http_server::Cause::AllocationFailed -> 3, ext::http_server::Cause::Timeout -> 4, ext::http_server::Cause::Clock(e) -> 5, ext::http_server::Cause::Io(e) -> 6, ext::http_server::Cause::Http(e) -> 7, ext::http_server::Cause::Date(e) -> 8, ext::http_server::Cause::UnsupportedResponse -> 9, ext::http_server::Cause::UnsupportedHeader(n) -> 10, ext::http_server::Cause::ExpectationRequired -> 11, ext::http_server::Cause::RequestLimit -> 12, ext::http_server::Cause::RequestLineLimit -> 13, ext::http_server::Cause::RequestTargetLimit -> 14, ext::http_server::Cause::ResponseLimit -> 15, ext::http_server::Cause::BodyLimit -> 16, ext::http_server::Cause::DrainLimit -> 17, ext::http_server::Cause::IoLimit -> 18, ext::http_server::Cause::WorkLimit -> 19, ext::http_server::Cause::BoundaryMismatch -> 20 }; }
+fn stage(value: ext::http_server::Stage) -> i32 { return match(value) { ext::http_server::Stage::Accept -> 0, ext::http_server::Stage::Head -> 1, ext::http_server::Stage::Continue -> 2, ext::http_server::Stage::Body -> 3, ext::http_server::Stage::Validate -> 4, ext::http_server::Stage::Decode -> 5, ext::http_server::Stage::Prepare -> 6, ext::http_server::Stage::Send -> 7, ext::http_server::Stage::Shutdown -> 8, ext::http_server::Stage::Drain -> 9, ext::http_server::Stage::Close -> 10 }; }
+fn event(value: core::option::Option<ext::http_server::Event>) -> i32 { if (value.is_none()) { return 0; } return match(value.unwrap()) { ext::http_server::Event::Head(head) -> 1, ext::http_server::Event::Request(request) -> 2, ext::http_server::Event::Rejected(rejection) -> 3, ext::http_server::Event::Empty -> 4, ext::http_server::Event::Complete(stats) -> 5 }; }
+fn need(value: ext::http_server::Need) -> i32 { return match(value) { ext::http_server::Need::Local -> 0, ext::http_server::Need::Input(n) -> 1, ext::http_server::Need::Decision -> 2, ext::http_server::Need::Output(kind) -> match(kind) { ext::http_server::SendKind::Continue -> 3, ext::http_server::SendKind::Final -> 4 }, ext::http_server::Need::Shutdown -> 5, ext::http_server::Need::Drain(n) -> 6, ext::http_server::Need::FinishTransport -> 7 }; }
+fn ready(bits: i32) -> ext::http_client::Readiness { return ext::http_client::Readiness { readable:(bits&1)!=0,writable:(bits&2)!=0,hangup:(bits&4)!=0,error:(bits&8)!=0 }; }
+fn hash(bytes: core::slice::View<u8>) -> i32 { let value: u32 = 5381; let index: i32 = 0; while (index < bytes.len()) { value = value*33+(bytes.get(index).unwrap() as u32); index += 1; } return value as i32; }
+fn words(output: [i32]) { let sink = std::stream::stdout(); let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(output),128); core::io::write_all(sink.borrow(),bytes,0,128).unwrap(); }
+fn data(bytes: core::slice::View<u8>) { let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),bytes.values,bytes.start,bytes.length).unwrap(); }
+trait Owner {
+    fn protocol(&self) -> &ext::http_server::Protocol;
+    fn interest(&self) -> ext::http_client::Interest;
+    fn raw_handle(&self) -> core::option::Option<i32>;
+    fn step(&self, bits: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,ext::http_server::Failure>;
+    fn before_wait(&self) -> core::result::Result<bool,ext::http_server::Failure>;
+    fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::result::Result<bool,ext::http_server::Failure>;
+    fn respond(&self, response: ext::http_server::Response) -> core::result::Result<bool,ext::http_server::Failure>;
+    fn abort(&self) -> core::result::Result<bool,ext::http_server::Failure>;
+    fn destroy(&self) -> core::result::Result<bool,ext::http_server::Failure>;
+}
+struct Plain { owner: ext::http_server::Exchange }
+impl Plain { fn borrow(&self) -> &Plain { return self; } }
+impl Owner for Plain {
+    fn protocol(&self) -> &ext::http_server::Protocol { return self.owner.protocol(); }
+    fn interest(&self) -> ext::http_client::Interest { return self.owner.interest(); }
+    fn raw_handle(&self) -> core::option::Option<i32> { return self.owner.raw_handle(); }
+    fn step(&self, bits: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,ext::http_server::Failure> { return self.owner.step(bits); }
+    fn before_wait(&self) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.before_wait(); }
+    fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.read_body(decision); }
+    fn respond(&self, response: ext::http_server::Response) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.respond(response); }
+    fn abort(&self) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.abort(); }
+    fn destroy(&self) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.destroy(); }
+}
+struct Pure { owner: ext::http_server::Protocol, announced: u64 }
+impl Pure { fn borrow(&self) -> &Pure { return self; } }
+impl Owner for Pure {
+    fn protocol(&self) -> &ext::http_server::Protocol { return self.owner.borrow(); }
+    fn raw_handle(&self) -> core::option::Option<i32> { return core::option::None(); }
+    fn interest(&self) -> ext::http_client::Interest { return ext::http_client::Interest { readable:false,writable:false,immediate:need(self.owner.need()) == 0 && state(self.owner.status()) == 0 }; }
+    fn step(&self, bits: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,ext::http_server::Failure> {
+        let got = self.owner.advance(); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        let revision: u64 = self.owner.event_revision(); if (revision != self.announced && revision != 0) { self.announced = revision; return core::result::Ok(self.owner.event()); } return core::result::Ok(core::option::None());
+    }
+    fn before_wait(&self) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.before_wait(); }
+    fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.read_body(decision); }
+    fn respond(&self, response: ext::http_server::Response) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.respond(response); }
+    fn abort(&self) -> core::result::Result<bool,ext::http_server::Failure> { return core::result::Ok(self.owner.abort()); }
+    fn destroy(&self) -> core::result::Result<bool,ext::http_server::Failure> { return core::result::Ok(self.owner.destroy()); }
+}
+struct Snapshot { head: core::option::Option<ext::http_server::RequestHead>, request: core::option::Option<ext::http_server::Request>, head_hash: i32, body_hash: i32, destroyed: bool }
+impl Snapshot { fn borrow(&self) -> &Snapshot { return self; } }
+fn emit<O>(owner: &O, saved: &Snapshot, tag: i32, published: core::option::Option<ext::http_server::Event>, error: core::option::Option<ext::http_server::Failure>, payload: core::slice::View<u8>, aux: i32) where O: Owner {
+    let output: [i32;32] = [0;32]; let p: &ext::http_server::Protocol = owner.protocol(); let stats: ext::http_server::Stats = p.stats(); let interest = owner.interest();
+    output[0] = 1213421617; output[1] = tag; output[2] = state(p.status()); output[3] = -1; if (owner.raw_handle().is_some()) { output[3] = owner.raw_handle().unwrap(); }
+    if (interest.readable) { output[4] |= 1; } if (interest.writable) { output[4] |= 2; } if (interest.immediate) { output[4] |= 4; }
+    output[5] = event(published); output[6] = need(p.need()); output[8] = stage(p.stage()); output[11] = stats.received as i32; output[12] = stats.retained; output[13] = stats.decoded; output[14] = stats.buffered_discarded; output[15] = stats.drain_received as i32; output[16] = stats.response_bytes; output[17] = stats.response_sent; output[18] = stats.continue_sent; output[19] = stats.io_calls as i32; output[20] = stats.work as i32; output[21] = stats.scan_work as i32; output[22] = stats.cleanup_calls as i32; output[23] = stats.cleanup_errors as i32;
+    if (stats.write_shutdown) { output[24] |= 1; } if (stats.peer_eof) { output[24] |= 2; } if (stats.final_started) { output[24] |= 4; } if (stats.closed) { output[24] |= 8; }
+    if (!saved.destroyed) {
+        if (saved.head.is_none() && p.head().is_some()) { saved.head = p.head(); saved.head_hash = hash(saved.head.unwrap().head.raw); }
+        if (saved.request.is_none() && p.request().is_some()) { saved.request = p.request(); saved.body_hash = hash(saved.request.unwrap().body); }
+        if (saved.head.is_some()) { assert(hash(saved.head.unwrap().head.raw) == saved.head_hash); output[25] = saved.head_hash; }
+        if (saved.request.is_some()) { assert(hash(saved.request.unwrap().body) == saved.body_hash); output[26] = saved.body_hash; }
+    }
+    if (p.rejection().is_some()) { let rejected = p.rejection().unwrap(); output[27] = cause(rejected.cause); output[28] = rejected.stats.received as i32; }
+    output[30] = payload.len(); output[31] = aux;
+    if (error.is_some()) {
+        let failed = error.unwrap(); assert(failed.rejection.is_some() == p.rejection().is_some());
+        if (failed.rejection.is_some()) { let original = p.rejection().unwrap(); let retained = failed.rejection.unwrap(); assert(cause(original.cause) == cause(retained.cause) && stage(original.stage) == stage(retained.stage) && original.stats.received == retained.stats.received && original.stats.work == retained.stats.work); }
+        if (state(p.status()) == 2) { assert(p.last_terminal_failure().is_some()); let cached = p.last_terminal_failure().unwrap(); assert(cause(cached.cause) == cause(failed.cause) && stage(cached.stage) == stage(failed.stage) && cached.stats.received == failed.stats.received && cached.stats.response_sent == failed.stats.response_sent && cached.stats.cleanup_calls == failed.stats.cleanup_calls); }
+        output[7] = cause(failed.cause); output[8] = stage(failed.stage); output[9] = match(failed.cause) { ext::http_server::Cause::Io(value) -> io(value), _ -> 0 }; if (failed.cleanup.is_some()) { output[10] = io(failed.cleanup.unwrap()); } output[31] = match(failed.cause) { ext::http_server::Cause::Http(value) -> match(value) { ext::http::Error::AllocationFailed -> 2, _ -> 0 }, _ -> aux };
+    }
+    words(output); data(payload);
+}
+fn response<O>(owner: &O, status: i32, count: i32, invalid: i32) -> core::result::Result<bool,ext::http_server::Failure> where O: Owner {
+    let storage: alloc::vec::Vec<u8> = alloc::vec::new(); let index: i32 = 0; while (index < count) { storage.try_push((index%256) as u8).unwrap(); index += 1; }
+    let body: core::slice::View<u8> = storage.as_view(); if (count == -1) { assert(owner.protocol().request().is_some()); body = owner.protocol().request().unwrap().body; }
+    let header_name: [u8;7] = [88,45,79,119,110,101,100]; let header_value: [u8;6] = [115,116,97,98,108,101];
+    let field = ext::http::Field { raw:lit("",0),name:core::slice::view<u8>(header_name,7).unwrap(),value:core::slice::view<u8>(header_value,6).unwrap(),offset:0 };
+    if (invalid == 1) { field.name = lit("Connection",10); } if (invalid == 2) { field.value = lit("bad\rvalue",9); } let fields: [ext::http::Field;1] = [field];
+    let staged = owner.respond(ext::http_server::Response { status:status,reason:lit("Result",6),headers:core::slice::view<ext::http::Field>(fields,1).unwrap(),body:body,date:core::time::system_time(0,0).unwrap() });
+    index = 0; while (index < count) { storage.set(index,90 as u8).unwrap(); index += 1; } header_value[0] = 88; header_name[0] = 89; storage.destroy(); return staged;
+}
+fn run<O>(owner: &O) -> i32 where O: Owner {
+    let saved: Snapshot = Snapshot { head:core::option::None(),request:core::option::None(),head_hash:0,body_hash:0,destroyed:false }; let poll = std::poll::new(1).unwrap(); let source = std::stream::stdin();
+    while (true) {
+        let command: [i32;8] = [0;8]; let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(command),32); core::io::read_exact(source.borrow(),raw,0,32).unwrap(); let action: i32 = command[0];
+        if (action == 26) { poll.destroy(); emit(owner,saved.borrow(),20,core::option::None(),core::option::None(),lit("",0),0); let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0; }
+        let tag: i32 = 5; if (action < 16) { tag = 1; } if (action == 16) { tag = 3; } if (action == 22) { tag = 11; } if (action == 23) { tag = 9; }
+        let empty: core::option::Option<ext::http_server::Event> = core::option::None(); let error: core::option::Option<ext::http_server::Failure> = core::option::None(); let published = empty; let payload = lit("",0); let aux: i32 = 0;
+        emit(owner,saved.borrow(),tag,empty,error,lit("",0),0);
+        if (action < 16) { let stepped = owner.step(ready(action)); if (stepped.is_err()) { error = core::option::Some(stepped.unwrap_err()); } else { published = stepped.unwrap(); if (event(published) == 2) { payload = owner.protocol().request().unwrap().body; } } }
+        if (action == 16) { let waited = owner.before_wait(); if (waited.is_err()) { error = core::option::Some(waited.unwrap_err()); } else { if (waited.unwrap()) { aux = 1; } } }
+        let result: core::result::Result<bool,ext::http_server::Failure> = core::result::Ok(false);
+        if (action == 17) { result = owner.read_body(ext::http_server::BodyDecision::Read); }
+        if (action == 18) { result = owner.read_body(ext::http_server::BodyDecision::ContinueThenRead); }
+        if (action == 19) { result = response(owner,command[1],command[2],command[3]); }
+        if (action == 21) { result = owner.abort(); }
+        if (action == 22) { result = owner.destroy(); saved.destroyed = true; }
+        if (action == 23) { published = owner.protocol().event(); aux = owner.protocol().event_revision() as i32; }
+        if (action == 28) { let storage: [i32;256] = [0;256]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),1024); assert(command[4] > 0 && command[4] <= 1024); core::io::read_exact(source.borrow(),bytes,0,command[4]).unwrap(); result = owner.protocol().feed(core::slice::view<u8>(bytes,command[4]).unwrap()); }
+        if (action == 29) { result = owner.protocol().feed_eof(); }
+        if (action == 30) { let started = owner.protocol().start_send(); if (started.is_err()) { error = core::option::Some(started.unwrap_err()); } else { if (started.unwrap().is_some()) { payload = started.unwrap().unwrap(); aux = owner.protocol().pending_send_bytes(); } } }
+        if (action == 31) { result = owner.protocol().commit_send(command[1]); }
+        if (action == 32) { result = owner.protocol().cancel_send(); }
+        if (action == 33) { result = owner.protocol().record_write_shutdown(false); }
+        if (action == 34) { result = owner.protocol().discard(command[1]); }
+        if (action == 35) { result = owner.protocol().record_close(true,core::option::None()); }
+        if (action == 36) { result = owner.protocol().transport_finished(); }
+        if (result.is_err()) { error = core::option::Some(result.unwrap_err()); }
+        emit(owner,saved.borrow(),tag+1,published,error,payload,aux);
+        if (action == 16 && error.is_none() && aux == 1) {
+            let interest = owner.interest(); let events: u32 = 0; if (interest.readable) { events |= std::poll::READABLE; } if (interest.writable) { events |= std::poll::WRITABLE; }
+            assert(owner.raw_handle().is_some()); let requests: [std::poll::Request;1] = [std::poll::Request { handle:owner.raw_handle().unwrap(),events:events }];
+            emit(owner,saved.borrow(),21,empty,core::option::None(),lit("",0),0); let waited = poll.poll_ms(core::slice::view<std::poll::Request>(requests,1).unwrap(),25); let bits: i32 = 0;
+            if (waited.is_ok()) { let r = poll.readiness(0).unwrap(); if (r.readable() || r.read_closed()) { bits |= 1; } if (r.writable()) { bits |= 2; } if (r.hangup()) { bits |= 4; } if (r.error() || r.invalid()) { bits |= 8; } } else { assert(match(waited.unwrap_err()) { std::poll::Error::Io(e) -> core::io::is_interrupted(e), _ -> false }); }
+            emit(owner,saved.borrow(),22,empty,core::option::None(),lit("",0),bits);
+        }
+    }
+    return 0;
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap(); let args = std::args::snapshot(1,8,256).unwrap(); assert(args.len() == 8);
+    let mode: i32 = number(args.get(0).unwrap()) as i32; let timeout = number(args.get(1).unwrap()); let options = ext::http_server::default_options(); options.io_calls = number(args.get(2).unwrap()); options.work = number(args.get(3).unwrap()); options.request_bytes = number(args.get(4).unwrap()) as i32; options.request.body_bytes = number(args.get(5).unwrap()) as i32; options.drain_bytes = number(args.get(6).unwrap()) as i32; options.response_bytes = number(args.get(7).unwrap()) as i32; args.destroy();
+    options.request.head_bytes = 4096; options.request.line_bytes = 1024; options.request.headers = 16; options.request.trailers = 16; options.request.trailer_bytes = 1024; options.response.head_bytes = 4096; options.response.line_bytes = 1024; options.response.headers = 16;
+    let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(timeout)).unwrap(); let initial: [i32;32] = [0;32]; initial[0] = 1213421617;
+    if (mode == 1) { let protocol = ext::http_server::protocol(options,deadline).unwrap(); let owner = Pure { owner:protocol,announced:0 }; let snapshot = Snapshot { head:core::option::None(),request:core::option::None(),head_hash:0,body_hash:0,destroyed:false }; emit(owner.borrow(),snapshot.borrow(),0,core::option::None(),core::option::None(),lit("",0),0); return run<Pure>(owner.borrow()); }
+    let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(1).unwrap(); initial[29] = match(listener.local_addr().unwrap()) { core::net::SocketAddr::V4(value) -> value.port as i32, _ -> 0 }; words(initial);
+    let source = std::stream::stdin(); let command: [i32;8] = [0;8]; let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(command),32); core::io::read_exact(source.borrow(),raw,0,32).unwrap(); assert(command[0] == 27); initial[1] = 7; words(initial);
+    let accepted = listener.accept(true).unwrap(); listener.close().unwrap(); accepted.socket.set_option(std::socket::Setting::SendBuffer,4096).unwrap(); accepted.socket.set_option(std::socket::Setting::ReceiveBuffer,4096).unwrap(); let owner = ext::http_server::begin_connected(accepted.socket,accepted.peer,options,deadline).unwrap();
+    let wrapped = Plain { owner:owner }; let snapshot = Snapshot { head:core::option::None(),request:core::option::None(),head_hash:0,body_hash:0,destroyed:false }; emit(wrapped.borrow(),snapshot.borrow(),8,core::option::None(),core::option::None(),lit("",0),0); return run<Plain>(wrapped.borrow());
+}

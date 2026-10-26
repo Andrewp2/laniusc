@@ -11,6 +11,12 @@ Production protocol and scheduling code stays in Lanius. Existing native
 socket, clock, poll and OpenSSL bindings supply host services. This design
 needs no C callbacks, worker entry, new compiler IR or cryptographic primitive.
 
+The concrete Protocol/plain-driver API is now frozen in
+[the shared server contract](library-server-contract.md). That contract is
+authoritative for source signatures and terminal cleanup; the scheduler owner
+freezes its concrete generic API separately. The sketches here describe the
+architecture and must follow those interfaces when implementation lands.
+
 ## Current boundaries
 
 - [http_server.lani](../extended/ext/http_server.lani) already owns a staged
@@ -49,17 +55,22 @@ spelling need a small admission control before implementation.
 
 ```lani
 pub enum BodyDecision { Read, ContinueThenRead }
+pub enum SendKind { Continue, Final }
 pub struct Rejection { cause: Cause, stage: Stage, stats: Stats }
 pub enum Event {
     Head(RequestHead), Request(Request), Rejected(Rejection), Empty, Complete(Stats)
 }
-pub enum Need { Local, Input(i32), Output, Decision, FinishTransport }
+pub enum Need {
+    Local, Input(i32), Output(SendKind), Decision,
+    Shutdown, Drain(i32), FinishTransport
+}
 
 pub fn protocol(options: Options, deadline: core::time::Deadline)
     -> core::result::Result<Protocol,Failure>;
 pub impl Protocol {
     pub fn advance(&self) -> core::result::Result<Need,Failure>;
     pub fn event(&self) -> core::option::Option<Event>;
+    pub fn event_revision(&self) -> u64;
     pub fn read_body(&self, decision: BodyDecision)
         -> core::result::Result<bool,Failure>;
     pub fn respond(&self, response: Response)
@@ -85,6 +96,11 @@ chooses the next operation. A driver publishes each decision once. Repeated
 inspection has no I/O or allocation. `Need::Decision` forbids input collection
 or response transmission until the application acts. Application pauses still
 consume the connection's existing absolute deadline.
+
+Empty and Complete become terminal events only after the driver has retired
+the native transport, recorded close progress and called transport_finished.
+Protocol abort retains its buffers; explicit Exchange.destroy releases them.
+The scheduler snapshots terminal values and then destroys backing once.
 
 | State/event | Application may do | Required next behavior |
 | --- | --- | --- |
@@ -265,6 +281,13 @@ output before being quiesced. Read-WANT_READ may be explicitly quiesced only
 through the supported API. Buffered native plaintext is immediate work even
 when the socket currently has no readable event. Reuse the client adapter's
 tested arbitration rules, but audit them for server response/drain transitions.
+If an interleaved read observes authenticated peer EOF while a write remains
+pending, Session enters PeerClosed and cannot retry that write. Fail and
+abandon the pending reservation with confirmed-send counters unchanged; do
+not infer successful delivery from peer closure. A pending discard read that
+requires write readiness must complete/progress its native operation before
+shutdown can begin. Shutdown WANT is itself exclusive until local alert
+completion, after which reads may resume.
 
 ## Rejection, drain and terminal behavior
 
@@ -439,6 +462,13 @@ Provide a caller-driven Server owner with `step`, `interest`/poll request
 publication, outcome access, stop_accepting, abort_all and destroy; make
 serve_until a convenience loop over that same owner. Do not implement a second
 blocking scheduling path. Admission or report exhaustion never extends budgets.
+
+The agreed wait interface separates a no-poll `step` from `prepare_wait`, which
+publishes a one-shot epoch and borrowed poll requests. `resume(epoch, readiness)`
+checks epoch, result length and the saved ordinal/generation/fd identities
+before caching fresh hints. Any server mutation invalidates the old epoch.
+`poll_once` performs prepare, one poll_ms and resume through this same owner;
+it cannot silently reuse publication after interruption or another mutation.
 
 ## Implementation split and acceptance
 

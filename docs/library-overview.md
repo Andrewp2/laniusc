@@ -1,6 +1,37 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current networking revision extracts
+The full library goal remains open. The next increment is
+[resumable concurrent HTTP/HTTPS servers](library-server-concurrency-plan.md):
+shared protocol ownership, plain/TLS drivers, one bounded polling scheduler
+and concurrent health/echo services. The
+[shared Protocol/plain-driver interface](library-server-contract.md) is frozen;
+source implementations and integration are in progress, with no new integrated
+compilation or runtime acceptance claimed.
+The [TLS server driver guide](extended-https-server-exchange.md) records its
+pending ownership, retry and closure contract. Earlier sequential service
+receipts do not establish the new concurrent service.
+
+**Server checkpoint evidence.**
+
+This server increment is a work-in-progress checkpoint. Two lower-layer
+controls have executable evidence on native Linux x86_64/glibc:
+
+- The public Protocol/Reply/generic Report admission control compiled and ran,
+  including handler-local response staging and nested owned error disposal.
+  Its scripted transport does not establish socket I/O or scheduling.
+- The OpenSSL server shutdown experiment passed four groups and 12 cases
+  across TLS 1.2 and 1.3, including write backpressure, late upload bytes,
+  authenticated EOF, deadline expiry and truncated transport. This establishes
+  the tested native peer profile, not the new HTTPS Exchange implementation.
+
+Direct plain/TLS Exchange tests and causal concurrent-service tests are saved
+but await runtime acceptance. The plain fixture's first two compile attempts
+found test-source visibility and vector-method errors; both are corrected,
+with the retry still pending. Scheduler and application integration remain
+unaccepted, as does the separate, not-yet-integrated TLS preparation/abort
+regression fixture. API reference regeneration is held until integration.
+
+The accepted client checkpoint `75ab38d1` extracts
 the shared HTTP Protocol owner, generalizes batch scheduling and adds
 resumable verified HTTPS. All selected current transport and integration gates
 pass on native Linux x86_64/glibc. Earlier
@@ -160,8 +191,9 @@ The current [fetch-many integration](extended-fetch-many.md) also passes all
 five groups in 24.18 seconds, including 59 reached allocation failures and a
 64-job control with at most four active sockets. Historical buffered/prepared
 stream receipts remain distinct from these selected current program gates.
-Executable worker threads and concurrent server scheduling
-also remain part of the full goal. The
+Concurrent server scheduling is the
+[next connected-library increment](library-server-concurrency-plan.md).
+Executable worker threads also remain part of the full goal. The
 [concurrency admission audit](library-concurrency-dependencies.md) records
 separate compiler/runtime boundaries. The historical execution receipts cover
 native Linux x86-64 CPU programs built by the GPU compiler.

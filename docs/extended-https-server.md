@@ -1,4 +1,117 @@
-# A bounded HTTPS health and echo service
+# Concurrent verified HTTPS health and echo service
+
+[`https_serve.lani`](../sample_programs/library/https_serve.lani) has been migrated
+to the shared [HTTP Protocol](library-server-contract.md),
+[resumable TLS server driver](extended-https-server-exchange.md) and the single
+[`server_poll`](extended-server-poll.md) scheduler through
+[`https_server_poll`](../extended/ext/https_server_poll.lani).
+
+**Work in progress:** source is saved against the frozen interfaces; application
+compilation, verified peers, concurrency and resource acceptance are pending.
+The historical sequential receipts below do not establish this migration.
+The intended profile remains Linux x86_64/glibc with system OpenSSL 3. No HTTP
+parser, body decoder, Date formatter, TLS record or cryptographic primitive is
+implemented in the application.
+
+## Current invocation and behavior
+
+```text
+https-serve ADDRESS CERT_CHAIN KEY [OPTIONS]
+  --requests N --concurrency N --timeout MS --service-timeout MS
+  --max-request N --max-body N --max-response N
+  --max-io N --max-tls N --max-work N --max-head N --max-headers N
+  --max-chunks N --report --require-client-ca FILE
+```
+
+Credential/trust loading precedes listener creation and the service deadline.
+The app still requires the explicit service chain/key, supplies an empty key
+passphrase without prompting, and prints exactly one bound numeric endpoint
+line on stdout. Required client-CA authentication is independent of service
+identity and route authorization. No HTTP handler runs before the native
+handshake and configured client-certificate policy succeed. Credential/trust
+failure never falls back to unauthenticated clients.
+
+The existing route policy remains: GET/HEAD /health returns 200 with ok\n/no
+body; POST /echo returns the transfer-decoded binary body; known-route wrong
+methods return 405 with the existing GET, HEAD or POST Allow value; other paths
+return empty 404; non-origin targets and authority-like // paths return empty
+421. Queries do not change routing and encoded paths are not percent-decoded.
+Health and echo retain application/octet-stream. Normal route responses wait
+for a complete canonically validated request. Unsupported Expect returns empty
+417 early. A parser rejection aborts without a final response, retaining its
+original typed syntax/limit/allocation failure; plain HTTP's mapped error
+responses remain a separate application policy.
+
+Shared protocol changes are explicit: supported HTTP/1.1 Expect sends 100 even
+when body bytes already arrived; managed Date/framing fields are added; response
+version follows HTTP/1.0 requests; retained tail after the first selected request
+is discarded, never processed as a second request. Authenticated empty HTTP
+input becomes a clean empty outcome. A fixed 25-byte Continue is counted
+separately; max-response now bounds the encoded final response. Reusable TLS
+closure/peer-EOF behavior is governed by the [driver contract](extended-https-server-exchange.md#local-notification-bounded-drain-and-peer-closure),
+not by a raw TCP half-close. Native role/version closure acceptance is separate
+from the old stream profile below.
+
+## Current bounded concurrency and counters
+
+Requests is 1..64, default 1, counting all accepted sockets including failed
+setup/handshake and empty/malformed requests. Concurrency is 1..16, default 4,
+effectively min(requests, concurrency); handshake, HTTP and drain occupy slots.
+Failures retire that owner while healthy siblings and further admissions
+continue. No hidden accepted owner exceeds the active cap.
+
+Timeout remains 0..60,000 ms, default 5,000, but starts when that connection is
+accepted. Service-timeout is 0..3,840,000 ms, default requests*timeout, beginning
+after credential/listener setup and startup output. One connection deadline is
+min(service deadline, accepted-at+timeout). This replaces the old timer renewed
+before each sequential accept. No byte, callback, handshake or retry resets it.
+
+Existing byte/call/work defaults and CLI caps below remain, with these mappings:
+max-request/raw, max-body/request decoding, max-response/final encoded response,
+max-head/headers/chunks/request HTTP limits, max-io/active connection leaves and
+wait participation, max-tls/native handshake/read/write/shutdown attempts,
+max-work/shared protocol accounting. The static health response still permits
+three bytes independently of the request-body cap. New drain data is bounded
+by the shared default 1 MiB allowance and one EOF lookahead. Transfers use at
+most 1024 plaintext bytes per step, or the smaller native Session cap. The app
+has no separate buffered-write queue. Argument capture now permits 64 arguments
+and 16,384 bytes; intermixed, equals values and last-repeat semantics remain.
+
+Aggregate work is requests*per-connection-work; active logical bytes are
+min(requests,concurrency)*Protocol.reservation_bytes(options), including response
+staging candidates. With n=requests and i=per-owner-I/O, attempted accepts are
+bounded by n*(i+1); issued wait permits by 1024+n*(i+1)+16*n*(i+1); operations by
+1024+n*(i+1)+32*n*(i+work+1); handler calls by 3*n. These finite conservative
+bounds are not limits on RSS, OpenSSL heap, cryptographic CPU or blocking
+credential I/O. Listener accept/poll allowances no longer spend a child's
+per-connection max-io. All deadline/native preemption caveats still apply.
+
+After the run, --report writes one acceptance-order stderr record for every
+accepted ID, including failed handshakes. The schema matches the
+[plain service](extended-http-serve.md#results-and-output), adding tls only when
+an actual native attempt snapshot is present. It removes the obsolete buffered
+accepted counter: sent counts confirmed final bytes, response the final encoded
+length, and interim counts Continue bytes separately. IDs begin at zero.
+failed/code describe that outcome rather than the whole process. Handler error,
+original response-preparation failure and secondary transport cleanup remain
+distinct in the scheduler's typed report; borrowed report copies are not owners.
+
+Exit classes remain 0 completed/empty/help, 2 arguments/configuration/limits,
+3 credentials/TLS/socket/clock/HTTP syntax, 4 allocation, 5 signal/output.
+A global service error determines run status; otherwise the first nonzero
+acceptance-order outcome does. Stderr report failure overrides with 5; the final
+HTTPS diagnostic retains its original status if writing the diagnostic fails.
+Startup/report writes each have eight attempted calls, independently of the
+network deadline, and can still block inside a host write.
+
+## Historical sequential implementation profile
+
+The following documentation and receipts describe the earlier tls_stream-based
+application and its reusable stream consumers. They remain historical evidence;
+references to sequential service, copied acceptance and prior budget scope do
+not describe the current migration above.
+
+## A bounded HTTPS health and echo service
 
 [`sample_programs/library/https_serve.lani`](../sample_programs/library/https_serve.lani)
 serves one request per TLS connection, sequentially, using system OpenSSL for
@@ -57,7 +170,7 @@ printf 'binary\000body' | curl --cacert /tmp/local-ca.pem \
 Use a certificate covering the chosen DNS name or IP address. DNS resolution
 belongs to the client; the server itself binds only numeric endpoints.
 
-## Required client certificates
+### Required client certificates
 
 `--require-client-ca CLIENT_CA_FILE` selects
 `ClientAuthentication::Required(Trust::CaFile(...))`. The option requires a
@@ -95,7 +208,7 @@ handshake or write success alone does not prove server acceptance. See the
 [mutual TLS application guide](extended-https-mutual-tls.md) and the
 [native policy and ownership contract](extended-openssl-mutual-tls.md).
 
-## Requests and responses
+### Requests and responses
 
 | Route | Method | Response |
 | --- | --- | --- |
@@ -137,7 +250,7 @@ complete. An authenticated TLS closure still cannot complete an unfinished
 HTTP body. Abrupt TCP EOF and cut TLS records are errors; the TLS wrapper never
 globally ignores unexpected EOF.
 
-## Bounds and deadline scope
+### Bounds and deadline scope
 
 | Option | Default | Maximum |
 | --- | --- | --- |
@@ -198,7 +311,7 @@ fail output. These descriptors can block inside a write, so the network
 deadline does not promise a whole-process deadline. `--report` emits one
 bounded stderr stats record for each constructed stream, after closing it.
 
-## Socket and TLS ownership
+### Socket and TLS ownership
 
 [`ext::tls_stream::accept_connected_until`](../extended/ext/tls_stream.lani)
 consumes an already connected socket on **every** result. All other copies of
@@ -244,7 +357,7 @@ frees the queue. The listener closes before the application's server context
 is destroyed. The process explicitly ignores SIGPIPE before using OpenSSL's
 socket BIO; it never replaces TLS closure with raw TCP write shutdown.
 
-## Errors and executable checks
+### Errors and executable checks
 
 | Exit | Meaning |
 | --- | --- |

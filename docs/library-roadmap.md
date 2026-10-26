@@ -420,9 +420,10 @@ availability contracts; do not substitute success-shaped placeholders.
    HTTP, URLs, cancellation and synchronization. Native C ABI/linking support
    precedes established-library TLS and database bindings. Acceptance applications:
    the [bounded concurrent downloader](extended-fetch-many.md) and a local HTTP
-   service. The downloader uses single-threaded poll scheduling; it does not
-   complete the [thread/atomic admission prerequisites](library-concurrency-dependencies.md)
-   or resumable TLS transport.
+   service. Downloaders and resumable verified HTTPS now use single-threaded
+   poll scheduling. The [concurrent server increment](library-server-concurrency-plan.md)
+   extends the connected-service workflow; it does not complete the separate
+   [thread/atomic admission prerequisites](library-concurrency-dependencies.md).
 4. **Storage and packaging.** Database integration, key-value storage,
    compression, archives, binary serialization and schemas. Acceptance
    application: a persistent indexed archive with checked round trips.
@@ -501,7 +502,34 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
-- Current networking revision, all selected transport/integration gates accepted:
+- Next increment, implementation/design with no new runtime acceptance:
+  [resumable concurrent HTTP/HTTPS servers](library-server-concurrency-plan.md)
+  place request/response state and explicit application decisions in one
+  `http_server::Protocol`, with plain and
+  [OpenSSL server drivers](extended-https-server-exchange.md) and one bounded
+  `server_poll` scheduler. Handlers must stage borrowed response storage
+  synchronously through a reply sink; reports must retain valid typed errors,
+  not expired request views. The planned finite service counts every accepted
+  socket, caps active handshakes/transfers/drains, preserves per-connection
+  deadlines under one service deadline, and exposes explicit stop/drain/abort
+  controls. The [shared Protocol/plain-driver contract](library-server-contract.md)
+  is frozen; source implementations and integration are in progress. The
+  [scheduler guide](extended-server-poll.md) describes its typed owner and
+  reporting surface. No new integrated compilation/runtime receipt is claimed;
+  the earlier sequential HTTP/HTTPS receipts do not accept this revision.
+  The application migration must document its explicit 100-continue policy
+  even when HTTPS body bytes are already buffered. TLS 1.2 and 1.3
+  early-response closure require separate native evidence before the final
+  server close policy is accepted.
+  After functional and causal concurrency gates, the proposed focused scale
+  observation uses 64 native echo connections, concurrency four and a checked
+  64 KiB binary body per connection. Record wall time excluding compilation,
+  completed bytes/outcomes, actual socket peak, source allocation count and
+  peak simultaneously live requested bytes under explicit coherent quotas.
+  TLS timing includes native handshake/close work; traced measurements must
+  remain labelled as traced. This planned observation is neither a compiler
+  speedup claim nor current performance evidence.
+- Accepted client checkpoint `75ab38d1`, all selected transport/integration gates accepted:
   [HTTP Protocol](extended-http-client.md) centralizes request staging,
   framing, decoding and response ownership independently of transport.
   [Generic batch scheduling](extended-http-batch.md) supplies one preparation,

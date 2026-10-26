@@ -1,5 +1,6 @@
-// Bounded sequential numeric-address HTTP service, no runtime host handler.
+// Bounded concurrent health/echo service over the shared server scheduler.
 module app::main;
+import core::clone;
 import core::decimal;
 import core::fmt;
 import core::io;
@@ -12,89 +13,179 @@ import core::text;
 import core::time;
 import ext::http;
 import ext::http_server;
+import ext::server_poll;
 import std::args;
 import std::clock;
+import std::poll;
 import std::signal;
 import std::socket;
 import std::stream;
-fn lit(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(s),n); return core::slice::view(raw,n).unwrap(); }
-fn text(s: str, n: i32) -> core::text::Text { let v = lit(s,n); return core::text::from_utf8_unchecked(v.values,v.start,v.len()); }
-fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool { if (v.len() != n) { return false; } let other = lit(s,n); let i: i32 = 0; while (i < n) { if (v.get(i).unwrap() != other.get(i).unwrap()) { return false; } i += 1; } return true; }
-fn write(v: core::slice::View<u8>, handle: i32) -> bool { let out = std::stream::from_handle(handle); return core::io::write_all(out.borrow(),v.values,v.start,v.len()).is_ok(); }
-fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:lit("",0),name:name,value:value,offset:0 }; }
+import ext::http_server_poll;
+enum AppError { Clock, Prepare(ext::http_server::Failure), InvalidState }
+// Diagnostic metadata owns no allocation, descriptor, or native handle.
+pub impl core::clone::Destroy<AppError> for AppError { pub fn destroy_value(owned: AppError) {} }
+struct Handler { maximum: i32 }
+impl Handler { fn borrow(&self) -> &Handler { return self; } }
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
+fn text(s: str, n: i32) -> core::text::Text { let v: core::slice::View<u8> = literal(s,n); return core::text::from_utf8_unchecked(v.values,v.start,v.len()); }
+fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool { if (v.len() != n) { return false; } let other: core::slice::View<u8> = literal(s,n); let i: i32 = 0; while (i < n) { if (v.get(i).unwrap() != other.get(i).unwrap()) { return false; } i += 1; } return true; }
+fn write_output(bytes: core::slice::View<u8>, handle: i32) -> bool {
+    let sink: std::stream::Descriptor = std::stream::from_handle(handle); let completed: i32 = 0; let calls: i32 = 8;
+    while (completed < bytes.len()) {
+        if (calls == 0) { return false; } calls -= 1;
+        let sent = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count: i32 = sent.unwrap(); if (count <= 0 || count > bytes.len() - completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:literal("",0),name:name,value:value,offset:0 }; }
 fn allocation(cause: ext::http_server::Cause) -> bool { return match(cause) { ext::http_server::Cause::AllocationFailed -> true, ext::http_server::Cause::Http(e) -> match(e) { ext::http::Error::AllocationFailed -> true, _ -> false }, _ -> false }; }
-fn report(connection: &ext::http_server::Connection, failed: bool) -> bool {
-    let s = connection.stats(); let scratch: [u8;255] = [0;255]; let f = core::fmt::buffer(scratch,0,255).unwrap();
-    f.write_text(text("received=",9)); f.write_unsigned(s.received,core::fmt::decimal()); f.write_text(text(" sent=",6)); f.write_unsigned(s.response_sent as u64,core::fmt::decimal()); f.write_text(text(" response=",10)); f.write_unsigned(s.response_bytes as u64,core::fmt::decimal()); f.write_text(text(" interim=",9)); f.write_unsigned(s.continue_sent as u64,core::fmt::decimal()); f.write_text(text(" drain=",7)); f.write_unsigned(s.drain_received,core::fmt::decimal()); f.write_text(text(" tail=",6)); f.write_unsigned(s.buffered_discarded as u64,core::fmt::decimal()); f.write_text(text(" io=",4)); f.write_unsigned(s.io_calls,core::fmt::decimal()); f.write_text(text(" cleanup=",9)); f.write_unsigned(s.cleanup_calls,core::fmt::decimal()); f.write_text(text(" cleanup-errors=",16)); f.write_unsigned(s.cleanup_errors,core::fmt::decimal()); f.write_text(text(" work=",6)); f.write_unsigned(s.work,core::fmt::decimal()); f.write_text(text(" scan=",6)); f.write_unsigned(s.scan_work,core::fmt::decimal()); f.write_text(text(" failed=",8)); f.write_unsigned(failed as u64,core::fmt::decimal()); f.write_text(text("\n",1)); let n = f.finish(); if (n.is_err()) { return false; } return write(core::slice::view(scratch,n.unwrap()).unwrap(),2);
+fn status_reason(n: i32) -> core::slice::View<u8> { return match(n) { 200 -> literal("OK",2), 204 -> literal("No Content",10), 400 -> literal("Bad Request",11), 404 -> literal("Not Found",9), 405 -> literal("Method Not Allowed",18), 413 -> literal("Content Too Large",17), 414 -> literal("URI Too Long",12), 417 -> literal("Expectation Failed",18), 421 -> literal("Misdirected Request",19), 431 -> literal("Request Header Fields Too Large",31), 500 -> literal("Internal Server Error",21), _ -> literal("Not Implemented",15) }; }
+fn service_limits(options: ext::http_server::Options, count: i32, concurrency: i32, timeout: i32) -> core::result::Result<ext::server_poll::ServerLimits,ext::server_poll::Cause> {
+    let bytes: core::result::Result<u64,ext::http_server::Cause> = ext::http_server::reservation_bytes(options);
+    if (bytes.is_err()) { return core::result::Err(ext::server_poll::Cause::Protocol(bytes.unwrap_err())); }
+    let n: u64 = count as u64; let width: i32 = concurrency; if (width > count) { width = count; }
+    // CLI caps count at64, all byte/count inputs at64MiB and io/work at i32MAX.
+    // These conservative formulas are below u64MAX; no caller value wraps.
+    let accepts: u64 = (options.io_calls + 1) * n;
+    return core::result::Ok(ext::server_poll::ServerLimits {
+        max_accepted:count,concurrency:width,accept_calls:accepts,
+        polls:1024 + accepts + 16 * n * (options.io_calls + 1),
+        operations:1024 + accepts + 32 * n * (options.io_calls + options.work + 1),
+        handler_calls:3 * n,work:options.work * n,live_bytes:bytes.unwrap() * (width as u64),
+        connection_timeout:core::time::from_millis(timeout as u64)
+    });
 }
-fn status_reason(n: i32) -> core::slice::View<u8> { return match(n) { 200 -> lit("OK",2), 204 -> lit("No Content",10), 400 -> lit("Bad Request",11), 404 -> lit("Not Found",9), 405 -> lit("Method Not Allowed",18), 413 -> lit("Content Too Large",17), 414 -> lit("URI Too Long",12), 417 -> lit("Expectation Failed",18), 421 -> lit("Misdirected Request",19), 431 -> lit("Request Header Fields Too Large",31), 500 -> lit("Internal Server Error",21), _ -> lit("Not Implemented",15) }; }
-fn reject_code(f: ext::http_server::Failure, head: bool) -> i32 { return match(f.cause) { ext::http_server::Cause::AllocationFailed -> 500, ext::http_server::Cause::Http(e) -> match(e) { ext::http::Error::AllocationFailed -> 500, ext::http::Error::Limit(n) -> reject_limit(head), _ -> 400 }, ext::http_server::Cause::RequestLimit -> reject_limit(head), ext::http_server::Cause::BodyLimit -> 413, ext::http_server::Cause::RequestTargetLimit -> 414, ext::http_server::Cause::RequestLineLimit -> 400, _ -> 400 }; }
+fn report_info(info: ext::server_poll::ConnectionInfo, code: i32) -> bool {
+    let s: ext::http_server::Stats = info.stats; let scratch: [u8;512] = [0;512]; let f: core::fmt::Formatter = core::fmt::buffer(scratch,0,512).unwrap();
+    f.write_text(text("received=",9)); f.write_unsigned(s.received,core::fmt::decimal());
+    f.write_text(text(" sent=",6)); f.write_unsigned(s.response_sent as u64,core::fmt::decimal());
+    f.write_text(text(" response=",10)); f.write_unsigned(s.response_bytes as u64,core::fmt::decimal());
+    f.write_text(text(" interim=",9)); f.write_unsigned(s.continue_sent as u64,core::fmt::decimal());
+    f.write_text(text(" drain=",7)); f.write_unsigned(s.drain_received,core::fmt::decimal());
+    f.write_text(text(" tail=",6)); f.write_unsigned(s.buffered_discarded as u64,core::fmt::decimal());
+    f.write_text(text(" io=",4)); f.write_unsigned(s.io_calls,core::fmt::decimal());
+    f.write_text(text(" cleanup=",9)); f.write_unsigned(s.cleanup_calls,core::fmt::decimal());
+    f.write_text(text(" cleanup-errors=",16)); f.write_unsigned(s.cleanup_errors,core::fmt::decimal());
+    f.write_text(text(" work=",6)); f.write_unsigned(s.work,core::fmt::decimal());
+    f.write_text(text(" scan=",6)); f.write_unsigned(s.scan_work,core::fmt::decimal());
+    f.write_text(text(" id=",4)); f.write_unsigned(info.id,core::fmt::decimal());
+    f.write_text(text(" rejected=",10)); f.write_unsigned(info.rejection.is_some() as u64,core::fmt::decimal());
+    f.write_text(text(" shutdown=",10)); f.write_unsigned(s.write_shutdown as u64,core::fmt::decimal());
+    f.write_text(text(" eof=",5)); f.write_unsigned(s.peer_eof as u64,core::fmt::decimal());
+    f.write_text(text(" closed=",8)); f.write_unsigned(s.closed as u64,core::fmt::decimal());
+    f.write_text(text(" code=",6)); f.write_unsigned(code as u64,core::fmt::decimal());
+    if (info.transport_calls.is_some()) { f.write_text(text(" tls=",5)); f.write_unsigned(info.transport_calls.unwrap(),core::fmt::decimal()); }
+    f.write_text(text(" failed=",8)); f.write_unsigned((code != 0) as u64,core::fmt::decimal()); f.write_text(text("\n",1));
+    let n = f.finish(); return n.is_ok() && write_output(core::slice::view(scratch,n.unwrap()).unwrap(),2);
+}
+fn answer(reply: &ext::server_poll::Reply, status: i32, body: core::slice::View<u8>, allow: core::slice::View<u8>, binary: bool) -> core::result::Result<ext::server_poll::Decision,AppError> {
+    let now = std::clock::system_now(); if (now.is_err()) { return core::result::Err(AppError::Clock); }
+    let content_type: core::slice::View<u8> = literal("text/plain; charset=utf-8",25); if (binary) { content_type = literal("application/octet-stream",24); }
+    let fields: [ext::http::Field;2] = [field(literal("Content-Type",12),content_type),field(literal("Allow",5),allow)]; let count: i32 = 1; if (!allow.is_empty()) { count = 2; }
+    // Synchronous staging copies all local fields and any request-borrowed body.
+    let staged = reply.stage(ext::http_server::Response { status:status,reason:status_reason(status),headers:core::slice::view(fields,count).unwrap(),body:body,date:now.unwrap() });
+    if (staged.is_err()) { return core::result::Err(AppError::Prepare(staged.unwrap_err())); }
+    return core::result::Ok(ext::server_poll::Decision::Responded);
+}
+fn reject_code(cause: ext::http_server::Cause, head: bool) -> i32 { return match(cause) {
+    ext::http_server::Cause::AllocationFailed -> 500,
+    ext::http_server::Cause::Http(e) -> match(e) { ext::http::Error::AllocationFailed -> 500, ext::http::Error::Limit(n) -> reject_limit(head), _ -> 400 },
+    ext::http_server::Cause::RequestLimit -> reject_limit(head), ext::http_server::Cause::BodyLimit -> 413,
+    ext::http_server::Cause::RequestTargetLimit -> 414, ext::http_server::Cause::RequestLineLimit -> 400, _ -> 400
+}; }
 fn reject_limit(head: bool) -> i32 { if (head) { return 431; } return 413; }
-fn protocol(cause: ext::http_server::Cause) -> bool { return match(cause) { ext::http_server::Cause::Http(e) -> true, ext::http_server::Cause::RequestLimit -> true, ext::http_server::Cause::RequestLineLimit -> true, ext::http_server::Cause::RequestTargetLimit -> true, ext::http_server::Cause::BodyLimit -> true, _ -> false }; }
-fn answer(c: &ext::http_server::Connection, status: i32, body: core::slice::View<u8>, allow: core::slice::View<u8>, binary: bool) -> i32 {
-    let now = std::clock::system_now(); if (now.is_err()) { return 3; }
-    let content_type = lit("text/plain; charset=utf-8",25); if (binary) { content_type = lit("application/octet-stream",24); }
-    let fields: [ext::http::Field;2] = [field(lit("Content-Type",12),content_type),field(lit("Allow",5),allow)]; let count: i32 = 1; if (!allow.is_empty()) { count = 2; }
-    let response = ext::http_server::Response { status:status,reason:status_reason(status),headers:core::slice::view(fields,count).unwrap(),body:body,date:now.unwrap() };
-    let result = c.reply(response); if (result.is_err()) { if (allocation(result.unwrap_err().cause)) { return 4; } return 3; } return 0;
+pub impl ext::server_poll::Handler<AppError> for Handler {
+    pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server::RequestHead, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,AppError> {
+        if (id >= self.maximum as u64) { return core::result::Err(AppError::InvalidState); }
+        let empty = literal("",0); let status: i32 = 0; let allow = empty; let m = head.head.method; let path = head.target.path;
+        let is_head: bool = eq(m,"HEAD",4);
+        if (head.target.scheme.is_some() && !ext::http::equal_name(head.target.scheme.unwrap(),literal("http",4))) { status = 421; }
+        if (match(head.expectation) { ext::http_server::Expectation::Unsupported -> true, _ -> false }) { status = 417; }
+        let known: bool = eq(m,"GET",3) || is_head || eq(m,"POST",4) || eq(m,"OPTIONS",7);
+        if (status == 0 && !known) { status = 501; }
+        if (status == 0 && eq(m,"OPTIONS",7)) { status = 204; allow = literal("GET, HEAD, POST, OPTIONS",24); }
+        if (status == 0 && !eq(path,"/health",7) && !eq(path,"/echo",5)) { status = 404; }
+        if (status == 0 && eq(path,"/health",7) && eq(m,"POST",4)) { status = 405; allow = literal("GET, HEAD, OPTIONS",18); }
+        if (status == 0 && eq(path,"/echo",5) && !eq(m,"POST",4)) { status = 405; allow = literal("POST, OPTIONS",13); }
+        if (status != 0 && status != 204) { return answer(reply,status,empty,allow,false); }
+        let decision: ext::http_server::BodyDecision = ext::http_server::BodyDecision::Read;
+        if (match(head.expectation) { ext::http_server::Expectation::Continue -> true, _ -> false }) { decision = ext::http_server::BodyDecision::ContinueThenRead; }
+        return core::result::Ok(ext::server_poll::Decision::Read(decision));
+    }
+    pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,AppError> {
+        if (id >= self.maximum as u64 || reply.head().is_none()) { return core::result::Err(AppError::InvalidState); }
+        let head: ext::http_server::RequestHead = reply.head().unwrap(); let empty = literal("",0);
+        if (eq(head.head.method,"OPTIONS",7)) { return answer(reply,204,empty,literal("GET, HEAD, POST, OPTIONS",24),false); }
+        if (eq(head.target.path,"/echo",5)) { return answer(reply,200,request.body,empty,true); }
+        let body = literal("ok\n",3); if (eq(head.head.method,"HEAD",4)) { body = empty; }
+        return answer(reply,200,body,empty,false);
+    }
+    pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,AppError> {
+        if (id >= self.maximum as u64) { return core::result::Err(AppError::InvalidState); }
+        return answer(reply,reject_code(rejection.cause,reply.head().is_none()),literal("",0),literal("",0),false);
+    }
 }
-fn reject(c: &ext::http_server::Connection, failure: ext::http_server::Failure, head: bool) -> i32 {
-    let empty = lit("",0); if (allocation(failure.cause)) { answer(c,500,empty,empty,false); return 4; }
-    if (!protocol(failure.cause)) { return 3; } return answer(c,reject_code(failure,head),empty,empty,false);
-}
-fn serve(c: &ext::http_server::Connection) -> i32 {
-    let empty = lit("",0); let got = c.read_head();
-    if (got.is_err()) { return reject(c,got.unwrap_err(),true); }
-    if (got.unwrap().is_none()) { return 0; }
-    let head = got.unwrap().unwrap(); let status: i32 = 0; let allow = empty;
-    let m = head.head.method; let path = head.target.path; let is_head: bool = eq(m,"HEAD",4);
-    if (head.target.scheme.is_some() && !ext::http::equal_name(head.target.scheme.unwrap(),lit("http",4))) { status = 421; }
-    if (match(head.expectation) { ext::http_server::Expectation::Unsupported -> true, _ -> false }) { status = 417; }
-    let known: bool = eq(m,"GET",3) || is_head || eq(m,"POST",4) || eq(m,"OPTIONS",7);
-    if (status == 0 && !known) { status = 501; }
-    if (status == 0 && eq(m,"OPTIONS",7)) { status = 204; allow = lit("GET, HEAD, POST, OPTIONS",24); }
-    if (status == 0 && !eq(path,"/health",7) && !eq(path,"/echo",5)) { status = 404; }
-    if (status == 0 && eq(path,"/health",7) && eq(m,"POST",4)) { status = 405; allow = lit("GET, HEAD, OPTIONS",18); }
-    if (status == 0 && eq(path,"/echo",5) && !eq(m,"POST",4)) { status = 405; allow = lit("POST, OPTIONS",13); }
-    if (status != 0 && status != 204) { return answer(c,status,empty,allow,false); }
-    if (match(head.expectation) { ext::http_server::Expectation::Continue -> true, _ -> false }) { let continued = c.send_continue(); if (continued.is_err()) { return 3; } }
-    let got = c.read_request(); if (got.is_err()) { return reject(c,got.unwrap_err(),false); }
-    let request = got.unwrap();
-    if (status == 204) { return answer(c,204,empty,allow,false); }
-    if (eq(path,"/echo",5)) { return answer(c,200,request.body,empty,true); }
-    let body = lit("ok\n",3); if (is_head) { body = empty; } return answer(c,200,body,empty,false);
+fn app_code(error: AppError) -> i32 { return match(error) { AppError::Prepare(failure) -> match(allocation(failure.cause)) { true -> 4, false -> 3 }, _ -> 3 }; }
+fn service_code(cause: ext::server_poll::Cause) -> i32 { return match(cause) {
+    ext::server_poll::Cause::AllocationFailed -> 4,
+    ext::server_poll::Cause::Protocol(cause) -> match(allocation(cause)) { true -> 4, false -> 3 },
+    ext::server_poll::Cause::Poll(error) -> match(error) { std::poll::Error::AllocationFailed -> 4, _ -> 3 }, _ -> 3
+}; }
+fn outcome_info(item: ext::server_poll::Outcome<ext::http_server::Failure,AppError>) -> core::option::Option<ext::server_poll::ConnectionInfo> { return match(item) {
+    ext::server_poll::Outcome::Pending(info) -> core::option::Some(info), ext::server_poll::Outcome::Complete(info) -> core::option::Some(info), ext::server_poll::Outcome::Empty(info) -> core::option::Some(info),
+    ext::server_poll::Outcome::Failed(value) -> core::option::Some(value.info), ext::server_poll::Outcome::HandlerFailed(value) -> core::option::Some(value.info), ext::server_poll::Outcome::InvalidDecision(value) -> core::option::Some(value.info),
+    ext::server_poll::Outcome::Aborted(value) -> core::option::Some(value.info), ext::server_poll::Outcome::AcceptFailed(value) -> core::option::Some(value.info), ext::server_poll::Outcome::Taken -> core::option::None()
+}; }
+fn outcome_code(item: ext::server_poll::Outcome<ext::http_server::Failure,AppError>) -> i32 { return match(item) {
+    ext::server_poll::Outcome::Complete(info) -> match(info.rejection.is_some() && allocation(info.rejection.unwrap().cause)) { true -> 4, false -> 0 },
+    ext::server_poll::Outcome::Empty(info) -> 0,
+    ext::server_poll::Outcome::Failed(value) -> match(allocation(value.error.cause)) { true -> 4, false -> 3 },
+    ext::server_poll::Outcome::HandlerFailed(value) -> app_code(value.error),
+    ext::server_poll::Outcome::InvalidDecision(value) -> match(value.preparation.is_some() && allocation(value.preparation.unwrap().cause)) { true -> 4, false -> 3 },
+    _ -> 3
+}; }
+fn review(report: &ext::server_poll::Report<ext::http_server::Failure,AppError>, reporting: bool, initial: i32) -> i32 {
+    let status: i32 = initial; let i: i32 = 0;
+    while (i < report.len()) { let item = report.get(i).unwrap(); let code: i32 = outcome_code(item); if (status == 0 && code != 0) { status = code; }
+        let info = outcome_info(item); if (reporting && (info.is_none() || !report_info(info.unwrap(),code))) { status = 5; } i += 1; }
+    return status;
 }
 fn run(args: std::args::Arguments) -> i32 {
-    if (args.len() == 1 && eq(args.get(0).unwrap(),"--help",6)) { if (!write(lit("Usage: http-serve ADDRESS [--requests N] [--timeout MS] [--report]\n",67),1)) { return 5; } return 0; }
+    if (args.len() == 1 && eq(args.get(0).unwrap(),"--help",6)) { if (!write_output(literal("Usage: http-serve ADDRESS [OPTIONS]\nOptions: --requests N --concurrency N --timeout MS --service-timeout MS --report\n         --max-request N --max-response N --max-body N --drain N\n         --max-head N --max-line N --max-headers N --max-trailers N\n         --max-trailer-bytes N --max-chunks N --max-io N --max-work N\n",320),1)) { return 5; } return 0; }
     if (args.len() < 1) { return 2; } let endpoint = core::net::parse_socket(args.get(0).unwrap()); if (endpoint.is_err()) { return 2; }
-    let options = ext::http_server::default_options(); let count: i32 = 1; let timeout: i32 = 5000; let reporting: bool = false; let i: i32 = 1;
+    let options = ext::http_server::default_options(); let count: i32 = 1; let concurrency: i32 = 4; let timeout: i32 = 5000; let service_timeout: i32 = -1; let reporting: bool = false; let i: i32 = 1;
     while (i < args.len()) {
         let key = args.get(i).unwrap(); i += 1; if (eq(key,"--report",8)) { reporting = true; continue; }
         if (i == args.len()) { return 2; } let value = args.get(i).unwrap(); i += 1; let parsed = core::decimal::parse_u32_range(value.values,value.start,value.len()); if (parsed.is_err() || value.is_empty() || parsed.unwrap() > 2147483647) { return 2; } let n: i32 = parsed.unwrap() as i32;
-        if (eq(key,"--requests",10)) { if (n < 1 || n > 64) { return 2; } count = n; continue; } if (eq(key,"--timeout",9)) { if (n > 60000) { return 2; } timeout = n; continue; }
+        if (eq(key,"--requests",10)) { if (n < 1 || n > 64) { return 2; } count = n; continue; }
+        if (eq(key,"--concurrency",13)) { if (n < 1 || n > 16) { return 2; } concurrency = n; continue; }
+        if (eq(key,"--timeout",9)) { if (n > 60000) { return 2; } timeout = n; continue; }
+        if (eq(key,"--service-timeout",17)) { if (n > 3840000) { return 2; } service_timeout = n; continue; }
         if (eq(key,"--max-io",8)) { options.io_calls = n as u64; continue; } if (eq(key,"--max-work",10)) { options.work = n as u64; continue; }
         if (n > 67108864) { return 2; } if (eq(key,"--max-request",13)) { options.request_bytes = n; continue; } if (eq(key,"--max-response",14)) { options.response_bytes = n; continue; } if (eq(key,"--max-body",10)) { options.request.body_bytes = n; options.response.body_bytes = n; continue; } if (eq(key,"--drain",7)) { options.drain_bytes = n; continue; } if (eq(key,"--max-head",10)) { options.request.head_bytes = n; continue; } if (eq(key,"--max-line",10)) { options.request.line_bytes = n; continue; } if (eq(key,"--max-headers",13)) { options.request.headers = n; continue; } if (eq(key,"--max-trailers",14)) { options.request.trailers = n; continue; } if (eq(key,"--max-trailer-bytes",19)) { options.request.trailer_bytes = n; continue; } if (eq(key,"--max-chunks",12)) { options.request.chunks = n; continue; } return 2;
     }
-    if (options.io_calls == 0) { return 2; }
+    if (options.io_calls == 0) { return 2; } if (service_timeout < 0) { service_timeout = count * timeout; }
     let family = match(endpoint.unwrap()) { core::net::SocketAddr::V4(v) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(v) -> std::socket::Family::Ipv6 };
     let opened = std::socket::create(family,std::socket::Kind::Tcp,true); if (opened.is_err()) { return 3; } let listener = opened.unwrap();
     if (match(family) { std::socket::Family::Ipv6 -> listener.set_option(std::socket::Setting::Ipv6Only,1).is_err(), _ -> false }) { listener.close(); return 3; }
     if (listener.bind(endpoint.unwrap()).is_err() || listener.listen(16).is_err()) { listener.close(); return 3; }
     let actual = listener.local_addr(); if (actual.is_err()) { listener.close(); return 3; }
-    let startup: [u8;96] = [0;96]; let startup_view = core::slice::view(startup,96).unwrap(); let formatted = actual.unwrap().format_into(startup_view); if (formatted.is_err()) { listener.close(); return 3; } let length = formatted.unwrap(); startup[length] = 10;
-    if (!write(core::slice::view(startup,length+1).unwrap(),1)) { listener.close(); return 5; }
-    let status: i32 = 0; let served: i32 = 0;
-    while (served < count && status == 0) {
-        let now = std::clock::monotonic_now(); if (now.is_err()) { status = 3; break; } let shifted = now.unwrap().checked_add(core::time::from_millis(timeout as u64)); if (shifted.is_err()) { status = 3; break; }
-        let got = ext::http_server::accept_until(listener.borrow(),options,core::time::deadline_at(shifted.unwrap())); if (got.is_err()) { status = 3; if (allocation(got.unwrap_err().cause)) { status = 4; } break; }
-        let connection = got.unwrap(); status = serve(connection.borrow()); let closed = connection.close(); if (closed.is_err() && status == 0) { status = 3; }
-        if (reporting && !report(connection.borrow(),status != 0)) { status = 5; }
-        let destroyed = connection.destroy(); if (destroyed.is_err() && status == 0) { status = 3; } served += 1;
-    }
+    let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup,95).unwrap()); if (formatted.is_err()) { listener.close(); return 3; } let length = formatted.unwrap(); startup[length] = 10;
+    if (!write_output(core::slice::view(startup,length+1).unwrap(),1)) { listener.close(); return 5; }
+    let computed = service_limits(options,count,concurrency,timeout); if (computed.is_err()) { listener.close(); return service_code(computed.unwrap_err()); }
+    let now = std::clock::monotonic_now(); if (now.is_err()) { listener.close(); return 3; }
+    let shifted = core::time::deadline_after(now.unwrap(),core::time::from_millis(service_timeout as u64)); if (shifted.is_err()) { listener.close(); return 3; }
+    let handler: Handler = Handler { maximum:count };
+    let served: core::result::Result<ext::server_poll::Report<ext::http_server::Failure,AppError>,ext::server_poll::ServiceFailure<ext::http_server::Failure,AppError>> = ext::http_server_poll::serve_until<Handler,AppError>(listener.borrow(),handler.borrow(),options,computed.unwrap(),shifted.unwrap());
+    let status: i32 = 0; if (served.is_err()) { status = service_code(served.unwrap_err().cause); }
+    let outcomes: ext::server_poll::Report<ext::http_server::Failure,AppError> = match(served) { core::result::Ok(value) -> value, core::result::Err(value) -> value.report };
+    status = review(outcomes.borrow(),reporting,status); outcomes.destroy();
     let closed = listener.close(); if (closed.is_err() && status == 0) { status = 3; } return status;
 }
 fn main() -> i32 {
     if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
-    let got = std::args::snapshot(1,48,8192); if (got.is_err()) { return match(got.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(n) -> 5, _ -> 2 }; }
+    let got = std::args::snapshot(1,64,8192); if (got.is_err()) { return match(got.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(n) -> 5, _ -> 2 }; }
     let args = got.unwrap(); let status = run(args); args.destroy(); return status;
 }

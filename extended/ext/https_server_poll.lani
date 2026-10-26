@@ -1,0 +1,73 @@
+// Verified TLS connections supplied to the shared server scheduler.
+module ext::https_server_poll;
+import core::clone;
+import core::option;
+import core::result;
+import core::time;
+import ext::http_client;
+import ext::http_server;
+import ext::https_server;
+import ext::openssl_tls;
+import ext::server_poll;
+import std::socket;
+
+// The context remains caller-owned. Keep its wrapper, this factory, handler
+// and listener alive and unchanged until the Server is destroyed. Every begin
+// eagerly attaches a Session which retains its own native context reference.
+pub struct Factory { context: &ext::openssl_tls::ServerContext, options: ext::http_server::Options, tls: ext::https_server::Options }
+pub struct Driver { owner: ext::https_server::Exchange }
+pub fn factory(context: &ext::openssl_tls::ServerContext, options: ext::http_server::Options, tls: ext::https_server::Options) -> Factory {
+    return Factory { context: context, options: options, tls: tls };
+}
+pub impl Factory { pub fn borrow(&self) -> &Factory { return self; } }
+
+pub impl ext::server_poll::Driver<ext::https_server::Failure> for Driver {
+    pub fn protocol(&self) -> &ext::http_server::Protocol { return self.owner.protocol(); }
+    pub fn stats(&self) -> ext::http_server::Stats { return self.owner.stats(); }
+    pub fn rejection(&self) -> core::option::Option<ext::http_server::Rejection> { return self.owner.rejection(); }
+    pub fn transport_calls(&self) -> core::option::Option<u64> { return core::option::Some(self.owner.tls_stats().calls); }
+    pub fn interest(&self) -> ext::http_client::Interest { return self.owner.interest(); }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { return self.owner.raw_handle(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,ext::https_server::Failure> { return self.owner.before_wait(); }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,ext::https_server::Failure> { return self.owner.step(ready); }
+    pub fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::result::Result<bool,ext::https_server::Failure> { return self.owner.read_body(decision); }
+    pub fn abort(&self) -> core::result::Result<bool,ext::https_server::Failure> { return self.owner.abort(); }
+    pub fn destroy(&self) {
+        assert(!match(self.owner.status()) { ext::http_server::Status::Active -> true, _ -> false });
+        let released: core::result::Result<bool,ext::https_server::Failure> = self.owner.destroy(); assert(released.is_ok());
+    }
+}
+pub impl ext::server_poll::Factory<Driver,ext::https_server::Failure> for Factory {
+    pub fn reservation(&self) -> core::result::Result<ext::server_poll::Reservation,ext::server_poll::Cause> {
+        let bytes: core::result::Result<u64,ext::http_server::Cause> = ext::http_server::reservation_bytes(self.options);
+        if (bytes.is_err()) { return core::result::Err(ext::server_poll::Cause::Protocol(bytes.unwrap_err())); }
+        if (self.tls.tls_calls == 0 || !self.context.is_open()) { return core::result::Err(ext::server_poll::Cause::InvalidLimits); }
+        return core::result::Ok(ext::server_poll::Reservation { work: self.options.work, bytes: bytes.unwrap() });
+    }
+    pub fn begin(&self, accepted: std::socket::Accepted, deadline: core::time::Deadline) -> core::result::Result<Driver,ext::https_server::Failure> {
+        let made: core::result::Result<ext::https_server::Exchange,ext::https_server::Failure> = ext::https_server::begin_connected(accepted.socket,accepted.peer,self.context,self.options,self.tls,deadline);
+        if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+        return core::result::Ok(Driver { owner: made.unwrap() });
+    }
+    pub fn failure_stats(&self, error: ext::https_server::Failure) -> ext::http_server::Stats { return error.stats; }
+    pub fn failure_transport_calls(&self, error: ext::https_server::Failure) -> core::option::Option<u64> { return core::option::Some(error.tls.calls); }
+    pub fn shared_failure(&self, error: ext::https_server::Failure) -> core::option::Option<ext::server_poll::Cause> {
+        return match(error.cause) {
+            ext::https_server::Cause::Http(value) -> match(value.cause) { ext::http_server::Cause::Clock(clock) -> core::option::Some(ext::server_poll::Cause::Clock(clock)), _ -> core::option::None() },
+            _ -> core::option::None()
+        };
+    }
+}
+
+pub fn new<H,A>(listener: &std::socket::Socket, factory: &Factory, handler: &H, limits: ext::server_poll::ServerLimits, deadline: core::time::Deadline)
+    -> core::result::Result<ext::server_poll::Server<Driver,ext::https_server::Failure,Factory,H,A>,ext::server_poll::Cause> where H: ext::server_poll::Handler<A> {
+    return ext::server_poll::new<Driver,ext::https_server::Failure,Factory,H,A>(listener,factory,handler,limits,deadline);
+}
+
+// Context and handler are borrowed throughout the synchronous service; no
+// active Session/socket or reference to this local Factory escapes the call.
+pub fn serve_until<H,A>(listener: &std::socket::Socket, context: &ext::openssl_tls::ServerContext, handler: &H, options: ext::http_server::Options, tls: ext::https_server::Options, limits: ext::server_poll::ServerLimits, deadline: core::time::Deadline)
+    -> core::result::Result<ext::server_poll::Report<ext::https_server::Failure,A>,ext::server_poll::ServiceFailure<ext::https_server::Failure,A>> where H: ext::server_poll::Handler<A>, A: core::clone::Destroy<A> {
+    let adapter: Factory = factory(context,options,tls);
+    return ext::server_poll::serve_until<Driver,ext::https_server::Failure,Factory,H,A>(listener,adapter.borrow(),handler,limits,deadline);
+}
