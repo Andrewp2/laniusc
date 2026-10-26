@@ -63,6 +63,22 @@ pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Erro
     let args:[std::linux::Argument;3]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(0)];
     return zero(call(263,view(args,3).unwrap()));
 }
+// General descriptor-relative paths; EEXIST does not establish directory type.
+// Mode and the complete byte path are checked before one allocation-free call.
+pub fn create_dir_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Result<i32,Error> {
+    if(mode>4095) { return Err(Error::InvalidInput); }
+    let storage:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
+    stage(path,packed)?;
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(mode as i64)];
+    return zero(call(258,view(args,3).unwrap()));
+}
+// One empty-directory removal, never recursive. AT_REMOVEDIR is 512 on Linux.
+pub fn remove_dir_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error> {
+    let storage:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
+    stage(path,packed)?;
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(512)];
+    return zero(call(263,view(args,3).unwrap()));
+}
 // Stage both paths before one renameat2 attempt. NoReplace is an atomic host
 // policy; unsupported flags/filesystems return their error without fallback.
 pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> Result<i32,Error> {

@@ -1,0 +1,73 @@
+// Inspect canonical ZIP entries from independently assembled central records.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::slice;
+import ext::zip;
+import std::io;
+
+fn word(value: i32) {
+    let output: [i32;1] = [value];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(output),4) == 4);
+}
+
+fn inspect(input: core::slice::View<u8>) {
+    let archive: ext::zip::Archive = ext::zip::parse(input,ext::zip::default_limits()).unwrap();
+    assert(archive.len() == 8);
+    let cursor: ext::zip::Cursor = archive.cursor();
+    let copied: ext::zip::Cursor = cursor;
+    let first_version: i32 = -1;
+    let first_offset: i32 = -1;
+    word(archive.len());
+    let index: i32 = 0;
+    while (index < archive.len()) {
+        let entry: ext::zip::Entry = cursor.next().unwrap();
+        if (index == 0) { first_version = entry.version_made_by; first_offset = entry.local_offset; }
+        assert(entry.version_made_by >= 0 && entry.version_made_by <= 65535);
+        assert(entry.data.len() == 0 && entry.compressed_size == 0 && entry.uncompressed_size == 0);
+        word(entry.version_made_by); word(entry.external_attributes as i32); word(entry.local_offset);
+        let payload: alloc::vec::Vec<u8> = ext::zip::extract(entry,0).unwrap();
+        assert(payload.len() == 0); payload.destroy();
+        index += 1;
+    }
+    assert(cursor.remaining() == 0 && core::option::is_none(cursor.next()) && core::option::is_none(cursor.next()));
+    assert(copied.remaining() == 8);
+    let first: ext::zip::Entry = copied.next().unwrap();
+    assert(first.version_made_by == first_version && first.local_offset == first_offset && copied.remaining() == 7);
+}
+
+fn writer_default() {
+    let name: [u8;1] = [120];
+    let empty: core::slice::View<u8> = core::slice::view(name,0).unwrap();
+    let sources: [ext::zip::Source;1] = [ext::zip::Source { name: core::slice::view(name,1).unwrap(), data: empty, method: ext::zip::Method::Stored, utf8: true }];
+    let output: alloc::vec::Vec<u8> = ext::zip::encode(core::slice::view(sources,1).unwrap(),empty,ext::zip::default_limits()).unwrap();
+    let archive: ext::zip::Archive = ext::zip::parse(output.as_view(),ext::zip::default_limits()).unwrap();
+    let cursor: ext::zip::Cursor = archive.cursor();
+    let entry: ext::zip::Entry = cursor.next().unwrap();
+    assert(entry.version_made_by == 20 && entry.external_attributes == 0);
+    word(entry.version_made_by); word(entry.external_attributes as i32);
+    output.destroy();
+}
+
+fn main() -> i32 {
+    let storage: [i32;1024] = [0;1024];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer,4096);
+    let count: i32 = 0;
+    while (count < 4096) {
+        let got: i32 = std::io::read_stdin(pointer+(count as usize),(4096-count) as usize);
+        assert(got >= 0);
+        if (got == 0) { break; }
+        count += got;
+    }
+    assert(count > 0 && count < 4096);
+    writer_default();
+    inspect(core::slice::view(packed,count).unwrap());
+    let strided: [u8;4100] = [255;4100];
+    let index: i32 = 0;
+    while (index < count) { strided[3+index] = packed[index]; index += 1; }
+    inspect(core::slice::view_range(strided,3,count).unwrap());
+    assert(strided[0] == 255 && strided[2] == 255 && strided[3+count] == 255);
+    return 0;
+}

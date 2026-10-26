@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **245 modules**, **11831 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **249 modules**, **12115 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -146,7 +146,7 @@ Inventory: **245 modules**, **11831 declaration/member entries**. Counts include
 | [std::file_hex](std/file_hex.md) | [source](../../stdlib/std/file_hex.lani#L4) | 9 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_i64](std/file_hex_wide_i64.md) | [source](../../stdlib/std/file_hex_wide_i64.lani#L2) | 3 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_u64](std/file_hex_wide_u64.md) | [source](../../stdlib/std/file_hex_wide_u64.lani#L2) | 3 | Source inventory | **Unregistered** |
-| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 95 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md), [stdlib-temp-files](../stdlib-temp-files.md) |
+| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 97 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md), [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-directory-at](../stdlib-directory-at.md) |
 | [std::filesystem](std/filesystem.md) | [source](../../stdlib/std/filesystem.lani#L4) | 5 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::fs](std/fs.md) | [source](../../stdlib/std/fs.lani#L5) | 105 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::gpu](std/gpu.md) | [source](../../stdlib/std/gpu.lani#L6) | 60 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
@@ -196,7 +196,11 @@ Inventory: **245 modules**, **11831 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
+| [ext::archive_extract](ext/archive_extract.md) | [source](../../extended/ext/archive_extract.lani#L3) | 151 | Source inventory | [extended-archive-extraction](../extended-archive-extraction.md), [extended-unpack](../extended-unpack.md), [library-archive-extraction-plan](../library-archive-extraction-plan.md) |
 | [ext::archive_index](ext/archive_index.md) | [source](../../extended/ext/archive_index.lani#L3) | 52 | Source inventory | [extended-archive-index](../extended-archive-index.md) |
+| [ext::archive_plan](ext/archive_plan.md) | [source](../../extended/ext/archive_plan.lani#L2) | 65 | Source inventory | [extended-archive-plan](../extended-archive-plan.md), [library-archive-extraction-plan](../library-archive-extraction-plan.md) |
+| [ext::archive_profile](ext/archive_profile.md) | [source](../../extended/ext/archive_profile.lani#L3) | 13 | Source inventory | [extended-archive-profile](../extended-archive-profile.md), [library-archive-extraction-plan](../library-archive-extraction-plan.md) |
+| [ext::archive_source](ext/archive_source.md) | [source](../../extended/ext/archive_source.lani#L3) | 52 | Source inventory | [extended-archive-source](../extended-archive-source.md), [extended-unpack](../extended-unpack.md) |
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::big_int](ext/big_int.md) | [source](../../extended/ext/big_int.lani#L3) | 56 | Source inventory | [extended-big-int](../extended-big-int.md) |
 | [ext::big_uint](ext/big_uint.md) | [source](../../extended/ext/big_uint.lani#L4) | 72 | Source inventory | [extended-big-uint](../extended-big-uint.md) |
@@ -266,7 +270,7 @@ Inventory: **245 modules**, **11831 declaration/member entries**. Counts include
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
 | [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 76 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
-| [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 81 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
+| [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data
 

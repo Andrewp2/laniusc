@@ -8,15 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
-Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. New remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. The primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp, including paths, symlinks, host errors, injected errors/invalid counts and bounds preflight. Preliminary bounds evidence overlaps and adds no distinct case. These allocation-free name operations supply no durability or hostile-directory authority. TempFile applies a stricter cooperative namespace/component policy; the separately accepted AtomicFile owner composes synchronization/publication/recovery with explicit receipts.
+Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. Their earlier primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp; preliminary bounds evidence overlaps. The new allocation-free create_dir_at/remove_dir_at use mkdirat/unlinkat(AT_REMOVEDIR), validate full path/mode before one attempt and preserve caller ownership. Their three focused native groups pass namespace24/bounds19/faults12 process invocations, including two repeated baselines and reached errno/invalid-count injections. General host path resolution still applies; EEXIST is not proof of a safe directory. These primitives supply no durability, automatic rollback or hostile-directory authority. TempFile and AtomicFile apply their separate cooperative namespace/publication/recovery contracts.
 
 ## Contract and evidence guides
 
 - [stdlib-file-operations](../../stdlib-file-operations.md)
 - [stdlib-file-resize](../../stdlib-file-resize.md)
 - [stdlib-temp-files](../../stdlib-temp-files.md)
+- [stdlib-directory-at](../../stdlib-directory-at.md)
 
-Declaration counts: constant: 2; enum: 5; field: 36; function: 22; impl: 1; method: 2; struct: 6; variant: 21.
+Declaration counts: constant: 2; enum: 5; field: 36; function: 24; impl: 1; method: 2; struct: 6; variant: 21.
 
 ## Declared imports
 
@@ -651,9 +652,25 @@ pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> Resu
 pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error>
 ```
 
-### function: rename_at
+### function: create_dir_at
 
 [Source line 68](../../../stdlib/std/file_ops.lani#L68)
+
+```lanius
+pub fn create_dir_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Result<i32,Error>
+```
+
+### function: remove_dir_at
+
+[Source line 76](../../../stdlib/std/file_ops.lani#L76)
+
+```lanius
+pub fn remove_dir_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error>
+```
+
+### function: rename_at
+
+[Source line 84](../../../stdlib/std/file_ops.lani#L84)
 
 ```lanius
 pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> Result<i32,Error>
@@ -661,7 +678,7 @@ pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd
 
 ### function: seek
 
-[Source line 80](../../../stdlib/std/file_ops.lani#L80)
+[Source line 96](../../../stdlib/std/file_ops.lani#L96)
 
 ```lanius
 pub fn seek(file:&File,offset:i64,origin:Origin) -> Result<i64,Error>
@@ -669,7 +686,7 @@ pub fn seek(file:&File,offset:i64,origin:Origin) -> Result<i64,Error>
 
 ### function: position
 
-[Source line 85](../../../stdlib/std/file_ops.lani#L85)
+[Source line 101](../../../stdlib/std/file_ops.lani#L101)
 
 ```lanius
 pub fn position(file:&File) -> Result<i64,Error>
@@ -677,7 +694,7 @@ pub fn position(file:&File) -> Result<i64,Error>
 
 ### function: set_len
 
-[Source line 88](../../../stdlib/std/file_ops.lani#L88)
+[Source line 104](../../../stdlib/std/file_ops.lani#L104)
 
 ```lanius
 pub fn set_len(file:&File,length:u64) -> Result<i32,Error>
@@ -685,7 +702,7 @@ pub fn set_len(file:&File,length:u64) -> Result<i32,Error>
 
 ### function: sync_all
 
-[Source line 96](../../../stdlib/std/file_ops.lani#L96)
+[Source line 112](../../../stdlib/std/file_ops.lani#L112)
 
 ```lanius
 pub fn sync_all(file:&File) -> Result<i32,Error>
@@ -693,7 +710,7 @@ pub fn sync_all(file:&File) -> Result<i32,Error>
 
 ### function: sync_data
 
-[Source line 97](../../../stdlib/std/file_ops.lani#L97)
+[Source line 113](../../../stdlib/std/file_ops.lani#L113)
 
 ```lanius
 pub fn sync_data(file:&File) -> Result<i32,Error>
@@ -701,7 +718,7 @@ pub fn sync_data(file:&File) -> Result<i32,Error>
 
 ### function: duplicate
 
-[Source line 98](../../../stdlib/std/file_ops.lani#L98)
+[Source line 114](../../../stdlib/std/file_ops.lani#L114)
 
 ```lanius
 pub fn duplicate(file:&File,minimum_fd:i32,close_on_exec:bool) -> Result<File,Error>
@@ -709,7 +726,7 @@ pub fn duplicate(file:&File,minimum_fd:i32,close_on_exec:bool) -> Result<File,Er
 
 ### function: duplicate_to
 
-[Source line 99](../../../stdlib/std/file_ops.lani#L99)
+[Source line 115](../../../stdlib/std/file_ops.lani#L115)
 
 ```lanius
 pub fn duplicate_to(source:&File,target:&File,close_on_exec:bool) -> Result<i32,Error>
@@ -717,7 +734,7 @@ pub fn duplicate_to(source:&File,target:&File,close_on_exec:bool) -> Result<i32,
 
 ### function: close_on_exec
 
-[Source line 103](../../../stdlib/std/file_ops.lani#L103)
+[Source line 119](../../../stdlib/std/file_ops.lani#L119)
 
 ```lanius
 pub fn close_on_exec(file:&File) -> Result<bool,Error>
@@ -725,7 +742,7 @@ pub fn close_on_exec(file:&File) -> Result<bool,Error>
 
 ### function: set_close_on_exec
 
-[Source line 104](../../../stdlib/std/file_ops.lani#L104)
+[Source line 120](../../../stdlib/std/file_ops.lani#L120)
 
 ```lanius
 pub fn set_close_on_exec(file:&File,enabled:bool) -> Result<i32,Error>
@@ -733,7 +750,7 @@ pub fn set_close_on_exec(file:&File,enabled:bool) -> Result<i32,Error>
 
 ### function: status_flags
 
-[Source line 105](../../../stdlib/std/file_ops.lani#L105)
+[Source line 121](../../../stdlib/std/file_ops.lani#L121)
 
 ```lanius
 pub fn status_flags(file:&File) -> Result<i32,Error>
@@ -741,7 +758,7 @@ pub fn status_flags(file:&File) -> Result<i32,Error>
 
 ### function: set_status
 
-[Source line 106](../../../stdlib/std/file_ops.lani#L106)
+[Source line 122](../../../stdlib/std/file_ops.lani#L122)
 
 ```lanius
 pub fn set_status(file:&File,append:bool,nonblocking:bool) -> Result<i32,Error>
@@ -749,7 +766,7 @@ pub fn set_status(file:&File,append:bool,nonblocking:bool) -> Result<i32,Error>
 
 ### function: decode_statx_into
 
-[Source line 109](../../../stdlib/std/file_ops.lani#L109)
+[Source line 125](../../../stdlib/std/file_ops.lani#L125)
 
 ```lanius
 pub fn decode_statx_into(input:View<u8>,output:&Metadata) -> Result<i32,Error>
@@ -757,7 +774,7 @@ pub fn decode_statx_into(input:View<u8>,output:&Metadata) -> Result<i32,Error>
 
 ### function: metadata_into
 
-[Source line 125](../../../stdlib/std/file_ops.lani#L125)
+[Source line 141](../../../stdlib/std/file_ops.lani#L141)
 
 ```lanius
 pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error>
@@ -765,7 +782,7 @@ pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Resu
 
 ### function: metadata_at_into
 
-[Source line 126](../../../stdlib/std/file_ops.lani#L126)
+[Source line 142](../../../stdlib/std/file_ops.lani#L142)
 
 ```lanius
 pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error>
@@ -773,7 +790,7 @@ pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,outpu
 
 ### function: metadata_file_into
 
-[Source line 127](../../../stdlib/std/file_ops.lani#L127)
+[Source line 143](../../../stdlib/std/file_ops.lani#L143)
 
 ```lanius
 pub fn metadata_file_into(file:&File,output:&Metadata) -> Result<i32,Error>

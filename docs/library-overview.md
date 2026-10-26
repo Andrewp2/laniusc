@@ -1,6 +1,11 @@
 # Standard and extended library overview
 
-The full library goal remains open. The branch is rebased onto `origin/lang`
+The full library goal remains open. The current
+[archive increment](library-archive-extraction-plan.md) adds shared namespace
+planning, extraction metadata policy, complete TAR/ZIP preparation, a bounded
+materializer and a real [unpack program](extended-unpack.md). The prerequisites,
+preparation, direct materializer and finite CLI groups pass on the documented
+native profile. The branch is rebased onto `origin/lang`
 `0d2e4a07`; the first [language-feature cleanup](library-language-adoption.md)
 executes across six library modules and the range-dot application. Item imports,
 local inference and selected `?` paths have focused native receipts, with a
@@ -13,6 +18,53 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted bounded archive increment.**
+
+The new production code is Lanius over the existing TAR/ZIP engines,
+AtomicFile and checked Linux descriptor operations. Current finite receipts
+use native x86_64 Linux, with local guard/output directories under ext4 `/tmp`:
+
+| Surface | Current scope |
+| --- | --- |
+| [Descriptor-relative directory operations](stdlib-directory-at.md) | Allocation-free `create_dir_at`/`remove_dir_at`: namespace 24, bounds 19 and faults 12 process invocations, including two fault baselines; all three Rust tests pass in 6.51s. |
+| [ZIP creator metadata](extended-zip.md#errors-and-executable-evidence) | The canonical Entry retains the raw `version_made_by` word. Eight independent central records execute through packed and nonzero strided views, plus unchanged writer defaults, in one Rust test/6.11s. This does not classify unknown creators as safe extraction types. |
+| [Namespace planner](extended-archive-plan.md) | Direct contracts and 76 independently modeled namespaces pass through a corrected fixture import. A separate four-process allocation receipt covers its baseline and three reached reservation failures. Model namespaces are not native process counts. |
+| [Extraction profile](extended-archive-profile.md) | Four groups pass 222 authored cases: TAR kinds 18, ZIP creator/attributes 84, extras 108 and direct bounds/strides 12, in 5.95s. Classification performs no filesystem operation or payload integrity check. |
+| [Complete archive source](extended-archive-source.md) | TAR 26, ZIP 26, limits 58 and allocation cleanup 10 process invocations pass four Rust tests in 8.09s. The 120 includes repeated baselines and eight reached source OOM cases. Admission and explicit release are checked before exit. |
+| [Materializer](extended-archive-extraction.md) | Eleven direct Python oracle groups pass 100 process invocations against one CLI-compiled ELF: success 12, existing eight, partial three, bounds 25, allocation eight plus eight, namespace nine, sync five, writes eight, close/rename six and recovery eight. Allocation groups include two calibrations and 14 reached ENOMEM cases. This direct receipt is separate from Rust driver build admission and earlier pre-native fixture failures; no passing direct Rust-libtest rerun is claimed. |
+| [Unpack CLI](extended-unpack.md#verification-scope) | Four Rust tests pass 69 process invocations in 10.64s: trees seven, arguments 27, bounds 30 and reporting five. Five additional input-fault invocations pass directly against the retained ELF: one calibration and four reached read injections. The added fifth libtest has build admission, not execution. |
+
+One separate observation reuses the accepted CLI ELF for a 273-entry ZIP:
+256 small files, 16 directories and one 2 MiB compressed payload, totaling
+71,261 archive bytes and 2,129,920 decoded bytes. Startup, read, extraction,
+fsync and reports take **1.653438s untraced** in this one sample; exact
+tree/content/status validation occurs outside that timer. The receipt is
+`target/stdlib-work/archive-unpack-observation-first.log`, with evidence under
+`/tmp/unpack-observation-5cqwou2x`. It adds no finite-case count, compiler
+throughput comparison or general filesystem performance claim.
+
+Preparation seals the entire namespace and validates all TAR footer/ZIP metadata
+before output effects. ZIP payload CRC/decode checks remain a separate canonical
+extraction step, including for zero-byte directories. The materializer uses
+NoReplace per file, preserves partial publication and explicit cleanup/recovery
+facts, and requires a cooperative stable namespace. Neither the CLI receipts
+nor generated declarations prove hostile namespace containment, supply a
+directory transaction, or bound native blocking time/aggregate DEFLATE CPU.
+GPU compilation here produces native CPU programs.
+The existing AtomicFile/TempFile/server receipts retain their separate scopes.
+
+The direct Run receipts under `target/stdlib-work/` are
+`archive-materializer-tree-single-owner-retry.log`,
+`archive-materializer-bounds-first.log`,
+`archive-materializer-allocations-first.log`,
+`archive-materializer-namespace-sync-fcntl-retry.log`,
+`archive-materializer-write-close-first.log` and
+`archive-materializer-recovery-first.log`. The 100 invocations include
+calibrations/overlap. They use frozen production `cf1347d5...` and probe ELF
+`268b8bed...`; full identities and each fixture correction remain in the
+[materializer guide](extended-archive-extraction.md). This selected workflow
+does not complete the full standard or extended library goal.
 
 **Atomic publication and key-value application checkpoint.**
 
@@ -50,8 +102,8 @@ their prior scope, and earlier caller-scratch CLI receipts remain historical.
 These operations use Lanius over existing Linux calls. The accepted namespace is
 exclusive/cooperative; no locking, hostile-directory, network-filesystem or
 universal crash/power-loss guarantee follows. The
-[archive extraction plan](library-archive-extraction-plan.md) is proposed next
-work; it supplies no executable extraction API or acceptance receipt.
+[archive increment](library-archive-extraction-plan.md) now composes those
+owners within the accepted finite extraction profile recorded above.
 
 **Temporary-file checkpoint.**
 
@@ -107,8 +159,8 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes its bounded writer and final check for the frozen AtomicFile/KV,
-TempFile/FileOps and server surfaces: 246 pages, 245 modules and 8,119 public
+passes its bounded writer and final check for the frozen archive, AtomicFile/KV,
+TempFile/FileOps and server surfaces: 250 pages, 249 modules and 8,197 public
 declaration markers. Source inventory evidence does not establish runtime
 support or library completion.
 

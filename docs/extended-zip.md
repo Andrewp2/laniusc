@@ -40,9 +40,22 @@ Cursor.next() -> Option<Entry>
 `Archive.comment` borrows the raw archive comment. Entries expose borrowed
 `name`, `comment`, central `extra`, `local_extra` and compressed `data` views;
 `method`, `utf8`, raw `flags`, `crc32`, compressed and uncompressed sizes;
-raw DOS modification time/date and external attributes; and the local record
-offset and end. Offsets are relative to the selected archive view, even when
-that view starts inside larger or strided storage.
+raw DOS modification time/date, `version_made_by: i32` and
+`external_attributes: u32`; and the local record offset and end. Offsets are
+relative to the selected archive view, even when that view starts inside
+larger or strided storage.
+
+`version_made_by` preserves the unsigned 16-bit central-directory word at
+header offset 4, represented as an `i32` in `0..65535`. Its upper byte identifies
+the creator's attribute convention: for example, 0 is MS-DOS, 3 is UNIX and 19
+is Darwin. Its lower byte describes the writer's supported ZIP specification
+version, with decimal major/minor digits. External attributes depend on that
+host convention; these meanings follow APPNOTE sections 4.4.2 and 4.4.15 in the
+[PKWARE specification](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
+The reader retains both fields without interpreting file types or rejecting
+unknown creator hosts or creator version bytes. The separate version-needed
+field continues to control existing feature validation. Filesystem extraction
+policy must interpret creator metadata before trusting attributes.
 
 The cursor visits central-directory order, including duplicate names, and
 remains exhausted after its last entry. It does not choose a winner for a
@@ -113,8 +126,9 @@ it writes raw legacy bytes.
 ## Deterministic writing and ownership
 
 The writer supports multiple stored and DEFLATE entries in caller order. It
-uses DOS date 1980-01-01 and time zero, required/made-by version 2.0, zero
-attributes, no extras or per-entry comments, and no data descriptors. It writes
+uses DOS date 1980-01-01 and time zero, required version 2.0, made-by word
+`0x0014` (MS-DOS attributes, ZIP version 2.0), zero attributes, no extras or
+per-entry comments, and no data descriptors. It writes
 correct local and central checksums/sizes after measuring compressed payloads.
 The raw compressor's fixed-Huffman LZ77 or stored-block policy is documented in
 [the DEFLATE module](extended-deflate.md). The same inputs produce the same
@@ -188,3 +202,28 @@ metadata, NUL and rejected path syntax. That contract passed in 6.79 seconds:
 `target/stdlib-work/http-batch-zip-name-contracts.log`. This receipt covers the
 shared name policy; the broader archive cases above retain their separate
 execution evidence.
+
+The creator metadata addition has a focused fixture in
+`tests/fixtures/extended/archive_extraction/zip_metadata.lani` and driver in
+`tests/extended_zip_metadata_execution.rs`. It prepares eight independently
+assembled creator/attribute pairs, including zero, UNIX, Darwin, NTFS, unknown
+hosts, low creator-version byte 255 and full unsigned word 65535. The same
+records exercise reordered directories, independent cursor copies, exhausted
+cursors, empty-payload extraction, packed input and a nonzero strided window.
+A separate writer control checks the unchanged made-by word and zero
+attributes. This current-layout gate passed on x86_64 Linux through GPU
+compilation and native execution: **1 Rust test, 6.11 seconds**, recorded in
+`target/stdlib-work/archive-zip-metadata-first.log`. The shared two-driver Rust
+build passed separately in 2.63 seconds, recorded in
+`target/stdlib-work/archive-prerequisite-drivers-build.log`. These are finite
+metadata and cursor checks; they do not establish filesystem extraction policy.
+
+The accepted artifacts have these SHA-256 values:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `extended/ext/zip.lani` | `9af79ae8926d6c3b4da12c6f4fadcb3af94830abcf6cf00deadef3dae3b0f800` |
+| `tests/fixtures/extended/archive_extraction/zip_metadata.lani` | `eeac2b56558fb66c250bfbf3fee823e4f073da3c544218d24d44302d7f2a0512` |
+| `tests/extended_zip_metadata_execution.rs` | `c66c5b85fd527b37c3d0578e8915bdedae96974d820cda3a477dacb299ebd2ad` |
+| `/tmp/laniusc_zip_metadata_exe_322021_0` | `715f826300b13c4391ef448ac61929d659f0a64d9775c52589e10df5995e4e23` |
+| `/tmp/laniusc_zip_metadata_input_322021_2.zip` | `b16753fe87b654ab99e816fbf50259f36cc0791780f22f884e40a329aec69e4d` |

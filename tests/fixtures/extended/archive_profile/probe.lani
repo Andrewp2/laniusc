@@ -1,0 +1,88 @@
+// Batched independent archive fixtures. Protocol: format:u8, mutation:u8,
+// reserved:u16(0), archive_length:u32 little-endian, then one archive.
+// One output byte per case: File0, Directory1, profile errors10..16;
+// 98 is canonical parser rejection, never an expected profile rejection.
+module app::main;
+import alloc::io;
+import core::io;
+import core::result::Result;
+import core::slice::View;
+import core::slice::view;
+import ext::archive_profile;
+import ext::tar;
+import ext::zip;
+import std::stream;
+
+fn byte(input: View<u8>, at: i32) -> u8 { return input.values[input.start+at]; }
+fn code(result: Result<ext::archive_profile::Kind,ext::archive_profile::Error>) -> u8 {
+    if (result.is_ok()) { return match (result.unwrap()) { ext::archive_profile::Kind::File -> 0, ext::archive_profile::Kind::Directory -> 1 }; }
+    return match (result.unwrap_err()) {
+        ext::archive_profile::Error::UnsupportedCreator -> 10,
+        ext::archive_profile::Error::UnsupportedType -> 11,
+        ext::archive_profile::Error::ContradictoryType -> 12,
+        ext::archive_profile::Error::UnsupportedExtra -> 13,
+        ext::archive_profile::Error::MalformedExtra -> 14,
+        ext::archive_profile::Error::DirectoryData -> 15,
+        ext::archive_profile::Error::Bounds -> 16
+    };
+}
+fn tar_case(input: View<u8>, mutation: i32) -> u8 {
+    let opened = ext::tar::reader(input); if (opened.is_err()) { return 98; }
+    let reader = opened.unwrap(); let next = reader.next();
+    if (next.is_err() || next.unwrap().is_none()) { return 98; }
+    let entry = next.unwrap().unwrap(); let tail = reader.next();
+    if (tail.is_err() || tail.unwrap().is_some()) { return 98; }
+    assert(mutation >= 0 && mutation <= 5);
+    if (mutation == 1) { entry.name.start = -1; }
+    if (mutation == 2) { entry.prefix.start = 2147483647; entry.prefix.length = 1; }
+    if (mutation == 3) { entry.link_name.length = -1; }
+    if (mutation == 4) { entry.data.start = -1; }
+    if (mutation == 5) { entry.data = entry.name; }
+    return code(ext::archive_profile::tar_kind(entry));
+}
+fn zip_case(input: View<u8>, mutation: i32) -> u8 {
+    let parsed = ext::zip::parse(input,ext::zip::default_limits()); if (parsed.is_err()) { return 98; }
+    let archive = parsed.unwrap(); if (archive.len() != 1) { return 98; }
+    let cursor = archive.cursor(); let entry = cursor.next().unwrap(); assert(cursor.next().is_none());
+    assert((mutation >= 0 && mutation <= 11) || mutation == 20);
+    if (mutation == 1) { entry.name.start = -1; }
+    if (mutation == 2) { entry.extra.start = 2147483647; entry.extra.length = 1; }
+    if (mutation == 3) { entry.local_extra.length = -1; }
+    if (mutation == 4) { entry.data.start = -1; }
+    if (mutation == 5) { entry.version_made_by = -1; }
+    if (mutation == 6) { entry.version_made_by = 65536; }
+    if (mutation == 7) { entry.compressed_size = -1; }
+    if (mutation == 8) { entry.uncompressed_size = -1; }
+    if (mutation == 9) { entry.extra.length = 65536; }
+    if (mutation == 10) { entry.local_extra.length = 65536; }
+    if (mutation == 11) { entry.name.length = 0; }
+    if (mutation == 20) {
+        // A stack [u8;N] is a real strided Lanius slice, not packed input.
+        let fields: [u8;9] = [85,84,5,0,1,0,0,0,0];
+        entry.extra = view(fields,9).unwrap(); entry.local_extra = entry.extra;
+        return code(ext::archive_profile::zip_kind(entry));
+    }
+    return code(ext::archive_profile::zip_kind(entry));
+}
+fn run(input: View<u8>) {
+    let position: i32 = 0; let output = std::stream::stdout();
+    while (position < input.length) {
+        assert(input.length-position >= 8);
+        let format = byte(input,position); let mutation = byte(input,position+1) as i32;
+        assert(byte(input,position+2) == 0 && byte(input,position+3) == 0);
+        let length: u32 = (byte(input,position+4) as u32) | ((byte(input,position+5) as u32) << 8) | ((byte(input,position+6) as u32) << 16) | ((byte(input,position+7) as u32) << 24);
+        position += 8; assert(length <= (input.length-position) as u32);
+        let archive = input.subview(position,position+length as i32).unwrap();
+        let value: u8 = 99;
+        if (format == 1) { value = tar_case(archive,mutation); }
+        else { assert(format == 2); value = zip_case(archive,mutation); }
+        let response: [u8;1] = [value]; assert(core::io::write_all(output.borrow(),response,0,1).is_ok());
+        position += length as i32;
+    }
+}
+fn main() -> i32 {
+    let input = alloc::io::with_limit(1048576).unwrap(); let source = std::stream::stdin();
+    let copied = std::stream::copy(source.borrow(),input.borrow());
+    if (copied.is_err()) { input.destroy(); return 97; }
+    let bytes = view(input.as_bytes(),input.len()).unwrap(); run(bytes); input.destroy(); return 0;
+}

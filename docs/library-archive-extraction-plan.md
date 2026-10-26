@@ -1,11 +1,12 @@
 # Bounded archive extraction plan
 
-Status: proposed next library increment. No filesystem extractor, unpack program,
-new directory primitive or changed ZIP metadata API is implemented or accepted
-by this document. AtomicFile now has 66 process invocations across four native
-groups; the migrated KV application has 64 across two, on the documented Linux
-x86_64/kernel `7.0.0-38-generic`/ext4-under-`/tmp` profile. Those finite receipts,
-and existing archive, TempFile and server evidence, do not accept extraction.
+Status: the selected bounded TAR/ZIP extraction workflow has executable
+acceptance on native Linux x86_64, kernel `7.0.0-38-generic`, using ext4 under
+`/tmp`. The direct materializer passes 100 process invocations across eleven
+groups, including calibrations and overlapping controls. The unpack program
+passes 74 invocations in its separate campaign. These are finite receipts for
+the contracts below, not completion of the standard and extended libraries.
+The earlier AtomicFile/KV and TempFile receipts retain their original scope.
 
 Build one native unpack workflow: read a bounded ustar or classic ZIP archive,
 validate its complete entry namespace, then publish regular files into a
@@ -19,28 +20,28 @@ filesystems and GPU-kernel execution need separate evidence.
 | Surface | Present behavior | Extraction work |
 | --- | --- | --- |
 | [`ext::tar`](../extended/ext/tar.lani) | Borrowed ustar headers/data; checked full footer; allocation-free path copying. Its reader preserves unsafe extraction names and several special file kinds. | Consume through `None` before effects; adapt only regular files/directories; apply the policy below. No second tar parser. |
-| [`ext::zip`](../extended/ext/zip.lani) | Full structural parse; borrowed cursor; stored/DEFLATE payload extraction with exact length and CRC-32 verification. Names/attributes remain archive metadata. | Preserve the central creator-host field, classify supported kinds explicitly, and apply the same path plan. No second ZIP/DEFLATE/CRC implementation. |
-| [`std::file_ops`](../stdlib/std/file_ops.lani) | `open_at`, metadata, duplication, synchronization, `rename_at` with real NoReplace, and non-directory `remove_file_at`. | Add checked `create_dir_at`; the existing module has no mkdirat wrapper. `remove_dir_at` is also absent, but automatic directory rollback is outside this first workflow. |
+| [`ext::zip`](../extended/ext/zip.lani) | Full structural parse; borrowed cursor; stored/DEFLATE payload extraction with exact length and CRC-32 verification. The raw creator word now survives parsing/cursors without restricting byte-archive acceptance. | Reuse the [strict extraction profile](extended-archive-profile.md) and shared namespace plan. No second ZIP/DEFLATE/CRC implementation. |
+| [`std::file_ops`](../stdlib/std/file_ops.lani) | `open_at`, metadata, duplication, sync, NoReplace rename and non-directory removal; checked `create_dir_at`/`remove_dir_at` now pass 55 native cases. | Use one validated component per anchored extraction operation. Automatic directory rollback remains outside this workflow. |
 | [`std::directory`](../stdlib/std/directory.lani) | Owned getdents reader and bounded observational walk. Final-component no-follow; raw byte names. | Reuse descriptor/identity rules. Neither a directory listing nor a walk proves that future lookups are safe or unchanged. A whole-tree walk is unnecessary for extraction. |
 | [`std::filesystem`](../stdlib/std/filesystem.lani) | Path-based mkdir/rmdir/unlink/rename. | These operations do not supply the anchored component operations needed here; do not use chdir or reconstructed full paths as substitutes. |
-| [`std::atomic_file`](../stdlib/std/atomic_file.lani) | In-place writer/publication owner; 66 native process invocations across owner/bounds/publication/fault groups pass on the documented local Linux profile. `create_in`, bounded writes, commit, receipts, explicit directory-sync retry and retained cleanup. | Reuse that accepted contract after the checkpoint is committed. Override default Replace with NoReplace for every output file. Preserve the complete receipt on all failures. |
+| [`std::atomic_file`](../stdlib/std/atomic_file.lani) | In-place writer/publication owner; 66 native process invocations across owner/bounds/publication/fault groups pass on the documented local Linux profile. `create_in`, bounded writes, commit, receipts, explicit directory-sync retry and retained cleanup. | The shared materializer uses NoReplace for every output file and preserves the complete receipt on failures. |
 
-One small host primitive is required before extraction source:
+The checked host creation primitive is [implemented and tested](stdlib-directory-at.md):
 
 ```text
 file_ops::create_dir_at(directory_fd, path, mode) -> Result<i32, io::Error>
 ```
 
-It must stage/validate the complete byte path and mode before one `mkdirat`
-attempt, preserve errno, validate the zero success result, and allocate nothing.
+It stages/validates the complete byte path and mode before one `mkdirat`
+attempt, preserves errno, validates the zero success result, and allocates nothing.
 The x86_64 call is 258, `(dirfd, path, mode)`. It remains a general relative-path
 wrapper like `open_at`; the extractor alone imposes a single-component rule.
 Linux permits an existing name to produce EEXIST even when it is a symlink;
 EEXIST must never mean "safe directory". Requested permissions are subject to
 umask/default ACL behavior. See [Linux mkdirat](https://man7.org/linux/man-pages/man2/mkdir.2.html).
 
-The companion `remove_dir_at` would use existing syscall 263 (`unlinkat`) with
-AT_REMOVEDIR=512, rather than the current flags=0 file-removal wrapper. It would
+The companion `remove_dir_at` uses existing syscall 263 (`unlinkat`) with
+AT_REMOVEDIR=512, rather than the flags=0 file-removal wrapper. It can
 remove one empty directory name only. It is useful for a later explicit empty
 directory cleanup API, not a reason to add recursive deletion now. See
 [Linux unlinkat](https://man7.org/linux/man-pages/man2/unlinkat.2.html).
@@ -68,14 +69,15 @@ The type distinction and prefix join follow the
 The normative format reference remains [POSIX pax/ustar](https://pubs.opengroup.org/onlinepubs/9799919799/utilities/pax.html);
 this restricted extractor makes no general pax restoration claim.
 
-For ZIP, the current `Entry.external_attributes` is insufficient to interpret
-file types: `read_entry` discards the central header's two-byte "version made
-by" field. Expose that raw field (or its creator-host byte) through the canonical
-entry parser/cursor before adding extraction. APPNOTE sections 4.4.2 and 4.4.15
+For ZIP, interpreting `Entry.external_attributes` also needs the central
+header's two-byte "version made by" field. The canonical parser/cursor now
+exposes it as `Entry.version_made_by`, preserving all 16 bits.
+APPNOTE sections 4.4.2 and 4.4.15
 make the attribute representation host-dependent; section 4.4.17 describes the
 stored name syntax. See [PKWARE APPNOTE 6.3.10](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
 
-Proposed first ZIP policy:
+The first ZIP policy is implemented in the
+[allocation-free profile adapter](extended-archive-profile.md):
 
 - Support DOS creator 0 and Unix creator 3; reject other creator profiles until
   their attribute semantics have an explicit adapter and tests.
@@ -97,10 +99,11 @@ Proposed first ZIP policy:
   into a destination. Unknown extras remain valid in the byte archive API; this
   first filesystem profile rejects them explicitly.
 
-Freeze exact attribute masks and ignored-extra IDs/shapes with the source review;
-each permitted field needs an independently constructed fixture. This metadata
-addition changes the public Entry layout and requires auditing its consumers;
-it needs no compiler feature. Existing archive indexing must continue to store
+The profile guide freezes exact masks and ignored-extra shapes, with 222
+classifications across four native processes. The metadata addition changes
+the public Entry layout; focused metadata and existing payload-contract gates
+pass, and its consumers were audited. It needs no compiler feature.
+Existing archive indexing continues to store
 the same snapshot bytes/ordinals unless a separate storage change is approved.
 
 ## One path policy for both formats
@@ -173,10 +176,13 @@ validation failures.
 
 ## Stages, lifetime and partial publication
 
-Keep two layers: a TAR/ZIP adapter makes one shared namespace plan; one host
-materializer walks directories and publishes files. Proposed module/program
-names and exact function signatures should freeze with implementation, rather
-than enter the reference inventory as declarations now.
+The implemented layers are [archive_plan](extended-archive-plan.md),
+[archive_profile](extended-archive-profile.md),
+[archive_source](extended-archive-source.md) and
+[archive_extract](extended-archive-extraction.md). Complete archive admission
+owns one shared namespace plan; the materializer walks directories and publishes
+files. The [unpack program](extended-unpack.md) owns bounded input and reports.
+The guides freeze their signatures, ownership and supported target.
 
 1. Read the complete bounded archive and close its input owner before output
    mutation. This supports input/output path overlap without streaming from a
@@ -278,7 +284,7 @@ there is no compiler-performance or cross-tool speed claim. A modest unpack
 observation can use many small files plus one bounded compressed payload once
 correctness gates pass; compilation stays outside its runtime measurement.
 
-## Proposed program boundary
+## Program boundary
 
 ```text
 unpack --format tar|zip --root OUTPUT_DIRECTORY [limits] -- ARCHIVE_FILE
@@ -304,10 +310,13 @@ Freeze exact flags/status codes/report schema with the program owner.
 
 ## Focused acceptance sequence
 
-These are planned gates, not receipts. Use actual compiled Lanius executables;
-Python/Rust provide fixtures, independent parsing and host observations only.
-Every command must be bounded below two minutes, with a narrower group split
-when compilation plus execution would exceed it.
+These are the selected acceptance requirements. Their finite passing receipts
+are in the module guides and the
+[direct owner fixture](../tests/fixtures/extended/archive_materializer/README.md).
+The tests use actual compiled Lanius executables; Python/Rust supply fixtures,
+independent parsing and host observations. Every command was bounded below two
+minutes. The native output is emitted by the GPU compiler; extraction itself
+does not run in a GPU compute kernel.
 
 | Gate | Required executable evidence |
 | --- | --- |
@@ -325,17 +334,46 @@ containment or whole-directory atomic publication in this increment. These stay
 visible future work under the full library roadmap. Sensitive cryptography, if
 later required, must use OpenSSL or another established native library.
 
-## Start conditions and completion
+## Acceptance and remaining work
 
-AtomicFile's public surface and selected runtime gates are now accepted. Begin
-extraction production only after that checkpoint is committed. Review the ZIP
-creator/type addition and checked mkdirat
-wrapper before writing the materializer. Freeze plan/run/report lifetimes,
-directory-sync order, attribute masks, cleanup reserves and CLI bounds together.
+AtomicFile's accepted checkpoint is committed. The ZIP creator/type addition
+and checked directory wrappers have passed source review and focused runtime
+gates. The [namespace planner](extended-archive-plan.md) and
+[complete source admission](extended-archive-source.md) also execute. Source
+admission passes 120 process cases, including eight reached allocation failures;
+those source-only receipts remain separate from filesystem extraction. The
+[Run contract](extended-archive-extraction.md) records report lifetimes,
+directory-sync order, separate cleanup reserves and its eleven passing groups.
 
-Finish this increment when both formats use the same executable host workflow,
-all selected gates pass on a recorded target/filesystem, no selected operation
-silently does nothing, recovery and partial publication remain inspectable, and
-the real unpack program is documented. Update inventories and generated API
-pages only after source/API freeze and actual receipts. This does not complete
-the larger standard/extended library goal.
+The direct groups cover success 12, existing objects eight, partial outcomes
+three, bounds 25, allocation halves eight each, namespace nine, sync five,
+writes eight, close/rename six and recovery eight: 100 process invocations.
+The allocation halves reach all fourteen measured source allocation positions;
+their two calibrations are included. Pre-exit ledgers check actual requested
+source mappings and descriptor generations. Recovery observes a real three-byte
+temporary prefix, preserved primary failure, explicit kept-name transfer and
+post-rename directory-sync retry without republication. Skipped injected closes
+have explicitly marked harness repairs; they are not real Linux close failures.
+
+The separate CLI campaign has 69 libtest-driven invocations plus five direct
+retained-executable input-fault cases. A single additional untraced observation
+extracts 273 ZIP entries, including 256 small files and one 2 MiB payload, in
+1.653438 seconds. Tree/content validation occurs outside that timer; it includes
+startup, input, extraction, synchronization and reporting, excludes compilation,
+and makes no compiler-throughput or general performance claim.
+
+Active host-call limits use conservative precharges for opaque AtomicFile calls;
+observed write/name/entropy/sync counters settle monotone receipt deltas across
+files. Cleanup authority is reserved before acquiring descriptors or an Atomic
+owner. A rejected retry cannot consume its existing cleanup lease. Automatic
+failure cleanup preserves a published-but-unsynced Atomic anchor for explicit
+sync retry; cleanup, keep and recovery-name transfer remain caller decisions.
+
+Both formats now use the same executable host workflow. The selected gates pass
+on the recorded target/filesystem, recovery and partial publication remain
+inspectable, and the real unpack program is documented. Terminal no-work returns
+are explicit state outcomes, never silent placeholder implementations. Other
+hosts/filesystems, hostile namespace containment, whole-tree transactions,
+rollback, archive metadata restoration, streaming/resumable decoding and broader
+formats remain outside this accepted increment. The larger library goal stays
+open in the [roadmap](library-roadmap.md#remaining-work-beyond-atomic-files).

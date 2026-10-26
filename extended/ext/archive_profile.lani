@@ -1,0 +1,112 @@
+// Strict metadata adapter for content-only extraction, without filesystem I/O.
+// Consume canonical tar/zip parsers first; this profile never replaces them.
+module ext::archive_profile;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import core::text;
+import ext::tar;
+import ext::zip;
+
+pub enum Kind { File, Directory }
+pub enum Error { UnsupportedCreator, UnsupportedType, ContradictoryType, UnsupportedExtra, MalformedExtra, DirectoryData, Bounds }
+
+fn valid(bytes: View<u8>) -> bool {
+    return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647-bytes.length;
+}
+fn byte(bytes: View<u8>, index: i32) -> u8 { return bytes.values[bytes.start+index]; }
+fn u16(bytes: View<u8>, index: i32) -> i32 { return (byte(bytes,index) as i32) | ((byte(bytes,index+1) as i32) << 8); }
+
+// Ignore permissions, ownership, device numbers and timestamps. A TAR directory
+// size may be a hint in the canonical ustar reader; it does not authorize data.
+pub fn tar_kind(entry: ext::tar::Entry) -> Result<Kind,Error> {
+    if (!valid(entry.name) || !valid(entry.prefix) || !valid(entry.link_name) || !valid(entry.uname) || !valid(entry.gname) || !valid(entry.data)) { return Err(Error::Bounds); }
+    let kind: i32 = match (entry.kind) { ext::tar::Kind::Regular -> 0, ext::tar::Kind::Directory -> 1, _ -> 2 };
+    if (kind == 0) { return Ok(Kind::File); }
+    if (kind == 1) {
+        if (entry.data.length != 0) { return Err(Error::DirectoryData); }
+        return Ok(Kind::Directory);
+    }
+    return Err(Error::UnsupportedType);
+}
+
+// The allowlist is deliberately narrower than ZIP interchange parsing:
+// 5455 timestamps, 7875 UID/GID, 7075 Unicode path, 6375 Unicode comment.
+// Shapes follow Info-ZIP proginfo/extrafld.txt and APPNOTE 4.6.8/4.6.9.
+// Nothing is restored or substituted, including a Unicode name with valid CRC.
+fn extras(fields: View<u8>, central: bool) -> Result<bool,Error> {
+    if (!valid(fields) || fields.length > 65535) { return Err(Error::Bounds); }
+    let position: i32 = 0; let seen: i32 = 0;
+    while (position < fields.length) {
+        if (fields.length-position < 4) { return Err(Error::MalformedExtra); }
+        let id = u16(fields,position); let length = u16(fields,position+2); position += 4;
+        if (length > fields.length-position) { return Err(Error::MalformedExtra); }
+        let tag: i32 = 0;
+        if (id == 21589) { tag = 1; }
+        if (id == 30837) { tag = 2; }
+        if (id == 28789) { tag = 4; }
+        if (id == 25461) { tag = 8; }
+        if (tag == 0) { return Err(Error::UnsupportedExtra); }
+        if ((seen & tag) != 0) { return Err(Error::MalformedExtra); } seen = seen | tag;
+        if (tag == 1) {
+            if (length < 1) { return Err(Error::MalformedExtra); }
+            let flags = byte(fields,position) as i32;
+            if ((flags & 248) != 0) { return Err(Error::MalformedExtra); }
+            let count: i32 = flags & 1;
+            if (!central) { count += ((flags >> 1) & 1) + ((flags >> 2) & 1); }
+            if (length != 1+4*count) { return Err(Error::MalformedExtra); }
+        } else {
+            if (tag == 2) {
+                if (length < 1) { return Err(Error::MalformedExtra); }
+                if (byte(fields,position) != 1) { return Err(Error::UnsupportedExtra); }
+                if (length < 3) { return Err(Error::MalformedExtra); }
+                let uid = byte(fields,position+1) as i32;
+                if (uid == 0 || uid > length-3) { return Err(Error::MalformedExtra); }
+                let gid = byte(fields,position+2+uid) as i32;
+                if (gid == 0 || length != 3+uid+gid) { return Err(Error::MalformedExtra); }
+            } else {
+                if (length < 1) { return Err(Error::MalformedExtra); }
+                if (byte(fields,position) != 1) { return Err(Error::UnsupportedExtra); }
+                if (length < 5) { return Err(Error::MalformedExtra); }
+                // CRC is opaque because the alternative text is always ignored.
+                // Validate UTF-8 shape without interpreting it as a destination.
+                if (core::text::from_utf8_range(fields.values,fields.start+position+5,length-5).is_err()) { return Err(Error::MalformedExtra); }
+            }
+        }
+        position += length;
+    }
+    return Ok(true);
+}
+
+// A successful classification does not validate payload length/CRC/DEFLATE or
+// a filesystem destination. The extraction planner still validates the raw
+// canonical name, and zip::extract must verify even an empty directory payload.
+// APPNOTE 4.4.2/4.4.15 make attributes creator-dependent. Only DOS0/Unix3 are
+// supported; Unix's high word follows Info-ZIP unix.c mapattr's st_mode layout.
+pub fn zip_kind(entry: ext::zip::Entry) -> Result<Kind,Error> {
+    if (!valid(entry.name) || !valid(entry.comment) || !valid(entry.extra) || !valid(entry.local_extra) || !valid(entry.data)) { return Err(Error::Bounds); }
+    if (entry.extra.length > 65535 || entry.local_extra.length > 65535 || entry.version_made_by < 0 || entry.version_made_by > 65535 || entry.compressed_size < 0 || entry.uncompressed_size < 0) { return Err(Error::Bounds); }
+    if (entry.name.length == 0) { return Err(Error::ContradictoryType); }
+    let creator = entry.version_made_by >> 8;
+    if (creator != 0 && creator != 3) { return Err(Error::UnsupportedCreator); }
+    let attributes = entry.external_attributes;
+    // Low DOS bits: readonly/hidden/system/directory/archive (0x37).
+    // Reject volume/reserved flags, middle bits and DOS high-word fields.
+    let rejected: u32 = 4294967240; if (creator == 3) { rejected = 65480; }
+    if ((attributes & rejected) != 0) { return Err(Error::UnsupportedType); }
+    let directory = byte(entry.name,entry.name.length-1) == 47;
+    // A clear DOS directory bit is not a positive regular-file assertion.
+    if ((attributes & 16) != 0 && !directory) { return Err(Error::ContradictoryType); }
+    if (creator == 3) {
+        let kind = (attributes >> 16) & 61440;
+        if (kind != 0 && kind != 32768 && kind != 16384) { return Err(Error::UnsupportedType); }
+        if ((kind == 32768 && directory) || (kind == 16384 && !directory)) { return Err(Error::ContradictoryType); }
+    }
+    extras(entry.local_extra,false)?; extras(entry.extra,true)?;
+    if (directory) {
+        if (entry.uncompressed_size != 0) { return Err(Error::DirectoryData); }
+        return Ok(Kind::Directory);
+    }
+    return Ok(Kind::File);
+}

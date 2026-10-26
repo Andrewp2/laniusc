@@ -530,11 +530,40 @@
         "docs/stdlib-iterator-transfer.md"
       ]
     },
+    "ext::archive_extract": {
+      "guides": [
+        "docs/extended-archive-extraction.md",
+        "docs/extended-unpack.md",
+        "docs/library-archive-extraction-plan.md"
+      ],
+      "note": "Content-only materializer over sealed archive_source::Prepared and the canonical AtomicFile owner. One manual Run uses anchored single-component directory walks and NoReplace per file, retaining per-node publication/sync/cleanup history and explicit kept-name transfer. Run's requested-owned cap includes Prepared, report/stack tables, recovery storage and one maximum ZIP decoded candidate; the caller's input owner is separate. Eleven direct Python groups pass 100 process invocations on one CLI-compiled ELF, including calibrations/overlap and 14 reached source ENOMEM cases. These cover normal/existing/partial trees, bounds, namespace/sync/write/close/rename faults, retained publication and recovery. The Rust driver has build admission, not a passing direct libtest rerun. The initial Rust-libtest fixture syntax failure occurred before native execution; later native harness corrections are recorded in the fixture guide. Separate unpack receipts pass 69 initial libtest-driven process invocations plus five direct retained-ELF input-fault invocations. Tested native Linux x86_64/kernel7.0.0-38/ext4 under /tmp. Cooperative stable namespace only; partial output remains, without directory transaction, rollback, hostile-directory containment, native blocking-time or aggregate DEFLATE CPU guarantees."
+    },
     "ext::archive_index": {
       "guides": [
         "docs/extended-archive-index.md"
       ],
       "note": "Persistent immutable ZIP snapshots and ordinal catalogs execute through SQLite on Linux x86_64/glibc. Seven focused native groups cover binary duplicate names and keys, all-entry CRC preflight, independent owners, pinned read consistency, explicit transaction uncertainty, native faults and 29 import plus 23 read allocation failures. The real archive-index program imports, lists, reads and exports a measured 1,024-entry, 8 MiB expanded archive."
+    },
+    "ext::archive_plan": {
+      "guides": [
+        "docs/extended-archive-plan.md",
+        "docs/library-archive-extraction-plan.md"
+      ],
+      "note": "Pure allocation-backed raw-byte namespace planner with complete path/type/duplicate/file-ancestor validation, implied/explicit directory coalescing and a sealed terminal state. It parses no archive and performs no filesystem operation. Fixed node/path/entry capacities, checked requested-byte reservation and bounded planning work are explicit; errors retain ordinal/offset and poison later mutation. Direct native contracts and 76 independent modeled namespaces pass, plus a separate four-process allocation baseline/three-reached-ENOMEM receipt with balanced release. Model namespaces are not process counts. Borrowed path/component views end at explicit destroy; no automatic lifetime or hostile-namespace guarantee."
+    },
+    "ext::archive_profile": {
+      "guides": [
+        "docs/extended-archive-profile.md",
+        "docs/library-archive-extraction-plan.md"
+      ],
+      "note": "Content-only extraction metadata policy over canonical TAR/ZIP entries: regular files/directories, DOS0/Unix3 creator attributes, explicit type consistency and a narrow validated ignored-extra allowlist. Names remain raw canonical archive bytes; Unicode alternatives do not replace them. Four native groups pass 222 authored cases (TAR18, ZIP84, extras108, bounds/strides12). This allocation-free classifier performs no filesystem operation, namespace planning, ownership/permission restoration or ZIP payload CRC/decode validation; physical borrowed backing remains the caller's obligation."
+    },
+    "ext::archive_source": {
+      "guides": [
+        "docs/extended-archive-source.md",
+        "docs/extended-unpack.md"
+      ],
+      "note": "Complete borrowed TAR/ZIP metadata admission into one manual Prepared owner containing a sealed Plan and ordered Member table. TAR consumes the full footer; ZIP completes structural metadata before allocation, then both adapters apply the extraction profile and namespace policy to every member. Independent archive/namespace/payload oracles pass TAR26, ZIP26, limits58 and allocation10 process invocations: 120 across four Rust tests, including repeated baselines and eight reached source OOM cases with pre-exit release checks. Packed/nonzero and actual signed-stride -8 views execute. max_owned_bytes counts configured Plan+Member requested capacities only, excluding borrowed input, Run and later decoded ZIP owners. Metadata success does not verify ZIP payload integrity; consumers must call canonical zip::extract, including for empty directories."
     },
     "ext::audio": {
       "guides": [
@@ -1026,6 +1055,7 @@
         "docs/extended-zip.md",
         "docs/extended-fetch-many.md"
       ],
+      "note": "Entry.version_made_by retains the raw unsigned 16-bit central creator word, without changing parser acceptance or writer defaults. Eight independent records execute through packed and nonzero native-strided views in one focused native Rust test. Creator-dependent extraction policy belongs to archive_profile; metadata parsing does not verify payload CRC/decode.",
       "declarations": {
         "validate_name": "Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper."
       }
@@ -1114,9 +1144,10 @@
       "guides": [
         "docs/stdlib-file-operations.md",
         "docs/stdlib-file-resize.md",
-        "docs/stdlib-temp-files.md"
+        "docs/stdlib-temp-files.md",
+        "docs/stdlib-directory-at.md"
       ],
-      "note": "Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. New remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. The primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp, including paths, symlinks, host errors, injected errors/invalid counts and bounds preflight. Preliminary bounds evidence overlaps and adds no distinct case. These allocation-free name operations supply no durability or hostile-directory authority. TempFile applies a stricter cooperative namespace/component policy; the separately accepted AtomicFile owner composes synchronization/publication/recovery with explicit receipts."
+      "note": "Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. Their earlier primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp; preliminary bounds evidence overlaps. The new allocation-free create_dir_at/remove_dir_at use mkdirat/unlinkat(AT_REMOVEDIR), validate full path/mode before one attempt and preserve caller ownership. Their three focused native groups pass namespace24/bounds19/faults12 process invocations, including two repeated baselines and reached errno/invalid-count injections. General host path resolution still applies; EEXIST is not proof of a safe directory. These primitives supply no durability, automatic rollback or hostile-directory authority. TempFile and AtomicFile apply their separate cooperative namespace/publication/recovery contracts."
     },
     "std::filesystem": {
       "guides": [

@@ -1,0 +1,364 @@
+// Bounded content-only extraction in a cooperative stable directory namespace.
+// One in-place manual owner; no rollback, replacement, or implicit continuation.
+module ext::archive_extract;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::path;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::archive_plan;
+import ext::archive_source;
+import ext::zip;
+import std::atomic_file;
+import std::file;
+import std::file_ops;
+import std::temp_file;
+
+pub struct Limits {
+    max_owned_bytes:u64, max_depth:i32, max_host_calls:u64, max_cleanup_calls:u64,
+    max_write_calls:u64, max_sync_calls:u64, max_entropy_calls:u64,
+    max_name_attempts:u64, max_zip_output:i32, max_steps:u64
+}
+pub enum State { Empty, Running, Complete, Failed, Destroyed }
+pub enum Stage { Validate, Reserve, Root, Decode, Walk, CreateDirectory, OpenDirectory, SyncChild, SyncParent, CreateFile, Write, Commit, Close, Cleanup, RetrySync, Keep, Transfer, Destroy }
+pub enum Cause { InvalidState, InvalidLimits, InvalidPrepared, OwnedLimit, DepthLimit, HostLimit, CleanupLimit, WriteLimit, SyncLimit, EntropyLimit, NameLimit, StepLimit, AllocationFailed, UnavailableMetadata, NotDirectory, UnsupportedDescriptor, NamespaceChanged, Retained, Bounds, Io(core::io::Error), Zip(ext::zip::Error), Atomic(std::atomic_file::Failure) }
+pub struct Failure { cause:Cause, stage:Stage, ordinal:i32, node:i32 }
+pub struct Stats {
+    entries_seen:u64, entries_completed:u64, created_directories:u64, published_files:u64,
+    bytes:u64, writes:u64, name_attempts:u64, entropy_calls:u64, syncs:u64,
+    host_charged:u64, cleanup_reserved:u64, cleanup_charged:u64,
+    namespace_closes:u64, cleanup_errors:u64, steps:u64, owned_bytes:u64, peak_fds:u64
+}
+pub struct NodeStatus {
+    node:i32, ordinal:i32, kind:ext::archive_plan::Kind, explicit:bool,
+    visited:bool, created:bool, created_ordinal:i32, open_attempts:u64, opened:bool,
+    child_sync_attempts:u64, child_synced:bool, child_sync_error:Option<core::io::Error>,
+    parent_sync_attempts:u64, parent_synced:bool, parent_sync_error:Option<core::io::Error>,
+    close_attempts:u64, close_error:Option<core::io::Error>,
+    file_attempted:bool, published:bool, kept:bool,
+    receipt:Option<std::atomic_file::Receipt>, identity:Option<std::file_ops::Identity>
+}
+struct Frame { file:std::file::File, node:i32 }
+pub struct Run {
+    current:State, limits:Limits, counters:Stats, first:Option<Failure>, cleanup_first:Option<Failure>,
+    root_error:Option<core::io::Error>, stage:Stage, ordinal:i32, node:i32,
+    statuses:alloc::vec::Vec<NodeStatus>, stack:alloc::vec::Vec<Frame>, chain:alloc::vec::Vec<i32>,
+    root:std::file::File, root_credit:bool, atomic:std::atomic_file::AtomicFile,
+    atomic_active:bool, atomic_node:i32, atomic_ordinal:i32, atomic_credit:bool,
+    previous:std::atomic_file::Stats, previous_temp:std::temp_file::Stats,
+    recovery:alloc::vec::Vec<u8>, recovery_length:i32, kept_duty:bool
+}
+
+pub fn default_limits() -> Limits {
+    return Limits { max_owned_bytes:67108864,max_depth:64,max_host_calls:1048576,
+        max_cleanup_calls:1048576,max_write_calls:1048576,max_sync_calls:1048576,
+        max_entropy_calls:1048576,max_name_attempts:262144,max_zip_output:16777216,max_steps:16777216 };
+}
+fn zero_atomic() -> std::atomic_file::Stats { return std::atomic_file::Stats { bytes:0,writes:0,file_syncs:0,renames:0,directory_syncs:0 }; }
+fn zero_temp() -> std::temp_file::Stats { return std::temp_file::Stats { name_attempts:0,open_attempts:0,collisions:0,excluded:0,entropy_calls:0 }; }
+pub fn empty() -> Run {
+    return Run { current:State::Empty,limits:default_limits(),counters:Stats { entries_seen:0,entries_completed:0,created_directories:0,published_files:0,bytes:0,writes:0,name_attempts:0,entropy_calls:0,syncs:0,host_charged:0,cleanup_reserved:0,cleanup_charged:0,namespace_closes:0,cleanup_errors:0,steps:0,owned_bytes:0,peak_fds:0 },
+        first:None(),cleanup_first:None(),root_error:None(),stage:Stage::Validate,ordinal:-1,node:-1,
+        statuses:alloc::vec::new(),stack:alloc::vec::new(),chain:alloc::vec::new(),root:std::file::File { handle:-1 },root_credit:false,
+        atomic:std::atomic_file::empty(),atomic_active:false,atomic_node:-1,atomic_ordinal:-1,atomic_credit:false,
+        previous:zero_atomic(),previous_temp:zero_temp(),recovery:alloc::vec::new(),recovery_length:0,kept_duty:false };
+}
+fn directory(kind:ext::archive_plan::Kind) -> bool { return match(kind) { ext::archive_plan::Kind::Directory->true,_ ->false }; }
+fn published(receipt:std::atomic_file::Receipt) -> bool { return match(receipt.visibility) { std::atomic_file::Visibility::Published->true,_ ->false }; }
+fn host(error:core::io::Error,code:i32) -> bool { return match(error) { core::io::Error::Host(value)->value==code,_ ->false }; }
+fn same(a:std::file_ops::Identity,b:std::file_ops::Identity) -> bool { return a.inode==b.inode && a.device_major==b.device_major && a.device_minor==b.device_minor; }
+fn interrupted(error:std::atomic_file::Failure) -> bool { return match(error.cause) { std::atomic_file::Error::Io(value)->match(value) { core::io::Error::Interrupted->true,_ ->false },_ ->false }; }
+fn path(component:View<u8>) -> core::path::Path { return core::path::from_view(component).unwrap(); }
+
+pub impl Run {
+    pub fn borrow(&self) -> &Run { return self; }
+    pub fn state(&self) -> State { return self.current; }
+    pub fn last_failure(&self) -> Option<Failure> { return self.first; }
+    pub fn cleanup_failure(&self) -> Option<Failure> { return self.cleanup_first; }
+    pub fn root_close_error(&self) -> Option<core::io::Error> { return self.root_error; }
+    pub fn stats(&self) -> Stats { return self.counters; }
+    pub fn node_status(&self,index:i32) -> Option<NodeStatus> { return self.statuses.get(index); }
+    pub fn current_node(&self) -> i32 { if(self.atomic_active) { return self.atomic_node; } return self.node; }
+    pub fn current_ordinal(&self) -> i32 { if(self.atomic_active) { return self.atomic_ordinal; } return self.ordinal; }
+    pub fn current_receipt(&self) -> Option<std::atomic_file::Receipt> { if(!self.atomic_active) { return None(); } return Some(self.atomic.receipt()); }
+    pub fn recovery_name(&self) -> View<u8> { return View { values:self.recovery.as_slice(),start:0,length:self.recovery_length }; }
+    pub fn resources_remaining(&self) -> bool { return self.root.is_open() || self.stack.len()!=0 || (self.atomic_active && self.atomic.receipt().retained) || self.kept_duty; }
+    fn problem(&self,cause:Cause) -> Failure {
+        let value:Failure=Failure { cause:cause,stage:self.stage,ordinal:self.ordinal,node:self.node };
+        if(match(self.current) { State::Running->true,_ ->false }) { if(self.first.is_none()) { self.first=Some(value); } }
+        return value;
+    }
+    fn cleanup_problem(&self,value:Failure) {
+        self.counters.cleanup_errors+=1; if(self.cleanup_first.is_none()) { self.cleanup_first=Some(value); }
+    }
+    fn step(&self) -> Result<bool,Failure> {
+        if(self.counters.steps==self.limits.max_steps) { return Err(self.problem(Cause::StepLimit)); }
+        self.counters.steps+=1; return Ok(true);
+    }
+    fn charge(&self,count:u64) -> Result<bool,Failure> {
+        if(count>self.limits.max_host_calls-self.counters.host_charged) { return Err(self.problem(Cause::HostLimit)); }
+        self.counters.host_charged+=count; return Ok(true);
+    }
+    fn reserve_cleanup(&self,count:u64) -> Result<bool,Failure> {
+        if(count>self.limits.max_cleanup_calls-self.counters.cleanup_reserved) { return Err(self.problem(Cause::CleanupLimit)); }
+        self.counters.cleanup_reserved+=count; return Ok(true);
+    }
+    fn add_owned(&self,count:u64) -> Result<bool,Failure> {
+        if(count>self.limits.max_owned_bytes-self.counters.owned_bytes) { return Err(self.problem(Cause::OwnedLimit)); }
+        self.counters.owned_bytes+=count; return Ok(true);
+    }
+    fn peak(&self) {
+        let current:u64=self.stack.len() as u64; if(self.root.is_open()) { current+=1; }
+        if(self.atomic_active) { let receipt=self.atomic.receipt(); if(receipt.file_open) { current+=1; } if(receipt.directory_open) { current+=1; } }
+        if(current>self.counters.peak_fds) { self.counters.peak_fds=current; }
+    }
+    fn status(&self,index:i32) -> NodeStatus { return self.statuses.at(index); }
+    fn put(&self,value:NodeStatus) { self.statuses.set(value.node,value).unwrap(); }
+    fn preflight(&self,source:&ext::archive_source::Prepared) -> Result<bool,Failure> {
+        if(self.limits.max_depth<0 || self.limits.max_zip_output<0) { return Err(self.problem(Cause::InvalidLimits)); }
+        if(!source.is_live() || !source.plan().is_sealed() || source.len()!=source.plan().entry_count()) { return Err(self.problem(Cause::InvalidPrepared)); }
+        let nodes=source.plan().node_count(); let depth:i32=0; let decoded:u64=0;
+        let index:i32=0; while(index<nodes) {
+            self.step()?; let node=source.plan().node(index).unwrap();
+            if(node.depth<1 || node.depth>self.limits.max_depth) { return Err(self.problem(Cause::DepthLimit)); }
+            if(node.parent>=index || node.parent< -1 || node.component_length<1 || node.component_length>255) { return Err(self.problem(Cause::InvalidPrepared)); }
+            if(node.depth>depth) { depth=node.depth; } index+=1;
+        }
+        index=0; while(index<source.len()) {
+            self.step()?; let member=source.member(index).unwrap();
+            if(source.plan().entry(index).unwrap()!=member.node || member.node<0 || member.node>=nodes || directory(member.kind)!=directory(source.plan().node(member.node).unwrap().kind)) { return Err(self.problem(Cause::InvalidPrepared)); }
+            let size:i32=match(member.payload) { ext::archive_source::Payload::Zip(entry)->entry.uncompressed_size,_ ->0 };
+            if(size<0 || size>self.limits.max_zip_output) { return Err(self.problem(Cause::InvalidLimits)); }
+            let capacity:u64=size as u64; if(capacity>0 && capacity<4) { capacity=4; } if(capacity>decoded) { decoded=capacity; } index+=1;
+        }
+        let width:u64=core::mem::size_of<NodeStatus>() as u64; let frame:u64=core::mem::size_of<Frame>() as u64;
+        if(width==0 || frame==0 || (nodes as u64)>2147483647/width || (depth as u64)>2147483647/frame || (depth as u64)>2147483647/4) { return Err(self.problem(Cause::InvalidLimits)); }
+        self.stage=Stage::Reserve;
+        self.add_owned(source.reserved_bytes())?; self.add_owned((nodes as u64)*width)?;
+        self.add_owned((depth as u64)*frame)?; self.add_owned((depth as u64)*4)?;
+        self.add_owned(37)?; self.add_owned(decoded)?; self.add_owned(255+37)?;
+        let statuses:Result<alloc::vec::Vec<NodeStatus>,alloc::vec::Error> =alloc::vec::with_capacity(nodes);
+        if(statuses.is_err()) { return Err(self.problem(Cause::AllocationFailed)); } self.statuses=statuses.unwrap();
+        let frames:Result<alloc::vec::Vec<Frame>,alloc::vec::Error> =alloc::vec::with_capacity(depth);
+        if(frames.is_err()) { return Err(self.problem(Cause::AllocationFailed)); } self.stack=frames.unwrap();
+        let chain:Result<alloc::vec::Vec<i32>,alloc::vec::Error> =alloc::vec::with_capacity(depth);
+        if(chain.is_err()) { return Err(self.problem(Cause::AllocationFailed)); } self.chain=chain.unwrap();
+        let recovery:Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(37);
+        if(recovery.is_err()) { return Err(self.problem(Cause::AllocationFailed)); } self.recovery=recovery.unwrap(); self.recovery.try_resize(37,0).unwrap();
+        index=0; while(index<nodes) {
+            let node=source.plan().node(index).unwrap();
+            self.statuses.try_push(NodeStatus { node:index,ordinal:node.ordinal,kind:node.kind,explicit:node.explicit,visited:false,created:false,created_ordinal:-1,open_attempts:0,opened:false,child_sync_attempts:0,child_synced:false,child_sync_error:None(),parent_sync_attempts:0,parent_synced:false,parent_sync_error:None(),close_attempts:0,close_error:None(),file_attempted:false,published:false,kept:false,receipt:None(),identity:None() }).unwrap(); index+=1;
+        }
+        return Ok(true);
+    }
+    fn metadata(&self,file:&std::file::File) -> Result<std::file_ops::Metadata,Failure> {
+        self.charge(1)?; let value=std::file_ops::empty_metadata(); let got=std::file_ops::metadata_file_into(file,value.borrow());
+        if(got.is_err()) { return Err(self.problem(Cause::Io(got.unwrap_err()))); }
+        if(!value.has(257)) { return Err(self.problem(Cause::UnavailableMetadata)); }
+        if(!match(std::file_ops::kind(value.mode)) { std::file_ops::Kind::Directory->true,_ ->false }) { return Err(self.problem(Cause::NotDirectory)); }
+        return Ok(value);
+    }
+    fn anchor(&self,root:&std::file::File) -> Result<bool,Failure> {
+        self.stage=Stage::Root; self.reserve_cleanup(1)?; self.charge(1)?;
+        let duplicated=std::file_ops::duplicate(root,0,true); if(duplicated.is_err()) { return Err(self.problem(Cause::Io(duplicated.unwrap_err()))); }
+        self.root=duplicated.unwrap(); self.root_credit=true; self.peak(); self.metadata(self.root.borrow())?;
+        self.charge(1)?; let flags=std::file_ops::status_flags(self.root.borrow()); if(flags.is_err()) { return Err(self.problem(Cause::Io(flags.unwrap_err()))); }
+        if((flags.unwrap()&2097152)!=0) { return Err(self.problem(Cause::UnsupportedDescriptor)); } return Ok(true);
+    }
+    fn parent(&self) -> std::file::File { if(self.stack.len()==0) { return self.root; } return self.stack.at(self.stack.len()-1).file; }
+    fn close_error(&self,node:i32,error:core::io::Error) {
+        if(node<0) { if(self.root_error.is_none()) { self.root_error=Some(error); } }
+        else { let status=self.status(node); if(status.close_error.is_none()) { status.close_error=Some(error); } self.put(status); }
+        self.cleanup_problem(Failure { cause:Cause::Io(error),stage:Stage::Close,ordinal:self.ordinal,node:node });
+    }
+    fn close_top(&self,cleanup:bool) -> Result<bool,Failure> {
+        if(self.stack.len()==0) { return Ok(false); } self.node=self.stack.at(self.stack.len()-1).node; if(!cleanup) { self.charge(1)?; }
+        let owned=self.stack.pop().unwrap(); self.counters.namespace_closes+=1; if(cleanup) { self.counters.cleanup_charged+=1; }
+        let status=self.status(owned.node); status.close_attempts+=1; self.put(status);
+        let closed=owned.file.close(); if(closed.is_err()) { self.close_error(owned.node,closed.unwrap_err()); return Err(self.problem(Cause::Io(closed.unwrap_err()))); } return Ok(true);
+    }
+    fn close_root(&self,cleanup:bool) -> Result<bool,Failure> {
+        if(!self.root.is_open()) { return Ok(false); } self.node=-1; if(!cleanup) { self.charge(1)?; }
+        if(cleanup && self.root_credit) { self.counters.cleanup_charged+=1; } self.root_credit=false; self.counters.namespace_closes+=1;
+        let closed=self.root.close(); if(closed.is_err()) { self.close_error(-1,closed.unwrap_err()); return Err(self.problem(Cause::Io(closed.unwrap_err()))); } return Ok(true);
+    }
+    fn close_stack(&self) -> Result<bool,Failure> { self.stage=Stage::Close; while(self.stack.len()>0) { self.step()?; self.close_top(false)?; } return Ok(true); }
+    fn sync_directory(&self,node:i32,file:&std::file::File,child:bool) -> Result<bool,Failure> {
+        if(child) { self.stage=Stage::SyncChild; } else { self.stage=Stage::SyncParent; }
+        if(self.counters.syncs==self.limits.max_sync_calls) { return Err(self.problem(Cause::SyncLimit)); }
+        self.charge(1)?; self.counters.syncs+=1;
+        let status=self.status(node); if(child) { status.child_sync_attempts+=1; } else { status.parent_sync_attempts+=1; } self.put(status);
+        let result=std::file_ops::sync_all(file); let after=self.status(node);
+        if(result.is_err()) {
+            if(child) { if(after.child_sync_error.is_none()) { after.child_sync_error=Some(result.unwrap_err()); } }
+            else { if(after.parent_sync_error.is_none()) { after.parent_sync_error=Some(result.unwrap_err()); } }
+            self.put(after); return Err(self.problem(Cause::Io(result.unwrap_err())));
+        }
+        if(child) { after.child_synced=true; } else { after.parent_synced=true; } self.put(after); return Ok(true);
+    }
+    fn open_directory(&self,node:i32,component:View<u8>,parent:&std::file::File) -> Result<std::file::File,Failure> {
+        self.stage=Stage::OpenDirectory; self.reserve_cleanup(1)?; self.charge(1)?;
+        let status=self.status(node); status.visited=true; status.open_attempts+=1; self.put(status);
+        let options=std::file_ops::options(); options.directory=true; options.no_follow=true;
+        let opened=std::file_ops::open_at(parent.raw_handle().unwrap(),path(component),options);
+        if(opened.is_err()) { return Err(Failure { cause:Cause::Io(opened.unwrap_err()),stage:self.stage,ordinal:self.ordinal,node:node }); } return Ok(opened.unwrap());
+    }
+    fn walk(&self,source:&ext::archive_source::Prepared,target:i32) -> Result<bool,Failure> {
+        self.close_stack()?; self.chain.clear(); self.stage=Stage::Walk; let next:i32=target;
+        while(next>=0) { self.step()?; if(self.chain.len()==self.chain.capacity()) { return Err(self.problem(Cause::DepthLimit)); } self.chain.try_push(next).unwrap(); next=source.plan().node(next).unwrap().parent; }
+        let at=self.chain.len(); while(at>0) {
+            at-=1; self.step()?; let selected=self.chain.at(at); self.node=selected;
+            let parent=self.parent(); let component=source.plan().component(selected).unwrap(); let fresh:bool=false;
+            let opened=self.open_directory(selected,component,parent.borrow());
+            if(opened.is_err()) {
+                let error=opened.unwrap_err(); let absent:bool=match(error.cause) { Cause::Io(value)->host(value,2),_ ->false };
+                if(!absent) { return Err(self.problem(error.cause)); }
+                if(self.status(selected).opened) { return Err(self.problem(Cause::NamespaceChanged)); }
+                self.stage=Stage::CreateDirectory; self.charge(1)?;
+                let made=std::file_ops::create_dir_at(parent.raw_handle().unwrap(),path(component),448);
+                if(made.is_ok()) {
+                    // No fallible operation between mkdir success and this record.
+                    fresh=true; let status=self.status(selected); status.created=true; status.created_ordinal=self.ordinal; self.put(status); self.counters.created_directories+=1;
+                } else { if(!host(made.unwrap_err(),17)) { return Err(self.problem(Cause::Io(made.unwrap_err()))); } }
+                opened=self.open_directory(selected,component,parent.borrow());
+                if(opened.is_err()) { return Err(self.problem(opened.unwrap_err().cause)); }
+            }
+            let child=opened.unwrap(); self.stack.try_push(Frame { file:child,node:selected }).unwrap(); self.peak();
+            let physical=self.status(selected); physical.opened=true; self.put(physical);
+            let metadata=self.metadata(child.borrow())?; let status=self.status(selected);
+            if(status.identity.is_some() && !same(status.identity.unwrap(),metadata.identity)) { return Err(self.problem(Cause::NamespaceChanged)); }
+            status.opened=true; if(status.identity.is_none()) { status.identity=Some(metadata.identity); } self.put(status);
+            if(fresh) { self.sync_directory(selected,child.borrow(),true)?; self.sync_directory(selected,parent.borrow(),false)?; }
+        }
+        return Ok(true);
+    }
+    fn settle(&self) {
+        let value=self.atomic.receipt();
+        self.counters.bytes+=value.stats.bytes-self.previous.bytes; self.counters.writes+=value.stats.writes-self.previous.writes;
+        self.counters.syncs+=(value.stats.file_syncs-self.previous.file_syncs)+(value.stats.directory_syncs-self.previous.directory_syncs);
+        self.counters.name_attempts+=(value.temporary_stats.name_attempts-self.previous_temp.name_attempts) as u64;
+        self.counters.entropy_calls+=value.temporary_stats.entropy_calls-self.previous_temp.entropy_calls;
+        self.previous=value.stats; self.previous_temp=value.temporary_stats;
+        // Inner commit/create/retry can report a retired close error even
+        // when no resource remains for a later Run cleanup invocation.
+        // Discover its diagnostic without counting the same event again.
+        if(self.cleanup_first.is_none()) {
+            let error:Option<core::io::Error> =value.cleanup.file_close_error; let stage:Stage=Stage::Close;
+            if(error.is_none()) { error=value.cleanup.remove_error; stage=Stage::Cleanup; }
+            if(error.is_none()) { error=value.cleanup.directory_close_error; stage=Stage::Close; }
+            if(error.is_some()) { self.cleanup_first=Some(Failure { cause:Cause::Io(error.unwrap()),stage:stage,ordinal:self.atomic_ordinal,node:self.atomic_node }); }
+        }
+        if(self.atomic_node>=0) { let status=self.status(self.atomic_node); status.file_attempted=true; status.receipt=Some(value); if(published(value) && !status.published) { status.published=true; self.counters.published_files+=1; } self.put(status); }
+        self.peak();
+    }
+    fn atomic_failure(&self) -> std::atomic_file::Failure {
+        let receipt=self.atomic.receipt(); let diagnostic=receipt.last_error.unwrap();
+        return std::atomic_file::Failure { stage:diagnostic.stage,cause:diagnostic.cause,completed:diagnostic.completed,receipt:receipt };
+    }
+    fn save_name(&self) {
+        let name=self.atomic.temporary_name(); if(name.length==37 && self.recovery.len()==37) { let at:i32=0; while(at<37) { self.recovery.set(at,name.values[name.start+at]).unwrap(); at+=1; } self.recovery_length=37; }
+    }
+    fn cleanup_atomic(&self) -> Result<bool,Failure> {
+        if(!self.atomic_active || !self.atomic.receipt().retained) { return Ok(false); }
+        self.stage=Stage::Cleanup; self.node=self.atomic_node; self.ordinal=self.atomic_ordinal;
+        if(!self.atomic_credit) { let reserved=self.reserve_cleanup(3); if(reserved.is_err()) { self.cleanup_problem(reserved.unwrap_err()); return Err(reserved.unwrap_err()); } } self.atomic_credit=false; self.counters.cleanup_charged+=3;
+        self.save_name(); let cleaned=self.atomic.cleanup(); self.settle();
+        if(!self.atomic.receipt().temporary_owned && !self.kept_duty) { self.recovery_length=0; }
+        if(cleaned.is_err()) { let failure=self.problem(Cause::Atomic(self.atomic_failure())); self.cleanup_problem(failure); return Err(failure); } return Ok(true);
+    }
+    fn cleanup_all(&self,preserve:bool) -> Option<Failure> {
+        let first:Option<Failure> =None();
+        let hold:bool=false; if(self.atomic_active) { let receipt=self.atomic.receipt(); hold=preserve && published(receipt) && !receipt.directory_synced; }
+        if(!hold) { let cleaned=self.cleanup_atomic(); if(cleaned.is_err()) { first=Some(cleaned.unwrap_err()); } }
+        while(self.stack.len()>0) { self.stage=Stage::Close; let closed=self.close_top(true); if(closed.is_err() && first.is_none()) { first=Some(closed.unwrap_err()); } }
+        self.stage=Stage::Close; let root=self.close_root(true); if(root.is_err() && first.is_none()) { first=Some(root.unwrap_err()); } return first;
+    }
+    fn publish(&self,source:&ext::archive_source::Prepared,member:ext::archive_source::Member,data:View<u8>) -> Result<bool,Failure> {
+        let node=source.plan().node(member.node).unwrap(); let target=node.parent; if(directory(member.kind)) { target=member.node; }
+        self.walk(source,target)?; self.node=member.node;
+        if(directory(member.kind)) { return Ok(true); }
+        self.stage=Stage::CreateFile;
+        if(self.counters.name_attempts==self.limits.max_name_attempts) { return Err(self.problem(Cause::NameLimit)); }
+        if(self.counters.entropy_calls==self.limits.max_entropy_calls) { return Err(self.problem(Cause::EntropyLimit)); }
+        if(self.limits.max_sync_calls-self.counters.syncs<2) { return Err(self.problem(Cause::SyncLimit)); }
+        let names:u64=self.limits.max_name_attempts-self.counters.name_attempts; if(names>32) { names=32; }
+        let entropy:u64=self.limits.max_entropy_calls-self.counters.entropy_calls; if(entropy>128) { entropy=128; }
+        self.reserve_cleanup(3)?; self.atomic_credit=true; self.charge(3+names+entropy)?;
+        let options=std::atomic_file::default_options(); options.policy=std::file_ops::RenamePolicy::NoReplace;
+        options.max_bytes=data.length as u64; options.write_calls=self.limits.max_write_calls-self.counters.writes;
+        options.directory_sync_calls=self.limits.max_sync_calls-self.counters.syncs-1; options.temporary.name_attempts=names as u32; options.temporary.entropy_calls=entropy;
+        self.atomic_active=true; self.atomic_node=member.node; self.atomic_ordinal=self.ordinal; self.previous=zero_atomic(); self.previous_temp=zero_temp(); self.recovery_length=0;
+        let parent=self.parent(); let created=self.atomic.create_in(parent.borrow(),path(source.plan().component(member.node).unwrap()),options); self.settle();
+        if(created.is_err()) { return Err(self.problem(Cause::Atomic(created.unwrap_err()))); }
+        let offset:i32=0; self.stage=Stage::Write;
+        while(offset<data.length) {
+            self.step()?; if(self.counters.writes==self.limits.max_write_calls) { return Err(self.problem(Cause::WriteLimit)); } self.charge(1)?;
+            let part:View<u8> =View { values:data.values,start:data.start+offset,length:data.length-offset };
+            let written=self.atomic.write(part); self.settle();
+            if(written.is_err()) {
+                if(!interrupted(written.unwrap_err()) || self.atomic.last_failure().is_some()) { return Err(self.problem(Cause::Atomic(written.unwrap_err()))); }
+            } else { offset+=written.unwrap(); }
+        }
+        self.stage=Stage::Commit; if(self.limits.max_sync_calls-self.counters.syncs<2) { return Err(self.problem(Cause::SyncLimit)); } self.charge(5)?;
+        let committed=self.atomic.commit(); self.settle(); if(!self.atomic.receipt().retained) { self.atomic_credit=false; }
+        if(committed.is_err()) { return Err(self.problem(Cause::Atomic(committed.unwrap_err()))); } return Ok(true);
+    }
+    fn perform(&self,source:&ext::archive_source::Prepared,root:&std::file::File) -> Result<bool,Failure> {
+        self.preflight(source)?; self.anchor(root)?;
+        let ordinal:i32=0; while(ordinal<source.len()) {
+            self.step()?; self.ordinal=ordinal; let member=source.member(ordinal).unwrap(); self.node=member.node; self.counters.entries_seen+=1;
+            if(self.atomic_active && self.atomic.receipt().retained) { return Err(self.problem(Cause::Retained)); }
+            self.atomic_active=false; self.stage=Stage::Decode; let decoded:alloc::vec::Vec<u8> =alloc::vec::new();
+            let data:View<u8> =match(member.payload) { ext::archive_source::Payload::Tar(value)->value,_ ->View { values:decoded.as_slice(),start:0,length:0 } };
+            let zipped:Option<ext::zip::Entry> =match(member.payload) { ext::archive_source::Payload::Zip(value)->Some(value),_ ->None() };
+            if(zipped.is_some()) {
+                let extracted=ext::zip::extract(zipped.unwrap(),self.limits.max_zip_output);
+                if(extracted.is_err()) { return Err(self.problem(Cause::Zip(extracted.unwrap_err()))); } decoded=extracted.unwrap(); data=decoded.as_view();
+            }
+            let result=self.publish(source,member,data); decoded.destroy(); if(result.is_err()) { return result; }
+            self.counters.entries_completed+=1; ordinal+=1;
+        }
+        self.close_stack()?; self.stage=Stage::Close; self.close_root(false)?; return Ok(true);
+    }
+    pub fn execute(&self,source:&ext::archive_source::Prepared,root:&std::file::File,limits:Limits) -> Result<bool,Failure> {
+        if(match(self.current) { State::Complete->true,_ ->false }) { return Ok(false); }
+        if(!match(self.current) { State::Empty->true,_ ->false }) { if(self.first.is_some()) { return Err(self.first.unwrap()); } return Err(self.problem(Cause::InvalidState)); }
+        self.current=State::Running; self.stage=Stage::Validate; self.ordinal=-1; self.node=-1; self.limits=limits; let completed=self.perform(source,root);
+        if(completed.is_err()) { let primary=completed.unwrap_err(); if(self.first.is_none()) { self.first=Some(primary); } self.current=State::Failed; self.cleanup_all(true); return Err(self.first.unwrap()); }
+        self.current=State::Complete; return Ok(true);
+    }
+    pub fn retry_current_directory_sync(&self) -> Result<bool,Failure> {
+        self.stage=Stage::RetrySync; self.node=self.atomic_node; self.ordinal=self.atomic_ordinal;
+        if(!self.atomic_active || !published(self.atomic.receipt()) || self.atomic.receipt().directory_synced || !self.atomic.receipt().directory_open) { return Err(self.problem(Cause::InvalidState)); }
+        if(self.counters.syncs==self.limits.max_sync_calls) { return Err(self.problem(Cause::SyncLimit)); }
+        self.charge(2)?; if(!self.atomic_credit) { self.reserve_cleanup(3)?; } self.atomic_credit=false; self.counters.cleanup_charged+=3;
+        let retried=self.atomic.retry_directory_sync(); self.settle();
+        if(retried.is_err()) { let failure=self.problem(Cause::Atomic(self.atomic_failure())); self.cleanup_problem(failure); return Err(failure); } return Ok(self.atomic.receipt().directory_synced);
+    }
+    pub fn keep_current(&self) -> Result<bool,Failure> {
+        self.stage=Stage::Keep; self.node=self.atomic_node; self.ordinal=self.atomic_ordinal;
+        if(!self.atomic_active || !self.atomic.receipt().temporary_owned) { return Err(self.problem(Cause::InvalidState)); }
+        self.save_name(); let kept=self.atomic.keep(); self.settle();
+        if(kept.is_err()) { return Err(self.problem(Cause::Atomic(self.atomic_failure()))); }
+        self.kept_duty=true; let status=self.status(self.atomic_node); status.kept=true; self.put(status); self.cleanup_atomic()?; return Ok(true);
+    }
+    pub fn take_kept_name(&self,destination:View<u8>) -> Result<i32,Failure> {
+        self.stage=Stage::Transfer;
+        if(!self.kept_duty || self.recovery_length!=37) { return Err(self.problem(Cause::InvalidState)); }
+        if(destination.start<0 || destination.length<37 || destination.start>2147483647-destination.length) { return Err(self.problem(Cause::Bounds)); }
+        let at:i32=0; while(at<37) { destination.values[destination.start+at]=self.recovery.at(at); at+=1; }
+        self.kept_duty=false; self.recovery_length=0; return Ok(37);
+    }
+    pub fn cleanup(&self) -> Result<bool,Failure> { let active=self.resources_remaining(); let failure=self.cleanup_all(false); if(failure.is_some()) { return Err(failure.unwrap()); } return Ok(active); }
+    pub fn destroy(&self) -> Result<bool,Failure> {
+        if(match(self.current) { State::Destroyed->true,_ ->false }) { return Ok(false); }
+        self.stage=Stage::Destroy; if(self.resources_remaining()) { return Err(self.problem(Cause::Retained)); }
+        self.statuses.destroy(); self.stack.destroy(); self.chain.destroy(); self.recovery.destroy(); self.recovery_length=0; self.current=State::Destroyed; return Ok(true);
+    }
+}

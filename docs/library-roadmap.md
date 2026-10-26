@@ -35,7 +35,7 @@ package distribution is a separate deliverable.
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Opt-in deep HashMap cloning executes with independent nested owners and typed key/value failure cleanup; opt-in recursive deque cloning also executes with logical ring and owned-error rollback coverage. Opt-in deep heap cloning also executes with Min/Max priority and nested/owned-error failure coverage. Opt-in deep TreeMap cloning also executes with sorted staging, independent nested owners, typed key/value rollback and empty/zero-sized coverage. Existing inherent collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. Opt-in deep HashSet and TreeSet cloning also execute with typed rollback and representative-preserving models. The protected std::vec/heap migration, additional owner compositions and automatic ownership remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Imported/nested generic Read/Write transport passes native contracts and checked cache reuse. Fixed-capacity buffered adapters execute with read-ahead/pending handoff, explicit finish/discard, partial-I/O and allocation failures, nested composition and a binary-copy application. Runtime writer formatting shares these contracts and leaves flush/finish explicit |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Named TempFile ownership and descriptor-relative Replace/NoReplace/removal pass five native groups on the documented Linux/ext4 profile. AtomicFile's bounded publication/recovery owner now passes 66 process invocations across four groups; the anchored no-SCRATCH kv_tool passes 64 across two. These finite receipts preserve visibility/durability/cleanup distinctions without locking or universal crash guarantees. Automatic owner destruction and broader platform support remain |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Named TempFile ownership and descriptor-relative Replace/NoReplace/removal pass five native groups on the documented Linux/ext4 profile. AtomicFile's bounded publication/recovery owner now passes 66 process invocations across four groups; the anchored no-SCRATCH kv_tool passes 64 across two. Checked descriptor-relative directory creation/removal now passes namespace24/bounds19/faults12 invocations across three groups. These finite receipts preserve visibility/durability/cleanup distinctions without locking or universal crash guarantees. Owned temporary directories, link/permission APIs, automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Explicit new groups, anchored signaling and non-reaping observation pass five focused API groups; a TERM/grace/KILL supervisor passes five groups and 53 cases, across separate receipts. Group escape/containment and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. System hostname/service resolution delegates to libc with explicit hints and owned ordered results on Linux x86_64/glibc; all four library groups and five CLI groups pass across separate receipts. Blocking NSS memory/time are outside local byte/result caps. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. At checkpoint 480432e8, resumable Prepared/Exchange passed all five direct groups (83 cases), one-thread/poll batches passed all seven groups, and fetch-many passed all five application groups across separate receipts. The current shared Protocol passes direct state/ownership execution; refactored plain synchronous/direct clients pass 188/83 cases, generic plain batches pass eight groups/103 cases and HTTPS batches pass six groups/108 cases through separate native receipts. The migrated HTTPS fetch and mutual-TLS application groups pass 63 and 101 cases respectively. The current fetch-many passes all five integration groups in 24.18 seconds; the nested-pattern compiler reduction is confirmed alongside an executable explicit-match control. Excluded buffered/prepared-context receipts retain their older scope. Older receipts do not cover the revised boundaries. Manual owners and one common deadline are explicit. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls, OpenSSL digests and client TLS with peer verification execute. Client TLS requires explicit peer trust/identity, borrowed nonblocking sockets and caller deadlines/SIGPIPE policy; the preceding TLS stream/HTTPS application passed 62 cases across four groups with numeric endpoints, explicit trust/identity, deadlines and manual cleanup. Server TLS and a bounded HTTPS service execute through OpenSSL. Earlier client credential/required fresh client-chain verification receipts cover 107 cases across six groups; earlier prepared-context/mutual-TLS HTTPS modes cover another 109 cases across four groups. Unauthenticated public service remains an explicit policy. Application identity/authorization, broader certificate APIs, asynchronous resolution/NSS resource policy, interface discovery, complete concurrent-server acceptance, keepalive and broader client policies remain; old std::net declarations remain unbound |
@@ -95,7 +95,14 @@ profiles: metadata, member data, multi-member writing and explicit format,
 capacity, checksum and resource failures. Binary
 [TAR/gzip](extended-tar-bytes.md) and [ZIP](extended-zip-bytes.md) applications
 exercise creation, listing and exact member reads; ZIP also exposes complete
-payload verification. They do not perform filesystem extraction. GNU/PAX TAR
+payload verification. Those codec APIs perform no filesystem extraction. The
+new [namespace planner](extended-archive-plan.md),
+[metadata profile](extended-archive-profile.md) and
+[complete source owner](extended-archive-source.md) now have finite native
+acceptance. The shared [materializer](extended-archive-extraction.md) and
+[unpack CLI](extended-unpack.md) are implemented; 74 CLI process invocations
+pass across libtest-driven and retained-ELF receipts; direct Run's 11 Python
+oracle groups pass 100 process invocations separately. GNU/PAX TAR
 extensions, ZIP64, encrypted and multi-disk ZIP remain unsupported and report
 explicit errors. [Archive compilation evidence](extended-archive-performance.md)
 and the application docs record target support and scale measurements.
@@ -377,7 +384,9 @@ ZIP and SQLite: the archive-index program imports, lists, gets and exports exact
 saved bytes. Its seven native groups cover binary names/keys, duplicate names,
 independent snapshot owners, complete CRC preflight, pinned catalog validation,
 explicit uncertain transaction outcomes, limits and allocation/native faults.
-Filesystem extraction and broader archive formats remain work.
+The separate content-only filesystem extractor is now implemented and executes
+through finite unpack CLI and direct materializer receipts. Broader archive
+formats remain work.
 
 [Narrow primitive integers](stdlib-narrow-integers.md) now match the canonical
 native-width policy families, with exhaustive byte arithmetic and independent
@@ -510,7 +519,8 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
 ## Remaining work beyond atomic files
 
 This audit preserves the full scope above. TempFile and finite AtomicFile/KV
-acceptance and server receipts do not complete other families.
+acceptance, the current archive increment and server receipts do not complete
+other families.
 The following are source/status gaps already identified by the roadmap, rather
 than a request to replace implementation work with more tests.
 
@@ -519,42 +529,41 @@ than a request to replace implementation work with more tests.
 | Values, memory and collections | Explicit TryClone/Destroy and manual owners execute; public borrowed views still rely on valid backing/lifetimes. The protected `std::vec` identity remains in compiler/extraction use. | Finish layout/manual-owner consolidation and remaining generic compositions; coordinate protected migration, over-aligned allocation and language lifetime/destruction support with compiler work. Revalidate old reductions before calling them solved or currently blocking. |
 | Iteration | `core::iter` provides the shared forward protocol, mapping/selection/folds, lookahead and bounded collection. It has no flatten/flat-map/scan family or replacement/displaced-owner sinks. | Complete further adapters/consumers and ownership-aware sink policies through the existing protocol, including recovery/cleanup contracts, rather than parallel iterator engines. |
 | Threads and synchronization | `std::thread` declares runtime externs but marks service 8 unbound; no working source atomic/mutex/channel library is present. The checked C profile has no function-pointer entry or C Boolean result. | Checked worker entry, runtime context/lifetime and memory-order admission precede usable thread/join/atomic/synchronization/channel APIs. Poll scheduling is not worker execution. See the [concurrency dependencies](library-concurrency-dependencies.md). |
-| Files, paths and processes | FileOps, directory walking, process groups, TempFile and anchored rename/unlink execute on their documented Linux profiles. AtomicFile/KV now has finite local-Linux publication/failure/recovery receipts. | Directory-relative creation/removal, owned temporary directories, link/readlink and permission operations remain absent from the checked filesystem surface. Concurrent spawn, group escape/containment and other platform bindings retain separate contracts. Single-name publication does not supply locking or multi-file transactions. |
+| Files, paths and processes | FileOps, directory walking, process groups, TempFile and anchored rename/unlink execute on their documented Linux profiles. AtomicFile/KV has finite local-Linux publication/failure/recovery receipts; descriptor-relative directory creation/removal now passes 55 process invocations. | Owned temporary directories, link/readlink and permission operations remain absent from the checked filesystem surface. Concurrent spawn, group escape/containment and other platform bindings retain separate contracts. Single-name publication does not supply locking or multi-file transactions. |
 | Connected protocols | HTTP/HTTPS and DNS transports execute with explicit numeric endpoints. NSS resolution is synchronous. WebSocket implements request/frame processing but explicitly has no accept-response validation or transport. | Usable resolving/URL policy, broader client orchestration, keepalive/pooling and connected WebSocket workflows remain. HTTP upgrade needs an explicit unread-byte/transport ownership handoff. Do not infer mixed invalid/valid mutual-TLS concurrency from sequential matrices. |
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
-| Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. TAR/ZIP source explicitly performs no filesystem extraction. | Filesystem extraction, resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Snapshot publication is not concurrent database transactions. |
+| Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Regex search allocates nine scratch vectors per probe; lexer discards each candidate Match after reading its span. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. A reusable workspace/span-only lexer path would address the recorded 36,887 allocations for 4,096 tokens without a second matcher. |
 | Mathematics | Big integers, finite decimals, ordinary statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. | Additional number theory, decimal exceptional/transcendental behavior, weighted/higher statistics, sparse/advanced decompositions and further distributions remain as listed above. Preserve finite-domain and accuracy limits. |
 | Application and media utilities | CLI event parsing, settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows execute. | CLI subcommands/automatic usage/completion/response files, richer configuration discovery/validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
 
-### Proposed next complete workflow
+### Accepted bounded archive workflow
 
-With finite AtomicFile/application receipts accepted, a bounded
-archive-to-filesystem workflow is a useful next increment. It connects an actual
-missing archive capability with the new filesystem ownership foundation:
+The [bounded extraction increment](library-archive-extraction-plan.md) is now
+implemented over the canonical TAR/ZIP readers and AtomicFile. Its checked
+directory primitives, raw ZIP creator metadata, shared namespace planner,
+content-only profile and complete metadata-source owner have finite native
+receipts. The [unpack program](extended-unpack.md) passes 69 initial
+libtest-driven process invocations plus five retained-ELF input-fault invocations.
+Direct [Run](extended-archive-extraction.md) ownership, fault, retained-publication
+and allocation gates now pass 100 process invocations across 11 Python groups,
+including two allocation calibrations and 14 reached ENOMEM cases. These reuse
+one CLI-compiled native ELF; the Rust driver has build admission, not a passing
+direct libtest rerun. This completes the selected finite archive increment,
+while the whole library scope above remains open.
 
-- Add the checked directory-anchor operations required to create and clean up
-  output directories, with explicit descriptor/name ownership.
-- Build one extractor over the canonical TAR/ZIP readers, using AtomicFile for
-  each accepted regular file. Choose and document the initial file/directory
-  profile; reject unsupported links/devices, absolute/parent traversal, unsafe
-  components, duplicate/conflicting names and exhausted bounds explicitly.
-- Keep the output root exclusive/cooperative unless a stronger namespace
-  contract is implemented. Report published files and retained cleanup owners
-  on failure; do not call multiple file commits an atomic directory transaction.
-- Deliver a real unpack program with exact bytes/namespace results, bounded
-  input/expanded bytes/entries/work and failure progress. Reuse the existing
-  codec engines and independent format readers.
+The contract remains cooperative/stable namespace, explicit bounds and manual
+ownership, per-file NoReplace publication, partial-output reporting and retained
+cleanup/name duties. It supplies no archive-wide transaction, rollback or
+hostile-directory containment. The codec engines remain separate byte APIs.
 
-This is a recommendation, not an implemented or accepted API. Threads/native
-entry remain a separate compiler dependency; reusable regex/lexer workspace is
-another substantive library-only increment that can proceed independently.
-The [archive extraction plan](library-archive-extraction-plan.md) records the
-required mkdirat/ZIP metadata additions, shared path policy, per-file publication
-and focused acceptance gates. Extraction itself remains unimplemented and
-unaccepted; production starts only after the AtomicFile checkpoint is committed.
+Threads/native entry retain compiler/runtime prerequisites. A reusable
+regex/lexer workspace is another substantive library increment: share the
+existing matcher while removing per-probe scratch allocation and returning
+spans without unnecessary Match owners. That work has not started here; the
+remaining family scope above stays open.
 
 ## Current work
 
@@ -567,7 +576,48 @@ unaccepted; production starts only after the AtomicFile checkpoint is committed.
   also pass. Public type/signature contracts are unchanged. A generic nested
   Option `?` path compiles but crashes in both minimal reductions; match controls
   execute, so production flatten retains its explicit match. Further cleanup
-  remains gradual and runtime-gated. Archive extraction remains proposed work.
+  remains gradual and runtime-gated. Archive extraction is the current
+  accepted finite native increment described below.
+- [Content-only archive extraction](library-archive-extraction-plan.md) now has
+  frozen production interfaces: `archive_plan`, `archive_profile`,
+  `archive_source` and `archive_extract`, plus checked `create_dir_at`/
+  `remove_dir_at` and raw ZIP `version_made_by` metadata. Primitives pass 55
+  process invocations; ZIP metadata passes one eight-record/two-view Rust
+  control; Plan passes direct contracts/76 modeled namespaces and a separate
+  allocation baseline plus three reached failures; Profile passes 222 authored
+  cases across four groups. Source passes TAR26/ZIP26/limits58/allocation10
+  process invocations (120 including repeated baselines and eight reached OOM),
+  with pre-exit mapping/fd ownership checks. The CLI passes trees7/arguments27/
+  bounds30/report5 through four Rust tests, then five direct retained-ELF input
+  fault cases. The added fifth libtest has build admission only. Direct Run
+  passes 11 Python groups/100 process invocations on one CLI-compiled ELF:
+  success12/existing8/partial3/bounds25/allocations8+8/namespace9/sync5/writes8/
+  close-rename6/recovery8. The allocation groups include two calibrations and
+  14 reached ENOMEM cases; counts overlap baseline contexts. Production remains
+  `cf1347d5...`, probe ELF `268b8bed...`. The direct Rust driver built in 1.26s;
+  the earlier three libtests failed before native fixture admission, and no
+  passing direct libtest rerun is claimed. Logs under `target/stdlib-work/` are
+  `archive-materializer-tree-single-owner-retry.log`,
+  `archive-materializer-bounds-first.log`,
+  `archive-materializer-allocations-first.log`,
+  `archive-materializer-namespace-sync-fcntl-retry.log`,
+  `archive-materializer-write-close-first.log` and
+  `archive-materializer-recovery-first.log`. Dedicated guides hold full
+  source/ELF identities and earlier pre-native import/syntax corrections.
+  These native Linux x86_64/kernel7.0.0-38/ext4-under-`/tmp` receipts accept the
+  selected bounded workflow, not GPU-kernel filesystem services or the full
+  standard/extended library goal.
+  The [reference writer/check](library-api-reference.md#current-generation-receipt)
+  pass at this freeze: 250 pages, 249 modules and 8,197 public declaration
+  markers. Four new archive pages, ZIP, FileOps and the index are regenerated;
+  26 focused generator tests pass in 3.129s. Protected human file hashes match
+  before/after. This is source inventory/tooling evidence, not runtime coverage.
+  A separate same-ELF observation unpacks 273 ZIP entries (256 small files,
+  16 directories and one 2 MiB compressed payload): 71,261 input bytes and
+  2,129,920 decoded bytes in 1.653438s untraced, including startup/read/fsync/
+  reports. Exact result validation is outside the timer. This one sample adds
+  no finite-case count or compiler/throughput ratio; receipt:
+  `archive-unpack-observation-first.log`.
 - [AtomicFile publication](stdlib-atomic-files.md) and the
   [`kv_tool` migration](extended-kv.md#current-application-receipts) now pass their
   selected native gates on Linux x86_64, kernel `7.0.0-38-generic`, ext4 under
@@ -595,8 +645,8 @@ unaccepted; production starts only after the AtomicFile checkpoint is committed.
   unchanged, and old scratch-path CLI receipts remain historical. Source/API
   surfaces are frozen for reference generation. Namespace authority remains
   exclusive/cooperative, without locking, network-filesystem semantics or
-  universal power-loss guarantees. The [next extraction plan](library-archive-extraction-plan.md)
-  adds no implemented archive workflow yet.
+  universal power-loss guarantees. The [archive increment](library-archive-extraction-plan.md)
+  now composes that foundation within its accepted finite native profile.
 - Accepted temporary-file prerequisite checkpoint:
   [`std::temp_file`](stdlib-temp-files.md) and
   [descriptor-relative removal/rename](stdlib-file-operations.md#descriptor-relative-name-mutations)
