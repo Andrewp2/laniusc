@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **249 modules**, **12164 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **250 modules**, **12264 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -146,7 +146,7 @@ Inventory: **249 modules**, **12164 declaration/member entries**. Counts include
 | [std::file_hex](std/file_hex.md) | [source](../../stdlib/std/file_hex.lani#L4) | 9 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_i64](std/file_hex_wide_i64.md) | [source](../../stdlib/std/file_hex_wide_i64.lani#L2) | 3 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_u64](std/file_hex_wide_u64.md) | [source](../../stdlib/std/file_hex_wide_u64.lani#L2) | 3 | Source inventory | **Unregistered** |
-| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 97 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md), [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-directory-at](../stdlib-directory-at.md) |
+| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 109 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md), [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-directory-at](../stdlib-directory-at.md), [stdlib-filesystem-links](../stdlib-filesystem-links.md) |
 | [std::filesystem](std/filesystem.md) | [source](../../stdlib/std/filesystem.lani#L4) | 5 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::fs](std/fs.md) | [source](../../stdlib/std/fs.lani#L5) | 105 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::gpu](std/gpu.md) | [source](../../stdlib/std/gpu.lani#L6) | 60 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
@@ -174,6 +174,7 @@ Inventory: **249 modules**, **12164 declaration/member entries**. Counts include
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L3) | 14 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
 | [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 83 | Source inventory | [stdlib-sockets](../stdlib-sockets.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
+| [std::temp_dir](std/temp_dir.md) | [source](../../stdlib/std/temp_dir.lani#L3) | 88 | Source inventory | [stdlib-temp-directories](../stdlib-temp-directories.md), [stdlib-mktemp-dir](../stdlib-mktemp-dir.md) |
 | [std::temp_file](std/temp_file.md) | [source](../../stdlib/std/temp_file.lani#L4) | 90 | Source inventory | [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-file-operations](../stdlib-file-operations.md) |
 | [std::thread](std/thread.md) | [source](../../stdlib/std/thread.lani#L5) | 47 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [std::time](std/time.md) | [source](../../stdlib/std/time.lani#L5) | 83 | Mixed host bindings | [stdlib-time](../stdlib-time.md) |

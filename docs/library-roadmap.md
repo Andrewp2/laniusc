@@ -35,7 +35,7 @@ package distribution is a separate deliverable.
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Opt-in deep HashMap cloning executes with independent nested owners and typed key/value failure cleanup; opt-in recursive deque cloning also executes with logical ring and owned-error rollback coverage. Opt-in deep heap cloning also executes with Min/Max priority and nested/owned-error failure coverage. Opt-in deep TreeMap cloning also executes with sorted staging, independent nested owners, typed key/value rollback and empty/zero-sized coverage. Existing inherent collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. Opt-in deep HashSet and TreeSet cloning also execute with typed rollback and representative-preserving models. The protected std::vec/heap migration, additional owner compositions and automatic ownership remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Imported/nested generic Read/Write transport passes native contracts and checked cache reuse. Fixed-capacity buffered adapters execute with read-ahead/pending handoff, explicit finish/discard, partial-I/O and allocation failures, nested composition and a binary-copy application. Runtime writer formatting shares these contracts and leaves flush/finish explicit |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Named TempFile ownership and descriptor-relative Replace/NoReplace/removal pass five native groups on the documented Linux/ext4 profile. AtomicFile's bounded publication/recovery owner now passes 66 process invocations across four groups; the anchored no-SCRATCH kv_tool passes 64 across two. Checked descriptor-relative directory creation/removal now passes namespace24/bounds19/faults12 invocations across three groups. These finite receipts preserve visibility/durability/cleanup distinctions without locking or universal crash guarantees. Owned temporary directories, link/permission APIs, automatic owner destruction and broader platform support remain |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Named TempFile ownership and descriptor-relative Replace/NoReplace/removal pass five native groups on the documented Linux/ext4 profile. AtomicFile's bounded publication/recovery owner now passes 66 process invocations across four groups; the anchored no-SCRATCH kv_tool passes 64 across two. Checked descriptor-relative directory creation/removal now passes namespace24/bounds19/faults12 invocations across three groups. These finite receipts preserve visibility/durability/cleanup distinctions without locking or universal crash guarantees. Checked link/readlink and descriptor/path permissions pass five groups totaling 139 accepted group cases; mktemp_dir passes 48 process invocations. TempDir passes all four groups totaling 46 accepted group cases. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Explicit new groups, anchored signaling and non-reaping observation pass five focused API groups; a TERM/grace/KILL supervisor passes five groups and 53 cases, across separate receipts. Group escape/containment and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. System hostname/service resolution delegates to libc with explicit hints and owned ordered results on Linux x86_64/glibc; all four library groups and five CLI groups pass across separate receipts. Blocking NSS memory/time are outside local byte/result caps. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. At checkpoint 480432e8, resumable Prepared/Exchange passed all five direct groups (83 cases), one-thread/poll batches passed all seven groups, and fetch-many passed all five application groups across separate receipts. The current shared Protocol passes direct state/ownership execution; refactored plain synchronous/direct clients pass 188/83 cases, generic plain batches pass eight groups/103 cases and HTTPS batches pass six groups/108 cases through separate native receipts. The migrated HTTPS fetch and mutual-TLS application groups pass 63 and 101 cases respectively. The current fetch-many passes all five integration groups in 24.18 seconds; the nested-pattern compiler reduction is confirmed alongside an executable explicit-match control. Excluded buffered/prepared-context receipts retain their older scope. Older receipts do not cover the revised boundaries. Manual owners and one common deadline are explicit. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls, OpenSSL digests and client TLS with peer verification execute. Client TLS requires explicit peer trust/identity, borrowed nonblocking sockets and caller deadlines/SIGPIPE policy; the preceding TLS stream/HTTPS application passed 62 cases across four groups with numeric endpoints, explicit trust/identity, deadlines and manual cleanup. Server TLS and a bounded HTTPS service execute through OpenSSL. Earlier client credential/required fresh client-chain verification receipts cover 107 cases across six groups; earlier prepared-context/mutual-TLS HTTPS modes cover another 109 cases across four groups. Unauthenticated public service remains an explicit policy. Application identity/authorization, broader certificate APIs, asynchronous resolution/NSS resource policy, interface discovery, complete concurrent-server acceptance, keepalive and broader client policies remain; old std::net declarations remain unbound |
@@ -535,7 +535,7 @@ than a request to replace implementation work with more tests.
 | Values, memory and collections | Explicit TryClone/Destroy and manual owners execute; public borrowed views still rely on valid backing/lifetimes. The protected `std::vec` identity remains in compiler/extraction use. | Finish layout/manual-owner consolidation and remaining generic compositions; coordinate protected migration, over-aligned allocation and language lifetime/destruction support with compiler work. Revalidate old reductions before calling them solved or currently blocking. |
 | Iteration | `core::iter` provides the shared forward protocol, mapping/selection/folds, lookahead and bounded collection. It has no flatten/flat-map/scan family or replacement/displaced-owner sinks. | Complete further adapters/consumers and ownership-aware sink policies through the existing protocol, including recovery/cleanup contracts, rather than parallel iterator engines. |
 | Threads and synchronization | `std::thread` declares runtime externs but marks service 8 unbound; no working source atomic/mutex/channel library is present. The checked C profile has no function-pointer entry or C Boolean result. | Checked worker entry, runtime context/lifetime and memory-order admission precede usable thread/join/atomic/synchronization/channel APIs. Poll scheduling is not worker execution. See the [concurrency dependencies](library-concurrency-dependencies.md). |
-| Files, paths and processes | FileOps, directory walking, process groups, TempFile and anchored rename/unlink execute on their documented Linux profiles. AtomicFile/KV has finite local-Linux publication/failure/recovery receipts; descriptor-relative directory creation/removal now passes 55 process invocations. | Owned temporary directories, link/readlink and permission operations remain absent from the checked filesystem surface. Concurrent spawn, group escape/containment and other platform bindings retain separate contracts. Single-name publication does not supply locking or multi-file transactions. |
+| Files, paths and processes | FileOps, directory walking, process groups, TempFile and anchored rename/unlink execute on their documented Linux profiles. AtomicFile/KV has finite local-Linux publication/failure/recovery receipts; descriptor-relative directory creation/removal passes 55 process invocations. Checked link/readlink and permissions pass 139 accepted group cases; mktemp_dir passes 48 process invocations. TempDir passes 46 accepted group cases across four groups. | Automatic owner destruction, concurrent spawn, group escape/containment and other platform bindings retain separate contracts. Preserve each receipt's overlap and finite target scope. Single-name publication does not supply locking or multi-file transactions. |
 | Connected protocols | HTTP/HTTPS and DNS transports execute with explicit numeric endpoints. NSS resolution is synchronous. WebSocket implements request/frame processing but explicitly has no accept-response validation or transport. | Usable resolving/URL policy, broader client orchestration, keepalive/pooling and connected WebSocket workflows remain. HTTP upgrade needs an explicit unread-byte/transport ownership handoff. Do not infer mixed invalid/valid mutual-TLS concurrency from sequential matrices. |
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
@@ -544,6 +544,49 @@ than a request to replace implementation work with more tests.
 | Application and media utilities | CLI event parsing, settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows execute. | CLI subcommands/automatic usage/completion/response files, richer configuration discovery/validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
+
+### Accepted filesystem increment
+
+The [selected filesystem increment](library-filesystem-completion-plan.md)
+implements [links and permissions](stdlib-filesystem-links.md),
+[owned temporary directories](stdlib-temp-directories.md) and a
+[real temporary-directory program](stdlib-mktemp-dir.md). Public interfaces and
+production source are frozen. All five FileOps groups now pass: links28,
+readlink19, permissions12, bounds45 and faults35, totaling 139 accepted group
+cases. The first 34 faults repeat in the successful fault-only retry; this is
+not cumulative process counting. All four application tests pass 48 process
+invocations: normal5, arguments13, allocation4 and faults26, with overlapping
+calibration/setup calls. All four TempDir groups pass: owner 9, admission/
+entropy 19, creation faults 8 and cleanup faults 10, totaling 46 accepted group
+cases across three commands. Earlier cases repeat during the harness retries,
+so this is not cumulative process counting. These are 13 selected passing Rust
+tests across separate invocations, not one clean combined run.
+
+TempDir removes only its own empty name, retains anchors and backing when
+removal fails, and supports explicit keep/retry. The checked link/readlink and
+permission primitives have no heap allocation, implicit retry or fallback.
+Their initial target is native Linux x86_64, not filesystem operations inside
+a GPU kernel. Automatic destruction, hostile-namespace guarantees and broader
+platform support remain separate work. The earlier finite filesystem receipts
+below retain their own source scope. Current source is FileOps `21269e34...`,
+TempDir `56898b00...` and application `118f9a78...`. A minimal comparison/cast
+parser reproduction prompted only an equivalent widening-cast local; no
+compiler source changed. The first primitive fault run stopped before its last
+child because strace rejected an oversized poke argument. The successful retry
+uses a 16-byte known prefix/full-count control, while real readlink cases still
+compare all output bytes. Skipped native-close injections prove logical
+retirement, not physical close success. These native Linux x86_64/ext4 `/tmp`
+receipts complete the selected increment, while the full standard and extended
+library goal remains open. TempDir owner 9 is accepted within the mixed 6.88s
+`filesystem-temp-dir-native-first.log`; creation 8/cleanup 10 within the mixed
+7.66s `filesystem-temp-dir-callback-retry.log`; admission/entropy 19 in the
+6.07s `filesystem-temp-dir-single-entropy-rule-retry.log`. The mixed commands
+contain other harness failures, so their times do not isolate the passing
+groups. A shadowed callback and duplicate getrandom injection rule required
+oracle-only corrections; the final admission retry binds a single first-draw
+rule and observes real subsequent entropy. Separate CPU controls number 40 for
+link primitives, 45 for TempDir and 16 for the application. Generated references
+record this source/API freeze separately from runtime acceptance.
 
 ### Accepted bounded archive workflow
 
@@ -575,6 +618,23 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Current [filesystem increment](library-filesystem-completion-plan.md):
+  [FileOps link/readlink and permissions](stdlib-filesystem-links.md),
+  [TempDir](stdlib-temp-directories.md) and the
+  [`mktemp_dir` program](stdlib-mktemp-dir.md) are implemented. FileOps passes
+  links28/readlink19/permissions12/bounds45/faults35 accepted group cases;
+  application normal5/arguments13/allocations4/faults26 pass 48 process
+  invocations in two commands (7.64s/7.32s). TempDir owner 9, admission/entropy 19,
+  creation faults 8 and cleanup faults 10 pass (46 accepted group cases).
+  FileOps source is `21269e34...`, TempDir
+  `56898b00...`, application `118f9a78...`. Checked primitives have one-attempt,
+  allocation-free contracts;
+  the manual directory owner preserves nonempty/removal recovery and never
+  deletes recursively. All 13 selected Rust tests are accepted across separate
+  commands, with harness failures and repeated cases retained in the receipts.
+  The reference writer/check pass: 251 pages, 250 modules and 8,259 public
+  declaration markers; only the index, FileOps and new TempDir page change.
+  Earlier TempFile/AtomicFile/archive receipts retain their original scope.
 - Current [reusable regex storage](library-regex-workspace-plan.md) uses one
   fixed nine-vector Workspace, a canonical owning Search cursor, span-only
   lexer probes and lazy regex-text Search admission. Production is frozen at
@@ -647,7 +707,7 @@ the rest of the family scope above stays open.
   selected bounded workflow, not GPU-kernel filesystem services or the full
   standard/extended library goal.
   The [reference writer/check](library-api-reference.md#current-generation-receipt)
-  pass at this freeze: 250 pages, 249 modules and 8,197 public declaration
+  pass at the archive freeze: 250 pages, 249 modules and 8,197 public declaration
   markers. Four new archive pages, ZIP, FileOps and the index are regenerated;
   26 focused generator tests pass in 3.129s. Protected human file hashes match
   before/after. This is source inventory/tooling evidence, not runtime coverage.

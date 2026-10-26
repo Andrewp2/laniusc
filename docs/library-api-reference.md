@@ -39,31 +39,45 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the reusable regex source/API freeze, the bounded writer and `--check` both
-exit zero for **250 pages from 249 source modules, with 8,220 public declaration
-markers**. Exactly four outputs change: the [index](api/README.md),
-[`regex`](api/ext/regex.md), [`lexer`](api/ext/lexer.md) and
-[`regex_text`](api/ext/regex_text.md). They retain the new Workspace/Search
-signatures, typed capacity failure, current source locations, ownership notes
-and reviewed guide links. Declaration markers do not count working functions.
-Receipts are `target/stdlib-work/regex-workspace-reference-writer-first.log`
-and `regex-workspace-reference-check-first.log` in that same directory. The
-[overview](library-overview.md) records the separate finite runtime evidence;
-generation itself establishes none.
+At the filesystem source/API freeze, the bounded writer and `--check` both
+exit zero for **251 pages from 250 source modules, with 8,259 public declaration
+markers**. Exactly three outputs change: the [index](api/README.md),
+[`file_ops`](api/std/file_ops.md) and the new
+[`temp_dir`](api/std/temp_dir.md). FileOps retains nine new functions plus
+`LinkRead`; TempDir contributes 29 public declaration markers. The reviewed
+metadata links the [link/permission guide](stdlib-filesystem-links.md),
+[temporary-directory owner guide](stdlib-temp-directories.md) and
+[real command guide](stdlib-mktemp-dir.md). Declaration markers do not count
+working functions.
 
-The supported direct CPU test runner passes **26 tests in 3.405 seconds** in
-`target/stdlib-work/regex-workspace-reference-generator-tests-first.log`. This includes
-module/item imports, module precedence, public enum variants, private/missing
-item rejection, no re-exports, and opaque bodies containing `?`/inferred locals.
-It verifies documentation tooling, not compiled language or library behavior.
+Receipts are `target/stdlib-work/filesystem-reference-writer-first.log` and
+`filesystem-reference-check-first.log` in that same directory. The accepted
+production source is FileOps `21269e34...` and TempDir `56898b00...`; the
+[overview](library-overview.md) records the separate finite native evidence.
+Generation itself establishes no runtime behavior. Initial parser admission,
+strace-poke launch and TempDir oracle failures remain classified in their
+module/fixture guides; successful regeneration does not resolve compiler or
+runtime dependencies.
+
+The unchanged generator's supported direct CPU runner passed **26 tests in
+3.293 seconds** during this increment's preparation (direct tool output).
+It was not rerun after the native gates. The prior regex-freeze run passed
+26 tests in 3.405 seconds in
+`target/stdlib-work/regex-workspace-reference-generator-tests-first.log`.
+These tests cover module/item imports, module precedence, public enum variants,
+private/missing item rejection, no re-exports, opaque bodies containing `?`/
+inferred locals, output ownership and read-only stale checks. They verify
+documentation tooling, not compiled language or library behavior.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
 hashes before generation and after the final check. The generator writes only
-the reference tree. The preceding archive freeze had 250 pages, 249 modules and
-8,197 markers, adding the four archive module pages and updating ZIP/FileOps.
-The earlier language-adoption/AtomicFile inventory had 246 pages, 245 modules
-and 8,119 markers. Their receipt metadata retains its guide-defined scope.
-The complete library goal remains open in the [overview](library-overview.md).
+the reference tree. The preceding reusable-regex freeze had 250 pages,
+249 modules and 8,220 markers, updating regex/lexer/regex-text and the index.
+The archive freeze had 250 pages, 249 modules and 8,197 markers, adding the four
+archive module pages and updating ZIP/FileOps. The earlier language-adoption/
+AtomicFile inventory had 246 pages, 245 modules and 8,119 markers. Those receipts
+retain their guide-defined scope. The complete library goal remains open in
+the [overview](library-overview.md).
 
 ## Source boundaries
 

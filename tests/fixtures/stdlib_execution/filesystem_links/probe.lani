@@ -1,0 +1,139 @@
+// Test-only13Q request + two4096-byte paths; ready20Q / result20Q+4104 bytes /
+// released20Q. Host ACKs each phase.
+// Host ACKs bracket real effects and explicit descriptor release before exit.
+module app::main;
+import core::io::Error;
+import core::mem;
+import core::path::Path;
+import core::result::Result;
+import core::slice::View;
+import std::file_ops;
+import std::linux;
+import std::io;
+
+fn text(value:str,count:i32) -> Path {
+    return Path { bytes:View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count } };
+}
+fn receive(pointer:ptr,count:i32) {
+    let at:i32=0; while(at<count) { let got=std::io::read_stdin(pointer+(at as usize),(count-at) as usize); assert(got>0 && got<=count-at); at+=got; }
+}
+fn send(pointer:ptr,count:i32) {
+    let at:i32=0; while(at<count) { let got=std::io::write_stdout(pointer+(at as usize),(count-at) as usize); assert(got>0 && got<=count-at); at+=got; }
+}
+fn word(input:[u8],offset:i32) -> u64 {
+    let result:u64=0; let i:i32=0; while(i<8) { result|=(input[offset+i] as u64)<<(i*8); i+=1; } return result;
+}
+fn marker(value:u8) {
+    let storage:[i32;1]=[value as i32]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(storage),1)==1);
+}
+fn ack() {
+    let storage:[i32;1]=[0]; receive(core::mem::i32_array_data_ptr(storage),1); assert(storage[0]==33);
+}
+fn report(values:[u64],phase:u64) {
+    let storage:[i32;40]=[0;40]; let pointer=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,160);
+    values[1]=phase; let i:i32=0;
+    while(i<20) { let j:i32=0; while(j<8) { packed[i*8+j]=((values[i]>>(j*8))&255) as u8; j+=1; } i+=1; }
+    send(pointer,160);
+}
+fn output(input:[u8]) {
+    let storage:[i32;256]=[0;256]; let pointer=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,1024); let at:i32=0;
+    while(at<4104) { let count:i32=4104-at; if(count>1024) { count=1024; }
+        let i:i32=0; while(i<count) { packed[i]=input[at+i]; i+=1; } send(pointer,count); at+=count; }
+}
+fn status(error:Error) -> u64 {
+    return match(error) { Error::Host(value)->value as u64,Error::Interrupted->4,Error::WouldBlock->11,
+        Error::InvalidInput->200,Error::InvalidCount->201,_ ->202 };
+}
+fn zero(result:Result<i32,Error>) -> u64 { if(result.is_err()) { return status(result.unwrap_err()); } assert(result.unwrap()==0); return 0; }
+fn read_status(result:Result<std::file_ops::LinkRead,Error>,values:[u64]) {
+    if(result.is_err()) { values[8]=status(result.unwrap_err()); }
+    else { let value=result.unwrap(); values[9]=value.copied as u64; if(value.complete) { values[10]=1; } }
+}
+fn invalid(view:View<u8>,code:u64) -> View<u8> {
+    let selected=view;
+    if(code==1) { selected.start = -1; } if(code==2) { selected.length = -1; }
+    if(code==3) { selected.start=2147483647; selected.length=2; } return selected;
+}
+fn main() -> i32 {
+    let header_words:[i32;26]=[0;26]; let header_pointer=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,104); receive(header_pointer,104);
+    let op=word(header,0); let follow=word(header,8); let cwd=word(header,16);
+    let first_count=word(header,24); let next_count=word(header,32);
+    let first_view=word(header,40); let next_view=word(header,48); let count=word(header,56);
+    let destination_view=word(header,64); let layout=word(header,72); let descriptors=word(header,80);
+    let mode=word(header,88); let anchored=word(header,96);
+    assert(op<=4 && follow<=1 && cwd<=1 && first_count<=4096 && next_count<=4096 && first_view<=3 && next_view<=3);
+    assert(count<=4096 && destination_view<=3 && layout<=2 && descriptors<=127 && mode<=4294967295 && anchored<=1);
+    let input_words:[i32;2048]=[0;2048]; let input_pointer=core::mem::i32_array_data_ptr(input_words);
+    let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(input_pointer,8192); receive(input_pointer,8192);
+    let first:[u8;4104]=[165;4104]; let next:[u8;4104]=[165;4104]; let native:[u8;4104]=[165;4104];
+    let destination_words:[i32;1026]=[0;1026];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(destination_words),4104);
+    let i:i32=0; while(i<4104) { packed[i]=165; i+=1; }
+    i=0; while(i<(first_count as i32)) { first[3+i]=input[i]; i+=1; }
+    i=0; while(i<(next_count as i32)) { next[3+i]=input[4096+i]; i+=1; }
+    assert(core::mem::slice_stride(packed)==1 && core::mem::slice_stride(native)!=1 && core::mem::slice_stride(first)!=1);
+    let selected:[u8]=packed; if(layout==1) { selected=native; } if(layout==2) { selected=first; }
+    let destination=invalid(View { values:selected,start:3,length:count as i32 },destination_view);
+    let old_path=Path { bytes:invalid(View { values:first,start:3,length:first_count as i32 },first_view) };
+    let new_path=Path { bytes:invalid(View { values:next,start:3,length:next_count as i32 },next_view) };
+    let options=std::file_ops::options(); options.directory=true; options.no_follow=true;
+    let left=std::file_ops::open(text("left",4),options).unwrap();
+    let right=std::file_ops::open(text("right",5),options).unwrap();
+    options=std::file_ops::options(); options.access=std::file_ops::Access::ReadWrite; options.append=true; options.nonblocking=true;
+    let file=std::file_ops::open(text("mode-file",9),options).unwrap();
+    let old_fd=left.raw_handle().unwrap(); let new_fd=right.raw_handle().unwrap(); let file_fd=file.raw_handle().unwrap();
+    let old_target=old_fd; let new_target=new_fd;
+    if((descriptors&1)!=0) { old_target = -1; } if((descriptors&2)!=0) { new_target = -1; }
+    if((descriptors&4)!=0) { old_target=file_fd; } if((descriptors&8)!=0) { new_target=file_fd; }
+    assert(std::file_ops::seek(file.borrow(),3,std::file_ops::Origin::Start).unwrap()==3);
+    let report_values:[u64;20]=[0;20];
+    let pid_args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    report_values[0]=1179864113; report_values[2]=std::linux::call(39,View { values:pid_args,start:0,length:0 }).unwrap() as u64;
+    report_values[3]=old_fd as u64; report_values[4]=new_fd as u64; report_values[5]=file_fd as u64;
+    report_values[6]=(old_target as i64) as u64; report_values[7]=(new_target as i64) as u64;
+    report_values[11]=3; report_values[12]=3;
+    report_values[13]=std::file_ops::status_flags(file.borrow()).unwrap() as u64; report_values[14]=report_values[13];
+    report_values[16]=op; report_values[17]=0; if(std::file_ops::close_on_exec(file.borrow()).unwrap()) { report_values[17]=1; }
+    report_values[18]=report_values[17]; report_values[19]=mode;
+    report(report_values,0); ack();
+    if((descriptors&16)!=0) { left.close().unwrap(); } if((descriptors&32)!=0) { right.close().unwrap(); }
+    if((descriptors&64)!=0) { file.close().unwrap(); }
+    if(anchored==1) {
+        let directory_words:[i32;3]=[0;3]; let pointer=core::mem::i32_array_data_ptr(directory_words);
+        let directory:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,12);
+        directory[0]=101; directory[1]=108; directory[2]=115; directory[3]=101; directory[4]=119;
+        directory[5]=104; directory[6]=101; directory[7]=114; directory[8]=101;
+        let args:[std::linux::Argument;1]=[std::linux::Argument::Address(pointer)];
+        assert(std::linux::call(80,View { values:args,start:0,length:1 }).unwrap()==0);
+    }
+    marker(67);
+    if(op==0) {
+        if(cwd==1) { report_values[8]=zero(std::file_ops::hard_link(old_path,new_path,follow==1)); }
+        else { report_values[8]=zero(std::file_ops::hard_link_at(old_target,old_path,new_target,new_path,follow==1)); }
+    }
+    if(op==1) {
+        if(cwd==1) { report_values[8]=zero(std::file_ops::symlink(old_path,new_path)); }
+        else { report_values[8]=zero(std::file_ops::symlink_at(old_path,new_target,new_path)); }
+    }
+    if(op==2) {
+        if(cwd==1) { read_status(std::file_ops::read_link_into(old_path,destination),report_values); }
+        else { read_status(std::file_ops::read_link_at_into(old_target,old_path,destination),report_values); }
+    }
+    if(op==3) { report_values[8]=zero(std::file_ops::set_permissions(file.borrow(),mode as u32)); }
+    if(op==4) {
+        if(cwd==1) { report_values[8]=zero(std::file_ops::set_permissions_path(old_path,mode as u32)); }
+        else { report_values[8]=zero(std::file_ops::set_permissions_at(old_target,old_path,mode as u32)); }
+    }
+    marker(99);
+    if((descriptors&64)==0) {
+        report_values[12]=std::file_ops::position(file.borrow()).unwrap() as u64;
+        report_values[14]=std::file_ops::status_flags(file.borrow()).unwrap() as u64;
+        report_values[18]=0; if(std::file_ops::close_on_exec(file.borrow()).unwrap()) { report_values[18]=1; }
+    } else { report_values[12]=18446744073709551615; report_values[14]=18446744073709551615; report_values[18]=18446744073709551615; }
+    report(report_values,1); output(selected); ack();
+    marker(80); left.close().unwrap(); right.close().unwrap(); file.close().unwrap(); marker(112);
+    report(report_values,2); ack(); return 0;
+}

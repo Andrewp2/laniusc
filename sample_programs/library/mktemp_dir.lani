@@ -1,0 +1,107 @@
+// Keep one empty directory; publication succeeds only after its complete name.
+module app::main;
+import core::io;
+import core::io::Write;
+import core::mem;
+import core::path;
+import core::slice::View;
+import std::args;
+import std::file_ops;
+import std::signal;
+import std::stream;
+import std::temp_dir;
+
+fn literal(text:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count };
+}
+fn same(a:View<u8>,b:View<u8>) -> bool {
+    if(a.length!=b.length) { return false; }
+    let at:i32=0; while(at<a.length) { if(a.values[a.start+at]!=b.values[b.start+at]) { return false; } at+=1; }
+    return true;
+}
+// Count every write attempt, including interruptions and partial progress.
+// A zero/invalid count, WouldBlock, other error or exhausted cap fails.
+fn output(value:View<u8>,error:bool) -> bool {
+    let sink=std::stream::stdout(); if(error) { sink=std::stream::stderr(); }
+    let at:i32=0; let calls:i32=0;
+    while(at<value.length) {
+        if(calls==64) { return false; } calls+=1;
+        let written=sink.write(value.values,value.start+at,value.length-at);
+        if(written.is_err()) { if(!core::io::is_interrupted(written.unwrap_err())) { return false; } }
+        else { let count=written.unwrap(); if(count<=0 || count>value.length-at) { return false; } at+=count; }
+    }
+    return true;
+}
+fn message(text:str,count:i32) { output(literal(text,count),true); }
+fn settle(owner:&std::temp_dir::TempDir,code:i32,published:bool) -> i32 {
+    let status=code;
+    let cleaned=owner.cleanup();
+    if(cleaned.is_err()) {
+        if(status==0) { status=3; }
+        if(owner.owns_temporary_name()) {
+            // A failed removal retains its name/anchor. Transfer the remaining
+            // empty-directory removal duty explicitly, then release backing.
+            message("mktemp_dir: cleanup failed; remove parent-relative name: ",57);
+            output(owner.name(),true); message("\n",1);
+            let kept=owner.keep();
+            if(kept.is_ok()) { if(owner.cleanup().is_err()) { message("mktemp_dir: closing retained parent failed\n",43); } }
+        } else {
+            if(published) { message("mktemp_dir: cleanup failed; printed directory remains kept\n",59); }
+            else { message("mktemp_dir: cleanup failed\n",27); }
+        }
+    }
+    return status;
+}
+fn create(parent_bytes:View<u8>) -> i32 {
+    let parsed=core::path::from_view(parent_bytes);
+    if(parsed.is_err()) { message("mktemp_dir: invalid parent path\n",32); return 2; }
+    let options=std::file_ops::options(); options.directory=true; options.no_follow=true; options.nonblocking=true;
+    let opened=std::file_ops::open(parsed.unwrap(),options);
+    if(opened.is_err()) { message("mktemp_dir: opening parent failed\n",34); return 3; }
+    let parent=opened.unwrap(); let owner=std::temp_dir::empty(); let code:i32=0; let published:bool=false;
+    let made=owner.create_in(parent.borrow(),std::temp_dir::default_limits());
+    if(made.is_err()) {
+        code=match(made.unwrap_err().cause) { std::temp_dir::Error::AllocationFailed->4,_ ->3 };
+        message("mktemp_dir: creating directory failed\n",38);
+    } else {
+        // Close both this child and the caller parent before stdout can publish
+        // a name. TempDir's duplicate parent still anchors removal/keep.
+        if(owner.close_directory().is_err()) { code=3; message("mktemp_dir: closing child failed\n",33); }
+        if(parent.close().is_err()) { code=3; message("mktemp_dir: closing parent failed\n",34); }
+        if(code==0) {
+            let bytes:[u8;38]=[0;38]; let name=owner.name(); let at:i32=0;
+            while(at<37) { bytes[at]=name.values[name.start+at]; at+=1; } bytes[37]=10;
+            if(!output(View { values:bytes,start:0,length:38 },false)) { code=3; message("mktemp_dir: writing name failed\n",32); }
+            else {
+                published=true;
+                if(owner.keep().is_err()) { code=3; message("mktemp_dir: keeping directory failed\n",37); }
+            }
+        }
+    }
+    code=settle(owner.borrow(),code,published);
+    // close is inert if the caller parent was already retired above.
+    if(parent.close().is_err()) { if(code==0) { code=3; } message("mktemp_dir: closing parent failed\n",34); }
+    return code;
+}
+fn main() -> i32 {
+    // Establish cleanup-safe output for help and admission diagnostics too.
+    // A failed installation returns without attempting a potentially fatal write.
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let snapshot=std::args::snapshot(1,1,4095);
+    if(snapshot.is_err()) {
+        let code=match(snapshot.unwrap_err()) { std::args::Error::AllocationFailed->4,std::args::Error::HostRead(index)->3,_ ->2 };
+        message("mktemp_dir: argument admission failed\n",38); return code;
+    }
+    let arguments=snapshot.unwrap(); let code:i32=0;
+    if(arguments.len()!=1) { message("usage: mktemp_dir PARENT\n",25); code=2; }
+    else {
+        let parent=arguments.get(0).unwrap();
+        if(same(parent,literal("--help",6))) {
+            if(!output(literal("usage: mktemp_dir PARENT\n",25),false)) { code=3; }
+        } else {
+            if(parent.length==0 || parent.values[parent.start]==45) { message("mktemp_dir: invalid parent argument\n",36); code=2; }
+            else { code=create(parent); }
+        }
+    }
+    arguments.destroy(); return code;
+}

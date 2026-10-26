@@ -1,0 +1,6 @@
+module app::main;
+struct Record { copied:i32, complete:bool }
+fn value(left:i64,right:i32) -> Record {
+    return Record { copied:0,complete:left<(right as i64) };
+}
+fn main() -> i32 { assert(value(1,2).complete); return 0; }

@@ -25,6 +25,7 @@ pub struct Identity { inode:u64, device_major:u32, device_minor:u32, rdev_major:
 pub struct Length { bytes:u64, blocks:u64, block_size:u32 }
 pub struct Times { access:Time, modified:Time, changed:Time, birth:Time }
 pub struct Metadata { mask:u32, mode:u32, identity:Identity, length:Length, times:Times, attributes:u64, attributes_mask:u64 }
+pub struct LinkRead { copied:i32, complete:bool }
 pub fn options() -> OpenOptions { return OpenOptions { access:Access::Read,create:false,exclusive:false,truncate:false,append:false,close_on_exec:true,no_follow:false,directory:false,nonblocking:false,no_controlling_terminal:true,synchronization:Synchronization::None,mode:438 }; }
 fn zero_time() -> Time { return Time { seconds:0,nanoseconds:0 }; }
 pub fn empty_metadata() -> Metadata { return Metadata { mask:0,mode:0,identity:Identity { inode:0,device_major:0,device_minor:0,rdev_major:0,rdev_minor:0,links:0,uid:0,gid:0 },length:Length { bytes:0,blocks:0,block_size:0 },times:Times { access:zero_time(),modified:zero_time(),changed:zero_time(),birth:zero_time() },attributes:0,attributes_mask:0 }; }
@@ -90,6 +91,46 @@ pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd
     let args:[std::linux::Argument;5]=[std::linux::Argument::Word(old_directory_fd as i64),std::linux::Argument::Address(old_pointer),std::linux::Argument::Word(new_directory_fd as i64),std::linux::Argument::Address(new_pointer),std::linux::Argument::Word(flags)];
     return zero(call(316,view(args,5).unwrap()));
 }
+// General descriptor-relative paths. Follow selects only the source's final
+// symlink; neither policy replaces an existing destination name.
+pub fn hard_link_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,follow:bool) -> Result<i32,Error> {
+    let old_storage:[i32;1024]=[0;1024]; let old_pointer=core::mem::i32_array_data_ptr(old_storage); let old_packed:[u8]=core::mem::typed_slice_from_raw_parts(old_pointer,4096);
+    stage(old_path,old_packed)?;
+    let new_storage:[i32;1024]=[0;1024]; let new_pointer=core::mem::i32_array_data_ptr(new_storage); let new_packed:[u8]=core::mem::typed_slice_from_raw_parts(new_pointer,4096);
+    stage(new_path,new_packed)?;
+    let flags:i64=0; if(follow) { flags=1024; }
+    let args:[std::linux::Argument;5]=[std::linux::Argument::Word(old_directory_fd as i64),std::linux::Argument::Address(old_pointer),std::linux::Argument::Word(new_directory_fd as i64),std::linux::Argument::Address(new_pointer),std::linux::Argument::Word(flags)];
+    return zero(call(265,view(args,5).unwrap()));
+}
+pub fn hard_link(old_path:core::path::Path,new_path:core::path::Path,follow:bool) -> Result<i32,Error> { return hard_link_at(AT_FDCWD,old_path,AT_FDCWD,new_path,follow); }
+// Target bytes are stored verbatim. Only new_path is resolved during this
+// operation; relative and dangling targets remain ordinary symlink contents.
+pub fn symlink_at(target:core::path::Path,new_directory_fd:i32,new_path:core::path::Path) -> Result<i32,Error> {
+    let target_storage:[i32;1024]=[0;1024]; let target_pointer=core::mem::i32_array_data_ptr(target_storage); let target_packed:[u8]=core::mem::typed_slice_from_raw_parts(target_pointer,4096);
+    stage(target,target_packed)?;
+    let new_storage:[i32;1024]=[0;1024]; let new_pointer=core::mem::i32_array_data_ptr(new_storage); let new_packed:[u8]=core::mem::typed_slice_from_raw_parts(new_pointer,4096);
+    stage(new_path,new_packed)?;
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Address(target_pointer),std::linux::Argument::Word(new_directory_fd as i64),std::linux::Argument::Address(new_pointer)];
+    return zero(call(266,view(args,3).unwrap()));
+}
+pub fn symlink(target:core::path::Path,new_path:core::path::Path) -> Result<i32,Error> { return symlink_at(target,AT_FDCWD,new_path); }
+// The extra probe byte distinguishes exact destination fit from truncation.
+// Stage and validate the whole result before touching a strided destination.
+pub fn read_link_at_into(directory_fd:i32,path:core::path::Path,destination:View<u8>) -> Result<LinkRead,Error> {
+    if(!valid(destination)) { return Err(Error::InvalidInput); }
+    let path_storage:[i32;1024]=[0;1024]; let path_pointer=core::mem::i32_array_data_ptr(path_storage); let path_packed:[u8]=core::mem::typed_slice_from_raw_parts(path_pointer,4096);
+    stage(path,path_packed)?;
+    let probe_storage:[i32;1024]=[0;1024]; let probe_pointer=core::mem::i32_array_data_ptr(probe_storage); let probe:[u8]=core::mem::typed_slice_from_raw_parts(probe_pointer,4096);
+    let requested:i32=4096; if(destination.length<4096) { requested=destination.length+1; }
+    let args:[std::linux::Argument;4]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(path_pointer),std::linux::Argument::Address(probe_pointer),std::linux::Argument::Word(requested as i64)];
+    let received=call(267,view(args,4).unwrap())?;
+    let requested_wide:i64=requested as i64;
+    if(received<0 || received>requested_wide) { return Err(Error::InvalidCount); }
+    let copied:i32=received as i32; if(copied>destination.length) { copied=destination.length; }
+    let index:i32=0; while(index<copied) { destination.values[destination.start+index]=probe[index]; index+=1; }
+    return Ok(LinkRead { copied:copied,complete:received<(requested as i64) });
+}
+pub fn read_link_into(path:core::path::Path,destination:View<u8>) -> Result<LinkRead,Error> { return read_link_at_into(AT_FDCWD,path,destination); }
 fn descriptor(file:&File) -> Result<i64,Error> { let raw= file.raw_handle(); if(core::option::is_none(raw)) { return Err(Error::Host(9)); } return Ok(core::option::unwrap(raw) as i64); }
 fn fcntl(file:&File,command:i64,value:i64) -> Result<i64,Error> { let got=descriptor(file)?; let args:[std::linux::Argument;3]=[std::linux::Argument::Word(got),std::linux::Argument::Word(command),std::linux::Argument::Word(value)]; return call(72,view(args,3).unwrap()); }
 fn zero(result:Result<i64,Error>) -> Result<i32,Error> { let value=result?; if(value!=0) { return Err(Error::InvalidCount); } return Ok(0); }
@@ -108,6 +149,24 @@ pub fn set_len(file:&File,length:u64) -> Result<i32,Error> {
     let arguments:View<std::linux::Argument> =View { values:args,start:0,length:2 };
     return zero(call(77,arguments));
 }
+// Permission/special bits only. The borrowed descriptor is neither closed nor
+// replaced; ownership/capability/filesystem rules remain the host's decision.
+pub fn set_permissions(file:&File,mode:u32) -> Result<i32,Error> {
+    if(mode>4095) { return Err(Error::InvalidInput); }
+    let got=descriptor(file)?;
+    let args:[std::linux::Argument;2]=[std::linux::Argument::Word(got),std::linux::Argument::Word(mode as i64)];
+    return zero(call(91,view(args,2).unwrap()));
+}
+// Raw Linux fchmodat has three arguments and follows the final symlink.
+// No no-follow emulation, descriptor opening, or libc fallback is performed.
+pub fn set_permissions_at(directory_fd:i32,path:core::path::Path,mode:u32) -> Result<i32,Error> {
+    if(mode>4095) { return Err(Error::InvalidInput); }
+    let storage:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
+    stage(path,packed)?;
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(mode as i64)];
+    return zero(call(268,view(args,3).unwrap()));
+}
+pub fn set_permissions_path(path:core::path::Path,mode:u32) -> Result<i32,Error> { return set_permissions_at(AT_FDCWD,path,mode); }
 fn sync(file:&File,number:i64) -> Result<i32,Error> { let got=descriptor(file)?; let args:[std::linux::Argument;1]=[std::linux::Argument::Word(got)]; return zero(call(number,view(args,1).unwrap())); }
 pub fn sync_all(file:&File) -> Result<i32,Error> { return sync(file,74); }
 pub fn sync_data(file:&File) -> Result<i32,Error> { return sync(file,75); }

@@ -1,0 +1,76 @@
+// Real TempDir owner. Four ACK barriers expose creation and recovery before exit.
+module app::main;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::path;
+import core::result::Result;
+import core::slice::View;
+import std::entropy;
+import std::file;
+import std::file_ops;
+import std::io;
+import std::linux;
+import std::temp_dir;
+
+fn bytes(value:str,count:i32)->View<u8> { return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count }; }
+fn path(value:str,count:i32)->core::path::Path { return core::path::from_view(bytes(value,count)).unwrap(); }
+fn mark(value:i32) { assert(std::io::write_byte(2,value)==1); }
+fn receive(pointer:ptr,count:i32) { let at:i32=0; while(at<count) { let got=std::io::read_stdin(pointer+(at as usize),(count-at) as usize); assert(got>0 && got<=count-at); at+=got; } }
+fn word(values:[u8],at:i32)->u64 { let value:u64=0; let i:i32=0; while(i<8) { value|=(values[at+i] as u64)<<(i*8); i+=1; } return value; }
+fn io(value:core::io::Error)->u64 { return match(value) { core::io::Error::Host(code)->code as u64,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,core::io::Error::InvalidInput->900,core::io::Error::InvalidCount->901,_ ->902 }; }
+fn optional(value:Option<core::io::Error>)->u64 { if(value.is_none()) { return 0; } return io(value.unwrap()); }
+fn entropy(value:std::entropy::Error)->u64 { return match(value) { std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(code)->100+code as u64 }; }
+fn cause(value:std::temp_dir::Error)->u64 { return match(value) { std::temp_dir::Error::InvalidState->1,std::temp_dir::Error::InvalidLimits->2,std::temp_dir::Error::AllocationFailed->3,std::temp_dir::Error::UnavailableMetadata->4,std::temp_dir::Error::NotDirectory->5,std::temp_dir::Error::UnsupportedDescriptor->6,std::temp_dir::Error::NameLimit->7,std::temp_dir::Error::Io(error)->1000+io(error),std::temp_dir::Error::Entropy(error)->2000+entropy(error.cause) }; }
+fn stage(value:std::temp_dir::Stage)->u64 { return match(value) { std::temp_dir::Stage::Validate->1,std::temp_dir::Stage::Allocate->2,std::temp_dir::Stage::Duplicate->3,std::temp_dir::Stage::Metadata->4,std::temp_dir::Stage::Flags->5,std::temp_dir::Stage::Entropy->6,std::temp_dir::Stage::Create->7,std::temp_dir::Stage::OpenDirectory->8,std::temp_dir::Stage::CloseDirectory->9,std::temp_dir::Stage::Remove->10,std::temp_dir::Stage::CloseParent->11 }; }
+fn state(value:std::temp_dir::State)->u64 { return match(value) { std::temp_dir::State::Inactive->0,std::temp_dir::State::Open->1,std::temp_dir::State::ClosedNamed->2,std::temp_dir::State::Kept->3,std::temp_dir::State::CleanupPending->4,std::temp_dir::State::Released->5 }; }
+fn removal(value:std::temp_dir::Removal)->u64 { return match(value) { std::temp_dir::Removal::NotOwned->0,std::temp_dir::Removal::Removed->1,std::temp_dir::Removal::AlreadyAbsent->2,std::temp_dir::Removal::Unconfirmed->3 }; }
+fn fd(value:&std::file::File)->u64 { if(value.raw_handle().is_none()) { return 18446744073709551615; } return value.raw_handle().unwrap() as u64; }
+fn clean(output:[u64],at:i32,value:std::temp_dir::Cleanup) { output[at]=value.directory_close_attempted as u64; output[at+1]=optional(value.directory_close_error); output[at+2]=value.remove_attempted as u64; output[at+3]=removal(value.removal); output[at+4]=optional(value.remove_error); output[at+5]=value.parent_close_attempted as u64; output[at+6]=optional(value.parent_close_error); output[at+7]=value.retained as u64; }
+fn action(output:[u64],value:Result<std::temp_dir::Cleanup,std::temp_dir::Failure>) { output[32]=1; output[33]=0; output[34]=0; if(value.is_err()) { let failure=value.unwrap_err(); output[32]=3; output[33]=cause(failure.cause); output[34]=stage(failure.stage); clean(output,35,failure.cleanup); } else { clean(output,35,value.unwrap()); } }
+fn emit(index:i32,owner:&std::temp_dir::TempDir,parent:&std::file::File,output:[u64],name:[u8]) {
+    output[0]=1413761362; output[1]=1; output[2]=index as u64; let args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)]; output[3]=std::linux::call(39,View { values:args,start:0,length:0 }).unwrap() as u64;
+    output[9]=state(owner.state()); output[10]=owner.owns_temporary_name() as u64; output[11]=fd(parent); output[12]=fd(owner.parent()); output[13]=fd(owner.directory()); output[14]=owner.name().length as u64;
+    let stats=owner.stats(); output[15]=stats.name_attempts as u64; output[16]=stats.mkdir_attempts as u64; output[17]=stats.open_attempts as u64; output[18]=stats.collisions as u64; output[19]=stats.entropy_calls;
+    output[20]=0; output[21]=0; output[22]=0; output[23]=0; let last=owner.last_failure(); if(last.is_some()) { let failure=last.unwrap(); output[20]=cause(failure.cause); output[21]=stage(failure.stage); output[22]=state(failure.state); output[23]=failure.cleanup.retained as u64; } clean(output,24,owner.last_cleanup());
+    let storage:[i32;138]=[0;138]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,552); let at:i32=0;
+    while(at<64) { let j:i32=0; while(j<8) { packed[at*8+j]=((output[at]>>(j*8))&255) as u8; j+=1; } at+=1; }
+    at=0; while(at<37) { packed[512+at]=name[at]; at+=1; } at=0; while(at<549) { let got=std::io::write_stdout(pointer+(at as usize),(549-at) as usize); assert(got>0 && got<=549-at); at+=got; }
+    let ack:[i32;1]=[0]; receive(core::mem::i32_array_data_ptr(ack),1); assert(ack[0]==65);
+}
+fn repair(raw:u64) { assert(raw<2147483648); mark(81); let args:[std::linux::Argument;1]=[std::linux::Argument::Word(raw as i64)]; assert(std::linux::call(3,View { values:args,start:0,length:1 }).unwrap()==0); mark(113); }
+fn main()->i32 {
+    let request:[i32;10]=[0;10]; let pointer=core::mem::i32_array_data_ptr(request); receive(pointer,40); let input:[u8]=core::mem::typed_slice_from_raw_parts(pointer,40);
+    let mode=word(input,0); let limits=std::temp_dir::Limits { name_attempts:word(input,8) as u32,entropy_calls:word(input,16) }; let parent_case=word(input,24); let repair_role=word(input,32); assert(mode<=9 && parent_case<=3 && repair_role<=3);
+    let parent=std::file::File { handle:-1 }; let options=std::file_ops::options(); options.directory=parent_case!=1; options.no_follow=true;
+    if(parent_case==3) { let raw:[i32;2]=[0;2]; let p=core::mem::i32_array_data_ptr(raw); let data:[u8]=core::mem::typed_slice_from_raw_parts(p,8); data[0]=97; data[1]=110; data[2]=99; data[3]=104; data[4]=111; data[5]=114; let args:[std::linux::Argument;4]=[std::linux::Argument::Word(-100),std::linux::Argument::Address(p),std::linux::Argument::Word(2097152|65536|524288),std::linux::Argument::Word(0)]; parent=std::file::from_owned_handle(std::linux::call(257,View { values:args,start:0,length:4 }).unwrap() as i32).unwrap(); }
+    if(parent_case!=3) { let selected=path("anchor",6); if(parent_case==1) { selected=path("regular",7); } parent=std::file_ops::open(selected,options).unwrap(); }
+    if(parent_case==2) { mark(80); parent.close().unwrap(); mark(112); }
+    let owner=std::temp_dir::empty(); let output:[u64;64]=[0;64]; let name:[u8;37]=[0;37]; output[4]=mode; output[5]=parent_case; output[45]=fd(parent.borrow());
+    if(mode==7) { mark(88); assert(!owner.close_directory().unwrap()); assert(match(owner.keep().unwrap_err()) { std::temp_dir::Error::InvalidState->true,_ ->false }); assert(owner.last_failure().is_none()); owner.cleanup().unwrap(); owner.destroy().unwrap(); mark(120); }
+    emit(0,owner.borrow(),parent.borrow(),output,name);
+    mark(67); let created=owner.create_in(parent.borrow(),limits); mark(99); output[6]=1;
+    if(created.is_err()) { output[6]=3; output[7]=cause(created.unwrap_err().cause); output[8]=stage(created.unwrap_err().stage); }
+    output[43]=fd(owner.parent()); output[44]=fd(owner.directory()); let current=owner.name(); let at:i32=0; while(at<current.length) { name[at]=current.values[current.start+at]; at+=1; }
+    if(created.is_ok()) {
+        assert(owner.owns_temporary_name() && std::file_ops::close_on_exec(owner.parent()).unwrap() && std::file_ops::close_on_exec(owner.directory()).unwrap());
+        if(mode==3) { mark(80); parent.close().unwrap(); output[55]=1; mark(112); }
+        if(mode==2 || mode==3 || mode==9) { mark(85); let options=std::file_ops::options(); options.access=std::file_ops::Access::ReadWrite; options.create=true; options.exclusive=true; options.no_follow=true; options.mode=384; let child=std::file_ops::open_at(owner.directory().raw_handle().unwrap(),path("payload",7),options).unwrap(); let data:[u8;6]=[0,255,128,97,13,10]; assert(core::io::write_all(child.borrow(),data,0,6).unwrap()==6); child.close().unwrap(); mark(117); }
+        if(mode==1) { mark(75); output[49]=owner.keep().unwrap() as u64; output[50]=owner.keep().unwrap() as u64; mark(107); }
+        if(mode==5) { mark(67); let rejected=owner.create_in(parent.borrow(),limits).unwrap_err(); output[46]=cause(rejected.cause); output[47]=stage(rejected.stage); assert(output[46]==1 && rejected.cleanup.retained && owner.last_failure().is_none()); mark(99); }
+        if(mode==6) { mark(70); let closed=owner.close_directory(); output[51]=1; if(closed.is_err()) { output[51]=3; output[52]=cause(closed.unwrap_err().cause); output[53]=stage(closed.unwrap_err().stage); } assert(!owner.close_directory().unwrap()); output[54]=1; mark(102); }
+    }
+    emit(1,owner.borrow(),parent.borrow(),output,name);
+    if(repair_role==3) { assert(!owner.directory().is_open()); repair(output[44]); }
+    mark(65); action(output,owner.cleanup()); mark(97);
+    emit(2,owner.borrow(),parent.borrow(),output,name);
+    if(repair_role==1) { assert(!owner.directory().is_open()); repair(output[44]); }
+    if(repair_role==2) { assert(!owner.parent().is_open()); repair(output[43]); }
+    if(owner.owns_temporary_name()) {
+        if(mode==2 || mode==3) { assert(owner.directory().is_open() && owner.parent().is_open()); mark(85); std::file_ops::remove_file_at(owner.directory().raw_handle().unwrap(),path("payload",7)).unwrap(); mark(117); }
+        if(mode==8 || mode==9) { mark(75); output[49]=owner.keep().unwrap() as u64; output[50]=owner.keep().unwrap() as u64; mark(107); }
+        let first=owner.last_failure().unwrap(); mark(67); let rejected=owner.create_in(parent.borrow(),limits).unwrap_err(); let after=owner.last_failure().unwrap(); assert(cause(rejected.cause)==1 && rejected.cleanup.retained && cause(first.cause)==cause(after.cause) && stage(first.stage)==stage(after.stage)); output[48]=1; mark(99);
+    }
+    mark(66); action(output,owner.cleanup()); mark(98); mark(88); owner.destroy().unwrap(); owner.destroy().unwrap(); mark(120); mark(80); parent.close().unwrap(); mark(112);
+    emit(3,owner.borrow(),parent.borrow(),output,name); return 0;
+}

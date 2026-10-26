@@ -1,7 +1,11 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
-[reusable regex-workspace increment](library-regex-workspace-plan.md) is
+[filesystem increment](library-filesystem-completion-plan.md) implements owned
+temporary directories, checked link/readlink and permission operations, and a
+real `mktemp_dir` program. All 13 selected Rust tests pass across separate
+native commands on the profile below; this completes the selected increment.
+The preceding [reusable regex-workspace increment](library-regex-workspace-plan.md) is
 implemented and passes the selected Workspace/Search, regex, lexer,
 regex-text and real-application gates on the native profile below. The preceding
 [archive increment](library-archive-extraction-plan.md) adds shared namespace
@@ -21,6 +25,49 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted filesystem increment.**
+
+| Surface | Current status |
+| --- | --- |
+| [Link and permission primitives](stdlib-filesystem-links.md) | All five groups pass: links 28, readlink 19, permissions 12, bounds 45 and faults 35, totaling 139 accepted group cases across separate commands. The first 34 fault cases repeat in the corrected fault-only receipt; this is not cumulative native-process counting. Exact syscall provenance and zero source allocation are checked. |
+| [Owned temporary directories](stdlib-temp-directories.md) | All four groups pass: owner 9, admission/entropy 19, creation faults 8 and cleanup faults 10, totaling 46 accepted group cases across three commands. Corrected harness attempts repeat earlier work; this is not cumulative process counting. TempFile receipts do not establish this distinct mkdir/open/removal lifecycle. |
+| [`mktemp_dir` program](stdlib-mktemp-dir.md) | All four tests pass 48 native process invocations across separate 7.64s/7.32s commands: normal 5, arguments 13, allocations 4 (baseline plus all three reached OOM positions), faults 26. This includes actual closed-reader help/creation pipes, retained-name cleanup and close-once retirement. Baselines and setup overlap. |
+
+Current FileOps source is `21269e34...`, TempDir is `56898b00...`, and the
+application is `118f9a78...`. Selected services target native
+Linux x86_64 through the existing checked syscall boundary. Namespaces remain
+cooperative, cleanup is nonrecursive, and close retirement is explicit. Earlier
+TempFile, AtomicFile, archive-directory and server evidence below retains its
+original source/target scope. The reference inventory records this accepted
+source/API freeze separately from the runtime receipts.
+
+Receipts are under `target/stdlib-work/`: `filesystem-links-native-first.log`
+(6.67s, four passing groups and the incomplete fault attempt),
+`filesystem-links-faults-small-poke-retry.log` (6.36s, all 35 faults),
+`filesystem-mktemp-behavior-local-guard.log` and
+`filesystem-mktemp-faults-first.log`. TempDir owner 9 passes within the mixed
+6.88s `filesystem-temp-dir-native-first.log`; creation 8 and cleanup 10 pass
+within the mixed 7.66s `filesystem-temp-dir-callback-retry.log`. Those commands
+contain harness failures in other groups and are not isolated passing-group
+timings. Admission/entropy 19 passes in the 6.07s
+`filesystem-temp-dir-single-entropy-rule-retry.log`. The first link fault
+attempt reaches 34 cases
+before strace rejects its final oversized command-line poke, before starting
+that child. The retry constrains a 16-byte supplied prefix plus the full
+returned count; real readlink cases still compare the entire destination.
+Initial source admission isolated a comparison/cast parse ambiguity; the
+[small reproduction](../tests/fixtures/stdlib_compiler_state/filesystem_imports/README.md)
+and an equivalent widening-cast local preserve the API/effect/error contract
+without a compiler change. TempDir callback-shadowing failures and a duplicate
+getrandom injection rule were oracle defects: the final retry uses one
+first-draw rule and verifies actual subsequent entropy. Production remained
+unchanged across those oracle retries. The separate CPU controls number 40
+for link primitives, 45 for TempDir and 16 for the application; they are not
+native cases. Skipped-close fault injections establish logical
+retirement and separately record remaining physical descriptors. Native
+receipts use Linux x86_64, kernel `7.0.0-38-generic`, ext4 under `/tmp`; they
+establish no broader host, namespace-security or crash-durability guarantee.
 
 **Accepted reusable regex storage.**
 
@@ -228,9 +275,9 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes its bounded writer and final check for the frozen archive, AtomicFile/KV,
-TempFile/FileOps and server surfaces: 250 pages, 249 modules and 8,197 public
-declaration markers. Source inventory evidence does not establish runtime
+passes its bounded writer and final check for the filesystem source/API freeze
+and preceding surfaces: 251 pages, 250 modules and 8,259 public declaration
+markers. Exactly three outputs change: the index, FileOps and new TempDir page. Source inventory evidence does not establish runtime
 support or library completion.
 
 Two lower-layer controls remain distinct from those current transport gates:
