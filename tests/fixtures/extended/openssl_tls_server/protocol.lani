@@ -102,7 +102,8 @@ fn write_all(session: &ext::openssl_tls::Session, fd: i32, source: [u8], length:
                 assert(session.pending_write_bytes() == amount && session.pending_read_bytes() == 0);
                 let before: i32 = tls_server_test_io_calls();
                 assert(cause(session.handshake().unwrap_err().cause) == 5);
-                assert(cause(session.read_into(view(scratch, 0, 8)).unwrap_err().cause) == 5);
+                let exclusive: bool = match (session.write_need()) { ext::openssl_tls::Need::Write -> true, _ -> false };
+                if (exclusive) { assert(cause(session.read_into(view(scratch, 0, 8)).unwrap_err().cause) == 5); }
                 assert(cause(session.write(view(source, 3, amount)).unwrap_err().cause) == 5);
                 assert(cause(session.shutdown().unwrap_err().cause) == 5);
                 assert(tls_server_test_io_calls() == before); stats.guards += 1;
@@ -143,7 +144,9 @@ fn read_all(session: &ext::openssl_tls::Session, fd: i32, length: i32, mode: i32
             assert(session.pending_read_bytes() == requested);
             let before: i32 = tls_server_test_io_calls();
             assert(cause(session.read_into(view(target, 5, requested - 1)).unwrap_err().cause) == 1);
-            assert(cause(session.write(view(target, 0, 0)).unwrap_err().cause) == 5);
+            let empty_write: i32 = match (session.write(view(target, 0, 0)).unwrap()) { ext::openssl_tls::Write::Complete(count) -> count, _ -> -1 };
+            assert(empty_write == 0 && session.pending_read_bytes() == requested);
+            assert(match (session.read_need()) { ext::openssl_tls::Need::Read -> action == -1, ext::openssl_tls::Need::Write -> action == -2, _ -> false });
             assert(cause(session.handshake().unwrap_err().cause) == 5);
             assert(cause(session.shutdown().unwrap_err().cause) == 5);
             assert(tls_server_test_io_calls() == before); stats.retries += 1;

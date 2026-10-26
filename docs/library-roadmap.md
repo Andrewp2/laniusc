@@ -38,9 +38,9 @@ package distribution is a separate deliverable.
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Explicit new groups, anchored signaling and non-reaping observation pass five focused API groups; a TERM/grace/KILL supervisor passes five groups and 53 cases, across separate receipts. Group escape/containment and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. System hostname/service resolution delegates to libc with explicit hints and owned ordered results on Linux x86_64/glibc; all four library groups and five CLI groups pass across separate receipts. Blocking NSS memory/time are outside local byte/result caps. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Resumable Prepared/Exchange passes all five direct groups (83 cases); one-thread/poll batches pass all seven groups, and fetch-many passes all five application groups across separate receipts. Manual owners and one common deadline are explicit. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls, OpenSSL digests and client TLS with peer verification execute. Client TLS requires explicit peer trust/identity, borrowed nonblocking sockets and caller deadlines/SIGPIPE policy; the TLS stream/HTTPS application executes 62 cases across four groups with numeric endpoints, explicit trust/identity, deadlines and manual cleanup. Server TLS and a bounded HTTPS service execute through OpenSSL. Client credential contexts and required fresh client-chain verification execute in 107 cases across six groups; prepared-context transport and real mutual-TLS HTTPS modes execute another 109 cases across four groups. Unauthenticated public service remains an explicit policy. Application identity/authorization, broader certificate APIs, asynchronous resolution/NSS resource policy, interface discovery, concurrent server scheduling, keepalive and broader client policies remain; old std::net declarations remain unbound |
-| Native libraries | Checked C signatures, ordinary ELF linking, process startup and explicit library owners | The Linux x86_64/glibc profile executes integer/pointer/f32/f64/void calls with up to 32 total parameters, independent SSE/GPR banks, ordinary ELF objects and CRT startup. OpenSSL EVP digest contexts and a binary stdin hashing program execute with dynamic libcrypto.so.3. SQLite database/prepared-statement owners and a persistent binary key/value program execute with system SQLite, including typed values, transactions, real persistence/locking, native and staging-allocation failures, and a measured bulk workload. Native entry/package builds spool original/replay payloads and execute above the resident aggregate threshold; source snapshots/global metadata still grow and descriptor CLI modes remain unsupported. OpenSSL client TLS with peer verification executes with 34 cases across four groups. Server TLS also executes with 53 focused cases; mutual TLS adds 107 cases across six groups using shared native credential loading and explicit required-peer policy. Callbacks, variadics, aggregate C layouts, foreign thread entry, standalone encryption/signature and broader certificate-trust APIs remain |
-| Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Bounded cleartext HTTP batches use one thread and reusable polling; all seven library groups and five application groups pass across separate native receipts, including queued admission after consecutive begin failures. This does not supply worker execution or synchronization. Current thread declarations remain unbound; [concurrency admission dependencies](library-concurrency-dependencies.md) isolate callback/worker-entry, checked Boolean transport, ownership and ordering prerequisites |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. System hostname/service resolution delegates to libc with explicit hints and owned ordered results on Linux x86_64/glibc; all four library groups and five CLI groups pass across separate receipts. Blocking NSS memory/time are outside local byte/result caps. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. At checkpoint 480432e8, resumable Prepared/Exchange passed all five direct groups (83 cases), one-thread/poll batches passed all seven groups, and fetch-many passed all five application groups across separate receipts. The current shared Protocol/generic scheduler/resumable HTTPS adapter passes six connected groups and 108 cases through separate native receipts; revised plain/custom-driver and application regressions remain pending. Older receipts do not cover the revised boundaries. Manual owners and one common deadline are explicit. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls, OpenSSL digests and client TLS with peer verification execute. Client TLS requires explicit peer trust/identity, borrowed nonblocking sockets and caller deadlines/SIGPIPE policy; the TLS stream/HTTPS application executes 62 cases across four groups with numeric endpoints, explicit trust/identity, deadlines and manual cleanup. Server TLS and a bounded HTTPS service execute through OpenSSL. Client credential contexts and required fresh client-chain verification execute in 107 cases across six groups; prepared-context transport and real mutual-TLS HTTPS modes execute another 109 cases across four groups. Unauthenticated public service remains an explicit policy. Application identity/authorization, broader certificate APIs, asynchronous resolution/NSS resource policy, interface discovery, concurrent server scheduling, keepalive and broader client policies remain; old std::net declarations remain unbound |
+| Native libraries | Checked C signatures, ordinary ELF linking, process startup and explicit library owners | The Linux x86_64/glibc profile executes integer/pointer/f32/f64/void calls with up to 32 total parameters, independent SSE/GPR banks, ordinary ELF objects and CRT startup. OpenSSL EVP digest contexts and a binary stdin hashing program execute with dynamic libcrypto.so.3. SQLite database/prepared-statement owners and a persistent binary key/value program execute with system SQLite, including typed values, transactions, real persistence/locking, native and staging-allocation failures, and a measured bulk workload. Native entry/package builds spool original/replay payloads and execute above the resident aggregate threshold; source snapshots/global metadata still grow and descriptor CLI modes remain unsupported. OpenSSL client TLS with peer verification executes with 34 cases across four groups. Server TLS also has 53 historical focused cases; mutual TLS adds 107 cases across six groups using shared native credential loading and explicit required-peer policy. The current independent retry/context-retention revision needs new native gates. Callbacks, variadics, aggregate C layouts, foreign thread entry, standalone encryption/signature and broader certificate-trust APIs remain |
+| Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | At checkpoint 480432e8, bounded cleartext HTTP batches passed seven library groups and five application groups across separate native receipts, including queued admission after consecutive begin failures. The current generic scheduler and verified HTTPS adapter use the same one-thread/poll architecture and pass 108 connected cases; revised plain/custom-driver and application regressions remain pending. This does not supply worker execution or synchronization. Current thread declarations remain unbound; [concurrency admission dependencies](library-concurrency-dependencies.md) isolate callback/worker-entry, checked Boolean transport, ownership and ordering prerequisites |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. A generated declaration reference links signatures, bounds, source locations and reviewed contract guides. Automatic compiler discovery/runtime registration, binary SDK distribution and complete semantic API documentation remain |
 
 ## Extended library scope
@@ -53,7 +53,7 @@ tests, target support, and relevant performance evidence.
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities |
 | Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch |
 | Files and packaging | Globs, directory walking utilities, compression, archives |
-| Network protocols | URL handling, HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batch scheduling and its CSV-to-ZIP application execute across separately accepted library/application receipts; TLS resumability, concurrent server scheduling, application authorization and broader orchestration remain open |
+| Network protocols | URL handling, HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batches and their CSV-to-ZIP application have separately accepted historical receipts; the current resumable HTTPS batches pass 108 connected cases; revised plain/custom-driver/application and remaining raw OpenSSL gates are pending; concurrent server scheduling, application authorization and broader orchestration remain open |
 | Storage | Database interfaces; executable [SQLite integration](extended-sqlite.md), [persistent binary key/value application](extended-sqlite-kv.md) and key-value snapshots; broader database/storage interfaces remain |
 | Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests, verified client/server TLS and mutual TLS execute with explicit trust and manual owners; standalone encryption/signature APIs, application identity/authorization and broader certificate policy remain open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
@@ -273,19 +273,24 @@ it with numeric-address sockets, owned responses, one deadline and explicit
 byte/work/I/O limits. Canonical parsing validates each selected response;
 informational responses and early final replies retain exact association and
 progress. The shared client exposes Prepared staging and resumable Exchange
-steps with explicit readiness and bounded network quanta. All five direct
-[Exchange groups](extended-http-exchange-testing.md) pass 83 cases across
-separate receipts, alongside all six synchronous regression groups (188 cases).
+steps with explicit readiness and bounded network quanta. At `480432e8`,
+all five direct [Exchange groups](extended-http-exchange-testing.md) passed
+83 cases across separate receipts, alongside all six synchronous regression
+groups (188 cases).
 [HTTP batches](extended-http-batch.md) reuse that engine with one thread and a
 reusable PollSet, input-order partial outcomes, one common deadline and manual
 response transfer. Logical pending/wire/body retention caps are separate from
 allocator capacity and peak RSS; scheduler operations and reserved protocol
 work are explicit. All seven batch groups and all five
-[fetch-many CSV-to-ZIP application](extended-fetch-many.md) groups are accepted
-across separate native receipts, including queued admission after consecutive
-begin failures without a blocking poll on remaining peers. TLS transport
-resumability and worker-thread orchestration remain
-separate work, as recorded by the
+[fetch-many CSV-to-ZIP application](extended-fetch-many.md) groups passed
+across separate native receipts at that checkpoint, including queued admission
+after consecutive begin failures without a blocking poll on remaining peers.
+The current shared Protocol and generic scheduler revisions need new gates.
+The [resumable HTTPS client](extended-https-client.md) and
+[HTTPS batch adapter](extended-https-batch.md) pass six connected native groups
+and 108 cases across separate receipts. Revised plain/custom-driver and
+application regressions remain pending; historical HTTP/TLS receipts do not
+cover the current revisions. Worker-thread orchestration remains separate work, as recorded by the
 [concurrency admission audit](library-concurrency-dependencies.md).
 A [staged HTTP/1 server connection](extended-http-server.md), accepted
 at `493d4e87`, handles one request and one closing final response per connection,
@@ -489,7 +494,56 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
-- [Resumable HTTP and batch scheduling](extended-http-batch.md) share one
+- Current networking revision, connected HTTPS accepted with regressions pending:
+  [HTTP Protocol](extended-http-client.md) centralizes request staging,
+  framing, decoding and response ownership independently of transport.
+  [Generic batch scheduling](extended-http-batch.md) supplies one preparation,
+  admission, refill, polling, accounting and cleanup engine with typed driver
+  errors. The [HTTPS driver](extended-https-client.md) and
+  [HTTPS batch adapter](extended-https-batch.md) compose this boundary with
+  OpenSSL peer verification, context retention and stable independent
+  read/write retry state. A production-shaped control compiles and exits zero
+  using the actual public generic traits and Report destruction with two
+  error types, including nested owned payloads
+  (`target/stdlib-work/resumable-transport-production-shape-first.log` and
+  `resumable-transport-production-shape-native.log`). This control does not
+  execute the scheduler. Eight raw OpenSSL duplex groups pass 30 cases through
+  separate receipts: four causal, two notification and four synthetic
+  rare-WANT cases in 6.43 s
+  (`target/stdlib-work/openssl-tls-duplex-initial-groups-first.log`), plus
+  20 backpressure, buffered-input, independent-owner, shutdown and fatal-error
+  cases in 6.20 s (`openssl-tls-duplex-five-edge-groups-first.log`). Its
+  reached source-allocation gate remains pending.
+  [Connected HTTPS gates](extended-https-batch-testing.md) compile the actual
+  adapter and pass all six groups, covering 108 cases across three receipts:
+  five verified overlap/ownership and four framing cases in 11.01 s
+  (`target/stdlib-work/https-batch-initial-two-groups-first.log`); 11 peer-policy,
+  six transport and 16 quota/cancellation cases in 14.04 s
+  (`https-batch-policy-transport-limits-first.log`); and 66 resource/direct
+  cases in 37.52 s (`https-batch-resource-direct-typed-retry.log`). The final
+  group fails each of 42 reached source allocations individually, including
+  16 after networking began, and adds 24 fault/recovery controls including six
+  direct-step/abort invocations. Its first resource invocation stopped during
+  direct-fixture compilation with nested-pattern `AssignMismatch`, before
+  Python cases ran; explicit typed matches preserve the assertions and the
+  passing retry needs no production/compiler patch. The failing form remains
+  recorded separately. Revised plain/custom-driver regression gates and the
+  migrated HTTPS fetch application are pending; library acceptance does not
+  accept that program.
+  Review also corrected a generic scheduler path that could block on siblings
+  after `before_wait` retired another owner, delaying queued admission; its
+  dedicated regression is pending. The generic contract requires
+  `before_wait` returning `Ok(true)` to preserve the previously observed
+  Interest and valid descriptor identity until poll registration. Borrowed
+  error payloads must outlive the returned Report/Failure and any taken
+  outcome through their final use/destruction, which can follow run return.
+  Historical receipts below do
+  not accept the new Protocol, generic/error or TLS retry contracts. Worker
+  threads, native callback entry and broader library coverage remain open;
+  the [concurrency audit](library-concurrency-dependencies.md) records the
+  separate compiler/runtime dependencies.
+- Accepted checkpoint `480432e8`:
+  [resumable HTTP and batch scheduling](extended-http-batch.md) shared one
   canonical request/framing engine. All five direct
   [Exchange groups](extended-http-exchange-testing.md) pass 83 cases across
   separate receipts: 3 + 20 + 2 in a mixed 9.35 s invocation, and the remaining
@@ -519,7 +573,9 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
   and passes the existing ZIP contract in 6.79 s. These native Linux x86-64 CPU
   programs are built by the GPU compiler and use one-thread/poll cleartext
   numeric connections, manual owners, a common deadline and logical retention
-  caps. Resumable TLS and threads remain in scope; the
+  caps. These receipts cover that preceding concrete scheduler and transport;
+  the current generic/Protocol revision requires new gates. Resumable TLS and
+  threads remain in scope; the
   [concurrency prerequisites](library-concurrency-dependencies.md) preserve
   separate executable controls and unresolved compiler/runtime admissions.
 - [Anchored longest-prefix matching and reusable lexers](extended-lexer.md)
@@ -555,7 +611,7 @@ OS entropy and noncryptographic CRC/Adler/FNV are also available.
   [compiler dependencies](library-context-inference-dependencies.md) preserve
   failing unannotated result contexts and nested/literal matching beside
   passing controls; no compiler source changed in this batch.
-- Accepted client TLS profile: [ext::openssl_tls](extended-openssl-tls.md) uses
+- Previously accepted client TLS profile: [ext::openssl_tls](extended-openssl-tls.md) uses
   OpenSSL 3 `libssl`/`libcrypto` for all TLS and sensitive operations. Fifteen
   verified transfer/identity cases pass in 18.56 s; seven closure/truncation
   and three stable-retry cases pass in a shared 18.01 s run whose separate

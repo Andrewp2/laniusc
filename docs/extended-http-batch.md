@@ -9,11 +9,12 @@ scheduler contains no TLS implementation or worker-thread pool.
 
 The source is [`extended/ext/http_batch.lani`](../extended/ext/http_batch.lani).
 The first profile is native Linux x86_64 through the existing socket/poll
-boundary. The concrete plain scheduler passed seven focused library groups
-and the [fetch-many application](extended-fetch-many.md) passed five groups
-through the separate receipts below. The generic driver/error revision is
-**pending compilation and execution acceptance**; those earlier receipts do
-not establish the revised generic boundary or a TLS adapter. Other targets,
+boundary. The earlier concrete plain scheduler passed seven focused library
+groups, and the [fetch-many application](extended-fetch-many.md) passed five
+groups through the separate receipts below. The generic driver/error revision
+has passed an interface admission control and two connected HTTPS groups;
+**full acceptance of the revised scheduler remains pending**, including its
+new regression for a slot freed by `before_wait` failure. Other targets,
 user GPU execution, name resolution, redirects, pooling and request replay
 remain outside this profile. The [single-exchange guide](extended-http-client.md)
 defines HTTP policy, including successful responses with non-2xx status.
@@ -97,8 +98,13 @@ trait methods cannot recurse into themselves.
 Driver statistics begin with the Prepared statistics, are monotone and retain
 confirmed progress on errors. They remain readable after terminal calls.
 Interest and readiness must agree: `before_wait` returning `Ok(false)` leaves
-immediate work available to `step`. Protocol work cannot exceed the shared client
-`Options.work` allowance. Drivers must preserve the common absolute deadline,
+immediate work available to `step`. For `Ok(true)`, the driver must preserve
+the preceding non-immediate `Interest` and its current descriptor identity
+through poll registration. The scheduler reads `interest()` before the gate,
+then uses those read/write flags with `raw_handle()` after it; the gate must
+not silently change which event or session that request describes.
+Protocol work cannot exceed the shared client `Options.work` allowance.
+Drivers must preserve the common absolute deadline,
 bounded nonblocking step/readiness contract and one-time Response transfer.
 `step` and `before_wait` errors must release and disarm the driver's transport
 and protocol owners before returning. `abort` does the same on every result,
@@ -109,7 +115,11 @@ Every returned `E` transfers its own error cleanup authority. Error statistics
 and shared-failure classification receive borrowed copies: they must not
 destroy, mutate or retain that authority. Errors must remain valid after the
 failed driver's partial owners have been released. Borrowed error payloads
-retain their caller-defined lifetime requirements. `from_http_failure` keeps
+must keep their backing valid and unchanged through the error's final use
+and destruction, whether it remains in a Report or Failure or transfers in a
+taken Outcome. That lifetime can extend past `run_with_until` returning;
+keeping factory/job backing alive only during the call is insufficient for
+an error that still borrows it. `from_http_failure` keeps
 canonical preparation failures typed; `shared_failure` identifies common
 deadline/clock failures that terminate the whole batch. The scheduler never
 reduces a driver error to an integer or parses transport-specific policy.
@@ -222,6 +232,13 @@ considered. This refill repeats only while it makes input progress; a credit
 shortage with active owners stops refill and waits for those owners to release
 allowance. No queue-only busy-poll rule bypasses the work reservation.
 
+A local error from `before_wait` can also free a slot after that refill.
+The wait pass then returns immediately to the outer admission loop before
+polling remaining siblings. It retains the failed input's typed error and
+releases its unused work credit. A shared error still terminates the batch.
+Previously charged participation allowances remain in the historical I/O
+count even when that pass returns without a physical poll.
+
 Immediate engine work is stepped without waiting for readiness. Pending peers
 register their current descriptor and read/write interest. If another owner
 still has immediate work, one zero-time shared poll probes those pending
@@ -330,12 +347,43 @@ there is no hard real-time return or asynchronous cancellation guarantee.
 
 ## Verification status
 
+### Current generic revision
+
+The separate [production-shaped admission control](../tests/fixtures/stdlib_compiler_state/resumable_transport_admission/REPRODUCTION.md)
+compiled to an x86_64 executable and exited zero. It dispatches the actual
+public `Driver` and `Factory` traits with two error types, including nested
+owned payloads, and executes the actual `Report<E>` take/destruction path.
+Its receipts are `target/stdlib-work/resumable-transport-production-shape-first.log`
+and `resumable-transport-production-shape-native.log`. Its fixture runner does
+**not** call `run_with_until`; this is interface and owner admission evidence,
+not scheduler, networking or TLS acceptance.
+
+Two [connected HTTPS groups](extended-https-batch-testing.md) pass nine cases
+in 11.01 seconds: verified overlap/input order/concurrency limits (five) and
+canonical framing/buffered plaintext (four). The receipt is
+`target/stdlib-work/https-batch-initial-two-groups-first.log`. These consumers
+exercise the actual generic scheduler through `ext::https_batch`; the remaining
+connected gates are pending. Separately, three raw OpenSSL duplex groups pass
+ten cases in 6.43 seconds in
+`target/stdlib-work/openssl-tls-duplex-initial-groups-first.log`. Those transport
+controls do not establish scheduler acceptance.
+
+Static review found a second real refill defect: a local `before_wait` error
+retired an owner, but the same wait pass could block on another peer before
+admitting queued work. A sibling waiting for a queued job could then stall
+until the common deadline. The source now returns to admission immediately
+after that local retirement. A focused causal regression for this correction
+is pending; neither the interface control nor the historical receipts below
+prove this path.
+
+### Historical concrete plain scheduler
+
 The [focused testing guide](extended-http-batch-testing.md) records the seven
-finite groups and their ownership/fault machinery. The following receipts
-cover the concrete plain scheduler before its generic driver/error revision.
-They do not establish generic trait admission, owned-error destruction or a
-TLS factory. Those revised boundaries remain pending. All seven earlier
-groups were accepted through four separate receipts:
+earlier finite groups and their ownership/fault machinery. The following
+receipts cover the concrete plain scheduler before its generic driver/error
+revision and the later wait-retirement correction. They do not establish the
+current source's full acceptance. All seven earlier groups were accepted
+through four separate receipts:
 
 | Invocation | Accepted scope | Elapsed | Receipt under `target/stdlib-work/` |
 | --- | --- | ---: | --- |
@@ -376,8 +424,10 @@ is supplied by the test peers or their reference codecs.
 ### Application acceptance
 
 The [fetch-many guide](extended-fetch-many.md) records all five accepted
-application groups on the same native Linux x86_64 profile. It composes the
-batch with CSV admission and staged ZIP output:
+application groups on the same native Linux x86_64 profile before the generic
+scheduler revision. It composes the batch with CSV admission and staged ZIP
+output. These historical receipts do not accept the revised application or
+scheduler:
 
 | Receipt under `target/stdlib-work/` | Accepted final scope | Elapsed |
 | --- | --- | ---: |

@@ -1,5 +1,20 @@
 # Standard and extended library overview
 
+The full library goal remains open. The current networking revision extracts
+the shared HTTP Protocol owner, generalizes batch scheduling and adds
+resumable verified HTTPS. Its complete native acceptance remains pending. Earlier
+HTTP/TLS receipts below describe the preceding accepted implementations;
+they do not establish acceptance of these revised boundaries.
+The production-shaped generic trait/Report control compiles and executes
+with two error types, including nested owned errors. All nine new OpenSSL duplex
+groups pass 36 cases, including five reached source-allocation failures. All six connected
+HTTPS groups pass 108 cases across separate invocations, including peer
+policy, transport failures, quotas, direct stepping and source-owner cleanup.
+The migrated application and revised plain/custom-driver regressions remain
+pending. The first wait-retirement regression attempt failed before its report
+with premature protocol EOF; its cause remains unclassified. These finite gates
+do not establish the whole revised transport stack.
+
 The [execution audit and portable foundation](stdlib-foundation.md) lists
 the stdlib APIs verified on x86_64, their edge behavior, and the remaining
 compiler and runtime dependencies.
@@ -92,25 +107,36 @@ Descendants can escape a group, and deadlines do not guarantee kernel-stuck
 processes become reapable; these APIs do not provide process-tree containment.
 
 [Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
-Prepared request staging and caller-driven Exchange steps. All five direct
-[Exchange groups](extended-http-exchange-testing.md) pass across separate
-receipts, covering 83 cases; the same engine also passes all six synchronous
+Prepared request staging and caller-driven Exchange steps. At `480432e8`,
+all five direct [Exchange groups](extended-http-exchange-testing.md) passed
+across separate receipts, covering 83 cases, alongside all six synchronous
 client regression groups (188 cases).
 [Bounded HTTP batches](extended-http-batch.md) schedule several numeric-endpoint
 connections using one thread and reusable polling, with input-order outcomes,
 one common deadline, manual response owners, logical pending/retained byte
-caps and explicit operation/work allowances. All seven batch groups pass
-across separate receipts, including consecutive begin failures followed by
-a valid queued job without a blocking poll that delays admission. The [fetch-many program](extended-fetch-many.md) composes bounded CSV
+caps and explicit operation/work allowances. At that checkpoint, all seven
+batch groups passed across separate receipts, including consecutive begin
+failures followed by a valid queued job without a blocking poll that delays
+admission. The [fetch-many program](extended-fetch-many.md) composes bounded CSV
 jobs, the batch scheduler and an ordered Stored ZIP, validating all requests
 before sockets and staging the archive before stdout. All five application
-groups pass across separate receipts, including 59 reached allocation failures
+groups passed across separate receipts, including 59 reached allocation failures
 and a 64-job scale control with at most four active sockets. Logical retention
 caps do not bound allocator capacity, temporary candidates or process RSS.
-Resumable TLS scheduling and executable worker threads remain part of the full
-goal; the [concurrency admission audit](library-concurrency-dependencies.md)
-records their separate compiler/runtime boundaries. These execution receipts
-cover native Linux x86-64 CPU programs built by the GPU compiler.
+The current [generic scheduler](extended-http-batch.md) uses one engine for
+plain and [HTTPS batches](extended-https-batch.md), with typed driver errors
+and explicit nested cleanup. The [resumable HTTPS driver](extended-https-client.md)
+uses the canonical HTTP Protocol and OpenSSL's verified transport, including
+stable retries and version-specific early-final closure. All six connected
+HTTPS groups pass 108 cases across three receipts. These are current native
+gates; the preceding HTTP/TLS receipts retain their separate historical scope.
+The migrated HTTPS application and revised plain/custom-driver regressions
+remain pending.
+Executable worker threads and concurrent server scheduling
+also remain part of the full goal. The
+[concurrency admission audit](library-concurrency-dependencies.md) records
+separate compiler/runtime boundaries. The historical execution receipts cover
+native Linux x86-64 CPU programs built by the GPU compiler.
 
 [Checked native C calls](library-native-c.md) execute on Linux x86_64/glibc
 through ordinary ELF objects, the system C linker and libc startup.
@@ -145,11 +171,13 @@ with 107 cases across six groups. Required authentication disables resumption
 and checks each fresh peer; certificate verification does not assign an
 application principal or authorization. Standalone encryption/signature APIs
 and certificate trust APIs outside TLS remain work. The
-[bounded HTTPS health/echo service](extended-https-server.md) passes 106 cases
+[bounded HTTPS health/echo service](extended-https-server.md) passed 106 cases
 across four groups using the shared TLS stream and canonical HTTP codec.
 [Prepared client contexts and mutual-TLS HTTPS modes](extended-https-mutual-tls.md)
-add 109 process cases across four groups. The client can present an explicit
-certificate/key pair while still verifying the server; the service can require
+add 109 process cases across four groups on the preceding TLS wrapper. The
+current independent read/write retry, context-retention and shutdown revision
+needs new [OpenSSL execution gates](extended-openssl-tls.md). The client can
+present an explicit certificate/key pair while still verifying the server; the service can require
 client certificates from an explicit CA file before processing HTTP.
 The [remaining native prerequisites](library-native-integration-prerequisites.md)
 record those boundaries. Native linking now spools opaque original/replay

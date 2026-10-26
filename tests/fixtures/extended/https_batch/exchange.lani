@@ -24,6 +24,11 @@ fn bytes(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = cor
 fn word(raw: [u8], at: i32) -> i32 { return ((raw[at] as u32)|((raw[at+1] as u32)<<8)|((raw[at+2] as u32)<<16)|((raw[at+3] as u32)<<24)) as i32; }
 fn mark(value: str) { let output = std::stream::stderr(); let part = bytes(value,1); core::io::write_all(output.borrow(),part.values,part.start,part.length).unwrap(); }
 fn inactive(value: ext::https_client::Failure) -> bool { return match(value.cause) { ext::https_client::Cause::Inactive -> true, _ -> false }; }
+fn host_five(value: ext::https_client::Cause) -> bool {
+    let io: core::option::Option<core::io::Error> = match(value) { ext::https_client::Cause::Io(error) -> core::option::Some(error), _ -> core::option::None() };
+    if (io.is_none()) { return false; }
+    return match(io.unwrap()) { core::io::Error::Host(number) -> number == 5, _ -> false };
+}
 fn ready() -> ext::http_client::Readiness { return ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false }; }
 fn output(words: [i32], length: i32) { let sink = std::stream::stdout(); let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),length*4); core::io::write_all(sink.borrow(),raw,0,length*4).unwrap(); }
 fn main() -> i32 {
@@ -56,7 +61,7 @@ fn main() -> i32 {
             let fd: i32 = owner.raw_handle().unwrap(); mark("A"); let stopped = owner.abort(); mark("a"); aborted = true;
             if (word(raw,12) == 0) { assert(stopped.is_ok() && stopped.unwrap()); }
             else {
-                assert(stopped.is_err()); let error = stopped.unwrap_err(); assert(match(error.cause) { ext::https_client::Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false });
+                assert(stopped.is_err()); let error: ext::https_client::Failure = stopped.unwrap_err(); assert(host_five(error.cause));
                 assert(match(error.stage) { ext::https_client::Stage::Close -> true, _ -> false }); assert(owner.last_failure().is_some()); close_error = true;
                 // strace's fake failed close skipped the kernel close. Repair
                 // that injected test descriptor outside the disarmed owner.
@@ -74,7 +79,7 @@ fn main() -> i32 {
     }
     let version: i32 = owner.negotiated_version(); assert(version == 771 || version == 772); assert(owner.raw_handle().is_none());
     assert(inactive(owner.step(ready()).unwrap_err()) && inactive(owner.before_wait().unwrap_err()) && !owner.abort().unwrap());
-    if (close_error) { let error = owner.last_failure().unwrap(); assert(match(error.cause) { ext::https_client::Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false }); assert(match(error.stage) { ext::https_client::Stage::Close -> true, _ -> false }); }
+    if (close_error) { let error: ext::https_client::Failure = owner.last_failure().unwrap(); assert(host_five(error.cause)); assert(match(error.stage) { ext::https_client::Stage::Close -> true, _ -> false }); }
     assert(owner.negotiated_version() == version && duplex_test_stat(-1,0) == 0 && duplex_test_stat(-1,1) == 0 && duplex_test_stat(-1,2) == 0); polls.destroy();
     let words: [i32;16] = [0;16]; words[0] = 1213415986; words[1] = version; words[2] = count; words[3] = owner.tls_stats().calls as i32; words[4] = duplex_test_stat(0,5) as i32; words[5] = duplex_test_stat(0,6) as i32; words[6] = duplex_test_stat(0,8) as i32; if (aborted) { words[7] = 1; } if (close_error) { words[8] = 1; }
     if (response.is_some()) { let result = response.unwrap(); words[9] = result.as_view().length; words[10] = result.body().length; output(words,16); let sink = std::stream::stdout(); let wire = result.as_view(); core::io::write_all(sink.borrow(),wire.values,wire.start,wire.length).unwrap(); let body = result.body(); core::io::write_all(sink.borrow(),body.values,body.start,body.length).unwrap(); result.destroy(); }

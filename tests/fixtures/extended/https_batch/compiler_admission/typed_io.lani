@@ -1,0 +1,17 @@
+// Candidate explicit two-match control; compile/execution acceptance is pending.
+module app::main;
+import core::io;
+import core::option;
+enum Cause { Io(core::io::Error), Other }
+fn host_five(value: Cause) -> bool {
+    let io: core::option::Option<core::io::Error> = match(value) { Cause::Io(error) -> core::option::Some(error), _ -> core::option::None() };
+    if (io.is_none()) { return false; }
+    return match(io.unwrap()) { core::io::Error::Host(number) -> number == 5, _ -> false };
+}
+fn main() -> i32 {
+    assert(host_five(Cause::Io(core::io::Error::Host(5))));
+    assert(!host_five(Cause::Io(core::io::Error::Host(4))));
+    assert(!host_five(Cause::Io(core::io::Error::Interrupted)));
+    assert(!host_five(Cause::Other));
+    return 0;
+}

@@ -2,14 +2,20 @@
 
 [`sample_programs/library/https_fetch.lani`](../sample_programs/library/https_fetch.lani)
 performs one HTTPS GET and writes the decoded response body to binary stdout.
-It uses the system OpenSSL 3 library for TLS and the existing
-[`ext::http`](extended-http.md) encoder, incremental framing cursor, canonical
-response parser and body decoder for HTTP/1.1.
+It uses the system OpenSSL 3 library for TLS through
+[`ext::https_client`](extended-https-client.md), which drives the same
+[`ext::http_client::Protocol`](extended-http-client.md) as cleartext HTTP.
+The application supplies a canonical Request and limits; the library owns
+request encoding, incremental framing, informational responses, canonical
+validation and body decoding. The application has no separate HTTP parser.
 
-The verified executable profile is Linux x86_64, linked through the native C
-profile to `libssl.so.3` and `libcrypto.so.3` with libc startup. TLS and
-certificate operations run in OpenSSL; application and stream ownership,
-bounds, polling and HTTP processing run in Lanius.
+The native profile is Linux x86_64, linked through the native C profile to
+`libssl.so.3` and `libcrypto.so.3` with libc startup. This migration to the
+resumable HTTPS driver is **pending compilation and runtime acceptance**.
+Earlier receipts below describe the preceding stream-based application and
+do not establish this revision. TLS and certificate operations run in
+OpenSSL; application ownership, bounds, polling and HTTP processing run in
+Lanius.
 
 ```text
 https-fetch ADDRESS PEER CA_FILE TARGET [OPTIONS]
@@ -74,8 +80,10 @@ rejected. The framing cursor only finds a candidate boundary; the complete
 selected response is then checked by the canonical parser before decoding.
 Decoding removes HTTP transfer framing; content encodings such as gzip remain
 part of the returned body.
-Extra application bytes received beyond the final response boundary are
-rejected. Output starts after the complete response has been validated and
+The application explicitly selects `http_client::Trailing::Reject`. Extra
+plaintext already read beyond the final response boundary is rejected. A
+self-delimited response does not wait for peer EOF merely to discover later
+bytes. Output starts after the complete response has been validated and
 decoded, and the TLS/session/socket owners have been released.
 
 Close-delimited responses require OpenSSL's authenticated `close_notify` EOF.
@@ -105,36 +113,63 @@ options use the last value. Argument capture permits 32 arguments and 16,384
 bytes. The request is capped at 16,384 bytes. HTTP limits are 16,384 head
 bytes, 8,192 line bytes, 64 headers, 16,384 trailer bytes, 16 trailers and
 65,536 chunks. Informational responses share the total response byte bound.
-At an exact response byte limit, one extra plaintext byte may be consumed to
-distinguish authenticated EOF from excess input; excess bytes are never output.
+At an exact close-delimited body or response byte limit, one extra plaintext
+byte may be consumed to distinguish authenticated EOF from excess input;
+excess bytes are never output. Fixed and chunked responses finish at their
+validated boundary without that EOF probe.
 
 The TLS profile bounds trust and credential paths to 4,096 UTF-8 bytes each,
-peer identities to 253 ASCII bytes, each native plaintext I/O buffer to 16,384
-bytes and certificate verification depth to 16. The stream's owned write queue
-has that same 16,384-byte capacity.
+peer identities to 253 ASCII bytes, native plaintext I/O buffers to at most
+16,384 bytes and certificate verification depth to 16. The HTTPS driver stages
+at most 1024 request bytes per active write and reads at most 1024 plaintext
+bytes per active read. Native retry storage keeps each pending operation
+stable; the application does not create a separate buffered stream queue.
 
-One absolute monotonic deadline covers connection establishment, TLS handshake,
-request transmission, response reads, parsing checks and local TLS shutdown.
-The socket is nonblocking. Every WANT_READ or WANT_WRITE polls the direction
-requested by OpenSSL, using the remaining time. Interrupted polls retry with
-the original deadline and spend call budget. A deadline or budget failure
-while a TLS operation is pending aborts that TLS session and closes the socket.
+The application creates one absolute monotonic deadline before loading its
+OpenSSL context, with or without client credentials. The same deadline then
+covers canonical request preparation, connection establishment, TLS handshake,
+request transmission, response reads, HTTP validation/decoding and local TLS
+shutdown. The socket is nonblocking. WANT_READ or WANT_WRITE polls the direction
+requested by OpenSSL using the remaining time. Interrupted polls retry with the
+original deadline and spend call budget. A terminal error aborts pending TLS
+operations and releases their owners.
 
-`--max-io` counts setup operations, socket calls, poll attempts, buffered write
-acceptance and TLS I/O attempts. Each TLS I/O attempt also spends `--max-tls`.
-Clock checks and OpenSSL's internal helper calls are not individual counted
-operations. Native TLS setup and cryptographic calls are synchronous;
-deadline checks surround them rather than preempting a call. Cleanup is
-unconditional even after a budget is exhausted. Parser work and plaintext
-byte limits are independent bounds, not a process-memory quota.
+The CLI maps its limits directly to the shared engine:
 
-With client credentials, the app creates that same absolute deadline before
-calling `new_with_credentials`. Credential loading is synchronous and precedes
-the prepared connector's first deadline check; it is not preempted and does
-not spend connector I/O counters. Its elapsed time still spends the existing
-deadline. The connector then charges configuration once and carries the same
-counters and deadline through connection and handshake. Path caps do not bound
-PEM file size, native parsing, allocations or cryptographic work.
+| Application bound | Library setting or check |
+| --- | --- |
+| Request, 16,384 bytes | `http_client::Options.request_bytes` |
+| `--max-response` | `http_client::Options.response_bytes`, including informational prefixes |
+| `--max-body` | `http_client::Options.wire.body_bytes` |
+| Eight informational responses / 65,536 bytes | `interim_count` / `interim_bytes` |
+| `--max-io` | `http_client::Options.io_calls` |
+| `--max-work` | `http_client::Options.work` |
+| `--max-tls` | `https_client::Options.tls_calls` |
+| `--max-output` | Decoded body-length check before the first stdout write |
+| `--max-stdout-calls` | Attempt allowance in the application's stdout loop |
+
+`--max-io` now counts TCP leaves, TLS attempts and poll participation in the
+shared engine. It includes the charged normal socket close. Each handshake,
+read, write or shutdown attempt also spends `--max-tls`, including WANT
+retries. It does not count buffered input acceptance, because this application
+no longer uses the `tls_stream` adapter. `--max-work` uses the shared HTTP
+encoder/cursor/canonical-validation/decoder accounting, including retained
+informational-head construction. These are intentional accounting changes;
+exact old stream call/work thresholds are not preserved. No budget resets
+between preparation, connection and completion.
+
+Context loading, native setup, clock observations and OpenSSL's internal helper
+calls are not separate charged I/O attempts. Native TLS setup and cryptographic
+calls are synchronous: deadline checks surround progress and cannot preempt a
+call. Context loading precedes the exchange's first deadline check; its elapsed
+time still spends the original deadline. Path caps do not bound PEM file size,
+native parsing, allocations or cryptographic work. Cleanup runs even after a
+budget is exhausted. Parser work and plaintext byte limits are independent
+bounds, not a process-memory quota.
+
+`--max-output` remains separate from `--max-body`. A complete decoded body may
+be allocated within the body limit before the smaller output limit rejects
+it. Such rejection destroys the Response and publishes no body prefix.
 
 The deadline applies to network processing. Stdout has its own byte and call
 limits; a blocking stdout descriptor can still block inside a write. Short
@@ -142,64 +177,86 @@ writes resume at the first unwritten byte. EINTR spends a call and retries;
 EAGAIN, host errors, zero progress and invalid counts fail output. Once stdout
 starts, an output failure can leave a body prefix.
 
-## The TLS stream adapter
+## Shared exchange and ownership
 
-[`ext::tls_stream`](../extended/ext/tls_stream.lani) is the reusable transport
-boundary. `connect_until` owns the nonblocking socket, OpenSSL context/session
-and one fixed write queue. It returns only after certificate verification.
-Use one active manual owner; all by-value copies remain inactive.
-
-The credential branch prepares an `openssl_tls::Context` and calls:
+The app creates an `openssl_tls::Context` with either `new` or
+`new_with_credentials`, then calls:
 
 ```text
-connect_with_context_until(endpoint, &Context, identity, limits, deadline)
-    -> Result<Stream, Failure>
+https_client::exchange_until(endpoint, &Context, identity, Request,
+                             http_options, tls_options, deadline)
+    -> Result<http_client::Response, https_client::Failure>
 ```
 
-This factory borrows the Context on success and every error; it never destroys
-the caller's owner. A successful Session retains its own native context
-reference. The app destroys its Context after either result, and a successful
-stream remains valid. The stream derives both its write-queue capacity and
-native read cap from `Context.io_bytes()`. Both client factories pass one
-charged State through the shared connection core without resetting counters or
-the absolute deadline.
+The Request contains `GET`, the supplied origin target, the constructed Host
+authority, no additional fields and an empty body. The canonical writer adds
+`Host`, `Connection: close` and the empty body's framing. Request backing stays
+live through the call. The HTTPS engine prepares once, copies the owned request
+and method, then drives the same Protocol used by cleartext HTTP. There is no
+second request encoder, framing cursor, response parser or body decoder in this
+application.
 
-The same Read/Write and deadline engine now supports
-[`accept_connected_until`](extended-https-server.md#socket-and-tls-ownership).
-It consumes an accepted socket on every result and retains the server's native
-context through its Session. Streams created by `connect_until` own a client
-Context in `Some`; prepared client streams and server streams store `None`.
-They do not own the caller's Context or ServerContext.
+The context remains the caller's owner on success and failure. The resumable
+driver acquires its own native context reference and identity backing before
+opening a socket; Session attachment retains the native context it needs. The
+app destroys its Context after the exchange returns. On success, TLS and socket
+owners have already been released, and exactly one Response owns its wire,
+decoded body, method and informational metadata. The app borrows `body()` for
+publication, then destroys that sole owner on either stdout result. It never
+destroys a borrowed Response descriptor copy.
 
-The adapter implements `core::io::Read` and `Write` with buffered acceptance.
-`write` first drains a previous accepted queue, then copies a bounded prefix of
-new input into its queue and returns the accepted count. It does not send that
-new queue yet. Modifying or freeing the original input after acceptance cannot
-change queued bytes. `flush` sends accepted bytes through OpenSSL's stable
-write/retry buffers. `read` and `shutdown` first flush any accepted queue.
-The sample explicitly flushes the GET before receiving the response.
+The synchronous facade drives the same readiness-based Exchange used by the
+[HTTPS batch adapter](extended-https-batch-testing.md). Its step operation does
+not poll internally; the facade waits explicitly when needed. Native failures
+retain their typed TLS diagnostic in the library's Failure, including confirmed
+progress and cleanup metadata; the CLI maps them to the exit classes below.
 
-`Stats.accepted_bytes` counts copied input once. `Stats.written_bytes` counts
-plaintext prefixes confirmed by successful native TLS writes. Retries do not
-charge acceptance again. A failed `write` accepts no new input, though draining
-an older accepted queue may have made progress. A failed `flush` can follow
-confirmed or unconfirmed wire progress; it does not promise delivery rollback.
-Every pending-operation failure is terminal, so the caller cannot retry new
-input on that TLS connection.
+The application establishes an explicit process SIGPIPE-ignore policy before
+OpenSSL uses socket BIOs.
 
-`check()` must succeed immediately before publishing an application result.
-If a native read succeeds and its following clock observation expires, the
-adapter preserves the delivered count, records a sticky failure and aborts.
-`check()` or the next operation exposes that failure; the sample checks after
-HTTP validation and decoding. `last_failure()` retains the TLS diagnostic,
-stage, confirmed counters and any socket cleanup error.
+## The TLS stream adapter
 
-`shutdown()` sends the local closure alert and stops at Sent or Complete.
-Afterward both reads and new write acceptance are closed; `check` and `close`
-remain available. `close()` is an explicit abortive release: it discards queued
-data, frees SSL, closes the sole socket owner, frees any owned client context and releases
-the queue. It never performs a hidden flush. The application establishes an
-explicit process SIGPIPE-ignore policy before using OpenSSL's socket BIO.
+The separate [`ext::tls_stream`](../extended/ext/tls_stream.lani) adapter remains
+available to consumers of `core::io::Read`/`Write` and to the existing HTTPS
+server profile. Its buffered acceptance and queue accounting are separate from
+this application's shared Protocol. The contracts below describe those stream
+consumers, including the historical application and focused consumer tests.
+
+`connect_until` owns a nonblocking socket, client Context, Session and fixed
+write queue. `connect_with_context_until(endpoint, &Context, identity, limits,
+deadline)` borrows the caller's Context on every result; the successful Session
+retains its own native reference, and the stream owns no caller Context.
+`accept_connected_until` consumes an accepted socket on every result and uses
+the same stream engine with a retained native server-context reference. Client
+factories return only after verifying the service certificate. Use one active
+manual stream owner; by-value descriptor copies do not acquire ownership.
+
+`write` first drains a previously accepted queue, then copies a bounded prefix
+of new input and returns the accepted count. It does not send that new queue
+yet. Input may be changed or released after acceptance. `flush` sends accepted
+bytes using OpenSSL's stable retry buffers; `read` and `shutdown` first flush
+the queue. Queue capacity and native read caps derive from `Context.io_bytes()`.
+Prepared and ordinary client factories share one deadline and charged State
+through connection and handshake, without resetting counters.
+
+`Stats.accepted_bytes` counts copied input once; `written_bytes` counts only
+plaintext prefixes confirmed by successful native writes. A failed write
+accepts no new input, though draining an older queue may have made progress.
+A failed flush does not promise delivery rollback. A terminal pending-operation
+failure aborts the session, and the owner cannot resume new input on it.
+
+Call `check()` before publishing a result obtained through the adapter. When a
+native read succeeds before a following clock observation fails, it preserves
+the delivered count and records a sticky failure. `check` or the next operation
+exposes that failure. `last_failure` retains the TLS diagnostic, stage,
+confirmed counters and any socket cleanup error.
+
+`shutdown` sends the local alert and stops at Sent or Complete, then closes
+reads and new write acceptance. `check` and `close` remain available. `close`
+releases SSL, the sole socket owner, any owned client Context and the queue,
+discarding queued data without a hidden flush. Stream consumers must establish
+their own process SIGPIPE policy. These operations and receipts remain a
+separate profile from the migrated `https_fetch` exchange.
 
 ## Errors and executable checks
 
@@ -228,6 +285,13 @@ are generated by the OpenSSL CLI into temporary storage. The tests cover:
 - Buffered acceptance, copied input, implicit drain before read, confirmed
   counters, pending-operation timeout/backpressure, and terminal shutdown.
 
+### Historical execution receipts
+
+These receipts predate the migration to `https_client::exchange_until`. New
+application compilation, verified peers, exact limits, output failures and
+mutual TLS regression acceptance are pending. The adapter-only cases remain a
+separate profile and cannot establish the migrated application.
+
 The original four groups passed on Linux x86_64 in 14.44 seconds: 18 verified HTTP
 matrix cases, 14 certificate/HTTP failure cases, 26 deadline/limit/output cases
 and four buffered-stream cases, totaling 62 cases. The linked ELF's generated
@@ -252,7 +316,7 @@ from the earlier 62-case receipts above. The
 [mutual TLS guide](extended-https-mutual-tls.md#focused-execution-gates) records
 the exact group scope; these are selected invocations, not a whole-suite run.
 
-On this source, the existing client buffered ownership/error group passed all
+Before this migration, the existing client buffered ownership/error group passed all
 four cases in 7.01 seconds
 (`target/stdlib-work/https-prepared-client-stream-regression.log`). The existing
 server socket/context/buffer group passed its nine cases in 6.73 seconds

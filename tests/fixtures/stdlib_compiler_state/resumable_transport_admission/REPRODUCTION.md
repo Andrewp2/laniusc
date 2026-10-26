@@ -151,7 +151,7 @@ timeout --kill-after=1s 2s /tmp/resumable-transport-typed
 ## Separate production-shape candidate
 
 `production_shape.lani` with `shape/adapters.lani` and `shape/runner.lani` is a
-separate, unexecuted candidate. It imports the **actual** public
+separately accepted executable control. It imports the **actual** public
 `ext::http_batch::Driver<E>`, `Factory<J,D,E>`, `Report<E>` and `Outcome<E>`
 definitions. No mirrored replacement interface or production module edit is
 used. It requires the additional `extended` source root.
@@ -191,11 +191,18 @@ For the nested specialization, the ledger must progress from 9 acquisitions
 and 5 releases after the run, to 6 releases after taking/destroying one error,
 to 9 after report destruction, and finally 11/11 after two conversion errors
 are created and released. The error payload bytes and nested Result/Option
-values are inspected while live. These checks demonstrate intended destruction
-dispatch if executed; they do not replace an independent mapping ledger.
+values are inspected while live. These executed assertions check destruction
+dispatch; they do not replace an independent mapping ledger.
 
-This extension is static-ready; compile/ELF/native acceptance is pending. Run
-it separately from the accepted first probe:
+The root's serialized compile returned 0 in
+`target/stdlib-work/resumable-transport-production-shape-first.log`. The result
+was confirmed as ELF64 little-endian EXEC for x86_64. Native execution returned
+0 with empty stdout/stderr in
+`target/stdlib-work/resumable-transport-production-shape-native.log`. This
+control covers its two concrete driver/error shapes and generic destruction;
+actual scheduler, network and TLS behavior have separate runtime gates.
+
+Reproduce it separately from the accepted first probe:
 
 ```sh
 timeout --kill-after=2s 100s env \

@@ -653,18 +653,25 @@
       "guides": [
         "docs/extended-http-batch.md",
         "docs/extended-http-batch-testing.md",
-        "docs/extended-fetch-many.md"
+        "docs/extended-fetch-many.md",
+        "docs/extended-https-batch.md"
       ],
-      "note": "Bounded concurrent cleartext HTTP uses one thread and a reusable std::poll PollSet over canonical Prepared/Exchange owners. All requests are prepared before sockets; input-order outcomes retain successful responses across global failure and transfer individually through Report.take. One common deadline, concurrency, pending/completed logical byte caps, scheduler operations and reserved aggregate protocol work are explicit. Logical retention caps exclude allocator capacities, temporary candidates and RSS. All seven batch groups and all five fetch-many application groups pass across separate native Linux x86-64 receipts, including causal overlap, partial outcomes, limits, reached-allocation cleanup and queued admission after consecutive begin failures without an intervening blocking poll. The 64-job application scale control peaks at four sockets; its allocation/requested-byte measurements are finite trace evidence, not RSS or throughput guarantees. TLS resumability and threads remain separate work."
+      "note": "One generic one-thread/PollSet engine owns canonical HTTP preparation, admission, refill, accounting and partial input-order results. run_with_until accepts typed Factory/Driver/error parameters; run_until supplies the plain adapter. Report/Failure.destroy require Destroy<E>, and take transfers response/error cleanup authority. Logical pending/completed byte caps exclude allocator capacities, temporary candidates, native transport memory and RSS; conservative reservations bound charged HTTP work rather than CPU instructions. The concrete scheduler at 480432e8 passed seven library groups and fetch-many passed five application groups through separate native Linux x86_64 receipts. Those historical results do not establish the current generic/error revision, Protocol refactor or HTTPS adapter; current native receipts have separate scopes. Worker threads remain separate work. A production-shaped public-trait/Report control compiles and executes with two error types and nested owners, but does not execute the scheduler. before_wait Ok(true) must preserve the observed Interest and valid descriptor identity through registration. Borrowed error payload backing must outlive final use/destruction of returned reports and taken outcomes, including after run return. All six connected HTTPS groups pass 108 cases across three native receipts, including 42 reached source-allocation failures and six direct-step/abort invocations. Revised plain/custom-driver regression and migrated HTTPS application gates remain pending.",
+      "declarations": {
+        "run_with_until": "Shared scheduler entry over typed jobs, Factory and Driver; begin consumes canonical Prepared on every result. Job/factory backing stays borrowed through return; borrowed error payloads must additionally survive final Report/taken-outcome use and destruction. before_wait Ok(true) preserves observed interest/descriptor identity until registration. The production-shaped generic control passes; all six connected HTTPS groups pass; revised plain/custom-driver regressions remain pending.",
+        "run_until": "Plain HTTP adapter over the same generic engine, returning Report<http_client::Failure> and Failure<http_client::Failure>; historical concrete-scheduler receipts do not establish the revised generic boundary."
+      }
     },
     "ext::http_client": {
       "guides": [
         "docs/extended-http-client.md",
         "docs/extended-http-exchange-testing.md",
         "docs/extended-http-batch.md",
-        "docs/extended-fetch-many.md"
+        "docs/extended-fetch-many.md",
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch.md"
       ],
-      "note": "Prepared copies and validates all request backing without opening a socket; begin transfers that owner into a resumable Exchange. Caller-driven steps never poll and perform at most one active network leaf, with 1024-byte send/receive quanta, explicit readiness and one absolute deadline. Manual owners transfer one Response or release once on failure/abort. exchange_until drives this same engine. All five focused direct Exchange groups (83 cases, including both 12/14-position reached-allocation sweeps) and all six synchronous regression groups (188 cases) pass across separate native Linux x86-64 receipts after refactoring. This cleartext numeric-endpoint profile does not establish resumable TLS or worker threads.",
+      "note": "Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol owner; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed byte progress, limits and Response transfer. Explicit Trailing selects Discard or Reject for already-received surplus bytes. Plain steps never poll and perform at most one active network leaf with 1024-byte I/O offers; exchange_until drives that owner. At 480432e8, five direct groups (83 cases) and six synchronous groups (188 cases) passed separately on native Linux x86_64. Those historical receipts do not establish the current Protocol extraction, trailing API or refactored plain driver; current native acceptance is pending. TLS stays in its separate adapter and OpenSSL.",
       "declarations": {
         "prepare_until": "Canonical request preflight and owned staging without sockets; successful Prepared owners must be consumed with begin or destroyed.",
         "begin_until": "Preparation followed by consuming Prepared.begin; socket opening only, with connect and HTTP progress performed by Exchange.step.",
@@ -675,6 +682,31 @@
       "guides": [
         "docs/extended-http-server.md"
       ]
+    },
+    "ext::https_batch": {
+      "guides": [
+        "docs/extended-https-batch.md",
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch-testing.md",
+        "docs/extended-http-batch.md"
+      ],
+      "note": "Thin verified HTTPS factory/driver adapter over the single generic HTTP batch engine. Jobs borrow a numeric endpoint, certificate identity and HTTP Request; job/context backing remains unchanged through synchronous return. All HTTP requests prepare before sockets; per-job TLS option/identity admission and native verification occur later. Typed Report/Failure preserve HTTPS diagnostics, input order, successful response ownership and partial outcomes. OpenSSL performs all TLS and cryptography, callers establish SIGPIPE policy, and TLS 1.2/1.3 retry/closure scope follows https_client. The adapter compiles on Linux x86_64/glibc/OpenSSL 3; earlier HTTP/TLS receipts do not accept it. All six connected HTTPS groups pass 108 cases across three native receipts, including 42 reached source-allocation failures and six direct-step/abort invocations. Revised plain/custom-driver regression and migrated HTTPS application gates remain pending.",
+      "declarations": {
+        "run_until": "Runs verified HTTPS jobs through http_batch.run_with_until with https_client::Failure as the typed outcome/cleanup error; one shared Context, absolute deadline and explicit HTTP/TLS/scheduler budgets. All six focused connected groups pass 108 cases through separate native Linux x86_64 receipts; the migrated HTTPS program remains unverified."
+      }
+    },
+    "ext::https_client": {
+      "guides": [
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch.md",
+        "docs/extended-https-batch-testing.md",
+        "docs/extended-openssl-tls.md"
+      ],
+      "note": "Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol owner, with no second HTTP parser. Begin consumes Prepared on every result, retains its own native Context reference and copies identity backing before opening one nonblocking socket. Steps never poll; native TLS attempts use stable staged writes, independent readiness needs and explicit TLS-call/I/O/deadline budgets. Early-final closure distinguishes TLS 1.3 notification from TLS 1.2 deferral; authenticated EOF is required for close-delimited bodies. Typed metadata retains HTTP/TLS/cleanup diagnostics. Native Linux x86_64/glibc/OpenSSL 3 current acceptance has separate receipts from historical TLS/HTTPS implementations. All six connected HTTPS groups pass 108 cases across three native receipts, including 42 reached source-allocation failures and six direct-step/abort invocations. Revised plain/custom-driver regression and migrated HTTPS application gates remain pending.",
+      "declarations": {
+        "begin_with_context_until": "Consumes and disarms canonical Prepared, preserving its deadline and charged HTTP state. Retains an independent native Context reference and identity copy; successful begin owns the transport until terminal cleanup.",
+        "exchange_until": "Synchronous facade over the same resumable verified Exchange and canonical HTTP Protocol; caller trust, identity, SIGPIPE policy and absolute deadline remain explicit."
+      }
     },
     "ext::image": {
       "guides": [
@@ -727,9 +759,11 @@
         "docs/extended-openssl-tls-server.md",
         "docs/extended-openssl-mutual-tls.md",
         "docs/extended-https-mutual-tls.md",
-        "docs/library-native-c.md"
+        "docs/library-native-c.md",
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch-testing.md"
       ],
-      "note": "Client, server and mutual TLS use OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Client credentials preserve mandatory server chain and DNS/IP verification. Server policy explicitly selects Unauthenticated or Required trust; required sessions check native client purpose, verification success and certificate presence, with session caching and tickets disabled. Certificate admission does not assign an application principal or authorize routes. Both roles share noninteractive credential loading and native passphrase cleansing. Manual sessions borrow connected nonblocking sockets; callers supply deadlines and SIGPIPE policy. Linked guides define later-alert handling, native resource bounds and separate execution receipts."
+      "note": "Client, server and mutual TLS delegate to OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Client credentials preserve mandatory server chain and DNS/IP verification; required server policy checks fresh client-chain verification and certificate presence without assigning application authorization. Manual sessions borrow connected nonblocking sockets and require caller deadlines and SIGPIPE policy. The current revision adds independent read/write readiness needs, stable staged retries, permitted duplex interleaving, read quiescence, local shutdown, negotiated-version diagnostics and Context retention. New native execution gates are pending; historical linked TLS/mutual-TLS receipts do not establish these revised retry/retention contracts. Native cryptographic CPU/storage costs remain outside logical HTTP quotas. All nine new duplex groups pass 36 finite causal/local-notification/WANT/backpressure/buffering/owner/shutdown/failure/source-allocation cases; legacy regressions remain pending."
     },
     "ext::parse": {
       "guides": [
@@ -840,7 +874,7 @@
         "docs/extended-openssl-mutual-tls.md",
         "docs/extended-https-mutual-tls.md"
       ],
-      "note": "Shared buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_context_until borrows a prepared client Context on every outcome, derives queue/read caps from that Context and retains a native reference through a successful Session. The ordinary connector owns its optional client Context; accepted server construction consumes its socket on every result and retains a native context reference. One absolute deadline and explicit byte/call budgets cover connection and handshake. Linked guides define buffered acceptance, stable retries, manual cleanup, mutual TLS policy and separate application/prepared-context execution receipts; TLS and sensitive operations remain in OpenSSL."
+      "note": "Shared buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_context_until borrows a prepared client Context on every outcome, derives queue/read caps from that Context and retains a native reference through a successful Session. The ordinary connector owns its optional client Context; accepted server construction consumes its socket on every result and retains a native context reference. One absolute deadline and explicit byte/call budgets cover connection and handshake. Linked guides define buffered acceptance, stable retries, manual cleanup, mutual TLS policy and separate application/prepared-context execution receipts; TLS and sensitive operations remain in OpenSSL. Those historical stream/application receipts predate the current OpenSSL independent retry/context-retention revision; its new native regression gates remain pending."
     },
     "ext::toml": {
       "guides": [

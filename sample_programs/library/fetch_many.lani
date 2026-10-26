@@ -182,6 +182,12 @@ fn archive(plan: &Plan, payloads: core::slice::View<Payload>, options: Options, 
 fn native_errno(error: core::io::Error) -> i32 { return match(error) { core::io::Error::Host(value) -> value, _ -> 0 }; }
 fn clock_errno(error: std::clock::Error) -> i32 { return match(error) { std::clock::Error::Host(value) -> value, _ -> 0 }; }
 fn poll_errno(error: std::poll::Error) -> i32 { return match(error) { std::poll::Error::Io(value) -> native_errno(value), std::poll::Error::Clock(value) -> clock_errno(value), _ -> 0 }; }
+// Batch aborts retain the complete client failure. Preserve the cleanup
+// diagnostic: a secondary close error takes precedence over its I/O cause.
+fn abort_cleanup(error: ext::http_client::Failure) -> core::option::Option<core::io::Error> {
+    if (error.cleanup.is_some()) { return error.cleanup; }
+    return match(error.cause) { ext::http_client::Cause::Io(value) -> core::option::Some(value), _ -> core::option::None() };
+}
 fn client_error(error: ext::http_client::Failure, preparation: bool, detail: &Detail) -> i32 {
     detail.cleanup = match(error.cleanup) { core::option::Some(value) -> native_errno(value), _ -> 0 };
     detail.errno = match(error.cause) { ext::http_client::Cause::Io(value) -> native_errno(value), ext::http_client::Cause::Clock(value) -> clock_errno(value), _ -> 0 };
@@ -193,11 +199,14 @@ fn client_error(error: ext::http_client::Failure, preparation: bool, detail: &De
     }
     return problem(detail,3,4,10);
 }
-fn batch_error(error: ext::http_batch::Cause, report: &ext::http_batch::Report, detail: &Detail) -> i32 {
+fn batch_error(error: ext::http_batch::Cause, report: &ext::http_batch::Report<ext::http_client::Failure>, detail: &Detail) -> i32 {
     detail.io = report.stats.io_calls; detail.work = report.stats.work;
     let ordinal: i32 = 0;
     while (ordinal < report.len()) {
-        let secondary: core::option::Option<core::io::Error> = match(report.get(ordinal).unwrap()) { ext::http_batch::Outcome::Aborted(value) -> value.cleanup, ext::http_batch::Outcome::Failed(value) -> value.cleanup, _ -> core::option::None() };
+        let item: ext::http_batch::Outcome<ext::http_client::Failure> = report.get(ordinal).unwrap();
+        let aborted: core::option::Option<ext::http_batch::Abort<ext::http_client::Failure>> = match(item) { ext::http_batch::Outcome::Aborted(value) -> core::option::Some(value), _ -> core::option::None() };
+        let secondary: core::option::Option<core::io::Error> = match(item) { ext::http_batch::Outcome::Failed(value) -> value.cleanup, _ -> core::option::None() };
+        if (aborted.is_some() && aborted.unwrap().cleanup.is_some()) { secondary = abort_cleanup(aborted.unwrap().cleanup.unwrap()); }
         if (secondary.is_some()) { detail.cleanup = native_errno(secondary.unwrap()); break; } ordinal += 1;
     }
     let preparation: bool = match(error) { ext::http_batch::Cause::Preparation -> true, _ -> false };
@@ -219,14 +228,14 @@ fn batch_error(error: ext::http_batch::Cause, report: &ext::http_batch::Report, 
     };
     let code: i32 = 3; if (cause == 2) { code = 4; } return problem(detail,code,4,cause);
 }
-fn payloads(report: &ext::http_batch::Report, detail: &Detail) -> core::result::Result<alloc::vec::Vec<Payload>,i32> {
+fn payloads(report: &ext::http_batch::Report<ext::http_client::Failure>, detail: &Detail) -> core::result::Result<alloc::vec::Vec<Payload>,i32> {
     detail.io = report.stats.io_calls; detail.work = report.stats.work;
     let output: alloc::vec::Vec<Payload> = alloc::vec::new();
     if (output.try_reserve(report.len()).is_err()) { return core::result::Err(problem(detail,4,4,2)); }
     let index: i32 = 0;
     while (index < report.len()) {
         detail.row = index;
-        let item: ext::http_batch::Outcome = report.get(index).unwrap();
+        let item: ext::http_batch::Outcome<ext::http_client::Failure> = report.get(index).unwrap();
         let complete: core::option::Option<ext::http_client::Response> = match(item) { ext::http_batch::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
         if (complete.is_none()) {
             let failed: core::option::Option<ext::http_client::Failure> = match(item) { ext::http_batch::Outcome::Failed(value) -> core::option::Some(value), _ -> core::option::None() };
@@ -269,9 +278,9 @@ fn download(plan: &Plan, options: Options, detail: &Detail) -> core::result::Res
     // Batch canonically prepares every request before opening its first socket.
     // Request/table backing remains live through run_until, then only completed
     // Response owners back Payload views during ZIP encoding.
-    let completed = ext::http_batch::run_until(pending.as_view(),client,limits,deadline); pending.destroy();
+    let completed: core::result::Result<ext::http_batch::Report<ext::http_client::Failure>,ext::http_batch::Failure<ext::http_client::Failure>> = ext::http_batch::run_until(pending.as_view(),client,limits,deadline); pending.destroy();
     if (completed.is_err()) { let error = completed.unwrap_err(); let code: i32 = batch_error(error.cause,error.report.borrow(),detail); error.destroy(); return core::result::Err(code); }
-    let report = completed.unwrap(); let projected = payloads(report.borrow(),detail);
+    let report: ext::http_batch::Report<ext::http_client::Failure> = completed.unwrap(); let projected = payloads(report.borrow(),detail);
     if (projected.is_err()) { let code: i32 = projected.unwrap_err(); report.destroy(); return core::result::Err(code); } let selected = projected.unwrap();
     let before = observe(deadline,start,detail);
     if (before.is_err()) { selected.destroy(); report.destroy(); return core::result::Err(before.unwrap_err()); }
