@@ -1,0 +1,107 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import std::args;
+import std::clock;
+import std::linux;
+import std::signal;
+import std::stream;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> { return core::slice::view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn number(value: core::slice::View<u8>) -> u64 { let n: u64 = 0; let i: i32 = 0; while (i < value.len()) { let b: u8 = value.get(i).unwrap(); assert(b >= 48 && b <= 57); n = n*10+(b-48) as u64; i += 1; } return n; }
+fn io_code(error: core::io::Error) -> i32 { return match(error) { core::io::Error::Host(n) -> n, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> -1 }; }
+fn cause(value: ext::http_client::Cause) -> i32 { return match(value) {
+    ext::http_client::Cause::InvalidOptions -> 1, ext::http_client::Cause::AllocationFailed -> 2,
+    ext::http_client::Cause::Timeout -> 3, ext::http_client::Cause::Io(v) -> 4,
+    ext::http_client::Cause::Http(v) -> 5, ext::http_client::Cause::RequestLimit -> 6,
+    ext::http_client::Cause::ResponseLimit -> 7, ext::http_client::Cause::BodyLimit -> 8,
+    ext::http_client::Cause::InterimLimit -> 9, ext::http_client::Cause::IoLimit -> 10,
+    ext::http_client::Cause::WorkLimit -> 11, ext::http_client::Cause::UnsupportedUpgrade -> 12,
+    ext::http_client::Cause::Inactive -> 13, ext::http_client::Cause::Clock(v) -> 14, _ -> 15 };
+}
+fn stage(value: ext::http_client::Stage) -> i32 { return match(value) { ext::http_client::Stage::Prepare -> 0, ext::http_client::Stage::Open -> 1, ext::http_client::Stage::Connect -> 2, ext::http_client::Stage::Send -> 3, ext::http_client::Stage::Receive -> 4, ext::http_client::Stage::Shutdown -> 5, ext::http_client::Stage::Validate -> 6, ext::http_client::Stage::Decode -> 7, ext::http_client::Stage::Close -> 8, ext::http_client::Stage::Publish -> 9 }; }
+fn state(value: ext::http_client::Status) -> i32 { return match(value) { ext::http_client::Status::Active -> 0, ext::http_client::Status::Complete -> 1, ext::http_client::Status::Failed -> 2, ext::http_client::Status::Aborted -> 3 }; }
+fn ready(bits: i32) -> ext::http_client::Readiness { return ext::http_client::Readiness { readable:(bits&1)!=0,writable:(bits&2)!=0,hangup:(bits&4)!=0,error:(bits&8)!=0 }; }
+fn write_words(words: [i32]) { let sink = std::stream::stdout(); let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),96); core::io::write_all(sink.borrow(),raw,0,96).unwrap(); }
+fn stats(words: [i32], tag: i32, value: ext::http_client::Stats) {
+    let i: i32 = 0; while (i < 24) { words[i] = 0; i += 1; }
+    words[0] = 1213487153; words[1] = tag; words[3] = -1;
+    words[8] = value.request_bytes; words[9] = value.request_sent; words[10] = value.response_received as i32; words[11] = value.interim_count; words[12] = value.discarded_bytes; words[13] = value.io_calls as i32; words[14] = value.work as i32;
+    if (value.upload_stopped) { words[15] = 1; } if (value.write_shutdown) { words[16] = 1; }
+}
+fn fill(words: [i32], tag: i32, owner: &ext::http_client::Exchange) {
+    stats(words,tag,owner.stats()); words[2] = state(owner.status()); if (owner.raw_handle().is_some()) { words[3] = owner.raw_handle().unwrap(); }
+    let interest: ext::http_client::Interest = owner.interest(); if (interest.readable) { words[4] = words[4]|1; } if (interest.writable) { words[4] = words[4]|2; } if (interest.immediate) { words[4] = words[4]|4; }
+}
+fn error(words: [i32], value: ext::http_client::Failure) { words[5] = cause(value.cause); words[6] = stage(value.stage); words[17] = value.message_offset; if (value.cleanup.is_some()) { words[7] = io_code(value.cleanup.unwrap()); } words[23] = match(value.cause) { ext::http_client::Cause::Io(v) -> io_code(v), ext::http_client::Cause::Http(v) -> match(v) { ext::http::Error::AllocationFailed -> 2, ext::http::Error::Limit(n) -> 3, _ -> 0 }, _ -> 0 }; words[18] = match(value.cause) { ext::http_client::Cause::Http(v) -> match(v) { ext::http::Error::Limit(n) -> n, _ -> 0 }, _ -> 0 }; }
+fn failure(words: [i32], owner: &ext::http_client::Exchange, value: ext::http_client::Failure) {
+    assert(state(owner.status()) == 2 && owner.raw_handle().is_none() && owner.last_failure().is_some());
+    let saved: ext::http_client::Failure = owner.last_failure().unwrap(); assert(cause(saved.cause) == cause(value.cause) && stage(saved.stage) == stage(value.stage) && saved.message_offset == value.message_offset && saved.stats.io_calls == value.stats.io_calls && saved.cleanup.is_some() == value.cleanup.is_some()); if (saved.cleanup.is_some()) { assert(io_code(saved.cleanup.unwrap()) == io_code(value.cleanup.unwrap())); }
+    let again: core::result::Result<core::option::Option<ext::http_client::Response>,ext::http_client::Failure> = owner.step(ready(15));
+    assert(again.is_err() && cause(again.unwrap_err().cause) == cause(value.cause) && stage(again.unwrap_err().stage) == stage(value.stage) && again.unwrap_err().message_offset == value.message_offset && again.unwrap_err().stats.request_sent == value.stats.request_sent && again.unwrap_err().stats.response_received == value.stats.response_received && again.unwrap_err().cleanup.is_some() == value.cleanup.is_some()); if (value.cleanup.is_some()) { assert(io_code(again.unwrap_err().cleanup.unwrap()) == io_code(value.cleanup.unwrap())); }
+    let waited: core::result::Result<bool,ext::http_client::Failure> = owner.before_wait(); assert(waited.is_err() && cause(waited.unwrap_err().cause) == cause(value.cause) && waited.unwrap_err().stats.io_calls == value.stats.io_calls);
+    assert(!owner.abort().unwrap() && !owner.abort().unwrap()); fill(words,4,owner); error(words,value); write_words(words);
+}
+fn complete(words: [i32], owner: &ext::http_client::Exchange, response: ext::http_client::Response) {
+    assert(state(owner.status()) == 1 && owner.raw_handle().is_none() && owner.last_failure().is_none());
+    assert(!owner.abort().unwrap() && !owner.abort().unwrap());
+    let again: core::result::Result<core::option::Option<ext::http_client::Response>,ext::http_client::Failure> = owner.step(ready(15)); assert(again.is_err() && cause(again.unwrap_err().cause) == 13);
+    let waited: core::result::Result<bool,ext::http_client::Failure> = owner.before_wait(); assert(waited.is_err() && cause(waited.unwrap_err().cause) == 13);
+    // All caller request backing is already gone and the Exchange is disarmed.
+    let message: ext::http::Message = response.message(); assert(message.head.method.len() == 4 && message.head.method.get(0).unwrap() == 80 && message.head.method.get(3).unwrap() == 84);
+    let infos: core::slice::View<ext::http::Head> = response.informational(); let i: i32 = 0; while (i < infos.len()) { assert(infos.get(i).unwrap().method.len() == 4 && infos.get(i).unwrap().method.get(0).unwrap() == 80); i += 1; }
+    assert(response.as_view().len() == message.consumed && response.body().len() == message.decoded_length);
+    fill(words,3,owner); words[17] = response.as_view().len(); words[18] = response.body().len(); words[19] = message.head.status; words[20] = infos.len(); if (infos.len() > 0) { words[21] = infos.get(0).unwrap().status; } if (infos.len() > 1) { words[22] = infos.get(1).unwrap().status; } words[23] = message.trailer_count; write_words(words);
+    let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),response.as_view().values,response.as_view().start,response.as_view().len()).unwrap(); core::io::write_all(sink.borrow(),response.body().values,response.body().start,response.body().len()).unwrap(); response.destroy();
+}
+fn begin(mode: i32, endpoint: core::net::SocketAddr, request: ext::http_client::Request, options: ext::http_client::Options, deadline: core::time::Deadline) -> core::result::Result<ext::http_client::Exchange,ext::http_client::Failure> {
+    if (mode == 3) { let prepared: core::result::Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(request,options,deadline); if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); } let actual = prepared.unwrap(); let made = actual.begin(endpoint); assert(!actual.is_active() && !actual.destroy() && !actual.destroy()); assert(cause(actual.begin(endpoint).unwrap_err().cause) == 13); return made; }
+    return ext::http_client::begin_until(endpoint,request,options,deadline);
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let args: std::args::Arguments = std::args::snapshot(1,8,1024).unwrap(); let endpoint = core::net::parse_socket(args.get(0).unwrap()).unwrap(); let mode: i32 = number(args.get(1).unwrap()) as i32;
+    let options = ext::http_client::default_options(); options.io_calls = number(args.get(3).unwrap()); options.work = number(args.get(4).unwrap()); options.response_bytes = number(args.get(5).unwrap()) as i32; options.wire.body_bytes = number(args.get(6).unwrap()) as i32; options.interim_count = number(args.get(7).unwrap()) as i32;
+    let now = std::clock::monotonic_now().unwrap(); let deadline = core::time::deadline_after(now,core::time::from_millis(number(args.get(2).unwrap()))).unwrap();
+    let method = alloc::vec::from_view(lit("POST",4)).unwrap(); let target = alloc::vec::from_view(lit("/exchange?q=x",13)).unwrap(); let authority = alloc::vec::from_view(lit("virtual.example:8080",20)).unwrap(); let name = alloc::vec::from_view(lit("X-Owned",7)).unwrap(); let value = alloc::vec::from_view(lit("caller-data",11)).unwrap();
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new(); fields.try_push(ext::http::Field { raw:lit("",0),name:name.as_view(),value:value.as_view(),offset:0 }).unwrap();
+    let raw: [u8;8] = [9,9,0,255,13,10,9,9]; let body = alloc::vec::from_view(core::slice::view_range(raw,2,4).unwrap()).unwrap(); if (mode == 1) { body.try_resize(4194304,88 as u8).unwrap(); }
+    let request = ext::http_client::Request { method:method.as_view(),target:target.as_view(),authority:authority.as_view(),headers:fields.as_view(),body:body.as_view() }; let words: [i32;24] = [0;24]; words[0] = 1213487153; words[1] = 100; write_words(words);
+    if (mode == 2) {
+        let prepared: core::result::Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(request,options,deadline);
+        method.destroy(); target.destroy(); authority.destroy(); name.destroy(); value.destroy(); fields.destroy(); body.destroy(); args.destroy();
+        if (prepared.is_err()) { stats(words,11,prepared.unwrap_err().stats); error(words,prepared.unwrap_err()); write_words(words); return 0; }
+        let actual = prepared.unwrap(); assert(actual.is_active()); let saved = actual.stats(); assert(actual.destroy() && !actual.destroy() && !actual.is_active()); assert(cause(actual.begin(endpoint).unwrap_err().cause) == 13); stats(words,6,saved); write_words(words); return 0;
+    }
+    let made: core::result::Result<ext::http_client::Exchange,ext::http_client::Failure> = begin(mode,endpoint,request,options,deadline);
+    method.destroy(); target.destroy(); authority.destroy(); name.destroy(); value.destroy(); fields.destroy(); body.destroy(); args.destroy();
+    if (made.is_err()) { stats(words,11,made.unwrap_err().stats); error(words,made.unwrap_err()); write_words(words); return 0; }
+    let owner = made.unwrap(); fill(words,0,owner.borrow()); write_words(words); let input = std::stream::stdin(); let command: [u8;1] = [0;1];
+    while (true) {
+        core::io::read_exact(input.borrow(),command,0,1).unwrap(); let action: i32 = command[0] as i32;
+        if (action == 18) { fill(words,5,owner.borrow()); write_words(words); let stopped: core::result::Result<bool,ext::http_client::Failure> = owner.abort(); if (stopped.is_ok()) { assert(stopped.unwrap()); } else { assert(owner.last_failure().is_some() && cause(owner.last_failure().unwrap().cause) == cause(stopped.unwrap_err().cause)); } assert(!owner.abort().unwrap() && state(owner.status()) == 3 && owner.raw_handle().is_none()); assert(cause(owner.step(ready(15)).unwrap_err().cause) == 13); fill(words,6,owner.borrow()); if (stopped.is_err()) { error(words,stopped.unwrap_err()); } write_words(words); return 0; }
+        if (action == 17) {
+            fill(words,7,owner.borrow()); write_words(words); let paid: core::result::Result<bool,ext::http_client::Failure> = owner.before_wait();
+            if (paid.is_err()) { failure(words,owner.borrow(),paid.unwrap_err()); return 0; }
+            fill(words,8,owner.borrow()); write_words(words); if (!paid.unwrap()) { fill(words,20,owner.borrow()); words[23] = -1; write_words(words); continue; } let interest = owner.interest(); let events: i32 = 0; if (interest.readable) { events = events|1; } if (interest.writable) { events = events|4; }
+            let packed: [i32;2] = [owner.raw_handle().unwrap(),events]; let args: [std::linux::Argument;3] = [std::linux::Argument::Address(core::mem::i32_array_data_ptr(packed)),std::linux::Argument::Word(1),std::linux::Argument::Word(0)]; let polled = std::linux::call(7,core::slice::view(args,3).unwrap());
+            let flags: u32 = (packed[1] as u32)>>16; let mask: i32 = 0; if ((flags&1)!=0) { mask = mask|1; } if ((flags&4)!=0) { mask = mask|2; } if ((flags&16)!=0) { mask = mask|4; } if ((flags&8)!=0) { mask = mask|8; }
+            fill(words,20,owner.borrow()); words[23] = mask; if (polled.is_err()) { words[23] = 0; } write_words(words);
+        } else {
+            assert(action >= 0 && action <= 15); fill(words,1,owner.borrow()); write_words(words);
+            let result: core::result::Result<core::option::Option<ext::http_client::Response>,ext::http_client::Failure> = owner.step(ready(action));
+            if (result.is_err()) { failure(words,owner.borrow(),result.unwrap_err()); return 0; }
+            if (result.unwrap().is_some()) { complete(words,owner.borrow(),result.unwrap().unwrap()); return 0; }
+            fill(words,2,owner.borrow()); write_words(words);
+        }
+    }
+    return 0;
+}

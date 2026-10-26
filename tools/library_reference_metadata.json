@@ -649,10 +649,27 @@
         "docs/extended-http-cursor.md"
       ]
     },
+    "ext::http_batch": {
+      "guides": [
+        "docs/extended-http-batch.md",
+        "docs/extended-http-batch-testing.md",
+        "docs/extended-fetch-many.md"
+      ],
+      "note": "Bounded concurrent cleartext HTTP uses one thread and a reusable std::poll PollSet over canonical Prepared/Exchange owners. All requests are prepared before sockets; input-order outcomes retain successful responses across global failure and transfer individually through Report.take. One common deadline, concurrency, pending/completed logical byte caps, scheduler operations and reserved aggregate protocol work are explicit. Logical retention caps exclude allocator capacities, temporary candidates and RSS. All seven batch groups and all five fetch-many application groups pass across separate native Linux x86-64 receipts, including causal overlap, partial outcomes, limits, reached-allocation cleanup and queued admission after consecutive begin failures without an intervening blocking poll. The 64-job application scale control peaks at four sockets; its allocation/requested-byte measurements are finite trace evidence, not RSS or throughput guarantees. TLS resumability and threads remain separate work."
+    },
     "ext::http_client": {
       "guides": [
-        "docs/extended-http-client.md"
-      ]
+        "docs/extended-http-client.md",
+        "docs/extended-http-exchange-testing.md",
+        "docs/extended-http-batch.md",
+        "docs/extended-fetch-many.md"
+      ],
+      "note": "Prepared copies and validates all request backing without opening a socket; begin transfers that owner into a resumable Exchange. Caller-driven steps never poll and perform at most one active network leaf, with 1024-byte send/receive quanta, explicit readiness and one absolute deadline. Manual owners transfer one Response or release once on failure/abort. exchange_until drives this same engine. All five focused direct Exchange groups (83 cases, including both 12/14-position reached-allocation sweeps) and all six synchronous regression groups (188 cases) pass across separate native Linux x86-64 receipts after refactoring. This cleartext numeric-endpoint profile does not establish resumable TLS or worker threads.",
+      "declarations": {
+        "prepare_until": "Canonical request preflight and owned staging without sockets; successful Prepared owners must be consumed with begin or destroyed.",
+        "begin_until": "Preparation followed by consuming Prepared.begin; socket opening only, with connect and HTTP progress performed by Exchange.step.",
+        "exchange_until": "Synchronous driver over the shared Prepared/Exchange engine, charging poll participation against the same cumulative deadline and quotas."
+      }
     },
     "ext::http_server": {
       "guides": [
@@ -935,8 +952,12 @@
     },
     "ext::zip": {
       "guides": [
-        "docs/extended-zip.md"
-      ]
+        "docs/extended-zip.md",
+        "docs/extended-fetch-many.md"
+      ],
+      "declarations": {
+        "validate_name": "Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper."
+      }
     },
     "std::args": {
       "guides": [

@@ -1,0 +1,295 @@
+// Bounded single-thread HTTP scheduling over the canonical resumable client.
+module ext::http_batch;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_client;
+import std::clock;
+import std::poll;
+
+pub struct Job { endpoint: core::net::SocketAddr, request: ext::http_client::Request }
+pub struct Limits { max_jobs: i32, concurrency: i32, max_pending_bytes: u64, max_wire_bytes: u64, max_body_bytes: u64, operations: u64, work: u64 }
+pub struct Abort { stats: ext::http_client::Stats, cleanup: core::option::Option<core::io::Error> }
+pub enum Outcome { NotStarted, Complete(ext::http_client::Response), Failed(ext::http_client::Failure), Aborted(Abort), Discarded(ext::http_client::Stats), Taken }
+pub struct Stats { jobs: i32, started: i32, complete: i32, failed: i32, aborted: i32, discarded: i32, peak_active: i32, operations: u64, polls: u64, io_calls: u64, work: u64, pending_bytes: u64, peak_pending_bytes: u64, wire_bytes: u64, body_bytes: u64 }
+// One active owner; get borrows descriptors, take transfers and disarms them.
+pub struct Report { outcomes: alloc::vec::Vec<Outcome>, stats: Stats }
+pub enum Cause { Bounds, InvalidLimits, AllocationFailed, Timeout, Clock(std::clock::Error), Poll(std::poll::Error), OperationLimit, WorkLimit, WireLimit, BodyLimit, PendingLimit, Preparation, InvalidEngine }
+pub struct Failure { cause: Cause, report: Report }
+struct Pending { owner: ext::http_client::Prepared, bytes: u64 }
+struct Slot { ordinal: i32, owner: core::option::Option<ext::http_client::Exchange>, credit: u64, reported_work: u64, reported_io: u64, ready: ext::http_client::Readiness }
+struct Run { report: Report, pending: alloc::vec::Vec<core::option::Option<Pending>>, slots: alloc::vec::Vec<Slot>, requests: alloc::vec::Vec<std::poll::Request>, poll: std::poll::PollSet, limits: Limits, deadline: core::time::Deadline, last: core::option::Option<core::time::Instant>, next: i32, active: i32, reserved_work: u64, turn: i32 }
+impl Run { fn borrow(&self) -> &Run { return self; } }
+
+pub const MAX_JOBS: i32 = 4096;
+pub const MAX_CONCURRENCY: i32 = 64;
+pub fn default_limits() -> Limits { return Limits { max_jobs: 64, concurrency: 4, max_pending_bytes: 67108864, max_wire_bytes: 67108864, max_body_bytes: 67108864, operations: 1048576, work: 4294967296 }; }
+fn statistics(jobs: i32) -> Stats { return Stats { jobs: jobs, started: 0, complete: 0, failed: 0, aborted: 0, discarded: 0, peak_active: 0, operations: 0, polls: 0, io_calls: 0, work: 0, pending_bytes: 0, peak_pending_bytes: 0, wire_bytes: 0, body_bytes: 0 }; }
+fn empty_report(jobs: i32) -> Report { return Report { outcomes: alloc::vec::new<Outcome>(), stats: statistics(jobs) }; }
+fn no_ready() -> ext::http_client::Readiness { return ext::http_client::Readiness { readable: false, writable: false, hangup: false, error: false }; }
+fn empty_slot() -> Slot { return Slot { ordinal: -1, owner: core::option::None(), credit: 0, reported_work: 0, reported_io: 0, ready: no_ready() }; }
+fn no_request() -> std::poll::Request { return std::poll::Request { handle: -1, events: 0 }; }
+pub impl Report {
+    pub fn borrow(&self) -> &Report { return self; }
+    pub fn len(&self) -> i32 { return self.outcomes.len(); }
+    pub fn get(&self, index: i32) -> core::option::Option<Outcome> { return self.outcomes.get(index); }
+    pub fn take(&self, index: i32) -> core::option::Option<Outcome> {
+        if (index < 0 || index >= self.outcomes.len()) { return core::option::None(); }
+        let value: Outcome = self.outcomes.at(index);
+        let taken: bool = match (value) { Outcome::Taken -> true, _ -> false };
+        if (taken) { return core::option::None(); }
+        self.outcomes.set(index,Outcome::Taken).unwrap(); return core::option::Some(value);
+    }
+    pub fn destroy(&self) {
+        let index: i32 = 0;
+        while (index < self.outcomes.len()) {
+            let value: Outcome = self.outcomes.at(index);
+            let owned: core::option::Option<ext::http_client::Response> = match (value) { Outcome::Complete(response) -> core::option::Some(response), _ -> core::option::None() };
+            if (owned.is_some()) { let response: ext::http_client::Response = owned.unwrap(); response.destroy(); }
+            index += 1;
+        }
+        self.outcomes.destroy();
+    }
+}
+pub impl Failure { pub fn borrow(&self) -> &Failure { return self; } pub fn destroy(&self) { self.report.destroy(); } }
+fn valid(limits: Limits) -> bool { return limits.max_jobs > 0 && limits.max_jobs <= MAX_JOBS && limits.concurrency > 0 && limits.concurrency <= MAX_CONCURRENCY && limits.concurrency <= limits.max_jobs; }
+fn put(run: &Run, ordinal: i32, outcome: Outcome) { run.report.outcomes.set(ordinal,outcome).unwrap(); }
+fn put_slot(run: &Run, index: i32, value: Slot) { run.slots.set(index,value).unwrap(); }
+fn take_slot(run: &Run, index: i32) -> Slot { return run.slots.set(index,empty_slot()).unwrap(); }
+fn spend(run: &Run, amount: u64) -> core::result::Result<bool,Cause> {
+    if (amount > run.limits.operations - run.report.stats.operations) { return core::result::Err(Cause::OperationLimit); }
+    run.report.stats.operations += amount; return core::result::Ok(true);
+}
+fn observe(run: &Run) -> core::result::Result<bool,Cause> {
+    let paid: core::result::Result<bool,Cause> = spend(run,1); if (paid.is_err()) { return paid; }
+    let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (read.is_err()) { return core::result::Err(Cause::Clock(read.unwrap_err())); }
+    let now: core::time::Instant = read.unwrap();
+    if (run.last.is_some() && now.compare(run.last.unwrap()) < 0) { return core::result::Err(Cause::Clock(std::clock::Error::ClockReversed)); }
+    run.last = core::option::Some(now);
+    if (run.deadline.is_expired(now)) { return core::result::Err(Cause::Timeout); }
+    return core::result::Ok(true);
+}
+// Move newly charged work from reserved allowance to cumulative actual work.
+// The same State crosses Prepared.begin, so only monotone deltas are counted.
+fn account(run: &Run, slot: &Slot, stats: ext::http_client::Stats) -> core::result::Result<bool,Cause> {
+    if (stats.work < slot.reported_work || stats.io_calls < slot.reported_io) { return core::result::Err(Cause::InvalidEngine); }
+    let delta: u64 = stats.work - slot.reported_work; let io: u64 = stats.io_calls - slot.reported_io;
+    let maximum: u64 = 18446744073709551615;
+    if (delta > slot.credit || delta > run.reserved_work || delta > run.limits.work - run.report.stats.work || io > maximum - run.report.stats.io_calls) { return core::result::Err(Cause::InvalidEngine); }
+    slot.credit -= delta; run.reserved_work -= delta; run.report.stats.work += delta; run.report.stats.io_calls += io;
+    slot.reported_work = stats.work; slot.reported_io = stats.io_calls; return core::result::Ok(true);
+}
+fn release_credit(run: &Run, slot: &Slot) { run.reserved_work -= slot.credit; slot.credit = 0; }
+fn shared_failure(failure: ext::http_client::Failure) -> core::option::Option<Cause> { return match (failure.cause) { ext::http_client::Cause::Timeout -> core::option::Some(Cause::Timeout), ext::http_client::Cause::Clock(error) -> core::option::Some(Cause::Clock(error)), _ -> core::option::None() }; }
+fn close_error(failure: ext::http_client::Failure) -> core::option::Option<core::io::Error> { if (failure.cleanup.is_some()) { return failure.cleanup; } return match (failure.cause) { ext::http_client::Cause::Io(error) -> core::option::Some(error), _ -> core::option::None() }; }
+// Mandatory cleanup does not spend active operations or protocol work. Attempt
+// every owner even after one close fails; completed report owners remain live.
+fn cleanup(run: &Run) {
+    let index: i32 = 0;
+    while (index < run.pending.len()) {
+        let value: core::option::Option<Pending> = run.pending.set(index,core::option::None()).unwrap();
+        if (value.is_some()) { let pending: Pending = value.unwrap(); pending.owner.destroy(); }
+        index += 1;
+    }
+    run.report.stats.pending_bytes = 0;
+    index = 0;
+    while (index < run.slots.len()) {
+        let slot: Slot = take_slot(run,index);
+        if (slot.owner.is_some()) {
+            let owner: ext::http_client::Exchange = slot.owner.unwrap();
+            let ended: core::result::Result<bool,ext::http_client::Failure> = owner.abort();
+            let secondary: core::option::Option<core::io::Error> = core::option::None(); if (ended.is_err()) { secondary = close_error(ended.unwrap_err()); }
+            put(run,slot.ordinal,Outcome::Aborted(Abort { stats: owner.stats(), cleanup: secondary })); run.report.stats.aborted += 1;
+        }
+        index += 1;
+    }
+    run.active = 0; run.reserved_work = 0;
+    run.pending.destroy(); run.slots.destroy(); run.requests.destroy(); run.poll.destroy();
+}
+fn failed(run: &Run, cause: Cause) -> core::result::Result<Report,Failure> { cleanup(run); return core::result::Err(Failure { cause: cause, report: run.report }); }
+fn metadata(run: &Run, count: i32, width: i32) -> core::result::Result<bool,Cause> {
+    let paid: core::result::Result<bool,Cause> = spend(run,(count as u64) + 1); if (paid.is_err()) { return paid; }
+    if (run.report.outcomes.try_reserve(count).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    let index: i32 = 0; while (index < count) { run.report.outcomes.try_push(Outcome::NotStarted).unwrap(); index += 1; }
+    paid = spend(run,(count as u64) + 1); if (paid.is_err()) { return paid; }
+    if (run.pending.try_reserve(count).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    index = 0; while (index < count) { run.pending.try_push(core::option::None()).unwrap(); index += 1; }
+    paid = spend(run,(width as u64) + 1); if (paid.is_err()) { return paid; }
+    if (run.slots.try_reserve(width).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    index = 0; while (index < width) { run.slots.try_push(empty_slot()).unwrap(); index += 1; }
+    paid = spend(run,(width as u64) + 1); if (paid.is_err()) { return paid; }
+    if (run.requests.try_reserve(width).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+    index = 0; while (index < width) { run.requests.try_push(no_request()).unwrap(); index += 1; }
+    paid = spend(run,2 * (width as u64) + 1); if (paid.is_err()) { return paid; }
+    let made: core::result::Result<std::poll::PollSet,std::poll::Error> = std::poll::new(width);
+    if (made.is_err()) { let error: std::poll::Error = made.unwrap_err(); let cause: Cause = match (error) { std::poll::Error::AllocationFailed -> Cause::AllocationFailed, _ -> Cause::Poll(error) }; return core::result::Err(cause); }
+    run.poll.destroy(); run.poll = made.unwrap(); return core::result::Ok(true);
+}
+fn prepare(run: &Run, jobs: core::slice::View<Job>, options: ext::http_client::Options) -> core::result::Result<bool,Cause> {
+    let index: i32 = 0;
+    while (index < jobs.length) {
+        let checked: core::result::Result<bool,Cause> = observe(run); if (checked.is_err()) { return checked; }
+        if (options.work > run.limits.work - run.report.stats.work) { return core::result::Err(Cause::WorkLimit); }
+        let paid: core::result::Result<bool,Cause> = spend(run,1); if (paid.is_err()) { return paid; }
+        run.reserved_work = options.work;
+        let job: Job = jobs.values[jobs.start + index];
+        let made: core::result::Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(job.request,options,run.deadline);
+        let bill: Slot = empty_slot(); bill.credit = options.work;
+        if (made.is_err()) {
+            let error: ext::http_client::Failure = made.unwrap_err(); let counted: core::result::Result<bool,Cause> = account(run,bill.borrow(),error.stats); release_credit(run,bill.borrow());
+            put(run,index,Outcome::Failed(error)); run.report.stats.failed += 1;
+            if (counted.is_err()) { return counted; } return core::result::Err(Cause::Preparation);
+        }
+        let owner: ext::http_client::Prepared = made.unwrap(); let stats: ext::http_client::Stats = owner.stats();
+        let counted: core::result::Result<bool,Cause> = account(run,bill.borrow(),stats); release_credit(run,bill.borrow());
+        if (counted.is_err()) { owner.destroy(); return counted; }
+        if (stats.request_bytes < 0 || job.request.method.length < 0) { owner.destroy(); return core::result::Err(Cause::InvalidEngine); }
+        let size: u64 = (stats.request_bytes as u64) + (job.request.method.length as u64);
+        if (size > run.limits.max_pending_bytes - run.report.stats.pending_bytes) { owner.destroy(); return core::result::Err(Cause::PendingLimit); }
+        run.pending.set(index,core::option::Some(Pending { owner: owner, bytes: size })).unwrap(); run.report.stats.pending_bytes += size;
+        if (run.report.stats.pending_bytes > run.report.stats.peak_pending_bytes) { run.report.stats.peak_pending_bytes = run.report.stats.pending_bytes; }
+        index += 1;
+    }
+    return core::result::Ok(true);
+}
+impl Slot { fn borrow(&self) -> &Slot { return self; } }
+fn admit(run: &Run, jobs: core::slice::View<Job>, options: ext::http_client::Options) -> core::result::Result<bool,Cause> {
+    let width: i32 = run.slots.len(); let paid: core::result::Result<bool,Cause> = spend(run,width as u64); if (paid.is_err()) { return paid; }
+    let visit: i32 = 0;
+    while (visit < width && run.next < jobs.length) {
+        let index: i32 = (run.turn + visit) % width; visit += 1;
+        if (run.slots.at(index).owner.is_none()) {
+            let pending: Pending = run.pending.at(run.next).unwrap(); let old: ext::http_client::Stats = pending.owner.stats();
+            if (old.work > options.work) { return core::result::Err(Cause::InvalidEngine); }
+            let credit: u64 = options.work - old.work;
+            if (credit > run.limits.work - run.report.stats.work - run.reserved_work) { if (run.active == 0) { return core::result::Err(Cause::WorkLimit); } return core::result::Ok(true); }
+            let charged: core::result::Result<bool,Cause> = spend(run,1); if (charged.is_err()) { return charged; }
+            let ordinal: i32 = run.next; run.next += 1; run.pending.set(ordinal,core::option::None()).unwrap(); run.report.stats.pending_bytes -= pending.bytes;
+            run.reserved_work += credit; run.report.stats.started += 1;
+            let slot: Slot = empty_slot(); slot.ordinal = ordinal; slot.credit = credit; slot.reported_work = old.work; slot.reported_io = old.io_calls;
+            let made: core::result::Result<ext::http_client::Exchange,ext::http_client::Failure> = pending.owner.begin(jobs.values[jobs.start + ordinal].endpoint);
+            if (made.is_err()) {
+                let error: ext::http_client::Failure = made.unwrap_err(); let counted: core::result::Result<bool,Cause> = account(run,slot.borrow(),error.stats); release_credit(run,slot.borrow());
+                put(run,ordinal,Outcome::Failed(error)); run.report.stats.failed += 1;
+                if (counted.is_err()) { return counted; } let global: core::option::Option<Cause> = shared_failure(error); if (global.is_some()) { return core::result::Err(global.unwrap()); }
+            } else {
+                let owner: ext::http_client::Exchange = made.unwrap(); let counted: core::result::Result<bool,Cause> = account(run,slot.borrow(),owner.stats());
+                slot.owner = core::option::Some(owner); put_slot(run,index,slot); run.active += 1; if (run.active > run.report.stats.peak_active) { run.report.stats.peak_active = run.active; }
+                if (counted.is_err()) { return counted; }
+            }
+        }
+    }
+    return core::result::Ok(true);
+}
+fn terminal_error(run: &Run, slot: &Slot, error: ext::http_client::Failure) -> core::result::Result<bool,Cause> {
+    put(run,slot.ordinal,Outcome::Failed(error)); run.report.stats.failed += 1; run.active -= 1; release_credit(run,slot);
+    let global: core::option::Option<Cause> = shared_failure(error); if (global.is_some()) { return core::result::Err(global.unwrap()); } return core::result::Ok(true);
+}
+fn advance(run: &Run, index: i32) -> core::result::Result<bool,Cause> {
+    let slot: Slot = take_slot(run,index); if (slot.owner.is_none()) { return core::result::Ok(true); }
+    let owner: ext::http_client::Exchange = slot.owner.unwrap(); slot.owner = core::option::None();
+    let interest: ext::http_client::Interest = owner.interest(); let ready: ext::http_client::Readiness = slot.ready; slot.ready = no_ready();
+    if (!interest.immediate && !ready.readable && !ready.writable && !ready.hangup && !ready.error) { slot.owner = core::option::Some(owner); put_slot(run,index,slot); return core::result::Ok(true); }
+    let paid: core::result::Result<bool,Cause> = spend(run,1); if (paid.is_err()) { slot.owner = core::option::Some(owner); put_slot(run,index,slot); return paid; }
+    let result: core::result::Result<core::option::Option<ext::http_client::Response>,ext::http_client::Failure> = owner.step(ready);
+    let counted: core::result::Result<bool,Cause> = account(run,slot.borrow(),owner.stats());
+    if (counted.is_err()) { if (result.is_ok() && result.unwrap().is_some()) { result.unwrap().unwrap().destroy(); } slot.owner = core::option::Some(owner); put_slot(run,index,slot); return counted; }
+    if (result.is_err()) { return terminal_error(run,slot.borrow(),result.unwrap_err()); }
+    if (result.unwrap().is_none()) { slot.owner = core::option::Some(owner); put_slot(run,index,slot); return core::result::Ok(true); }
+    let response: ext::http_client::Response = result.unwrap().unwrap(); run.active -= 1; release_credit(run,slot.borrow());
+    let wire: u64 = response.wire.len() as u64; let body: u64 = response.decoded.len() as u64;
+    if (wire > run.limits.max_wire_bytes - run.report.stats.wire_bytes || body > run.limits.max_body_bytes - run.report.stats.body_bytes) {
+        let stats: ext::http_client::Stats = response.stats; response.destroy(); put(run,slot.ordinal,Outcome::Discarded(stats)); run.report.stats.discarded += 1;
+        if (wire > run.limits.max_wire_bytes - run.report.stats.wire_bytes) { return core::result::Err(Cause::WireLimit); } return core::result::Err(Cause::BodyLimit);
+    }
+    run.report.stats.wire_bytes += wire; run.report.stats.body_bytes += body; run.report.stats.complete += 1; put(run,slot.ordinal,Outcome::Complete(response)); return core::result::Ok(true);
+}
+fn milliseconds(remaining: core::time::Duration) -> i32 { if (remaining.seconds >= 2147484) { return 2147483647; } let value: u64 = remaining.seconds * 1000 + ((remaining.nanos as u64) + 999999) / 1000000; if (value > 2147483647) { return 2147483647; } return value as i32; }
+fn interrupted(error: std::poll::Error) -> bool { return match (error) { std::poll::Error::Io(cause) -> core::io::is_interrupted(cause), _ -> false }; }
+fn wait(run: &Run) -> core::result::Result<bool,Cause> {
+    let width: i32 = run.slots.len(); let paid: core::result::Result<bool,Cause> = spend(run,width as u64); if (paid.is_err()) { return paid; }
+    let registered: i32 = 0; let immediate: bool = false; let index: i32 = 0;
+    while (index < width) {
+        run.requests.set(index,no_request()).unwrap(); let slot: Slot = take_slot(run,index);
+        if (slot.owner.is_some()) {
+            let owner: ext::http_client::Exchange = slot.owner.unwrap(); slot.owner = core::option::None(); let interest: ext::http_client::Interest = owner.interest();
+            if (interest.immediate) { immediate = true; slot.owner = core::option::Some(owner); put_slot(run,index,slot); }
+            else {
+                let charged: core::result::Result<bool,Cause> = spend(run,1); if (charged.is_err()) { slot.owner = core::option::Some(owner); put_slot(run,index,slot); return charged; }
+                let gate: core::result::Result<bool,ext::http_client::Failure> = owner.before_wait(); let counted: core::result::Result<bool,Cause> = account(run,slot.borrow(),owner.stats());
+                if (counted.is_err()) { slot.owner = core::option::Some(owner); put_slot(run,index,slot); return counted; }
+                if (gate.is_err()) { let terminal: core::result::Result<bool,Cause> = terminal_error(run,slot.borrow(),gate.unwrap_err()); if (terminal.is_err()) { return terminal; } }
+                else {
+                    slot.owner = core::option::Some(owner); put_slot(run,index,slot);
+                    if (!gate.unwrap()) { immediate = true; }
+                    else {
+                        let handle: core::option::Option<i32> = owner.raw_handle(); if (handle.is_none() || handle.unwrap() < 0 || (!interest.readable && !interest.writable)) { return core::result::Err(Cause::InvalidEngine); }
+                        let events: u32 = 0; if (interest.readable) { events = events | std::poll::READABLE; } if (interest.writable) { events = events | std::poll::WRITABLE; }
+                        run.requests.set(index,std::poll::Request { handle: handle.unwrap(), events: events }).unwrap(); registered += 1;
+                    }
+                }
+            }
+        }
+        index += 1;
+    }
+    if (registered == 0) { if (run.active > 0 && !immediate) { return core::result::Err(Cause::InvalidEngine); } return core::result::Ok(true); }
+    let checked: core::result::Result<bool,Cause> = observe(run); if (checked.is_err()) { return checked; }
+    let timeout: i32 = 0; if (!immediate) { timeout = milliseconds(run.deadline.remaining(run.last.unwrap())); }
+    let charged: core::result::Result<bool,Cause> = spend(run,1); if (charged.is_err()) { return charged; }
+    run.report.stats.polls += 1; let result: core::result::Result<i32,std::poll::Error> = run.poll.poll_ms(run.requests.as_view(),timeout);
+    let after: core::result::Result<bool,Cause> = observe(run); if (after.is_err()) { return after; }
+    if (result.is_err()) { if (interrupted(result.unwrap_err())) { return core::result::Ok(true); } return core::result::Err(Cause::Poll(result.unwrap_err())); }
+    let visited: core::result::Result<bool,Cause> = spend(run,width as u64); if (visited.is_err()) { return visited; }
+    index = 0;
+    while (index < width) {
+        if (run.requests.at(index).handle >= 0) {
+            let ready: std::poll::Readiness = run.poll.readiness(index).unwrap(); let slot: Slot = take_slot(run,index);
+            if (slot.owner.is_none()) { return core::result::Err(Cause::InvalidEngine); }
+            slot.ready = ext::http_client::Readiness { readable: ready.readable() || ready.read_closed(), writable: ready.writable(), hangup: ready.hangup(), error: ready.error() || ready.invalid() }; put_slot(run,index,slot);
+        }
+        index += 1;
+    }
+    return core::result::Ok(true);
+}
+
+// All views borrow valid unchanged backing through return. All requests are
+// canonically prepared before the first socket; a preparation error starts none.
+// A failure owns its retained report; no active/pending network owner escapes.
+pub fn run_until(jobs: core::slice::View<Job>, options: ext::http_client::Options, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Report,Failure> {
+    if (!core::io::valid_range(jobs.start,jobs.length)) { return core::result::Err(Failure { cause: Cause::Bounds, report: empty_report(0) }); }
+    if (!valid(limits) || deadline.instant.ticks.nanos >= 1000000000) { return core::result::Err(Failure { cause: Cause::InvalidLimits, report: empty_report(jobs.length) }); }
+    if (jobs.length > limits.max_jobs) { return core::result::Err(Failure { cause: Cause::Bounds, report: empty_report(jobs.length) }); }
+    if (jobs.length == 0) { return core::result::Ok(empty_report(0)); }
+    let run: Run = Run { report: empty_report(jobs.length), pending: alloc::vec::new<core::option::Option<Pending>>(), slots: alloc::vec::new<Slot>(), requests: alloc::vec::new<std::poll::Request>(), poll: std::poll::new(0).unwrap(), limits: limits, deadline: deadline, last: core::option::None(), next: 0, active: 0, reserved_work: 0, turn: 0 };
+    let observed: core::result::Result<bool,Cause> = observe(run.borrow()); if (observed.is_err()) { return failed(run.borrow(),observed.unwrap_err()); }
+    let width: i32 = limits.concurrency; if (width > jobs.length) { width = jobs.length; }
+    let allocated: core::result::Result<bool,Cause> = metadata(run.borrow(),jobs.length,width); if (allocated.is_err()) { return failed(run.borrow(),allocated.unwrap_err()); }
+    let prepared: core::result::Result<bool,Cause> = prepare(run.borrow(),jobs,options); if (prepared.is_err()) { return failed(run.borrow(),prepared.unwrap_err()); }
+    while (true) {
+        if (run.active == 0 && run.next == jobs.length) { cleanup(run.borrow()); return core::result::Ok(run.report); }
+        let checked: core::result::Result<bool,Cause> = observe(run.borrow()); if (checked.is_err()) { return failed(run.borrow(),checked.unwrap_err()); }
+        let admitted: core::result::Result<bool,Cause> = admit(run.borrow(),jobs,options); if (admitted.is_err()) { return failed(run.borrow(),admitted.unwrap_err()); }
+        let paid: core::result::Result<bool,Cause> = spend(run.borrow(),width as u64); if (paid.is_err()) { return failed(run.borrow(),paid.unwrap_err()); }
+        let visit: i32 = 0;
+        while (visit < width) { let index: i32 = (run.turn + visit) % width; let progressed: core::result::Result<bool,Cause> = advance(run.borrow(),index); if (progressed.is_err()) { return failed(run.borrow(),progressed.unwrap_err()); } visit += 1; }
+        run.turn += 1; if (run.turn == width) { run.turn = 0; }
+        // A completed step can free a slot. Refill before a blocking poll on
+        // remaining peers; admit retains the same order and work-credit guard.
+        while (run.next < jobs.length && run.active < width) {
+            let before: i32 = run.next;
+            let refilled: core::result::Result<bool,Cause> = admit(run.borrow(),jobs,options);
+            if (refilled.is_err()) { return failed(run.borrow(),refilled.unwrap_err()); }
+            // Failed begins still consume input. Stop only when admission
+            // made no progress (for example, active work holds the credit).
+            if (run.next == before) { break; }
+        }
+        if (run.active > 0) { let waited: core::result::Result<bool,Cause> = wait(run.borrow()); if (waited.is_err()) { return failed(run.borrow(),waited.unwrap_err()); } }
+    }
+    return failed(run.borrow(),Cause::InvalidEngine);
+}

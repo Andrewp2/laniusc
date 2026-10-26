@@ -1,0 +1,8 @@
+// Expected native rejection: source metadata declares service 8 unbound.
+// Integer zero is not a checked entry identity or permission to start a worker.
+module app::main;
+import std::thread;
+
+fn main() -> i32 {
+    return std::thread::spawn(0,0);
+}

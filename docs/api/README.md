@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **236 modules**, **10879 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **237 modules**, **11000 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -215,7 +215,8 @@ Inventory: **236 modules**, **10879 declaration/member entries**. Counts include
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
-| [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 74 | Source inventory | [extended-http-client](../extended-http-client.md) |
+| [ext::http_batch](ext/http_batch.md) | [source](../../extended/ext/http_batch.lani#L2) | 70 | Source inventory | [extended-http-batch](../extended-http-batch.md), [extended-http-batch-testing](../extended-http-batch-testing.md), [extended-fetch-many](../extended-fetch-many.md) |
+| [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 124 | Source inventory | [extended-http-client](../extended-http-client.md), [extended-http-exchange-testing](../extended-http-exchange-testing.md), [extended-http-batch](../extended-http-batch.md), [extended-fetch-many](../extended-fetch-many.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 128 | Source inventory | [extended-http-server](../extended-http-server.md) |
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 43 | Source inventory | [extended-image](../extended-image.md) |
 | [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 18 | Source inventory | [extended-inflate](../extended-inflate.md) |
@@ -257,7 +258,7 @@ Inventory: **236 modules**, **10879 declaration/member entries**. Counts include
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
 | [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 76 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
-| [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
+| [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 81 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data
 

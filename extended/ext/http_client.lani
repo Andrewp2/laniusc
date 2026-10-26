@@ -15,9 +15,15 @@ import std::socket;
 pub struct Request { method: core::slice::View<u8>, target: core::slice::View<u8>, authority: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8> }
 pub struct Options { wire: ext::http::Limits, request_bytes: i32, response_bytes: i32, interim_count: i32, interim_bytes: i32, io_calls: u64, work: u64 }
 pub enum Stage { Prepare, Open, Connect, Send, Receive, Shutdown, Validate, Decode, Close, Publish }
-pub enum Cause { InvalidOptions, UnsupportedRequest, UnsupportedHeader(i32), UnsupportedUpgrade, AllocationFailed, Timeout, Clock(std::clock::Error), Io(core::io::Error), Http(ext::http::Error), RequestLimit, ResponseLimit, BodyLimit, InterimLimit, IoLimit, WorkLimit, BoundaryMismatch }
+pub enum Cause { InvalidOptions, UnsupportedRequest, UnsupportedHeader(i32), UnsupportedUpgrade, AllocationFailed, Timeout, Clock(std::clock::Error), Io(core::io::Error), Http(ext::http::Error), RequestLimit, ResponseLimit, BodyLimit, InterimLimit, IoLimit, WorkLimit, BoundaryMismatch, Inactive }
 pub struct Stats { request_bytes: i32, request_sent: i32, response_received: u64, interim_count: i32, discarded_bytes: i32, io_calls: u64, work: u64, upload_stopped: bool, write_shutdown: bool }
 pub struct Failure { cause: Cause, stage: Stage, message_offset: i32, stats: Stats, cleanup: core::option::Option<core::io::Error> }
+pub struct Readiness { readable: bool, writable: bool, hangup: bool, error: bool }
+pub struct Interest { readable: bool, writable: bool, immediate: bool }
+pub enum Status { Active, Complete, Failed, Aborted }
+pub struct Prepared { owner: Owners, state: State, track: Track, active: bool }
+pub struct Exchange { owner: Owners, state: State, track: Track, socket: std::socket::Socket, endpoint: core::net::SocketAddr, phase: Phase, status: Status, read_blocked: bool, write_blocked: bool, send_turn: bool, failure: core::option::Option<Failure> }
+enum Phase { ConnectStart, WaitConnect, ConnectError, ConnectPeer, Scan, Receive, Send, Shutdown, Decode, Close, Publish }
 pub struct Response { wire: alloc::vec::Vec<u8>, method: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, interim: alloc::vec::Vec<ext::http::Head>, validated: ext::http::Message, final_offset: i32, stats: Stats }
 struct Span { offset: i32, length: i32 }
 struct Owners { request: alloc::vec::Vec<u8>, method: alloc::vec::Vec<u8>, wire: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, spans: alloc::vec::Vec<Span>, heads: alloc::vec::Vec<ext::http::Head> }
@@ -49,7 +55,6 @@ fn active(s: &State) -> core::result::Result<bool,Cause> {
     if (s.deadline.is_expired(value)) { return core::result::Err(Cause::Timeout); } return core::result::Ok(true);
 }
 fn call(s: &State) -> core::result::Result<bool,Cause> { let before = active(s); if (before.is_err()) { return before; } if (s.stats.io_calls == s.options.io_calls) { return core::result::Err(Cause::IoLimit); } s.stats.io_calls += 1; return core::result::Ok(true); }
-fn transient(error: core::io::Error) -> bool { return match(error) { core::io::Error::Interrupted -> true, core::io::Error::WouldBlock -> true, _ -> false }; }
 fn fail(s: &State, cause: Cause, cleanup: core::option::Option<core::io::Error>) -> Failure { return Failure { cause:cause,stage:s.stage,message_offset:s.message_offset,stats:s.stats,cleanup:cleanup }; }
 fn digits(value: i32) -> i32 { let n: i32 = value; let count: i32 = 1; while (n >= 10) { n /= 10; count += 1; } return count; }
 fn prepare(s: &State, q: Request, owner: &Owners) -> core::result::Result<bool,Cause> {
@@ -104,112 +109,47 @@ fn finish(s: &State, socket: &std::socket::Socket, outcome: core::result::Result
 
 struct Track { cursor: ext::http::Cursor, charged: u64, close: bool, eof: bool, status: i32, head_end: i32, validated: core::option::Option<ext::http::Message> }
 impl Track { fn borrow(&self) -> &Track { return self; } }
-fn scan(s: &State, owner: &Owners, track: &Track, socket: &std::socket::Socket) -> core::result::Result<bool,Cause> {
-    while (true) {
-        s.stage = Stage::Receive; let before = active(s); if (before.is_err()) { return before; }
-        let bytes: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,owner.wire.len()).unwrap();
-        let got = track.cursor.advance(bytes,owner.method.as_view(),track.eof);
-        let spent: u64 = track.cursor.work(); let paid = charge(s,spent-track.charged); track.charged = spent;
-        if (paid.is_err()) { return paid; } if (got.is_err()) { return core::result::Err(Cause::Http(got.unwrap_err())); }
-        let after = active(s); if (after.is_err()) { return after; }
-        let event: ext::http::Scan = got.unwrap();
-        let pending: bool = match(event) { ext::http::Scan::NeedMore -> true, _ -> false }; if (pending) { return core::result::Ok(false); }
-        let ready: bool = match(event) { ext::http::Scan::HeadReady(v) -> true, _ -> false };
-        if (ready) {
-            let info: ext::http::HeadInfo = match(event) { ext::http::Scan::HeadReady(v) -> v, _ -> ext::http::HeadInfo { status:0,version:0,kind:ext::http::BodyKind::Empty,content_length:0,head_end:0 } };
-            track.status = info.status; track.head_end = info.head_end;
-            if (info.status == 101) { return core::result::Err(Cause::UnsupportedUpgrade); }
-            if (info.status >= 200) {
-                track.close = match(info.kind) { ext::http::BodyKind::Close -> true, _ -> false };
-                if (s.stats.request_sent < s.stats.request_bytes) { s.stats.upload_stopped = true; let stopped = shutdown_write(s,socket); if (stopped.is_err()) { return stopped; } }
-            }
-            continue;
+// One cursor event. A boundary is canonically validated before it is accepted.
+// Only spans survive interim scanning; retained Head views are built after freeze.
+fn scan_once(s: &State, owner: &Owners, track: &Track) -> core::result::Result<i32,Cause> {
+    s.stage = Stage::Receive; let before = active(s); if (before.is_err()) { return core::result::Err(before.unwrap_err()); }
+    let bytes: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,owner.wire.len()).unwrap();
+    let got = track.cursor.advance(bytes,owner.method.as_view(),track.eof);
+    let spent: u64 = track.cursor.work(); let paid = charge(s,spent-track.charged); track.charged = spent;
+    if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); } if (got.is_err()) { return core::result::Err(Cause::Http(got.unwrap_err())); }
+    let after = active(s); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+    let event: ext::http::Scan = got.unwrap();
+    let pending: bool = match(event) { ext::http::Scan::NeedMore -> true, _ -> false }; if (pending) { return core::result::Ok(0); }
+    let ready: bool = match(event) { ext::http::Scan::HeadReady(v) -> true, _ -> false };
+    if (ready) {
+        let info: ext::http::HeadInfo = match(event) { ext::http::Scan::HeadReady(v) -> v, _ -> ext::http::HeadInfo { status:0,version:0,kind:ext::http::BodyKind::Empty,content_length:0,head_end:0 } };
+        track.status = info.status; track.head_end = info.head_end;
+        if (info.status == 101) { return core::result::Err(Cause::UnsupportedUpgrade); }
+        if (info.status >= 200) {
+            track.close = match(info.kind) { ext::http::BodyKind::Close -> true, _ -> false };
+            if (s.stats.request_sent < s.stats.request_bytes) { s.stats.upload_stopped = true; return core::result::Ok(2); }
         }
-        let boundary: ext::http::FrameBoundary = match(event) { ext::http::Scan::Boundary(v) -> v, _ -> ext::http::FrameBoundary { consumed:0,decoded_length:0 } };
-        if (boundary.consumed < 0 || boundary.consumed > bytes.len()) { return core::result::Err(Cause::BoundaryMismatch); }
-        let end: i32 = s.message_offset+boundary.consumed;
-        let selected: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
-        if (track.status < 200) {
-            if (s.stats.interim_count == s.options.interim_count || end > s.options.interim_bytes) { return core::result::Err(Cause::InterimLimit); }
-            let parsed = canonical(s,selected,owner.method.as_view(),boundary.decoded_length,false,track.eof); if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
-            if (owner.spans.try_push(Span { offset:s.message_offset,length:boundary.consumed }).is_err()) { return core::result::Err(Cause::AllocationFailed); }
-            s.stats.interim_count += 1; s.message_offset = end;
-            let next = ext::http::cursor(ext::http::CursorMode::Response,s.options.wire,s.options.response_bytes-end,s.options.work-s.stats.work);
-            if (next.is_err()) { return core::result::Err(Cause::Http(next.unwrap_err())); }
-            track.cursor = next.unwrap(); track.charged = 0; track.close = false; track.status = 0; track.head_end = 0; continue;
-        }
-        s.stats.discarded_bytes = owner.wire.len()-end; owner.wire.try_resize(end,0 as u8).unwrap();
-        let exact: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
-        let parsed = canonical(s,exact,owner.method.as_view(),boundary.decoded_length,true,track.eof);
-        if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
-        track.validated = core::option::Some(parsed.unwrap()); return core::result::Ok(true);
+        return core::result::Ok(1);
     }
-    return core::result::Err(Cause::BoundaryMismatch);
-}
-fn wait_ready(s: &State, socket: &std::socket::Socket, readable: bool, writable: bool) -> core::result::Result<bool,Cause> {
-    while (true) {
-        let before = call(s); if (before.is_err()) { return before; }
-        let remaining: core::time::Duration = s.deadline.remaining(s.last); let milliseconds: i32 = 2147483647;
-        if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
-        let waited = socket.wait_ms(readable,writable,milliseconds); let after = active(s); if (after.is_err()) { return after; }
-        if (waited.is_err()) { if (core::io::is_interrupted(waited.unwrap_err())) { continue; } return core::result::Err(Cause::Io(waited.unwrap_err())); }
-        if (!waited.unwrap().timed_out) { return core::result::Ok(true); }
+    let boundary: ext::http::FrameBoundary = match(event) { ext::http::Scan::Boundary(v) -> v, _ -> ext::http::FrameBoundary { consumed:0,decoded_length:0 } };
+    if (boundary.consumed < 0 || boundary.consumed > bytes.len()) { return core::result::Err(Cause::BoundaryMismatch); }
+    let end: i32 = s.message_offset+boundary.consumed;
+    let selected: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
+    if (track.status < 200) {
+        if (s.stats.interim_count == s.options.interim_count || end > s.options.interim_bytes) { return core::result::Err(Cause::InterimLimit); }
+        let parsed = canonical(s,selected,owner.method.as_view(),boundary.decoded_length,false,track.eof); if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+        if (owner.spans.try_push(Span { offset:s.message_offset,length:boundary.consumed }).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+        s.stats.interim_count += 1; s.message_offset = end;
+        let next = ext::http::cursor(ext::http::CursorMode::Response,s.options.wire,s.options.response_bytes-end,s.options.work-s.stats.work);
+        if (next.is_err()) { return core::result::Err(Cause::Http(next.unwrap_err())); }
+        track.cursor = next.unwrap(); track.charged = 0; track.close = false; track.status = 0; track.head_end = 0;
+        return core::result::Ok(1);
     }
-    return core::result::Err(Cause::Timeout);
-}
-fn connect(s: &State, socket: &std::socket::Socket, endpoint: core::net::SocketAddr) -> core::result::Result<bool,Cause> {
-    s.stage = Stage::Connect; let before = call(s); if (before.is_err()) { return before; }
-    let started = socket.connect(endpoint); let after = active(s); if (after.is_err()) { return after; }
-    if (started.is_err()) { return core::result::Err(Cause::Io(started.unwrap_err())); }
-    let done: bool = match(started.unwrap()) { std::socket::Connection::Connected -> true, _ -> false }; if (done) { return core::result::Ok(true); }
-    let ready = wait_ready(s,socket,false,true); if (ready.is_err()) { return ready; }
-    let before = call(s); if (before.is_err()) { return before; }
-    let error = socket.take_error(); let after = active(s); if (after.is_err()) { return after; }
-    if (error.is_err()) { return core::result::Err(Cause::Io(error.unwrap_err())); }
-    let pending: core::option::Option<i32> = error.unwrap(); if (pending.is_some()) { return core::result::Err(Cause::Io(core::io::Error::Host(pending.unwrap()))); }
-    let before = call(s); if (before.is_err()) { return before; }
-    let peer = socket.peer_addr(); let after = active(s); if (after.is_err()) { return after; }
-    if (peer.is_err()) { return core::result::Err(Cause::Io(peer.unwrap_err())); } return core::result::Ok(true);
-}
-fn transfer(s: &State, owner: &Owners, track: &Track, socket: &std::socket::Socket) -> core::result::Result<bool,Cause> {
-    let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
-    while (true) {
-        let framed = scan(s,owner,track,socket); if (framed.is_err()) { return framed; } if (framed.unwrap()) { return core::result::Ok(true); }
-        let raw_capacity: i32 = s.options.response_bytes-owner.wire.len(); let capacity: i32 = raw_capacity;
-        if (track.close) { let body_capacity: i32 = s.options.wire.body_bytes-(owner.wire.len()-s.message_offset-track.head_end); if (body_capacity < capacity) { capacity = body_capacity; } }
-        let probe: bool = capacity == 0;
-        if (capacity < 0 || (probe && !track.close)) { return core::result::Err(Cause::ResponseLimit); }
-        let count: i32 = capacity; if (count > 1024) { count = 1024; } if (probe) { count = 1; }
-        s.stage = Stage::Receive; let before = call(s); if (before.is_err()) { return before; }
-        let result = socket.receive(core::slice::view(scratch,count).unwrap());
-        // Preserve successful byte progress even if its later clock observation
-        // fails or has crossed the absolute deadline.
-        if (result.is_ok()) { let got: i32 = result.unwrap(); if (got < 0 || got > count) { return core::result::Err(Cause::Io(core::io::Error::InvalidCount)); } s.stats.response_received += got as u64; }
-        let after = active(s); if (after.is_err()) { return after; }
-        let progress: bool = false;
-        if (result.is_ok()) {
-            let got: i32 = result.unwrap();
-            if (got == 0) { track.eof = true; continue; }
-            if (probe) { if (raw_capacity == 0) { return core::result::Err(Cause::ResponseLimit); } return core::result::Err(Cause::BodyLimit); }
-            if (owner.wire.try_extend(core::slice::view(scratch,got).unwrap()).is_err()) { return core::result::Err(Cause::AllocationFailed); }
-            progress = true;
-            // Drain HeadReady before attempting any more upload bytes.
-            let framed = scan(s,owner,track,socket); if (framed.is_err()) { return framed; } if (framed.unwrap()) { return core::result::Ok(true); }
-        } else { if (!transient(result.unwrap_err())) { return core::result::Err(Cause::Io(result.unwrap_err())); } }
-        if (!s.stats.upload_stopped && s.stats.request_sent < owner.request.len()) {
-            s.stage = Stage::Send; let before = call(s); if (before.is_err()) { return before; }
-            let sent = socket.send(owner.request.as_view().subview(s.stats.request_sent,owner.request.len()).unwrap());
-            if (sent.is_ok()) { let got: i32 = sent.unwrap(); if (got <= 0 || got > owner.request.len()-s.stats.request_sent) { return core::result::Err(Cause::Io(core::io::Error::WriteZero)); } s.stats.request_sent += got; progress = true; }
-            let after = active(s); if (after.is_err()) { return after; }
-            if (sent.is_err() && !transient(sent.unwrap_err())) { return core::result::Err(Cause::Io(sent.unwrap_err())); }
-        }
-        if (!progress) {
-            s.stage = Stage::Receive;
-            let writable: bool = !s.stats.upload_stopped && s.stats.request_sent < owner.request.len();
-            let waited = wait_ready(s,socket,true,writable); if (waited.is_err()) { return waited; }
-        }
-    }
-    return core::result::Err(Cause::BoundaryMismatch);
+    s.stats.discarded_bytes = owner.wire.len()-end; owner.wire.try_resize(end,0 as u8).unwrap();
+    let exact: core::slice::View<u8> = owner.wire.as_view().subview(s.message_offset,end).unwrap();
+    let parsed = canonical(s,exact,owner.method.as_view(),boundary.decoded_length,true,track.eof);
+    if (parsed.is_err()) { return core::result::Err(parsed.unwrap_err()); }
+    track.validated = core::option::Some(parsed.unwrap()); return core::result::Ok(3);
 }
 fn decode(s: &State, owner: &Owners, message: ext::http::Message) -> core::result::Result<bool,Cause> {
     s.stage = Stage::Decode; let paid = charge(s,2*(message.decoded_length as u64)); if (paid.is_err()) { return paid; }
@@ -224,23 +164,223 @@ fn decode(s: &State, owner: &Owners, message: ext::http::Message) -> core::resul
     }
     return active(s);
 }
-pub fn exchange_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+fn empty_owners() -> Owners { return Owners { request:alloc::vec::new(),method:alloc::vec::new(),wire:alloc::vec::new(),decoded:alloc::vec::new(),spans:alloc::vec::new(),heads:alloc::vec::new() }; }
+fn running(status: Status) -> bool { return match(status) { Status::Active -> true, _ -> false }; }
+fn empty_readiness() -> Readiness { return Readiness { readable:false,writable:false,hangup:false,error:false }; }
+fn upload(x: &Exchange) -> bool { return !x.state.stats.upload_stopped && x.state.stats.request_sent < x.owner.request.len(); }
+fn inactive(s: &State) -> Failure { return fail(s,Cause::Inactive,core::option::None()); }
+// Failure cleanup is mandatory even after the deadline or active-call limit.
+fn stop(x: &Exchange, cause: Cause) -> Failure {
+    let ended = finish(x.state.borrow(),x.socket.borrow(),core::result::Err(cause));
+    let failure: Failure = ended.unwrap_err();
+    x.owner.destroy(); x.track.validated = core::option::None(); x.failure = core::option::Some(failure); x.status = Status::Failed;
+    return failure;
+}
+pub fn prepare_until(request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Prepared,Failure> {
     let state: State = State { options:options,deadline:deadline,last:core::time::instant(core::time::zero()),stage:Stage::Prepare,message_offset:0,stats:Stats { request_bytes:0,request_sent:0,response_received:0,interim_count:0,discarded_bytes:0,io_calls:0,work:0,upload_stopped:false,write_shutdown:false } };
     if (!checked(options)) { return core::result::Err(fail(state.borrow(),Cause::InvalidOptions,core::option::None())); }
-    let owner: Owners = Owners { request:alloc::vec::new(),method:alloc::vec::new(),wire:alloc::vec::new(),decoded:alloc::vec::new(),spans:alloc::vec::new(),heads:alloc::vec::new() };
+    let owner: Owners = empty_owners();
     let prepared = prepare(state.borrow(),request,owner.borrow()); if (prepared.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),prepared.unwrap_err(),core::option::None())); }
     let made = ext::http::cursor(ext::http::CursorMode::Response,options.wire,options.response_bytes,options.work-state.stats.work);
     if (made.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),Cause::Http(made.unwrap_err()),core::option::None())); }
     let track: Track = Track { cursor:made.unwrap(),charged:0,close:false,eof:false,status:0,head_end:0,validated:core::option::None() };
-    state.stage = Stage::Open; let before = call(state.borrow()); if (before.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),before.unwrap_err(),core::option::None())); }
-    let opened = std::socket::create(family(endpoint),std::socket::Kind::Tcp,true);
-    if (opened.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
-    let socket: std::socket::Socket = opened.unwrap(); state.stage = Stage::Connect;
-    let outcome: core::result::Result<bool,Cause> = connect(state.borrow(),socket.borrow(),endpoint);
-    if (outcome.is_ok()) { outcome = transfer(state.borrow(),owner.borrow(),track.borrow(),socket.borrow()); }
-    if (outcome.is_ok()) { outcome = decode(state.borrow(),owner.borrow(),track.validated.unwrap()); }
-    let finished = finish(state.borrow(),socket.borrow(),outcome); if (finished.is_err()) { owner.destroy(); return core::result::Err(finished.unwrap_err()); }
-    owner.request.destroy(); owner.spans.destroy(); state.stage = Stage::Publish;
-    let final_check = active(state.borrow()); if (final_check.is_err()) { owner.method.destroy(); owner.wire.destroy(); owner.decoded.destroy(); owner.heads.destroy(); return core::result::Err(fail(state.borrow(),final_check.unwrap_err(),core::option::None())); }
-    return core::result::Ok(Response { wire:owner.wire,method:owner.method,decoded:owner.decoded,interim:owner.heads,validated:track.validated.unwrap(),final_offset:state.message_offset,stats:state.stats });
+    return core::result::Ok(Prepared { owner:owner,state:state,track:track,active:true });
+}
+pub impl Prepared {
+    pub fn borrow(&self) -> &Prepared { return self; }
+    pub fn stats(&self) -> Stats { return self.state.stats; }
+    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn destroy(&self) -> bool { if (!self.active) { return false; } self.active = false; self.owner.destroy(); return true; }
+    // Transfer before any fallible socket operation; copies remain borrowed aliases.
+    pub fn begin(&self, endpoint: core::net::SocketAddr) -> core::result::Result<Exchange,Failure> {
+        if (!self.active) { return core::result::Err(inactive(self.state.borrow())); }
+        let owner: Owners = self.owner; let state: State = self.state; let track: Track = self.track;
+        self.active = false; self.owner = empty_owners(); self.track.validated = core::option::None();
+        state.stage = Stage::Open; let before = call(state.borrow());
+        if (before.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),before.unwrap_err(),core::option::None())); }
+        let opened = std::socket::create(family(endpoint),std::socket::Kind::Tcp,true);
+        if (opened.is_err()) { owner.destroy(); return core::result::Err(fail(state.borrow(),Cause::Io(opened.unwrap_err()),core::option::None())); }
+        let socket: std::socket::Socket = opened.unwrap();
+        let after = active(state.borrow()); if (after.is_err()) { let ended = finish(state.borrow(),socket.borrow(),core::result::Err(after.unwrap_err())); owner.destroy(); return core::result::Err(ended.unwrap_err()); }
+        return core::result::Ok(Exchange { owner:owner,state:state,track:track,socket:socket,endpoint:endpoint,phase:Phase::ConnectStart,status:Status::Active,read_blocked:false,write_blocked:false,send_turn:false,failure:core::option::None() });
+    }
+}
+pub fn begin_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Exchange,Failure> {
+    let made = prepare_until(request,options,deadline); if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let prepared: Prepared = made.unwrap(); return prepared.begin(endpoint);
+}
+// One action, with at most one network leaf. Pure phase changes never retry I/O.
+fn advance(x: &Exchange, ready: Readiness) -> core::result::Result<bool,Cause> {
+    let s: &State = x.state.borrow();
+    let is_connect_start: bool = match(x.phase) { Phase::ConnectStart -> true, _ -> false };
+    if (is_connect_start) {
+        s.stage = Stage::Connect; let before = call(s); if (before.is_err()) { return before; }
+        let started = x.socket.connect(x.endpoint); let after = active(s); if (after.is_err()) { return after; }
+        if (started.is_err()) { return core::result::Err(Cause::Io(started.unwrap_err())); }
+        let connected: bool = match(started.unwrap()) { std::socket::Connection::Connected -> true, _ -> false };
+        x.phase = Phase::WaitConnect; if (connected) { x.phase = Phase::Scan; }
+        return core::result::Ok(true);
+    }
+    let is_wait_connect: bool = match(x.phase) { Phase::WaitConnect -> true, _ -> false };
+    if (is_wait_connect) {
+        if (ready.writable || ready.error || ready.hangup) { x.phase = Phase::ConnectError; }
+        return core::result::Ok(true);
+    }
+    let is_connect_error: bool = match(x.phase) { Phase::ConnectError -> true, _ -> false };
+    if (is_connect_error) {
+        s.stage = Stage::Connect; let before = call(s); if (before.is_err()) { return before; }
+        let error = x.socket.take_error(); let after = active(s); if (after.is_err()) { return after; }
+        if (error.is_err()) { return core::result::Err(Cause::Io(error.unwrap_err())); }
+        if (error.unwrap().is_some()) { return core::result::Err(Cause::Io(core::io::Error::Host(error.unwrap().unwrap()))); }
+        x.phase = Phase::ConnectPeer; return core::result::Ok(true);
+    }
+    let is_connect_peer: bool = match(x.phase) { Phase::ConnectPeer -> true, _ -> false };
+    if (is_connect_peer) {
+        s.stage = Stage::Connect; let before = call(s); if (before.is_err()) { return before; }
+        let peer = x.socket.peer_addr(); let after = active(s); if (after.is_err()) { return after; }
+        if (peer.is_err()) {
+            let pending: bool = match(peer.unwrap_err()) { core::io::Error::Host(code) -> code == 107, _ -> false };
+            if (!pending) { return core::result::Err(Cause::Io(peer.unwrap_err())); }
+            x.phase = Phase::WaitConnect;
+        } else { x.phase = Phase::Scan; }
+        return core::result::Ok(true);
+    }
+    let is_scan: bool = match(x.phase) { Phase::Scan -> true, _ -> false };
+    if (is_scan) {
+        let scanned = scan_once(s,x.owner.borrow(),x.track.borrow()); if (scanned.is_err()) { return core::result::Err(scanned.unwrap_err()); }
+        let event: i32 = scanned.unwrap();
+        if (event == 0) { x.phase = Phase::Receive; if (x.send_turn && upload(x)) { x.phase = Phase::Send; } }
+        if (event == 2) { x.phase = Phase::Shutdown; }
+        if (event == 3) { x.phase = Phase::Decode; }
+        return core::result::Ok(true);
+    }
+    let is_receive: bool = match(x.phase) { Phase::Receive -> true, _ -> false };
+    if (is_receive) {
+        if (x.read_blocked) { if (upload(x) && !x.write_blocked) { x.phase = Phase::Send; } return core::result::Ok(true); }
+        let raw_capacity: i32 = s.options.response_bytes-x.owner.wire.len(); let capacity: i32 = raw_capacity;
+        if (x.track.close) { let body_capacity: i32 = s.options.wire.body_bytes-(x.owner.wire.len()-s.message_offset-x.track.head_end); if (body_capacity < capacity) { capacity = body_capacity; } }
+        let probe: bool = capacity == 0;
+        if (capacity < 0 || (probe && !x.track.close)) { return core::result::Err(Cause::ResponseLimit); }
+        let count: i32 = capacity; if (count > 1024) { count = 1024; } if (probe) { count = 1; }
+        let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
+        s.stage = Stage::Receive; let before = call(s); if (before.is_err()) { return before; }
+        let result = x.socket.receive(core::slice::view(scratch,count).unwrap());
+        if (result.is_ok()) { let got: i32 = result.unwrap(); if (got < 0 || got > count) { return core::result::Err(Cause::Io(core::io::Error::InvalidCount)); } s.stats.response_received += got as u64; }
+        let after = active(s); if (after.is_err()) { return after; }
+        if (result.is_err()) {
+            let error: core::io::Error = result.unwrap_err();
+            if (core::io::is_interrupted(error)) { return core::result::Ok(true); }
+            let blocked: bool = match(error) { core::io::Error::WouldBlock -> true, _ -> false };
+            if (!blocked) { return core::result::Err(Cause::Io(error)); }
+            x.read_blocked = true; x.phase = Phase::Send; return core::result::Ok(true);
+        }
+        let got: i32 = result.unwrap(); x.send_turn = true; x.write_blocked = false;
+        if (got == 0) { x.track.eof = true; x.phase = Phase::Scan; return core::result::Ok(true); }
+        if (probe) { if (raw_capacity == 0) { return core::result::Err(Cause::ResponseLimit); } return core::result::Err(Cause::BodyLimit); }
+        if (x.owner.wire.try_extend(core::slice::view(scratch,got).unwrap()).is_err()) { return core::result::Err(Cause::AllocationFailed); }
+        x.phase = Phase::Scan; return core::result::Ok(true);
+    }
+    let is_send: bool = match(x.phase) { Phase::Send -> true, _ -> false };
+    if (is_send) {
+        if (!upload(x) || x.write_blocked) { x.phase = Phase::Receive; return core::result::Ok(true); }
+        let end: i32 = x.owner.request.len(); if (end-s.stats.request_sent > 1024) { end = s.stats.request_sent+1024; }
+        s.stage = Stage::Send; let before = call(s); if (before.is_err()) { return before; }
+        let sent = x.socket.send(x.owner.request.as_view().subview(s.stats.request_sent,end).unwrap());
+        if (sent.is_ok()) { let got: i32 = sent.unwrap(); if (got <= 0 || got > end-s.stats.request_sent) { return core::result::Err(Cause::Io(core::io::Error::WriteZero)); } s.stats.request_sent += got; x.read_blocked = false; }
+        let after = active(s); if (after.is_err()) { return after; }
+        if (sent.is_err()) {
+            let error: core::io::Error = sent.unwrap_err(); if (core::io::is_interrupted(error)) { return core::result::Ok(true); }
+            let blocked: bool = match(error) { core::io::Error::WouldBlock -> true, _ -> false };
+            if (!blocked) { return core::result::Err(Cause::Io(error)); } x.write_blocked = true;
+        }
+        x.send_turn = false; x.phase = Phase::Receive; return core::result::Ok(true);
+    }
+    let is_shutdown: bool = match(x.phase) { Phase::Shutdown -> true, _ -> false };
+    if (is_shutdown) {
+        let stopped = shutdown_write(s,x.socket.borrow()); if (stopped.is_err()) { return stopped; }
+        x.phase = Phase::Scan; return core::result::Ok(true);
+    }
+    let is_decode: bool = match(x.phase) { Phase::Decode -> true, _ -> false };
+    if (is_decode) {
+        let decoded = decode(s,x.owner.borrow(),x.track.validated.unwrap()); if (decoded.is_err()) { return decoded; }
+        x.phase = Phase::Close; return core::result::Ok(true);
+    }
+    return core::result::Ok(true);
+}
+pub impl Exchange {
+    pub fn borrow(&self) -> &Exchange { return self; }
+    pub fn stats(&self) -> Stats { return self.state.stats; }
+    pub fn status(&self) -> Status { return self.status; }
+    pub fn last_failure(&self) -> core::option::Option<Failure> { return self.failure; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { if (!running(self.status)) { return core::option::None(); } return self.socket.raw_handle(); }
+    pub fn interest(&self) -> Interest {
+        if (!running(self.status)) { return Interest { readable:false,writable:false,immediate:false }; }
+        return match(self.phase) {
+            Phase::WaitConnect -> Interest { readable:false,writable:true,immediate:false },
+            Phase::Receive -> Interest { readable:true,writable:upload(self),immediate:!self.read_blocked || (upload(self) && !self.write_blocked) },
+            Phase::Send -> Interest { readable:true,writable:upload(self),immediate:!self.read_blocked || (upload(self) && !self.write_blocked) },
+            _ -> Interest { readable:false,writable:false,immediate:true }
+        };
+    }
+    // Charge one allowance per actual shared/single poll participation, including EINTR.
+    // Immediate work must be stepped instead; it incurs no fabricated poll charge.
+    pub fn before_wait(&self) -> core::result::Result<bool,Failure> {
+        let failed: bool = match(self.status) { Status::Failed -> true, _ -> false };
+        if (failed) { return core::result::Err(self.failure.unwrap()); }
+        if (!running(self.status)) { return core::result::Err(inactive(self.state.borrow())); }
+        let observed = active(self.state.borrow()); if (observed.is_err()) { return core::result::Err(stop(self,observed.unwrap_err())); }
+        if (self.interest().immediate) { return core::result::Ok(false); }
+        let paid = call(self.state.borrow()); if (paid.is_err()) { return core::result::Err(stop(self,paid.unwrap_err())); }
+        return core::result::Ok(true);
+    }
+    pub fn step(&self, ready: Readiness) -> core::result::Result<core::option::Option<Response>,Failure> {
+        let failed: bool = match(self.status) { Status::Failed -> true, _ -> false };
+        if (failed) { return core::result::Err(self.failure.unwrap()); }
+        if (!running(self.status)) { return core::result::Err(inactive(self.state.borrow())); }
+        let observed = active(self.state.borrow()); if (observed.is_err()) { return core::result::Err(stop(self,observed.unwrap_err())); }
+        if (ready.readable || ready.hangup || ready.error) {
+            self.read_blocked = false;
+            let sending: bool = match(self.phase) { Phase::Send -> true, _ -> false }; if (sending) { self.phase = Phase::Receive; }
+        }
+        if (ready.writable || ready.hangup || ready.error) { self.write_blocked = false; }
+        let closing: bool = match(self.phase) { Phase::Close -> true, _ -> false };
+        if (closing) {
+            let ended = finish(self.state.borrow(),self.socket.borrow(),core::result::Ok(true));
+            if (ended.is_err()) { let failure: Failure = ended.unwrap_err(); self.owner.destroy(); self.track.validated = core::option::None(); self.failure = core::option::Some(failure); self.status = Status::Failed; return core::result::Err(failure); }
+            self.phase = Phase::Publish; return core::result::Ok(core::option::None());
+        }
+        let publishing: bool = match(self.phase) { Phase::Publish -> true, _ -> false };
+        if (publishing) {
+            self.owner.request.destroy(); self.owner.spans.destroy(); self.state.stage = Stage::Publish;
+            let checked = active(self.state.borrow()); if (checked.is_err()) { return core::result::Err(stop(self,checked.unwrap_err())); }
+            let response: Response = Response { wire:self.owner.wire,method:self.owner.method,decoded:self.owner.decoded,interim:self.owner.heads,validated:self.track.validated.unwrap(),final_offset:self.state.message_offset,stats:self.state.stats };
+            self.owner = empty_owners(); self.track.validated = core::option::None(); self.status = Status::Complete;
+            return core::result::Ok(core::option::Some(response));
+        }
+        let progressed = advance(self,ready); if (progressed.is_err()) { return core::result::Err(stop(self,progressed.unwrap_err())); }
+        return core::result::Ok(core::option::None());
+    }
+    pub fn abort(&self) -> core::result::Result<bool,Failure> {
+        if (!running(self.status)) { return core::result::Ok(false); }
+        self.state.stage = Stage::Close; let closed = self.socket.close(); self.owner.destroy(); self.track.validated = core::option::None(); self.status = Status::Aborted;
+        if (closed.is_err()) { let failure: Failure = fail(self.state.borrow(),Cause::Io(closed.unwrap_err()),core::option::None()); self.failure = core::option::Some(failure); return core::result::Err(failure); }
+        return core::result::Ok(true);
+    }
+}
+pub fn exchange_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
+    let made = begin_until(endpoint,request,options,deadline); if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let exchange: Exchange = made.unwrap(); let ready: Readiness = empty_readiness();
+    while (true) {
+        let result = exchange.step(ready); ready = empty_readiness();
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        if (result.unwrap().is_some()) { return core::result::Ok(result.unwrap().unwrap()); }
+        let interest: Interest = exchange.interest(); if (interest.immediate) { continue; }
+        let charged = exchange.before_wait(); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); } if (!charged.unwrap()) { continue; }
+        let remaining: core::time::Duration = exchange.state.deadline.remaining(exchange.state.last); let milliseconds: i32 = 2147483647;
+        if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
+        let waited = exchange.socket.wait_ms(interest.readable,interest.writable,milliseconds);
+        if (waited.is_err()) { if (!core::io::is_interrupted(waited.unwrap_err())) { return core::result::Err(stop(exchange.borrow(),Cause::Io(waited.unwrap_err()))); } }
+        else { let observed: std::socket::Ready = waited.unwrap(); ready = Readiness { readable:observed.readable,writable:observed.writable,hangup:observed.hangup,error:observed.error }; }
+    }
+    return core::result::Err(inactive(exchange.state.borrow()));
 }

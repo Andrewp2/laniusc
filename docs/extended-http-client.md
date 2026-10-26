@@ -32,7 +32,11 @@ pub fn exchange_until(
 ) -> core::result::Result<Response,Failure>;
 ```
 
-All request views borrow caller storage only until `exchange_until` returns.
+All request views borrow caller storage during `prepare_until` or `begin_until`.
+On successful preparation, every required byte has been copied: callers may
+release method, target, authority, header names/values, body, and their view
+containers before starting or driving the exchange. `exchange_until` performs
+that same preparation internally.
 Their backing may use valid nonzero starts and physical strides; logical
 bounds are checked, while actual storage extent/layout/lifetime remain the
 caller’s contract. Bodies preserve all byte values. Header names/values are
@@ -56,6 +60,106 @@ the client does not silently change GET to POST when a body is supplied.
 Endpoint routing is independent of the Host authority and its optional port.
 No authority equality, URI normalization, DNS, NSS, `getaddrinfo`, search path,
 or `/etc/resolv.conf` policy is applied.
+
+## Resumable preparation and exchange
+
+```lanius
+pub struct Readiness {
+    readable: bool, writable: bool, hangup: bool, error: bool,
+}
+pub struct Interest { readable: bool, writable: bool, immediate: bool }
+pub enum Status { Active, Complete, Failed, Aborted }
+
+pub fn prepare_until(request: Request, options: Options, deadline: Deadline)
+    -> Result<Prepared,Failure>;
+pub fn begin_until(endpoint: SocketAddr, request: Request,
+    options: Options, deadline: Deadline) -> Result<Exchange,Failure>;
+
+pub impl Prepared {
+    pub fn borrow(&self) -> &Prepared;
+    pub fn stats(&self) -> Stats;
+    pub fn is_active(&self) -> bool;
+    pub fn destroy(&self) -> bool;
+    pub fn begin(&self, endpoint: SocketAddr) -> Result<Exchange,Failure>;
+}
+pub impl Exchange {
+    pub fn borrow(&self) -> &Exchange;
+    pub fn interest(&self) -> Interest;
+    pub fn raw_handle(&self) -> Option<i32>;
+    pub fn stats(&self) -> Stats;
+    pub fn status(&self) -> Status;
+    pub fn last_failure(&self) -> Option<Failure>;
+    pub fn before_wait(&self) -> Result<bool,Failure>;
+    pub fn step(&self, ready: Readiness) -> Result<Option<Response>,Failure>;
+    pub fn abort(&self) -> Result<bool,Failure>;
+}
+```
+
+The abbreviated types above are `core::net::SocketAddr`,
+`core::time::Deadline`, `core::option::Option`, and `core::result::Result`.
+Preparation runs the same checked request writer and copies the method without
+opening a socket. This lets a caller validate and stage several jobs before
+starting network activity. Preparation failures release their temporary owners.
+An active `Prepared` must be consumed with `begin` or released with `destroy`.
+`destroy` returns true once, then false. `begin` disarms the actual Prepared
+before opening a nonblocking socket, and preserves its absolute deadline and
+cumulative work/I/O accounting. It opens only; connection attempts start in
+`step`. Repeated `begin` on a consumed/destroyed Prepared reports `Inactive`.
+`begin_until` is preparation followed by `begin`.
+
+`step` never polls, sleeps, or retries a failed network operation internally.
+It returns `Ok(None)` while active, one owned `Response` on completion, or a
+`Failure`. A step performs at most one active network leaf: connect, socket
+error query, peer query, receive, send, or write shutdown. Send and receive
+attempts use at most 1024 bytes. Other turns advance at most one cursor event
+(including canonical validation when that event selects a boundary),
+decode/materialize the final response and all bounded informational heads,
+close, or publish.
+Mandatory error cleanup may also close the socket in a failing turn. Cursor
+and whole-message parsing use the existing byte/header/trailer/work caps;
+canonical validation and decoding are bounded actions, not preemptible CPU
+slices or a hard wall-clock fairness guarantee.
+
+Drive `interest().immediate` work immediately with all-false Readiness. When it
+is false, call `before_wait` before participating in a single or shared poll.
+It checks the deadline and charges one I/O allowance, returning `Ok(true)`.
+If immediate work remains, it returns `Ok(false)` without a poll charge; step
+that work first. This charge is an abstract per-exchange poll participation:
+one shared poll may charge several participating exchanges, and interrupted
+or timed-out attempts still count. No poll occurs inside `before_wait`.
+Pass the resulting readiness flags to the next step, then discard that hint.
+A timeout or interruption uses all-false readiness; the next step checks the
+original deadline again. Readiness belongs to that current socket/slot only:
+never reuse an old result for a new Exchange that happens to reuse its fd.
+
+`raw_handle` is an optional borrowed descriptor for a poller. Do not close,
+read/write, change flags, or otherwise operate on it independently. Readiness
+is advisory: after EINPROGRESS, an exchange waits for writable/error/hangup
+readiness before querying SO_ERROR, and then proves connection with a separate
+peer query. SO_ERROR zero alone never authorizes sending. A still-unconnected
+peer query returns to waiting. Calls with no readiness cannot bypass the
+pending-connect gate. Hangup is never a substitute for an actual receive EOF.
+These checks follow Linux [connect](https://man7.org/linux/man-pages/man2/connect.2.html)
+and [getpeername](https://man7.org/linux/man-pages/man2/getpeername.2.html).
+
+While active, `stats` is cumulative and `last_failure` is empty. Completion
+transfers the response once, closes the socket and disarms all Exchange owners;
+`status` becomes Complete and `raw_handle` is empty. Failure closes/releases
+once and caches its original Failure; repeated step/before_wait calls return
+that same failure without I/O, allocation, or renewed budgets. `abort` releases
+an active Exchange regardless of exhausted quotas/deadline, returns true once,
+and marks it Aborted. A close error is returned as primary `Cause::Io` at Close
+and retained in `last_failure`; cleanup is still complete and not retried.
+`abort` on any terminal state returns false. Step/before_wait on Complete or
+Aborted report a local `Cause::Inactive` without touching transferred owners.
+Terminal interest has all fields false. Copies of Prepared/Exchange are only
+borrowed aliases: keep one actual manual owner, and do not mutate their fields.
+
+`exchange_until` is the canonical synchronous driver over these same APIs.
+It steps immediate work, charges poll participation, performs one socket poll,
+and feeds that readiness back into the engine. It shares every request,
+framing, response-validation, ownership and error path with direct callers;
+there is no second HTTP parser or transport implementation.
 
 ## Owned response and views
 
@@ -134,15 +238,18 @@ were consulted; h11 and Python `http.client` are independent test oracles.
 
 ## Upload progress and early final responses
 
-The nonblocking loop drains cursor events, tries a receive, drains any new
-events, then tries a request write when still permitted. It polls both readable
-and writable directions when neither operation makes progress. This permits
+The nonblocking engine processes cursor events before sending, alternates
+bounded receive/send attempts while upload remains permitted, and enables a
+fresh receive probe after each successful send. It requests both readable and
+writable directions when neither operation can progress. Two WouldBlock
+results settle on non-immediate interest rather than spinning between phases. This permits
 an early final response to stop an upload instead of blocking in a send-all
 operation while the server waits for the client to read its rejection.
 
 If a final HeadReady arrives before all staged request bytes have been sent,
 `upload_stopped` becomes true and no more request bytes are sent. The client
-performs one checked `Shutdown::Write`, then continues receiving the final
+performs one checked `Shutdown::Write` in a separate subsequent step, then
+continues receiving the final
 response. This sends request-side EOF to a peer waiting on the abandoned
 body. A successful shutdown is recorded before the next clock observation.
 Shutdown failure is terminal. Normally completed uploads are not half-closed
@@ -181,7 +288,7 @@ much more raw storage than decoded body bytes. Retained vectors grow
 geometrically; quotas bound logical payloads and configured work, not exact
 allocator capacity, peak temporary mappings, or process RSS.
 
-The I/O quota counts each socket creation, connect, poll attempt, SO_ERROR
+The I/O quota counts each socket creation, connect, poll participation, SO_ERROR
 check, peer check, send, receive, and write shutdown. Repeated EINTR/WouldBlock
 attempts still count. The client uses single-attempt socket operations and
 its own absolute-deadline poll loop; helper-internal retries cannot reset or
@@ -216,7 +323,8 @@ EOF in the exact-cap probe path.
 `Stats`, and an optional secondary close error. Causes distinguish invalid
 options, unsupported requests/managed headers/upgrades, allocation, timeout,
 clock/socket/wire errors, request/response/body/interim/I/O/work limits, and
-cursor/canonical boundary mismatch. HTTP parser offsets remain relative to
+cursor/canonical boundary mismatch, and local use after completion/abort
+(`Inactive`). HTTP parser offsets remain relative to
 the selected message; add `message_offset` to locate them in the observed
 connection byte stream. Stages distinguish preparation, opening, connecting,
 sending, receiving, shutdown, validation, decoding, close, and publication.
@@ -283,6 +391,11 @@ resolver activity inside the HTTP client.
 
 ## Focused execution evidence
 
+The synchronous client regression and the five direct Prepared/Exchange groups
+passed after the resumable refactor on the native Linux x86-64 profile through
+the production GPU compiler. Their separate receipts and finite scopes are
+recorded below.
+
 `tests/extended_http_client_execution.rs` compiles native public contracts and
 the CLI. The native fixture destroys caller method storage before inspecting
 the response, exercises counted/strided binary input, two informational heads,
@@ -303,10 +416,35 @@ broken stdout/stderr pipes and failed signal setup. Oracles require test-only
 Python h11; production uses no Python, Rust parser, JSON bridge, or external
 network nameserver/service.
 
-The accepted native gates execute 188 cases across six tests. The two
-allocation paths reach 13 and 22 mappings; each reached allocation is failed
-individually and checked for cleanup. The 1 MiB response scale case completed
-in 0.128 seconds of client-process wall time, including startup and transfer but
-excluding compilation. The late-shutdown control verifies a successful
-shutdown syscall and its recorded progress before the delayed return causes
-the original deadline to expire.
+All six synchronous regression groups passed in 26.85 seconds, recorded in
+`target/stdlib-work/http-exchange-client-regressions-current.log`. They report
+188 cases: one native contract, 47 matrix, 21 limit/early-final, 34 rejection,
+73 fault and 12 CLI/I/O cases. The two allocation paths reach 13 body and 22
+report mappings; each reached allocation is failed individually and checked
+for cleanup. The 1 MiB response case recorded 0.120329 seconds of client-process
+wall time, including startup and transfer but excluding compilation. This is
+one native peer/process observation, not a standalone throughput measurement.
+The late-shutdown control verifies a successful shutdown syscall and its
+recorded progress before the delayed return causes the original deadline to
+expire.
+
+`tests/extended_http_exchange_execution.rs` adds 83 direct cases: three
+stepping/readiness, 20 framing, two early-final, 10 lifecycle and 48 fault
+cases. The strengthened steps, framing and early-final groups passed in the
+mixed 9.35-second invocation recorded in
+`target/stdlib-work/http-exchange-all-groups-current.log`. Lifecycle and fault
+groups passed their focused 8.58-second retry in
+`target/stdlib-work/http-exchange-two-groups-retry.log`. The allocation
+workloads reached 12 and 14 engine allocation positions, each failed once.
+These counts are separate from the synchronous 188-case regression.
+
+Direct-call trace epochs check no internal poll, one active network leaf per
+step, 1024-byte send/receive bounds, cumulative accounting and confirmed
+prefixes. They also check staged caller-storage release, owned Response
+lifetimes, real EOF versus advisory readiness, early-final half-close and
+single cleanup authority. Two harness corrections preserved the existing
+fresh-readiness and canonical zero-cap contracts; the classification and
+full coverage limits are in the
+[Exchange testing guide](extended-http-exchange-testing.md). These finite
+loopback cases do not establish hard CPU preemption or general HTTP
+conformance.

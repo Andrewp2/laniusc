@@ -91,6 +91,27 @@ pass across separate receipts; the supervisor covers 53 cases.
 Descendants can escape a group, and deadlines do not guarantee kernel-stuck
 processes become reapable; these APIs do not provide process-tree containment.
 
+[Resumable cleartext HTTP exchanges](extended-http-client.md) expose owned
+Prepared request staging and caller-driven Exchange steps. All five direct
+[Exchange groups](extended-http-exchange-testing.md) pass across separate
+receipts, covering 83 cases; the same engine also passes all six synchronous
+client regression groups (188 cases).
+[Bounded HTTP batches](extended-http-batch.md) schedule several numeric-endpoint
+connections using one thread and reusable polling, with input-order outcomes,
+one common deadline, manual response owners, logical pending/retained byte
+caps and explicit operation/work allowances. All seven batch groups pass
+across separate receipts, including consecutive begin failures followed by
+a valid queued job without a blocking poll that delays admission. The [fetch-many program](extended-fetch-many.md) composes bounded CSV
+jobs, the batch scheduler and an ordered Stored ZIP, validating all requests
+before sockets and staging the archive before stdout. All five application
+groups pass across separate receipts, including 59 reached allocation failures
+and a 64-job scale control with at most four active sockets. Logical retention
+caps do not bound allocator capacity, temporary candidates or process RSS.
+Resumable TLS scheduling and executable worker threads remain part of the full
+goal; the [concurrency admission audit](library-concurrency-dependencies.md)
+records their separate compiler/runtime boundaries. These execution receipts
+cover native Linux x86-64 CPU programs built by the GPU compiler.
+
 [Checked native C calls](library-native-c.md) execute on Linux x86_64/glibc
 through ordinary ELF objects, the system C linker and libc startup.
 [OpenSSL digest contexts](extended-openssl-digest.md) provide streaming

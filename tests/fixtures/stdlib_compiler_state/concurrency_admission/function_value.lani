@@ -1,0 +1,11 @@
+// Expected rejection: an ordinary function name is not an addressable,
+// checked C callback capability. No pthread_create prototype is fabricated.
+module app::main;
+
+fn worker(argument: ptr) -> ptr { return argument; }
+
+fn main() -> i32 {
+    let entry: ptr = worker;
+    if (entry == 0) { return 1; }
+    return 0;
+}
