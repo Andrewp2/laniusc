@@ -36,6 +36,26 @@ banner under `docs/api/`. It refuses to replace a handwritten file at an output
 path, rejects symlinks and preserves unrelated files. Generated pages are not
 edited by hand. The handwritten guide you are reading is outside that tree.
 
+### Current generation receipt
+
+At the TempFile/FileOps and server public-interface freeze, the bounded writer
+and final `--check` both exit zero for **245 pages from 244 source modules,
+with 8,090 public declaration markers**. The inventory adds
+[`temp_file`](api/std/temp_file.md), alongside the new server pages
+[`http_server_poll`](api/ext/http_server_poll.md),
+[`https_server`](api/ext/https_server.md),
+[`https_server_poll`](api/ext/https_server_poll.md) and
+[`server_poll`](api/ext/server_poll.md), and refreshes FileOps, HTTP server and
+the module index. These are declaration markers, not a count of working functions.
+
+The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
+hashes before generation and after the final check. The generator writes only
+the reference tree. Metadata includes the finite TempFile/FileOps and server,
+application, scale, teardown and scheduler receipts. The complete library goal
+remains open; AtomicFile publication and the `kv_tool` migration are pending,
+and server coverage gaps stay explicit in the [overview](library-overview.md).
+Generation supplies no runtime acceptance for any API.
+
 ## Source boundaries
 
 `tools/generate_library_reference.py` is documentation tooling. Declaration

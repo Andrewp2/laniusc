@@ -17,13 +17,28 @@ keys, chains and trust files stay in temporary directories; none are checked in.
 ## Shared-scheduler oracle migration
 
 The actual application now uses the shared HTTP Protocol, resumable HTTPS
-transport and server scheduler. The migrated matrix passed all 30 cases against
-the current application ELF, recorded in
-`target/stdlib-work/https-serve-shared-scheduler-matrix-expect-policy-retry.log`.
+transport and server scheduler. All three migrated application groups passed,
+totaling 102 process cases. The affected mutual-TLS application groups also
+passed, totaling 101 process cases; each actual app pair counts two processes.
+Both profiles used reused native ELFs, with no fixture/product changes during
+the gates. Exact receipts under `target/stdlib-work/` are:
+
+| Profile | Mode | Cases | Receipt |
+| --- | --- | --- | --- |
+| HTTPS service | `matrix` | 30 | `https-serve-shared-scheduler-matrix-expect-policy-retry.log` |
+| HTTPS service | `failures` | 23 | `https-serve-shared-scheduler-failures-first.log` |
+| HTTPS service | `limits` | 49 | `https-serve-shared-scheduler-limits-first.log` |
+| Mutual-TLS apps | `matrix` | 35 | `https-mutual-shared-server-matrix-first.log` |
+| Mutual-TLS apps | `failures` | 34 | `https-mutual-shared-server-failures-first.log` |
+| Mutual-TLS apps | `limits` | 32 | `https-mutual-shared-server-limits-first.log` |
+
+These logs record case counts without durations. They exclude the separate raw
+stream and prepared-context consumers; no new acceptance of those groups is
+claimed here.
+
 The first attempt (`https-serve-shared-scheduler-matrix-first.log`) stopped at
 the stale unsupported HTTP/1.0 Expect expectation; production code was unchanged
-for the accepted retry. The negative and quota groups below are saved but have
-not yet been executed against the migrated application.
+for the accepted retry.
 
 Stage 1 updates matrix/application helpers: acceptance-order IDs and per-owner
 code/failure/cleanup records replace the old copied-acceptance counter; native
@@ -54,8 +69,8 @@ The `stream` function and its raw probe modes are unchanged: they collect their
 own transport output and never use the application's report, managed-Date or
 HTTP response/unwrap helper. The mTLS `prepared` group likewise uses its separate
 native probe and peer, not the migrated application helpers. There is no schema
-fallback between these profiles. Historical receipts below are not acceptance
-for the migrated negative/quota groups or new stream/prepared acceptance.
+fallback between these profiles. The historical stream/prepared receipts remain
+separate from the current scheduler application acceptance above.
 
 ## Historical verified cases
 

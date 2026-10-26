@@ -6,14 +6,14 @@ to the shared [HTTP Protocol](library-server-contract.md),
 [`server_poll`](extended-server-poll.md) scheduler through
 [`https_server_poll`](../extended/ext/https_server_poll.lani).
 
-**Work in progress:** the actual migrated application compiles and links on
+**Current acceptance:** the actual migrated application compiles and links on
 Linux x86_64/glibc with system OpenSSL 3. Two native causal HTTPS cases passed:
 a held handshake while two later verified clients complete/refill, and a held
 4 MiB response reader while a healthy verified sibling completes. Each run
-reached two active owners and three sockets including the listener. The migrated
-application matrix also passed all 30 cases. Negative/quota oracle migration is
-saved, with execution pending; allocation/fault gates remain pending too.
-Historical sequential receipts below do not establish those remaining gates.
+reached two active owners and three sockets including the listener. All three
+migrated application groups passed, totaling 102 cases; the affected mutual-TLS
+app groups passed another 101 cases. These receipts do not include allocation
+fault injection or new acceptance of the separate stream/prepared consumers.
 No HTTP parser, body decoder, Date formatter, TLS record or
 cryptographic primitive is implemented in the application.
 
@@ -23,15 +23,33 @@ process observations of 0.158297 and 6.473137 seconds respectively. The latter
 used an unchanged 131,072-byte receive buffer and required traced output
 backpressure. These finite causal checks are not throughput benchmarks.
 
-The current matrix receipt is
-`target/stdlib-work/https-serve-shared-scheduler-matrix-expect-policy-retry.log`.
-Its first attempt, `https-serve-shared-scheduler-matrix-first.log`, stopped at a
+## Current application receipts
+
+The reused native application ELFs passed these focused Python oracle groups
+with unchanged fixture/product files during each gate. Receipt paths are under
+`target/stdlib-work/`; these logs report case counts, without durations.
+
+| Profile | Group | Cases | Receipt |
+| --- | --- | --- | --- |
+| HTTPS service | Matrix | 30 | `https-serve-shared-scheduler-matrix-expect-policy-retry.log` |
+| HTTPS service | Failures | 23 | `https-serve-shared-scheduler-failures-first.log` |
+| HTTPS service | Limits | 49 | `https-serve-shared-scheduler-limits-first.log` |
+| Mutual-TLS apps | Matrix | 35 | `https-mutual-shared-server-matrix-first.log` |
+| Mutual-TLS apps | Failures | 34 | `https-mutual-shared-server-failures-first.log` |
+| Mutual-TLS apps | Limits | 32 | `https-mutual-shared-server-limits-first.log` |
+
+The HTTPS service total is 102 process cases; the mutual-TLS app total is 101,
+with each actual fetch/service pair counting two processes. These are separate
+finite profiles, excluding the raw stream and prepared-context groups.
+
+The first HTTPS matrix attempt,
+`https-serve-shared-scheduler-matrix-first.log`, stopped at a
 stale expectation that unsupported HTTP/1.0 Expect would return 200. The frozen
 shared policy returns 417; the corrected oracle checks that response and adds a
 recognized HTTP/1.0 100-continue control that echoes the body without an interim
 response. The application was unchanged for the retry.
 
-Pending negative/quota groups require one report for each accepted socket,
+The accepted negative/quota groups require one report for each accepted socket,
 including failed handshakes. Listener expiry has no accepted-owner report;
 accepted handshake/request expiry has one. Tiny I/O and TLS caps are exercised
 with actual connected peers and exact consumed-call counters. Zero TLS/I/O

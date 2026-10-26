@@ -1,57 +1,75 @@
 # Resumable HTTP and HTTPS servers
 
-This is an implementation proposal. It supplies no new executable API or
-acceptance receipt. The intended result is one bounded server scheduler that
-can keep serving healthy connections while another client stalls during a
-handshake, request, response or close. It advances the connected-program
-milestone; worker threads and the rest of the library roadmap remain open.
+The shared Protocol, plain and TLS drivers, generic server scheduler and both
+local service applications are implemented. Finite native gates have passed
+for protocol and generic dispatch, direct drivers, retained synchronous
+behavior, causal application concurrency and bounded scale. The full server
+increment is still under acceptance. Remaining gates cover plain fault and
+resource handling, targeted TLS teardown, and actual Server owned-error and
+global-cap behavior. Worker threads and the rest of the library roadmap remain
+open.
+
+This document preserves the original design rationale and the numbered
+acceptance scope below. Its sketches explain that design; the current guides
+define exact APIs, supported profiles and separate acceptance receipts:
+
+| Surface | Current guide |
+| --- | --- |
+| Shared Protocol and plain Exchange | [Shared server contract](library-server-contract.md) |
+| TLS Exchange and closure policy | [HTTPS server Exchange](extended-https-server-exchange.md) |
+| Generic scheduler and persistent Server | [Server poll](extended-server-poll.md) |
+| Plain service application | [HTTP service](extended-http-serve.md) |
+| TLS service application | [HTTPS service](extended-https-server.md) |
+
+Those finite receipts do not establish every acceptance item below. In
+particular, separate raw OpenSSL experiments, direct-driver controls and
+application runs retain their own evidence limits. No GPU program execution
+or support for another operating system is claimed.
 
 The first supported profile is Linux x86_64/glibc, with OpenSSL 3 for HTTPS.
 Production protocol and scheduling code stays in Lanius. Existing native
 socket, clock, poll and OpenSSL bindings supply host services. This design
 needs no C callbacks, worker entry, new compiler IR or cryptographic primitive.
 
-The concrete Protocol/plain-driver API is now frozen in
-[the shared server contract](library-server-contract.md). That contract is
-authoritative for source signatures and terminal cleanup; the scheduler owner
-freezes its concrete generic API separately. The sketches here describe the
-architecture and must follow those interfaces when implementation lands.
+## Starting point before implementation
 
-## Current boundaries
+The following boundaries describe the sequential implementation that this
+increment replaced. They explain why the shared engine was needed.
 
-- [http_server.lani](../extended/ext/http_server.lani) already owns a staged
-  head, request wire, decoded body and encoded response. It uses the canonical
+- [http_server.lani](../extended/ext/http_server.lani) already owned a staged
+  head, request wire, decoded body and encoded response. It used the canonical
   HTTP cursor/parser/decoder/writer, but accept, receive, send and drain methods
-  contain waits and loops.
-- [https_serve.lani](../sample_programs/library/https_serve.lani) duplicates
+  contained waits and loops.
+- [https_serve.lani](../sample_programs/library/https_serve.lani) duplicated
   request collection, Expect handling, decoding and response preparation in
-  the application. It serves connections sequentially through
+  the application. It served connections sequentially through
   [tls_stream.lani](../extended/ext/tls_stream.lani), whose byte-stream
-  operations also wait internally.
-- [openssl_tls.lani](../extended/ext/openssl_tls.lani) supplies caller-driven
+  operations also waited internally.
+- [openssl_tls.lani](../extended/ext/openssl_tls.lani) supplied caller-driven
   handshake/read/write/shutdown attempts, stable native retry storage and
-  separate read/write count cells. It borrows its nonblocking descriptor.
-- [std::poll](../stdlib/std/poll.lani) supplies reusable bounded storage.
-  `poll_ms` performs one syscall and returns EINTR; `poll_until` contains a
-  retry loop. The scheduler will use `poll_ms` and retain its own deadlines.
+  separate read/write count cells. It borrowed its nonblocking descriptor.
+- [std::poll](../stdlib/std/poll.lani) supplied reusable bounded storage.
+  `poll_ms` performed one syscall and returned EINTR; `poll_until` contained a
+  retry loop. The new scheduler uses `poll_ms` and retains its own deadlines.
 
-The transport-independent server protocol must become the sole authority for
+The resulting transport-independent server protocol is the sole authority for
 head validation, target classification, Expect policy, request boundaries,
 body decoding and response encoding. Both direct drivers and the concurrent
 service use it. Existing canonical codecs remain the source of wire rules.
 
 ## Protocol owner and application decisions
 
-Keep Protocol and the existing public request, response, options, stats and
-HTTP error types together in `ext::http_server`. Refactor its old synchronous
-Connection around Protocol plus the plain driver. The new HTTPS driver imports
-that same module. This produces one preparation/parser/writer implementation
-without a protocol/type import cycle. Shared module edits are sequential until
-the Protocol interface is frozen; the scheduler and TLS adapter can proceed
-in separate files against that interface.
+The implementation keeps Protocol and the public request, response, options,
+stats and HTTP error types together in `ext::http_server`. Its synchronous
+Connection now uses Protocol plus the plain driver. The HTTPS driver imports
+that same module. This gives both transports one preparation/parser/writer
+implementation without a protocol/type import cycle. The Protocol interface
+was frozen before the scheduler and TLS adapter integrated against it.
 
-Proposed signatures below describe contracts; names and generic parameter
-spelling need a small admission control before implementation.
+The original partial sketch below describes the ownership and decision model.
+It is not the complete public interface. The exact signatures are in the
+[shared contract](library-server-contract.md); the actual public generic
+admission control has compiled and executed, as recorded there.
 
 ```lani
 pub enum BodyDecision { Read, ContinueThenRead }
@@ -120,12 +138,13 @@ Known excessive fixed content fails before 100. Once any 100 response is
 staged, finish its exact bytes before permitting a final response. Invalid
 ordering returns `InvalidState`/`ExpectationRequired` without starting I/O.
 
-The HTTPS application currently omits 100 when some body bytes have already
-arrived. RFC 9110 permits that, but the proposed common library deliberately
-keeps the stricter explicit-continue rule above for both transports. Record
-this application behavior change and verify it; do not carry two policies
-silently. Head callbacks must promptly choose a final response or continuation
-rather than wait for a body the client has withheld.
+The previous sequential HTTPS application omitted 100 when some body bytes
+had already arrived. RFC 9110 permits that. The common library and migrated
+applications use the explicit-continue rule above for both transports. The
+[HTTPS application guide](extended-https-server.md) records this behavior
+change and its finite regression receipts. Head callbacks must promptly
+choose a final response or continuation rather than wait for a body the client
+has withheld.
 [RFC 9110 Expect requirements](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.1.1).
 
 ### Backing and transfer
@@ -313,13 +332,14 @@ discard unseen application data. After peer alert, finish native cleanup and
 close the socket once. An abrupt TCP EOF is truncation, not authenticated EOF.
 [OpenSSL shutdown behavior](https://docs.openssl.org/3.0/man3/SSL_shutdown/).
 
-The proposed success policy requires authenticated peer EOF for TLS teardown,
+The selected success policy requires authenticated peer EOF for TLS teardown,
 as plain teardown requires EOF. It can time out after a delivered response
 when the peer withholds its alert; retain that successful write progress in
-the error. In particular, TLS 1.2 early rejection needs an explicit native
-peer gate: do not assume TLS 1.3 half-close behavior. If native TLS 1.2 cannot
-support the proposed drain ordering, revise the published close policy
-explicitly before implementation acceptance. Do not disguise a timeout,
+the error. TLS 1.2 early rejection needed an explicit native peer experiment,
+separate from TLS 1.3 half-close behavior. The
+[TLS driver guide](extended-https-server-exchange.md) records the selected
+ordering, raw closure experiments and later direct-driver acceptance as
+separate evidence. Do not disguise a timeout,
 truncation or missing peer alert as clean completion, or silently drop TLS 1.2
 from the previously supported service profile.
 
@@ -333,11 +353,13 @@ Failed and completed terminal observations are stable and do no more I/O.
 
 ## One reusable server scheduler
 
-Candidate module: `ext::server_poll`, parameterized by a plain/TLS Factory,
+The implemented `ext::server_poll` is parameterized by a plain/TLS Factory,
 Driver and application Handler using ordinary Lanius traits. This is one
 server admission/poll/cleanup engine shared by both transports. It reuses
 std::poll; it need not force listener admission and application decisions into
-the client's finite pre-staged-job scheduler.
+the client's finite pre-staged-job scheduler. The following original sketch
+shows the division of responsibility; consult the
+[scheduler guide](extended-server-poll.md) for its full current interfaces.
 
 ```lani
 pub trait Driver<E> {
@@ -472,7 +494,7 @@ it cannot silently reuse publication after interruption or another mutation.
 
 ## Implementation split and acceptance
 
-| Owner | Candidate source surface | Independent responsibility |
+| Owner | Source surface | Independent responsibility |
 | --- | --- | --- |
 | Protocol | Protocol and shared types in ext::http_server | Canonical parsing/writing, decisions, reservations, backing and work charges |
 | Plain driver | ext::http_server, after Protocol interface freeze | One-leaf socket progression and synchronous wrappers over it; one file owner at a time |
@@ -481,11 +503,11 @@ it cannot silently reuse publication after interruption or another mutation.
 | Application | http_serve and https_serve | Routing/status/trust policy, argument bounds, finite concurrency and reports |
 | Tests/review | Focused direct, protocol, scheduler and application fixtures | Independent peers, causal schedules, owner ledgers and regressions |
 
-Agree on type ownership, Event/Need, error layers and consumption rules first.
-Then protocol, TLS and scheduler owners can work in parallel against the small
-admitted trait control. Only the protocol owner edits common response/target
-logic. TLS tests share the existing native observer; no duplicate production
-hook. A reviewer separately checks lifetimes, error scope and reservations.
+The implementation sequence established type ownership, Event/Need, error
+layers and consumption rules before parallel adapter work. A small actual
+public trait control checked the generic boundary. Common response/target
+logic stays with the Protocol owner. TLS tests share the existing native
+observer. Independent review checks lifetimes, error scope and reservations.
 
 Executable acceptance must include:
 

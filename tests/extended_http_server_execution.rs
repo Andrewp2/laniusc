@@ -85,5 +85,24 @@ fn http_server_exact_drain_probe_late_success_progress_expect_preflight_and_cli_
 }
 #[test]
 fn http_server_every_reached_allocation_leaf_io_retry_quota_close_and_real_stdio_faults_cleanup() {
-    assert!(oracle("faults", cli().path()).contains("http-server-faults cases=35"));
+    let summary = oracle("faults", cli().path());
+    let mut fields = summary.split_whitespace();
+    assert_eq!(fields.next(), Some("http-server-faults"));
+    let cases: usize = fields
+        .next()
+        .unwrap()
+        .strip_prefix("cases=")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let allocations: usize = fields
+        .next()
+        .unwrap()
+        .strip_prefix("source-allocation-positions=")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(allocations > 0, "{summary}");
+    assert_eq!(cases, allocations.checked_add(18).unwrap(), "{summary}");
+    assert!(fields.next().is_none(), "{summary}");
 }

@@ -5,23 +5,48 @@ shared [`http_server::Protocol`](library-server-contract.md) through the thin
 [`http_server_poll`](../extended/ext/http_server_poll.lani) adapter and the
 single [`server_poll`](extended-server-poll.md) scheduler.
 
-**Work in progress:** the actual migrated application compiles and has passed
-two native causal concurrency cases on Linux x86_64: a held partial request
-while two later clients complete/refill, and a held 4 MiB response reader while
-a healthy sibling completes. Both runs reached two active owners and three
-sockets including the listener. Broader application regression and allocation/
-fault gates remain pending. Other operating systems and GPU-kernel execution
-are unverified.
+The migrated application has current native regression and allocation/fault
+receipts on Linux x86-64. Other operating systems and GPU-kernel execution
+remain unverified. Coverage is finite; negative CLI vectors for `--concurrency`
+and `--service-timeout` remain pending.
 
-The receipts are `target/stdlib-work/server-concurrency-plain-refill-first.log`
-and `target/stdlib-work/server-concurrency-plain-reader-normal-window-retry.log`.
-The latter used an unchanged 131,072-byte receive buffer before and after the
-held reader resumed; it proved backpressure through traced EAGAIN. These are
-finite causal checks, not throughput benchmarks. Three separate Connection
-facade cases passed in 10.72 seconds in
-`target/stdlib-work/http-server-shared-facade-close-history-retry.log`; they do
-not substitute for broader application gates. Earlier sequential receipts in
-the [connection guide](extended-http-server.md) remain separate.
+## Current executable evidence
+
+The fresh `target/stdlib-work/http-serve-concurrent-current` executable compiled
+in `target/stdlib-work/http-serve-concurrent-current-compile.log` and passed:
+
+| Group | Accepted scope | Receipt in `target/stdlib-work/` |
+| --- | --- | --- |
+| HTTP matrix | 30 IPv4/IPv6, binary fixed/chunked, fragmented, Expect, routing and one-final-response cases. | `http-serve-current-matrix.log` |
+| Exact owner quota | 1 case, preserving `io=12` with one accepted-owner flag check and eleven reached EINTR receives. Listener acceptance/shared polls are separate. | `http-serve-current-quota-first.log` |
+| Limits | 16 malformed/capped/empty/budget/deadline cases, including 1 MiB binary echo. | `http-serve-current-limits-first.log` |
+| Boundaries | 25 cases: line/head/target precedence, no-100 preflight, drain caps 0/17 with uploads 0/17/18, reached late-success progress, two distinct accepted owners and invalid arguments. | `http-serve-current-boundaries-first.log` |
+| Faults | 41 cases, including all 23 source allocation positions reached by one 6 KiB echo baseline. | `http-serve-current-faults-first.log` |
+
+Faults require exact ENOMEM instruction address, mmap arguments and successful
+allocation prefix through each injected position. Native errors/retries, quota,
+close and stdout/signal failures must reach their intended calls; full accepted
+allocation rejections independently parse as empty HTTP 500 with exit 4. Close
+EIO injection skips the kernel close, so its application receipt covers logical
+retirement followed by physical release at process exit. The separate direct
+abort gate explicitly repairs and checks such a skipped close before exit.
+These groups total 113 process case invocations. The quota case also occurs
+inside the fault group, so the total includes overlapping coverage.
+See the [application fixture guide](../tests/fixtures/extended/http_server_application/README.md)
+for bounded commands, failure artifacts and exact finite scope.
+
+An earlier migrated build passed two causal concurrency cases: a held partial
+request while two later clients complete/refill, and a held 4 MiB response
+reader while a healthy sibling completes. Both reached two active owners and
+three sockets including the listener. Their receipts remain
+`target/stdlib-work/server-concurrency-plain-refill-first.log` and
+`target/stdlib-work/server-concurrency-plain-reader-normal-window-retry.log`.
+The reader kept its 131,072-byte receive buffer unchanged and required traced
+write EAGAIN. These are correctness/resource observations. The earlier
+sequential matrix history remains separate from the refreshed current matrix
+receipt above.
+Three standalone Connection facade cases also passed in 10.72 seconds in
+`target/stdlib-work/http-server-shared-facade-close-history-retry.log`.
 
 ## Invocation and routes
 

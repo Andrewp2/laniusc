@@ -123,3 +123,4 @@ fn early_final_tls_responses_finish_stable_backpressure_then_notify_and_discard_
 include!("fixtures/extended/https_server_exchange/cleanup_driver.rs");
 include!("fixtures/extended/https_server_exchange/constructor_driver.rs");
 include!("fixtures/extended/https_server_exchange/constructor_allocation_driver.rs");
+include!("fixtures/extended/https_server_exchange/teardown_driver.rs");

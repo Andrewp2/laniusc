@@ -1,12 +1,13 @@
 # Resumable verified HTTPS server connections
 
-`ext::https_server` has a source implementation against the
-[frozen server Protocol contract](library-server-contract.md). Compilation and
-native acceptance are pending. Its close ordering follows the selected
-paired native TLS experiment below. The earlier sequential HTTPS service and
-client driver receipts do not establish this server driver.
+`ext::https_server` implements the
+[frozen server Protocol contract](library-server-contract.md). The actual
+server Exchange compiled, linked and passed 34 direct native cases across seven
+focused groups. Its close ordering also follows the separate paired native TLS
+experiment below. The [acceptance scope](#acceptance-scope) distinguishes these
+direct cases from lower-layer OpenSSL and connected-application evidence.
 
-The intended profile is Linux x86_64/glibc with OpenSSL 3 `libssl` and
+The accepted native profile is Linux x86_64/glibc with OpenSSL 3 `libssl` and
 `libcrypto`. The caller supplies an accepted, connected, nonblocking TCP
 socket and a configured `openssl_tls::ServerContext`. Lanius drives the
 shared `http_server::Protocol`; OpenSSL continues to perform certificate
@@ -212,7 +213,47 @@ a negotiated version alone.
 
 ## Acceptance scope
 
-Compilation, direct native state cases, verified client-certificate policy,
-early-response closure for both versions, retry schedules, exact limits and
-owner/allocation failure gates are pending for this driver. No supported
-target is claimed from source alone. The full library roadmap remains open.
+The actual linked Linux x86_64 Exchange passed **34 distinct direct cases
+across seven groups**:
+
+| Group | Cases | Finite accepted scope |
+| --- | --- | --- |
+| Steps | 6 | TLS 1.2/1.3 public and required-client policy, fixed/chunked binary bodies, Expect, missing-client rejection before HTTP |
+| Early-final closure | 2 | Real write backpressure, stable retries, complete 413 response, local alert, bounded upload discard and authenticated peer EOF |
+| Fatal preparation cleanup | 4 | Reply.stage WorkLimit, preserved primary, explicit abort and reached close EIO under both TLS versions |
+| Normal-close cleanup | 4 | Successful closure controls and reached close EIO as the sole primary under both TLS versions |
+| Constructor and quotas | 6 | Consumed socket, closed context, zero/tiny TLS and HTTP I/O allowances, real handshake WANT_READ and terminal replay before HTTP |
+| Constructor source allocations | 4 | One successful baseline and all three dynamically discovered, reached source allocation failures |
+| Teardown and empty input | 8 | TLS 1.2/1.3 missing-alert absolute Timeout, cut native record, exact drain cap plus one, and authenticated Empty |
+
+These gates check one-or-zero SSL I/O per step, caller-owned polling, retained
+borrowed views and response staging, plus pre-exit source/native/descriptor
+ownership. The [direct fixture guide](../tests/fixtures/extended/https_server_exchange/README.md#status)
+records each exact receipt, compiler admission corrections and evidence limits.
+The source allocation campaign does not inject native OpenSSL heap failures.
+These are native host executions of compiler-generated code, not GPU execution
+of TLS services or evidence for other operating systems.
+
+The teardown group passed on its first attempt in 21.05 seconds, recorded in
+`target/stdlib-work/https-server-exchange-teardown-first.log`. Its eight cases
+retain confirmed response progress through missing-alert Timeout, a native
+record cut to seven wire bytes, and 258 discarded bytes against a 257-byte
+drain cap. Authenticated empty input publishes Empty only after cleanup. The
+group checks sticky terminal replay and native/source/descriptor ownership
+before process exit, with 31 CPU ledger controls recorded separately from the
+eight product cases.
+
+The twelve raw OpenSSL shutdown cases above are separate lower-layer evidence;
+they are not included in the 34 direct Exchange cases and cannot establish the
+driver's composition by themselves. The migrated HTTPS and mutual-TLS programs
+have their own [application receipts](extended-https-server.md#current-application-receipts),
+separate from both direct-driver and raw-transport groups. Earlier sequential
+service, client-driver and prepared-context receipts remain separate too.
+
+Remaining direct gaps include post-native or paused-decision clock failure
+and uncommon read WANT_WRITE, write WANT_READ and shutdown WANT dispatch.
+The [finite gap list](../tests/fixtures/extended/https_server_exchange/README.md#remaining-direct-driver-acceptance-gaps)
+states the current boundaries; lower-layer retry and Protocol tests do not
+replace those direct composition cases. Mixed rejected and verified
+client-certificate owners within one concurrent service remain a separate
+scheduler/application coverage gap. The full library roadmap remains open.

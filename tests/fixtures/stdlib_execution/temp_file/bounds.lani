@@ -1,0 +1,23 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file_ops;
+fn invalid(result:core::result::Result<i32,core::io::Error>){assert(core::result::is_err(result));assert(match(core::result::unwrap_err(result)){core::io::Error::InvalidInput->true,_ ->false});}
+fn large(result:core::result::Result<i32,core::io::Error>){assert(core::result::is_err(result));assert(match(core::result::unwrap_err(result)){core::io::Error::Host(value)->value==36,_ ->false});}
+fn main()->i32{
+    let source:[u8;5]=[0,115,114,99,0];let destination:[u8;6]=[0,0,100,115,116,0];
+    let from:core::path::Path=core::path::Path{bytes:core::slice::View{values:source,start:1,length:3}};
+    let to:core::path::Path=core::path::Path{bytes:core::slice::View{values:destination,start:2,length:3}};
+    let bad:core::path::Path=core::path::Path{bytes:core::slice::View{values:source,start:-1,length:1}};
+    invalid(std::file_ops::remove_file_at(-100,bad));invalid(std::file_ops::rename_at(-100,bad,-100,to,std::file_ops::RenamePolicy::Replace));invalid(std::file_ops::rename_at(-100,from,-100,bad,std::file_ops::RenamePolicy::Replace));
+    bad.bytes.start=2147483647;bad.bytes.length=2;invalid(std::file_ops::remove_file_at(-100,bad));invalid(std::file_ops::rename_at(-100,from,-100,bad,std::file_ops::RenamePolicy::NoReplace));
+    bad.bytes.start=1;bad.bytes.length=-1;invalid(std::file_ops::remove_file_at(-100,bad));
+    bad.bytes.start=0;bad.bytes.length=1;invalid(std::file_ops::remove_file_at(-100,bad));invalid(std::file_ops::rename_at(-100,from,-100,bad,std::file_ops::RenamePolicy::Replace));
+    let storage:[i32;1025]=[0;1025];let packed:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4100);let oversized:core::path::Path=core::path::Path{bytes:core::slice::View{values:packed,start:0,length:4096}};
+    large(std::file_ops::remove_file_at(-100,oversized));large(std::file_ops::rename_at(-100,oversized,-100,to,std::file_ops::RenamePolicy::Replace));large(std::file_ops::rename_at(-100,from,-100,oversized,std::file_ops::RenamePolicy::Replace));
+    core::result::unwrap(std::file_ops::rename_at(-100,from,-100,from,std::file_ops::RenamePolicy::Replace));core::result::unwrap(std::file_ops::rename_at(-100,from,-100,to,std::file_ops::RenamePolicy::NoReplace));
+    packed[0]=0;packed[1]=100;packed[2]=115;packed[3]=116;packed[4]=0;let selected:core::path::Path=core::path::Path{bytes:core::slice::View{values:packed,start:1,length:3}};core::result::unwrap(std::file_ops::remove_file_at(-100,selected));return 0;
+}

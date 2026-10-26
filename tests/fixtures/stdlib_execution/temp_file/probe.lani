@@ -1,0 +1,89 @@
+// Request: mode/name-attempts/entropy-calls/excluded-case/parent-case u64 words.
+// Response: 64 u64 metadata words, then a 37-byte copied name (zero if absent).
+// Modes0 cleanup,1 keep,2 close-file,3 unlink-retry,4 unlink-keep,
+// 5 fake-file-close repair,6 fake-dir-close repair,7 anchor rename,8 absent,
+// 9 active-create rejection,10 large kept file,11 empty kept file.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::entropy;
+import std::file;
+import std::file_ops;
+import std::filesystem;
+import std::linux;
+import std::stream;
+import std::temp_file;
+fn bytes(value:str,count:i32)->core::slice::View<u8>{let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);return core::slice::View{values:raw,start:0,length:count};}
+fn path(value:str,count:i32)->core::path::Path{return core::result::unwrap(core::path::from_view(bytes(value,count)));}
+fn word(bytes:[u8],at:i32)->u64{let result:u64=0;let i:i32=0;while(i<8){result|=(bytes[at+i] as u64)<<(i*8);i+=1;}return result;}
+fn io(error:core::io::Error)->u64{return match(error){core::io::Error::Host(code)->code as u64,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,core::io::Error::InvalidInput->900,core::io::Error::InvalidCount->901,_ ->902};}
+fn optional(error:core::option::Option<core::io::Error>)->u64{if(core::option::is_none(error)){return 0;}return io(core::option::unwrap(error));}
+fn entropy(error:std::entropy::Error)->u64{return match(error){std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(code)->100+code as u64};}
+fn cause(error:std::temp_file::Error)->u64{return match(error){std::temp_file::Error::InvalidState->1,std::temp_file::Error::InvalidLimits->2,std::temp_file::Error::InvalidName->3,std::temp_file::Error::AllocationFailed->4,std::temp_file::Error::UnavailableMetadata->5,std::temp_file::Error::NotDirectory->6,std::temp_file::Error::UnsupportedDescriptor->7,std::temp_file::Error::NameLimit->8,std::temp_file::Error::Io(error)->1000+io(error),std::temp_file::Error::Entropy(failure)->2000+entropy(failure.cause)};}
+fn stage(value:std::temp_file::Stage)->u64{return match(value){std::temp_file::Stage::Validate->1,std::temp_file::Stage::Allocate->2,std::temp_file::Stage::Duplicate->3,std::temp_file::Stage::Metadata->4,std::temp_file::Stage::Flags->5,std::temp_file::Stage::Entropy->6,std::temp_file::Stage::Create->7,std::temp_file::Stage::CloseFile->8,std::temp_file::Stage::Remove->9,std::temp_file::Stage::CloseDirectory->10};}
+fn state(value:std::temp_file::State)->u64{return match(value){std::temp_file::State::Inactive->0,std::temp_file::State::Open->1,std::temp_file::State::ClosedNamed->2,std::temp_file::State::Kept->3,std::temp_file::State::CleanupPending->4,std::temp_file::State::Released->5};}
+fn removal(value:std::temp_file::Removal)->u64{return match(value){std::temp_file::Removal::NotOwned->0,std::temp_file::Removal::Removed->1,std::temp_file::Removal::AlreadyAbsent->2,std::temp_file::Removal::Unconfirmed->3};}
+fn fd(file:&std::file::File)->u64{let value:core::option::Option<i32> = file.raw_handle();if(core::option::is_none(value)){return 18446744073709551615;}return core::option::unwrap(value) as u64;}
+fn mark(value:u8){let byte:[u8;1]=[value];let stderr:std::stream::Descriptor=std::stream::stderr();assert(core::io::write_all(stderr.borrow(),byte,0,1).is_ok());}
+fn receipt(output:[u64],at:i32,result:core::result::Result<std::temp_file::Cleanup,std::temp_file::Failure>){
+    let inactive:std::temp_file::TempFile=std::temp_file::empty();let value:std::temp_file::Cleanup=inactive.last_cleanup();
+    if(core::result::is_err(result)){let failure:std::temp_file::Failure=core::result::unwrap_err(result);output[at]=cause(failure.cause);output[at+1]=stage(failure.stage);value=failure.cleanup;}
+    else{value=core::result::unwrap(result);}
+    output[at+2]=value.file_close_attempted as u64;output[at+3]=optional(value.file_close_error);output[at+4]=value.remove_attempted as u64;output[at+5]=removal(value.removal);output[at+6]=optional(value.remove_error);output[at+7]=value.directory_close_attempted as u64;output[at+8]=optional(value.directory_close_error);output[at+9]=value.retained as u64;
+}
+// strace's injected close error SKIPS the actual close. Repair only that test
+// artifact, using its known raw fd, after verifying the production owner retired
+// it. This is not a production retry, nor evidence that a real close leaks.
+fn repair(raw:u64){mark(81);assert(raw<2147483648);let args:[std::linux::Argument;1]=[std::linux::Argument::Word(raw as i64)];assert(core::result::unwrap(std::linux::call(3,core::slice::View{values:args,start:0,length:1}))==0);mark(113);}
+fn main()->i32{
+    let input:[u8;40]=[0;40];let stdin:std::stream::Descriptor=std::stream::stdin();assert(core::io::read_exact(stdin.borrow(),input,0,40).is_ok());
+    let mode:u64=word(input,0);let excluded_case:u64=word(input,24);let parent_case:u64=word(input,32);assert(mode<=11&&excluded_case<=12&&parent_case<=3);
+    let options:std::file_ops::OpenOptions=std::file_ops::options();options.no_follow=true;options.directory=parent_case!=1;
+    let parent:std::file::File=std::file::File{handle:-1};
+    if(parent_case==3){
+        let storage:[i32;2]=[0;2];let pointer:ptr=core::mem::i32_array_data_ptr(storage);let raw:[u8]=core::mem::typed_slice_from_raw_parts(pointer,8);raw[0]=97;raw[1]=110;raw[2]=99;raw[3]=104;raw[4]=111;raw[5]=114;
+        let args:[std::linux::Argument;4]=[std::linux::Argument::Word(-100),std::linux::Argument::Address(pointer),std::linux::Argument::Word(2097152|65536|524288),std::linux::Argument::Word(0)];
+        parent=core::result::unwrap(std::file::from_owned_handle(core::result::unwrap(std::linux::call(257,core::slice::View{values:args,start:0,length:4})) as i32));
+    }else{let name:core::path::Path=path("anchor",6);if(parent_case==1){name=path("regular",7);}parent=core::result::unwrap(std::file_ops::open(name,options));}
+    let output:[u64;64]=[0;64];output[9]=fd(parent.borrow());if(parent_case==2){mark(80);core::result::unwrap(parent.close());mark(112);}
+    let owner:std::temp_file::TempFile=std::temp_file::empty();let limits:std::temp_file::Limits=std::temp_file::Limits{name_attempts:word(input,8) as u32,entropy_calls:word(input,16)};
+    let excluded_storage:[u8;256]=[120;256];let excluded:[u8]=excluded_storage;let excluded_view:core::slice::View<u8> = core::slice::View{values:excluded,start:0,length:37};
+    let i:i32=0;while(i<37){excluded[i]=48;i+=1;}excluded[0]=46;excluded[1]=116;excluded[2]=109;excluded[3]=112;excluded[4]=45;
+    if(excluded_case==2){excluded_view.length=0;}if(excluded_case==3){excluded[0]=46;excluded_view.length=1;}if(excluded_case==4){excluded[0]=46;excluded[1]=46;excluded_view.length=2;}
+    if(excluded_case==5){excluded[0]=47;excluded_view.length=2;}if(excluded_case==6){excluded[1]=0;}if(excluded_case==7){excluded_view.start=-1;}if(excluded_case==8){excluded_view.start=2147483647;excluded_view.length=2;}if(excluded_case==9){excluded_view.length=256;}if(excluded_case==10){excluded_view.length=255;}
+    if(excluded_case==11){excluded_view.start=1;excluded_view.length=37;excluded[1]=255;}if(excluded_case==12){excluded[0]=120;excluded[1]=47;excluded[2]=121;excluded_view.length=3;}
+    let created:core::result::Result<bool,std::temp_file::Failure> = core::result::Ok(false);
+    mark(67);if(excluded_case==0){created=owner.create_in(parent.borrow(),limits);}else{created=owner.create_in_excluding(parent.borrow(),core::path::Path{bytes:excluded_view},limits);}mark(99);
+    if(core::result::is_err(created)){let failure:std::temp_file::Failure=core::result::unwrap_err(created);output[0]=cause(failure.cause);output[1]=stage(failure.stage);output[3]=failure.cleanup.retained as u64;}
+    output[2]=state(owner.state());let stats:std::temp_file::Stats=owner.stats();output[4]=stats.name_attempts as u64;output[5]=stats.open_attempts as u64;output[6]=stats.collisions as u64;output[7]=stats.excluded as u64;output[8]=stats.entropy_calls;
+    output[10]=fd(owner.file());output[11]=fd(owner.directory());let named:core::slice::View<u8> = owner.name();output[12]=named.length as u64;let name:[u8;37]=[0;37];i=0;while(i<named.length){name[i]=named.values[named.start+i];i+=1;}
+    if(core::result::is_ok(created)){
+        assert(owner.owns_temporary_name());assert(core::result::unwrap(std::file_ops::close_on_exec(owner.file())));assert(core::result::unwrap(std::file_ops::close_on_exec(owner.directory())));
+        if(mode!=11){let data:[u8;6]=[0,255,128,97,13,10];assert(core::result::unwrap(core::io::write_all(owner.file(),data,0,6))==6);
+        core::result::unwrap(std::file_ops::seek(owner.file(),0,std::file_ops::Origin::Start));let copied:[u8;6]=[0;6];assert(core::result::unwrap(core::io::read_exact(owner.file(),copied,0,6))==6);i=0;while(i<6){assert(copied[i]==data[i]);i+=1;}}
+        if(mode==10){let block:[u8;1024]=[0;1024];i=0;while(i<1024){block[i]=((i*17)&255) as u8;i+=1;}let round:i32=0;while(round<33){core::result::unwrap(core::io::write_all(owner.file(),block,0,1024));round+=1;}}
+        if(mode==9){mark(67);let bad=owner.create_in(parent.borrow(),limits);mark(99);assert(core::result::is_err(bad));let failure:std::temp_file::Failure=core::result::unwrap_err(bad);assert(cause(failure.cause)==1&&failure.cleanup.retained);assert(core::option::is_none(owner.last_failure()));}
+        if(mode==1||mode==10||mode==11){mark(75);output[34]=1+(core::result::unwrap(owner.keep())==false) as u64;output[35]=1+(core::result::unwrap(owner.keep())==false) as u64;assert(!owner.owns_temporary_name());mark(107);}
+        if(mode==2){mark(70);let closed=owner.close_file();if(core::result::is_err(closed)){let failure:std::temp_file::Failure=core::result::unwrap_err(closed);output[31]=cause(failure.cause);}output[32]=state(owner.state());assert(!core::result::unwrap(owner.close_file()));mark(102);}
+        if(mode==2&&output[31]!=0){repair(output[10]);}
+        if(mode==7){mark(82);core::result::unwrap(std::file_ops::rename_at(-100,path("anchor",6),-100,path("moved",5),std::file_ops::RenamePolicy::NoReplace));core::result::unwrap(std::filesystem::create_dir(path("anchor",6)));mark(114);mark(80);core::result::unwrap(parent.close());mark(112);}
+        if(mode==8){mark(85);core::result::unwrap(std::file_ops::remove_file_at(core::option::unwrap(owner.directory().raw_handle()),core::result::unwrap(core::path::from_view(owner.name()))));mark(117);}
+    }
+    mark(65);receipt(output,20,owner.cleanup());mark(97);
+    if(mode==3||mode==4){assert(output[26]!=0&&output[29]==1);assert(!owner.file().is_open()&&owner.directory().is_open()&&owner.owns_temporary_name());if(mode==4){mark(75);assert(core::result::unwrap(owner.keep()));assert(!core::result::unwrap(owner.keep()));mark(107);}}
+    if(mode==5){assert(output[23]!=0&&!owner.file().is_open());repair(output[10]);}
+    if(mode==6){assert(output[28]!=0&&!owner.directory().is_open());repair(output[11]);}
+    mark(66);receipt(output,40,owner.cleanup());mark(98);mark(88);receipt(output,50,owner.destroy());mark(120);
+    let latest:std::temp_file::Cleanup=owner.last_cleanup();output[16]=latest.file_close_attempted as u64;output[17]=latest.remove_attempted as u64;output[18]=latest.directory_close_attempted as u64;output[19]=latest.retained as u64;
+    output[60]=state(owner.state());output[63]=owner.owns_temporary_name() as u64;let last:core::option::Option<std::temp_file::Failure> = owner.last_failure();if(core::option::is_some(last)){let failure:std::temp_file::Failure=core::option::unwrap(last);output[61]=cause(failure.cause);output[62]=stage(failure.stage);assert(!failure.cleanup.retained);}
+    mark(80);core::result::unwrap(parent.close());mark(112);let pid_args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];output[13]=core::result::unwrap(std::linux::call(39,core::slice::View{values:pid_args,start:0,length:0})) as u64;
+    let encoded:[u8;549]=[0;549];i=0;while(i<64){let j:i32=0;while(j<8){encoded[i*8+j]=((output[i]>>(j*8))&255) as u8;j+=1;}i+=1;}i=0;while(i<37){encoded[512+i]=name[i];i+=1;}
+    let stdout:std::stream::Descriptor=std::stream::stdout();assert(core::io::write_all(stdout.borrow(),encoded,0,549).is_ok());
+    // Hold the live process after all library cleanup so the independent host
+    // oracle can inspect actual fds/maps before process exit could hide leaks.
+    let ack:[u8;1]=[0;1];assert(core::io::read_exact(stdin.borrow(),ack,0,1).is_ok());assert(ack[0]==33);return 0;
+}

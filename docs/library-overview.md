@@ -8,6 +8,29 @@ and concurrent health/echo services. Source is implemented against the frozen
 gates have started passing. The complete server increment is not accepted.
 Earlier sequential service receipts retain their separate historical scope.
 
+**Temporary-file checkpoint.**
+
+[Owned temporary files](stdlib-temp-files.md) and the new
+[descriptor-relative name primitives](stdlib-file-operations.md#descriptor-relative-name-mutations)
+pass five native groups: owner eight, collisions six, validation 18, faults 19
+and primitives 27. These are **78 process invocations**, including repeated
+baselines; two preliminary overlapping receipts do not make 80 distinct cases.
+The accepted profile is Linux x86_64, kernel `7.0.0-38-generic`, using ext4 under
+`/tmp`. The fault group includes its baseline, one reached 37-byte dynamic
+source-allocation failure and 17 other cases. The 26 CPU oracle controls are
+separate from native runs. Three source-runtime pairs are verified per ELF;
+owner probes check source/fd release before exit, and primitive traces balance
+their allocation-free descriptor operations.
+
+TempFile keeps one manual owner, duplicates its parent directory anchor,
+creates exclusively from bounded OS entropy, and supports explicit close,
+same-owner keep and fallible cleanup with retained recovery authority. Its
+parent namespace must be exclusive/cooperative; no hostile-directory, crash
+scavenging or durability guarantee is added. All production code is Lanius over
+the existing raw Linux boundary, with no new runtime binding or cryptographic
+implementation. AtomicFile publication and the `kv_tool` migration remain
+pending in the [atomic-files plan](library-atomic-files-plan.md).
+
 **Server checkpoint evidence.**
 
 Current finite evidence uses native Linux x86_64/glibc, with OpenSSL 3 for TLS.
@@ -17,17 +40,32 @@ The accepted scopes below come from separate invocations:
 | --- | --- |
 | Plain direct Exchange | 50 distinct cases: four steps, 11 decisions/views, four drain, six lifecycle, 23 faults and two additive abort/close-error cases. The stronger typed OOM campaign repeats 23 cases across 15 reached allocation sites; two typed invalid-count reruns repeat lifecycle coverage, adding no cases to the total. |
 | Synchronous Connection facade | Three current retained-view, atomic-preflight and sticky-failure cases, in `http-server-shared-facade-close-history-retry.log` (10.72 seconds). |
-| [HTTPS direct Exchange](extended-https-server-exchange.md) | 16 cases through separate receipts: six verified steps (12.87 seconds), two early closures, four fatal-preparation/abort cleanup (12.11 seconds) and four normal-close cleanup (11.40 seconds). Each cleanup group reaches two close EIO injections. |
-| [Generic server scheduler](extended-server-poll.md) | Seven scripted owner/publication/refill/reservation controls, across 15.58- and 14.62-second receipts. Scripted drivers alone do not establish real transport behavior. |
+| [HTTPS direct Exchange](extended-https-server-exchange.md) | 34 cases across seven groups through separate receipts: six verified steps, two early closures, four fatal-preparation/abort cleanup, four normal-close cleanup, six constructor/quota (11.07 seconds) and four constructor-allocation cases (10.88 seconds). The allocation group reaches three dynamic source-allocation failures; native OpenSSL heap allocation is outside that ledger. Eight paired TLS 1.2/1.3 teardown cases additionally pass in 21.05 seconds, with pre-exit owner/descriptor checks and sticky replay. |
+| [Generic server scheduler](extended-server-poll.md) | 17 scripted profiles execute the actual Server: seven earlier owner/publication/refill/reservation profiles, three owned E/A profiles (13.60 seconds) and seven active-cap/cancellation profiles (13.42 seconds). The no-Destroy empty-report helper control remains a separate 21.84-second receipt. |
+| Actual plain-driver poll faults | Two reached fault cases and one calibration, separately from the 17 scripted profiles. EINTR requires a fresh publication and recovery without stale readiness reads; EIO publishes shared PollIo(5), cleans up live owners and preserves the caller's listener. The retry reuses the compiled ELF. |
 | [Plain health/echo program](extended-http-serve.md) | Two causal cases: held partial-head/queued refill (0.060573 traced seconds) and a held 4 MiB response reader (5.149525 traced seconds). Each peaks at two accepted owners and three sockets including the listener; the reader requires actual write EAGAIN before its healthy sibling completes. |
+| Current plain application regressions | Matrix 30, quota one, limits 16, boundaries 25 and faults 41, through separate invocations. These total 113 process-case invocations, not distinct coverage: the standalone quota case repeats within faults. The fault group reaches 23 source-allocation failures and 18 other cases. |
 | [Verified HTTPS health/echo program](extended-https-server.md) | Two corresponding TLS 1.3 causal cases pass in 0.158297 and 6.473137 traced seconds. They retain the same owner/socket caps, and the 4 MiB reader requires real EAGAIN, verified response bytes and authenticated closure. |
+| Current HTTPS application regressions | 102 cases across separate matrix/failure/limit invocations: 30, 23 and 49. These exercise the current server scheduler and have no recorded wall-time claim. |
+| Current mutual-TLS application regressions | 101 cases across separate matrix/failure/limit invocations: 35, 34 and 32, using the accepted fetch executable with the current server executable. Earlier client-only receipts remain separate. |
+| [Scale observation](../tests/fixtures/extended/server_concurrency/README.md#separate-scale-observation) | Plain and TLS each complete 64 exact 64 KiB echoes with demand eight, four active owners and five sockets. Plain: 1,224 source allocations, 1,165,325 peak requested source bytes, 3.346761 traced seconds. TLS: 1,419 allocations, 1,352,377 bytes, 4.226492 traced seconds. |
 
 The [connected fixture guide](../tests/fixtures/extended/server_concurrency/README.md)
 records the exact application receipts and the preceding artificial-buffer
 timeouts. These are traced observations, not deployment-capacity or compiler
-speedup measurements. Direct HTTPS constructor-allocation/quota boundaries,
-negative/quota/resource application campaigns, broader integration gates and
-the proposed scale observation remain pending. API reference regeneration is held.
+speedup measurements. Source metrics count verified dynamic requested bytes,
+excluding the bootstrap mapping, native/OpenSSL heap, kernel memory and RSS.
+The focused poll-fault receipt is
+`target/stdlib-work/server-poll-marked-poll-faults-format-retry.log`
+(`cases=2 calibration=1`); its Python-only retry supplies no wall-time claim.
+Rare WANT schedules, clock failures after native TLS calls and concurrent
+mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
+sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
+The [declaration reference](library-api-reference.md#current-generation-receipt)
+passes for the TempFile/FileOps and server interface freeze at 245 pages,
+244 modules and 8,090 markers. It includes the current finite receipt metadata;
+this remains source inventory evidence, not completion of runtime gates or the
+pending AtomicFile phase.
 
 Two lower-layer controls remain distinct from those current transport gates:
 

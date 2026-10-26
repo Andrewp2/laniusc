@@ -1,6 +1,5 @@
 // Plain HTTP connections supplied to the shared server scheduler.
 module ext::http_server_poll;
-import core::clone;
 import core::option;
 import core::result;
 import core::time;
@@ -63,7 +62,7 @@ pub fn new<H,A>(listener: &std::socket::Socket, factory: &Factory, handler: &H, 
 // Convenience loop over the same caller-driven scheduler. All connection
 // owners retire before return; the result owns only outcomes and diagnostics.
 pub fn serve_until<H,A>(listener: &std::socket::Socket, handler: &H, options: ext::http_server::Options, limits: ext::server_poll::ServerLimits, deadline: core::time::Deadline)
-    -> core::result::Result<ext::server_poll::Report<ext::http_server::Failure,A>,ext::server_poll::ServiceFailure<ext::http_server::Failure,A>> where H: ext::server_poll::Handler<A>, A: core::clone::Destroy<A> {
+    -> core::result::Result<ext::server_poll::Report<ext::http_server::Failure,A>,ext::server_poll::ServiceFailure<ext::http_server::Failure,A>> where H: ext::server_poll::Handler<A> {
     let adapter: Factory = factory(options);
     return ext::server_poll::serve_until<Driver,ext::http_server::Failure,Factory,H,A>(listener,adapter.borrow(),handler,limits,deadline);
 }

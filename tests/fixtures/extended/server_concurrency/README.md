@@ -130,8 +130,9 @@ application cases in total across separate invocations:
 The TLS reader confirms the complete 4 MiB binary echo, actual output EAGAIN,
 healthy-sibling progress and authenticated closure. Its initial/resumed receive
 capacities are both 131,072, as in the plain reader. These finite observations
-do not establish all network schedules. Negative/quota/resource application
-campaigns and the separate scale observation remain pending.
+do not establish all network schedules. Broader plain application fault/resource
+and populated owned-error/scheduler-cap gates remain separate. The direct TLS
+teardown cases have their own receipt in the HTTPS Exchange guide.
 
 ### First held-reader timeout investigation
 
@@ -179,7 +180,7 @@ unchanged. Ordinary buffer capacities are recorded instead. This revision
 passes the ordinary-buffer plain and TLS retries recorded above. Broader
 resource/failure coverage remains pending.
 
-## Separate scale observation: prepared, not executed
+## Separate scale observation
 
 `scale.py` runs an existing compiled application; it never invokes the compiler.
 Each mode requests 64 distinct connections, each echoing a checked 65,536-byte
@@ -232,9 +233,22 @@ timeout --kill-after=2s 95s python3 -B \
   target/stdlib-work/https-serve-concurrent
 ```
 
-The fixture is frozen for root execution. Syntax, both actual executable-site
-profiles and 27 CPU ledger controls pass; no application was executed for
-these static/CPU checks and no native scale receipt is claimed. The controls exercise
+Both native modes pass through separate root invocations:
+
+| Receipt under `target/stdlib-work/` | Connections / body bytes | Active/socket peaks | Source allocations | Peak live requested source bytes | Traced seconds |
+| --- | --- | --- | --- | --- | --- |
+| `http-serve-concurrent-scale-first.log` | 64 / 4,194,304 | 4 / 5 | 1,224 | 1,165,325 | 3.346761 |
+| `https-serve-concurrent-scale-first.log` | 64 / 4,194,304 | 4 / 5 | 1,419 | 1,352,377 | 4.226492 |
+
+Each connects demand eight before release, completes every 65,536-byte binary
+echo, validates all 64 acceptance-order reports and balances the verified source
+owners and observed descriptors. The metrics retain the exclusions and timing
+definition above. These finite traced observations do not complete the broader
+plain application fault/resource campaign or replace the separate direct TLS
+teardown and scheduler ownership/cap receipts.
+
+Syntax, both actual executable-site profiles and 27 CPU ledger controls also
+pass; those static/CPU checks execute no application. The controls exercise
 overlap/reuse peaks, verified source sites, exact releases, exclusion of native
 maps, fd reuse/generations, socket caps, incomplete traces, ownership errors
 and rejection of malformed sectionless ELF/runtime profiles:

@@ -12,6 +12,7 @@ pub const AT_FDCWD:i32=-100;
 pub const MAX_PATH_BYTES:i32=4095;
 pub enum Access { Read, Write, ReadWrite }
 pub enum Synchronization { None, Data, All }
+pub enum RenamePolicy { Replace, NoReplace }
 pub enum Origin { Start, Current, End, Data, Hole }
 pub enum Kind { Unknown, Regular, Directory, Symlink, Fifo, Socket, Character, Block }
 pub struct OpenOptions { access:Access, create:bool, exclusive:bool, truncate:bool, append:bool, close_on_exec:bool, no_follow:bool, directory:bool, nonblocking:bool, no_controlling_terminal:bool, synchronization:Synchronization, mode:u32 }
@@ -48,6 +49,26 @@ pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> core
     let args:[std::linux::Argument;4]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(core::result::unwrap(checked)),std::linux::Argument::Word(value.mode as i64)];
     let opened=call(257,core::result::unwrap(core::slice::view(args,4))); if(core::result::is_err(opened)) { return core::result::Err(core::result::unwrap_err(opened)); } let fd:i64=core::result::unwrap(opened);
     if(fd<0 || fd>2147483647) { return core::result::Err(core::io::Error::InvalidCount); } return std::file::from_owned_handle(fd as i32);
+}
+// General descriptor-relative byte paths, like open_at. Absolute paths ignore
+// their directory fd. This removes one non-directory name, not its link target.
+// Leaf-only and namespace-authority policy belongs to the owning caller.
+pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> core::result::Result<i32,core::io::Error> {
+    let storage:[i32;1024]=[0;1024]; let pointer:ptr=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
+    let prepared=stage(path,packed); if(core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(0)];
+    return zero(call(263,core::result::unwrap(core::slice::view(args,3))));
+}
+// Stage both paths before one renameat2 attempt. NoReplace is an atomic host
+// policy; unsupported flags/filesystems return their error without fallback.
+pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> core::result::Result<i32,core::io::Error> {
+    let old_storage:[i32;1024]=[0;1024]; let old_pointer:ptr=core::mem::i32_array_data_ptr(old_storage); let old_packed:[u8]=core::mem::typed_slice_from_raw_parts(old_pointer,4096);
+    let old_prepared=stage(old_path,old_packed); if(core::result::is_err(old_prepared)) { return core::result::Err(core::result::unwrap_err(old_prepared)); }
+    let new_storage:[i32;1024]=[0;1024]; let new_pointer:ptr=core::mem::i32_array_data_ptr(new_storage); let new_packed:[u8]=core::mem::typed_slice_from_raw_parts(new_pointer,4096);
+    let new_prepared=stage(new_path,new_packed); if(core::result::is_err(new_prepared)) { return core::result::Err(core::result::unwrap_err(new_prepared)); }
+    let flags:i64=match(policy) { RenamePolicy::Replace->0, RenamePolicy::NoReplace->1 };
+    let args:[std::linux::Argument;5]=[std::linux::Argument::Word(old_directory_fd as i64),std::linux::Argument::Address(old_pointer),std::linux::Argument::Word(new_directory_fd as i64),std::linux::Argument::Address(new_pointer),std::linux::Argument::Word(flags)];
+    return zero(call(316,core::result::unwrap(core::slice::view(args,5))));
 }
 fn descriptor(file:&std::file::File) -> core::result::Result<i64,core::io::Error> { let raw= file.raw_handle(); if(core::option::is_none(raw)) { return core::result::Err(core::io::Error::Host(9)); } return core::result::Ok(core::option::unwrap(raw) as i64); }
 fn fcntl(file:&std::file::File,command:i64,value:i64) -> core::result::Result<i64,core::io::Error> { let got=descriptor(file); if(core::result::is_err(got)) { return got; } let args:[std::linux::Argument;3]=[std::linux::Argument::Word(core::result::unwrap(got)),std::linux::Argument::Word(command),std::linux::Argument::Word(value)]; return call(72,core::result::unwrap(core::slice::view(args,3))); }

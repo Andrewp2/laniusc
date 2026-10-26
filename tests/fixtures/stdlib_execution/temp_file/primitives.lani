@@ -1,0 +1,25 @@
+// CLI: u PATH | r OLD NEW | n OLD NEW. Relative source uses left/; relative
+// destination uses right/. Absolute paths retain the host's dirfd-ignore rule.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import std::file;
+import std::file_ops;
+import std::process;
+fn literal(value:str,count:i32)->core::path::Path{let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);return core::result::unwrap(core::path::from_bytes(raw,count));}
+fn code(result:core::result::Result<i32,core::io::Error>)->i32{if(core::result::is_ok(result)){assert(core::result::unwrap(result)==0);return 0;}return match(core::result::unwrap_err(result)){core::io::Error::Host(value)->value,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,core::io::Error::InvalidInput->200,core::io::Error::InvalidCount->201,_ ->202};}
+fn main()->i32{
+    let argc:i32=std::process::argc();if(argc<3||argc>4||std::process::arg_len(1)!=1){return 203;}
+    let operation:[i32;1]=[0];let operation_pointer:ptr=core::mem::i32_array_data_ptr(operation);assert(std::process::arg_read(1,operation_pointer,1)==1);let op:[u8]=core::mem::typed_slice_from_raw_parts(operation_pointer,1);
+    let first_storage:[i32;1280]=[0;1280];let first_pointer:ptr=core::mem::i32_array_data_ptr(first_storage);let first_count:i32=std::process::arg_len(2);if(first_count<0||first_count>5120){return 204;}assert(std::process::arg_read(2,first_pointer,first_count as usize)==first_count);let first:core::path::Path=core::result::unwrap(core::path::from_bytes(core::mem::typed_slice_from_raw_parts(first_pointer,first_count),first_count));
+    let options:std::file_ops::OpenOptions=std::file_ops::options();options.directory=true;options.no_follow=true;
+    let left:std::file::File=core::result::unwrap(std::file_ops::open(literal("left",4),options));
+    if(op[0]==117){let status:i32=code(std::file_ops::remove_file_at(core::option::unwrap(left.raw_handle()),first));core::result::unwrap(left.close());return status;}
+    if((op[0]!=114&&op[0]!=110)||argc!=4){core::result::unwrap(left.close());return 205;}
+    let second_storage:[i32;1280]=[0;1280];let second_pointer:ptr=core::mem::i32_array_data_ptr(second_storage);let second_count:i32=std::process::arg_len(3);if(second_count<0||second_count>5120){core::result::unwrap(left.close());return 206;}assert(std::process::arg_read(3,second_pointer,second_count as usize)==second_count);let second:core::path::Path=core::result::unwrap(core::path::from_bytes(core::mem::typed_slice_from_raw_parts(second_pointer,second_count),second_count));
+    let right:std::file::File=core::result::unwrap(std::file_ops::open(literal("right",5),options));let policy:std::file_ops::RenamePolicy=std::file_ops::RenamePolicy::Replace;if(op[0]==110){policy=std::file_ops::RenamePolicy::NoReplace;}
+    let status:i32=code(std::file_ops::rename_at(core::option::unwrap(left.raw_handle()),first,core::option::unwrap(right.raw_handle()),second,policy));core::result::unwrap(right.close());core::result::unwrap(left.close());return status;
+}

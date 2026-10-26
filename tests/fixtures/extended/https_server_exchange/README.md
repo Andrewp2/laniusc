@@ -77,8 +77,8 @@ specified real response backpressure, stable pending write retries, complete
 peer EOF for these native peers. They do not establish behavior for every peer
 implementation.
 
-The two additive cleanup groups also passed, for **16 accepted direct HTTPS
-cases** across all four current groups. Their receipts are:
+The two additive cleanup groups also passed, bringing the initial four groups
+to 16 accepted direct HTTPS cases. Their receipts are:
 
 | Receipt under `target/stdlib-work/` | Result | Scope |
 | --- | --- | --- |
@@ -89,8 +89,25 @@ These cleanup cases establish the primary/secondary distinction and sticky
 fatal replay described below, with the native-created listener harness and
 pre-exit native/source/descriptor ownership checks. They do not establish
 constructor allocation-failure coverage or direct TLS/I/O quota boundaries.
-Python syntax, literal byte lengths, Rust
-formatting, diff checks and the nine CPU ledger controls pass. Each shell
+The separate constructor/quota group subsequently passed six cases. Receipt:
+`target/stdlib-work/https-server-exchange-constructor-quotas-syntax-retry.log`
+(exit 0; 11.07 s). Its scope is the six precise pre-HTTP constructor/quota
+boundaries below, including two actual handshake `WANT_READ` outcomes and 17
+CPU ledger controls. The constructor allocation campaign then passed its
+baseline and all three dynamically discovered source allocation positions,
+bringing the first six groups to 26 distinct accepted direct cases. Receipt:
+`target/stdlib-work/https-server-exchange-constructor-allocations-first.log`
+(exit 0; 10.88 s; `cases=4 reached-source-oom=3 constructor-ledger-controls=21`).
+That finite campaign covers reached Lanius source allocations inside
+`begin_connected`; it does not sweep native OpenSSL heap failures.
+The separate teardown group then passed all eight TLS 1.2/1.3 cases on its
+first attempt, for **34 distinct accepted direct HTTPS cases across seven
+groups**. Receipt: `target/stdlib-work/https-server-exchange-teardown-first.log`
+(exit 0; 21.05 s), with two absolute timeouts, two cut native records, two
+drain overflows, two authenticated empty inputs and 31 CPU ledger controls.
+Python syntax, literal byte lengths, Rust formatting and diff checks pass;
+the initial step ledger has nine CPU controls and the focused additive ledgers
+have their own counts below. Each shell
 command stays under two minutes. These receipts establish native host
 execution, not GPU kernel execution of TLS services.
 
@@ -126,7 +143,7 @@ Fatal preparation/cleanup has its own accepted gates above. Quota and allocation
 campaigns are separate focused gates; the initial two groups do not establish
 their acceptance.
 
-## Additive constructor and quota gates (native acceptance pending)
+## Additive constructor and quota gates
 
 `constructor.lani` opens its listener and accepted socket inside the native
 child. A Python peer connects after the tracer starts and sends no TLS or HTTP
@@ -176,11 +193,16 @@ The first quota gate stopped at fixture compilation before any native case:
 `LNC0016` at `constructor.lani:35:10` after 4.01 s. Bare `else if` is not
 accepted by the current source grammar; that single occurrence was changed to
 the equivalent nested `else { if (...) { ... } }`, preserving all assertions.
-This is a fixture syntax correction, not an accepted runtime result. Retried
-compiler admission, the six native quota cases and the separate reached-source
-constructor allocation sweep remain pending.
+This is a fixture syntax correction, not an accepted runtime result.
 
-`constructor_allocations.py` prepares that separate finite campaign: one
+The syntax retry passed compiler admission and all six native quota cases:
+`target/stdlib-work/https-server-exchange-constructor-quotas-syntax-retry.log`
+(exit 0; 11.07 s), with summary
+`cases=6 real-handshake-WANT_READ=2 constructor-ledger-controls=17`.
+The separate reached-source constructor allocation sweep has its own accepted
+receipt below; this quota receipt alone does not establish that result.
+
+`constructor_allocations.py` executes that separate finite campaign: one
 successful constructor/abort control followed by a reached failure of every
 verified source allocation actually observed inside the constructor. The
 baseline must contain at least one such request; its private allocation layout
@@ -202,10 +224,100 @@ Its separate Rust test definition is included from
 constructor_reached_source_allocations_unwind_protocol_socket_and_native_session
 ```
 
-It can also reuse the first accepted constructor ELF directly through
-`python3 -B constructor_allocations.py <ELF> <certificate-directory>`. Both
-native acceptance and compiler admission of the new constructor source are
-still pending; no added case changes the 16 accepted-case receipt above.
+It can also reuse the accepted constructor ELF directly through
+`python3 -B constructor_allocations.py <ELF> <certificate-directory>`.
+Constructor source admission is accepted by the quota gate; native acceptance
+of the allocation campaign is recorded in
+`target/stdlib-work/https-server-exchange-constructor-allocations-first.log`
+(exit 0; 10.88 s). The accepted baseline dynamically discovered three source
+positions, and all three reached `ENOMEM` runs passed with the typed failure,
+pre-exit zero-owner barrier and 21 CPU ledger/prefix controls. These four
+processes are included once in the 34-case total above; the earlier six-case
+quota group remains separate. No native OpenSSL heap sweep is claimed.
+
+## Additive teardown campaign
+
+`teardown.lani` and `teardown_oracle.py` execute eight direct Exchange cases:
+each of the following runs under TLS 1.2 and TLS 1.3 with the existing verified
+native OpenSSL MemoryBIO peer:
+
+- Missing client `close_notify`: the peer authenticates the server's alert
+  and keeps its TCP transport live. The Exchange must reach HTTP `Timeout` at
+  driver/Protocol `Drain` under the original four-second absolute deadline,
+  retaining the entire independently parsed binary 413 response and no false
+  peer EOF.
+- Cut native record: after authenticating the server's alert, the peer asks
+  OpenSSL to generate a new 257-byte application record, sends only its first
+  seven wire bytes and ends its transport write direction. The Exchange must
+  retain the full response and report TLS `Truncated` / `Read`, SSL error 1,
+  native code 167772454, and no authenticated EOF or leaked plaintext.
+- Drain cap plus one: after the server's alert the peer sends 258 native
+  plaintext bytes against a 257-byte drain allowance. The exact-cap read and
+  positive one-byte lookahead must retain 258 confirmed discarded bytes, then
+  fail HTTP `DrainLimit` at driver/Protocol `Drain`.
+- Authenticated empty HTTP input: the verified peer sends its alert without
+  any HTTP bytes. The Exchange must notify, retire its transport and publish
+  exactly one `Empty` event with no head, request or response.
+
+The failure cases stage their final response synchronously from caller-local
+binary storage, which is then changed. A phase packet is emitted only after
+the complete response and actual local notification have been recorded; the
+peer's fault is released at that boundary. Every terminal failure checks its
+typed cause/stage, exact confirmed byte counts, Failed status and cached replay
+through step and before_wait without another TLS call, I/O/work charge or
+close. Borrowed head bytes remain hashed until actual destroy.
+
+The native child creates the listener and accepted socket after exec. Physical
+TCP EOF, zero native context/session owners, child `/proc` descriptors 0/1/2,
+and the source/descriptor ledger's zero-owner report barrier all precede the
+final process acknowledgement. TLS records and cryptography are generated by
+the existing native OpenSSL helper, with only record-prefix transport cutting
+under test control. Source allocation sites remain separate from native heaps.
+The new ledger reuses the 17 constructor controls and adds 14 teardown controls
+for 31 total CPU controls, including hidden polls, leaks, delayed cleanup,
+unverified source sites and repeated close/report rejection.
+
+The exact test filter is:
+
+```text
+teardown_failures_keep_confirmed_output_and_authenticated_empty_cleans_before_event
+```
+
+The Python oracle has a seven-second per-case harness bound; the actual
+Exchange deadline is four seconds from construction and is never renewed.
+Compiler admission and all eight native cases passed on the first gate:
+`target/stdlib-work/https-server-exchange-teardown-first.log`
+(exit 0; 21.05 s), with summary
+`cases=8 absolute-timeout=2 cut-native-record=2 drain-overflow=2 authenticated-empty=2 teardown-ledger-controls=31`.
+For both TLS versions the failure cases retained the independently parsed
+106-byte final response and the 63-byte request head. The cut record delivered
+no application plaintext. Overflow retained exactly 258 discarded bytes and
+321 total received bytes. Empty input published exactly one cleanup-gated
+Empty event with zero request/response bytes. All native/source/descriptor
+pre-exit barriers and sticky replay assertions passed. These eight cases are
+included once in the 34-case total; they do not add rare WANT or post-native
+clock injection coverage.
+
+## Remaining direct-driver acceptance gaps
+
+The 34-case receipt is finite. It does not yet exercise these material driver
+branches:
+
+- Deadline/clock failure after a successful native read, write or notification,
+  or while an application decision is paused. Successful transport progress
+  must remain recorded in the final failure. Existing direct quotas exhaust
+  before native operations; the Reply.stage regression reaches WorkLimit,
+  not a post-native clock failure.
+- Driver dispatch for read `WANT_WRITE`, write `WANT_READ` and shutdown WANT
+  retries. Raw Session
+  tests establish the primitive retry rules, and the direct early-final
+  cases establish real write `WANT_WRITE`, but neither covers all these
+  driver-specific eligibility/quiesce paths.
+
+Shared HTTP response syntax, Expect/rejection policy and Protocol source
+allocation coverage already have focused tests below this driver. Repeating
+their full matrices or sweeping native OpenSSL heap allocations is not implied
+by these remaining direct composition gaps.
 
 ## Additive cleanup regressions
 
