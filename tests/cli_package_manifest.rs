@@ -677,6 +677,72 @@ fn cli_package_lock_generates_lockfile_that_existing_check_path_uses() {
 }
 
 #[test]
+fn cli_package_lock_generates_and_replays_item_import_edges() {
+    let root = common::temp_artifact_path("laniusc_cli_package_lock", "item_import", None);
+    let (_, entry, manifest) = write_package_manifest_fixture(&root);
+    fs::write(
+        entry,
+        "module app::main;\nimport app::helper::add_one;\nfn main() -> i32 { return add_one(-1); }\n",
+    )
+    .expect("write package item import");
+    let lockfile = root.join("lanius.lock.json");
+    let mut lock = Command::new(laniusc_bin());
+    lock.arg("package")
+        .arg("lock")
+        .arg("--manifest")
+        .arg(manifest)
+        .arg("-o")
+        .arg(&lockfile);
+    let output = common::command_output_with_timeout("package lock item import", &mut lock);
+    common::assert_command_success("package lock item import", &output);
+    let mut document: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(&lockfile).expect("read generated item-import lock"),
+    )
+    .expect("parse generated item-import lock");
+    let edge = document["import_graph"]["imports"]
+        .as_array()
+        .expect("recorded import edges")
+        .iter()
+        .find(|edge| edge["import_path"] == "app::helper::add_one")
+        .expect("lock records the literal item import");
+    assert_eq!(edge["target_module_path"], "app::helper");
+    PackageLockfile::load_json_file(&lockfile)
+        .expect("reload generated item-import lock")
+        .load_path_manifest()
+        .expect("replay declaring module");
+
+    let mut check = Command::new(laniusc_bin());
+    check.arg("check").arg("--package-lockfile").arg(&lockfile);
+    let output = common::command_output_with_timeout("check item-import lock", &mut check);
+    common::assert_command_success("check item-import lock", &output);
+    assert!(output.stdout.is_empty(), "check must not emit target bytes");
+
+    // A direct module prefix is valid; a more distant ancestor is not.
+    document["import_graph"]["imports"][0]["import_path"] =
+        serde_json::Value::String("app::helper::add_one::nested".to_string());
+    fs::write(
+        &lockfile,
+        serde_json::to_string(&document).expect("serialize tampered import"),
+    )
+    .expect("write tampered import");
+    let mut reject = Command::new(laniusc_bin());
+    reject.arg("check").arg("--package-lockfile").arg(&lockfile);
+    let output =
+        common::command_output_with_timeout("reject tampered item-import lock", &mut reject);
+    assert!(!output.status.success(), "tampered lock must be rejected");
+    assert!(
+        output.stdout.is_empty(),
+        "rejection must not emit target bytes"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("app::helper::add_one::nested") && stderr.contains("app::helper"),
+        "{stderr}"
+    );
+    fs::remove_dir_all(root).expect("remove item-import CLI package");
+}
+
+#[test]
 fn cli_package_lockfile_reports_import_cycle_with_package_context() {
     let root = common::temp_artifact_path("laniusc_cli_package_lock", "two_module_cycle", None);
     let app_root = root.join("src/app");

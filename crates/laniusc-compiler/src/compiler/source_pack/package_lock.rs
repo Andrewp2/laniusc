@@ -2529,6 +2529,33 @@ fn resolve_lockfile_import(
     source_path: &Path,
     source: &str,
 ) -> Result<PackageLockfileResolvedImport, CompileError> {
+    // Match source-root discovery: a whole module wins; only a missing whole
+    // path may name an item in its direct module prefix. Declaration/visibility
+    // validation remains with the compiler, not package metadata discovery.
+    let whole =
+        resolve_lockfile_module_import(import, roots, source_library_id, source_path, source);
+    let Err(error) = whole else { return whole };
+    if !matches!(&error, CompileError::Diagnostic(diagnostic) if diagnostic.code == "LNC0001") {
+        return Err(error);
+    }
+    let Some((module, _item)) = import.path.rsplit_once("::") else {
+        return Err(error);
+    };
+    let prefix = LeadingImportPath {
+        path: module.to_string(),
+        ..import.clone()
+    };
+    resolve_lockfile_module_import(&prefix, roots, source_library_id, source_path, source)
+        .map_err(|_| error)
+}
+
+fn resolve_lockfile_module_import(
+    import: &LeadingImportPath,
+    roots: &[PackageLockfileImportSearchRoot],
+    source_library_id: u32,
+    source_path: &Path,
+    source: &str,
+) -> Result<PackageLockfileResolvedImport, CompileError> {
     let import_path = import.path.as_str();
     let mut searched_paths = Vec::with_capacity(roots.len());
     if source_library_id == PACKAGE_LOCKFILE_STDLIB_LIBRARY_ID {

@@ -6,7 +6,6 @@ from pathlib import Path
 import re
 import struct
 import subprocess
-import types
 
 FIXTURES = Path(__file__).resolve().parents[2]
 
@@ -83,17 +82,57 @@ def events(text):
 
 
 def source_maps(text, profile, directory):
-    """Run the existing source ownership checker unchanged on all map events."""
+    """Bind source maps to exact runtime post-IPs, flags and requested lengths."""
     pairs, named = profile
-    # A private function binding supplies the already-verified raw ELF profile.
-    # No shared module, source file, runtime or production operation is patched.
-    namespace = dict(SHARED.analyze.__globals__)
-    namespace["verified_sites"] = lambda _executable: (pairs, named)
-    checker = types.FunctionType(SHARED.analyze.__code__, namespace)
+    alloc_sites = {a for a, _ in pairs} | set(named)
+    free_sites = {f for _, f in pairs} | set(named)
+    expected_flags = getattr(pairs, "mmap_flags", {a: 0x62 for a, _ in pairs})
+    executable_ranges = getattr(pairs, "executable_ranges", [])
     path = Path(directory) / "verified-source-mappings.trace"
     selected = [entry["line"] for entry in events(text)[0] if entry["name"] in ("mmap", "munmap")]
     path.write_text("".join(line + "\n" for line in selected))
-    return checker(path, "verified-temp-file-profile", epochs=False, injected_close=None)
+    live, attempts, allocations, counters = {}, {}, [], Counter()
+    for index, entry in enumerate(events(path.read_text())[0]):
+        name, ip, value = entry["name"], entry["ip"], entry["result"].split()[0]
+        args = arguments(entry["args"])
+        counters[name] += 1
+        entry = dict(entry, line_number=index, ordinal=counters[name], epoch=False,
+                     injected="INJECTED" in entry["result"])
+        attempts.setdefault(name, []).append(entry)
+        in_image = any(start <= ip < end for start, end in executable_ranges)
+        if name == "mmap" and ip in alloc_sites:
+            flags = {"MAP_PRIVATE", "MAP_ANONYMOUS"}
+            profile_flags = expected_flags.get(ip, 0x62)
+            assert profile_flags in (0x22, 0x62), ("unsupported source mmap profile", ip, profile_flags)
+            if profile_flags == 0x62:
+                flags.add("MAP_32BIT")
+            assert len(args) == 6 and args[0] == "NULL" and int(args[1]) > 0, entry
+            assert args[2] == "PROT_READ|PROT_WRITE" and set(args[3].split("|")) == flags and args[4:] == ["-1", "0"], entry
+            allocation = dict(entry, length=int(args[1]))
+            allocations.append(allocation)
+            if value.startswith("0x"):
+                pointer = int(value, 16)
+                assert 0 < pointer < (1 << 64) and pointer not in live, (entry, live)
+                assert pointer + allocation["length"] < (1 << 64), entry
+                if profile_flags == 0x62:
+                    assert pointer < 0x80000000, entry
+                live[pointer] = allocation["length"]
+            else:
+                assert value == "-1", entry
+        elif name == "mmap":
+            # The raw image's code is closed: another mmap there cannot hide
+            # as libc/bootstrap activity merely because it returns a high ptr.
+            assert not in_image and "MAP_32BIT" not in entry["args"], ("unverified source allocation site", entry)
+        elif name == "munmap":
+            pointer, length = int(args[0], 16), int(args[1])
+            if pointer in live:
+                assert ip in free_sites and value == "0" and live[pointer] == length, (entry, live)
+                del live[pointer]
+            else:
+                assert ip not in free_sites and not in_image and pointer >= 0x80000000, ("unowned source release", entry, live)
+    assert not live, ("source mappings survived release", live)
+    return dict(allocations=allocations, epoch_allocations=[], attempts=attempts,
+                calls=dict(counters), max_sockets=0)
 
 
 def analyze(text, profile, directory, *, repaired_close=None, repair_phase="A"):
@@ -218,6 +257,51 @@ def controls():
                 count += 1
             else:
                 raise AssertionError("temporary-file ledger accepted an unretired close fault")
+        class Profiles(list):
+            pass
+        full = Profiles([(a, f)])
+        full.mmap_flags = {a: 0x22}
+        full.executable_ranges = [(0x400000, 0x410000)]
+        wide = base.replace("|MAP_32BIT", "").replace("0x41000000", "0x7fff41000000")
+        assert len(analyze(wide, (full, []), directory)["source"]["allocations"]) == 1
+        count += 1
+        native = event("mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7fff55000000", 0x7fff12340000)
+        native += event("munmap(0x7fff55000000, 4096) = 0", 0x7fff12340000)
+        assert len(analyze(native + wide, (full, []), directory)["source"]["allocations"]) == 1
+        count += 1
+        wide_free = free.replace("0x41000000", "0x7fff41000000")
+        wide_alloc = allocated.replace("|MAP_32BIT", "").replace("0x41000000", "0x7fff41000000")
+        mutations = [wide.replace(wide_free, ""), wide + wide_free,
+                     wide.replace(wide_free, wide_free.replace(", 37)", ", 36)")),
+                     wide.replace(wide_free, wide_free.replace(f"{f:016x}", "00007fff12340000")),
+                     wide.replace(wide_alloc, wide_alloc.replace(f"{a:016x}", "0000000000402002")),
+                     wide.replace(wide_alloc, wide_alloc.replace("MAP_ANONYMOUS", "MAP_ANONYMOUS|MAP_32BIT")),
+                     wide.replace(wide_alloc, wide_alloc.replace("MAP_PRIVATE", "MAP_SHARED")),
+                     wide.replace(wide_alloc, wide_alloc.replace(", -1, 0)", ", 0, 0)")),
+                     wide.replace(wide_alloc, wide_alloc.replace("NULL, 37", "NULL, 0")),
+                     wide.replace("0x7fff41000000", "0xfffffffffffffff0"),
+                     wide + event("munmap(0x7fff66000000, 37) = 0", f)]
+        for text in mutations:
+            try:
+                analyze(text, (full, []), directory)
+            except AssertionError:
+                count += 1
+            else:
+                raise AssertionError("temporary-file ledger accepted unverified full-width mapping behavior")
+        failed = wide_alloc[:wide_alloc.index(" = ")] + " = -1 ENOMEM (Cannot allocate memory) (INJECTED)\n"
+        assert source_maps(failed, (full, []), directory)["allocations"][0]["injected"]
+        count += 1
+        # A mixed executable cannot use the current profile to excuse a high
+        # pointer returned by its separately bound historical allocation site.
+        mixed = Profiles([(a, f), (a + 0x100, f + 0x100)])
+        mixed.mmap_flags = {a: 0x62, a + 0x100: 0x22}
+        mixed.executable_ranges = full.executable_ranges
+        try:
+            analyze(base.replace("0x41000000", "0x7fff41000000"), (mixed, []), directory)
+        except AssertionError:
+            count += 1
+        else:
+            raise AssertionError("historical runtime profile accepted a full-width mapping")
     return count
 
 

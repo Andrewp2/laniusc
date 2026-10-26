@@ -104,6 +104,24 @@ def main():
     expected = tuple(0x400078 + offset + 2 for offset in RESOURCES.SITES.SYSCALLS)
     assert raw_runtime_pairs(image) == [expected]
     count += 1
+    current = runtime.replace(bytes.fromhex("41ba62000000"), bytes.fromhex("41ba22000000"))
+    current_image = header + program + current
+    current_pairs = raw_runtime_pairs(current_image)
+    assert current_pairs == [expected] and current_pairs.mmap_flags == {expected[0]: 0x22}
+    assert raw_runtime_pairs(image).mmap_flags == {expected[0]: 0x62}
+    count += 1
+    both_size = 120 + len(runtime) + len(current)
+    both_program = struct.pack("<IIQQQQQQ", 1, 5, 0, 0x400000, 0x400000, both_size, both_size, 4096)
+    both_pairs = raw_runtime_pairs(header + both_program + runtime + current)
+    assert both_pairs.mmap_flags == {expected[0]: 0x62, expected[0] + len(runtime): 0x22}
+    count += 1
+    for unsupported in (current_pairs, both_pairs):
+        try:
+            Ledger(Path("/nonexistent/unsupported-full-width.trace"), unsupported, [])
+        except AssertionError:
+            count += 1
+        else:
+            raise AssertionError("historical scale ledger silently accepted a full-width source profile")
 
     def changed(offset, replacement):
         return image[:offset] + replacement + image[offset + len(replacement):]
@@ -111,7 +129,10 @@ def main():
                changed(40, struct.pack("<Q", 120)),
                changed(32, struct.pack("<Q", len(image) + 1)),
                changed(68, struct.pack("<I", 4)), changed(24, bytes(8)),
-               changed(len(image) - 1, b"\x00")]
+               changed(len(image) - 1, b"\x00"),
+               header + program + current.replace(bytes.fromhex("41ba22000000"), bytes.fromhex("41ba42000000")),
+               header + program + current.replace(bytes.fromhex("b80b0000000f05c3"), bytes.fromhex("b80a0000000f05c3")),
+               header + program + current.replace(bytes.fromhex("4885c0790231c0c3"), bytes.fromhex("4885c0780231c0c3"))]
     for mutant in invalid:
         try:
             raw_runtime_pairs(mutant)

@@ -4,7 +4,8 @@ The [module index](api/README.md) inventories source declarations in `stdlib/`
 and `extended/`. Each module page retains public signatures, generic bounds,
 enclosing impl/trait headers, types, fields, enum variants and constants, with
 links to their exact source lines. Function bodies are omitted. Direct source
-imports link to the corresponding module pages.
+imports link to the corresponding module pages; item imports also link to the
+exact declaration's source line.
 
 This improves discovery. It does not complete the semantic API reference.
 Linked guides own runtime behavior, target evidence, errors, ownership,
@@ -18,9 +19,9 @@ closure. Use the compiler's package resolver for source distribution.
 From the repository root, with Python 3.10 or newer:
 
 ```sh
-timeout --kill-after=2s 100s python3 tools/generate_library_reference.py
-timeout --kill-after=2s 100s python3 tools/generate_library_reference.py --check
-timeout --kill-after=2s 100s python3 -m unittest discover -s tools -p test_generate_library_reference.py
+timeout --kill-after=2s 100s python3 -B tools/generate_library_reference.py
+timeout --kill-after=2s 100s python3 -B tools/generate_library_reference.py --check
+timeout --kill-after=2s 100s python3 -B tools/test_generate_library_reference.py
 ```
 
 These commands are CPU-only and require no compiler binary, shader build or
@@ -38,25 +39,29 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the AtomicFile/KV, TempFile/FileOps and server public-interface freeze, the
-bounded writer and final `--check` both exit zero for **246 pages from 245 source
-modules, with 8,119 public declaration markers**. The inventory adds
-[`atomic_file`](api/std/atomic_file.md) and refreshes the module index,
-[`kv`](api/ext/kv.md), [`file_ops`](api/std/file_ops.md) and
-[`temp_file`](api/std/temp_file.md): five generated output pages change at this
-checkpoint. The existing server reference pages remain included. The preceding
-TempFile/FileOps/server check was 245 pages, 244 modules and 8,090 markers.
-These are declaration markers, not a count of working functions.
+At the first library language-adoption source freeze, the bounded writer and
+final `--check` both exit zero for **246 pages from 245 source modules, with
+8,119 public declaration markers**. Six generated pages change:
+[`decimal`](api/core/decimal.md), [`decimal_number`](api/core/decimal_number.md),
+[`path`](api/core/path.md), [`wide_i64_checked`](api/core/wide_i64_checked.md),
+[`wide_u64_checked`](api/core/wide_u64_checked.md) and
+[`file_ops`](api/std/file_ops.md). They retain the new item imports, short source
+signatures and current source locations. The index and totals are unchanged.
+Declaration markers do not count working functions.
+
+The supported direct CPU test runner passes **26 tests in 3.078 seconds** in
+`target/stdlib-work/lang-reference-generator-tests-direct.log`. This includes
+module/item imports, module precedence, public enum variants, private/missing
+item rejection, no re-exports, and opaque bodies containing `?`/inferred locals.
+It verifies documentation tooling, not compiled language or library behavior.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
 hashes before generation and after the final check. The generator writes only
-the reference tree. Metadata includes AtomicFile's 66 process invocations across
-four groups and the migrated KV application's 64 across two, with preliminary
-overlap and CPU/build admission kept separate. It preserves finite
-TempFile/FileOps, server/application, scale, teardown and scheduler receipts.
-The complete library goal remains open, server coverage gaps stay explicit in
-the [overview](library-overview.md), and archive extraction is proposed work.
-Generation supplies no runtime acceptance for any API.
+the reference tree. The preceding AtomicFile/KV inventory had the same totals
+and added [`atomic_file`](api/std/atomic_file.md); its finite receipt metadata
+and older TempFile/server notes retain their guide-defined scope. The complete
+library goal remains open in the [overview](library-overview.md). Generation
+supplies no runtime acceptance for any API.
 
 ## Source boundaries
 
@@ -69,7 +74,8 @@ counts and enum payloads. Unknown public declaration shapes stop generation
 with a source path and line instead of silently disappearing from the index.
 
 The scanner does not validate the language grammar, infer types, resolve trait
-calls, decide semantic visibility or act as a compiler fallback. A public
+calls or act as a compiler fallback. Import-link checks use declared public
+ownership in the source, not compiler visibility analysis. A public
 method is retained with its complete impl header, including an impl not itself
 spelled `pub`; trait members are retained under their public trait. Fields and
 variants appear under their declared public owner, without implying that
@@ -77,11 +83,27 @@ arbitrary construction or mutation satisfies that owner's invariants. Private
 function bodies and private helper types are excluded.
 
 All `.lani` sources in the two roots are scanned, including newly added modules.
-Module paths must match their root-relative source paths and declared imports
-must name an inventoried source. This checks the inventory's links; it does not
-replace compiler module resolution. Limits are 4,096 files, 4 MiB per source
-file, one million documentation tokens per file and 64 MiB total source bytes.
-Opened files must be regular UTF-8 files.
+Module paths must match their root-relative source paths. Import links follow
+the [item-import contract](language-ergonomics.md#item-imports):
+
+- An inventoried module matching the entire path wins, even if the prefix
+  module contains a public item with that same final name.
+- Otherwise, the prefix must be an inventoried module and the last segment
+  must identify exactly one public declaration there. Variants of public enums
+  have module-level names, including `core::result::Ok`; their declaration links
+  point to the variant's own source line.
+- Private, missing or ambiguous items fail with the importing file/line.
+  Struct fields, impl methods and private-enum variants are not module items.
+  Imported names are not re-exported. Aliases, globs and `use` are unsupported.
+
+An item link preserves the full written import path, identifies its declaration
+kind, links the owning module page and the exact declaration, and retains a
+separate link to the import line. Existing module links keep their format.
+This static inventory lookup does not replace compiler package/name resolution,
+type checking or runtime verification. Short public signatures keep their
+original source spelling; the generator does not expand imported type names.
+Limits are 4,096 files, 4 MiB per source file, one million documentation tokens
+per file and 64 MiB total source bytes. Opened files must be regular UTF-8 files.
 
 ## Reviewed guide mappings and status notes
 

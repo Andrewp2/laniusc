@@ -76,6 +76,7 @@ def events(text, *, phase_markers=True):
 
 
 def analyze(text, profile, directory, *, final=True, repaired_close=None, repair_phase="M", phase_markers=True):
+    assert all(flags == 0x62 for flags in getattr(profile[0], "mmap_flags", {}).values()), "Atomic checkpoint ledger requires its historical MAP_32BIT profile; full-width source accounting is not migrated"
     entries, epochs = events(text, phase_markers=phase_markers)
     live, generations, acquisitions, closes = {}, Counter(), [], []
     pairs, named = profile
@@ -211,6 +212,17 @@ def controls():
     first = parent + marker('C') + allocated + duplicated + marker('c') + marker('M') + call('fsync(4) = -1 EIO (Input/output error) (INJECTED)') + marker('m')
     final = first + marker('V') + marker('v') + marker('D') + call('fsync(4) = 0') + close + free + marker('d') + marker('A') + marker('a') + marker('B') + marker('b') + marker('X') + marker('x') + marker('P') + call('close(3) = 0') + marker('p')
     with tempfile.TemporaryDirectory(prefix='atomic-file-ledger-cpu-') as directory:
+        class FullWidth(list):
+            pass
+        unsupported = FullWidth([(a, f)])
+        unsupported.mmap_flags = {a: 0x22}
+        for final_checkpoint in (False, True):
+            try:
+                analyze('', (unsupported, []), directory, final=final_checkpoint)
+            except AssertionError:
+                count += 1
+            else:
+                raise AssertionError('historical Atomic checkpoint ledger accepted a full-width source profile')
         held = analyze(first, ([(a, f)], []), directory, final=False)
         assert set(held['live']) == {3, 4} and set(held['mappings']) == {0x41000000}
         count += 1

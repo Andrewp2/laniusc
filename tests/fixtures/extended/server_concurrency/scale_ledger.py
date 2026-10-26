@@ -15,7 +15,7 @@ RESOURCES = helper("server_scale_verified_resources", FIXTURES / "https_batch/re
 
 
 def raw_runtime_pairs(image):
-    """Current sectionless compiler output: admit only exact runtime helpers."""
+    """Admit exact sectionless runtime helpers and retain their mmap authority."""
     assert len(image) >= 64 and image[:7] == b"\x7fELF\x02\x01\x01"
     header = struct.unpack_from("<16sHHIQQQIHHHHHH", image)
     assert header[1:4] == (2, 62, 1) and header[8] == 64
@@ -23,7 +23,16 @@ def raw_runtime_pairs(image):
     phoff, phsize, phcount = header[5], header[9], header[10]
     assert phsize == 56 and 0 < phcount < 1024
     assert phoff <= len(image) and phsize * phcount <= len(image) - phoff
-    pairs, entry = set(), False
+    # runtime_abi.slang retains the exact register setup, mmap error handling
+    # and adjacent munmap helper. Full-width storage changes only its flags
+    # immediate from PRIVATE|ANON|32BIT to PRIVATE|ANON. Historical retained
+    # executables still use the first profile; no other opcode is optional.
+    legacy = RESOURCES.SITES.RUNTIME
+    old_flags = bytes.fromhex("41ba62000000")
+    new_flags = bytes.fromhex("41ba22000000")
+    assert legacy.count(old_flags) == 1
+    runtimes = ((legacy, 0x62), (legacy.replace(old_flags, new_flags), 0x22))
+    pairs, entry, authority, matched, executable_ranges = set(), False, {}, set(), []
     for index in range(phcount):
         kind, flags, offset, address, _, size, memory, _ = struct.unpack_from(
             "<IIQQQQQQ", image, phoff + index * phsize)
@@ -32,13 +41,25 @@ def raw_runtime_pairs(image):
             continue
         assert address + size < 1 << 64
         entry |= address <= header[4] < address + size
+        executable_ranges.append((address, address + size))
         code = image[offset:offset + size]
-        at = code.find(RESOURCES.SITES.RUNTIME)
-        while at >= 0:
-            pairs.add(tuple(address + at + position + 2 for position in RESOURCES.SITES.SYSCALLS))
-            at = code.find(RESOURCES.SITES.RUNTIME, at + 1)
+        for runtime, flags in runtimes:
+            at = code.find(runtime)
+            while at >= 0:
+                pair = tuple(address + at + position + 2 for position in RESOURCES.SITES.SYSCALLS)
+                pairs.add(pair)
+                assert pair[0] not in authority or authority[pair[0]] == flags
+                authority[pair[0]] = flags
+                matched.add(runtime)
+                at = code.find(runtime, at + 1)
     assert entry and pairs, "missing executable entry or exact allocation runtime"
-    return sorted(pairs)
+    class RuntimePairs(list):
+        pass
+    result = RuntimePairs(sorted(pairs))
+    result.mmap_flags = authority
+    result.executable_ranges = executable_ranges
+    result.runtimes = sorted(matched)
+    return result
 
 
 def verified_sites(executable, directory):
@@ -52,22 +73,24 @@ def verified_sites(executable, directory):
     pairs = raw_runtime_pairs(image)
     # Sectionless files cannot use objdump -d's section/symbol walk. Decode the
     # exact known helper from its entry, retaining syscall instruction checks.
-    runtime = Path(directory) / "verified-source-runtime.bin"
-    runtime.write_bytes(RESOURCES.SITES.RUNTIME)
-    result = subprocess.run(["objdump", "-D", "-b", "binary", "-m", "i386:x86-64",
-                             "--no-show-raw-insn", str(runtime)],
-                            capture_output=True, text=True, check=True, timeout=10)
-    instructions = {}
-    for line in result.stdout.splitlines():
-        match = re.match(r"^\s*([0-9a-f]+):\s+(\S+)", line)
-        if match:
-            instructions[int(match[1], 16)] = match[2]
-    assert all(instructions.get(offset) == "syscall" for offset in RESOURCES.SITES.SYSCALLS)
+    for index, pattern in enumerate(pairs.runtimes):
+        runtime = Path(directory) / ("verified-source-runtime-%d.bin" % index)
+        runtime.write_bytes(pattern)
+        result = subprocess.run(["objdump", "-D", "-b", "binary", "-m", "i386:x86-64",
+                                 "--no-show-raw-insn", str(runtime)],
+                                capture_output=True, text=True, check=True, timeout=10)
+        instructions = {}
+        for line in result.stdout.splitlines():
+            match = re.match(r"^\s*([0-9a-f]+):\s+(\S+)", line)
+            if match:
+                instructions[int(match[1], 16)] = match[2]
+        assert all(instructions.get(offset) == "syscall" for offset in RESOURCES.SITES.SYSCALLS)
     return pairs, []
 
 
 class Ledger:
     def __init__(self, path, pairs, named):
+        assert all(flags == 0x62 for flags in getattr(pairs, "mmap_flags", {}).values()), "scale ledger requires its historical MAP_32BIT profile; full-width source accounting is not migrated"
         self.path = Path(path)
         self.alloc_sites = {a for a, _ in pairs} | set(named)
         self.free_sites = {f for _, f in pairs} | set(named)

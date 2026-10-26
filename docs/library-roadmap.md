@@ -559,6 +559,15 @@ unaccepted; production starts only after the AtomicFile checkpoint is committed.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Rebased onto `origin/lang` `0d2e4a07`. The initial
+  [language-feature cleanup](library-language-adoption.md) adopts item imports,
+  local inference and selected propagation paths in six library modules plus
+  range-dot. Focused native library gates and all 67 application cases pass;
+  package-lock item imports, relocated source bundles and reference generation
+  also pass. Public type/signature contracts are unchanged. A generic nested
+  Option `?` path compiles but crashes in both minimal reductions; match controls
+  execute, so production flatten retains its explicit match. Further cleanup
+  remains gradual and runtime-gated. Archive extraction remains proposed work.
 - [AtomicFile publication](stdlib-atomic-files.md) and the
   [`kv_tool` migration](extended-kv.md#current-application-receipts) now pass their
   selected native gates on Linux x86_64, kernel `7.0.0-38-generic`, ext4 under

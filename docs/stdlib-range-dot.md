@@ -7,9 +7,40 @@ adapters, an application `Mapper` implementation, `core::i64::checked_add`,
 checked decimal parsing/formatting, owned raw argument snapshots, and checked
 stdout writes. Application arithmetic and iteration are Lanius.
 
-The application is admitted as **x86_64 Linux ELF through the GPU compiler**.
-One strict-checked executable supplied 67 passing native cases. The acceptance
-record below gives the checkpoint, exact bounded commands, logs, and scope.
+The current item-import/inference source is admitted as **x86_64 Linux ELF
+through the GPU compiler**. Its unchanged focused gate passed all 67 native
+cases in one Rust test, recorded in `target/stdlib-work/lang-range-dot.log`.
+The current receipt and the separate earlier acceptance record below identify
+their own checkpoints and scope.
+
+## Item imports and inferred locals
+
+The source uses focused item imports for its iterator constructors, Mapper and
+Pair, numeric parsing/formatting, checked addition, argument snapshots, signal
+policy and stdout. Initializers determine concrete local types, including the
+borrowed adapter chain:
+
+```lanius
+let paired = zip(left.borrow(),right.borrow());
+let selected = take(paired.borrow(),limit);
+let product = Product {};
+let products = map(selected.borrow(),product.borrow());
+let indexed = enumerate(products.borrow());
+```
+
+The imported free functions infer their item types from the concrete Iterator
+and Mapper implementations under the
+[bound-directed inference rule](language-ergonomics.md#local-type-inference).
+The mapper still widens each operand with `as i64`; the zero-initialized count
+and sum remain explicitly `u64` and `i64`. The packed output storage retains its
+`[i32;16]` backing and `[u8]` view annotations.
+
+Status conversion remains explicit in functions returning i32. Main retains
+the argument owner through processing and destroys it after every processing
+result. Parsing order, mapper effects, checked prefix accumulation and output
+publication follow the earlier program's order. The existing native test and
+oracle are unchanged; its exact filter remains
+`range_dot_csv_prefix_arithmetic_and_exact_failure_cleanup`.
 
 ## Build and use
 
@@ -124,7 +155,42 @@ counters, and output storage are typed stack locals. Every source cursor,
 adapter, and mapper remains alive while a downstream adapter borrows it.
 Stdout is borrowed and remains open.
 
-## Focused test and accepted evidence
+## Current language-migration acceptance
+
+The unmodified
+[`stdlib_range_dot_execution`](../tests/stdlib_range_dot_execution.rs) driver
+passed `range_dot_csv_prefix_arithmetic_and_exact_failure_cleanup` in **7.22 s**,
+including production-root GPU compilation and all 67 native cases. It reused one
+strict-checked ELF for the case set detailed in the historical table below:
+numeric prefixes and extremes, grammar/budget errors, reached allocation and
+output faults, actual EPIPE and signal setup. The existing independent numeric
+oracle, output/status checks and exact argument-owner cleanup checks were
+unchanged. The migrated iterator chain therefore has executable evidence, not
+only successful type checking.
+
+| Evidence | Scope | Receipt under `target/stdlib-work/` |
+| --- | --- | --- |
+| Shared driver build | Ten test drivers built in 45.55 s; not a range-dot-only build time | `lang-adoption-drivers-build.log` |
+| Current application gate | One Rust test, 67 native cases, 7.22 s, exit 0 | `lang-range-dot.log` |
+
+The rebased HEAD was `21764809dcab66be3e2e2afe0b5c17c93b3b7dc0`, with
+`origin/lang` at `0d2e4a07aa5b0f0dda6a2bcbd0d1c9d3de4a0eca`. The working tree
+also contained other stdlib language migrations and package-lock fixes, so HEAD
+alone does not identify a clean source snapshot. The checked application, test
+driver source and retained ELF have these SHA-256 values:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `sample_programs/library/range_dot.lani` | `b02397bef70f720415f94701b4483b1aea7339d88b1cead36786423cf9f876d5` |
+| `tests/stdlib_range_dot_execution.rs` | `d75abce779cdb9df867b6397f69242b7ce7f60ebb27984af718f047405ac5d2f` |
+| `/tmp/laniusc_range_dot_executable_310831_0` | `328acfcaaa141282759f8153abec605db285a730e5d466a928d3500deb16e8cd` |
+
+The retained ELF and logs are local artifacts. This receipt establishes the
+documented native Linux application behavior for this finite case set. It is
+not an application GPU-kernel target, a throughput benchmark, or acceptance of
+unrelated language features or stdlib migrations.
+
+## Focused test and historical accepted evidence
 
 [`tests/stdlib_range_dot_execution.rs`](../tests/stdlib_range_dot_execution.rs)
 defines `range_dot_csv_prefix_arithmetic_and_exact_failure_cleanup`. It compiled

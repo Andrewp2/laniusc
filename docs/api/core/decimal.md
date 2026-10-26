@@ -18,7 +18,9 @@ Declaration counts: enum: 2; field: 2; function: 58; struct: 1; variant: 7.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::result](result.md) · [source](../../../stdlib/core/decimal.lani#L4)
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/core/decimal.lani#L4)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/core/decimal.lani#L5)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/decimal.lani#L6)
 
 ## Types, fields and variants
 
@@ -26,7 +28,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: FormatError
 
-[Source line 154](../../../stdlib/core/decimal.lani#L154)
+[Source line 156](../../../stdlib/core/decimal.lani#L156)
 
 ```lanius
 pub enum FormatError
@@ -34,7 +36,7 @@ pub enum FormatError
 
 #### variant: Bounds
 
-[Source line 154](../../../stdlib/core/decimal.lani#L154)
+[Source line 156](../../../stdlib/core/decimal.lani#L156)
 
 ```lanius
 Bounds
@@ -42,7 +44,7 @@ Bounds
 
 #### variant: BufferTooSmall
 
-[Source line 154](../../../stdlib/core/decimal.lani#L154)
+[Source line 156](../../../stdlib/core/decimal.lani#L156)
 
 ```lanius
 BufferTooSmall(i32)
@@ -50,7 +52,7 @@ BufferTooSmall(i32)
 
 ### enum: ParseErrorKind
 
-[Source line 346](../../../stdlib/core/decimal.lani#L346)
+[Source line 348](../../../stdlib/core/decimal.lani#L348)
 
 ```lanius
 pub enum ParseErrorKind
@@ -58,7 +60,7 @@ pub enum ParseErrorKind
 
 #### variant: Bounds
 
-[Source line 346](../../../stdlib/core/decimal.lani#L346)
+[Source line 348](../../../stdlib/core/decimal.lani#L348)
 
 ```lanius
 Bounds
@@ -66,7 +68,7 @@ Bounds
 
 #### variant: Empty
 
-[Source line 346](../../../stdlib/core/decimal.lani#L346)
+[Source line 348](../../../stdlib/core/decimal.lani#L348)
 
 ```lanius
 Empty
@@ -74,7 +76,7 @@ Empty
 
 #### variant: MissingDigits
 
-[Source line 346](../../../stdlib/core/decimal.lani#L346)
+[Source line 348](../../../stdlib/core/decimal.lani#L348)
 
 ```lanius
 MissingDigits
@@ -82,7 +84,7 @@ MissingDigits
 
 #### variant: InvalidDigit
 
-[Source line 346](../../../stdlib/core/decimal.lani#L346)
+[Source line 348](../../../stdlib/core/decimal.lani#L348)
 
 ```lanius
 InvalidDigit
@@ -90,7 +92,7 @@ InvalidDigit
 
 #### variant: Overflow
 
-[Source line 346](../../../stdlib/core/decimal.lani#L346)
+[Source line 348](../../../stdlib/core/decimal.lani#L348)
 
 ```lanius
 Overflow
@@ -98,7 +100,7 @@ Overflow
 
 ### struct: ParseError
 
-[Source line 347](../../../stdlib/core/decimal.lani#L347)
+[Source line 349](../../../stdlib/core/decimal.lani#L349)
 
 ```lanius
 pub struct ParseError
@@ -106,7 +108,7 @@ pub struct ParseError
 
 #### field: kind
 
-[Source line 347](../../../stdlib/core/decimal.lani#L347)
+[Source line 349](../../../stdlib/core/decimal.lani#L349)
 
 ```lanius
 kind: ParseErrorKind
@@ -114,7 +116,7 @@ kind: ParseErrorKind
 
 #### field: offset
 
-[Source line 347](../../../stdlib/core/decimal.lani#L347)
+[Source line 349](../../../stdlib/core/decimal.lani#L349)
 
 ```lanius
 offset: i32
@@ -124,7 +126,7 @@ offset: i32
 
 ### function: len_u32
 
-[Source line 6](../../../stdlib/core/decimal.lani#L6)
+[Source line 8](../../../stdlib/core/decimal.lani#L8)
 
 ```lanius
 pub fn len_u32(value: u32) -> u32
@@ -132,7 +134,7 @@ pub fn len_u32(value: u32) -> u32
 
 ### function: byte_at_or_u32
 
-[Source line 18](../../../stdlib/core/decimal.lani#L18)
+[Source line 20](../../../stdlib/core/decimal.lani#L20)
 
 ```lanius
 pub fn byte_at_or_u32(value: u32, index: u32, fallback: u8) -> u8
@@ -140,7 +142,7 @@ pub fn byte_at_or_u32(value: u32, index: u32, fallback: u8) -> u8
 
 ### function: len_i32
 
-[Source line 45](../../../stdlib/core/decimal.lani#L45)
+[Source line 47](../../../stdlib/core/decimal.lani#L47)
 
 ```lanius
 pub fn len_i32(value: i32) -> u32
@@ -148,7 +150,7 @@ pub fn len_i32(value: i32) -> u32
 
 ### function: byte_at_or_i32
 
-[Source line 55](../../../stdlib/core/decimal.lani#L55)
+[Source line 57](../../../stdlib/core/decimal.lani#L57)
 
 ```lanius
 pub fn byte_at_or_i32(value: i32, index: u32, fallback: u8) -> u8
@@ -156,7 +158,7 @@ pub fn byte_at_or_i32(value: i32, index: u32, fallback: u8) -> u8
 
 ### function: len_u8
 
-[Source line 65](../../../stdlib/core/decimal.lani#L65)
+[Source line 67](../../../stdlib/core/decimal.lani#L67)
 
 ```lanius
 pub fn len_u8(value: u8) -> u32
@@ -164,7 +166,7 @@ pub fn len_u8(value: u8) -> u32
 
 ### function: byte_at_or_u8
 
-[Source line 70](../../../stdlib/core/decimal.lani#L70)
+[Source line 72](../../../stdlib/core/decimal.lani#L72)
 
 ```lanius
 pub fn byte_at_or_u8(value: u8, index: u32, fallback: u8) -> u8
@@ -172,7 +174,7 @@ pub fn byte_at_or_u8(value: u8, index: u32, fallback: u8) -> u8
 
 ### function: len_u16
 
-[Source line 75](../../../stdlib/core/decimal.lani#L75)
+[Source line 77](../../../stdlib/core/decimal.lani#L77)
 
 ```lanius
 pub fn len_u16(value: u16) -> u32
@@ -180,7 +182,7 @@ pub fn len_u16(value: u16) -> u32
 
 ### function: byte_at_or_u16
 
-[Source line 80](../../../stdlib/core/decimal.lani#L80)
+[Source line 82](../../../stdlib/core/decimal.lani#L82)
 
 ```lanius
 pub fn byte_at_or_u16(value: u16, index: u32, fallback: u8) -> u8
@@ -188,7 +190,7 @@ pub fn byte_at_or_u16(value: u16, index: u32, fallback: u8) -> u8
 
 ### function: len_i8
 
-[Source line 85](../../../stdlib/core/decimal.lani#L85)
+[Source line 87](../../../stdlib/core/decimal.lani#L87)
 
 ```lanius
 pub fn len_i8(value: i8) -> u32
@@ -196,7 +198,7 @@ pub fn len_i8(value: i8) -> u32
 
 ### function: byte_at_or_i8
 
-[Source line 90](../../../stdlib/core/decimal.lani#L90)
+[Source line 92](../../../stdlib/core/decimal.lani#L92)
 
 ```lanius
 pub fn byte_at_or_i8(value: i8, index: u32, fallback: u8) -> u8
@@ -204,7 +206,7 @@ pub fn byte_at_or_i8(value: i8, index: u32, fallback: u8) -> u8
 
 ### function: len_i16
 
-[Source line 95](../../../stdlib/core/decimal.lani#L95)
+[Source line 97](../../../stdlib/core/decimal.lani#L97)
 
 ```lanius
 pub fn len_i16(value: i16) -> u32
@@ -212,7 +214,7 @@ pub fn len_i16(value: i16) -> u32
 
 ### function: byte_at_or_i16
 
-[Source line 100](../../../stdlib/core/decimal.lani#L100)
+[Source line 102](../../../stdlib/core/decimal.lani#L102)
 
 ```lanius
 pub fn byte_at_or_i16(value: i16, index: u32, fallback: u8) -> u8
@@ -220,7 +222,7 @@ pub fn byte_at_or_i16(value: i16, index: u32, fallback: u8) -> u8
 
 ### function: len_u64
 
-[Source line 105](../../../stdlib/core/decimal.lani#L105)
+[Source line 107](../../../stdlib/core/decimal.lani#L107)
 
 ```lanius
 pub fn len_u64(value: u64) -> u32
@@ -228,7 +230,7 @@ pub fn len_u64(value: u64) -> u32
 
 ### function: byte_at_or_u64
 
-[Source line 112](../../../stdlib/core/decimal.lani#L112)
+[Source line 114](../../../stdlib/core/decimal.lani#L114)
 
 ```lanius
 pub fn byte_at_or_u64(value: u64, index: u32, fallback: u8) -> u8
@@ -236,7 +238,7 @@ pub fn byte_at_or_u64(value: u64, index: u32, fallback: u8) -> u8
 
 ### function: len_i64
 
-[Source line 130](../../../stdlib/core/decimal.lani#L130)
+[Source line 132](../../../stdlib/core/decimal.lani#L132)
 
 ```lanius
 pub fn len_i64(value: i64) -> u32
@@ -244,7 +246,7 @@ pub fn len_i64(value: i64) -> u32
 
 ### function: byte_at_or_i64
 
-[Source line 136](../../../stdlib/core/decimal.lani#L136)
+[Source line 138](../../../stdlib/core/decimal.lani#L138)
 
 ```lanius
 pub fn byte_at_or_i64(value: i64, index: u32, fallback: u8) -> u8
@@ -252,7 +254,7 @@ pub fn byte_at_or_i64(value: i64, index: u32, fallback: u8) -> u8
 
 ### function: len_usize
 
-[Source line 145](../../../stdlib/core/decimal.lani#L145)
+[Source line 147](../../../stdlib/core/decimal.lani#L147)
 
 ```lanius
 pub fn len_usize(value: usize) -> u32
@@ -260,7 +262,7 @@ pub fn len_usize(value: usize) -> u32
 
 ### function: len_isize
 
-[Source line 146](../../../stdlib/core/decimal.lani#L146)
+[Source line 148](../../../stdlib/core/decimal.lani#L148)
 
 ```lanius
 pub fn len_isize(value: isize) -> u32
@@ -268,7 +270,7 @@ pub fn len_isize(value: isize) -> u32
 
 ### function: byte_at_or_usize
 
-[Source line 147](../../../stdlib/core/decimal.lani#L147)
+[Source line 149](../../../stdlib/core/decimal.lani#L149)
 
 ```lanius
 pub fn byte_at_or_usize(value: usize, index: u32, fallback: u8) -> u8
@@ -276,7 +278,7 @@ pub fn byte_at_or_usize(value: usize, index: u32, fallback: u8) -> u8
 
 ### function: byte_at_or_isize
 
-[Source line 150](../../../stdlib/core/decimal.lani#L150)
+[Source line 152](../../../stdlib/core/decimal.lani#L152)
 
 ```lanius
 pub fn byte_at_or_isize(value: isize, index: u32, fallback: u8) -> u8
@@ -284,87 +286,87 @@ pub fn byte_at_or_isize(value: isize, index: u32, fallback: u8) -> u8
 
 ### function: format_u64
 
-[Source line 176](../../../stdlib/core/decimal.lani#L176)
+[Source line 178](../../../stdlib/core/decimal.lani#L178)
 
 ```lanius
-pub fn format_u64(destination: [u8], offset: i32, capacity: i32, value: u64) -> core::result::Result<i32, FormatError>
+pub fn format_u64(destination: [u8], offset: i32, capacity: i32, value: u64) -> Result<i32, FormatError>
 ```
 
 ### function: format_i64
 
-[Source line 179](../../../stdlib/core/decimal.lani#L179)
+[Source line 181](../../../stdlib/core/decimal.lani#L181)
 
 ```lanius
-pub fn format_i64(destination: [u8], offset: i32, capacity: i32, value: i64) -> core::result::Result<i32, FormatError>
+pub fn format_i64(destination: [u8], offset: i32, capacity: i32, value: i64) -> Result<i32, FormatError>
 ```
 
 ### function: format_u8
 
-[Source line 182](../../../stdlib/core/decimal.lani#L182)
+[Source line 184](../../../stdlib/core/decimal.lani#L184)
 
 ```lanius
-pub fn format_u8(destination: [u8], offset: i32, capacity: i32, value: u8) -> core::result::Result<i32, FormatError>
+pub fn format_u8(destination: [u8], offset: i32, capacity: i32, value: u8) -> Result<i32, FormatError>
 ```
 
 ### function: format_u16
 
-[Source line 185](../../../stdlib/core/decimal.lani#L185)
+[Source line 187](../../../stdlib/core/decimal.lani#L187)
 
 ```lanius
-pub fn format_u16(destination: [u8], offset: i32, capacity: i32, value: u16) -> core::result::Result<i32, FormatError>
+pub fn format_u16(destination: [u8], offset: i32, capacity: i32, value: u16) -> Result<i32, FormatError>
 ```
 
 ### function: format_u32
 
-[Source line 188](../../../stdlib/core/decimal.lani#L188)
+[Source line 190](../../../stdlib/core/decimal.lani#L190)
 
 ```lanius
-pub fn format_u32(destination: [u8], offset: i32, capacity: i32, value: u32) -> core::result::Result<i32, FormatError>
+pub fn format_u32(destination: [u8], offset: i32, capacity: i32, value: u32) -> Result<i32, FormatError>
 ```
 
 ### function: format_usize
 
-[Source line 191](../../../stdlib/core/decimal.lani#L191)
+[Source line 193](../../../stdlib/core/decimal.lani#L193)
 
 ```lanius
-pub fn format_usize(destination: [u8], offset: i32, capacity: i32, value: usize) -> core::result::Result<i32, FormatError>
+pub fn format_usize(destination: [u8], offset: i32, capacity: i32, value: usize) -> Result<i32, FormatError>
 ```
 
 ### function: format_i8
 
-[Source line 194](../../../stdlib/core/decimal.lani#L194)
+[Source line 196](../../../stdlib/core/decimal.lani#L196)
 
 ```lanius
-pub fn format_i8(destination: [u8], offset: i32, capacity: i32, value: i8) -> core::result::Result<i32, FormatError>
+pub fn format_i8(destination: [u8], offset: i32, capacity: i32, value: i8) -> Result<i32, FormatError>
 ```
 
 ### function: format_i16
 
-[Source line 197](../../../stdlib/core/decimal.lani#L197)
+[Source line 199](../../../stdlib/core/decimal.lani#L199)
 
 ```lanius
-pub fn format_i16(destination: [u8], offset: i32, capacity: i32, value: i16) -> core::result::Result<i32, FormatError>
+pub fn format_i16(destination: [u8], offset: i32, capacity: i32, value: i16) -> Result<i32, FormatError>
 ```
 
 ### function: format_i32
 
-[Source line 200](../../../stdlib/core/decimal.lani#L200)
+[Source line 202](../../../stdlib/core/decimal.lani#L202)
 
 ```lanius
-pub fn format_i32(destination: [u8], offset: i32, capacity: i32, value: i32) -> core::result::Result<i32, FormatError>
+pub fn format_i32(destination: [u8], offset: i32, capacity: i32, value: i32) -> Result<i32, FormatError>
 ```
 
 ### function: format_isize
 
-[Source line 203](../../../stdlib/core/decimal.lani#L203)
+[Source line 205](../../../stdlib/core/decimal.lani#L205)
 
 ```lanius
-pub fn format_isize(destination: [u8], offset: i32, capacity: i32, value: isize) -> core::result::Result<i32, FormatError>
+pub fn format_isize(destination: [u8], offset: i32, capacity: i32, value: isize) -> Result<i32, FormatError>
 ```
 
 ### function: can_append_ascii_digit_u32
 
-[Source line 209](../../../stdlib/core/decimal.lani#L209)
+[Source line 211](../../../stdlib/core/decimal.lani#L211)
 
 ```lanius
 pub fn can_append_ascii_digit_u32(current: u32, byte: u8, limit: u32) -> bool
@@ -372,7 +374,7 @@ pub fn can_append_ascii_digit_u32(current: u32, byte: u8, limit: u32) -> bool
 
 ### function: append_ascii_digit_or_u32
 
-[Source line 221](../../../stdlib/core/decimal.lani#L221)
+[Source line 223](../../../stdlib/core/decimal.lani#L223)
 
 ```lanius
 pub fn append_ascii_digit_or_u32(current: u32, byte: u8, limit: u32, fallback: u32) -> u32
@@ -380,7 +382,7 @@ pub fn append_ascii_digit_or_u32(current: u32, byte: u8, limit: u32, fallback: u
 
 ### function: parse_ascii_u32_or
 
-[Source line 235](../../../stdlib/core/decimal.lani#L235)
+[Source line 237](../../../stdlib/core/decimal.lani#L237)
 
 ```lanius
 pub fn parse_ascii_u32_or(values: [i32], len: i32, fallback: u32) -> u32
@@ -388,7 +390,7 @@ pub fn parse_ascii_u32_or(values: [i32], len: i32, fallback: u32) -> u32
 
 ### function: parse_ascii_i32_or
 
-[Source line 261](../../../stdlib/core/decimal.lani#L261)
+[Source line 263](../../../stdlib/core/decimal.lani#L263)
 
 ```lanius
 pub fn parse_ascii_i32_or(values: [i32], len: i32, fallback: i32) -> i32
@@ -396,7 +398,7 @@ pub fn parse_ascii_i32_or(values: [i32], len: i32, fallback: i32) -> i32
 
 ### function: parse_ascii_u8_or
 
-[Source line 309](../../../stdlib/core/decimal.lani#L309)
+[Source line 311](../../../stdlib/core/decimal.lani#L311)
 
 ```lanius
 pub fn parse_ascii_u8_or(values: [i32], len: i32, fallback: u8) -> u8
@@ -404,7 +406,7 @@ pub fn parse_ascii_u8_or(values: [i32], len: i32, fallback: u8) -> u8
 
 ### function: parse_ascii_u16_or
 
-[Source line 317](../../../stdlib/core/decimal.lani#L317)
+[Source line 319](../../../stdlib/core/decimal.lani#L319)
 
 ```lanius
 pub fn parse_ascii_u16_or(values: [i32], len: i32, fallback: u16) -> u16
@@ -412,7 +414,7 @@ pub fn parse_ascii_u16_or(values: [i32], len: i32, fallback: u16) -> u16
 
 ### function: parse_ascii_i8_or
 
-[Source line 325](../../../stdlib/core/decimal.lani#L325)
+[Source line 327](../../../stdlib/core/decimal.lani#L327)
 
 ```lanius
 pub fn parse_ascii_i8_or(values: [i32], len: i32, fallback: i8) -> i8
@@ -420,7 +422,7 @@ pub fn parse_ascii_i8_or(values: [i32], len: i32, fallback: i8) -> i8
 
 ### function: parse_ascii_i16_or
 
-[Source line 333](../../../stdlib/core/decimal.lani#L333)
+[Source line 335](../../../stdlib/core/decimal.lani#L335)
 
 ```lanius
 pub fn parse_ascii_i16_or(values: [i32], len: i32, fallback: i16) -> i16
@@ -431,157 +433,157 @@ pub fn parse_ascii_i16_or(values: [i32], len: i32, fallback: i16) -> i16
 [Source line 397](../../../stdlib/core/decimal.lani#L397)
 
 ```lanius
-pub fn parse_u8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u8, ParseError>
+pub fn parse_u8_range(bytes: [u8], offset: i32, count: i32) -> Result<u8, ParseError>
 ```
 
 ### function: parse_u16_range
 
-[Source line 403](../../../stdlib/core/decimal.lani#L403)
+[Source line 402](../../../stdlib/core/decimal.lani#L402)
 
 ```lanius
-pub fn parse_u16_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u16, ParseError>
+pub fn parse_u16_range(bytes: [u8], offset: i32, count: i32) -> Result<u16, ParseError>
 ```
 
 ### function: parse_u32_range
 
-[Source line 409](../../../stdlib/core/decimal.lani#L409)
+[Source line 407](../../../stdlib/core/decimal.lani#L407)
 
 ```lanius
-pub fn parse_u32_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u32, ParseError>
+pub fn parse_u32_range(bytes: [u8], offset: i32, count: i32) -> Result<u32, ParseError>
 ```
 
 ### function: parse_i8_range
 
-[Source line 415](../../../stdlib/core/decimal.lani#L415)
+[Source line 412](../../../stdlib/core/decimal.lani#L412)
 
 ```lanius
-pub fn parse_i8_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i8, ParseError>
+pub fn parse_i8_range(bytes: [u8], offset: i32, count: i32) -> Result<i8, ParseError>
 ```
 
 ### function: parse_i16_range
 
-[Source line 421](../../../stdlib/core/decimal.lani#L421)
+[Source line 417](../../../stdlib/core/decimal.lani#L417)
 
 ```lanius
-pub fn parse_i16_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i16, ParseError>
+pub fn parse_i16_range(bytes: [u8], offset: i32, count: i32) -> Result<i16, ParseError>
 ```
 
 ### function: parse_i32_range
 
-[Source line 427](../../../stdlib/core/decimal.lani#L427)
+[Source line 422](../../../stdlib/core/decimal.lani#L422)
 
 ```lanius
-pub fn parse_i32_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32, ParseError>
+pub fn parse_i32_range(bytes: [u8], offset: i32, count: i32) -> Result<i32, ParseError>
 ```
 
 ### function: parse_u8
 
-[Source line 433](../../../stdlib/core/decimal.lani#L433)
+[Source line 427](../../../stdlib/core/decimal.lani#L427)
 
 ```lanius
-pub fn parse_u8(bytes: [u8], count: i32) -> core::result::Result<u8, ParseError>
+pub fn parse_u8(bytes: [u8], count: i32) -> Result<u8, ParseError>
 ```
 
 ### function: parse_u16
 
-[Source line 437](../../../stdlib/core/decimal.lani#L437)
+[Source line 431](../../../stdlib/core/decimal.lani#L431)
 
 ```lanius
-pub fn parse_u16(bytes: [u8], count: i32) -> core::result::Result<u16, ParseError>
+pub fn parse_u16(bytes: [u8], count: i32) -> Result<u16, ParseError>
 ```
 
 ### function: parse_u32
 
-[Source line 441](../../../stdlib/core/decimal.lani#L441)
+[Source line 435](../../../stdlib/core/decimal.lani#L435)
 
 ```lanius
-pub fn parse_u32(bytes: [u8], count: i32) -> core::result::Result<u32, ParseError>
+pub fn parse_u32(bytes: [u8], count: i32) -> Result<u32, ParseError>
 ```
 
 ### function: parse_i8
 
-[Source line 445](../../../stdlib/core/decimal.lani#L445)
+[Source line 439](../../../stdlib/core/decimal.lani#L439)
 
 ```lanius
-pub fn parse_i8(bytes: [u8], count: i32) -> core::result::Result<i8, ParseError>
+pub fn parse_i8(bytes: [u8], count: i32) -> Result<i8, ParseError>
 ```
 
 ### function: parse_i16
 
-[Source line 449](../../../stdlib/core/decimal.lani#L449)
+[Source line 443](../../../stdlib/core/decimal.lani#L443)
 
 ```lanius
-pub fn parse_i16(bytes: [u8], count: i32) -> core::result::Result<i16, ParseError>
+pub fn parse_i16(bytes: [u8], count: i32) -> Result<i16, ParseError>
 ```
 
 ### function: parse_i32
 
-[Source line 453](../../../stdlib/core/decimal.lani#L453)
+[Source line 447](../../../stdlib/core/decimal.lani#L447)
 
 ```lanius
-pub fn parse_i32(bytes: [u8], count: i32) -> core::result::Result<i32, ParseError>
+pub fn parse_i32(bytes: [u8], count: i32) -> Result<i32, ParseError>
 ```
 
 ### function: parse_u64_range
 
-[Source line 457](../../../stdlib/core/decimal.lani#L457)
+[Source line 451](../../../stdlib/core/decimal.lani#L451)
 
 ```lanius
-pub fn parse_u64_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<u64, ParseError>
+pub fn parse_u64_range(bytes: [u8], offset: i32, count: i32) -> Result<u64, ParseError>
 ```
 
 ### function: parse_i64_range
 
-[Source line 461](../../../stdlib/core/decimal.lani#L461)
+[Source line 455](../../../stdlib/core/decimal.lani#L455)
 
 ```lanius
-pub fn parse_i64_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<i64, ParseError>
+pub fn parse_i64_range(bytes: [u8], offset: i32, count: i32) -> Result<i64, ParseError>
 ```
 
 ### function: parse_usize_range
 
-[Source line 466](../../../stdlib/core/decimal.lani#L466)
+[Source line 460](../../../stdlib/core/decimal.lani#L460)
 
 ```lanius
-pub fn parse_usize_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<usize, ParseError>
+pub fn parse_usize_range(bytes: [u8], offset: i32, count: i32) -> Result<usize, ParseError>
 ```
 
 ### function: parse_isize_range
 
-[Source line 471](../../../stdlib/core/decimal.lani#L471)
+[Source line 464](../../../stdlib/core/decimal.lani#L464)
 
 ```lanius
-pub fn parse_isize_range(bytes: [u8], offset: i32, count: i32) -> core::result::Result<isize, ParseError>
+pub fn parse_isize_range(bytes: [u8], offset: i32, count: i32) -> Result<isize, ParseError>
 ```
 
 ### function: parse_u64
 
-[Source line 476](../../../stdlib/core/decimal.lani#L476)
+[Source line 468](../../../stdlib/core/decimal.lani#L468)
 
 ```lanius
-pub fn parse_u64(bytes: [u8], count: i32) -> core::result::Result<u64, ParseError>
+pub fn parse_u64(bytes: [u8], count: i32) -> Result<u64, ParseError>
 ```
 
 ### function: parse_i64
 
-[Source line 477](../../../stdlib/core/decimal.lani#L477)
+[Source line 469](../../../stdlib/core/decimal.lani#L469)
 
 ```lanius
-pub fn parse_i64(bytes: [u8], count: i32) -> core::result::Result<i64, ParseError>
+pub fn parse_i64(bytes: [u8], count: i32) -> Result<i64, ParseError>
 ```
 
 ### function: parse_usize
 
-[Source line 478](../../../stdlib/core/decimal.lani#L478)
+[Source line 470](../../../stdlib/core/decimal.lani#L470)
 
 ```lanius
-pub fn parse_usize(bytes: [u8], count: i32) -> core::result::Result<usize, ParseError>
+pub fn parse_usize(bytes: [u8], count: i32) -> Result<usize, ParseError>
 ```
 
 ### function: parse_isize
 
-[Source line 479](../../../stdlib/core/decimal.lani#L479)
+[Source line 471](../../../stdlib/core/decimal.lani#L471)
 
 ```lanius
-pub fn parse_isize(bytes: [u8], count: i32) -> core::result::Result<isize, ParseError>
+pub fn parse_isize(bytes: [u8], count: i32) -> Result<isize, ParseError>
 ```

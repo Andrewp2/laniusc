@@ -39,6 +39,34 @@ enforce unique ownership or automatic destruction.
 - Panics are for documented checked preconditions and explicit convenience
   operations. Missing host support must never look like successful execution.
 
+## Imports, inference and propagation
+
+Use [item imports and local inference](language-ergonomics.md) to keep ordinary
+library code readable. `import core::result::Result;` names that declaration;
+import constructors such as `Ok` and `Err` separately when using their short
+names. Prefer explicit item imports when broad module imports supply competing
+names. The language has no import aliases, globs or re-exports.
+
+Infer a local's type when its initializer fixes the type. Keep annotations for
+width-sensitive numeric literals, empty generic owners and values whose type
+would otherwise depend on later statements. Imported iterator functions can
+infer their item types from unique matching trait implementations; keep explicit
+arguments when the implementations do not determine a unique type.
+
+Use `?` for unchanged `Result` errors or ordinary `Option` absence. It returns
+early, performs no error conversion and does not destroy manual owners. Keep
+explicit error branches when they close descriptors, destroy allocations,
+preserve progress, or update recovery state before returning. A borrowed helper
+may propagate directly when its caller retains and releases the owner on every
+outcome. Error translation between distinct types also stays explicit.
+
+Execution still gates each migration. A generic nested `Option` extraction
+through `?` currently compiles but crashes; its paired match controls execute.
+Keep that implementation explicit until the
+[compiler dependency](../tests/fixtures/stdlib_compiler_state/try_generic_flatten/README.md)
+is repaired. Concrete borrowed path extraction and the migrated Result paths
+have their own [passing receipts](library-language-adoption.md).
+
 ## Bytes, text and indices
 
 Bytes are arbitrary `u8` values. Text is valid UTF-8 and can contain NUL. String

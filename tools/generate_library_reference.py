@@ -193,7 +193,7 @@ class Scanner:
         if (not parts or len(parts) % 2 != 1
                 or any(not IDENTIFIER.fullmatch(part) for part in parts[::2])
                 or any(part != "::" for part in parts[1::2])):
-            self.error(f"unsupported {keyword} path; inventory does not resolve imports", start)
+            self.error(f"unsupported {keyword} path; expected identifiers separated by ::", start)
         name = "".join(parts)
         if keyword == "module":
             if self.module or start != 0:
@@ -332,6 +332,27 @@ class Scanner:
         return Module(self.module, self.path, self.imports, declarations, self.public_keywords, self.module_line)
 
 
+def import_target(importer: Module, name: str, line: int,
+                  known: dict[str, Module]) -> tuple[Module, Declaration | None]:
+    """Link an inventoried module first, otherwise one public item of its prefix."""
+    if name in known:
+        return known[name], None
+    prefix, separator, item_name = name.rpartition("::")
+    if separator and prefix in known:
+        owner = known[prefix]
+        items = [item for item in owner.declarations if item.kind != "impl"]
+        # Public enum variants also have module-level import names.
+        items.extend(variant for item in owner.declarations if item.kind == "enum"
+                     for variant in item.children)
+        matches = [item for item in items if item.name == item_name]
+        if len(matches) == 1:
+            return owner, matches[0]
+        if matches:
+            raise ReferenceError(f"{importer.path}:{line}: ambiguous public item import: {name}")
+        raise ReferenceError(f"{importer.path}:{line}: public item absent from inventory: {name}")
+    raise ReferenceError(f"{importer.path}:{line}: declared import absent from inventory: {name}")
+
+
 def discover(root: Path) -> list[Module]:
     modules = []
     total = 0
@@ -361,11 +382,10 @@ def discover(root: Path) -> list[Module]:
     names = [module.name for module in modules]
     if len(names) != len(set(names)):
         raise ReferenceError("duplicate module identity")
-    known = set(names)
+    known = {module.name: module for module in modules}
     for module in modules:
         for name, line in module.imports:
-            if name not in known:
-                raise ReferenceError(f"{module.path}:{line}: declared import absent from inventory: {name}")
+            import_target(module, name, line, known)
     return sorted(modules, key=lambda module: (LAYERS.index(module.name.split("::")[0]), module.name))
 
 
@@ -466,8 +486,12 @@ def render_module(module: Module, metadata: dict, known: dict) -> str:
         result.append("None.\n")
     else:
         result.append("Direct source imports; this is not a package-resolution or transitive dependency result.\n")
-        result.extend("- " + link(path, page_path(known[name]), name) + " · " + link(path, module.path, "source", line)
-                      for name, line in module.imports)
+        for name, line in module.imports:
+            target, item = import_target(module, name, line, known)
+            imported = "- " + link(path, page_path(target), name)
+            if item is not None:
+                imported += f" (item: {item.kind}) · " + link(path, target.path, "declaration", item.line)
+            result.append(imported + " · " + link(path, module.path, "source", line))
         result.append("")
     groups = [("Types, fields and variants", {"type alias", "struct", "enum"}),
               ("Constants", {"constant"}), ("Free functions and extern declarations", {"function", "extern function"}),

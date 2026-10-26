@@ -1,12 +1,16 @@
 // Checked x86_64 Linux descriptor operations. No heap allocation or retries.
 module std::file_ops;
-import core::io;
+import core::io::Error;
 import core::mem;
 import core::option;
 import core::path;
-import core::result;
-import core::slice;
-import std::file;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import core::slice::view;
+import std::file::File;
+import std::file::from_owned_handle;
 import std::linux;
 pub const AT_FDCWD:i32=-100;
 pub const MAX_PATH_BYTES:i32=4095;
@@ -26,99 +30,98 @@ fn zero_time() -> Time { return Time { seconds:0,nanoseconds:0 }; }
 pub fn empty_metadata() -> Metadata { return Metadata { mask:0,mode:0,identity:Identity { inode:0,device_major:0,device_minor:0,rdev_major:0,rdev_minor:0,links:0,uid:0,gid:0 },length:Length { bytes:0,blocks:0,block_size:0 },times:Times { access:zero_time(),modified:zero_time(),changed:zero_time(),birth:zero_time() },attributes:0,attributes_mask:0 }; }
 pub impl Metadata { pub fn borrow(&self) -> &Metadata { return self; } pub fn has(&self,fields:u32) -> bool { return (self.mask&fields)==fields; } }
 pub fn kind(mode:u32) -> Kind { let value:u32=mode&61440; if(value==32768) { return Kind::Regular; } if(value==16384) { return Kind::Directory; } if(value==40960) { return Kind::Symlink; } if(value==4096) { return Kind::Fifo; } if(value==49152) { return Kind::Socket; } if(value==8192) { return Kind::Character; } if(value==24576) { return Kind::Block; } return Kind::Unknown; }
-fn host_error(error:std::linux::Error) -> core::io::Error { return match(error) { std::linux::Error::System(value)->errno(value), _->core::io::Error::InvalidInput }; }
-fn errno(value:i32) -> core::io::Error { if(value==4) { return core::io::Error::Interrupted; } if(value==11) { return core::io::Error::WouldBlock; } return core::io::Error::Host(value); }
-fn call(number:i64,args:core::slice::View<std::linux::Argument>) -> core::result::Result<i64,core::io::Error> { let result=std::linux::call(number,args); if(core::result::is_err(result)) { return core::result::Err(host_error(core::result::unwrap_err(result))); } return core::result::Ok(core::result::unwrap(result)); }
-fn valid(view:core::slice::View<u8>) -> bool { return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length; }
-fn stage(path:core::path::Path,destination:[u8]) -> core::result::Result<i32,core::io::Error> {
-    let bytes:core::slice::View<u8> =path.as_bytes(); if(!valid(bytes)) { return core::result::Err(core::io::Error::InvalidInput); }
-    if(bytes.len()>MAX_PATH_BYTES) { return core::result::Err(core::io::Error::Host(36)); } let i:i32=0;
-    while(i<bytes.len()) { let value:u8=core::option::unwrap(bytes.get(i)); if(value==0) { return core::result::Err(core::io::Error::InvalidInput); } destination[i]=value; i+=1; } destination[i]=0; return core::result::Ok(i);
+fn host_error(error:std::linux::Error) -> Error { return match(error) { std::linux::Error::System(value)->errno(value), _->Error::InvalidInput }; }
+fn errno(value:i32) -> Error { if(value==4) { return Error::Interrupted; } if(value==11) { return Error::WouldBlock; } return Error::Host(value); }
+fn call(number:i64,args:View<std::linux::Argument>) -> Result<i64,Error> { let result=std::linux::call(number,args); if(result.is_err()) { return Err(host_error(result.unwrap_err())); } return Ok(result.unwrap()); }
+fn valid(view:View<u8>) -> bool { return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length; }
+fn stage(path:core::path::Path,destination:[u8]) -> Result<i32,Error> {
+    let bytes=path.as_bytes(); if(!valid(bytes)) { return Err(Error::InvalidInput); }
+    if(bytes.len()>MAX_PATH_BYTES) { return Err(Error::Host(36)); } let i:i32=0;
+    while(i<bytes.len()) { let value=core::option::unwrap(bytes.get(i)); if(value==0) { return Err(Error::InvalidInput); } destination[i]=value; i+=1; } destination[i]=0; return Ok(i);
 }
-fn flags(value:OpenOptions) -> core::result::Result<i64,core::io::Error> {
+fn flags(value:OpenOptions) -> Result<i64,Error> {
     let access:i64=match(value.access) { Access::Read->0, Access::Write->1, Access::ReadWrite->2 };
-    if(value.mode>4095 || (value.exclusive && !value.create) || ((value.append || value.truncate) && access==0) || (value.directory && (value.create || value.truncate || access!=0))) { return core::result::Err(core::io::Error::InvalidInput); }
+    if(value.mode>4095 || (value.exclusive && !value.create) || ((value.append || value.truncate) && access==0) || (value.directory && (value.create || value.truncate || access!=0))) { return Err(Error::InvalidInput); }
     let result:i64=access; if(value.create) { result=result|64; } if(value.exclusive) { result=result|128; } if(value.truncate) { result=result|512; } if(value.append) { result=result|1024; } if(value.close_on_exec) { result=result|524288; } if(value.no_follow) { result=result|131072; } if(value.directory) { result=result|65536; } if(value.nonblocking) { result=result|2048; } if(value.no_controlling_terminal) { result=result|256; }
-    let synchronization:i64=match(value.synchronization) { Synchronization::None->0, Synchronization::Data->4096, Synchronization::All->1052672 }; result=result|synchronization; return core::result::Ok(result);
+    let synchronization:i64=match(value.synchronization) { Synchronization::None->0, Synchronization::Data->4096, Synchronization::All->1052672 }; result=result|synchronization; return Ok(result);
 }
-pub fn open(path:core::path::Path,value:OpenOptions) -> core::result::Result<std::file::File,core::io::Error> { return open_at(AT_FDCWD,path,value); }
-pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> core::result::Result<std::file::File,core::io::Error> {
-    let checked=flags(value); if(core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
-    let storage:[i32;1024]=[0;1024]; let pointer:ptr=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
-    let prepared=stage(path,packed); if(core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
-    let args:[std::linux::Argument;4]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(core::result::unwrap(checked)),std::linux::Argument::Word(value.mode as i64)];
-    let opened=call(257,core::result::unwrap(core::slice::view(args,4))); if(core::result::is_err(opened)) { return core::result::Err(core::result::unwrap_err(opened)); } let fd:i64=core::result::unwrap(opened);
-    if(fd<0 || fd>2147483647) { return core::result::Err(core::io::Error::InvalidCount); } return std::file::from_owned_handle(fd as i32);
+pub fn open(path:core::path::Path,value:OpenOptions) -> Result<File,Error> { return open_at(AT_FDCWD,path,value); }
+pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> Result<File,Error> {
+    let checked=flags(value)?;
+    let storage:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
+    stage(path,packed)?;
+    let args:[std::linux::Argument;4]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(checked),std::linux::Argument::Word(value.mode as i64)];
+    let fd=call(257,view(args,4).unwrap())?;
+    if(fd<0 || fd>2147483647) { return Err(Error::InvalidCount); } return from_owned_handle(fd as i32);
 }
 // General descriptor-relative byte paths, like open_at. Absolute paths ignore
 // their directory fd. This removes one non-directory name, not its link target.
 // Leaf-only and namespace-authority policy belongs to the owning caller.
-pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> core::result::Result<i32,core::io::Error> {
-    let storage:[i32;1024]=[0;1024]; let pointer:ptr=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
-    let prepared=stage(path,packed); if(core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
+pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error> {
+    let storage:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096);
+    stage(path,packed)?;
     let args:[std::linux::Argument;3]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(0)];
-    return zero(call(263,core::result::unwrap(core::slice::view(args,3))));
+    return zero(call(263,view(args,3).unwrap()));
 }
 // Stage both paths before one renameat2 attempt. NoReplace is an atomic host
 // policy; unsupported flags/filesystems return their error without fallback.
-pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> core::result::Result<i32,core::io::Error> {
-    let old_storage:[i32;1024]=[0;1024]; let old_pointer:ptr=core::mem::i32_array_data_ptr(old_storage); let old_packed:[u8]=core::mem::typed_slice_from_raw_parts(old_pointer,4096);
-    let old_prepared=stage(old_path,old_packed); if(core::result::is_err(old_prepared)) { return core::result::Err(core::result::unwrap_err(old_prepared)); }
-    let new_storage:[i32;1024]=[0;1024]; let new_pointer:ptr=core::mem::i32_array_data_ptr(new_storage); let new_packed:[u8]=core::mem::typed_slice_from_raw_parts(new_pointer,4096);
-    let new_prepared=stage(new_path,new_packed); if(core::result::is_err(new_prepared)) { return core::result::Err(core::result::unwrap_err(new_prepared)); }
+pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> Result<i32,Error> {
+    let old_storage:[i32;1024]=[0;1024]; let old_pointer=core::mem::i32_array_data_ptr(old_storage); let old_packed:[u8]=core::mem::typed_slice_from_raw_parts(old_pointer,4096);
+    stage(old_path,old_packed)?;
+    let new_storage:[i32;1024]=[0;1024]; let new_pointer=core::mem::i32_array_data_ptr(new_storage); let new_packed:[u8]=core::mem::typed_slice_from_raw_parts(new_pointer,4096);
+    stage(new_path,new_packed)?;
     let flags:i64=match(policy) { RenamePolicy::Replace->0, RenamePolicy::NoReplace->1 };
     let args:[std::linux::Argument;5]=[std::linux::Argument::Word(old_directory_fd as i64),std::linux::Argument::Address(old_pointer),std::linux::Argument::Word(new_directory_fd as i64),std::linux::Argument::Address(new_pointer),std::linux::Argument::Word(flags)];
-    return zero(call(316,core::result::unwrap(core::slice::view(args,5))));
+    return zero(call(316,view(args,5).unwrap()));
 }
-fn descriptor(file:&std::file::File) -> core::result::Result<i64,core::io::Error> { let raw= file.raw_handle(); if(core::option::is_none(raw)) { return core::result::Err(core::io::Error::Host(9)); } return core::result::Ok(core::option::unwrap(raw) as i64); }
-fn fcntl(file:&std::file::File,command:i64,value:i64) -> core::result::Result<i64,core::io::Error> { let got=descriptor(file); if(core::result::is_err(got)) { return got; } let args:[std::linux::Argument;3]=[std::linux::Argument::Word(core::result::unwrap(got)),std::linux::Argument::Word(command),std::linux::Argument::Word(value)]; return call(72,core::result::unwrap(core::slice::view(args,3))); }
-fn zero(result:core::result::Result<i64,core::io::Error>) -> core::result::Result<i32,core::io::Error> { if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } if(core::result::unwrap(result)!=0) { return core::result::Err(core::io::Error::InvalidCount); } return core::result::Ok(0); }
-pub fn seek(file:&std::file::File,offset:i64,origin:Origin) -> core::result::Result<i64,core::io::Error> {
-    let got=descriptor(file); if(core::result::is_err(got)) { return got; } let whence:i64=match(origin) { Origin::Start->0, Origin::Current->1, Origin::End->2, Origin::Data->3, Origin::Hole->4 };
-    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(core::result::unwrap(got)),std::linux::Argument::Word(offset),std::linux::Argument::Word(whence)]; let result=call(8,core::result::unwrap(core::slice::view(args,3)));
-    if(core::result::is_ok(result) && core::result::unwrap(result)<0) { return core::result::Err(core::io::Error::InvalidCount); } return result;
+fn descriptor(file:&File) -> Result<i64,Error> { let raw= file.raw_handle(); if(core::option::is_none(raw)) { return Err(Error::Host(9)); } return Ok(core::option::unwrap(raw) as i64); }
+fn fcntl(file:&File,command:i64,value:i64) -> Result<i64,Error> { let got=descriptor(file)?; let args:[std::linux::Argument;3]=[std::linux::Argument::Word(got),std::linux::Argument::Word(command),std::linux::Argument::Word(value)]; return call(72,view(args,3).unwrap()); }
+fn zero(result:Result<i64,Error>) -> Result<i32,Error> { let value=result?; if(value!=0) { return Err(Error::InvalidCount); } return Ok(0); }
+pub fn seek(file:&File,offset:i64,origin:Origin) -> Result<i64,Error> {
+    let got=descriptor(file)?; let whence:i64=match(origin) { Origin::Start->0, Origin::Current->1, Origin::End->2, Origin::Data->3, Origin::Hole->4 };
+    let args:[std::linux::Argument;3]=[std::linux::Argument::Word(got),std::linux::Argument::Word(offset),std::linux::Argument::Word(whence)]; let position=call(8,view(args,3).unwrap())?;
+    if(position<0) { return Err(Error::InvalidCount); } return Ok(position);
 }
-pub fn position(file:&std::file::File) -> core::result::Result<i64,core::io::Error> { return seek(file,0,Origin::Current); }
+pub fn position(file:&File) -> Result<i64,Error> { return seek(file,0,Origin::Current); }
 // One ftruncate attempt, without retry or allocation. Borrow the live owner;
 // the host validates write access and filesystem support. No offset change.
-pub fn set_len(file:&std::file::File,length:u64) -> core::result::Result<i32,core::io::Error> {
-    if(length>9223372036854775807) { return core::result::Err(core::io::Error::InvalidInput); }
-    let got:core::result::Result<i64,core::io::Error> =descriptor(file);
-    if(core::result::is_err(got)) { return core::result::Err(core::result::unwrap_err(got)); }
-    let args:[std::linux::Argument;2]=[std::linux::Argument::Word(core::result::unwrap(got)),std::linux::Argument::Word(length as i64)];
-    let arguments:core::slice::View<std::linux::Argument> =core::slice::View { values:args,start:0,length:2 };
+pub fn set_len(file:&File,length:u64) -> Result<i32,Error> {
+    if(length>9223372036854775807) { return Err(Error::InvalidInput); }
+    let got=descriptor(file)?;
+    let args:[std::linux::Argument;2]=[std::linux::Argument::Word(got),std::linux::Argument::Word(length as i64)];
+    let arguments:View<std::linux::Argument> =View { values:args,start:0,length:2 };
     return zero(call(77,arguments));
 }
-fn sync(file:&std::file::File,number:i64) -> core::result::Result<i32,core::io::Error> { let got=descriptor(file); if(core::result::is_err(got)) { return core::result::Err(core::result::unwrap_err(got)); } let args:[std::linux::Argument;1]=[std::linux::Argument::Word(core::result::unwrap(got))]; return zero(call(number,core::result::unwrap(core::slice::view(args,1)))); }
-pub fn sync_all(file:&std::file::File) -> core::result::Result<i32,core::io::Error> { return sync(file,74); }
-pub fn sync_data(file:&std::file::File) -> core::result::Result<i32,core::io::Error> { return sync(file,75); }
-pub fn duplicate(file:&std::file::File,minimum_fd:i32,close_on_exec:bool) -> core::result::Result<std::file::File,core::io::Error> { if(minimum_fd<0) { return core::result::Err(core::io::Error::InvalidInput); } let command:i64=0; if(close_on_exec) { command=1030; } let result=fcntl(file,command,minimum_fd as i64); if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let fd:i64=core::result::unwrap(result); if(fd<0 || fd>2147483647) { return core::result::Err(core::io::Error::InvalidCount); } return std::file::from_owned_handle(fd as i32); }
-pub fn duplicate_to(source:&std::file::File,target:&std::file::File,close_on_exec:bool) -> core::result::Result<i32,core::io::Error> {
-    let old=descriptor(source); let next=descriptor(target); if(core::result::is_err(old)) { return core::result::Err(core::result::unwrap_err(old)); } if(core::result::is_err(next)) { return core::result::Err(core::result::unwrap_err(next)); } let from:i64=core::result::unwrap(old); let to:i64=core::result::unwrap(next); if(from==to) { return core::result::Err(core::io::Error::InvalidInput); }
-    let flag:i64=0; if(close_on_exec) { flag=524288; } let args:[std::linux::Argument;3]=[std::linux::Argument::Word(from),std::linux::Argument::Word(to),std::linux::Argument::Word(flag)]; let result=call(292,core::result::unwrap(core::slice::view(args,3))); if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } if(core::result::unwrap(result)!=to) { return core::result::Err(core::io::Error::InvalidCount); } return core::result::Ok(0);
+fn sync(file:&File,number:i64) -> Result<i32,Error> { let got=descriptor(file)?; let args:[std::linux::Argument;1]=[std::linux::Argument::Word(got)]; return zero(call(number,view(args,1).unwrap())); }
+pub fn sync_all(file:&File) -> Result<i32,Error> { return sync(file,74); }
+pub fn sync_data(file:&File) -> Result<i32,Error> { return sync(file,75); }
+pub fn duplicate(file:&File,minimum_fd:i32,close_on_exec:bool) -> Result<File,Error> { if(minimum_fd<0) { return Err(Error::InvalidInput); } let command:i64=0; if(close_on_exec) { command=1030; } let fd=fcntl(file,command,minimum_fd as i64)?; if(fd<0 || fd>2147483647) { return Err(Error::InvalidCount); } return from_owned_handle(fd as i32); }
+pub fn duplicate_to(source:&File,target:&File,close_on_exec:bool) -> Result<i32,Error> {
+    let old=descriptor(source); let next=descriptor(target); let from=old?; let to=next?; if(from==to) { return Err(Error::InvalidInput); }
+    let flag:i64=0; if(close_on_exec) { flag=524288; } let args:[std::linux::Argument;3]=[std::linux::Argument::Word(from),std::linux::Argument::Word(to),std::linux::Argument::Word(flag)]; let result=call(292,view(args,3).unwrap())?; if(result!=to) { return Err(Error::InvalidCount); } return Ok(0);
 }
-pub fn close_on_exec(file:&std::file::File) -> core::result::Result<bool,core::io::Error> { let result=fcntl(file,1,0); if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value:i64=core::result::unwrap(result); if(value<0 || value>2147483647) { return core::result::Err(core::io::Error::InvalidCount); } return core::result::Ok((value&1)!=0); }
-pub fn set_close_on_exec(file:&std::file::File,enabled:bool) -> core::result::Result<i32,core::io::Error> { let result=fcntl(file,1,0); if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value:i64=core::result::unwrap(result); if(value<0 || value>2147483647) { return core::result::Err(core::io::Error::InvalidCount); } value=value&2147483646; if(enabled) { value=value|1; } return zero(fcntl(file,2,value)); }
-pub fn status_flags(file:&std::file::File) -> core::result::Result<i32,core::io::Error> { let result=fcntl(file,3,0); if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value:i64=core::result::unwrap(result); if(value<0 || value>2147483647) { return core::result::Err(core::io::Error::InvalidCount); } return core::result::Ok(value as i32); }
-pub fn set_status(file:&std::file::File,append:bool,nonblocking:bool) -> core::result::Result<i32,core::io::Error> { let result=status_flags(file); if(core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); } let value:i32=core::result::unwrap(result)&2147480575; if(append) { value=value|1024; } if(nonblocking) { value=value|2048; } return zero(fcntl(file,4,value as i64)); }
-fn integer(input:core::slice::View<u8>,at:i32,count:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<count) { value=value|((core::option::unwrap(input.get(at+i)) as u64)<<(i*8)); i+=1; } return value; }
-fn time(input:core::slice::View<u8>,at:i32) -> Time { return Time { seconds:integer(input,at,8) as i64,nanoseconds:integer(input,at+8,4) as u32 }; }
-pub fn decode_statx_into(input:core::slice::View<u8>,output:&Metadata) -> core::result::Result<i32,core::io::Error> {
-    if(!valid(input)) { return core::result::Err(core::io::Error::InvalidInput); } if(input.len()<256) { return core::result::Err(core::io::Error::InvalidCount); }
-    let mask:u32=integer(input,0,4) as u32; let mode:u32=0; if((mask&1)!=0) { mode=(integer(input,28,2) as u32)&61440; } if((mask&2)!=0) { mode=mode|((integer(input,28,2) as u32)&4095); }
-    let identity:Identity=Identity { inode:0,device_major:integer(input,136,4) as u32,device_minor:integer(input,140,4) as u32,rdev_major:integer(input,128,4) as u32,rdev_minor:integer(input,132,4) as u32,links:0,uid:0,gid:0 };
+pub fn close_on_exec(file:&File) -> Result<bool,Error> { let value=fcntl(file,1,0)?; if(value<0 || value>2147483647) { return Err(Error::InvalidCount); } return Ok((value&1)!=0); }
+pub fn set_close_on_exec(file:&File,enabled:bool) -> Result<i32,Error> { let value=fcntl(file,1,0)?; if(value<0 || value>2147483647) { return Err(Error::InvalidCount); } value=value&2147483646; if(enabled) { value=value|1; } return zero(fcntl(file,2,value)); }
+pub fn status_flags(file:&File) -> Result<i32,Error> { let value=fcntl(file,3,0)?; if(value<0 || value>2147483647) { return Err(Error::InvalidCount); } return Ok(value as i32); }
+pub fn set_status(file:&File,append:bool,nonblocking:bool) -> Result<i32,Error> { let value=status_flags(file)?; value=value&2147480575; if(append) { value=value|1024; } if(nonblocking) { value=value|2048; } return zero(fcntl(file,4,value as i64)); }
+fn integer(input:View<u8>,at:i32,count:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<count) { value=value|((core::option::unwrap(input.get(at+i)) as u64)<<(i*8)); i+=1; } return value; }
+fn time(input:View<u8>,at:i32) -> Time { return Time { seconds:integer(input,at,8) as i64,nanoseconds:integer(input,at+8,4) as u32 }; }
+pub fn decode_statx_into(input:View<u8>,output:&Metadata) -> Result<i32,Error> {
+    if(!valid(input)) { return Err(Error::InvalidInput); } if(input.len()<256) { return Err(Error::InvalidCount); }
+    let mask=integer(input,0,4) as u32; let mode:u32=0; if((mask&1)!=0) { mode=(integer(input,28,2) as u32)&61440; } if((mask&2)!=0) { mode=mode|((integer(input,28,2) as u32)&4095); }
+    let identity=Identity { inode:0,device_major:integer(input,136,4) as u32,device_minor:integer(input,140,4) as u32,rdev_major:integer(input,128,4) as u32,rdev_minor:integer(input,132,4) as u32,links:0,uid:0,gid:0 };
     if((mask&256)!=0) { identity.inode=integer(input,32,8); } if((mask&4)!=0) { identity.links=integer(input,16,4) as u32; } if((mask&8)!=0) { identity.uid=integer(input,20,4) as u32; } if((mask&16)!=0) { identity.gid=integer(input,24,4) as u32; }
-    let length:Length=Length { bytes:0,blocks:0,block_size:integer(input,4,4) as u32 }; if((mask&512)!=0) { length.bytes=integer(input,40,8); } if((mask&1024)!=0) { length.blocks=integer(input,48,8); }
-    let times:Times=Times { access:zero_time(),modified:zero_time(),changed:zero_time(),birth:zero_time() }; if((mask&32)!=0) { times.access=time(input,64); } if((mask&64)!=0) { times.modified=time(input,112); } if((mask&128)!=0) { times.changed=time(input,96); } if((mask&2048)!=0) { times.birth=time(input,80); }
-    if(times.access.nanoseconds>999999999 || times.modified.nanoseconds>999999999 || times.changed.nanoseconds>999999999 || times.birth.nanoseconds>999999999) { return core::result::Err(core::io::Error::InvalidCount); }
-    let attributes:u64=integer(input,8,8); let attributes_mask:u64=integer(input,56,8);
-    output.mask=mask; output.mode=mode; output.identity=identity; output.length=length; output.times=times; output.attributes=attributes; output.attributes_mask=attributes_mask; return core::result::Ok(0);
+    let length=Length { bytes:0,blocks:0,block_size:integer(input,4,4) as u32 }; if((mask&512)!=0) { length.bytes=integer(input,40,8); } if((mask&1024)!=0) { length.blocks=integer(input,48,8); }
+    let times=Times { access:zero_time(),modified:zero_time(),changed:zero_time(),birth:zero_time() }; if((mask&32)!=0) { times.access=time(input,64); } if((mask&64)!=0) { times.modified=time(input,112); } if((mask&128)!=0) { times.changed=time(input,96); } if((mask&2048)!=0) { times.birth=time(input,80); }
+    if(times.access.nanoseconds>999999999 || times.modified.nanoseconds>999999999 || times.changed.nanoseconds>999999999 || times.birth.nanoseconds>999999999) { return Err(Error::InvalidCount); }
+    let attributes=integer(input,8,8); let attributes_mask=integer(input,56,8);
+    output.mask=mask; output.mode=mode; output.identity=identity; output.length=length; output.times=times; output.attributes=attributes; output.attributes_mask=attributes_mask; return Ok(0);
 }
-fn query(directory_fd:i32,path:core::path::Path,flags:i64,output:&Metadata) -> core::result::Result<i32,core::io::Error> {
-    let path_storage:[i32;1024]=[0;1024]; let pointer:ptr=core::mem::i32_array_data_ptr(path_storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096); let prepared=stage(path,packed); if(core::result::is_err(prepared)) { return core::result::Err(core::result::unwrap_err(prepared)); }
-    let output_storage:[i32;64]=[0;64]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_storage); let args:[std::linux::Argument;5]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(flags),std::linux::Argument::Word(4095),std::linux::Argument::Address(output_pointer)];
-    let result=zero(call(332,core::result::unwrap(core::slice::view(args,5)))); if(core::result::is_err(result)) { return result; } let bytes:[u8]=core::mem::typed_slice_from_raw_parts(output_pointer,256); return decode_statx_into(core::result::unwrap(core::slice::view(bytes,256)),output);
+fn query(directory_fd:i32,path:core::path::Path,flags:i64,output:&Metadata) -> Result<i32,Error> {
+    let path_storage:[i32;1024]=[0;1024]; let pointer=core::mem::i32_array_data_ptr(path_storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,4096); stage(path,packed)?;
+    let output_storage:[i32;64]=[0;64]; let output_pointer=core::mem::i32_array_data_ptr(output_storage); let args:[std::linux::Argument;5]=[std::linux::Argument::Word(directory_fd as i64),std::linux::Argument::Address(pointer),std::linux::Argument::Word(flags),std::linux::Argument::Word(4095),std::linux::Argument::Address(output_pointer)];
+    zero(call(332,view(args,5).unwrap()))?; let bytes:[u8]=core::mem::typed_slice_from_raw_parts(output_pointer,256); return decode_statx_into(view(bytes,256).unwrap(),output);
 }
-pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> core::result::Result<i32,core::io::Error> { return metadata_at_into(AT_FDCWD,path,follow,output); }
-pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> core::result::Result<i32,core::io::Error> { let flags:i64=256; if(follow) { flags=0; } return query(directory_fd,path,flags,output); }
-pub fn metadata_file_into(file:&std::file::File,output:&Metadata) -> core::result::Result<i32,core::io::Error> { let got=descriptor(file); if(core::result::is_err(got)) { return core::result::Err(core::result::unwrap_err(got)); } let empty:[u8;1]=[0]; let path:core::path::Path=core::result::unwrap(core::path::from_bytes(empty,0)); return query(core::result::unwrap(got) as i32,path,4096,output); }
+pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error> { return metadata_at_into(AT_FDCWD,path,follow,output); }
+pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error> { let flags:i64=256; if(follow) { flags=0; } return query(directory_fd,path,flags,output); }
+pub fn metadata_file_into(file:&File,output:&Metadata) -> Result<i32,Error> { let got=descriptor(file)?; let empty:[u8;1]=[0]; let path=core::path::from_bytes(empty,0).unwrap(); return query(got as i32,path,4096,output); }

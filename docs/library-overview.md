@@ -1,6 +1,11 @@
 # Standard and extended library overview
 
-The full library goal remains open. The latest accepted increment is
+The full library goal remains open. The branch is rebased onto `origin/lang`
+`0d2e4a07`; the first [language-feature cleanup](library-language-adoption.md)
+executes across six library modules and the range-dot application. Item imports,
+local inference and selected `?` paths have focused native receipts, with a
+nested generic Option compiler dependency retained separately. This adds no new
+API family. The preceding accepted increment is
 [AtomicFile publication and the key-value application migration](library-atomic-files-plan.md).
 [AtomicFile](stdlib-atomic-files.md) and the
 [migrated CLI](extended-kv.md#current-application-receipts) now have finite native

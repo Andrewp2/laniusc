@@ -22,14 +22,18 @@ Declaration counts: constant: 2; enum: 5; field: 36; function: 22; impl: 1; meth
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::io](../core/io.md) · [source](../../../stdlib/std/file_ops.lani#L3)
+- [core::io::Error](../core/io.md) (item: enum) · [declaration](../../../stdlib/core/io.lani#L5) · [source](../../../stdlib/std/file_ops.lani#L3)
 - [core::mem](../core/mem.md) · [source](../../../stdlib/std/file_ops.lani#L4)
 - [core::option](../core/option.md) · [source](../../../stdlib/std/file_ops.lani#L5)
 - [core::path](../core/path.md) · [source](../../../stdlib/std/file_ops.lani#L6)
-- [core::result](../core/result.md) · [source](../../../stdlib/std/file_ops.lani#L7)
-- [core::slice](../core/slice.md) · [source](../../../stdlib/std/file_ops.lani#L8)
-- [std::file](file.md) · [source](../../../stdlib/std/file_ops.lani#L9)
-- [std::linux](linux.md) · [source](../../../stdlib/std/file_ops.lani#L10)
+- [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/std/file_ops.lani#L7)
+- [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/std/file_ops.lani#L8)
+- [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/std/file_ops.lani#L9)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../stdlib/std/file_ops.lani#L10)
+- [core::slice::view](../core/slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L27) · [source](../../../stdlib/std/file_ops.lani#L11)
+- [std::file::File](file.md) (item: struct) · [declaration](../../../stdlib/std/file.lani#L25) · [source](../../../stdlib/std/file_ops.lani#L12)
+- [std::file::from_owned_handle](file.md) (item: function) · [declaration](../../../stdlib/std/file.lani#L62) · [source](../../../stdlib/std/file_ops.lani#L13)
+- [std::linux](linux.md) · [source](../../../stdlib/std/file_ops.lani#L14)
 
 ## Types, fields and variants
 
@@ -37,7 +41,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Access
 
-[Source line 13](../../../stdlib/std/file_ops.lani#L13)
+[Source line 17](../../../stdlib/std/file_ops.lani#L17)
 
 ```lanius
 pub enum Access
@@ -45,7 +49,7 @@ pub enum Access
 
 #### variant: Read
 
-[Source line 13](../../../stdlib/std/file_ops.lani#L13)
+[Source line 17](../../../stdlib/std/file_ops.lani#L17)
 
 ```lanius
 Read
@@ -53,7 +57,7 @@ Read
 
 #### variant: Write
 
-[Source line 13](../../../stdlib/std/file_ops.lani#L13)
+[Source line 17](../../../stdlib/std/file_ops.lani#L17)
 
 ```lanius
 Write
@@ -61,7 +65,7 @@ Write
 
 #### variant: ReadWrite
 
-[Source line 13](../../../stdlib/std/file_ops.lani#L13)
+[Source line 17](../../../stdlib/std/file_ops.lani#L17)
 
 ```lanius
 ReadWrite
@@ -69,7 +73,7 @@ ReadWrite
 
 ### enum: Synchronization
 
-[Source line 14](../../../stdlib/std/file_ops.lani#L14)
+[Source line 18](../../../stdlib/std/file_ops.lani#L18)
 
 ```lanius
 pub enum Synchronization
@@ -77,7 +81,7 @@ pub enum Synchronization
 
 #### variant: None
 
-[Source line 14](../../../stdlib/std/file_ops.lani#L14)
+[Source line 18](../../../stdlib/std/file_ops.lani#L18)
 
 ```lanius
 None
@@ -85,7 +89,7 @@ None
 
 #### variant: Data
 
-[Source line 14](../../../stdlib/std/file_ops.lani#L14)
+[Source line 18](../../../stdlib/std/file_ops.lani#L18)
 
 ```lanius
 Data
@@ -93,7 +97,7 @@ Data
 
 #### variant: All
 
-[Source line 14](../../../stdlib/std/file_ops.lani#L14)
+[Source line 18](../../../stdlib/std/file_ops.lani#L18)
 
 ```lanius
 All
@@ -101,7 +105,7 @@ All
 
 ### enum: RenamePolicy
 
-[Source line 15](../../../stdlib/std/file_ops.lani#L15)
+[Source line 19](../../../stdlib/std/file_ops.lani#L19)
 
 ```lanius
 pub enum RenamePolicy
@@ -109,7 +113,7 @@ pub enum RenamePolicy
 
 #### variant: Replace
 
-[Source line 15](../../../stdlib/std/file_ops.lani#L15)
+[Source line 19](../../../stdlib/std/file_ops.lani#L19)
 
 ```lanius
 Replace
@@ -117,7 +121,7 @@ Replace
 
 #### variant: NoReplace
 
-[Source line 15](../../../stdlib/std/file_ops.lani#L15)
+[Source line 19](../../../stdlib/std/file_ops.lani#L19)
 
 ```lanius
 NoReplace
@@ -125,7 +129,7 @@ NoReplace
 
 ### enum: Origin
 
-[Source line 16](../../../stdlib/std/file_ops.lani#L16)
+[Source line 20](../../../stdlib/std/file_ops.lani#L20)
 
 ```lanius
 pub enum Origin
@@ -133,7 +137,7 @@ pub enum Origin
 
 #### variant: Start
 
-[Source line 16](../../../stdlib/std/file_ops.lani#L16)
+[Source line 20](../../../stdlib/std/file_ops.lani#L20)
 
 ```lanius
 Start
@@ -141,7 +145,7 @@ Start
 
 #### variant: Current
 
-[Source line 16](../../../stdlib/std/file_ops.lani#L16)
+[Source line 20](../../../stdlib/std/file_ops.lani#L20)
 
 ```lanius
 Current
@@ -149,7 +153,7 @@ Current
 
 #### variant: End
 
-[Source line 16](../../../stdlib/std/file_ops.lani#L16)
+[Source line 20](../../../stdlib/std/file_ops.lani#L20)
 
 ```lanius
 End
@@ -157,7 +161,7 @@ End
 
 #### variant: Data
 
-[Source line 16](../../../stdlib/std/file_ops.lani#L16)
+[Source line 20](../../../stdlib/std/file_ops.lani#L20)
 
 ```lanius
 Data
@@ -165,7 +169,7 @@ Data
 
 #### variant: Hole
 
-[Source line 16](../../../stdlib/std/file_ops.lani#L16)
+[Source line 20](../../../stdlib/std/file_ops.lani#L20)
 
 ```lanius
 Hole
@@ -173,7 +177,7 @@ Hole
 
 ### enum: Kind
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 pub enum Kind
@@ -181,7 +185,7 @@ pub enum Kind
 
 #### variant: Unknown
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Unknown
@@ -189,7 +193,7 @@ Unknown
 
 #### variant: Regular
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Regular
@@ -197,7 +201,7 @@ Regular
 
 #### variant: Directory
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Directory
@@ -205,7 +209,7 @@ Directory
 
 #### variant: Symlink
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Symlink
@@ -213,7 +217,7 @@ Symlink
 
 #### variant: Fifo
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Fifo
@@ -221,7 +225,7 @@ Fifo
 
 #### variant: Socket
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Socket
@@ -229,7 +233,7 @@ Socket
 
 #### variant: Character
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Character
@@ -237,7 +241,7 @@ Character
 
 #### variant: Block
 
-[Source line 17](../../../stdlib/std/file_ops.lani#L17)
+[Source line 21](../../../stdlib/std/file_ops.lani#L21)
 
 ```lanius
 Block
@@ -245,7 +249,7 @@ Block
 
 ### struct: OpenOptions
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 pub struct OpenOptions
@@ -253,7 +257,7 @@ pub struct OpenOptions
 
 #### field: access
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 access:Access
@@ -261,7 +265,7 @@ access:Access
 
 #### field: create
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 create:bool
@@ -269,7 +273,7 @@ create:bool
 
 #### field: exclusive
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 exclusive:bool
@@ -277,7 +281,7 @@ exclusive:bool
 
 #### field: truncate
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 truncate:bool
@@ -285,7 +289,7 @@ truncate:bool
 
 #### field: append
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 append:bool
@@ -293,7 +297,7 @@ append:bool
 
 #### field: close_on_exec
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 close_on_exec:bool
@@ -301,7 +305,7 @@ close_on_exec:bool
 
 #### field: no_follow
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 no_follow:bool
@@ -309,7 +313,7 @@ no_follow:bool
 
 #### field: directory
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 directory:bool
@@ -317,7 +321,7 @@ directory:bool
 
 #### field: nonblocking
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 nonblocking:bool
@@ -325,7 +329,7 @@ nonblocking:bool
 
 #### field: no_controlling_terminal
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 no_controlling_terminal:bool
@@ -333,7 +337,7 @@ no_controlling_terminal:bool
 
 #### field: synchronization
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 synchronization:Synchronization
@@ -341,7 +345,7 @@ synchronization:Synchronization
 
 #### field: mode
 
-[Source line 18](../../../stdlib/std/file_ops.lani#L18)
+[Source line 22](../../../stdlib/std/file_ops.lani#L22)
 
 ```lanius
 mode:u32
@@ -349,7 +353,7 @@ mode:u32
 
 ### struct: Time
 
-[Source line 19](../../../stdlib/std/file_ops.lani#L19)
+[Source line 23](../../../stdlib/std/file_ops.lani#L23)
 
 ```lanius
 pub struct Time
@@ -357,7 +361,7 @@ pub struct Time
 
 #### field: seconds
 
-[Source line 19](../../../stdlib/std/file_ops.lani#L19)
+[Source line 23](../../../stdlib/std/file_ops.lani#L23)
 
 ```lanius
 seconds:i64
@@ -365,7 +369,7 @@ seconds:i64
 
 #### field: nanoseconds
 
-[Source line 19](../../../stdlib/std/file_ops.lani#L19)
+[Source line 23](../../../stdlib/std/file_ops.lani#L23)
 
 ```lanius
 nanoseconds:u32
@@ -373,7 +377,7 @@ nanoseconds:u32
 
 ### struct: Identity
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 pub struct Identity
@@ -381,7 +385,7 @@ pub struct Identity
 
 #### field: inode
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 inode:u64
@@ -389,7 +393,7 @@ inode:u64
 
 #### field: device_major
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 device_major:u32
@@ -397,7 +401,7 @@ device_major:u32
 
 #### field: device_minor
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 device_minor:u32
@@ -405,7 +409,7 @@ device_minor:u32
 
 #### field: rdev_major
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 rdev_major:u32
@@ -413,7 +417,7 @@ rdev_major:u32
 
 #### field: rdev_minor
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 rdev_minor:u32
@@ -421,7 +425,7 @@ rdev_minor:u32
 
 #### field: links
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 links:u32
@@ -429,7 +433,7 @@ links:u32
 
 #### field: uid
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 uid:u32
@@ -437,7 +441,7 @@ uid:u32
 
 #### field: gid
 
-[Source line 20](../../../stdlib/std/file_ops.lani#L20)
+[Source line 24](../../../stdlib/std/file_ops.lani#L24)
 
 ```lanius
 gid:u32
@@ -445,7 +449,7 @@ gid:u32
 
 ### struct: Length
 
-[Source line 21](../../../stdlib/std/file_ops.lani#L21)
+[Source line 25](../../../stdlib/std/file_ops.lani#L25)
 
 ```lanius
 pub struct Length
@@ -453,7 +457,7 @@ pub struct Length
 
 #### field: bytes
 
-[Source line 21](../../../stdlib/std/file_ops.lani#L21)
+[Source line 25](../../../stdlib/std/file_ops.lani#L25)
 
 ```lanius
 bytes:u64
@@ -461,7 +465,7 @@ bytes:u64
 
 #### field: blocks
 
-[Source line 21](../../../stdlib/std/file_ops.lani#L21)
+[Source line 25](../../../stdlib/std/file_ops.lani#L25)
 
 ```lanius
 blocks:u64
@@ -469,7 +473,7 @@ blocks:u64
 
 #### field: block_size
 
-[Source line 21](../../../stdlib/std/file_ops.lani#L21)
+[Source line 25](../../../stdlib/std/file_ops.lani#L25)
 
 ```lanius
 block_size:u32
@@ -477,7 +481,7 @@ block_size:u32
 
 ### struct: Times
 
-[Source line 22](../../../stdlib/std/file_ops.lani#L22)
+[Source line 26](../../../stdlib/std/file_ops.lani#L26)
 
 ```lanius
 pub struct Times
@@ -485,7 +489,7 @@ pub struct Times
 
 #### field: access
 
-[Source line 22](../../../stdlib/std/file_ops.lani#L22)
+[Source line 26](../../../stdlib/std/file_ops.lani#L26)
 
 ```lanius
 access:Time
@@ -493,7 +497,7 @@ access:Time
 
 #### field: modified
 
-[Source line 22](../../../stdlib/std/file_ops.lani#L22)
+[Source line 26](../../../stdlib/std/file_ops.lani#L26)
 
 ```lanius
 modified:Time
@@ -501,7 +505,7 @@ modified:Time
 
 #### field: changed
 
-[Source line 22](../../../stdlib/std/file_ops.lani#L22)
+[Source line 26](../../../stdlib/std/file_ops.lani#L26)
 
 ```lanius
 changed:Time
@@ -509,7 +513,7 @@ changed:Time
 
 #### field: birth
 
-[Source line 22](../../../stdlib/std/file_ops.lani#L22)
+[Source line 26](../../../stdlib/std/file_ops.lani#L26)
 
 ```lanius
 birth:Time
@@ -517,7 +521,7 @@ birth:Time
 
 ### struct: Metadata
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 pub struct Metadata
@@ -525,7 +529,7 @@ pub struct Metadata
 
 #### field: mask
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 mask:u32
@@ -533,7 +537,7 @@ mask:u32
 
 #### field: mode
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 mode:u32
@@ -541,7 +545,7 @@ mode:u32
 
 #### field: identity
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 identity:Identity
@@ -549,7 +553,7 @@ identity:Identity
 
 #### field: length
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 length:Length
@@ -557,7 +561,7 @@ length:Length
 
 #### field: times
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 times:Times
@@ -565,7 +569,7 @@ times:Times
 
 #### field: attributes
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 attributes:u64
@@ -573,7 +577,7 @@ attributes:u64
 
 #### field: attributes_mask
 
-[Source line 23](../../../stdlib/std/file_ops.lani#L23)
+[Source line 27](../../../stdlib/std/file_ops.lani#L27)
 
 ```lanius
 attributes_mask:u64
@@ -583,7 +587,7 @@ attributes_mask:u64
 
 ### constant: AT_FDCWD
 
-[Source line 11](../../../stdlib/std/file_ops.lani#L11)
+[Source line 15](../../../stdlib/std/file_ops.lani#L15)
 
 ```lanius
 pub const AT_FDCWD:i32=-100;
@@ -591,7 +595,7 @@ pub const AT_FDCWD:i32=-100;
 
 ### constant: MAX_PATH_BYTES
 
-[Source line 12](../../../stdlib/std/file_ops.lani#L12)
+[Source line 16](../../../stdlib/std/file_ops.lani#L16)
 
 ```lanius
 pub const MAX_PATH_BYTES:i32=4095;
@@ -601,7 +605,7 @@ pub const MAX_PATH_BYTES:i32=4095;
 
 ### function: options
 
-[Source line 24](../../../stdlib/std/file_ops.lani#L24)
+[Source line 28](../../../stdlib/std/file_ops.lani#L28)
 
 ```lanius
 pub fn options() -> OpenOptions
@@ -609,7 +613,7 @@ pub fn options() -> OpenOptions
 
 ### function: empty_metadata
 
-[Source line 26](../../../stdlib/std/file_ops.lani#L26)
+[Source line 30](../../../stdlib/std/file_ops.lani#L30)
 
 ```lanius
 pub fn empty_metadata() -> Metadata
@@ -617,7 +621,7 @@ pub fn empty_metadata() -> Metadata
 
 ### function: kind
 
-[Source line 28](../../../stdlib/std/file_ops.lani#L28)
+[Source line 32](../../../stdlib/std/file_ops.lani#L32)
 
 ```lanius
 pub fn kind(mode:u32) -> Kind
@@ -625,161 +629,161 @@ pub fn kind(mode:u32) -> Kind
 
 ### function: open
 
-[Source line 44](../../../stdlib/std/file_ops.lani#L44)
+[Source line 48](../../../stdlib/std/file_ops.lani#L48)
 
 ```lanius
-pub fn open(path:core::path::Path,value:OpenOptions) -> core::result::Result<std::file::File,core::io::Error>
+pub fn open(path:core::path::Path,value:OpenOptions) -> Result<File,Error>
 ```
 
 ### function: open_at
 
-[Source line 45](../../../stdlib/std/file_ops.lani#L45)
+[Source line 49](../../../stdlib/std/file_ops.lani#L49)
 
 ```lanius
-pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> core::result::Result<std::file::File,core::io::Error>
+pub fn open_at(directory_fd:i32,path:core::path::Path,value:OpenOptions) -> Result<File,Error>
 ```
 
 ### function: remove_file_at
 
-[Source line 56](../../../stdlib/std/file_ops.lani#L56)
+[Source line 60](../../../stdlib/std/file_ops.lani#L60)
 
 ```lanius
-pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> core::result::Result<i32,core::io::Error>
+pub fn remove_file_at(directory_fd:i32,path:core::path::Path) -> Result<i32,Error>
 ```
 
 ### function: rename_at
 
-[Source line 64](../../../stdlib/std/file_ops.lani#L64)
+[Source line 68](../../../stdlib/std/file_ops.lani#L68)
 
 ```lanius
-pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> core::result::Result<i32,core::io::Error>
+pub fn rename_at(old_directory_fd:i32,old_path:core::path::Path,new_directory_fd:i32,new_path:core::path::Path,policy:RenamePolicy) -> Result<i32,Error>
 ```
 
 ### function: seek
 
-[Source line 76](../../../stdlib/std/file_ops.lani#L76)
+[Source line 80](../../../stdlib/std/file_ops.lani#L80)
 
 ```lanius
-pub fn seek(file:&std::file::File,offset:i64,origin:Origin) -> core::result::Result<i64,core::io::Error>
+pub fn seek(file:&File,offset:i64,origin:Origin) -> Result<i64,Error>
 ```
 
 ### function: position
 
-[Source line 81](../../../stdlib/std/file_ops.lani#L81)
+[Source line 85](../../../stdlib/std/file_ops.lani#L85)
 
 ```lanius
-pub fn position(file:&std::file::File) -> core::result::Result<i64,core::io::Error>
+pub fn position(file:&File) -> Result<i64,Error>
 ```
 
 ### function: set_len
 
-[Source line 84](../../../stdlib/std/file_ops.lani#L84)
+[Source line 88](../../../stdlib/std/file_ops.lani#L88)
 
 ```lanius
-pub fn set_len(file:&std::file::File,length:u64) -> core::result::Result<i32,core::io::Error>
+pub fn set_len(file:&File,length:u64) -> Result<i32,Error>
 ```
 
 ### function: sync_all
 
-[Source line 93](../../../stdlib/std/file_ops.lani#L93)
+[Source line 96](../../../stdlib/std/file_ops.lani#L96)
 
 ```lanius
-pub fn sync_all(file:&std::file::File) -> core::result::Result<i32,core::io::Error>
+pub fn sync_all(file:&File) -> Result<i32,Error>
 ```
 
 ### function: sync_data
 
-[Source line 94](../../../stdlib/std/file_ops.lani#L94)
+[Source line 97](../../../stdlib/std/file_ops.lani#L97)
 
 ```lanius
-pub fn sync_data(file:&std::file::File) -> core::result::Result<i32,core::io::Error>
+pub fn sync_data(file:&File) -> Result<i32,Error>
 ```
 
 ### function: duplicate
 
-[Source line 95](../../../stdlib/std/file_ops.lani#L95)
+[Source line 98](../../../stdlib/std/file_ops.lani#L98)
 
 ```lanius
-pub fn duplicate(file:&std::file::File,minimum_fd:i32,close_on_exec:bool) -> core::result::Result<std::file::File,core::io::Error>
+pub fn duplicate(file:&File,minimum_fd:i32,close_on_exec:bool) -> Result<File,Error>
 ```
 
 ### function: duplicate_to
 
-[Source line 96](../../../stdlib/std/file_ops.lani#L96)
+[Source line 99](../../../stdlib/std/file_ops.lani#L99)
 
 ```lanius
-pub fn duplicate_to(source:&std::file::File,target:&std::file::File,close_on_exec:bool) -> core::result::Result<i32,core::io::Error>
+pub fn duplicate_to(source:&File,target:&File,close_on_exec:bool) -> Result<i32,Error>
 ```
 
 ### function: close_on_exec
 
-[Source line 100](../../../stdlib/std/file_ops.lani#L100)
+[Source line 103](../../../stdlib/std/file_ops.lani#L103)
 
 ```lanius
-pub fn close_on_exec(file:&std::file::File) -> core::result::Result<bool,core::io::Error>
+pub fn close_on_exec(file:&File) -> Result<bool,Error>
 ```
 
 ### function: set_close_on_exec
 
-[Source line 101](../../../stdlib/std/file_ops.lani#L101)
+[Source line 104](../../../stdlib/std/file_ops.lani#L104)
 
 ```lanius
-pub fn set_close_on_exec(file:&std::file::File,enabled:bool) -> core::result::Result<i32,core::io::Error>
+pub fn set_close_on_exec(file:&File,enabled:bool) -> Result<i32,Error>
 ```
 
 ### function: status_flags
 
-[Source line 102](../../../stdlib/std/file_ops.lani#L102)
+[Source line 105](../../../stdlib/std/file_ops.lani#L105)
 
 ```lanius
-pub fn status_flags(file:&std::file::File) -> core::result::Result<i32,core::io::Error>
+pub fn status_flags(file:&File) -> Result<i32,Error>
 ```
 
 ### function: set_status
 
-[Source line 103](../../../stdlib/std/file_ops.lani#L103)
+[Source line 106](../../../stdlib/std/file_ops.lani#L106)
 
 ```lanius
-pub fn set_status(file:&std::file::File,append:bool,nonblocking:bool) -> core::result::Result<i32,core::io::Error>
+pub fn set_status(file:&File,append:bool,nonblocking:bool) -> Result<i32,Error>
 ```
 
 ### function: decode_statx_into
 
-[Source line 106](../../../stdlib/std/file_ops.lani#L106)
+[Source line 109](../../../stdlib/std/file_ops.lani#L109)
 
 ```lanius
-pub fn decode_statx_into(input:core::slice::View<u8>,output:&Metadata) -> core::result::Result<i32,core::io::Error>
+pub fn decode_statx_into(input:View<u8>,output:&Metadata) -> Result<i32,Error>
 ```
 
 ### function: metadata_into
 
-[Source line 122](../../../stdlib/std/file_ops.lani#L122)
+[Source line 125](../../../stdlib/std/file_ops.lani#L125)
 
 ```lanius
-pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> core::result::Result<i32,core::io::Error>
+pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error>
 ```
 
 ### function: metadata_at_into
 
-[Source line 123](../../../stdlib/std/file_ops.lani#L123)
+[Source line 126](../../../stdlib/std/file_ops.lani#L126)
 
 ```lanius
-pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> core::result::Result<i32,core::io::Error>
+pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error>
 ```
 
 ### function: metadata_file_into
 
-[Source line 124](../../../stdlib/std/file_ops.lani#L124)
+[Source line 127](../../../stdlib/std/file_ops.lani#L127)
 
 ```lanius
-pub fn metadata_file_into(file:&std::file::File,output:&Metadata) -> core::result::Result<i32,core::io::Error>
+pub fn metadata_file_into(file:&File,output:&Metadata) -> Result<i32,Error>
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 27
+### impl at line 31
 
-[Source line 27](../../../stdlib/std/file_ops.lani#L27)
+[Source line 31](../../../stdlib/std/file_ops.lani#L31)
 
 ```lanius
 pub impl Metadata
@@ -787,7 +791,7 @@ pub impl Metadata
 
 #### method: borrow
 
-[Source line 27](../../../stdlib/std/file_ops.lani#L27)
+[Source line 31](../../../stdlib/std/file_ops.lani#L31)
 
 ```lanius
 pub fn borrow(&self) -> &Metadata
@@ -795,7 +799,7 @@ pub fn borrow(&self) -> &Metadata
 
 #### method: has
 
-[Source line 27](../../../stdlib/std/file_ops.lani#L27)
+[Source line 31](../../../stdlib/std/file_ops.lani#L31)
 
 ```lanius
 pub fn has(&self,fields:u32) -> bool
