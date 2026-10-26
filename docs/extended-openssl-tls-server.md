@@ -14,6 +14,11 @@ passed all nine rejection cases after the role changes. These receipts cover
 the native profile above; other targets and the broader security family
 remain separate work.
 
+After the shared duplex changes, the selected server retry/ownership group
+passed one case in 6.26 seconds on 2026-10-26. The complete earlier matrices
+were not rerun in that invocation. Current shared retry, shutdown and
+context-retention evidence is recorded in the [client TLS guide](extended-openssl-tls.md#current-duplex-and-ownership-receipts).
+
 ## Server credentials and client authentication
 
 ```lanius
@@ -148,6 +153,7 @@ Server sessions use the existing methods and outcome enums:
 | `read_into(output)` | `Read::{Data(count),Closed,WantRead,WantWrite}` |
 | `write(input)` / `retry_write()` | `Write::{Complete(count),WantRead,WantWrite}` |
 | `shutdown()` | `Shutdown::{Complete,Sent,WantRead,WantWrite}` |
+| `shutdown_write()` | The same outcomes, stopping after confirmed local notification |
 
 Each progress operation makes at most one TLS I/O call. Poll according to the
 returned WANT, including a write needing readability or a read needing
@@ -159,8 +165,11 @@ a peer certificate after their mandatory DNS/IP checks.
 
 Read and write retries retain the original staging pointers and request
 lengths. Pending writes retry only through `retry_write()`; caller bytes can
-be released after the initial copy. Only one application operation may be
-pending. Successful native counts are checked before copyout or completion.
+be released after the initial copy. A write wanting write readiness excludes
+other TLS I/O. A write wanting read readiness may interleave reads; either
+pending read WANT may interleave writes. Each pending direction retains its
+own reservation. Successful native counts are checked before copyout or
+completion.
 See the [client guide's shared Session contract](extended-openssl-tls.md#read-and-write-retry-buffers)
 for exact retry, empty-I/O and confirmed-progress rules.
 
@@ -172,10 +181,14 @@ is attempted afterward.
 
 `shutdown()` is available only without pending application I/O. Native return
 zero means the local notification was sent (`Sent`), not that both directions
-completed. Retry shutdown under readiness/deadline policy until `Complete`,
-or explicitly abandon. Application I/O remains disabled while closing.
-The shared [closure and error-ordering contract](extended-openssl-tls.md#eof-and-shutdown)
-is unchanged.
+completed. A read waiting for read readiness can first be released with
+`quiesce_read`; a read wanting write readiness must progress or be abandoned.
+An incomplete shutdown WANT is exclusive. After confirmed local `Sent`, reads
+are allowed but application writes remain forbidden. Use `shutdown_write`
+for local notification followed by reads; its local Sent replay does not
+repeat native shutdown. Full `shutdown` retry is explicit. The shared
+[closure and error-ordering contract](extended-openssl-tls.md#eof-and-shutdown)
+defines remaining-data and TLS-version behavior.
 
 ## Error phases
 
@@ -250,6 +263,14 @@ rejections in 5.98 seconds:
 `target/stdlib-work/openssl-tls-client-policy-server-regression.log`.
 That regression independently retains mandatory client authentication of the
 server.
+
+On 2026-10-26, after the directional guard migration,
+`server_tls_retries_keep_staged_writes_and_allow_changed_read_destinations`
+passed its one case in 6.26 seconds, recorded in
+`target/stdlib-work/openssl-tls-server-duplex-guards-regression.log`. It checks
+stable pending writes, changed read destinations, required guards and bounded
+polling on the current source. This selected group does not rerun the other
+five historical server groups or the historical client policy matrix.
 
 The focused server gate, after the required compiler build, is:
 

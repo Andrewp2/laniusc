@@ -1,4 +1,4 @@
-// Candidate explicit two-match control; compile/execution acceptance is pending.
+// Confirmed explicit two-match control; compiles and executes all four checks.
 module app::main;
 import core::io;
 import core::option;

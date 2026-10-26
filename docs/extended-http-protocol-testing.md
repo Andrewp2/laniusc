@@ -50,10 +50,26 @@ There is no second HTTP parser or protocol implementation in the harness.
 
 ## Acceptance
 
-Current compiler/native execution is pending. Python syntax, literal byte
-lengths, and scoped formatting have been checked while preparing the fixture.
-This guide must not be read as a runtime acceptance receipt until the root's
-serialized execution succeeds.
+The focused test
+`direct_protocol_reservations_boundaries_and_manual_owners_execute_without_transport`
+passed on Linux x86-64 through the production GPU compiler in **7.94 seconds**.
+The root's serialized receipt is
+`target/stdlib-work/http-protocol-direct-contracts-first.log`. The separate Rust
+driver build completed in 1.04 seconds and is recorded in
+`target/stdlib-work/http-protocol-direct-driver-build.log`.
+
+The native fixture reached its final success marker and exited successfully.
+The shared ledger reported **247 successful mapping events**, each explicitly
+released with its matching unmap, and zero traced network/poll/close calls:
+
+```text
+http-protocol states checked allocations=247 explicit-owner-ledger=balanced no-network
+```
+
+This is one executable state-contract group, including its deliberate API
+failure paths. The 247 events describe that run's allocation activity; they are
+not 247 allocation-denial tests. The fixture and production Protocol were
+unchanged for this acceptance run.
 
 The finite direct cases do not establish OpenSSL retry behavior, real network
 readiness, delayed native return accounting, deadline fault behavior, exhaustive

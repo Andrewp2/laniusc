@@ -93,6 +93,10 @@ fn deadlines_network_budgets_and_stdout_bounds_are_enforced() {
     oracle("limits");
 }
 #[test]
+fn empty_body_zero_budgets_and_one_mebibyte_binary_output_execute() {
+    oracle("empty-and-large");
+}
+#[test]
 fn buffered_tls_acceptance_copies_input_flushes_and_becomes_terminal_on_errors() {
     oracle("stream");
 }

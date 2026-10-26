@@ -8,31 +8,33 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Bounded concurrent cleartext HTTP uses one thread and a reusable std::poll PollSet over canonical Prepared/Exchange owners. All requests are prepared before sockets; input-order outcomes retain successful responses across global failure and transfer individually through Report.take. One common deadline, concurrency, pending/completed logical byte caps, scheduler operations and reserved aggregate protocol work are explicit. Logical retention caps exclude allocator capacities, temporary candidates and RSS. All seven batch groups and all five fetch-many application groups pass across separate native Linux x86-64 receipts, including causal overlap, partial outcomes, limits, reached-allocation cleanup and queued admission after consecutive begin failures without an intervening blocking poll. The 64-job application scale control peaks at four sockets; its allocation/requested-byte measurements are finite trace evidence, not RSS or throughput guarantees. TLS resumability and threads remain separate work.
+One generic one-thread/PollSet engine owns canonical HTTP preparation, admission, refill, accounting and input-order partial results. run_with_until accepts typed Factory/Driver/error parameters; run_until supplies the plain adapter. Report/Failure.destroy require Destroy<E>; take transfers cleanup authority. before_wait Ok(true) preserves observed Interest and descriptor identity through registration. Borrowed E backing outlives final Report/taken-outcome use and destruction, including after run return. Current plain execution passes eight groups and 103 cases through two receipts: seven original groups/102 cases in 13.00 seconds and one causal wait-retirement case in 10.07 seconds. The first retirement fixture failed under incoherent validation/work caps; coherent caps preserve its original allowance and causal assertions, and the retry passes without a product accounting change. All six connected HTTPS groups separately pass 108 cases. Historical 480432e8 receipts retain separate scope; current fetch-many also passes all five application groups in 24.18 seconds, including all 59 reached allocation failures and a 64-job/four-socket control. Logical retention/work caps exclude allocator capacities, temporary candidates, native transport storage/CPU and RSS. Worker threads remain separate work.
 
 ## Contract and evidence guides
 
 - [extended-http-batch](../../extended-http-batch.md)
 - [extended-http-batch-testing](../../extended-http-batch-testing.md)
 - [extended-fetch-many](../../extended-fetch-many.md)
+- [extended-https-batch](../../extended-https-batch.md)
 
-Declaration counts: constant: 2; enum: 2; field: 30; function: 2; impl: 2; method: 7; struct: 6; variant: 19.
+Declaration counts: constant: 2; enum: 2; field: 30; function: 3; impl: 4; method: 18; struct: 6; trait: 2; trait member: 11; variant: 19.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/http_batch.lani#L3)
-- [core::io](../core/io.md) · [source](../../../extended/ext/http_batch.lani#L4)
-- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_batch.lani#L5)
-- [core::net](../core/net.md) · [source](../../../extended/ext/http_batch.lani#L6)
-- [core::option](../core/option.md) · [source](../../../extended/ext/http_batch.lani#L7)
-- [core::result](../core/result.md) · [source](../../../extended/ext/http_batch.lani#L8)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_batch.lani#L9)
-- [core::time](../core/time.md) · [source](../../../extended/ext/http_batch.lani#L10)
-- [ext::http_client](http_client.md) · [source](../../../extended/ext/http_batch.lani#L11)
-- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_batch.lani#L12)
-- [std::poll](../std/poll.md) · [source](../../../extended/ext/http_batch.lani#L13)
+- [core::clone](../core/clone.md) · [source](../../../extended/ext/http_batch.lani#L4)
+- [core::io](../core/io.md) · [source](../../../extended/ext/http_batch.lani#L5)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/http_batch.lani#L6)
+- [core::net](../core/net.md) · [source](../../../extended/ext/http_batch.lani#L7)
+- [core::option](../core/option.md) · [source](../../../extended/ext/http_batch.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/http_batch.lani#L9)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/http_batch.lani#L10)
+- [core::time](../core/time.md) · [source](../../../extended/ext/http_batch.lani#L11)
+- [ext::http_client](http_client.md) · [source](../../../extended/ext/http_batch.lani#L12)
+- [std::clock](../std/clock.md) · [source](../../../extended/ext/http_batch.lani#L13)
+- [std::poll](../std/poll.md) · [source](../../../extended/ext/http_batch.lani#L14)
 
 ## Types, fields and variants
 
@@ -40,7 +42,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: Job
 
-[Source line 15](../../../extended/ext/http_batch.lani#L15)
+[Source line 16](../../../extended/ext/http_batch.lani#L16)
 
 ```lanius
 pub struct Job
@@ -48,7 +50,7 @@ pub struct Job
 
 #### field: endpoint
 
-[Source line 15](../../../extended/ext/http_batch.lani#L15)
+[Source line 16](../../../extended/ext/http_batch.lani#L16)
 
 ```lanius
 endpoint: core::net::SocketAddr
@@ -56,7 +58,7 @@ endpoint: core::net::SocketAddr
 
 #### field: request
 
-[Source line 15](../../../extended/ext/http_batch.lani#L15)
+[Source line 16](../../../extended/ext/http_batch.lani#L16)
 
 ```lanius
 request: ext::http_client::Request
@@ -64,7 +66,7 @@ request: ext::http_client::Request
 
 ### struct: Limits
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 pub struct Limits
@@ -72,7 +74,7 @@ pub struct Limits
 
 #### field: max_jobs
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 max_jobs: i32
@@ -80,7 +82,7 @@ max_jobs: i32
 
 #### field: concurrency
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 concurrency: i32
@@ -88,7 +90,7 @@ concurrency: i32
 
 #### field: max_pending_bytes
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 max_pending_bytes: u64
@@ -96,7 +98,7 @@ max_pending_bytes: u64
 
 #### field: max_wire_bytes
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 max_wire_bytes: u64
@@ -104,7 +106,7 @@ max_wire_bytes: u64
 
 #### field: max_body_bytes
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 max_body_bytes: u64
@@ -112,7 +114,7 @@ max_body_bytes: u64
 
 #### field: operations
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 operations: u64
@@ -120,7 +122,7 @@ operations: u64
 
 #### field: work
 
-[Source line 16](../../../extended/ext/http_batch.lani#L16)
+[Source line 44](../../../extended/ext/http_batch.lani#L44)
 
 ```lanius
 work: u64
@@ -128,15 +130,15 @@ work: u64
 
 ### struct: Abort
 
-[Source line 17](../../../extended/ext/http_batch.lani#L17)
+[Source line 45](../../../extended/ext/http_batch.lani#L45)
 
 ```lanius
-pub struct Abort
+pub struct Abort<E>
 ```
 
 #### field: stats
 
-[Source line 17](../../../extended/ext/http_batch.lani#L17)
+[Source line 45](../../../extended/ext/http_batch.lani#L45)
 
 ```lanius
 stats: ext::http_client::Stats
@@ -144,23 +146,23 @@ stats: ext::http_client::Stats
 
 #### field: cleanup
 
-[Source line 17](../../../extended/ext/http_batch.lani#L17)
+[Source line 45](../../../extended/ext/http_batch.lani#L45)
 
 ```lanius
-cleanup: core::option::Option<core::io::Error>
+cleanup: core::option::Option<E>
 ```
 
 ### enum: Outcome
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
-pub enum Outcome
+pub enum Outcome<E>
 ```
 
 #### variant: NotStarted
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
 NotStarted
@@ -168,7 +170,7 @@ NotStarted
 
 #### variant: Complete
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
 Complete(ext::http_client::Response)
@@ -176,23 +178,23 @@ Complete(ext::http_client::Response)
 
 #### variant: Failed
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
-Failed(ext::http_client::Failure)
+Failed(E)
 ```
 
 #### variant: Aborted
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
-Aborted(Abort)
+Aborted(Abort<E>)
 ```
 
 #### variant: Discarded
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
 Discarded(ext::http_client::Stats)
@@ -200,7 +202,7 @@ Discarded(ext::http_client::Stats)
 
 #### variant: Taken
 
-[Source line 18](../../../extended/ext/http_batch.lani#L18)
+[Source line 46](../../../extended/ext/http_batch.lani#L46)
 
 ```lanius
 Taken
@@ -208,7 +210,7 @@ Taken
 
 ### struct: Stats
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 pub struct Stats
@@ -216,7 +218,7 @@ pub struct Stats
 
 #### field: jobs
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 jobs: i32
@@ -224,7 +226,7 @@ jobs: i32
 
 #### field: started
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 started: i32
@@ -232,7 +234,7 @@ started: i32
 
 #### field: complete
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 complete: i32
@@ -240,7 +242,7 @@ complete: i32
 
 #### field: failed
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 failed: i32
@@ -248,7 +250,7 @@ failed: i32
 
 #### field: aborted
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 aborted: i32
@@ -256,7 +258,7 @@ aborted: i32
 
 #### field: discarded
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 discarded: i32
@@ -264,7 +266,7 @@ discarded: i32
 
 #### field: peak_active
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 peak_active: i32
@@ -272,7 +274,7 @@ peak_active: i32
 
 #### field: operations
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 operations: u64
@@ -280,7 +282,7 @@ operations: u64
 
 #### field: polls
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 polls: u64
@@ -288,7 +290,7 @@ polls: u64
 
 #### field: io_calls
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 io_calls: u64
@@ -296,7 +298,7 @@ io_calls: u64
 
 #### field: work
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 work: u64
@@ -304,7 +306,7 @@ work: u64
 
 #### field: pending_bytes
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 pending_bytes: u64
@@ -312,7 +314,7 @@ pending_bytes: u64
 
 #### field: peak_pending_bytes
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 peak_pending_bytes: u64
@@ -320,7 +322,7 @@ peak_pending_bytes: u64
 
 #### field: wire_bytes
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 wire_bytes: u64
@@ -328,7 +330,7 @@ wire_bytes: u64
 
 #### field: body_bytes
 
-[Source line 19](../../../extended/ext/http_batch.lani#L19)
+[Source line 47](../../../extended/ext/http_batch.lani#L47)
 
 ```lanius
 body_bytes: u64
@@ -336,23 +338,23 @@ body_bytes: u64
 
 ### struct: Report
 
-[Source line 21](../../../extended/ext/http_batch.lani#L21)
+[Source line 49](../../../extended/ext/http_batch.lani#L49)
 
 ```lanius
-pub struct Report
+pub struct Report<E>
 ```
 
 #### field: outcomes
 
-[Source line 21](../../../extended/ext/http_batch.lani#L21)
+[Source line 49](../../../extended/ext/http_batch.lani#L49)
 
 ```lanius
-outcomes: alloc::vec::Vec<Outcome>
+outcomes: alloc::vec::Vec<Outcome<E>>
 ```
 
 #### field: stats
 
-[Source line 21](../../../extended/ext/http_batch.lani#L21)
+[Source line 49](../../../extended/ext/http_batch.lani#L49)
 
 ```lanius
 stats: Stats
@@ -360,7 +362,7 @@ stats: Stats
 
 ### enum: Cause
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 pub enum Cause
@@ -368,7 +370,7 @@ pub enum Cause
 
 #### variant: Bounds
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 Bounds
@@ -376,7 +378,7 @@ Bounds
 
 #### variant: InvalidLimits
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 InvalidLimits
@@ -384,7 +386,7 @@ InvalidLimits
 
 #### variant: AllocationFailed
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 AllocationFailed
@@ -392,7 +394,7 @@ AllocationFailed
 
 #### variant: Timeout
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 Timeout
@@ -400,7 +402,7 @@ Timeout
 
 #### variant: Clock
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 Clock(std::clock::Error)
@@ -408,7 +410,7 @@ Clock(std::clock::Error)
 
 #### variant: Poll
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 Poll(std::poll::Error)
@@ -416,7 +418,7 @@ Poll(std::poll::Error)
 
 #### variant: OperationLimit
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 OperationLimit
@@ -424,7 +426,7 @@ OperationLimit
 
 #### variant: WorkLimit
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 WorkLimit
@@ -432,7 +434,7 @@ WorkLimit
 
 #### variant: WireLimit
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 WireLimit
@@ -440,7 +442,7 @@ WireLimit
 
 #### variant: BodyLimit
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 BodyLimit
@@ -448,7 +450,7 @@ BodyLimit
 
 #### variant: PendingLimit
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 PendingLimit
@@ -456,7 +458,7 @@ PendingLimit
 
 #### variant: Preparation
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 Preparation
@@ -464,7 +466,7 @@ Preparation
 
 #### variant: InvalidEngine
 
-[Source line 22](../../../extended/ext/http_batch.lani#L22)
+[Source line 50](../../../extended/ext/http_batch.lani#L50)
 
 ```lanius
 InvalidEngine
@@ -472,15 +474,15 @@ InvalidEngine
 
 ### struct: Failure
 
-[Source line 23](../../../extended/ext/http_batch.lani#L23)
+[Source line 51](../../../extended/ext/http_batch.lani#L51)
 
 ```lanius
-pub struct Failure
+pub struct Failure<E>
 ```
 
 #### field: cause
 
-[Source line 23](../../../extended/ext/http_batch.lani#L23)
+[Source line 51](../../../extended/ext/http_batch.lani#L51)
 
 ```lanius
 cause: Cause
@@ -488,17 +490,17 @@ cause: Cause
 
 #### field: report
 
-[Source line 23](../../../extended/ext/http_batch.lani#L23)
+[Source line 51](../../../extended/ext/http_batch.lani#L51)
 
 ```lanius
-report: Report
+report: Report<E>
 ```
 
 ## Constants
 
 ### constant: MAX_JOBS
 
-[Source line 29](../../../extended/ext/http_batch.lani#L29)
+[Source line 57](../../../extended/ext/http_batch.lani#L57)
 
 ```lanius
 pub const MAX_JOBS: i32 = 4096;
@@ -506,7 +508,7 @@ pub const MAX_JOBS: i32 = 4096;
 
 ### constant: MAX_CONCURRENCY
 
-[Source line 30](../../../extended/ext/http_batch.lani#L30)
+[Source line 58](../../../extended/ext/http_batch.lani#L58)
 
 ```lanius
 pub const MAX_CONCURRENCY: i32 = 64;
@@ -516,41 +518,159 @@ pub const MAX_CONCURRENCY: i32 = 64;
 
 ### function: default_limits
 
-[Source line 31](../../../extended/ext/http_batch.lani#L31)
+[Source line 59](../../../extended/ext/http_batch.lani#L59)
 
 ```lanius
 pub fn default_limits() -> Limits
 ```
 
-### function: run_until
+### function: run_with_until
 
-[Source line 264](../../../extended/ext/http_batch.lani#L264)
+[Source line 334](../../../extended/ext/http_batch.lani#L334)
 
 ```lanius
-pub fn run_until(jobs: core::slice::View<Job>, options: ext::http_client::Options, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Report,Failure>
+pub fn run_with_until<J,D,E,F>(jobs: core::slice::View<J>, factory: &F, options: ext::http_client::Options, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Report<E>,Failure<E>> where D: Driver<E>, F: Factory<J,D,E>
 ```
 
-## Implementation blocks and public methods
+Shared scheduler over typed jobs, Factory and Driver; begin consumes canonical Prepared on every result. Job/factory backing stays borrowed through return; borrowed E backing additionally survives final Report/taken-outcome use and destruction. before_wait Ok(true) preserves interest/descriptor identity through registration. Current plain eight-group/103-case and HTTPS six-group/108-case receipts are separate.
 
-### impl at line 37
+### function: run_until
+
+[Source line 367](../../../extended/ext/http_batch.lani#L367)
+
+```lanius
+pub fn run_until(jobs: core::slice::View<Job>, options: ext::http_client::Options, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Report<ext::http_client::Failure>,Failure<ext::http_client::Failure>>
+```
+
+Plain HTTP adapter over the same generic engine, returning Report<http_client::Failure> and Failure<http_client::Failure>. All eight current plain groups pass 103 cases across two native Linux x86_64 receipts.
+
+## Traits and members
+
+### trait: Driver
+
+[Source line 24](../../../extended/ext/http_batch.lani#L24)
+
+```lanius
+pub trait Driver<E>
+```
+
+#### trait member: stats
+
+[Source line 25](../../../extended/ext/http_batch.lani#L25)
+
+```lanius
+pub fn stats(&self) -> ext::http_client::Stats;
+```
+
+#### trait member: interest
+
+[Source line 26](../../../extended/ext/http_batch.lani#L26)
+
+```lanius
+pub fn interest(&self) -> ext::http_client::Interest;
+```
+
+#### trait member: raw_handle
+
+[Source line 27](../../../extended/ext/http_batch.lani#L27)
+
+```lanius
+pub fn raw_handle(&self) -> core::option::Option<i32>;
+```
+
+#### trait member: before_wait
+
+[Source line 28](../../../extended/ext/http_batch.lani#L28)
+
+```lanius
+pub fn before_wait(&self) -> core::result::Result<bool,E>;
+```
+
+#### trait member: step
+
+[Source line 29](../../../extended/ext/http_batch.lani#L29)
+
+```lanius
+pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,E>;
+```
+
+#### trait member: abort
+
+[Source line 30](../../../extended/ext/http_batch.lani#L30)
+
+```lanius
+pub fn abort(&self) -> core::result::Result<bool,E>;
+```
+
+### trait: Factory
 
 [Source line 37](../../../extended/ext/http_batch.lani#L37)
 
 ```lanius
-pub impl Report
+pub trait Factory<J,D,E>
 ```
 
-#### method: borrow
+#### trait member: request
 
 [Source line 38](../../../extended/ext/http_batch.lani#L38)
 
 ```lanius
-pub fn borrow(&self) -> &Report
+pub fn request(&self, job: J) -> ext::http_client::Request;
+```
+
+#### trait member: begin
+
+[Source line 39](../../../extended/ext/http_batch.lani#L39)
+
+```lanius
+pub fn begin(&self, prepared: &ext::http_client::Prepared, job: J) -> core::result::Result<D,E>;
+```
+
+#### trait member: from_http_failure
+
+[Source line 40](../../../extended/ext/http_batch.lani#L40)
+
+```lanius
+pub fn from_http_failure(&self, failure: ext::http_client::Failure) -> E;
+```
+
+#### trait member: failure_stats
+
+[Source line 41](../../../extended/ext/http_batch.lani#L41)
+
+```lanius
+pub fn failure_stats(&self, error: E) -> ext::http_client::Stats;
+```
+
+#### trait member: shared_failure
+
+[Source line 42](../../../extended/ext/http_batch.lani#L42)
+
+```lanius
+pub fn shared_failure(&self, error: E) -> core::option::Option<Cause>;
+```
+
+## Implementation blocks and public methods
+
+### impl at line 65
+
+[Source line 65](../../../extended/ext/http_batch.lani#L65)
+
+```lanius
+pub impl<E> Report<E>
+```
+
+#### method: borrow
+
+[Source line 66](../../../extended/ext/http_batch.lani#L66)
+
+```lanius
+pub fn borrow(&self) -> &Report<E>
 ```
 
 #### method: len
 
-[Source line 39](../../../extended/ext/http_batch.lani#L39)
+[Source line 67](../../../extended/ext/http_batch.lani#L67)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -558,48 +678,152 @@ pub fn len(&self) -> i32
 
 #### method: get
 
-[Source line 40](../../../extended/ext/http_batch.lani#L40)
+[Source line 68](../../../extended/ext/http_batch.lani#L68)
 
 ```lanius
-pub fn get(&self, index: i32) -> core::option::Option<Outcome>
+pub fn get(&self, index: i32) -> core::option::Option<Outcome<E>>
 ```
 
 #### method: take
 
-[Source line 41](../../../extended/ext/http_batch.lani#L41)
+[Source line 69](../../../extended/ext/http_batch.lani#L69)
 
 ```lanius
-pub fn take(&self, index: i32) -> core::option::Option<Outcome>
+pub fn take(&self, index: i32) -> core::option::Option<Outcome<E>>
 ```
 
 #### method: destroy
 
-[Source line 48](../../../extended/ext/http_batch.lani#L48)
+[Source line 77](../../../extended/ext/http_batch.lani#L77)
 
 ```lanius
-pub fn destroy(&self)
+pub fn destroy(&self) where E: core::clone::Destroy<E>
 ```
 
-### impl at line 59
+### impl at line 90
 
-[Source line 59](../../../extended/ext/http_batch.lani#L59)
+[Source line 90](../../../extended/ext/http_batch.lani#L90)
 
 ```lanius
-pub impl Failure
+pub impl<E> Failure<E>
 ```
 
 #### method: borrow
 
-[Source line 59](../../../extended/ext/http_batch.lani#L59)
+[Source line 90](../../../extended/ext/http_batch.lani#L90)
 
 ```lanius
-pub fn borrow(&self) -> &Failure
+pub fn borrow(&self) -> &Failure<E>
 ```
 
 #### method: destroy
 
-[Source line 59](../../../extended/ext/http_batch.lani#L59)
+[Source line 90](../../../extended/ext/http_batch.lani#L90)
 
 ```lanius
-pub fn destroy(&self)
+pub fn destroy(&self) where E: core::clone::Destroy<E>
+```
+
+### impl at line 126
+
+[Source line 126](../../../extended/ext/http_batch.lani#L126)
+
+```lanius
+pub impl Driver<ext::http_client::Failure> for PlainDriver
+```
+
+#### method: stats
+
+[Source line 127](../../../extended/ext/http_batch.lani#L127)
+
+```lanius
+pub fn stats(&self) -> ext::http_client::Stats
+```
+
+#### method: interest
+
+[Source line 128](../../../extended/ext/http_batch.lani#L128)
+
+```lanius
+pub fn interest(&self) -> ext::http_client::Interest
+```
+
+#### method: raw_handle
+
+[Source line 129](../../../extended/ext/http_batch.lani#L129)
+
+```lanius
+pub fn raw_handle(&self) -> core::option::Option<i32>
+```
+
+#### method: before_wait
+
+[Source line 130](../../../extended/ext/http_batch.lani#L130)
+
+```lanius
+pub fn before_wait(&self) -> core::result::Result<bool,ext::http_client::Failure>
+```
+
+#### method: step
+
+[Source line 131](../../../extended/ext/http_batch.lani#L131)
+
+```lanius
+pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,ext::http_client::Failure>
+```
+
+#### method: abort
+
+[Source line 132](../../../extended/ext/http_batch.lani#L132)
+
+```lanius
+pub fn abort(&self) -> core::result::Result<bool,ext::http_client::Failure>
+```
+
+### impl at line 134
+
+[Source line 134](../../../extended/ext/http_batch.lani#L134)
+
+```lanius
+pub impl Factory<Job,PlainDriver,ext::http_client::Failure> for PlainFactory
+```
+
+#### method: request
+
+[Source line 135](../../../extended/ext/http_batch.lani#L135)
+
+```lanius
+pub fn request(&self, job: Job) -> ext::http_client::Request
+```
+
+#### method: begin
+
+[Source line 136](../../../extended/ext/http_batch.lani#L136)
+
+```lanius
+pub fn begin(&self, prepared: &ext::http_client::Prepared, job: Job) -> core::result::Result<PlainDriver,ext::http_client::Failure>
+```
+
+#### method: from_http_failure
+
+[Source line 141](../../../extended/ext/http_batch.lani#L141)
+
+```lanius
+pub fn from_http_failure(&self, failure: ext::http_client::Failure) -> ext::http_client::Failure
+```
+
+#### method: failure_stats
+
+[Source line 142](../../../extended/ext/http_batch.lani#L142)
+
+```lanius
+pub fn failure_stats(&self, error: ext::http_client::Failure) -> ext::http_client::Stats
+```
+
+#### method: shared_failure
+
+[Source line 143](../../../extended/ext/http_batch.lani#L143)
+
+```lanius
+pub fn shared_failure(&self, error: ext::http_client::Failure) -> core::option::Option<Cause>
 ```

@@ -2,6 +2,7 @@
 // fault is injected: job 1 deliberately retires from before_wait after upload.
 module app::main;
 import alloc::vec;
+import core::fmt;
 import core::io;
 import core::mem;
 import core::net;
@@ -27,6 +28,27 @@ fn marker(value: str, count: i32) { let part = bytes(value,count); let sink = st
 fn word(raw: [u8], at: i32) -> i32 { return ((raw[at] as u32)|((raw[at+1] as u32)<<8)|((raw[at+2] as u32)<<16)|((raw[at+3] as u32)<<24)) as i32; }
 fn output(words: [i32], count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),count*4); let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),raw,0,count*4).unwrap(); }
 fn data(part: core::slice::View<u8>) { let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),part.values,part.start,part.length).unwrap(); }
+fn diagnostic_number(value: u64) {
+    let storage: [u8;32] = [0;32]; let formatter = core::fmt::buffer(storage,0,32).unwrap(); formatter.write_unsigned(value,core::fmt::decimal());
+    let count: i32 = formatter.finish().unwrap(); let sink = std::stream::stderr(); core::io::write_all(sink.borrow(),storage,0,count).unwrap();
+}
+fn diagnostic(report: &ext::http_batch::Report<ext::http_client::Failure>) {
+    marker("unexpected-batch-counts complete=",33); diagnostic_number(report.stats.complete as u64); marker(" failed=",8); diagnostic_number(report.stats.failed as u64); marker(" aborted=",9); diagnostic_number(report.stats.aborted as u64); marker("\n",1);
+    let index: i32 = 0;
+    while (index < report.len()) {
+        let item: ext::http_batch::Outcome<ext::http_client::Failure> = report.get(index).unwrap();
+        let failure: core::option::Option<ext::http_client::Failure> = match(item) { ext::http_batch::Outcome::Failed(error) -> core::option::Some(error), _ -> core::option::None() };
+        if (failure.is_some()) {
+            let error: ext::http_client::Failure = failure.unwrap();
+            marker("failed job=",11); diagnostic_number(index as u64);
+            let work_limit: bool = match(error.cause) { ext::http_client::Cause::WorkLimit -> true, _ -> false };
+            let timeout: bool = match(error.cause) { ext::http_client::Cause::Timeout -> true, _ -> false };
+            if (work_limit) { marker(" cause=work-limit",17); } else { if (timeout) { marker(" cause=timeout",14); } else { marker(" cause=other",12); } }
+            marker(" work=",6); diagnostic_number(error.stats.work); marker(" io=",4); diagnostic_number(error.stats.io_calls); marker(" sent=",6); diagnostic_number(error.stats.request_sent as u64); marker(" received=",10); diagnostic_number(error.stats.response_received); marker("\n",1);
+        }
+        index += 1;
+    }
+}
 pub impl ext::http_batch::Factory<Job,Driver,ext::http_client::Failure> for Factory {
     pub fn request(&self, job: Job) -> ext::http_client::Request { return job.request; }
     pub fn begin(&self, prepared: &ext::http_client::Prepared, job: Job) -> core::result::Result<Driver,ext::http_client::Failure> {
@@ -86,11 +108,14 @@ fn main() -> i32 {
     while (index < 3) { let item: ext::http_client::Request = request; item.target = core::slice::view_range<u8>(targets,index*4,4).unwrap(); item.body = core::slice::view_range<u8>(bodies,index*4,4).unwrap(); jobs[index] = Job { ordinal: index, endpoint: core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: word(ports,index*4) as u16 }), request: item }; index += 1; }
     let audit: Audit = Audit { held_pending: false, witnessed: false, retired: 0, queued: 0 }; let factory: Factory = Factory { audit: audit.borrow() };
     let options: ext::http_client::Options = ext::http_client::default_options(); options.request_bytes = 8192; options.response_bytes = 8192; options.wire.body_bytes = 4096; options.work = 1000000; options.io_calls = 10000;
+    options.wire.head_bytes = 4096; options.wire.line_bytes = 1024; options.wire.headers = 16; options.wire.trailers = 16; options.wire.trailer_bytes = 1024;
     let limits: ext::http_batch::Limits = ext::http_batch::default_limits(); limits.concurrency = 2; limits.max_jobs = 3; limits.operations = 100000; limits.work = 32000000;
     let deadline: core::time::Deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(3000)).unwrap();
     let got: core::result::Result<ext::http_batch::Report<ext::http_client::Failure>,ext::http_batch::Failure<ext::http_client::Failure>> = ext::http_batch::run_with_until<Job,Driver,ext::http_client::Failure,Factory>(core::slice::view<Job>(jobs,3).unwrap(),factory.borrow(),options,limits,deadline);
     assert(got.is_ok()); let report: ext::http_batch::Report<ext::http_client::Failure> = got.unwrap();
-    assert(audit.witnessed && audit.retired == 1 && audit.queued == 1 && report.len() == 3); assert(report.stats.started == 3 && report.stats.complete == 2 && report.stats.failed == 1 && report.stats.aborted == 0 && report.stats.discarded == 0 && report.stats.peak_active == 2);
+    assert(audit.witnessed && audit.retired == 1 && audit.queued == 1 && report.len() == 3);
+    let expected: bool = report.stats.started == 3 && report.stats.complete == 2 && report.stats.failed == 1 && report.stats.aborted == 0 && report.stats.discarded == 0 && report.stats.peak_active == 2;
+    if (!expected) { diagnostic(report.borrow()); } assert(expected);
     headers.destroy(); let words: [i32;20] = [0;20]; words[0] = 1212301617; words[2] = report.len(); words[3] = report.stats.jobs; words[4] = report.stats.started; words[5] = report.stats.complete; words[6] = report.stats.failed; words[7] = report.stats.aborted; words[8] = report.stats.discarded; words[9] = report.stats.peak_active; words[10] = report.stats.operations as i32; words[11] = report.stats.polls as i32; words[12] = report.stats.io_calls as i32; words[13] = report.stats.work as i32; words[14] = report.stats.pending_bytes as i32; words[15] = report.stats.peak_pending_bytes as i32; words[16] = report.stats.wire_bytes as i32; words[17] = report.stats.body_bytes as i32; output(words,20);
     index = 0; while (index < report.len()) { result(report.get(index).unwrap()); index += 1; } report.destroy(); report.destroy();
     marker("owners-released\n",16); let checkpoint: [i32;1] = [1212301618]; output(checkpoint,1); let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0;

@@ -178,12 +178,13 @@ covering 108 cases on the profile stated above.
 The first resource-group attempt stopped before any Python campaign case:
 the direct consumer's nested `Cause::Io(Error::Host(number))` pattern was
 parsed but rejected with `AssignMismatch` / `LNC0006` at the bound value.
-The unchanged original, diagnostic and unexecuted reduction/control sources
-are preserved in
+The unchanged original, diagnostic, confirmed 14-line rejection and executed
+two-match control are preserved in
 [compiler_admission](../tests/fixtures/extended/https_batch/compiler_admission/README.md).
 The active consumer selects the typed I/O payload before matching Host(5),
 retaining both exact error assertions, and passed the complete retry above.
-The standalone reduction/control candidates remain unexecuted. The initial
+The standalone nested-pattern reduction also rejects with LNC0006; the explicit
+two-match control compiles and executes all four assertions with exit zero. The initial
 10.24-second compile rejection is not evidence of a production TLS failure.
 Python syntax and scoped whitespace checks have passed; they are test
 infrastructure checks, not additional HTTPS execution receipts. The

@@ -8,19 +8,21 @@ There is no custom cryptography, TLS record parser, C adapter, JSON bridge or
 Rust/Python production TLS implementation.
 
 The source targets the [Linux x86_64/glibc native C profile](library-native-c.md),
-with OpenSSL 3.0.13 audited locally. The dedicated native execution gates pass
-34 cases across four groups: verified identity and binary transfers, rejection
-policy, authenticated closure/truncation, and stable nonblocking retries.
-The receipts and the corrected test-peer fixture are recorded below. These
-results cover this client profile. [Server TLS](extended-openssl-tls-server.md)
-has separate passing native gates. [Mutual TLS](extended-openssl-mutual-tls.md)
-also passes six groups and 107 cases with explicit client credentials and
-required server-side client verification. The full security family remains work.
+with OpenSSL 3.0.13 audited locally. All nine current raw duplex groups pass
+36 executed cases, including independent read/write retries, read quiescence,
+write-side shutdown, context retention and all five source allocations reached
+by one staging lifecycle. The [connected HTTPS tests](extended-https-batch-testing.md)
+also pass six groups and 108 cases using this wrapper, the shared HTTP Protocol
+and the generic scheduler.
 
-This revision adds independent retry requirements, permitted read/write
-interleaving, read quiescence, a write-side shutdown step and explicit context
-retention. Its new execution gates are pending. The earlier receipts below do
-not establish those new contracts.
+The migrated [HTTPS fetch](extended-https-fetch.md) application also passes its
+four groups, 63 cases; the [mutual HTTPS applications](extended-https-mutual-tls.md)
+pass three groups and 101 cases. Focused retry/ownership regressions pass for
+the older raw client, [server](extended-openssl-tls-server.md) and
+[mutual TLS](extended-openssl-mutual-tls.md) consumers. These results do not rerun
+their complete historical matrices or accept the separate stream-only
+consumers. These finite Linux tests do not complete the security family or
+establish another target.
 
 ## Trust and identity
 
@@ -338,9 +340,88 @@ OpenSSL's `long` arguments/results map to `i64`, `uint64_t` options to `u64`,
 lengths to `usize`, and opaque handles to `ptr` on the selected profile. Control
 commands and option masks match the installed OpenSSL 3 headers.
 
-The following are historical receipts for the earlier serialized retry
-profile. The new interleaving, context-retention and write-side shutdown
-contracts remain pending executable acceptance.
+### Current duplex and ownership receipts
+
+On 2026-10-26, the
+[`extended_openssl_tls_duplex_execution`](../tests/extended_openssl_tls_duplex_execution.rs)
+driver passed all nine current groups through three separate invocations.
+The compiler generated linked native x86_64 ELFs; the consumers then executed
+against host OpenSSL 3. This is not a GPU execution target. The driver checks
+the linked ELF and both OpenSSL library dependencies before execution.
+
+| Receipt under `target/stdlib-work/` | Executed scope | Invocation time |
+| --- | --- | --- |
+| `openssl-tls-duplex-initial-groups-first.log` | 3 groups, 10 cases: causal read/write interleaving and retained context lifetime (4), TLS 1.3 local notification followed by peer application data (2), labelled rare-WANT controls (4) | 6.43 s |
+| `openssl-tls-duplex-five-edge-groups-first.log` | 5 groups, 20 cases: real write backpressure (2), buffered plaintext without socket readiness (2), two SSL owners with reverse retries (2), native fatal results and real truncated records (8), full-shutdown retries (6) | 6.20 s |
+| `openssl-tls-duplex-source-allocations-first.log` | 1 group, 6 processes: one successful lifecycle and each of its five reached source-allocation failures | 7.36 s |
+
+The peer withholds reads until the backpressure consumer observes a real native
+write `WANT_WRITE`. The buffered-input consumer drains one native record after
+a zero-time poll reports no socket event. Per-SSL observers check stable write
+addresses, lengths, bytes and count cells even after caller backing changes.
+Rare WANT and fatal injections are labelled negative controls; successful
+transfers and encrypted records still come from OpenSSL.
+
+The allocation campaign binds every injected ENOMEM to the baseline's exact
+global mmap ordinal, emitted allocator instruction and requested size. All
+source mappings created inside the campaign must be released before its
+completion marker, and the complete trace must balance earlier source owners.
+Native Context and Session owner counters must also reach zero before exit.
+Nine CPU mutation controls check the source ledger and are not additional
+product cases. Native OpenSSL heap allocations and process-global caches are
+outside that source ledger. See the
+[fixture evidence boundaries](../tests/fixtures/extended/openssl_tls_duplex/README.md).
+
+The [connected HTTPS gate](extended-https-batch-testing.md#acceptance) provides
+separate evidence for peer policy, transport scheduling and typed error
+propagation through this wrapper. Its 108 cases do not replace the dedicated
+legacy profile regressions. The migrated command-line programs have their own
+accepted receipts below.
+
+The three existing [HTTPS fetch application groups](extended-https-fetch.md#current-migrated-application-acceptance)
+passed 58 cases in 11.12 seconds, recorded in
+`target/stdlib-work/https-fetch-shared-exchange-app-first.log`. The separate
+[mutual HTTPS application groups](extended-https-mutual-tls.md#focused-execution-gates)
+passed 101 cases in 18.14 seconds, recorded in
+`target/stdlib-work/https-mutual-tls-shared-fetch-app-first.log`. Both use the
+migrated fetch's shared Exchange facade. These invocations exclude the
+buffered-stream and prepared-context stream consumers. A new five-case empty
+body/1 MiB application group also passed in 8.92 seconds, recorded in
+`target/stdlib-work/https-fetch-empty-zero-limits-mebibyte-first.log`. Together
+the two ordinary fetch receipts accept four groups and 63 cases. The
+[fetch guide](extended-https-fetch.md#current-migrated-application-acceptance)
+records the exact empty-body, zero-budget and binary-output checks.
+
+The [shared HTTP Protocol and plain exchange gates](extended-http-client.md#current-extraction-acceptance),
+[generic plain batch gates](extended-http-batch.md#current-generic-revision)
+and [migrated CSV-to-ZIP downloader](extended-fetch-many.md#focused-acceptance)
+also pass their current selected gates. Their guides retain the distinct
+execution and ownership scopes.
+
+### Focused legacy retry regressions
+
+After their guard expectations were migrated to the directional retry
+contract, all three selected legacy retry/ownership gates passed:
+
+| Receipt under `target/stdlib-work/` | Executed scope | Invocation time |
+| --- | --- | --- |
+| `openssl-tls-client-duplex-guards-regression.log` | 3 client cases: stable pending writes, bounded polling, dirty error queue and native ownership | 6.48 s |
+| `openssl-tls-server-duplex-guards-regression.log` | 1 server case: staged writes, changed read destinations and bounded polling | 6.26 s |
+| `openssl-mutual-tls-duplex-guards-regression.log` | 6 mutual-TLS cases across both roles, with stable retries and real backpressure | 7.01 s |
+
+Each is one selected group. The remaining historical groups were not rerun
+in these invocations. The migrated checks reject a read only after a pending
+write wants write readiness. An empty write during a pending read must return
+local `Complete(0)` while preserving its reservation and remembered WANT,
+without another native TLS call. Replacement writes, handshake and shutdown
+still reject pending operations where required.
+
+### Historical profile and application receipts
+
+The following receipts cover the earlier serialized retry profile. Its old
+consumers have been migrated to the directional retry contract and their
+focused retry gates passed above. The complete historical matrices and
+separate stream consumers have not been rerun for this revision.
 
 [`extended_openssl_tls_execution`](../tests/extended_openssl_tls_execution.rs)
 compiles the actual Lanius wrapper on the GPU and executes its native-linked
@@ -372,11 +453,13 @@ other platforms or complete security-family coverage. The separate
 [server TLS guide](extended-openssl-tls-server.md) records six passing groups
 and the mandatory client-policy regression after introducing session roles.
 The
-[`ext::tls_stream`/HTTPS guide](extended-https-fetch.md) records a separate
-accepted adapter/application gate: 62 cases across four groups pass in 14.44 s,
+[`ext::tls_stream`/HTTPS guide](extended-https-fetch.md) records a historical
+adapter/application gate: 62 cases across four groups passed in 14.44 s,
 covering stream progress, verification/HTTP failures, limits and binary framing
 (`target/stdlib-work/https-fetch-execution-current.log`). That profile uses
 numeric endpoints, explicit trust/identity, deadlines and manual cleanup.
+It does not accept the current `https_fetch` migration to the resumable driver;
+the separate current application receipts above do.
 Test peers, certificates and native observers are test infrastructure;
 production TLS and sensitive operations remain in OpenSSL.
 

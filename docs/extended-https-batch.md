@@ -18,11 +18,32 @@ executable scope. User GPU execution and other platforms are unverified.
 
 The production-shaped public generic trait/Report control compiles and exits
 zero with two error types, including nested owned errors. It does not execute
-the scheduler. All nine raw OpenSSL duplex groups pass 36 cases through separate
-receipts, including the source-allocation gate; legacy regressions remain pending. Those lower-layer
-controls are separate from the connected HTTPS results below. These library
-cases do not accept the migrated HTTPS fetch program, whose gates remain
-pending, or revised plain/custom-driver regressions.
+the scheduler. All nine raw OpenSSL duplex groups pass 36 cases through
+separate receipts, including the source-allocation gate. Selected native
+client/server/mutual-TLS retry guards separately pass ten cases; these are
+not complete reruns of all earlier TLS suites. Those lower-layer
+controls are separate from the connected HTTPS results below. The migrated
+[HTTPS fetch program](extended-https-fetch.md) has two receipts accepting all
+four application groups and 63 cases, including empty-body zero allowances and
+an exact 1 MiB binary response. Affected
+[mutual-TLS application modes](extended-https-mutual-tls.md) pass three groups
+and 101 cases, excluding prepared-context streams. Revised plain client and
+batch regressions also pass, with their own scopes and receipts.
+The current [fetch-many CSV-to-ZIP program](extended-fetch-many.md) passes all
+five integration groups in 24.18 seconds, including 59 reached allocation
+failures and a four-socket cap during its 64-job control. Historical full
+native TLS matrices and excluded buffered/prepared-context groups retain their
+older receipt scope; these selected current tests do not rerun them.
+
+The separate generic-driver wait-retirement regression compiled but first
+failed before its report with premature protocol EOF. Review classified its
+fixture's work allowance as insufficient for default HTTP validation caps.
+The corrected fixture passes unchanged behavioral assertions in its
+10.07-second retry (`http-batch-wait-retirement-coherent-limits-retry.log`).
+The complete current plain batch has eight accepted groups and 103 cases
+across that receipt and a separate 13.00-second seven-group regression. The
+[fixture record](../tests/fixtures/extended/http_batch_wait_retirement/README.md)
+preserves the failed attempt, diagnostic evidence and budget correction.
 
 ## Public API
 
@@ -198,3 +219,10 @@ ran. Rewriting that fixture as two explicit typed matches preserves its errno
 and cleanup assertions. The passing retry required no production/compiler
 patch; the [testing guide](extended-https-batch-testing.md#acceptance) retains
 the failing form and distinguishes it from runtime evidence.
+
+The confirmed 14-line `nested_io.lani` reduction imports no HTTP/TLS code and
+still rejects the nested binding with `LNC0006` at 6:59. The explicit two-match
+control compiles to a validated native x86_64 ELF and exits zero after all four
+assertions. The [admission record](../tests/fixtures/extended/https_batch/compiler_admission/README.md)
+keeps both commands and diagnostics. This is a compiler-expression limitation
+with an executable source spelling, not a runtime TLS failure or a compiler fix.

@@ -101,7 +101,6 @@ accepted these current-source groups on 2026-10-26:
 | --- | --- | --- |
 | `openssl-tls-duplex-initial-groups-first.log` | exit 0; 3 groups; 6.43 s | causal 4, notification 2, injected rare WANT controls 4 |
 | `openssl-tls-duplex-five-edge-groups-first.log` | exit 0; 5 groups; 6.20 s | full shutdown 6, fatal/truncation 8, buffered plaintext 2, real backpressure 2, two owners 2 |
-
 | `openssl-tls-duplex-source-allocations-first.log` | exit 0; 1 group; 7.36 s | baseline plus five reached source-allocation failures; nine ledger controls |
 
 These are 36 executed cases across all nine current groups. Legacy profile
@@ -112,7 +111,7 @@ compiler generates each native linked x86_64 consumer, which then executes
 against the host OpenSSL libraries.
 
 The driver is `tests/extended_openssl_tls_duplex_execution.rs`. The six additive
-test filters are frozen while their acceptance receipts are collected:
+test filters below are accepted; their fixtures remain frozen:
 
 ```text
 real_write_backpressure_exclusively_retries_owned_bytes_and_native_arguments

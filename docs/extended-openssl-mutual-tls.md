@@ -6,16 +6,21 @@ certificate-chain operation. The Lanius layer supplies policy, bounded byte
 staging, nonblocking progress and explicit cleanup; it implements no
 cryptographic primitive or TLS record parser.
 
-All six focused mutual TLS groups are accepted: 107 cases compiled on the GPU
-and executed as native C-linked Linux x86_64/glibc binaries with system OpenSSL
-3.0.13. Acceptance combines the separate receipts below; it is not a claim of
-one wholly passing suite run. Existing affected behavior has also passed
-on this source: nine mandatory client-verification cases in 7.03 s
+The earlier credential profile passed all six focused mutual TLS groups:
+107 cases compiled on the GPU and executed as native C-linked Linux
+x86_64/glibc binaries with system OpenSSL 3.0.13. Those historical receipts
+combine separate invocations, not one wholly passing suite run. Its affected
+behavior also passed nine mandatory client-verification cases in 7.03 s
 (`target/stdlib-work/mutual-tls-client-verification-regression.log`) and all six
 ordinary server groups, 53 cases, in 6.95 s
 (`target/stdlib-work/mutual-tls-server-regression.log`). Those regression
-receipts establish their stated regression scope in addition to the new
-mutual TLS acceptance.
+receipts establish their stated historical regression scope.
+
+After the shared duplex changes, the selected mutual-TLS retry group passed
+all six cases in 7.01 seconds on 2026-10-26, covering both roles and real
+backpressure. This current-source gate did not rerun the five other historical
+mutual-TLS groups. The [shared TLS guide](extended-openssl-tls.md#current-duplex-and-ownership-receipts)
+records the separate current duplex, shutdown and ownership gates.
 
 ## Explicit policies
 
@@ -168,8 +173,13 @@ Each step performs at most one native TLS operation and returns completion,
 `WantRead`, `WantWrite` or an error. Both readiness directions are possible
 from reads and writes. A pending write owns a stable byte copy and must use
 `retry_write`; a pending read retains its original native address and request
-size while allowing a different sufficiently large destination. Other
-operations are rejected while either is pending.
+size while allowing a different sufficiently large destination. A new write
+cannot replace a pending write. Write-WANT_WRITE excludes other
+TLS I/O; write-WANT_READ permits reads, and either read WANT permits writes.
+Handshake and native shutdown require no pending application operation.
+`read_need` and `write_need` retain independent requirements. The shared
+[Session contract](extended-openssl-tls.md#explicit-progress-operations)
+defines read quiescence and reads after confirmed local notification.
 
 The caller supplies polling, absolute deadlines, total call/byte quotas and
 an explicit SIGPIPE policy. After abandonment, destroy the TLS owner before
@@ -205,6 +215,8 @@ the native observer and syscall injector are test machinery.
 
 ### Accepted runtime receipts
 
+These receipts cover the credential profile before the shared duplex changes.
+
 | Receipt | Accepted scope |
 | --- | --- |
 | `target/stdlib-work/mutual-tls-matrix-first.log` | Matrix: 19 cases in 6.21 s, covering both roles, TLS 1.2/1.3, DNS/IP server references, chains, layouts, default/custom trust and native policy receipts |
@@ -218,6 +230,18 @@ plus the two successful baselines. It checks exact `MAP_32BIT` releases and
 native/context/session/fd ownership. The mixed receipt remains a recorded
 partially failing run; the later focused receipt resolves its verification
 assertion without changing production behavior.
+
+### Current focused retry regression
+
+`mutual_tls_stable_retries_cover_both_roles_and_real_backpressure` passed six
+cases in 7.01 seconds on 2026-10-26, recorded in
+`target/stdlib-work/openssl-mutual-tls-duplex-guards-regression.log`. The current
+consumer checks copied retry bytes and pointers, changed read destinations,
+real backpressure and the directional guards for both roles. An empty write
+must complete locally without clearing a pending read's size or WANT and
+without another native TLS call. This selected group does not establish a
+fresh pass of every historical matrix, credential, verification, allocation
+or native-fault case.
 
 ### Wrong-trust native control
 

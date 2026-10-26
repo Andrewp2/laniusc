@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import select
+import shutil
 import struct
 import subprocess
 import sys
@@ -23,6 +24,59 @@ sys.modules[SPEC.name] = raw
 SPEC.loader.exec_module(raw)
 
 MARKERS = b"held-read-pending\nwait-retired\nqueued-admitted\nowners-released\n"
+
+
+def preserve_failure(directory, process, received, error, peers, stdout=b"", stderr=b"", drained=False):
+    """Retain the actual failed run before TemporaryDirectory can erase it.
+
+    Let an exited tracee's strace parent reap it before resorting to termination.
+    A live stalled process is then killed with --kill-on-exit still in effect;
+    the status before that intervention is recorded separately.
+    """
+    status_before = process.poll() if process is not None else None
+    intervention = "none"
+    if process is not None:
+        if status_before is None:
+            try:
+                process.wait(timeout=.2)
+            except subprocess.TimeoutExpired:
+                intervention = "killed live strace after diagnostic wait"
+                process.kill()
+        if not drained:
+            try:
+                remaining_stdout, remaining_stderr = process.communicate(timeout=3)
+                stdout += remaining_stdout
+                stderr += remaining_stderr
+            except (ValueError, subprocess.TimeoutExpired) as drain_error:
+                intervention += "; drain failed: " + repr(drain_error)
+    retained = Path(tempfile.mkdtemp(prefix="http-batch-wait-retirement-failure-"))
+    for name in ("syscalls.log", "input.bin"):
+        path = Path(directory) / name
+        if path.exists():
+            shutil.copy2(path, retained / name)
+    (retained / "native.stdout").write_bytes(bytes(received) + stdout)
+    (retained / "native.stderr").write_bytes(stderr)
+    with peers.condition:
+        events = list(peers.events)
+        errors = [repr(item) for item in peers.errors]
+        seen, closed = set(peers.seen), set(peers.closed)
+    diagnostic = {
+        "error": repr(error),
+        "strace_returncode_before_drain": status_before,
+        "strace_returncode_after_drain": process.returncode if process is not None else None,
+        "intervention": intervention,
+        "protocol_bytes_read": len(received),
+        "stdout": bytes(received) + stdout,
+        "stderr": stderr,
+        "peer_events": events,
+        "peer_errors": errors,
+        "peer_full_requests": seen,
+        "peer_closed": closed,
+    }
+    (retained / "diagnostic.txt").write_text(repr(diagnostic) + "\n", encoding="utf-8")
+    print("http-batch-wait-retirement failure evidence: " + str(retained), file=sys.stderr)
+    print(repr(diagnostic), file=sys.stderr)
+    return retained
 
 
 class RetirementPeers(raw.Peers):
@@ -81,6 +135,10 @@ def run(executable):
     jobs = [raw.Job(raw.fixed(b"held\x00\xff", 201)), raw.Job(b""), raw.Job(raw.fixed(b"queued\x00\xff", 202))]
     peers = RetirementPeers(jobs, 2).start()
     process = None
+    received = bytearray()
+    stdout, stderr = b"", b""
+    drained = False
+    retained = None
     with tempfile.TemporaryDirectory(prefix="http-batch-wait-retirement-") as directory:
         trace = Path(directory) / "syscalls.log"
         try:
@@ -89,7 +147,9 @@ def run(executable):
                 "trace=mmap,munmap,socket,close,connect,getsockopt,getpeername,sendto,recvfrom,poll,shutdown,clock_gettime,read,write",
                 executable,
             ], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
-            process.stdin.write(struct.pack("<3i", *(job.port for job in jobs)))
+            packet = struct.pack("<3i", *(job.port for job in jobs))
+            (Path(directory) / "input.bin").write_bytes(packet)
+            process.stdin.write(packet)
             process.stdin.flush()
             until = time.monotonic() + 7
 
@@ -101,6 +161,7 @@ def run(executable):
                     part = os.read(process.stdout.fileno(), count - len(data))
                     assert part, ("premature protocol EOF", process.poll(), bytes(data))
                     data.extend(part)
+                    received.extend(part)
                 return bytes(data)
 
             report = raw.parse(read)
@@ -121,6 +182,7 @@ def run(executable):
             process.stdin.close()
             process.stdin = None
             stdout, stderr = process.communicate(timeout=3)
+            drained = True
             assert process.returncode == 0 and not stdout and stderr == MARKERS, (process.returncode, stdout, stderr)
             assert report["cause"] == 0 and [item["kind"] for item in report["outcomes"]] == [1, 2, 1], report
             counts = report["stats"]
@@ -147,11 +209,24 @@ def run(executable):
             ledger = verify_trace(trace, report)
             assert before["allocations"] == ledger["allocations"] and before["max_sockets"] == 2, (before, ledger)
             print("http-batch-wait-retirement cases=1 synthetic-driver-error=9001 before-exit-cleanup=1")
+        except BaseException as error:
+            retained = preserve_failure(directory, process, received, error, peers, stdout, stderr, drained)
+            raise AssertionError(("wait-retirement failed; evidence retained", str(retained), repr(error))) from error
         finally:
             if process is not None and process.poll() is None:
                 process.kill()
                 process.communicate()
-            peers.finish()
+            # Do not let a peer cleanup assertion replace an earlier native or
+            # protocol failure. Its snapshot is already in retained evidence.
+            active_failure = sys.exc_info()[0] is not None
+            try:
+                peers.finish()
+            except BaseException as peer_error:
+                if not active_failure:
+                    raise
+                if retained is not None:
+                    (retained / "peer-cleanup-error.txt").write_text(repr(peer_error) + "\n", encoding="utf-8")
+                print("additional peer cleanup failure: " + repr(peer_error), file=sys.stderr)
 
 
 if __name__ == "__main__":

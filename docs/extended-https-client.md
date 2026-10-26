@@ -8,9 +8,13 @@ progress; it adds no HTTP parser or cryptographic implementation. Plain
 `ext::http_client` imports no OpenSSL code.
 
 The native profile is Linux x86_64/glibc with OpenSSL 3 `libssl` and
-`libcrypto`. This source revision is **pending compilation and native execution
-acceptance**. Earlier HTTP, TLS and HTTPS application receipts do not establish
-this new transport driver or its generic batch integration.
+`libcrypto`. All six focused connected HTTPS groups pass 108 cases through
+three separate native invocations. They exercise this Exchange directly and
+through the [HTTPS batch adapter](extended-https-batch.md), using the shared
+HTTP Protocol and generic scheduler. The synchronous facade also passes the
+migrated `https_fetch` program's four groups, 63 cases, plus the
+separate mutual HTTPS application gate of 101 cases. These application
+invocations exclude their stream-only consumers.
 
 ## Public entry points
 
@@ -230,9 +234,58 @@ no resource release.
 
 ## Acceptance scope
 
-Static source/API and independent ownership review found no remaining
-concrete blocker. Compilation, verified
-single/batch peers, duplex WANT schedules, early-final version behavior,
-typed native faults, resource ledgers and reached allocation-failure gates
-remain pending. No earlier module receipt is claimed as execution evidence
-for this revision.
+On 2026-10-26, all six groups in
+[`extended_https_batch_execution.rs`](../tests/extended_https_batch_execution.rs)
+passed on the native profile above. These are separate invocations, not one
+whole-suite run:
+
+| Receipt under `target/stdlib-work/` | Executed scope | Invocation time |
+| --- | --- | --- |
+| `https-batch-initial-two-groups-first.log` | 2 groups, 9 cases: verified overlap/ownership (5), canonical framing and buffered input (4) | 11.01 s |
+| `https-batch-policy-transport-limits-first.log` | 3 groups, 33 cases: typed peer policy (11), duplex transport and early-final closure (6), limits/cancellation (16) | 14.04 s |
+| `https-batch-resource-direct-typed-retry.log` | 1 group, 66 cases: native faults, recovery, six direct resumable/abort invocations and every one of 42 reached source-allocation failures | 37.52 s |
+
+The causal peers require concurrent connection/handshake and complete-request
+barriers before releasing responses. Independent HTTP readers check emitted
+requests and returned messages. TLS 1.3 early-final response bodies wait for
+authenticated client notification; TLS 1.2 peers exercise the documented
+deferred policy. Direct-consumer traces forbid hidden polls inside step/wait
+and check the one-active-leaf limit. The kernel descriptor ledger, per-SSL
+native owner counters and exact source-allocation ledger check cleanup before
+process exit. Sixteen of the 42 allocation failures occurred after socket
+creation. These runs use the scheduler's wait-retirement correction.
+
+The first resource attempt stopped at compilation of a nested test-only error
+pattern, before any Python campaign case ran. The accepted retry selects the
+typed I/O payload before matching its Host code and preserves the exact error
+assertions. No production TLS or compiler patch was needed for that correction.
+The [testing guide](extended-https-batch-testing.md#acceptance) records the
+reproduction and complete evidence boundaries.
+
+The lower-level [raw TLS duplex gate](extended-openssl-tls.md#current-duplex-and-ownership-receipts)
+passes all nine groups and 36 cases separately. The migrated
+[HTTPS fetch application](extended-https-fetch.md#current-migrated-application-acceptance)
+passes its 18 matrix, 14 failure and 26 limits cases in a separate
+11.12-second invocation, recorded in
+`target/stdlib-work/https-fetch-shared-exchange-app-first.log`. The
+[mutual HTTPS application gate](extended-https-mutual-tls.md#focused-execution-gates)
+passes 35 matrix, 34 failure and 32 limits cases in 18.14 seconds, recorded in
+`target/stdlib-work/https-mutual-tls-shared-fetch-app-first.log`. These use
+`exchange_until` through the actual CLI and exclude the separate
+buffered-stream/prepared-context consumers. The additive empty-body,
+zero-budget and 1 MiB group passed five cases in 8.92 seconds, recorded in
+`target/stdlib-work/https-fetch-empty-zero-limits-mebibyte-first.log`. The two
+ordinary application receipts therefore accept four groups and 63 cases;
+the [fetch guide](extended-https-fetch.md#current-migrated-application-acceptance)
+records their precise scope.
+
+The selected legacy raw client/server/mutual-TLS retry gates also pass; their
+scope is recorded in the [TLS guide](extended-openssl-tls.md#focused-legacy-retry-regressions).
+The [shared HTTP Protocol and plain exchange gates](extended-http-client.md#current-extraction-acceptance),
+[generic plain batch gates](extended-http-batch.md#current-generic-revision)
+and [migrated CSV-to-ZIP application](extended-fetch-many.md#focused-acceptance)
+also have current acceptance with their stated scopes. Full historical TLS
+matrices and deliberately excluded stream-only consumers retain their earlier
+receipts; this batch did not rerun them. These finite native schedules do not
+cover every TLS partition, network interleaving or native OpenSSL allocation
+failure, and they establish no other execution target.

@@ -2,7 +2,8 @@
 
 The full library goal remains open. The current networking revision extracts
 the shared HTTP Protocol owner, generalizes batch scheduling and adds
-resumable verified HTTPS. Its complete native acceptance remains pending. Earlier
+resumable verified HTTPS. All selected current transport and integration gates
+pass on native Linux x86_64/glibc. Earlier
 HTTP/TLS receipts below describe the preceding accepted implementations;
 they do not establish acceptance of these revised boundaries.
 The production-shaped generic trait/Report control compiles and executes
@@ -10,10 +11,26 @@ with two error types, including nested owned errors. All nine new OpenSSL duplex
 groups pass 36 cases, including five reached source-allocation failures. All six connected
 HTTPS groups pass 108 cases across separate invocations, including peer
 policy, transport failures, quotas, direct stepping and source-owner cleanup.
-The migrated application and revised plain/custom-driver regressions remain
-pending. The first wait-retirement regression attempt failed before its report
-with premature protocol EOF; its cause remains unclassified. These finite gates
-do not establish the whole revised transport stack.
+The transport-free Protocol passes its direct state/ownership group with 247
+balanced mapping events and no network calls. The revised plain client passes
+six synchronous groups (188 cases) and five direct Exchange groups (83 cases).
+Plain batches pass eight groups (103 cases), including queued refill after
+`before_wait` retires a driver. The migrated HTTPS fetch
+application passes four groups and 63 cases; its mutual-TLS application
+regressions pass three groups and 101 cases, excluding the prepared-context
+stream group. The current fetch-many application passes all five groups,
+including all 59 reached allocation failures and a 64-job control with at most
+four sockets. Focused native client/server/mutual-TLS retry guards pass ten
+cases across three selected groups. Historical full native TLS matrices and
+excluded buffered/prepared-context groups retain their older receipt scope.
+The first wait-retirement regression failed before its report because its
+fixture allowed less work than canonical validation reserves. The fixture now
+uses coherent HTTP caps; its unchanged behavioral assertions pass the retry.
+One nested enum-pattern compiler limitation is isolated by a confirmed
+14-line rejection and an executable explicit-match control; production
+behavior and compiler source are unchanged. These finite profile gates do not
+enumerate every input or network schedule. Worker threads, concurrent server
+scheduling and the remaining library roadmap stay open.
 
 The [execution audit and portable foundation](stdlib-foundation.md) lists
 the stdlib APIs verified on x86_64, their edge behavior, and the remaining
@@ -130,8 +147,19 @@ uses the canonical HTTP Protocol and OpenSSL's verified transport, including
 stable retries and version-specific early-final closure. All six connected
 HTTPS groups pass 108 cases across three receipts. These are current native
 gates; the preceding HTTP/TLS receipts retain their separate historical scope.
-The migrated HTTPS application and revised plain/custom-driver regressions
-remain pending.
+The [direct Protocol group](extended-http-protocol-testing.md) passes in 7.94
+seconds with 247 explicitly balanced mapping events and no network calls;
+these are successful allocations, not 247 allocation-denial tests.
+The revised plain client passes all six synchronous groups (188 cases) and
+all five direct groups (83 cases), while the generic plain batch passes eight
+groups (103 cases) across two receipts. The migrated
+[HTTPS fetch](extended-https-fetch.md) passes four application groups (63 cases),
+including empty-body zero allowances and an exact 1 MiB binary output. The affected
+[mutual-TLS modes](extended-https-mutual-tls.md) pass three groups (101 cases).
+The current [fetch-many integration](extended-fetch-many.md) also passes all
+five groups in 24.18 seconds, including 59 reached allocation failures and a
+64-job control with at most four active sockets. Historical buffered/prepared
+stream receipts remain distinct from these selected current program gates.
 Executable worker threads and concurrent server scheduling
 also remain part of the full goal. The
 [concurrency admission audit](library-concurrency-dependencies.md) records
@@ -176,7 +204,8 @@ across four groups using the shared TLS stream and canonical HTTP codec.
 [Prepared client contexts and mutual-TLS HTTPS modes](extended-https-mutual-tls.md)
 add 109 process cases across four groups on the preceding TLS wrapper. The
 current independent read/write retry, context-retention and shutdown revision
-needs new [OpenSSL execution gates](extended-openssl-tls.md). The client can
+has separate passing [OpenSSL duplex and selected regression receipts](extended-openssl-tls.md).
+The client can
 present an explicit certificate/key pair while still verifying the server; the service can require
 client certificates from an explicit CA file before processing HTTP.
 The [remaining native prerequisites](library-native-integration-prerequisites.md)

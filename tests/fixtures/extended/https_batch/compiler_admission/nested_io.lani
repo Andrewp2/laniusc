@@ -1,4 +1,4 @@
-// Candidate reduction of original_exchange.lani:59; admission is pending.
+// Confirmed reduction: nested Host(number) binding is rejected with LNC0006.
 module app::main;
 import core::io;
 enum Cause { Io(core::io::Error), Other }
