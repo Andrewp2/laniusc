@@ -1,0 +1,32 @@
+// enumerate_from<I, T> where I: Iterator<T>: the one Iterator implementation
+// of Counter binds T.
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+
+struct Counter { n: i32, end: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+}
+pub impl core::iter::Iterator<i32> for Counter {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.n >= self.end) { return core::option::None(); }
+        let value: i32 = self.n;
+        self.n = self.n + 1;
+        return core::option::Some(value);
+    }
+}
+
+fn main() -> i32 {
+    let counter = Counter { n: 1, end: 4 };
+    let indexed = core::iter::enumerate_from(counter.borrow(), 10);
+    let total: i32 = 0;
+    while (true) {
+        let next = indexed.next();
+        if (next.is_none()) { break; }
+        let item = next.unwrap();
+        total = total + item.second * (item.first as i32);
+    }
+    return total;
+}

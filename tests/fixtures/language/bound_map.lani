@@ -1,0 +1,39 @@
+// map<I, M, T, U> where I: Iterator<T>, M: Mapper<T, U>: Counter's
+// Iterator<i32> binds T, the local Mapper<i32, i64> implementation binds U.
+module app::main;
+import core::iter;
+import core::option;
+
+struct Counter { n: i32, end: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+}
+pub impl core::iter::Iterator<i32> for Counter {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.n >= self.end) { return core::option::None(); }
+        let value: i32 = self.n;
+        self.n = self.n + 1;
+        return core::option::Some(value);
+    }
+}
+
+struct Triple {}
+impl Triple {
+    fn borrow(&self) -> &Triple { return self; }
+}
+pub impl core::iter::Mapper<i32, i64> for Triple {
+    pub fn apply(&self, value: i32) -> i64 { return (value as i64) * 3; }
+}
+
+fn main() -> i32 {
+    let counter = Counter { n: 1, end: 4 };
+    let triple = Triple {};
+    let mapped = core::iter::map(counter.borrow(), triple.borrow());
+    let total: i64 = 0;
+    while (true) {
+        let next = mapped.next();
+        if (next.is_none()) { break; }
+        total = total + next.unwrap();
+    }
+    return total as i32;
+}

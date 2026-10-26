@@ -1,0 +1,24 @@
+// The receiving type binds T = i64 first; Counter's Iterator<i32> disagrees
+// and publishes nothing.
+module app::main;
+import core::iter;
+import core::option;
+
+struct Counter { n: i32, end: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+}
+pub impl core::iter::Iterator<i32> for Counter {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.n >= self.end) { return core::option::None(); }
+        let value: i32 = self.n;
+        self.n = self.n + 1;
+        return core::option::Some(value);
+    }
+}
+
+fn main() -> i32 {
+    let counter = Counter { n: 1, end: 4 };
+    let indexed: core::iter::Enumerate<Counter,i64> = core::iter::enumerate_from(counter.borrow(), 10);
+    return 0;
+}

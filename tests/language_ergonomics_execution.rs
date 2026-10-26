@@ -90,3 +90,43 @@ fn try_on_an_option_needs_an_option_result() {
         &["LNC0006", "`?` returns this error from a function whose result type differs"],
     );
 }
+
+#[test]
+fn a_bound_infers_the_item_type_of_enumerate_from() {
+    assert_exit("bound_enumerate.lani", 68);
+}
+
+#[test]
+fn bounds_infer_map_types_from_a_local_mapper() {
+    assert_exit("bound_map.lani", 18);
+}
+
+#[test]
+fn bounds_infer_the_item_and_error_types_of_a_transfer() {
+    assert_exit("bound_transfer.lani", 15);
+}
+
+#[test]
+fn bound_inference_follows_a_chain_of_inferred_results() {
+    assert_exit("bound_chain.lani", 20);
+}
+
+#[test]
+fn a_bound_without_an_implementation_infers_nothing() {
+    assert_rejected("bound_no_implementation.lani", &["LNC0006"]);
+}
+
+#[test]
+fn a_bound_with_two_matching_implementations_infers_nothing() {
+    assert_rejected("bound_two_implementations.lani", &["LNC0006"]);
+}
+
+#[test]
+fn an_explicit_argument_that_contradicts_the_implementation_is_rejected() {
+    assert_rejected("bound_conflicting_claim.lani", &["LNC0008"]);
+}
+
+#[test]
+fn a_receiving_type_that_contradicts_the_implementation_is_rejected() {
+    assert_rejected("bound_conflicting_result.lani", &["LNC0008"]);
+}

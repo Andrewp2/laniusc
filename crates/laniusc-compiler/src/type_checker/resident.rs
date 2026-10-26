@@ -1816,6 +1816,14 @@ impl GpuTypeChecker {
                         ContextConstantProducer::ResultRequests,
                     )?;
                 }
+                let bound_inference = bind_groups
+                    .calls
+                    .bound_inference
+                    .as_ref()
+                    .filter(|_| dependency_types_present);
+                if let Some(bound) = bound_inference {
+                    bound.clear.record(encoder)?;
+                }
                 if let Some(visibility) = module_path
                     .dependency_visibility
                     .as_ref()
@@ -1832,7 +1840,12 @@ impl GpuTypeChecker {
                             visibility.validate_call_results_group.record_invocation(
                                 encoder,
                                 &visibility.generic_call_results_resolve,
-                            )
+                            )?;
+                            // The resident page's implementations and bounds.
+                            if let Some(bound) = bound_inference {
+                                bound.collect_dependency.record(encoder)?;
+                            }
+                            Ok(())
                         };
                     if let Some(pages) = dependency_pages.filter(|pages| pages.len() > 1) {
                         record_each_dependency_page(
@@ -1845,6 +1858,10 @@ impl GpuTypeChecker {
                     } else {
                         contextual_results(encoder)?;
                     }
+                }
+                if let Some(bound) = bound_inference {
+                    bound.collect_local.record(encoder)?;
+                    bound.infer.record(encoder)?;
                 }
                 if aggregates_required {
                     bind_groups

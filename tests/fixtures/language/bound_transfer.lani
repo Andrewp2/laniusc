@@ -1,0 +1,42 @@
+// try_transfer_up_to<I, S, T, E> where I: Iterator<T>, S: TrySink<T, E>:
+// the source binds T, the sink's one TrySink implementation binds E.
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+
+struct Counter { n: i32, end: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+}
+pub impl core::iter::Iterator<i32> for Counter {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.n >= self.end) { return core::option::None(); }
+        let value: i32 = self.n;
+        self.n = self.n + 1;
+        return core::option::Some(value);
+    }
+}
+
+enum Full { Limit }
+struct Total { sum: i32, limit: i32 }
+impl Total {
+    fn borrow(&self) -> &Total { return self; }
+}
+pub impl core::iter::TrySink<i32, Full> for Total {
+    pub fn try_accept(&self, item: i32) -> core::option::Option<Full> {
+        if (self.sum + item > self.limit) { return core::option::Some(Full::Limit()); }
+        self.sum = self.sum + item;
+        return core::option::None();
+    }
+}
+
+fn main() -> i32 {
+    let counter = Counter { n: 1, end: 6 };
+    let total = Total { sum: 0, limit: 100 };
+    let moved = core::iter::try_transfer_up_to(counter.borrow(), total.borrow(), 10);
+    if (moved.is_err()) { return 1; }
+    let report = moved.unwrap();
+    if (!report.exhausted || report.accepted != 5) { return 2; }
+    return total.sum;
+}

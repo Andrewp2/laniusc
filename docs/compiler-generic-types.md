@@ -5,6 +5,60 @@ type references and native layouts. `Option<T>` and `Result<T, E>` use this
 same mechanism. Execution below is x86_64 Linux ELF emitted by the GPU
 compiler; user-program GPU execution is not established.
 
+## Bound-directed generic call inference (2026-10-26)
+
+A call can leave a type parameter that no argument mentions, such as `T` in
+`core::iter::enumerate_from<I, T>(source: &I, ...) where I: Iterator<T>`.
+The type checker now infers it from the callee's bounds:
+
+- Take a bound `P: Tr<A1..An>` of the callee where `P` is already bound to a
+  closed type (by an explicit argument, an argument claim or receiving
+  context).
+- Count the implementations of `Tr` whose subject matches that type. These
+  come from every dependency page and from this unit.
+- If exactly one matches, substitute its own parameters into its trait
+  arguments; they must come out closed. Then match `A1..An` against them, and
+  publish the bindings as the call's context.
+- Zero or several matches bind nothing, so the call keeps its existing
+  diagnostic (LNC0006 for an unbound parameter).
+- No conversion is ever applied. Every slot the call already binds must agree
+  with the inferred type; any disagreement drops the whole publication, and a
+  contradicting binding is still rejected (LNC0008).
+
+The rule runs in every call-inference round. A binding inferred for one call
+can type a `let` that feeds the next call, so chains settle over rounds. For
+example, `enumerate_from`, `map` and `try_transfer_up_to` in
+`sample_programs/library/index_words.lani` all infer without turbofish.
+
+The kernels are in `shaders/type_checker/calls/`:
+
+| Kernel | Job |
+| --- | --- |
+| `03l0` | Clears the tables in `bound_tables.slang` each round. |
+| `03l1` | Collects implementation and free-function bound rows from each resident dependency page. |
+| `03l2` | Collects this unit's implementations of imported traits. |
+| `03l3` | Infers, one lane per call. |
+
+Limits of this first version:
+
+- Only calls of imported free functions use the rule. Method calls and calls
+  of local generic functions do not.
+- The bound's subject must be one of the callee's own type parameters, with
+  1 to 7 trait arguments.
+- `P`'s binding must be closed, so a call inside a generic body whose `P` is
+  still a parameter infers nothing.
+- Implementation `where` clauses are not consulted when counting. A clause
+  can't add a candidate; it can only make a unique match fail later, when
+  program evidence validates the selected implementation.
+- An implementation whose header has no canonical ID matches every subject,
+  so it can only make a selection ambiguous.
+- Implementations of local traits are not collected, since an imported
+  callee can't name them.
+- If either table overflows (16384 rows), nothing is inferred.
+
+Tests: the `bound_*` fixtures in `tests/fixtures/language/`, run by
+`tests/language_ergonomics_execution.rs`.
+
 ## `core::mem::size_of<T>()` (2026-10-15, implemented 2026-10-18)
 
 Generic heap-backed containers (the 36 allocating `vec_*`, `set_*`, `map_*`

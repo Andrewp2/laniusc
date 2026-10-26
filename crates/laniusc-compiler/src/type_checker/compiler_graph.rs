@@ -1052,6 +1052,9 @@ pub(super) const DEPENDENCY_CALL_RESULTS_SUBSTITUTE_PASS: &str =
     "type_check.dependencies.validate_call_results.substitute";
 pub(super) const DEPENDENCY_CALL_RESULTS_VALIDATE_PASS: &str =
     "type_check.dependencies.validate_call_results.validate";
+/// Rows of each bound-directed inference table: implementations of every
+/// resident page and of the unit, and free-function bounds.
+pub(super) const BOUND_INFERENCE_ROWS: u64 = 16384;
 pub(super) const DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS: &str =
     "type_check.dependencies.resolve_generic_call_results";
 
@@ -3097,6 +3100,13 @@ fn build_graph(
         _call_dependency_host_service as "call_dependency_host_service" in Tokens => token_rows * 4;
         _call_dependency_native_abi as "call_dependency_native_abi" in Tokens => token_rows * 4;
         _call_dependency_generic_requirements as "call_dependency_generic_requirements" in Tokens => token_rows * 4;
+    });
+    // Bound-directed inference tables (calls/bound_tables.slang): 16-word
+    // rows, rebuilt in every inference round.
+    graph_resources!(graph, Workspace {
+        _bound_inference_counts as "bound_inference_counts" in Calls => 16;
+        _bound_implementation_rows as "bound_implementation_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
+        _bound_predicate_rows as "bound_predicate_rows" in Calls => BOUND_INFERENCE_ROWS * 64;
     });
     graph_resources!(graph, Input {
         _token_count as "token_count" in Tokens => 4;
@@ -5708,6 +5718,14 @@ fn build_graph(
         DEPENDENCY_GENERIC_CALL_RESULTS_RESOLVE_PASS,
         "hir_active_dispatch_args",
     )?;
+    for spec in [
+        CALLS_BOUND_TABLES_CLEAR,
+        CALLS_BOUND_DEPENDENCY_COLLECT,
+        CALLS_BOUND_LOCAL_COLLECT,
+        CALLS_BOUND_INFER,
+    ] {
+        spec.register_kernel(&mut graph, kernels)?;
+    }
     let aggregate_scan_resources = graph.resolve_prefix_scan_resources(AGGREGATE_SCAN_RESOURCES)?;
     graph.add_fragment(PrefixScanGraph {
         phase: CompilerPhase::TypeCheck,

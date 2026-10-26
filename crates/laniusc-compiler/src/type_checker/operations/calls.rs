@@ -314,3 +314,39 @@ pub(in crate::type_checker) const CALLS_EXPLICIT_APPLICATIONS_VALIDATE: Reflecte
     call_pass!("explicit_applications.validate", HirNodes,
         "type_checker/calls/03a8_validate_explicit_applications")
         .with_indirect_dispatch("explicit_application_dispatch_args");
+
+// Bound-directed generic call inference (calls/03l*), recorded in each
+// inference round after the dependency result passes.
+pub(in crate::type_checker) const CALLS_BOUND_TABLES_CLEAR: ReflectedComputeSpec = call_pass!(
+    "bound_inference.clear",
+    Calls,
+    "type_checker/calls/03l0_clear_bound_tables"
+)
+.initializer();
+pub(in crate::type_checker) const CALLS_BOUND_DEPENDENCY_COLLECT: ReflectedComputeSpec = call_pass!(
+    "bound_inference.collect_dependency",
+    Calls,
+    "type_checker/calls/03l1_collect_dependency_bounds"
+)
+.with_aliases(&[
+    typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
+]);
+pub(in crate::type_checker) const CALLS_BOUND_LOCAL_COLLECT: ReflectedComputeSpec = call_pass!(
+    "bound_inference.collect_local",
+    HirNodes,
+    "type_checker/calls/03l2_collect_local_implementations"
+)
+.with_indirect_dispatch("hir_active_dispatch_args");
+pub(in crate::type_checker) const CALLS_BOUND_INFER: ReflectedComputeSpec = call_pass!(
+    "bound_inference.infer",
+    HirNodes,
+    "type_checker/calls/03l3_infer_bound_generics"
+)
+.with_modes(&[
+    ("type_native_word_count", AccessMode::Write),
+    ("type_native_scalar_identity", AccessMode::Write),
+])
+.with_aliases(&[
+    typecheck_resource!("canonical_type_roots" => "call_parameter_canonical_type_roots", Read),
+])
+.with_indirect_dispatch("hir_active_dispatch_args");
