@@ -1,0 +1,118 @@
+// Opt-in ordered-map memory-owner cloning and explicit recursive release.
+// Ordinary TreeMap.try_clone/destroy keep their shallow ownership contracts.
+module alloc::clone_tree_map;
+import alloc::tree_map;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum StorageError { Entries(alloc::vec::Error), Map(alloc::tree_map::Error) }
+pub enum Error<KE,VE> { Storage(StorageError), Key(i32,KE), Value(i32,VE), ChangedKey(i32) }
+
+fn destroy_entries<K,V>(entries: &alloc::vec::Vec<alloc::tree_map::Entry<K,V>>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    while (true) {
+        let next: core::option::Option<alloc::tree_map::Entry<K,V>> = entries.pop(); if (next.is_none()) { break; }
+        let item: alloc::tree_map::Entry<K,V> = next.unwrap(); K::destroy_value(item.key); V::destroy_value(item.value);
+    }
+    entries.destroy();
+}
+
+// Every live pair must consist of distinct active memory owners. Cursor.next
+// computes its successor from node links before either nested owner is freed;
+// traversal performs no comparison of released keys. No clone/order bound.
+// Aliases, cursors and views become invalid; Destroy must not mutate this map
+// reentrantly. Reset the actual owner, making repeated release harmless.
+pub fn destroy_tree_map<K,V>(owner: &alloc::tree_map::TreeMap<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    let cursor: alloc::tree_map::Cursor<K,V> = owner.iter();
+    while (true) {
+        let next: core::option::Option<alloc::tree_map::Entry<K,V>> = cursor.next(); if (next.is_none()) { break; }
+        let item: alloc::tree_map::Entry<K,V> = next.unwrap(); K::destroy_value(item.key); V::destroy_value(item.value);
+    }
+    owner.destroy();
+}
+
+// Recover and disarm the owning cursor, then use canonical deep release.
+// Yielded pairs belong to their callers and are never released here.
+pub fn destroy_tree_map_iter<K,V>(owner: &alloc::tree_map::IntoIter<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    let remaining: alloc::tree_map::TreeMap<K,V> = owner.take_remaining();
+    destroy_tree_map<K,V>(remaining.borrow());
+}
+
+// Source structure and borrowed leaves must remain live, lawful and immutable
+// for the call. Reserve both container allocations before invoking any leaf.
+// Clone in sorted logical order, key before value. KE/VE transfer unchanged
+// and must not borrow any partial destination released during rollback.
+pub fn try_clone<K,V,KE,VE>(source: &alloc::tree_map::TreeMap<K,V>)
+    -> core::result::Result<alloc::tree_map::TreeMap<K,V>,Error<KE,VE>>
+    where K: core::cmp::Ord<K>, K: core::cmp::Eq<K>,
+          K: core::clone::TryClone<K,KE>, K: core::clone::Destroy<K>,
+          V: core::clone::TryClone<V,VE>, V: core::clone::Destroy<V> {
+    let made_map: core::result::Result<alloc::tree_map::TreeMap<K,V>,alloc::tree_map::Error> = alloc::tree_map::with_capacity<K,V>(source.len());
+    if (made_map.is_err()) { return core::result::Err(Error::Storage(StorageError::Map(made_map.unwrap_err()))); }
+    let output: alloc::tree_map::TreeMap<K,V> = made_map.unwrap();
+    let made_entries: core::result::Result<alloc::vec::Vec<alloc::tree_map::Entry<K,V>>,alloc::vec::Error> = alloc::vec::with_capacity<alloc::tree_map::Entry<K,V>>(source.len());
+    if (made_entries.is_err()) {
+        output.destroy(); return core::result::Err(Error::Storage(StorageError::Entries(made_entries.unwrap_err())));
+    }
+    let entries: alloc::vec::Vec<alloc::tree_map::Entry<K,V>> = made_entries.unwrap();
+    let cursor: alloc::tree_map::Cursor<K,V> = source.iter(); let index: i32 = 0;
+    while (index < source.len()) {
+        let borrowed: alloc::tree_map::Entry<K,V> = cursor.next().unwrap();
+        let made_key: core::result::Result<K,KE> = K::try_clone_value(borrowed.key);
+        if (made_key.is_err()) {
+            let error: KE = made_key.unwrap_err(); destroy_entries<K,V>(entries.borrow()); output.destroy();
+            return core::result::Err(Error::Key(index,error));
+        }
+        let key: K = made_key.unwrap();
+        if (!K::eq(borrowed.key,key) || K::lt(borrowed.key,key) || K::lt(key,borrowed.key)) {
+            K::destroy_value(key); destroy_entries<K,V>(entries.borrow()); output.destroy();
+            return core::result::Err(Error::ChangedKey(index));
+        }
+        let made_value: core::result::Result<V,VE> = V::try_clone_value(borrowed.value);
+        if (made_value.is_err()) {
+            let error: VE = made_value.unwrap_err(); K::destroy_value(key);
+            destroy_entries<K,V>(entries.borrow()); output.destroy();
+            return core::result::Err(Error::Value(index,error));
+        }
+        let value: V = made_value.unwrap();
+        let item: alloc::tree_map::Entry<K,V> = alloc::tree_map::Entry { key:key,value:value };
+        let added: core::result::Result<i32,alloc::vec::Error> = entries.try_push(item);
+        if (added.is_err()) {
+            K::destroy_value(key); V::destroy_value(value); destroy_entries<K,V>(entries.borrow()); output.destroy();
+            return core::result::Err(Error::Storage(StorageError::Entries(added.unwrap_err())));
+        }
+        index+=1;
+    }
+    // This canonical builder validates adjacent order and reuses the capacity
+    // already reserved above. No repeated insertion, sort, or Node layout copy.
+    let staged: core::slice::View<alloc::tree_map::Entry<K,V>> = entries.as_view();
+    let initialized: core::result::Result<i32,alloc::tree_map::Error> = output.try_init_sorted(staged);
+    if (initialized.is_err()) {
+        let error: alloc::tree_map::Error = initialized.unwrap_err(); destroy_entries<K,V>(entries.borrow()); output.destroy();
+        return core::result::Err(Error::Storage(StorageError::Map(error)));
+    }
+    // Nested ownership transfers to output. Only staging backing is released.
+    entries.destroy(); return core::result::Ok(output);
+}
+
+pub impl<K,V,KE,VE> core::clone::TryClone<alloc::tree_map::TreeMap<K,V>,Error<KE,VE>>
+    for alloc::tree_map::TreeMap<K,V>
+    where K: core::cmp::Ord<K>, K: core::cmp::Eq<K>,
+          K: core::clone::TryClone<K,KE>, K: core::clone::Destroy<K>,
+          V: core::clone::TryClone<V,VE>, V: core::clone::Destroy<V> {
+    pub fn try_clone_value(source: alloc::tree_map::TreeMap<K,V>)
+        -> core::result::Result<alloc::tree_map::TreeMap<K,V>,Error<KE,VE>> {
+        return try_clone<K,V,KE,VE>(source.borrow());
+    }
+}
+pub impl<K,V> core::clone::Destroy<alloc::tree_map::TreeMap<K,V>> for alloc::tree_map::TreeMap<K,V>
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    pub fn destroy_value(owned: alloc::tree_map::TreeMap<K,V>) { destroy_tree_map<K,V>(owned.borrow()); }
+}

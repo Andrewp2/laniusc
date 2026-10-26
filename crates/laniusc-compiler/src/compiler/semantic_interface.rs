@@ -7,7 +7,8 @@
 /// Current binary schema version for GPU semantic-interface artifacts.
 // Version 15 carries typed constant atoms and explicit array length graphs.
 // Version 16 adds the never scalar leaf (18), shifting signature type indices.
-pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 16;
+// Version 17 records checked C ABI declarations, including private hidden ones.
+pub const GPU_SEMANTIC_INTERFACE_VERSION: u32 = 17;
 const GPU_SEMANTIC_INTERFACE_MAGIC: [u8; 8] = *b"LNSIFACE";
 const HEADER_U32S: usize = 16;
 const MODULE_U32S: usize = 2;
@@ -22,6 +23,57 @@ pub(crate) const IMPLEMENTATION_METHOD_BINDING_U32S: usize = 6;
 pub(crate) const IMPLEMENTATION_OWNER_TAG: u32 = 0x8000_0000;
 const INVALID: u32 = u32::MAX;
 const MAX_CANONICAL_NAME_BYTES: usize = 64;
+const DECL_FLAG_NATIVE_C: u32 = 2;
+const NATIVE_ABI_C: u32 = 1;
+const NATIVE_C_MAX_PARAMETERS: usize = 32;
+
+/// Types admitted by the Linux x86-64 direct C-call profile.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NativeCType {
+    Void,
+    I32,
+    U32,
+    I64,
+    U64,
+    Isize,
+    Usize,
+    Ptr,
+    F32,
+    F64,
+}
+
+impl NativeCType {
+    fn from_scalar(scalar: u32) -> Option<Self> {
+        use crate::primitive_types::*;
+        Some(match scalar {
+            SCALAR_UNIT => Self::Void,
+            SCALAR_I32 => Self::I32,
+            SCALAR_U32 => Self::U32,
+            SCALAR_I64 => Self::I64,
+            SCALAR_U64 => Self::U64,
+            SCALAR_ISIZE => Self::Isize,
+            SCALAR_USIZE => Self::Usize,
+            SCALAR_PTR => Self::Ptr,
+            SCALAR_F32 => Self::F32,
+            SCALAR_F64 => Self::F64,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeCSignature {
+    pub parameters: Vec<NativeCType>,
+    pub result: NativeCType,
+}
+
+/// A checked source declaration's stable identity and unmangled native name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeCFunction {
+    pub identity: [u32; 3],
+    pub name: String,
+    pub signature: NativeCSignature,
+}
 
 pub(crate) mod dependency_batch;
 mod implementation_evidence;
@@ -111,7 +163,7 @@ pub struct GpuSemanticInterfaceModuleSegmentRecord {
     pub name_byte_len: u32,
 }
 
-/// One public declaration exported by the unit.
+/// One public declaration or retained hidden declaration exported by the unit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuSemanticInterfaceDeclarationRecord {
     pub module: u32,
@@ -126,7 +178,9 @@ pub struct GpuSemanticInterfaceDeclarationRecord {
     pub member_count: u32,
     pub owner_declaration: u32,
     pub flags: u32,
+    /// Constant bits, or the runtime host-service identity for a callable.
     pub value_lo: u32,
+    /// Constant bits, or the native ABI (1 = checked direct C) for a callable.
     pub value_hi: u32,
 }
 
@@ -360,6 +414,55 @@ pub struct GpuSemanticInterfaceArtifact {
 }
 
 impl GpuSemanticInterfaceArtifact {
+    /// Resolves native bindings from validated interface records. Names and
+    /// signatures are GPU-produced facts; the host does not inspect source.
+    pub fn native_c_functions(&self) -> Result<Vec<NativeCFunction>, String> {
+        self.validate()?;
+        self.declarations.iter().enumerate()
+            .filter(|(_, declaration)| declaration.flags & DECL_FLAG_NATIVE_C != 0)
+            .map(|(index, declaration)| self.native_c_function(index, declaration))
+            .collect()
+    }
+
+    fn native_c_function(&self, index: usize, declaration: &GpuSemanticInterfaceDeclarationRecord)
+        -> Result<NativeCFunction, String>
+    {
+        let invalid = || format!("semantic-interface declaration {index} has an unsupported native C signature");
+        if declaration.kind != 5 || declaration.namespace != 2 ||
+            declaration.value_hi != NATIVE_ABI_C || declaration.value_lo != INVALID ||
+            declaration.owner_declaration != INVALID
+        { return Err(invalid()); }
+        let signature = self.types.get(declaration.signature_type as usize).ok_or_else(invalid)?;
+        if signature.kind != GpuSemanticInterfaceTypeKind::Function as u32 ||
+            signature.edge_count == 0 || signature.edge_count as usize > NATIVE_C_MAX_PARAMETERS + 1
+        { return Err(invalid()); }
+        let edges = checked_range("native C signature edge", index,
+            signature.first_edge, signature.edge_count, self.type_edges.len())?;
+        let mut types = Vec::with_capacity(edges.len());
+        for edge in &self.type_edges[edges] {
+            let leaf = self.types.get(edge.type_index as usize).ok_or_else(invalid)?;
+            if leaf.kind != GpuSemanticInterfaceTypeKind::Scalar as u32 { return Err(invalid()); }
+            types.push(NativeCType::from_scalar(leaf.payload_lo).ok_or_else(invalid)?);
+        }
+        let result = types.pop().ok_or_else(invalid)?;
+        if types.contains(&NativeCType::Void) { return Err(invalid()); }
+        let members = checked_range("native C members", index, declaration.first_member,
+            declaration.member_count, self.members.len())?;
+        if members.len() != types.len() || self.members[members].iter()
+            .any(|member| member.kind != GpuSemanticInterfaceMemberKind::Parameter as u32)
+        { return Err(invalid()); }
+        let name = checked_range("native C name", index, declaration.name_byte_start,
+            declaration.name_byte_len, self.name_bytes.len())?;
+        let name = std::str::from_utf8(&self.name_bytes[name])
+            .map_err(|_| invalid())?.to_owned();
+        if name.is_empty() || name.as_bytes().contains(&0) { return Err(invalid()); }
+        Ok(NativeCFunction {
+            identity: [self.library_id, self.unit_id, index as u32],
+            name,
+            signature: NativeCSignature { parameters: types, result },
+        })
+    }
+
     /// Validates all record ranges, canonical names, and typed references.
     pub fn validate(&self) -> Result<(), String> {
         if self.version != GPU_SEMANTIC_INTERFACE_VERSION {
@@ -389,6 +492,11 @@ impl GpuSemanticInterfaceArtifact {
         // dependency lookup; it need not be grouped by module because every
         // record carries its explicit module index and lookup hashes that key.
         for (index, declaration) in self.declarations.iter().enumerate() {
+            if declaration.flags & !3 != 0 ||
+                (declaration.kind != 3 && declaration.flags & DECL_FLAG_NATIVE_C == 0 && declaration.value_hi != 0)
+            {
+                return Err(format!("semantic-interface declaration {index} has invalid native ABI metadata"));
+            }
             validate_optional_index(
                 "declaration signature type",
                 index,
@@ -669,7 +777,11 @@ impl GpuSemanticInterfaceArtifact {
         self.validate_trait_headers()?;
         self.validate_parameter_scopes()?;
         self.validate_implementations()?;
-        self.validate_predicates()
+        self.validate_predicates()?;
+        for (index, declaration) in self.declarations.iter().enumerate()
+            .filter(|(_, declaration)| declaration.flags & DECL_FLAG_NATIVE_C != 0)
+        { self.native_c_function(index, declaration)?; }
+        Ok(())
     }
 
     /// A predicate is a callable contract, with explicit lexical ownership for
@@ -1769,6 +1881,49 @@ fn read_count(bytes: &[u8], cursor: &mut usize, domain: &str) -> Result<usize, S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn native_c_interface() -> GpuSemanticInterfaceArtifact {
+        let mut interface = representative_interface();
+        let declaration = &mut interface.declarations[0];
+        declaration.kind = 5;
+        declaration.flags = 3; // hidden C declarations retain native metadata
+        declaration.value_lo = INVALID;
+        declaration.value_hi = NATIVE_ABI_C;
+        interface.types[1].edge_count = 2;
+        interface.type_edges.push(GpuSemanticInterfaceTypeEdge { type_index: 0 });
+        interface
+    }
+
+    #[test]
+    fn native_c_bindings_round_trip_hidden_identity_name_and_signature() {
+        let interface = native_c_interface();
+        let restored = GpuSemanticInterfaceArtifact::from_bytes(&interface.to_bytes().unwrap()).unwrap();
+        assert_eq!(restored.native_c_functions().unwrap(), vec![NativeCFunction {
+            identity: [7, 11, 0],
+            name: "add".to_owned(),
+            signature: NativeCSignature {
+                parameters: vec![NativeCType::I32], result: NativeCType::I32,
+            },
+        }]);
+    }
+
+    #[test]
+    fn native_c_interface_rejects_forged_profiles_and_unsupported_signatures() {
+        for case in 0..8 {
+            let mut interface = native_c_interface();
+            match case {
+                0 => interface.declarations[0].kind = 4,
+                1 => interface.declarations[0].value_hi = 2,
+                2 => interface.declarations[0].value_lo = 43,
+                3 => interface.declarations[0].flags = 1,
+                4 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_BOOL,
+                5 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_I8,
+                6 => interface.types[0].payload_lo = crate::primitive_types::SCALAR_UNIT,
+                _ => interface.types[1].edge_count = 34,
+            }
+            assert!(interface.native_c_functions().is_err(), "forged profile case {case}");
+        }
+    }
 
     fn append_name(bytes: &mut Vec<u8>, name: &str) -> (u32, u32, u32, u32) {
         let start = bytes.len() as u32;

@@ -1,0 +1,9 @@
+module fixture::consumer;
+import core::clone;
+import core::clone_values;
+import core::result;
+import fixture::control;
+pub fn duplicate<T,E>(source: T) -> core::result::Result<T,E>
+    where T: core::clone::TryClone<T,E> {
+    return T::try_clone_value(source);
+}

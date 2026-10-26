@@ -809,10 +809,15 @@ fn register_semantic_inputs<'a>(
         semantic.function_host_service_by_hir
     );
     buffer!(
+        "typecheck.semantic_function_native_abis_by_hir",
+        semantic.function_native_abi_by_hir
+    );
+    buffer!(
         "typecheck.semantic_control_depths_by_hir",
         semantic.control_depth_by_hir
     );
     buffer!("typecheck.semantic_calls_by_hir", semantic.calls_by_hir);
+    buffer!("typecheck.semantic_call_native_abis_by_hir", semantic.call_native_abi_by_hir);
     buffer!(
         "typecheck.semantic_expr_ref_tags_by_hir",
         semantic.expr_ref_tag_by_hir
@@ -976,7 +981,7 @@ pub(crate) fn semantic_input_views<'a>(
     semantic: GpuSemanticArtifactView<'a>,
 ) -> Vec<TrackedBufferView<'a>> {
     let mut views = hir.tracked_views();
-    let semantic_views: [TrackedBufferView<'a>; 53] = [
+    let semantic_views: [TrackedBufferView<'a>; 55] = [
         semantic.value_decl_by_hir.into(),
         semantic.value_type_by_hir.into(),
         semantic.value_const_by_hir.into(),
@@ -988,8 +993,10 @@ pub(crate) fn semantic_input_views<'a>(
         semantic.function_return_type_by_hir.into(),
         semantic.function_entrypoint_by_hir.into(),
         semantic.function_host_service_by_hir.into(),
+        semantic.function_native_abi_by_hir.into(),
         semantic.control_depth_by_hir.into(),
         semantic.calls_by_hir.into(),
+        semantic.call_native_abi_by_hir.into(),
         semantic.expr_ref_tag_by_hir.into(),
         semantic.expr_ref_payload_by_hir.into(),
         semantic.aggregate_decl_token_by_hir.into(),
@@ -3813,8 +3820,10 @@ mod tests {
             function_return_type_by_hir: &enclosing_fn,
             function_entrypoint_by_hir: &enclosing_fn,
             function_host_service_by_hir: &semantic_array_lengths,
+            function_native_abi_by_hir: &semantic_array_lengths,
             control_depth_by_hir: &enclosing_fn,
             calls_by_hir: &checked_calls,
+            call_native_abi_by_hir: &semantic_array_lengths,
             expr_ref_tag_by_hir: &semantic_ref_tags,
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
@@ -4169,8 +4178,10 @@ mod tests {
             function_return_type_by_hir: &return_types,
             function_entrypoint_by_hir: &entrypoints,
             function_host_service_by_hir: &semantic_array_lengths,
+            function_native_abi_by_hir: &semantic_array_lengths,
             control_depth_by_hir: &enclosing_functions,
             calls_by_hir: &checked_calls,
+            call_native_abi_by_hir: &semantic_array_lengths,
             expr_ref_tag_by_hir: &semantic_ref_tags,
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
@@ -4454,8 +4465,10 @@ mod tests {
             function_return_type_by_hir: &enclosing,
             function_entrypoint_by_hir: &enclosing,
             function_host_service_by_hir: &semantic_array_lengths,
+            function_native_abi_by_hir: &semantic_array_lengths,
             control_depth_by_hir: &enclosing,
             calls_by_hir: &checked_calls,
+            call_native_abi_by_hir: &semantic_array_lengths,
             expr_ref_tag_by_hir: &semantic_ref_tags,
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,
@@ -4739,8 +4752,10 @@ mod tests {
             function_return_type_by_hir: &enclosing_fn,
             function_entrypoint_by_hir: &enclosing_fn,
             function_host_service_by_hir: &semantic_array_lengths,
+            function_native_abi_by_hir: &semantic_array_lengths,
             control_depth_by_hir: &enclosing_fn,
             calls_by_hir: &checked_calls,
+            call_native_abi_by_hir: &semantic_array_lengths,
             expr_ref_tag_by_hir: &semantic_ref_tags,
             expr_ref_payload_by_hir: &semantic_ref_payloads,
             aggregate_decl_token_by_hir: &semantic_ref_payloads,

@@ -189,6 +189,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 LOWERING_DIAGNOSTIC_DETAIL_TOKEN, function.name_token,
                 function.hir_function, semantic_row);
         else if (!entrypoint && (function.flags & SEMANTIC_FUNCTION_FLAG_EXTERN) != 0u &&
+                 (function.flags & SEMANTIC_FUNCTION_FLAG_NATIVE_C) == 0u &&
                  function_abi_param_count(function) > 6u)
         {
             uint detail = function.name_token;
@@ -237,6 +238,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 ? LOWERING_DIAGNOSTIC_X86_LEGACY_RESULT_LAYOUT
                 : LOWERING_DIAGNOSTIC_X86_AGGREGATE_RESULT_LAYOUT,
             LOWERING_DIAGNOSTIC_DETAIL_HIR, source_hir, source_hir, semantic_row);
+    // Checked C externs are projected as CALL_SYMBOL with canonical symbol
+    // identity. Keep ordinary unbound extern CALLs outside the native ABI;
+    // their shape alone cannot authorize calling an arbitrary C function.
     if (opt_ir_op(core) == SEMANTIC_LIR_OP_CALL && operands.a < function_count &&
         (semantic_lir_functions[operands.a].flags & SEMANTIC_FUNCTION_FLAG_EXTERN) != 0u)
         report_diagnostic(LOWERING_DIAGNOSTIC_X86_CALL_ABI,

@@ -1,0 +1,95 @@
+// Four-u64 records: capacity, retained length, head rotation, failing logical
+// index (u64::MAX means success). Reports values and ownership events.
+module app::main;
+import alloc::clone_deque;
+import alloc::deque;
+import core::clone;
+import core::io;
+import core::result;
+import std::stream;
+
+struct State { log: [i32], cloned: i32, destroyed: i32, mask: u64, reject: i32 }
+impl State { fn borrow(&self) -> &State { return self; } }
+struct Token { tag: i32, state: &State, owned: bool }
+enum Fault { Rejected(i32) }
+pub impl core::clone::TryClone<Token,Fault> for Token {
+    pub fn try_clone_value(source: Token) -> core::result::Result<Token,Fault> {
+        assert(!source.owned);
+        let state: &State = source.state;
+        let log: [i32] = state.log; log[state.cloned] = source.tag; state.cloned += 1;
+        if (source.tag == state.reject) { return core::result::Err(Fault::Rejected(source.tag)); }
+        return core::result::Ok(Token { tag: source.tag, state: state, owned: true });
+    }
+}
+pub impl core::clone::Destroy<Token> for Token {
+    pub fn destroy_value(owned: Token) {
+        assert(owned.owned);
+        let state: &State = owned.state;
+        let bit: u64 = 1 << owned.tag;
+        assert((state.mask & bit) == 0); state.mask |= bit; state.destroyed += 1;
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn rejected(error: Fault) -> i32 { return match(error) { Fault::Rejected(tag) -> tag }; }
+fn bad_storage(error: alloc::deque::Error) -> i32 { assert(false); return -1; }
+fn element(index: i32, error: Fault) -> i32 { word(index as u64); word(rejected(error) as u64); return 0; }
+fn failure(error: alloc::clone_deque::Error<Fault>) -> i32 {
+    return match(error) {
+        alloc::clone_deque::Error::Storage(error) -> bad_storage(error),
+        alloc::clone_deque::Error::Element(index,error) -> element(index,error)
+    };
+}
+fn run(capacity: i32, length: i32, rotation: i32, fail: u64) {
+    let log: [i32;6] = [0;6]; let reject: i32 = -1;
+    if (fail != 18446744073709551615) { reject = rotation+(fail as i32); }
+    let state: State = State { log: log, cloned: 0, destroyed: 0, mask: 0, reject: reject };
+    let source: alloc::deque::Deque<Token> = alloc::deque::with_capacity<Token>(capacity).unwrap();
+    let index: i32 = 0;
+    while (index < capacity) { source.try_push_back(Token { tag: index, state: state.borrow(), owned: false }).unwrap(); index += 1; }
+    index = 0;
+    while (index < rotation) {
+        source.pop_front(); source.try_push_back(Token { tag: capacity+index, state: state.borrow(), owned: false }).unwrap(); index += 1;
+    }
+    source.truncate(length).unwrap();
+    let result: core::result::Result<alloc::deque::Deque<Token>,alloc::clone_deque::Error<Fault>> = alloc::clone_deque::try_clone<Token,Fault>(source.borrow());
+    if (result.is_ok()) {
+        word(1); word(0); word(0);
+        let copy = result.unwrap(); word(copy.len() as u64); index = 0;
+        while (index < copy.len()) { word(copy.at(index).tag as u64); index += 1; }
+        alloc::clone_deque::destroy_deque<Token>(copy.borrow());
+        alloc::clone_deque::destroy_deque<Token>(copy.borrow());
+        assert(copy.is_empty() && copy.capacity() == 0 && copy.head == 0);
+    } else { word(2); failure(result.unwrap_err()); word(0); }
+    word(state.cloned as u64); index = 0;
+    while (index < state.cloned) { word(log[index] as u64); index += 1; }
+    word(state.destroyed as u64); word(state.mask);
+    word(source.len() as u64); word(source.capacity() as u64); word(source.head as u64); index = 0;
+    while (index < source.len()) { word(source.at(index).tag as u64); index += 1; }
+    // Source descriptors are borrowed tokens; their Destroy is forbidden.
+    source.destroy();
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8;32] = [0;32];
+    while (true) {
+        let received: core::result::Result<i32,core::io::Error> = input.read(record,0,32);
+        if (received.is_err()) { return 1; }
+        let count: i32 = received.unwrap(); if (count == 0) { return 0; }
+        if (count < 32) { if (core::io::read_exact(input.borrow(),record,count,32-count).is_err()) { return 2; } }
+        let capacity: u64 = decode(record,0); let length: u64 = decode(record,8);
+        let rotation: u64 = decode(record,16); let fail: u64 = decode(record,24);
+        assert(capacity <= 6 && length <= capacity && (rotation < capacity || (capacity == 0 && rotation == 0))
+            && (fail < length || fail == 18446744073709551615));
+        run(capacity as i32,length as i32,rotation as i32,fail);
+    }
+    return 0;
+}

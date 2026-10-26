@@ -4,8 +4,10 @@
 module ext::csv;
 import alloc::string;
 import core::io;
+import core::mem;
 import core::option;
 import core::result;
+import core::slice;
 import core::utf8;
 import core::text;
 import alloc::vec;
@@ -33,6 +35,9 @@ pub enum Error {
 }
 struct Span { start: i32, length: i32 }
 pub struct Record { bytes: alloc::vec::Vec<u8>, fields: alloc::vec::Vec<Span> }
+// Borrowed canonical bytes; never destroy row through this inactive descriptor.
+// Keep the Record live and unchanged until this cursor and its copies end.
+pub struct Encoding { row: Record, column: i32, offset: i32, phase: i32, remaining_bytes: u64 }
 pub struct Table { rows: alloc::vec::Vec<Record> }
 pub struct Progress { consumed: i32, record: bool }
 pub struct Decoder {
@@ -48,6 +53,33 @@ fn empty_record() -> Record {
     let fields: alloc::vec::Vec<Span> = alloc::vec::new();
     return Record { bytes: bytes, fields: fields };
 }
+pub fn new() -> Record { return empty_record(); }
+fn vec_error(error: alloc::vec::Error) -> Error {
+    return match (error) { alloc::vec::Error::AllocationFailed -> Error::AllocationFailed, alloc::vec::Error::CapacityOverflow -> Error::CapacityOverflow, _ -> Error::Bounds };
+}
+// Validate hostile logical Text metadata before indexing. Character offsets
+// are relative to the supplied Text for append, or packed bytes for preflight.
+fn checked_field(text: core::text::Text, base: u64) -> core::result::Result<i32,Error> {
+    let checked = core::text::from_utf8_range(text.bytes,text.start,text.length);
+    if (checked.is_err()) {
+        let error: Error = match (checked.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> Error::InvalidUtf8(base + (at as u64)), _ -> Error::Bounds };
+        return core::result::Err(error);
+    }
+    let index: i32 = 0;
+    while (index < text.length) {
+        let byte: u8 = text.bytes[text.start + index];
+        if ((byte < 32 && byte != 13 && byte != 10) || byte == 127) { return core::result::Err(Error::InvalidCharacter(base + (index as u64))); }
+        index += 1;
+    }
+    return core::result::Ok(text.length);
+}
+fn growth(capacity: i32, needed: i32, maximum: i32) -> i32 {
+    let target: i32 = maximum;
+    if (capacity <= maximum / 2) { target = capacity * 2; }
+    if (target < 4 && maximum >= 4) { target = 4; }
+    if (target < needed) { target = needed; }
+    return target;
+}
 fn string_error(error: alloc::string::Error) -> Error {
     let converted: Error = match (error) {
         alloc::string::Error::AllocationFailed -> Error::AllocationFailed,
@@ -59,6 +91,77 @@ fn string_error(error: alloc::string::Error) -> Error {
     return converted;
 }
 pub impl Record {
+    pub fn borrow(&self) -> &Record { return self; }
+    fn valid_storage(&self) -> bool {
+        let maximum_fields: i32 = (2147483647 / core::mem::size_of<Span>()) as i32;
+        return self.bytes.len() >= 0 && self.bytes.capacity() >= 0 && self.bytes.len() <= self.bytes.capacity() && self.fields.len() >= 0 && self.fields.capacity() >= 0 && self.fields.len() <= self.fields.capacity() && self.fields.capacity() <= maximum_fields;
+    }
+    // Strong failure guarantee: contents, lengths, capacities and existing
+    // views all survive Err. Stage both growths before changing either owner.
+    // A Text borrowed from an existing field is valid through this append.
+    pub fn try_push_field(&self, text: core::text::Text) -> core::result::Result<i32,Error> {
+        if (!self.valid_storage()) { return core::result::Err(Error::Bounds); }
+        let checked = checked_field(text,0);
+        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let before: i32 = self.bytes.len(); let count: i32 = self.fields.len();
+        let maximum_fields: i32 = (2147483647 / core::mem::size_of<Span>()) as i32;
+        if (text.length > 2147483647 - before || count >= maximum_fields) { return core::result::Err(Error::CapacityOverflow); }
+        let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+        let fields: alloc::vec::Vec<Span> = alloc::vec::new();
+        let grow_bytes: bool = before + text.length > self.bytes.capacity();
+        let grow_fields: bool = count + 1 > self.fields.capacity();
+        if (grow_bytes) {
+            let allocated = alloc::vec::with_capacity<u8>(growth(self.bytes.capacity(),before + text.length,2147483647));
+            if (allocated.is_err()) { return core::result::Err(vec_error(allocated.unwrap_err())); }
+            bytes = allocated.unwrap();
+            core::result::unwrap(bytes.try_extend(self.bytes.as_view()));
+        }
+        if (grow_fields) {
+            let allocated = alloc::vec::with_capacity<Span>(growth(self.fields.capacity(),count + 1,maximum_fields));
+            if (allocated.is_err()) { bytes.destroy(); return core::result::Err(vec_error(allocated.unwrap_err())); }
+            fields = allocated.unwrap();
+            core::result::unwrap(fields.try_extend(self.fields.as_view()));
+        }
+        // Reserved appends cannot allocate. Old bytes remain live while the
+        // incoming Text is copied, including an alias of those same bytes.
+        let source: core::slice::View<u8> = core::slice::View { values: text.bytes, start: text.start, length: text.length };
+        if (grow_bytes) { core::result::unwrap(bytes.try_extend(source)); }
+        else { core::result::unwrap(self.bytes.try_extend(source)); }
+        let span: Span = Span { start: before, length: text.length };
+        if (grow_fields) { core::result::unwrap(fields.try_push(span)); }
+        else { core::result::unwrap(self.fields.try_push(span)); }
+        if (grow_bytes) { self.bytes.destroy(); self.bytes = bytes; }
+        if (grow_fields) { self.fields.destroy(); self.fields = fields; }
+        return core::result::Ok(count + 1);
+    }
+    // Validate the complete packed layout and field dialect before emission.
+    // No allocation. A zero-field Record is no record and has zero output.
+    pub fn encoded_len(&self) -> core::result::Result<u64,Error> {
+        if (!self.valid_storage()) { return core::result::Err(Error::Bounds); }
+        let total: u64 = 0; let column: i32 = 0; let offset: i32 = 0;
+        while (column < self.fields.len()) {
+            let span: Span = self.fields.at(column);
+            if (span.start != offset || span.length < 0 || span.length > self.bytes.len() - offset) { return core::result::Err(Error::Bounds); }
+            let field: core::text::Text = core::text::Text { bytes: self.bytes.as_slice(), start: span.start, length: span.length };
+            let checked = checked_field(field,offset as u64);
+            if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+            let addition: u64 = 2 + (span.length as u64);
+            if (column > 0) { addition += 1; }
+            let index: i32 = 0;
+            while (index < span.length) { if (field.bytes[field.start + index] == 34) { addition += 1; } index += 1; }
+            if (total > 18446744073709551615 - addition) { return core::result::Err(Error::CapacityOverflow); }
+            total += addition; offset += span.length; column += 1;
+        }
+        if (offset != self.bytes.len()) { return core::result::Err(Error::Bounds); }
+        if (column > 0) { if (total > 18446744073709551613) { return core::result::Err(Error::CapacityOverflow); } total += 2; }
+        return core::result::Ok(total);
+    }
+    pub fn encoding(&self) -> core::result::Result<Encoding,Error> {
+        let length = self.encoded_len();
+        if (length.is_err()) { return core::result::Err(length.unwrap_err()); }
+        let borrowed: Record = Record { bytes: self.bytes, fields: self.fields };
+        return core::result::Ok(Encoding { row: borrowed, column: 0, offset: 0, phase: 0, remaining_bytes: length.unwrap() });
+    }
     pub fn field_count(&self) -> i32 { return self.fields.len(); }
     pub fn byte_len(&self) -> i32 { return self.bytes.len(); }
     pub fn byte_capacity(&self) -> i32 { return self.bytes.capacity(); }
@@ -82,6 +185,39 @@ pub impl Record {
     pub fn destroy(&self) {
         self.bytes.destroy(); self.fields.destroy();
         self.bytes = alloc::vec::new(); self.fields = alloc::vec::new();
+    }
+}
+
+pub impl Encoding {
+    pub fn borrow(&self) -> &Encoding { return self; }
+    pub fn remaining(&self) -> u64 { return self.remaining_bytes; }
+    // Byte cursor shared by materialized and streaming encoding. Exhaustion
+    // is fused; cursor copies have independent positions and borrow one row.
+    pub fn next(&self) -> core::option::Option<u8> {
+        if (self.remaining_bytes == 0) { return core::option::None(); }
+        let byte: u8 = 0;
+        while (true) {
+            if (self.phase == 0) { byte = 34; self.phase = 1; break; }
+            if (self.phase == 1) {
+                let field: core::text::Text = self.row.field(self.column).unwrap();
+                if (self.offset < field.length) {
+                    byte = field.bytes[field.start + self.offset]; self.offset += 1;
+                    if (byte == 34) { self.phase = 2; }
+                    break;
+                }
+                self.phase = 3;
+            }
+            else { if (self.phase == 2) { byte = 34; self.phase = 1; break; }
+            else { if (self.phase == 3) { byte = 34; self.phase = 4; break; }
+            else { if (self.phase == 4) {
+                self.column += 1; self.offset = 0;
+                if (self.column < self.row.field_count()) { byte = 44; self.phase = 0; }
+                else { byte = 13; self.phase = 5; }
+                break;
+            }
+            else { byte = 10; self.phase = 6; break; } } } }
+        }
+        self.remaining_bytes -= 1; return core::option::Some(byte);
     }
 }
 
@@ -330,24 +466,20 @@ impl Encoder {
         return true;
     }
     fn record(&self, row: Record) -> bool {
-        let column: i32 = 0;
-        while (column < row.field_count()) {
-            if (column > 0 && !self.push(44)) { return false; }
-            if (!self.push(34)) { return false; }
-            let field: core::text::Text = core::result::unwrap(row.field(column));
-            let offset: i32 = 0;
-            while (offset < field.byte_len()) {
-                let scalar: u32 = core::option::unwrap(field.scalar_at_byte(offset));
-                if (scalar == 34 && !self.push(34)) { return false; }
-                if (!self.push(scalar)) { return false; }
-                offset += core::utf8::encoded_len_or(scalar, 0) as i32;
-            }
-            if (!self.push(34)) { return false; }
-            column += 1;
+        let made = row.encoding();
+        if (made.is_err()) { self.error = made.unwrap_err(); return false; }
+        let cursor: Encoding = made.unwrap();
+        if (cursor.remaining() > (2147483647 - self.output.byte_len()) as u64) { self.error = Error::CapacityOverflow; return false; }
+        while (cursor.remaining() > 0) {
+            let first: u8 = cursor.next().unwrap(); let width: u32 = core::utf8::sequence_len_or(first,0);
+            let second: u8 = 0; let third: u8 = 0; let fourth: u8 = 0;
+            if (width > 1) { second = cursor.next().unwrap(); }
+            if (width > 2) { third = cursor.next().unwrap(); }
+            if (width > 3) { fourth = cursor.next().unwrap(); }
+            let scalar: u32 = core::utf8::decode_or(first,second,third,fourth,width,4294967295);
+            if (!self.push(scalar)) { return false; }
         }
-        // A cleared/destroyed Record has no fields and encodes to no bytes.
-        if (row.field_count() == 0) { return true; }
-        return self.push(13) && self.push(10);
+        return true;
     }
 }
 pub fn encode_record(record: Record) -> core::result::Result<alloc::string::String, Error> {

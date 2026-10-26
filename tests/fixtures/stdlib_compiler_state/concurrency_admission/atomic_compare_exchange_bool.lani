@@ -1,0 +1,11 @@
+// Expected rejection: the actual libatomic runtime returns C _Bool.
+// Its five-argument runtime form has no GCC builtin "weak" parameter.
+// Do not change the result to i32/u32 merely to pass the current C checker.
+module app::main;
+
+extern "C" fn __atomic_compare_exchange_4(
+    object: ptr, expected: ptr, desired: u32,
+    success_order: i32, failure_order: i32
+) -> bool;
+
+fn main() -> i32 { return 0; }

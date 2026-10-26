@@ -1,8 +1,8 @@
 //! GPU x86 object and linker boundary.
 //!
 //! Frontend lowering and machine-byte emission live in the compiler graph LIR
-//! pipeline. This module retains only the durable object contract and the GPU
-//! linker used to combine independently compiled units.
+//! pipeline. This module retains the durable object contract, the GPU linker
+//! for freestanding executables, and opt-in ELF packaging for system C linking.
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -18,6 +18,9 @@ mod link;
 pub(crate) use link::{GpuX86LinkInput, GpuX86MissingSymbolDefinition, X86_LINK_NO_ENTRY_OBJECT};
 
 mod object;
+mod file_object;
+pub(crate) use file_object::GpuX86FileObject;
+pub(crate) mod native;
 pub(crate) use object::{
     GPU_X86_OBJECT_HEADER_BYTES,
     GpuX86LinkObjectMetadata,
@@ -25,6 +28,7 @@ pub(crate) use object::{
 };
 pub use object::{
     GPU_X86_OBJECT_VERSION,
+    GPU_X86_CRT_MAIN_BRIDGE_BYTES,
     GpuX86ObjectSection,
     GpuX86ObjectSymbolRecord,
     GpuX86RelocatableObject,

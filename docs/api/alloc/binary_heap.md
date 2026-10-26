@@ -8,14 +8,17 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
+Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
+
 ## Contract and evidence guides
 
 - [stdlib-binary-heap](../../stdlib-binary-heap.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 - [stdlib-heap-iterators](../../stdlib-heap-iterators.md)
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
+- [stdlib-owning-heap](../../stdlib-owning-heap.md)
 
-Declaration counts: enum: 2; field: 2; function: 4; impl: 2; method: 21; struct: 1; variant: 5.
+Declaration counts: enum: 3; field: 3; function: 4; impl: 4; method: 30; struct: 2; variant: 6.
 
 ## Declared imports
 
@@ -89,9 +92,25 @@ CapacityOverflow
 AllocationFailed
 ```
 
-### struct: BinaryHeap
+### enum: IntoIterError
 
 [Source line 15](../../../stdlib/alloc/binary_heap.lani#L15)
+
+```lanius
+pub enum IntoIterError
+```
+
+#### variant: Remaining
+
+[Source line 15](../../../stdlib/alloc/binary_heap.lani#L15)
+
+```lanius
+Remaining(i32)
+```
+
+### struct: BinaryHeap
+
+[Source line 16](../../../stdlib/alloc/binary_heap.lani#L16)
 
 ```lanius
 pub struct BinaryHeap<T>
@@ -99,7 +118,7 @@ pub struct BinaryHeap<T>
 
 #### field: items
 
-[Source line 15](../../../stdlib/alloc/binary_heap.lani#L15)
+[Source line 16](../../../stdlib/alloc/binary_heap.lani#L16)
 
 ```lanius
 items: std::vec::Vec<T>
@@ -107,17 +126,33 @@ items: std::vec::Vec<T>
 
 #### field: order
 
-[Source line 15](../../../stdlib/alloc/binary_heap.lani#L15)
+[Source line 16](../../../stdlib/alloc/binary_heap.lani#L16)
 
 ```lanius
 order: Order
+```
+
+### struct: IntoIter
+
+[Source line 19](../../../stdlib/alloc/binary_heap.lani#L19)
+
+```lanius
+pub struct IntoIter<T>
+```
+
+#### field: heap
+
+[Source line 19](../../../stdlib/alloc/binary_heap.lani#L19)
+
+```lanius
+heap: BinaryHeap<T>
 ```
 
 ## Free functions and extern declarations
 
 ### function: new
 
-[Source line 17](../../../stdlib/alloc/binary_heap.lani#L17)
+[Source line 21](../../../stdlib/alloc/binary_heap.lani#L21)
 
 ```lanius
 pub fn new<T>(order: Order) -> BinaryHeap<T>
@@ -125,7 +160,7 @@ pub fn new<T>(order: Order) -> BinaryHeap<T>
 
 ### function: from_vec
 
-[Source line 62](../../../stdlib/alloc/binary_heap.lani#L62)
+[Source line 66](../../../stdlib/alloc/binary_heap.lani#L66)
 
 ```lanius
 pub fn from_vec<T>(items: std::vec::Vec<T>, order: Order) -> BinaryHeap<T> where T: core::cmp::Ord<T>
@@ -133,7 +168,7 @@ pub fn from_vec<T>(items: std::vec::Vec<T>, order: Order) -> BinaryHeap<T> where
 
 ### function: with_capacity
 
-[Source line 67](../../../stdlib/alloc/binary_heap.lani#L67)
+[Source line 71](../../../stdlib/alloc/binary_heap.lani#L71)
 
 ```lanius
 pub fn with_capacity<T>(capacity: i32, order: Order) -> core::result::Result<BinaryHeap<T>, Error>
@@ -141,7 +176,7 @@ pub fn with_capacity<T>(capacity: i32, order: Order) -> core::result::Result<Bin
 
 ### function: from_view
 
-[Source line 75](../../../stdlib/alloc/binary_heap.lani#L75)
+[Source line 79](../../../stdlib/alloc/binary_heap.lani#L79)
 
 ```lanius
 pub fn from_view<T>(values: core::slice::View<T>, order: Order) -> core::result::Result<BinaryHeap<T>, Error> where T: core::cmp::Ord<T>
@@ -149,9 +184,9 @@ pub fn from_view<T>(values: core::slice::View<T>, order: Order) -> core::result:
 
 ## Implementation blocks and public methods
 
-### impl at line 82
+### impl at line 86
 
-[Source line 82](../../../stdlib/alloc/binary_heap.lani#L82)
+[Source line 86](../../../stdlib/alloc/binary_heap.lani#L86)
 
 ```lanius
 pub impl<T> BinaryHeap<T>
@@ -159,7 +194,7 @@ pub impl<T> BinaryHeap<T>
 
 #### method: borrow
 
-[Source line 83](../../../stdlib/alloc/binary_heap.lani#L83)
+[Source line 87](../../../stdlib/alloc/binary_heap.lani#L87)
 
 ```lanius
 pub fn borrow(&self) -> &BinaryHeap<T>
@@ -167,7 +202,7 @@ pub fn borrow(&self) -> &BinaryHeap<T>
 
 #### method: len
 
-[Source line 84](../../../stdlib/alloc/binary_heap.lani#L84)
+[Source line 88](../../../stdlib/alloc/binary_heap.lani#L88)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -175,7 +210,7 @@ pub fn len(&self) -> i32
 
 #### method: capacity
 
-[Source line 85](../../../stdlib/alloc/binary_heap.lani#L85)
+[Source line 89](../../../stdlib/alloc/binary_heap.lani#L89)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -183,7 +218,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 86](../../../stdlib/alloc/binary_heap.lani#L86)
+[Source line 90](../../../stdlib/alloc/binary_heap.lani#L90)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -191,7 +226,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: order
 
-[Source line 87](../../../stdlib/alloc/binary_heap.lani#L87)
+[Source line 91](../../../stdlib/alloc/binary_heap.lani#L91)
 
 ```lanius
 pub fn order(&self) -> Order
@@ -199,7 +234,7 @@ pub fn order(&self) -> Order
 
 #### method: as_view
 
-[Source line 91](../../../stdlib/alloc/binary_heap.lani#L91)
+[Source line 95](../../../stdlib/alloc/binary_heap.lani#L95)
 
 ```lanius
 pub fn as_view(&self) -> core::slice::View<T>
@@ -207,7 +242,7 @@ pub fn as_view(&self) -> core::slice::View<T>
 
 #### method: iter
 
-[Source line 97](../../../stdlib/alloc/binary_heap.lani#L97)
+[Source line 101](../../../stdlib/alloc/binary_heap.lani#L101)
 
 ```lanius
 pub fn iter(&self) -> core::slice::Iter<T>
@@ -215,7 +250,7 @@ pub fn iter(&self) -> core::slice::Iter<T>
 
 #### method: peek
 
-[Source line 101](../../../stdlib/alloc/binary_heap.lani#L101)
+[Source line 105](../../../stdlib/alloc/binary_heap.lani#L105)
 
 ```lanius
 pub fn peek(&self) -> core::option::Option<T>
@@ -223,7 +258,7 @@ pub fn peek(&self) -> core::option::Option<T>
 
 #### method: try_reserve
 
-[Source line 105](../../../stdlib/alloc/binary_heap.lani#L105)
+[Source line 109](../../../stdlib/alloc/binary_heap.lani#L109)
 
 ```lanius
 pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
@@ -231,7 +266,7 @@ pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
 
 #### method: try_push
 
-[Source line 127](../../../stdlib/alloc/binary_heap.lani#L127)
+[Source line 131](../../../stdlib/alloc/binary_heap.lani#L131)
 
 ```lanius
 pub fn try_push(&self, value: T) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -239,7 +274,7 @@ pub fn try_push(&self, value: T) -> core::result::Result<i32, Error> where T: co
 
 #### method: try_extend
 
-[Source line 143](../../../stdlib/alloc/binary_heap.lani#L143)
+[Source line 147](../../../stdlib/alloc/binary_heap.lani#L147)
 
 ```lanius
 pub fn try_extend(&self, values: core::slice::View<T>) -> core::result::Result<i32, Error> where T: core::cmp::Ord<T>
@@ -247,7 +282,7 @@ pub fn try_extend(&self, values: core::slice::View<T>) -> core::result::Result<i
 
 #### method: pop
 
-[Source line 165](../../../stdlib/alloc/binary_heap.lani#L165)
+[Source line 169](../../../stdlib/alloc/binary_heap.lani#L169)
 
 ```lanius
 pub fn pop(&self) -> core::option::Option<T> where T: core::cmp::Ord<T>
@@ -255,7 +290,7 @@ pub fn pop(&self) -> core::option::Option<T> where T: core::cmp::Ord<T>
 
 #### method: replace_top
 
-[Source line 178](../../../stdlib/alloc/binary_heap.lani#L178)
+[Source line 182](../../../stdlib/alloc/binary_heap.lani#L182)
 
 ```lanius
 pub fn replace_top(&self, value: T) -> core::option::Option<T> where T: core::cmp::Ord<T>
@@ -263,7 +298,7 @@ pub fn replace_top(&self, value: T) -> core::option::Option<T> where T: core::cm
 
 #### method: push_pop
 
-[Source line 188](../../../stdlib/alloc/binary_heap.lani#L188)
+[Source line 192](../../../stdlib/alloc/binary_heap.lani#L192)
 
 ```lanius
 pub fn push_pop(&self, value: T) -> T where T: core::cmp::Ord<T>
@@ -271,7 +306,7 @@ pub fn push_pop(&self, value: T) -> T where T: core::cmp::Ord<T>
 
 #### method: try_clone
 
-[Source line 197](../../../stdlib/alloc/binary_heap.lani#L197)
+[Source line 201](../../../stdlib/alloc/binary_heap.lani#L201)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<BinaryHeap<T>, Error>
@@ -279,7 +314,7 @@ pub fn try_clone(&self) -> core::result::Result<BinaryHeap<T>, Error>
 
 #### method: try_shrink_to_fit
 
-[Source line 203](../../../stdlib/alloc/binary_heap.lani#L203)
+[Source line 207](../../../stdlib/alloc/binary_heap.lani#L207)
 
 ```lanius
 pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
@@ -287,15 +322,23 @@ pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
 
 #### method: take_vec
 
-[Source line 213](../../../stdlib/alloc/binary_heap.lani#L213)
+[Source line 217](../../../stdlib/alloc/binary_heap.lani#L217)
 
 ```lanius
 pub fn take_vec(&self) -> std::vec::Vec<T>
 ```
 
+#### method: take_iter
+
+[Source line 226](../../../stdlib/alloc/binary_heap.lani#L226)
+
+```lanius
+pub fn take_iter(&self) -> IntoIter<T>
+```
+
 #### method: take_sorted_vec
 
-[Source line 221](../../../stdlib/alloc/binary_heap.lani#L221)
+[Source line 233](../../../stdlib/alloc/binary_heap.lani#L233)
 
 ```lanius
 pub fn take_sorted_vec(&self) -> std::vec::Vec<T> where T: core::cmp::Ord<T>
@@ -303,7 +346,7 @@ pub fn take_sorted_vec(&self) -> std::vec::Vec<T> where T: core::cmp::Ord<T>
 
 #### method: clear
 
-[Source line 234](../../../stdlib/alloc/binary_heap.lani#L234)
+[Source line 246](../../../stdlib/alloc/binary_heap.lani#L246)
 
 ```lanius
 pub fn clear(&self)
@@ -311,15 +354,95 @@ pub fn clear(&self)
 
 #### method: destroy
 
-[Source line 235](../../../stdlib/alloc/binary_heap.lani#L235)
+[Source line 247](../../../stdlib/alloc/binary_heap.lani#L247)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 239
+### impl at line 250
 
-[Source line 239](../../../stdlib/alloc/binary_heap.lani#L239)
+[Source line 250](../../../stdlib/alloc/binary_heap.lani#L250)
+
+```lanius
+pub impl<T> IntoIter<T>
+```
+
+#### method: borrow
+
+[Source line 251](../../../stdlib/alloc/binary_heap.lani#L251)
+
+```lanius
+pub fn borrow(&self) -> &IntoIter<T>
+```
+
+#### method: remaining
+
+[Source line 252](../../../stdlib/alloc/binary_heap.lani#L252)
+
+```lanius
+pub fn remaining(&self) -> i32
+```
+
+#### method: capacity
+
+[Source line 253](../../../stdlib/alloc/binary_heap.lani#L253)
+
+```lanius
+pub fn capacity(&self) -> i32
+```
+
+#### method: order
+
+[Source line 254](../../../stdlib/alloc/binary_heap.lani#L254)
+
+```lanius
+pub fn order(&self) -> Order
+```
+
+#### method: is_empty
+
+[Source line 255](../../../stdlib/alloc/binary_heap.lani#L255)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: try_finish
+
+[Source line 259](../../../stdlib/alloc/binary_heap.lani#L259)
+
+```lanius
+pub fn try_finish(&self) -> core::option::Option<IntoIterError>
+```
+
+#### method: take_remaining
+
+[Source line 269](../../../stdlib/alloc/binary_heap.lani#L269)
+
+```lanius
+pub fn take_remaining(&self) -> BinaryHeap<T>
+```
+
+### impl at line 276
+
+[Source line 276](../../../stdlib/alloc/binary_heap.lani#L276)
+
+```lanius
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> where T: core::cmp::Ord<T>
+```
+
+#### method: next
+
+[Source line 280](../../../stdlib/alloc/binary_heap.lani#L280)
+
+```lanius
+pub fn next(&self) -> core::option::Option<T>
+```
+
+### impl at line 284
+
+[Source line 284](../../../stdlib/alloc/binary_heap.lani#L284)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::Ord<T>
@@ -327,7 +450,7 @@ pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::
 
 #### method: try_accept
 
-[Source line 240](../../../stdlib/alloc/binary_heap.lani#L240)
+[Source line 285](../../../stdlib/alloc/binary_heap.lani#L285)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>

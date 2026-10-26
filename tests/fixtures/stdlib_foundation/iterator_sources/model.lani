@@ -1,0 +1,85 @@
+// Six-u64 records: kind, source length/value, step, calls, copy schedule,
+// and prefix calls made before the cursor is copied.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Probe { length: i32, position: i32, calls: i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i64> for Probe {
+    pub fn next(&self) -> core::option::Option<i64> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let item: i32 = self.position; self.position += 1;
+        return core::option::Some(item as i64);
+    }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn observe(item: core::option::Option<i64>, source: &Probe) {
+    if (item.is_some()) { word(1); word(item.unwrap() as u64); }
+    else { word(0); word(0); }
+    word(source.position as u64); word(source.calls as u64);
+}
+fn copies<I>(first: I, source: &Probe, calls: i32, schedule: u64, fork_after: i32)
+    where I: core::iter::Iterator<i64> {
+    let call: i32 = 0;
+    while (call < fork_after) { observe(first.next(),source); call += 1; }
+    let second: I = first;
+    while (call < calls) {
+        if (((schedule >> call) & 1) == 0) { observe(first.next(),source); }
+        else { observe(second.next(),source); }
+        call += 1;
+    }
+}
+fn run(kind: i32, length: i32, step: u64, calls: i32, schedule: u64, fork_after: i32) {
+    let source: Probe = Probe { length: length, position: 0, calls: 0 };
+    if (kind <= 1) {
+        let checked: core::result::Result<core::iter::StepBy<Probe,i64>,core::iter::StepError> = core::iter::step_by<Probe,i64>(source.borrow(),step);
+        if (checked.is_err()) { assert(source.calls == 0 && source.position == 0); word(0); return; }
+        let selected: core::iter::StepBy<Probe,i64> = checked.unwrap();
+        assert(source.calls == 0 && source.position == 0); word(1);
+        if (kind == 0) { copies<core::iter::StepBy<Probe,i64>>(selected,source.borrow(),calls,schedule,fork_after); }
+        else {
+            let first: &core::iter::StepBy<Probe,i64> = selected.borrow();
+            let second: &core::iter::StepBy<Probe,i64> = selected.borrow();
+            let call: i32 = 0;
+            while (call < calls) {
+                if (call < fork_after || ((schedule >> call) & 1) == 0) { observe(first.next(),source.borrow()); }
+                else { observe(second.next(),source.borrow()); }
+                call += 1;
+            }
+        }
+    } else {
+        word(1);
+        if (kind == 2) { let leaf: core::iter::Once<i64> = core::iter::once<i64>(100 + (length as i64)); copies<core::iter::Once<i64>>(leaf,source.borrow(),calls,schedule,fork_after); }
+        else { if (kind == 3) { let leaf: core::iter::Repeat<i64> = core::iter::repeat<i64>(100 + (length as i64)); copies<core::iter::Repeat<i64>>(leaf,source.borrow(),calls,schedule,fork_after); }
+        else { let leaf: core::iter::Empty<i64> = core::iter::empty<i64>(); copies<core::iter::Empty<i64>>(leaf,source.borrow(),calls,schedule,fork_after); } }
+    }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8;48] = [0;48];
+    while (true) {
+        let received: core::result::Result<i32,core::io::Error> = input.read(record,0,48);
+        if (received.is_err()) { return 1; }
+        let count: i32 = received.unwrap(); if (count == 0) { return 0; }
+        if (count < 48) { if (core::io::read_exact(input.borrow(),record,count,48-count).is_err()) { return 2; } }
+        let kind: u64 = decode(record,0); let length: u64 = decode(record,8); let step: u64 = decode(record,16);
+        let calls: u64 = decode(record,24); let schedule: u64 = decode(record,32); let fork_after: u64 = decode(record,40);
+        assert(kind <= 4 && length <= 5 && calls <= 5 && fork_after <= calls);
+        run(kind as i32,length as i32,step,calls as i32,schedule,fork_after as i32);
+    }
+    return 0;
+}

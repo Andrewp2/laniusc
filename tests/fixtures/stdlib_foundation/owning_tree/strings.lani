@@ -1,0 +1,34 @@
+module app::main;
+import alloc::clone_tree_map;
+import alloc::clone_tree_set;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::iter;
+import core::result;
+fn text(first:u8)->alloc::string::String{let bytes:[u8;4]=[first,0,195,169];return alloc::string::from_utf8(bytes,4).unwrap();}
+fn map_owners(){
+    let source=alloc::tree_map::with_capacity<alloc::string::String,alloc::string::String>(6).unwrap();
+    source.try_insert(text(65),text(97)).unwrap();source.try_insert(text(66),text(98)).unwrap();source.try_insert(text(67),text(99)).unwrap();
+    let query=source.lower_bound(source.first().unwrap().key).unwrap();let second=source.upper_bound(query.key).unwrap();
+    let hole=source.remove(second.key).unwrap();hole.key.destroy();hole.value.destroy();
+    let cursor=source.take_iter();assert(source.is_empty()&&source.capacity()==0&&cursor.remaining()==2&&cursor.capacity()==6);
+    source.try_insert(text(68),text(100)).unwrap();alloc::clone_tree_map::destroy_tree_map<alloc::string::String,alloc::string::String>(source.borrow());
+    let yielded=cursor.next().unwrap();assert(yielded.key.byte_at(0).unwrap()==65&&yielded.value.byte_at(0).unwrap()==97);
+    alloc::clone_tree_map::destroy_tree_map_iter<alloc::string::String,alloc::string::String>(cursor.borrow());
+    alloc::clone_tree_map::destroy_tree_map_iter<alloc::string::String,alloc::string::String>(cursor.borrow());
+    assert(cursor.remaining()==0&&cursor.capacity()==0&&cursor.next().is_none()&&cursor.next_back().is_none());
+    // Both transferred owners remain valid after remainder and backing release.
+    yielded.value.try_push_scalar(90).unwrap();assert(yielded.key.byte_len()==4&&yielded.value.byte_len()==5&&yielded.value.byte_at(4).unwrap()==90);
+    yielded.key.destroy();yielded.value.destroy();source.destroy();
+}
+fn set_owners(){
+    let source=alloc::tree_set::with_capacity<alloc::string::String>(6).unwrap();source.try_insert(text(65)).unwrap();source.try_insert(text(66)).unwrap();source.try_insert(text(67)).unwrap();
+    let second=source.upper_bound(source.first().unwrap()).unwrap();source.remove(second).unwrap().destroy();
+    let cursor=source.take_iter();source.try_insert(text(68)).unwrap();alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(source.borrow());
+    let yielded=cursor.next_back().unwrap();assert(yielded.byte_at(0).unwrap()==67&&cursor.remaining()==1);
+    alloc::clone_tree_set::destroy_tree_set_iter<alloc::string::String>(cursor.borrow());alloc::clone_tree_set::destroy_tree_set_iter<alloc::string::String>(cursor.borrow());
+    assert(cursor.capacity()==0&&cursor.next().is_none()&&cursor.next_back().is_none());yielded.try_push_scalar(90).unwrap();
+    assert(yielded.byte_len()==5&&yielded.byte_at(4).unwrap()==90);yielded.destroy();source.destroy();
+}
+fn main()->i32{map_owners();set_owners();return 0;}

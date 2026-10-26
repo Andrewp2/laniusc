@@ -1,0 +1,98 @@
+#![cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod common;
+use std::{
+    os::unix::fs::PermissionsExt,
+    path::PathBuf,
+    process::Command,
+    sync::OnceLock,
+    time::Duration,
+};
+fn root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+fn compile(entry: PathBuf) -> common::TempArtifact {
+    let roots = laniusc_compiler::compiler::EntrySourceRoots {
+        stdlib_root: Some(root().join("stdlib")),
+        user_roots: vec![root().join("extended")],
+    };
+    let options = laniusc_compiler::compiler::NativeLinkOptions {
+        libraries: vec!["ssl".into(), "crypto".into()],
+        ..Default::default()
+    };
+    let bytes = common::run_gpu_codegen_with_timeout("https-fetch native link", move || {
+        pollster::block_on(
+            laniusc_compiler::compiler::compile_entry_to_x86_64_with_native_link(
+                &entry, &roots, &options,
+            ),
+        )
+    })
+    .unwrap_or_else(|error| panic!("https-fetch: {error}"));
+    let executable = common::TempArtifact::new("laniusc_https_fetch", "executable", None);
+    std::fs::write(executable.path(), bytes).unwrap();
+    let validation = common::process_output_with_timeout(
+        "https-fetch linked ELF",
+        Command::new("python3")
+            .arg(root().join("tests/fixtures/native_c/validate_linked_elf.py"))
+            .arg(executable.path()),
+        Duration::from_secs(20),
+    );
+    common::assert_command_success("https-fetch linked ELF", &validation);
+    let linked = common::process_output_with_timeout(
+        "https-fetch dependencies",
+        Command::new("readelf").arg("-d").arg(executable.path()),
+        Duration::from_secs(10),
+    );
+    common::assert_command_success("https-fetch dependencies", &linked);
+    let dependencies = String::from_utf8(linked.stdout).unwrap();
+    assert!(
+        dependencies.contains("libssl.so.3") && dependencies.contains("libcrypto.so.3"),
+        "{dependencies}"
+    );
+    std::fs::set_permissions(executable.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    executable
+}
+fn cli() -> &'static common::TempArtifact {
+    static EXE: OnceLock<common::TempArtifact> = OnceLock::new();
+    EXE.get_or_init(|| compile(root().join("sample_programs/library/https_fetch.lani")))
+}
+fn stream() -> &'static common::TempArtifact {
+    static EXE: OnceLock<common::TempArtifact> = OnceLock::new();
+    EXE.get_or_init(|| {
+        compile(root().join("tests/fixtures/extended/https_fetch/stream_contracts.lani"))
+    })
+}
+fn oracle(mode: &str) {
+    let executable = if mode == "stream" { stream() } else { cli() };
+    let output = common::process_output_with_timeout(
+        format!("https-fetch {mode}"),
+        Command::new("python3")
+            .arg(root().join("tests/fixtures/extended/https_fetch/oracle.py"))
+            .arg(mode)
+            .arg(executable.path()),
+        Duration::from_secs(70),
+    );
+    common::assert_command_success(format!("https-fetch {mode}"), &output);
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let summary = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        summary.starts_with(&format!("https-fetch-{mode} cases=")),
+        "{summary}"
+    );
+    eprint!("{summary}");
+}
+#[test]
+fn verified_binary_fixed_chunked_close_informational_and_ip_http_responses_execute() {
+    oracle("matrix");
+}
+#[test]
+fn certificate_identity_and_http_failures_publish_no_output() {
+    oracle("failures");
+}
+#[test]
+fn deadlines_network_budgets_and_stdout_bounds_are_enforced() {
+    oracle("limits");
+}
+#[test]
+fn buffered_tls_acceptance_copies_input_flushes_and_becomes_terminal_on_errors() {
+    oracle("stream");
+}

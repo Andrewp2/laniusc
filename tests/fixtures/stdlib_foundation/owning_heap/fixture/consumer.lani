@@ -1,0 +1,18 @@
+module fixture::consumer;
+import alloc::binary_heap;
+import alloc::clone_binary_heap;
+import core::clone;
+import core::iter;
+import core::option;
+
+// Imported generic dispatch must retain the cursor's checked item type.
+pub fn pull<I,T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> {
+    return source.next();
+}
+// Neither recovery nor cleanup is allowed to acquire an Ord/TryClone bound.
+pub fn recover<T>(source: &alloc::binary_heap::IntoIter<T>) -> alloc::binary_heap::BinaryHeap<T> {
+    return source.take_remaining();
+}
+pub fn release<T>(source: &alloc::binary_heap::IntoIter<T>) where T: core::clone::Destroy<T> {
+    alloc::clone_binary_heap::destroy_binary_heap_iter<T>(source);
+}

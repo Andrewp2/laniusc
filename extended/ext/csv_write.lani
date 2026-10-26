@@ -1,0 +1,46 @@
+// Bounded allocation-free CSV writes. No implicit flush or writer ownership.
+module ext::csv_write;
+import core::io;
+import core::result;
+import ext::csv;
+
+pub struct Limits { max_output: u64, max_write_calls: u64 }
+pub struct Progress { written: u64, write_calls: u64 }
+pub enum Cause { Csv(ext::csv::Error), OutputLimit, CallLimit, Io(core::io::Error) }
+pub struct Failure { cause: Cause, written: u64, write_calls: u64 }
+pub fn default_limits() -> Limits { return Limits { max_output: 16777216, max_write_calls: 65536 }; }
+
+// The writer obeys core::io::Write: Err accepts no bytes in that call. A bad
+// successful count cannot establish further acceptance, so retain only the
+// preceding confirmed prefix. The writer and row remain live for this call;
+// no alias may destroy them or mutate the row reentrantly. Write may update
+// its own sink state. The writer may not retain the borrowed scratch view.
+pub fn write_record<W>(writer: &W, record: &ext::csv::Record, limits: Limits) -> core::result::Result<Progress,Failure>
+    where W: core::io::Write {
+    let made = record.encoding();
+    if (made.is_err()) { return core::result::Err(Failure { cause: Cause::Csv(made.unwrap_err()), written: 0, write_calls: 0 }); }
+    let cursor: ext::csv::Encoding = made.unwrap();
+    if (cursor.remaining() > limits.max_output) { return core::result::Err(Failure { cause: Cause::OutputLimit, written: 0, write_calls: 0 }); }
+    let written: u64 = 0; let calls: u64 = 0;
+    let scratch: [u8;1024] = [0;1024];
+    while (cursor.remaining() > 0) {
+        let length: i32 = 0;
+        while (length < 1024 && cursor.remaining() > 0) { scratch[length] = cursor.next().unwrap(); length += 1; }
+        let offset: i32 = 0;
+        while (offset < length) {
+            if (calls == limits.max_write_calls) { return core::result::Err(Failure { cause: Cause::CallLimit, written: written, write_calls: calls }); }
+            calls += 1;
+            let attempt: core::result::Result<i32,core::io::Error> = writer.write(scratch,offset,length - offset);
+            if (attempt.is_err()) {
+                let error: core::io::Error = attempt.unwrap_err();
+                if (core::io::is_interrupted(error)) { continue; }
+                return core::result::Err(Failure { cause: Cause::Io(error), written: written, write_calls: calls });
+            }
+            let accepted: i32 = attempt.unwrap();
+            if (accepted < 0 || accepted > length - offset) { return core::result::Err(Failure { cause: Cause::Io(core::io::Error::InvalidCount), written: written, write_calls: calls }); }
+            if (accepted == 0) { return core::result::Err(Failure { cause: Cause::Io(core::io::Error::WriteZero), written: written, write_calls: calls }); }
+            offset += accepted; written += accepted as u64;
+        }
+    }
+    return core::result::Ok(Progress { written: written, write_calls: calls });
+}

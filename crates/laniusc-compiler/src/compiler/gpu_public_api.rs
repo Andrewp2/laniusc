@@ -656,6 +656,24 @@ where
     compile_path_manifest_to_x86_64(&source_pack).await
 }
 
+/// Compile checked Lanius objects, serialize their existing sections as ELF
+/// relocatables, and link them with the platform C runtime and explicit native
+/// inputs. Foreign calls use the checked scalar C ABI; the system linker does
+/// symbol resolution and normal libc/library startup.
+pub async fn compile_entry_to_x86_64_with_native_link<EP>(
+    entry_path: EP,
+    roots: &EntrySourceRoots,
+    options: &NativeLinkOptions,
+) -> Result<Vec<u8>, CompileError>
+where
+    EP: AsRef<Path>,
+{
+    let source_pack = load_entry_path_manifest_with_source_roots(entry_path, roots)?;
+    global_x86_gpu_compiler()?
+        .compile_path_manifest_with_native_link(&source_pack, options)
+        .await
+}
+
 async fn compile_path_manifest_to_wasm(
     source_pack: &ExplicitSourcePackPathManifest,
 ) -> Result<Vec<u8>, CompileError> {

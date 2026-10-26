@@ -1,0 +1,106 @@
+// Opt-in recursive HashSet cloning and explicit memory-owner release.
+// Ordinary set methods keep their shallow key copy and cleanup behavior.
+// Import this module in composition entries and generic consumers.
+module alloc::clone_hash_set;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+
+// Indexes count live entries in source.iter() order, not buckets or insertion
+// order. E keeps its own ownership and cannot borrow a partial destination.
+pub enum Error<E> { Storage(alloc::hash_map::Error), Element(i32,E), ChangedKey(i32) }
+
+// Each stored key must be a distinct active owner under Destroy<T>. Walk
+// descriptors directly: released keys must never be used for lookup/remove.
+// Destroy callbacks must not reenter/mutate this set. Old copies and cursors
+// become invalid. The actual owner is reset; repeated release is harmless.
+pub fn destroy_hash_set<T>(owner: &alloc::hash_set::HashSet<T>)
+    where T: core::clone::Destroy<T> {
+    let cursor: alloc::hash_set::Iter<T> = owner.iter();
+    while (true) {
+        let next: core::option::Option<T> = cursor.next();
+        if (next.is_none()) { break; }
+        T::destroy_value(next.unwrap());
+    }
+    owner.destroy();
+}
+
+// Release only the unconsumed keys and table, retaining caller authority for
+// yielded owners. Disarm before callbacks; never compare a released key.
+pub fn destroy_hash_set_iter<T>(owner: &alloc::hash_set::IntoIter<T>)
+    where T: core::clone::Destroy<T> {
+    let remaining: alloc::hash_set::HashSet<T> = owner.take_remaining();
+    destroy_hash_set<T>(remaining.borrow());
+}
+
+// Source owners and representatives remain immutable. Reserve the complete
+// destination table before cloning leaves. Eq/Hash must be lawful and stable;
+// callbacks must not reenter/mutate either set. The checks below detect changed
+// identity along this path, not arbitrary broken traits or aliased owners.
+pub fn try_clone<T,E>(source: &alloc::hash_set::HashSet<T>)
+    -> core::result::Result<alloc::hash_set::HashSet<T>,Error<E>>
+    where T: core::hash::Hash<T>, T: core::cmp::Eq<T>,
+          T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    let output: alloc::hash_set::HashSet<T> = alloc::hash_set::new();
+    let reserved: core::result::Result<i32,alloc::hash_map::Error> = output.try_reserve(source.len());
+    if (reserved.is_err()) { return core::result::Err(Error::Storage(reserved.unwrap_err())); }
+    let cursor: alloc::hash_set::Iter<T> = source.iter();
+    let index: i32 = 0;
+    while (true) {
+        let next: core::option::Option<T> = cursor.next();
+        if (next.is_none()) { break; }
+        let borrowed: T = next.unwrap();
+        let cloned: core::result::Result<T,E> = T::try_clone_value(borrowed);
+        if (cloned.is_err()) {
+            let failure: E = cloned.unwrap_err();
+            destroy_hash_set<T>(output.borrow());
+            return core::result::Err(Error::Element(index,failure));
+        }
+        let key: T = cloned.unwrap();
+        if (!T::eq(borrowed,key) || T::hash(borrowed) != T::hash(key) || output.contains(key)) {
+            T::destroy_value(key);
+            destroy_hash_set<T>(output.borrow());
+            return core::result::Err(Error::ChangedKey(index));
+        }
+        let inserted: core::result::Result<core::option::Option<T>,alloc::hash_map::Error> = output.try_insert(key);
+        if (inserted.is_err()) {
+            let failure: alloc::hash_map::Error = inserted.unwrap_err();
+            T::destroy_value(key);
+            destroy_hash_set<T>(output.borrow());
+            return core::result::Err(Error::Storage(failure));
+        }
+        let rejected: core::option::Option<T> = inserted.unwrap();
+        if (rejected.is_some()) {
+            // Ordinary duplicates return the supplied key. If unstable
+            // callbacks caused displacement instead, the returned owner still
+            // needs separate release from the currently installed prefix.
+            T::destroy_value(rejected.unwrap());
+            destroy_hash_set<T>(output.borrow());
+            return core::result::Err(Error::ChangedKey(index));
+        }
+        index += 1;
+    }
+    return core::result::Ok(output);
+}
+
+pub impl<T,E> core::clone::TryClone<alloc::hash_set::HashSet<T>,Error<E>>
+    for alloc::hash_set::HashSet<T>
+    where T: core::hash::Hash<T>, T: core::cmp::Eq<T>,
+          T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    pub fn try_clone_value(source: alloc::hash_set::HashSet<T>)
+        -> core::result::Result<alloc::hash_set::HashSet<T>,Error<E>> {
+        return try_clone<T,E>(source.borrow());
+    }
+}
+
+// Consumes this descriptor; stale aliases are not reset by a by-value call.
+// For a reusable active owner call destroy_hash_set(owner.borrow()).
+pub impl<T> core::clone::Destroy<alloc::hash_set::HashSet<T>> for alloc::hash_set::HashSet<T>
+    where T: core::clone::Destroy<T> {
+    pub fn destroy_value(owned: alloc::hash_set::HashSet<T>) { destroy_hash_set<T>(owned.borrow()); }
+}

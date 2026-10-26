@@ -7,7 +7,8 @@ native execution tests; it does not certify another target, a running host's
 permissions, every raw argument combination, or composable-artifact linking.
 The original inventory required no new GPU execution. The later
 [raw host-width repair](stdlib-raw-host-width.md) adds focused native evidence
-for the size, count, capacity and alignment contracts below.
+for the size, count, capacity and alignment contracts below. The native C
+integrations below have separate, later execution receipts.
 
 ## Read the two capability inventories separately
 
@@ -59,16 +60,14 @@ not add a new compiler service per OS call or make old externs executable.
 | [`std::file_ops`](stdlib-file-operations.md) | `openat`, `lseek`, `ftruncate`, `fcntl`, `dup3`, `fsync`, `fdatasync`, `statx`; checked raw-byte paths/options, signed wide positions and lengths, metadata field-presence/layout validation, synchronization errors and manual FD ownership. No crash-durable namespace transaction or lock is implied. | `stdlib_file_operations_execution`: real identity/flags/large offsets, independent OS metadata, malformed/bounds atomicity and injected errors; [resize gates](stdlib-file-resize.md): sparse file lengths, zero extension, shared offsets and one-attempt errors |
 | [`std::file_copy`](stdlib-file-copy.md) | Composes descriptor flags, statx identity, seek, truncate and File byte I/O for bounded regular-file replacement. Checks aliases before destruction, reads actual EOF and reports consumed/written progress. No transaction, lock, implicit retry, sync or close is supplied. | `stdlib_file_copy_execution`: 84 native cases including real partial writes and zero-size pseudo-files; `stdlib_copy_file_execution`: 59 application cases with owner and error cleanup |
 | [`std::directory`](stdlib-directory.md) | `getdents64` plus open/statx; bounded record parsing and iteration, anchored no-follow traversal, explicit race and lifetime limits, staged snapshots. | `stdlib_directory_execution`: OS oracle, byte names, trees/scale/limits, allocation and descriptor cleanup |
-| [`std::socket`](stdlib-sockets.md) | socket/connect/bind/listen/accept4; stream/datagram send/receive; endpoint queries, shutdown, supported options, descriptor status/duplication and one-FD readiness. Numeric IPv4/IPv6 addresses, ownership and errno/retry/deadline policy remain source code. DNS/TLS are separate APIs. | `stdlib_socket_execution`: real IPv4/IPv6 TCP/UDP, datagram truncation, half-close, options, accept cleanup and deadline/error checks |
+| [`std::socket`](stdlib-sockets.md) | socket/connect/bind/listen/accept4; stream/datagram send/receive; endpoint queries, shutdown, supported options, descriptor status/duplication and one-FD readiness. Numeric IPv4/IPv6 addresses, ownership and errno/retry/deadline policy remain source code. System resolution and authenticated TLS use the separate native C integrations below. | `stdlib_socket_execution`: real IPv4/IPv6 TCP/UDP, datagram truncation, half-close, options, accept cleanup and deadline/error checks |
 | [`std::signal`](stdlib-signals.md) | `rt_sigaction` for the supported typed signals and Default/Ignore dispositions. No arbitrary source handler/trampoline is installed. | `stdlib_signal_execution`: kernel disposition inspection, real broken-pipe behavior, restoration and injected failure |
 | [`std::poll`](stdlib-poll.md) | Multi-FD poll with fixed-capacity owned scratch/publication, borrowed FD lifetimes and advisory readiness. One-call relative waits or bounded absolute CLOCK_MONOTONIC waits; post-poll observed expiry publishes zero. | `stdlib_poll_execution`: pipes/socketpairs, invalid/negative/duplicate FDs, saved-result atomicity, allocation/result/clock faults, EINTR budgets and independent `select.poll` over 4,096 records |
-| [`std::command`](stdlib-command.md) | Same-stack fork/execve/wait4/kill, pipe2, dup3/fcntl, close_range, chdir and descriptor I/O; owned startup staging/status channel, explicit startup uncertainty and child/PID lifetime. Requires the documented single-threaded/no-outside-reaping contract and host close_range support. | `stdlib_command_execution`: real lifecycle, pipe/environment/cwd/FD actions and independent startup/resource-fault model |
+| [`std::command`](stdlib-command.md) | Same-stack fork/execve/wait4/kill, pipe2, dup3/fcntl, close_range, chdir and descriptor I/O; owned startup staging/status channel, explicit startup uncertainty and child/PID lifetime. Explicit new groups use setpgid/getpgid; waitid/WNOWAIT retains the unreaped leader anchor for group signaling and capture. Requires the documented single-threaded/no-outside-reaping contract and host close_range support. | `stdlib_command_execution`: real lifecycle, pipe/environment/cwd/FD actions and independent startup/resource-fault model; [group API and supervisor gates](stdlib-command-groups.md#focused-execution-evidence) cover authority, escalation and failure cleanup |
 
 Higher-level DNS, TZif, file formats and command pipe-draining clients compose
 these operations. Their own guides/tests establish protocol/format and resource
-contracts; their existence does not bind libc resolver/TLS/SQLite or old
-catalog APIs. This inventory makes no new completion claim for a consumer still
-under implementation.
+contracts. These source implementations do not bind the old catalog APIs.
 
 Raw descriptor/stdio byte counts, startup argument/environment copy capacities,
 environment key lengths, clock output capacities and current-directory capacity
@@ -78,9 +77,26 @@ access huge sentinel buffers. Declared `i32` indices/results and each wrapper's
 existing short-I/O/errno policy remain explicit. See the
 [raw boundary guide](stdlib-raw-host-width.md) for ownership and backing rules.
 
+## Ordinary native C integrations
+
+[`std::resolve`](stdlib-resolve.md) calls libc `getaddrinfo` and `freeaddrinfo`
+through the checked [native C profile](library-native-c.md), with CRT startup
+and thread-local errno. It stages explicit hints, validates the selected glibc
+layouts and returns owned socket addresses in native order, including
+duplicates. All four [library groups](stdlib-resolve-testing.md) and all five
+[`resolve-host` application groups](stdlib-resolve-host.md) pass through separate
+receipts. Input/result caps bound Lanius staging and traversal, not native
+NSS allocation, blocking time or cleanup work; there is no lookup deadline.
+
+The same native C path supplies [OpenSSL TLS, including mutual TLS](extended-openssl-mutual-tls.md)
+and [SQLite](extended-sqlite.md). These are ordinary library calls, with explicit
+native owners and wrapper policies. They add no host intrinsic or service ID
+and do not bind the ten legacy `std::net` externs. Callbacks, foreign thread
+entry and aggregate C layouts remain outside the native C profile.
+
 ## Binding authority and metadata corrections
 
-The native path is a closed compiler mapping:
+The direct host-service path is a closed compiler mapping:
 
 1. `type_checker/params.rs` supplies builtin spellings; semantic
    `artifact/00_project.slang::host_service_for_function` admits the known
@@ -104,8 +120,11 @@ the catalog's canonical nondecreasing service-ID order and its existing gate.
 
 Direct native success does not loosen composable-artifact descriptor policy:
 target-byte descriptors with runtime requirements remain rejected, including
-family 14. General native FFI, thread entry/TLS/atomics, user GPU execution,
-and complete external runtime linking require their own contracts and evidence.
+family 14. The separate [native C profile](library-native-c.md) supplies
+executable scalar/pointer calls and CRT linking outside those descriptor modes.
+Broader C ABI profiles, source thread-local storage and atomics, foreign thread
+entry, user GPU execution and complete external runtime linking require their
+own contracts and evidence.
 
 ### Keeping this inventory current
 

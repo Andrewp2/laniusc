@@ -1,0 +1,10 @@
+module app::main;
+import alloc::tree_set;
+import alloc::string;
+import core::clone;
+fn release<T>(owned:T) where T:core::clone::Destroy<T>{T::destroy_value(owned);}
+fn main()->i32{
+    let source:alloc::tree_set::TreeSet<alloc::string::String> = alloc::tree_set::new();
+    release<alloc::tree_set::TreeSet<alloc::string::String>>(source);
+    return 0;
+}

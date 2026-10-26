@@ -1,0 +1,121 @@
+// Bounded UTF-8 numeric-column report with lookahead and shared reductions.
+// Runtime acceptance is tracked in docs/stdlib-column-extrema.md.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::cmp;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import std::args;
+import std::signal;
+import std::stream;
+const MAX_INPUT: i32=65536;
+const MAX_ROWS: i32=4096;
+struct Sample { value: i64, row: u64 }
+pub impl core::cmp::Ord<Sample> for Sample {
+    pub fn lt(a: Sample,b: Sample) -> bool { return a.value<b.value; }
+    pub fn le(a: Sample,b: Sample) -> bool { return a.value<=b.value; }
+    pub fn gt(a: Sample,b: Sample) -> bool { return a.value>b.value; }
+    pub fn ge(a: Sample,b: Sample) -> bool { return a.value>=b.value; }
+}
+fn signed(bytes: [u8],offset: i32,value: i64) -> i32 {
+    let formatted: core::result::Result<i32,core::decimal::FormatError> =core::decimal::format_i64(bytes,offset,128-offset,value);
+    if (formatted.is_err()) { return -1; } return offset+formatted.unwrap();
+}
+fn unsigned(bytes: [u8],offset: i32,value: u64) -> i32 {
+    let formatted: core::result::Result<i32,core::decimal::FormatError> =core::decimal::format_u64(bytes,offset,128-offset,value);
+    if (formatted.is_err()) { return -1; } return offset+formatted.unwrap();
+}
+fn publish(values: &alloc::vec::Vec<Sample>) -> i32 {
+    let storage: [i32;32]=[0;32];
+    let bytes: [u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),128);
+    let header: [u8;30]=[99,111,117,110,116,44,109,105,110,44,109,97,120,44,109,105,110,95,114,111,119,44,109,97,120,95,114,111,119,10];
+    // Copy the header into packed output; the fixed typed byte array itself
+    // is not assumed to have native syscall byte stride.
+    let index: i32=0; while (index<30) { bytes[index]=header[index]; index+=1; }
+    let offset: i32=unsigned(bytes,30,values.len() as u64); if (offset<0) { return 3; }
+    bytes[offset]=44; offset+=1;
+    if (!values.is_empty()) {
+        let low: core::slice::Iter<Sample> =values.iter(); let high: core::slice::Iter<Sample> =values.iter();
+        let minimum: Sample=core::iter::min<core::slice::Iter<Sample>,Sample>(low.borrow()).unwrap();
+        let maximum: Sample=core::iter::max<core::slice::Iter<Sample>,Sample>(high.borrow()).unwrap();
+        offset=signed(bytes,offset,minimum.value); if (offset<0) { return 3; } bytes[offset]=44; offset+=1;
+        offset=signed(bytes,offset,maximum.value); if (offset<0) { return 3; } bytes[offset]=44; offset+=1;
+        offset=unsigned(bytes,offset,minimum.row); if (offset<0) { return 3; } bytes[offset]=44; offset+=1;
+        offset=unsigned(bytes,offset,maximum.row); if (offset<0) { return 3; }
+    } else { bytes[offset]=44; bytes[offset+1]=44; bytes[offset+2]=44; offset+=3; }
+    bytes[offset]=10; offset+=1;
+    let sink: std::stream::Descriptor=std::stream::stdout();
+    if (core::io::write_all(sink.borrow(),bytes,0,offset).is_err()) { return 3; } return 0;
+}
+fn stage(text: core::text::Text,column: u64,values: &alloc::vec::Vec<Sample>) -> i32 {
+    let separator_bytes: [u8;1]=[10];
+    let separator: core::text::Text=core::text::from_utf8_unchecked(separator_bytes,0,1);
+    let lines: core::text::Split=text.split(separator);
+    let pending: core::iter::Peekable<core::text::Split,core::text::Text> =core::iter::peekable<core::text::Split,core::text::Text>(lines.borrow());
+    let row: u64=0;
+    while (pending.peek().is_some()) {
+        let line: core::text::Text=pending.next().unwrap().trim_ascii(); row+=1;
+        if (!line.is_empty() && line.byte_at(0).unwrap()!=35) {
+            if (values.len()==MAX_ROWS) { return 7; }
+            let words: core::text::SplitAsciiWhitespace=line.split_ascii_whitespace();
+            let fields: core::iter::Peekable<core::text::SplitAsciiWhitespace,core::text::Text> =core::iter::peekable<core::text::SplitAsciiWhitespace,core::text::Text>(words.borrow());
+            let index: u64=1;
+            while (index<column && fields.peek().is_some()) { fields.next(); index+=1; }
+            let selected: core::option::Option<core::text::Text> =fields.next();
+            if (selected.is_none()) { return 6; }
+            let parsed: core::result::Result<i64,core::decimal::ParseError> =selected.unwrap().parse_i64();
+            if (parsed.is_err()) { return 6; }
+            if (values.try_push(Sample { value:parsed.unwrap(),row:row }).is_err()) { return 4; }
+            assert(fields.try_finish().is_none());
+        }
+    }
+    assert(pending.try_finish().is_none()); return 0;
+}
+fn summarize(input: &alloc::io::Buffer,column: u64) -> i32 {
+    // Validate comments and unselected fields too, before parsing/publication.
+    let checked: core::result::Result<core::text::Text,core::text::Error> =core::text::from_utf8(input.as_bytes(),input.len());
+    if (checked.is_err()) { return 6; }
+    let allocated: core::result::Result<alloc::vec::Vec<Sample>,alloc::vec::Error> =alloc::vec::with_capacity<Sample>(MAX_ROWS);
+    if (allocated.is_err()) { return 4; }
+    let values: alloc::vec::Vec<Sample> =allocated.unwrap();
+    let status: i32=stage(checked.unwrap(),column,values.borrow());
+    if (status==0) { status=publish(values.borrow()); }
+    values.destroy(); return status;
+}
+fn input_status(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::AllocationFailed -> 4,core::io::Error::LimitExceeded -> 7,_ -> 3 };
+}
+fn report(column: u64) -> i32 {
+    let made: core::result::Result<alloc::io::Buffer,core::io::Error> =alloc::io::with_limit(MAX_INPUT);
+    if (made.is_err()) { return input_status(made.unwrap_err()); }
+    let input: alloc::io::Buffer=made.unwrap();
+    let reserved: core::result::Result<i32,core::io::Error> =input.try_reserve(MAX_INPUT);
+    if (reserved.is_err()) { let code: i32=input_status(reserved.unwrap_err()); input.destroy(); return code; }
+    let source: std::stream::Descriptor=std::stream::stdin();
+    let copied: core::result::Result<u64,core::io::CopyFailure> =std::stream::copy(source.borrow(),input.borrow());
+    let status: i32=0;
+    if (copied.is_err()) { status=input_status(copied.unwrap_err().cause); }
+    else { status=summarize(input.borrow(),column); }
+    input.destroy(); return status;
+}
+fn process(arguments: std::args::Arguments) -> i32 {
+    if (arguments.len()!=1) { return 2; }
+    let argument: core::slice::View<u8> =arguments.get(0).unwrap();
+    let parsed: core::result::Result<u64,core::decimal::ParseError> =core::decimal::parse_u64_range(argument.values,argument.start,argument.length);
+    if (parsed.is_err()) { return 2; }
+    let column: u64=parsed.unwrap(); if (column==0 || column>4096) { return 2; }
+    return report(column);
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> =std::args::snapshot(1,1,32);
+    if (captured.is_err()) { return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4,std::args::Error::HostRead(index) -> 3,_ -> 2 }; }
+    let arguments: std::args::Arguments=captured.unwrap(); let status: i32=process(arguments); arguments.destroy(); return status;
+}

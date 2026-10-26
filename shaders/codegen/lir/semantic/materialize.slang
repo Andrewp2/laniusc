@@ -1097,7 +1097,8 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         op = SEMANTIC_LIR_OP_CALL_INTRINSIC;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 3u)
         op = SEMANTIC_LIR_OP_CALL_HOST;
-    else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 4u)
+    else if (op == SEMANTIC_LIR_OP_CALL &&
+        (semantic_call_kind[node] == 4u || semantic_call_kind[node] == 6u))
         op = SEMANTIC_LIR_OP_CALL_SYMBOL;
     else if (op == SEMANTIC_LIR_OP_CALL && semantic_call_kind[node] == 5u)
         op = SEMANTIC_LIR_OP_AGGREGATE_NEW;
@@ -1323,6 +1324,8 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         op = SEMANTIC_LIR_OP_CONST_F64;
     core.flags = ((type_ref_tag & 3u) << SEMANTIC_LIR_TYPE_REF_TAG_SHIFT) |
         ((op & 0x3fu) << SEMANTIC_LIR_OP_SHIFT);
+    if (op == SEMANTIC_LIR_OP_CALL_SYMBOL && semantic_call_kind[node] == 6u)
+        core.flags |= SEMANTIC_LIR_FLAG_NATIVE_C_CALL;
     // Field word offsets and indexed-array lengths are mutually exclusive
     // projection metadata. They share the existing per-row side table instead
     // of widening every semantic instruction.

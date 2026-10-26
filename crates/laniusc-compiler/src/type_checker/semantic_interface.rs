@@ -392,6 +392,7 @@ impl GpuTypeChecker {
             state
                 .typecheck_graph
                 .u32_buffer("semantic_value_const_present_by_hir")?,
+            state.typecheck_graph.u32_buffer("semantic_function_native_abi_by_hir")?,
         ];
         let dependency_visibility = module_path.dependency_visibility.as_deref();
         let dependency_trait_header = dependency_visibility
@@ -440,6 +441,7 @@ impl GpuTypeChecker {
             semantic_value_const_by_hir: (&graph_buffers[21]).into(),
             semantic_value_const_present_by_hir: (&graph_buffers[22]).into(),
             function_host_service_by_hir: (&graph_buffers[14]).into(),
+            function_native_abi_by_hir: (&graph_buffers[23]).into(),
             public_decl_count: (&module_path.interface_public_decl_count).into(),
             public_decl_local_id: (&module_path.interface_public_decl_local_id).into(),
             public_decl_index_by_local: (&module_path.interface_public_decl_index_by_local).into(),
@@ -744,6 +746,10 @@ impl GpuTypeChecker {
         identity_resources.buffer(
             "semantic_function_host_service_by_hir",
             inputs.function_host_service_by_hir,
+        );
+        identity_resources.buffer(
+            "semantic_function_native_abi_by_hir",
+            inputs.function_native_abi_by_hir,
         );
         identity_resources.buffer("interface_name_ref_len", &name_ref_len);
         identity_resources.buffer("interface_name_ref_prefix", &name_ref_prefix);

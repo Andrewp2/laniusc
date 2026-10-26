@@ -1,0 +1,102 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone_binary_heap;
+import alloc::string;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import fixture::consumer;
+import std::io;
+import std::io_decimal;
+import std::vec;
+
+struct NoTraits {}
+struct ReleaseOnly { id: i32, text: alloc::string::String, released: [bool] }
+pub impl core::clone::Destroy<ReleaseOnly> for ReleaseOnly {
+    pub fn destroy_value(item: ReleaseOnly) {
+        assert(item.id>=0 && item.id<3 && !item.released[item.id]); item.released[item.id]=true;
+        assert(item.text.byte_len()==4 && item.text.byte_at(0).unwrap()==(65+item.id) as u8 && item.text.byte_at(1).unwrap()==0);
+        item.text.destroy();
+    }
+}
+struct Unit {}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(a: Unit,b: Unit) -> bool { return false; }
+    pub fn le(a: Unit,b: Unit) -> bool { return true; }
+    pub fn gt(a: Unit,b: Unit) -> bool { return false; }
+    pub fn ge(a: Unit,b: Unit) -> bool { return true; }
+}
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(item: Unit) { assert(std::io::write_byte(1,90)==1); } }
+fn lifecycle_without_ord<T>(source: &alloc::binary_heap::BinaryHeap<T>) {
+    let cursor: alloc::binary_heap::IntoIter<T> =source.take_iter();
+    assert(source.is_empty() && source.capacity()==0);
+    let recovered: alloc::binary_heap::BinaryHeap<T> =fixture::consumer::recover<T>(cursor.borrow());
+    assert(cursor.is_empty() && cursor.capacity()==0 && cursor.try_finish().is_none());
+    assert(recovered.is_empty()); recovered.destroy();
+}
+fn empty_and_reserved() {
+    let plain: alloc::binary_heap::BinaryHeap<NoTraits> =alloc::binary_heap::new<NoTraits>(alloc::binary_heap::Order::Max);
+    lifecycle_without_ord<NoTraits>(plain.borrow());
+    let empty: alloc::binary_heap::IntoIter<NoTraits> =plain.take_iter();
+    assert(empty.remaining()==0 && empty.capacity()==0 && empty.is_empty() && empty.try_finish().is_none() && empty.try_finish().is_none());
+    let reserved: alloc::binary_heap::BinaryHeap<u64> =alloc::binary_heap::with_capacity<u64>(3,alloc::binary_heap::Order::Min).unwrap();
+    let capacity: i32=reserved.capacity();
+    let cursor: alloc::binary_heap::IntoIter<u64> =reserved.take_iter();
+    assert(cursor.is_empty() && cursor.capacity()==capacity && cursor.next().is_none());
+    assert(cursor.try_finish().is_none() && cursor.try_finish().is_none() && cursor.capacity()==0);
+    let recoverable: alloc::binary_heap::BinaryHeap<u64> =alloc::binary_heap::with_capacity<u64>(5,alloc::binary_heap::Order::Max).unwrap();
+    let backing: ptr=recoverable.items.storage;
+    let unused: alloc::binary_heap::IntoIter<u64> =recoverable.take_iter();
+    let recovered: alloc::binary_heap::BinaryHeap<u64> =unused.take_remaining();
+    assert(recovered.is_empty() && recovered.capacity()==5 && recovered.items.storage==backing && unused.capacity()==0);
+    assert(match (recovered.order()) { alloc::binary_heap::Order::Max -> true,alloc::binary_heap::Order::Min -> false });
+    let again: alloc::binary_heap::IntoIter<u64> =recovered.take_iter(); assert(again.try_finish().is_none() && again.capacity()==0);
+    // ReleaseOnly has no Ord or TryClone implementation, even for an empty
+    // reserved owner. Lifecycle and finish must remain available independently.
+    let release: alloc::binary_heap::BinaryHeap<ReleaseOnly> =alloc::binary_heap::with_capacity<ReleaseOnly>(2,alloc::binary_heap::Order::Min).unwrap();
+    lifecycle_without_ord<ReleaseOnly>(release.borrow()); release.destroy();
+}
+fn release_without_ord() {
+    let released: [bool;3]=[false;3];
+    let source: alloc::binary_heap::BinaryHeap<ReleaseOnly> =alloc::binary_heap::with_capacity<ReleaseOnly>(3,alloc::binary_heap::Order::Max).unwrap();
+    // Public canonical backing is initialized as ReleaseOnly, without a cast
+    // or a fictitious ordering instance. No priority operation is attempted;
+    // these are distinct active owners to test the Destroy-only lifecycle.
+    let id: i32=0;
+    while (id<3) {
+        let bytes: [u8;4]=[(65+id) as u8,0,195,169];
+        let text: alloc::string::String=alloc::string::from_utf8(bytes,4).unwrap();
+        source.items=std::vec::try_push<ReleaseOnly>(source.items,ReleaseOnly { id:id,text:text,released:released }); id+=1;
+    }
+    assert(source.len()==3);
+    let cursor: alloc::binary_heap::IntoIter<ReleaseOnly> =source.take_iter();
+    assert(match (cursor.try_finish().unwrap()) { alloc::binary_heap::IntoIterError::Remaining(count) -> count==3 });
+    let recovered: alloc::binary_heap::BinaryHeap<ReleaseOnly> =fixture::consumer::recover<ReleaseOnly>(cursor.borrow());
+    assert(cursor.is_empty() && cursor.capacity()==0 && recovered.len()==3 && recovered.capacity()==3);
+    let remaining: alloc::binary_heap::IntoIter<ReleaseOnly> =recovered.take_iter();
+    fixture::consumer::release<ReleaseOnly>(remaining.borrow()); fixture::consumer::release<ReleaseOnly>(remaining.borrow());
+    assert(remaining.is_empty() && remaining.capacity()==0 && released[0] && released[1] && released[2]);
+    assert(remaining.try_finish().is_none() && cursor.try_finish().is_none()); source.destroy(); recovered.destroy();
+}
+fn zero_sized() {
+    let source: alloc::binary_heap::BinaryHeap<Unit> =alloc::binary_heap::with_capacity<Unit>(9,alloc::binary_heap::Order::Max).unwrap();
+    let index: i32=0; while (index<9) { source.try_push(Unit {}).unwrap(); index+=1; }
+    let cursor: alloc::binary_heap::IntoIter<Unit> =source.take_iter();
+    assert(cursor.remaining()==9 && cursor.capacity()==2147483647 && source.capacity()==0 && source.items.storage==0);
+    Unit::destroy_value(cursor.next().unwrap()); Unit::destroy_value(cursor.next().unwrap());
+    assert(match (cursor.try_finish().unwrap()) { alloc::binary_heap::IntoIterError::Remaining(count) -> count==7 });
+    let recovered: alloc::binary_heap::BinaryHeap<Unit> =cursor.take_remaining();
+    assert(recovered.len()==7 && recovered.capacity()==2147483647 && recovered.items.storage==0 && cursor.capacity()==0);
+    let again: alloc::binary_heap::IntoIter<Unit> =recovered.take_iter();
+    Unit::destroy_value(again.next().unwrap()); Unit::destroy_value(again.next().unwrap());
+    fixture::consumer::release<Unit>(again.borrow()); assert(again.capacity()==0 && again.next().is_none());
+    fixture::consumer::release<Unit>(again.borrow()); source.destroy(); recovered.destroy();
+}
+fn main() -> i32 {
+    // Host ledger uses checked runtime width rather than assuming native rows.
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<ReleaseOnly>())>0); assert(std::io::write_byte(1,10)==1);
+    empty_and_reserved(); release_without_ord(); zero_sized(); return 0;
+}

@@ -1,21 +1,23 @@
 # WebSocket wire protocol
 
-`ext::websocket` implements the HTTP/1 opening handshake and the extension-free
+`ext::websocket` implements HTTP/1 upgrade-request syntax and the extension-free
 frame and message protocol from [RFC 6455](https://www.rfc-editor.org/rfc/rfc6455).
 It validates borrowed input, assembles fragmented messages, exposes controls,
 and encodes checked outgoing frames. Production processing is Lanius. It opens
 no sockets and supplies no TLS, authentication, origin policy or random source.
 
-The implementation composes `ext::http`, `core::base64`, and `core::sha1`.
+The implementation composes `ext::http` and `core::base64`. It does not generate
+or validate a WebSocket upgrade response or a Sec-WebSocket-Accept value.
+The retained APIs pass the focused native execution groups described below.
 [The protocol registry](https://www.iana.org/assignments/websocket/) supplies the
 registered close codes through 1014. RFC 7936 changes subprotocol registration
 procedures, RFC 8307 permits `.well-known` WebSocket URI paths, and RFC 8441 adds
 an HTTP/2 bootstrap. The first two require no different wire processing here;
 HTTP/2 bootstrap and all negotiated extensions, including per-message deflate,
-are outside this HTTP/1 profile. Valid extension offers in a request are parsed
-and declined; a response selecting any extension is rejected.
+are outside this HTTP/1 profile. Extension offers in a request are checked for
+syntax; the caller handles any negotiation outside this module.
 
-## Opening handshake
+## HTTP upgrade request syntax
 
 All byte arguments use `core::slice::View<u8>` and preserve source bytes.
 
@@ -25,25 +27,20 @@ All byte arguments use `core::slice::View<u8>` and preserve source bytes.
 | `validate_request(input, limits)` | Borrowed `Request` with checked GET/HTTP/1.1 head, key and offered protocol count; following frame bytes remain outside `request.head.raw` |
 | `protocol_at(request, index)`, `offers(request, protocol)` | Borrow offered tokens in preference order; protocol agreement is case-sensitive |
 | `key_into(nonce, destination)` | Encode exactly 16 caller-supplied nonce bytes as 24 canonical Base64 bytes |
-| `accept_into(key, destination)` | Validate a canonical 16-byte Base64 key and write the standardized 28-byte accept value |
-| `validate_response(input, request, limits)` | Require HTTP/1.1 status 101, Upgrade/Connection agreement, exact accept value and at most one offered selected protocol |
 | `encode_request(start_line, fields, nonce, protocols, limits)` | Owned checked request; caller supplies Host and optional Origin/authentication fields; `protocols` is empty or a unique comma-separated token list |
-| `encode_response(request, protocol, fields, limits)` | Owned checked 101 response; empty selection means no protocol, otherwise selection must match an offer |
 
-Header names are case-insensitive. Key/version/accept singleton duplicates are
-rejected; protocol offers can span several fields, but every token must be
-unique. Response protocol fields cannot repeat. Request Connection/Upgrade
-lists are checked, including repeated field lines. A response Upgrade is a
-single `websocket` value. The key must decode to exactly 16 bytes with canonical
-padding and unused bits. Version is exactly `13`. Nonzero request content and
+Header names are case-insensitive. Key/version singleton duplicates and
+Sec-WebSocket-Accept in a request are rejected. Protocol offers can span several
+fields, but every token must be unique. Request Connection/Upgrade lists are
+checked, including repeated field lines. The key must decode to exactly 16
+bytes with canonical padding and unused bits. Version is exactly `13`. Nonzero request content and
 transfer coding are rejected; a zero Content-Length is permitted. Origin may
 occur once; the caller decides whether its value is acceptable.
 
-Generators reserve Upgrade, Connection, the listed Sec-WebSocket handshake
-fields and message
-framing to themselves. Extra fields cannot supply those names. The request
-encoder emits Content-Length zero through `ext::http`; the 101 response omits
-content framing. Returned vectors have one owner and require `destroy()`.
+The request encoder reserves Upgrade, Connection, the listed Sec-WebSocket
+handshake fields and message framing to itself. Extra fields cannot supply
+those names. It emits Content-Length zero through `ext::http`. Returned
+vectors have one owner and require `destroy()`.
 Every validation/allocation failure releases temporary header and wire owners.
 
 A nonce must be freshly generated from an unpredictable source for each actual
@@ -53,9 +50,8 @@ keys in examples/tests are reproducible test data, not a random-source fallback.
 
 Request and Frame values passed back to helpers must come from their validators
 or parser and remain unchanged. Connection fields are maintained by its methods;
-do not forge or mutate them. Request/response records borrow their heads. Keep
-their sources alive and
-unchanged through protocol lookup, response validation or response generation.
+do not forge or mutate them. Request records borrow their heads. Keep their
+sources alive and unchanged through protocol lookup.
 The HTTP parser checks Host/target syntax but performs no routing or authority
 policy; callers implementing a real endpoint must supply that context. These
 helpers do not authorize an Origin or authenticate a peer.
@@ -115,7 +111,7 @@ closed cleanly.
 
 All limits and logical ranges must be nonnegative and nonoverflowing. Physical
 backing must cover each declared range; a view cannot discover a forged physical
-slice length. Parsers allocate nothing. Handshake generation bounds field count
+slice length. Parsers allocate nothing. Request generation bounds field count
 and line sizes before staging; HTTP head budgets also apply. Protocol uniqueness
 checking scans the bounded offered token set rather than allocating a registry
 (worst case O(P²H) for P protocols and H head bytes; the default P cap is 32).
@@ -135,8 +131,8 @@ Event payloads borrow internal connection storage and must be treated as
 read-only. They expire on the next `receive` or destruction. Incoming wire
 bytes must be disjoint from both internal buffers, including earlier event
 views. `decode_frame_into` requires a validated unchanged Frame and disjoint
-source/destination. Key/accept helpers snapshot their source before writing and
-permit overlap; all destination range/capacity errors are atomic.
+source/destination. `key_into` snapshots its source before writing and permits
+overlap; destination range/capacity errors are atomic.
 
 Connection and vector copies alias their allocations; keep one active owner and
 destroy it once. After destroying a connection, call no other methods except
@@ -152,25 +148,6 @@ UTF-8/close offsets include its wire header. Sending validation offsets refer to
 the supplied payload. HTTP handshake parse errors retain HTTP head offsets;
 Handshake/Unsupported errors carry no byte offset.
 
-## SHA-1 interoperability helper
-
-`core::sha1` implements RFC 3174's 80-word compression method with five chaining
-words, a 64-byte block and a checked 64-bit length. `new()` creates a context;
-`update(view)` validates the complete logical range and bit-count limit before
-mutation. `finish()` finalizes in place and returns an independent 20-byte
-Digest; retained Digests remain unchanged across later updates, resets and
-finishes on any context. Repeated finish is stable. Update after finish returns
-Finished until `reset()`. `digest(view)` is the single-input convenience function. Neither path
-allocates. Use a separate `new()` call for each active stream; those contexts
-have independent block storage and can be updated in any interleaving. Contexts
-must come from new/reset; do not modify their fields or supply input aliasing
-the context's block storage. Copying an active State to branch a stream is outside
-this contract.
-
-SHA-1 is not collision-resistant and is included only because RFC 6455 requires
-it for Sec-WebSocket-Accept. This use does not authenticate a peer. The module
-makes no general signature, password hashing or TLS security claim.
-
 ## Offline consumer
 
 Compile the complete Lanius program with the optional source root:
@@ -179,8 +156,6 @@ Compile the complete Lanius program with the optional source root:
 laniusc --stdlib-root stdlib --source-root extended \
   sample_programs/library/websocket_wire.lani -o websocket-wire
 ./websocket-wire --request request.http
-./websocket-wire --accept --protocol chat request.http > response.http
-./websocket-wire --response request.http response.http
 ./websocket-wire client-frames.bin
 ./websocket-wire --client --decode --message 0 server-frames.bin > body.bin
 ```
@@ -194,11 +169,11 @@ count toward `--message N`. A missing selected message is an error.
 
 Frame mode normally requires a received Close at EOF. `--allow-open` explicitly
 permits an open or fragmented message capture made of complete frames; it never
-accepts a truncated frame. Trailing bytes after a Close are rejected. Handshake
-reports include the selected head's consumed/remaining boundary; later captured
-frame bytes remain outside that head. Response validation takes the original
-request file as context. Accept mode selects only an offered protocol and emits
-a response without negotiating extensions; it does not implement endpoint policy.
+accepts a truncated frame. Trailing bytes after a Close are rejected. `--request`
+reports the parsed request head's protocol count and consumed/remaining boundary;
+later captured frame bytes remain outside that head. It cannot be combined with
+frame/decode options. The CLI provides no upgrade-response mode or subprotocol
+selection option.
 
 The CLI reads and stages its whole result before stdout. Malformed/incomplete
 input, protocol errors and resource limits produce no stdout. A write failure
@@ -213,21 +188,30 @@ caps total frames at 65,536, including controls and empty fragments. Arguments
 are bounded to 32 and 65,536 total bytes. The program supplies no mask-key or
 nonce generation and never opens a socket.
 
-## Executable evidence
+## Focused verification status
 
-`tests/extended_websocket_execution.rs` covers RFC SHA-1 known answers including
-one million `a` bytes, every split of the two-block test vector, streaming
-boundaries against Python hashlib, RFC handshakes, nonzero source/destination
-ranges, fragments/control interleaving, split UTF-8, close states, and malformed
-lengths/flags. Allocation denial tests verify retryable sender/receiver state
-and release of handshake/frame staging owners.
+The retained `tests/extended_websocket_execution.rs` coverage concerns request
+parsing/encoding, Base64 nonce encoding, nonzero ranges, frame/message state,
+fragments/control interleaving, split UTF-8, close handling and malformed
+lengths/flags. Allocation controls cover retryable sender/receiver state and
+release of request/frame staging owners.
 
-`tests/extended_websocket_wire_execution.rs` exercises the real CLI, deterministic
-binary/text captures, every UTF-8 split, short/16-bit/64-bit lengths, every
-truncation of the RFC Hello/Close capture, reserved close codes, work/input/output
-limits, and file/stdin workflows. Python's `websockets` parser independently
-validates generated captures and every echoed outgoing frame in both masking
-directions; test-only fixed mask keys make those vectors reproducible. Syscall
-faults cover allocations and read/write/open/close errors with allocation address
-and size accounting. Neither Python nor a host WebSocket implementation is used
-in production.
+`tests/extended_websocket_wire_execution.rs` retains the framing and request
+CLI workflows, input/output limits and ownership/I/O controls. Python's
+`websockets` parser is a test oracle for captured/generated frames; no host
+WebSocket implementation is used in production. Tests for removed upgrade
+response behavior are removed with those APIs.
+
+On 2026-10-25, the reduced surface passed both
+`extended_websocket_execution` groups in 12.37 seconds and all four
+`extended_websocket_wire_execution` groups in 20.17 seconds. These compile
+Lanius through the GPU compiler, validate emitted ELF jumps and execute on
+x86_64 Linux. They cover the retained request/frame APIs, actual program
+output, malformed input, limits, allocation failures and I/O cleanup.
+The local logs are `target/stdlib-work/remove-crypto-websocket.log` and
+`target/stdlib-work/remove-crypto-websocket-wire.log`.
+
+Each runtime invocation used `timeout --kill-after=2s 100s`,
+`flock target/stdlib-work/library-gpu.lock`, and `--test-threads=1` on the
+freshly built driver binary. The three affected Rust drivers built together
+in 86 seconds. No compiler, IR, ABI or proof source changed.

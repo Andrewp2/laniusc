@@ -1,0 +1,8 @@
+module fixture::consumer;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::iter;
+import core::option;
+pub fn pull<I,T>(cursor: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> { return cursor.next(); }
+pub fn map_cursor<K,V>(owner: &alloc::hash_map::HashMap<K,V>) -> alloc::hash_map::IntoIter<K,V> { return owner.take_iter(); }
+pub fn set_cursor<T>(owner: &alloc::hash_set::HashSet<T>) -> alloc::hash_set::IntoIter<T> { return owner.take_iter(); }

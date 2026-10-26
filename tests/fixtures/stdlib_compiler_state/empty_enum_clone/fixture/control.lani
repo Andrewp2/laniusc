@@ -1,0 +1,11 @@
+// Diagnostic inhabited control only. This is not a production replacement
+// for core::clone_values::Infallible and is never imported by production.
+module fixture::control;
+import core::clone;
+import core::result;
+pub enum Inhabited { Unreachable }
+pub impl core::clone::TryClone<i32,Inhabited> for i32 {
+    pub fn try_clone_value(source: i32) -> core::result::Result<i32,Inhabited> {
+        return core::result::Ok(source);
+    }
+}

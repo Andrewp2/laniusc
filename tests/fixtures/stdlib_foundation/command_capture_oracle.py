@@ -13,7 +13,7 @@ import time
 
 CLI, FAULT = (str(Path(p).resolve()) for p in sys.argv[1:3])
 CASES = 0
-TRACE = "mmap,munmap,pipe2,close,fcntl,fork,wait4,poll,read,write,clock_gettime,rt_sigaction,kill"
+TRACE = "mmap,munmap,pipe2,close,fcntl,fork,waitid,wait4,poll,read,write,clock_gettime,rt_sigaction,kill"
 
 
 def run(arguments, data=b"", expected=0, out=None, err=None):
@@ -64,6 +64,25 @@ def ledger(trace, close_model=False, allowed_unreaped=()):
     return calls
 
 
+def reached_injections(trace, injections):
+    for injection in injections:
+        syscall, *settings = injection.split(":")
+        options = dict(item.split("=", 1) for item in settings)
+        start = re.fullmatch(r"(\d+)(\+)?", options["when"])
+        assert start, injection
+        first, repeated = int(start[1]), bool(start[2])
+        calls = [line for line in trace.splitlines() if line.startswith(syscall + "(")]
+        expected = set(range(first, len(calls) + 1)) if repeated else {first}
+        actual = {i for i, line in enumerate(calls, 1) if "INJECTED" in line}
+        assert expected and actual == expected, (injection, trace)
+        for ordinal in actual:
+            result = calls[ordinal - 1].rsplit(" = ", 1)[1].split()
+            if "error" in options:
+                assert result[:2] == ["-1", options["error"]], (injection, trace)
+            else:
+                assert result[0] == options["retval"], (injection, trace)
+
+
 def traced(executable, arguments=(), inject=(), expected=0, data=b"", out=b"", closed=None, close_model=False, allow_incomplete=False):
     global CASES
     if isinstance(inject, str):
@@ -87,8 +106,7 @@ def traced(executable, arguments=(), inject=(), expected=0, data=b"", out=b"", c
         assert result.returncode == expected, (inject, result, trace)
         if closed != "stdout":
             assert result.stdout == out, (inject, result, trace)
-        if inject:
-            assert "INJECTED" in trace, (inject, trace)
+        reached_injections(trace, inject)
         incomplete = ()
         if allow_incomplete:
             found = re.search(rb"cleanup-incomplete pid=(\d+)", result.stderr)
@@ -163,6 +181,8 @@ for inject, expected in [
     ("read:error=EAGAIN:when=2", 0),
     ("read:error=EIO:when=2", 87),
     ("read:retval=1025:when=2", 87),
+    ("waitid:error=EINTR:when=1", 0),
+    ("waitid:error=EIO:when=1", 89),
     ("wait4:error=EINTR:when=1", 0),
     ("wait4:error=EIO:when=1", 89),
 ]:
@@ -192,7 +212,8 @@ publication, _, _, _ = traced(CLI, ["--", "/bin/echo", "data"], closed="stdout",
 assert b"reason=11 errno=32" in publication.stderr and b"stdout-read=5" in publication.stderr
 traced(CLI, ["--bad"], closed="stderr", expected=125)
 
-# Deliberately hide all successful wait observations. The CLI must disclose
+# Deliberately prevent successful final reaping. WNOWAIT may still observe a
+# terminal status without consuming the child. The CLI must disclose
 # retained ownership, not claim reap. This harness adopts/reaps that exact
 # killed descendant after the CLI exits; no unrelated PID is signaled.
 libc = ctypes.CDLL(None, use_errno=True)

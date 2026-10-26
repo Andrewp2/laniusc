@@ -11,8 +11,9 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-zip](../../extended-zip.md)
+- [extended-fetch-many](../../extended-fetch-many.md)
 
-Declaration counts: enum: 2; field: 33; function: 4; impl: 2; method: 5; struct: 5; variant: 29.
+Declaration counts: enum: 2; field: 33; function: 5; impl: 2; method: 5; struct: 5; variant: 29.
 
 ## Declared imports
 
@@ -609,9 +610,19 @@ pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Resu
 pub fn extract(entry: Entry, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>
 ```
 
+### function: validate_name
+
+[Source line 211](../../../extended/ext/zip.lani#L211)
+
+```lanius
+pub fn validate_name(name: core::slice::View<u8>, utf8: bool) -> core::result::Result<i32,Error>
+```
+
+Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper.
+
 ### function: encode
 
-[Source line 208](../../../extended/ext/zip.lani#L208)
+[Source line 217](../../../extended/ext/zip.lani#L217)
 
 ```lanius
 pub fn encode(entries: core::slice::View<Source>, comment: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>

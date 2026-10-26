@@ -25,6 +25,7 @@ RWStructuredBuffer<uint> call_dependency_generic_requirements;
 RWStructuredBuffer<uint> call_dependency_unit_id;
 RWStructuredBuffer<uint> call_dependency_local_index;
 RWStructuredBuffer<uint> call_dependency_host_service;
+RWStructuredBuffer<uint> call_dependency_native_abi;
 RWStructuredBuffer<uint> call_param_count;
 RWStructuredBuffer<uint> call_return_type;
 RWStructuredBuffer<uint> call_return_type_token;
@@ -54,6 +55,7 @@ void publish_method_result(
     call_dependency_unit_id[method_token] = unit;
     call_dependency_local_index[method_token] = method_local_index;
     call_dependency_host_service[method_token] = INVALID;
+    call_dependency_native_abi[method_token] = 0u;
     call_dependency_generic_requirements[method_token] =
         dependency_method_type_count(member_i) |
         (dependency_method_constant_count(member_i) << 16u);

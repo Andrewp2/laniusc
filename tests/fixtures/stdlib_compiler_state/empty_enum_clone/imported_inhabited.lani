@@ -1,0 +1,10 @@
+// Paired diagnostic inhabited E; production Infallible remains empty.
+module app::main;
+import core::result;
+import fixture::consumer;
+import fixture::control;
+fn main() -> i32 {
+    let result: core::result::Result<i32,fixture::control::Inhabited> =
+        fixture::consumer::duplicate<i32,fixture::control::Inhabited>(37);
+    assert(result.unwrap()==37); return 0;
+}

@@ -1,0 +1,9 @@
+// Expected grammar rejection: extern declarations currently end in ';'.
+// This isolates the missing C-facing definition, not a valid current API.
+module app::main;
+
+pub extern "C" fn worker(argument: ptr) -> ptr {
+    return argument;
+}
+
+fn main() -> i32 { return 0; }

@@ -1,0 +1,82 @@
+// Test-only transport: 14 u32 words then UTF-8 pattern/input/replacement bytes.
+// Fields: mode,p/t/r lengths,layout,match/call caps,worklo/hi,output/repl caps,
+// per-search VM cap,regex flags,reserved. Responses use hex byte payloads.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::regex;
+import ext::regex_text;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn word(bytes: [u8], at: i32) -> i32 { return ((bytes[at] as u32) | ((bytes[at+1] as u32)<<8) | ((bytes[at+2] as u32)<<16) | ((bytes[at+3] as u32)<<24)) as i32; }
+fn usage(value: ext::regex_text::Usage) { std::io::write_byte(1,59); std::io_decimal::write_i32(1,value.matches); std::io::write_byte(1,44); std::io_decimal::write_i32(1,value.calls); std::io::write_byte(1,44); std::io_decimal::write_i64(1,value.reserved_work); }
+fn hex(text: core::text::Text) {
+    let digits: str = "0123456789abcdef"; let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(digits),16); let at: i32 = 0;
+    while (at < text.length) { let value: i32 = text.bytes[text.start+at] as i32; let high: i32 = value / 16; let low: i32 = value % 16; let first: i32 = raw[high] as i32; let second: i32 = raw[low] as i32; std::io::write_byte(1,first); std::io::write_byte(1,second); at += 1; }
+}
+fn error(value: ext::regex_text::Error) {
+    let kind: i32 = match(value) {
+        ext::regex_text::Error::InvalidLimits -> 1,
+        ext::regex_text::Error::Text(cause) -> match(cause) { core::text::Error::Bounds -> 2, core::text::Error::NotCharBoundary -> 3, core::text::Error::InvalidUtf8(at) -> 4 },
+        ext::regex_text::Error::Template(at) -> 5, ext::regex_text::Error::Capture(at,group) -> 6,
+        ext::regex_text::Error::SearchCallLimit -> 7, ext::regex_text::Error::SearchWorkLimit -> 8,
+        ext::regex_text::Error::OutputLimit -> 9, ext::regex_text::Error::ReplacementLimit -> 10, ext::regex_text::Error::AllocationFailed -> 11,
+        ext::regex_text::Error::Regex(cause) -> match(cause) { ext::regex::Error::Syntax(at) -> 21, ext::regex::Error::Unsupported(at) -> 22, ext::regex::Error::Limit(at) -> 23, ext::regex::Error::AllocationFailed -> 24, ext::regex::Error::Bounds -> 25, ext::regex::Error::InvalidUtf8(at) -> 26, ext::regex::Error::WorkLimit -> 27 }
+    };
+    let offset: i32 = match(value) { ext::regex_text::Error::Template(at) -> at, ext::regex_text::Error::Capture(at,group) -> at, ext::regex_text::Error::Text(cause) -> match(cause) { core::text::Error::InvalidUtf8(at) -> at, _ -> 0 }, _ -> 0 };
+    let group: i32 = match(value) { ext::regex_text::Error::Capture(at,number) -> number, _ -> 0 };
+    std::io::write_byte(1,69); std::io_decimal::write_i32(1,kind); std::io::write_byte(1,58); std::io_decimal::write_i32(1,offset); std::io::write_byte(1,58); std::io_decimal::write_i32(1,group);
+}
+fn split(regex: &ext::regex::Regex, input: core::text::Text, limits: ext::regex_text::SearchLimits) {
+    let made = ext::regex_text::split(regex,input,limits); if (made.is_err()) { error(made.unwrap_err()); return; }
+    let cursor = made.unwrap(); let parts: alloc::vec::Vec<core::text::Text> = alloc::vec::new();
+    while (true) {
+        let next = cursor.next(); if (next.is_err()) { let failure = next.unwrap_err(); cursor.destroy(); parts.destroy(); error(failure); return; }
+        let item = next.unwrap(); if (item.is_none()) { break; }
+        if (parts.try_push(item.unwrap()).is_err()) { cursor.destroy(); parts.destroy(); error(ext::regex_text::Error::AllocationFailed); return; }
+    }
+    let used = cursor.usage(); cursor.destroy(); std::io::write_byte(1,83);
+    let at: i32 = 0; let values = parts.as_slice();
+    while (at < parts.len()) { if (at != 0) { std::io::write_byte(1,47); } hex(values[at]); at += 1; }
+    usage(used); parts.destroy();
+}
+fn replace(regex: &ext::regex::Regex, input: core::text::Text, replacement: core::text::Text, limits: ext::regex_text::ReplaceLimits, mode: i32) {
+    let made: core::result::Result<ext::regex_text::Replacement,ext::regex_text::Error> = core::result::Err(ext::regex_text::Error::InvalidLimits);
+    if (mode == 1) { made = ext::regex_text::replace_literal(regex,input,replacement,limits); }
+    else { made = ext::regex_text::replace_template(regex,input,replacement,limits); }
+    if (made.is_err()) { error(made.unwrap_err()); return; }
+    let owned = made.unwrap(); std::io::write_byte(1,82); hex(owned.output.as_text()); usage(owned.usage); owned.destroy();
+}
+fn main() -> i32 {
+    let source = std::stream::stdin(); let words: [i32;8206] = [0;8206]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(words),32824);
+    let native: [u8;8200] = [165;8200]; let packed: [i32;2050] = [0;2050]; let physical: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed),8200);
+    while (true) {
+        let first = source.read(bytes,0,1).unwrap(); if (first == 0) { return 0; } core::io::read_exact(source.borrow(),bytes,1,55).unwrap();
+        let mode = word(bytes,0); let plen = word(bytes,4); let tlen = word(bytes,8); let rlen = word(bytes,12); let layout = word(bytes,16);
+        assert(mode >= 0 && mode <= 2 && plen >= 0 && plen <= 8192 && tlen >= 0 && tlen <= 8192 && rlen >= 0 && rlen <= 8192 && layout >= 0 && layout <= 2);
+        core::io::read_exact(source.borrow(),bytes,56,plen+tlen+rlen).unwrap();
+        let options = ext::regex::options(); options.max_work = word(bytes,44); options.multiline = (word(bytes,48) & 1) != 0; options.dot_matches_newline = (word(bytes,48) & 2) != 0;
+        let pattern = core::text::from_utf8_unchecked(bytes,56,plen); let replacement = core::text::from_utf8_unchecked(bytes,56+plen+tlen,rlen);
+        let compiled = ext::regex::compile(pattern,options);
+        if (compiled.is_err()) { error(ext::regex_text::Error::Regex(compiled.unwrap_err())); }
+        else {
+            let regex = compiled.unwrap(); let vector: alloc::vec::Vec<u8> = alloc::vec::new(); let target: [u8] = native;
+            if (layout == 1) { vector.try_resize(tlen+8,165).unwrap(); target = vector.as_slice(); }
+            if (layout == 2) { target = physical; }
+            let at: i32 = 0; while (at < tlen) { target[3+at] = bytes[56+plen+at]; at += 1; }
+            let input = core::text::from_utf8_unchecked(target,3,tlen);
+            let work: u64 = (word(bytes,28) as u32 as u64) | ((word(bytes,32) as u32 as u64)<<32);
+            let search = ext::regex_text::SearchLimits { max_matches: word(bytes,20), max_calls: word(bytes,24), max_work: work as i64 };
+            if (mode == 0) { split(regex.borrow(),input,search); }
+            else { replace(regex.borrow(),input,replacement,ext::regex_text::ReplaceLimits { search: search, max_output_bytes: word(bytes,36), max_replacement_bytes: word(bytes,40) },mode); }
+            vector.destroy(); regex.destroy();
+        }
+        std::io::write_byte(1,10);
+    }
+    return 0;
+}

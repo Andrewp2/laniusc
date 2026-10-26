@@ -1,0 +1,41 @@
+module fixture::leaf;
+import alloc::string;
+import core::clone;
+import core::cmp;
+import core::result;
+pub struct Leaf { identity: i32, order: i32, text: alloc::string::String, fail: i32, trace: [i32] }
+pub enum Fault { Allocation(alloc::string::Error), Injected(i32,i32,alloc::string::String) }
+fn fault(identity: i32,stage: i32) -> Fault {
+    let bytes: [u8;5] = [69,0,identity as u8,stage as u8,85];
+    let made = alloc::string::from_utf8(bytes,5);
+    if(made.is_err()){return Fault::Allocation(made.unwrap_err());}
+    return Fault::Injected(identity,stage,made.unwrap());
+}
+pub impl core::cmp::Eq<Leaf> for Leaf {
+    pub fn eq(a: Leaf,b: Leaf) -> bool {return a.identity==b.identity;}
+    pub fn ne(a: Leaf,b: Leaf) -> bool {return a.identity!=b.identity;}
+}
+pub impl core::cmp::Ord<Leaf> for Leaf {
+    pub fn lt(a: Leaf,b: Leaf) -> bool {return a.order<b.order;}
+    pub fn le(a: Leaf,b: Leaf) -> bool {return a.order<=b.order;}
+    pub fn gt(a: Leaf,b: Leaf) -> bool {return a.order>b.order;}
+    pub fn ge(a: Leaf,b: Leaf) -> bool {return a.order>=b.order;}
+}
+pub impl core::clone::TryClone<Leaf,Fault> for Leaf {
+    pub fn try_clone_value(source: Leaf) -> core::result::Result<Leaf,Fault> {
+        assert(source.trace[0]<3); source.trace[8+source.trace[0]]=source.identity; source.trace[0]+=1;
+        if(source.fail==0){return core::result::Err(fault(source.identity,0));}
+        let made=source.text.try_clone();
+        if(made.is_err()){return core::result::Err(Fault::Allocation(made.unwrap_err()));}
+        let partial=made.unwrap();
+        if(source.fail==1){let error:Fault=fault(source.identity,1);partial.destroy();return core::result::Err(error);}
+        let identity:i32=source.identity;let order:i32=source.order;
+        // Deliberately broken clones separately exercise Eq and Ord guards.
+        if(source.fail==2){identity+=100;} if(source.fail==3){order+=100;}
+        source.trace[1]+=1;
+        return core::result::Ok(Leaf {identity:identity,order:order,text:partial,fail:-1,trace:source.trace});
+    }
+}
+pub impl core::clone::Destroy<Leaf> for Leaf {
+    pub fn destroy_value(owned: Leaf) {assert(owned.trace[1]>0);owned.trace[1]-=1;owned.trace[2]+=1;owned.text.destroy();}
+}

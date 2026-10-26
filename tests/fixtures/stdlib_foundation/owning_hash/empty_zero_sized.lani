@@ -1,0 +1,50 @@
+module app::main;
+import alloc::clone_hash_map;
+import alloc::clone_hash_set;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::iter;
+import fixture::consumer;
+import std::io;
+struct NoTraits { words: [u64;2] }
+struct ReleaseOnly {}
+struct Unit {}
+pub impl core::clone::Destroy<ReleaseOnly> for ReleaseOnly { pub fn destroy_value(value: ReleaseOnly) { assert(false); } }
+pub impl core::hash::Hash<Unit> for Unit { pub fn hash(value: Unit) -> u32 { return 15; } }
+pub impl core::cmp::Eq<Unit> for Unit {
+    pub fn eq(left: Unit, right: Unit) -> bool { return true; }
+    pub fn ne(left: Unit, right: Unit) -> bool { return false; }
+}
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(value: Unit) { assert(std::io::write_byte(1,120) == 1); } }
+fn main() -> i32 {
+    let empty_map: alloc::hash_map::HashMap<NoTraits,NoTraits> = alloc::hash_map::new();
+    let vacant_map = empty_map.take_iter(); assert(vacant_map.next().is_none() && vacant_map.try_finish().is_none());
+    empty_map.try_reserve(2).unwrap(); let capacity: i32 = empty_map.capacity(); let reserved_map = empty_map.take_iter();
+    assert(reserved_map.next().is_none() && reserved_map.capacity() == capacity);
+    let restored_map = reserved_map.take_remaining(); assert(restored_map.is_empty() && restored_map.capacity() == capacity);
+    assert(reserved_map.take_remaining().capacity() == 0 && reserved_map.try_finish().is_none());
+    let finish_map = restored_map.take_iter(); assert(finish_map.try_finish().is_none() && finish_map.try_finish().is_none());
+    let empty_set: alloc::hash_set::HashSet<NoTraits> = alloc::hash_set::new();
+    let vacant_set = empty_set.take_iter(); assert(vacant_set.next().is_none() && vacant_set.try_finish().is_none());
+    empty_set.try_reserve(2).unwrap(); let set_capacity: i32 = empty_set.capacity(); let reserved_set = empty_set.take_iter();
+    assert(reserved_set.next().is_none() && reserved_set.capacity() == set_capacity);
+    let restored_set = reserved_set.take_remaining(); assert(restored_set.is_empty() && restored_set.capacity() == set_capacity);
+    let finish_set = restored_set.take_iter(); assert(finish_set.try_finish().is_none() && finish_set.try_finish().is_none());
+    let released_map: alloc::hash_map::HashMap<ReleaseOnly,ReleaseOnly> = alloc::hash_map::new(); let map_cursor = released_map.take_iter();
+    alloc::clone_hash_map::destroy_hash_map_iter<ReleaseOnly,ReleaseOnly>(map_cursor.borrow());
+    let released_set: alloc::hash_set::HashSet<ReleaseOnly> = alloc::hash_set::new(); let set_cursor = released_set.take_iter();
+    alloc::clone_hash_set::destroy_hash_set_iter<ReleaseOnly>(set_cursor.borrow());
+    let map: alloc::hash_map::HashMap<Unit,Unit> = alloc::hash_map::new(); map.try_insert(Unit {},Unit {}).unwrap();
+    let cursor = map.take_iter(); assert(cursor.remaining() == 1 && cursor.try_finish().is_some());
+    let entry = fixture::consumer::pull<alloc::hash_map::IntoIter<Unit,Unit>,alloc::hash_map::Entry<Unit,Unit>>(cursor.borrow()).unwrap();
+    Unit::destroy_value(entry.key); Unit::destroy_value(entry.value);
+    assert(cursor.remaining() == 0 && cursor.capacity() > 0 && cursor.next().is_none());
+    alloc::clone_hash_map::destroy_hash_map_iter<Unit,Unit>(cursor.borrow()); alloc::clone_hash_map::destroy_hash_map_iter<Unit,Unit>(cursor.borrow());
+    let set: alloc::hash_set::HashSet<Unit> = alloc::hash_set::new(); set.try_insert(Unit {}).unwrap();
+    let owned = set.take_iter(); assert(owned.remaining() == 1 && owned.try_finish().is_some());
+    alloc::clone_hash_set::destroy_hash_set_iter<Unit>(owned.borrow()); alloc::clone_hash_set::destroy_hash_set_iter<Unit>(owned.borrow());
+    assert(cursor.capacity() == 0 && owned.capacity() == 0); return 0;
+}

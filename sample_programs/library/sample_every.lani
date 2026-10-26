@@ -1,0 +1,76 @@
+// Sample a bounded prefix of an inclusive integer range, then report count/sum.
+// Usage: sample_every START END STEP INPUT_LIMIT; see stdlib-iterator-sources.md.
+module app::main;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+import std::args;
+import std::signal;
+import std::stream;
+
+fn output(count: u64, sum: i64) -> i32 {
+    let storage: [i32;16] = [0;16];
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),64);
+    bytes[0] = 99; bytes[1] = 111; bytes[2] = 117; bytes[3] = 110; bytes[4] = 116;
+    bytes[5] = 44; bytes[6] = 115; bytes[7] = 117; bytes[8] = 109; bytes[9] = 10;
+    let formatted_count: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_u64(bytes,10,54,count);
+    if (formatted_count.is_err()) { return 3; }
+    let comma: i32 = 10 + formatted_count.unwrap(); bytes[comma] = 44;
+    let start: i32 = comma + 1;
+    let formatted_sum: core::result::Result<i32,core::decimal::FormatError> = core::decimal::format_i64(bytes,start,63-start,sum);
+    if (formatted_sum.is_err()) { return 3; }
+    let newline: i32 = start + formatted_sum.unwrap(); bytes[newline] = 10;
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    if (core::io::write_all(sink.borrow(),bytes,0,newline+1).is_err()) { return 3; }
+    return 0;
+}
+
+// arguments is a borrowed shallow handle. Main retains its sole owner and
+// destroys it after every return from process, including validation/I/O errors.
+fn process(arguments: std::args::Arguments) -> i32 {
+    if (arguments.len() != 4) { return 2; }
+    let start_text: core::slice::View<u8> = arguments.get(0).unwrap();
+    let end_text: core::slice::View<u8> = arguments.get(1).unwrap();
+    let step_text: core::slice::View<u8> = arguments.get(2).unwrap();
+    let limit_text: core::slice::View<u8> = arguments.get(3).unwrap();
+    let parsed_start: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(start_text.values,start_text.start,start_text.length);
+    let parsed_end: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32_range(end_text.values,end_text.start,end_text.length);
+    let parsed_step: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(step_text.values,step_text.start,step_text.length);
+    let parsed_limit: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(limit_text.values,limit_text.start,limit_text.length);
+    if (parsed_start.is_err() || parsed_end.is_err() || parsed_step.is_err() || parsed_limit.is_err()) { return 2; }
+    let start: i32 = parsed_start.unwrap(); let end: i32 = parsed_end.unwrap();
+    let step: u64 = parsed_step.unwrap(); let limit: u64 = parsed_limit.unwrap();
+    if (limit > 1000000) { return 2; }
+    let bounds: core::range::RangeInclusive<i32> = core::range::range_inclusive(start,end);
+    let source: core::iter::RangeI32 = core::iter::range_i32_inclusive(bounds);
+    // Bound work before stepping. A huge step over a wide range can consume
+    // only this many successful source items before the bounded source ends.
+    let bounded: core::iter::Take<core::iter::RangeI32,i32> = core::iter::take<core::iter::RangeI32,i32>(source.borrow(),limit);
+    let checked: core::result::Result<core::iter::StepBy<core::iter::Take<core::iter::RangeI32,i32>,i32>,core::iter::StepError> =
+        core::iter::step_by<core::iter::Take<core::iter::RangeI32,i32>,i32>(bounded.borrow(),step);
+    if (checked.is_err()) { return 2; }
+    let selected: core::iter::StepBy<core::iter::Take<core::iter::RangeI32,i32>,i32> = checked.unwrap();
+    let count: u64 = 0; let sum: i64 = 0;
+    while (true) {
+        let next: core::option::Option<i32> = selected.next();
+        if (next.is_none()) { break; }
+        count += 1; sum += next.unwrap() as i64;
+    }
+    // At most one million i32 values are added; all intermediate sums fit i64.
+    return output(count,sum);
+}
+
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,4,128);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 };
+    }
+    let arguments: std::args::Arguments = captured.unwrap();
+    let status: i32 = process(arguments); arguments.destroy(); return status;
+}

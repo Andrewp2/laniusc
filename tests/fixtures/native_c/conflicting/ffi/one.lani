@@ -1,0 +1,2 @@
+module ffi::one;
+pub extern "C" fn probe_imported(value: i32) -> i32;

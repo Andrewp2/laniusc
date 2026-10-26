@@ -1,0 +1,94 @@
+// Opt-in deep cloning and explicit memory-owner release for BinaryHeap<T>.
+// Import this module in both the entry and generic consumers that select its
+// TryClone/Destroy implementations. Ordinary heap methods remain shallow.
+module alloc::clone_binary_heap;
+import alloc::binary_heap;
+import core::clone;
+import core::cmp;
+import core::mem;
+import core::result;
+import core::slice;
+import std::vec;
+
+pub enum Error<E> { Storage(alloc::binary_heap::Error), Element(i32,E) }
+
+// Consume a completed independent prefix in reverse source-storage order.
+// Every item is one active memory owner. E never enters this cleanup path.
+fn release_storage<T>(owned: std::vec::Vec<T>) where T: core::clone::Destroy<T> {
+    let items: std::vec::Vec<T> = owned;
+    while (!std::vec::is_empty(items)) {
+        let item: T = std::vec::last(items).unwrap();
+        items = std::vec::try_pop(items);
+        T::destroy_value(item);
+    }
+    std::vec::destroy(items);
+}
+
+fn clone_order<T,E>(source: core::slice::View<T>, order: alloc::binary_heap::Order)
+    -> core::result::Result<alloc::binary_heap::BinaryHeap<T>,Error<E>>
+    where T: core::cmp::Ord<T>, T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    if (source.start < 0 || source.length < 0) { return core::result::Err(Error::Storage(alloc::binary_heap::Error::InvalidCapacity)); }
+    if (source.start > 2147483647-source.length) { return core::result::Err(Error::Storage(alloc::binary_heap::Error::CapacityOverflow)); }
+    let size: usize = core::mem::size_of<T>();
+    if (size != 0 && source.length as usize > 2147483647 / size) { return core::result::Err(Error::Storage(alloc::binary_heap::Error::CapacityOverflow)); }
+    let items: std::vec::Vec<T> = std::vec::try_with_capacity<T>(source.length);
+    if (std::vec::capacity(items) < source.length) { return core::result::Err(Error::Storage(alloc::binary_heap::Error::AllocationFailed)); }
+    let index: i32 = 0;
+    while (index < source.length) {
+        let cloned: core::result::Result<T,E> = T::try_clone_value(source.get(index).unwrap());
+        if (cloned.is_err()) {
+            let error: E = cloned.unwrap_err();
+            release_storage<T>(items);
+            return core::result::Err(Error::Element(index,error));
+        }
+        let item: T = cloned.unwrap();
+        let next: std::vec::Vec<T> = std::vec::try_push(items,item);
+        if (std::vec::len(next) != index+1) {
+            T::destroy_value(item); release_storage<T>(items);
+            return core::result::Err(Error::Storage(alloc::binary_heap::Error::AllocationFailed));
+        }
+        items = next;
+        index += 1;
+    }
+    // Transfer the reserved backing once. Bottom-up heapification is O(n),
+    // invokes no additional cloning and performs no allocation.
+    return core::result::Ok(alloc::binary_heap::from_vec<T>(items,order));
+}
+
+// Preserve the source's configured priority order. Element errors identify
+// source.as_view() storage positions, not positions in the sorted pop order.
+pub fn try_clone<T,E>(source: &alloc::binary_heap::BinaryHeap<T>)
+    -> core::result::Result<alloc::binary_heap::BinaryHeap<T>,Error<E>>
+    where T: core::cmp::Ord<T>, T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    return clone_order<T,E>(source.as_view(),source.order());
+}
+
+// Reset the actual active heap before consuming its initialized entries.
+// No Ord/Clone bound: release does not inspect priority or rebuild the heap.
+// Every stored entry must own a distinct active value under Destroy<T>.
+pub fn destroy_heap<T>(owner: &alloc::binary_heap::BinaryHeap<T>) where T: core::clone::Destroy<T> {
+    release_storage<T>(owner.take_vec());
+}
+
+// Reset the actual cursor before releasing its remaining active owners.
+// Already-yielded values belong to the caller. Recovery and physical-storage
+// cleanup need only Destroy<T>, without Ord<T> or TryClone<T,E>.
+pub fn destroy_binary_heap_iter<T>(owner: &alloc::binary_heap::IntoIter<T>) where T: core::clone::Destroy<T> {
+    let remaining: alloc::binary_heap::BinaryHeap<T> = owner.take_remaining();
+    destroy_heap<T>(remaining.borrow());
+}
+
+pub impl<T,E> core::clone::TryClone<alloc::binary_heap::BinaryHeap<T>,Error<E>>
+    for alloc::binary_heap::BinaryHeap<T>
+    where T: core::cmp::Ord<T>, T: core::clone::TryClone<T,E>, T: core::clone::Destroy<T> {
+    pub fn try_clone_value(source: alloc::binary_heap::BinaryHeap<T>)
+        -> core::result::Result<alloc::binary_heap::BinaryHeap<T>,Error<E>> {
+        return try_clone<T,E>(source.borrow());
+    }
+}
+// Consumes this descriptor. Copied aliases are not additional owners and are
+// not reset; use destroy_heap(actual_owner.borrow()) when that owner stays live.
+pub impl<T> core::clone::Destroy<alloc::binary_heap::BinaryHeap<T>>
+    for alloc::binary_heap::BinaryHeap<T> where T: core::clone::Destroy<T> {
+    pub fn destroy_value(owned: alloc::binary_heap::BinaryHeap<T>) { destroy_heap<T>(owned.borrow()); }
+}

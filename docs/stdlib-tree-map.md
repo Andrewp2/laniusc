@@ -52,6 +52,7 @@ integration remains a separate compiler dependency.
 | `new<K, V>()` | Empty owner without allocation |
 | `with_capacity<K, V>(capacity)` | Result containing empty storage for the requested entry count |
 | `from_sorted<K, V>(view)` | Independent node storage with shallow copies; require strictly increasing, unique keys |
+| `try_init_sorted(view)` | Initialize an empty actual owner with strictly increasing entries, reusing reserved storage; return the entry count |
 | `borrow()` | Reference to the actual owner |
 | `len()`, `capacity()`, `is_empty()` | Live entry count, reserved node count and emptiness |
 | `contains_key(key)` | Whether an equivalent key exists |
@@ -72,10 +73,27 @@ integration remains a separate compiler dependency.
 
 Errors are `InvalidCapacity` for a negative request, `CapacityOverflow` when
 the requested node storage exceeds the supported size, `AllocationFailed`,
-`InvalidOrder` for equivalent or descending adjacent sorted-input keys, and
-`InvalidRange` when upper precedes lower. Sorted input is validated before
-allocation. Empty construction, lookup and traversal do not allocate. The
+`InvalidOrder` for equivalent or descending adjacent sorted-input keys,
+`InvalidRange` when upper precedes lower or sorted-input View metadata is
+invalid, and `NotEmpty` when sorted initialization receives a nonempty owner.
+Sorted input is validated before allocation. Empty construction, lookup and traversal do not allocate. The
 initial View must satisfy its physical backing and lifetime preconditions.
+
+`try_init_sorted` is the canonical empty-owner construction boundary used by
+`from_sorted` and the opt-in [deep-clone helper](stdlib-clone-tree-map.md).
+Its View must not alias the destination's backing allocation. It rejects a
+nonempty destination before inspecting input, then rejects negative or
+overflowing View metadata, excessive counts and non-increasing adjacent keys
+before reserving or writing. Every error preserves the destination, its
+capacity and the input. Successful initialization copies entries shallowly and
+uses the existing linear midpoint builder. If capacity already covers the
+input count, initialization allocates nothing. Entries removed by `clear` or
+pop remain the caller's nested-resource responsibility. The focused canonical
+initialization group passed its two native entry fixtures in 5.55 seconds,
+including allocation denial and reservation reuse. The separate deep-clone
+gate now passes all five groups, including zero-sized keys/values, nested
+owners and every reached allocation failure; its guide records both compiler
+repairs and the execution receipts.
 
 Storage requests are limited to `i32::MAX` bytes, divided by the size of the
 node for the selected key/value types. Node metadata takes space even when

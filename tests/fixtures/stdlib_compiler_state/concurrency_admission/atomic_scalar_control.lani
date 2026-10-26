@@ -1,0 +1,39 @@
+// Proposed positive control: ordinary libatomic calls, one thread only.
+// Link with --native-link --native-library atomic. This is not a race test.
+module app::main;
+
+extern "C" fn malloc(size: usize) -> ptr;
+extern "C" fn free(owner: ptr);
+extern "C" fn __atomic_load_4(object: ptr, order: i32) -> u32;
+extern "C" fn __atomic_store_4(object: ptr, value: u32, order: i32);
+extern "C" fn __atomic_exchange_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_fetch_add_4(object: ptr, value: u32, order: i32) -> u32;
+extern "C" fn __atomic_load_8(object: ptr, order: i32) -> u64;
+extern "C" fn __atomic_store_8(object: ptr, value: u64, order: i32);
+extern "C" fn __atomic_exchange_8(object: ptr, value: u64, order: i32) -> u64;
+extern "C" fn __atomic_fetch_add_8(object: ptr, value: u64, order: i32) -> u64;
+
+fn exercise(storage: ptr) -> i32 {
+    // malloc provides alignment; the disjoint words occupy bytes 0..4 and 8..16.
+    // Five is GCC's __ATOMIC_SEQ_CST. No plain view aliases either word.
+    let wide: ptr = storage + 8;
+    __atomic_store_4(storage,4294967294,5);
+    if (__atomic_fetch_add_4(storage,3,5) != 4294967294) { return 1; }
+    if (__atomic_load_4(storage,5) != 1) { return 2; }
+    if (__atomic_exchange_4(storage,2309737967,5) != 1) { return 3; }
+    if (__atomic_load_4(storage,5) != 2309737967) { return 4; }
+    __atomic_store_8(wide,18446744073709551614,5);
+    if (__atomic_fetch_add_8(wide,3,5) != 18446744073709551614) { return 5; }
+    if (__atomic_load_8(wide,5) != 1) { return 6; }
+    if (__atomic_exchange_8(wide,18364758544493064720,5) != 1) { return 7; }
+    if (__atomic_load_8(wide,5) != 18364758544493064720) { return 8; }
+    return 0;
+}
+
+fn main() -> i32 {
+    let storage: ptr = malloc(16);
+    if (storage == 0) { return 90; }
+    let status: i32 = exercise(storage);
+    free(storage);
+    return status;
+}

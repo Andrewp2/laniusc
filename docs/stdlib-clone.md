@@ -12,6 +12,10 @@ protocols. It reuses this engine at every level, retaining nested error indexes
 and cleanup. Ordinary collection clone/destroy methods keep their shallow
 policies. Mutating a nested owner through a copied handle requires transferring
 it out and restoring its updated descriptor before recursive release.
+The opt-in [scalar and structural module](stdlib-clone-values.md) also supplies
+exact scalar cloning and Option/Result/Pair compositions, including Pair prefix
+rollback and independently typed errors. Its nested String/Vec execution and
+all 45 reached allocation failures pass the focused native gates.
 
 ## Protocols
 

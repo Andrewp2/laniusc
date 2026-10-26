@@ -1,0 +1,176 @@
+// Streaming stdin CSV projection/reordering through reusable records.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { columns: core::slice::View<u8>, operands: i32, help: bool, report: bool, max_input: u64, max_output: u64, max_records: i32, max_fields: i32, max_field_bytes: i32, max_record_bytes: i32, max_work: u64, max_read_calls: u64, max_write_calls: u64 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Stats { input: u64, consumed: u64, output: u64, rows: u64, read_calls: u64, write_calls: u64, work: u64, decoder_bytes: i32, decoder_fields: i32, record_bytes: i32, record_fields: i32 }
+enum Cause { Arguments, Limit, MissingColumn(i32), Allocation, Parse(ext::csv::Error), Read(core::io::Error), Write(ext::csv_write::Failure), Flush(core::io::Error) }
+struct Failure { cause: Cause, stats: Stats }
+struct State { options: Options, parser: ext::csv::Decoder, record: ext::csv::Record, stats: Stats }
+impl State { fn borrow(&self) -> &State { return self; } }
+fn defaults() -> Options { return Options { columns:literal("",0),operands:0,help:false,report:false,max_input:16777216,max_output:33554432,max_records:100000,max_fields:256,max_field_bytes:65536,max_record_bytes:1048576,max_work:268435456,max_read_calls:65536,max_write_calls:65536 }; }
+fn empty_stats() -> Stats { return Stats { input:0,consumed:0,output:0,rows:0,read_calls:0,write_calls:0,work:0,decoder_bytes:0,decoder_fields:0,record_bytes:0,record_fields:0 }; }
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view(bytes,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let bytes = literal(value,count); return core::text::from_utf8_unchecked(bytes.values,bytes.start,bytes.len()); }
+fn write_output(bytes: core::slice::View<u8>, handle: i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed: i32 = 0; let calls: i32 = 8;
+    while (completed < bytes.len()) {
+        if (calls == 0) { return false; } calls -= 1;
+        let result: core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (result.is_err()) { if (core::io::is_interrupted(result.unwrap_err())) { continue; } return false; }
+        let count: i32 = result.unwrap(); if (count <= 0 || count > bytes.len() - completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn status(cause: Cause) -> i32 { return match (cause) {
+    Cause::Allocation -> 4,
+    Cause::Read(detail) -> match (detail) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+    Cause::Flush(detail) -> match (detail) { core::io::Error::AllocationFailed -> 4, _ -> 3 },
+    Cause::Parse(detail) -> match (detail) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 },
+    Cause::Write(detail) -> match (detail.cause) { ext::csv_write::Cause::Io(io) -> match(io) { core::io::Error::AllocationFailed -> 4, _ -> 3 }, ext::csv_write::Cause::Csv(csv) -> match(csv) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }, _ -> 2 },
+    _ -> 2
+}; }
+fn diagnostic(cause: Cause) -> i32 {
+    let code: i32 = status(cause); let message = literal("csv-rewrite: input or resource limit failure\n",45);
+    if (code == 3) { message = literal("csv-rewrite: I/O failure after confirmed output prefix\n",55); }
+    if (code == 4) { message = literal("csv-rewrite: allocation failed\n",31); }
+    let arguments: bool = match(cause) { Cause::Arguments -> true, _ -> false }; if (arguments) { message = literal("csv-rewrite: invalid columns or arguments\n",42); }
+    let missing: bool = match(cause) { Cause::MissingColumn(index) -> true, _ -> false }; if (missing) { message = literal("csv-rewrite: selected column is missing\n",40); }
+    write_output(message,2); return code;
+}
+fn charge(state: &State, amount: u64) -> bool { if (amount > state.options.max_work - state.stats.work) { return false; } state.stats.work += amount; return true; }
+fn emit<W>(sink: &W, columns: core::slice::View<i32>, state: &State) -> core::result::Result<i32,Cause> where W: core::io::Write {
+    state.record.clear(); let column: i32 = 0;
+    while (column < columns.len()) {
+        let index: i32 = columns.get(column).unwrap(); let selected = state.parser.field(index);
+        if (selected.is_err()) { return core::result::Err(Cause::MissingColumn(index)); }
+        let value: core::text::Text = selected.unwrap(); let length: i32 = value.byte_len();
+        if (length > state.options.max_field_bytes || length > state.options.max_record_bytes - state.record.byte_len()) { return core::result::Err(Cause::Limit); }
+        if (!charge(state,16 + 6 * (length as u64))) { return core::result::Err(Cause::Limit); }
+        let appended = state.record.try_push_field(value); if (appended.is_err()) { return core::result::Err(Cause::Parse(appended.unwrap_err())); } column += 1;
+    }
+    if (!charge(state,8 * (state.record.byte_len() as u64) + 16 * (state.record.field_count() as u64) + 8)) { return core::result::Err(Cause::Limit); }
+    let limits: ext::csv_write::Limits = ext::csv_write::Limits { max_output:state.options.max_output - state.stats.output,max_write_calls:state.options.max_write_calls - state.stats.write_calls };
+    let written: core::result::Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record(sink,state.record.borrow(),limits);
+    if (written.is_err()) { let failure = written.unwrap_err(); state.stats.output += failure.written; state.stats.write_calls += failure.write_calls; return core::result::Err(Cause::Write(failure)); }
+    let progress = written.unwrap(); state.stats.output += progress.written; state.stats.write_calls += progress.write_calls; state.stats.rows += 1; return core::result::Ok(0);
+}
+fn flush<W>(sink: &W, state: &State) -> core::result::Result<i32,Cause> where W: core::io::Write {
+    if (state.stats.output == 0) { return core::result::Ok(0); }
+    while (true) {
+        if (state.stats.write_calls == state.options.max_write_calls) { return core::result::Err(Cause::Limit); } state.stats.write_calls += 1;
+        let result: core::result::Result<i32,core::io::Error> = sink.flush(); if (result.is_err()) { if (core::io::is_interrupted(result.unwrap_err())) { continue; } return core::result::Err(Cause::Flush(result.unwrap_err())); }
+        if (result.unwrap() != 0) { return core::result::Err(Cause::Flush(core::io::Error::InvalidCount)); } return core::result::Ok(0);
+    }
+    return core::result::Err(Cause::Limit);
+}
+fn transform<R,W>(source: &R, sink: &W, columns: core::slice::View<i32>, state: &State) -> core::result::Result<i32,Cause> where R: core::io::Read, W: core::io::Write {
+    let scratch: [u8;4096] = [0;4096]; let position: i32 = 0; let length: i32 = 0;
+    while (true) {
+        if (position == length) {
+            if (state.stats.read_calls == state.options.max_read_calls) { return core::result::Err(Cause::Limit); } state.stats.read_calls += 1;
+            let remaining: u64 = state.options.max_input - state.stats.input; let amount: i32 = 4096; if (remaining < 4096) { amount = remaining as i32; } if (amount == 0) { amount = 1; }
+            let received: core::result::Result<i32,core::io::Error> = source.read(scratch,0,amount);
+            if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return core::result::Err(Cause::Read(received.unwrap_err())); }
+            let count: i32 = received.unwrap(); if (count < 0 || count > amount) { return core::result::Err(Cause::Read(core::io::Error::InvalidCount)); }
+            state.stats.input += count as u64; if ((count as u64) > remaining) { return core::result::Err(Cause::Limit); }
+            if (count == 0) {
+                if (!charge(state,1)) { return core::result::Err(Cause::Limit); }
+                let ended = state.parser.finish(); state.stats.consumed = state.parser.byte_offset(); if (ended.is_err()) { return core::result::Err(Cause::Parse(ended.unwrap_err())); }
+                if (ended.unwrap()) { let emitted: core::result::Result<i32,Cause> = emit(sink,columns,state); if (emitted.is_err()) { return emitted; } }
+                return flush(sink,state);
+            }
+            position = 0; length = count;
+        }
+        let remaining_work: u64 = state.options.max_work - state.stats.work; if (remaining_work <= 1) { return core::result::Err(Cause::Limit); }
+        let amount: i32 = length - position; if ((amount as u64) > remaining_work - 1) { amount = (remaining_work - 1) as i32; }
+        if (!charge(state,1 + (amount as u64))) { return core::result::Err(Cause::Limit); }
+        let fed = state.parser.feed(scratch,position,amount); state.stats.consumed = state.parser.byte_offset();
+        if (fed.is_err()) { return core::result::Err(Cause::Parse(fed.unwrap_err())); }
+        let progress = fed.unwrap(); if (progress.consumed <= 0 || progress.consumed > amount) { return core::result::Err(Cause::Read(core::io::Error::InvalidCount)); }
+        state.stats.work -= (amount - progress.consumed) as u64; position += progress.consumed;
+        if (progress.record) { let emitted: core::result::Result<i32,Cause> = emit(sink,columns,state); if (emitted.is_err()) { return emitted; } }
+    }
+    return core::result::Err(Cause::Limit);
+}
+fn rewrite<R,W>(source: &R, sink: &W, columns: core::slice::View<i32>, options: Options) -> core::result::Result<Stats,Failure> where R: core::io::Read, W: core::io::Write {
+    let dialect = ext::csv::default_options(); dialect.max_records = options.max_records; dialect.max_fields = options.max_fields; dialect.max_field_bytes = options.max_field_bytes; dialect.max_record_bytes = options.max_record_bytes;
+    let made = ext::csv::decoder(dialect); if (made.is_err()) { return core::result::Err(Failure { cause:Cause::Parse(made.unwrap_err()),stats:empty_stats() }); }
+    let state: State = State { options:options,parser:made.unwrap(),record:ext::csv::new(),stats:empty_stats() };
+    let result: core::result::Result<i32,Cause> = transform(source,sink,columns,state.borrow());
+    state.stats.decoder_bytes = state.parser.byte_capacity(); state.stats.decoder_fields = state.parser.field_capacity(); state.stats.record_bytes = state.record.byte_capacity(); state.stats.record_fields = state.record.field_capacity();
+    let stats: Stats = state.stats; state.record.destroy(); state.parser.destroy();
+    if (result.is_err()) { return core::result::Err(Failure { cause:result.unwrap_err(),stats:stats }); } return core::result::Ok(stats);
+}
+fn report_stats(stats: Stats) -> bool {
+    let scratch: [u8;640] = [0;640]; let output = core::fmt::buffer(scratch,0,640).unwrap();
+    output.write_text(text("input=",6)); output.write_unsigned(stats.input,core::fmt::decimal()); output.write_text(text(" consumed=",10)); output.write_unsigned(stats.consumed,core::fmt::decimal()); output.write_text(text(" output=",8)); output.write_unsigned(stats.output,core::fmt::decimal()); output.write_text(text(" rows=",6)); output.write_unsigned(stats.rows,core::fmt::decimal()); output.write_text(text(" read-calls=",12)); output.write_unsigned(stats.read_calls,core::fmt::decimal()); output.write_text(text(" write-calls=",13)); output.write_unsigned(stats.write_calls,core::fmt::decimal()); output.write_text(text(" work=",6)); output.write_unsigned(stats.work,core::fmt::decimal()); output.write_text(text(" decoder-bytes=",15)); output.write_unsigned(stats.decoder_bytes as u64,core::fmt::decimal()); output.write_text(text(" decoder-fields=",16)); output.write_unsigned(stats.decoder_fields as u64,core::fmt::decimal()); output.write_text(text(" record-bytes=",14)); output.write_unsigned(stats.record_bytes as u64,core::fmt::decimal()); output.write_text(text(" record-fields=",15)); output.write_unsigned(stats.record_fields as u64,core::fmt::decimal()); output.write_text(text("\n",1));
+    let finished = output.finish(); return finished.is_ok() && write_output(core::slice::view(scratch,finished.unwrap()).unwrap(),2);
+}
+fn columns(value: core::slice::View<u8>, maximum: i32) -> core::result::Result<alloc::vec::Vec<i32>,Cause> {
+    let output: alloc::vec::Vec<i32> = alloc::vec::new(); let start: i32 = 0; let end: i32 = 0;
+    while (true) {
+        while (end < value.len() && value.get(end).unwrap() != 44) { end += 1; }
+        if (start == end || output.len() == maximum) { output.destroy(); return core::result::Err(Cause::Arguments); }
+        let selected = value.subview(start,end).unwrap(); let parsed = core::decimal::parse_u32_range(selected.values,selected.start,selected.len());
+        if (parsed.is_err() || parsed.unwrap() >= maximum as u32) { output.destroy(); return core::result::Err(Cause::Arguments); }
+        if (output.try_push(parsed.unwrap() as i32).is_err()) { output.destroy(); return core::result::Err(Cause::Allocation); }
+        if (end == value.len()) { return core::result::Ok(output); } end += 1; start = end;
+    }
+    return core::result::Err(Cause::Arguments);
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 1) { options.help = true; return true; } if (item.id == 2) { options.report = true; return true; }
+    let value = item.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.len());
+    if (parsed.is_err() || value.is_empty() || parsed.unwrap() > 2147483647 as u64) { return false; } let count: u64 = parsed.unwrap();
+    if (item.id == 3 || item.id == 4) { if (count > 1073741824) { return false; } }
+    if (item.id == 3) { options.max_input = count; } if (item.id == 4) { options.max_output = count; }
+    if (item.id == 5) { if (count > 1000000) { return false; } options.max_records = count as i32; }
+    if (item.id == 6) { if (count < 1 || count > 4096) { return false; } options.max_fields = count as i32; }
+    if (item.id == 7 || item.id == 8) { if (count > 16777216) { return false; } }
+    if (item.id == 7) { options.max_field_bytes = count as i32; } if (item.id == 8) { options.max_record_bytes = count as i32; }
+    if (item.id == 9) { options.max_work = count; } if (item.id == 10) { options.max_read_calls = count; } if (item.id == 11) { options.max_write_calls = count; } return true;
+}
+fn operand(options: &Options, bytes: core::slice::View<u8>) -> bool { options.operands += 1; options.columns = bytes; return options.operands <= 1; }
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;11] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag }, ext::cli::Spec { id:2,long:literal("report",6),short:0,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:3,long:literal("max-input",9),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:4,long:literal("max-output",10),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:5,long:literal("max-records",11),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:6,long:literal("max-fields",10),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:7,long:literal("max-field-bytes",15),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:8,long:literal("max-record-bytes",16),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:9,long:literal("max-work",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:10,long:literal("max-read-calls",14),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:11,long:literal("max-write-calls",15),short:0,arity:ext::cli::Arity::Required }
+    ];
+    let options = defaults(); let parser = ext::cli::parser(values.as_view(),core::slice::view(specs,11).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    while (true) {
+        let event = parser.next(); if (event.is_err()) { return diagnostic(Cause::Arguments); } let next = event.unwrap(); if (next.is_none()) { break; }
+        let valid: bool = match (next.unwrap()) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item.bytes) }; if (!valid) { return diagnostic(Cause::Arguments); }
+    }
+    if (options.help) { if (!write_output(literal("Usage: csv-rewrite COLUMNS [OPTIONS]\nCOLUMNS: comma-separated zero-based indices, e.g. 2,0,2\nOptions: --max-input N --max-output N --max-records N --max-fields N\n         --max-field-bytes N --max-record-bytes N --max-work N\n         --max-read-calls N --max-write-calls N --report\n",282),1)) { return diagnostic(Cause::Flush(core::io::Error::Host(5))); } return 0; }
+    if (options.operands != 1) { return diagnostic(Cause::Arguments); }
+    let selected = columns(options.columns,options.max_fields); if (selected.is_err()) { return diagnostic(selected.unwrap_err()); } let indices = selected.unwrap();
+    let source = std::stream::stdin(); let sink = std::stream::stdout(); let result: core::result::Result<Stats,Failure> = rewrite(source.borrow(),sink.borrow(),indices.as_view(),options); indices.destroy();
+    let stats = empty_stats(); if (result.is_ok()) { stats = result.unwrap(); } else { stats = result.unwrap_err().stats; }
+    let reported: bool = true; if (options.report) { reported = report_stats(stats); }
+    if (result.is_err()) { return diagnostic(result.unwrap_err().cause); }
+    if (!reported) { return diagnostic(Cause::Flush(core::io::Error::Host(5))); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return diagnostic(Cause::Flush(core::io::Error::Host(5))); }
+    let captured = std::args::snapshot(1,48,16384); if (captured.is_err()) { return match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> diagnostic(Cause::Allocation), std::args::Error::HostRead(index) -> diagnostic(Cause::Read(core::io::Error::Host(5))), _ -> diagnostic(Cause::Arguments) }; }
+    let values = captured.unwrap(); let code: i32 = arguments(values); values.destroy(); return code;
+}

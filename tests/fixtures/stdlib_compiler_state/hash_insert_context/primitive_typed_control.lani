@@ -1,0 +1,20 @@
+// Current CLI compile/native control passed with exact i64 bits; see README.md.
+module app::main;
+import alloc::hash_map;
+import core::option;
+import core::result;
+
+fn observe(item: core::option::Option<alloc::hash_map::Entry<i32,i64>>) {
+    let previous = item.unwrap(); assert(previous.key == 7 && previous.value == 42);
+}
+fn main() -> i32 {
+    let owner: alloc::hash_map::HashMap<i32,i64> = alloc::hash_map::new();
+    let initial: i64 = 42; assert(owner.try_insert(7,initial).unwrap().is_none());
+    let cursor = owner.take_iter(); let recovered = cursor.take_remaining();
+    let inserted_value: i64 = -9223372036854775807;
+    let insertion: core::result::Result<core::option::Option<alloc::hash_map::Entry<i32,i64>>,alloc::hash_map::Error> = recovered.try_insert(7,inserted_value);
+    observe(insertion.unwrap());
+    let stored: i64 = recovered.get(7).unwrap(); let bits: u64 = stored as u64;
+    assert(stored < 0 && bits == 9223372036854775809);
+    recovered.destroy(); return 0;
+}

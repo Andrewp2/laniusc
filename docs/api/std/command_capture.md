@@ -8,11 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
+Progress.status may be an observed terminal status while Progress.reaped is false. Capture retains the unreaped leader anchor while draining acquired pipes, then performs a charged final nonblocking reap before success. A failure can retain that Child authority unless ownership was lost or final reaping already occurred; captured output owners and child cleanup remain explicit. The guides define operation/deadline scope and current execution evidence.
+
 ## Contract and evidence guides
 
 - [stdlib-command-capture](../../stdlib-command-capture.md)
+- [stdlib-command-groups](../../stdlib-command-groups.md)
+- [stdlib-run-group](../../stdlib-run-group.md)
 
-Declaration counts: enum: 5; field: 27; function: 2; impl: 2; method: 4; struct: 5; variant: 38.
+Declaration counts: enum: 5; field: 28; function: 2; impl: 2; method: 4; struct: 5; variant: 38.
 
 ## Declared imports
 
@@ -532,6 +536,14 @@ startup: std::command::Startup
 acquired: bool
 ```
 
+#### field: reaped
+
+[Source line 25](../../../stdlib/std/command_capture.lani#L25)
+
+```lanius
+reaped: bool
+```
+
 ### struct: Output
 
 [Source line 26](../../../stdlib/std/command_capture.lani#L26)
@@ -648,7 +660,7 @@ pub fn default_limits() -> Limits
 
 ### function: communicate
 
-[Source line 110](../../../stdlib/std/command_capture.lani#L110)
+[Source line 123](../../../stdlib/std/command_capture.lani#L123)
 
 ```lanius
 pub fn communicate(child: &std::command::Child, data: core::slice::View<u8>, limits: Limits, deadline: core::time::Deadline) -> core::result::Result<Output,Failure>

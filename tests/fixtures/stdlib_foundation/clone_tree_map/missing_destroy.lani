@@ -1,0 +1,11 @@
+module app::main;
+import alloc::clone_tree_map;
+import alloc::string;
+import alloc::tree_map;
+import core::result;
+import fixture::prerequisites;
+fn main() -> i32 {
+    let map: alloc::tree_map::TreeMap<alloc::string::String,fixture::prerequisites::CloneOnly> = alloc::tree_map::new();
+    alloc::clone_tree_map::try_clone<alloc::string::String,fixture::prerequisites::CloneOnly,alloc::string::Error,fixture::prerequisites::Never>(map.borrow());
+    return 0;
+}

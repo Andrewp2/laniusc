@@ -1,0 +1,40 @@
+module app::main;
+extern "C" fn probe_args6(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64) -> u64;
+extern "C" fn probe_args7(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64) -> u64;
+extern "C" fn probe_args8(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64,h:u64) -> u64;
+extern "C" fn probe_args9(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64,h:u64,i:u64) -> u64;
+extern "C" fn probe_align0() -> usize;
+extern "C" fn probe_align7(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64) -> usize;
+extern "C" fn probe_align8(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64,h:u64) -> usize;
+extern "C" fn probe_align9(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64,h:u64,i:u64) -> usize;
+extern "C" fn probe_seed(index:u32) -> u64;
+extern "C" fn probe_clobber() -> u64;
+
+fn after_foreign_call(a: u64, b: u64) -> u64 { return a * 3 + b * 5; }
+
+fn main() -> i32 {
+    if (probe_args6(11,23,37,53,71,89) != 2585) { return 1; }
+    if (probe_args7(11,23,37,53,71,89,107) != 4404) { return 2; }
+    if (probe_args8(11,23,37,53,71,89,107,131) != 6893) { return 3; }
+    if (probe_args9(11,23,37,53,71,89,107,131,157) != 10504) { return 4; }
+    if (probe_args9(157,131,107,89,71,53,37,23,11) != 4654) { return 5; }
+    if (probe_align0() != 8) { return 6; }
+    if (probe_align7(11,23,37,53,71,89,107) != 8) { return 7; }
+    if (probe_align8(11,23,37,53,71,89,107,131) != 8) { return 8; }
+    if (probe_align9(11,23,37,53,71,89,107,131,157) != 8) { return 9; }
+    let a: u64 = probe_seed(0);
+    let b: u64 = probe_seed(1);
+    let c: u64 = probe_seed(2);
+    let d: u64 = probe_seed(3);
+    let e: u64 = probe_seed(4);
+    let f: u64 = probe_seed(5);
+    let g: u64 = probe_seed(6);
+    let h: u64 = probe_seed(7);
+    let i: u64 = probe_seed(8);
+    let returned: u64 = probe_clobber();
+    if (returned != 10986060915021696495) { return 10; }
+    if (probe_args9(a,b,c,d,e,f,g,h,i) != 429496745998) { return 11; }
+    if (after_foreign_call(a,i) != 34359739536) { return 12; }
+    if (a != 4294967297 || i != 4294967529) { return 13; }
+    return 0;
+}

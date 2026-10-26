@@ -205,6 +205,15 @@ fn name_valid(name: core::slice::View<u8>) -> bool {
     if (name.length > 1 && byte(name,1) == 58) { return false; }
     let index: i32 = 0; while (index < name.length) { if (byte(name,index) == 0 || byte(name,index) == 92) { return false; } index += 1; } return true;
 }
+// Check the writer's name policy without constructing an archive. Returns
+// the byte length, allocates nothing, and does not interpret filesystem paths.
+// A trailing slash still requires empty data when encode validates an entry.
+pub fn validate_name(name: core::slice::View<u8>, utf8: bool) -> core::result::Result<i32,Error> {
+    if (!valid(name)) { return core::result::Err(Error::Bounds); }
+    if (!name_valid(name)) { return core::result::Err(Error::Name); }
+    if (utf8 && !encoding(name)) { return core::result::Err(Error::Encoding); }
+    return core::result::Ok(name.length);
+}
 pub fn encode(entries: core::slice::View<Source>, comment: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
     if (entries.start < 0 || entries.length < 0 || entries.start > 2147483647-entries.length || !valid(comment) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
     if (entries.length >= 65535 || entries.length > limits.max_entries) { return core::result::Err(Error::EntryLimit); }

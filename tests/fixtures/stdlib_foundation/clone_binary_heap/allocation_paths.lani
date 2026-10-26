@@ -1,0 +1,48 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone;
+import alloc::clone_binary_heap;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::result;
+import fixture::types;
+import std::io;
+import std::io_decimal;
+
+fn finish(tag: i32, status: i32) -> i32 { if (std::io_decimal::write_i32(1,tag)<0 || std::io::write_byte(1,10)!=1) { return 5; } return status; }
+fn storage(error: alloc::binary_heap::Error) -> i32 { assert(match(error) { alloc::binary_heap::Error::AllocationFailed -> true, _ -> false }); return 10; }
+fn row_storage(index: i32, error: alloc::vec::Error) -> i32 { assert(match(error) { alloc::vec::Error::AllocationFailed -> true, _ -> false }); return 20+index; }
+fn leaf(index: i32, inner: i32, error: alloc::string::Error) -> i32 { assert(inner>=0 && inner<2 && match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false }); return 100+2*index+inner; }
+fn row(index: i32, error: alloc::clone::Error<alloc::string::Error>) -> i32 {
+    assert(index>=0 && index<3);
+    return match(error) { alloc::clone::Error::Storage(value) -> row_storage(index,value), alloc::clone::Error::Element(inner,value) -> leaf(index,inner,value), alloc::clone::Error::Bounds -> -1 };
+}
+fn tag(error: alloc::clone_binary_heap::Error<alloc::clone::Error<alloc::string::Error>>) -> i32 {
+    return match(error) { alloc::clone_binary_heap::Error::Storage(value) -> storage(value), alloc::clone_binary_heap::Error::Element(index,value) -> row(index,value) };
+}
+fn main() -> i32 {
+    if (std::io_decimal::write_usize(1,core::mem::size_of<alloc::string::String>())<0 || std::io::write_byte(1,10)!=1 || std::io_decimal::write_usize(1,core::mem::size_of<fixture::types::Record>())<0 || std::io::write_byte(1,10)!=1) { return 5; }
+    let bytes: [u8;4] = [65,0,195,169]; let made = alloc::string::from_utf8(bytes,4);
+    if (made.is_err()) { return finish(1,4); } let original: alloc::string::String = made.unwrap();
+    let rows = alloc::vec::with_capacity<alloc::string::String>(2);
+    if (rows.is_err()) { assert(original.byte_at(1).unwrap()==0); original.destroy(); return finish(2,4); }
+    let values = rows.unwrap(); values.try_push(original).unwrap(); values.try_push(original).unwrap();
+    let heaps = alloc::binary_heap::with_capacity<fixture::types::Record>(3,alloc::binary_heap::Order::Min);
+    if (heaps.is_err()) { assert(values.len()==2 && original.byte_len()==4); values.destroy(); original.destroy(); return finish(3,4); }
+    let source = heaps.unwrap();
+    source.try_push(fixture::types::Record { priority:4,id:10,values:values }).unwrap(); source.try_push(fixture::types::Record { priority:-2,id:20,values:values }).unwrap(); source.try_push(fixture::types::Record { priority:4,id:30,values:values }).unwrap();
+    let view = source.as_view(); let ids: [i32;3] = [0;3]; let keys: [i32;3] = [0;3]; let index: i32 = 0;
+    while (index<3) { let item: fixture::types::Record = view.get(index).unwrap(); ids[index]=item.id; keys[index]=item.priority; index+=1; }
+    let result = alloc::clone_binary_heap::try_clone<fixture::types::Record,alloc::clone::Error<alloc::string::Error>>(source.borrow());
+    assert(source.len()==3 && source.capacity()==3 && original.byte_len()==4 && original.byte_at(1).unwrap()==0 && values.len()==2 && values.capacity()==2);
+    index=0; while (index<3) { let item: fixture::types::Record = view.get(index).unwrap(); assert(item.id==ids[index] && item.priority==keys[index] && item.values.at(0).byte_at(3).unwrap()==169); index+=1; }
+    // Source entries deliberately borrow the same row and leaf descriptors.
+    // Release their three actual backing owners shallowly, exactly once.
+    source.destroy(); values.destroy(); original.destroy();
+    if (result.is_err()) { return finish(tag(result.unwrap_err()),4); }
+    let copy = result.unwrap(); assert(copy.len()==3);
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Record>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity()==0); return finish(0,0);
+}

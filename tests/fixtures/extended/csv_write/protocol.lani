@@ -1,0 +1,28 @@
+module app::main;
+import core::result;
+import core::text;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::stream;
+fn main() -> i32 {
+    let captured = std::args::snapshot(1,256,65536);
+    if (captured.is_err()) { return 4; }
+    let values: std::args::Arguments = captured.unwrap(); let row: ext::csv::Record = ext::csv::new();
+    let index: i32 = 0;
+    while (index < values.len()) {
+        let bytes = values.get(index).unwrap();
+        // Deliberately pass unchecked Text so the producer must validate UTF-8.
+        let text: core::text::Text = core::text::Text { bytes: bytes.values, start: bytes.start, length: bytes.length };
+        let appended = row.try_push_field(text);
+        if (appended.is_err()) {
+            let status: i32 = match (appended.unwrap_err()) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 };
+            row.destroy(); values.destroy(); return status;
+        }
+        index += 1;
+    }
+    let sink: std::stream::Descriptor = std::stream::stdout();
+    let written = ext::csv_write::write_record(sink.borrow(),row.borrow(),ext::csv_write::default_limits());
+    row.destroy(); values.destroy();
+    if (written.is_err()) { return 3; } return 0;
+}

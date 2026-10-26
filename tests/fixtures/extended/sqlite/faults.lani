@@ -1,0 +1,77 @@
+// One native fault per process, injected by fault_interposer.c.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::sqlite;
+import std::stream;
+
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count), start: 0, length: count }; }
+fn phase(value: ext::sqlite::Phase) -> u64 { return match (value) { ext::sqlite::Phase::Open -> 1, ext::sqlite::Phase::Configure -> 2, ext::sqlite::Phase::Prepare -> 3, ext::sqlite::Phase::Bind -> 4, ext::sqlite::Phase::Step -> 5, ext::sqlite::Phase::Reset -> 6, ext::sqlite::Phase::ClearBindings -> 7, ext::sqlite::Phase::Column -> 8, ext::sqlite::Phase::Finalize -> 9, ext::sqlite::Phase::Close -> 10, ext::sqlite::Phase::Transaction -> 11 }; }
+fn state(value: ext::sqlite::State) -> i32 { return match (value) { ext::sqlite::State::Ready -> 0, ext::sqlite::State::Row -> 1, ext::sqlite::State::Done -> 2, ext::sqlite::State::Failed -> 3, ext::sqlite::State::Finalized -> 4 }; }
+fn row(value: ext::sqlite::Step) -> bool { return match (value) { ext::sqlite::Step::Row -> true, _ -> false }; }
+fn invalid(error: ext::sqlite::Error, expected_phase: u64) {
+    let invalid_state: bool = match (error.cause) { ext::sqlite::Cause::InvalidState -> true, _ -> false };
+    assert(invalid_state && phase(error.phase) == expected_phase && error.code == 0);
+}
+fn report(error: ext::sqlite::Error) {
+    let words: [u64; 2] = [phase(error.phase), error.code as u64]; let data: [u8; 16] = [0; 16];
+    let at: i32 = 0; while (at < 2) { let shift: i32 = 0; while (shift < 8) { data[at * 8 + shift] = ((words[at] >> (shift * 8)) & 255) as u8; shift += 1; } at += 1; }
+    let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), data, 0, 16).is_ok());
+}
+fn cleanup(db: &ext::sqlite::Database, statement: &ext::sqlite::Statement) {
+    assert(statement.finalize().is_ok() && statement.finalize().is_ok() && !statement.is_open() && state(statement.state()) == 4);
+    assert(db.close().is_ok() && db.close().is_ok() && !db.is_open());
+}
+fn ready_failure(db: &ext::sqlite::Database, statement: &ext::sqlite::Statement, result: core::result::Result<i32, ext::sqlite::Error>) -> bool {
+    if (result.is_ok()) { return false; }
+    report(result.unwrap_err()); assert(state(statement.state()) == 0 && db.is_open()); cleanup(db, statement); return true;
+}
+fn column_failure(db: &ext::sqlite::Database, statement: &ext::sqlite::Statement, error: ext::sqlite::Error, target: [u8]) {
+    report(error);
+    let at: i32 = 0; while (at < 64) { assert(target[at] == 221); at += 1; }
+    if (ext::sqlite::primary_code(error) == 7) {
+        assert(state(statement.state()) == 3);
+        invalid(statement.step().unwrap_err(), 5); invalid(statement.column_type(0).unwrap_err(), 8);
+        let reset_error: ext::sqlite::Error = statement.reset().unwrap_err();
+        assert(ext::sqlite::primary_code(reset_error) == 7 && state(statement.state()) == 0);
+        assert(row(statement.step().unwrap()) && state(statement.state()) == 1);
+    } else { assert(state(statement.state()) == 1); }
+    cleanup(db, statement);
+}
+fn main() -> i32 {
+    let opened: core::result::Result<ext::sqlite::Database, ext::sqlite::Error> = ext::sqlite::memory(ext::sqlite::default_limits());
+    if (opened.is_err()) { report(opened.unwrap_err()); return 0; }
+    let db: ext::sqlite::Database = opened.unwrap();
+    let prepared: core::result::Result<ext::sqlite::Statement, ext::sqlite::Error> = db.prepare(bytes("SELECT 'native text',X'00FF80',?1,?2,?3", 39));
+    if (prepared.is_err()) { report(prepared.unwrap_err()); assert(db.close().is_ok()); return 0; }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    assert(statement.parameter_count() == 3 && statement.column_count() == 5);
+    if (ready_failure(db.borrow(), statement.borrow(), statement.bind_i64(1, 42))) { return 0; }
+    if (ready_failure(db.borrow(), statement.borrow(), statement.bind_f64(2, 0.1))) { return 0; }
+    if (ready_failure(db.borrow(), statement.borrow(), statement.bind_text(3, bytes("copied", 6)))) { return 0; }
+    if (ready_failure(db.borrow(), statement.borrow(), statement.bind_blob(3, bytes("copied", 6)))) { return 0; }
+    if (ready_failure(db.borrow(), statement.borrow(), statement.clear_bindings())) { return 0; }
+    if (ready_failure(db.borrow(), statement.borrow(), statement.reset())) { return 0; }
+    let stepped: core::result::Result<ext::sqlite::Step, ext::sqlite::Error> = statement.step();
+    if (stepped.is_err()) {
+        report(stepped.unwrap_err()); assert(state(statement.state()) == 3);
+        invalid(statement.step().unwrap_err(), 5); invalid(statement.column_type(0).unwrap_err(), 8);
+        assert(statement.reset().is_ok() && state(statement.state()) == 0); cleanup(db.borrow(), statement.borrow()); return 0;
+    }
+    assert(row(stepped.unwrap()));
+    let target: [u8; 64] = [221; 64]; let destination: core::slice::View<u8> = core::slice::View { values: target, start: 7, length: 48 };
+    let text: core::result::Result<i32, ext::sqlite::Error> = statement.column_text_copy(0, destination);
+    if (text.is_err()) { column_failure(db.borrow(), statement.borrow(), text.unwrap_err(), target); return 0; }
+    assert(text.unwrap() == 11); let at: i32 = 0; while (at < 64) { target[at] = 221; at += 1; }
+    let blob: core::result::Result<i32, ext::sqlite::Error> = statement.column_blob_copy(1, destination);
+    if (blob.is_err()) { column_failure(db.borrow(), statement.borrow(), blob.unwrap_err(), target); return 0; }
+    assert(blob.unwrap() == 3);
+    let finalized: core::result::Result<i32, ext::sqlite::Error> = statement.finalize();
+    assert(!statement.is_open() && state(statement.state()) == 4 && statement.finalize().is_ok());
+    if (finalized.is_err()) { report(finalized.unwrap_err()); assert(db.close().is_ok()); return 0; }
+    let closed: core::result::Result<i32, ext::sqlite::Error> = db.close();
+    if (closed.is_err()) { report(closed.unwrap_err()); assert(db.is_open() && db.autocommit().unwrap() && db.close().is_ok() && !db.is_open()); return 0; }
+    assert(false); return 1;
+}

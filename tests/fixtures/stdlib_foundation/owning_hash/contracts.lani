@@ -1,0 +1,73 @@
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::iter;
+import fixture::consumer;
+import fixture::key;
+
+fn maps() {
+    let owner: alloc::hash_map::HashMap<fixture::key::Key,i64> = alloc::hash_map::new(); owner.try_reserve(8).unwrap();
+    let id: i32 = 0; while (id < 4) { assert(owner.try_insert(fixture::key::make(id,100+id),-4294967297-(id as i64)).unwrap().is_none()); id += 1; }
+    assert(owner.remove(fixture::key::make(1,0)).unwrap().key.representative == 101);
+    let backing: ptr = owner.storage; let capacity: i32 = owner.capacity(); let occupied: i32 = owner.occupied;
+    let cursor: alloc::hash_map::IntoIter<fixture::key::Key,i64> = fixture::consumer::map_cursor<fixture::key::Key,i64>(owner.borrow());
+    assert(owner.is_empty() && owner.capacity() == 0 && owner.storage == 0 && owner.occupied == 0);
+    assert(cursor.remaining() == 3 && cursor.capacity() == capacity);
+    assert(match(cursor.try_finish().unwrap()) { alloc::hash_map::IntoIterError::Remaining(count) -> count == 3 });
+    let first: alloc::hash_map::Entry<fixture::key::Key,i64> = cursor.next().unwrap();
+    assert(first.key.id != 1 && first.value == -4294967297-(first.key.id as i64));
+    // Reusing the reset source allocates independent backing.
+    owner.try_insert(fixture::key::make(9,909),99).unwrap(); assert(owner.storage != backing); owner.destroy();
+    let recovered: alloc::hash_map::HashMap<fixture::key::Key,i64> = cursor.take_remaining();
+    assert(cursor.is_empty() && cursor.capacity() == 0 && cursor.next().is_none() && cursor.try_finish().is_none());
+    assert(recovered.len() == 2 && recovered.capacity() == capacity && recovered.storage == backing && recovered.occupied == occupied);
+    id = 0; while (id < 4) {
+        let item = recovered.get_entry(fixture::key::make(id,0));
+        if (id == 1 || id == first.key.id) { assert(item.is_none()); }
+        else { assert(item.unwrap().key.representative == 100+id && item.unwrap().value == -4294967297-(id as i64)); }
+        id += 1;
+    }
+    assert(recovered.try_insert(first.key,first.value).unwrap().is_none());
+    assert(recovered.storage == backing && recovered.occupied == occupied);
+    let rest: alloc::hash_map::IntoIter<fixture::key::Key,i64> = recovered.take_iter(); let mask: u32 = 0;
+    while (true) {
+        let next = fixture::consumer::pull<alloc::hash_map::IntoIter<fixture::key::Key,i64>,alloc::hash_map::Entry<fixture::key::Key,i64>>(rest.borrow());
+        if (next.is_none()) { break; } let entry = next.unwrap(); let bit: u32 = 1 << entry.key.id;
+        assert((mask & bit) == 0); mask |= bit;
+    }
+    assert(mask == 13 && rest.is_empty() && rest.capacity() == capacity);
+    let empty = rest.take_remaining(); assert(empty.is_empty() && empty.capacity() == capacity && empty.occupied == occupied && empty.storage == backing);
+    assert(rest.take_remaining().capacity() == 0 && rest.try_finish().is_none());
+    empty.try_insert(fixture::key::make(10,1010),-10).unwrap(); assert(empty.storage == backing && empty.get(fixture::key::make(10,0)).unwrap() == -10);
+    let finish = empty.take_iter(); finish.next().unwrap(); assert(finish.is_empty() && finish.capacity() == capacity);
+    assert(finish.next().is_none() && finish.try_finish().is_none() && finish.try_finish().is_none() && finish.capacity() == 0);
+}
+fn sets() {
+    let owner: alloc::hash_set::HashSet<fixture::key::Key> = alloc::hash_set::with_capacity<fixture::key::Key>(8).unwrap();
+    let id: i32 = 0; while (id < 4) { assert(owner.try_insert(fixture::key::make(id,200+id)).unwrap().is_none()); id += 1; }
+    assert(owner.remove(fixture::key::make(1,0)).unwrap().representative == 201);
+    let backing: ptr = owner.state.storage; let capacity: i32 = owner.capacity(); let occupied: i32 = owner.state.occupied;
+    let cursor = fixture::consumer::set_cursor<fixture::key::Key>(owner.borrow());
+    assert(owner.is_empty() && owner.capacity() == 0 && owner.state.storage == 0 && owner.state.occupied == 0);
+    assert(match(cursor.try_finish().unwrap()) { alloc::hash_set::IntoIterError::Remaining(count) -> count == 3 });
+    let first = fixture::consumer::pull<alloc::hash_set::IntoIter<fixture::key::Key>,fixture::key::Key>(cursor.borrow()).unwrap();
+    owner.try_insert(fixture::key::make(9,909)).unwrap(); assert(owner.state.storage != backing); owner.destroy();
+    let recovered = cursor.take_remaining();
+    assert(cursor.remaining() == 0 && cursor.capacity() == 0 && cursor.next().is_none() && cursor.try_finish().is_none());
+    assert(recovered.len() == 2 && recovered.capacity() == capacity && recovered.state.storage == backing && recovered.state.occupied == occupied);
+    id = 0; while (id < 4) {
+        let item = recovered.get(fixture::key::make(id,0));
+        if (id == 1 || id == first.id) { assert(item.is_none()); } else { assert(item.unwrap().representative == 200+id); }
+        id += 1;
+    }
+    assert(recovered.try_insert(first).unwrap().is_none() && recovered.state.storage == backing && recovered.state.occupied == occupied);
+    let rest = recovered.take_iter(); let mask: u32 = 0;
+    while (true) { let next = rest.next(); if (next.is_none()) { break; } let bit: u32 = 1 << next.unwrap().id; assert((mask & bit) == 0); mask |= bit; }
+    assert(mask == 13 && rest.capacity() == capacity);
+    let empty = rest.take_remaining(); assert(empty.is_empty() && empty.capacity() == capacity && empty.state.storage == backing && empty.state.occupied == occupied);
+    assert(rest.take_remaining().capacity() == 0 && rest.try_finish().is_none());
+    empty.try_insert(fixture::key::make(10,1010)).unwrap(); assert(empty.state.storage == backing && empty.get(fixture::key::make(10,0)).unwrap().representative == 1010);
+    let finish = empty.take_iter(); finish.next().unwrap(); assert(finish.capacity() == capacity && finish.next().is_none());
+    assert(finish.try_finish().is_none() && finish.try_finish().is_none() && finish.capacity() == 0);
+}
+fn main() -> i32 { maps(); sets(); return 0; }

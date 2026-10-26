@@ -1,0 +1,20 @@
+module fixture::zst;
+import core::clone;
+import core::cmp;
+import core::result;
+pub struct Unit {}
+pub enum Never { Unreachable }
+pub impl core::cmp::Eq<Unit> for Unit {
+    pub fn eq(a: Unit,b: Unit) -> bool { return true; }
+    pub fn ne(a: Unit,b: Unit) -> bool { return false; }
+}
+pub impl core::cmp::Ord<Unit> for Unit {
+    pub fn lt(a: Unit,b: Unit) -> bool { return false; }
+    pub fn le(a: Unit,b: Unit) -> bool { return true; }
+    pub fn gt(a: Unit,b: Unit) -> bool { return false; }
+    pub fn ge(a: Unit,b: Unit) -> bool { return true; }
+}
+pub impl core::clone::TryClone<Unit,Never> for Unit {
+    pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> { return core::result::Ok(source); }
+}
+pub impl core::clone::Destroy<Unit> for Unit { pub fn destroy_value(owned: Unit) {} }

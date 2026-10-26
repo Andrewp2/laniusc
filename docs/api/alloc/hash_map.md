@@ -8,13 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
+Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
+
 ## Contract and evidence guides
 
 - [stdlib-hash-collections](../../stdlib-hash-collections.md)
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
+- [stdlib-owning-hash](../../stdlib-owning-hash.md)
 
-Declaration counts: enum: 2; field: 18; function: 13; impl: 6; method: 20; struct: 5; variant: 5.
+Declaration counts: enum: 3; field: 29; function: 17; impl: 9; method: 29; struct: 7; variant: 6.
 
 ## Declared imports
 
@@ -64,9 +67,25 @@ CapacityOverflow
 AllocationFailed
 ```
 
+### enum: IntoIterError
+
+[Source line 13](../../../stdlib/alloc/hash_map.lani#L13)
+
+```lanius
+pub enum IntoIterError
+```
+
+#### variant: Remaining
+
+[Source line 13](../../../stdlib/alloc/hash_map.lani#L13)
+
+```lanius
+Remaining(i32)
+```
+
 ### enum: SinkError
 
-[Source line 14](../../../stdlib/alloc/hash_map.lani#L14)
+[Source line 15](../../../stdlib/alloc/hash_map.lani#L15)
 
 ```lanius
 pub enum SinkError
@@ -74,7 +93,7 @@ pub enum SinkError
 
 #### variant: Duplicate
 
-[Source line 14](../../../stdlib/alloc/hash_map.lani#L14)
+[Source line 15](../../../stdlib/alloc/hash_map.lani#L15)
 
 ```lanius
 Duplicate
@@ -82,7 +101,7 @@ Duplicate
 
 #### variant: Storage
 
-[Source line 14](../../../stdlib/alloc/hash_map.lani#L14)
+[Source line 15](../../../stdlib/alloc/hash_map.lani#L15)
 
 ```lanius
 Storage(Error)
@@ -90,7 +109,7 @@ Storage(Error)
 
 ### struct: Entry
 
-[Source line 15](../../../stdlib/alloc/hash_map.lani#L15)
+[Source line 16](../../../stdlib/alloc/hash_map.lani#L16)
 
 ```lanius
 pub struct Entry<K, V>
@@ -98,7 +117,7 @@ pub struct Entry<K, V>
 
 #### field: key
 
-[Source line 15](../../../stdlib/alloc/hash_map.lani#L15)
+[Source line 16](../../../stdlib/alloc/hash_map.lani#L16)
 
 ```lanius
 key: K
@@ -106,7 +125,7 @@ key: K
 
 #### field: value
 
-[Source line 15](../../../stdlib/alloc/hash_map.lani#L15)
+[Source line 16](../../../stdlib/alloc/hash_map.lani#L16)
 
 ```lanius
 value: V
@@ -114,7 +133,7 @@ value: V
 
 ### struct: HashMap
 
-[Source line 17](../../../stdlib/alloc/hash_map.lani#L17)
+[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
 
 ```lanius
 pub struct HashMap<K, V>
@@ -122,7 +141,7 @@ pub struct HashMap<K, V>
 
 #### field: storage
 
-[Source line 17](../../../stdlib/alloc/hash_map.lani#L17)
+[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
 
 ```lanius
 storage: ptr
@@ -130,7 +149,7 @@ storage: ptr
 
 #### field: buckets
 
-[Source line 17](../../../stdlib/alloc/hash_map.lani#L17)
+[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
 
 ```lanius
 buckets: i32
@@ -138,7 +157,7 @@ buckets: i32
 
 #### field: length
 
-[Source line 17](../../../stdlib/alloc/hash_map.lani#L17)
+[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
 
 ```lanius
 length: i32
@@ -146,7 +165,7 @@ length: i32
 
 #### field: occupied
 
-[Source line 17](../../../stdlib/alloc/hash_map.lani#L17)
+[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
 
 ```lanius
 occupied: i32
@@ -154,7 +173,7 @@ occupied: i32
 
 ### struct: Iter
 
-[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
+[Source line 19](../../../stdlib/alloc/hash_map.lani#L19)
 
 ```lanius
 pub struct Iter<K, V>
@@ -162,7 +181,7 @@ pub struct Iter<K, V>
 
 #### field: storage
 
-[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
+[Source line 19](../../../stdlib/alloc/hash_map.lani#L19)
 
 ```lanius
 storage: ptr
@@ -170,7 +189,7 @@ storage: ptr
 
 #### field: buckets
 
-[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
+[Source line 19](../../../stdlib/alloc/hash_map.lani#L19)
 
 ```lanius
 buckets: i32
@@ -178,23 +197,23 @@ buckets: i32
 
 #### field: position
 
-[Source line 18](../../../stdlib/alloc/hash_map.lani#L18)
+[Source line 19](../../../stdlib/alloc/hash_map.lani#L19)
 
 ```lanius
 position: i32
 ```
 
-### struct: KeyStorage
+### struct: IntoIter
 
-[Source line 280](../../../stdlib/alloc/hash_map.lani#L280)
+[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
 
 ```lanius
-pub struct KeyStorage
+pub struct IntoIter<K, V>
 ```
 
 #### field: storage
 
-[Source line 280](../../../stdlib/alloc/hash_map.lani#L280)
+[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
 
 ```lanius
 storage: ptr
@@ -202,7 +221,7 @@ storage: ptr
 
 #### field: buckets
 
-[Source line 280](../../../stdlib/alloc/hash_map.lani#L280)
+[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
 
 ```lanius
 buckets: i32
@@ -210,7 +229,7 @@ buckets: i32
 
 #### field: length
 
-[Source line 280](../../../stdlib/alloc/hash_map.lani#L280)
+[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
 
 ```lanius
 length: i32
@@ -218,31 +237,31 @@ length: i32
 
 #### field: occupied
 
-[Source line 280](../../../stdlib/alloc/hash_map.lani#L280)
+[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
 
 ```lanius
 occupied: i32
 ```
 
-#### field: key_bytes
+#### field: position
 
-[Source line 280](../../../stdlib/alloc/hash_map.lani#L280)
+[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
 
 ```lanius
-key_bytes: usize
+position: i32
 ```
 
-### struct: KeyCursor
+### struct: KeyStorage
 
-[Source line 281](../../../stdlib/alloc/hash_map.lani#L281)
+[Source line 333](../../../stdlib/alloc/hash_map.lani#L333)
 
 ```lanius
-pub struct KeyCursor
+pub struct KeyStorage
 ```
 
 #### field: storage
 
-[Source line 281](../../../stdlib/alloc/hash_map.lani#L281)
+[Source line 333](../../../stdlib/alloc/hash_map.lani#L333)
 
 ```lanius
 storage: ptr
@@ -250,7 +269,55 @@ storage: ptr
 
 #### field: buckets
 
-[Source line 281](../../../stdlib/alloc/hash_map.lani#L281)
+[Source line 333](../../../stdlib/alloc/hash_map.lani#L333)
+
+```lanius
+buckets: i32
+```
+
+#### field: length
+
+[Source line 333](../../../stdlib/alloc/hash_map.lani#L333)
+
+```lanius
+length: i32
+```
+
+#### field: occupied
+
+[Source line 333](../../../stdlib/alloc/hash_map.lani#L333)
+
+```lanius
+occupied: i32
+```
+
+#### field: key_bytes
+
+[Source line 333](../../../stdlib/alloc/hash_map.lani#L333)
+
+```lanius
+key_bytes: usize
+```
+
+### struct: KeyCursor
+
+[Source line 334](../../../stdlib/alloc/hash_map.lani#L334)
+
+```lanius
+pub struct KeyCursor
+```
+
+#### field: storage
+
+[Source line 334](../../../stdlib/alloc/hash_map.lani#L334)
+
+```lanius
+storage: ptr
+```
+
+#### field: buckets
+
+[Source line 334](../../../stdlib/alloc/hash_map.lani#L334)
 
 ```lanius
 buckets: i32
@@ -258,7 +325,7 @@ buckets: i32
 
 #### field: position
 
-[Source line 281](../../../stdlib/alloc/hash_map.lani#L281)
+[Source line 334](../../../stdlib/alloc/hash_map.lani#L334)
 
 ```lanius
 position: i32
@@ -266,7 +333,63 @@ position: i32
 
 #### field: key_bytes
 
-[Source line 281](../../../stdlib/alloc/hash_map.lani#L281)
+[Source line 334](../../../stdlib/alloc/hash_map.lani#L334)
+
+```lanius
+key_bytes: usize
+```
+
+### struct: KeyIntoIter
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
+
+```lanius
+pub struct KeyIntoIter
+```
+
+#### field: storage
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
+
+```lanius
+storage: ptr
+```
+
+#### field: buckets
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
+
+```lanius
+buckets: i32
+```
+
+#### field: length
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
+
+```lanius
+length: i32
+```
+
+#### field: occupied
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
+
+```lanius
+occupied: i32
+```
+
+#### field: position
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
+
+```lanius
+position: i32
+```
+
+#### field: key_bytes
+
+[Source line 335](../../../stdlib/alloc/hash_map.lani#L335)
 
 ```lanius
 key_bytes: usize
@@ -276,7 +399,7 @@ key_bytes: usize
 
 ### function: new
 
-[Source line 22](../../../stdlib/alloc/hash_map.lani#L22)
+[Source line 26](../../../stdlib/alloc/hash_map.lani#L26)
 
 ```lanius
 pub fn new<K, V>() -> HashMap<K, V>
@@ -284,7 +407,7 @@ pub fn new<K, V>() -> HashMap<K, V>
 
 ### function: key_storage
 
-[Source line 284](../../../stdlib/alloc/hash_map.lani#L284)
+[Source line 339](../../../stdlib/alloc/hash_map.lani#L339)
 
 ```lanius
 pub fn key_storage<T>() -> KeyStorage
@@ -292,7 +415,7 @@ pub fn key_storage<T>() -> KeyStorage
 
 ### function: key_replace
 
-[Source line 295](../../../stdlib/alloc/hash_map.lani#L295)
+[Source line 350](../../../stdlib/alloc/hash_map.lani#L350)
 
 ```lanius
 pub fn key_replace<T>(owner: &KeyStorage, key: T) -> core::result::Result<core::option::Option<T>, Error> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -300,7 +423,7 @@ pub fn key_replace<T>(owner: &KeyStorage, key: T) -> core::result::Result<core::
 
 ### function: key_contains
 
-[Source line 304](../../../stdlib/alloc/hash_map.lani#L304)
+[Source line 359](../../../stdlib/alloc/hash_map.lani#L359)
 
 ```lanius
 pub fn key_contains<T>(owner: &KeyStorage, key: T) -> bool where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -308,7 +431,7 @@ pub fn key_contains<T>(owner: &KeyStorage, key: T) -> bool where T: core::hash::
 
 ### function: key_iter
 
-[Source line 307](../../../stdlib/alloc/hash_map.lani#L307)
+[Source line 362](../../../stdlib/alloc/hash_map.lani#L362)
 
 ```lanius
 pub fn key_iter<T>(owner: &KeyStorage) -> KeyCursor
@@ -316,15 +439,47 @@ pub fn key_iter<T>(owner: &KeyStorage) -> KeyCursor
 
 ### function: key_next
 
-[Source line 311](../../../stdlib/alloc/hash_map.lani#L311)
+[Source line 366](../../../stdlib/alloc/hash_map.lani#L366)
 
 ```lanius
 pub fn key_next<T>(cursor: &KeyCursor) -> core::option::Option<T>
 ```
 
+### function: key_take_iter
+
+[Source line 382](../../../stdlib/alloc/hash_map.lani#L382)
+
+```lanius
+pub fn key_take_iter<T>(owner: &KeyStorage) -> KeyIntoIter
+```
+
+### function: key_into_next
+
+[Source line 387](../../../stdlib/alloc/hash_map.lani#L387)
+
+```lanius
+pub fn key_into_next<T>(cursor: &KeyIntoIter) -> core::option::Option<T>
+```
+
+### function: key_into_finish
+
+[Source line 393](../../../stdlib/alloc/hash_map.lani#L393)
+
+```lanius
+pub fn key_into_finish<T>(cursor: &KeyIntoIter) -> core::option::Option<IntoIterError>
+```
+
+### function: key_take_remaining
+
+[Source line 397](../../../stdlib/alloc/hash_map.lani#L397)
+
+```lanius
+pub fn key_take_remaining<T>(cursor: &KeyIntoIter) -> KeyStorage
+```
+
 ### function: key_destroy
 
-[Source line 319](../../../stdlib/alloc/hash_map.lani#L319)
+[Source line 402](../../../stdlib/alloc/hash_map.lani#L402)
 
 ```lanius
 pub fn key_destroy<T>(owner: &KeyStorage)
@@ -332,7 +487,7 @@ pub fn key_destroy<T>(owner: &KeyStorage)
 
 ### function: key_get
 
-[Source line 323](../../../stdlib/alloc/hash_map.lani#L323)
+[Source line 406](../../../stdlib/alloc/hash_map.lani#L406)
 
 ```lanius
 pub fn key_get<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -340,7 +495,7 @@ pub fn key_get<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T
 
 ### function: key_remove
 
-[Source line 329](../../../stdlib/alloc/hash_map.lani#L329)
+[Source line 412](../../../stdlib/alloc/hash_map.lani#L412)
 
 ```lanius
 pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
@@ -348,7 +503,7 @@ pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> wher
 
 ### function: key_reserve
 
-[Source line 336](../../../stdlib/alloc/hash_map.lani#L336)
+[Source line 419](../../../stdlib/alloc/hash_map.lani#L419)
 
 ```lanius
 pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error>
@@ -356,7 +511,7 @@ pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Resu
 
 ### function: key_shrink
 
-[Source line 341](../../../stdlib/alloc/hash_map.lani#L341)
+[Source line 424](../../../stdlib/alloc/hash_map.lani#L424)
 
 ```lanius
 pub fn key_shrink<T>(owner: &KeyStorage) -> core::result::Result<i32, Error>
@@ -364,7 +519,7 @@ pub fn key_shrink<T>(owner: &KeyStorage) -> core::result::Result<i32, Error>
 
 ### function: key_clone
 
-[Source line 346](../../../stdlib/alloc/hash_map.lani#L346)
+[Source line 429](../../../stdlib/alloc/hash_map.lani#L429)
 
 ```lanius
 pub fn key_clone<T>(owner: &KeyStorage) -> core::result::Result<KeyStorage, Error>
@@ -372,7 +527,7 @@ pub fn key_clone<T>(owner: &KeyStorage) -> core::result::Result<KeyStorage, Erro
 
 ### function: key_clear
 
-[Source line 353](../../../stdlib/alloc/hash_map.lani#L353)
+[Source line 436](../../../stdlib/alloc/hash_map.lani#L436)
 
 ```lanius
 pub fn key_clear<T>(owner: &KeyStorage)
@@ -380,9 +535,9 @@ pub fn key_clear<T>(owner: &KeyStorage)
 
 ## Implementation blocks and public methods
 
-### impl at line 73
+### impl at line 77
 
-[Source line 73](../../../stdlib/alloc/hash_map.lani#L73)
+[Source line 77](../../../stdlib/alloc/hash_map.lani#L77)
 
 ```lanius
 pub impl<K, V> HashMap<K, V>
@@ -390,7 +545,7 @@ pub impl<K, V> HashMap<K, V>
 
 #### method: borrow
 
-[Source line 74](../../../stdlib/alloc/hash_map.lani#L74)
+[Source line 78](../../../stdlib/alloc/hash_map.lani#L78)
 
 ```lanius
 pub fn borrow(&self) -> &HashMap<K, V>
@@ -398,7 +553,7 @@ pub fn borrow(&self) -> &HashMap<K, V>
 
 #### method: len
 
-[Source line 75](../../../stdlib/alloc/hash_map.lani#L75)
+[Source line 79](../../../stdlib/alloc/hash_map.lani#L79)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -406,7 +561,7 @@ pub fn len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 76](../../../stdlib/alloc/hash_map.lani#L76)
+[Source line 80](../../../stdlib/alloc/hash_map.lani#L80)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -414,7 +569,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: capacity
 
-[Source line 78](../../../stdlib/alloc/hash_map.lani#L78)
+[Source line 82](../../../stdlib/alloc/hash_map.lani#L82)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -422,7 +577,7 @@ pub fn capacity(&self) -> i32
 
 #### method: contains_key
 
-[Source line 95](../../../stdlib/alloc/hash_map.lani#L95)
+[Source line 99](../../../stdlib/alloc/hash_map.lani#L99)
 
 ```lanius
 pub fn contains_key(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core::cmp::Eq<K>
@@ -430,7 +585,7 @@ pub fn contains_key(&self, key: K) -> bool where K: core::hash::Hash<K>, K: core
 
 #### method: get_entry
 
-[Source line 99](../../../stdlib/alloc/hash_map.lani#L99)
+[Source line 103](../../../stdlib/alloc/hash_map.lani#L103)
 
 ```lanius
 pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>>
@@ -439,7 +594,7 @@ pub fn get_entry(&self, key: K) -> core::option::Option<Entry<K, V>>
 
 #### method: get
 
-[Source line 106](../../../stdlib/alloc/hash_map.lani#L106)
+[Source line 110](../../../stdlib/alloc/hash_map.lani#L110)
 
 ```lanius
 pub fn get(&self, key: K) -> core::option::Option<V>
@@ -448,7 +603,7 @@ pub fn get(&self, key: K) -> core::option::Option<V>
 
 #### method: try_reserve
 
-[Source line 141](../../../stdlib/alloc/hash_map.lani#L141)
+[Source line 145](../../../stdlib/alloc/hash_map.lani#L145)
 
 ```lanius
 pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
@@ -456,7 +611,7 @@ pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, Error>
 
 #### method: try_insert
 
-[Source line 157](../../../stdlib/alloc/hash_map.lani#L157)
+[Source line 161](../../../stdlib/alloc/hash_map.lani#L161)
 
 ```lanius
 pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option::Option<Entry<K, V>>, Error>
@@ -465,7 +620,7 @@ pub fn try_insert(&self, key: K, value: V) -> core::result::Result<core::option:
 
 #### method: remove
 
-[Source line 188](../../../stdlib/alloc/hash_map.lani#L188)
+[Source line 192](../../../stdlib/alloc/hash_map.lani#L192)
 
 ```lanius
 pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>>
@@ -474,15 +629,23 @@ pub fn remove(&self, key: K) -> core::option::Option<Entry<K, V>>
 
 #### method: iter
 
-[Source line 199](../../../stdlib/alloc/hash_map.lani#L199)
+[Source line 203](../../../stdlib/alloc/hash_map.lani#L203)
 
 ```lanius
 pub fn iter(&self) -> Iter<K, V>
 ```
 
+#### method: take_iter
+
+[Source line 208](../../../stdlib/alloc/hash_map.lani#L208)
+
+```lanius
+pub fn take_iter(&self) -> IntoIter<K, V>
+```
+
 #### method: clear
 
-[Source line 203](../../../stdlib/alloc/hash_map.lani#L203)
+[Source line 214](../../../stdlib/alloc/hash_map.lani#L214)
 
 ```lanius
 pub fn clear(&self)
@@ -490,7 +653,7 @@ pub fn clear(&self)
 
 #### method: try_shrink_to_fit
 
-[Source line 210](../../../stdlib/alloc/hash_map.lani#L210)
+[Source line 221](../../../stdlib/alloc/hash_map.lani#L221)
 
 ```lanius
 pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
@@ -498,7 +661,7 @@ pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, Error>
 
 #### method: try_clone
 
-[Source line 218](../../../stdlib/alloc/hash_map.lani#L218)
+[Source line 229](../../../stdlib/alloc/hash_map.lani#L229)
 
 ```lanius
 pub fn try_clone(&self) -> core::result::Result<HashMap<K, V>, Error>
@@ -506,15 +669,15 @@ pub fn try_clone(&self) -> core::result::Result<HashMap<K, V>, Error>
 
 #### method: destroy
 
-[Source line 235](../../../stdlib/alloc/hash_map.lani#L235)
+[Source line 246](../../../stdlib/alloc/hash_map.lani#L246)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 245
+### impl at line 256
 
-[Source line 245](../../../stdlib/alloc/hash_map.lani#L245)
+[Source line 256](../../../stdlib/alloc/hash_map.lani#L256)
 
 ```lanius
 pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for HashMap<K, V>
@@ -523,15 +686,15 @@ pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for HashMap<K, V>
 
 #### method: try_accept
 
-[Source line 247](../../../stdlib/alloc/hash_map.lani#L247)
+[Source line 258](../../../stdlib/alloc/hash_map.lani#L258)
 
 ```lanius
 pub fn try_accept(&self, item: Entry<K, V>) -> core::option::Option<SinkError>
 ```
 
-### impl at line 258
+### impl at line 269
 
-[Source line 258](../../../stdlib/alloc/hash_map.lani#L258)
+[Source line 269](../../../stdlib/alloc/hash_map.lani#L269)
 
 ```lanius
 pub impl<K, V> Iter<K, V>
@@ -539,15 +702,15 @@ pub impl<K, V> Iter<K, V>
 
 #### method: borrow
 
-[Source line 259](../../../stdlib/alloc/hash_map.lani#L259)
+[Source line 270](../../../stdlib/alloc/hash_map.lani#L270)
 
 ```lanius
 pub fn borrow(&self) -> &Iter<K, V>
 ```
 
-### impl at line 262
+### impl at line 273
 
-[Source line 262](../../../stdlib/alloc/hash_map.lani#L262)
+[Source line 273](../../../stdlib/alloc/hash_map.lani#L273)
 
 ```lanius
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Iter<K, V>
@@ -555,15 +718,87 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Iter<K, V>
 
 #### method: next
 
-[Source line 264](../../../stdlib/alloc/hash_map.lani#L264)
+[Source line 275](../../../stdlib/alloc/hash_map.lani#L275)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Entry<K, V>>
 ```
 
-### impl at line 282
+### impl at line 286
 
-[Source line 282](../../../stdlib/alloc/hash_map.lani#L282)
+[Source line 286](../../../stdlib/alloc/hash_map.lani#L286)
+
+```lanius
+pub impl<K, V> IntoIter<K, V>
+```
+
+#### method: borrow
+
+[Source line 287](../../../stdlib/alloc/hash_map.lani#L287)
+
+```lanius
+pub fn borrow(&self) -> &IntoIter<K, V>
+```
+
+#### method: remaining
+
+[Source line 288](../../../stdlib/alloc/hash_map.lani#L288)
+
+```lanius
+pub fn remaining(&self) -> i32
+```
+
+#### method: capacity
+
+[Source line 289](../../../stdlib/alloc/hash_map.lani#L289)
+
+```lanius
+pub fn capacity(&self) -> i32
+```
+
+#### method: is_empty
+
+[Source line 290](../../../stdlib/alloc/hash_map.lani#L290)
+
+```lanius
+pub fn is_empty(&self) -> bool
+```
+
+#### method: try_finish
+
+[Source line 295](../../../stdlib/alloc/hash_map.lani#L295)
+
+```lanius
+pub fn try_finish(&self) -> core::option::Option<IntoIterError>
+```
+
+#### method: take_remaining
+
+[Source line 305](../../../stdlib/alloc/hash_map.lani#L305)
+
+```lanius
+pub fn take_remaining(&self) -> HashMap<K, V>
+```
+
+### impl at line 311
+
+[Source line 311](../../../stdlib/alloc/hash_map.lani#L311)
+
+```lanius
+pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V>
+```
+
+#### method: next
+
+[Source line 314](../../../stdlib/alloc/hash_map.lani#L314)
+
+```lanius
+pub fn next(&self) -> core::option::Option<Entry<K, V>>
+```
+
+### impl at line 336
+
+[Source line 336](../../../stdlib/alloc/hash_map.lani#L336)
 
 ```lanius
 pub impl KeyStorage
@@ -571,15 +806,15 @@ pub impl KeyStorage
 
 #### method: borrow
 
-[Source line 282](../../../stdlib/alloc/hash_map.lani#L282)
+[Source line 336](../../../stdlib/alloc/hash_map.lani#L336)
 
 ```lanius
 pub fn borrow(&self) -> &KeyStorage
 ```
 
-### impl at line 283
+### impl at line 337
 
-[Source line 283](../../../stdlib/alloc/hash_map.lani#L283)
+[Source line 337](../../../stdlib/alloc/hash_map.lani#L337)
 
 ```lanius
 pub impl KeyCursor
@@ -587,8 +822,24 @@ pub impl KeyCursor
 
 #### method: borrow
 
-[Source line 283](../../../stdlib/alloc/hash_map.lani#L283)
+[Source line 337](../../../stdlib/alloc/hash_map.lani#L337)
 
 ```lanius
 pub fn borrow(&self) -> &KeyCursor
+```
+
+### impl at line 338
+
+[Source line 338](../../../stdlib/alloc/hash_map.lani#L338)
+
+```lanius
+pub impl KeyIntoIter
+```
+
+#### method: borrow
+
+[Source line 338](../../../stdlib/alloc/hash_map.lani#L338)
+
+```lanius
+pub fn borrow(&self) -> &KeyIntoIter
 ```

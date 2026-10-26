@@ -1,0 +1,25 @@
+// aP proves MAX's predicate ran; b proves the unindexable item was consumed;
+// no later P or ? may appear before the ordinary checked panic.
+module app::main;
+import core::iter;
+import core::option;
+import std::io;
+struct Source { position: i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::iter::Iterator<i32> for Source {
+    pub fn next(&self) -> core::option::Option<i32> {
+        if (self.position==2) { return core::option::None(); }
+        let value: i32=self.position; self.position+=1;
+        assert(std::io::write_byte(1,97+value)==1); return core::option::Some(value);
+    }
+}
+struct Never {}
+impl Never { fn borrow(&self) -> &Never { return self; } }
+pub impl core::iter::Mapper<i32,bool> for Never {
+    pub fn apply(&self,value: i32) -> bool { assert(std::io::write_byte(1,80)==1); return false; }
+}
+fn main() -> i32 {
+    let source: Source=Source { position:0 }; let predicate: Never=Never {};
+    let value: core::option::Option<u64> =core::iter::position_from<Source,Never,i32>(source.borrow(),predicate.borrow(),18446744073709551615);
+    std::io::write_byte(1,63); return 9;
+}

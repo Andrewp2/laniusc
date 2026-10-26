@@ -1,0 +1,10 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::tree_set;
+import core::result;
+import fixture::zst;
+fn main() -> i32 {
+    let source = alloc::tree_set::with_capacity<fixture::zst::DestroyOnly>(3).unwrap();
+    alloc::clone_tree_set::destroy_tree_set<fixture::zst::DestroyOnly>(source.borrow());
+    assert(source.is_empty() && source.capacity()==0); return 0;
+}

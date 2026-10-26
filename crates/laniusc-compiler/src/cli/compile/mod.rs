@@ -9,7 +9,10 @@ use super::{
     common::{CliError, missing_cli_argument_error},
     output::{CliEmission, write_cli_emission},
 };
-use crate::{compiler::EntrySourceRoots, gpu::device};
+use crate::{
+    compiler::{EntrySourceRoots, NativeLinkOptions},
+    gpu::device,
+};
 
 /// Runs a validated compile/check request.
 ///
@@ -27,6 +30,7 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
         output,
         emit,
         check_only,
+        native_link,
         source_pack,
         uses_source_pack,
     } = request;
@@ -51,6 +55,7 @@ pub(crate) fn run(request: CompileRequest) -> Result<(), CliError> {
                 package_lockfile.as_deref(),
                 check_only,
                 &emit,
+                native_link.as_ref(),
             );
             // Debug dumps and dispatch captures are written even when the
             // compile failed: a failing compile is usually why they were asked for.
@@ -78,11 +83,19 @@ fn compile_non_source_pack(
     package_lockfile: Option<&Path>,
     check_only: bool,
     emit: &str,
+    native_link: Option<&NativeLinkOptions>,
 ) -> Result<CliEmission, CliError> {
     if let Some(package_manifest) = package_manifest {
-        package::compile_manifest(package_manifest, check_only, emit)
+        package::compile_manifest(package_manifest, check_only, emit, native_link)
     } else if let Some(package_lockfile) = package_lockfile {
-        package::compile_lockfile(package_lockfile, check_only, emit)
+        package::compile_lockfile(package_lockfile, check_only, emit, native_link)
+    } else if let Some(native_link) = native_link {
+        let input = required_entry_input(inputs, "laniusc native linking")?;
+        let roots = EntrySourceRoots {
+            stdlib_root: stdlib_root.map(Path::to_path_buf),
+            user_roots: source_roots.to_vec(),
+        };
+        entry::compile_native(input, &roots, native_link)
     } else if !source_roots.is_empty() {
         let input = required_entry_input(inputs, "laniusc --source-root")?;
         let roots = EntrySourceRoots {

@@ -1,0 +1,140 @@
+module app::main;
+import alloc::string;
+import core::iter;
+import core::option;
+import core::pair;
+import core::range;
+import core::result;
+import core::slice;
+import core::text;
+
+struct Marker {}
+struct Payload { wide: u64, cells: [i32;2], optional: core::option::Option<i32> }
+struct Counter { calls: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+struct Pack { counter: &Counter }
+impl Pack { fn borrow(&self) -> &Pack { return self; } }
+pub impl core::iter::Mapper<Payload,core::pair::Pair<Payload,i32>> for Pack {
+    pub fn apply(&self, value: Payload) -> core::pair::Pair<Payload,i32> {
+        let counter: &Counter = self.counter; counter.calls += 1;
+        return core::pair::Pair { first: value, second: counter.calls };
+    }
+}
+struct Probe { length: i32, position: i32, calls: i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.position; self.position += 1;
+        return core::option::Some(value);
+    }
+}
+struct Poison {}
+impl Poison { fn borrow(&self) -> &Poison { return self; } }
+pub impl core::iter::Iterator<i32> for Poison {
+    pub fn next(&self) -> core::option::Option<i32> { assert(false); return core::option::None(); }
+}
+fn pull<I,T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> { return source.next(); }
+fn view(values: [i32]) -> [i32] { return values; }
+
+fn leaves() {
+    let nothing: core::iter::Empty<Payload> = core::iter::empty<Payload>();
+    let copied_nothing: core::iter::Empty<Payload> = nothing;
+    assert(nothing.next().is_none() && copied_nothing.next().is_none() && nothing.next().is_none());
+    let marker: Marker = Marker {};
+    let no_marker: core::iter::Empty<Marker> = core::iter::empty<Marker>();
+    let absent: core::option::Option<Marker> = pull<core::iter::Empty<Marker>,Marker>(no_marker.borrow());
+    assert(absent.is_none());
+    let single: core::iter::Once<Marker> = core::iter::once<Marker>(marker);
+    assert(single.next().is_some() && single.next().is_none() && single.next().is_none());
+    let nested: core::iter::Once<core::option::Option<i32>> = core::iter::once<core::option::Option<i32>>(core::option::None());
+    let nested_item: core::option::Option<core::option::Option<i32>> = nested.next();
+    assert(nested_item.is_some() && nested_item.unwrap().is_none() && nested.next().is_none());
+
+    let payload: Payload = Payload { wide: 18446744073709551615, cells: [19,23], optional: core::option::Some(-7) };
+    let one: core::iter::Once<Payload> = core::iter::once<Payload>(payload);
+    let fork: core::iter::Once<Payload> = one;
+    let shared: &core::iter::Once<Payload> = one.borrow();
+    let first: Payload = shared.next().unwrap();
+    let second: Payload = fork.next().unwrap();
+    let spent: core::iter::Once<Payload> = one;
+    assert(first.wide == 18446744073709551615 && second.cells[1] == 23 && second.optional.unwrap() == -7);
+    assert(one.next().is_none() && shared.next().is_none() && fork.next().is_none() && spent.next().is_none());
+
+    let cells: [i32;2] = [19,23];
+    let repeated: core::iter::Repeat<[i32]> = core::iter::repeat<[i32]>(view(cells));
+    let repeated_copy: core::iter::Repeat<[i32]> = repeated;
+    let before: [i32] = repeated.next().unwrap(); assert(before[1] == 23);
+    cells[1] = 91;
+    let after: [i32] = repeated_copy.next().unwrap(); assert(after[1] == 91 && before[1] == 91);
+    let marker_repeat: core::iter::Repeat<Marker> = core::iter::repeat<Marker>(marker);
+    let finite: core::iter::Take<core::iter::Repeat<Marker>,Marker> = core::iter::take<core::iter::Repeat<Marker>,Marker>(marker_repeat.borrow(),3);
+    assert(finite.next().is_some() && finite.next().is_some() && finite.next().is_some() && finite.next().is_none() && finite.next().is_none());
+}
+
+fn stepping() {
+    let poison: Poison = Poison {};
+    let rejected: core::result::Result<core::iter::StepBy<Poison,i32>,core::iter::StepError> = core::iter::step_by<Poison,i32>(poison.borrow(),0);
+    let zero: bool = match (rejected.unwrap_err()) { core::iter::StepError::Zero -> true };
+    assert(zero);
+    let lazy: core::iter::StepBy<Poison,i32> = core::iter::step_by<Poison,i32>(poison.borrow(),18446744073709551615).unwrap();
+    let none: core::iter::Take<core::iter::StepBy<Poison,i32>,i32> = core::iter::take<core::iter::StepBy<Poison,i32>,i32>(lazy.borrow(),0);
+    assert(none.next().is_none() && none.next().is_none());
+
+    let source: Probe = Probe { length: 9, position: 0, calls: 0 };
+    let selected: core::iter::StepBy<Probe,i32> = core::iter::step_by<Probe,i32>(source.borrow(),3).unwrap();
+    assert(source.calls == 0);
+    assert(selected.next().unwrap() == 0 && source.calls == 1 && source.position == 1);
+    let copied: core::iter::StepBy<Probe,i32> = selected;
+    let alias: &core::iter::StepBy<Probe,i32> = selected.borrow();
+    assert(copied.next().unwrap() == 3 && selected.next().unwrap() == 6 && source.calls == 7);
+    assert(alias.next().is_none() && source.calls == 10 && copied.next().is_none() && source.calls == 11);
+    assert(selected.next().is_none() && alias.next().is_none() && copied.next().is_none() && source.calls == 11);
+
+    let short: Probe = Probe { length: 3, position: 0, calls: 0 };
+    let huge: core::iter::StepBy<Probe,i32> = core::iter::step_by<Probe,i32>(short.borrow(),18446744073709551615).unwrap();
+    assert(huge.next().unwrap() == 0 && short.calls == 1);
+    assert(huge.next().is_none() && huge.next().is_none() && short.calls == 4 && short.position == 3);
+}
+
+fn compounds_and_callbacks() {
+    let a: Payload = Payload { wide: 18446744073709551615, cells: [1,11], optional: core::option::None() };
+    let b: Payload = Payload { wide: 9223372036854775808, cells: [2,22], optional: core::option::Some(-2) };
+    let c: Payload = Payload { wide: 4294967296, cells: [3,33], optional: core::option::Some(-3) };
+    let values: [Payload;5] = [a,b,c,b,a];
+    let source: core::slice::Iter<Payload> = core::iter::from_slice<Payload>(values,5).unwrap();
+    let selected: core::iter::StepBy<core::slice::Iter<Payload>,Payload> = core::iter::step_by<core::slice::Iter<Payload>,Payload>(source.borrow(),2).unwrap();
+    let counter: Counter = Counter { calls: 0 }; let pack: Pack = Pack { counter: counter.borrow() };
+    let mapped: core::iter::Map<core::iter::StepBy<core::slice::Iter<Payload>,Payload>,Pack,Payload,core::pair::Pair<Payload,i32>> =
+        core::iter::map<core::iter::StepBy<core::slice::Iter<Payload>,Payload>,Pack,Payload,core::pair::Pair<Payload,i32>>(selected.borrow(),pack.borrow());
+    assert(counter.calls == 0 && source.remaining() == 5);
+    let first: core::pair::Pair<Payload,i32> = mapped.next().unwrap();
+    let second: core::pair::Pair<Payload,i32> = mapped.next().unwrap();
+    let third: core::pair::Pair<Payload,i32> = mapped.next().unwrap();
+    assert(first.first.optional.is_none() && first.second == 1 && second.first.cells[1] == 33 && second.first.optional.unwrap() == -3 && second.second == 2);
+    assert(third.first.wide == 18446744073709551615 && third.second == 3 && source.remaining() == 0);
+    assert(mapped.next().is_none() && mapped.next().is_none() && counter.calls == 3);
+}
+
+fn shallow_owner_aliases() {
+    let bytes: [u8;4] = [100,97,116,97];
+    let owner: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let repeated: core::iter::Repeat<alloc::string::String> = core::iter::repeat<alloc::string::String>(owner);
+    let selected: core::iter::StepBy<core::iter::Repeat<alloc::string::String>,alloc::string::String> =
+        core::iter::step_by<core::iter::Repeat<alloc::string::String>,alloc::string::String>(repeated.borrow(),2).unwrap();
+    let first: alloc::string::String = selected.next().unwrap();
+    let second: alloc::string::String = selected.next().unwrap();
+    let one: core::iter::Once<alloc::string::String> = core::iter::once<alloc::string::String>(owner);
+    let copy: core::iter::Once<alloc::string::String> = one;
+    let third: alloc::string::String = one.next().unwrap();
+    let fourth: alloc::string::String = copy.next().unwrap();
+    assert(first.byte_len() == 4 && second.byte_len() == 4 && third.byte_len() == 4 && fourth.byte_len() == 4);
+    let text: core::text::Text = second.as_text(); assert(text.byte_at(3).unwrap() == 97);
+    assert(one.next().is_none() && copy.next().is_none());
+    // Only owner has release authority; every yielded or discarded handle is
+    // an alias. No cursor is used after this single explicit destruction.
+    owner.destroy();
+}
+
+fn main() -> i32 { leaves(); stepping(); compounds_and_callbacks(); shallow_owner_aliases(); return 0; }

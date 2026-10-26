@@ -280,6 +280,8 @@ void plan_call_result(X86PlanInput input, uint words, uint storage_slot)
         }
         plan_move64(X86_REG, result);
     }
+    else if ((metadata & X86_LIR_METADATA_NATIVE_C) != 0u && x86_scalar_float(metadata))
+        plan_xmm(x86_scalar_f64(metadata), false, 0u, result);
     else plan_value_move(x86_scalar_float(metadata),
         x86_scalar_float(metadata) ? x86_scalar_f64(metadata)
             : scalar_uses_64bit_gpr(metadata & 0xffu), X86_REG, result);
@@ -640,8 +642,14 @@ void plan_ordinary(X86PlanInput input)
     }
     else if (op == X86_LIR_OP_CALL_ARG)
     {
-        bool stack_argument = operands.b >= 6u;
+        bool native_c = (metadata & X86_LIR_METADATA_NATIVE_C) != 0u;
+        bool stack_argument = operands.b >= (native_c ? 16u : 6u);
         if (stack_argument && core.local_ordinal != 0u) plan_bytes(4u, 0x08ec8348u); // sub rsp, 8
+        if (native_c && is_float && !stack_argument)
+        {
+            plan_xmm(f64, true, operands.b, locations.a);
+            return;
+        }
         uint destination = X86_REG | (stack_argument ? 0u : x86_abi_argument_register(operands.b));
         if ((metadata & X86_LIR_METADATA_IMMEDIATE) != 0u)
         {

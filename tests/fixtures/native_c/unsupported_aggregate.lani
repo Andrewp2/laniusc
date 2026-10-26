@@ -1,0 +1,6 @@
+module app::main;
+
+struct Pair { first: i32, second: i32 }
+extern "C" fn native_unused(value: Pair) -> i32;
+
+fn main() -> i32 { return 0; }

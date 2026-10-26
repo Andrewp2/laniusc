@@ -1,0 +1,45 @@
+module app::main;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::types;
+import std::io;
+import std::io_decimal;
+fn key(order:i32,stamp:i32)->fixture::types::Key{return fixture::types::Key {order:order,stamp:stamp};}
+fn out(value:u64){assert(std::io_decimal::write_u64(1,value)>0&&std::io::write_byte(1,10)==1);}
+fn map_item(item:core::option::Option<alloc::tree_map::Entry<fixture::types::Key,u64>>){
+    if(item.is_none()){out(0);return;}let pair=item.unwrap();out(1);out(pair.key.order as u64);out(pair.key.stamp as u64);out(pair.value);
+}
+fn set_item(item:core::option::Option<fixture::types::Key>){
+    if(item.is_none()){out(0);return;}let value=item.unwrap();out(1);out(value.order as u64);out(value.stamp as u64);
+}
+fn map_error(error:alloc::tree_map::IntoIterError)->u64{return match(error){alloc::tree_map::IntoIterError::Remaining(count)->count as u64};}
+fn set_error(error:alloc::tree_set::IntoIterError)->u64{return match(error){alloc::tree_set::IntoIterError::Remaining(count)->count as u64};}
+fn map_finish(value:core::option::Option<alloc::tree_map::IntoIterError>){out(match(value){None->0,Some(error)->map_error(error)});}
+fn set_finish(value:core::option::Option<alloc::tree_set::IntoIterError>){out(match(value){None->0,Some(error)->set_error(error)});}
+fn main()->i32{
+    let source=alloc::tree_map::with_capacity<fixture::types::Key,u64>(512).unwrap();let keys=alloc::tree_set::with_capacity<fixture::types::Key>(512).unwrap();let i:i32=255;
+    while(i>=0){source.try_insert(key(i,100+i),10000+i as u64*17).unwrap();keys.try_insert(key(i,100+i)).unwrap();i-=1;}
+    i=1;while(i<256){source.remove(key(i,0)).unwrap();keys.remove(key(i,0)).unwrap();i+=4;}
+    let pairs=source.take_iter();let values=keys.take_iter();let step:i32=0;let state:i32=113;
+    while(step<192){state=(state*73+41)%997;let op:i32=step%6;
+        if(op==0){map_item(pairs.next());set_item(values.next());}
+        else{if(op==1){map_item(pairs.next_back());set_item(values.next_back());}
+        else{if(op==2){map_finish(pairs.try_finish());set_finish(values.try_finish());}
+        else{
+            let map=pairs.take_remaining();let set=values.take_remaining();assert(pairs.remaining()==0&&pairs.capacity()==0&&values.remaining()==0&&values.capacity()==0);
+            if(op==3){let order:i32=256+state%128;let stamp:i32=1000+step;map.try_insert(key(order,stamp),20000+step as u64).unwrap();set.try_replace(key(order,stamp)).unwrap();}
+            else{if(op==4){let order:i32=state%384;map_item(map.remove(key(order,0)));set_item(set.remove(key(order,0)));}
+            else{out(map.len() as u64);let cursor=map.iter();while(true){let next=cursor.next();if(next.is_none()){break;}let item=next.unwrap();out(item.key.order as u64);out(item.key.stamp as u64);out(item.value);}
+                out(set.len() as u64);let cursor=set.iter();while(true){let next=cursor.next();if(next.is_none()){break;}let item=next.unwrap();out(item.order as u64);out(item.stamp as u64);}}}
+            pairs=map.take_iter();values=set.take_iter();assert(map.is_empty()&&map.capacity()==0&&set.is_empty()&&set.capacity()==0);
+        }}}
+        out(pairs.remaining() as u64);out(pairs.capacity() as u64);out(values.remaining() as u64);out(values.capacity() as u64);step+=1;
+    }
+    // Drain every surviving representative; exhausted backing remains until finish.
+    while(true){let pair=pairs.next();let item=values.next();map_item(pair);set_item(item);if(pair.is_none()){assert(item.is_none());break;}}
+    assert(pairs.capacity()==512&&values.capacity()==512&&pairs.try_finish().is_none()&&values.try_finish().is_none());
+    assert(pairs.capacity()==0&&values.capacity()==0&&pairs.try_finish().is_none()&&values.try_finish().is_none());source.destroy();keys.destroy();return 0;
+}

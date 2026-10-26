@@ -1,0 +1,23 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::tree_set;
+import core::iter;
+import core::result;
+import fixture::model_key;
+import std::io;
+import std::io_decimal;
+fn report(value:i32){assert(std::io_decimal::write_i32(1,value)>0&&std::io::write_byte(1,10)==1);}
+fn run(count:i32){
+    let counts:[i32;4]=[0;4];let source=alloc::tree_set::with_capacity<fixture::model_key::Key>(count).unwrap();let index:i32=count;
+    while(index>0){index-=1;source.try_insert(fixture::model_key::Key {number:index,stamp:100+index,counts:counts}).unwrap();}
+    counts[0]=0;counts[1]=0;counts[2]=0;counts[3]=0;
+    let result:core::result::Result<alloc::tree_set::TreeSet<fixture::model_key::Key>,alloc::clone_tree_set::Error<fixture::model_key::Never>> =
+        alloc::clone_tree_set::try_clone<fixture::model_key::Key,fixture::model_key::Never>(source.borrow());
+    let copy=result.unwrap();let comparisons:i32=counts[0];let equalities:i32=counts[1];
+    assert(copy.len()==count&&source.len()==count&&counts[2]==count&&equalities==count);
+    let cursor=copy.iter();index=0;while(index<count){let key=cursor.next().unwrap();assert(key.number==index&&key.stamp==100+index);index+=1;}assert(cursor.next().is_none());
+    alloc::clone_tree_set::destroy_tree_set<fixture::model_key::Key>(copy.borrow());
+    assert(copy.is_empty()&&copy.capacity()==0&&counts[3]==count&&source.len()==count);
+    report(count);report(comparisons);report(equalities);report(counts[2]);report(counts[3]);source.destroy();
+}
+fn main()->i32{run(64);run(512);return 0;}

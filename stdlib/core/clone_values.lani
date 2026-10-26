@@ -1,0 +1,242 @@
+// Opt-in value cloning and explicit release for resource-free scalars and
+// structural Option/Result/Pair compositions. No implicit moves or Drop.
+module core::clone_values;
+import core::clone;
+import core::option;
+import core::pair;
+import core::result;
+
+// No value can be constructed: scalar identity cloning has no failure case.
+pub enum Infallible {}
+pub enum ResultError<TE,FE> { Value(TE), Error(FE) }
+pub enum PairError<AE,BE> { First(AE), Second(BE) }
+
+// A by-value source is a borrowed shallow descriptor. Clone only the active
+// payload. Its error transfers unchanged; there is no completed prefix here.
+pub fn try_clone_option<T,E>(source: core::option::Option<T>)
+    -> core::result::Result<core::option::Option<T>,E>
+    where T: core::clone::TryClone<T,E> {
+    if (source.is_none()) {
+        let absent: core::option::Option<T> = core::option::None();
+        return core::result::Ok(absent);
+    }
+    let cloned: core::result::Result<T,E> = T::try_clone_value(source.unwrap());
+    if (cloned.is_err()) { return core::result::Err(cloned.unwrap_err()); }
+    return core::result::Ok(core::option::Some(cloned.unwrap()));
+}
+
+// Outer Ok means cloning succeeded, even when the original variant was Err.
+// Only the active source payload is cloned; TE and FE remain distinct.
+pub fn try_clone_result<T,F,TE,FE>(source: core::result::Result<T,F>)
+    -> core::result::Result<core::result::Result<T,F>,ResultError<TE,FE>>
+    where T: core::clone::TryClone<T,TE>, F: core::clone::TryClone<F,FE> {
+    if (source.is_ok()) {
+        let cloned: core::result::Result<T,TE> = T::try_clone_value(source.unwrap());
+        if (cloned.is_err()) { return core::result::Err(ResultError::Value(cloned.unwrap_err())); }
+        let value: core::result::Result<T,F> = core::result::Ok(cloned.unwrap());
+        return core::result::Ok(value);
+    }
+    let cloned: core::result::Result<F,FE> = F::try_clone_value(source.unwrap_err());
+    if (cloned.is_err()) { return core::result::Err(ResultError::Error(cloned.unwrap_err())); }
+    let value: core::result::Result<T,F> = core::result::Err(cloned.unwrap());
+    return core::result::Ok(value);
+}
+
+// Clone first, then second. The first field needs Destroy for rollback; the
+// second needs only TryClone, since its own failure must clean its partials.
+// AE/BE must not borrow the fresh first owner released on second failure.
+pub fn try_clone_pair<A,B,AE,BE>(source: core::pair::Pair<A,B>)
+    -> core::result::Result<core::pair::Pair<A,B>,PairError<AE,BE>>
+    where A: core::clone::TryClone<A,AE>, A: core::clone::Destroy<A>,
+          B: core::clone::TryClone<B,BE> {
+    let made_first: core::result::Result<A,AE> = A::try_clone_value(core::pair::first<A,B>(source));
+    if (made_first.is_err()) { return core::result::Err(PairError::First(made_first.unwrap_err())); }
+    let first: A = made_first.unwrap();
+    let made_second: core::result::Result<B,BE> = B::try_clone_value(core::pair::second<A,B>(source));
+    if (made_second.is_err()) {
+        let error: BE = made_second.unwrap_err();
+        A::destroy_value(first);
+        return core::result::Err(PairError::Second(error));
+    }
+    let second: B = made_second.unwrap();
+    return core::result::Ok(core::pair::new<A,B>(first,second));
+}
+
+pub impl<T,E> core::clone::TryClone<core::option::Option<T>,E>
+    for core::option::Option<T>
+    where T: core::clone::TryClone<T,E> {
+    pub fn try_clone_value(source: core::option::Option<T>)
+        -> core::result::Result<core::option::Option<T>,E> {
+        return try_clone_option<T,E>(source);
+    }
+}
+pub impl<T> core::clone::Destroy<core::option::Option<T>> for core::option::Option<T>
+    where T: core::clone::Destroy<T> {
+    pub fn destroy_value(owned: core::option::Option<T>) {
+        if (owned.is_some()) { T::destroy_value(owned.unwrap()); }
+    }
+}
+
+pub impl<T,F,TE,FE> core::clone::TryClone<core::result::Result<T,F>,ResultError<TE,FE>>
+    for core::result::Result<T,F>
+    where T: core::clone::TryClone<T,TE>, F: core::clone::TryClone<F,FE> {
+    pub fn try_clone_value(source: core::result::Result<T,F>)
+        -> core::result::Result<core::result::Result<T,F>,ResultError<TE,FE>> {
+        return try_clone_result<T,F,TE,FE>(source);
+    }
+}
+pub impl<T,F> core::clone::Destroy<core::result::Result<T,F>> for core::result::Result<T,F>
+    where T: core::clone::Destroy<T>, F: core::clone::Destroy<F> {
+    pub fn destroy_value(owned: core::result::Result<T,F>) {
+        if (owned.is_ok()) { T::destroy_value(owned.unwrap()); }
+        else { F::destroy_value(owned.unwrap_err()); }
+    }
+}
+
+pub impl<A,B,AE,BE> core::clone::TryClone<core::pair::Pair<A,B>,PairError<AE,BE>>
+    for core::pair::Pair<A,B>
+    where A: core::clone::TryClone<A,AE>, A: core::clone::Destroy<A>,
+          B: core::clone::TryClone<B,BE> {
+    pub fn try_clone_value(source: core::pair::Pair<A,B>)
+        -> core::result::Result<core::pair::Pair<A,B>,PairError<AE,BE>> {
+        return try_clone_pair<A,B,AE,BE>(source);
+    }
+}
+pub impl<A,B> core::clone::Destroy<core::pair::Pair<A,B>> for core::pair::Pair<A,B>
+    where A: core::clone::Destroy<A>, B: core::clone::Destroy<B> {
+    pub fn destroy_value(owned: core::pair::Pair<A,B>) {
+        let first: A = core::pair::first<A,B>(owned);
+        let second: B = core::pair::second<A,B>(owned);
+        A::destroy_value(first); B::destroy_value(second);
+    }
+}
+
+// These concrete scalar values own no nested resources. Identity return is a
+// bit copy, including floating NaN payloads and signed zero; it performs no
+// arithmetic, text conversion, canonicalization or native allocation.
+// Scalar Destroy is a no-op because there is no owned resource to release.
+pub impl core::clone::TryClone<bool,Infallible> for bool {
+    pub fn try_clone_value(source: bool) -> core::result::Result<bool,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<bool> for bool {
+    pub fn destroy_value(owned: bool) {}
+}
+
+pub impl core::clone::TryClone<char,Infallible> for char {
+    pub fn try_clone_value(source: char) -> core::result::Result<char,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<char> for char {
+    pub fn destroy_value(owned: char) {}
+}
+
+pub impl core::clone::TryClone<i8,Infallible> for i8 {
+    pub fn try_clone_value(source: i8) -> core::result::Result<i8,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<i8> for i8 {
+    pub fn destroy_value(owned: i8) {}
+}
+
+pub impl core::clone::TryClone<i16,Infallible> for i16 {
+    pub fn try_clone_value(source: i16) -> core::result::Result<i16,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<i16> for i16 {
+    pub fn destroy_value(owned: i16) {}
+}
+
+pub impl core::clone::TryClone<i32,Infallible> for i32 {
+    pub fn try_clone_value(source: i32) -> core::result::Result<i32,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<i32> for i32 {
+    pub fn destroy_value(owned: i32) {}
+}
+
+pub impl core::clone::TryClone<i64,Infallible> for i64 {
+    pub fn try_clone_value(source: i64) -> core::result::Result<i64,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<i64> for i64 {
+    pub fn destroy_value(owned: i64) {}
+}
+
+pub impl core::clone::TryClone<isize,Infallible> for isize {
+    pub fn try_clone_value(source: isize) -> core::result::Result<isize,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<isize> for isize {
+    pub fn destroy_value(owned: isize) {}
+}
+
+pub impl core::clone::TryClone<u8,Infallible> for u8 {
+    pub fn try_clone_value(source: u8) -> core::result::Result<u8,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<u8> for u8 {
+    pub fn destroy_value(owned: u8) {}
+}
+
+pub impl core::clone::TryClone<u16,Infallible> for u16 {
+    pub fn try_clone_value(source: u16) -> core::result::Result<u16,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<u16> for u16 {
+    pub fn destroy_value(owned: u16) {}
+}
+
+pub impl core::clone::TryClone<u32,Infallible> for u32 {
+    pub fn try_clone_value(source: u32) -> core::result::Result<u32,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<u32> for u32 {
+    pub fn destroy_value(owned: u32) {}
+}
+
+pub impl core::clone::TryClone<u64,Infallible> for u64 {
+    pub fn try_clone_value(source: u64) -> core::result::Result<u64,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<u64> for u64 {
+    pub fn destroy_value(owned: u64) {}
+}
+
+pub impl core::clone::TryClone<usize,Infallible> for usize {
+    pub fn try_clone_value(source: usize) -> core::result::Result<usize,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<usize> for usize {
+    pub fn destroy_value(owned: usize) {}
+}
+
+pub impl core::clone::TryClone<f32,Infallible> for f32 {
+    pub fn try_clone_value(source: f32) -> core::result::Result<f32,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<f32> for f32 {
+    pub fn destroy_value(owned: f32) {}
+}
+
+pub impl core::clone::TryClone<f64,Infallible> for f64 {
+    pub fn try_clone_value(source: f64) -> core::result::Result<f64,Infallible> {
+        return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<f64> for f64 {
+    pub fn destroy_value(owned: f64) {}
+}

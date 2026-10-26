@@ -12,7 +12,11 @@ import std::vec;
 
 pub enum Order { Min, Max }
 pub enum Error { InvalidCapacity, CapacityOverflow, AllocationFailed }
+pub enum IntoIterError { Remaining(i32) }
 pub struct BinaryHeap<T> { items: std::vec::Vec<T>, order: Order }
+// One active owner of the heap and its unconsumed values. Copies alias that
+// owner; they cannot be used as independent cursors or destroyed separately.
+pub struct IntoIter<T> { heap: BinaryHeap<T> }
 
 pub fn new<T>(order: Order) -> BinaryHeap<T> {
     let items: std::vec::Vec<T> = std::vec::new();
@@ -216,6 +220,14 @@ pub impl<T> BinaryHeap<T> {
         return items;
     }
 
+    // Transfer this heap's allocation and values to a priority-order cursor.
+    // Reset the actual source, preserving its order for independent reuse.
+    // End all borrowed views first; no allocation or ordering bound is needed.
+    pub fn take_iter(&self) -> IntoIter<T> {
+        let owned: BinaryHeap<T> = BinaryHeap { items: self.take_vec(), order: self.order };
+        return IntoIter { heap: owned };
+    }
+
     // Transfer the vector sorted in pop order (Min ascending, Max descending).
     // In-place heapsort, O(n log n), no allocation, not stable for equal keys.
     pub fn take_sorted_vec(&self) -> std::vec::Vec<T> where T: core::cmp::Ord<T> {
@@ -233,6 +245,39 @@ pub impl<T> BinaryHeap<T> {
     // Clear/destroy do not invoke destructors for nested owned values.
     pub fn clear(&self) { self.items = std::vec::clear(self.items); }
     pub fn destroy(&self) { std::vec::destroy(self.items); self.items = std::vec::new(); }
+}
+
+pub impl<T> IntoIter<T> {
+    pub fn borrow(&self) -> &IntoIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.heap.len(); }
+    pub fn capacity(&self) -> i32 { return self.heap.capacity(); }
+    pub fn order(&self) -> Order { return self.heap.order(); }
+    pub fn is_empty(&self) -> bool { return self.heap.is_empty(); }
+
+    // Refuse to release unconsumed owners. Exhaustion retains the allocation
+    // until successful finish, recovery, or an explicit deep cleanup helper.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let count: i32 = self.remaining();
+        if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
+        self.heap.destroy();
+        return core::option::None();
+    }
+
+    // Transfer the valid remaining heap in O(1), retaining capacity and order.
+    // Disarm this cursor before handing its cleanup authority to the caller.
+    // No comparison, heapification, allocation, or nested destruction occurs.
+    pub fn take_remaining(&self) -> BinaryHeap<T> {
+        let order: Order = self.heap.order();
+        let items: std::vec::Vec<T> = self.heap.take_vec();
+        return BinaryHeap { items: items, order: order };
+    }
+}
+
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> where T: core::cmp::Ord<T> {
+    // Each pull transfers one value in canonical pop order: Min ascending,
+    // Max descending. O(log n) per successful pull, with no allocation.
+    // Equal-priority representatives have no stable relative order.
+    pub fn next(&self) -> core::option::Option<T> { return self.heap.pop(); }
 }
 
 // Preserve this heap's configured order and try_push's shallow ownership rules.

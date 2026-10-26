@@ -1,0 +1,24 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone_binary_heap;
+import alloc::string;
+import core::result;
+import fixture::consumer;
+import fixture::types;
+fn run(order: alloc::binary_heap::Order) {
+    let empty: alloc::binary_heap::BinaryHeap<alloc::string::String> = alloc::binary_heap::new<alloc::string::String>(order);
+    let copy = alloc::clone_binary_heap::try_clone<alloc::string::String,alloc::string::Error>(empty.borrow()).unwrap();
+    assert(copy.is_empty() && copy.capacity()==0 && empty.is_empty());
+    alloc::clone_binary_heap::destroy_heap<alloc::string::String>(copy.borrow()); empty.destroy();
+    let source: alloc::binary_heap::BinaryHeap<fixture::types::Unit> = alloc::binary_heap::new<fixture::types::Unit>(order);
+    let index: i32 = 0; while (index<9) { source.try_push(fixture::types::Unit {}).unwrap(); index+=1; }
+    let cloned: core::result::Result<alloc::binary_heap::BinaryHeap<fixture::types::Unit>,alloc::clone_binary_heap::Error<fixture::types::Never>> = fixture::consumer::duplicate<alloc::binary_heap::BinaryHeap<fixture::types::Unit>,alloc::clone_binary_heap::Error<fixture::types::Never>>(source);
+    let units = cloned.unwrap(); assert(units.len()==9 && units.capacity()==2147483647 && source.len()==9);
+    assert(units.pop().is_some() && units.len()==8 && source.len()==9);
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Unit>(units.borrow()); alloc::clone_binary_heap::destroy_heap<fixture::types::Unit>(source.borrow());
+    alloc::clone_binary_heap::destroy_heap<fixture::types::Unit>(units.borrow());
+    assert(units.is_empty() && units.capacity()==0 && source.is_empty() && source.capacity()==0);
+    let release_only: alloc::binary_heap::BinaryHeap<fixture::types::ReleaseOnly> = alloc::binary_heap::new<fixture::types::ReleaseOnly>(order);
+    alloc::clone_binary_heap::destroy_heap<fixture::types::ReleaseOnly>(release_only.borrow());
+}
+fn main() -> i32 { run(alloc::binary_heap::Order::Min); run(alloc::binary_heap::Order::Max); return 0; }

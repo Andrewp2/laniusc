@@ -25,6 +25,7 @@ pub(super) struct ResidentSourcePackExecutor<'compiler, 'gpu> {
     // The manifest's standard library (`standard_library_id`): only its units
     // enter the warm caches that survive a project clear.
     standard_library_id: Option<u32>,
+    native_link: Option<NativeLinkOptions>,
 }
 
 /// The linked program: its bytes, or the byte length already written to the
@@ -76,7 +77,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         target: SourcePackArtifactTarget,
     ) -> Self {
         debug_assert_ne!(target, SourcePackArtifactTarget::Generic);
-        Self { compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None }
+        Self { compiler, target, pending_originals: Vec::new(), output_file: None, standard_library_id: None, native_link: None }
     }
 
     pub(super) fn with_output_file(
@@ -90,6 +91,11 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
     /// Names the manifest's standard library (its `standard_library_id`).
     pub(super) fn with_standard_library(mut self, standard_library_id: Option<u32>) -> Self {
         self.standard_library_id = standard_library_id;
+        self
+    }
+
+    pub(super) fn with_native_link(mut self, options: &NativeLinkOptions) -> Self {
+        self.native_link = Some(options.clone());
         self
     }
 
@@ -116,9 +122,18 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
         // so generic bodies specialize alike. A standard-library unit may
         // reuse an earlier job's pending original; it is admitted with the
         // rest of this program at link.
-        let pending = self.compiler.compile_cached_pending_original_unit(
-            self.target, &handle.job, standard_library, &handle.source_files, dependency_pages.into(),
-        ).await?;
+        let pending = if self.native_link.is_some() {
+            // The native profile spills before any cache or pending inventory
+            // can retain its section vectors. Checked source facts still own
+            // their exact source and dependency snapshots for admission.
+            self.compiler.compile_file_pending_native_unit(
+                &handle.job, &handle.source_files, dependency_pages.into(),
+            ).await?
+        } else {
+            self.compiler.compile_cached_pending_original_unit(
+                self.target, &handle.job, standard_library, &handle.source_files, dependency_pages.into(),
+            ).await?
+        };
         let artifact = PendingNativeArtifact {
             slot: self.pending_originals.len(), facts: pending.facts().clone(),
         };
@@ -147,14 +162,46 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             return Err(source_pack_artifact_store_error(
                 "pending native link omitted an original source unit"));
         }
+        // Keep source-checked C declarations tied to the exact original unit
+        // snapshots admitted below, including private declarations. Generic
+        // replays retain those original foreign identities.
+        let mut native_functions = Vec::new();
+        if self.target == SourcePackArtifactTarget::X86_64 {
+            for pending in &self.pending_originals {
+                native_functions.extend(pending.facts().interface().native_c_functions()
+                    .map_err(source_pack_artifact_store_error)?);
+            }
+            if self.native_link.is_none() && !native_functions.is_empty() {
+                return Err(CompileError::GpuCodegen(
+                    "C extern declarations require the native linking profile; use --native-link and explicit --native-library inputs".into()));
+            }
+        }
         let pending = std::mem::take(&mut self.pending_originals);
+        if let Some(options) = &self.native_link {
+            let objects = self.compiler.specialize_spilled_native_objects(pending).await?;
+            let bridge = super::native_codegen::native_main_bridge(&objects)?;
+            let executable = x86::native::link_native_file_executable(
+                &objects, &native_functions, bridge, options,
+            ).map_err(|error| super::x86_codegen::x86_source_pack_link_error(
+                "link native C executable", error))?;
+            return match &self.output_file {
+                Some(path) => super::bounded_path_codegen::write_output_file_atomically(
+                    path, self.target, |file| executable.write_to(file).map_err(|error|
+                        super::x86_codegen::x86_source_pack_link_error("write native C executable", error)),
+                ).map(ResidentLinkedOutput::File),
+                None => executable.read_bytes(options.max_output_bytes)
+                    .map(ResidentLinkedOutput::Bytes)
+                    .map_err(|error| super::x86_codegen::x86_source_pack_link_error(
+                        "read native C executable", error)),
+            };
+        }
         let objects = self.compiler.specialize_pending_source_pack_objects(pending).await?;
         match self.target {
             SourcePackArtifactTarget::X86_64 => {
                 let objects = objects.into_iter().map(|object| match object {
                     CompiledSourcePackObject::X86_64(object) => Ok(object),
-                    CompiledSourcePackObject::Wasm(_) => Err(source_pack_artifact_store_error(
-                        "resident x86_64 source-pack link received a Wasm object")),
+                    CompiledSourcePackObject::Wasm(_) | CompiledSourcePackObject::X86_64File(_) => Err(source_pack_artifact_store_error(
+                        "resident x86_64 source-pack link received a different object storage")),
                 }).collect::<Result<Vec<_>, _>>()?;
                 let input_span = crate::gpu::trace::HostSpan::new("host.compiler", "codegen.x86.link.input");
                 let input = x86::GpuX86LinkInput::for_executable_refs(objects.iter())
@@ -194,7 +241,7 @@ impl<'compiler, 'gpu> ResidentSourcePackExecutor<'compiler, 'gpu> {
             SourcePackArtifactTarget::Wasm => {
                 let objects = objects.iter().map(|object| match object {
                     CompiledSourcePackObject::Wasm(object) => Ok(object),
-                    CompiledSourcePackObject::X86_64(_) => Err(source_pack_artifact_store_error(
+                    CompiledSourcePackObject::X86_64(_) | CompiledSourcePackObject::X86_64File(_) => Err(source_pack_artifact_store_error(
                         "resident Wasm source-pack link received an x86_64 object")),
                 }).collect::<Result<Vec<_>, _>>()?;
                 let input = wasm::GpuWasmLinkInput::for_executable_refs(objects)

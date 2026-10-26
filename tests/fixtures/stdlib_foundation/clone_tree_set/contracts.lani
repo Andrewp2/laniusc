@@ -1,0 +1,38 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::string;
+import alloc::tree_set;
+import core::iter;
+import core::result;
+import fixture::consumer;
+fn text(first: u8) -> alloc::string::String {
+    let bytes: [u8;4] = [first,0,195,169]; return alloc::string::from_utf8(bytes,4).unwrap();
+}
+fn main() -> i32 {
+    let a = text(65); let b = text(66); let c = text(67); let d = text(68);
+    let source = alloc::tree_set::with_capacity<alloc::string::String>(8).unwrap();
+    source.try_insert(c).unwrap(); source.try_insert(a).unwrap(); source.try_insert(b).unwrap(); source.try_insert(d).unwrap();
+    let removed = source.remove(b).unwrap(); removed.destroy();
+    let shallow = source.try_clone().unwrap(); let shallow_first = shallow.first().unwrap();
+    assert(shallow_first.bytes.storage==a.bytes.storage); shallow.destroy();
+    let saved = source.iter(); let saved_bytes = a.as_bytes();
+    let result: core::result::Result<alloc::tree_set::TreeSet<alloc::string::String>,alloc::clone_tree_set::Error<alloc::string::Error>> =
+        fixture::consumer::duplicate<alloc::tree_set::TreeSet<alloc::string::String>,alloc::clone_tree_set::Error<alloc::string::Error>>(source);
+    let copy = result.unwrap(); let old_first = saved.next().unwrap();
+    assert(source.len()==3 && source.capacity()==8 && old_first.equals(a) && saved_bytes[0]==65 && saved_bytes[1]==0);
+    let copied_first = copy.first().unwrap(); assert(copied_first.bytes.storage!=a.bytes.storage);
+    // Transfer the actual key before growth and ordering changes, then install
+    // its updated descriptor. Borrowed get/first copies cannot own this edit.
+    let changed = copy.remove(copied_first).unwrap(); changed.try_push_scalar(90).unwrap();
+    copy.try_insert(changed).unwrap();
+    let first = copy.first().unwrap(); let sibling = copy.upper_bound(first).unwrap();
+    assert(first.byte_len()==5 && first.byte_at(4).unwrap()==90 && sibling.byte_len()==4 && a.byte_len()==4);
+    assert(copy.len()==3 && source.len()==3 && source.first().unwrap().byte_len()==4);
+    source.destroy(); a.destroy(); c.destroy(); d.destroy();
+    let owned = copy.pop_last().unwrap();
+    alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(copy.borrow());
+    alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity()==0 && owned.byte_at(1).unwrap()==0); owned.destroy();
+    copy.try_insert(text(69)).unwrap(); fixture::consumer::release<alloc::tree_set::TreeSet<alloc::string::String>>(copy);
+    return 0;
+}

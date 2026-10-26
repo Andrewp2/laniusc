@@ -1,0 +1,128 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::slice;
+import core::time;
+import std::args;
+import std::clock;
+import std::command;
+import std::command_capture;
+import std::command_raw;
+import std::file;
+import std::signal;
+import std::stream;
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn record(mode: i32, header: [i32]) {
+    let words: [i32;11] = [1196576817,mode,0,0,0,0,0,0,0,0,0];
+    words[2] = std::command_raw::word(39,0,0,0) as i32; words[3] = std::command_raw::word(121,0,0,0) as i32; words[4] = std::command_raw::word(124,0,0,0) as i32;
+    let index: i32 = 0; while (index < 6) { words[index+5] = header[index]; index += 1; }
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),44); let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),raw,0,44).unwrap();
+}
+fn command(input: &std::file::File, byte: u8) { let data: [u8;1] = [byte]; core::io::write_all(input,data,0,1).unwrap(); }
+fn receive(output: &std::file::File, words: [i32], count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),count*4); core::io::read_exact(output,raw,0,count*4).unwrap(); }
+fn observed(child: &std::command::Child) -> std::command::ExitStatus {
+    let count: i32 = 0;
+    while (count < 1000) {
+        let status = child.try_observe_exit();
+        if (status.is_err()) { assert(status.unwrap_err().errno == 4); }
+        else { if (status.unwrap().is_some()) { return status.unwrap().unwrap(); } }
+        std::command_raw::word(7,0,0,10); count += 1;
+    }
+    assert(false); return child.wait().unwrap();
+}
+fn child(value: std::command::Spawn) -> std::command::Child {
+    return match(value) { std::command::Spawn::Child(owner) -> owner, std::command::Spawn::Unknown(unknown) -> unexpected(unknown.child), std::command::Spawn::Failed(failed) -> impossible() };
+}
+fn unexpected(owner: std::command::Child) -> std::command::Child { owner.cancel_and_wait(); assert(false); return owner; }
+fn impossible() -> std::command::Child { assert(false); let argv: [core::slice::View<u8>;1] = [bytes("/bin/true",9)]; return child(std::command::spawn(std::command::request(argv[0],core::slice::view(argv,1).unwrap(),core::slice::view(argv,0).unwrap())).unwrap()); }
+fn failure_probe() -> i32 {
+    let argv: [core::slice::View<u8>;1] = [bytes("/no/such/command",16)]; let request = std::command::request(argv[0],core::slice::view(argv,1).unwrap(),core::slice::view(argv,0).unwrap());
+    request.group = std::command::Group::New; request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
+    let made = std::command::spawn(request); if (made.is_err()) { return 41; }
+    return match(made.unwrap()) {
+        std::command::Spawn::Failed(failed) -> failed_start(failed),
+        std::command::Spawn::Unknown(unknown) -> unknown_start(unknown),
+        std::command::Spawn::Child(owner) -> early_exit(owner)
+    };
+}
+fn failed_start(failed: std::command::FailedStart) -> i32 { assert(failed.status.code.unwrap() == 127 && failed.failure.errno > 0); return match(failed.failure.stage) { std::command::Stage::ProcessGroup -> 42, std::command::Stage::Exec -> 43, _ -> 47 }; }
+fn unknown_start(unknown: std::command::UnknownStart) -> i32 {
+    assert(unknown.child.id().is_some());
+    if (unknown.child.group_id().is_some()) { unknown.child.cancel_group_and_wait().unwrap(); }
+    else { unknown.child.cancel_and_wait().unwrap(); }
+    unknown.child.close_pipes().unwrap(); assert(unknown.child.id().is_none() && unknown.child.group_id().is_none()); return 44;
+}
+fn early_exit(owner: std::command::Child) -> i32 { let status = owner.wait().unwrap(); owner.close_pipes().unwrap(); assert(owner.id().is_none() && owner.group_id().is_none()); if (status.signal.is_some()) { assert(status.signal.unwrap() == 9); return 45; } assert(status.code.unwrap() == 127); return 46; }
+fn run_inner(peer: core::slice::View<u8>, mode_text: core::slice::View<u8>, mode: i32) -> i32 {
+    if (mode == 9) { return failure_probe(); }
+    if (mode == 6) { std::signal::set_disposition(std::signal::Signal::Child,std::signal::Disposition::Ignore).unwrap(); }
+    let argv: [core::slice::View<u8>;3] = [bytes("/usr/bin/python3",16),peer,mode_text]; let request = std::command::request(argv[0],core::slice::view(argv,3).unwrap(),core::slice::view(argv,0).unwrap());
+    if (mode != 0) { request.group = std::command::Group::New; }
+    request.stdin = std::command::Stdio::Pipe; request.stdout = std::command::Stdio::Pipe; request.stderr = std::command::Stdio::Null;
+    let owner = child(std::command::spawn(request).unwrap()); let pid: i32 = owner.id().unwrap();
+    if (mode != 0) { assert(owner.group_id().unwrap() == pid && owner.confirm_group().unwrap() == pid); }
+    else { assert(owner.group_id().is_none() && owner.signal_group(0).is_err()); }
+    assert(owner.signal_group(-1).is_err() && owner.signal_group(65).is_err());
+    if (mode == 7 || mode == 8) { return capture(owner,mode); }
+    let input = owner.take_stdin().unwrap(); let output = owner.take_stdout().unwrap(); let header: [i32;6] = [0;6]; receive(output.borrow(),header,6);
+    assert(header[0] == 1196576817 && header[1] == pid && header[4] > 1); record(mode,header);
+    if (mode == 0 || mode == 1) {
+        let ack: [i32;2] = [0;2]; owner.signal(10).unwrap(); receive(output.borrow(),ack,2); assert(ack[0] == 1094929201 && ack[1] == pid);
+        if (mode == 1) {
+            owner.signal_group(0).unwrap(); owner.signal_group(10).unwrap(); let other: [i32;2] = [0;2]; receive(output.borrow(),ack,2); receive(output.borrow(),other,2);
+            assert(ack[0] == 1094929201 && other[0] == 1094929201 && ack[1] != other[1] && (ack[1] == pid || ack[1] == header[4]) && (other[1] == pid || other[1] == header[4]));
+        }
+        command(input.borrow(),81); input.close().unwrap(); assert(owner.wait().unwrap().code.unwrap() == 0);
+    }
+    if (mode == 2 || mode == 3 || mode == 10) {
+        if (mode == 3) { command(input.borrow(),77); let moved: [i32;2] = [0;2]; receive(output.borrow(),moved,2); assert(moved[0] == 1196576817 && moved[1] == std::command_raw::word(121,0,0,0) as i32); }
+        if (mode == 10) { assert(owner.cancel_group_and_wait().unwrap_err().errno == 1 && owner.id().unwrap() == pid && owner.group_id().unwrap() == pid); }
+        assert(owner.cancel_group_and_wait().unwrap().signal.unwrap() == 9); input.close().unwrap();
+    }
+    if (mode == 11) { assert(owner.signal_group(10).unwrap_err().errno == 1 && owner.id().unwrap() == pid && owner.group_id().unwrap() == pid); command(input.borrow(),81); input.close().unwrap(); assert(owner.wait().unwrap().code.unwrap() == 0); }
+    if (mode == 4 || mode == 5 || mode == 6) {
+        if (mode == 4) { let first = owner.try_observe_exit(); if (first.is_err()) { assert(first.unwrap_err().errno == 4 && owner.id().unwrap() == pid && owner.group_id().unwrap() == pid); assert(owner.try_observe_exit().unwrap().is_none()); } else { assert(first.unwrap().is_none()); } }
+        command(input.borrow(),69); input.close().unwrap();
+        if (mode == 4) { assert(observed(owner.borrow()).code.unwrap() == 23 && owner.id().unwrap() == pid && owner.group_id().unwrap() == pid); owner.signal_group(10).unwrap(); let ack: [i32;2] = [0;2]; receive(output.borrow(),ack,2); assert(ack[0] == 1094929201 && ack[1] == header[4]); assert(owner.cancel_group_and_wait().unwrap().code.unwrap() == 23); }
+        if (mode == 5) { assert(owner.wait().unwrap().code.unwrap() == 23); }
+        if (mode == 6) { assert(owner.wait().unwrap_err().errno == 10); std::signal::set_disposition(std::signal::Signal::Child,std::signal::Disposition::Default).unwrap(); }
+    }
+    assert(owner.id().is_none() && owner.group_id().is_none()); assert(owner.signal_group(0).is_err() && owner.signal_group(9).is_err()); output.close().unwrap(); owner.close_pipes().unwrap();
+    if (mode == 5 || mode == 6) { let revoked: [u8;1] = [82]; let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),revoked,0,1).unwrap(); }
+    return 0;
+}
+fn finished(status: i32) -> i32 { let raw: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(raw),true) == -10); return status; }
+fn run(peer: core::slice::View<u8>, mode_text: core::slice::View<u8>, mode: i32) -> i32 {
+    if (mode >= 1 && mode <= 3) {
+        let argv: [core::slice::View<u8>;2] = [bytes("/bin/sleep",10),bytes("20",2)]; let request = std::command::request(argv[0],core::slice::view(argv,2).unwrap(),core::slice::view(argv,0).unwrap());
+        request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
+        let sentinel = child(std::command::spawn(request).unwrap()); let pid = sentinel.id().unwrap(); let parent_group = std::command_raw::word(121,0,0,0);
+        assert(std::command_raw::word(121,pid as i64,0,0) == parent_group);
+        let status = run_inner(peer,mode_text,mode); sentinel.signal(0).unwrap(); assert(std::command_raw::word(121,pid as i64,0,0) == parent_group); assert(sentinel.cancel_and_wait().unwrap().signal.unwrap() == 9); sentinel.close_pipes().unwrap(); return finished(status);
+    }
+    return finished(run_inner(peer,mode_text,mode));
+}
+fn capture(owner: std::command::Child, mode: i32) -> i32 {
+    let empty: [u8;0] = []; let limits = std::command_capture::default_limits(); limits.max_stdout_bytes = 24; limits.max_stderr_bytes = 0;
+    let now = std::clock::monotonic_now().unwrap(); let deadline = core::time::deadline_after(now,core::time::from_secs(3)).unwrap();
+    let result = std::command_capture::communicate(owner.borrow(),core::slice::view(empty,0).unwrap(),limits,deadline);
+    let header: [i32;6] = [0;6];
+    if (mode == 7) {
+        let failed = result.unwrap_err(); assert(match(failed.cause) { std::command_capture::Error::Deadline -> true, _ -> false });
+        assert(failed.stdout.len() == 24 && failed.progress.status.unwrap().code.unwrap() == 23 && !failed.progress.reaped && owner.id().is_some() && owner.group_id().is_some());
+        let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(header),24); let i: i32 = 0; while (i < 24) { raw[i] = failed.stdout.at(i); i += 1; } failed.destroy(); record(mode,header);
+        assert(owner.cancel_group_and_wait().unwrap().code.unwrap() == 23);
+    }
+    if (mode == 8) {
+        let captured = result.unwrap(); assert(captured.status.code.unwrap() == 23 && captured.progress.reaped && captured.stdout.len() == 24);
+        let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(header),24); let i: i32 = 0; while (i < 24) { raw[i] = captured.stdout.at(i); i += 1; } captured.destroy(); record(mode,header);
+    }
+    assert(owner.id().is_none() && owner.group_id().is_none() && owner.signal_group(9).is_err()); owner.close_pipes().unwrap(); return 0;
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let captured = std::args::snapshot(1,2,8192).unwrap(); let peer = captured.get(0).unwrap(); let mode = captured.get(1).unwrap(); assert(mode.length >= 1 && mode.length <= 2); let value: i32 = mode.values[mode.start] as i32 - 48; if (mode.length == 2) { value = value*10 + (mode.values[mode.start+1] as i32 - 48); }
+    let status: i32 = run(peer,mode,value); captured.destroy(); return status;
+}

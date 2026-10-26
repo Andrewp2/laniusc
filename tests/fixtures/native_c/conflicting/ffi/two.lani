@@ -1,0 +1,2 @@
+module ffi::two;
+pub extern "C" fn probe_imported(value: i64) -> i64;

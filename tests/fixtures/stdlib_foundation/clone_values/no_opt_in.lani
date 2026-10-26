@@ -1,0 +1,15 @@
+module app::main;
+import core::clone;
+import core::option;
+import core::result;
+struct Marker {}
+enum Fault { Unexpected }
+pub impl core::clone::TryClone<Marker,Fault> for Marker {
+    pub fn try_clone_value(source: Marker) -> core::result::Result<Marker,Fault> { return core::result::Ok(source); }
+}
+fn duplicate<T,E>(source: T) -> core::result::Result<T,E> where T: core::clone::TryClone<T,E> { return T::try_clone_value(source); }
+fn main() -> i32 {
+    let source: core::option::Option<Marker> = core::option::None();
+    duplicate<core::option::Option<Marker>,Fault>(source);
+    return 0;
+}

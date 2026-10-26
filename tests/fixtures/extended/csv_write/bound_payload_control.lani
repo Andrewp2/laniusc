@@ -1,0 +1,18 @@
+// Equivalent classifier using separate functions and a named enum payload.
+// Current CLI compile/native both pass (csv-bound-payload.log and
+// csv-bound-payload-native.log). This changes two source-shape dimensions.
+module app::main;
+import core::io;
+import ext::csv_write;
+fn host(code: i32) -> i32 { if (code == 7) { return 1; } return 0; }
+fn classify_error(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::Host(code) -> host(code), core::io::Error::WouldBlock -> 2, core::io::Error::WriteZero -> 3, core::io::Error::InvalidCount -> 4, _ -> 0 };
+}
+fn classify(cause: ext::csv_write::Cause) -> i32 {
+    return match (cause) { ext::csv_write::Cause::Io(error) -> classify_error(error), ext::csv_write::Cause::CallLimit -> 6, _ -> 0 };
+}
+fn main() -> i32 {
+    assert(classify(ext::csv_write::Cause::Io(core::io::Error::Host(7))) == 1);
+    assert(classify(ext::csv_write::Cause::Io(core::io::Error::Host(8))) == 0);
+    assert(classify(ext::csv_write::Cause::CallLimit) == 6); return 0;
+}

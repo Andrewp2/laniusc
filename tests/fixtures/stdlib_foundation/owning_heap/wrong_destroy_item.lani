@@ -1,0 +1,13 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone_binary_heap;
+import core::clone;
+struct Item {}
+struct Other {}
+pub impl core::clone::Destroy<Other> for Item { pub fn destroy_value(item: Other) {} }
+fn main() -> i32 {
+    let heap: alloc::binary_heap::BinaryHeap<Item> =alloc::binary_heap::new<Item>(alloc::binary_heap::Order::Min);
+    let cursor: alloc::binary_heap::IntoIter<Item> =heap.take_iter();
+    alloc::clone_binary_heap::destroy_binary_heap_iter<Item>(cursor.borrow());
+    return 0;
+}

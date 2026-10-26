@@ -1,0 +1,332 @@
+// Ordered CSV GET jobs -> concurrent cleartext HTTP -> one staged Stored ZIP.
+// Numeric endpoints route independently of Host; no DNS, TLS or request replay.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import ext::cli;
+import ext::csv;
+import ext::http;
+import ext::http_batch;
+import ext::http_client;
+import ext::zip;
+import std::args;
+import std::clock;
+import std::poll;
+import std::signal;
+import std::stream;
+
+const MAX_JOBS: i32 = 64;
+const READ_CALLS: i32 = 16384;
+const WRITE_CALLS: i32 = 65536;
+struct Options { concurrency: i32, timeout: u64, input: i32, body: i32, total_body: u64, wire: i32, total_wire: u64, output: i32, io: u64, work: u64, total_work: u64, operations: u64, allow: bool, help: bool, seen: u32 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Detail { stage: i32, row: i32, status: i32, cause: i32, errno: i32, cleanup: i32, io: u64, work: u64, written: i32 }
+impl Detail { fn borrow(&self) -> &Detail { return self; } }
+struct Row { name: core::slice::View<u8>, endpoint: core::net::SocketAddr, authority: core::slice::View<u8>, target: core::slice::View<u8> }
+struct Plan { table: ext::csv::Table, rows: alloc::vec::Vec<Row> }
+impl Plan {
+    fn borrow(&self) -> &Plan { return self; }
+    fn destroy(&self) { self.rows.destroy(); self.table.destroy(); }
+}
+// Borrowed views into completed batch Responses; keep their owners through
+// archive encoding. This descriptor and its Vec never destroy body backing.
+struct Payload { status: i32, body: core::slice::View<u8> }
+enum ReadError { Io(core::io::Error), Calls, Limit, Allocation }
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let part = bytes(value,count); return core::text::from_utf8_unchecked(part.values,part.start,part.length); }
+fn view(value: core::text::Text) -> core::slice::View<u8> { return core::slice::View { values: value.bytes, start: value.start, length: value.length }; }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true;
+}
+fn problem(detail: &Detail, code: i32, stage: i32, cause: i32) -> i32 { detail.stage = stage; detail.cause = cause; return code; }
+fn number(value: core::slice::View<u8>) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = value.values[value.start+index]; if (byte < 48 || byte > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err()) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+fn apply(options: &Options, occurrence: ext::cli::Occurrence) -> bool {
+    let bit: u32 = (1 as u32) << occurrence.id; if ((options.seen & bit) != 0) { return false; } options.seen |= bit;
+    if (occurrence.id == 11) { options.allow = true; return true; } if (occurrence.id == 12) { options.help = true; return true; }
+    let parsed = number(occurrence.value.unwrap().bytes); if (parsed.is_none()) { return false; } let value: u64 = parsed.unwrap();
+    if (occurrence.id == 1) { if (value < 1 || value > 16) { return false; } options.concurrency = value as i32; }
+    if (occurrence.id == 2) { if (value > 60000) { return false; } options.timeout = value; }
+    if (occurrence.id == 3) { if (value > 262144) { return false; } options.input = value as i32; }
+    if (occurrence.id == 4) { if (value > 8388608) { return false; } options.body = value as i32; }
+    if (occurrence.id == 5) { if (value > 33554432) { return false; } options.total_body = value; }
+    if (occurrence.id == 6) { if (value > 16777216) { return false; } options.wire = value as i32; }
+    if (occurrence.id == 7) { if (value > 67108864) { return false; } options.total_wire = value; }
+    if (occurrence.id == 8) { if (value > 41943040) { return false; } options.output = value as i32; }
+    if (occurrence.id == 9) { if (value == 0 || value > 1000000) { return false; } options.io = value; }
+    if (occurrence.id == 10) { if (value > 268435456) { return false; } options.work = value; }
+    if (occurrence.id == 13) { if (value > 1073741824) { return false; } options.total_work = value; }
+    if (occurrence.id == 14) { if (value > 10000000) { return false; } options.operations = value; }
+    return true;
+}
+fn parse(arguments: std::args::Arguments, options: &Options) -> bool {
+    let specs: [ext::cli::Spec;14] = [
+        ext::cli::Spec { id: 1, long: bytes("concurrency",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: bytes("timeout-ms",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: bytes("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: bytes("max-body",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: bytes("max-total-body",14), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: bytes("max-wire",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 7, long: bytes("max-total-wire",14), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 8, long: bytes("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 9, long: bytes("max-io",6), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 10, long: bytes("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 11, long: bytes("allow-http-errors",17), short: 0, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 12, long: bytes("help",4), short: 104, arity: ext::cli::Arity::Flag },
+        ext::cli::Spec { id: 13, long: bytes("max-total-work",14), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 14, long: bytes("max-operations",14), short: 0, arity: ext::cli::Arity::Required }
+    ];
+    let parser = ext::cli::parser(arguments.as_view(),core::slice::view<ext::cli::Spec>(specs,14).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    while (true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return false; } let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let valid: bool = match(next.unwrap()) { ext::cli::Event::Option(value) -> apply(options,value), ext::cli::Event::Operand(value) -> false }; if (!valid) { return false; }
+    }
+    return !options.help || arguments.len() == 1;
+}
+
+// Every host attempt consumes the budget, including EINTR. An exact byte
+// cap still requires a positive-capacity EOF probe; the extra byte is rejected.
+fn read_input<R>(reader: &R, output: &alloc::io::Buffer, maximum_calls: i32) -> core::result::Result<i32,ReadError> where R: core::io::Read {
+    let storage: [u8;1024] = [0;1024]; let calls: i32 = 0;
+    while (true) {
+        if (calls >= maximum_calls) { return core::result::Err(ReadError::Calls); } calls += 1;
+        let left: i32 = output.limit()-output.len(); let count: i32 = left; if (count > 1024) { count = 1024; } if (count == 0) { count = 1; }
+        let got: core::result::Result<i32,core::io::Error> = reader.read(storage,0,count);
+        if (got.is_err()) { let error = got.unwrap_err(); if (core::io::is_interrupted(error)) { continue; } return core::result::Err(ReadError::Io(error)); }
+        let amount: i32 = got.unwrap(); if (amount < 0 || amount > count) { return core::result::Err(ReadError::Io(core::io::Error::InvalidCount)); }
+        if (amount == 0) { return core::result::Ok(output.len()); } if (amount > left) { return core::result::Err(ReadError::Limit); }
+        let added: core::result::Result<i32,core::io::Error> = output.write(storage,0,amount);
+        if (added.is_err()) { let error = added.unwrap_err(); return match(error) { core::io::Error::AllocationFailed -> core::result::Err(ReadError::Allocation), core::io::Error::LimitExceeded -> core::result::Err(ReadError::Limit), _ -> core::result::Err(ReadError::Io(error)) }; }
+    }
+    return core::result::Err(ReadError::Calls);
+}
+fn publish<W>(writer: &W, source: [u8], count: i32, maximum_calls: i32) -> core::result::Result<i32,core::io::Failure> where W: core::io::Write {
+    let completed: i32 = 0; let calls: i32 = 0;
+    while (completed < count) {
+        if (calls >= maximum_calls) { return core::result::Err(core::io::Failure { cause: core::io::Error::LimitExceeded, completed: completed }); } calls += 1;
+        let sent: core::result::Result<i32,core::io::Error> = writer.write(source,completed,count-completed);
+        if (sent.is_err()) { let error = sent.unwrap_err(); if (core::io::is_interrupted(error)) { continue; } return core::result::Err(core::io::Failure { cause: error, completed: completed }); }
+        let amount: i32 = sent.unwrap(); if (amount <= 0 || amount > count-completed) { return core::result::Err(core::io::Failure { cause: core::io::Error::InvalidCount, completed: completed }); } completed += amount;
+    }
+    return core::result::Ok(completed);
+}
+fn io_code(error: core::io::Error) -> i32 { return match(error) { core::io::Error::AllocationFailed -> 4, core::io::Error::LimitExceeded -> 2, _ -> 5 }; }
+fn csv_code(error: ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn zip_code(error: ext::zip::Error) -> i32 { return match(error) { ext::zip::Error::AllocationFailed -> 4, _ -> 2 }; }
+
+fn prepare(source: [u8], count: i32, detail: &Detail) -> core::result::Result<Plan,i32> {
+    let dialect = ext::csv::default_options(); dialect.max_records = MAX_JOBS+1; dialect.max_fields = 4; dialect.max_field_bytes = 4096; dialect.max_record_bytes = 6208;
+    let parsed = ext::csv::parse_bytes(source,0,count,dialect); if (parsed.is_err()) { return core::result::Err(problem(detail,csv_code(parsed.unwrap_err()),3,1)); } let table = parsed.unwrap();
+    if (table.row_count() < 2 || table.row_count() > MAX_JOBS+1 || table.field_count(0).unwrap() != 4) { table.destroy(); return core::result::Err(problem(detail,2,3,1)); }
+    if (!equal(view(table.field(0,0).unwrap()),bytes("archive-name",12)) || !equal(view(table.field(0,1).unwrap()),bytes("numeric-endpoint",16)) || !equal(view(table.field(0,2).unwrap()),bytes("http-authority",14)) || !equal(view(table.field(0,3).unwrap()),bytes("origin-target",13))) { table.destroy(); return core::result::Err(problem(detail,2,3,1)); }
+    let rows: alloc::vec::Vec<Row> = alloc::vec::new(); let count: i32 = table.row_count()-1;
+    if (rows.try_reserve(count).is_err()) { table.destroy(); return core::result::Err(problem(detail,4,3,2)); }
+    let index: i32 = 0;
+    while (index < count) {
+        detail.row = index;
+        if (table.field_count(index+1).unwrap() != 4) { rows.destroy(); table.destroy(); return core::result::Err(problem(detail,2,3,1)); }
+        let name = view(table.field(index+1,0).unwrap()); let address = view(table.field(index+1,1).unwrap()); let authority = view(table.field(index+1,2).unwrap()); let target = view(table.field(index+1,3).unwrap());
+        if (name.length > 1024 || address.length > 64 || authority.length > 1024 || target.length > 4096) { rows.destroy(); table.destroy(); return core::result::Err(problem(detail,2,3,3)); }
+        let named = ext::zip::validate_name(name,true); if (named.is_err()) { rows.destroy(); table.destroy(); return core::result::Err(problem(detail,zip_code(named.unwrap_err()),3,4)); }
+        let endpoint = core::net::parse_socket(address); if (endpoint.is_err()) { rows.destroy(); table.destroy(); return core::result::Err(problem(detail,2,3,5)); }
+        if (rows.try_push(Row { name: name, endpoint: endpoint.unwrap(), authority: authority, target: target }).is_err()) { rows.destroy(); table.destroy(); return core::result::Err(problem(detail,4,3,2)); }
+        index += 1;
+    }
+    detail.row = -1; return core::result::Ok(Plan { table: table, rows: rows });
+}
+fn append(output: &alloc::io::Buffer, part: core::slice::View<u8>) -> i32 {
+    let added: core::result::Result<i32,core::io::Error> = output.write(part.values,part.start,part.length); if (added.is_err()) { return io_code(added.unwrap_err()); } return 0;
+}
+fn comment_row(output: &alloc::io::Buffer, index: i32, payload: Payload) -> i32 {
+    let storage: [u8;96] = [0;96]; let formatter = core::fmt::buffer(storage,0,96).unwrap();
+    formatter.write_unsigned(index as u64,core::fmt::decimal()); formatter.write_text(text(",",1)); formatter.write_unsigned(payload.status as u64,core::fmt::decimal()); formatter.write_text(text(",",1)); formatter.write_unsigned(payload.body.length as u64,core::fmt::decimal()); formatter.write_text(text("\n",1));
+    let finished = formatter.finish(); if (finished.is_err()) { return 2; } return append(output,core::slice::view<u8>(storage,finished.unwrap()).unwrap());
+}
+fn archive(plan: &Plan, payloads: core::slice::View<Payload>, options: Options, detail: &Detail) -> core::result::Result<alloc::vec::Vec<u8>,i32> {
+    if (payloads.length != plan.rows.len()) { return core::result::Err(problem(detail,3,4,6)); }
+    let index: i32 = 0;
+    while (index < payloads.length) {
+        let payload: Payload = payloads.values[payloads.start+index];
+        if (!options.allow && (payload.status < 200 || payload.status >= 300)) { detail.row = index; detail.status = payload.status; return core::result::Err(problem(detail,2,5,7)); }
+        index += 1;
+    }
+    let sources: alloc::vec::Vec<ext::zip::Source> = alloc::vec::new(); if (sources.try_reserve(payloads.length).is_err()) { return core::result::Err(problem(detail,4,6,2)); }
+    let comment = alloc::io::with_limit(4096).unwrap(); let status: i32 = append(comment.borrow(),bytes("row,status,bytes\n",17)); index = 0;
+    while (status == 0 && index < payloads.length) {
+        let payload: Payload = payloads.values[payloads.start+index]; let row: Row = plan.rows.at(index);
+        if (sources.try_push(ext::zip::Source { name: row.name, data: payload.body, method: ext::zip::Method::Stored, utf8: true }).is_err()) { status = 4; break; }
+        status = comment_row(comment.borrow(),index,payload); index += 1;
+    }
+    if (status != 0) { comment.destroy(); sources.destroy(); return core::result::Err(problem(detail,status,6,2)); }
+    let limits = ext::zip::default_limits(); limits.max_entries = MAX_JOBS; limits.max_archive = options.output; limits.max_entry = options.body; limits.max_total = options.total_body; limits.max_work = 67108864;
+    let encoded = ext::zip::encode(sources.as_view(),core::slice::view<u8>(comment.as_bytes(),comment.len()).unwrap(),limits); comment.destroy(); sources.destroy();
+    if (encoded.is_err()) { return core::result::Err(problem(detail,zip_code(encoded.unwrap_err()),6,8)); } return core::result::Ok(encoded.unwrap());
+}
+
+fn native_errno(error: core::io::Error) -> i32 { return match(error) { core::io::Error::Host(value) -> value, _ -> 0 }; }
+fn clock_errno(error: std::clock::Error) -> i32 { return match(error) { std::clock::Error::Host(value) -> value, _ -> 0 }; }
+fn poll_errno(error: std::poll::Error) -> i32 { return match(error) { std::poll::Error::Io(value) -> native_errno(value), std::poll::Error::Clock(value) -> clock_errno(value), _ -> 0 }; }
+fn client_error(error: ext::http_client::Failure, preparation: bool, detail: &Detail) -> i32 {
+    detail.cleanup = match(error.cleanup) { core::option::Some(value) -> native_errno(value), _ -> 0 };
+    detail.errno = match(error.cause) { ext::http_client::Cause::Io(value) -> native_errno(value), ext::http_client::Cause::Clock(value) -> clock_errno(value), _ -> 0 };
+    let allocation: bool = match(error.cause) { ext::http_client::Cause::AllocationFailed -> true, ext::http_client::Cause::Http(value) -> match(value) { ext::http::Error::AllocationFailed -> true, _ -> false }, _ -> false };
+    if (allocation) { return problem(detail,4,4,2); }
+    if (preparation) {
+        let runtime: i32 = match(error.cause) { ext::http_client::Cause::WorkLimit -> 15, ext::http_client::Cause::Timeout -> 11, ext::http_client::Cause::Clock(value) -> 12, _ -> 0 };
+        if (runtime != 0) { return problem(detail,3,4,runtime); } return problem(detail,2,4,9);
+    }
+    return problem(detail,3,4,10);
+}
+fn batch_error(error: ext::http_batch::Cause, report: &ext::http_batch::Report, detail: &Detail) -> i32 {
+    detail.io = report.stats.io_calls; detail.work = report.stats.work;
+    let ordinal: i32 = 0;
+    while (ordinal < report.len()) {
+        let secondary: core::option::Option<core::io::Error> = match(report.get(ordinal).unwrap()) { ext::http_batch::Outcome::Aborted(value) -> value.cleanup, ext::http_batch::Outcome::Failed(value) -> value.cleanup, _ -> core::option::None() };
+        if (secondary.is_some()) { detail.cleanup = native_errno(secondary.unwrap()); break; } ordinal += 1;
+    }
+    let preparation: bool = match(error) { ext::http_batch::Cause::Preparation -> true, _ -> false };
+    if (preparation) {
+        let index: i32 = 0;
+        while (index < report.len()) {
+            let failed: core::option::Option<ext::http_client::Failure> = match(report.get(index).unwrap()) { ext::http_batch::Outcome::Failed(value) -> core::option::Some(value), _ -> core::option::None() };
+            if (failed.is_some()) { detail.row = index; return client_error(failed.unwrap(),true,detail); } index += 1;
+        }
+        return problem(detail,3,4,19);
+    }
+    detail.errno = match(error) { ext::http_batch::Cause::Clock(value) -> clock_errno(value), ext::http_batch::Cause::Poll(value) -> poll_errno(value), _ -> 0 };
+    let poll_allocation: bool = match(error) { ext::http_batch::Cause::Poll(value) -> match(value) { std::poll::Error::AllocationFailed -> true, _ -> false }, _ -> false };
+    if (poll_allocation) { return problem(detail,4,4,2); }
+    let cause: i32 = match(error) {
+        ext::http_batch::Cause::AllocationFailed -> 2, ext::http_batch::Cause::Timeout -> 11, ext::http_batch::Cause::Clock(value) -> 12,
+        ext::http_batch::Cause::Poll(value) -> 13, ext::http_batch::Cause::OperationLimit -> 14, ext::http_batch::Cause::WorkLimit -> 15,
+        ext::http_batch::Cause::WireLimit -> 16, ext::http_batch::Cause::BodyLimit -> 17, ext::http_batch::Cause::PendingLimit -> 18, _ -> 19
+    };
+    let code: i32 = 3; if (cause == 2) { code = 4; } return problem(detail,code,4,cause);
+}
+fn payloads(report: &ext::http_batch::Report, detail: &Detail) -> core::result::Result<alloc::vec::Vec<Payload>,i32> {
+    detail.io = report.stats.io_calls; detail.work = report.stats.work;
+    let output: alloc::vec::Vec<Payload> = alloc::vec::new();
+    if (output.try_reserve(report.len()).is_err()) { return core::result::Err(problem(detail,4,4,2)); }
+    let index: i32 = 0;
+    while (index < report.len()) {
+        detail.row = index;
+        let item: ext::http_batch::Outcome = report.get(index).unwrap();
+        let complete: core::option::Option<ext::http_client::Response> = match(item) { ext::http_batch::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (complete.is_none()) {
+            let failed: core::option::Option<ext::http_client::Failure> = match(item) { ext::http_batch::Outcome::Failed(value) -> core::option::Some(value), _ -> core::option::None() };
+            let status: i32 = problem(detail,3,4,19); if (failed.is_some()) { status = client_error(failed.unwrap(),false,detail); }
+            output.destroy(); return core::result::Err(status);
+        }
+        let response: ext::http_client::Response = complete.unwrap();
+        if (output.try_push(Payload { status: response.message().head.status, body: response.body() }).is_err()) { output.destroy(); return core::result::Err(problem(detail,4,4,2)); } index += 1;
+    }
+    detail.row = -1; return core::result::Ok(output);
+}
+fn jobs(plan: &Plan, detail: &Detail) -> core::result::Result<alloc::vec::Vec<ext::http_batch::Job>,i32> {
+    let output: alloc::vec::Vec<ext::http_batch::Job> = alloc::vec::new();
+    if (output.try_reserve(plan.rows.len()).is_err()) { return core::result::Err(problem(detail,4,3,2)); }
+    let headers: [ext::http::Field;0] = []; let none = bytes("",0); let index: i32 = 0;
+    while (index < plan.rows.len()) {
+        let row: Row = plan.rows.at(index);
+        let request = ext::http_client::Request { method: bytes("GET",3), target: row.target, authority: row.authority, headers: core::slice::view<ext::http::Field>(headers,0).unwrap(), body: none };
+        if (output.try_push(ext::http_batch::Job { endpoint: row.endpoint, request: request }).is_err()) { output.destroy(); return core::result::Err(problem(detail,4,3,2)); } index += 1;
+    }
+    return core::result::Ok(output);
+}
+// A clock observation bounds admission/publication points; synchronous ZIP work
+// is not interrupted in the middle of encode. Never reset the batch deadline.
+fn observe(deadline: core::time::Deadline, previous: core::time::Instant, detail: &Detail) -> core::result::Result<core::time::Instant,i32> {
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (now.is_err()) { detail.errno = clock_errno(now.unwrap_err()); return core::result::Err(problem(detail,3,6,12)); }
+    let value: core::time::Instant = now.unwrap();
+    if (value.compare(previous) < 0) { return core::result::Err(problem(detail,3,6,12)); }
+    if (deadline.is_expired(value)) { return core::result::Err(problem(detail,3,6,11)); } return core::result::Ok(value);
+}
+fn download(plan: &Plan, options: Options, detail: &Detail) -> core::result::Result<alloc::vec::Vec<u8>,i32> {
+    let staged = jobs(plan,detail); if (staged.is_err()) { return core::result::Err(staged.unwrap_err()); } let pending = staged.unwrap();
+    let now: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (now.is_err()) { pending.destroy(); detail.errno = clock_errno(now.unwrap_err()); return core::result::Err(problem(detail,3,4,12)); }
+    let start: core::time::Instant = now.unwrap(); let deadline = core::time::deadline_after(start,core::time::from_millis(options.timeout)).unwrap();
+    let client = ext::http_client::default_options(); client.request_bytes = 65536; client.response_bytes = options.wire; client.interim_count = 4; client.interim_bytes = 16384; client.io_calls = options.io; client.work = options.work;
+    client.wire.head_bytes = 16384; client.wire.line_bytes = 8192; client.wire.headers = 64; client.wire.body_bytes = options.body; client.wire.trailer_bytes = 4096; client.wire.trailers = 32; client.wire.chunks = 4096;
+    let limits = ext::http_batch::default_limits(); limits.max_jobs = MAX_JOBS; limits.concurrency = options.concurrency; limits.max_pending_bytes = 4194496; limits.max_wire_bytes = options.total_wire; limits.max_body_bytes = options.total_body; limits.operations = options.operations; limits.work = options.total_work;
+    // Batch canonically prepares every request before opening its first socket.
+    // Request/table backing remains live through run_until, then only completed
+    // Response owners back Payload views during ZIP encoding.
+    let completed = ext::http_batch::run_until(pending.as_view(),client,limits,deadline); pending.destroy();
+    if (completed.is_err()) { let error = completed.unwrap_err(); let code: i32 = batch_error(error.cause,error.report.borrow(),detail); error.destroy(); return core::result::Err(code); }
+    let report = completed.unwrap(); let projected = payloads(report.borrow(),detail);
+    if (projected.is_err()) { let code: i32 = projected.unwrap_err(); report.destroy(); return core::result::Err(code); } let selected = projected.unwrap();
+    let before = observe(deadline,start,detail);
+    if (before.is_err()) { selected.destroy(); report.destroy(); return core::result::Err(before.unwrap_err()); }
+    let encoded = archive(plan,selected.as_view(),options,detail); selected.destroy(); report.destroy();
+    if (encoded.is_err()) { return core::result::Err(encoded.unwrap_err()); } let output = encoded.unwrap();
+    let after = observe(deadline,before.unwrap(),detail);
+    if (after.is_err()) { output.destroy(); return core::result::Err(after.unwrap_err()); } return core::result::Ok(output);
+}
+fn execute(options: Options, detail: &Detail) -> i32 {
+    let input = alloc::io::with_limit(options.input).unwrap(); let source = std::stream::stdin();
+    let received = read_input<std::stream::Descriptor>(source.borrow(),input.borrow(),READ_CALLS);
+    if (received.is_err()) {
+        let error: ReadError = received.unwrap_err();
+        let code: i32 = match(error) { ReadError::Allocation -> 4, ReadError::Limit -> 2, _ -> 5 };
+        detail.errno = match(error) { ReadError::Io(value) -> native_errno(value), _ -> 0 }; input.destroy(); return problem(detail,code,2,20);
+    }
+    let prepared = prepare(input.as_bytes(),input.len(),detail);
+    if (prepared.is_err()) { input.destroy(); return prepared.unwrap_err(); } let plan = prepared.unwrap();
+    let staged = download(plan.borrow(),options,detail); plan.destroy(); input.destroy();
+    if (staged.is_err()) { return staged.unwrap_err(); } let output = staged.unwrap();
+    // All sockets, completed Responses and CSV/request owners have ended.
+    // Only the independently encoded ZIP remains during blocking publication.
+    let sink = std::stream::stdout(); let written = publish<std::stream::Descriptor>(sink.borrow(),output.as_slice(),output.len(),WRITE_CALLS); output.destroy();
+    if (written.is_err()) { let failure = written.unwrap_err(); detail.written = failure.completed; detail.errno = native_errno(failure.cause); return problem(detail,5,7,22); } return 0;
+}
+fn process(arguments: std::args::Arguments, detail: &Detail) -> i32 {
+    let options = Options { concurrency: 4, timeout: 5000, input: 65536, body: 1048576, total_body: 8388608, wire: 2097152, total_wire: 16777216, output: 16777216, io: 100000, work: 33554432, total_work: 268435456, operations: 1048576, allow: false, help: false, seen: 0 };
+    if (!parse(arguments,options.borrow())) { return problem(detail,2,1,21); }
+    if (options.help) {
+        let usage = bytes("Usage: fetch-many [--concurrency N] [--timeout-ms N] [--max-input N] [--max-body N] [--max-total-body N] [--max-wire N] [--max-total-wire N] [--max-output N] [--max-io N] [--max-work N] [--max-total-work N] [--max-operations N] [--allow-http-errors] < jobs.csv > bodies.zip\n",274);
+        let sink = std::stream::stdout(); let written = publish<std::stream::Descriptor>(sink.borrow(),usage.values,usage.length,WRITE_CALLS);
+        if (written.is_err()) { let error = written.unwrap_err(); detail.written = error.completed; detail.errno = native_errno(error.cause); return problem(detail,5,7,22); } return 0;
+    }
+    return execute(options,detail);
+}
+fn diagnostic(detail: Detail, status: i32) -> bool {
+    let scratch: [u8;512] = [0;512]; let output = core::fmt::buffer(scratch,0,512).unwrap();
+    output.write_text(text("fetch-many: stage=",18)); output.write_signed(detail.stage as i64,core::fmt::decimal());
+    output.write_text(text(" row=",5)); output.write_signed(detail.row as i64,core::fmt::decimal());
+    output.write_text(text(" status=",8)); output.write_signed(detail.status as i64,core::fmt::decimal());
+    output.write_text(text(" cause=",7)); output.write_signed(detail.cause as i64,core::fmt::decimal());
+    output.write_text(text(" errno=",7)); output.write_signed(detail.errno as i64,core::fmt::decimal());
+    output.write_text(text(" cleanup=",9)); output.write_signed(detail.cleanup as i64,core::fmt::decimal());
+    output.write_text(text(" io=",4)); output.write_unsigned(detail.io,core::fmt::decimal());
+    output.write_text(text(" work=",6)); output.write_unsigned(detail.work,core::fmt::decimal());
+    output.write_text(text(" written=",9)); output.write_signed(detail.written as i64,core::fmt::decimal());
+    output.write_text(text(" exit=",6)); output.write_signed(status as i64,core::fmt::decimal()); output.write_text(text("\n",1));
+    let finished = output.finish(); if (finished.is_err()) { return false; } let sink = std::stream::stderr();
+    return publish<std::stream::Descriptor>(sink.borrow(),scratch,finished.unwrap(),1024).is_ok();
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let detail = Detail { stage: 1, row: -1, status: 0, cause: 21, errno: 0, cleanup: 0, io: 0, work: 0, written: 0 };
+    let captured = std::args::snapshot(1,64,8192); let status: i32 = 0;
+    if (captured.is_err()) { status = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 5, _ -> 2 }; }
+    else { let arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail,status)) { return 5; } return status;
+}

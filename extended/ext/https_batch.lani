@@ -1,0 +1,59 @@
+// Verified HTTPS jobs over the shared HTTP batch scheduler.
+module ext::https_batch;
+import core::io;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_batch;
+import ext::http_client;
+import ext::https_client;
+import ext::openssl_tls;
+
+pub struct Job { endpoint: core::net::SocketAddr, identity: ext::openssl_tls::Identity, request: ext::http_client::Request }
+struct Factory { context: &ext::openssl_tls::Context, options: ext::https_client::Options }
+struct Driver { owner: ext::https_client::Exchange }
+impl Factory { fn borrow(&self) -> &Factory { return self; } }
+
+pub impl ext::http_batch::Driver<ext::https_client::Failure> for Driver {
+    pub fn stats(&self) -> ext::http_client::Stats { return self.owner.stats(); }
+    pub fn interest(&self) -> ext::http_client::Interest { return self.owner.interest(); }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { return self.owner.raw_handle(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,ext::https_client::Failure> { return self.owner.before_wait(); }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,ext::https_client::Failure> { return self.owner.step(ready); }
+    pub fn abort(&self) -> core::result::Result<bool,ext::https_client::Failure> { return self.owner.abort(); }
+}
+pub impl ext::http_batch::Factory<Job,Driver,ext::https_client::Failure> for Factory {
+    // These Job copies borrow their views; the caller retains all backing.
+    pub fn request(&self, job: Job) -> ext::http_client::Request { return job.request; }
+    pub fn begin(&self, prepared: &ext::http_client::Prepared, job: Job) -> core::result::Result<Driver,ext::https_client::Failure> {
+        let result = ext::https_client::begin_with_context_until(prepared,job.endpoint,self.context,job.identity,self.options);
+        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+        return core::result::Ok(Driver { owner: result.unwrap() });
+    }
+    pub fn from_http_failure(&self, error: ext::http_client::Failure) -> ext::https_client::Failure {
+        return ext::https_client::Failure { cause: ext::https_client::Cause::Http(error), stage: ext::https_client::Stage::Prepare, stats: error.stats, tls: ext::https_client::TlsStats { calls: 0, handshakes: 0, reads: 0, writes: 0, shutdowns: 0 }, cleanup: core::option::None() };
+    }
+    pub fn failure_stats(&self, error: ext::https_client::Failure) -> ext::http_client::Stats { return error.stats; }
+    pub fn shared_failure(&self, error: ext::https_client::Failure) -> core::option::Option<ext::http_batch::Cause> {
+        return match(error.cause) {
+            ext::https_client::Cause::Http(detail) -> match(detail.cause) {
+                ext::http_client::Cause::Timeout -> core::option::Some(ext::http_batch::Cause::Timeout),
+                ext::http_client::Cause::Clock(clock) -> core::option::Some(ext::http_batch::Cause::Clock(clock)),
+                _ -> core::option::None()
+            },
+            _ -> core::option::None()
+        };
+    }
+}
+
+// Borrow jobs, their backing views and the context unchanged through return.
+// All HTTP requests are prepared before sockets. Each begun exchange retains
+// its own native context reference and owns its socket/session until cleanup.
+// The result owns typed outcomes; take transfers, destroy releases the rest.
+pub fn run_until(jobs: core::slice::View<Job>, context: &ext::openssl_tls::Context, options: ext::http_client::Options, tls: ext::https_client::Options, limits: ext::http_batch::Limits, deadline: core::time::Deadline)
+    -> core::result::Result<ext::http_batch::Report<ext::https_client::Failure>,ext::http_batch::Failure<ext::https_client::Failure>> {
+    let factory: Factory = Factory { context: context, options: tls };
+    return ext::http_batch::run_with_until<Job,Driver,ext::https_client::Failure,Factory>(jobs,factory.borrow(),options,limits,deadline);
+}

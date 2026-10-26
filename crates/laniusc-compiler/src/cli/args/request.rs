@@ -2,28 +2,33 @@ use std::path::PathBuf;
 
 use super::{
     command::CompileRequest,
+    native_link,
     validation::{
         validate_check_mode,
         validate_descriptor_output,
         validate_emit_and_target,
         validate_language_edition,
+        validate_native_link_mode,
         validate_package_mode,
         validate_source_pack_options,
         validate_source_pack_prepare_options,
     },
 };
-use crate::cli::{
-    common::{
-        CliError,
-        LANIUS_DEFAULT_EMIT_TARGET,
-        LANIUS_LANGUAGE_EDITION,
-        canonical_directory_path,
-        canonical_unique_directory_paths,
-        incompatible_cli_options_error,
-        invalid_cli_argument_count_error,
-        missing_cli_argument_error,
+use crate::{
+    cli::{
+        common::{
+            CliError,
+            LANIUS_DEFAULT_EMIT_TARGET,
+            LANIUS_LANGUAGE_EDITION,
+            canonical_directory_path,
+            canonical_unique_directory_paths,
+            incompatible_cli_options_error,
+            invalid_cli_argument_count_error,
+            missing_cli_argument_error,
+        },
+        source_pack,
     },
-    source_pack,
+    compiler::NativeLinkOptions,
 };
 
 /// Mutable builder used while parsing compile/check flags.
@@ -42,7 +47,9 @@ pub(super) struct CompileRequestBuilder {
     pub(super) target_triple: Option<String>,
     pub(super) language_edition: String,
     pub(super) check_only: bool,
+    pub(super) native_link: Option<NativeLinkOptions>,
     pub(super) source_pack: source_pack::Options,
+    pub(super) source_pack_options_requested: bool,
 }
 
 impl Default for CompileRequestBuilder {
@@ -59,7 +66,9 @@ impl Default for CompileRequestBuilder {
             target_triple: None,
             language_edition: LANIUS_LANGUAGE_EDITION.to_string(),
             check_only: false,
+            native_link: None,
             source_pack: source_pack::Options::default(),
+            source_pack_options_requested: false,
         }
     }
 }
@@ -79,11 +88,23 @@ impl CompileRequestBuilder {
             target_triple,
             language_edition,
             check_only,
+            native_link,
             source_pack,
+            source_pack_options_requested,
         } = self;
 
         validate_emit_and_target(&emit, target_triple.as_deref())?;
         validate_language_edition(&language_edition)?;
+        if native_link.is_some() {
+            validate_native_link_mode(
+                &emit,
+                check_only,
+                &inputs,
+                &stdlib_paths,
+                package_manifest.is_some() || package_lockfile.is_some(),
+                source_pack_options_requested,
+            )?;
+        }
         validate_source_pack_options(&source_pack)?;
         validate_package_mode(
             &inputs,
@@ -173,6 +194,9 @@ impl CompileRequestBuilder {
             &source_pack,
         )?;
         validate_descriptor_output(uses_source_pack, &source_pack)?;
+        let native_link = native_link
+            .map(native_link::canonicalize_options)
+            .transpose()?;
 
         Ok(CompileRequest {
             inputs,
@@ -184,6 +208,7 @@ impl CompileRequestBuilder {
             output,
             emit,
             check_only,
+            native_link,
             source_pack,
             uses_source_pack,
         })

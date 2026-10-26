@@ -130,7 +130,12 @@ pub use semantic_interface::{
     GpuSemanticInterfaceTypeEdge,
     GpuSemanticInterfaceTypeKind,
     GpuSemanticInterfaceTypeRecord,
+    NativeCFunction,
+    NativeCSignature,
+    NativeCType,
 };
+pub use crate::codegen::x86::native::NativeLinkOptions;
+pub(crate) use crate::codegen::x86::native::NativeMainBridge;
 pub(crate) use semantic_interface::{
     IMPLEMENTATION_METHOD_BINDING_U32S,
     IMPLEMENTATION_U32S,

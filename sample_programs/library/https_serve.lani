@@ -1,0 +1,295 @@
+// Bounded sequential HTTPS health/echo service using the shared HTTP codec.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import ext::cli;
+import ext::http;
+import ext::openssl_tls;
+import ext::tls_stream;
+import ext::uri;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+
+enum Error { Arguments, Limit, Allocation, Clock, Timeout, Io(core::io::Error), Http(ext::http::Error), Tls(ext::openssl_tls::Error), Transport(ext::tls_stream::Failure), Output }
+struct Options { endpoint: core::slice::View<u8>, certificate: core::slice::View<u8>, key: core::slice::View<u8>, client_ca: core::option::Option<core::slice::View<u8>>, operands: i32, help: bool, report: bool, requests: i32, timeout: i32, max_request: i32, max_body: i32, max_response: i32, max_head: i32, max_headers: i32, max_chunks: i32, max_io: u64, max_tls: u64, max_work: u64 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Work { used: u64, maximum: u64, response: i32 }
+impl Work { fn borrow(&self) -> &Work { return self; } }
+struct Accept { used: u64, maximum: u64, deadline: core::time::Deadline, last: core::time::Instant }
+impl Accept { fn borrow(&self) -> &Accept { return self; } }
+struct Request { wire: alloc::vec::Vec<u8>, body: alloc::vec::Vec<u8>, head: ext::http::Head }
+impl Request { fn destroy(&self) { self.body.destroy(); self.wire.destroy(); } }
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(bytes,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let bytes = literal(value,count); return core::text::from_utf8_unchecked(bytes.values,bytes.start,bytes.len()); }
+fn eq(left: core::slice::View<u8>, value: str, count: i32) -> bool {
+    if (left.len() != count) { return false; } let right = literal(value,count); let index: i32 = 0;
+    while (index < count) { if (left.get(index).unwrap() != right.get(index).unwrap()) { return false; } index += 1; } return true;
+}
+fn write_output(bytes: core::slice::View<u8>, handle: i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed: i32 = 0; let calls: i32 = 8;
+    while (completed < bytes.len()) {
+        if (calls == 0) { return false; } calls -= 1;
+        let sent = sink.write(bytes.values,bytes.start + completed,bytes.len() - completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count: i32 = sent.unwrap(); if (count <= 0 || count > bytes.len() - completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status: i32, message: core::slice::View<u8>) -> i32 { write_output(message,2); return status; }
+fn tls_error(detail: ext::openssl_tls::Error) -> i32 {
+    return match (detail.cause) {
+        ext::openssl_tls::Cause::AllocationFailed -> report(4,literal("https-serve: allocation failed\n",31)),
+        ext::openssl_tls::Cause::Truncated -> report(3,literal("https-serve: truncated TLS stream\n",34)),
+        ext::openssl_tls::Cause::InvalidLimits -> report(2,literal("https-serve: invalid TLS configuration\n",39)),
+        ext::openssl_tls::Cause::Bounds -> report(2,literal("https-serve: invalid TLS configuration\n",39)),
+        ext::openssl_tls::Cause::Limit -> report(2,literal("https-serve: invalid TLS configuration\n",39)),
+        ext::openssl_tls::Cause::Utf8 -> report(2,literal("https-serve: invalid TLS configuration\n",39)),
+        ext::openssl_tls::Cause::Nul -> report(2,literal("https-serve: invalid TLS configuration\n",39)),
+        _ -> report(3,literal("https-serve: TLS operation failed\n",34))
+    };
+}
+fn error(detail: Error) -> i32 { return match (detail) {
+    Error::Arguments -> report(2,literal("https-serve: invalid arguments\n",31)),
+    Error::Limit -> report(2,literal("https-serve: byte, call or work limit exceeded\n",47)),
+    Error::Allocation -> report(4,literal("https-serve: allocation failed\n",31)),
+    Error::Clock -> report(3,literal("https-serve: monotonic clock failed\n",36)),
+    Error::Timeout -> report(3,literal("https-serve: network timeout\n",29)),
+    Error::Output -> report(5,literal("https-serve: output I/O or call limit failed\n",45)),
+    Error::Io(cause) -> report(3,literal("https-serve: socket operation failed\n",37)),
+    Error::Tls(cause) -> tls_error(cause),
+    Error::Http(cause) -> match (cause) { ext::http::Error::AllocationFailed -> report(4,literal("https-serve: allocation failed\n",31)), ext::http::Error::Limit(n) -> report(2,literal("https-serve: HTTP limit exceeded\n",33)), _ -> report(3,literal("https-serve: invalid or incomplete HTTP request\n",48)) },
+    Error::Transport(failure) -> match (failure.cause) {
+        ext::tls_stream::Cause::InvalidLimits -> report(2,literal("https-serve: invalid limits\n",28)),
+        ext::tls_stream::Cause::AllocationFailed -> report(4,literal("https-serve: allocation failed\n",31)),
+        ext::tls_stream::Cause::Timeout -> report(3,literal("https-serve: network timeout\n",29)),
+        ext::tls_stream::Cause::IoLimit -> error(Error::Limit), ext::tls_stream::Cause::TlsLimit -> error(Error::Limit),
+        ext::tls_stream::Cause::ReadLimit -> error(Error::Limit), ext::tls_stream::Cause::WriteLimit -> error(Error::Limit),
+        ext::tls_stream::Cause::Tls(cause) -> tls_error(cause),
+        _ -> report(3,literal("https-serve: network operation failed\n",38))
+    }
+}; }
+fn charge(work: &Work, amount: u64) -> bool { if (amount > work.maximum - work.used) { return false; } work.used += amount; return true; }
+fn stream_error(stream: &ext::tls_stream::Stream) -> Error {
+    if (stream.last_failure().is_some()) { return Error::Transport(stream.last_failure().unwrap()); }
+    return Error::Io(core::io::Error::InvalidCount);
+}
+fn active(accept: &Accept) -> core::result::Result<i32,Error> {
+    let got = std::clock::monotonic_now(); if (got.is_err()) { return core::result::Err(Error::Clock); }
+    let now = got.unwrap(); if (now.compare(accept.last) < 0) { return core::result::Err(Error::Clock); } accept.last = now;
+    if (accept.deadline.is_expired(now)) { return core::result::Err(Error::Timeout); } return core::result::Ok(0);
+}
+fn accept_call(accept: &Accept) -> core::result::Result<i32,Error> {
+    let checked = active(accept); if (checked.is_err()) { return checked; }
+    if (accept.used == accept.maximum) { return core::result::Err(Error::Limit); } accept.used += 1; return core::result::Ok(0);
+}
+fn accept_until(listener: &std::socket::Socket, accept: &Accept) -> core::result::Result<std::socket::Socket,Error> {
+    while (true) {
+        let charged = accept_call(accept); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+        let accepted = listener.accept(true);
+        let after = active(accept);
+        if (after.is_err()) { if (accepted.is_ok()) { let socket = accepted.unwrap().socket; socket.close(); } return core::result::Err(after.unwrap_err()); }
+        if (accepted.is_ok()) { return core::result::Ok(accepted.unwrap().socket); }
+        let cause: core::io::Error = accepted.unwrap_err().cause;
+        if (core::io::is_interrupted(cause)) { continue; }
+        let would_block: bool = match (cause) { core::io::Error::WouldBlock -> true, _ -> false };
+        if (!would_block) { return core::result::Err(Error::Io(cause)); }
+        let charged = accept_call(accept); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); }
+        let remaining = accept.deadline.remaining(accept.last); let milliseconds: i32 = 2147483647;
+        if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds * 1000 + ((remaining.nanos as u64) + 999999) / 1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
+        let ready = listener.wait_ms(true,false,milliseconds);
+        let after = active(accept); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
+        if (ready.is_err() && !core::io::is_interrupted(ready.unwrap_err())) { return core::result::Err(Error::Io(ready.unwrap_err())); }
+    }
+    return core::result::Err(Error::Timeout);
+}
+fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:literal("",0),name:name,value:value,offset:0 }; }
+fn send(stream: &ext::tls_stream::Stream, options: &Options, work: &Work, line: core::slice::View<u8>, method: core::slice::View<u8>, body: core::slice::View<u8>, allow: core::slice::View<u8>, interim: bool) -> core::result::Result<i32,Error> {
+    if (!charge(work,4 * ((body.len() as u64) + 1024))) { return core::result::Err(Error::Limit); }
+    let limits = ext::http::default_limits(); limits.head_bytes = 16384; limits.headers = 64; limits.body_bytes = options.max_body; if (limits.body_bytes < 3) { limits.body_bytes = 3; }
+    let fields: [ext::http::Field;3] = [field(literal("Content-Type",12),literal("application/octet-stream",24)),field(literal("Connection",10),literal("close",5)),field(literal("Allow",5),allow)];
+    let count: i32 = 2; if (!allow.is_empty()) { count = 3; } if (interim) { count = 0; }
+    let encoded = ext::http::encode_response(line,method,core::slice::view(fields,count).unwrap(),body,limits);
+    if (encoded.is_err()) { return core::result::Err(Error::Http(encoded.unwrap_err())); }
+    let bytes = encoded.unwrap();
+    if (bytes.len() > options.max_response - work.response) { bytes.destroy(); return core::result::Err(Error::Limit); }
+    work.response += bytes.len();
+    let checked = stream.check(); if (checked.is_err()) { bytes.destroy(); return core::result::Err(Error::Transport(checked.unwrap_err())); }
+    let sent = core::io::write_all(stream,bytes.as_slice(),0,bytes.len()); bytes.destroy();
+    if (sent.is_err() || stream.flush().is_err()) { return core::result::Err(stream_error(stream)); }
+    let after = stream.check(); if (after.is_err()) { return core::result::Err(Error::Transport(after.unwrap_err())); }
+    return core::result::Ok(0);
+}
+fn receive(stream: &ext::tls_stream::Stream, options: &Options, work: &Work) -> core::result::Result<core::option::Option<Request>,Error> {
+    let limits = ext::http::default_limits(); limits.head_bytes = options.max_head; limits.headers = options.max_headers; limits.chunks = options.max_chunks; limits.trailers = 16; limits.body_bytes = options.max_body;
+    let wire: alloc::vec::Vec<u8> = alloc::vec::new();
+    if (options.max_request == 0) { return core::result::Err(Error::Limit); }
+    let made = ext::http::cursor(ext::http::CursorMode::Request,limits,options.max_request,work.maximum - work.used);
+    if (made.is_err()) { return core::result::Err(Error::Http(made.unwrap_err())); }
+    let cursor = made.unwrap(); let charged: u64 = 0; let eof: bool = false; let scratch: [u8;1024] = [0;1024];
+    while (true) {
+        let checked = stream.check(); if (checked.is_err()) { wire.destroy(); return core::result::Err(Error::Transport(checked.unwrap_err())); }
+        let scanned = cursor.advance(wire.as_view(),literal("",0),eof); let used: u64 = cursor.work(); let paid: bool = charge(work,used - charged); charged = used;
+        if (!paid) { wire.destroy(); return core::result::Err(Error::Limit); }
+        if (scanned.is_err()) { wire.destroy(); return core::result::Err(Error::Http(scanned.unwrap_err())); }
+        let event = scanned.unwrap(); let is_head: bool = match (event) { ext::http::Scan::HeadReady(v) -> true, _ -> false };
+        if (is_head) {
+            let end: i32 = match (event) { ext::http::Scan::HeadReady(v) -> v.head_end, _ -> 0 };
+            if (!charge(work,4 * (end as u64))) { wire.destroy(); return core::result::Err(Error::Limit); }
+            let parsed = ext::http::parse_request_head(wire.as_view(),limits); if (parsed.is_err()) { wire.destroy(); return core::result::Err(Error::Http(parsed.unwrap_err())); }
+            let head = parsed.unwrap();
+            if (head.content_length > options.max_body || (head.content_length >= 0 && head.content_length > options.max_request - head.raw.len())) { wire.destroy(); return core::result::Err(Error::Limit); }
+            let headers = head.headers(); let expectations: i32 = 0; let continued: bool = true;
+            while (true) { let next = headers.next(); if (next.is_none()) { break; } let value = next.unwrap(); if (ext::http::equal_name(value.name,literal("Expect",6))) { expectations += 1; if (!ext::http::equal_name(value.value,literal("100-continue",12))) { continued = false; } } }
+            if (head.version == 11 && (expectations > 1 || (expectations == 1 && !continued))) {
+                let sent = send(stream,options,work,literal("HTTP/1.1 417 Expectation Failed",31),head.method,literal("",0),literal("",0),false); wire.destroy();
+                if (sent.is_err()) { return core::result::Err(sent.unwrap_err()); } return core::result::Ok(core::option::None());
+            }
+            // A client that has already started its body no longer needs 100.
+            let empty: bool = match (head.kind) { ext::http::BodyKind::Empty -> true, _ -> false };
+            if (expectations == 1 && head.version == 11 && wire.len() == head.raw.len() && head.content_length != 0 && !empty) {
+                let sent = send(stream,options,work,literal("HTTP/1.1 100 Continue",21),head.method,literal("",0),literal("",0),true);
+                if (sent.is_err()) { wire.destroy(); return core::result::Err(sent.unwrap_err()); }
+            }
+            continue;
+        }
+        let complete: bool = match (event) { ext::http::Scan::Boundary(v) -> true, _ -> false };
+        if (complete) {
+            let boundary: ext::http::FrameBoundary = match (event) { ext::http::Scan::Boundary(v) -> v, _ -> ext::http::FrameBoundary { consumed:0,decoded_length:0 } };
+            if (boundary.consumed != wire.len() || boundary.decoded_length < 0) { wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Malformed(boundary.consumed))); }
+            if (!charge(work,4 * (wire.len() as u64) + 4 * (limits.head_bytes as u64) * ((limits.trailers as u64) + 1))) { wire.destroy(); return core::result::Err(Error::Limit); }
+            let parsed = ext::http::parse_request(wire.as_view(),eof,limits); if (parsed.is_err()) { wire.destroy(); return core::result::Err(Error::Http(parsed.unwrap_err())); }
+            let message = parsed.unwrap();
+            if (message.consumed != boundary.consumed || message.decoded_length != boundary.decoded_length) { wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Bounds)); }
+            if (!charge(work,2 * (message.decoded_length as u64))) { wire.destroy(); return core::result::Err(Error::Limit); }
+            let allocated = alloc::vec::with_capacity<u8>(message.decoded_length); if (allocated.is_err()) { wire.destroy(); return core::result::Err(Error::Allocation); }
+            let body = allocated.unwrap(); if (body.try_resize(message.decoded_length,0 as u8).is_err()) { body.destroy(); wire.destroy(); return core::result::Err(Error::Allocation); }
+            let decoded = ext::http::decode_into(message,body.as_view());
+            if (decoded.is_err()) { body.destroy(); wire.destroy(); return core::result::Err(Error::Http(decoded.unwrap_err())); }
+            if (decoded.unwrap() != message.decoded_length) { body.destroy(); wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Bounds)); }
+            let checked = stream.check(); if (checked.is_err()) { body.destroy(); wire.destroy(); return core::result::Err(Error::Transport(checked.unwrap_err())); }
+            return core::result::Ok(core::option::Some(Request { wire:wire,body:body,head:message.head }));
+        }
+        let capacity: i32 = options.max_request - wire.len(); let amount: i32 = capacity; if (amount > 1024) { amount = 1024; } if (amount == 0) { amount = 1; }
+        let got = stream.read(scratch,0,amount); if (got.is_err()) { wire.destroy(); return core::result::Err(stream_error(stream)); }
+        let count: i32 = got.unwrap(); if (count == 0) { eof = true; continue; }
+        if (count > capacity) { wire.destroy(); return core::result::Err(Error::Limit); }
+        if (wire.try_extend(core::slice::view(scratch,count).unwrap()).is_err()) { wire.destroy(); return core::result::Err(Error::Allocation); }
+    }
+    return core::result::Err(Error::Arguments);
+}
+fn exchange(stream: &ext::tls_stream::Stream, options: &Options, work: &Work) -> core::result::Result<i32,Error> {
+    let received = receive(stream,options,work); if (received.is_err()) { return core::result::Err(received.unwrap_err()); }
+    if (received.unwrap().is_none()) { return core::result::Ok(0); }
+    let request = received.unwrap().unwrap(); let method = request.head.method;
+    let body = literal("",0); let allow = literal("",0); let line = literal("HTTP/1.1 404 Not Found",22);
+    let origin: bool = !request.head.target.is_empty() && request.head.target.get(0).unwrap() == 47;
+    let reference = ext::uri::parse_with_limit(request.head.target,8192);
+    if (!origin || reference.is_err() || reference.unwrap().authority.is_some()) { line = literal("HTTP/1.1 421 Misdirected Request",32); }
+    else {
+        let path = reference.unwrap().path; let health: bool = eq(path,"/health",7); let echo: bool = eq(path,"/echo",5);
+        if (health || echo) {
+            let get: bool = eq(method,"GET",3); let head: bool = eq(method,"HEAD",4); let post: bool = eq(method,"POST",4);
+            if (health && (get || head)) { line = literal("HTTP/1.1 200 OK",15); if (!head) { body = literal("ok\n",3); } }
+            else { if (echo && post) { line = literal("HTTP/1.1 200 OK",15); body = request.body.as_view(); }
+                else { line = literal("HTTP/1.1 405 Method Not Allowed",31); if (health) { allow = literal("GET, HEAD",9); } else { allow = literal("POST",4); } }
+            }
+        }
+    }
+    let sent = send(stream,options,work,line,method,body,allow,false); request.destroy(); return sent;
+}
+fn report_stats(stats: ext::tls_stream::Stats, accepted: u64, work: &Work, failed: bool) -> bool {
+    let scratch: [u8;384] = [0;384]; let output = core::fmt::buffer(scratch,0,384).unwrap();
+    output.write_text(text("received=",9)); output.write_unsigned(stats.read_bytes,core::fmt::decimal()); output.write_text(text(" accepted=",10)); output.write_unsigned(stats.accepted_bytes,core::fmt::decimal()); output.write_text(text(" sent=",6)); output.write_unsigned(stats.written_bytes,core::fmt::decimal()); output.write_text(text(" response=",10)); output.write_unsigned(work.response as u64,core::fmt::decimal()); output.write_text(text(" io=",4)); output.write_unsigned(accepted + stats.io_calls,core::fmt::decimal()); output.write_text(text(" tls=",5)); output.write_unsigned(stats.tls_calls,core::fmt::decimal()); output.write_text(text(" work=",6)); output.write_unsigned(work.used,core::fmt::decimal()); output.write_text(text(" failed=",8)); output.write_unsigned(failed as u64,core::fmt::decimal()); output.write_text(text("\n",1));
+    let done = output.finish(); return done.is_ok() && write_output(core::slice::view(scratch,done.unwrap()).unwrap(),2);
+}
+fn serve_one(listener: &std::socket::Socket, server: &ext::openssl_tls::ServerContext, options: &Options) -> core::result::Result<i32,Error> {
+    let now = std::clock::monotonic_now(); if (now.is_err()) { return core::result::Err(Error::Clock); }
+    let shifted = core::time::deadline_after(now.unwrap(),core::time::from_millis(options.timeout as u64)); if (shifted.is_err()) { return core::result::Err(Error::Clock); }
+    let accept: Accept = Accept { used:0,maximum:options.max_io,deadline:shifted.unwrap(),last:now.unwrap() };
+    let accepted = accept_until(listener,accept.borrow()); if (accepted.is_err()) { return core::result::Err(accepted.unwrap_err()); }
+    let socket = accepted.unwrap(); if (accept.used == options.max_io) { socket.close(); return core::result::Err(Error::Limit); }
+    let limits = ext::tls_stream::default_limits(); limits.io_calls = options.max_io - accept.used; limits.tls_calls = options.max_tls; limits.read_bytes = (options.max_request as u64) + 1; limits.written_bytes = options.max_response as u64;
+    let made = ext::tls_stream::accept_connected_until(socket,server,limits,shifted.unwrap()); if (made.is_err()) { return core::result::Err(Error::Transport(made.unwrap_err())); }
+    let stream = made.unwrap(); let work: Work = Work { used:0,maximum:options.max_work,response:0 };
+    let result = exchange(stream.borrow(),options,work.borrow());
+    if (result.is_ok()) { let shutdown = stream.shutdown(); if (shutdown.is_err()) { result = core::result::Err(Error::Transport(shutdown.unwrap_err())); } }
+    if (result.is_ok()) { let checked = stream.check(); if (checked.is_err()) { result = core::result::Err(Error::Transport(checked.unwrap_err())); } }
+    let closed = stream.close(); if (closed.is_err() && result.is_ok()) { result = core::result::Err(Error::Transport(closed.unwrap_err())); }
+    if (options.report && !report_stats(stream.stats(),accept.used,work.borrow(),result.is_err())) { return core::result::Err(Error::Output); }
+    return result;
+}
+fn service(options: &Options) -> core::result::Result<i32,Error> {
+    let endpoint = core::net::parse_socket(options.endpoint); if (endpoint.is_err() || options.certificate.is_empty() || options.key.is_empty()) { return core::result::Err(Error::Arguments); }
+    if (options.client_ca.is_some() && options.client_ca.unwrap().is_empty()) { return core::result::Err(Error::Arguments); }
+    let authentication: ext::openssl_tls::ClientAuthentication = ext::openssl_tls::ClientAuthentication::Unauthenticated;
+    if (options.client_ca.is_some()) { authentication = ext::openssl_tls::ClientAuthentication::Required(ext::openssl_tls::Trust::CaFile(options.client_ca.unwrap())); }
+    let created = ext::openssl_tls::new_server(options.certificate,options.key,literal("",0),authentication,ext::openssl_tls::default_limits());
+    if (created.is_err()) { return core::result::Err(Error::Tls(created.unwrap_err())); } let server = created.unwrap();
+    let family = match (endpoint.unwrap()) { core::net::SocketAddr::V4(v) -> std::socket::Family::Ipv4, core::net::SocketAddr::V6(v) -> std::socket::Family::Ipv6 };
+    let opened = std::socket::create(family,std::socket::Kind::Tcp,true); if (opened.is_err()) { server.destroy(); return core::result::Err(Error::Io(opened.unwrap_err())); } let listener = opened.unwrap();
+    let configured: core::result::Result<i32,core::io::Error> = core::result::Ok(0);
+    if (match(family) { std::socket::Family::Ipv6 -> true, _ -> false }) { configured = listener.set_option(std::socket::Setting::Ipv6Only,1); }
+    if (configured.is_ok()) { configured = listener.set_option(std::socket::Setting::ReuseAddress,1); }
+    if (configured.is_ok()) { configured = listener.bind(endpoint.unwrap()); } if (configured.is_ok()) { configured = listener.listen(16); }
+    if (configured.is_err()) { listener.close(); server.destroy(); return core::result::Err(Error::Io(configured.unwrap_err())); }
+    let actual = listener.local_addr(); if (actual.is_err()) { listener.close(); server.destroy(); return core::result::Err(Error::Io(actual.unwrap_err())); }
+    let startup: [u8;96] = [0;96]; let formatted = actual.unwrap().format_into(core::slice::view(startup,95).unwrap());
+    if (formatted.is_err()) { listener.close(); server.destroy(); return core::result::Err(Error::Arguments); } let length = formatted.unwrap(); startup[length] = 10;
+    if (!write_output(core::slice::view(startup,length + 1).unwrap(),1)) { listener.close(); server.destroy(); return core::result::Err(Error::Output); }
+    let result: core::result::Result<i32,Error> = core::result::Ok(0); let served: i32 = 0;
+    while (served < options.requests) { result = serve_one(listener.borrow(),server.borrow(),options); if (result.is_err()) { break; } served += 1; }
+    let closed = listener.close(); server.destroy(); if (closed.is_err() && result.is_ok()) { result = core::result::Err(Error::Io(closed.unwrap_err())); } return result;
+}
+fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
+    if (item.id == 1) { options.help = true; return true; } if (item.id == 2) { options.report = true; return true; }
+    if (item.id == 14) { options.client_ca = core::option::Some(item.value.unwrap().bytes); return true; }
+    let bytes = item.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(bytes.values,bytes.start,bytes.len());
+    if (parsed.is_err() || bytes.is_empty() || parsed.unwrap() > 2147483647 as u64) { return false; } let value: u64 = parsed.unwrap();
+    if (item.id == 3) { if (value < 1 || value > 64) { return false; } options.requests = value as i32; }
+    if (item.id == 4) { if (value > 60000) { return false; } options.timeout = value as i32; }
+    if (item.id >= 5 && item.id <= 7 && value > 16777216) { return false; }
+    if (item.id == 5) { options.max_request = value as i32; } if (item.id == 6) { options.max_body = value as i32; } if (item.id == 7) { options.max_response = value as i32; }
+    if (item.id == 8) { options.max_io = value; } if (item.id == 9) { options.max_tls = value; } if (item.id == 10) { options.max_work = value; }
+    if (item.id == 11) { if (value > 65536) { return false; } options.max_head = value as i32; }
+    if (item.id == 12) { if (value > 1024) { return false; } options.max_headers = value as i32; }
+    if (item.id == 13) { if (value > 65536) { return false; } options.max_chunks = value as i32; } return true;
+}
+fn operand(options: &Options, bytes: core::slice::View<u8>) -> bool {
+    if (options.operands == 0) { options.endpoint = bytes; } if (options.operands == 1) { options.certificate = bytes; } if (options.operands == 2) { options.key = bytes; }
+    options.operands += 1; return options.operands <= 3;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let specs: [ext::cli::Spec;14] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag }, ext::cli::Spec { id:2,long:literal("report",6),short:0,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:3,long:literal("requests",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:4,long:literal("timeout",7),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:5,long:literal("max-request",11),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:6,long:literal("max-body",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:7,long:literal("max-response",12),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:8,long:literal("max-io",6),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:9,long:literal("max-tls",7),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:10,long:literal("max-work",8),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:11,long:literal("max-head",8),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:12,long:literal("max-headers",11),short:0,arity:ext::cli::Arity::Required }, ext::cli::Spec { id:13,long:literal("max-chunks",10),short:0,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:14,long:literal("require-client-ca",17),short:0,arity:ext::cli::Arity::Required }
+    ];
+    let options: Options = Options { endpoint:literal("",0),certificate:literal("",0),key:literal("",0),client_ca:core::option::None(),operands:0,help:false,report:false,requests:1,timeout:5000,max_request:2097152,max_body:1048576,max_response:2097152,max_head:16384,max_headers:64,max_chunks:65536,max_io:65536,max_tls:32768,max_work:67108864 };
+    let parser = ext::cli::parser(values.as_view(),core::slice::view(specs,14).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    while (true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return error(Error::Arguments); } let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let valid: bool = match (next.unwrap()) { ext::cli::Event::Option(item) -> apply(options.borrow(),item), ext::cli::Event::Operand(item) -> operand(options.borrow(),item.bytes) }; if (!valid) { return error(Error::Arguments); }
+    }
+    if (options.help) { if (!write_output(literal("Usage: https-serve ADDRESS CERT_CHAIN KEY [OPTIONS]\nOptions: --requests N --timeout MS --max-request N --max-body N --max-response N\n         --max-io N --max-tls N --max-work N --max-head N --max-headers N\n         --max-chunks N --report --require-client-ca FILE\n",265),1)) { return error(Error::Output); } return 0; }
+    if (options.operands != 3) { return error(Error::Arguments); } let result = service(options.borrow()); if (result.is_err()) { return error(result.unwrap_err()); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return report(5,literal("https-serve: cannot ignore SIGPIPE\n",35)); }
+    let captured = std::args::snapshot(1,48,16384); if (captured.is_err()) { return match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> error(Error::Allocation), _ -> error(Error::Arguments) }; }
+    let values = captured.unwrap(); let status: i32 = arguments(values); values.destroy(); return status;
+}

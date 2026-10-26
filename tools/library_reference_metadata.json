@@ -16,8 +16,10 @@
         "docs/stdlib-binary-heap.md",
         "docs/stdlib-cursor-integration.md",
         "docs/stdlib-heap-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-heap.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::bitset": {
       "guides": [
@@ -35,6 +37,47 @@
         "docs/stdlib-clone.md",
         "docs/stdlib-owning-iterators.md"
       ]
+    },
+    "alloc::clone_binary_heap": {
+      "guides": [
+        "docs/stdlib-clone-binary-heap.md",
+        "docs/stdlib-owning-heap.md"
+      ],
+      "note": "Opt-in recursive heap cloning and explicit destruction execute on Linux x86_64 through the GPU compiler and preserve Min/Max order. All five focused groups pass, covering independent nested owners, priority multiplicities, empty/zero-sized values, 13 typed allocation failures, 16 owned-error paths and all 96 reached owned-error allocations. Ordinary inherent collection methods retain their documented shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+    },
+    "alloc::clone_deque": {
+      "guides": [
+        "docs/stdlib-clone-deque.md"
+      ],
+      "note": "Opt-in recursive deque cloning and explicit destruction execute on Linux x86_64 through the production GPU compiler. All four focused groups pass, with 379 logical ring cases, 13 reached nested allocation failures, six owned-error paths and 33 owned-error allocation failures. Ordinary inherent Deque methods retain their documented shallow policy; the guide defines actual-owner and borrowed-alias cleanup."
+    },
+    "alloc::clone_hash_map": {
+      "guides": [
+        "docs/stdlib-clone-hash-map.md",
+        "docs/stdlib-owning-hash.md"
+      ],
+      "note": "Opt-in recursive hash-map cloning and explicit key/value destruction execute on Linux x86_64 through the GPU compiler. All four focused groups pass, covering independent nested owners, collisions/tombstones, typed rollback, 14 reached allocation failures, 18 owned key/value errors and changed key identity. Ordinary inherent collection methods retain their documented shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+    },
+    "alloc::clone_hash_set": {
+      "guides": [
+        "docs/stdlib-clone-hash-set.md",
+        "docs/stdlib-owning-hash.md"
+      ],
+      "note": "Opt-in deep HashSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Three focused groups pass, including 557 sequence/failure/identity cases, six owned errors, all 39 reached allocation failures, independent String owners, empty and zero-sized keys. Ordinary inherent set methods retain their shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+    },
+    "alloc::clone_tree_map": {
+      "guides": [
+        "docs/stdlib-clone-tree-map.md",
+        "docs/stdlib-owning-tree.md"
+      ],
+      "note": "Opt-in recursive ordered-map cloning and explicit key/value destruction execute on Linux x86_64 through the production GPU compiler. All five focused groups pass, covering independent nested owners, sorted staging, transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures, 12 owned key/value errors and three changed-key cases. Ordinary inherent TreeMap methods retain their documented shallow policy; unrelated generic replay dependencies remain separate. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+    },
+    "alloc::clone_tree_set": {
+      "guides": [
+        "docs/stdlib-clone-tree-set.md",
+        "docs/stdlib-owning-tree.md"
+      ],
+      "note": "Opt-in deep TreeSet cloning and explicit destruction execute on Linux x86_64 through the GPU compiler. Five focused groups pass, including independent String owners, a 512-state ordered model, observable O(n log n) construction, nine reached allocation failures, typed owned errors and changed-key checks. Ordinary inherent set methods retain their shallow policy. Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::clone_vec": {
       "guides": [
@@ -58,15 +101,19 @@
       "guides": [
         "docs/stdlib-hash-collections.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-hash.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::hash_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-hash.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::io": {
       "guides": [
@@ -88,15 +135,19 @@
       "guides": [
         "docs/stdlib-tree-map.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-tree.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::tree_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
-        "docs/stdlib-iterator-collection-sinks.md"
-      ]
+        "docs/stdlib-iterator-collection-sinks.md",
+        "docs/stdlib-owning-tree.md"
+      ],
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
     },
     "alloc::vec": {
       "guides": [
@@ -110,11 +161,6 @@
     "core::adler32": {
       "guides": [
         "docs/stdlib-adler32.md"
-      ]
-    },
-    "core::aes": {
-      "guides": [
-        "docs/core-aes.md"
       ]
     },
     "core::base64": {
@@ -148,11 +194,6 @@
         "docs/stdlib-calendar.md"
       ]
     },
-    "core::chacha20": {
-      "guides": [
-        "docs/stdlib-chacha20.md"
-      ]
-    },
     "core::char": {
       "guides": [
         "docs/stdlib-unicode.md"
@@ -160,8 +201,16 @@
     },
     "core::clone": {
       "guides": [
-        "docs/stdlib-clone.md"
+        "docs/stdlib-clone.md",
+        "docs/stdlib-clone-values.md"
       ]
+    },
+    "core::clone_values": {
+      "guides": [
+        "docs/stdlib-clone-values.md",
+        "docs/compiler-empty-enum-layout.md"
+      ],
+      "note": "Opt-in scalar and structural cloning executes on Linux x86_64 through the GPU compiler. Five native groups pass: fourteen exact scalar types with true empty Infallible errors, active-only Option/Result cloning, Pair rollback, nested String/Vec owners, minimal bounds, eighteen callback cases, fourteen owned errors, all 45 reached allocation failures and four source rejections. Scalar Destroy does nothing because scalars own no resource; wrapper Destroy releases only active owners. No implicit moves, Drop or pointer/view owner implementations."
     },
     "core::cmp": {
       "guides": [
@@ -271,8 +320,12 @@
         "docs/compiler-iterator-assignment-context.md",
         "docs/stdlib-iterator-transfer.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-iterators.md"
-      ]
+        "docs/stdlib-owning-iterators.md",
+        "docs/stdlib-iterator-sources.md",
+        "docs/stdlib-iterator-lookahead.md",
+        "docs/stdlib-column-extrema.md"
+      ],
+      "note": "Peekable borrows its upstream cursor and exposes borrowed shallow observations. For owning sources, cached-item recovery transfers that item's cleanup authority; finish rejects a populated cache or closes only the adapter without polling upstream. Position search uses relative checked u64 indices; minimum keeps the first tied representative and maximum the last. Reductions retain the existing caller-managed ownership policy; the guides define source resumption, callback order, overflow and focused native evidence."
     },
     "core::math": {
       "guides": [
@@ -316,11 +369,6 @@
         "docs/stdlib-paths.md"
       ]
     },
-    "core::poly1305": {
-      "guides": [
-        "docs/stdlib-poly1305.md"
-      ]
-    },
     "core::random": {
       "guides": [
         "docs/stdlib-randomness.md"
@@ -346,18 +394,6 @@
       "guides": [
         "docs/stdlib-fixed-capacity.md",
         "docs/stdlib-cursor-integration.md"
-      ]
-    },
-    "core::sha256": {
-      "guides": [
-        "docs/stdlib-sha256.md",
-        "docs/stdlib-hash-bytes.md"
-      ]
-    },
-    "core::sha512": {
-      "guides": [
-        "docs/stdlib-sha512.md",
-        "docs/stdlib-hash-bytes.md"
       ]
     },
     "core::slice": {
@@ -494,10 +530,11 @@
         "docs/stdlib-iterator-transfer.md"
       ]
     },
-    "ext::aes_gcm": {
+    "ext::archive_index": {
       "guides": [
-        "docs/extended-aes-gcm.md"
-      ]
+        "docs/extended-archive-index.md"
+      ],
+      "note": "Persistent immutable ZIP snapshots and ordinal catalogs execute through SQLite on Linux x86_64/glibc. Seven focused native groups cover binary duplicate names and keys, all-entry CRC preflight, independent owners, pinned read consistency, explicit transaction uncertainty, native faults and 29 import plus 23 read allocation failures. The real archive-index program imports, lists, reads and exports a measured 1,024-entry, 8 MiB expanded archive."
     },
     "ext::audio": {
       "guides": [
@@ -519,12 +556,6 @@
         "docs/extended-cbor.md"
       ]
     },
-    "ext::chacha20_poly1305": {
-      "guides": [
-        "docs/extended-chacha20-poly1305.md",
-        "docs/extended-seal-bytes.md"
-      ]
-    },
     "ext::cli": {
       "guides": [
         "docs/extended-cli.md"
@@ -542,8 +573,18 @@
     },
     "ext::csv": {
       "guides": [
-        "docs/extended-csv.md"
-      ]
+        "docs/extended-csv.md",
+        "docs/extended-csv-write.md",
+        "docs/extended-csv-rewrite.md"
+      ],
+      "note": "Reusable record construction, complete preflight and the shared canonical encoding cursor execute through the GPU compiler on Linux x86_64. Staged growth preserves contents, capacities and borrowed views on allocation failure, including self-alias append. Legacy materializing encoders share the same quoting cursor; their focused regression groups pass."
+    },
+    "ext::csv_write": {
+      "guides": [
+        "docs/extended-csv-write.md",
+        "docs/extended-csv-rewrite.md"
+      ],
+      "note": "Bounded generic stream writing executes on Linux x86_64 with complete preflight, a fixed 1,024-element byte scratch buffer, explicit output/call limits, exact confirmed partial progress and no implicit flush. All five focused groups pass through separate receipts, including six staged allocation failures and 4,096 allocation-free record reuses. The real column rewrite program also passes all five groups. Explicit result types avoid documented compiler inference dependencies."
     },
     "ext::decimal": {
       "guides": [
@@ -592,12 +633,6 @@
         "docs/extended-dns-client.md"
       ]
     },
-    "ext::ed25519": {
-      "guides": [
-        "docs/extended-ed25519.md",
-        "docs/extended-sign-bytes.md"
-      ]
-    },
     "ext::geometry": {
       "guides": [
         "docs/extended-geometry.md"
@@ -608,28 +643,33 @@
         "docs/extended-glob.md"
       ]
     },
-    "ext::hkdf_sha256": {
-      "guides": [
-        "docs/extended-hmac-hkdf.md",
-        "docs/extended-derive-key.md"
-      ]
-    },
-    "ext::hmac_sha256": {
-      "guides": [
-        "docs/extended-hmac-hkdf.md",
-        "docs/extended-derive-key.md"
-      ]
-    },
     "ext::http": {
       "guides": [
         "docs/extended-http.md",
         "docs/extended-http-cursor.md"
       ]
     },
+    "ext::http_batch": {
+      "guides": [
+        "docs/extended-http-batch.md",
+        "docs/extended-http-batch-testing.md",
+        "docs/extended-fetch-many.md"
+      ],
+      "note": "Bounded concurrent cleartext HTTP uses one thread and a reusable std::poll PollSet over canonical Prepared/Exchange owners. All requests are prepared before sockets; input-order outcomes retain successful responses across global failure and transfer individually through Report.take. One common deadline, concurrency, pending/completed logical byte caps, scheduler operations and reserved aggregate protocol work are explicit. Logical retention caps exclude allocator capacities, temporary candidates and RSS. All seven batch groups and all five fetch-many application groups pass across separate native Linux x86-64 receipts, including causal overlap, partial outcomes, limits, reached-allocation cleanup and queued admission after consecutive begin failures without an intervening blocking poll. The 64-job application scale control peaks at four sockets; its allocation/requested-byte measurements are finite trace evidence, not RSS or throughput guarantees. TLS resumability and threads remain separate work."
+    },
     "ext::http_client": {
       "guides": [
-        "docs/extended-http-client.md"
-      ]
+        "docs/extended-http-client.md",
+        "docs/extended-http-exchange-testing.md",
+        "docs/extended-http-batch.md",
+        "docs/extended-fetch-many.md"
+      ],
+      "note": "Prepared copies and validates all request backing without opening a socket; begin transfers that owner into a resumable Exchange. Caller-driven steps never poll and perform at most one active network leaf, with 1024-byte send/receive quanta, explicit readiness and one absolute deadline. Manual owners transfer one Response or release once on failure/abort. exchange_until drives this same engine. All five focused direct Exchange groups (83 cases, including both 12/14-position reached-allocation sweeps) and all six synchronous regression groups (188 cases) pass across separate native Linux x86-64 receipts after refactoring. This cleartext numeric-endpoint profile does not establish resumable TLS or worker threads.",
+      "declarations": {
+        "prepare_until": "Canonical request preflight and owned staging without sockets; successful Prepared owners must be consumed with begin or destroyed.",
+        "begin_until": "Preparation followed by consuming Prepared.begin; socket opening only, with connect and HTTP progress performed by Exchange.step.",
+        "exchange_until": "Synchronous driver over the shared Prepared/Exchange engine, charging poll participation against the same cumulative deadline and quotas."
+      }
     },
     "ext::http_server": {
       "guides": [
@@ -656,6 +696,13 @@
         "docs/extended-kv.md"
       ]
     },
+    "ext::lexer": {
+      "guides": [
+        "docs/extended-lexer.md",
+        "docs/extended-lex-scan.md"
+      ],
+      "note": "Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-prefix search. The longest byte span wins, with declaration order resolving ties; skip rules consume input and empty winners or unmatched input are terminal errors. Cursors borrow the compiled Lexer and validated immutable input, and tokens borrow input bytes. Construction, input, step, token, search-call and reserved VM-allowance limits are explicit; the guides define allocation costs, work-counter scope and the current execution evidence."
+    },
     "ext::linalg": {
       "guides": [
         "docs/extended-linalg.md"
@@ -666,10 +713,23 @@
         "docs/extended-log.md"
       ]
     },
-    "ext::p256": {
+    "ext::openssl_digest": {
       "guides": [
-        "docs/extended-p256.md"
-      ]
+        "docs/extended-openssl-digest.md",
+        "docs/library-native-c.md",
+        "docs/extended-openssl-hash.md"
+      ],
+      "note": "Digests execute through OpenSSL 3 EVP on Linux x86_64/glibc with checked native C linking and an explicit libcrypto dependency. The raw extern declarations require caller-managed native pointer and lifetime contracts."
+    },
+    "ext::openssl_tls": {
+      "guides": [
+        "docs/extended-openssl-tls.md",
+        "docs/extended-openssl-tls-server.md",
+        "docs/extended-openssl-mutual-tls.md",
+        "docs/extended-https-mutual-tls.md",
+        "docs/library-native-c.md"
+      ],
+      "note": "Client, server and mutual TLS use OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Client credentials preserve mandatory server chain and DNS/IP verification. Server policy explicitly selects Unauthenticated or Required trust; required sessions check native client purpose, verification success and certificate presence, with session caching and tickets disabled. Certificate admission does not assign an application principal or authorize routes. Both roles share noninteractive credential loading and native passphrase cleansing. Manual sessions borrow connected nonblocking sockets; callers supply deadlines and SIGPIPE policy. Linked guides define later-alert handling, native resource bounds and separate execution receipts."
     },
     "ext::parse": {
       "guides": [
@@ -698,17 +758,21 @@
     },
     "ext::regex": {
       "guides": [
-        "docs/extended-regex.md"
-      ]
+        "docs/extended-regex.md",
+        "docs/extended-regex-text.md",
+        "docs/extended-lexer.md"
+      ],
+      "note": "The read-only search_work_limit accessor exposes the existing per-search VM allowance for aggregate adapters. Validated Input and anchored longest-prefix methods reuse the existing ordered Pike engine while preserving full-input assertions and capture priority on equal endpoints; ordinary find and Matches retain leftmost-first behavior. The lexer guide defines endpoint selection and borrowed input lifetime. Bounded split/replacement continue to reuse the canonical Matches cursor."
+    },
+    "ext::regex_text": {
+      "guides": [
+        "docs/extended-regex-text.md"
+      ],
+      "note": "Borrowed split fields and independent owned literal/numeric-template replacement execute through the GPU compiler on Linux x86_64. All six focused groups pass through separate receipts: direct contracts, 288 independent nonempty reference cases, 89 explicit zero-width/template/budget cases, all 77 reached library allocation failures, 24 CLI cases, and all 43 reached CLI allocation failures plus four I/O schedules. Search budgets reserve complete configured VM allowances; they do not count every CPU instruction or I/O call. Other targets remain unverified."
     },
     "ext::schema": {
       "guides": [
         "docs/extended-schema.md"
-      ]
-    },
-    "ext::service_identity": {
-      "guides": [
-        "docs/extended-service-identity.md"
       ]
     },
     "ext::settings": {
@@ -725,6 +789,15 @@
       "guides": [
         "docs/extended-signal.md"
       ]
+    },
+    "ext::sqlite": {
+      "guides": [
+        "docs/extended-sqlite.md",
+        "docs/library-native-c.md",
+        "docs/extended-sqlite-kv.md",
+        "docs/extended-sqlite-allocation.md"
+      ],
+      "note": "SQLite database and prepared-statement owners execute on Linux x86_64/glibc through checked C linking with an explicit sqlite3 dependency. Native gates cover 558 typed-value cases, 640 model commands, real persistence and locks, 21 native failure modes and four staging allocation failures. The linked guides define strict value access, ownership, limits, cleanup and the measured bulk workload."
     },
     "ext::statistics": {
       "guides": [
@@ -758,53 +831,16 @@
         "docs/extended-timezone.md"
       ]
     },
-    "ext::tls_authentication": {
+    "ext::tls_stream": {
       "guides": [
-        "docs/extended-tls-authentication.md"
-      ]
-    },
-    "ext::tls_connection": {
-      "guides": [
-        "docs/extended-tls-connection.md",
-        "docs/tls-connection-contract.md"
-      ]
-    },
-    "ext::tls_framing": {
-      "guides": [
-        "docs/extended-tls-framing.md"
-      ]
-    },
-    "ext::tls_handshake": {
-      "guides": [
-        "docs/extended-tls-handshake.md",
-        "docs/extended-tls-auth-foundation.md"
-      ]
-    },
-    "ext::tls_negotiation": {
-      "guides": [
-        "docs/extended-tls-negotiation.md"
-      ]
-    },
-    "ext::tls_record": {
-      "guides": [
-        "docs/extended-tls-record.md"
-      ]
-    },
-    "ext::tls_schedule": {
-      "guides": [
-        "docs/extended-tls-schedule.md"
-      ]
-    },
-    "ext::tls_tcp": {
-      "guides": [
-        "docs/extended-tls-tcp.md",
-        "docs/extended-tls-exchange.md"
-      ]
-    },
-    "ext::tls_transcript": {
-      "guides": [
-        "docs/extended-tls-schedule.md"
-      ]
+        "docs/extended-https-fetch.md",
+        "docs/extended-openssl-tls.md",
+        "docs/extended-https-server.md",
+        "docs/extended-openssl-tls-server.md",
+        "docs/extended-openssl-mutual-tls.md",
+        "docs/extended-https-mutual-tls.md"
+      ],
+      "note": "Shared buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_context_until borrows a prepared client Context on every outcome, derives queue/read caps from that Context and retains a native reference through a successful Session. The ordinary connector owns its optional client Context; accepted server construction consumes its socket on every result and retains a native context reference. One absolute deadline and explicit byte/call budgets cover connection and handshake. Linked guides define buffered acceptance, stable retries, manual cleanup, mutual TLS policy and separate application/prepared-context execution receipts; TLS and sensitive operations remain in OpenSSL."
     },
     "ext::toml": {
       "guides": [
@@ -908,27 +944,20 @@
         "docs/extended-websocket.md"
       ]
     },
-    "ext::x25519": {
-      "guides": [
-        "docs/extended-x25519.md"
-      ]
-    },
     "ext::x509": {
       "guides": [
         "docs/extended-x509.md",
         "docs/extended-certificate-info.md"
       ]
     },
-    "ext::x509_path": {
-      "guides": [
-        "docs/extended-x509-path.md",
-        "docs/extended-verify-certificate.md"
-      ]
-    },
     "ext::zip": {
       "guides": [
-        "docs/extended-zip.md"
-      ]
+        "docs/extended-zip.md",
+        "docs/extended-fetch-many.md"
+      ],
+      "declarations": {
+        "validate_name": "Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper."
+      }
     },
     "std::args": {
       "guides": [
@@ -947,20 +976,28 @@
     },
     "std::command": {
       "guides": [
-        "docs/stdlib-command.md"
-      ]
+        "docs/stdlib-command.md",
+        "docs/stdlib-command-groups.md",
+        "docs/stdlib-run-group.md"
+      ],
+      "note": "Process-group creation is explicit. Group signaling requires the confirmed original group and an owned, unreaped leader; non-reaping terminal observations do not consume that anchor. Final reaping or lost-child evidence revokes it. Copied Child descriptors do not grant independent wait or signal authority. The guides define startup uncertainty, cancellation limits and current target/execution evidence."
     },
     "std::command_capture": {
       "guides": [
-        "docs/stdlib-command-capture.md"
-      ]
+        "docs/stdlib-command-capture.md",
+        "docs/stdlib-command-groups.md",
+        "docs/stdlib-run-group.md"
+      ],
+      "note": "Progress.status may be an observed terminal status while Progress.reaped is false. Capture retains the unreaped leader anchor while draining acquired pipes, then performs a charged final nonblocking reap before success. A failure can retain that Child authority unless ownership was lost or final reaping already occurred; captured output owners and child cleanup remain explicit. The guides define operation/deadline scope and current execution evidence."
     },
     "std::command_raw": {
       "guides": [
-        "docs/stdlib-command.md"
+        "docs/stdlib-command.md",
+        "docs/stdlib-command-groups.md",
+        "docs/stdlib-run-group.md"
       ],
       "role": "support",
-      "note": "Internal syscall support for std::command. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise."
+      "note": "Internal Linux syscall support for std::command, including process-group setup and non-reaping exit observation. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise. The linked guides define target and execution scope."
     },
     "std::directory": {
       "guides": [
@@ -1069,6 +1106,13 @@
       "guides": [
         "docs/stdlib-randomness.md"
       ]
+    },
+    "std::resolve": {
+      "guides": [
+        "docs/stdlib-resolve.md",
+        "docs/stdlib-resolve-host.md"
+      ],
+      "note": "Blocking libc hostname/service resolution uses explicit ASCII input, address-family, TCP/UDP and flag policies. Native order and duplicates are copied into an owned SocketAddr vector; result caps and unsupported native shapes fail without publishing a partial vector. EAI_SYSTEM retains errno captured before cleanup. Local staging/result limits do not bound NSS memory, elapsed lookup time or native cleanup work; the guides define the selected layout/profile and current execution evidence."
     },
     "std::signal": {
       "guides": [

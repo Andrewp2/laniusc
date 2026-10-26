@@ -1,0 +1,129 @@
+// Opt-in recursive HashMap cloning and explicit memory-owner release.
+// Ordinary HashMap methods retain shallow key/value copy and cleanup behavior.
+// Import this module in composition entries and generic consumers.
+module alloc::clone_hash_map;
+import alloc::hash_map;
+import core::clone;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+
+// Indexes count live entries in source.iter() order, not buckets or insertion
+// order. Errors retain their own ownership; no error may borrow a destination
+// key/value which this operation releases before returning.
+pub enum Error<KE,VE> {
+    Storage(alloc::hash_map::Error),
+    Key(i32,KE),
+    Value(i32,VE),
+    ChangedKey(i32)
+}
+
+// Every live key/value is one distinct active owner under its Destroy impl.
+// Walk descriptors directly: destroyed keys cannot be used for lookup/remove.
+// Destroy callbacks must not reenter/mutate this map. Old entry copies and
+// cursors become invalid. The actual owner is reset; repeated release is OK.
+pub fn destroy_hash_map<K,V>(owner: &alloc::hash_map::HashMap<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    let cursor: alloc::hash_map::Iter<K,V> = owner.iter();
+    while (true) {
+        let next: core::option::Option<alloc::hash_map::Entry<K,V>> = cursor.next();
+        if (next.is_none()) { break; }
+        let entry: alloc::hash_map::Entry<K,V> = next.unwrap();
+        K::destroy_value(entry.key);
+        V::destroy_value(entry.value);
+    }
+    owner.destroy();
+}
+
+// Release only the cursor's unconsumed owners and table. Already yielded
+// entries remain the caller's responsibility. Recovery disarms the actual
+// cursor before callbacks run; no released key is compared or hashed.
+pub fn destroy_hash_map_iter<K,V>(owner: &alloc::hash_map::IntoIter<K,V>)
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    let remaining: alloc::hash_map::HashMap<K,V> = owner.take_remaining();
+    destroy_hash_map<K,V>(remaining.borrow());
+}
+
+// Source entries are borrowed and remain unchanged. Reserve the complete table
+// before any leaf clone. Successful keys must retain Eq/Hash identity; those
+// traits must be lawful, stable and free of reentrant map mutation. Detection
+// below does not make arbitrary broken Eq/Hash or aliasing owners sound.
+pub fn try_clone<K,V,KE,VE>(source: &alloc::hash_map::HashMap<K,V>)
+    -> core::result::Result<alloc::hash_map::HashMap<K,V>,Error<KE,VE>>
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K>,
+          K: core::clone::TryClone<K,KE>, K: core::clone::Destroy<K>,
+          V: core::clone::TryClone<V,VE>, V: core::clone::Destroy<V> {
+    let output: alloc::hash_map::HashMap<K,V> = alloc::hash_map::new();
+    let reserved: core::result::Result<i32,alloc::hash_map::Error> = output.try_reserve(source.len());
+    if (reserved.is_err()) { return core::result::Err(Error::Storage(reserved.unwrap_err())); }
+    let cursor: alloc::hash_map::Iter<K,V> = source.iter();
+    let index: i32 = 0;
+    while (true) {
+        let next: core::option::Option<alloc::hash_map::Entry<K,V>> = cursor.next();
+        if (next.is_none()) { break; }
+        let borrowed: alloc::hash_map::Entry<K,V> = next.unwrap();
+        let key_result: core::result::Result<K,KE> = K::try_clone_value(borrowed.key);
+        if (key_result.is_err()) {
+            let failure: KE = key_result.unwrap_err();
+            destroy_hash_map<K,V>(output.borrow());
+            return core::result::Err(Error::Key(index,failure));
+        }
+        let key: K = key_result.unwrap();
+        // Check before invoking the value clone or admitting a replacement.
+        if (!K::eq(borrowed.key,key) || K::hash(borrowed.key) != K::hash(key) || output.contains_key(key)) {
+            K::destroy_value(key);
+            destroy_hash_map<K,V>(output.borrow());
+            return core::result::Err(Error::ChangedKey(index));
+        }
+        let value_result: core::result::Result<V,VE> = V::try_clone_value(borrowed.value);
+        if (value_result.is_err()) {
+            let failure: VE = value_result.unwrap_err();
+            K::destroy_value(key);
+            destroy_hash_map<K,V>(output.borrow());
+            return core::result::Err(Error::Value(index,failure));
+        }
+        let value: V = value_result.unwrap();
+        let inserted: core::result::Result<core::option::Option<alloc::hash_map::Entry<K,V>>,alloc::hash_map::Error> = output.try_insert(key,value);
+        if (inserted.is_err()) {
+            let failure: alloc::hash_map::Error = inserted.unwrap_err();
+            K::destroy_value(key); V::destroy_value(value);
+            destroy_hash_map<K,V>(output.borrow());
+            return core::result::Err(Error::Storage(failure));
+        }
+        let displaced: core::option::Option<alloc::hash_map::Entry<K,V>> = inserted.unwrap();
+        if (displaced.is_some()) {
+            // Stable lawful keys make this unreachable. If a callback changed
+            // key identity, both displaced and newly installed owners still
+            // need release; never silently succeed with a shorter clone.
+            let previous: alloc::hash_map::Entry<K,V> = displaced.unwrap();
+            K::destroy_value(previous.key); V::destroy_value(previous.value);
+            destroy_hash_map<K,V>(output.borrow());
+            return core::result::Err(Error::ChangedKey(index));
+        }
+        index += 1;
+    }
+    return core::result::Ok(output);
+}
+
+pub impl<K,V,KE,VE> core::clone::TryClone<alloc::hash_map::HashMap<K,V>,Error<KE,VE>>
+    for alloc::hash_map::HashMap<K,V>
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K>,
+          K: core::clone::TryClone<K,KE>, K: core::clone::Destroy<K>,
+          V: core::clone::TryClone<V,VE>, V: core::clone::Destroy<V> {
+    pub fn try_clone_value(source: alloc::hash_map::HashMap<K,V>)
+        -> core::result::Result<alloc::hash_map::HashMap<K,V>,Error<KE,VE>> {
+        return try_clone<K,V,KE,VE>(source.borrow());
+    }
+}
+
+// Consumes the passed descriptor; stale aliases are not reset by this call.
+// For a reusable active map owner call destroy_hash_map(owner.borrow()).
+pub impl<K,V> core::clone::Destroy<alloc::hash_map::HashMap<K,V>>
+    for alloc::hash_map::HashMap<K,V>
+    where K: core::clone::Destroy<K>, V: core::clone::Destroy<V> {
+    pub fn destroy_value(owned: alloc::hash_map::HashMap<K,V>) {
+        destroy_hash_map<K,V>(owned.borrow());
+    }
+}

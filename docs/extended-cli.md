@@ -202,5 +202,7 @@ checksum uses packed i32 scratch storage. The earlier large-byte-repeat
 checker error was subsequently [fixed in `e59a9183`](compiler-array-repeat-context.md);
 the CLI measurements above retain their original checkpoint.
 Configuration loading now has its own [contracts and execution suite](extended-config.md).
-Logging and complete directory/runtime support remain on the
+[Structured logging](extended-log.md) and
+[directory operations](stdlib-directory.md) now execute. Higher-level CLI
+facilities and broader runtime support remain on the
 [library roadmap](library-roadmap.md).

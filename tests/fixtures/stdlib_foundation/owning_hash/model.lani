@@ -1,0 +1,106 @@
+// Six-u64 records: map/set, packed setup commands, command count, pulls,
+// reinsert key, finish-empty-first flag. Set/map contents have no order promise.
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::consumer;
+import fixture::key;
+import std::stream;
+
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0; while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; } return value;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0; while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn map_item(item: core::option::Option<alloc::hash_map::Entry<fixture::key::Key,i64>>) {
+    if (item.is_none()) { word(0); word(0); word(0); word(0); return; }
+    let entry = item.unwrap(); word(1); word(entry.key.id as u64); word(entry.key.representative as u64); word(entry.value as u64);
+}
+fn set_item(item: core::option::Option<fixture::key::Key>) {
+    if (item.is_none()) { word(0); word(0); word(0); word(0); return; }
+    let key = item.unwrap(); word(1); word(key.id as u64); word(key.representative as u64); word(0);
+}
+fn map_entries(owner: &alloc::hash_map::HashMap<fixture::key::Key,i64>) {
+    word(owner.len() as u64); let cursor = owner.iter();
+    while (true) { let next = cursor.next(); if (next.is_none()) { break; } let entry = next.unwrap(); word(entry.key.id as u64); word(entry.key.representative as u64); word(entry.value as u64); }
+}
+fn set_entries(owner: &alloc::hash_set::HashSet<fixture::key::Key>) {
+    word(owner.len() as u64); let cursor = owner.iter();
+    while (true) { let next = cursor.next(); if (next.is_none()) { break; } let key = next.unwrap(); word(key.id as u64); word(key.representative as u64); word(0); }
+}
+fn maps(packed: u64, count: i32, pulls: i32, inserted: i32, finish_first: bool) {
+    let owner: alloc::hash_map::HashMap<fixture::key::Key,i64> = alloc::hash_map::new(); let index: i32 = 0;
+    while (index < count) {
+        let op: i32 = ((packed >> (4*index)) & 15) as i32; let id: i32 = op % 5;
+        if (op < 10) { owner.try_insert(fixture::key::make(id,100+index),-4294967297-(index as i64)).unwrap(); }
+        else { owner.remove(fixture::key::make(id,0)); } index += 1;
+    }
+    let capacity: i32 = owner.capacity(); word(capacity as u64); word(owner.occupied as u64); map_entries(owner.borrow());
+    let cursor = owner.take_iter(); assert(owner.len() == 0 && owner.capacity() == 0 && owner.occupied == 0); index = 0;
+    while (index < pulls) { map_item(fixture::consumer::pull<alloc::hash_map::IntoIter<fixture::key::Key,i64>,alloc::hash_map::Entry<fixture::key::Key,i64>>(cursor.borrow())); word(cursor.remaining() as u64); index += 1; }
+    assert(cursor.capacity() == capacity); let rejected: i32 = 0;
+    if (!cursor.is_empty() || finish_first) {
+        let failure = cursor.try_finish();
+        if (failure.is_some()) { rejected = match(failure.unwrap()) { alloc::hash_map::IntoIterError::Remaining(value) -> value }; }
+    }
+    word(rejected as u64); word(cursor.capacity() as u64);
+    let recovered = cursor.take_remaining(); assert(cursor.is_empty() && cursor.capacity() == 0 && cursor.next().is_none() && cursor.try_finish().is_none());
+    assert(cursor.take_remaining().capacity() == 0); word(recovered.capacity() as u64); word(recovered.occupied as u64); map_entries(recovered.borrow());
+    index = 0; while (index < 5) { map_item(recovered.get_entry(fixture::key::make(index,0))); index += 1; }
+    let inserted_value: i64 = -9223372036854775807;
+    let insertion: core::result::Result<core::option::Option<alloc::hash_map::Entry<fixture::key::Key,i64>>,alloc::hash_map::Error> =
+        recovered.try_insert(fixture::key::make(inserted,999),inserted_value);
+    map_item(insertion.unwrap());
+    let final_capacity: i32 = recovered.capacity(); word(final_capacity as u64); word(recovered.occupied as u64); map_entries(recovered.borrow());
+    let final = recovered.take_iter(); assert(recovered.is_empty() && recovered.capacity() == 0); word(final.remaining() as u64);
+    while (true) {
+        let next = final.next(); if (next.is_none()) { break; } let entry = next.unwrap(); word(entry.key.id as u64); word(entry.key.representative as u64); word(entry.value as u64);
+    }
+    assert(final.is_empty() && final.capacity() == final_capacity && final.next().is_none());
+    assert(final.try_finish().is_none() && final.try_finish().is_none() && final.take_remaining().capacity() == 0);
+}
+fn sets(packed: u64, count: i32, pulls: i32, inserted: i32, finish_first: bool) {
+    let owner: alloc::hash_set::HashSet<fixture::key::Key> = alloc::hash_set::new(); let index: i32 = 0;
+    while (index < count) {
+        let op: i32 = ((packed >> (4*index)) & 15) as i32; let id: i32 = op % 5;
+        if (op < 5) { owner.try_insert(fixture::key::make(id,100+index)).unwrap(); }
+        else { if (op < 10) { owner.try_replace(fixture::key::make(id,100+index)).unwrap(); } else { owner.remove(fixture::key::make(id,0)); } } index += 1;
+    }
+    let capacity: i32 = owner.capacity(); word(capacity as u64); word(owner.state.occupied as u64); set_entries(owner.borrow());
+    let cursor = owner.take_iter(); assert(owner.len() == 0 && owner.capacity() == 0 && owner.state.occupied == 0); index = 0;
+    while (index < pulls) { set_item(fixture::consumer::pull<alloc::hash_set::IntoIter<fixture::key::Key>,fixture::key::Key>(cursor.borrow())); word(cursor.remaining() as u64); index += 1; }
+    assert(cursor.capacity() == capacity); let rejected: i32 = 0;
+    if (!cursor.is_empty() || finish_first) {
+        let failure = cursor.try_finish();
+        if (failure.is_some()) { rejected = match(failure.unwrap()) { alloc::hash_set::IntoIterError::Remaining(value) -> value }; }
+    }
+    word(rejected as u64); word(cursor.capacity() as u64);
+    let recovered = cursor.take_remaining(); assert(cursor.is_empty() && cursor.capacity() == 0 && cursor.next().is_none() && cursor.try_finish().is_none());
+    assert(cursor.take_remaining().capacity() == 0); word(recovered.capacity() as u64); word(recovered.state.occupied as u64); set_entries(recovered.borrow());
+    index = 0; while (index < 5) { set_item(recovered.get(fixture::key::make(index,0))); index += 1; }
+    set_item(recovered.try_replace(fixture::key::make(inserted,999)).unwrap());
+    let final_capacity: i32 = recovered.capacity(); word(final_capacity as u64); word(recovered.state.occupied as u64); set_entries(recovered.borrow());
+    let final = recovered.take_iter(); assert(recovered.is_empty() && recovered.capacity() == 0); word(final.remaining() as u64);
+    while (true) { let next = final.next(); if (next.is_none()) { break; } let key = next.unwrap(); word(key.id as u64); word(key.representative as u64); word(0); }
+    assert(final.is_empty() && final.capacity() == final_capacity && final.next().is_none());
+    assert(final.try_finish().is_none() && final.try_finish().is_none() && final.take_remaining().capacity() == 0);
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let record: [u8;48] = [0;48];
+    while (true) {
+        let read: core::result::Result<i32,core::io::Error> = input.read(record,0,48); if (read.is_err()) { return 1; }
+        let count: i32 = read.unwrap(); if (count == 0) { return 0; } if (count < 48) { if (core::io::read_exact(input.borrow(),record,count,48-count).is_err()) { return 2; } }
+        let kind: u64 = decode(record,0); let packed: u64 = decode(record,8); let commands: u64 = decode(record,16);
+        let pulls: u64 = decode(record,24); let inserted: u64 = decode(record,32); let finish: u64 = decode(record,40);
+        assert(kind <= 1 && commands <= 5 && pulls <= 6 && inserted < 5 && finish <= 1);
+        if (kind == 0) { maps(packed,commands as i32,pulls as i32,inserted as i32,finish == 1); }
+        else { sets(packed,commands as i32,pulls as i32,inserted as i32,finish == 1); }
+    }
+    return 0;
+}

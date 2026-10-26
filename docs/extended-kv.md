@@ -169,11 +169,12 @@ scratch file may remain. A successful rename is the replacement commit point.
 
 This provides checked file replacement during ordinary process execution.
 It does not call `fsync`, lock files, obtain exclusive creation, or provide
-concurrent database transactions or crash durability. Those services are not
-available in the current bindings. Renaming replaces the destination file inode
+concurrent database transactions or crash durability. Sync and exclusive-open
+bindings exist in [`std::file_ops`](stdlib-filesystem.md), but this tool does not
+use them. Renaming replaces the destination file inode
 with the scratch inode; new-file permissions follow the host umask, and prior
-ownership/ACL metadata is not preserved by this tool. SQLite and other durable
-database services remain separate host dependencies.
+ownership/ACL metadata is not preserved by this tool. The separate
+[SQLite adapter](extended-sqlite.md) provides native database transactions.
 
 The CLI caps input snapshot bytes at 9 MiB, live bytes at 8 MiB, entries at 4,096,
 each key at 64 KiB, each value at 4 MiB, and work at 128 Mi units. It caps captured

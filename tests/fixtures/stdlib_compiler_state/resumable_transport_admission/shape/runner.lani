@@ -1,0 +1,100 @@
+module shape::runner;
+import alloc::vec;
+import core::clone;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_batch;
+import ext::http_client;
+import std::clock;
+
+pub struct Probe<E> { report: ext::http_batch::Report<E>, observed: i64, steps: i32, aborts: i32 }
+fn counts(jobs: i32) -> ext::http_batch::Stats { return ext::http_batch::Stats { jobs: jobs, started: 5, complete: 1, failed: 3, aborted: 2, discarded: 0, peak_active: 4, operations: 0, polls: 0, io_calls: 0, work: 0, pending_bytes: 0, peak_pending_bytes: 0, wire_bytes: 41, body_bytes: 3 }; }
+fn inspect_error<J,D,E,F>(factory: &F, error: E, code: i32, shared: bool) where F: ext::http_batch::Factory<J,D,E> {
+    let stats: ext::http_client::Stats = factory.failure_stats(error); assert(stats.request_bytes == code);
+    let cause: core::option::Option<ext::http_batch::Cause> = factory.shared_failure(error); assert(cause.is_some() == shared);
+    if (shared) {
+        let observed: i32 = match(cause.unwrap()) { ext::http_batch::Cause::Timeout -> 404, ext::http_batch::Cause::Clock(value) -> match(value) { std::clock::Error::Host(number) -> number, _ -> -1 }, _ -> -2 }; assert(observed == code);
+    }
+}
+// The real imported traits/types are exercised by two bounded local rounds.
+// No polling, endpoint opening, TLS, or production scheduling claim is made.
+pub fn run<J,D,E,F>(jobs: core::slice::View<J>, factory: &F, deadline: core::time::Deadline) -> Probe<E>
+    where D: ext::http_batch::Driver<E>, F: ext::http_batch::Factory<J,D,E> {
+    assert(jobs.length == 6);
+    let slots: alloc::vec::Vec<core::option::Option<D>> = alloc::vec::with_capacity<core::option::Option<D>>(6).unwrap();
+    let outcomes: alloc::vec::Vec<ext::http_batch::Outcome<E>> = alloc::vec::with_capacity<ext::http_batch::Outcome<E>>(6).unwrap();
+    let index: i32 = 0;
+    while (index < 6) { slots.try_push(core::option::None()).unwrap(); let empty: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::NotStarted; outcomes.try_push(empty).unwrap(); index += 1; }
+    index = 0;
+    while (index < 6) {
+        let job: J = jobs.values[jobs.start+index]; let request: ext::http_client::Request = factory.request(job);
+        let made: core::result::Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(request,ext::http_client::default_options(),deadline);
+        if (made.is_err()) {
+            let error: E = factory.from_http_failure(made.unwrap_err()); inspect_error<J,D,E,F>(factory,error,101,false);
+            let outcome: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::Failed(error); outcomes.set(index,outcome).unwrap(); index += 1; continue;
+        }
+        let prepared: ext::http_client::Prepared = made.unwrap();
+        let begun: core::result::Result<D,E> = factory.begin(prepared.borrow(),job); assert(!prepared.is_active());
+        if (begun.is_err()) {
+            let error: E = begun.unwrap_err(); inspect_error<J,D,E,F>(factory,error,202,true);
+            let outcome: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::Failed(error); outcomes.set(index,outcome).unwrap();
+        } else { slots.set(index,core::option::Some(begun.unwrap())).unwrap(); }
+        index += 1;
+    }
+    let probe: Probe<E> = Probe { report: ext::http_batch::Report { outcomes: outcomes, stats: counts(6) }, observed: 0, steps: 0, aborts: 0 };
+    let round: i32 = 0;
+    while (round < 2) {
+        index = 0;
+        while (index < 6) {
+            let held: core::option::Option<D> = slots.set(index,core::option::None()).unwrap(); if (held.is_none()) { index += 1; continue; } let driver: D = held.unwrap();
+            let before: ext::http_client::Stats = driver.stats(); assert(before.request_bytes > 0); probe.observed += (before.request_bytes as i64)+(before.request_sent as i64);
+            let interest: ext::http_client::Interest = driver.interest(); let handle: core::option::Option<i32> = driver.raw_handle();
+            assert(interest.immediate && interest.readable && !interest.writable && handle.is_none());
+            let waited: core::result::Result<bool,E> = driver.before_wait(); assert(waited.is_ok() && waited.unwrap());
+            if (index >= 4) {
+                let stopped: core::result::Result<bool,E> = driver.abort(); let after: ext::http_client::Stats = driver.stats(); assert(after.request_bytes == 0 && after.io_calls == 1); probe.aborts += 1;
+                let cleanup: core::option::Option<E> = core::option::None();
+                if (stopped.is_err()) { let error: E = stopped.unwrap_err(); inspect_error<J,D,E,F>(factory,error,404,true); cleanup = core::option::Some(error); } else { assert(stopped.unwrap()); }
+                let outcome: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::Aborted(ext::http_batch::Abort { stats: after, cleanup: cleanup }); probe.report.outcomes.set(index,outcome).unwrap();
+                index += 1; continue;
+            }
+            let ready = ext::http_client::Readiness { readable: true, writable: false, hangup: false, error: false };
+            let advanced: core::result::Result<core::option::Option<ext::http_client::Response>,E> = driver.step(ready); probe.steps += 1;
+            if (advanced.is_err()) {
+                let error: E = advanced.unwrap_err(); inspect_error<J,D,E,F>(factory,error,303,false);
+                let cleanup: core::result::Result<bool,E> = driver.abort(); let after: ext::http_client::Stats = driver.stats(); assert(cleanup.is_ok() && !cleanup.unwrap() && after.request_bytes == 0 && after.request_sent == 2 && after.io_calls == 2);
+                let outcome: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::Failed(error); probe.report.outcomes.set(index,outcome).unwrap();
+            } else {
+                let response: core::option::Option<ext::http_client::Response> = advanced.unwrap();
+                if (response.is_some()) {
+                    let cleanup: core::result::Result<bool,E> = driver.abort(); let after: ext::http_client::Stats = driver.stats(); assert(cleanup.is_ok() && !cleanup.unwrap() && after.request_bytes == 0 && after.request_sent == 2 && after.io_calls == 2);
+                    let outcome: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::Complete(response.unwrap()); probe.report.outcomes.set(index,outcome).unwrap();
+                } else { slots.set(index,core::option::Some(driver)).unwrap(); }
+            }
+            index += 1;
+        }
+        round += 1;
+    }
+    index = 0; while (index < 6) { assert(slots.at(index).is_none()); index += 1; } slots.destroy(); return probe;
+}
+// Only the consumers require Destroy<E>; admission/construction remains free
+// of that bound. Both a taken owner and owners left in Report are released.
+pub fn dispose<E>(outcome: ext::http_batch::Outcome<E>) where E: core::clone::Destroy<E> {
+    let response: core::option::Option<ext::http_client::Response> = match(outcome) { ext::http_batch::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+    if (response.is_some()) { response.unwrap().destroy(); }
+    let error: core::option::Option<E> = match(outcome) { ext::http_batch::Outcome::Failed(value) -> core::option::Some(value), ext::http_batch::Outcome::Aborted(value) -> value.cleanup, _ -> core::option::None() };
+    if (error.is_some()) { E::destroy_value(error.unwrap()); }
+}
+pub fn destroy<E>(report: &ext::http_batch::Report<E>) where E: core::clone::Destroy<E> { report.destroy(); }
+pub fn conversions<J,D,E,F>(factory: &F) where F: ext::http_batch::Factory<J,D,E>, E: core::clone::Destroy<E> {
+    let causes: [ext::http_client::Cause;2] = [ext::http_client::Cause::Timeout,ext::http_client::Cause::Clock(std::clock::Error::Host(707))];
+    let codes: [i32;2] = [404,707]; let index: i32 = 0;
+    while (index < 2) {
+        let zero = ext::http_client::Stats { request_bytes: 0, request_sent: 0, response_received: 0, interim_count: 0, discarded_bytes: 0, io_calls: 0, work: 0, upload_stopped: false, write_shutdown: false };
+        let failure = ext::http_client::Failure { cause: causes[index], stage: ext::http_client::Stage::Prepare, message_offset: 0, stats: zero, cleanup: core::option::None() };
+        let error: E = factory.from_http_failure(failure); inspect_error<J,D,E,F>(factory,error,codes[index],true);
+        let owned: ext::http_batch::Outcome<E> = ext::http_batch::Outcome::Failed(error); dispose<E>(owned); index += 1;
+    }
+}

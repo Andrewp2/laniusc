@@ -1,0 +1,10 @@
+// Positive control for the ordinary function used by function_value.lani.
+module app::main;
+
+fn worker(argument: ptr) -> ptr { return argument; }
+
+fn main() -> i32 {
+    let argument: ptr = 0;
+    if (worker(argument) != argument) { return 1; }
+    return 0;
+}

@@ -1,0 +1,24 @@
+module app::main;
+import core::mem;
+import std::process;
+import std::env;
+
+extern "C" fn probe_constructor() -> i32;
+extern "C" fn probe_environment_length() -> usize;
+extern "C" fn probe_buffer() -> ptr;
+
+fn main() -> i32 {
+    if (probe_constructor() != 4951) { return 1; }
+    if (std::process::argc() != 3) { return 2; }
+    if (std::process::arg_len(1) != 0 || std::process::arg_len(2) != 17) { return 3; }
+    let buffer: ptr = probe_buffer();
+    if (std::process::arg_read(2,buffer,32) != 17) { return 4; }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(buffer,32);
+    if (bytes[0] != 110 || bytes[8] != 32 || bytes[16] != 116) { return 5; }
+    let key: str = "LANIUS_NATIVE_C_TEST";
+    let key_ptr: ptr = core::mem::string_data_ptr(key);
+    if (probe_environment_length() != 12 || std::env::var_len(key_ptr,20) != 12) { return 6; }
+    if (std::env::var_read(key_ptr,20,buffer,32) != 12) { return 7; }
+    if (bytes[0] != 108 || bytes[6] != 45 || bytes[11] != 101) { return 8; }
+    return 0;
+}

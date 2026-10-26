@@ -1,0 +1,103 @@
+// Test-only LE packet transport. 17 u32 words then rule records and input.
+// Header: mode,rulecount,inputlen,layout,start,inputcap,steps,tokens,calls,
+// worklo,workhi,persearch,flags,rulecap,patterncap,statecap,payloadlen.
+// Rule record: id,skip,patternlen, followed immediately by pattern bytes.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::lexer;
+import ext::regex;
+import std::io;
+import std::io_decimal;
+import std::stream;
+fn word(bytes: [u8], at: i32) -> i32 { return ((bytes[at] as u32) | ((bytes[at+1] as u32)<<8) | ((bytes[at+2] as u32)<<16) | ((bytes[at+3] as u32)<<24)) as i32; }
+fn number(value: i32) { std::io_decimal::write_i32(1,value); }
+fn colon() { std::io::write_byte(1,58); }
+fn cause(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::Syntax(at) -> 1, ext::regex::Error::Unsupported(at) -> 2, ext::regex::Error::Limit(at) -> 3, ext::regex::Error::AllocationFailed -> 4, ext::regex::Error::Bounds -> 5, ext::regex::Error::InvalidUtf8(at) -> 6, ext::regex::Error::WorkLimit -> 7 }; }
+fn offset(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::Syntax(at) -> at, ext::regex::Error::Unsupported(at) -> at, ext::regex::Error::Limit(at) -> at, ext::regex::Error::InvalidUtf8(at) -> at, _ -> 0 }; }
+fn error(error: ext::lexer::Error) {
+    let kind: i32 = match(error) {
+        ext::lexer::Error::Bounds -> 1, ext::lexer::Error::InvalidLimits -> 2, ext::lexer::Error::RuleLimit -> 3,
+        ext::lexer::Error::PatternLimit(index) -> 4, ext::lexer::Error::StateLimit(index) -> 5,
+        ext::lexer::Error::InputLimit -> 6, ext::lexer::Error::AllocationFailed -> 7,
+        ext::lexer::Error::Pattern(index,value) -> 8, ext::lexer::Error::Input(value) -> 9,
+        ext::lexer::Error::Search(index,position,value) -> 10, ext::lexer::Error::NoMatch(position) -> 11,
+        ext::lexer::Error::EmptyMatch(index,position) -> 12, ext::lexer::Error::StepLimit(position) -> 13,
+        ext::lexer::Error::TokenLimit(position) -> 14, ext::lexer::Error::SearchCallLimit(index,position) -> 15,
+        ext::lexer::Error::SearchWorkLimit(index,position) -> 16
+    };
+    let rule: i32 = match(error) {
+        ext::lexer::Error::PatternLimit(index) -> index, ext::lexer::Error::StateLimit(index) -> index,
+        ext::lexer::Error::Pattern(index,value) -> index, ext::lexer::Error::Search(index,position,value) -> index,
+        ext::lexer::Error::EmptyMatch(index,position) -> index, ext::lexer::Error::SearchCallLimit(index,position) -> index,
+        ext::lexer::Error::SearchWorkLimit(index,position) -> index, _ -> -1
+    };
+    let at: i32 = match(error) {
+        ext::lexer::Error::Pattern(index,value) -> offset(value), ext::lexer::Error::Input(value) -> offset(value),
+        ext::lexer::Error::Search(index,position,value) -> position, ext::lexer::Error::NoMatch(position) -> position,
+        ext::lexer::Error::EmptyMatch(index,position) -> position, ext::lexer::Error::StepLimit(position) -> position,
+        ext::lexer::Error::TokenLimit(position) -> position, ext::lexer::Error::SearchCallLimit(index,position) -> position,
+        ext::lexer::Error::SearchWorkLimit(index,position) -> position, _ -> 0
+    };
+    let code: i32 = match(error) {
+        ext::lexer::Error::Pattern(index,value) -> cause(value), ext::lexer::Error::Input(value) -> cause(value),
+        ext::lexer::Error::Search(index,position,value) -> cause(value), _ -> 0
+    };
+    std::io::write_byte(1,69); number(kind); colon(); number(rule); colon(); number(at); colon(); number(code);
+}
+fn hex(text: core::text::Text) {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("0123456789abcdef"),16); let at: i32 = 0;
+    while (at < text.length) { let value: i32 = text.bytes[text.start+at] as i32; let high: i32 = value / 16; let low: i32 = value % 16; let first: i32 = raw[high] as i32; let second: i32 = raw[low] as i32; std::io::write_byte(1,first); std::io::write_byte(1,second); at += 1; }
+}
+fn scan(lexer: &ext::lexer::Lexer, input: core::text::Text, limits: ext::lexer::ScanLimits) {
+    let made = lexer.scan(input,limits); if (made.is_err()) { error(made.unwrap_err()); return; }
+    let cursor = made.unwrap(); std::io::write_byte(1,76);
+    while (true) {
+        let result = cursor.next(); if (result.is_err()) { error(result.unwrap_err()); break; }
+        let found = result.unwrap(); if (found.is_none()) { std::io::write_byte(1,68); break; }
+        let token = found.unwrap(); number(token.rule); colon(); number(token.id); colon(); number(token.span.start); colon(); number(token.span.end); colon(); hex(token.text); std::io::write_byte(1,47);
+    }
+    let used = cursor.usage(); let position = cursor.position(); assert(cursor.next().unwrap().is_none()); assert(cursor.next().unwrap().is_none()); assert(cursor.usage().calls == used.calls); cursor.destroy(); cursor.destroy();
+    std::io::write_byte(1,59); number(used.steps); std::io::write_byte(1,44); number(used.tokens); std::io::write_byte(1,44); number(used.calls); std::io::write_byte(1,44); std::io_decimal::write_i64(1,used.reserved_work); std::io::write_byte(1,44); number(position);
+}
+fn prefix(regex: &ext::regex::Regex, input: core::text::Text, start: i32, mode: i32) {
+    let result: core::result::Result<core::option::Option<ext::regex::Match>,ext::regex::Error> = core::result::Err(ext::regex::Error::Bounds);
+    if (mode == 1) { result = regex.longest_prefix_from(input,start); }
+    if (mode == 2) { result = regex.find_from(input,start); }
+    if (mode == 3) { let checked = ext::regex::input(input); if (checked.is_err()) { error(ext::lexer::Error::Input(checked.unwrap_err())); return; } result = regex.longest_prefix_in(checked.unwrap(),start); }
+    if (result.is_err()) { error(ext::lexer::Error::Input(result.unwrap_err())); return; }
+    let found = result.unwrap(); if (found.is_none()) { std::io::write_byte(1,78); return; }
+    let matched = found.unwrap(); std::io::write_byte(1,80); let index: i32 = 0;
+    while (index < matched.group_count()) { if (index > 0) { std::io::write_byte(1,47); } let span = matched.span(index); if (span.is_none()) { std::io::write_byte(1,45); } else { number(span.unwrap().start); colon(); number(span.unwrap().end); } index += 1; }
+    matched.destroy();
+}
+fn main() -> i32 {
+    let source = std::stream::stdin(); let words: [i32;8192] = [0;8192]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),32768);
+    let native: [u8;8200] = [165;8200]; let packed: [i32;2050] = [0;2050]; let physical: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed),8200);
+    let empty = core::text::from_utf8_unchecked(bytes,0,0); let unused = ext::lexer::Rule { id: 0, pattern: empty, skip: false }; let rules: [ext::lexer::Rule;8] = [unused,unused,unused,unused,unused,unused,unused,unused];
+    while (true) {
+        if (source.read(bytes,0,1).unwrap() == 0) { return 0; } core::io::read_exact(source.borrow(),bytes,1,67).unwrap();
+        let mode = word(bytes,0); let count = word(bytes,4); let length = word(bytes,8); let layout = word(bytes,12); let payload = word(bytes,64);
+        assert(mode >= 0 && mode <= 3 && count >= 0 && count <= 8 && length >= 0 && length <= 8192 && layout >= 0 && layout <= 2 && payload >= 0 && payload <= 32700);
+        core::io::read_exact(source.borrow(),bytes,68,payload).unwrap(); let at: i32 = 68; let index: i32 = 0;
+        while (index < count) { assert(at+12 <= 68+payload); let id = word(bytes,at); let skip = word(bytes,at+4); let size = word(bytes,at+8); at += 12; assert(size >= 0 && size <= 8192 && at+size <= 68+payload); rules[index] = ext::lexer::Rule { id: id, pattern: core::text::from_utf8_unchecked(bytes,at,size), skip: skip != 0 }; at += size; index += 1; }
+        assert(at+length == 68+payload); let vector: alloc::vec::Vec<u8> = alloc::vec::new(); let target: [u8] = native;
+        if (layout == 1) { vector.try_resize(length+8,165).unwrap(); target = vector.as_slice(); } if (layout == 2) { target = physical; }
+        index = 0; while (index < length) { target[3+index] = bytes[at+index]; index += 1; } let input = core::text::from_utf8_unchecked(target,3,length);
+        let options = ext::regex::options(); options.max_work = word(bytes,44); options.multiline = (word(bytes,48)&1) != 0; options.dot_matches_newline = (word(bytes,48)&2) != 0;
+        if (mode == 0) {
+            let made = ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,count).unwrap(),options,ext::lexer::BuildLimits { max_rules: word(bytes,52), max_pattern_bytes: word(bytes,56), max_states: word(bytes,60) });
+            if (made.is_err()) { error(made.unwrap_err()); }
+            else { let lexer = made.unwrap(); let work: u64 = (word(bytes,36) as u32 as u64) | ((word(bytes,40) as u32 as u64)<<32); scan(lexer.borrow(),input,ext::lexer::ScanLimits { max_input_bytes: word(bytes,20), max_steps: word(bytes,24), max_tokens: word(bytes,28), max_calls: word(bytes,32), max_work: work as i64 }); lexer.destroy(); }
+        } else {
+            assert(count == 1); let made = ext::regex::compile(rules[0].pattern,options); if (made.is_err()) { error(ext::lexer::Error::Pattern(0,made.unwrap_err())); } else { let regex = made.unwrap(); prefix(regex.borrow(),input,word(bytes,16),mode); regex.destroy(); }
+        }
+        vector.destroy(); std::io::write_byte(1,10);
+    }
+    return 0;
+}

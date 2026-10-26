@@ -1,0 +1,46 @@
+// Every happy-path allocation is injected by the Rust driver. Recovery probes
+// use the still-live Regex/input after the one injected failure is consumed.
+module app::main;
+import alloc::string;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::regex;
+import ext::regex_text;
+import std::io;
+import std::io_decimal;
+fn text(value: str, count: i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn report(stage: i32) -> i32 { std::io_decimal::write_i32(1,stage); std::io::write_byte(1,10); if (stage == 0) { return 0; } return 4; }
+fn allocation(error: ext::regex_text::Error) -> bool { return match(error) { ext::regex_text::Error::AllocationFailed -> true, ext::regex_text::Error::Regex(value) -> match(value) { ext::regex::Error::AllocationFailed -> true, _ -> false }, _ -> false }; }
+fn preserved(regex: &ext::regex::Regex, input: alloc::string::String) {
+    assert(input.as_text().equals(text("a\0ab",4)) && input.byte_len() == 4);
+    assert(regex.group_count() == 3 && regex.state_count() > 0 && regex.search_work_limit() == 10000);
+    assert(regex.is_match(input.as_text()).unwrap());
+}
+fn finish(regex: ext::regex::Regex, input: alloc::string::String, output: ext::regex_text::Replacement) -> i32 {
+    let made = ext::regex_text::split(regex.borrow(),input.as_text(),ext::regex_text::default_search_limits()); assert(made.is_ok()); let cursor = made.unwrap();
+    let count: i32 = 0;
+    while (true) {
+        let result = cursor.next();
+        if (result.is_err()) { assert(allocation(result.unwrap_err())); cursor.destroy(); output.destroy(); preserved(regex.borrow(),input); regex.destroy(); input.destroy(); return report(4); }
+        let item = result.unwrap(); if (item.is_none()) { break; }
+        let part = item.unwrap(); if (count == 0 || count == 2) { assert(part.length == 0); } else { assert(count == 1 && part.equals(text("\0",1))); } count += 1;
+    }
+    assert(count == 3 && cursor.usage().matches == 2 && cursor.usage().calls == 3); cursor.destroy(); cursor.destroy();
+    let probe = regex.is_match(input.as_text());
+    if (probe.is_err()) { assert(match(probe.unwrap_err()) { ext::regex::Error::AllocationFailed -> true, _ -> false }); output.destroy(); preserved(regex.borrow(),input); regex.destroy(); input.destroy(); return report(5); }
+    assert(probe.unwrap()); input.destroy(); regex.destroy();
+    assert(output.output.as_text().equals(text("[a//a]$\0[a/b/ab]$",17)) && output.usage.matches == 2 && output.usage.calls == 3);
+    output.destroy(); output.destroy(); assert(output.output.byte_len() == 0 && output.output.capacity() == 0); return report(0);
+}
+fn main() -> i32 {
+    let made = alloc::string::from_text(text("a\0ab",4));
+    if (made.is_err()) { assert(match(made.unwrap_err()) { alloc::string::Error::AllocationFailed -> true, _ -> false }); return report(1); }
+    let input = made.unwrap(); let options = ext::regex::options(); options.max_work = 10000;
+    let compiled = ext::regex::compile(text("(a)(b)?",7),options);
+    if (compiled.is_err()) { assert(match(compiled.unwrap_err()) { ext::regex::Error::AllocationFailed -> true, _ -> false }); assert(input.as_text().equals(text("a\0ab",4))); input.destroy(); return report(2); }
+    let regex = compiled.unwrap(); let result = ext::regex_text::replace_template(regex.borrow(),input.as_text(),text("[$1/$2/$0]$$",12),ext::regex_text::default_replace_limits());
+    if (result.is_err()) { assert(allocation(result.unwrap_err())); preserved(regex.borrow(),input); regex.destroy(); input.destroy(); return report(3); }
+    return finish(regex,input,result.unwrap());
+}

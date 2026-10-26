@@ -1,0 +1,41 @@
+module app::main;
+import alloc::clone_deque;
+import alloc::deque;
+import core::clone;
+import core::result;
+import std::io;
+
+struct Trap {}
+struct Unit {}
+enum Never { Unexpected }
+pub impl core::clone::TryClone<Trap,Never> for Trap {
+    pub fn try_clone_value(source: Trap) -> core::result::Result<Trap,Never> { assert(false); return core::result::Ok(source); }
+}
+pub impl core::clone::Destroy<Trap> for Trap {
+    pub fn destroy_value(owned: Trap) { assert(false); }
+}
+pub impl core::clone::TryClone<Unit,Never> for Unit {
+    pub fn try_clone_value(source: Unit) -> core::result::Result<Unit,Never> {
+        assert(std::io::write_byte(1,99) == 1); return core::result::Ok(source);
+    }
+}
+pub impl core::clone::Destroy<Unit> for Unit {
+    pub fn destroy_value(owned: Unit) { assert(std::io::write_byte(1,100) == 1); }
+}
+fn main() -> i32 {
+    let empty: alloc::deque::Deque<Trap> = alloc::deque::new();
+    let empty_copy: alloc::deque::Deque<Trap> = alloc::clone_deque::try_clone<Trap,Never>(empty.borrow()).unwrap();
+    assert(empty_copy.is_empty() && empty_copy.capacity() == 0);
+    alloc::clone_deque::destroy_deque<Trap>(empty_copy.borrow());
+    alloc::clone_deque::destroy_deque<Trap>(empty.borrow());
+    let source: alloc::deque::Deque<Unit> = alloc::deque::new();
+    source.try_push_back(Unit {}).unwrap(); source.try_push_front(Unit {}).unwrap(); source.try_push_back(Unit {}).unwrap();
+    assert(source.len() == 3 && source.capacity() == 2147483647 && source.as_views().first.len() == 1 && source.as_views().second.len() == 2);
+    let copy: alloc::deque::Deque<Unit> = alloc::clone_deque::try_clone<Unit,Never>(source.borrow()).unwrap();
+    assert(copy.len() == 3 && copy.capacity() == 2147483647);
+    alloc::clone_deque::destroy_deque<Unit>(copy.borrow());
+    alloc::clone_deque::destroy_deque<Unit>(copy.borrow());
+    alloc::clone_deque::destroy_deque<Unit>(source.borrow());
+    assert(copy.is_empty() && copy.capacity() == 0 && source.is_empty() && source.capacity() == 0);
+    return 0;
+}

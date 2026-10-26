@@ -101,7 +101,7 @@ impl GpuCompiler<'_> {
             })
             .collect::<anyhow::Result<Vec<_>>>()
             .map_err(native_program_error)?;
-        self.specialize_admitted_source_pack_objects(units, program, calls)
+        self.specialize_admitted_source_pack_objects(units, program, calls, false)
             .await
     }
 
@@ -116,8 +116,8 @@ impl GpuCompiler<'_> {
             .into_iter()
             .map(|object| match object {
                 CompiledSourcePackObject::X86_64(object) => Ok(object),
-                CompiledSourcePackObject::Wasm(_) => Err(CompileError::GpuCodegen(
-                    "x86 specialization received a different target".into(),
+                CompiledSourcePackObject::Wasm(_) | CompiledSourcePackObject::X86_64File(_) => Err(CompileError::GpuCodegen(
+                    "resident x86 specialization received a different object storage".into(),
                 )),
             })
             .collect()
@@ -128,6 +128,28 @@ impl GpuCompiler<'_> {
     pub(super) async fn specialize_pending_source_pack_objects(
         &self,
         pending: Vec<PendingOriginalUnit>,
+    ) -> Result<Vec<CompiledSourcePackObject>, CompileError> {
+        self.specialize_pending_objects_with_storage(pending, false).await
+    }
+
+    /// The native C profile retains metadata for specialization while opaque
+    /// original and replay sections remain in private files.
+    pub(super) async fn specialize_spilled_native_objects(
+        &self,
+        pending: Vec<PendingOriginalUnit>,
+    ) -> Result<Vec<x86::GpuX86FileObject>, CompileError> {
+        self.specialize_pending_objects_with_storage(pending, true).await?
+            .into_iter().map(|object| match object {
+                CompiledSourcePackObject::X86_64File(object) => Ok(object),
+                _ => Err(source_pack_artifact_store_error(
+                    "native specialization published an object outside its private file storage")),
+            }).collect()
+    }
+
+    async fn specialize_pending_objects_with_storage(
+        &self,
+        pending: Vec<PendingOriginalUnit>,
+        spill_native: bool,
     ) -> Result<Vec<CompiledSourcePackObject>, CompileError> {
         let facts = pending
             .iter()
@@ -154,7 +176,7 @@ impl GpuCompiler<'_> {
         let (units, calls): (Vec<_>, Vec<_>) = released.into_iter().unzip();
         let references = units.iter().collect::<Vec<_>>();
         let objects = self
-            .specialize_admitted_source_pack_objects(&references, program, calls)
+            .specialize_admitted_source_pack_objects(&references, program, calls, spill_native)
             .await?;
         Ok(objects.into_iter().map(Cow::into_owned).collect())
     }
@@ -164,6 +186,7 @@ impl GpuCompiler<'_> {
         units: &[&'a CompiledSourcePackUnit],
         mut program: NativeProgramSession,
         initial_calls: Vec<Vec<AdmittedCall>>,
+        spill_native: bool,
     ) -> Result<Vec<Cow<'a, CompiledSourcePackObject>>, CompileError> {
         if units.len() != initial_calls.len() {
             return Err(CompileError::GpuCodegen(
@@ -714,7 +737,7 @@ impl GpuCompiler<'_> {
                         );
                     }
                     let RunOutput {
-                        mut object,
+                        object,
                         call_hirs,
                         call_owners,
                         layouts: entry_layouts,
@@ -725,6 +748,7 @@ impl GpuCompiler<'_> {
                         binding_contracts: _,
                         binding_layouts: _,
                     } = output;
+                    let mut object = if spill_native { object.spill_native()? } else { object };
                     let (library_id, unit_id, _) = pending[&keys[0]].target;
                     let candidate = next_unit_by_library.entry(library_id).or_default();
                     while used_units.contains(&(library_id, *candidate)) {
@@ -1243,8 +1267,9 @@ impl RunOutput {
 /// environment graph) and the impl bindings this job's evidence selected
 /// for it. Layout witnesses are compared separately, at lookup.
 /// The library instance cache keys runs by template sources only, so it
-/// holds x86 runs alone; a Wasm template always replays.
-fn is_x86(template: &CompiledSourcePackUnit) -> bool {
+/// holds resident x86 runs alone. File-backed native runs always replay, so
+/// this cache cannot retain their section vectors after they have spilled.
+fn is_resident_x86(template: &CompiledSourcePackUnit) -> bool {
     matches!(template.object, CompiledSourcePackObject::X86_64(_))
 }
 
@@ -1329,7 +1354,7 @@ impl GpuCompiler<'_> {
             .lock()
             .expect("library instance cache mutex poisoned");
         let Some((library_id, unit_id, template)) = template.filter(|&(.., template)| {
-            instance_copies && is_x86(template) && cache.cacheable_template(template)
+            instance_copies && is_resident_x86(template) && cache.cacheable_template(template)
         }) else {
             lookup.misses = keys;
             return Ok(lookup);
@@ -1431,7 +1456,7 @@ impl GpuCompiler<'_> {
             .expect("library instance cache mutex poisoned");
         if !templates
             .get(&(library_id, unit_id))
-            .is_some_and(|template| is_x86(template) && cache.cacheable_template(template))
+            .is_some_and(|template| is_resident_x86(template) && cache.cacheable_template(template))
         {
             return;
         }

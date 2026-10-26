@@ -1,11 +1,15 @@
 //! Focused warmed GPU compiler benchmark for a real source entry and its imports.
 //! Use identical inputs and separate compiled shader sets for paired comparisons.
 //! LANIUS_PERF_REBUILD_ENTRY=1 forces an entry cache miss through a private copy.
+//! Optional LANIUS_PERF_STDIN is freshly opened for every native validation,
+//! outside the compilation timer, including warmups and measured iterations.
+//! WARMUPS=0 ITERS=1 selects a single compile plus native output verification;
+//! that correctness-only selection is not a warmed performance comparison.
 use std::{
     env,
     fs,
     path::PathBuf,
-    process::Command,
+    process::{Command, Stdio},
     time::{Instant, SystemTime},
 };
 
@@ -37,12 +41,19 @@ async fn run() -> Result<(), String> {
     } else {
         fs::read(&args[2]).map_err(|error| error.to_string())?
     };
+    let input = env::var_os("LANIUS_PERF_STDIN").map(PathBuf::from);
+    let input_bytes = input
+        .as_ref()
+        .map(|path| fs::metadata(path).map(|metadata| metadata.len()))
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .unwrap_or(0);
     let warmups: usize = args[3]
         .parse()
         .map_err(|error| format!("warmups: {error}"))?;
     let iters: usize = args[4].parse().map_err(|error| format!("iters: {error}"))?;
-    if warmups == 0 || iters == 0 {
-        return Err("warmups and iterations must both be positive".into());
+    if iters == 0 {
+        return Err("iterations must be positive".into());
     }
     let rebuild_entry = env::var("LANIUS_PERF_REBUILD_ENTRY").as_deref() == Ok("1");
     let mut input_copy = InputCopy(None);
@@ -71,7 +82,7 @@ async fn run() -> Result<(), String> {
             .map_err(|error| format!("{}: {error}", entry.display()))?;
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
         // Verify every emitted program outside the measured compiler span.
-        validate_output(&output, &expected)?;
+        validate_output(&output, &expected, input.as_ref())?;
         if index >= warmups {
             samples.push(elapsed);
             println!("sample={} ms={elapsed:.3}", index - warmups);
@@ -86,7 +97,7 @@ async fn run() -> Result<(), String> {
     };
     let mean = samples.iter().sum::<f64>() / samples.len() as f64;
     println!(
-        "entry={} source_roots={} rebuild_entry={rebuild_entry} warmups={warmups} iters={iters} output_bytes={} min_ms={:.3} median_ms={median:.3} avg_ms={mean:.3} max_ms={:.3} output_verified=true",
+        "entry={} source_roots={} rebuild_entry={rebuild_entry} warmups={warmups} iters={iters} input_bytes={input_bytes} output_bytes={} min_ms={:.3} median_ms={median:.3} avg_ms={mean:.3} max_ms={:.3} output_verified=true",
         args[0],
         roots.user_roots.len(),
         output.len(),
@@ -107,7 +118,7 @@ impl Drop for InputCopy {
 }
 
 #[cfg(all(unix, target_arch = "x86_64"))]
-fn validate_output(bytes: &[u8], expected: &[u8]) -> Result<(), String> {
+fn validate_output(bytes: &[u8], expected: &[u8], input: Option<&PathBuf>) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     if !bytes.starts_with(b"\x7fELF") {
         return Err("compiler did not emit an ELF program".into());
@@ -117,11 +128,13 @@ fn validate_output(bytes: &[u8], expected: &[u8]) -> Result<(), String> {
     let result = (|| {
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
             .map_err(|error| error.to_string())?;
-        let output = Command::new("timeout")
-            .args(["5s"])
-            .arg(&path)
-            .output()
-            .map_err(|error| error.to_string())?;
+        let mut command = Command::new("timeout");
+        command.args(["5s"]).arg(&path);
+        if let Some(input) = input {
+            let file = fs::File::open(input).map_err(|error| error.to_string())?;
+            command.stdin(Stdio::from(file));
+        }
+        let output = command.output().map_err(|error| error.to_string())?;
         if !output.status.success() || output.stdout != expected || !output.stderr.is_empty() {
             return Err(format!(
                 "emitted program failed its output contract: {output:?}"
@@ -134,6 +147,6 @@ fn validate_output(bytes: &[u8], expected: &[u8]) -> Result<(), String> {
 }
 
 #[cfg(not(all(unix, target_arch = "x86_64")))]
-fn validate_output(_: &[u8], _: &[u8]) -> Result<(), String> {
+fn validate_output(_: &[u8], _: &[u8], _: Option<&PathBuf>) -> Result<(), String> {
     Err("this benchmark validates emitted programs on x86_64 Unix".into())
 }

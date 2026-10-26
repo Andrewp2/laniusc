@@ -1,0 +1,39 @@
+module app::main;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::csv;
+fn literal(value: str, count: i32) -> core::text::Text { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::text::from_utf8(bytes,count).unwrap(); }
+fn checksum(row: &ext::csv::Record) -> u64 {
+    let total: u64 = 0; let column: i32 = 0;
+    while (column < row.field_count()) { let field: core::text::Text = row.field(column).unwrap(); let index: i32 = 0;
+        total = total * 131 + field.byte_len() as u64;
+        while (index < field.byte_len()) { total = total * 131 + field.byte_at(index).unwrap() as u64; index += 1; } column += 1; }
+    return total;
+}
+fn append(row: &ext::csv::Record, text: core::text::Text) -> bool {
+    let bytes: i32 = row.byte_len(); let count: i32 = row.field_count(); let bc: i32 = row.byte_capacity(); let fc: i32 = row.field_capacity();
+    let hash: u64 = checksum(row); let old: core::option::Option<core::text::Text> = core::option::None();
+    if (count > 0) { old = core::option::Some(row.field(0).unwrap()); }
+    let result = row.try_push_field(text);
+    if (result.is_ok()) { assert(result.unwrap() == count + 1); return true; }
+    assert(match (result.unwrap_err()) { ext::csv::Error::AllocationFailed -> true, _ -> false });
+    assert(row.byte_len() == bytes && row.field_count() == count && row.byte_capacity() == bc && row.field_capacity() == fc && checksum(row) == hash);
+    if (old.is_some()) { assert(old.unwrap().equals(row.field(0).unwrap())); }
+    assert(row.encoded_len().is_ok()); return false;
+}
+fn failed(row: &ext::csv::Record) -> i32 { row.destroy(); row.destroy(); return 4; }
+fn main() -> i32 {
+    let row: ext::csv::Record = ext::csv::new(); let index: i32 = 0;
+    while (index < 4) { if (!append(row.borrow(),literal("x",1))) { return failed(row.borrow()); } index += 1; }
+    assert(row.byte_len() == 4 && row.byte_capacity() == 4 && row.field_capacity() == 4);
+    let aliased: core::text::Text = row.field(0).unwrap();
+    if (!append(row.borrow(),aliased)) { return failed(row.borrow()); }
+    assert(row.field(4).unwrap().equals(literal("x",1)));
+    if (!append(row.borrow(),literal("longer than the remaining capacity",34))) { return failed(row.borrow()); }
+    while (row.field_count() < 9) { if (!append(row.borrow(),literal("",0))) { return failed(row.borrow()); } }
+    let bc: i32 = row.byte_capacity(); let fc: i32 = row.field_capacity(); row.clear();
+    assert(row.byte_len() == 0 && row.field_count() == 0 && row.byte_capacity() == bc && row.field_capacity() == fc);
+    assert(append(row.borrow(),literal("reuse",5))); row.destroy(); return 0;
+}

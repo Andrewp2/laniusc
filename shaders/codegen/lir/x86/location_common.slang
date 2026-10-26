@@ -82,6 +82,19 @@ uint x86_move_float_from_gpr_bytes(uint source_gpr, uint location, bool wide)
         source_gpr >= 8u ? 1u : 0u);
 }
 
+// Matches encoding.x86_put_xmm for an SSE scalar result captured from XMM0.
+// MOVSS/MOVSD and MOVD/MOVQ transport the checked bits without conversion.
+uint x86_move_float_from_xmm_bytes(uint xmm, uint location, bool wide)
+{
+    if (x86_location_is_xmm(location))
+        return x86_location_xmm(location) == xmm ? 0u :
+            4u + (xmm >= 8u || x86_location_xmm(location) >= 8u ? 1u : 0u);
+    if (x86_location_is_register(location))
+        return 4u + (wide || xmm >= 8u || x86_location_payload(location) >= 8u ? 1u : 0u);
+    return 4u + (xmm >= 8u ? 1u : 0u) +
+        x86_stack_displacement_bytes(x86_location_payload(location));
+}
+
 uint x86_move32_to_fixed_bytes(uint location, uint fixed_register)
 {
     if (x86_location_is_xmm(location))
@@ -335,7 +348,9 @@ uint x86_call_result_instruction_bytes(uint metadata, uint result_words,
             x86_move32_from_fixed_bytes(2u, result_location + 1u);
     if ((metadata & X86_LIR_METADATA_AGGREGATE) == 0u)
         return 5u + (x86_scalar_float(metadata)
-            ? x86_move_float_from_gpr_bytes(0u, result_location, x86_scalar_f64(metadata))
+            ? (metadata & X86_LIR_METADATA_NATIVE_C) != 0u
+                ? x86_move_float_from_xmm_bytes(0u, result_location, x86_scalar_f64(metadata))
+                : x86_move_float_from_gpr_bytes(0u, result_location, x86_scalar_f64(metadata))
             : scalar_uses_64bit_gpr(metadata & 0xffu)
             ? x86_move64_from_fixed_bytes(0u, result_location)
             : x86_move32_from_fixed_bytes(0u, result_location));

@@ -6,6 +6,8 @@ import type_checker.semantic.artifact.constant_reference;
 import type_checker.type.instances.generic_param_lookup;
 import type_checker.predicates.scalar_subject;
 import gpu_index;
+import native_c_abi;
+import status;
 
 // Projection columns are sparse by their compact semantic domain. Value,
 // enclosing-function, control-depth, and expression-type columns cover every
@@ -49,6 +51,11 @@ StructuredBuffer<uint> compact_path_segment_count;
 StructuredBuffer<HirPathSegment> compact_path_segments;
 StructuredBuffer<uint> compact_param_count;
 StructuredBuffer<HirParam> compact_params;
+StructuredBuffer<HirRange> compact_param_ranges;
+StructuredBuffer<HirRange> compact_generic_param_ranges;
+StructuredBuffer<uint> compact_fn_return_type;
+StructuredBuffer<NativeAbiToken> token_words;
+ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> compact_method_count;
 StructuredBuffer<HirMethodCore> compact_method_cores;
 StructuredBuffer<HirMethodSignature> compact_method_signatures;
@@ -97,6 +104,8 @@ RWStructuredBuffer<uint> semantic_enclosing_fn_by_hir;
 RWStructuredBuffer<uint> semantic_function_return_type_by_hir;
 RWStructuredBuffer<uint> semantic_function_entrypoint_by_hir;
 RWStructuredBuffer<uint> semantic_function_host_service_by_hir;
+RWStructuredBuffer<uint> semantic_function_native_abi_by_hir;
+RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> semantic_function_native_symbol_by_hir;
 RWStructuredBuffer<uint> semantic_predicate_subject_parameter_token_by_hir;
 RWStructuredBuffer<uint> semantic_control_depth_by_hir;
@@ -171,7 +180,7 @@ uint type_leaf_token(uint row, HirCore core, HirPayload payload)
     return compact_path_segments[record.segment_start + record.segment_count - 1u].name_token;
 }
 
-uint host_service_for_function(HirPayload payload)
+uint host_service_for_function(HirPayload payload, uint source_abi)
 {
     if (payload.a != HIR_ITEM_KIND_EXTERN_FN || !valid_token(payload.b)) return INVALID;
     uint name_id = name_id_by_token[payload.b];
@@ -181,9 +190,59 @@ uint host_service_for_function(HirPayload payload)
         // 63..73 are types/paths/intrinsics and must not bind ordinary externs.
         if (!((service <= 62u && service != LANGUAGE_SYMBOL_I32_ARRAY_DATA_PTR) ||
               service == HOST_SERVICE_LINUX_SYSCALL6)) continue;
-        if (language_name_id[service] == name_id) return service;
+        uint required_abi = service == 31u || service == 32u || service == 61u || service == 62u
+            ? SOURCE_ABI_LANIUS_ALLOC : service == HOST_SERVICE_LINUX_SYSCALL6
+            ? SOURCE_ABI_LANIUS_LINUX : SOURCE_ABI_LANIUS_STD;
+        if (language_name_id[service] == name_id && source_abi == required_abi) return service;
     }
     return INVALID;
+}
+
+// The accepted type graph, rather than source spelling or inferred machine
+// width, admits a C signature. In particular references and aggregates cannot
+// borrow the opaque-ptr calling convention.
+bool native_c_type(uint node, bool result, uint hir_count)
+{
+    return node < hir_count && semantic_expr_ref_tag_by_hir[node] == 1u &&
+        native_c_scalar(semantic_expr_ref_payload_by_hir[node], result);
+}
+
+bool validate_native_c_function(uint row, HirPayload payload, uint hir_count)
+{
+    uint detail = payload.b;
+    bool accepted = true;
+    uint owner = row;
+    for (uint depth = 0u; depth < hir_count; depth++)
+    {
+        if (compact_generic_param_ranges[owner].count != 0u) { accepted = false; break; }
+        uint parent = compact_hir_core[owner].parent;
+        if (parent == INVALID || parent >= owner) break;
+        owner = parent;
+    }
+    HirRange range = compact_param_ranges[row];
+    uint count = min(compact_param_count[0u], gParams.n_hir_nodes);
+    accepted = accepted && range.count <= NATIVE_C_MAX_PARAMETERS &&
+        (range.count == 0u || (range.start < count && range.count <= count - range.start));
+    if (accepted)
+        for (uint i = 0u; i < range.count; i++)
+        {
+            HirParam parameter = compact_params[range.start + i];
+            if (parameter.owner != row || parameter.ordinal != i ||
+                !native_c_type(parameter.type_node, false, hir_count))
+            {
+                detail = parameter.name_token;
+                accepted = false;
+                break;
+            }
+        }
+    uint result = compact_fn_return_type[row];
+    if (accepted && result != INVALID && !native_c_type(result, true, hir_count))
+    {
+        detail = result < hir_count ? compact_hir_core[result].token_start : payload.b;
+        accepted = false;
+    }
+    if (!accepted) record_min_token_error(status, detail, 29u, 1u);
+    return accepted;
 }
 
 // A subject column value with this bit is a scalar subject's type code, not a
@@ -329,7 +388,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
             ? call_return_type[token] : 0u;
         semantic_function_entrypoint_by_hir[row] = valid_token(token)
             ? fn_entrypoint_tag[token] : 0u;
-        semantic_function_host_service_by_hir[row] = host_service_for_function(payload);
+        uint source_abi = native_extern_source_abi(core, payload, token_words,
+            source_bytes, gParams.n_tokens, gParams.source_len);
+        bool native_c = source_abi == NATIVE_ABI_C &&
+            validate_native_c_function(row, payload, hir_count);
+        semantic_function_native_abi_by_hir[row] = native_c ? NATIVE_ABI_C : NATIVE_ABI_NONE;
+        semantic_function_host_service_by_hir[row] = host_service_for_function(payload, source_abi);
     }
     // Use the native definition policy; method visibility and lexical scope
     // are distinct identities. Predicate-only columns retain their own gate.

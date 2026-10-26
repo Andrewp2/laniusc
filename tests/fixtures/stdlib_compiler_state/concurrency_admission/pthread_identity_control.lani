@@ -1,0 +1,13 @@
+// Proposed positive control for libc's initial-thread ABI, not thread creation.
+// On Linux x86_64/glibc pthread_t is unsigned long, represented here by usize.
+module app::main;
+
+extern "C" fn pthread_self() -> usize;
+extern "C" fn pthread_equal(left: usize, right: usize) -> i32;
+
+fn main() -> i32 {
+    let first: usize = pthread_self();
+    let second: usize = pthread_self();
+    if (pthread_equal(first,second) == 0) { return 1; }
+    return 0;
+}

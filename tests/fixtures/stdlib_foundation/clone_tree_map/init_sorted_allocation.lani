@@ -1,0 +1,16 @@
+module app::main;
+import alloc::tree_map;
+import core::result;
+import core::slice;
+fn main() -> i32 {
+    let entries: [alloc::tree_map::Entry<i32,i32>;2] = [alloc::tree_map::Entry {key:3,value:30},alloc::tree_map::Entry {key:8,value:80}];
+    let map: alloc::tree_map::TreeMap<i32,i32> = alloc::tree_map::new();
+    let result = map.try_init_sorted(core::slice::view(entries,2).unwrap());
+    if (result.is_err()) {
+        assert(match(result.unwrap_err()) {alloc::tree_map::Error::AllocationFailed -> true,_ -> false});
+        assert(map.is_empty() && map.capacity()==0 && entries[0].key==3 && entries[1].value==80);
+        map.destroy(); return 4;
+    }
+    assert(result.unwrap()==2 && map.len()==2 && map.get(3).unwrap()==30 && map.get(8).unwrap()==80);
+    map.destroy(); return 0;
+}

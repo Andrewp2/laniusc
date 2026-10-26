@@ -28,8 +28,9 @@ Source order is explicit: index zero is the lowest priority. A resolved Value
 records its source index, and its descendants retain that origin. Applications
 choose source names, defaults, environment mapping, schema validation and CLI
 precedence. The module does not read environment variables or search directories
-implicitly. TOML support, environment adapters and reusable schema validation
-remain future work.
+implicitly. [Typed settings](extended-settings.md) provide JSON/TOML layers and
+explicit environment bindings through `ext::settings` and `ext::settings_env`.
+Configuration-specific validation and discovery policy remain separate.
 
 ## API and ownership
 

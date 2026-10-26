@@ -4,6 +4,7 @@
 
 import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
+import codegen.lir.x86.crt_entry;
 import gpu_index;
 
 struct Params
@@ -47,5 +48,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint pos = linear_dispatch_thread_id_2d(dtid, DISPATCH_X_STRIDE);
     X86ArtifactLayout layout = x86_artifact_layout[0u];
     if (layout.status != 0u || pos >= layout.runtime_length) return;
-    store_byte(layout.runtime_offset + pos, x86_runtime_byte(pos));
+    store_byte(layout.runtime_offset + pos, pos < X86_RUNTIME_LENGTH
+        ? x86_runtime_byte(pos)
+        : x86_crt_entry_byte(pos - X86_RUNTIME_LENGTH, layout));
 }

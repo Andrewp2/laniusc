@@ -1,0 +1,37 @@
+module app::main;
+import alloc::clone_tree_set;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::iter;
+import core::result;
+import std::io;
+import std::io_decimal;
+fn allocation(error:alloc::string::Error)->bool{return match(error){alloc::string::Error::AllocationFailed->true,_ ->false};}
+fn storage(error:alloc::tree_map::Error)->i32{assert(match(error){alloc::tree_map::Error::AllocationFailed->true,_ ->false});return 10;}
+fn element(index:i32,error:alloc::string::Error)->i32{assert(index>=0&&index<3&&allocation(error));return 20+index;}
+fn tag(error:alloc::clone_tree_set::Error<alloc::string::Error>)->i32{
+    return match(error){alloc::clone_tree_set::Error::Storage(error)->storage(error),alloc::clone_tree_set::Error::Element(index,error)->element(index,error),alloc::clone_tree_set::Error::ChangedKey(index)->-1};
+}
+fn finish(value:i32,status:i32)->i32{assert(std::io_decimal::write_i32(1,value)>0&&std::io::write_byte(1,10)==1);return status;}
+fn main()->i32 {
+    let a_bytes:[u8;4]=[30,0,195,169];let b_bytes:[u8;4]=[10,0,195,169];let c_bytes:[u8;4]=[20,0,195,169];let d_bytes:[u8;4]=[40,0,195,169];
+    let a_made=alloc::string::from_utf8(a_bytes,4);if(a_made.is_err()){assert(allocation(a_made.unwrap_err()));return finish(1,4);}let a=a_made.unwrap();
+    let b_made=alloc::string::from_utf8(b_bytes,4);if(b_made.is_err()){assert(allocation(b_made.unwrap_err()));a.destroy();return finish(2,4);}let b=b_made.unwrap();
+    let c_made=alloc::string::from_utf8(c_bytes,4);if(c_made.is_err()){assert(allocation(c_made.unwrap_err()));a.destroy();b.destroy();return finish(3,4);}let c=c_made.unwrap();
+    let d_made=alloc::string::from_utf8(d_bytes,4);if(d_made.is_err()){assert(allocation(d_made.unwrap_err()));a.destroy();b.destroy();c.destroy();return finish(4,4);}let d=d_made.unwrap();
+    let source_made=alloc::tree_set::with_capacity<alloc::string::String>(6);
+    if(source_made.is_err()){assert(storage(source_made.unwrap_err())==10);a.destroy();b.destroy();c.destroy();d.destroy();return finish(5,4);}
+    let source=source_made.unwrap();source.try_insert(a).unwrap();source.try_insert(b).unwrap();source.try_insert(c).unwrap();source.try_insert(d).unwrap();
+    let removed=source.remove(c).unwrap();removed.destroy();
+    let saved=source.iter();let saved_bytes=b.as_bytes();
+    let result:core::result::Result<alloc::tree_set::TreeSet<alloc::string::String>,alloc::clone_tree_set::Error<alloc::string::Error>> =
+        alloc::clone_tree_set::try_clone<alloc::string::String,alloc::string::Error>(source.borrow());
+    let first=saved.next().unwrap();let middle=saved.next().unwrap();let last=saved.next().unwrap();
+    assert(source.len()==3&&source.capacity()==6&&first.equals(b)&&middle.equals(a)&&last.equals(d)&&saved.next().is_none());
+    assert(a.byte_len()==4&&b.byte_len()==4&&d.byte_len()==4&&saved_bytes[0]==10&&saved_bytes[1]==0&&saved_bytes[3]==169);
+    source.destroy();a.destroy();b.destroy();d.destroy();
+    if(result.is_err()){return finish(tag(result.unwrap_err()),4);}
+    let copy=result.unwrap();assert(copy.len()==3&&copy.first().unwrap().byte_at(0).unwrap()==10&&copy.last().unwrap().byte_at(0).unwrap()==40);
+    alloc::clone_tree_set::destroy_tree_set<alloc::string::String>(copy.borrow());return finish(0,0);
+}

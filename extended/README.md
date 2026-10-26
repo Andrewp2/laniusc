@@ -6,7 +6,8 @@ ordinary modules. Add this root only when an application needs an extended
 module:
 
 ```sh
-timeout --kill-after=2s 100s target/stdlib-build/debug/laniusc \
+export CARGO_TARGET_DIR="$PWD/target/stdlib-build"
+timeout --kill-after=2s 100s "$CARGO_TARGET_DIR/debug/laniusc" \
   --stdlib-root stdlib --source-root extended \
   sample_programs/csv_normalize.lani -o /tmp/csv-normalize
 ```
@@ -17,23 +18,26 @@ The [generated declaration index](../docs/api/README.md#ext) lists public
 signatures and source locations; the guides below describe runtime contracts.
 Declaration inventory does not establish execution or complete semantic docs.
 
+[OpenSSL digest contexts](../docs/extended-openssl-digest.md) execute SHA-256,
+SHA-512, SHA3-256 and SHA3-512 through the [native C profile](../docs/library-native-c.md)
+on Linux x86_64/glibc. The [hashing program](../docs/extended-openssl-hash.md)
+uses that binding for binary stdin. Sensitive operations belong to established
+native libraries; Lanius handles the interface, byte layout and ownership.
+C `f32`/`f64` calls execute through independent SSE/GPR banks. An owned
+[SQLite adapter](../docs/extended-sqlite.md) and
+[persistent binary key/value program](../docs/extended-sqlite-kv.md) execute
+through system SQLite on the same Linux x86_64/glibc profile, including typed
+values, transactions, persistence, locks and explicit failure recovery.
+TLS, encryption, signatures and certificate trust wrappers remain unimplemented;
+see the [remaining native prerequisites](../docs/library-native-integration-prerequisites.md).
+Raw DER/X.509 parsing supplies schema inspection independently.
+
 | Module | Working surface | Execution evidence |
 | --- | --- | --- |
-| [`ext::hmac_sha256`](ext/hmac_sha256.lani), [`ext::hkdf_sha256`](ext/hkdf_sha256.lani) | Incremental keyed MACs, extract/expand key derivation, explicit lifecycle and output limits, caller storage | x86_64 Linux; [RFC vectors, state ownership and failure contracts](../docs/extended-hmac-hkdf.md), [streaming key-derivation program](../docs/extended-derive-key.md) |
-| [`ext::chacha20_poly1305`](ext/chacha20_poly1305.lani) | IETF authenticated encryption/decryption with full tags, checked views and authenticate-before-output behavior | x86_64 Linux; [RFC vectors, independent models, mutation rejection and ordinary consumer](../docs/extended-chacha20-poly1305.md) |
-| [`ext::aes_gcm`](ext/aes_gcm.lani) | AES-128/192/256 GCM with general byte IVs, full detached tags, copied keys and authentication before plaintext writes | x86_64 Linux; [1,022 independent protocol commands and an ordinary consumer](../docs/extended-aes-gcm.md), including NIST vectors, counter wrap, mutations and bounds. [TLS records](../docs/extended-tls-record.md) separately admit AES-128-GCM/SHA-256. |
-| [`ext::x25519`](ext/x25519.lani) | Fixed-storage scalar multiplication, canonical coordinates and all-zero shared-result rejection | x86_64 Linux; [RFC vectors, libsodium/field models, encodings and iteration evidence](../docs/extended-x25519.md) |
-| [`ext::ed25519`](ext/ed25519.lani) | Deterministic pure Ed25519 keys/signatures, canonical encodings and explicit subgroup verification policy | x86_64 Linux; [all five focused native groups](../docs/extended-ed25519.md), including RFC vectors, independent signing, adversarial points and byte mutations |
+| [`ext::openssl_digest`](ext/openssl_digest.lani) | Owned OpenSSL 3 EVP contexts for streaming SHA-256, SHA-512, SHA3-256 and SHA3-512; checked byte views, output buffers, errors and cleanup | Linux x86_64/glibc with dynamic `libcrypto.so.3`; [2,124 digest cases and 12 native failure modes](../docs/extended-openssl-digest.md), [bounded stdin hashing program](../docs/extended-openssl-hash.md). Other security wrappers remain work. |
+| [`ext::sqlite`](ext/sqlite.lani) | Native SQLite database and prepared-statement owners, strict typed values, copied text/blobs, transactions, limits, errors and cleanup | Linux x86_64/glibc with system SQLite; [558 typed cases, 640 model commands, 21 native failure modes and a measured bulk workload](../docs/extended-sqlite.md), [four staging allocation failures](../docs/extended-sqlite-allocation.md), [persistent binary key/value program](../docs/extended-sqlite-kv.md). |
 | [`ext::der`](ext/der.lani) | Borrowed canonical TLV framing, typed values, checked cursors and atomic caller-buffer writes | x86_64 Linux; [1,824 model/certificate commands and an ordinary consumer](../docs/extended-der.md). Certificate schema and trust policy remain separate. |
-| [`ext::x509`](ext/x509.lani) | Borrowed certificate structure, Names, algorithms, selected extensions and shared parse/work budgets | x86_64 Linux; [690 model/OpenSSL commands and an ordinary consumer](../docs/extended-x509.md). Signature, path, identity, time and trust validation remain separate. |
-| [`ext::service_identity`](ext/service_identity.lani) | Explicit DNS/IP references, ASCII DNS/wildcard matching and complete SAN traversal with shared work budgets | x86_64 Linux; [1,592 protocol commands and an ordinary consumer](../docs/extended-service-identity.md). No CN fallback, implicit lookup or trust decision. |
-| [`ext::x509_path`](ext/x509_path.lani) | Ordered Ed25519 server paths, explicit anchors, inclusive UTC validity, usage/CA/path constraints and copied validated leaf keys | x86_64 Linux; [160 model/OpenSSL commands and an ordinary consumer](../docs/extended-x509-path.md), plus [84 certificate-verifier cases](../docs/extended-verify-certificate.md). Restricted offline profile; normalized DN matching, path building, name constraints, certificate policies and revocation remain unsupported. |
-| [`ext::tls_framing`](ext/tls_framing.lani) | Caller-backed incremental record/handshake framing, exact consumed prefixes, backpressure and poisoned-state recovery | x86_64 Linux; [7,760 model actions, an ordinary consumer and the full 16,777,215-byte handshake body](../docs/extended-tls-framing.md). Framing retains opaque types/versions; connection policy owns their legality. |
-| [`ext::tls_handshake`](ext/tls_handshake.lani) | Borrowed TLS 1.3 frames, typed body codecs and shared iterator cursors | x86_64 Linux; [1,396 model commands and an ordinary consumer](../docs/extended-tls-handshake.md). Negotiation, connection ordering and authentication policy remain separate. |
-| [`ext::tls_negotiation`](ext/tls_negotiation.lani) | Checked X25519/Ed25519/SHA-256 suite selection, HRR/CH2 rules, SNI/ALPN and atomic extension writers | x86_64 Linux; [1,294 model commands and quota probes plus a six-flow consumer](../docs/extended-tls-negotiation.md), with returned-byte witnesses, full writer snapshots and zero allocations. Connection ordering, transcript and key epochs remain owned by the connection engine. |
-| [`ext::tls_authentication`](ext/tls_authentication.lani) | Ordered server-flight path, CertificateVerify and Finished checks; copied peer key/transcript only after authentication; terminal failure latching | x86_64 Linux; [110 protocol cases, 340 state observations and an ordinary consumer](../docs/extended-tls-authentication.md), including source-buffer retirement, copies, retry/budget boundaries and a long chain. Authentication is one connection checkpoint; negotiation, record state, client-Finished transmission and transport remain. |
-| [`ext::tls_schedule`](ext/tls_schedule.lani), [`ext::tls_transcript`](ext/tls_transcript.lani) | Typed SHA-256 key schedule, Finished/exporter/resumption derivation, complete-frame transcripts and HRR rewriting | x86_64 Linux; [114 protocol commands, 460 transcript actions, 12 RFC anchors and an ordinary consumer](../docs/extended-tls-schedule.md). Callers must enforce real connection checkpoints. |
-| [`ext::tls_record`](ext/tls_record.lani) | TLS 1.3 AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 records with explicit suites, directional state and key-use limits | x86_64 Linux; [308 ChaCha and 220 AES protocol commands, plus two ordinary consumers](../docs/extended-tls-record.md), with zero allocations. [Compile-time and output-size comparison](../docs/library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration) records the added cost. Full TLS connections remain separate work. |
+| [`ext::x509`](ext/x509.lani) | Borrowed certificate structure, Names, algorithms, selected extensions and shared parse/work budgets | x86_64 Linux; [690 model/OpenSSL commands and an ordinary consumer](../docs/extended-x509.md). Schema inspection only; no signature, path or trust verification. |
 | [`ext::csv`](ext/csv.lani) | Incremental UTF-8 decoding, reusable packed records, whole tables, borrowed/copied fields and canonical encoding | x86_64 Linux; [contracts and tests](../docs/extended-csv.md) |
 | [`ext::json`](ext/json.lani) | Parse/build owned documents, query nodes, encode compact JSON with exact number text | x86_64 Linux; [contracts and tests](../docs/extended-json.md) |
 | [`ext::cli`](ext/cli.lani) | Borrowed raw-byte argument parser, short groups, exact long names, required/optional values and structured errors | x86_64 Linux; [contracts and tests](../docs/extended-cli.md) |
@@ -77,7 +81,7 @@ Declaration inventory does not establish execution or complete semantic docs.
 | [`ext::http_server`](ext/http_server.lani) | One staged cleartext HTTP/1 connection with stable request views, explicit 100 Continue, checked final response and bounded close/drain | x86_64 Linux; [deadlines, quotas, ownership, local service and peer/fault tests](../docs/extended-http-server.md). Keepalive, worker scheduling, TLS and upgrade/tunnel handoff remain separate work. |
 | [`ext::dns`](ext/dns.lani) | Binary DNS names, validated compression, complete QUERY sections, common RDATA, EDNS and checked packet writing | x86_64 Linux offline processing; [profile, limits, models and program](../docs/extended-dns.md). Host resolution remains separate. |
 | [`ext::dns_client`](ext/dns_client.lani) | Explicit numeric-server UDP queries, fixed retry windows, correlated TCP fallback and owned validated responses | x86_64 Linux; [transport profile, query application and loopback/fault tests](../docs/extended-dns-client.md). System resolver/NSS policy remains separate. |
-| [`ext::websocket`](ext/websocket.lani) | RFC 6455 handshakes, role masking, frames, fragmented messages, control/close state and checked encoding | x86_64 Linux offline processing; [contracts, independent oracles and program](../docs/extended-websocket.md). Socket/TLS transport remains separate. |
+| [`ext::websocket`](ext/websocket.lani) | RFC 6455 request validation/encoding, Base64 keys, role masking, frames, fragmented messages, control/close state and checked encoding | x86_64 Linux offline processing; [contracts, independent oracles and program](../docs/extended-websocket.md). Server accept generation and response verification require future native security bindings; socket transport remains separate. |
 | [`ext::kv`](ext/kv.lani) | Owned arbitrary-byte key/value storage, atomic mutations and canonical checked snapshots | x86_64 Linux; [models, file program and persistence limits](../docs/extended-kv.md). Crash durability and concurrent transactions require host services. |
 | [`ext::timezone`](ext/timezone.lani) | Owned TZif v1–v4, supported POSIX footer rules, historical offsets and complete local-time candidates | x86_64 Linux; [coverage, ambiguity, limits and command-line tool](../docs/extended-timezone.md). Leap-bearing files and unsupported annual rule streams fail explicitly. |
 | [`ext::image`](ext/image.lani) | Owned straight RGBA8 pixels, strided views, crop, rotation, flips, blit and source-over | x86_64 Linux; [pixel and ownership contracts](../docs/extended-image.md) |
@@ -86,23 +90,9 @@ Declaration inventory does not establish execution or complete semantic docs.
 | [`ext::wave`](ext/wave.lani) | PCM8/16/24/32, IEEE float and ordinary extensible WAVE decoding; checked canonical encoding | x86_64 Linux; [format and conversion contracts](../docs/extended-wave.md) |
 | [`ext::signal`](ext/signal.lani) | Finite complex arithmetic, FFT/inverse, windows, full convolution and spectral bins | x86_64 Linux; [numerical/resource contracts](../docs/extended-signal.md), [WAVE spectrum program](../docs/extended-wave-spectrum.md) |
 
-The [seal-bytes application](../docs/extended-seal-bytes.md) passes 137 native
-cases, including allocation/I/O failures, full 1 MiB seal/open and shared
-call-budget checks. The
-[pinned compiler comparison](../docs/library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured crypto and large-library workloads and their limits. Full TLS
-connections still require handshake negotiation, certificates, peer
-authentication, trust policy and transport integration.
-
-The [signing application](../docs/extended-sign-bytes.md) passes 128 native
-cases, including full 1 MiB sign/verify and resource/I/O failures. The
-[composed authentication flight](../docs/extended-tls-auth-foundation.md) passes
-18 cases and 720 output fields across both layouts and eight tamper scenarios.
-It verifies a real certificate's self-signature and authentication checkpoints
-inside a fixed fixture; chain/identity/time/constraint trust and a reusable
-connection state machine remain separate work.
-The [certificate inspector](../docs/extended-certificate-info.md) passes 50
-native cases for parsed metadata, complete reports, failures and resource caps.
+The [certificate inspector](../docs/extended-certificate-info.md) reports
+parsed schema metadata with explicit input, work and output limits. It computes
+no cryptographic fingerprint and makes no trust decision.
 
 Generated Unicode table modules are implementation data rather than separate
 APIs. Their source versions and regeneration commands are recorded by the

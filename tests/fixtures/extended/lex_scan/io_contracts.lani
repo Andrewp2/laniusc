@@ -1,0 +1,75 @@
+// Appended to the real sample after renaming only its command main.
+struct ProbeReader { data: [u8], length: i32, position: i32, calls: i32, mode: i32 }
+impl ProbeReader { fn borrow(&self) -> &ProbeReader { return self; } }
+pub impl core::io::Read for ProbeReader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.mode == 1 && self.calls == 1) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 3) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 4) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 5) { return core::result::Ok(count+1); }
+        if (self.mode == 6) { return core::result::Ok(-1); }
+        if (self.position == self.length) { return core::result::Ok(0); }
+        assert(count > 0); destination[offset] = self.data[self.position]; self.position += 1; return core::result::Ok(1);
+    }
+}
+fn read_error(error: ReadError) -> i32 {
+    return match(error) { ReadError::Calls -> 1, ReadError::Limit -> 2, ReadError::Allocation -> 3, ReadError::Io(value) -> match(value) { core::io::Error::WouldBlock -> 4, core::io::Error::Host(code) -> 5, core::io::Error::InvalidCount -> 6, _ -> 7 } };
+}
+fn readers() {
+    let data: [u8;2] = [65,66]; let mode: i32 = 0;
+    while (mode < 7) {
+        let source = ProbeReader { data: data, length: 2, position: 0, calls: 0, mode: mode };
+        let output = alloc::io::with_limit(2).unwrap(); let result = read_bounded<ProbeReader>(source.borrow(),output.borrow(),4);
+        if (mode <= 1) { assert(result.unwrap() == 2 && output.len() == 2 && output.as_bytes()[0] == 65 && output.as_bytes()[1] == 66 && source.calls == 3+mode); }
+        else {
+            let expected: i32 = 6; if (mode == 2) { expected = 4; } if (mode == 3) { expected = 1; } if (mode == 4) { expected = 5; }
+            assert(read_error(result.unwrap_err()) == expected && output.len() == 0);
+            let calls: i32 = 1; if (mode == 3) { calls = 4; } assert(source.calls == calls);
+        }
+        output.destroy(); mode += 1;
+    }
+    let overflow = ProbeReader { data: data, length: 2, position: 0, calls: 0, mode: 0 }; let one = alloc::io::with_limit(1).unwrap();
+    assert(read_error(read_bounded<ProbeReader>(overflow.borrow(),one.borrow(),4).unwrap_err()) == 2 && one.len() == 1 && one.as_bytes()[0] == 65 && overflow.position == 2 && overflow.calls == 2); one.destroy();
+    let exact = ProbeReader { data: data, length: 2, position: 0, calls: 0, mode: 0 }; let two = alloc::io::with_limit(2).unwrap();
+    assert(read_error(read_bounded<ProbeReader>(exact.borrow(),two.borrow(),2).unwrap_err()) == 1 && exact.calls == 2 && two.len() == 2); two.destroy();
+    let eof = ProbeReader { data: data, length: 0, position: 0, calls: 0, mode: 0 }; let zero = alloc::io::with_limit(0).unwrap();
+    assert(read_bounded<ProbeReader>(eof.borrow(),zero.borrow(),1).unwrap() == 0 && eof.calls == 1); zero.destroy();
+}
+struct ProbeWriter { data: [u8], used: i32, calls: i32, mode: i32 }
+impl ProbeWriter { fn borrow(&self) -> &ProbeWriter { return self; } }
+pub impl core::io::Write for ProbeWriter {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.mode == 1 && self.calls == 1) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 2 && self.calls == 2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 3 && self.calls == 2) { return core::result::Ok(0); }
+        if (self.mode == 4) { return core::result::Ok(count+1); }
+        if (self.mode == 5) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 6 && self.calls == 2) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 7) { return core::result::Ok(-1); }
+        assert(count > 0 && self.used < 4); self.data[self.used] = source[offset]; self.used += 1; return core::result::Ok(1);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { assert(false); return core::result::Ok(0); }
+}
+fn writers() {
+    let source: [u8;3] = [65,66,67]; let mode: i32 = 0;
+    while (mode < 8) {
+        let data: [u8;4] = [0;4]; let sink = ProbeWriter { data: data, used: 0, calls: 0, mode: mode };
+        let result = publish<ProbeWriter>(sink.borrow(),source,3,4);
+        if (mode <= 1) { assert(result.unwrap() == 3 && sink.used == 3 && sink.calls == 3+mode && data[0] == 65 && data[1] == 66 && data[2] == 67); }
+        else {
+            let failure = result.unwrap_err(); let completed: i32 = 0; let calls: i32 = 1;
+            if (mode == 2 || mode == 3 || mode == 6) { completed = 1; calls = 2; } if (mode == 5) { calls = 4; }
+            assert(failure.completed == completed && sink.used == completed && sink.calls == calls);
+            if (completed == 1) { assert(data[0] == 65 && data[1] == 0); }
+            let valid: bool = match(failure.cause) { core::io::Error::WouldBlock -> mode == 2, core::io::Error::Host(code) -> mode == 6 && code == 5, core::io::Error::LimitExceeded -> mode == 5, core::io::Error::InvalidCount -> mode == 3 || mode == 4 || mode == 7, _ -> false }; assert(valid);
+        }
+        mode += 1;
+    }
+    let data: [u8;4] = [0;4]; let sink = ProbeWriter { data: data, used: 0, calls: 0, mode: 0 };
+    let failure = publish<ProbeWriter>(sink.borrow(),source,3,2).unwrap_err(); assert(failure.completed == 2 && sink.calls == 2 && data[0] == 65 && data[1] == 66 && data[2] == 0);
+    let valid: bool = match(failure.cause) { core::io::Error::LimitExceeded -> true, _ -> false }; assert(valid);
+}
+fn main() -> i32 { readers(); writers(); return 0; }

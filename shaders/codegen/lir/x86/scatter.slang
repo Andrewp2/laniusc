@@ -95,6 +95,53 @@ uint call_abi_argument_count(uint start, uint count)
     return result;
 }
 
+// The checked C profile contains only scalar eightbytes. INTEGER and SSE
+// registers are independent banks; an exhausted bank spills its subsequent
+// arguments without consuming registers in the other bank.
+uint native_c_stack_words(uint start, uint count)
+{
+    uint floats = 0u;
+    for (uint i = 0u; i < count; i++)
+        if (scalar_is_float(semantic_lir_call_args[start + i].value_metadata &
+            SEMANTIC_LIR_VALUE_TYPE_MASK)) floats++;
+    uint integers = count - floats;
+    return (floats > 8u ? floats - 8u : 0u) +
+        (integers > 6u ? integers - 6u : 0u);
+}
+
+// Register destinations use their bank ordinal (GPR 0..5, XMM 0..7), while
+// stack destinations use 16 + their source-order stack index. Expansion emits
+// reversed stack arguments first, followed by register arguments in source
+// order. Every source has a stable home before these parallel copies run.
+SemanticLirCallArg native_c_argument(uint start, uint count, uint row,
+    uint stack_words, out uint destination)
+{
+    uint integers = 0u;
+    uint floats = 0u;
+    uint stack = 0u;
+    uint registers = 0u;
+    destination = INVALID;
+    SemanticLirCallArg selected = semantic_lir_call_args[start];
+    for (uint i = 0u; i < count; i++)
+    {
+        SemanticLirCallArg argument = semantic_lir_call_args[start + i];
+        bool floating = scalar_is_float(argument.value_metadata & SEMANTIC_LIR_VALUE_TYPE_MASK);
+        uint ordinal;
+        if (floating) { ordinal = floats; floats++; }
+        else { ordinal = integers; integers++; }
+        bool spilled = ordinal >= (floating ? 8u : 6u);
+        uint position = spilled ? stack_words - 1u - stack : stack_words + registers;
+        if (position == row)
+        {
+            selected = argument;
+            destination = spilled ? 16u + stack : ordinal;
+        }
+        if (spilled) stack++;
+        else registers++;
+    }
+    return selected;
+}
+
 bool direct_i32_constant(uint semantic_row, uint semantic_count,
                          out uint value)
 {
@@ -178,12 +225,16 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
     uint cursor = 0u;
     uint sret_shift = call_result_words > 2u && opt_ir_op(source) != SEMANTIC_LIR_OP_CALL_INTRINSIC ? 1u : 0u;
     uint argument_rows = call_abi_argument_count(argument_start, argument_count);
-    uint stack_words = argument_rows + sret_shift > 6u
+    bool native_c = (source.flags & SEMANTIC_LIR_FLAG_NATIVE_C_CALL) != 0u;
+    uint stack_words = native_c ? native_c_stack_words(argument_start, argument_count)
+        : argument_rows + sret_shift > 6u
         ? argument_rows + sret_shift - 6u : 0u;
     // Push excess arguments right-to-left before moving register arguments.
     uint value_row = abi_row < stack_words
         ? argument_rows - 1u - abi_row : abi_row - stack_words;
-    for (uint arg_i = 0u; arg_i < argument_count; arg_i += 1u)
+    if (native_c)
+        argument = native_c_argument(argument_start, argument_count, abi_row, stack_words, abi_ordinal);
+    else for (uint arg_i = 0u; arg_i < argument_count; arg_i += 1u)
     {
         SemanticLirCallArg candidate = semantic_lir_call_args[argument_start + arg_i];
         uint width = call_argument_width(candidate);
@@ -231,6 +282,7 @@ void write_call_arg(uint page_row, uint row, uint semantic_row, uint source_hir,
         (argument.value_metadata & SEMANTIC_LIR_VALUE_ARRAY_PAIR) != 0u ||
         direct_slice_intrinsic;
     operands.metadata = (argument_type & 0xffu) |
+        (native_c ? X86_LIR_METADATA_NATIVE_C : 0u) |
         ((argument.value_metadata & SEMANTIC_LIR_VALUE_AGGREGATE) != 0u
             ? X86_LIR_METADATA_AGGREGATE : 0u) |
         (string_value &&
@@ -886,7 +938,10 @@ void main(uint3 dtid: SV_DispatchThreadID)
     bool local_aggregate_result = op == X86_LIR_OP_CALL &&
         call_result_words != 0u;
     uint metadata = (source.type_id >= 128u ? SEMANTIC_LIR_TY_POINTER
-        : source.type_id & 0xffu) | ((source.flags & ~(SEMANTIC_LIR_FLAG_NATIVE_PLACE | SEMANTIC_LIR_FLAG_PLACE_VIEW)) << 8u) |
+        : source.type_id & 0xffu) | ((source.flags & ~(SEMANTIC_LIR_FLAG_NATIVE_PLACE |
+            SEMANTIC_LIR_FLAG_PLACE_VIEW | SEMANTIC_LIR_FLAG_ARRAY_PAIR |
+            SEMANTIC_LIR_FLAG_NATIVE_C_CALL)) << 8u) |
+        ((source.flags & SEMANTIC_LIR_FLAG_NATIVE_C_CALL) != 0u ? X86_LIR_METADATA_NATIVE_C : 0u) |
         (x86_semantic_type_is_aggregate(source) || copy_words != 0u ||
          imported_aggregate_result || local_aggregate_result
             ? X86_LIR_METADATA_AGGREGATE : 0u);
@@ -1375,7 +1430,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
         metadata |= X86_LIR_METADATA_RHS_NARROW;
     X86LirCore core;
     core.source_hir = source_hir;
-    uint stack_words = argument_rows + (call_result_words > 2u ? 1u : 0u) > 6u
+    uint stack_words = (source.flags & SEMANTIC_LIR_FLAG_NATIVE_C_CALL) != 0u
+        ? native_c_stack_words(argument_start, argument_count)
+        : argument_rows + (call_result_words > 2u ? 1u : 0u) > 6u
         ? argument_rows + (call_result_words > 2u ? 1u : 0u) - 6u : 0u;
     uint aligned_stack_words = (stack_words + 1u) & ~1u;
     core.local_ordinal = op == X86_LIR_OP_COMPARE_BRANCH_FALSE ||

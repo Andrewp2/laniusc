@@ -1,0 +1,319 @@
+// Fixed bounded command protocol; every SQL statement below is source-owned.
+module app::main;
+import alloc::vec;
+import core::f64;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::sqlite;
+import std::stream;
+pub extern "C" fn sqlite3_memory_highwater(reset: i32) -> i64;
+
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { let sink: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(sink.borrow(), self.bytes, 0, self.used).is_ok()); self.used = 0; }
+    fn word(&self, value: u64) { if (self.used == 1024) { self.flush(); } let at: i32 = 0; while (at < 8) { self.bytes[self.used + at] = ((value >> (at * 8)) & 255) as u8; at += 1; } self.used += 8; }
+    fn error(&self, error: ext::sqlite::Error) { assert(native(error.cause) || readonly(error.cause)); self.word(1); self.word(ext::sqlite::primary_code(error) as u64); }
+    fn changes(&self, db: &ext::sqlite::Database) { self.word(0); self.word(db.changes().unwrap() as u64); self.word(db.last_insert_rowid().unwrap() as u64); }
+}
+fn bytes(value: str, length: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length), start: 0, length: length }; }
+fn decode(input: [u8], start: i32) -> u64 { let value: u64 = 0; let at: i32 = 0; while (at < 8) { value |= (input[start + at] as u64) << (at * 8); at += 1; } return value; }
+fn row(value: ext::sqlite::Step) -> bool { return match (value) { ext::sqlite::Step::Row -> true, ext::sqlite::Step::Done -> false }; }
+fn native(value: ext::sqlite::Cause) -> bool { return match (value) { ext::sqlite::Cause::Native -> true, _ -> false }; }
+fn readonly(value: ext::sqlite::Cause) -> bool { return match (value) { ext::sqlite::Cause::ReadOnly -> true, _ -> false }; }
+fn cause(value: ext::sqlite::Cause) -> i32 { return match (value) {
+    ext::sqlite::Cause::Bounds -> 1, ext::sqlite::Cause::InvalidLimits -> 2, ext::sqlite::Cause::Limit -> 3,
+    ext::sqlite::Cause::Closed -> 4, ext::sqlite::Cause::InvalidState -> 5, ext::sqlite::Cause::Parameter -> 6,
+    ext::sqlite::Cause::Column -> 7, ext::sqlite::Cause::Type -> 8, ext::sqlite::Cause::Utf8 -> 9,
+    ext::sqlite::Cause::Nul -> 10, ext::sqlite::Cause::EmptySql -> 11, ext::sqlite::Cause::TrailingSql -> 12,
+    ext::sqlite::Cause::OutputTooSmall -> 13, ext::sqlite::Cause::AllocationFailed -> 14,
+    ext::sqlite::Cause::UnexpectedNative -> 15, ext::sqlite::Cause::ReadOnly -> 16,
+    ext::sqlite::Cause::Native -> 17, ext::sqlite::Cause::NotANumber -> 18 }; }
+fn phase(value: ext::sqlite::Phase) -> i32 { return match (value) {
+    ext::sqlite::Phase::Open -> 1, ext::sqlite::Phase::Configure -> 2, ext::sqlite::Phase::Prepare -> 3,
+    ext::sqlite::Phase::Bind -> 4, ext::sqlite::Phase::Step -> 5, ext::sqlite::Phase::Reset -> 6,
+    ext::sqlite::Phase::ClearBindings -> 7, ext::sqlite::Phase::Column -> 8,
+    ext::sqlite::Phase::Finalize -> 9, ext::sqlite::Phase::Close -> 10, ext::sqlite::Phase::Transaction -> 11 }; }
+fn expected(error: ext::sqlite::Error, c: i32, p: i32) { assert(cause(error.cause) == c && phase(error.phase) == p && error.code == 0); }
+fn kind(value: ext::sqlite::ColumnType) -> u64 { return match (value) { ext::sqlite::ColumnType::Integer -> 1, ext::sqlite::ColumnType::Real -> 2, ext::sqlite::ColumnType::Text -> 3, ext::sqlite::ColumnType::Blob -> 4, ext::sqlite::ColumnType::Null -> 5 }; }
+fn state(value: ext::sqlite::State) -> i32 { return match (value) { ext::sqlite::State::Ready -> 0, ext::sqlite::State::Row -> 1, ext::sqlite::State::Done -> 2, ext::sqlite::State::Failed -> 3, ext::sqlite::State::Finalized -> 4 }; }
+fn execute(db: &ext::sqlite::Database, sql: core::slice::View<u8>) -> core::result::Result<i32, ext::sqlite::Error> {
+    let prepared: core::result::Result<ext::sqlite::Statement, ext::sqlite::Error> = db.prepare(sql);
+    if (prepared.is_err()) { return core::result::Err(prepared.unwrap_err()); }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    let stepped: core::result::Result<ext::sqlite::Step, ext::sqlite::Error> = statement.step();
+    if (stepped.is_err()) { let error: ext::sqlite::Error = stepped.unwrap_err(); let released: core::result::Result<i32, ext::sqlite::Error> = statement.finalize(); assert(!statement.is_open()); return core::result::Err(error); }
+    assert(!row(stepped.unwrap())); return statement.finalize();
+}
+fn malformed(values: [u8], mode: i32) -> core::slice::View<u8> {
+    if (mode == 0) { return core::slice::View { values: values, start: -1, length: 0 }; }
+    if (mode == 1) { return core::slice::View { values: values, start: 0, length: -1 }; }
+    return core::slice::View { values: values, start: 2147483647, length: 1 };
+}
+fn unchanged(values: [u8], length: i32, value: u8) { let at: i32 = 0; while (at < length) { assert(values[at] == value); at += 1; } }
+fn copy_column(statement: &ext::sqlite::Statement, index: i32, is_text: bool, target: [u8], offset: i32, output: &Output) {
+    let length: i32 = 0;
+    if (is_text) { length = statement.column_text_len(index).unwrap(); } else { length = statement.column_blob_len(index).unwrap(); }
+    assert(length >= 0 && length <= 2048);
+    let at: i32 = 0; while (at < 2080) { target[at] = 221; at += 1; }
+    let destination: core::slice::View<u8> = core::slice::View { values: target, start: offset, length: 2048 };
+    at = 0;
+    while (at < 3) {
+        if (is_text) { expected(statement.column_text_copy(index, malformed(target, at)).unwrap_err(), 1, 8); }
+        else { expected(statement.column_blob_copy(index, malformed(target, at)).unwrap_err(), 1, 8); }
+        unchanged(target, 2080, 221); assert(state(statement.state()) == 1); at += 1;
+    }
+    let invalid: i32 = statement.column_count();
+    if (is_text) { expected(statement.column_text_copy(invalid, destination).unwrap_err(), 7, 8); expected(statement.column_blob_copy(index, destination).unwrap_err(), 8, 8); }
+    else { expected(statement.column_blob_copy(invalid, destination).unwrap_err(), 7, 8); expected(statement.column_text_copy(index, destination).unwrap_err(), 8, 8); }
+    unchanged(target, 2080, 221);
+    if (length > 0) {
+        destination.length = length - 1;
+        if (is_text) { expected(statement.column_text_copy(index, destination).unwrap_err(), 13, 8); }
+        else { expected(statement.column_blob_copy(index, destination).unwrap_err(), 13, 8); }
+        unchanged(target, 2080, 221); destination.length = 2048;
+    }
+    let copied: i32 = 0;
+    if (is_text) { copied = statement.column_text_copy(index, destination).unwrap(); }
+    else { copied = statement.column_blob_copy(index, destination).unwrap(); }
+    assert(copied == length && state(statement.state()) == 1);
+    output.word(length as u64); at = 0;
+    while (at < 2080) { if (at < offset || at >= offset + length) { assert(target[at] == 221); } else { output.word(target[at] as u64); } at += 1; }
+}
+fn render(statement: &ext::sqlite::Statement, layout: u64, offset: i32, output: &Output) {
+    assert(statement.column_count() == 6);
+    assert(kind(statement.column_type(0).unwrap()) == 1 && kind(statement.column_type(1).unwrap()) == 1);
+    assert(kind(statement.column_type(3).unwrap()) == 3 && kind(statement.column_type(4).unwrap()) == 4 && kind(statement.column_type(5).unwrap()) == 5);
+    expected(statement.column_f64(1).unwrap_err(), 8, 8); expected(statement.column_i64(3).unwrap_err(), 8, 8);
+    expected(statement.column_type(-1).unwrap_err(), 7, 8); expected(statement.column_type(6).unwrap_err(), 7, 8);
+    output.word(statement.column_i64(0).unwrap() as u64); output.word(statement.column_i64(1).unwrap() as u64);
+    let rkind: u64 = kind(statement.column_type(2).unwrap()); output.word(rkind);
+    if (rkind == 2) { output.word(core::f64::to_bits(statement.column_f64(2).unwrap())); } else { assert(rkind == 5); output.word(0); }
+    let stack: [u8; 2080] = [221; 2080]; let packed: [i32; 520] = [0; 520]; let owned: alloc::vec::Vec<u8> = alloc::vec::new();
+    let target: [u8] = stack;
+    if (layout == 1) { target = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 2080); }
+    if (layout == 2) { assert(owned.try_extend(core::slice::View { values: stack, start: 0, length: 2080 }).unwrap() == 2080); target = owned.as_slice(); }
+    copy_column(statement, 3, true, target, offset, output); copy_column(statement, 4, false, target, offset, output);
+    output.word(5); owned.destroy();
+}
+fn bind_values(statement: &ext::sqlite::Statement, header: [u8], source: [u8], offset: i32) {
+    assert(statement.parameter_count() == 5);
+    assert(statement.bind_i64(1, decode(header, 8) as i64).is_ok());
+    assert(statement.bind_i64(2, decode(header, 16) as i64).is_ok());
+    assert(statement.bind_f64(3, core::f64::from_bits(decode(header, 24))).is_ok());
+    let text_length: i32 = decode(header, 32) as i32; let blob_length: i32 = decode(header, 40) as i32;
+    assert(statement.bind_text(4, core::slice::View { values: source, start: offset, length: text_length }).is_ok());
+    assert(statement.bind_blob(5, core::slice::View { values: source, start: offset + text_length, length: blob_length }).is_ok());
+    let at: i32 = 0;
+    while (at < text_length + blob_length) { source[offset + at] ^= 1; at += 1; }
+}
+fn bulk(db: &ext::sqlite::Database, count: i32, output: &Output) {
+    assert(count > 0 && count <= 32768 && (count & (count - 1)) == 0);
+    let previous_peak: i64 = sqlite3_memory_highwater(1);
+    assert(execute(db, bytes("CREATE TABLE bench(k INTEGER PRIMARY KEY,v INTEGER NOT NULL)", 60)).is_ok());
+    assert(db.begin(ext::sqlite::Transaction::Immediate).is_ok() && !db.autocommit().unwrap());
+    let insert: ext::sqlite::Statement = db.prepare(bytes("INSERT INTO bench VALUES(?1,?2)", 31)).unwrap();
+    let at: i32 = 0;
+    while (at < count) {
+        let key: i32 = (at * 4051) & (count - 1); let value: i32 = (at * 17) ^ (at / 7);
+        assert(insert.bind_i64(1, key as i64).is_ok() && insert.bind_i64(2, value as i64).is_ok());
+        assert(!row(insert.step().unwrap()) && insert.reset().is_ok() && state(insert.state()) == 0);
+        at += 1;
+    }
+    assert(insert.finalize().is_ok() && db.commit().is_ok() && db.autocommit().unwrap());
+    let aggregate: ext::sqlite::Statement = db.prepare(bytes("SELECT count(*),sum(v),sum(k*v) FROM bench", 42)).unwrap();
+    assert(row(aggregate.step().unwrap())); output.word(0);
+    output.word(aggregate.column_i64(0).unwrap() as u64); output.word(aggregate.column_i64(1).unwrap() as u64); output.word(aggregate.column_i64(2).unwrap() as u64);
+    assert(!row(aggregate.step().unwrap()) && aggregate.finalize().is_ok());
+    let query: ext::sqlite::Statement = db.prepare(bytes("SELECT v FROM bench WHERE k=?1", 30)).unwrap();
+    let checksum: u64 = 0; at = 0;
+    while (at < count) {
+        assert(query.bind_i64(1, at as i64).is_ok() && row(query.step().unwrap()));
+        checksum += ((at + 1) as u64) * (query.column_i64(0).unwrap() as u64);
+        assert(!row(query.step().unwrap()) && query.reset().is_ok()); at += 1;
+    }
+    assert(query.finalize().is_ok()); output.word(checksum); output.word(sqlite3_memory_highwater(0) as u64);
+}
+fn run(db: &ext::sqlite::Database, header: [u8], payload: [u8], output: &Output) {
+    let op: u64 = decode(header, 0);
+    if (op >= 5 && op <= 7) {
+        let result: core::result::Result<i32, ext::sqlite::Error> = core::result::Ok(0);
+        if (op == 5) { result = db.begin(ext::sqlite::Transaction::Immediate); }
+        if (op == 6) { result = db.commit(); } if (op == 7) { result = db.rollback(); }
+        if (result.is_err()) { output.error(result.unwrap_err()); } else { output.changes(db); } return;
+    }
+    if (op == 10) { bulk(db, decode(header, 8) as i32, output); return; }
+    let sql: core::slice::View<u8> = bytes("SELECT * FROM records ORDER BY k", 32);
+    if (op == 0) { sql = bytes("INSERT INTO records VALUES(?1,?2,?3,?4,?5,NULL)", 47); }
+    if (op == 1) { sql = bytes("DELETE FROM records WHERE k=?1", 30); }
+    if (op == 2) { sql = bytes("UPDATE records SET i=?2,r=?3,t=?4,b=?5 WHERE k=?1", 49); }
+    if (op == 3) { sql = bytes("SELECT * FROM records WHERE k=?1", 32); }
+    if (op == 9) { sql = bytes("SELECT ?1,?2,?3,?4,?5,NULL", 26); }
+    let prepared: core::result::Result<ext::sqlite::Statement, ext::sqlite::Error> = db.prepare(sql);
+    if (prepared.is_err()) { output.error(prepared.unwrap_err()); return; }
+    let statement: ext::sqlite::Statement = prepared.unwrap();
+    let layout: u64 = decode(header, 48); let offset: i32 = decode(header, 56) as i32;
+    let stack: [u8; 4128] = [165; 4128]; let packed: [i32; 1032] = [0; 1032]; let owned: alloc::vec::Vec<u8> = alloc::vec::new(); let source: [u8] = stack;
+    if (layout % 3 == 1) { source = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed), 4128); }
+    if (layout % 3 == 2) { assert(owned.try_extend(core::slice::View { values: stack, start: 0, length: 4128 }).unwrap() == 4128); source = owned.as_slice(); }
+    let total: i32 = (decode(header, 32) + decode(header, 40)) as i32;
+    let at: i32 = 0; while (at < total) { source[offset + at] = payload[at]; at += 1; }
+    if (op == 0 || op == 2 || op == 9) { bind_values(statement.borrow(), header, source, offset); }
+    if (op == 1 || op == 3) { assert(statement.bind_i64(1, decode(header, 8) as i64).is_ok()); }
+    if (op <= 2) {
+        let stepped: core::result::Result<ext::sqlite::Step, ext::sqlite::Error> = statement.step();
+        if (stepped.is_err()) { output.error(stepped.unwrap_err()); assert(state(statement.state()) == 3); let released: core::result::Result<i32, ext::sqlite::Error> = statement.finalize(); assert(!statement.is_open()); }
+        else { assert(!row(stepped.unwrap()) && statement.finalize().is_ok()); output.changes(db); }
+    } else {
+        output.word(0);
+        while (true) {
+            let next: ext::sqlite::Step = statement.step().unwrap();
+            if (!row(next)) { output.word(0); break; }
+            output.word(1); render(statement.borrow(), layout / 3, 17 - offset / 2, output);
+        }
+        expected(statement.step().unwrap_err(), 5, 5); assert(statement.finalize().is_ok());
+    }
+    owned.destroy();
+}
+fn contracts() {
+    let limits: ext::sqlite::Limits = ext::sqlite::default_limits();
+    let db: ext::sqlite::Database = ext::sqlite::memory(limits).unwrap(); assert(db.is_open() && db.autocommit().unwrap());
+    let statement: ext::sqlite::Statement = db.prepare(bytes("SELECT ?1", 9)).unwrap();
+    assert(statement.is_open() && state(statement.state()) == 0 && statement.parameter_count() == 1 && statement.column_count() == 1);
+    let busy: ext::sqlite::Error = db.close().unwrap_err(); assert(ext::sqlite::is_busy(busy) && phase(busy.phase) == 10 && db.is_open());
+    expected(statement.column_i64(0).unwrap_err(), 5, 8);
+    expected(statement.bind_i64(0, 7).unwrap_err(), 6, 4); expected(statement.bind_i64(2, 7).unwrap_err(), 6, 4);
+    let minimum_bits: u64 = 9223372036854775808; let minimum: i64 = minimum_bits as i64;
+    assert(statement.bind_i64(1, minimum).is_ok());
+    expected(statement.bind_f64(1, core::f64::from_bits(9221120237041090561)).unwrap_err(), 18, 4);
+    let invalid: [u8; 1] = [255];
+    expected(statement.bind_text(1, core::slice::View { values: invalid, start: 0, length: 1 }).unwrap_err(), 9, 4);
+    let at: i32 = 0;
+    while (at < 3) { expected(statement.bind_blob(1, malformed(invalid, at)).unwrap_err(), 1, 4); at += 1; }
+    assert(row(statement.step().unwrap()) && statement.column_i64(0).unwrap() == minimum);
+    expected(statement.bind_null(1).unwrap_err(), 5, 4); expected(statement.clear_bindings().unwrap_err(), 5, 7);
+    assert(!row(statement.step().unwrap())); expected(statement.step().unwrap_err(), 5, 5); expected(statement.column_i64(0).unwrap_err(), 5, 8);
+    assert(statement.reset().is_ok() && row(statement.step().unwrap()) && statement.column_i64(0).unwrap() == minimum);
+    assert(statement.reset().is_ok() && statement.clear_bindings().is_ok() && statement.bind_null(1).is_ok() && row(statement.step().unwrap()) && kind(statement.column_type(0).unwrap()) == 5);
+    assert(statement.finalize().is_ok() && statement.finalize().is_ok() && !statement.is_open() && state(statement.state()) == 4);
+    expected(statement.step().unwrap_err(), 4, 5); expected(statement.reset().unwrap_err(), 4, 6);
+    expected(db.prepare(bytes("", 0)).unwrap_err(), 11, 3); expected(db.prepare(bytes(" \t\r\n", 4)).unwrap_err(), 11, 3);
+    expected(db.prepare(bytes("SELECT 1; SELECT 2", 18)).unwrap_err(), 12, 3);
+    expected(db.prepare(bytes("SELECT 1; -- tail", 17)).unwrap_err(), 12, 3);
+    let nul_sql: [u8; 8] = [83, 69, 76, 69, 67, 84, 0, 49];
+    expected(db.prepare(core::slice::View { values: nul_sql, start: 0, length: 8 }).unwrap_err(), 10, 3);
+    expected(db.prepare(core::slice::View { values: invalid, start: 0, length: 1 }).unwrap_err(), 9, 3);
+    expected(db.prepare(malformed(invalid, 0)).unwrap_err(), 1, 3);
+    let trailing: ext::sqlite::Statement = db.prepare(bytes("SELECT 1; \t\r\n", 13)).unwrap(); assert(row(trailing.step().unwrap()) && trailing.column_i64(0).unwrap() == 1 && trailing.finalize().is_ok());
+    let malformed_text: ext::sqlite::Statement = db.prepare(bytes("SELECT CAST(X'FF' AS TEXT)", 26)).unwrap();
+    assert(row(malformed_text.step().unwrap())); expected(malformed_text.column_text_len(0).unwrap_err(), 9, 8);
+    let untouched: [u8; 8] = [77; 8];
+    expected(malformed_text.column_text_copy(0, core::slice::View { values: untouched, start: 0, length: 8 }).unwrap_err(), 9, 8);
+    unchanged(untouched, 8, 77); assert(state(malformed_text.state()) == 1 && malformed_text.finalize().is_ok());
+    assert(execute(db.borrow(), bytes("CREATE TABLE unique_values(k INTEGER PRIMARY KEY)", 49)).is_ok());
+    let insert: ext::sqlite::Statement = db.prepare(bytes("INSERT INTO unique_values VALUES(?1)", 36)).unwrap();
+    assert(insert.bind_i64(1, 1).is_ok() && !row(insert.step().unwrap()) && insert.reset().is_ok());
+    let constraint: ext::sqlite::Error = insert.step().unwrap_err(); assert(native(constraint.cause) && ext::sqlite::primary_code(constraint) == 19 && state(insert.state()) == 3);
+    let reset_error: ext::sqlite::Error = insert.reset().unwrap_err(); assert(ext::sqlite::primary_code(reset_error) == 19 && state(insert.state()) == 0);
+    assert(insert.bind_i64(1, 2).is_ok() && !row(insert.step().unwrap()) && insert.reset().is_ok());
+    assert(insert.step().is_err()); let finalize_error: ext::sqlite::Error = insert.finalize().unwrap_err(); assert(ext::sqlite::primary_code(finalize_error) == 19 && !insert.is_open());
+    assert(db.close().is_ok() && db.close().is_ok() && !db.is_open()); expected(db.prepare(bytes("SELECT 1", 8)).unwrap_err(), 4, 3);
+}
+fn limited_prepare(limits: ext::sqlite::Limits, sql: core::slice::View<u8>) {
+    let db: ext::sqlite::Database = ext::sqlite::memory(limits).unwrap();
+    let failure: ext::sqlite::Error = db.prepare(sql).unwrap_err(); assert(native(failure.cause) && phase(failure.phase) == 3);
+    assert(db.close().is_ok());
+}
+fn limit_contracts() {
+    let defaults: ext::sqlite::Limits = ext::sqlite::default_limits(); let bad: ext::sqlite::Limits = defaults;
+    bad.path_bytes = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.sql_bytes = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.value_bytes = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.column_bytes = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.variables = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.columns = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.expression_depth = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.compound_selects = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.vm_ops = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.busy_timeout_ms = -1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad.busy_timeout_ms = 60001; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.column_bytes = bad.value_bytes + 1; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.path_bytes = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.sql_bytes = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.value_bytes = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.variables = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.columns = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.expression_depth = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.compound_selects = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.vm_ops = 0; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.path_bytes = 2147483647; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.sql_bytes = 2147483647; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    bad.value_bytes = 2147483647; expected(ext::sqlite::memory(bad).unwrap_err(), 2, 1); bad = defaults;
+    let invalid_path: [u8; 1] = [0];
+    expected(ext::sqlite::open(core::slice::View { values: invalid_path, start: 0, length: 1 }, ext::sqlite::Mode::Create, defaults).unwrap_err(), 10, 1);
+    invalid_path[0] = 255;
+    expected(ext::sqlite::open(core::slice::View { values: invalid_path, start: 0, length: 1 }, ext::sqlite::Mode::Create, defaults).unwrap_err(), 9, 1);
+    expected(ext::sqlite::open(malformed(invalid_path, 0), ext::sqlite::Mode::Create, defaults).unwrap_err(), 1, 1);
+    bad.path_bytes = 7; expected(ext::sqlite::memory(bad).unwrap_err(), 3, 1); bad.path_bytes = 8;
+    let exact_path: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap(); assert(exact_path.close().is_ok()); bad = defaults;
+    bad.sql_bytes = 8; let exact_sql: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap();
+    let statement: ext::sqlite::Statement = exact_sql.prepare(bytes("SELECT 1", 8)).unwrap(); assert(statement.finalize().is_ok());
+    expected(exact_sql.prepare(bytes("SELECT 1 ", 9)).unwrap_err(), 3, 3); assert(exact_sql.close().is_ok()); bad = defaults;
+    bad.columns = 1; limited_prepare(bad, bytes("SELECT 1,2", 10)); bad = defaults;
+    bad.variables = 1; limited_prepare(bad, bytes("SELECT ?2", 9)); bad = defaults;
+    bad.expression_depth = 2; limited_prepare(bad, bytes("SELECT 1+(2+(3+4))", 18)); bad = defaults;
+    bad.compound_selects = 1; limited_prepare(bad, bytes("SELECT 1 UNION ALL SELECT 2", 27)); bad = defaults;
+    bad.vm_ops = 1; limited_prepare(bad, bytes("SELECT 1", 8)); bad = defaults;
+    bad.busy_timeout_ms = 60000; let timeout: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap(); assert(timeout.close().is_ok()); bad = defaults;
+    bad.column_bytes = 2; let narrow: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap();
+    let wide: ext::sqlite::Statement = narrow.prepare(bytes("SELECT 'abc'", 12)).unwrap(); assert(row(wide.step().unwrap()));
+    expected(wide.column_text_len(0).unwrap_err(), 3, 8); assert(wide.finalize().is_ok() && narrow.close().is_ok());
+    bad.column_bytes = 3; let exact: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap();
+    let three: ext::sqlite::Statement = exact.prepare(bytes("SELECT 'abc'", 12)).unwrap(); assert(row(three.step().unwrap()) && three.column_text_len(0).unwrap() == 3 && three.finalize().is_ok() && exact.close().is_ok());
+    bad = defaults; bad.value_bytes = 8; bad.column_bytes = 8;
+    let small: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap(); let value: ext::sqlite::Statement = small.prepare(bytes("SELECT ?1", 9)).unwrap();
+    assert(value.bind_blob(1, bytes("12345678", 8)).is_ok()); expected(value.bind_blob(1, bytes("123456789", 9)).unwrap_err(), 3, 4);
+    assert(row(value.step().unwrap()) && value.column_blob_len(0).unwrap() == 8 && value.reset().is_ok());
+    assert(value.bind_text(1, bytes("12345678", 8)).is_ok()); expected(value.bind_text(1, bytes("123456789", 9)).unwrap_err(), 3, 4);
+    assert(row(value.step().unwrap()) && value.column_text_len(0).unwrap() == 8 && value.finalize().is_ok());
+    // A short alias keeps the result-column name inside LENGTH=8 while the
+    // produced value still exceeds that cap during sqlite3_step.
+    let oversized: ext::sqlite::Statement = small.prepare(bytes("SELECT zeroblob(9) AS b", 23)).unwrap();
+    let too_big: ext::sqlite::Error = oversized.step().unwrap_err(); assert(native(too_big.cause) && ext::sqlite::primary_code(too_big) == 18);
+    assert(oversized.finalize().is_err() && small.close().is_ok());
+    bad = defaults; bad.column_bytes = 0;
+    let zero: ext::sqlite::Database = ext::sqlite::memory(bad).unwrap(); let empty: ext::sqlite::Statement = zero.prepare(bytes("SELECT '',X''", 13)).unwrap();
+    assert(row(empty.step().unwrap()) && empty.column_text_len(0).unwrap() == 0 && empty.column_blob_len(1).unwrap() == 0 && kind(empty.column_type(1).unwrap()) == 4);
+    assert(empty.finalize().is_ok() && zero.close().is_ok());
+}
+fn main() -> i32 {
+    contracts(); limit_contracts();
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let sink_bytes: [u8; 1024] = [0; 1024]; let output: Output = Output { bytes: sink_bytes, used: 0 };
+    let header: [u8; 64] = [0; 64]; let payload: [u8; 4096] = [0; 4096];
+    assert(core::io::read_exact(input.borrow(), header, 0, 24).is_ok());
+    let mode: u64 = decode(header, 0); let path_length: u64 = decode(header, 8); let count: u64 = decode(header, 16);
+    assert(mode <= 2 && path_length <= 4096 && count <= 4096);
+    assert(core::io::read_exact(input.borrow(), payload, 0, path_length as i32).is_ok());
+    let limits: ext::sqlite::Limits = ext::sqlite::default_limits();
+    let opened: core::result::Result<ext::sqlite::Database, ext::sqlite::Error> = ext::sqlite::memory(limits);
+    if (path_length > 0) {
+        assert(opened.unwrap().close().is_ok());
+        let access: ext::sqlite::Mode = ext::sqlite::Mode::Create; if (mode == 1) { access = ext::sqlite::Mode::ReadOnly; }
+        if (mode == 2) { access = ext::sqlite::Mode::ReadWrite; }
+        opened = ext::sqlite::open(core::slice::View { values: payload, start: 0, length: path_length as i32 }, access, limits);
+    }
+    if (opened.is_err()) { output.error(opened.unwrap_err()); output.flush(); return 0; }
+    let db: ext::sqlite::Database = opened.unwrap();
+    if (mode == 0) { assert(execute(db.borrow(), bytes("CREATE TABLE IF NOT EXISTS records(k INTEGER PRIMARY KEY,i INTEGER,r REAL,t TEXT,b BLOB,n)", 90)).is_ok()); }
+    output.word(0); let at: u64 = 0;
+    while (at < count) {
+        assert(core::io::read_exact(input.borrow(), header, 0, 64).is_ok());
+        let text_length: u64 = decode(header, 32); let blob_length: u64 = decode(header, 40);
+        assert(text_length <= 2048 && blob_length <= 2048 && decode(header, 48) < 9 && decode(header, 56) <= 15);
+        assert(core::io::read_exact(input.borrow(), payload, 0, (text_length + blob_length) as i32).is_ok());
+        run(db.borrow(), header, payload, output.borrow()); at += 1;
+    }
+    assert(db.autocommit().unwrap() && db.close().is_ok()); output.flush(); return 0;
+}

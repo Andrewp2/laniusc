@@ -1,0 +1,76 @@
+// Runtime layouts followed by a tag decoded from the actual typed error.
+module app::main;
+import alloc::clone;
+import alloc::clone_deque;
+import alloc::clone_vec;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+
+fn allocation(error: alloc::vec::Error) -> bool {
+    return match(error) { alloc::vec::Error::AllocationFailed -> true, _ -> false };
+}
+fn leaf(error: alloc::string::Error) -> bool {
+    return match(error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
+}
+fn ring_allocation(error: alloc::deque::Error) -> bool {
+    return match(error) { alloc::deque::Error::AllocationFailed -> true, _ -> false };
+}
+fn row_storage(error: alloc::vec::Error, row: i32) -> i32 { assert(allocation(error)); return 20+row; }
+fn leaf_error(error: alloc::string::Error, row: i32, column: i32) -> i32 {
+    assert(leaf(error) && column >= 0 && column < 2); return 100+2*row+column;
+}
+fn row_error(error: alloc::clone::Error<alloc::string::Error>, row: i32) -> i32 {
+    assert(row >= 0 && row < 3);
+    return match(error) {
+        alloc::clone::Error::Storage(error) -> row_storage(error,row),
+        alloc::clone::Error::Element(column,error) -> leaf_error(error,row,column),
+        alloc::clone::Error::Bounds -> -1
+    };
+}
+fn outer_storage(error: alloc::deque::Error) -> i32 { assert(ring_allocation(error)); return 10; }
+fn clone_error(error: alloc::clone_deque::Error<alloc::clone::Error<alloc::string::Error>>) -> i32 {
+    return match(error) {
+        alloc::clone_deque::Error::Storage(error) -> outer_storage(error),
+        alloc::clone_deque::Error::Element(row,error) -> row_error(error,row)
+    };
+}
+fn finish(tag: i32, status: i32) -> i32 {
+    if (std::io_decimal::write_i32(1,tag) < 0 || std::io::write_byte(1,10) != 1) { return 5; }
+    return status;
+}
+fn main() -> i32 {
+    if (std::io_decimal::write_usize(1,core::mem::size_of<alloc::string::String>()) < 0 || std::io::write_byte(1,10) != 1) { return 5; }
+    if (std::io_decimal::write_usize(1,core::mem::size_of<alloc::vec::Vec<alloc::string::String>>()) < 0 || std::io::write_byte(1,10) != 1) { return 5; }
+    let bytes: [u8;4] = [65,0,195,169];
+    let made = alloc::string::from_utf8(bytes,4);
+    if (made.is_err()) { assert(leaf(made.unwrap_err())); return finish(1,4); }
+    let text: alloc::string::String = made.unwrap();
+    let row_made: core::result::Result<alloc::vec::Vec<alloc::string::String>,alloc::vec::Error> = alloc::vec::with_capacity<alloc::string::String>(2);
+    if (row_made.is_err()) { assert(allocation(row_made.unwrap_err()) && text.byte_len() == 4 && text.byte_at(1).unwrap() == 0); text.destroy(); return finish(2,4); }
+    let row = row_made.unwrap(); row.try_push(text).unwrap(); row.try_push(text).unwrap();
+    let source_made: core::result::Result<alloc::deque::Deque<alloc::vec::Vec<alloc::string::String>>,alloc::deque::Error> = alloc::deque::with_capacity<alloc::vec::Vec<alloc::string::String>>(3);
+    if (source_made.is_err()) { assert(ring_allocation(source_made.unwrap_err()) && row.len() == 2 && text.byte_len() == 4); row.destroy(); text.destroy(); return finish(3,4); }
+    let source = source_made.unwrap(); source.try_push_back(row).unwrap(); source.try_push_back(row).unwrap(); source.try_push_back(row).unwrap();
+    source.pop_front(); source.try_push_back(row).unwrap();
+    let saved_row: core::slice::View<alloc::string::String> = row.as_view();
+    let saved_source: alloc::deque::Views<alloc::vec::Vec<alloc::string::String>> = source.as_views();
+    let result: core::result::Result<alloc::deque::Deque<alloc::vec::Vec<alloc::string::String>>,alloc::clone_deque::Error<alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone_deque::try_clone<alloc::vec::Vec<alloc::string::String>,alloc::clone::Error<alloc::string::Error>>(source.borrow());
+    assert(source.len() == 3 && source.capacity() == 3 && source.head == 1
+        && saved_source.first.start == 1 && saved_source.first.len() == 2 && saved_source.second.len() == 1
+        && saved_source.second.get(0).unwrap().len() == 2 && row.len() == 2 && row.capacity() == 2
+        && saved_row.get(1).unwrap().byte_at(1).unwrap() == 0 && text.byte_len() == 4 && text.byte_at(3).unwrap() == 169);
+    // Repeated source entries borrow row and text; release only their owners.
+    source.destroy(); row.destroy(); text.destroy();
+    if (result.is_err()) { return finish(clone_error(result.unwrap_err()),4); }
+    let copy = result.unwrap();
+    assert(copy.len() == 3 && copy.at(0).len() == 2 && copy.at(2).at(1).byte_at(3).unwrap() == 169);
+    alloc::clone_deque::destroy_deque<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    return finish(0,0);
+}

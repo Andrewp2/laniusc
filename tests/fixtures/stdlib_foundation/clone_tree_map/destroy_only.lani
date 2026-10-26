@@ -1,0 +1,14 @@
+module app::main;
+import alloc::clone_tree_map;
+import alloc::tree_map;
+import core::clone;
+import core::result;
+// No Eq, Ord or TryClone implementation. Releasing pre-reserved empty storage
+// needs only Destroy even when construction of entries would need ordering.
+struct OnlyDestroy { value: i32 }
+pub impl core::clone::Destroy<OnlyDestroy> for OnlyDestroy {pub fn destroy_value(owned: OnlyDestroy) {}}
+fn main() -> i32 {
+    let map = alloc::tree_map::with_capacity<OnlyDestroy,OnlyDestroy>(3).unwrap();
+    alloc::clone_tree_map::destroy_tree_map<OnlyDestroy,OnlyDestroy>(map.borrow());
+    assert(map.is_empty() && map.capacity()==0); return 0;
+}

@@ -20,6 +20,7 @@
 // local nominal by this index, and only hidden locals change, from INVALID.
 import hir_records;
 import status;
+import native_c_abi;
 
 StructuredBuffer<uint> decl_count_out;
 StructuredBuffer<uint> decl_kind;
@@ -47,6 +48,8 @@ StructuredBuffer<uint> resolved_type_decl;
 StructuredBuffer<uint> type_expr_ref_tag;
 StructuredBuffer<uint> type_expr_ref_payload;
 StructuredBuffer<uint> type_instance_decl_token;
+StructuredBuffer<NativeAbiToken> token_words;
+ByteAddressBuffer source_bytes;
 globallycoherent RWStructuredBuffer<uint> interface_public_decl_count;
 globallycoherent RWStructuredBuffer<uint> interface_public_decl_local_id;
 globallycoherent RWStructuredBuffer<uint> interface_public_decl_index_by_local;
@@ -215,6 +218,26 @@ void main(uint3 group: SV_GroupID, uint lane: SV_GroupIndex)
     if (lane == 0u) { g_changed[0u] = 0u; g_changed[1u] = 0u; g_changed[2u] = 0u; g_marked = 0u; }
     GroupMemoryBarrierWithGroupSync();
     uint decls = active_decls();
+    // A private C declaration still needs a stable symbol/name/signature for
+    // native linking. Keep it in the hidden partition; dependency name lookup
+    // continues to exclude it. It is admitted later by the checked C profile.
+    uint source_len; source_bytes.GetDimensions(source_len);
+    uint tokens; uint token_stride; token_words.GetDimensions(tokens, token_stride);
+    [loop]
+    for (uint local = lane; local < decls; local += LANES)
+    {
+        uint hir = decl_hir_node[local];
+        if (decl_kind[local] == 5u && hir < active_hir() &&
+            interface_public_decl_index_by_local[local] == INVALID &&
+            native_extern_source_abi(compact_hir_core[hir], compact_hir_payload[hir],
+                token_words, source_bytes, tokens, source_len) == NATIVE_ABI_C)
+        {
+            interface_public_decl_index_by_local[local] = MARK;
+            interface_public_decl_index_by_hir[hir] = MARK;
+            InterlockedAdd(g_marked, 1u);
+        }
+    }
+    AllMemoryBarrierWithGroupSync();
     uint rounds = decls + 1u;
     bool converged = false;
     [loop]

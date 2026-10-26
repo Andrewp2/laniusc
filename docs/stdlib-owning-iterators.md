@@ -11,6 +11,12 @@ The focused gates below passed on **native x86_64 Linux**, with the GPU compiler
 emitting CPU executables. They establish neither user-program GPU execution nor
 support for other targets. The compiler and runtime were unchanged.
 
+The same ownership and explicit-finish policy now applies to
+[hash map/set cursors](stdlib-owning-hash.md),
+[ordered map/set cursors](stdlib-owning-tree.md) and
+[priority heap cursors](stdlib-owning-heap.md). Their dedicated guides describe
+remainder recovery, ordering costs, minimal trait bounds and native tests.
+
 ## One active storage owner
 
 End source views and borrowed cursors before `take_iter()`. The call transfers

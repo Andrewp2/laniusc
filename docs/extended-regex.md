@@ -36,15 +36,37 @@ releases those allocations; it is not automatic or compiler-enforced.
 | `Regex.borrow() -> &Regex` | Borrow the compiled owner for helper calls. |
 | `Regex.group_count() -> i32` | Number of captures **including group 0**. |
 | `Regex.state_count() -> i32` | Number of compiled NFA instructions. |
+| `Regex.search_work_limit() -> i32` | Configured per-search `Options.max_work`; used by aggregate-budget adapters. |
 | `Regex.find(Text) -> Result<Option<Match>, Error>` | First match, or ordinary absence. |
 | `Regex.find_from(Text, i32) -> Result<Option<Match>, Error>` | Search at or after a scalar boundary; anchors retain the whole input context. |
 | `Regex.is_match(Text) -> Result<bool, Error>` | Search and release temporary capture storage. |
 | `Regex.find_iter(Text) -> Result<Matches, Error>` | Validate input and create a cursor borrowing input and compiled storage. |
+| `input(Text) -> Result<Input, Error>` | Validate one borrowed input for repeated longest-prefix probes. |
+| `Regex.longest_prefix(Text) -> Result<Option<Match>, Error>` | Longest whole match anchored at byte zero. |
+| `Regex.longest_prefix_from(Text, i32) -> Result<Option<Match>, Error>` | Longest whole match anchored at the exact scalar boundary. |
+| `Regex.longest_prefix_in(Input, i32) -> Result<Option<Match>, Error>` | Repeat an anchored probe without revalidating the complete input. |
 | `Match.group_count() -> i32` | Same count as the compiled regex, including group 0. |
 | `Match.span(i32) -> Option<Span>` | Capture `{start,end}` or None for an absent group or invalid group number. |
 | `Matches.next() -> Result<Option<Match>, Error>` | Transfer a newly owned capture set to the caller, or return None/error. |
 | `Regex.destroy()`, `Match.destroy()` | Release the owned allocations. |
 | `Matches.destroy()` | Fuse the cursor; it retains no allocation between calls. |
+
+[Bounded splitting and replacement](extended-regex-text.md) consume the same
+Matches cursor. Their guide defines borrowed fields, numeric replacement
+templates, owned output and conservative aggregate search accounting.
+
+[Reusable token lexing](extended-lexer.md) uses longest-prefix matching through
+the same engine. Each probe starts at the supplied byte offset and keeps the
+furthest matching endpoint. Equal endpoints retain ordered Pike capture
+priority. Assertions inspect the complete supplied Text, including context
+before a nonzero start. Lazy quantifiers still participate in longest whole-span
+selection. A returned Match owns its captures and requires explicit destruction.
+
+`Input` borrows validated backing. Keep its original Text storage alive and
+unchanged for every probe; do not forge or mutate its fields. The reusable
+method checks start bounds and scalar boundaries but does not rescan UTF-8.
+The raw-Text methods validate before searching. Scratch initialization, Match
+ownership and VM work limits retain the ordinary search contracts.
 
 Spans are half-open **byte** offsets relative to the supplied input Text, not
 its underlying allocation. Every endpoint is a Unicode scalar boundary. Group
@@ -74,7 +96,7 @@ destroyed regex/match. Public fields do not imply a stable storage format.
 
 ## Dialect
 
-Matching is leftmost-first: prefer the earliest start, then the left branch of
+Ordinary `find`, `find_from` and `Matches` matching is leftmost-first: prefer the earliest start, then the left branch of
 alternation and the preferred branch of each quantifier. Greedy quantifiers
 prefer more repetitions; a trailing `?` reverses that preference. This is not
 POSIX leftmost-longest matching. No implicit normalization or casing occurs.
@@ -174,8 +196,8 @@ huge nested repetitions of empty expressions cannot bypass bounds by emitting
 few instructions. `max_repeat` limits every explicit minimum/maximum count;
 unbounded `*`/`+` do not use a numeric repeat count.
 
-`max_work` applies separately to each find/find_from/is_match or iterator
-next. It charges each newly visited epsilon/consuming state and each tested
+`max_work` applies separately to each find/find_from/is_match, longest-prefix
+probe or iterator next. It charges each newly visited epsilon/consuming state and each tested
 class term. UTF-8 validation, scratch initialization, per-boundary seen-array clearing,
 and capture copying are
 outside that counter; their sizes are bounded separately. A limit error does
@@ -188,7 +210,7 @@ valid if a later next hits a limit.
 | `Unsupported(byte_offset)` | Recognized unsupported syntax or unknown property/escape. |
 | `Limit(byte_offset)` | Invalid options or compile resource bound; offset is 0 when no single source location identifies expansion failure. |
 | `AllocationFailed` | Compilation/search storage allocation failed; partial owners have been released. |
-| `Bounds` | Invalid Text integer metadata or non-boundary/out-of-range find_from index. |
+| `Bounds` | Invalid Text integer metadata or non-boundary/out-of-range search start. |
 | `InvalidUtf8(byte_offset)` | Malformed selected Text range; offset relative to pattern or search input for the failing operation. |
 | `WorkLimit` | Search exhausted its VM work budget. |
 
@@ -211,3 +233,11 @@ semantics, native strides, malformed UTF-8, subviews, ownership, all resource
 bounds, long nested repetitions, and injected allocation failures with release
 accounting. See `tests/extended_regex_execution.rs` and the executable
 `regex_contracts`/`regex_input` fixtures.
+
+After sharing the engine with anchored longest-prefix search, both existing
+regex groups pass again in 9.70 seconds:
+`target/stdlib-work/regex-longest-mode-regression.log`. The
+[lexer guide](extended-lexer.md) records the separate new-mode contracts,
+576 endpoint/tokenization model cases, 63 edge tables and allocation-failure
+gates. These receipts cover GPU compilation followed by native Linux x86_64
+execution; they do not establish another user-program target.

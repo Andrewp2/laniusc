@@ -1,0 +1,14 @@
+// Diagnostic candidate: all three match forms should execute identically.
+module app::main;
+import core::option;
+enum Material { Rsae(i32), Ed25519(i32), P256(i32) }
+struct Holder { material:Material }
+impl Holder { fn borrow(&self)->&Holder{return self;} }
+fn pick(key:&Holder)->i32{
+ let selected:core::option::Option<i32> =match(key.material){Material::Rsae(v)->core::option::Some(v),_->core::option::None()};
+ return selected.unwrap_or(-1);
+}
+fn main()->i32{
+ let first:Holder=Holder{material:Material::Rsae(17)};let second:Holder=Holder{material:Material::Ed25519(29)};let third:Holder=Holder{material:Material::P256(31)};
+ assert(pick(first.borrow())==17);assert(pick(second.borrow())==-1);assert(pick(third.borrow())==-1);return 0;
+}

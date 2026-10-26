@@ -1,0 +1,10 @@
+module app::main;
+import core::mem;
+import core::result;
+enum Empty {}
+fn value() -> core::result::Result<i32,Empty> { return core::result::Ok(37); }
+fn main() -> i32 {
+    assert(core::mem::size_of<Empty>()==8);
+    let answer: i32 = match(value()) { Ok(inner) -> inner, Err(_) -> -1 };
+    assert(answer==37); return 0;
+}

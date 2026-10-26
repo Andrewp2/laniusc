@@ -10,6 +10,9 @@ import core::result;
 
 pub struct HashSet<T> { state: alloc::hash_map::KeyStorage }
 pub struct Iter<T> { state: alloc::hash_map::KeyCursor }
+pub enum IntoIterError { Remaining(i32) }
+// One owner of backing storage and all unconsumed key cleanup authority.
+pub struct IntoIter<T> { state: alloc::hash_map::KeyIntoIter }
 
 pub fn new<T>() -> HashSet<T> { return HashSet { state: alloc::hash_map::key_storage<T>() }; }
 pub fn with_capacity<T>(capacity: i32) -> core::result::Result<HashSet<T>, alloc::hash_map::Error> {
@@ -41,6 +44,9 @@ pub impl<T> HashSet<T> {
     pub fn remove(&self, key: T) -> core::option::Option<T> where T: core::hash::Hash<T>, T: core::cmp::Eq<T> { return alloc::hash_map::key_remove<T>(self.state.borrow(), key); }
     // Any mutation/destruction invalidates outstanding cursors and borrowed keys.
     pub fn iter(&self) -> Iter<T> { return Iter { state: alloc::hash_map::key_iter<T>(self.state.borrow()) }; }
+    // Reset the actual source. End borrowed key/cursor use before transfer;
+    // old shallow owner aliases cannot be reused or independently consumed.
+    pub fn take_iter(&self) -> IntoIter<T> { return IntoIter { state: alloc::hash_map::key_take_iter<T>(self.state.borrow()) }; }
     pub fn try_reserve(&self, additional: i32) -> core::result::Result<i32, alloc::hash_map::Error> { return alloc::hash_map::key_reserve<T>(self.state.borrow(), additional); }
     pub fn try_shrink_to_fit(&self) -> core::result::Result<i32, alloc::hash_map::Error> { return alloc::hash_map::key_shrink<T>(self.state.borrow()); }
     // Independent storage with shallow borrowed key copies, as with map clone.
@@ -127,4 +133,24 @@ pub impl<T> Iter<T> {
 
 pub impl<T> core::iter::Iterator<T> for Iter<T> {
     pub fn next(&self) -> core::option::Option<T> { return alloc::hash_map::key_next<T>(self.state.borrow()); }
+}
+
+pub impl<T> IntoIter<T> {
+    pub fn borrow(&self) -> &IntoIter<T> { return self; }
+    pub fn remaining(&self) -> i32 { return self.state.length; }
+    pub fn capacity(&self) -> i32 { return self.state.buckets / 2; }
+    pub fn is_empty(&self) -> bool { return self.state.length == 0; }
+    // Reject without changing state; successful finish frees only empty tables.
+    pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
+        let failure: core::option::Option<alloc::hash_map::IntoIterError> = alloc::hash_map::key_into_finish<T>(self.state.borrow());
+        if (failure.is_none()) { return core::option::None(); }
+        let count: i32 = match(failure.unwrap()) { alloc::hash_map::IntoIterError::Remaining(count) -> count };
+        return core::option::Some(IntoIterError::Remaining(count));
+    }
+    // Transfer the same allocation and tombstones in O(1); disarm this cursor.
+    pub fn take_remaining(&self) -> HashSet<T> { return HashSet { state: alloc::hash_map::key_take_remaining<T>(self.state.borrow()) }; }
+}
+
+pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
+    pub fn next(&self) -> core::option::Option<T> { return alloc::hash_map::key_into_next<T>(self.state.borrow()); }
 }

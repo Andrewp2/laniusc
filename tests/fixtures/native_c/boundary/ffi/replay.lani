@@ -1,0 +1,10 @@
+module ffi::replay;
+
+extern "C" fn probe_imported(value: i32) -> i32;
+
+// Imported generic bodies are instantiated from their retained template.
+// The C call must survive that replay while the specialized payload is live.
+pub fn through_c<T>(value: T, factor: i32) -> T {
+    assert(probe_imported(factor) == 122);
+    return value;
+}

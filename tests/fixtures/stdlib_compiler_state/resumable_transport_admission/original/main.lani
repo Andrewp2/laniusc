@@ -1,0 +1,80 @@
+// Admission candidate only: root will compile and execute this exact source.
+module app::main;
+import core::option;
+import core::slice;
+import admission::protocol;
+import admission::scheduler;
+import admission::plain;
+import admission::nested;
+
+fn plain() {
+    let ledger = admission::protocol::Ledger { acquired: 0, released: 0, transfers: 0, begun: 0 };
+    let j0 = admission::plain::Job { seed: 11, mode: 0, ledger: ledger.borrow() };
+    let j1 = admission::plain::Job { seed: 12, mode: 1, ledger: ledger.borrow() };
+    let j2 = admission::plain::Job { seed: 13, mode: 2, ledger: ledger.borrow() };
+    let j3 = admission::plain::Job { seed: 14, mode: 3, ledger: ledger.borrow() };
+    let j4 = admission::plain::Job { seed: 15, mode: 4, ledger: ledger.borrow() };
+    let j5 = admission::plain::Job { seed: 16, mode: 5, ledger: ledger.borrow() };
+    let jobs: [&admission::plain::Job;6] = [j0.borrow(),j1.borrow(),j2.borrow(),j3.borrow(),j4.borrow(),j5.borrow()];
+    let report: admission::scheduler::Report<admission::plain::Error> = admission::scheduler::run<admission::plain::Factory,admission::plain::Job,admission::plain::Prepared,admission::plain::Exchange,admission::plain::Error>(core::slice::view<&admission::plain::Job>(jobs,6).unwrap(),4);
+    assert(report.observed == 14 && report.steps == 4 && report.aborts == 2 && report.outcomes.len() == 6);
+    assert(ledger.acquired == 5 && ledger.released == 4 && ledger.transfers == 1 && ledger.begun == 4);
+    let phases: [i32;6] = [0,0,1,2,3,0]; let codes: [i32;6] = [0,101,202,303,404,0]; let index: i32 = 0;
+    while (index < 6) {
+        let item: admission::scheduler::Outcome<admission::plain::Error> = report.outcomes.set(index,admission::scheduler::Outcome::Pending).unwrap();
+        if (index == 0) {
+            let response: core::option::Option<admission::protocol::Response> = match(item) { admission::scheduler::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+            assert(response.is_some()); let owned = response.unwrap(); assert(owned.stamp == 111 && owned.cells.len() == 2);
+            assert(owned.cells.at(0).number == 11 && owned.cells.at(0).marked && owned.cells.at(1).number == -11 && !owned.cells.at(1).marked); owned.destroy();
+        } else {
+            if (index == 5) {
+                let stopped: bool = match(item) { admission::scheduler::Outcome::Stopped(stats) -> !stats.active && stats.calls == 0 && stats.bytes == 0, _ -> false }; assert(stopped);
+            } else {
+                let failed: core::option::Option<admission::scheduler::Fault<admission::plain::Error>> = match(item) { admission::scheduler::Outcome::Failed(value) -> core::option::Some(value), _ -> core::option::None() };
+                assert(failed.is_some()); let fault = failed.unwrap(); assert(fault.phase == phases[index] && fault.shared == (index == 2 || index == 4));
+                assert(!fault.stats.active && fault.stats.bytes == 0); if (index == 3) { assert(fault.stats.calls == 2); }
+                let code: i32 = match(fault.error) { admission::plain::Error::Local(value) -> value, admission::plain::Error::Clock(value) -> value, admission::plain::Error::Timeout -> 404 }; assert(code == codes[index]);
+            }
+        }
+        index += 1;
+    }
+    report.outcomes.destroy(); assert(ledger.acquired == ledger.released && j0.seed == 11 && j5.mode == 5);
+}
+fn nested() {
+    let ledger = admission::protocol::Ledger { acquired: 0, released: 0, transfers: 0, begun: 0 };
+    let seed: i64 = -4294967297;
+    let j0 = admission::nested::Job { seed: seed, control: core::option::Some(0), ledger: ledger.borrow() };
+    let j1 = admission::nested::Job { seed: 22, control: core::option::Some(1), ledger: ledger.borrow() };
+    let j2 = admission::nested::Job { seed: 23, control: core::option::Some(2), ledger: ledger.borrow() };
+    let j3 = admission::nested::Job { seed: 24, control: core::option::Some(3), ledger: ledger.borrow() };
+    let j4 = admission::nested::Job { seed: 25, control: core::option::Some(4), ledger: ledger.borrow() };
+    let j5 = admission::nested::Job { seed: 26, control: core::option::Some(5), ledger: ledger.borrow() };
+    let jobs: [&admission::nested::Job;6] = [j0.borrow(),j1.borrow(),j2.borrow(),j3.borrow(),j4.borrow(),j5.borrow()];
+    let report: admission::scheduler::Report<admission::nested::Error> = admission::scheduler::run<admission::nested::Factory,admission::nested::Job,admission::nested::Prepared,admission::nested::Exchange,admission::nested::Error>(core::slice::view<&admission::nested::Job>(jobs,6).unwrap(),4);
+    assert(report.observed == 20 && report.steps == 4 && report.aborts == 2 && report.outcomes.len() == 6);
+    assert(ledger.acquired == 9 && ledger.released == 4 && ledger.transfers == 1 && ledger.begun == 4);
+    let phases: [i32;6] = [0,0,1,2,3,0]; let codes: [i64;6] = [0,101,202,303,404,0]; let index: i32 = 0;
+    while (index < 6) {
+        let item: admission::scheduler::Outcome<admission::nested::Error> = report.outcomes.set(index,admission::scheduler::Outcome::Pending).unwrap();
+        if (index == 0) {
+            let response: core::option::Option<admission::protocol::Response> = match(item) { admission::scheduler::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+            assert(response.is_some()); let owned = response.unwrap(); assert(owned.stamp == seed+100 && owned.cells.len() == 3);
+            assert(owned.cells.at(0).number == seed && owned.cells.at(0).marked && owned.cells.at(1).number == 4294967297 && !owned.cells.at(1).marked && owned.cells.at(2).number == -17 && owned.cells.at(2).marked); owned.destroy();
+        } else {
+            if (index == 5) {
+                let stopped: bool = match(item) { admission::scheduler::Outcome::Stopped(stats) -> !stats.active && stats.calls == 0 && stats.bytes == 0, _ -> false }; assert(stopped);
+            } else {
+                let failed: core::option::Option<admission::scheduler::Fault<admission::nested::Error>> = match(item) { admission::scheduler::Outcome::Failed(value) -> core::option::Some(value), _ -> core::option::None() };
+                assert(failed.is_some()); let fault = failed.unwrap(); assert(fault.phase == phases[index] && fault.shared == (index == 2 || index == 4));
+                assert(!fault.stats.active && fault.stats.bytes == 0); if (index == 3) { assert(fault.stats.calls == 2); }
+                let code: i64 = match(fault.error.kind) { admission::nested::Kind::Local(value) -> value, admission::nested::Kind::Clock(value) -> value.unwrap() as i64, admission::nested::Kind::Timeout -> 404 }; assert(code == codes[index]);
+                assert(fault.error.context.is_some()); let context: admission::nested::Context = fault.error.context.unwrap();
+                assert(context.value.is_ok() && context.value.unwrap().is_some() && context.value.unwrap().unwrap() == -7);
+                assert(context.owner.len() == 3 && context.owner.at(0) == 0 && context.owner.at(1) == 128 && context.owner.at(2) == 255); fault.error.destroy();
+            }
+        }
+        index += 1;
+    }
+    report.outcomes.destroy(); assert(ledger.acquired == ledger.released && j0.seed == seed && j5.control.unwrap() == 5);
+}
+fn main() -> i32 { plain(); nested(); return 0; }

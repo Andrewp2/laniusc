@@ -1,0 +1,78 @@
+module app::main;
+import alloc::clone;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+fn text(letter: u8) -> alloc::string::String {
+    let bytes: [u8;4]=[letter,0,195,169]; return alloc::string::from_utf8(bytes,4).unwrap();
+}
+fn check(value: alloc::string::String,letter: u8) {
+    assert(value.byte_len()==4 && value.byte_at(0).unwrap()==letter && value.byte_at(1).unwrap()==0 && value.byte_at(3).unwrap()==169);
+}
+fn recovered_cache() {
+    let owner: alloc::vec::Vec<alloc::string::String> =alloc::vec::with_capacity<alloc::string::String>(3).unwrap();
+    owner.try_push(text(65)).unwrap(); owner.try_push(text(66)).unwrap(); owner.try_push(text(67)).unwrap();
+    let source: alloc::vec::IntoIter<alloc::string::String> =owner.take_iter();
+    let cursor: core::iter::Peekable<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String> =core::iter::peekable<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(source.borrow());
+    let borrowed: alloc::string::String=cursor.peek().unwrap(); check(borrowed,65);
+    let address: ptr=borrowed.bytes.storage;
+    assert(cursor.has_cached() && source.remaining()==2 && cursor.try_finish().is_some());
+    assert(cursor.peek().unwrap().bytes.storage==address && source.remaining()==2);
+    let recovered: alloc::string::String=cursor.take_cached().unwrap();
+    assert(recovered.bytes.storage==address && !cursor.has_cached() && source.remaining()==2 && cursor.try_finish().is_none());
+    // The source cleanup cannot reach the transferred cache owner.
+    alloc::clone::destroy_vec_iter<alloc::string::String>(source.borrow());
+    assert(source.capacity()==0 && cursor.peek().is_none() && cursor.next().is_none());
+    check(recovered,65); recovered.destroy();
+}
+fn consumed_cache() {
+    let owner: alloc::vec::Vec<alloc::string::String> =alloc::vec::with_capacity<alloc::string::String>(3).unwrap();
+    owner.try_push(text(68)).unwrap(); owner.try_push(text(69)).unwrap(); owner.try_push(text(70)).unwrap();
+    let source: alloc::vec::IntoIter<alloc::string::String> =owner.take_iter();
+    let cursor: core::iter::Peekable<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String> =core::iter::peekable<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(source.borrow());
+    check(cursor.peek().unwrap(),68); let first: alloc::string::String=cursor.next().unwrap(); check(first,68); first.destroy();
+    check(cursor.peek().unwrap(),69); assert(source.remaining()==1);
+    let second: alloc::string::String=cursor.next().unwrap(); check(second,69); second.destroy();
+    assert(cursor.try_finish().is_none() && source.remaining()==1);
+    // Closing the empty-cache adapter leaves the unread owner upstream.
+    alloc::clone::destroy_vec_iter<alloc::string::String>(source.borrow());
+    assert(source.capacity()==0 && cursor.next().is_none());
+}
+struct Reverse {}
+impl Reverse { fn borrow(&self) -> &Reverse { return self; } }
+pub impl core::iter::Comparator<alloc::string::String> for Reverse {
+    pub fn compare(&self,a: alloc::string::String,b: alloc::string::String) -> core::ordering::Ordering {
+        return core::ordering::compare_i32(b.byte_at(0).unwrap() as i32,a.byte_at(0).unwrap() as i32);
+    }
+}
+fn borrowed_reductions() {
+    let owner: alloc::vec::Vec<alloc::string::String> =alloc::vec::with_capacity<alloc::string::String>(4).unwrap();
+    owner.try_push(text(66)).unwrap(); owner.try_push(text(65)).unwrap(); owner.try_push(text(66)).unwrap(); owner.try_push(text(65)).unwrap();
+    let first: core::slice::Iter<alloc::string::String> =owner.iter();
+    let minimum: alloc::string::String=core::iter::min<core::slice::Iter<alloc::string::String>,alloc::string::String>(first.borrow()).unwrap();
+    assert(minimum.bytes.storage==owner.at(1).bytes.storage); check(minimum,65);
+    let second: core::slice::Iter<alloc::string::String> =owner.iter();
+    let maximum: alloc::string::String=core::iter::max<core::slice::Iter<alloc::string::String>,alloc::string::String>(second.borrow()).unwrap();
+    assert(maximum.bytes.storage==owner.at(2).bytes.storage); check(maximum,66);
+    let compare: Reverse=Reverse {};
+    let third: core::slice::Iter<alloc::string::String> =owner.iter();
+    let reverse_min: alloc::string::String=core::iter::min_by<core::slice::Iter<alloc::string::String>,Reverse,alloc::string::String>(third.borrow(),compare.borrow()).unwrap();
+    assert(reverse_min.bytes.storage==owner.at(0).bytes.storage);
+    let fourth: core::slice::Iter<alloc::string::String> =owner.iter();
+    let reverse_max: alloc::string::String=core::iter::max_by<core::slice::Iter<alloc::string::String>,Reverse,alloc::string::String>(fourth.borrow(),compare.borrow()).unwrap();
+    assert(reverse_max.bytes.storage==owner.at(3).bytes.storage && owner.len()==4);
+    // Every reduction result borrows an original String. Release only the
+    // actual owner collection, after all aliases have ended.
+    alloc::clone::destroy_vec<alloc::string::String>(owner.borrow());
+}
+fn main() -> i32 {
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<alloc::string::String>())>0); assert(std::io::write_byte(1,10)==1);
+    recovered_cache(); consumed_cache(); borrowed_reductions(); return 0;
+}

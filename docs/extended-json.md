@@ -163,5 +163,6 @@ destination range and treats negative zero as zero. It does not allocate or
 round through floating point; conversion errors have offset -1.
 
 Streaming parsing/encoding, floating-point conversion, further numeric builder
-helpers, editing/removal, deep cloning, schema validation and other targets
-remain work.
+helpers, editing/removal, deep cloning and other targets remain work.
+[Schema validation](extended-schema.md) executes separately through
+`ext::schema`, with its documented vocabulary and resource limits.

@@ -6,7 +6,29 @@ import core::result;
 import core::slice;
 import ext::zip;
 fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::result::unwrap(core::slice::view(raw,count)); }
+fn names() {
+    assert(ext::zip::validate_name(bytes("",0),true).unwrap() == 0);
+    assert(ext::zip::validate_name(bytes("dir/",4),true).unwrap() == 4);
+    assert(ext::zip::validate_name(bytes("../x",4),true).unwrap() == 4);
+    assert(ext::zip::validate_name(bytes("é",2),true).unwrap() == 2);
+    let native: [u8;5] = [255,97,98,99,255];
+    let name: core::slice::View<u8> = core::slice::view_range(native,1,3).unwrap();
+    assert(ext::zip::validate_name(name,true).unwrap() == 3);
+    let raw: core::slice::View<u8> = core::slice::view_range(native,0,1).unwrap();
+    assert(ext::zip::validate_name(raw,false).unwrap() == 1);
+    assert(match(ext::zip::validate_name(raw,true).unwrap_err()) { ext::zip::Error::Encoding -> true, _ -> false });
+    assert(match(ext::zip::validate_name(bytes("/x",2),true).unwrap_err()) { ext::zip::Error::Name -> true, _ -> false });
+    assert(match(ext::zip::validate_name(bytes("c:x",3),true).unwrap_err()) { ext::zip::Error::Name -> true, _ -> false });
+    assert(match(ext::zip::validate_name(bytes("x\\y",3),true).unwrap_err()) { ext::zip::Error::Name -> true, _ -> false });
+    let nul: [u8;3] = [97,0,98];
+    assert(match(ext::zip::validate_name(core::slice::view(nul,3).unwrap(),false).unwrap_err()) { ext::zip::Error::Name -> true, _ -> false });
+    let invalid: core::slice::View<u8> = name; invalid.start = -1;
+    assert(match(ext::zip::validate_name(invalid,true).unwrap_err()) { ext::zip::Error::Bounds -> true, _ -> false });
+    invalid = name; invalid.start = 2147483647; invalid.length = 1;
+    assert(match(ext::zip::validate_name(invalid,true).unwrap_err()) { ext::zip::Error::Bounds -> true, _ -> false });
+}
 fn main() -> i32 {
+    names();
     let first: [u8;8] = [255,0,255,97,98,97,98,255]; let source: core::slice::View<u8> = core::result::unwrap(core::slice::view_range(first,1,6));
     let entries: [ext::zip::Source;3] = [
         ext::zip::Source { name: bytes("a.bin",5), data: source, method: ext::zip::Method::Stored, utf8: true },

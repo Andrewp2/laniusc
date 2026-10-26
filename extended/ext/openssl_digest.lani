@@ -1,0 +1,178 @@
+// Streaming digests through OpenSSL 3 EVP. Native execution requires the
+// checked C ABI and libc startup profile in docs/extended-openssl-digest.md.
+module ext::openssl_digest;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub enum Algorithm { Sha256, Sha512, Sha3_256, Sha3_512 }
+pub enum Stage { Fetch, Size, Context, Init, Update, Final }
+pub enum Cause { Bounds, Closed, OutputTooSmall, UnexpectedSize(i32), OpenSsl }
+// completed is the successful prefix of this update call, never a failed
+// chunk. Other operations return zero. code is zero for wrapper errors and
+// can also be zero when OpenSSL reports failure without a queued diagnostic.
+pub struct Failure { cause: Cause, stage: Stage, code: u64, completed: i32 }
+// One active manual owner. Copies alias both native resources and must remain
+// inactive. Keep these fields intact; use borrow() for every operation.
+pub struct Context { method: ptr, context: ptr, length: i32 }
+
+pub fn digest_size(algorithm: Algorithm) -> i32 {
+    return match (algorithm) { Algorithm::Sha256 -> 32, Algorithm::Sha512 -> 64, Algorithm::Sha3_256 -> 32, Algorithm::Sha3_512 -> 64 };
+}
+
+fn name(algorithm: Algorithm) -> str {
+    return match (algorithm) { Algorithm::Sha256 -> "SHA256", Algorithm::Sha512 -> "SHA512", Algorithm::Sha3_256 -> "SHA3-256", Algorithm::Sha3_512 -> "SHA3-512" };
+}
+
+fn name_length(algorithm: Algorithm) -> i32 {
+    return match (algorithm) { Algorithm::Sha256 -> 6, Algorithm::Sha512 -> 6, Algorithm::Sha3_256 -> 8, Algorithm::Sha3_512 -> 8 };
+}
+
+fn valid(bytes: core::slice::View<u8>) -> bool {
+    return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647 - bytes.length;
+}
+
+fn failure(cause: Cause, stage: Stage, completed: i32) -> Failure {
+    return Failure { cause: cause, stage: stage, code: 0, completed: completed };
+}
+
+// Call immediately after the failing function, before any cleanup. Preserve
+// the earliest diagnostic from that call and discard the rest of its queue.
+fn native_failure(stage: Stage, completed: i32) -> Failure {
+    let code: u64 = ERR_get_error();
+    ERR_clear_error();
+    return Failure { cause: Cause::OpenSsl, stage: stage, code: code, completed: completed };
+}
+
+// Uses the default library context and its configured provider/property
+// policy. Names are copied into packed storage and explicitly terminated.
+pub fn new(algorithm: Algorithm) -> core::result::Result<Context, Failure> {
+    let storage: [i32; 4] = [0; 4];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 16);
+    let count: i32 = name_length(algorithm);
+    let text: str = name(algorithm);
+    let source: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(text), count);
+    let index: i32 = 0;
+    while (index < count) { packed[index] = source[index]; index += 1; }
+    packed[count] = 0;
+    let nowhere: ptr = 0;
+    ERR_clear_error();
+    let method: ptr = EVP_MD_fetch(nowhere, pointer, nowhere);
+    if (method == 0) { return core::result::Err(native_failure(Stage::Fetch, 0)); }
+    ERR_clear_error();
+    let size: i32 = EVP_MD_get_size(method);
+    if (size < 0) {
+        let error: Failure = native_failure(Stage::Size, 0);
+        EVP_MD_free(method);
+        return core::result::Err(error);
+    }
+    if (size != digest_size(algorithm)) {
+        EVP_MD_free(method);
+        return core::result::Err(failure(Cause::UnexpectedSize(size), Stage::Size, 0));
+    }
+    ERR_clear_error();
+    let context: ptr = EVP_MD_CTX_new();
+    if (context == 0) {
+        let error: Failure = native_failure(Stage::Context, 0);
+        EVP_MD_free(method);
+        return core::result::Err(error);
+    }
+    let owner: Context = Context { method: method, context: context, length: size };
+    ERR_clear_error();
+    let initialized: i32 = EVP_DigestInit_ex2(context, method, nowhere);
+    if (initialized != 1) {
+        let error: Failure = native_failure(Stage::Init, 0);
+        owner.destroy();
+        return core::result::Err(error);
+    }
+    return core::result::Ok(owner);
+}
+
+pub impl Context {
+    pub fn borrow(&self) -> &Context { return self; }
+    pub fn is_open(&self) -> bool { return self.method != 0 && self.context != 0; }
+    // Remains available after finish/destroy; it does not reopen the context.
+    pub fn output_size(&self) -> i32 { return self.length; }
+
+    // Consume the entire supplied view. For another range, pass a subview.
+    // Input bytes must not overlap this owner. The borrowed backing must stay
+    // valid until return. Empty input makes no native call on a live context.
+    pub fn update(&self, input: core::slice::View<u8>) -> core::result::Result<i32, Failure> {
+        if (!valid(input)) { return core::result::Err(failure(Cause::Bounds, Stage::Update, 0)); }
+        if (!self.is_open()) { return core::result::Err(failure(Cause::Closed, Stage::Update, 0)); }
+        if (input.length == 0) { return core::result::Ok(0); }
+        let storage: [i32; 256] = [0; 256];
+        let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+        let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 1024);
+        let completed: i32 = 0;
+        while (completed < input.length) {
+            let amount: i32 = input.length - completed;
+            if (amount > 1024) { amount = 1024; }
+            let index: i32 = 0;
+            while (index < amount) { packed[index] = input.values[input.start + completed + index]; index += 1; }
+            ERR_clear_error();
+            let updated: i32 = EVP_DigestUpdate(self.context, pointer, amount as usize);
+            if (updated != 1) {
+                let error: Failure = native_failure(Stage::Update, completed);
+                self.destroy();
+                return core::result::Err(error);
+            }
+            completed += amount;
+        }
+        return core::result::Ok(completed);
+    }
+
+    // Write the first output_size() bytes and close this owner on success.
+    // Invalid metadata/capacity preserves the live operation and all output.
+    // A native failure closes the owner and leaves caller output untouched.
+    // Output must not overlap the owner and must physically back its view.
+    pub fn finish_into(&self, output: core::slice::View<u8>) -> core::result::Result<i32, Failure> {
+        if (!valid(output)) { return core::result::Err(failure(Cause::Bounds, Stage::Final, 0)); }
+        if (!self.is_open()) { return core::result::Err(failure(Cause::Closed, Stage::Final, 0)); }
+        if (output.length < self.length) { return core::result::Err(failure(Cause::OutputTooSmall, Stage::Final, 0)); }
+        let storage: [i32; 16] = [0; 16];
+        let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+        let packed: [u8] = core::mem::typed_slice_from_raw_parts(pointer, 64);
+        // The selected fixed-size algorithm was checked before initialization.
+        // NULL omits the optional C unsigned-int output length cell.
+        let nowhere: ptr = 0;
+        ERR_clear_error();
+        let finalized: i32 = EVP_DigestFinal_ex(self.context, pointer, nowhere);
+        if (finalized != 1) {
+            let error: Failure = native_failure(Stage::Final, 0);
+            self.destroy();
+            return core::result::Err(error);
+        }
+        let size: i32 = self.length;
+        self.destroy();
+        let index: i32 = 0;
+        while (index < size) { output.values[output.start + index] = packed[index]; index += 1; }
+        return core::result::Ok(size);
+    }
+
+    // Release exactly once through this active owner. No automatic destructor
+    // or copy tracking exists; inactive by-value aliases must never be used.
+    pub fn destroy(&self) {
+        let context: ptr = self.context;
+        let method: ptr = self.method;
+        let nowhere: ptr = 0;
+        self.context = nowhere;
+        self.method = nowhere;
+        if (context != 0) { EVP_MD_CTX_free(context); }
+        if (method != 0) { EVP_MD_free(method); }
+    }
+}
+
+// Raw OpenSSL 3 declarations. Caller supplies valid C buffers, lifetimes and
+// ownership and must meet the platform's C ABI and libc startup contract.
+pub extern "C" fn EVP_MD_fetch(context: ptr, algorithm: ptr, properties: ptr) -> ptr;
+pub extern "C" fn EVP_MD_get_size(method: ptr) -> i32;
+pub extern "C" fn EVP_MD_CTX_new() -> ptr;
+pub extern "C" fn EVP_DigestInit_ex2(context: ptr, method: ptr, parameters: ptr) -> i32;
+pub extern "C" fn EVP_DigestUpdate(context: ptr, bytes: ptr, count: usize) -> i32;
+pub extern "C" fn EVP_DigestFinal_ex(context: ptr, output: ptr, length: ptr) -> i32;
+pub extern "C" fn EVP_MD_CTX_free(context: ptr);
+pub extern "C" fn EVP_MD_free(method: ptr);
+pub extern "C" fn ERR_clear_error();
+pub extern "C" fn ERR_get_error() -> u64;

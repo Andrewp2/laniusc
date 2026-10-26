@@ -1,0 +1,99 @@
+module app::main;
+import alloc::clone;
+import alloc::clone_deque;
+import alloc::clone_vec;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::result;
+import core::slice;
+import fixture::consumer;
+
+fn deque_of_rows() -> i32 {
+    let bytes: [u8;4] = [65,0,195,169];
+    let original: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let aliases: [alloc::string::String;2] = [original,original];
+    let row: alloc::vec::Vec<alloc::string::String> = alloc::vec::from_view(core::slice::view(aliases,2).unwrap()).unwrap();
+    let empty: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    let source: alloc::deque::Deque<alloc::vec::Vec<alloc::string::String>> = alloc::deque::with_capacity<alloc::vec::Vec<alloc::string::String>>(3).unwrap();
+    source.try_push_back(row).unwrap(); source.try_push_back(row).unwrap(); source.try_push_back(empty).unwrap();
+    source.pop_front(); source.try_push_back(row).unwrap();
+    let views: alloc::deque::Views<alloc::vec::Vec<alloc::string::String>> = source.as_views();
+    assert(views.first.start == 1 && views.first.len() == 2 && views.second.len() == 1);
+    let result: core::result::Result<alloc::deque::Deque<alloc::vec::Vec<alloc::string::String>>,alloc::clone_deque::Error<alloc::clone::Error<alloc::string::Error>>> =
+        fixture::consumer::duplicate<alloc::deque::Deque<alloc::vec::Vec<alloc::string::String>>,alloc::clone_deque::Error<alloc::clone::Error<alloc::string::Error>>>(source);
+    assert(source.len() == 3 && source.capacity() == 3 && source.as_views().first.start == 1 && row.len() == 2 && original.byte_at(1).unwrap() == 0);
+    // Every source entry borrows row/empty. Only their original backing and
+    // the one String have release authority; do not deep-destroy this source.
+    source.destroy(); row.destroy(); empty.destroy(); original.destroy();
+    let copy = result.unwrap();
+    assert(copy.len() == 3 && copy.at(1).is_empty());
+    let first_row: alloc::vec::Vec<alloc::string::String> = copy.remove(0).unwrap();
+    let last_row: alloc::vec::Vec<alloc::string::String> = copy.at(1);
+    let first: alloc::string::String = first_row.remove(0).unwrap();
+    let sibling: alloc::string::String = first_row.at(0);
+    let last: alloc::string::String = last_row.at(0);
+    let edited = first.try_push_scalar(88);
+    let independent: bool = edited.is_ok() && first.byte_len() == 5 && first.byte_at(4).unwrap() == 88
+        && sibling.byte_len() == 4 && last.byte_len() == 4 && last.byte_at(3).unwrap() == 169;
+    // Reinstall through vacated capacity on both success and edit failure.
+    first_row.try_insert(0,first).unwrap(); copy.try_insert(0,first_row).unwrap();
+    let transferred: alloc::vec::Vec<alloc::string::String> = copy.pop_back().unwrap();
+    alloc::clone_deque::destroy_deque<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    alloc::clone_deque::destroy_deque<alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity() == 0 && copy.head == 0 && transferred.len() == 2 && transferred.at(0).byte_at(1).unwrap() == 0);
+    alloc::clone::destroy_vec<alloc::string::String>(transferred.borrow());
+    if (edited.is_err()) { return 4; }
+    if (!independent) { return 1; }
+    return 0;
+}
+
+fn vector_of_deques() -> i32 {
+    let bytes: [u8;4] = [82,0,195,169];
+    let original: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let ring: alloc::deque::Deque<alloc::string::String> = alloc::deque::with_capacity<alloc::string::String>(3).unwrap();
+    ring.try_push_back(original).unwrap(); ring.try_push_back(original).unwrap(); ring.try_push_back(original).unwrap();
+    ring.pop_front(); ring.try_push_back(original).unwrap();
+    let rings: [alloc::deque::Deque<alloc::string::String>;2] = [ring,ring];
+    let source: alloc::vec::Vec<alloc::deque::Deque<alloc::string::String>> = alloc::vec::from_view(core::slice::view(rings,2).unwrap()).unwrap();
+    let result: core::result::Result<alloc::vec::Vec<alloc::deque::Deque<alloc::string::String>>,alloc::clone::Error<alloc::clone_deque::Error<alloc::string::Error>>> =
+        fixture::consumer::duplicate<alloc::vec::Vec<alloc::deque::Deque<alloc::string::String>>,alloc::clone::Error<alloc::clone_deque::Error<alloc::string::Error>>>(source);
+    assert(source.len() == 2 && ring.len() == 3 && ring.as_views().first.start == 1 && original.byte_len() == 4);
+    source.destroy(); ring.destroy(); original.destroy();
+    let copy = result.unwrap();
+    let first_ring: alloc::deque::Deque<alloc::string::String> = copy.remove(0).unwrap();
+    let other_ring: alloc::deque::Deque<alloc::string::String> = copy.at(0);
+    let first: alloc::string::String = first_ring.pop_front().unwrap();
+    let other: alloc::string::String = other_ring.at(0);
+    let edited = first.try_push_scalar(90);
+    let independent: bool = edited.is_ok() && first.byte_len() == 5 && other.byte_len() == 4 && other.byte_at(1).unwrap() == 0;
+    first_ring.try_push_front(first).unwrap(); copy.try_insert(0,first_ring).unwrap();
+    // This generic consumer selects Vec Destroy, then Deque Destroy, then
+    // String Destroy from the explicitly imported opt-in implementations.
+    fixture::consumer::release<alloc::vec::Vec<alloc::deque::Deque<alloc::string::String>>>(copy);
+    if (edited.is_err()) { return 4; }
+    if (!independent) { return 1; }
+    return 0;
+}
+
+struct Counter { released: i32 }
+impl Counter { fn borrow(&self) -> &Counter { return self; } }
+struct ReleaseOnly { counter: &Counter }
+pub impl core::clone::Destroy<ReleaseOnly> for ReleaseOnly {
+    pub fn destroy_value(owned: ReleaseOnly) { let counter: &Counter = owned.counter; counter.released += 1; }
+}
+fn destroy_only() {
+    let counter: Counter = Counter { released: 0 };
+    let owner: alloc::deque::Deque<ReleaseOnly> = alloc::deque::with_capacity<ReleaseOnly>(2).unwrap();
+    owner.try_push_back(ReleaseOnly { counter: counter.borrow() }).unwrap();
+    owner.try_push_front(ReleaseOnly { counter: counter.borrow() }).unwrap();
+    alloc::clone_deque::destroy_deque<ReleaseOnly>(owner.borrow());
+    alloc::clone_deque::destroy_deque<ReleaseOnly>(owner.borrow());
+    assert(counter.released == 2 && owner.is_empty() && owner.capacity() == 0 && owner.head == 0);
+}
+fn main() -> i32 {
+    let first: i32 = deque_of_rows(); if (first != 0) { return first; }
+    let second: i32 = vector_of_deques(); if (second != 0) { return second; }
+    destroy_only(); return 0;
+}

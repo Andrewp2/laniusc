@@ -1,0 +1,22 @@
+// Successful exec: a parent group error must retain an Unknown child owner.
+module app::main;
+import core::mem;
+import core::slice;
+import std::command;
+import std::command_raw;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn confirmed(owner: std::command::Child, uncertain: bool) -> i32 {
+    let pid = owner.id().unwrap();
+    if (uncertain) { assert(owner.group_id().is_none() && match(owner.startup()) { std::command::Startup::Unknown -> true, _ -> false }); }
+    assert(owner.confirm_group().unwrap() == pid && owner.group_id().unwrap() == pid);
+    if (uncertain) { assert(match(owner.startup()) { std::command::Startup::Unknown -> true, _ -> false }); }
+    assert(owner.cancel_group_and_wait().unwrap().signal.unwrap() == 9); owner.close_pipes().unwrap(); assert(owner.group_id().is_none() && owner.signal_group(9).is_err());
+    let raw: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(raw),true) == -10); if (uncertain) { return 44; } return 40;
+}
+fn unknown(value: std::command::UnknownStart) -> i32 { assert(match(value.failure.stage) { std::command::Stage::ProcessGroup -> true, _ -> false }); return confirmed(value.child,true); }
+fn impossible() -> i32 { assert(false); return 48; }
+fn main() -> i32 {
+    let argv: [core::slice::View<u8>;2] = [bytes("/bin/sleep",10),bytes("20",2)]; let request = std::command::request(argv[0],core::slice::view(argv,2).unwrap(),core::slice::view(argv,0).unwrap());
+    request.group = std::command::Group::New; request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
+    return match(std::command::spawn(request).unwrap()) { std::command::Spawn::Child(owner) -> confirmed(owner,false), std::command::Spawn::Unknown(value) -> unknown(value), std::command::Spawn::Failed(value) -> impossible() };
+}

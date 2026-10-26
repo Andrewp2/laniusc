@@ -1,0 +1,35 @@
+module app::main;
+import alloc::clone_hash_set;
+import alloc::hash_set;
+import alloc::string;
+import core::result;
+import fixture::consumer;
+
+fn main() -> i32 {
+    let a: [u8;4] = [65,0,195,169]; let b: [u8;3] = [66,0,90];
+    let first: alloc::string::String = alloc::string::from_utf8(a,4).unwrap();
+    let second: alloc::string::String = alloc::string::from_utf8(b,3).unwrap();
+    let source: alloc::hash_set::HashSet<alloc::string::String> = alloc::hash_set::with_capacity<alloc::string::String>(8).unwrap();
+    assert(source.try_insert(first).unwrap().is_none() && source.try_insert(second).unwrap().is_none());
+    let capacity: i32 = source.capacity();
+    let result: core::result::Result<alloc::hash_set::HashSet<alloc::string::String>,alloc::clone_hash_set::Error<alloc::string::Error>> =
+        fixture::consumer::duplicate<alloc::hash_set::HashSet<alloc::string::String>,alloc::clone_hash_set::Error<alloc::string::Error>>(source);
+    assert(source.len() == 2 && source.capacity() == capacity && source.get(first).unwrap().byte_at(1).unwrap() == 0);
+    let copy = result.unwrap();
+    // Transfer the actual stored key before changing its bytes or backing.
+    let edited: alloc::string::String = copy.remove(first).unwrap();
+    let changed = edited.try_push_scalar(88);
+    assert(copy.try_insert(edited).unwrap().is_none());
+    assert(changed.is_ok() && copy.contains(edited) && !copy.contains(first)
+        && edited.byte_len() == 5 && edited.byte_at(4).unwrap() == 88
+        && source.contains(first) && first.byte_len() == 4 && second.byte_len() == 3);
+    let transferred: alloc::string::String = copy.remove(second).unwrap();
+    // Source owns these two unique originals. The consumer selects HashSet's
+    // opt-in Destroy implementation; first/second aliases are now inactive.
+    fixture::consumer::release<alloc::hash_set::HashSet<alloc::string::String>>(source);
+    assert(transferred.byte_len() == 3 && transferred.byte_at(1).unwrap() == 0 && edited.byte_at(3).unwrap() == 169);
+    fixture::consumer::reset<alloc::string::String>(copy.borrow());
+    fixture::consumer::reset<alloc::string::String>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity() == 0 && transferred.byte_at(2).unwrap() == 90);
+    transferred.destroy(); return 0;
+}

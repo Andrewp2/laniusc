@@ -16,6 +16,7 @@ mod descriptor_work_queue;
 mod typecheck;
 mod wasm_codegen;
 mod x86_codegen;
+mod native_codegen;
 
 mod helpers;
 mod host_timer;

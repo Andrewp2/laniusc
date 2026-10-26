@@ -1,0 +1,8 @@
+module app::main;
+import core::clone_values;
+import fixture::consumer;
+enum Wrong { Unexpected }
+fn main() -> i32 {
+    fixture::consumer::duplicate<i32,Wrong>(31);
+    return 0;
+}

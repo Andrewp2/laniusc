@@ -12,17 +12,18 @@ import std::env;
 import std::file;
 import std::signal;
 
-pub enum Error { Bounds, Nul, InvalidInput, MissingPath, Limit, AllocationFailed, Host, StartupUnknown, LostChild, AlreadyReaped, EnvironmentChanged }
-pub enum Stage { Validate, Allocate, Descriptors, Fork, CloseRange, Redirect, Directory, Exec, StartupRead, StartupProtocol, Wait, Signal, Close, Environment }
+pub enum Error { Bounds, Nul, InvalidInput, MissingPath, Limit, AllocationFailed, Host, StartupUnknown, LostChild, AlreadyReaped, EnvironmentChanged, GroupUnconfirmed }
+pub enum Stage { Validate, Allocate, Descriptors, Fork, CloseRange, Redirect, Directory, Exec, StartupRead, StartupProtocol, Wait, Signal, Close, Environment, ProcessGroup }
 pub struct Failure { kind: Error, stage: Stage, errno: i32 }
 pub struct Limits { max_args: i32, max_env: i32, max_string: i32, max_bytes: i32, max_paths: i32 }
 pub enum Search { Exact, EnvironmentPath }
 pub enum ChildSigpipe { Default, Inherit }
+pub enum Group { Inherit, New }
 pub enum Stdio { Inherit, Closed, Null, Pipe, Borrowed(i32) }
-pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
+pub struct Request { program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>, cwd: core::option::Option<core::slice::View<u8>>, search: Search, sigpipe: ChildSigpipe, group: Group, stdin: Stdio, stdout: Stdio, stderr: Stdio, limits: Limits }
 pub enum Startup { Unconfirmed, Unknown }
 pub struct ExitStatus { raw: i32, code: core::option::Option<i32>, signal: core::option::Option<i32>, core_dumped: bool }
-pub struct Child { pid: i32, input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>, startup_state: Startup, cached: core::option::Option<ExitStatus> }
+pub struct Child { pid: i32, input: core::option::Option<std::file::File>, output: core::option::Option<std::file::File>, error: core::option::Option<std::file::File>, startup_state: Startup, cached: core::option::Option<ExitStatus>, group_policy: Group, group_confirmed: bool, observed: core::option::Option<ExitStatus> }
 pub struct FailedStart { failure: Failure, status: ExitStatus }
 pub struct UnknownStart { child: Child, failure: Failure }
 pub enum Spawn { Child(Child), Failed(FailedStart), Unknown(UnknownStart) }
@@ -73,7 +74,7 @@ fn prepare(request: Request) -> core::result::Result<Prepared,Failure> {
     return core::result::Ok(Prepared { bytes: bytes, pointers: pointers, paths: path_offsets, cwd: cwd, env_at: env_at });
 }
 fn owned(fd: i32) -> core::option::Option<std::file::File> { if (fd < 0) { return core::option::None(); } return core::option::Some(std::file::from_owned_handle(fd).unwrap()); }
-fn make_child(pid: i32, fds: [i32], state: Startup) -> Child { return Child { pid: pid, input: owned(fds[0]), output: owned(fds[1]), error: owned(fds[2]), startup_state: state, cached: core::option::None() }; }
+fn make_child(pid: i32, fds: [i32], state: Startup, group: Group) -> Child { return Child { pid: pid, input: owned(fds[0]), output: owned(fds[1]), error: owned(fds[2]), startup_state: state, cached: core::option::None(), group_policy: group, group_confirmed: false, observed: core::option::None() }; }
 fn close_fds(fds: [i32]) { let i: i32 = 0; while (i < 3) { std::command_raw::close(fds[i]); fds[i] = -1; i += 1; } }
 fn child_failure(fd: i32, stage: i32, errno: i32) {
     let packet: [i32;4] = [0;4]; packet[0] = 1279479108; packet[1] = stage; packet[2] = errno; packet[3] = packet[0] ^ stage ^ errno;
@@ -81,7 +82,9 @@ fn child_failure(fd: i32, stage: i32, errno: i32) {
     while (done < 16) { let n: i64 = std::command_raw::pointer(1,fd as i64,p+(done as usize),(16-done) as i64); if (n == -4) { continue; } if (n <= 0 || n > (16-done) as i64) { break; } done += n as i32; }
     std::command_raw::terminate();
 }
-fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe) {
+fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpipe, group: Group) {
+    let new_group: bool = match(group) { Group::New -> true, _ -> false };
+    if (new_group) { let grouped: i64 = std::command_raw::set_group(0,0); if (grouped != 0) { let errno: i32 = 5; if (grouped < 0) { errno = (0-grouped) as i32; } child_failure(error_fd,6,errno); } }
     let n: i64 = -4; while (n == -4) { n = std::command_raw::word(436,3,4294967295,4); } if (n < 0) { child_failure(error_fd,1,(0-n) as i32); }
     let i: i32 = 0; while (i < 3) {
         if (fds[i] < 0) { n = std::command_raw::close(i) as i64; if (n < 0 && n != -9) { child_failure(error_fd,2,(0-n) as i32); } }
@@ -98,7 +101,7 @@ fn child_exec(prepared: Prepared, fds: [i32], error_fd: i32, sigpipe: ChildSigpi
     }
     if (denied) { last = 13; } child_failure(error_fd,4,last); std::command_raw::terminate();
 }
-fn report_stage(stage: i32) -> Stage { if (stage == 1) { return Stage::CloseRange; } if (stage == 2) { return Stage::Redirect; } if (stage == 3) { return Stage::Directory; } if (stage == 5) { return Stage::Signal; } return Stage::Exec; }
+fn report_stage(stage: i32) -> Stage { if (stage == 1) { return Stage::CloseRange; } if (stage == 2) { return Stage::Redirect; } if (stage == 3) { return Stage::Directory; } if (stage == 5) { return Stage::Signal; } if (stage == 6) { return Stage::ProcessGroup; } return Stage::Exec; }
 // Err is possible only before fork succeeds, after all owned resources close.
 // Post-fork unknown outcomes always retain the child in Spawn::Unknown.
 pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure> {
@@ -126,13 +129,29 @@ pub fn spawn(request: Request) -> core::result::Result<Spawn,Failure> {
     }
     let channel: [i32;2] = [-1;2]; let made: i32 = std::command_raw::make_pipe(channel); if (made < 0) { close_fds(child_fds); close_fds(parent_fds); prepared.destroy(); return core::result::Err(host(Stage::Descriptors,made as i64)); }
     let pid: i64 = std::command_raw::fork(); if (pid < 0) { close_fds(child_fds); close_fds(parent_fds); std::command_raw::close(channel[0]); std::command_raw::close(channel[1]); prepared.destroy(); return core::result::Err(host(Stage::Fork,pid)); }
-    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe); std::command_raw::terminate(); }
-    close_fds(child_fds); std::command_raw::close(channel[1]); prepared.destroy(); let child: Child = make_child(pid as i32,parent_fds,Startup::Unconfirmed);
+    if (pid == 0) { child_exec(prepared,child_fds,channel[1],request.sigpipe,request.group); std::command_raw::terminate(); }
+    close_fds(child_fds); std::command_raw::close(channel[1]); prepared.destroy(); let child: Child = make_child(pid as i32,parent_fds,Startup::Unconfirmed,request.group);
+    // Both sides establish the new group before relying on it. Parent EACCES
+    // means exec won the race, but only an exact getpgid result confirms the
+    // expected group. Error-channel EOF alone never grants group authority.
+    let group_error: core::option::Option<Failure> = core::option::None();
+    let new_group: bool = match(request.group) { Group::New -> true, _ -> false };
+    if (new_group) {
+        let grouped: i64 = std::command_raw::set_group(pid as i32,pid as i32);
+        if (grouped == 0) { child.group_confirmed = true; }
+        else {
+            if (grouped == -13) { let confirmed: core::result::Result<i32,Failure> = child.confirm_group(); if (confirmed.is_err()) { group_error = core::option::Some(confirmed.unwrap_err()); } }
+            else { if (grouped < 0) { group_error = core::option::Some(host(Stage::ProcessGroup,grouped)); } else { group_error = core::option::Some(failure(Error::Host,Stage::ProcessGroup,5)); } }
+        }
+    }
     let packet: [i32;4] = [0;4]; let p = core::mem::i32_array_data_ptr(packet); let done: i32 = 0; let read_error: i32 = 0;
     while (done < 16) { let n: i64 = std::command_raw::pointer(0,channel[0] as i64,p+(done as usize),(16-done) as i64); if (n == -4) { continue; } if (n < 0) { read_error = (0-n) as i32; break; } if (n == 0) { break; } if (n > (16-done) as i64) { read_error = 5; break; } done += n as i32; }
     std::command_raw::close(channel[0]);
-    if (done == 0 && read_error == 0) { return core::result::Ok(Spawn::Child(child)); }
-    if (read_error != 0 || done != 16 || packet[0] != 1279479108 || packet[1] < 1 || packet[1] > 5 || packet[2] < 1 || packet[2] > 4095 || packet[3] != (packet[0] ^ packet[1] ^ packet[2])) {
+    if (done == 0 && read_error == 0) {
+        if (group_error.is_some()) { child.startup_state = Startup::Unknown; return core::result::Ok(Spawn::Unknown(UnknownStart { child: child, failure: group_error.unwrap() })); }
+        return core::result::Ok(Spawn::Child(child));
+    }
+    if (read_error != 0 || done != 16 || packet[0] != 1279479108 || packet[1] < 1 || packet[1] > 6 || packet[2] < 1 || packet[2] > 4095 || packet[3] != (packet[0] ^ packet[1] ^ packet[2])) {
         child.startup_state = Startup::Unknown; let stage: Stage = Stage::StartupProtocol; if (read_error != 0) { stage = Stage::StartupRead; }
         return core::result::Ok(Spawn::Unknown(UnknownStart { child: child, failure: failure(Error::StartupUnknown,stage,read_error) }));
     }
@@ -145,6 +164,24 @@ pub impl Child {
     pub fn borrow(&self) -> &Child { return self; }
     pub fn id(&self) -> core::option::Option<i32> { if (self.pid <= 0) { return core::option::None(); } return core::option::Some(self.pid); }
     pub fn startup(&self) -> Startup { return self.startup_state; }
+    // Requested policy is independent of proven, currently anchored authority.
+    pub fn group(&self) -> Group { return self.group_policy; }
+    pub fn group_id(&self) -> core::option::Option<i32> {
+        if (!self.group_confirmed || self.pid <= 1 || self.cached.is_some()) { return core::option::None(); }
+        return core::option::Some(self.pid);
+    }
+    // Retry uncertain setup with one kernel query. The owned unreaped leader
+    // pins its numeric identity; an arbitrary positive PGID is never accepted.
+    pub fn confirm_group(&self) -> core::result::Result<i32,Failure> {
+        if (self.pid <= 1 || self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::ProcessGroup,0)); }
+        let requested: bool = match(self.group_policy) { Group::New -> true, _ -> false };
+        if (!requested) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
+        if (self.group_confirmed) { return core::result::Ok(self.pid); }
+        let actual: i64 = std::command_raw::get_group(self.pid);
+        if (actual < 0) { return core::result::Err(host(Stage::ProcessGroup,actual)); }
+        if (actual != self.pid as i64) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
+        self.group_confirmed = true; return core::result::Ok(self.pid);
+    }
     pub fn take_stdin(&self) -> core::option::Option<std::file::File> { let value = self.input; self.input = core::option::None(); return value; }
     pub fn take_stdout(&self) -> core::option::Option<std::file::File> { let value = self.output; self.output = core::option::None(); return value; }
     pub fn take_stderr(&self) -> core::option::Option<std::file::File> { let value = self.error; self.error = core::option::None(); return value; }
@@ -160,12 +197,41 @@ pub impl Child {
         let status: [i32;1] = [0;1]; let n = std::command_raw::wait(self.pid,core::mem::i32_array_data_ptr(status),true); if (n == 0) { return core::result::Ok(core::option::None()); }
         return self.record_wait(n,status[0]);
     }
+    // Observe terminal status without consuming it. Keep the unreaped leader
+    // anchor for group cancellation while descendants still hold pipe ends.
+    // cached remains exclusively the already-reaped status cache.
+    pub fn try_observe_exit(&self) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
+        if (self.cached.is_some()) { return core::result::Ok(self.cached); }
+        if (self.pid <= 0) { return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+        if (self.observed.is_some()) { return core::result::Ok(self.observed); }
+        // Native Linux x86_64 siginfo_t: 128 bytes, child pid at byte16,
+        // status at byte24, si_code at byte8. Initialize the no-event sentinel.
+        let info: [i32;32] = [0;32];
+        let n: i64 = std::command_raw::observe_exit(self.pid,core::mem::i32_array_data_ptr(info));
+        if (n < 0) {
+            if (n == -10) { self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); }
+            return core::result::Err(host(Stage::Wait,n));
+        }
+        if (n != 0) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        if (info[4] == 0) { return core::result::Ok(core::option::None()); }
+        if (info[0] != 17 || info[4] != self.pid) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+        let raw: i32 = 0;
+        if (info[2] == 1) { if (info[6] < 0 || info[6] > 255) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); } raw = info[6] << 8; }
+        else {
+            if ((info[2] != 2 && info[2] != 3) || info[6] < 1 || info[6] > 64) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
+            raw = info[6]; if (info[2] == 3) { raw = raw | 128; }
+        }
+        let code: core::option::Option<i32> = core::option::None(); let signal: core::option::Option<i32> = core::option::None();
+        if (info[2] == 1) { code = core::option::Some(info[6]); } else { signal = core::option::Some(info[6]); }
+        self.observed = core::option::Some(ExitStatus { raw: raw, code: code, signal: signal, core_dumped: info[2] == 3 });
+        return core::result::Ok(self.observed);
+    }
     fn record_wait(&self, n: i64, raw: i32) -> core::result::Result<core::option::Option<ExitStatus>,Failure> {
-        if (n < 0) { if (n == -10) { self.pid = 0; return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); } return core::result::Err(host(Stage::Wait,n)); }
+        if (n < 0) { if (n == -10) { self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Err(failure(Error::LostChild,Stage::Wait,10)); } return core::result::Err(host(Stage::Wait,n)); }
         if (n != self.pid as i64 || (raw & 127) == 127) { return core::result::Err(failure(Error::Host,Stage::Wait,5)); }
         let code: core::option::Option<i32> = core::option::None(); let signal: core::option::Option<i32> = core::option::None(); let dumped: bool = false;
         if ((raw & 127) == 0) { code = core::option::Some((raw >> 8) & 255); } else { signal = core::option::Some(raw & 127); dumped = (raw & 128) != 0; }
-        let status: ExitStatus = ExitStatus { raw: raw, code: code, signal: signal, core_dumped: dumped }; self.cached = core::option::Some(status); self.pid = 0; return core::result::Ok(self.cached);
+        let status: ExitStatus = ExitStatus { raw: raw, code: code, signal: signal, core_dumped: dumped }; self.cached = core::option::Some(status); self.pid = 0; self.group_confirmed = false; self.observed = core::option::None(); return core::result::Ok(self.cached);
     }
     pub fn wait(&self) -> core::result::Result<ExitStatus,Failure> {
         let input = self.take_stdin(); if (core::option::is_some(input)) { core::option::unwrap(input).close(); }
@@ -176,13 +242,40 @@ pub impl Child {
         if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); } if (self.pid <= 0 || core::option::is_some(self.cached)) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
         let n = std::command_raw::word(62,self.pid as i64,signal as i64,0); if (n < 0) { return core::result::Err(host(Stage::Signal,n)); } return core::result::Ok(0);
     }
+    // Signal the original confirmed group, never a freshly queried arbitrary
+    // group. Success proves delivery to at least one permitted member only.
+    pub fn signal_group(&self, signal: i32) -> core::result::Result<i32,Failure> {
+        if (signal < 0 || signal > 64) { return core::result::Err(failure(Error::InvalidInput,Stage::Signal,0)); }
+        if (self.pid <= 1 || self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
+        if (self.group_id().is_none()) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
+        let target: i64 = 0-(self.pid as i64);
+        let n: i64 = std::command_raw::word(62,target,signal as i64,0);
+        if (n < 0) { return core::result::Err(host(Stage::Signal,n)); }
+        if (n != 0) { return core::result::Err(failure(Error::Host,Stage::Signal,5)); }
+        return core::result::Ok(0);
+    }
+    // Attempt every cleanup action, preserving the first error. Any error
+    // leaves the unreaped Child owner for retry; only the final wait reaps it.
+    // The positive leader fallback also covers a leader that left its group.
+    pub fn cancel_group_and_wait(&self) -> core::result::Result<ExitStatus,Failure> {
+        if (self.pid <= 1 || self.cached.is_some()) { return core::result::Err(failure(Error::AlreadyReaped,Stage::Signal,0)); }
+        if (self.group_id().is_none()) { return core::result::Err(failure(Error::GroupUnconfirmed,Stage::ProcessGroup,0)); }
+        let first: core::option::Option<Failure> = core::option::None();
+        let closed: core::result::Result<i32,Failure> = self.close_pipes(); if (closed.is_err()) { first = core::option::Some(closed.unwrap_err()); }
+        let grouped: core::result::Result<i32,Failure> = self.signal_group(9);
+        if (grouped.is_err()) { let cause: Failure = grouped.unwrap_err(); if (cause.errno != 3 && first.is_none()) { first = core::option::Some(cause); } }
+        let leader: core::result::Result<i32,Failure> = self.signal(9);
+        if (leader.is_err()) { let cause: Failure = leader.unwrap_err(); if (cause.errno != 3 && first.is_none()) { first = core::option::Some(cause); } }
+        if (first.is_some()) { return core::result::Err(first.unwrap()); }
+        return self.wait();
+    }
     pub fn cancel_and_wait(&self) -> core::result::Result<ExitStatus,Failure> {
         self.close_pipes(); if (self.pid > 0) { let n = std::command_raw::word(62,self.pid as i64,9,0); if (n < 0 && n != -3) { return core::result::Err(host(Stage::Signal,n)); } } return self.wait();
     }
 }
 
 pub fn request(program: core::slice::View<u8>, arguments: core::slice::View<core::slice::View<u8>>, environment: core::slice::View<core::slice::View<u8>>) -> Request {
-    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
+    return Request { program: program, arguments: arguments, environment: environment, cwd: core::option::None(), search: Search::Exact, sigpipe: ChildSigpipe::Default, group: Group::Inherit, stdin: Stdio::Inherit, stdout: Stdio::Inherit, stderr: Stdio::Inherit, limits: default_limits() };
 }
 pub struct Environment { bytes: alloc::vec::Vec<i32>, values: alloc::vec::Vec<core::slice::View<u8>> }
 pub impl Environment {

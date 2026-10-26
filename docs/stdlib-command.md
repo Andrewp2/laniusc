@@ -6,6 +6,13 @@
 
 Construct `request(program, arguments, environment)` and optionally change its fields before `spawn`. `arguments` must contain at least `argv[0]`; it is independent of `program`. All strings are raw bytes, including empty arguments and non-UTF-8 paths. Program, cwd, arguments, and environment entries must contain no NUL. Program and cwd must be nonempty. Environment entries must have a nonempty key followed by `=`; empty values, duplicate keys, and supplied order are preserved.
 
+`Request.group` explicitly selects `Group::Inherit` (the factory default) or
+`Group::New`. New-group creation, independently confirmed signaling authority
+and non-reaping exit observation follow the
+[process-group contract](stdlib-command-groups.md). Direct Request literals
+must supply this policy. Group signaling is separate from direct-child
+signaling; neither API supplies process-tree containment or terminal job control.
+
 The request borrows every view and its physical backing until `spawn` returns. Views validate nonnegative start/length and checked logical endpoints; callers supply valid physical backing. `spawn` copies all strings and pointer tables before `fork`, so these inputs can be destroyed after it returns. Copies of an owner alias one resource: do not independently close or reap copies.
 
 `Child` and `Environment` must originate from this API. Their PID/cache/descriptor/Vec fields are library-maintained ownership state: do not forge owners or mutate those fields directly, even though the current language exposes record fields. Configure `Request` fields and use owner methods instead.
@@ -24,6 +31,13 @@ The request borrows every view and its physical backing until `spawn` returns. V
 EOF is deliberately **not proof that exec occurred**. It can also mean that child setup was killed or that reporting failed. The kernel can kill a process after exec has passed its recoverable failure point. A later exit status cannot retrospectively distinguish every such case. A child that successfully runs an executable and exits 127 is an ordinary `Child`; a reported exec error has a separate `Failed` result. The channel protocol is an internal 16-byte magic/stage/errno/checksum record over a blocking `pipe2(O_CLOEXEC)` pipe. Partial writes/reads and EINTR are handled; a short/corrupt record is unknown, never a successful-exec claim.
 
 `Failure` exposes `kind`, `stage`, and positive Linux `errno` (zero for library validation/allocation errors). Stages distinguish validation, allocation, descriptors, fork, close-range, redirect, directory, exec, startup read/protocol, wait, signal, close, and environment capture. Failed child setup normally exits 127, but `FailedStart.status` records what wait actually observed.
+
+`Stage::ProcessGroup` also reports new-group setup and confirmation failures.
+Its child packet uses stage 6. A parent setup/confirmation failure can return
+an owner-carrying `Unknown` even after clean channel EOF; EOF still proves
+neither exec nor group setup. Requested policy and confirmed authority have
+separate accessors. Existing valid child failure packets retain their specific
+failure and actual reaped status.
 
 ## Standard streams and descriptors
 
@@ -48,6 +62,16 @@ The child marks **all** descriptors ≥3 CLOEXEC with `close_range`; only its in
 ## Waiting and signals
 
 `wait()` and `try_wait()` use wait4 for this positive PID only. `try_wait()` returns `None` while running. A terminal result is cached: subsequent waits return the same `ExitStatus`, `id()` becomes `None`, and `signal` is rejected. `ExitStatus` provides the raw Linux status, optional exit code, optional terminating signal, and core-dump bit.
+
+`try_observe_exit()` instead uses waitid with WNOWAIT to retain the unreaped
+leader. Its observed status is separate from the final reaped cache; repeating
+the call may return the cached observation without another syscall. It is not
+a fresh existence or ownership probe. Group authority ends on actual reaping
+or observed ECHILD, and still requires the no-outside-reaper precondition.
+`signal_group()` and `cancel_group_and_wait()` use only a confirmed new-group
+owner; the latter attempts both that group and the still-owned positive leader
+before its final wait. Details, partial failures and descendant escape limits
+are in the [group guide](stdlib-command-groups.md).
 
 Blocking `wait()` retries EINTR. Nonblocking `try_wait()` performs one wait4(WNOHANG) attempt and returns a host failure with errno 4 on EINTR, retaining PID/cache state so the caller can check its own deadline/budget before retrying. Observed ECHILD permanently invalidates PID ownership and returns `LostChild`; later signaling is rejected, preventing a reused PID from being signaled. Other wait failures retain the child for retry. Never discard a live `Child`: there is no automatic destructor, background reaper, or detached mode. There is no pidfd; the precondition against outside reaping is essential until a wait observes termination/ECHILD.
 
@@ -96,3 +120,14 @@ The implementation follows Linux [fork](https://man7.org/linux/man-pages/man2/fo
 Focused native tests cover real fork/exec/wait and failed exec, cached status, binary pipes, PATH/cwd/environment, descriptor swaps and closed streams, child SIGPIPE policies, ECHILD invalidation, malformed requests and limits. Independent Python subprocess peers and strace fault/FD/allocation/reaping ledgers exercise the runner and startup ambiguity. The test sources are `tests/stdlib_command_execution.rs` and the `command*` fixtures under `tests/fixtures/stdlib_foundation`.
 
 The injected close-EIO regression checks error reporting and a single close attempt. Since strace injection skips the actual syscall, its ledger models Linux's documented ownership-ending close-error contract; it does not claim that the injected syscall physically released the FD. Real closed stdout/stderr pipes exercise SIGPIPE handling without that model.
+
+After adding group policy and non-reaping observation, all four existing
+command groups pass again in 22.09 seconds:
+`target/stdlib-work/command-group-inherit-regressions.log`. The one direct
+Request fixture now explicitly selects Inherit. New-group behavior has separate
+focused gates in the group guide; this inherited-policy regression does not
+establish those new behaviors by itself.
+
+The runner's diagnostic mapping also includes `Stage::ProcessGroup`. Its
+focused application/startup-resource regression passes after that addition in
+8.75 seconds: `target/stdlib-work/command-process-group-diagnostic-regression.log`.

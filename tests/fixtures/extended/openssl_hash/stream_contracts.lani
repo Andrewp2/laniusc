@@ -1,0 +1,126 @@
+// Appended to the actual sample with its main renamed by the focused driver.
+// Deterministic stream behavior exercises the sample loop, not a duplicate.
+struct ScriptReader { bytes: [u8], length: i32, position: i32, width: i32, calls: i32, interrupts: i32, mode: i32, largest: i32 }
+impl ScriptReader { fn borrow(&self) -> &ScriptReader { return self; } }
+pub impl core::io::Read for ScriptReader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (count > self.largest) { self.largest = count; }
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 1) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 2) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 3) { return core::result::Ok(count + 1); }
+        let amount: i32 = self.length - self.position;
+        if (amount > self.width) { amount = self.width; }
+        if (amount > count) { amount = count; }
+        let index: i32 = 0;
+        while (index < amount) { destination[offset + index] = self.bytes[self.position + index]; index += 1; }
+        self.position += amount;
+        return core::result::Ok(amount);
+    }
+}
+struct ScriptWriter { bytes: [u8], position: i32, width: i32, calls: i32, interrupts: i32, mode: i32 }
+impl ScriptWriter { fn borrow(&self) -> &ScriptWriter { return self; } }
+pub impl core::io::Write for ScriptWriter {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 1) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 2) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 3) { return core::result::Ok(count + 1); }
+        if (self.mode == 4) { return core::result::Ok(0); }
+        let amount: i32 = count;
+        if (amount > self.width) { amount = self.width; }
+        let index: i32 = 0;
+        while (index < amount) { self.bytes[self.position + index] = source[offset + index]; index += 1; }
+        self.position += amount;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn reader(bytes: [u8], length: i32, width: i32) -> ScriptReader {
+    return ScriptReader { bytes: bytes, length: length, position: 0, width: width, calls: 0, interrupts: 0, mode: 0, largest: 0 };
+}
+fn writer(bytes: [u8], width: i32) -> ScriptWriter {
+    return ScriptWriter { bytes: bytes, position: 0, width: width, calls: 0, interrupts: 0, mode: 0 };
+}
+fn failure(result: core::result::Result<i32,HashError>, expected: i32) {
+    assert(core::result::is_err(result));
+    let code: i32 = match (core::result::unwrap_err(result)) {
+        HashError::InputLimit -> 1, HashError::CallLimit -> 2,
+        HashError::InputIo -> 3, HashError::OutputIo -> 4, HashError::OpenSsl -> 5
+    };
+    assert(code == expected);
+}
+fn main() -> i32 {
+    let data: [u8; 7] = [97,98,0,255,10,0,120];
+    let baseline: [u8; 129] = [199; 129];
+    let first: ScriptReader = reader(data,7,1024);
+    let full: ScriptWriter = writer(baseline,129);
+    assert(core::result::unwrap(hash_stream(first.borrow(),full.borrow(),ext::openssl_digest::Algorithm::Sha256,7,3)) == 65);
+    assert(first.position == 7 && first.calls == 2 && full.calls == 1 && full.position == 65);
+    assert(baseline[64] == 10 && baseline[65] == 199);
+    let width: i32 = 1;
+    while (width <= 8) {
+        let output: [u8; 129] = [199; 129];
+        let source: ScriptReader = reader(data,7,width);
+        let sink: ScriptWriter = writer(output,width);
+        source.interrupts = 2; sink.interrupts = 3;
+        assert(core::result::unwrap(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,100)) == 65);
+        assert(source.position == 7 && sink.position == 65);
+        let index: i32 = 0;
+        while (index < 129) { assert(output[index] == baseline[index]); index += 1; }
+        width += 1;
+    }
+    let output: [u8; 129] = [199; 129];
+    let limited: ScriptReader = reader(data,7,1024);
+    let quiet: ScriptWriter = writer(output,129);
+    failure(hash_stream(limited.borrow(),quiet.borrow(),ext::openssl_digest::Algorithm::Sha256,6,10),1);
+    assert(limited.position == 7 && limited.largest == 7 && quiet.calls == 0);
+    let empty: ScriptReader = reader(data,0,1024);
+    let empty_sink: ScriptWriter = writer(output,129);
+    assert(core::result::unwrap(hash_stream(empty.borrow(),empty_sink.borrow(),ext::openssl_digest::Algorithm::Sha512,0,2)) == 129);
+    assert(empty.calls == 1 && empty.largest == 1 && empty_sink.calls == 1);
+    let zero: ScriptReader = reader(data,7,1024);
+    let zero_sink: ScriptWriter = writer(output,129);
+    failure(hash_stream(zero.borrow(),zero_sink.borrow(),ext::openssl_digest::Algorithm::Sha256,0,10),1);
+    assert(zero.position == 1 && zero.largest == 1 && zero_sink.calls == 0);
+    let mode: i32 = 1;
+    while (mode <= 3) {
+        let source: ScriptReader = reader(data,7,1024);
+        let sink: ScriptWriter = writer(output,129);
+        source.mode = mode;
+        failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,10),3);
+        assert(source.calls == 1 && sink.calls == 0);
+        mode += 1;
+    }
+    mode = 1;
+    while (mode <= 4) {
+        let source: ScriptReader = reader(data,7,1024);
+        let sink: ScriptWriter = writer(output,129);
+        sink.mode = mode;
+        failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,10),4);
+        assert(source.calls == 2 && sink.calls == 1 && sink.position == 0);
+        mode += 1;
+    }
+    let source: ScriptReader = reader(data,7,1024);
+    let sink: ScriptWriter = writer(output,129);
+    failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,0),2);
+    assert(source.calls == 0 && sink.calls == 0);
+    source.interrupts = 10;
+    failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,3),2);
+    assert(source.calls == 3 && sink.calls == 0);
+    source.interrupts = 0; source.calls = 0;
+    failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,1),2);
+    assert(source.calls == 1 && sink.calls == 0 && source.position == 7);
+    source.position = 0; source.calls = 0;
+    failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,2),2);
+    assert(source.calls == 2 && sink.calls == 0);
+    source.position = 0; source.calls = 0; sink.interrupts = 10;
+    failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,5),2);
+    assert(source.calls == 2 && sink.calls == 3 && sink.position == 0);
+    source.position = 0; source.calls = 0; sink.calls = 0; sink.interrupts = 0; sink.width = 1;
+    failure(hash_stream(source.borrow(),sink.borrow(),ext::openssl_digest::Algorithm::Sha256,7,5),2);
+    assert(source.calls == 2 && sink.calls == 3 && sink.position == 3);
+    return 0;
+}

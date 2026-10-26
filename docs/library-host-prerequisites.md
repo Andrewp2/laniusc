@@ -27,7 +27,25 @@ The [native integration proposal](library-native-integration-prerequisites.md)
 records the existing code-entry, linker, allocator and process-context evidence.
 The syscall thunk requires the
 same returning stack and continuation; it cannot implement clone/vfork/new-stack
-entry by itself. TLS/SQLite and general native FFI remain separate dependencies.
+entry by itself. Cryptography and TLS require an established external library
+through a checked native binding. The [native C profile](library-native-c.md)
+and [OpenSSL digests](extended-openssl-digest.md) now execute. C `f32`/`f64` calls
+also execute through independent SSE/GPR banks, with exact IEEE transport,
+mixed 32-parameter stack/alignment and imported generic replay evidence.
+The owned [SQLite adapter](extended-sqlite.md) and
+[persistent binary key/value program](extended-sqlite-kv.md) execute through
+system SQLite on Linux x86_64/glibc. Native typed-value, transaction, file/lock,
+error and [staging allocation](extended-sqlite-allocation.md) gates pass; the
+module guide records the exact receipts and bounded bulk-workload measurement.
+[Client TLS with peer verification](extended-openssl-tls.md) and the
+[TLS stream/HTTPS application](extended-https-fetch.md) execute through OpenSSL 3.
+[Server TLS](extended-openssl-tls-server.md) also executes through OpenSSL with
+an explicit unauthenticated-client policy.
+[Required-client mutual TLS](extended-openssl-mutual-tls.md) also executes
+through OpenSSL with shared credential owners and fresh required authentication.
+Broader security wrappers remain library work. Callbacks,
+variadics, aggregate C layouts and foreign thread entry need separate compiler
+contracts.
 [Subprocess support](stdlib-command.md) now executes over same-stack
 fork/exec/wait, with explicit startup uncertainty, owned pipes and a
 single-threaded/no-outside-reaping contract. The command runner and 78-case

@@ -92,6 +92,19 @@ MSG_NOSIGNAL policy. Flush, close and signal disposition remain separate effects
 Module documentation names supported targets and required services. Portable
 algorithms remain separate from allocation and operating-system bindings.
 
+## Cryptography and TLS boundary
+
+Cryptographic primitives, key derivation, signatures, certificate trust and TLS
+must come from an established external library through a checked native binding.
+Do not add in-house implementations to the standard or extended library. The
+[native C profile](library-native-c.md) and [OpenSSL digest adapter](extended-openssl-digest.md)
+now execute. Other security adapters and broader ABI types need their own
+implementation and tests; declarations or raw syscalls alone do not establish support.
+
+Checksums, noncryptographic hashes and protocol framing can remain Lanius code.
+Secure entropy remains an operating-system service. DER/X.509 structure parsing
+does not establish certificate trust, authenticated names or TLS support.
+
 ## Compatibility and evidence
 
 There is no identified external compatibility commitment for the APIs being

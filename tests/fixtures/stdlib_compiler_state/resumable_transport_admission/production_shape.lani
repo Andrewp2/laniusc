@@ -1,0 +1,81 @@
+// Separate from immutable main.lani. Native admission of this entry is pending.
+module app::main;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_batch;
+import ext::http_client;
+import std::clock;
+import admission::protocol;
+import admission::plain;
+import admission::nested;
+import shape::adapters;
+import shape::runner;
+
+fn deadline() -> core::time::Deadline {
+    let read: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    let made: core::result::Result<core::time::Deadline,core::time::Error> = core::time::deadline_after(read.unwrap(),core::time::from_secs(30)); return made.unwrap();
+}
+fn body<E>(report: &ext::http_batch::Report<E>, first: u8) {
+    let found: core::option::Option<ext::http_batch::Outcome<E>> = report.get(0); let item: ext::http_batch::Outcome<E> = found.unwrap();
+    let response: core::option::Option<ext::http_client::Response> = match(item) { ext::http_batch::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+    assert(response.is_some()); let owned = response.unwrap();
+    assert(owned.message().head.status == 200 && owned.as_view().length == 41 && owned.body().length == 3);
+    let bytes = owned.body(); assert(bytes.get(0).unwrap() == first && bytes.get(1).unwrap() == 0 && bytes.get(2).unwrap() == 255);
+}
+fn taken<E>(item: ext::http_batch::Outcome<E>, first: u8) {
+    let response: core::option::Option<ext::http_client::Response> = match(item) { ext::http_batch::Outcome::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+    assert(response.is_some()); let bytes = response.unwrap().body(); assert(bytes.length == 3 && bytes.get(0).unwrap() == first && bytes.get(1).unwrap() == 0 && bytes.get(2).unwrap() == 255);
+}
+fn plain() {
+    let ledger = admission::protocol::Ledger { acquired: 0, released: 0, transfers: 0, begun: 0 };
+    let audit = shape::adapters::Audit { requests: 0, begins: 0, interests: 0, handles: 0, waits: 0 };
+    let jobs: [admission::plain::Job;6] = [
+        admission::plain::Job { seed: 11, mode: 0, ledger: ledger.borrow() }, admission::plain::Job { seed: 12, mode: 1, ledger: ledger.borrow() },
+        admission::plain::Job { seed: 13, mode: 2, ledger: ledger.borrow() }, admission::plain::Job { seed: 14, mode: 3, ledger: ledger.borrow() },
+        admission::plain::Job { seed: 15, mode: 4, ledger: ledger.borrow() }, admission::plain::Job { seed: 16, mode: 5, ledger: ledger.borrow() }
+    ];
+    let factory = shape::adapters::PlainFactory { audit: audit.borrow() };
+    let probe: shape::runner::Probe<admission::plain::Error> = shape::runner::run<admission::plain::Job,shape::adapters::PlainDriver,admission::plain::Error,shape::adapters::PlainFactory>(core::slice::view<admission::plain::Job>(jobs,6).unwrap(),factory.borrow(),deadline());
+    assert(probe.observed == 14 && probe.steps == 4 && probe.aborts == 2 && probe.report.len() == 6);
+    assert(audit.requests == 6 && audit.begins == 5 && audit.interests == 6 && audit.handles == 6 && audit.waits == 6);
+    assert(ledger.acquired == 5 && ledger.released == 5 && ledger.transfers == 1 && ledger.begun == 4); body<admission::plain::Error>(probe.report.borrow(),11 as u8);
+    let selected: core::option::Option<ext::http_batch::Outcome<admission::plain::Error>> = probe.report.take(2); let repeated_error: core::option::Option<ext::http_batch::Outcome<admission::plain::Error>> = probe.report.take(2); assert(selected.is_some() && repeated_error.is_none());
+    let code: i32 = match(selected.unwrap()) { ext::http_batch::Outcome::Failed(error) -> match(error) { admission::plain::Error::Clock(value) -> value, _ -> -1 }, _ -> -2 }; assert(code == 202); shape::runner::dispose<admission::plain::Error>(selected.unwrap());
+    let completed: core::option::Option<ext::http_batch::Outcome<admission::plain::Error>> = probe.report.take(0); let repeated_response: core::option::Option<ext::http_batch::Outcome<admission::plain::Error>> = probe.report.take(0); assert(completed.is_some() && repeated_response.is_none());
+    shape::runner::destroy<admission::plain::Error>(probe.report.borrow()); shape::runner::destroy<admission::plain::Error>(probe.report.borrow()); assert(probe.report.len() == 0);
+    taken<admission::plain::Error>(completed.unwrap(),11 as u8); shape::runner::dispose<admission::plain::Error>(completed.unwrap());
+    shape::runner::conversions<admission::plain::Job,shape::adapters::PlainDriver,admission::plain::Error,shape::adapters::PlainFactory>(factory.borrow());
+    assert(ledger.acquired == ledger.released && jobs[0].seed == 11 && jobs[5].mode == 5);
+}
+fn nested() {
+    let ledger = admission::protocol::Ledger { acquired: 0, released: 0, transfers: 0, begun: 0 };
+    let audit = shape::adapters::Audit { requests: 0, begins: 0, interests: 0, handles: 0, waits: 0 }; let seed: i64 = -4294967297;
+    let jobs: [admission::nested::Job;6] = [
+        admission::nested::Job { seed: seed, control: core::option::Some(0), ledger: ledger.borrow() }, admission::nested::Job { seed: 22, control: core::option::Some(1), ledger: ledger.borrow() },
+        admission::nested::Job { seed: 23, control: core::option::Some(2), ledger: ledger.borrow() }, admission::nested::Job { seed: 24, control: core::option::Some(3), ledger: ledger.borrow() },
+        admission::nested::Job { seed: 25, control: core::option::Some(4), ledger: ledger.borrow() }, admission::nested::Job { seed: 26, control: core::option::Some(5), ledger: ledger.borrow() }
+    ];
+    let factory = shape::adapters::NestedFactory { audit: audit.borrow(), ledger: ledger.borrow() };
+    let probe: shape::runner::Probe<admission::nested::Error> = shape::runner::run<admission::nested::Job,shape::adapters::NestedDriver,admission::nested::Error,shape::adapters::NestedFactory>(core::slice::view<admission::nested::Job>(jobs,6).unwrap(),factory.borrow(),deadline());
+    assert(probe.observed == 20 && probe.steps == 4 && probe.aborts == 2 && probe.report.len() == 6);
+    assert(audit.requests == 6 && audit.begins == 5 && audit.interests == 6 && audit.handles == 6 && audit.waits == 6);
+    assert(ledger.acquired == 9 && ledger.released == 5 && ledger.transfers == 1 && ledger.begun == 4); body<admission::nested::Error>(probe.report.borrow(),128 as u8);
+    let index: i32 = 1;
+    while (index < 5) {
+        let found: core::option::Option<ext::http_batch::Outcome<admission::nested::Error>> = probe.report.get(index); let item: ext::http_batch::Outcome<admission::nested::Error> = found.unwrap();
+        let error: core::option::Option<admission::nested::Error> = match(item) { ext::http_batch::Outcome::Failed(value) -> core::option::Some(value), ext::http_batch::Outcome::Aborted(value) -> value.cleanup, _ -> core::option::None() };
+        assert(error.is_some()); let context: admission::nested::Context = error.unwrap().context.unwrap();
+        assert(context.value.is_ok() && context.value.unwrap().unwrap() == -7 && context.owner.len() == 3 && context.owner.at(0) == 0 && context.owner.at(1) == 128 && context.owner.at(2) == 255); index += 1;
+    }
+    let selected: core::option::Option<ext::http_batch::Outcome<admission::nested::Error>> = probe.report.take(2); let repeated_error: core::option::Option<ext::http_batch::Outcome<admission::nested::Error>> = probe.report.take(2); assert(selected.is_some() && repeated_error.is_none());
+    let code: i32 = match(selected.unwrap()) { ext::http_batch::Outcome::Failed(error) -> match(error.kind) { admission::nested::Kind::Clock(value) -> value.unwrap(), _ -> -1 }, _ -> -2 }; assert(code == 202);
+    shape::runner::dispose<admission::nested::Error>(selected.unwrap()); assert(ledger.released == 6);
+    let completed: core::option::Option<ext::http_batch::Outcome<admission::nested::Error>> = probe.report.take(0); let repeated_response: core::option::Option<ext::http_batch::Outcome<admission::nested::Error>> = probe.report.take(0); assert(completed.is_some() && repeated_response.is_none());
+    shape::runner::destroy<admission::nested::Error>(probe.report.borrow()); assert(ledger.released == 9); shape::runner::destroy<admission::nested::Error>(probe.report.borrow()); assert(ledger.released == 9 && probe.report.len() == 0);
+    taken<admission::nested::Error>(completed.unwrap(),128 as u8); shape::runner::dispose<admission::nested::Error>(completed.unwrap());
+    shape::runner::conversions<admission::nested::Job,shape::adapters::NestedDriver,admission::nested::Error,shape::adapters::NestedFactory>(factory.borrow());
+    assert(ledger.acquired == 11 && ledger.released == 11 && jobs[0].seed == seed && jobs[5].control.unwrap() == 5);
+}
+fn main() -> i32 { plain(); nested(); return 0; }

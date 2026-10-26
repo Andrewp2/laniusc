@@ -1,0 +1,39 @@
+// One controlled source staging lifecycle, with no TLS/network operation.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::slice;
+import ext::openssl_tls;
+import std::args;
+import std::socket;
+import std::stream;
+extern "C" fn duplex_test_fd_open(fd: i32) -> i32;
+extern "C" fn duplex_test_stat(index: i32, field: i32) -> i64;
+fn view(value: str, length: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length), start: 0, length: length }; }
+fn marker(value: str) { let output: std::stream::Descriptor = std::stream::stderr(); assert(core::io::write_all(output.borrow(), view(value, 2).values, 0, 2).is_ok()); }
+fn phase(error: ext::openssl_tls::Error) -> i32 {
+    assert(match (error.cause) { ext::openssl_tls::Cause::AllocationFailed -> true, _ -> false });
+    return match (error.phase) { ext::openssl_tls::Phase::Trust -> 1, ext::openssl_tls::Phase::Identity -> 2, ext::openssl_tls::Phase::Session -> 3, _ -> 99 };
+}
+fn main() -> i32 {
+    let arguments: std::args::Arguments = std::args::snapshot(1, 2, 16384).unwrap(); assert(arguments.len() == 2);
+    let value: core::slice::View<u8> = arguments.get(0).unwrap(); let fd: i32 = core::decimal::parse_u32_range(value.values, value.start, value.length).unwrap() as i32;
+    let socket: std::socket::Socket = std::socket::from_owned_handle(fd, std::socket::Family::Ipv4, std::socket::Kind::Tcp).unwrap();
+    let outcome: i32 = 0; marker("A\n");
+    let limits: ext::openssl_tls::Limits = ext::openssl_tls::default_limits(); limits.io_bytes = 97;
+    let created = ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(arguments.get(1).unwrap()), limits);
+    if (created.is_err()) { outcome = phase(created.unwrap_err()); }
+    else {
+        let original: ext::openssl_tls::Context = created.unwrap(); let retained: ext::openssl_tls::Context = original.retain().unwrap();
+        original.destroy(); assert(duplex_test_stat(-1, 0) == 1);
+        let attached = retained.session(fd, ext::openssl_tls::Identity::Dns(view("localhost", 9)));
+        retained.destroy(); assert(duplex_test_stat(-1, 0) == 0);
+        if (attached.is_err()) { outcome = phase(attached.unwrap_err()); }
+        else { let session: ext::openssl_tls::Session = attached.unwrap(); session.destroy(); session.destroy(); }
+    }
+    assert(outcome != 99 && duplex_test_stat(-1, 0) == 0 && duplex_test_stat(-1, 1) == 0 && duplex_test_stat(-1, 2) == 0 && duplex_test_stat(-1, 3) == 0);
+    assert(duplex_test_fd_open(fd) == 1); marker("B\n"); assert(socket.close().is_ok()); arguments.destroy();
+    let bytes: [u8; 8] = [0; 8]; bytes[0] = outcome as u8;
+    let output: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(output.borrow(), bytes, 0, 8).is_ok()); return 0;
+}

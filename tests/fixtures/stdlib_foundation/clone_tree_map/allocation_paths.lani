@@ -1,0 +1,68 @@
+// Every reached mmap is injected separately by the Rust driver.
+module app::main;
+import alloc::clone;
+import alloc::clone_tree_map;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::tree_map;
+import alloc::vec;
+import core::mem;
+import core::iter;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+
+fn vector(error: alloc::vec::Error) -> bool { return match(error) {alloc::vec::Error::AllocationFailed -> true,_ -> false}; }
+fn string(error: alloc::string::Error) -> bool { return match(error) {alloc::string::Error::AllocationFailed -> true,_ -> false}; }
+fn map(error: alloc::tree_map::Error) -> bool { return match(error) {alloc::tree_map::Error::AllocationFailed -> true,_ -> false}; }
+fn finish(tag: i32, status: i32) -> i32 { assert(std::io_decimal::write_i32(1,tag)>0 && std::io::write_byte(1,10)==1); return status; }
+fn storage(error: alloc::clone_tree_map::StorageError) -> i32 {
+    return match(error) {alloc::clone_tree_map::StorageError::Map(error) -> map_error(error),alloc::clone_tree_map::StorageError::Entries(error) -> entries_error(error)};
+}
+fn map_error(error: alloc::tree_map::Error) -> i32 { assert(map(error)); return 10; }
+fn entries_error(error: alloc::vec::Error) -> i32 { assert(vector(error)); return 11; }
+fn key_error(index: i32,error: alloc::string::Error) -> i32 { assert(index>=0 && index<2 && string(error)); return 20+index; }
+fn row_storage(index: i32,error: alloc::vec::Error) -> i32 { assert(vector(error)); return 30+index; }
+fn row_leaf(outer: i32,inner: i32,error: alloc::string::Error) -> i32 { assert(inner>=0 && inner<2 && string(error)); return 100+outer*2+inner; }
+fn value_error(index: i32,error: alloc::clone::Error<alloc::string::Error>) -> i32 {
+    assert(index>=0 && index<2);
+    return match(error) {alloc::clone::Error::Storage(error) -> row_storage(index,error),alloc::clone::Error::Element(inner,error) -> row_leaf(index,inner,error),alloc::clone::Error::Bounds -> -1};
+}
+fn error_tag(error: alloc::clone_tree_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>) -> i32 {
+    return match(error) {alloc::clone_tree_map::Error::Storage(error) -> storage(error),alloc::clone_tree_map::Error::Key(index,error) -> key_error(index,error),alloc::clone_tree_map::Error::Value(index,error) -> value_error(index,error),alloc::clone_tree_map::Error::ChangedKey(index) -> -1};
+}
+fn main() -> i32 {
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<alloc::tree_map::Entry<alloc::string::String,alloc::vec::Vec<alloc::string::String>>>())>0 && std::io::write_byte(1,10)==1);
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<alloc::string::String>())>0 && std::io::write_byte(1,10)==1);
+    let bytes: [u8;4] = [83,0,195,169]; let a_bytes: [u8;2] = [65,0]; let b_bytes: [u8;2] = [66,0];
+    let text_made = alloc::string::from_utf8(bytes,4);
+    if (text_made.is_err()) { assert(string(text_made.unwrap_err())); return finish(1,4); }
+    let original = text_made.unwrap();
+    let a_made = alloc::string::from_utf8(a_bytes,2);
+    if (a_made.is_err()) { assert(string(a_made.unwrap_err())); original.destroy(); return finish(2,4); }
+    let a = a_made.unwrap();
+    let b_made = alloc::string::from_utf8(b_bytes,2);
+    if (b_made.is_err()) { assert(string(b_made.unwrap_err())); a.destroy(); original.destroy(); return finish(3,4); }
+    let b = b_made.unwrap();
+    let row_made = alloc::vec::with_capacity<alloc::string::String>(2);
+    if (row_made.is_err()) { assert(vector(row_made.unwrap_err())); a.destroy(); b.destroy(); original.destroy(); return finish(4,4); }
+    let row = row_made.unwrap(); row.try_push(original).unwrap(); row.try_push(original).unwrap();
+    let source_made = alloc::tree_map::with_capacity<alloc::string::String,alloc::vec::Vec<alloc::string::String>>(4);
+    if (source_made.is_err()) { assert(map(source_made.unwrap_err())); row.destroy(); a.destroy(); b.destroy(); original.destroy(); return finish(5,4); }
+    let source = source_made.unwrap(); source.try_insert(b,row).unwrap(); source.try_insert(a,row).unwrap();
+    let saved = source.iter(); let saved_row = row.as_view(); let saved_bytes = original.as_bytes();
+    let result: core::result::Result<alloc::tree_map::TreeMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>>,alloc::clone_tree_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>> =
+        alloc::clone_tree_map::try_clone<alloc::string::String,alloc::vec::Vec<alloc::string::String>,alloc::string::Error,alloc::clone::Error<alloc::string::Error>>(source.borrow());
+    let first = saved.next().unwrap(); let second = saved.next().unwrap();
+    let old_text: alloc::string::String = saved_row.get(1).unwrap();
+    assert(source.len()==2 && source.capacity()==4 && first.key.equals(a) && second.key.equals(b) && saved.next().is_none());
+    assert(row.len()==2 && row.capacity()==2 && original.byte_len()==4 && old_text.byte_at(1).unwrap()==0 && saved_bytes[3]==169);
+    source.destroy(); row.destroy(); a.destroy(); b.destroy(); original.destroy();
+    if (result.is_err()) { return finish(error_tag(result.unwrap_err()),4); }
+    let copy = result.unwrap(); assert(copy.len()==2);
+    let first_copy = copy.first().unwrap(); let values = first_copy.value.as_slice(); let leaf: alloc::string::String = values[0];
+    assert(first_copy.key.byte_len()==2 && first_copy.key.byte_at(1).unwrap()==0 && leaf.byte_at(3).unwrap()==169);
+    alloc::clone_tree_map::destroy_tree_map<alloc::string::String,alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    return finish(0,0);
+}

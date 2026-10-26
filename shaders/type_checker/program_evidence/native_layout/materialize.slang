@@ -51,13 +51,6 @@ public EvidenceStatus plm_expand_nominal(uint node, bool source_copy, uint2 sour
                      value.x != pev_constant_parameter_scalar(parameter.y))))
                 return pev_invalid(176u, node, parameter.y);
         }
-        if (tail.x == 0u)
-        {
-            // The existing shared native evaluator has no value layout for a
-            // zero-variant enum. References/slices terminate before requesting it.
-            EvidenceStatus empty = pev_invalid(177u, node, recipe);
-            empty.state = PEV_UNSUPPORTED; return empty;
-        }
         status = plm_charge(tail.x);
         if (status.state != PEV_VALID) return status;
         status = plm_reserve(2u, tail.x, first_group);
@@ -103,8 +96,12 @@ public EvidenceStatus plm_expand_nominal(uint node, bool source_copy, uint2 sour
             if (!plm_write2(3u, root_next++, 0u, normalized)) return pev_invalid(171u, 3u, root_next - 1u);
         }
     }
+    // The admitted enum recipe proves a zero-variant definition complete.
+    // Publish its ordinary discriminant width here, without re-reading the
+    // recipe during leaf evaluation or inventing a variant/payload group.
+    uint known_words = row.z == 2u && groups == 0u ? 1u : PEV_INVALID;
     if (root_next - first_root != root_count ||
-        !plm_write4(4u, node, 0u, uint4(first_group, groups, first_root, PEV_INVALID)))
+        !plm_write4(4u, node, 0u, uint4(first_group, groups, first_root, known_words)))
         return pev_invalid(178u, node, recipe);
     program_evidence_native_layout_work[15u] = first_group + groups;
     program_evidence_native_layout_work[16u] = first_root + root_count;

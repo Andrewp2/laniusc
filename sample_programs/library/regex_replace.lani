@@ -1,0 +1,122 @@
+// Bounded UTF-8 stdin rewrite; stdout contains only result bytes. Write errors
+// can leave an accepted prefix; callers supply an external I/O deadline.
+// argv follows native OS rules (no NUL); no extra shell/escape language.
+module app::main;
+import alloc::io;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import ext::cli;
+import ext::regex;
+import ext::regex_text;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Config { input: i32, replacement: ext::regex_text::ReplaceLimits, seen: u32, help: bool, operands: i32 }
+impl Config { fn borrow(&self) -> &Config { return self; } }
+struct Diagnostic { stage: i32, code: i32, offset: i32 }
+impl Diagnostic { fn borrow(&self) -> &Diagnostic { return self; } }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let part = bytes(value,count); return core::text::from_utf8_unchecked(part.values,part.start,part.length); }
+fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
+fn fail(detail: &Diagnostic, status: i32, stage: i32, code: i32) -> i32 { detail.stage = stage; detail.code = code; return status; }
+fn argument(config: &Config, option: ext::cli::Occurrence) -> bool {
+    let bit: u32 = (1 as u32) << option.id; if ((config.seen & bit) != 0) { return false; } config.seen = config.seen | bit;
+    if (option.id == 6) { config.help = true; return true; }
+    let value = option.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err()) { return false; } let number: u64 = parsed.unwrap();
+    if (option.id == 5) { let ceiling: u64 = 9223372036854775807; if (number > ceiling) { return false; } config.replacement.search.max_work = number as i64; return true; }
+    if (number > 67108864) { return false; }
+    if (option.id == 1) { config.input = number as i32; }
+    if (option.id == 2) { config.replacement.max_output_bytes = number as i32; }
+    if (option.id == 3) { if (number > 1000000) { return false; } config.replacement.search.max_matches = number as i32; }
+    if (option.id == 4) { if (number > 1000001) { return false; } config.replacement.search.max_calls = number as i32; }
+    return true;
+}
+fn operand(config: &Config, values: [core::slice::View<u8>], argument: ext::cli::Argument) -> bool {
+    if (config.operands >= 3) { return false; }
+    values[config.operands] = argument.bytes; config.operands += 1; return true;
+}
+fn regex_error(error: ext::regex::Error, detail: &Diagnostic) -> i32 {
+    detail.offset = match(error) { ext::regex::Error::Syntax(at) -> at, ext::regex::Error::Unsupported(at) -> at, ext::regex::Error::InvalidUtf8(at) -> at, _ -> -1 };
+    return match(error) { ext::regex::Error::AllocationFailed -> fail(detail,4,2,6), _ -> fail(detail,2,2,2) };
+}
+fn replacement_error(error: ext::regex_text::Error, detail: &Diagnostic) -> i32 {
+    detail.offset = match(error) { ext::regex_text::Error::Template(at) -> at, ext::regex_text::Error::Capture(at,group) -> at, ext::regex_text::Error::Text(value) -> match(value) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 }, _ -> -1 };
+    return match(error) {
+        ext::regex_text::Error::AllocationFailed -> fail(detail,4,3,6),
+        ext::regex_text::Error::Regex(value) -> match(value) { ext::regex::Error::AllocationFailed -> fail(detail,4,3,6), _ -> fail(detail,2,3,5) },
+        _ -> fail(detail,2,3,5)
+    };
+}
+fn rewrite(regex: &ext::regex::Regex, input: core::text::Text, replacement: core::text::Text, limits: ext::regex_text::ReplaceLimits, templated: bool) -> core::result::Result<ext::regex_text::Replacement,ext::regex_text::Error> {
+    if (templated) { return ext::regex_text::replace_template(regex,input,replacement,limits); }
+    return ext::regex_text::replace_literal(regex,input,replacement,limits);
+}
+fn process(arguments: std::args::Arguments, detail: &Diagnostic) -> i32 {
+    let specs: [ext::cli::Spec;6] = [
+        ext::cli::Spec { id: 1, long: bytes("max-input",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 2, long: bytes("max-output",10), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 3, long: bytes("max-matches",11), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 4, long: bytes("max-calls",9), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 5, long: bytes("max-work",8), short: 0, arity: ext::cli::Arity::Required },
+        ext::cli::Spec { id: 6, long: bytes("help",4), short: 104, arity: ext::cli::Arity::Flag }
+    ];
+    let parser = ext::cli::parser(arguments.as_view(),core::slice::view(specs,6).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    let config = Config { input: 4194304, replacement: ext::regex_text::default_replace_limits(), seen: 0, help: false, operands: 0 }; config.replacement.max_replacement_bytes = 65536;
+    let nowhere: ptr = 0; let raw_empty: [u8] = core::mem::typed_slice_from_raw_parts<u8>(nowhere,0); let empty: core::slice::View<u8> = core::slice::view<u8>(raw_empty,0).unwrap();
+    let operands: [core::slice::View<u8>;3] = [empty;3];
+    while (true) {
+        let parsed = parser.next(); if (parsed.is_err()) { return fail(detail,2,0,1); } let item = parsed.unwrap(); if (item.is_none()) { break; }
+        let valid: bool = match(item.unwrap()) {
+            ext::cli::Event::Option(option) -> argument(config.borrow(),option),
+            ext::cli::Event::Operand(value) -> operand(config.borrow(),operands,value)
+        };
+        if (!valid) { return fail(detail,2,0,1); }
+    }
+    if (config.help) {
+        if (arguments.len() != 1) { return fail(detail,2,0,1); }
+        let usage = bytes("Usage: regex-replace literal|template PATTERN REPLACEMENT [--max-input N] [--max-output N] [--max-matches N] [--max-calls N] [--max-work N]\n",140);
+        let sink = std::stream::stdout(); if (core::io::write_all(sink.borrow(),usage.values,usage.start,usage.length).is_err()) { return fail(detail,3,4,7); } return 0;
+    }
+    if (config.operands != 3) { return fail(detail,2,0,1); }
+    let templated: bool = same(operands[0],bytes("template",8)); if (!templated && !same(operands[0],bytes("literal",7))) { return fail(detail,2,0,1); }
+    let pattern = core::text::from_utf8_range(operands[1].values,operands[1].start,operands[1].length);
+    let replacement = core::text::from_utf8_range(operands[2].values,operands[2].start,operands[2].length);
+    if (pattern.is_err() || replacement.is_err()) { return fail(detail,2,0,3); }
+    let compiled = ext::regex::compile(pattern.unwrap(),ext::regex::options());
+    if (compiled.is_err()) { return regex_error(compiled.unwrap_err(),detail); } let regex: ext::regex::Regex = compiled.unwrap();
+    let input = alloc::io::with_limit(config.input).unwrap(); let source = std::stream::stdin(); let copied = std::stream::copy(source.borrow(),input.borrow());
+    if (copied.is_err()) {
+        let error = copied.unwrap_err().cause; input.destroy(); regex.destroy();
+        return match(error) { core::io::Error::AllocationFailed -> fail(detail,4,1,6), core::io::Error::LimitExceeded -> fail(detail,2,1,5), _ -> fail(detail,3,1,7) };
+    }
+    let selected = core::text::from_utf8(input.as_bytes(),input.len());
+    if (selected.is_err()) { detail.offset = match(selected.unwrap_err()) { core::text::Error::InvalidUtf8(at) -> at, _ -> -1 }; input.destroy(); regex.destroy(); return fail(detail,2,1,3); }
+    let result = rewrite(regex.borrow(),selected.unwrap(),replacement.unwrap(),config.replacement,templated);
+    input.destroy(); regex.destroy();
+    if (result.is_err()) { return replacement_error(result.unwrap_err(),detail); }
+    let output = result.unwrap(); let sink = std::stream::stdout();
+    let written = core::io::write_all(sink.borrow(),output.output.as_bytes(),0,output.output.byte_len()); output.destroy();
+    if (written.is_err()) { return fail(detail,3,4,7); } return 0;
+}
+fn diagnostic(detail: Diagnostic) -> bool {
+    let raw: [u8;128] = [0;128]; let format = core::fmt::buffer(raw,0,128).unwrap();
+    format.write_text(text("regex-replace: stage=",21)); format.write_signed(detail.stage as i64,core::fmt::decimal());
+    format.write_text(text(" code=",6)); format.write_signed(detail.code as i64,core::fmt::decimal());
+    if (detail.offset >= 0) { format.write_text(text(" byte=",6)); format.write_signed(detail.offset as i64,core::fmt::decimal()); }
+    format.write_text(text("\n",1)); let sink = std::stream::stderr(); return core::io::write_all(sink.borrow(),raw,0,format.finish().unwrap()).is_ok();
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let detail = Diagnostic { stage: 0, code: 0, offset: -1 }; let status: i32 = 0; let captured = std::args::snapshot(1,32,131072);
+    if (captured.is_err()) { status = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> fail(detail.borrow(),4,0,6), std::args::Error::HostRead(at) -> fail(detail.borrow(),3,0,7), _ -> fail(detail.borrow(),2,0,1) }; }
+    else { let arguments = captured.unwrap(); status = process(arguments,detail.borrow()); arguments.destroy(); }
+    if (status != 0 && !diagnostic(detail)) { return 3; } return status;
+}

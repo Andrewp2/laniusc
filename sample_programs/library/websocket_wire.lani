@@ -1,4 +1,4 @@
-// Offline RFC 6455 handshake/frame inspector. No network transport.
+// Offline RFC 6455 request/frame inspector. No network transport.
 module app::main;
 import alloc::vec;
 import core::fmt;
@@ -59,33 +59,27 @@ fn handshake_report(head:ext::http::Head,protocols:i32,input_length:i32,output:&
     let storage:[u8;160]=[0;160]; let f:core::fmt::Formatter=core::result::unwrap(core::fmt::buffer(storage,0,160)); f.write_text(text("handshake=1 protocols=",22)); f.write_signed(protocols as i64,core::fmt::decimal()); f.write_text(text(" consumed=",10)); f.write_signed(head.raw.len() as i64,core::fmt::decimal()); f.write_text(text(" remaining=",11)); f.write_signed((input_length-head.raw.len()) as i64,core::fmt::decimal()); f.write_text(text("\n",1)); let n:i32=core::result::unwrap(f.finish()); return append(output,core::result::unwrap(core::slice::view(storage,n)),maximum);
 }
 fn process(args:std::args::Arguments) -> i32 {
-    let mode:i32=0; let client:bool=false; let open:bool=false; let decode:bool=false; let wanted:i32=0; let message_set:bool=false; let maximum:i32=18874368; let max_output:i32=18874368; let path:core::slice::View<u8> =bytes("-",1); let request_path:core::slice::View<u8> =bytes("",0); let protocol:core::slice::View<u8> =bytes("",0); let path_set:bool=false; let options:bool=true; let i:i32=0;
+    let mode:i32=0; let client:bool=false; let open:bool=false; let decode:bool=false; let wanted:i32=0; let message_set:bool=false; let maximum:i32=18874368; let max_output:i32=18874368; let path:core::slice::View<u8> =bytes("-",1); let path_set:bool=false; let options:bool=true; let i:i32=0;
     while(i<args.len()) { let arg:core::slice::View<u8> =core::option::unwrap(args.get(i));
         if(options && equal(arg,"--",2)) { options=false; }
-        else { if(options && equal(arg,"--help",6)) { if(!write(bytes("Usage: websocket-wire [--client] [--allow-open] [--decode [--message N]] [--request|--accept [--protocol NAME]|--response REQUEST_FILE] [--max-input N] [--max-output N] [--] [FILE|-]\n",183),1)) { return 3; } return 0; }
-        else { if(options && (equal(arg,"--request",9) || equal(arg,"--accept",8) || equal(arg,"--response",10))) { if(mode!=0) { return 2; } mode=1; if(equal(arg,"--accept",8)) { mode=2; } if(equal(arg,"--response",10)) { mode=3; i+=1; if(i==args.len()) { return 2; } request_path=core::option::unwrap(args.get(i)); if(request_path.is_empty() || equal(request_path,"-",1)) { return 2; } } }
-        else { if(options && (equal(arg,"--max-input",11) || equal(arg,"--max-output",12) || equal(arg,"--message",9) || equal(arg,"--protocol",10))) { i+=1; if(i==args.len()) { return 2; } let value:core::slice::View<u8> =core::option::unwrap(args.get(i)); if(equal(arg,"--protocol",10)) { protocol=value; if(protocol.is_empty()) { return 2; } } else { let n:i32=number(value); if(n<0) { return 2; } if(equal(arg,"--message",9)) { wanted=n; message_set=true; } else { if(n>67108864) { return 2; } if(equal(arg,"--max-input",11)) { maximum=n; } else { max_output=n; } } } }
+        else { if(options && equal(arg,"--help",6)) { if(!write(bytes("Usage: websocket-wire [--client] [--allow-open] [--decode [--message N]] [--request] [--max-input N] [--max-output N] [--] [FILE|-]\n",132),1)) { return 3; } return 0; }
+        else { if(options && equal(arg,"--request",9)) { if(mode!=0) { return 2; } mode=1; }
+        else { if(options && (equal(arg,"--max-input",11) || equal(arg,"--max-output",12) || equal(arg,"--message",9))) { i+=1; if(i==args.len()) { return 2; } let value:core::slice::View<u8> =core::option::unwrap(args.get(i)); let n:i32=number(value); if(n<0) { return 2; } if(equal(arg,"--message",9)) { wanted=n; message_set=true; } else { if(n>67108864) { return 2; } if(equal(arg,"--max-input",11)) { maximum=n; } else { max_output=n; } } }
         else { if(options && equal(arg,"--client",8)) { client=true; }
         else { if(options && equal(arg,"--allow-open",12)) { open=true; }
         else { if(options && equal(arg,"--decode",8)) { if(decode) { return 2; } decode=true; }
         else { if(path_set || (options && arg.len()>1 && core::option::unwrap(arg.get(0))==45)) { return 2; } path=arg; path_set=true; } } } } } } }
         i+=1;
     }
-    if((mode!=0 && (decode || client || open || message_set)) || (mode!=2 && !protocol.is_empty()) || (!decode && message_set)) { return 2; }
-    let input:alloc::vec::Vec<u8> =alloc::vec::new(); let request_input:alloc::vec::Vec<u8> =alloc::vec::new(); let output:alloc::vec::Vec<u8> =alloc::vec::new(); let status:i32=read(path,input.borrow(),maximum);
-    if(status==0 && mode==3) { status=read(request_path,request_input.borrow(),maximum); }
+    if((mode!=0 && (decode || client || open || message_set)) || (!decode && message_set)) { return 2; }
+    let input:alloc::vec::Vec<u8> =alloc::vec::new(); let output:alloc::vec::Vec<u8> =alloc::vec::new(); let status:i32=read(path,input.borrow(),maximum);
     if(status==0) {
         if(mode==0) { let role:ext::websocket::Role=ext::websocket::Role::Server; if(client) { role=ext::websocket::Role::Client; } status=frames(input.as_view(),role,open,decode,wanted,output.borrow(),max_output); }
-        else { let raw:core::slice::View<u8> =input.as_view(); if(mode==3) { raw=request_input.as_view(); }
-            let parsed=ext::websocket::validate_request(raw,ext::websocket::default_limits());
+        else { let parsed=ext::websocket::validate_request(input.as_view(),ext::websocket::default_limits());
             if(core::result::is_err(parsed)) { status=error(core::result::unwrap_err(parsed),0); }
-            else { let request:ext::websocket::Request=core::result::unwrap(parsed);
-                if(mode==1) { status=handshake_report(request.head,request.protocol_count,input.len(),output.borrow(),max_output); }
-                if(mode==2) { let dummy:ext::http::Field=ext::http::Field { raw:bytes("",0),name:bytes("",0),value:bytes("",0),offset:0 }; let fields:[ext::http::Field;1]=[dummy]; let encoded=ext::websocket::encode_response(request,protocol,core::result::unwrap(core::slice::view(fields,0)),ext::websocket::default_limits()); if(core::result::is_err(encoded)) { let failure:ext::websocket::Error=core::result::unwrap_err(encoded); let allocation:bool=match(failure) { ext::websocket::Error::AllocationFailed->true, _->false }; if(allocation) { status=4; } else { status=error(failure,0); } } else { let owner:alloc::vec::Vec<u8> =core::result::unwrap(encoded); if(owner.len()>max_output) { owner.destroy(); status=2; } else { output=owner; } } }
-                if(mode==3) { let checked=ext::websocket::validate_response(input.as_view(),request,ext::websocket::default_limits()); if(core::result::is_err(checked)) { status=error(core::result::unwrap_err(checked),0); } else { let response:ext::websocket::Response=core::result::unwrap(checked); let protocols:i32=0; if(core::option::is_some(response.protocol)) { protocols=1; } status=handshake_report(response.head,protocols,input.len(),output.borrow(),max_output); } }
-            }
+            else { let request:ext::websocket::Request=core::result::unwrap(parsed); status=handshake_report(request.head,request.protocol_count,input.len(),output.borrow(),max_output); }
         }
     }
-    if(status==0 && !write(output.as_view(),1)) { status=3; } output.destroy(); request_input.destroy(); input.destroy(); return status;
+    if(status==0 && !write(output.as_view(),1)) { status=3; } output.destroy(); input.destroy(); return status;
 }
 fn main() -> i32 { let snapshot=std::args::snapshot(1,32,65536); if(core::result::is_err(snapshot)) { return match(core::result::unwrap_err(snapshot)) { std::args::Error::AllocationFailed->4, std::args::Error::HostRead(at)->3, _->2 }; } let args:std::args::Arguments=core::result::unwrap(snapshot); let status:i32=process(args); args.destroy(); return status; }

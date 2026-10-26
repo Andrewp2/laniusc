@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **244 modules**, **10937 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **237 modules**, **11000 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -17,7 +17,6 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
 | [core::adler32](core/adler32.md) | [source](../../stdlib/core/adler32.lani#L3) | 9 | Source inventory | [stdlib-adler32](../stdlib-adler32.md) |
-| [core::aes](core/aes.md) | [source](../../stdlib/core/aes.lani#L3) | 13 | Source inventory | [core-aes](../core-aes.md) |
 | [core::array_i32](core/array_i32.md) | [source](../../stdlib/core/array_i32.lani#L4) | 2 | Source inventory | **Unregistered** |
 | [core::array_i32_4](core/array_i32_4.md) | [source](../../stdlib/core/array_i32_4.lani#L2) | 14 | Source inventory | **Unregistered** |
 | [core::array_u8_4](core/array_u8_4.md) | [source](../../stdlib/core/array_u8_4.lani#L4) | 17 | Source inventory | **Unregistered** |
@@ -29,9 +28,9 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [core::bitset](core/bitset.md) | [source](../../stdlib/core/bitset.lani#L5) | 59 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md) |
 | [core::bool](core/bool.md) | [source](../../stdlib/core/bool.lani#L3) | 10 | Source inventory | [stdlib-boolean-bits](../stdlib-boolean-bits.md) |
 | [core::calendar](core/calendar.md) | [source](../../stdlib/core/calendar.lani#L4) | 158 | Source inventory | [stdlib-calendar](../stdlib-calendar.md) |
-| [core::chacha20](core/chacha20.md) | [source](../../stdlib/core/chacha20.lani#L3) | 19 | Source inventory | [stdlib-chacha20](../stdlib-chacha20.md) |
 | [core::char](core/char.md) | [source](../../stdlib/core/char.lani#L2) | 19 | Source inventory | [stdlib-unicode](../stdlib-unicode.md) |
-| [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md) |
+| [core::clone](core/clone.md) | [source](../../stdlib/core/clone.lani#L3) | 4 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-clone-values](../stdlib-clone-values.md) |
+| [core::clone_values](core/clone_values.md) | [source](../../stdlib/core/clone_values.lani#L3) | 78 | Source inventory | [stdlib-clone-values](../stdlib-clone-values.md), [compiler-empty-enum-layout](../compiler-empty-enum-layout.md) |
 | [core::cmp](core/cmp.md) | [source](../../stdlib/core/cmp.lani#L5) | 250 | Source inventory | [stdlib-comparison](../stdlib-comparison.md) |
 | [core::crc32](core/crc32.md) | [source](../../stdlib/core/crc32.lani#L3) | 6 | Source inventory | [stdlib-byte-codecs](../stdlib-byte-codecs.md) |
 | [core::decimal](core/decimal.md) | [source](../../stdlib/core/decimal.lani#L3) | 70 | Source inventory | [stdlib-decimal](../stdlib-decimal.md) |
@@ -53,7 +52,7 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [core::i8](core/i8.md) | [source](../../stdlib/core/i8.lani#L5) | 137 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [core::isize](core/isize.md) | [source](../../stdlib/core/isize.lani#L5) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
-| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L12) | 142 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
+| [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L12) | 198 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-iterator-sources](../stdlib-iterator-sources.md), [stdlib-iterator-lookahead](../stdlib-iterator-lookahead.md), [stdlib-column-extrema](../stdlib-column-extrema.md) |
 | [core::math](core/math.md) | [source](../../stdlib/core/math.lani#L27) | 18 | Source inventory | [stdlib-math](../stdlib-math.md) |
 | [core::mem](core/mem.md) | [source](../../stdlib/core/mem.lani#L5) | 14 | Source inventory | [stdlib-memory](../stdlib-memory.md) |
 | [core::net](core/net.md) | [source](../../stdlib/core/net.lani#L2) | 334 | Source inventory | [stdlib-net](../stdlib-net.md) |
@@ -64,15 +63,11 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [core::panic](core/panic.md) | [source](../../stdlib/core/panic.lani#L3) | 29 | Source inventory | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |
 | [core::path](core/path.md) | [source](../../stdlib/core/path.lani#L5) | 78 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [core::path_rules](core/path_rules.md) | [source](../../stdlib/core/path_rules.lani#L3) | 59 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
-| [core::poly1305](core/poly1305.md) | [source](../../stdlib/core/poly1305.lani#L4) | 40 | Source inventory | [stdlib-poly1305](../stdlib-poly1305.md) |
 | [core::random](core/random.md) | [source](../../stdlib/core/random.lani#L5) | 40 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [core::range](core/range.md) | [source](../../stdlib/core/range.lani#L9) | 51 | Source inventory | [stdlib-ranges](../stdlib-ranges.md) |
 | [core::result](core/result.md) | [source](../../stdlib/core/result.lani#L7) | 24 | Source inventory | [stdlib-result](../stdlib-result.md) |
 | [core::runtime](core/runtime.md) | [source](../../stdlib/core/runtime.lani#L15) | 113 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::set](core/set.md) | [source](../../stdlib/core/set.lani#L4) | 24 | Source inventory | [stdlib-fixed-capacity](../stdlib-fixed-capacity.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
-| [core::sha1](core/sha1.md) | [source](../../stdlib/core/sha1.lani#L3) | 22 | Source inventory | **Unregistered** |
-| [core::sha256](core/sha256.md) | [source](../../stdlib/core/sha256.lani#L4) | 30 | Source inventory | [stdlib-sha256](../stdlib-sha256.md), [stdlib-hash-bytes](../stdlib-hash-bytes.md) |
-| [core::sha512](core/sha512.md) | [source](../../stdlib/core/sha512.lani#L4) | 35 | Source inventory | [stdlib-sha512](../stdlib-sha512.md), [stdlib-hash-bytes](../stdlib-hash-bytes.md) |
 | [core::slice](core/slice.md) | [source](../../stdlib/core/slice.lani#L10) | 87 | Source inventory | [stdlib-slice-views](../stdlib-slice-views.md), [stdlib-slice](../stdlib-slice.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md) |
 | [core::target](core/target.md) | [source](../../stdlib/core/target.lani#L6) | 37 | Source inventory | [library-host-prerequisites](../library-host-prerequisites.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [core::text](core/text.md) | [source](../../stdlib/core/text.lani#L4) | 86 | Source inventory | [stdlib-text](../stdlib-text.md), [stdlib-text-composition](../stdlib-text-composition.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-text-split-iterators](../stdlib-text-split-iterators.md) |
@@ -107,20 +102,26 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | --- | --- | ---: | --- | --- |
 | [alloc::allocator](alloc/allocator.md) | [source](../../stdlib/alloc/allocator.lani#L3) | 51 | Source inventory | [stdlib-raw-host-width](../stdlib-raw-host-width.md), [library-host-operation-support](../library-host-operation-support.md) |
 | [alloc::arena](alloc/arena.md) | [source](../../stdlib/alloc/arena.lani#L3) | 49 | Source inventory | [stdlib-arena](../stdlib-arena.md) |
-| [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 37 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md) |
+| [alloc::binary_heap](alloc/binary_heap.md) | [source](../../stdlib/alloc/binary_heap.lani#L4) | 52 | Source inventory | [stdlib-binary-heap](../stdlib-binary-heap.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-heap-iterators](../stdlib-heap-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-heap](../stdlib-owning-heap.md) |
 | [alloc::bitset](alloc/bitset.md) | [source](../../stdlib/alloc/bitset.lani#L4) | 55 | Source inventory | [stdlib-bitset-owned](../stdlib-bitset-owned.md) |
 | [alloc::buffered](alloc/buffered.md) | [source](../../stdlib/alloc/buffered.lani#L4) | 49 | Source inventory | [stdlib-buffered](../stdlib-buffered.md), [stdlib-format-write](../stdlib-format-write.md) |
 | [alloc::clone](alloc/clone.md) | [source](../../stdlib/alloc/clone.lani#L2) | 8 | Source inventory | [stdlib-clone](../stdlib-clone.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
+| [alloc::clone_binary_heap](alloc/clone_binary_heap.md) | [source](../../stdlib/alloc/clone_binary_heap.lani#L4) | 10 | Source inventory | [stdlib-clone-binary-heap](../stdlib-clone-binary-heap.md), [stdlib-owning-heap](../stdlib-owning-heap.md) |
+| [alloc::clone_deque](alloc/clone_deque.md) | [source](../../stdlib/alloc/clone_deque.lani#L4) | 9 | Source inventory | [stdlib-clone-deque](../stdlib-clone-deque.md) |
+| [alloc::clone_hash_map](alloc/clone_hash_map.md) | [source](../../stdlib/alloc/clone_hash_map.lani#L4) | 12 | Source inventory | [stdlib-clone-hash-map](../stdlib-clone-hash-map.md), [stdlib-owning-hash](../stdlib-owning-hash.md) |
+| [alloc::clone_hash_set](alloc/clone_hash_set.md) | [source](../../stdlib/alloc/clone_hash_set.lani#L4) | 11 | Source inventory | [stdlib-clone-hash-set](../stdlib-clone-hash-set.md), [stdlib-owning-hash](../stdlib-owning-hash.md) |
+| [alloc::clone_tree_map](alloc/clone_tree_map.md) | [source](../../stdlib/alloc/clone_tree_map.lani#L3) | 15 | Source inventory | [stdlib-clone-tree-map](../stdlib-clone-tree-map.md), [stdlib-owning-tree](../stdlib-owning-tree.md) |
+| [alloc::clone_tree_set](alloc/clone_tree_set.md) | [source](../../stdlib/alloc/clone_tree_set.lani#L3) | 11 | Source inventory | [stdlib-clone-tree-set](../stdlib-clone-tree-set.md), [stdlib-owning-tree](../stdlib-owning-tree.md) |
 | [alloc::clone_vec](alloc/clone_vec.md) | [source](../../stdlib/alloc/clone_vec.lani#L5) | 5 | Source inventory | [stdlib-nested-clone](../stdlib-nested-clone.md) |
 | [alloc::deque](alloc/deque.md) | [source](../../stdlib/alloc/deque.lani#L3) | 88 | Source inventory | [stdlib-deque](../stdlib-deque.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 | [alloc::format](alloc/format.md) | [source](../../stdlib/alloc/format.lani#L2) | 5 | Source inventory | [stdlib-format-strings](../stdlib-format-strings.md) |
-| [alloc::hash_map](alloc/hash_map.md) | [source](../../stdlib/alloc/hash_map.lani#L3) | 69 | Source inventory | [stdlib-hash-collections](../stdlib-hash-collections.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md) |
-| [alloc::hash_set](alloc/hash_set.md) | [source](../../stdlib/alloc/hash_set.lani#L3) | 35 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md) |
+| [alloc::hash_map](alloc/hash_map.md) | [source](../../stdlib/alloc/hash_map.lani#L3) | 100 | Source inventory | [stdlib-hash-collections](../stdlib-hash-collections.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-hash](../stdlib-owning-hash.md) |
+| [alloc::hash_set](alloc/hash_set.md) | [source](../../stdlib/alloc/hash_set.lani#L3) | 49 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-hash](../stdlib-owning-hash.md) |
 | [alloc::io](alloc/io.md) | [source](../../stdlib/alloc/io.lani#L3) | 18 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
 | [alloc::path](alloc/path.md) | [source](../../stdlib/alloc/path.lani#L4) | 48 | Source inventory | [stdlib-paths](../stdlib-paths.md) |
 | [alloc::string](alloc/string.md) | [source](../../stdlib/alloc/string.lani#L5) | 73 | Source inventory | [stdlib-string](../stdlib-string.md), [stdlib-clone](../stdlib-clone.md) |
-| [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 93 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md) |
-| [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 44 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md) |
+| [alloc::tree_map](alloc/tree_map.md) | [source](../../stdlib/alloc/tree_map.lani#L3) | 110 | Source inventory | [stdlib-tree-map](../stdlib-tree-map.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md) |
+| [alloc::tree_set](alloc/tree_set.md) | [source](../../stdlib/alloc/tree_set.lani#L3) | 59 | Source inventory | [stdlib-owned-sets](../stdlib-owned-sets.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-tree](../stdlib-owning-tree.md) |
 | [alloc::vec](alloc/vec.md) | [source](../../stdlib/alloc/vec.lani#L4) | 69 | Source inventory | [stdlib-vec](../stdlib-vec.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md) |
 
 ### `std`
@@ -130,8 +131,8 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [std::args](std/args.md) | [source](../../stdlib/std/args.lani#L3) | 18 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::args_checked](std/args_checked.md) | [source](../../stdlib/std/args_checked.lani#L7) | 3 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
 | [std::clock](std/clock.md) | [source](../../stdlib/std/clock.lani#L2) | 21 | Source inventory | [stdlib-time](../stdlib-time.md) |
-| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 107 | Source inventory | [stdlib-command](../stdlib-command.md) |
-| [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 83 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md) |
+| [std::command](std/command.md) | [source](../../stdlib/std/command.lani#L3) | 122 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
+| [std::command_capture](std/command_capture.md) | [source](../../stdlib/std/command_capture.lani#L3) | 84 | Source inventory | [stdlib-command-capture](../stdlib-command-capture.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 | [std::directory](std/directory.md) | [source](../../stdlib/std/directory.lani#L2) | 63 | Source inventory | [stdlib-directory](../stdlib-directory.md) |
 | [std::entropy](std/entropy.md) | [source](../../stdlib/std/entropy.lani#L2) | 26 | Source inventory | [stdlib-randomness](../stdlib-randomness.md), [stdlib-entropy-bounded](../stdlib-entropy-bounded.md) |
 | [std::env](std/env.md) | [source](../../stdlib/std/env.lani#L3) | 78 | Source inventory | [stdlib-process-context](../stdlib-process-context.md) |
@@ -168,6 +169,7 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [std::random](std/random.md) | [source](../../stdlib/std/random.lani#L3) | 43 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_checked](std/random_checked.md) | [source](../../stdlib/std/random_checked.lani#L5) | 6 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
 | [std::random_wide](std/random_wide.md) | [source](../../stdlib/std/random_wide.lani#L3) | 5 | Source inventory | [stdlib-randomness](../stdlib-randomness.md) |
+| [std::resolve](std/resolve.md) | [source](../../stdlib/std/resolve.lani#L4) | 59 | Source inventory | [stdlib-resolve](../stdlib-resolve.md), [stdlib-resolve-host](../stdlib-resolve-host.md) |
 | [std::signal](std/signal.md) | [source](../../stdlib/std/signal.lani#L3) | 14 | Source inventory | [stdlib-signals](../stdlib-signals.md) |
 | [std::socket](std/socket.md) | [source](../../stdlib/std/socket.lani#L3) | 83 | Source inventory | [stdlib-sockets](../stdlib-sockets.md) |
 | [std::stream](std/stream.md) | [source](../../stdlib/std/stream.lani#L3) | 15 | Source inventory | [stdlib-streams](../stdlib-streams.md) |
@@ -192,16 +194,16 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
-| [ext::aes_gcm](ext/aes_gcm.md) | [source](../../extended/ext/aes_gcm.lani#L3) | 19 | Source inventory | [extended-aes-gcm](../extended-aes-gcm.md) |
+| [ext::archive_index](ext/archive_index.md) | [source](../../extended/ext/archive_index.lani#L3) | 52 | Source inventory | [extended-archive-index](../extended-archive-index.md) |
 | [ext::audio](ext/audio.md) | [source](../../extended/ext/audio.lani#L2) | 44 | Source inventory | [extended-audio](../extended-audio.md) |
 | [ext::big_int](ext/big_int.md) | [source](../../extended/ext/big_int.lani#L3) | 56 | Source inventory | [extended-big-int](../extended-big-int.md) |
 | [ext::big_uint](ext/big_uint.md) | [source](../../extended/ext/big_uint.lani#L4) | 72 | Source inventory | [extended-big-uint](../extended-big-uint.md) |
 | [ext::cbor](ext/cbor.md) | [source](../../extended/ext/cbor.lani#L4) | 64 | Source inventory | [extended-cbor](../extended-cbor.md) |
-| [ext::chacha20_poly1305](ext/chacha20_poly1305.md) | [source](../../extended/ext/chacha20_poly1305.lani#L3) | 9 | Source inventory | [extended-chacha20-poly1305](../extended-chacha20-poly1305.md), [extended-seal-bytes](../extended-seal-bytes.md) |
 | [ext::cli](ext/cli.md) | [source](../../extended/ext/cli.lani#L3) | 42 | Source inventory | [extended-cli](../extended-cli.md) |
 | [ext::compression](ext/compression.md) | [source](../../extended/ext/compression.lani#L3) | 31 | Source inventory | [extended-compression](../extended-compression.md) |
 | [ext::config](ext/config.md) | [source](../../extended/ext/config.lani#L4) | 47 | Source inventory | [extended-config](../extended-config.md) |
-| [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 87 | Source inventory | [extended-csv](../extended-csv.md) |
+| [ext::csv](ext/csv.md) | [source](../../extended/ext/csv.lani#L4) | 102 | Source inventory | [extended-csv](../extended-csv.md), [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
+| [ext::csv_write](ext/csv_write.md) | [source](../../extended/ext/csv_write.lani#L2) | 17 | Source inventory | [extended-csv-write](../extended-csv-write.md), [extended-csv-rewrite](../extended-csv-rewrite.md) |
 | [ext::decimal](ext/decimal.md) | [source](../../extended/ext/decimal.lani#L3) | 92 | Source inventory | [extended-decimal](../extended-decimal.md) |
 | [ext::deflate](ext/deflate.md) | [source](../../extended/ext/deflate.lani#L4) | 8 | Source inventory | [extended-deflate](../extended-deflate.md) |
 | [ext::der](ext/der.md) | [source](../../extended/ext/der.lani#L3) | 92 | Source inventory | [extended-der](../extended-der.md) |
@@ -210,46 +212,39 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [ext::distributions](ext/distributions.md) | [source](../../extended/ext/distributions.lani#L3) | 45 | Source inventory | [extended-distributions](../extended-distributions.md) |
 | [ext::dns](ext/dns.md) | [source](../../extended/ext/dns.lani#L2) | 139 | Source inventory | [extended-dns](../extended-dns.md) |
 | [ext::dns_client](ext/dns_client.md) | [source](../../extended/ext/dns_client.lani#L2) | 77 | Source inventory | [extended-dns-client](../extended-dns-client.md) |
-| [ext::ed25519](ext/ed25519.md) | [source](../../extended/ext/ed25519.lani#L4) | 12 | Source inventory | [extended-ed25519](../extended-ed25519.md), [extended-sign-bytes](../extended-sign-bytes.md) |
 | [ext::geometry](ext/geometry.md) | [source](../../extended/ext/geometry.lani#L3) | 81 | Source inventory | [extended-geometry](../extended-geometry.md) |
 | [ext::glob](ext/glob.md) | [source](../../extended/ext/glob.lani#L3) | 42 | Source inventory | [extended-glob](../extended-glob.md) |
-| [ext::hkdf_sha256](ext/hkdf_sha256.md) | [source](../../extended/ext/hkdf_sha256.lani#L3) | 9 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
-| [ext::hmac_sha256](ext/hmac_sha256.md) | [source](../../extended/ext/hmac_sha256.lani#L3) | 17 | Source inventory | [extended-hmac-hkdf](../extended-hmac-hkdf.md), [extended-derive-key](../extended-derive-key.md) |
 | [ext::http](ext/http.md) | [source](../../extended/ext/http.lani#L2) | 108 | Source inventory | [extended-http](../extended-http.md), [extended-http-cursor](../extended-http-cursor.md) |
-| [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 74 | Source inventory | [extended-http-client](../extended-http-client.md) |
+| [ext::http_batch](ext/http_batch.md) | [source](../../extended/ext/http_batch.lani#L2) | 70 | Source inventory | [extended-http-batch](../extended-http-batch.md), [extended-http-batch-testing](../extended-http-batch-testing.md), [extended-fetch-many](../extended-fetch-many.md) |
+| [ext::http_client](ext/http_client.md) | [source](../../extended/ext/http_client.lani#L2) | 124 | Source inventory | [extended-http-client](../extended-http-client.md), [extended-http-exchange-testing](../extended-http-exchange-testing.md), [extended-http-batch](../extended-http-batch.md), [extended-fetch-many](../extended-fetch-many.md) |
 | [ext::http_server](ext/http_server.md) | [source](../../extended/ext/http_server.lani#L2) | 128 | Source inventory | [extended-http-server](../extended-http-server.md) |
 | [ext::image](ext/image.md) | [source](../../extended/ext/image.lani#L2) | 43 | Source inventory | [extended-image](../extended-image.md) |
 | [ext::inflate](ext/inflate.md) | [source](../../extended/ext/inflate.lani#L4) | 18 | Source inventory | [extended-inflate](../extended-inflate.md) |
 | [ext::json](ext/json.md) | [source](../../extended/ext/json.lani#L3) | 79 | Source inventory | [extended-json](../extended-json.md) |
 | [ext::kv](ext/kv.md) | [source](../../extended/ext/kv.lani#L3) | 48 | Source inventory | [extended-kv](../extended-kv.md) |
+| [ext::lexer](ext/lexer.md) | [source](../../extended/ext/lexer.lani#L2) | 70 | Source inventory | [extended-lexer](../extended-lexer.md), [extended-lex-scan](../extended-lex-scan.md) |
 | [ext::linalg](ext/linalg.md) | [source](../../extended/ext/linalg.lani#L3) | 87 | Source inventory | [extended-linalg](../extended-linalg.md) |
 | [ext::log](ext/log.md) | [source](../../extended/ext/log.lani#L3) | 38 | Source inventory | [extended-log](../extended-log.md) |
-| [ext::p256](ext/p256.md) | [source](../../extended/ext/p256.lani#L3) | 25 | Source inventory | [extended-p256](../extended-p256.md) |
+| [ext::openssl_digest](ext/openssl_digest.md) | [source](../../extended/ext/openssl_digest.lani#L3) | 46 | Source inventory | [extended-openssl-digest](../extended-openssl-digest.md), [library-native-c](../library-native-c.md), [extended-openssl-hash](../extended-openssl-hash.md) |
+| [ext::openssl_tls](ext/openssl_tls.md) | [source](../../extended/ext/openssl_tls.lani#L3) | 167 | Source inventory | [extended-openssl-tls](../extended-openssl-tls.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md), [library-native-c](../library-native-c.md) |
 | [ext::parse](ext/parse.md) | [source](../../extended/ext/parse.lani#L3) | 68 | Source inventory | [extended-parse](../extended-parse.md) |
 | [ext::patch](ext/patch.md) | [source](../../extended/ext/patch.lani#L2) | 32 | Source inventory | [extended-patch](../extended-patch.md) |
 | [ext::percent](ext/percent.md) | [source](../../extended/ext/percent.lani#L5) | 11 | Source inventory | [extended-percent](../extended-percent.md) |
 | [ext::png](ext/png.md) | [source](../../extended/ext/png.lani#L2) | 30 | Source inventory | [extended-png](../extended-png.md) |
 | [ext::progress](ext/progress.md) | [source](../../extended/ext/progress.lani#L2) | 15 | Source inventory | [extended-progress](../extended-progress.md) |
-| [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 67 | Source inventory | [extended-regex](../extended-regex.md) |
+| [ext::regex](ext/regex.md) | [source](../../extended/ext/regex.lani#L2) | 74 | Source inventory | [extended-regex](../extended-regex.md), [extended-regex-text](../extended-regex-text.md), [extended-lexer](../extended-lexer.md) |
+| [ext::regex_text](ext/regex_text.md) | [source](../../extended/ext/regex_text.lani#L3) | 44 | Source inventory | [extended-regex-text](../extended-regex-text.md) |
 | [ext::schema](ext/schema.md) | [source](../../extended/ext/schema.lani#L3) | 90 | Source inventory | [extended-schema](../extended-schema.md) |
-| [ext::service_identity](ext/service_identity.md) | [source](../../extended/ext/service_identity.lani#L3) | 20 | Source inventory | [extended-service-identity](../extended-service-identity.md) |
 | [ext::settings](ext/settings.md) | [source](../../extended/ext/settings.lani#L3) | 118 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
+| [ext::sqlite](ext/sqlite.md) | [source](../../extended/ext/sqlite.lani#L3) | 145 | Source inventory | [extended-sqlite](../extended-sqlite.md), [library-native-c](../library-native-c.md), [extended-sqlite-kv](../extended-sqlite-kv.md), [extended-sqlite-allocation](../extended-sqlite-allocation.md) |
 | [ext::statistics](ext/statistics.md) | [source](../../extended/ext/statistics.lani#L4) | 104 | Source inventory | [extended-statistics](../extended-statistics.md) |
 | [ext::table](ext/table.md) | [source](../../extended/ext/table.lani#L2) | 27 | Source inventory | [extended-table](../extended-table.md) |
 | [ext::tar](ext/tar.md) | [source](../../extended/ext/tar.lani#L3) | 81 | Source inventory | [extended-tar](../extended-tar.md) |
 | [ext::terminal](ext/terminal.md) | [source](../../extended/ext/terminal.lani#L3) | 15 | Source inventory | [extended-terminal](../extended-terminal.md) |
 | [ext::timezone](ext/timezone.md) | [source](../../extended/ext/timezone.lani#L3) | 80 | Source inventory | [extended-timezone](../extended-timezone.md) |
-| [ext::tls_authentication](ext/tls_authentication.md) | [source](../../extended/ext/tls_authentication.lani#L3) | 56 | Source inventory | [extended-tls-authentication](../extended-tls-authentication.md) |
-| [ext::tls_connection](ext/tls_connection.md) | [source](../../extended/ext/tls_connection.lani#L3) | 213 | Source inventory | [extended-tls-connection](../extended-tls-connection.md), [tls-connection-contract](../tls-connection-contract.md) |
-| [ext::tls_framing](ext/tls_framing.md) | [source](../../extended/ext/tls_framing.lani#L3) | 47 | Source inventory | [extended-tls-framing](../extended-tls-framing.md) |
-| [ext::tls_handshake](ext/tls_handshake.md) | [source](../../extended/ext/tls_handshake.lani#L3) | 130 | Source inventory | [extended-tls-handshake](../extended-tls-handshake.md), [extended-tls-auth-foundation](../extended-tls-auth-foundation.md) |
-| [ext::tls_negotiation](ext/tls_negotiation.md) | [source](../../extended/ext/tls_negotiation.lani#L3) | 66 | Source inventory | [extended-tls-negotiation](../extended-tls-negotiation.md) |
-| [ext::tls_record](ext/tls_record.md) | [source](../../extended/ext/tls_record.lani#L4) | 48 | Source inventory | [extended-tls-record](../extended-tls-record.md) |
-| [ext::tls_schedule](ext/tls_schedule.md) | [source](../../extended/ext/tls_schedule.lani#L2) | 57 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
-| [ext::tls_tcp](ext/tls_tcp.md) | [source](../../extended/ext/tls_tcp.lani#L3) | 81 | Source inventory | [extended-tls-tcp](../extended-tls-tcp.md), [extended-tls-exchange](../extended-tls-exchange.md) |
-| [ext::tls_transcript](ext/tls_transcript.md) | [source](../../extended/ext/tls_transcript.lani#L2) | 20 | Source inventory | [extended-tls-schedule](../extended-tls-schedule.md) |
+| [ext::tls_stream](ext/tls_stream.md) | [source](../../extended/ext/tls_stream.lani#L3) | 66 | Source inventory | [extended-https-fetch](../extended-https-fetch.md), [extended-openssl-tls](../extended-openssl-tls.md), [extended-https-server](../extended-https-server.md), [extended-openssl-tls-server](../extended-openssl-tls-server.md), [extended-openssl-mutual-tls](../extended-openssl-mutual-tls.md), [extended-https-mutual-tls](../extended-https-mutual-tls.md) |
 | [ext::toml](ext/toml.md) | [source](../../extended/ext/toml.lani#L2) | 83 | Source inventory | [extended-toml](../extended-toml.md) |
 | [ext::unicode_case](ext/unicode_case.md) | [source](../../extended/ext/unicode_case.lani#L4) | 21 | Source inventory | [extended-unicode-case](../extended-unicode-case.md) |
 | [ext::unicode_graphemes](ext/unicode_graphemes.md) | [source](../../extended/ext/unicode_graphemes.lani#L3) | 18 | Source inventory | [extended-unicode-graphemes](../extended-unicode-graphemes.md) |
@@ -261,11 +256,9 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 | [ext::uri](ext/uri.md) | [source](../../extended/ext/uri.lani#L3) | 33 | Source inventory | [extended-uri](../extended-uri.md) |
 | [ext::uri_resolve](ext/uri_resolve.md) | [source](../../extended/ext/uri_resolve.lani#L3) | 8 | Source inventory | [extended-uri-resolve](../extended-uri-resolve.md) |
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
-| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md) |
-| [ext::x25519](ext/x25519.md) | [source](../../extended/ext/x25519.lani#L3) | 9 | Source inventory | [extended-x25519](../extended-x25519.md) |
+| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 76 | Source inventory | [extended-websocket](../extended-websocket.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
-| [ext::x509_path](ext/x509_path.md) | [source](../../extended/ext/x509_path.lani#L3) | 56 | Source inventory | [extended-x509-path](../extended-x509-path.md), [extended-verify-certificate](../extended-verify-certificate.md) |
-| [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 80 | Source inventory | [extended-zip](../extended-zip.md) |
+| [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 81 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 
 ## Support and implementation data
 
@@ -283,7 +276,7 @@ Inventory: **244 modules**, **10937 declaration/member entries**. Counts include
 
 | Module | Source | Entries | Profile | Contract guides |
 | --- | --- | ---: | --- | --- |
-| [std::command_raw](std/command_raw.md) | [source](../../stdlib/std/command_raw.lani#L2) | 13 | Source inventory | [stdlib-command](../stdlib-command.md) |
+| [std::command_raw](std/command_raw.md) | [source](../../stdlib/std/command_raw.lani#L2) | 16 | Source inventory | [stdlib-command](../stdlib-command.md), [stdlib-command-groups](../stdlib-command-groups.md), [stdlib-run-group](../stdlib-run-group.md) |
 
 ### `ext`
 
@@ -311,7 +304,6 @@ These are discovery/contract-link gaps, not claims that their code is missing or
 - [core::hex_wide_u64](core/hex_wide_u64.md)
 - [core::ops](core/ops.md)
 - [core::pair](core/pair.md)
-- [core::sha1](core/sha1.md)
 - [core::u32_cells](core/u32_cells.md)
 - [core::varint_wide_i64](core/varint_wide_i64.md)
 - [core::varint_wide_u64](core/varint_wide_u64.md)

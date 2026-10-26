@@ -1,0 +1,116 @@
+module app::main;
+import alloc::binary_heap;
+import alloc::clone;
+import alloc::clone_binary_heap;
+import alloc::string;
+import alloc::vec;
+import core::clone;
+import core::cmp;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import fixture::consumer;
+import std::io;
+import std::io_decimal;
+
+struct Log { ids: [i32], count: i32, compare: bool }
+impl Log { fn borrow(&self) -> &Log { return self; } }
+struct Owned { id: i32, priority: i32, wide: u64, text: alloc::string::String, log: &Log }
+fn check(item: Owned) {
+    assert(item.priority==item.id && item.wide==18446744073709551615-(item.id as u64));
+    assert(item.text.byte_len()==4 && item.text.byte_at(0).unwrap()==(64+item.id) as u8);
+    assert(item.text.byte_at(1).unwrap()==0 && item.text.byte_at(2).unwrap()==195 && item.text.byte_at(3).unwrap()==169);
+}
+fn make(id: i32,log: &Log) -> Owned {
+    let bytes: [u8;4]=[(64+id) as u8,0,195,169];
+    let text: alloc::string::String=alloc::string::from_utf8(bytes,4).unwrap();
+    return Owned { id:id,priority:id,wide:18446744073709551615-(id as u64),text:text,log:log };
+}
+fn less(a: Owned,b: Owned) -> bool { let log: &Log=a.log; assert(log.compare); return a.priority<b.priority; }
+pub impl core::cmp::Ord<Owned> for Owned {
+    pub fn lt(a: Owned,b: Owned) -> bool { return less(a,b); }
+    pub fn le(a: Owned,b: Owned) -> bool { return !less(b,a); }
+    pub fn gt(a: Owned,b: Owned) -> bool { return less(b,a); }
+    pub fn ge(a: Owned,b: Owned) -> bool { return !less(a,b); }
+}
+pub impl core::clone::Destroy<Owned> for Owned {
+    pub fn destroy_value(item: Owned) {
+        check(item); let log: &Log=item.log; let index: i32=0;
+        while (index<log.count) { assert(log.ids[index]!=item.id); index+=1; }
+        assert(log.count<16); log.ids[log.count]=item.id; log.count+=1; item.text.destroy();
+    }
+}
+fn min_owners(log: &Log) {
+    let source: alloc::binary_heap::BinaryHeap<Owned> =alloc::binary_heap::with_capacity<Owned>(5,alloc::binary_heap::Order::Min).unwrap();
+    source.try_push(make(3,log)).unwrap(); source.try_push(make(1,log)).unwrap(); source.try_push(make(5,log)).unwrap();
+    source.try_push(make(2,log)).unwrap(); source.try_push(make(4,log)).unwrap();
+    let backing: ptr=source.items.storage; let capacity: i32=source.capacity();
+    log.compare=false;
+    let cursor: alloc::binary_heap::IntoIter<Owned> =source.take_iter();
+    assert(source.is_empty() && source.capacity()==0 && cursor.remaining()==5 && cursor.capacity()==capacity);
+    assert(match (source.order()) { alloc::binary_heap::Order::Min -> true,alloc::binary_heap::Order::Max -> false });
+    // The reused actual source is independent of the old cursor allocation.
+    source.try_reserve(1).unwrap(); source.try_push(make(9,log)).unwrap(); assert(source.items.storage!=backing);
+    alloc::clone_binary_heap::destroy_heap<Owned>(source.borrow()); assert(source.capacity()==0 && log.count==1 && log.ids[0]==9);
+    assert(match (cursor.try_finish().unwrap()) { alloc::binary_heap::IntoIterError::Remaining(n) -> n==5 });
+    log.compare=true;
+    let held: Owned=fixture::consumer::pull<alloc::binary_heap::IntoIter<Owned>,Owned>(cursor.borrow()).unwrap();
+    check(held); assert(held.id==1); let held_text: ptr=held.text.bytes.storage;
+    log.compare=false;
+    let remaining: alloc::binary_heap::BinaryHeap<Owned> =fixture::consumer::recover<Owned>(cursor.borrow());
+    assert(cursor.is_empty() && cursor.capacity()==0 && cursor.try_finish().is_none());
+    assert(remaining.len()==4 && remaining.capacity()==capacity && remaining.items.storage==backing);
+    log.compare=true;
+    // Reinsert the transferred owner, without cloning it or changing backing.
+    remaining.try_push(held).unwrap();
+    let resumed: alloc::binary_heap::IntoIter<Owned> =remaining.take_iter();
+    let first: Owned=resumed.next().unwrap(); assert(first.id==1 && first.text.bytes.storage==held_text); Owned::destroy_value(first);
+    let second: Owned=resumed.next().unwrap(); assert(second.id==2); Owned::destroy_value(second);
+    assert(resumed.remaining()==3 && resumed.capacity()==capacity);
+    assert(match (resumed.try_finish().unwrap()) { alloc::binary_heap::IntoIterError::Remaining(n) -> n==3 });
+    log.compare=false;
+    fixture::consumer::release<Owned>(resumed.borrow()); fixture::consumer::release<Owned>(resumed.borrow());
+    assert(resumed.is_empty() && resumed.capacity()==0 && remaining.is_empty() && remaining.capacity()==0 && log.count==6);
+    assert(log.ids[1]==1 && log.ids[2]==2);
+    let seen: [bool;6]=[false;6]; let index: i32=3;
+    while (index<6) { let id: i32=log.ids[index]; assert(id>=3 && id<=5 && !seen[id]); seen[id]=true; index+=1; }
+    source.destroy(); remaining.destroy();
+}
+enum Rejection { Denied(i32,u64,core::option::Option<bool>) }
+struct Sink { items: alloc::vec::Vec<Owned>, calls: i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::iter::TrySink<Owned,Rejection> for Sink {
+    pub fn try_accept(&self,item: Owned) -> core::option::Option<Rejection> {
+        check(item); self.calls+=1;
+        if (item.id==13) { return core::option::Some(Rejection::Denied(item.id,item.wide,core::option::Some(false))); }
+        self.items.try_push(item).unwrap(); return core::option::None();
+    }
+}
+fn rejected_sink(log: &Log) {
+    log.compare=true;
+    let source: alloc::binary_heap::BinaryHeap<Owned> =alloc::binary_heap::with_capacity<Owned>(4,alloc::binary_heap::Order::Max).unwrap();
+    let id: i32=11; while (id<=14) { source.try_push(make(id,log)).unwrap(); id+=1; }
+    let capacity: i32=source.capacity();
+    let cursor: alloc::binary_heap::IntoIter<Owned> =source.take_iter();
+    let sink: Sink=Sink { items:alloc::vec::with_capacity<Owned>(4).unwrap(),calls:0 };
+    let failed: core::iter::TransferError<Owned,Rejection> =core::iter::try_transfer_up_to<alloc::binary_heap::IntoIter<Owned>,Sink,Owned,Rejection>(cursor.borrow(),sink.borrow(),18446744073709551615).unwrap_err();
+    assert(failed.accepted==1 && sink.calls==2 && sink.items.len()==1 && sink.items.at(0).id==14 && cursor.remaining()==2 && cursor.capacity()==capacity);
+    assert(match (failed.error) { Rejection::Denied(id,wide,flag) -> id==13 && wide==18446744073709551602 && !flag.unwrap() });
+    assert(failed.rejected.id==13); Owned::destroy_value(failed.rejected);
+    let zero: core::iter::Transfer=core::iter::try_transfer_up_to<alloc::binary_heap::IntoIter<Owned>,Sink,Owned,Rejection>(cursor.borrow(),sink.borrow(),0).unwrap();
+    assert(zero.accepted==0 && !zero.exhausted && sink.calls==2 && cursor.remaining()==2);
+    let resumed: core::iter::Transfer=core::iter::try_transfer_up_to<alloc::binary_heap::IntoIter<Owned>,Sink,Owned,Rejection>(cursor.borrow(),sink.borrow(),18446744073709551615).unwrap();
+    assert(resumed.accepted==2 && resumed.exhausted && sink.calls==4 && sink.items.len()==3 && sink.items.at(1).id==12 && sink.items.at(2).id==11);
+    assert(cursor.is_empty() && cursor.capacity()==capacity && cursor.next().is_none() && cursor.next().is_none());
+    log.compare=false;
+    assert(cursor.try_finish().is_none() && cursor.try_finish().is_none() && cursor.capacity()==0);
+    alloc::clone::destroy_vec<Owned>(sink.items.borrow());
+    assert(log.count==10 && log.ids[6]==13 && log.ids[7]==11 && log.ids[8]==12 && log.ids[9]==14);
+    fixture::consumer::release<Owned>(cursor.borrow()); source.destroy();
+}
+fn main() -> i32 {
+    assert(std::io_decimal::write_usize(1,core::mem::size_of<Owned>())>0); assert(std::io::write_byte(1,10)==1);
+    let ids: [i32;16]=[0;16]; let log: Log=Log { ids:ids,count:0,compare:true };
+    min_owners(log.borrow()); rejected_sink(log.borrow()); return 0;
+}

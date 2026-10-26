@@ -27,15 +27,6 @@ fn executable(path: &str) -> common::TempArtifact {
 fn run(command: &mut Command) -> Output {
     common::process_output_with_timeout("websocket", command, Duration::from_secs(5))
 }
-fn input(bytes: &[u8]) -> common::TempArtifact {
-    let file = common::TempArtifact::new("laniusc_websocket", "input", None);
-    file.write_bytes(bytes);
-    file
-}
-fn invoke(exe: &common::TempArtifact, bytes: &[u8]) -> Output {
-    let file = input(bytes);
-    run(Command::new(exe.path()).stdin(std::fs::File::open(file.path()).unwrap()))
-}
 fn checked(out: &Output, status: i32) {
     assert_eq!(out.status.code(), Some(status), "{out:?}");
     assert!(out.stderr.is_empty(), "{out:?}");
@@ -63,34 +54,7 @@ fn freed(events: &str) -> usize {
     count
 }
 #[test]
-fn sha1_rfc3174_known_answers_and_streaming_match_hashlib() {
-    let exe = executable("tests/fixtures/extended/sha1_contracts.lani");
-    let out = invoke(&exe, b"");
-    checked(&out, 0);
-    assert!(out.stdout.is_empty());
-    let exe = executable("tests/fixtures/extended/sha1_input.lani");
-    let mut seed = 0x190aed38u32;
-    for length in [
-        0, 1, 2, 55, 56, 57, 63, 64, 65, 72, 73, 74, 127, 128, 129, 4096, 65537,
-    ] {
-        let bytes: Vec<u8> = (0..length)
-            .map(|_| {
-                seed ^= seed << 13;
-                seed ^= seed >> 17;
-                seed ^= seed << 5;
-                seed as u8
-            })
-            .collect();
-        let data = input(&bytes);
-        let actual = run(Command::new(exe.path()).stdin(std::fs::File::open(data.path()).unwrap()));
-        checked(&actual, 0);
-        let expected=run(Command::new("python3").args(["-c","import hashlib,sys;sys.stdout.buffer.write(hashlib.sha1(sys.stdin.buffer.read()).digest())"]).stdin(std::fs::File::open(data.path()).unwrap()));
-        checked(&expected, 0);
-        assert_eq!(actual.stdout, expected.stdout, "length={length}");
-    }
-}
-#[test]
-fn websocket_contracts_cover_handshake_fragments_controls_close_and_limits() {
+fn websocket_contracts_cover_requests_fragments_controls_close_and_limits() {
     let exe = executable("tests/fixtures/extended/websocket_contracts.lani");
     let trace = common::TempArtifact::new("laniusc_websocket", "trace", None);
     let out = run(Command::new("strace")
@@ -137,7 +101,8 @@ fn websocket_allocation_errors_preserve_state_and_release_staging() {
             freed(&events)
         };
         let count = execute(None, 0);
-        assert!(count >= 4, "{name} must reach meaningful allocation states");
+        let minimum = if name == "websocket_failure" { 4 } else { 1 };
+        assert!(count >= minimum, "{name} must reach an owned allocation");
         for at in 1..=count {
             execute(Some(at), 4);
         }

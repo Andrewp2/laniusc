@@ -1,0 +1,17 @@
+// Explicit trait-contract control for read_inference_untyped: compile/native 0.
+// Receipts: target/stdlib-work/lex-read-context-typed{,-native}.log.
+// Only the read result annotation differs from the reduced source body.
+module app::main;
+import core::io;
+import core::result;
+fn receive<R>(reader: &R, destination: [u8]) -> i32 where R: core::io::Read {
+    let read: core::result::Result<i32,core::io::Error> = reader.read(destination,0,1);
+    if (read.is_err()) { return -1; }
+    return read.unwrap();
+}
+fn main() -> i32 {
+    let source: [u8;1] = [120]; let destination: [u8;1] = [0];
+    let reader: core::io::SliceReader = core::io::slice_reader(source,1).unwrap();
+    assert(receive(reader.borrow(),destination) == 1);
+    assert(destination[0] == 120 && reader.position() == 1); return 0;
+}

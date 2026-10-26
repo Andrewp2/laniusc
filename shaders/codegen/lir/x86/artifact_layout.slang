@@ -1,5 +1,6 @@
 import codegen.lowering_ir;
 import codegen.lir.x86.runtime_abi;
+import codegen.lir.x86.crt_entry;
 
 struct Params { uint target_capacity; uint token_capacity; uint function_capacity; uint artifact_capacity; };
 ConstantBuffer<Params> gParams;
@@ -29,7 +30,7 @@ void main()
     layout.text_offset = ELF_TEXT_OFFSET;
     layout.body_offset = ELF_TEXT_OFFSET + ENTRY_WRAPPER_BYTES;
     layout.runtime_offset = layout.body_offset + layout.body_length;
-    layout.runtime_length = X86_RUNTIME_LENGTH;
+    layout.runtime_length = X86_CRT_RUNTIME_LENGTH;
     layout.rodata_offset = layout.runtime_offset + layout.runtime_length;
     layout.rodata_length = semantic_lir_string_pool_len[0u];
     layout.file_length = layout.rodata_offset + layout.rodata_length;

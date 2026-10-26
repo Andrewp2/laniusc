@@ -1,0 +1,10 @@
+module fixture::prerequisites;
+import core::clone;
+import core::result;
+pub enum Never { Unreachable }
+pub struct CloneOnly { value: i32 }
+pub struct DestroyOnly { value: i32 }
+pub impl core::clone::TryClone<CloneOnly,Never> for CloneOnly {
+    pub fn try_clone_value(source: CloneOnly) -> core::result::Result<CloneOnly,Never> {return core::result::Ok(source);}
+}
+pub impl core::clone::Destroy<DestroyOnly> for DestroyOnly {pub fn destroy_value(owned: DestroyOnly) {}}

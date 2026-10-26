@@ -1,0 +1,9 @@
+// Paired diagnostic scalar trait implementation; no production fallback.
+module app::main;
+import core::clone;
+import core::result;
+import fixture::control;
+fn main() -> i32 {
+    let result: core::result::Result<i32,fixture::control::Inhabited> = i32::try_clone_value(37);
+    assert(result.unwrap()==37); return 0;
+}

@@ -1,0 +1,58 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::support;
+struct Optional { position: i32, polls: i32 }
+impl Optional { fn borrow(&self) -> &Optional { return self; } }
+pub impl core::iter::Iterator<core::option::Option<i64>> for Optional {
+    pub fn next(&self) -> core::option::Option<core::option::Option<i64>> {
+        self.polls+=1;
+        if (self.position==3) { return core::option::None(); }
+        let value: core::option::Option<i64> =core::option::None();
+        if (self.position>0) { value=core::option::Some(-4294967297-(self.position as i64)); }
+        self.position+=1; return core::option::Some(value);
+    }
+}
+fn cache() {
+    let source: Optional=Optional { position:0,polls:0 };
+    let cursor: core::iter::Peekable<Optional,core::option::Option<i64>> =core::iter::peekable<Optional,core::option::Option<i64>>(source.borrow());
+    assert(!cursor.has_cached() && source.polls==0 && cursor.take_cached().is_none() && source.polls==0);
+    assert(cursor.peek().unwrap().is_none() && cursor.has_cached() && source.polls==1 && source.position==1);
+    assert(cursor.peek().unwrap().is_none() && source.polls==1);
+    assert(match (cursor.try_finish().unwrap()) { core::iter::PeekableError::Cached -> true });
+    assert(cursor.has_cached() && cursor.peek().unwrap().is_none() && source.polls==1);
+    assert(cursor.next().unwrap().is_none() && !cursor.has_cached() && source.polls==1);
+    assert(cursor.peek().unwrap().unwrap()==-4294967298 && source.polls==2);
+    assert(cursor.take_cached().unwrap().unwrap()==-4294967298 && !cursor.has_cached() && source.polls==2);
+    assert(cursor.take_cached().is_none() && source.polls==2);
+    assert(cursor.next().unwrap().unwrap()==-4294967299 && source.polls==3);
+    assert(cursor.peek().is_none() && source.polls==4);
+    assert(cursor.peek().is_none() && cursor.next().is_none() && cursor.take_cached().is_none() && source.polls==4 && cursor.try_finish().is_none());
+    let unused: Optional=Optional { position:0,polls:0 };
+    let closed: core::iter::Peekable<Optional,core::option::Option<i64>> =core::iter::peekable<Optional,core::option::Option<i64>>(unused.borrow());
+    assert(closed.try_finish().is_none() && closed.try_finish().is_none() && unused.polls==0);
+    assert(closed.peek().is_none() && closed.next().is_none() && unused.polls==0 && unused.next().unwrap().is_none());
+    let resumed: core::iter::Peekable<Optional,core::option::Option<i64>> =core::iter::peekable<Optional,core::option::Option<i64>>(unused.borrow());
+    assert(resumed.peek().unwrap().unwrap()==-4294967298 && unused.polls==2);
+    assert(resumed.take_cached().unwrap().unwrap()==-4294967298 && resumed.try_finish().is_none() && unused.polls==2);
+    assert(unused.next().unwrap().unwrap()==-4294967299 && unused.polls==3);
+}
+fn searches() {
+    let source: fixture::support::Source=fixture::support::Source { length:6,position:0,polls:0,seed:0 };
+    let predicate: fixture::support::Predicate=fixture::support::Predicate { target:2,calls:0 };
+    assert(core::iter::position<fixture::support::Source,fixture::support::Predicate,fixture::support::Item>(source.borrow(),predicate.borrow()).unwrap()==2);
+    assert(source.position==3 && source.polls==3 && predicate.calls==3);
+    predicate.target=4; predicate.calls=0;
+    assert(core::iter::position<fixture::support::Source,fixture::support::Predicate,fixture::support::Item>(source.borrow(),predicate.borrow()).unwrap()==1);
+    assert(source.position==5 && source.polls==5 && predicate.calls==2 && source.next().unwrap().id==5);
+    let maximum: fixture::support::Source=fixture::support::Source { length:1,position:0,polls:0,seed:0 };
+    predicate.target=0; predicate.calls=0;
+    assert(core::iter::position_from<fixture::support::Source,fixture::support::Predicate,fixture::support::Item>(maximum.borrow(),predicate.borrow(),18446744073709551615).unwrap()==18446744073709551615);
+    assert(maximum.polls==1 && predicate.calls==1);
+    let missing: fixture::support::Source=fixture::support::Source { length:1,position:0,polls:0,seed:0 };
+    predicate.target=99; predicate.calls=0;
+    assert(core::iter::position_from<fixture::support::Source,fixture::support::Predicate,fixture::support::Item>(missing.borrow(),predicate.borrow(),18446744073709551615).is_none());
+    assert(missing.polls==2 && predicate.calls==1);
+}
+fn main() -> i32 { cache(); searches(); return 0; }

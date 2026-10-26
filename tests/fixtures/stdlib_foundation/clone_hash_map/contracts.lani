@@ -1,0 +1,75 @@
+module app::main;
+import alloc::clone;
+import alloc::clone_hash_map;
+import alloc::clone_vec;
+import alloc::hash_map;
+import alloc::string;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import fixture::consumer;
+
+fn text(bytes: [u8], length: i32) -> alloc::string::String { return alloc::string::from_utf8(bytes,length).unwrap(); }
+fn string_pairs() {
+    let a: [u8; 4] = [65,0,195,169]; let b: [u8; 3] = [66,0,90]; let data: [u8; 4] = [86,0,195,169];
+    let key_a: alloc::string::String = text(a,4); let key_b: alloc::string::String = text(b,3); let shared: alloc::string::String = text(data,4);
+    let source: alloc::hash_map::HashMap<alloc::string::String,alloc::string::String> = alloc::hash_map::new();
+    assert(source.try_reserve(8).is_ok());
+    assert(source.try_insert(key_a,shared).unwrap().is_none() && source.try_insert(key_b,shared).unwrap().is_none());
+    let capacity: i32 = source.capacity(); let storage: ptr = source.storage; let bytes: [u8] = shared.as_bytes();
+    let result: core::result::Result<alloc::hash_map::HashMap<alloc::string::String,alloc::string::String>,alloc::clone_hash_map::Error<alloc::string::Error,alloc::string::Error>> =
+        fixture::consumer::duplicate<alloc::hash_map::HashMap<alloc::string::String,alloc::string::String>,alloc::clone_hash_map::Error<alloc::string::Error,alloc::string::Error>>(source);
+    assert(source.len()==2 && source.capacity()==capacity && source.storage==storage && bytes[1]==0 && shared.byte_len()==4);
+    let copy: alloc::hash_map::HashMap<alloc::string::String,alloc::string::String> = result.unwrap();
+    assert(copy.len()==2 && copy.storage!=source.storage);
+    let transferred: alloc::hash_map::Entry<alloc::string::String,alloc::string::String> = copy.remove(key_a).unwrap();
+    let edited: alloc::string::String = transferred.value;
+    assert(edited.try_push_scalar(88).is_ok());
+    assert(copy.try_insert(transferred.key,edited).unwrap().is_none());
+    assert(copy.get(key_a).unwrap().byte_len()==5 && copy.get(key_a).unwrap().byte_at(4).unwrap()==88);
+    assert(copy.get(key_b).unwrap().byte_len()==4 && source.get(key_a).unwrap().byte_len()==4 && shared.byte_len()==4);
+    let stored: alloc::hash_map::Entry<alloc::string::String,alloc::string::String> = copy.get_entry(key_a).unwrap();
+    assert(stored.key.byte_len()==4 && stored.key.byte_at(1).unwrap()==0 && stored.key.byte_at(3).unwrap()==169);
+    alloc::clone_hash_map::destroy_hash_map<alloc::string::String,alloc::string::String>(copy.borrow());
+    alloc::clone_hash_map::destroy_hash_map<alloc::string::String,alloc::string::String>(copy.borrow());
+    assert(copy.is_empty() && copy.capacity()==0 && copy.storage==0 && shared.byte_at(3).unwrap()==169 && key_a.byte_at(1).unwrap()==0);
+    // Source values borrow shared; only the original keys/text own their bytes.
+    source.destroy(); key_a.destroy(); key_b.destroy(); shared.destroy();
+}
+fn nested_values() {
+    let a: [u8; 1] = [65]; let b: [u8; 1] = [66]; let data: [u8; 4] = [83,0,195,169];
+    let key_a: alloc::string::String = text(a,1); let key_b: alloc::string::String = text(b,1); let shared: alloc::string::String = text(data,4);
+    let borrowed: [alloc::string::String; 2] = [shared,shared];
+    let row: alloc::vec::Vec<alloc::string::String> = alloc::vec::from_view(core::slice::view(borrowed,2).unwrap()).unwrap();
+    let source: alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = alloc::hash_map::new();
+    assert(source.try_insert(key_a,row).unwrap().is_none() && source.try_insert(key_b,row).unwrap().is_none());
+    let copied: core::result::Result<alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>>,alloc::clone_hash_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>> =
+        fixture::consumer::duplicate<alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>>,alloc::clone_hash_map::Error<alloc::string::Error,alloc::clone::Error<alloc::string::Error>>>(source);
+    assert(source.len()==2 && row.len()==2 && shared.byte_at(1).unwrap()==0);
+    let copy: alloc::hash_map::HashMap<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = copied.unwrap();
+    let entry: alloc::hash_map::Entry<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = copy.remove(key_a).unwrap();
+    let edited_row: alloc::vec::Vec<alloc::string::String> = entry.value;
+    let edited: alloc::string::String = edited_row.pop().unwrap();
+    assert(edited.try_push_scalar(90).is_ok() && edited_row.try_push(edited).is_ok());
+    assert(copy.try_insert(entry.key,edited_row).unwrap().is_none());
+    let left: alloc::vec::Vec<alloc::string::String> = copy.get(key_a).unwrap(); let right: alloc::vec::Vec<alloc::string::String> = copy.get(key_b).unwrap();
+    assert(left.len()==2 && right.len()==2 && left.at(0).byte_len()==4 && left.at(1).byte_len()==5 && right.at(1).byte_len()==4 && shared.byte_len()==4);
+    let removed: alloc::hash_map::Entry<alloc::string::String,alloc::vec::Vec<alloc::string::String>> = copy.remove(key_b).unwrap();
+    alloc::clone_hash_map::destroy_hash_map<alloc::string::String,alloc::vec::Vec<alloc::string::String>>(copy.borrow());
+    assert(removed.value.len()==2 && removed.value.at(1).byte_at(3).unwrap()==169);
+    removed.key.destroy(); alloc::clone::destroy_vec<alloc::string::String>(removed.value.borrow());
+    assert(copy.is_empty() && copy.capacity()==0 && row.len()==2 && shared.byte_len()==4);
+    source.destroy(); row.destroy(); key_a.destroy(); key_b.destroy(); shared.destroy();
+}
+fn trait_release() {
+    let raw: [u8; 1] = [75]; let key: alloc::string::String = text(raw,1); let value: alloc::string::String = text(raw,1);
+    let source: alloc::hash_map::HashMap<alloc::string::String,alloc::string::String> = alloc::hash_map::new();
+    assert(source.try_insert(key,value).unwrap().is_none());
+    let copy: alloc::hash_map::HashMap<alloc::string::String,alloc::string::String> = alloc::clone_hash_map::try_clone<alloc::string::String,alloc::string::String,alloc::string::Error,alloc::string::Error>(source.borrow()).unwrap();
+    fixture::consumer::release<alloc::hash_map::HashMap<alloc::string::String,alloc::string::String>>(copy);
+    assert(source.get(key).unwrap().byte_len()==1);
+    alloc::clone_hash_map::destroy_hash_map<alloc::string::String,alloc::string::String>(source.borrow());
+    assert(source.is_empty() && source.capacity()==0);
+}
+fn main() -> i32 { string_pairs(); nested_values(); trait_release(); return 0; }

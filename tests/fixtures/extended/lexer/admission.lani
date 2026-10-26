@@ -1,0 +1,31 @@
+module app::main;
+import core::mem;
+import core::slice;
+import core::text;
+import ext::lexer;
+import ext::regex;
+fn text(value: str, count: i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn main() -> i32 {
+    let rules: [ext::lexer::Rule;3] = [ext::lexer::Rule { id: 1, pattern: text("unused",6), skip: false },ext::lexer::Rule { id: 2, pattern: text("a",1), skip: false },ext::lexer::Rule { id: 3, pattern: text("b",1), skip: false }];
+    let selected = core::slice::View<ext::lexer::Rule> { values: rules, start: 1, length: 2 }; let options = ext::regex::options(); let limits = ext::lexer::default_build_limits();
+    let first = ext::regex::compile(text("a",1),options).unwrap(); let second = ext::regex::compile(text("b",1),options).unwrap(); let exact: i32 = first.state_count() + second.state_count(); first.destroy(); second.destroy();
+    limits.max_rules = 2; limits.max_pattern_bytes = 2; limits.max_states = exact;
+    let lexer = ext::lexer::compile(selected,options,limits).unwrap(); assert(lexer.rule_count() == 2 && lexer.state_count() == exact); lexer.destroy(); lexer.destroy();
+    limits.max_states = exact - 1; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::StateLimit(rule) -> rule == 1, _ -> false });
+    limits.max_states = exact; limits.max_pattern_bytes = 1; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::PatternLimit(rule) -> rule == 1, _ -> false });
+    limits.max_pattern_bytes = 2; limits.max_rules = 1; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::RuleLimit -> true, _ -> false });
+    limits = ext::lexer::BuildLimits { max_rules: 1024, max_pattern_bytes: 16777216, max_states: 1048576 }; let lexer = ext::lexer::compile(selected,options,limits).unwrap();
+    limits.max_rules = 1025; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::InvalidLimits -> true, _ -> false });
+    limits = ext::lexer::default_build_limits(); limits.max_pattern_bytes = 16777217; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::InvalidLimits -> true, _ -> false });
+    limits = ext::lexer::default_build_limits(); limits.max_states = 1048577; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::InvalidLimits -> true, _ -> false });
+    limits = ext::lexer::default_build_limits(); limits.max_rules = -1; assert(match(ext::lexer::compile(selected,options,limits).unwrap_err()) { ext::lexer::Error::InvalidLimits -> true, _ -> false });
+    let malformed = selected; malformed.start = -1; assert(match(ext::lexer::compile(malformed,options,ext::lexer::default_build_limits()).unwrap_err()) { ext::lexer::Error::Bounds -> true, _ -> false });
+    malformed = selected; malformed.length = -1; assert(match(ext::lexer::compile(malformed,options,ext::lexer::default_build_limits()).unwrap_err()) { ext::lexer::Error::Bounds -> true, _ -> false });
+    malformed = selected; malformed.start = 2147483647; malformed.length = 1; assert(match(ext::lexer::compile(malformed,options,ext::lexer::default_build_limits()).unwrap_err()) { ext::lexer::Error::Bounds -> true, _ -> false });
+    let invalid: [u8;1] = [255]; let text = core::text::Text { bytes: invalid, start: 0, length: 1 }; let scan = ext::lexer::default_scan_limits(); scan.max_input_bytes = 0;
+    assert(match(lexer.scan(text,scan).unwrap_err()) { ext::lexer::Error::InputLimit -> true, _ -> false }); scan.max_input_bytes = 1;
+    assert(match(lexer.scan(text,scan).unwrap_err()) { ext::lexer::Error::Input(cause) -> match(cause) { ext::regex::Error::InvalidUtf8(at) -> at == 0, _ -> false }, _ -> false });
+    let broken = text; broken.start = 2147483647; broken.length = 1; assert(match(lexer.scan(broken,scan).unwrap_err()) { ext::lexer::Error::Input(cause) -> match(cause) { ext::regex::Error::Bounds -> true, _ -> false }, _ -> false });
+    scan.max_calls = -1; assert(match(lexer.scan(text,scan).unwrap_err()) { ext::lexer::Error::InvalidLimits -> true, _ -> false }); lexer.destroy();
+    return 0;
+}

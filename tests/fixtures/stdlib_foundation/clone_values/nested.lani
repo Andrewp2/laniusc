@@ -1,0 +1,42 @@
+module app::main;
+import alloc::clone;
+import alloc::clone_vec;
+import alloc::string;
+import alloc::vec;
+import core::clone_values;
+import core::option;
+import core::pair;
+import core::result;
+import fixture::consumer;
+
+fn main() -> i32 {
+    let bytes: [u8;4] = [65,0,195,169]; let text: alloc::string::String = alloc::string::from_utf8(bytes,4).unwrap();
+    let values: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(2).unwrap();
+    values.try_push(-2147483648).unwrap(); values.try_push(2147483647).unwrap();
+    // Source becomes the active owner; text/values are borrowed aliases below.
+    let source: core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>> =
+        core::option::Some(core::result::Ok(core::pair::new<alloc::string::String,alloc::vec::Vec<i32>>(text,values)));
+    let first: core::result::Result<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,core::clone_values::ResultError<core::clone_values::PairError<alloc::string::Error,alloc::clone::Error<core::clone_values::Infallible>>,alloc::string::Error>> =
+        fixture::consumer::duplicate<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,core::clone_values::ResultError<core::clone_values::PairError<alloc::string::Error,alloc::clone::Error<core::clone_values::Infallible>>,alloc::string::Error>>(source);
+    let second: core::result::Result<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>,core::clone_values::ResultError<core::clone_values::PairError<alloc::string::Error,alloc::clone::Error<core::clone_values::Infallible>>,alloc::string::Error>> =
+        core::clone_values::try_clone_option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>,core::clone_values::ResultError<core::clone_values::PairError<alloc::string::Error,alloc::clone::Error<core::clone_values::Infallible>>,alloc::string::Error>>(source);
+    // Transfer the complete first payload out before growing its descriptors.
+    // The old first result/Option/Result copies are inactive from this point.
+    let copied: core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>> = first.unwrap().unwrap().unwrap();
+    let other: core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>> = second.unwrap();
+    let borrowed: core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>> = other.unwrap().unwrap();
+    assert(copied.first.bytes.storage!=text.bytes.storage && borrowed.first.bytes.storage!=text.bytes.storage && copied.first.bytes.storage!=borrowed.first.bytes.storage);
+    assert(copied.second.storage!=values.storage && borrowed.second.storage!=values.storage && copied.second.storage!=borrowed.second.storage);
+    copied.first.try_push_scalar(88).unwrap(); copied.second.try_push(73).unwrap();
+    assert(copied.first.byte_len()==5 && copied.first.byte_at(4).unwrap()==88 && copied.second.len()==3 && copied.second.at(2)==73);
+    assert(text.byte_len()==4 && text.byte_at(1).unwrap()==0 && values.len()==2 && values.at(0)==-2147483648);
+    assert(borrowed.first.byte_len()==4 && borrowed.second.len()==2 && borrowed.second.at(1)==2147483647);
+    fixture::consumer::release<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>>(source);
+    assert(copied.first.byte_at(3).unwrap()==169 && borrowed.first.byte_at(2).unwrap()==195);
+    // Rebuild the active nested owner from updated descriptors for release.
+    let rebuilt: core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>> = core::option::Some(core::result::Ok(copied));
+    fixture::consumer::release<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>>(rebuilt);
+    assert(borrowed.first.byte_at(1).unwrap()==0 && borrowed.second.at(0)==-2147483648);
+    fixture::consumer::release<core::option::Option<core::result::Result<core::pair::Pair<alloc::string::String,alloc::vec::Vec<i32>>,alloc::string::String>>>(other);
+    return 0;
+}

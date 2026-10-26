@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=4716 code=AssignMismatch detail=0
+error[LNC0006]: type mismatch
+ --> tests/fixtures/stdlib_compiler_state/resumable_transport_admission/main.lani:24:142
+   |
+24 |         let item: admission::scheduler::Outcome<admission::plain::Error> = report.outcomes.set(index,admission::scheduler::Outcome::Pending).unwrap();
+   |                                                                                                                                              ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

@@ -1,0 +1,121 @@
+// Appended to the actual sample with its main renamed by the focused driver.
+// Deterministic stream behavior exercises the sample loop, not a duplicate.
+struct ScriptReader { bytes: [u8], length: i32, position: i32, width: i32, calls: i32, interrupts: i32, mode: i32, largest: i32 }
+impl ScriptReader { fn borrow(&self) -> &ScriptReader { return self; } }
+pub impl core::io::Read for ScriptReader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (count > self.largest) { self.largest = count; }
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 1) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 2) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 3) { return core::result::Ok(count + 1); }
+        let amount: i32 = self.length - self.position;
+        if (amount > self.width) { amount = self.width; }
+        if (amount > count) { amount = count; }
+        let index: i32 = 0;
+        while (index < amount) { destination[offset + index] = self.bytes[self.position + index]; index += 1; }
+        self.position += amount;
+        return core::result::Ok(amount);
+    }
+}
+struct ScriptWriter { bytes: [u8], position: i32, width: i32, calls: i32, interrupts: i32, mode: i32 }
+impl ScriptWriter { fn borrow(&self) -> &ScriptWriter { return self; } }
+pub impl core::io::Write for ScriptWriter {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 1) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 2) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 3) { return core::result::Ok(count + 1); }
+        if (self.mode == 4) { return core::result::Ok(0); }
+        let amount: i32 = count;
+        if (amount > self.width) { amount = self.width; }
+        let index: i32 = 0;
+        while (index < amount) { self.bytes[self.position + index] = source[offset + index]; index += 1; }
+        self.position += amount;
+        return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { return core::result::Ok(0); }
+}
+fn reader(bytes: [u8], length: i32, width: i32) -> ScriptReader {
+    return ScriptReader { bytes: bytes, length: length, position: 0, width: width, calls: 0, interrupts: 0, mode: 0, largest: 0 };
+}
+fn writer(bytes: [u8], width: i32) -> ScriptWriter {
+    return ScriptWriter { bytes: bytes, position: 0, width: width, calls: 0, interrupts: 0, mode: 0 };
+}
+fn read_failure(result: core::result::Result<alloc::vec::Vec<u8>,AppError>, expected: i32) {
+    assert(core::result::is_err(result));
+    let code: i32 = match (core::result::unwrap_err(result)) {
+        AppError::InputLimit -> 1, AppError::CallLimit -> 2, AppError::InputIo -> 3, _ -> 0
+    };
+    assert(code == expected);
+}
+fn write_failure(result: core::result::Result<i32,AppError>, expected: i32) {
+    assert(core::result::is_err(result));
+    let code: i32 = match (core::result::unwrap_err(result)) { AppError::CallLimit -> 2, AppError::OutputIo -> 4, _ -> 0 };
+    assert(code == expected);
+}
+fn main() -> i32 {
+    let data: [u8; 7] = [97,98,0,255,10,0,120];
+    let width: i32 = 1;
+    while (width <= 8) {
+        let source: ScriptReader = reader(data,7,width); source.interrupts = 2;
+        let budget: Budget = Budget { remaining: 100 };
+        let captured: alloc::vec::Vec<u8> = core::result::unwrap(read_input(source.borrow(),7,budget.borrow()));
+        assert(captured.len() == 7 && source.position == 7 && source.calls <= 10 && budget.remaining == 100 - source.calls);
+        let index: i32 = 0; while (index < 7) { assert(captured.at(index) == data[index]); index += 1; }
+        let output: [u8; 12] = [199; 12]; let sink: ScriptWriter = writer(output,width); sink.interrupts = 3;
+        let part: core::slice::View<u8> = core::result::unwrap(captured.as_view().subview(2,7));
+        assert(core::result::unwrap(write_bounded(sink.borrow(),part,budget.borrow())) == 5);
+        assert(sink.position == 5 && budget.remaining == 100 - source.calls - sink.calls);
+        index = 0; while (index < 5) { assert(output[index] == data[index+2]); index += 1; }
+        assert(output[5] == 199); captured.destroy(); width += 1;
+    }
+    let output: [u8; 12] = [199; 12];
+    let source: ScriptReader = reader(data,7,1024);
+    let budget: Budget = Budget { remaining: 10 };
+    read_failure(read_input(source.borrow(),6,budget.borrow()),1);
+    assert(source.position == 7 && source.largest == 7 && source.calls == 1);
+    let empty: ScriptReader = reader(data,0,1024);
+    let empty_budget: Budget = Budget { remaining: 1 };
+    let captured: alloc::vec::Vec<u8> = core::result::unwrap(read_input(empty.borrow(),0,empty_budget.borrow()));
+    assert(captured.is_empty() && empty.largest == 1 && empty_budget.remaining == 0); captured.destroy();
+    let zero: ScriptReader = reader(data,7,1024);
+    let zero_budget: Budget = Budget { remaining: 10 };
+    read_failure(read_input(zero.borrow(),0,zero_budget.borrow()),1);
+    assert(zero.position == 1 && zero.largest == 1);
+    let mode: i32 = 1;
+    while (mode <= 3) {
+        let failed: ScriptReader = reader(data,7,1024); failed.mode = mode;
+        let allowance: Budget = Budget { remaining: 10 };
+        read_failure(read_input(failed.borrow(),7,allowance.borrow()),3);
+        assert(failed.calls == 1 && allowance.remaining == 9); mode += 1;
+    }
+    mode = 1;
+    while (mode <= 4) {
+        let sink: ScriptWriter = writer(output,12); sink.mode = mode;
+        let allowance: Budget = Budget { remaining: 10 };
+        write_failure(write_bounded(sink.borrow(),core::result::unwrap(core::slice::view(data,7)),allowance.borrow()),4);
+        assert(sink.calls == 1 && sink.position == 0 && allowance.remaining == 9); mode += 1;
+    }
+    let interrupted: ScriptReader = reader(data,7,1024); interrupted.interrupts = 10;
+    let allowance: Budget = Budget { remaining: 3 };
+    read_failure(read_input(interrupted.borrow(),7,allowance.borrow()),2);
+    assert(interrupted.calls == 3 && allowance.remaining == 0);
+    let no_calls: ScriptReader = reader(data,7,1024);
+    let exhausted: Budget = Budget { remaining: 0 };
+    read_failure(read_input(no_calls.borrow(),7,exhausted.borrow()),2); assert(no_calls.calls == 0);
+    let eof: ScriptReader = reader(data,7,1024);
+    let one: Budget = Budget { remaining: 1 };
+    read_failure(read_input(eof.borrow(),7,one.borrow()),2); assert(eof.calls == 1 && eof.position == 7);
+    let sink: ScriptWriter = writer(output,1);
+    let limited: Budget = Budget { remaining: 3 };
+    write_failure(write_bounded(sink.borrow(),core::result::unwrap(core::slice::view(data,7)),limited.borrow()),2);
+    assert(sink.position == 3 && sink.calls == 3);
+    let retry: ScriptWriter = writer(output,12); retry.interrupts = 10;
+    let retries: Budget = Budget { remaining: 3 };
+    write_failure(write_bounded(retry.borrow(),core::result::unwrap(core::slice::view(data,7)),retries.borrow()),2);
+    assert(retry.position == 0 && retry.calls == 3);
+    return 0;
+}

@@ -1,0 +1,101 @@
+// Independent host oracle checks priority and representative conservation,
+// without relying on heap layout or promising stability among equal keys.
+module app::main;
+import alloc::binary_heap;
+import core::cmp;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import fixture::consumer;
+import std::stream;
+
+struct Item { id: i32, priority: i32, wide: u64, pair: [i64;2], flag: core::option::Option<bool> }
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(a: Item,b: Item) -> bool { return a.priority<b.priority; }
+    pub fn le(a: Item,b: Item) -> bool { return a.priority<=b.priority; }
+    pub fn gt(a: Item,b: Item) -> bool { return a.priority>b.priority; }
+    pub fn ge(a: Item,b: Item) -> bool { return a.priority>=b.priority; }
+}
+fn item(id: i32,seed: i32) -> Item {
+    let flag: core::option::Option<bool> = core::option::None();
+    if (id%3!=0) { flag=core::option::Some(id%2==0); }
+    return Item { id:id,priority:(id*7+seed*3)%5-2,wide:18446744073709551615-(id as u64),
+        pair:[-4294967297-(id as i64),8589934593+(id as i64)],flag:flag };
+}
+struct Output { bytes: [u8], used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) {
+        let stdout: std::stream::Descriptor=std::stream::stdout();
+        assert(core::io::write_all(stdout.borrow(),self.bytes,0,self.used).is_ok()); self.used=0;
+    }
+    fn word(&self,value: u64) {
+        if (self.used==1024) { self.flush(); }
+        let index: i32=0;
+        while (index<8) { self.bytes[self.used+index]=((value>>(index*8))&255) as u8; index+=1; }
+        self.used+=8;
+    }
+    fn item(&self,value: Item) {
+        self.word(value.id as u64); self.word(value.priority as u64); self.word(value.wide);
+        self.word(value.pair[0] as u64); self.word(value.pair[1] as u64);
+        let flag: u64=0; if (value.flag.is_some()) { if (value.flag.unwrap()) { flag=2; } else { flag=1; } }
+        self.word(flag);
+    }
+}
+fn same_order(order: alloc::binary_heap::Order,mode: i32) -> bool {
+    return match (order) { alloc::binary_heap::Order::Min -> mode==0,alloc::binary_heap::Order::Max -> mode==1 };
+}
+fn run(mode: i32,seed: i32,length: i32,output: &Output) {
+    let order: alloc::binary_heap::Order=alloc::binary_heap::Order::Min;
+    if (mode==1) { order=alloc::binary_heap::Order::Max; }
+    let source: alloc::binary_heap::BinaryHeap<Item> =alloc::binary_heap::with_capacity<Item>(length+3,order).unwrap();
+    let index: i32=0; while (index<length) { source.try_push(item(index,seed)).unwrap(); index+=1; }
+    let backing: ptr=source.items.storage; let capacity: i32=source.capacity();
+    let cursor: alloc::binary_heap::IntoIter<Item> =source.take_iter();
+    assert(source.is_empty() && source.capacity()==0 && same_order(source.order(),mode));
+    assert(cursor.remaining()==length && cursor.capacity()==capacity && same_order(cursor.order(),mode));
+    // Reuse the actual reset source, with independent backing, while the old
+    // heap remains owned by the cursor. Release it before any cursor pulls.
+    source.try_reserve(1).unwrap(); source.try_push(item(1000,seed)).unwrap();
+    assert(source.items.storage!=backing && source.pop().unwrap().id==1000); source.destroy();
+    let prefix: i32=0;
+    if (seed==1) { prefix=length/2; }
+    if (seed==2) { prefix=length; }
+    if (seed==3 && length>0) { prefix=1; }
+    output.word(mode as u64); output.word(seed as u64); output.word(length as u64); output.word(prefix as u64);
+    index=0;
+    while (index<prefix) {
+        let value: Item=fixture::consumer::pull<alloc::binary_heap::IntoIter<Item>,Item>(cursor.borrow()).unwrap();
+        output.item(value); index+=1;
+    }
+    let left: i32=length-prefix;
+    if (left>0) {
+        assert(match (cursor.try_finish().unwrap()) { alloc::binary_heap::IntoIterError::Remaining(count) -> count==left });
+        assert(cursor.remaining()==left && cursor.capacity()==capacity);
+    } else { assert(cursor.next().is_none() && cursor.next().is_none() && cursor.capacity()==capacity); }
+    let remaining: alloc::binary_heap::BinaryHeap<Item> =fixture::consumer::recover<Item>(cursor.borrow());
+    assert(remaining.len()==left && remaining.capacity()==capacity && remaining.items.storage==backing && same_order(remaining.order(),mode));
+    assert(cursor.is_empty() && cursor.capacity()==0 && same_order(cursor.order(),mode) && cursor.next().is_none() && cursor.try_finish().is_none());
+    remaining.try_push(item(length,seed)).unwrap();
+    assert(remaining.capacity()==capacity && remaining.items.storage==backing);
+    let resumed: alloc::binary_heap::IntoIter<Item> =remaining.take_iter();
+    assert(remaining.is_empty() && remaining.capacity()==0 && same_order(remaining.order(),mode));
+    index=0;
+    while (index<left+1) {
+        output.item(fixture::consumer::pull<alloc::binary_heap::IntoIter<Item>,Item>(resumed.borrow()).unwrap()); index+=1;
+    }
+    assert(resumed.is_empty() && resumed.capacity()==capacity && resumed.next().is_none() && resumed.next().is_none());
+    assert(resumed.try_finish().is_none() && resumed.try_finish().is_none() && resumed.capacity()==0 && same_order(resumed.order(),mode));
+    remaining.destroy(); source.destroy();
+}
+fn main() -> i32 {
+    let bytes: [u8;1024]=[0;1024]; let output: Output=Output { bytes:bytes,used:0 };
+    output.word(core::mem::size_of<Item>() as u64);
+    let mode: i32=0;
+    while (mode<2) { let seed: i32=0; while (seed<4) { let length: i32=0;
+        while (length<18) { run(mode,seed,length,output.borrow()); length+=1; } seed+=1;
+    } mode+=1; }
+    output.flush(); return 0;
+}

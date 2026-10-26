@@ -84,6 +84,12 @@ it fails explicitly.
 
 ## Names and extra fields
 
+`validate_name(name, utf8)` checks the writer's name policy without constructing
+an archive. It returns the byte length or `Bounds`, `Name` or `Encoding`, and
+allocates nothing. Its checks share the writer's private name and encoding
+helpers. Whether a name ending in `/` has an empty payload is checked later by
+`encode`; name validation does not provide filesystem extraction safety.
+
 Names and comments retain their bytes. With the UTF-8 flag set, both are
 validated as UTF-8. Without it, bytes retain their legacy encoding, conventionally
 CP437; the library performs no conversion. Unknown extra-field TLVs are checked
@@ -175,3 +181,10 @@ headers and truncations, unsupported features, integrity errors, exact limits,
 1,024-entry work bounds and every observed allocation failure. Each successful
 allocation is checked against its release. Python and Rust are independent test
 machinery and do not supply production behavior.
+
+The public `validate_name` helper also passes the focused native archive
+contract, including UTF-8 and raw names, nonzero strided subviews, invalid view
+metadata, NUL and rejected path syntax. That contract passed in 6.79 seconds:
+`target/stdlib-work/http-batch-zip-name-contracts.log`. This receipt covers the
+shared name policy; the broader archive cases above retain their separate
+execution evidence.

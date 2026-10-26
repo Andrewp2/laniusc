@@ -1,0 +1,61 @@
+// Appended to actual application helpers; every transfer uses read_input/publish.
+struct Reader { data: [u8], length: i32, at: i32, calls: i32, chunk: i32, mode: i32, interruptions: i32 }
+impl Reader { fn borrow(&self) -> &Reader { return self; } }
+pub impl core::io::Read for Reader {
+    pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.mode == 1 && self.calls <= self.interruptions) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 6) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 3) { return core::result::Ok(-1); }
+        if (self.mode == 4) { return core::result::Ok(count+1); }
+        if (self.mode == 5 && self.at >= 2) { return core::result::Err(core::io::Error::Host(5)); }
+        let n: i32 = self.length-self.at; if (n > count) { n = count; } if (n > self.chunk) { n = self.chunk; }
+        let i: i32 = 0; while (i < n) { destination[offset+i] = self.data[self.at+i]; i += 1; } self.at += n; return core::result::Ok(n);
+    }
+}
+struct Sink { output: [u8], at: i32, calls: i32, chunk: i32, mode: i32, interruptions: i32, flushes: i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::io::Write for Sink {
+    pub fn write(&self, source: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.mode == 1 && self.calls <= self.interruptions) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 6) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 2 && self.at >= 2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 3) { return core::result::Ok(0); }
+        if (self.mode == 4) { return core::result::Ok(-1); }
+        if (self.mode == 5) { return core::result::Ok(count+1); }
+        let n: i32 = count; if (n > self.chunk) { n = self.chunk; } let i: i32 = 0;
+        while (i < n) { self.output[self.at+i] = source[offset+i]; i += 1; } self.at += n; return core::result::Ok(n);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { self.flushes += 1; return core::result::Err(core::io::Error::Host(5)); }
+}
+fn io_category(error: core::io::Error) -> i32 { return match(error) { core::io::Error::LimitExceeded -> 1,core::io::Error::WouldBlock -> 2,core::io::Error::InvalidCount -> 3,core::io::Error::Host(code) -> 4,_ -> 9 }; }
+fn read_category(error: ReadError) -> i32 { return match(error) { ReadError::Calls -> 1,ReadError::Limit -> 5,ReadError::Io(cause) -> io_category(cause),ReadError::Allocation -> 6 }; }
+fn read_case(length: i32, limit: i32, chunk: i32, mode: i32, interruptions: i32, budget: i32, expected: i32, consumed: i32, stored: i32, calls: i32) {
+    let data: [u8;6] = [97,0,255,10,13,98]; let source: Reader = Reader { data:data,length:length,at:0,calls:0,chunk:chunk,mode:mode,interruptions:interruptions };
+    let output = alloc::io::with_limit(limit).unwrap();
+    let result: core::result::Result<i32,ReadError> = read_input(source.borrow(),output.borrow(),budget);
+    if (expected == 0) { assert(result.is_ok() && result.unwrap() == stored); } else { assert(result.is_err() && read_category(result.unwrap_err()) == expected); }
+    assert(source.at == consumed && source.calls == calls && output.len() == stored);
+    let i: i32 = 0; while (i < stored) { assert(output.as_bytes()[i] == data[i]); i += 1; } output.destroy(); output.destroy();
+}
+fn write_case(chunk: i32, mode: i32, interruptions: i32, budget: i32, expected: i32, prefix: i32, calls: i32) {
+    let data: [u8;6] = [97,0,255,10,13,98]; let storage: [u8;8] = [0;8]; let sink: Sink = Sink { output:storage,at:0,calls:0,chunk:chunk,mode:mode,interruptions:interruptions,flushes:0 };
+    let result: core::result::Result<i32,core::io::Failure> = publish(sink.borrow(),data,6,budget);
+    if (expected == 0) { assert(result.is_ok() && result.unwrap() == prefix); }
+    else { assert(result.is_err()); let failure = result.unwrap_err(); assert(failure.completed == prefix && io_category(failure.cause) == expected); }
+    assert(sink.at == prefix && sink.calls == calls && sink.flushes == 0); let i: i32 = 0; while (i < prefix) { assert(storage[i] == data[i]); i += 1; }
+}
+fn main() -> i32 {
+    let chunk: i32 = 1;
+    while (chunk <= 8) { let reads: i32 = (6+chunk-1)/chunk+1; read_case(6,6,chunk,0,0,reads,0,6,6,reads); write_case(chunk,0,0,reads-1,0,6,reads-1); chunk += 1; }
+    read_case(0,0,1,0,0,1,0,0,0,1); read_case(1,0,1,0,0,1,5,1,0,1); read_case(4,3,1,0,0,4,5,4,3,4);
+    read_case(6,6,2,1,2,6,0,6,6,6); read_case(6,6,2,1,2,2,1,0,0,2); read_case(6,6,2,6,0,4,1,0,0,4);
+    read_case(6,6,2,2,0,4,2,0,0,1); read_case(6,6,2,3,0,4,3,0,0,1); read_case(6,6,2,4,0,4,3,0,0,1);
+    read_case(6,6,2,5,0,4,4,2,2,2); read_case(6,6,2,0,0,0,1,0,0,0); read_case(6,6,2,0,0,3,1,6,6,3);
+    write_case(2,1,2,5,0,6,5); write_case(2,1,2,2,1,0,2); write_case(2,6,0,4,1,0,4); write_case(2,2,0,8,2,2,2);
+    write_case(2,3,0,8,3,0,1); write_case(2,4,0,8,3,0,1); write_case(2,5,0,8,3,0,1); write_case(2,0,0,0,1,0,0); write_case(2,0,0,1,1,2,1);
+    let empty: [u8;1] = [0;1]; let sink: Sink = Sink { output:empty,at:0,calls:0,chunk:1,mode:0,interruptions:0,flushes:0 }; assert(publish(sink.borrow(),empty,0,0).unwrap() == 0 && sink.calls == 0 && sink.flushes == 0);
+    return 0;
+}

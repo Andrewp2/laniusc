@@ -1,7 +1,8 @@
 # Standard and extended libraries
 
 The goal is a complete, usable standard library and a broad extended library,
-implemented in Lanius. This document tracks the whole scope. Completing the first
+with Lanius interfaces and explicit native bindings for host and third-party
+services. This document tracks the whole scope. Completing the first
 milestone does not complete the goal.
 
 ## Dependency layers
@@ -26,21 +27,20 @@ package distribution is a separate deliverable.
 
 | Family | Required contents | Executable state and remaining work |
 | --- | --- | --- |
-| Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols and String implementations execute with typed errors and manual memory-owner release. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
-| Byte digests | Incremental SHA-2, checked message lengths, copied results and reset | SHA-224/256 and SHA-384/512/512-224/512-256 execute without allocation, including variant-specific initial values, padding and full length encoding. Independent models cover streaming layouts, state/digest copies, finalization and rejection atomicity. The stdin hash program exercises all six algorithms, EOF, byte/call limits and I/O failures on native Linux |
-| Cryptographic byte primitives | Stream cipher, block cipher, one-time authentication, authenticated encryption, key exchange and record protection | [ChaCha20](stdlib-chacha20.md), [Poly1305](stdlib-poly1305.md), [AES-128/192/256](core-aes.md), optional [ChaCha20-Poly1305](extended-chacha20-poly1305.md), [AES-GCM](extended-aes-gcm.md), [X25519](extended-x25519.md) and [TLS record protection](extended-tls-record.md) pass focused native Linux gates. Records support explicit AES-128-GCM/SHA-256 and ChaCha20-Poly1305/SHA-256 suites with directional key-use limits. [Performance evidence](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration) includes the changed import closure and output size. Further signature/group algorithms and full TLS connections remain |
+| Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols, String implementations and opt-in exact scalar/Option/Result/Pair compositions execute with typed errors and manual memory-owner release. True empty Infallible errors retain the existing enum tag layout; nested owners and typed rollback pass executable tests. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
-| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque cursors transfer cleanup authority and recover their original storage, with explicit nested cleanup and a streaming unique-word application. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
+| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Recoverable one-item lookahead, relative/MAX position search and ordinary/custom extrema execute with explicit first-minimum/last-maximum tie policies. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum/extrema, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque/hash/tree map/set and heap cursors transfer cleanup authority, retain exhausted backing until explicit finish, and recover valid remaining collections in O(1), with explicit nested cleanup. Hash traversal is unordered; tree and heap priority pulls use O(log n) removal. The unique-word application now publishes through the TreeSet owning cursor. Further adapters/consumers, replacement sinks, other owning cursor families and language for-loop integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Runtime formats also render to generic byte writers through bounded caller scratch, with preflight validation, exact accepted-prefix failures and a direct-call limit. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
-| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Existing collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. The protected std::vec/heap migration, deep ownership in other collections and automatic ownership remain |
+| Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Opt-in deep HashMap cloning executes with independent nested owners and typed key/value failure cleanup; opt-in recursive deque cloning also executes with logical ring and owned-error rollback coverage. Opt-in deep heap cloning also executes with Min/Max priority and nested/owned-error failure coverage. Opt-in deep TreeMap cloning also executes with sorted staging, independent nested owners, typed key/value rollback and empty/zero-sized coverage. Existing inherent collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. Opt-in deep HashSet and TreeSet cloning also execute with typed rollback and representative-preserving models. The protected std::vec/heap migration, additional owner compositions and automatic ownership remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Imported/nested generic Read/Write transport passes native contracts and checked cache reuse. Fixed-capacity buffered adapters execute with read-ahead/pending handoff, explicit finish/discard, partial-I/O and allocation failures, nested composition and a binary-copy application. Runtime writer formatting shares these contracts and leaves flush/finish explicit |
 | Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Automatic owner destruction and broader platform support remain |
-| Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Process groups and concurrent spawn policy remain |
+| Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Explicit new groups, anchored signaling and non-reaping observation pass five focused API groups; a TERM/grace/KILL supervisor passes five groups and 53 cases, across separate receipts. Group escape/containment and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
-| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Real TCP/DNS/fetch/local-service programs exercise transfers. Old std::net declarations remain unbound; system resolver/NSS/interface policy, TLS, concurrent server scheduling, keepalive and broader client policies remain |
-| Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Current thread module is contract-only; runtime prerequisites remain |
+| Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. System hostname/service resolution delegates to libc with explicit hints and owned ordered results on Linux x86_64/glibc; all four library groups and five CLI groups pass across separate receipts. Blocking NSS memory/time are outside local byte/result caps. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. Resumable Prepared/Exchange passes all five direct groups (83 cases); one-thread/poll batches pass all seven groups, and fetch-many passes all five application groups across separate receipts. Manual owners and one common deadline are explicit. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls, OpenSSL digests and client TLS with peer verification execute. Client TLS requires explicit peer trust/identity, borrowed nonblocking sockets and caller deadlines/SIGPIPE policy; the TLS stream/HTTPS application executes 62 cases across four groups with numeric endpoints, explicit trust/identity, deadlines and manual cleanup. Server TLS and a bounded HTTPS service execute through OpenSSL. Client credential contexts and required fresh client-chain verification execute in 107 cases across six groups; prepared-context transport and real mutual-TLS HTTPS modes execute another 109 cases across four groups. Unauthenticated public service remains an explicit policy. Application identity/authorization, broader certificate APIs, asynchronous resolution/NSS resource policy, interface discovery, concurrent server scheduling, keepalive and broader client policies remain; old std::net declarations remain unbound |
+| Native libraries | Checked C signatures, ordinary ELF linking, process startup and explicit library owners | The Linux x86_64/glibc profile executes integer/pointer/f32/f64/void calls with up to 32 total parameters, independent SSE/GPR banks, ordinary ELF objects and CRT startup. OpenSSL EVP digest contexts and a binary stdin hashing program execute with dynamic libcrypto.so.3. SQLite database/prepared-statement owners and a persistent binary key/value program execute with system SQLite, including typed values, transactions, real persistence/locking, native and staging-allocation failures, and a measured bulk workload. Native entry/package builds spool original/replay payloads and execute above the resident aggregate threshold; source snapshots/global metadata still grow and descriptor CLI modes remain unsupported. OpenSSL client TLS with peer verification executes with 34 cases across four groups. Server TLS also executes with 53 focused cases; mutual TLS adds 107 cases across six groups using shared native credential loading and explicit required-peer policy. Callbacks, variadics, aggregate C layouts, foreign thread entry, standalone encryption/signature and broader certificate-trust APIs remain |
+| Concurrency | Threads, joining, synchronization, atomics, channels, cancellation | Bounded cleartext HTTP batches use one thread and reusable polling; all seven library groups and five application groups pass across separate native receipts, including queued admission after consecutive begin failures. This does not supply worker execution or synchronization. Current thread declarations remain unbound; [concurrency admission dependencies](library-concurrency-dependencies.md) isolate callback/worker-entry, checked Boolean transport, ownership and ordering prerequisites |
 | Development | Assertions, test runner, property helpers, benchmarks, diagnostics, API docs | Nontrapping checks, explicit source suites, filters, seeded properties, injected/native-clock benchmarks and a bounded native compiler/run driver execute. Selective, relocatable source bundles use the existing package resolver and verify inventory hashes. A generated declaration reference links signatures, bounds, source locations and reviewed contract guides. Automatic compiler discovery/runtime registration, binary SDK distribution and complete semantic API documentation remain |
 
 ## Extended library scope
@@ -53,8 +53,9 @@ tests, target support, and relevant performance evidence.
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities |
 | Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch |
 | Files and packaging | Globs, directory walking utilities, compression, archives |
-| Network protocols | URL handling, HTTP client/server, WebSockets, DNS, TLS integration |
-| Storage | Database interfaces, SQLite integration, key-value storage |
+| Network protocols | URL handling, HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batch scheduling and its CSV-to-ZIP application execute across separately accepted library/application receipts; TLS resumability, concurrent server scheduling, application authorization and broader orchestration remain open |
+| Storage | Database interfaces; executable [SQLite integration](extended-sqlite.md), [persistent binary key/value application](extended-sqlite-kv.md) and key-value snapshots; broader database/storage interfaces remain |
+| Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests, verified client/server TLS and mutual TLS execute with explicit trust and manual owners; standalone encryption/signature APIs, application identity/authorization and broader certificate policy remain open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
 | Application utilities | CLI parsing, logging, configuration, tables, progress reporting |
 | Media | Image codecs, pixel operations, audio codecs and signal utilities |
@@ -128,7 +129,7 @@ precision-limited division, conversions and lawful numeric keys. A
 [CSV ledger](extended-decimal-ledger.md) calculates rounded line subtotals,
 taxes and running totals without binary floating point. Signed decimal zeros,
 NaNs/infinities, transcendental decimal functions, additional number-theory
-algorithms and cryptographic uses remain separate work.
+algorithms remain separate work.
 
 [Statistics](extended-statistics.md) provides checked streaming moments,
 covariance/correlation, simple linear fits, compensated sums, scaled norms and
@@ -178,8 +179,29 @@ Locale-sensitive collation, dictionary segmentation and shaping remain work.
 using ordered Pike matching, with captures, greedy/lazy repetition, scalar
 classes and Unicode 17 properties. Unsupported syntax fails explicitly. A
 [streaming search program](extended-text-grep.md) compiles once and processes
-bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax,
-replacement/split conveniences and lexers remain. [Text parsing cursors](extended-parse.md)
+bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax
+and additional replacement interfaces remain.
+[Bounded splitting and replacement](extended-regex-text.md) now provide
+borrowed fields, independent literal/numeric-template output and conservative
+aggregate VM allowances through the existing matcher. Six focused native
+groups pass, including 288 independent reference cases, 89 edge tables,
+allocation-failure cleanup and a binary rewrite CLI.
+[Reusable lexical scanning](extended-lexer.md) now shares the regex engine's
+anchored longest-prefix mode. It validates each input once, returns borrowed
+tokens, chooses the earlier rule for equal longest spans and rejects
+nonprogress, unmatched input and exhausted caps explicitly. Five native groups
+pass through separate receipts, including 576 independent model cases, 63
+edge tables and all 120 allocation failures reached by the fixtures. Scratch
+is allocated per probe; competing patterns can rescan suffixes, so callers
+retain explicit input, search-call and reserved-work limits.
+The [CSV-rules lexer application](extended-lex-scan.md) composes CSV decoding,
+compiled rules, borrowed tokens, hash counters and staged bounded output. Its
+five native groups pass through separate receipts, including both modes over
+124 independent grammar inputs, all 60 reached allocation-failure positions,
+exact I/O fault injections and a 4,096-token cost observation. The retained
+[generic Read context dependency](library-context-inference-dependencies.md)
+has a rejected unannotated reduction and an executed explicitly typed control.
+[Text parsing cursors](extended-parse.md)
 provide checked locations, spans, checkpoints and atomic bounded scanners.
 The [integer expression calculator](extended-expr-calc.md) combines them with
 inline stacks, checked arithmetic and runtime formatting.
@@ -250,22 +272,40 @@ finds boundaries without retaining views into growing storage. The
 it with numeric-address sockets, owned responses, one deadline and explicit
 byte/work/I/O limits. Canonical parsing validates each selected response;
 informational responses and early final replies retain exact association and
-progress. A [staged HTTP/1 server connection](extended-http-server.md), accepted
+progress. The shared client exposes Prepared staging and resumable Exchange
+steps with explicit readiness and bounded network quanta. All five direct
+[Exchange groups](extended-http-exchange-testing.md) pass 83 cases across
+separate receipts, alongside all six synchronous regression groups (188 cases).
+[HTTP batches](extended-http-batch.md) reuse that engine with one thread and a
+reusable PollSet, input-order partial outcomes, one common deadline and manual
+response transfer. Logical pending/wire/body retention caps are separate from
+allocator capacity and peak RSS; scheduler operations and reserved protocol
+work are explicit. All seven batch groups and all five
+[fetch-many CSV-to-ZIP application](extended-fetch-many.md) groups are accepted
+across separate native receipts, including queued admission after consecutive
+begin failures without a blocking poll on remaining peers. TLS transport
+resumability and worker-thread orchestration remain
+separate work, as recorded by the
+[concurrency admission audit](library-concurrency-dependencies.md).
+A [staged HTTP/1 server connection](extended-http-server.md), accepted
 at `493d4e87`, handles one request and one closing final response per connection,
 with immutable published head/body views, explicit 100 Continue, checked Date
 and response staging, one deadline, quotas and half-close/drain cleanup. Its
 real local health/echo service accepts numeric IPv4/IPv6 endpoints and bounded
 sequential connections. Independent peers and injected resource/host failures
-exercise framing, early rejection, binary bodies and owner cleanup. TLS,
-automatic resolution/redirects, connection pooling, server keepalive/concurrent
+exercise framing, early rejection, binary bodies and owner cleanup. A separate
+[HTTPS service](extended-https-server.md) now composes the same codec with
+OpenSSL server TLS, shared buffered streams, bounded acceptance and one absolute
+deadline per connection slot. Automatic resolution/redirects, connection pooling, server keepalive/concurrent
 scheduling, upgrades/tunnels and HTTP/2 remain work.
 
 [DNS wire processing](extended-dns.md) validates binary names, compression,
 QUERY sections, common RDATA and EDNS, with bounded complete message writing.
-[WebSocket processing](extended-websocket.md) provides RFC 6455 handshakes,
+[WebSocket processing](extended-websocket.md) provides RFC 6455 request processing,
 role masking, fragmented UTF-8, control/close state and frame generation.
 Both have real offline programs and independent interoperability/failure tests;
-host resolution, TLS and protocol transport orchestration remain separate work.
+host resolution and their protocol-specific TLS/transport orchestration remain
+separate work.
 The [owned socket API](stdlib-sockets.md) and [TCP exchange program](stdlib-tcp-exchange.md)
 provide executable numeric-address TCP/UDP transport independently.
 [DNS transport](extended-dns-client.md) now adds explicit-server queries, fresh
@@ -274,10 +314,50 @@ framed TCP fallback, with a real DNS query program. Independent loopback peers,
 late-success deadline tests and allocation/host faults verify the implemented
 profile. This supplies neither system resolver/NSS policy nor DNS authentication.
 
+The separate [system hostname/service resolver](stdlib-resolve.md) now delegates
+to libc `getaddrinfo` with explicit family, TCP/UDP, ASCII and mapping policies.
+It preserves native ordering and duplicate addresses in an owned vector and
+fails without partial publication on a result cap or unsupported native shape.
+All four [native library groups](stdlib-resolve-testing.md) pass, including an
+80-case independent libc matrix, malformed/error lists, exact result limits and
+all four reached wrapper allocation failures. The
+[resolve-host application](stdlib-resolve-host.md) adds staged numeric output
+and passes all five groups, including real/scripted I/O and all seven reached
+allocation failures. Acceptance combines separate receipts; the guides retain
+the mixed invocations and corrected harness retries. NSS lookup remains
+synchronous: local limits do not impose a
+native allocation quota or deadline. Asynchronous resolution, interface policy
+and authenticated DNS remain separate work.
+
+[Explicit child groups](stdlib-command-groups.md) use the existing Linux
+boundary for group creation, confirmation and signaling. An owned unreaped
+leader anchors the original group; non-reaping observation preserves it while
+capture drains descendant-held pipes, and final reaping revokes it. The
+[run-group application](stdlib-run-group.md) adds observed run/grace/reap
+deadlines and explicit TERM/KILL escalation, including a positive-leader
+fallback. All five API groups and five application groups pass across separate
+receipts; the supervisor covers 53 cases, including all nine reached pre-spawn
+allocation failures. The guides retain the startup/fault harness correction
+and focused retry, without claiming one combined passing suite run. Group escape,
+outside reapers, arbitrary concurrent spawn and process-tree containment remain
+outside this initial ownership contract.
+
 [Byte key/value storage](extended-kv.md) provides atomic owned mutations and
 canonical CRC-checked snapshots. Its file program stages replacements through
-a caller-provided disposable sibling path. Crash durability, locking,
-transactions, SQLite and the persistent indexed-archive application remain.
+a caller-provided disposable sibling path. Its crash durability, locking and
+transaction contracts remain open. A separate native
+[SQLite adapter](extended-sqlite.md) and
+[persistent binary key/value application](extended-sqlite-kv.md) now execute on
+Linux x86_64/glibc, including real database files, transactions, write locks and
+explicit native failure recovery. Their
+[staging allocation gate](extended-sqlite-allocation.md) verifies all four
+reached packing failures and exact mapping release.
+[Persistent indexed ZIP snapshots](extended-archive-index.md) now compose
+ZIP and SQLite: the archive-index program imports, lists, gets and exports exact
+saved bytes. Its seven native groups cover binary names/keys, duplicate names,
+independent snapshot owners, complete CRC preflight, pinned catalog validation,
+explicit uncertain transaction outcomes, limits and allocation/native faults.
+Filesystem extraction and broader archive formats remain work.
 
 [Narrow primitive integers](stdlib-narrow-integers.md) now match the canonical
 native-width policy families, with exhaustive byte arithmetic and independent
@@ -325,8 +405,12 @@ availability contracts; do not substitute success-shaped placeholders.
    arguments, configuration, logging, clocks and randomness. Acceptance
    application: a directory report with filters and structured output.
 3. **Connected programs.** Runtime bindings for sockets, processes and threads;
-   HTTP, URLs, cancellation and synchronization. Acceptance applications:
-   a bounded concurrent downloader and a local HTTP service.
+   HTTP, URLs, cancellation and synchronization. Native C ABI/linking support
+   precedes established-library TLS and database bindings. Acceptance applications:
+   the [bounded concurrent downloader](extended-fetch-many.md) and a local HTTP
+   service. The downloader uses single-threaded poll scheduling; it does not
+   complete the [thread/atomic admission prerequisites](library-concurrency-dependencies.md)
+   or resumable TLS transport.
 4. **Storage and packaging.** Database integration, key-value storage,
    compression, archives, binary serialization and schemas. Acceptance
    application: a persistent indexed archive with checked round trips.
@@ -340,24 +424,46 @@ Families can proceed independently once their dependencies have working
 contracts. A compiler defect should have a minimal reproduction and an affected
 API list; unrelated library work can continue.
 
-[SHA-224/256](stdlib-sha256.md) and the [SHA-512 family](stdlib-sha512.md)
-provide the six byte-oriented SHA-2 algorithms with incremental state and
-allocation-free digest values. [HMAC-SHA-256 and HKDF-SHA-256](extended-hmac-hkdf.md)
-add keyed state and extract/expand operations, checked against RFC vectors
-and independent models. Their applications [hash stdin](stdlib-hash-bytes.md)
-and [derive keys from binary stdin](extended-derive-key.md) with explicit byte
-and I/O-call limits. [ChaCha20](stdlib-chacha20.md),
-[Poly1305](stdlib-poly1305.md), [ChaCha20-Poly1305](extended-chacha20-poly1305.md)
-and [X25519](extended-x25519.md) also pass their focused native gates.
-The [TLS record layer](extended-tls-record.md) passes its ordinary consumer
-and 308 protocol commands after a
-[host capacity repair](tls-record-lowering-dependency.md).
-The [seal-bytes application](extended-seal-bytes.md) passes 137 native cases,
-including full 1 MiB seal/open and allocation/I/O failures. The
-[pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-records measured workloads and limits. The current connection, certificate and
-transport evidence is listed below. General TLS/PKIX, native foreign-library
-integration and the other remaining families still need their own evidence.
+[Checked C ABI calls and native linking](library-native-c.md) now execute on
+Linux x86_64/glibc. [OpenSSL EVP digest contexts](extended-openssl-digest.md)
+and the [binary stdin hashing program](extended-openssl-hash.md) use that profile
+for SHA-256, SHA-512, SHA3-256 and SHA3-512. Native libraries perform all
+sensitive operations; no Lanius, Rust or Python production implementation of
+the cryptographic algorithms is introduced. C `f32`/`f64` calls now execute
+with independent SSE/GPR register banks, exact IEEE transport and mixed
+32-parameter stack/alignment coverage. An owned
+[SQLite adapter](extended-sqlite.md) and
+[persistent binary key/value program](extended-sqlite-kv.md) execute through
+system SQLite, with typed values, transaction models, persistent files, native
+locks and failure cleanup. Their guides record the completed gates and the
+measured 32,768-insert/indexed-read workload.
+[Client TLS with peer verification](extended-openssl-tls.md) now executes through OpenSSL 3,
+with 34 cases across four groups for trust/identity, binary transfer,
+closure/truncation and stable retries. [Server TLS](extended-openssl-tls-server.md)
+also passes six groups and 53 cases, including explicit unauthenticated-client
+policy, credential loading and native/allocation failure cleanup. Mandatory
+client trust/identity rejection still passes after introducing session roles.
+[Mutual TLS](extended-openssl-mutual-tls.md) now adds 107 cases across six
+groups: client credentials, required fresh client-chain verification, purpose,
+trust, stable retries and native/allocation cleanup. Required servers disable
+resumption; certificate verification does not assign application principals or
+permissions. Standalone encryption and signature APIs, and certificate trust
+APIs outside TLS remain work. The
+[TLS stream/HTTPS application](extended-https-fetch.md) also executes 62 cases
+across four groups on Linux x86_64, using numeric endpoints, explicit trust and
+identity, deadline/resource limits and manual owner cleanup. The
+[prepared-context connector and mutual-TLS HTTPS modes](extended-https-mutual-tls.md)
+add 109 process cases across four groups, including real client/server pairs
+and failures before HTTP publication. The
+[remaining native prerequisites](library-native-integration-prerequisites.md)
+include callbacks and foreign threads. The separate
+[concurrency admission audit](library-concurrency-dependencies.md) records
+working direct/native scalar controls and the remaining checked Boolean,
+callback/worker entry, owner-transfer and memory-order contracts; it does not
+establish executable threads or compare-exchange. Native entry/package linking now spools
+opaque sections and executes above one resident unit, while source snapshots
+and global metadata remain resident. TCP/UDP,
+OS entropy and noncryptographic CRC/Adler/FNV are also available.
 
 ## Completion requirements
 
@@ -375,151 +481,228 @@ integration and the other remaining families still need their own evidence.
 - Measure relevant operations and representative large-library compile
   workloads with the repository's performance tools. Keep each command below
   two minutes and avoid unrelated GPU test reruns.
-- The language implementations remain Lanius. Rust/Python may drive tests;
-  they do not implement library behavior. No JSON transport or Wasm dependency
-  is introduced as a substitute for native library execution.
+- Portable algorithms and library interfaces use Lanius. Host and third-party
+  services use explicit native bindings with executable ABI/linking contracts.
+  Rust/Python may drive tests; JSON transport, subprocess serialization and Wasm
+  bridges do not establish native library integration.
 
 ## Current work
 
-- Branch: `codex/stdlib`, based on `441e66f9`.
-- Authentication foundation: all five [Ed25519](extended-ed25519.md) groups
-  pass, including pure RFC vectors, independent signing, subgroup/scalar
-  boundaries, valid identity nonces and component-byte mutations.
-  [DER](extended-der.md) passes an ordinary consumer and 1,824 model/certificate
-  commands; [handshake codecs](extended-tls-handshake.md) pass an ordinary
-  consumer and 1,396 commands. The [schedule/transcript](extended-tls-schedule.md)
-  passes 114 unique commands, 460 transcript actions and 12 RFC anchors across
-  its documented invocations; its corrected test-anchor history is retained.
-  Record keys and updates share the checked label encoder, with the unchanged
-  308-command record regression passing. The
-  [signing program](extended-sign-bytes.md) passes 128 native cases, including
-  full 1 MiB sign/verify, owner/I/O failures and call-budget limits. The
-  [composed TLS authentication flight](extended-tls-auth-foundation.md) passes
-  18 cases and 720 output fields, including eight tamper scenarios in both
-  layouts, after independent source/oracle review. All are x86_64 Linux native
-  execution through the GPU compiler; user GPU kernels remain unverified.
-- Certificate structure and incremental framing: [X.509](extended-x509.md)
-  passes its ordinary consumer and 690 model/OpenSSL commands across Ed25519,
-  RSA and ECDSA certificate structures. Its shared budget bounds TLV attempts,
-  successful items, comparisons and cursor/helper work; malformed headers spend
-  budget too. [Framing](extended-tls-framing.md) passes 7,760 state-model
-  actions, an ordinary consumer and the full 16,777,215-byte handshake body.
-  The full-size fixture owns one explicitly accounted allocation; the smaller
-  framing/model processes allocate nothing. The
-  [certificate inspector](extended-certificate-info.md) passes 50 native cases
-  for metadata/schema inspection, complete report publication, allocation/I/O
-  failures, EOF, byte/work/output caps and shared call-budget exhaustion. Its
-  guide preserves the corrected closed-pipe test-harness failure separately.
-- [Bounded nonblocking entropy](stdlib-entropy-bounded.md) passes all four
-  focused groups across its documented admission invocations. New operations
-  use one charged `getrandom(GRND_NONBLOCK)` attempt per read, preserve completed
-  prefixes and expose EAGAIN without spinning. The exact-fill helper retries
-  only EINTR within a shared attempt budget. Existing entropy entry points
-  retain their documented behavior; a connection still checks its own deadline
-  between individual attempts.
-- Certificate authentication: [DNS/IP service identity](extended-service-identity.md)
-  passes 1,592 protocol commands and an ordinary consumer.
-  [Ordered Ed25519 paths](extended-x509-path.md) pass 144 model commands,
-  16 OpenSSL comparisons and an ordinary consumer. Explicit anchors, inclusive
-  validity, supported CA/usage/path constraints and shared budgets precede
-  leaf-key publication. The [certificate verifier](extended-verify-certificate.md)
-  passes 84 native cases across ordinary/CLI, owner/I/O failures and limits.
-  This offline profile uses byte-exact distinguished names and rejects
-  unsupported constraints/policies; general PKIX path building, normalized
-  names, name constraints, certificate policies and revocation remain work.
-- [AES](core-aes.md) passes 1,680 independent block/error commands and an
-  ordinary consumer. [AES-GCM](extended-aes-gcm.md) passes 1,022 commands and
-  an ordinary consumer, including general IV hashing, counter wrap, 16 KiB
-  payloads and authentication-before-output failures. All three AES key
-  widths execute without allocation. No compiler source changed; these gates
-  add no machine constant-time or throughput claim.
-- [P-256](extended-p256.md) passes 1,288 independent protocol commands and an
-  ordinary consumer across five strict ELFs and 82 native processes, all with
-  empty allocation traces. It validates compressed/uncompressed SEC1 points,
-  computes public keys and raw ECDH, verifies ECDSA/SHA-256 and parses strict
-  signature DER. Published NIST/RFC data, affine/OpenSSL comparisons, exceptional
-  group cases, mutations and metadata/range failures check exact bytes in both
-  buffer layouts. TLS/certificate integration, RSA and the remaining mandatory
-  algorithms are separate work; machine constant-time behavior remains unproven.
-- Explicit TLS record suites: the unchanged 308-command ChaCha regression and
-  a new 220-command OpenSSL AES-GCM model pass, each with an ordinary consumer.
-  AES uses a cached owned key and a conservative `2^24` record cap, with a
-  signal to reserve the final old-key record for KeyUpdate. Four strict ELFs
-  execute in seven native processes with empty allocation traces. The
-  [source comparison](library-foundation-performance.md#explicit-record-suites-and-aes-gcm-integration)
-  records a 4.1% higher warmed compilation median and 36.6% larger ELF for the
-  existing authentication workload; no compiler source changed. The portable
-  connection and transport layers now have separate evidence below.
-- [Semantic TLS negotiation](extended-tls-negotiation.md) passes 1,222 wire-model
-  commands and 72 exact/one-less shared-budget probes, plus a six-flow ordinary
-  consumer covering both suites, direct handshakes and two retry forms.
-  Selection re-derives borrowed Offer descriptions, pins retry cookies and
-  suites, preserves unchanged CH2 fields and extension order, and enforces
-  offered SNI/ALPN responses. Independent byte witnesses check returned views;
-  writer snapshots check complete error atomicity. Four strict ELFs run in
-  25 native processes with empty allocation traces. These helpers add no
-  authentication or connected-transport claim.
-- [Server-flight authentication](extended-tls-authentication.md) passes
-  110 protocol cases with 340 state observations and an ordinary consumer.
-  Its strict EE/Certificate/CV/Finished order calls the real path validator,
-  checks both transcript proofs and withholds the peer key until success.
-  Copies, cleared prior input, retryable metadata/scratch failures, shared
-  work/signature limits and terminal failures execute. A real eight-certificate
-  flight over 64 KiB rejects the default work quota and succeeds with a raised
-  allowance. This authenticates the server; Established still requires the
-  client's Finished to be committed to the transport.
-- [Portable TLS connection state](extended-tls-connection.md) passes paired
-  client/server handshakes for both suites and buffer layouts, both retry forms,
-  long eight-certificate flights and 46 error/publication/epoch boundary cases.
-  The engine uses caller storage without allocation, holds application bytes
-  until client Finished is acknowledged, and retains exact pending wire prefixes.
-  Two paired native processes each own one explicitly accounted test arena;
-  the ordinary and boundary consumers have empty allocation traces.
-- [Owned TLS over TCP](extended-tls-tcp.md) passes 18 independent OpenSSL
-  exchanges in both roles and suites, 37 ownership/fault cases, and two exact
-  1 MiB pressure streams. Actual syscall traces include one positive short send,
-  retained wire progress, matching releases and one socket close attempt.
-  Six operation-resumption cases also pass: actual acknowledged sends and
-  retained unfed receives survive budget renewal without repeated bytes.
-  The [real TLS exchange program](extended-tls-exchange.md) passes 74 cases
-  across both-role interoperability, CLI/files/I/O, ownership and shared host
-  budgets. These are
-  x86_64 Linux native results through the GPU compiler; they do not establish
-  user GPU kernels or other targets.
-- Further TLS work includes broader certificate policy and mandatory algorithms,
-  as specified in the [connection contract](tls-connection-contract.md). The earlier accepted
-  flight supplies receiver secrets directly and checks a real certificate's
-  self-signature as a primitive; the newer path validator supplies a restricted
-  certificate trust decision separately. The new authentication bridge enforces
-  CertificateVerify and server Finished; the new engine enforces the client
-  Finished checkpoint, partial I/O progress, alerts and closure in its selected
-  profile. Other cipher/signature suites, resumption and early-data
-  policy remain part of the broader TLS work. The complete library goal still
-  includes threads, SQLite and the other families above.
-- Current crypto checkpoint: [IETF ChaCha20](stdlib-chacha20.md),
-  [Poly1305](stdlib-poly1305.md), their
-  [authenticated-encryption construction](extended-chacha20-poly1305.md) and
-  [X25519 key exchange](extended-x25519.md) pass focused native Linux gates
-  through the GPU compiler. [TLS 1.3 record protection](extended-tls-record.md)
-  passes all three tests, including its ordinary consumer and 308 protocol
-  commands, after a [host capacity repair](tls-record-lowering-dependency.md).
-  The [bounded seal-bytes program](extended-seal-bytes.md) passes all four gates,
-  totaling 137 native cases across ordinary messages, owner/I/O failures,
-  1 MiB boundaries and call budgets. The
-  [pinned compiler comparison](library-foundation-performance.md#authenticated-bytes-key-exchange-and-tls-records)
-  records before/after evidence and limits. TLS handshake, peer authentication,
-  certificates, trust policy and transport integration remain required after
-  this layer. The full goal still includes threads, SQLite and the other
-  families above.
-- Previous hash milestone: the byte-oriented SHA-2 family (SHA-224, SHA-256,
-  SHA-384, SHA-512, SHA-512/224 and SHA-512/256), followed by HMAC-SHA-256
-  and HKDF-SHA-256. Allocation-free Lanius implementations and native admission
-  are complete, with incremental state, explicit bounds/length/finalization
-  errors, primary-specification vectors and 3,362 independent model commands.
-  The streaming stdin hashing and key-derivation applications pass 136 and 51
-  native cases respectively. The whole library goal remains open. This supplies
-  prerequisites for protocol work; TLS still needs handshake/certificate/trust
-  policy and its transport state machine.
+- Branch: `codex/stdlib`; the full library goal remains open.
+- [Resumable HTTP and batch scheduling](extended-http-batch.md) share one
+  canonical request/framing engine. All five direct
+  [Exchange groups](extended-http-exchange-testing.md) pass 83 cases across
+  separate receipts: 3 + 20 + 2 in a mixed 9.35 s invocation, and the remaining
+  10 + 48 in an 8.58 s retry, including both reached-allocation sweeps (12 and
+  14 positions). The synchronous client separately passes six groups and 188
+  cases in 26.85 s after refactoring
+  (`target/stdlib-work/http-exchange-client-regressions-current.log`).
+  All seven batch groups are accepted through separate receipts: 16
+  contract cases in 9.84 s; 10 matrix and 14 fault cases plus 36 reached OOM
+  positions (38 resource processes) in a mixed 13.79 s run; and five overlap
+  plus 18 limit cases in the corrected-source 9.62 s retry. The final one-case
+  consecutive-begin-failures regression passes in 8.54 s
+  (`target/stdlib-work/http-batch-consecutive-begin-failures.log`): exact EIO
+  injections on socket attempts three/four, no positive-time poll before the
+  fifth valid queued socket, ordered Complete/Complete/Failed/Failed/Complete
+  outcomes and checked owner/descriptor cleanup. The
+  [fetch-many](extended-fetch-many.md) app
+  passes all five groups across two accepted receipts: final matrix 16,
+  failures 31 and resources 61 (59 reached OOM positions) in 15.63 s
+  (`target/stdlib-work/fetch-many-matrix-failures-resources-final.log`), plus
+  limits 66 and I/O 19 with 38 internal production-helper scenarios in 18.81 s
+  (`target/stdlib-work/fetch-many-failures-limits-io-first.log`). Its traced
+  64-job control decodes 65,536 bytes into a 72,861-byte ZIP, peaks at four
+  sockets, makes 1,133 allocations and reaches 349,680 simultaneously live
+  requested bytes in 0.245 s. This is finite traced process evidence, with no
+  RSS or throughput claim. Public ZIP name validation shares the writer policy
+  and passes the existing ZIP contract in 6.79 s. These native Linux x86-64 CPU
+  programs are built by the GPU compiler and use one-thread/poll cleartext
+  numeric connections, manual owners, a common deadline and logical retention
+  caps. Resumable TLS and threads remain in scope; the
+  [concurrency prerequisites](library-concurrency-dependencies.md) preserve
+  separate executable controls and unresolved compiler/runtime admissions.
+- [Anchored longest-prefix matching and reusable lexers](extended-lexer.md)
+  pass five native groups through separate receipts: full-context model cases,
+  assertion/capture/error tables, construction/input caps and exact owner
+  cleanup at all 120 allocation failures reached by the fixtures. Ordinary
+  regex matching retains its prior semantics; both existing groups pass again
+  in 9.70 s. The [CSV-rules lexer program](extended-lex-scan.md) passes all five
+  groups: its 124-input/two-mode matrix in 8.40 s, error/scripted-I/O/resource
+  groups in 14.16 s, and both 30-position OOM campaigns plus I/O faults in
+  8.36 s. The 4,096-token run made 36,887 allocations with balanced releases;
+  reusable matcher scratch remains a useful performance improvement. Fixture
+  and harness corrections preserve exact syntax-error offsets and bounded
+  failure-path allocation cleanup. The app uses explicit I/O result types;
+  the reduced inference failure remains documented, with no compiler changes.
+- [Regex split/replacement adapters and stdin rewrite CLI](extended-regex-text.md)
+  pass six focused groups through separate GPU-compile/native receipts. The
+  existing Matches cursor supplies captures and empty-match progress. Tests
+  cover 288 independent nonempty reference cases across checked axes and three
+  layouts, 89 explicit edge tables, all 77 reached library allocation failures,
+  24 CLI cases, all 43 reached CLI allocation failures and four I/O schedules.
+  Output owners and borrowed fields have explicit manual lifetimes; aggregate
+  search work reserves VM allowances rather than counting all CPU work.
+- [Reusable CSV construction and bounded stream writing](extended-csv-write.md)
+  execute through the shared canonical encoder, with complete preflight,
+  accepted-prefix errors and explicit output/write-attempt limits. All five
+  groups pass via separate receipts, including six staged-growth allocation
+  failures and 4,096 allocation-free record reuses. The
+  [column rewrite program](extended-csv-rewrite.md) also passes five groups:
+  62 independent output cases, 88 limit cases, 11 real I/O cases, scripted
+  production-helper scenarios and allocation/resource controls. Its 4,096-row
+  run retains the one-row allocation count and peak storage. The
+  [compiler dependencies](library-context-inference-dependencies.md) preserve
+  failing unannotated result contexts and nested/literal matching beside
+  passing controls; no compiler source changed in this batch.
+- Accepted client TLS profile: [ext::openssl_tls](extended-openssl-tls.md) uses
+  OpenSSL 3 `libssl`/`libcrypto` for all TLS and sensitive operations. Fifteen
+  verified transfer/identity cases pass in 18.56 s; seven closure/truncation
+  and three stable-retry cases pass in a shared 18.01 s run whose separate
+  legacy verification fixture initially failed. After correcting the test
+  peer's fatal-alert flush and establishing a real TLS 1.1 CPU control, all
+  nine verification-rejection cases pass independently in 16.73 s. Production
+  TLS source is unchanged across those gates. The guide records each receipt,
+  mandatory trust/identity, borrowed nonblocking sockets, manual ownership,
+  caller deadlines and SIGPIPE policy. This covers 34 cases across four groups,
+  with no single all-green suite receipt claimed. The
+  [TLS stream/HTTPS application](extended-https-fetch.md) passes all four groups
+  in 14.44 s: 4 stream, 14 verification/HTTP-failure, 26 limit and 18 binary/
+  framing cases, recorded in `target/stdlib-work/https-fetch-execution-current.log`.
+  Numeric endpoints, explicit trust/identity, deadlines and manual ownership
+  remain the supported scope. Server TLS and the HTTPS service have separate
+  passing gates below; mutual TLS has since advanced in its separate gates.
+  The full security family remains open.
+- Accepted [opt-in deep HashMap cloning](stdlib-clone-hash-map.md): four native
+  groups pass on Linux x86_64 through the GPU compiler. The independent nested
+  owner contract passes in 7.46 s; the remaining three groups pass in 11.71 s,
+  including 14 reached allocation failures, 18 owned key/value errors, six
+  identity changes, two defensive cleanup cases, collisions/tombstones and
+  empty/zero-sized paths. Ordinary inherent methods retain their shallow
+  policy. [Recursive deque cloning](stdlib-clone-deque.md) also passes four
+  native groups: contracts in 7.80 s and three model/failure groups in 12.28 s,
+  covering 379 logical cases, 13 nested allocation failures, six owned-error
+  paths and 33 owned-error allocation failures. [Deep heap cloning](stdlib-clone-binary-heap.md)
+  passes all five native groups: contracts in 5.96 s and four model/failure
+  groups in 12.01 s, including Min/Max priorities, empty/zero-sized values,
+  13 typed allocation failures, 16 owned-error paths and all 96 reached
+  owned-error allocations. [Deep TreeMap cloning](stdlib-clone-tree-map.md)
+  passes all five active native groups: the contract group in 9.83 s and four
+  prerequisite/construction/failure groups in 13.47 s, with the manual probe
+  ignored. Coverage includes sorted staging, independent String/Vec owners,
+  transfer/reset, empty/zero-sized values, 15 reached clone-allocation failures,
+  12 owned key/value errors and three changed-key cases. Two general compiler
+  fixes restore local nominal layout through canonical identity and preserve
+  checked aggregate widths when fields are zero-sized. The
+  [dependency record](library-dependencies.md) describes the exact mechanisms;
+  unrelated generic replay reproductions have not been revalidated.
+- Accepted [OpenSSL server TLS](extended-openssl-tls-server.md): six groups
+  pass 53 cases in 5.98 s, covering credentials and encrypted passphrases
+  without prompting, context references, stable retries, closure/truncation,
+  12 native fault boundaries and all six reached staging allocations.
+  The existing mandatory client trust/identity/protocol gate still passes
+  nine cases in 5.98 s. [Shared TLS streams and HTTPS service](extended-https-server.md)
+  pass all four server groups: 28 verified exchange cases in 7.17 s and
+  78 limit/failure/stream cases in 10.87 s. The existing HTTPS client passes
+  all 62 cases again in 13.90 s after the shared ownership change. The service
+  uses numeric endpoints, one absolute deadline per sequential connection slot,
+  the canonical HTTP codec and an explicit unauthenticated-client TLS policy.
+  Mutual TLS has since advanced in separate library and application gates;
+  keepalive and concurrent scheduling remain work.
+- Accepted [mutual TLS](extended-openssl-mutual-tls.md): six library groups
+  execute 107 cases across separate receipts. Native OpenSSL verifies client
+  chains/purpose/possession, required servers disable resumption and both roles
+  check peer presence after native completion. Shared credential loading
+  supports explicit passphrases without prompting. The existing nine-case
+  client rejection group and all 53 server cases still pass. The
+  [prepared client connector and HTTPS credential modes](extended-https-mutual-tls.md)
+  execute 109 process cases across four groups: eight borrowed-context cases
+  in 6.21 s and the other 101 cases in 15.23 s. TLS 1.3 local completion is not
+  treated as proof that the remote endpoint accepted a client certificate.
+  All cryptographic operations use OpenSSL; application principals,
+  authorization and broader security interfaces remain work.
+- Accepted [scalar and structural cloning](stdlib-clone-values.md): all five
+  groups pass in 19.37 s, covering fourteen scalar types, exact IEEE bit
+  transport, nested Option/Result/Pair/String/Vec owners, active-only callbacks,
+  minimal bounds, 18 callback scenarios, 14 owned errors, all 45 reached
+  allocation failures and four actual-call rejections. The
+  [empty-enum layout repair](compiler-empty-enum-layout.md) aligns three GPU
+  producers with the existing one-word enum tag ABI. The six paired reductions
+  and separate raw-stride assertions pass, and four inhabited structural
+  controls pass; no separate callee-layout fallback was introduced.
+- Accepted deep set ownership: [HashSet](stdlib-clone-hash-set.md) passes
+  three native groups in 15.05 s, including 557 sequence/failure/identity cases,
+  six owned errors and all 39 reached allocation failures. [TreeSet](stdlib-clone-tree-set.md)
+  passes its contract group in 9.61 s and four model/failure/selection groups
+  in 10.73 s, including a 512-state ordered model, observable O(n log n)
+  construction, nine reached allocation failures and owned-error rollback.
+  Both preserve independent String owners and reuse the existing shared map
+  engines. Ordinary set methods retain their shallow ownership policy.
+- Accepted [persistent indexed ZIP snapshots](extended-archive-index.md):
+  the 56-case ownership/binary-name matrix passes in 8.27 s; six remaining
+  groups pass in 17.16 s, including 30 corruption cases, 40 limit cases,
+  nine native recovery cases, all 29 import and 23 read allocation positions,
+  and scripted short I/O. The 1,024-entry workload expands to 8 MiB and saves
+  an 8,005,812-byte ZIP: import takes 1.385 s, and count/list/seven gets/export
+  take 4.422 s in this one measured run. These are application process times,
+  including decompression, validation and native persistence, rather than
+  isolated SQLite lookup timings. Dedicated schema, ordinal/raw-byte names,
+  all-entry import CRC checks and uncertain transaction recovery are explicit.
+- Accepted native object storage: original and generic replay section bytes
+  spool privately, exact original admission facts remain intact, and ELF export
+  streams one payload at a time. A two-file 6 MiB source pack executes in one
+  group in 3.86 s, including private C calls through imported generics, direct
+  file output and output-limit preservation. Eighteen exporter/linker CPU tests
+  pass in 0.94 s; three storage, two atomic-output and two new facts/metadata
+  tests also pass. The combined host build takes 35.42 s. The
+  [native guide](library-native-c.md) records receipts and response/diagnostic/
+  output limits. Source snapshots and global metadata still grow with the
+  program; explicit source-pack descriptor CLI modes remain unsupported.
+- Accepted SQLite milestone: the owned [adapter](extended-sqlite.md) and
+  [persistent binary key/value application](extended-sqlite-kv.md) execute on
+  Linux x86_64/glibc through system SQLite. Lanius supplies interface, staging,
+  limits, errors and explicit cleanup. Four ordinary library groups pass in
+  14.92 s, including 558 typed-value cases and 640 model commands; all 21 native
+  failure modes pass in one group in 9.03 s. The
+  [staging allocation gate](extended-sqlite-allocation.md) passes one group in
+  8.60 s: baseline plus failures at all four reached path/SQL/text/blob staging
+  requests, with retries and mapping/native-owner ledgers. Five application
+  groups pass in 17.54 s, covering 99 oracle cases plus scripted stream checks.
+  The compiled bulk run performs 32,768 inserts and 32,768 indexed selects in
+  51.798074 ms, excluding GPU compilation, with SQLite reporting a 545,848-byte
+  allocation high-water mark. Independent aggregate/index checksums match. The
+  linked guides record receipts and the metric's limits; the full library goal
+  remains open.
+- Current accepted C ABI extension: `f32`/C `float` and `f64`/C `double`
+  transport through independent SSE8/GPR6 banks, with up to 32 total scalar
+  parameters. The native float gate passes one group in 8.03 s, covering exact
+  IEEE bits including NaN payloads, mixed register/stack arguments and alignment,
+  imported generic replay and live SSE clobbers. Four declaration-contract
+  groups pass in 9.77 s, and the eight existing integer/pointer execution groups
+  pass in 10.55 s. Two native C semantic-interface CPU tests pass in 0.00 s after
+  a 42.45 s test build, checking binding identity/signature round-trip and forged
+  or unsupported profile rejection. The compiler build completed in 46.71 s. The
+  [native C guide](library-native-c.md) records receipts. Existing scalar IDs
+  and ABI metadata represent the extension without an artifact version change.
+- Earlier accepted native milestone: [checked C declarations and native linking](library-native-c.md)
+  execute on Linux x86_64/glibc, including scalar normalization, register/stack
+  arguments through 32 parameters, imported generic replay and CRT startup.
+  [OpenSSL EVP digests](extended-openssl-digest.md) and the
+  [hashing program](extended-openssl-hash.md) execute with dynamic `libcrypto.so.3`.
+  The four focused gates pass 3 declaration groups, 8 native-call groups,
+  4 digest groups covering 2,124 cases plus 12 failure modes, and 3 application
+  groups. Semantic interface v17 and x86 object v4 require rebuilt artifacts.
+  File-backed native linking, callbacks, foreign thread entry, TLS, encryption,
+  signatures, certificate trust and SQLite wrappers remained open at that
+  checkpoint; the SQLite, client TLS and native storage milestones above supply
+  their later execution evidence.
+  The full library goal remains open.
+- Raw [DER](extended-der.md) and [X.509 structure parsing](extended-x509.md)
+  remain useful schema inspection tools. The
+  [certificate inspector](extended-certificate-info.md) reports schema metadata without a cryptographic fingerprint or trust decision.
+- [Bounded nonblocking entropy](stdlib-entropy-bounded.md) retains one charged
+  getrandom attempt per read, explicit partial progress and shared attempt
+  budgets. Socket, polling and clock contracts remain separate.
 - Previous milestone: runtime formatting to generic byte writers, using the
   existing parser/renderer, bounded scratch, complete preflight before output,
   exact confirmed failure progress and explicit call budgets. Independent
@@ -553,21 +736,22 @@ integration and the other remaining families still need their own evidence.
   checked APIs and real closed-pipe cleanup. The heap view boundary constructs
   directly from initialized owner state; original failed source is preserved.
   These APIs execute as x86_64 Linux programs produced by the GPU compiler;
-  user GPU kernels and other targets are unverified. Threads, TLS, SQLite,
-  generic adapter composition and final distribution/reference work remain.
+  user GPU kernels and other targets were unverified. Threads, TLS, SQLite,
+  generic adapter composition and final distribution/reference work remained
+  open at that checkpoint.
   A generated declaration reference covers the current source inventory;
   semantic guide gaps stay explicit. Native thread-entry, memory-ordering and
-  foreign-call prerequisites have a separate source-audited proposal.
+  remaining foreign-call prerequisites have a separate [boundary guide](library-native-integration-prerequisites.md).
 - Preceding milestone: canonical narrow integers, full-range binary64 elementary
   functions, generic owned hash/tree sets, TZif time zones, DNS and WebSocket
-  wire processing, byte key/value snapshots, signal processing and selective
+  request/frame processing, byte key/value snapshots, signal processing and selective
   source distribution. Five new native programs and four migrated set consumers
   exercise real behavior. Independent models, malformed-input/resource cases,
   allocation/I/O faults and independent source reviews are recorded per guide.
   Supported execution remains x86_64 Linux output from GPU compilation. The
   [host prerequisite audit](library-host-prerequisites.md) names missing services;
   sockets/processes/threads, SQLite, generic adapter composition and final
-  distribution/reference/completion work remain.
+  distribution/reference/completion work remained open at that checkpoint.
 - Preceding milestone: native 64-bit/pointer integers; Lanius source test/property/
   benchmark workflow; legacy collection/text consumer migration; exact geometry;
   terminal tables/progress; PNG/image and WAVE/audio utilities; HTTP/1 wire codec.
@@ -650,7 +834,11 @@ integration and the other remaining families still need their own evidence.
   every CIDR prefix width. The [address filter](stdlib-address-filter.md) uses
   these values with native streams and explicit resource limits. URI parsing
   now reuses these IP parsers; all six existing URI runtime groups pass.
-  Host sockets and name/interface resolution remain runtime prerequisites.
+  Numeric TCP/UDP sockets now execute through [`std::socket`](stdlib-sockets.md).
+  The separate [system resolver](stdlib-resolve.md) now supplies synchronous
+  libc/NSS lookup with owned ordered results; all four library groups and five
+  resolver CLI groups pass through separate receipts. Asynchronous lookup,
+  native NSS memory/time policy and interface discovery remain open.
 - Paths: [`core::path` and `alloc::path`](stdlib-paths.md) separate borrowed Unix
   paths and owned buffers from host filesystem services. Component cursors,
   names/extensions, ancestors, prefixes, comparison/hash, joins, atomic edits
@@ -658,8 +846,10 @@ integration and the other remaining families still need their own evidence.
   4,014 modeled edits, aliased inputs, allocation/write failures, large batches
   and a raw-byte path-joining program. Existing mixed-separator/Windows byte
   rules moved to `core::path_rules` with callers. Direct malformed View-record
-  construction has a compiler reproduction and an executable control. Host
-  metadata and directory enumeration still block the directory-report application.
+  construction has a preserved compiler reproduction and a
+  [descriptor-adjustment repair](library-dependencies.md). Host metadata,
+  directory walking and the [directory-report application](stdlib-directory.md)
+  now execute.
 - Time: [`core::time` and `std::clock`](stdlib-time.md) execute normalized
   durations, full-width signed Unix timestamps, monotonic instants, deadlines
   and generic waits with injected or native clocks. Five test groups cover 400
@@ -717,7 +907,9 @@ integration and the other remaining families still need their own evidence.
   files and CLI overrides. Eight groups cover generated layers, numeric limits,
   every observed allocation failure and host errors. JSON now also exposes
   borrowed text/key queries and exact i64/u64 conversion of decimal/exponent
-  forms. Environment adapters, reusable schemas and TOML sources remain.
+  forms. [Typed settings](extended-settings.md) now provide JSON/TOML layers and
+  explicit environment bindings. Configuration-specific validation and discovery
+  policy remain separate.
 - Formatting and logging: [`core::fmt`](stdlib-formatting.md) composes integers
   in bases 2–36, Text, scalars, booleans and custom Display implementations into
   caller-backed buffers with measurement and sticky append errors.
@@ -731,7 +923,11 @@ integration and the other remaining families still need their own evidence.
   controls. Preparing records and then calling write_all executes.
 - Extended CSV: parsing, independent field copies and canonical encoding execute
   on x86_64 Linux, including generated tables, borrowed field views and allocation fault injection.
-  See [extended-csv.md](extended-csv.md). Incremental decoding now shares the same parser; row construction remains.
+  See [extended-csv.md](extended-csv.md). Incremental decoding shares the same
+  parser; [reusable row construction and bounded stream writing](extended-csv-write.md)
+  now execute through the same canonical byte cursor. The
+  [column rewrite application](extended-csv-rewrite.md) composes those pieces
+  with explicit global input/output/work/call bounds and manual cleanup.
 - Shared I/O: portable Read/Write traits, exact/all/copy operations, slice
   cursors, owned byte buffers and native descriptor adapters have execution
   coverage. CSV uses these streams. See [stdlib-streams.md](stdlib-streams.md).
@@ -859,6 +1055,18 @@ integration and the other remaining families still need their own evidence.
   batch allocation across 126 native cases, including 79 allocation denials.
   A reduced finish-result replay dependency remains recorded; helpers use
   canonical empty-owner recovery and destruction. No compiler source changed.
+- [Owning hash map/set](stdlib-owning-hash.md),
+  [ordered map/set](stdlib-owning-tree.md) and [heap](stdlib-owning-heap.md)
+  cursors now transfer cleanup authority and recover their canonical remaining
+  collection in O(1). Exhaustion retains backing until explicit finish or
+  cleanup; deep helpers release only remaining owners with minimal Destroy
+  bounds. Independent native models cover 5,368 hash cases, 192 paired ordered
+  steps and 32 snapshots per engine, and 144 priority cases. Address/length
+  ledgers check actual owner release. Tree and heap pulls use their existing
+  O(log n) removal engines. The word deduplicator now publishes through the
+  TreeSet owning cursor and still passes its 126 native cases. Explicit types
+  avoid a [reproduced hash insertion context dependency](library-context-inference-dependencies.md);
+  the original expression remains a compiler dependency.
 - [Streaming runtime formatting](stdlib-format-write.md) now writes through
   generic byte writers using bounded scratch and the existing format grammar.
   Complete preflight precedes output; failures preserve confirmed progress and
@@ -866,6 +1074,15 @@ integration and the other remaining families still need their own evidence.
   cover 960 commands, with independent preflight/error and nested-buffer gates.
   The [CSV report](stdlib-format-report.md) passes 81 native cases, including
   23 representative allocation denials and exact output limits.
+- [Iterator lookahead and reductions](stdlib-iterator-lookahead.md) now execute
+  with an explicit recoverable cache, nested optional items, relative/MAX
+  position search and first-minimum/last-maximum tie policies. Four library
+  groups pass in the initial 15.67 s run, including 1,280 cache schedules,
+  320 extrema models, 180 position models, exact owner releases and a checked
+  overflow-order witness. The [column extrema program](stdlib-column-extrema.md)
+  passes its separate 24-case group in 6.51 s after correcting two strace
+  harness mistakes; all four reached allocation failures and real output
+  injections are checked. No production source changed during those retries.
 - Next foundation work: further iterator adapters and consumers, additional
   streaming interfaces, protected Vec/heap migration and numeric/manual
   ownership consolidation. Owned hash/tree sets now execute, and silent-failure

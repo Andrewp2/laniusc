@@ -8,13 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: support/implementation data. Profile: **Source inventory**.
 
-Internal syscall support for std::command. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise.
+Internal Linux syscall support for std::command, including process-group setup and non-reaping exit observation. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise. The linked guides define target and execution scope.
 
 ## Contract and evidence guides
 
 - [stdlib-command](../../stdlib-command.md)
+- [stdlib-command-groups](../../stdlib-command-groups.md)
+- [stdlib-run-group](../../stdlib-run-group.md)
 
-Declaration counts: function: 13.
+Declaration counts: function: 16.
 
 ## Declared imports
 
@@ -91,9 +93,33 @@ pub fn null_fd(write: bool) -> i32
 pub fn fork() -> i64
 ```
 
-### function: wait
+### function: set_group
 
 [Source line 31](../../../stdlib/std/command_raw.lani#L31)
+
+```lanius
+pub fn set_group(pid: i32, group: i32) -> i64
+```
+
+### function: get_group
+
+[Source line 32](../../../stdlib/std/command_raw.lani#L32)
+
+```lanius
+pub fn get_group(pid: i32) -> i64
+```
+
+### function: observe_exit
+
+[Source line 36](../../../stdlib/std/command_raw.lani#L36)
+
+```lanius
+pub fn observe_exit(pid: i32, info: ptr) -> i64
+```
+
+### function: wait
+
+[Source line 39](../../../stdlib/std/command_raw.lani#L39)
 
 ```lanius
 pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64
@@ -101,7 +127,7 @@ pub fn wait(pid: i32, status: ptr, nonblocking: bool) -> i64
 
 ### function: change_dir
 
-[Source line 32](../../../stdlib/std/command_raw.lani#L32)
+[Source line 40](../../../stdlib/std/command_raw.lani#L40)
 
 ```lanius
 pub fn change_dir(path: ptr) -> i64
@@ -109,7 +135,7 @@ pub fn change_dir(path: ptr) -> i64
 
 ### function: execute
 
-[Source line 33](../../../stdlib/std/command_raw.lani#L33)
+[Source line 41](../../../stdlib/std/command_raw.lani#L41)
 
 ```lanius
 pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64
@@ -117,7 +143,7 @@ pub fn execute(path: ptr, argv: ptr, env: ptr) -> i64
 
 ### function: store_pointer
 
-[Source line 34](../../../stdlib/std/command_raw.lani#L34)
+[Source line 42](../../../stdlib/std/command_raw.lani#L42)
 
 ```lanius
 pub fn store_pointer(slot: ptr, value: ptr)
@@ -125,7 +151,7 @@ pub fn store_pointer(slot: ptr, value: ptr)
 
 ### function: terminate
 
-[Source line 35](../../../stdlib/std/command_raw.lani#L35)
+[Source line 43](../../../stdlib/std/command_raw.lani#L43)
 
 ```lanius
 pub fn terminate()

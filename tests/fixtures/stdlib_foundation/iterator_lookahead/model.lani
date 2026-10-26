@@ -1,0 +1,61 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::support;
+fn actions(output: &fixture::support::Output) {
+    let length: i32=0;
+    while (length<5) { let schedule: i32=0; while (schedule<256) {
+        let source: fixture::support::Source=fixture::support::Source { length:length,position:0,polls:0,seed:0 };
+        let cursor: core::iter::Peekable<fixture::support::Source,fixture::support::Item> =core::iter::peekable<fixture::support::Source,fixture::support::Item>(source.borrow());
+        assert(source.polls==0); let step: i32=0;
+        while (step<4) {
+            let op: i32=(schedule>>(step*2))&3; let error: bool=false;
+            let value: core::option::Option<fixture::support::Item> =core::option::None();
+            if (op==0) { value=fixture::support::observe<fixture::support::Source,fixture::support::Item>(cursor.borrow()); }
+            if (op==1) { value=fixture::support::pull<core::iter::Peekable<fixture::support::Source,fixture::support::Item>,fixture::support::Item>(cursor.borrow()); }
+            if (op==2) { value=cursor.take_cached(); }
+            if (op==3) { error=cursor.try_finish().is_some(); }
+            output.optional(value); output.word(source.position as u64); output.word(source.polls as u64);
+            if (cursor.has_cached()) { output.word(1); } else { output.word(0); }
+            if (error) { output.word(1); } else { output.word(0); }
+            step+=1;
+        }
+        output.optional(cursor.take_cached()); assert(cursor.try_finish().is_none());
+        assert(cursor.peek().is_none() && cursor.next().is_none() && !cursor.has_cached());
+        output.optional(source.next()); output.word(source.position as u64); output.word(source.polls as u64);
+        schedule+=1;
+    } length+=1; }
+}
+fn reductions(output: &fixture::support::Output) {
+    let mode: i32=0;
+    while (mode<4) { let seed: i32=0; while (seed<8) { let length: i32=0; while (length<10) {
+        let source: fixture::support::Source=fixture::support::Source { length:length,position:0,polls:0,seed:seed };
+        let left: [i32;16]=[0;16]; let right: [i32;16]=[0;16];
+        let compare: fixture::support::Compare=fixture::support::Compare { left:left,right:right,calls:0,reverse:true };
+        let value: core::option::Option<fixture::support::Item> =core::option::None();
+        if (mode==0) { value=core::iter::min<fixture::support::Source,fixture::support::Item>(source.borrow()); }
+        if (mode==1) { value=core::iter::max<fixture::support::Source,fixture::support::Item>(source.borrow()); }
+        if (mode==2) { value=fixture::support::choose<fixture::support::Source,fixture::support::Compare,fixture::support::Item>(source.borrow(),compare.borrow()); }
+        if (mode==3) { value=core::iter::max_by<fixture::support::Source,fixture::support::Compare,fixture::support::Item>(source.borrow(),compare.borrow()); }
+        output.rich(value); output.word(source.position as u64); output.word(source.polls as u64); output.word(compare.calls as u64);
+        let index: i32=0; while (index<compare.calls) { output.word(left[index] as u64); output.word(right[index] as u64); index+=1; }
+        length+=1;
+    } seed+=1; } mode+=1; }
+}
+fn positions(output: &fixture::support::Output) {
+    let start: i32=0;
+    while (start<2) { let length: i32=0; while (length<9) { let target: i32=0; while (target<10) {
+        let source: fixture::support::Source=fixture::support::Source { length:length,position:0,polls:0,seed:0 };
+        let predicate: fixture::support::Predicate=fixture::support::Predicate { target:target,calls:0 };
+        let found: core::option::Option<u64> =core::iter::position_from<fixture::support::Source,fixture::support::Predicate,fixture::support::Item>(source.borrow(),predicate.borrow(),(start*7) as u64);
+        if (found.is_none()) { output.word(0); output.word(0); } else { output.word(1); output.word(found.unwrap()); }
+        output.word(source.position as u64); output.word(source.polls as u64); output.word(predicate.calls as u64);
+        output.optional(source.next()); output.word(source.position as u64); output.word(source.polls as u64);
+        target+=1;
+    } length+=1; } start+=1; }
+}
+fn main() -> i32 {
+    let bytes: [u8;1024]=[0;1024]; let output: fixture::support::Output=fixture::support::Output { bytes:bytes,used:0 };
+    actions(output.borrow()); reductions(output.borrow()); positions(output.borrow()); output.flush(); return 0;
+}

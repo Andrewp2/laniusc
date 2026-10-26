@@ -1,0 +1,15 @@
+module app::main;
+import core::clone;
+import core::clone_values;
+import core::pair;
+import core::result;
+struct Only {}
+enum Never { Unexpected }
+pub impl core::clone::TryClone<Only,Never> for Only {
+    pub fn try_clone_value(source: Only) -> core::result::Result<Only,Never> { return core::result::Ok(source); }
+}
+fn main() -> i32 {
+    let source: core::pair::Pair<Only,Only> = core::pair::new<Only,Only>(Only {},Only {});
+    core::clone_values::try_clone_pair<Only,Only,Never,Never>(source);
+    return 0;
+}

@@ -1,0 +1,144 @@
+module app::main;
+import core::f32;
+import core::f64;
+import ffi::replay;
+
+extern "C" fn fp_asm_from32(bits: u32) -> f32;
+extern "C" fn fp_asm_from64(bits: u64) -> f64;
+extern "C" fn fp_asm_bits32(value: f32) -> u32;
+extern "C" fn fp_asm_bits64(value: f64) -> u64;
+extern "C" fn fp_asm_clobber() -> u64;
+extern "C" fn fp_asm_clobber32() -> f32;
+extern "C" fn fp_asm_clobber64() -> f64;
+extern "C" fn fp_c_pointer(index: u32) -> ptr;
+extern "C" fn fp_c_gpr_first(a:u64,b:u64,c:u64,d:u64,e:u64,f:u64,g:u64,s:f32,t:f64) -> u32;
+extern "C" fn fp_c_mixed32(
+    a01:f32, a02:f64, a03:i32, a04:f32,
+    a05:u64, a06:f64, a07:ptr, a08:f32,
+    a09:f64, a10:f32, a11:f64, a12:f32,
+    a13:i64, a14:f64, a15:usize, a16:f32,
+    a17:isize, a18:f64, a19:u32, a20:f32,
+    a21:ptr, a22:f64, a23:i32, a24:f32,
+    a25:u64, a26:f64, a27:usize, a28:f32,
+    a29:isize, a30:f64, a31:u32, a32:f32
+) -> u32;
+extern "C" fn fp_asm_align31(
+    a01:f32, a02:f64, a03:i32, a04:f32,
+    a05:u64, a06:f64, a07:ptr, a08:f32,
+    a09:f64, a10:f32, a11:f64, a12:f32,
+    a13:i64, a14:f64, a15:usize, a16:f32,
+    a17:isize, a18:f64, a19:u32, a20:f32,
+    a21:ptr, a22:f64, a23:i32, a24:f32,
+    a25:u64, a26:f64, a27:usize, a28:f32,
+    a29:isize, a30:f64, a31:u32
+) -> usize;
+extern "C" fn fp_asm_align32(
+    a01:f32, a02:f64, a03:i32, a04:f32,
+    a05:u64, a06:f64, a07:ptr, a08:f32,
+    a09:f64, a10:f32, a11:f64, a12:f32,
+    a13:i64, a14:f64, a15:usize, a16:f32,
+    a17:isize, a18:f64, a19:u32, a20:f32,
+    a21:ptr, a22:f64, a23:i32, a24:f32,
+    a25:u64, a26:f64, a27:usize, a28:f32,
+    a29:isize, a30:f64, a31:u32, a32:f32
+) -> usize;
+
+fn from32(bits: u32) -> f32 { return core::f32::from_bits(bits); }
+fn from64(bits: u64) -> f64 { return core::f64::from_bits(bits); }
+fn raw32(value: f32) -> u32 { return core::f32::to_bits(value); }
+fn raw64(value: f64) -> u64 { return core::f64::to_bits(value); }
+
+fn check_bits() -> i32 {
+    // +/-zero, +/-minimum subnormal, maximum subnormal, normals, +/-infinity,
+    // signed quiet NaN payloads, and a signaling NaN payload cross unchanged.
+    let cases32: [u32;12] = [0,2147483648,1,2147483649,8388607,1069547520,2139095040,4286578688,2143363909,4291117857,2139169605,3223322624];
+    let cases64: [u64;12] = [0,9223372036854775808,1,9223372036854775809,4503599627370495,4609434218613702656,9218868437227405312,18442240474082181120,9221140253039434428,18444681174862340933,9218888453225749180,13836183955189006336];
+    let index: i32 = 0;
+    while (index < 12) {
+        let bits32: u32 = cases32[index];
+        let bits64: u64 = cases64[index];
+        if (ffi::replay::fp_c_bits32(from32(bits32)) != bits32) { return 1; }
+        if (raw32(ffi::replay::fp_c_from32(bits32)) != bits32) { return 2; }
+        if (fp_asm_bits32(from32(bits32)) != bits32) { return 3; }
+        if (raw32(fp_asm_from32(bits32)) != bits32) { return 4; }
+        if (raw32(ffi::replay::fp_c_echo32(from32(bits32))) != bits32) { return 5; }
+        if (ffi::replay::fp_c_bits64(from64(bits64)) != bits64) { return 6; }
+        if (raw64(ffi::replay::fp_c_from64(bits64)) != bits64) { return 7; }
+        if (fp_asm_bits64(from64(bits64)) != bits64) { return 8; }
+        if (raw64(fp_asm_from64(bits64)) != bits64) { return 9; }
+        if (raw64(ffi::replay::fp_c_echo64(from64(bits64))) != bits64) { return 10; }
+        index = index + 1;
+    }
+    return 0;
+}
+
+fn check_register_banks_and_stack() -> i32 {
+    let p0: ptr = fp_c_pointer(0);
+    let p1: ptr = fp_c_pointer(1);
+    if (fp_c_gpr_first(11,23,37,53,71,89,107,from32(1067450368),from64(13836183955189006336)) != 0) { return 21; }
+    let mismatch: u32 = fp_c_mixed32(
+        from32(1067450368), from64(13836183955189006336), -123456789, from32(2147483648),
+        18364758544493064720, from64(9221140253039434428), p0, from32(1),
+        from64(18442240474082181120), from32(2139095040), from64(9223372036854775809), from32(2143363909),
+        -5124095576030430, from64(1), 12302652060662169617, from32(3223322624),
+        -9927935178558959, from64(4609434218613702656), 3795080824, from32(8388607),
+        p1, from64(9218888453225749180), -1700000011, from32(4291117857),
+        10535140504318566128, from64(9223372036854775808), 13532434998891647266, from32(4286578688),
+        -14731774781087472, from64(4503599627370495), 4294967294, from32(2139169605)
+    );
+    if (mismatch != 0) { print_i32(mismatch as i32); return 22; }
+    if (fp_asm_align31(
+        from32(1067450368), from64(13836183955189006336), -123456789, from32(2147483648),
+        18364758544493064720, from64(9221140253039434428), p0, from32(1),
+        from64(18442240474082181120), from32(2139095040), from64(9223372036854775809), from32(2143363909),
+        -5124095576030430, from64(1), 12302652060662169617, from32(3223322624),
+        -9927935178558959, from64(4609434218613702656), 3795080824, from32(8388607),
+        p1, from64(9218888453225749180), -1700000011, from32(4291117857),
+        10535140504318566128, from64(9223372036854775808), 13532434998891647266, from32(4286578688),
+        -14731774781087472, from64(4503599627370495), 4294967294
+    ) != 8) { return 23; }
+    if (fp_asm_align32(
+        from32(1067450368), from64(13836183955189006336), -123456789, from32(2147483648),
+        18364758544493064720, from64(9221140253039434428), p0, from32(1),
+        from64(18442240474082181120), from32(2139095040), from64(9223372036854775809), from32(2143363909),
+        -5124095576030430, from64(1), 12302652060662169617, from32(3223322624),
+        -9927935178558959, from64(4609434218613702656), 3795080824, from32(8388607),
+        p1, from64(9218888453225749180), -1700000011, from32(4291117857),
+        10535140504318566128, from64(9223372036854775808), 13532434998891647266, from32(4286578688),
+        -14731774781087472, from64(4503599627370495), 4294967294, from32(2139169605)
+    ) != 8) { return 24; }
+    return 0;
+}
+
+fn check_live_floats() -> i32 {
+    let s0: f32 = ffi::replay::fp_c_from32(2143363909);
+    let s1: f32 = ffi::replay::fp_c_from32(2147483648);
+    let s2: f32 = ffi::replay::fp_c_from32(1);
+    let s3: f32 = ffi::replay::fp_c_from32(3214934016);
+    let d0: f64 = ffi::replay::fp_c_from64(9221140253039434428);
+    let d1: f64 = ffi::replay::fp_c_from64(9223372036854775808);
+    let d2: f64 = ffi::replay::fp_c_from64(1);
+    let d3: f64 = ffi::replay::fp_c_from64(13836183955189006336);
+    if (fp_asm_clobber() != 1311768467139281697) { return 41; }
+    if (raw32(s0) != 2143363909 || raw32(s1) != 2147483648 || raw32(s2) != 1 || raw32(s3) != 3214934016) { return 42; }
+    if (raw64(d0) != 9221140253039434428 || raw64(d1) != 9223372036854775808 || raw64(d2) != 1 || raw64(d3) != 13836183955189006336) { return 43; }
+    let left32: f32 = ffi::replay::fp_c_from32(1069547520);
+    let sum32: f32 = left32 + fp_asm_clobber32();
+    if (raw32(sum32) != 1083179008) { return 44; }
+    let left64: f64 = ffi::replay::fp_c_from64(4609434218613702656);
+    let sum64: f64 = left64 + fp_asm_clobber64();
+    if (raw64(sum64) != 4615626668101337088) { return 45; }
+    return 0;
+}
+
+struct Payload { single: f32, double: f64, tag: u64 }
+
+fn main() -> i32 {
+    let bits: i32 = check_bits(); if (bits != 0) { return bits; }
+    let banks: i32 = check_register_banks_and_stack(); if (banks != 0) { return banks; }
+    let live: i32 = check_live_floats(); if (live != 0) { return live; }
+    let payload: Payload = Payload { single: from32(2143993054), double: from64(9223372036854775809), tag: 18364758544493064720 };
+    let returned: Payload = ffi::replay::through_c(payload,1.5,-2.5);
+    if (raw32(returned.single) != 2143993054 || raw64(returned.double) != 9223372036854775809 || returned.tag != 18364758544493064720) { return 61; }
+    return 0;
+}

@@ -1,0 +1,74 @@
+module admission::scheduler;
+import alloc::vec;
+import core::option;
+import core::result;
+import core::slice;
+import admission::protocol;
+
+pub struct Fault<E> { phase: i32, error: E, stats: admission::protocol::Stats, shared: bool }
+pub enum Outcome<E> { Pending, Complete(admission::protocol::Response), Failed(Fault<E>), Stopped(admission::protocol::Stats) }
+pub struct Report<E> { outcomes: alloc::vec::Vec<Outcome<E>>, observed: i64, steps: i32, aborts: i32 }
+fn zero() -> admission::protocol::Stats { return admission::protocol::Stats { calls: 0, bytes: 0, active: false }; }
+
+// Borrowed job references avoid imposing an unrelated generic borrow trait.
+// This is two bounded rounds, not a production scheduler or I/O simulation.
+pub fn run<F,J,P,D,E>(jobs: core::slice::View<&J>, abort_from: i32) -> Report<E>
+    where F: admission::protocol::Factory<J,P,D,E>, D: admission::protocol::Driver<E> {
+    let slots: alloc::vec::Vec<core::option::Option<D>> = alloc::vec::with_capacity<core::option::Option<D>>(jobs.length).unwrap();
+    let outcomes: alloc::vec::Vec<Outcome<E>> = alloc::vec::with_capacity<Outcome<E>>(jobs.length).unwrap();
+    let index: i32 = 0;
+    while (index < jobs.length) { slots.try_push(core::option::None()).unwrap(); outcomes.try_push(Outcome::Pending).unwrap(); index += 1; }
+    index = 0;
+    while (index < jobs.length) {
+        let job: &J = jobs.values[jobs.start+index];
+        let prepared: core::result::Result<P,E> = F::prepare(job);
+        if (prepared.is_err()) {
+            let error: E = prepared.unwrap_err(); let fault: Fault<E> = Fault { phase: 0, error: error, stats: zero(), shared: F::classify(error) };
+            outcomes.set(index,Outcome::Failed(fault)).unwrap(); index += 1; continue;
+        }
+        let started: core::result::Result<D,E> = F::begin(prepared.unwrap(),job);
+        if (started.is_err()) {
+            let error: E = started.unwrap_err(); let fault: Fault<E> = Fault { phase: 1, error: error, stats: zero(), shared: F::classify(error) };
+            outcomes.set(index,Outcome::Failed(fault)).unwrap();
+        } else { slots.set(index,core::option::Some(started.unwrap())).unwrap(); }
+        index += 1;
+    }
+    let report: Report<E> = Report { outcomes: outcomes, observed: 0, steps: 0, aborts: 0 };
+    let round: i32 = 0;
+    while (round < 2) {
+        index = 0;
+        while (index < jobs.length) {
+            let held: core::option::Option<D> = slots.set(index,core::option::None()).unwrap();
+            if (held.is_none()) { index += 1; continue; }
+            let driver: D = held.unwrap(); let before: admission::protocol::Stats = driver.stats();
+            assert(before.active); report.observed += before.bytes+(before.calls as i64);
+            if (index >= abort_from) {
+                let stopped: core::result::Result<bool,E> = driver.abort(); let after: admission::protocol::Stats = driver.stats();
+                assert(!after.active && after.bytes == 0); report.aborts += 1;
+                if (stopped.is_err()) {
+                    let error: E = stopped.unwrap_err(); let fault: Fault<E> = Fault { phase: 3, error: error, stats: after, shared: F::classify(error) };
+                    report.outcomes.set(index,Outcome::Failed(fault)).unwrap();
+                } else { assert(stopped.unwrap()); report.outcomes.set(index,Outcome::Stopped(after)).unwrap(); }
+                index += 1; continue;
+            }
+            let advanced: core::result::Result<core::option::Option<admission::protocol::Response>,E> = driver.step(); report.steps += 1;
+            if (advanced.is_err()) {
+                let error: E = advanced.unwrap_err(); let cleanup: core::result::Result<bool,E> = driver.abort(); assert(cleanup.is_ok() && !cleanup.unwrap());
+                let after: admission::protocol::Stats = driver.stats(); assert(!after.active && after.calls == 2);
+                let fault: Fault<E> = Fault { phase: 2, error: error, stats: after, shared: F::classify(error) };
+                report.outcomes.set(index,Outcome::Failed(fault)).unwrap();
+            } else {
+                let response: core::option::Option<admission::protocol::Response> = advanced.unwrap();
+                if (response.is_some()) {
+                    let cleanup: core::result::Result<bool,E> = driver.abort(); let after: admission::protocol::Stats = driver.stats();
+                    assert(cleanup.is_ok() && !cleanup.unwrap() && !after.active); report.outcomes.set(index,Outcome::Complete(response.unwrap())).unwrap();
+                }
+                else { slots.set(index,core::option::Some(driver)).unwrap(); }
+            }
+            index += 1;
+        }
+        round += 1;
+    }
+    index = 0; while (index < slots.len()) { assert(slots.at(index).is_none()); index += 1; }
+    slots.destroy(); return report;
+}

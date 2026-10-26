@@ -1,0 +1,67 @@
+module fixture::support;
+import core::cmp;
+import core::io;
+import core::iter;
+import core::option;
+import core::ordering;
+import core::result;
+import std::stream;
+pub struct Item { id: i32, priority: i32, wide: u64, pair: [i64;2] }
+pub fn item(id: i32,seed: i32) -> Item {
+    return Item { id:id,priority:(id*7+seed*3)%5-2,wide:18446744073709551615-(id as u64),pair:[-4294967297-(id as i64),8589934593+(id as i64)] };
+}
+pub impl core::cmp::Ord<Item> for Item {
+    pub fn lt(a: Item,b: Item) -> bool { return a.priority<b.priority; }
+    pub fn le(a: Item,b: Item) -> bool { return a.priority<=b.priority; }
+    pub fn gt(a: Item,b: Item) -> bool { return a.priority>b.priority; }
+    pub fn ge(a: Item,b: Item) -> bool { return a.priority>=b.priority; }
+}
+pub struct Source { length: i32, position: i32, polls: i32, seed: i32 }
+pub impl Source { pub fn borrow(&self) -> &Source { return self; } }
+pub impl core::iter::Iterator<Item> for Source {
+    pub fn next(&self) -> core::option::Option<Item> {
+        self.polls+=1;
+        if (self.position==self.length) { return core::option::None(); }
+        let value: Item=item(self.position,self.seed); self.position+=1; return core::option::Some(value);
+    }
+}
+pub struct Compare { left: [i32], right: [i32], calls: i32, reverse: bool }
+pub impl Compare { pub fn borrow(&self) -> &Compare { return self; } }
+pub impl core::iter::Comparator<Item> for Compare {
+    pub fn compare(&self,a: Item,b: Item) -> core::ordering::Ordering {
+        assert(self.calls<16); self.left[self.calls]=a.id; self.right[self.calls]=b.id; self.calls+=1;
+        let left: i32=a.priority; let right: i32=b.priority;
+        if (self.reverse) { left=b.priority; right=a.priority; }
+        return core::ordering::compare_i32(left,right);
+    }
+}
+pub struct Predicate { target: i32, calls: i32 }
+pub impl Predicate { pub fn borrow(&self) -> &Predicate { return self; } }
+pub impl core::iter::Mapper<Item,bool> for Predicate {
+    pub fn apply(&self,value: Item) -> bool { self.calls+=1; return value.id==self.target; }
+}
+pub fn pull<I,T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> { return source.next(); }
+pub fn observe<I,T>(source: &core::iter::Peekable<I,T>) -> core::option::Option<T> where I: core::iter::Iterator<T> { return source.peek(); }
+pub fn choose<I,C,T>(source: &I,comparator: &C) -> core::option::Option<T> where I: core::iter::Iterator<T>,C: core::iter::Comparator<T> {
+    return core::iter::min_by<I,C,T>(source,comparator);
+}
+pub struct Output { bytes: [u8], used: i32 }
+pub impl Output {
+    pub fn borrow(&self) -> &Output { return self; }
+    pub fn flush(&self) {
+        let sink: std::stream::Descriptor=std::stream::stdout();
+        assert(core::io::write_all(sink.borrow(),self.bytes,0,self.used).is_ok()); self.used=0;
+    }
+    pub fn word(&self,value: u64) {
+        if (self.used==1024) { self.flush(); }
+        let index: i32=0; while (index<8) { self.bytes[self.used+index]=((value>>(index*8))&255) as u8; index+=1; } self.used+=8;
+    }
+    pub fn optional(&self,value: core::option::Option<Item>) {
+        if (value.is_none()) { self.word(0); self.word(0); }
+        else { self.word(1); self.word(value.unwrap().id as u64); }
+    }
+    pub fn rich(&self,value: core::option::Option<Item>) {
+        self.optional(value);
+        if (value.is_some()) { let item: Item=value.unwrap(); self.word(item.priority as u64); self.word(item.wide); self.word(item.pair[0] as u64); self.word(item.pair[1] as u64); }
+    }
+}

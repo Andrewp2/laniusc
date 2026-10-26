@@ -10,7 +10,9 @@
 // copies share upstream references. Discarded transferred owners can leak;
 // owning-cursor Destroy helpers cannot recover items no longer in the source.
 module core::iter;
+import core::cmp;
 import core::option;
+import core::ordering;
 import core::pair;
 import core::panic;
 import core::range;
@@ -41,6 +43,12 @@ pub trait TryFolder<A, T, E> {
     pub fn try_apply(&self, accumulator: A, value: T) -> core::result::Result<A, E>;
 }
 
+// Compare shallow values under a consistent total ordering. Reductions pass
+// the current winner first and the next source item second.
+pub trait Comparator<T> {
+    pub fn compare(&self, left: T, right: T) -> core::ordering::Ordering;
+}
+
 // A fallible destination for one shallow item. None accepts the item; Some
 // rejects it with an error. On rejection the sink must not retain the item or
 // publish a partial insertion. Instrumentation may record the failed attempt.
@@ -58,6 +66,15 @@ pub struct Transfer { accepted: u64, exhausted: bool }
 // destination. accepted counts only this call, not the sink's earlier entries.
 pub struct TransferError<T, E> { accepted: u64, rejected: T, error: E }
 
+pub struct Empty<T> {}
+pub struct Once<T> { value: T, done: bool }
+pub struct Repeat<T> { value: T }
+pub enum PeekableError { Cached }
+// cached Some(None) for an optional item is distinct from an absent cache.
+// Keep one active ownership-bearing handle; copies grant no cleanup authority.
+pub struct Peekable<I,T> { source: &I, cached: core::option::Option<T>, done: bool }
+pub enum StepError { Zero }
+pub struct StepBy<I, T> { source: &I, skip: u64, first: bool, done: bool }
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
 pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
@@ -70,6 +87,33 @@ pub struct Skip<I, T> { source: &I, remaining: u64, done: bool }
 pub struct TakeWhile<I, P, T> { source: &I, predicate: &P, done: bool }
 pub struct SkipWhile<I, P, T> { source: &I, predicate: &P, skipping: bool, done: bool }
 pub struct Advance { advanced: u64, exhausted: bool }
+
+pub fn empty<T>() -> Empty<T> { return Empty {}; }
+
+// The stored value and every cursor copy are shallow. Copying this leaf forks
+// its one-item availability, without creating another cleanup authority.
+pub fn once<T>(value: T) -> Once<T> { return Once { value: value, done: false }; }
+
+// Yield the same shallow value forever. Bound consumption with Take. A
+// transferred memory owner cannot be repeated safely unless the application
+// keeps a separate cleanup authority and treats yielded handles as aliases.
+pub fn repeat<T>(value: T) -> Repeat<T> { return Repeat { value: value }; }
+
+// Lazy construction: no source call and no allocation. The source object and
+// its backing must outlive this adapter and all borrowed observations.
+pub fn peekable<I,T>(source: &I) -> Peekable<I,T> where I: Iterator<T> {
+    return Peekable { source: source, cached: core::option::None(), done: false };
+}
+
+// Construction never polls. First next pulls one item; later calls discard
+// step-1 successful items before pulling the result. Stop at the first None,
+// even for MAX, and never poll the source again through this adapter.
+pub fn step_by<I, T>(source: &I, step: u64)
+    -> core::result::Result<StepBy<I, T>, StepError> where I: Iterator<T> {
+    if (step == 0) { return core::result::Err(StepError::Zero); }
+    let selected: StepBy<I, T> = StepBy { source: source, skip: step - 1, first: true, done: false };
+    return core::result::Ok(selected);
+}
 
 // Check logical metadata only. values must physically back count elements.
 pub fn from_slice<T>(values: [T], count: i32)
@@ -197,6 +241,98 @@ pub fn find_map<I, M, T, U>(source: &I, mapper: &M) -> core::option::Option<U>
     return core::option::None();
 }
 
+// The result is relative to this call's remaining source, not its original
+// beginning. Consume the match without another poll; skipped owners receive
+// no implicit destruction. The predicate/caller retains their cleanup policy.
+pub fn position<I,P,T>(source: &I, predicate: &P) -> core::option::Option<u64>
+    where I: Iterator<T>, P: Mapper<T,bool> {
+    return position_from<I,P,T>(source,predicate,0);
+}
+
+// Label the first item without skipping it. MAX is valid; after an unmatched
+// MAX, None is ordinary EOF but another Some is consumed then panics before
+// its predicate call. Match Enumerate's checked policy without MAX+1/wrapping.
+pub fn position_from<I,P,T>(source: &I, predicate: &P, first_index: u64) -> core::option::Option<u64>
+    where I: Iterator<T>, P: Mapper<T,bool> {
+    let index: u64 = first_index;
+    let max_used: bool = false;
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return core::option::None(); }
+        if (max_used) { core::panic::panic(); }
+        if (predicate.apply(item.unwrap())) { return core::option::Some(index); }
+        if (index == 18446744073709551615) { max_used = true; }
+        else { index += 1; }
+    }
+    return core::option::None();
+}
+
+// Consume through the first None. Empty is None; min keeps the first tied
+// representative and max the last. Values not returned remain ordinary
+// shallow values: no implicit clone/destruction of discarded owners occurs.
+pub fn min<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: core::cmp::Ord<T> {
+    let first: core::option::Option<T> = source.next();
+    if (first.is_none()) { return first; }
+    let winner: T = first.unwrap();
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return core::option::Some(winner); }
+        let value: T = item.unwrap();
+        if (T::gt(winner,value)) { winner = value; }
+    }
+    return core::option::Some(winner);
+}
+
+pub fn max<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: core::cmp::Ord<T> {
+    let first: core::option::Option<T> = source.next();
+    if (first.is_none()) { return first; }
+    let winner: T = first.unwrap();
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return core::option::Some(winner); }
+        let value: T = item.unwrap();
+        if (T::le(winner,value)) { winner = value; }
+    }
+    return core::option::Some(winner);
+}
+
+// Exactly n-1 callback calls for n nonempty inputs, in (winner,new) order.
+// Comparison callbacks borrow their shallow arguments; they must preserve the
+// values needed by later calls/result. Source/callback work can be unbounded.
+pub fn min_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
+    where I: Iterator<T>, C: Comparator<T> {
+    let first: core::option::Option<T> = source.next();
+    if (first.is_none()) { return first; }
+    let winner: T = first.unwrap();
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return core::option::Some(winner); }
+        let value: T = item.unwrap();
+        let replace: bool = match (comparator.compare(winner,value)) {
+            core::ordering::Ordering::Greater -> true, _ -> false
+        };
+        if (replace) { winner = value; }
+    }
+    return core::option::Some(winner);
+}
+
+pub fn max_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
+    where I: Iterator<T>, C: Comparator<T> {
+    let first: core::option::Option<T> = source.next();
+    if (first.is_none()) { return first; }
+    let winner: T = first.unwrap();
+    while (true) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { return core::option::Some(winner); }
+        let value: T = item.unwrap();
+        let replace: bool = match (comparator.compare(winner,value)) {
+            core::ordering::Ordering::Less -> true, core::ordering::Ordering::Equal -> true, _ -> false
+        };
+        if (replace) { winner = value; }
+    }
+    return core::option::Some(winner);
+}
+
 // Empty identities are false for any and true for all. A decisive predicate
 // result consumes its item and returns immediately, leaving the rest untouched.
 pub fn any<I, P, T>(source: &I, predicate: &P) -> bool
@@ -319,6 +455,97 @@ pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T> {
         if (self.end - self.position < self.width) { return core::option::None(); }
         let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: self.width };
         self.position += 1; return core::option::Some(result);
+    }
+}
+
+pub impl<T> Empty<T> {
+    pub fn borrow(&self) -> &Empty<T> { return self; }
+}
+
+pub impl<I,T> Peekable<I,T> {
+    pub fn borrow(&self) -> &Peekable<I,T> { return self; }
+    pub fn has_cached(&self) -> bool { return self.cached.is_some(); }
+
+    // Borrowed shallow observation, never another cleanup authority. End
+    // aliases before next/take_cached/cleanup. First peek can poll upstream.
+    pub fn peek(&self) -> core::option::Option<T> where I: Iterator<T> {
+        if (self.cached.is_some() || self.done) { return self.cached; }
+        let source: &I = self.source;
+        self.cached = source.next();
+        if (self.cached.is_none()) { self.done = true; }
+        return self.cached;
+    }
+
+    // Transfer only the cached item, without polling or closing this adapter.
+    pub fn take_cached(&self) -> core::option::Option<T> {
+        let item: core::option::Option<T> = self.cached;
+        self.cached = core::option::None();
+        return item;
+    }
+
+    // Close this adapter without polling/draining/freeing upstream. A cached
+    // owner must first be consumed or recovered; rejection preserves it.
+    pub fn try_finish(&self) -> core::option::Option<PeekableError> {
+        if (self.cached.is_some()) { return core::option::Some(PeekableError::Cached); }
+        self.done = true;
+        return core::option::None();
+    }
+}
+
+pub impl<I,T> Iterator<T> for Peekable<I,T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.cached.is_some()) { return self.take_cached(); }
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { self.done = true; }
+        return item;
+    }
+}
+
+pub impl<T> Iterator<T> for Empty<T> {
+    pub fn next(&self) -> core::option::Option<T> { return core::option::None(); }
+}
+
+pub impl<T> Once<T> {
+    pub fn borrow(&self) -> &Once<T> { return self; }
+}
+
+pub impl<T> Iterator<T> for Once<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        self.done = true;
+        return core::option::Some(self.value);
+    }
+}
+
+pub impl<T> Repeat<T> {
+    pub fn borrow(&self) -> &Repeat<T> { return self; }
+}
+
+pub impl<T> Iterator<T> for Repeat<T> {
+    pub fn next(&self) -> core::option::Option<T> { return core::option::Some(self.value); }
+}
+
+pub impl<I, T> StepBy<I, T> {
+    pub fn borrow(&self) -> &StepBy<I, T> { return self; }
+}
+
+pub impl<I, T> Iterator<T> for StepBy<I, T> where I: Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let remaining: u64 = 0;
+        if (!self.first) { remaining = self.skip; }
+        self.first = false;
+        while (remaining > 0) {
+            let skipped: core::option::Option<T> = source.next();
+            if (core::option::is_none(skipped)) { self.done = true; return skipped; }
+            remaining -= 1;
+        }
+        let item: core::option::Option<T> = source.next();
+        if (core::option::is_none(item)) { self.done = true; }
+        return item;
     }
 }
 

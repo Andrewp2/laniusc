@@ -1,0 +1,124 @@
+module app::main;
+import alloc::clone;
+import alloc::clone_hash_map;
+import alloc::clone_vec;
+import alloc::hash_map;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+import fixture::leaf;
+
+fn message(value: alloc::string::String, tag: i32, stage: i32, expected_tag: i32, expected_stage: i32) {
+    assert(tag==expected_tag && stage==expected_stage && value.byte_len()==5 && value.byte_at(0).unwrap()==69 && value.byte_at(1).unwrap()==0 && value.byte_at(2).unwrap()==(tag as u8) && value.byte_at(3).unwrap()==(stage as u8) && value.byte_at(4).unwrap()==90);
+    value.destroy();
+}
+fn key_failure(error: fixture::leaf::KeyError, index: i32, wanted: i32, stage: i32, mode: i32) {
+    assert(mode==0 && index==wanted);
+    match(error) { fixture::leaf::KeyError::Injected(tag,actual,value) -> message(value,tag,actual,wanted,stage), fixture::leaf::KeyError::Allocation(ignored) -> assert(false) };
+}
+fn value_leaf(error: fixture::leaf::ValueError, index: i32, inner: i32, wanted: i32, wanted_inner: i32, stage: i32) {
+    assert(index==wanted && inner==wanted_inner);
+    match(error) { fixture::leaf::ValueError::Injected(tag,actual,value) -> message(value,tag,actual,2*wanted+wanted_inner,stage), fixture::leaf::ValueError::Allocation(ignored) -> assert(false) };
+}
+fn value_failure(error: alloc::clone::Error<fixture::leaf::ValueError>, index: i32, wanted: i32, inner: i32, stage: i32, mode: i32) {
+    assert(mode==1);
+    match(error) {
+        alloc::clone::Error::Element(at,leaf) -> value_leaf(leaf,index,at,wanted,inner,stage),
+        alloc::clone::Error::Storage(ignored) -> assert(false), alloc::clone::Error::Bounds -> assert(false)
+    };
+}
+fn failure(error: alloc::clone_hash_map::Error<fixture::leaf::KeyError,alloc::clone::Error<fixture::leaf::ValueError>>, mode: i32, wanted: i32, inner: i32, stage: i32) {
+    match(error) {
+        alloc::clone_hash_map::Error::Key(at,leaf) -> key_failure(leaf,at,wanted,stage,mode),
+        alloc::clone_hash_map::Error::Value(at,leaf) -> value_failure(leaf,at,wanted,inner,stage,mode),
+        alloc::clone_hash_map::Error::ChangedKey(at) -> assert(mode>=2 && at==wanted),
+        alloc::clone_hash_map::Error::Storage(ignored) -> assert(false)
+    };
+}
+fn run_case(mode: i32, wanted: i32, inner: i32, stage: i32) {
+    // All live keys collide. Removing id20 leaves a tombstone between id10
+    // and id30; error indexes must count live entries, not physical buckets.
+    let raw: [u8; 7] = [83,0,195,169,33,90,78]; let original: alloc::string::String = alloc::string::from_utf8(raw,7).unwrap();
+    let log: [i32; 256] = [0; 256];
+    let rows: [alloc::vec::Vec<fixture::leaf::Value>; 3] = [alloc::vec::new(),alloc::vec::new(),alloc::vec::new()];
+    let source: alloc::hash_map::HashMap<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = alloc::hash_map::new();
+    assert(source.try_reserve(4).is_ok());
+    let position: i32 = 0;
+    while (position<4) {
+        let id: i32 = 10*(position+1); let ordinal: i32 = position; if (position>1) { ordinal-=1; }
+        let key_mode: i32 = 0; if (mode==2 && ordinal==wanted && position!=1) { key_mode=1; } if (mode==3 && ordinal==wanted && position!=1) { key_mode=2; }
+        if (mode==4 && position!=1) { key_mode=3; }
+        let fail: i32 = -1; if (mode==0 && ordinal==wanted && position!=1) { fail=stage; }
+        let key: fixture::leaf::Key = fixture::leaf::Key { text:original,id:id,ordinal:ordinal,fail:fail,mode:key_mode,hash_code:17,cloned:false,log:log };
+        let row: alloc::vec::Vec<fixture::leaf::Value> = alloc::vec::new();
+        if (position!=1) {
+            assert(row.try_reserve(2).is_ok()); let at: i32 = 0;
+            while (at<2) {
+                let value_fail: i32 = -1; if (mode==1 && ordinal==wanted && at==inner) { value_fail=stage; }
+                let value: fixture::leaf::Value = fixture::leaf::Value { text:original,id:2*ordinal+at,fail:value_fail,switch_eq:mode==5 && ordinal==1 && at==1,log:log };
+                assert(row.try_push(value).is_ok()); at+=1;
+            }
+            rows[ordinal]=row;
+        }
+        assert(source.try_insert(key,row).unwrap().is_none()); position+=1;
+    }
+    let query: fixture::leaf::Key = fixture::leaf::Key { text:original,id:20,ordinal:0,fail:-1,mode:0,hash_code:17,cloned:false,log:log };
+    let deleted: alloc::hash_map::Entry<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = source.remove(query).unwrap();
+    assert(deleted.value.is_empty() && source.len()==3 && source.occupied==4);
+    let capacity: i32 = source.capacity(); let storage: ptr = source.storage;
+    let result: core::result::Result<alloc::hash_map::HashMap<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>>,alloc::clone_hash_map::Error<fixture::leaf::KeyError,alloc::clone::Error<fixture::leaf::ValueError>>> =
+        alloc::clone_hash_map::try_clone<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>,fixture::leaf::KeyError,alloc::clone::Error<fixture::leaf::ValueError>>(source.borrow());
+    // Restore deliberately broken Eq before inspecting the untouched source.
+    log[6]=0;
+    assert((result.is_err() || mode==6) && source.len()==3 && source.capacity()==capacity && source.storage==storage && source.occupied==4 && original.byte_at(1).unwrap()==0);
+    let cursor: alloc::hash_map::Iter<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = source.iter();
+    let index: i32 = 0;
+    while (true) {
+        let next: core::option::Option<alloc::hash_map::Entry<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>>> = cursor.next();
+        if (next.is_none()) { break; } let entry = next.unwrap();
+        assert(entry.key.ordinal==index && entry.key.text.byte_len()==7 && entry.value.len()==2 && entry.value.at(1).text.byte_at(3).unwrap()==169); index+=1;
+    }
+    assert(index==3);
+    if (mode==6) {
+        assert(result.is_ok() && log[0]==3 && log[1]==6 && log[2]==0 && log[3]==0);
+        let copy: alloc::hash_map::HashMap<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = result.unwrap();
+        let equal_query: fixture::leaf::Key = fixture::leaf::Key { text:original,id:30,ordinal:77,fail:-1,mode:0,hash_code:17,cloned:false,log:log };
+        let stored: alloc::hash_map::Entry<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = copy.get_entry(equal_query).unwrap();
+        assert(stored.key.ordinal==1 && stored.key.text.byte_len()==7 && copy.len()==3);
+        source.destroy(); index=0; while (index<3) { rows[index].destroy(); index+=1; } original.destroy();
+        let copied: alloc::hash_map::Iter<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>> = copy.iter(); index=0;
+        while (true) {
+            let next: core::option::Option<alloc::hash_map::Entry<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>>> = copied.next();
+            if (next.is_none()) { break; } let entry = next.unwrap();
+            assert(entry.key.ordinal==index && entry.key.id!=20 && entry.key.text.byte_at(1).unwrap()==0 && entry.value.len()==2 && entry.value.at(1).text.byte_at(6).unwrap()==78); index+=1;
+        }
+        assert(index==3); alloc::clone_hash_map::destroy_hash_map<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>>(copy.borrow());
+        alloc::clone_hash_map::destroy_hash_map<fixture::leaf::Key,alloc::vec::Vec<fixture::leaf::Value>>(copy.borrow());
+        assert(copy.is_empty() && copy.capacity()==0 && log[2]==3 && log[3]==6); return;
+    }
+    let key_calls: i32 = wanted+1; let value_calls: i32 = 2*wanted;
+    let key_drops: i32 = wanted; let value_drops: i32 = 2*wanted;
+    if (mode==1) { value_calls+=inner+1; key_drops+=1; value_drops+=inner; }
+    if (mode>=2) { key_drops+=1; }
+    if (mode==5) { value_calls=4; value_drops=4; }
+    assert(log[0]==key_calls && log[1]==value_calls && log[2]==key_drops && log[3]==value_drops);
+    // Every completed source ordinal starts K, then value0, then value1.
+    index=0; while (index<wanted) { assert(log[16+3*index]==1000+index && log[17+3*index]==2000+2*index && log[18+3*index]==2001+2*index); index+=1; }
+    assert(log[16+3*wanted]==1000+wanted);
+    source.destroy(); index=0; while (index<3) { rows[index].destroy(); index+=1; } original.destroy();
+    // E is read only after source and partial destination storage are gone.
+    failure(result.unwrap_err(),mode,wanted,inner,stage);
+}
+fn main() -> i32 {
+    let at: i32 = 0;
+    while (at<3) {
+        let stage: i32 = 0;
+        while (stage<2) { run_case(0,at,0,stage); let inner: i32 = 0; while (inner<2) { run_case(1,at,inner,stage); inner+=1; } stage+=1; }
+        run_case(2,at,0,0); run_case(3,at,0,0); at+=1;
+    }
+    // Controlled unlawful Eq implementations test duplicate/replacement
+    // cleanup. The public contract still requires lawful stable Eq/Hash.
+    run_case(4,1,0,0); run_case(5,1,0,0); run_case(6,0,0,0); return 0;
+}

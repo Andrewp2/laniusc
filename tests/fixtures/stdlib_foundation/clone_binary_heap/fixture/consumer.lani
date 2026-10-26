@@ -1,0 +1,7 @@
+module fixture::consumer;
+import alloc::clone_binary_heap;
+import alloc::clone_vec;
+import core::clone;
+import core::result;
+pub fn duplicate<T,E>(source: T) -> core::result::Result<T,E> where T: core::clone::TryClone<T,E> { return T::try_clone_value(source); }
+pub fn release<T>(owned: T) where T: core::clone::Destroy<T> { T::destroy_value(owned); }

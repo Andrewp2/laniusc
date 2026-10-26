@@ -1,0 +1,209 @@
+// Native-only raw TLS contract consumer. FD ownership is transferred by the
+// Python fixture; no production transport or TLS implementation lives here.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import core::time;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+
+extern "C" fn duplex_test_arm(index: i32, fault: i32);
+extern "C" fn duplex_test_fail_up_ref();
+extern "C" fn duplex_test_forget_read(index: i32);
+extern "C" fn duplex_test_strict_reads(index: i32, enabled: i32);
+extern "C" fn duplex_test_pending(index: i32) -> i32;
+extern "C" fn duplex_test_fd_open(fd: i32) -> i32;
+extern "C" fn duplex_test_stat(index: i32, field: i32) -> i64;
+
+struct Stats { mode: i32, version: i32, checks: i32, sent: i32, received: i32, quiesced: i32, notify: i32, closed: i32, failure: i32, fd_checked: i32, steps: i32, deadline: core::time::Deadline }
+impl Stats {
+    fn borrow(&self) -> &Stats { return self; }
+    fn charge(&self) { assert(self.steps < 20000); self.steps += 1; assert(!self.deadline.is_expired(std::clock::monotonic_now().unwrap())); }
+}
+fn view(values: [u8], start: i32, length: i32) -> core::slice::View<u8> { return core::slice::View { values: values, start: start, length: length }; }
+fn literal(value: str, length: i32) -> core::slice::View<u8> { return view(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value), length), 0, length); }
+fn number(value: core::slice::View<u8>) -> i32 { return core::decimal::parse_u32_range(value.values, value.start, value.length).unwrap() as i32; }
+fn need(value: ext::openssl_tls::Need) -> i32 { return match (value) { ext::openssl_tls::Need::None -> 0, ext::openssl_tls::Need::Read -> 1, ext::openssl_tls::Need::Write -> 2 }; }
+fn invalid(error: ext::openssl_tls::Error) -> bool { return match (error.cause) { ext::openssl_tls::Cause::InvalidState -> true, _ -> false }; }
+fn closed(error: ext::openssl_tls::Error) -> bool { return match (error.cause) { ext::openssl_tls::Cause::Closed -> true, _ -> false }; }
+fn read_action(value: ext::openssl_tls::Read) -> i32 { return match (value) { ext::openssl_tls::Read::Data(count) -> count, ext::openssl_tls::Read::Closed -> -3, ext::openssl_tls::Read::WantRead -> -1, ext::openssl_tls::Read::WantWrite -> -2 }; }
+fn write_action(value: ext::openssl_tls::Write) -> i32 { return match (value) { ext::openssl_tls::Write::Complete(count) -> count, ext::openssl_tls::Write::WantRead -> -1, ext::openssl_tls::Write::WantWrite -> -2 }; }
+fn shutdown_action(value: ext::openssl_tls::Shutdown) -> i32 { return match (value) { ext::openssl_tls::Shutdown::Complete -> 0, ext::openssl_tls::Shutdown::Sent -> 3, ext::openssl_tls::Shutdown::WantRead -> 1, ext::openssl_tls::Shutdown::WantWrite -> 2 }; }
+fn marker(value: str, length: i32) { let output: std::stream::Descriptor = std::stream::stderr(); assert(core::io::write_all(output.borrow(), literal(value, length).values, 0, length).is_ok()); }
+fn wait(socket: &std::socket::Socket, writing: bool, stats: &Stats) {
+    stats.charge(); let ready: std::socket::Ready = socket.wait_until(!writing, writing, stats.deadline).unwrap(); assert(!ready.timed_out);
+}
+fn handshake(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, stats: &Stats) {
+    assert(session.negotiated_version() == 0);
+    while (true) {
+        stats.charge(); let result: ext::openssl_tls::Handshake = session.handshake().unwrap();
+        let action: i32 = match (result) { ext::openssl_tls::Handshake::Complete -> 0, ext::openssl_tls::Handshake::WantRead -> 1, ext::openssl_tls::Handshake::WantWrite -> 2 };
+        if (action == 0) { stats.version = session.negotiated_version(); assert(stats.version == 771 || stats.version == 772); return; }
+        wait(socket, action == 2, stats);
+    }
+}
+fn quiesce(session: &ext::openssl_tls::Session, index: i32, stats: &Stats) {
+    let before: i64 = duplex_test_stat(-1, 3);
+    assert(need(session.read_need()) == 1 && session.pending_read_bytes() > 0);
+    assert(session.quiesce_read().unwrap()); duplex_test_forget_read(index);
+    assert(!session.quiesce_read().unwrap());
+    assert(session.pending_read_bytes() == 0 && need(session.read_need()) == 0 && duplex_test_stat(-1, 3) == before);
+    stats.quiesced += 1; stats.checks += 1;
+}
+fn write_all(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, input: core::slice::View<u8>, stats: &Stats) {
+    stats.charge(); let result: ext::openssl_tls::Write = session.write(input).unwrap();
+    while (true) {
+        let action: i32 = write_action(result);
+        if (action >= 0) { assert(action == input.length && session.pending_write_bytes() == 0 && need(session.write_need()) == 0); stats.sent += action; return; }
+        wait(socket, action == -2, stats); stats.charge(); result = session.retry_write().unwrap();
+    }
+}
+fn read_bytes(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, count: i32, stats: &Stats) {
+    let bytes: [u8; 80] = [205; 80]; let at: i32 = 0;
+    while (at < count) {
+        stats.charge(); let amount: i32 = read_action(session.read_into(view(bytes, 3, 32)).unwrap());
+        if (amount >= 0) {
+            assert(amount > 0 && amount <= count - at);
+            let i: i32 = 0; while (i < amount) { assert(bytes[3 + i] == (((at + i) * 73 + 11) as u8)); i += 1; }
+            at += amount; stats.received += amount;
+        } else { assert(amount != -3); wait(socket, amount == -2, stats); }
+    }
+    assert(session.pending_read_bytes() == 0 && need(session.read_need()) == 0);
+}
+fn finish(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, stats: &Stats) {
+    let bytes: [u8; 32] = [177; 32];
+    while (true) {
+        stats.charge(); let action: i32 = read_action(session.read_into(view(bytes, 0, 32)).unwrap());
+        if (action == -3) { stats.closed += 1; break; }
+        assert(action < 0); wait(socket, action == -2, stats);
+    }
+    let before: i64 = duplex_test_stat(-1, 3);
+    assert(read_action(session.read_into(view(bytes, 0, 32)).unwrap()) == -3);
+    assert(duplex_test_stat(-1, 3) == before);
+    while (true) {
+        stats.charge(); let action: i32 = shutdown_action(session.shutdown().unwrap());
+        if (action == 0) { break; }
+        wait(socket, action == 2, stats);
+    }
+    assert(!session.is_open() && session.negotiated_version() == 0); stats.checks += 1;
+}
+fn local_notify(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, stats: &Stats) {
+    while (true) {
+        stats.charge(); let action: i32 = shutdown_action(session.shutdown_write().unwrap());
+        if (action == 3) { break; }
+        assert(action != 0); wait(socket, action == 2, stats);
+    }
+    let before: i64 = duplex_test_stat(-1, 3);
+    assert(shutdown_action(session.shutdown_write().unwrap()) == 3);
+    assert(shutdown_action(session.shutdown_write().unwrap()) == 3);
+    assert(invalid(session.write(literal("x", 1)).unwrap_err()));
+    assert(duplex_test_stat(-1, 3) == before); stats.notify += 1; stats.checks += 1;
+}
+fn causal(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, stats: &Stats) {
+    let bytes: [u8; 80] = [205; 80];
+    stats.charge(); assert(read_action(session.read_into(view(bytes, 3, 32)).unwrap()) == -1);
+    assert(session.pending_read_bytes() == 32 && need(session.read_need()) == 1);
+    let before: i64 = duplex_test_stat(-1, 3); assert(write_action(session.write(view(bytes, 0, 0)).unwrap()) == 0);
+    assert(duplex_test_stat(-1, 3) == before);
+    if (stats.mode == 1) { quiesce(session, 0, stats); }
+    write_all(session, socket, literal("request", 7), stats);
+    if (stats.mode == 0) { assert(session.pending_read_bytes() == 32 && need(session.read_need()) == 1); }
+    if (stats.mode == 1) {
+        stats.charge(); assert(read_action(session.read_into(view(bytes, 3, 32)).unwrap()) == -1); quiesce(session, 0, stats);
+        local_notify(session, socket, stats);
+        // The peer does not send its body until it authenticates our alert.
+        // A read may already reserve again; local idempotence must ignore it.
+        stats.charge(); let action: i32 = read_action(session.read_into(view(bytes, 3, 32)).unwrap());
+        if (action < 0) {
+            assert(action == -1); let calls: i64 = duplex_test_stat(-1, 3);
+            assert(shutdown_action(session.shutdown_write().unwrap()) == 3 && duplex_test_stat(-1, 3) == calls);
+        } else {
+            assert(action > 0 && action <= 32); let i: i32 = 0; while (i < action) { assert(bytes[3 + i] == ((i * 73 + 11) as u8)); i += 1; }
+            stats.received += action;
+        }
+    }
+    // Continue pattern checking at the actual already-delivered offset.
+    if (stats.received == 0) { read_bytes(session, socket, 257, stats); }
+    else {
+        let at: i32 = stats.received;
+        while (at < 257) {
+            stats.charge(); let n: i32 = read_action(session.read_into(view(bytes, 3, 32)).unwrap());
+            if (n > 0) { assert(n <= 257 - at); let i: i32 = 0; while (i < n) { assert(bytes[3 + i] == (((at + i) * 73 + 11) as u8)); i += 1; } at += n; stats.received += n; }
+            else { assert(n == -1 || n == -2); wait(socket, n == -2, stats); }
+        }
+    }
+    finish(session, socket, stats); stats.checks += 1;
+}
+fn rare(session: &ext::openssl_tls::Session, socket: &std::socket::Socket, stats: &Stats) {
+    let source: [u8; 7] = [114,101,113,117,101,115,116]; let destination: [u8; 80] = [205; 80];
+    if (stats.mode == 2) {
+        duplex_test_arm(0, 1); stats.charge(); assert(write_action(session.write(view(source, 0, 7)).unwrap()) == -1);
+        assert(session.pending_write_bytes() == 7 && need(session.write_need()) == 1);
+        let i: i32 = 0; while (i < 7) { source[i] = 238; i += 1; }
+        let before: i64 = duplex_test_stat(-1, 3); assert(invalid(session.write(literal("replace", 7)).unwrap_err()));
+        assert(duplex_test_stat(-1, 3) == before);
+        // The peer sends first and then waits for the original staged request.
+        read_bytes(session, socket, 257, stats);
+        stats.charge(); let action: i32 = write_action(session.retry_write().unwrap());
+        while (action < 0) { wait(socket, action == -2, stats); stats.charge(); action = write_action(session.retry_write().unwrap()); }
+        assert(action == 7); stats.sent += action;
+        assert(duplex_test_stat(0, 6) > 0 && duplex_test_stat(0, 8) > 0);
+    } else {
+        duplex_test_arm(0, 2); stats.charge(); assert(read_action(session.read_into(view(destination, 3, 32)).unwrap()) == -2);
+        assert(need(session.read_need()) == 2 && session.pending_read_bytes() == 32);
+        let before: i64 = duplex_test_stat(-1, 3); assert(invalid(session.quiesce_read().unwrap_err()));
+        assert(duplex_test_stat(-1, 3) == before);
+        write_all(session, socket, view(source, 0, 7), stats);
+        assert(session.pending_read_bytes() == 32 && need(session.read_need()) == 2);
+        read_bytes(session, socket, 257, stats);
+        assert(duplex_test_stat(0, 7) > 0 && duplex_test_stat(0, 8) > 0);
+    }
+    finish(session, socket, stats); stats.checks += 1;
+}
+fn publish(stats: &Stats, second: bool) {
+    let values: [u64; 40] = [0; 40];
+    values[0] = stats.mode as u64; values[1] = stats.version as u64; values[2] = stats.checks as u64; values[3] = stats.sent as u64; values[4] = stats.received as u64;
+    values[5] = stats.quiesced as u64; values[6] = stats.notify as u64; values[7] = stats.closed as u64;
+    let i: i32 = 0; while (i < 7) { values[8 + i] = duplex_test_stat(-1, i) as u64; i += 1; }
+    i = 0; while (i < 11) { values[15 + i] = duplex_test_stat(0, i) as u64; if (second) { values[26 + i] = duplex_test_stat(1, i) as u64; } i += 1; }
+    values[37] = stats.failure as u64; values[38] = stats.steps as u64; values[39] = stats.fd_checked as u64;
+    let bytes: [u8; 320] = [0; 320]; i = 0;
+    while (i < 40) { let j: i32 = 0; while (j < 8) { bytes[i * 8 + j] = (values[i] >> (j * 8)) as u8; j += 1; } i += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(output.borrow(), bytes, 0, 320).is_ok());
+}
+fn main() -> i32 {
+    assert(std::signal::set_disposition(std::signal::Signal::BrokenPipe, std::signal::Disposition::Ignore).is_ok());
+    let arguments: std::args::Arguments = std::args::snapshot(1, 5, 16384).unwrap(); assert(arguments.len() == 5);
+    let fd: i32 = number(arguments.get(0).unwrap()); let mode: i32 = number(arguments.get(3).unwrap()); assert(mode >= 0 && mode <= 3);
+    let socket: std::socket::Socket = std::socket::from_owned_handle(fd, std::socket::Family::Ipv4, std::socket::Kind::Tcp).unwrap();
+    let now: core::time::Instant = std::clock::monotonic_now().unwrap();
+    let stats: Stats = Stats { mode: mode, version: 0, checks: 0, sent: 0, received: 0, quiesced: 0, notify: 0, closed: 0, failure: 0, fd_checked: 0, steps: 0, deadline: core::time::deadline_at(now.checked_add(core::time::from_millis(4000)).unwrap()) };
+    let limits: ext::openssl_tls::Limits = ext::openssl_tls::default_limits(); limits.io_bytes = 65536;
+    let context: ext::openssl_tls::Context = ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(arguments.get(2).unwrap()), limits).unwrap();
+    assert(duplex_test_stat(-1, 0) == 1);
+    duplex_test_fail_up_ref(); let rejected: ext::openssl_tls::Error = context.retain().unwrap_err();
+    assert(match (rejected.cause) { ext::openssl_tls::Cause::Native -> true, _ -> false });
+    assert(rejected.code != 0 && context.is_open() && duplex_test_stat(-1, 0) == 1);
+    let retained: ext::openssl_tls::Context = context.retain().unwrap(); let again: ext::openssl_tls::Context = retained.retain().unwrap();
+    assert(retained.io_bytes() == 65536 && again.io_bytes() == 65536 && duplex_test_stat(-1, 0) == 3);
+    context.destroy(); context.destroy(); assert(closed(context.retain().unwrap_err()));
+    let session: ext::openssl_tls::Session = again.session(fd, ext::openssl_tls::Identity::Dns(literal("localhost", 9))).unwrap();
+    retained.destroy(); again.destroy(); assert(duplex_test_stat(-1, 0) == 0 && duplex_test_stat(-1, 1) == 1);
+    duplex_test_strict_reads(0, 1); stats.checks += 1;
+    handshake(session.borrow(), socket.borrow(), stats.borrow());
+    if (mode <= 1) { causal(session.borrow(), socket.borrow(), stats.borrow()); }
+    else { rare(session.borrow(), socket.borrow(), stats.borrow()); }
+    let calls: i64 = duplex_test_stat(-1, 3);
+    session.destroy(); session.destroy(); assert(closed(session.quiesce_read().unwrap_err()) && closed(session.shutdown_write().unwrap_err()));
+    assert(session.negotiated_version() == 0 && need(session.read_need()) == 0 && need(session.write_need()) == 0 && duplex_test_stat(-1, 3) == calls);
+    assert(duplex_test_fd_open(fd) == 1); stats.fd_checked = 1; assert(socket.close().is_ok());
+    assert(duplex_test_fd_open(fd) == 0 && duplex_test_stat(-1, 0) == 0 && duplex_test_stat(-1, 1) == 0 && duplex_test_stat(-1, 2) == 0);
+    arguments.destroy(); publish(stats.borrow(), false); return 0;
+}

@@ -1,0 +1,8 @@
+module probe::protocol;
+import core::result;
+
+// Diagnostic-only ownership transfer. This deliberately is not TryClone:
+// source is consumed, so returning its descriptor creates no second owner.
+pub trait Transfer<T,E> {
+    pub fn transfer(source: T) -> core::result::Result<T,E>;
+}

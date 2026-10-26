@@ -1,0 +1,21 @@
+// No argument snapshot: every allocation belongs to the checked spawn itself.
+module app::main;
+import core::mem;
+import core::slice;
+import std::command;
+import std::command_raw;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn finish(status: i32) -> i32 { let raw: [i32;1] = [0;1]; assert(std::command_raw::wait(-1,core::mem::i32_array_data_ptr(raw),true) == -10); return status; }
+fn failed(value: std::command::FailedStart) -> i32 { assert(value.status.code.unwrap() == 127 && value.failure.errno > 0); return finish(match(value.failure.stage) { std::command::Stage::ProcessGroup -> 42, std::command::Stage::Exec -> 43, _ -> 47 }); }
+fn unknown(value: std::command::UnknownStart) -> i32 {
+    assert(value.child.id().is_some());
+    if (value.child.group_id().is_some()) { value.child.cancel_group_and_wait().unwrap(); } else { value.child.cancel_and_wait().unwrap(); }
+    value.child.close_pipes().unwrap(); assert(value.child.id().is_none() && value.child.group_id().is_none()); return finish(44);
+}
+fn early(value: std::command::Child) -> i32 { let status = value.wait().unwrap(); value.close_pipes().unwrap(); assert(value.id().is_none() && value.group_id().is_none()); if (status.signal.is_some()) { assert(status.signal.unwrap() == 9); return finish(45); } assert(status.code.unwrap() == 127); return finish(46); }
+fn main() -> i32 {
+    let argv: [core::slice::View<u8>;1] = [bytes("/no/such/command",16)]; let request = std::command::request(argv[0],core::slice::view(argv,1).unwrap(),core::slice::view(argv,0).unwrap());
+    request.group = std::command::Group::New; request.stdin = std::command::Stdio::Null; request.stdout = std::command::Stdio::Null; request.stderr = std::command::Stdio::Null;
+    let made = std::command::spawn(request); if (made.is_err()) { return finish(41); }
+    return match(made.unwrap()) { std::command::Spawn::Failed(value) -> failed(value), std::command::Spawn::Unknown(value) -> unknown(value), std::command::Spawn::Child(value) -> early(value) };
+}

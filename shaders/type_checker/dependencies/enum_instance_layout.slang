@@ -35,7 +35,8 @@ public uint dependency_concrete_enum_instance_words<TypeRefs : ILocalStructTypeR
     uint count = dependency_declaration_word(parent * 14u + 9u);
     if (start > dependency_member_count() || count > dependency_member_count() - start)
         return 0u;
-    uint maximum = 0u;
+    // The checked enum declaration retains a discriminant even with no variants.
+    uint maximum = 1u;
     for (uint offset = 0u; offset < count; offset += 1u)
     {
         uint member = (start + offset) * SEMANTIC_INTERFACE_MEMBER_WORDS;

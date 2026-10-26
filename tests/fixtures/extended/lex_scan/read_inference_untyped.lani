@@ -1,0 +1,17 @@
+// Retained reduction of lex_scan's original generic Read result context.
+// This reduction also rejects LNC0027 at read.is_err(); typed control executes.
+// Receipt: target/stdlib-work/lex-read-context-untyped.log.
+module app::main;
+import core::io;
+import core::result;
+fn receive<R>(reader: &R, destination: [u8]) -> i32 where R: core::io::Read {
+    let read = reader.read(destination,0,1);
+    if (read.is_err()) { return -1; }
+    return read.unwrap();
+}
+fn main() -> i32 {
+    let source: [u8;1] = [120]; let destination: [u8;1] = [0];
+    let reader: core::io::SliceReader = core::io::slice_reader(source,1).unwrap();
+    assert(receive(reader.borrow(),destination) == 1);
+    assert(destination[0] == 120 && reader.position() == 1); return 0;
+}

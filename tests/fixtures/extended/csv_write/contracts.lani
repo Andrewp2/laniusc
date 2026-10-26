@@ -1,0 +1,153 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::csv;
+import ext::csv_write;
+
+struct Sink { bytes: [u8], position: i32, width: i32, calls: u64, interrupts: u64, fail_at: i32, kind: i32, flushes: i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::io::Write for Sink {
+    pub fn write(&self, data: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.calls += 1;
+        if (self.interrupts > 0) { self.interrupts -= 1; return core::result::Err(core::io::Error::Interrupted); }
+        if (self.position == self.fail_at) {
+            if (self.kind == 1) { return core::result::Err(core::io::Error::Host(7)); }
+            if (self.kind == 2) { return core::result::Err(core::io::Error::WouldBlock); }
+            if (self.kind == 3) { return core::result::Ok(0); }
+            if (self.kind == 4) { return core::result::Ok(-1); }
+            if (self.kind == 5) { return core::result::Ok(count + 1); }
+            if (self.kind == 6) { return core::result::Err(core::io::Error::Interrupted); }
+        }
+        let amount: i32 = count; if (amount > self.width) { amount = self.width; }
+        if (self.kind != 0 && amount > self.fail_at - self.position) { amount = self.fail_at - self.position; }
+        let index: i32 = 0;
+        while (index < amount) { self.bytes[self.position + index] = data[offset + index]; index += 1; }
+        self.position += amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { self.flushes += 1; return core::result::Ok(0); }
+}
+fn sink(bytes: [u8], width: i32) -> Sink { return Sink { bytes: bytes, position: 0, width: width, calls: 0, interrupts: 0, fail_at: 0, kind: 0, flushes: 0 }; }
+fn text(value: str, length: i32) -> core::text::Text {
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length);
+    return core::text::from_utf8(bytes,length).unwrap();
+}
+fn source() -> ext::csv::Record {
+    let row: ext::csv::Record = ext::csv::new();
+    assert(row.try_push_field(text("a\"b",3)).unwrap() == 1);
+    assert(row.try_push_field(text("é\r\n",4)).unwrap() == 2);
+    assert(row.try_push_field(text("",0)).unwrap() == 3); return row;
+}
+fn equal_prefix(bytes: [u8], expected: core::text::Text, length: i32) {
+    let index: i32 = 0; while (index < length) { assert(bytes[index] == expected.byte_at(index).unwrap()); index += 1; }
+    assert(bytes[length] == 199);
+}
+fn host_kind(code: i32) -> i32 { if (code == 7) { return 1; } return 0; }
+fn error_kind(error: core::io::Error) -> i32 {
+    return match (error) { core::io::Error::Host(code) -> host_kind(code), core::io::Error::WouldBlock -> 2, core::io::Error::WriteZero -> 3, core::io::Error::InvalidCount -> 4, _ -> 0 };
+}
+fn io_kind(cause: ext::csv_write::Cause) -> i32 {
+    return match (cause) { ext::csv_write::Cause::Io(error) -> error_kind(error), ext::csv_write::Cause::CallLimit -> 6, _ -> 0 };
+}
+fn checked_offset(offset: u64, at: u64, code: i32) -> i32 { assert(offset == at); return code; }
+fn rejected(row: &ext::csv::Record, input: core::text::Text, expected: i32, at: u64) {
+    let bytes: i32 = row.byte_len(); let count: i32 = row.field_count(); let bc: i32 = row.byte_capacity(); let fc: i32 = row.field_capacity();
+    let prior: core::text::Text = row.field(0).unwrap();
+    let result: core::result::Result<i32,ext::csv::Error> = row.try_push_field(input); assert(result.is_err());
+    let code: i32 = match (result.unwrap_err()) { ext::csv::Error::Bounds -> 1, ext::csv::Error::InvalidUtf8(offset) -> checked_offset(offset,at,2), ext::csv::Error::InvalidCharacter(offset) -> checked_offset(offset,at,3), _ -> 0 };
+    assert(code == expected && row.byte_len() == bytes && row.field_count() == count && row.byte_capacity() == bc && row.field_capacity() == fc);
+    assert(prior.equals(text("a\"b",3)));
+}
+fn chunks() {
+    let data: alloc::vec::Vec<u8> = alloc::vec::new(); data.try_resize(4200,0).unwrap();
+    let pattern: [u8;7] = [195,169,34,44,13,10,120]; let index: i32 = 0;
+    while (index < 4200) { data.set(index,pattern[index % 7]).unwrap(); index += 1; }
+    let row: ext::csv::Record = ext::csv::new(); row.try_push_field(core::text::from_utf8(data.as_slice(),data.len()).unwrap()).unwrap(); row.try_push_field(text("",0)).unwrap(); data.destroy();
+    let material: alloc::string::String = ext::csv::encode_record(row).unwrap();
+    let expected: core::text::Text = material.as_text(); assert(expected.byte_len() > 4096 && expected.byte_len() < 5000);
+    let widths: [i32;6] = [1,7,1023,1024,1025,8192]; index = 0;
+    while (index < 6) {
+        let output: [u8;5000] = [199;5000]; let target: Sink = sink(output,widths[index]);
+        let written: ext::csv_write::Progress = ext::csv_write::write_record(target.borrow(),row.borrow(),ext::csv_write::Limits { max_output: expected.byte_len() as u64, max_write_calls: 10000 }).unwrap();
+        assert(written.written == expected.byte_len() as u64 && written.write_calls == target.calls && target.flushes == 0); equal_prefix(output,expected,expected.byte_len()); index += 1;
+    }
+    let boundaries: [i32;13] = [0,1,2,1022,1023,1024,1025,2047,2048,2049,4095,4096,4806]; index = 0;
+    while (index < 13) {
+        let kind: i32 = 1;
+        while (kind <= 6) {
+            let output: [u8;5000] = [199;5000]; let target: Sink = sink(output,17); target.kind = kind; target.fail_at = boundaries[index];
+            let failed: ext::csv_write::Failure = ext::csv_write::write_record(target.borrow(),row.borrow(),ext::csv_write::Limits { max_output: 10000, max_write_calls: 10000 }).unwrap_err();
+            let code: i32 = kind; if (kind == 5) { code = 4; }
+            assert(io_kind(failed.cause) == code && failed.written == boundaries[index] as u64 && failed.write_calls == target.calls && target.flushes == 0);
+            equal_prefix(output,expected,boundaries[index]); kind += 1;
+        }
+        index += 1;
+    }
+    material.destroy(); row.destroy();
+}
+fn main() -> i32 {
+    let row: ext::csv::Record = source();
+    let expected: core::text::Text = text("\"a\"\"b\",\"é\r\n\",\"\"\r\n",18);
+    assert(row.encoded_len().unwrap() == expected.byte_len() as u64);
+    let material: alloc::string::String = ext::csv::encode_record(row).unwrap(); assert(material.as_text().equals(expected)); material.destroy();
+    let left: ext::csv::Encoding = row.encoding().unwrap(); let right: ext::csv::Encoding = left;
+    let index: i32 = 0;
+    while (index < expected.byte_len()) { assert(left.next().unwrap() == expected.byte_at(index).unwrap()); index += 1; }
+    assert(left.next().is_none() && left.next().is_none() && left.remaining() == 0 && right.remaining() == expected.byte_len() as u64);
+    let bytes: [u8;64] = [199;64]; let width: i32 = 1;
+    while (width <= 20) {
+        let target: Sink = sink(bytes,width); target.interrupts = 2;
+        let limit: u64 = ((expected.byte_len() + width - 1) / width) as u64 + 2;
+        let limits: ext::csv_write::Limits = ext::csv_write::Limits { max_output: expected.byte_len() as u64, max_write_calls: limit };
+        let complete: ext::csv_write::Progress = ext::csv_write::write_record(target.borrow(),row.borrow(),limits).unwrap();
+        assert(complete.written == expected.byte_len() as u64 && complete.write_calls == limit && target.calls == limit && target.flushes == 0);
+        equal_prefix(bytes,expected,expected.byte_len());
+        let short: Sink = sink(bytes,width); short.interrupts = 2; limits.max_write_calls = limit - 1;
+        let failed: ext::csv_write::Failure = ext::csv_write::write_record(short.borrow(),row.borrow(),limits).unwrap_err();
+        assert(io_kind(failed.cause) == 6 && failed.written == short.position as u64 && failed.write_calls == limit - 1 && short.calls == limit - 1 && short.flushes == 0);
+        width += 1;
+    }
+    let kind: i32 = 1;
+    while (kind <= 6) {
+        let boundary: i32 = 0;
+        while (boundary < expected.byte_len()) {
+            let output: [u8;64] = [199;64]; let target: Sink = sink(output,3); target.kind = kind; target.fail_at = boundary; target.interrupts = 1;
+            let failed: ext::csv_write::Failure = ext::csv_write::write_record(target.borrow(),row.borrow(),ext::csv_write::Limits { max_output: 64, max_write_calls: 64 }).unwrap_err();
+            let code: i32 = kind; if (kind == 5) { code = 4; }
+            assert(io_kind(failed.cause) == code && failed.written == boundary as u64 && failed.write_calls == target.calls && target.flushes == 0);
+            equal_prefix(output,expected,boundary); boundary += 1;
+        }
+        kind += 1;
+    }
+    let untouched: Sink = sink(bytes,64);
+    let limited: ext::csv_write::Failure = ext::csv_write::write_record(untouched.borrow(),row.borrow(),ext::csv_write::Limits { max_output: 17, max_write_calls: 100 }).unwrap_err();
+    assert(match (limited.cause) { ext::csv_write::Cause::OutputLimit -> true, _ -> false }); assert(limited.written == 0 && limited.write_calls == 0 && untouched.calls == 0);
+    let zero: Sink = sink(bytes,64);
+    let exhausted: ext::csv_write::Failure = ext::csv_write::write_record(zero.borrow(),row.borrow(),ext::csv_write::Limits { max_output: 64, max_write_calls: 0 }).unwrap_err();
+    assert(io_kind(exhausted.cause) == 6 && exhausted.written == 0 && exhausted.write_calls == 0 && zero.calls == 0);
+    let invalid: [u8;5] = [97,0,255,128,127];
+    rejected(row.borrow(),core::text::Text { bytes: invalid, start: -1, length: 1 },1,0);
+    rejected(row.borrow(),core::text::Text { bytes: invalid, start: 0, length: -1 },1,0);
+    rejected(row.borrow(),core::text::Text { bytes: invalid, start: 2147483647, length: 1 },1,0);
+    rejected(row.borrow(),core::text::Text { bytes: invalid, start: 2, length: 1 },2,0);
+    rejected(row.borrow(),core::text::Text { bytes: invalid, start: 1, length: 1 },3,0);
+    rejected(row.borrow(),core::text::Text { bytes: invalid, start: 4, length: 1 },3,0);
+    let all: i32 = 0; while (all <= 127) {
+        if ((all < 32 && all != 10 && all != 13) || all == 127) { let control: [u8;1] = [all as u8]; rejected(row.borrow(),core::text::Text { bytes: control, start: 0, length: 1 },3,0); }
+        all += 1;
+    }
+    row.destroy(); row.destroy();
+    let empty: ext::csv::Record = ext::csv::new();
+    let target: Sink = sink(bytes,1);
+    let progress: ext::csv_write::Progress = ext::csv_write::write_record(target.borrow(),empty.borrow(),ext::csv_write::Limits { max_output: 0, max_write_calls: 0 }).unwrap();
+    assert(progress.written == 0 && progress.write_calls == 0 && target.calls == 0 && empty.encoding().unwrap().next().is_none());
+    empty.try_push_field(text("",0)).unwrap(); assert(empty.encoded_len().unwrap() == 4);
+    let output: [u8;8] = [199;8]; let one: Sink = sink(output,8);
+    assert(ext::csv_write::write_record(one.borrow(),empty.borrow(),ext::csv_write::Limits { max_output: 4, max_write_calls: 1 }).unwrap().written == 4);
+    equal_prefix(output,text("\"\"\r\n",4),4); assert(one.flushes == 0); empty.destroy();
+    chunks(); return 0;
+}
