@@ -70,6 +70,19 @@ theorem RepU32.lit {n : Nat} (b : n < 4294967296) : RepU32 (BitVec.ofNat 32 n) (
 @[rep_rule] theorem lt_pow64 {n : Nat} (h : Nat.blt n 18446744073709551616 = true) : n < 18446744073709551616 :=
   Nat.blt_eq.mp h
 
+/-! Where a function is in a program given as a chain of named tails: each
+tail's place follows from the previous one's, so finding all of them is linear
+in the program, not quadratic. -/
+
+theorem drop_next {α} {l : List α} {n : Nat} {a : α} {t : List α} (h : l.drop n = a :: t) :
+    l.drop (n + 1) = t := by
+  rw [← List.drop_drop, h]; rfl
+
+theorem get_of_drop {α} {l : List α} {n : Nat} {a : α} {t : List α} (h : l.drop n = a :: t) :
+    l[n]? = some a := by
+  have := congrArg (·[0]?) h
+  simpa using this
+
 /-- A callee's certificate as a proof's hypothesis: `P` in a structure, so
 that `simp [*]` does not take the certificate's implication as a conditional
 rewrite (whose premises it would try to prove at every representation). The

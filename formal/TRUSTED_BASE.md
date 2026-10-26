@@ -390,8 +390,9 @@ compiler that someone actually runs is one of these two:
    proved for any program and prims holding the function's source at some
    index, from its callees' certificates as hypotheses; the link
    (`Gen/SelfCert.lean`) instantiates them with the program's indices, the
-   lookups (`prog.funcs[i]? = ...`, by `rfl`) and the prim tests (by
-   `decide +kernel`, which adds no axiom). Nothing in a proof depends on
+   lookups (`prog.funcs[i]? = ...`, from `prog.funcs.drop i`, each from the
+   previous one, over the chain of named tails `prog` is) and the prim tests
+   (by `decide +kernel`, which adds no axiom). Nothing in a proof depends on
    another function's index, so the generator names everything by Lanius
    function name, not index (decided 10-25).
 2. **The Lean build.** Run `#eval compileSource` or a compiled Lean
