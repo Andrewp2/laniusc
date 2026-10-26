@@ -1,0 +1,46 @@
+// Appended to the real application's helpers; no alternate output algorithm.
+struct Sink { output: [u8], length: i32, maximum: i32, writes: i32, flushes: i32, mode: i32, interruptions: i32 }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::io::Write for Sink {
+    pub fn write(&self, bytes: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error> {
+        self.writes += 1;
+        if (self.mode == 1 && self.writes <= self.interruptions) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 9) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 2 && self.length >= 2) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.mode == 3) { return core::result::Ok(0); }
+        if (self.mode == 4) { return core::result::Ok(-1); }
+        if (self.mode == 5) { return core::result::Ok(count+1); }
+        let n: i32 = count; if (n > self.maximum) { n = self.maximum; }
+        let i: i32 = 0; while (i < n) { self.output[self.length+i] = bytes[offset+i]; i += 1; } self.length += n;
+        return core::result::Ok(n);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        self.flushes += 1;
+        if (self.mode == 6 && self.flushes <= self.interruptions) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.mode == 7) { return core::result::Err(core::io::Error::Host(5)); }
+        if (self.mode == 8) { return core::result::Ok(1); }
+        return core::result::Ok(0);
+    }
+}
+fn category(error: core::io::Error) -> i32 { return match (error) { core::io::Error::LimitExceeded -> 1,core::io::Error::WouldBlock -> 2,core::io::Error::WriteZero -> 3,core::io::Error::InvalidCount -> 4,core::io::Error::Host(code) -> 5,_ -> 9 }; }
+fn output_case(mode: i32, maximum: i32, interruptions: i32, budget: u64, expected: i32, prefix: i32, calls: u64) {
+    let storage: [u8;128] = [0;128]; let sink: Sink = Sink { output:storage,length:0,maximum:maximum,writes:0,flushes:0,mode:mode,interruptions:interruptions };
+    let bytes: [u8;8] = [255,97,0,98,10,99,13,255]; let input: core::slice::View<u8> = core::slice::view_range(bytes,1,6).unwrap();
+    let result: core::result::Result<Progress,OutputFailure> = publish(sink.borrow(),input,budget);
+    if (expected == 0) { assert(result.is_ok()); let value: Progress = result.unwrap(); assert(value.written == prefix as u64 && value.calls == calls); }
+    else { assert(result.is_err()); let value: OutputFailure = result.unwrap_err(); assert(category(value.cause) == expected && value.written == prefix as u64 && value.calls == calls); }
+    assert(sink.length == prefix && sink.writes+sink.flushes == calls as i32);
+    let i: i32 = 0; while (i < prefix) { assert(storage[i] == input.get(i).unwrap()); i += 1; }
+}
+fn main() -> i32 {
+    let maximum: i32 = 1;
+    while (maximum <= 8) { let writes: u64 = ((6+maximum-1)/maximum) as u64; output_case(0,maximum,0,writes+1,0,6,writes+1); maximum += 1; }
+    output_case(1,2,3,7,0,6,7); output_case(1,2,3,3,1,0,3); output_case(9,2,0,5,1,0,5);
+    output_case(2,2,0,8,2,2,2); output_case(3,2,0,8,3,0,1); output_case(4,2,0,8,4,0,1); output_case(5,2,0,8,4,0,1);
+    output_case(0,2,0,0,1,0,0); output_case(0,2,0,1,1,2,1); output_case(0,2,0,3,1,6,3);
+    output_case(6,2,2,6,0,6,6); output_case(6,2,2,5,1,6,5); output_case(7,2,0,8,5,6,4); output_case(8,2,0,8,4,6,4);
+    let none: [u8;1] = [0;1]; let empty: core::slice::View<u8> = core::slice::view(none,0).unwrap();
+    let sink: Sink = Sink { output:none,length:0,maximum:1,writes:0,flushes:0,mode:0,interruptions:0 };
+    assert(publish(sink.borrow(),empty,0).is_err()); let done: Progress = publish(sink.borrow(),empty,1).unwrap(); assert(done.written == 0 && done.calls == 1 && sink.writes == 0 && sink.flushes == 1);
+    return 0;
+}

@@ -88,10 +88,11 @@ required-client profile.
 ## Credentials and admission policy
 
 Supply a PEM chain with the endpoint's leaf first and its intermediate issuers
-afterward, plus the matching, unencrypted PEM private key. Both applications
-pass an explicit empty passphrase and never prompt. Encrypted, malformed,
-missing or mismatched credentials fail; there is no passphrase argument or
-password source in either application. The reusable
+afterward, plus the matching PEM private key. Both applications pass an
+explicit empty passphrase and never prompt. Keys requiring a nonempty
+passphrase, malformed credentials, missing files and mismatched keys fail;
+there is no passphrase argument or password source in either application. An
+encrypted key that accepts the empty passphrase can load. The reusable
 [`ext::openssl_tls` factory](extended-openssl-mutual-tls.md) separately supports
 explicit secret input. Credential and trust paths must be nonempty, NUL-free
 UTF-8 within the configured 4,096-byte path cap. Native file access policy and

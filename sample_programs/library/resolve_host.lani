@@ -1,0 +1,177 @@
+// Ordered native resolver output with explicit lookup policy and bounded I/O.
+// getaddrinfo is synchronous; these bounds do not preempt NSS/DNS/native work.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import std::args;
+import std::resolve;
+import std::signal;
+import std::socket;
+import std::stream;
+
+struct Options { first: core::slice::View<u8>, second: core::slice::View<u8>, operands: i32, help: bool, passive: bool, numeric_host: bool, numeric_service: bool, family: std::resolve::Family, kind: std::socket::Kind, results: i32, output: i32, calls: u64 }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Progress { written: u64, calls: u64 }
+struct OutputFailure { cause: core::io::Error, written: u64, calls: u64 }
+enum Error { Arguments, Allocation, Limit, Format, Resolve(std::resolve::Error), Output(OutputFailure) }
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(raw,count).unwrap(); }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let i: i32 = 0;
+    while (i < left.length) { if (left.get(i).unwrap() != right.get(i).unwrap()) { return false; } i += 1; } return true;
+}
+fn decimal(value: core::slice::View<u8>) -> core::option::Option<u64> {
+    if (value.is_empty()) { return core::option::None(); } let i: i32 = 0;
+    while (i < value.length) { let byte: u8 = value.get(i).unwrap(); if (byte < 48 || byte > 57) { return core::option::None(); } i += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err()) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+
+// Every write/flush attempt, including Interrupted, spends the shared cap.
+// Failed writes do not advance; only successful valid counts confirm a prefix.
+fn publish<W>(sink: &W, input: core::slice::View<u8>, maximum: u64) -> core::result::Result<Progress,OutputFailure> where W: core::io::Write {
+    let offset: i32 = 0; let calls: u64 = 0;
+    while (offset < input.length) {
+        if (calls == maximum) { return core::result::Err(OutputFailure { cause:core::io::Error::LimitExceeded,written:offset as u64,calls:calls }); }
+        calls += 1;
+        let result: core::result::Result<i32,core::io::Error> = sink.write(input.values,input.start+offset,input.length-offset);
+        if (result.is_err()) { let cause: core::io::Error = result.unwrap_err(); if (core::io::is_interrupted(cause)) { continue; } return core::result::Err(OutputFailure { cause:cause,written:offset as u64,calls:calls }); }
+        let count: i32 = result.unwrap();
+        if (count < 0 || count > input.length-offset) { return core::result::Err(OutputFailure { cause:core::io::Error::InvalidCount,written:offset as u64,calls:calls }); }
+        if (count == 0) { return core::result::Err(OutputFailure { cause:core::io::Error::WriteZero,written:offset as u64,calls:calls }); }
+        offset += count;
+    }
+    while (true) {
+        if (calls == maximum) { return core::result::Err(OutputFailure { cause:core::io::Error::LimitExceeded,written:offset as u64,calls:calls }); }
+        calls += 1; let result: core::result::Result<i32,core::io::Error> = sink.flush();
+        if (result.is_err()) { let cause: core::io::Error = result.unwrap_err(); if (core::io::is_interrupted(cause)) { continue; } return core::result::Err(OutputFailure { cause:cause,written:offset as u64,calls:calls }); }
+        if (result.unwrap() != 0) { return core::result::Err(OutputFailure { cause:core::io::Error::InvalidCount,written:offset as u64,calls:calls }); }
+        return core::result::Ok(Progress { written:offset as u64,calls:calls });
+    }
+    return core::result::Ok(Progress { written:offset as u64,calls:calls });
+}
+fn diagnostic(code: i32, text: core::slice::View<u8>) -> i32 { let sink = std::stream::stderr(); publish(sink.borrow(),text,8); return code; }
+fn copy_text(bytes: [u8], at: i32, text: core::slice::View<u8>) -> i32 { let i: i32 = 0; while (i < text.length) { bytes[at+i] = text.get(i).unwrap(); i += 1; } return at+text.length; }
+fn signed(bytes: [u8], at: i32, value: i32) -> i32 { return at+core::decimal::format_i64(bytes,at,256-at,value as i64).unwrap(); }
+fn unsigned(bytes: [u8], at: i32, value: u64) -> i32 { return at+core::decimal::format_u64(bytes,at,256-at,value).unwrap(); }
+fn resolver_status(cause: std::resolve::Cause) -> i32 {
+    return match (cause) { std::resolve::Cause::AllocationFailed -> 4, std::resolve::Cause::Native -> 3, std::resolve::Cause::UnsupportedResult -> 3, std::resolve::Cause::InvalidResult -> 3, _ -> 2 };
+}
+fn resolver_report(value: std::resolve::Error) -> i32 {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let at: i32 = copy_text(bytes,0,literal("resolve-host: lookup failed (code=",34)); at = signed(bytes,at,value.code);
+    at = copy_text(bytes,at,literal(", system=",9)); at = signed(bytes,at,value.system); at = copy_text(bytes,at,literal(", index=",8)); at = signed(bytes,at,value.index);
+    at = copy_text(bytes,at,literal(")\n",2)); return diagnostic(resolver_status(value.cause),core::slice::view(bytes,at).unwrap());
+}
+fn output_report(value: OutputFailure) -> i32 {
+    let storage: [i32;64] = [0;64]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),256);
+    let at: i32 = copy_text(bytes,0,literal("resolve-host: output failed (written=",37)); at = unsigned(bytes,at,value.written);
+    at = copy_text(bytes,at,literal(", calls=",8)); at = unsigned(bytes,at,value.calls); at = copy_text(bytes,at,literal(")\n",2)); return diagnostic(5,core::slice::view(bytes,at).unwrap());
+}
+fn report(error: Error) -> i32 {
+    return match (error) {
+        Error::Arguments -> diagnostic(2,literal("resolve-host: invalid arguments\n",32)),
+        Error::Allocation -> diagnostic(4,literal("resolve-host: allocation failed\n",32)),
+        Error::Limit -> diagnostic(2,literal("resolve-host: output byte limit\n",32)),
+        Error::Format -> diagnostic(3,literal("resolve-host: address formatting failed\n",40)),
+        Error::Resolve(value) -> resolver_report(value),
+        Error::Output(value) -> output_report(value)
+    };
+}
+
+fn stage(values: &alloc::vec::Vec<core::net::SocketAddr>, maximum: i32) -> core::result::Result<alloc::io::Buffer,Error> {
+    let storage: [i32;20] = [0;20]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),80);
+    let view: core::slice::View<u8> = core::slice::view(bytes,79).unwrap(); let length: i32 = 0; let i: i32 = 0;
+    while (i < values.len()) {
+        let formatted: core::result::Result<i32,core::net::Error> = values.get(i).unwrap().format_into(view);
+        if (formatted.is_err()) { return core::result::Err(Error::Format); } let count: i32 = formatted.unwrap()+1;
+        if (count > maximum-length) { return core::result::Err(Error::Limit); } length += count; i += 1;
+    }
+    let made: core::result::Result<alloc::io::Buffer,core::io::Error> = alloc::io::with_limit(maximum);
+    if (made.is_err()) { return core::result::Err(Error::Limit); } let output: alloc::io::Buffer = made.unwrap();
+    if (output.try_reserve(length).is_err()) { output.destroy(); return core::result::Err(Error::Allocation); }
+    i = 0;
+    while (i < values.len()) {
+        let formatted: core::result::Result<i32,core::net::Error> = values.get(i).unwrap().format_into(view);
+        if (formatted.is_err()) { output.destroy(); return core::result::Err(Error::Format); } let count: i32 = formatted.unwrap(); bytes[count] = 10;
+        let appended: core::result::Result<i32,core::io::Error> = output.write(bytes,0,count+1);
+        if (appended.is_err()) { output.destroy(); return core::result::Err(Error::Allocation); } i += 1;
+    }
+    return core::result::Ok(output);
+}
+fn resolve(options: &Options) -> core::result::Result<alloc::io::Buffer,Error> {
+    let host: std::resolve::Host = std::resolve::Host::Name(options.first); let service: core::slice::View<u8> = options.second;
+    if (options.passive) { if (options.operands != 1 || options.numeric_host) { return core::result::Err(Error::Arguments); } host = std::resolve::Host::Wildcard; service = options.first; }
+    else { if (options.operands != 2) { return core::result::Err(Error::Arguments); } if (options.numeric_host) { host = std::resolve::Host::Numeric(options.first); } }
+    if (service.is_empty()) { return core::result::Err(Error::Arguments); }
+    let port: core::option::Option<u64> = decimal(service); let selected: std::resolve::Service = std::resolve::Service::Name(service);
+    // All-digit overflow must remain an argument error, never a named lookup.
+    let digits: bool = true; let i: i32 = 0; while (i < service.length) { let b: u8 = service.get(i).unwrap(); if (b < 48 || b > 57) { digits = false; } i += 1; }
+    if (digits) { if (port.is_none() || port.unwrap() > 65535) { return core::result::Err(Error::Arguments); } selected = std::resolve::Service::Port(port.unwrap() as u16); }
+    else { if (options.numeric_service || service.get(0).unwrap() == 43 || service.get(0).unwrap() == 45) { return core::result::Err(Error::Arguments); } }
+    let policy: std::resolve::Options = std::resolve::default_options(); policy.family = options.family; policy.kind = options.kind;
+    let limits: std::resolve::Limits = std::resolve::default_limits(); limits.max_results = options.results;
+    let found: core::result::Result<alloc::vec::Vec<core::net::SocketAddr>,std::resolve::Error> = std::resolve::lookup(host,selected,policy,limits);
+    if (found.is_err()) { return core::result::Err(Error::Resolve(found.unwrap_err())); }
+    let addresses: alloc::vec::Vec<core::net::SocketAddr> = found.unwrap(); let staged: core::result::Result<alloc::io::Buffer,Error> = stage(addresses.borrow(),options.output); addresses.destroy(); return staged;
+}
+
+fn option_id(name: core::slice::View<u8>) -> i32 {
+    if (equal(name,literal("help",4))) { return 1; } if (equal(name,literal("passive",7))) { return 2; }
+    if (equal(name,literal("numeric-host",12))) { return 3; } if (equal(name,literal("numeric-service",15))) { return 4; }
+    if (equal(name,literal("family",6))) { return 5; } if (equal(name,literal("transport",9))) { return 6; }
+    if (equal(name,literal("max-results",11))) { return 7; } if (equal(name,literal("max-output",10))) { return 8; }
+    if (equal(name,literal("max-write-calls",15))) { return 9; } return 0;
+}
+fn apply(options: &Options, id: i32, value: core::slice::View<u8>) -> bool {
+    if (id == 5) { if (equal(value,literal("any",3))) { options.family = std::resolve::Family::Any; return true; } if (equal(value,literal("ipv4",4))) { options.family = std::resolve::Family::Ipv4; return true; } if (equal(value,literal("ipv6",4))) { options.family = std::resolve::Family::Ipv6; return true; } return false; }
+    if (id == 6) { if (equal(value,literal("tcp",3))) { options.kind = std::socket::Kind::Tcp; return true; } if (equal(value,literal("udp",3))) { options.kind = std::socket::Kind::Udp; return true; } return false; }
+    let parsed: core::option::Option<u64> = decimal(value); if (parsed.is_none()) { return false; } let number: u64 = parsed.unwrap();
+    if (id == 7) { if (number == 0 || number > 1024) { return false; } options.results = number as i32; return true; }
+    if (id == 8) { if (number > 1048576) { return false; } options.output = number as i32; return true; }
+    if (number > 2147483647) { return false; } options.calls = number; return true;
+}
+fn arguments(values: std::args::Arguments) -> i32 {
+    let options: Options = Options { first:literal("",0),second:literal("",0),operands:0,help:false,passive:false,numeric_host:false,numeric_service:false,family:std::resolve::Family::Any,kind:std::socket::Kind::Tcp,results:64,output:65536,calls:4096 };
+    let i: i32 = 0; let ended: bool = false;
+    while (i < values.len()) {
+        let word: core::slice::View<u8> = values.get(i).unwrap(); i += 1;
+        if (!ended && equal(word,literal("--",2))) { ended = true; continue; }
+        if (!ended && word.length > 1 && word.get(0).unwrap() == 45 && word.get(1).unwrap() == 45) {
+            let split: i32 = 2; while (split < word.length && word.get(split).unwrap() != 61) { split += 1; }
+            let name: core::slice::View<u8> = word.subview(2,split).unwrap(); let id: i32 = option_id(name); if (id == 0) { return report(Error::Arguments); }
+            if (id <= 4) {
+                if (split != word.length) { return report(Error::Arguments); } if (id == 1) { options.help = true; } if (id == 2) { options.passive = true; } if (id == 3) { options.numeric_host = true; } if (id == 4) { options.numeric_service = true; }
+            } else {
+                let value: core::slice::View<u8> = literal("",0);
+                if (split < word.length) { value = word.subview(split+1,word.length).unwrap(); }
+                else { if (i == values.len()) { return report(Error::Arguments); } value = values.get(i).unwrap(); i += 1; }
+                if (!apply(options.borrow(),id,value)) { return report(Error::Arguments); }
+            }
+        } else {
+            if (!ended && !word.is_empty() && word.get(0).unwrap() == 45) { return report(Error::Arguments); }
+            if (options.operands == 0) { options.first = word; } if (options.operands == 1) { options.second = word; } options.operands += 1; if (options.operands > 2) { return report(Error::Arguments); }
+        }
+    }
+    let sink = std::stream::stdout();
+    if (options.help) {
+        let usage = literal("Usage: resolve-host HOST SERVICE [OPTIONS]\n       resolve-host --passive SERVICE [OPTIONS]\nOptions: --family any|ipv4|ipv6 --transport tcp|udp --numeric-host\n         --numeric-service --max-results N --max-output N --max-write-calls N\n",236);
+        let printed: core::result::Result<Progress,OutputFailure> = publish(sink.borrow(),usage,options.calls); if (printed.is_err()) { return report(Error::Output(printed.unwrap_err())); } return 0;
+    }
+    let result: core::result::Result<alloc::io::Buffer,Error> = resolve(options.borrow()); if (result.is_err()) { return report(result.unwrap_err()); }
+    let output: alloc::io::Buffer = result.unwrap(); let printed: core::result::Result<Progress,OutputFailure> = publish(sink.borrow(),core::slice::view(output.as_bytes(),output.len()).unwrap(),options.calls); output.destroy();
+    if (printed.is_err()) { return report(Error::Output(printed.unwrap_err())); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return diagnostic(5,literal("resolve-host: cannot ignore SIGPIPE\n",36)); }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,32,8192);
+    if (captured.is_err()) { return match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> report(Error::Allocation), _ -> report(Error::Arguments) }; }
+    let values: std::args::Arguments = captured.unwrap(); let status: i32 = arguments(values); values.destroy(); return status;
+}

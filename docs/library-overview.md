@@ -68,6 +68,29 @@ before publication and uses bounded scratch with explicit partial progress.
 The [CSV report program](stdlib-format-report.md) composes it with numeric
 parsing and buffered output.
 
+[System hostname and service resolution](stdlib-resolve.md) now wraps libc
+`getaddrinfo` on Linux x86_64/glibc, with explicit ASCII input, family,
+TCP/UDP and flag policies. It copies native order and duplicates into owned
+socket-address values; unsupported shapes and result limits fail atomically.
+The [resolve-host program](stdlib-resolve-host.md) formats those values without
+opening a connection. All four library groups and five application groups pass
+through separate native receipts; the
+[verification guide](stdlib-resolve-testing.md) records independent libc,
+malformed-result, limit and reached-allocation coverage.
+Lookup blocks in NSS/libc. Local byte/result limits do not impose native memory
+quotas, a lookup deadline or DNS authentication.
+
+[Child process groups](stdlib-command-groups.md) add explicit creation,
+confirmed signaling authority and non-reaping exit observation. The original
+unreaped leader anchors the group ID; final reaping or lost-child evidence
+revokes that authority. Pipe capture can retain an observed status while
+draining descendant-held pipes, then perform the final reap. The
+[run-group supervisor](stdlib-run-group.md) adds explicit TERM/grace/KILL policy
+and reports incomplete cleanup. Five API groups and five application groups
+pass across separate receipts; the supervisor covers 53 cases.
+Descendants can escape a group, and deadlines do not guarantee kernel-stuck
+processes become reapable; these APIs do not provide process-tree containment.
+
 [Checked native C calls](library-native-c.md) execute on Linux x86_64/glibc
 through ordinary ELF objects, the system C linker and libc startup.
 [OpenSSL digest contexts](extended-openssl-digest.md) provide streaming

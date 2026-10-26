@@ -74,6 +74,24 @@ own floating-point behavior. C variadics, callbacks and aggregate layouts remain
 outside the profile. Existing scalar IDs and the selected System V ABI tag
 represent this extension, so it requires no artifact version change.
 
+## System hostname and service resolution
+
+[`std::resolve`](stdlib-resolve.md) uses ordinary checked libc calls to
+`getaddrinfo`, `freeaddrinfo` and the thread-local errno accessor. CRT startup
+supplies the libc process state; no new compiler intrinsic, resolver engine or
+production C shim is involved. The Lanius adapter stages explicit hints and
+validates the selected glibc `addrinfo`/socket-address layouts before copying
+ordered results into an owned `Vec<core::net::SocketAddr>`. Those explicit
+raw-memory layouts do not add aggregate C parameters or results to the ABI.
+
+All four [library groups](stdlib-resolve-testing.md) pass, including independent
+libc comparisons, local admission, malformed native lists and all four reached
+source allocation failures. The five [`resolve-host` groups](stdlib-resolve-host.md)
+also pass, covering 136 application/consumer process cases. Their guides record
+the separate receipts. Byte/result caps do not bound native NSS memory or
+blocking time, and there is no lookup deadline. Legacy `std::net` declarations
+remain unbound.
+
 ## SQLite databases and application
 
 An owned [SQLite adapter](extended-sqlite.md) and a
@@ -182,12 +200,16 @@ execution have no support claim from these gates.
 `libssl.so.3` and `libcrypto.so.3`, including peer trust/identity checks, stable
 WANT retries and authenticated closure/truncation. Sessions manually borrow a
 connected nonblocking descriptor; callers supply polling/deadlines and process
-SIGPIPE policy. [Server TLS](extended-openssl-tls-server.md) now passes six
-native groups and 53 cases through the same native libraries, with explicit
-unauthenticated-client policy and shared session I/O. The mandatory client
-trust/identity rejection gate also passes after introducing session roles.
-Mutual TLS, standalone encryption/signature APIs and general certificate
-trust APIs remain work. The
+SIGPIPE policy. [Server TLS](extended-openssl-tls-server.md) retains its explicit
+unauthenticated-client default and shared session I/O.
+[Mutual TLS](extended-openssl-mutual-tls.md) adds client credentials and required
+fresh client-chain verification, with 107 cases across six library groups.
+[Prepared client contexts and mutual-TLS HTTPS modes](extended-https-mutual-tls.md)
+add 109 application/consumer process cases across four groups. Required servers
+verify the peer before opening application I/O; TLS 1.3 client-local completion
+does not establish remote acceptance. Trust-chain admission does not supply
+application authorization. Standalone encryption/signature APIs and general
+certificate trust APIs remain work. The
 [native integration prerequisites](library-native-integration-prerequisites.md)
 record ownership, policy, callback and concurrency requirements. The
 [complete library roadmap](library-roadmap.md) remains open.
@@ -209,6 +231,8 @@ handling separately:
 | [`native_c_contract`](../tests/native_c_contract.rs) | 4 groups pass in 9.77 s: nine unsupported signature categories, accepted f32/f64 metadata, visibility/identity/runtime-name collisions, and the 32-parameter limit | `target/stdlib-work/native-c-float-contract.log` |
 | [`native_c_execution`](../tests/native_c_execution.rs) | 8 groups pass in 10.55 s: integer/pointer/void regression, register/stack arguments, startup, imported calls, generic replay, 31/32 mixed parameters, linked-ELF validation and rejection paths | `target/stdlib-work/native-c-float-integer-regression.log` |
 | Native C semantic-interface unit tests | 2 CPU tests pass in 0.00 s after a 42.45 s test build: native binding identity/signature round-trip and forged/unsupported profile rejection | `target/stdlib-work/native-c-float-interface-unit.log` |
+| [`stdlib_resolve_execution`](../tests/stdlib_resolve_execution.rs) | All four groups pass through separate receipts: 80 real libc cases in 6.12 s; local validation and 97 synthetic cases in a 9.68 s expanded invocation; all four source allocation failures and recovery in 6.04 s | [Resolver receipts](stdlib-resolve.md#execution-evidence) |
+| [`stdlib_resolve_host_execution`](../tests/stdlib_resolve_host_execution.rs) | All five groups pass, covering 136 application/consumer process cases: ordered native results, limits, output faults, seven source allocation failures and scripted publication | [Application receipts](stdlib-resolve-host.md#status-and-focused-gates) |
 | [`extended_sqlite_execution`](../tests/extended_sqlite_execution.rs), ordinary cases | 4 groups pass in 14.92 s: typed values, model, file persistence/locking and bounded bulk workload | `target/stdlib-work/sqlite-library-execution-current.log` |
 | Same driver, native failures | 1 group passes all 21 modes in 9.03 s | `target/stdlib-work/sqlite-native-fault-execution.log` |
 | [`extended_sqlite_allocation_execution`](../tests/extended_sqlite_allocation_execution.rs) | 1 group passes in 8.60 s: baseline plus four staging allocation failures, retries and cleanup ledgers | `target/stdlib-work/sqlite-staging-allocation-execution.log` |
@@ -220,6 +244,8 @@ handling separately:
 | Mandatory client policy after server roles | Nine trust/identity/protocol rejections pass in 5.98 s | `target/stdlib-work/openssl-tls-client-policy-server-regression.log` |
 | HTTPS client after shared context ownership | All four groups and 62 cases pass in 13.90 s | `target/stdlib-work/https-fetch-server-context-regression.log` |
 | [`extended_https_server_execution`](../tests/extended_https_server_execution.rs) | All four groups pass 106 cases: 28 verified exchanges in 7.17 s and 78 limits/failures/stream cases in 10.87 s | `target/stdlib-work/https-server-matrix-vec-corrected.log`, `target/stdlib-work/https-server-limits-failures-stream.log` |
+| [`extended_openssl_mutual_tls_execution`](../tests/extended_openssl_mutual_tls_execution.rs) | All six groups pass through separate receipts, covering 107 cases: both roles, credentials, verification, retries, native faults and staging allocation failures | [Mutual TLS receipts](extended-openssl-mutual-tls.md#accepted-runtime-receipts) |
+| [`extended_https_mutual_tls_execution`](../tests/extended_https_mutual_tls_execution.rs) | All four groups pass: 8 prepared-context cases in 6.21 s and 101 application cases in 15.23 s | `target/stdlib-work/https-mutual-prepared-first.log`, `target/stdlib-work/https-mutual-app-groups.log` |
 | [`extended_archive_index_execution`](../tests/extended_archive_index_execution.rs) | Seven groups pass: the 56-case ownership matrix in 8.27 s and six remaining groups in 17.16 s, including native/transaction errors, allocation failures and a measured 1,024-entry workload | `target/stdlib-work/archive-index-matrix.log`, `target/stdlib-work/archive-index-failures-workload.log` |
 | [`extended_openssl_digest_execution`](../tests/extended_openssl_digest_execution.rs) | 4 groups pass in 8.11 s: 2,124 digest cases and 12 native failure modes | `target/stdlib-work/openssl-digest-execution-first.log` |
 | [`extended_openssl_hash_execution`](../tests/extended_openssl_hash_execution.rs) | 3 groups pass in 10.11 s: real binary stdin, CLI bounds, short transfers and native failure cleanup | `target/stdlib-work/openssl-hash-execution-first.log` |

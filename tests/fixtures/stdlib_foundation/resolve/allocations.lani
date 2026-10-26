@@ -1,0 +1,34 @@
+// One successful lookup reaches exactly four source-owned allocations. A
+// one-shot failure at each reached site is followed by a complete retry.
+module app::main;
+import alloc::vec;
+import core::net;
+import core::slice;
+import std::io;
+import std::io_decimal;
+import std::resolve;
+extern "C" fn test_resolve_begin(mode: i32, parameter: i32);
+extern "C" fn test_resolve_stat(index: i32) -> i64;
+fn input_unchanged(host: [u8], service: [u8]) { let at: i32 = 0; while (at < 96) { assert(host[3+at] == 104); at += 1; } at = 0; while (at < 16) { assert(service[3+at] == 115); at += 1; } assert(host[0] == 165 && host[99] == 165 && service[0] == 165 && service[19] == 165); }
+fn output_valid(output: &alloc::vec::Vec<core::net::SocketAddr>) {
+    let first_scope: u32 = 2309737967; let last_scope: u32 = 4294967295;
+    assert(output.len() == 4 && output.capacity() == 4 && test_resolve_stat(0) == 1 && test_resolve_stat(1) == 1 && test_resolve_stat(2) == 0 && test_resolve_stat(3) == 0);
+    let first = output.get(0).unwrap(); let second = output.get(1).unwrap(); let third = output.get(2).unwrap(); let fourth = output.get(3).unwrap();
+    assert(match(first) { core::net::SocketAddr::V4(address) -> address.address.to_bits() == core::net::ipv4(198,51,100,227).to_bits() && address.port == 43210, _ -> false });
+    assert(match(second) { core::net::SocketAddr::V6(address) -> address.address.high == core::net::ipv6(8193,3512,4660,65535,0,43981,57005,48879).high && address.address.low == core::net::ipv6(8193,3512,4660,65535,0,43981,57005,48879).low && address.scope == first_scope && address.port == 43210, _ -> false });
+    assert(match(third) { core::net::SocketAddr::V4(address) -> address.address.to_bits() == core::net::ipv4(198,51,100,227).to_bits() && address.port == 43210, _ -> false });
+    assert(match(fourth) { core::net::SocketAddr::V6(address) -> address.address.high == 0 && address.address.low == core::net::ipv6(0,0,0,0,0,65535,49152,635).low && address.scope == last_scope && address.port == 43210, _ -> false });
+}
+fn main() -> i32 {
+    let host: [u8;104] = [165;104]; let service: [u8;24] = [165;24]; let at: i32 = 0; while (at < 96) { host[3+at] = 104; at += 1; } at = 0; while (at < 16) { service[3+at] = 115; at += 1; }
+    let h = std::resolve::Host::Name(core::slice::View<u8> { values: host, start: 3, length: 96 }); let s = std::resolve::Service::Name(core::slice::View<u8> { values: service, start: 3, length: 16 }); let options = std::resolve::default_options(); let limits = std::resolve::default_limits();
+    test_resolve_begin(1,0); let made = std::resolve::lookup(h,s,options,limits); input_unchanged(host,service);
+    if (made.is_err()) {
+        let error = made.unwrap_err(); assert(match(error.cause) { std::resolve::Cause::AllocationFailed -> true, _ -> false }); assert(error.code == 0 && error.system == 0 && error.index == -1);
+        let phase: i32 = match(error.phase) { std::resolve::Phase::Host -> 2, std::resolve::Phase::Service -> 3, std::resolve::Phase::Lookup -> 4, std::resolve::Phase::Results -> 5, _ -> 0 }; assert(phase >= 2 && phase <= 5);
+        let called: i64 = 0; if (phase == 5) { called = 1; } assert(test_resolve_stat(0) == called && test_resolve_stat(1) == called && test_resolve_stat(2) == 0 && test_resolve_stat(3) == 0);
+        test_resolve_begin(1,0); let retry = std::resolve::lookup(h,s,options,limits).unwrap(); output_valid(retry.borrow()); retry.destroy(); retry.destroy(); assert(retry.len() == 0 && retry.capacity() == 0); input_unchanged(host,service);
+        std::io_decimal::write_i32(1,phase); std::io::write_byte(1,10); return 4;
+    }
+    let output = made.unwrap(); output_valid(output.borrow()); output.destroy(); output.destroy(); assert(output.len() == 0 && output.capacity() == 0); input_unchanged(host,service); std::io_decimal::write_i32(1,0); std::io::write_byte(1,10); return 0;
+}

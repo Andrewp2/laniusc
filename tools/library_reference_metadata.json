@@ -955,20 +955,28 @@
     },
     "std::command": {
       "guides": [
-        "docs/stdlib-command.md"
-      ]
+        "docs/stdlib-command.md",
+        "docs/stdlib-command-groups.md",
+        "docs/stdlib-run-group.md"
+      ],
+      "note": "Process-group creation is explicit. Group signaling requires the confirmed original group and an owned, unreaped leader; non-reaping terminal observations do not consume that anchor. Final reaping or lost-child evidence revokes it. Copied Child descriptors do not grant independent wait or signal authority. The guides define startup uncertainty, cancellation limits and current target/execution evidence."
     },
     "std::command_capture": {
       "guides": [
-        "docs/stdlib-command-capture.md"
-      ]
+        "docs/stdlib-command-capture.md",
+        "docs/stdlib-command-groups.md",
+        "docs/stdlib-run-group.md"
+      ],
+      "note": "Progress.status may be an observed terminal status while Progress.reaped is false. Capture retains the unreaped leader anchor while draining acquired pipes, then performs a charged final nonblocking reap before success. A failure can retain that Child authority unless ownership was lost or final reaping already occurred; captured output owners and child cleanup remain explicit. The guides define operation/deadline scope and current execution evidence."
     },
     "std::command_raw": {
       "guides": [
-        "docs/stdlib-command.md"
+        "docs/stdlib-command.md",
+        "docs/stdlib-command-groups.md",
+        "docs/stdlib-run-group.md"
       ],
       "role": "support",
-      "note": "Internal syscall support for std::command. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise."
+      "note": "Internal Linux syscall support for std::command, including process-group setup and non-reaping exit observation. Use the checked command API and its ownership contract for ordinary programs; this inventory does not make the raw helpers a separate support promise. The linked guides define target and execution scope."
     },
     "std::directory": {
       "guides": [
@@ -1077,6 +1085,13 @@
       "guides": [
         "docs/stdlib-randomness.md"
       ]
+    },
+    "std::resolve": {
+      "guides": [
+        "docs/stdlib-resolve.md",
+        "docs/stdlib-resolve-host.md"
+      ],
+      "note": "Blocking libc hostname/service resolution uses explicit ASCII input, address-family, TCP/UDP and flag policies. Native order and duplicates are copied into an owned SocketAddr vector; result caps and unsupported native shapes fail without publishing a partial vector. EAI_SYSTEM retains errno captured before cleanup. Local staging/result limits do not bound NSS memory, elapsed lookup time or native cleanup work; the guides define the selected layout/profile and current execution evidence."
     },
     "std::signal": {
       "guides": [

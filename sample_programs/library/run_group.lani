@@ -1,0 +1,213 @@
+// Noninteractive new-group supervision. Reap only the direct child; descendants
+// may leave the group. Keep the leader unreaped through TERM/grace/KILL.
+module app::main;
+import core::decimal;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import core::text;
+import core::time;
+import std::args;
+import std::clock;
+import std::command;
+import std::poll;
+import std::signal;
+import std::stream;
+
+const CLEANUP_ROUNDS: i32 = 10000;
+struct Options { first: i32, timeout: u64, grace: u64, reap: u64, operations: u64, status: bool, help: bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Clock { last: core::time::Instant, ready: bool }
+impl Clock { fn borrow(&self) -> &Clock { return self; } }
+struct Budget { used: u64, maximum: u64 }
+impl Budget {
+    fn borrow(&self) -> &Budget { return self; }
+    fn charge(&self) -> bool { if (self.used >= self.maximum) { return false; } self.used += 1; return true; }
+}
+struct Detail { stage: i32, reason: i32, errno: i32, pid: i32, startup: i32, group: bool, term: i32, group_kill: bool, leader_kill: bool, reaped: bool, lost: bool, code: i32, signal: i32, incomplete: i32, cleanup_errno: i32, show: bool }
+impl Detail { fn borrow(&self) -> &Detail { return self; } }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+fn text(value: str, count: i32) -> core::text::Text { let part: core::slice::View<u8> = bytes(value,count); return core::text::from_utf8_unchecked(part.values,part.start,part.length); }
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true;
+}
+fn number(value: core::slice::View<u8>) -> core::option::Option<u64> {
+    if (value.length < 1 || value.length > 20) { return core::option::None(); } let index: i32 = 0;
+    while (index < value.length) { let byte: u8 = value.values[value.start+index]; if (byte < 48 || byte > 57) { return core::option::None(); } index += 1; }
+    let parsed: core::result::Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err()) { return core::option::None(); } return core::option::Some(parsed.unwrap());
+}
+fn parse(arguments: std::args::Arguments, options: &Options) -> bool {
+    let index: i32 = 0; let seen: u32 = 0;
+    while (index < arguments.len()) {
+        let value = arguments.get(index).unwrap(); if (equal(value,bytes("--",2))) { index += 1; break; }
+        if (value.length == 0 || value.values[value.start] != 45 || equal(value,bytes("-",1))) { break; }
+        let id: i32 = 0;
+        if (equal(value,bytes("--timeout-ms",12))) { id = 1; } if (equal(value,bytes("--grace-ms",10))) { id = 2; }
+        if (equal(value,bytes("--reap-ms",9))) { id = 3; } if (equal(value,bytes("--max-operations",16))) { id = 4; }
+        if (equal(value,bytes("--status",8))) { id = 5; } if (equal(value,bytes("--help",6))) { id = 6; }
+        if (id == 0) { return false; } let bit: u32 = (1 as u32) << id; if ((seen & bit) != 0) { return false; } seen |= bit;
+        if (id == 5) { options.status = true; index += 1; continue; } if (id == 6) { options.help = true; index += 1; continue; }
+        if (index+1 >= arguments.len()) { return false; } let parsed = number(arguments.get(index+1).unwrap()); if (parsed.is_none()) { return false; } let count: u64 = parsed.unwrap();
+        if (id == 1) { if (count > 86400000) { return false; } options.timeout = count; }
+        if (id == 2) { if (count > 60000) { return false; } options.grace = count; }
+        if (id == 3) { if (count > 60000) { return false; } options.reap = count; }
+        if (id == 4) { if (count > 10000000) { return false; } options.operations = count; }
+        index += 2;
+    }
+    options.first = index; if (options.help) { return arguments.len() == 1; } return index < arguments.len();
+}
+fn problem(detail: &Detail, stage: i32, reason: i32, errno: i32) -> i32 { detail.stage = stage; detail.reason = reason; detail.errno = errno; return 125; }
+fn cleanup_error(detail: &Detail, errno: i32) { if (detail.cleanup_errno == 0) { detail.cleanup_errno = errno; if (errno == 0) { detail.cleanup_errno = 5; } } }
+fn clock_errno(error: std::clock::Error) -> i32 { return match(error) { std::clock::Error::Host(value) -> value, _ -> 5 }; }
+fn io_errno(error: core::io::Error) -> i32 { return match(error) { core::io::Error::Host(value) -> value, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> 5 }; }
+fn poll_errno(error: std::poll::Error) -> i32 { return match(error) { std::poll::Error::Io(value) -> io_errno(value), std::poll::Error::Clock(value) -> clock_errno(value), _ -> 5 }; }
+fn sample(clock: &Clock) -> core::result::Result<core::time::Instant,i32> {
+    let sampled: core::result::Result<core::time::Instant,std::clock::Error> = std::clock::monotonic_now();
+    if (sampled.is_err()) { return core::result::Err(clock_errno(sampled.unwrap_err())); } let now: core::time::Instant = sampled.unwrap();
+    if (clock.ready && now.compare(clock.last) < 0) { return core::result::Err(5); } clock.last = now; clock.ready = true; return core::result::Ok(now);
+}
+fn until(now: core::time::Instant, milliseconds: u64) -> core::result::Result<core::time::Deadline,i32> {
+    let made = core::time::deadline_after(now,core::time::from_millis(milliseconds)); if (made.is_err()) { return core::result::Err(75); } return core::result::Ok(made.unwrap());
+}
+fn delay(deadline: core::time::Deadline, now: core::time::Instant) -> i32 {
+    let left = deadline.remaining(now); if (left.seconds == 0 && left.nanos < 10000000) { return ((left.nanos+999999)/1000000) as i32; } return 10;
+}
+fn pause(poll: &std::poll::PollSet, milliseconds: i32) -> core::result::Result<i32,std::poll::Error> {
+    let empty: [std::poll::Request;0] = []; return poll.poll_ms(core::slice::view<std::poll::Request>(empty,0).unwrap(),milliseconds);
+}
+fn status(value: std::command::ExitStatus, detail: &Detail) -> i32 {
+    detail.reaped = true; if (value.code.is_some()) { detail.code = value.code.unwrap(); return detail.code; }
+    if (value.signal.is_some()) { detail.signal = value.signal.unwrap(); return 128+detail.signal; } return problem(detail,4,4,5);
+}
+fn note_signal(result: core::result::Result<i32,std::command::Failure>, detail: &Detail) {
+    if (result.is_err()) { let failure = result.unwrap_err(); if (failure.errno != 3) { cleanup_error(detail,failure.errno); } }
+}
+// No wait occurs here. Even a leader which exits after TERM retains its PID
+// anchor until group KILL has been attempted at the end of this fixed grace.
+fn grace(poll: &std::poll::PollSet, clock: &Clock, milliseconds: u64, detail: &Detail) {
+    let initial = sample(clock); if (initial.is_err()) { cleanup_error(detail,initial.unwrap_err()); return; }
+    let made = until(initial.unwrap(),milliseconds); if (made.is_err()) { cleanup_error(detail,made.unwrap_err()); return; } let deadline = made.unwrap(); let rounds: i32 = 0;
+    while (rounds < CLEANUP_ROUNDS) {
+        let checked = sample(clock); if (checked.is_err()) { cleanup_error(detail,checked.unwrap_err()); return; } let now = checked.unwrap(); if (deadline.is_expired(now)) { return; }
+        let polled = pause(poll,delay(deadline,now)); rounds += 1; if (polled.is_err()) { let errno: i32 = poll_errno(polled.unwrap_err()); if (errno != 4) { cleanup_error(detail,errno); return; } }
+    }
+    cleanup_error(detail,5);
+}
+fn reap(child: &std::command::Child, poll: &std::poll::PollSet, clock: &Clock, milliseconds: u64, detail: &Detail) {
+    let timed: bool = true; let deadline: core::time::Deadline = core::time::deadline_at(clock.last);
+    let initial = sample(clock); if (initial.is_err()) { cleanup_error(detail,initial.unwrap_err()); timed = false; }
+    else { let made = until(initial.unwrap(),milliseconds); if (made.is_err()) { cleanup_error(detail,made.unwrap_err()); timed = false; } else { deadline = made.unwrap(); } }
+    let rounds: i32 = 0;
+    while (rounds < CLEANUP_ROUNDS) {
+        let waited = child.try_wait(); rounds += 1;
+        if (waited.is_ok() && waited.unwrap().is_some()) { status(waited.unwrap().unwrap(),detail); return; }
+        if (waited.is_err()) { let failure = waited.unwrap_err(); if (failure.errno != 4) { cleanup_error(detail,failure.errno); } }
+        if (child.id().is_none()) { detail.lost = true; return; }
+        if (!timed) { break; }
+        let checked = sample(clock); if (checked.is_err()) { cleanup_error(detail,checked.unwrap_err()); break; } let now = checked.unwrap(); if (deadline.is_expired(now)) { break; }
+        let polled = pause(poll,delay(deadline,now)); if (polled.is_err()) { let errno: i32 = poll_errno(polled.unwrap_err()); if (errno != 4) { cleanup_error(detail,errno); break; } }
+    }
+    if (child.id().is_some()) { detail.incomplete = child.id().unwrap(); }
+}
+fn cleanup(child: &std::command::Child, poll: &std::poll::PollSet, clock: &Clock, options: Options, detail: &Detail) {
+    let closed = child.close_pipes(); if (closed.is_err()) { cleanup_error(detail,closed.unwrap_err().errno); }
+    if (child.id().is_none()) { return; }
+    if (child.group_id().is_some()) { detail.term = 1; note_signal(child.signal_group(15),detail); }
+    else { detail.term = 2; }
+    note_signal(child.signal(15),detail);
+    grace(poll,clock,options.grace,detail);
+    // No cached or saved numeric PGID is ever used for a signal. The owner
+    // validates authority; its positive leader may have left the original group.
+    if (child.id().is_some()) {
+        if (child.group_id().is_some()) { detail.group_kill = true; note_signal(child.signal_group(9),detail); }
+        detail.leader_kill = true; note_signal(child.signal(9),detail);
+    }
+    reap(child,poll,clock,options.reap,detail);
+}
+fn monitor(child: &std::command::Child, poll: &std::poll::PollSet, clock: &Clock, options: Options, detail: &Detail) -> i32 {
+    let budget = Budget { used: 0, maximum: options.operations }; let result: i32 = 125;
+    if (!budget.charge()) { result = problem(detail,4,3,0); }
+    else {
+        let initial = sample(clock);
+        if (initial.is_err()) { result = problem(detail,4,2,initial.unwrap_err()); }
+        else {
+            let made = until(initial.unwrap(),options.timeout);
+            if (made.is_err()) { result = problem(detail,4,2,made.unwrap_err()); }
+            else {
+                let deadline = made.unwrap();
+                while (true) {
+                    if (!budget.charge()) { result = problem(detail,4,3,0); break; }
+                    let checked = sample(clock); if (checked.is_err()) { result = problem(detail,4,2,checked.unwrap_err()); break; } let now = checked.unwrap();
+                    if (deadline.is_expired(now)) { problem(detail,4,6,0); result = 124; break; }
+                    if (!budget.charge()) { result = problem(detail,4,3,0); break; }
+                    let waited = child.try_wait();
+                    if (waited.is_ok() && waited.unwrap().is_some()) { return status(waited.unwrap().unwrap(),detail); }
+                    if (waited.is_err()) { let failure = waited.unwrap_err(); if (failure.errno != 4) { if (child.id().is_none()) { detail.lost = true; } result = problem(detail,4,4,failure.errno); break; } }
+                    if (!budget.charge()) { result = problem(detail,4,3,0); break; }
+                    let polled = pause(poll,delay(deadline,now)); if (polled.is_err()) { let errno: i32 = poll_errno(polled.unwrap_err()); if (errno != 4) { result = problem(detail,4,5,errno); break; } }
+                }
+            }
+        }
+    }
+    cleanup(child,poll,clock,options,detail); return result;
+}
+fn supervise(child: std::command::Child, unknown: bool, poll: &std::poll::PollSet, clock: &Clock, options: Options, detail: &Detail, failure_errno: i32) -> i32 {
+    detail.pid = child.id().unwrap_or(0); detail.startup = 1; if (unknown) { detail.startup = 2; }
+    if (child.id().is_none()) { detail.lost = true; }
+    let errno: i32 = failure_errno;
+    if (child.group_id().is_none()) { let confirmed = child.confirm_group(); if (confirmed.is_err() && !unknown) { errno = confirmed.unwrap_err().errno; } } detail.group = child.group_id().is_some();
+    if (unknown || !detail.group) { let reason: i32 = 7; if (!unknown) { reason = 10; } problem(detail,3,reason,errno); cleanup(child.borrow(),poll,clock,options,detail); return 125; }
+    return monitor(child.borrow(),poll,clock,options,detail);
+}
+fn rejected(value: std::command::FailedStart, detail: &Detail) -> i32 {
+    status(value.status,detail); problem(detail,3,8,value.failure.errno); if (value.failure.errno == 2 || value.failure.errno == 20) { return 127; } return 126;
+}
+fn launch(arguments: std::args::Arguments, poll: &std::poll::PollSet, clock: &Clock, options: Options, detail: &Detail) -> i32 {
+    let captured = std::command::snapshot_environment(std::command::default_limits()); if (captured.is_err()) { return problem(detail,2,9,captured.unwrap_err().errno); } let environment = captured.unwrap();
+    let all = arguments.as_view(); let tail: core::slice::View<core::slice::View<u8>> = core::slice::View { values: all.values, start: all.start+options.first, length: all.length-options.first };
+    let request = std::command::request(arguments.get(options.first).unwrap(),tail,environment.as_view()); request.search = std::command::Search::EnvironmentPath; request.group = std::command::Group::New; request.stdin = std::command::Stdio::Null;
+    let spawned = std::command::spawn(request); environment.destroy();
+    if (spawned.is_err()) { return problem(detail,3,9,spawned.unwrap_err().errno); }
+    return match(spawned.unwrap()) {
+        std::command::Spawn::Child(child) -> supervise(child,false,poll,clock,options,detail,0),
+        std::command::Spawn::Unknown(value) -> supervise(value.child,true,poll,clock,options,detail,value.failure.errno),
+        std::command::Spawn::Failed(value) -> rejected(value,detail)
+    };
+}
+fn publish(source: core::slice::View<u8>, error: bool) -> bool {
+    let sink = std::stream::stdout(); if (error) { sink = std::stream::stderr(); } let at: i32 = 0; let calls: i32 = 0;
+    while (at < source.length && calls < 1024) {
+        let written: core::result::Result<i32,core::io::Error> = sink.write(source.values,source.start+at,source.length-at); calls += 1;
+        if (written.is_err()) { if (core::io::is_interrupted(written.unwrap_err())) { continue; } return false; }
+        let count: i32 = written.unwrap(); if (count <= 0 || count > source.length-at) { return false; } at += count;
+    } return at == source.length;
+}
+fn process(arguments: std::args::Arguments, detail: &Detail) -> i32 {
+    let options = Options { first: 0, timeout: 10000, grace: 1000, reap: 1000, operations: 1000000, status: false, help: false };
+    if (!parse(arguments,options.borrow())) { return problem(detail,1,1,0); } detail.show = options.status;
+    if (options.help) { if (!publish(bytes("Usage: run-group [--timeout-ms N] [--grace-ms N] [--reap-ms N] [--max-operations N] [--status] -- PROGRAM [ARG...]\n",115),false)) { return problem(detail,6,11,0); } return 0; }
+    let clock = Clock { last: core::time::instant(core::time::zero()), ready: false }; let checked = sample(clock.borrow()); if (checked.is_err()) { return problem(detail,2,2,checked.unwrap_err()); }
+    let made = std::poll::new(0); if (made.is_err()) { return problem(detail,2,9,poll_errno(made.unwrap_err())); } let poll = made.unwrap();
+    let result: i32 = launch(arguments,poll.borrow(),clock.borrow(),options,detail); poll.destroy(); return result;
+}
+fn report(detail: Detail) -> bool {
+    let storage: [u8;512] = [0;512]; let output = core::fmt::buffer(storage,0,512).unwrap();
+    output.write_text(text("run-group: stage=",17)); output.write_signed(detail.stage as i64,core::fmt::decimal()); output.write_text(text(" reason=",8)); output.write_signed(detail.reason as i64,core::fmt::decimal()); output.write_text(text(" errno=",7)); output.write_signed(detail.errno as i64,core::fmt::decimal());
+    output.write_text(text(" pid=",5)); output.write_signed(detail.pid as i64,core::fmt::decimal()); output.write_text(text(" startup=",9)); output.write_signed(detail.startup as i64,core::fmt::decimal()); output.write_text(text(" group-confirmed=",17)); output.write_bool(detail.group);
+    output.write_text(text(" term-scope=",12)); output.write_signed(detail.term as i64,core::fmt::decimal()); output.write_text(text(" group-kill-attempted=",22)); output.write_bool(detail.group_kill); output.write_text(text(" leader-kill-attempted=",23)); output.write_bool(detail.leader_kill);
+    output.write_text(text(" reaped=",8)); output.write_bool(detail.reaped); output.write_text(text(" ownership-lost=",16)); output.write_bool(detail.lost); output.write_text(text(" exit=",6)); output.write_signed(detail.code as i64,core::fmt::decimal()); output.write_text(text(" signal=",8)); output.write_signed(detail.signal as i64,core::fmt::decimal());
+    if (detail.incomplete > 0) { output.write_text(text(" cleanup-incomplete pid=",24)); output.write_signed(detail.incomplete as i64,core::fmt::decimal()); } if (detail.cleanup_errno != 0) { output.write_text(text(" cleanup-errno=",15)); output.write_signed(detail.cleanup_errno as i64,core::fmt::decimal()); }
+    output.write_text(text("\n",1)); let finished = output.finish(); if (finished.is_err()) { return false; } return publish(core::slice::view<u8>(storage,finished.unwrap()).unwrap(),true);
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 125; }
+    let detail = Detail { stage: 0, reason: 0, errno: 0, pid: 0, startup: 0, group: false, term: 0, group_kill: false, leader_kill: false, reaped: false, lost: false, code: -1, signal: -1, incomplete: 0, cleanup_errno: 0, show: false };
+    let captured = std::args::snapshot(1,4120,1048576); let result: i32 = 125;
+    if (captured.is_err()) { problem(detail.borrow(),1,9,0); } else { let arguments = captured.unwrap(); result = process(arguments,detail.borrow()); arguments.destroy(); }
+    if ((detail.stage != 0 || detail.show) && !report(detail)) { return 125; } return result;
+}

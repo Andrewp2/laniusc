@@ -1,0 +1,194 @@
+// Blocking system hostname/service resolution through libc getaddrinfo.
+// Fixed layouts below belong only to Linux x86_64/glibc, not Lanius records.
+// See docs/stdlib-resolve.md for NSS policy, ownership and blocking limits.
+module std::resolve;
+import alloc::allocator;
+import alloc::vec;
+import core::mem;
+import core::net;
+import core::result;
+import core::slice;
+import std::socket;
+
+pub enum Host { Name(core::slice::View<u8>), Numeric(core::slice::View<u8>), Loopback, Wildcard }
+pub enum Service { Name(core::slice::View<u8>), Port(u16), Unspecified }
+pub enum Family { Any, Ipv4, Ipv6 }
+pub enum Mapping { Disabled, Fallback, All }
+pub struct Options { family: Family, kind: std::socket::Kind, addr_config: bool, mapping: Mapping }
+pub struct Limits { host_bytes: i32, service_bytes: i32, max_results: i32 }
+pub enum Phase { Input, Host, Service, Lookup, Results }
+pub enum Cause { Bounds, InvalidLimits, InvalidOptions, Empty, Nul, NonAscii, InvalidHost, InvalidService, MissingInput, AllocationFailed, Native, ResultLimit, UnsupportedResult, InvalidResult }
+// code is the unchanged EAI result for Native; system is saved errno only
+// for EAI_SYSTEM. index is a byte offset / result ordinal, or -1 if not local.
+pub struct Error { cause: Cause, phase: Phase, code: i32, system: i32, index: i32 }
+struct Staged { storage: ptr, bytes: usize, value: ptr }
+
+pub const MAX_HOST_BYTES: i32 = 65536;
+pub const MAX_SERVICE_BYTES: i32 = 4096;
+pub const MAX_RESULTS: i32 = 4096;
+pub fn default_options() -> Options { return Options { family: Family::Any, kind: std::socket::Kind::Tcp, addr_config: false, mapping: Mapping::Disabled }; }
+pub fn default_limits() -> Limits { return Limits { host_bytes: 4096, service_bytes: 64, max_results: 256 }; }
+fn local(cause: Cause, phase: Phase, index: i32) -> Error { return Error { cause: cause, phase: phase, code: 0, system: 0, index: index }; }
+fn valid(bytes: core::slice::View<u8>) -> bool { return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647 - bytes.length; }
+fn valid_limits(limits: Limits) -> bool { return limits.host_bytes > 0 && limits.host_bytes <= MAX_HOST_BYTES && limits.service_bytes > 0 && limits.service_bytes <= MAX_SERVICE_BYTES && limits.max_results > 0 && limits.max_results <= MAX_RESULTS; }
+fn family_code(family: Family) -> i32 { return match (family) { Family::Any -> 0, Family::Ipv4 -> 2, Family::Ipv6 -> 10 }; }
+fn kind_code(kind: std::socket::Kind) -> i32 { return match (kind) { std::socket::Kind::Tcp -> 1, std::socket::Kind::Udp -> 2 }; }
+fn protocol_code(kind: std::socket::Kind) -> i32 { return match (kind) { std::socket::Kind::Tcp -> 6, std::socket::Kind::Udp -> 17 }; }
+fn null_host(host: Host) -> bool { return match (host) { Host::Loopback -> true, Host::Wildcard -> true, _ -> false }; }
+fn null_service(service: Service) -> bool { return match (service) { Service::Unspecified -> true, _ -> false }; }
+fn checked(bytes: core::slice::View<u8>, maximum: i32, phase: Phase) -> core::result::Result<i32,Error> {
+    if (!valid(bytes)) { return core::result::Err(local(Cause::Bounds,phase,-1)); }
+    if (bytes.length == 0) { return core::result::Err(local(Cause::Empty,phase,0)); }
+    if (bytes.length > maximum) { return core::result::Err(local(Cause::Bounds,phase,-1)); }
+    let index: i32 = 0;
+    while (index < bytes.length) {
+        let value: u8 = bytes.values[bytes.start + index];
+        if (value == 0) { return core::result::Err(local(Cause::Nul,phase,index)); }
+        if (value < 33 || value > 126) { return core::result::Err(local(Cause::NonAscii,phase,index)); }
+        index += 1;
+    }
+    return core::result::Ok(0);
+}
+fn checked_host(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32,Error> {
+    let result: core::result::Result<i32,Error> = checked(bytes,limits.host_bytes,Phase::Host);
+    if (result.is_err()) { return result; }
+    // glibc rewrites exact "*" to NULL before applying AI_NUMERICHOST.
+    if (bytes.length == 1 && bytes.values[bytes.start] == 42) { return core::result::Err(local(Cause::InvalidHost,Phase::Host,0)); }
+    return core::result::Ok(0);
+}
+fn checked_service(bytes: core::slice::View<u8>, limits: Limits) -> core::result::Result<i32,Error> {
+    let result: core::result::Result<i32,Error> = checked(bytes,limits.service_bytes,Phase::Service);
+    if (result.is_err()) { return result; }
+    let first: u8 = bytes.values[bytes.start];
+    if (first == 43 || first == 45 || (bytes.length == 1 && first == 42)) { return core::result::Err(local(Cause::InvalidService,Phase::Service,0)); }
+    let index: i32 = 0; let digits: bool = true;
+    while (index < bytes.length) { let value: u8 = bytes.values[bytes.start + index]; if (value < 48 || value > 57) { digits = false; } index += 1; }
+    // Numeric services must enter through Port(u16), never libc strtoul.
+    if (digits) { return core::result::Err(local(Cause::InvalidService,Phase::Service,0)); }
+    return core::result::Ok(0);
+}
+fn empty_stage() -> Staged { let nowhere: ptr = 0; return Staged { storage: nowhere, bytes: 0, value: nowhere }; }
+fn pack(bytes: core::slice::View<u8>, phase: Phase) -> core::result::Result<Staged,Error> {
+    let size: usize = (bytes.length as usize) + 1;
+    let storage: ptr = alloc::allocator::alloc(size,8);
+    if (storage == 0) { return core::result::Err(local(Cause::AllocationFailed,phase,-1)); }
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(storage,bytes.length + 1);
+    let index: i32 = 0;
+    while (index < bytes.length) { raw[index] = bytes.values[bytes.start + index]; index += 1; }
+    raw[bytes.length] = 0;
+    return core::result::Ok(Staged { storage: storage, bytes: size, value: storage });
+}
+fn port_length(port: u16) -> i32 { if (port >= 10000) { return 5; } if (port >= 1000) { return 4; } if (port >= 100) { return 3; } if (port >= 10) { return 2; } return 1; }
+fn checked_port(port: u16, limits: Limits) -> core::result::Result<i32,Error> { if (port_length(port) > limits.service_bytes) { return core::result::Err(local(Cause::Bounds,Phase::Service,-1)); } return core::result::Ok(0); }
+fn pack_port(port: u16) -> core::result::Result<Staged,Error> {
+    let length: i32 = port_length(port); let size: usize = (length as usize) + 1;
+    let storage: ptr = alloc::allocator::alloc(size,8);
+    if (storage == 0) { return core::result::Err(local(Cause::AllocationFailed,Phase::Service,-1)); }
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(storage,length + 1);
+    raw[length] = 0; let index: i32 = length - 1; let rest: u32 = port as u32;
+    while (true) { raw[index] = 48 + (rest % 10) as u8; rest = rest / 10; index -= 1; if (rest == 0) { break; } }
+    return core::result::Ok(Staged { storage: storage, bytes: size, value: storage });
+}
+impl Staged { fn destroy(&self) { if (self.storage != 0) { alloc::allocator::dealloc(self.storage,self.bytes,8); } } }
+fn pointer_at(storage: ptr) -> ptr { let cell: [ptr] = core::mem::typed_slice_from_raw_parts(storage,1); return cell[0]; }
+fn unsigned32(bytes: [u8], offset: i32) -> u32 { return (bytes[offset] as u32) | ((bytes[offset + 1] as u32) << 8) | ((bytes[offset + 2] as u32) << 16) | ((bytes[offset + 3] as u32) << 24); }
+fn flags(host: Host, service: Service, options: Options) -> i32 {
+    let value: i32 = 0;
+    let host_flags: i32 = match (host) { Host::Wildcard -> 1, Host::Numeric(bytes) -> 4, _ -> 0 };
+    let service_flags: i32 = match (service) { Service::Port(port) -> 1024, _ -> 0 };
+    value = value | host_flags | service_flags;
+    if (options.addr_config) { value = value | 32; }
+    let mapping_flags: i32 = match (options.mapping) { Mapping::Disabled -> 0, Mapping::Fallback -> 8, Mapping::All -> 24 };
+    value = value | mapping_flags;
+    return value;
+}
+// The native list is owned and immutable here. Pointers must be physically
+// backed by libc's documented structures; logical checks cannot prove memory.
+fn decode(node: ptr, options: Options, zero_port: bool, ordinal: i32) -> core::result::Result<core::net::SocketAddr,Error> {
+    let fields: [u8] = core::mem::typed_slice_from_raw_parts(node,48);
+    let family: u32 = unsigned32(fields,4);
+    if (family != 2 && family != 10) { return core::result::Err(local(Cause::UnsupportedResult,Phase::Results,ordinal)); }
+    if (family_code(options.family) != 0 && family != family_code(options.family) as u32) { return core::result::Err(local(Cause::InvalidResult,Phase::Results,ordinal)); }
+    if (unsigned32(fields,8) != kind_code(options.kind) as u32 || unsigned32(fields,12) != protocol_code(options.kind) as u32) { return core::result::Err(local(Cause::UnsupportedResult,Phase::Results,ordinal)); }
+    let length: u32 = unsigned32(fields,16); let expected: u32 = 16; if (family == 10) { expected = 28; }
+    if (length != expected) { return core::result::Err(local(Cause::InvalidResult,Phase::Results,ordinal)); }
+    let address: ptr = pointer_at(node + 24);
+    if (address == 0) { return core::result::Err(local(Cause::InvalidResult,Phase::Results,ordinal)); }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(address,expected as i32);
+    if (((bytes[0] as u32) | ((bytes[1] as u32) << 8)) != family) { return core::result::Err(local(Cause::InvalidResult,Phase::Results,ordinal)); }
+    let port: u16 = ((bytes[2] as u16) << 8) | (bytes[3] as u16);
+    if (zero_port && port != 0) { return core::result::Err(local(Cause::InvalidResult,Phase::Results,ordinal)); }
+    if (family == 2) {
+        return core::result::Ok(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(bytes[4],bytes[5],bytes[6],bytes[7]), port: port }));
+    }
+    if (unsigned32(bytes,4) != 0) { return core::result::Err(local(Cause::UnsupportedResult,Phase::Results,ordinal)); }
+    let octets: [u8] = core::mem::typed_slice_from_raw_parts(address + 8,16);
+    let view: core::slice::View<u8> = core::slice::View { values: octets, start: 0, length: 16 };
+    let ip: core::net::Ipv6Addr = core::net::ipv6_from_octets(view).unwrap();
+    return core::result::Ok(core::net::SocketAddr::V6(core::net::SocketAddrV6 { address: ip, port: port, scope: unsigned32(bytes,24) }));
+}
+
+// One synchronous libc lookup. All local validation precedes allocations and
+// calls. Native order/duplicates are preserved; errors publish no partial Vec.
+// Inputs are borrowed only during this call; returned values own no C pointers.
+pub fn lookup(host: Host, service: Service, options: Options, limits: Limits) -> core::result::Result<alloc::vec::Vec<core::net::SocketAddr>,Error> {
+    if (!valid_limits(limits)) { return core::result::Err(local(Cause::InvalidLimits,Phase::Input,-1)); }
+    let mapped: bool = match (options.mapping) { Mapping::Disabled -> false, _ -> true };
+    if (mapped && family_code(options.family) != 10) { return core::result::Err(local(Cause::InvalidOptions,Phase::Input,-1)); }
+    let checked: core::result::Result<i32,Error> = match (host) { Host::Name(bytes) -> checked_host(bytes,limits), Host::Numeric(bytes) -> checked_host(bytes,limits), _ -> core::result::Ok(0) };
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    checked = match (service) { Service::Name(bytes) -> checked_service(bytes,limits), Service::Port(port) -> checked_port(port,limits), _ -> core::result::Ok(0) };
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    if (null_host(host) && null_service(service)) { return core::result::Err(local(Cause::MissingInput,Phase::Input,-1)); }
+    let staged_host: core::result::Result<Staged,Error> = match (host) { Host::Name(bytes) -> pack(bytes,Phase::Host), Host::Numeric(bytes) -> pack(bytes,Phase::Host), _ -> core::result::Ok(empty_stage()) };
+    if (staged_host.is_err()) { return core::result::Err(staged_host.unwrap_err()); }
+    let node: Staged = staged_host.unwrap();
+    let staged_service: core::result::Result<Staged,Error> = match (service) { Service::Name(bytes) -> pack(bytes,Phase::Service), Service::Port(port) -> pack_port(port), _ -> core::result::Ok(empty_stage()) };
+    if (staged_service.is_err()) { let error: Error = staged_service.unwrap_err(); node.destroy(); return core::result::Err(error); }
+    let target: Staged = staged_service.unwrap();
+    // Explicit packed host block: addrinfo48 (alignment8), then result ptr8.
+    let frame: ptr = alloc::allocator::alloc(56,8);
+    if (frame == 0) { target.destroy(); node.destroy(); return core::result::Err(local(Cause::AllocationFailed,Phase::Lookup,-1)); }
+    let bytes: [u8] = core::mem::typed_slice_from_raw_parts(frame,56);
+    let index: i32 = 0; while (index < 56) { bytes[index] = 0; index += 1; }
+    let hints: [i32] = core::mem::typed_slice_from_raw_parts(frame,4);
+    hints[0] = flags(host,service,options); hints[1] = family_code(options.family); hints[2] = kind_code(options.kind); hints[3] = protocol_code(options.kind);
+    let errno_pointer: ptr = __errno_location();
+    let errno_cell: [i32] = core::mem::typed_slice_from_raw_parts(errno_pointer,1);
+    errno_cell[0] = 0;
+    let code: i32 = getaddrinfo(node.value,target.value,frame,frame + 48);
+    let saved_errno: i32 = errno_cell[0];
+    // Nonzero status transfers no native-list ownership, even if a broken
+    // implementation scribbles the output slot. libc owns its partial cleanup.
+    if (code != 0) {
+        let system: i32 = 0; if (code == -11) { system = saved_errno; }
+        let error: Error = Error { cause: Cause::Native, phase: Phase::Lookup, code: code, system: system, index: -1 };
+        alloc::allocator::dealloc(frame,56,8); target.destroy(); node.destroy(); return core::result::Err(error);
+    }
+    let head: ptr = pointer_at(frame + 48);
+    alloc::allocator::dealloc(frame,56,8); target.destroy(); node.destroy();
+    if (head == 0) { return core::result::Err(local(Cause::InvalidResult,Phase::Results,0)); }
+    let cursor: ptr = head; let count: i32 = 0;
+    while (cursor != 0) {
+        if (count == limits.max_results) { let error: Error = local(Cause::ResultLimit,Phase::Results,count); freeaddrinfo(head); return core::result::Err(error); }
+        let decoded: core::result::Result<core::net::SocketAddr,Error> = decode(cursor,options,null_service(service),count);
+        if (decoded.is_err()) { let error: Error = decoded.unwrap_err(); freeaddrinfo(head); return core::result::Err(error); }
+        count += 1; cursor = pointer_at(cursor + 40);
+    }
+    let allocated: core::result::Result<alloc::vec::Vec<core::net::SocketAddr>,alloc::vec::Error> = alloc::vec::with_capacity<core::net::SocketAddr>(count);
+    if (allocated.is_err()) { let error: Error = local(Cause::AllocationFailed,Phase::Results,-1); freeaddrinfo(head); return core::result::Err(error); }
+    let output: alloc::vec::Vec<core::net::SocketAddr> = allocated.unwrap(); cursor = head; index = 0;
+    while (cursor != 0) {
+        let decoded: core::result::Result<core::net::SocketAddr,Error> = decode(cursor,options,null_service(service),index);
+        if (decoded.is_err()) { let error: Error = decoded.unwrap_err(); freeaddrinfo(head); output.destroy(); return core::result::Err(error); }
+        let added: core::result::Result<i32,alloc::vec::Error> = output.try_push(decoded.unwrap());
+        if (added.is_err()) { let error: Error = local(Cause::AllocationFailed,Phase::Results,index); freeaddrinfo(head); output.destroy(); return core::result::Err(error); }
+        index += 1; cursor = pointer_at(cursor + 40);
+    }
+    freeaddrinfo(head); return core::result::Ok(output);
+}
+
+// Exact glibc C signatures; no Lanius aggregate crosses the foreign boundary.
+extern "C" fn getaddrinfo(node: ptr, service: ptr, hints: ptr, result: ptr) -> i32;
+extern "C" fn freeaddrinfo(result: ptr);
+extern "C" fn __errno_location() -> ptr;

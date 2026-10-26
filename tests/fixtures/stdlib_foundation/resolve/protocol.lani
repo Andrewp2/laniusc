@@ -1,0 +1,67 @@
+// Test-only packet boundary. Twenty LE u32 words, then host/service bytes.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::result;
+import core::slice;
+import std::io;
+import std::io_decimal;
+import std::resolve;
+import std::socket;
+import std::stream;
+extern "C" fn test_resolve_begin(mode: i32, parameter: i32);
+extern "C" fn test_resolve_stat(index: i32) -> i64;
+extern "C" fn test_resolve_clobber_errno();
+fn word(bytes: [u8], at: i32) -> i32 { return ((bytes[at] as u32) | ((bytes[at+1] as u32)<<8) | ((bytes[at+2] as u32)<<16) | ((bytes[at+3] as u32)<<24)) as i32; }
+fn number(value: i32) { std::io_decimal::write_i32(1,value); }
+fn colon() { std::io::write_byte(1,58); }
+fn hex(value: u8) { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("0123456789abcdef"),16); let widened: i32 = value as i32; let high: i32 = raw[widened/16] as i32; let low: i32 = raw[widened%16] as i32; std::io::write_byte(1,high); std::io::write_byte(1,low); }
+fn endpoint(value: core::net::SocketAddr) {
+    let ipv4 = match(value) { core::net::SocketAddr::V4(address) -> true, _ -> false };
+    if (ipv4) {
+        let address = match(value) { core::net::SocketAddr::V4(address) -> address, _ -> core::net::SocketAddrV4 { address: core::net::ipv4(0,0,0,0), port: 0 } };
+        number(4); colon(); number(address.port as i32); colon(); number(0); colon(); let at: i32 = 0; while (at < 4) { hex(address.address.octet(at).unwrap()); at += 1; }
+    } else {
+        let address = match(value) { core::net::SocketAddr::V6(address) -> address, _ -> core::net::SocketAddrV6 { address: core::net::ipv6(0,0,0,0,0,0,0,0), port: 0, scope: 0 } };
+        number(6); colon(); number(address.port as i32); colon(); std::io_decimal::write_u64(1,address.scope as u64); colon(); let at: i32 = 0; while (at < 16) { hex(address.address.octet(at).unwrap()); at += 1; }
+    }
+    std::io::write_byte(1,47);
+}
+fn error(value: std::resolve::Error) {
+    let cause: i32 = match(value.cause) { std::resolve::Cause::Bounds -> 1, std::resolve::Cause::InvalidLimits -> 2, std::resolve::Cause::InvalidOptions -> 3, std::resolve::Cause::Empty -> 4, std::resolve::Cause::Nul -> 5, std::resolve::Cause::NonAscii -> 6, std::resolve::Cause::InvalidHost -> 7, std::resolve::Cause::InvalidService -> 8, std::resolve::Cause::MissingInput -> 9, std::resolve::Cause::AllocationFailed -> 10, std::resolve::Cause::Native -> 11, std::resolve::Cause::ResultLimit -> 12, std::resolve::Cause::UnsupportedResult -> 13, std::resolve::Cause::InvalidResult -> 14 };
+    let phase: i32 = match(value.phase) { std::resolve::Phase::Input -> 1, std::resolve::Phase::Host -> 2, std::resolve::Phase::Service -> 3, std::resolve::Phase::Lookup -> 4, std::resolve::Phase::Results -> 5 };
+    std::io::write_byte(1,69); number(cause); colon(); number(phase); colon(); number(value.code); colon(); number(value.system); colon(); number(value.index);
+}
+fn stats() { std::io::write_byte(1,59); let at: i32 = 0; while (at < 15) { if (at > 0) { std::io::write_byte(1,44); } std::io_decimal::write_i64(1,test_resolve_stat(at)); at += 1; } }
+fn main() -> i32 {
+    let source = std::stream::stdin(); let words: [i32;17500] = [0;17500]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),70000);
+    let native_host: [u8;4104] = [165;4104]; let native_service: [u8;4104] = [165;4104]; let packed_host: [i32;1026] = [0;1026]; let packed_service: [i32;1026] = [0;1026];
+    let host_packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_host),4104); let service_packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_service),4104);
+    while (true) {
+        if (source.read(bytes,0,1).unwrap() == 0) { return 0; } core::io::read_exact(source.borrow(),bytes,1,79).unwrap();
+        let host_length = word(bytes,48); let service_length = word(bytes,52); let layout = word(bytes,44); assert(host_length >= 0 && host_length <= 65536 && service_length >= 0 && service_length <= 4096 && layout >= 0 && layout <= 2); assert(layout == 1 || (host_length <= 4096 && service_length <= 4096));
+        core::io::read_exact(source.borrow(),bytes,80,host_length+service_length).unwrap();
+        let host_owner: alloc::vec::Vec<u8> = alloc::vec::new(); let service_owner: alloc::vec::Vec<u8> = alloc::vec::new(); let host_bytes: [u8] = native_host; let service_bytes: [u8] = native_service;
+        if (layout == 1) { host_owner.try_resize(host_length+8,165).unwrap(); service_owner.try_resize(service_length+8,165).unwrap(); host_bytes = host_owner.as_slice(); service_bytes = service_owner.as_slice(); }
+        if (layout == 2) { host_bytes = host_packed; service_bytes = service_packed; }
+        let at: i32 = 0; while (at < 3) { host_bytes[at] = 165; service_bytes[at] = 165; at += 1; }
+        at = 0; while (at < host_length) { host_bytes[3+at] = bytes[80+at]; at += 1; } host_bytes[3+host_length] = 165;
+        at = 0; while (at < service_length) { service_bytes[3+at] = bytes[80+host_length+at]; at += 1; } service_bytes[3+service_length] = 165;
+        let host_view = core::slice::View<u8> { values: host_bytes, start: word(bytes,60), length: word(bytes,64) }; let service_view = core::slice::View<u8> { values: service_bytes, start: word(bytes,68), length: word(bytes,72) };
+        let host: std::resolve::Host = match(word(bytes,8)) { 0 -> std::resolve::Host::Name(host_view), 1 -> std::resolve::Host::Numeric(host_view), 2 -> std::resolve::Host::Loopback, _ -> std::resolve::Host::Wildcard };
+        let service: std::resolve::Service = match(word(bytes,12)) { 0 -> std::resolve::Service::Name(service_view), 1 -> std::resolve::Service::Port(word(bytes,56) as u16), _ -> std::resolve::Service::Unspecified };
+        let options = std::resolve::default_options(); options.family = match(word(bytes,16)) { 0 -> std::resolve::Family::Any, 1 -> std::resolve::Family::Ipv4, _ -> std::resolve::Family::Ipv6 }; options.kind = std::socket::Kind::Tcp; if (word(bytes,20) != 0) { options.kind = std::socket::Kind::Udp; } options.addr_config = word(bytes,24) != 0; options.mapping = match(word(bytes,28)) { 0 -> std::resolve::Mapping::Disabled, 1 -> std::resolve::Mapping::Fallback, _ -> std::resolve::Mapping::All };
+        test_resolve_begin(word(bytes,0),word(bytes,4));
+        let result = std::resolve::lookup(host,service,options,std::resolve::Limits { host_bytes: word(bytes,32), service_bytes: word(bytes,36), max_results: word(bytes,40) });
+        test_resolve_clobber_errno();
+        assert(host_bytes[0] == 165 && host_bytes[2] == 165 && host_bytes[3+host_length] == 165 && service_bytes[0] == 165 && service_bytes[2] == 165 && service_bytes[3+service_length] == 165);
+        at = 0; while (at < host_length) { assert(host_bytes[3+at] == bytes[80+at]); host_bytes[3+at] = 0; at += 1; }
+        at = 0; while (at < service_length) { assert(service_bytes[3+at] == bytes[80+host_length+at]); service_bytes[3+at] = 0; at += 1; }
+        if (result.is_err()) { error(result.unwrap_err()); }
+        else { let output = result.unwrap(); std::io::write_byte(1,79); let values = output.as_slice(); at = 0; while (at < output.len()) { endpoint(values[at]); at += 1; } output.destroy(); output.destroy(); assert(output.len() == 0 && output.capacity() == 0); }
+        assert(test_resolve_stat(2) == 0 && test_resolve_stat(3) == 0); stats(); host_owner.destroy(); service_owner.destroy(); std::io::write_byte(1,10);
+    }
+    return 0;
+}

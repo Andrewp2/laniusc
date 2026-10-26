@@ -13,6 +13,46 @@ selected working profile.
 [polling](stdlib-poll.md) and [subprocesses](stdlib-command.md) retain their
 documented contracts. The full library goal remains open.
 
+## System lookup and child-group authority
+
+The [system hostname/service resolver](stdlib-resolve.md) uses the existing
+scalar/pointer C profile to call libc `getaddrinfo`/`freeaddrinfo`; it adds no
+compiler service or aggregate C ABI. Its Linux x86_64/glibc contract fixes and
+checks the packed `addrinfo` and IPv4/IPv6 sockaddr layouts. Explicit hints
+select ASCII host/service input, family, TCP/UDP and supported flags. Native
+order and duplicates become independent owned `SocketAddr` values, with
+all-or-nothing result caps and strict native-shape admission. Only successful
+lookup transfers a list owner; cleanup receives the original head once.
+`EAI_SYSTEM` preserves errno captured immediately before cleanup.
+
+All four [resolver verification groups](stdlib-resolve-testing.md) execute,
+including independent libc comparisons and every reached wrapper allocation
+failure. The [resolve-host program](stdlib-resolve-host.md) composes the value
+API with bounded staged output and passes five groups, including its seven
+reached allocation failures. Separate receipts and corrected harness retries
+are retained in the guides; no combined passing suite invocation is claimed.
+Neither a byte/result cap nor a socket deadline bounds
+synchronous libc/NSS allocation, internal work or elapsed lookup time.
+Asynchronous resolution, callbacks, NSS policy isolation and portable layout
+profiles require separate contracts and evidence.
+
+[Explicit child process groups](stdlib-command-groups.md) use the existing
+Linux syscall boundary, independently of libc resolution. Group creation and
+confirmation are separate from startup certainty. Only the original confirmed
+group with an owned, unreaped leader grants negative-PGID signal authority.
+Non-reaping observation retains that leader: capture's terminal `status` can
+exist while `reaped=false`, so descendant-held pipes can still be drained or
+explicitly cancelled. Final reaping or observed ECHILD revokes authority.
+
+The [run-group supervisor](stdlib-run-group.md) applies TERM/grace/KILL and
+bounded direct-child reap attempts, reporting incomplete cleanup. Five focused
+API groups and five supervisor groups (53 application cases) pass through
+separate receipts. The single-threaded,
+one-active-owner, no-outside-reaper preconditions still apply. Descendants can
+leave the group/session or change permissions; this is not process-tree
+containment, terminal job control or a guarantee that a kernel-stuck process
+becomes reapable by a timestamp.
+
 ## Native cryptography and remaining security work
 
 OpenSSL 3 EVP supplies executable SHA-256, SHA-512, SHA3-256 and SHA3-512.
@@ -165,13 +205,15 @@ Separate three admissions:
 3. **Callbacks:** addressable exported entries, ABI trampolines, context lifetime,
    reentrancy and foreign-thread attachment remain unimplemented.
 
-OpenSSL digests, client TLS with peer verification and SQLite supply native bindings with
+OpenSSL digests, verified client/server TLS including mutual TLS, and SQLite supply native bindings with
 execution evidence. The SQLite adapter and its application execute database,
 statement, buffer and failure contracts documented in their guides, including
 real files, transactions and native lock recovery. Client TLS verifies peer
-trust and identity within its documented profile. Server TLS, standalone
-encryption/signature APIs and broader certificate policy still need their own
-accepted wrappers. No JSON bridge, subprocess serialization adapter or
+trust and identity within its documented profile; required servers verify fresh
+client chains without assigning application authorization. Standalone
+encryption/signature APIs and broader certificate policy remain work.
+The libc resolver has separate layout, blocking and ownership limits above.
+No JSON bridge, subprocess serialization adapter or
 declaration-only API is counted as native integration. Production sensitive
 operations use established native libraries, with no custom Lanius or
 Rust/Python cryptographic implementation.
