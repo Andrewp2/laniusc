@@ -1,0 +1,52 @@
+// Separate admission from Slot<T>: matching a borrowed optional payload must
+// preserve a borrow of its stored payload, not a borrow of a pattern copy.
+module app::main;
+import core::option;
+
+// Test-local inherent method: borrow self, not a field. Production Option is
+// unchanged; this isolates the enum match from Slot<T>::value_ref's rejection.
+impl<T> core::option::Option<T> {
+    fn candidate_borrow(&self) -> &core::option::Option<T> { return self; }
+}
+
+struct Record { count: u64, calls: i32 }
+impl Record {
+    fn add(&self, amount: u64) { self.count += amount; self.calls += 1; }
+}
+
+fn payload_ref<T>(value: &core::option::Option<T>) -> core::option::Option<&T> {
+    let absent: core::option::Option<&T> = core::option::None();
+    return match (value) {
+        core::option::Some(inner) -> core::option::Some(inner),
+        core::option::None -> absent
+    };
+}
+
+fn stored_payload<T>(value: &core::option::Option<T>) -> core::option::Option<&T> {
+    return payload_ref<T>(value);
+}
+fn update(record: &Record, amount: u64) { record.add(amount); }
+
+fn main() -> i32 {
+    let initial: Record = Record { count: 4294967297, calls: 0 };
+    let stored: core::option::Option<Record> = core::option::Some(initial);
+    let first: &Record = stored_payload<Record>(stored.candidate_borrow()).unwrap();
+    update(first, 7);
+    let observed: Record = stored.unwrap();
+    assert(observed.count == 4294967304 && observed.calls == 1);
+
+    let second: &Record = stored_payload<Record>(stored.candidate_borrow()).unwrap();
+    update(second, 9);
+    assert(first.count == 4294967313 && first.calls == 2);
+    let final_value: Record = stored.unwrap();
+    assert(final_value.count == 4294967313 && final_value.calls == 2);
+    assert(initial.count == 4294967297 && initial.calls == 0);
+
+    // End every payload borrow before changing the variant. No default T is
+    // constructed, no layout offsets are assumed, and None is never projected.
+    stored = core::option::None();
+    assert(stored_payload<Record>(stored.candidate_borrow()).is_none());
+    let empty: core::option::Option<Record> = core::option::None();
+    assert(stored_payload<Record>(empty.candidate_borrow()).is_none());
+    return 0;
+}

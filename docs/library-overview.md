@@ -1,6 +1,12 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
+The full library goal remains open. The next
+[scan and nested-iteration increment](library-nested-iteration-plan.md) is
+planned over the existing iterator protocol. Small user-module controls execute
+generic cursor value transfer and six owning Vec/Deque retirement/recovery
+profiles. Public adapters, imported-library composition, full owner accounting
+and the real application remain pending; these controls establish no new
+executable library API. The accepted
 [filesystem increment](library-filesystem-completion-plan.md) implements owned
 temporary directories, checked link/readlink and permission operations, and a
 real `mktemp_dir` program. All 13 selected Rust tests pass across separate

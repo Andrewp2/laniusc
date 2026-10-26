@@ -618,6 +618,16 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Next [scan and nested-iteration increment](library-nested-iteration-plan.md):
+  Scan/TryScan and general TryFlatten/TryFlatMap will use the canonical
+  protocol, with explicit inner retirement and recovery. A generic slice
+  value-transfer control and six owning Vec/Deque user-module profiles compile
+  and execute; they are admission controls, not implemented public adapters.
+  Production stdlib/caller-policy composition, initially empty construction,
+  outer acquisition ordering, full pre-exit owner accounting and the real
+  flatten/sum application remain pending. The explicit policy returns an
+  updated recoverable inner on failure; it does not require arbitrary J to
+  provide a borrowing helper or discard exhausted backing.
 - Current [filesystem increment](library-filesystem-completion-plan.md):
   [FileOps link/readlink and permissions](stdlib-filesystem-links.md),
   [TempDir](stdlib-temp-directories.md) and the

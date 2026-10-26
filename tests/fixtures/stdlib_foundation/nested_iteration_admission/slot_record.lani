@@ -1,0 +1,44 @@
+// Admission candidate, not a library implementation. The assertions must run:
+// a compile-only result does not establish that the returned borrow aliases
+// the generic field rather than a temporary shallow copy.
+module app::main;
+
+struct Slot<T> { value: T }
+impl<T> Slot<T> {
+    fn borrow(&self) -> &Slot<T> { return self; }
+    fn value_ref(&self) -> &T { return self.value; }
+}
+
+struct Record { count: u64, calls: i32, marks: [u64;2] }
+impl Record {
+    fn add(&self, amount: u64) {
+        self.count += amount;
+        self.calls += 1;
+        self.marks[0] = self.count;
+        self.marks[1] = self.calls as u64;
+    }
+}
+
+fn stored_ref<T>(slot: &Slot<T>) -> &T { return slot.value_ref(); }
+fn update(record: &Record, amount: u64) { record.add(amount); }
+
+fn main() -> i32 {
+    let initial: Record = Record { count: 4294967297, calls: 0, marks: [0,0] };
+    let slot: Slot<Record> = Slot { value: initial };
+    let first: &Record = stored_ref<Record>(slot.borrow());
+    update(first, 7);
+    assert(slot.value.count == 4294967304 && slot.value.calls == 1);
+    assert(slot.value.marks[0] == 4294967304 && slot.value.marks[1] == 1);
+
+    // A second generic projection must see and mutate the same stored record.
+    let second: &Record = stored_ref<Record>(slot.borrow());
+    update(second, 9);
+    assert(first.count == 4294967313 && first.calls == 2);
+    assert(slot.value.count == 4294967313 && slot.value.calls == 2);
+    assert(slot.value.marks[0] == 4294967313 && slot.value.marks[1] == 2);
+
+    // The original by-value input is an inactive copy, not another owner or
+    // position authority. Mutating the slot must not mutate this record copy.
+    assert(initial.count == 4294967297 && initial.calls == 0);
+    return 0;
+}

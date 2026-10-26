@@ -1,0 +1,58 @@
+// Admission only: move a generic cursor out, mutate its actual local receiver,
+// then reinstall that updated value. No borrowed enum payload or Borrow bound.
+module app::main;
+import core::iter;
+import core::option;
+import core::slice;
+
+// T is carried by the nominal adapter, as it is by existing Map/Take. This
+// admission does not require reverse inference from J's trait implementation.
+struct Active<J,T> { value: core::option::Option<J>, done: bool, calls: i32 }
+impl<J,T> Active<J,T> {
+    fn take_active(&self) -> core::option::Option<J> {
+        let previous: core::option::Option<J> = self.value;
+        self.value = core::option::None();
+        self.done = true;
+        return previous;
+    }
+}
+pub impl<J,T> core::iter::Iterator<T> for Active<J,T> where J: core::iter::Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done || self.value.is_none()) { return core::option::None(); }
+        let inner: J = self.value.unwrap();
+        // The option's old shallow copy has no active position/cleanup duty
+        // once cleared. No callback may reenter this temporary-empty adapter.
+        self.value = core::option::None();
+        self.calls += 1;
+        let result: core::option::Option<T> = inner.next();
+        self.value = core::option::Some(inner);
+        if (result.is_none()) { self.done = true; }
+        return result;
+    }
+}
+
+fn main() -> i32 {
+    let values: [i32;3] = [7,11,19];
+    let source: core::slice::Iter<i32> = core::iter::from_slice<i32>(values,3).unwrap();
+    let active: Active<core::slice::Iter<i32>,i32> = Active { value: core::option::Some(source), done: false, calls: 0 };
+    assert(active.next().unwrap() == 7);
+    assert(active.value.unwrap().remaining() == 2 && active.calls == 1);
+    assert(active.next().unwrap() == 11);
+    assert(active.value.unwrap().remaining() == 1 && active.calls == 2);
+    assert(active.next().unwrap() == 19);
+    assert(active.value.unwrap().remaining() == 0 && active.calls == 3);
+    assert(active.next().is_none() && active.calls == 4);
+    assert(active.next().is_none() && active.calls == 4);
+    let finished: core::slice::Iter<i32> = active.take_active().unwrap();
+    assert(finished.remaining() == 0 && active.value.is_none());
+    assert(active.take_active().is_none() && active.next().is_none() && active.calls == 4);
+
+    let other: core::slice::Iter<i32> = core::iter::from_slice<i32>(values,3).unwrap();
+    let stopped: Active<core::slice::Iter<i32>,i32> = Active { value: core::option::Some(other), done: false, calls: 0 };
+    assert(stopped.next().unwrap() == 7);
+    let remainder: core::slice::Iter<i32> = stopped.take_active().unwrap();
+    assert(remainder.remaining() == 2 && stopped.next().is_none() && stopped.calls == 1);
+    assert(remainder.next().unwrap() == 11 && remainder.next().unwrap() == 19);
+    assert(remainder.next().is_none() && stopped.take_active().is_none());
+    return 0;
+}
