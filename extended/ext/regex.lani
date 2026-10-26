@@ -3,12 +3,18 @@ module ext::regex;
 import alloc::vec;
 import core::mem;
 import core::option;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
 import core::result;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
 import core::text;
 import core::unicode;
 import core::utf8;
 
-pub enum Error { Syntax(i32), Unsupported(i32), Limit(i32), AllocationFailed, Bounds, InvalidUtf8(i32), WorkLimit }
+pub enum Error { Syntax(i32), Unsupported(i32), Limit(i32), AllocationFailed, Bounds, InvalidUtf8(i32), WorkLimit, WorkspaceTooSmall }
 pub struct Options { multiline: bool, dot_matches_newline: bool, max_pattern_bytes: i32, max_states: i32, max_depth: i32, max_captures: i32, max_repeat: i32, max_work: i32 }
 pub struct Span { start: i32, end: i32 }
 pub struct Match { captures: alloc::vec::Vec<i32> }
@@ -17,7 +23,10 @@ pub struct Input { text: core::text::Text }
 // Internal storage is public only because the language has no opaque fields.
 // Do not forge/mutate these records. Copies alias a single explicit owner.
 pub struct Regex { code: alloc::vec::Vec<Inst>, terms: alloc::vec::Vec<Term>, entry: i32, groups: i32, config: Options }
-pub struct Matches { regex: Regex, text: core::text::Text, position: i32, done: bool }
+// Search and Matches each have one active manual owner. Copies cannot fork
+// cursor positions or workspace cleanup authority.
+pub struct Search { regex: Regex, input: Input, workspace: Workspace, position: i32, captures: bool, done: bool }
+pub struct Matches { search: Search }
 pub struct Inst { op: i32, x: i32, y: i32, a: i32, b: i32, flag: bool }
 pub struct Term { low: u32, high: u32, property: i32, negated: bool }
 struct Node { op: i32, left: i32, right: i32, a: i32, b: i32, flag: bool }
@@ -386,32 +395,90 @@ pub fn compile(pattern: core::text::Text, config: Options) -> core::result::Resu
     if (builder.failed) { builder.code.destroy(); parser.terms.destroy(); return core::result::Err(builder.error); }
     return core::result::Ok(Regex { code: builder.code, terms: parser.terms, entry: entry, groups: parser.groups + 1, config: config });
 }
-struct Scratch { current: alloc::vec::Vec<i32>, next: alloc::vec::Vec<i32>, current_caps: alloc::vec::Vec<i32>, next_caps: alloc::vec::Vec<i32>, stack: alloc::vec::Vec<i32>, stack_caps: alloc::vec::Vec<i32>, seen: alloc::vec::Vec<i32>, temporary: alloc::vec::Vec<i32>, candidate: alloc::vec::Vec<i32>, slots: i32, work: i32, max_work: i32, failed: bool }
-fn sized(value: &alloc::vec::Vec<i32>, count: i32, fill: i32) -> bool { return core::result::is_ok(value.try_resize(count, fill)); }
-fn scratch(states: i32, slots: i32, limit: i32) -> core::result::Result<Scratch, Error> {
-    let current: alloc::vec::Vec<i32> = alloc::vec::new(); let next: alloc::vec::Vec<i32> = alloc::vec::new();
-    let current_caps: alloc::vec::Vec<i32> = alloc::vec::new(); let next_caps: alloc::vec::Vec<i32> = alloc::vec::new();
-    let stack: alloc::vec::Vec<i32> = alloc::vec::new(); let stack_caps: alloc::vec::Vec<i32> = alloc::vec::new();
-    let seen: alloc::vec::Vec<i32> = alloc::vec::new(); let temporary: alloc::vec::Vec<i32> = alloc::vec::new(); let candidate: alloc::vec::Vec<i32> = alloc::vec::new();
-    let value: Scratch = Scratch { current: current, next: next, current_caps: current_caps, next_caps: next_caps, stack: stack, stack_caps: stack_caps, seen: seen, temporary: temporary, candidate: candidate, slots: slots, work: 0, max_work: limit, failed: false };
-    if (!sized(value.current.borrow(), states, 0) || !sized(value.next.borrow(), states, 0) ||
-        !sized(value.current_caps.borrow(), states * slots, -1) || !sized(value.next_caps.borrow(), states * slots, -1) ||
-        !sized(value.stack.borrow(), states, 0) || !sized(value.stack_caps.borrow(), states * slots, -1) ||
-        !sized(value.seen.borrow(), states, 0) || !sized(value.temporary.borrow(), slots, -1) || !sized(value.candidate.borrow(), slots, -1)) {
-        value.destroy(); return core::result::Err(Error::AllocationFailed);
+// Fixed-capacity storage for one active search at a time. Public fields are
+// internal descriptors, not a forgeable or stable storage format. Capacity is
+// independent of a particular program/input and never grows during search.
+pub struct Workspace {
+    current: alloc::vec::Vec<i32>, next: alloc::vec::Vec<i32>,
+    current_caps: alloc::vec::Vec<i32>, next_caps: alloc::vec::Vec<i32>,
+    stack: alloc::vec::Vec<i32>, stack_caps: alloc::vec::Vec<i32>,
+    seen: alloc::vec::Vec<i32>, temporary: alloc::vec::Vec<i32>, candidate: alloc::vec::Vec<i32>,
+    states_reserved: i32, groups_reserved: i32, bytes_reserved: u64,
+    active_states: i32, slots: i32, result_groups: i32, matched: bool,
+    work: i32, max_work: i32, failed: bool
+}
+fn sized(value: &alloc::vec::Vec<i32>, count: i32, fill: i32) -> bool { return value.try_resize(count,fill).is_ok(); }
+// Groups include group zero. Reserve exactly the requested nine Vec owners;
+// invalid dimensions/byte arithmetic fail before the first allocation.
+pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error> {
+    if (states < 1 || states > 65536 || groups < 1 || groups > 129) { return Err(Error::Limit(0)); }
+    if (groups > 2147483647 / 2) { return Err(Error::Limit(0)); }
+    let slots: i32 = groups * 2;
+    if (states > 2147483647 / slots) { return Err(Error::Limit(0)); }
+    let matrix: i32 = states * slots;
+    let elements: u64 = 4 * (states as u64) + 3 * (matrix as u64) + 2 * (slots as u64);
+    let width: u64 = core::mem::size_of<i32>() as u64;
+    if (width > 0 && (elements > 18446744073709551615 / width || (matrix as u64) > 2147483647 / width)) { return Err(Error::Limit(0)); }
+    let value = Workspace {
+        current: alloc::vec::new(), next: alloc::vec::new(),
+        current_caps: alloc::vec::new(), next_caps: alloc::vec::new(),
+        stack: alloc::vec::new(), stack_caps: alloc::vec::new(),
+        seen: alloc::vec::new(), temporary: alloc::vec::new(), candidate: alloc::vec::new(),
+        states_reserved: states, groups_reserved: groups, bytes_reserved: elements * width,
+        active_states: 0, slots: 0, result_groups: 0, matched: false,
+        work: 0, max_work: 0, failed: false
+    };
+    if (!sized(value.current.borrow(),states,0) || !sized(value.next.borrow(),states,0) ||
+        !sized(value.current_caps.borrow(),matrix,-1) || !sized(value.next_caps.borrow(),matrix,-1) ||
+        !sized(value.stack.borrow(),states,0) || !sized(value.stack_caps.borrow(),matrix,-1) ||
+        !sized(value.seen.borrow(),states,0) || !sized(value.temporary.borrow(),slots,-1) || !sized(value.candidate.borrow(),slots,-1)) {
+        value.destroy(); return Err(Error::AllocationFailed);
     }
-    return core::result::Ok(value);
+    return Ok(value);
 }
 fn copy_slots(source: [i32], source_at: i32, target: [i32], target_at: i32, slots: i32) {
     let i: i32 = 0; while (i < slots) { target[target_at + i] = source[source_at + i]; i += 1; }
 }
-pub impl Scratch {
-    fn destroy(&self) { self.current.destroy(); self.next.destroy(); self.current_caps.destroy(); self.next_caps.destroy(); self.stack.destroy(); self.stack_caps.destroy(); self.seen.destroy(); self.temporary.destroy(); self.candidate.destroy(); }
+pub impl Workspace {
+    pub fn borrow(&self) -> &Workspace { return self; }
+    pub fn state_capacity(&self) -> i32 { return self.states_reserved; }
+    pub fn group_capacity(&self) -> i32 { return self.groups_reserved; }
+    // Requested owned bytes, not rounded allocator pages or total process RSS.
+    pub fn owned_bytes(&self) -> u64 { return self.bytes_reserved; }
+    pub fn group_count(&self) -> i32 { if (!self.matched) { return 0; } return self.result_groups; }
+    // Last attempted search's existing VM counter; not total CPU work.
+    pub fn work_used(&self) -> i32 { return self.work; }
+    pub fn span(&self, group: i32) -> Option<Span> {
+        if (!self.matched || group < 0 || group >= self.result_groups) { return None(); }
+        let caps = self.candidate.as_slice();
+        if (caps[group * 2] < 0 || caps[group * 2 + 1] < 0) { return None(); }
+        return Some(Span { start: caps[group * 2], end: caps[group * 2 + 1] });
+    }
+    fn invalidate(&self) {
+        self.matched = false; self.result_groups = 0; self.active_states = 0;
+        self.slots = 0; self.work = 0; self.max_work = 0; self.failed = false;
+    }
+    pub fn destroy(&self) {
+        self.current.destroy(); self.next.destroy(); self.current_caps.destroy(); self.next_caps.destroy();
+        self.stack.destroy(); self.stack_caps.destroy(); self.seen.destroy(); self.temporary.destroy(); self.candidate.destroy();
+        self.states_reserved = 0; self.groups_reserved = 0; self.bytes_reserved = 0;
+        self.active_states = 0; self.slots = 0; self.result_groups = 0; self.matched = false;
+        self.max_work = 0; self.failed = false;
+    }
+    fn begin(&self, states: i32, groups: i32, limit: i32) {
+        self.active_states = states; self.slots = groups * 2; self.max_work = limit;
+        // Clear the NEW program's complete active range, including positions
+        // beyond a preceding smaller program. Reserved but inactive PCs need
+        // not be visited at every input boundary.
+        self.clear_seen();
+        let temp = self.temporary.as_slice(); let candidate = self.candidate.as_slice(); let i: i32 = 0;
+        while (i < self.slots) { temp[i] = -1; candidate[i] = -1; i += 1; }
+    }
     fn tick(&self) -> bool { if (self.work >= self.max_work) { self.failed = true; return false; } self.work += 1; return true; }
-    fn clear_seen(&self) { let seen: [i32] = self.seen.as_slice(); let i: i32 = 0; while (i < self.seen.len()) { seen[i] = 0; i += 1; } }
+    fn clear_seen(&self) { let seen = self.seen.as_slice(); let i: i32 = 0; while (i < self.active_states) { seen[i] = 0; i += 1; } }
     fn swap_lists(&self) {
-        let pcs: alloc::vec::Vec<i32> = self.current; self.current = self.next; self.next = pcs;
-        let caps: alloc::vec::Vec<i32> = self.current_caps; self.current_caps = self.next_caps; self.next_caps = caps;
+        let pcs = self.current; self.current = self.next; self.next = pcs;
+        let caps = self.current_caps; self.current_caps = self.next_caps; self.next_caps = caps;
     }
 }
 fn previous_scalar(text: core::text::Text, position: i32) -> u32 {
@@ -439,7 +506,7 @@ pub impl Regex {
     pub fn destroy(&self) { self.code.destroy(); self.terms.destroy(); }
     // Expand epsilon instructions in DFS priority order, retaining only the
     // first thread at each PC. Pending branches use explicit bounded storage.
-    fn closure(&self, scratch: &Scratch, pc: i32, caps: [i32], caps_at: i32, output: [i32], output_caps: [i32], count: i32, text: core::text::Text, position: i32) -> i32 {
+    fn closure(&self, scratch: &Workspace, pc: i32, caps: [i32], caps_at: i32, output: [i32], output_caps: [i32], count: i32, text: core::text::Text, position: i32) -> i32 {
         let code: [Inst] = self.code.as_slice(); let seen: [i32] = scratch.seen.as_slice();
         let stack: [i32] = scratch.stack.as_slice(); let stack_caps: [i32] = scratch.stack_caps.as_slice(); let temp: [i32] = scratch.temporary.as_slice();
         copy_slots(caps, caps_at, temp, 0, scratch.slots);
@@ -454,7 +521,9 @@ pub impl Regex {
                     stack[pending] = inst.y; copy_slots(temp, 0, stack_caps, pending * scratch.slots, scratch.slots); pending += 1;
                     cursor = inst.x; continue;
                 }
-                if (inst.op == 12) { temp[inst.a] = position; cursor = inst.x; continue; }
+                // Captures record past execution only. Span mode skips the
+                // subgroup write, preserving the Save PC, tick and priority.
+                if (inst.op == 12) { if (inst.a < scratch.slots) { temp[inst.a] = position; } cursor = inst.x; continue; }
                 if (inst.op >= 4 && inst.op <= 9) {
                     if (assertion(inst.op, text, position, self.config.multiline)) { cursor = inst.x; continue; }
                 } else {
@@ -466,7 +535,7 @@ pub impl Regex {
         }
         return total;
     }
-    fn consumes(&self, inst: Inst, scalar: u32, scratch: &Scratch) -> bool {
+    fn consumes(&self, inst: Inst, scalar: u32, scratch: &Workspace) -> bool {
         if (inst.op == 1) { return scalar == inst.a as u32; }
         if (inst.op == 3) { return scalar != 10 || self.config.dot_matches_newline; }
         let terms: [Term] = self.terms.as_slice(); let i: i32 = inst.a; let found: bool = false;
@@ -480,10 +549,16 @@ pub impl Regex {
         if (inst.flag) { return !found; }
         return found;
     }
-    fn search(&self, text: core::text::Text, start: i32, longest_prefix: bool) -> core::result::Result<core::option::Option<Match>, Error> {
-        let allocated: core::result::Result<Scratch, Error> = scratch(self.code.len(), self.groups * 2, self.config.max_work);
-        if (core::result::is_err(allocated)) { return core::result::Err(core::result::unwrap_err(allocated)); }
-        let scratch: Scratch = core::result::unwrap(allocated); let current_count: i32 = 0; let position: i32 = start; let matched: bool = false;
+    // The sole matcher. No allocation, growth or ownership transfer occurs
+    // here. Full-capture and span calls differ only in active capture slots.
+    fn search_with(&self, input: Input, start: i32, longest_prefix: bool, captures: bool, scratch: &Workspace) -> Result<bool,Error> {
+        scratch.invalidate();
+        let text = input.text;
+        if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return Err(Error::Bounds); }
+        let groups: i32 = 1; if (captures) { groups = self.groups; }
+        if (self.code.len() > scratch.state_capacity() || groups > scratch.group_capacity()) { return Err(Error::WorkspaceTooSmall); }
+        scratch.begin(self.code.len(),groups,self.config.max_work);
+        let current_count: i32 = 0; let position: i32 = start; let matched: bool = false;
         let code: [Inst] = self.code.as_slice();
         while (true) {
             let current: [i32] = scratch.current.as_slice(); let current_caps: [i32] = scratch.current_caps.as_slice();
@@ -491,7 +566,7 @@ pub impl Regex {
             let temp: [i32] = scratch.temporary.as_slice(); let candidate: [i32] = scratch.candidate.as_slice();
             if ((!longest_prefix && !matched) || (longest_prefix && position == start)) {
                 let i: i32 = 0; while (i < scratch.slots) { temp[i] = -1; i += 1; }
-                current_count = self.closure(scratch.borrow(), self.entry, temp, 0, current, current_caps, current_count, text, position);
+                current_count = self.closure(scratch, self.entry, temp, 0, current, current_caps, current_count, text, position);
             }
             // Current closure is complete before reusing seen for next position.
             scratch.clear_seen(); let next_count: i32 = 0; let i: i32 = 0;
@@ -509,79 +584,136 @@ pub impl Regex {
                     i += 1; continue;
                 }
                 if (!scratch.tick()) { break; }
-                if (position < text.length && self.consumes(inst, scalar, scratch.borrow())) {
-                    next_count = self.closure(scratch.borrow(), inst.x, current_caps, i * scratch.slots, next, next_caps, next_count, text, following);
+                if (position < text.length && self.consumes(inst, scalar, scratch)) {
+                    next_count = self.closure(scratch, inst.x, current_caps, i * scratch.slots, next, next_caps, next_count, text, following);
                 }
                 i += 1;
             }
-            if (scratch.failed) { scratch.destroy(); return core::result::Err(Error::WorkLimit); }
+            if (scratch.failed) { return Err(Error::WorkLimit); }
             if (((longest_prefix || matched) && next_count == 0) || position == text.length) { break; }
             scratch.swap_lists(); current_count = next_count; position = following;
         }
-        if (!matched) { scratch.destroy(); return core::result::Ok(core::option::None()); }
-        // Transfer the candidate allocation, then release every scratch owner.
-        let captures: alloc::vec::Vec<i32> = scratch.candidate; scratch.candidate = alloc::vec::new(); scratch.destroy();
-        return core::result::Ok(core::option::Some(Match { captures: captures }));
+        if (matched) { scratch.matched = true; scratch.result_groups = groups; }
+        return Ok(matched);
     }
-    pub fn find_from(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
-        let checked: core::result::Result<core::text::Text, Error> = validate(text);
-        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
-        if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return core::result::Err(Error::Bounds); }
-        return self.search(text, start, false);
+    pub fn find_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<bool,Error> {
+        return self.search_with(input,start,false,true,storage);
+    }
+    pub fn longest_prefix_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<bool,Error> {
+        return self.search_with(input,start,true,true,storage);
+    }
+    pub fn find_span_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<Option<Span>,Error> {
+        let checked = self.search_with(input,start,false,false,storage);
+        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+        return Ok(storage.span(0));
+    }
+    pub fn longest_prefix_span_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<Option<Span>,Error> {
+        let checked = self.search_with(input,start,true,false,storage);
+        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+        return Ok(storage.span(0));
+    }
+    // Consumes a private temporary workspace immediately after the sole VM
+    // search. Public reusable searches never detach any workspace allocation.
+    fn owned_search(&self, input: Input, start: i32, longest_prefix: bool) -> Result<Option<Match>,Error> {
+        let text = input.text;
+        if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return Err(Error::Bounds); }
+        let allocated = workspace(self.code.len(),self.groups);
+        if (allocated.is_err()) { return Err(allocated.unwrap_err()); }
+        let storage = allocated.unwrap();
+        let result = self.search_with(input,start,longest_prefix,true,storage.borrow());
+        if (result.is_err()) { let error = result.unwrap_err(); storage.destroy(); return Err(error); }
+        if (!result.unwrap()) { storage.destroy(); return Ok(None()); }
+        let captures = storage.candidate; storage.candidate = alloc::vec::new(); storage.destroy();
+        return Ok(Some(Match { captures: captures }));
+    }
+    pub fn find_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error> {
+        let checked = input(text);
+        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+        return self.owned_search(checked.unwrap(),start,false);
     }
     // Anchored at start, with the longest endpoint and ordinary Pike capture
     // priority on ties. Assertions retain the complete validated input context.
-    pub fn longest_prefix_in(&self, input: Input, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
-        let text = input.text;
-        if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return core::result::Err(Error::Bounds); }
-        return self.search(text, start, true);
-    }
-    pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> core::result::Result<core::option::Option<Match>, Error> {
+    pub fn longest_prefix_in(&self, input: Input, start: i32) -> Result<Option<Match>,Error> { return self.owned_search(input,start,true); }
+    pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error> {
         let checked = input(text);
-        if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        if (checked.is_err()) { return Err(checked.unwrap_err()); }
         return self.longest_prefix_in(checked.unwrap(),start);
     }
-    pub fn longest_prefix(&self, text: core::text::Text) -> core::result::Result<core::option::Option<Match>, Error> { return self.longest_prefix_from(text,0); }
-    pub fn find(&self, text: core::text::Text) -> core::result::Result<core::option::Option<Match>, Error> { return self.find_from(text, 0); }
-    pub fn is_match(&self, text: core::text::Text) -> core::result::Result<bool, Error> {
-        let found: core::result::Result<core::option::Option<Match>, Error> = self.find(text);
-        if (core::result::is_err(found)) { return core::result::Err(core::result::unwrap_err(found)); }
-        let item: core::option::Option<Match> = core::result::unwrap(found);
-        if (core::option::is_none(item)) { return core::result::Ok(false); }
-        core::option::unwrap(item).destroy(); return core::result::Ok(true);
+    pub fn longest_prefix(&self, text: core::text::Text) -> Result<Option<Match>,Error> { return self.longest_prefix_from(text,0); }
+    pub fn find(&self, text: core::text::Text) -> Result<Option<Match>,Error> { return self.find_from(text,0); }
+    pub fn is_match(&self, text: core::text::Text) -> Result<bool,Error> {
+        let validated = input(text);
+        if (validated.is_err()) { return Err(validated.unwrap_err()); }
+        let checked = validated.unwrap();
+        let allocated = workspace(self.code.len(),1);
+        if (allocated.is_err()) { return Err(allocated.unwrap_err()); }
+        let storage = allocated.unwrap();
+        let result = self.search_with(checked,0,false,false,storage.borrow());
+        storage.destroy(); return result;
     }
-    pub fn find_iter(&self, text: core::text::Text) -> core::result::Result<Matches, Error> {
-        let checked: core::result::Result<core::text::Text, Error> = validate(text);
-        if (core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
-        return core::result::Ok(Matches { regex: Regex { code: self.code, terms: self.terms, entry: self.entry, groups: self.groups, config: self.config }, text: text, position: 0, done: false });
+    fn iterator(&self, input: Input, captures: bool) -> Result<Search,Error> {
+        let groups: i32 = 1; if (captures) { groups = self.groups; }
+        let allocated = workspace(self.code.len(),groups);
+        if (allocated.is_err()) { return Err(allocated.unwrap_err()); }
+        let storage = allocated.unwrap();
+        return Ok(Search {
+            regex: Regex { code: self.code, terms: self.terms, entry: self.entry, groups: self.groups, config: self.config },
+            input: input, workspace: storage, position: 0, captures: captures, done: false
+        });
+    }
+    pub fn capture_iter(&self, input: Input) -> Result<Search,Error> { return self.iterator(input,true); }
+    pub fn span_iter(&self, input: Input) -> Result<Search,Error> { return self.iterator(input,false); }
+    pub fn find_iter(&self, text: core::text::Text) -> Result<Matches,Error> {
+        let checked = input(text);
+        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+        let made = self.capture_iter(checked.unwrap());
+        if (made.is_err()) { return Err(made.unwrap_err()); }
+        return Ok(Matches { search: made.unwrap() });
     }
 }
-pub impl Scratch { fn borrow(&self) -> &Scratch { return self; } }
 pub impl Match {
     pub fn group_count(&self) -> i32 { return self.captures.len() / 2; }
-    pub fn span(&self, group: i32) -> core::option::Option<Span> {
-        if (group < 0 || group >= self.group_count()) { return core::option::None(); }
-        let caps: [i32] = self.captures.as_slice();
-        if (caps[group * 2] < 0 || caps[group * 2 + 1] < 0) { return core::option::None(); }
-        return core::option::Some(Span { start: caps[group * 2], end: caps[group * 2 + 1] });
+    pub fn span(&self, group: i32) -> Option<Span> {
+        if (group < 0 || group >= self.group_count()) { return None(); }
+        let caps = self.captures.as_slice();
+        if (caps[group * 2] < 0 || caps[group * 2 + 1] < 0) { return None(); }
+        return Some(Span { start: caps[group * 2], end: caps[group * 2 + 1] });
     }
     pub fn destroy(&self) { self.captures.destroy(); }
 }
-pub impl Matches {
-    pub fn next(&self) -> core::result::Result<core::option::Option<Match>, Error> {
-        if (self.done) { return core::result::Ok(core::option::None()); }
-        let result: core::result::Result<core::option::Option<Match>, Error> = self.regex.search(self.text, self.position, false);
-        if (core::result::is_err(result)) { self.done = true; return result; }
-        let found: core::option::Option<Match> = core::result::unwrap(result);
-        if (core::option::is_none(found)) { self.done = true; return result; }
-        let span: Span = core::option::unwrap(core::option::unwrap(found).span(0));
-        self.position = span.end;
+pub impl Search {
+    pub fn borrow(&self) -> &Search { return self; }
+    pub fn span(&self, group: i32) -> Option<Span> { return self.workspace.span(group); }
+    pub fn group_count(&self) -> i32 { return self.workspace.group_count(); }
+    pub fn work_used(&self) -> i32 { return self.workspace.work_used(); }
+    pub fn destroy(&self) { self.done = true; self.workspace.destroy(); }
+    pub fn next(&self) -> Result<Option<Span>,Error> {
+        // A final empty EOF result remains readable until this next attempt.
+        // Releasing it does not execute or charge another VM search.
+        if (self.done) { self.workspace.destroy(); return Ok(None()); }
+        let result = self.regex.search_with(self.input,self.position,false,self.captures,self.workspace.borrow());
+        if (result.is_err()) { let error = result.unwrap_err(); self.destroy(); return Err(error); }
+        if (!result.unwrap()) { self.destroy(); return Ok(None()); }
+        let span = self.workspace.span(0).unwrap(); self.position = span.end;
         if (span.start == span.end) {
-            if (self.position == self.text.length) { self.done = true; }
-            else { self.position += core::utf8::encoded_len_or(core::option::unwrap(self.text.scalar_at_byte(self.position)), 0) as i32; }
+            if (self.position == self.input.text.length) { self.done = true; }
+            else { self.position += core::utf8::encoded_len_or(self.input.text.scalar_at_byte(self.position).unwrap(),0) as i32; }
         }
-        return result;
+        return Ok(Some(span));
     }
-    // No allocation is retained between calls; this only fuses the cursor.
-    pub fn destroy(&self) { self.done = true; }
+}
+pub impl Matches {
+    pub fn next(&self) -> Result<Option<Match>,Error> {
+        let result = self.search.next();
+        if (result.is_err()) { return Err(result.unwrap_err()); }
+        if (result.unwrap().is_none()) { return Ok(None()); }
+        // Independent capture ownership is the convenience API's only
+        // per-result allocation. The canonical Search retains its scratch.
+        let count: i32 = self.search.group_count() * 2;
+        let captures: alloc::vec::Vec<i32> = alloc::vec::new();
+        if (!sized(captures.borrow(),count,-1)) { captures.destroy(); self.destroy(); return Err(Error::AllocationFailed); }
+        copy_slots(self.search.workspace.candidate.as_slice(),0,captures.as_slice(),0,count);
+        return Ok(Some(Match { captures: captures }));
+    }
+    pub fn destroy(&self) { self.search.destroy(); }
 }

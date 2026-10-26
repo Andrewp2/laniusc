@@ -190,22 +190,28 @@ bounded UTF-8 records with counts, numbering and inversion. Wider regex syntax
 and additional replacement interfaces remain.
 [Bounded splitting and replacement](extended-regex-text.md) now provide
 borrowed fields, independent literal/numeric-template output and conservative
-aggregate VM allowances through the existing matcher. Six focused native
-groups pass, including 288 independent reference cases, 89 edge tables,
-allocation-failure cleanup and a binary rewrite CLI.
+aggregate VM allowances through the existing matcher. The new lazy Search
+workspace integration passes all seven current groups across separate receipts,
+including lazy-admission, 288 model cases, 89 tables, all 41 reached library and
+25 CLI OOM positions, exact CLI output and four I/O schedules. Prior six-group
+receipts retain their older lifecycle/allocation scope.
 [Reusable lexical scanning](extended-lexer.md) now shares the regex engine's
 anchored longest-prefix mode. It validates each input once, returns borrowed
 tokens, chooses the earlier rule for equal longest spans and rejects
-nonprogress, unmatched input and exhausted caps explicitly. Five native groups
-pass through separate receipts, including 576 independent model cases, 63
-edge tables and all 120 allocation failures reached by the fixtures. Scratch
-is allocated per probe; competing patterns can rescan suffixes, so callers
-retain explicit input, search-call and reserved-work limits.
+nonprogress, unmatched input and exhausted caps explicitly. Nonempty cursors now
+own one reusable two-slot workspace sized to the largest actual rule program;
+empty input needs none. All six current groups pass owner/admission/contracts,
+576 model cases, 63 explicit tables and all 30 reached OOM positions. The older
+120-OOM receipt describes the per-probe implementation. Competing patterns can
+rescan suffixes, so input, search-call and reserved-work limits remain explicit.
 The [CSV-rules lexer application](extended-lex-scan.md) composes CSV decoding,
 compiled rules, borrowed tokens, hash counters and staged bounded output. Its
-five native groups pass through separate receipts, including both modes over
-124 independent grammar inputs, all 60 reached allocation-failure positions,
-exact I/O fault injections and a 4,096-token cost observation. The retained
+five current native groups pass both modes over 124 independent grammar inputs,
+boundary/admission/I/O controls and all 30 reached allocation positions per mode.
+The 4,096-token observation records 32 verified source requests, 8,895 total
+requested bytes and 6,868 peak live requested bytes with balanced releases.
+Its 79.624585ms traced harness time includes setup and verification; no isolated
+application throughput or compiler-speed claim follows. The retained
 [generic Read context dependency](library-context-inference-dependencies.md)
 has a rejected unannotated reduction and an executed explicitly typed control.
 [Text parsing cursors](extended-parse.md)
@@ -533,7 +539,7 @@ than a request to replace implementation work with more tests.
 | Connected protocols | HTTP/HTTPS and DNS transports execute with explicit numeric endpoints. NSS resolution is synchronous. WebSocket implements request/frame processing but explicitly has no accept-response validation or transport. | Usable resolving/URL policy, broader client orchestration, keepalive/pooling and connected WebSocket workflows remain. HTTP upgrade needs an explicit unread-byte/transport ownership handoff. Do not infer mixed invalid/valid mutual-TLS concurrency from sequential matrices. |
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
-| Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Regex search allocates nine scratch vectors per probe; lexer discards each candidate Match after reading its span. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. A reusable workspace/span-only lexer path would address the recorded 36,887 allocations for 4,096 tokens without a second matcher. |
+| Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
 | Mathematics | Big integers, finite decimals, ordinary statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. | Additional number theory, decimal exceptional/transcendental behavior, weighted/higher statistics, sparse/advanced decompositions and further distributions remain as listed above. Preserve finite-domain and accuracy limits. |
 | Application and media utilities | CLI event parsing, settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows execute. | CLI subcommands/automatic usage/completion/response files, richer configuration discovery/validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
@@ -559,15 +565,48 @@ ownership, per-file NoReplace publication, partial-output reporting and retained
 cleanup/name duties. It supplies no archive-wide transaction, rollback or
 hostile-directory containment. The codec engines remain separate byte APIs.
 
-Threads/native entry retain compiler/runtime prerequisites. A reusable
-regex/lexer workspace is another substantive library increment: share the
-existing matcher while removing per-probe scratch allocation and returning
-spans without unnecessary Match owners. That work has not started here; the
-remaining family scope above stays open.
+Threads/native entry retain compiler/runtime prerequisites. The
+[reusable regex/lexer workspace increment](library-regex-workspace-plan.md) is
+now implemented, sharing the existing matcher and returning spans without
+discarded Match owners. Its fixed-capacity/owner, consumer and real-application
+gates pass across the selected finite receipts. This completes that increment;
+the rest of the family scope above stays open.
 
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Current [reusable regex storage](library-regex-workspace-plan.md) uses one
+  fixed nine-vector Workspace, a canonical owning Search cursor, span-only
+  lexer probes and lazy regex-text Search admission. Production is frozen at
+  Regex `4520d1fc...`, Lexer `9eddce44...`, regex-text `bc9f87b7...` and lex-scan
+  `7454037c...`. Current native receipts: one strict Workspace contract fixture
+  in 6.12s, a constructor baseline plus nine reached OOM processes, 839 reuse/
+  span model scenarios in 6.99s, and three lexer owner/admission/contracts tests
+  in 12.79s. The constructor's 9.19s command also contains a pre-native failed
+  model attempt; it is not a constructor-only duration. Two model fixture
+  admission errors were corrected with exhaustive error-offset arms, without
+  changing production behavior. All six lexer tests pass across separate
+  12.79s/11.88s commands, including 576 models, 63 tables and all 30 reached OOMs.
+  All seven regex-text tests pass across 12.70s/11.36s/10.89s commands: lazy
+  storage/admission, 288 models, 89 tables, direct contracts, all 41 library and
+  25 CLI reached OOMs, 24 exact/rejected/help CLI cases and four I/O schedules.
+  The same-pattern lazy fixture records nine allocations/416 requested bytes
+  for span storage versus nine/928 for captures. Both ordinary Regex/input
+  regressions pass in 10.50s; their older allocation subprobe uses legacy
+  accounting and is separate from the strict new workspace ledger. All five
+  lex-scan gates pass across 13.63s/16.66s commands: 124 grammar inputs in both
+  modes, boundaries, admission/nonpublication, scripted I/O, 30 reached OOMs per
+  mode and exact 4,096-token output/cost. The latter records 32 verified source
+  mmap requests, 8,895 total requested source bytes and 6,868 peak live requested
+  bytes with balanced releases. Its 79.624585ms traced harness time includes
+  setup and verification; it is not an isolated application or compiler-speed
+  measurement. These are 23 selected Rust tests across separate commands, plus
+  separate 24/30/11 CPU controls; they do not complete the full library goal.
+  The durable module-level
+  [lowering reproduction](../tests/fixtures/stdlib_compiler_state/regex_workspace_admission/README.md)
+  preserves the original question-mark module beside six passing reductions
+  and equivalent explicit guards. It does not establish a single failing
+  operator or make ordinary propagation unavailable.
 - Rebased onto `origin/lang` `0d2e4a07`. The initial
   [language-feature cleanup](library-language-adoption.md) adopts item imports,
   local inference and selected propagation paths in six library modules plus
@@ -576,8 +615,8 @@ remaining family scope above stays open.
   also pass. Public type/signature contracts are unchanged. A generic nested
   Option `?` path compiles but crashes in both minimal reductions; match controls
   execute, so production flatten retains its explicit match. Further cleanup
-  remains gradual and runtime-gated. Archive extraction is the current
-  accepted finite native increment described below.
+  remains gradual and runtime-gated. Archive extraction retains its preceding
+  accepted finite native scope below.
 - [Content-only archive extraction](library-archive-extraction-plan.md) now has
   frozen production interfaces: `archive_plan`, `archive_profile`,
   `archive_source` and `archive_extract`, plus checked `create_dir_at`/
@@ -908,8 +947,8 @@ remaining family scope above stays open.
   threads remain in scope; the
   [concurrency prerequisites](library-concurrency-dependencies.md) preserve
   separate executable controls and unresolved compiler/runtime admissions.
-- [Anchored longest-prefix matching and reusable lexers](extended-lexer.md)
-  pass five native groups through separate receipts: full-context model cases,
+- Earlier [anchored longest-prefix matching and reusable lexers](extended-lexer.md)
+  passed five native groups through separate receipts: full-context model cases,
   assertion/capture/error tables, construction/input caps and exact owner
   cleanup at all 120 allocation failures reached by the fixtures. Ordinary
   regex matching retains its prior semantics; both existing groups pass again
@@ -917,13 +956,13 @@ remaining family scope above stays open.
   groups: its 124-input/two-mode matrix in 8.40 s, error/scripted-I/O/resource
   groups in 14.16 s, and both 30-position OOM campaigns plus I/O faults in
   8.36 s. The 4,096-token run made 36,887 allocations with balanced releases;
-  reusable matcher scratch remains a useful performance improvement. Fixture
+  these allocation counts belong to the prior per-probe implementation. Fixture
   and harness corrections preserve exact syntax-error offsets and bounded
   failure-path allocation cleanup. The app uses explicit I/O result types;
   the reduced inference failure remains documented, with no compiler changes.
-- [Regex split/replacement adapters and stdin rewrite CLI](extended-regex-text.md)
-  pass six focused groups through separate GPU-compile/native receipts. The
-  existing Matches cursor supplies captures and empty-match progress. Tests
+- Earlier [regex split/replacement adapters and stdin rewrite CLI](extended-regex-text.md)
+  passed six focused groups through separate GPU-compile/native receipts. That
+  implementation used Matches for captures and empty-match progress. Tests
   cover 288 independent nonempty reference cases across checked axes and three
   layouts, 89 explicit edge tables, all 77 reached library allocation failures,
   24 CLI cases, all 43 reached CLI allocation failures and four I/O schedules.

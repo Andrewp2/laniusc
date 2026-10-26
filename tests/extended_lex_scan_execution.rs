@@ -349,28 +349,27 @@ fn malformed_rules_context_failures_and_all_cli_resource_knobs_publish_nothing()
     assert!(output.stdout.is_empty());
 }
 
-#[derive(Debug)]
-struct MemoryEvent {
-    allocation: bool,
-    address: String,
-    size: usize,
-    ordinal: usize,
-}
 struct Ledger {
     attempts: Vec<usize>,
     failed: usize,
     opens: usize,
     closes: usize,
-    memory: Vec<MemoryEvent>,
+    peak_requested: usize,
 }
-fn ledger(trace: &str) -> Ledger {
+fn ledger(executable: &Path, trace: &str) -> Ledger {
+    ledger_with_close_policy(executable, trace, false)
+}
+fn ledger_with_close_policy(executable: &Path, trace: &str, skipped_close: bool) -> Ledger {
+    let verified = verified_trace(executable, trace);
+    let trace = verified.as_str();
     let mut mappings = BTreeMap::<String, usize>::new();
     let mut handles = BTreeSet::new();
     let mut attempts = Vec::new();
     let mut failed = 0;
     let mut opens = 0;
     let mut closes = 0;
-    let mut memory = Vec::new();
+    let mut skipped = 0;
+    let mut peak_requested = 0;
     for line in trace.lines() {
         if line.starts_with("mmap(") {
             let size = line.split(',').nth(1).unwrap().trim().parse().unwrap();
@@ -382,17 +381,12 @@ fn ledger(trace: &str) -> Ledger {
                 .split_whitespace()
                 .next()
                 .unwrap();
-            memory.push(MemoryEvent {
-                allocation: true,
-                address: address.to_owned(),
-                size,
-                ordinal: attempts.len(),
-            });
             if address.starts_with("0x") {
                 assert!(
                     mappings.insert(address.to_owned(), size).is_none(),
                     "{trace}"
                 );
+                peak_requested = peak_requested.max(mappings.values().sum());
             } else {
                 assert_eq!(address, "-1", "{trace}");
                 assert!(line.contains("ENOMEM"), "{trace}");
@@ -402,12 +396,6 @@ fn ledger(trace: &str) -> Ledger {
             let (args, result) = tail.split_once(')').unwrap();
             let (address, size) = args.split_once(',').unwrap();
             let size: usize = size.trim().parse().unwrap();
-            memory.push(MemoryEvent {
-                allocation: false,
-                address: address.trim().to_owned(),
-                size,
-                ordinal: 0,
-            });
             assert_eq!(mappings.remove(address.trim()), Some(size), "{trace}");
             assert_eq!(result.trim(), "= 0", "{trace}");
         } else if line.starts_with("open(") || line.starts_with("openat(") {
@@ -425,6 +413,14 @@ fn ledger(trace: &str) -> Ledger {
             }
         } else if let Some(tail) = line.strip_prefix("close(") {
             let fd: i32 = tail.split_once(')').unwrap().0.parse().unwrap();
+            let result = line.rsplit_once(" = ").unwrap().1;
+            if result != "0" {
+                assert!(
+                    skipped_close && result.starts_with("-1 EIO ") && result.contains("INJECTED"),
+                    "{trace}"
+                );
+                skipped += 1;
+            }
             assert!(handles.remove(&fd), "double/unowned close: {trace}");
             closes += 1;
         } else {
@@ -436,73 +432,25 @@ fn ledger(trace: &str) -> Ledger {
     }
     assert!(mappings.is_empty(), "unreleased mappings: {trace}");
     assert!(handles.is_empty(), "unretired rule descriptor: {trace}");
+    assert_eq!(skipped, usize::from(skipped_close), "{trace}");
     Ledger {
         attempts,
         failed,
         opens,
         closes,
-        memory,
+        peak_requested,
     }
-}
-fn eager_frame_episode(baseline: &Ledger) -> (usize, usize) {
-    // The one-literal regex constructor's initial code/frame allocations
-    // form a unique adjacent owner episode: allocate parent, allocate frame,
-    // immediately release that same frame. Derive its ordinal/request from
-    // observed lifetimes, without native record widths or a fixed ordinal.
-    let candidates = baseline
-        .memory
-        .windows(3)
-        .filter_map(|events| {
-            let [parent, temporary, released] = events else {
-                unreachable!()
-            };
-            (parent.allocation
-                && temporary.allocation
-                && !released.allocation
-                && temporary.address == released.address
-                && temporary.size == released.size)
-                .then_some((parent.ordinal, temporary.size))
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(candidates.len(), 1, "{:?}", baseline.memory);
-    candidates[0]
-}
-fn allocation_failure_path(
-    actual: &Ledger,
-    baseline: &Ledger,
-    point: usize,
-    eager_frame: (usize, usize),
-) {
-    assert_eq!(
-        actual.attempts.get(..point),
-        Some(&baseline.attempts[..point])
-    );
-    let continuation = &actual.attempts[point..];
-    if continuation.is_empty() {
-        return;
-    }
-    assert_eq!(point, eager_frame.0, "{:?}", actual.memory);
-    assert_eq!(continuation, [eager_frame.1], "{:?}", actual.memory);
-    let failed = actual
-        .memory
-        .iter()
-        .position(|event| event.allocation && event.ordinal == point)
-        .unwrap();
-    let temporary = &actual.memory[failed + 1];
-    let released = &actual.memory[failed + 2];
-    assert!(temporary.allocation && !released.allocation);
-    assert_eq!(temporary.size, eager_frame.1);
-    assert_eq!(temporary.address, released.address);
-    assert_eq!(temporary.size, released.size);
 }
 fn injected(trace: &str, syscall: &str, errno: &str, ordinal: usize) {
     let marked = trace
         .lines()
+        .map(|line| line.split_once("] ").map_or(line, |(_, body)| body))
         .filter(|line| line.contains("INJECTED"))
         .collect::<Vec<_>>();
     assert_eq!(marked.len(), 1, "{trace}");
     let calls = trace
         .lines()
+        .map(|line| line.split_once("] ").map_or(line, |(_, body)| body))
         .filter(|line| line.starts_with(&format!("{syscall}(")))
         .collect::<Vec<_>>();
     assert_eq!(calls.get(ordinal - 1), marked.first(), "{trace}");
@@ -533,14 +481,17 @@ fn trace_paths(
 ) -> (Output, String) {
     let trace = common::TempArtifact::new("lex_scan", "trace", None);
     let mut command = Command::new("strace");
-    command.args(["-qq", "-o"]).arg(trace.path()).args([
-        "-e",
-        if io {
-            "trace=mmap,munmap,read,write,open,openat,close"
-        } else {
-            "trace=mmap,munmap"
-        },
-    ]);
+    command
+        .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
+        .arg(trace.path())
+        .args([
+            "-e",
+            if io {
+                "trace=mmap,munmap,read,write,open,openat,close"
+            } else {
+                "trace=mmap,munmap"
+            },
+        ]);
     if let Some(fault) = fault {
         command.args(["-e", fault]);
     }
@@ -564,9 +515,9 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
         let (baseline, events) =
             trace_paths(grammar_file.path(), source_file.path(), mode, None, true);
         checked(&baseline, 0);
-        let original = ledger(&events);
-        let eager_frame = eager_frame_episode(&original);
-        assert!(original.attempts.len() > 10 && original.attempts.len() <= 256);
+        let original = ledger(cli().path(), &events);
+        let baseline_trace = events.clone();
+        assert!(!original.attempts.is_empty());
         assert_eq!((original.opens, original.closes), (1, 1));
         for point in 1..=original.attempts.len() {
             let (output, events) = trace_paths(
@@ -579,9 +530,9 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
             injected(&events, "mmap", "ENOMEM", point);
             checked(&output, 4);
             assert!(output.stdout.is_empty(), "{mode} OOM{point}: {output:?}");
-            let actual = ledger(&events);
+            let actual = ledger(cli().path(), &events);
             assert_eq!(actual.failed, 1, "{events}");
-            allocation_failure_path(&actual, &original, point, eager_frame);
+            bind_allocations(cli().path(), &baseline_trace, &events, point);
         }
         eprintln!(
             "lex-scan {mode}: all {} reached application mmap failures cleaned",
@@ -596,7 +547,7 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
         injected(&events, syscall, "EINTR", 1);
         checked(&output, 0);
         assert_eq!(output.stdout, b"id,start,end\n7,0,1\n");
-        ledger(&events);
+        ledger(cli().path(), &events);
     }
     for (fault, syscall) in [
         ("inject=read:error=EIO:when=1", "read"),
@@ -607,7 +558,13 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
         injected(&events, syscall, "EIO", 1);
         checked(&output, 3);
         assert!(output.stdout.is_empty());
-        ledger(&events);
+        if syscall == "close" {
+            // strace skipped this physical close. Check one logical retirement,
+            // without calling it a natural close error or a physical release.
+            ledger_with_close_policy(cli().path(), &events, true);
+        } else {
+            ledger(cli().path(), &events);
+        }
     }
     let input = vec![b'a'; 256];
     let (output, events) = traced(
@@ -622,7 +579,7 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
     let tokens = (0..256).map(|at| (7, at, at + 1)).collect::<Vec<_>>();
     let expected = spans_output(&tokens);
     assert_eq!(output.stdout, expected[..1024]);
-    ledger(&events);
+    ledger(cli().path(), &events);
     let grammar = file("rules", &grammar);
     let input = file("input", b"a");
     let output = run(Command::new("sh")
@@ -646,13 +603,16 @@ fn all_reached_application_ooms_close_rules_and_release_every_mapping_before_pub
 fn scripted_production_io_helpers_bound_partial_progress_interruptions_and_eof_probes() {
     let trace = common::TempArtifact::new("lex_scan", "io_trace", None);
     let output = run(Command::new("strace")
-        .args(["-qq", "-o"])
+        .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
         .arg(io_fixture().path()));
     checked(&output, 0);
     assert!(output.stdout.is_empty());
-    ledger(&fs::read_to_string(trace.path()).unwrap());
+    ledger(
+        io_fixture().path(),
+        &fs::read_to_string(trace.path()).unwrap(),
+    );
 }
 
 #[test]
@@ -663,11 +623,49 @@ fn four_thousand_tokens_report_real_allocation_cost_with_exact_counts() {
     let (output, events) = traced(&grammar, &input, "counts", None, false);
     checked(&output, 0);
     assert_eq!(output.stdout, b"id,count\n7,4096\n");
-    let allocations = ledger(&events);
+    let allocations = ledger(cli().path(), &events);
     assert_eq!(allocations.failed, 0);
     eprintln!(
-        "lex-scan 4096-token resource receipt: {} mmap requests, balanced releases, {:?} traced wall time; correctness/cost observation only",
+        "lex-scan 4096-token resource receipt: {} verified source mmap requests, {} total requested bytes, {} peak live requested bytes, balanced releases, {:?} traced wall time; whole-process correctness/cost observation only",
         allocations.attempts.len(),
+        allocations.attempts.iter().sum::<usize>(),
+        allocations.peak_requested,
         started.elapsed()
+    );
+}
+
+fn resource_helper() -> PathBuf {
+    root().join("tests/fixtures/extended/lexer/resources.py")
+}
+fn verified_trace(executable: &Path, trace: &str) -> String {
+    let file = common::TempArtifact::new("lex_scan", "verified_trace", None);
+    file.write_str(trace);
+    let output = run(Command::new("python3")
+        .arg("-B")
+        .arg(resource_helper())
+        .arg("verify")
+        .arg(executable)
+        .arg(file.path()));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+fn bind_allocations(executable: &Path, baseline: &str, actual: &str, point: usize) {
+    let before = common::TempArtifact::new("lex_scan", "allocation_baseline", None);
+    let after = common::TempArtifact::new("lex_scan", "allocation_fault", None);
+    before.write_str(baseline);
+    after.write_str(actual);
+    let output = run(Command::new("python3")
+        .arg("-B")
+        .arg(resource_helper())
+        .arg("bind")
+        .arg(executable)
+        .arg(before.path())
+        .arg(after.path())
+        .arg(point.to_string()));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(
+        output.stdout.is_empty() && output.stderr.is_empty(),
+        "{output:?}"
     );
 }

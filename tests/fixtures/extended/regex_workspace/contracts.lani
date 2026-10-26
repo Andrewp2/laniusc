@@ -1,0 +1,159 @@
+// Explicit Workspace owners remain allocated through the first two ACKs.
+// Search cursors own independent storage and retire it on terminal next/destroy.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice::view;
+import core::text;
+import ext::regex;
+import std::io;
+import std::linux;
+
+fn text(value:str,count:i32) -> core::text::Text {
+    return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap();
+}
+fn compiled(pattern:core::text::Text,work:i32) -> ext::regex::Regex {
+    let config=ext::regex::options(); config.max_work=work; return ext::regex::compile(pattern,config).unwrap();
+}
+fn word(value:u64) {
+    let storage:[i32;2]=[(value&4294967295) as i32,(value>>32) as i32];
+    let pointer=core::mem::i32_array_data_ptr(storage); let at:i32=0;
+    while(at<8) { let sent=std::io::write_stdout(pointer+(at as usize),(8-at) as usize); assert(sent>0 && sent<=8-at); at+=sent; }
+}
+fn ack() {
+    let storage:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(storage),1)==1 && storage[0]==65);
+}
+fn checkpoint(pid:u64,phase:u64,workspace:&ext::regex::Workspace) {
+    word(1380406097); word(pid); word(phase); word(0);
+    word(workspace.state_capacity() as u64); word(workspace.group_capacity() as u64);
+    word(workspace.owned_bytes()); word(workspace.work_used() as u64); ack();
+}
+fn span(workspace:&ext::regex::Workspace,group:i32,start:i32,end:i32) {
+    let value=workspace.span(group).unwrap(); assert(value.start==start && value.end==end);
+}
+fn absent(workspace:&ext::regex::Workspace) {
+    assert(workspace.group_count()==0 && workspace.span(-1).is_none() && workspace.span(0).is_none() && workspace.span(9).is_none());
+}
+fn small(error:ext::regex::Error) -> bool { return match(error) { ext::regex::Error::WorkspaceTooSmall->true,_ ->false }; }
+fn bounds(error:ext::regex::Error) -> bool { return match(error) { ext::regex::Error::Bounds->true,_ ->false }; }
+fn work(error:ext::regex::Error) -> bool { return match(error) { ext::regex::Error::WorkLimit->true,_ ->false }; }
+fn empty_search(regex:&ext::regex::Regex,input:ext::regex::Input,captures:bool) {
+    let made:core::result::Result<ext::regex::Search,ext::regex::Error> =core::result::Err(ext::regex::Error::Bounds);
+    if(captures) { made=regex.capture_iter(input); } else { made=regex.span_iter(input); }
+    let cursor=made.unwrap();
+    let expected:[i32;3]=[0,2,6]; let at:i32=0;
+    while(at<3) {
+        let value=cursor.next().unwrap().unwrap(); assert(value.start==expected[at] && value.end==expected[at]);
+        let retained=cursor.span(0).unwrap(); assert(retained.start==value.start && retained.end==value.end && cursor.group_count()==1);
+        at+=1;
+    }
+    // The final empty EOF success remains published until the NEXT attempt.
+    assert(cursor.span(0).unwrap().end==6 && cursor.group_count()==1);
+    let used=cursor.work_used(); assert(used>0);
+    assert(cursor.next().unwrap().is_none() && cursor.group_count()==0 && cursor.span(0).is_none());
+    assert(cursor.work_used()==used); assert(cursor.next().unwrap().is_none() && cursor.work_used()==used);
+    cursor.destroy(); cursor.destroy(); assert(cursor.group_count()==0 && cursor.work_used()==used);
+}
+fn main() -> i32 {
+    let arguments:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    let pid=std::linux::call(39,view(arguments,0).unwrap()).unwrap() as u64;
+    let simple=compiled(text("a",1),10000);
+    let captures=compiled(text("(a)(b)?",7),10000);
+    let large=compiled(text("(a|aa)(a?)(b?)(c?)",18),10000);
+    let long_states=compiled(text("a{32}",5),10000);
+    let limited=compiled(text("a",1),1);
+    let scalar=compiled(text(".",1),10000);
+    let empty=compiled(text("",0),10000);
+    let input=ext::regex::input(text("ab",2)).unwrap();
+    let no=ext::regex::input(text("x",1)).unwrap();
+    let one=ext::regex::input(text("a",1)).unwrap();
+    let pair=ext::regex::input(text("aa",2)).unwrap();
+    let long_input=ext::regex::input(text("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",32)).unwrap();
+    let native:[u8;10]=[255,120,195,169,240,159,153,130,0,255];
+    let selected=core::text::from_utf8_range(native,1,8).unwrap();
+    assert(core::mem::slice_stride(native)!=1); let unicode=ext::regex::input(selected).unwrap();
+    let workspace=ext::regex::workspace(128,8).unwrap();
+    let exact=ext::regex::workspace(simple.state_count(),simple.group_count()).unwrap();
+    let groups=ext::regex::workspace(128,1).unwrap();
+    let insufficient=ext::regex::workspace(simple.state_count()-1,8).unwrap();
+    let minimum=ext::regex::workspace(1,1).unwrap();
+    let max_groups=ext::regex::workspace(1,129).unwrap();
+    let max_states=ext::regex::workspace(65536,1).unwrap();
+    assert(minimum.state_capacity()==1 && minimum.group_capacity()==1);
+    assert(max_groups.state_capacity()==1 && max_groups.group_capacity()==129);
+    assert(max_states.state_capacity()==65536 && max_states.group_capacity()==1);
+    assert(captures.find_with(input,0,workspace.borrow()).unwrap());
+    let capture_work=workspace.work_used(); assert(capture_work>1);
+    // Compile the below-cap control BEFORE the allocation-free ACK interval.
+    let capture_limited=compiled(text("(a)(b)?",7),capture_work-1);
+    let held=captures.find(text("ab",2)).unwrap().unwrap();
+    checkpoint(pid,1,workspace.borrow());
+    let repeat:i32=0;
+    while(repeat<3) {
+        assert(captures.find_with(input,0,workspace.borrow()).unwrap()); span(workspace.borrow(),2,1,2);
+        assert(workspace.work_used()==capture_work);
+        assert(captures.find_span_with(input,0,workspace.borrow()).unwrap().unwrap().end==2);
+        assert(workspace.work_used()==capture_work && workspace.group_count()==1 && workspace.span(1).is_none());
+        assert(work(capture_limited.find_with(input,0,workspace.borrow()).unwrap_err())); absent(workspace.borrow());
+        assert(workspace.work_used()==capture_work-1);
+        assert(work(capture_limited.find_span_with(input,0,workspace.borrow()).unwrap_err())); absent(workspace.borrow());
+        assert(workspace.work_used()==capture_work-1);
+        assert(captures.find_with(one,0,workspace.borrow()).unwrap()); assert(workspace.span(2).is_none());
+        assert(long_states.longest_prefix_span_with(long_input,0,workspace.borrow()).unwrap().unwrap().end==32);
+        assert(large.longest_prefix_with(pair,0,workspace.borrow()).unwrap());
+        span(workspace.borrow(),0,0,2); span(workspace.borrow(),1,0,1); span(workspace.borrow(),2,1,2);
+        assert(workspace.group_count()==5 && workspace.span(3).unwrap().start==2);
+        assert(simple.find_span_with(one,0,workspace.borrow()).unwrap().unwrap().end==1);
+        assert(workspace.group_count()==1 && workspace.span(1).is_none());
+        assert(!captures.find_with(no,0,workspace.borrow()).unwrap()); absent(workspace.borrow());
+        assert(work(limited.find_with(one,0,workspace.borrow()).unwrap_err())); absent(workspace.borrow()); assert(workspace.work_used()==1);
+        assert(simple.find_with(one,0,workspace.borrow()).unwrap()); let used=workspace.work_used(); assert(used>1);
+        assert(simple.find_with(one,0,workspace.borrow()).unwrap() && workspace.work_used()==used);
+        assert(bounds(scalar.find_with(unicode,2,workspace.borrow()).unwrap_err())); absent(workspace.borrow()); assert(workspace.work_used()==0);
+        assert(bounds(scalar.find_span_with(unicode,-1,workspace.borrow()).unwrap_err())); absent(workspace.borrow());
+        assert(bounds(scalar.longest_prefix_with(unicode,2147483647,workspace.borrow()).unwrap_err())); absent(workspace.borrow());
+        assert(scalar.longest_prefix_span_with(unicode,3,workspace.borrow()).unwrap().unwrap().end==7);
+        span(workspace.borrow(),0,3,7); assert(workspace.group_count()==1);
+        assert(simple.find_with(one,0,exact.borrow()).unwrap());
+        assert(small(captures.find_with(input,0,exact.borrow()).unwrap_err())); absent(exact.borrow()); assert(exact.work_used()==0);
+        assert(simple.find_with(one,0,exact.borrow()).unwrap());
+        assert(small(captures.find_with(input,0,groups.borrow()).unwrap_err())); absent(groups.borrow());
+        assert(captures.find_span_with(input,0,groups.borrow()).unwrap().unwrap().end==2 && groups.group_count()==1);
+        assert(small(simple.find_with(one,0,insufficient.borrow()).unwrap_err())); absent(insufficient.borrow());
+        assert(small(simple.find_span_with(one,0,minimum.borrow()).unwrap_err())); absent(minimum.borrow());
+        assert(simple.find_with(one,0,max_states.borrow()).unwrap());
+        repeat+=1;
+    }
+    assert(held.group_count()==3 && held.span(2).unwrap().start==1 && held.span(2).unwrap().end==2);
+    checkpoint(pid,2,workspace.borrow());
+    workspace.destroy(); workspace.destroy();
+    assert(workspace.state_capacity()==0 && workspace.group_capacity()==0 && workspace.owned_bytes()==0);
+    assert(small(simple.find_with(one,0,workspace.borrow()).unwrap_err())); absent(workspace.borrow());
+    exact.destroy(); groups.destroy(); insufficient.destroy(); minimum.destroy(); max_groups.destroy(); max_states.destroy();
+    let optional=ext::regex::input(text("ab a",4)).unwrap();
+    let capture_cursor=captures.capture_iter(optional).unwrap();
+    let span_cursor=captures.span_iter(optional).unwrap();
+    assert(capture_cursor.next().unwrap().unwrap().end==2 && capture_cursor.group_count()==3);
+    assert(capture_cursor.span(2).unwrap().start==1 && capture_cursor.span(2).unwrap().end==2);
+    assert(span_cursor.next().unwrap().unwrap().end==2 && span_cursor.group_count()==1 && span_cursor.span(1).is_none());
+    assert(capture_cursor.next().unwrap().unwrap().start==3 && capture_cursor.span(2).is_none());
+    assert(span_cursor.next().unwrap().unwrap().start==3 && span_cursor.group_count()==1);
+    assert(capture_cursor.next().unwrap().is_none() && capture_cursor.group_count()==0);
+    assert(span_cursor.next().unwrap().is_none() && span_cursor.group_count()==0);
+    capture_cursor.destroy(); capture_cursor.destroy(); span_cursor.destroy(); span_cursor.destroy();
+    // Independent cursor owners may be interleaved without sharing position.
+    let left=scalar.capture_iter(unicode).unwrap(); let right=scalar.span_iter(unicode).unwrap();
+    assert(left.next().unwrap().unwrap().end==1 && right.next().unwrap().unwrap().end==1);
+    assert(left.next().unwrap().unwrap().end==3 && left.span(0).unwrap().start==1);
+    right.destroy(); right.destroy(); assert(right.next().unwrap().is_none());
+    assert(left.next().unwrap().unwrap().end==7 && left.next().unwrap().unwrap().end==8);
+    assert(left.next().unwrap().is_none() && left.span(0).is_none()); left.destroy(); left.destroy();
+    let cursor=limited.capture_iter(one).unwrap(); assert(work(cursor.next().unwrap_err()));
+    let used=cursor.work_used(); assert(used==1 && cursor.span(0).is_none() && cursor.group_count()==0);
+    assert(cursor.next().unwrap().is_none() && cursor.work_used()==used); cursor.destroy(); cursor.destroy();
+    let unicode_empty=ext::regex::input(text("é🙂",6)).unwrap();
+    empty_search(empty.borrow(),unicode_empty,true); empty_search(empty.borrow(),unicode_empty,false);
+    simple.destroy(); captures.destroy(); capture_limited.destroy(); large.destroy(); long_states.destroy(); limited.destroy(); scalar.destroy(); empty.destroy();
+    assert(held.span(0).unwrap().end==2 && held.span(2).unwrap().start==1); held.destroy(); held.destroy();
+    checkpoint(pid,3,workspace.borrow()); return 0;
+}

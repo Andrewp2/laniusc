@@ -8,11 +8,12 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Borrowed split fields and independent owned literal/numeric-template replacement execute through the GPU compiler on Linux x86_64. All six focused groups pass through separate receipts: direct contracts, 288 independent nonempty reference cases, 89 explicit zero-width/template/budget cases, all 77 reached library allocation failures, 24 CLI cases, and all 43 reached CLI allocation failures plus four I/O schedules. Search budgets reserve complete configured VM allowances; they do not count every CPU instruction or I/O call. Other targets remain unverified.
+Borrowed split fields and independent owned literal/numeric-template replacement share canonical Regex Search storage. Split construction validates Input without acquiring a workspace; the first next admitted by terminal, match, call and work limits charges its attempt before constructing Search. Split/literal replacement use two-slot span storage, while templates retain full captures through final empty-EOF expansion. Workspace construction OOM is Regex(AllocationFailed) on that charged attempt, and no owned Match is acquired per delimiter or template match. All seven current tests pass across separate 12.70-second, 11.36-second and 10.89-second commands on GPU-compiler-emitted Linux x86_64 native code: lazy-admission/ownership checks, 288 model cases, 89 explicit tables, direct contracts, all 41 library and 25 CLI reached OOM positions, 24 exact/rejected/help CLI cases and four read/write EINTR/EIO schedules. The lazy fixture observes nine requested allocations/416 bytes for span storage versus nine/928 for full captures of the same pattern. Earlier six-group and 77/43 allocation-failure receipts describe the previous implementation and are not current allocation acceptance. Search budgets reserve configured VM allowances, not every CPU instruction, I/O call or process byte; other targets remain unverified.
 
 ## Contract and evidence guides
 
 - [extended-regex-text](../../extended-regex-text.md)
+- [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
 
 Declaration counts: enum: 1; field: 15; function: 5; impl: 2; method: 6; struct: 5; variant: 10.
 
@@ -299,7 +300,7 @@ pub fn default_replace_limits() -> ReplaceLimits
 
 ### function: split
 
-[Source line 79](../../../extended/ext/regex_text.lani#L79)
+[Source line 104](../../../extended/ext/regex_text.lani#L104)
 
 ```lanius
 pub fn split(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLimits) -> core::result::Result<Split,Error>
@@ -307,7 +308,7 @@ pub fn split(regex: &ext::regex::Regex, text: core::text::Text, limits: SearchLi
 
 ### function: replace_literal
 
-[Source line 204](../../../extended/ext/regex_text.lani#L204)
+[Source line 229](../../../extended/ext/regex_text.lani#L229)
 
 ```lanius
 pub fn replace_literal(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits) -> core::result::Result<Replacement,Error>
@@ -315,7 +316,7 @@ pub fn replace_literal(regex: &ext::regex::Regex, text: core::text::Text, replac
 
 ### function: replace_template
 
-[Source line 209](../../../extended/ext/regex_text.lani#L209)
+[Source line 234](../../../extended/ext/regex_text.lani#L234)
 
 ```lanius
 pub fn replace_template(regex: &ext::regex::Regex, text: core::text::Text, replacement: core::text::Text, limits: ReplaceLimits) -> core::result::Result<Replacement,Error>
@@ -323,9 +324,9 @@ pub fn replace_template(regex: &ext::regex::Regex, text: core::text::Text, repla
 
 ## Implementation blocks and public methods
 
-### impl at line 85
+### impl at line 110
 
-[Source line 85](../../../extended/ext/regex_text.lani#L85)
+[Source line 110](../../../extended/ext/regex_text.lani#L110)
 
 ```lanius
 pub impl Split
@@ -333,7 +334,7 @@ pub impl Split
 
 #### method: borrow
 
-[Source line 86](../../../extended/ext/regex_text.lani#L86)
+[Source line 111](../../../extended/ext/regex_text.lani#L111)
 
 ```lanius
 pub fn borrow(&self) -> &Split
@@ -341,7 +342,7 @@ pub fn borrow(&self) -> &Split
 
 #### method: usage
 
-[Source line 87](../../../extended/ext/regex_text.lani#L87)
+[Source line 112](../../../extended/ext/regex_text.lani#L112)
 
 ```lanius
 pub fn usage(&self) -> Usage
@@ -349,7 +350,7 @@ pub fn usage(&self) -> Usage
 
 #### method: destroy
 
-[Source line 88](../../../extended/ext/regex_text.lani#L88)
+[Source line 113](../../../extended/ext/regex_text.lani#L113)
 
 ```lanius
 pub fn destroy(&self)
@@ -357,15 +358,15 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 89](../../../extended/ext/regex_text.lani#L89)
+[Source line 114](../../../extended/ext/regex_text.lani#L114)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<core::text::Text>,Error>
 ```
 
-### impl at line 104
+### impl at line 129
 
-[Source line 104](../../../extended/ext/regex_text.lani#L104)
+[Source line 129](../../../extended/ext/regex_text.lani#L129)
 
 ```lanius
 pub impl Replacement
@@ -373,7 +374,7 @@ pub impl Replacement
 
 #### method: borrow
 
-[Source line 105](../../../extended/ext/regex_text.lani#L105)
+[Source line 130](../../../extended/ext/regex_text.lani#L130)
 
 ```lanius
 pub fn borrow(&self) -> &Replacement
@@ -381,7 +382,7 @@ pub fn borrow(&self) -> &Replacement
 
 #### method: destroy
 
-[Source line 106](../../../extended/ext/regex_text.lani#L106)
+[Source line 131](../../../extended/ext/regex_text.lani#L131)
 
 ```lanius
 pub fn destroy(&self)

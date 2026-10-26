@@ -4,7 +4,7 @@ mod common;
 use std::{
     collections::BTreeMap,
     os::unix::fs::PermissionsExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::OnceLock,
     time::Duration,
@@ -368,78 +368,35 @@ fn lexer_build_and_input_admission_validate_bounds_exact_caps_and_cleanup() {
     let file = executable("admission.lani");
     let trace = common::TempArtifact::new("laniusc_lexer", "admission_trace", None);
     let output = run(Command::new("strace")
-        .args(["-qq", "-o"])
+        .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
         .arg(file.path()));
     checked(&output, 0);
     assert!(output.stdout.is_empty(), "{output:?}");
-    assert!(ledger(&std::fs::read_to_string(trace.path()).unwrap()) > 0);
+    assert!(ledger(file.path(), &std::fs::read_to_string(trace.path()).unwrap()) > 0);
 }
 
 #[test]
 fn every_reached_lexer_allocation_failure_preserves_sources_and_releases_exact_owners() {
     let file = executable("allocations.lani");
-    let trace = common::TempArtifact::new("laniusc_lexer", "allocation_trace", None);
-    let execute = |failure: Option<usize>| {
-        let mut command = Command::new("strace");
-        command
-            .args(["-qq", "-o"])
-            .arg(trace.path())
-            .args(["-e", "trace=mmap,munmap"]);
-        if let Some(index) = failure {
-            command.args(["-e", &format!("inject=mmap:error=ENOMEM:when={index}")]);
-        }
-        command.arg(file.path());
-        let output = run(&mut command);
-        (output, std::fs::read_to_string(trace.path()).unwrap())
-    };
-    let (output, events) = execute(None);
+    let output = common::process_output_with_timeout(
+        "lexer constructor OOM campaign",
+        Command::new("python3")
+            .arg("-B")
+            .arg(fixture("resources.py"))
+            .arg("allocations")
+            .arg(file.path()),
+        Duration::from_secs(68),
+    );
     checked(&output, 0);
-    assert_eq!(output.stdout, b"0\n");
-    let points = ledger(&events);
+    let receipt = String::from_utf8(output.stdout).unwrap();
     assert!(
-        (64..256).contains(&points),
-        "unexpected allocation scope: {points}: {events}"
+        receipt.starts_with("lexer-resources allocations cases="),
+        "{receipt}"
     );
-    let mut stages = [0usize; 6];
-    let mut later_candidate = [false; 2];
-    for index in 1..=points {
-        let (output, events) = execute(Some(index));
-        checked(&output, 4);
-        let parts: Vec<usize> = std::str::from_utf8(&output.stdout)
-            .unwrap()
-            .trim()
-            .split(':')
-            .map(|part| part.parse().unwrap())
-            .collect();
-        assert!((1..=5).contains(&parts[0]), "allocation{index}: {output:?}");
-        stages[parts[0]] += 1;
-        if parts[0] >= 4 {
-            assert_eq!(parts.len(), 3);
-            assert!(parts[1] < 2 && parts[2] <= 2);
-            if parts[1] == 1 && parts[2] == 0 {
-                later_candidate[parts[0] - 4] = true;
-            }
-        } else {
-            assert_eq!(parts.len(), 1);
-        }
-        ledger(&events);
-        assert_eq!(
-            events.matches("INJECTED").count(),
-            1,
-            "allocation{index}: {events}"
-        );
-    }
-    assert!(stages[1..].iter().all(|count| *count > 0), "{stages:?}");
-    assert!(
-        later_candidate.into_iter().all(|v| v),
-        "missing later-rule OOM after winning candidate"
-    );
-    eprintln!(
-        "lexer all {points} reached OOM positions passed; input/pattern/build/scan/probe stages={:?}",
-        &stages[1..]
-    );
+    assert!(receipt.contains(" stages="), "{receipt}");
+    print!("{receipt}");
 }
 fn fixture(name: &str) -> PathBuf {
     root().join("tests/fixtures/extended/lexer").join(name)
@@ -468,7 +425,9 @@ fn checked(output: &Output, status: i32) {
     assert_eq!(output.status.code(), Some(status), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
 }
-fn ledger(trace: &str) -> usize {
+fn ledger(executable: &Path, trace: &str) -> usize {
+    let verified = verified_trace(executable, trace);
+    let trace = verified.as_str();
     let mut live = BTreeMap::new();
     let mut attempts = 0;
     for line in trace.lines() {
@@ -503,11 +462,43 @@ fn longest_prefix_and_lexer_contracts_preserve_context_priority_progress_and_bud
     let file = executable("contracts.lani");
     let trace = common::TempArtifact::new("laniusc_lexer", "contracts_trace", None);
     let output = run(Command::new("strace")
-        .args(["-qq", "-o"])
+        .args(["--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
         .arg(file.path()));
     checked(&output, 0);
     assert!(output.stdout.is_empty(), "{output:?}");
-    assert!(ledger(&std::fs::read_to_string(trace.path()).unwrap()) > 0);
+    assert!(ledger(file.path(), &std::fs::read_to_string(trace.path()).unwrap()) > 0);
+}
+
+fn verified_trace(executable: &Path, trace: &str) -> String {
+    let file = common::TempArtifact::new("laniusc_lexer", "verified_trace", None);
+    file.write_str(trace);
+    let output = run(Command::new("python3")
+        .arg("-B")
+        .arg(fixture("resources.py"))
+        .arg("verify")
+        .arg(executable)
+        .arg(file.path()));
+    checked(&output, 0);
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn independent_cursor_workspaces_preserve_tokens_and_allocate_only_during_construction() {
+    let file = executable("reuse.lani");
+    let output = common::process_output_with_timeout(
+        "lexer independent cursor owners",
+        Command::new("python3")
+            .arg("-B")
+            .arg(fixture("resources.py"))
+            .arg("reuse")
+            .arg(file.path()),
+        Duration::from_secs(68),
+    );
+    checked(&output, 0);
+    assert_eq!(
+        output.stdout,
+        b"lexer-resources reuse checkpoints=9 cases=1\n"
+    );
 }

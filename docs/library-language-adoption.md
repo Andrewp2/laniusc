@@ -109,7 +109,7 @@ scope; the two older checkpoint ledgers explicitly reject a new full-width
 profile until their accounting is migrated. A successful primitive retry does
 not revalidate those suites.
 
-### Remaining compiler dependency
+### Remaining compiler dependencies
 
 The attempted generic `Option.flatten` rewrite compiles but receives SIGSEGV.
 Both minimal try/match pairs reproduce this with identical payload checks;
@@ -117,6 +117,14 @@ the match controls exit 0. Production `core::option` is unchanged. The
 [reproduction guide](../tests/fixtures/stdlib_compiler_state/try_generic_flatten/README.md)
 records exact sources, hashes, bounded commands and the larger parent control.
 This cleanup does not absorb the compiler repair.
+
+The later [reusable regex increment](library-regex-workspace-plan.md) uses item
+imports and inferred locals, but ten proposed `?` expressions in the complete
+module fail SSA-dominance validation. Equivalent explicit checks execute all
+selected workspace and consumer gates. Six small reductions pass, so the
+[retained module-level reproduction](../tests/fixtures/stdlib_compiler_state/regex_workspace_admission/README.md)
+does not establish a general propagation or aggregate restriction. The working
+question-mark sites in the six modules above retain their independent evidence.
 
 ### Frozen source hashes
 

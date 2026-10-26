@@ -1,0 +1,102 @@
+// Test-only packets: seven LE-u32 words, pattern bytes, input bytes. A single
+// explicit Workspace is reused across all packets and both capture modes.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::text;
+import ext::regex;
+import std::io;
+import std::io_decimal;
+import std::stream;
+
+fn integer(bytes:[u8],at:i32) -> i32 {
+    return ((bytes[at] as u32)|((bytes[at+1] as u32)<<8)|((bytes[at+2] as u32)<<16)|((bytes[at+3] as u32)<<24)) as i32;
+}
+fn number(value:i32) { std::io_decimal::write_i32(1,value); }
+fn error(value:ext::regex::Error) {
+    let code:i32=match(value) { ext::regex::Error::Syntax(_)->1,ext::regex::Error::Unsupported(_)->2,
+        ext::regex::Error::Limit(_)->3,ext::regex::Error::AllocationFailed->4,
+        ext::regex::Error::Bounds->5,ext::regex::Error::InvalidUtf8(_)->6,
+        ext::regex::Error::WorkLimit->7,ext::regex::Error::WorkspaceTooSmall->8 };
+    let offset:i32=match(value) { ext::regex::Error::Syntax(syntax_at)->syntax_at,
+        ext::regex::Error::Unsupported(unsupported_at)->unsupported_at,
+        ext::regex::Error::Limit(limit_at)->limit_at,
+        ext::regex::Error::InvalidUtf8(utf8_at)->utf8_at,
+        ext::regex::Error::AllocationFailed->0,ext::regex::Error::Bounds->0,
+        ext::regex::Error::WorkLimit->0,ext::regex::Error::WorkspaceTooSmall->0 };
+    std::io::write_byte(1,69); number(code); std::io::write_byte(1,58); number(offset);
+}
+fn spans(workspace:&ext::regex::Workspace) {
+    let group:i32=0;
+    while(group<workspace.group_count()) {
+        if(group>0) { std::io::write_byte(1,47); }
+        let selected=workspace.span(group);
+        if(selected.is_none()) { std::io::write_byte(1,45); }
+        else { let span=selected.unwrap(); number(span.start); std::io::write_byte(1,58); number(span.end); }
+        group+=1;
+    }
+}
+fn absent(workspace:&ext::regex::Workspace) {
+    assert(workspace.group_count()==0 && workspace.span(0).is_none());
+    assert(workspace.span(-1).is_none() && workspace.span(8).is_none());
+}
+fn main() -> i32 {
+    let workspace=ext::regex::workspace(128,8).unwrap();
+    let source=std::stream::stdin();
+    let storage:[i32;4096]=[0;4096]; let raw=core::mem::i32_array_data_ptr(storage);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(raw,16384);
+    let native:[u8;4096]=[165;4096]; let packed:[i32;1024]=[0;1024];
+    let physical:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(packed),4096);
+    let owned=workspace.owned_bytes();
+    while(true) {
+        if(source.read(bytes,0,1).unwrap()==0) { break; }
+        core::io::read_exact(source.borrow(),bytes,1,27).unwrap();
+        let plen=integer(bytes,0); let length=integer(bytes,4); let mode=integer(bytes,8);
+        let layout=integer(bytes,12); let start=integer(bytes,16); let flags=integer(bytes,20); let work=integer(bytes,24);
+        assert(plen>=0 && plen<=4096 && length>=0 && length<=4090 && mode>=0 && mode<=3 && layout>=0 && layout<=1);
+        core::io::read_exact(source.borrow(),bytes,28,plen+length).unwrap();
+        let pattern=core::text::from_utf8_unchecked(bytes,28,plen);
+        let target:[u8]=physical; if(layout==1) { target=native; }
+        assert(core::mem::slice_stride(physical)==1 && core::mem::slice_stride(native)!=1);
+        let index:i32=0; while(index<length) { target[3+index]=bytes[28+plen+index]; index+=1; }
+        let text=core::text::from_utf8_unchecked(target,3,length);
+        let config=ext::regex::options(); config.max_work=work;
+        config.multiline=(flags&1)!=0; config.dot_matches_newline=(flags&2)!=0;
+        let regex=ext::regex::compile(pattern,config).unwrap();
+        let checked=ext::regex::input(text);
+        if(checked.is_err()) { error(checked.unwrap_err()); }
+        else {
+            let input=checked.unwrap();
+            if(mode<2) {
+                let result:core::result::Result<bool,ext::regex::Error> =core::result::Err(ext::regex::Error::Bounds);
+                if(mode==0) { result=regex.find_with(input,start,workspace.borrow()); }
+                else { result=regex.longest_prefix_with(input,start,workspace.borrow()); }
+                if(result.is_err()) { error(result.unwrap_err()); absent(workspace.borrow()); }
+                else {
+                    if(result.unwrap()) { std::io::write_byte(1,80); assert(workspace.group_count()==regex.group_count()); spans(workspace.borrow()); }
+                    else { std::io::write_byte(1,78); absent(workspace.borrow()); }
+                }
+            } else {
+                let result:core::result::Result<core::option::Option<ext::regex::Span>,ext::regex::Error> =core::result::Err(ext::regex::Error::Bounds);
+                if(mode==2) { result=regex.find_span_with(input,start,workspace.borrow()); }
+                else { result=regex.longest_prefix_span_with(input,start,workspace.borrow()); }
+                if(result.is_err()) { error(result.unwrap_err()); absent(workspace.borrow()); }
+                else {
+                    let selected=result.unwrap();
+                    if(selected.is_none()) { std::io::write_byte(1,78); absent(workspace.borrow()); }
+                    else {
+                        let span=selected.unwrap(); let actual=workspace.span(0).unwrap();
+                        assert(actual.start==span.start && actual.end==span.end && workspace.group_count()==1);
+                        assert(workspace.span(1).is_none()); std::io::write_byte(1,80); spans(workspace.borrow());
+                    }
+                }
+            }
+        }
+        assert(workspace.state_capacity()==128 && workspace.group_capacity()==8 && workspace.owned_bytes()==owned);
+        assert(workspace.work_used()>=0 && workspace.work_used()<=work);
+        regex.destroy(); std::io::write_byte(1,10);
+    }
+    workspace.destroy(); workspace.destroy(); return 0;
+}

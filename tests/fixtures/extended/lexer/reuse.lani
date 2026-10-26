@@ -1,0 +1,56 @@
+// Actual independent Cursor owners; ACKs expose source storage before exit.
+module app::main;
+import core::mem;
+import core::slice;
+import core::text;
+import ext::lexer;
+import ext::regex;
+import std::io;
+import std::linux;
+
+fn text(value:str,count:i32)->core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn mark(value:i32) { assert(std::io::write_byte(2,value)==1); }
+fn checkpoint(index:i32) {
+    let args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    let pid=std::linux::call(39,core::slice::View<std::linux::Argument> { values:args,start:0,length:0 }).unwrap() as i32;
+    let frame:[i32;3]=[1279613016,index,pid]; let pointer=core::mem::i32_array_data_ptr(frame); let at:i32=0;
+    while(at<12) { let sent=std::io::write_stdout(pointer+(at as usize),(12-at) as usize); assert(sent>0 && sent<=12-at); at+=sent; }
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1 && input[0]==65);
+}
+fn token(cursor:&ext::lexer::Cursor,start:i32,end:i32)->ext::lexer::Token {
+    let item=cursor.next().unwrap().unwrap(); assert(item.rule==0 && item.id==17 && item.span.start==start && item.span.end==end); return item;
+}
+fn used(cursor:&ext::lexer::Cursor,position:i32,steps:i32,tokens:i32,calls:i32) {
+    let usage=cursor.usage(); assert(cursor.position()==position && usage.steps==steps && usage.tokens==tokens && usage.calls==calls && usage.reserved_work==(calls as i64)*10000);
+}
+fn main()->i32 {
+    mark(67);
+    let rules:[ext::lexer::Rule;2]=[ext::lexer::Rule { id:17,pattern:text("(a)+",4),skip:false },ext::lexer::Rule { id:-1,pattern:text(" +",2),skip:true }];
+    let options=ext::regex::options(); options.max_work=10000;
+    let lexer=ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,2).unwrap(),options,ext::lexer::default_build_limits()).unwrap();
+    mark(99); checkpoint(0);
+    mark(65); let first=lexer.scan(text("a a",3),ext::lexer::default_scan_limits()).unwrap(); mark(97); used(first.borrow(),0,0,0,0); checkpoint(1);
+    mark(66); let second=lexer.scan(text("aa a",4),ext::lexer::default_scan_limits()).unwrap(); mark(98); used(second.borrow(),0,0,0,0); checkpoint(2);
+    mark(78); let held=token(first.borrow(),0,1); let other=token(second.borrow(),0,2); used(first.borrow(),1,1,1,2); used(second.borrow(),2,1,1,2); mark(110); checkpoint(3);
+    mark(78); token(first.borrow(),2,3); used(first.borrow(),3,3,2,6); mark(110);
+    mark(70); assert(first.next().unwrap().is_none()); mark(102);
+    mark(78); assert(first.next().unwrap().is_none()); first.destroy(); first.destroy(); token(second.borrow(),3,4); used(second.borrow(),4,3,2,6); assert(held.text.equals(text("a",1)) && other.text.equals(text("aa",2))); mark(110); checkpoint(4);
+    mark(68); second.destroy(); mark(100);
+    mark(78); second.destroy(); assert(second.next().unwrap().is_none()); used(second.borrow(),4,3,2,6); mark(110); checkpoint(5);
+    mark(71); let failing=lexer.scan(text(" a?",3),ext::lexer::default_scan_limits()).unwrap(); mark(103);
+    mark(78); token(failing.borrow(),1,2); used(failing.borrow(),2,2,1,4); mark(110);
+    mark(69); let error=failing.next().unwrap_err(); assert(match(error) { ext::lexer::Error::NoMatch(at)->at==2,_ ->false }); mark(101);
+    mark(78); assert(failing.next().unwrap().is_none()); failing.destroy(); failing.destroy(); used(failing.borrow(),2,2,1,6); mark(110); checkpoint(6);
+    let limits=ext::lexer::default_scan_limits(); limits.max_calls=1;
+    mark(72); let limited=lexer.scan(text("a",1),limits).unwrap(); mark(104);
+    mark(69); let error=limited.next().unwrap_err(); assert(match(error) { ext::lexer::Error::SearchCallLimit(rule,at)->rule==1 && at==0,_ ->false }); mark(101);
+    mark(78); used(limited.borrow(),0,0,0,1); assert(limited.next().unwrap().is_none()); limited.destroy(); limited.destroy(); mark(110);
+    mark(90);
+    let limits=ext::lexer::ScanLimits { max_input_bytes:0,max_steps:0,max_tokens:0,max_calls:0,max_work:0 };
+    let empty=lexer.scan(text("",0),limits).unwrap(); assert(empty.next().unwrap().is_none()); assert(empty.next().unwrap().is_none()); empty.destroy(); empty.destroy(); used(empty.borrow(),0,0,0,0);
+    let bad:[u8;1]=[255]; let invalid=core::text::Text { bytes:bad,start:0,length:1 };
+    assert(match(lexer.scan(invalid,ext::lexer::default_scan_limits()).unwrap_err()) { ext::lexer::Error::Input(cause)->match(cause) { ext::regex::Error::InvalidUtf8(at)->at==0,_ ->false },_ ->false });
+    mark(122); checkpoint(7);
+    mark(82); lexer.destroy(); lexer.destroy(); assert(held.text.equals(text("a",1)) && other.text.equals(text("aa",2))); mark(114); checkpoint(8);
+    return 0;
+}

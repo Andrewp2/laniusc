@@ -113,12 +113,12 @@ fn lexer_status(error: ext::lexer::Error, detail: &Detail) -> i32 {
         ext::lexer::Error::SearchCallLimit(rule,at) -> rule, ext::lexer::Error::SearchWorkLimit(rule,at) -> rule, _ -> -1
     };
     detail.offset = match(error) {
-        ext::lexer::Error::Pattern(rule,value) -> regex_offset(value), ext::lexer::Error::Input(value) -> regex_offset(value),
+        ext::lexer::Error::Pattern(rule,value) -> regex_offset(value), ext::lexer::Error::Input(value) -> regex_offset(value), ext::lexer::Error::Workspace(value) -> regex_offset(value),
         ext::lexer::Error::Search(rule,at,value) -> at, ext::lexer::Error::EmptyMatch(rule,at) -> at, ext::lexer::Error::NoMatch(at) -> at,
         ext::lexer::Error::StepLimit(at) -> at, ext::lexer::Error::TokenLimit(at) -> at,
         ext::lexer::Error::SearchCallLimit(rule,at) -> at, ext::lexer::Error::SearchWorkLimit(rule,at) -> at, _ -> -1
     };
-    return match(error) { ext::lexer::Error::AllocationFailed -> 4, ext::lexer::Error::Pattern(rule,value) -> regex_status(value), ext::lexer::Error::Input(value) -> regex_status(value), ext::lexer::Error::Search(rule,at,value) -> regex_status(value), _ -> 2 };
+    return match(error) { ext::lexer::Error::AllocationFailed -> 4, ext::lexer::Error::Pattern(rule,value) -> regex_status(value), ext::lexer::Error::Input(value) -> regex_status(value), ext::lexer::Error::Workspace(value) -> regex_status(value), ext::lexer::Error::Search(rule,at,value) -> regex_status(value), _ -> 2 };
 }
 fn csv_status(error: ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
 

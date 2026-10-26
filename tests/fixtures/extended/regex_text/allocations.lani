@@ -23,7 +23,15 @@ fn finish(regex: ext::regex::Regex, input: alloc::string::String, output: ext::r
     let count: i32 = 0;
     while (true) {
         let result = cursor.next();
-        if (result.is_err()) { assert(allocation(result.unwrap_err())); cursor.destroy(); output.destroy(); preserved(regex.borrow(),input); regex.destroy(); input.destroy(); return report(4); }
+        if (result.is_err()) {
+            // Split construction is allocation-free. Its one lazy workspace
+            // admission is a charged first next, with the precise wrapped OOM.
+            assert(match(result.unwrap_err()) { ext::regex_text::Error::Regex(value) -> match(value) { ext::regex::Error::AllocationFailed -> true, _ -> false }, _ -> false });
+            assert(cursor.usage().calls == 1 && cursor.usage().matches == 0 && cursor.usage().reserved_work == 10000);
+            assert(cursor.next().unwrap().is_none() && cursor.next().unwrap().is_none());
+            assert(cursor.usage().calls == 1 && cursor.usage().reserved_work == 10000);
+            cursor.destroy(); cursor.destroy(); output.destroy(); preserved(regex.borrow(),input); regex.destroy(); input.destroy(); return report(4);
+        }
         let item = result.unwrap(); if (item.is_none()) { break; }
         let part = item.unwrap(); if (count == 0 || count == 2) { assert(part.length == 0); } else { assert(count == 1 && part.equals(text("\0",1))); } count += 1;
     }

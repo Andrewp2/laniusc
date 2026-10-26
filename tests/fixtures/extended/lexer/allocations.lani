@@ -1,5 +1,5 @@
-// One-shot mmap failures cover every reached owner; recovery probes allocate
-// after the injected ordinal is consumed and must still read the original data.
+// Cursor construction owns scratch; next allocates nothing. Healthy rescans
+// after one denied constructor retain the original program and input owners.
 module app::main;
 import alloc::string;
 import core::mem;
@@ -10,39 +10,32 @@ import ext::regex;
 import std::io;
 import std::io_decimal;
 fn text(value: str, count: i32) -> core::text::Text { return core::text::from_utf8(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn mark(value:i32) { assert(std::io::write_byte(2,value)==1); }
 fn report(stage: i32) -> i32 { std::io_decimal::write_i32(1,stage); std::io::write_byte(1,10); if (stage == 0) { return 0; } return 4; }
-fn report_search(stage: i32, rule: i32, at: i32) -> i32 { std::io_decimal::write_i32(1,stage); std::io::write_byte(1,58); std::io_decimal::write_i32(1,rule); std::io::write_byte(1,58); std::io_decimal::write_i32(1,at); std::io::write_byte(1,10); return 4; }
 fn allocation(error: ext::lexer::Error) -> bool { return match(error) { ext::lexer::Error::AllocationFailed -> true, ext::lexer::Error::Pattern(rule,cause) -> match(cause) { ext::regex::Error::AllocationFailed -> true, _ -> false }, ext::lexer::Error::Search(rule,at,cause) -> match(cause) { ext::regex::Error::AllocationFailed -> true, _ -> false }, _ -> false }; }
 fn original(input: alloc::string::String) { assert(input.byte_len() == 4 && input.as_text().equals(text("a\0aa",4))); }
 fn item(value: ext::lexer::Token, expected: i32) { assert(value.rule == 0 && value.id == 17); if (expected == 0) { assert(value.span.start == 0 && value.span.end == 1 && value.text.equals(text("a",1))); } else { assert(expected == 1 && value.span.start == 2 && value.span.end == 4 && value.text.equals(text("aa",2))); } }
 fn preserved(lexer: &ext::lexer::Lexer, input: alloc::string::String) {
-    original(input); assert(lexer.rule_count() == 2 && lexer.state_count() > 0); let cursor = lexer.scan(input.as_text(),ext::lexer::default_scan_limits()).unwrap();
-    item(cursor.next().unwrap().unwrap(),0); item(cursor.next().unwrap().unwrap(),1); assert(cursor.next().unwrap().is_none()); assert(cursor.usage().steps == 3 && cursor.usage().tokens == 2 && cursor.usage().calls == 6); cursor.destroy();
+    mark(82); original(input); assert(lexer.rule_count() == 2 && lexer.state_count() > 0); let cursor = lexer.scan(input.as_text(),ext::lexer::default_scan_limits()).unwrap();
+    item(cursor.next().unwrap().unwrap(),0); item(cursor.next().unwrap().unwrap(),1); assert(cursor.next().unwrap().is_none()); assert(cursor.usage().steps == 3 && cursor.usage().tokens == 2 && cursor.usage().calls == 6); cursor.destroy(); mark(114);
 }
 fn scan(lexer: ext::lexer::Lexer, input: alloc::string::String, stage: i32) -> i32 {
-    let cursor = lexer.scan(input.as_text(),ext::lexer::default_scan_limits()).unwrap(); let count: i32 = 0;
-    while (true) {
-        let result = cursor.next();
-        if (result.is_err()) {
-            let error = result.unwrap_err(); assert(allocation(error)); assert(match(error) { ext::lexer::Error::Search(rule,at,cause) -> rule >= 0 && rule < 2 && (at == 0 || at == 1 || at == 2), _ -> false });
-            // At == 1 is possible after consuming the first token and before
-            // committing the skipped NUL; at == 2 retains that committed skip.
-            assert(cursor.usage().calls > 0 && cursor.usage().reserved_work == (cursor.usage().calls as i64) * 10000);
-            let position = cursor.position(); assert(position == 0 || position == 1 || position == 2); assert(cursor.next().unwrap().is_none()); cursor.destroy();
-            let rule: i32 = match(error) { ext::lexer::Error::Search(index,at,cause) -> index, _ -> -1 };
-            preserved(lexer.borrow(),input); lexer.destroy(); lexer.destroy(); original(input); input.destroy(); return report_search(stage,rule,position);
-        }
-        let found = result.unwrap(); if (found.is_none()) { break; } item(found.unwrap(),count); count += 1;
-    }
-    assert(count == 2 && cursor.position() == 4 && cursor.usage().steps == 3 && cursor.usage().calls == 6); cursor.destroy(); cursor.destroy();
+    let phase:i32=65; if(stage==5) { phase=66; }
+    mark(phase); let made=lexer.scan(input.as_text(),ext::lexer::default_scan_limits()); mark(phase+32);
+    if(made.is_err()) { assert(match(made.unwrap_err()) { ext::lexer::Error::AllocationFailed->true,_ ->false }); preserved(lexer.borrow(),input); lexer.destroy(); lexer.destroy(); original(input); input.destroy(); return report(stage); }
+    let cursor=made.unwrap(); let before=cursor.usage(); assert(before.steps==0 && before.tokens==0 && before.calls==0 && before.reserved_work==0 && cursor.position()==0);
+    mark(78); item(cursor.next().unwrap().unwrap(),0); item(cursor.next().unwrap().unwrap(),1); mark(110);
+    mark(84); assert(cursor.next().unwrap().is_none()); mark(116);
+    mark(78); assert(cursor.next().unwrap().is_none()); cursor.destroy(); cursor.destroy(); mark(110);
+    assert(cursor.position()==4 && cursor.usage().steps==3 && cursor.usage().calls==6 && cursor.usage().reserved_work==60000);
     if (stage == 4) { return scan(lexer,input,5); }
     lexer.destroy(); lexer.destroy(); assert(lexer.rule_count() == 0 && lexer.state_count() == 0); original(input); input.destroy(); input.destroy(); return report(0);
 }
 fn main() -> i32 {
-    let made = alloc::string::from_text(text("a\0aa",4)); if (made.is_err()) { return report(1); } let input = made.unwrap();
-    let made = alloc::string::from_text(text("a+?",3)); if (made.is_err()) { original(input); input.destroy(); return report(2); } let pattern = made.unwrap();
+    mark(73); let made = alloc::string::from_text(text("a\0aa",4)); mark(105); if (made.is_err()) { assert(match(made.unwrap_err()) { alloc::string::Error::AllocationFailed->true,_ ->false }); return report(1); } let input = made.unwrap();
+    mark(80); let made = alloc::string::from_text(text("a+?",3)); mark(112); if (made.is_err()) { assert(match(made.unwrap_err()) { alloc::string::Error::AllocationFailed->true,_ ->false }); original(input); input.destroy(); return report(2); } let pattern = made.unwrap();
     let rules: [ext::lexer::Rule;2] = [ext::lexer::Rule { id: 17, pattern: pattern.as_text(), skip: false },ext::lexer::Rule { id: -1, pattern: text("\0",1), skip: true }];
-    let options = ext::regex::options(); options.max_work = 10000; let made = ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,2).unwrap(),options,ext::lexer::default_build_limits());
+    let options = ext::regex::options(); options.max_work = 10000; mark(67); let made = ext::lexer::compile(core::slice::view<ext::lexer::Rule>(rules,2).unwrap(),options,ext::lexer::default_build_limits()); mark(99);
     if (made.is_err()) { assert(allocation(made.unwrap_err())); original(input); assert(pattern.as_text().equals(text("a+?",3))); pattern.destroy(); input.destroy(); return report(3); }
     let lexer = made.unwrap(); pattern.destroy(); return scan(lexer,input,4);
 }

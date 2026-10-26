@@ -2,13 +2,17 @@
 
 `ext::regex_text` provides borrowed splitting and owned literal or numeric
 capture replacement. It consumes the existing [`ext::regex`](extended-regex.md)
-`Matches` cursor. It adds no matcher, capture algorithm or host regex call.
-The source preserves the Regex and input on success and recoverable failure.
+`Search` cursor with one retained workspace. Split and literal replacement use
+its group-0-only span mode; templates read its full captures before advancing.
+It adds no matcher, capture algorithm or host regex call. The source preserves
+the Regex and input on success and recoverable failure.
 
-All six focused groups passed on Linux x86-64 through the GPU compiler on
-2026-10-25, in separate contract, reference, allocation and sample program
-gates. The algorithms use existing Lanius text, regex and owned-storage APIs;
-execution on other targets has not been established.
+All seven reusable-workspace tests passed across three focused runs on native
+Linux x86_64, executing programs emitted by the GPU compiler. Their finite
+contracts, model, ownership, allocation and sample-program scope is recorded
+below. Earlier receipts remain separate because they describe the prior
+allocation layout. User-program GPU-kernel execution and other hosts/targets
+have not been established.
 
 ## API and limits
 
@@ -58,6 +62,14 @@ reservation. The next search is rejected before invocation if either budget
 would be exceeded. Equality with either cap is allowed. Call exhaustion is
 checked before work exhaustion when both apply.
 
+Workspace construction is lazy. After admitting and charging the first search
+attempt, the helper calls `Regex.span_iter(Input)` for split/literal replacement
+or `Regex.capture_iter(Input)` for templates. It retains that canonical cursor
+for subsequent attempts. A workspace construction failure is the charged
+attempt's `Regex(AllocationFailed)`; a zero match cap or rejected call/work
+allowance acquires no workspace. Input validation and template preflight remain
+eager. Neither split delimiters nor template expansion acquire an owned Match.
+
 `Usage.reserved_work` reports reserved allowances rather than measured VM
 transitions. For example, a regex configured for 100 work units and an
 aggregate cap of 200 can attempt two searches even if the first used only five
@@ -84,16 +96,20 @@ has a final field, including when there is no delimiter search.
 The Regex and input backing must stay alive and immutable until the cursor is
 finished or destroyed. Returned fields remain valid after cursor destruction
 while the original input remains valid. Cursor copies must not be advanced
-independently. The cursor retains no Match or allocation between calls. It
-destroys every acquired capture owner before returning a field. Error, explicit
-destruction and exhaustion fuse it; later `next()` calls return None without
-another search. At match-count truncation or ordinary absence, the final tail
-is emitted exactly once.
+independently. The cursor retains no owned Match. It owns one lazy canonical
+span-search workspace between calls, with only two active capture slots for
+group 0 regardless of the pattern's other groups.
+Call `destroy()` if abandoning iteration early; copied descriptors are inactive
+aliases and must not be advanced or destroyed separately. Error, explicit
+destruction and exhaustion release the workspace and fuse the cursor; later
+`next()` calls return None without another search. At match-count truncation
+or ordinary absence, the final tail is emitted exactly once.
 
 ### Empty matches use the existing cursor policy
 
-After an empty match, `Matches` advances one Unicode scalar rather than one
-byte. It suppresses a nonempty alternative beginning at that same position.
+After an empty match, the canonical `Search` advances one Unicode scalar rather
+than one byte. It suppresses a nonempty alternative beginning at that same
+position.
 An empty match immediately following a nonempty match's end is allowed, and a
 final empty match at EOF is returned once. This module preserves that sequence
 for both split and replacement. It does not adopt Python's default empty-match
@@ -150,9 +166,16 @@ preflights the complete grammar and every capture reference before allocating
 tokens, searching or constructing output. Tokens borrow validated template
 ranges and select capture numbers; every token allocation is released.
 
-On any recoverable failure, the helper releases tokens, all acquired Matches,
-partial output and temporary search owners. No partial replacement is
-returned. Each String append checks the output cap before growing storage.
+Template expansion reads the current cursor's captures before any next search
+or destruction. In particular, a successful final empty match at EOF marks the
+cursor terminal but keeps its capture storage live through that expansion.
+The next attempt or explicit cleanup releases it without another charged
+search. Copied whole-match/capture spans are values; borrowed capture storage
+must not be retained across another search or destruction.
+
+On any recoverable failure, the helper releases tokens, the retained search
+workspace and partial output. No partial replacement is returned. Each String
+append checks the output cap before growing storage.
 This all-or-nothing result contract preserves the borrowed sources. It does
 not provide automatic cleanup for a trap, invalid physical backing or caller
 ownership violations.
@@ -173,6 +196,8 @@ there is no aggregate allocation quota.
 `OutputLimit`, `ReplacementLimit` and `AllocationFailed`.
 Text validation preserves its exact error; matcher failure preserves its exact
 error, including the matcher's own per-search WorkLimit and AllocationFailed.
+`Regex(WorkspaceTooSmall)` also preserves the engine's explicit workspace-shape
+error; the helper does not replace it with absence or an owned-search fallback.
 The convenience module's AllocationFailed covers token/output storage.
 Oversized replacement input returns ReplacementLimit after metadata checks
 and before UTF-8 scanning. No bound establishes physical backing for a forged
@@ -218,9 +243,52 @@ return through cleanup.
 
 ## Focused verification
 
+### Reusable-workspace integration
+
+The current source uses only the canonical `span_iter`/`capture_iter` search
+paths. Independent read-only review of the production source found no material
+adapter issue in lazy budget admission, descriptor write-back, final-empty
+capture lifetime or early-return cleanup. That source review is separate from
+the executable receipts below; no independent review of the new test paths
+is claimed.
+
+The accepted regex_text source is SHA-256
+`bc9f87b7cebba2545238867d0a45ad9a7feba986ac6ecf832be1484a0b4b9d3c`.
+All seven current native tests passed:
+
+| Gate | Native result | Log under `target/stdlib-work/` |
+| --- | --- | --- |
+| Lazy workspace, model and tables | 3/3 passed in 12.70 seconds; one span workspace with 9 allocations / 416 requested bytes versus full captures with 9 / 928, 288 Python cases (seed `0x6ab17a31`) and 89 explicit tables | `regex-text-workspace-lazy-model-tables-first.log` |
+| Direct contracts and library allocation failures | 2/2 passed in 11.36 seconds; all 41 reached OOM positions, setup/compile/replacement/split/probe counts `1/8/14/9/9` | `regex-text-workspace-contracts-oom-first.log` |
+| CLI behavior, allocation and I/O | 2/2 passed in 10.89 seconds; nine exact binary cases, 14 rejections, help, all 25 reached CLI OOMs and single read/write EINTR/EIO schedules | `regex-text-workspace-cli-first.log` |
+
+The strict native mapping ledger checks that split construction and zero-match,
+rejected-call and rejected-work paths allocate no workspace. On the measured
+`(a)(b)?` pattern, first admitted split search retains one nine-allocation span
+workspace; later delimiters allocate no additional search storage. Literal
+replacement uses that same span shape, while template replacement uses the
+full-capture shape. Both release it on termination. The 416/928-byte values
+count those requested source workspace allocations, excluding compilation,
+input/output owners, native heap and RSS. The final-empty template case also
+checks captures are read before workspace release.
+
+The 41/25 OOM campaigns cover every reached allocation position in their
+recorded baseline library/program fixtures, one failed allocation per run.
+They check exact owner release and continued source usability where applicable;
+they do not establish every regex/input/allocation path. The 288-case model
+uses independent Python `re` matches and captures for the shared nonempty
+subset. The 89 tables separately specify this library's empty-match, template
+and budget behavior.
+
+These are separate focused runs, not one whole-suite timing or a throughput
+comparison. They establish GPU compilation followed by native Linux x86_64
+execution, not user-program GPU-kernel execution or another host/target.
+
+### Prior implementation receipts
+
 [`tests/extended_regex_text_execution.rs`](../tests/extended_regex_text_execution.rs)
-and the [fixture directory](../tests/fixtures/extended/regex_text) provide six
-focused groups:
+and the [fixture directory](../tests/fixtures/extended/regex_text) supplied these
+six focused groups for the prior implementation:
 
 - Direct contracts for borrowed UTF-8 subranges, NUL, native and packed strides,
   exact empty-match progress, final tails, zero/truncated limits, fused failures,
@@ -243,8 +311,8 @@ focused groups:
 - All 43 reached sample allocations plus single read/write EINTR and EIO
   schedules, checking status, stdout policy and exact owner release.
 
-Each executable uses the unchanged strict native transfer validator. Native
-processes have ten-second outer timeouts. Accepted receipts are:
+Those executables used the strict native transfer validator and ten-second
+outer process timeouts. Historical accepted receipts are:
 
 | Gate | Native result | Log |
 | --- | --- | --- |
@@ -253,11 +321,11 @@ processes have ten-second outer timeouts. Accepted receipts are:
 | Reference and explicit tables | 2/2 passed in 7.80 seconds; 288 Python cases and 89 independent table cases | `target/stdlib-work/regex-text-model-tables-final.log` |
 | CLI behavior, allocation and I/O | 2/2 passed in 8.33 seconds; nine exact binary cases, 14 rejections, help, all 43 reached OOMs and four single read/write EINTR/EIO schedules | `target/stdlib-work/regex-replace-program-typed.log` |
 
-These were separate focused runs rather than one whole-suite timing. The
-production library remained unchanged after its first accepted contract gate.
-The final model has durable axis coverage assertions. Review found no
-remaining ownership or oracle issue. The finite cases do not establish every
-regex, allocation schedule, I/O interruption sequence or execution target.
+These were separate focused runs rather than one whole-suite timing. That
+implementation remained unchanged after its first accepted contract gate.
+Its 77/43 allocation counts remain historical; the current fixture counts are
+41/25 above. The finite cases do not establish every regex, allocation schedule,
+I/O interruption sequence or execution target.
 
 The focused suite, after the required compiler build, is:
 

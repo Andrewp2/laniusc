@@ -39,38 +39,31 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the archive source/API freeze, the bounded writer and final `--check` both
-exit zero for **250 pages from 249 source modules, with 8,197 public declaration
-markers**. Across this increment seven outputs change: the [index](api/README.md),
-four new pages for
-[`archive_plan`](api/ext/archive_plan.md),
-[`archive_profile`](api/ext/archive_profile.md),
-[`archive_source`](api/ext/archive_source.md) and
-[`archive_extract`](api/ext/archive_extract.md), plus
-[`zip`](api/ext/zip.md) and [`file_ops`](api/std/file_ops.md).
-They retain the current public signatures, raw ZIP creator field, checked
-directory operations, exact source locations and reviewed contract links.
-Declaration markers do not count working functions. Final receipts are
-`target/stdlib-work/archive-reference-writer-note-correction.log` and
-`archive-reference-check-note-correction.log` in that same directory. This
-final repeat qualifies the materializer fixture's failure history; only its
-generated page changes, and declaration totals stay unchanged.
+At the reusable regex source/API freeze, the bounded writer and `--check` both
+exit zero for **250 pages from 249 source modules, with 8,220 public declaration
+markers**. Exactly four outputs change: the [index](api/README.md),
+[`regex`](api/ext/regex.md), [`lexer`](api/ext/lexer.md) and
+[`regex_text`](api/ext/regex_text.md). They retain the new Workspace/Search
+signatures, typed capacity failure, current source locations, ownership notes
+and reviewed guide links. Declaration markers do not count working functions.
+Receipts are `target/stdlib-work/regex-workspace-reference-writer-first.log`
+and `regex-workspace-reference-check-first.log` in that same directory. The
+[overview](library-overview.md) records the separate finite runtime evidence;
+generation itself establishes none.
 
-The supported direct CPU test runner passes **26 tests in 3.129 seconds** in
-`target/stdlib-work/archive-reference-generator-tests-first.log`. This includes
+The supported direct CPU test runner passes **26 tests in 3.405 seconds** in
+`target/stdlib-work/regex-workspace-reference-generator-tests-first.log`. This includes
 module/item imports, module precedence, public enum variants, private/missing
 item rejection, no re-exports, and opaque bodies containing `?`/inferred locals.
 It verifies documentation tooling, not compiled language or library behavior.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
 hashes before generation and after the final check. The generator writes only
-the reference tree. The preceding first language-adoption and AtomicFile/KV
-inventories had 246 pages, 245 modules and 8,119 markers; the former updated six
-item-import source pages and the latter added
-[`atomic_file`](api/std/atomic_file.md). Their finite receipt metadata and older
-TempFile/server notes retain their guide-defined scope. The complete
-library goal remains open in the [overview](library-overview.md). Generation
-supplies no runtime acceptance for any API.
+the reference tree. The preceding archive freeze had 250 pages, 249 modules and
+8,197 markers, adding the four archive module pages and updating ZIP/FileOps.
+The earlier language-adoption/AtomicFile inventory had 246 pages, 245 modules
+and 8,119 markers. Their receipt metadata retains its guide-defined scope.
+The complete library goal remains open in the [overview](library-overview.md).
 
 ## Source boundaries
 

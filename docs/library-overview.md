@@ -1,6 +1,9 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[reusable regex-workspace increment](library-regex-workspace-plan.md) is
+implemented and passes the selected Workspace/Search, regex, lexer,
+regex-text and real-application gates on the native profile below. The preceding
 [archive increment](library-archive-extraction-plan.md) adds shared namespace
 planning, extraction metadata policy, complete TAR/ZIP preparation, a bounded
 materializer and a real [unpack program](extended-unpack.md). The prerequisites,
@@ -18,6 +21,72 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted reusable regex storage.**
+
+One canonical fixed `Workspace` serves full-capture and two-slot span searches;
+`Search` owns that storage and centralizes scalar progress and terminal release.
+The lexer owns one span workspace per nonempty cursor. Regex-text creates its
+Search lazily after admitting and charging an attempt, using span mode for
+split/literal replacement and full captures for templates. Ordinary convenience
+Match APIs retain independent result ownership; this is one engine, with
+explicit manual lifetimes and no new regex syntax.
+
+| Surface | Current finite evidence |
+| --- | --- |
+| Canonical Workspace/Search | Strict capacity/reset, zero-allocation reuse, EOF-capture and owner checks pass one native fixture in 6.12s. Constructor baseline plus all nine reached OOM cases pass ten processes. The corrected reuse/span model passes 839 cases in 6.99s. Both ordinary Regex/input regression tests pass in 10.50s. |
+| Lexer workspace integration | All six tests pass across separate 12.79s and 11.88s invocations: owner interleaving/admission/contracts, 576 model cases, 63 explicit tables and all 30 reached OOM positions. |
+| Regex-text and rewrite CLI | All seven tests pass across separate 12.70s, 11.36s and 10.89s invocations: lazy storage, 288 model cases, 89 tables, direct contracts, all 41 library/25 CLI reached OOMs, 24 CLI cases and four I/O fault schedules. |
+| Lex-scan application | All five tests pass across separate 13.63s and 16.66s invocations: 124 grammar inputs in both modes plus boundaries, malformed admission/nonpublication, scripted I/O, all 30 reached OOM positions per mode and a 4,096-token cost observation. |
+
+Current receipts are under `target/stdlib-work/`:
+`regex-workspace-contracts-first.log`,
+`regex-workspace-model-and-oom-first.log`,
+`regex-workspace-model-exhaustive-offset-retry.log`,
+`regex-workspace-existing-regressions-first.log`,
+`lexer-workspace-owners-contracts-admission-first.log`,
+`lexer-workspace-model-tables-oom-first.log`,
+`regex-text-workspace-lazy-model-tables-first.log`,
+`regex-text-workspace-contracts-oom-first.log`,
+`regex-text-workspace-cli-first.log`,
+`lex-scan-workspace-behavior-io-first.log` and
+`lex-scan-workspace-faults-cost-first.log`. These are 23 selected passing Rust
+tests across separate commands: Workspace 3, base regex 2, lexer 6, regex-text 7
+and lex-scan 5. Separate CPU controls number 24 for Workspace, 30 for lexer
+resources and 11 for regex-text resources; they are not native library tests.
+The 9.19s mixed
+constructor/model command accepted the ten constructor processes but rejected
+that model fixture before native execution; it is not an allocation-only time.
+Two model admission attempts failed before exhaustive error-offset arms fixed
+the fixture; source matching/capacity contracts were unchanged. The corrected
+839 cases are model scenarios, not 839 native process invocations. The lazy
+regex-text fixture observes nine allocations/416 requested bytes in span mode
+versus nine/928 in capture mode for the same `(a)(b)?` program; it does not
+measure total process memory. The older allocation subprobe in the ordinary
+Regex regression uses legacy accounting; the new strict constructor/workspace
+ledger supplies the current storage evidence.
+
+The current 4,096-token application observation records 32 verified source mmap
+requests, 8,895 total requested source bytes and 6,868 peak live requested bytes,
+with balanced releases. Its 79.624585ms traced correctness/cost harness wall
+time includes temporary-input setup, process execution and output/ledger
+verification. Requested-byte counts do not measure total native memory, kernel
+state or RSS. This establishes no compiler-speed or general throughput ratio.
+
+Native evidence is Linux x86_64 code emitted by the GPU compiler. Fixed capacity
+and VM work allowances do not bound initialization/capture-copy/Unicode-table
+CPU, process RSS or wall time. Competing token rules can rescan suffixes. Older
+77/43 regex-text OOM counts, 120 lexer OOM positions and the 36,887-allocation
+lex-scan observation describe the prior per-probe implementation, not current
+allocation acceptance. The [declaration reference](library-api-reference.md)
+records the current source/API freeze separately from runtime acceptance.
+
+The production regex uses equivalent explicit propagation guards. An
+[unused-import module reproduction](../tests/fixtures/stdlib_compiler_state/regex_workspace_admission/README.md)
+retains a lowering-dominance dependency in the original question-mark module;
+six smaller constructor/arithmetic/propagation controls execute. No individual
+operator or aggregate shape has been isolated as the cause, and ordinary `?`
+support is not declared unavailable. Compiler repair remains separate work.
 
 **Accepted bounded archive increment.**
 
@@ -405,26 +474,29 @@ allocation failures, plus a 4,096-row resource control. The
 [reduced compiler dependencies](library-context-inference-dependencies.md)
 retain original failing expressions beside native passing controls.
 
-[Regex splitting and replacement](extended-regex-text.md) reuse the existing
-matcher and capture cursor, with borrowed fields, owned literal/template
-output and explicit search/output bounds. Six native groups cover independent
-reference cases, Unicode and empty-match tables, every reached allocation
-failure and a binary stdin/stdout rewrite program. Search work is a
-conservative reservation of per-search VM allowances, not a total CPU or I/O
-budget.
+[Regex splitting and replacement](extended-regex-text.md) now reuse canonical
+Search with one lazily acquired workspace. Borrowed split fields, independent
+literal/template outputs and explicit search/output bounds retain their
+documented contracts. All seven current groups pass, including 41 reached
+library and 25 CLI allocation failures, with exact output and I/O failure
+behavior. The preceding six-group receipts remain historical. Search work
+reserves per-search VM allowances rather than total CPU or I/O work.
 
 [Reusable lexical scanning](extended-lexer.md) selects the longest anchored
 regex span at each position, with declaration-order ties, borrowed UTF-8
 tokens and explicit progress, call and work limits. It shares the canonical
-regex engine and validates each input once. Five native groups pass through
-separate receipts, including 576 independent model cases, 63 edge tables and
-all 120 allocation failures reached by the focused fixtures. Probes still
-allocate matcher scratch, and competing patterns can rescan input; this is
-not an allocation-free or whole-input linear-time claim.
+regex engine and validates each input once. Each nonempty cursor now owns one
+eager span workspace, reused during token selection; terminal calls can release
+it. All six current groups pass: owner/admission/contracts, 576 model cases,
+63 explicit tables and all 30 reached OOM positions. The earlier 120-position
+receipt retains its preceding per-probe scope. Competing patterns can rescan
+input; neither reusable scratch nor these receipts establish whole-input
+linear time.
 The [CSV-rules lexer program](extended-lex-scan.md) emits staged token spans or
-per-kind counts through bounded native I/O. Its five groups pass, including
-124 grammar inputs in both modes, all 60 allocation-failure positions across
-the two output modes, injected I/O failures and a measured 4,096-token run.
+per-kind counts through bounded native I/O. All five current groups pass the
+124-input/two-mode model, boundaries, admission, I/O, 30 reached OOM positions
+per mode and a verified 4,096-token cost observation. Its earlier allocation
+observation retains its historical implementation/accounting scope.
 
 The [CSV report application](csv-report.md) combines streams, UTF-8 text,
 checked decimal parsing, generic collections, CSV and JSON to validate and
