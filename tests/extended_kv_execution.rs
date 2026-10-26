@@ -497,136 +497,29 @@ fn allocation_denial_on_mutation_decode_and_serialization_releases_owners_and_pr
         }
     }
 }
-fn cli_run(args: &[&str]) -> Output {
-    common::process_output_with_timeout(
-        "kv-tool",
-        Command::new(cli().path()).args(args),
-        Duration::from_secs(10),
-    )
+fn application_group(group: &str) {
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let output = common::process_output_with_timeout(
+        format!("kv-tool {group}"),
+        Command::new("python3")
+            .arg(root.join("tests/fixtures/extended/kv_publication/oracle.py"))
+            .arg(cli().path())
+            .arg(group),
+        Duration::from_secs(80),
+    );
+    checked(&output);
+    let summary = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        summary.starts_with(&format!("kv-application-{group} cases=")),
+        "{summary}"
+    );
+    eprint!("{summary}");
 }
 #[test]
 fn native_file_cli_round_trips_binary_values_and_replaces_only_validated_complete_snapshots() {
-    let help = cli_run(&["--help"]);
-    checked(&help);
-    assert!(help.stdout.starts_with(b"Usage: kv-tool ") && help.stdout.ends_with(b"\n"));
-    let db = common::TempArtifact::new("laniusc_kv", "database", None);
-    let scratch = common::TempArtifact::new("laniusc_kv", "scratch", None);
-    let d = db.path().to_str().unwrap();
-    let s = scratch.path().to_str().unwrap();
-    checked(&cli_run(&["init", d, s]));
-    assert!(!scratch.path().exists());
-    let empty = std::fs::read(db.path()).unwrap();
-    assert_eq!(empty, snapshot(&BTreeMap::new()));
-    assert_eq!(cli_run(&["init", d, s]).status.code(), Some(2));
-    assert_eq!(std::fs::read(db.path()).unwrap(), empty);
-    for (k, v) in [
-        ("00ff", "000102ff"),
-        ("", ""),
-        ("abcd", "c3a9"),
-        ("00ff", "ff00"),
-    ] {
-        checked(&cli_run(&["put", d, s, k, v]));
-        assert!(!scratch.path().exists());
-    }
-    let got = cli_run(&["get", d, "00ff"]);
-    checked(&got);
-    assert_eq!(got.stdout, vec![255, 0]);
-    let absent = cli_run(&["get", d, "99"]);
-    assert_eq!(absent.status.code(), Some(5));
-    assert!(absent.stdout.is_empty() && absent.stderr.is_empty());
-    assert_eq!(cli_run(&["get", d, ""]).stdout, b"");
-    let listed = cli_run(&["list", d]);
-    checked(&listed);
-    assert_eq!(listed.stdout, b"\t\n00ff\tff00\nabcd\tc3a9\n");
-    checked(&cli_run(&["check", d]));
-    checked(&cli_run(&["remove", d, s, "00ff"]));
-    let committed = std::fs::read(db.path()).unwrap();
-    assert_eq!(cli_run(&["remove", d, s, "00ff"]).status.code(), Some(5));
-    assert_eq!(std::fs::read(db.path()).unwrap(), committed);
-    for args in [
-        vec!["put", d, s, "a", "00"],
-        vec!["put", d, s, "gg", "00"],
-        vec!["put", d, d, "00", "00"],
-        vec!["bad", d],
-    ] {
-        let o = cli_run(&args);
-        assert_eq!(o.status.code(), Some(2), "{o:?}");
-        assert!(o.stdout.is_empty());
-        assert_eq!(std::fs::read(db.path()).unwrap(), committed);
-    }
-    db.write_bytes(b"corrupt snapshot");
-    let o = cli_run(&["put", d, s, "00", "00"]);
-    assert_eq!(o.status.code(), Some(2));
-    assert_eq!(std::fs::read(db.path()).unwrap(), b"corrupt snapshot");
-    assert!(!scratch.path().exists());
+    application_group("roundtrips");
 }
 #[test]
-fn native_cli_faults_preserve_database_before_rename_close_handles_and_clean_scratch() {
-    let db = common::TempArtifact::new("laniusc_kv", "fault-database", None);
-    let scratch = common::TempArtifact::new("laniusc_kv", "fault-scratch", None);
-    let d = db.path().to_str().unwrap();
-    let s = scratch.path().to_str().unwrap();
-    let original = snapshot(&BTreeMap::from([(vec![1], vec![7; 1000])]));
-    let trace = common::TempArtifact::new("laniusc_kv", "filetrace", None);
-    let traced = |fault: Option<&str>| {
-        db.write_bytes(&original);
-        let _ = std::fs::remove_file(scratch.path());
-        let mut cmd = Command::new("strace");
-        cmd.args(["-qq", "-o"]).arg(trace.path()).args([
-            "-e",
-            "trace=mmap,munmap,open,read,write,close,rename,unlink",
-        ]);
-        if let Some(f) = fault {
-            cmd.args(["-e", f]);
-        }
-        cmd.arg(cli().path()).args(["put", d, s, "02", "ff00"]);
-        let o = common::process_output_with_timeout(
-            "kv-tool faults",
-            &mut cmd,
-            Duration::from_secs(10),
-        );
-        let events = std::fs::read_to_string(trace.path()).unwrap();
-        let n = freed(&events);
-        (o, n, events)
-    };
-    let (o, n, events) = traced(None);
-    checked(&o);
-    assert!(n > 4);
-    assert!(events.contains("rename("));
-    for fail in 1..=n {
-        let (o, _, events) = traced(Some(&format!("inject=mmap:error=ENOMEM:when={fail}")));
-        assert_eq!(
-            o.status.code(),
-            Some(4),
-            "allocation {fail}: {o:?}\n{events}"
-        );
-        assert_eq!(std::fs::read(db.path()).unwrap(), original);
-        assert!(!scratch.path().exists());
-    }
-    for fault in [
-        "inject=open:error=EIO:when=1",
-        "inject=open:error=EIO:when=2",
-        "inject=read:error=EIO:when=1",
-        "inject=read:error=EIO:when=2",
-        "inject=write:error=EIO:when=1",
-        "inject=write:error=EIO:when=2",
-        "inject=close:error=EIO:when=1",
-        "inject=close:error=EIO:when=2",
-        "inject=rename:error=EIO:when=1",
-    ] {
-        let (o, _, events) = traced(Some(fault));
-        assert_eq!(o.status.code(), Some(3), "{fault}: {o:?}\n{events}");
-        assert_eq!(std::fs::read(db.path()).unwrap(), original, "{fault}");
-        assert!(!scratch.path().exists(), "{fault}");
-    }
-    for fault in [
-        "inject=read:error=EINTR:when=1",
-        "inject=write:error=EINTR:when=1",
-    ] {
-        let (o, _, events) = traced(Some(fault));
-        checked(&o);
-        assert!(events.contains("INJECTED"));
-        assert_ne!(std::fs::read(db.path()).unwrap(), original);
-        assert!(!scratch.path().exists());
-    }
+fn native_cli_atomic_publication_races_faults_and_reached_allocations_report_visibility() {
+    application_group("publication");
 }

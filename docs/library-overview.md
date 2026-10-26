@@ -1,12 +1,52 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current increment is
-[resumable concurrent HTTP/HTTPS servers](library-server-concurrency-plan.md):
-shared protocol ownership, plain/TLS drivers, one bounded polling scheduler
-and concurrent health/echo services. Source is implemented against the frozen
-[Protocol/plain-driver contract](library-server-contract.md); focused native
-gates have started passing. The complete server increment is not accepted.
-Earlier sequential service receipts retain their separate historical scope.
+The full library goal remains open. The latest accepted increment is
+[AtomicFile publication and the key-value application migration](library-atomic-files-plan.md).
+[AtomicFile](stdlib-atomic-files.md) and the
+[migrated CLI](extended-kv.md#current-application-receipts) now have finite native
+acceptance on the profile below. The accepted TempFile prerequisite and server
+evidence retain their checkpoint scope. The
+[remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
+keeps the broader standard and extended library work visible.
+
+**Atomic publication and key-value application checkpoint.**
+
+The actual AtomicFile probe passes owner nine, bounds 25, publication six and
+faults 26: **66 process invocations across four groups**, including baselines.
+The preliminary smoke case overlaps and is not a 67th distinct behavior.
+The target is native Linux x86_64, kernel `7.0.0-38-generic`, on ext4 under
+`/tmp`. The publication gate observes complete new bytes and Published visibility
+while the directory anchor is still live, then permits explicit directory-sync
+retry; the retry never repeats rename. Recoverable preflight/EINTR, real partial
+writes, NoReplace conflict/contenders, ambiguous rename and retained cleanup have
+finite executable coverage. The bounds retry corrected the fixture's owned-fd
+write selector; it changed no product/probe source and reused the same ELF.
+
+Receipts under `target/stdlib-work/` are `atomic-file-owner-group-first.log`,
+`atomic-file-bounds-selector-retry.log`, `atomic-file-publication-first.log` and
+`atomic-file-faults-first.log`. The separate 36 CPU ledger controls are not native
+cases. Source allocations and native descriptor generations are checked before
+exit; this does not account for all host/kernel memory or prove every schedule.
+
+The migrated `kv_tool` passes round trips 33 and publication 31: **64 process
+invocations across two groups**, including 13 reached source-allocation failures
+and 15 I/O controls in the publication group. Its new arities omit SCRATCH and
+anchor mutation load/publication to one parent/leaf, with NoReplace init and
+Replace updates. Published-but-unsynced, unconfirmed visibility and retained
+cleanup remain explicit outcomes, including when stderr delivery fails.
+The current receipts are `kv-tool-atomic-syntax-retry-compile.log`,
+`kv-tool-atomic-roundtrips-first.log` and `kv-tool-atomic-publication-first.log`.
+The first compile failure was unsupported application match-arm syntax; the
+correction required no compiler change. Eleven CPU binding controls and two
+Rust driver `--no-run` admissions remain separate from native oracle execution;
+no Rust libtest execution is claimed. Portable Store/snapshot tests retain
+their prior scope, and earlier caller-scratch CLI receipts remain historical.
+
+These operations use Lanius over existing Linux calls. The accepted namespace is
+exclusive/cooperative; no locking, hostile-directory, network-filesystem or
+universal crash/power-loss guarantee follows. The
+[archive extraction plan](library-archive-extraction-plan.md) is proposed next
+work; it supplies no executable extraction API or acceptance receipt.
 
 **Temporary-file checkpoint.**
 
@@ -28,8 +68,8 @@ same-owner keep and fallible cleanup with retained recovery authority. Its
 parent namespace must be exclusive/cooperative; no hostile-directory, crash
 scavenging or durability guarantee is added. All production code is Lanius over
 the existing raw Linux boundary, with no new runtime binding or cryptographic
-implementation. AtomicFile publication and the `kv_tool` migration remain
-pending in the [atomic-files plan](library-atomic-files-plan.md).
+implementation. The separately accepted AtomicFile/KV layer above builds on
+this prerequisite; its new receipts do not expand the original TempFile group.
 
 **Server checkpoint evidence.**
 
@@ -62,10 +102,10 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes for the TempFile/FileOps and server interface freeze at 245 pages,
-244 modules and 8,090 markers. It includes the current finite receipt metadata;
-this remains source inventory evidence, not completion of runtime gates or the
-pending AtomicFile phase.
+passes its bounded writer and final check for the frozen AtomicFile/KV,
+TempFile/FileOps and server surfaces: 246 pages, 245 modules and 8,119 public
+declaration markers. Source inventory evidence does not establish runtime
+support or library completion.
 
 Two lower-layer controls remain distinct from those current transport gates:
 

@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Source inventory**.
 
-Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. New remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. The primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp, including paths, symlinks, host errors, injected errors/invalid counts and bounds preflight. Preliminary bounds evidence overlaps and adds no distinct case. These allocation-free name operations supply no durability or hostile-directory authority. TempFile applies a stricter cooperative namespace/component policy; AtomicFile publication remains pending.
+Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. New remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. The primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp, including paths, symlinks, host errors, injected errors/invalid counts and bounds preflight. Preliminary bounds evidence overlaps and adds no distinct case. These allocation-free name operations supply no durability or hostile-directory authority. TempFile applies a stricter cooperative namespace/component policy; the separately accepted AtomicFile owner composes synchronization/publication/recovery with explicit receipts.
 
 ## Contract and evidence guides
 

@@ -1,4 +1,4 @@
-// Native bounded snapshot store. Explicit disposable sibling scratch path.
+// Native bounded snapshot store. Atomic publication through an anchored parent.
 module app::main;
 import alloc::io;
 import alloc::vec;
@@ -10,9 +10,35 @@ import core::result;
 import core::slice;
 import ext::kv;
 import std::args;
+import std::atomic_file;
+import std::entropy;
 import std::file;
-import std::filesystem;
+import std::file_ops;
 import std::stream;
+import std::temp_file;
+
+enum Notice { None, Invalid, Io, Allocation, Exists, PublishedUnsynced, Unconfirmed }
+struct Outcome {
+    code: i32, notice: Notice, visibility: std::atomic_file::Visibility,
+    cleanup_failed: bool, diagnostic_failed: bool
+}
+// Both paths borrow the one argument snapshot. Split raw bytes rather than
+// normalizing the final component, so a trailing slash or '/.' cannot retarget.
+struct Target { parent: core::path::Path, leaf: core::path::Path }
+
+fn ordinary(code: i32) -> Outcome {
+    let notice: Notice = Notice::None;
+    if (code == 2) { notice = Notice::Invalid; }
+    if (code == 3) { notice = Notice::Io; }
+    if (code == 4) { notice = Notice::Allocation; }
+    return Outcome { code: code, notice: notice, visibility: std::atomic_file::Visibility::NotPublished,
+        cleanup_failed: false, diagnostic_failed: false };
+}
+fn cleanup_failure(outcome: Outcome) -> Outcome { outcome.code = 8; outcome.cleanup_failed = true; return outcome; }
+fn close_outcome(file: &std::file::File, outcome: Outcome) -> Outcome {
+    if (file.close().is_err()) { return cleanup_failure(outcome); }
+    return outcome;
+}
 
 fn literal(text: str, count: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count), start: 0, length: count }; }
 fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
@@ -26,23 +52,128 @@ fn unhex(text: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8
     let result: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(result.try_resize(text.length/2,0))) { result.destroy(); return core::result::Err(4); }
     let bytes: [u8] = result.as_slice(); i = 0; while (i < result.len()) { bytes[i] = (hex_digit(text.values[text.start+i*2])*16+hex_digit(text.values[text.start+i*2+1])) as u8; i += 1; } return core::result::Ok(result);
 }
-fn load(path: core::path::Path) -> core::result::Result<ext::kv::Store,i32> {
-    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read); if (core::result::is_err(opened)) { return core::result::Err(io_code(core::result::unwrap_err(opened))); } let file: std::file::File = core::result::unwrap(opened);
-    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(9437184)); let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),input.borrow()); let closed: core::result::Result<i32,core::io::Error> = file.close();
-    if (core::result::is_err(copied)) { input.destroy(); return core::result::Err(io_code(core::result::unwrap_err(copied).cause)); } if (core::result::is_err(closed)) { input.destroy(); return core::result::Err(3); }
-    let decoded: core::result::Result<ext::kv::Store,ext::kv::Error> = ext::kv::decode(core::result::unwrap(core::slice::view(input.as_bytes(),input.len())),limits()); input.destroy(); if (core::result::is_err(decoded)) { return core::result::Err(error_code(core::result::unwrap_err(decoded))); } return core::result::Ok(core::result::unwrap(decoded));
+fn read_store(file: std::file::File) -> core::result::Result<ext::kv::Store,Outcome> {
+    let input: alloc::io::Buffer = alloc::io::with_limit(9437184).unwrap();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),input.borrow());
+    let outcome: Outcome = ordinary(0);
+    if (copied.is_err()) { outcome = ordinary(io_code(copied.unwrap_err().cause)); }
+    outcome = close_outcome(file.borrow(),outcome);
+    if (outcome.code != 0) { input.destroy(); return core::result::Err(outcome); }
+    let decoded: core::result::Result<ext::kv::Store,ext::kv::Error> = ext::kv::decode(core::slice::view(input.as_bytes(),input.len()).unwrap(),limits());
+    input.destroy();
+    if (decoded.is_err()) { return core::result::Err(ordinary(error_code(decoded.unwrap_err()))); }
+    return core::result::Ok(decoded.unwrap());
 }
-fn save(store: &ext::kv::Store, path: core::path::Path, scratch: core::path::Path) -> i32 {
-    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::kv::Error> = ext::kv::encode(store,9437184,134217728); if (core::result::is_err(encoded)) { return error_code(core::result::unwrap_err(encoded)); } let bytes: alloc::vec::Vec<u8> = core::result::unwrap(encoded);
-    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(scratch,std::file::OpenMode::Create); if (core::result::is_err(opened)) { bytes.destroy(); return io_code(core::result::unwrap_err(opened)); } let file: std::file::File = core::result::unwrap(opened);
-    let complete: bool = core::result::is_ok(core::io::write_all(file.borrow(),bytes.as_slice(),0,bytes.len())); let closed: bool = core::result::is_ok(file.close()); bytes.destroy();
-    if (!complete || !closed) { std::filesystem::remove_file(scratch); return 3; }
-    let renamed: core::result::Result<i32,core::io::Error> = std::filesystem::rename(scratch,path); if (core::result::is_err(renamed)) { std::filesystem::remove_file(scratch); return 3; } return 0;
+fn load(path: core::path::Path) -> core::result::Result<ext::kv::Store,Outcome> {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read);
+    if (opened.is_err()) { return core::result::Err(ordinary(io_code(opened.unwrap_err()))); }
+    return read_store(opened.unwrap());
 }
-fn sibling(path: core::path::Path, scratch: core::path::Path) -> bool {
-    if (path.byte_len() > 4095 || scratch.byte_len() > 4095 || path.equals(scratch)) { return false; }
-    if (core::option::is_none(path.file_name()) || core::option::is_none(scratch.file_name())) { return false; }
-    let a: core::option::Option<core::path::Path> = path.parent(); let b: core::option::Option<core::path::Path> = scratch.parent(); if (core::option::is_none(a) || core::option::is_none(b)) { return false; } return core::option::unwrap(a).equals(core::option::unwrap(b));
+fn load_at(parent: &std::file::File, leaf: core::path::Path) -> core::result::Result<ext::kv::Store,Outcome> {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open_at(parent.raw_handle().unwrap(),leaf,std::file_ops::options());
+    if (opened.is_err()) { return core::result::Err(ordinary(io_code(opened.unwrap_err()))); }
+    return read_store(opened.unwrap());
+}
+fn target(path: core::path::Path) -> core::result::Result<Target,Outcome> {
+    let bytes: core::slice::View<u8> = path.as_bytes();
+    if (bytes.length == 0 || bytes.length > 4095) { return core::result::Err(ordinary(2)); }
+    let slash: i32 = -1; let index: i32 = 0;
+    while (index < bytes.length) { if (bytes.values[bytes.start+index] == 47) { slash = index; } index += 1; }
+    let leaf: core::slice::View<u8> = core::slice::View { values: bytes.values, start: bytes.start+slash+1, length: bytes.length-slash-1 };
+    if (leaf.length == 0 || leaf.length > 255 || same(leaf,literal(".",1)) || same(leaf,literal("..",2))) { return core::result::Err(ordinary(2)); }
+    let parent: core::path::Path = core::path::from_view(literal(".",1)).unwrap();
+    if (slash >= 0) {
+        let count: i32 = slash; if (slash == 0) { count = 1; }
+        parent = core::path::from_view(core::slice::View { values: bytes.values, start: bytes.start, length: count }).unwrap();
+    }
+    return core::result::Ok(Target { parent: parent, leaf: core::path::from_view(leaf).unwrap() });
+}
+fn temporary_code(error: std::temp_file::Error) -> i32 {
+    return match(error) {
+        std::temp_file::Error::AllocationFailed -> 4,
+        std::temp_file::Error::InvalidLimits -> 2,
+        std::temp_file::Error::InvalidName -> 2,
+        std::temp_file::Error::NameLimit -> 2,
+        std::temp_file::Error::Io(cause) -> io_code(cause),
+        std::temp_file::Error::Entropy(failure) -> match(failure.cause) { std::entropy::Error::CallLimit -> 2, _ -> 3 },
+        _ -> 3
+    };
+}
+fn atomic_code(error: std::atomic_file::Error) -> i32 {
+    return match(error) {
+        std::atomic_file::Error::AllocationFailed -> 4,
+        std::atomic_file::Error::InvalidOptions -> 2,
+        std::atomic_file::Error::InvalidDestination -> 2,
+        std::atomic_file::Error::Bounds -> 2,
+        std::atomic_file::Error::ByteLimit -> 2,
+        std::atomic_file::Error::WriteLimit -> 2,
+        std::atomic_file::Error::DirectorySyncLimit -> 2,
+        std::atomic_file::Error::Io(cause) -> io_code(cause),
+        std::atomic_file::Error::Temporary(failure) -> temporary_code(failure.cause),
+        std::atomic_file::Error::Ownership(cause) -> temporary_code(cause),
+        _ -> 3
+    };
+}
+fn atomic_failure(failure: std::atomic_file::Failure) -> Outcome {
+    let receipt: std::atomic_file::Receipt = failure.receipt;
+    let outcome: Outcome = ordinary(atomic_code(failure.cause)); outcome.visibility = receipt.visibility;
+    let visibility: i32 = match(receipt.visibility) {
+        std::atomic_file::Visibility::Published -> 1,
+        std::atomic_file::Visibility::Unconfirmed -> 2,
+        std::atomic_file::Visibility::NotPublished -> 0
+    };
+    if (visibility == 1 && !receipt.directory_synced) { outcome.code = 6; outcome.notice = Notice::PublishedUnsynced; }
+    if (visibility == 2) { outcome.code = 7; outcome.notice = Notice::Unconfirmed; }
+    if (visibility == 0) {
+        let renamed: bool = match(failure.stage) { std::atomic_file::Stage::Rename -> true, _ -> false };
+        let exists: bool = match(failure.cause) { std::atomic_file::Error::Io(cause) -> match(cause) { core::io::Error::Host(code) -> code == 17, _ -> false }, _ -> false };
+        if (renamed && exists) { outcome.code = 2; outcome.notice = Notice::Exists; }
+    }
+    return outcome;
+}
+fn cleanup_errors(receipt: std::temp_file::Cleanup) -> bool {
+    return receipt.file_close_error.is_some() || receipt.remove_error.is_some() || receipt.directory_close_error.is_some();
+}
+fn release_atomic(owner: &std::atomic_file::AtomicFile, outcome: Outcome) -> Outcome {
+    // Preserve historical action/cleanup errors while reading CURRENT visibility.
+    let released: core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure> = owner.cleanup();
+    let receipt: std::atomic_file::Receipt = owner.receipt(); outcome.visibility = receipt.visibility;
+    if (released.is_err() || cleanup_errors(receipt.cleanup)) { outcome = cleanup_failure(outcome); }
+    if (receipt.temporary_owned) {
+        // Unlink was unconfirmed. Report the live recovery name, then explicitly
+        // accept the named residue; the next cleanup cannot unlink it again.
+        let okay: bool = write(literal("kv-tool: retained temporary name in database directory: ",56),true);
+        if (!write(owner.temporary_name(),true)) { okay = false; }
+        if (!write(literal("\n",1),true)) { okay = false; }
+        if (!okay) { outcome.diagnostic_failed = true; }
+        let kept: core::result::Result<bool,std::atomic_file::Failure> = owner.keep();
+        // temporary_owned is the public keep precondition; no I/O or allocation
+        // can fail this ownership transition.
+        assert(kept.is_ok());
+        let retired: core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure> = owner.cleanup();
+        receipt = owner.receipt(); outcome.visibility = receipt.visibility;
+        if (retired.is_err() || cleanup_errors(receipt.cleanup)) { outcome = cleanup_failure(outcome); }
+    }
+    assert(!receipt.retained);
+    return outcome;
+}
+fn publish(store: &ext::kv::Store, parent: &std::file::File, leaf: core::path::Path, policy: std::file_ops::RenamePolicy) -> Outcome {
+    // Canonical encoding completes before temporary creation or publication.
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::kv::Error> = ext::kv::encode(store,9437184,134217728);
+    if (encoded.is_err()) { return ordinary(error_code(encoded.unwrap_err())); }
+    let bytes: alloc::vec::Vec<u8> = encoded.unwrap();
+    let options: std::atomic_file::Options = std::atomic_file::default_options();
+    options.policy = policy; options.max_bytes = 9437184; options.write_calls = 1048576; options.directory_sync_calls = 1;
+    let owner: std::atomic_file::AtomicFile = std::atomic_file::empty();
+    let created: core::result::Result<bool,std::atomic_file::Failure> = owner.create_in(parent,leaf,options);
+    if (created.is_err()) { bytes.destroy(); return release_atomic(owner.borrow(),atomic_failure(created.unwrap_err())); }
+    let written: core::result::Result<u64,std::atomic_file::Failure> = owner.write_all(bytes.as_view());
+    bytes.destroy();
+    if (written.is_err()) { return release_atomic(owner.borrow(),atomic_failure(written.unwrap_err())); }
+    let committed: core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure> = owner.commit();
+    let outcome: Outcome = ordinary(0);
+    if (committed.is_err()) { outcome = atomic_failure(committed.unwrap_err()); }
+    return release_atomic(owner.borrow(),outcome);
 }
 fn listing(store: &ext::kv::Store) -> i32 {
     let size: i64 = (store.byte_len() as i64)*2+(store.len() as i64)*2; if (size > 18874368) { return 2; }
@@ -51,26 +182,120 @@ fn listing(store: &ext::kv::Store) -> i32 {
     while (index < store.len()) { let entry: ext::kv::Entry = core::result::unwrap(store.entry(index)); let side: i32 = 0; while (side < 2) { let source: core::slice::View<u8> = entry.key; if (side == 1) { source = entry.value; } let i: i32 = 0; while (i < source.length) { let value: i32 = source.values[source.start+i] as i32; bytes[at] = alphabet.values[value/16]; bytes[at+1] = alphabet.values[value%16]; at += 2; i += 1; } bytes[at] = 9; if (side == 1) { bytes[at] = 10; } at += 1; side += 1; } index += 1; }
     let okay: bool = write(output.as_view(),false); output.destroy(); if (!okay) { return 3; } return 0;
 }
-fn process(args: std::args::Arguments) -> i32 {
-    if (args.len() < 2) { return 2; } let command: core::slice::View<u8> = core::option::unwrap(args.get(0)); let mode: i32 = 0;
-    if (same(command,literal("init",4))) { mode = 1; } if (same(command,literal("put",3))) { mode = 2; } if (same(command,literal("remove",6))) { mode = 3; } if (same(command,literal("get",3))) { mode = 4; } if (same(command,literal("list",4))) { mode = 5; } if (same(command,literal("check",5))) { mode = 6; }
-    let count: i32 = 2; if (mode == 1 || mode == 4) { count = 3; } if (mode == 2) { count = 5; } if (mode == 3) { count = 4; } if (mode == 0 || args.len() != count) { return 2; }
-    let path_result: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(core::option::unwrap(args.get(1))); if (core::result::is_err(path_result)) { return 2; } let path: core::path::Path = core::result::unwrap(path_result); let scratch: core::path::Path = path;
-    if (mode <= 3) { let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(core::option::unwrap(args.get(2))); if (core::result::is_err(parsed)) { return 2; } scratch = core::result::unwrap(parsed); if (!sibling(path,scratch)) { return 2; } }
-    if (mode == 1) { let existing: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read); if (core::result::is_ok(existing)) { let file: std::file::File = core::result::unwrap(existing); if (core::result::is_err(file.close())) { return 3; } return 2; } let missing: bool = match (core::result::unwrap_err(existing)) { core::io::Error::Host(code) -> code == 2, _ -> false }; if (!missing) { return 3; } let empty: ext::kv::Store = ext::kv::new(); let status: i32 = save(empty.borrow(),path,scratch); empty.destroy(); return status; }
+fn mutate(mode: i32, path: core::path::Path, key: core::slice::View<u8>, value: core::slice::View<u8>) -> Outcome {
+    let selected: core::result::Result<Target,Outcome> = target(path);
+    if (selected.is_err()) { return selected.unwrap_err(); }
+    let names: Target = selected.unwrap();
+    let options: std::file_ops::OpenOptions = std::file_ops::options(); options.directory = true;
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open(names.parent,options);
+    if (opened.is_err()) { return ordinary(io_code(opened.unwrap_err())); }
+    let parent: std::file::File = opened.unwrap();
+    if (mode == 1) {
+        // No existence check: the publication itself arbitrates NoReplace.
+        let store: ext::kv::Store = ext::kv::new();
+        let outcome: Outcome = publish(store.borrow(),parent.borrow(),names.leaf,std::file_ops::RenamePolicy::NoReplace);
+        store.destroy(); return close_outcome(parent.borrow(),outcome);
+    }
+    let loaded: core::result::Result<ext::kv::Store,Outcome> = load_at(parent.borrow(),names.leaf);
+    if (loaded.is_err()) { return close_outcome(parent.borrow(),loaded.unwrap_err()); }
+    let store: ext::kv::Store = loaded.unwrap(); let outcome: Outcome = ordinary(0);
+    if (mode == 2) {
+        let put: core::result::Result<ext::kv::Put,ext::kv::Error> = store.put(key,value,limits());
+        if (put.is_err()) { outcome = ordinary(error_code(put.unwrap_err())); }
+        else { outcome = publish(store.borrow(),parent.borrow(),names.leaf,std::file_ops::RenamePolicy::Replace); }
+    } else {
+        let removed: core::result::Result<bool,ext::kv::Error> = store.remove(key,134217728);
+        if (removed.is_err()) { outcome = ordinary(error_code(removed.unwrap_err())); }
+        else {
+            if (removed.unwrap()) { outcome = publish(store.borrow(),parent.borrow(),names.leaf,std::file_ops::RenamePolicy::Replace); }
+            else { outcome = ordinary(5); }
+        }
+    }
+    store.destroy(); return close_outcome(parent.borrow(),outcome);
+}
+fn process(args: std::args::Arguments) -> Outcome {
+    if (args.len() < 2) { return ordinary(2); }
+    let command: core::slice::View<u8> = args.get(0).unwrap(); let mode: i32 = 0;
+    if (same(command,literal("init",4))) { mode = 1; }
+    if (same(command,literal("put",3))) { mode = 2; }
+    if (same(command,literal("remove",6))) { mode = 3; }
+    if (same(command,literal("get",3))) { mode = 4; }
+    if (same(command,literal("list",4))) { mode = 5; }
+    if (same(command,literal("check",5))) { mode = 6; }
+    let count: i32 = 2;
+    if (mode == 3 || mode == 4) { count = 3; }
+    if (mode == 2) { count = 4; }
+    if (mode == 0 || args.len() != count) { return ordinary(2); }
+    let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(args.get(1).unwrap());
+    if (parsed.is_err()) { return ordinary(2); }
+    let path: core::path::Path = parsed.unwrap();
     let key: alloc::vec::Vec<u8> = alloc::vec::new(); let value: alloc::vec::Vec<u8> = alloc::vec::new();
-    if (mode >= 2 && mode <= 4) { let position: i32 = 3; if (mode == 4) { position = 2; } let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(core::option::unwrap(args.get(position))); if (core::result::is_err(decoded)) { return core::result::unwrap_err(decoded); } key = core::result::unwrap(decoded); }
-    if (mode == 2) { let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(core::option::unwrap(args.get(4))); if (core::result::is_err(decoded)) { key.destroy(); return core::result::unwrap_err(decoded); } value = core::result::unwrap(decoded); }
-    let loaded: core::result::Result<ext::kv::Store,i32> = load(path); if (core::result::is_err(loaded)) { key.destroy(); value.destroy(); return core::result::unwrap_err(loaded); } let store: ext::kv::Store = core::result::unwrap(loaded); let status: i32 = 0;
-    if (mode == 2) { let put: core::result::Result<ext::kv::Put,ext::kv::Error> = store.put(key.as_view(),value.as_view(),limits()); if (core::result::is_err(put)) { status = error_code(core::result::unwrap_err(put)); } else { status = save(store.borrow(),path,scratch); } }
-    if (mode == 3) { let removed: core::result::Result<bool,ext::kv::Error> = store.remove(key.as_view(),134217728); if (core::result::is_err(removed)) { status = error_code(core::result::unwrap_err(removed)); } else { if (core::result::unwrap(removed)) { status = save(store.borrow(),path,scratch); } else { status = 5; } } }
-    if (mode == 4) { let found: core::result::Result<core::option::Option<core::slice::View<u8>>,ext::kv::Error> = store.get(key.as_view(),134217728); if (core::result::is_err(found)) { status = error_code(core::result::unwrap_err(found)); } else { let item: core::option::Option<core::slice::View<u8>> = core::result::unwrap(found); if (core::option::is_none(item)) { status = 5; } else { if (!write(core::option::unwrap(item),false)) { status = 3; } } } }
+    if (mode >= 2 && mode <= 4) {
+        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(args.get(2).unwrap());
+        if (decoded.is_err()) { return ordinary(decoded.unwrap_err()); }
+        key = decoded.unwrap();
+    }
+    if (mode == 2) {
+        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(args.get(3).unwrap());
+        if (decoded.is_err()) { key.destroy(); return ordinary(decoded.unwrap_err()); }
+        value = decoded.unwrap();
+    }
+    if (mode <= 3) {
+        let outcome: Outcome = mutate(mode,path,key.as_view(),value.as_view());
+        key.destroy(); value.destroy(); return outcome;
+    }
+    let loaded: core::result::Result<ext::kv::Store,Outcome> = load(path);
+    if (loaded.is_err()) { key.destroy(); value.destroy(); return loaded.unwrap_err(); }
+    let store: ext::kv::Store = loaded.unwrap(); let status: i32 = 0;
+    if (mode == 4) {
+        let found: core::result::Result<core::option::Option<core::slice::View<u8>>,ext::kv::Error> = store.get(key.as_view(),134217728);
+        if (found.is_err()) { status = error_code(found.unwrap_err()); }
+        else {
+            let item: core::option::Option<core::slice::View<u8>> = found.unwrap();
+            if (item.is_none()) { status = 5; } else { if (!write(item.unwrap(),false)) { status = 3; } }
+        }
+    }
     if (mode == 5) { status = listing(store.borrow()); }
-    key.destroy(); value.destroy(); store.destroy(); return status;
+    key.destroy(); value.destroy(); store.destroy(); return ordinary(status);
+}
+fn report(outcome: Outcome) -> i32 {
+    let okay: bool = !outcome.diagnostic_failed;
+    let notice: i32 = match(outcome.notice) {
+        Notice::None -> 0, Notice::Invalid -> 1, Notice::Io -> 2,
+        Notice::Allocation -> 3, Notice::Exists -> 4,
+        Notice::PublishedUnsynced -> 5, Notice::Unconfirmed -> 6
+    };
+    if (notice == 1) { if (!write(literal("kv-tool: invalid input or resource limit\n",41),true)) { okay = false; } }
+    if (notice == 2) { if (!write(literal("kv-tool: I/O failure\n",21),true)) { okay = false; } }
+    if (notice == 3) { if (!write(literal("kv-tool: allocation failed\n",27),true)) { okay = false; } }
+    if (notice == 4) { if (!write(literal("kv-tool: database already exists\n",33),true)) { okay = false; } }
+    if (notice == 5) { if (!write(literal("kv-tool: snapshot published; directory sync unconfirmed\n",56),true)) { okay = false; } }
+    if (notice == 6) { if (!write(literal("kv-tool: publication visibility unconfirmed\n",44),true)) { okay = false; } }
+    if (outcome.cleanup_failed) {
+        let published: bool = match(outcome.visibility) { std::atomic_file::Visibility::Published -> true, _ -> false };
+        let unsynced: bool = match(outcome.notice) { Notice::PublishedUnsynced -> true, _ -> false };
+        if (published && !unsynced) {
+            if (!write(literal("kv-tool: snapshot published; cleanup failed\n",44),true)) { okay = false; }
+        } else {
+            if (!write(literal("kv-tool: cleanup failed\n",24),true)) { okay = false; }
+        }
+    }
+    // Failed stderr cannot erase an already known publication/cleanup outcome.
+    if (!okay && outcome.code == 0) { return 3; }
+    return outcome.code;
 }
 fn main() -> i32 {
-    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,5,262144); let status: i32 = 0;
-    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; }
-    else { let args: std::args::Arguments = core::result::unwrap(captured); if (args.len() == 1 && same(core::option::unwrap(args.get(0)),literal("--help",6))) { if (!write(literal("Usage: kv-tool init DB SCRATCH | put DB SCRATCH KEY_HEX VALUE_HEX | remove DB SCRATCH KEY_HEX | get DB KEY_HEX | list DB | check DB\n",132),false)) { status = 3; } } else { status = process(args); } args.destroy(); }
-    let okay: bool = true; if (status == 2) { okay = write(literal("kv-tool: invalid input or resource limit\n",41),true); } if (status == 3) { okay = write(literal("kv-tool: I/O failure\n",21),true); } if (status == 4) { okay = write(literal("kv-tool: allocation failed\n",27),true); } if (!okay) { return 3; } return status;
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,4,262144);
+    let outcome: Outcome = ordinary(0);
+    if (captured.is_err()) {
+        let status: i32 = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 };
+        outcome = ordinary(status);
+    } else {
+        let args: std::args::Arguments = captured.unwrap();
+        if (args.len() == 1 && same(args.get(0).unwrap(),literal("--help",6))) {
+            if (!write(literal("Usage: kv-tool init DB | put DB KEY_HEX VALUE_HEX | remove DB KEY_HEX | get DB KEY_HEX | list DB | check DB\n",108),false)) { outcome = ordinary(3); }
+        } else { outcome = process(args); }
+        args.destroy();
+    }
+    return report(outcome);
 }

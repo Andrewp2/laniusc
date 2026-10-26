@@ -754,7 +754,8 @@
     "ext::kv": {
       "guides": [
         "docs/extended-kv.md"
-      ]
+      ],
+      "note": "Portable owned byte-key/value Store and canonical versioned CRC-checked snapshots retain their executable model/format/failure receipts. Store mutations are atomic in memory and preserve old backing on failure; they do not provide database transactions or publication durability. The migrated no-SCRATCH kv_tool now delegates to std::atomic_file, anchoring mutation load/publication to one parent descriptor and raw leaf with NoReplace init and Replace updates. Current native Linux x86_64/ext4 receipts pass round trips 33 and publication 31, totaling 64 process invocations across two groups; publication includes 13 reached source OOM and 15 I/O controls. Published-unsynced, visibility-unconfirmed and retained-cleanup statuses remain explicit even when stderr delivery fails. Eleven CPU binding controls and Rust driver --no-run admission are separate from actual native oracle execution. The first compile failure required only supported application match-arm syntax, not a compiler change. Earlier caller-scratch CLI receipts remain historical; the portable Store API and snapshot format are unchanged. Cooperative namespaces, no locking or universal crash durability; CRC is noncryptographic."
     },
     "ext::lexer": {
       "guides": [
@@ -1039,6 +1040,14 @@
         "docs/stdlib-process-context.md"
       ]
     },
+    "std::atomic_file": {
+      "guides": [
+        "docs/stdlib-atomic-files.md",
+        "docs/stdlib-temp-files.md",
+        "docs/extended-kv.md"
+      ],
+      "note": "Bounded sequential publication implemented in Lanius over TempFile and existing Linux descriptor calls. Keep one in-place manual owner; destination bytes are copied before effects. Replace/NoReplace commit syncs and closes the file once, renames once, immediately records Published/disarms deletion, then syncs the anchored directory. Receipts preserve NotPublished/Published/Unconfirmed visibility, confirmed bytes, current resources and separate primary/latest/cleanup errors. Cached commit is inert; explicit directory-sync retry never writes or renames. Failed removal retains recovery ownership; cleanup never unlinks the destination. Native Linux x86_64/kernel 7.0.0-38-generic/ext4 under /tmp passes owner 9, bounds 25, publication 6 and faults 26: 66 process invocations across four groups including baselines; preliminary smoke overlaps. A live-anchor Published checkpoint precedes ACK-controlled explicit sync retry. The bounds retry fixes only the oracle owned-fd write selector and reuses the unchanged probe ELF. Thirty-six CPU ledger controls and Rust --no-run admission are separate from native execution. Actual source/fd ownership is observed before exit. Parent mutation authority must be exclusive/cooperative; attempts/bytes are bounded, blocking time is not. No hostile-directory, network-filesystem, locking, universal power-loss or automatic-destructor guarantee; no new runtime binding or crypto implementation."
+    },
     "std::clock": {
       "guides": [
         "docs/stdlib-time.md"
@@ -1107,7 +1116,7 @@
         "docs/stdlib-file-resize.md",
         "docs/stdlib-temp-files.md"
       ],
-      "note": "Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. New remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. The primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp, including paths, symlinks, host errors, injected errors/invalid counts and bounds preflight. Preliminary bounds evidence overlaps and adds no distinct case. These allocation-free name operations supply no durability or hostile-directory authority. TempFile applies a stricter cooperative namespace/component policy; AtomicFile publication remains pending."
+      "note": "Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. New remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. The primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp, including paths, symlinks, host errors, injected errors/invalid counts and bounds preflight. Preliminary bounds evidence overlaps and adds no distinct case. These allocation-free name operations supply no durability or hostile-directory authority. TempFile applies a stricter cooperative namespace/component policy; the separately accepted AtomicFile owner composes synchronization/publication/recovery with explicit receipts."
     },
     "std::filesystem": {
       "guides": [

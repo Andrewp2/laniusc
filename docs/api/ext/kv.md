@@ -8,6 +8,8 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Portable owned byte-key/value Store and canonical versioned CRC-checked snapshots retain their executable model/format/failure receipts. Store mutations are atomic in memory and preserve old backing on failure; they do not provide database transactions or publication durability. The migrated no-SCRATCH kv_tool now delegates to std::atomic_file, anchoring mutation load/publication to one parent descriptor and raw leaf with NoReplace init and Replace updates. Current native Linux x86_64/ext4 receipts pass round trips 33 and publication 31, totaling 64 process invocations across two groups; publication includes 13 reached source OOM and 15 I/O controls. Published-unsynced, visibility-unconfirmed and retained-cleanup statuses remain explicit even when stderr delivery fails. Eleven CPU binding controls and Rust driver --no-run admission are separate from actual native oracle execution. The first compile failure required only supported application match-arm syntax, not a compiler change. Earlier caller-scratch CLI receipts remain historical; the portable Store API and snapshot format are unchanged. Cooperative namespaces, no locking or universal crash durability; CRC is noncryptographic.
+
 ## Contract and evidence guides
 
 - [extended-kv](../../extended-kv.md)

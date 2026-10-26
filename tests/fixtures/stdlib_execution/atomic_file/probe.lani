@@ -1,0 +1,101 @@
+// Request12Q; every checkpoint128Q + copied temp37/destination255 bytes.
+// Actual AtomicFile only. The host observes checkpoint1 before any recovery.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::atomic_file;
+import std::entropy;
+import std::file;
+import std::file_ops;
+import std::filesystem;
+import std::linux;
+import std::stream;
+import std::temp_file;
+
+fn bytes(value:str,count:i32)->core::slice::View<u8>{return core::slice::View{values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count};}
+fn path(value:str,count:i32)->core::path::Path{return core::path::Path{bytes:bytes(value,count)};}
+fn word(input:[u8],at:i32)->u64{let value:u64=0;let i:i32=0;while(i<8){value|=(input[at+i] as u64)<<(i*8);i+=1;}return value;}
+fn io(error:core::io::Error)->u64{return match(error){core::io::Error::Host(code)->code as u64,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,core::io::Error::InvalidInput->900,core::io::Error::InvalidCount->901,_ ->902};}
+fn optional(error:core::option::Option<core::io::Error>)->u64{if(error.is_none()){return 0;}return io(error.unwrap());}
+fn entropy(error:std::entropy::Error)->u64{return match(error){std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(code)->100+code as u64};}
+fn temporary(error:std::temp_file::Error)->u64{return match(error){std::temp_file::Error::InvalidState->1,std::temp_file::Error::InvalidLimits->2,std::temp_file::Error::InvalidName->3,std::temp_file::Error::AllocationFailed->4,std::temp_file::Error::UnavailableMetadata->5,std::temp_file::Error::NotDirectory->6,std::temp_file::Error::UnsupportedDescriptor->7,std::temp_file::Error::NameLimit->8,std::temp_file::Error::Io(value)->1000+io(value),std::temp_file::Error::Entropy(value)->2000+entropy(value.cause)};}
+fn cause(error:std::atomic_file::Error)->u64{return match(error){std::atomic_file::Error::InvalidState->1,std::atomic_file::Error::InvalidOptions->2,std::atomic_file::Error::InvalidDestination->3,std::atomic_file::Error::AllocationFailed->4,std::atomic_file::Error::Bounds->5,std::atomic_file::Error::ByteLimit->6,std::atomic_file::Error::WriteLimit->7,std::atomic_file::Error::DirectorySyncLimit->8,std::atomic_file::Error::NoProgress->9,std::atomic_file::Error::InvalidCount->10,std::atomic_file::Error::Io(value)->1000+io(value),std::atomic_file::Error::Temporary(value)->10000+temporary(value.cause),std::atomic_file::Error::Ownership(value)->20000+temporary(value)};}
+fn stage(value:std::atomic_file::Stage)->u64{return match(value){std::atomic_file::Stage::Validate->1,std::atomic_file::Stage::Allocate->2,std::atomic_file::Stage::Create->3,std::atomic_file::Stage::Write->4,std::atomic_file::Stage::SyncFile->5,std::atomic_file::Stage::CloseFile->6,std::atomic_file::Stage::Rename->7,std::atomic_file::Stage::Disarm->8,std::atomic_file::Stage::SyncDirectory->9,std::atomic_file::Stage::Cleanup->10,std::atomic_file::Stage::Keep->11};}
+fn state(value:std::atomic_file::State)->u64{return match(value){std::atomic_file::State::Inactive->0,std::atomic_file::State::Writing->1,std::atomic_file::State::Failed->2,std::atomic_file::State::Published->3,std::atomic_file::State::Kept->4,std::atomic_file::State::Released->5};}
+fn visibility(value:std::atomic_file::Visibility)->u64{return match(value){std::atomic_file::Visibility::NotPublished->0,std::atomic_file::Visibility::Published->1,std::atomic_file::Visibility::Unconfirmed->2};}
+fn removal(value:std::temp_file::Removal)->u64{return match(value){std::temp_file::Removal::NotOwned->0,std::temp_file::Removal::Removed->1,std::temp_file::Removal::AlreadyAbsent->2,std::temp_file::Removal::Unconfirmed->3};}
+fn fd(value:core::option::Option<i32>)->u64{if(value.is_none()){return 18446744073709551615;}return value.unwrap() as u64;}
+fn mark(value:u8){let raw:[u8;1]=[value];let sink=std::stream::stderr();core::io::write_all(sink.borrow(),raw,0,1).unwrap();}
+fn ack(){let raw:[u8;1]=[0];let source=std::stream::stdin();core::io::read_exact(source.borrow(),raw,0,1).unwrap();assert(raw[0]==33);}
+fn cleanup(output:[u64],at:i32,value:std::temp_file::Cleanup){output[at]=value.file_close_attempted as u64;output[at+1]=optional(value.file_close_error);output[at+2]=value.remove_attempted as u64;output[at+3]=removal(value.removal);output[at+4]=optional(value.remove_error);output[at+5]=value.directory_close_attempted as u64;output[at+6]=optional(value.directory_close_error);output[at+7]=value.retained as u64;}
+fn receipt(output:[u64],at:i32,value:std::atomic_file::Receipt){
+    output[at]=state(value.state);output[at+1]=visibility(value.visibility);output[at+2]=value.stats.bytes;output[at+3]=value.stats.writes;output[at+4]=value.stats.file_syncs;output[at+5]=value.stats.renames;output[at+6]=value.stats.directory_syncs;output[at+7]=value.file_synced as u64;output[at+8]=value.directory_synced as u64;output[at+9]=value.file_open as u64;output[at+10]=value.directory_open as u64;output[at+11]=value.temporary_owned as u64;output[at+12]=value.retained as u64;cleanup(output,at+13,value.cleanup);
+    output[at+21]=value.temporary_stats.name_attempts as u64;output[at+22]=value.temporary_stats.open_attempts as u64;output[at+23]=value.temporary_stats.collisions as u64;output[at+24]=value.temporary_stats.excluded as u64;output[at+25]=value.temporary_stats.entropy_calls;
+    output[at+26]=0;output[at+27]=0;output[at+28]=0;if(value.last_error.is_some()){let error=value.last_error.unwrap();output[at+26]=cause(error.cause);output[at+27]=stage(error.stage);output[at+28]=error.completed;}
+    output[at+29]=0;output[at+30]=0;output[at+31]=0;
+}
+fn returned(result:core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure>)->std::atomic_file::Receipt{if(result.is_err()){return result.unwrap_err().receipt;}return result.unwrap();}
+fn equal(first:core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure>,next:core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure>)->bool{
+    if(first.is_err()!=next.is_err()){return false;}if(first.is_err()){let a=first.unwrap_err();let b=next.unwrap_err();if(cause(a.cause)!=cause(b.cause)||stage(a.stage)!=stage(b.stage)||a.completed!=b.completed){return false;}}
+    let a:[u64;32]=[0;32];let b:[u64;32]=[0;32];receipt(a,0,returned(first));receipt(b,0,returned(next));let i:i32=0;while(i<32){if(a[i]!=b[i]){return false;}i+=1;}return true;
+}
+fn failed(output:[u64],error:std::atomic_file::Failure){if(output[4]==0){output[4]=cause(error.cause);output[5]=stage(error.stage);output[118]=error.completed;}}
+fn written(output:[u64],result:core::result::Result<u64,std::atomic_file::Failure>)->bool{if(result.is_err()){failed(output,result.unwrap_err());return false;}return true;}
+fn clean_result(output:[u64],at:i32,result:core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure>,value:std::temp_file::Cleanup){if(result.is_err()){output[at]=cause(result.unwrap_err().cause);output[at+1]=stage(result.unwrap_err().stage);}cleanup(output,at+2,value);}
+fn current(output:[u64],owner:&std::atomic_file::AtomicFile){receipt(output,8,owner.receipt());output[110]=0;output[111]=0;output[112]=0;if(owner.last_failure().is_some()){let error=owner.last_failure().unwrap();output[110]=cause(error.cause);output[111]=stage(error.stage);output[112]=error.completed;}}
+fn emit(output:[u64],checkpoint:u64,temp:[u8],dest:[u8]){
+    output[1]=checkpoint;let raw:[u8;1316]=[0;1316];let i:i32=0;while(i<128){let j:i32=0;while(j<8){raw[i*8+j]=((output[i]>>(j*8))&255) as u8;j+=1;}i+=1;}i=0;while(i<37){raw[1024+i]=temp[i];i+=1;}i=0;while(i<255){raw[1061+i]=dest[i];i+=1;}
+    let sink=std::stream::stdout();core::io::write_all(sink.borrow(),raw,0,1316).unwrap();ack();
+}
+// The injected close is skipped by strace. Repair that known kernel artifact
+// only after the host has observed the retired library owner at checkpoint1.
+fn repair(raw:u64){assert(raw<2147483648);mark(81);let args:[std::linux::Argument;1]=[std::linux::Argument::Word(raw as i64)];assert(std::linux::call(3,core::slice::View{values:args,start:0,length:1}).unwrap()==0);mark(113);}
+fn chdir(){let storage:[i32;3]=[0;3];let pointer:ptr=core::mem::i32_array_data_ptr(storage);let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,12);raw[0]=101;raw[1]=108;raw[2]=115;raw[3]=101;raw[4]=119;raw[5]=104;raw[6]=101;raw[7]=114;raw[8]=101;let args:[std::linux::Argument;1]=[std::linux::Argument::Address(pointer)];assert(std::linux::call(80,core::slice::View{values:args,start:0,length:1}).unwrap()==0);}
+fn write_payload(output:[u64],owner:&std::atomic_file::AtomicFile,payload:u64,kind:u64)->bool{
+    let data:[u8;6]=[0,255,128,97,13,10];let view=core::slice::View{values:data,start:0,length:6};
+    if(kind==1||kind==2||kind==5){if(kind==1){view.start=-1;view.length=1;}if(kind==2){view.start=2147483647;view.length=2;}if(kind==5){view.length=-1;}let result=owner.write(view);assert(result.is_err());failed(output,result.unwrap_err());return false;}
+    if(kind==3){assert(payload==0);if(!written(output,owner.write_all(core::slice::View{values:data,start:0,length:3}))){return false;}return written(output,owner.write_all(core::slice::View{values:data,start:3,length:3}));}
+    if(kind==4){view.length=0;let result=owner.write(view);if(result.is_err()){failed(output,result.unwrap_err());return false;}assert(result.unwrap()==0);return true;}
+    if(kind==6){assert(payload==0);let result=owner.write(view);if(result.is_err()){failed(output,result.unwrap_err());return false;}return true;}
+    if(kind==7){assert(payload==0);let result=owner.write(view);if(result.is_err()){assert(cause(result.unwrap_err().cause)==1004&&state(owner.receipt().state)==1);output[114]|=16;return written(output,owner.write_all(view));}let count:i32=result.unwrap();view.start=count;view.length=6-count;return written(output,owner.write_all(view));}
+    if(kind==8||kind==9){assert(payload==0);let before=owner.receipt();let bad=view;if(kind==8){bad.start=-1;bad.length=1;}let result=owner.write_all(bad);assert(result.is_err()&&cause(result.unwrap_err().cause)==5+(kind==9) as u64);let after=owner.receipt();assert(state(after.state)==1&&after.stats.bytes==before.stats.bytes&&after.stats.writes==before.stats.writes);if(kind==8){output[114]|=32;}else{output[114]|=64;view.length=3;}return written(output,owner.write_all(view));}
+    if(payload==1){view.length=0;return written(output,owner.write_all(view));}
+    if(payload==2){let large:[u8;33798]=[0;33798];let i:i32=0;while(i<6){large[i]=data[i];i+=1;}while(i<33798){large[i]=(((i-6)*17)&255) as u8;i+=1;}return written(output,owner.write_all(core::slice::View{values:large,start:0,length:33798}));}
+    return written(output,owner.write_all(view));
+}
+fn main()->i32{
+    let input:[u8;96]=[0;96];let source=std::stream::stdin();core::io::read_exact(source.borrow(),input,0,96).unwrap();let mode:u64=word(input,0);let destination_case:u64=word(input,48);let parent_case:u64=word(input,56);let payload:u64=word(input,64);let write_case:u64=word(input,72);assert(mode<=8&&destination_case<=12&&parent_case<=5&&payload<=2&&write_case<=9);
+    let output:[u64;128]=[0;128];output[0]=1;output[2]=mode;let pid_args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];output[3]=std::linux::call(39,core::slice::View{values:pid_args,start:0,length:0}).unwrap() as u64;
+    let open=std::file_ops::options();open.no_follow=true;open.directory=parent_case!=1;let parent:std::file::File=std::file::File{handle:-1};
+    if(parent_case==3){let storage:[i32;2]=[0;2];let pointer:ptr=core::mem::i32_array_data_ptr(storage);let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,8);raw[0]=97;raw[1]=110;raw[2]=99;raw[3]=104;raw[4]=111;raw[5]=114;let args:[std::linux::Argument;4]=[std::linux::Argument::Word(-100),std::linux::Argument::Address(pointer),std::linux::Argument::Word(2097152|65536|524288),std::linux::Argument::Word(0)];parent=std::file::from_owned_handle(std::linux::call(257,core::slice::View{values:args,start:0,length:4}).unwrap() as i32).unwrap();}
+    else{let selected=path("anchor",6);if(parent_case==1){selected=path("regular",7);}parent=std::file_ops::open(selected,open).unwrap();}
+    output[117]=fd(parent.raw_handle());if(parent_case==2){mark(80);parent.close().unwrap();mark(112);}
+    let destination:[u8;256]=[120;256];destination[1]=116;destination[2]=97;destination[3]=114;destination[4]=103;destination[5]=101;destination[6]=116;let selected=core::slice::View{values:destination,start:1,length:6};
+    if(destination_case==1){selected.start=0;selected.length=37;let i:i32=0;while(i<37){destination[i]=48;i+=1;}destination[0]=46;destination[1]=116;destination[2]=109;destination[3]=112;destination[4]=45;}
+    if(destination_case==2){selected.length=0;}if(destination_case==3){selected.start=0;selected.length=1;destination[0]=46;}if(destination_case==4){selected.start=0;selected.length=2;destination[0]=46;destination[1]=46;}if(destination_case==5){destination[1]=47;}if(destination_case==6){destination[2]=0;}if(destination_case==7){selected.start=-1;selected.length=1;}if(destination_case==8){selected.start=2147483647;selected.length=2;}if(destination_case==9){selected.start=0;selected.length=256;}if(destination_case==10){selected.start=0;selected.length=255;let i:i32=0;while(i<255){destination[i]=120;i+=1;}}if(destination_case==11){selected.start=1;selected.length=37;destination[1]=255;}if(destination_case==12){selected.start=0;selected.length=3;destination[0]=120;destination[1]=47;destination[2]=121;}
+    let copied_destination:[u8;255]=[0;255];if(selected.start>=0&&selected.length>=0&&selected.length<=255&&selected.start<=256-selected.length){output[7]=selected.length as u64;let i:i32=0;while(i<selected.length){copied_destination[i]=destination[selected.start+i];i+=1;}}
+    let options=std::atomic_file::default_options();options.temporary=std::temp_file::Limits{name_attempts:word(input,32) as u32,entropy_calls:word(input,40)};options.max_bytes=word(input,16);options.write_calls=word(input,24);options.directory_sync_calls=word(input,88);if(word(input,8)==1){options.policy=std::file_ops::RenamePolicy::NoReplace;}else{assert(word(input,8)==0);}
+    let owner=std::atomic_file::empty();mark(67);let created=owner.create_in(parent.borrow(),core::path::Path{bytes:selected},options);mark(99);if(created.is_err()){failed(output,created.unwrap_err());}else{assert(created.unwrap());}
+    output[115]=fd(owner.file_handle());output[116]=fd(owner.directory_handle());let temporary:[u8;37]=[0;37];let named=owner.temporary_name();assert(named.length<=37);output[6]=named.length as u64;let i:i32=0;while(i<named.length){temporary[i]=named.values[named.start+i];i+=1;}i=0;while(i<256){destination[i]=122;i+=1;}
+    if(created.is_ok()){let copied=owner.destination();assert(copied.length==output[7] as i32);i=0;while(i<copied.length){assert(copied.values[copied.start+i]==copied_destination[i]);i+=1;}
+        if(parent_case==4){mark(82);std::file_ops::rename_at(-100,path("anchor",6),-100,path("moved",5),std::file_ops::RenamePolicy::NoReplace).unwrap();std::filesystem::create_dir(path("anchor",6)).unwrap();mark(114);mark(80);parent.close().unwrap();mark(112);}if(parent_case==5){mark(72);chdir();mark(104);}
+        mark(87);let wrote:bool=write_payload(output,owner.borrow(),payload,write_case);mark(119);
+    }
+    let committed:core::option::Option<core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure>> =core::option::None();
+    if(mode==8&&created.is_ok()){current(output,owner.borrow());emit(output,0,temporary,copied_destination);}
+    if(created.is_ok()&&(mode==0||mode==3||mode==6||mode==7||mode==8)){mark(77);let result=owner.commit();mark(109);committed=core::option::Some(result);if(result.is_err()){failed(output,result.unwrap_err());}mark(86);assert(equal(result,owner.commit()));mark(118);output[113]=1;}
+    current(output,owner.borrow());i=0;while(i<32){output[40+i]=output[8+i];i+=1;}emit(output,1,temporary,copied_destination);
+    if(mode==3&&created.is_ok()){assert(visibility(owner.receipt().visibility)==1&&!owner.receipt().directory_synced&&owner.receipt().directory_open);mark(68);let retried=owner.retry_directory_sync();mark(100);output[79]=1;if(retried.is_err()){output[72]=cause(retried.unwrap_err().cause);output[73]=stage(retried.unwrap_err().stage);output[78]=retried.unwrap_err().completed;}let value=owner.receipt();output[74]=visibility(value.visibility);output[76]=value.stats.directory_syncs;output[77]=value.directory_open as u64;if(value.last_error.is_some()){output[75]=cause(value.last_error.unwrap().cause);}}
+    if(mode==6){assert(output[115]==word(input,80)&&!owner.receipt().file_open&&owner.receipt().cleanup.file_close_error.is_some());repair(word(input,80));}
+    if(mode==7){assert(output[116]==word(input,80)&&!owner.receipt().directory_open&&owner.receipt().cleanup.directory_close_error.is_some()&&visibility(owner.receipt().visibility)==1&&owner.receipt().directory_synced);repair(word(input,80));}
+    if(mode==1&&created.is_ok()){mark(75);assert(owner.keep().unwrap());output[114]|=1;assert(!owner.keep().unwrap());output[114]|=2;mark(107);}
+    mark(65);let first=owner.cleanup();clean_result(output,80,first,owner.last_cleanup());mark(97);
+    if(mode==4||mode==5){assert(first.is_err()&&owner.receipt().temporary_owned&&owner.receipt().directory_open&&!owner.receipt().file_open&&owner.last_cleanup().remove_error.is_some());if(mode==5){mark(75);assert(owner.keep().unwrap());output[114]|=1;assert(!owner.keep().unwrap());output[114]|=2;mark(107);}}
+    mark(66);let second=owner.cleanup();clean_result(output,90,second,owner.last_cleanup());mark(98);mark(88);let destroyed=owner.destroy();clean_result(output,100,destroyed,owner.last_cleanup());assert(!owner.receipt().retained);let repeated=owner.destroy();assert(repeated.is_ok()&&!repeated.unwrap().retained);output[114]|=4;mark(120);
+    if(committed.is_some()){mark(86);assert(equal(committed.unwrap(),owner.commit()));mark(118);output[113]=1;}
+    current(output,owner.borrow());mark(80);parent.close().unwrap();mark(112);emit(output,2,temporary,copied_destination);return 0;
+}

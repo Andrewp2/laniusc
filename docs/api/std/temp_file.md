@@ -683,7 +683,7 @@ pub fn owns_temporary_name(&self) -> bool
 
 #### method: file
 
-[Source line 68](../../../stdlib/std/temp_file.lani#L68)
+[Source line 70](../../../stdlib/std/temp_file.lani#L70)
 
 ```lanius
 pub fn file(&self) -> &std::file::File
@@ -691,7 +691,7 @@ pub fn file(&self) -> &std::file::File
 
 #### method: directory
 
-[Source line 69](../../../stdlib/std/temp_file.lani#L69)
+[Source line 71](../../../stdlib/std/temp_file.lani#L71)
 
 ```lanius
 pub fn directory(&self) -> &std::file::File
@@ -699,7 +699,7 @@ pub fn directory(&self) -> &std::file::File
 
 #### method: name
 
-[Source line 71](../../../stdlib/std/temp_file.lani#L71)
+[Source line 73](../../../stdlib/std/temp_file.lani#L73)
 
 ```lanius
 pub fn name(&self) -> core::slice::View<u8>
@@ -707,7 +707,7 @@ pub fn name(&self) -> core::slice::View<u8>
 
 #### method: last_failure
 
-[Source line 75](../../../stdlib/std/temp_file.lani#L75)
+[Source line 77](../../../stdlib/std/temp_file.lani#L77)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Failure>
@@ -715,7 +715,7 @@ pub fn last_failure(&self) -> core::option::Option<Failure>
 
 #### method: create_in
 
-[Source line 90](../../../stdlib/std/temp_file.lani#L90)
+[Source line 92](../../../stdlib/std/temp_file.lani#L92)
 
 ```lanius
 pub fn create_in(&self,parent:&std::file::File,limits:Limits) -> core::result::Result<bool,Failure>
@@ -723,7 +723,7 @@ pub fn create_in(&self,parent:&std::file::File,limits:Limits) -> core::result::R
 
 #### method: create_in_excluding
 
-[Source line 95](../../../stdlib/std/temp_file.lani#L95)
+[Source line 97](../../../stdlib/std/temp_file.lani#L97)
 
 ```lanius
 pub fn create_in_excluding(&self,parent:&std::file::File,excluded:core::path::Path,limits:Limits) -> core::result::Result<bool,Failure>
@@ -731,7 +731,7 @@ pub fn create_in_excluding(&self,parent:&std::file::File,excluded:core::path::Pa
 
 #### method: close_file
 
-[Source line 163](../../../stdlib/std/temp_file.lani#L163)
+[Source line 165](../../../stdlib/std/temp_file.lani#L165)
 
 ```lanius
 pub fn close_file(&self) -> core::result::Result<bool,Failure>
@@ -739,7 +739,7 @@ pub fn close_file(&self) -> core::result::Result<bool,Failure>
 
 #### method: keep
 
-[Source line 177](../../../stdlib/std/temp_file.lani#L177)
+[Source line 181](../../../stdlib/std/temp_file.lani#L181)
 
 ```lanius
 pub fn keep(&self) -> core::result::Result<bool,Error>
@@ -747,7 +747,7 @@ pub fn keep(&self) -> core::result::Result<bool,Error>
 
 #### method: cleanup
 
-[Source line 183](../../../stdlib/std/temp_file.lani#L183)
+[Source line 187](../../../stdlib/std/temp_file.lani#L187)
 
 ```lanius
 pub fn cleanup(&self) -> core::result::Result<Cleanup,Failure>
@@ -755,7 +755,7 @@ pub fn cleanup(&self) -> core::result::Result<Cleanup,Failure>
 
 #### method: destroy
 
-[Source line 226](../../../stdlib/std/temp_file.lani#L226)
+[Source line 230](../../../stdlib/std/temp_file.lani#L230)
 
 ```lanius
 pub fn destroy(&self) -> core::result::Result<Cleanup,Failure>

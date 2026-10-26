@@ -1,12 +1,16 @@
 # Owned temporary files and atomic publication
 
-Atomic-publication proposal. The prerequisite TempFile owner and checked
-descriptor-relative primitives are now implemented and accepted in 78 native
-process cases across five groups, including repeated baselines; the
+This workflow is implemented and accepted on the finite native x86_64 Linux
+profile recorded in the module guides. The prerequisite TempFile owner and
+checked descriptor-relative primitives passed 78 native process invocations
+across five groups, including repeated baselines; the
 [TempFile guide](stdlib-temp-files.md)
-records exact scope and receipts. `std::atomic_file` and the `kv_tool` migration
-remain pending, and no atomic-publication or crash-durability acceptance is
-claimed here.
+records exact scope and receipts. `std::atomic_file` passed four focused groups
+with 66 process invocations; its [guide](stdlib-atomic-files.md) records the
+owner, bounds, publication and fault receipts. The migrated `kv_tool` passed its
+separate [application gates](extended-kv.md#current-application-receipts).
+These receipts do not complete the overall standard-library goal or establish
+crash durability.
 
 Build one complete workflow: create an owned temporary regular file in an
 anchored directory, write bounded data, then either keep it, remove it, or
@@ -26,17 +30,17 @@ network filesystems and universal power-loss durability are outside this scope.
 - [`std::file`](../stdlib/std/file.lani) is a manual descriptor owner. `close`
   retires its descriptor before one host attempt, including on error. `flush`
   does not synchronize storage.
-- [`std::filesystem`](../stdlib/std/filesystem.lani) has checked pathname
-  rename/unlink, but lacks descriptor-relative mutations.
-- [`kv_tool::save`](../sample_programs/library/kv_tool.lani) currently truncates
-  a caller-selected sibling scratch path, follows its final symlink, ignores
-  removal failures and does not sync either file or directory. `init` checks
-  absence before a replacing rename, so a concurrent creator can be overwritten.
+- [`std::filesystem`](../stdlib/std/filesystem.lani) supplies checked pathname
+  rename/unlink; the descriptor-relative mutations live in `std::file_ops`.
+- [`kv_tool::save`](../sample_programs/library/kv_tool.lani) now uses the bounded
+  AtomicFile owner. It replaced a caller-selected SCRATCH flow that followed a
+  final symlink, ignored removal failures and omitted synchronization. `init`
+  now uses NoReplace instead of checking absence before a replacing rename.
 
 The new workflow belongs in host-backed std modules, separate from portable
-core utilities. Candidate modules are `std::temp_file` for ownership and
-`std::atomic_file` for the publication policy. Share the owner implementation;
-do not build independent scratch-file mechanisms in consumers.
+core utilities. `std::temp_file` supplies ownership and `std::atomic_file`
+supplies publication policy over that owner. Consumers share the implementation
+instead of building independent scratch-file mechanisms.
 
 ## Directory authority and names
 
@@ -207,15 +211,34 @@ deadline or async disk I/O; native tests need an external process timeout.
 
 ## Implementation and executable acceptance
 
-The anchored primitives and shared TempFile owner are implemented and accepted
-for the native profile in their guide. Next implement the bounded publication
-wrapper and a `kv_tool` migration. Remove the caller-selected SCRATCH
-workflow when migrating that example. Use NoReplace for init and Replace for
-snapshot updates. Keep its existing snapshot byte/work limits; explicitly report
-published-but-unsynced and cleanup failures. Concurrent read/modify/write updates
-still require separate application coordination.
+The anchored primitives, shared TempFile owner, bounded AtomicFile wrapper and
+`kv_tool` migration are implemented. AtomicFile's accepted source SHA-256 starts
+`9e0a9709`; its four groups passed 66 native process invocations against one
+frozen probe ELF on Linux 7.0.0-38-generic/x86_64 with local ext4 process
+directories. Counts include repeated baselines. The two baseline-reached source
+allocations were denied individually, and publication retry was independently
+observed while Published still retained its anchor. Exact receipts and limits
+are in the [AtomicFile guide](stdlib-atomic-files.md#executable-acceptance).
 
-Focused x86 execution tests should cover:
+The first bounds gate exposed an oracle fd-selector error: stderr phase markers
+were counted as file payload writes. The inspected trace had no owned-file
+write. The selector correction and two CPU controls brought the harness total
+to 36 controls; the full bounds retry reused unchanged production/probe code
+and the same ELF. The preliminary smoke overlaps current groups. Both Rust test
+drivers passed build admission separately from native runtime acceptance.
+
+The migrated application removes the SCRATCH argument, uses NoReplace for init
+and Replace for updates, preserves snapshot limits, and reports publication
+uncertainty and cleanup failures. Its 64 process invocations are documented
+separately in the [KV guide](extended-kv.md#current-application-receipts), rather
+than counted as AtomicFile cases. Concurrent read/modify/write updates still
+require application coordination.
+
+The original focused test strategy is retained below. The module and fixture
+guides state which finite cases were executed; this checklist is not a claim
+that every possible fault, target or crash scenario was tested.
+
+Focused x86 execution tests cover or should continue to cover:
 
 - Real exclusive creation, final-symlink collisions, private requested mode,
   CLOEXEC on both descriptors, exact binary/empty/large contents, keep/cleanup,
@@ -242,7 +265,8 @@ Focused x86 execution tests should cover:
   cleanup failure followed by keep or retry. Count exact closes and require no
   live source owners after complete release.
 
-Keep production logic in Lanius; host-side tests may arrange and inspect the
-filesystem. Run bounded focused groups and a real `kv_tool` round trip through
-several replacements, each command under two minutes. Record filesystem,
-kernel, compiler and target receipts before calling the workflow executable.
+Production logic remains in Lanius; host-side tests arrange and inspect the
+filesystem. Every acceptance command stays under two minutes. No new compiler,
+native-glue or cryptographic implementation was required. GPU kernels, other
+operating systems, network filesystems, hostile parent namespaces, metadata
+preservation and power-cut durability remain outside this accepted profile.

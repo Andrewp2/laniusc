@@ -41,6 +41,8 @@ runtime behavior, failure rules and supported targets.
 | Memory | `core::mem`, `alloc::allocator`, `alloc::arena` | [Value copying, raw storage and view layouts](../docs/stdlib-memory.md), [arena layouts and ownership](../docs/stdlib-arena.md) |
 | Streams and files | `core::io`, `alloc::io`, `alloc::buffered`, `std::stream`, `std::file`, `std::filesystem` | [Byte streams](../docs/stdlib-streams.md), [buffered adapters and binary copying](../docs/stdlib-buffered.md), [files](../docs/stdlib-files.md), [filesystem operations](../docs/stdlib-filesystem.md) |
 | File options and directories | `std::file_ops`, `std::directory` | [Seek, metadata, sync and duplication](../docs/stdlib-file-operations.md), [checked file lengths](../docs/stdlib-file-resize.md), [raw names and bounded walks](../docs/stdlib-directory.md) |
+| Owned temporary files | `std::temp_file` | [Exclusive creation, bounded OS entropy, same-owner keep and retained cleanup](../docs/stdlib-temp-files.md); finite native Linux x86_64/ext4 profile, cooperative namespace |
+| Single-name file publication | `std::atomic_file` | [Bounded Replace/NoReplace commit, sync/visibility receipts and explicit recovery](../docs/stdlib-atomic-files.md); finite local Linux x86_64/ext4 profile, cooperative namespace |
 | Bounded file replacement | `std::file_copy` | [Descriptor alias checks, quotas and error prefixes](../docs/stdlib-file-copy.md), [copy-file application](../docs/stdlib-copy-file.md) |
 | Paths | `core::path`, `alloc::path` | [Unix byte paths](../docs/stdlib-paths.md) |
 | Arguments and environment | `std::args`, `std::args_checked`, `std::env`, `std::env_checked`, `std::process` | [Raw startup bytes, owned snapshots, checked copies, cwd and immediate exit](../docs/stdlib-process-context.md) |
@@ -61,11 +63,17 @@ consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 The optional [OpenSSL digest module](../docs/extended-openssl-digest.md) executes
 streaming SHA-256, SHA-512, SHA3-256 and SHA3-512 through checked native C calls.
 CRC, Adler and FNV hashing serve checksums and ordinary data structures.
-TLS, encryption, signatures, certificate trust and SQLite wrappers remain
-unimplemented; the [native integration guide](../docs/library-native-integration-prerequisites.md)
-records that work. Sensitive operations use established native libraries.
+OpenSSL [verified client TLS](../docs/extended-openssl-tls.md),
+[server TLS](../docs/extended-openssl-tls-server.md) and
+[mutual TLS](../docs/extended-openssl-mutual-tls.md) execute on their documented
+native Linux x86_64 profiles. The [SQLite adapter](../docs/extended-sqlite.md)
+also executes through the system library with explicit native owners and
+transaction/error contracts. Standalone encryption/signature wrappers and trust
+interfaces beyond the selected TLS policies remain work in the
+[native integration guide](../docs/library-native-integration-prerequisites.md).
+Sensitive operations use established native libraries.
 The [extended library](../extended/README.md) also contains data formats,
-mathematics, cleartext network protocols and raw certificate inspection.
+mathematics, HTTP/HTTPS workflows and raw certificate inspection.
 
 ## Ownership and errors
 
@@ -133,11 +141,14 @@ direct host bindings. For example, the library network capability is true for
 service 5 remains unavailable. Neither inventory claims all host services work.
 The [operation-level host inventory](../docs/library-host-operation-support.md)
 records the supported subsets and their implementation/test evidence.
-The [native C profile](../docs/library-native-c.md) supports checked scalar and
-pointer calls, libc startup and OpenSSL digests. It currently requires source
-packs that fit the resident compiler path; file-backed native ELF linking,
-callbacks and foreign thread entry remain dependencies. Threads, further
-security-library wrappers and database integration remain work. The older `std::net`
+The [native C profile](../docs/library-native-c.md) supports checked scalar,
+pointer and floating-point calls, ordinary ELF linking and libc startup.
+Native entry/package builds spool opaque original/replay payloads and execute
+above one resident aggregate unit; source snapshots and global metadata still
+remain resident and grow. Source frontend-unit limits and the documented native
+link/output caps still apply. Callbacks, aggregate/variadic C calls, checked C
+Boolean transport and foreign worker entry remain unsupported. Threads, further
+security-library wrappers and broader database interfaces remain work. The older `std::net`
 declarations remain unbound; executable numeric socket ownership is in
 `std::socket`. [The remaining API audit](../docs/library-remaining-api-audit.md)
 distinguishes unavailable services and legacy interfaces. Generic

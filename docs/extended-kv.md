@@ -2,9 +2,12 @@
 
 `ext::kv` stores arbitrary byte keys and values in owned memory, supports checked
 mutations and lookup, and reads and writes a versioned binary snapshot. The
-`kv-tool` program uses real native file operations to replace a snapshot through
-an explicitly supplied scratch path. Production code is Lanius; Python is only
-an independent test oracle.
+`kv-tool` program now delegates snapshot publication to
+[`std::atomic_file`](stdlib-atomic-files.md), using the shared TempFile owner.
+The migrated application compiled and passed 64 native process invocations
+across two focused groups on x86_64 Linux/ext4. Production code is Lanius;
+Python is only an independent test oracle. The [current application receipts](#current-application-receipts)
+state the finite acceptance scope.
 
 ## Storage and ownership
 
@@ -130,9 +133,9 @@ target/stdlib-build/debug/laniusc --stdlib-root stdlib --source-root extended sa
 Commands are:
 
 ```text
-kv-tool init DB SCRATCH
-kv-tool put DB SCRATCH KEY_HEX VALUE_HEX
-kv-tool remove DB SCRATCH KEY_HEX
+kv-tool init DB
+kv-tool put DB KEY_HEX VALUE_HEX
+kv-tool remove DB KEY_HEX
 kv-tool get DB KEY_HEX
 kv-tool list DB
 kv-tool check DB
@@ -144,54 +147,106 @@ letter case. An empty shell argument represents empty bytes. `get` writes the
 exact value bytes without a newline. `list` writes lowercase key hex, a tab,
 value hex, and LF for each entry in sorted order. `check` validates the complete
 snapshot and writes nothing. Mutation commands write nothing on success.
-`init` requires a missing DB and refuses an existing readable file. For example:
+`init` uses atomic NoReplace publication; it does not check existence before a
+replacing rename. An existing destination is a conflict, including a dangling
+symlink, and a concurrent creator cannot be silently overwritten. For example:
 
 ```sh
-kv-tool init ./example.kv ./example.scratch
-kv-tool put ./example.kv ./example.scratch 00ff 68656c6c6f00
+kv-tool init ./example.kv
+kv-tool put ./example.kv 00ff 68656c6c6f00
 kv-tool get ./example.kv 00ff
 ```
 
-DB and SCRATCH must have matching lexical parent paths and distinct normal
-filenames. SCRATCH is a caller-owned disposable path: opening it creates or
-truncates it. The caller must ensure it is not a symlink or hard link to DB or
-another file that must be preserved, and that other processes do not use either
-path during the operation. Lexical checks cannot establish filesystem identity
-or prevent path races. No generated or fixed temporary filename is used.
+### Anchored publication and cleanup
 
-The CLI fully reads, decodes, mutates, and encodes before opening scratch. It
-writes the complete snapshot with checked short-write/EINTR handling, closes
-the scratch owner once, and then performs one checked native rename. The old DB
-bytes are unchanged on errors before a successful rename. A failed write, close,
-or rename attempts to unlink scratch; if cleanup itself fails, a disposable
-scratch file may remain. A successful rename is the replacement commit point.
-`remove` of an absent key does not touch either file.
+Mutating commands split DB at its last raw slash, keeping the parent bytes and
+one final component. They reject empty paths, paths longer than 4,095 bytes,
+empty or over-255-byte final components, `.` and `..`. A trailing slash or `/.`
+is rejected rather than normalized to a different destination. A bare filename
+uses `.` as its parent; `/name` uses `/`. Non-UTF-8 path bytes are preserved.
+The parent is resolved and opened once as a directory with CLOEXEC. Updates
+load DB with open_at against that anchor, and publication uses the same anchor
+and raw final component. The read-only commands keep their existing pathname
+behavior. Initial parent symlinks are resolved by that one open, not repeatedly
+looked up during publication.
 
-This provides checked file replacement during ordinary process execution.
-It does not call `fsync`, lock files, obtain exclusive creation, or provide
-concurrent database transactions or crash durability. Sync and exclusive-open
-bindings exist in [`std::file_ops`](stdlib-filesystem.md), but this tool does not
-use them. Renaming replaces the destination file inode
-with the scratch inode; new-file permissions follow the host umask, and prior
-ownership/ACL metadata is not preserved by this tool. The separate
-[SQLite adapter](extended-sqlite.md) provides native database transactions.
+The caller must hold exclusive or cooperative mutation authority over this
+parent namespace throughout the operation. Directory anchoring fixes parent
+identity, including after a parent rename; it cannot protect temporary child
+names against hostile directory writers. The tool does not lock the database
+or prevent concurrent read/modify/write lost updates. Existing open readers and
+other hard links can retain the previous inode. An update reads an existing DB
+symlink normally, then Replace acts on that destination entry itself, leaving
+its former target unchanged. The separate [SQLite adapter](extended-sqlite.md)
+provides native database transactions.
+
+Keys/values are validated, the complete old snapshot is decoded, and the
+mutation and canonical encoding finish before any temporary file is created.
+The app then calls AtomicFile create_in, bounded write_all and commit. It has no
+caller SCRATCH argument, compatibility form, custom name generator, open/truncate
+publication or duplicated rename/sync workflow. Init selects NoReplace; put and
+successful remove select Replace. Removing an absent key does not create or
+publish a temporary file.
+
+AtomicFile uses exclusive no-follow creation of a fresh `.tmp-` name from OS
+entropy in the anchored directory, requesting private `0600` permissions. It
+syncs the complete file, closes it once, renames once, records publication before
+further fallible calls, and syncs the directory. Prior ownership, mode, ACLs and
+timestamps are not preserved. Sync guarantees depend on the selected local
+filesystem and device; these operations do not establish survival of every
+power loss. See the [atomic publication contract](stdlib-atomic-files.md) for
+namespace authority, platform limits and native acceptance status.
+
+Confirmed NotPublished errors preserve the old destination. An ambiguous rename
+failure remains visibility-unconfirmed: the app does not retry rename, infer
+rollback or claim the old DB survived. If rename succeeded but directory sync
+failed, the app reports that the snapshot was published with directory sync
+unconfirmed. It closes the retained anchor without retrying sync or upgrading
+that durability result. Published destinations are never unlinked as cleanup.
+
+Every acquired input file and parent descriptor is closed once. Atomic cleanup
+errors are checked independently of the primary failure and preserve publication
+facts. If temporary removal remains unconfirmed, the app writes
+`kv-tool: retained temporary name in database directory: ` followed by the live
+37-byte name and LF before its final diagnostic. It then explicitly keeps that
+named residue and cleans up the remaining descriptors/backing, without a second
+unlink. The caller must arrange later recovery of that reported name. Successful
+later cleanup cannot erase the earlier failure or make an uncertain publication
+durable. There is no automatic cleanup on process death or crash scavenger.
 
 The CLI caps input snapshot bytes at 9 MiB, live bytes at 8 MiB, entries at 4,096,
 each key at 64 KiB, each value at 4 MiB, and work at 128 Mi units. It caps captured
-arguments at five and their combined bytes at 256 KiB. Hex arguments are also
+arguments at four and their combined bytes at 256 KiB. Hex arguments are also
 subject to the host's argument-size limit. A listing can contain at most 18 MiB.
+Publication permits at most 9 MiB confirmed bytes and 1,048,576 write attempts,
+including short-write and EINTR attempts, with at most 1,024 bytes per attempt.
+It retains TempFile's 32 candidate and 128 entropy-call defaults and permits one
+directory-sync attempt. These are finite attempt/work bounds, not deadlines:
+kernel opens, writes and syncs can block.
 
 | Exit status | Meaning |
 | --- | --- |
 | 0 | Success |
 | 2 | Invalid arguments, malformed snapshot, existing DB on init, or resource limit |
-| 3 | File/stream operation or diagnostic write failed |
+| 3 | Ordinary file/stream operation or output failed |
 | 4 | Allocation failed |
 | 5 | Absent key on get or remove; no diagnostic |
+| 6 | Snapshot published, directory sync unconfirmed |
+| 7 | Publication visibility unconfirmed |
+| 8 | Cleanup failed, preserving any earlier failure and publication diagnostic |
 
-Other failures emit one short diagnostic when stderr is writable. No snapshot
-prefix is published to DB on a parsing, mutation, encoding, or pre-rename I/O
-failure. Read-only `get`/`list` output can contain a prefix on stdout I/O failure.
+When stderr is writable, init conflict emits
+`kv-tool: database already exists` plus LF. Status 6 emits
+`kv-tool: snapshot published; directory sync unconfirmed` plus LF; status 7 emits
+`kv-tool: publication visibility unconfirmed` plus LF. A combined primary and
+cleanup failure preserves its primary diagnostic, appends
+`kv-tool: cleanup failed` plus LF, and returns 8. A cleanup-only failure after
+fully synced publication emits `kv-tool: snapshot published; cleanup failed`
+plus LF. Failed stderr delivery preserves an already nonzero status, including
+6, 7 or 8, so it cannot hide publication or cleanup facts. An output failure
+without an earlier failure returns 3. Malformed input/resource, ordinary I/O and
+allocation diagnostics retain their existing wording.
+Read-only `get`/`list` output can contain a prefix on stdout I/O failure.
 
 ## Verification
 
@@ -202,5 +257,64 @@ exercise arbitrary bytes and empty keys/values, verify native selected views
 and input independence, and cover exact limits and bounded work. Corruption
 cases include truncation, CRC damage, lengths/counts, version/reserved fields,
 duplicate and unsorted keys, and trailing bytes. Allocation denial checks each
-observed store and CLI allocation and frees all owners; native file faults check
-DB preservation before rename, scratch cleanup, and interrupted I/O retries.
+observed store allocation and frees all owners. These portable Store and binary
+snapshot contracts are unchanged by this application migration.
+
+### Current application receipts
+
+The actual migrated `kv_tool.lani` compiled to a native x86_64 Linux executable
+and passed both focused application groups against that reused ELF on the
+selected local ext4 profile. The receipts under `target/stdlib-work/` are:
+
+| Gate | Result | Receipt |
+| --- | --- | --- |
+| Application syntax retry | Compile exit 0 | `kv-tool-atomic-syntax-retry-compile.log` |
+| Round trips | 33 process invocations | `kv-tool-atomic-roundtrips-first.log` |
+| Publication | 31 process invocations, including 13 reached source ENOMEM and 15 I/O controls | `kv-tool-atomic-publication-first.log` |
+
+The two runtime groups total **64 process invocations**; compilation is not an
+additional runtime case. Their Python logs report counts without durations.
+The accepted source SHA-256 is
+`9de65a6cf8b42e923dd39d8374b26ed1216da63430a04359c76fb19e990e6cbe`.
+The [application fixture guide](../tests/fixtures/extended/kv_publication/README.md)
+records exact test filters, fault binding and evidence boundaries.
+
+Round trips compare complete canonical snapshot bytes with an independent
+struct/CRC oracle. They cover binary and empty keys/values, replacement,
+sorted list/get/check/remove, absent keys, corrupt snapshots, application
+bounds, raw non-UTF-8 names and rejection of the old SCRATCH argument form.
+
+Publication derives every reached source allocation in its successful Replace
+baseline and binds injected ENOMEM to the actual instruction, requested size,
+flags and preceding allocation prefix. Bound I/O controls cover opens, reads,
+writes, EINTR retries, file sync, ambiguous rename, directory sync, combined
+write/unlink failure and an undeliverable publication diagnostic. The cases
+independently observe old or complete new target bytes, exact statuses/messages,
+the actual retained recovery name, and explicit source/descriptor release.
+In particular, directory-sync failure leaves the complete new snapshot and
+status 6; failure to deliver its stderr diagnostic still leaves status 6.
+The injected skipped-rename EIO case observes the old target, while correctly
+retaining visibility-unconfirmed status 7 rather than claiming rollback.
+
+The NoReplace race creates a distinct complete destination winner after init
+has acquired its private candidate. Actual EEXIST, status 2, unchanged winner
+and cleanup of only the owned candidate are checked. It does not alter the
+temporary name or use a timing ratio as the correctness oracle.
+
+The first application compile, recorded in
+`target/stdlib-work/kv-tool-atomic-first-compile.log`, stopped before native
+execution with `LNC0016` at `kv_tool.lani:121:52`: this source grammar does not
+accept block arms in match expressions. The application now matches scalar
+tags and uses if branches in `atomic_failure` and `report`; output and outcome
+contracts are unchanged. This was an application syntax correction, with no
+compiler changes. The AtomicFile library smoke had already compiled and run.
+
+The five portable Store/contract/model/snapshot/limit/allocation tests were not
+changed by the application migration. Earlier caller-scratch CLI receipts remain
+historical, separate from these accepted replacement gates. This finite native
+coverage is not GPU-kernel execution, a universal power-loss durability test,
+a network-filesystem guarantee, locking or concurrent database transactions.
+Synthetic close-failure injection is excluded from this application campaign:
+the host tracer skips the real close, and the CLI has no fixture-only repair
+hook. Additional filesystem/platform, input-size and fault schedules need their
+own evidence.

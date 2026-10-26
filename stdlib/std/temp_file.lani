@@ -64,7 +64,9 @@ pub impl TempFile {
     pub fn owns_temporary_name(&self) -> bool { return self.owns_name; }
     // These borrow real owners. Do not close/take/replace either borrowed File.
     // The directory borrow is for inspection/anchored operations respecting the
-    // same namespace authority, never for changing our temporary name.
+    // same namespace authority. The sole AtomicFile publication layer may
+    // rename a closed owned source, then immediately call pure keep() before
+    // another syscall. Other borrowers must not change the temporary name.
     pub fn file(&self) -> &std::file::File { return self.file_owner.borrow(); }
     pub fn directory(&self) -> &std::file::File { return self.directory_owner.borrow(); }
     // Empty until we own a created name. Keep retains this borrow until cleanup.
@@ -174,6 +176,8 @@ pub impl TempFile {
     // Same owner, no allocation or I/O. Later cleanup closes owners/backing but
     // leaves this name. On a failed unlink it also transfers that recovery duty
     // to the caller without dropping the anchor or borrowed name information.
+    // AtomicFile also uses this pure disarm immediately after successful rename;
+    // its retained name is then the old source label, not a claim it still exists.
     pub fn keep(&self) -> core::result::Result<bool,Error> {
         if(self.kept) { return core::result::Ok(false); }
         if(!self.owns_name) { return core::result::Err(Error::InvalidState); }
