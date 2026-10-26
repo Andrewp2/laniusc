@@ -51,6 +51,7 @@ signature. They are not emitted, and the output imports MODULE.
 import os
 import re
 import sys
+import zlib
 
 # Prelude functions: Lanius signature -> how a call is written in Lean.
 PRELUDE_FNS = {
@@ -783,47 +784,107 @@ class Extractor:
 
     # declarations -----------------------------------------------------
 
-    def run(self, source_name, module):
-        """The extraction as Lean modules, by name: `module` imports the parts
-        `module.P{k}`, each about PART_SIZE definitions importing the one before.
-        Each part hides its bodies (module system), so a changed body rebuilds
-        only its part and the modules that `import all` it."""
-        parts, current, size, in_mutual = [], [], 0, False
+    def run(self, source_name, module, formal):
+        """The extraction as Lean modules, by name, with bodies hidden from
+        other modules (module system): `module.Types` has the types, and each
+        part `module.P.<first definition>` about 8 definitions, importing the
+        types and the parts that define what it names. A part ends after a
+        definition whose name hashes to 0 mod 8 (or at 24), so adding a
+        definition changes one part, and a module is rebuilt only when a
+        module it imports, directly or through public imports, changes. A
+        part imports the parts its hidden bodies name privately, so a new
+        definition rebuilds the parts that import its part, not their
+        importers. `module` imports all."""
+        types, units, current, in_mutual = [], [], None, False
         for item in self.order:
             if item['kind'] == 'mutual':
-                current.append('mutual\n' if item['begin'] else 'end\n')
+                if item['begin']:
+                    current = {'texts': ['mutual\n'], 'names': []}
+                else:
+                    current['texts'].append('end\n')
+                    units.append(current)
+                    current = None
                 in_mutual = item['begin']
-            elif item['kind'] == 'struct':
-                current.append(self.emit_struct(item))
-            elif item['kind'] == 'enum':
-                current.append(self.emit_enum(item))
-            elif item['kind'] == 'fn':
+                continue
+            if item['kind'] in ('struct', 'enum'):
+                types.append(self.emit_struct(item) if item['kind'] == 'struct' else self.emit_enum(item))
+                continue
+            fns = []
+            if item['kind'] == 'fn':
                 if item['name'] in SPEC_FNS:
                     # Exposed: the specs and their callers unfold them.
-                    text = self.emit_fn(item, f'Lists.{camel(item["name"])}')
-                    current.append(re.sub(r'^def ', '@[expose] def ', text, count=1, flags=re.M))
+                    name = f'Lists.{camel(item["name"])}'
+                    text = re.sub(r'^def ', '@[expose] def ', self.emit_fn(item, name), count=1, flags=re.M)
                     _, _, statement, proof = SPEC_FNS[item['name']]
-                    current.append(f'theorem Lists.{camel(item["name"])}_spec {statement} :=\n  {proof}\n')
-                elif not item['inline']:
-                    current.append(self.emit_fn(item, camel(item['name'])))
-                    size += 1
+                    fns.append((name, text + f'\ntheorem {name}_spec {statement} :=\n  {proof}\n'))
+                elif item['inline']:
+                    # An inline function: the term its calls were replaced by,
+                    # for the extraction certificates. Its parameters may be
+                    # Lean keywords: its calls never bind them.
+                    name = f'Inline.{camel(item["name"])}'
+                    text = self.emit_fn(item, name, keyword_params=True)
+                    fns.append((name, re.sub(r'^def ', '@[expose] def ', text, count=1, flags=re.M)))
+                else:
+                    fns.append((camel(item['name']), self.emit_fn(item, camel(item['name']))))
             elif item['kind'] == 'impl':
                 for f in item['fns']:
                     if f['inline']:
                         fail('inline methods are not supported')
-                    current.append(self.emit_fn(f, f'{item["name"]}.{camel(f["name"])}'))
-                    size += 1
-            if size >= PART_SIZE and not in_mutual:
-                parts.append(current)
-                current, size = [], 0
-        if current:
-            parts.append(current)
+                    name = f'{item["name"]}.{camel(f["name"])}'
+                    fns.append((name, self.emit_fn(f, name)))
+            for name, text in fns:
+                if in_mutual:
+                    current['texts'].append(text)
+                    current['names'].append(name)
+                else:
+                    units.append({'texts': [text], 'names': [name]})
+        # The inline functions last: their bodies name functions defined after them.
+        units = [u for u in units if not u['names'][0].startswith('Inline.')] + \
+            [u for u in units if u['names'][0].startswith('Inline.')]
+        parts, part = [], []
+        for u in units:
+            part.append(u)
+            if zlib.crc32(u['names'][0].encode()) % 8 == 0 or len(part) >= 24:
+                parts.append(part)
+                part = []
+        if part:
+            parts.append(part)
+        named = {}
+        for part in parts:
+            pname = f'{module}.P.' + re.sub(r'[^A-Za-z0-9_]', '_', part[0]['names'][0])
+            if pname in named:
+                fail(f'two parts named {pname}')
+            named[pname] = part
+        where = external_names(formal, [source['module'] for source in self.imports])
+        for pname, part in named.items():
+            for u in part:
+                for n in u['names']:
+                    where[n] = pname
         texts = {}
-        for k, body in enumerate(parts):
-            imports = [source['module'] for source in self.imports] if k == 0 else [f'{module}.P{k - 1}']
-            texts[f'{module}.P{k}'] = '\n'.join(
-                ['module\n\n' + ''.join(f'public import {m}\n' for m in imports) + '\npublic section\n' +
-                 PART_HEADER.format(source=source_name, module=module)] + body + ['end Lanius.Mini\n'])
+        ext_types = [f'{source["module"]}.Types' for source in self.imports]
+        texts[f'{module}.Types'] = ('module\n\n' + ''.join(f'public import {m}\n' for m in ext_types) +
+                                    '\npublic section\n' + PART_HEADER.format(source=source_name, module=module) +
+                                    '\n'.join(types) + '\nend Lanius.Mini\n')
+        rank = {p: k for k, p in enumerate(named)}
+        for pname, part in named.items():
+            own = {n for u in part for n in u['names']}
+
+            def needs(units):
+                # Only earlier parts: Lean defines before use, so a later one
+                # is a spurious match of a method name.
+                body = ''.join(''.join(u['texts']) for u in units)
+                return {where[n] for n in referenced(body, where, own)
+                        if rank.get(where[n], -1) < rank[pname]}
+            # What hidden bodies name is a private import, which does not
+            # rebuild this part's importers when it changes; exposed bodies
+            # (the specs, the inline functions) need theirs public.
+            public = needs([u for u in part if '@[expose]' in ''.join(u['texts'])])
+            private = needs(part) - public
+            texts[pname] = '\n'.join(
+                ['module\n\n' + ''.join(f'public import {m}\n' for m in [f'{module}.Types'] + sorted(public)) +
+                 ''.join(f'import {m}\n' for m in sorted(private)) + '\npublic section\n' +
+                 PART_HEADER.format(source=source_name, module=module)] +
+                [''.join(u['texts']) for u in part] + ['end Lanius.Mini\n'])
         texts[module] = ('module\n\n' + ''.join(f'public import {m}\n' for m in texts) + '\n' +
                          HEADER.format(source=source_name, parts=len(parts)))
         return texts
@@ -1308,10 +1369,57 @@ namespace Lanius.Mini
 '''
 
 
-def import_all_blocks(formal, module, parts, files):
+def external_names(formal, modules):
+    """The definitions of extracted modules already written, by Lean name
+    (without `Lanius.Mini.`): the part that defines each."""
+    where = {}
+    for m in modules:
+        d = os.path.join(formal, *m.split('.'), 'P')
+        for n in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            if n.endswith('.lean'):
+                text = open(os.path.join(d, n)).read()
+                for name in re.findall(r'^(?:@\[expose\] )?def ([A-Za-z0-9_.]+)', text, re.M):
+                    where[name] = f'{m}.P.{n[:-5]}'
+    return where
+
+
+def where_of(texts):
+    """The part of each definition in the texts extract.py writes."""
+    where = {}
+    for m, t in texts.items():
+        if '.P.' in m:
+            for name in re.findall(r'^(?:@\[expose\] )?def ([A-Za-z0-9_.]+)', t, re.M):
+                where[name] = m
+    return where
+
+
+def referenced(body, where, own):
+    """The defined names `body` may refer to: exact names, a method `x.name`
+    of any type, and a sibling method `name` inside a method's namespace."""
+    out = set()
+    spaces = {n.rsplit('.', 1)[0] for n in own if '.' in n}
+    for tok in set(re.findall(r'(?<![A-Za-z0-9_.])[A-Za-z_][A-Za-z0-9_.]*', body)):
+        if tok in where:
+            out.add(tok)
+        for sp in spaces:
+            if f'{sp}.{tok}' in where:
+                out.add(f'{sp}.{tok}')
+        if '.' in tok:
+            last = tok.rsplit('.', 1)[1]
+            out |= {n for n in where if n.endswith('.' + last)}
+    for last in set(re.findall(r'\)\.([A-Za-z_][A-Za-z0-9_]*)', body)):
+        out |= {n for n in where if n.endswith('.' + last)}
+    return out - own
+
+
+def import_all_blocks(formal, module, parts, files, where):
     """The Lean files with a block `-- import all: MODULE` .. `-- end import all`,
     with the block's lines rewritten to `import all` every part of MODULE: a
-    module that unfolds the extraction's definitions sees their bodies."""
+    module that unfolds the extraction's definitions sees their bodies,
+    privately, so its importers do not depend on them. And those with a block
+    `-- import parts: MODULE name..` .. `-- end import parts`, rewritten to
+    `public import` the parts defining the names: what the module's public
+    statements and exposed definitions mention."""
     out = {}
     begin = f'-- import all: {module}\n'
     for dirpath, _, names in os.walk(os.path.join(formal, 'Lanius')):
@@ -1320,11 +1428,23 @@ def import_all_blocks(formal, module, parts, files):
             if not n.endswith('.lean') or path in files:
                 continue
             text = open(path).read()
-            if begin not in text:
-                continue
-            head, rest = text.split(begin, 1)
-            _, tail = rest.split('-- end import all\n', 1)
-            out[path] = head + begin + ''.join(f'import all {m}\n' for m in parts) + '-- end import all\n' + tail
+            new = text
+            if begin in new:
+                head, rest = new.split(begin, 1)
+                _, tail = rest.split('-- end import all\n', 1)
+                new = head + begin + ''.join(f'import all {m}\n' for m in parts) + '-- end import all\n' + tail
+            m = re.search(rf'^-- import parts: {re.escape(module)}((?: \S+)*)\n', new, re.M)
+            if m:
+                head, rest = new[:m.end()], new[m.end():]
+                _, tail = rest.split('-- end import parts\n', 1)
+                wanted = m.group(1).split()
+                missing = [w for w in wanted if w not in where]
+                if missing:
+                    fail(f'{path}: {module} defines no {missing}')
+                mods = sorted({where[w] for w in wanted})
+                new = head + ''.join(f'public import {x}\n' for x in mods) + '-- end import parts\n' + tail
+            if new != text:
+                out[path] = new
     return out
 
 
@@ -1346,20 +1466,26 @@ def main(argv):
         name = os.path.relpath(os.path.abspath(source), root)
         if module is None:
             base = os.path.splitext(os.path.relpath(os.path.abspath(output), os.path.join(root, 'formal')))[0]
-            texts = Extractor(items).run(name, base.replace(os.sep, '.'))
+            texts = Extractor(items).run(name, base.replace(os.sep, '.'), os.path.join(root, 'formal'))
         else:
             texts = {None: Extractor(items).run_inline(name, module)}
     except ExtractError as error:
         print(f'{source}: {error}', file=sys.stderr)
         return 1
-    stem = os.path.splitext(output)[0]
-    files = {output if m is None or not re.search(r'\.P\d+$', m) else os.path.join(stem, m.rsplit('.', 1)[1] + '.lean'): t
-             for m, t in texts.items()}
-    stale = sorted(os.path.join(stem, n) for n in (os.listdir(stem) if os.path.isdir(stem) else [])
-                   if re.fullmatch(r'P\d+\.lean', n) and os.path.join(stem, n) not in files)
+    stem = os.path.splitext(os.path.abspath(output))[0]
+    mod = base.replace(os.sep, '.') if module is None else None
+
+    def path_of(m):
+        return output if m is None or m == mod else os.path.join(root, 'formal', *m.split('.')) + '.lean'
+    files = {path_of(m): t for m, t in texts.items()}
+    old = []
+    for d in [stem, os.path.join(stem, 'P')]:
+        if module is None and os.path.isdir(d):
+            old += [os.path.join(d, n) for n in os.listdir(d) if n.endswith('.lean')]
+    stale = sorted(f for f in old if f not in files)
     if check:
         files.update(import_all_blocks(os.path.join(root, 'formal'), base.replace(os.sep, '.'),
-                                       [m for m in texts if m != base.replace(os.sep, '.')], files)
+                                       [m for m in texts if m != base.replace(os.sep, '.')], files, where_of(texts))
                      if module is None else {})
         changed = [f for f, t in files.items() if not os.path.exists(f) or open(f).read() != t] + stale
         if changed:
@@ -1368,7 +1494,7 @@ def main(argv):
         return 0
     if module is None:
         files.update(import_all_blocks(os.path.join(root, 'formal'), base.replace(os.sep, '.'),
-                                       [m for m in texts if m != base.replace(os.sep, '.')], files))
+                                       [m for m in texts if m != base.replace(os.sep, '.')], files, where_of(texts)))
     for f in stale:
         os.remove(f)
     for f, t in files.items():

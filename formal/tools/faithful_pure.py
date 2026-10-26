@@ -4,8 +4,8 @@
     python3 -I formal/tools/faithful_pure.py [--chunk N] [DUMP REP OUTDIR]
 
 DUMP is the Lean file faithful_dump.py wrote (`Lanius.Faithful.Self`, with
-DUMP.meta next to it), REP the SelfRep.lean faithful_certs.py wrote (for the
-prims). OUTDIR (default: DUMP's directory) gets
+DUMP.meta next to it), REP the SelfProg.lean faithful_certs.py wrote (for
+the prims). OUTDIR (default: DUMP's directory) gets
 
   SelfPureBase.lean  the prims, the functions `outside` the pure fragment
                      (the driver `app::main`, and `size_of` and
@@ -546,7 +546,7 @@ def main(argv):
         chunk, argv = int(argv[1]), argv[2:]
     here = os.path.dirname(os.path.abspath(__file__))
     gen = os.path.join(here, '..', 'Lanius', 'Faithful', 'Gen')
-    dump, rep, outdir = argv if argv else (os.path.join(gen, 'Self.lean'), os.path.join(gen, 'SelfRep.lean'), gen)
+    dump, rep, outdir = argv if argv else (os.path.join(gen, 'Self.lean'), os.path.join(gen, 'SelfProg.lean'), gen)
 
     names = {}
     with open(dump + '.meta' if os.path.exists(dump + '.meta') else
@@ -557,7 +557,7 @@ def main(argv):
                 names[int(parts[1])] = parts[2] + ('' if parts[4] == '-' else f'<{parts[4]}>')
     with open(rep) as f:
         text = f.read()
-    m = re.search(r'def prims : Prims :=\s*\{\s*boxed := \[([\d, ]*)\],\s*unbox := \[([\d, ]*)\]\s*\}', text)
+    m = re.search(r'def (?:_root_\.Lanius\.Faithful\.SelfRep\.)?prims : Prims :=\s*\{\s*boxed := \[([\d, ]*)\],\s*unbox := \[([\d, ]*)\]\s*\}', text)
     prims = {k: [int(x) for x in m.group(j).split(',') if x.strip()] for j, k in ((1, 'boxed'), (2, 'unbox'))}
     prim_set = set(prims['boxed']) | set(prims['unbox'])
 
@@ -692,14 +692,14 @@ def main(argv):
     # The prims' templates.
     def boxed_args(i):
         f, body = prog.funcs[i], prog.src_text[i]
-        so = re.search(r'letCall 857 \(SrcType\.uint \(UintTy\.usize\)\) (\d+) \[\]', body)
-        sl = re.search(r'letCall 1021 \S+ (\d+) \[', body)
+        so = re.search(r'letCall 39 \(SrcType\.uint \(UintTy\.usize\)\) (\d+) \[\]', body)
+        sl = re.search(r'letCall 203 \S+ (\d+) \[', body)
         pa = re.search(r'discard \(SrcEff\.eCall (\d+) \[\]\)', body)
         return lean_ty(f['params'][0][1]), prog.type_id(f['ret']), int(so.group(1)), int(sl.group(1)), int(pa.group(1))
 
     def unbox_args(i):
         f, body = prog.funcs[i], prog.src_text[i]
-        sl = re.search(r'letCall 1189 \S+ (\d+) \[', body)
+        sl = re.search(r'letCall 39 \S+ (\d+) \[', body)
         return lean_ty(f['ret']), prog.type_id(f['params'][0][1]), int(sl.group(1))
 
     def forall(items):

@@ -64,19 +64,19 @@ theorem unbox_sim {c : Nat} {t : SrcType} {id slice : Nat} {values ps : List Val
   have pc : pcall sp prims (m + 1) c [p] = some p := by simp only [pcall, prim, if_true, single]
   refine ⟨p, pc, ?_⟩
   have start : (({ st with locals := [] } : State).bindLocals (paramBindings (unboxFunc t id slice).params
-      [.structure id [.pointer a]])) = ({ st with locals := [] } : State).bindLocal 1159 (.structure id [.pointer a]) :=
+      [.structure id [.pointer a]])) = ({ st with locals := [] } : State).bindLocal 9 (.structure id [.pointer a]) :=
     rfl
   rw [start] at run
-  have inv0 := inv.clear.bindLocal 1159 (.structure id [.pointer a])
+  have inv0 := inv.clear.bindLocal 9 (.structure id [.pointer a])
   simp only [unboxFunc, SrcStmt.toCore, SrcEff.toCore, SrcExpr.toCore, SrcType.toCore,
     List.map_cons, List.map_nil, bv_zero, bv_one] at run
   obtain ⟨_, sv, s1, s2, -, call, body, rfl⟩ := letLocal_inv run
-  have storage : ∀ {j u s}, evalExpr j sp.toCore (({ st with locals := [] } : State).bindLocal 1159
-      (.structure id [.pointer a])) (.field (.local 1159) 0) = .done u s →
-      u = .pointer a ∧ s = ({ st with locals := [] } : State).bindLocal 1159 (.structure id [.pointer a]) := by
+  have storage : ∀ {j u s}, evalExpr j sp.toCore (({ st with locals := [] } : State).bindLocal 9
+      (.structure id [.pointer a])) (.field (.local 9) 0) = .done u s →
+      u = .pointer a ∧ s = ({ st with locals := [] } : State).bindLocal 9 (.structure id [.pointer a]) := by
     intro j u s h
     obtain ⟨_, sid, fields, -, base, hf⟩ := field_inv h
-    obtain ⟨hv, rfl⟩ := local_eval (local?_bindLocal_self inv.clear 1159 _) base
+    obtain ⟨hv, rfl⟩ := local_eval (local?_bindLocal_self inv.clear 9 _) base
     simp only [Value.structure.injEq] at hv
     obtain ⟨rfl, rfl⟩ := hv
     simp only [List.getElem?_cons_zero, Option.some.injEq] at hf
@@ -87,23 +87,23 @@ theorem unbox_sim {c : Nat} {t : SrcType} {id slice : Nat} {values ps : List Val
   rw [show (a + (8 * w - 8)) % 2 ^ 64 = a + 8 * w - 8 by rw [Nat.mod_eq_of_lt (by omega)]; omega] at body
   obtain ⟨_, rv, -, idx, rfl⟩ := return_inv body
   obtain ⟨_, bv, s3, -, baseRun, rest⟩ := index_inv idx
-  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self same.inv 1189 _) baseRun
+  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self same.inv 39 _) baseRun
   obtain ⟨iv, posn, ir, hi, hr⟩ := rest _ _ _ rfl
   obtain ⟨rfl, rfl⟩ := value_inv ir
   simp only [Semantics.integerIndex, show ¬ ((0 : Int) < 0) by decide, if_false, Except.ok.injEq] at hi
   subst hi
   have hr' := raw_read_zero kind wv pos hr
-  have heap : (s1.bindLocal 1189 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap = st.heap := same.heap
+  have heap : (s1.bindLocal 39 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap = st.heap := same.heap
   rw [heap, read, Except.ok.injEq] at hr'
   subst hr'
   simp only [CallResult] at result
   subst result
-  have done := same.bind 1189 (.rawSlice t.toCore (a + 8 * w - 8) 1) |>.restore s1
+  have done := same.bind 39 (.rawSlice t.toCore (a + 8 * w - 8) 1) |>.restore s1
   refine ⟨?_, done.inv, ?_⟩
   · show VRel sp.toCore (boxElem sp prims) (restoreLocals s1 _).heap t _ p
     rw [done.heap]
     exact rel
-  · exact (((Step.clear st).trans (Step.bindLocal _ 1159 _)).trans done.step)
+  · exact (((Step.clear st).trans (Step.bindLocal _ 9 _)).trans done.step)
 
 end
 

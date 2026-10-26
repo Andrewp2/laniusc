@@ -17,7 +17,8 @@ its lexer tokens are dumped (LANIUS_DEBUG_DUMP_BUFFERS=token_words).
 Then, under `lake env lean`, `sourceProgram` (the Lean lexer, then the
 extracted validator and builder) reads each file with laniusc's tree, and the
 result must be the program this script expects the text to mean: the
-generated program with each local named by the byte offset of its binding,
+generated program with each local named by the byte offset of its binding
+from its function's name,
 literals as the text writes them (`(-5)` is a negation, `(7 as u8)` a cast),
 statement lists nested the way the reader nests them, and effectful
 expressions collapsed the way the reader reads them (see collapse and
@@ -61,17 +62,23 @@ UINT_BITS = oracle.UINT_BITS
 # ---------------------------------------------------------------- printing
 
 class Printer:
-    """Lanius text, with the byte offset of every binding occurrence."""
+    """Lanius text, with the byte offset of every binding occurrence from its
+    function's name (the front end's local ids)."""
 
     def __init__(self):
-        self.parts, self.pos, self.binding = [], 0, {}
+        self.parts, self.pos, self.base, self.binding = [], 0, 0, {}
 
     def emit(self, text):
         self.parts.append(text)
         self.pos += len(text.encode())
 
+    def func(self, text):
+        """`fn name...`: the name starts the function's local numbering."""
+        self.base = self.pos + len('fn ')
+        self.emit(text)
+
     def bind(self, key, name):
-        self.binding[key] = self.pos
+        self.binding[key] = self.pos - self.base
         self.emit(name)
 
     def text(self):
@@ -710,7 +717,7 @@ class Chunk:
             self.type_decl(k, 'enum', j, variants)
         if self.generic:
             self.cur = self.module[('gid', k)]
-            self.out.emit(f'fn p{k}_gid<T>(')
+            self.out.func(f'fn p{k}_gid<T>(')
             self.out.bind((self.cur, k, 'gid_x'), 'x')
             self.gid[k] = self.out.binding[(self.cur, k, 'gid_x')]
             self.out.emit(': T) -> T {\n    return x;\n}\n\n')
@@ -721,7 +728,7 @@ class Chunk:
             self.key = ('f', k, j)
             self.calls[self.key], self.tys[self.key] = [], list(params) + [ret]
             out, ids = self.out, {}
-            out.emit(f'fn p{k}_f{j}' + ('<T>' if g is not None else '') + '(')
+            out.func(f'fn p{k}_f{j}' + ('<T>' if g is not None else '') + '(')
             for i, t in enumerate(params):
                 if i:
                     out.emit(', ')

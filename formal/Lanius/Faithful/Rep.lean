@@ -70,6 +70,13 @@ theorem RepU32.lit {n : Nat} (b : n < 4294967296) : RepU32 (BitVec.ofNat 32 n) (
 @[rep_rule] theorem lt_pow64 {n : Nat} (h : Nat.blt n 18446744073709551616 = true) : n < 18446744073709551616 :=
   Nat.blt_eq.mp h
 
+/-- A callee's certificate as a proof's hypothesis: `P` in a structure, so
+that `simp [*]` does not take the certificate's implication as a conditional
+rewrite (whose premises it would try to prove at every representation). The
+`certs` tactic applies its `out`. -/
+structure Certified (P : Prop) : Prop where
+  out : P
+
 /-- A prim's certificate: `boxed` and `unbox` give back their argument. -/
 theorem prim_cert {sp : SrcProgram} {prims : Prims} {c n : Nat} {α : Type} {r : α → Value → Prop} {x : α}
     {v w : Value} (prim : prims.isPrim c = true) (h : pcall sp prims n c [v] = some w) (hr : r x v) : r x w := by

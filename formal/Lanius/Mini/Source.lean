@@ -2,58 +2,98 @@ module
 
 public import Lanius.Mini.Semantics
 public import Lanius.Semantics
+public import Lanius.Mini.SourceCore
 -- import all: Lanius.Mini.Compiler
-import all Lanius.Mini.Compiler.P0
-import all Lanius.Mini.Compiler.P1
-import all Lanius.Mini.Compiler.P2
-import all Lanius.Mini.Compiler.P3
-import all Lanius.Mini.Compiler.P4
-import all Lanius.Mini.Compiler.P5
-import all Lanius.Mini.Compiler.P6
-import all Lanius.Mini.Compiler.P7
-import all Lanius.Mini.Compiler.P8
-import all Lanius.Mini.Compiler.P9
-import all Lanius.Mini.Compiler.P10
-import all Lanius.Mini.Compiler.P11
-import all Lanius.Mini.Compiler.P12
-import all Lanius.Mini.Compiler.P13
-import all Lanius.Mini.Compiler.P14
-import all Lanius.Mini.Compiler.P15
-import all Lanius.Mini.Compiler.P16
-import all Lanius.Mini.Compiler.P17
-import all Lanius.Mini.Compiler.P18
-import all Lanius.Mini.Compiler.P19
-import all Lanius.Mini.Compiler.P20
-import all Lanius.Mini.Compiler.P21
-import all Lanius.Mini.Compiler.P22
-import all Lanius.Mini.Compiler.P23
-import all Lanius.Mini.Compiler.P24
-import all Lanius.Mini.Compiler.P25
-import all Lanius.Mini.Compiler.P26
-import all Lanius.Mini.Compiler.P27
-import all Lanius.Mini.Compiler.P28
-import all Lanius.Mini.Compiler.P29
-import all Lanius.Mini.Compiler.P30
-import all Lanius.Mini.Compiler.P31
-import all Lanius.Mini.Compiler.P32
-import all Lanius.Mini.Compiler.P33
-import all Lanius.Mini.Compiler.P34
-import all Lanius.Mini.Compiler.P35
-import all Lanius.Mini.Compiler.P36
-import all Lanius.Mini.Compiler.P37
-import all Lanius.Mini.Compiler.P38
-import all Lanius.Mini.Compiler.P39
-import all Lanius.Mini.Compiler.P40
-import all Lanius.Mini.Compiler.P41
-import all Lanius.Mini.Compiler.P42
-import all Lanius.Mini.Compiler.P43
-import all Lanius.Mini.Compiler.P44
-import all Lanius.Mini.Compiler.P45
-import all Lanius.Mini.Compiler.P46
-import all Lanius.Mini.Compiler.P47
-import all Lanius.Mini.Compiler.P48
-import all Lanius.Mini.Compiler.P49
+import all Lanius.Mini.Compiler.Types
+import all Lanius.Mini.Compiler.P.Lists_empty
+import all Lanius.Mini.Compiler.P.DivOp_size
+import all Lanius.Mini.Compiler.P.codeSize
+import all Lanius.Mini.Compiler.P.compileArgs
+import all Lanius.Mini.Compiler.P.arities
+import all Lanius.Mini.Compiler.P.pow2
+import all Lanius.Mini.Compiler.P.moduleExports
+import all Lanius.Mini.Compiler.P.importOk
+import all Lanius.Mini.Compiler.P.importsOk
+import all Lanius.Mini.Compiler.P.modulesOk
+import all Lanius.Mini.Compiler.P.moduleFirsts
+import all Lanius.Mini.Compiler.P.Instr_pieces
+import all Lanius.Mini.Compiler.P.compileModules
+import all Lanius.Mini.Compiler.P.render
+import all Lanius.Mini.Compiler.P.UintTy_mask
+import all Lanius.Mini.Compiler.P.UintTy_isWide
+import all Lanius.Mini.Compiler.P.lookup
+import all Lanius.Mini.Compiler.P.arithShiftRight
+import all Lanius.Mini.Compiler.P.equality
+import all Lanius.Mini.Compiler.P.conjunction
+import all Lanius.Mini.Compiler.P.lowerLocal
+import all Lanius.Mini.Compiler.P.copyBinding
+import all Lanius.Mini.Compiler.P.lowerTagged
+import all Lanius.Mini.Compiler.P.armScope
+import all Lanius.Mini.Compiler.P.assignFrom
+import all Lanius.Mini.Compiler.P.lowerMatchArms
+import all Lanius.Mini.Compiler.P.lowerCallSig
+import all Lanius.Mini.Compiler.P.consArgs
+import all Lanius.Mini.Compiler.P.shortCircuit
+import all Lanius.Mini.Compiler.P.evalNot
+import all Lanius.Mini.Compiler.P.evalSame
+import all Lanius.Mini.Compiler.P.matchDst
+import all Lanius.Mini.Compiler.P.matchVariants
+import all Lanius.Mini.Compiler.P.lowerSetValues
+import all Lanius.Mini.Compiler.P.lowerSetCallArgs
+import all Lanius.Mini.Compiler.P.lowerReturn
+import all Lanius.Mini.Compiler.P.lowerAddress
+import all Lanius.Mini.Compiler.P.structFields
+import all Lanius.Mini.Compiler.P.enumVariants
+import all Lanius.Mini.Compiler.P.usizeWidth
+import all Lanius.Mini.Compiler.P.wordWidth
+import all Lanius.Mini.Compiler.P.wordElement
+import all Lanius.Mini.Compiler.P.widthOf
+import all Lanius.Mini.Compiler.P.elementBase
+import all Lanius.Mini.Compiler.P.iteThen
+import all Lanius.Mini.Compiler.P.storeType
+import all Lanius.Mini.Compiler.P.indexOf
+import all Lanius.Mini.Compiler.P.lowerLoadType
+import all Lanius.Mini.Compiler.P.storeEvalWord
+import all Lanius.Mini.Compiler.P.sigs
+import all Lanius.Mini.Compiler.P.lowerBody
+import all Lanius.Mini.Compiler.P.declareFuncs
+import all Lanius.Mini.Compiler.P.declareProgram
+import all Lanius.Mini.Compiler.P.BinOp_folds
+import all Lanius.Mini.Compiler.P.Word_compute
+import all Lanius.Mini.Compiler.P.Word_narrows
+import all Lanius.Mini.Compiler.P.binaryConstant
+import all Lanius.Mini.Compiler.P.Expr_agrees
+import all Lanius.Mini.Compiler.P.assignAgrees
+import all Lanius.Mini.Compiler.P.callAgrees
+import all Lanius.Mini.Compiler.P.substAll
+import all Lanius.Mini.Compiler.P.Stmt_kills
+import all Lanius.Mini.Compiler.P.optKill
+import all Lanius.Mini.Compiler.P.optimizeNeg
+import all Lanius.Mini.Compiler.P.optimizeLeft
+import all Lanius.Mini.Compiler.P.optimizeIte
+import all Lanius.Mini.Compiler.P.compileOr
+import all Lanius.Mini.Compiler.P.compileSource
+import all Lanius.Mini.Compiler.P.Inline_arithOf
+import all Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+import all Lanius.Mini.Compiler.P.Inline_branchAgrees
 -- end import all
+-- import parts: Lanius.Mini.Compiler BinOp.size Code.size DivOp.size Instr.size Piece.size SrcType.isI32 SrcType.isScalar SrcType.isUint SrcType.same SrcType.size arith boolBits compileOptimized compileSource declareProgram enumVariants fieldOffset funcsReturn lowerFuncs maxSize offsetOrArith sigs sizes storeEvalThen storeEvalWord structFields
+public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.compileModules
+public import Lanius.Mini.Compiler.P.compileOr
+public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.declareProgram
+public import Lanius.Mini.Compiler.P.enumVariants
+public import Lanius.Mini.Compiler.P.lookup
+public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.pow2
+public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.storeEvalWord
+public import Lanius.Mini.Compiler.P.structFields
+-- end import parts
 
 @[expose] public section
 
@@ -67,202 +107,6 @@ position. The theorem in `SourceCorrect.lean` is about Core's own evaluator
 namespace Lanius.Mini
 
 open Lanius.Core (Value)
-
-def UintTy.toCore : UintTy → Core.UnsignedIntTy
-  | .uint8 => .u8
-  | .uint32 => .u32
-  | .uint64 => .u64
-  | .usize => .usize
-
-def UintTy.width : UintTy → Nat
-  | .uint8 => 8
-  | .uint32 => 32
-  | .uint64 => 64
-  | .usize => 64
-
-def SrcType.toCore : SrcType → Core.Ty
-  | .i32 => .scalar (.signed .i32)
-  | .bool => .scalar .bool
-  | .uint kind => .scalar (.unsigned kind.toCore)
-  | .struct id _ => .structure id
-  | .enum id _ => .enumeration id
-  | .ptr => .scalar .rawPtr
-  | .slice element => .slice element.toCore
-  | .unit => .unit
-  | .isize => .scalar (.signed .isize)
-
-/-- The Core type id of a struct or enum type. -/
-def SrcType.typeId : SrcType → Nat
-  | .i32 => 0
-  | .bool => 0
-  | .uint _ => 0
-  | .struct id _ => id
-  | .enum id _ => id
-  | .ptr => 0
-  | .slice _ => 0
-  | .unit => 0
-  | .isize => 0
-
-/-- The Core type a cast to this type names. Lowering only casts to `i32`
-and the unsigned types. -/
-def SrcType.toScalar : SrcType → Core.ScalarTy
-  | .i32 => .signed .i32
-  | .bool => .bool
-  | .uint kind => .unsigned kind.toCore
-  | .struct _ _ => .bool
-  | .enum _ _ => .bool
-  | .ptr => .rawPtr
-  | .slice _ => .bool
-  | .unit => .bool
-  | .isize => .signed .isize
-
-/-- Core's raw slice of this element type from a pointer and a length:
-`slice_from_raw_parts` for `i32`, the typed form for the rest. -/
-def SrcType.sliceFrom : SrcType → Core.Expr → Core.Expr → Core.Expr
-  | .i32, pointer, length => .i32SliceFromRawParts pointer length
-  | .bool, pointer, length => .typedSliceFromRawParts (.scalar .bool) pointer length
-  | .uint kind, pointer, length => .typedSliceFromRawParts (.scalar (.unsigned kind.toCore)) pointer length
-  | .struct id _, pointer, length => .typedSliceFromRawParts (.structure id) pointer length
-  | .enum id _, pointer, length => .typedSliceFromRawParts (.enumeration id) pointer length
-  | .ptr, pointer, length => .typedSliceFromRawParts (.scalar .rawPtr) pointer length
-  | .slice element, pointer, length => .typedSliceFromRawParts (.slice element.toCore) pointer length
-  | .unit, pointer, length => .typedSliceFromRawParts .unit pointer length
-  | .isize, pointer, length => .typedSliceFromRawParts (.scalar (.signed .isize)) pointer length
-
-def SrcDivOp.toCore : SrcDivOp → Core.BinaryOp
-  | .quotient => .divide
-  | .remainder => .remainder
-
-def SrcOp.toCore : SrcOp → Core.BinaryOp
-  | .plus => .add
-  | .minus => .subtract
-  | .times => .multiply
-  | .bitAnd => .bitAnd
-  | .bitOr => .bitOr
-  | .bitXor => .bitXor
-  | .shiftLeft => .shiftLeft
-  | .shiftRight => .shiftRight
-  | .less => .less
-  | .lessEq => .lessEqual
-  | .greater => .greater
-  | .greaterEq => .greaterEqual
-  | .equal => .equal
-  | .notEqual => .notEqual
-  | .logicalAnd => .logicalAnd
-  | .logicalOr => .logicalOr
-
-def SrcExpr.toCore : SrcExpr → Core.Expr
-  | .int value => .value (.signed .i32 value.toInt)
-  | .boolean value => .value (.boolean value)
-  | .unsigned kind value => .value (.unsigned kind.toCore value.toNat)
-  | .local id => .local id
-  | .field id index => .field (.local id) index
-  | .negate operand => .unary .negate operand.toCore
-  | .not operand => .unary .logicalNot operand.toCore
-  | .apply op left right => .binary op.toCore left.toCore right.toCore
-  | .cast ty operand => .cast ty.toScalar operand.toCore
-  | .null => .value (.pointer 0)
-
-/-- Match arms from variant `k`: arm `k` matches variant `k` of enum type
-`id`, binding its payload. -/
-def coreArms (id : Nat) : Nat → List SrcArm → List (Core.Pattern × Core.Expr)
-  | _, [] => []
-  | k, arm :: rest => (.enumVariant id k (arm.binders.map .bind), arm.value.toCore) :: coreArms id (k + 1) rest
-
-mutual
-/-- An effectful expression means the same Core expression as its pure
-counterpart, with calls, reads and literals where they occur. -/
-def SrcEff.toCore : SrcEff → Core.Expr
-  | .ePure e => e.toCore
-  | .eCall callee args => .call callee (SrcEff.toCoreList args)
-  | .eApply op left right => .binary op.toCore left.toCore right.toCore
-  | .eNeg operand => .unary .negate operand.toCore
-  | .eNot operand => .unary .logicalNot operand.toCore
-  | .eCast ty operand => .cast ty.toScalar operand.toCore
-  | .eIndex slice index => .index (.local slice) index.toCore
-  | .eStruct ty fields => .structValue ty.typeId (SrcEff.toCoreList fields)
-  | .eVariant ty variant payload => .enumValue ty.typeId variant (SrcEff.toCoreList payload)
-  | .eMatch scrutinee ety _ binders values =>
-      .matchValue scrutinee.toCore (SrcEff.coreArms ety.typeId 0 binders values)
-  | .eDivide op left right => .binary op.toCore left.toCore right.toCore
-  | .eStride slice => .intrinsic .sliceStride (.local slice)
-
-def SrcEff.toCoreList : List SrcEff → List Core.Expr
-  | [] => []
-  | e :: es => e.toCore :: SrcEff.toCoreList es
-
-/-- Arm `k` matches variant `k`, binding its payload. -/
-def SrcEff.coreArms (id : Nat) : Nat → List (List Nat) → List SrcEff → List (Core.Pattern × Core.Expr)
-  | _, [], _ => []
-  | _, _ :: _, [] => []
-  | k, binders :: rest, value :: values =>
-      (.enumVariant id k (binders.map .bind), value.toCore) :: SrcEff.coreArms id (k + 1) rest values
-end
-
-def SrcStmt.toCore : SrcStmt → Core.Stmt
-  | .nop => .skip
-  | .let id ty value body => .letLocal id ty.toCore value.toCore body.toCore
-  | .letStruct id ty fields body =>
-      .letLocal id ty.toCore (.structValue ty.typeId (fields.map SrcExpr.toCore)) body.toCore
-  | .letCall id ty callee args body =>
-      .letLocal id ty.toCore (.call callee (args.map SrcExpr.toCore)) body.toCore
-  | .letEnum id ty variant payload body =>
-      .letLocal id ty.toCore (.enumValue ty.typeId variant (payload.map SrcExpr.toCore)) body.toCore
-  | .letMatch id ty scrutinee enumId arms body =>
-      .letLocal id ty.toCore (.matchValue (.local scrutinee) (coreArms enumId 0 arms)) body.toCore
-  | .set id value => .expression (.assign .set (.local id) value.toCore)
-  | .setField id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
-  | .setCall id callee args =>
-      .expression (.assign .set (.local id) (.call callee (args.map SrcExpr.toCore)))
-  | .then first second => .sequence first.toCore second.toCore
-  | .if condition thenBranch elseBranch =>
-      .ifThenElse condition.toCore thenBranch.toCore elseBranch.toCore
-  | .while condition body => .whileLoop condition.toCore body.toCore
-  | .return value => .returnValue (some value.toCore)
-  | .letAlloc id size shift body =>
-      .letLocal id (.scalar .rawPtr) (.alloc size.toCore (.value (.unsigned .usize (2 ^ shift)))) body.toCore
-  | .letLoad id pointer offset body =>
-      .letLocal id (.scalar (.unsigned .u8)) (.loadByte pointer.toCore offset.toCore) body.toCore
-  | .setByte pointer offset value => .expression (.storeByte pointer.toCore offset.toCore value.toCore)
-  | .free pointer size shift =>
-      .expression (.dealloc pointer.toCore size.toCore (.value (.unsigned .usize (2 ^ shift))))
-  | .letSlice id element pointer length body =>
-      .letLocal id (.slice element.toCore) (element.sliceFrom pointer.toCore length.toCore) body.toCore
-  | .letIndex id ty slice index body =>
-      .letLocal id ty.toCore (.index (.local slice) index.toCore) body.toCore
-  | .setIndex slice index value =>
-      .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
-  | .letEval id ty value body => .letLocal id ty.toCore value.toCore body.toCore
-  | .setEval id value => .expression (.assign .set (.local id) value.toCore)
-  | .ifEval condition thenBranch elseBranch =>
-      .ifThenElse condition.toCore thenBranch.toCore elseBranch.toCore
-  | .whileEval condition body => .whileLoop condition.toCore body.toCore
-  | .returnEval value => .returnValue (some value.toCore)
-  | .discard value => .expression value.toCore
-  | .setIndexEval slice index value =>
-      .expression (.assign .set (.index (.local slice) index.toCore) value.toCore)
-  | .setFieldEval id index value => .expression (.assign .set (.field (.local id) index) value.toCore)
-  | .returnUnit => .returnValue none
-  | .assert condition => .expression (.intrinsic .assert condition.toCore)
-
-def SrcFunc.toCore (id : Nat) (func : SrcFunc) : Core.Function where
-  id := id
-  parameters := func.params.map fun param => (param.id, param.ty.toCore)
-  returnType := func.ret.toCore
-  body := some func.body.toCore
-
-/-- Functions numbered from `id`. -/
-def coreFuncs : Nat → List SrcFunc → List Core.Function
-  | _, [] => []
-  | id, func :: rest => func.toCore id :: coreFuncs (id + 1) rest
-
-def SrcStructDecl.toCore (decl : SrcStructDecl) : Core.StructDecl where
-  id := decl.id
-  fields := decl.fields.map SrcType.toCore
-
-def SrcEnumDecl.toCore (decl : SrcEnumDecl) : Core.EnumDecl where
-  id := decl.id
-  variants := decl.variants.map (List.map SrcType.toCore)
 
 /-- The struct and enum declarations the front pass derives from the
 program's types (`declareProgram`); none for a program it rejects. -/
@@ -571,17 +415,6 @@ theorem FieldsHold.set : ∀ {fs vs env slot}, FieldsHold fs vs env slot → ∀
         rw [fieldOffset_succ, if_neg (by omega)]
       · rw [fieldOffset_succ, ← Nat.add_assoc]
         exact rest.set found scalar holdsNew
-
-/-! Core's i32 arithmetic is `BitVec 32` arithmetic on `toInt`. -/
-
-theorem wrapSigned_i32 (n : Int) :
-    Semantics.wrapSigned Core.Target.x86_64 .i32 n = (BitVec.ofInt 32 n).toInt := by
-  rw [BitVec.toInt_ofInt]
-  change (if n % 4294967296 ≥ 2147483648 then n % 4294967296 - 4294967296 else n % 4294967296) =
-    (if n % 4294967296 < 2147483648 then n % 4294967296 else n % 4294967296 - 4294967296)
-  by_cases h : 2147483648 ≤ n % 4294967296
-  · rw [if_pos h, if_neg (by omega)]
-  · rw [if_neg h, if_pos (by omega)]
 
 theorem toInt_emod (x : BitVec 32) : x.toInt % 4294967296 = (x.toNat : Int) := by
   rw [BitVec.toInt_eq_toNat_bmod]

@@ -23,7 +23,8 @@
 // table: the first file's non-generic types in order, then each instance as
 // the functions' types first need it. Constants are replaced by their
 // literal values. A local (parameter, let, match binder) is the byte offset
-// of its binding occurrence, and a use names the innermost binding of the
+// of its binding occurrence from its function's name (so an edit to one
+// function renumbers no other), and a use names the innermost binding of the
 // same spelling. A local cannot be spelled like a function, a type, a variant
 // or a constant of its module, so every use has one reading.
 module mini::frontend;
@@ -1718,7 +1719,8 @@ pub fn add_insts(table: List<Inst>, new: List<Inst>) -> List<Inst> {
 
 // Where a type expression is read: the declarations, the module, and the
 // type parameters in scope with their types; the spellings a local may
-// not take; and, in a function body, its result type.
+// not take; and, in a function body, its result type and the byte offset of
+// its name, which locals are numbered from.
 pub struct FrontEnv {
     decls: Decls,
     home: List<List<usize>>,
@@ -1726,10 +1728,11 @@ pub struct FrontEnv {
     subst: List<Ty>,
     globals: List<List<usize>>,
     ret: core::option::Option<Ty>,
+    base: usize,
 }
 
 pub fn decl_env(decls: Decls, home: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> FrontEnv {
-    return FrontEnv { decls: decls, home: home, names: names, subst: subst, globals: empty(), ret: None };
+    return FrontEnv { decls: decls, home: home, names: names, subst: subst, globals: empty(), ret: None, base: 0 };
 }
 
 // The variants spelled name among module m's enums (types counted from k).
@@ -4380,7 +4383,7 @@ fn binder_of(env: FrontEnv, scope: List<Local>, p: CTree, t: Ty, pats: List<CTre
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
     if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text)) {
-        return cons_binder(tok.start, binders_of(env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), pats, payload));
+        return cons_binder(minus(tok.start, env.base), binders_of(env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), pats, payload));
     }
     return None;
 }
@@ -5589,7 +5592,7 @@ pub fn slice_returned(id: usize, el: Ty, h: core::option::Option<LetHead>) -> co
 
 // `return slice_from_raw_parts(pointer, length);` in a function whose
 // result is a slice: a slice local, then its return. The local's id is the
-// byte offset of the value's first token, which no binding has.
+// offset of the value's first token, which no binding has.
 pub fn return_slice(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     return match (env.ret) {
         None -> None,
@@ -5597,7 +5600,7 @@ pub fn return_slice(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) ->
             None -> None,
             Some(el) -> match (tree_tokens(e)) {
                 Nil -> None,
-                Cons(first, rest) -> slice_returned(first.start, el, let_head(fuel, env, scope, t, e)),
+                Cons(first, rest) -> slice_returned(minus(first.start, env.base), el, let_head(fuel, env, scope, t, e)),
             },
         },
     };
@@ -6044,7 +6047,7 @@ pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest:
     if (node_prod(kid(s, 2)) == p_let_type() && node_prod(kid(s, 3)) == p_let_init() && !member(env.globals, tok.text)) {
         return match (ty_of(fuel, env, kid(kid(s, 2), 1))) {
             None -> None,
-            Some(t) -> let_of(tok.start, t, let_head_or_eval(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: tok.start, ty: t }, scope), rest)),
+            Some(t) -> let_of(minus(tok.start, env.base), t, let_head_or_eval(minus(fuel, 1), env, scope, t, kid(kid(s, 3), 1)), stmts_of(minus(fuel, 1), env, cons(Local { name: tok.text, id: minus(tok.start, env.base), ty: t }, scope), rest)),
         };
     }
     return None;
@@ -6127,7 +6130,7 @@ fn param_of(pfuel: usize, penv: FrontEnv, pfd: FnDecl, pscope: List<Local>, pp: 
             None -> None,
             Some(t) -> match (ty_of(pfuel, penv, t)) {
                 None -> None,
-                Some(x) -> cons_param(MParam { id: tok.start, ty: x }, params_of(pfuel, penv, pfd, cons(Local { name: tok.text, id: tok.start, ty: x }, pscope), prest)),
+                Some(x) -> cons_param(MParam { id: minus(tok.start, penv.base), ty: x }, params_of(pfuel, penv, pfd, cons(Local { name: tok.text, id: minus(tok.start, penv.base), ty: x }, pscope), prest)),
             },
         };
     }
@@ -6192,9 +6195,9 @@ pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> 
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     let f: CTree = fd.tree;
-    let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None };
+    let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
     let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
-    let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt) };
+    let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt), base: kid_token(f, 1).start };
     if (length(names) == length(args)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,

@@ -239,7 +239,8 @@ still a parse tree of the same tokens. Trusted:
     the type's largest value, the cast of the `u64` literal of its bits for
     `isize`);
   - a local is the byte offset of its binding (a parameter, `let` or match
-    binder);
+    binder) from the start of its function's name (since 10-25, so that an
+    edit to one function renumbers the locals of no other);
   - a use names the innermost binding with the same spelling, and locals may
     not be spelled like a type, type alias, variant or constant of their
     module (a function is only named by a call, so a local may share its
@@ -306,7 +307,7 @@ still a parse tree of the same tokens. Trusted:
 
   - `slice_stride(x)` of a slice local x is `EStride(x)`;
   - `return slice_from_raw_parts(p, n);` in a function whose result is a
-    slice is a slice local (named by the byte offset of `slice_from_raw_parts`)
+    slice is a slice local (named by the offset of `slice_from_raw_parts`)
     and its return;
   - a bare variant name is the one variant of that spelling among the
     current module's enums, else among its imported modules' enums;
@@ -385,7 +386,14 @@ compiler that someone actually runs is one of these two:
    The extraction's and the sources' bodies are hidden from other Lean
    modules (module system, for incremental checking); that changes only
    what the elaborator may unfold, not what the kernel checks, and a proof
-   that needs a hidden body fails rather than passes.
+   that needs a hidden body fails rather than passes. Each certificate is
+   proved for any program and prims holding the function's source at some
+   index, from its callees' certificates as hypotheses; the link
+   (`Gen/SelfCert.lean`) instantiates them with the program's indices, the
+   lookups (`prog.funcs[i]? = ...`, by `rfl`) and the prim tests (by
+   `decide +kernel`, which adds no axiom). Nothing in a proof depends on
+   another function's index, so the generator names everything by Lanius
+   function name, not index (decided 10-25).
 2. **The Lean build.** Run `#eval compileSource` or a compiled Lean
    executable. Extraction is then irrelevant, but Lean's code generator and
    runtime are trusted: GMP `Nat`, and the `@[extern]` and `implemented_by`

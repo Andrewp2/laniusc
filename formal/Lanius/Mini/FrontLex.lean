@@ -1,5 +1,6 @@
 import Lanius.Compiler.LexerCanonical
 import Lanius.Mini.Frontend
+import Lanius.Mini.Compiler
 
 /-! The tokens the front end validates against: the Lean lexer's
 (`Lanius.Compiler.Lexer.lexCanonical`), as `Token`s with laniusc's token kind

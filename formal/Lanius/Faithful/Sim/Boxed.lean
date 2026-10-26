@@ -47,27 +47,27 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   have pc : pcall sp prims (m + 1) c [p] = some p := by simp only [pcall, prim, if_true, single]
   refine ⟨p, pc, ?_⟩
   have start : (({ st with locals := [] } : State).bindLocals (paramBindings (boxedFunc t id sizeOf slice panic).params
-      [x])) = ({ st with locals := [] } : State).bindLocal 827 x := rfl
+      [x])) = ({ st with locals := [] } : State).bindLocal 9 x := rfl
   rw [start] at run
-  have inv0 := inv.clear.bindLocal 827 x
-  have x0 := local?_bindLocal_self inv.clear 827 x
-  have step0 : Step st (({ st with locals := [] } : State).bindLocal 827 x) :=
-    (Step.clear st).trans (Step.bindLocal _ 827 x)
-  have heap0 : (({ st with locals := [] } : State).bindLocal 827 x).heap = st.heap := rfl
-  generalize hs0 : ({ st with locals := [] } : State).bindLocal 827 x = s0 at run inv0 x0 step0 heap0
+  have inv0 := inv.clear.bindLocal 9 x
+  have x0 := local?_bindLocal_self inv.clear 9 x
+  have step0 : Step st (({ st with locals := [] } : State).bindLocal 9 x) :=
+    (Step.clear st).trans (Step.bindLocal _ 9 x)
+  have heap0 : (({ st with locals := [] } : State).bindLocal 9 x).heap = st.heap := rfl
+  generalize hs0 : ({ st with locals := [] } : State).bindLocal 9 x = s0 at run inv0 x0 step0 heap0
   simp only [boxedFunc, SrcStmt.toCore, SrcEff.toCore, SrcEff.toCoreList, SrcExpr.toCore, SrcType.toCore, SrcOp.toCore,
     SrcType.typeId, List.map_cons, List.map_nil, bv_zero, bv_one, Nat.reducePow] at run
   -- the storage's size
   obtain ⟨_, v1, s1, s2, -, call1, b1, rfl⟩ := letLocal_inv run
   obtain ⟨w, hw, pos, most, rfl, same1, locals1⟩ := sizeOf_call sizeOfFound el inv0 call1
   simp only [NativeLayout.maxWords] at most
-  have inv1 := same1.inv.bindLocal 857 (.unsigned .usize (8 * w))
-  have x1 := local?_bindLocal_other (id := 857) (by decide) (.unsigned .usize (8 * w)) (local?_step same1.step locals1 x0)
-  have n1 := local?_bindLocal_self same1.inv 857 (.unsigned .usize (8 * w))
-  have heap1 : (s1.bindLocal 857 (.unsigned .usize (8 * w))).heap = st.heap := same1.heap.trans heap0
-  have step1 : Step st (s1.bindLocal 857 (.unsigned .usize (8 * w))) :=
+  have inv1 := same1.inv.bindLocal 39 (.unsigned .usize (8 * w))
+  have x1 := local?_bindLocal_other (id := 39) (by decide) (.unsigned .usize (8 * w)) (local?_step same1.step locals1 x0)
+  have n1 := local?_bindLocal_self same1.inv 39 (.unsigned .usize (8 * w))
+  have heap1 : (s1.bindLocal 39 (.unsigned .usize (8 * w))).heap = st.heap := same1.heap.trans heap0
+  have step1 : Step st (s1.bindLocal 39 (.unsigned .usize (8 * w))) :=
     step0.trans (same1.step.trans (Step.bindLocal _ _ _))
-  generalize hq1 : s1.bindLocal 857 (.unsigned .usize (8 * w)) = q1 at b1 inv1 x1 n1 heap1 step1
+  generalize hq1 : s1.bindLocal 39 (.unsigned .usize (8 * w)) = q1 at b1 inv1 x1 n1 heap1 step1
   -- the allocation
   obtain ⟨_, v2, s3, s4, -, e2, b2, rfl⟩ := letLocal_inv b1
   obtain ⟨_, n, s5, al, s6, -, sz, alr, alloc⟩ := alloc_inv e2
@@ -85,7 +85,7 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
     obtain ⟨_, s7, c7, -, first, -⟩ := sequence_inv b2
     obtain ⟨_, s8, x8, -, cond, branch⟩ := if_inv first
     obtain ⟨_, l, s9, r, -, lr, rr, op⟩ := binary_inv (by decide) (by decide) cond
-    obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self (st := { q1 with heap := q1.heap }) inv1 904 _) lr
+    obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self (st := { q1 with heap := q1.heap }) inv1 86 _) lr
     obtain ⟨rfl, rfl⟩ := value_inv rr
     rw [toCore_target', pointer_equal, Except.ok.injEq, Value.boolean.injEq] at op
     subst op
@@ -108,10 +108,10 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   have unique1 : HeapBlockBasesUnique H1 := by
     rw [hH]; exact Memory.Heap.allocatedBytes_unique inv1.below inv1.unique (by decide)
   have inv2 : Inv { q1 with heap := H1 } := ⟨inv1.views, inv1.fresh, below1, unique1⟩
-  have inv3 := inv2.bindLocal 904 (.pointer a)
-  have ptr := local?_bindLocal_self inv2 904 (.pointer a)
-  have x3 := local?_bindLocal_other (id := 904) (by decide) (.pointer a)
-    (show ({ q1 with heap := H1 } : State).local? 827 = some x from x1)
+  have inv3 := inv2.bindLocal 86 (.pointer a)
+  have ptr := local?_bindLocal_self inv2 86 (.pointer a)
+  have x3 := local?_bindLocal_other (id := 86) (by decide) (.pointer a)
+    (show ({ q1 with heap := H1 } : State).local? 9 = some x from x1)
   -- the null check
   obtain ⟨_, s7, c7, -, first, rest⟩ := sequence_inv b2
   obtain ⟨_, s8, x8, -, cond, branch⟩ := if_inv first
@@ -130,13 +130,13 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   obtain ⟨w', hw', -, rfl, same3, locals3⟩ := slice_call sliceFound el inv3 (fun h => local_eval ptr h) call3
   rw [hw, Option.some.injEq] at hw'
   subst hw'
-  have inv4 := same3.inv.bindLocal 1021 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
-  have view4 := local?_bindLocal_self same3.inv 1021 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
-  have x4 := local?_bindLocal_other (id := 1021) (by decide) (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
+  have inv4 := same3.inv.bindLocal 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
+  have view4 := local?_bindLocal_self same3.inv 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
+  have x4 := local?_bindLocal_other (id := 203) (by decide) (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
     (local?_step same3.step locals3 x3)
-  have ptr4 := local?_bindLocal_other (id := 1021) (by decide) (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
+  have ptr4 := local?_bindLocal_other (id := 203) (by decide) (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)
     (local?_step same3.step locals3 ptr)
-  have heap4 : (s10.bindLocal 1021 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)).heap = H1 := same3.heap
+  have heap4 : (s10.bindLocal 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)).heap = H1 := same3.heap
   -- the write
   obtain ⟨_, s12, c12, -, first4, rest4⟩ := sequence_inv b3
   obtain ⟨_, u, -, asg, rfl⟩ := expression_inv first4
@@ -156,15 +156,15 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   simp only [pure, Except.pure, Except.ok.injEq] at wrapped
   subst wrapped
   simp only [Semantics.ResolvedPlace.viewFreeRootWrite, raw, Option.isNone_some, Bool.false_and,
-    Bool.false_eq_true, if_false, syncFrom_ok (st := { (s10.bindLocal 1021 _) with heap := H2 }) inv4.views,
+    Bool.false_eq_true, if_false, syncFrom_ok (st := { (s10.bindLocal 203 _) with heap := H2 }) inv4.views,
     Except.ok.injEq] at synced
   subst synced
   -- the returned box
   obtain ⟨_, rv', -, sv, rfl⟩ := return_inv rest4
   obtain ⟨_, vs, -, es, rfl⟩ := structValue_inv sv
   obtain ⟨_, u1, s17, rest5, -, e17, es2, rfl⟩ := exprs_cons_inv es
-  obtain ⟨rfl, rfl⟩ := local_eval (show ({ (s10.bindLocal 1021 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1))
-    with heap := H2 } : State).local? 904 = some (.pointer a) from ptr4) e17
+  obtain ⟨rfl, rfl⟩ := local_eval (show ({ (s10.bindLocal 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1))
+    with heap := H2 } : State).local? 86 = some (.pointer a) from ptr4) e17
   obtain ⟨rfl, rfl⟩ := exprs_nil_inv es2
   simp only [CallResult] at result
   subst result
@@ -180,7 +180,7 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   -- the value's store
   have spec : NativeStoreSpec NativeLayout.maxDepth sp.toCore t.toCore x (8 * w) :=
     store_spec NativeLayout.maxDepth r (wordElement_wordType el) hw (Nat.le_refl _)
-  have readable : (s10.bindLocal 1021 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)).heap.Readable
+  have readable : (s10.bindLocal 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)).heap.Readable
       (a + 8 * w - 8 + 8 - 8 * w) (8 * w) := by
     rw [heap4, show a + 8 * w - 8 + 8 - 8 * w = a by omega]
     exact fun i lt => ⟨0, zeros i lt⟩
@@ -189,12 +189,12 @@ theorem boxed_sim {c : Nat} {t : SrcType} {id sizeOf slice panic : Nat} {values 
   subst write
   rw [heap4, show a + 8 * w - 8 + 8 - 8 * w = a by omega] at region
   have reads : HeapReads st.heap H2 := heap1 ▸ oldReads.writeRegionFresh inv1.below age region
-  have inv5 : Inv { (s10.bindLocal 1021 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)) with heap := H2 } :=
+  have inv5 : Inv { (s10.bindLocal 203 (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)) with heap := H2 } :=
     ⟨inv4.views, inv4.fresh, region.below below1, region.unique⟩
   refine ⟨?_, ((inv5.restore _).restore _).restore _, ⟨?_, reads⟩⟩
   · exact .box box hw pos room snap.read (VRel.mono reads r)
-  · exact step1.cells.trans ((Step.bindLocal { q1 with heap := H1 } 904 _).cells.trans
-      (same3.step.cells.trans (Step.bindLocal s10 1021 _).cells))
+  · exact step1.cells.trans ((Step.bindLocal { q1 with heap := H1 } 86 _).cells.trans
+      (same3.step.cells.trans (Step.bindLocal s10 203 _).cells))
 
 end
 

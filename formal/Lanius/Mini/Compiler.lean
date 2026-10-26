@@ -1,55 +1,77 @@
 module
 
-public import Lanius.Mini.Compiler.P0
-public import Lanius.Mini.Compiler.P1
-public import Lanius.Mini.Compiler.P2
-public import Lanius.Mini.Compiler.P3
-public import Lanius.Mini.Compiler.P4
-public import Lanius.Mini.Compiler.P5
-public import Lanius.Mini.Compiler.P6
-public import Lanius.Mini.Compiler.P7
-public import Lanius.Mini.Compiler.P8
-public import Lanius.Mini.Compiler.P9
-public import Lanius.Mini.Compiler.P10
-public import Lanius.Mini.Compiler.P11
-public import Lanius.Mini.Compiler.P12
-public import Lanius.Mini.Compiler.P13
-public import Lanius.Mini.Compiler.P14
-public import Lanius.Mini.Compiler.P15
-public import Lanius.Mini.Compiler.P16
-public import Lanius.Mini.Compiler.P17
-public import Lanius.Mini.Compiler.P18
-public import Lanius.Mini.Compiler.P19
-public import Lanius.Mini.Compiler.P20
-public import Lanius.Mini.Compiler.P21
-public import Lanius.Mini.Compiler.P22
-public import Lanius.Mini.Compiler.P23
-public import Lanius.Mini.Compiler.P24
-public import Lanius.Mini.Compiler.P25
-public import Lanius.Mini.Compiler.P26
-public import Lanius.Mini.Compiler.P27
-public import Lanius.Mini.Compiler.P28
-public import Lanius.Mini.Compiler.P29
-public import Lanius.Mini.Compiler.P30
-public import Lanius.Mini.Compiler.P31
-public import Lanius.Mini.Compiler.P32
-public import Lanius.Mini.Compiler.P33
-public import Lanius.Mini.Compiler.P34
-public import Lanius.Mini.Compiler.P35
-public import Lanius.Mini.Compiler.P36
-public import Lanius.Mini.Compiler.P37
-public import Lanius.Mini.Compiler.P38
-public import Lanius.Mini.Compiler.P39
-public import Lanius.Mini.Compiler.P40
-public import Lanius.Mini.Compiler.P41
-public import Lanius.Mini.Compiler.P42
-public import Lanius.Mini.Compiler.P43
-public import Lanius.Mini.Compiler.P44
-public import Lanius.Mini.Compiler.P45
-public import Lanius.Mini.Compiler.P46
-public import Lanius.Mini.Compiler.P47
-public import Lanius.Mini.Compiler.P48
-public import Lanius.Mini.Compiler.P49
+public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.Compiler.P.Lists_empty
+public import Lanius.Mini.Compiler.P.DivOp_size
+public import Lanius.Mini.Compiler.P.codeSize
+public import Lanius.Mini.Compiler.P.compileArgs
+public import Lanius.Mini.Compiler.P.arities
+public import Lanius.Mini.Compiler.P.pow2
+public import Lanius.Mini.Compiler.P.moduleExports
+public import Lanius.Mini.Compiler.P.importOk
+public import Lanius.Mini.Compiler.P.importsOk
+public import Lanius.Mini.Compiler.P.modulesOk
+public import Lanius.Mini.Compiler.P.moduleFirsts
+public import Lanius.Mini.Compiler.P.Instr_pieces
+public import Lanius.Mini.Compiler.P.compileModules
+public import Lanius.Mini.Compiler.P.render
+public import Lanius.Mini.Compiler.P.UintTy_mask
+public import Lanius.Mini.Compiler.P.UintTy_isWide
+public import Lanius.Mini.Compiler.P.lookup
+public import Lanius.Mini.Compiler.P.arithShiftRight
+public import Lanius.Mini.Compiler.P.equality
+public import Lanius.Mini.Compiler.P.conjunction
+public import Lanius.Mini.Compiler.P.lowerLocal
+public import Lanius.Mini.Compiler.P.copyBinding
+public import Lanius.Mini.Compiler.P.lowerTagged
+public import Lanius.Mini.Compiler.P.armScope
+public import Lanius.Mini.Compiler.P.assignFrom
+public import Lanius.Mini.Compiler.P.lowerMatchArms
+public import Lanius.Mini.Compiler.P.lowerCallSig
+public import Lanius.Mini.Compiler.P.consArgs
+public import Lanius.Mini.Compiler.P.shortCircuit
+public import Lanius.Mini.Compiler.P.evalNot
+public import Lanius.Mini.Compiler.P.evalSame
+public import Lanius.Mini.Compiler.P.matchDst
+public import Lanius.Mini.Compiler.P.matchVariants
+public import Lanius.Mini.Compiler.P.lowerSetValues
+public import Lanius.Mini.Compiler.P.lowerSetCallArgs
+public import Lanius.Mini.Compiler.P.lowerReturn
+public import Lanius.Mini.Compiler.P.lowerAddress
+public import Lanius.Mini.Compiler.P.structFields
+public import Lanius.Mini.Compiler.P.enumVariants
+public import Lanius.Mini.Compiler.P.usizeWidth
+public import Lanius.Mini.Compiler.P.wordWidth
+public import Lanius.Mini.Compiler.P.wordElement
+public import Lanius.Mini.Compiler.P.widthOf
+public import Lanius.Mini.Compiler.P.elementBase
+public import Lanius.Mini.Compiler.P.iteThen
+public import Lanius.Mini.Compiler.P.storeType
+public import Lanius.Mini.Compiler.P.indexOf
+public import Lanius.Mini.Compiler.P.lowerLoadType
+public import Lanius.Mini.Compiler.P.storeEvalWord
+public import Lanius.Mini.Compiler.P.sigs
+public import Lanius.Mini.Compiler.P.lowerBody
+public import Lanius.Mini.Compiler.P.declareFuncs
+public import Lanius.Mini.Compiler.P.declareProgram
+public import Lanius.Mini.Compiler.P.BinOp_folds
+public import Lanius.Mini.Compiler.P.Word_compute
+public import Lanius.Mini.Compiler.P.Word_narrows
+public import Lanius.Mini.Compiler.P.binaryConstant
+public import Lanius.Mini.Compiler.P.Expr_agrees
+public import Lanius.Mini.Compiler.P.assignAgrees
+public import Lanius.Mini.Compiler.P.callAgrees
+public import Lanius.Mini.Compiler.P.substAll
+public import Lanius.Mini.Compiler.P.Stmt_kills
+public import Lanius.Mini.Compiler.P.optKill
+public import Lanius.Mini.Compiler.P.optimizeNeg
+public import Lanius.Mini.Compiler.P.optimizeLeft
+public import Lanius.Mini.Compiler.P.optimizeIte
+public import Lanius.Mini.Compiler.P.compileOr
+public import Lanius.Mini.Compiler.P.compileSource
+public import Lanius.Mini.Compiler.P.Inline_arithOf
+public import Lanius.Mini.Compiler.P.Inline_lowerSetScalar
+public import Lanius.Mini.Compiler.P.Inline_branchAgrees
 
 /-! Generated by formal/tools/extract.py from formal/lani/mini/compiler.lani. Do not edit.
 
@@ -60,6 +82,6 @@ operations become `Lists.name` with a spec theorem). `usize` is `Nat`, `i32` is
 prelude's `plus`/`minus`/`times` panic instead of wrapping, so they are
 `+`/`-`/`*` on `Nat` for every run that returns.
 
-The definitions are in 50 parts, `.P0` on, in source order, whose bodies
+The definitions are in 71 parts, `.P0` on, in source order, whose bodies
 are hidden from other modules: a proof that unfolds one imports its part with
 `import all`, so that it is rebuilt only when that part changes. -/

@@ -141,22 +141,22 @@ theorem sizeOf_body {t : SrcType} (el : wordElement sp.decls t = true) (inv : In
     SrcType.toScalar, UintTy.toCore, slice, bv_zero] at run
   obtain ⟨_, v1, s1, s2, -, e1, b1, rfl⟩ := letLocal_inv run
   obtain ⟨rfl, rfl⟩ := value_inv e1
-  have inv1 := inv.bindLocal 2525 (.pointer 0)
+  have inv1 := inv.bindLocal 32 (.pointer 0)
   obtain ⟨_, v2, s3, s4, -, e2, b2, rfl⟩ := letLocal_inv b1
   obtain ⟨_, a, s5, n, s6, -, p2, n2, m2⟩ := typedSlice_inv e2
-  obtain ⟨ha, rfl⟩ := local_eval (local?_bindLocal_self inv 2525 _) p2
+  obtain ⟨ha, rfl⟩ := local_eval (local?_bindLocal_self inv 32 _) p2
   obtain ⟨hn, rfl⟩ := value_inv n2
   simp only [Value.pointer.injEq, Value.signed.injEq, true_and] at ha hn
   subst ha hn
   obtain ⟨w, hw, pos, -, rfl, rfl⟩ := map_inv kind m2
-  have inv2 := inv1.bindLocal 2551 (.rawSlice t.toCore 0 (Int.toNat 0))
+  have inv2 := inv1.bindLocal 58 (.rawSlice t.toCore 0 (Int.toNat 0))
   obtain ⟨_, v3, s7, s8, -, e3, b3, rfl⟩ := letLocal_inv b2
   obtain ⟨_, x3, stride, -, l3, hs, rfl⟩ := stride_inv e3
-  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv1 2551 _) l3
+  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv1 58 _) l3
   rw [stride_word kind hw, Option.some.injEq] at hs
   subst hs
-  have inv3 := inv2.bindLocal 2606 (.signed .isize (-((8 * w : Nat) : Int)))
-  have known := local?_bindLocal_self inv2 2606 (.signed .isize (-((8 * w : Nat) : Int)))
+  have inv3 := inv2.bindLocal 113 (.signed .isize (-((8 * w : Nat) : Int)))
+  have known := local?_bindLocal_self inv2 113 (.signed .isize (-((8 * w : Nat) : Int)))
   have most := valueWords_le kind hw
   simp only [NativeLayout.maxWords] at most
   obtain ⟨_, s10, c1, -, first, rest⟩ := sequence_inv b3
@@ -188,7 +188,7 @@ theorem sizeOf_body {t : SrcType} (el : wordElement sp.decls t = true) (inv : In
   rcases rest with ⟨bad, -⟩ | ⟨-, rfl, rfl⟩
   · cases bad
   refine ⟨w, hw, pos, most, rfl, ?_⟩
-  exact (((((Same.refl inv).bind 2525 _).bind 2551 _).bind 2606 _).restore _).restore _ |>.restore _
+  exact (((((Same.refl inv).bind 32 _).bind 58 _).bind 113 _).restore _).restore _ |>.restore _
 
 /-- A call of `size_of<t>()`: `8 * w`, the state's heap and locals as they were. -/
 theorem sizeOf_call {t : SrcType} {callee : Nat} {v : Value} (found : sp.funcs[callee]? = some (sizeOfFunc t))

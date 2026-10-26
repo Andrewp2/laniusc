@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Faithful.Rep
-public import Lanius.Mini.Source
+import Lanius.Mini.SourceCore
 
 @[expose] public section
 

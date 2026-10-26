@@ -118,7 +118,7 @@ register_option faithful.rounds : Nat := { defValue := 40, descr := "rounds befo
 register_option faithful.admitClose : Bool := { defValue := false, descr := "admit instead of closing (to time the rounds)" }
 
 register_option faithful.closeBudget : Nat := {
-  defValue := 30000, descr := "heartbeats (in thousands) for one closing step" }
+  defValue := 60000, descr := "heartbeats (in thousands) for one closing step" }
 
 /-- Run `x` with its own heartbeat budget: a closing step that fails costs
 at most that much. -/

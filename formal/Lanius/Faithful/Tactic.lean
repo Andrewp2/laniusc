@@ -151,20 +151,26 @@ elab "rep" : tactic => do
   unless ← repGoal 200 goal do throwError m!"rep: no representation{indentD (MessageData.ofGoal goal)}"
   replaceMainGoal []
 
-/-- A call hypothesis: callee, argument count. -/
-def callOf? (t : Expr) : MetaM (Option (Nat × Nat)) := do
+/-- A call hypothesis: the callee's name suffix (`{c}` for an index `c`,
+`_K` for an index variable `ix_K`), argument count. -/
+def callOf? (t : Expr) : MetaM (Option (String × Nat)) := do
   let t ← instantiateMVars t
   let some (_, lhs, _) := t.eq? | return none
   unless lhs.isAppOfArity ``pcall 5 do return none
   let args := lhs.getAppArgs
-  let some callee := (← whnfR args[3]!).rawNatLit? <|> args[3]!.nat? | return none
   let some (_, values) := args[4]!.listLit? | return none
-  return some (callee, values.length)
+  if let .fvar id := args[3]! then
+    let name := (← id.getUserName).toString
+    if name.startsWith "ix_" then return some ((name.drop 2).toString, values.length)
+    return none
+  let some callee := (← whnfR args[3]!).rawNatLit? <|> args[3]!.nat? | return none
+  return some (toString callee, values.length)
 
 /-- Apply the certificates of the calls whose argument premises hold. A call
 of `c` uses the hypothesis `ih{c}` if there is one (a call within the
 function's recursive group), or `ext{c}` (a callee's certificate the proof
-takes as a hypothesis), else the theorem `cert{c}` of `ns`. -/
+takes as a hypothesis), else the theorem `cert{c}` of `ns`; a call of an index
+variable `ix_K`, `ih_K` or `ext_K`. -/
 partial def certsLoop (ns : Name) : TacticM Unit := do
   let mut progress := true
   while progress do
@@ -182,7 +188,10 @@ partial def certsLoop (ns : Name) : TacticM Unit := do
         let local? := (← getLCtx).findFromUserName? (Name.mkSimple s!"ih{c}") <|>
           (← getLCtx).findFromUserName? (Name.mkSimple s!"ext{c}")
         let fn : Term ← match local? with
-          | some d => pure ⟨mkIdent d.userName⟩
+          | some d =>
+            if (← whnfR (← instantiateMVars d.type)).isAppOf `Lanius.Faithful.Certified then
+              `(term| $(mkIdent d.userName).out)
+            else pure ⟨mkIdent d.userName⟩
           | none => pure ⟨mkIdent (ns ++ Name.mkSimple s!"cert{c}")⟩
         let h ← `(term| $(⟨mkIdent (← fvar.getUserName)⟩))
         let mut app ← `(term| $fn $h)

@@ -1,6 +1,8 @@
 module
 
-public import Lanius.Mini.Grows
+public import Lanius.Semantics
+public import Lanius.Mini.Compiler.Types
+public import Lanius.Mini.SourceCore
 
 @[expose] public section
 

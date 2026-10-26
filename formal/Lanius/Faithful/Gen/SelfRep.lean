@@ -1,7 +1,7 @@
 module
 
 public import Lanius.Faithful.Rep
-public import Lanius.Mini.Frontend
+public import Lanius.Mini.Frontend.Types
 public import Lanius.Faithful.Gen.SelfTypes
 
 @[expose] public section
@@ -597,8 +597,8 @@ inductive RepLocalTy : Lanius.Mini.LocalTy → Value → Prop where
       RepNat x0 v0 → RepSrcType x1 v1 → RepLocalTy (Lanius.Mini.LocalTy.mk x0 x1) (.structure 184 [v0, v1])
 
 inductive RepFrontEnv : Lanius.Mini.FrontEnv → Value → Prop where
-  | c0 {x0 : Lanius.Mini.Decls} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : List Lanius.Mini.Ty} {x4 : List (List Nat)} {x5 : Option Lanius.Mini.Ty} {v0 v1 v2 v3 v4 v5 : Value} :
-      RepDecls x0 v0 → (RepList 42 (RepList 9 RepNat)) x1 v1 → (RepList 42 (RepList 9 RepNat)) x2 v2 → (RepList 117 RepTy) x3 v3 → (RepList 42 (RepList 9 RepNat)) x4 v4 → (RepOption 167 RepTy) x5 v5 → RepFrontEnv (Lanius.Mini.FrontEnv.mk x0 x1 x2 x3 x4 x5) (.structure 186 [v0, v1, v2, v3, v4, v5])
+  | c0 {x0 : Lanius.Mini.Decls} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : List Lanius.Mini.Ty} {x4 : List (List Nat)} {x5 : Option Lanius.Mini.Ty} {x6 : Nat} {v0 v1 v2 v3 v4 v5 v6 : Value} :
+      RepDecls x0 v0 → (RepList 42 (RepList 9 RepNat)) x1 v1 → (RepList 42 (RepList 9 RepNat)) x2 v2 → (RepList 117 RepTy) x3 v3 → (RepList 42 (RepList 9 RepNat)) x4 v4 → (RepOption 167 RepTy) x5 v5 → RepNat x6 v6 → RepFrontEnv (Lanius.Mini.FrontEnv.mk x0 x1 x2 x3 x4 x5 x6) (.structure 186 [v0, v1, v2, v3, v4, v5, v6])
 
 inductive RepPlace : Lanius.Mini.Place → Value → Prop where
   | c0 {x0 : Nat} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 : Value} :
@@ -708,10 +708,6 @@ attribute [rep_rule] RepArity.c0 RepTyped.c0 RepEvaluated.c0 RepFact.c0 RepEvalu
 attribute [rep_rule] RepPlace.c0 RepFields.c0 RepLocal.c0 RepMParams.c0 RepSplit.c0 RepCalled.c0 RepLetHead.c0 RepLetHead.c1
 attribute [rep_rule] RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepPathRef.c0
 attribute [rep_rule] RepVariantAt.c0 RepBind.c0 RepFound.c0 RepEffArm.c0 RepVariantTy.c0 RepArgsBound.c0 RepBound.c0
-
-def prims : Prims :=
-  { boxed := [53, 54, 55, 67, 105, 109, 121, 166, 221, 228, 253, 270, 329, 344, 345, 346, 347, 349, 351, 373, 378, 392, 515, 559, 593, 594, 721, 725, 727, 754, 755, 763, 802, 817, 864, 866, 908, 926, 928, 931, 1019, 1023, 1042, 1043, 1127, 1142, 1155, 1159, 1216, 1397, 1560, 1614, 1645, 1666],
-    unbox := [18, 20, 59, 63, 68, 75, 106, 110, 124, 143, 145, 169, 223, 225, 278, 315, 319, 325, 330, 335, 348, 350, 354, 369, 385, 406, 408, 546, 551, 552, 596, 600, 601, 609, 623, 652, 666, 670, 747, 748, 804, 823, 923, 925, 959, 1025, 1098, 1129, 1135, 1429, 1513, 1606, 1613, 1642] }
 
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 6 := rfl
 @[pure_rule] theorem ty2_typeId : ty2.typeId = 7 := rfl

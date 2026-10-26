@@ -199,26 +199,26 @@ def PureProg (sp : SrcProgram) (prims : Prims) (outside : List Nat) : Prop :=
 def sizeOfFunc (t : SrcType) : SrcFunc where
   params := []
   ret := .uint .usize
-  body := .let 2525 .ptr .null (.letSlice 2551 t (.local 2525) (.int 0) (.letEval 2606 .isize (.eStride 2551)
-    (.then (.if (.apply .less (.local 2606) (.cast .isize (.int 0)))
-        (.return (.cast (.uint .usize) (.apply .minus (.cast .isize (.int 0)) (.local 2606)))) .nop)
-      (.return (.cast (.uint .usize) (.local 2606))))))
+  body := .let 32 .ptr .null (.letSlice 58 t (.local 32) (.int 0) (.letEval 113 .isize (.eStride 58)
+    (.then (.if (.apply .less (.local 113) (.cast .isize (.int 0)))
+        (.return (.cast (.uint .usize) (.apply .minus (.cast .isize (.int 0)) (.local 113)))) .nop)
+      (.return (.cast (.uint .usize) (.local 113))))))
 
 /-- `typed_slice_from_storage<T>(storage, len)`: a view whose element 0 is the
 storage's last word for a downward stride. -/
 def sliceFunc (t : SrcType) : SrcFunc where
-  params := [{ id := 3284, ty := .ptr }, { id := 3298, ty := .i32 }]
+  params := [{ id := 28, ty := .ptr }, { id := 42, ty := .i32 }]
   ret := .slice t
-  body := .then (.assert (.ePure (.apply .greaterEq (.local 3298) (.int 0))))
-    (.let 3353 .ptr .null (.letSlice 3379 t (.local 3353) (.int 0) (.letEval 3434 .isize (.eStride 3379)
-      (.then (.if (.apply .logicalOr (.apply .greaterEq (.local 3434) (.cast .isize (.int 0)))
-            (.apply .equal (.local 3298) (.int 0)))
-          (.letSlice 3524 t (.local 3284) (.local 3298) (.return (.local 3524))) .nop)
-        (.let 3577 (.uint .usize) (.apply .minus (.apply .times
-            (.cast (.uint .usize) (.apply .minus (.cast .isize (.int 0)) (.local 3434)))
-            (.cast (.uint .usize) (.local 3298))) (.unsigned .usize 8))
-          (.letSlice 3650 t (.apply .plus (.local 3284) (.local 3577)) (.local 3298)
-            (.return (.local 3650))))))))
+  body := .then (.assert (.ePure (.apply .greaterEq (.local 42) (.int 0))))
+    (.let 97 .ptr .null (.letSlice 123 t (.local 97) (.int 0) (.letEval 178 .isize (.eStride 123)
+      (.then (.if (.apply .logicalOr (.apply .greaterEq (.local 178) (.cast .isize (.int 0)))
+            (.apply .equal (.local 42) (.int 0)))
+          (.letSlice 268 t (.local 28) (.local 42) (.return (.local 268))) .nop)
+        (.let 321 (.uint .usize) (.apply .minus (.apply .times
+            (.cast (.uint .usize) (.apply .minus (.cast .isize (.int 0)) (.local 178)))
+            (.cast (.uint .usize) (.local 42))) (.unsigned .usize 8))
+          (.letSlice 394 t (.apply .plus (.local 28) (.local 321)) (.local 42)
+            (.return (.local 394))))))))
 
 def panicFunc : SrcFunc where
   params := []
@@ -227,20 +227,20 @@ def panicFunc : SrcFunc where
 
 /-- `boxed<T>(value)` with the box struct `id`. -/
 def boxedFunc (t : SrcType) (id sizeOf slice panic : Nat) : SrcFunc where
-  params := [{ id := 827, ty := t }]
+  params := [{ id := 9, ty := t }]
   ret := .struct id [.ptr]
-  body := .letCall 857 (.uint .usize) sizeOf [] (.letAlloc 904 (.local 857) 3
-    (.then (.if (.apply .equal (.local 904) .null) (.discard (.eCall panic [])) .nop)
-      (.letCall 1021 (.slice t) slice [.local 904, .int 1]
-        (.then (.setIndex 1021 (.int 0) (.local 827))
-          (.returnEval (.eStruct (.struct id [.ptr]) [.ePure (.local 904)]))))))
+  body := .letCall 39 (.uint .usize) sizeOf [] (.letAlloc 86 (.local 39) 3
+    (.then (.if (.apply .equal (.local 86) .null) (.discard (.eCall panic [])) .nop)
+      (.letCall 203 (.slice t) slice [.local 86, .int 1]
+        (.then (.setIndex 203 (.int 0) (.local 9))
+          (.returnEval (.eStruct (.struct id [.ptr]) [.ePure (.local 86)]))))))
 
 /-- `unbox<T>(value)` with the box struct `id`. -/
 def unboxFunc (t : SrcType) (id slice : Nat) : SrcFunc where
-  params := [{ id := 1159, ty := .struct id [.ptr] }]
+  params := [{ id := 9, ty := .struct id [.ptr] }]
   ret := t
-  body := .letCall 1189 (.slice t) slice [.field 1159 0, .int 1]
-    (.returnEval (.eIndex 1189 (.ePure (.int 0))))
+  body := .letCall 39 (.slice t) slice [.field 9 0, .int 1]
+    (.returnEval (.eIndex 39 (.ePure (.int 0))))
 
 /-- Function `i` is `boxed<t>`, of the box struct `id`. -/
 def BoxedAt (sp : SrcProgram) (prims : Prims) (i : Nat) : Prop :=

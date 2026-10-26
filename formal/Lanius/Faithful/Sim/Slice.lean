@@ -46,7 +46,7 @@ variable {sp : SrcProgram} {k : Nat} {st st' : State} {c : Completion}
 
 /-- The body on storage `a` and length 1. -/
 theorem slice_body {t : SrcType} (el : wordElement sp.decls t = true) (inv : Inv st) {a : Nat}
-    (storage : st.local? 3284 = some (.pointer a)) (one : st.local? 3298 = some (.signed .i32 1))
+    (storage : st.local? 28 = some (.pointer a)) (one : st.local? 42 = some (.signed .i32 1))
     (run : execStmt k sp.toCore st (sliceFunc t).body.toCore = .done c st') :
     ∃ w, NativeLayout.valueWords? sp.toCore t.toCore = some w ∧ 0 < w ∧
       c = .returned (some (.rawSlice t.toCore ((a + (8 * w - 8)) % 2 ^ 64) 1)) ∧ Same st st' := by
@@ -64,25 +64,25 @@ theorem slice_body {t : SrcType} (el : wordElement sp.decls t = true) (inv : Inv
   -- the empty view and its stride
   obtain ⟨_, v1, s3, s4, -, e1, b1, rfl⟩ := letLocal_inv rest
   obtain ⟨rfl, rfl⟩ := value_inv e1
-  have inv1 := inv.bindLocal 3353 (.pointer 0)
+  have inv1 := inv.bindLocal 97 (.pointer 0)
   obtain ⟨_, v2, s5, s6, -, e2, b2, rfl⟩ := letLocal_inv b1
   obtain ⟨_, a0, s7, n0, s8, -, p2, n2, m2⟩ := typedSlice_inv e2
-  obtain ⟨ha, rfl⟩ := local_eval (local?_bindLocal_self inv 3353 _) p2
+  obtain ⟨ha, rfl⟩ := local_eval (local?_bindLocal_self inv 97 _) p2
   obtain ⟨hn, rfl⟩ := value_inv n2
   simp only [Value.pointer.injEq, Value.signed.injEq, true_and] at ha hn
   subst ha hn
   obtain ⟨w, hw, pos, -, rfl, rfl⟩ := map_inv kind m2
-  have inv2 := inv1.bindLocal 3379 (.rawSlice t.toCore 0 (Int.toNat 0))
+  have inv2 := inv1.bindLocal 123 (.rawSlice t.toCore 0 (Int.toNat 0))
   obtain ⟨_, v3, s9, s10, -, e3, b3, rfl⟩ := letLocal_inv b2
   obtain ⟨_, x3, stride, -, l3, hs, rfl⟩ := stride_inv e3
-  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv1 3379 _) l3
+  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv1 123 _) l3
   rw [stride_word kind hw, Option.some.injEq] at hs
   subst hs
-  have inv3 := inv2.bindLocal 3434 (.signed .isize (-((8 * w : Nat) : Int)))
-  have known := local?_bindLocal_self inv2 3434 (.signed .isize (-((8 * w : Nat) : Int)))
-  have one3 := local?_bindLocal_other (id := 3434) (by decide) (.signed .isize (-((8 * w : Nat) : Int)))
-    (local?_bindLocal_other (id := 3379) (by decide) (.rawSlice t.toCore 0 (Int.toNat 0))
-      (local?_bindLocal_other (id := 3353) (by decide) (.pointer 0) one))
+  have inv3 := inv2.bindLocal 178 (.signed .isize (-((8 * w : Nat) : Int)))
+  have known := local?_bindLocal_self inv2 178 (.signed .isize (-((8 * w : Nat) : Int)))
+  have one3 := local?_bindLocal_other (id := 178) (by decide) (.signed .isize (-((8 * w : Nat) : Int)))
+    (local?_bindLocal_other (id := 123) (by decide) (.rawSlice t.toCore 0 (Int.toNat 0))
+      (local?_bindLocal_other (id := 97) (by decide) (.pointer 0) one))
   have most := valueWords_le kind hw
   simp only [NativeLayout.maxWords] at most
   -- the branch for forward strides and empty views, not taken
@@ -139,29 +139,29 @@ theorem slice_body {t : SrcType} (el : wordElement sp.decls t = true) (inv : Inv
     simp only [Int.toNat_natCast, show Int.toNat 1 = 1 from rfl, Nat.mul_one]
     omega
   rw [offset] at b6
-  have inv4 := inv3.bindLocal 3577 (.unsigned .usize (8 * w - 8))
+  have inv4 := inv3.bindLocal 321 (.unsigned .usize (8 * w - 8))
   -- the view of the storage
   obtain ⟨_, v7, s21, s22, -, e7, b7, rfl⟩ := letLocal_inv b6
   obtain ⟨_, a1, s23, n1, s24, -, p7, n7, m7⟩ := typedSlice_inv e7
   obtain ⟨_, l11, s25, r11, -, l11r, r11r, op11⟩ := binary_inv (by decide) (by decide) p7
-  have storage4 := local?_bindLocal_other (id := 3577) (by decide) (.unsigned .usize (8 * w - 8))
-    (local?_bindLocal_other (id := 3434) (by decide) (.signed .isize (-((8 * w : Nat) : Int)))
-      (local?_bindLocal_other (id := 3379) (by decide) (.rawSlice t.toCore 0 (Int.toNat 0))
-        (local?_bindLocal_other (id := 3353) (by decide) (.pointer 0) storage)))
+  have storage4 := local?_bindLocal_other (id := 321) (by decide) (.unsigned .usize (8 * w - 8))
+    (local?_bindLocal_other (id := 178) (by decide) (.signed .isize (-((8 * w : Nat) : Int)))
+      (local?_bindLocal_other (id := 123) (by decide) (.rawSlice t.toCore 0 (Int.toNat 0))
+        (local?_bindLocal_other (id := 97) (by decide) (.pointer 0) storage)))
   obtain ⟨rfl, rfl⟩ := local_eval storage4 l11r
-  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv3 3577 _) r11r
+  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv3 321 _) r11r
   rw [toCore_target', pointer_add, Except.ok.injEq, Value.pointer.injEq] at op11
   subst op11
-  obtain ⟨hn1, rfl⟩ := local_eval (local?_bindLocal_other (id := 3577) (by decide) _ one3) n7
+  obtain ⟨hn1, rfl⟩ := local_eval (local?_bindLocal_other (id := 321) (by decide) _ one3) n7
   simp only [Value.signed.injEq, true_and] at hn1
   subst hn1
   obtain ⟨w', hw', -, -, rfl, rfl⟩ := map_inv kind m7
   rw [hw, Option.some.injEq] at hw'
   subst hw'
   obtain ⟨_, rv, -, rr, rfl⟩ := return_inv b7
-  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv4 3650 _) rr
+  obtain ⟨rfl, rfl⟩ := local_eval (local?_bindLocal_self inv4 394 _) rr
   refine ⟨w, hw, pos, rfl, ?_⟩
-  exact (((((((Same.refl inv).bind 3353 _).bind 3379 _).bind 3434 _).bind 3577 _).bind 3650 _).restore _
+  exact (((((((Same.refl inv).bind 97 _).bind 123 _).bind 178 _).bind 321 _).bind 394 _).restore _
     |>.restore _ |>.restore _ |>.restore _ |>.restore _)
 
 /-- A call of `typed_slice_from_storage<t>(p, 1)` on storage `a`: the view, the
@@ -185,12 +185,12 @@ theorem slice_call {t : SrcType} {callee : Nat} {p : Core.Expr} {a : Nat} {v : V
   have inv0 := Same.start inv (paramBindings (sliceFunc t).params [.pointer a, .signed .i32 1])
   have start : (({ st with locals := [] } : State).bindLocals
       (paramBindings (sliceFunc t).params [.pointer a, .signed .i32 1])) =
-      (({ st with locals := [] } : State).bindLocal 3284 (.pointer a)).bindLocal 3298 (.signed .i32 1) := rfl
-  have inv1 : Inv (({ st with locals := [] } : State).bindLocal 3284 (.pointer a)) := inv.clear.bindLocal _ _
+      (({ st with locals := [] } : State).bindLocal 28 (.pointer a)).bindLocal 42 (.signed .i32 1) := rfl
+  have inv1 : Inv (({ st with locals := [] } : State).bindLocal 28 (.pointer a)) := inv.clear.bindLocal _ _
   rw [start] at body inv0
   obtain ⟨w, hw, pos, rfl, same⟩ := slice_body el inv0
-    (local?_bindLocal_other (id := 3298) (by decide) _ (local?_bindLocal_self inv.clear 3284 _))
-    (local?_bindLocal_self inv1 3298 _) body
+    (local?_bindLocal_other (id := 42) (by decide) _ (local?_bindLocal_self inv.clear 28 _))
+    (local?_bindLocal_self inv1 42 _) body
   refine ⟨w, hw, pos, result, ?_, rfl⟩
   have := Same.call (st := st) (completed := completed) (paramBindings (sliceFunc t).params [.pointer a, .signed .i32 1])
   rw [start] at this

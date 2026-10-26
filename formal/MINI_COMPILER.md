@@ -801,7 +801,8 @@ concrete tree. It rejects anything outside the front pass's subset, and it
 resolves names to numbers:
 - a function is its position among the functions;
 - a struct or enum is its position among the type declarations;
-- a local is the byte offset of its binding.
+- a local is the byte offset of its binding from the function's name (so an
+  edit to one function renumbers no other function's locals).
 
 With generics these positions are positions in the instance tables (see
 below). `sourceProgramFiles` takes several files, each a module, the
@@ -1075,7 +1076,7 @@ as expected, 48/48 mutants rejected; `--generic` seed 29, 200 programs,
 
 `return slice_from_raw_parts(p, n);` in a function whose result is a slice
 reads as a slice local and its return,
-`LetSlice(id, el, p, n, Return(Local(id)))`; `id` is the byte offset of the
+`LetSlice(id, el, p, n, Return(Local(id)))`; `id` is the offset of the
 value's first token, which no binding has. An integer literal whose expected
 type is unsigned is now `Unsigned(u, n)` (the `8` in
 `(length as usize) - 8`). So `typed_slice_from_storage` and
@@ -1292,10 +1293,15 @@ generated file. This replaced an earlier prelude on `std::vec::Vec<T>` whose
 operations were loops that copied, so their Lean meaning was trusted.
 
 `formal/tools/extract.py` turns everything after the prelude into
-`Lanius/Mini/Compiler.lean`, a Lean module importing the parts
-`Lanius/Mini/Compiler/P*.lean` (8 definitions each, bodies hidden from other
-modules; a module that unfolds them lists them between `-- import all:
-Lanius.Mini.Compiler` and `-- end import all`, which the extractor rewrites):
+`Lanius/Mini/Compiler.lean`, a Lean module importing the types
+(`Compiler/Types.lean`) and the parts `Lanius/Mini/Compiler/P/<first
+definition>.lean` (about 8 definitions each, the boundaries chosen by a hash
+of the names so that adding a definition changes one part; bodies hidden from
+other modules, and a part imports the parts its bodies name privately, so a
+new definition does not rebuild what imports those). A module that unfolds
+them lists them between `-- import all: Lanius.Mini.Compiler` and `-- end
+import all`, and one that names them in its statements lists the names after
+`-- import parts: Lanius.Mini.Compiler`; the extractor rewrites both blocks:
 
 ```bash
 python3 formal/tools/extract.py formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean
