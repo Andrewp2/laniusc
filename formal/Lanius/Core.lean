@@ -1,4 +1,8 @@
-import Lanius.Basic
+module
+
+public import Lanius.Basic
+
+@[expose] public section
 
 namespace Lanius.Core
 

@@ -1,5 +1,9 @@
-import Lanius.Faithful.Pure
-import Lanius.Faithful.Attr
+module
+
+public import Lanius.Faithful.Pure
+public import Lanius.Faithful.Attr
+
+public meta section
 
 /-! Tactics for the extraction certificates.
 

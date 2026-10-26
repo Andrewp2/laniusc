@@ -1,5 +1,61 @@
-import Lanius.Mini.Semantics
-import Lanius.Mini.Unsigned
+module
+
+public import Lanius.Mini.Semantics
+public import Lanius.Mini.Unsigned
+-- import all: Lanius.Mini.Compiler
+import all Lanius.Mini.Compiler.P0
+import all Lanius.Mini.Compiler.P1
+import all Lanius.Mini.Compiler.P2
+import all Lanius.Mini.Compiler.P3
+import all Lanius.Mini.Compiler.P4
+import all Lanius.Mini.Compiler.P5
+import all Lanius.Mini.Compiler.P6
+import all Lanius.Mini.Compiler.P7
+import all Lanius.Mini.Compiler.P8
+import all Lanius.Mini.Compiler.P9
+import all Lanius.Mini.Compiler.P10
+import all Lanius.Mini.Compiler.P11
+import all Lanius.Mini.Compiler.P12
+import all Lanius.Mini.Compiler.P13
+import all Lanius.Mini.Compiler.P14
+import all Lanius.Mini.Compiler.P15
+import all Lanius.Mini.Compiler.P16
+import all Lanius.Mini.Compiler.P17
+import all Lanius.Mini.Compiler.P18
+import all Lanius.Mini.Compiler.P19
+import all Lanius.Mini.Compiler.P20
+import all Lanius.Mini.Compiler.P21
+import all Lanius.Mini.Compiler.P22
+import all Lanius.Mini.Compiler.P23
+import all Lanius.Mini.Compiler.P24
+import all Lanius.Mini.Compiler.P25
+import all Lanius.Mini.Compiler.P26
+import all Lanius.Mini.Compiler.P27
+import all Lanius.Mini.Compiler.P28
+import all Lanius.Mini.Compiler.P29
+import all Lanius.Mini.Compiler.P30
+import all Lanius.Mini.Compiler.P31
+import all Lanius.Mini.Compiler.P32
+import all Lanius.Mini.Compiler.P33
+import all Lanius.Mini.Compiler.P34
+import all Lanius.Mini.Compiler.P35
+import all Lanius.Mini.Compiler.P36
+import all Lanius.Mini.Compiler.P37
+import all Lanius.Mini.Compiler.P38
+import all Lanius.Mini.Compiler.P39
+import all Lanius.Mini.Compiler.P40
+import all Lanius.Mini.Compiler.P41
+import all Lanius.Mini.Compiler.P42
+import all Lanius.Mini.Compiler.P43
+import all Lanius.Mini.Compiler.P44
+import all Lanius.Mini.Compiler.P45
+import all Lanius.Mini.Compiler.P46
+import all Lanius.Mini.Compiler.P47
+import all Lanius.Mini.Compiler.P48
+import all Lanius.Mini.Compiler.P49
+-- end import all
+
+@[expose] public section
 
 /-! Core's `<<` and `>>` as the mini IR's shifts. Core traps on an amount
 outside the type's bits, so a shift that returns has an amount below the

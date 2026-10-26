@@ -1,4 +1,8 @@
-import Lanius.Core
+module
+
+public import Lanius.Core
+
+@[expose] public section
 
 namespace Lanius.NativeLayout
 

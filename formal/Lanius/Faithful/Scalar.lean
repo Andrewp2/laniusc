@@ -1,5 +1,9 @@
-import Lanius.Faithful.Rep
-import Lanius.Mini.Source
+module
+
+public import Lanius.Faithful.Rep
+public import Lanius.Mini.Source
+
+@[expose] public section
 
 /-! # Core's scalar operations on represented values
 

@@ -382,6 +382,10 @@ compiler that someone actually runs is one of these two:
    relates to Core. The certificates are partial: a run that does not
    return is not covered. Not yet done: the theorem that joins the driver,
    `call_sim` and the certificates into one statement about Core runs.
+   The extraction's and the sources' bodies are hidden from other Lean
+   modules (module system, for incremental checking); that changes only
+   what the elaborator may unfold, not what the kernel checks, and a proof
+   that needs a hidden body fails rather than passes.
 2. **The Lean build.** Run `#eval compileSource` or a compiled Lean
    executable. Extraction is then irrelevant, but Lean's code generator and
    runtime are trusted: GMP `Nat`, and the `@[extern]` and `implemented_by`

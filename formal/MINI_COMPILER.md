@@ -1292,7 +1292,10 @@ generated file. This replaced an earlier prelude on `std::vec::Vec<T>` whose
 operations were loops that copied, so their Lean meaning was trusted.
 
 `formal/tools/extract.py` turns everything after the prelude into
-`Lanius/Mini/Compiler.lean`:
+`Lanius/Mini/Compiler.lean`, a Lean module importing the parts
+`Lanius/Mini/Compiler/P*.lean` (8 definitions each, bodies hidden from other
+modules; a module that unfolds them lists them between `-- import all:
+Lanius.Mini.Compiler` and `-- end import all`, which the extractor rewrites):
 
 ```bash
 python3 formal/tools/extract.py formal/lani/mini/compiler.lani formal/Lanius/Mini/Compiler.lean

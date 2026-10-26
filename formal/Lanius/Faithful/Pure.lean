@@ -1,4 +1,8 @@
-import Lanius.Mini.Grows
+module
+
+public import Lanius.Mini.Grows
+
+@[expose] public section
 
 /-! # The pure meaning of a front-pass program
 

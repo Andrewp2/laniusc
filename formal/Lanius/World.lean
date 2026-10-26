@@ -1,4 +1,8 @@
-import Lanius.Memory
+module
+
+public import Lanius.Memory
+
+@[expose] public section
 
 namespace Lanius.World
 

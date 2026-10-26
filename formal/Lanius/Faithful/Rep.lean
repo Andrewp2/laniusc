@@ -1,4 +1,8 @@
-import Lanius.Faithful.Simp
+module
+
+public import Lanius.Faithful.Simp
+
+@[expose] public section
 
 /-! # Representations
 

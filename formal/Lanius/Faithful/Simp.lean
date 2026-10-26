@@ -1,4 +1,8 @@
-import Lanius.Faithful.Tactic
+module
+
+public import Lanius.Faithful.Tactic
+
+@[expose] public section
 
 /-! The rewrites that run the pure semantics on a body of known syntax,
 leaving only the calls (`pcall`), which the certificates of the callees
@@ -162,7 +166,7 @@ its unfolding compares the chain's binds head to head. -/
 
 attribute [pure_rule] Option.bind_none Option.map_none Option.bind_assoc Option.bind_fun_some
   Option.map_bind Option.bind_map Function.comp_def List.zip_cons_cons List.zip_nil_left List.map_cons List.map_nil
-  List.length_cons List.length_nil ite_true ite_false if_true if_false Option.some.injEq reduceCtorEq exists_eq_left
+  List.length_cons List.length_nil ite_true ite_false if_true if_false Option.some.injEq exists_eq_left
   exists_eq_right exists_and_left exists_and_right and_true true_and ne_eq not_false_eq_true decide_true
   decide_false List.cons.injEq and_self eq_self_iff_true decide_eq_true_eq decide_eq_false_iff_not
   Bool.not_eq_true Bool.not_eq_false Bool.not_eq_true' Bool.not_eq_false' Bool.not_not List.getElem?_cons_zero List.getElem?_cons_succ
@@ -187,13 +191,13 @@ attribute [pure_rule] BitVec.ofNat_eq_ofNat
 
 /-- Run the pure meaning of a body as far as its calls. -/
 macro "pure_simp" " at " h:ident : tactic => `(tactic|
-  simp only [pure_rule, pstmt, peff, peffs, pexpr, pexprs, paramEnv, paramBindings, applyOp, binary, unary, cast,
+  simp only [pure_rule, reduceCtorEq, pstmt, peff, peffs, pexpr, pexprs, paramEnv, paramBindings, applyOp, binary, unary, cast,
     SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore, SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod, Nat.reducePow,
     Nat.reduceBEq, Nat.reduceBNe] at $h:ident)
 
 /-- `pure_simp` on every hypothesis. -/
 macro "pure_simp_all" : tactic => `(tactic|
-  simp only [pure_rule, pstmt, peff, peffs, pexpr, pexprs, paramEnv, paramBindings, applyOp, binary, unary, cast,
+  simp only [pure_rule, reduceCtorEq, pstmt, peff, peffs, pexpr, pexprs, paramEnv, paramBindings, applyOp, binary, unary, cast,
     SrcOp.toCore, SrcDivOp.toCore, UintTy.toCore, SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff, Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod, Nat.reducePow,
     Nat.reduceBEq, Nat.reduceBNe] at *)
 

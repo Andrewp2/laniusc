@@ -1,6 +1,10 @@
-import Lanius.Memory
-import Lanius.NativeLayout
-import Lanius.World
+module
+
+public import Lanius.Memory
+public import Lanius.NativeLayout
+public import Lanius.World
+
+@[expose] public section
 
 namespace Lanius.Semantics
 
@@ -105,7 +109,7 @@ def State.bindLocal (state : State) (id : VarId) (value : Value) : State :=
 def State.bindUninitialized (state : State) (id : VarId) : State :=
   state.bindCell id none
 
-private def removeFirstLocal : List (VarId × CellId) → VarId → List (VarId × CellId)
+def removeFirstLocal : List (VarId × CellId) → VarId → List (VarId × CellId)
   | [], _ => []
   | binding :: rest, id =>
       if binding.1 == id then rest else binding :: removeFirstLocal rest id
@@ -113,7 +117,7 @@ private def removeFirstLocal : List (VarId × CellId) → VarId → List (VarId 
 def State.unbindLocal (state : State) (id : VarId) : State :=
   { state with locals := removeFirstLocal state.locals id }
 
-private theorem mem_removeFirstLocal
+theorem mem_removeFirstLocal
     (binding : VarId × CellId) (bindings : List (VarId × CellId)) (id : VarId) :
     binding ∈ removeFirstLocal bindings id → binding ∈ bindings := by
   induction bindings with
@@ -169,7 +173,7 @@ def wrapUnsigned (target : Target) (type : UnsignedIntTy) (value : Nat) : Nat :=
 def wrapUnsignedInt (target : Target) (type : UnsignedIntTy) (value : Int) : Nat :=
   Int.toNat (value % Int.ofNat (unsignedModulus target type))
 
-private def signedBits (target : Target) (type : SignedIntTy) (value : Int) : Nat :=
+def signedBits (target : Target) (type : SignedIntTy) (value : Int) : Nat :=
   Int.toNat (value % signedModulus target type)
 
 theorem signedBits_i32_nat (target : Target) (n : Nat) (bound : n < 2 ^ 32) :
@@ -234,7 +238,7 @@ def truncDiv (left right : Int) : Int :=
   let quotient := left.natAbs / right.natAbs
   if (left < 0) = (right < 0) then Int.ofNat quotient else -Int.ofNat quotient
 
-private def arithmeticShiftRight (value : Int) (amount : Nat) : Int :=
+def arithmeticShiftRight (value : Int) (amount : Nat) : Int :=
   let divisor : Int := Int.ofNat (2 ^ amount)
   if value >= 0 then value / divisor else -((-value + divisor - 1) / divisor)
 

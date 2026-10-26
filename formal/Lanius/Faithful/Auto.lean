@@ -1,4 +1,9 @@
-import Lanius.Faithful.Scalar
+module
+
+public import Lanius.Faithful.Scalar
+public meta import Lean
+
+public meta section
 
 /-! # `faithful`: a certificate's proof
 
@@ -418,7 +423,7 @@ def pureSimpEval : TacticM Unit := do
       if t.isAppOfArity ``LT.lt 4 then continue
       out := out.push d.fvarId
     return out
-  let stx ← `(tactic| simp (maxSteps := 2000000) only [pure_rule, pstmt, peff, peffs, pexpr, pexprs, paramEnv, Lanius.Mini.paramBindings,
+  let stx ← `(tactic| simp (maxSteps := 2000000) only [pure_rule, reduceCtorEq, pstmt, peff, peffs, pexpr, pexprs, paramEnv, Lanius.Mini.paramBindings,
     applyOp, binary, unary, cast, Lanius.Mini.SrcOp.toCore, Lanius.Mini.SrcDivOp.toCore, Lanius.Mini.UintTy.toCore,
     Lanius.Mini.SrcType.toScalar, Nat.reduceLT, Nat.reduceEqDiff,
     Nat.reduceAdd, Nat.reduceSub, Nat.reduceMul, Nat.reduceMod, Nat.reducePow, Nat.reduceBEq, Nat.reduceBNe])
