@@ -159,7 +159,8 @@ def callOf? (t : Expr) : MetaM (Option (Nat × Nat)) := do
 
 /-- Apply the certificates of the calls whose argument premises hold. A call
 of `c` uses the hypothesis `ih{c}` if there is one (a call within the
-function's recursive group), else the theorem `cert{c}` of `ns`. -/
+function's recursive group), or `ext{c}` (a callee's certificate the proof
+takes as a hypothesis), else the theorem `cert{c}` of `ns`. -/
 partial def certsLoop (ns : Name) : TacticM Unit := do
   let mut progress := true
   while progress do
@@ -174,7 +175,8 @@ partial def certsLoop (ns : Name) : TacticM Unit := do
     for (_, fvar, c, k) in calls do
       let goal ← getMainGoal
       let ok ← goal.withContext do
-        let local? := (← getLCtx).findFromUserName? (Name.mkSimple s!"ih{c}")
+        let local? := (← getLCtx).findFromUserName? (Name.mkSimple s!"ih{c}") <|>
+          (← getLCtx).findFromUserName? (Name.mkSimple s!"ext{c}")
         let fn : Term ← match local? with
           | some d => pure ⟨mkIdent d.userName⟩
           | none => pure ⟨mkIdent (ns ++ Name.mkSimple s!"cert{c}")⟩

@@ -1094,7 +1094,7 @@ def addInsts (table : List Inst) (new : List Inst) : List Inst :=
   | x :: rest => addInsts (addInst table x) rest
 
 /-- Where a type expression is read: the declarations, the module, and the type parameters in scope with their types; the spellings a local may not take; and, in a function body, its result type. -/
-structure Env where
+structure FrontEnv where
   decls : Decls
   home : List (List Nat)
   names : List (List Nat)
@@ -1103,8 +1103,8 @@ structure Env where
   ret : Option Ty
   deriving Repr
 
-def declEnv (decls : Decls) (home : List (List Nat)) (names : List (List Nat)) (subst : List Ty) : Env :=
-  ({ decls := decls, home := home, names := names, subst := subst, globals := [], ret := none } : Env)
+def declEnv (decls : Decls) (home : List (List Nat)) (names : List (List Nat)) (subst : List Ty) : FrontEnv :=
+  ({ decls := decls, home := home, names := names, subst := subst, globals := [], ret := none } : FrontEnv)
 
 /-- The variants spelled name among module m's enums (types counted from k). -/
 def variantsNamed (types : List TypeDecl) (m : List (List Nat)) (name : List Nat) (k : Nat) : List VariantAt :=
@@ -1137,7 +1137,7 @@ def onlyVariant (vs : List VariantAt) : Option VariantAt :=
     | w :: more => none
 
 /-- A bare variant name: the one enum of the current module that has it, or else the one enum of the imported modules that has it. -/
-def bareVariant (env : Env) (name : List Nat) : Option VariantAt :=
+def bareVariant (env : FrontEnv) (name : List Nat) : Option VariantAt :=
   match variantsNamed env.decls.types env.home name 0 with
   | [] => onlyVariant (importedVariants env.decls.types env.decls.imports env.home name)
   | v :: rest => onlyVariant (v :: rest)
@@ -1159,13 +1159,13 @@ def variantIn (types : List TypeDecl) (d : Option Nat) (name : List Nat) : Optio
     | some t => variantOfDecl t k name
 
 /-- `E::V` or `m::E::V`: the variant V of the enum E. -/
-def enumVariant (env : Env) (front : List (List Nat)) (name : List Nat) : Option VariantAt :=
+def enumVariant (env : FrontEnv) (front : List (List Nat)) (name : List Nat) : Option VariantAt :=
   match splitLast front with
   | none => none
   | some t => variantIn env.decls.types (findType env.decls.types (moduleOr env.home t.home) t.name 0) name
 
 /-- The variant a value path names: `V` (see bare_variant), `E::V` or `m::E::V` when the prefix names an enum, else `m::V`, the one enum of module m that has V. -/
-def variantByPath (env : Env) (s : Split) : Option VariantAt :=
+def variantByPath (env : FrontEnv) (s : Split) : Option VariantAt :=
   if noNames s.home then
     bareVariant env s.name
   else
@@ -1202,18 +1202,18 @@ def primTy (name : List Nat) : Option Ty :=
   | some t => srcTy t
 
 /-- The type a type parameter spelled name stands for. -/
-def paramTy (env : Env) (name : List Nat) : Option Ty :=
+def paramTy (env : FrontEnv) (name : List Nat) : Option Ty :=
   match position env.names name 0 with
   | none => none
   | some i => env.subst[i]?
 
 /-- The declaration a type path names: a path with no module part names a type of the current module. -/
-def typeDeclAt (env : Env) (segments : List (List Nat)) : Option Nat :=
+def typeDeclAt (env : FrontEnv) (segments : List (List Nat)) : Option Nat :=
   match splitLast segments with
   | none => none
   | some s => findType env.decls.types (moduleOr env.home s.home) s.name 0
 
-def arityOk (env : Env) (d : Nat) (args : List Ty) : Bool :=
+def arityOk (env : FrontEnv) (d : Nat) (args : List Ty) : Bool :=
   match env.decls.types[d]? with
   | none => false
   | some t => decide (t.params.length = args.length)
@@ -1224,23 +1224,23 @@ def namedChecked (ok : Bool) (d : Nat) (ts : List Ty) : Option Ty :=
   else
     none
 
-def namedArgs (env : Env) (d : Nat) (args : Option (List Ty)) : Option Ty :=
+def namedArgs (env : FrontEnv) (d : Nat) (args : Option (List Ty)) : Option Ty :=
   match args with
   | none => none
   | some ts => namedChecked (arityOk env d ts) d ts
 
-def namedOf (env : Env) (d : Option Nat) (args : Option (List Ty)) : Option Ty :=
+def namedOf (env : FrontEnv) (d : Option Nat) (args : Option (List Ty)) : Option Ty :=
   match d with
   | none => none
   | some x => namedArgs env x args
 
-def primOrNamed (env : Env) (segments : List (List Nat)) (n : List Nat) : Option Ty :=
+def primOrNamed (env : FrontEnv) (segments : List (List Nat)) (n : List Nat) : Option Ty :=
   match primTy n with
   | some t => some t
   | none => namedOf env (typeDeclAt env segments) (some [])
 
 /-- A type without arguments: a type parameter, a primitive type or a declared type. -/
-def bareTy (env : Env) (segments : List (List Nat)) : Option Ty :=
+def bareTy (env : FrontEnv) (segments : List (List Nat)) : Option Ty :=
   match singleName segments with
   | none => namedOf env (typeDeclAt env segments) (some [])
   | some n =>
@@ -1248,7 +1248,7 @@ def bareTy (env : Env) (segments : List (List Nat)) : Option Ty :=
     | some t => some t
     | none => primOrNamed env segments n
 
-def bareOf (env : Env) (segments : Option (List (List Nat))) : Option Ty :=
+def bareOf (env : FrontEnv) (segments : Option (List (List Nat))) : Option Ty :=
   match segments with
   | none => none
   | some ss => bareTy env ss
@@ -1271,7 +1271,7 @@ def consTy (head : Option Ty) (tail : Option (List Ty)) : Option (List Ty) :=
 mutual
 
 /-- The type a type expression names: `[T]`, a type parameter, a primitive type, or a declared type with its arguments. -/
-def tyOf (fuel : Nat) (env : Env) (t : CTree) : Option Ty :=
+def tyOf (fuel : Nat) (env : FrontEnv) (t : CTree) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -1288,7 +1288,7 @@ def tyOf (fuel : Nat) (env : Env) (t : CTree) : Option Ty :=
         else
           none
 
-def appliedOf (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) (items : Option (List CTree)) : Option Ty :=
+def appliedOf (fuel : Nat) (env : FrontEnv) (segments : Option (List (List Nat))) (items : Option (List CTree)) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -1303,7 +1303,7 @@ def appliedOf (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) (it
         | none => aliasTy (fuel - 1) env ss (argsTys (fuel - 1) env gs)
 
 /-- A type path without arguments: a type parameter, a primitive or declared type, or else a type alias. -/
-def bareOrAlias (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) : Option Ty :=
+def bareOrAlias (fuel : Nat) (env : FrontEnv) (segments : Option (List (List Nat))) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -1315,7 +1315,7 @@ def bareOrAlias (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) :
       | none => aliasTy (fuel - 1) env ss (some [])
 
 /-- The type alias a path names, at type arguments: its type, read in the alias's module with its parameters standing for the arguments. -/
-def aliasTy (fuel : Nat) (env : Env) (segments : List (List Nat)) (args : Option (List Ty)) : Option Ty :=
+def aliasTy (fuel : Nat) (env : FrontEnv) (segments : List (List Nat)) (args : Option (List Ty)) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -1339,7 +1339,7 @@ def aliasAt (fuel : Nat) (decls : Decls) (a : AliasDecl) (ts : List Ty) : Option
       none
 
 /-- The types of generic arguments (generic_argument_type). -/
-def argsTys (fuel : Nat) (env : Env) (items : List CTree) : Option (List Ty) :=
+def argsTys (fuel : Nat) (env : FrontEnv) (items : List CTree) : Option (List Ty) :=
   if fuel = 0 then
     none
   else
@@ -1347,7 +1347,7 @@ def argsTys (fuel : Nat) (env : Env) (items : List CTree) : Option (List Ty) :=
     | [] => some []
     | g :: rest => consTy (argTy (fuel - 1) env g) (argsTys (fuel - 1) env rest)
 
-def argTy (fuel : Nat) (env : Env) (g : CTree) : Option Ty :=
+def argTy (fuel : Nat) (env : FrontEnv) (g : CTree) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -1357,7 +1357,7 @@ def argTy (fuel : Nat) (env : Env) (g : CTree) : Option Ty :=
       none
 
 /-- The types of a list of type expressions. -/
-def tyList (fuel : Nat) (env : Env) (ts : List CTree) : Option (List Ty) :=
+def tyList (fuel : Nat) (env : FrontEnv) (ts : List CTree) : Option (List Ty) :=
   if fuel = 0 then
     none
   else
@@ -1377,7 +1377,7 @@ def consTys (head : Option (List Ty)) (tail : Option (List (List Ty))) : Option 
   | none => none
   | some t => consTysTail t tail
 
-def payloadList (fuel : Nat) (env : Env) (ps : List (List CTree)) : Option (List (List Ty)) :=
+def payloadList (fuel : Nat) (env : FrontEnv) (ps : List (List CTree)) : Option (List (List Ty)) :=
   match ps with
   | [] => some []
   | p :: rest => consTys (tyList fuel env p) (payloadList fuel env rest)
@@ -1708,7 +1708,7 @@ def findLocalId (scope : List Local) (id : Nat) : Option Local :=
       findLocalId rest id
 
 /-- A primary `name` (ident -> path ident_plain) or `self`: a local. -/
-def localOf (env : Env) (scope : List Local) (c : CTree) : Option Local :=
+def localOf (env : FrontEnv) (scope : List Local) (c : CTree) : Option Local :=
   if decide (nodeProd c = (173)) && decide (nodeProd (kid c 1) = (274)) then
     match pathName (kid c 0) with
     | none => none
@@ -1730,7 +1730,7 @@ def fieldIn (entry : Option TypeDecl) (name : List Nat) : Option Nat :=
   | some e => position e.fields name 0
 
 /-- The field index of member in the struct type t. -/
-def fieldIndex (env : Env) (t : Ty) (name : List Nat) : Option Nat :=
+def fieldIndex (env : FrontEnv) (t : Ty) (name : List Nat) : Option Nat :=
   match t with
   | .tyI32 => none
   | .tyBool => none
@@ -1746,7 +1746,7 @@ def fieldExpr (id : Nat) (index : Option Nat) : Option SrcExpr :=
   | some j => some (SrcExpr.field id j)
 
 /-- `primary.member`: a field of a struct local. -/
-def memberOf (env : Env) (scope : List Local) (primary : CTree) (tail : CTree) : Option SrcExpr :=
+def memberOf (env : FrontEnv) (scope : List Local) (primary : CTree) (tail : CTree) : Option SrcExpr :=
   if decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd (kid tail 3) = (164)) then
     match localOf env scope primary with
     | none => none
@@ -1759,7 +1759,7 @@ def scalarOf (t : Option Ty) : Option SrcType :=
   | none => none
   | some x => scalarSrc x
 
-def namedScalar (fuel : Nat) (env : Env) (name : List Nat) : Option SrcType :=
+def namedScalar (fuel : Nat) (env : FrontEnv) (name : List Nat) : Option SrcType :=
   match paramTy env name with
   | some t => scalarSrc t
   | none =>
@@ -1768,7 +1768,7 @@ def namedScalar (fuel : Nat) (env : Env) (name : List Nat) : Option SrcType :=
     | some t => scalarSrc t
 
 /-- The type a cast names (cast_type -> one segment): a primitive type, a type parameter standing for one, or a type alias of the module naming one. -/
-def castTypeOf (fuel : Nat) (env : Env) (t : CTree) : Option SrcType :=
+def castTypeOf (fuel : Nat) (env : FrontEnv) (t : CTree) : Option SrcType :=
   let path : CTree := kid t 0
   if decide (nodeProd t = (310)) && decide (nodeProd path = (311)) && decide (nodeProd (kid path 0) = (312)) && decide (nodeProd (kid path 1) = (314)) then
     namedScalar fuel env (kidToken (kid path 0) 0).text
@@ -1786,7 +1786,7 @@ def castInto (t : Option SrcType) (e : Option SrcExpr) : Option SrcExpr :=
   | some ty => castValue ty e
 
 /-- `acc as T as U ...`: casts apply left to right. -/
-def casts (fuel : Nat) (env : Env) (acc : Option SrcExpr) (tail : CTree) : Option SrcExpr :=
+def casts (fuel : Nat) (env : FrontEnv) (acc : Option SrcExpr) (tail : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -1957,7 +1957,7 @@ def wideConst (t : Option Ty) (toks : List Token) : Option SrcExpr :=
 mutual
 
 /-- The expression a node of the expression grammar denotes. Calls, struct literals and match are statement forms, so they are not expressions here. -/
-def exprOf (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
+def exprOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2005,7 +2005,7 @@ def exprOf (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option Sr
                               none
 
 /-- A name: a local, or else a constant, whose literal value it is. -/
-def identExpr (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
+def identExpr (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2017,7 +2017,7 @@ def identExpr (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option
     else
       none
 
-def constRef (fuel : Nat) (env : Env) (segments : Option (List (List Nat))) : Option SrcExpr :=
+def constRef (fuel : Nat) (env : FrontEnv) (segments : Option (List (List Nat))) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2036,13 +2036,13 @@ def constValue (fuel : Nat) (decls : Decls) (k : ConstDecl) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
-    let cenv : Env := declEnv decls k.home [] []
+    let cenv : FrontEnv := declEnv decls k.home [] []
     match literalAs (tyOf (fuel - 1) cenv k.ty) (exprOf (fuel - 1) cenv [] k.value) with
     | some x => some x
     | none => wideConst (tyOf (fuel - 1) cenv k.ty) (treeTokens k.value)
 
 /-- assign -> orexpr assign_end, as a value. -/
-def assignValue (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Option SrcExpr :=
+def assignValue (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2052,7 +2052,7 @@ def assignValue (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) : Opti
       none
 
 /-- postfix -> primary postfix_tail, as a value: the primary, or a field. -/
-def postfixValue (fuel : Nat) (env : Env) (scope : List Local) (primary : CTree) (tail : CTree) : Option SrcExpr :=
+def postfixValue (fuel : Nat) (env : FrontEnv) (scope : List Local) (primary : CTree) (tail : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2065,7 +2065,7 @@ def postfixValue (fuel : Nat) (env : Env) (scope : List Local) (primary : CTree)
         none
 
 /-- acc op operand op operand ...: binary operators apply left to right. -/
-def fold (fuel : Nat) (env : Env) (scope : List Local) (acc : Option SrcExpr) (tail : CTree) : Option SrcExpr :=
+def fold (fuel : Nat) (env : FrontEnv) (scope : List Local) (acc : Option SrcExpr) (tail : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2074,7 +2074,7 @@ def fold (fuel : Nat) (env : Env) (scope : List Local) (acc : Option SrcExpr) (t
     else
       acc
 
-def foldOp (fuel : Nat) (env : Env) (scope : List Local) (acc : Option SrcExpr) (op : Option SrcOp) (tail : CTree) : Option SrcExpr :=
+def foldOp (fuel : Nat) (env : FrontEnv) (scope : List Local) (acc : Option SrcExpr) (op : Option SrcOp) (tail : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2082,7 +2082,7 @@ def foldOp (fuel : Nat) (env : Env) (scope : List Local) (acc : Option SrcExpr) 
     | none => none
     | some left => foldLeft (fuel - 1) env scope left op tail
 
-def foldLeft (fuel : Nat) (env : Env) (scope : List Local) (left : SrcExpr) (op : Option SrcOp) (tail : CTree) : Option SrcExpr :=
+def foldLeft (fuel : Nat) (env : FrontEnv) (scope : List Local) (left : SrcExpr) (op : Option SrcOp) (tail : CTree) : Option SrcExpr :=
   if fuel = 0 then
     none
   else
@@ -2179,7 +2179,7 @@ def pickTy (leftBare : Bool) (a : Option Ty) (b : Option Ty) : Option Ty :=
     a
 
 /-- The type of an expression, as type arguments are inferred from it. -/
-def exprTy (fuel : Nat) (env : Env) (scope : List Local) (e : SrcExpr) : Option Ty :=
+def exprTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : SrcExpr) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -2195,7 +2195,7 @@ def exprTy (fuel : Nat) (env : Env) (scope : List Local) (e : SrcExpr) : Option 
     | .cast t x => srcTy t
     | .null => some Ty.tyPtr
 
-def exprsTys (fuel : Nat) (env : Env) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
+def exprsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (es : List SrcExpr) : Option (List Ty) :=
   match es with
   | [] => some []
   | e :: rest => consTy (exprTy fuel env scope e) (exprsTys fuel env scope rest)
@@ -2274,7 +2274,7 @@ def namedParts (t : Ty) : Option Inst :=
 mutual
 
 /-- Match a type expression of a declaration, whose type parameters names are being inferred, against an actual type, extending binds. -/
-def matchTy (fuel : Nat) (env : Env) (names : List (List Nat)) (pattern : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+def matchTy (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (pattern : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2290,7 +2290,7 @@ def matchTy (fuel : Nat) (env : Env) (names : List (List Nat)) (pattern : CTree)
       else
         none
 
-def matchPath (fuel : Nat) (env : Env) (names : List (List Nat)) (segments : Option (List (List Nat))) (items : Option (List CTree)) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+def matchPath (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (segments : Option (List (List Nat))) (items : Option (List CTree)) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2301,7 +2301,7 @@ def matchPath (fuel : Nat) (env : Env) (names : List (List Nat)) (segments : Opt
       | none => none
       | some gs => matchNamed (fuel - 1) env names ss gs actual binds
 
-def matchNamed (fuel : Nat) (env : Env) (names : List (List Nat)) (segments : List (List Nat)) (items : List CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+def matchNamed (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (segments : List (List Nat)) (items : List CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2312,7 +2312,7 @@ def matchNamed (fuel : Nat) (env : Env) (names : List (List Nat)) (segments : Li
       | some t => sameOrNone (sameTy t actual) binds
       | none => matchDecl (fuel - 1) env names (typeDeclAt env segments) items (namedParts actual) binds
 
-def matchDecl (fuel : Nat) (env : Env) (names : List (List Nat)) (d : Option Nat) (items : List CTree) (actual : Option Inst) (binds : List Bind) : Option (List Bind) :=
+def matchDecl (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (d : Option Nat) (items : List CTree) (actual : Option Inst) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2323,7 +2323,7 @@ def matchDecl (fuel : Nat) (env : Env) (names : List (List Nat)) (d : Option Nat
       | none => none
       | some a => matchSameDecl (fuel - 1) env names (decide (x = a.decl)) items a.args binds
 
-def matchSameDecl (fuel : Nat) (env : Env) (names : List (List Nat)) (same : Bool) (items : List CTree) (args : List Ty) (binds : List Bind) : Option (List Bind) :=
+def matchSameDecl (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (same : Bool) (items : List CTree) (args : List Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2333,7 +2333,7 @@ def matchSameDecl (fuel : Nat) (env : Env) (names : List (List Nat)) (same : Boo
       none
 
 /-- Generic arguments (generic_argument_type) against the actual arguments. -/
-def matchArgs (fuel : Nat) (env : Env) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
+def matchArgs (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2347,7 +2347,7 @@ def matchArgs (fuel : Nat) (env : Env) (names : List (List Nat)) (items : List C
       | [] => none
       | a :: more => matchArgsNext (fuel - 1) env names rest more (matchArg (fuel - 1) env names g a binds)
 
-def matchArg (fuel : Nat) (env : Env) (names : List (List Nat)) (g : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
+def matchArg (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (g : CTree) (actual : Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2356,7 +2356,7 @@ def matchArg (fuel : Nat) (env : Env) (names : List (List Nat)) (g : CTree) (act
     else
       none
 
-def matchArgsNext (fuel : Nat) (env : Env) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
+def matchArgsNext (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (items : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2365,7 +2365,7 @@ def matchArgsNext (fuel : Nat) (env : Env) (names : List (List Nat)) (items : Li
     | some b => matchArgs (fuel - 1) env names items actuals b
 
 /-- Type expressions against actual types, in order. -/
-def matchTys (fuel : Nat) (env : Env) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
+def matchTys (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (binds : List Bind) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2379,7 +2379,7 @@ def matchTys (fuel : Nat) (env : Env) (names : List (List Nat)) (patterns : List
       | [] => none
       | a :: more => matchTysNext (fuel - 1) env names rest more (matchTy (fuel - 1) env names p a binds)
 
-def matchTysNext (fuel : Nat) (env : Env) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
+def matchTysNext (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (patterns : List CTree) (actuals : List Ty) (got : Option (List Bind)) : Option (List Bind) :=
   if fuel = 0 then
     none
   else
@@ -2436,7 +2436,7 @@ def retPattern (fd : FnDecl) : Option CTree :=
   else
     none
 
-def calleeEnv (decls : Decls) (fd : FnDecl) : Env :=
+def calleeEnv (decls : Decls) (fd : FnDecl) : FrontEnv :=
   declEnv decls fd.home [] []
 
 def instFrom (d : Nat) (args : Option (List Ty)) : Option Inst :=
@@ -2477,7 +2477,7 @@ def explicitChecked (ok : Bool) (d : Nat) (args : List Ty) : Option Inst :=
     none
 
 /-- `f<T, ...>(args)`: the type arguments as written (a free function's own). -/
-def explicitInst (fuel : Nat) (env : Env) (d : Nat) (fd : FnDecl) (targs : List CTree) : Option Inst :=
+def explicitInst (fuel : Nat) (env : FrontEnv) (d : Nat) (fd : FnDecl) (targs : List CTree) : Option Inst :=
   match argsTys fuel env targs with
   | none => none
   | some ts => explicitChecked (noNames fd.implParams && decide (ts.length = fd.params.length)) d ts
@@ -2698,7 +2698,7 @@ def bareEff (x : MEff) : Bool :=
   | .xDivide op l r => bareEff l && bareEff r
   | .xStride sl => false
 
-def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :=
+def effTy (fuel : Nat) (env : FrontEnv) (scope : List Local) (x : MEff) : Option Ty :=
   if fuel = 0 then
     none
   else
@@ -2716,7 +2716,7 @@ def effTy (fuel : Nat) (env : Env) (scope : List Local) (x : MEff) : Option Ty :
     | .xDivide op l r => pickTy (bareEff l) (effTy (fuel - 1) env scope l) (effTy (fuel - 1) env scope r)
     | .xStride sl => some Ty.tyIsize
 
-def effsTys (fuel : Nat) (env : Env) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
+def effsTys (fuel : Nat) (env : FrontEnv) (scope : List Local) (xs : List MEff) : Option (List Ty) :=
   match xs with
   | [] => some []
   | x :: rest => consTy (effTy fuel env scope x) (effsTys fuel env scope rest)
@@ -2853,12 +2853,12 @@ def consExpr (head : Option SrcExpr) (tail : Option (List SrcExpr)) : Option (Li
   | none => none
   | some e => consExprTail e tail
 
-def exprsOf (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) : Option (List SrcExpr) :=
+def exprsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (items : List CTree) : Option (List SrcExpr) :=
   match items with
   | [] => some []
   | e :: rest => consExpr (exprOf fuel env scope e) (exprsOf fuel env scope rest)
 
-def argsOf (fuel : Nat) (env : Env) (scope : List Local) (args : CTree) : Option (List SrcExpr) :=
+def argsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (args : CTree) : Option (List SrcExpr) :=
   match listItems fuel args with
   | none => none
   | some items => exprsOf fuel env scope items
@@ -2868,19 +2868,19 @@ def called (inst : Option Inst) (args : List SrcExpr) : Option Called :=
   | none => none
   | some i => some ({ inst := i, args := args } : Called)
 
-def freeCallOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (d : Nat) (fd : FnDecl) (targs : List CTree) (es : List SrcExpr) : Option Called :=
+def freeCallOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (d : Nat) (fd : FnDecl) (targs : List CTree) (es : List SrcExpr) : Option Called :=
   if noTrees targs then
     called (inferInst fuel env.decls d fd [] (exprsTys fuel env scope es) expected) es
   else
     called (explicitInst fuel env d fd targs) es
 
 /-- A call of the free function d, with type arguments written or inferred. -/
-def freeCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (d : Nat) (targs : List CTree) (es : List SrcExpr) : Option Called :=
+def freeCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (d : Nat) (targs : List CTree) (es : List SrcExpr) : Option Called :=
   match env.decls.fns[d]? with
   | none => none
   | some fd => freeCallOf fuel env scope expected d fd targs es
 
-def methodInst (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (found : Option Found) (es : List SrcExpr) : Option Called :=
+def methodInst (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (found : Option Found) (es : List SrcExpr) : Option Called :=
   match found with
   | none => none
   | some x =>
@@ -2889,13 +2889,13 @@ def methodInst (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (fo
     | some fd => called (inferInst fuel env.decls x.decl fd x.binds (exprsTys fuel env scope es) expected) es
 
 /-- `T::m(args)`: the method m of the one impl whose type matches the type s. -/
-def staticCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (s : Option Ty) (name : List Nat) (es : List SrcExpr) : Option Called :=
+def staticCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (s : Option Ty) (name : List Nat) (es : List SrcExpr) : Option Called :=
   match s with
   | none => none
   | some t => methodInst fuel env scope expected (findMethod fuel env.decls env.decls.fns 0 name t) es
 
 /-- `x.m(args)`: `T::m(x, args)` for x's type T. -/
-def methodCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (l : Option Local) (name : List Nat) (es : Option (List SrcExpr)) : Option Called :=
+def methodCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (l : Option Local) (name : List Nat) (es : Option (List SrcExpr)) : Option Called :=
   match l with
   | none => none
   | some x =>
@@ -2904,12 +2904,12 @@ def methodCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (l 
     | some args => staticCall fuel env scope expected (some x.ty) name (SrcExpr.local x.id :: args)
 
 /-- A path's one-segment prefix that names a type: a type parameter or a primitive type (`T::m`, `i32::hash`). -/
-def isTypeParam (env : Env) (owner : Option (List Nat)) : Bool :=
+def isTypeParam (env : FrontEnv) (owner : Option (List Nat)) : Bool :=
   match owner with
   | none => false
   | some n => member env.names n || !(isNoneType (primitive n))
 
-def ownerTy (env : Env) (owner : Option (List Nat)) : Option Ty :=
+def ownerTy (env : FrontEnv) (owner : Option (List Nat)) : Option Ty :=
   match owner with
   | none => none
   | some n =>
@@ -2923,10 +2923,10 @@ def isSomeIndex (k : Option Nat) : Bool :=
   | some x => true
 
 /-- A path naming a function: `T::m` for a type parameter T, or a free function of the path's module. -/
-def isFnPath (env : Env) (s : Split) : Bool :=
+def isFnPath (env : FrontEnv) (s : Split) : Bool :=
   isTypeParam env (singleName s.home) || isSomeIndex (findFn env.decls.fns (moduleOr env.home s.home) s.name 0)
 
-def pathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (s : Split) (targs : List CTree) (es : List SrcExpr) : Option Called :=
+def pathCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (s : Split) (targs : List CTree) (es : List SrcExpr) : Option Called :=
   let owner : Option (List Nat) := singleName s.home
   if isTypeParam env owner && noTrees targs then
     staticCall fuel env scope expected (ownerTy env owner) s.name es
@@ -2936,7 +2936,7 @@ def pathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (s : 
     | some d => freeCall fuel env scope expected d targs es
 
 /-- `path(args)` as a call, its value stored at type expected. -/
-def pathCallOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (path : CTree) (args : CTree) : Option Called :=
+def pathCallOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (path : CTree) (args : CTree) : Option Called :=
   match pathRef fuel (kid path 0) (kid path 1) with
   | none => none
   | some pr =>
@@ -2954,7 +2954,7 @@ def isMethodForm (pf : CTree) : Bool :=
   let call : CTree := kid tail 3
   (decide (nodeProd primary = (174)) || decide (nodeProd primary = (173)) && decide (nodeProd (kid primary 1) = (274))) && decide (nodeProd tail = (163)) && decide (nodeProd (kid tail 2) = (297)) && decide (nodeProd call = (161)) && decide (nodeProd (kid call 3) = (164))
 
-def methodCallOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Ty) (pf : CTree) : Option Called :=
+def methodCallOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Ty) (pf : CTree) : Option Called :=
   let tail : CTree := kid pf 1
   methodCall fuel env scope expected (localOf env scope (kid pf 0)) (kidToken tail 1).text (argsOf fuel env scope (kid (kid tail 3) 1))
 
@@ -2994,7 +2994,7 @@ def callHeadOf (c : Option Called) : Option LetHead :=
   | none => none
   | some x => some (LetHead.callOf x)
 
-def namedHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (s : Split) (targs : List CTree) (es : List SrcExpr) : Option LetHead :=
+def namedHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (s : Split) (targs : List CTree) (es : List SrcExpr) : Option LetHead :=
   if isFnPath env s then
     callHeadOf (pathCall fuel env scope ty s targs es)
   else
@@ -3110,7 +3110,7 @@ def deallocPath : List (List Nat) :=
   textAlloc :: textAllocator :: [textDealloc]
 
 /-- `path(args)`: the allocator, a raw view, a function or a variant. -/
-def callPathHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTree) (args : CTree) : Option LetHead :=
+def callPathHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (path : CTree) (args : CTree) : Option LetHead :=
   let segments : Option (List (List Nat)) := pathSpellings fuel (kid path 0) (kid path 1)
   if isPath segments allocPath then
     allocHead (argsOf fuel env scope args)
@@ -3137,7 +3137,7 @@ def indexHead (l : Option Local) (index : Option SrcExpr) : Option LetHead :=
     | some i => some (LetHead.indexOf x.id i)
 
 /-- `name` or `m::name`: a unit variant, or else a value. -/
-def unitHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTree) (init : CTree) : Option LetHead :=
+def unitHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (path : CTree) (init : CTree) : Option LetHead :=
   match pathSpellings fuel (kid path 0) (kid path 1) with
   | none => plainHead (exprOf fuel env scope init)
   | some ss =>
@@ -3153,7 +3153,7 @@ def fieldValues (fs : List CTree) : List CTree :=
   | [] => []
   | f :: rest => kid f 2 :: fieldValues rest
 
-def literalChecked (fuel : Nat) (env : Env) (scope : List Local) (ok : Bool) (fs : List CTree) : Option LetHead :=
+def literalChecked (fuel : Nat) (env : FrontEnv) (scope : List Local) (ok : Bool) (fs : List CTree) : Option LetHead :=
   if ok then
     match exprsOf fuel env scope (fieldValues fs) with
     | none => none
@@ -3173,12 +3173,12 @@ def sameNames (names : List (List Nat)) (fs : List CTree) : Bool :=
     | [] => false
     | f :: more => sameText n (kidToken f 0).text && sameNames rest more
 
-def literalEntry (fuel : Nat) (env : Env) (scope : List Local) (same : Bool) (entry : Option TypeDecl) (fs : List CTree) : Option LetHead :=
+def literalEntry (fuel : Nat) (env : FrontEnv) (scope : List Local) (same : Bool) (entry : Option TypeDecl) (fs : List CTree) : Option LetHead :=
   match entry with
   | none => none
   | some t => literalChecked fuel env scope (same && !t.isEnum && sameNames t.fields fs) fs
 
-def literalAt (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (d : Option Nat) (fs : List CTree) : Option LetHead :=
+def literalAt (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (d : Option Nat) (fs : List CTree) : Option LetHead :=
   match d with
   | none => none
   | some x =>
@@ -3187,7 +3187,7 @@ def literalAt (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (d : Optio
     | some e => literalEntry fuel env scope (decide (x = e)) env.decls.types[x]? fs
 
 /-- `S { f: e, ... }` of the let's own struct type, fields in declared order. -/
-def literalHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (path : CTree) (fields : CTree) : Option LetHead :=
+def literalHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (path : CTree) (fields : CTree) : Option LetHead :=
   match pathSpellings fuel (kid path 0) (kid path 1) with
   | none => none
   | some ss =>
@@ -3221,7 +3221,7 @@ def armValue (ids : List Nat) (value : Option SrcExpr) : Option SrcArm :=
   | none => none
   | some e => some ({ binders := ids, value := e } : SrcArm)
 
-def armBound (fuel : Nat) (env : Env) (bound : Option Bound) (value : CTree) : Option SrcArm :=
+def armBound (fuel : Nat) (env : FrontEnv) (bound : Option Bound) (value : CTree) : Option SrcArm :=
   match bound with
   | none => none
   | some b => armValue b.ids (exprOf fuel env b.scope value)
@@ -3237,7 +3237,7 @@ def consBinder (id : Nat) (rest : Option Bound) : Option Bound :=
   | some b => some ({ ids := id :: b.ids, scope := b.scope } : Bound)
 
 /-- One plain name pattern per payload type, each a fresh local. -/
-def bindersOf (env : Env) (scope : List Local) (pats : List CTree) (payload : List Ty) : Option Bound :=
+def bindersOf (env : FrontEnv) (scope : List Local) (pats : List CTree) (payload : List Ty) : Option Bound :=
   match payload with
   | [] =>
     (match pats with
@@ -3281,7 +3281,7 @@ def armNamed (segments : Option (List (List Nat))) (owner : TypeDecl) (name : Li
     | some s => sameText s.name name && armPrefix s.home owner
 
 /-- `V -> value` or `V(b, ...) -> value` (match_arm -> pattern MatchArrow expr). -/
-def armOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option SrcArm :=
+def armOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option SrcArm :=
   let pattern : CTree := kid arm 0
   let ptail : CTree := kid pattern 1
   let path : CTree := kid pattern 0
@@ -3332,7 +3332,7 @@ def armsInOrder (fuel : Nat) (owner : TypeDecl) (variants : List VariantTy) (arm
     none
 
 /-- Arm k is variant k. -/
-def armsOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
+def armsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
   match variants with
   | [] =>
     (match arms with
@@ -3343,12 +3343,12 @@ def armsOf (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (var
     | [] => none
     | a :: more => consArm (armOf fuel env scope owner v a) (armsOf fuel env scope owner rest more)
 
-def armsOrdered (fuel : Nat) (env : Env) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
+def armsOrdered (fuel : Nat) (env : FrontEnv) (scope : List Local) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List SrcArm) :=
   match armsInOrder fuel owner variants arms with
   | none => none
   | some os => armsOf fuel env scope owner variants os
 
-def matchEnum (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (owner : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option LetHead :=
+def matchEnum (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (owner : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option LetHead :=
   if owner.isEnum then
     match payloads with
     | none => none
@@ -3359,7 +3359,7 @@ def matchEnum (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (owner :
   else
     none
 
-def matchLocal (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (m : CTree) : Option LetHead :=
+def matchLocal (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (m : CTree) : Option LetHead :=
   match namedParts l.ty with
   | none => none
   | some n =>
@@ -3367,7 +3367,7 @@ def matchLocal (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (m : CT
     | none => none
     | some t => matchEnum fuel env scope l t (payloadTys fuel env.decls n.decl n.args) m
 
-def matchScrutinee (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) (m : CTree) : Option LetHead :=
+def matchScrutinee (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) (m : CTree) : Option LetHead :=
   if nodeProd (kid pf 1) = (164) then
     match localOf env scope (kid pf 0) with
     | none => none
@@ -3376,12 +3376,12 @@ def matchScrutinee (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) (m
     none
 
 /-- `match (x) { arms }`: x a local of an enum type, one arm per variant in order. -/
-def matchHead (fuel : Nat) (env : Env) (scope : List Local) (m : CTree) : Option LetHead :=
+def matchHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (m : CTree) : Option LetHead :=
   match peel fuel (kid m 2) with
   | none => none
   | some pf => matchScrutinee fuel env scope pf m
 
-def postfixHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (pf : CTree) (init : CTree) : Option LetHead :=
+def postfixHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (pf : CTree) (init : CTree) : Option LetHead :=
   let primary : CTree := kid pf 0
   let tail : CTree := kid pf 1
   if decide (nodeProd primary = (187)) && decide (nodeProd tail = (164)) then
@@ -3405,7 +3405,7 @@ def postfixHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (pf : CT
               plainHead (exprOf fuel env scope init)
 
 /-- The head of `let x: ty = init;`. -/
-def letHead (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
+def letHead (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
   match peel fuel init with
   | none => plainHead (exprOf fuel env scope init)
   | some pf => postfixHead fuel env scope ty pf init
@@ -3434,7 +3434,7 @@ def namedInferred (d : Nat) (args : Option (List Ty)) : Option Ty :=
   | some ts => some (Ty.tyNamed d ts)
 
 /-- The type of a literal of declaration d: its known arguments, or else those inferred by matching the field or payload types as written with the values' types. -/
-def declInst (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (t : TypeDecl) (known : Option (List Ty)) (patterns : Option (List CTree)) (values : List MEff) : Option Ty :=
+def declInst (fuel : Nat) (env : FrontEnv) (scope : List Local) (d : Nat) (t : TypeDecl) (known : Option (List Ty)) (patterns : Option (List CTree)) (values : List MEff) : Option Ty :=
   match known with
   | some args => some (Ty.tyNamed d args)
   | none =>
@@ -3458,7 +3458,7 @@ def fieldExpects (fuel : Nat) (decls : Decls) (d : Nat) (known : Option (List Ty
   | none => none
   | some args => fieldTys fuel decls d args
 
-def xVariantOf (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (t : TypeDecl) (index : Nat) (known : Option (List Ty)) (payload : Option (List MEff)) : Option MEff :=
+def xVariantOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (d : Nat) (t : TypeDecl) (index : Nat) (known : Option (List Ty)) (payload : Option (List MEff)) : Option MEff :=
   match payload with
   | none => none
   | some ps =>
@@ -3466,7 +3466,7 @@ def xVariantOf (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (t : Type
     | none => none
     | some ty => some (MEff.xVariant ty index ps)
 
-def xStructOf (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (t : TypeDecl) (known : Option (List Ty)) (values : Option (List MEff)) : Option MEff :=
+def xStructOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (d : Nat) (t : TypeDecl) (known : Option (List Ty)) (values : Option (List MEff)) : Option MEff :=
   match values with
   | none => none
   | some vs =>
@@ -3508,7 +3508,7 @@ def inferEff (fuel : Nat) (decls : Decls) (d : Nat) (fd : FnDecl) (start : List 
   | some t => inferInst fuel decls d fd start argTys t
   | none => inferArgs fuel decls d fd start argTys
 
-def effCalled (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (start : List Bind) (pre : List MEff) (args : Option (List MEff)) : Option MEff :=
+def effCalled (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (start : List Bind) (pre : List MEff) (args : Option (List MEff)) : Option MEff :=
   match args with
   | none => none
   | some xs => xCallOf (inferEff fuel env.decls d fd start (effsTys fuel env scope (pre ++ xs)) expected) (pre ++ xs)
@@ -3526,7 +3526,7 @@ def effBinary (p : Nat) (acc : Option MEff) (right : Option MEff) : Option MEff 
       | some o => xApplyOf o acc right
 
 /-- `acc as T as U ...` -/
-def effCasts (fuel : Nat) (env : Env) (acc : Option MEff) (tail : CTree) : Option MEff :=
+def effCasts (fuel : Nat) (env : FrontEnv) (acc : Option MEff) (tail : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3535,7 +3535,7 @@ def effCasts (fuel : Nat) (env : Env) (acc : Option MEff) (tail : CTree) : Optio
     else
       acc
 
-def armEff (fuel : Nat) (env : Env) (b : Bound) (value : Option MEff) : Option EffArm :=
+def armEff (fuel : Nat) (env : FrontEnv) (b : Bound) (value : Option MEff) : Option EffArm :=
   match value with
   | none => none
   | some x => some ({ binders := b.ids, value := x, ty := effTy fuel env b.scope x } : EffArm)
@@ -3599,7 +3599,7 @@ def fieldValue (decls : Decls) (x : MEff) (t : Ty) (j : Nat) : MEff :=
   | some id => MEff.xPure (SrcExpr.field id j)
   | none => MEff.xCall (projection decls t j) [x]
 
-def fieldOfTy (env : Env) (x : MEff) (t : Option Ty) (name : List Nat) : Option MEff :=
+def fieldOfTy (env : FrontEnv) (x : MEff) (t : Option Ty) (name : List Nat) : Option MEff :=
   match t with
   | none => none
   | some ty =>
@@ -3607,7 +3607,7 @@ def fieldOfTy (env : Env) (x : MEff) (t : Option Ty) (name : List Nat) : Option 
     | none => none
     | some j => some (fieldValue env.decls x ty j)
 
-def methodOfTy (fuel : Nat) (env : Env) (t : Option Ty) (name : List Nat) : Option Found :=
+def methodOfTy (fuel : Nat) (env : FrontEnv) (t : Option Ty) (name : List Nat) : Option Found :=
   match t with
   | none => none
   | some ty => findMethod fuel env.decls env.decls.fns 0 name ty
@@ -3651,7 +3651,7 @@ def argExpected (fuel : Nat) (decls : Decls) (fd : FnDecl) (names : List (List N
   | some a => tyOf fuel (declEnv decls fd.home names a) p
 
 /-- An argument's type matched with its parameter's; an integer literal binds nothing (laniusc gives it the parameter's type). -/
-def bindArg (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (x : MEff) (b : List Bind) : Option (List Bind) :=
+def bindArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (x : MEff) (b : List Bind) : Option (List Bind) :=
   if bareEff x then
     some b
   else
@@ -3659,18 +3659,18 @@ def bindArg (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names :
     | none => none
     | some t => matchTy fuel (calleeEnv env.decls fd) names p t b
 
-def matchTysOrNone (fuel : Nat) (env : Env) (names : List (List Nat)) (ps : List CTree) (ts : Option (List Ty)) (b : List Bind) : Option (List Bind) :=
+def matchTysOrNone (fuel : Nat) (env : FrontEnv) (names : List (List Nat)) (ps : List CTree) (ts : Option (List Ty)) (b : List Bind) : Option (List Bind) :=
   match ts with
   | none => none
   | some xs => matchTys fuel env names ps xs b
 
 /-- The instance: from the bindings; if a type parameter is still unbound, with the integer literal arguments taken as i32. -/
-def instBound (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (a : ArgsBound) : Option Inst :=
+def instBound (fuel : Nat) (env : FrontEnv) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (a : ArgsBound) : Option Inst :=
   match boundArgs names a.binds with
   | some ts => some ({ decl := d, args := ts } : Inst)
   | none => instFrom d (boundOrNone names (matchTysOrNone fuel (calleeEnv env.decls fd) names ps (effsTys fuel env scope a.args) a.binds))
 
-def effInferred (fuel : Nat) (env : Env) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (r : Option ArgsBound) : Option MEff :=
+def effInferred (fuel : Nat) (env : FrontEnv) (scope : List Local) (d : Nat) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (r : Option ArgsBound) : Option MEff :=
   match r with
   | none => none
   | some a => xCallOf (instBound fuel env scope d fd names ps a) a.args
@@ -3714,7 +3714,7 @@ def divergeArm (decls : Decls) (expected : Option Ty) (x : Option MEff) : Option
 mutual
 
 /-- The effectful expression a node of the expression grammar denotes, its value stored at type expected when that is known: the pure expression expr_of reads, or else a call, a variant, a struct literal, a match, a slice element, a division, or an operator, cast or negation of these. -/
-def effOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
+def effOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3722,7 +3722,7 @@ def effOf (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (
     | some e => some (MEff.xPure e)
     | none => effNode (fuel - 1) env scope expected c
 
-def effNode (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
+def effNode (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3761,7 +3761,7 @@ def effNode (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty)
                         none
 
 /-- acc op operand op operand ... -/
-def effFold (fuel : Nat) (env : Env) (scope : List Local) (acc : Option MEff) (tail : CTree) : Option MEff :=
+def effFold (fuel : Nat) (env : FrontEnv) (scope : List Local) (acc : Option MEff) (tail : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3771,7 +3771,7 @@ def effFold (fuel : Nat) (env : Env) (scope : List Local) (acc : Option MEff) (t
       acc
 
 /-- A primary with no postfix, `path(args)`, `x.m(args)`, or `v[index]` for a slice local v. -/
-def effPostfix (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (pf : CTree) : Option MEff :=
+def effPostfix (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (pf : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3796,13 +3796,13 @@ def effPostfix (fuel : Nat) (env : Env) (scope : List Local) (expected : Option 
               effChain f env scope expected (effPrimary f env scope primary) tail
 
 /-- The value a postfix starts from: a local, or any other primary. -/
-def effPrimary (fuel : Nat) (env : Env) (scope : List Local) (primary : CTree) : Option MEff :=
+def effPrimary (fuel : Nat) (env : FrontEnv) (scope : List Local) (primary : CTree) : Option MEff :=
   match localOf env scope primary with
   | some l => some (MEff.xPure (SrcExpr.local l.id))
   | none => effNode fuel env scope none primary
 
 /-- The rest of a postfix after the value x: `.f` (Field of a local, else the call of the field's projection), `.m(args)` (the method m of x's type, with x the receiver), or `[index]` of a slice local, then what follows. -/
-def effChain (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (x : Option MEff) (tail : CTree) : Option MEff :=
+def effChain (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (x : Option MEff) (tail : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3813,7 +3813,7 @@ def effChain (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       | none => none
       | some v => effStep (fuel - 1) env scope expected v tail
 
-def effStep (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (x : MEff) (tail : CTree) : Option MEff :=
+def effStep (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (x : MEff) (tail : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3833,7 +3833,7 @@ def effStep (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty)
         none
 
 /-- A name that is not a local or a constant: a unit variant; or a struct literal `S { f: e, ... }`, fields in declared order. -/
-def effIdent (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
+def effIdent (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (c : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3862,7 +3862,7 @@ def effIdent (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       else
         none
 
-def effLiteral (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (d : Nat) (t : TypeDecl) (fs : List CTree) : Option MEff :=
+def effLiteral (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (t : TypeDecl) (fs : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3872,7 +3872,7 @@ def effLiteral (fuel : Nat) (env : Env) (scope : List Local) (expected : Option 
       none
 
 /-- A variant with its payload. -/
-def effVariant (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (v : Option VariantAt) (items : List CTree) : Option MEff :=
+def effVariant (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (v : Option VariantAt) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3884,7 +3884,7 @@ def effVariant (fuel : Nat) (env : Env) (scope : List Local) (expected : Option 
       | some t => xVariantOf fuel env scope x.owner t x.index (knownArgs t x.owner expected) (effList (fuel - 1) env scope (variantExpects fuel env.decls x.owner x.index (knownArgs t x.owner expected)) items)
 
 /-- Expressions in order, each stored at its expected type when known. -/
-def effList (fuel : Nat) (env : Env) (scope : List Local) (expects : Option (List Ty)) (items : List CTree) : Option (List MEff) :=
+def effList (fuel : Nat) (env : FrontEnv) (scope : List Local) (expects : Option (List Ty)) (items : List CTree) : Option (List MEff) :=
   if fuel = 0 then
     none
   else
@@ -3893,7 +3893,7 @@ def effList (fuel : Nat) (env : Env) (scope : List Local) (expects : Option (Lis
     | c :: rest => consEff (effOf (fuel - 1) env scope (headTy expects) c) (effList (fuel - 1) env scope (tailTys expects) rest)
 
 /-- `path(args)`: a function, `T::m` for a type parameter T, or a variant. slice_stride(x): one argument, a slice local. -/
-def strideArg (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) : Option MEff :=
+def strideArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (items : List CTree) : Option MEff :=
   match items with
   | [] => none
   | a :: rest =>
@@ -3901,7 +3901,7 @@ def strideArg (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree)
     | [] => strideOfPostfix env scope (peel fuel a)
     | b :: more => none
 
-def strideOfPostfix (env : Env) (scope : List Local) (pf : Option CTree) : Option MEff :=
+def strideOfPostfix (env : FrontEnv) (scope : List Local) (pf : Option CTree) : Option MEff :=
   match pf with
   | none => none
   | some x => strideOfLocal (decide (nodeProd (kid x 1) = (164))) (localOf env scope (kid x 0))
@@ -3917,7 +3917,7 @@ def strideOfLocal (plain : Bool) (l : Option Local) : Option MEff :=
   else
     none
 
-def effPathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (path : CTree) (args : CTree) : Option MEff :=
+def effPathCall (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (path : CTree) (args : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3940,7 +3940,7 @@ def effPathCall (fuel : Nat) (env : Env) (scope : List Local) (expected : Option
             | none => none
             | some items => effNamed (fuel - 1) env scope expected s pr.targs items
 
-def effNamed (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (s : Split) (targs : List CTree) (items : List CTree) : Option MEff :=
+def effNamed (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : Split) (targs : List CTree) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3952,7 +3952,7 @@ def effNamed (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       else
         none
 
-def effFnPath (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (s : Split) (targs : List CTree) (items : List CTree) : Option MEff :=
+def effFnPath (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : Split) (targs : List CTree) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3970,7 +3970,7 @@ def effFnPath (fuel : Nat) (env : Env) (scope : List Local) (expected : Option T
         | some fd => effFree (fuel - 1) env scope expected d fd targs items
 
 /-- A free function's call, its type arguments written or inferred. -/
-def effFree (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (targs : List CTree) (items : List CTree) : Option MEff :=
+def effFree (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (targs : List CTree) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3985,7 +3985,7 @@ def effFree (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty)
         | some xs => some (MEff.xCall i xs)
 
 /-- A call whose type arguments are inferred, from start: the arguments after pre (the receiver, if any). -/
-def effInfer (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (start : List Bind) (pre : List MEff) (items : List CTree) : Option MEff :=
+def effInfer (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (d : Nat) (fd : FnDecl) (start : List Bind) (pre : List MEff) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -3998,7 +3998,7 @@ def effInfer (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       | some ps => effInferred fuel env scope d fd names ps (effArgsBound (fuel - 1) env scope fd names ps pre items (retBinds fuel env.decls fd names start expected))
 
 /-- The arguments in order, each read at its parameter's type when the bindings so far give it one, and the bindings they extend. -/
-def effArgsBound (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (pre : List MEff) (items : List CTree) (binds : Option (List Bind)) : Option ArgsBound :=
+def effArgsBound (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (ps : List CTree) (pre : List MEff) (items : List CTree) (binds : Option (List Bind)) : Option ArgsBound :=
   if fuel = 0 then
     none
   else
@@ -4022,7 +4022,7 @@ def effArgsBound (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (na
           | [] => none
           | c :: more => effArgNext f env scope fd names p rest more b (effOf f env scope (argExpected f env.decls fd names p b) c)
 
-def effArgNext (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (ps : List CTree) (items : List CTree) (b : List Bind) (x : Option MEff) : Option ArgsBound :=
+def effArgNext (fuel : Nat) (env : FrontEnv) (scope : List Local) (fd : FnDecl) (names : List (List Nat)) (p : CTree) (ps : List CTree) (items : List CTree) (b : List Bind) (x : Option MEff) : Option ArgsBound :=
   if fuel = 0 then
     none
   else
@@ -4030,7 +4030,7 @@ def effArgNext (fuel : Nat) (env : Env) (scope : List Local) (fd : FnDecl) (name
     | none => none
     | some v => consBound v (effArgsBound (fuel - 1) env scope fd names ps [] items (bindArg (fuel - 1) env scope fd names p v b))
 
-def effFound (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (found : Option Found) (pre : List MEff) (items : List CTree) : Option MEff :=
+def effFound (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (found : Option Found) (pre : List MEff) (items : List CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -4042,7 +4042,7 @@ def effFound (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty
       | some fd => effInfer (fuel - 1) env scope expected x.decl fd x.binds pre items
 
 /-- `x.m(args)`: `T::m(x, args)` for x's type T. -/
-def effMethod (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (pf : CTree) : Option MEff :=
+def effMethod (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (pf : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -4055,13 +4055,13 @@ def effMethod (fuel : Nat) (env : Env) (scope : List Local) (expected : Option T
       | some items => effFound (fuel - 1) env scope expected (findMethod fuel env.decls env.decls.fns 0 (kidToken tail 1).text x.ty) [MEff.xPure (SrcExpr.local x.id)] items
 
 /-- `match (scrutinee) { arms }`: the scrutinee of an enum type, one arm per variant in order. -/
-def effMatch (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (m : CTree) : Option MEff :=
+def effMatch (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (m : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
     effMatchOn (fuel - 1) env scope expected (effOf (fuel - 1) env scope none (kid m 2)) m
 
-def effMatchOn (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (s : Option MEff) (m : CTree) : Option MEff :=
+def effMatchOn (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (s : Option MEff) (m : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -4078,7 +4078,7 @@ def effMatchOn (fuel : Nat) (env : Env) (scope : List Local) (expected : Option 
           | none => none
           | some t => effMatchEnum (fuel - 1) env scope expected x ety t (payloadTys fuel env.decls n.decl n.args) m
 
-def effMatchEnum (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (x : MEff) (ety : Ty) (t : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option MEff :=
+def effMatchEnum (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (x : MEff) (ety : Ty) (t : TypeDecl) (payloads : Option (List (List Ty))) (m : CTree) : Option MEff :=
   if fuel = 0 then
     none
   else
@@ -4092,7 +4092,7 @@ def effMatchEnum (fuel : Nat) (env : Env) (scope : List Local) (expected : Optio
     else
       none
 
-def effArmsOrdered (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List EffArm) :=
+def effArmsOrdered (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List EffArm) :=
   if fuel = 0 then
     none
   else
@@ -4101,7 +4101,7 @@ def effArmsOrdered (fuel : Nat) (env : Env) (scope : List Local) (expected : Opt
     | some os => effArms (fuel - 1) env scope expected owner variants os
 
 /-- Arm k is variant k. -/
-def effArms (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List EffArm) :=
+def effArms (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (variants : List VariantTy) (arms : List CTree) : Option (List EffArm) :=
   if fuel = 0 then
     none
   else
@@ -4116,7 +4116,7 @@ def effArms (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty)
       | a :: more => consEffArm (effArm (fuel - 1) env scope expected owner v a) (effArms (fuel - 1) env scope expected owner rest more)
 
 /-- `V -> value` or `V(b, ...) -> value`. -/
-def effArm (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option EffArm :=
+def effArm (fuel : Nat) (env : FrontEnv) (scope : List Local) (expected : Option Ty) (owner : TypeDecl) (v : VariantTy) (arm : CTree) : Option EffArm :=
   if fuel = 0 then
     none
   else
@@ -4133,7 +4133,7 @@ def effArm (fuel : Nat) (env : Env) (scope : List Local) (expected : Option Ty) 
     else
       none
 
-def effArmBound (fuel : Nat) (env : Env) (expected : Option Ty) (bound : Option Bound) (value : CTree) : Option EffArm :=
+def effArmBound (fuel : Nat) (env : FrontEnv) (expected : Option Ty) (bound : Option Bound) (value : CTree) : Option EffArm :=
   if fuel = 0 then
     none
   else
@@ -4152,7 +4152,7 @@ def evalHead (x : Option MEff) : Option LetHead :=
     | none => some (LetHead.evalOf e)
 
 /-- The head of `let x: ty = init;`: a statement form, or else an effectful expression. -/
-def letHeadOrEval (fuel : Nat) (env : Env) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
+def letHeadOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (ty : Ty) (init : CTree) : Option LetHead :=
   match letHead fuel env scope ty init with
   | some h => some h
   | none => evalHead (effOf fuel env scope (some ty) init)
@@ -4248,7 +4248,7 @@ def sliceReturned (id : Nat) (el : Ty) (h : Option LetHead) : Option MStmt :=
     | .evalOf x => none
 
 /-- `return slice_from_raw_parts(pointer, length);` in a function whose result is a slice: a slice local, then its return. The local's id is the byte offset of the value's first token, which no binding has. -/
-def returnSlice (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
+def returnSlice (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
   match env.ret with
   | none => none
   | some t =>
@@ -4259,7 +4259,7 @@ def returnSlice (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Opti
       | [] => none
       | first :: rest => sliceReturned first.start el (letHead fuel env scope t e)
 
-def returnOrEval (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
+def returnOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
   match exprOf fuel env scope e with
   | some x => some (MStmt.mReturn x)
   | none =>
@@ -4279,7 +4279,7 @@ def ifEvalOf (c : Option MEff) (a : Option MStmt) (b : Option MStmt) : Option MS
       | some t => some (MStmt.mIfEval x s t)
 
 /-- `if (c) { a } else { b }`, c pure or else effectful. -/
-def ifOrEval (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
+def ifOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) (a : Option MStmt) (b : Option MStmt) : Option MStmt :=
   match exprOf fuel env scope c with
   | some x => ifBranches x a b
   | none => ifEvalOf (effOf fuel env scope (some Ty.tyBool) c) a b
@@ -4293,7 +4293,7 @@ def whileEvalOf (c : Option MEff) (body : Option MStmt) : Option MStmt :=
     | some b => some (MStmt.mWhileEval x b)
 
 /-- `while (c) { body }`, c pure or else effectful. -/
-def whileOrEval (fuel : Nat) (env : Env) (scope : List Local) (c : CTree) (body : Option MStmt) : Option MStmt :=
+def whileOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (c : CTree) (body : Option MStmt) : Option MStmt :=
   match exprOf fuel env scope c with
   | some x => whileBody x body
   | none => whileEvalOf (effOf fuel env scope (some Ty.tyBool) c) body
@@ -4314,7 +4314,7 @@ def setCallOf (id : Nat) (c : Option Called) : Option MStmt :=
   | some x => some (MStmt.mSetCall id x.inst x.args)
 
 /-- `x = value;`: a call, or an expression. -/
-def setPostfix (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (pf : CTree) (value : CTree) : Option MStmt :=
+def setPostfix (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (pf : CTree) (value : CTree) : Option MStmt :=
   if isPathCall pf then
     setCallOf l.id (pathCallOf fuel env scope l.ty (kid (kid pf 0) 0) (kid (kid pf 1) 1))
   else
@@ -4323,7 +4323,7 @@ def setPostfix (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (pf : C
     else
       setValue l.id (exprOf fuel env scope value)
 
-def setLocal (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
+def setLocal (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
   match peel fuel value with
   | none => setValue l.id (exprOf fuel env scope value)
   | some pf => setPostfix fuel env scope l pf value
@@ -4345,7 +4345,7 @@ def setEvalOf (id : Nat) (x : Option MEff) : Option MStmt :=
     | none => some (MStmt.mSetEval id e)
 
 /-- `x = value;`: a statement form, or else an effectful expression. -/
-def setOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
+def setOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (value : CTree) : Option MStmt :=
   match setLocal fuel env scope l value with
   | some s => some s
   | none => setEvalOf l.id (effOf fuel env scope (some l.ty) value)
@@ -4359,7 +4359,7 @@ def setIndexEvalOf (slice : Nat) (index : Option MEff) (value : Option MEff) : O
     | some v => some (MStmt.mSetIndexEval slice i v)
 
 /-- `v[index] = value;` -/
-def setIndexOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (index : CTree) (value : CTree) : Option MStmt :=
+def setIndexOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (index : CTree) (value : CTree) : Option MStmt :=
   match setIndexOf l.id (exprOf fuel env scope index) (exprOf fuel env scope value) with
   | some s => some s
   | none => setIndexEvalOf l.id (effOf fuel env scope none index) (effOf fuel env scope (sliceElem l.ty) value)
@@ -4376,7 +4376,7 @@ def fieldTyAt (fuel : Nat) (decls : Decls) (t : Ty) (j : Nat) : Option Ty :=
   | some ts => ts[j]?
 
 /-- `x.f = value;`: value pure, or else effectful (stored at the field's type). -/
-def setFieldOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (name : List Nat) (value : CTree) : Option MStmt :=
+def setFieldOrEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (name : List Nat) (value : CTree) : Option MStmt :=
   match fieldIndex env l.ty name with
   | none => none
   | some j =>
@@ -4384,7 +4384,7 @@ def setFieldOrEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (na
     | some v => some (MStmt.mSetField l.id j v)
     | none => fieldEvalStmt l.id j (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value)
 
-def assignTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
+def assignTarget (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1
   if nodeProd tail = (164) then
     match localOf env scope (kid target 0) with
@@ -4437,7 +4437,7 @@ def assertOf (x : Option MEff) : Option MStmt :=
   | some e => some (MStmt.mAssert e)
 
 /-- `assert(c)`: its one argument, a bool. -/
-def assertArg (fuel : Nat) (env : Env) (scope : List Local) (args : Option (List CTree)) : Option MStmt :=
+def assertArg (fuel : Nat) (env : FrontEnv) (scope : List Local) (args : Option (List CTree)) : Option MStmt :=
   match args with
   | none => none
   | some items =>
@@ -4449,7 +4449,7 @@ def assertArg (fuel : Nat) (env : Env) (scope : List Local) (args : Option (List
       | d :: more => none
 
 /-- A call statement: `alloc::allocator::dealloc(pointer, size, align);`, `assert(c);`, or a call whose value (if any) is discarded. -/
-def callStmt (fuel : Nat) (env : Env) (scope : List Local) (pf : CTree) : Option MStmt :=
+def callStmt (fuel : Nat) (env : FrontEnv) (scope : List Local) (pf : CTree) : Option MStmt :=
   let path : CTree := kid (kid pf 0) 0
   if isPathCall pf && isPath (pathSpellings fuel (kid path 0) (kid path 1)) deallocPath then
     freeOf (argsOf fuel env scope (kid (kid pf 1) 1))
@@ -4495,13 +4495,13 @@ def compoundValue (op : SrcOp) (left : SrcExpr) (right : Option SrcExpr) : Optio
   | none => none
   | some r => some (SrcExpr.apply op left r)
 
-def compoundField (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (index : Option Nat) (op : SrcOp) (value : CTree) : Option MStmt :=
+def compoundField (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (index : Option Nat) (op : SrcOp) (value : CTree) : Option MStmt :=
   match index with
   | none => none
   | some j => setFieldValue l.id j (compoundValue op (SrcExpr.field l.id j) (exprOf fuel env scope value))
 
 /-- `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`. -/
-def compoundTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (op : SrcOp) (value : CTree) : Option MStmt :=
+def compoundTarget (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (op : SrcOp) (value : CTree) : Option MStmt :=
   let tail : CTree := kid target 1
   if nodeProd tail = (164) then
     match localOf env scope (kid target 0) with
@@ -4515,7 +4515,7 @@ def compoundTarget (fuel : Nat) (env : Env) (scope : List Local) (target : CTree
     else
       none
 
-def compoundPure (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (op : Option SrcOp) (value : CTree) : Option MStmt :=
+def compoundPure (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (op : Option SrcOp) (value : CTree) : Option MStmt :=
   match op with
   | none => none
   | some o => compoundTarget fuel env scope target o value
@@ -4533,13 +4533,13 @@ def compoundEff (p : Nat) (left : MEff) (right : Option MEff) : Option MEff :=
       | some o => xApplyOf o (some left) right
 
 /-- `x.f op= e`, when e or op is effectful. -/
-def compoundFieldEval (fuel : Nat) (env : Env) (scope : List Local) (l : Local) (index : Option Nat) (p : Nat) (value : CTree) : Option MStmt :=
+def compoundFieldEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (l : Local) (index : Option Nat) (p : Nat) (value : CTree) : Option MStmt :=
   match index with
   | none => none
   | some j => fieldEvalStmt l.id j (compoundEff p (MEff.xPure (SrcExpr.field l.id j)) (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value))
 
 /-- `x op= e` or `x.f op= e`, when e or op is effectful. -/
-def compoundEval (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : Option MStmt :=
+def compoundEval (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : Option MStmt :=
   if nodeProd (kid target 1) = (164) then
     match localOf env scope (kid target 0) with
     | none => none
@@ -4553,7 +4553,7 @@ def compoundEval (fuel : Nat) (env : Env) (scope : List Local) (target : CTree) 
     else
       none
 
-def compoundOf (fuel : Nat) (env : Env) (scope : List Local) (target : Option CTree) (p : Nat) (value : CTree) : Option MStmt :=
+def compoundOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (target : Option CTree) (p : Nat) (value : CTree) : Option MStmt :=
   match target with
   | none => none
   | some t =>
@@ -4562,7 +4562,7 @@ def compoundOf (fuel : Nat) (env : Env) (scope : List Local) (target : Option CT
     | none => compoundEval fuel env scope t p value
 
 /-- `target = value;`: target a local, a field of one or a slice element; value a call (to a plain local) or an expression. Also `target op= value;`, and the call statement `dealloc(...)`. -/
-def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Option MStmt :=
+def assignment (fuel : Nat) (env : FrontEnv) (scope : List Local) (e : CTree) : Option MStmt :=
   let a : CTree := kid e 0
   let set : CTree := kid a 1
   if decide (nodeProd e = (104)) && decide (nodeProd a = (105)) && decide (nodeProd set = (106)) then
@@ -4583,7 +4583,7 @@ def assignment (fuel : Nat) (env : Env) (scope : List Local) (e : CTree) : Optio
 mutual
 
 /-- A statement list: a let scopes over the statements after it. -/
-def blockOf (fuel : Nat) (env : Env) (scope : List Local) (list : CTree) : Option MStmt :=
+def blockOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (list : CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -4591,7 +4591,7 @@ def blockOf (fuel : Nat) (env : Env) (scope : List Local) (list : CTree) : Optio
     | none => none
     | some items => stmtsOf (fuel - 1) env scope items
 
-def stmtsOf (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) : Option MStmt :=
+def stmtsOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (items : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -4599,7 +4599,7 @@ def stmtsOf (fuel : Nat) (env : Env) (scope : List Local) (items : List CTree) :
     | [] => some MStmt.mNop
     | s :: rest => stmtFirst (fuel - 1) env scope s rest
 
-def stmtFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
+def stmtFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -4611,7 +4611,7 @@ def stmtFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : 
       | next :: more => thenOf (stmtOf (fuel - 1) env scope s) (stmtsOf (fuel - 1) env scope rest)
 
 /-- `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon). -/
-def letFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
+def letFirst (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) (rest : List CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -4624,7 +4624,7 @@ def letFirst (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) (rest : L
       none
 
 /-- return, if, while, and assignments. -/
-def stmtOf (fuel : Nat) (env : Env) (scope : List Local) (s : CTree) : Option MStmt :=
+def stmtOf (fuel : Nat) (env : FrontEnv) (scope : List Local) (s : CTree) : Option MStmt :=
   if fuel = 0 then
     none
   else
@@ -4681,7 +4681,7 @@ def consParam (p : MParam) (rest : Option MParams) : Option MParams :=
   | some r => some ({ params := p :: r.params, scope := r.scope } : MParams)
 
 /-- `name: T` or `self` (by value); each a local named by its spelling. -/
-def paramsOf (fuel : Nat) (env : Env) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
+def paramsOf (fuel : Nat) (env : FrontEnv) (fd : FnDecl) (scope : List Local) (items : List CTree) : Option MParams :=
   match items with
   | [] => some ({ params := [], scope := scope } : MParams)
   | p :: rest =>
@@ -4701,12 +4701,12 @@ def funcBody (ps : MParams) (r : RetTy) (body : Option MStmt) : Option MFunc :=
   | none => none
   | some b => some ({ params := ps.params, ret := r, body := b } : MFunc)
 
-def funcRet (fuel : Nat) (env : Env) (ps : MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
+def funcRet (fuel : Nat) (env : FrontEnv) (ps : MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
   match ret with
   | none => none
   | some r => funcBody ps r (blockOf fuel env ps.scope body)
 
-def funcParams (fuel : Nat) (env : Env) (params : Option MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
+def funcParams (fuel : Nat) (env : FrontEnv) (params : Option MParams) (ret : Option RetTy) (body : CTree) : Option MFunc :=
   match params with
   | none => none
   | some ps => funcRet fuel env ps ret body
@@ -4717,7 +4717,7 @@ def retOfTy (t : Option Ty) : Option RetTy :=
   | some x => some (RetTy.retOf x)
 
 /-- The result type a return_type_opt names. -/
-def resultOf (fuel : Nat) (env : Env) (ret : CTree) : Option RetTy :=
+def resultOf (fuel : Nat) (env : FrontEnv) (ret : CTree) : Option RetTy :=
   if nodeProd ret = (35) then
     some RetTy.retUnit
   else
@@ -4742,9 +4742,9 @@ def retExpected (r : Option RetTy) : Option Ty :=
 def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option MFunc :=
   let names : List (List Nat) := fd.implParams ++ fd.params
   let f : CTree := fd.tree
-  let tenv : Env := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := none } : Env)
+  let tenv : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := none } : FrontEnv)
   let rt : Option RetTy := resultOf fuel tenv (kid f 6)
-  let env : Env := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := retExpected rt } : Env)
+  let env : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := retExpected rt } : FrontEnv)
   if names.length = args.length then
     match listItems fuel (kid f 4) with
     | none => none

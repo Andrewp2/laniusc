@@ -1719,7 +1719,7 @@ pub fn add_insts(table: List<Inst>, new: List<Inst>) -> List<Inst> {
 // Where a type expression is read: the declarations, the module, and the
 // type parameters in scope with their types; the spellings a local may
 // not take; and, in a function body, its result type.
-pub struct Env {
+pub struct FrontEnv {
     decls: Decls,
     home: List<List<usize>>,
     names: List<List<usize>>,
@@ -1728,8 +1728,8 @@ pub struct Env {
     ret: core::option::Option<Ty>,
 }
 
-pub fn decl_env(decls: Decls, home: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> Env {
-    return Env { decls: decls, home: home, names: names, subst: subst, globals: empty(), ret: None };
+pub fn decl_env(decls: Decls, home: List<List<usize>>, names: List<List<usize>>, subst: List<Ty>) -> FrontEnv {
+    return FrontEnv { decls: decls, home: home, names: names, subst: subst, globals: empty(), ret: None };
 }
 
 // The variants spelled name among module m's enums (types counted from k).
@@ -1779,7 +1779,7 @@ pub fn only_variant(vs: List<VariantAt>) -> core::option::Option<VariantAt> {
 
 // A bare variant name: the one enum of the current module that has it, or
 // else the one enum of the imported modules that has it.
-pub fn bare_variant(env: Env, name: List<usize>) -> core::option::Option<VariantAt> {
+pub fn bare_variant(env: FrontEnv, name: List<usize>) -> core::option::Option<VariantAt> {
     return match (variants_named(env.decls.types, env.home, name, 0)) {
         Nil -> only_variant(imported_variants(env.decls.types, env.decls.imports, env.home, name)),
         Cons(v, rest) -> only_variant(cons(v, unbox(rest))),
@@ -1807,7 +1807,7 @@ pub fn variant_in(types: List<TypeDecl>, d: core::option::Option<usize>, name: L
 }
 
 // `E::V` or `m::E::V`: the variant V of the enum E.
-pub fn enum_variant(env: Env, front: List<List<usize>>, name: List<usize>) -> core::option::Option<VariantAt> {
+pub fn enum_variant(env: FrontEnv, front: List<List<usize>>, name: List<usize>) -> core::option::Option<VariantAt> {
     return match (split_last(front)) {
         None -> None,
         Some(t) -> variant_in(env.decls.types, find_type(env.decls.types, module_or(env.home, t.home), t.name, 0), name),
@@ -1817,7 +1817,7 @@ pub fn enum_variant(env: Env, front: List<List<usize>>, name: List<usize>) -> co
 // The variant a value path names: `V` (see bare_variant), `E::V` or
 // `m::E::V` when the prefix names an enum, else `m::V`, the one enum of
 // module m that has V.
-pub fn variant_by_path(env: Env, s: Split) -> core::option::Option<VariantAt> {
+pub fn variant_by_path(env: FrontEnv, s: Split) -> core::option::Option<VariantAt> {
     if (no_names(s.home)) {
         return bare_variant(env, s.name);
     }
@@ -1862,7 +1862,7 @@ pub fn prim_ty(name: List<usize>) -> core::option::Option<Ty> {
 }
 
 // The type a type parameter spelled name stands for.
-pub fn param_ty(env: Env, name: List<usize>) -> core::option::Option<Ty> {
+pub fn param_ty(env: FrontEnv, name: List<usize>) -> core::option::Option<Ty> {
     return match (position(env.names, name, 0)) {
         None -> None,
         Some(i) -> get(env.subst, i),
@@ -1871,14 +1871,14 @@ pub fn param_ty(env: Env, name: List<usize>) -> core::option::Option<Ty> {
 
 // The declaration a type path names: a path with no module part names a
 // type of the current module.
-pub fn type_decl_at(env: Env, segments: List<List<usize>>) -> core::option::Option<usize> {
+pub fn type_decl_at(env: FrontEnv, segments: List<List<usize>>) -> core::option::Option<usize> {
     return match (split_last(segments)) {
         None -> None,
         Some(s) -> find_type(env.decls.types, module_or(env.home, s.home), s.name, 0),
     };
 }
 
-pub fn arity_ok(env: Env, d: usize, args: List<Ty>) -> bool {
+pub fn arity_ok(env: FrontEnv, d: usize, args: List<Ty>) -> bool {
     return match (get(env.decls.types, d)) {
         None -> false,
         Some(t) -> length(t.params) == length(args),
@@ -1892,21 +1892,21 @@ pub fn named_checked(ok: bool, d: usize, ts: List<Ty>) -> core::option::Option<T
     return None;
 }
 
-pub fn named_args(env: Env, d: usize, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+pub fn named_args(env: FrontEnv, d: usize, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
     return match (args) {
         None -> None,
         Some(ts) -> named_checked(arity_ok(env, d, ts), d, ts),
     };
 }
 
-pub fn named_of(env: Env, d: core::option::Option<usize>, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+pub fn named_of(env: FrontEnv, d: core::option::Option<usize>, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
     return match (d) {
         None -> None,
         Some(x) -> named_args(env, x, args),
     };
 }
 
-pub fn prim_or_named(env: Env, segments: List<List<usize>>, n: List<usize>) -> core::option::Option<Ty> {
+pub fn prim_or_named(env: FrontEnv, segments: List<List<usize>>, n: List<usize>) -> core::option::Option<Ty> {
     return match (prim_ty(n)) {
         Some(t) -> Some(t),
         None -> named_of(env, type_decl_at(env, segments), Some(empty())),
@@ -1915,7 +1915,7 @@ pub fn prim_or_named(env: Env, segments: List<List<usize>>, n: List<usize>) -> c
 
 // A type without arguments: a type parameter, a primitive type or a
 // declared type.
-pub fn bare_ty(env: Env, segments: List<List<usize>>) -> core::option::Option<Ty> {
+pub fn bare_ty(env: FrontEnv, segments: List<List<usize>>) -> core::option::Option<Ty> {
     return match (single_name(segments)) {
         None -> named_of(env, type_decl_at(env, segments), Some(empty())),
         Some(n) -> match (param_ty(env, n)) {
@@ -1925,7 +1925,7 @@ pub fn bare_ty(env: Env, segments: List<List<usize>>) -> core::option::Option<Ty
     };
 }
 
-pub fn bare_of(env: Env, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<Ty> {
+pub fn bare_of(env: FrontEnv, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<Ty> {
     return match (segments) {
         None -> None,
         Some(ss) -> bare_ty(env, ss),
@@ -1956,7 +1956,7 @@ pub fn cons_ty(head: core::option::Option<Ty>, tail: core::option::Option<List<T
 // extract: mutual begin
 // The type a type expression names: `[T]`, a type parameter, a primitive
 // type, or a declared type with its arguments.
-pub fn ty_of(fuel: usize, env: Env, t: CTree) -> core::option::Option<Ty> {
+pub fn ty_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -1974,7 +1974,7 @@ pub fn ty_of(fuel: usize, env: Env, t: CTree) -> core::option::Option<Ty> {
     return None;
 }
 
-pub fn applied_of(fuel: usize, env: Env, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>) -> core::option::Option<Ty> {
+pub fn applied_of(fuel: usize, env: FrontEnv, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -1992,7 +1992,7 @@ pub fn applied_of(fuel: usize, env: Env, segments: core::option::Option<List<Lis
 
 // A type path without arguments: a type parameter, a primitive or declared
 // type, or else a type alias.
-pub fn bare_or_alias(fuel: usize, env: Env, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<Ty> {
+pub fn bare_or_alias(fuel: usize, env: FrontEnv, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -2007,7 +2007,7 @@ pub fn bare_or_alias(fuel: usize, env: Env, segments: core::option::Option<List<
 
 // The type alias a path names, at type arguments: its type, read in the
 // alias's module with its parameters standing for the arguments.
-pub fn alias_ty(fuel: usize, env: Env, segments: List<List<usize>>, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
+pub fn alias_ty(fuel: usize, env: FrontEnv, segments: List<List<usize>>, args: core::option::Option<List<Ty>>) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -2034,7 +2034,7 @@ pub fn alias_at(fuel: usize, decls: Decls, a: AliasDecl, ts: List<Ty>) -> core::
 }
 
 // The types of generic arguments (generic_argument_type).
-pub fn args_tys(fuel: usize, env: Env, items: List<CTree>) -> core::option::Option<List<Ty>> {
+pub fn args_tys(fuel: usize, env: FrontEnv, items: List<CTree>) -> core::option::Option<List<Ty>> {
     if (fuel == 0) {
         return None;
     }
@@ -2044,7 +2044,7 @@ pub fn args_tys(fuel: usize, env: Env, items: List<CTree>) -> core::option::Opti
     };
 }
 
-pub fn arg_ty(fuel: usize, env: Env, g: CTree) -> core::option::Option<Ty> {
+pub fn arg_ty(fuel: usize, env: FrontEnv, g: CTree) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -2055,7 +2055,7 @@ pub fn arg_ty(fuel: usize, env: Env, g: CTree) -> core::option::Option<Ty> {
 }
 
 // The types of a list of type expressions.
-pub fn ty_list(fuel: usize, env: Env, ts: List<CTree>) -> core::option::Option<List<Ty>> {
+pub fn ty_list(fuel: usize, env: FrontEnv, ts: List<CTree>) -> core::option::Option<List<Ty>> {
     if (fuel == 0) {
         return None;
     }
@@ -2080,7 +2080,7 @@ pub fn cons_tys(head: core::option::Option<List<Ty>>, tail: core::option::Option
     };
 }
 
-pub fn payload_list(fuel: usize, env: Env, ps: List<List<CTree>>) -> core::option::Option<List<List<Ty>>> {
+pub fn payload_list(fuel: usize, env: FrontEnv, ps: List<List<CTree>>) -> core::option::Option<List<List<Ty>>> {
     return match (ps) {
         Nil -> Some(empty()),
         Cons(p, rest) -> cons_tys(ty_list(fuel, env, p), payload_list(fuel, env, unbox(rest))),
@@ -2498,7 +2498,7 @@ fn find_local_id_at(il: Local, irest: List<Local>, iid: usize) -> core::option::
 }
 
 // A primary `name` (ident -> path ident_plain) or `self`: a local.
-pub fn local_of(env: Env, scope: List<Local>, c: CTree) -> core::option::Option<Local> {
+pub fn local_of(env: FrontEnv, scope: List<Local>, c: CTree) -> core::option::Option<Local> {
     if (node_prod(c) == p_ident() && node_prod(kid(c, 1)) == p_ident_plain()) {
         return match (path_name(kid(c, 0))) {
             None -> None,
@@ -2526,7 +2526,7 @@ pub fn field_in(entry: core::option::Option<TypeDecl>, name: List<usize>) -> cor
 }
 
 // The field index of member in the struct type t.
-pub fn field_index(env: Env, t: Ty, name: List<usize>) -> core::option::Option<usize> {
+pub fn field_index(env: FrontEnv, t: Ty, name: List<usize>) -> core::option::Option<usize> {
     return match (t) {
         TyI32 -> None,
         TyBool -> None,
@@ -2546,7 +2546,7 @@ pub fn field_expr(id: usize, index: core::option::Option<usize>) -> core::option
 }
 
 // `primary.member`: a field of a struct local.
-pub fn member_of(env: Env, scope: List<Local>, primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
+pub fn member_of(env: FrontEnv, scope: List<Local>, primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
     if (node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(kid(tail, 3)) == p_postfix_end()) {
         return match (local_of(env, scope, primary)) {
             None -> None,
@@ -2563,7 +2563,7 @@ pub fn scalar_of(t: core::option::Option<Ty>) -> core::option::Option<SrcType> {
     };
 }
 
-pub fn named_scalar(fuel: usize, env: Env, name: List<usize>) -> core::option::Option<SrcType> {
+pub fn named_scalar(fuel: usize, env: FrontEnv, name: List<usize>) -> core::option::Option<SrcType> {
     return match (param_ty(env, name)) {
         Some(t) -> scalar_src(t),
         None -> match (prim_ty(name)) {
@@ -2575,7 +2575,7 @@ pub fn named_scalar(fuel: usize, env: Env, name: List<usize>) -> core::option::O
 
 // The type a cast names (cast_type -> one segment): a primitive type, a
 // type parameter standing for one, or a type alias of the module naming one.
-pub fn cast_type_of(fuel: usize, env: Env, t: CTree) -> core::option::Option<SrcType> {
+pub fn cast_type_of(fuel: usize, env: FrontEnv, t: CTree) -> core::option::Option<SrcType> {
     let path: CTree = kid(t, 0);
     if (node_prod(t) == p_cast_type_name() && node_prod(path) == p_cast_type_path() && node_prod(kid(path, 0)) == p_cast_type_path_ident() && node_prod(kid(path, 1)) == p_cast_type_path_end()) {
         return named_scalar(fuel, env, kid_token(kid(path, 0), 0).text);
@@ -2598,7 +2598,7 @@ pub fn cast_into(t: core::option::Option<SrcType>, e: core::option::Option<SrcEx
 }
 
 // `acc as T as U ...`: casts apply left to right.
-pub fn casts(fuel: usize, env: Env, acc: core::option::Option<SrcExpr>, tail: CTree) -> core::option::Option<SrcExpr> {
+pub fn casts(fuel: usize, env: FrontEnv, acc: core::option::Option<SrcExpr>, tail: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2796,7 +2796,7 @@ pub fn wide_const(t: core::option::Option<Ty>, toks: List<Token>) -> core::optio
 // extract: mutual begin
 // The expression a node of the expression grammar denotes. Calls, struct
 // literals and match are statement forms, so they are not expressions here.
-pub fn expr_of(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
+pub fn expr_of(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2845,7 +2845,7 @@ pub fn expr_of(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::opt
 }
 
 // A name: a local, or else a constant, whose literal value it is.
-pub fn ident_expr(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
+pub fn ident_expr(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2859,7 +2859,7 @@ pub fn ident_expr(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::
     return None;
 }
 
-pub fn const_ref(fuel: usize, env: Env, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<SrcExpr> {
+pub fn const_ref(fuel: usize, env: FrontEnv, segments: core::option::Option<List<List<usize>>>) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2884,7 +2884,7 @@ pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Opt
     if (fuel == 0) {
         return None;
     }
-    let cenv: Env = decl_env(decls, k.home, empty(), empty());
+    let cenv: FrontEnv = decl_env(decls, k.home, empty(), empty());
     return match (literal_as(ty_of(minus(fuel, 1), cenv, k.ty), expr_of(minus(fuel, 1), cenv, empty(), k.value))) {
         Some(x) -> Some(x),
         None -> wide_const(ty_of(minus(fuel, 1), cenv, k.ty), tree_tokens(k.value)),
@@ -2892,7 +2892,7 @@ pub fn const_value(fuel: usize, decls: Decls, k: ConstDecl) -> core::option::Opt
 }
 
 // assign -> orexpr assign_end, as a value.
-pub fn assign_value(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
+pub fn assign_value(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2903,7 +2903,7 @@ pub fn assign_value(fuel: usize, env: Env, scope: List<Local>, c: CTree) -> core
 }
 
 // postfix -> primary postfix_tail, as a value: the primary, or a field.
-pub fn postfix_value(fuel: usize, env: Env, scope: List<Local>, primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
+pub fn postfix_value(fuel: usize, env: FrontEnv, scope: List<Local>, primary: CTree, tail: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2917,7 +2917,7 @@ pub fn postfix_value(fuel: usize, env: Env, scope: List<Local>, primary: CTree, 
 }
 
 // acc op operand op operand ...: binary operators apply left to right.
-pub fn fold(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option<SrcExpr>, tail: CTree) -> core::option::Option<SrcExpr> {
+pub fn fold(fuel: usize, env: FrontEnv, scope: List<Local>, acc: core::option::Option<SrcExpr>, tail: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2927,7 +2927,7 @@ pub fn fold(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option
     return acc;
 }
 
-pub fn fold_op(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option<SrcExpr>, op: core::option::Option<SrcOp>, tail: CTree) -> core::option::Option<SrcExpr> {
+pub fn fold_op(fuel: usize, env: FrontEnv, scope: List<Local>, acc: core::option::Option<SrcExpr>, op: core::option::Option<SrcOp>, tail: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -2937,7 +2937,7 @@ pub fn fold_op(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Opt
     };
 }
 
-pub fn fold_left(fuel: usize, env: Env, scope: List<Local>, left: SrcExpr, op: core::option::Option<SrcOp>, tail: CTree) -> core::option::Option<SrcExpr> {
+pub fn fold_left(fuel: usize, env: FrontEnv, scope: List<Local>, left: SrcExpr, op: core::option::Option<SrcOp>, tail: CTree) -> core::option::Option<SrcExpr> {
     if (fuel == 0) {
         return None;
     }
@@ -3054,7 +3054,7 @@ pub fn pick_ty(left_bare: bool, a: core::option::Option<Ty>, b: core::option::Op
 }
 
 // The type of an expression, as type arguments are inferred from it.
-pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::option::Option<Ty> {
+pub fn expr_ty(fuel: usize, env: FrontEnv, scope: List<Local>, e: SrcExpr) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -3072,7 +3072,7 @@ pub fn expr_ty(fuel: usize, env: Env, scope: List<Local>, e: SrcExpr) -> core::o
     };
 }
 
-pub fn exprs_tys(fuel: usize, env: Env, scope: List<Local>, es: List<SrcExpr>) -> core::option::Option<List<Ty>> {
+pub fn exprs_tys(fuel: usize, env: FrontEnv, scope: List<Local>, es: List<SrcExpr>) -> core::option::Option<List<Ty>> {
     return match (es) {
         Nil -> Some(empty()),
         Cons(e, rest) -> cons_ty(expr_ty(fuel, env, scope, e), exprs_tys(fuel, env, scope, unbox(rest))),
@@ -3175,7 +3175,7 @@ pub fn named_parts(t: Ty) -> core::option::Option<Inst> {
 // extract: mutual begin
 // Match a type expression of a declaration, whose type parameters names are
 // being inferred, against an actual type, extending binds.
-pub fn match_ty(fuel: usize, env: Env, names: List<List<usize>>, pattern: CTree, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_ty(fuel: usize, env: FrontEnv, names: List<List<usize>>, pattern: CTree, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3193,7 +3193,7 @@ pub fn match_ty(fuel: usize, env: Env, names: List<List<usize>>, pattern: CTree,
     return None;
 }
 
-pub fn match_path(fuel: usize, env: Env, names: List<List<usize>>, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_path(fuel: usize, env: FrontEnv, names: List<List<usize>>, segments: core::option::Option<List<List<usize>>>, items: core::option::Option<List<CTree>>, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3206,7 +3206,7 @@ pub fn match_path(fuel: usize, env: Env, names: List<List<usize>>, segments: cor
     };
 }
 
-pub fn match_named(fuel: usize, env: Env, names: List<List<usize>>, segments: List<List<usize>>, items: List<CTree>, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_named(fuel: usize, env: FrontEnv, names: List<List<usize>>, segments: List<List<usize>>, items: List<CTree>, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3219,7 +3219,7 @@ pub fn match_named(fuel: usize, env: Env, names: List<List<usize>>, segments: Li
     };
 }
 
-pub fn match_decl(fuel: usize, env: Env, names: List<List<usize>>, d: core::option::Option<usize>, items: List<CTree>, actual: core::option::Option<Inst>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_decl(fuel: usize, env: FrontEnv, names: List<List<usize>>, d: core::option::Option<usize>, items: List<CTree>, actual: core::option::Option<Inst>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3232,7 +3232,7 @@ pub fn match_decl(fuel: usize, env: Env, names: List<List<usize>>, d: core::opti
     };
 }
 
-pub fn match_same_decl(fuel: usize, env: Env, names: List<List<usize>>, same: bool, items: List<CTree>, args: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_same_decl(fuel: usize, env: FrontEnv, names: List<List<usize>>, same: bool, items: List<CTree>, args: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3243,7 +3243,7 @@ pub fn match_same_decl(fuel: usize, env: Env, names: List<List<usize>>, same: bo
 }
 
 // Generic arguments (generic_argument_type) against the actual arguments.
-pub fn match_args(fuel: usize, env: Env, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_args(fuel: usize, env: FrontEnv, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3259,7 +3259,7 @@ pub fn match_args(fuel: usize, env: Env, names: List<List<usize>>, items: List<C
     };
 }
 
-pub fn match_arg(fuel: usize, env: Env, names: List<List<usize>>, g: CTree, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_arg(fuel: usize, env: FrontEnv, names: List<List<usize>>, g: CTree, actual: Ty, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3269,7 +3269,7 @@ pub fn match_arg(fuel: usize, env: Env, names: List<List<usize>>, g: CTree, actu
     return None;
 }
 
-pub fn match_args_next(fuel: usize, env: Env, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, got: core::option::Option<List<Bind>>) -> core::option::Option<List<Bind>> {
+pub fn match_args_next(fuel: usize, env: FrontEnv, names: List<List<usize>>, items: List<CTree>, actuals: List<Ty>, got: core::option::Option<List<Bind>>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3280,7 +3280,7 @@ pub fn match_args_next(fuel: usize, env: Env, names: List<List<usize>>, items: L
 }
 
 // Type expressions against actual types, in order.
-pub fn match_tys(fuel: usize, env: Env, names: List<List<usize>>, patterns: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_tys(fuel: usize, env: FrontEnv, names: List<List<usize>>, patterns: List<CTree>, actuals: List<Ty>, binds: List<Bind>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3296,7 +3296,7 @@ pub fn match_tys(fuel: usize, env: Env, names: List<List<usize>>, patterns: List
     };
 }
 
-pub fn match_tys_next(fuel: usize, env: Env, names: List<List<usize>>, patterns: List<CTree>, actuals: List<Ty>, got: core::option::Option<List<Bind>>) -> core::option::Option<List<Bind>> {
+pub fn match_tys_next(fuel: usize, env: FrontEnv, names: List<List<usize>>, patterns: List<CTree>, actuals: List<Ty>, got: core::option::Option<List<Bind>>) -> core::option::Option<List<Bind>> {
     if (fuel == 0) {
         return None;
     }
@@ -3367,7 +3367,7 @@ pub fn ret_pattern(fd: FnDecl) -> core::option::Option<CTree> {
     return None;
 }
 
-pub fn callee_env(decls: Decls, fd: FnDecl) -> Env {
+pub fn callee_env(decls: Decls, fd: FnDecl) -> FrontEnv {
     return decl_env(decls, fd.home, empty(), empty());
 }
 
@@ -3420,7 +3420,7 @@ pub fn explicit_checked(ok: bool, d: usize, args: List<Ty>) -> core::option::Opt
 }
 
 // `f<T, ...>(args)`: the type arguments as written (a free function's own).
-pub fn explicit_inst(fuel: usize, env: Env, d: usize, fd: FnDecl, targs: List<CTree>) -> core::option::Option<Inst> {
+pub fn explicit_inst(fuel: usize, env: FrontEnv, d: usize, fd: FnDecl, targs: List<CTree>) -> core::option::Option<Inst> {
     return match (args_tys(fuel, env, targs)) {
         None -> None,
         Some(ts) -> explicit_checked(no_names(fd.impl_params) && length(ts) == length(fd.params), d, ts),
@@ -3701,7 +3701,7 @@ pub fn bare_eff(x: MEff) -> bool {
     };
 }
 
-pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::option::Option<Ty> {
+pub fn eff_ty(fuel: usize, env: FrontEnv, scope: List<Local>, x: MEff) -> core::option::Option<Ty> {
     if (fuel == 0) {
         return None;
     }
@@ -3721,7 +3721,7 @@ pub fn eff_ty(fuel: usize, env: Env, scope: List<Local>, x: MEff) -> core::optio
     };
 }
 
-pub fn effs_tys(fuel: usize, env: Env, scope: List<Local>, xs: List<MEff>) -> core::option::Option<List<Ty>> {
+pub fn effs_tys(fuel: usize, env: FrontEnv, scope: List<Local>, xs: List<MEff>) -> core::option::Option<List<Ty>> {
     return match (xs) {
         Nil -> Some(empty()),
         Cons(x, rest) -> cons_ty(eff_ty(fuel, env, scope, x), effs_tys(fuel, env, scope, unbox(rest))),
@@ -3884,14 +3884,14 @@ pub fn cons_expr(head: core::option::Option<SrcExpr>, tail: core::option::Option
     };
 }
 
-pub fn exprs_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<List<SrcExpr>> {
+pub fn exprs_of(fuel: usize, env: FrontEnv, scope: List<Local>, items: List<CTree>) -> core::option::Option<List<SrcExpr>> {
     return match (items) {
         Nil -> Some(empty()),
         Cons(e, rest) -> cons_expr(expr_of(fuel, env, scope, e), exprs_of(fuel, env, scope, unbox(rest))),
     };
 }
 
-pub fn args_of(fuel: usize, env: Env, scope: List<Local>, args: CTree) -> core::option::Option<List<SrcExpr>> {
+pub fn args_of(fuel: usize, env: FrontEnv, scope: List<Local>, args: CTree) -> core::option::Option<List<SrcExpr>> {
     return match (list_items(fuel, args)) {
         None -> None,
         Some(items) -> exprs_of(fuel, env, scope, items),
@@ -3907,7 +3907,7 @@ pub fn called(inst: core::option::Option<Inst>, args: List<SrcExpr>) -> core::op
     };
 }
 
-pub fn free_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, d: usize, fd: FnDecl, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
+pub fn free_call_of(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, d: usize, fd: FnDecl, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
     if (no_trees(targs)) {
         return called(infer_inst(fuel, env.decls, d, fd, empty(), exprs_tys(fuel, env, scope, es), expected), es);
     }
@@ -3915,14 +3915,14 @@ pub fn free_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, d: 
 }
 
 // A call of the free function d, with type arguments written or inferred.
-pub fn free_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, d: usize, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
+pub fn free_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, d: usize, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
     return match (get(env.decls.fns, d)) {
         None -> None,
         Some(fd) -> free_call_of(fuel, env, scope, expected, d, fd, targs, es),
     };
 }
 
-pub fn method_inst(fuel: usize, env: Env, scope: List<Local>, expected: Ty, found: core::option::Option<Found>, es: List<SrcExpr>) -> core::option::Option<Called> {
+pub fn method_inst(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, found: core::option::Option<Found>, es: List<SrcExpr>) -> core::option::Option<Called> {
     return match (found) {
         None -> None,
         Some(x) -> match (get(env.decls.fns, x.decl)) {
@@ -3933,7 +3933,7 @@ pub fn method_inst(fuel: usize, env: Env, scope: List<Local>, expected: Ty, foun
 }
 
 // `T::m(args)`: the method m of the one impl whose type matches the type s.
-pub fn static_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: core::option::Option<Ty>, name: List<usize>, es: List<SrcExpr>) -> core::option::Option<Called> {
+pub fn static_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, s: core::option::Option<Ty>, name: List<usize>, es: List<SrcExpr>) -> core::option::Option<Called> {
     return match (s) {
         None -> None,
         Some(t) -> method_inst(fuel, env, scope, expected, find_method(fuel, env.decls, env.decls.fns, 0, name, t), es),
@@ -3941,7 +3941,7 @@ pub fn static_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: c
 }
 
 // `x.m(args)`: `T::m(x, args)` for x's type T.
-pub fn method_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, l: core::option::Option<Local>, name: List<usize>, es: core::option::Option<List<SrcExpr>>) -> core::option::Option<Called> {
+pub fn method_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, l: core::option::Option<Local>, name: List<usize>, es: core::option::Option<List<SrcExpr>>) -> core::option::Option<Called> {
     return match (l) {
         None -> None,
         Some(x) -> match (es) {
@@ -3953,14 +3953,14 @@ pub fn method_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, l: c
 
 // A path's one-segment prefix that names a type: a type parameter or a
 // primitive type (`T::m`, `i32::hash`).
-pub fn is_type_param(env: Env, owner: core::option::Option<List<usize>>) -> bool {
+pub fn is_type_param(env: FrontEnv, owner: core::option::Option<List<usize>>) -> bool {
     return match (owner) {
         None -> false,
         Some(n) -> member(env.names, n) || !is_none_type(primitive(n)),
     };
 }
 
-pub fn owner_ty(env: Env, owner: core::option::Option<List<usize>>) -> core::option::Option<Ty> {
+pub fn owner_ty(env: FrontEnv, owner: core::option::Option<List<usize>>) -> core::option::Option<Ty> {
     return match (owner) {
         None -> None,
         Some(n) -> match (param_ty(env, n)) {
@@ -3979,11 +3979,11 @@ pub fn is_some_index(k: core::option::Option<usize>) -> bool {
 
 // A path naming a function: `T::m` for a type parameter T, or a free
 // function of the path's module.
-pub fn is_fn_path(env: Env, s: Split) -> bool {
+pub fn is_fn_path(env: FrontEnv, s: Split) -> bool {
     return is_type_param(env, single_name(s.home)) || is_some_index(find_fn(env.decls.fns, module_or(env.home, s.home), s.name, 0));
 }
 
-pub fn path_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
+pub fn path_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<Called> {
     let owner: core::option::Option<List<usize>> = single_name(s.home);
     if (is_type_param(env, owner) && no_trees(targs)) {
         return static_call(fuel, env, scope, expected, owner_ty(env, owner), s.name, es);
@@ -3995,7 +3995,7 @@ pub fn path_call(fuel: usize, env: Env, scope: List<Local>, expected: Ty, s: Spl
 }
 
 // `path(args)` as a call, its value stored at type expected.
-pub fn path_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, path: CTree, args: CTree) -> core::option::Option<Called> {
+pub fn path_call_of(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, path: CTree, args: CTree) -> core::option::Option<Called> {
     return match (path_ref(fuel, kid(path, 0), kid(path, 1))) {
         None -> None,
         Some(pr) -> match (split_last(pr.segments)) {
@@ -4016,7 +4016,7 @@ pub fn is_method_form(pf: CTree) -> bool {
     return (node_prod(primary) == p_self_value() || (node_prod(primary) == p_ident() && node_prod(kid(primary, 1)) == p_ident_plain())) && node_prod(tail) == p_postfix_member() && node_prod(kid(tail, 2)) == p_member_type_args_none() && node_prod(call) == p_postfix_call() && node_prod(kid(call, 3)) == p_postfix_end();
 }
 
-pub fn method_call_of(fuel: usize, env: Env, scope: List<Local>, expected: Ty, pf: CTree) -> core::option::Option<Called> {
+pub fn method_call_of(fuel: usize, env: FrontEnv, scope: List<Local>, expected: Ty, pf: CTree) -> core::option::Option<Called> {
     let tail: CTree = kid(pf, 1);
     return method_call(fuel, env, scope, expected, local_of(env, scope, kid(pf, 0)), kid_token(tail, 1).text, args_of(fuel, env, scope, kid(kid(tail, 3), 1)));
 }
@@ -4067,7 +4067,7 @@ pub fn call_head_of(c: core::option::Option<Called>) -> core::option::Option<Let
     };
 }
 
-pub fn named_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<LetHead> {
+pub fn named_head(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, s: Split, targs: List<CTree>, es: List<SrcExpr>) -> core::option::Option<LetHead> {
     if (is_fn_path(env, s)) {
         return call_head_of(path_call(fuel, env, scope, ty, s, targs, es));
     }
@@ -4203,7 +4203,7 @@ pub fn dealloc_path() -> List<List<usize>> {
 }
 
 // `path(args)`: the allocator, a raw view, a function or a variant.
-pub fn call_path_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, path: CTree, args: CTree) -> core::option::Option<LetHead> {
+pub fn call_path_head(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, path: CTree, args: CTree) -> core::option::Option<LetHead> {
     let segments: core::option::Option<List<List<usize>>> = path_spellings(fuel, kid(path, 0), kid(path, 1));
     if (is_path(segments, alloc_path())) {
         return alloc_head(args_of(fuel, env, scope, args));
@@ -4234,7 +4234,7 @@ pub fn index_head(l: core::option::Option<Local>, index: core::option::Option<Sr
 }
 
 // `name` or `m::name`: a unit variant, or else a value.
-pub fn unit_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, path: CTree, init: CTree) -> core::option::Option<LetHead> {
+pub fn unit_head(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, path: CTree, init: CTree) -> core::option::Option<LetHead> {
     return match (path_spellings(fuel, kid(path, 0), kid(path, 1))) {
         None -> plain_head(expr_of(fuel, env, scope, init)),
         Some(ss) -> match (split_last(ss)) {
@@ -4254,7 +4254,7 @@ pub fn field_values(fs: List<CTree>) -> List<CTree> {
     };
 }
 
-pub fn literal_checked(fuel: usize, env: Env, scope: List<Local>, ok: bool, fs: List<CTree>) -> core::option::Option<LetHead> {
+pub fn literal_checked(fuel: usize, env: FrontEnv, scope: List<Local>, ok: bool, fs: List<CTree>) -> core::option::Option<LetHead> {
     if (ok) {
         return match (exprs_of(fuel, env, scope, field_values(fs))) {
             None -> None,
@@ -4278,14 +4278,14 @@ pub fn same_names(names: List<List<usize>>, fs: List<CTree>) -> bool {
     };
 }
 
-pub fn literal_entry(fuel: usize, env: Env, scope: List<Local>, same: bool, entry: core::option::Option<TypeDecl>, fs: List<CTree>) -> core::option::Option<LetHead> {
+pub fn literal_entry(fuel: usize, env: FrontEnv, scope: List<Local>, same: bool, entry: core::option::Option<TypeDecl>, fs: List<CTree>) -> core::option::Option<LetHead> {
     return match (entry) {
         None -> None,
         Some(t) -> literal_checked(fuel, env, scope, same && !t.is_enum && same_names(t.fields, fs), fs),
     };
 }
 
-pub fn literal_at(fuel: usize, env: Env, scope: List<Local>, ty: Ty, d: core::option::Option<usize>, fs: List<CTree>) -> core::option::Option<LetHead> {
+pub fn literal_at(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, d: core::option::Option<usize>, fs: List<CTree>) -> core::option::Option<LetHead> {
     return match (d) {
         None -> None,
         Some(x) -> match (named_decl(ty)) {
@@ -4296,7 +4296,7 @@ pub fn literal_at(fuel: usize, env: Env, scope: List<Local>, ty: Ty, d: core::op
 }
 
 // `S { f: e, ... }` of the let's own struct type, fields in declared order.
-pub fn literal_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, path: CTree, fields: CTree) -> core::option::Option<LetHead> {
+pub fn literal_head(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, path: CTree, fields: CTree) -> core::option::Option<LetHead> {
     return match (path_spellings(fuel, kid(path, 0), kid(path, 1))) {
         None -> None,
         Some(ss) -> match (list_items(fuel, fields)) {
@@ -4340,7 +4340,7 @@ pub fn arm_value(ids: List<usize>, value: core::option::Option<SrcExpr>) -> core
     };
 }
 
-pub fn arm_bound(fuel: usize, env: Env, bound: core::option::Option<Bound>, value: CTree) -> core::option::Option<SrcArm> {
+pub fn arm_bound(fuel: usize, env: FrontEnv, bound: core::option::Option<Bound>, value: CTree) -> core::option::Option<SrcArm> {
     return match (bound) {
         None -> None,
         Some(b) -> arm_value(b.ids, expr_of(fuel, env, b.scope, value)),
@@ -4362,7 +4362,7 @@ pub fn cons_binder(id: usize, rest: core::option::Option<Bound>) -> core::option
 }
 
 // One plain name pattern per payload type, each a fresh local.
-pub fn binders_of(env: Env, scope: List<Local>, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
+pub fn binders_of(env: FrontEnv, scope: List<Local>, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     return match (payload) {
         Nil -> match (pats) {
             Nil -> Some(Bound { ids: empty(), scope: scope }),
@@ -4376,7 +4376,7 @@ pub fn binders_of(env: Env, scope: List<Local>, pats: List<CTree>, payload: List
 }
 
 // extract: inline
-fn binder_of(env: Env, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
+fn binder_of(env: FrontEnv, scope: List<Local>, p: CTree, t: Ty, pats: List<CTree>, payload: List<Ty>) -> core::option::Option<Bound> {
     let path: CTree = kid(p, 0);
     let tok: Token = kid_token(kid(path, 0), 0);
     if (node_prod(p) == p_pattern_ident() && node_prod(kid(p, 1)) == p_pattern_plain() && is_some_name(path_name(path)) && !member(env.globals, tok.text)) {
@@ -4418,7 +4418,7 @@ pub fn arm_named(segments: core::option::Option<List<List<usize>>>, owner: TypeD
 }
 
 // `V -> value` or `V(b, ...) -> value` (match_arm -> pattern MatchArrow expr).
-pub fn arm_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<SrcArm> {
+pub fn arm_of(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<SrcArm> {
     let pattern: CTree = kid(arm, 0);
     let ptail: CTree = kid(pattern, 1);
     let path: CTree = kid(pattern, 0);
@@ -4480,7 +4480,7 @@ pub fn arms_in_order(fuel: usize, owner: TypeDecl, variants: List<VariantTy>, ar
 }
 
 // Arm k is variant k.
-pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
+pub fn arms_of(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
     return match (variants) {
         Nil -> match (arms) {
             Nil -> Some(empty()),
@@ -4493,14 +4493,14 @@ pub fn arms_of(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, varia
     };
 }
 
-pub fn arms_ordered(fuel: usize, env: Env, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
+pub fn arms_ordered(fuel: usize, env: FrontEnv, scope: List<Local>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<SrcArm>> {
     return match (arms_in_order(fuel, owner, variants, arms)) {
         None -> None,
         Some(os) -> arms_of(fuel, env, scope, owner, variants, os),
     };
 }
 
-pub fn match_enum(fuel: usize, env: Env, scope: List<Local>, l: Local, owner: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<LetHead> {
+pub fn match_enum(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, owner: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<LetHead> {
     if (owner.is_enum) {
         return match (payloads) {
             None -> None,
@@ -4513,7 +4513,7 @@ pub fn match_enum(fuel: usize, env: Env, scope: List<Local>, l: Local, owner: Ty
     return None;
 }
 
-pub fn match_local(fuel: usize, env: Env, scope: List<Local>, l: Local, m: CTree) -> core::option::Option<LetHead> {
+pub fn match_local(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, m: CTree) -> core::option::Option<LetHead> {
     return match (named_parts(l.ty)) {
         None -> None,
         Some(n) -> match (get(env.decls.types, n.decl)) {
@@ -4523,7 +4523,7 @@ pub fn match_local(fuel: usize, env: Env, scope: List<Local>, l: Local, m: CTree
     };
 }
 
-pub fn match_scrutinee(fuel: usize, env: Env, scope: List<Local>, pf: CTree, m: CTree) -> core::option::Option<LetHead> {
+pub fn match_scrutinee(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree, m: CTree) -> core::option::Option<LetHead> {
     if (node_prod(kid(pf, 1)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(pf, 0))) {
             None -> None,
@@ -4534,14 +4534,14 @@ pub fn match_scrutinee(fuel: usize, env: Env, scope: List<Local>, pf: CTree, m: 
 }
 
 // `match (x) { arms }`: x a local of an enum type, one arm per variant in order.
-pub fn match_head(fuel: usize, env: Env, scope: List<Local>, m: CTree) -> core::option::Option<LetHead> {
+pub fn match_head(fuel: usize, env: FrontEnv, scope: List<Local>, m: CTree) -> core::option::Option<LetHead> {
     return match (peel(fuel, kid(m, 2))) {
         None -> None,
         Some(pf) -> match_scrutinee(fuel, env, scope, pf, m),
     };
 }
 
-pub fn postfix_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, pf: CTree, init: CTree) -> core::option::Option<LetHead> {
+pub fn postfix_head(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, pf: CTree, init: CTree) -> core::option::Option<LetHead> {
     let primary: CTree = kid(pf, 0);
     let tail: CTree = kid(pf, 1);
     if (node_prod(primary) == p_match_expr() && node_prod(tail) == p_postfix_end()) {
@@ -4566,7 +4566,7 @@ pub fn postfix_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, pf: CTree
 }
 
 // The head of `let x: ty = init;`.
-pub fn let_head(fuel: usize, env: Env, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
+pub fn let_head(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
     return match (peel(fuel, init)) {
         None -> plain_head(expr_of(fuel, env, scope, init)),
         Some(pf) -> postfix_head(fuel, env, scope, ty, pf, init),
@@ -4607,7 +4607,7 @@ pub fn named_inferred(d: usize, args: core::option::Option<List<Ty>>) -> core::o
 // The type of a literal of declaration d: its known arguments, or else
 // those inferred by matching the field or payload types as written with
 // the values' types.
-pub fn decl_inst(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDecl, known: core::option::Option<List<Ty>>, patterns: core::option::Option<List<CTree>>, values: List<MEff>) -> core::option::Option<Ty> {
+pub fn decl_inst(fuel: usize, env: FrontEnv, scope: List<Local>, d: usize, t: TypeDecl, known: core::option::Option<List<Ty>>, patterns: core::option::Option<List<CTree>>, values: List<MEff>) -> core::option::Option<Ty> {
     return match (known) {
         Some(args) -> Some(TyNamed(d, boxed(args))),
         None -> match (patterns) {
@@ -4637,7 +4637,7 @@ pub fn field_expects(fuel: usize, decls: Decls, d: usize, known: core::option::O
     };
 }
 
-pub fn x_variant_of(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDecl, index: usize, known: core::option::Option<List<Ty>>, payload: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+pub fn x_variant_of(fuel: usize, env: FrontEnv, scope: List<Local>, d: usize, t: TypeDecl, index: usize, known: core::option::Option<List<Ty>>, payload: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
     return match (payload) {
         None -> None,
         Some(ps) -> match (decl_inst(fuel, env, scope, d, t, known, get(t.payloads, index), ps)) {
@@ -4647,7 +4647,7 @@ pub fn x_variant_of(fuel: usize, env: Env, scope: List<Local>, d: usize, t: Type
     };
 }
 
-pub fn x_struct_of(fuel: usize, env: Env, scope: List<Local>, d: usize, t: TypeDecl, known: core::option::Option<List<Ty>>, values: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+pub fn x_struct_of(fuel: usize, env: FrontEnv, scope: List<Local>, d: usize, t: TypeDecl, known: core::option::Option<List<Ty>>, values: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
     return match (values) {
         None -> None,
         Some(vs) -> match (decl_inst(fuel, env, scope, d, t, known, Some(t.field_types), vs)) {
@@ -4700,7 +4700,7 @@ pub fn infer_eff(fuel: usize, decls: Decls, d: usize, fd: FnDecl, start: List<Bi
     };
 }
 
-pub fn eff_called(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, start: List<Bind>, pre: List<MEff>, args: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
+pub fn eff_called(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, start: List<Bind>, pre: List<MEff>, args: core::option::Option<List<MEff>>) -> core::option::Option<MEff> {
     return match (args) {
         None -> None,
         Some(xs) -> x_call_of(infer_eff(fuel, env.decls, d, fd, start, effs_tys(fuel, env, scope, concat(pre, xs)), expected), concat(pre, xs)),
@@ -4722,7 +4722,7 @@ pub fn eff_binary(p: usize, acc: core::option::Option<MEff>, right: core::option
 }
 
 // `acc as T as U ...`
-pub fn eff_casts(fuel: usize, env: Env, acc: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
+pub fn eff_casts(fuel: usize, env: FrontEnv, acc: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -4732,7 +4732,7 @@ pub fn eff_casts(fuel: usize, env: Env, acc: core::option::Option<MEff>, tail: C
     return acc;
 }
 
-pub fn arm_eff(fuel: usize, env: Env, b: Bound, value: core::option::Option<MEff>) -> core::option::Option<EffArm> {
+pub fn arm_eff(fuel: usize, env: FrontEnv, b: Bound, value: core::option::Option<MEff>) -> core::option::Option<EffArm> {
     return match (value) {
         None -> None,
         Some(x) -> Some(EffArm { binders: b.ids, value: x, ty: eff_ty(fuel, env, b.scope, x) }),
@@ -4811,7 +4811,7 @@ pub fn field_value(decls: Decls, x: MEff, t: Ty, j: usize) -> MEff {
     };
 }
 
-pub fn field_of_ty(env: Env, x: MEff, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<MEff> {
+pub fn field_of_ty(env: FrontEnv, x: MEff, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<MEff> {
     return match (t) {
         None -> None,
         Some(ty) -> match (field_index(env, ty, name)) {
@@ -4821,7 +4821,7 @@ pub fn field_of_ty(env: Env, x: MEff, t: core::option::Option<Ty>, name: List<us
     };
 }
 
-pub fn method_of_ty(fuel: usize, env: Env, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<Found> {
+pub fn method_of_ty(fuel: usize, env: FrontEnv, t: core::option::Option<Ty>, name: List<usize>) -> core::option::Option<Found> {
     return match (t) {
         None -> None,
         Some(ty) -> find_method(fuel, env.decls, env.decls.fns, 0, name, ty),
@@ -4877,7 +4877,7 @@ pub fn arg_expected(fuel: usize, decls: Decls, fd: FnDecl, names: List<List<usiz
 
 // An argument's type matched with its parameter's; an integer literal binds
 // nothing (laniusc gives it the parameter's type).
-pub fn bind_arg(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, p: CTree, x: MEff, b: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn bind_arg(fuel: usize, env: FrontEnv, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, p: CTree, x: MEff, b: List<Bind>) -> core::option::Option<List<Bind>> {
     if (bare_eff(x)) {
         return Some(b);
     }
@@ -4887,7 +4887,7 @@ pub fn bind_arg(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: Li
     };
 }
 
-pub fn match_tys_or_none(fuel: usize, env: Env, names: List<List<usize>>, ps: List<CTree>, ts: core::option::Option<List<Ty>>, b: List<Bind>) -> core::option::Option<List<Bind>> {
+pub fn match_tys_or_none(fuel: usize, env: FrontEnv, names: List<List<usize>>, ps: List<CTree>, ts: core::option::Option<List<Ty>>, b: List<Bind>) -> core::option::Option<List<Bind>> {
     return match (ts) {
         None -> None,
         Some(xs) -> match_tys(fuel, env, names, ps, xs, b),
@@ -4896,14 +4896,14 @@ pub fn match_tys_or_none(fuel: usize, env: Env, names: List<List<usize>>, ps: Li
 
 // The instance: from the bindings; if a type parameter is still unbound,
 // with the integer literal arguments taken as i32.
-pub fn inst_bound(fuel: usize, env: Env, scope: List<Local>, d: usize, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, a: ArgsBound) -> core::option::Option<Inst> {
+pub fn inst_bound(fuel: usize, env: FrontEnv, scope: List<Local>, d: usize, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, a: ArgsBound) -> core::option::Option<Inst> {
     return match (bound_args(names, a.binds)) {
         Some(ts) -> Some(Inst { decl: d, args: ts }),
         None -> inst_from(d, bound_or_none(names, match_tys_or_none(fuel, callee_env(env.decls, fd), names, ps, effs_tys(fuel, env, scope, a.args), a.binds))),
     };
 }
 
-pub fn eff_inferred(fuel: usize, env: Env, scope: List<Local>, d: usize, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, r: core::option::Option<ArgsBound>) -> core::option::Option<MEff> {
+pub fn eff_inferred(fuel: usize, env: FrontEnv, scope: List<Local>, d: usize, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, r: core::option::Option<ArgsBound>) -> core::option::Option<MEff> {
     return match (r) {
         None -> None,
         Some(a) -> x_call_of(inst_bound(fuel, env, scope, d, fd, names, ps, a), a.args),
@@ -4960,7 +4960,7 @@ pub fn diverge_arm(decls: Decls, expected: core::option::Option<Ty>, x: core::op
 // value stored at type expected when that is known: the pure expression
 // expr_of reads, or else a call, a variant, a struct literal, a match, a
 // slice element, a division, or an operator, cast or negation of these.
-pub fn eff_of(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+pub fn eff_of(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -4970,7 +4970,7 @@ pub fn eff_of(fuel: usize, env: Env, scope: List<Local>, expected: core::option:
     };
 }
 
-pub fn eff_node(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+pub fn eff_node(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5010,7 +5010,7 @@ pub fn eff_node(fuel: usize, env: Env, scope: List<Local>, expected: core::optio
 }
 
 // acc op operand op operand ...
-pub fn eff_fold(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
+pub fn eff_fold(fuel: usize, env: FrontEnv, scope: List<Local>, acc: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5022,7 +5022,7 @@ pub fn eff_fold(fuel: usize, env: Env, scope: List<Local>, acc: core::option::Op
 
 // A primary with no postfix, `path(args)`, `x.m(args)`, or `v[index]`
 // for a slice local v.
-pub fn eff_postfix(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
+pub fn eff_postfix(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5048,7 +5048,7 @@ pub fn eff_postfix(fuel: usize, env: Env, scope: List<Local>, expected: core::op
 }
 
 // The value a postfix starts from: a local, or any other primary.
-pub fn eff_primary(fuel: usize, env: Env, scope: List<Local>, primary: CTree) -> core::option::Option<MEff> {
+pub fn eff_primary(fuel: usize, env: FrontEnv, scope: List<Local>, primary: CTree) -> core::option::Option<MEff> {
     return match (local_of(env, scope, primary)) {
         Some(l) -> Some(XPure(Local(l.id))),
         None -> eff_node(fuel, env, scope, None, primary),
@@ -5058,7 +5058,7 @@ pub fn eff_primary(fuel: usize, env: Env, scope: List<Local>, primary: CTree) ->
 // The rest of a postfix after the value x: `.f` (Field of a local, else the
 // call of the field's projection), `.m(args)` (the method m of x's type,
 // with x the receiver), or `[index]` of a slice local, then what follows.
-pub fn eff_chain(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, x: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
+pub fn eff_chain(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, x: core::option::Option<MEff>, tail: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5071,7 +5071,7 @@ pub fn eff_chain(fuel: usize, env: Env, scope: List<Local>, expected: core::opti
     };
 }
 
-pub fn eff_step(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, tail: CTree) -> core::option::Option<MEff> {
+pub fn eff_step(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, tail: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5094,7 +5094,7 @@ pub fn eff_step(fuel: usize, env: Env, scope: List<Local>, expected: core::optio
 
 // A name that is not a local or a constant: a unit variant; or a struct
 // literal `S { f: e, ... }`, fields in declared order.
-pub fn eff_ident(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
+pub fn eff_ident(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, c: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5126,7 +5126,7 @@ pub fn eff_ident(fuel: usize, env: Env, scope: List<Local>, expected: core::opti
     return None;
 }
 
-pub fn eff_literal(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, t: TypeDecl, fs: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_literal(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, t: TypeDecl, fs: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5137,7 +5137,7 @@ pub fn eff_literal(fuel: usize, env: Env, scope: List<Local>, expected: core::op
 }
 
 // A variant with its payload.
-pub fn eff_variant(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, v: core::option::Option<VariantAt>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_variant(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, v: core::option::Option<VariantAt>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5151,7 +5151,7 @@ pub fn eff_variant(fuel: usize, env: Env, scope: List<Local>, expected: core::op
 }
 
 // Expressions in order, each stored at its expected type when known.
-pub fn eff_list(fuel: usize, env: Env, scope: List<Local>, expects: core::option::Option<List<Ty>>, items: List<CTree>) -> core::option::Option<List<MEff>> {
+pub fn eff_list(fuel: usize, env: FrontEnv, scope: List<Local>, expects: core::option::Option<List<Ty>>, items: List<CTree>) -> core::option::Option<List<MEff>> {
     if (fuel == 0) {
         return None;
     }
@@ -5163,7 +5163,7 @@ pub fn eff_list(fuel: usize, env: Env, scope: List<Local>, expects: core::option
 
 // `path(args)`: a function, `T::m` for a type parameter T, or a variant.
 // slice_stride(x): one argument, a slice local.
-pub fn stride_arg(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn stride_arg(fuel: usize, env: FrontEnv, scope: List<Local>, items: List<CTree>) -> core::option::Option<MEff> {
     return match (items) {
         Nil -> None,
         Cons(a, rest) -> match (unbox(rest)) {
@@ -5173,7 +5173,7 @@ pub fn stride_arg(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>)
     };
 }
 
-pub fn stride_of_postfix(env: Env, scope: List<Local>, pf: core::option::Option<CTree>) -> core::option::Option<MEff> {
+pub fn stride_of_postfix(env: FrontEnv, scope: List<Local>, pf: core::option::Option<CTree>) -> core::option::Option<MEff> {
     return match (pf) {
         None -> None,
         Some(x) -> stride_of_local(node_prod(kid(x, 1)) == p_postfix_end(), local_of(env, scope, kid(x, 0))),
@@ -5193,7 +5193,7 @@ pub fn stride_of_local(plain: bool, l: core::option::Option<Local>) -> core::opt
     return None;
 }
 
-pub fn eff_path_call(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, path: CTree, args: CTree) -> core::option::Option<MEff> {
+pub fn eff_path_call(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, path: CTree, args: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5219,7 +5219,7 @@ pub fn eff_path_call(fuel: usize, env: Env, scope: List<Local>, expected: core::
     };
 }
 
-pub fn eff_named(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, s: Split, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_named(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, s: Split, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5232,7 +5232,7 @@ pub fn eff_named(fuel: usize, env: Env, scope: List<Local>, expected: core::opti
     return None;
 }
 
-pub fn eff_fn_path(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, s: Split, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_fn_path(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, s: Split, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5253,7 +5253,7 @@ pub fn eff_fn_path(fuel: usize, env: Env, scope: List<Local>, expected: core::op
 }
 
 // A free function's call, its type arguments written or inferred.
-pub fn eff_free(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_free(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, targs: List<CTree>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5271,7 +5271,7 @@ pub fn eff_free(fuel: usize, env: Env, scope: List<Local>, expected: core::optio
 
 // A call whose type arguments are inferred, from start: the arguments
 // after pre (the receiver, if any).
-pub fn eff_infer(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, start: List<Bind>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_infer(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, d: usize, fd: FnDecl, start: List<Bind>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5287,7 +5287,7 @@ pub fn eff_infer(fuel: usize, env: Env, scope: List<Local>, expected: core::opti
 
 // The arguments in order, each read at its parameter's type when the
 // bindings so far give it one, and the bindings they extend.
-pub fn eff_args_bound(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, pre: List<MEff>, items: List<CTree>, binds: core::option::Option<List<Bind>>) -> core::option::Option<ArgsBound> {
+pub fn eff_args_bound(fuel: usize, env: FrontEnv, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, ps: List<CTree>, pre: List<MEff>, items: List<CTree>, binds: core::option::Option<List<Bind>>) -> core::option::Option<ArgsBound> {
     if (fuel == 0) {
         return None;
     }
@@ -5313,7 +5313,7 @@ pub fn eff_args_bound(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, nam
     };
 }
 
-pub fn eff_arg_next(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, p: CTree, ps: List<CTree>, items: List<CTree>, b: List<Bind>, x: core::option::Option<MEff>) -> core::option::Option<ArgsBound> {
+pub fn eff_arg_next(fuel: usize, env: FrontEnv, scope: List<Local>, fd: FnDecl, names: List<List<usize>>, p: CTree, ps: List<CTree>, items: List<CTree>, b: List<Bind>, x: core::option::Option<MEff>) -> core::option::Option<ArgsBound> {
     if (fuel == 0) {
         return None;
     }
@@ -5323,7 +5323,7 @@ pub fn eff_arg_next(fuel: usize, env: Env, scope: List<Local>, fd: FnDecl, names
     };
 }
 
-pub fn eff_found(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, found: core::option::Option<Found>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
+pub fn eff_found(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, found: core::option::Option<Found>, pre: List<MEff>, items: List<CTree>) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5337,7 +5337,7 @@ pub fn eff_found(fuel: usize, env: Env, scope: List<Local>, expected: core::opti
 }
 
 // `x.m(args)`: `T::m(x, args)` for x's type T.
-pub fn eff_method(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
+pub fn eff_method(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, pf: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5353,14 +5353,14 @@ pub fn eff_method(fuel: usize, env: Env, scope: List<Local>, expected: core::opt
 
 // `match (scrutinee) { arms }`: the scrutinee of an enum type, one arm per
 // variant in order.
-pub fn eff_match(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, m: CTree) -> core::option::Option<MEff> {
+pub fn eff_match(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, m: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
     return eff_match_on(minus(fuel, 1), env, scope, expected, eff_of(minus(fuel, 1), env, scope, None, kid(m, 2)), m);
 }
 
-pub fn eff_match_on(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, s: core::option::Option<MEff>, m: CTree) -> core::option::Option<MEff> {
+pub fn eff_match_on(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, s: core::option::Option<MEff>, m: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5379,7 +5379,7 @@ pub fn eff_match_on(fuel: usize, env: Env, scope: List<Local>, expected: core::o
     };
 }
 
-pub fn eff_match_enum(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, ety: Ty, t: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<MEff> {
+pub fn eff_match_enum(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, x: MEff, ety: Ty, t: TypeDecl, payloads: core::option::Option<List<List<Ty>>>, m: CTree) -> core::option::Option<MEff> {
     if (fuel == 0) {
         return None;
     }
@@ -5395,7 +5395,7 @@ pub fn eff_match_enum(fuel: usize, env: Env, scope: List<Local>, expected: core:
     return None;
 }
 
-pub fn eff_arms_ordered(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<EffArm>> {
+pub fn eff_arms_ordered(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<EffArm>> {
     if (fuel == 0) {
         return None;
     }
@@ -5406,7 +5406,7 @@ pub fn eff_arms_ordered(fuel: usize, env: Env, scope: List<Local>, expected: cor
 }
 
 // Arm k is variant k.
-pub fn eff_arms(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<EffArm>> {
+pub fn eff_arms(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, variants: List<VariantTy>, arms: List<CTree>) -> core::option::Option<List<EffArm>> {
     if (fuel == 0) {
         return None;
     }
@@ -5423,7 +5423,7 @@ pub fn eff_arms(fuel: usize, env: Env, scope: List<Local>, expected: core::optio
 }
 
 // `V -> value` or `V(b, ...) -> value`.
-pub fn eff_arm(fuel: usize, env: Env, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<EffArm> {
+pub fn eff_arm(fuel: usize, env: FrontEnv, scope: List<Local>, expected: core::option::Option<Ty>, owner: TypeDecl, v: VariantTy, arm: CTree) -> core::option::Option<EffArm> {
     if (fuel == 0) {
         return None;
     }
@@ -5442,7 +5442,7 @@ pub fn eff_arm(fuel: usize, env: Env, scope: List<Local>, expected: core::option
     return None;
 }
 
-pub fn eff_arm_bound(fuel: usize, env: Env, expected: core::option::Option<Ty>, bound: core::option::Option<Bound>, value: CTree) -> core::option::Option<EffArm> {
+pub fn eff_arm_bound(fuel: usize, env: FrontEnv, expected: core::option::Option<Ty>, bound: core::option::Option<Bound>, value: CTree) -> core::option::Option<EffArm> {
     if (fuel == 0) {
         return None;
     }
@@ -5465,7 +5465,7 @@ pub fn eval_head(x: core::option::Option<MEff>) -> core::option::Option<LetHead>
 
 // The head of `let x: ty = init;`: a statement form, or else an effectful
 // expression.
-pub fn let_head_or_eval(fuel: usize, env: Env, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
+pub fn let_head_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, ty: Ty, init: CTree) -> core::option::Option<LetHead> {
     return match (let_head(fuel, env, scope, ty, init)) {
         Some(h) -> Some(h),
         None -> eval_head(eff_of(fuel, env, scope, Some(ty), init)),
@@ -5590,7 +5590,7 @@ pub fn slice_returned(id: usize, el: Ty, h: core::option::Option<LetHead>) -> co
 // `return slice_from_raw_parts(pointer, length);` in a function whose
 // result is a slice: a slice local, then its return. The local's id is the
 // byte offset of the value's first token, which no binding has.
-pub fn return_slice(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+pub fn return_slice(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     return match (env.ret) {
         None -> None,
         Some(t) -> match (slice_elem(t)) {
@@ -5603,7 +5603,7 @@ pub fn return_slice(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core
     };
 }
 
-pub fn return_or_eval(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+pub fn return_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     return match (expr_of(fuel, env, scope, e)) {
         Some(x) -> Some(MReturn(x)),
         None -> match (return_slice(fuel, env, scope, e)) {
@@ -5627,7 +5627,7 @@ pub fn if_eval_of(c: core::option::Option<MEff>, a: core::option::Option<MStmt>,
 }
 
 // `if (c) { a } else { b }`, c pure or else effectful.
-pub fn if_or_eval(fuel: usize, env: Env, scope: List<Local>, c: CTree, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+pub fn if_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree, a: core::option::Option<MStmt>, b: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (expr_of(fuel, env, scope, c)) {
         Some(x) -> if_branches(x, a, b),
         None -> if_eval_of(eff_of(fuel, env, scope, Some(TyBool), c), a, b),
@@ -5645,7 +5645,7 @@ pub fn while_eval_of(c: core::option::Option<MEff>, body: core::option::Option<M
 }
 
 // `while (c) { body }`, c pure or else effectful.
-pub fn while_or_eval(fuel: usize, env: Env, scope: List<Local>, c: CTree, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
+pub fn while_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, c: CTree, body: core::option::Option<MStmt>) -> core::option::Option<MStmt> {
     return match (expr_of(fuel, env, scope, c)) {
         Some(x) -> while_body(x, body),
         None -> while_eval_of(eff_of(fuel, env, scope, Some(TyBool), c), body),
@@ -5674,7 +5674,7 @@ pub fn set_call_of(id: usize, c: core::option::Option<Called>) -> core::option::
 }
 
 // `x = value;`: a call, or an expression.
-pub fn set_postfix(fuel: usize, env: Env, scope: List<Local>, l: Local, pf: CTree, value: CTree) -> core::option::Option<MStmt> {
+pub fn set_postfix(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, pf: CTree, value: CTree) -> core::option::Option<MStmt> {
     if (is_path_call(pf)) {
         return set_call_of(l.id, path_call_of(fuel, env, scope, l.ty, kid(kid(pf, 0), 0), kid(kid(pf, 1), 1)));
     }
@@ -5684,7 +5684,7 @@ pub fn set_postfix(fuel: usize, env: Env, scope: List<Local>, l: Local, pf: CTre
     return set_value(l.id, expr_of(fuel, env, scope, value));
 }
 
-pub fn set_local(fuel: usize, env: Env, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
+pub fn set_local(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
     return match (peel(fuel, value)) {
         None -> set_value(l.id, expr_of(fuel, env, scope, value)),
         Some(pf) -> set_postfix(fuel, env, scope, l, pf, value),
@@ -5712,7 +5712,7 @@ pub fn set_eval_of(id: usize, x: core::option::Option<MEff>) -> core::option::Op
 }
 
 // `x = value;`: a statement form, or else an effectful expression.
-pub fn set_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
+pub fn set_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, value: CTree) -> core::option::Option<MStmt> {
     return match (set_local(fuel, env, scope, l, value)) {
         Some(s) -> Some(s),
         None -> set_eval_of(l.id, eff_of(fuel, env, scope, Some(l.ty), value)),
@@ -5730,7 +5730,7 @@ pub fn set_index_eval_of(slice: usize, index: core::option::Option<MEff>, value:
 }
 
 // `v[index] = value;`
-pub fn set_index_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, index: CTree, value: CTree) -> core::option::Option<MStmt> {
+pub fn set_index_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: CTree, value: CTree) -> core::option::Option<MStmt> {
     return match (set_index_of(l.id, expr_of(fuel, env, scope, index), expr_of(fuel, env, scope, value))) {
         Some(s) -> Some(s),
         None -> set_index_eval_of(l.id, eff_of(fuel, env, scope, None, index), eff_of(fuel, env, scope, slice_elem(l.ty), value)),
@@ -5753,7 +5753,7 @@ pub fn field_ty_at(fuel: usize, decls: Decls, t: Ty, j: usize) -> core::option::
 }
 
 // `x.f = value;`: value pure, or else effectful (stored at the field's type).
-pub fn set_field_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, name: List<usize>, value: CTree) -> core::option::Option<MStmt> {
+pub fn set_field_or_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, name: List<usize>, value: CTree) -> core::option::Option<MStmt> {
     return match (field_index(env, l.ty, name)) {
         None -> None,
         Some(j) -> match (expr_of(fuel, env, scope, value)) {
@@ -5763,7 +5763,7 @@ pub fn set_field_or_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, na
     };
 }
 
-pub fn assign_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
+pub fn assign_target(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
@@ -5828,7 +5828,7 @@ pub fn assert_of(x: core::option::Option<MEff>) -> core::option::Option<MStmt> {
 }
 
 // `assert(c)`: its one argument, a bool.
-pub fn assert_arg(fuel: usize, env: Env, scope: List<Local>, args: core::option::Option<List<CTree>>) -> core::option::Option<MStmt> {
+pub fn assert_arg(fuel: usize, env: FrontEnv, scope: List<Local>, args: core::option::Option<List<CTree>>) -> core::option::Option<MStmt> {
     return match (args) {
         None -> None,
         Some(items) -> match (items) {
@@ -5843,7 +5843,7 @@ pub fn assert_arg(fuel: usize, env: Env, scope: List<Local>, args: core::option:
 
 // A call statement: `alloc::allocator::dealloc(pointer, size, align);`,
 // `assert(c);`, or a call whose value (if any) is discarded.
-pub fn call_stmt(fuel: usize, env: Env, scope: List<Local>, pf: CTree) -> core::option::Option<MStmt> {
+pub fn call_stmt(fuel: usize, env: FrontEnv, scope: List<Local>, pf: CTree) -> core::option::Option<MStmt> {
     let path: CTree = kid(kid(pf, 0), 0);
     if (is_path_call(pf) && is_path(path_spellings(fuel, kid(path, 0), kid(path, 1)), dealloc_path())) {
         return free_of(args_of(fuel, env, scope, kid(kid(pf, 1), 1)));
@@ -5894,7 +5894,7 @@ pub fn compound_value(op: SrcOp, left: SrcExpr, right: core::option::Option<SrcE
     };
 }
 
-pub fn compound_field(fuel: usize, env: Env, scope: List<Local>, l: Local, index: core::option::Option<usize>, op: SrcOp, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_field(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: core::option::Option<usize>, op: SrcOp, value: CTree) -> core::option::Option<MStmt> {
     return match (index) {
         None -> None,
         Some(j) -> set_field_value(l.id, j, compound_value(op, Field(l.id, j), expr_of(fuel, env, scope, value))),
@@ -5902,7 +5902,7 @@ pub fn compound_field(fuel: usize, env: Env, scope: List<Local>, l: Local, index
 }
 
 // `x op= e` is `x = x op e`, and `x.f op= e` is `x.f = x.f op e`.
-pub fn compound_target(fuel: usize, env: Env, scope: List<Local>, target: CTree, op: SrcOp, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_target(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, op: SrcOp, value: CTree) -> core::option::Option<MStmt> {
     let tail: CTree = kid(target, 1);
     if (node_prod(tail) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
@@ -5919,7 +5919,7 @@ pub fn compound_target(fuel: usize, env: Env, scope: List<Local>, target: CTree,
     return None;
 }
 
-pub fn compound_pure(fuel: usize, env: Env, scope: List<Local>, target: CTree, op: core::option::Option<SrcOp>, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_pure(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, op: core::option::Option<SrcOp>, value: CTree) -> core::option::Option<MStmt> {
     return match (op) {
         None -> None,
         Some(o) -> compound_target(fuel, env, scope, target, o, value),
@@ -5941,7 +5941,7 @@ pub fn compound_eff(p: usize, left: MEff, right: core::option::Option<MEff>) -> 
 }
 
 // `x.f op= e`, when e or op is effectful.
-pub fn compound_field_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, index: core::option::Option<usize>, p: usize, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_field_eval(fuel: usize, env: FrontEnv, scope: List<Local>, l: Local, index: core::option::Option<usize>, p: usize, value: CTree) -> core::option::Option<MStmt> {
     return match (index) {
         None -> None,
         Some(j) -> field_eval_stmt(l.id, j, compound_eff(p, XPure(Field(l.id, j)), eff_of(fuel, env, scope, field_ty_at(fuel, env.decls, l.ty, j), value))),
@@ -5949,7 +5949,7 @@ pub fn compound_field_eval(fuel: usize, env: Env, scope: List<Local>, l: Local, 
 }
 
 // `x op= e` or `x.f op= e`, when e or op is effectful.
-pub fn compound_eval(fuel: usize, env: Env, scope: List<Local>, target: CTree, p: usize, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_eval(fuel: usize, env: FrontEnv, scope: List<Local>, target: CTree, p: usize, value: CTree) -> core::option::Option<MStmt> {
     if (node_prod(kid(target, 1)) == p_postfix_end()) {
         return match (local_of(env, scope, kid(target, 0))) {
             None -> None,
@@ -5966,7 +5966,7 @@ pub fn compound_eval(fuel: usize, env: Env, scope: List<Local>, target: CTree, p
     return None;
 }
 
-pub fn compound_of(fuel: usize, env: Env, scope: List<Local>, target: core::option::Option<CTree>, p: usize, value: CTree) -> core::option::Option<MStmt> {
+pub fn compound_of(fuel: usize, env: FrontEnv, scope: List<Local>, target: core::option::Option<CTree>, p: usize, value: CTree) -> core::option::Option<MStmt> {
     return match (target) {
         None -> None,
         Some(t) -> match (compound_pure(fuel, env, scope, t, compound_op(p), value)) {
@@ -5979,7 +5979,7 @@ pub fn compound_of(fuel: usize, env: Env, scope: List<Local>, target: core::opti
 // `target = value;`: target a local, a field of one or a slice element;
 // value a call (to a plain local) or an expression. Also `target op=
 // value;`, and the call statement `dealloc(...)`.
-pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
+pub fn assignment(fuel: usize, env: FrontEnv, scope: List<Local>, e: CTree) -> core::option::Option<MStmt> {
     let a: CTree = kid(e, 0);
     let set: CTree = kid(a, 1);
     if (node_prod(e) == p_expr() && node_prod(a) == p_assign() && node_prod(set) == p_assign_set()) {
@@ -6002,7 +6002,7 @@ pub fn assignment(fuel: usize, env: Env, scope: List<Local>, e: CTree) -> core::
 
 // extract: mutual begin
 // A statement list: a let scopes over the statements after it.
-pub fn block_of(fuel: usize, env: Env, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
+pub fn block_of(fuel: usize, env: FrontEnv, scope: List<Local>, list: CTree) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -6012,7 +6012,7 @@ pub fn block_of(fuel: usize, env: Env, scope: List<Local>, list: CTree) -> core:
     };
 }
 
-pub fn stmts_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -> core::option::Option<MStmt> {
+pub fn stmts_of(fuel: usize, env: FrontEnv, scope: List<Local>, items: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -6022,7 +6022,7 @@ pub fn stmts_of(fuel: usize, env: Env, scope: List<Local>, items: List<CTree>) -
     };
 }
 
-pub fn stmt_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
+pub fn stmt_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -6036,7 +6036,7 @@ pub fn stmt_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: Lis
 }
 
 // `let x: ty = init;` (let_stmt -> Let LetIdent let_type let_init LetSemicolon).
-pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
+pub fn let_first(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree, rest: List<CTree>) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -6051,7 +6051,7 @@ pub fn let_first(fuel: usize, env: Env, scope: List<Local>, s: CTree, rest: List
 }
 
 // return, if, while, and assignments.
-pub fn stmt_of(fuel: usize, env: Env, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
+pub fn stmt_of(fuel: usize, env: FrontEnv, scope: List<Local>, s: CTree) -> core::option::Option<MStmt> {
     if (fuel == 0) {
         return None;
     }
@@ -6112,7 +6112,7 @@ pub fn cons_param(p: MParam, rest: core::option::Option<MParams>) -> core::optio
 }
 
 // `name: T` or `self` (by value); each a local named by its spelling.
-pub fn params_of(fuel: usize, env: Env, fd: FnDecl, scope: List<Local>, items: List<CTree>) -> core::option::Option<MParams> {
+pub fn params_of(fuel: usize, env: FrontEnv, fd: FnDecl, scope: List<Local>, items: List<CTree>) -> core::option::Option<MParams> {
     return match (items) {
         Nil -> Some(MParams { params: empty(), scope: scope }),
         Cons(p, rest) -> param_of(fuel, env, fd, scope, p, unbox(rest)),
@@ -6120,7 +6120,7 @@ pub fn params_of(fuel: usize, env: Env, fd: FnDecl, scope: List<Local>, items: L
 }
 
 // extract: inline
-fn param_of(pfuel: usize, penv: Env, pfd: FnDecl, pscope: List<Local>, pp: CTree, prest: List<CTree>) -> core::option::Option<MParams> {
+fn param_of(pfuel: usize, penv: FrontEnv, pfd: FnDecl, pscope: List<Local>, pp: CTree, prest: List<CTree>) -> core::option::Option<MParams> {
     let tok: Token = kid_token(pp, 0);
     if ((node_prod(pp) == p_param_named() || node_prod(pp) == p_param_self()) && !member(penv.globals, tok.text)) {
         return match (pattern_of(pfd, pp)) {
@@ -6141,14 +6141,14 @@ pub fn func_body(ps: MParams, r: RetTy, body: core::option::Option<MStmt>) -> co
     };
 }
 
-pub fn func_ret(fuel: usize, env: Env, ps: MParams, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
+pub fn func_ret(fuel: usize, env: FrontEnv, ps: MParams, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
     return match (ret) {
         None -> None,
         Some(r) -> func_body(ps, r, block_of(fuel, env, ps.scope, body)),
     };
 }
 
-pub fn func_params(fuel: usize, env: Env, params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
+pub fn func_params(fuel: usize, env: FrontEnv, params: core::option::Option<MParams>, ret: core::option::Option<RetTy>, body: CTree) -> core::option::Option<MFunc> {
     return match (params) {
         None -> None,
         Some(ps) -> func_ret(fuel, env, ps, ret, body),
@@ -6163,7 +6163,7 @@ pub fn ret_of_ty(t: core::option::Option<Ty>) -> core::option::Option<RetTy> {
 }
 
 // The result type a return_type_opt names.
-pub fn result_of(fuel: usize, env: Env, ret: CTree) -> core::option::Option<RetTy> {
+pub fn result_of(fuel: usize, env: FrontEnv, ret: CTree) -> core::option::Option<RetTy> {
     if (node_prod(ret) == p_ret_void()) {
         return Some(RetUnit);
     }
@@ -6192,9 +6192,9 @@ pub fn ret_expected(r: core::option::Option<RetTy>) -> core::option::Option<Ty> 
 pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::option::Option<MFunc> {
     let names: List<List<usize>> = concat(fd.impl_params, fd.params);
     let f: CTree = fd.tree;
-    let tenv: Env = Env { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None };
+    let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None };
     let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
-    let env: Env = Env { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt) };
+    let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt) };
     if (length(names) == length(args)) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,

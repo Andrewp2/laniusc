@@ -370,6 +370,18 @@ compiler that someone actually runs is one of these two:
    To shrink it: a Lean semantics for the pure subset and a proof that
    extraction preserves it (roadmap steps 2 and 6), and self-hosting
    (step 11).
+
+   Partly done (10-25): for the self program, the front end's reading of
+   the compiler's own source (`mini::selfhost`, `Faithful/Gen/Self.lean`),
+   each of the 1,547 functions reachable from `front_end_files`, `grammar`
+   and `compile_source` has a kernel-checked certificate
+   (`Faithful/Gen/SelfCert.lean`, standard axioms): a pure run of it that
+   returns represents the extracted Lean function's result. What remains
+   trusted there: the representation relations (`Gen/SelfRep.lean`, one
+   per type, generated) and the pure semantics `pcall`, which `call_sim`
+   relates to Core. The certificates are partial: a run that does not
+   return is not covered. Not yet done: the theorem that joins the driver,
+   `call_sim` and the certificates into one statement about Core runs.
 2. **The Lean build.** Run `#eval compileSource` or a compiled Lean
    executable. Extraction is then irrelevant, but Lean's code generator and
    runtime are trusted: GMP `Nat`, and the `@[extern]` and `implemented_by`

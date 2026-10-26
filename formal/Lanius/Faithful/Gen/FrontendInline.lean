@@ -298,7 +298,7 @@ def Inline.findMethodAt (mfuel : Nat) (mdecls : Decls) (mfd : FnDecl) (mrest : L
   else
     findMethod mfuel mdecls mrest (mk + 1) mname ms
 
-def Inline.binderOf (env : Env) (scope : List Local) (p : CTree) (t : Ty) (pats : List CTree) (payload : List Ty) : Option Bound :=
+def Inline.binderOf (env : FrontEnv) (scope : List Local) (p : CTree) (t : Ty) (pats : List CTree) (payload : List Ty) : Option Bound :=
   let path : CTree := kid p 0
   let tok : Token := kidToken (kid path 0) 0
   if decide (nodeProd p = (195)) && decide (nodeProd (kid p 1) = (199)) && isSomeName (pathName path) && !(member env.globals tok.text) then
@@ -306,7 +306,7 @@ def Inline.binderOf (env : Env) (scope : List Local) (p : CTree) (t : Ty) (pats 
   else
     none
 
-def Inline.paramOf (pfuel : Nat) (penv : Env) (pfd : FnDecl) (pscope : List Local) (pp : CTree) (prest : List CTree) : Option MParams :=
+def Inline.paramOf (pfuel : Nat) (penv : FrontEnv) (pfd : FnDecl) (pscope : List Local) (pp : CTree) (prest : List CTree) : Option MParams :=
   let tok : Token := kidToken pp 0
   if (decide (nodeProd pp = (62)) || decide (nodeProd pp = (63))) && !(member penv.globals tok.text) then
     match patternOf pfd pp with

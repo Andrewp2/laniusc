@@ -22,7 +22,7 @@ open Lean Elab Tactic Meta
 
 /-- `Rep.. x v`: the relation, the Lean value and the pure value. -/
 def repOf? (t : Expr) : MetaM (Option (Name × Expr × Expr)) := do
-  let t ← instantiateMVars t
+  let t := (← instantiateMVars t).cleanupAnnotations
   let .const n _ := t.getAppFn | return none
   let .str _ last := n | return none
   unless last.startsWith "Rep" do return none
@@ -42,10 +42,27 @@ def isCtorApp (e : Expr) : MetaM Bool := do
 partial def casesKnown : TacticM Bool := do
   let goal ← getMainGoal
   let found ← goal.withContext do
+    -- The values a hypothesis being evaluated mentions: only those need their
+    -- shape. (A list built of calls, a grammar table, has a representation per
+    -- element; splitting them all only to rebuild them in the goal is
+    -- quadratic in the context.)
+    let mut used : Std.HashSet FVarId := {}
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      if (← repOf? d.type).isSome then continue
+      if (← callOf? d.type).isSome then continue
+      let t ← instantiateMVars d.type
+      unless ← isProp t do continue
+      for f in (collectFVars {} t).fvarIds do used := used.insert f
+    -- And the goal's: a number or a structure there (one constructor) is
+    -- compared with what the goal computes.
+    let target ← instantiateMVars (← goal.getType)
     for d in ← getLCtx do
       if d.isImplementationDetail then continue
       let some (n, x, v) ← repOf? d.type | continue
       let some (.inductInfo info) := (← getEnv).find? n | continue
+      if v.isFVar && !used.contains v.fvarId! &&
+          !(info.ctors.length == 1 && target.containsFVar v.fvarId!) then continue
       if info.ctors.length == 1 || (← isCtorApp v) || (← isCtorApp x) then return some d.fvarId
     return none
   match found with
@@ -91,6 +108,7 @@ def phase {α : Type} (name : String) (x : TacticM α) : TacticM α := do
     let t1 ← IO.monoNanosNow
     if t1 - t0 > 1000000 then IO.eprintln s!"faithful phase {name}: {(t1 - t0) / 1000000} ms"
 
+register_option faithful.depth : Nat := { defValue := 100, descr := "nested splits before giving up" }
 register_option faithful.rounds : Nat := { defValue := 40, descr := "rounds before closing" }
 register_option faithful.admitClose : Bool := { defValue := false, descr := "admit instead of closing (to time the rounds)" }
 
@@ -214,6 +232,102 @@ def falseHyp : TacticM Bool := do
           catch _ => saved.restore
     return false
 
+/-- A number a closed term evaluates to: an inline constant (a token or
+production kind) or a literal. -/
+def closedNat? (e : Expr) : MetaM (Option Nat) := do
+  if e.hasFVar || e.hasMVar then return none
+  unless (← instantiateMVars (← inferType e)).isConstOf ``Nat do return none
+  let e ← whnfD e
+  return e.rawNatLit? <|> e.nat?
+
+/-- `t = a` (or `a = t`) with `a` closed: `t`, `a`'s number, and a proof of `t = a`. -/
+def pinned? (d : LocalDecl) : MetaM (Option (Expr × Nat × Expr)) := do
+  let some (_, l, r) := (← instantiateMVars d.type).eq? | return none
+  if let some k ← closedNat? r then
+    unless l.hasFVar do return none
+    return some (l, k, d.toExpr)
+  if let some k ← closedNat? l then
+    unless r.hasFVar do return none
+    return some (r, k, ← mkEqSymm d.toExpr)
+  return none
+
+/-- Close a branch whose tests contradict each other: `t = a` and `t = b`
+for different numbers, or `t = a` and `¬t = b` for the same one (one kind
+tested against another after a split). -/
+def pinnedClash : TacticM Bool := do
+  let goal ← getMainGoal
+  goal.withContext do
+    let mut pins : Array (Expr × Nat × Expr) := #[]
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      if let some p ← pinned? d then pins := pins.push p
+    if pins.isEmpty then return false
+    let target ← goal.getType
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      let t ← instantiateMVars d.type
+      -- `t = b` against `t = a`.
+      if let some (t', b, hb) ← pinned? d then
+        for (t, a, ha) in pins do
+          if a != b && t == t' then
+            -- a = b from the two, against `decide`.
+            let hab ← mkEqTrans (← mkEqSymm ha) hb
+            let aT := (← inferType' ha).appArg!
+            let bT := (← inferType' hb).appArg!
+            let ne ← mkDecideProof (mkNot (← mkEq aT bT))
+            goal.assign (← mkAbsurd target hab ne)
+            replaceMainGoal []
+            return true
+      -- `¬t = b` against `t = a`, `a` and `b` the same number.
+      if t.isAppOfArity ``Not 1 then
+        let inner := t.appArg!
+        let some (_, l, r) := inner.eq? | continue
+        for (t, a, ha) in pins do
+          let lhsCase ← do
+            if l == t then pure (some (r, false)) else if r == t then pure (some (l, true)) else pure none
+          let some (b, flipped) := lhsCase | continue
+          let some k ← closedNat? b | continue
+          if k != a then continue
+          let aTerm := (← inferType' ha).appArg!
+          let hab ← mkDecideProof (← mkEq aTerm b)
+          let htb ← mkEqTrans ha hab
+          let hyp ← if flipped then mkEqSymm htb else pure htb
+          goal.assign (← mkAbsurd target hyp d.toExpr)
+          replaceMainGoal []
+          return true
+    -- A test `P t` that is false of the number `t` is pinned to (`isLevel`
+    -- of a production known to be another one).
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      let t ← instantiateMVars d.type
+      unless ← isProp t do continue
+      if (← repOf? t).isSome || (← callOf? t).isSome then continue
+      for (pt, _, ha) in pins do
+        if t == (← inferType' ha) then continue
+        let abst ← kabstract t pt
+        unless abst.hasLooseBVars do continue
+        let aTerm := (← inferType' ha).appArg!
+        let pa := abst.instantiate1 aTerm
+        if pa.hasFVar || pa.hasMVar then continue
+        let saved ← saveState
+        try
+          let dec ← mkDecide pa
+          let r ← withTransparency .default (whnf dec)
+          unless r.isConstOf ``false do
+            saved.restore
+            continue
+          let motive ← mkLambdaFVars #[] (.lam `x (← inferType pt) abst .default)
+          let hpa ← mkEqNDRec motive d.toExpr ha
+          let inst ← synthInstance (mkApp (mkConst ``Decidable) pa)
+          let nota := mkApp3 (mkConst ``of_decide_eq_false) pa inst (← mkEqRefl (mkConst ``false))
+          goal.assign (← mkAbsurd target hpa nota)
+          replaceMainGoal []
+          return true
+        catch _ => saved.restore
+    return false
+where
+  inferType' (h : Expr) : MetaM Expr := do return (← instantiateMVars (← inferType h))
+
 /-- The applications of matchers in `e`, outermost first. -/
 partial def matcherApps (env : Environment) (e : Expr) (acc : Array Expr) : Array Expr :=
   match e with
@@ -330,6 +444,8 @@ def round (ns : Name) : TacticM Unit := do
   phase "certs" (certsLoop ns)
   if (← getGoals).isEmpty then return
   let _ ← phase "contradiction" falseHyp
+  if (← getGoals).isEmpty then return
+  let _ ← phase "clash" (tryTac (do unless ← pinnedClash do throwError "none"))
 
 /-- The pure values a hypothesis waits on: the scrutinee of a match
 (`parms`), a struct whose field is read, a condition, an operand. -/
@@ -375,6 +491,50 @@ def stuckRep? : TacticM (Option FVarId) := do
           if b == v then return some r
     return none
 
+/-- The condition of an `if` in `e` outside any binder, the outermost first. -/
+partial def closedIte? (e : Expr) : Option Expr :=
+  if e.isAppOfArity ``ite 5 && !e.appFn!.appFn!.appFn!.appArg!.hasLooseBVars then
+    some e.appFn!.appFn!.appFn!.appArg!
+  else match e with
+    | .app f a => closedIte? f <|> closedIte? a
+    | .lam _ t b _ | .forallE _ t b _ => closedIte? t <|> closedIte? b
+    | .letE _ t v b _ => closedIte? t <|> closedIte? v <|> closedIte? b
+    | .mdata _ b | .proj _ _ b => closedIte? b
+    | _ => none
+
+/-- Split on the condition of an `if` in a hypothesis being evaluated, with a
+rewrite: `split at` simplifies the whole hypothesis in a bounded number of
+steps, which a long body (a chain of `||` tests) runs out of. -/
+def iteSplit : TacticM Bool := do
+  let goal ← getMainGoal
+  let found ← goal.withContext do
+    for d in ← getLCtx do
+      if d.isImplementationDetail then continue
+      if (← repOf? d.type).isSome then continue
+      if (← callOf? d.type).isSome then continue
+      unless ← isProp d.type do continue
+      if let some c := closedIte? (← instantiateMVars d.type) then return some (d.userName, c)
+    return none
+  let some (h, c) := found | return false
+  tryTac do
+    let g ← getMainGoal
+    let h ← g.withContext do
+      let some d := (← getLCtx).findFromUserName? h | throwError "lost"
+      pure d.fvarId
+    let g ← g.rename h `hsplit
+    replaceMainGoal [g]
+    let cStx ← g.withContext (Term.exprToSyntax c)
+    let hs := mkIdent `hsplit
+    let hc := mkIdent `hc
+    evalTactic (← `(tactic| by_cases $hc : $cStx))
+    let [pos, neg] ← getGoals | throwError "by_cases"
+    setGoals [pos]
+    evalTactic (← `(tactic| rw [if_pos $hc:ident] at $hs:ident))
+    let pos ← getGoals
+    setGoals [neg]
+    evalTactic (← `(tactic| rw [if_neg $hc:ident] at $hs:ident))
+    setGoals (pos ++ (← getGoals))
+
 /-- Split the main goal on what its body waits on. -/
 def split : TacticM Bool := do
   if let some r ← stuckRep? then
@@ -386,9 +546,10 @@ def split : TacticM Bool := do
         replaceMainGoal (subgoals.map (·.mvarId)).toList
         return true
       -- A call's result: name the Lean value first.
-      let rName ← r.getUserName
       let saved ← saveState
+      let rName := `hrep
       try
+        replaceMainGoal [← goal.rename r rName]
         evalTactic (← `(tactic| generalize hx : $(← Term.exprToSyntax x) = y at $(mkIdent rName):ident))
         let goal ← getMainGoal
         let some d := (← goal.withContext getLCtx).findFromUserName? rName | throwError "lost"
@@ -399,6 +560,7 @@ def split : TacticM Bool := do
         saved.restore
         return false
     if ok then return true
+  if ← iteSplit then return true
   if ← tryTac (evalTactic (← `(tactic| split at *))) then return true
   -- An `if` or `match` in a hypothesis being evaluated, or in the goal.
   let goal ← getMainGoal
@@ -415,7 +577,7 @@ def split : TacticM Bool := do
     try
       let g ← (← getMainGoal).rename h `hsplit
       replaceMainGoal [g]
-      evalTactic (← `(tactic| split at hsplit))
+      evalTactic (← `(tactic| split at $(mkIdent `hsplit):ident))
       return true
     catch _ => saved.restore
   tryTac (evalTactic (← `(tactic| split)))
@@ -471,10 +633,10 @@ partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : Tactic
   if ← tryTac (do dropMods; evalTactic (← `(tactic| rep)); done) then return
   if !heads.isEmpty then
     -- A recursive function: unfold it once (`simp` would not stop).
-    if ← closes (← `(tactic| (unfold $heads*; simp only [*, ↓reduceIte]; rep))) then return
+    if ← closes (← `(tactic| (unfold $heads*; simp only [*, ↓reduceIte, BitVec.ofNat_eq_ofNat]; rep))) then return
     -- Or only its call in the goal's Lean side (`unfold` would unfold its
     -- calls in the pure value too).
-    if ← closes (← `(tactic| (rw [$(heads[0]!):ident]; simp only [*, ↓reduceIte]; rep))) then return
+    if ← closes (← `(tactic| (rw [$(heads[0]!):ident]; simp only [*, ↓reduceIte, BitVec.ofNat_eq_ofNat]; rep))) then return
     if ← closes (← `(tactic| (simp only [$lemmas,*]; rep))) then return
     if ← closes (← `(tactic| (simp only [$lemmas,*, *]; rep))) then return
     if ← closes (← `(tactic| (simp only [$lemmas,*] at *; rep))) then return
@@ -490,6 +652,12 @@ partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : Tactic
         let _ ← unfoldInlineConds
         evalTactic (← `(tactic| (simp [$lemmas,*, *]; rep)))
         done) then return
+    -- A recursive function's tests against inline constants: unfold those
+    -- in the conditions, and the function once.
+    if ← tryTac (withBudget do
+        unless ← unfoldInlineConds do throwError "no inline constants"
+        evalTactic (← `(tactic| (unfold $heads*; simp [*]; rep)))
+        done) then return
   -- The functions applied to constructors, everywhere: the facts the
   -- hypotheses state about the parts, or a contradiction.
   let callees ← phase "ctorCallees" ctorCallees
@@ -499,6 +667,14 @@ partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : Tactic
   if !all.isEmpty then
     if ← closes (← `(tactic| (simp [$all,*, *] at *; rep))) then return
     if ← closes (← `(tactic| (simp [$all,*] at *; simp [$all,*, *]; rep))) then return
+  -- The same with the inline constants (token kinds and the like) unfolded
+  -- everywhere at once, so the hypotheses about them match the goal's tests.
+  let consts ← inlineConsts
+  if !consts.isEmpty then
+    let withConsts ← (names ++ consts).mapM fun n => `(Lean.Parser.Tactic.simpLemma| $(mkIdent n):ident)
+    -- Two passes: `simp at *` rewrites the goal with the hypotheses as they
+    -- were before the constants were unfolded.
+    if ← closes (← `(tactic| (simp [$withConsts,*] at *; simp [$all,*, *]; rep))) then return
   -- An index into a list's tail: `¬i = 0` and the tail's representation.
   if ← closes (← `(tactic| (simp only [List.getD_eq_getElem?_getD, List.getElem?_cons, *, ↓reduceIte]; rep))) then
     return
@@ -517,7 +693,7 @@ syntax "faithful" " [" ident,* "]" : tactic
 
 elab_rules : tactic
   | `(tactic| faithful [$heads,*]) => do
-    faithfulLoop (← getCurrNamespace) heads.getElems 30
+    faithfulLoop (← getCurrNamespace) heads.getElems (faithful.depth.get (← getOptions))
 
 /-- For working on the generator only: a proof `faithful` cannot finish is
 reported as a warning and admitted, so one run shows every failure. No
@@ -529,7 +705,7 @@ elab_rules : tactic
     let saved ← saveState
     let ns ← getCurrNamespace
     phaseTimes.set {}
-    tryCatchRuntimeEx (faithfulLoop ns heads.getElems 30) (fun e => do
+    tryCatchRuntimeEx (faithfulLoop ns heads.getElems (faithful.depth.get (← getOptions))) (fun e => do
       saved.restore
       logWarning m!"FAITHFUL FAILED: {e.toMessageData}"
       evalTactic (← `(tactic| admit)))
