@@ -1,0 +1,13 @@
+// An item import makes one declaration visible by its own name.
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::result::Result;
+import core::result::Ok;
+import core::result::unwrap_or;
+
+fn main() -> i32 {
+    let present: Option<i32> = Some(3);
+    let value: Result<i32,i32> = Ok(4);
+    return present.unwrap() + unwrap_or(value, 0);
+}

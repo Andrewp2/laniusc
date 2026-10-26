@@ -1,0 +1,10 @@
+// Two module imports both declare `unwrap_or`; the item import selects one.
+module app::main;
+import core::option;
+import core::result;
+import core::result::unwrap_or;
+
+fn main() -> i32 {
+    let value: Result<i32,i32> = Err(1);
+    return unwrap_or(value, 7);
+}

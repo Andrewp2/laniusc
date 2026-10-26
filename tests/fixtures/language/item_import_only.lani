@@ -1,0 +1,8 @@
+// An item import makes only its item visible: `Some` is not imported.
+module app::main;
+import core::option::Option;
+
+fn main() -> i32 {
+    let present: Option<i32> = Some(3);
+    return present.unwrap();
+}

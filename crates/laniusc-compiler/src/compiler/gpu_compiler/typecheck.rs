@@ -4594,8 +4594,25 @@ fn unresolved_identifier_diagnostic(
     source: &str,
     start: usize,
     len: usize,
-    _detail: u32,
+    detail: u32,
 ) -> CompileError {
+    // The path resolver's status for a name that two module imports provide.
+    const PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT: u32 = 4;
+    if detail == PATH_RESOLVE_STATUS_AMBIGUOUS_IMPORT {
+        return CompileError::Diagnostic(
+            Diagnostic::error("LNC0005", "ambiguous imported name")
+                .with_primary_label(diagnostic_label_from_source_span(
+                    path,
+                    source,
+                    start,
+                    len,
+                    "more than one imported module declares this name",
+                ))
+                .with_note(
+                    "import the one you mean, such as `import std::stream::copy;`, or write its full path",
+                ),
+        );
+    }
     CompileError::Diagnostic(
         Diagnostic::error("LNC0005", "unresolved identifier")
             .with_primary_label(diagnostic_label_from_source_span(

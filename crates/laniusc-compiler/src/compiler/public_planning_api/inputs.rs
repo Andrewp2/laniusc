@@ -508,7 +508,7 @@ fn load_source_root_imports(
                 SourceRootLibrary::User => user_paths.push(resolved.path),
             },
             SourceRootLoadAction::Discover(import, importer_library) => {
-                let resolved = resolve_source_root_import(&import, roots, importer_library)?;
+                let resolved = resolve_source_root_module_or_item(&import, roots, importer_library)?;
                 if !loaded_source_paths.insert(resolved.path.clone()) {
                     continue;
                 }
@@ -526,6 +526,25 @@ fn load_source_root_imports(
     }
 
     Ok(())
+}
+
+/// An import names a module or, as `import a::b::item;`, one item of a
+/// module. A file for the whole path wins; otherwise the import's module is
+/// its prefix. A missing prefix reports the whole path.
+fn resolve_source_root_module_or_item(
+    import: &SourceRootImport,
+    roots: &[SourceRootSearchRoot],
+    importer_library: SourceRootLibrary,
+) -> Result<SourceRootResolvedImport, CompileError> {
+    let whole = resolve_source_root_import(import, roots, importer_library);
+    let Err(error) = whole else { return whole };
+    let missing = matches!(&error, CompileError::Diagnostic(d) if d.code == "LNC0001");
+    if !missing {
+        return Err(error);
+    }
+    let Some((module, _item)) = import.path.rsplit_once("::") else { return Err(error) };
+    let prefix = SourceRootImport { path: module.to_string(), ..import.clone() };
+    resolve_source_root_import(&prefix, roots, importer_library).map_err(|_| error)
 }
 
 fn resolve_source_root_import(

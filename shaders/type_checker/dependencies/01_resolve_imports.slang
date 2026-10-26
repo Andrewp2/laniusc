@@ -1,5 +1,7 @@
 // Resolve locally-unmatched imports against canonical dependency modules.
-// Each import probes the GPU-built module table independently.
+// Each import probes the GPU-built module table independently. When the whole
+// path is no module, an item import's prefix is: import_item_name_id then
+// holds the leaf's name.
 
 import dependency_interface;
 import byte_packing;
@@ -36,6 +38,7 @@ ByteAddressBuffer source_bytes;
 StructuredBuffer<uint> dependency_module_lookup;
 RWStructuredBuffer<uint> import_target_dependency_module_id;
 RWStructuredBuffer<uint> import_status;
+RWStructuredBuffer<uint> import_item_name_id;
 RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
@@ -62,9 +65,8 @@ uint mix(uint hash, uint value)
     return hash;
 }
 
-uint path_hash(uint path_id)
+uint path_hash(uint path_id, uint count)
 {
-    uint count = path_segment_count[path_id];
     uint first = path_segment_base[path_id];
     uint hash = mix(2166136261u, count);
     for (uint segment_i = 0u; segment_i < 8u; segment_i += 1u)
@@ -106,12 +108,11 @@ bool segment_equal(uint name_id, uint dependency_segment)
     return true;
 }
 
-bool module_equal(uint path_id, uint module_i)
+bool module_equal(uint path_id, uint path_count, uint module_i)
 {
     uint module = module_i * MODULE_WORDS;
     uint module_first = dependency_module_word(module + 0u);
     uint module_count = dependency_module_word(module + 1u);
-    uint path_count = path_segment_count[path_id];
     if (path_count != module_count || path_count > 8u)
         return false;
     uint path_first = path_segment_base[path_id];
@@ -129,6 +130,31 @@ bool module_equal(uint path_id, uint module_i)
 void record_error(uint token_i, uint code, uint detail)
 {
     record_min_token_error(status, token_i, code, detail);
+}
+
+// The page's module named by the path's first `count` segments, or INVALID.
+uint find_module(uint path_id, uint count, inout bool duplicate)
+{
+    uint mask = gParams.lookup_capacity - 1u;
+    uint slot = path_hash(path_id, count) & mask;
+    uint match = INVALID;
+    for (uint probe = 0u; probe < gParams.lookup_capacity; probe += 1u)
+    {
+        uint module_i = dependency_module_lookup[slot];
+        if (module_i == INVALID)
+            break;
+        if (module_i < dependency_module_count() && module_equal(path_id, count, module_i))
+        {
+            if (match != INVALID)
+            {
+                duplicate = true;
+                return INVALID;
+            }
+            match = module_i;
+        }
+        slot = (slot + 1u) & mask;
+    }
+    return match;
 }
 
 [shader("compute")]
@@ -155,25 +181,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
 
     uint path_id = import_path_id[import_i];
     uint token = path_owner_token[path_id];
-    uint mask = gParams.lookup_capacity - 1u;
-    uint slot = path_hash(path_id) & mask;
-    uint match = INVALID;
-    for (uint probe = 0u; probe < gParams.lookup_capacity; probe += 1u)
+    uint count = path_segment_count[path_id];
+    bool duplicate = false;
+    uint match = find_module(path_id, count, duplicate);
+    uint item = INVALID;
+    if (match == INVALID && !duplicate && count > 1u)
     {
-        uint module_i = dependency_module_lookup[slot];
-        if (module_i == INVALID)
-            break;
-        if (module_i < dependency_module_count() && module_equal(path_id, module_i))
-        {
-            if (match != INVALID)
-            {
-                import_status[import_i] = IMPORT_STATUS_AMBIGUOUS;
-                record_error(token, ERR_DUPLICATE_MODULE, IMPORT_STATUS_AMBIGUOUS);
-                return;
-            }
-            match = module_i;
-        }
-        slot = (slot + 1u) & mask;
+        match = find_module(path_id, count - 1u, duplicate);
+        item = path_segment_name_id[path_segment_base[path_id] + count - 1u];
+    }
+    if (duplicate)
+    {
+        import_status[import_i] = IMPORT_STATUS_AMBIGUOUS;
+        record_error(token, ERR_DUPLICATE_MODULE, IMPORT_STATUS_AMBIGUOUS);
+        return;
     }
     if (match == INVALID)
     {
@@ -201,5 +222,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     import_target_dependency_module_id[identity + 1u] = library_id;
     import_target_dependency_module_id[identity + 2u] = unit_id;
     import_target_dependency_module_id[identity + 3u] = local_index;
+    import_item_name_id[import_i] = item;
     import_status[import_i] = IMPORT_STATUS_OK;
 }

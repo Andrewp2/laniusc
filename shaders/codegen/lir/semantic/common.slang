@@ -29,21 +29,6 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_CONST_ITEM = 25u;
-static const uint SEMANTIC_HIR_FN = 3u;
-static const uint SEMANTIC_HIR_BLOCK = 6u;
-
-// A function whose body is empty owns no statement rows, so no target
-// function would be registered for it: a call to it could not resolve its
-// callee, and it would have no row to carry its frame. Its body block
-// therefore lowers as a bare `return;`. Rows are in preorder, so the block
-// is empty exactly when the next row is not its child.
-bool semantic_lir_is_empty_fn_body(StructuredBuffer<HirCore> hir_core, uint node, uint hir_count)
-{
-    if (node >= hir_count || hir_core[node].kind != SEMANTIC_HIR_BLOCK) return false;
-    uint parent = hir_core[node].parent;
-    if (parent >= hir_count || hir_core[parent].kind != SEMANTIC_HIR_FN) return false;
-    return node + 1u >= hir_count || hir_core[node + 1u].parent != node;
-}
 
 static const uint HIR_STMT_LET = 1u;
 static const uint HIR_STMT_RETURN = 2u;

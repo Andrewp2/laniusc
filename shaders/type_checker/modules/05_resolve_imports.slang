@@ -8,7 +8,11 @@
 //   import records to their owning module ids.
 // - Direct self-imports are rejected here. The following sorted import-edge
 //   pass rejects two-module cycles through GPU range lookups.
-// - This pass writes import_target_module_id and import_status only. It does
+// - An item import (`import a::b::item;`) names a declaration rather than a
+//   module: when the whole path is no module, its prefix is the target module
+//   and import_item_name_id holds the leaf's name. Module imports win.
+// - This pass writes import_target_module_id, import_item_name_id and
+//   import_status only. It does
 //   not make declarations visible, resolve value/type paths, perform CPU path
 //   lookup, scan source bytes, use hashes, or apply same-source shortcuts.
 
@@ -40,12 +44,14 @@ StructuredBuffer<HirCore> compact_hir_core;
 StructuredBuffer<uint> path_segment_count;
 StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_prefix_id;
+StructuredBuffer<uint> path_segment_name_id;
 StructuredBuffer<uint> path_owner_token;
 StructuredBuffer<uint> module_count_out;
 StructuredBuffer<uint> module_by_canonical_id;
 
 RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> import_target_module_id;
+RWStructuredBuffer<uint> import_item_name_id;
 RWStructuredBuffer<uint> import_status;
 
 static const uint INVALID = 0xffffffffu;
@@ -99,9 +105,8 @@ uint import_owner_token(uint import_i)
     return compact_hir_core[owner].token_start;
 }
 
-uint find_module_for_path(uint path_id)
+uint find_module_for_prefix(uint path_id, uint count)
 {
-    uint count = path_segment_count[path_id];
     uint canonical_id = path_prefix_id[path_segment_base[path_id] + count - 1u];
     uint module_id = module_lookup_find(
         canonical_id,
@@ -119,6 +124,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
 
     import_target_module_id[import_i] = INVALID;
+    import_item_name_id[import_i] = INVALID;
 
     if (import_kind[import_i] != HIR_ITEM_IMPORT_TARGET_PATH)
     {
@@ -147,7 +153,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
             record_error(path_owner_token[path_id], ERR_UNRESOLVED_IMPORT, IMPORT_STATUS_UNRESOLVED);
         return;
     }
-    uint module_i = find_module_for_path(path_id);
+    uint module_i = find_module_for_prefix(path_id, count);
+    if (module_i == INVALID && count > 1u)
+    {
+        module_i = find_module_for_prefix(path_id, count - 1u);
+        if (module_i != INVALID)
+            import_item_name_id[import_i] =
+                path_segment_name_id[path_segment_base[path_id] + count - 1u];
+    }
     if (module_i == INVALID)
     {
         import_status[import_i] = IMPORT_STATUS_UNRESOLVED;

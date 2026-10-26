@@ -1,8 +1,12 @@
 // Scatter the import/declaration relation after its per-import count scan.
+// An item import keeps only the rows of its named declarations, and its name
+// takes precedence over module imports in the same module: their rows of that
+// name get no owner, so lookups never see them.
 
 import dependency_interface;
 import gpu_index;
 import status;
+import byte_packing;
 
 struct Params
 {
@@ -16,8 +20,23 @@ struct Params
     uint hir_capacity;
 };
 
+struct NameSpan
+{
+    uint start;
+    uint len;
+    uint kind;
+    uint token_index;
+};
+
 ConstantBuffer<Params> gParams;
 StructuredBuffer<uint> import_count_out;
+StructuredBuffer<uint> import_status;
+StructuredBuffer<uint> import_item_name_id;
+StructuredBuffer<uint> name_hash_lo;
+StructuredBuffer<uint> name_hash_hi;
+StructuredBuffer<NameSpan> name_spans;
+ByteAddressBuffer source_bytes;
+ByteAddressBuffer language_symbol_bytes;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_dependency_module_id;
 StructuredBuffer<uint> dependency_visible_count;
@@ -29,6 +48,8 @@ RWStructuredBuffer<uint> status;
 
 static const uint INVALID = 0xffffffffu;
 static const uint IMPORT_IDENTITY_STRIDE = 4u;
+static const uint IMPORT_STATUS_OK = 0u;
+static const uint NAME_KIND_LANGUAGE_SYMBOL = 3u;
 static const uint DECL_WORDS = 14u;
 static const uint ERR_NAME_LIMIT = 11u;
 static const uint WG_SIZE = 256u;
@@ -47,6 +68,55 @@ uint active_import_count()
 uint declaration_module(uint declaration_i)
 {
     return dependency_declaration_word(declaration_i * DECL_WORDS);
+}
+
+uint dependency_name_byte(uint byte_i)
+{
+    uint word = dependency_name_byte_word(byte_i >> 2u);
+    return (word >> ((byte_i & 3u) * 8u)) & 0xffu;
+}
+
+uint local_name_byte(NameSpan span, uint byte_i)
+{
+    return span.kind == NAME_KIND_LANGUAGE_SYMBOL
+        ? byte_address_load_u8(language_symbol_bytes, span.start + byte_i)
+        : byte_address_load_u8_bounded(source_bytes, span.start + byte_i, gParams.source_len);
+}
+
+bool declaration_name_equal(uint name_id, uint declaration_i)
+{
+    uint base = declaration_i * DECL_WORDS;
+    if (dependency_declaration_word(base + 1u) != name_hash_lo[name_id] ||
+        dependency_declaration_word(base + 2u) != name_hash_hi[name_id])
+        return false;
+    NameSpan span = name_spans[name_id];
+    uint start = dependency_declaration_word(base + 3u);
+    uint len = dependency_declaration_word(base + 4u);
+    if (span.len != len || len > 64u)
+        return false;
+    for (uint byte_i = 0u; byte_i < 64u; byte_i += 1u)
+    {
+        if (byte_i >= len)
+            break;
+        if (local_name_byte(span, byte_i) != dependency_name_byte(start + byte_i))
+            return false;
+    }
+    return true;
+}
+
+// Whether an item import in `module` names this declaration's name.
+bool item_import_names(uint module, uint declaration_i)
+{
+    uint count = active_import_count();
+    for (uint import_i = 0u; import_i < count; import_i += 1u)
+    {
+        uint item = import_item_name_id[import_i];
+        if (item != INVALID && import_module_id[import_i] == module &&
+            import_status[import_i] == IMPORT_STATUS_OK &&
+            declaration_name_equal(item, declaration_i))
+            return true;
+    }
+    return false;
 }
 
 uint import_for_visible_row(uint visible_i)
@@ -92,6 +162,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (declaration_i >= dependency_declaration_count() ||
         declaration_module(declaration_i) != target)
         return;
-    dependency_visible_owner_module[visible_i] = import_module_id[import_i];
+    uint module = import_module_id[import_i];
+    uint item = import_item_name_id[import_i];
+    if (item != INVALID ? !declaration_name_equal(item, declaration_i)
+                        : item_import_names(module, declaration_i))
+        module = INVALID;
+    dependency_visible_owner_module[visible_i] = module;
     dependency_visible_decl[visible_i] = declaration_i;
 }

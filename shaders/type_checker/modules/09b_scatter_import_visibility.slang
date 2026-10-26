@@ -8,6 +8,9 @@
 //   search over public declaration prefixes in the target module range.
 // - Output rows are already compact. A later pass publishes them directly into
 //   an exact lookup table; no ordering relation is constructed here.
+// - An item import keeps only the rows of its named declarations. Its name
+//   takes precedence over module imports in the same module: their rows of
+//   that name are left invalid, so lookups never see them.
 
 import gpu_index;
 import range_query;
@@ -27,6 +30,7 @@ StructuredBuffer<uint> import_count_out;
 StructuredBuffer<uint> import_status;
 StructuredBuffer<uint> import_module_id;
 StructuredBuffer<uint> import_target_module_id;
+StructuredBuffer<uint> import_item_name_id;
 StructuredBuffer<uint> import_visible_count;
 StructuredBuffer<uint> import_visible_count_out;
 StructuredBuffer<uint> import_visible_prefix;
@@ -178,6 +182,26 @@ uint public_decl_row_for_local_index(uint begin, uint end, uint local_i)
                : INVALID;
 }
 
+// Whether an item import of `name` in `module` shadows module imports.
+bool item_import_names(uint module, uint name)
+{
+    uint count = active_import_count();
+    for (uint import_i = 0u; import_i < count; import_i += 1u)
+    {
+        if (import_item_name_id[import_i] == name && import_module_id[import_i] == module &&
+            import_status[import_i] == IMPORT_STATUS_OK)
+            return true;
+    }
+    return false;
+}
+
+void write_invalid_row(uint visible_i)
+{
+    import_visible_key_module_id[visible_i] = INVALID;
+    import_visible_key_name_id[visible_i] = INVALID;
+    import_visible_key_to_decl_id[visible_i] = INVALID;
+}
+
 QueryRange target_module_decl_range(uint module_id)
 {
     ModuleLookupKey key;
@@ -225,7 +249,14 @@ void main(uint3 dtid: SV_DispatchThreadID)
     if (decl_i >= gParams.capacity)
         return;
 
+    uint name = decl_name_id[decl_i];
+    uint item = import_item_name_id[import_i];
+    if (item != INVALID ? name != item : item_import_names(importing_module, name))
+    {
+        write_invalid_row(visible_i);
+        return;
+    }
     import_visible_key_module_id[visible_i] = importing_module;
-    import_visible_key_name_id[visible_i] = decl_name_id[decl_i];
+    import_visible_key_name_id[visible_i] = name;
     import_visible_key_to_decl_id[visible_i] = decl_i;
 }

@@ -3861,6 +3861,7 @@ fn build_graph(
         _import_visible_value_count_out as "import_visible_value_count_out" in Declarations => 4;
         _import_module_id as "import_module_id" in Declarations => record_rows * 4;
         _import_target_module_id as "import_target_module_id" in Declarations => record_rows * 4;
+        _import_item_name_id as "import_item_name_id" in Declarations => record_rows * 4;
         _import_status as "import_status" in Declarations => record_rows * 4;
     });
     if module_record_capacity <= MODULE_RELATION_SMALL_SORT_CAPACITY {

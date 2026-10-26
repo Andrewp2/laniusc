@@ -369,7 +369,7 @@ pub(in crate::type_checker) const RESOLVE_IMPORTS: ReflectedComputeSpec = typech
     "type_check.modules.imports.resolve",
     Declarations,
     "type_checker/modules/05_resolve_imports"
-    ; writes ["import_target_module_id", "import_status"]
+    ; writes ["import_target_module_id", "import_item_name_id", "import_status"]
     ; resources [
         typecheck_resource!("status" => "status", ReadWrite),
         typecheck_resource!("import_count_out" => "import_record_count_out", Read),
