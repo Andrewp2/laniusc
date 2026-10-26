@@ -1,6 +1,10 @@
 // Carry an expression's accepted complete type into an unannotated declaration.
 // Initializers and result rows are immutable here; each statement owns its
 // declaration, so name/index/member readers need no source-text inference.
+// A `value?` expression owns its `?` token the same way: it publishes there
+// the `Ok`/`Some` payload type of its `core::result::Result` or
+// `core::option::Option` operand, after checking that the enclosing function
+// returns the same enum with an identical error type.
 //
 // Types compare by canonical ID (docs/canonical-type-ids.md). A lane plans
 // its declaration's new type, interns it and the published one on demand
@@ -17,6 +21,7 @@ import type_checker.canonical.canonical_checked_rows;
 // Shares the candidate keys' decl_id_by_name_token binding.
 import type_checker.canonical.canonical_candidates;
 import type_checker.substitution.ct_checked;
+import status;
 
 struct Params { uint n_tokens; uint source_len; uint n_hir_nodes; };
 ConstantBuffer<Params> gParams;
@@ -40,6 +45,10 @@ StructuredBuffer<uint> module_key_segment_name_id;
 StructuredBuffer<uint> language_name_id;
 StructuredBuffer<uint> name_hash_lo;
 StructuredBuffer<uint> name_hash_hi;
+StructuredBuffer<uint> compact_hir_nearest_fn;
+StructuredBuffer<uint> fn_return_ref_tag;
+StructuredBuffer<uint> fn_return_ref_payload;
+RWStructuredBuffer<uint> status;
 
 void clear_unavailable_inferred_declaration(uint token)
 {
@@ -132,6 +141,10 @@ static const uint INVALID = 0xffffffffu;
 static const uint PLAN_NONE = 0u;
 static const uint PLAN_FOR = 1u;
 static const uint PLAN_LET = 2u;
+static const uint PLAN_TRY = 3u;
+// ReturnMismatch details of a `?` (typecheck.rs try_diagnostic).
+static const uint TRY_NOT_RESULT = 0x3f01u;
+static const uint TRY_RETURN_MISMATCH = 0x3f02u;
 
 // One declaration a lane may publish: its token, the planned type `value`,
 // the published type `previous`, and what the IDs must still decide.
@@ -149,6 +162,10 @@ struct BindingPlan
     bool call_result;
     uint initializer;
     uint initializer_kind;
+    // PLAN_TRY: the operand's and the function result's error types (scalar
+    // never for Option, which has none).
+    uint2 error;
+    uint2 expected_error;
 }
 
 BindingPlan no_plan()
@@ -164,6 +181,8 @@ BindingPlan no_plan()
     plan.call_result = false;
     plan.initializer = INVALID;
     plan.initializer_kind = 0u;
+    plan.error = uint2(1u, SCALAR_NEVER);
+    plan.expected_error = uint2(1u, SCALAR_NEVER);
     return plan;
 }
 
@@ -260,6 +279,158 @@ BindingPlan plan_for_binding(uint node, HirPayload statement, uint count)
     return plan;
 }
 
+// Whether checked row `instance` is `core::result::Result` (1) or
+// `core::option::Option` (2), else 0. `resident` is false when the
+// declaration is on another dependency page, which decides it instead.
+uint try_enum_form(uint instance, out bool resident)
+{
+    resident = true;
+    if (instance >= checked_type_capacity() || type_instance_kind[instance] != 1u)
+        return 0u;
+    uint module_name = INVALID;
+    uint name = INVALID;
+    uint library_id = external_type_library_id[instance];
+    uint unit_id = external_type_unit_id[instance];
+    uint local_id = external_type_local_index[instance];
+    if (library_id != INVALID && unit_id != INVALID && local_id != INVALID)
+    {
+        uint declaration = dependency_find_declaration(library_id, unit_id, local_id);
+        if (declaration == INVALID) { resident = false; return 0u; }
+        uint base = declaration * 14u;
+        uint module = dependency_declaration_word(base);
+        if (module >= dependency_module_count()) return 0u;
+        uint segment_base = dependency_module_word(module * 2u);
+        uint capacity = dependency_count(2u);
+        if (dependency_module_word(module * 2u + 1u) != 2u || segment_base >= capacity ||
+            capacity - segment_base < 2u)
+            return 0u;
+        uint segments = segment_base * 4u;
+        uint core_id = language_name_id[63u];
+        if (dependency_module_segment_word(segments) != name_hash_lo[core_id] ||
+            dependency_module_segment_word(segments + 1u) != name_hash_hi[core_id])
+            return 0u;
+        for (uint symbol = 75u; symbol <= 78u; symbol++)
+        {
+            uint id = language_name_id[symbol];
+            if (dependency_module_segment_word(segments + 4u) == name_hash_lo[id] &&
+                dependency_module_segment_word(segments + 5u) == name_hash_hi[id])
+                module_name = symbol;
+            if (dependency_declaration_word(base + 1u) == name_hash_lo[id] &&
+                dependency_declaration_word(base + 2u) == name_hash_hi[id])
+                name = symbol;
+        }
+    }
+    else
+    {
+        uint token = type_instance_decl_token[instance];
+        if (token >= gParams.n_tokens) return 0u;
+        uint declaration = decl_id_by_name_token[token];
+        if (declaration >= gParams.n_hir_nodes) return 0u;
+        uint module = decl_module_id[declaration];
+        if (module >= gParams.n_hir_nodes || module_key_segment_count[module] != 2u) return 0u;
+        uint base = module_key_segment_base[module];
+        if (base >= gParams.n_tokens || gParams.n_tokens - base < 2u ||
+            module_key_segment_name_id[base] != language_name_id[63u]) return 0u;
+        for (uint symbol = 75u; symbol <= 78u; symbol++)
+        {
+            uint id = language_name_id[symbol];
+            if (module_key_segment_name_id[base + 1u] == id) module_name = symbol;
+            if (decl_name_id[declaration] == id) name = symbol;
+        }
+    }
+    // Symbols 75-78 are result, Result, option, Option.
+    if (module_name == 75u && name == 76u && type_instance_arg_count[instance] == 2u) return 1u;
+    if (module_name == 77u && name == 78u && type_instance_arg_count[instance] == 1u) return 2u;
+    return 0u;
+}
+
+bool same_nominal_declaration(uint left, uint right)
+{
+    return type_instance_kind[right] == 1u &&
+        type_instance_decl_token[left] == type_instance_decl_token[right] &&
+        external_type_library_id[left] == external_type_library_id[right] &&
+        external_type_unit_id[left] == external_type_unit_id[right] &&
+        external_type_local_index[left] == external_type_local_index[right];
+}
+
+void record_try_error(uint token, uint detail)
+{
+    // Inference rounds publish provisional facts; the final run diagnoses.
+    if (call_inference_state[0u] == 0u)
+        record_min_token_error(status, token, 4u, detail);
+}
+
+BindingPlan plan_try(uint node, uint count)
+{
+    BindingPlan plan = no_plan();
+    HirCore core = compact_hir_core[node];
+    uint operand = compact_hir_payload[node].b;
+    uint token = core.token_end - 1u;
+    if (operand >= count || core.token_end == 0u || token >= gParams.n_tokens) return plan;
+    uint tag = call_inference_result_tag[operand];
+    uint payload = call_inference_result_payload[operand];
+    if (tag == 0u && compact_hir_core[operand].kind == 19u)
+    {
+        payload = call_result_instance[operand];
+        tag = 3u;
+    }
+    if (tag == 0u || payload == INVALID) return plan;
+    bool resident = true;
+    uint form = tag == 3u ? try_enum_form(payload, resident) : 0u;
+    if (!resident) return plan;
+    if (form == 0u) { record_try_error(token, TRY_NOT_RESULT); return plan; }
+    uint function = compact_hir_nearest_fn[node];
+    uint function_token = function < count ? compact_hir_payload[function].b : INVALID;
+    if (function_token >= gParams.n_tokens) return plan;
+    uint expected = fn_return_ref_payload[function_token];
+    if (fn_return_ref_tag[function_token] != 3u || expected >= checked_type_capacity() ||
+        !same_nominal_declaration(payload, expected))
+    { record_try_error(token, TRY_RETURN_MISMATCH); return plan; }
+    uint value_tag; uint value;
+    if (!ScopedCheckedTypeGraph.argument(payload, 0u, value_tag, value)) return plan;
+    if (form == 1u)
+    {
+        uint error_tag; uint error; uint expected_tag; uint expected_error;
+        if (!ScopedCheckedTypeGraph.argument(payload, 1u, error_tag, error) ||
+            !ScopedCheckedTypeGraph.argument(expected, 1u, expected_tag, expected_error))
+            return plan;
+        plan.error = uint2(error_tag, error);
+        plan.expected_error = uint2(expected_tag, expected_error);
+    }
+    plan.mode = PLAN_TRY;
+    plan.node = node;
+    plan.token = token;
+    plan.value = uint2(value_tag, value);
+    plan.previous = uint2(decl_type_ref_tag[token], decl_type_ref_payload[token]);
+    plan.initializer = operand;
+    return plan;
+}
+
+// The payload type at the `?` token, once the operand and the error types
+// are complete and the error types are identical.
+void publish_try(BindingPlan plan, uint4 ids)
+{
+    uint token = plan.token;
+    bool complete = (plan.value.x != 3u || (ct_is_resolved(ids.x) && ct_closed(ids.x))) &&
+        (plan.error.x != 3u || (ct_is_resolved(ids.z) && ct_closed(ids.z))) &&
+        (plan.expected_error.x != 3u || (ct_is_resolved(ids.w) && ct_closed(ids.w)));
+    if (!complete) { clear_unavailable_inferred_declaration(token); return; }
+    if (!same_type(plan.error, ids.z, plan.expected_error, ids.w))
+    {
+        record_try_error(token, TRY_RETURN_MISMATCH);
+        clear_unavailable_inferred_declaration(token);
+        return;
+    }
+    if (decl_type_ref_tag[token] != plan.value.x || decl_type_ref_payload[token] != plan.value.y)
+    {
+        bool changed = !same_type(plan.previous, ids.y, plan.value, ids.x);
+        decl_type_ref_tag[token] = plan.value.x;
+        decl_type_ref_payload[token] = plan.value.y;
+        if (changed) { uint ignored; InterlockedAdd(call_inference_state[1u], 1u, ignored); }
+    }
+    visible_type[token] = plan.value.x == 1u ? plan.value.y : 0u;
+}
+
 BindingPlan plan_let_binding(uint node, uint kind, HirPayload statement, uint count)
 {
     BindingPlan plan = no_plan();
@@ -278,9 +449,9 @@ BindingPlan plan_let_binding(uint node, uint kind, HirPayload statement, uint co
     uint initializer_kind = compact_hir_core[initializer].kind;
     // Only these forms publish into the accepted expression relation used
     // below. Other initializer producers retain ownership of their facts:
-    // kinds 14, 16, 17, 19-24, 28, 33 and 34, as bits of (kind - 14).
+    // kinds 14, 16, 17, 19-24, 28, 33, 34 and 36, as bits of (kind - 14).
     uint owned_kind = initializer_kind - 14u;
-    if (owned_kind > 20u || ((0x1847edu >> owned_kind) & 1u) == 0u) return plan;
+    if (owned_kind > 22u || ((0x5847edu >> owned_kind) & 1u) == 0u) return plan;
     if (owned_kind == 0u || owned_kind - 2u <= 1u)
     {
         uint operation = compact_hir_payload[initializer].a;
@@ -358,19 +529,26 @@ void main(uint3 dtid: SV_DispatchThreadID)
     BindingPlan plan;
     if (kind == 30u || (kind == 7u && statement.a == 7u))
         plan = plan_for_binding(node, statement, count);
+    else if (kind == 36u)
+        plan = plan_try(node, count);
     else
         plan = plan_let_binding(node, kind, statement, count);
     if (plan.mode == PLAN_NONE) return;
     uint spare = CT_NONE;
-    uint2 ids = uint2(CT_UNKNOWN, CT_UNKNOWN);
+    uint4 ids = uint4(CT_UNKNOWN, CT_UNKNOWN, CT_UNKNOWN, CT_UNKNOWN);
+    uint operands = plan.mode == PLAN_TRY ? 4u : 2u;
     [loop]
-    for (uint index = 0u; index < 2u; index++)
+    for (uint index = 0u; index < operands; index++)
     {
-        uint2 operand = index == 0u ? plan.value : plan.previous;
+        uint2 operand = index == 0u ? plan.value : index == 1u ? plan.previous
+            : index == 2u ? plan.error : plan.expected_error;
         uint id = ct_intern_checked<CtCheckedRows>(operand.x, operand.y, spare);
         if (index == 0u) ids.x = id;
-        else ids.y = id;
+        else if (index == 1u) ids.y = id;
+        else if (index == 2u) ids.z = id;
+        else ids.w = id;
     }
     if (plan.mode == PLAN_FOR) publish_for_binding(plan, ids.x, ids.y);
+    else if (plan.mode == PLAN_TRY) publish_try(plan, ids);
     else publish_let_binding(plan, ids.x, ids.y, count);
 }

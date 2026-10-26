@@ -218,8 +218,9 @@ uint lir_for_hir_original(uint node, uint hir_count)
     // is materialized by the final synthetic VALUE_GET row. Consumers of the
     // HIR identity must observe that value-producing row, just as they observe
     // the sole row of an ordinary expression.
+    // ((kind - 34) & ~2) == 0 is a match (34) or `value?` (36).
     return (semantic_argument_value_layout[node].x != 0u ||
-        compact_hir_core[node].kind == HIR_MATCH_EXPR ||
+        ((compact_hir_core[node].kind - HIR_MATCH_EXPR) & ~2u) == 0u ||
         semantic_lir_is_short_circuit(compact_hir_core[node], compact_hir_payload[node]))
         ? first + semantic_place_original_count[node] - 1u : first;
 }
@@ -1001,7 +1002,7 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
         // Capture at the source expression's completion point, before the
         // next argument runs. The original expression still owns calls,
         // constructor elements, and structured-control recipe rows.
-        bool final_value = hir.kind == HIR_MATCH_EXPR ||
+        bool final_value = ((hir.kind - HIR_MATCH_EXPR) & ~2u) == 0u ||
             semantic_lir_is_short_circuit(hir, payload);
         uint source_row = final_value ? local_count - 1u : 0u;
         SemanticLirRow snapshot;
@@ -1968,7 +1969,7 @@ SemanticLirSchedule place_semantic_schedule(uint node, uint local_row, uint hir_
     uint recipe = place_original_recipe_count(node);
     bool appended = local_row >= original;
     bool snapshot = local_row == recipe && local_row < original;
-    bool final_value = hir.kind == HIR_MATCH_EXPR ||
+    bool final_value = ((hir.kind - HIR_MATCH_EXPR) & ~2u) == 0u ||
         semantic_lir_is_short_circuit(hir, compact_hir_payload[node]);
     uint source = snapshot || appended ? (final_value ? recipe - 1u : 0u) : local_row;
     SemanticLirSchedule schedule = semantic_schedule(node, source, recipe,

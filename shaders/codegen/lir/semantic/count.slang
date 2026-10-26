@@ -197,6 +197,11 @@ void count_original(uint3 dtid)
             semantic_lir_count[node] = 0u;
             return;
         }
+        if (core.kind == HIR_TRY_EXPR)
+        {
+            semantic_lir_count[node] = SEMANTIC_TRY_ROW_COUNT + capture_rows;
+            return;
+        }
         if (core.kind == HIR_MATCH_EXPR)
         {
             SemanticMatchRecipe match_recipe = semantic_match_recipe_for_hir(node, count);
@@ -259,6 +264,7 @@ uint value_row_in_node(uint node, uint original, uint projection)
     if (original == 0u) return LIR_INVALID;
     return semantic_argument_value_layout[node].x != 0u ||
         compact_hir_core[node].kind == HIR_MATCH_EXPR ||
+        compact_hir_core[node].kind == HIR_TRY_EXPR ||
         semantic_lir_is_short_circuit(compact_hir_core[node], compact_hir_payload[node])
         ? original - 1u : 0u;
 }

@@ -41,6 +41,7 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -73,7 +74,8 @@ bool is_expr_node_kind(uint kind)
            kind == HIR_ARRAY_EXPR ||
            kind == HIR_STRUCT_LITERAL_EXPR ||
            kind == HIR_PATH_EXPR ||
-           kind == HIR_MATCH_EXPR;
+           kind == HIR_MATCH_EXPR ||
+           kind == HIR_TRY_EXPR;
 }
 
 [shader("compute")]

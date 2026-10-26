@@ -70,6 +70,8 @@ static const uint HIR_EXPR_RANGE_FULL = 33u;
 static const uint HIR_EXPR_RANGE_INCLUSIVE = 34u;
 static const uint HIR_EXPR_RANGE_TO_INCLUSIVE = 35u;
 static const uint HIR_EXPR_CAST = 36u;
+// `value?`: LEFT is the Result/Option operand.
+static const uint HIR_EXPR_TRY = 37u;
 
 static const uint HIR_TYPE = 5u;
 static const uint HIR_EXPR = 14u;
@@ -86,6 +88,7 @@ static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
 
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
@@ -278,7 +281,8 @@ bool is_value_postfix_production(uint prod)
 {
     return prod == PROD_POSTFIX_CALL ||
            prod == PROD_POSTFIX_INDEX ||
-           prod == PROD_POSTFIX_MEMBER;
+           prod == PROD_POSTFIX_MEMBER ||
+           prod == PROD_POSTFIX_TRY;
 }
 
 uint tail_continuation(uint tail)
@@ -544,7 +548,7 @@ uint index_base_node(uint index_node)
         (previous_kind >= HIR_EXPR && previous_kind <= HIR_ARRAY_EXPR) ||
         previous_kind == HIR_STRUCT_LITERAL_EXPR ||
         previous_kind == HIR_PATH_EXPR ||
-        previous_kind == HIR_MATCH_EXPR;
+        previous_kind == HIR_MATCH_EXPR || previous_kind == HIR_TRY_EXPR;
     if (previous_is_expression)
         return previous;
 
@@ -553,7 +557,7 @@ uint index_base_node(uint index_node)
         (parent_kind >= HIR_EXPR && parent_kind <= HIR_ARRAY_EXPR) ||
         parent_kind == HIR_STRUCT_LITERAL_EXPR ||
         parent_kind == HIR_PATH_EXPR ||
-        parent_kind == HIR_MATCH_EXPR;
+        parent_kind == HIR_MATCH_EXPR || parent_kind == HIR_TRY_EXPR;
     return parent_is_expression || (valid_node(p) && node_kind[p] == PROD_POSTFIX)
         ? p : INVALID;
 }
@@ -562,7 +566,8 @@ bool is_direct_result_hir_kind(uint kind)
 {
     return kind == HIR_CALL_EXPR || kind == HIR_INDEX_EXPR ||
            kind == HIR_MEMBER_EXPR || kind == HIR_ARRAY_EXPR ||
-           kind == HIR_STRUCT_LITERAL_EXPR || kind == HIR_MATCH_EXPR;
+           kind == HIR_STRUCT_LITERAL_EXPR || kind == HIR_MATCH_EXPR ||
+           kind == HIR_TRY_EXPR;
 }
 
 void publish_expr(uint i)
@@ -708,6 +713,15 @@ void publish_expr(uint i)
     if (prod == PROD_POSTFIX_INDEX)
     {
         write_expr_record(i, HIR_EXPR_INDEX, index_base_node(i), child, INVALID);
+        publish_expr_result(i, i);
+        return;
+    }
+
+    if (prod == PROD_POSTFIX_TRY)
+    {
+        // The operand is found exactly as an index base is; the only child
+        // is the continuation.
+        write_expr_record(i, HIR_EXPR_TRY, index_base_node(i), INVALID, INVALID);
         publish_expr_result(i, i);
         return;
     }

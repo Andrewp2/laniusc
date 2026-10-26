@@ -210,6 +210,30 @@ struct CheckedRecordFields : IConcreteStructFields
     }
 }
 
+// The error type of a Result operand (its second type argument); false for
+// an Option, which has none.
+bool try_error_reference(uint operand, uint hir_count, out uint tag, out uint payload)
+{
+    tag = 0u; payload = LIR_INVALID;
+    if (operand >= hir_count || semantic_expr_ref_tag[operand] != 3u) return false;
+    uint instance = semantic_expr_ref_payload[operand];
+    return instance < checked_type_capacity() && type_instance_arg_count[instance] == 2u &&
+        ScopedCheckedTypeGraph.argument(instance, 1u, tag, payload);
+}
+
+uint try_error_words(uint tag, uint payload, uint hir_count)
+{
+    if (tag == 3u && payload < checked_type_capacity())
+        return type_instance_kind[payload] == 3u ? NATIVE_SLICE_WORDS : type_instance_native_words[payload];
+    if (tag != TYPE_REF_SCALAR) return 0u;
+    if (payload == SEMANTIC_LIR_TY_STRING) return 2u;
+    if (payload < 128u) return 1u;
+    uint token = native_nominal_declaration_token(payload, gParams.n_tokens,
+        hir_count, semantic_aggregate_hir_by_name_token, compact_hir_core);
+    return token != LIR_INVALID
+        ? semantic_struct_word_count_by_hir[semantic_aggregate_hir_by_name_token[token]] : 0u;
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
@@ -228,11 +252,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
                            max(compact_field_count[0u], compact_call_arg_count[0u])));
         InterlockedMin(lowering_status[0u].available_capacity, gParams.element_capacity);
     }
-    uint total = array_count + field_count + call_arg_count;
+    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
+    // The last segment has one row per HIR node: a `value?` on a Result
+    // rebuilds `Err(e)` for the function's own result type (try_rows).
+    uint try_base = array_count + field_count + call_arg_count;
+    uint total = try_base + hir_count;
+    if (row == 0u && total > gParams.element_capacity)
+    {
+        InterlockedOr(lowering_status[0u].flags, LOWERING_STATUS_AGGREGATE_CAPACITY);
+        InterlockedMax(lowering_status[0u].required_capacity, total);
+        InterlockedMin(lowering_status[0u].available_capacity, gParams.element_capacity);
+    }
     if (row == 0u) semantic_lir_aggregate_element_total[0u] = total;
     if (row >= total) return;
 
-    uint hir_count = min(compact_hir_count[0u], gParams.n_hir_nodes);
     SemanticLirAggregateElement result;
     result.slice_array_length = LIR_INVALID;
     if (row < array_count)
@@ -329,6 +362,25 @@ void main(uint3 dtid: SV_DispatchThreadID)
                     SEMANTIC_LIR_FLAG_ARRAY_PAIR) == 0u)
                 result.slice_array_length = source_length;
         }
+    }
+    else if (row >= try_base)
+    {
+        // Rows 7 and 8 of a `value?` are the error LOAD and its AGGREGATE_NEW.
+        uint node = row - try_base;
+        uint tag; uint payload;
+        bool result_operand = compact_hir_core[node].kind == HIR_TRY_EXPR &&
+            semantic_lir_count[node] >= SEMANTIC_TRY_ROW_COUNT &&
+            try_error_reference(compact_hir_payload[node].b, hir_count, tag, payload);
+        uint first = semantic_lir_offset[node];
+        result.aggregate_instruction = result_operand ? first + 8u : LIR_INVALID;
+        result.value_instruction = result_operand ? first + 7u : LIR_INVALID;
+        result.ordinal = 0u;
+        result.name_token = LIR_INVALID;
+        result.value_metadata = result_operand
+            ? semantic_lir_value_metadata(tag == TYPE_REF_SCALAR ? semantic_lir_type(payload) : 0u, tag, payload)
+            : 0u;
+        result.word_offset = 1u;
+        result.word_count = result_operand ? try_error_words(tag, payload, hir_count) : 0u;
     }
     else
     {

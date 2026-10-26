@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2480,
+    "cells": 2548,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2480,
+    "cells": 2548,
     "conflicts": []
   },
   "ll1_runtime": {
     "nonterminals": 150,
     "start_nonterminal": "file",
     "predict_cells": 30000,
-    "rhs_symbols": 581
+    "rhs_symbols": 583
   },
   "ll1_predictions": [
     {
@@ -4882,6 +4882,12 @@
     },
     {
       "nonterminal": "member_type_args_opt",
+      "lookahead": "Question",
+      "lookahead_id": 39,
+      "production": 297
+    },
+    {
+      "nonterminal": "member_type_args_opt",
       "lookahead": "NotEqual",
       "lookahead_id": 40,
       "production": 297
@@ -5896,6 +5902,12 @@
     },
     {
       "nonterminal": "path_tail",
+      "lookahead": "Question",
+      "lookahead_id": 39,
+      "production": 51
+    },
+    {
+      "nonterminal": "path_tail",
       "lookahead": "NotEqual",
       "lookahead_id": 40,
       "production": 51
@@ -6544,6 +6556,12 @@
     },
     {
       "nonterminal": "postfix_tail",
+      "lookahead": "Question",
+      "lookahead_id": 39,
+      "production": 318
+    },
+    {
+      "nonterminal": "postfix_tail",
       "lookahead": "NotEqual",
       "lookahead_id": 40,
       "production": 164
@@ -6900,6 +6918,12 @@
       "nonterminal": "primary_ident_tail",
       "lookahead": "Dot",
       "lookahead_id": 35,
+      "production": 274
+    },
+    {
+      "nonterminal": "primary_ident_tail",
+      "lookahead": "Question",
+      "lookahead_id": 39,
       "production": 274
     },
     {
@@ -12462,6 +12486,17 @@
       "arity": 0,
       "rhs": [
         "'ArrayRepeatCount'"
+      ]
+    },
+    {
+      "id": 318,
+      "line": 412,
+      "lhs": "postfix_tail",
+      "tag": "postfix_try",
+      "arity": 1,
+      "rhs": [
+        "'Question'",
+        "postfix_tail"
       ]
     }
   ]

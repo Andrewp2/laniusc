@@ -1,0 +1,34 @@
+module app::main;
+import core::result;
+import core::option;
+
+fn parse(x: i32) -> core::result::Result<i32, i32> {
+    if (x < 0) { return core::result::Err(0 - x); }
+    return core::result::Ok(x);
+}
+
+fn find(x: i32) -> core::option::Option<i32> {
+    if (x == 0) { return core::option::None(); }
+    return core::option::Some(x);
+}
+
+// The Ok type changes (i32 to bool); the error type stays i32.
+fn positive(x: i32) -> core::result::Result<bool, i32> {
+    let value = parse(x)?;
+    return core::result::Ok(value > 0);
+}
+
+// The Some type changes (i32 to bool).
+fn nonzero_even(x: i32) -> core::option::Option<bool> {
+    let value = find(x)?;
+    return core::option::Some(value % 2 == 0);
+}
+
+fn main() -> i32 {
+    let code: i32 = 0;
+    if (positive(5).unwrap()) { code = code + 1; }
+    code = code + positive(0 - 9).unwrap_err() * 10;
+    if (nonzero_even(4).unwrap()) { code = code + 2; }
+    if (nonzero_even(0).is_none()) { code = code + 4; }
+    return code;
+}

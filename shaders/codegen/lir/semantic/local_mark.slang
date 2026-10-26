@@ -91,6 +91,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             receiver_temporary_token(hir, semantic_calls_by_hir[hir], hir_count, holder) < gParams.n_tokens;
         semantic_local_flag[hir] = match_result ? 3u
             : source_local || match_binding || receiver_temporary ||
+                core.kind == HIR_TRY_EXPR ||
                 semantic_lir_is_short_circuit(core, payload)
                 ? 1u : range_for ? 2u : 0u;
         return;

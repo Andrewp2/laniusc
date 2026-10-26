@@ -206,14 +206,17 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // reads, including str's two-word descriptor.
         bool concrete_declaration_ref = declaration_tag == TYPE_REF_SCALAR ||
             declaration_tag == TYPE_REF_INSTANCE;
-        uint match_tag = core.kind == 34u && valid_token(core.token_start)
-            ? decl_type_ref_tag[core.token_start] : TYPE_REF_INVALID;
+        // A match's type is at its `match` token, a `value?`'s at its `?`.
+        uint match_token = core.kind == 34u ? core.token_start
+            : core.kind == 36u ? core.token_end - 1u : INVALID;
+        uint match_tag = valid_token(match_token)
+            ? decl_type_ref_tag[match_token] : TYPE_REF_INVALID;
         bool concrete_match_ref = match_tag == TYPE_REF_SCALAR ||
             match_tag == TYPE_REF_INSTANCE;
         if (concrete_match_ref)
         {
             tag = match_tag;
-            payload = decl_type_ref_payload[core.token_start];
+            payload = decl_type_ref_payload[match_token];
         }
         else if (scalar != 0u && !concrete_type_ref && !concrete_call_ref &&
                  !concrete_declaration_ref && !checked_member_ref)

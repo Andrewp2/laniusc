@@ -4291,6 +4291,9 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                 ))
                 .with_note(type_mismatch_note(detail)),
         ),
+        GpuTypeCheckCode::ReturnMismatch if detail == TRY_NOT_RESULT || detail == TRY_RETURN_MISMATCH => {
+            try_diagnostic(path, source, start, len, detail)
+        }
         GpuTypeCheckCode::ReturnMismatch => return_mismatch_diagnostic(path, source, start, len),
         GpuTypeCheckCode::ConditionType => condition_type_diagnostic(path, source, start, len),
         GpuTypeCheckCode::LoopControl => loop_control_diagnostic(path, source, start, len),
@@ -4340,6 +4343,30 @@ fn return_mismatch_diagnostic(path: &Path, source: &str, start: usize, len: usiz
                 "return value does not match the function return type",
             ))
             .with_note("change the returned expression or the function return type so they agree"),
+    )
+}
+
+// ReturnMismatch details of `value?` (calls/03f_infer_return_bindings).
+const TRY_NOT_RESULT: u32 = 0x3f01;
+const TRY_RETURN_MISMATCH: u32 = 0x3f02;
+
+fn try_diagnostic(path: &Path, source: &str, start: usize, len: usize, detail: u32) -> CompileError {
+    let (label, note) = if detail == TRY_NOT_RESULT {
+        (
+            "`?` needs a `core::result::Result` or `core::option::Option` value",
+            "`?` returns early on `Err` or `None`; use `match` for other enums",
+        )
+    } else {
+        (
+            "`?` returns this error from a function whose result type differs",
+            "the function must return the same enum: `Result<_, E>` with the operand's exact `E` \
+             (`?` never converts errors), or `Option<_>` for an `Option` operand",
+        )
+    };
+    CompileError::Diagnostic(
+        Diagnostic::error("LNC0006", "type mismatch")
+            .with_primary_label(diagnostic_label_from_source_span(path, source, start, len, label))
+            .with_note(note),
     )
 }
 

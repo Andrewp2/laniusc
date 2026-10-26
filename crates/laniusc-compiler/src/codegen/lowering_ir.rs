@@ -1286,7 +1286,9 @@ impl LoweringCapacities {
             ));
         }
         let call_arguments = hir_nodes;
-        let aggregate_elements = hir_nodes;
+        // Array, field and call-argument elements, then one row per HIR node
+        // for the `Err(e)` a `value?` rebuilds (semantic/aggregate_elements).
+        let aggregate_elements = multiply(hir_nodes, 2, "aggregate element")?;
         let target_instructions = multiply(
             hir_nodes,
             match target {
@@ -3377,6 +3379,8 @@ fn lowering_compiler_graph_builder(
         name: "lir.semantic.scatter",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::SemanticInstructions,
+        // The pass is two dispatches: scatter, then try_rows over the rows of
+        // each `value?`. try_rows reads only bindings scatter also reflects.
         accesses: vec![
             PassAccess::read("compact_expr_parent", hir_expr_parent),
             PassAccess::read("semantic_place_original_count", semantic_place_original_count),

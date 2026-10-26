@@ -112,6 +112,7 @@ uint lir_for_hir(uint node)
     // structured match and short-circuit recipes publish a final VALUE_GET.
     return semantic_argument_value_layout[node].x != 0u ||
         compact_hir_core[node].kind == HIR_MATCH_EXPR ||
+        compact_hir_core[node].kind == HIR_TRY_EXPR ||
         semantic_lir_is_short_circuit(
             compact_hir_core[node], compact_hir_payload[node])
         ? first + semantic_place_original_count[node] - 1u : first;

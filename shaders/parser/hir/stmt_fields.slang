@@ -55,6 +55,7 @@ static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint HIR_BLOCK = 6u;
 static const uint HIR_EXPR_RANGE = 30u;
 static const uint HIR_EXPR_RANGE_FROM = 31u;
@@ -234,7 +235,8 @@ bool is_hir_expression_kind(uint kind)
            kind == HIR_ARRAY_EXPR ||
            kind == HIR_STRUCT_LITERAL_EXPR ||
            kind == HIR_PATH_EXPR ||
-           kind == HIR_MATCH_EXPR;
+           kind == HIR_MATCH_EXPR ||
+           kind == HIR_TRY_EXPR;
 }
 
 uint direct_expr_child(uint node)

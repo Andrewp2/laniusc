@@ -93,7 +93,8 @@ uint previous_sibling_node(uint i)
 bool is_postfix_operator(uint prod)
 {
     return prod == PROD_POSTFIX_CALL || prod == PROD_POSTFIX_INDEX ||
-           prod == PROD_POSTFIX_MEMBER;
+           prod == PROD_POSTFIX_MEMBER ||
+           prod == PROD_POSTFIX_TRY;
 }
 
 bool is_call_arg_container(uint prod)

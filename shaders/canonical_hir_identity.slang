@@ -20,6 +20,7 @@ static const uint CANONICAL_HIR_ARRAY_EXPR = 24u;
 static const uint CANONICAL_HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint CANONICAL_HIR_PATH_EXPR = 33u;
 static const uint CANONICAL_HIR_MATCH_EXPR = 34u;
+static const uint CANONICAL_HIR_TRY_EXPR = 36u;
 static const uint CANONICAL_HIR_EXPR_RANGE = 30u;
 static const uint CANONICAL_HIR_EXPR_RANGE_FROM = 31u;
 static const uint CANONICAL_HIR_EXPR_RANGE_INCLUSIVE = 34u;
@@ -42,7 +43,8 @@ uint canonical_hir_priority(uint kind)
 {
     if (kind == CANONICAL_HIR_CALL_EXPR || kind == CANONICAL_HIR_INDEX_EXPR ||
         kind == CANONICAL_HIR_MEMBER_EXPR || kind == CANONICAL_HIR_ARRAY_EXPR ||
-        kind == CANONICAL_HIR_STRUCT_LITERAL_EXPR || kind == CANONICAL_HIR_MATCH_EXPR)
+        kind == CANONICAL_HIR_STRUCT_LITERAL_EXPR || kind == CANONICAL_HIR_MATCH_EXPR ||
+        kind == CANONICAL_HIR_TRY_EXPR)
         return 14u;
     // Type paths are represented by a side table owned by the type row.
     if (kind == CANONICAL_HIR_TYPE) return 13u;
@@ -99,6 +101,10 @@ uint canonical_hir_anchor(
     if (kind == CANONICAL_HIR_CALL_EXPR && call_open_token < canonical_capacity)
         return call_open_token;
     if (kind == CANONICAL_HIR_MEMBER_EXPR && token_end > default_token &&
+        token_end <= canonical_capacity)
+        return token_end - 1u;
+    // `value?` spans its operand and ends at its `?` token.
+    if (kind == CANONICAL_HIR_TRY_EXPR && token_end > default_token &&
         token_end <= canonical_capacity)
         return token_end - 1u;
     if ((kind == CANONICAL_HIR_ASSIGN_EXPR || kind == CANONICAL_HIR_BINARY_EXPR ||

@@ -36,6 +36,8 @@ static const uint MAX_GROUPS_X = 65535u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_EXPR_INDEX = 26u;
+static const uint HIR_EXPR_TRY = 37u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint HIR_EXPR_RECORD_STRIDE = 4u;
 static const uint HIR_EXPR_RECORD_FORM = 0u;
 static const uint HIR_EXPR_RECORD_LEFT = 1u;
@@ -99,7 +101,8 @@ uint previous_sibling_node(uint node)
 bool is_postfix_operator(uint prod)
 {
     return prod == PROD_POSTFIX_CALL || prod == PROD_POSTFIX_INDEX ||
-           prod == PROD_POSTFIX_MEMBER;
+           prod == PROD_POSTFIX_MEMBER ||
+           prod == PROD_POSTFIX_TRY;
 }
 
 uint token_before(uint token)
@@ -147,6 +150,9 @@ uint receiver_token_for_node(uint receiver_node)
         }
         return valid_node(base) ? out_emit_pos[base] : INVALID;
     }
+    // `value?` publishes its result type at its own `?` token.
+    if (node_kind[receiver_node] == PROD_POSTFIX_TRY)
+        return out_emit_pos[receiver_node];
     if (is_postfix_operator(node_kind[receiver_node]))
         return postfix_operator_head_token(receiver_node);
     return out_emit_pos[receiver_node];
@@ -203,7 +209,8 @@ uint postfix_base_start(uint base)
 
 void publish_index_span(uint node)
 {
-    if (expr_record(node, HIR_EXPR_RECORD_FORM) != HIR_EXPR_INDEX)
+    uint form = expr_record(node, HIR_EXPR_RECORD_FORM);
+    if (form != HIR_EXPR_INDEX && form != HIR_EXPR_TRY)
         return;
 
     uint base = expr_record(node, HIR_EXPR_RECORD_LEFT);
@@ -220,8 +227,10 @@ void publish_index_span(uint node)
     // operand's semantic span may include empty-tail anchors, and another
     // lane can be publishing a nested index span in this dispatch. Its end
     // plus one is therefore neither a boundary nor a stable input.
-    uint operand = first_child_node(node);
-    uint tail = valid_node(operand) ? next_sibling[operand] : INVALID;
+    // `value?` has no bracket operand: its only child is the continuation.
+    uint operand = form == HIR_EXPR_TRY ? INVALID : first_child_node(node);
+    uint tail = form == HIR_EXPR_TRY ? first_child_node(node)
+        : valid_node(operand) ? next_sibling[operand] : INVALID;
     if (valid_node(tail) && parent[tail] == node &&
         (is_postfix_operator(node_kind[tail]) || node_kind[tail] == PROD_POSTFIX_END))
         hir_token_end[node] = out_emit_pos[tail];
@@ -245,6 +254,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
         hir_member_name_token[node] = INVALID;
         publish_member(node);
     }
-    else if (kind == HIR_INDEX_EXPR)
+    else if (kind == HIR_INDEX_EXPR || kind == HIR_TRY_EXPR)
         publish_index_span(node);
 }

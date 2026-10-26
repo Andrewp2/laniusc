@@ -121,16 +121,18 @@ bool inference_value_reference(uint node, out uint tag, out uint payload, bool c
             tag = semantic_expr_ref_tag_by_hir[root];
             payload = semantic_expr_ref_payload_by_hir[root];
         }
-        else if (core.kind == 34u)
+        else if (core.kind == 34u || core.kind == 36u)
         {
-            if (core.token_start >= gParams.n_tokens) return false;
-            if (core.kind == 34u && !current_match)
+            // A match publishes at its `match` token, `value?` at its `?`.
+            uint token = core.kind == 34u ? core.token_start : core.token_end - 1u;
+            if (token >= gParams.n_tokens) return false;
+            if (!current_match)
             {
                 tag = call_inference_result_tag[root]; payload = call_inference_result_payload[root];
             }
             else
             {
-                tag = decl_type_ref_tag[core.token_start]; payload = decl_type_ref_payload[core.token_start];
+                tag = decl_type_ref_tag[token]; payload = decl_type_ref_payload[token];
             }
         }
         else if (core.kind == 23u)

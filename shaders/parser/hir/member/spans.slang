@@ -67,7 +67,8 @@ uint semantic_row_node(uint row)
 bool is_postfix_operator(uint production)
 {
     return production == PROD_POSTFIX_CALL || production == PROD_POSTFIX_INDEX ||
-           production == PROD_POSTFIX_MEMBER;
+           production == PROD_POSTFIX_MEMBER ||
+           production == PROD_POSTFIX_TRY;
 }
 
 uint receiver_span_start(uint receiver)

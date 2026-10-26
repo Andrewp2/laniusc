@@ -83,8 +83,11 @@ void main(uint3 dtid: SV_DispatchThreadID)
     {
         bool match_result = compact_hir_core[hir].kind == HIR_MATCH_EXPR;
         bool match_binding = match_payload_binding(hir);
+        // `value?` keeps its operand's enum address (try_rows).
         bool short_circuit = semantic_lir_is_short_circuit(
-            compact_hir_core[hir], compact_hir_payload[hir]);
+            compact_hir_core[hir], compact_hir_payload[hir]) ||
+            compact_hir_core[hir].kind == HIR_TRY_EXPR;
+        bool try_operand = compact_hir_core[hir].kind == HIR_TRY_EXPR;
         SemanticLirLocal result;
         result.function_id = function_id;
         result.declaration_id = match_result
@@ -94,7 +97,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             : receiver_temporary ? compact_hir_payload[member].c
             : local == 0u ? compact_hir_payload[hir].b : gParams.n_tokens + hir;
         result.ordinal = row + local - function.local_start;
-        result.type_id = short_circuit ? 2u
+        result.type_id = try_operand ? SEMANTIC_LIR_TY_POINTER
+            : short_circuit ? 2u
             : match_result && local == 1u ? SEMANTIC_LIR_TY_POINTER
             : receiver_temporary ? holder_type
             : local == 0u ? semantic_value_type_by_hir[hir] : 3u;

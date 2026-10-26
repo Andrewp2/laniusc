@@ -90,6 +90,7 @@ static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint HIR_MODULE_ITEM = 31u;
 static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_FILE = 1u;
@@ -426,7 +427,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         payload.c = call_args.count;
         payload.d = hir_canonical_context_stmt[row];
     }
-    else if (core.kind == HIR_INDEX_EXPR)
+    else if (core.kind == HIR_INDEX_EXPR || core.kind == HIR_TRY_EXPR)
     {
         // The index base is an immediate operand identity. A postfix call,
         // member, or earlier index may publish the enclosing expression as
@@ -438,7 +439,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             base_kind == HIR_INDEX_EXPR || base_kind == HIR_MEMBER_EXPR ||
             base_kind == HIR_ARRAY_EXPR ||
             base_kind == HIR_STRUCT_LITERAL_EXPR ||
-            base_kind == HIR_MATCH_EXPR;
+            base_kind == HIR_MATCH_EXPR || base_kind == HIR_TRY_EXPR;
         payload.a = expr_form;
         uint projected_base = direct_base ? dense_id(raw_base) : expression_id(raw_base);
         payload.b = projected_base != INVALID ? projected_base : semantic_id(raw_base);
@@ -455,7 +456,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         // to their own executable row without retaining parser member columns.
         uint raw_receiver = hir_member_receiver_node[raw];
         payload.a = expr_form;
-        payload.b = valid_raw(raw_receiver) && hir_kind[raw_receiver] == HIR_MEMBER_EXPR
+        payload.b = valid_raw(raw_receiver) &&
+                (hir_kind[raw_receiver] == HIR_MEMBER_EXPR || hir_kind[raw_receiver] == HIR_TRY_EXPR)
             ? dense_id(raw_receiver)
             : expression_id(raw_receiver);
         payload.c = hir_member_name_token[raw];

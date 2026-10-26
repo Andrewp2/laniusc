@@ -1,0 +1,12 @@
+module app::main;
+import core::result;
+import core::option;
+
+fn find(x: i32) -> core::option::Option<i32> { return core::option::Some(x); }
+
+fn f(x: i32) -> core::result::Result<i32, i32> {
+    let y = find(x)?;
+    return core::result::Ok(y);
+}
+
+fn main() -> i32 { return f(1).unwrap(); }

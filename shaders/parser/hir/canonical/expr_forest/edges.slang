@@ -26,6 +26,7 @@ static const uint HIR_ASSIGN_EXPR = 15u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_FOR_STMT = 30u;
@@ -102,7 +103,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
             }
         }
 
-        if (core.kind == HIR_MEMBER_EXPR)
+        if (core.kind == HIR_MEMBER_EXPR || core.kind == HIR_TRY_EXPR)
             publish_parent(payload.b, row);
         else if ((core.kind == HIR_STMT || core.kind == HIR_ASSIGN_EXPR) &&
                  payload.a == HIR_STMT_ASSIGN)

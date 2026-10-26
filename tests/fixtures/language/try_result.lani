@@ -1,0 +1,21 @@
+module app::main;
+import core::result;
+
+fn half(x: i32) -> core::result::Result<i32, i32> {
+    if (x % 2 != 0) { return core::result::Err(x); }
+    return core::result::Ok(x / 2);
+}
+
+// Both `?`s return the first odd value as the error.
+fn quarter(x: i32) -> core::result::Result<i32, i32> {
+    let h = half(x)?;
+    let q = half(h)?;
+    return core::result::Ok(q);
+}
+
+fn main() -> i32 {
+    let a = quarter(20).unwrap();
+    let b = quarter(6).unwrap_err();
+    let c = quarter(7).unwrap_err();
+    return a + b * 10 + c * 30; // 5 + 30 + 210 = 245
+}

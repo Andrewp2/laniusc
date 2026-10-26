@@ -56,6 +56,7 @@ static const uint HIR_MODULE_ITEM = 31u;
 static const uint HIR_IMPORT_ITEM = 32u;
 static const uint HIR_PATH_EXPR = 33u;
 static const uint HIR_MATCH_EXPR = 34u;
+static const uint HIR_TRY_EXPR = 36u;
 static const uint HIR_IMPL = 35u;
 static const uint HIR_EXPR_FORWARD = 1u;
 static const uint HIR_EXPR_RANGE_FROM = 31u;
@@ -153,7 +154,8 @@ uint member_name_token(uint member_node)
 bool direct_expression_kind(uint kind)
 {
     return kind == HIR_CALL_EXPR || kind == HIR_INDEX_EXPR || kind == HIR_MEMBER_EXPR ||
-           kind == HIR_ARRAY_EXPR || kind == HIR_STRUCT_LITERAL_EXPR || kind == HIR_MATCH_EXPR;
+           kind == HIR_ARRAY_EXPR || kind == HIR_STRUCT_LITERAL_EXPR || kind == HIR_MATCH_EXPR ||
+           kind == HIR_TRY_EXPR;
 }
 
 bool durable_kind(uint kind)

@@ -402,3 +402,11 @@ type_expr [type_never] -> 'ReturnNever';
 # The productions sit at the end of the file to keep earlier production IDs.
 array_elems_tail [array_repeat] -> 'ArraySemicolon' array_repeat_count;
 array_repeat_count [array_repeat_count] -> 'ArrayRepeatCount';
+
+# ----- Try -----
+# `value?` is a postfix operator on a `core::result::Result` or
+# `core::option::Option` value: it yields the `Ok`/`Some` payload, and an
+# `Err(e)`/`None` returns from the enclosing function, whose result must be the
+# same enum with the same error type (no conversion). The production sits at
+# the end of the file to keep earlier production IDs.
+postfix_tail [postfix_try] -> 'Question' postfix_tail;

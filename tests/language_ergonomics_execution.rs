@@ -56,3 +56,37 @@ fn a_name_from_two_module_imports_is_reported_as_ambiguous() {
         &["LNC0005", "ambiguous imported name", "import std::stream::copy;"],
     );
 }
+
+#[test]
+fn try_returns_the_error_or_unwraps_the_value() {
+    assert_exit("try_result.lani", 245);
+}
+
+#[test]
+fn try_keeps_the_error_and_changes_the_payload_type() {
+    assert_exit("try_payload_change.lani", 97);
+}
+
+#[test]
+fn try_needs_a_result_or_option_operand() {
+    assert_rejected(
+        "try_not_result.lani",
+        &["LNC0006", "`?` needs a `core::result::Result` or `core::option::Option` value"],
+    );
+}
+
+#[test]
+fn try_never_converts_the_error_type() {
+    assert_rejected(
+        "try_error_mismatch.lani",
+        &["LNC0006", "`?` returns this error from a function whose result type differs"],
+    );
+}
+
+#[test]
+fn try_on_an_option_needs_an_option_result() {
+    assert_rejected(
+        "try_option_in_result.lani",
+        &["LNC0006", "`?` returns this error from a function whose result type differs"],
+    );
+}

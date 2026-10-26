@@ -35,7 +35,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint kind = compact_hir_core[node].kind;
     if (kind != 14u && kind != 16u && kind != 17u && kind != 20u &&
         kind != 21u && kind != 22u && kind != 23u && kind != 28u &&
-        kind != 33u && kind != 34u) return;
+        kind != 33u && kind != 34u && kind != 36u) return;
     uint tag; uint payload;
     bool available = inference_value_reference(node, tag, payload);
     // Unresolved source applications cannot become accepted value facts. In

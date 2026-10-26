@@ -352,6 +352,7 @@ struct SemanticPasses {
     scan_down: PassData,
     scan_apply: PassData,
     scatter: PassData,
+    try_rows: PassData,
     call_args: PassData,
     aggregate_elements: PassData,
     strings: PassData,
@@ -388,6 +389,7 @@ impl SemanticPasses {
             scan_down: load("scan/counted/02_hierarchy_down"),
             scan_apply: load("scan/counted/02_apply"),
             scatter: load("codegen/lir/semantic/scatter"),
+            try_rows: load("codegen/lir/semantic/try_rows"),
             call_args: load("codegen/lir/semantic/call_args"),
             aggregate_elements: load("codegen/lir/semantic/aggregate_elements"),
             strings: load("codegen/lir/semantic/strings"),
@@ -1116,6 +1118,7 @@ struct GpuSemanticLoweringOperations {
     count: JobSized,
     instruction_scan: GpuResidentExclusiveScan,
     scatter: JobSized,
+    try_rows: JobSized,
     call_args: JobSized,
     aggregate_elements: JobSized,
     strings: JobSized,
@@ -1966,6 +1969,13 @@ impl GpuSemanticLoweringStage {
                 &scatter_params,
                 capacities.semantic_instructions,
             )?, sem_extent::semantic_rows, capacities)?,
+            // Under scatter's graph pass: it rewrites rows scatter produced.
+            try_rows: JobSized::new(direct_uniform!(
+                "lir.semantic.scatter",
+                &passes.try_rows,
+                &scatter_params,
+                hir_nodes,
+            )?, sem_extent::hir, capacities)?,
             call_args: JobSized::new(direct_uniform!(
                 "lir.semantic.call_args",
                 &passes.call_args,
@@ -2207,6 +2217,7 @@ impl GpuSemanticLoweringStage {
         operations.place_addresses.record_job(encoder, job)?;
         stamp!("lowering.semantic.instructions.scan.done");
         operations.scatter.record_job(encoder, job)?;
+        operations.try_rows.record_job(encoder, job)?;
         stamp!("lowering.semantic.instructions.scatter.done");
         operations.call_args.record_job(encoder, job)?;
         stamp!("lowering.semantic.call_arguments.scatter.done");

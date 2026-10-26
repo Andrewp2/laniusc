@@ -24,6 +24,9 @@ static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_ARRAY_EXPR = 24u;
 static const uint HIR_STRUCT_LITERAL_EXPR = 28u;
 static const uint HIR_MATCH_EXPR = 34u;
+// `value?`; its rows are written by try_rows after scatter.
+static const uint HIR_TRY_EXPR = 36u;
+static const uint SEMANTIC_TRY_ROW_COUNT = 13u;
 static const uint HIR_INDEX_EXPR = 20u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_FOR_STMT = 30u;
