@@ -1,0 +1,72 @@
+// A close failure after otherwise completed HTTPS is one canonical primary.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_server;
+import ext::https_server;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::linux;
+import std::poll;
+import std::signal;
+import std::socket;
+import std::stream;
+extern "C" fn duplex_test_fd_open(fd: i32) -> i32;
+extern "C" fn duplex_test_stat(index: i32, field: i32) -> i64;
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),count).unwrap(); }
+fn number(part: core::slice::View<u8>) -> i32 { return core::decimal::parse_u32_range(part.values,part.start,part.length).unwrap() as i32; }
+fn mark(text: str) { let sink = std::stream::stderr(); let part = bytes(text,1); core::io::write_all(sink.borrow(),part.values,0,1).unwrap(); }
+fn host_five(error: core::io::Error) -> bool { return match(error) { core::io::Error::Host(value) -> value == 5, _ -> false }; }
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let args = std::args::snapshot(1,3,32768).unwrap(); assert(args.len() == 3); let fault: bool = number(args.get(2).unwrap()) != 0;
+    let context = ext::openssl_tls::new_server(args.get(0).unwrap(),args.get(1).unwrap(),bytes("",0),ext::openssl_tls::ClientAuthentication::Unauthenticated,ext::openssl_tls::default_limits()).unwrap();
+    mark("C"); let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(1).unwrap();
+    let port: u64 = match(listener.local_addr().unwrap()) { core::net::SocketAddr::V4(value) -> value.port as u64, _ -> 0 }; assert(port > 0);
+    let startup: [u8;16] = [0;16]; let j: i32 = 0; while (j < 8) { startup[j] = (1213421622 as u64 >> (j*8)) as u8; startup[8+j] = (port >> (j*8)) as u8; j += 1; } let initial_output = std::stream::stdout(); core::io::write_all(initial_output.borrow(),startup,0,16).unwrap();
+    let control = std::stream::stdin(); let connected: [u8;1] = [0]; core::io::read_exact(control.borrow(),connected,0,1).unwrap(); assert(connected[0] == 43);
+    let accepted = listener.accept(true).unwrap(); listener.close().unwrap(); let fd: i32 = accepted.socket.raw_handle().unwrap();
+    let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(4000)).unwrap();
+    let owner = ext::https_server::begin_connected(accepted.socket,accepted.peer,context.borrow(),ext::http_server::default_options(),ext::https_server::default_options(),deadline).unwrap(); mark("c"); context.destroy(); args.destroy();
+    let poll = std::poll::new(1).unwrap(); let readiness = ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false }; let steps: i32 = 0; let terminal: bool = false; let seen_failure: bool = false;
+    while (!terminal) {
+        assert(steps < 10000); steps += 1; let before: i64 = duplex_test_stat(-1,3); mark("S"); let result = owner.step(readiness); mark("s"); assert(duplex_test_stat(-1,3)-before <= 1);
+        readiness = ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false };
+        if (result.is_err()) {
+            assert(fault); let error: ext::https_server::Failure = result.unwrap_err();
+            assert(match(error.stage) { ext::https_server::Stage::Close -> true, _ -> false });
+            let inner: core::option::Option<ext::http_server::Failure> = match(error.cause) { ext::https_server::Cause::Http(value) -> core::option::Some(value), _ -> core::option::None() }; assert(inner.is_some());
+            assert(match(inner.unwrap().stage) { ext::http_server::Stage::Close -> true, _ -> false }); assert(match(inner.unwrap().cause) { ext::http_server::Cause::Io(value) -> host_five(value), _ -> false });
+            assert(error.cleanup.is_none() && inner.unwrap().cleanup.is_none());
+            assert(error.stats.closed && error.stats.cleanup_calls == 1 && error.stats.cleanup_errors == 1 && error.stats.response_sent == error.stats.response_bytes && error.stats.peer_eof && error.stats.write_shutdown);
+            assert(owner.last_terminal_failure().is_some()); let cached: ext::https_server::Failure = owner.last_terminal_failure().unwrap(); assert(cached.cleanup.is_none() && cached.stats.cleanup_errors == 1);
+            let cached_inner: core::option::Option<ext::http_server::Failure> = match(cached.cause) { ext::https_server::Cause::Http(value) -> core::option::Some(value), _ -> core::option::None() }; assert(cached_inner.is_some() && cached_inner.unwrap().cleanup.is_none());
+            seen_failure = true; terminal = true;
+        } else { if (result.unwrap().is_some()) {
+            let kind: i32 = match(result.unwrap().unwrap()) { ext::http_server::Event::Head(value) -> 1, ext::http_server::Event::Request(value) -> 2, ext::http_server::Event::Complete(value) -> 3, _ -> 99 };
+            if (kind == 1) { owner.read_body(ext::http_server::BodyDecision::Read).unwrap(); }
+            if (kind == 2) { let fields: [ext::http::Field;0] = []; mark("R"); owner.respond(ext::http_server::Response { status:200,reason:bytes("Ok",2),headers:core::slice::view<ext::http::Field>(fields,0).unwrap(),body:bytes("",0),date:core::time::system_time(0,0).unwrap() }).unwrap(); mark("r"); }
+            if (kind == 3) { assert(!fault); terminal = true; } assert(kind != 99);
+        } }
+        if (terminal) { break; }
+        let interest = owner.interest(); if (!interest.immediate) {
+            mark("W"); assert(owner.before_wait().unwrap()); mark("w"); let events: u32 = 0; if (interest.readable) { events |= std::poll::READABLE; } if (interest.writable) { events |= std::poll::WRITABLE; }
+            let items: [std::poll::Request;1] = [std::poll::Request { handle:owner.raw_handle().unwrap(),events:events }]; mark("P"); poll.poll_ms(core::slice::view<std::poll::Request>(items,1).unwrap(),25).unwrap(); mark("p"); let found = poll.readiness(0).unwrap(); readiness = ext::http_client::Readiness { readable:found.readable(),writable:found.writable(),hangup:found.hangup() || found.read_closed(),error:found.error() || found.invalid() };
+        }
+    }
+    assert(seen_failure == fault); let version: i32 = owner.negotiated_version(); let stats = owner.stats(); let calls: i64 = duplex_test_stat(-1,3);
+    if (fault) { mark("K"); assert(duplex_test_fd_open(fd) == 1); let items: [std::linux::Argument;1] = [std::linux::Argument::Word(fd as i64)]; assert(std::linux::call(3,core::slice::view<std::linux::Argument>(items,1).unwrap()).unwrap() == 0); mark("k"); }
+    assert(owner.raw_handle().is_none() && duplex_test_fd_open(fd) == 0 && duplex_test_stat(-1,0) == 0 && duplex_test_stat(-1,1) == 0 && duplex_test_stat(-1,2) == 0);
+    assert(!owner.abort().unwrap()); mark("X"); owner.destroy().unwrap(); assert(!owner.destroy().unwrap()); mark("x"); poll.destroy(); assert(duplex_test_stat(-1,3) == calls);
+    let values: [u64;16] = [1213421621,version as u64,steps as u64,calls as u64,stats.cleanup_calls,stats.cleanup_errors,stats.received,stats.response_sent as u64,0,0,0,1,stats.response_bytes as u64,0,0,fd as u64]; if (fault) { values[10] = 1; }
+    let output: [u8;128] = [0;128]; let i: i32 = 0; while (i < 16) { let j: i32 = 0; while (j < 8) { output[i*8+j] = (values[i]>>(j*8)) as u8; j += 1; } i += 1; }
+    let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),output,0,128).unwrap(); let input = std::stream::stdin(); let ack: [u8;1] = [0]; core::io::read_exact(input.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0;
+}

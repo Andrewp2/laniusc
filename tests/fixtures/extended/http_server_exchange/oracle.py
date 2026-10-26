@@ -3,6 +3,7 @@ import contextlib
 from pathlib import Path
 import re
 import select
+import socket
 import sys
 import time
 
@@ -241,7 +242,7 @@ def rejection(value, amount):
 
 def drain(executable):
     for cap, sent, failure in ((0, 0, False), (17, 17, False), (17, 18, True)):
-        with case(executable, "exact-drain-%d-%d" % (cap, sent), drain_cap=cap) as value:
+        with case(executable, "exact-drain-%d-%d" % (cap, sent), raw_cap=2097152, drain_cap=cap) as value:
             rejection(value, 0)
             value.until(lambda row: row[24] & 1 or row[7])
             await_eof(value)
@@ -258,7 +259,7 @@ def drain(executable):
             reads = [e for e in events(text) if e["name"] == "recvfrom"]
             assert reads[-1]["args"].split(", ")[2] == "1", reads[-1]
             assert reads[-1]["result"].split()[0] == ("1" if failure else "0"), reads[-1]
-    with case(executable, "duplex-backpressure", timeout=12000) as value:
+    with case(executable, "duplex-backpressure", timeout=12000, raw_cap=2097152) as value:
         rejection(value, 1048576)
         # Withhold reads until the actual server send buffer reaches EAGAIN.
         # Send an unread upload concurrently in bounded peer attempts.
@@ -277,6 +278,17 @@ def drain(executable):
         else:
             raise AssertionError(("missing real send backpressure and drain", value.last))
         assert eagain and value.last[17] < value.last[16] and value.last[15] > 0
+        assert not value.evidence.peer_wire, "response read before the backpressure witness"
+        value.evidence.peer_actions.append(("backpressure-confirmed", value.last[17], value.last[15]))
+        # The small peer window establishes actual EAGAIN. Release that
+        # deliberate constraint after the causal witness: keeping it through
+        # the full MiB transfer measures TCP window-reopen pacing instead of
+        # the Exchange's ability to resume once the peer reads again.
+        before = value.conn.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+        value.conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1048576)
+        after = value.conn.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+        value.evidence.peer_actions.append(("peer-receive-window-released", before, after))
+        assert after > before, ("peer receive window did not grow", before, after)
         for _ in range(20000):
             value.collect()
             if upload:
@@ -291,6 +303,22 @@ def drain(executable):
 
 
 def lifecycle(executable):
+    with case(executable, "empty-eof-finish-stage", mode=1) as value:
+        assert value.step()[6] == 1
+        assert value.command(29)[7] == 0
+        finish = value.step()
+        assert finish[6] == 7 and finish[8] == 10 and finish[5] == 0, finish
+        assert finish[2] == 0 and finish[24] & 2 and not finish[24] & 8, finish
+        assert value.command(23)[5] == 0, "Empty published before transport cleanup"
+        # Pure mode explicitly acknowledges transport effects; it owns no fd.
+        closed = value.command(35)
+        assert closed[7] == 0 and closed[24] & 8 and closed[2] == 0, closed
+        assert value.command(23)[5] == 0, "Empty published before transport_finished"
+        assert value.command(36)[7] == 0
+        empty = value.command(23)
+        assert empty[2] == 1 and empty[5] == 4 and empty[8] == 10 and empty[31] == 1, empty
+        assert empty[16:20] == (0, 0, 0, 0), empty
+        value.finish()
     with case(executable, "abort-stable-head") as value:
         head(value, request(b"POST", b"/echo", BODY))
         saved = value.last[25]
@@ -323,6 +351,10 @@ def lifecycle(executable):
         failed = value.command(16)
         assert failed[7] == 4 and failed[2] == 2 and failed[3] == -1, failed
         value.finish()
+    invalid_counts(executable)
+
+
+def invalid_counts(executable):
     for count in (0, 26):
         with case(executable, "invalid-confirmed-count-%d" % count, mode=1) as value:
             pure_input(value, b"POST /echo HTTP/1.1\r\nHost: x\r\nExpect: 100-continue\r\nContent-Length: 4\r\n\r\n")
@@ -332,9 +364,10 @@ def lifecycle(executable):
             value.command(30)
             failed = value.command(31, count)
             assert failed[7] == 6 and failed[2] == 2 and failed[18] == 0, failed
+            assert failed[29] == (3 if count == 0 else 4), failed
             for _ in range(2):
                 again = value.step()
-                assert again[7:29] == failed[7:29], (failed, again)
+                assert again[7:30] == failed[7:30], (failed, again)
             value.finish()
 
 
@@ -346,8 +379,10 @@ def faults(executable):
     with case(executable, "fatal-receive", fault="recvfrom:error=EIO:when=1") as value:
         value.send(request(b"POST", b"/echo", b""))
         failed = terminal(value)
-        assert failed[7] == 6 and failed[9] == 5 and failed[11] == 0 and failed[22] == 1, failed
-        text, _ = value.finish()
+        assert failed[7] == 6 and failed[9] == 5 and failed[11] == 0 and failed[22] == 1 and failed[2] == 2 and failed[3] == -1, failed
+        # This deliberately skipped receive leaves the queued request unread;
+        # TCP may reset on fatal close. A reset is distinct from successful EOF.
+        text, _ = value.finish(allow_reset=True)
         injected(text, "recvfrom", 1, "EIO")
     with case(executable, "fatal-shutdown", fault="shutdown:error=EIO:when=1") as value:
         content = head(value, request(b"POST", b"/echo", BODY))
@@ -396,9 +431,9 @@ def faults(executable):
                 value.command(19, 200, -1)
             failed = value.last
             if failed[5] == 3:
-                assert failed[27] in (3, 7) and failed[2] == 0, failed
+                assert (failed[27], failed[29]) in ((3, 1), (7, 2)) and failed[2] == 0, failed
             else:
-                assert failed[7] == 3 or (failed[7] == 7 and failed[31] == 2), failed
+                assert (failed[7], failed[29]) in ((3, 1), (7, 2)), failed
             assert failed[17] == 0, ("allocation failure published final bytes", failed)
             value.command(21)
             text, _ = value.finish()
@@ -418,5 +453,5 @@ if __name__ == "__main__":
     executable, group = sys.argv[1:]
     controls = guard_controls()
     {"steps": steps, "decisions": decisions, "drain": drain,
-     "lifecycle": lifecycle, "faults": faults}[group](executable)
+     "lifecycle": lifecycle, "invalid-counts": invalid_counts, "faults": faults}[group](executable)
     print("http-server-exchange-%s cases=%d source-allocation-positions=%d cpu-guard-controls=%d owners-and-step-boundaries-checked=1" % (group, COUNT, ALLOCATION_POSITIONS, controls))

@@ -116,7 +116,11 @@ pub impl Protocol {
     pub fn failure(&self, cause: Cause) -> Failure {
         if (self.terminal.is_some()) { return self.terminal.unwrap(); }
         if (!running(self.current)) { return self.local_failure(Cause::InvalidState); }
-        let error: Failure = self.local_failure(cause); self.terminal = core::option::Some(error); self.current = Status::Failed; self.current_event = core::option::None(); return error;
+        let error: Failure = self.local_failure(cause);
+        // A final post-close clock check can establish the fatal cause after
+        // record_close has already retired the native owner successfully.
+        error.cleanup_attempted = self.progress.closed && self.progress.cleanup_calls > 0;
+        self.terminal = core::option::Some(error); self.current = Status::Failed; self.current_event = core::option::None(); return error;
     }
     fn active(&self) -> core::result::Result<bool,Cause> { let now = check_time(self.last,self.deadline); if (now.is_err()) { return core::result::Err(now.unwrap_err()); } self.last = now.unwrap(); return core::result::Ok(true); }
     fn pay(&self, units: u64) -> core::result::Result<bool,Cause> { if (units > self.options.work-self.progress.work) { return core::result::Err(Cause::WorkLimit); } self.progress.work += units; return core::result::Ok(true); }
@@ -335,7 +339,7 @@ pub impl Protocol {
         let body: bool = match(self.phase) { Phase::ScanBody -> true, _ -> false };
         if (heading || body) {
             self.stage = Stage::Head; if (body) { self.stage = Stage::Body; }
-            if (heading && self.input_eof && self.wire.is_empty()) { self.empty = true; self.phase = Phase::Finish; return core::result::Ok(Need::FinishTransport); }
+            if (heading && self.input_eof && self.wire.is_empty()) { self.empty = true; self.phase = Phase::Finish; self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); }
             let got = self.scan(); if (got.is_err()) { return self.rejected_or_failed(got.unwrap_err()); }
             let event: ext::http::Scan = got.unwrap();
             if (match(event) { ext::http::Scan::NeedMore -> true, _ -> false }) { self.phase = Phase::InputHead; if (body) { self.phase = Phase::InputBody; } return core::result::Ok(self.need()); }
@@ -533,9 +537,19 @@ pub impl Exchange {
     pub fn abort(&self) -> core::result::Result<bool,Failure> {
         // Reply.stage may have latched a fatal Protocol error directly. Native
         // ownership still has to retire even though Protocol is already Failed.
-        if (!self.socket.is_open() && !running(self.owner.status())) { return core::result::Ok(false); } self.owner.abort();
+        if (!self.socket.is_open() && !running(self.owner.status())) { return core::result::Ok(false); }
+        let had_terminal: bool = self.owner.last_terminal_failure().is_some(); self.owner.abort();
         let attempted: bool = self.socket.is_open(); let closed = self.socket.close(); let recorded = self.owner.record_close(attempted,cleanup_error(closed));
-        if (closed.is_err() && recorded.is_err()) { return core::result::Err(recorded.unwrap_err()); } return core::result::Ok(true);
+        if (closed.is_err() && recorded.is_err()) {
+            if (had_terminal) {
+                // Abort reports this new cleanup cause separately. The cached
+                // primary still contains its original cause plus this close.
+                let cleanup: Failure = self.owner.local_failure(Cause::Io(closed.unwrap_err())); cleanup.stage = Stage::Close; cleanup.cleanup_attempted = attempted;
+                return core::result::Err(cleanup);
+            }
+            return core::result::Err(recorded.unwrap_err());
+        }
+        return core::result::Ok(true);
     }
     pub fn destroy(&self) -> core::result::Result<bool,Failure> {
         let aborted = self.abort(); let released: bool = self.owner.destroy(); if (aborted.is_err()) { return core::result::Err(aborted.unwrap_err()); } return core::result::Ok(released || aborted.unwrap());

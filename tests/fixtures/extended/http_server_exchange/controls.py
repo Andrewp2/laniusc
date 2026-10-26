@@ -2,8 +2,9 @@
 from pathlib import Path
 import struct
 import tempfile
+from types import SimpleNamespace
 
-from support import MAGIC, START, audit_epochs, audit_resources, events, parse_response, request
+from support import MAGIC, START, Session, audit_epochs, audit_resources, events, parse_response, request
 
 
 def marker(tag, io=0):
@@ -23,6 +24,51 @@ def rejected(action):
     except AssertionError:
         return
     raise AssertionError("trace mutation was not rejected")
+
+
+def collector_controls():
+    class Peer:
+        def __init__(self, value):
+            self.value = value
+
+        def recv(self, _count):
+            if isinstance(self.value, BaseException):
+                raise self.value
+            return self.value
+
+    def fixture(status=2, fd=-1, closed=8, cleanup=1, result=None):
+        row = [0] * 32
+        row[2], row[3], row[24], row[22] = status, fd, closed, cleanup
+        return SimpleNamespace(conn=Peer(ConnectionResetError(104, "test reset") if result is None else result),
+                               eof=False, reset=False, last=row,
+                               evidence=SimpleNamespace(peer_actions=[], peer_wire=bytearray()))
+
+    count = 0
+    for status in (2, 3):
+        value = fixture(status=status)
+        Session.collect(value, allow_reset=True)
+        assert value.reset and not value.eof and value.evidence.peer_actions == [("server-reset", 104, 0)]
+        count += 1
+    value = fixture()
+    rejected(lambda: Session.collect(value))
+    assert value.reset and not value.eof and value.evidence.peer_actions == [("server-reset", 104, 0)]
+    count += 1
+    for options in ({"status": 0}, {"status": 1}, {"fd": 4}, {"closed": 0}, {"cleanup": 0}):
+        value = fixture(**options)
+        rejected(lambda: Session.collect(value, allow_reset=True))
+        count += 1
+    value = fixture()
+    Session.collect(value, allow_reset=True)
+    rejected(lambda: Session.collect(value))
+    count += 1
+    value = fixture(status=1, result=b"")
+    Session.collect(value)
+    assert value.eof and not value.reset and value.evidence.peer_actions == [("server-eof", 0)]
+    count += 1
+    value = fixture(status=0, fd=4, closed=0, cleanup=0, result=BlockingIOError())
+    Session.collect(value)
+    assert not value.eof and not value.reset and not value.evidence.peer_actions
+    return count + 1
 
 
 def run():
@@ -66,7 +112,7 @@ def run():
     assert b"Transfer-Encoding: chunked" in request(b"POST", b"/echo", b"\0\xff", chunked=True)
     parse_response(b"HTTP/1.1 200 OK\r\nDate: Thu, 01 Jan 1970 00:00:00 GMT\r\nConnection: close\r\nContent-Length: 2\r\n\r\n\0\xff", b"POST", 200, b"\0\xff")
     count += 1
-    return count
+    return count + collector_controls()
 
 
 if __name__ == "__main__":

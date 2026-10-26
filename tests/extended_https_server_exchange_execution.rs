@@ -119,3 +119,7 @@ fn verified_server_steps_gate_public_required_client_http_and_expect_binary_bodi
 fn early_final_tls_responses_finish_stable_backpressure_then_notify_and_discard_uploads() {
     group("closure");
 }
+
+include!("fixtures/extended/https_server_exchange/cleanup_driver.rs");
+include!("fixtures/extended/https_server_exchange/constructor_driver.rs");
+include!("fixtures/extended/https_server_exchange/constructor_allocation_driver.rs");

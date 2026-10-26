@@ -686,14 +686,14 @@
         "docs/extended-https-server-exchange.md",
         "docs/library-server-contract.md"
       ],
-      "note": "The preceding sequential Connection has separate historical native receipts. Its current refactor implements one shared server Protocol and a one-leaf plain Exchange, with Connection as a synchronous facade. The frozen contract defines latched Head/Request/Rejected decisions, explicit Continue, atomic response staging, stable request views until destroy, sticky fatal failures and separate retained rejection diagnostics. Abort retires transport while preserving backing; destroy releases backing. Canonical HTTP codecs remain the wire authority. Integrated compiler/runtime acceptance is pending for this server revision; earlier sequential service receipts do not establish it. Concurrent handlers stage local response views through the scheduler reply sink; no worker/native callback or cryptographic implementation is added."
+      "note": "Shared server Protocol and one-leaf plain Exchange, with Connection as a synchronous facade. Current Linux x86_64/glibc receipts cover 50 distinct direct cases: four steps, 11 decisions/views, four drain, six lifecycle, 23 faults and two abort/close-error cases. Stronger typed OOM reruns cover the same 23 cases across 15 reached sites; two invalid-count reruns repeat lifecycle cases, not extra coverage. The facade separately passes three cases in 10.72 seconds. Latched Head/Request/Rejected decisions, explicit Continue, atomic response staging, stable views until destroy, sticky fatal failures and retained rejection diagnostics are explicit. Abort retires transport while preserving backing; destroy releases backing. Canonical HTTP codecs remain the wire authority. Earlier sequential receipts retain their historical scope; concurrent handlers stage local views through the reply sink. Broader application/resource acceptance remains open."
     },
     "ext::http_server_poll": {
       "guides": [
         "docs/extended-server-poll.md",
         "docs/library-server-contract.md"
       ],
-      "note": "Plain factory/driver adapter over the single server_poll engine and http_server::Exchange. Factory, caller-owned listener and handler stay live unchanged through Server destruction. Source is present; integrated compilation/native acceptance is pending, and earlier sequential HTTP receipts do not establish this adapter."
+      "note": "Plain factory/driver adapter over the single server_poll engine and http_server::Exchange. Factory, caller-owned listener and handler stay live unchanged through Server destruction. The actual plain health/echo program passes two causal native cases: held partial-head with queued refill and held 4 MiB response reader with real EAGAIN before healthy-sibling completion. Both enforce at most two active accepted owners and three sockets including the listener, with complete responses, EOF and acceptance-order reports. Broader negative/quota/resource application gates and scale remain pending; earlier sequential receipts do not establish this adapter."
     },
     "ext::https_batch": {
       "guides": [
@@ -726,7 +726,7 @@
         "docs/library-server-contract.md",
         "docs/library-server-concurrency-plan.md"
       ],
-      "note": "Source implementation of the shared server Protocol over OpenSSL 3 on the intended Linux x86_64/glibc profile; integrated compilation/runtime acceptance is pending. begin_connected consumes its accepted nonblocking socket on entry/error and eagerly creates a Session while ServerContext is borrowed; SSL_new retains the native reference. Steps never poll and perform zero or one active TLS attempt. HTTP events require verified handshake policy, stable staged writes survive WANT, and both protocol versions require local notify plus bounded discard to authenticated peer EOF before terminal publication. The paired raw closure experiment is lower-layer evidence, not acceptance of this driver. SIGPIPE policy and manual ownership remain explicit; cryptography stays in OpenSSL."
+      "note": "Shared server Protocol over OpenSSL 3 on Linux x86_64/glibc. Sixteen direct native cases pass through separate receipts: six verified steps, two early closures, four fatal-preparation/abort cleanup and four normal-close cleanup, including two reached close EIO injections in each cleanup group. Constructor allocation failures and direct quota boundaries remain pending. begin_connected consumes its accepted nonblocking socket on entry/error and eagerly creates a Session while ServerContext is borrowed; SSL_new retains the native reference. Steps never poll and perform zero or one active TLS attempt. HTTP events require verified handshake policy, stable writes survive WANT, and both protocol versions require local notify plus bounded discard to authenticated peer EOF before terminal publication. The raw 12-case closure experiment is distinct lower-layer evidence. SIGPIPE policy and manual ownership remain explicit; cryptography stays in OpenSSL."
     },
     "ext::https_server_poll": {
       "guides": [
@@ -734,7 +734,7 @@
         "docs/extended-https-server-exchange.md",
         "docs/library-server-contract.md"
       ],
-      "note": "Verified TLS factory/driver adapter over the single server_poll engine and https_server::Exchange. Keep ServerContext, factory, listener and handler alive unchanged through Server destruction; each begun Session holds its own native reference. Typed outcomes preserve HTTP/TLS diagnostics and transport-call counts. Source is present; integrated compiler/native acceptance is pending. OpenSSL performs TLS and cryptography."
+      "note": "Verified TLS factory/driver adapter over the single server_poll engine and https_server::Exchange. Keep ServerContext, factory, listener and handler alive unchanged through Server destruction; each begun Session holds its own native reference. Typed outcomes preserve HTTP/TLS diagnostics and transport-call counts. Two actual TLS 1.3 health/echo causal cases pass held-handshake queued refill and held 4 MiB response backpressure with real EAGAIN, verified bytes, authenticated closure and acceptance-order reports. Both enforce two active accepted owners and three sockets including the listener. Broader negative/quota/resource application gates and scale remain pending. OpenSSL performs TLS and cryptography."
     },
     "ext::image": {
       "guides": [
@@ -843,7 +843,7 @@
         "docs/library-server-contract.md",
         "docs/library-server-concurrency-plan.md"
       ],
-      "note": "Shared typed server scheduler source under implementation, with no integrated compiler/runtime acceptance yet. One caller-driven Server and its synchronous facade own bounded admission, cooperative fair progress, poll publication, reservations, cancellation and acceptance-order reports. Reply.stage copies handler-local response backing during the handler call; request views cannot escape to retired-slot reports. Listener/factory/handler backing remains borrowed through Server destruction, while borrowed error payloads must outlive all returned/taken outcomes. Logical byte/work reservations are not RSS, native crypto CPU or native heap quotas. Earlier client-batch and sequential-server receipts do not establish this server scheduler; worker threads remain separate work."
+      "note": "One shared typed, caller-driven server scheduler and synchronous facade own bounded admission, cooperative fair progress, poll publication, reservations, cancellation and acceptance-order reports. Seven scripted controls pass across separate 15.58- and 14.62-second native receipts. Four actual plain/TLS 1.3 health/echo causal cases separately pass held setup with queued refill and held 4 MiB backpressure with real EAGAIN, sibling progress, complete closure/reports and actual two-owner/three-socket caps. Broader application/resource gates and scale remain pending. Reply.stage copies handler-local backing during the handler call; request views cannot escape to retired-slot reports. Listener/factory/handler backing remains borrowed through Server destruction, while borrowed error payloads must outlive all returned/taken outcomes. Logical byte/work reservations are not RSS, native crypto CPU or native heap quotas. Worker threads remain separate work."
     },
     "ext::settings": {
       "guides": [

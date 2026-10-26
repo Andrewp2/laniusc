@@ -83,3 +83,39 @@ fn server_terminal_replay_abort_and_destruction_release_each_owner_once() {
 fn server_direct_errors_keep_progress_and_reached_allocation_failures_release_owners() {
     group("faults");
 }
+
+#[test]
+fn server_fatal_preparation_abort_distinguishes_primary_and_new_close_error() {
+    // Keep this additive probe separate from the five direct-operation groups.
+    let path = "tests/fixtures/extended/http_server_exchange/abort_cleanup.lani";
+    let entry = root().join(path);
+    let roots = laniusc_compiler::compiler::EntrySourceRoots {
+        stdlib_root: Some(root().join("stdlib")),
+        user_roots: vec![root().join("extended")],
+    };
+    let bytes = common::run_gpu_codegen_with_timeout(path, move || {
+        pollster::block_on(
+            laniusc_compiler::compiler::compile_entry_to_x86_64_with_source_roots(&entry, &roots),
+        )
+    })
+    .unwrap_or_else(|error| panic!("{path}: {error}"));
+    assert!(common::x86_jumps::is_x86_64_executable(&bytes));
+    let executable = common::TempArtifact::new("http_server_abort_cleanup", "native", None);
+    executable.write_bytes(bytes);
+    std::fs::set_permissions(executable.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let output = common::process_output_with_timeout(
+        "HTTP server Exchange fatal preparation abort",
+        Command::new("python3")
+            .arg(root().join("tests/fixtures/extended/http_server_exchange/abort_oracle.py"))
+            .arg(executable.path()),
+        Duration::from_secs(40),
+    );
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stderr.is_empty(), "{output:?}");
+    let summary = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        summary.starts_with("http-server-exchange-abort-cleanup cases=2 reached-close-EIO=1"),
+        "{summary}"
+    );
+    eprintln!("{summary}");
+}

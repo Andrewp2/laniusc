@@ -372,6 +372,7 @@ fn driver_abort(exchange: &Exchange) -> core::result::Result<bool,Failure> {
     let original_stage: Stage = exchange.stage;
     exchange.stage = Stage::Close; exchange.protocol.abort();
     let closed = close_transport(exchange); exchange.current = ext::http_server::Status::Aborted;
+    if (had_terminal) { exchange.current = ext::http_server::Status::Failed; }
     if (had_terminal && exchange.protocol.last_terminal_failure().is_some()) {
         let primary: Failure = metadata(exchange,Cause::Http(exchange.protocol.last_terminal_failure().unwrap())); primary.stage = original_stage;
         exchange.failure = core::option::Some(primary);

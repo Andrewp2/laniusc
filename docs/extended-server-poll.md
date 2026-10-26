@@ -106,6 +106,10 @@ Responded requires a successfully staged final response. Read is legal only
 for Head with no final staged; Protocol enforces the explicit Continue policy.
 Request/Rejected require Responded or Abort. A handler may recover an atomic
 staging rejection by staging a valid alternative while allowance remains.
+An atomic staging rejection followed by Abort is cancellation. If staging
+instead fails the Protocol, even a returned Abort produces
+InvalidDecision(ResponseFailure) with the exact preparation Failure retained;
+a preparation clock error also stops the service.
 Unaccepted decisions cannot silently leave an application event pending.
 Handlers are ordinary synchronous calls and must bound their own work;
 the scheduler cannot preempt blocking application or native code.
@@ -140,6 +144,13 @@ submission does not fabricate an observed syscall. A caller may perform at
 most one external poll for a publication. Driver I/O counters separately
 include conservative poll participation. Mandatory cleanup bypasses exhausted
 active budgets and attempts every owner.
+
+Scheduler operations precharge each complete bounded pass: the admission slot
+search, poll-request clearing and active-owner visits, and both readiness
+identity validation and hint copying. An early exit keeps the reserved pass
+charge. Clock observations and active hook calls have separate charges.
+Cheap invalid epoch/length checks return before these passes. These are
+abstract work units, not CPU instructions or a wall-time preemption guarantee.
 
 ## Manual typed outcomes
 
@@ -222,8 +233,61 @@ ECONNABORTED spend one accept attempt and yield; no acquired descriptor means
 no acceptance ordinal. Other listener failures stop admission. This follows
 the [Linux accept error contract](https://man7.org/linux/man-pages/man2/accept.2.html).
 
-The accepted interface receipts are
+## Executable evidence and remaining scope
+
+The separate interface receipts are
 `target/stdlib-work/server-poll-public-admission-first.log` and
-`server-poll-public-admission-native-first.log`. Both returned zero with empty
-output and a validated x86_64 ELF. They predate the persistent engine and
-do not establish its quotas, scheduling, network behavior or cleanup paths.
+`target/stdlib-work/server-poll-public-admission-native-first.log`. Both
+returned zero with empty output and a validated x86_64 ELF. They establish
+the imported public boundary, nested owned E/A, handler-local response copying
+and manual report transfer/disposal. They predate the persistent engine.
+
+Seven actual persistent-owner controls have also passed in two separate
+compile/native groups on Linux x86_64:
+
+| Receipt under `target/stdlib-work/` | Native cases | Whole group |
+| --- | ---: | ---: |
+| `server-poll-fatal-preparation-visibility-retry.log` | 3 | 15.58 s |
+| `server-poll-publication-refill-reservations-first.log` | 4 | 14.62 s |
+
+The first group retains fatal response-stage WorkLimit followed by handler
+Ok(Abort) as InvalidDecision(ResponseFailure), including the original
+preparation diagnostic. Ordinary Abort and recoverable unsupported-status
+preflight followed by Abort remain Aborted. These cases execute actual
+new/step/prepare_wait/resume/take/take_report/destruction, Pending-transfer
+rejection, released reservations and inactive-owner behavior.
+
+The second group executes nonempty one-shot readiness publication, cheap
+invalid epoch/length rejection, superseding epochs, one-time advisory-readiness
+consumption and mutation invalidation. A scripted local Timeout in before_wait
+retires its owner and returns immediate work before the queued socket is
+admitted. Separate capacity cases check that a single byte reservation reduces
+configured concurrency two to one, and that consumed cumulative work is not
+refunded after retirement: global WorkLimit leaves the queued fd unaccepted
+while retaining the original local Timeout outcome.
+
+Both groups use the real Server and Protocol with scripted test Drivers and
+actual accepted loopback TCP sockets. Three and six accepted peers,
+respectively, observe actual EOF. Before acknowledging process exit, the
+independent harness checks `/proc` descriptors and source mmap/munmap plus
+socket/close ownership; the completed trace must balance too. These unlinked
+ELFs contain no CRT/OpenSSL heap mixed into the source allocation ledger.
+The retained executables are `/tmp/server_poll_native_201688_0` and
+`/tmp/server_poll_publication_native_206274_0`.
+
+The preparation group's first invocation stopped before native execution in
+4.35 seconds with LNC0021: fixture implementations of imported public traits
+had private visibility. Correcting those declarations left the assertions and
+production implementation unchanged. The failed receipt is
+`target/stdlib-work/server-poll-fatal-preparation-first.log`; it is not a
+scheduler runtime failure.
+
+These seven finite controls establish no HTTP wire transfer or TLS behavior.
+They script advisory readiness and local Timeout rather than establish genuine
+deadline expiration. They do not establish physical poll-once/service-loop
+progress, all quota/error boundaries, or an allocation-failure campaign. Real
+HTTP/HTTPS programs and transport-specific concurrency still need their own
+receipts; these owner controls do not convert pending application/TLS gates
+into acceptance. Other targets and user GPU execution remain unverified.
+See the [fixture guide](../tests/fixtures/extended/server_poll/README.md) for
+the exact control scope.

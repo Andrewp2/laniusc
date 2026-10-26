@@ -1,20 +1,35 @@
 # Standard and extended library overview
 
-The full library goal remains open. The next increment is
+The full library goal remains open. The current increment is
 [resumable concurrent HTTP/HTTPS servers](library-server-concurrency-plan.md):
 shared protocol ownership, plain/TLS drivers, one bounded polling scheduler
-and concurrent health/echo services. The
-[shared Protocol/plain-driver interface](library-server-contract.md) is frozen;
-source implementations and integration are in progress, with no new integrated
-compilation or runtime acceptance claimed.
-The [TLS server driver guide](extended-https-server-exchange.md) records its
-pending ownership, retry and closure contract. Earlier sequential service
-receipts do not establish the new concurrent service.
+and concurrent health/echo services. Source is implemented against the frozen
+[Protocol/plain-driver contract](library-server-contract.md); focused native
+gates have started passing. The complete server increment is not accepted.
+Earlier sequential service receipts retain their separate historical scope.
 
 **Server checkpoint evidence.**
 
-This server increment is a work-in-progress checkpoint. Two lower-layer
-controls have executable evidence on native Linux x86_64/glibc:
+Current finite evidence uses native Linux x86_64/glibc, with OpenSSL 3 for TLS.
+The accepted scopes below come from separate invocations:
+
+| Surface | Accepted scope |
+| --- | --- |
+| Plain direct Exchange | 50 distinct cases: four steps, 11 decisions/views, four drain, six lifecycle, 23 faults and two additive abort/close-error cases. The stronger typed OOM campaign repeats 23 cases across 15 reached allocation sites; two typed invalid-count reruns repeat lifecycle coverage, adding no cases to the total. |
+| Synchronous Connection facade | Three current retained-view, atomic-preflight and sticky-failure cases, in `http-server-shared-facade-close-history-retry.log` (10.72 seconds). |
+| [HTTPS direct Exchange](extended-https-server-exchange.md) | 16 cases through separate receipts: six verified steps (12.87 seconds), two early closures, four fatal-preparation/abort cleanup (12.11 seconds) and four normal-close cleanup (11.40 seconds). Each cleanup group reaches two close EIO injections. |
+| [Generic server scheduler](extended-server-poll.md) | Seven scripted owner/publication/refill/reservation controls, across 15.58- and 14.62-second receipts. Scripted drivers alone do not establish real transport behavior. |
+| [Plain health/echo program](extended-http-serve.md) | Two causal cases: held partial-head/queued refill (0.060573 traced seconds) and a held 4 MiB response reader (5.149525 traced seconds). Each peaks at two accepted owners and three sockets including the listener; the reader requires actual write EAGAIN before its healthy sibling completes. |
+| [Verified HTTPS health/echo program](extended-https-server.md) | Two corresponding TLS 1.3 causal cases pass in 0.158297 and 6.473137 traced seconds. They retain the same owner/socket caps, and the 4 MiB reader requires real EAGAIN, verified response bytes and authenticated closure. |
+
+The [connected fixture guide](../tests/fixtures/extended/server_concurrency/README.md)
+records the exact application receipts and the preceding artificial-buffer
+timeouts. These are traced observations, not deployment-capacity or compiler
+speedup measurements. Direct HTTPS constructor-allocation/quota boundaries,
+negative/quota/resource application campaigns, broader integration gates and
+the proposed scale observation remain pending. API reference regeneration is held.
+
+Two lower-layer controls remain distinct from those current transport gates:
 
 - The public Protocol/Reply/generic Report admission control compiled and ran,
   including handler-local response staging and nested owned error disposal.
@@ -23,13 +38,6 @@ controls have executable evidence on native Linux x86_64/glibc:
   across TLS 1.2 and 1.3, including write backpressure, late upload bytes,
   authenticated EOF, deadline expiry and truncated transport. This establishes
   the tested native peer profile, not the new HTTPS Exchange implementation.
-
-Direct plain/TLS Exchange tests and causal concurrent-service tests are saved
-but await runtime acceptance. The plain fixture's first two compile attempts
-found test-source visibility and vector-method errors; both are corrected,
-with the retry still pending. Scheduler and application integration remain
-unaccepted, as does the separate, not-yet-integrated TLS preparation/abort
-regression fixture. API reference regeneration is held until integration.
 
 The accepted client checkpoint `75ab38d1` extracts
 the shared HTTP Protocol owner, generalizes batch scheduling and adds
@@ -60,8 +68,8 @@ uses coherent HTTP caps; its unchanged behavioral assertions pass the retry.
 One nested enum-pattern compiler limitation is isolated by a confirmed
 14-line rejection and an executable explicit-match control; production
 behavior and compiler source are unchanged. These finite profile gates do not
-enumerate every input or network schedule. Worker threads, concurrent server
-scheduling and the remaining library roadmap stay open.
+enumerate every input or network schedule. Worker threads, complete server
+runtime acceptance and the remaining library roadmap stay open.
 
 The [execution audit and portable foundation](stdlib-foundation.md) lists
 the stdlib APIs verified on x86_64, their edge behavior, and the remaining
@@ -191,8 +199,8 @@ The current [fetch-many integration](extended-fetch-many.md) also passes all
 five groups in 24.18 seconds, including 59 reached allocation failures and a
 64-job control with at most four active sockets. Historical buffered/prepared
 stream receipts remain distinct from these selected current program gates.
-Concurrent server scheduling is the
-[next connected-library increment](library-server-concurrency-plan.md).
+The [current concurrent-server increment](library-server-concurrency-plan.md)
+has the finite passes recorded above; its complete acceptance remains open.
 Executable worker threads also remain part of the full goal. The
 [concurrency admission audit](library-concurrency-dependencies.md) records
 separate compiler/runtime boundaries. The historical execution receipts cover

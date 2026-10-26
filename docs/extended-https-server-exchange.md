@@ -153,6 +153,10 @@ retires its live transport. A successful actual close returns `Ok(true)`;
 replaying the earlier diagnostic during bookkeeping is not a new cleanup
 error. A new close failure is returned separately, while the saved primary
 retains that real secondary error and the final cleanup counters.
+Cleanup of an already fatal Protocol preserves Failed status: later step and
+before_wait replay the refreshed original Failure, even when abort itself
+successfully retired the transport. Explicit cancellation without an earlier
+fatal instead records Aborted.
 The saved earlier primary retains its operation stage. When no earlier fatal
 exists, close failure is the sole Close primary, with no duplicate secondary
 cleanup field.

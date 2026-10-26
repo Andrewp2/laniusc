@@ -66,7 +66,7 @@ fn oracle(mode: &str, exe: &std::path::Path) -> String {
     summary
 }
 #[test]
-fn http_server_retained_views_checked_date_preflight_and_exact_staged_send_retry_execute() {
+fn http_server_retained_views_atomic_preflight_and_sticky_fatal_replay_execute() {
     let exe = compile("tests/fixtures/extended/http_server_contracts.lani");
     assert!(oracle("native", exe.path()).contains("http-server-native cases=3"));
 }

@@ -1,0 +1,139 @@
+// Real persistent Server, scripted HTTP progress, real accepted socket owners.
+// This is not evidence that HTTP bytes traversed the network.
+module app::main;
+import core::clone;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_server;
+import ext::server_poll;
+import std::clock;
+import std::poll;
+import std::socket;
+import std::stream;
+
+struct ApplicationError { code: i32 }
+pub impl core::clone::Destroy<ApplicationError> for ApplicationError { pub fn destroy_value(owned: ApplicationError) { assert(false); } }
+struct Ledger { begun: i32, aborted: i32, destroyed: i32, had_backing: i32 }
+struct Driver { owner: ext::http_server::Protocol, socket: std::socket::Socket, ledger: &Ledger, fed: bool, revision: u64 }
+struct Factory { options: ext::http_server::Options, ledger: &Ledger }
+struct Handler { mode: i32, heads: i32, expected: core::option::Option<ext::http_server::Failure> }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),count).unwrap(); }
+fn work_limit(cause: ext::http_server::Cause) -> bool { return match(cause) { ext::http_server::Cause::WorkLimit -> true, _ -> false }; }
+fn immediate(owner: &ext::http_server::Protocol) -> bool { return match(owner.need()) { ext::http_server::Need::Drain(count) -> false, _ -> true }; }
+fn retire(driver: &Driver) -> bool {
+    let open: bool = driver.socket.is_open(); driver.owner.abort();
+    if (open) {
+        driver.socket.close().unwrap(); let recorded = driver.owner.record_close(true,core::option::None());
+        if (recorded.is_err()) { assert(work_limit(recorded.unwrap_err().cause)); }
+        driver.ledger.aborted += 1;
+    }
+    return open;
+}
+pub impl ext::server_poll::Driver<ext::http_server::Failure> for Driver {
+    pub fn protocol(&self) -> &ext::http_server::Protocol { return self.owner.borrow(); }
+    pub fn stats(&self) -> ext::http_server::Stats { return self.owner.stats(); }
+    pub fn transport_calls(&self) -> core::option::Option<u64> { return core::option::None(); }
+    pub fn rejection(&self) -> core::option::Option<ext::http_server::Rejection> { return self.owner.rejection(); }
+    pub fn interest(&self) -> ext::http_client::Interest { return ext::http_client::Interest { readable:false,writable:false,immediate:immediate(self.owner.borrow()) }; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { return self.socket.raw_handle(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,ext::http_server::Failure> {
+        let checked = self.owner.check(); if (checked.is_err()) { let error = checked.unwrap_err(); retire(self); return core::result::Err(error); }
+        return core::result::Ok(false);
+    }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,ext::http_server::Failure> {
+        assert(!ready.readable && !ready.writable && !ready.hangup && !ready.error);
+        let need: ext::http_server::Need = self.owner.need();
+        let result: core::result::Result<bool,ext::http_server::Failure> = core::result::Ok(true);
+        if (match(need) { ext::http_server::Need::Local -> true, _ -> false }) { let advanced = self.owner.advance(); if (advanced.is_err()) { result = core::result::Err(advanced.unwrap_err()); } }
+        else { if (match(need) { ext::http_server::Need::Input(count) -> true, _ -> false }) { assert(!self.fed); self.fed = true; result = self.owner.feed(bytes("GET / HTTP/1.1\r\nHost: local.test\r\n\r\n",36)); } }
+        if (result.is_err()) { let error = result.unwrap_err(); retire(self); return core::result::Err(error); }
+        let revision: u64 = self.owner.event_revision();
+        if (revision != 0 && revision != self.revision) { self.revision = revision; return core::result::Ok(self.owner.event()); }
+        return core::result::Ok(core::option::None());
+    }
+    pub fn read_body(&self, choice: ext::http_server::BodyDecision) -> core::result::Result<bool,ext::http_server::Failure> { return self.owner.read_body(choice); }
+    pub fn abort(&self) -> core::result::Result<bool,ext::http_server::Failure> { return core::result::Ok(retire(self)); }
+    pub fn destroy(&self) {
+        assert(!self.socket.is_open()); if (self.owner.logical_bytes() > 0) { self.ledger.had_backing += 1; }
+        assert(self.owner.destroy() && self.owner.logical_bytes() == 0 && !self.owner.destroy()); self.ledger.destroyed += 1;
+    }
+}
+pub impl ext::server_poll::Factory<Driver,ext::http_server::Failure> for Factory {
+    pub fn reservation(&self) -> core::result::Result<ext::server_poll::Reservation,ext::server_poll::Cause> { return core::result::Ok(ext::server_poll::Reservation { work:self.options.work,bytes:ext::http_server::reservation_bytes(self.options).unwrap() }); }
+    pub fn begin(&self, accepted: std::socket::Accepted, deadline: core::time::Deadline) -> core::result::Result<Driver,ext::http_server::Failure> {
+        let made = ext::http_server::protocol(self.options,deadline);
+        if (made.is_err()) { let error = made.unwrap_err(); accepted.socket.close().unwrap(); return core::result::Err(error); }
+        self.ledger.begun += 1; return core::result::Ok(Driver { owner:made.unwrap(),socket:accepted.socket,ledger:self.ledger,fed:false,revision:0 });
+    }
+    pub fn failure_stats(&self, error: ext::http_server::Failure) -> ext::http_server::Stats { return error.stats; }
+    pub fn failure_transport_calls(&self, error: ext::http_server::Failure) -> core::option::Option<u64> { return core::option::None(); }
+    pub fn shared_failure(&self, error: ext::http_server::Failure) -> core::option::Option<ext::server_poll::Cause> { return match(error.cause) { ext::http_server::Cause::Clock(value) -> core::option::Some(ext::server_poll::Cause::Clock(value)), _ -> core::option::None() }; }
+}
+pub impl ext::server_poll::Handler<ApplicationError> for Handler {
+    pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server::RequestHead, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ApplicationError> {
+        assert(id == 0 && head.head.method.length == 3 && reply.head().is_some()); self.heads += 1;
+        if (self.mode != 0) {
+            let fields: [ext::http::Field;1] = [ext::http::Field { raw:bytes("",0),name:bytes("",0),value:bytes("",0),offset:0 }];
+            let body: [u8;4096] = [90;4096];
+            let response: ext::http_server::Response = ext::http_server::Response { status:400,reason:bytes("Bad Request",11),headers:core::slice::view<ext::http::Field>(fields,0).unwrap(),body:core::slice::view<u8>(body,4096).unwrap(),date:core::time::unix_epoch() };
+            if (self.mode == 2) { response.status = 101; }
+            let staged = reply.stage(response); assert(staged.is_err() && !reply.is_staged()); self.expected = core::option::Some(staged.unwrap_err());
+            if (self.mode == 1) { assert(work_limit(staged.unwrap_err().cause)); }
+            else { assert(match(staged.unwrap_err().cause) { ext::http_server::Cause::UnsupportedResponse -> true, _ -> false }); }
+        }
+        return core::result::Ok(ext::server_poll::Decision::Abort);
+    }
+    pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ApplicationError> { assert(false); return core::result::Ok(ext::server_poll::Decision::Abort); }
+    pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ApplicationError> { assert(false); return core::result::Ok(ext::server_poll::Decision::Abort); }
+}
+fn run(mode: i32) {
+    let until = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_secs(10)).unwrap();
+    let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(1).unwrap();
+    let ledger: Ledger = Ledger { begun:0,aborted:0,destroyed:0,had_backing:0 };
+    let options = ext::http_server::default_options(); options.request_bytes = 1024; options.request.head_bytes = 256; options.request.body_bytes = 0; options.request.trailers = 0; options.response_bytes = 8192; options.response.head_bytes = 1024; options.response.line_bytes = 128; options.response.body_bytes = 4096; options.response.headers = 8; options.work = 4096;
+    let factory: Factory = Factory { options:options,ledger:ledger.borrow() }; let handler: Handler = Handler { mode:mode,heads:0,expected:core::option::None() };
+    let limits = ext::server_poll::default_limits(); limits.max_accepted = 1; limits.concurrency = 1; limits.work = options.work; limits.live_bytes = ext::http_server::reservation_bytes(options).unwrap();
+    let server: ext::server_poll::Server<Driver,ext::http_server::Failure,Factory,Handler,ApplicationError> = ext::server_poll::new<Driver,ext::http_server::Failure,Factory,Handler,ApplicationError>(listener.borrow(),factory.borrow(),handler.borrow(),limits,until).unwrap();
+    let initial = server.prepare_wait().unwrap(); assert(initial.immediate && initial.requests.length == 0 && initial.epoch == 0 && !initial.complete);
+    let empty: [std::poll::Readiness;1] = [std::poll::Readiness { bits:0 }];
+    assert(match(server.resume(initial.epoch,core::slice::view<std::poll::Readiness>(empty,0).unwrap()).unwrap_err()) { ext::server_poll::Cause::InvalidPublication -> true, _ -> false });
+    let client = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); client.connect_until(listener.local_addr().unwrap(),until).unwrap();
+    server.step().unwrap(); assert(ledger.begun == 1 && server.stats().active == 1 && server.len() == 1 && !server.is_accepting());
+    assert(server.take(0).is_none() && server.take_report().is_err());
+    let iterations: i32 = 0; while (!server.is_complete()) { assert(iterations < 16); iterations += 1; server.step().unwrap(); }
+    assert(server.last_failure().is_none() && ledger.aborted == 1 && ledger.destroyed == 1 && ledger.had_backing == 1 && handler.heads == 1);
+    let stats = server.stats(); assert(stats.accepted == 1 && stats.active == 0 && stats.reserved_work == 0 && stats.reserved_bytes == 0 && stats.polls == 0 && stats.handler_calls == 1 && stats.work > 2048);
+    let report = server.take_report().unwrap(); assert(server.take_report().is_err() && server.step().is_err() && !server.destroy());
+    let item = report.take(0).unwrap(); assert(report.take(0).is_none()); report.destroy(); report.destroy();
+    let info: ext::http_server::Stats = match(item) { ext::server_poll::Outcome::Aborted(value) -> value.info.stats, ext::server_poll::Outcome::InvalidDecision(value) -> value.info.stats, _ -> ext::http_server::Stats { received:0,retained:0,decoded:0,buffered_discarded:0,drain_received:0,response_bytes:0,response_sent:0,continue_sent:0,io_calls:0,work:0,scan_work:0,cleanup_calls:0,cleanup_errors:0,write_shutdown:false,peer_eof:false,final_started:false,closed:false } };
+    assert(info.closed && info.cleanup_calls == 1 && info.cleanup_errors == 0 && info.response_bytes == 0);
+    if (mode == 1) {
+        assert(stats.invalid_decisions == 1 && stats.aborted == 0);
+        let retained: core::option::Option<ext::server_poll::DecisionFailure<ext::http_server::Failure>> = match(item) { ext::server_poll::Outcome::InvalidDecision(value) -> core::option::Some(value), _ -> core::option::None() };
+        let decision = retained.unwrap(); assert(match(decision.cause) { ext::server_poll::DecisionCause::ResponseFailure -> true, _ -> false } && decision.cleanup.is_none());
+        let actual = decision.preparation.unwrap(); let expected = handler.expected.unwrap();
+        assert(work_limit(actual.cause) && match(actual.stage) { ext::http_server::Stage::Prepare -> true, _ -> false });
+        assert(actual.stats.received == expected.stats.received && actual.stats.work == expected.stats.work && actual.stats.retained == expected.stats.retained && actual.stats.response_bytes == expected.stats.response_bytes && actual.stats.io_calls == expected.stats.io_calls);
+        assert(!actual.stats.closed && actual.stats.cleanup_calls == 0 && !actual.cleanup_attempted && actual.cleanup.is_none() && actual.rejection.is_none());
+    } else { assert(stats.aborted == 1 && stats.invalid_decisions == 0 && match(item) { ext::server_poll::Outcome::Aborted(value) -> value.cleanup.is_none(), _ -> false }); }
+    ext::server_poll::destroy_outcome<ext::http_server::Failure,ApplicationError>(item);
+    let received: [u8;1] = [0]; assert(client.receive_until(core::slice::view<u8>(received,1).unwrap(),until).unwrap() == 0); client.close().unwrap();
+    assert(listener.is_open()); listener.close().unwrap();
+}
+impl Ledger { fn borrow(&self) -> &Ledger { return self; } }
+impl Factory { fn borrow(&self) -> &Factory { return self; } }
+impl Handler { fn borrow(&self) -> &Handler { return self; } }
+fn main() -> i32 {
+    run(1); run(0); run(2);
+    let marker: [i32;4] = [0x53504f4c,3,0,0]; let wire: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(marker),16);
+    let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),wire,0,16).unwrap();
+    let source = std::stream::stdin(); let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 1); return 0;
+}

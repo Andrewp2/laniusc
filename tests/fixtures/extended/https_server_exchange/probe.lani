@@ -41,14 +41,14 @@ impl Saved {
 }
 fn respond(owner: &ext::https_server::Exchange, early: bool) {
     let local: alloc::vec::Vec<u8> = alloc::vec::new(); let part: core::slice::View<u8> = bytes("",0); let code: i32 = 200;
-    if (early) { code = 413; local.try_resize(65536,0).unwrap(); let i: i32 = 0; while (i < 65536) { local.try_set(i,((i*73+11) as u8)).unwrap(); i += 1; } part = local.as_view(); }
+    if (early) { code = 413; local.try_resize(65536,0).unwrap(); let i: i32 = 0; while (i < 65536) { local.set(i,((i*73+11) as u8)).unwrap(); i += 1; } part = local.as_view(); }
     else { part = owner.protocol().request().unwrap().body; }
     let name: [u8;7] = [88,45,79,119,110,101,100]; let value: [u8;6] = [115,116,97,98,108,101];
     let fields: [ext::http::Field;1] = [ext::http::Field { raw:bytes("",0),name:core::slice::view<u8>(name,7).unwrap(),value:core::slice::view<u8>(value,6).unwrap(),offset:0 }];
     let before: i64 = duplex_test_stat(-1,3); mark("R");
     owner.respond(ext::http_server::Response { status:code,reason:bytes("Result",6),headers:core::slice::view<ext::http::Field>(fields,1).unwrap(),body:part,date:core::time::system_time(0,0).unwrap() }).unwrap(); mark("r");
     assert(duplex_test_stat(-1,3) == before);
-    name[0] = 89; value[0] = 88; let i: i32 = 0; while (i < local.len()) { local.try_set(i,238).unwrap(); i += 1; } local.destroy();
+    name[0] = 89; value[0] = 88; let i: i32 = 0; while (i < local.len()) { local.set(i,238).unwrap(); i += 1; } local.destroy();
 }
 fn main() -> i32 {
     std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
@@ -83,7 +83,7 @@ fn main() -> i32 {
             let error: ext::https_server::Failure = result.unwrap_err();
             assert(mode == 2 && heads == 0 && requests == 0 && owner.protocol().stats().received == 0 && owner.protocol().stats().response_sent == 0);
             assert(match(error.stage) { ext::https_server::Stage::Handshake -> true, _ -> false });
-            let failed = match(error.cause) { ext::https_server::Cause::Tls(value) -> core::option::Some(value), _ -> core::option::None() }; assert(failed.is_some());
+            let failed: core::option::Option<ext::openssl_tls::Error> = match(error.cause) { ext::https_server::Cause::Tls(value) -> core::option::Some(value), _ -> core::option::None() }; assert(failed.is_some());
             let native = failed.unwrap(); assert(match(native.phase) { ext::openssl_tls::Phase::Handshake -> true, _ -> false }); assert(native.code != 0 && native.ssl_error == 1); tls_failure = 1; tls_reason = native.code; break;
         }
         let event = result.unwrap();

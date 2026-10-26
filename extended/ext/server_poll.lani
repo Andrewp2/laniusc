@@ -203,7 +203,8 @@ fn application<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, driver: D, even
     }
     if (counted.is_err()) { slot.owner = core::option::Some(driver); return counted; }
     let decision: Decision = selected.unwrap(); let stop: bool = match(decision) { Decision::Abort -> true, _ -> false };
-    if (stop) {
+    let fatal_preparation: bool = sink.last_failure().is_some() && match(driver.protocol().status()) { ext::http_server::Status::Failed -> true, _ -> false };
+    if (stop && !fatal_preparation) {
         let ended = driver.abort(); let bill = account(s,slot,driver.stats(),driver.transport_calls()); let info = information<D,E>(slot,driver.stats(),driver.transport_calls(),driver.rejection());
         let cleanup: core::option::Option<E> = core::option::None(); if (ended.is_err()) { cleanup = core::option::Some(ended.unwrap_err()); }
         driver.destroy(); release(s,slot); outcome(s,slot.id,Outcome::Aborted(Abort { info:info,cleanup:cleanup })); s.report.stats.aborted += 1;
@@ -214,7 +215,7 @@ fn application<D,E,F,H,A>(s: &Server<D,E,F,H,A>, slot: &Slot<D>, driver: D, even
     let invalid: core::option::Option<DecisionCause> = core::option::None();
     if (read.is_some()) { if (!head) { invalid = core::option::Some(DecisionCause::WrongEvent); } else { if (sink.is_staged() || driver.protocol().final_staged()) { invalid = core::option::Some(DecisionCause::UnexpectedResponse); } } }
     else { if (!sink.is_staged() || !driver.protocol().final_staged()) { invalid = core::option::Some(DecisionCause::MissingResponse); } }
-    if (sink.last_failure().is_some() && match(driver.protocol().status()) { ext::http_server::Status::Failed -> true, _ -> false }) { invalid = core::option::Some(DecisionCause::ResponseFailure); }
+    if (fatal_preparation) { invalid = core::option::Some(DecisionCause::ResponseFailure); }
     if (invalid.is_some()) {
         let ended = driver.abort(); let bill = account(s,slot,driver.stats(),driver.transport_calls()); let info = information<D,E>(slot,driver.stats(),driver.transport_calls(),driver.rejection());
         let cleanup: core::option::Option<E> = core::option::None(); if (ended.is_err()) { cleanup = core::option::Some(ended.unwrap_err()); }
@@ -283,8 +284,9 @@ fn admit<D,E,F,H,A>(s: &Server<D,E,F,H,A>) -> core::result::Result<bool,Cause> w
     let shortage = admission_limit(s); if (shortage.is_some()) { return core::result::Err(shortage.unwrap()); }
     if (!s.listener_ready || !can_admit(s)) { return core::result::Ok(false); }
     if (s.report.stats.accept_calls == s.limits.accept_calls) { return core::result::Err(Cause::AcceptLimit); }
-    // Reserve the attempt and possible constructor hook before acquiring an fd.
-    let paid = spend(s,2); if (paid.is_err()) { return paid; }
+    // Reserve the complete slot search, attempt and possible constructor hook
+    // before searching or acquiring an fd. An early exit keeps this charge.
+    let paid = spend(s,(s.slots.len() as u64)+2); if (paid.is_err()) { return paid; }
     let index: i32 = 0; while (index < s.slots.len() && s.slots.at(index).owner.is_some()) { index += 1; }
     if (index == s.slots.len()) { return core::result::Err(Cause::InvalidDriver); }
     s.report.stats.reserved_work += s.reservation.work; s.report.stats.reserved_bytes += s.reservation.bytes;
@@ -401,7 +403,7 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
         if (self.is_complete()) { return core::result::Ok(interest_view(self,0,false,true)); }
         let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
         let shortage = admission_limit(self); if (shortage.is_some()) { return core::result::Err(fatal(self,shortage.unwrap())); }
-        let paid = spend(self,self.requests.len() as u64); if (paid.is_err()) { return core::result::Err(fatal(self,paid.unwrap_err())); }
+        let paid = spend(self,(self.requests.len() as u64)+(self.slots.len() as u64)); if (paid.is_err()) { return core::result::Err(fatal(self,paid.unwrap_err())); }
         let index: i32 = 0; while (index < self.requests.len()) { self.requests.set(index,no_request()).unwrap(); self.bindings.set(index,no_binding()).unwrap(); index += 1; }
         let registered: i32 = 0; let immediate: bool = can_admit(self) && self.listener_ready;
         if (can_admit(self) && !self.listener_ready) {
@@ -450,6 +452,10 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
     pub fn resume(&self, epoch: u64, ready: core::slice::View<std::poll::Readiness>) -> core::result::Result<bool,Cause> where D: Driver<E> {
         if (!self.alive || self.transferred) { return core::result::Err(Cause::Inactive); }
         if (!self.published || epoch != self.epoch || !core::io::valid_range(ready.start,ready.length) || ready.length != self.requests.len()) { return core::result::Err(Cause::InvalidPublication); }
+        let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
+        // Pay both bounded passes before inspecting any binding or caching a
+        // hint. Failed identity validation still consumes the reserved work.
+        let paid = spend(self,2*(self.requests.len() as u64)); if (paid.is_err()) { return core::result::Err(fatal(self,paid.unwrap_err())); }
         let index: i32 = 0;
         while (index < self.bindings.len()) {
             let binding: Binding = self.bindings.at(index);
@@ -464,8 +470,6 @@ pub impl<D,E,F,H,A> Server<D,E,F,H,A> {
             index += 1;
         }
         self.published = false;
-        let checked = observe(self); if (checked.is_err()) { return core::result::Err(fatal(self,checked.unwrap_err())); }
-        let paid = spend(self,self.requests.len() as u64); if (paid.is_err()) { return core::result::Err(fatal(self,paid.unwrap_err())); }
         index = 0;
         while (index < self.bindings.len()) {
             if (self.bindings.at(index).handle >= 0) {

@@ -5,11 +5,23 @@ shared [`http_server::Protocol`](library-server-contract.md) through the thin
 [`http_server_poll`](../extended/ext/http_server_poll.lani) adapter and the
 single [`server_poll`](extended-server-poll.md) scheduler.
 
-**Work in progress:** this application migration is saved against the frozen
-interfaces. Compilation and native application acceptance are pending. Earlier
-sequential receipts in the [connection guide](extended-http-server.md) do not
-establish this concurrent revision. The intended first target is Linux x86_64;
-other operating systems and GPU-kernel execution are unverified.
+**Work in progress:** the actual migrated application compiles and has passed
+two native causal concurrency cases on Linux x86_64: a held partial request
+while two later clients complete/refill, and a held 4 MiB response reader while
+a healthy sibling completes. Both runs reached two active owners and three
+sockets including the listener. Broader application regression and allocation/
+fault gates remain pending. Other operating systems and GPU-kernel execution
+are unverified.
+
+The receipts are `target/stdlib-work/server-concurrency-plain-refill-first.log`
+and `target/stdlib-work/server-concurrency-plain-reader-normal-window-retry.log`.
+The latter used an unchanged 131,072-byte receive buffer before and after the
+held reader resumed; it proved backpressure through traced EAGAIN. These are
+finite causal checks, not throughput benchmarks. Three separate Connection
+facade cases passed in 10.72 seconds in
+`target/stdlib-work/http-server-shared-facade-close-history-retry.log`; they do
+not substitute for broader application gates. Earlier sequential receipts in
+the [connection guide](extended-http-server.md) remain separate.
 
 ## Invocation and routes
 

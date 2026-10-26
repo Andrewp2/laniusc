@@ -6,12 +6,39 @@ to the shared [HTTP Protocol](library-server-contract.md),
 [`server_poll`](extended-server-poll.md) scheduler through
 [`https_server_poll`](../extended/ext/https_server_poll.lani).
 
-**Work in progress:** source is saved against the frozen interfaces; application
-compilation, verified peers, concurrency and resource acceptance are pending.
-The historical sequential receipts below do not establish this migration.
-The intended profile remains Linux x86_64/glibc with system OpenSSL 3. No HTTP
-parser, body decoder, Date formatter, TLS record or cryptographic primitive is
-implemented in the application.
+**Work in progress:** the actual migrated application compiles and links on
+Linux x86_64/glibc with system OpenSSL 3. Two native causal HTTPS cases passed:
+a held handshake while two later verified clients complete/refill, and a held
+4 MiB response reader while a healthy verified sibling completes. Each run
+reached two active owners and three sockets including the listener. The migrated
+application matrix also passed all 30 cases. Negative/quota oracle migration is
+saved, with execution pending; allocation/fault gates remain pending too.
+Historical sequential receipts below do not establish those remaining gates.
+No HTTP parser, body decoder, Date formatter, TLS record or
+cryptographic primitive is implemented in the application.
+
+The receipts are `target/stdlib-work/server-concurrency-tls-refill-first.log`
+and `target/stdlib-work/server-concurrency-tls-reader-first.log`, with traced
+process observations of 0.158297 and 6.473137 seconds respectively. The latter
+used an unchanged 131,072-byte receive buffer and required traced output
+backpressure. These finite causal checks are not throughput benchmarks.
+
+The current matrix receipt is
+`target/stdlib-work/https-serve-shared-scheduler-matrix-expect-policy-retry.log`.
+Its first attempt, `https-serve-shared-scheduler-matrix-first.log`, stopped at a
+stale expectation that unsupported HTTP/1.0 Expect would return 200. The frozen
+shared policy returns 417; the corrected oracle checks that response and adds a
+recognized HTTP/1.0 100-continue control that echoes the body without an interim
+response. The application was unchanged for the retry.
+
+Pending negative/quota groups require one report for each accepted socket,
+including failed handshakes. Listener expiry has no accepted-owner report;
+accepted handshake/request expiry has one. Tiny I/O and TLS caps are exercised
+with actual connected peers and exact consumed-call counters. Zero TLS/I/O
+configuration has no admission, while zero HTTP work consumes and closes an
+accepted socket before attaching TLS. The separate raw stream and prepared
+context consumers retain their own report-free transport profile; their earlier
+receipts are not new acceptance of this scheduler application.
 
 ## Current invocation and behavior
 
@@ -45,7 +72,11 @@ responses remain a separate application policy.
 Shared protocol changes are explicit: supported HTTP/1.1 Expect sends 100 even
 when body bytes already arrived; managed Date/framing fields are added; response
 version follows HTTP/1.0 requests; retained tail after the first selected request
-is discarded, never processed as a second request. Authenticated empty HTTP
+is discarded, never processed as a second request. For HTTP/1.0, recognized
+100-continue is ignored, without an interim response, while unsupported
+expectations receive 417. This intentionally replaces the earlier HTTPS app's
+blanket ignoring of HTTP/1.0 expectations; the distinction follows
+[RFC 9110 section 10.1.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.1.1). Authenticated empty HTTP
 input becomes a clean empty outcome. A fixed 25-byte Continue is counted
 separately; max-response now bounds the encoded final response. Reusable TLS
 closure/peer-EOF behavior is governed by the [driver contract](extended-https-server-exchange.md#local-notification-bounded-drain-and-peer-closure),
@@ -240,7 +271,9 @@ For HTTP/1.1, one case-insensitive `Expect: 100-continue` receives an encoded
 100 response after canonical header, framing and declared-length checks. The
 interim response is omitted if any body bytes are already buffered or no body
 is forthcoming. Duplicate or unsupported expectations receive an encoded 417
-without waiting for the body. HTTP/1.0 expectations are ignored. See
+without waiting for the body. This earlier sequential application ignored all
+HTTP/1.0 expectations. The current shared protocol instead ignores recognized
+100-continue and rejects unsupported expectations with 417, as permitted by
 [RFC 9110 section 10.1.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-10.1.1).
 
 Malformed, incomplete or over-limit requests abort the connection without a

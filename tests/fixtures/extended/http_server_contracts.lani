@@ -14,6 +14,23 @@ import std::socket;
 fn lit(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(s),n); return core::slice::view(raw,n).unwrap(); }
 fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.len() != b.len()) { return false; } let i: i32 = 0; while (i < a.len()) { if (a.get(i).unwrap() != b.get(i).unwrap()) { return false; } i += 1; } return true; }
 fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:lit("",0),name:name,value:value,offset:0 }; }
+fn stage(value: ext::http_server::Stage) -> i32 { return match(value) {
+    ext::http_server::Stage::Accept -> 0, ext::http_server::Stage::Head -> 1, ext::http_server::Stage::Continue -> 2,
+    ext::http_server::Stage::Body -> 3, ext::http_server::Stage::Validate -> 4, ext::http_server::Stage::Decode -> 5,
+    ext::http_server::Stage::Prepare -> 6, ext::http_server::Stage::Send -> 7, ext::http_server::Stage::Shutdown -> 8,
+    ext::http_server::Stage::Drain -> 9, ext::http_server::Stage::Close -> 10
+}; }
+fn diagnostic(value: ext::http_server::Cause) -> i32 { return match(value) {
+    ext::http_server::Cause::Io(error) -> match(error) { core::io::Error::Host(n) -> n, _ -> 0 },
+    ext::http_server::Cause::Clock(error) -> match(error) { std::clock::Error::Host(n) -> -n, _ -> 0 }, _ -> 0
+}; }
+fn same_failure(actual: ext::http_server::Failure, expected: ext::http_server::Failure) {
+    assert(diagnostic(actual.cause) == diagnostic(expected.cause) && stage(actual.stage) == stage(expected.stage));
+    assert(actual.cleanup_attempted && actual.cleanup.is_none() && actual.stats.closed);
+    assert(actual.stats.io_calls == expected.stats.io_calls && actual.stats.work == expected.stats.work);
+    assert(actual.stats.response_bytes == expected.stats.response_bytes && actual.stats.response_sent == expected.stats.response_sent);
+    assert(actual.stats.cleanup_calls == expected.stats.cleanup_calls && actual.stats.cleanup_errors == expected.stats.cleanup_errors);
+}
 fn main() -> i32 {
     let post_close: bool = std::process::argc() > 1;
     let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(2).unwrap();
@@ -32,17 +49,28 @@ fn main() -> i32 {
     response.status = 200; response.date = core::time::SystemTime { seconds:9223372036854775807,nanos:0 }; assert(c.reply(response).is_err() && c.stats().io_calls == before && c.stats().response_bytes == 0);
     response.date = core::time::system_time(784111777,0).unwrap(); fields[0] = field(lit("Content-Length",14),lit("1500",4)); response.headers = core::slice::view(fields,1).unwrap(); assert(c.reply(response).is_err() && c.stats().io_calls == before);
     response.headers = none; let result = c.reply(response);
-    // A failed send retains the exact staged response for explicit finish().
+    // Fatal transport/clock failures close once and replay without more I/O.
+    // Borrowed request views remain valid until explicit destruction.
     if (post_close) {
         assert(result.is_err()); let f = result.unwrap_err(); assert(match(f.cause) { ext::http_server::Cause::Clock(e) -> match(e) { std::clock::Error::Host(n) -> n == 5, _ -> false }, _ -> false });
-        assert(f.cleanup_attempted && f.cleanup.is_none() && f.stats.closed && f.stats.cleanup_calls == 1 && f.stats.cleanup_errors == 0 && c.finish().is_err());
-    } else { if (result.is_err()) { assert(match(result.unwrap_err().cause) { ext::http_server::Cause::Io(e) -> match(e) { core::io::Error::Host(n) -> n == 5, _ -> false }, _ -> false }); assert(c.reply(response).is_err()); c.finish().unwrap(); } }
-    assert(c.stats().closed && c.stats().response_sent == c.stats().response_bytes && c.stats().write_shutdown && c.stats().peer_eof && c.stats().cleanup_calls == 1);
-    assert(same(h.head.method,lit("POST",4)) && request.body.get(1499).unwrap() == (1499%256) as u8); if (!post_close) { c.finish().unwrap(); } c.close().unwrap(); assert(c.stats().cleanup_calls == 1);
+        assert(f.cleanup_attempted && f.cleanup.is_none() && f.stats.closed && f.stats.cleanup_calls == 1 && f.stats.cleanup_errors == 0);
+    } else { if (result.is_err()) { assert(diagnostic(result.unwrap_err().cause) == 5 && stage(result.unwrap_err().stage) == 7); } }
+    if (result.is_err()) {
+        let failure: ext::http_server::Failure = result.unwrap_err();
+        same_failure(c.read_head().unwrap_err(),failure); same_failure(c.read_request().unwrap_err(),failure);
+        same_failure(c.send_continue().unwrap_err(),failure); same_failure(c.reply(response).unwrap_err(),failure);
+        same_failure(c.finish().unwrap_err(),failure); same_failure(c.finish().unwrap_err(),failure);
+    } else { c.finish().unwrap(); }
+    assert(c.stats().closed && c.stats().cleanup_calls == 1);
+    if (result.is_ok() || post_close) { assert(c.stats().response_sent == c.stats().response_bytes && c.stats().write_shutdown && c.stats().peer_eof); }
+    else { assert(c.stats().response_sent == 0 && !c.stats().write_shutdown); }
+    assert(same(h.head.method,lit("POST",4)) && request.body.get(1499).unwrap() == (1499%256) as u8); c.close().unwrap(); assert(c.stats().cleanup_calls == 1);
     let received: alloc::vec::Vec<u8> = alloc::vec::new(); let buffer: [u8;240] = [0;240];
     while (true) { let n = client.receive_until(core::slice::view(buffer,240).unwrap(),deadline).unwrap(); if (n == 0) { break; } received.try_extend(core::slice::view(buffer,n).unwrap()).unwrap(); }
-    let parsed = ext::http::parse_response(received.as_view(),lit("POST",4),true,ext::http::default_limits()).unwrap(); assert(parsed.head.status == 200 && parsed.decoded_length == 1500 && parsed.consumed == received.len());
-    assert(same(parsed.head.lookup(lit("Date",4)).unwrap().value,lit("Sun, 06 Nov 1994 08:49:37 GMT",29)));
-    let bytes = parsed.encoded_body; i = 0; while (i < 1500) { assert(bytes.get(i).unwrap() == (i%256) as u8); i += 1; }
+    if (result.is_ok() || post_close) {
+        let parsed = ext::http::parse_response(received.as_view(),lit("POST",4),true,ext::http::default_limits()).unwrap(); assert(parsed.head.status == 200 && parsed.decoded_length == 1500 && parsed.consumed == received.len());
+        assert(same(parsed.head.lookup(lit("Date",4)).unwrap().value,lit("Sun, 06 Nov 1994 08:49:37 GMT",29)));
+        let bytes = parsed.encoded_body; i = 0; while (i < 1500) { assert(bytes.get(i).unwrap() == (i%256) as u8); i += 1; }
+    } else { assert(received.is_empty()); }
     received.destroy(); c.destroy().unwrap(); client.close().unwrap(); listener.close().unwrap(); return 0;
 }

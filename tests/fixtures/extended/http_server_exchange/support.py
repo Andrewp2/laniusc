@@ -212,6 +212,7 @@ class Session:
         self.trace = self.evidence.directory / "syscalls.log"
         self.conn = None
         self.eof = False
+        self.reset = False
         self.last = None
         self.payloads = []
         command = ["strace", "--kill-on-exit", "-qq", "-xx", "-i", "-s", "4096", "-o", str(self.trace),
@@ -263,13 +264,23 @@ class Session:
             assert self.last[1] == 22, self.last
         return self.last
 
-    def collect(self):
+    def collect(self, *, allow_reset=False):
+        if allow_reset:
+            assert self.last[2] in (2, 3) and self.last[3] == -1 and self.last[24] & 8 and self.last[22] == 1, ("reset allowance requires explicit fatal/aborted cleanup", self.last)
         if self.conn is None or self.eof:
+            return
+        assert not self.reset or allow_reset, "peer reset cannot satisfy a clean EOF requirement"
+        if self.reset:
             return
         while True:
             try:
                 data = self.conn.recv(65536)
             except BlockingIOError:
+                return
+            except ConnectionResetError as error:
+                self.reset = True
+                self.evidence.peer_actions.append(("server-reset", error.errno, len(self.evidence.peer_wire)))
+                assert allow_reset, ("unexpected peer reset", self.last)
                 return
             if not data:
                 self.eof = True
@@ -327,7 +338,9 @@ class Session:
             assert len(self.evidence.records) > before, ("unresolved application decision", self.last)
         raise AssertionError(("step bound", self.last))
 
-    def finish(self):
+    def finish(self, *, allow_reset=False):
+        if allow_reset:
+            assert self.last[2] in (2, 3) and self.last[3] == -1 and self.last[24] & 8 and self.last[22] == 1, ("reset allowance requires explicit fatal/aborted cleanup", self.last)
         self.command(22)
         packet = struct.pack("<8i", 26, 0, 0, 0, 0, 0, 0, 0)
         self.evidence.process.stdin.write(packet)
@@ -369,7 +382,7 @@ class Session:
         self.evidence.process.stdin.close()
         self.evidence.process.stdin = None
         self.evidence.finish_process()
-        self.collect()
+        self.collect(allow_reset=allow_reset)
         text = self.trace.read_text(encoding="utf-8")
         after = audit_resources(text, self.evidence.directory)
         assert before[0] == after[0], (before, after)
