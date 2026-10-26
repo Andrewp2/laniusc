@@ -1,0 +1,17 @@
+// Candidate control: typed variant and member-result context, same value 37.
+module app::main;
+import alloc::vec;
+import core::result;
+import reduction::types;
+enum Error { Value(i32), Empty }
+fn main() -> i32 {
+    let outcomes: alloc::vec::Vec<reduction::types::Outcome<Error>> = alloc::vec::new();
+    let first: reduction::types::Outcome<Error> = reduction::types::Outcome::Failed(Error::Value(37));
+    outcomes.try_push(first).unwrap();
+    let report: reduction::types::Report<Error> = reduction::types::Report { outcomes: outcomes };
+    let pending: reduction::types::Outcome<Error> = reduction::types::Outcome::Pending;
+    let replaced: core::result::Result<reduction::types::Outcome<Error>,alloc::vec::Error> = report.outcomes.set(0,pending);
+    let item: reduction::types::Outcome<Error> = replaced.unwrap();
+    let code: i32 = match(item) { reduction::types::Outcome::Failed(error) -> match(error) { Error::Value(value) -> value, _ -> -1 }, _ -> -2 };
+    assert(code == 37); report.outcomes.destroy(); return 0;
+}

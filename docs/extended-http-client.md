@@ -80,6 +80,7 @@ pub impl Prepared {
     pub fn stats(&self) -> Stats;
     pub fn is_active(&self) -> bool;
     pub fn destroy(&self) -> bool;
+    pub fn into_protocol(&self) -> Result<Protocol,Failure>;
     pub fn begin(&self, endpoint: SocketAddr) -> Result<Exchange,Failure>;
 }
 pub impl Exchange {
@@ -100,7 +101,8 @@ The abbreviated types above are `core::net::SocketAddr`,
 Preparation runs the same checked request writer and copies the method without
 opening a socket. This lets a caller validate and stage several jobs before
 starting network activity. Preparation failures release their temporary owners.
-An active `Prepared` must be consumed with `begin` or released with `destroy`.
+An active `Prepared` must be consumed with `begin` or `into_protocol`, or
+released with `destroy`.
 `destroy` returns true once, then false. `begin` disarms the actual Prepared
 before opening a nonblocking socket, and preserves its absolute deadline and
 cumulative work/I/O accounting. It opens only; connection attempts start in
@@ -160,6 +162,105 @@ It steps immediate work, charges poll participation, performs one socket poll,
 and feeds that readiness back into the engine. It shares every request,
 framing, response-validation, ownership and error path with direct callers;
 there is no second HTTP parser or transport implementation.
+
+## Shared transport-free Protocol
+
+The concrete `Protocol` owns the staged request, copied method, growing receive
+wire, framing cursor, informational spans/heads and decoded body. Plain
+Exchange and TLS drivers drive this same owner. Request encoding, incremental
+framing, canonical validation, decoding and Response construction each have
+one implementation. This module imports no OpenSSL code; plaintext HTTP needs
+no `libssl` or `libcrypto` dependency.
+
+```lanius
+pub enum Trailing { Discard, Reject }
+pub enum Need { Local, Transfer, StopUpload, FinishTransport, Complete(Response) }
+pub impl Protocol {
+    pub fn borrow(&self) -> &Protocol;
+    pub fn stats(&self) -> Stats;
+    pub fn remaining(&self) -> core::time::Duration;
+    pub fn status(&self) -> Status;
+    pub fn last_failure(&self) -> Option<Failure>;
+    pub fn check(&self) -> Result<bool,Failure>;
+    pub fn before_io(&self, stage: Stage) -> Result<bool,Failure>;
+    pub fn before_wait(&self) -> Result<bool,Failure>;
+    pub fn failure(&self, cause: Cause) -> Failure;
+    pub fn advance(&self) -> Result<Need,Failure>;
+    pub fn receive_limit(&self) -> Result<i32,Failure>;
+    pub fn feed(&self, bytes: View<u8>) -> Result<bool,Failure>;
+    pub fn feed_eof(&self) -> Result<bool,Failure>;
+    pub fn start_send(&self) -> Result<Option<View<u8>>,Failure>;
+    pub fn pending_send_bytes(&self) -> i32;
+    pub fn commit_send(&self, count: i32) -> Result<bool,Failure>;
+    pub fn cancel_send(&self) -> Result<bool,Failure>;
+    pub fn acknowledge_stop(&self) -> Result<bool,Failure>;
+    pub fn record_write_shutdown(&self) -> Result<bool,Failure>;
+    pub fn transport_finished(&self) -> Result<bool,Failure>;
+    pub fn abort(&self) -> bool;
+}
+```
+
+Here `View` abbreviates `core::slice::View`; the other abbreviations are above.
+`Prepared.into_protocol` disarms the actual Prepared before driver work and
+transfers its unchanged deadline, accounting and buffer owners. The method
+opens no socket and reads no clock. The existing plain `Prepared.begin` uses
+that transfer internally, then opens its socket. Copies of a Protocol remain
+borrowed aliases with one cleanup authority.
+
+`advance` performs a bounded local action and returns Local when more local
+work remains. Transfer permits external I/O; `receive_limit` and `start_send`
+require that state. A driver must drain new framing events before starting a
+new upload chunk. `receive_limit` returns a positive count at most 1024,
+including the separate one-byte Close EOF probe. `feed` accepts a positive
+confirmed receive prefix and copies it into owned wire storage. It records
+received bytes before its post-operation deadline/clock observation, including
+a limit-overflow probe byte. `feed_eof` is for an actual transport EOF from a
+positive-capacity read. Both resume local scanning. The driver validates native
+counts and uses `check` after operations that return an error without bytes.
+
+`start_send` reserves at most 1024 immutable staged request bytes. Only one
+reservation may exist. `commit_send` confirms a positive prefix once and clears
+that reservation, recording progress before its later clock observation.
+A native retry retains the reservation; it must not call start_send again.
+`cancel_send` clears a reservation only after the driver proves that no native
+request remains in flight. An ordinary socket EAGAIN/EINTR supplies that proof;
+a TLS WANT result does not. These are manual driver contracts, with no borrowed
+buffer reallocation or mutation permitted while an operation refers to it.
+
+StopUpload reports an observed final head immediately. New reservations are
+then suppressed, while an operation reserved before that head may still commit
+its confirmed bytes. `acknowledge_stop` resumes framing after the driver adopts
+that policy; it does not set `write_shutdown` or perform I/O. Only an actual
+successful socket write shutdown or confirmed local TLS alert justifies
+`record_write_shutdown`. Transport-specific TLS retry, alert and version policy
+belongs to the TLS driver; Protocol never maps a TLS WANT to a cancelled write
+or performs a raw TCP shutdown for TLS.
+
+FinishTransport follows shared canonical validation and decoding. The driver
+finishes and closes its transport before calling `transport_finished`, with
+no pending send reservation. A later advance constructs and transfers the
+sole Complete(Response), disarming Protocol. Repeating advance then returns
+Inactive; it never replays that Response. A final HTTP boundary or EOF alone
+is insufficient to acknowledge transport cleanup.
+
+`before_io` checks the deadline and charges one active attempt at its supplied
+HTTP stage. Protocol's `before_wait` always charges one poll participation;
+the driver must first establish that it will actually participate. `remaining`
+returns the deadline remainder at the last checked monotonic instant, without
+a new clock read or budget charge. Use it after a successful check/before_wait
+for that poll's timeout; it does not refresh or extend the deadline. The plain
+Exchange wrapper retains its immediate-work `Ok(false)` behavior. Native/TLS
+attempt limits can add a separate transport budget, and native failures retain
+their structured transport diagnostics rather than being cast to integers.
+Mandatory cleanup stays outside exhausted active allowances.
+
+Protocol failures are sticky and retain HTTP buffers for explicit cleanup.
+`failure(cause)` records the first failure with shared progress/stage; later
+operations return that original failure. `abort` releases HTTP buffers once,
+performs no transport operation and preserves a saved failure. It returns false
+after release or Complete transfer. Drivers close/disarm their actual socket,
+TLS and Protocol owners before returning a terminal error to a batch scheduler.
+Direct Protocol users have that same explicit cleanup obligation.
 
 ## Owned response and views
 
@@ -223,9 +324,11 @@ read error, hangup readiness flag, or zero-length buffer is never substituted
 for EOF. HTTP/1.0 response compatibility and the strict Content-Length/TE
 recipient policy are inherited from the wire parser.
 
-Already-read bytes beyond the final boundary are discarded and counted.
-They are never interpreted as a second response, cached, forwarded, or
-included in `as_view()`/`body()`. The client closes its dedicated connection
+`Options.trailing` selects the treatment of already-read bytes beyond the final
+boundary. Its default Discard counts and removes them; Reject instead fails
+with `Cause::Http(Error::Malformed(boundary.consumed))`, relative to the current
+message. Neither policy interprets them as a second response, caches or
+forwards them, or includes them in a published `as_view()`/`body()`. The client closes its dedicated connection
 without waiting for proof that unseen trailing bytes do not exist. The
 receive buffer keeps connection offsets through informational messages;
 it does not repeatedly move a remaining tail to its front.
@@ -247,7 +350,9 @@ an early final response to stop an upload instead of blocking in a send-all
 operation while the server waits for the client to read its rejection.
 
 If a final HeadReady arrives before all staged request bytes have been sent,
-`upload_stopped` becomes true and no more request bytes are sent. The client
+`upload_stopped` becomes true and no new chunk is reserved. The plain client
+has no native write left in flight across calls, so it sends no later request
+bytes. It
 performs one checked `Shutdown::Write` in a separate subsequent step, then
 continues receiving the final
 response. This sends request-side EOF to a peer waiting on the abandoned
@@ -272,6 +377,7 @@ are not a realtime OS scheduling guarantee.
 
 | Option | Default | Meaning |
 | --- | ---: | --- |
+| `trailing` | `Trailing::Discard` | Discard/count or reject already-received bytes after the final boundary |
 | `wire` | `ext::http::default_limits()` | Head/line/header, decoded body, trailer, and chunk caps |
 | `request_bytes` | 17825792 | Complete staged request bytes |
 | `response_bytes` | 18874368 | Retained cumulative raw response bytes, including informational heads and chunk overhead |
@@ -337,7 +443,13 @@ fails. Terminal errors are established before close: the original protocol,
 limit, or timeout error stays primary if close also fails. Close failure after
 an otherwise valid response discards the response. Every socket owner is
 invalidated before its one direct close attempt; close is never retried.
-No response view is returned on error, and all heap owners are released.
+A plain Exchange returns no response view on error and releases all of its
+heap owners. Direct Protocol failures retain their explicit owner until abort,
+as described above.
+`Failure` itself contains only diagnostic metadata, with no allocation or
+native handle; its explicit `core::clone::Destroy<Failure>` implementation
+therefore has no resource work. Response owners still require their documented
+explicit destruction.
 
 ## Fetch application
 
@@ -390,6 +502,15 @@ unchanged Host authority. There is no automatic address selection/fallback or
 resolver activity inside the HTTP client.
 
 ## Focused execution evidence
+
+The shared transport-free Protocol extraction and new trailing policy are
+pending their current compiler/native gates. The receipts below establish the
+preceding `480432e8` HTTP implementation; they do not establish acceptance of
+these new Protocol entry points or the refactored plain driver. Existing
+public plain Exchange/exchange_until signatures remain the same, and callers
+using default_options select the existing Discard behavior. A direct Options
+literal must now supply trailing explicitly.
+
 
 The synchronous client regression and the five direct Prepared/Exchange groups
 passed after the resumable refactor on the native Linux x86-64 profile through

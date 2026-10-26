@@ -1,0 +1,106 @@
+// Test-only binary packet boundary; all HTTPS scheduling uses the public API.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_batch;
+import ext::http_client;
+import ext::https_batch;
+import ext::https_client;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::signal;
+import std::stream;
+extern "C" fn duplex_test_stat(index: i32, field: i32) -> i64;
+extern "C" fn duplex_test_arm_next(fault: i32);
+extern "C" fn duplex_test_fail_up_ref();
+const MAGIC: i32 = 1213415985;
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+fn word(raw: [u8], at: i32) -> i32 { return ((raw[at] as u32)|((raw[at+1] as u32)<<8)|((raw[at+2] as u32)<<16)|((raw[at+3] as u32)<<24)) as i32; }
+fn wide(words: [i32], at: i32, value: u64) { words[at] = value as i32; words[at+1] = (value>>32) as i32; }
+fn output(words: [i32], count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),count*4); let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),raw,0,count*4).unwrap(); }
+fn data(part: core::slice::View<u8>) { let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),part.values,part.start,part.length).unwrap(); }
+fn configured(ca: core::slice::View<u8>, certificate: core::slice::View<u8>, key: core::slice::View<u8>, credentials: bool, limits: ext::openssl_tls::Limits) -> core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> {
+    if (credentials) { return ext::openssl_tls::new_with_credentials(ext::openssl_tls::Trust::CaFile(ca),certificate,key,bytes("",0),limits); }
+    return ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(ca),limits);
+}
+fn errno(value: core::io::Error) -> i32 { return match(value) { core::io::Error::Host(n) -> n, core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, _ -> -1 }; }
+fn global(value: ext::http_batch::Cause) -> i32 { return match(value) { ext::http_batch::Cause::Bounds -> 1, ext::http_batch::Cause::InvalidLimits -> 2, ext::http_batch::Cause::AllocationFailed -> 3, ext::http_batch::Cause::Timeout -> 4, ext::http_batch::Cause::Clock(e) -> 5, ext::http_batch::Cause::Poll(e) -> 6, ext::http_batch::Cause::OperationLimit -> 7, ext::http_batch::Cause::WorkLimit -> 8, ext::http_batch::Cause::WireLimit -> 9, ext::http_batch::Cause::BodyLimit -> 10, ext::http_batch::Cause::PendingLimit -> 11, ext::http_batch::Cause::Preparation -> 12, ext::http_batch::Cause::InvalidEngine -> 13 }; }
+fn http_cause(value: ext::http_client::Cause) -> i32 { return match(value) { ext::http_client::Cause::InvalidOptions -> 1, ext::http_client::Cause::AllocationFailed -> 2, ext::http_client::Cause::Timeout -> 3, ext::http_client::Cause::Io(e) -> 4, ext::http_client::Cause::Http(e) -> 5, ext::http_client::Cause::RequestLimit -> 6, ext::http_client::Cause::ResponseLimit -> 7, ext::http_client::Cause::BodyLimit -> 8, ext::http_client::Cause::InterimLimit -> 9, ext::http_client::Cause::IoLimit -> 10, ext::http_client::Cause::WorkLimit -> 11, ext::http_client::Cause::UnsupportedUpgrade -> 12, ext::http_client::Cause::Clock(e) -> 14, _ -> 15 }; }
+fn http_stage(value: ext::http_client::Stage) -> i32 { return match(value) { ext::http_client::Stage::Prepare -> 0, ext::http_client::Stage::Open -> 1, ext::http_client::Stage::Connect -> 2, ext::http_client::Stage::Send -> 3, ext::http_client::Stage::Receive -> 4, ext::http_client::Stage::Shutdown -> 5, ext::http_client::Stage::Validate -> 6, ext::http_client::Stage::Decode -> 7, ext::http_client::Stage::Close -> 8, ext::http_client::Stage::Publish -> 9 }; }
+fn wire_kind(value: ext::http::Error) -> i32 { return match(value) { ext::http::Error::Bounds -> 1, ext::http::Error::Incomplete(n) -> 2, ext::http::Error::Malformed(n) -> 3, ext::http::Error::Limit(n) -> 4, ext::http::Error::Unsupported(n) -> 5, ext::http::Error::Capacity -> 6, ext::http::Error::AllocationFailed -> 7 }; }
+fn wire_offset(value: ext::http::Error) -> i32 { return match(value) { ext::http::Error::Incomplete(n) -> n, ext::http::Error::Malformed(n) -> n, ext::http::Error::Limit(n) -> n, ext::http::Error::Unsupported(n) -> n, _ -> -1 }; }
+fn tls_cause(value: ext::openssl_tls::Cause) -> i32 { return match(value) { ext::openssl_tls::Cause::Bounds -> 1, ext::openssl_tls::Cause::InvalidLimits -> 2, ext::openssl_tls::Cause::Limit -> 3, ext::openssl_tls::Cause::Closed -> 4, ext::openssl_tls::Cause::InvalidState -> 5, ext::openssl_tls::Cause::Identity -> 6, ext::openssl_tls::Cause::Utf8 -> 7, ext::openssl_tls::Cause::Nul -> 8, ext::openssl_tls::Cause::AllocationFailed -> 9, ext::openssl_tls::Cause::Native -> 10, ext::openssl_tls::Cause::Verification -> 11, ext::openssl_tls::Cause::PeerCertificate -> 12, ext::openssl_tls::Cause::PeerClosed -> 13, ext::openssl_tls::Cause::Truncated -> 14, ext::openssl_tls::Cause::UnexpectedNative -> 15 }; }
+fn tls_phase(value: ext::openssl_tls::Phase) -> i32 { return match(value) { ext::openssl_tls::Phase::Context -> 0, ext::openssl_tls::Phase::Trust -> 1, ext::openssl_tls::Phase::Policy -> 2, ext::openssl_tls::Phase::Session -> 3, ext::openssl_tls::Phase::Identity -> 4, ext::openssl_tls::Phase::Attach -> 5, ext::openssl_tls::Phase::Handshake -> 6, ext::openssl_tls::Phase::Read -> 7, ext::openssl_tls::Phase::Write -> 8, ext::openssl_tls::Phase::Shutdown -> 9, ext::openssl_tls::Phase::Certificate -> 10, ext::openssl_tls::Phase::PrivateKey -> 11, ext::openssl_tls::Phase::Passphrase -> 12, ext::openssl_tls::Phase::KeyMatch -> 13 }; }
+fn stats(words: [i32], value: ext::http_client::Stats) { words[26] = value.request_bytes; words[27] = value.request_sent; wide(words,28,value.response_received); words[30] = value.interim_count; words[31] = value.discarded_bytes; wide(words,32,value.io_calls); wide(words,34,value.work); if (value.upload_stopped) { words[36] = 1; } if (value.write_shutdown) { words[37] = 1; } }
+fn failure(words: [i32], value: ext::https_client::Failure) {
+    words[1] = match(value.cause) { ext::https_client::Cause::Http(e) -> 1, ext::https_client::Cause::Tls(e) -> 2, ext::https_client::Cause::Io(e) -> 3, ext::https_client::Cause::InvalidOptions -> 4, ext::https_client::Cause::TlsLimit -> 5, ext::https_client::Cause::Inactive -> 6, ext::https_client::Cause::InvalidEngine -> 7, ext::https_client::Cause::PeerClosed -> 8 };
+    words[2] = match(value.stage) { ext::https_client::Stage::Prepare -> 0, ext::https_client::Stage::Retain -> 1, ext::https_client::Stage::Open -> 2, ext::https_client::Stage::Connect -> 3, ext::https_client::Stage::Attach -> 4, ext::https_client::Stage::Handshake -> 5, ext::https_client::Stage::Transfer -> 6, ext::https_client::Stage::Shutdown -> 7, ext::https_client::Stage::Close -> 8, ext::https_client::Stage::Publish -> 9 };
+    if (value.cleanup.is_some()) { words[6] = errno(value.cleanup.unwrap()); }
+    let http: core::option::Option<ext::http_client::Failure> = match(value.cause) { ext::https_client::Cause::Http(e) -> core::option::Some(e), _ -> core::option::None() };
+    if (http.is_some()) { let error = http.unwrap(); words[3] = http_cause(error.cause); words[4] = http_stage(error.stage); words[5] = match(error.cause) { ext::http_client::Cause::Io(e) -> errno(e), _ -> 0 }; words[44] = error.message_offset; if (error.cleanup.is_some()) { words[45] = errno(error.cleanup.unwrap()); } let wire: core::option::Option<ext::http::Error> = match(error.cause) { ext::http_client::Cause::Http(e) -> core::option::Some(e), _ -> core::option::None() }; if (wire.is_some()) { words[46] = wire_kind(wire.unwrap()); words[47] = wire_offset(wire.unwrap()); } }
+    let tls: core::option::Option<ext::openssl_tls::Error> = match(value.cause) { ext::https_client::Cause::Tls(e) -> core::option::Some(e), _ -> core::option::None() };
+    if (tls.is_some()) { let error = tls.unwrap(); words[7] = tls_cause(error.cause); words[8] = tls_phase(error.phase); words[9] = error.ssl_error; words[10] = error.system; wide(words,12,error.code); wide(words,14,error.verify_code as u64); }
+    let io: core::option::Option<core::io::Error> = match(value.cause) { ext::https_client::Cause::Io(e) -> core::option::Some(e), _ -> core::option::None() }; if (io.is_some()) { words[5] = errno(io.unwrap()); }
+    wide(words,16,value.tls.calls); wide(words,18,value.tls.handshakes); wide(words,20,value.tls.reads); wide(words,22,value.tls.writes); wide(words,24,value.tls.shutdowns); stats(words,value.stats);
+}
+fn result(value: ext::http_batch::Outcome<ext::https_client::Failure>) {
+    let words: [i32;64] = [0;64]; words[0] = match(value) { ext::http_batch::Outcome::NotStarted -> 0, ext::http_batch::Outcome::Complete(r) -> 1, ext::http_batch::Outcome::Failed(e) -> 2, ext::http_batch::Outcome::Aborted(a) -> 3, ext::http_batch::Outcome::Discarded(s) -> 4, ext::http_batch::Outcome::Taken -> 5 };
+    let response: core::option::Option<ext::http_client::Response> = match(value) { ext::http_batch::Outcome::Complete(r) -> core::option::Some(r), _ -> core::option::None() };
+    if (response.is_some()) { let owner = response.unwrap(); stats(words,owner.stats); words[38] = owner.as_view().len(); words[39] = owner.body().len(); words[40] = owner.message().head.status; words[41] = owner.message().trailer_count; words[42] = owner.informational().len(); assert(owner.message().head.method.len() == 4); let first = owner.message().head.method.get(0).unwrap(); assert(first == 80 || first == 72); let expected = bytes("POST",4); if (first == 72) { expected = bytes("HEAD",4); } let letter: i32 = 0; while (letter < 4) { assert(owner.message().head.method.get(letter).unwrap() == expected.get(letter).unwrap()); letter += 1; } output(words,64); data(owner.as_view()); data(owner.body()); return; }
+    let error: core::option::Option<ext::https_client::Failure> = match(value) { ext::http_batch::Outcome::Failed(e) -> core::option::Some(e), _ -> core::option::None() }; if (error.is_some()) { failure(words,error.unwrap()); }
+    let aborted: core::option::Option<ext::http_batch::Abort<ext::https_client::Failure>> = match(value) { ext::http_batch::Outcome::Aborted(a) -> core::option::Some(a), _ -> core::option::None() }; if (aborted.is_some()) { let abort = aborted.unwrap(); if (abort.cleanup.is_some()) { failure(words,abort.cleanup.unwrap()); } stats(words,abort.stats); }
+    let discarded: core::option::Option<ext::http_client::Stats> = match(value) { ext::http_batch::Outcome::Discarded(s) -> core::option::Some(s), _ -> core::option::None() }; if (discarded.is_some()) { stats(words,discarded.unwrap()); }
+    output(words,64);
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let source = std::stream::stdin(); let input: [i32;96] = [0;96]; let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input),384); core::io::read_exact(source.borrow(),raw,0,128).unwrap(); let count: i32 = word(raw,0); assert(count >= 0 && count <= 8); core::io::read_exact(source.borrow(),raw,128,count*32).unwrap();
+    let args = std::args::snapshot(1,3,16384).unwrap(); assert(args.len() == 3); let tls_limits = ext::openssl_tls::default_limits(); tls_limits.io_bytes = word(raw,76); let context_result = configured(args.get(0).unwrap(),args.get(1).unwrap(),args.get(2).unwrap(),word(raw,80) != 0,tls_limits);
+    let context = context_result.unwrap();
+    let native: [u8;512] = [165;512]; let backing: [i32;128] = [0;128]; let selected: [u8] = native; if (word(raw,68) != 0) { selected = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(backing),512); }
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new(); let body: alloc::vec::Vec<u8> = alloc::vec::new(); let index: i32 = 0; while (index < 512) { selected[index] = 165; index += 1; } index = 0;
+    while (index < count) { let requested: i32 = word(raw,140+index*32); if (requested > 4) { assert(requested <= 4194304); if (requested > body.len()) { body.try_resize(requested,88 as u8).unwrap(); } } index += 1; }
+    if (body.len() > 0) { body.set(0,0 as u8).unwrap(); body.set(1,255 as u8).unwrap(); body.set(2,0 as u8).unwrap(); body.set(3,10 as u8).unwrap(); }
+    let request = ext::http_client::Request { method:bytes("POST",4),target:bytes("/",1),authority:bytes("batch.example",13),headers:fields.as_view(),body:bytes("",0) };
+    let dummy = ext::https_batch::Job { endpoint:core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 }),identity:ext::openssl_tls::Identity::Dns(bytes("fixture.test",12)),request:request };
+    let records: [ext::https_batch::Job;10] = [dummy;10]; index = 0;
+    while (index < count) {
+        let base: i32 = index*64; let at: i32 = 0; while (at < 4) { selected[base+at] = bytes("POST",4).get(at).unwrap(); at += 1; } if (word(raw,136+index*32) == 1) { at = 0; while (at < 4) { selected[base+at] = bytes("HEAD",4).get(at).unwrap(); at += 1; } }
+        selected[base+8] = 47; selected[base+9] = 106; selected[base+10] = (48+index/10) as u8; selected[base+11] = (48+index%10) as u8; if (word(raw,136+index*32) == 2) { selected[base+9] = 13; }
+        selected[base+32] = 0; selected[base+33] = 255; selected[base+34] = index as u8; selected[base+35] = 10;
+        let content = core::slice::View<u8> { values:selected,start:base+32,length:word(raw,140+index*32) }; if (content.length > 4) { content = body.as_view().subview(0,content.length).unwrap(); }
+        let prepared = ext::http_client::Request { method:core::slice::View<u8> { values:selected,start:base,length:4 },target:core::slice::View<u8> { values:selected,start:base+8,length:4 },authority:bytes("batch.example",13),headers:fields.as_view(),body:content };
+        let endpoint = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:word(raw,128+index*32) as u16 }); if (word(raw,132+index*32) == 6) { endpoint = core::net::SocketAddr::V6(core::net::SocketAddrV6 { address:core::net::ipv6(0,0,0,0,0,0,0,1),port:word(raw,128+index*32) as u16,scope:0 }); }
+        let identity = ext::openssl_tls::Identity::Dns(bytes("fixture.test",12)); let identity_mode: i32 = word(raw,144+index*32); if (identity_mode == 1) { identity = ext::openssl_tls::Identity::Dns(bytes("wrong.invalid",13)); } if (identity_mode == 2) { identity = ext::openssl_tls::Identity::Ip(bytes("127.0.0.1",9)); } if (identity_mode == 3) { identity = ext::openssl_tls::Identity::Ip(bytes("127.0.0.2",9)); } if (identity_mode == 4) { identity = ext::openssl_tls::Identity::Ip(bytes("::1",3)); }
+        records[index+1] = ext::https_batch::Job { endpoint:endpoint,identity:identity,request:prepared }; index += 1;
+    }
+    let jobs_owner: alloc::vec::Vec<ext::https_batch::Job> = alloc::vec::new(); let values: [ext::https_batch::Job] = records; if (word(raw,72) != 0) { jobs_owner.try_extend(core::slice::view<ext::https_batch::Job>(records,count+2).unwrap()).unwrap(); values = jobs_owner.as_slice(); }
+    let jobs = core::slice::View<ext::https_batch::Job> { values:values,start:1,length:count }; let limits = ext::http_batch::Limits { max_jobs:word(raw,12),concurrency:word(raw,4),max_pending_bytes:(word(raw,16) as u32) as u64,max_wire_bytes:(word(raw,20) as u32) as u64,max_body_bytes:(word(raw,24) as u32) as u64,operations:(word(raw,28) as u32) as u64,work:(word(raw,32) as u32) as u64 };
+    let options = ext::http_client::default_options(); options.work = (word(raw,36) as u32) as u64; options.io_calls = (word(raw,40) as u32) as u64; options.response_bytes = word(raw,44); options.wire.body_bytes = word(raw,48); options.interim_count = word(raw,52); options.wire.head_bytes = word(raw,96); options.wire.line_bytes = word(raw,100); options.wire.headers = 16; options.wire.trailers = 16; options.wire.trailer_bytes = 1024; options.request_bytes = 8388608; options.trailing = ext::http_client::Trailing::Reject;
+    let tls = ext::https_client::Options { tls_calls:(word(raw,64) as u32) as u64 }; let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis((word(raw,8) as u32) as u64)).unwrap();
+    if (word(raw,84) > 0) { duplex_test_arm_next(word(raw,84)); } if (word(raw,88) != 0) { duplex_test_fail_up_ref(); }
+    let marker: [i32;4] = [MAGIC,100,0,0]; output(marker,4);
+    let got: core::result::Result<ext::http_batch::Report<ext::https_client::Failure>,ext::http_batch::Failure<ext::https_client::Failure>> = ext::https_batch::run_until(jobs,context.borrow(),options,tls,limits,deadline);
+    let global_cause: i32 = 0; if (got.is_err()) { global_cause = global(got.unwrap_err().cause); }
+    let report: ext::http_batch::Report<ext::https_client::Failure> = match(got) { core::result::Ok(owner) -> owner, core::result::Err(error) -> error.report }; index = 0; while (index < count) { let base: i32 = index*64; assert(selected[base+32] == 0 && selected[base+33] == 255 && selected[base+34] == index as u8 && selected[base+35] == 10 && selected[base+36] == 165 && selected[base+63] == 165); index += 1; } if (body.len() > 0) { assert(body.get(0).unwrap() == 0 && body.get(1).unwrap() == 255 && body.get(2).unwrap() == 0 && body.get(3).unwrap() == 10); } jobs_owner.destroy(); fields.destroy(); body.destroy(); context.destroy(); context.destroy(); args.destroy();
+    index = 0; while (index < count*64) { selected[index] = 0; index += 1; }
+    let words: [i32;80] = [0;80]; words[0] = MAGIC; words[2] = global_cause; words[3] = report.len(); words[4] = report.stats.jobs; words[5] = report.stats.started; words[6] = report.stats.complete; words[7] = report.stats.failed; words[8] = report.stats.aborted; words[9] = report.stats.discarded; words[10] = report.stats.peak_active;
+    wide(words,12,report.stats.operations); wide(words,14,report.stats.polls); wide(words,16,report.stats.io_calls); wide(words,18,report.stats.work); wide(words,20,report.stats.pending_bytes); wide(words,22,report.stats.peak_pending_bytes); wide(words,24,report.stats.wire_bytes); wide(words,26,report.stats.body_bytes);
+    let held: core::option::Option<ext::http_batch::Outcome<ext::https_client::Failure>> = core::option::None(); let take_index: i32 = word(raw,56); if (take_index >= 0 && take_index < report.len()) { let candidate = report.get(take_index).unwrap(); if (match(candidate) { ext::http_batch::Outcome::Complete(r) -> true, _ -> false }) { held = report.take(take_index); assert(held.is_some() && report.take(take_index).is_none()); words[28] = 1; } }
+    assert(report.get(-1).is_none() && report.get(report.len()).is_none() && duplex_test_stat(-1,0) == 0 && duplex_test_stat(-1,1) == 0 && duplex_test_stat(-1,2) == 0);
+    index = 0; while (index < 7) { wide(words,44+index*2,duplex_test_stat(-1,index) as u64); index += 1; }
+    if (word(raw,84) > 0 && duplex_test_stat(-1,3) > 0) { wide(words,58,duplex_test_stat(0,5) as u64); wide(words,60,duplex_test_stat(0,6) as u64); wide(words,62,duplex_test_stat(0,8) as u64); }
+    output(words,80); index = 0; while (index < report.len()) { result(report.get(index).unwrap()); index += 1; } report.destroy(); report.destroy();
+    if (held.is_some()) { let value = held.unwrap(); result(value); let response: core::option::Option<ext::http_client::Response> = match(value) { ext::http_batch::Outcome::Complete(r) -> core::option::Some(r), _ -> core::option::None() }; response.unwrap().destroy(); }
+    marker[1] = 101; output(marker,4); if (word(raw,60) != 0) { let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); }
+    return 0;
+}

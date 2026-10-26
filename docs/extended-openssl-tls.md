@@ -17,6 +17,11 @@ has separate passing native gates. [Mutual TLS](extended-openssl-mutual-tls.md)
 also passes six groups and 107 cases with explicit client credentials and
 required server-side client verification. The full security family remains work.
 
+This revision adds independent retry requirements, permitted read/write
+interleaving, read quiescence, a write-side shutdown step and explicit context
+retention. Its new execution gates are pending. The earlier receipts below do
+not establish those new contracts.
+
 ## Trust and identity
 
 `new(trust,limits)` returns `Result<Context,Error>`. Choose
@@ -41,7 +46,16 @@ configuration cannot turn missing `close_notify` into successful EOF. The
 checked API offers no verification-disable option.
 
 `context.session(fd,identity)` returns `Result<Session,Error>`. Identity is
-mandatory and separate from the numeric endpoint used to establish the socket:
+mandatory and separate from the numeric endpoint used to establish the socket.
+
+`context.validate_identity(identity)` returns `Result<i32,Error>` and reuses
+the same local checker without allocating or calling OpenSSL. It returns
+`Ok(0)` for admitted metadata/policy, or a local error; a closed context returns
+`Cause::Closed` in `Phase::Identity`. An asynchronous caller can use it before
+opening a socket. It does not prove physical view backing or complete IP
+syntax: OpenSSL still checks IP syntax when the Session is attached.
+
+The identity policies are:
 
 | Identity | Verification and SNI |
 | --- | --- |
@@ -63,8 +77,8 @@ A successful handshake is exposed as `Open` only after both
 `SSL_get_verify_result()==0` and a non-null borrowed peer certificate. The
 wrapper never frees that borrowed certificate pointer. Checking both prevents
 an anonymous or certificate-free handshake from being treated as authenticated.
-This profile does not add certificate pinning, OCSP/CRL policy, client
-certificates, ALPN or application protocol negotiation.
+Certificate pinning, OCSP/CRL policy, ALPN and application protocol negotiation
+remain outside this profile. Client credentials use the constructor above.
 
 ## Socket and context ownership
 
@@ -92,6 +106,16 @@ its native context references, so `context.destroy()` may release the wrapper's
 reference while existing sessions remain live. A session does not retain a
 pointer into the Lanius context owner's storage.
 
+`context.retain()` returns `Result<Context,Error>` and uses `SSL_CTX_up_ref`
+to create a distinct native reference with the same limits. The returned
+context is another active owner that must eventually be destroyed. Either
+owner may be destroyed first. A closed source returns `Cause::Closed` in
+`Phase::Context`; native failure captures the error queue and transfers no
+reference. This lets an asynchronous connection retain policy before creating
+its Session. A descriptor copy alone does not retain anything. Retained
+contexts share immutable trust, credentials and policy; callers must not edit
+them through native declarations or owner fields.
+
 `session.destroy()` abandons TLS without implicitly calling `SSL_shutdown`.
 It invalidates its pointers, frees SSL, wipes its owned read/write staging with
 OpenSSL's `OPENSSL_cleanse`, and releases the allocations. Repeated destruction
@@ -113,18 +137,46 @@ protocol work; a step count is not a CPU-work or hard-time bound.
 | `read_into(output)` | `Read::{Data(count),Closed,WantRead,WantWrite}` |
 | `write(input)` | `Write::{Complete(count),WantRead,WantWrite}` |
 | `retry_write()` | The same write outcomes for the pending staged request |
-| `shutdown()` | `Shutdown::{Complete,Sent,WantRead,WantWrite}` |
+| `shutdown_write()` | `Shutdown::{Complete,Sent,WantRead,WantWrite}`; stop after local notification |
+| `shutdown()` | The same outcomes, with explicit bidirectional progress |
 
 `State` is `Handshake`, `Open`, `PeerClosed`, `Closing`, `Closed` or `Failed`.
-Application I/O requires `Open`. Repeating a completed handshake succeeds
-locally only when no other operation is pending. A fatal TLS error releases
-the native session and staging, reports `Failed`, and leaves `is_open()` false.
+Application writes require `Open`. Reads also remain available after confirmed
+local notification, as described below. Repeating a completed handshake succeeds
+locally only before shutdown and when no application operation is pending.
+A fatal TLS error releases the native session and staging, reports `Failed`,
+and leaves `is_open()` false.
 Calling `destroy()` afterward records `Closed` and performs no repeated free.
 
 Either read or write can need either socket readiness. Poll according to the
-returned WANT, not the operation name. Only one application operation may be
-pending at once. `pending_read_bytes()` and `pending_write_bytes()` expose its
-retained request size; they are not counts of bytes delivered to the peer.
+returned WANT, not the operation name. `read_need()` and `write_need()` return
+`Need::{None,Read,Write}`. They remember each direction's most recent WANT
+separately, until that request completes, is quiesced where allowed, or is
+destroyed. They do not consult OpenSSL's thread error state later. A call in
+the other direction does not replace this receipt; it may make an optimistic
+retry useful. `pending_read_bytes()` and `pending_write_bytes()` expose the
+retained request sizes, not delivered-byte counts.
+
+Calls remain serialized in one thread. Permitted interleaving is:
+
+| Last incomplete application operation | Next application operation |
+| --- | --- |
+| Read wanting read or write readiness | Retry the read, or start/resume a write |
+| Write wanting read readiness | Retry the same staged write, or read |
+| Write wanting write readiness | Retry that staged write only; no other TLS I/O |
+
+A second new `write()` never replaces a pending write. Initial handshake and
+an incomplete shutdown retry remain exclusive. These rules follow OpenSSL's
+[retry documentation](https://docs.openssl.org/3.0/man3/SSL_get_error/) and
+the maintainers' [read/write interleaving clarification](https://github.com/openssl/openssl/discussions/23112).
+
+The wrapper retains OpenSSL's default `SSL_MODE_AUTO_RETRY` policy. A successful
+read can leave plaintext buffered inside SSL after the socket is no longer
+readable. A resumable driver must permit another bounded read attempt after
+`Data` before waiting for new socket input. It must not busy-loop solely on
+`SSL_has_pending`: incomplete records can keep that flag true without yielding
+application data. Native record/control-message processing is not preempted by
+a Lanius step or byte limit.
 
 ## Read and write retry buffers
 
@@ -142,15 +194,26 @@ capacity; otherwise `Cause::Bounds` is returned without another TLS call. On
 success, only the returned prefix is copied and the read staging is wiped.
 An empty initial output returns `Data(0)` locally and does not mean EOF.
 
+OpenSSL itself does not require stable read arguments across WANT. The wrapper
+keeps this size reservation until completion or `quiesce_read()`. That method
+returns `Result<bool,Error>`: `true` clears a read waiting for read readiness,
+and `false` means no read was reserved. It clears the wrapper's size/need and
+wipes its staging without consuming or discarding native buffered TLS input.
+A read waiting for write readiness returns `InvalidState`; progress that
+protocol output through the permitted operations, or destroy the session at a
+bound. A closed owner returns `Closed`. Quiescence is a conservative wrapper
+policy, not a claim that OpenSSL globally forbids interleaving read retries.
+
 `write(input)` accepts one complete request no larger than `limits.io_bytes`,
 copies it to owned staging and tries one `SSL_write_ex`. On WANT, release or
-reuse the original input freely and call only `retry_write()` or `destroy()`.
+reuse the original input freely and resume it through `retry_write()`.
 Retry uses the same bytes, length, buffer address and result cell. A second
-`write`, a read, handshake or shutdown while it is pending returns
-`InvalidState`. The wrapper does not enable moving-buffer or partial-write
-modes. It validates every successful native count and returns its confirmed
+`write`, handshake or shutdown while it is pending returns `InvalidState`.
+A read is permitted only when the pending write wants read readiness. The
+wrapper does not enable moving-buffer or partial-write modes. It validates
+every successful native count and returns its confirmed
 prefix; the caller handles any unconsumed suffix as a new request. Empty input
-returns `Complete(0)` locally when no operation is pending.
+returns `Complete(0)` locally when no write is pending and writes are admitted.
 
 WANT or failure is not a promise that no encrypted data reached the peer. A
 native write may have sent part of a multi-record request before reporting
@@ -159,6 +222,14 @@ cancelled/fatal write has no reliable delivered-prefix count. A higher-level
 stream adapter must preserve that uncertainty when reporting acceptance or
 flush failure. The copied pending request remains immutable until completion
 or destruction.
+
+For HTTP upload/early-final scheduling, a driver can stage at most 1,024 bytes
+at a time and stop admitting new chunks when it recognizes the final response
+head. A native write already pending must retain its arguments and may need
+to finish before shutdown. If it wants write readiness and the peer refuses
+to drain the upload, reading the early response is not permitted until that
+write completes. A deadline or quota must terminate the connection honestly;
+small chunks do not guarantee full-duplex success against that peer.
 
 ## EOF and shutdown
 
@@ -172,7 +243,9 @@ OpenSSL 3's `SSL_R_UNEXPECTED_EOF_WHILE_READING`. It is never normalized to
 `Read::Closed`. Other protocol and system failures retain their native details.
 Fatal SSL/SYSCALL errors destroy the session without a later shutdown attempt.
 
-`shutdown()` requires no pending application read/write. It enters `Closing`:
+Entering native shutdown requires no pending application read/write. A read
+waiting for read readiness can first be quiesced. Starting shutdown enters
+`Closing` and permanently stops application writes:
 
 - Native return 1 completes both directions, frees TLS resources and returns
   `Shutdown::Complete` with state `Closed`.
@@ -180,11 +253,49 @@ Fatal SSL/SYSCALL errors destroy the session without a later shutdown attempt.
   peer notification remains pending. The wrapper does not call `SSL_get_error`
   for this successful incomplete result.
 - A negative return is classified immediately as WANT or an error. Retry only
-  `shutdown()` after readiness; application I/O stays disabled.
+  a shutdown method after readiness; application I/O stays disabled until that
+  attempt reaches `Sent` or `Complete`.
+
+`shutdown_write()` is the operation for sending local notification while
+preserving remaining response reads. After confirmed `Sent`, repeated
+`shutdown_write()` calls return `Sent` locally without a second native shutdown
+call. `read_into()` is then admitted in `Closing`; it can produce data, WANT
+or authenticated EOF under the usual retry rules. EOF records `PeerClosed`,
+and the caller can explicitly complete cleanup or destroy the session. Writes
+remain forbidden even if no write request was pending when shutdown started.
+The local `Sent` replay does not interfere with a subsequently reserved read.
+
+`shutdown()` explicitly requests native bidirectional progress. After `Sent`,
+use reads to preserve any remaining application data; do not call `shutdown()`
+again until that data has been consumed. A second native shutdown call can
+reject peer application data rather than return it. If the caller starts a
+new explicit bidirectional wait and it returns WANT, that wait is exclusive;
+`shutdown_write()` then resumes the active shutdown rather than cancelling it.
+
+OpenSSL supports reads after local notification. The protocol difference still
+matters: TLS 1.3 leaves the initiator's read side open, whereas TLS 1.2 requires
+the receiver to answer immediately and discard its pending writes. A TLS 1.2
+peer therefore need not generate a delayed response body after receiving the
+notification. An incomplete HTTP message remains an error. See
+[TLS 1.3 closure](https://www.rfc-editor.org/rfc/rfc8446.txt) and
+[TLS 1.2 closure](https://www.rfc-editor.org/rfc/rfc5246.txt).
+
+`negotiated_version()` returns OpenSSL's numeric `SSL_version` result after
+handshake completion and the required role policy checks: `771` (`0x0303`)
+for TLS 1.2 or `772` (`0x0304`) for TLS 1.3
+in the audited native library. It returns zero before handshake completion or
+after destruction. This reports the retained session's version, not remote
+application acceptance or authorization.
 
 `Sent` alone is not a bidirectional clean shutdown. The caller decides whether
 its application framing permits abandonment, or continues to the peer's alert
 under its deadline. The socket remains borrowed throughout.
+
+Receiving peer closure while the opposite application operation is still
+reserved does not confirm that operation's completion. This wrapper stops
+application writes at `PeerClosed`; if a pending request cannot be quiesced
+or completed under those state rules, destroy the session. Graceful shutdown
+is not guaranteed from every partially completed operation state.
 
 ## Error capture and limits
 
@@ -226,6 +337,10 @@ build target directory, for example `CARGO_TARGET_DIR="$PWD/target/stdlib-build"
 OpenSSL's `long` arguments/results map to `i64`, `uint64_t` options to `u64`,
 lengths to `usize`, and opaque handles to `ptr` on the selected profile. Control
 commands and option masks match the installed OpenSSL 3 headers.
+
+The following are historical receipts for the earlier serialized retry
+profile. The new interleaving, context-retention and write-side shutdown
+contracts remain pending executable acceptance.
 
 [`extended_openssl_tls_execution`](../tests/extended_openssl_tls_execution.rs)
 compiles the actual Lanius wrapper on the GPU and executes its native-linked
@@ -274,3 +389,8 @@ Primary references: OpenSSL's [verification policy](https://docs.openssl.org/3.0
 [write retries](https://docs.openssl.org/3.0/man3/SSL_write/),
 [shutdown](https://docs.openssl.org/3.0/man3/SSL_shutdown/) and
 [peer-certificate ownership](https://docs.openssl.org/3.0/man3/SSL_get_peer_certificate/).
+The additions also use the native [context reference count](https://docs.openssl.org/3.0/man3/SSL_CTX_new/),
+[read-argument clarification](https://github.com/openssl/openssl/discussions/25310),
+[interleaving table](https://github.com/openssl/openssl/discussions/30934) and
+[buffered-plaintext contract](https://docs.openssl.org/3.0/man3/SSL_pending/).
+The version getter follows [SSL_version](https://docs.openssl.org/3.0/man3/SSL_get_version/).

@@ -1,0 +1,4 @@
+module reduction::types;
+import alloc::vec;
+pub enum Outcome<E> { Pending, Failed(E) }
+pub struct Report<E> { outcomes: alloc::vec::Vec<Outcome<E>> }

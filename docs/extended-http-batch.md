@@ -1,21 +1,22 @@
 # Bounded concurrent HTTP exchanges
 
-`ext::http_batch` schedules independent cleartext HTTP/1 exchanges over numeric
-socket endpoints using one thread and one reusable `std::poll::PollSet`. It
-reuses `ext::http_client::Prepared` and `Exchange` for request encoding, socket
-progress, framing, validation, decoding and close behavior. There is no second
-HTTP engine, TLS implementation or worker-thread pool.
+`ext::http_batch` schedules independent HTTP exchanges using one thread and one
+reusable `std::poll::PollSet`. Canonical request preparation always uses
+`ext::http_client::Prepared`; a typed factory supplies the transport driver.
+The plain entry uses the existing HTTP `Exchange`. Both entries use one
+preparation, admission, refill, polling, accounting and cleanup engine. The
+scheduler contains no TLS implementation or worker-thread pool.
 
 The source is [`extended/ext/http_batch.lani`](../extended/ext/http_batch.lani).
 The first profile is native Linux x86_64 through the existing socket/poll
-boundary. All seven focused library groups pass GPU compilation and
-native execution through separate receipts, including the scheduler correction
-and consecutive-failed-begin regression described below. The
-[fetch-many application](extended-fetch-many.md) also passes all five groups
-through separate receipts. Other targets, user GPU execution,
-TLS, name resolution, redirects, pooling and request replay are outside this
-profile. The [single-exchange guide](extended-http-client.md) defines the
-underlying HTTP policy, including successful responses with non-2xx status.
+boundary. The concrete plain scheduler passed seven focused library groups
+and the [fetch-many application](extended-fetch-many.md) passed five groups
+through the separate receipts below. The generic driver/error revision is
+**pending compilation and execution acceptance**; those earlier receipts do
+not establish the revised generic boundary or a TLS adapter. Other targets,
+user GPU execution, name resolution, redirects, pooling and request replay
+remain outside this profile. The [single-exchange guide](extended-http-client.md)
+defines HTTP policy, including successful responses with non-2xx status.
 
 ## API and limits
 
@@ -28,7 +29,12 @@ pub struct Limits {
 }
 pub fn default_limits() -> Limits;
 pub fn run_until(jobs: View<Job>, options: http_client::Options,
-    limits: Limits, deadline: Deadline) -> Result<Report,Failure>;
+    limits: Limits, deadline: Deadline)
+    -> Result<Report<http_client::Failure>,Failure<http_client::Failure>>;
+pub fn run_with_until<J,D,E,F>(jobs: View<J>, factory: &F,
+    options: http_client::Options, limits: Limits, deadline: Deadline)
+    -> Result<Report<E>,Failure<E>>
+    where D: Driver<E>, F: Factory<J,D,E>;
 ```
 
 The abbreviations above refer to `core::net::SocketAddr`, `core::slice::View`,
@@ -39,7 +45,7 @@ response, informational-response, I/O and protocol-work limits.
 | Batch limit | Default | Meaning |
 | --- | ---: | --- |
 | `max_jobs` | 64 | Bounds submitted, queued and input-indexed result records; valid range 1..4,096. |
-| `concurrency` | 4 | Bounds active Exchange owners; valid range 1..64 and at most `max_jobs`. |
+| `concurrency` | 4 | Bounds active driver owners; valid range 1..64 and at most `max_jobs`. |
 | `max_pending_bytes` | 64 MiB | Logical encoded request plus copied method bytes held by pending Prepared owners. |
 | `max_wire_bytes` | 64 MiB | Logical wire bytes retained in completed Response owners. |
 | `max_body_bytes` | 64 MiB | Decoded body bytes retained in completed Response owners. |
@@ -53,6 +59,61 @@ an empty successful Report without allocation, clock or poll calls, including
 under zero unsigned limits. Invalid limits or malformed/overflowing job view
 metadata still fail locally. Physical view backing is a caller precondition.
 
+## Typed factory and driver contract
+
+```lanius
+pub trait Driver<E> {
+    pub fn stats(&self) -> http_client::Stats;
+    pub fn interest(&self) -> http_client::Interest;
+    pub fn raw_handle(&self) -> Option<i32>;
+    pub fn before_wait(&self) -> Result<bool,E>;
+    pub fn step(&self, ready: http_client::Readiness)
+        -> Result<Option<http_client::Response>,E>;
+    pub fn abort(&self) -> Result<bool,E>;
+}
+pub trait Factory<J,D,E> {
+    pub fn request(&self, job: J) -> http_client::Request;
+    pub fn begin(&self, prepared: &http_client::Prepared, job: J) -> Result<D,E>;
+    pub fn from_http_failure(&self, failure: http_client::Failure) -> E;
+    pub fn failure_stats(&self, error: E) -> http_client::Stats;
+    pub fn shared_failure(&self, error: E) -> Option<Cause>;
+}
+```
+
+Job arguments are borrowed shallow descriptors. `request` projects a request
+from unchanged caller backing; it does not consume the job, create a second
+request owner, perform network effects or retain an owner outside the call.
+The factory and all backing it borrows must remain valid through return.
+Its hooks are bounded synchronous operations; the scheduler cannot preempt
+arbitrary custom factory code.
+
+`begin` consumes and disarms the actual Prepared on every result. It preserves
+the prepared HTTP state, deadline and already charged work instead of running
+another encoder. A successful driver owns exactly one transport/protocol
+session. No active driver escapes the scheduler. The plain adapter is a
+private wrapper around the existing `http_client::Exchange`, so forwarding
+trait methods cannot recurse into themselves.
+
+Driver statistics begin with the Prepared statistics, are monotone and retain
+confirmed progress on errors. They remain readable after terminal calls.
+Interest and readiness must agree: `before_wait` returning `Ok(false)` leaves
+immediate work available to `step`. Protocol work cannot exceed the shared client
+`Options.work` allowance. Drivers must preserve the common absolute deadline,
+bounded nonblocking step/readiness contract and one-time Response transfer.
+`step` and `before_wait` errors must release and disarm the driver's transport
+and protocol owners before returning. `abort` does the same on every result,
+including an error that reports failed cleanup. A driver must not retain a
+successful Response after transferring it.
+
+Every returned `E` transfers its own error cleanup authority. Error statistics
+and shared-failure classification receive borrowed copies: they must not
+destroy, mutate or retain that authority. Errors must remain valid after the
+failed driver's partial owners have been released. Borrowed error payloads
+retain their caller-defined lifetime requirements. `from_http_failure` keeps
+canonical preparation failures typed; `shared_failure` identifies common
+deadline/clock failures that terminate the whole batch. The scheduler never
+reduces a driver error to an integer or parses transport-specific policy.
+
 ## Preparation and ownership
 
 All canonical request preparation happens before the first socket is opened.
@@ -61,18 +122,19 @@ method copy and framing cursor. No application or batch-specific request
 encoder or parser runs in parallel with that source of truth.
 
 Any preparation failure returns global `Cause::Preparation`, records the
-failing input's `Outcome::Failed(client_failure)`, and leaves every other
+failing input's `Outcome::Failed(factory.from_http_failure(client_failure))`, and leaves every other
 outcome `NotStarted`. All previously prepared owners are destroyed and no
 socket has been started. The nested failure retains the original allocation,
 validation, protocol-work, clock or deadline reason. A global pending-cap,
 work-reservation or scheduler failure during preparation likewise opens no
 sockets, but is reported under its own batch cause.
 
-All job and Request views borrow caller backing through `run_until`'s return.
+All job and Request views borrow caller backing through the selected run
+function's return.
 Do not free, grow, mutate or destructively alias that backing during the call.
 Each Prepared owner stages its request independently, but queued endpoints
-and the input records remain borrowed. There are no user callbacks or public
-persistent runner whose queued views can outlive this call.
+and the input records remain borrowed. Custom factory/driver hooks run only
+inside the synchronous call; no public persistent runner retains queued views.
 
 Before preparation the batch allocates an input-indexed outcome vector and
 pending vector, at most `min(concurrency, job_count)` active slots and poll
@@ -81,8 +143,9 @@ after preparation starts. Engine request/response storage still allocates
 under each exchange's existing contract.
 
 After every preparation succeeds, admissions follow increasing input index.
-`Prepared.begin` transfers its actual owner, opens one nonblocking socket and
-preserves the preparation's charged work. Begin, socket, HTTP and per-exchange
+The factory's `begin` transfers the prepared owner into its driver. The plain
+factory opens one nonblocking socket and preserves preparation's charged work.
+Begin, socket, HTTP and per-exchange
 limit failures become `Outcome::Failed` and valid siblings continue. A common
 clock/deadline failure from an active exchange also terminates the batch;
 that exchange keeps its detailed Failed outcome and other active jobs abort.
@@ -90,26 +153,30 @@ that exchange keeps its detailed Failed outcome and other active jobs abort.
 ## Input-order outcomes and transfer
 
 ```lanius
-pub struct Abort { stats: http_client::Stats, cleanup: Option<io::Error> }
-pub enum Outcome {
-    NotStarted, Complete(http_client::Response), Failed(http_client::Failure),
-    Aborted(Abort), Discarded(http_client::Stats), Taken
+pub struct Abort<E> { stats: http_client::Stats, cleanup: Option<E> }
+pub enum Outcome<E> {
+    NotStarted, Complete(http_client::Response), Failed(E),
+    Aborted(Abort<E>), Discarded(http_client::Stats), Taken
 }
-pub struct Report { outcomes: alloc::vec::Vec<Outcome>, stats: Stats }
-pub struct Failure { cause: Cause, report: Report }
+pub struct Report<E> { outcomes: alloc::vec::Vec<Outcome<E>>, stats: Stats }
+pub struct Failure<E> { cause: Cause, report: Report<E> }
 ```
 
 `Report.borrow`, `len`, `get(index)`, `take(index)` and `destroy` operate on the
-one active report owner. `get` returns `Option<Outcome>` as a shallow borrowed
-descriptor. `take` returns an owning `Option<Outcome>` and installs `Taken`
+one active report owner. `get` returns `Option<Outcome<E>>` as a shallow borrowed
+descriptor. `take` returns an owning `Option<Outcome<E>>` and installs `Taken`
 before exposing it; an out-of-range or already-taken index returns `None`.
-`destroy` destroys every remaining Complete response and the outcome storage;
-it resets length to zero and preserves the historical numeric Stats.
-`Failure.borrow` and `Failure.destroy` provide the corresponding owner helpers.
+`Report.destroy` and `Failure.destroy` require `E: core::clone::Destroy<E>`.
+They destroy each remaining Complete response, each Failed error, and each
+Aborted cleanup error before releasing the outcome storage. Length resets to
+zero; historical numeric Stats remain. Constructors, execution, borrow, get
+and take do not require this bound. The plain HTTP failure's Destroy is an
+explicit no-op because its diagnostic fields own no allocation or handle.
 
 Do not destroy an owner copied from `get`, mutate its vectors, or create a
 second cleanup authority from a by-value Report/Failure copy. Transfer an
-outcome with `take` when it must survive report destruction. A transferred
+outcome with `take` when it must survive report destruction. Taking Failed or
+Aborted transfers the contained `E` cleanup authority as well. A transferred
 Complete response owns its wire, method, decoded body and informational heads;
 its views remain valid until that response is destroyed. No request, pending,
 active-socket or poll owner escapes on either result.
@@ -123,17 +190,27 @@ caller transfers any. A valid HTTP 404/500 is a Complete response; application
 status policy is separate.
 
 On a global failure, completed responses remain owned by the returned report.
-Every active exchange is aborted once and recorded with its confirmed client
-Stats and optional close error; pending owners are destroyed and leave
+Every active driver is aborted once and recorded with its confirmed client
+Stats and the actual optional typed abort error; pending owners are destroyed and leave
 NotStarted outcomes. Every active cleanup is attempted even after a prior
 close fails or the work/deadline/operation allowance expires. Close is one
 attempt under the socket owner contract; a faulty native close return does
 not prove the kernel released that descriptor.
 
+### Plain caller types
+
+Plain callers use `Report<http_client::Failure>`,
+`Outcome<http_client::Failure>` and `Failure<http_client::Failure>` in explicit
+annotations. `Abort.cleanup` now carries the complete HTTP failure rather
+than an extracted `io::Error`; callers can inspect its primary cause, stage,
+statistics and secondary cleanup field. This preserves the same typed error
+path used by other drivers. It does not create a second plain scheduler or a
+compatibility alias.
+
 ## Fair scheduling and readiness
 
 Each sweep starts at a rotating slot and performs at most one bounded
-`Exchange.step` per active owner. Each engine step performs one bounded phase
+driver `step` per active owner. The plain HTTP engine step performs one bounded phase
 action with at most one network leaf. A cursor-boundary action also includes
 canonical validation; decoding can rebuild all configured-cap informational
 heads. Sends/receives offer at most 1,024 bytes. This is cooperative fairness,
@@ -221,6 +298,12 @@ and the client's configured limits. Peak storage can include a candidate
 before its retention check. Destroying or taking results does not rewrite the
 report's historical completed byte totals.
 
+A custom driver's native-library storage and transport work are outside these
+HTTP logical byte and protocol-work counters. The adapter must document and
+enforce its own transport allowances. Scheduler operations charge calls to
+factory/driver hooks, not every operation performed inside them; the same
+bounded-step and owner-cleanup contracts remain required.
+
 ## Errors and common deadline
 
 ```lanius
@@ -248,8 +331,11 @@ there is no hard real-time return or asynchronous cancellation guarantee.
 ## Verification status
 
 The [focused testing guide](extended-http-batch-testing.md) records the seven
-finite groups and their ownership/fault machinery. All seven groups are
-accepted through four separate receipts:
+finite groups and their ownership/fault machinery. The following receipts
+cover the concrete plain scheduler before its generic driver/error revision.
+They do not establish generic trait admission, owned-error destruction or a
+TLS factory. Those revised boundaries remain pending. All seven earlier
+groups were accepted through four separate receipts:
 
 | Invocation | Accepted scope | Elapsed | Receipt under `target/stdlib-work/` |
 | --- | --- | ---: | --- |

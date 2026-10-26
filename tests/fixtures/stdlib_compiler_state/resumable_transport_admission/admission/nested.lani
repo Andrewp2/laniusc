@@ -1,0 +1,56 @@
+module admission::nested;
+import alloc::vec;
+import core::option;
+import core::result;
+import admission::protocol;
+
+pub enum Kind { Local(i64), Clock(core::option::Option<i32>), Timeout }
+pub struct Context { value: core::result::Result<core::option::Option<i32>,bool>, owner: alloc::vec::Vec<u8> }
+pub struct Error { kind: Kind, context: core::option::Option<Context>, ledger: &admission::protocol::Ledger }
+pub impl Error {
+    pub fn destroy(&self) { assert(self.context.is_some()); let context: Context = self.context.unwrap(); context.owner.destroy(); self.context = core::option::None(); self.ledger.released += 1; }
+}
+pub struct Job { seed: i64, control: core::option::Option<i32>, ledger: &admission::protocol::Ledger }
+pub impl Job { pub fn borrow(&self) -> &Job { return self; } }
+pub struct Payload { cells: alloc::vec::Vec<admission::protocol::Cell>, secret: core::option::Option<core::result::Result<i64,i32>> }
+pub struct Prepared { payload: Payload, flags: [i32;2], ledger: &admission::protocol::Ledger }
+pub struct Exchange { payload: core::option::Option<Payload>, flags: [i32;2], calls: u64, ledger: &admission::protocol::Ledger }
+pub struct Factory {}
+fn error(kind: Kind, ledger: &admission::protocol::Ledger) -> Error {
+    let owner: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(3).unwrap(); owner.try_push(0 as u8).unwrap(); owner.try_push(128 as u8).unwrap(); owner.try_push(255 as u8).unwrap(); ledger.acquired += 1;
+    let value: core::result::Result<core::option::Option<i32>,bool> = core::result::Ok(core::option::Some(-7));
+    return Error { kind: kind, context: core::option::Some(Context { value: value, owner: owner }), ledger: ledger };
+}
+pub impl admission::protocol::Factory<Job,Prepared,Exchange,Error> for Factory {
+    pub fn prepare(job: &Job) -> core::result::Result<Prepared,Error> {
+        let mode: i32 = job.control.unwrap(); if (mode == 1) { return core::result::Err(error(Kind::Local(101),job.ledger)); }
+        let cells: alloc::vec::Vec<admission::protocol::Cell> = alloc::vec::with_capacity<admission::protocol::Cell>(3).unwrap();
+        cells.try_push(admission::protocol::Cell { number: job.seed, marked: true }).unwrap(); cells.try_push(admission::protocol::Cell { number: 4294967297, marked: false }).unwrap(); cells.try_push(admission::protocol::Cell { number: -17, marked: true }).unwrap(); job.ledger.acquired += 1;
+        let secret: core::option::Option<core::result::Result<i64,i32>> = core::option::Some(core::result::Ok(job.seed+100));
+        return core::result::Ok(Prepared { payload: Payload { cells: cells, secret: secret }, flags: [mode,77], ledger: job.ledger });
+    }
+    pub fn begin(prepared: Prepared, job: &Job) -> core::result::Result<Exchange,Error> {
+        assert(prepared.flags[0] == job.control.unwrap() && prepared.flags[1] == 77);
+        if (prepared.flags[0] == 2) { prepared.payload.cells.destroy(); prepared.ledger.released += 1; return core::result::Err(error(Kind::Clock(core::option::Some(202)),job.ledger)); }
+        prepared.ledger.begun += 1; return core::result::Ok(Exchange { payload: core::option::Some(prepared.payload), flags: prepared.flags, calls: 0, ledger: prepared.ledger });
+    }
+    pub fn classify(value: Error) -> bool { return match(value.kind) { Kind::Timeout -> true, Kind::Clock(code) -> true, Kind::Local(code) -> false }; }
+}
+pub impl admission::protocol::Driver<Error> for Exchange {
+    pub fn stats(&self) -> admission::protocol::Stats {
+        let count: i64 = 0; if (self.payload.is_some()) { count = self.payload.unwrap().cells.len() as i64; }
+        return admission::protocol::Stats { calls: self.calls as i32, bytes: count, active: self.payload.is_some() };
+    }
+    pub fn step(&self) -> core::result::Result<core::option::Option<admission::protocol::Response>,Error> {
+        self.calls += 1; if (self.calls == 1) { return core::result::Ok(core::option::None()); }
+        let payload: Payload = self.payload.unwrap(); self.payload = core::option::None();
+        if (self.flags[0] == 3) { payload.cells.destroy(); self.ledger.released += 1; return core::result::Err(error(Kind::Local(303),self.ledger)); }
+        self.ledger.transfers += 1;
+        return core::result::Ok(core::option::Some(admission::protocol::Response { cells: payload.cells, ledger: self.ledger, stamp: payload.secret.unwrap().unwrap() }));
+    }
+    pub fn abort(&self) -> core::result::Result<bool,Error> {
+        if (self.payload.is_none()) { return core::result::Ok(false); }
+        let payload: Payload = self.payload.unwrap(); self.payload = core::option::None(); payload.cells.destroy(); self.ledger.released += 1;
+        if (self.flags[0] == 4) { return core::result::Err(error(Kind::Timeout,self.ledger)); } return core::result::Ok(true);
+    }
+}

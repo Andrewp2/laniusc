@@ -1,0 +1,27 @@
+module admission::protocol;
+import alloc::vec;
+import core::option;
+import core::result;
+
+pub struct Ledger { acquired: i32, released: i32, transfers: i32, begun: i32 }
+pub impl Ledger { pub fn borrow(&self) -> &Ledger { return self; } }
+// Compound elements exercise the canonical Vec raw-storage stride.
+pub struct Cell { number: i64, marked: bool }
+pub struct Stats { calls: i32, bytes: i64, active: bool }
+// Concrete response layout: E parameterizes errors, not response storage.
+pub struct Response { cells: alloc::vec::Vec<Cell>, ledger: &Ledger, stamp: i64 }
+pub impl Response {
+    pub fn destroy(&self) { self.cells.destroy(); self.ledger.released += 1; }
+}
+pub trait Driver<E> {
+    pub fn stats(&self) -> Stats;
+    pub fn step(&self) -> core::result::Result<core::option::Option<Response>,E>;
+    pub fn abort(&self) -> core::result::Result<bool,E>;
+}
+// prepare preserves J. begin consumes P on either result. classify borrows a
+// descriptor copy: it must not release E or any owned payload within it.
+pub trait Factory<J,P,D,E> {
+    pub fn prepare(job: &J) -> core::result::Result<P,E>;
+    pub fn begin(prepared: P, job: &J) -> core::result::Result<D,E>;
+    pub fn classify(error: E) -> bool;
+}

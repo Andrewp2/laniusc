@@ -1,0 +1,105 @@
+module shape::adapters;
+import alloc::vec;
+import core::clone;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::http;
+import ext::http_batch;
+import ext::http_client;
+import std::clock;
+import admission::protocol;
+import admission::plain;
+import admission::nested;
+
+pub struct Audit { requests: i32, begins: i32, interests: i32, handles: i32, waits: i32 }
+pub impl Audit { pub fn borrow(&self) -> &Audit { return self; } }
+pub struct PlainFactory { audit: &Audit }
+pub impl PlainFactory { pub fn borrow(&self) -> &PlainFactory { return self; } }
+pub struct NestedFactory { audit: &Audit, ledger: &admission::protocol::Ledger }
+pub impl NestedFactory { pub fn borrow(&self) -> &NestedFactory { return self; } }
+pub struct PlainDriver { inner: admission::plain::Exchange, waits: i32, audit: &Audit }
+pub struct NestedDriver { inner: admission::nested::Exchange, counters: [i32;2], audit: &Audit }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+pub fn metrics(calls: i32, count: i64, waits: i32) -> ext::http_client::Stats {
+    return ext::http_client::Stats { request_bytes: count as i32, request_sent: calls, response_received: 0, interim_count: 0, discarded_bytes: 0, io_calls: waits as u64, work: (calls+waits) as u64, upload_stopped: false, write_shutdown: false };
+}
+fn request_for(mode: i32) -> ext::http_client::Request {
+    let target = bytes("/probe",6); if (mode == 1) { target = bytes("",0); } let headers: [ext::http::Field;0] = [];
+    return ext::http_client::Request { method: bytes("GET",3), target: target, authority: bytes("probe.test",10), headers: core::slice::view<ext::http::Field>(headers,0).unwrap(), body: bytes("",0) };
+}
+fn nested_error(kind: admission::nested::Kind, ledger: &admission::protocol::Ledger) -> admission::nested::Error {
+    let owner: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(3).unwrap(); owner.try_push(0 as u8).unwrap(); owner.try_push(128 as u8).unwrap(); owner.try_push(255 as u8).unwrap(); ledger.acquired += 1;
+    let value: core::result::Result<core::option::Option<i32>,bool> = core::result::Ok(core::option::Some(-7));
+    return admission::nested::Error { kind: kind, context: core::option::Some(admission::nested::Context { value: value, owner: owner }), ledger: ledger };
+}
+// Convert a consumed first-probe response to an independently owned concrete
+// HTTP Response. Canonical parsing supplies all retained wire/head views.
+fn response(owned: admission::protocol::Response, nested: bool) -> ext::http_client::Response {
+    let first: u8 = 11;
+    if (nested) { assert(owned.cells.len() == 3 && owned.cells.at(0).number == -4294967297 && owned.cells.at(1).number == 4294967297 && owned.cells.at(2).number == -17); first = 128; }
+    else { assert(owned.cells.len() == 2 && owned.cells.at(0).number == 11 && owned.cells.at(1).number == -11); }
+    assert(owned.cells.at(0).marked && !owned.cells.at(1).marked); owned.destroy();
+    let body: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(3).unwrap(); body.try_push(first).unwrap(); body.try_push(0 as u8).unwrap(); body.try_push(255 as u8).unwrap();
+    let wire: alloc::vec::Vec<u8> = alloc::vec::from_view(bytes("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n",38)).unwrap(); wire.try_extend(body.as_view()).unwrap();
+    let method: alloc::vec::Vec<u8> = alloc::vec::from_view(bytes("GET",3)).unwrap();
+    let message: ext::http::Message = ext::http::parse_response(wire.as_view(),method.as_view(),true,ext::http::default_limits()).unwrap();
+    return ext::http_client::Response { wire: wire, method: method, decoded: body, interim: alloc::vec::new<ext::http::Head>(), validated: message, final_offset: 0, stats: metrics(2,3,2) };
+}
+pub impl core::clone::Destroy<admission::plain::Error> for admission::plain::Error { pub fn destroy_value(owned: admission::plain::Error) {} }
+pub impl core::clone::Destroy<admission::nested::Error> for admission::nested::Error { pub fn destroy_value(owned: admission::nested::Error) { owned.destroy(); } }
+
+pub impl ext::http_batch::Factory<admission::plain::Job,PlainDriver,admission::plain::Error> for PlainFactory {
+    pub fn request(&self, job: admission::plain::Job) -> ext::http_client::Request { self.audit.requests += 1; return request_for(job.mode); }
+    pub fn begin(&self, prepared: &ext::http_client::Prepared, job: admission::plain::Job) -> core::result::Result<PlainDriver,admission::plain::Error> {
+        self.audit.begins += 1; assert(prepared.is_active() && prepared.stats().request_bytes > 0); assert(prepared.destroy());
+        let made: core::result::Result<admission::plain::Prepared,admission::plain::Error> = admission::plain::Factory::prepare(job.borrow());
+        if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+        let begun: core::result::Result<admission::plain::Exchange,admission::plain::Error> = admission::plain::Factory::begin(made.unwrap(),job.borrow());
+        if (begun.is_err()) { return core::result::Err(begun.unwrap_err()); } return core::result::Ok(PlainDriver { inner: begun.unwrap(), waits: 0, audit: self.audit });
+    }
+    pub fn from_http_failure(&self, failure: ext::http_client::Failure) -> admission::plain::Error { return match(failure.cause) { ext::http_client::Cause::Timeout -> admission::plain::Error::Timeout, ext::http_client::Cause::Clock(error) -> match(error) { std::clock::Error::Host(code) -> admission::plain::Error::Clock(code), _ -> admission::plain::Error::Clock(-1) }, _ -> admission::plain::Error::Local(101) }; }
+    pub fn failure_stats(&self, error: admission::plain::Error) -> ext::http_client::Stats { let code: i32 = match(error) { admission::plain::Error::Local(value) -> value, admission::plain::Error::Clock(value) -> value, admission::plain::Error::Timeout -> 404 }; return metrics(0,code as i64,0); }
+    pub fn shared_failure(&self, error: admission::plain::Error) -> core::option::Option<ext::http_batch::Cause> { return match(error) { admission::plain::Error::Timeout -> core::option::Some(ext::http_batch::Cause::Timeout), admission::plain::Error::Clock(code) -> core::option::Some(ext::http_batch::Cause::Clock(std::clock::Error::Host(code))), _ -> core::option::None() }; }
+}
+pub impl ext::http_batch::Factory<admission::nested::Job,NestedDriver,admission::nested::Error> for NestedFactory {
+    pub fn request(&self, job: admission::nested::Job) -> ext::http_client::Request { self.audit.requests += 1; return request_for(job.control.unwrap()); }
+    pub fn begin(&self, prepared: &ext::http_client::Prepared, job: admission::nested::Job) -> core::result::Result<NestedDriver,admission::nested::Error> {
+        self.audit.begins += 1; assert(prepared.is_active() && prepared.stats().request_bytes > 0); assert(prepared.destroy());
+        let made: core::result::Result<admission::nested::Prepared,admission::nested::Error> = admission::nested::Factory::prepare(job.borrow());
+        if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+        let begun: core::result::Result<admission::nested::Exchange,admission::nested::Error> = admission::nested::Factory::begin(made.unwrap(),job.borrow());
+        if (begun.is_err()) { return core::result::Err(begun.unwrap_err()); } return core::result::Ok(NestedDriver { inner: begun.unwrap(), counters: [0,77], audit: self.audit });
+    }
+    pub fn from_http_failure(&self, failure: ext::http_client::Failure) -> admission::nested::Error { let kind: admission::nested::Kind = match(failure.cause) { ext::http_client::Cause::Timeout -> admission::nested::Kind::Timeout, ext::http_client::Cause::Clock(error) -> match(error) { std::clock::Error::Host(code) -> admission::nested::Kind::Clock(core::option::Some(code)), _ -> admission::nested::Kind::Clock(core::option::None()) }, _ -> admission::nested::Kind::Local(101) }; return nested_error(kind,self.ledger); }
+    pub fn failure_stats(&self, error: admission::nested::Error) -> ext::http_client::Stats { let code: i64 = match(error.kind) { admission::nested::Kind::Local(value) -> value, admission::nested::Kind::Clock(value) -> value.unwrap() as i64, admission::nested::Kind::Timeout -> 404 }; return metrics(0,code,0); }
+    pub fn shared_failure(&self, error: admission::nested::Error) -> core::option::Option<ext::http_batch::Cause> { return match(error.kind) { admission::nested::Kind::Timeout -> core::option::Some(ext::http_batch::Cause::Timeout), admission::nested::Kind::Clock(code) -> core::option::Some(ext::http_batch::Cause::Clock(std::clock::Error::Host(code.unwrap()))), _ -> core::option::None() }; }
+}
+
+pub impl ext::http_batch::Driver<admission::plain::Error> for PlainDriver {
+    pub fn stats(&self) -> ext::http_client::Stats { let value: admission::protocol::Stats = self.inner.stats(); return metrics(value.calls,value.bytes,self.waits); }
+    pub fn interest(&self) -> ext::http_client::Interest { self.audit.interests += 1; return ext::http_client::Interest { readable: true, writable: false, immediate: true }; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { self.audit.handles += 1; return core::option::None(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,admission::plain::Error> { self.waits += 1; self.audit.waits += 1; return core::result::Ok(true); }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,admission::plain::Error> {
+        assert(ready.readable && !ready.writable && !ready.hangup && !ready.error);
+        let advanced: core::result::Result<core::option::Option<admission::protocol::Response>,admission::plain::Error> = self.inner.step();
+        if (advanced.is_err()) { return core::result::Err(advanced.unwrap_err()); } let owned: core::option::Option<admission::protocol::Response> = advanced.unwrap();
+        if (owned.is_none()) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(response(owned.unwrap(),false)));
+    }
+    pub fn abort(&self) -> core::result::Result<bool,admission::plain::Error> { return self.inner.abort(); }
+}
+pub impl ext::http_batch::Driver<admission::nested::Error> for NestedDriver {
+    pub fn stats(&self) -> ext::http_client::Stats { let value: admission::protocol::Stats = self.inner.stats(); assert(self.counters[1] == 77); return metrics(value.calls,value.bytes,self.counters[0]); }
+    pub fn interest(&self) -> ext::http_client::Interest { self.audit.interests += 1; return ext::http_client::Interest { readable: true, writable: false, immediate: true }; }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { self.audit.handles += 1; return core::option::None(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,admission::nested::Error> { self.counters[0] += 1; self.audit.waits += 1; return core::result::Ok(true); }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,admission::nested::Error> {
+        assert(ready.readable && !ready.writable && !ready.hangup && !ready.error);
+        let advanced: core::result::Result<core::option::Option<admission::protocol::Response>,admission::nested::Error> = self.inner.step();
+        if (advanced.is_err()) { return core::result::Err(advanced.unwrap_err()); } let owned: core::option::Option<admission::protocol::Response> = advanced.unwrap();
+        if (owned.is_none()) { return core::result::Ok(core::option::None()); } return core::result::Ok(core::option::Some(response(owned.unwrap(),true)));
+    }
+    pub fn abort(&self) -> core::result::Result<bool,admission::nested::Error> { return self.inner.abort(); }
+}

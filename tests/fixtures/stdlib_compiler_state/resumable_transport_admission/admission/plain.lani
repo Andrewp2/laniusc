@@ -1,0 +1,41 @@
+module admission::plain;
+import alloc::vec;
+import core::option;
+import core::result;
+import admission::protocol;
+
+pub enum Error { Local(i32), Clock(i32), Timeout }
+pub struct Job { seed: i32, mode: i32, ledger: &admission::protocol::Ledger }
+pub impl Job { pub fn borrow(&self) -> &Job { return self; } }
+pub struct Prepared { cells: alloc::vec::Vec<admission::protocol::Cell>, mode: i32, ledger: &admission::protocol::Ledger }
+pub struct Exchange { cells: alloc::vec::Vec<admission::protocol::Cell>, mode: i32, calls: i32, ledger: &admission::protocol::Ledger }
+pub struct Factory {}
+pub impl admission::protocol::Factory<Job,Prepared,Exchange,Error> for Factory {
+    pub fn prepare(job: &Job) -> core::result::Result<Prepared,Error> {
+        if (job.mode == 1) { return core::result::Err(Error::Local(101)); }
+        let cells: alloc::vec::Vec<admission::protocol::Cell> = alloc::vec::with_capacity<admission::protocol::Cell>(2).unwrap();
+        cells.try_push(admission::protocol::Cell { number: job.seed as i64, marked: true }).unwrap();
+        cells.try_push(admission::protocol::Cell { number: 0-(job.seed as i64), marked: false }).unwrap(); job.ledger.acquired += 1;
+        return core::result::Ok(Prepared { cells: cells, mode: job.mode, ledger: job.ledger });
+    }
+    pub fn begin(prepared: Prepared, job: &Job) -> core::result::Result<Exchange,Error> {
+        assert(prepared.mode == job.mode && prepared.ledger.acquired >= 1);
+        if (job.mode == 2) { prepared.cells.destroy(); prepared.ledger.released += 1; return core::result::Err(Error::Clock(202)); }
+        prepared.ledger.begun += 1; return core::result::Ok(Exchange { cells: prepared.cells, mode: prepared.mode, calls: 0, ledger: prepared.ledger });
+    }
+    pub fn classify(error: Error) -> bool { return match(error) { Error::Timeout -> true, Error::Clock(value) -> true, Error::Local(value) -> false }; }
+}
+pub impl admission::protocol::Driver<Error> for Exchange {
+    pub fn stats(&self) -> admission::protocol::Stats { return admission::protocol::Stats { calls: self.calls, bytes: self.cells.len() as i64, active: !self.cells.is_empty() }; }
+    pub fn step(&self) -> core::result::Result<core::option::Option<admission::protocol::Response>,Error> {
+        self.calls += 1; if (self.calls == 1) { return core::result::Ok(core::option::None()); }
+        if (self.mode == 3) { self.cells.destroy(); self.ledger.released += 1; return core::result::Err(Error::Local(303)); }
+        let cells = self.cells; self.cells = alloc::vec::new<admission::protocol::Cell>(); self.ledger.transfers += 1;
+        return core::result::Ok(core::option::Some(admission::protocol::Response { cells: cells, ledger: self.ledger, stamp: cells.at(0).number+100 }));
+    }
+    pub fn abort(&self) -> core::result::Result<bool,Error> {
+        if (self.cells.is_empty()) { return core::result::Ok(false); }
+        self.cells.destroy(); self.ledger.released += 1;
+        if (self.mode == 4) { return core::result::Err(Error::Timeout); } return core::result::Ok(true);
+    }
+}
