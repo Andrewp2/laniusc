@@ -39,45 +39,60 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the filesystem source/API freeze, the bounded writer and `--check` both
-exit zero for **251 pages from 250 source modules, with 8,259 public declaration
-markers**. Exactly three outputs change: the [index](api/README.md),
-[`file_ops`](api/std/file_ops.md) and the new
-[`temp_dir`](api/std/temp_dir.md). FileOps retains nine new functions plus
-`LinkRead`; TempDir contributes 29 public declaration markers. The reviewed
-metadata links the [link/permission guide](stdlib-filesystem-links.md),
-[temporary-directory owner guide](stdlib-temp-directories.md) and
-[real command guide](stdlib-mktemp-dir.md). Declaration markers do not count
+At the nested-iteration source/API freeze, the bounded writer and `--check`
+both exit zero for **251 pages from 250 source modules, with 8,295 lexical
+public declaration markers**. Exactly six outputs change: the
+[index](api/README.md), [core::iter](api/core/iter.md),
+[core::format](api/core/format.md), [http_batch](api/ext/http_batch.md),
+[https_batch](api/ext/https_batch.md) and [regex](api/ext/regex.md).
+
+The new iterator declarations link the
+[scan/nested contract](stdlib-nested-iteration.md) and
+[real flatten_sum guide](stdlib-flatten-sum.md). Core source is `7256a394...`;
+application source is `946043fe...`. Two direct public smoke programs, three
+semantic/model Rust gates and all four application tests have finite native
+receipts. All four strict owner oracle groups also pass directly on one
+retained ELF: 156 group cases with overlapping baselines and 132 individually
+reached OOMs. Those are not four passing Rust libtests. The selected increment
+is accepted on its finite native profile; source generation itself establishes
+no runtime behavior and does not complete the full library goal.
+
+Final classification receipts are
+`target/stdlib-work/nested-iteration-reference-final-writer.log` and
+`nested-iteration-reference-final-check.log` in that same directory. The earlier
+`nested-iteration-reference-writer-first.log`/`nested-iteration-reference-check-first.log`
+recorded the same source/counts with strict owners still pending. This final
+refresh changes only the core::iter status note; the six changed outputs above
+are relative to the preceding filesystem source freeze. The
+[overview](library-overview.md) records runtime scope separately. Public `pub`
+spellings are counted lexically, including required public implementations of
+private helper types; the count is not a number of externally usable APIs or
 working functions.
 
-Receipts are `target/stdlib-work/filesystem-reference-writer-first.log` and
-`filesystem-reference-check-first.log` in that same directory. The accepted
-production source is FileOps `21269e34...` and TempDir `56898b00...`; the
-[overview](library-overview.md) records the separate finite native evidence.
-Generation itself establishes no runtime behavior. Initial parser admission,
-strace-poke launch and TempDir oracle failures remain classified in their
-module/fixture guides; successful regeneration does not resolve compiler or
-runtime dependencies.
+A narrow scanner correction now excludes implementation blocks whose direct
+receiver is a known local private struct/enum. That removes eight internal
+blocks: `NestedIdentity`, format's `Output`, plain/HTTPS batch driver/factory
+helpers, and regex's empty Parser/Builder blocks. Public, unknown, external,
+primitive and generic-parameter receivers retain their existing inventory.
+This is a source-visibility boundary, not a new compiler or type resolver.
+The precise rule and retained checks are described below.
 
-The unchanged generator's supported direct CPU runner passed **26 tests in
-3.293 seconds** during this increment's preparation (direct tool output).
-It was not rerun after the native gates. The prior regex-freeze run passed
-26 tests in 3.405 seconds in
-`target/stdlib-work/regex-workspace-reference-generator-tests-first.log`.
-These tests cover module/item imports, module precedence, public enum variants,
-private/missing item rejection, no re-exports, opaque bodies containing `?`/
-inferred locals, output ownership and read-only stale checks. They verify
-documentation tooling, not compiled language or library behavior.
+Three focused CPU controls pass in 0.002s (direct tool output). The full
+supported CPU runner then passes **29 tests in 3.711 seconds** in
+`target/stdlib-work/nested-iteration-reference-generator-tests-first.log`.
+The new controls require private-owner suppression, positive public/external/
+builtin/generic-shadow retention, and rejection of unsupported public syntax
+inside a hidden owner's block. Existing import, source-span, marker-count,
+output-ownership and stale-check controls also pass. These tests verify tooling,
+not native library behavior; they were not repeated for later metadata edits.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
 hashes before generation and after the final check. The generator writes only
-the reference tree. The preceding reusable-regex freeze had 250 pages,
-249 modules and 8,220 markers, updating regex/lexer/regex-text and the index.
-The archive freeze had 250 pages, 249 modules and 8,197 markers, adding the four
-archive module pages and updating ZIP/FileOps. The earlier language-adoption/
-AtomicFile inventory had 246 pages, 245 modules and 8,119 markers. Those receipts
-retain their guide-defined scope. The complete library goal remains open in
-the [overview](library-overview.md).
+the reference tree. The preceding filesystem freeze had 251 pages, 250 modules
+and 8,259 markers, updating FileOps/new TempDir and the index. The reusable-regex
+freeze had 250 pages, 249 modules and 8,220 markers; the archive freeze had
+250/249/8,197. The earlier language-adoption/AtomicFile inventory had 246 pages,
+245 modules and 8,119 markers. Their receipts retain their guide-defined scope.
 
 ## Source boundaries
 
@@ -93,10 +108,20 @@ The scanner does not validate the language grammar, infer types, resolve trait
 calls or act as a compiler fallback. Import-link checks use declared public
 ownership in the source, not compiler visibility analysis. A public
 method is retained with its complete impl header, including an impl not itself
-spelled `pub`; trait members are retained under their public trait. Fields and
-variants appear under their declared public owner, without implying that
-arbitrary construction or mutation satisfies that owner's invariants. Private
-function bodies and private helper types are excluded.
+spelled `pub`; trait members are retained under their public trait. A complete
+module scan first records local struct/enum visibility. An impl whose direct
+nominal receiver is one of those known private local types is excluded together
+with its methods, even if the impl must be spelled `pub`. Later type declarations
+and same-module-qualified receivers are recognized; generic binders shadowing
+a local type name remain generic receivers. Public/unknown/external/primitive
+receivers retain their existing treatment. The scanner does not resolve aliases,
+imports, generic bounds or arbitrary composite types to infer additional private
+owners. Unsupported public shapes are still rejected during the complete scan
+before this filter; all lexical `pub` markers remain counted.
+
+Fields and variants appear under their declared public owner, without implying
+that arbitrary construction or mutation satisfies that owner's invariants.
+Private function bodies and private helper types are excluded.
 
 All `.lani` sources in the two roots are scanned, including newly added modules.
 Module paths must match their root-relative source paths. Import links follow

@@ -1,0 +1,112 @@
+// Actual public nested engine, caller Iterator/Mapper/retirement implementations.
+// The scripted inner owns no native backing; resource campaigns are separate.
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+
+struct Trace { values: [i32], length: i32 }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn add(&self, value: i32) { assert(self.length < 128); self.values[self.length] = value; self.length += 1; }
+}
+struct Inner { id: i32, length: i32, position: i32, retired: i32, trace: &Trace }
+impl Inner { fn borrow(&self) -> &Inner { return self; } }
+pub impl core::iter::Iterator<i32> for Inner {
+    pub fn next(&self) -> core::option::Option<i32> {
+        let trace: &Trace = self.trace; trace.add(300+self.id);
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.id*10+self.position; self.position += 1;
+        return core::option::Some(value);
+    }
+}
+struct Outer { lengths: [i32], length: i32, position: i32, calls: i32, trace: &Trace }
+impl Outer { fn borrow(&self) -> &Outer { return self; } }
+pub impl core::iter::Iterator<Inner> for Outer {
+    pub fn next(&self) -> core::option::Option<Inner> {
+        let trace: &Trace = self.trace; trace.add(100+self.position); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let id: i32 = self.position; self.position += 1;
+        return core::option::Some(Inner { id: id, length: self.lengths[id], position: 0, retired: 0, trace: trace });
+    }
+}
+struct Retire { calls: i32, fail_id: i32, trace: &Trace }
+impl Retire { fn borrow(&self) -> &Retire { return self; } }
+pub impl core::iter::InnerRetirement<Inner,u64> for Retire {
+    pub fn try_retire(&self, inner: Inner) -> core::option::Option<core::iter::RetireFailure<Inner,u64>> {
+        let trace: &Trace = self.trace; trace.add(200+inner.id); self.calls += 1;
+        assert(inner.position == inner.length); inner.retired += 1;
+        if (inner.id == self.fail_id && inner.retired == 1) {
+            return core::option::Some(core::iter::RetireFailure { inner: inner, error: 18446744073709551615 });
+        }
+        return core::option::None();
+    }
+}
+struct Inputs { position: i32, calls: i32, trace: &Trace }
+impl Inputs { fn borrow(&self) -> &Inputs { return self; } }
+pub impl core::iter::Iterator<i32> for Inputs {
+    pub fn next(&self) -> core::option::Option<i32> {
+        let trace: &Trace = self.trace; trace.add(100+self.position); self.calls += 1;
+        if (self.position == 4) { return core::option::None(); }
+        let value: i32 = self.position; self.position += 1; return core::option::Some(value);
+    }
+}
+struct Make { calls: i32, trace: &Trace }
+impl Make { fn borrow(&self) -> &Make { return self; } }
+pub impl core::iter::Mapper<i32,core::result::Result<Inner,u64>> for Make {
+    pub fn apply(&self, value: i32) -> core::result::Result<Inner,u64> {
+        let trace: &Trace = self.trace; trace.add(400+value); self.calls += 1;
+        if (value == 2) { return core::result::Err(4294967297); }
+        return core::result::Ok(Inner { id: value, length: value, position: 0, retired: 0, trace: trace });
+    }
+}
+
+fn main() -> i32 {
+    let events: [i32;128] = [0;128]; let trace: Trace = Trace { values: events, length: 0 };
+    let lengths: [i32;3] = [0,2,1];
+    let outer: Outer = Outer { lengths: lengths, length: 3, position: 0, calls: 0, trace: trace.borrow() };
+    let policy: Retire = Retire { calls: 0, fail_id: 1, trace: trace.borrow() };
+    let flattened: core::iter::TryFlatten<Outer,Inner,Retire,i32,u64> = core::iter::try_flatten<Outer,Inner,Retire,i32,u64>(outer.borrow(),policy.borrow());
+    assert(outer.calls == 0 && policy.calls == 0 && trace.length == 0 && !flattened.has_active());
+    assert(flattened.next().unwrap().unwrap() == 10 && flattened.has_active());
+    assert(trace.length == 5 && events[0] == 100 && events[1] == 300 && events[2] == 200 && events[3] == 101 && events[4] == 301);
+    let finish: core::option::Option<core::iter::NestedFinishError> = flattened.try_finish();
+    assert(finish.is_some() && match (finish.unwrap()) { core::iter::NestedFinishError::Active -> true });
+    assert(flattened.has_active() && trace.length == 5 && flattened.borrow().next().unwrap().unwrap() == 11);
+    assert(flattened.next().unwrap().unwrap_err() == 18446744073709551615);
+    assert(flattened.has_active() && outer.position == 2 && outer.calls == 2 && policy.calls == 2);
+    let count: i32 = trace.length;
+    assert(flattened.next().is_none() && flattened.next().is_none() && trace.length == count);
+    assert(flattened.try_finish().is_some() && flattened.has_active() && trace.length == count);
+    let recovered: Inner = flattened.take_active().unwrap();
+    assert(recovered.id == 1 && recovered.position == 2 && recovered.retired == 1);
+    assert(!flattened.has_active() && flattened.take_active().is_none() && flattened.try_finish().is_none());
+    assert(flattened.next().is_none() && trace.length == count);
+    assert(policy.try_retire(recovered).is_none() && policy.calls == 3);
+    let resumed: core::iter::TryFlatten<Outer,Inner,Retire,i32,u64> = core::iter::try_flatten<Outer,Inner,Retire,i32,u64>(outer.borrow(),policy.borrow());
+    assert(resumed.next().unwrap().unwrap() == 20 && resumed.next().is_none());
+    assert(!resumed.has_active() && resumed.try_finish().is_none() && outer.calls == 4 && policy.calls == 4);
+    count = trace.length; assert(resumed.next().is_none() && trace.length == count);
+
+    let untouched: Outer = Outer { lengths: lengths, length: 0, position: 0, calls: 0, trace: trace.borrow() };
+    let closed: core::iter::TryFlatten<Outer,Inner,Retire,i32,u64> = core::iter::try_flatten<Outer,Inner,Retire,i32,u64>(untouched.borrow(),policy.borrow());
+    assert(closed.try_finish().is_none() && closed.next().is_none() && untouched.calls == 0);
+    let empty: core::iter::TryFlatten<Outer,Inner,Retire,i32,u64> = core::iter::try_flatten<Outer,Inner,Retire,i32,u64>(untouched.borrow(),policy.borrow());
+    assert(!empty.has_active() && empty.next().is_none() && untouched.calls == 1);
+    count = trace.length; assert(empty.next().is_none() && trace.length == count);
+
+    let inputs: Inputs = Inputs { position: 0, calls: 0, trace: trace.borrow() };
+    let mapper: Make = Make { calls: 0, trace: trace.borrow() };
+    policy.calls = 0; policy.fail_id = -1;
+    let mapped: core::iter::TryFlatMap<Inputs,Make,Retire,i32,Inner,i32,u64> = core::iter::try_flat_map<Inputs,Make,Retire,i32,Inner,i32,u64>(inputs.borrow(),mapper.borrow(),policy.borrow());
+    count = trace.length;
+    assert(inputs.calls == 0 && mapper.calls == 0 && policy.calls == 0 && !mapped.has_active());
+    assert(trace.length == count && mapped.next().unwrap().unwrap() == 10);
+    assert(inputs.calls == 2 && mapper.calls == 2 && policy.calls == 1 && mapped.has_active());
+    assert(mapped.next().unwrap().unwrap_err() == 4294967297);
+    assert(inputs.calls == 3 && mapper.calls == 3 && policy.calls == 2 && !mapped.has_active());
+    count = trace.length;
+    assert(mapped.next().is_none() && mapped.borrow().next().is_none() && mapped.try_finish().is_none());
+    assert(mapped.take_active().is_none() && trace.length == count && inputs.next().unwrap() == 3);
+    return 0;
+}

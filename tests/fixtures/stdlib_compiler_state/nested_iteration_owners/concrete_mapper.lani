@@ -1,0 +1,15 @@
+// Parser admission control only. main performs no ownership operations.
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::result;
+struct Fault { code:i32 }
+struct Inner<J> { cursor:J }
+struct Make<J> { code:i32 }
+pub impl core::iter::Mapper<alloc::string::String,core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String> >,Fault> > for Make<alloc::vec::IntoIter<alloc::string::String> > {
+    pub fn apply(&self,value:alloc::string::String) -> core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String> >,Fault> {
+        return core::result::Err(Fault { code:1 });
+    }
+}
+fn main() -> i32 { return 0; }

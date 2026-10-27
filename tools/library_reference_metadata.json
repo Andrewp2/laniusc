@@ -323,9 +323,11 @@
         "docs/stdlib-owning-iterators.md",
         "docs/stdlib-iterator-sources.md",
         "docs/stdlib-iterator-lookahead.md",
-        "docs/stdlib-column-extrema.md"
+        "docs/stdlib-column-extrema.md",
+        "docs/stdlib-nested-iteration.md",
+        "docs/stdlib-flatten-sum.md"
       ],
-      "note": "Peekable borrows its upstream cursor and exposes borrowed shallow observations. For owning sources, cached-item recovery transfers that item's cleanup authority; finish rejects a populated cache or closes only the adapter without polling upstream. Position search uses relative checked u64 indices; minimum keeps the first tied representative and maximum the last. Reductions retain the existing caller-managed ownership policy; the guides define source resumption, callback order, overflow and focused native evidence."
+      "note": "Fused forward iteration, borrowed adapters, lookahead and bounded transfer use explicit shallow-item ownership. Peekable supports cached-item recovery; position uses checked relative u64 indices and extrema preserve first-minimum/last-maximum ties. Scan/TryScan borrow caller-owned state and fuse on stop/error. TryFlatten/TryFlatMap share one engine with explicit InnerRetirement transfer, restoring the policy-returned updated inner after failure and preserving take_active recovery. The selected scan/nested increment executes on native Linux x86_64 through finite semantic, owned-resource/fault and real flatten_sum receipts; the linked guides distinguish direct-oracle and Rust-libtest evidence. Keep sources, callbacks and borrowed backing alive, prohibit reentrancy, and explicitly retire/release owners. Downstream output quotas do not bound empty-inner traversal."
     },
     "core::math": {
       "guides": [

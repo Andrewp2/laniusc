@@ -144,6 +144,8 @@ class Scanner:
         self.module = ""
         self.module_line = 1
         self.imports = []
+        self.private_nominals = set()
+        self.public_nominals = set()
 
     def error(self, message, position=None):
         position = self.position if position is None else position
@@ -252,6 +254,61 @@ class Scanner:
                 raise ReferenceError(f"{self.path}:{declaration.line}: duplicate {declaration.kind} {declaration.name}")
             seen.add(key)
 
+    def local_impl_receiver(self, declaration):
+        """Recognize only a direct local nominal receiver; resolve no types."""
+        header = [token.text for token in tokens(declaration.signature, self.path)]
+        position = 2 if header[0] == "pub" else 1  # after impl
+        parameters = set()
+        if position < len(header) and header[position] == "<":
+            depth, need_name = 1, True
+            position += 1
+            while position < len(header) and depth:
+                word = header[position]
+                if depth == 1 and need_name and IDENTIFIER.fullmatch(word) and word != "const":
+                    parameters.add(word)
+                    need_name = False
+                if depth == 1 and word == ",":
+                    need_name = True
+                depth += (word == "<") - (word == ">")
+                position += 1
+            if depth:
+                return None
+
+        # Find the receiver after a top-level `for`, or directly after impl's
+        # parameters for an inherent block. Bounds do not belong to the receiver.
+        start, stop, depth = position, len(header), 0
+        for index in range(position, len(header)):
+            word = header[index]
+            if depth == 0:
+                if word == "for":
+                    start = index + 1
+                elif word == "where":
+                    stop = index
+                    break
+            depth += (word == "<") - (word == ">")
+        receiver = header[start:stop]
+        if not receiver or not IDENTIFIER.fullmatch(receiver[0]):
+            return None
+        path, position = [receiver[0]], 1
+        while position + 1 < len(receiver) and receiver[position] == "::":
+            if not IDENTIFIER.fullmatch(receiver[position + 1]):
+                return None
+            path.append(receiver[position + 1])
+            position += 2
+        if position < len(receiver):
+            if receiver[position] != "<":
+                return None
+            depth = 0
+            for index in range(position, len(receiver)):
+                depth += (receiver[index] == "<") - (receiver[index] == ">")
+                if depth == 0 and index != len(receiver) - 1:
+                    return None
+            if depth:
+                return None
+        if len(path) == 1:
+            return None if path[0] in parameters else path[0]
+        return path[-1] if path[:-1] == self.module.split("::") else None
+
     def items(self, context="module", visible=True):
         result = []
         while self.position < len(self.tokens) and self.word() != "}":
@@ -304,6 +361,7 @@ class Scanner:
                 closing = self.close_body(opening)
                 declaration = self.span(start, opening, keyword, name)
                 if keyword in ("struct", "enum"):
+                    (self.public_nominals if public else self.private_nominals).add(name)
                     if public:
                         declaration.children = self.members(opening, closing, "field" if keyword == "struct" else "variant")
                 else:
@@ -329,6 +387,12 @@ class Scanner:
         for position, token in enumerate(self.tokens):
             if token.text == "pub" and position not in self.public_positions:
                 self.error("unsupported public declaration marker outside inventoried item boundary", position)
+        # A public trait implementation does not make its private local owner
+        # public. Filter only after the complete scan, including later owners
+        # and unsupported-public-syntax checks. Lexical pub counts stay intact.
+        private = self.private_nominals - self.public_nominals
+        declarations = [item for item in declarations
+                        if item.kind != "impl" or self.local_impl_receiver(item) not in private]
         return Module(self.module, self.path, self.imports, declarations, self.public_keywords, self.module_line)
 
 

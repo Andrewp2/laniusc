@@ -1,0 +1,182 @@
+// Binary test transport only: 25 u64 command words, 14 words per action,
+// followed by effect-count and effects. All traversal is actual core::iter.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Trace { values: [u64], length: i32 }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn add(&self, value: u64) { assert(self.length < 512); self.values[self.length] = value; self.length += 1; }
+}
+struct Inner { id: i32, length: i32, position: i32, steps: i32, trace: &Trace }
+pub impl core::iter::Iterator<u64> for Inner {
+    pub fn next(&self) -> core::option::Option<u64> {
+        let trace: &Trace = self.trace; trace.add(300+self.id as u64);
+        if (self.position == self.length) { return core::option::None(); }
+        let value: u64 = 4294967297+(self.id as u64)*10+self.position as u64;
+        self.position += 1; return core::option::Some(value);
+    }
+}
+struct State { lengths: [i32], length: i32, position: i32, calls: i32, trace: &Trace }
+impl State {
+    fn borrow(&self) -> &State { return self; }
+    fn acquire(&self) -> core::option::Option<i32> {
+        let trace: &Trace = self.trace; trace.add(100+self.position as u64); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let id: i32 = self.position; self.position += 1; return core::option::Some(id);
+    }
+    fn inner(&self, id: i32) -> Inner {
+        return Inner { id: id, length: self.lengths[id], position: 0, steps: 0, trace: self.trace };
+    }
+}
+struct Outer { state: &State }
+impl Outer { fn borrow(&self) -> &Outer { return self; } }
+pub impl core::iter::Iterator<Inner> for Outer {
+    pub fn next(&self) -> core::option::Option<Inner> {
+        let state: &State = self.state;
+        let id: core::option::Option<i32> = state.acquire();
+        if (id.is_none()) { return core::option::None(); }
+        return core::option::Some(state.inner(id.unwrap()));
+    }
+}
+struct Input { state: &State }
+impl Input { fn borrow(&self) -> &Input { return self; } }
+pub impl core::iter::Iterator<i32> for Input {
+    pub fn next(&self) -> core::option::Option<i32> { let state: &State = self.state; return state.acquire(); }
+}
+struct Mapping { state: &State, fail: i32, calls: i32 }
+impl Mapping { fn borrow(&self) -> &Mapping { return self; } }
+pub impl core::iter::Mapper<i32,core::result::Result<Inner,u64>> for Mapping {
+    pub fn apply(&self, id: i32) -> core::result::Result<Inner,u64> {
+        let state: &State = self.state; let trace: &Trace = state.trace;
+        self.calls += 1; trace.add(400+id as u64);
+        if (id == self.fail) { return core::result::Err(2000+id as u64); }
+        return core::result::Ok(state.inner(id));
+    }
+}
+struct Policy { fail: i32, calls: i32, trace: &Trace }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::iter::InnerRetirement<Inner,u64> for Policy {
+    pub fn try_retire(&self, inner: Inner) -> core::option::Option<core::iter::RetireFailure<Inner,u64>> {
+        assert(inner.position == inner.length);
+        let trace: &Trace = self.trace; trace.add(200+inner.id as u64); self.calls += 1;
+        inner.steps += 1;
+        if (inner.id == self.fail && inner.steps == 1) {
+            return core::option::Some(core::iter::RetireFailure { inner: inner, error: 1000+inner.id as u64 });
+        }
+        return core::option::None();
+    }
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+fn release(inner: Inner, policy: &Policy) {
+    while (inner.next().is_some()) { }
+    let failed: core::option::Option<core::iter::RetireFailure<Inner,u64>> = policy.try_retire(inner);
+    if (failed.is_some()) { assert(policy.try_retire(failed.unwrap().inner).is_none()); }
+}
+fn run(bytes: [u8]) {
+    let mode: u64 = decode(bytes,0); let length: i32 = decode(bytes,8) as i32;
+    let fail: i32 = decode(bytes,16) as i32; let map_fail: i32 = decode(bytes,24) as i32;
+    let lengths: [i32;4] = [0;4]; let index: i32 = 0;
+    while (index < 4) { lengths[index] = decode(bytes,32+index*8) as i32; assert(lengths[index] <= 3); index += 1; }
+    let actions: i32 = decode(bytes,64) as i32;
+    assert(mode <= 1 && length >= 0 && length <= 4 && fail >= 0 && fail <= 9 && map_fail >= 0 && map_fail <= 9 && actions <= 16);
+    let events: [u64;512] = [0;512]; let trace: Trace = Trace { values: events, length: 0 };
+    let state: State = State { lengths: lengths, length: length, position: 0, calls: 0, trace: trace.borrow() };
+    let outer: Outer = Outer { state: state.borrow() }; let input: Input = Input { state: state.borrow() };
+    let mapper: Mapping = Mapping { state: state.borrow(), fail: map_fail, calls: 0 };
+    let policy: Policy = Policy { fail: fail, calls: 0, trace: trace.borrow() };
+    let left: core::iter::TryFlatten<Outer,Inner,Policy,u64,u64> = core::iter::try_flatten<Outer,Inner,Policy,u64,u64>(outer.borrow(),policy.borrow());
+    let right: core::iter::TryFlatten<Outer,Inner,Policy,u64,u64> = core::iter::try_flatten<Outer,Inner,Policy,u64,u64>(outer.borrow(),policy.borrow());
+    let mapped_left: core::iter::TryFlatMap<Input,Mapping,Policy,i32,Inner,u64,u64> = core::iter::try_flat_map<Input,Mapping,Policy,i32,Inner,u64,u64>(input.borrow(),mapper.borrow(),policy.borrow());
+    let mapped_right: core::iter::TryFlatMap<Input,Mapping,Policy,i32,Inner,u64,u64> = core::iter::try_flat_map<Input,Mapping,Policy,i32,Inner,u64,u64>(input.borrow(),mapper.borrow(),policy.borrow());
+    let recovered: core::option::Option<Inner> = core::option::None();
+    assert(state.calls == 0 && mapper.calls == 0 && policy.calls == 0 && trace.length == 0);
+    index = 0;
+    while (index < actions) {
+        let action: u64 = decode(bytes,72+index*8); assert(action <= 8);
+        let tag: u64 = 0; let value: u64 = 0;
+        if (action == 0 || action == 5) {
+            let item: core::option::Option<core::result::Result<u64,u64>> = core::option::None();
+            if (mode == 0) { if (action == 0) { item = left.next(); } else { item = right.next(); } }
+            else { if (action == 0) { item = mapped_left.next(); } else { item = mapped_right.next(); } }
+            if (item.is_some()) {
+                let result: core::result::Result<u64,u64> = item.unwrap();
+                if (result.is_ok()) { tag = 1; value = result.unwrap(); } else { tag = 2; value = result.unwrap_err(); }
+            }
+        } else { if (action == 1 || action == 6) {
+            let refused: core::option::Option<core::iter::NestedFinishError> = core::option::None();
+            if (mode == 0) { if (action == 1) { refused = left.try_finish(); } else { refused = right.try_finish(); } }
+            else { if (action == 1) { refused = mapped_left.try_finish(); } else { refused = mapped_right.try_finish(); } }
+            tag = 3; if (refused.is_some()) { tag = 4; }
+        } else { if (action == 2 || action == 7) {
+            let taken: core::option::Option<Inner> = core::option::None();
+            if (mode == 0) { if (action == 2) { taken = left.take_active(); } else { taken = right.take_active(); } }
+            else { if (action == 2) { taken = mapped_left.take_active(); } else { taken = mapped_right.take_active(); } }
+            tag = 5;
+            if (taken.is_some()) { assert(recovered.is_none()); recovered = taken; tag = 6; }
+        } else { if (action == 3) {
+            tag = 8;
+            if (recovered.is_some()) {
+                let inner: Inner = recovered.unwrap(); recovered = core::option::None();
+                let item: core::option::Option<u64> = inner.next();
+                if (item.is_some()) { recovered = core::option::Some(inner); tag = 7; value = item.unwrap(); }
+                else {
+                    let failure: core::option::Option<core::iter::RetireFailure<Inner,u64>> = policy.try_retire(inner);
+                    if (failure.is_some()) { let failed: core::iter::RetireFailure<Inner,u64> = failure.unwrap(); recovered = core::option::Some(failed.inner); tag = 9; value = failed.error; }
+                }
+            }
+        } else {
+            assert(action == 4 || action == 8); tag = 10;
+            if (mode == 0) {
+                if (action == 4) { assert(!left.has_active()); left = core::iter::try_flatten<Outer,Inner,Policy,u64,u64>(outer.borrow(),policy.borrow()); }
+                else { assert(!right.has_active()); right = core::iter::try_flatten<Outer,Inner,Policy,u64,u64>(outer.borrow(),policy.borrow()); }
+            } else {
+                if (action == 4) { assert(!mapped_left.has_active()); mapped_left = core::iter::try_flat_map<Input,Mapping,Policy,i32,Inner,u64,u64>(input.borrow(),mapper.borrow(),policy.borrow()); }
+                else { assert(!mapped_right.has_active()); mapped_right = core::iter::try_flat_map<Input,Mapping,Policy,i32,Inner,u64,u64>(input.borrow(),mapper.borrow(),policy.borrow()); }
+            }
+        } } } }
+        let active_left: bool = false; let active_right: bool = false;
+        if (mode == 0) { active_left = left.has_active(); active_right = right.has_active(); }
+        else { active_left = mapped_left.has_active(); active_right = mapped_right.has_active(); }
+        word(tag); word(value); word(active_left as u64); word(active_right as u64);
+        word(state.position as u64); word(state.calls as u64); word(mapper.calls as u64); word(policy.calls as u64);
+        word(recovered.is_some() as u64);
+        if (recovered.is_some()) { let inner: Inner = recovered.unwrap(); word(inner.id as u64); word(inner.position as u64); word(inner.steps as u64); }
+        else { word(0); word(0); word(0); }
+        word(trace.length as u64); word(index as u64); index += 1;
+    }
+    word(trace.length as u64); index = 0;
+    while (index < trace.length) { word(events[index]); index += 1; }
+    // Explicitly retire any remaining borrowed-only cursor authority after
+    // its final observation. This cleanup is not a native-owner evidence gate.
+    let a: core::option::Option<Inner> = core::option::None(); let b: core::option::Option<Inner> = core::option::None();
+    if (mode == 0) { a = left.take_active(); b = right.take_active(); }
+    else { a = mapped_left.take_active(); b = mapped_right.take_active(); }
+    if (a.is_some()) { release(a.unwrap(),policy.borrow()); }
+    if (b.is_some()) { release(b.unwrap(),policy.borrow()); }
+    if (recovered.is_some()) { release(recovered.unwrap(),policy.borrow()); }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let bytes: [u8;200] = [0;200];
+    while (true) {
+        let result: core::result::Result<i32,core::io::Error> = input.read(bytes,0,200); assert(result.is_ok());
+        let count: i32 = result.unwrap(); if (count == 0) { return 0; }
+        if (count < 200) { assert(core::io::read_exact(input.borrow(),bytes,count,200-count).is_ok()); }
+        run(bytes);
+    }
+    return 0;
+}

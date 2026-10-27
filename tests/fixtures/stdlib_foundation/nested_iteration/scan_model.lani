@@ -1,0 +1,119 @@
+// Binary observations of two actual adapters sharing source/callback state.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+struct Trace { values: [u64], length: i32 }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn add(&self, value: u64) { assert(self.length < 128); self.values[self.length] = value; self.length += 1; }
+}
+struct Source { length: i32, position: i32, calls: i32, trace: &Trace }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::iter::Iterator<i32> for Source {
+    pub fn next(&self) -> core::option::Option<i32> {
+        let trace: &Trace = self.trace; trace.add(100+self.position as u64); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let value: i32 = self.position; self.position += 1; return core::option::Some(value);
+    }
+}
+struct Context { total: u64, calls: i32, stop: i32, fail: i32, trace: &Trace }
+impl Context {
+    fn borrow(&self) -> &Context { return self; }
+    fn update(&self, value: i32) {
+        let trace: &Trace = self.trace; trace.add(200+value as u64);
+        self.calls += 1; self.total += 1+value as u64;
+    }
+}
+struct Running { context: &Context }
+impl Running { fn borrow(&self) -> &Running { return self; } }
+pub impl core::iter::Mapper<i32,core::option::Option<u64>> for Running {
+    pub fn apply(&self, value: i32) -> core::option::Option<u64> {
+        let context: &Context = self.context; context.update(value);
+        if (value == context.stop) { return core::option::None(); }
+        return core::option::Some(context.total);
+    }
+}
+struct Fallible { context: &Context }
+impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
+pub impl core::iter::Mapper<i32,core::result::Result<core::option::Option<u64>,u64>> for Fallible {
+    pub fn apply(&self, value: i32) -> core::result::Result<core::option::Option<u64>,u64> {
+        let context: &Context = self.context; context.update(value);
+        if (value == context.fail) { return core::result::Err(18446744073709551615-value as u64); }
+        if (value == context.stop) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(context.total));
+    }
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+fn run(bytes: [u8]) {
+    let mode: u64 = decode(bytes,0); let length: i32 = decode(bytes,8) as i32;
+    let stop: i32 = decode(bytes,16) as i32; let fail: i32 = decode(bytes,24) as i32;
+    let initial: u64 = decode(bytes,32); let actions: i32 = decode(bytes,40) as i32;
+    assert(mode <= 1 && length >= 0 && length <= 6 && stop >= 0 && stop <= 9 && fail >= 0 && fail <= 9 && actions <= 12);
+    let events: [u64;128] = [0;128]; let trace: Trace = Trace { values: events, length: 0 };
+    let source: Source = Source { length: length, position: 0, calls: 0, trace: trace.borrow() };
+    let context: Context = Context { total: initial, calls: 0, stop: stop, fail: fail, trace: trace.borrow() };
+    let running: Running = Running { context: context.borrow() }; let fallible: Fallible = Fallible { context: context.borrow() };
+    let left: core::iter::Scan<Source,Running,i32,u64> = core::iter::scan<Source,Running,i32,u64>(source.borrow(),running.borrow());
+    let right: core::iter::Scan<Source,Running,i32,u64> = core::iter::scan<Source,Running,i32,u64>(source.borrow(),running.borrow());
+    let tried_left: core::iter::TryScan<Source,Fallible,i32,u64,u64> = core::iter::try_scan<Source,Fallible,i32,u64,u64>(source.borrow(),fallible.borrow());
+    let tried_right: core::iter::TryScan<Source,Fallible,i32,u64,u64> = core::iter::try_scan<Source,Fallible,i32,u64,u64>(source.borrow(),fallible.borrow());
+    assert(source.calls == 0 && context.calls == 0 && trace.length == 0);
+    let index: i32 = 0;
+    while (index < actions) {
+        let action: u64 = decode(bytes,48+index*8); assert(action <= 4);
+        let tag: u64 = 0; let value: u64 = 0;
+        if (action == 0 || action == 1) {
+            if (mode == 0) {
+                let item: core::option::Option<u64> = core::option::None();
+                if (action == 0) { item = left.next(); } else { item = right.next(); }
+                if (item.is_some()) { tag = 1; value = item.unwrap(); }
+            } else {
+                let item: core::option::Option<core::result::Result<u64,u64>> = core::option::None();
+                if (action == 0) { item = tried_left.next(); } else { item = tried_right.next(); }
+                if (item.is_some()) {
+                    let result: core::result::Result<u64,u64> = item.unwrap();
+                    if (result.is_ok()) { tag = 1; value = result.unwrap(); } else { tag = 2; value = result.unwrap_err(); }
+                }
+            }
+        } else { if (action == 2) {
+            let item: core::option::Option<i32> = source.next();
+            if (item.is_some()) { tag = 1; value = item.unwrap() as u64; }
+        } else {
+            tag = 3;
+            if (mode == 0) {
+                if (action == 3) { left = core::iter::scan<Source,Running,i32,u64>(source.borrow(),running.borrow()); }
+                else { right = core::iter::scan<Source,Running,i32,u64>(source.borrow(),running.borrow()); }
+            } else {
+                if (action == 3) { tried_left = core::iter::try_scan<Source,Fallible,i32,u64,u64>(source.borrow(),fallible.borrow()); }
+                else { tried_right = core::iter::try_scan<Source,Fallible,i32,u64,u64>(source.borrow(),fallible.borrow()); }
+            }
+        } }
+        word(tag); word(value); word(source.position as u64); word(source.calls as u64);
+        word(context.calls as u64); word(context.total); word(trace.length as u64); index += 1;
+    }
+    word(trace.length as u64); index = 0;
+    while (index < trace.length) { word(events[index]); index += 1; }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let bytes: [u8;144] = [0;144];
+    while (true) {
+        let result: core::result::Result<i32,core::io::Error> = input.read(bytes,0,144); assert(result.is_ok());
+        let count: i32 = result.unwrap(); if (count == 0) { return 0; }
+        if (count < 144) { assert(core::io::read_exact(input.borrow(),bytes,count,144-count).is_ok()); }
+        run(bytes);
+    }
+    return 0;
+}

@@ -1,0 +1,80 @@
+// Public-module admission and finite runtime contracts; no local adapter copy.
+module app::main;
+import core::iter;
+import core::option;
+import core::result;
+
+struct Source { length: i32, position: i32, calls: i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+pub impl core::iter::Iterator<i32> for Source {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        self.position += 1;
+        return core::option::Some(self.position);
+    }
+}
+struct Running { calls: i32, total: i64, stop: i32 }
+impl Running { fn borrow(&self) -> &Running { return self; } }
+pub impl core::iter::Mapper<i32,core::option::Option<i64>> for Running {
+    pub fn apply(&self, value: i32) -> core::option::Option<i64> {
+        self.calls += 1; self.total += value as i64;
+        if (value == self.stop) { return core::option::None(); }
+        return core::option::Some(self.total);
+    }
+}
+struct Fallible { calls: i32, total: u64, stop: i32, fail: i32 }
+impl Fallible { fn borrow(&self) -> &Fallible { return self; } }
+pub impl core::iter::Mapper<i32,core::result::Result<core::option::Option<u64>,u64>> for Fallible {
+    pub fn apply(&self, value: i32) -> core::result::Result<core::option::Option<u64>,u64> {
+        self.calls += 1; self.total += value as u64;
+        if (value == self.fail) { return core::result::Err(18446744073709551615); }
+        if (value == self.stop) { return core::result::Ok(core::option::None()); }
+        return core::result::Ok(core::option::Some(self.total));
+    }
+}
+
+fn main() -> i32 {
+    let source: Source = Source { length: 4, position: 0, calls: 0 };
+    let callback: Running = Running { calls: 0, total: -4294967297, stop: 3 };
+    let scan: core::iter::Scan<Source,Running,i32,i64> = core::iter::scan<Source,Running,i32,i64>(source.borrow(),callback.borrow());
+    assert(source.calls == 0 && callback.calls == 0);
+    assert(scan.next().unwrap() == -4294967296 && scan.next().unwrap() == -4294967294);
+    assert(scan.next().is_none() && source.position == 3 && source.calls == 3 && callback.calls == 3);
+    assert(callback.total == -4294967291);
+    assert(scan.next().is_none() && scan.borrow().next().is_none());
+    assert(source.calls == 3 && callback.calls == 3 && source.next().unwrap() == 4);
+
+    let empty: Source = Source { length: 0, position: 0, calls: 0 };
+    let unused: Running = Running { calls: 0, total: 7, stop: 1 };
+    let empty_scan: core::iter::Scan<Source,Running,i32,i64> = core::iter::scan<Source,Running,i32,i64>(empty.borrow(),unused.borrow());
+    assert(empty.calls == 0 && unused.calls == 0);
+    assert(empty_scan.next().is_none() && empty_scan.next().is_none());
+    assert(empty.calls == 1 && unused.calls == 0 && unused.total == 7);
+
+    let failing: Source = Source { length: 4, position: 0, calls: 0 };
+    let fallible: Fallible = Fallible { calls: 0, total: 4294967297, stop: -1, fail: 2 };
+    let tried: core::iter::TryScan<Source,Fallible,i32,u64,u64> = core::iter::try_scan<Source,Fallible,i32,u64,u64>(failing.borrow(),fallible.borrow());
+    assert(failing.calls == 0 && fallible.calls == 0);
+    assert(tried.next().unwrap().unwrap() == 4294967298);
+    assert(tried.next().unwrap().unwrap_err() == 18446744073709551615);
+    assert(tried.next().is_none() && tried.borrow().next().is_none());
+    assert(failing.position == 2 && failing.calls == 2 && fallible.calls == 2 && fallible.total == 4294967300);
+    assert(failing.next().unwrap() == 3);
+
+    let stopping: Source = Source { length: 4, position: 0, calls: 0 };
+    let maybe: Fallible = Fallible { calls: 0, total: 0, stop: 2, fail: -1 };
+    let stopped: core::iter::TryScan<Source,Fallible,i32,u64,u64> = core::iter::try_scan<Source,Fallible,i32,u64,u64>(stopping.borrow(),maybe.borrow());
+    assert(stopping.calls == 0 && maybe.calls == 0);
+    assert(stopped.next().unwrap().unwrap() == 1 && stopped.next().is_none());
+    assert(stopped.next().is_none() && stopping.calls == 2 && maybe.calls == 2 && maybe.total == 3);
+    assert(stopping.next().unwrap() == 3);
+
+    let no_input: Source = Source { length: 0, position: 0, calls: 0 };
+    let no_callback: Fallible = Fallible { calls: 0, total: 0, stop: -1, fail: -1 };
+    let empty_try: core::iter::TryScan<Source,Fallible,i32,u64,u64> = core::iter::try_scan<Source,Fallible,i32,u64,u64>(no_input.borrow(),no_callback.borrow());
+    assert(no_input.calls == 0 && no_callback.calls == 0);
+    assert(empty_try.next().is_none() && empty_try.next().is_none());
+    assert(no_input.calls == 1 && no_callback.calls == 0);
+    return 0;
+}

@@ -17,7 +17,7 @@ One ordered Pike engine now supports reusable fixed-capacity Workspace storage a
 - [extended-lexer](../../extended-lexer.md)
 - [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
 
-Declaration counts: enum: 1; field: 53; function: 4; impl: 7; method: 37; struct: 10; variant: 8.
+Declaration counts: enum: 1; field: 53; function: 4; impl: 5; method: 37; struct: 10; variant: 8.
 
 ## Declared imports
 
@@ -652,22 +652,6 @@ pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error>
 ```
 
 ## Implementation blocks and public methods
-
-### impl at line 114
-
-[Source line 114](../../../extended/ext/regex.lani#L114)
-
-```lanius
-pub impl Parser
-```
-
-### impl at line 282
-
-[Source line 282](../../../extended/ext/regex.lani#L282)
-
-```lanius
-pub impl Builder
-```
 
 ### impl at line 442
 

@@ -13,7 +13,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 - [stdlib-format-strings](../../stdlib-format-strings.md)
 - [stdlib-format-write](../../stdlib-format-write.md)
 
-Declaration counts: enum: 3; field: 8; function: 5; impl: 1; struct: 4; variant: 21.
+Declaration counts: enum: 3; field: 8; function: 5; struct: 4; variant: 21.
 
 ## Declared imports
 
@@ -361,14 +361,4 @@ pub fn format_into_staged(pattern: core::text::Text, positional: core::slice::Vi
 ```lanius
 pub fn write<W>(pattern: core::text::Text, positional: core::slice::View<Argument>, named: core::slice::View<Named>, writer: &W, scratch: core::slice::View<u8>, limits: WriteLimits)
     -> core::result::Result<i32, WriteFailure> where W: core::io::Write
-```
-
-## Implementation blocks and public methods
-
-### impl at line 108
-
-[Source line 108](../../../stdlib/core/format.lani#L108)
-
-```lanius
-pub impl<W> Output<W>
 ```

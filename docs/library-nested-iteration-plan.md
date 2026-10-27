@@ -1,9 +1,13 @@
 # Scan and nested iteration
 
-Status: proposed next library increment after filesystem commit `48837130`.
-Production adapters below are not implemented or accepted. Small executable
-admission candidates are being checked first. The complete standard and
-extended library goal remains open.
+Status: implementation after filesystem commit `48837130` and admission
+checkpoint `b77567b5`. The four production adapters execute through actual
+public stdlib imports. Two direct smoke programs, three semantic Rust tests
+and all four real-application tests pass. All four strict adapter ownership/fault
+groups also pass directly against the retained native executable. This accepts
+the selected increment on the documented native target.
+The earlier user-module controls retain their narrow accepted scope below.
+The complete standard and extended library goal remains open.
 
 ## Existing boundary
 
@@ -44,7 +48,7 @@ authority. The adapter introduces no deep clone or automatic destruction.
 
 ## General nested iteration
 
-The explicit value-transfer policy under admission is:
+The implemented value-transfer policy is:
 
 ```text
 RetireFailure<J,E> { inner:J, error:E }
@@ -159,10 +163,11 @@ single generic active-owner engine; no compiler or production source changed.
 Independent review confirmed the stale-state discriminator and genuine cleanup
 calls; three missing payload checks were added before the accepted run.
 
-This establishes the narrow user-module value/retirement mechanism. It does
-not establish a production outer traversal, initially empty construction,
-stdlib-classified public adapters with caller-defined policies, or a strict
-pre-exit mapping ledger. Those remain explicit implementation/acceptance gates.
+This establishes the narrow user-module value/retirement mechanism. Those
+initial controls alone did not establish production outer traversal, initially
+empty construction, stdlib-classified public adapters with caller-defined
+policies, or a strict pre-exit mapping ledger. The production receipts below
+now cover those separate acceptance gates.
 
 ## Acceptance and real use
 
@@ -175,11 +180,105 @@ allocation during traversal, no double retirement, and no lost active or outer
 remainder. Scan tests cover terminating None, errors, state changes and exact
 source/callback counts.
 
-A `flatten_sum` program will read bounded integer rows, build owned per-row
-vectors, flat-map rows into owning cursors, explicitly retire exhausted backing,
-and TryScan checked running totals. It stages bounded output before delivery.
-Its gates include empty rows, malformed/binary input, integer overflow, source
-allocation failure and output failure, using real library modules.
+The `flatten_sum` program reads bounded integer rows, builds owned per-row
+vectors, flat-maps rows into owning cursors, explicitly retires exhausted backing,
+and uses TryScan for checked running totals. It stages bounded output before
+delivery. Its accepted gates include empty rows, malformed/binary input,
+integer overflow, source allocation failure and output failure, using real
+library modules.
+
+## Production checkpoint and current receipts
+
+`stdlib/core/iter.lani` implements Scan/TryScan and TryFlatten/TryFlatMap with
+one private `nested_next` traversal engine. TryFlatten supplies a call-local
+identity Mapper; it stores no reference to that temporary. Both constructors
+store only the borrowed source/callbacks and an initially empty active slot.
+All previous API bodies are byte-preserved. The current production SHA-256 is
+`7256a39462db691ece403a6d9a409947f7fafa7919783be474d510f1bf63ce3c`.
+
+The first public scan import rejected the private identity's trait block
+because the public Mapper contract requires a `pub impl`. Adding that keyword
+admitted the module without changing any body, type or compiler source. That
+initial source-authoring error is not a compiler dependency.
+
+Receipts below are under `target/stdlib-work/`. Two smokes import the actual
+public stdlib adapters and define callbacks/retirement in the caller. They do
+not duplicate a local adapter implementation.
+
+| Accepted scope | Execution | Receipt |
+| --- | --- | --- |
+| Scan/TryScan: lazy construction, empty source, callback None/error, state and fusion | CLI compilation and native exit 0 | `nested-public-scan-smoke-visibility-retry.log`, `nested-public-scan-smoke-native-first.log` |
+| Nested adapters: empty-inner retirement order, updated-J failure, finish refusal, take/retry and outer resumption | CLI compilation and native exit 0 | `nested-public-nested-smoke-first.log`, `nested-public-nested-smoke-native-first.log` |
+| Independent state models and generic shapes | Three Rust tests pass in one 9.31s command: 360 nested commands, 672 scan commands, nested Option/Result/arrays, wide records, actual strided views and zero-sized items | `nested-public-models-shapes-first.log` |
+| `flatten_sum` composition admission | Three physical rows/four integer values produce the exact four running totals, native exit 0 | `nested-flatten-sum-admission-first.log`, `nested-flatten-sum-admission-native-first.log` |
+| `flatten_sum` normal and admission groups | Two Rust tests pass: 138 model and 54 bounds process cases, 8.51s | `nested-flatten-sum-models-bounds-first.log` |
+| `flatten_sum` allocation and I/O fault groups | Two Rust tests pass: 11 allocation cases (baseline plus all ten reached OOMs) and 16 I/O cases, 8.23s | `nested-flatten-sum-allocations-faults-first.log` |
+| Larger `flatten_sum` workload | Accepted ELF processes 3,072 physical rows, including 2,048 empty rows, and 65,536 values; exact 382,110-byte output passes outside the timer | `nested-flatten-sum-scale-first.log` |
+| Direct owner lifecycle | 14 healthy profiles pass through four live checkpoints, with real Vec/wrapped Deque and owned String items/errors | `nested-owners-lifecycle-lazy-count-retry.log` |
+| Flatten allocation recovery | 30 process group cases pass, including two baselines and all 28 reached OOMs | `nested-owners-flatten-oom-first.log` |
+| Flat-map Vec allocation recovery | 56 process group cases pass, including four baselines and all 52 reached OOMs, including resumed mapping | `nested-owners-flatmap-vec-oom-first.log` |
+| Flat-map wrapped Deque allocation recovery | 56 process group cases pass, including four baselines and all 52 reached OOMs, including resumed mapping | `nested-owners-flatmap-deque-oom-first.log` |
+
+The two registered smoke Rust functions were not rerun solely to change the
+receipt format; their source programs have the direct accepted receipts above.
+The 1,032 model commands are logical scenarios, not native process counts.
+An initial Rust-driver build failed because its smoke helper passed Command
+instead of a mutable reference; the one-character source correction rebuilt
+both semantic/application drivers in 1.39s. This launcher correction changed
+no Lanius source. The application groups total 219 process group cases,
+including overlapping baselines and setup, rather than independent properties.
+Their allocation traces require explicit release before process exit; they
+do not supply the direct adapters' live ownership checkpoints.
+
+The larger workload reuses the accepted application ELF rather than recompiling.
+Its one untraced process takes 0.157614975 seconds, including launch, stdin
+transfer, parsing, the owning pipeline, formatting and stdout capture. Input
+and exact expected output are prepared before the timer; validation follows
+it. This is one native application observation, not a compiler benchmark or
+general throughput ratio. Evidence is under `/tmp/flatten-sum-scale-c24v1gy5`.
+
+The strict ownership fixture's first lifecycle attempt
+(`nested-owners-lifecycle-first.log`) rejects before native emission with GPU
+parser code 4 and final stack-effect depth -4. The fallback LNC0021 points at
+a nested Mapper argument, but that concrete header compiles in isolation.
+The minimal rejected/accepted pair instead isolates the applied bound subject
+`where Make<J>: Mapper<...>` versus a bare generic `M` subject. The canonical
+grammar (`grammar/lanius.bnf`, `where_predicate`) admits only an identifier in
+that position. This was unsupported fixture syntax, not a demonstrated generic
+type failure or compiler regression. The test helper now accepts the borrowed
+mapper explicitly, keeping the actual owning cursor types and effect contracts.
+The [retained source controls](../tests/fixtures/stdlib_compiler_state/nested_iteration_owners/README.md)
+record the reductions and separate declaration admission from runtime evidence.
+
+The next attempt passes parsing but cannot infer a generic cursor-field call's
+local result (`nested-owners-lifecycle-generic-mapper.log`). Explicit local J
+and Option types, including reinstallation of the actual mutated cursor, admit
+the same owning values. This source form needs no compiler change; the retained
+original and diagnostic describe the observed inference gap without claiming
+an isolated general inference defect.
+
+The admitted probe SHA-256 is
+`e92ee3b894a6ce93eafed81a217ef9f04dd5dcf610239ea1c8cb503a608fdfc4`.
+Its first native attempt reaches the live resource checkpoints but exposes an
+oracle expectation which counted an unconstructed flat-map inner as allocated.
+The corrected oracle (`eb37f142...`) distinguishes three preconstructed flatten
+inners from two constructed flat-map inners at retirement failure. The strict
+source ledger, live mappings/descriptors, callback order and fault-prefix
+assertions are unchanged. Four added CPU controls cover this eager/lazy
+distinction; all 41 owner-oracle controls pass independently.
+
+All four owner groups above then execute directly against the same retained
+ELF, SHA-256
+`3d99ec693eee833df297e5201e992210761845707a21ce00f7d176bc58b7d32c`,
+without recompiling unchanged source. They total 156 process group cases,
+including overlapping baseline/setup profiles, and 132 individually reached
+OOMs. This is direct Python-oracle acceptance, not four passing Rust libtests.
+The Rust driver has build/source admission and its first native oracle attempt;
+the corrected direct receipts supply the runtime acceptance. Each profile
+checks actual live `/proc` mappings and descriptors at four acknowledged frames,
+including held output/error owners after inner/outer cleanup and zero remaining
+source owners before exit. No hidden constructor or adapter allocation is
+accepted. Callback allocations remain explicit caller effects.
 
 Initial acceptance is native Linux x86_64 CPU execution of programs emitted by
 the GPU compiler. No user-program GPU or other-host support is inferred.
@@ -188,8 +287,9 @@ must retain their measured workload scope.
 
 ## Subsequent ownership-aware sinks
 
-Replacement sinks remain part of the full roadmap. They follow this increment
-under a separate contract: rejection before insertion returns the incoming
+The [replacement-sink plan](library-replacement-sinks-plan.md) remains part of
+the full roadmap. It follows this increment under a separate contract:
+rejection before insertion returns the incoming
 owner, while a failure delivering an already displaced owner must report the
 committed replacement and return that displaced owner. Existing TrySink
 rejection semantics remain unchanged. A secondary-output failure must never

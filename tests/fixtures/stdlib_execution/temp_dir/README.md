@@ -1,8 +1,9 @@
 # Temporary directory execution gates
 
-**All four native groups passed: 46 distinct finite profiles.** Acceptance was
-recorded across separate commands. This counts the profiles in each accepted
-group once, rather than summing executions across failed attempts and retries.
+**All four native groups passed: 46 accepted group cases.** Acceptance was
+recorded across separate commands. Ordinary baselines and setup overlap across
+groups. This counts cases in each accepted group once, rather than summing
+executions across failed attempts and retries or claiming independent properties.
 
 | Accepted group | Profiles | Receipt in `target/stdlib-work/` | Invocation elapsed |
 | --- | ---: | --- | --- |

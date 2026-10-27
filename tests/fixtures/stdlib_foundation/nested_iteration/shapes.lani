@@ -1,0 +1,113 @@
+// Actual public adapter specialization with nested, wide and zero-sized items.
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+struct Borrowed<J,E> { calls: i32 }
+impl<J,E> Borrowed<J,E> { fn borrow(&self) -> &Borrowed<J,E> { return self; } }
+pub impl<J,E> core::iter::InnerRetirement<J,E> for Borrowed<J,E> {
+    pub fn try_retire(&self, inner: J) -> core::option::Option<core::iter::RetireFailure<J,E>> {
+        // This fixture's slice/Once cursors own no backing. Retiring their
+        // sole cursor authority requires no native operation or deep destroy.
+        self.calls += 1; return core::option::None();
+    }
+}
+struct AsSome<T> { calls: i32 }
+impl<T> AsSome<T> { fn borrow(&self) -> &AsSome<T> { return self; } }
+pub impl<T> core::iter::Mapper<T,core::option::Option<T>> for AsSome<T> {
+    pub fn apply(&self, item: T) -> core::option::Option<T> { self.calls += 1; return core::option::Some(item); }
+}
+struct AsOnce<T> { calls: i32 }
+impl<T> AsOnce<T> { fn borrow(&self) -> &AsOnce<T> { return self; } }
+pub impl<T> core::iter::Mapper<T,core::result::Result<core::iter::Once<T>,u64>> for AsOnce<T> {
+    pub fn apply(&self, item: T) -> core::result::Result<core::iter::Once<T>,u64> {
+        self.calls += 1; return core::result::Ok(core::iter::once<T>(item));
+    }
+}
+struct Payload { unsigned: u64, signed: i64, cells: [u64;2], nested: core::option::Option<bool> }
+struct Unit {}
+struct Arrays { calls: i32 }
+impl Arrays { fn borrow(&self) -> &Arrays { return self; } }
+pub impl core::iter::Mapper<i64,core::result::Result<core::option::Option<[u64;2]>,core::option::Option<core::result::Result<i64,[u64;2]>>>> for Arrays {
+    pub fn apply(&self, value: i64) -> core::result::Result<core::option::Option<[u64;2]>,core::option::Option<core::result::Result<i64,[u64;2]>>> {
+        self.calls += 1;
+        let cells: [u64;2] = [18446744073709551615,value as u64];
+        if (self.calls == 1) { return core::result::Ok(core::option::Some(cells)); }
+        let error: core::result::Result<i64,[u64;2]> = core::result::Err(cells);
+        return core::result::Err(core::option::Some(error));
+    }
+}
+
+fn nested_views() {
+    let words: [u64;2] = [18446744073709551615,4294967297];
+    let good: core::result::Result<[u64;2],u64> = core::result::Ok(words);
+    let bad: core::result::Result<[u64;2],u64> = core::result::Err(9223372036854775808);
+    let a: core::option::Option<core::result::Result<[u64;2],u64>> = core::option::None();
+    let b: core::option::Option<core::result::Result<[u64;2],u64>> = core::option::Some(bad);
+    let c: core::option::Option<core::result::Result<[u64;2],u64>> = core::option::Some(good);
+    let values: [core::option::Option<core::result::Result<[u64;2],u64>>;4] = [c,a,b,c];
+    assert(core::mem::slice_stride(values) != 0);
+    let empty_view: core::slice::View<core::option::Option<core::result::Result<[u64;2],u64>>> = core::slice::View { values: values, start: 1, length: 0 };
+    let first_view: core::slice::View<core::option::Option<core::result::Result<[u64;2],u64>>> = core::slice::View { values: values, start: 1, length: 2 };
+    let last_view: core::slice::View<core::option::Option<core::result::Result<[u64;2],u64>>> = core::slice::View { values: values, start: 3, length: 1 };
+    let empty: core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>> = core::iter::from_view<core::option::Option<core::result::Result<[u64;2],u64>>>(empty_view).unwrap();
+    let first: core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>> = core::iter::from_view<core::option::Option<core::result::Result<[u64;2],u64>>>(first_view).unwrap();
+    let last: core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>> = core::iter::from_view<core::option::Option<core::result::Result<[u64;2],u64>>>(last_view).unwrap();
+    let inners: [core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>;3] = [empty,first,last];
+    let outer: core::slice::Iter<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>> = core::iter::from_slice<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>>(inners,3).unwrap();
+    let policy: Borrowed<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,core::option::Option<i64>> = Borrowed { calls: 0 };
+    let flattened: core::iter::TryFlatten<core::slice::Iter<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>>,core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,Borrowed<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,core::option::Option<i64>>,core::option::Option<core::result::Result<[u64;2],u64>>,core::option::Option<i64>> = core::iter::try_flatten<core::slice::Iter<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>>,core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,Borrowed<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,core::option::Option<i64>>,core::option::Option<core::result::Result<[u64;2],u64>>,core::option::Option<i64>>(outer.borrow(),policy.borrow());
+    assert(policy.calls == 0);
+    assert(flattened.next().unwrap().unwrap().is_none());
+    assert(flattened.next().unwrap().unwrap().unwrap().unwrap_err() == 9223372036854775808);
+    let actual: [u64;2] = flattened.next().unwrap().unwrap().unwrap().unwrap();
+    assert(actual[0] == 18446744073709551615 && actual[1] == 4294967297);
+    assert(flattened.next().is_none() && flattened.next().is_none() && policy.calls == 3 && !flattened.has_active());
+    assert(flattened.try_finish().is_none() && outer.remaining() == 0);
+
+    let source: core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>> = core::iter::from_view<core::option::Option<core::result::Result<[u64;2],u64>>>(first_view).unwrap();
+    let identity: AsSome<core::option::Option<core::result::Result<[u64;2],u64>>> = AsSome { calls: 0 };
+    let scan: core::iter::Scan<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,AsSome<core::option::Option<core::result::Result<[u64;2],u64>>>,core::option::Option<core::result::Result<[u64;2],u64>>,core::option::Option<core::result::Result<[u64;2],u64>>> = core::iter::scan<core::slice::Iter<core::option::Option<core::result::Result<[u64;2],u64>>>,AsSome<core::option::Option<core::result::Result<[u64;2],u64>>>,core::option::Option<core::result::Result<[u64;2],u64>>,core::option::Option<core::result::Result<[u64;2],u64>>>(source.borrow(),identity.borrow());
+    assert(scan.next().unwrap().is_none());
+    assert(scan.next().unwrap().unwrap().unwrap_err() == 9223372036854775808);
+    assert(scan.next().is_none() && identity.calls == 2);
+}
+
+fn wide_flat_map() {
+    let values: [Payload;2] = [Payload { unsigned: 18446744073709551615, signed: -4294967297, cells: [4294967297,9223372036854775808], nested: core::option::Some(false) },Payload { unsigned: 9223372036854775808, signed: 9223372036854775807, cells: [18446744073709551615,0], nested: core::option::None() }];
+    let source: core::slice::Iter<Payload> = core::iter::from_slice<Payload>(values,2).unwrap();
+    let mapper: AsOnce<Payload> = AsOnce { calls: 0 };
+    let policy: Borrowed<core::iter::Once<Payload>,u64> = Borrowed { calls: 0 };
+    let mapped: core::iter::TryFlatMap<core::slice::Iter<Payload>,AsOnce<Payload>,Borrowed<core::iter::Once<Payload>,u64>,Payload,core::iter::Once<Payload>,Payload,u64> = core::iter::try_flat_map<core::slice::Iter<Payload>,AsOnce<Payload>,Borrowed<core::iter::Once<Payload>,u64>,Payload,core::iter::Once<Payload>,Payload,u64>(source.borrow(),mapper.borrow(),policy.borrow());
+    let a: Payload = mapped.next().unwrap().unwrap(); let b: Payload = mapped.next().unwrap().unwrap();
+    assert(a.unsigned == 18446744073709551615 && a.signed == -4294967297 && !a.nested.unwrap());
+    assert(a.cells[0] == 4294967297 && a.cells[1] == 9223372036854775808);
+    assert(b.unsigned == 9223372036854775808 && b.signed == 9223372036854775807 && b.nested.is_none());
+    assert(b.cells[0] == 18446744073709551615 && b.cells[1] == 0);
+    assert(mapped.next().is_none() && mapped.next().is_none() && mapper.calls == 2 && policy.calls == 2);
+}
+
+fn arrays_and_units() {
+    let values: [i64;2] = [-4294967297,9223372036854775807];
+    let source: core::slice::Iter<i64> = core::iter::from_slice<i64>(values,2).unwrap();
+    let mapper: Arrays = Arrays { calls: 0 };
+    let scanned: core::iter::TryScan<core::slice::Iter<i64>,Arrays,i64,[u64;2],core::option::Option<core::result::Result<i64,[u64;2]>>> = core::iter::try_scan<core::slice::Iter<i64>,Arrays,i64,[u64;2],core::option::Option<core::result::Result<i64,[u64;2]>>>(source.borrow(),mapper.borrow());
+    let a: [u64;2] = scanned.next().unwrap().unwrap();
+    assert(a[0] == 18446744073709551615 && a[1] == 18446744069414584319);
+    let error: [u64;2] = scanned.next().unwrap().unwrap_err().unwrap().unwrap_err();
+    assert(error[0] == 18446744073709551615 && error[1] == 9223372036854775807);
+    assert(scanned.next().is_none() && scanned.next().is_none() && mapper.calls == 2);
+
+    let units: [Unit;3] = [Unit {},Unit {},Unit {}];
+    assert(core::mem::slice_stride(units) == 0);
+    let unit_source: core::slice::Iter<Unit> = core::iter::from_slice<Unit>(units,3).unwrap();
+    let unit_mapper: AsOnce<Unit> = AsOnce { calls: 0 };
+    let unit_policy: Borrowed<core::iter::Once<Unit>,u64> = Borrowed { calls: 0 };
+    let mapped: core::iter::TryFlatMap<core::slice::Iter<Unit>,AsOnce<Unit>,Borrowed<core::iter::Once<Unit>,u64>,Unit,core::iter::Once<Unit>,Unit,u64> = core::iter::try_flat_map<core::slice::Iter<Unit>,AsOnce<Unit>,Borrowed<core::iter::Once<Unit>,u64>,Unit,core::iter::Once<Unit>,Unit,u64>(unit_source.borrow(),unit_mapper.borrow(),unit_policy.borrow());
+    assert(mapped.next().unwrap().is_ok() && mapped.next().unwrap().is_ok() && mapped.next().unwrap().is_ok());
+    assert(mapped.next().is_none() && mapped.next().is_none() && unit_mapper.calls == 3 && unit_policy.calls == 3);
+}
+fn main() -> i32 { nested_views(); wide_flat_map(); arrays_and_units(); return 0; }

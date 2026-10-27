@@ -74,6 +74,46 @@ trait Private { pub fn hidden() -> i32; }
         self.assertEqual(second.signature, "impl Other")
         self.assertEqual(second.children[0].signature, "pub fn read(&self) -> i32")
 
+    def test_private_nominal_implementations_do_not_publish_helpers(self):
+        source = '''module core::sample;
+pub trait Read<T> { pub fn read(value:T) -> T; }
+pub impl<T> Read<T> for Hidden<T> { pub fn read(value:T) -> T { return value; } }
+impl Hidden<i32> { pub fn leak() {} }
+pub impl<T> core::sample::Hidden<T> { pub fn leak_qualified() {} }
+pub impl Read<i32> for Secret { pub fn read(value:i32) -> i32 { return value; } }
+struct Hidden<T> { value:T }
+enum Secret { Empty }
+'''
+        module = self.scan(source)
+        self.assertEqual([(item.kind, item.name) for item in module.declarations], [("trait", "Read")])
+        self.assertEqual([item.name for item in module.declarations[0].children], ["read"])
+        self.assertEqual(module.public_keywords, sum(token.text == "pub" for token in reference.tokens(source)))
+
+    def test_public_unknown_external_and_shadowed_receivers_remain_visible(self):
+        module = self.scan('''module core::sample;
+struct Hidden<T> { value:T }
+pub struct Visible<T> { value:T }
+pub trait Read<T> { fn read(value:T) -> T; }
+pub impl<T, const N:usize> Read<T> for Visible<Hidden<T>> where T:a::Trait<T> { pub fn read(value:T) -> T { return value; } }
+impl core::sample::Visible<i32> { pub fn local() {} }
+pub impl Read<i32> for external::Hidden<i32> { pub fn external() {} }
+pub impl Read<i32> for i32 { pub fn builtin() {} }
+pub impl Read<i32> for Imported { pub fn unknown() {} }
+pub impl<Hidden:a::Trait<core::pair::Pair<i32,u8>>> Read<Hidden> for Hidden { pub fn generic() {} }
+pub impl Read<i32> for [Hidden<i32>;2] { pub fn array() {} }
+''')
+        blocks = [item for item in module.declarations if item.kind == "impl"]
+        self.assertEqual([item.children[0].name for item in blocks],
+                         ["read", "local", "external", "builtin", "unknown", "generic", "array"])
+        self.assertEqual([item.name for item in module.declarations[0].children], ["value"])
+        self.assertEqual([item.name for item in module.declarations[1].children], ["read"])
+
+    def test_hidden_receiver_still_rejects_unsupported_public_syntax(self):
+        with self.assertRaisesRegex(reference.ReferenceError, "unsupported public declaration shape"):
+            self.scan('''module core::sample; struct Hidden {}
+pub impl Hidden { pub unsafe fn action() {} }
+''')
+
     def test_externs_aliases_and_constant_initializer(self):
         module = self.scan('''module core::sample;
 pub extern "lanius_std" fn send(value: ptr, count: usize) -> i32;

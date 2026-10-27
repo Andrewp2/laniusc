@@ -1,0 +1,12 @@
+// Declaration/parser control only; no owning values are constructed.
+module app::main;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::result;
+struct Fault { code:i32 }
+struct Inner<J> { cursor:J }
+struct Make<J> { code:i32 }
+fn check<J,M>() where M:core::iter::Mapper<alloc::string::String,core::result::Result<Inner<J>,Fault>> { }
+fn main() -> i32 { return 0; }

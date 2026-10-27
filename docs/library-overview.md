@@ -1,12 +1,11 @@
 # Standard and extended library overview
 
-The full library goal remains open. The next
+The full library goal remains open. The current
 [scan and nested-iteration increment](library-nested-iteration-plan.md) is
-planned over the existing iterator protocol. Small user-module controls execute
-generic cursor value transfer and six owning Vec/Deque retirement/recovery
-profiles. Public adapters, imported-library composition, full owner accounting
-and the real application remain pending; these controls establish no new
-executable library API. The accepted
+implemented through the canonical iterator protocol. Two direct public smoke
+programs, three semantic/model Rust tests and all four real `flatten_sum`
+tests pass. All four direct strict-owner groups now pass as well; the selected
+increment is accepted on the finite profile below. The accepted
 [filesystem increment](library-filesystem-completion-plan.md) implements owned
 temporary directories, checked link/readlink and permission operations, and a
 real `mktemp_dir` program. All 13 selected Rust tests pass across separate
@@ -31,6 +30,54 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted scan and nested-iteration increment.**
+
+| Surface | Current finite scope |
+| --- | --- |
+| [Public adapter admission](stdlib-nested-iteration.md#verification-status) | Two actual stdlib-import programs compile and exit zero, covering all four adapters. These are direct CLI/native receipts; the two corresponding libtest registrations were not rerun. |
+| [Semantic and payload models](../tests/fixtures/stdlib_foundation/nested_iteration/README.md) | All three Rust tests pass in 9.31s: 360 nested and 672 scan binary command scenarios plus actual nested Option/Result/array, wide, strided and zero-sized payload checks. |
+| [Real flatten_sum program](stdlib-flatten-sum.md) | All four tests pass 219 process group cases across two commands: models 138/bounds 54 in 8.51s; allocations 11 (baseline plus ten reached OOMs)/faults 16 in 8.23s. Baselines/setup overlap; the earlier direct smoke adds no cases. |
+| [Strict native owners](../tests/fixtures/stdlib_execution/nested_iteration_owners/README.md) | All four direct oracle groups pass on one retained ELF: lifecycle 14, flatten OOM 30, Vec flat-map OOM 56 and Deque flat-map OOM 56. Total 156 group cases includes overlapping baselines; 132 OOM runs are individually reached. This is not a four-libtest receipt. |
+
+Core source is `7256a394...`; application source is `946043fe...`. Scan borrows
+caller-owned state. One nested engine transfers an exhausted inner to explicit
+retirement, restores the actual returned updated inner on failure, yields one
+error and fuses. Early take/finish preserves inner and outer recovery duties.
+No automatic destruction or borrowed-lifetime enforcement is added.
+
+Receipts under `target/stdlib-work/` are
+`nested-public-models-shapes-first.log`,
+`nested-flatten-sum-models-bounds-first.log` and
+`nested-flatten-sum-allocations-faults-first.log`; the separate direct smoke
+logs and exact source/ELF identities are in the linked guides. Seven Rust tests
+pass across those commands, plus two direct programs; this is not an all-five
+semantic-libtest run. The separate four direct owner groups verify actual
+Vec/Deque/String backing, owned errors and acknowledged live cleanup; the app
+checks source release at traced exit without that ACK protocol. Separate
+semantic/app CPU controls number 18 each; owner oracle controls number 41. Target evidence is native Linux
+x86_64 CPU code emitted by the GPU compiler, kernel `7.0.0-38-generic` with
+local ext4 `/tmp` fixtures. No other host or user GPU-kernel support follows.
+
+Direct owner receipts are `nested-owners-lifecycle-lazy-count-retry.log`,
+`nested-owners-flatten-oom-first.log`, `nested-owners-flatmap-vec-oom-first.log`
+and `nested-owners-flatmap-deque-oom-first.log`. Probe `e92ee3b8...`, retained
+ELF `3d99ec69...` and oracle `eb37f142...` establish actual updated-inner
+recovery, retirement-before-acquisition and held output/error release through
+strict site/size/prefix/phase and live mapping checkpoints. Initial fixture
+admission corrected an unsupported applied where-subject and generic cursor
+locals; later lazy/eager-count oracle corrections reused the emitted ELF.
+Production and compiler sources were unchanged by those fixture/oracle fixes.
+
+One separate untraced application observation processes 65,536 values in 3,072
+rows, including 2,048 empty rows, in 0.157614975s. The timer includes startup,
+stdin, parsing, ownership traversal, formatting and stdout capture; exact
+output validation is outside it. `nested-flatten-sum-scale-first.log` supplies
+one local observation, not a new fault case, source allocation count, compiler
+benchmark or general ratio. Nested calls can cross many empty inners, so output
+quotas do not bound outer/callback work. The
+[remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
+keeps replacement sinks and other iterator work visible.
 
 **Accepted filesystem increment.**
 
@@ -281,9 +328,12 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes its bounded writer and final check for the filesystem source/API freeze
-and preceding surfaces: 251 pages, 250 modules and 8,259 public declaration
-markers. Exactly three outputs change: the index, FileOps and new TempDir page. Source inventory evidence does not establish runtime
+passes its bounded writer and final check for the nested-iteration source/API
+freeze and preceding surfaces: 251 pages, 250 modules and 8,295 lexical public
+declaration markers. Six outputs change: the index, core::iter and four pages
+losing known-private helper impls. The completed strict-owner classification
+is reflected separately from source extraction; generation accepts no runtime
+gate itself. Source inventory evidence does not establish runtime
 support or library completion.
 
 Two lower-layer controls remain distinct from those current transport gates:
