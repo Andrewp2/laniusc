@@ -66,6 +66,25 @@ pub trait TrySink<T, E> {
     pub fn try_accept(&self, item: T) -> core::option::Option<E>;
 }
 
+// A checked replacement destination for one complete shallow item. Err leaves
+// incoming cleanup authority with caller and publishes no partial insertion.
+// Ok(None) stores a new item; Ok(Some(old)) stores the incoming item and returns
+// the complete displaced owner. No clone/Destroy or rollback is implicit.
+pub trait TryReplaceSink<T,E> {
+    pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,E>;
+}
+
+// Relative to this call only: replaced <= committed. A displaced-delivery
+// failure includes its CURRENT committed replacement in both counters.
+pub struct ReplacementProgress { committed: u64, replaced: u64 }
+pub struct ReplacementTransfer { progress: ReplacementProgress, exhausted: bool }
+pub enum ReplacementFailure<T,RE,DE> {
+    // Destination rejected this incoming T; no current commit occurred.
+    Rejected(ReplacementProgress,T,RE),
+    // Replacement committed. This T is the OLD item, rejected by delivery.
+    Undelivered(ReplacementProgress,T,DE),
+}
+
 // A transfer stops at the quota without probing again. exhausted means an
 // actual None was observed, not that a quota-ending source is known nonempty.
 pub struct Transfer { accepted: u64, exhausted: bool }
@@ -469,6 +488,60 @@ pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
         accepted += 1;
     }
     return core::result::Ok(Transfer { accepted: accepted, exhausted: false });
+}
+
+// At most limit immediate source calls/replacement attempts. Each old item is
+// delivered once through the existing TrySink contract before another pull.
+// Zero touches no object; a quota stop never probes for EOF. One next/hash/
+// callback may do unbounded work internally, outside this immediate-call quota.
+//
+// Rejected returns the incoming owner: retry/release it before source resume.
+// Undelivered returns the OLD owner after the incoming replacement committed:
+// retry only its delivery, retain it elsewhere or release it, not replacement.
+// Earlier commits/deliveries are never rolled back. Returned errors/items and
+// stored inputs keep their shallow cleanup authority; nothing is destroyed.
+// Caller also retains an owning source's remainder and exhausted backing.
+//
+// Keep source/destinations/backing alive and separate. No borrowed source into
+// either mutating destination; callbacks must not reenter or mutate peers.
+// A delivery error must neither retain old nor publish a partial insertion.
+// Partial-output writers cannot claim this rejection contract. This helper
+// itself performs no allocation or host work; callbacks own their effects.
+pub fn try_replace_up_to<I,R,D,T,RE,DE>(source: &I, replacement: &R, displaced: &D, limit: u64)
+    -> core::result::Result<ReplacementTransfer,ReplacementFailure<T,RE,DE>>
+    where I: Iterator<T>, R: TryReplaceSink<T,RE>, D: TrySink<T,DE> {
+    let committed: u64 = 0;
+    let replaced: u64 = 0;
+    while (committed < limit) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) {
+            let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+            return core::result::Ok(ReplacementTransfer { progress: progress, exhausted: true });
+        }
+        let value: T = item.unwrap();
+        let stored: core::result::Result<core::option::Option<T>,RE> = replacement.try_replace_item(value);
+        if (stored.is_err()) {
+            let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+            let failure: ReplacementFailure<T,RE,DE> = ReplacementFailure::Rejected(progress,value,stored.unwrap_err());
+            return core::result::Err(failure);
+        }
+        // committed < limit <= MAX. replaced <= old committed, so either
+        // increment remains <= the new committed count without MAX+1.
+        committed += 1;
+        let previous: core::option::Option<T> = stored.unwrap();
+        if (previous.is_some()) {
+            replaced += 1;
+            let old: T = previous.unwrap();
+            let failed: core::option::Option<DE> = displaced.try_accept(old);
+            if (failed.is_some()) {
+                let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+                let failure: ReplacementFailure<T,RE,DE> = ReplacementFailure::Undelivered(progress,old,failed.unwrap());
+                return core::result::Err(failure);
+            }
+        }
+    }
+    let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+    return core::result::Ok(ReplacementTransfer { progress: progress, exhausted: false });
 }
 
 // At most limit next calls; no probe when the quota is reached. exhausted says

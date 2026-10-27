@@ -1,6 +1,11 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[replacement-sink increment](library-replacement-sinks-plan.md) is implemented
+and accepted on the finite native profile below. Two semantic Rust gates,
+five negative-bound tests, strict owner/reached-OOM groups and the real
+latest-values campaigns now pass, separately from the initial direct smokes.
+The accepted
 [scan and nested-iteration increment](library-nested-iteration-plan.md) is
 implemented through the canonical iterator protocol. Two direct public smoke
 programs, three semantic/model Rust tests and all four real `flatten_sum`
@@ -30,6 +35,44 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted replacement-sink increment.**
+
+The [contract](stdlib-replacement-sinks.md) adds one bounded helper and four
+thin canonical map/set implementations. Rejected returns the incoming owner
+before commit; Undelivered returns the complete old item after commit. Recovery
+must not repeat that replacement. Both old map fields retain cleanup authority;
+prior collection and TrySink bodies are unchanged. Core source is `a6fc9e0d...`.
+
+| Surface | Accepted finite scope |
+| --- | --- |
+| Public/owning admission | Two direct stdlib-import programs exit zero. |
+| Semantics and shapes | Two separate Rust tests pass: model53 scenarios in 9.73s and wide/optional/zero-sized/four-duplicate-policy checks in 9.49s. |
+| Negative bounds | Five compiler-rejection Rust tests pass in 5.67s, separate from a 1m00s test-profile build; they prove no native behavior. |
+| Strict owners | Five direct groups pass 219 group cases with overlap and 183 individually reached OOMs. Lifecycle includes 16 healthy cases plus four unreached no-growth controls. |
+| [Latest-values program](stdlib-latest-values.md) | Four direct groups pass 248 overlapping cases: models136, bounds61, allocations34 (baseline plus33 OOMs), faults17. The strengthened bounds oracle verifies causal old/new/remainder owner lifetime. |
+
+The model/shape receipts are `replacement-model-typed-prime-retry.log` and
+`replacement-shapes-local-projection-retry.log`. Strict owners use
+`replacement-owners-{lifecycle,hash-map-oom,tree-map-oom,hash-set-oom,tree-set-oom}-first.log`.
+App groups use `replacement-latest-values-{models-first,bounds-live-order-retry,allocations-first,faults-first}.log`.
+All are under `target/stdlib-work/`; linked guides own exact identities and
+scope. The five resource and four app groups are direct retained-ELF oracle
+receipts, not five/four passing Rust libtests. Their registered drivers build
+with `--no-run` together in 3.42s. CPU controls number 18 semantic, 45 resource
+and 26 app, separately from runtime.
+
+A separate zero-sized return-call compiler dependency remains in an
+[import-free reproduction](../tests/fixtures/stdlib_compiler_state/replacement_zst_return/README.md).
+The API's public Failure/Result Unit storage and direct projection pass; a
+separate `(Progress,Unit,Unit)->Unit` function traps while its u64-return control
+executes. No compiler/library implementation was changed to hide that boundary.
+One 4,096-row/512-key untraced app observation takes 0.087919031s, including
+launch/input validation/owners/maps/history/staging/output capture, with exact
+checking outside the timer. It adds no case, allocation/RSS count or general
+compiler/performance ratio. Target evidence is native Linux x86_64 CPU programs
+emitted by the GPU compiler. The selected increment is accepted; the complete
+library goal remains open.
 
 **Accepted scan and nested-iteration increment.**
 
@@ -77,7 +120,7 @@ one local observation, not a new fault case, source allocation count, compiler
 benchmark or general ratio. Nested calls can cross many empty inners, so output
 quotas do not bound outer/callback work. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
-keeps replacement sinks and other iterator work visible.
+keeps remaining iterator and library work visible.
 
 **Accepted filesystem increment.**
 
@@ -328,12 +371,11 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes its bounded writer and final check for the nested-iteration source/API
-freeze and preceding surfaces: 251 pages, 250 modules and 8,295 lexical public
-declaration markers. Six outputs change: the index, core::iter and four pages
-losing known-private helper impls. The completed strict-owner classification
-is reflected separately from source extraction; generation accepts no runtime
-gate itself. Source inventory evidence does not establish runtime
+passes its bounded writer and final check for the replacement-sink source/API
+freeze: 251 pages, 250 modules and 8,309 lexical public declaration markers.
+Six outputs change: the index, core::iter and four map/set pages. Runtime
+acceptance is recorded separately; source extraction and negative compiler
+admission accept no runtime gate themselves. Source inventory evidence does not establish runtime
 support or library completion.
 
 Two lower-layer controls remain distinct from those current transport gates:

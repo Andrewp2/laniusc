@@ -1,0 +1,156 @@
+// Actual stdlib helper/facades with caller implementations. Scalar ownership
+// and finite effect checks only; models, owned-error and native ledgers follow.
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::result;
+
+struct Source<T> { values: [T], length: i32, position: i32, calls: i32 }
+impl<T> Source<T> { fn borrow(&self) -> &Source<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Source<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let item: T = self.values[self.position]; self.position += 1;
+        return core::option::Some(item);
+    }
+}
+struct Journal<T> { values: [T], length: i32, allow: i32, calls: i32 }
+impl<T> Journal<T> { fn borrow(&self) -> &Journal<T> { return self; } }
+pub impl<T> core::iter::TrySink<T,u64> for Journal<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<u64> {
+        self.calls += 1;
+        if (self.length == self.allow) { return core::option::Some(9002); }
+        self.values[self.length] = item; self.length += 1;
+        return core::option::None();
+    }
+}
+struct Store { value: core::option::Option<i32>, reject: i32, calls: i32 }
+impl Store { fn borrow(&self) -> &Store { return self; } }
+pub impl core::iter::TryReplaceSink<i32,u64> for Store {
+    pub fn try_replace_item(&self, item: i32) -> core::result::Result<core::option::Option<i32>,u64> {
+        self.calls += 1;
+        if (item == self.reject) { return core::result::Err(9001); }
+        let previous: core::option::Option<i32> = self.value;
+        self.value = core::option::Some(item); return core::result::Ok(previous);
+    }
+}
+fn wrong_phase() -> i32 { assert(false); return 0; }
+fn rejected(progress: core::iter::ReplacementProgress, incoming: i32, error: u64) -> i32 {
+    assert(progress.committed == 1 && progress.replaced == 0 && error == 9001 && incoming == 7); return incoming;
+}
+fn undelivered(progress: core::iter::ReplacementProgress, old: i32, error: u64) -> i32 {
+    assert(progress.committed == 1 && progress.replaced == 1 && error == 9002 && old == 5); return old;
+}
+fn get_rejected(failure: core::iter::ReplacementFailure<i32,u64,u64>) -> i32 {
+    return match (failure) { core::iter::ReplacementFailure::Rejected(progress,item,error) -> rejected(progress,item,error), _ -> wrong_phase() };
+}
+fn get_undelivered(failure: core::iter::ReplacementFailure<i32,u64,u64>) -> i32 {
+    return match (failure) { core::iter::ReplacementFailure::Undelivered(progress,item,error) -> undelivered(progress,item,error), _ -> wrong_phase() };
+}
+fn errors_and_recovery() {
+    let values: [i32;3] = [5,7,9]; let saved: [i32;4] = [0;4];
+    let source: Source<i32> = Source { values: values, length: 3, position: 0, calls: 0 };
+    let store: Store = Store { value: core::option::None(), reject: 7, calls: 0 };
+    let journal: Journal<i32> = Journal { values: saved, length: 0, allow: 4, calls: 0 };
+    let zero: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(source.borrow(),store.borrow(),journal.borrow(),0);
+    let untouched: core::iter::ReplacementTransfer = zero.unwrap();
+    assert(untouched.progress.committed == 0 && untouched.progress.replaced == 0 && !untouched.exhausted);
+    assert(source.calls == 0 && store.calls == 0 && journal.calls == 0);
+    let no_input: Source<i32> = Source { values: values, length: 0, position: 0, calls: 0 };
+    let no_transfer: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(no_input.borrow(),store.borrow(),journal.borrow(),18446744073709551615);
+    let observed_empty: core::iter::ReplacementTransfer = no_transfer.unwrap();
+    assert(observed_empty.progress.committed == 0 && observed_empty.progress.replaced == 0 && observed_empty.exhausted);
+    assert(no_input.calls == 1 && store.calls == 0 && journal.calls == 0);
+    let first: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(source.borrow(),store.borrow(),journal.borrow(),18446744073709551615);
+    let incoming: i32 = get_rejected(first.unwrap_err());
+    assert(source.position == 2 && source.calls == 2 && store.calls == 2 && store.value.unwrap() == 5 && journal.calls == 0);
+    store.reject = -1;
+    let retry: core::result::Result<core::option::Option<i32>,u64> = store.try_replace_item(incoming);
+    assert(journal.try_accept(retry.unwrap().unwrap()).is_none());
+    let continued: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(source.borrow(),store.borrow(),journal.borrow(),1);
+    let exact: core::iter::ReplacementTransfer = continued.unwrap();
+    assert(exact.progress.committed == 1 && exact.progress.replaced == 1 && !exact.exhausted && source.calls == 3);
+    assert(store.value.unwrap() == 9 && journal.length == 2 && saved[0] == 5 && saved[1] == 7);
+    let end: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(source.borrow(),store.borrow(),journal.borrow(),18446744073709551615);
+    let empty: core::iter::ReplacementTransfer = end.unwrap();
+    assert(empty.progress.committed == 0 && empty.progress.replaced == 0 && empty.exhausted && source.calls == 4);
+    assert(store.calls == 4 && journal.calls == 2);
+
+    let updates: [i32;2] = [7,9]; let held: [i32;2] = [0;2];
+    let next: Source<i32> = Source { values: updates, length: 2, position: 0, calls: 0 };
+    let committed: Store = Store { value: core::option::Some(5), reject: -1, calls: 0 };
+    let blocked: Journal<i32> = Journal { values: held, length: 0, allow: 0, calls: 0 };
+    let failed: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(next.borrow(),committed.borrow(),blocked.borrow(),18446744073709551615);
+    let old: i32 = get_undelivered(failed.unwrap_err());
+    assert(next.position == 1 && next.calls == 1 && committed.calls == 1 && committed.value.unwrap() == 7);
+    assert(blocked.length == 0 && blocked.calls == 1);
+    blocked.allow = 2; assert(blocked.try_accept(old).is_none());
+    let resumed: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<i32,u64,u64>> =
+        core::iter::try_replace_up_to<Source<i32>,Store,Journal<i32>,i32,u64,u64>(next.borrow(),committed.borrow(),blocked.borrow(),18446744073709551615);
+    let complete: core::iter::ReplacementTransfer = resumed.unwrap();
+    assert(complete.progress.committed == 1 && complete.progress.replaced == 1 && complete.exhausted);
+    assert(next.calls == 3 && committed.calls == 2 && committed.value.unwrap() == 9);
+    assert(blocked.calls == 3 && blocked.length == 2 && held[0] == 5 && held[1] == 7);
+}
+
+struct Key { id: i32, mark: u64 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(a: Key,b: Key) -> bool { return a.id == b.id; }
+    pub fn ne(a: Key,b: Key) -> bool { return a.id != b.id; }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value: Key) -> u32 { return 7; } }
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(a: Key,b: Key) -> bool { return a.id < b.id; }
+    pub fn le(a: Key,b: Key) -> bool { return a.id <= b.id; }
+    pub fn gt(a: Key,b: Key) -> bool { return a.id > b.id; }
+    pub fn ge(a: Key,b: Key) -> bool { return a.id >= b.id; }
+}
+type MapItem = alloc::hash_map::Entry<Key,u64>;
+fn facades() {
+    let old: Key = Key { id: 1, mark: 4294967297 }; let new: Key = Key { id: 1, mark: 18446744073709551615 };
+    let map: alloc::hash_map::HashMap<Key,u64> = alloc::hash_map::new<Key,u64>();
+    let seeded: core::result::Result<core::option::Option<MapItem>,alloc::hash_map::Error> = map.try_insert(old,11);
+    assert(seeded.unwrap().is_none());
+    let update: MapItem = alloc::hash_map::Entry { key: new, value: 29 };
+    let values: [MapItem;1] = [update]; let saved: [MapItem;1] = [update];
+    let source: Source<MapItem> = Source { values: values, length: 1, position: 0, calls: 0 };
+    let journal: Journal<MapItem> = Journal { values: saved, length: 0, allow: 1, calls: 0 };
+    let replaced: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<MapItem,alloc::hash_map::Error,u64>> =
+        core::iter::try_replace_up_to<Source<MapItem>,alloc::hash_map::HashMap<Key,u64>,Journal<MapItem>,MapItem,alloc::hash_map::Error,u64>(source.borrow(),map.borrow(),journal.borrow(),1);
+    let transfer: core::iter::ReplacementTransfer = replaced.unwrap();
+    assert(transfer.progress.committed == 1 && transfer.progress.replaced == 1 && !transfer.exhausted);
+    let retained: MapItem = map.get_entry(old).unwrap();
+    assert(retained.key.mark == 18446744073709551615 && retained.value == 29 && map.len() == 1);
+    assert(source.calls == 1 && journal.calls == 1 && saved[0].key.mark == 4294967297 && saved[0].value == 11);
+    let duplicate: core::option::Option<alloc::hash_map::SinkError> = map.try_accept(alloc::hash_map::Entry { key: old, value: 41 });
+    assert(match (duplicate.unwrap()) { alloc::hash_map::SinkError::Duplicate -> true, _ -> false });
+    let unchanged: MapItem = map.get_entry(old).unwrap();
+    assert(unchanged.key.mark == 18446744073709551615 && unchanged.value == 29 && map.len() == 1);
+    map.destroy();
+
+    let set: alloc::tree_set::TreeSet<Key> = alloc::tree_set::new<Key>();
+    let initial: core::result::Result<core::option::Option<Key>,alloc::tree_map::Error> = set.try_insert(old);
+    assert(initial.unwrap().is_none());
+    let keys: [Key;1] = [new]; let previous: [Key;1] = [new];
+    let input: Source<Key> = Source { values: keys, length: 1, position: 0, calls: 0 };
+    let history: Journal<Key> = Journal { values: previous, length: 0, allow: 1, calls: 0 };
+    let changed: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<Key,alloc::tree_map::Error,u64>> =
+        core::iter::try_replace_up_to<Source<Key>,alloc::tree_set::TreeSet<Key>,Journal<Key>,Key,alloc::tree_map::Error,u64>(input.borrow(),set.borrow(),history.borrow(),18446744073709551615);
+    let done: core::iter::ReplacementTransfer = changed.unwrap();
+    assert(done.progress.committed == 1 && done.progress.replaced == 1 && done.exhausted);
+    assert(input.calls == 2 && history.calls == 1 && previous[0].mark == 4294967297);
+    assert(set.len() == 1 && set.get(old).unwrap().mark == 18446744073709551615); set.destroy();
+}
+fn main() -> i32 { errors_and_recovery(); facades(); return 0; }

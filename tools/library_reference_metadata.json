@@ -102,18 +102,20 @@
         "docs/stdlib-hash-collections.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-hash.md"
+        "docs/stdlib-owning-hash.md",
+        "docs/stdlib-replacement-sinks.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
     },
     "alloc::hash_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-hash.md"
+        "docs/stdlib-owning-hash.md",
+        "docs/stdlib-replacement-sinks.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide."
     },
     "alloc::io": {
       "guides": [
@@ -136,18 +138,21 @@
         "docs/stdlib-tree-map.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-tree.md"
+        "docs/stdlib-owning-tree.md",
+        "docs/stdlib-replacement-sinks.md",
+        "docs/stdlib-latest-values.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
     },
     "alloc::tree_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-tree.md"
+        "docs/stdlib-owning-tree.md",
+        "docs/stdlib-replacement-sinks.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide."
     },
     "alloc::vec": {
       "guides": [
@@ -325,9 +330,11 @@
         "docs/stdlib-iterator-lookahead.md",
         "docs/stdlib-column-extrema.md",
         "docs/stdlib-nested-iteration.md",
-        "docs/stdlib-flatten-sum.md"
+        "docs/stdlib-flatten-sum.md",
+        "docs/stdlib-replacement-sinks.md",
+        "docs/stdlib-latest-values.md"
       ],
-      "note": "Fused forward iteration, borrowed adapters, lookahead and bounded transfer use explicit shallow-item ownership. Peekable supports cached-item recovery; position uses checked relative u64 indices and extrema preserve first-minimum/last-maximum ties. Scan/TryScan borrow caller-owned state and fuse on stop/error. TryFlatten/TryFlatMap share one engine with explicit InnerRetirement transfer, restoring the policy-returned updated inner after failure and preserving take_active recovery. The selected scan/nested increment executes on native Linux x86_64 through finite semantic, owned-resource/fault and real flatten_sum receipts; the linked guides distinguish direct-oracle and Rust-libtest evidence. Keep sources, callbacks and borrowed backing alive, prohibit reentrancy, and explicitly retire/release owners. Downstream output quotas do not bound empty-inner traversal."
+      "note": "Shared fused iteration, borrowed scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Nested retirement preserves the actual updated inner and take_active recovery. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. The selected replacement increment has finite native Linux x86_64 semantic, owner/fault and real-application acceptance; linked guides distinguish direct oracle groups from Rust tests and record a separate zero-sized function-return compiler dependency. Keep sources/callbacks/backing alive, prohibit reentrancy, and apply quotas to immediate calls rather than arbitrary upstream work."
     },
     "core::math": {
       "guides": [

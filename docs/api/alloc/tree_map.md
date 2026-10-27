@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
+Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope.
 
 ## Contract and evidence guides
 
@@ -16,8 +16,10 @@ Owning cursors also execute with explicit transfer, retained backing, O(1) recov
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 - [stdlib-owning-tree](../../stdlib-owning-tree.md)
+- [stdlib-replacement-sinks](../../stdlib-replacement-sinks.md)
+- [stdlib-latest-values](../../stdlib-latest-values.md)
 
-Declaration counts: enum: 3; field: 25; function: 20; impl: 8; method: 39; struct: 6; variant: 9.
+Declaration counts: enum: 3; field: 25; function: 20; impl: 9; method: 40; struct: 6; variant: 9.
 
 ## Declared imports
 
@@ -269,7 +271,7 @@ owner: TreeMap<K, V>
 
 ### struct: KeyStorage
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 pub struct KeyStorage
@@ -277,7 +279,7 @@ pub struct KeyStorage
 
 #### field: storage
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 storage: ptr
@@ -285,7 +287,7 @@ storage: ptr
 
 #### field: reserved
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 reserved: i32
@@ -293,7 +295,7 @@ reserved: i32
 
 #### field: used
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 used: i32
@@ -301,7 +303,7 @@ used: i32
 
 #### field: length
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 length: i32
@@ -309,7 +311,7 @@ length: i32
 
 #### field: root
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 root: i32
@@ -317,7 +319,7 @@ root: i32
 
 #### field: free
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 free: i32
@@ -325,7 +327,7 @@ free: i32
 
 #### field: key_bytes
 
-[Source line 404](../../../stdlib/alloc/tree_map.lani#L404)
+[Source line 413](../../../stdlib/alloc/tree_map.lani#L413)
 
 ```lanius
 key_bytes: usize
@@ -333,7 +335,7 @@ key_bytes: usize
 
 ### struct: KeyCursor
 
-[Source line 405](../../../stdlib/alloc/tree_map.lani#L405)
+[Source line 414](../../../stdlib/alloc/tree_map.lani#L414)
 
 ```lanius
 pub struct KeyCursor
@@ -341,7 +343,7 @@ pub struct KeyCursor
 
 #### field: storage
 
-[Source line 405](../../../stdlib/alloc/tree_map.lani#L405)
+[Source line 414](../../../stdlib/alloc/tree_map.lani#L414)
 
 ```lanius
 storage: ptr
@@ -349,7 +351,7 @@ storage: ptr
 
 #### field: reserved
 
-[Source line 405](../../../stdlib/alloc/tree_map.lani#L405)
+[Source line 414](../../../stdlib/alloc/tree_map.lani#L414)
 
 ```lanius
 reserved: i32
@@ -357,7 +359,7 @@ reserved: i32
 
 #### field: front
 
-[Source line 405](../../../stdlib/alloc/tree_map.lani#L405)
+[Source line 414](../../../stdlib/alloc/tree_map.lani#L414)
 
 ```lanius
 front: i32
@@ -365,7 +367,7 @@ front: i32
 
 #### field: back
 
-[Source line 405](../../../stdlib/alloc/tree_map.lani#L405)
+[Source line 414](../../../stdlib/alloc/tree_map.lani#L414)
 
 ```lanius
 back: i32
@@ -373,7 +375,7 @@ back: i32
 
 #### field: key_bytes
 
-[Source line 405](../../../stdlib/alloc/tree_map.lani#L405)
+[Source line 414](../../../stdlib/alloc/tree_map.lani#L414)
 
 ```lanius
 key_bytes: usize
@@ -408,7 +410,7 @@ pub fn from_sorted<K, V>(input: core::slice::View<Entry<K, V>>) -> core::result:
 
 ### function: key_storage
 
-[Source line 408](../../../stdlib/alloc/tree_map.lani#L408)
+[Source line 417](../../../stdlib/alloc/tree_map.lani#L417)
 
 ```lanius
 pub fn key_storage<T>() -> KeyStorage
@@ -416,7 +418,7 @@ pub fn key_storage<T>() -> KeyStorage
 
 ### function: key_replace
 
-[Source line 419](../../../stdlib/alloc/tree_map.lani#L419)
+[Source line 428](../../../stdlib/alloc/tree_map.lani#L428)
 
 ```lanius
 pub fn key_replace<T>(owner: &KeyStorage, key: T) -> core::result::Result<core::option::Option<T>, Error> where T: core::cmp::Ord<T>
@@ -424,7 +426,7 @@ pub fn key_replace<T>(owner: &KeyStorage, key: T) -> core::result::Result<core::
 
 ### function: key_contains
 
-[Source line 428](../../../stdlib/alloc/tree_map.lani#L428)
+[Source line 437](../../../stdlib/alloc/tree_map.lani#L437)
 
 ```lanius
 pub fn key_contains<T>(owner: &KeyStorage, key: T) -> bool where T: core::cmp::Ord<T>
@@ -432,7 +434,7 @@ pub fn key_contains<T>(owner: &KeyStorage, key: T) -> bool where T: core::cmp::O
 
 ### function: key_iter
 
-[Source line 431](../../../stdlib/alloc/tree_map.lani#L431)
+[Source line 440](../../../stdlib/alloc/tree_map.lani#L440)
 
 ```lanius
 pub fn key_iter<T>(owner: &KeyStorage) -> KeyCursor
@@ -440,7 +442,7 @@ pub fn key_iter<T>(owner: &KeyStorage) -> KeyCursor
 
 ### function: key_next
 
-[Source line 435](../../../stdlib/alloc/tree_map.lani#L435)
+[Source line 444](../../../stdlib/alloc/tree_map.lani#L444)
 
 ```lanius
 pub fn key_next<T>(cursor: &KeyCursor) -> core::option::Option<T>
@@ -448,7 +450,7 @@ pub fn key_next<T>(cursor: &KeyCursor) -> core::option::Option<T>
 
 ### function: key_destroy
 
-[Source line 443](../../../stdlib/alloc/tree_map.lani#L443)
+[Source line 452](../../../stdlib/alloc/tree_map.lani#L452)
 
 ```lanius
 pub fn key_destroy<T>(owner: &KeyStorage)
@@ -456,7 +458,7 @@ pub fn key_destroy<T>(owner: &KeyStorage)
 
 ### function: key_get
 
-[Source line 447](../../../stdlib/alloc/tree_map.lani#L447)
+[Source line 456](../../../stdlib/alloc/tree_map.lani#L456)
 
 ```lanius
 pub fn key_get<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T>
@@ -464,7 +466,7 @@ pub fn key_get<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T
 
 ### function: key_remove
 
-[Source line 453](../../../stdlib/alloc/tree_map.lani#L453)
+[Source line 462](../../../stdlib/alloc/tree_map.lani#L462)
 
 ```lanius
 pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> where T: core::cmp::Ord<T>
@@ -472,7 +474,7 @@ pub fn key_remove<T>(owner: &KeyStorage, key: T) -> core::option::Option<T> wher
 
 ### function: key_reserve
 
-[Source line 460](../../../stdlib/alloc/tree_map.lani#L460)
+[Source line 469](../../../stdlib/alloc/tree_map.lani#L469)
 
 ```lanius
 pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Result<i32, Error>
@@ -480,7 +482,7 @@ pub fn key_reserve<T>(owner: &KeyStorage, additional: i32) -> core::result::Resu
 
 ### function: key_shrink
 
-[Source line 465](../../../stdlib/alloc/tree_map.lani#L465)
+[Source line 474](../../../stdlib/alloc/tree_map.lani#L474)
 
 ```lanius
 pub fn key_shrink<T>(owner: &KeyStorage) -> core::result::Result<i32, Error>
@@ -488,7 +490,7 @@ pub fn key_shrink<T>(owner: &KeyStorage) -> core::result::Result<i32, Error>
 
 ### function: key_clone
 
-[Source line 470](../../../stdlib/alloc/tree_map.lani#L470)
+[Source line 479](../../../stdlib/alloc/tree_map.lani#L479)
 
 ```lanius
 pub fn key_clone<T>(owner: &KeyStorage) -> core::result::Result<KeyStorage, Error>
@@ -496,7 +498,7 @@ pub fn key_clone<T>(owner: &KeyStorage) -> core::result::Result<KeyStorage, Erro
 
 ### function: key_clear
 
-[Source line 477](../../../stdlib/alloc/tree_map.lani#L477)
+[Source line 486](../../../stdlib/alloc/tree_map.lani#L486)
 
 ```lanius
 pub fn key_clear<T>(owner: &KeyStorage)
@@ -504,7 +506,7 @@ pub fn key_clear<T>(owner: &KeyStorage)
 
 ### function: key_endpoint
 
-[Source line 483](../../../stdlib/alloc/tree_map.lani#L483)
+[Source line 492](../../../stdlib/alloc/tree_map.lani#L492)
 
 ```lanius
 pub fn key_endpoint<T>(owner: &KeyStorage, last: bool) -> core::option::Option<T>
@@ -512,7 +514,7 @@ pub fn key_endpoint<T>(owner: &KeyStorage, last: bool) -> core::option::Option<T
 
 ### function: key_pop
 
-[Source line 489](../../../stdlib/alloc/tree_map.lani#L489)
+[Source line 498](../../../stdlib/alloc/tree_map.lani#L498)
 
 ```lanius
 pub fn key_pop<T>(owner: &KeyStorage, last: bool) -> core::option::Option<T>
@@ -520,7 +522,7 @@ pub fn key_pop<T>(owner: &KeyStorage, last: bool) -> core::option::Option<T>
 
 ### function: key_bound
 
-[Source line 497](../../../stdlib/alloc/tree_map.lani#L497)
+[Source line 506](../../../stdlib/alloc/tree_map.lani#L506)
 
 ```lanius
 pub fn key_bound<T>(owner: &KeyStorage, key: T, strict: bool) -> core::option::Option<T> where T: core::cmp::Ord<T>
@@ -528,7 +530,7 @@ pub fn key_bound<T>(owner: &KeyStorage, key: T, strict: bool) -> core::option::O
 
 ### function: key_range
 
-[Source line 503](../../../stdlib/alloc/tree_map.lani#L503)
+[Source line 512](../../../stdlib/alloc/tree_map.lani#L512)
 
 ```lanius
 pub fn key_range<T>(owner: &KeyStorage, lower: T, upper: T) -> core::result::Result<KeyCursor, Error> where T: core::cmp::Ord<T>
@@ -536,7 +538,7 @@ pub fn key_range<T>(owner: &KeyStorage, lower: T, upper: T) -> core::result::Res
 
 ### function: key_next_back
 
-[Source line 509](../../../stdlib/alloc/tree_map.lani#L509)
+[Source line 518](../../../stdlib/alloc/tree_map.lani#L518)
 
 ```lanius
 pub fn key_next_back<T>(cursor: &KeyCursor) -> core::option::Option<T>
@@ -762,9 +764,26 @@ pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for TreeMap<K, V>
 pub fn try_accept(&self, item: Entry<K, V>) -> core::option::Option<SinkError>
 ```
 
-### impl at line 348
+### impl at line 350
 
-[Source line 348](../../../stdlib/alloc/tree_map.lani#L348)
+[Source line 350](../../../stdlib/alloc/tree_map.lani#L350)
+
+```lanius
+pub impl<K,V> core::iter::TryReplaceSink<Entry<K,V>,Error> for TreeMap<K,V>
+    where K: core::cmp::Ord<K>
+```
+
+#### method: try_replace_item
+
+[Source line 352](../../../stdlib/alloc/tree_map.lani#L352)
+
+```lanius
+pub fn try_replace_item(&self, item: Entry<K,V>) -> core::result::Result<core::option::Option<Entry<K,V>>,Error>
+```
+
+### impl at line 357
+
+[Source line 357](../../../stdlib/alloc/tree_map.lani#L357)
 
 ```lanius
 pub impl<K, V> Cursor<K, V>
@@ -772,7 +791,7 @@ pub impl<K, V> Cursor<K, V>
 
 #### method: borrow
 
-[Source line 349](../../../stdlib/alloc/tree_map.lani#L349)
+[Source line 358](../../../stdlib/alloc/tree_map.lani#L358)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<K, V>
@@ -780,7 +799,7 @@ pub fn borrow(&self) -> &Cursor<K, V>
 
 #### method: is_empty
 
-[Source line 350](../../../stdlib/alloc/tree_map.lani#L350)
+[Source line 359](../../../stdlib/alloc/tree_map.lani#L359)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -788,15 +807,15 @@ pub fn is_empty(&self) -> bool
 
 #### method: next_back
 
-[Source line 351](../../../stdlib/alloc/tree_map.lani#L351)
+[Source line 360](../../../stdlib/alloc/tree_map.lani#L360)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<Entry<K, V>>
 ```
 
-### impl at line 361
+### impl at line 370
 
-[Source line 361](../../../stdlib/alloc/tree_map.lani#L361)
+[Source line 370](../../../stdlib/alloc/tree_map.lani#L370)
 
 ```lanius
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V>
@@ -804,15 +823,15 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V>
 
 #### method: next
 
-[Source line 362](../../../stdlib/alloc/tree_map.lani#L362)
+[Source line 371](../../../stdlib/alloc/tree_map.lani#L371)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Entry<K, V>>
 ```
 
-### impl at line 372
+### impl at line 381
 
-[Source line 372](../../../stdlib/alloc/tree_map.lani#L372)
+[Source line 381](../../../stdlib/alloc/tree_map.lani#L381)
 
 ```lanius
 pub impl<K, V> IntoIter<K, V>
@@ -820,7 +839,7 @@ pub impl<K, V> IntoIter<K, V>
 
 #### method: borrow
 
-[Source line 373](../../../stdlib/alloc/tree_map.lani#L373)
+[Source line 382](../../../stdlib/alloc/tree_map.lani#L382)
 
 ```lanius
 pub fn borrow(&self) -> &IntoIter<K, V>
@@ -828,7 +847,7 @@ pub fn borrow(&self) -> &IntoIter<K, V>
 
 #### method: remaining
 
-[Source line 374](../../../stdlib/alloc/tree_map.lani#L374)
+[Source line 383](../../../stdlib/alloc/tree_map.lani#L383)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -836,7 +855,7 @@ pub fn remaining(&self) -> i32
 
 #### method: capacity
 
-[Source line 375](../../../stdlib/alloc/tree_map.lani#L375)
+[Source line 384](../../../stdlib/alloc/tree_map.lani#L384)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -844,7 +863,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 376](../../../stdlib/alloc/tree_map.lani#L376)
+[Source line 385](../../../stdlib/alloc/tree_map.lani#L385)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -852,7 +871,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: next_back
 
-[Source line 379](../../../stdlib/alloc/tree_map.lani#L379)
+[Source line 388](../../../stdlib/alloc/tree_map.lani#L388)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<Entry<K, V>>
@@ -860,7 +879,7 @@ pub fn next_back(&self) -> core::option::Option<Entry<K, V>>
 
 #### method: try_finish
 
-[Source line 384](../../../stdlib/alloc/tree_map.lani#L384)
+[Source line 393](../../../stdlib/alloc/tree_map.lani#L393)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<IntoIterError>
@@ -868,15 +887,15 @@ pub fn try_finish(&self) -> core::option::Option<IntoIterError>
 
 #### method: take_remaining
 
-[Source line 391](../../../stdlib/alloc/tree_map.lani#L391)
+[Source line 400](../../../stdlib/alloc/tree_map.lani#L400)
 
 ```lanius
 pub fn take_remaining(&self) -> TreeMap<K, V>
 ```
 
-### impl at line 393
+### impl at line 402
 
-[Source line 393](../../../stdlib/alloc/tree_map.lani#L393)
+[Source line 402](../../../stdlib/alloc/tree_map.lani#L402)
 
 ```lanius
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V>
@@ -884,15 +903,15 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V>
 
 #### method: next
 
-[Source line 394](../../../stdlib/alloc/tree_map.lani#L394)
+[Source line 403](../../../stdlib/alloc/tree_map.lani#L403)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Entry<K, V>>
 ```
 
-### impl at line 406
+### impl at line 415
 
-[Source line 406](../../../stdlib/alloc/tree_map.lani#L406)
+[Source line 415](../../../stdlib/alloc/tree_map.lani#L415)
 
 ```lanius
 pub impl KeyStorage
@@ -900,15 +919,15 @@ pub impl KeyStorage
 
 #### method: borrow
 
-[Source line 406](../../../stdlib/alloc/tree_map.lani#L406)
+[Source line 415](../../../stdlib/alloc/tree_map.lani#L415)
 
 ```lanius
 pub fn borrow(&self) -> &KeyStorage
 ```
 
-### impl at line 407
+### impl at line 416
 
-[Source line 407](../../../stdlib/alloc/tree_map.lani#L407)
+[Source line 416](../../../stdlib/alloc/tree_map.lani#L416)
 
 ```lanius
 pub impl KeyCursor
@@ -916,7 +935,7 @@ pub impl KeyCursor
 
 #### method: borrow
 
-[Source line 407](../../../stdlib/alloc/tree_map.lani#L407)
+[Source line 416](../../../stdlib/alloc/tree_map.lani#L416)
 
 ```lanius
 pub fn borrow(&self) -> &KeyCursor

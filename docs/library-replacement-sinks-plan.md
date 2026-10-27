@@ -1,11 +1,13 @@
 # Ownership-aware replacement sinks
 
-Status: **proposal only**. The new interfaces below are not implemented or
-executable. This proposes the next iteration work after the accepted
-[scan/nested increment](library-nested-iteration-plan.md).
-The complete standard and extended library goal remains
-open. This document changes no production or test source and records no new
-execution receipt.
+Status: **selected increment accepted on the finite native Linux x86_64
+profile**. The frozen five-file implementation passes direct public admission,
+two semantic Rust gates, five negative-bound compiler tests, strict owner/OOM
+campaigns and the real latest-values application. Direct oracle campaigns are
+not claimed as Rust-libtest execution. The full standard and extended library
+goal remains open; the separate zero-sized return-call compiler dependency
+below is retained. The [contract guide](stdlib-replacement-sinks.md) owns API,
+cleanup, failure and target details.
 
 ## Problem and existing source contracts
 
@@ -29,7 +31,7 @@ Hash-map replacement also returns before reserve/growth. The set methods
 delegate through their existing canonical key-storage/map engines. Set
 `try_insert` has a different policy: an equivalent key preserves the old stored
 representative and returns the **supplied incoming** representative. It must not
-implement the proposed replacement sink.
+implement the selected replacement sink.
 
 The two map `Entry` types remain distinct nominal types. Returning only an old
 map value would lose the old key's cleanup authority. All four selected
@@ -41,9 +43,10 @@ replacement. A replacement followed by failed delivery cannot be represented
 as ordinary `TrySink` rejection: the incoming item now belongs to the map/set,
 so returning it as the rejected item would duplicate cleanup authority.
 
-## Recommended shared boundary
+## Frozen shared boundary
 
-These names and signatures are proposed for contract review, not frozen APIs:
+The selected names and signatures are implemented at the source freeze below.
+The current finite executable receipts are recorded below:
 
 ```lani
 pub trait TryReplaceSink<T,E> {
@@ -90,7 +93,7 @@ not a reason to alter compiler dispatch or add compatibility aliases.
   `Ok(Some(None))` is a displacement of a real optional item, distinct from
   `Ok(None)` with no displacement.
 
-Proposed standard implementations:
+Selected standard implementations:
 
 | Destination | `T` | `RE` | Delegate unchanged |
 | --- | --- | --- | --- |
@@ -224,14 +227,14 @@ receiver patterns for distinct caller implementations. Reject wrong map Entry
 identity, key bounds, replacement error, displaced item and displaced error.
 
 The existing dependency ledger records selected generic source shapes; none
-alone proves this proposed API is blocked. In particular, an older generic
+alone proves this API is blocked. In particular, an older generic
 `Vec.at` extraction and imported finish-result shape have retained captures;
 prefer already canonical cursor/typed-view ownership paths in the fixtures.
 Preserve any newly failing minimal source before classifying it. Routine source
 visibility, duplicate receiver-pattern or inference errors are not compiler
 bugs. Do not change compiler IR, ABI, proofs, extraction or runtime here.
 
-Proposed production ownership is small:
+Production ownership is limited to:
 
 - `core::iter`: one destination trait, progress/result types and one bounded
   helper using the existing Iterator/TrySink protocols.
@@ -240,9 +243,73 @@ Proposed production ownership is small:
 - Dedicated guide plus overview/roadmap/reference updates after implementation
   and actual receipts. Root README and human policy files remain untouched.
 
+## Current source freeze and first admission
+
+The five production files are frozen; static review finds 109 added lines and
+no deleted or changed existing bodies. There is no compiler/runtime change.
+
+| Production file | SHA-256 |
+| --- | --- |
+| `stdlib/core/iter.lani` | `a6fc9e0d63c55088c66eb70d33b425a224d4672c4cd32743cfcad3639bac79af` |
+| `stdlib/alloc/hash_map.lani` | `f3e6b36340c74402bbdb970619800b85e3c70980b529d8f3bae3602afca91095` |
+| `stdlib/alloc/hash_set.lani` | `eeba04ae4a8f6cef1469c67269f5dcb3c6eefa30632cebda9d0fdf595979f3d0` |
+| `stdlib/alloc/tree_map.lani` | `01904e6481ceb83c025990b832e755f3eb8c6e7b9ddf71db04d951f63faed02c` |
+| `stdlib/alloc/tree_set.lani` | `bd3cec1c95ceb32ef46909a3c2b533187967e5138c33690b7928cdf8750212ee` |
+
+Two direct CLI/native programs execute through those actual modules:
+
+| Scope | Source prefix | Compile/native receipts under `target/stdlib-work/` | ELF prefix |
+| --- | --- | --- | --- |
+| Public helper with caller-defined pre/postcommit failures, quotas/EOF, actual HashMap/TreeSet representatives and existing HashMap TrySink policy | `a1a17538...` | `replacement-public-smoke-first.log`, `replacement-public-smoke-native-first.log` | `8386070d...` |
+| Small TreeMap/String/error-owner composition | `7b7f5c98...` | `replacement-owners-admission-first.log`, `replacement-owners-admission-native-first.log` | `b6173242...` |
+
+Both ELFs exit zero. These are direct admission programs, not Rust-libtest or
+full model/facade campaign receipts. The owning program has no strict live
+mapping/FD ledger or allocation-failure acceptance; the later strict campaign
+has separate receipts below. Five
+negative-bound Rust tests separately pass in 5.67s in
+`replacement-bounds-first.log`; its command also includes a 1m00s test-profile
+build. They assert helper-call LNC0008 labels for wrong Entry identity, missing
+key Hash, wrong raw replacement error, displaced item and displaced error. No
+native behavior is inferred from expected compiler rejection.
+Existing collection and earlier nested-iteration receipts retain their old
+source scopes; the new smoke checks only its explicit older-policy control.
+
+## Accepted finite campaigns
+
+| Surface | Current accepted scope | Receipts under `target/stdlib-work/` |
+| --- | --- | --- |
+| Semantic Rust gates | One model test/53 scenarios in 9.73s and one actual wide/optional/zero-sized shape and four-facade duplicate-policy test in 9.49s | `replacement-model-typed-prime-retry.log`, `replacement-shapes-local-projection-retry.log` |
+| Strict owners | Five direct groups: lifecycle20, HashMap63, TreeMap57, HashSet41, TreeSet38; 219 group cases with overlapping baselines and 183 individually reached OOMs | `replacement-owners-{lifecycle,hash-map-oom,tree-map-oom,hash-set-oom,tree-set-oom}-first.log` |
+| Real latest-values program | Four direct groups: models136, bounds61, allocations34 (baseline plus33 reached OOMs), faults17; 248 group cases with overlap | `replacement-latest-values-models-first.log`, `replacement-latest-values-bounds-live-order-retry.log`, `replacement-latest-values-allocations-first.log`, `replacement-latest-values-faults-first.log` |
+
+The owner lifecycle contains 16 healthy cases and four intentionally unreached
+allocation-denial controls. Those four establish the specific no-growth
+replacement behavior, not reached fault coverage. The five owner and four app
+groups reuse retained native ELFs and are not five/four passing Rust libtests.
+Their registered drivers build together with `--no-run` in 3.42s
+(`replacement-app-owner-driver-build-first.log`), separately from runtime.
+CPU controls number 18 semantic, 45 resource and 26 application.
+
+The first model fixture needed a typed Result local. Its initial shape helper
+exposed a separate import-free `(Progress,Unit,Unit)->Unit` return-call issue:
+compilation succeeds but native execution traps; changing only the separate
+control's return to u64 executes. Actual public Failure/Result Unit construction
+and direct caller projection are correct and retain all shape assertions.
+The [minimal reproduction](../tests/fixtures/stdlib_compiler_state/replacement_zst_return/README.md)
+and [dependency ledger](library-dependencies.md) preserve that specific compiler
+boundary; no production or compiler source changed to admit this API.
+
+Independent review strengthened the app's owner witness: trusted allocation
+ordinals bind to the original full-trace mmap, and old/new/remainder owners must
+exist before the first positive diagnostic write and survive its complete
+record. The corrected 61-case bounds rerun passes with app/ELF unchanged. Module
+and fixture guides retain exact hashes, initial failures and ledger scope.
+
 ## Acceptance obligations
 
-The following are required future evidence, not completed tests or proofs.
+The finite campaigns above satisfy the selected obligations below. They are
+not universal proofs, complete compiler-generic acceptance or other-host support.
 
 ### State model and exact ownership
 
@@ -303,35 +370,29 @@ not a universal throughput or compiler-performance claim.
 
 ## Real program: latest values with displaced history
 
-Propose `sample_programs/library/latest_values.lani`: a bounded stdin utility
-which processes UTF-8 `key<TAB>value` rows, retains the latest value per key and
-emits displaced entries in update order followed by a key-sorted final snapshot.
-Freeze its exact record/escaping grammar and CLI bounds before implementation.
+The implemented [latest_values program](stdlib-latest-values.md) reads bounded
+strict UTF-8 `key<TAB>value` rows, stores independent String key/value owners in
+TreeMap, and collects complete displaced entries in update order. Its staged
+output emits history followed by a key-sorted latest snapshot. Rejected and
+Undelivered cleanup preserve both old/new fields, errors and source remainders;
+a failed old-item delivery does not repeat the committed replacement.
 
-Use existing Text/decimal/stdio modules to validate bounded input and arguments,
-then create independent owned String keys and values in an owned Entry vector.
-An owning source transfers entries to `TreeMap<String,String>` through the new
-helper. A bounded displaced-history sink uses the existing TrySink contract and
-an owned vector of complete old tree-map Entries. It must reject before retaining
-an item when its explicit history bound or allocation fails.
+All four direct application campaigns pass the 248 group cases above. The
+bounded history-zero diagnostic proves the new value is already stored while
+the old and remainder owners remain live, before explicit cleanup. Its oracle
+provides trace-exit release evidence; the separate strict-owner fixture supplies
+live acknowledged `/proc` checkpoints. The application guide owns exact grammar,
+eight CLI caps, output/error policy, source identities and receipt mechanics.
 
-Stage normal output before delivery. On a precommit error, preserve/release the
-returned incoming entry; on failed history delivery, preserve/release the old
-entry while recognizing the latest update already resides in the map. Clean
-both String fields of every owned entry, both destinations, the returned error
-and the source remainder/backing exactly once. The library fixtures demonstrate
-retry; the CLI may fail with no normal stdout after safely cleaning its partial
-in-memory state. Final stdout write failure can expose a confirmed prefix and
-must report it honestly rather than promise rollback.
+One separate untraced observation processes 4,096 rows/512 keys, returning 3,584
+displacements and 512 snapshot entries: 49,152 input bytes and 65,536 output
+bytes. Its 0.087919031s includes launch, stdin, input validation, String owners,
+map/history processing, staging and stdout capture; independent exact-output
+validation is outside the timer. `replacement-latest-values-scale-first.log`
+records this one local sample. It adds no group case, measured allocation/RSS
+count or compiler/general speed ratio.
 
-Independent application cases should cover repeated keys with distinct owned
-representatives, empty values, invalid UTF-8/records, exact/exceeded input/row/
-history/output/I/O budgets, final ordering and complete displaced history. A
-history rejection after a known successful replacement is a required causal
-case. Include every reached source/map/history/output allocation denial, short
-I/O, EINTR, hard errors and real EPIPE through existing signal/stream APIs.
-
-Initial target evidence should be stated as native Linux x86_64 CPU programs
-emitted by the GPU compiler. No user-program GPU, other-host or executable new
-API claim follows from this plan. Further iterator families, collection owners,
-host services and the full library goal remain separate unfinished work.
+The accepted target is native Linux x86_64 CPU programs emitted by the GPU
+compiler. No user-program GPU or broader-host support follows. Further iterator
+families, collection owners, host services and the full library goal remain
+separate unfinished work.

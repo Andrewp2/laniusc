@@ -1,0 +1,220 @@
+// Public generic payload/error tags and coexistence of replacement with the
+// existing duplicate-rejecting transfer policy on all four actual facades.
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+
+struct Slot<T,E> { stored: core::option::Option<T>, rejected: core::option::Option<E>, calls: i32 }
+impl<T,E> Slot<T,E> { fn borrow(&self) -> &Slot<T,E> { return self; } }
+pub impl<T,E> core::iter::TryReplaceSink<T,E> for Slot<T,E> {
+    pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,E> {
+        self.calls += 1;
+        if (self.rejected.is_some()) { return core::result::Err(self.rejected.unwrap()); }
+        let old: core::option::Option<T> = self.stored; self.stored = core::option::Some(item);
+        return core::result::Ok(old);
+    }
+}
+struct Collect<T,E> { values: [T], length: i32, calls: i32, rejected: core::option::Option<E> }
+impl<T,E> Collect<T,E> { fn borrow(&self) -> &Collect<T,E> { return self; } }
+pub impl<T,E> core::iter::TrySink<T,E> for Collect<T,E> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<E> {
+        self.calls += 1;
+        if (self.rejected.is_some()) { return self.rejected; }
+        self.values[self.length] = item; self.length += 1; return core::option::None();
+    }
+}
+type Nested = core::option::Option<core::result::Result<[u64;2],u64>>;
+type RE = core::option::Option<bool>;
+type DE = core::option::Option<core::result::Result<i64,[u64;2]>>;
+fn absent_old(progress: core::iter::ReplacementProgress, old: Nested, error: DE) -> Nested {
+    assert(progress.committed == 1 && progress.replaced == 1 && old.is_none() && error.is_none()); return old;
+}
+fn rejected_optional(progress: core::iter::ReplacementProgress, incoming: Nested, error: RE) -> Nested {
+    assert(progress.committed == 0 && progress.replaced == 0 && error.is_none());
+    assert(incoming.unwrap().unwrap_err() == 18446744073709551615); return incoming;
+}
+fn present_error(progress: core::iter::ReplacementProgress, old: Nested, error: DE) -> Nested {
+    assert(progress.committed == 1 && progress.replaced == 1 && old.unwrap().unwrap_err() == 18446744073709551615);
+    let words: [u64;2] = error.unwrap().unwrap_err();
+    assert(words[0] == 9223372036854775808 && words[1] == 4294967297); return old;
+}
+fn impossible<T>() -> T { core::panic::panic(); }
+fn option_result_tags() {
+    let absent: Nested = core::option::None(); let rejected_delivery: DE = core::option::None();
+    let replacement: Slot<Nested,RE> = Slot { stored: core::option::Some(absent), rejected: core::option::None(), calls: 0 };
+    let backing: [Nested;3] = [absent;3];
+    let displaced: Collect<Nested,DE> = Collect { values: backing, length: 0, calls: 0, rejected: core::option::Some(rejected_delivery) };
+    let words: [u64;2] = [18446744073709551615,4294967297];
+    let incoming: Nested = core::option::Some(core::result::Ok(words));
+    let source: core::iter::Once<Nested> = core::iter::once<Nested>(incoming);
+    let result: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<Nested,RE,DE>> = core::iter::try_replace_up_to<core::iter::Once<Nested>,Slot<Nested,RE>,Collect<Nested,DE>,Nested,RE,DE>(source.borrow(),replacement.borrow(),displaced.borrow(),1);
+    let old: Nested = match (result.unwrap_err()) {
+        core::iter::ReplacementFailure::Rejected(progress,item,error) -> impossible<Nested>(),
+        core::iter::ReplacementFailure::Undelivered(progress,item,error) -> absent_old(progress,item,error),
+    };
+    let stored: [u64;2] = replacement.stored.unwrap().unwrap().unwrap();
+    assert(stored[0] == words[0] && stored[1] == words[1] && replacement.calls == 1 && displaced.length == 0 && displaced.calls == 1);
+    displaced.rejected = core::option::None(); assert(displaced.try_accept(old).is_none());
+    assert(displaced.length == 1 && displaced.values[0].is_none() && replacement.calls == 1);
+
+    let reject: RE = core::option::None(); replacement.rejected = core::option::Some(reject);
+    let next: Nested = core::option::Some(core::result::Err(18446744073709551615));
+    let second: core::iter::Once<Nested> = core::iter::once<Nested>(next);
+    let failure: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<Nested,RE,DE>> = core::iter::try_replace_up_to<core::iter::Once<Nested>,Slot<Nested,RE>,Collect<Nested,DE>,Nested,RE,DE>(second.borrow(),replacement.borrow(),displaced.borrow(),18446744073709551615);
+    let returned: Nested = match (failure.unwrap_err()) {
+        core::iter::ReplacementFailure::Rejected(progress,item,error) -> rejected_optional(progress,item,error),
+        core::iter::ReplacementFailure::Undelivered(progress,item,error) -> impossible<Nested>(),
+    };
+    assert(replacement.calls == 2 && displaced.calls == 2 && displaced.length == 1);
+    let unchanged: [u64;2] = replacement.stored.unwrap().unwrap().unwrap();
+    assert(unchanged[0] == words[0] && unchanged[1] == words[1]);
+    replacement.rejected = core::option::None();
+    let older: Nested = replacement.try_replace_item(returned).unwrap().unwrap();
+    assert(displaced.try_accept(older).is_none() && displaced.length == 2 && replacement.calls == 3);
+    let history: [u64;2] = displaced.values[1].unwrap().unwrap(); assert(history[0] == words[0] && history[1] == words[1]);
+
+    let error_words: [u64;2] = [9223372036854775808,4294967297];
+    let nested_error: DE = core::option::Some(core::result::Err(error_words)); displaced.rejected = core::option::Some(nested_error);
+    let third: core::iter::Once<Nested> = core::iter::once<Nested>(absent);
+    let last: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<Nested,RE,DE>> = core::iter::try_replace_up_to<core::iter::Once<Nested>,Slot<Nested,RE>,Collect<Nested,DE>,Nested,RE,DE>(third.borrow(),replacement.borrow(),displaced.borrow(),1);
+    let pending: Nested = match (last.unwrap_err()) {
+        core::iter::ReplacementFailure::Rejected(progress,item,error) -> impossible<Nested>(),
+        core::iter::ReplacementFailure::Undelivered(progress,item,error) -> present_error(progress,item,error),
+    };
+    assert(replacement.stored.is_some() && replacement.stored.unwrap().is_none() && replacement.calls == 4 && displaced.length == 2);
+    displaced.rejected = core::option::None(); assert(displaced.try_accept(pending).is_none());
+    assert(displaced.length == 3 && displaced.calls == 5 && displaced.values[2].unwrap().unwrap_err() == 18446744073709551615);
+}
+struct Unit {}
+struct UnitSource { position: i32, calls: i32 }
+impl UnitSource { fn borrow(&self) -> &UnitSource { return self; } }
+pub impl core::iter::Iterator<Unit> for UnitSource {
+    pub fn next(&self) -> core::option::Option<Unit> {
+        self.calls += 1; if (self.position == 3) { return core::option::None(); }
+        self.position += 1; return core::option::Some(Unit {});
+    }
+}
+fn zero_sized() {
+    let input: UnitSource = UnitSource { position: 0, calls: 0 };
+    let replacement: Slot<Unit,Unit> = Slot { stored: core::option::None(), rejected: core::option::None(), calls: 0 };
+    let backing: [Unit;2] = [Unit {},Unit {}];
+    let displaced: Collect<Unit,Unit> = Collect { values: backing, length: 0, calls: 0, rejected: core::option::Some(Unit {}) };
+    let result: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<Unit,Unit,Unit>> = core::iter::try_replace_up_to<UnitSource,Slot<Unit,Unit>,Collect<Unit,Unit>,Unit,Unit,Unit>(input.borrow(),replacement.borrow(),displaced.borrow(),2);
+    let failure: core::iter::ReplacementFailure<Unit,Unit,Unit> = result.unwrap_err();
+    let expected_variant: bool = match (failure) {
+        core::iter::ReplacementFailure::Rejected(progress,item,error) -> false,
+        core::iter::ReplacementFailure::Undelivered(progress,item,error) -> true,
+    };
+    assert(expected_variant);
+    let progress: core::iter::ReplacementProgress = match (failure) {
+        core::iter::ReplacementFailure::Rejected(before,item,error) -> before,
+        core::iter::ReplacementFailure::Undelivered(before,item,error) -> before,
+    };
+    assert(progress.committed == 2 && progress.replaced == 1);
+    let pending: Unit = match (failure) {
+        core::iter::ReplacementFailure::Rejected(before,item,error) -> item,
+        core::iter::ReplacementFailure::Undelivered(before,item,error) -> item,
+    };
+    assert(input.position == 2 && input.calls == 2 && replacement.calls == 2 && displaced.calls == 1 && displaced.length == 0 && replacement.stored.is_some());
+    displaced.rejected = core::option::None(); assert(displaced.try_accept(pending).is_none());
+    let resumed: core::iter::ReplacementTransfer = core::iter::try_replace_up_to<UnitSource,Slot<Unit,Unit>,Collect<Unit,Unit>,Unit,Unit,Unit>(input.borrow(),replacement.borrow(),displaced.borrow(),18446744073709551615).unwrap();
+    assert(resumed.progress.committed == 1 && resumed.progress.replaced == 1 && resumed.exhausted);
+    assert(input.position == 3 && input.calls == 4 && replacement.calls == 3 && displaced.calls == 3 && displaced.length == 2);
+}
+
+type Tag = core::option::Option<core::result::Result<[u64;2],bool>>;
+struct Data { serial: u64, signed: i64, words: [u64;2], tag: Tag }
+struct Key { id: i32, representative: Data }
+type HashEntry = alloc::hash_map::Entry<Key,Data>;
+type TreeEntry = alloc::tree_map::Entry<Key,Data>;
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.id == right.id; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.id != right.id; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left: Key, right: Key) -> bool { return left.id < right.id; }
+    pub fn le(left: Key, right: Key) -> bool { return left.id <= right.id; }
+    pub fn gt(left: Key, right: Key) -> bool { return left.id > right.id; }
+    pub fn ge(left: Key, right: Key) -> bool { return left.id >= right.id; }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value: Key) -> u32 { return 7; } }
+fn data(mark: u64) -> Data {
+    let words: [u64;2] = [4294967297+mark,18446744073709551615]; let tag: Tag = core::option::None();
+    if (mark%3 == 0) { tag = core::option::Some(core::result::Ok(words)); }
+    if (mark%3 == 1) { tag = core::option::Some(core::result::Err(false)); }
+    return Data { serial: 18446744073709551615-mark, signed: -4294967297-mark as i64, words: words, tag: tag };
+}
+fn key(mark: u64) -> Key { return Key { id: 7, representative: data(mark) }; }
+fn check(value: Data, mark: u64) {
+    assert(value.serial == 18446744073709551615-mark && value.signed == -4294967297-mark as i64);
+    assert(value.words[0] == 4294967297+mark && value.words[1] == 18446744073709551615);
+    if (mark%3 == 2) { assert(value.tag.is_none()); }
+    else { if (mark%3 == 1) { assert(!value.tag.unwrap().unwrap_err()); }
+    else { let words: [u64;2] = value.tag.unwrap().unwrap(); assert(words[0] == value.words[0] && words[1] == value.words[1]); } }
+}
+fn check_key(value: Key, mark: u64) { assert(value.id == 7); check(value.representative,mark); }
+trait Duplicate<E> { fn duplicate(&self) -> bool; }
+impl Duplicate<alloc::hash_map::SinkError> for alloc::hash_map::SinkError {
+    fn duplicate(&self) -> bool { return match (self) { alloc::hash_map::SinkError::Duplicate -> true, alloc::hash_map::SinkError::Storage(error) -> false }; }
+}
+impl Duplicate<alloc::tree_map::SinkError> for alloc::tree_map::SinkError {
+    fn duplicate(&self) -> bool { return match (self) { alloc::tree_map::SinkError::Duplicate -> true, alloc::tree_map::SinkError::Storage(error) -> false }; }
+}
+fn replace_one<T,R,E>(destination: &R, item: T) -> T where R: core::iter::TryReplaceSink<T,E> {
+    let backing: [T;1] = [item]; let displaced: Collect<T,bool> = Collect { values: backing, length: 0, calls: 0, rejected: core::option::None() };
+    let source: core::iter::Once<T> = core::iter::once<T>(item);
+    let result: core::iter::ReplacementTransfer = core::iter::try_replace_up_to<core::iter::Once<T>,R,Collect<T,bool>,T,E,bool>(source.borrow(),destination,displaced.borrow(),1).unwrap();
+    assert(result.progress.committed == 1 && result.progress.replaced == 1 && !result.exhausted && displaced.length == 1 && displaced.calls == 1);
+    return displaced.values[0];
+}
+fn duplicate<T,R,E>(destination: &R, item: T) -> T where R: core::iter::TrySink<T,E>, E: Duplicate<E> {
+    let source: core::iter::Once<T> = core::iter::once<T>(item);
+    let result: core::iter::TransferError<T,E> = core::iter::try_transfer_up_to<core::iter::Once<T>,R,T,E>(source.borrow(),destination,1).unwrap_err();
+    assert(result.accepted == 0 && result.error.duplicate()); return result.rejected;
+}
+fn hash_map_case() {
+    let destination: alloc::hash_map::HashMap<Key,Data> = alloc::hash_map::new<Key,Data>();
+    assert(destination.try_insert(key(10),data(20)).unwrap().is_none());
+    let incoming: HashEntry = alloc::hash_map::Entry { key: key(11), value: data(21) };
+    let old: HashEntry = replace_one<HashEntry,alloc::hash_map::HashMap<Key,Data>,alloc::hash_map::Error>(destination.borrow(),incoming);
+    check_key(old.key,10); check(old.value,20);
+    let supplied: HashEntry = alloc::hash_map::Entry { key: key(12), value: data(22) };
+    let returned: HashEntry = duplicate<HashEntry,alloc::hash_map::HashMap<Key,Data>,alloc::hash_map::SinkError>(destination.borrow(),supplied);
+    check_key(returned.key,12); check(returned.value,22);
+    let current: HashEntry = destination.get_entry(key(99)).unwrap(); check_key(current.key,11); check(current.value,21);
+    assert(destination.len() == 1); destination.destroy();
+}
+fn tree_map_case() {
+    let destination: alloc::tree_map::TreeMap<Key,Data> = alloc::tree_map::with_capacity<Key,Data>(1).unwrap();
+    assert(destination.try_insert(key(10),data(20)).unwrap().is_none());
+    let incoming: TreeEntry = alloc::tree_map::Entry { key: key(11), value: data(21) };
+    let old: TreeEntry = replace_one<TreeEntry,alloc::tree_map::TreeMap<Key,Data>,alloc::tree_map::Error>(destination.borrow(),incoming);
+    check_key(old.key,10); check(old.value,20);
+    let supplied: TreeEntry = alloc::tree_map::Entry { key: key(12), value: data(22) };
+    let returned: TreeEntry = duplicate<TreeEntry,alloc::tree_map::TreeMap<Key,Data>,alloc::tree_map::SinkError>(destination.borrow(),supplied);
+    check_key(returned.key,12); check(returned.value,22);
+    let current: TreeEntry = destination.get_entry(key(99)).unwrap(); check_key(current.key,11); check(current.value,21);
+    assert(destination.len() == 1); destination.destroy();
+}
+fn hash_set_case() {
+    let destination: alloc::hash_set::HashSet<Key> = alloc::hash_set::with_capacity<Key>(1).unwrap(); assert(destination.try_insert(key(10)).unwrap().is_none());
+    let old: Key = replace_one<Key,alloc::hash_set::HashSet<Key>,alloc::hash_map::Error>(destination.borrow(),key(11)); check_key(old,10);
+    let returned: Key = duplicate<Key,alloc::hash_set::HashSet<Key>,alloc::hash_map::SinkError>(destination.borrow(),key(12)); check_key(returned,12);
+    check_key(destination.get(key(99)).unwrap(),11); assert(destination.len() == 1); destination.destroy();
+}
+fn tree_set_case() {
+    let destination: alloc::tree_set::TreeSet<Key> = alloc::tree_set::with_capacity<Key>(1).unwrap(); assert(destination.try_insert(key(10)).unwrap().is_none());
+    let old: Key = replace_one<Key,alloc::tree_set::TreeSet<Key>,alloc::tree_map::Error>(destination.borrow(),key(11)); check_key(old,10);
+    let returned: Key = duplicate<Key,alloc::tree_set::TreeSet<Key>,alloc::tree_map::SinkError>(destination.borrow(),key(12)); check_key(returned,12);
+    check_key(destination.get(key(99)).unwrap(),11); assert(destination.len() == 1); destination.destroy();
+}
+fn main() -> i32 { option_result_tags(); zero_sized(); hash_map_case(); tree_map_case(); hash_set_case(); tree_set_case(); return 0; }

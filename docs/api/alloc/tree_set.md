@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
+Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide.
 
 ## Contract and evidence guides
 
@@ -16,8 +16,9 @@ Owning cursors also execute with explicit transfer, retained backing, O(1) recov
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 - [stdlib-owning-tree](../../stdlib-owning-tree.md)
+- [stdlib-replacement-sinks](../../stdlib-replacement-sinks.md)
 
-Declaration counts: enum: 1; field: 3; function: 2; impl: 6; method: 43; struct: 3; variant: 1.
+Declaration counts: enum: 1; field: 3; function: 2; impl: 7; method: 44; struct: 3; variant: 1.
 
 ## Declared imports
 
@@ -382,9 +383,26 @@ pub impl<T> core::iter::TrySink<T, alloc::tree_map::SinkError> for TreeSet<T>
 pub fn try_accept(&self, item: T) -> core::option::Option<alloc::tree_map::SinkError>
 ```
 
-### impl at line 144
+### impl at line 146
 
-[Source line 144](../../../stdlib/alloc/tree_set.lani#L144)
+[Source line 146](../../../stdlib/alloc/tree_set.lani#L146)
+
+```lanius
+pub impl<T> core::iter::TryReplaceSink<T,alloc::tree_map::Error> for TreeSet<T>
+    where T: core::cmp::Ord<T>
+```
+
+#### method: try_replace_item
+
+[Source line 148](../../../stdlib/alloc/tree_set.lani#L148)
+
+```lanius
+pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,alloc::tree_map::Error>
+```
+
+### impl at line 153
+
+[Source line 153](../../../stdlib/alloc/tree_set.lani#L153)
 
 ```lanius
 pub impl<T> Cursor<T>
@@ -392,7 +410,7 @@ pub impl<T> Cursor<T>
 
 #### method: borrow
 
-[Source line 145](../../../stdlib/alloc/tree_set.lani#L145)
+[Source line 154](../../../stdlib/alloc/tree_set.lani#L154)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<T>
@@ -400,7 +418,7 @@ pub fn borrow(&self) -> &Cursor<T>
 
 #### method: next_back
 
-[Source line 146](../../../stdlib/alloc/tree_set.lani#L146)
+[Source line 155](../../../stdlib/alloc/tree_set.lani#L155)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
@@ -408,15 +426,15 @@ pub fn next_back(&self) -> core::option::Option<T>
 
 #### method: is_empty
 
-[Source line 147](../../../stdlib/alloc/tree_set.lani#L147)
+[Source line 156](../../../stdlib/alloc/tree_set.lani#L156)
 
 ```lanius
 pub fn is_empty(&self) -> bool
 ```
 
-### impl at line 150
+### impl at line 159
 
-[Source line 150](../../../stdlib/alloc/tree_set.lani#L150)
+[Source line 159](../../../stdlib/alloc/tree_set.lani#L159)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Cursor<T>
@@ -424,15 +442,15 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T>
 
 #### method: next
 
-[Source line 151](../../../stdlib/alloc/tree_set.lani#L151)
+[Source line 160](../../../stdlib/alloc/tree_set.lani#L160)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 154
+### impl at line 163
 
-[Source line 154](../../../stdlib/alloc/tree_set.lani#L154)
+[Source line 163](../../../stdlib/alloc/tree_set.lani#L163)
 
 ```lanius
 pub impl<T> IntoIter<T>
@@ -440,7 +458,7 @@ pub impl<T> IntoIter<T>
 
 #### method: borrow
 
-[Source line 155](../../../stdlib/alloc/tree_set.lani#L155)
+[Source line 164](../../../stdlib/alloc/tree_set.lani#L164)
 
 ```lanius
 pub fn borrow(&self) -> &IntoIter<T>
@@ -448,7 +466,7 @@ pub fn borrow(&self) -> &IntoIter<T>
 
 #### method: remaining
 
-[Source line 156](../../../stdlib/alloc/tree_set.lani#L156)
+[Source line 165](../../../stdlib/alloc/tree_set.lani#L165)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -456,7 +474,7 @@ pub fn remaining(&self) -> i32
 
 #### method: capacity
 
-[Source line 157](../../../stdlib/alloc/tree_set.lani#L157)
+[Source line 166](../../../stdlib/alloc/tree_set.lani#L166)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -464,7 +482,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 158](../../../stdlib/alloc/tree_set.lani#L158)
+[Source line 167](../../../stdlib/alloc/tree_set.lani#L167)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -472,7 +490,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: next_back
 
-[Source line 160](../../../stdlib/alloc/tree_set.lani#L160)
+[Source line 169](../../../stdlib/alloc/tree_set.lani#L169)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
@@ -480,7 +498,7 @@ pub fn next_back(&self) -> core::option::Option<T>
 
 #### method: try_finish
 
-[Source line 163](../../../stdlib/alloc/tree_set.lani#L163)
+[Source line 172](../../../stdlib/alloc/tree_set.lani#L172)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<IntoIterError>
@@ -488,15 +506,15 @@ pub fn try_finish(&self) -> core::option::Option<IntoIterError>
 
 #### method: take_remaining
 
-[Source line 169](../../../stdlib/alloc/tree_set.lani#L169)
+[Source line 178](../../../stdlib/alloc/tree_set.lani#L178)
 
 ```lanius
 pub fn take_remaining(&self) -> TreeSet<T>
 ```
 
-### impl at line 174
+### impl at line 183
 
-[Source line 174](../../../stdlib/alloc/tree_set.lani#L174)
+[Source line 183](../../../stdlib/alloc/tree_set.lani#L183)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for IntoIter<T>
@@ -504,7 +522,7 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 
 #### method: next
 
-[Source line 175](../../../stdlib/alloc/tree_set.lani#L175)
+[Source line 184](../../../stdlib/alloc/tree_set.lani#L184)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>

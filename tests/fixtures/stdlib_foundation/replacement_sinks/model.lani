@@ -1,0 +1,290 @@
+// Finite binary observations of the actual replacement helper and all four
+// actual collection delegates. Only mode0 supplies a scripted rejecting sink.
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::tree_map;
+import alloc::tree_set;
+import core::cmp;
+import core::hash;
+import core::io;
+import core::iter;
+import core::option;
+import core::result;
+import std::stream;
+
+struct Key { id: u64, representative: u64 }
+struct Item { key: Key, value: u64 }
+type HashEntry = alloc::hash_map::Entry<Key,u64>;
+type TreeEntry = alloc::tree_map::Entry<Key,u64>;
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left: Key, right: Key) -> bool { return left.id == right.id; }
+    pub fn ne(left: Key, right: Key) -> bool { return left.id != right.id; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left: Key, right: Key) -> bool { return left.id < right.id; }
+    pub fn le(left: Key, right: Key) -> bool { return left.id <= right.id; }
+    pub fn gt(left: Key, right: Key) -> bool { return left.id > right.id; }
+    pub fn ge(left: Key, right: Key) -> bool { return left.id >= right.id; }
+}
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value: Key) -> u32 { return 7; } }
+
+// Observation/factory traits are fixture-only. They neither wrap nor replace
+// the destination passed to core::iter::try_replace_up_to.
+trait Record<T> { fn id(&self) -> u64; fn representative(&self) -> u64; fn payload(&self) -> u64; }
+impl Record<Item> for Item {
+    fn id(&self) -> u64 { return self.key.id; }
+    fn representative(&self) -> u64 { return self.key.representative; }
+    fn payload(&self) -> u64 { return self.value; }
+}
+impl Record<HashEntry> for HashEntry {
+    fn id(&self) -> u64 { return self.key.id; }
+    fn representative(&self) -> u64 { return self.key.representative; }
+    fn payload(&self) -> u64 { return self.value; }
+}
+impl Record<TreeEntry> for TreeEntry {
+    fn id(&self) -> u64 { return self.key.id; }
+    fn representative(&self) -> u64 { return self.key.representative; }
+    fn payload(&self) -> u64 { return self.value; }
+}
+impl Record<Key> for Key {
+    fn id(&self) -> u64 { return self.id; }
+    fn representative(&self) -> u64 { return self.representative; }
+    fn payload(&self) -> u64 { return 0; }
+}
+trait Factory<T> { fn make(&self, id: u64, representative: u64) -> T; }
+struct ItemFactory {} struct HashFactory {} struct TreeFactory {} struct KeyFactory {}
+impl ItemFactory { fn borrow(&self) -> &ItemFactory { return self; } }
+impl HashFactory { fn borrow(&self) -> &HashFactory { return self; } }
+impl TreeFactory { fn borrow(&self) -> &TreeFactory { return self; } }
+impl KeyFactory { fn borrow(&self) -> &KeyFactory { return self; } }
+impl Factory<Item> for ItemFactory {
+    fn make(&self, id: u64, representative: u64) -> Item { return Item { key: Key { id: id, representative: representative }, value: 18446744073709551615-representative }; }
+}
+impl Factory<HashEntry> for HashFactory {
+    fn make(&self, id: u64, representative: u64) -> HashEntry { return alloc::hash_map::Entry { key: Key { id: id, representative: representative }, value: 18446744073709551615-representative }; }
+}
+impl Factory<TreeEntry> for TreeFactory {
+    fn make(&self, id: u64, representative: u64) -> TreeEntry { return alloc::tree_map::Entry { key: Key { id: id, representative: representative }, value: 18446744073709551615-representative }; }
+}
+impl Factory<Key> for KeyFactory {
+    fn make(&self, id: u64, representative: u64) -> Key { return Key { id: id, representative: representative }; }
+}
+struct Trace { events: [u64], length: i32 }
+impl Trace {
+    fn borrow(&self) -> &Trace { return self; }
+    fn add(&self, event: u64) { assert(self.length < 128); self.events[self.length] = event; self.length += 1; }
+}
+struct Source<T> { values: [T], length: i32, position: i32, calls: i32, trace: &Trace }
+impl<T> Source<T> { fn borrow(&self) -> &Source<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Source<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let trace: &Trace = self.trace; trace.add(1); self.calls += 1;
+        if (self.position == self.length) { return core::option::None(); }
+        let item: T = self.values[self.position]; self.position += 1; return core::option::Some(item);
+    }
+}
+struct DeliveryError { attempt: u64, representative: u64 }
+struct Journal<T> { values: [T], length: i32, calls: i32, reject: u64, trace: &Trace }
+impl<T> Journal<T> { fn borrow(&self) -> &Journal<T> { return self; } }
+pub impl<T> core::iter::TrySink<T,DeliveryError> for Journal<T> where T: Record<T> {
+    pub fn try_accept(&self, item: T) -> core::option::Option<DeliveryError> {
+        let trace: &Trace = self.trace; trace.add(3); self.calls += 1;
+        if (item.representative() == self.reject) {
+            return core::option::Some(DeliveryError { attempt: self.calls as u64, representative: item.representative() });
+        }
+        assert(self.length < 16); self.values[self.length] = item; self.length += 1;
+        return core::option::None();
+    }
+}
+struct Reject { representative: u64 }
+trait ErrorCode<E> { fn code(&self) -> u64; }
+impl ErrorCode<Reject> for Reject { fn code(&self) -> u64 { return 1000+self.representative; } }
+impl ErrorCode<alloc::hash_map::Error> for alloc::hash_map::Error {
+    fn code(&self) -> u64 { return match (self) { alloc::hash_map::Error::InvalidCapacity -> 1, alloc::hash_map::Error::CapacityOverflow -> 2, alloc::hash_map::Error::AllocationFailed -> 3 }; }
+}
+impl ErrorCode<alloc::tree_map::Error> for alloc::tree_map::Error {
+    fn code(&self) -> u64 { return match (self) { alloc::tree_map::Error::InvalidCapacity -> 1, alloc::tree_map::Error::CapacityOverflow -> 2, alloc::tree_map::Error::AllocationFailed -> 3, alloc::tree_map::Error::InvalidOrder -> 4, alloc::tree_map::Error::InvalidRange -> 5, alloc::tree_map::Error::NotEmpty -> 6 }; }
+}
+trait Observe<T> { fn snapshot(&self); fn arm(&self, reject: u64); fn attempts(&self) -> u64; }
+struct Script { values: [Item], present: [bool], reject: u64, calls: u64, trace: &Trace }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+pub impl core::iter::TryReplaceSink<Item,Reject> for Script {
+    pub fn try_replace_item(&self, item: Item) -> core::result::Result<core::option::Option<Item>,Reject> {
+        let trace: &Trace = self.trace; trace.add(2); self.calls += 1;
+        if (item.key.representative == self.reject) { return core::result::Err(Reject { representative: item.key.representative }); }
+        let index: i32 = item.key.id as i32; let old: core::option::Option<Item> = core::option::None();
+        if (self.present[index]) { old = core::option::Some(self.values[index]); }
+        self.present[index] = true; self.values[index] = item; return core::result::Ok(old);
+    }
+}
+impl Observe<Item> for Script {
+    fn arm(&self, reject: u64) { self.reject = reject; }
+    fn attempts(&self) -> u64 { return self.calls; }
+    fn snapshot(&self) {
+        let length: u64 = 0; let index: i32 = 0;
+        while (index < 3) { if (self.present[index]) { length += 1; } index += 1; }
+        word(length); index = 0;
+        while (index < 3) { if (self.present[index]) { word(1); record<Item>(self.values[index]); } else { word(0); word(0); word(0); word(0); } index += 1; }
+    }
+}
+impl Observe<HashEntry> for alloc::hash_map::HashMap<Key,u64> {
+    fn arm(&self, reject: u64) { }
+    fn attempts(&self) -> u64 { return 0; }
+    fn snapshot(&self) {
+        word(self.len() as u64); let id: u64 = 0;
+        while (id < 3) { optional<HashEntry>(self.get_entry(Key { id: id, representative: 0 })); id += 1; }
+    }
+}
+impl Observe<TreeEntry> for alloc::tree_map::TreeMap<Key,u64> {
+    fn arm(&self, reject: u64) { }
+    fn attempts(&self) -> u64 { return 0; }
+    fn snapshot(&self) {
+        word(self.len() as u64); let id: u64 = 0;
+        while (id < 3) { optional<TreeEntry>(self.get_entry(Key { id: id, representative: 0 })); id += 1; }
+    }
+}
+impl Observe<Key> for alloc::hash_set::HashSet<Key> {
+    fn arm(&self, reject: u64) { }
+    fn attempts(&self) -> u64 { return 0; }
+    fn snapshot(&self) {
+        word(self.len() as u64); let id: u64 = 0;
+        while (id < 3) { optional<Key>(self.get(Key { id: id, representative: 0 })); id += 1; }
+    }
+}
+impl Observe<Key> for alloc::tree_set::TreeSet<Key> {
+    fn arm(&self, reject: u64) { }
+    fn attempts(&self) -> u64 { return 0; }
+    fn snapshot(&self) {
+        word(self.len() as u64); let id: u64 = 0;
+        while (id < 3) { optional<Key>(self.get(Key { id: id, representative: 0 })); id += 1; }
+    }
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn record<T>(item: T) where T: Record<T> { word(item.id()); word(item.representative()); word(item.payload()); }
+fn optional<T>(item: core::option::Option<T>) where T: Record<T> {
+    if (item.is_some()) { word(1); record<T>(item.unwrap()); } else { word(0); word(0); word(0); word(0); }
+}
+struct Pending<T> { kind: u64, item: core::option::Option<T> }
+fn emit<T>(tag: u64, progress: core::iter::ReplacementProgress, exhausted: bool, item: core::option::Option<T>, code: u64, detail: u64) where T: Record<T> {
+    word(tag); word(progress.committed); word(progress.replaced); word(exhausted as u64); optional<T>(item); word(code); word(detail);
+}
+fn rejected<T,RE>(progress: core::iter::ReplacementProgress, item: T, error: RE) -> Pending<T> where T: Record<T>, RE: ErrorCode<RE> {
+    emit<T>(1,progress,false,core::option::Some(item),error.code(),0);
+    return Pending { kind: 1, item: core::option::Some(item) };
+}
+fn undelivered<T>(progress: core::iter::ReplacementProgress, item: T, error: DeliveryError) -> Pending<T> where T: Record<T> {
+    emit<T>(2,progress,false,core::option::Some(item),2000+error.attempt,error.representative);
+    return Pending { kind: 2, item: core::option::Some(item) };
+}
+fn transfer<T,R,RE>(source: &Source<T>, replacement: &R, displaced: &Journal<T>, limit: u64) -> Pending<T>
+    where T: Record<T>, R: core::iter::TryReplaceSink<T,RE>, RE: ErrorCode<RE> {
+    let result: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<T,RE,DeliveryError>> = core::iter::try_replace_up_to<Source<T>,R,Journal<T>,T,RE,DeliveryError>(source,replacement,displaced,limit);
+    if (result.is_ok()) {
+        let success: core::iter::ReplacementTransfer = result.unwrap();
+        emit<T>(0,success.progress,success.exhausted,core::option::None(),0,0);
+        return Pending { kind: 0, item: core::option::None() };
+    }
+    return match (result.unwrap_err()) {
+        core::iter::ReplacementFailure::Rejected(progress,item,error) -> rejected<T,RE>(progress,item,error),
+        core::iter::ReplacementFailure::Undelivered(progress,item,error) -> undelivered<T>(progress,item,error),
+    };
+}
+fn retry<T,R,RE>(pending: Pending<T>, replacement: &R, displaced: &Journal<T>) -> Pending<T>
+    where T: Record<T>, R: core::iter::TryReplaceSink<T,RE>, RE: ErrorCode<RE> {
+    let progress: core::iter::ReplacementProgress = core::iter::ReplacementProgress { committed: 0, replaced: 0 };
+    if (pending.item.is_none()) { emit<T>(3,progress,false,core::option::None(),0,0); return pending; }
+    let item: T = pending.item.unwrap(); let old: core::option::Option<T> = core::option::Some(item);
+    if (pending.kind == 1) {
+        let changed: core::result::Result<core::option::Option<T>,RE> = replacement.try_replace_item(item);
+        if (changed.is_err()) { emit<T>(4,progress,false,pending.item,changed.unwrap_err().code(),0); return pending; }
+        progress.committed = 1; old = changed.unwrap();
+        if (old.is_some()) { progress.replaced = 1; }
+    } else { assert(pending.kind == 2); }
+    if (old.is_some()) {
+        let displaced_item: T = old.unwrap(); let delivery: core::option::Option<DeliveryError> = displaced.try_accept(displaced_item);
+        if (delivery.is_some()) {
+            let error: DeliveryError = delivery.unwrap(); emit<T>(5,progress,false,old,2000+error.attempt,error.representative);
+            return Pending { kind: 2, item: old };
+        }
+    }
+    emit<T>(6,progress,false,core::option::None(),0,0); return Pending { kind: 0, item: core::option::None() };
+}
+fn snapshot<T,R>(source: &Source<T>, replacement: &R, displaced: &Journal<T>) where T: Record<T>, R: Observe<T> {
+    word(source.position as u64); word(source.calls as u64); word(replacement.attempts()); word(displaced.calls as u64); word(displaced.length as u64);
+    let index: i32 = 0; while (index < displaced.length) { record<T>(displaced.values[index]); index += 1; }
+    replacement.snapshot();
+}
+fn run<T,R,RE,F>(bytes: [u8], replacement: &R, factory: &F, trace: &Trace)
+    where T: Record<T>, R: core::iter::TryReplaceSink<T,RE>, R: Observe<T>, RE: ErrorCode<RE>, F: Factory<T> {
+    let length: i32 = decode(bytes,8) as i32; let prefix: i32 = decode(bytes,16) as i32;
+    let reject: u64 = decode(bytes,24); let delivery: u64 = decode(bytes,32);
+    let first: u64 = decode(bytes,40); let second: u64 = decode(bytes,48); let pattern: u64 = decode(bytes,56);
+    assert(length >= 0 && length <= 7 && prefix >= 0 && prefix <= 3 && pattern <= 2);
+    let default: T = factory.make(0,0); let inputs: [T;8] = [default;8]; let history: [T;16] = [default;16];
+    let index: i32 = 0;
+    while (index < prefix) {
+        let seed: T = factory.make(index as u64,10+index as u64);
+        let inserted: core::result::Result<core::option::Option<T>,RE> = replacement.try_replace_item(seed);
+        let previous: core::option::Option<T> = inserted.unwrap(); assert(previous.is_none()); index += 1;
+    }
+    replacement.arm(reject); trace.length = 0; index = 0;
+    while (index < length) {
+        let id: u64 = 0;
+        if (pattern == 1) { id = (index as u64)%3; } else { if (pattern == 2) { id = (2*index as u64+1)%3; } }
+        inputs[index] = factory.make(id,100+index as u64); index += 1;
+    }
+    let source: Source<T> = Source { values: inputs, length: length, position: 0, calls: 0, trace: trace };
+    let journal: Journal<T> = Journal { values: history, length: 0, calls: 0, reject: delivery, trace: trace };
+    let pending: Pending<T> = transfer<T,R,RE>(source.borrow(),replacement,journal.borrow(),first);
+    snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    pending = retry<T,R,RE>(pending,replacement,journal.borrow()); snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    // Clear scripted failure policy without resetting the observed counts.
+    // Real facades' Observe.arm is deliberately test-only/no-op.
+    replacement.arm(18446744073709551615);
+    journal.reject = 18446744073709551615;
+    pending = retry<T,R,RE>(pending,replacement,journal.borrow()); snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    pending = transfer<T,R,RE>(source.borrow(),replacement,journal.borrow(),second); assert(pending.item.is_none()); snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    pending = transfer<T,R,RE>(source.borrow(),replacement,journal.borrow(),18446744073709551615); assert(pending.item.is_none()); snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    pending = transfer<T,R,RE>(source.borrow(),replacement,journal.borrow(),0); assert(pending.item.is_none()); snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    pending = transfer<T,R,RE>(source.borrow(),replacement,journal.borrow(),1); assert(pending.item.is_none()); snapshot<T,R>(source.borrow(),replacement,journal.borrow());
+    word(trace.length as u64); index = 0; while (index < trace.length) { word(trace.events[index]); index += 1; }
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; } return value;
+}
+fn command(bytes: [u8]) {
+    let mode: u64 = decode(bytes,0); assert(mode <= 4);
+    let events: [u64;128] = [0;128]; let trace: Trace = Trace { events: events, length: 0 };
+    if (mode == 0) {
+        let defaults: [Item;3] = [Item { key: Key { id: 0, representative: 0 }, value: 0 };3]; let present: [bool;3] = [false;3];
+        let destination: Script = Script { values: defaults, present: present, reject: 18446744073709551615, calls: 0, trace: trace.borrow() };
+        let factory: ItemFactory = ItemFactory {}; run<Item,Script,Reject,ItemFactory>(bytes,destination.borrow(),factory.borrow(),trace.borrow());
+    } else { if (mode == 1) {
+        let destination: alloc::hash_map::HashMap<Key,u64> = alloc::hash_map::new<Key,u64>(); destination.try_reserve(3).unwrap();
+        let factory: HashFactory = HashFactory {}; run<HashEntry,alloc::hash_map::HashMap<Key,u64>,alloc::hash_map::Error,HashFactory>(bytes,destination.borrow(),factory.borrow(),trace.borrow()); destination.destroy();
+    } else { if (mode == 2) {
+        let destination: alloc::tree_map::TreeMap<Key,u64> = alloc::tree_map::with_capacity<Key,u64>(3).unwrap();
+        let factory: TreeFactory = TreeFactory {}; run<TreeEntry,alloc::tree_map::TreeMap<Key,u64>,alloc::tree_map::Error,TreeFactory>(bytes,destination.borrow(),factory.borrow(),trace.borrow()); destination.destroy();
+    } else { if (mode == 3) {
+        let destination: alloc::hash_set::HashSet<Key> = alloc::hash_set::with_capacity<Key>(3).unwrap();
+        let factory: KeyFactory = KeyFactory {}; run<Key,alloc::hash_set::HashSet<Key>,alloc::hash_map::Error,KeyFactory>(bytes,destination.borrow(),factory.borrow(),trace.borrow()); destination.destroy();
+    } else {
+        let destination: alloc::tree_set::TreeSet<Key> = alloc::tree_set::with_capacity<Key>(3).unwrap();
+        let factory: KeyFactory = KeyFactory {}; run<Key,alloc::tree_set::TreeSet<Key>,alloc::tree_map::Error,KeyFactory>(bytes,destination.borrow(),factory.borrow(),trace.borrow()); destination.destroy();
+    } } } }
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let bytes: [u8;64] = [0;64];
+    while (true) {
+        let result: core::result::Result<i32,core::io::Error> = input.read(bytes,0,64); assert(result.is_ok());
+        let count: i32 = result.unwrap(); if (count == 0) { return 0; }
+        if (count < 64) { assert(core::io::read_exact(input.borrow(),bytes,count,64-count).is_ok()); } command(bytes);
+    }
+    return 0;
+}

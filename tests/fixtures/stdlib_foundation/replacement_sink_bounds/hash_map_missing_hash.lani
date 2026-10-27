@@ -1,0 +1,23 @@
+// The key has exact Eq<Key>, but no Hash<Key>; all item/error identities agree.
+module app::main;
+import alloc::hash_map;
+import alloc::vec;
+import core::cmp;
+import core::iter;
+import core::result;
+import core::slice;
+
+struct Key { id:i32 }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.id==right.id; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.id!=right.id; }
+}
+fn main() -> i32 {
+    let value: alloc::hash_map::Entry<Key,i32> = alloc::hash_map::Entry { key:Key { id:1 },value:7 };
+    let values: [alloc::hash_map::Entry<Key,i32>;1] = [value];
+    let source: core::slice::Iter<alloc::hash_map::Entry<Key,i32>> = core::iter::from_slice<alloc::hash_map::Entry<Key,i32>>(values,1).unwrap();
+    let replacement: alloc::hash_map::HashMap<Key,i32> = alloc::hash_map::new<Key,i32>();
+    let displaced: alloc::vec::Vec<alloc::hash_map::Entry<Key,i32>> = alloc::vec::new<alloc::hash_map::Entry<Key,i32>>();
+    let rejected: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<alloc::hash_map::Entry<Key,i32>,alloc::hash_map::Error,alloc::vec::Error>> = core::iter::try_replace_up_to<core::slice::Iter<alloc::hash_map::Entry<Key,i32>>,alloc::hash_map::HashMap<Key,i32>,alloc::vec::Vec<alloc::hash_map::Entry<Key,i32>>,alloc::hash_map::Entry<Key,i32>,alloc::hash_map::Error,alloc::vec::Error>(source.borrow(),replacement.borrow(),displaced.borrow(),1);
+    return 0;
+}

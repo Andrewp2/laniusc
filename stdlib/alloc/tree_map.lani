@@ -345,6 +345,15 @@ pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for TreeMap<K, V>
     }
 }
 
+// Preserve canonical replacement of both key/value and its complete old entry.
+// No duplicate precheck or remove/reinsert transaction is introduced.
+pub impl<K,V> core::iter::TryReplaceSink<Entry<K,V>,Error> for TreeMap<K,V>
+    where K: core::cmp::Ord<K> {
+    pub fn try_replace_item(&self, item: Entry<K,V>) -> core::result::Result<core::option::Option<Entry<K,V>>,Error> {
+        return self.try_insert(item.key,item.value);
+    }
+}
+
 pub impl<K, V> Cursor<K, V> {
     pub fn borrow(&self) -> &Cursor<K, V> { return self; }
     pub fn is_empty(&self) -> bool { return self.front < 0; }

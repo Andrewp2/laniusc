@@ -1,0 +1,18 @@
+// Only the replacement item identity is wrong: TreeMap Entry is not HashMap Entry.
+module app::main;
+import alloc::hash_map;
+import alloc::tree_map;
+import alloc::vec;
+import core::iter;
+import core::result;
+import core::slice;
+
+fn main() -> i32 {
+    let value: alloc::tree_map::Entry<i32,i32> = alloc::tree_map::Entry { key:1,value:7 };
+    let values: [alloc::tree_map::Entry<i32,i32>;1] = [value];
+    let source: core::slice::Iter<alloc::tree_map::Entry<i32,i32>> = core::iter::from_slice<alloc::tree_map::Entry<i32,i32>>(values,1).unwrap();
+    let replacement: alloc::hash_map::HashMap<i32,i32> = alloc::hash_map::new<i32,i32>();
+    let displaced: alloc::vec::Vec<alloc::tree_map::Entry<i32,i32>> = alloc::vec::new<alloc::tree_map::Entry<i32,i32>>();
+    let rejected: core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<alloc::tree_map::Entry<i32,i32>,alloc::hash_map::Error,alloc::vec::Error>> = core::iter::try_replace_up_to<core::slice::Iter<alloc::tree_map::Entry<i32,i32>>,alloc::hash_map::HashMap<i32,i32>,alloc::vec::Vec<alloc::tree_map::Entry<i32,i32>>,alloc::tree_map::Entry<i32,i32>,alloc::hash_map::Error,alloc::vec::Error>(source.borrow(),replacement.borrow(),displaced.borrow(),1);
+    return 0;
+}

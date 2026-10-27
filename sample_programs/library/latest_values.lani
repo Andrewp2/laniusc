@@ -1,0 +1,189 @@
+// Independent String owners, canonical replacement and bounded displaced history.
+module app::main;
+import alloc::vec;
+import alloc::string;
+import alloc::string::String;
+import alloc::tree_map;
+import core::decimal;
+import core::io;
+import core::io::Read;
+import core::io::Write;
+import core::iter;
+import core::iter::Iterator;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import core::text;
+import std::args;
+import std::signal;
+import std::stream;
+
+enum AppError { Input, Limit, Allocation, Io }
+enum HistoryError { Limit, Allocation }
+struct Config { input:i32,rows:i32,key:i32,value:i32,history:i32,output:i32,reads:i32,writes:i32 }
+struct History<T> { items:alloc::vec::Vec<T>,limit:i32 }
+struct Report { calls:i32,failed:bool }
+impl<T> History<T> { fn borrow(&self) -> &History<T> { return self; } }
+impl Report { fn borrow(&self) -> &Report { return self; } }
+pub impl<T> core::iter::TrySink<T,HistoryError> for History<T> {
+    pub fn try_accept(&self,item:T) -> Option<HistoryError> {
+        if(self.items.len()==self.limit) { return Some(HistoryError::Limit); }
+        if(self.items.try_push(item).is_err()) { return Some(HistoryError::Allocation); } return None();
+    }
+}
+fn literal(text:str,count:i32) -> View<u8> { return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count }; }
+fn same(a:View<u8>,b:View<u8>) -> bool { if(a.length!=b.length) { return false; } let at:i32=0; while(at<a.length) { if(a.values[a.start+at]!=b.values[b.start+at]) { return false; } at+=1; } return true; }
+fn code(error:AppError) -> i32 { return match(error) { AppError::Allocation->4,AppError::Io->3,_ ->2 }; }
+fn flag(name:View<u8>) -> i32 {
+    if(same(name,literal("--input-bytes",13))) { return 0; } if(same(name,literal("--rows",6))) { return 1; }
+    if(same(name,literal("--key-bytes",11))) { return 2; } if(same(name,literal("--value-bytes",13))) { return 3; }
+    if(same(name,literal("--history",9))) { return 4; } if(same(name,literal("--output-bytes",14))) { return 5; }
+    if(same(name,literal("--read-calls",12))) { return 6; } if(same(name,literal("--write-calls",13))) { return 7; } return -1;
+}
+fn config(arguments:std::args::Arguments) -> Result<Config,AppError> {
+    let limits:[i32;8]=[262144,1024,1024,4096,1024,524288,4096,4096]; let maxima:[u32;8]=[2097152,4096,4096,65536,4096,4194304,65536,65536];
+    let seen:u32=0; let at:i32=0;
+    while(at<arguments.len()) {
+        if(at+1>=arguments.len()) { return Err(AppError::Input); } let id=flag(arguments.get(at).unwrap()); if(id<0) { return Err(AppError::Input); }
+        let bit:u32=1; bit=bit<<id; if((seen&bit)!=0) { return Err(AppError::Input); } seen=seen|bit;
+        let value=arguments.get(at+1).unwrap(); let parsed=core::decimal::parse_u32_range(value.values,value.start,value.length);
+        if(parsed.is_err()) { return Err(AppError::Input); } let number=parsed.unwrap(); if(number>maxima[id]) { return Err(AppError::Limit); } limits[id]=number as i32; at+=2;
+    }
+    return Ok(Config { input:limits[0],rows:limits[1],key:limits[2],value:limits[3],history:limits[4],output:limits[5],reads:limits[6],writes:limits[7] });
+}
+fn read_input(limits:Config) -> Result<alloc::vec::Vec<u8>,AppError> {
+    let made:Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(limits.input);
+    if(made.is_err()) { return Err(AppError::Allocation); } let bytes=made.unwrap(); let scratch:[u8;1024]=[0;1024]; let calls:i32=0;
+    let source=std::stream::stdin();
+    while(true) {
+        if(calls==limits.reads) { bytes.destroy(); return Err(AppError::Limit); }
+        let remaining=limits.input-bytes.len(); let count=remaining; if(count>1024) { count=1024; } if(count==0) { count=1; } calls+=1;
+        let got=source.read(scratch,0,count);
+        if(got.is_err()) { if(!core::io::is_interrupted(got.unwrap_err())) { bytes.destroy(); return Err(AppError::Io); } }
+        else { let count_got=got.unwrap(); if(count_got<0 || count_got>count) { bytes.destroy(); return Err(AppError::Io); }
+            if(count_got==0) { return Ok(bytes); } if(remaining==0) { bytes.destroy(); return Err(AppError::Limit); }
+            if(bytes.try_extend(View { values:scratch,start:0,length:count_got }).is_err()) { bytes.destroy(); return Err(AppError::Allocation); }
+        }
+    } return Err(AppError::Io);
+}
+fn validate(input:View<u8>,limits:Config) -> Result<i32,AppError> {
+    if(core::text::from_utf8_range(input.values,input.start,input.length).is_err()) { return Err(AppError::Input); }
+    let at:i32=0; let rows:i32=0;
+    while(at<input.length) {
+        if(rows==limits.rows) { return Err(AppError::Limit); } rows+=1; let begin=at; let separator:i32=-1;
+        while(at<input.length && input.values[input.start+at]!=10) {
+            let byte=input.values[input.start+at];
+            if(byte==9) { if(separator>=0) { return Err(AppError::Input); } separator=at; }
+            else { if(byte<32 || byte==127) { return Err(AppError::Input); } } at+=1;
+        }
+        if(separator<=begin) { return Err(AppError::Input); }
+        if(separator-begin>limits.key || at-separator-1>limits.value) { return Err(AppError::Limit); } at+=1;
+    } return Ok(rows);
+}
+fn release(item:alloc::tree_map::Entry<String,String>) { item.key.destroy(); item.value.destroy(); }
+fn release_entries(items:alloc::vec::Vec<alloc::tree_map::Entry<String,String>>) {
+    let source=items.take_iter(); while(true) { let item=source.next(); if(item.is_none()) { break; } release(item.unwrap()); } source.try_finish(); items.destroy();
+}
+fn release_map(map:alloc::tree_map::TreeMap<String,String>) {
+    let source=map.take_iter(); while(true) { let item=source.next(); if(item.is_none()) { break; } release(item.unwrap()); } source.try_finish(); map.destroy();
+}
+fn build(input:View<u8>,count:i32) -> Result<alloc::vec::Vec<alloc::tree_map::Entry<String,String>>,AppError> {
+    let made:Result<alloc::vec::Vec<alloc::tree_map::Entry<String,String>>,alloc::vec::Error> =alloc::vec::with_capacity(count);
+    if(made.is_err()) { return Err(AppError::Allocation); } let entries=made.unwrap(); let at:i32=0;
+    while(at<input.length) {
+        let begin=at; while(input.values[input.start+at]!=9) { at+=1; } let separator=at; at+=1;
+        while(at<input.length && input.values[input.start+at]!=10) { at+=1; }
+        let key=alloc::string::from_text(core::text::from_utf8_range(input.values,input.start+begin,separator-begin).unwrap());
+        if(key.is_err()) { release_entries(entries); return Err(AppError::Allocation); } let key_owner=key.unwrap();
+        let value=alloc::string::from_text(core::text::from_utf8_range(input.values,input.start+separator+1,at-separator-1).unwrap());
+        if(value.is_err()) { key_owner.destroy(); release_entries(entries); return Err(AppError::Allocation); }
+        let item=alloc::tree_map::Entry { key:key_owner,value:value.unwrap() };
+        if(entries.try_push(item).is_err()) { release(item); release_entries(entries); return Err(AppError::Allocation); } at+=1;
+    } return Ok(entries);
+}
+fn report_piece(report:&Report,bytes:View<u8>) {
+    if(report.failed) { return; } let sink=std::stream::stderr(); let at:i32=0;
+    while(at<bytes.length) {
+        if(report.calls==256) { report.failed=true; return; } report.calls+=1; let count=bytes.length-at; if(count>1024) { count=1024; }
+        let sent=sink.write(bytes.values,bytes.start+at,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { report.failed=true; return; } }
+        else { let amount=sent.unwrap(); if(amount<=0 || amount>count) { report.failed=true; return; } at+=amount; }
+    }
+}
+fn report_number(report:&Report,value:u64) { let bytes:[u8;20]=[0;20]; let formatted=core::decimal::format_u64(bytes,0,20,value); if(formatted.is_err()) { report.failed=true; } else { report_piece(report,View { values:bytes,start:0,length:formatted.unwrap() }); } }
+fn report_entry(report:&Report,item:alloc::tree_map::Entry<String,String>) {
+    report_piece(report,View { values:item.key.as_bytes(),start:0,length:item.key.byte_len() }); report_piece(report,literal("\t",1));
+    report_piece(report,View { values:item.value.as_bytes(),start:0,length:item.value.byte_len() });
+}
+fn undelivered(progress:core::iter::ReplacementProgress,old:alloc::tree_map::Entry<String,String>,map:&alloc::tree_map::TreeMap<String,String>,remaining:i32) -> bool {
+    let current=map.get_entry(old.key); if(current.is_none()) { return false; }
+    let report=Report { calls:0,failed:false }; report_piece(report.borrow(),literal("undelivered\t",12));
+    report_number(report.borrow(),progress.committed); report_piece(report.borrow(),literal("\t",1)); report_number(report.borrow(),progress.replaced);
+    report_piece(report.borrow(),literal("\t",1)); report_number(report.borrow(),remaining as u64); report_piece(report.borrow(),literal("\t",1));
+    report_entry(report.borrow(),old); report_piece(report.borrow(),literal("\t",1)); report_entry(report.borrow(),current.unwrap()); report_piece(report.borrow(),literal("\n",1));
+    return true;
+}
+fn stage_entry(output:&alloc::vec::Vec<u8>,item:alloc::tree_map::Entry<String,String>,old:bool,maximum:i32) -> i32 {
+    let required:i32=6+item.key.byte_len()+item.value.byte_len(); if(required>maximum-output.len()) { return 2; }
+    let kind=literal("new\t",4); if(old) { kind=literal("old\t",4); }
+    if(output.try_extend(kind).is_err()) { return 4; }
+    if(output.try_extend(View { values:item.key.as_bytes(),start:0,length:item.key.byte_len() }).is_err()) { return 4; }
+    if(output.try_push(9).is_err()) { return 4; }
+    if(output.try_extend(View { values:item.value.as_bytes(),start:0,length:item.value.byte_len() }).is_err()) { return 4; }
+    if(output.try_push(10).is_err()) { return 4; } return 0;
+}
+fn deliver(bytes:View<u8>,maximum:i32) -> Result<bool,AppError> {
+    let sink=std::stream::stdout(); let at:i32=0; let calls:i32=0;
+    while(at<bytes.length) {
+        if(calls==maximum) { return Err(AppError::Limit); } calls+=1; let count=bytes.length-at; if(count>1024) { count=1024; }
+        let sent=sink.write(bytes.values,bytes.start+at,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return Err(AppError::Io); } }
+        else { let amount=sent.unwrap(); if(amount<=0 || amount>count) { return Err(AppError::Io); } at+=amount; }
+    } return Ok(true);
+}
+fn rejected(incoming:alloc::tree_map::Entry<String,String>,error:alloc::tree_map::Error) -> i32 {
+    let status=match(error) { alloc::tree_map::Error::AllocationFailed->4,_ ->2 }; release(incoming); return status;
+}
+fn failed_history(progress:core::iter::ReplacementProgress,old:alloc::tree_map::Entry<String,String>,error:HistoryError,map:&alloc::tree_map::TreeMap<String,String>,remaining:i32) -> i32 {
+    let status=match(error) { HistoryError::Limit->2,HistoryError::Allocation->4 };
+    if(!undelivered(progress,old,map,remaining)) { status=3; } release(old); return status;
+}
+fn process(entries:alloc::vec::Vec<alloc::tree_map::Entry<String,String>>,limits:Config) -> i32 {
+    let count=entries.len(); let source=entries.take_iter(); let map:alloc::tree_map::TreeMap<String,String> =alloc::tree_map::new();
+    let history:History<alloc::tree_map::Entry<String,String>> =History { items:alloc::vec::new(),limit:limits.history }; let status:i32=0;
+    let result:Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<alloc::tree_map::Entry<String,String>,alloc::tree_map::Error,HistoryError>> =core::iter::try_replace_up_to(source.borrow(),map.borrow(),history.borrow(),(count as u64)+1);
+    if(result.is_ok()) { let receipt:core::iter::ReplacementTransfer=result.unwrap(); let expected:u64=count as u64; if(!receipt.exhausted || receipt.progress.committed!=expected) { status=3; } }
+    if(result.is_err()) {
+        status=match(result.unwrap_err()) {
+            core::iter::ReplacementFailure::Rejected(progress,incoming,error)->rejected(incoming,error),
+            core::iter::ReplacementFailure::Undelivered(progress,old,error)->failed_history(progress,old,error,map.borrow(),source.remaining()),
+        };
+    }
+    while(true) { let item=source.next(); if(item.is_none()) { break; } release(item.unwrap()); } if(source.try_finish().is_some()) { if(status==0) { status=3; } } entries.destroy();
+    if(status!=0) { release_entries(history.items); release_map(map); return status; }
+    let allocated:Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(limits.output);
+    if(allocated.is_err()) { release_entries(history.items); release_map(map); return 4; } let output=allocated.unwrap();
+    let old=history.items.take_iter(); while(true) { let item=old.next(); if(item.is_none()) { break; } let owned=item.unwrap(); if(status==0) { status=stage_entry(output.borrow(),owned,true,limits.output); } release(owned); } old.try_finish(); history.items.destroy();
+    let current=map.take_iter(); while(true) { let item=current.next(); if(item.is_none()) { break; } let owned=item.unwrap(); if(status==0) { status=stage_entry(output.borrow(),owned,false,limits.output); } release(owned); } current.try_finish(); map.destroy();
+    if(status==0) { let sent=deliver(output.as_view(),limits.writes); if(sent.is_err()) { status=code(sent.unwrap_err()); } } output.destroy(); return status;
+}
+fn run(limits:Config) -> i32 {
+    let got=read_input(limits); if(got.is_err()) { return code(got.unwrap_err()); } let input=got.unwrap();
+    let checked=validate(input.as_view(),limits); if(checked.is_err()) { input.destroy(); return code(checked.unwrap_err()); }
+    let made=build(input.as_view(),checked.unwrap()); input.destroy(); if(made.is_err()) { return code(made.unwrap_err()); } return process(made.unwrap(),limits);
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let got=std::args::snapshot(1,16,1024);
+    if(got.is_err()) { return match(got.unwrap_err()) { std::args::Error::AllocationFailed->4,std::args::Error::HostRead(index)->3,_ ->2 }; } let arguments=got.unwrap(); let status:i32=0;
+    if(arguments.len()==1 && same(arguments.get(0).unwrap(),literal("--help",6))) {
+        let text=literal("usage: latest_values [--input-bytes N] [--rows N] [--key-bytes N] [--value-bytes N] [--history N] [--output-bytes N] [--read-calls N] [--write-calls N]\n",152);
+        if(deliver(text,64).is_err()) { status=3; }
+    } else { let parsed=config(arguments); if(parsed.is_err()) { status=code(parsed.unwrap_err()); } else { status=run(parsed.unwrap()); } }
+    arguments.destroy(); if(status!=0) { let sink=std::stream::stderr(); let message=literal("latest_values: failed\n",22); sink.write(message.values,message.start,message.length); } return status;
+}
