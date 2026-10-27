@@ -1,0 +1,243 @@
+// Owned HTTP(S) URL planning over canonical URI syntax. Host effects are only
+// allocator backing; no DNS, sockets, TLS or files. Keep one manual owner.
+module ext::http_url;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::net;
+import core::net::IpAddr;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::host_name;
+import ext::uri;
+
+pub enum Scheme { Http, Https }
+pub enum HostKind { Dns, Ipv4, Ipv6 }
+pub struct Limits { url_bytes:i32, target_bytes:i32 }
+pub enum ErrorKind {
+    Bounds, InvalidLimits, Uri, Scheme, Authority, Userinfo, Host, Port,
+    TargetLimit, AllocationFailed
+}
+pub struct Error { kind:ErrorKind, offset:i32, syntax:Option<ext::uri::Error> }
+pub struct Url {
+    storage:Vec<u8>, request_target:Vec<u8>, selected_scheme:Scheme,
+    selected_kind:HostKind, address:Option<IpAddr>, selected_port:u16,
+    host_start:i32, host_length:i32, authority_start:i32,
+    authority_length:i32, active:bool
+}
+struct Profile {
+    scheme:Scheme, kind:HostKind, address:Option<IpAddr>, port:u16,
+    host:View<u8>, authority:View<u8>, path:View<u8>, query:Option<View<u8>>,
+    target_length:i32
+}
+
+pub fn default_limits() -> Limits { return Limits { url_bytes:16384, target_bytes:8192 }; }
+fn valid(bytes:View<u8>) -> bool {
+    return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647-bytes.length;
+}
+fn failure(kind:ErrorKind, offset:i32) -> Error { return Error { kind:kind, offset:offset, syntax:None() }; }
+fn byte(bytes:View<u8>, index:i32) -> u8 { return bytes.values[bytes.start+index]; }
+fn lower(value:u8) -> u8 { if (value >= 65 && value <= 90) { return value+32; } return value; }
+fn digit(value:u8) -> bool { return value >= 48 && value <= 57; }
+fn hex(value:u8) -> bool {
+    return digit(value) || (value >= 65 && value <= 70) || (value >= 97 && value <= 102);
+}
+fn uri_offset(error:ext::uri::Error) -> i32 {
+    return match (error) {
+        ext::uri::Error::Bounds -> -1,
+        ext::uri::Error::LengthLimit -> -1,
+        ext::uri::Error::InvalidByte(at_byte) -> at_byte,
+        ext::uri::Error::InvalidPercent(at_percent) -> at_percent,
+        ext::uri::Error::InvalidScheme(at_scheme) -> at_scheme,
+        ext::uri::Error::InvalidAuthority(at_authority) -> at_authority,
+        ext::uri::Error::InvalidHost(at_host) -> at_host,
+        ext::uri::Error::InvalidPort(at_port) -> at_port
+    };
+}
+fn dns_offset(error:ext::host_name::Error, length:i32) -> i32 {
+    return match (error) {
+        ext::host_name::Error::Bounds -> 0,
+        ext::host_name::Error::Empty -> 0,
+        ext::host_name::Error::Limit -> length,
+        ext::host_name::Error::Nul(at_nul) -> at_nul,
+        ext::host_name::Error::Invalid(at_invalid) -> at_invalid
+    };
+}
+fn scheme(bytes:View<u8>) -> Result<Scheme,Error> {
+    if ((bytes.length == 4 || bytes.length == 5) && lower(byte(bytes,0)) == 104
+        && lower(byte(bytes,1)) == 116 && lower(byte(bytes,2)) == 116 && lower(byte(bytes,3)) == 112) {
+        if (bytes.length == 4) { return Ok(Scheme::Http); }
+        if (lower(byte(bytes,4)) == 115) { return Ok(Scheme::Https); }
+    }
+    return Err(failure(ErrorKind::Scheme,0));
+}
+
+// Reject legacy decimal/octal/hex numeric candidates before a DNS lookup can
+// reinterpret them. Strict dotted IPv4 is classified separately first.
+fn legacy_numeric(host:View<u8>) -> bool {
+    let at:i32 = 0;
+    let parts:i32 = 0;
+    while (at < host.length) {
+        parts += 1;
+        if (parts > 4) { return false; }
+        let hexadecimal:bool = host.length-at >= 2 && byte(host,at) == 48
+            && (byte(host,at+1) == 120 || byte(host,at+1) == 88);
+        if (hexadecimal) { at += 2; }
+        let first:i32 = at;
+        while (at < host.length && byte(host,at) != 46) {
+            let value:u8 = byte(host,at);
+            if ((!hexadecimal && !digit(value)) || (hexadecimal && !hex(value))) { return false; }
+            at += 1;
+        }
+        if (at == first) { return false; }
+        if (at < host.length) {
+            at += 1;
+            if (at == host.length) { return false; }
+        }
+    }
+    return parts > 0;
+}
+fn port(bytes:View<u8>, raw_start:i32) -> Result<u16,Error> {
+    if (bytes.length == 0) { return Err(failure(ErrorKind::Port,raw_start)); }
+    let value:i32 = 0;
+    let at:i32 = 0;
+    while (at < bytes.length) {
+        let current:u8 = byte(bytes,at);
+        if (!digit(current)) { return Err(failure(ErrorKind::Port,raw_start+at)); }
+        let amount:i32 = (current-48) as i32;
+        if (value > (65535-amount)/10) { return Err(failure(ErrorKind::Port,raw_start+at)); }
+        value = value*10+amount;
+        at += 1;
+    }
+    if (value == 0) { return Err(failure(ErrorKind::Port,raw_start)); }
+    return Ok(value as u16);
+}
+
+// No allocation before all syntax, profile and resulting target size checks.
+fn inspect(input:View<u8>, limits:Limits) -> Result<Profile,Error> {
+    if (!valid(input)) { return Err(failure(ErrorKind::Bounds,-1)); }
+    if (limits.url_bytes <= 0 || limits.url_bytes > 1048576
+        || limits.target_bytes <= 0 || limits.target_bytes > 1048576) {
+        return Err(failure(ErrorKind::InvalidLimits,-1));
+    }
+    let parsed:Result<ext::uri::Reference,ext::uri::Error> = ext::uri::parse_with_limit(input,limits.url_bytes);
+    if (parsed.is_err()) {
+        let error:ext::uri::Error = parsed.unwrap_err();
+        return Err(Error { kind:ErrorKind::Uri, offset:uri_offset(error), syntax:Some(error) });
+    }
+    let reference = parsed.unwrap();
+    if (reference.scheme.is_none()) { return Err(failure(ErrorKind::Scheme,0)); }
+    let scheme_bytes = reference.scheme.unwrap();
+    let selected_scheme:Scheme = scheme(scheme_bytes)?;
+    if (reference.authority.is_none()) {
+        return Err(failure(ErrorKind::Authority,scheme_bytes.length+1));
+    }
+    let authority = reference.authority.unwrap();
+    if (authority.userinfo.is_some()) {
+        let userinfo = authority.userinfo.unwrap();
+        return Err(failure(ErrorKind::Userinfo,userinfo.start-input.start+userinfo.length));
+    }
+    let host:View<u8> = authority.host;
+    let host_offset:i32 = host.start-input.start;
+    if (host.length == 0) { return Err(failure(ErrorKind::Authority,host_offset)); }
+    let selected_kind:HostKind = HostKind::Dns;
+    let address:Option<IpAddr> = None();
+    let bracketed:bool = match (authority.kind) {
+        ext::uri::HostKind::RegName -> false,
+        ext::uri::HostKind::Ipv4 -> false,
+        ext::uri::HostKind::Ipv6 -> true,
+        ext::uri::HostKind::IpvFuture -> false
+    };
+    let future:bool = match (authority.kind) {
+        ext::uri::HostKind::RegName -> false,
+        ext::uri::HostKind::Ipv4 -> false,
+        ext::uri::HostKind::Ipv6 -> false,
+        ext::uri::HostKind::IpvFuture -> true
+    };
+    if (future) { return Err(failure(ErrorKind::Host,host_offset)); }
+    if (bracketed) {
+        host = host.subview(1,host.length-1).unwrap();
+        let parsed_ip = core::net::parse_ipv6(host);
+        if (parsed_ip.is_err()) { return Err(failure(ErrorKind::Host,host_offset)); }
+        address = Some(IpAddr::V6(parsed_ip.unwrap()));
+        selected_kind = HostKind::Ipv6;
+    } else {
+        let parsed_ip = core::net::parse_ipv4(host);
+        if (parsed_ip.is_ok()) { address = Some(IpAddr::V4(parsed_ip.unwrap())); selected_kind = HostKind::Ipv4; }
+        else {
+            if (legacy_numeric(host)) { return Err(failure(ErrorKind::Host,host_offset)); }
+            if (host.length > 253) { return Err(failure(ErrorKind::Host,host_offset+253)); }
+            let checked = ext::host_name::check_dns(host,253);
+            if (checked.is_err()) {
+                return Err(failure(ErrorKind::Host,host_offset+dns_offset(checked.unwrap_err(),host.length)));
+            }
+        }
+    }
+    let selected_port:u16 = 80;
+    if (match (selected_scheme) { Scheme::Http -> false, Scheme::Https -> true }) { selected_port = 443; }
+    if (authority.port.is_some()) {
+        let bytes = authority.port.unwrap();
+        selected_port = port(bytes,bytes.start-input.start)?;
+    }
+    let target_length:i32 = reference.path.length;
+    if (target_length == 0) { target_length = 1; }
+    if (reference.query.is_some()) {
+        // Every source component is bounded by 1 MiB, so these signed sums fit.
+        target_length += 1+reference.query.unwrap().length;
+    }
+    if (target_length > limits.target_bytes) {
+        return Err(failure(ErrorKind::TargetLimit,reference.path.start-input.start));
+    }
+    return Ok(Profile { scheme:selected_scheme, kind:selected_kind, address:address,
+        port:selected_port, host:host, authority:authority.raw, path:reference.path,
+        query:reference.query, target_length:target_length });
+}
+
+pub fn parse(input:View<u8>, limits:Limits) -> Result<Url,Error> {
+    let profile:Profile = inspect(input,limits)?;
+    let made:Result<Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(input.length);
+    if (made.is_err()) { return Err(failure(ErrorKind::AllocationFailed,-1)); }
+    let storage:Vec<u8> = made.unwrap();
+    // Exact capacities and immutable, validated source views make copying
+    // infallible and prevent any growth or effects after either reservation.
+    storage.try_extend(input).unwrap();
+    let made:Result<Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(profile.target_length);
+    if (made.is_err()) { storage.destroy(); return Err(failure(ErrorKind::AllocationFailed,-1)); }
+    let target:Vec<u8> = made.unwrap();
+    if (profile.path.length == 0) { target.try_push(47).unwrap(); }
+    else { target.try_extend(profile.path).unwrap(); }
+    if (profile.query.is_some()) { target.try_push(63).unwrap(); target.try_extend(profile.query.unwrap()).unwrap(); }
+    return Ok(Url { storage:storage, request_target:target, selected_scheme:profile.scheme,
+        selected_kind:profile.kind, address:profile.address, selected_port:profile.port,
+        host_start:profile.host.start-input.start, host_length:profile.host.length,
+        authority_start:profile.authority.start-input.start, authority_length:profile.authority.length,
+        active:true });
+}
+
+pub impl Url {
+    pub fn borrow(&self) -> &Url { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn scheme(&self) -> Option<Scheme> { if (!self.active) { return None(); } return Some(self.selected_scheme); }
+    pub fn host_kind(&self) -> Option<HostKind> { if (!self.active) { return None(); } return Some(self.selected_kind); }
+    pub fn host(&self) -> Option<View<u8>> {
+        if (!self.active) { return None(); }
+        return Some(self.storage.as_view().subview(self.host_start,self.host_start+self.host_length).unwrap());
+    }
+    pub fn ip(&self) -> Option<IpAddr> { if (!self.active) { return None(); } return self.address; }
+    pub fn port(&self) -> Option<u16> { if (!self.active) { return None(); } return Some(self.selected_port); }
+    pub fn authority(&self) -> Option<View<u8>> {
+        if (!self.active) { return None(); }
+        return Some(self.storage.as_view().subview(self.authority_start,self.authority_start+self.authority_length).unwrap());
+    }
+    pub fn target(&self) -> Option<View<u8>> { if (!self.active) { return None(); } return Some(self.request_target.as_view()); }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.active = false;
+        self.request_target.destroy(); self.storage.destroy(); self.address = None();
+        return true;
+    }
+}

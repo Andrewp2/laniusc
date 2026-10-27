@@ -6,6 +6,7 @@ import core::mem;
 import core::result;
 import core::slice;
 import core::text;
+import ext::host_name;
 
 pub enum Trust { DefaultPaths, CaFile(core::slice::View<u8>) }
 pub enum Identity { Dns(core::slice::View<u8>), Ip(core::slice::View<u8>) }
@@ -234,7 +235,6 @@ pub fn new_server(certificate_chain: core::slice::View<u8>, private_key: core::s
 
 fn identity_bytes(identity: Identity) -> core::slice::View<u8> { return match (identity) { Identity::Dns(bytes) -> bytes, Identity::Ip(bytes) -> bytes }; }
 fn is_dns(identity: Identity) -> bool { return match (identity) { Identity::Dns(bytes) -> true, _ -> false }; }
-fn letter(byte: u8) -> bool { return (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122); }
 fn digit(byte: u8) -> bool { return byte >= 48 && byte <= 57; }
 fn checked_identity(identity: Identity, limits: Limits) -> core::result::Result<i32, Error> {
     let bytes: core::slice::View<u8> = identity_bytes(identity);
@@ -243,33 +243,27 @@ fn checked_identity(identity: Identity, limits: Limits) -> core::result::Result<
     if (bytes.length > limits.identity_bytes) { return core::result::Err(local(Cause::Limit, Phase::Identity)); }
     let dns: bool = is_dns(identity);
     if (!dns && bytes.length > 45) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
-    let label: i32 = 0;
-    let has_letter: bool = false;
-    let previous: u8 = 0;
+    if (dns) {
+        let checked: core::result::Result<i32,ext::host_name::Error> = ext::host_name::check_dns(bytes,limits.identity_bytes);
+        if (checked.is_err()) {
+            let cause: Cause = match (checked.unwrap_err()) {
+                ext::host_name::Error::Bounds -> Cause::Bounds,
+                ext::host_name::Error::Empty -> Cause::Identity,
+                ext::host_name::Error::Limit -> Cause::Limit,
+                ext::host_name::Error::Nul(at_nul) -> Cause::Nul,
+                ext::host_name::Error::Invalid(at_invalid) -> Cause::Identity
+            };
+            return core::result::Err(local(cause,Phase::Identity));
+        }
+        return core::result::Ok(0);
+    }
     let index: i32 = 0;
     while (index < bytes.length) {
         let byte: u8 = bytes.values[bytes.start + index];
         if (byte == 0) { return core::result::Err(local(Cause::Nul, Phase::Identity)); }
-        if (dns) {
-            if (byte == 46) {
-                if (label == 0 || previous == 45) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
-                label = 0;
-            } else {
-                if (!letter(byte) && !digit(byte) && byte != 45) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
-                if (label == 0 && byte == 45) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
-                label += 1;
-                if (label > 63) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
-                if (letter(byte)) { has_letter = true; }
-            }
-        } else {
-            if (!digit(byte) && !(byte >= 65 && byte <= 70) && !(byte >= 97 && byte <= 102) && byte != 46 && byte != 58) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
-        }
-        previous = byte;
+        if (!digit(byte) && !(byte >= 65 && byte <= 70) && !(byte >= 97 && byte <= 102) && byte != 46 && byte != 58) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
         index += 1;
     }
-    // DNS references are ASCII hostnames without wildcards/trailing dot.
-    // A digit/dot-only reference must use the IP policy and is never SNI.
-    if (dns && (label == 0 || previous == 45 || !has_letter)) { return core::result::Err(local(Cause::Identity, Phase::Identity)); }
     return core::result::Ok(0);
 }
 

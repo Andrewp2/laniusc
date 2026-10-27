@@ -1,0 +1,100 @@
+// Test-only binary framing; every answer comes from the actual public URL API.
+module app::main;
+import core::mem;
+import core::io;
+import core::net;
+import core::slice;
+import core::slice::View;
+import core::option::Option;
+import core::result::Result;
+import std::stream;
+import ext::uri;
+import ext::http_url;
+
+fn word(value: u64) -> bool {
+    let bytes: [u8;8] = [0;8]; let i: i32 = 0;
+    while (i < 8) { bytes[i] = ((value >> (i*8)) & 255) as u8; i += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok()); return true;
+}
+fn payload(value: View<u8>) -> bool {
+    assert(word(value.length as u64)); let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),value.values,value.start,value.length).is_ok()); return true;
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let i: i32 = 0; while (i < 8) { value |= (bytes[offset+i] as u64) << (i*8); i += 1; } return value;
+}
+fn kind(value: ext::http_url::ErrorKind) -> i32 {
+    return match (value) {
+        ext::http_url::ErrorKind::Bounds -> 1, ext::http_url::ErrorKind::InvalidLimits -> 2,
+        ext::http_url::ErrorKind::Uri -> 3, ext::http_url::ErrorKind::Scheme -> 4,
+        ext::http_url::ErrorKind::Authority -> 5, ext::http_url::ErrorKind::Userinfo -> 6,
+        ext::http_url::ErrorKind::Host -> 7, ext::http_url::ErrorKind::Port -> 8,
+        ext::http_url::ErrorKind::TargetLimit -> 9, ext::http_url::ErrorKind::AllocationFailed -> 10
+    };
+}
+struct Syntax { kind: i32, offset: i32 }
+fn syntax(value: ext::uri::Error) -> Syntax {
+    return match (value) {
+        ext::uri::Error::Bounds -> Syntax { kind: 1, offset: -1 },
+        ext::uri::Error::LengthLimit -> Syntax { kind: 2, offset: -1 },
+        ext::uri::Error::InvalidByte(at) -> Syntax { kind: 3, offset: at },
+        ext::uri::Error::InvalidPercent(at) -> Syntax { kind: 4, offset: at },
+        ext::uri::Error::InvalidScheme(at) -> Syntax { kind: 5, offset: at },
+        ext::uri::Error::InvalidAuthority(at) -> Syntax { kind: 6, offset: at },
+        ext::uri::Error::InvalidHost(at) -> Syntax { kind: 7, offset: at },
+        ext::uri::Error::InvalidPort(at) -> Syntax { kind: 8, offset: at }
+    };
+}
+fn inactive(url: &ext::http_url::Url) -> bool {
+    return !url.is_open() && url.scheme().is_none() && url.host_kind().is_none() && url.host().is_none() && url.ip().is_none() && url.port().is_none() && url.authority().is_none() && url.target().is_none();
+}
+fn run(packet: [u8]) -> bool {
+    let length: i32 = decode(packet,0) as i32; let layout: i32 = decode(packet,24) as i32; let malformed: i32 = decode(packet,32) as i32;
+    assert(length >= 0 && length <= 512 && layout >= 0 && layout <= 1 && malformed >= 0 && malformed <= 3);
+    let limits: ext::http_url::Limits = ext::http_url::Limits { url_bytes: decode(packet,8) as i32, target_bytes: decode(packet,16) as i32 };
+    let native: [u8;520] = [90;520]; let words: [i32;130] = [0;130];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),520);
+    assert(core::mem::slice_stride(native) < 0 && core::mem::slice_stride(packed) == 1);
+    let backing: [u8] = native; if (layout == 1) { backing = packed; }
+    let i: i32 = 0; while (i < 520) { backing[i] = 90; i += 1; }
+    i = 0; while (i < length) { backing[3+i] = packet[40+i]; i += 1; }
+    let input: View<u8> = View<u8> { values: backing, start: 3, length: length };
+    if (malformed == 1) { input.start = -1; }
+    if (malformed == 2) { input.length = -1; }
+    if (malformed == 3) { input.start = 2147483647; input.length = 1; }
+    let result: Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(input,limits);
+    i = 3; while (i < 3+length) { backing[i] = 88; i += 1; }
+    assert(backing[0] == 90 && backing[2] == 90 && backing[3+length] == 90 && backing[519] == 90);
+    assert(word(0x55524c));
+    if (result.is_err()) {
+        let error: ext::http_url::Error = result.unwrap_err();
+        assert(word(1) && word(kind(error.kind) as u64) && word(error.offset as u64) && word(error.syntax.is_some() as u64));
+        if (error.syntax.is_some()) { let original: Syntax = syntax(error.syntax.unwrap()); assert(word(original.kind as u64) && word(original.offset as u64)); }
+        return true;
+    }
+    let url: ext::http_url::Url = result.unwrap(); assert(url.is_open() && word(0));
+    let scheme: ext::http_url::Scheme = url.scheme().unwrap(); let host_kind: ext::http_url::HostKind = url.host_kind().unwrap();
+    assert(word(match (scheme) { ext::http_url::Scheme::Http -> 0, ext::http_url::Scheme::Https -> 1 }));
+    assert(word(match (host_kind) { ext::http_url::HostKind::Dns -> 0, ext::http_url::HostKind::Ipv4 -> 4, ext::http_url::HostKind::Ipv6 -> 6 }));
+    assert(word(url.port().unwrap() as u64) && payload(url.host().unwrap()) && payload(url.authority().unwrap()) && payload(url.target().unwrap()));
+    let ip: Option<core::net::IpAddr> = url.ip(); assert(word(ip.is_some() as u64));
+    if (ip.is_some()) {
+        let value: core::net::IpAddr = ip.unwrap(); let bytes: [u8;16] = [90;16];
+        let count: i32 = value.write_octets(core::slice::view(bytes,16).unwrap()).unwrap();
+        assert((count == 4 || count == 16) && payload(core::slice::view(bytes,count).unwrap()));
+    }
+    assert(url.destroy() && inactive(url.borrow()) && !url.destroy() && inactive(url.borrow())); return true;
+}
+fn main() -> i32 {
+    let words: [i32;138] = [0;138];
+    let packet: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),552);
+    let input: std::stream::Descriptor = std::stream::stdin();
+    while (true) {
+        let result: Result<i32,core::io::Error> = input.read(packet,0,552); assert(result.is_ok()); let count: i32 = result.unwrap();
+        if (count == 0) { return 0; }
+        if (count < 552) { assert(core::io::read_exact(input.borrow(),packet,count,552-count).is_ok()); }
+        assert(run(packet));
+    }
+    return 0;
+}

@@ -1,0 +1,85 @@
+// URL-based plain HTTP. This module has no OpenSSL source/link dependency.
+// One synchronous call prepares once, selects TCP once and transfers its owner.
+module ext::url_client;
+import core::io;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_url;
+import ext::url_connect;
+
+pub struct Request { method: View<u8>, headers: View<ext::http::Field>, body: View<u8> }
+pub struct Options { connection: ext::url_connect::Options, http: ext::http_client::Options }
+pub enum Stage { Validate, Prepare, Connect, Adopt, Exchange }
+pub enum Cause {
+    InvalidState, SchemeMismatch, ConnectionOptions(ext::url_connect::Cause),
+    Connect(ext::url_connect::Failure), Http(ext::http_client::Failure)
+}
+// Diagnostic values own neither native handles nor allocation backing.
+pub struct Failure {
+    stage: Stage, cause: Cause, connection: Option<ext::url_connect::ConnectionInfo>,
+    http: Option<ext::http_client::Stats>, cleanup: Option<core::io::Error>
+}
+pub struct Response { owner: ext::http_client::Response, selected: ext::url_connect::ConnectionInfo, active: bool }
+
+pub fn default_options() -> Options {
+    let http: ext::http_client::Options = ext::http_client::default_options();
+    http.trailing = ext::http_client::Trailing::Reject;
+    return Options { connection: ext::url_connect::default_options(), http: http };
+}
+fn local(cause: Cause) -> Failure {
+    return Failure { stage: Stage::Validate, cause: cause, connection: None(), http: None(), cleanup: None() };
+}
+fn http_failure(stage: Stage, error: ext::http_client::Failure, selected: Option<ext::url_connect::ConnectionInfo>) -> Failure {
+    return Failure { stage: stage, cause: Cause::Http(error), connection: selected, http: Some(error.stats), cleanup: error.cleanup };
+}
+
+pub impl Response {
+    pub fn borrow(&self) -> &Response { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    // Requires this Response to be active; all returned views borrow its owner.
+    pub fn http(&self) -> &ext::http_client::Response { return self.owner.borrow(); }
+    pub fn connection(&self) -> ext::url_connect::ConnectionInfo { return self.selected; }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.active = false; self.owner.destroy(); return true;
+    }
+}
+
+pub fn exchange_until(url: &ext::http_url::Url, request: Request, options: Options,
+    deadline: core::time::Deadline) -> Result<Response,Failure> {
+    if (!url.is_open()) { return Err(local(Cause::InvalidState)); }
+    let plain: bool = match (url.scheme().unwrap()) { ext::http_url::Scheme::Http -> true, _ -> false };
+    if (!plain) { return Err(local(Cause::SchemeMismatch)); }
+    let checked: Result<bool,ext::url_connect::Cause> = ext::url_connect::validate_options(options.connection);
+    if (checked.is_err()) { return Err(local(Cause::ConnectionOptions(checked.unwrap_err()))); }
+    let wire: ext::http_client::Request = ext::http_client::Request {
+        method: request.method, target: url.target().unwrap(), authority: url.authority().unwrap(),
+        headers: request.headers, body: request.body
+    };
+    let made: Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(wire,options.http,deadline);
+    if (made.is_err()) { return Err(http_failure(Stage::Prepare,made.unwrap_err(),None())); }
+    let prepared: ext::http_client::Prepared = made.unwrap();
+    let connected: Result<ext::url_connect::Connection,ext::url_connect::Failure> = ext::url_connect::connect_until(url,options.connection,deadline);
+    if (connected.is_err()) {
+        let error: ext::url_connect::Failure = connected.unwrap_err(); let stats: ext::http_client::Stats = prepared.stats();
+        prepared.destroy();
+        return Err(Failure { stage: Stage::Connect, cause: Cause::Connect(error), connection: None(), http: Some(stats), cleanup: error.cleanup });
+    }
+    let connection: ext::url_connect::Connection = connected.unwrap();
+    let selected: ext::url_connect::ConnectionInfo = connection.info();
+    // Adoption invalidates both source owners on success and failure.
+    let admitted: Result<ext::http_client::Exchange,ext::http_client::Failure> = prepared.adopt_connected(connection.socket());
+    if (admitted.is_err()) { return Err(http_failure(Stage::Adopt,admitted.unwrap_err(),Some(selected))); }
+    let exchange: ext::http_client::Exchange = admitted.unwrap();
+    let completed: Result<ext::http_client::Response,ext::http_client::Failure> = exchange.run();
+    if (completed.is_err()) { return Err(http_failure(Stage::Exchange,completed.unwrap_err(),Some(selected))); }
+    return Ok(Response { owner: completed.unwrap(), selected: selected, active: true });
+}

@@ -1,0 +1,96 @@
+// Verified HTTPS over URL-selected TCP. OpenSSL performs all cryptography.
+// Importing this module requires the explicit native SSL/crypto libraries.
+module ext::url_tls;
+import core::io;
+import core::option;
+import core::option::Option;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::time;
+import ext::http_client;
+import ext::http_url;
+import ext::https_client;
+import ext::openssl_tls;
+import ext::url_client;
+import ext::url_connect;
+
+pub struct Options { request: ext::url_client::Options, tls: ext::https_client::Options }
+pub enum Stage { Validate, Identity, Prepare, Connect, Adopt, Exchange }
+pub enum Cause {
+    InvalidState, SchemeMismatch, InvalidOptions, ConnectionOptions(ext::url_connect::Cause),
+    Identity(ext::openssl_tls::Error), Connect(ext::url_connect::Failure),
+    Http(ext::http_client::Failure), Https(ext::https_client::Failure)
+}
+pub struct Failure {
+    stage: Stage, cause: Cause, connection: Option<ext::url_connect::ConnectionInfo>,
+    http: Option<ext::http_client::Stats>, tls: Option<ext::https_client::TlsStats>,
+    cleanup: Option<core::io::Error>
+}
+pub struct Response {
+    owner: ext::http_client::Response, selected: ext::url_connect::ConnectionInfo,
+    tls: ext::https_client::TlsStats, active: bool
+}
+pub fn default_options() -> Options {
+    return Options { request: ext::url_client::default_options(), tls: ext::https_client::default_options() };
+}
+fn local(stage: Stage, cause: Cause) -> Failure {
+    return Failure { stage: stage, cause: cause, connection: core::option::None(), http: core::option::None(), tls: core::option::None(), cleanup: core::option::None() };
+}
+pub impl Response {
+    pub fn borrow(&self) -> &Response { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    // Requires an active owner; body/header views expire when it is destroyed.
+    pub fn http(&self) -> &ext::http_client::Response { return self.owner.borrow(); }
+    pub fn connection(&self) -> ext::url_connect::ConnectionInfo { return self.selected; }
+    pub fn tls_stats(&self) -> ext::https_client::TlsStats { return self.tls; }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.active = false; self.owner.destroy(); return true;
+    }
+}
+
+pub fn exchange_until(url: &ext::http_url::Url, context: &ext::openssl_tls::Context,
+    request: ext::url_client::Request, options: Options,
+    deadline: core::time::Deadline) -> Result<Response,Failure> {
+    if (!url.is_open()) { return Err(local(Stage::Validate,Cause::InvalidState)); }
+    let secure: bool = match (url.scheme().unwrap()) { ext::http_url::Scheme::Https -> true, _ -> false };
+    if (!secure) { return Err(local(Stage::Validate,Cause::SchemeMismatch)); }
+    let checked: Result<bool,ext::url_connect::Cause> = ext::url_connect::validate_options(options.request.connection);
+    if (checked.is_err()) { return Err(local(Stage::Validate,Cause::ConnectionOptions(checked.unwrap_err()))); }
+    if (options.tls.tls_calls == 0) { return Err(local(Stage::Validate,Cause::InvalidOptions)); }
+    let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Ip(url.host().unwrap());
+    let dns: bool = match (url.host_kind().unwrap()) { ext::http_url::HostKind::Dns -> true, _ -> false };
+    if (dns) { identity = ext::openssl_tls::Identity::Dns(url.host().unwrap()); }
+    let admitted: Result<i32,ext::openssl_tls::Error> = context.validate_identity(identity);
+    if (admitted.is_err()) { return Err(local(Stage::Identity,Cause::Identity(admitted.unwrap_err()))); }
+    let wire: ext::http_client::Request = ext::http_client::Request {
+        method: request.method, target: url.target().unwrap(), authority: url.authority().unwrap(),
+        headers: request.headers, body: request.body
+    };
+    let made: Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(wire,options.request.http,deadline);
+    if (made.is_err()) {
+        let error: ext::http_client::Failure = made.unwrap_err();
+        return Err(Failure { stage: Stage::Prepare, cause: Cause::Http(error), connection: core::option::None(), http: core::option::Some(error.stats), tls: core::option::None(), cleanup: error.cleanup });
+    }
+    let prepared: ext::http_client::Prepared = made.unwrap();
+    let connected: Result<ext::url_connect::Connection,ext::url_connect::Failure> = ext::url_connect::connect_until(url,options.request.connection,deadline);
+    if (connected.is_err()) {
+        let error: ext::url_connect::Failure = connected.unwrap_err(); let stats: ext::http_client::Stats = prepared.stats();
+        prepared.destroy();
+        return Err(Failure { stage: Stage::Connect, cause: Cause::Connect(error), connection: core::option::None(), http: core::option::Some(stats), tls: core::option::None(), cleanup: error.cleanup });
+    }
+    let connection: ext::url_connect::Connection = connected.unwrap(); let selected: ext::url_connect::ConnectionInfo = connection.info();
+    let begun: Result<ext::https_client::Exchange,ext::https_client::Failure> = ext::https_client::adopt_connected_with_context_until(prepared.borrow(),connection.socket(),context,identity,options.tls);
+    if (begun.is_err()) {
+        let error: ext::https_client::Failure = begun.unwrap_err();
+        return Err(Failure { stage: Stage::Adopt, cause: Cause::Https(error), connection: core::option::Some(selected), http: core::option::Some(error.stats), tls: core::option::None(), cleanup: error.cleanup });
+    }
+    let exchange: ext::https_client::Exchange = begun.unwrap();
+    let completed: Result<ext::http_client::Response,ext::https_client::Failure> = exchange.run();
+    if (completed.is_err()) {
+        let error: ext::https_client::Failure = completed.unwrap_err();
+        return Err(Failure { stage: Stage::Exchange, cause: Cause::Https(error), connection: core::option::Some(selected), http: core::option::Some(error.stats), tls: core::option::Some(exchange.tls_stats()), cleanup: error.cleanup });
+    }
+    return Ok(Response { owner: completed.unwrap(), selected: selected, tls: exchange.tls_stats(), active: true });
+}

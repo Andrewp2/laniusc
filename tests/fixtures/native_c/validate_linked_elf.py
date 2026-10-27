@@ -54,7 +54,8 @@ def validate_function_instructions(functions, instructions, executable_range):
     return branches
 
 
-def validate(path):
+def inspect(path):
+    """Validate and return the same parsed image/instruction authority."""
     image = Path(path).read_bytes()
 
     def unpack(format_, offset):
@@ -121,24 +122,42 @@ def validate(path):
           "missing sized Lanius function symbols")
     check(sum(name == "main" for name, _, _ in functions) == 1, "missing unique CRT main bridge")
 
-    result = subprocess.run(["objdump", "-d", "--no-show-raw-insn", str(path)],
+    result = subprocess.run(["objdump", "-d", "-w", str(path)],
                             capture_output=True, text=True, timeout=20, check=True)
-    instructions = {}
-    prefixes = {"addr32", "bnd", "cs", "data16", "ds", "es", "fs", "gs",
-                "lock", "notrack", "rep", "repe", "repne", "repnz", "repz", "ss"}
-    for line in result.stdout.splitlines():
-        match = re.match(r"^\s*([0-9a-f]+):\s+(\S.*)$", line)
-        if not match:
-            continue
-        address = int(match[1], 16)
-        tokens = match[2].split()
-        while tokens and (tokens[0] in prefixes or tokens[0].startswith("rex")):
-            tokens.pop(0)
-        check(tokens, "instruction has no mnemonic")
-        instructions[address] = (tokens[0], tokens[1:])
+    def decoded(output):
+        instructions, ends = {}, {}
+        prefixes = {"addr32", "bnd", "cs", "data16", "ds", "es", "fs", "gs",
+                    "lock", "notrack", "rep", "repe", "repne", "repnz", "repz", "ss"}
+        for line in output.splitlines():
+            match = re.match(r"^\s*([0-9a-f]+):\s+((?:[0-9a-f]{2}\s+)+)(\S.*)$", line)
+            if not match:
+                continue
+            address = int(match[1], 16)
+            ends[address] = address + len(match[2].split())
+            tokens = match[3].split()
+            while tokens and (tokens[0] in prefixes or tokens[0].startswith("rex")):
+                tokens.pop(0)
+            check(tokens, "instruction has no mnemonic")
+            instructions[address] = (tokens[0], tokens[1:])
+        return instructions, ends
+
+    instructions, instruction_ends = decoded(result.stdout)
+    # Keep the original validator's zero-suppressed instruction map/rules.
+    # Exact runtime coverage also needs objdump's normally omitted zero padding.
+    complete = subprocess.run(["objdump", "-d", "-w", "-z", str(path)],
+                              capture_output=True, text=True, timeout=20, check=True)
+    runtime_instructions, runtime_instruction_ends = decoded(complete.stdout)
 
     branches = validate_function_instructions(functions, instructions, executable_range)
-    return len(functions), branches
+    return dict(image=image, loads=loads, functions=functions, symbols=symbols,
+                instructions=instructions, instruction_ends=instruction_ends,
+                runtime_instructions=runtime_instructions, runtime_instruction_ends=runtime_instruction_ends,
+                branches=branches)
+
+
+def validate(path):
+    inspected = inspect(path)
+    return len(inspected["functions"]), inspected["branches"]
 
 
 if __name__ == "__main__":

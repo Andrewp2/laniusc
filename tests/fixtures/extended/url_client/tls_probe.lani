@@ -1,0 +1,84 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_url;
+import ext::https_client;
+import ext::openssl_tls;
+import ext::url_client;
+import ext::url_connect;
+import ext::url_tls;
+import std::args;
+import std::clock;
+import std::signal;
+import std::stream;
+fn lit(value:str,count:i32) -> core::slice::View<u8> {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn number(value:core::slice::View<u8>) -> i32 {
+    let out:i32=0; let at:i32=0;
+    while(at<value.length) { let byte=value.get(at).unwrap(); assert(byte>=48 && byte<=57); out=out*10+(byte-48) as i32; at+=1; }
+    return out;
+}
+fn mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); core::io::write_all(sink.borrow(),bytes,0,1).unwrap(); }
+fn ack() { let bytes:[u8;1]=[0]; let source=std::stream::stdin(); core::io::read_exact(source.borrow(),bytes,0,1).unwrap(); assert(bytes[0]==43); }
+fn emit(words:[u64]) {
+    let bytes:[u8;128]=[0;128]; let at:i32=0;
+    while(at<16) { let part:i32=0; while(part<8) { bytes[at*8+part]=(words[at]>>(part*8)) as u8; part+=1; } at+=1; }
+    let sink=std::stream::stdout(); core::io::write_all(sink.borrow(),bytes,0,128).unwrap();
+}
+fn verification(error:ext::openssl_tls::Error) -> bool {
+    return match(error.cause) { ext::openssl_tls::Cause::Verification -> true, ext::openssl_tls::Cause::PeerCertificate -> true, _ -> false };
+}
+fn secure_verification(error:ext::https_client::Failure) -> bool {
+    return match(error.cause) { ext::https_client::Cause::Tls(value) -> verification(value), _ -> false };
+}
+fn failed_verification(error:ext::url_tls::Failure) -> bool {
+    return match(error.cause) { ext::url_tls::Cause::Https(value) -> secure_verification(value), _ -> false };
+}
+fn selected(words:[u64],info:ext::url_connect::ConnectionInfo,stats:ext::http_client::Stats,tls:ext::https_client::TlsStats) {
+    words[2]=info.index as u64; words[3]=info.stats.resolver_calls; words[4]=info.stats.addresses as u64;
+    words[5]=info.stats.attempts as u64; words[6]=info.stats.socket_calls; words[7]=info.stats.polls;
+    words[8]=stats.request_bytes as u64; words[9]=stats.request_sent as u64; words[10]=stats.response_received;
+    words[11]=stats.io_calls; words[12]=tls.calls;
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let arguments=std::args::snapshot(1,4,16384).unwrap();
+    let url=ext::http_url::parse(arguments.get(0).unwrap(),ext::http_url::default_limits()).unwrap();
+    let context=ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(arguments.get(1).unwrap()),ext::openssl_tls::default_limits()).unwrap();
+    let expected=number(arguments.get(2).unwrap()); let mode=number(arguments.get(3).unwrap()); assert(mode>=0 && mode<=2); arguments.destroy();
+    let words:[u64;16]=[0;16]; words[0]=1431456844; emit(words); ack();
+    let empty=lit("",0); let fields:[ext::http::Field;1]=[ext::http::Field { raw:empty,name:empty,value:empty,offset:0 }];
+    let body:[u8;8]=[9,9,0,255,13,10,9,9];
+    let request=ext::url_client::Request { method:lit("POST",4),headers:core::slice::View { values:fields,start:0,length:0 },body:core::slice::view_range(body,2,4).unwrap() };
+    let deadline=core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_secs(4)).unwrap();
+    mark(66); let completed=ext::url_tls::exchange_until(url.borrow(),context.borrow(),request,ext::url_tls::default_options(),deadline); mark(98);
+    let held:core::option::Option<ext::url_tls::Response> =core::option::None();
+    if(mode==0) {
+        assert(completed.is_ok()); let response:ext::url_tls::Response=completed.unwrap(); held=core::option::Some(response);
+        let info=response.connection(); assert(info.index==expected && info.stats.attempts==expected+1);
+        let http:&ext::http_client::Response=response.http();
+        assert(http.message().head.status==200 && http.body().length==4);
+        assert(http.body().get(0).unwrap()==0 && http.body().get(1).unwrap()==255 && http.body().get(2).unwrap()==13 && http.body().get(3).unwrap()==10);
+        assert(http.stats.request_sent==http.stats.request_bytes && !http.stats.upload_stopped);
+        selected(words,info,http.stats,response.tls_stats()); words[13]=200; words[14]=4;
+    } else {
+        assert(completed.is_err()); let failure:ext::url_tls::Failure=completed.unwrap_err();
+        assert(failure.connection.is_some() && failure.http.is_some() && failure.tls.is_some() && failure.cleanup.is_none());
+        let exchanging:bool=match(failure.stage) { ext::url_tls::Stage::Exchange -> true, _ -> false }; assert(exchanging);
+        let info=failure.connection.unwrap(); let http=failure.http.unwrap(); assert(info.index==expected && info.stats.attempts==expected+1);
+        if(mode==1) { assert(failed_verification(failure) && http.request_sent==0); }
+        else { assert(!failed_verification(failure) && http.request_sent==http.request_bytes && http.request_sent>0); }
+        selected(words,info,http,failure.tls.unwrap()); words[15]=mode as u64;
+    }
+    assert(words[12]>0); words[1]=1; emit(words); ack(); mark(68);
+    if(held.is_some()) { let response=held.unwrap(); assert(response.destroy() && !response.destroy()); }
+    context.destroy(); assert(url.destroy() && !url.destroy()); mark(100);
+    words[1]=2; emit(words); ack(); return 0;
+}

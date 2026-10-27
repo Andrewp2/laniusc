@@ -1,0 +1,36 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import std::clock;
+import std::socket;
+
+fn literal(value:str,count:i32) -> core::slice::View<u8> {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn invalid_io(error:core::io::Error) -> bool {
+    return match(error) { core::io::Error::InvalidInput->true,_ ->false };
+}
+fn main() -> i32 {
+    let empty=literal("",0);
+    let fields:[ext::http::Field;1]=[ext::http::Field { raw:empty,name:empty,value:empty,offset:0 }];
+    let request=ext::http_client::Request { method:literal("GET",3),target:literal("/adopt",6),authority:literal("adopt.example:8080",18),headers:core::slice::View { values:fields,start:0,length:0 },body:empty };
+    let now=std::clock::monotonic_now().unwrap();
+    let deadline=core::time::deadline_at(now.checked_add(core::time::from_millis(2000)).unwrap());
+    let prepared=ext::http_client::prepare_until(request,ext::http_client::default_options(),deadline).unwrap();
+    let supplied=std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Udp,true).unwrap();
+    assert(prepared.is_active() && supplied.is_open());
+    let adopted=prepared.adopt_connected(supplied.borrow());
+    assert(adopted.is_err());
+    let failure:ext::http_client::Failure=adopted.unwrap_err();
+    let invalid:bool=match(failure.cause) { ext::http_client::Cause::Io(value)->invalid_io(value),_ ->false };
+    assert(invalid && failure.cleanup.is_none());
+    assert(!prepared.is_active() && !supplied.is_open() && supplied.raw_handle().is_none());
+    assert(!prepared.destroy() && supplied.close().is_ok());
+    return 0;
+}

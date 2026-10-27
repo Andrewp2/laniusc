@@ -1,0 +1,62 @@
+module app::main;
+import core::mem;
+import core::option::Option;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_url;
+import ext::url_client;
+import ext::url_connect;
+import std::clock;
+
+fn bytes(value:str, length:i32) -> View<u8> {
+    return core::slice::view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length),length).unwrap();
+}
+fn unsupported_request(error:ext::http_client::Failure) -> bool {
+    return match (error.cause) { ext::http_client::Cause::UnsupportedRequest -> true, _ -> false };
+}
+fn limit_without_activity(error:ext::url_connect::Failure) -> bool {
+    let limited:bool = match (error.cause) { ext::url_connect::Cause::CallLimit -> true, _ -> false };
+    return limited && error.stats.resolver_calls == 0 && error.stats.attempts == 0 && error.stats.socket_calls == 0;
+}
+fn main() -> i32 {
+    let empty:View<u8> = bytes("",0);
+    let fields:[ext::http::Field;1] = [ext::http::Field { raw:empty,name:empty,value:empty,offset:0 }];
+    let headers:View<ext::http::Field> = core::slice::view(fields,0).unwrap();
+    let request:ext::url_client::Request = ext::url_client::Request { method:bytes("GET",3),headers:headers,body:empty };
+    let now:core::time::Instant = std::clock::monotonic_now().unwrap();
+    let deadline:core::time::Deadline = core::time::deadline_at(now.checked_add(core::time::from_secs(30)).unwrap());
+    let options:ext::url_client::Options = ext::url_client::default_options();
+    let secure:ext::http_url::Url = ext::http_url::parse(bytes("https://example.test/",21),ext::http_url::default_limits()).unwrap();
+    let mismatched:Result<ext::url_client::Response,ext::url_client::Failure> = ext::url_client::exchange_until(secure.borrow(),request,options,deadline);
+    assert(mismatched.is_err());
+    let mismatch:bool = match (mismatched.unwrap_err().cause) { ext::url_client::Cause::SchemeMismatch -> true, _ -> false };
+    assert(mismatch && secure.destroy());
+
+    let url:ext::http_url::Url = ext::http_url::parse(bytes("http://example.test/",20),ext::http_url::default_limits()).unwrap();
+    let invalid:ext::url_client::Request = ext::url_client::Request { method:bytes("CONNECT",7),headers:headers,body:empty };
+    let rejected:Result<ext::url_client::Response,ext::url_client::Failure> = ext::url_client::exchange_until(url.borrow(),invalid,options,deadline);
+    assert(rejected.is_err());
+    let failure:ext::url_client::Failure = rejected.unwrap_err();
+    let preparing:bool = match (failure.stage) { ext::url_client::Stage::Prepare -> true, _ -> false };
+    let cause:ext::url_client::Cause = failure.cause;
+    let unsupported:bool = match (cause) { ext::url_client::Cause::Http(error) -> unsupported_request(error), _ -> false };
+    assert(preparing && unsupported && failure.http.is_some() && failure.connection.is_none() && failure.cleanup.is_none());
+
+    options.connection.socket_calls = 0;
+    let capped:Result<ext::url_client::Response,ext::url_client::Failure> = ext::url_client::exchange_until(url.borrow(),request,options,deadline);
+    assert(capped.is_err());
+    let capped_error:ext::url_client::Failure = capped.unwrap_err();
+    let exhausted:bool = match (capped_error.cause) { ext::url_client::Cause::Connect(error) -> limit_without_activity(error), _ -> false };
+    assert(exhausted);
+    assert(capped_error.http.is_some() && capped_error.cleanup.is_none());
+    assert(url.destroy() && !url.destroy());
+    let inactive:Result<ext::url_client::Response,ext::url_client::Failure> = ext::url_client::exchange_until(url.borrow(),request,options,deadline);
+    assert(inactive.is_err());
+    let closed:bool = match (inactive.unwrap_err().cause) { ext::url_client::Cause::InvalidState -> true, _ -> false };
+    assert(closed);
+    return 0;
+}

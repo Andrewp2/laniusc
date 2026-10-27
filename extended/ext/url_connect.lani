@@ -1,0 +1,318 @@
+// Ordered, bounded TCP selection only: no HTTP engine or TLS dependency.
+// NSS is synchronous; before/after clocks cannot cancel its internal work.
+module ext::url_connect;
+import alloc::vec;
+import core::io;
+import core::net;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::time;
+import ext::http_url;
+import std::clock;
+import std::resolve;
+import std::socket;
+
+pub struct Options {
+    family:std::resolve::Family, addr_config:bool, max_results:i32,
+    max_attempts:i32, socket_calls:u64, attempt_timeout:core::time::Duration
+}
+// resolver_calls counts resolver API invocations, including local staging
+// failures before native NSS. socket_calls counts actual socket leaves only.
+pub struct Stats { resolver_calls:u64, addresses:i32, attempts:i32, socket_calls:u64, polls:u64 }
+pub enum Stage { Validate, Resolve, Open, Connect, Poll, Verify, Close }
+pub enum Cause {
+    InvalidState, InvalidOptions, NoAddresses, Exhausted, AttemptLimit, CallLimit, Timeout,
+    Clock(std::clock::Error), Time(core::time::Error), Resolve(std::resolve::Error), Io(core::io::Error)
+}
+pub struct AttemptFailure {
+    index:i32, endpoint:core::net::SocketAddr, stage:Stage, cause:core::io::Error, timed_out:bool
+}
+pub struct Failure {
+    stage:Stage, cause:Cause, stats:Stats, index:i32, endpoint:Option<core::net::SocketAddr>,
+    last_attempt:Option<AttemptFailure>, cleanup:Option<core::io::Error>
+}
+pub struct ConnectionInfo {
+    index:i32, endpoint:core::net::SocketAddr, stats:Stats, last_attempt:Option<AttemptFailure>
+}
+// One cleanup authority. Shallow copies cannot independently close/adopt it.
+pub struct Connection { transport:std::socket::Socket, metadata:ConnectionInfo }
+
+pub fn default_options() -> Options {
+    return Options { family:std::resolve::Family::Any,addr_config:false,max_results:32,
+        max_attempts:16,socket_calls:512,attempt_timeout:core::time::from_secs(5) };
+}
+// A zero/one call budget is valid configuration but fails admission before NSS.
+pub fn validate_options(options:Options) -> Result<bool,Cause> {
+    if(options.max_results<1 || options.max_results>4096 || options.max_attempts<1 || options.max_attempts>4096 ||
+        options.attempt_timeout.nanos>=1000000000 || options.attempt_timeout.is_zero()) {
+        return Err(Cause::InvalidOptions);
+    }
+    return Ok(true);
+}
+pub impl Connection {
+    pub fn borrow(&self) -> &Connection { return self; }
+    // The canonical driver adopts through this actual token, invalidating it.
+    pub fn socket(&self) -> &std::socket::Socket { return self.transport.borrow(); }
+    pub fn info(&self) -> ConnectionInfo { return self.metadata; }
+    pub fn close(&self) -> Result<bool,core::io::Error> {
+        if(!self.transport.is_open()) { return Ok(false); }
+        let closed=self.transport.close();
+        if(closed.is_err()) { return Err(closed.unwrap_err()); }
+        return Ok(true);
+    }
+}
+
+struct State {
+    options:Options, deadline:core::time::Deadline, previous:Option<core::time::Instant>,
+    stats:Stats, index:i32, endpoint:Option<core::net::SocketAddr>, last_attempt:Option<AttemptFailure>
+}
+impl State {
+    fn borrow(&self) -> &State { return self; }
+    fn failure(&self,stage:Stage,cause:Cause) -> Failure {
+        return Failure { stage:stage,cause:cause,stats:self.stats,index:self.index,
+            endpoint:self.endpoint,last_attempt:self.last_attempt,cleanup:None() };
+    }
+    fn now(&self) -> Result<core::time::Instant,Cause> {
+        let read=std::clock::monotonic_now();
+        if(read.is_err()) { return Err(Cause::Clock(read.unwrap_err())); }
+        let value=read.unwrap();
+        if(self.previous.is_some() && value.compare(self.previous.unwrap())<0) {
+            return Err(Cause::Clock(std::clock::Error::ClockReversed));
+        }
+        self.previous=Some(value);
+        if(self.deadline.is_expired(value)) { return Err(Cause::Timeout); }
+        return Ok(value);
+    }
+    fn record(&self,stage:Stage,error:core::io::Error,timed_out:bool) {
+        self.last_attempt=Some(AttemptFailure { index:self.index,endpoint:self.endpoint.unwrap(),
+            stage:stage,cause:error,timed_out:timed_out });
+    }
+    fn charge(&self) -> bool {
+        // Before create and while a socket is live, leave one close credit.
+        if(self.options.socket_calls-self.stats.socket_calls<2) { return false; }
+        self.stats.socket_calls+=1; return true;
+    }
+}
+fn endpoint_error(error:core::io::Error) -> bool {
+    return match(error) { core::io::Error::Host(code)->code==111 || code==101 || code==113 || code==110 || code==99 || code==100,_ ->false };
+}
+fn unsupported(error:core::io::Error) -> bool {
+    return match(error) { core::io::Error::Host(code)->code==97 || code==93,_ ->false };
+}
+fn interrupted(error:core::io::Error) -> bool { return match(error) { core::io::Error::Interrupted->true,_ ->false }; }
+fn not_connected(error:core::io::Error) -> bool { return match(error) { core::io::Error::Host(code)->code==107,_ ->false }; }
+fn host_error(code:i32) -> core::io::Error {
+    if(code==4) { return core::io::Error::Interrupted; }
+    if(code==11) { return core::io::Error::WouldBlock; }
+    return core::io::Error::Host(code);
+}
+fn io_primary(failure:Failure) -> bool {
+    return match(failure.cause) { Cause::Io(error) -> true, _ -> false };
+}
+
+// Cleanup is unconditional despite a failed budget/clock/deadline gate. Its
+// credit was reserved before creating this socket. close retires even on Err.
+fn retire(state:&State,transport:&std::socket::Socket,failure:Failure) -> Failure {
+    assert(transport.is_open() && state.stats.socket_calls<state.options.socket_calls);
+    state.stats.socket_calls+=1;
+    let closed=transport.close();
+    let checked=state.now();
+    let result=failure;
+    if(closed.is_err()) { result.cleanup=Some(closed.unwrap_err()); }
+    // Preserve an already terminal control failure. A fresh clock failure
+    // while retiring an endpoint error is terminal, including after close Err.
+    if(checked.is_err() && io_primary(result)) { result.stage=Stage::Close; result.cause=checked.unwrap_err(); }
+    result.stats=state.stats; result.last_attempt=state.last_attempt; return result;
+}
+fn terminal(state:&State,transport:&std::socket::Socket,stage:Stage,cause:Cause) -> Failure {
+    return retire(state,transport,state.failure(stage,cause));
+}
+// A failed native leaf is saved before its post-clock gate. The latter is
+// primary on Clock/global Timeout, so it can never cause endpoint fallback.
+fn failed(state:&State,transport:&std::socket::Socket,stage:Stage,error:core::io::Error,
+    timed_out:bool,advance:bool) -> Result<Option<std::socket::Socket>,Failure> {
+    state.record(stage,error,timed_out);
+    let checked=state.now(); let cause:Cause=Cause::Io(error);
+    if(checked.is_err()) { cause=checked.unwrap_err(); }
+    let result=retire(state,transport,state.failure(stage,cause));
+    if(advance && io_primary(result) && result.cleanup.is_none()) { return Ok(None()); }
+    return Err(result);
+}
+// All successful leaves receive a fresh clock check. None means the attempt
+// deadline expired while the global one is still live; caller retires it.
+fn checked(state:&State,transport:&std::socket::Socket,deadline:core::time::Deadline,stage:Stage)
+    -> Result<Option<core::time::Instant>,Failure> {
+    let read=state.now();
+    if(read.is_err()) { return Err(terminal(state,transport,stage,read.unwrap_err())); }
+    let now=read.unwrap();
+    if(deadline.is_expired(now)) { return Ok(None()); }
+    return Ok(Some(now));
+}
+fn admitted(state:&State,transport:&std::socket::Socket,deadline:core::time::Deadline,stage:Stage)
+    -> Result<Option<core::time::Instant>,Failure> {
+    let check=checked(state,transport,deadline,stage);
+    if(check.is_err() || check.unwrap().is_none()) { return check; }
+    if(!state.charge()) { return Err(terminal(state,transport,stage,Cause::CallLimit)); }
+    return check;
+}
+fn milliseconds(deadline:core::time::Deadline,now:core::time::Instant) -> i32 {
+    let left=deadline.remaining(now);
+    if(left.seconds>2147483) { return 2147483647; }
+    let value:u64=left.seconds*1000+((left.nanos as u64)+999999)/1000000;
+    if(value>2147483647) { return 2147483647; }
+    return value as i32;
+}
+fn attempt(state:&State,ordinal:i32,endpoint:core::net::SocketAddr) -> Result<Option<std::socket::Socket>,Failure> {
+    let initial=state.now();
+    if(initial.is_err()) { return Err(state.failure(Stage::Open,initial.unwrap_err())); }
+    let shifted=initial.unwrap().checked_add(state.options.attempt_timeout);
+    if(shifted.is_err()) { return Err(state.failure(Stage::Open,Cause::Time(shifted.unwrap_err()))); }
+    let at=shifted.unwrap();
+    if(state.deadline.instant.compare(at)<0) { at=state.deadline.instant; }
+    let deadline=core::time::deadline_at(at);
+    if(!state.charge()) { return Err(state.failure(Stage::Open,Cause::CallLimit)); }
+    let family=std::socket::Family::Ipv4;
+    if(endpoint.address().version()==6) { family=std::socket::Family::Ipv6; }
+    // Commit diagnostics only for an actual create attempt. Earlier local
+    // gates retain -1/None, or the preceding actual attempt's metadata.
+    state.index=ordinal; state.endpoint=Some(endpoint); state.stats.attempts+=1;
+    let opened=std::socket::create(family,std::socket::Kind::Tcp,true);
+    if(opened.is_err()) {
+        let error=opened.unwrap_err(); state.record(Stage::Open,error,false);
+        let after=state.now();
+        if(after.is_err()) { return Err(state.failure(Stage::Open,after.unwrap_err())); }
+        if(unsupported(error)) { return Ok(None()); }
+        return Err(state.failure(Stage::Open,Cause::Io(error)));
+    }
+    let transport=opened.unwrap();
+    let after=checked(state,transport.borrow(),deadline,Stage::Open);
+    if(after.is_err()) { return Err(after.unwrap_err()); }
+    if(after.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Open,core::io::Error::Host(110),true,true); }
+    let gate=admitted(state,transport.borrow(),deadline,Stage::Connect);
+    if(gate.is_err()) { return Err(gate.unwrap_err()); }
+    if(gate.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Connect,core::io::Error::Host(110),true,true); }
+    let connected=transport.connect(endpoint);
+    if(connected.is_err()) {
+        let error=connected.unwrap_err(); return failed(state,transport.borrow(),Stage::Connect,error,false,endpoint_error(error));
+    }
+    let pending:bool=match(connected.unwrap()) { std::socket::Connection::Connected->false,std::socket::Connection::InProgress->true };
+    let after=checked(state,transport.borrow(),deadline,Stage::Connect);
+    if(after.is_err()) { return Err(after.unwrap_err()); }
+    if(after.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Connect,core::io::Error::Host(110),true,true); }
+    while(true) {
+        if(pending) {
+            let gate=admitted(state,transport.borrow(),deadline,Stage::Poll);
+            if(gate.is_err()) { return Err(gate.unwrap_err()); }
+            if(gate.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Poll,core::io::Error::Host(110),true,true); }
+            state.stats.polls+=1;
+            let waited=transport.wait_ms(false,true,milliseconds(deadline,gate.unwrap().unwrap()));
+            if(waited.is_err()) {
+                let error=waited.unwrap_err();
+                if(!interrupted(error)) { return failed(state,transport.borrow(),Stage::Poll,error,false,false); }
+                let after=state.now();
+                if(after.is_err()) {
+                    state.record(Stage::Poll,error,false); return Err(terminal(state,transport.borrow(),Stage::Poll,after.unwrap_err()));
+                }
+                if(deadline.is_expired(after.unwrap())) { return failed(state,transport.borrow(),Stage::Poll,core::io::Error::Host(110),true,true); }
+                continue;
+            }
+            let after=checked(state,transport.borrow(),deadline,Stage::Poll);
+            if(after.is_err()) { return Err(after.unwrap_err()); }
+            if(after.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Poll,core::io::Error::Host(110),true,true); }
+            if(waited.unwrap().timed_out) { continue; }
+            let gate=admitted(state,transport.borrow(),deadline,Stage::Verify);
+            if(gate.is_err()) { return Err(gate.unwrap_err()); }
+            if(gate.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Verify,core::io::Error::Host(110),true,true); }
+            let status=transport.take_error();
+            if(status.is_err()) { return failed(state,transport.borrow(),Stage::Verify,status.unwrap_err(),false,false); }
+            if(status.unwrap().is_some()) {
+                let error=host_error(status.unwrap().unwrap());
+                return failed(state,transport.borrow(),Stage::Verify,error,false,endpoint_error(error));
+            }
+            let after=checked(state,transport.borrow(),deadline,Stage::Verify);
+            if(after.is_err()) { return Err(after.unwrap_err()); }
+            if(after.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Verify,core::io::Error::Host(110),true,true); }
+        }
+        // SO_ERROR alone can have been consumed. Require actual peer proof
+        // even when connect returned immediate success.
+        let gate=admitted(state,transport.borrow(),deadline,Stage::Verify);
+        if(gate.is_err()) { return Err(gate.unwrap_err()); }
+        if(gate.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Verify,core::io::Error::Host(110),true,true); }
+        let peer=transport.peer_addr();
+        if(peer.is_err()) {
+            let error=peer.unwrap_err();
+            if(!not_connected(error)) { return failed(state,transport.borrow(),Stage::Verify,error,false,false); }
+            let after=state.now();
+            if(after.is_err()) {
+                state.record(Stage::Verify,error,false); return Err(terminal(state,transport.borrow(),Stage::Verify,after.unwrap_err()));
+            }
+            if(deadline.is_expired(after.unwrap())) { return failed(state,transport.borrow(),Stage::Verify,core::io::Error::Host(110),true,true); }
+            pending=true; continue;
+        }
+        let after=checked(state,transport.borrow(),deadline,Stage::Verify);
+        if(after.is_err()) { return Err(after.unwrap_err()); }
+        if(after.unwrap().is_none()) { return failed(state,transport.borrow(),Stage::Verify,core::io::Error::Host(110),true,true); }
+        return Ok(Some(transport));
+    }
+    return Err(state.failure(Stage::Verify,Cause::InvalidState));
+}
+
+// Numeric candidates use no source allocation; DNS owns exactly lookup's Vec.
+fn select(state:&State,addresses:&alloc::vec::Vec<core::net::SocketAddr>,numeric:Option<core::net::SocketAddr>)
+    -> Result<Connection,Failure> {
+    let ordinal:i32=0;
+    while(ordinal<state.stats.addresses) {
+        if(state.stats.attempts==state.options.max_attempts) { return Err(state.failure(Stage::Open,Cause::AttemptLimit)); }
+        let endpoint:core::net::SocketAddr=match(numeric) { Some(value)->value,None->addresses.at(ordinal) };
+        let result=attempt(state,ordinal,endpoint);
+        if(result.is_err()) { return Err(result.unwrap_err()); }
+        if(result.unwrap().is_some()) {
+            return Ok(Connection { transport:result.unwrap().unwrap(),metadata:ConnectionInfo {
+                index:ordinal,endpoint:endpoint,stats:state.stats,last_attempt:state.last_attempt } });
+        }
+        ordinal+=1;
+    }
+    return Err(state.failure(Stage::Connect,Cause::Exhausted));
+}
+pub fn connect_until(url:&ext::http_url::Url,options:Options,deadline:core::time::Deadline) -> Result<Connection,Failure> {
+    let state=State { options:options,deadline:deadline,previous:None(),
+        stats:Stats { resolver_calls:0,addresses:0,attempts:0,socket_calls:0,polls:0 },
+        index:-1,endpoint:None(),last_attempt:None() };
+    let valid=validate_options(options);
+    if(valid.is_err()) { return Err(state.failure(Stage::Validate,valid.unwrap_err())); }
+    if(deadline.instant.ticks.nanos>=1000000000) { return Err(state.failure(Stage::Validate,Cause::InvalidOptions)); }
+    if(!url.is_open()) { return Err(state.failure(Stage::Validate,Cause::InvalidState)); }
+    if(options.socket_calls<2) { return Err(state.failure(Stage::Validate,Cause::CallLimit)); }
+    let addresses:alloc::vec::Vec<core::net::SocketAddr> =alloc::vec::new();
+    let numeric:Option<core::net::SocketAddr> =None();
+    if(url.ip().is_some()) {
+        let ip=url.ip().unwrap(); let allowed:bool=match(options.family) {
+            std::resolve::Family::Any->true,std::resolve::Family::Ipv4->ip.version()==4,std::resolve::Family::Ipv6->ip.version()==6 };
+        if(!allowed) { return Err(state.failure(Stage::Resolve,Cause::NoAddresses)); }
+        numeric=Some(match(ip) {
+            core::net::IpAddr::V4(value)->core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:value,port:url.port().unwrap() }),
+            core::net::IpAddr::V6(value)->core::net::SocketAddr::V6(core::net::SocketAddrV6 { address:value,port:url.port().unwrap(),scope:0 }) });
+        state.stats.addresses=1;
+    } else {
+        let before=state.now();
+        if(before.is_err()) { return Err(state.failure(Stage::Resolve,before.unwrap_err())); }
+        state.stats.resolver_calls+=1;
+        let found=std::resolve::lookup(std::resolve::Host::Name(url.host().unwrap()),std::resolve::Service::Port(url.port().unwrap()),
+            std::resolve::Options { family:options.family,kind:std::socket::Kind::Tcp,addr_config:options.addr_config,mapping:std::resolve::Mapping::Disabled },
+            std::resolve::Limits { host_bytes:253,service_bytes:5,max_results:options.max_results });
+        let after=state.now();
+        if(found.is_err()) {
+            if(after.is_err()) { return Err(state.failure(Stage::Resolve,after.unwrap_err())); }
+            return Err(state.failure(Stage::Resolve,Cause::Resolve(found.unwrap_err())));
+        }
+        addresses=found.unwrap(); state.stats.addresses=addresses.len();
+        if(after.is_err()) { addresses.destroy(); return Err(state.failure(Stage::Resolve,after.unwrap_err())); }
+    }
+    if(state.stats.addresses==0) { addresses.destroy(); return Err(state.failure(Stage::Resolve,Cause::NoAddresses)); }
+    let result=select(state.borrow(),addresses.borrow(),numeric);
+    addresses.destroy(); return result;
+}

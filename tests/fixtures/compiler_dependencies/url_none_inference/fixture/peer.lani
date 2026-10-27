@@ -1,0 +1,2 @@
+module fixture::peer;
+pub enum Need { None, Read, Write }

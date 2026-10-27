@@ -1,0 +1,49 @@
+// Shared ASCII DNS identity admission. No allocation, normalization, lookup
+// or host calls. Logical bounds are checked; physical backing must be live.
+module ext::host_name;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+
+pub enum Error { Bounds, Empty, Limit, Nul(i32), Invalid(i32) }
+
+fn valid(bytes:View<u8>) -> bool {
+    return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647-bytes.length;
+}
+fn letter(value:u8) -> bool {
+    return (value >= 65 && value <= 90) || (value >= 97 && value <= 122);
+}
+fn digit(value:u8) -> bool { return value >= 48 && value <= 57; }
+
+// The caller selects the total byte cap; 253 is URL/default-TLS policy, not a
+// hidden constant here. End-state failures point at the logical input end.
+pub fn check_dns(bytes:View<u8>, maximum_bytes:i32) -> Result<i32,Error> {
+    if (!valid(bytes)) { return Err(Error::Bounds); }
+    if (maximum_bytes <= 0) { return Err(Error::Limit); }
+    if (bytes.length == 0) { return Err(Error::Empty); }
+    if (bytes.length > maximum_bytes) { return Err(Error::Limit); }
+    let label:i32 = 0;
+    let has_letter:bool = false;
+    let previous:u8 = 0;
+    let index:i32 = 0;
+    while (index < bytes.length) {
+        let value:u8 = bytes.values[bytes.start+index];
+        if (value == 0) { return Err(Error::Nul(index)); }
+        if (value == 46) {
+            if (label == 0 || previous == 45) { return Err(Error::Invalid(index)); }
+            label = 0;
+        } else {
+            if (!letter(value) && !digit(value) && value != 45) { return Err(Error::Invalid(index)); }
+            if (label == 0 && value == 45) { return Err(Error::Invalid(index)); }
+            label += 1;
+            if (label > 63) { return Err(Error::Invalid(index)); }
+            if (letter(value)) { has_letter = true; }
+        }
+        previous = value;
+        index += 1;
+    }
+    // A digit/dot-only reference must use an IP policy and is never DNS SNI.
+    if (label == 0 || previous == 45 || !has_letter) { return Err(Error::Invalid(bytes.length)); }
+    return Ok(0);
+}

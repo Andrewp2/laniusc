@@ -1,0 +1,440 @@
+// One URL-selected HTTP(S) request. OpenSSL owns TLS and verification;
+// canonical URL/HTTP modules own policy, preparation and response parsing.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::path;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import core::slice::view;
+import core::time;
+import ext::cli;
+import ext::http;
+import ext::http_client;
+import ext::http_url;
+import ext::https_client;
+import ext::openssl_tls;
+import ext::url_client;
+import ext::url_connect;
+import ext::url_tls;
+import std::args;
+import std::clock;
+import std::file;
+import std::file_ops;
+import std::resolve;
+import std::signal;
+import std::stream;
+
+enum Reason { Arguments, Url, Request, Configuration, Limits, Timeout, Allocation,
+    Clock, Resolve, Connect, Tls, Verify, Response, Input, Output }
+struct Failure { reason:Reason, cleanup:bool }
+struct Options {
+    url:Option<View<u8>>, method:View<u8>, body:Option<View<u8>>,
+    ca:Option<View<u8>>, certificate:Option<View<u8>>, key:Option<View<u8>>,
+    help:bool, tls_only:bool, timeout:i32, max_output:i32,
+    stdout_calls:u64, body_calls:u64, secure:ext::url_tls::Options
+}
+struct Clock { deadline:core::time::Deadline, previous:core::time::Instant }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+impl Clock {
+    fn borrow(&self) -> &Clock { return self; }
+    fn check(&self) -> Result<bool,Failure> {
+        let read = std::clock::monotonic_now();
+        if (read.is_err()) { return Err(failure(Reason::Clock)); }
+        let now = read.unwrap();
+        if (now.compare(self.previous) < 0) { return Err(failure(Reason::Clock)); }
+        self.previous = now;
+        if (self.deadline.is_expired(now)) { return Err(failure(Reason::Timeout)); }
+        return Ok(true);
+    }
+}
+fn literal(value:str, count:i32) -> View<u8> {
+    let bytes:[u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return view(bytes,count).unwrap();
+}
+fn failure(reason:Reason) -> Failure { return Failure { reason:reason, cleanup:false }; }
+fn code(reason:Reason) -> i32 {
+    return match (reason) {
+        Reason::Arguments -> 2, Reason::Url -> 2, Reason::Request -> 2,
+        Reason::Configuration -> 2, Reason::Allocation -> 4, Reason::Output -> 5,
+        Reason::Limits -> 3, Reason::Timeout -> 3, Reason::Clock -> 3, Reason::Resolve -> 3,
+        Reason::Connect -> 3, Reason::Tls -> 3, Reason::Verify -> 3,
+        Reason::Response -> 3, Reason::Input -> 3
+    };
+}
+fn diagnostic(reason:Reason) -> View<u8> {
+    return match (reason) {
+        Reason::Arguments -> literal("fetch: invalid arguments\n",25),
+        Reason::Url -> literal("fetch: invalid URL\n",19),
+        Reason::Request -> literal("fetch: invalid request\n",23),
+        Reason::Configuration -> literal("fetch: invalid configuration\n",29),
+        Reason::Limits -> literal("fetch: limit exceeded\n",22),
+        Reason::Timeout -> literal("fetch: timeout\n",15),
+        Reason::Allocation -> literal("fetch: allocation failed\n",25),
+        Reason::Clock -> literal("fetch: monotonic clock failed\n",30),
+        Reason::Resolve -> literal("fetch: name resolution failed\n",30),
+        Reason::Connect -> literal("fetch: connection failed\n",25),
+        Reason::Tls -> literal("fetch: TLS operation failed\n",28),
+        Reason::Verify -> literal("fetch: certificate verification failed\n",39),
+        Reason::Response -> literal("fetch: invalid or incomplete HTTP response\n",43),
+        Reason::Input -> literal("fetch: body file I/O failed\n",28),
+        Reason::Output -> literal("fetch: output I/O or call limit failed\n",39)
+    };
+}
+fn write(bytes:View<u8>, handle:i32, maximum_calls:u64) -> bool {
+    let sink = std::stream::from_handle(handle);
+    let completed:i32 = 0; let calls:u64 = 0;
+    while (completed < bytes.length) {
+        if (calls == maximum_calls) { return false; } calls += 1;
+        let sent = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count:i32 = sent.unwrap();
+        if (count <= 0 || count > bytes.length-completed) { return false; }
+        completed += count;
+    }
+    return true;
+}
+fn report(error:Failure) -> i32 {
+    // Diagnostic delivery must not erase an already determined failure class.
+    write(diagnostic(error.reason),2,8);
+    if (error.cleanup) { write(literal("fetch: cleanup failed\n",22),2,8); }
+    return code(error.reason);
+}
+fn allocation_reason(error:alloc::vec::Error) -> Reason {
+    return match (error) {
+        alloc::vec::Error::Bounds -> Reason::Arguments,
+        alloc::vec::Error::InvalidCapacity -> Reason::Configuration,
+        alloc::vec::Error::CapacityOverflow -> Reason::Limits,
+        alloc::vec::Error::AllocationFailed -> Reason::Allocation
+    };
+}
+fn wire_reason(error:ext::http::Error, preparing:bool) -> Reason {
+    if (match (error) { ext::http::Error::AllocationFailed -> true, _ -> false }) { return Reason::Allocation; }
+    if (match (error) { ext::http::Error::Limit(at) -> true, _ -> false }) { return Reason::Limits; }
+    if (preparing) { return Reason::Request; } return Reason::Response;
+}
+fn http_reason(error:ext::http_client::Failure) -> Reason {
+    let preparing:bool = match (error.stage) { ext::http_client::Stage::Prepare -> true, _ -> false };
+    return match (error.cause) {
+        ext::http_client::Cause::InvalidOptions -> Reason::Configuration,
+        ext::http_client::Cause::UnsupportedRequest -> Reason::Request,
+        ext::http_client::Cause::UnsupportedHeader(header) -> Reason::Request,
+        ext::http_client::Cause::UnsupportedUpgrade -> Reason::Response,
+        ext::http_client::Cause::AllocationFailed -> Reason::Allocation,
+        ext::http_client::Cause::Timeout -> Reason::Timeout,
+        ext::http_client::Cause::Clock(clock) -> Reason::Clock,
+        ext::http_client::Cause::Io(io) -> Reason::Connect,
+        ext::http_client::Cause::Http(wire) -> wire_reason(wire,preparing),
+        ext::http_client::Cause::RequestLimit -> Reason::Limits,
+        ext::http_client::Cause::ResponseLimit -> Reason::Limits,
+        ext::http_client::Cause::BodyLimit -> Reason::Limits,
+        ext::http_client::Cause::InterimLimit -> Reason::Limits,
+        ext::http_client::Cause::IoLimit -> Reason::Limits,
+        ext::http_client::Cause::WorkLimit -> Reason::Limits,
+        ext::http_client::Cause::BoundaryMismatch -> Reason::Response,
+        ext::http_client::Cause::Inactive -> Reason::Connect
+    };
+}
+fn tls_reason(error:ext::openssl_tls::Error) -> Reason {
+    return match (error.cause) {
+        ext::openssl_tls::Cause::Bounds -> Reason::Configuration,
+        ext::openssl_tls::Cause::InvalidLimits -> Reason::Configuration,
+        ext::openssl_tls::Cause::Limit -> Reason::Configuration,
+        ext::openssl_tls::Cause::Identity -> Reason::Configuration,
+        ext::openssl_tls::Cause::Utf8 -> Reason::Configuration,
+        ext::openssl_tls::Cause::Nul -> Reason::Configuration,
+        ext::openssl_tls::Cause::AllocationFailed -> Reason::Allocation,
+        ext::openssl_tls::Cause::Verification -> Reason::Verify,
+        ext::openssl_tls::Cause::PeerCertificate -> Reason::Verify,
+        _ -> Reason::Tls
+    };
+}
+fn https_reason(error:ext::https_client::Failure) -> Reason {
+    return match (error.cause) {
+        ext::https_client::Cause::Http(http) -> http_reason(http),
+        ext::https_client::Cause::Tls(tls) -> tls_reason(tls),
+        ext::https_client::Cause::InvalidOptions -> Reason::Configuration,
+        ext::https_client::Cause::TlsLimit -> Reason::Limits,
+        _ -> Reason::Tls
+    };
+}
+fn resolve_reason(error:std::resolve::Error) -> Reason {
+    return match (error.cause) { std::resolve::Cause::AllocationFailed -> Reason::Allocation, _ -> Reason::Resolve };
+}
+fn connect_reason(cause:ext::url_connect::Cause) -> Reason {
+    return match (cause) {
+        ext::url_connect::Cause::InvalidOptions -> Reason::Configuration,
+        ext::url_connect::Cause::AttemptLimit -> Reason::Limits,
+        ext::url_connect::Cause::CallLimit -> Reason::Limits,
+        ext::url_connect::Cause::Timeout -> Reason::Timeout,
+        ext::url_connect::Cause::Clock(clock) -> Reason::Clock,
+        ext::url_connect::Cause::Time(time) -> Reason::Clock,
+        ext::url_connect::Cause::Resolve(resolve) -> resolve_reason(resolve),
+        _ -> Reason::Connect
+    };
+}
+fn plain_failure(error:ext::url_client::Failure) -> Failure {
+    let reason:Reason = match (error.cause) {
+        ext::url_client::Cause::ConnectionOptions(options) -> connect_reason(options),
+        ext::url_client::Cause::Connect(connect) -> connect_reason(connect.cause),
+        ext::url_client::Cause::Http(http) -> http_reason(http),
+        _ -> Reason::Configuration
+    };
+    return Failure { reason:reason, cleanup:error.cleanup.is_some() };
+}
+fn secure_failure(error:ext::url_tls::Failure) -> Failure {
+    let reason:Reason = match (error.cause) {
+        ext::url_tls::Cause::ConnectionOptions(options) -> connect_reason(options),
+        ext::url_tls::Cause::Identity(identity) -> tls_reason(identity),
+        ext::url_tls::Cause::Connect(connect) -> connect_reason(connect.cause),
+        ext::url_tls::Cause::Http(http) -> http_reason(http),
+        ext::url_tls::Cause::Https(https) -> https_reason(https),
+        _ -> Reason::Configuration
+    };
+    return Failure { reason:reason, cleanup:error.cleanup.is_some() };
+}
+
+fn defaults() -> Options {
+    let secure = ext::url_tls::default_options();
+    secure.request.http.request_bytes = 2097152; secure.request.http.response_bytes = 2097152;
+    secure.request.http.wire.head_bytes = 16384; secure.request.http.wire.line_bytes = 16384;
+    secure.request.http.wire.headers = 64; secure.request.http.wire.trailers = 16;
+    secure.request.http.wire.body_bytes = 1048576;
+    secure.request.http.io_calls = 65536; secure.request.http.work = 67108864;
+    secure.tls.tls_calls = 32768;
+    return Options { url:core::option::None(), method:literal("GET",3), body:core::option::None(), ca:core::option::None(),
+        certificate:core::option::None(), key:core::option::None(), help:false, tls_only:false, timeout:5000,
+        max_output:1048576, stdout_calls:65536, body_calls:65536, secure:secure };
+}
+fn option(id:i32, name:View<u8>) -> ext::cli::Spec {
+    return ext::cli::Spec { id:id, long:name, short:0, arity:ext::cli::Arity::Required };
+}
+fn apply(options:&Options, headers:&Vec<ext::http::Field>, item:ext::cli::Occurrence) -> Result<bool,Failure> {
+    if (item.id == 1) { options.help = true; return Ok(true); }
+    let value = item.value.unwrap().bytes;
+    if (value.length == 0) { return Err(failure(Reason::Arguments)); }
+    if (item.id == 2) { options.method = value; return Ok(true); }
+    if (item.id == 3) {
+        let colon:i32 = 0;
+        while (colon < value.length && value.get(colon).unwrap() != 58) { colon += 1; }
+        if (colon == 0 || colon == value.length) { return Err(failure(Reason::Arguments)); }
+        let field:ext::http::Field = ext::http::Field { raw:literal("",0),
+            name:value.subview(0,colon).unwrap(), value:value.subview(colon+1,value.length).unwrap(), offset:0 };
+        let added = headers.try_push(field);
+        if (added.is_err()) { return Err(failure(allocation_reason(added.unwrap_err()))); }
+        return Ok(true);
+    }
+    if (item.id == 4) { options.body = core::option::Some(value); return Ok(true); }
+    if (item.id == 5) { options.ca = core::option::Some(value); options.tls_only = true; return Ok(true); }
+    if (item.id == 6) { options.certificate = core::option::Some(value); options.tls_only = true; return Ok(true); }
+    if (item.id == 7) { options.key = core::option::Some(value); options.tls_only = true; return Ok(true); }
+    let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
+    if (parsed.is_err()) { return Err(failure(Reason::Arguments)); }
+    let number:u64 = parsed.unwrap();
+    if (item.id == 8 || item.id == 9) {
+        if (number > 60000 || (item.id == 9 && number == 0)) { return Err(failure(Reason::Configuration)); }
+        if (item.id == 8) { options.timeout = number as i32; }
+        else { options.secure.request.connection.attempt_timeout = core::time::from_millis(number); }
+    }
+    if (item.id >= 10 && item.id <= 13 && number > 16777216) { return Err(failure(Reason::Configuration)); }
+    if (item.id == 10) { options.max_output = number as i32; }
+    if (item.id == 11) { options.secure.request.http.request_bytes = number as i32; }
+    if (item.id == 12) { options.secure.request.http.response_bytes = number as i32; }
+    if (item.id == 13) { options.secure.request.http.wire.body_bytes = number as i32; }
+    if (item.id == 14) { options.secure.request.http.work = number; }
+    if (item.id == 15 || item.id == 16) {
+        if (number == 0) { return Err(failure(Reason::Configuration)); }
+        if (item.id == 15) { options.secure.request.http.io_calls = number; }
+        else { options.secure.tls.tls_calls = number; options.tls_only = true; }
+    }
+    if (item.id == 17) { options.secure.request.connection.socket_calls = number; }
+    if (item.id == 18 || item.id == 19) {
+        if (number < 1 || number > 4096) { return Err(failure(Reason::Configuration)); }
+        if (item.id == 18) { options.secure.request.connection.max_attempts = number as i32; }
+        else { options.secure.request.connection.max_results = number as i32; }
+    }
+    if (item.id == 20) { options.stdout_calls = number; }
+    if (item.id == 21) { options.body_calls = number; }
+    return Ok(true);
+}
+fn operand(options:&Options, bytes:View<u8>) -> Result<bool,Failure> {
+    if (options.url.is_some()) { return Err(failure(Reason::Arguments)); }
+    options.url = core::option::Some(bytes); return Ok(true);
+}
+
+// This borrowed-only helper may return early; its caller always closes File.
+fn body_contents(file:&std::file::File, output:&Vec<u8>, maximum:i32,
+    maximum_calls:u64, clock:&Clock) -> Result<bool,Failure> {
+    let used:u64 = 1; // open was already attempted; one close credit stays free.
+    clock.check()?;
+    let metadata = std::file_ops::empty_metadata();
+    used += 1;
+    let queried = std::file_ops::metadata_file_into(file,metadata.borrow());
+    clock.check()?;
+    if (queried.is_err() || !metadata.has(1)) { return Err(failure(Reason::Input)); }
+    let regular:bool = match (std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Regular -> true, _ -> false };
+    if (!regular) { return Err(failure(Reason::Input)); }
+    let storage:[u8;1024] = [0;1024];
+    while (true) {
+        clock.check()?;
+        if (maximum_calls-used < 2) { return Err(failure(Reason::Limits)); }
+        let remaining:i32 = maximum-output.len();
+        let count:i32 = remaining;
+        if (count > 1024) { count = 1024; }
+        if (count == 0) { count = 1; }
+        used += 1;
+        let received = file.read(storage,0,count);
+        clock.check()?;
+        if (received.is_err()) {
+            if (!core::io::is_interrupted(received.unwrap_err())) { return Err(failure(Reason::Input)); }
+        } else {
+            let got:i32 = received.unwrap();
+            if (got < 0 || got > count) { return Err(failure(Reason::Input)); }
+            if (got == 0) { return Ok(true); }
+            if (got > remaining) { return Err(failure(Reason::Limits)); }
+            let added = output.try_extend(view(storage,got).unwrap());
+            if (added.is_err()) { return Err(failure(allocation_reason(added.unwrap_err()))); }
+        }
+    }
+    return Err(failure(Reason::Input));
+}
+fn read_body(path:View<u8>, output:&Vec<u8>, maximum:i32,
+    maximum_calls:u64, clock:&Clock) -> Result<bool,Failure> {
+    if (path.length == 0 || path.length > 4095) { return Err(failure(Reason::Arguments)); }
+    let parsed = core::path::from_view(path);
+    if (parsed.is_err()) { return Err(failure(Reason::Arguments)); }
+    if (maximum_calls < 4) { return Err(failure(Reason::Limits)); }
+    clock.check()?;
+    let options = std::file_ops::options(); options.nonblocking = true;
+    let opened = std::file_ops::open(parsed.unwrap(),options);
+    let observed = clock.check();
+    if (opened.is_err()) { if (observed.is_err()) { return observed; } return Err(failure(Reason::Input)); }
+    let file:std::file::File = opened.unwrap();
+    let result:Result<bool,Failure> = observed;
+    if (result.is_ok()) { result = body_contents(file.borrow(),output,maximum,maximum_calls,clock); }
+    // Cleanup runs after any primary failure, expired deadline or spent quota.
+    let closed = file.close(); let checked = clock.check();
+    if (result.is_err()) {
+        let error:Failure = result.unwrap_err();
+        if (closed.is_err()) { error.cleanup = true; } return Err(error);
+    }
+    if (closed.is_err()) { return Err(failure(Reason::Input)); }
+    if (checked.is_err()) { return checked; }
+    return Ok(true);
+}
+fn publish(response:&ext::http_client::Response, options:&Options) -> Result<bool,Failure> {
+    let body = response.body();
+    if (body.length > options.max_output) { return Err(failure(Reason::Limits)); }
+    if (!write(body,1,options.stdout_calls)) { return Err(failure(Reason::Output)); }
+    return Ok(true);
+}
+fn make_context(options:&Options) -> Result<ext::openssl_tls::Context,ext::openssl_tls::Error> {
+    let trust:ext::openssl_tls::Trust = ext::openssl_tls::Trust::DefaultPaths;
+    if (options.ca.is_some()) { trust = ext::openssl_tls::Trust::CaFile(options.ca.unwrap()); }
+    if (options.certificate.is_some()) {
+        return ext::openssl_tls::new_with_credentials(trust,options.certificate.unwrap(),
+            options.key.unwrap(),literal("",0),ext::openssl_tls::default_limits());
+    }
+    return ext::openssl_tls::new(trust,ext::openssl_tls::default_limits());
+}
+fn perform(url:&ext::http_url::Url, headers:&Vec<ext::http::Field>, body:View<u8>,
+    options:&Options, clock:&Clock) -> Result<bool,Failure> {
+    clock.check()?;
+    let request:ext::url_client::Request = ext::url_client::Request {
+        method:options.method, headers:headers.as_view(), body:body };
+    let secure:bool = match (url.scheme().unwrap()) { ext::http_url::Scheme::Http -> false, ext::http_url::Scheme::Https -> true };
+    if (!secure) {
+        let result = ext::url_client::exchange_until(url,request,options.secure.request,clock.deadline);
+        if (result.is_err()) { return Err(plain_failure(result.unwrap_err())); }
+        let response:ext::url_client::Response = result.unwrap();
+        let published = publish(response.http(),options); response.destroy(); return published;
+    }
+    let made = make_context(options);
+    let observed = clock.check();
+    if (made.is_err()) { if (observed.is_err()) { return observed; } return Err(failure(tls_reason(made.unwrap_err()))); }
+    let context:ext::openssl_tls::Context = made.unwrap();
+    if (observed.is_err()) { context.destroy(); return observed; }
+    let result = ext::url_tls::exchange_until(url,context.borrow(),request,options.secure,clock.deadline);
+    context.destroy();
+    if (result.is_err()) { return Err(secure_failure(result.unwrap_err())); }
+    let response:ext::url_tls::Response = result.unwrap();
+    let published = publish(response.http(),options); response.destroy(); return published;
+}
+fn fetch(options:&Options, headers:&Vec<ext::http::Field>) -> Result<bool,Failure> {
+    let now = std::clock::monotonic_now();
+    if (now.is_err()) { return Err(failure(Reason::Clock)); }
+    let shifted = core::time::deadline_after(now.unwrap(),core::time::from_millis(options.timeout as u64));
+    if (shifted.is_err()) { return Err(failure(Reason::Clock)); }
+    let clock:Clock = Clock { deadline:shifted.unwrap(), previous:now.unwrap() };
+    let parsed = ext::http_url::parse(options.url.unwrap(),ext::http_url::default_limits());
+    if (parsed.is_err()) {
+        let allocation:bool = match (parsed.unwrap_err().kind) { ext::http_url::ErrorKind::AllocationFailed -> true, _ -> false };
+        if (allocation) { return Err(failure(Reason::Allocation)); } return Err(failure(Reason::Url));
+    }
+    let url:ext::http_url::Url = parsed.unwrap();
+    let secure:bool = match (url.scheme().unwrap()) { ext::http_url::Scheme::Http -> false, ext::http_url::Scheme::Https -> true };
+    if ((!secure && options.tls_only) || options.certificate.is_some() != options.key.is_some()) {
+        url.destroy(); return Err(failure(Reason::Arguments));
+    }
+    let input:Vec<u8> = alloc::vec::new();
+    let result:Result<bool,Failure> = clock.check();
+    if (result.is_ok() && options.body.is_some()) {
+        let maximum:i32 = options.secure.request.http.wire.body_bytes;
+        if (options.secure.request.http.request_bytes < maximum) { maximum = options.secure.request.http.request_bytes; }
+        result = read_body(options.body.unwrap(),input.borrow(),maximum,options.body_calls,clock.borrow());
+    }
+    if (result.is_ok()) { result = perform(url.borrow(),headers,input.as_view(),options,clock.borrow()); }
+    input.destroy(); url.destroy(); return result;
+}
+
+fn arguments(values:View<View<u8>>, headers:&Vec<ext::http::Field>) -> i32 {
+    let specs:[ext::cli::Spec;21] = [
+        ext::cli::Spec { id:1, long:literal("help",4), short:104, arity:ext::cli::Arity::Flag },
+        option(2,literal("method",6)), option(3,literal("header",6)), option(4,literal("body",4)),
+        option(5,literal("ca-file",7)), option(6,literal("client-cert",11)), option(7,literal("client-key",10)),
+        option(8,literal("timeout",7)), option(9,literal("connect-timeout",15)), option(10,literal("max-output",10)),
+        option(11,literal("max-request",11)), option(12,literal("max-response",12)), option(13,literal("max-body",8)),
+        option(14,literal("max-work",8)), option(15,literal("max-io",6)), option(16,literal("max-tls",7)),
+        option(17,literal("max-socket-calls",16)), option(18,literal("max-attempts",12)), option(19,literal("max-results",11)),
+        option(20,literal("max-stdout-calls",16)), option(21,literal("max-body-calls",14))
+    ];
+    let made = ext::cli::parser(values,view(specs,21).unwrap(),ext::cli::Ordering::Intermixed);
+    if (made.is_err()) { return report(failure(Reason::Arguments)); }
+    let parser = made.unwrap(); let options:Options = defaults();
+    while (true) {
+        let parsed = parser.next();
+        if (parsed.is_err()) { return report(failure(Reason::Arguments)); }
+        let next = parsed.unwrap(); if (next.is_none()) { break; }
+        let applied:Result<bool,Failure> = match (next.unwrap()) {
+            ext::cli::Event::Option(item) -> apply(options.borrow(),headers,item),
+            ext::cli::Event::Operand(argument) -> operand(options.borrow(),argument.bytes)
+        };
+        if (applied.is_err()) { return report(applied.unwrap_err()); }
+    }
+    if (options.help) {
+        let help = literal("Usage: fetch URL [OPTIONS]\nOptions: --method METHOD --header NAME:VALUE --body FILE --ca-file FILE\n         --client-cert CHAIN --client-key KEY --timeout MS --connect-timeout MS\n         --max-output N --max-request N --max-response N --max-body N\n         --max-work N --max-io N --max-tls N --max-socket-calls N\n         --max-attempts N --max-results N --max-stdout-calls N --max-body-calls N\n         --help, -h\n",417);
+        if (!write(help,1,options.stdout_calls)) { return report(failure(Reason::Output)); } return 0;
+    }
+    if (options.url.is_none()) { return report(failure(Reason::Arguments)); }
+    let result = fetch(options.borrow(),headers);
+    if (result.is_err()) { return report(result.unwrap_err()); } return 0;
+}
+fn main() -> i32 {
+    // Without a confirmed SIGPIPE policy even a diagnostic could terminate.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,64,32768);
+    if (captured.is_err()) {
+        let reason:Reason = match (captured.unwrap_err()) { std::args::Error::AllocationFailed -> Reason::Allocation, std::args::Error::HostRead(host) -> Reason::Input, _ -> Reason::Arguments };
+        return report(failure(reason));
+    }
+    let values:std::args::Arguments = captured.unwrap(); let headers:Vec<ext::http::Field> = alloc::vec::new();
+    let status:i32 = arguments(values.as_view(),headers.borrow());
+    headers.destroy(); values.destroy(); return status;
+}
