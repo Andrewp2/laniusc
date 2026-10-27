@@ -1,6 +1,7 @@
-// Physical row owners -> TryFlatMap/retirement -> TryScan -> staged output.
+// Physical row owners -> FlatMap/scalar retirement -> TryScan -> staged output.
 module app::main;
 import alloc::vec;
+import core::clone_values::Infallible;
 import core::decimal;
 import core::i64;
 import core::io;
@@ -20,28 +21,29 @@ import std::args;
 import std::signal;
 import std::stream;
 
-enum AppError { Input, Limit, Overflow, Allocation, Io, Retirement }
+enum AppError { Input, Limit, Overflow, Allocation, Io }
 struct Config { input:i32,rows:i32,values:i32,output:i32,reads:i32,writes:i32 }
 struct Counts { rows:i32,values:i32 }
 struct RowMap<T> { marker:Option<T> }
-struct Retire<T> { marker:Option<T> }
+struct Retire {}
 struct Running { total:i64 }
 impl<T> RowMap<T> { fn borrow(&self) -> &RowMap<T> { return self; } }
-impl<T> Retire<T> { fn borrow(&self) -> &Retire<T> { return self; } }
+impl Retire { fn borrow(&self) -> &Retire { return self; } }
 impl Running { fn borrow(&self) -> &Running { return self; } }
-pub impl<T> core::iter::Mapper<alloc::vec::Vec<T>,Result<alloc::vec::IntoIter<T>,AppError>> for RowMap<T> {
-    pub fn apply(&self,row:alloc::vec::Vec<T>) -> Result<alloc::vec::IntoIter<T>,AppError> { return Ok(row.take_iter()); }
+pub impl<T> core::iter::Mapper<alloc::vec::Vec<T>,alloc::vec::IntoIter<T>> for RowMap<T> {
+    pub fn apply(&self,row:alloc::vec::Vec<T>) -> alloc::vec::IntoIter<T> { return row.take_iter(); }
 }
-pub impl<T> core::iter::InnerRetirement<alloc::vec::IntoIter<T>,AppError> for Retire<T> {
-    pub fn try_retire(&self,inner:alloc::vec::IntoIter<T>) -> Option<core::iter::RetireFailure<alloc::vec::IntoIter<T>,AppError>> {
-        if(inner.try_finish().is_some()) { return Some(core::iter::RetireFailure { inner:inner,error:AppError::Retirement }); }
+pub impl core::iter::InnerRetirement<alloc::vec::IntoIter<i64>,Infallible> for Retire {
+    pub fn try_retire(&self,inner:alloc::vec::IntoIter<i64>) -> Option<core::iter::RetireFailure<alloc::vec::IntoIter<i64>,Infallible>> {
+        // i64 items own no resources. Consume all cursor storage without a
+        // fallible finish; the nested engine calls this only after exhaustion.
+        let remainder=inner.take_remaining(); remainder.destroy();
         return None();
     }
 }
-pub impl core::iter::Mapper<Result<i64,AppError>,Result<Option<i64>,AppError>> for Running {
-    pub fn apply(&self,value:Result<i64,AppError>) -> Result<Option<i64>,AppError> {
-        if(value.is_err()) { return Err(value.unwrap_err()); }
-        let added=core::i64::checked_add(self.total,value.unwrap());
+pub impl core::iter::Mapper<i64,Result<Option<i64>,AppError>> for Running {
+    pub fn apply(&self,value:i64) -> Result<Option<i64>,AppError> {
+        let added=core::i64::checked_add(self.total,value);
         if(added.is_none()) { return Err(AppError::Overflow); }
         self.total=added.unwrap(); return Ok(Some(self.total));
     }
@@ -49,7 +51,7 @@ pub impl core::iter::Mapper<Result<i64,AppError>,Result<Option<i64>,AppError>> f
 fn literal(text:str,count:i32) -> View<u8> { return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count }; }
 fn same(a:View<u8>,b:View<u8>) -> bool { if(a.length!=b.length) { return false; } let at:i32=0; while(at<a.length) { if(a.values[a.start+at]!=b.values[b.start+at]) { return false; } at+=1; } return true; }
 fn horizontal(byte:u8) -> bool { return byte==32 || byte==9 || byte==11 || byte==12 || byte==13; }
-fn code(error:AppError) -> i32 { return match(error) { AppError::Allocation->4,AppError::Io->3,AppError::Retirement->3,_ ->2 }; }
+fn code(error:AppError) -> i32 { return match(error) { AppError::Allocation->4,AppError::Io->3,_ ->2 }; }
 fn flag(name:View<u8>) -> i32 {
     if(same(name,literal("--input-bytes",13))) { return 0; } if(same(name,literal("--rows",6))) { return 1; }
     if(same(name,literal("--values",8))) { return 2; } if(same(name,literal("--output-bytes",14))) { return 3; }
@@ -133,8 +135,8 @@ fn deliver(bytes:View<u8>,maximum:i32) -> Result<bool,AppError> {
 fn pipeline(rows:alloc::vec::Vec<alloc::vec::Vec<i64>>,limits:Config) -> i32 {
     let made:Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(limits.output);
     if(made.is_err()) { destroy_rows(rows); return 4; } let staged=made.unwrap(); let outer=rows.take_iter();
-    let mapper:RowMap<i64> =RowMap { marker:None() }; let retirement:Retire<i64> =Retire { marker:None() }; let running=Running { total:0 };
-    let flat:core::iter::TryFlatMap<alloc::vec::IntoIter<alloc::vec::Vec<i64>>,RowMap<i64>,Retire<i64>,alloc::vec::Vec<i64>,alloc::vec::IntoIter<i64>,i64,AppError> =core::iter::try_flat_map(outer.borrow(),mapper.borrow(),retirement.borrow());
+    let mapper:RowMap<i64> =RowMap { marker:None() }; let retirement=Retire {}; let running=Running { total:0 };
+    let flat:core::iter::FlatMap<alloc::vec::IntoIter<alloc::vec::Vec<i64>>,RowMap<i64>,Retire,alloc::vec::Vec<i64>,alloc::vec::IntoIter<i64>,i64> =core::iter::flat_map(outer.borrow(),mapper.borrow(),retirement.borrow());
     let scan=core::iter::try_scan(flat.borrow(),running.borrow()); let status:i32=0; let scratch:[u8;20]=[0;20];
     while(status==0) {
         let next=scan.next(); if(next.is_none()) { break; } let item=next.unwrap();

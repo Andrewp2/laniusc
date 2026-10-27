@@ -1,6 +1,12 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[ordinary nested-iteration increment](library-infallible-nested-plan.md)
+implements `Flatten` and `FlatMap` through the existing nested engine and the
+true empty `Infallible` error type. Public admission, two semantic/model Rust
+tests, three negative-bound tests, all eight strict-owner cases and the migrated
+real `flatten_sum` groups pass on the finite native profile below. The selected
+increment is accepted. The preceding
 [replacement-sink increment](library-replacement-sinks-plan.md) is implemented
 and accepted on the finite native profile below. Two semantic Rust gates,
 five negative-bound tests, strict owner/reached-OOM groups and the real
@@ -8,9 +14,9 @@ latest-values campaigns now pass, separately from the initial direct smokes.
 The accepted
 [scan and nested-iteration increment](library-nested-iteration-plan.md) is
 implemented through the canonical iterator protocol. Two direct public smoke
-programs, three semantic/model Rust tests and all four real `flatten_sum`
-tests pass. All four direct strict-owner groups now pass as well; the selected
-increment is accepted on the finite profile below. The accepted
+programs, three semantic/model Rust tests and all four historical fallible
+`flatten_sum` tests pass. All four direct strict-owner groups pass as well;
+the selected increment is accepted on the finite profile below. The accepted
 [filesystem increment](library-filesystem-completion-plan.md) implements owned
 temporary directories, checked link/readlink and permission operations, and a
 real `mktemp_dir` program. All 13 selected Rust tests pass across separate
@@ -35,6 +41,39 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted ordinary nested iteration.**
+
+The [contract](stdlib-infallible-nested.md) adds plain `Iterator<T>` adapters
+with `Mapper<S,J>` and an explicit
+`InnerRetirement<J,Infallible>` policy. Construction is lazy, active-inner
+take/finish preserves recovery, and retirement precedes another outer pull.
+The existing fallible engine and adapters are unchanged. Owning inners still
+require real retirement; the empty error type does not imply automatic cleanup.
+
+| Surface | Current finite scope |
+| --- | --- |
+| Public adapter admission | One actual stdlib-import program compiles and exits zero through the direct CLI. |
+| [Semantics and shapes](../tests/fixtures/stdlib_foundation/infallible_nested_iteration/README.md) | Two Rust tests pass together in 9.38s: 24 modeled action schedules in one native process, plus a separate optional/Result/wide, actual positive/negative-stride, zero-sized and Scan/Take composition program. |
+| [Negative bounds](../tests/fixtures/stdlib_foundation/infallible_nested_bounds/README.md) | Three Rust tests pass in 4.77s, requiring source-local rejection of fallible retirement, a fallible mapper and the wrong inner item. They establish no native behavior. |
+| [Current flatten_sum program](stdlib-flatten-sum.md#current-ordinary-adapter-receipts) | Four direct oracle groups pass 219 overlapping cases: models138, bounds54, allocations11 (baseline plus ten reached OOMs), faults16. These are not four current Rust-libtest receipts. |
+| [Strict native owners](../tests/fixtures/stdlib_execution/infallible_nested_iteration_owners/README.md) | Eight direct cases pass: Vec/wrapped Deque × Flatten/FlatMap × full/early-take-resume. Four live acknowledged checkpoints verify exact owner partitions and pre-exit mapping/descriptor cleanup. No source allocation attempt occurs after setup, including callbacks and recovery. |
+
+Core source is `5034fbac...`; the migrated application is `65cfcdfc...`.
+Receipts under `target/stdlib-work/` are
+`infallible-nested-public-smoke-{first,native-first}.log`,
+`infallible-nested-model-shapes-first.log`,
+`infallible-nested-bounds-first.log` and
+`infallible-flatten-sum-{models,bounds,allocations,faults}-first.log`.
+Owner receipt `infallible-nested-owners-lifecycle-first.log` uses probe
+`0a8aa0d4...`, retained ELF `530cbe74...` and oracle `7f7c77c8...`.
+It is a direct native receipt, not a passing Rust libtest or an OOM campaign.
+Nine semantic and 25 owner CPU controls are separate from runtime.
+The semantic and negative test-profile builds take 1.76s and 1.80s separately
+from their test phases. Targets remain native Linux x86_64 CPU programs
+emitted by the GPU compiler. No current ordinary-app scale observation or
+user-program GPU support is inferred. Earlier receipts below retain their
+original source scope; the complete library goal remains open.
 
 **Accepted replacement-sink increment.**
 
@@ -76,14 +115,15 @@ library goal remains open.
 
 **Accepted scan and nested-iteration increment.**
 
-| Surface | Current finite scope |
+| Surface | Accepted historical source scope |
 | --- | --- |
 | [Public adapter admission](stdlib-nested-iteration.md#verification-status) | Two actual stdlib-import programs compile and exit zero, covering all four adapters. These are direct CLI/native receipts; the two corresponding libtest registrations were not rerun. |
 | [Semantic and payload models](../tests/fixtures/stdlib_foundation/nested_iteration/README.md) | All three Rust tests pass in 9.31s: 360 nested and 672 scan binary command scenarios plus actual nested Option/Result/array, wide, strided and zero-sized payload checks. |
-| [Real flatten_sum program](stdlib-flatten-sum.md) | All four tests pass 219 process group cases across two commands: models 138/bounds 54 in 8.51s; allocations 11 (baseline plus ten reached OOMs)/faults 16 in 8.23s. Baselines/setup overlap; the earlier direct smoke adds no cases. |
+| [Earlier fallible flatten_sum program](stdlib-flatten-sum.md#historical-fallible-adapter-receipts) | All four tests pass 219 process group cases across two commands: models 138/bounds 54 in 8.51s; allocations 11 (baseline plus ten reached OOMs)/faults 16 in 8.23s. Baselines/setup overlap; the earlier direct smoke adds no cases. |
 | [Strict native owners](../tests/fixtures/stdlib_execution/nested_iteration_owners/README.md) | All four direct oracle groups pass on one retained ELF: lifecycle 14, flatten OOM 30, Vec flat-map OOM 56 and Deque flat-map OOM 56. Total 156 group cases includes overlapping baselines; 132 OOM runs are individually reached. This is not a four-libtest receipt. |
 
-Core source is `7256a394...`; application source is `946043fe...`. Scan borrows
+This accepted freeze is core `7256a394...` and application `946043fe...`;
+the current ordinary-adapter migration has separate receipts above. Scan borrows
 caller-owned state. One nested engine transfers an exhausted inner to explicit
 retirement, restores the actual returned updated inner on failure, yields one
 error and fuses. Early take/finish preserves inner and outer recovery duties.
@@ -112,8 +152,8 @@ admission corrected an unsupported applied where-subject and generic cursor
 locals; later lazy/eager-count oracle corrections reused the emitted ELF.
 Production and compiler sources were unchanged by those fixture/oracle fixes.
 
-One separate untraced application observation processes 65,536 values in 3,072
-rows, including 2,048 empty rows, in 0.157614975s. The timer includes startup,
+One separate historical untraced application observation processes 65,536
+values in 3,072 rows, including 2,048 empty rows, in 0.157614975s. The timer includes startup,
 stdin, parsing, ownership traversal, formatting and stdout capture; exact
 output validation is outside it. `nested-flatten-sum-scale-first.log` supplies
 one local observation, not a new fault case, source allocation count, compiler
@@ -371,12 +411,12 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes its bounded writer and final check for the replacement-sink source/API
-freeze: 251 pages, 250 modules and 8,309 lexical public declaration markers.
-Six outputs change: the index, core::iter and four map/set pages. Runtime
-acceptance is recorded separately; source extraction and negative compiler
-admission accept no runtime gate themselves. Source inventory evidence does not establish runtime
-support or library completion.
+passes its bounded writer and final check for the ordinary nested-iteration
+source/API freeze: 251 pages, 250 modules and 8,329 lexical public declaration
+markers. Only the index and core::iter page change relative to the preceding
+replacement freeze. Runtime acceptance is recorded separately; source extraction
+and negative compiler admission accept no runtime gate themselves. Source
+inventory evidence does not establish runtime support or library completion.
 
 Two lower-layer controls remain distinct from those current transport gates:
 

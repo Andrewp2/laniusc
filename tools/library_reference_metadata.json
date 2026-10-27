@@ -330,11 +330,12 @@
         "docs/stdlib-iterator-lookahead.md",
         "docs/stdlib-column-extrema.md",
         "docs/stdlib-nested-iteration.md",
+        "docs/stdlib-infallible-nested.md",
         "docs/stdlib-flatten-sum.md",
         "docs/stdlib-replacement-sinks.md",
         "docs/stdlib-latest-values.md"
       ],
-      "note": "Shared fused iteration, borrowed scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Nested retirement preserves the actual updated inner and take_active recovery. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. The selected replacement increment has finite native Linux x86_64 semantic, owner/fault and real-application acceptance; linked guides distinguish direct oracle groups from Rust tests and record a separate zero-sized function-return compiler dependency. Keep sources/callbacks/backing alive, prohibit reentrancy, and apply quotas to immediate calls rather than arbitrary upstream work."
+      "note": "Shared fused iteration, scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Ordinary Flatten/FlatMap use real empty Infallible retirement through the existing nested engine, preserving actual updated-inner recovery; their selected semantic, live-owner and real-application gates pass on native Linux x86_64. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. Linked guides retain each receipt's source scope, direct-oracle versus Rust-test distinction and separate zero-sized return-call compiler dependency. Keep backing alive, prohibit reentrancy, and bound upstream work separately from output quotas."
     },
     "core::math": {
       "guides": [

@@ -1,9 +1,9 @@
 # Owned row flattening and running totals
 
-Status: all four focused tests pass 219 process group cases across two native
-commands, including baselines and overlapping setup. These are finite workflow
-receipts, not 219 independent properties. The program uses public adapters in
-[`core::iter`](stdlib-iterators.md), not a test-only traversal. The complete
+Status: ordinary `FlatMap` migration passes compiler admission and all four
+direct executable groups: 219 process group cases with overlapping baselines.
+The earlier fallible-adapter receipts are recorded separately below. The program
+uses public adapters in [`core::iter`](stdlib-iterators.md). The complete
 library goal remains open. Source: [flatten_sum.lani](../sample_programs/library/flatten_sum.lani).
 
 ```text
@@ -65,7 +65,7 @@ replace the primary status.
 | --- | --- |
 | 0 | All staged totals delivered, or help delivered. |
 | 2 | Argument/input grammar, integer/running overflow, or an explicit resource/call limit. |
-| 3 | Signal/host I/O error, invalid progress or unexpected retirement failure. |
+| 3 | Signal/host I/O error, invalid progress or unexpected ownership failure. |
 | 4 | Source allocation failure. |
 
 ## Ownership pipeline
@@ -75,14 +75,17 @@ The input buffer is fully validated first. The program constructs an owned
 a real one-element backing reservation. It then releases the input buffer.
 
 1. `Vec.take_iter()` transfers the outer backing and remaining row owners.
-2. `TryFlatMap` borrows the outer cursor and mapper. Mapping transfers each row
-   to its owning `Vec::IntoIter<i64>`.
-3. An explicit `InnerRetirement` policy calls `try_finish()` on each exhausted
-   inner before another outer row is acquired. A retirement error returns the
-   actual updated inner plus the shared AppError.
-4. `TryScan` receives `Result<i64,AppError>`, propagates upstream errors and
-   uses canonical checked addition. It formats successful totals into the
-   bounded staging owner.
+2. Ordinary `FlatMap` borrows the outer cursor and mapper. Mapping transfers
+   each row directly to its owning `Vec::IntoIter<i64>`, without allocation or
+   a fallible result wrapper.
+3. The scalar-specific `InnerRetirement<IntoIter<i64>,Infallible>` policy
+   consumes the inner with `take_remaining()` and destroys its backing before
+   another outer row is acquired. No i64 item owns a nested resource, so this
+   policy is total even for a nonempty supplied cursor. The shared nested
+   engine calls it only after exhaustion. No fallible finish result is ignored.
+4. `TryScan` receives plain i64 values and uses canonical checked addition.
+   Overflow remains an explicit AppError. Successful totals are formatted into
+   the bounded staging owner.
 5. On normal termination or error, `take_active()` transfers any active inner.
    Its remainder is recovered and destroyed; every unconsumed outer row and
    the outer backing are explicitly released. No error masquerades as None.
@@ -100,10 +103,34 @@ The adapters allocate no traversal scratch. Runtime/stack/kernel allocations,
 RSS and host-call wall time are separate from these explicit library-owner
 bounds. Empty-row traversal work is bounded by the outer row count.
 
-## Current execution receipts
+## Current ordinary-adapter receipts
 
-The accepted application is SHA-256 `946043fe...`, unchanged throughout these
-gates, with `core::iter` `7256a394...`. Full identities are recorded in the
+The ordinary `FlatMap` application is source-frozen at SHA-256 `65cfcdfc...`.
+It preserves the command grammar, bounds, status codes, staging and explicit
+active-inner/unread-row cleanup. The independent oracle and Rust driver are
+unchanged. With `core::iter` `5034fbac...`, compiler admission passes in
+`target/stdlib-work/infallible-flatten-sum-admission-first.log`. The emitted
+ELF is SHA-256 `2707585b...`; full identities are in the fixture guide.
+
+Four separate direct Python oracle groups reuse that executable:
+
+| Log under `target/stdlib-work/` | Current accepted scope |
+| --- | --- |
+| `infallible-flatten-sum-models-first.log` | 138 model process cases, including physical empty-row ownership. |
+| `infallible-flatten-sum-bounds-first.log` | 54 argument/input/overflow/output-limit process cases. |
+| `infallible-flatten-sum-allocations-first.log` | 11 process cases: one baseline and all ten reached source OOMs. |
+| `infallible-flatten-sum-faults-first.log` | 16 I/O fault process cases. |
+
+These total 219 group cases with overlapping setup/baselines, not independent
+properties. This acceptance is direct Python execution against the retained
+ELF; the registered Rust tests were not rerun for this migration. The current
+source has no new scale observation. Historical native receipts and the older
+scale timing below retain their source-specific scope.
+
+## Historical fallible-adapter receipts
+
+The earlier `TryFlatMap` application is SHA-256 `946043fe...`, unchanged
+throughout these gates, with `core::iter` `7256a394...`. Full identities are recorded in the
 [fixture guide](../tests/fixtures/stdlib_execution/flatten_sum/README.md).
 Logs under `target/stdlib-work/` record:
 
@@ -124,7 +151,8 @@ workflow and is not added to the 219 cases. Its admission/execution logs are
 The target is native Linux x86_64 CPU execution emitted by the GPU compiler,
 kernel `7.0.0-38-generic`; test evidence resides under local ext4 `/tmp`.
 There is no user GPU-kernel, broader-host or universal performance claim.
-Eighteen CPU oracle controls are separate from native program execution.
+Eighteen CPU oracle controls passed separately from that native execution;
+no new execution is inferred from the unchanged oracle.
 The shared semantic/application driver build passed in 1.39s
 (`nested-semantic-app-drivers-borrow-retry.log`); that is not an isolated
 app-build time. Its initial E0308 (`nested-semantic-app-drivers-first-build.log`)
@@ -148,14 +176,14 @@ before the traced process-exit syscall. The application has no ACK handshake:
 this is exit-boundary trace evidence, distinct from direct adapter fixtures'
 live `/proc` ownership checkpoints.
 
-These results cover the listed workflow and fault schedules. The direct
+These historical results cover that source's listed workflow and fault schedules. The direct
 adapters' semantic, owned-error and live-checkpoint campaigns retain their
 separate scope in the [nested-iteration plan](library-nested-iteration-plan.md);
 these application results do not complete the full library goal.
 
 ### Separate scale observation
 
-One untraced run reused accepted ELF `906488cc...` with unchanged app
+One historical untraced run reused accepted ELF `906488cc...` with app
 `946043fe...` and core `7256a394...`. It processed 3,072 physical rows:
 1,024 nonempty rows of 64 ones and 2,048 empty rows, totaling 65,536 values and
 133,120 input bytes. Output was 382,110 bytes; exact totals 1..65,536 were

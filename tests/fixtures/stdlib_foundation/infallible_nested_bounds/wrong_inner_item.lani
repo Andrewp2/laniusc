@@ -1,0 +1,25 @@
+// Source and real Infallible retirement agree on Iter<i32>; requested item is u64.
+module app::main;
+import core::clone_values;
+import core::iter;
+import core::option;
+import core::slice;
+
+struct InfallibleRetirement {}
+impl InfallibleRetirement { fn borrow(&self) -> &InfallibleRetirement { return self; } }
+// The borrowed slice cursor owns no backing to release.
+pub impl core::iter::InnerRetirement<core::slice::Iter<i32>,core::clone_values::Infallible> for InfallibleRetirement {
+    pub fn try_retire(&self, inner:core::slice::Iter<i32>) -> core::option::Option<core::iter::RetireFailure<core::slice::Iter<i32>,core::clone_values::Infallible>> {
+        let retired: core::option::Option<core::iter::RetireFailure<core::slice::Iter<i32>,core::clone_values::Infallible>> = core::option::None();
+        return retired;
+    }
+}
+fn main() -> i32 {
+    let values: [i32;1] = [7];
+    let inner: core::slice::Iter<i32> = core::iter::from_slice<i32>(values,1).unwrap();
+    let inners: [core::slice::Iter<i32>;1] = [inner];
+    let source: core::slice::Iter<core::slice::Iter<i32>> = core::iter::from_slice<core::slice::Iter<i32>>(inners,1).unwrap();
+    let retirement: InfallibleRetirement = InfallibleRetirement {};
+    let rejected: core::iter::Flatten<core::slice::Iter<core::slice::Iter<i32>>,core::slice::Iter<i32>,InfallibleRetirement,u64> = core::iter::flatten<core::slice::Iter<core::slice::Iter<i32>>,core::slice::Iter<i32>,InfallibleRetirement,u64>(source.borrow(),retirement.borrow());
+    return 0;
+}

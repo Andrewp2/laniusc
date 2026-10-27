@@ -1,0 +1,156 @@
+// Real ordinary adapters: plain optional/result items, nonzero signed strides,
+// wide records, zero-sized items and bounded consumer composition.
+module app::main;
+import core::clone_values;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+struct Borrowed<J> { calls: i32 }
+impl<J> Borrowed<J> { fn borrow(&self) -> &Borrowed<J> { return self; } }
+pub impl<J> core::iter::InnerRetirement<J,core::clone_values::Infallible> for Borrowed<J> {
+    pub fn try_retire(&self, inner: J) -> core::option::Option<core::iter::RetireFailure<J,core::clone_values::Infallible>> {
+        // Every J in this fixture borrows separately live storage or is Once.
+        // There is no owned backing and no inhabitant to fabricate for E.
+        self.calls += 1; return core::option::None();
+    }
+}
+struct AsOnce<T> { calls: i32 }
+impl<T> AsOnce<T> { fn borrow(&self) -> &AsOnce<T> { return self; } }
+pub impl<T> core::iter::Mapper<T,core::iter::Once<T>> for AsOnce<T> {
+    pub fn apply(&self, item: T) -> core::iter::Once<T> { self.calls += 1; return core::iter::once<T>(item); }
+}
+type Nested = core::option::Option<core::result::Result<[u64;2],u64>>;
+type Cursor = core::slice::Iter<Nested>;
+type Outer = core::slice::Iter<Cursor>;
+type Flat = core::iter::Flatten<Outer,Cursor,Borrowed<Cursor>,Nested>;
+fn optional_items() {
+    let words: [u64;2] = [18446744073709551615,4294967297];
+    let a: Nested = core::option::None();
+    let b: Nested = core::option::Some(core::result::Err(9223372036854775808));
+    let c: Nested = core::option::Some(core::result::Ok(words));
+    let values: [Nested;4] = [c,a,b,c]; assert(core::mem::slice_stride(values) < 0);
+    let empty_view: core::slice::View<Nested> = core::slice::View { values: values, start: 1, length: 0 };
+    let first_view: core::slice::View<Nested> = core::slice::View { values: values, start: 1, length: 2 };
+    let last_view: core::slice::View<Nested> = core::slice::View { values: values, start: 3, length: 1 };
+    let rows: [Cursor;3] = [empty_view.iter(),first_view.iter(),last_view.iter()];
+    let source: Outer = core::iter::from_slice<Cursor>(rows,3).unwrap();
+    let policy: Borrowed<Cursor> = Borrowed { calls: 0 };
+    let flattened: Flat = core::iter::flatten<Outer,Cursor,Borrowed<Cursor>,Nested>(source.borrow(),policy.borrow());
+    assert(source.remaining() == 3 && policy.calls == 0 && !flattened.has_active());
+    let first: core::option::Option<Nested> = flattened.next();
+    assert(first.is_some() && first.unwrap().is_none());
+    let second: core::option::Option<Nested> = flattened.borrow().next();
+    assert(second.unwrap().unwrap().unwrap_err() == 9223372036854775808);
+    let third: core::option::Option<Nested> = flattened.next();
+    let actual: [u64;2] = third.unwrap().unwrap().unwrap();
+    assert(actual[0] == words[0] && actual[1] == words[1]);
+    assert(flattened.next().is_none() && flattened.next().is_none() && policy.calls == 3);
+    assert(!flattened.has_active() && flattened.try_finish().is_none() && source.remaining() == 0);
+}
+struct Payload { wide: u64, signed: i64, words: [u64;2], nested: core::option::Option<bool> }
+type PayloadSource = core::slice::Iter<Payload>;
+type PayloadFlatMap = core::iter::FlatMap<PayloadSource,AsOnce<Payload>,Borrowed<core::iter::Once<Payload>>,Payload,core::iter::Once<Payload>,Payload>;
+fn wide_items() {
+    let values: [Payload;2] = [Payload { wide: 18446744073709551615, signed: -4294967297, words: [4294967297,9223372036854775808], nested: core::option::Some(false) },Payload { wide: 9223372036854775808, signed: 9223372036854775807, words: [18446744073709551615,0], nested: core::option::None() }];
+    let source: PayloadSource = core::iter::from_slice<Payload>(values,2).unwrap();
+    let mapper: AsOnce<Payload> = AsOnce { calls: 0 }; let policy: Borrowed<core::iter::Once<Payload>> = Borrowed { calls: 0 };
+    let mapped: PayloadFlatMap = core::iter::flat_map<PayloadSource,AsOnce<Payload>,Borrowed<core::iter::Once<Payload>>,Payload,core::iter::Once<Payload>,Payload>(source.borrow(),mapper.borrow(),policy.borrow());
+    assert(source.remaining() == 2 && mapper.calls == 0 && policy.calls == 0);
+    let first: core::option::Option<Payload> = mapped.next(); let a: Payload = first.unwrap();
+    let second: core::option::Option<Payload> = mapped.next(); let b: Payload = second.unwrap();
+    assert(a.wide == 18446744073709551615 && a.signed == -4294967297 && !a.nested.unwrap());
+    assert(a.words[0] == 4294967297 && a.words[1] == 9223372036854775808);
+    assert(b.wide == 9223372036854775808 && b.signed == 9223372036854775807 && b.nested.is_none());
+    assert(b.words[0] == 18446744073709551615 && b.words[1] == 0);
+    assert(mapped.next().is_none() && mapped.next().is_none() && mapper.calls == 2 && policy.calls == 2);
+}
+fn bytes(view: core::slice::View<u8>) {
+    let inner: core::slice::Iter<u8> = view.iter();
+    let outer: core::iter::Once<core::slice::Iter<u8>> = core::iter::once<core::slice::Iter<u8>>(inner);
+    let policy: Borrowed<core::slice::Iter<u8>> = Borrowed { calls: 0 };
+    let flattened: core::iter::Flatten<core::iter::Once<core::slice::Iter<u8>>,core::slice::Iter<u8>,Borrowed<core::slice::Iter<u8>>,u8> = core::iter::flatten<core::iter::Once<core::slice::Iter<u8>>,core::slice::Iter<u8>,Borrowed<core::slice::Iter<u8>>,u8>(outer.borrow(),policy.borrow());
+    assert(flattened.next().unwrap() == 128 && flattened.next().unwrap() == 255 && flattened.next().unwrap() == 7);
+    assert(flattened.next().is_none() && flattened.next().is_none() && policy.calls == 1);
+}
+fn strides() {
+    let descending: [u8;5] = [99,128,255,7,90]; assert(core::mem::slice_stride(descending) < 0);
+    let native: core::slice::View<u8> = core::slice::View { values: descending, start: 1, length: 3 }; bytes(native);
+    // Reuse the admitted allocation-free packed-byte view over live i32 stack
+    // backing. Source bytes and backing remain live through the entire call.
+    let storage: [i32;2] = [0,0]; let pointer: ptr = core::mem::i32_array_data_ptr(storage);
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer,8); assert(core::mem::slice_stride(packed) == 1);
+    packed[0] = 99; packed[1] = 128; packed[2] = 255; packed[3] = 7; packed[4] = 90;
+    let positive: core::slice::View<u8> = core::slice::View { values: packed, start: 1, length: 3 }; bytes(positive);
+    assert(packed[0] == 99 && packed[4] == 90 && descending[0] == 99 && descending[4] == 90);
+}
+struct Unit {}
+type UnitSource = core::slice::Iter<Unit>;
+type UnitMapped = core::iter::FlatMap<UnitSource,AsOnce<Unit>,Borrowed<core::iter::Once<Unit>>,Unit,core::iter::Once<Unit>,Unit>;
+fn zero_sized() {
+    let values: [Unit;3] = [Unit {},Unit {},Unit {}]; assert(core::mem::slice_stride(values) == 0);
+    let source: UnitSource = core::iter::from_slice<Unit>(values,3).unwrap();
+    let mapper: AsOnce<Unit> = AsOnce { calls: 0 }; let policy: Borrowed<core::iter::Once<Unit>> = Borrowed { calls: 0 };
+    let mapped: UnitMapped = core::iter::flat_map<UnitSource,AsOnce<Unit>,Borrowed<core::iter::Once<Unit>>,Unit,core::iter::Once<Unit>,Unit>(source.borrow(),mapper.borrow(),policy.borrow());
+    let first: core::option::Option<Unit> = mapped.next(); assert(first.is_some() && source.remaining() == 2);
+    assert(mapped.has_active() && mapped.try_finish().is_some() && mapper.calls == 1 && policy.calls == 0);
+    let recovered: core::iter::Once<Unit> = mapped.take_active().unwrap();
+    assert(recovered.next().is_none());
+    assert(mapped.take_active().is_none() && mapped.next().is_none() && mapped.try_finish().is_none());
+    assert(policy.try_retire(recovered).is_none() && policy.calls == 1 && mapper.calls == 1);
+    let resumed: UnitMapped = core::iter::flat_map<UnitSource,AsOnce<Unit>,Borrowed<core::iter::Once<Unit>>,Unit,core::iter::Once<Unit>,Unit>(source.borrow(),mapper.borrow(),policy.borrow());
+    assert(resumed.next().is_some() && resumed.next().is_some());
+    assert(resumed.next().is_none() && resumed.next().is_none() && source.remaining() == 0 && mapper.calls == 3 && policy.calls == 3);
+}
+struct Running { total: i64, calls: i32 }
+impl Running { fn borrow(&self) -> &Running { return self; } }
+pub impl core::iter::Mapper<i64,core::option::Option<i64>> for Running {
+    pub fn apply(&self, value: i64) -> core::option::Option<i64> { self.total += value; self.calls += 1; return core::option::Some(self.total); }
+}
+fn first_two<I>(source: &I) where I: core::iter::Iterator<i64> {
+    let running: Running = Running { total: 0, calls: 0 };
+    let scan: core::iter::Scan<I,Running,i64,i64> = core::iter::scan<I,Running,i64,i64>(source,running.borrow());
+    let quota: core::iter::Take<core::iter::Scan<I,Running,i64,i64>,i64> = core::iter::take<core::iter::Scan<I,Running,i64,i64>,i64>(scan.borrow(),2);
+    assert(quota.next().unwrap() == 2 && quota.next().unwrap() == 5);
+    assert(quota.next().is_none() && quota.next().is_none() && running.calls == 2 && running.total == 5);
+}
+struct Views { calls: i32 }
+impl Views { fn borrow(&self) -> &Views { return self; } }
+pub impl core::iter::Mapper<core::slice::View<i64>,core::slice::Iter<i64>> for Views {
+    pub fn apply(&self, view: core::slice::View<i64>) -> core::slice::Iter<i64> { self.calls += 1; return view.iter(); }
+}
+type Integers = core::slice::Iter<i64>;
+type IntegerOuter = core::slice::Iter<Integers>;
+type IntegerFlat = core::iter::Flatten<IntegerOuter,Integers,Borrowed<Integers>,i64>;
+type ViewSource = core::slice::Iter<core::slice::View<i64>>;
+type IntegerMap = core::iter::FlatMap<ViewSource,Views,Borrowed<Integers>,core::slice::View<i64>,Integers,i64>;
+fn composition() {
+    let values: [i64;5] = [2,3,5,7,11];
+    let first: core::slice::View<i64> = core::slice::View { values: values, start: 0, length: 2 };
+    let last: core::slice::View<i64> = core::slice::View { values: values, start: 2, length: 3 };
+    let rows: [Integers;2] = [first.iter(),last.iter()];
+    let outer: IntegerOuter = core::iter::from_slice<Integers>(rows,2).unwrap();
+    let policy: Borrowed<Integers> = Borrowed { calls: 0 };
+    let flattened: IntegerFlat = core::iter::flatten<IntegerOuter,Integers,Borrowed<Integers>,i64>(outer.borrow(),policy.borrow());
+    first_two<IntegerFlat>(flattened.borrow());
+    assert(outer.remaining() == 1 && policy.calls == 0 && flattened.has_active() && flattened.try_finish().is_some());
+    let recovered: Integers = flattened.take_active().unwrap(); assert(recovered.remaining() == 0 && recovered.next().is_none());
+    assert(policy.try_retire(recovered).is_none() && policy.calls == 1 && flattened.next().is_none());
+    let resumed: IntegerFlat = core::iter::flatten<IntegerOuter,Integers,Borrowed<Integers>,i64>(outer.borrow(),policy.borrow());
+    assert(resumed.next().unwrap() == 5 && resumed.next().unwrap() == 7 && resumed.next().unwrap() == 11);
+    assert(resumed.next().is_none() && policy.calls == 2 && outer.remaining() == 0);
+
+    let view_rows: [core::slice::View<i64>;2] = [first,last];
+    let inputs: ViewSource = core::iter::from_slice<core::slice::View<i64>>(view_rows,2).unwrap();
+    let mapper: Views = Views { calls: 0 }; let mapped_policy: Borrowed<Integers> = Borrowed { calls: 0 };
+    let mapped: IntegerMap = core::iter::flat_map<ViewSource,Views,Borrowed<Integers>,core::slice::View<i64>,Integers,i64>(inputs.borrow(),mapper.borrow(),mapped_policy.borrow());
+    first_two<IntegerMap>(mapped.borrow());
+    assert(inputs.remaining() == 1 && mapper.calls == 1 && mapped_policy.calls == 0 && mapped.has_active() && mapped.try_finish().is_some());
+    let taken: Integers = mapped.take_active().unwrap(); assert(taken.remaining() == 0 && taken.next().is_none());
+    assert(mapped_policy.try_retire(taken).is_none() && mapped.next().is_none());
+    let continued: IntegerMap = core::iter::flat_map<ViewSource,Views,Borrowed<Integers>,core::slice::View<i64>,Integers,i64>(inputs.borrow(),mapper.borrow(),mapped_policy.borrow());
+    assert(continued.next().unwrap() == 5 && continued.next().unwrap() == 7 && continued.next().unwrap() == 11);
+    assert(continued.next().is_none() && continued.next().is_none() && mapper.calls == 2 && mapped_policy.calls == 2 && inputs.remaining() == 0);
+}
+fn main() -> i32 { optional_items(); wide_items(); strides(); zero_sized(); composition(); return 0; }

@@ -39,56 +39,55 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the replacement-sink source/API freeze, the bounded writer and `--check`
-both exit zero for **251 pages from 250 source modules, with 8,309 lexical
-public declaration markers**. Exactly six outputs change relative to the
-preceding nested-iteration freeze: the [index](api/README.md),
-[core::iter](api/core/iter.md), [HashMap](api/alloc/hash_map.md),
-[HashSet](api/alloc/hash_set.md), [TreeMap](api/alloc/tree_map.md) and
-[TreeSet](api/alloc/tree_set.md). They retain the frozen replacement trait,
-progress/failure types, bounded helper and four thin collection implementations,
-linked to the [contract guide](stdlib-replacement-sinks.md).
+At the ordinary nested-iteration source/API freeze, the bounded writer and
+`--check` both exit zero for **251 pages from 250 source modules, with 8,329
+lexical public declaration markers**. Exactly two outputs change relative to
+the replacement-sink freeze: the [index](api/README.md) and
+[core::iter](api/core/iter.md). They retain `Flatten`, `FlatMap`, the actual
+`Infallible` retirement bounds and recovery methods, with a link to the
+[ordinary nested-iteration contract](stdlib-infallible-nested.md). The private
+mapping bridge is excluded by the existing known-local-private owner rule.
 
-Current core source is `a6fc9e0d...`; the
-[plan](library-replacement-sinks-plan.md#current-source-freeze-and-first-admission)
-records all five production hashes. The selected increment now has two direct
-admissions, two semantic/shape Rust tests, five negative-bound compiler tests,
-five direct strict-owner groups and four direct latest-values groups accepted.
-The retained-ELF oracle groups are not five/four passing Rust libtests. A
-separate zero-sized return-call compiler dependency remains documented. The
-selected finite native increment is accepted; source generation itself proves
-no runtime behavior and does not complete the full library goal. Earlier nested
-and collection receipts retain their own source scopes.
+Core source is `5034fbac...`; all earlier traversal bodies are unchanged.
+The selected increment is accepted on its finite native Linux x86_64 profile:
+one direct public smoke, two semantic/model Rust tests, three negative-bound
+Rust tests, eight direct live-owner cases and four direct current
+[flatten_sum groups](stdlib-flatten-sum.md#current-ordinary-adapter-receipts).
+The model compares 24 schedules in one native process; the owner and app groups
+are direct oracle receipts, not current passing Rust libtests. Linked guides
+own exact identities, limits and receipts. Source generation itself proves no
+runtime behavior and does not complete the full library goal.
 
-Current classification receipts are
-`target/stdlib-work/replacement-reference-final-writer.log` and
-`replacement-reference-final-check.log` in that same directory. Earlier
-`replacement-reference-partial-bounds-{writer,check}.log` and
-`replacement-reference-partial-writer.log` retain the same source/counts with
-then-pending runtime classification. Final metadata is brief; the
-[replacement guide](stdlib-replacement-sinks.md) and
-[latest-values guide](stdlib-latest-values.md) own exact receipts and caveats. The
-[overview](library-overview.md) records runtime scope separately. Public `pub`
+The current generation receipts are
+`target/stdlib-work/infallible-nested-reference-final-writer.log` and
+`infallible-nested-reference-final-check.log` in that directory. Metadata stays
+brief; the [module guide](stdlib-infallible-nested.md),
+[application guide](stdlib-flatten-sum.md) and [overview](library-overview.md)
+record execution and historical source scope separately. Public `pub`
 spellings are counted lexically, including required public implementations of
-private helper types; the count is not externally usable APIs or working functions.
+private helpers; this is not a count of externally usable APIs or working
+functions.
 
-The existing known-local-private scanner rule continues to exclude private
-helper implementation blocks while retaining public, unknown, external,
-primitive and generic-parameter receivers. No generator code or tests changed
-for replacement sinks. Its preceding nested-iteration controls passed three
-focused cases in 0.002s and **29 full CPU tests in 3.711s**, recorded in
+The existing scanner rule excludes known local private helper implementation
+blocks while retaining public, unknown, external, primitive and generic-parameter
+receivers. No generator code or tests changed for this increment. Its earlier
+nested-iteration controls passed three focused cases in 0.002s and **29 full
+CPU tests in 3.711s**, recorded in
 `target/stdlib-work/nested-iteration-reference-generator-tests-first.log`.
-They cover private-owner suppression, positive receiver retention, unsupported
-public syntax, imports/source spans, lexical counts and output ownership.
-Those unchanged tests were not repeated for source/metadata regeneration.
+Those controls cover private-owner suppression, positive receiver retention,
+unsupported public syntax, imports/source spans, lexical counts and output
+ownership. Unchanged tests were not repeated for source/metadata regeneration.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
 hashes before generation and after the final check. The generator writes only
-the reference tree. The preceding nested freeze had 251 pages, 250 modules and
-8,295 markers; the filesystem freeze had 251/250/8,259. The reusable-regex freeze
-had 250/249/8,220; archive had 250/249/8,197. Earlier language-adoption/AtomicFile
-inventory had 246 pages, 245 modules and 8,119 markers. Their receipts retain
-their guide-defined source and runtime scope.
+the reference tree. The replacement-sink freeze had 251 pages, 250 modules and
+8,309 markers, with its final writer/check receipts in
+`replacement-reference-final-{writer,check}.log`. Earlier partial replacement
+receipts retain their then-pending runtime classification. The preceding
+fallible nested freeze had 251/250/8,295; filesystem had 251/250/8,259;
+reusable regex had 250/249/8,220; archive had 250/249/8,197. Earlier
+language-adoption/AtomicFile inventory had 246 pages, 245 modules and 8,119
+markers. Each retains its guide-defined source and runtime scope.
 
 ## Source boundaries
 

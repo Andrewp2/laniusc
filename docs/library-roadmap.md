@@ -30,7 +30,7 @@ package distribution is a separate deliverable.
 | Fundamental values | Option, Result, ordering, comparison, hashing, cloning, explicit errors | Generic Option/Result execute; partial equality/order are distinct from total equality/order, with explicit total float keys. Explicit TryClone/Destroy protocols, String implementations and opt-in exact scalar/Option/Result/Pair compositions execute with typed errors and manual memory-owner release. True empty Infallible errors retain the existing enum tag layout; nested owners and typed rollback pass executable tests. Some generic forwarding and record extraction compositions remain compiler dependencies; automatic ownership and implicit derive/move/drop remain |
 | Numbers | Every primitive width, checked/wrapping/saturating arithmetic, conversions, bit operations, floating-point utilities | Canonical primitive-width arithmetic, bits and conversion policies execute; seven obsolete number/byte helper modules are removed and their ordinary consumers migrated. Pointer widths explicitly describe x86_64. Binary32/binary64 bit, rounding, square-root, decimal and precision-formatting APIs execute, as do full-range binary64 elementary functions with documented accuracy evidence. Native floats use partial comparison with explicit total keys. Represented two-word values remain an explicit separate API |
 | Borrowed data | Arrays, slices, ranges, searching, sorting, partitioning, copying | Generic algorithms and counted View values execute, including subviews, checked mutations and cursors; initial physical counts still require compiler length projection |
-| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Recoverable one-item lookahead, relative/MAX position search and ordinary/custom extrema execute with explicit first-minimum/last-maximum tie policies. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum/extrema, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque/hash/tree map/set and heap cursors transfer cleanup authority, retain exhausted backing until explicit finish, and recover valid remaining collections in O(1), with explicit nested cleanup. Hash traversal is unordered; tree and heap priority pulls use O(log n) removal. The unique-word application now publishes through the TreeSet owning cursor. Scan/TryScan and TryFlatten/TryFlatMap now share the canonical protocol with explicit inner retirement, updated-owner recovery and fused errors. Two direct public smokes, three semantic/model Rust gates and all four flatten_sum tests pass; all four direct strict-owner oracle groups pass 156 group cases including overlapping baselines and 132 individually reached OOM runs. Replacement sinks now have two semantic Rust gates, five negative-bound tests, five direct owner groups (219 overlapping cases/183 reached OOMs) and four direct latest-values groups (248 overlapping cases) accepted; direct oracle groups are not Rust-libtest receipts. Further adapters/consumers, other owning cursor families and language for-loop integration remain |
+| Iteration | Explicit iterator protocol, ranges, slices, collections, text, adapters, consumers | The shared fused Iterator<T> protocol executes for canonical slice/chunk/window cursors, full-domain i32 ranges, fixed-capacity Vec/Set, owned Vec/deque/heap/hash/tree map/set cursors, bitsets, Text bytes/scalars and text splits. Borrowed take/chain/map/zip/filter/filter_map/skip/take_while/skip_while, checked u64 enumeration, searches, boolean consumers and ordinary/fallible left folds execute with explicit effects and shallow cleanup. Recoverable one-item lookahead, relative/MAX position search and ordinary/custom extrema execute with explicit first-minimum/last-maximum tie policies. Bounded fallible transfer collects into fixed/owned Vec, deque, hash/tree maps and sets, and Min/Max heaps, returning rejected items and accepted-prefix progress. Map/set sinks reject duplicates while preserving stored representatives. Separate native models cover cursor state, selection/copy/callback order, short circuits, transfer recovery and source resumption; owner traces check allocation behavior. Range-dot, window-report, column-sum/extrema, word-sort and identifier-index programs exercise composition and errors. Owning Vec/deque/hash/tree map/set and heap cursors transfer cleanup authority, retain exhausted backing until explicit finish, and recover valid remaining collections in O(1), with explicit nested cleanup. Hash traversal is unordered; tree and heap priority pulls use O(log n) removal. The unique-word application now publishes through the TreeSet owning cursor. Scan/TryScan and TryFlatten/TryFlatMap share the canonical protocol with explicit inner retirement, updated-owner recovery and fused errors. Their accepted historical freeze has two direct public smokes, three semantic/model Rust gates, four fallible flatten_sum tests and four direct owner groups (156 overlapping group cases/132 reached OOM runs). Ordinary Flatten/FlatMap now use the same engine with real empty Infallible retirement: a direct public smoke, two semantic/model Rust gates, three negative-bound tests, eight direct live-owner cases and the migrated ordinary flatten_sum groups pass. The current application has 219 overlapping direct group cases, separate from the older Rust-test receipt. Replacement sinks now have two semantic Rust gates, five negative-bound tests, five direct owner groups (219 overlapping cases/183 reached OOMs) and four direct latest-values groups (248 overlapping cases) accepted; direct oracle groups are not Rust-libtest receipts. Further adapters/consumers, other owning cursor families and language for-loop integration remain |
 | Text | Borrowed UTF-8, owned String, Unicode scalars, byte boundaries, search, split, trim, join, parse, formatting | Packed String, borrowed Text, scalar/word iteration, join/repeat, integer/float conversion, caller-buffer Display, runtime format strings and owned formatting execute. Alignment counts scalars and numeric precision rounds exact binary values. Optional extended modules provide Unicode 17 full casing, normalization, default word/grapheme boundaries and an explicit terminal width policy. Runtime formats also render to generic byte writers through bounded caller scratch, with preflight validation, exact accepted-prefix failures and a direct-call limit. Richer format controls and collation remain |
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Opt-in deep HashMap cloning executes with independent nested owners and typed key/value failure cleanup; opt-in recursive deque cloning also executes with logical ring and owned-error rollback coverage. Opt-in deep heap cloning also executes with Min/Max priority and nested/owned-error failure coverage. Opt-in deep TreeMap cloning also executes with sorted staging, independent nested owners, typed key/value rollback and empty/zero-sized coverage. Existing inherent collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. Opt-in deep HashSet and TreeSet cloning also execute with typed rollback and representative-preserving models. The protected std::vec/heap migration, additional owner compositions and automatic ownership remain |
@@ -533,7 +533,7 @@ than a request to replace implementation work with more tests.
 | Area | Current evidence | Remaining work |
 | --- | --- | --- |
 | Values, memory and collections | Explicit TryClone/Destroy and manual owners execute; public borrowed views still rely on valid backing/lifetimes. The protected `std::vec` identity remains in compiler/extraction use. | Finish layout/manual-owner consolidation and remaining generic compositions; coordinate protected migration, over-aligned allocation and language lifetime/destruction support with compiler work. Revalidate old reductions before calling them solved or currently blocking. |
-| Iteration | Shared forward iteration, scan/nested traversal and bounded transfer retain their accepted finite scopes. Replacement sinks/helper now pass semantic/shape, negative-bound, strict-owner/reached-OOM and real-application gates with pre/postcommit recovery. | Further adapters/consumers remain, with explicit cleanup through the canonical protocol. Preserve manual borrowed lifetimes, nonreentrancy and finite work/target limits; the separate zero-sized function-return dependency remains in the compiler ledger. |
+| Iteration | Shared forward iteration, scan/nested traversal and bounded transfer retain their accepted finite scopes. Ordinary Flatten/FlatMap now pass semantic/shape, negative-bound, eight live-owner cases and the migrated flatten_sum groups through the same nested engine. Replacement sinks/helper pass semantic/shape, negative-bound, strict-owner/reached-OOM and real-application gates with pre/postcommit recovery. | Further adapters/consumers remain, with explicit cleanup through the canonical protocol. Preserve manual borrowed lifetimes, nonreentrancy and finite work/target limits; the separate zero-sized function-return dependency remains in the compiler ledger. |
 | Threads and synchronization | `std::thread` declares runtime externs but marks service 8 unbound; no working source atomic/mutex/channel library is present. The checked C profile has no function-pointer entry or C Boolean result. | Checked worker entry, runtime context/lifetime and memory-order admission precede usable thread/join/atomic/synchronization/channel APIs. Poll scheduling is not worker execution. See the [concurrency dependencies](library-concurrency-dependencies.md). |
 | Files, paths and processes | FileOps, directory walking, process groups, TempFile and anchored rename/unlink execute on their documented Linux profiles. AtomicFile/KV has finite local-Linux publication/failure/recovery receipts; descriptor-relative directory creation/removal passes 55 process invocations. Checked link/readlink and permissions pass 139 accepted group cases; mktemp_dir passes 48 process invocations. TempDir passes 46 accepted group cases across four groups. | Automatic owner destruction, concurrent spawn, group escape/containment and other platform bindings retain separate contracts. Preserve each receipt's overlap and finite target scope. Single-name publication does not supply locking or multi-file transactions. |
 | Connected protocols | HTTP/HTTPS and DNS transports execute with explicit numeric endpoints. NSS resolution is synchronous. WebSocket implements request/frame processing but explicitly has no accept-response validation or transport. | Usable resolving/URL policy, broader client orchestration, keepalive/pooling and connected WebSocket workflows remain. HTTP upgrade needs an explicit unread-byte/transport ownership handoff. Do not infer mixed invalid/valid mutual-TLS concurrency from sequential matrices. |
@@ -544,6 +544,47 @@ than a request to replace implementation work with more tests.
 | Application and media utilities | CLI event parsing, settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows execute. | CLI subcommands/automatic usage/completion/response files, richer configuration discovery/validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
+
+### Accepted ordinary nested iteration
+
+The [ordinary contract](stdlib-infallible-nested.md) and
+[plan](library-infallible-nested-plan.md) add `Flatten` and `FlatMap` with plain
+items and ordinary mapping. The real empty `Infallible` error specializes the
+existing retirement protocol; the shared engine and earlier bodies are
+unchanged. Construction remains lazy, retirement precedes another outer pull,
+and explicit take/finish preserves actual updated-inner recovery. Owning
+inners require real retirement, with manual backing and yielded-value lifetimes.
+
+Core source `5034fbac...` has direct public compile/native admission. Two
+semantic Rust tests pass together in 9.38s after a separate 1.76s build:
+24 model schedules in one native process plus optional/Result/wide, actual
+positive/negative-stride, zero-sized and Scan/Take composition. Three negative
+Rust tests pass in 4.77s after a separate 1.80s build; their source-local
+LNC0008 rejections establish no native behavior.
+
+All eight direct strict-owner cases pass: Vec/physically wrapped Deque ×
+Flatten/FlatMap × full/early-take-resume. Four live ACK checkpoints check exact
+owner partitions, held output and pre-exit mappings/descriptors. No source
+allocation attempt is permitted after setup, including callbacks and recovery.
+This is not a Rust-libtest receipt or an OOM campaign. The owner receipt is
+`infallible-nested-owners-lifecycle-first.log`, with probe/ELF/oracle prefixes
+`0a8aa0d4...`/`530cbe74...`/`7f7c77c8...`; 25 CPU controls are separate.
+
+Current [flatten_sum](stdlib-flatten-sum.md#current-ordinary-adapter-receipts),
+source `65cfcdfc...`, passes all four direct oracle groups: models138,
+bounds54, allocations11 (baseline plus ten reached OOMs) and faults16.
+These total 219 overlapping group cases, not four current Rust-libtest passes.
+Logs under `target/stdlib-work/` use
+`infallible-flatten-sum-{models,bounds,allocations,faults}-first.log`;
+semantic/negative logs are `infallible-nested-model-shapes-first.log` and
+`infallible-nested-bounds-first.log`. Nine semantic CPU controls are separate;
+unchanged app oracle controls were not rerun.
+
+The selected increment is accepted for native Linux x86_64 CPU output from the
+GPU compiler. Earlier fallible-adapter receipts and the older application
+timing retain their historical source scope. No current app timing, user GPU
+execution or compiler-speed ratio follows. Further iterator work and the full
+library goal remain open.
 
 ### Accepted replacement sinks
 
@@ -591,12 +632,13 @@ semantic/payload Rust tests pass in 9.31s
 (`nested-public-models-shapes-first.log`): 360 nested/672 scan binary command
 scenarios and executable nested/wide/array/strided/zero-sized payload checks.
 Their two registered smoke libtests were filtered out; this is not an all-five
-libtest receipt. All four [flatten_sum tests](stdlib-flatten-sum.md) pass 219
+libtest receipt. All four [earlier fallible flatten_sum tests](stdlib-flatten-sum.md#historical-fallible-adapter-receipts) pass 219
 process group cases: models138/bounds54 in 8.51s and allocations11/faults16 in
 8.23s, with setup/baseline overlap. Allocation scope is a baseline and all ten
 reached source OOMs. Eighteen model and eighteen app CPU controls are separate.
 
-Core source remains `7256a394...`, app `946043fe...`. All four direct strict
+This historical freeze is core `7256a394...`, app `946043fe...`; the ordinary
+application migration has separate current receipts above. All four direct strict
 owner groups pass against one retained ELF: lifecycle14/OOM0, flatten30/OOM28,
 Vec56/OOM52 and Deque56/OOM52. These total 156 group cases with overlapping
 baselines and 132 individually reached OOM runs; they are not four passing
@@ -614,12 +656,11 @@ and explicit generic cursor locals. Oracle lazy/eager counts were then
 corrected with the emitted ELF unchanged, preserving exact fault binding and
 all ledger assertions. These fixture/oracle changes needed no production or
 compiler source change. This selected increment is accepted. A separate
-65,536-value/3,072-row untraced application observation (2,048 empty rows) takes
+historical 65,536-value/3,072-row untraced application observation (2,048 empty rows) takes
 0.157614975s including launch/I/O/parsing/traversal/formatting/capture, with
 validation outside the timer. It adds no finite case, compiler benchmark or
 general ratio. The reference records current acceptance separately from source
-inventory. The full library goal, replacement sinks and further iterator work
-remain open.
+inventory. The full library goal and further iterator work remain open.
 
 ### Accepted filesystem increment
 
@@ -694,6 +735,14 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [ordinary nested-iteration increment](library-infallible-nested-plan.md):
+  core `5034fbac...` adds Flatten/FlatMap through the existing shared engine and
+  true empty Infallible retirement. One direct public smoke, two semantic Rust
+  gates, three negative-bound Rust tests and eight direct live-owner cases pass.
+  The model covers 24 schedules in one native process. Current flatten_sum
+  `65cfcdfc...` passes four direct oracle groups totaling 219 overlapping cases,
+  including ten reached application OOMs; this is not a four-Rust-libtest
+  receipt. Manual lifetimes, explicit recovery and outer-work bounds remain.
 - Accepted [replacement-sink increment](library-replacement-sinks-plan.md):
   frozen five-file implementation, two direct admissions, two semantic/shape
   Rust gates, five negative-bound tests, five direct strict-owner groups
@@ -707,7 +756,7 @@ the rest of the family scope above stays open.
   and explicit value-transfer retirement/recovery. Two direct public smokes
   execute; three semantic/model Rust tests pass in 9.31s (360 nested/672 scan
   binary commands plus generic payload checks). All four
-  [flatten_sum tests](stdlib-flatten-sum.md), app `946043fe...`, pass 219 process
+  [historical fallible flatten_sum tests](stdlib-flatten-sum.md#historical-fallible-adapter-receipts), app `946043fe...`, pass 219 process
   group cases across 8.51s/8.23s commands, including ten reached source OOMs.
   All four direct strict-owner groups pass on a retained ELF: 156 overlapping
   group cases and 132 individually reached OOM runs. This is separate from Rust

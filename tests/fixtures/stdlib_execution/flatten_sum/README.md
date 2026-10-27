@@ -1,12 +1,16 @@
 # Flatten-sum real application checks
 
-Status: all four application tests pass 219 process group cases across two
-native commands, including overlapping setup/baselines. This is not 219
-independent properties. The actual application is
+Status: ordinary `FlatMap` migration passes compiler admission and all four
+direct Python oracle groups: 219 process group cases with overlapping
+setup/baselines. Earlier fallible-adapter receipts are recorded separately below.
+The actual application is
 `sample_programs/library/flatten_sum.lani`; the
 [semantic guide](../../../../docs/stdlib-flatten-sum.md) defines its input,
 output, limits and manual-owner contracts. Production uses real public
-TryFlatMap/InnerRetirement/TryScan and owning Vec cursors.
+FlatMap/InnerRetirement/TryScan and owning Vec cursors. Its mapper transfers
+each row directly to IntoIter. Scalar-specific total retirement consumes and
+destroys the i64 cursor's remaining storage; Running receives plain i64 and
+retains checked overflow failure. No fallible finish error is discarded.
 
 Root serializes each compile/native gate; every command is bounded:
 
@@ -58,9 +62,39 @@ CPU-only preparation:
 timeout --kill-after=2s 100s python3 -B tests/fixtures/stdlib_execution/flatten_sum/oracle.py controls
 ```
 
-## Current finite native receipts
+## Current ordinary-adapter receipts
 
-Logs under `target/stdlib-work/`:
+Current application SHA-256:
+`65cfcdfc76f67bade6345ea75276f04cc7f9fa422b6c35c211f4f15d4f62e9fc`.
+The CLI contract, independent oracle and registered Rust driver are unchanged.
+Active inner recovery and unread outer-row cleanup retain their prior ordering.
+Current compiler admission passes in
+`target/stdlib-work/infallible-flatten-sum-admission-first.log`.
+
+| Current identity | SHA-256 |
+| --- | --- |
+| `stdlib/core/iter.lani` | `5034fbac8a84b1499af18fbaf2963d54da4452e633413d33804b154e1a108a64` |
+| `target/stdlib-work/infallible-flatten-sum.elf` | `2707585b5eb6d58517cc7e35ad67c4c42fb83d0786b17642cbdc006fcf1f4edf` |
+| Compiler CLI | `e8ad0014f4eb54595da04c1e98521cd0bf4e18db273538203416e1fd2f20e5b9` |
+
+All four direct Python oracle groups pass against that retained ELF:
+
+| Log under `target/stdlib-work/` | Accepted process group cases |
+| --- | --- |
+| `infallible-flatten-sum-models-first.log` | 138 |
+| `infallible-flatten-sum-bounds-first.log` | 54 |
+| `infallible-flatten-sum-allocations-first.log` | 11: one baseline plus all ten reached source OOMs |
+| `infallible-flatten-sum-faults-first.log` | 16 |
+
+Total: 219 group cases with overlapping setup/baselines, not 219 independent
+properties. These are separate direct invocations, not a fresh four-Rust-test
+pass or driver-build receipt. The unchanged registered driver and oracle
+identities appear in the historical table below. No current scale observation
+or general performance claim follows from the older source's timing.
+
+## Historical fallible-adapter native receipts
+
+These logs under `target/stdlib-work/` cover the earlier `TryFlatMap` source:
 
 | Log | Result |
 | --- | --- |
@@ -74,14 +108,14 @@ positions from verified executable allocation sites and requires exact
 instruction/argument/prefix binding and explicit release; no old allocation
 floor establishes this result.
 
-| Accepted source | SHA-256 |
+| Historically accepted source | SHA-256 |
 | --- | --- |
 | `sample_programs/library/flatten_sum.lani` | `946043fe6f13dfcd76c8266cb5950e5b00dac381b63f98259e9bf4cac23a7fd1` |
 | `stdlib/core/iter.lani` | `7256a39462db691ece403a6d9a409947f7fafa7919783be474d510f1bf63ce3c` |
 | `tests/stdlib_flatten_sum_execution.rs` | `2f4ebf9d43577a3b6eb7c6da1652693c38470d7a92a6b19e24536ed8586ab739` |
 | `oracle.py` | `444831c2770a1b9ca8ad98e594a665675ed0f4498b4dd0319affa6a9042ec563` |
 
-These run as native Linux x86_64 CPU code emitted by the GPU compiler on
+Those tests ran as native Linux x86_64 CPU code emitted by the GPU compiler on
 kernel `7.0.0-38-generic`, with local ext4 `/tmp` evidence. They make no other
 host/user GPU-kernel or universal throughput claim. The earlier direct CLI
 admission and three-row/four-value native smoke overlap this workflow; their
@@ -93,7 +127,7 @@ Its initial E0308 (`nested-semantic-app-drivers-first-build.log`) was in the sep
 `stdlib_nested_iteration_execution.rs` harness; it did not change this app,
 oracle or accepted byte/ownership contracts.
 
-Eighteen CPU controls separately pass byte grammar/overflow, source literal
+Eighteen CPU controls separately passed byte grammar/overflow, source literal
 lengths and injection reachability/result/site/prefix binding. Only this
 dedicated Rust driver was formatted with `--config skip_children=true`.
 The fixture author made no additional Cargo/GPU/native run while finalizing
@@ -103,7 +137,7 @@ remains open.
 
 ## Separate scale observation
 
-`nested-flatten-sum-scale-first.log` records one untraced execution reusing
+The historical `nested-flatten-sum-scale-first.log` records one untraced execution reusing
 accepted ELF SHA-256
 `906488cc3febca5cf7577466bbed9ff526cd63e0e5ec4a5a64156a1bd0682d35`,
 with unchanged app `946043fe...` and core `7256a394...`. It processes 3,072

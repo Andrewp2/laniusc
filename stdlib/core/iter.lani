@@ -10,6 +10,7 @@
 // copies share upstream references. Discarded transferred owners can leak;
 // owning-cursor Destroy helpers cannot recover items no longer in the source.
 module core::iter;
+import core::clone_values;
 import core::cmp;
 import core::option;
 import core::ordering;
@@ -119,7 +120,12 @@ pub enum NestedFinishError { Active }
 struct NestedState<J> { active: core::option::Option<J>, done: bool }
 pub struct TryFlatten<I,J,R,T,E> { source: &I, retirement: &R, state: NestedState<J> }
 pub struct TryFlatMap<I,M,R,S,J,T,E> { source: &I, mapper: &M, retirement: &R, state: NestedState<J> }
+// Ordinary facades require a genuinely infallible retirement policy. They use
+// the same state/traversal and manual-owner rules as their Try counterparts.
+pub struct Flatten<I,J,R,T> { source: &I, retirement: &R, state: NestedState<J> }
+pub struct FlatMap<I,M,R,S,J,T> { source: &I, mapper: &M, retirement: &R, state: NestedState<J> }
 struct NestedIdentity<J,E> {}
+struct NestedLift<M,S,J> { mapper: &M }
 pub struct Zip<A, B, T, U> { left: &A, right: &B, done: bool }
 pub struct Enumerate<I, T> { source: &I, next_index: u64, max_used: bool, done: bool }
 pub struct Filter<I, P, T> { source: &I, predicate: &P, done: bool }
@@ -239,6 +245,26 @@ pub fn try_flat_map<I,M,R,S,J,T,E>(source: &I, mapper: &M, retirement: &R) -> Tr
         J: Iterator<T>, R: InnerRetirement<J,E> {
     let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
     return TryFlatMap { source: source, mapper: mapper, retirement: retirement, state: state };
+}
+
+// No eager pull/allocation/default J. Infallible is the existing empty enum,
+// not an inhabited sentinel. Policies with reportable cleanup errors must use
+// try_flatten; an ordinary policy may not silently ignore such a failure.
+pub fn flatten<I,J,R,T>(source: &I, retirement: &R) -> Flatten<I,J,R,T>
+    where I: Iterator<J>, J: Iterator<T>, R: InnerRetirement<J,core::clone_values::Infallible> {
+    let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
+    return Flatten { source: source, retirement: retirement, state: state };
+}
+
+// Mapper returns J directly; fallible construction belongs to try_flat_map.
+// Caller owns mapper/state/backing lifetime. Returned J cannot borrow temporary
+// call-local storage. Empty-inner work, nonreentry and yielded-borrow lifetimes
+// are identical to try_flatten/try_flat_map, including explicit early recovery.
+pub fn flat_map<I,M,R,S,J,T>(source: &I, mapper: &M, retirement: &R) -> FlatMap<I,M,R,S,J,T>
+    where I: Iterator<S>, M: Mapper<S,J>, J: Iterator<T>,
+        R: InnerRetirement<J,core::clone_values::Infallible> {
+    let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
+    return FlatMap { source: source, mapper: mapper, retirement: retirement, state: state };
 }
 
 // Selection callbacks reuse Mapper: bool selects an original shallow item,
@@ -821,6 +847,30 @@ pub impl<J,E> Mapper<J,core::result::Result<J,E>> for NestedIdentity<J,E> {
     pub fn apply(&self, value: J) -> core::result::Result<J,E> { return core::result::Ok(value); }
 }
 
+// Call-scoped bridge only. It borrows the actual caller mapper; neither this
+// record nor its reference is ever retained by the nested traversal engine.
+impl<M,S,J> NestedLift<M,S,J> {
+    fn borrow(&self) -> &NestedLift<M,S,J> { return self; }
+}
+pub impl<M,S,J> Mapper<S,core::result::Result<J,core::clone_values::Infallible>> for NestedLift<M,S,J>
+    where M: Mapper<S,J> {
+    pub fn apply(&self, value: S) -> core::result::Result<J,core::clone_values::Infallible> {
+        let mapper: &M = self.mapper;
+        let inner: J = mapper.apply(value);
+        return core::result::Ok(inner);
+    }
+}
+
+// Only the engine's outer transport Result is removed. If T is itself an
+// Option or Result its None/Err remains an ordinary yielded item. No fallible
+// error is erased: a lawful value of Infallible cannot be constructed.
+fn infallible_nested_item<T>(item: core::option::Option<core::result::Result<T,core::clone_values::Infallible>>)
+    -> core::option::Option<T> {
+    if (item.is_none()) { return core::option::None(); }
+    let value: core::result::Result<T,core::clone_values::Infallible> = item.unwrap();
+    return core::option::Some(value.unwrap());
+}
+
 // The only nested traversal engine. It borrows these arguments for this call
 // and stores only transferred J values. No local mapper/provider escapes.
 // Move out and clear BEFORE local next or policy calls. Reinstall a mutated
@@ -899,6 +949,48 @@ pub impl<I,M,R,S,J,T,E> Iterator<core::result::Result<T,E>> for TryFlatMap<I,M,R
         let mapper: &M = self.mapper;
         let retirement: &R = self.retirement;
         return nested_next<I,M,R,S,J,T,E>(state,source,mapper,retirement);
+    }
+}
+
+pub impl<I,J,R,T> Flatten<I,J,R,T> {
+    pub fn borrow(&self) -> &Flatten<I,J,R,T> { return self; }
+    pub fn has_active(&self) -> bool { return self.state.has_active(); }
+    pub fn take_active(&self) -> core::option::Option<J> { return self.state.take_active(); }
+    pub fn try_finish(&self) -> core::option::Option<NestedFinishError> { return self.state.try_finish(); }
+}
+
+pub impl<I,J,R,T> Iterator<T> for Flatten<I,J,R,T>
+    where I: Iterator<J>, J: Iterator<T>, R: InnerRetirement<J,core::clone_values::Infallible> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let state: &NestedState<J> = self.state.borrow();
+        let source: &I = self.source;
+        let retirement: &R = self.retirement;
+        let identity: NestedIdentity<J,core::clone_values::Infallible> = NestedIdentity {};
+        let item: core::option::Option<core::result::Result<T,core::clone_values::Infallible>> =
+            nested_next<I,NestedIdentity<J,core::clone_values::Infallible>,R,J,J,T,core::clone_values::Infallible>(state,source,identity.borrow(),retirement);
+        return infallible_nested_item<T>(item);
+    }
+}
+
+pub impl<I,M,R,S,J,T> FlatMap<I,M,R,S,J,T> {
+    pub fn borrow(&self) -> &FlatMap<I,M,R,S,J,T> { return self; }
+    pub fn has_active(&self) -> bool { return self.state.has_active(); }
+    pub fn take_active(&self) -> core::option::Option<J> { return self.state.take_active(); }
+    pub fn try_finish(&self) -> core::option::Option<NestedFinishError> { return self.state.try_finish(); }
+}
+
+pub impl<I,M,R,S,J,T> Iterator<T> for FlatMap<I,M,R,S,J,T>
+    where I: Iterator<S>, M: Mapper<S,J>, J: Iterator<T>,
+        R: InnerRetirement<J,core::clone_values::Infallible> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let state: &NestedState<J> = self.state.borrow();
+        let source: &I = self.source;
+        let mapper: &M = self.mapper;
+        let retirement: &R = self.retirement;
+        let lifted: NestedLift<M,S,J> = NestedLift { mapper: mapper };
+        let item: core::option::Option<core::result::Result<T,core::clone_values::Infallible>> =
+            nested_next<I,NestedLift<M,S,J>,R,S,J,T,core::clone_values::Infallible>(state,source,lifted.borrow(),retirement);
+        return infallible_nested_item<T>(item);
     }
 }
 
