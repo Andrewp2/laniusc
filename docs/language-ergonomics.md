@@ -43,8 +43,8 @@ function whose error type is `i32`, and an `Option` does not become a
 - "`?` returns this error from a function whose result type differs" when the
   enum or the exact error type does not match.
 
-Decision: README "Honesty" forbids implicit conversions, so an error type
-change is written out, e.g. with `map_err`.
+Decision: no implicit conversions. An error type change is written out,
+e.g. with `map_err`, so the reader sees each conversion at its site.
 
 Implementation:
 - The parser has a postfix `?` production (HIR kind 36).
