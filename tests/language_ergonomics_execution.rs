@@ -68,6 +68,16 @@ fn try_keeps_the_error_and_changes_the_payload_type() {
 }
 
 #[test]
+fn try_in_a_generic_body_unwraps_an_aggregate_payload() {
+    assert_exit("try_generic_aggregate.lani", 49);
+}
+
+#[test]
+fn try_passes_an_aggregate_payload_as_a_call_argument() {
+    assert_exit("try_aggregate_argument.lani", 127);
+}
+
+#[test]
 fn try_needs_a_result_or_option_operand() {
     assert_rejected(
         "try_not_result.lani",

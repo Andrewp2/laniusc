@@ -1,5 +1,7 @@
 # Regex workspace compiler admission controls
 
+Status (2026-10-27): fixed on `lang`. The failing sites pass an aggregate `?` payload straight to a call (`self.owned_search(input(text)?, ...)`). The argument snapshot row appended to the `?` rows kept the default schedule and ran before the payload load. `try_rows` now schedules it after row 12. The patched module from `try-syntax.patch` compiles. Covered by `try_passes_an_aggregate_payload_as_a_call_argument`.
+
 These Lanius controls narrow the compiler diagnostic observed while
 compiling the reusable regex increment. The six small reductions import no
 `ext::regex`, parser, matcher, or extended-library source. The durable module

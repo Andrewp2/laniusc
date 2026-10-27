@@ -1,0 +1,25 @@
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+struct Pair { a: i32, b: i32 }
+
+// In a generic body the payload type Option<T> has a type parameter.
+fn flatten<T>(value: Option<Option<T>>) -> Option<T> {
+    return value?;
+}
+
+fn main() -> i32 {
+    let present: Option<Option<i32>> = Some(Some(-7));
+    let hollow: Option<Option<i32>> = Some(None());
+    let absent: Option<Option<i32>> = None();
+    if (flatten(present).unwrap() != -7) { return 1; }
+    if (flatten(hollow).is_some()) { return 2; }
+    if (flatten(absent).is_some()) { return 3; }
+    let pair: Option<Option<Pair>> = Some(Some(Pair { a: 4, b: 9 }));
+    let got = flatten(pair).unwrap();
+    let none: Option<Option<Pair>> = Some(None());
+    if (flatten(none).is_some()) { return 4; }
+    return got.a * 10 + got.b; // 49
+}

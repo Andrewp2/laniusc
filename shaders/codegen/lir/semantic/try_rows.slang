@@ -148,8 +148,22 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint2 value_layout = reference_layout(semantic_expr_ref_tag[node], semantic_expr_ref_payload[node], hir_count);
     uint2 return_layout = uint2(function.result_type, function.result_word_count);
 
-    for (uint local_row = 0u; local_row < SEMANTIC_TRY_ROW_COUNT; local_row++)
+    // Rows past the 13 (an argument snapshot, projection loads) keep their
+    // scatter contents but must follow row 12 in this schedule.
+    uint row_count = min(semantic_lir_count[node], 128u);
+    for (uint local_row = 0u; local_row < row_count; local_row++)
     {
+        if (local_row >= SEMANTIC_TRY_ROW_COUNT)
+        {
+            uint appended = first + local_row;
+            SemanticLirSchedule tail;
+            tail.execution_region = hir.token_end > hir.token_start ? hir.token_end - 1u : hir.token_end;
+            tail.execution_rank = 0xffffffffu - hir.token_start;
+            tail.execution_tie =
+                (0x00ffffffu - min(semantic_execution_rank[node], 0x00ffffffu)) * 128u + local_row;
+            semantic_lir_schedule[appended] = target_schedule_pack(tail, gParams.schedule_packed_bits);
+            continue;
+        }
         uint row = first + local_row;
         SemanticLirOperands operands;
         operands.result = row;

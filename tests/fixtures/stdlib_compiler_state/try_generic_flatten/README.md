@@ -1,5 +1,7 @@
 # Generic nested Option payload through `?`
 
+Status (2026-10-27): fixed on `lang`. The type checker now gives `value?` a payload type that contains type parameters (`Option<T>`); before, the expression had no type and its payload load had width 0. Covered by `try_in_a_generic_body_unwraps_an_aggregate_payload` in `tests/language_ergonomics_execution.rs`.
+
 These diagnostic-only pairs preserve a compiler dependency found while adopting
 the language ergonomics features from `origin/lang` at `0d2e4a07`. They are not
 registered as passing executable tests. No compiler or ABI change is included.
