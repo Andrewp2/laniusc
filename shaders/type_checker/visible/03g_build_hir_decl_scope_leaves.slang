@@ -52,6 +52,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint leaf = linear_thread_id(dtid);
     if (leaf >= gParams.leaf_base)
         return;
+    // Readers size their search by this layout, not by their unit's tokens.
+    if (leaf == 0u)
+        hir_visible_decl_scope_tree[0u] = gParams.leaf_base;
 
     uint active_count = active_decl_count();
     uint start = leaf * HIR_VISIBLE_DECL_ROW_BLOCK_SIZE;

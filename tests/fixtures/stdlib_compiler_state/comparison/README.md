@@ -1,5 +1,11 @@
 # Comparison compiler dependencies
 
+Status (2026-10-27) on `lang`:
+
+- `blanket-partial.lani` compiles with `blanket-root` and exits 0.
+- `generic-record-vec-at.lani` compiles and exits 0. It no longer gets SIGSEGV.
+- `generic-partial-cmp-match.lani` still fails, in `modules/10m3_validate_imported_unit_patterns`. It is not about generics: `match (a.partial_cmp(b)) { Less -> ... }` on `i32` fails the same way. A dependency method call's nongeneric result gets a checked row only from a receiving statement (`dependencies/08a`). A match scrutinee keeps the callee's external canonical type node, which is a different page node from the pattern's enum node, so the scrutinee check finds no row. Matching the result of a local generic function that returns `PartialOrdering` works.
+
 These failing reductions are outside the passing library surface. They were
 reproduced on 2026-10-23 without editing compiler/runtime code. The adjacent
 controls execute on x86_64 Linux. See `docs/library-dependencies.md` and

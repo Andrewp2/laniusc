@@ -95,8 +95,6 @@ void main(uint3 dtid: SV_DispatchThreadID)
     uint flags = wasm_lir_supported(core) || inline_host_operation ||
         imported_host_operation || supported_intrinsic
         ? 0u : TARGET_LIR_FLAG_UNSUPPORTED;
-    // Host/intrinsic support cannot override an unsupported checked width.
-    if (core.type_id == SCALAR_F64) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     if (wasm_plan_unsupported) flags |= TARGET_LIR_FLAG_UNSUPPORTED;
     // An `||` negation whose operand is not the just-stored left side.
     if (wasm_short_circuit_not(core) && !reload_short_circuit)
@@ -180,6 +178,20 @@ void main(uint3 dtid: SV_DispatchThreadID)
                 : local_row == 1u ? operands.b : local_row == 2u ? 32u : 0u;
         }
     }
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONST_F64)
+    {
+        // The bit pattern as an i64 constant (the CONST_I64 rows above),
+        // then f64.reinterpret_i64.
+        uint bits_rows = wasm_const_f64_rows(operands) - 1u;
+        if (local_row == bits_rows) opcode = WASM_LIR_OP_F64_REINTERPRET_I64;
+        else if (bits_rows == 1u) opcode = WASM_LIR_OP_I64_CONST;
+        else opcode = local_row == 0u ? WASM_LIR_OP_I64_CONST_U32
+            : local_row <= 2u ? WASM_LIR_OP_I64_CONST
+            : local_row == 3u ? WASM_LIR_OP_I64_SHL : WASM_LIR_OP_I64_OR;
+        immediate = local_row >= bits_rows ? 0u
+            : bits_rows == 1u || local_row == 0u ? operands.a
+            : local_row == 1u ? operands.b : local_row == 2u ? 32u : 0u;
+    }
     else if (opt_ir_op(core) == SEMANTIC_LIR_OP_CONVERT)
     {
         // The class change, then renormalize a narrow i32-class target.
@@ -205,7 +217,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
             flags |= TARGET_LIR_FLAG_UNSUPPORTED;
         if (local_row == 0u) opcode = shift_amount_opcode;
     }
-    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE && core.type_id != TY_FLOAT)
+    else if (opt_ir_op(core) == SEMANTIC_LIR_OP_NEGATE &&
+             !wasm_class_is_float(wasm_scalar_class(core.type_id)))
     {
         bool wide = wasm_scalar_class(core.type_id) == WASM_CLASS_I64;
         opcode = local_row == 0u

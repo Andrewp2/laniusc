@@ -1,5 +1,7 @@
 # Zero-sized return call boundary
 
+Status (2026-10-27): fixed on `lang`. An x86 local call row whose result is zero words kept its argument count in the result-width operand. With three arguments the emitter then passed a hidden result pointer and clobbered the first argument. `repro.lani` and its variants exit 0.
+
 Status: confirmed compiler/runtime dependency on native Linux x86_64 programs
 emitted by the GPU compiler. No compiler, runtime or ABI implementation is
 changed by these fixtures. The exact responsible compiler pass is not isolated.

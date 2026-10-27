@@ -70,34 +70,13 @@ uint active_match_payload_count()
 #include "receiver_layout.slang"
 #include "body_return.slang"
 
+// A payload binder's row. Variant sub-patterns are checks, not binders.
 uint match_payload_for_pattern(uint node)
 {
-    uint lo = 0u;
-    uint hi = active_match_payload_count();
-    while (lo < hi)
-    {
-        uint mid = lo + (hi - lo) / 2u;
-        if (compact_match_payloads[mid].pattern < node) lo = mid + 1u;
-        else hi = mid;
-    }
-    if (lo >= active_match_payload_count() ||
-        compact_match_payloads[lo].pattern != node)
-        return LIR_INVALID;
-    uint declaration_token = semantic_value_id[node];
-    uint variant_count = min(compact_variant_count[0u], gParams.n_hir_nodes);
-    uint variant_lo = 0u;
-    uint variant_hi = variant_count;
-    while (variant_lo < variant_hi)
-    {
-        uint mid = variant_lo + (variant_hi - variant_lo) / 2u;
-        if (compact_variants[mid].name_token < declaration_token)
-            variant_lo = mid + 1u;
-        else
-            variant_hi = mid;
-    }
-    return variant_lo < variant_count &&
-        compact_variants[variant_lo].name_token == declaration_token
-            ? LIR_INVALID : lo;
+    uint row = semantic_match_payload_row(node);
+    return row != LIR_INVALID &&
+        semantic_match_variant_ordinal(node, gParams.n_hir_nodes) == LIR_INVALID
+        ? row : LIR_INVALID;
 }
 
 // Pattern syntax is matched against, never evaluated.
@@ -182,6 +161,11 @@ void count_original(uint3 dtid)
     {
         HirCore core = compact_hir_core[node];
         HirPayload payload = compact_hir_payload[node];
+        if (semantic_match_check_row(node, count) != LIR_INVALID)
+        {
+            semantic_lir_count[node] = SEMANTIC_MATCH_CHECK_ROWS;
+            return;
+        }
         uint match_payload = match_payload_for_pattern(node);
         if (match_payload != LIR_INVALID)
         {

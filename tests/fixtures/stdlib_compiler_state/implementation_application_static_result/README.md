@@ -1,5 +1,7 @@
 # Static implementation result inside a generic record expression
 
+Status (2026-10-27): fixed on `lang`. A static bound-trait call such as `W::echo(value)` has a checked result reference but no legacy scalar return code. The struct-literal field check read only that code, saw "unknown", and reported "expected generic parameter 33". The field check now accepts a call whose checked result is the field's expected reference. The original nested expression compiles and all of `main.lani`'s native assertions pass. The regression test is `a_static_bound_call_fills_a_generic_record_field` (`tests/fixtures/language/static_bound_call_in_record_field.lani`).
+
 This source-only snapshot preserves the exact original constant-application
 entry, imported implementation, and imported consumer from the first native-v2
 forwarding attempt. `SOURCES.sha256` identifies those three source files. It is

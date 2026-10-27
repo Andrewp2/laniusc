@@ -7773,7 +7773,7 @@ pub fn sum<const N: usize>(values: [i32; N]) -> i32 {
 }
 pub fn forward<const M: usize>(values: [i32; M]) -> i32 { return sum(values); }
 pub fn dimensions<const N: usize, const M: u32>(rows: [[i32; N]; M]) -> usize {
-    return N * 10 + M;
+    return N * 10 + (M as usize);
 }
 pub fn signed_length<const N: i32>(values: [i32; N]) -> i32 { return N; }
 pub fn shadow_local<const N: usize>(values: [i32; N]) -> i32 {
@@ -9471,7 +9471,6 @@ fn explicit_constant_arguments_reject_kind_and_arity_errors() {
         ("constant supplied for type", "fn keep<T>(v: T) -> T { return v; } fn main() -> i32 { return keep<3>(42); }"),
         ("missing interleaved constant", "fn keep<T, const N: usize>(v: T) -> T { return v; } fn main() -> i32 { return keep<i32>(42); }"),
         ("runtime value is not constant parameter", "fn length<const N: usize>() -> usize { return N; } fn main() -> i32 { let count = 3; let size = length<count>(); return 42; }"),
-        ("reserved invalid constant payload", "fn length<const N: usize>() -> usize { return N; } fn main() -> i32 { let size = length<4294967295>(); return 42; }"),
     ] {
         let error = common::run_gpu_codegen_with_timeout("invalid explicit constant header", move || {
             let compiler = pollster::block_on(laniusc_compiler::compiler::GpuCompiler::new()).expect("GPU compiler");
@@ -9483,6 +9482,18 @@ fn explicit_constant_arguments_reject_kind_and_arity_errors() {
         assert_eq!(diagnostic.code, "LNC0027", "{label}: {diagnostic:?}");
         assert!(diagnostic.primary_label.is_some(), "{label}: {diagnostic:?}");
     }
+}
+
+#[test]
+fn explicit_constant_arguments_keep_the_u32_max_value() {
+    // 0xffffffff is the GPU tables' invalid marker, but as a usize constant
+    // it is an ordinary value.
+    execute_with_status(
+        "u32 max constant argument",
+        "fn length<const N: usize>() -> usize { return N; } fn main() -> i32 { let size = length<4294967295>(); if (size != 4294967295) { return 1; } if (size + 1 != 4294967296) { return 2; } return 42; }",
+        b"",
+        42,
+    );
 }
 
 #[test]
@@ -10640,7 +10651,7 @@ fn qualified_enum_variants_bind_qualifier_scope_before_members() {
         "module core::left; pub enum Choice<T> { Left(T), Missing }").unwrap();
     std::fs::write(root.0.path().join("core/right.lani"),
         "module core::right; pub enum Choice<T> { Right(T), Missing }").unwrap();
-    let reject = |label: &str, source: &str| {
+    let reject_with = |label: &str, source: &str, codes: &[&str]| {
         let entry = common::TempArtifact::new("qualifier_scope", label, Some("lani"));
         entry.write_str(source);
         let entry_path = entry.path().to_owned(); let stdlib = root.0.path().to_owned();
@@ -10648,12 +10659,16 @@ fn qualified_enum_variants_bind_qualifier_scope_before_members() {
             pollster::block_on(compile_entry_to_x86_64_with_stdlib(&entry_path, &stdlib))
         }).expect_err("an invalid qualifier must not emit code");
         let diagnostic = error.to_public_diagnostic();
-        assert!(matches!(diagnostic.code.as_str(), "LNC0005" | "LNC0042"), "{label}: {error:?}");
+        assert!(codes.contains(&diagnostic.code.as_str()), "{label}: {error:?}");
         assert!(diagnostic.primary_label.is_some(), "{label}: {diagnostic:?}");
     };
+    let reject = |label: &str, source: &str| reject_with(label, source, &["LNC0005", "LNC0042"]);
+    // The local Choice binds the qualifier; it has no variant or associated
+    // function Imported, so the call does not resolve.
     for qualifier in ["Choice", "Choice<i32>"] {
-        reject("local type shadows imported variant owner", &format!(
-            "import core::choices; enum Choice<T> {{ Local(T) }} fn main() -> i32 {{ let wrong = {qualifier}::Imported(42); return 0; }}"));
+        reject_with("local type shadows imported variant owner", &format!(
+            "import core::choices; enum Choice<T> {{ Local(T) }} fn main() -> i32 {{ let wrong = {qualifier}::Imported(42); return 0; }}"),
+            &["LNC0027"]);
     }
     execute_with_stdlib("local qualifier and explicit imported qualifier coexist", r#"
 import core::choices;

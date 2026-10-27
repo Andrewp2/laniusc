@@ -1100,6 +1100,58 @@ static const uint WASM_LIR_OP_F32_CONVERT_I32_U = 0xb3u;
 static const uint WASM_LIR_OP_F32_CONVERT_I64_S = 0xb4u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_F32_CONVERT_I64_U = 0xb5u;
+// f64 values: arithmetic, comparison, conversion, and the bit pattern
+// reinterpretation that builds an f64 constant from i64 rows.
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_CONST = 0x44u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_EQ = 0x61u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_NE = 0x62u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_LT = 0x63u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_GT = 0x64u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_LE = 0x65u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_GE = 0x66u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_NEG = 0x9au;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_ADD = 0xa0u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_SUB = 0xa1u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_MUL = 0xa2u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_DIV = 0xa3u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_TRUNC_F64_S = 0xaau;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I32_TRUNC_F64_U = 0xabu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_TRUNC_F64_S = 0xb0u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_I64_TRUNC_F64_U = 0xb1u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F32_DEMOTE_F64 = 0xb6u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_CONVERT_I32_S = 0xb7u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_CONVERT_I32_U = 0xb8u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_CONVERT_I64_S = 0xb9u;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_CONVERT_I64_U = 0xbau;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_PROMOTE_F32 = 0xbbu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_REINTERPRET_I64 = 0xbfu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_LOAD = 0x2bu;
+// IR_OPCODE
+static const uint WASM_LIR_OP_F64_STORE = 0x39u;
 // IR_OPCODE
 static const uint WASM_LIR_OP_I32_EXTEND8_S = 0xc0u;
 // IR_OPCODE

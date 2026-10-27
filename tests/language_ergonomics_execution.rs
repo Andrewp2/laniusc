@@ -140,3 +140,43 @@ fn an_explicit_argument_that_contradicts_the_implementation_is_rejected() {
 fn a_receiving_type_that_contradicts_the_implementation_is_rejected() {
     assert_rejected("bound_conflicting_result.lani", &["LNC0008"]);
 }
+
+#[test]
+fn a_nested_variant_pattern_checks_its_payload_and_falls_through() {
+    assert_exit("nested_patterns.lani", 0);
+}
+
+#[test]
+fn nested_patterns_match_imported_and_generic_variants() {
+    assert_exit("nested_patterns_imported.lani", 0);
+}
+
+#[test]
+fn a_static_bound_call_fills_a_generic_record_field() {
+    assert_exit("static_bound_call_in_record_field.lani", 0);
+}
+
+#[test]
+fn a_receiver_binding_types_a_literal_argument() {
+    assert_exit("receiver_binds_literal_argument.lani", 0);
+}
+
+// The resident workspace is sized by the largest unit checked so far; this
+// preserved program's imports are larger than it. Name lookup must use the
+// scope tree's published layout, not one derived from this unit's tokens.
+#[test]
+fn name_lookup_uses_the_scope_tree_layout_of_a_larger_workspace() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let fixture = root.join("tests/fixtures/stdlib_compiler_state/cli_match_shadow");
+    let entry = fixture.join("original.lani");
+    let roots = laniusc_compiler::compiler::EntrySourceRoots {
+        stdlib_root: Some(root.join("stdlib")),
+        user_roots: vec![fixture.join("extended")],
+    };
+    common::run_gpu_codegen_with_timeout("cli_match_shadow", move || {
+        pollster::block_on(
+            laniusc_compiler::compiler::compile_entry_to_x86_64_with_source_roots(&entry, &roots),
+        )
+    })
+    .unwrap_or_else(|error| panic!("cli_match_shadow/original.lani: {error}"));
+}

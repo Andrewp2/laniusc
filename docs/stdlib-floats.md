@@ -172,9 +172,9 @@ The existing `f32` source-root loader test and floating-window application also
 pass. The selected native raytracer gate passes after replacing its Rust reference's
 unscaled Newton approximation with primitive `f32::sqrt`. The 19×10 native PPM
 is byte-for-byte identical to the previous standard-library implementation.
-Its separate static 16×9 `expected.ppm` disagrees with the corrected reference,
-so the fixture-oracle consistency test remains stale; that image was not changed
-in this milestone.
+Its separate static 16×9 `expected.ppm` disagreed with the corrected reference
+until 2026-10-27, when it was regenerated: the native x86-64 output and the Rust
+reference now produce the same bytes, and the fixture-oracle test passes.
 
 Reference/test code controls native processes and supplies independent
 expected values; all production behavior remains Lanius. No compiler, ABI,

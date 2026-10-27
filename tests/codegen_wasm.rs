@@ -2149,8 +2149,8 @@ fn main() -> i32 {
 #[test]
 fn wasm_executes_nested_f32_return_call_with_aggregate_receiver_arg() {
     common::require_node();
-    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
-        include_str!("../stdlib/core/f32.lani"),
+    let wasm = common::compile_source_with_stdlib_to_wasm_with_timeout(
+        "nested_f32_return_call_with_aggregate_receiver_arg",
         r#"
 module app::main;
 
@@ -2181,7 +2181,7 @@ fn main() -> i32 {
     return 1;
 }
 "#,
-    ])
+    )
     .expect("nested f32 return call with aggregate receiver arg should compile to WASM");
 
     let status = common::run_wasm_main_return_with_node(
@@ -2195,8 +2195,8 @@ fn main() -> i32 {
 #[test]
 fn wasm_executes_normalized_vector_dot_product() {
     common::require_node();
-    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
-        include_str!("../stdlib/core/f32.lani"),
+    let wasm = common::compile_source_with_stdlib_to_wasm_with_timeout(
+        "normalized_vector_dot_product",
         r#"
 module app::main;
 
@@ -2260,7 +2260,7 @@ fn main() -> i32 {
     return 1;
 }
 "#,
-    ])
+    )
     .expect("normalized vector dot product should compile to WASM");
 
     let status = common::run_wasm_main_return_with_node(
@@ -2431,8 +2431,8 @@ fn main() -> i32 {
 #[test]
 fn wasm_executes_imported_core_f32_sqrt_with_node() {
     common::require_node();
-    let wasm = common::compile_source_pack_to_wasm_with_timeout(&[
-        include_str!("../stdlib/core/f32.lani"),
+    let wasm = common::compile_source_with_stdlib_to_wasm_with_timeout(
+        "imported_core_f32_sqrt_with_node",
         r#"
 module app::main;
 
@@ -2446,7 +2446,7 @@ fn main() -> i32 {
     return 1;
 }
 "#,
-    ])
+    )
     .expect("imported core::f32 sqrt should compile to WASM");
 
     let status = common::run_wasm_main_return_with_node(

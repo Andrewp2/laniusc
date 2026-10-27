@@ -5,18 +5,11 @@
 # failure that is not listed.
 #
 # One test per line: test binary, test name, owner, reason.
-# Baseline: compiler_generic_types_execution at 5268ccec, whole binary
-# (ulimit -c 0, LANIUS_PROCESS_TEST_TIMEOUT_MS=5000): 481 tests, 7 failures.
-# The same 7 on 44de87da. The five constant tests are four separate causes
-# (P13 triage, 2026-10-18); none involves module constants (P3's fold).
+# compiler_generic_types_execution: its 7 baseline failures were fixed on
+# 2026-10-27 (constant environments, literal scalar conflicts, two stale
+# tests); the whole binary passes 483/483.
 
-compiler_generic_types_execution  constant_length_inference_executes_all_32_slots_locally_and_imported  TBD  inference loses a binding when a header has more than 32 generics in all (T + 32 constants, or T, U + 31; 32 constants alone pass)
-compiler_generic_types_execution  explicit_constant_arguments_reject_kind_and_arity_errors  TBD  stale row: 4294967295 is no longer a reserved payload (typed constant atoms); length<4294967295>() runs and returns it
-compiler_generic_types_execution  explicit_constant_arguments_reject_noninteger_parameter_types  TBD  stamp<1>() on const N: bool reports LNC0027 (kind) instead of LNC0006 (scalar conflict)
-compiler_generic_types_execution  generic_constant_values_execute_with_declared_types_and_lexical_scope  TBD  stale test: N * 10 + M with M: u32 is u32 + usize, the case 8a512e68 fixed in its method twin; passes with (M as usize)
-compiler_generic_types_execution  generic_constant_values_reject_noninteger_array_lengths  TBD  [i32; N] with const N: bool reaches LNC0047 at native layout instead of LNC0006
-compiler_generic_types_execution  qualified_enum_variants_bind_qualifier_scope_before_members  TBD  not triaged
-compiler_generic_types_execution  typed_array_receiver_executes_through_adjusted_borrow  TBD  not triaged
+sample_program_manifest  checked_sample_catalog_covers_required_runtime_facilities  TBD  random_fill (and three output samples) ignore SIGPIPE through std::signal, which reaches std::linux system calls the Wasm backend rejects (LNC0036); needs a platform-selection feature or a Wasm std::signal binding; the samples are tagged x86_64 until then
 
 # laniusc-compiler lib tests (cargo test -p laniusc-compiler --lib): the PEV GPU
 # tests below fail the same way in every P7a gate since before integ27.
@@ -66,3 +59,157 @@ type_checker_semantics  type_checker_accepts_array_length_from_fifth_const_gener
 type_checker_semantics  type_checker_rejects_overlapping_exact_and_generic_inherent_methods  TBD  rejected with LNC0027 "call resolution failed", not the expected "call does not match a resolved function or method"
 type_checker_semantics  type_checker_rejects_under_applied_inherent_impl_receiver_targets_on_gpu  TBD  rejected with LNC0021 "invalid trait implementation", not the expected "inherent impl target has the wrong number of type arguments"
 type_checker_semantics  type_checker_resolves_impl_parameter_before_same_named_nominal_on_gpu  TBD  valid source rejected with LNC0021 (invalid trait implementation)
+
+# type_checker_generics: these 2 predate the canonical type IDs' 32-slot
+# environments (listed as pre-existing in the 10-21 full run). Both use a
+# 129-parameter struct; LNC0047 detail 2 is the documented 32-parameter limit.
+type_checker_generics  type_checker_accepts_generic_parameter_list_beyond_stale_record_limit  TBD  LNC0047: the checked application exceeds 32 type parameters (canonical environment slots)
+type_checker_generics  type_checker_rejects_reused_wide_instance_argument_mismatch_after_claim_capacity  TBD  LNC0047 instead of the expected mismatch: same 32-parameter limit
+
+# Stdlib suites failing on base 61df289b (2026-10-27, first full stdlib_* run
+# of the Phase 1 tree). The first four were rerun at 61df289b itself and fail
+# the same way. The rest fail in a Python oracle, an inventory check or the
+# environment, not in compiler output; they were not rerun at the base.
+stdlib_atomic_file_execution  atomic_file_faults_preserve_visibility_prefix_recovery_and_cleanup  TBD  oracle: the checkpoint ledger requires the historical MAP_32BIT profile (full-width accounting not migrated); fails at 61df289b
+stdlib_atomic_file_execution  atomic_file_publication_orders_syncs_caches_commit_and_retries_directory_sync  TBD  same MAP_32BIT ledger assertion; fails at 61df289b
+stdlib_atomic_file_execution  atomic_file_publishes_binary_empty_large_and_anchored_destinations  TBD  same MAP_32BIT ledger assertion; fails at 61df289b
+stdlib_atomic_file_execution  atomic_file_validates_views_limits_and_bounded_write_attempts  TBD  same MAP_32BIT ledger assertion; fails at 61df289b
+stdlib_clone_execution  cloning_preserves_duplicate_borrowed_sources_and_independent_nested_owners  TBD  LNC0017 program catalog GPU admission/coherence failed [5,0,172,75,...]; fails at 61df289b
+stdlib_resolve_host_execution  every_observed_local_allocation_failure_releases_mappings_and_native_list  TBD  resolve-host oracle: request/role counts differ; fails at 61df289b
+stdlib_file_execution  std_file_public_functions_have_runtime_cases  TBD  inventory: std::file::open lacks a runtime case; fails at 61df289b
+stdlib_host_execution  std_io_decimal_public_functions_have_runtime_cases  TBD  inventory: std::io_decimal::write_u64 lacks a runtime case
+stdlib_linux_execution  builtin_name_counts_and_sparse_host_slots_stay_consistent  TBD  inventory: 79 builtin names, test expects 75
+stdlib_math_execution  elementary_functions_match_high_precision_general_range_reference  TBD  environment: the oracle imports mpmath, which is not installed
+stdlib_raw_host_width_execution  assembly_oracle_matches_changed_tables_and_shifted_neighbor_entries  TBD  oracle: runtime width arrays/offsets differ from the assembled source
+stdlib_raw_host_width_execution  clock_and_cwd_compare_full_capacities_before_host_access  TBD  setup file missing (NotFound) after the table oracle fails
+stdlib_raw_host_width_execution  finite_argument_environment_copies_keep_full_bounds_and_exact_key_identity  TBD  setup file missing (NotFound) after the table oracle fails
+stdlib_raw_host_width_execution  raw_allocation_high_word_is_transported_without_modulo_reduction  TBD  setup file missing (NotFound) after the table oracle fails
+stdlib_raw_host_width_execution  small_real_operations_and_allocator_rejections_preserve_owners_and_runtime_neighbors  TBD  setup file missing (NotFound) after the table oracle fails
+stdlib_raw_host_width_execution  synthetic_sizes_counts_and_capacity_words_reach_the_kernel_without_wrapping  TBD  setup file missing (NotFound) after the table oracle fails
+stdlib_resolve_execution  every_reached_resolver_source_allocation_failure_cleans_both_owner_domains_and_retries  TBD  oracle: resolve/allocation_sites.py fails reading allocation sites
+stdlib_resolve_execution  resolver_local_validation_is_ordered_allocation_free_and_preserves_all_view_layouts  TBD  oracle: resolve/allocation_sites.py fails reading allocation sites
+stdlib_runtime_contract  alloc_allocator_pointer_result_contract_type_checks_fail_closed_through_stdlib_root  TBD  LNC0005 in the alloc::allocator pointer-result helpers (pre-existing in the 10-21 full run)
+stdlib_runtime_contract  runtime_bound_api_diagnostic_catalog_has_unambiguous_service_api_selectors  TBD  inventory: a selector is now "executable-stdlib", test expects "known-unbound"
+
+# Extended suites failing on base 61df289b (2026-10-27, first full extended_*
+# run of the Phase 1 tree). Most need software this machine lacks (libsqlite3,
+# Python h11/mpmath/numpy/websockets, a dnspython venv). Lines ending "fails at
+# 61df289b" were rerun at the base and fail the same way.
+extended_archive_index_execution  all_entry_crc_preflight_and_malformed_catalogs_are_explicit  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_archive_index_execution  every_reached_import_and_read_allocation_failure_balances_owned_mappings  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_archive_index_execution  exact_and_exceeded_byte_entry_work_and_io_limits_preserve_committed_snapshots  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_archive_index_execution  immutable_snapshots_duplicate_raw_names_binary_keys_and_owner_lifetimes  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_archive_index_execution  native_rollback_commit_uncertainty_busy_and_descriptor_failures  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_archive_index_execution  scripted_short_io_interruptions_and_call_budgets_execute_sample_helpers  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_archive_index_execution  thousand_entry_import_indexed_catalog_queries_get_and_exact_export_are_measured  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_csv_write_execution  every_staged_growth_failure_preserves_record_capacities_views_and_self_aliases  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_csv_write_execution  record_reuse_and_stream_writing_allocate_nothing_after_warmup_and_never_flush  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_data_analyze_execution  data_analyze_matches_independent_csv_statistics_and_qr_oracles  TBD  environment: the oracle imports numpy, which is not installed
+extended_data_analyze_execution  data_analyze_rejects_bad_numbers_csv_shapes_rank_and_resource_limits_atomically  TBD  environment: the oracle imports numpy, which is not installed
+extended_discrete_distributions_execution  high_precision_mass_tails_and_independent_sampling_models  TBD  environment: the oracle imports mpmath, which is not installed
+extended_distributions_execution  high_precision_density_log_tail_and_seeded_sampling_models  TBD  environment: the oracle imports mpmath, which is not installed
+extended_dns_client_execution  dns_client_all_reached_allocations_socket_io_entropy_clock_and_late_successes_cleanup  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_client_execution  dns_client_cli_stages_output_and_cleans_up_real_broken_pipes_and_io_faults  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_client_execution  dns_client_correlates_sources_ids_complete_questions_and_bounds_junk_retry_windows  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_client_execution  dns_client_native_counted_strided_name_owned_response_and_borrowed_records_execute  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_client_execution  dns_client_preserves_truncation_before_close_failure_and_receive_stage_on_retry_exhaustion  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_client_execution  dns_client_rejects_malformed_frames_incomplete_replies_and_resource_limits_without_output  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_client_execution  dns_client_udp_tcp_fallback_binary_names_rcodes_edns_and_large_frames_match_independent_peer  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_execution  dns_edns_owner_accepts_a_valid_compressed_root_name  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_execution  dns_large_compressed_section_runs_with_bounded_work  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_execution  dns_library_and_cli_cleanup_each_allocation_and_io_failure_without_partial_output  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_execution  dns_malformed_compression_rdata_boundaries_edns_truncation_and_limits_are_rejected  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_execution  dns_names_sections_compression_and_common_rdata_match_dnspython  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_dns_execution  dns_query_cli_binary_labels_edns_arguments_and_name_limits_execute  TBD  environment: needs the isolated dnspython oracle venv (docs/extended-dns-client.md)
+extended_fetch_many_execution  csv_jobs_overlap_causally_and_ordered_zip_bodies_comments_match_independent_oracles  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_many_execution  every_reached_allocation_failure_cleans_up_and_bounded_scale_keeps_concurrency_cap  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_many_execution  exact_csv_body_wire_archive_concurrency_call_and_work_bounds_are_enforced  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_many_execution  invalid_late_jobs_http_status_protocol_and_transport_failures_publish_no_zip  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_many_execution  real_and_scripted_input_output_faults_preserve_confirmed_prefix_and_finite_attempts  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_url_execution  url_fetch_cli_url_request_and_configuration_fail_before_network  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_url_execution  url_fetch_plain_binary_body_headers_caps_deadline_and_closed_reader_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_fetch_url_execution  url_fetch_verified_dns_ip_san_and_explicit_default_ca_paths_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  batch_causal_waves_prove_overlap_cap_fair_refill_and_input_order  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  batch_independent_http_readers_cover_binary_framing_layouts_and_mixed_failures  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  batch_leaf_poll_clock_and_repeated_interrupt_faults_close_all_owners_before_exit  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  batch_preflights_every_request_before_network_and_owns_taken_response_backing  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  batch_shared_deadline_budgets_and_retained_caps_cancel_without_losing_prior_results  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  before_wait_retirement_refills_a_queued_job_before_blocking_on_a_held_sibling  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  consecutive_queued_begin_failures_refill_past_a_held_sibling_without_starvation  TBD  environment: the oracle imports h11, which is not installed
+extended_http_batch_execution  every_reached_batch_allocation_failure_releases_active_pending_and_result_owners  TBD  environment: the oracle imports h11, which is not installed
+extended_http_client_execution  http_client_caps_exact_eof_probe_and_early_final_half_close_are_bounded  TBD  environment: the oracle imports h11, which is not installed
+extended_http_client_execution  http_client_cli_files_stream_faults_closed_pipes_and_output_cleanup_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_client_execution  http_client_each_reached_allocation_leaf_io_quota_late_results_and_cleanup_failures_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_client_execution  http_client_fixed_chunked_close_binary_headers_versions_and_fragmentation_match_independent_peers  TBD  environment: the oracle imports h11, which is not installed
+extended_http_client_execution  http_client_native_owned_method_binary_body_interim_and_borrowed_response_contracts_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_client_execution  http_client_rejects_truncation_smuggling_malformed_upgrades_and_request_injection  TBD  environment: the oracle imports h11, which is not installed
+extended_http_exchange_execution  early_final_head_stops_future_upload_and_half_closes_before_response_body  TBD  environment: the oracle imports h11, which is not installed
+extended_http_exchange_execution  fragmented_information_chunk_fixed_and_close_prefixes_match_independent_oracles  TBD  environment: the oracle imports h11, which is not installed
+extended_http_exchange_execution  prepared_abort_completion_and_sticky_failure_transfer_cleanup_once  TBD  environment: the oracle imports h11, which is not installed
+extended_http_exchange_execution  resumed_deadline_budget_leaf_faults_and_reached_allocations_preserve_progress_and_cleanup  TBD  environment: the oracle imports h11, which is not installed
+extended_http_exchange_execution  staged_request_lifetimes_pending_readiness_and_one_leaf_steps_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_message_execution  http_valid_corpus_matches_h11_framing_and_python_http_client_body_oracles  TBD  environment: the oracle imports h11, which is not installed
+extended_https_batch_execution  canonical_http_framing_and_buffered_tls_plaintext_survive_owner_teardown  TBD  environment: the oracle imports h11, which is not installed
+extended_https_batch_execution  early_final_tls13_authenticated_half_close_and_tls12_deferral_preserve_framing  TBD  environment: the oracle imports h11, which is not installed
+extended_https_batch_execution  global_deadline_and_retained_result_caps_cancel_active_and_pending_owners  TBD  environment: the oracle imports h11, which is not installed
+extended_https_batch_execution  resumable_wants_native_faults_and_every_reached_source_allocation_release_resources  TBD  environment: the oracle imports h11, which is not installed
+extended_https_batch_execution  typed_server_verification_and_mutual_tls_failures_preserve_siblings_and_no_peer_http  TBD  environment: the oracle imports h11, which is not installed
+extended_https_batch_execution  verified_https_batches_overlap_tcp_and_handshake_then_preserve_input_order_and_cap  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_exchange_execution  server_direct_errors_keep_progress_and_reached_allocation_failures_release_owners  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_exchange_execution  server_early_rejection_duplex_backpressure_and_exact_eof_probe_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_exchange_execution  server_fatal_preparation_abort_distinguishes_primary_and_new_close_error  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_exchange_execution  server_protocol_decisions_expect_and_stable_views_survive_backing_growth  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_exchange_execution  server_steps_have_one_active_socket_leaf_and_external_waits  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_exchange_execution  server_terminal_replay_abort_and_destruction_release_each_owner_once  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_execution  http_server_every_reached_allocation_leaf_io_retry_quota_close_and_real_stdio_faults_cleanup  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_execution  http_server_exact_drain_probe_late_success_progress_expect_preflight_and_cli_bounds_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_execution  http_server_ipv4_ipv6_binary_chunked_fragmented_expect_and_one_final_match_independent_clients  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_execution  http_server_rejects_malformed_framing_under_caps_and_echoes_one_mebibyte  TBD  environment: the oracle imports h11, which is not installed
+extended_http_server_execution  http_server_retained_views_atomic_preflight_and_sticky_fatal_replay_execute  TBD  environment: the oracle imports h11, which is not installed
+extended_https_server_exchange_execution  constructor_and_tls_io_quotas_fail_before_http_and_replay_without_native_io  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_https_server_exchange_execution  constructor_reached_source_allocations_unwind_protocol_socket_and_native_session  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_https_server_exchange_execution  early_final_tls_responses_finish_stable_backpressure_then_notify_and_discard_uploads  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_https_server_exchange_execution  fatal_reply_preparation_abort_distinguishes_success_and_new_close_failure  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_https_server_exchange_execution  otherwise_successful_https_close_failure_has_one_canonical_primary  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_https_server_exchange_execution  teardown_failures_keep_confirmed_output_and_authenticated_empty_cleans_before_event  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_https_server_exchange_execution  verified_server_steps_gate_public_required_client_http_and_expect_binary_bodies  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_openssl_mutual_tls_execution  each_reached_credential_trust_identity_and_session_staging_failure_cleans_exactly  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_openssl_tls_duplex_execution  every_reached_tls_source_staging_allocation_failure_releases_native_and_source_owners  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_parse_execution  parse_operation_sequences_match_independent_utf8_prefix_model_without_allocation  TBD  LNC0006 at parse_model.lani:47: unwrap_or(core::result::unwrap(scalar), 4294967295) as i64 binds T from the literal; fails at 61df289b
+extended_sample_counts_execution  real_count_csv_prediction_statistics_limits_and_fault_cleanup  TBD  environment: the oracle imports mpmath, which is not installed
+extended_schema_execution  schema_executes_supported_rules_against_independent_2020_12_validator  TBD  schema enum case 107: true is treated as equal to 1 in an array item; fails at 61df289b
+extended_server_concurrency_execution  partial_plain_head_allows_healthy_response_and_queued_refill_before_release  TBD  environment: the oracle imports h11, which is not installed
+extended_server_concurrency_execution  plain_response_backpressure_preserves_healthy_sibling_progress_and_socket_cap  TBD  environment: the oracle imports h11, which is not installed
+extended_server_concurrency_execution  tls_response_backpressure_preserves_verified_sibling_progress_and_authenticated_close  TBD  environment: the oracle imports h11, which is not installed
+extended_server_concurrency_execution  withheld_tls_handshake_allows_verified_sibling_and_queued_refill_before_release  TBD  environment: the oracle imports h11, which is not installed
+extended_server_poll_execution  external_publications_retirement_refill_and_reservation_caps_execute  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_server_poll_execution  fatal_reply_preparation_survives_abort_and_scheduler_owners_are_released  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_server_poll_limits_execution  active_owner_caps_and_cancellation_preserve_cleanup_and_first_failure  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_server_poll_limits_execution  reached_poll_interruptions_reprepare_and_fatal_poll_errors_retire_live_owners  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_server_poll_ownership_execution  actual_server_retains_owned_factory_driver_application_and_abort_errors  TBD  oracle: the allocation ledger requires the historical MAP_32BIT profile; fails at 61df289b
+extended_sqlite_allocation_execution  each_reached_staging_allocation_failure_preserves_bindings_retries_and_releases_owners  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_execution  bounded_bulk_transaction_reuses_statements_and_reports_native_time_and_memory  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_execution  deterministic_transactions_and_changes_follow_an_independent_dictionary_model  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_execution  file_commit_rollback_readonly_and_native_write_locks_preserve_persistent_rows  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_execution  injected_native_failures_preserve_output_and_obey_resource_and_state_contracts  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_execution  storage_classes_full_integers_and_exact_binary64_cross_all_byte_layouts  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_program_execution  arguments_input_output_and_io_attempt_limits_preserve_existing_rows  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_program_execution  descriptor_failures_preserve_prior_values_and_original_error_status  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_program_execution  persisted_binary_values_raw_keys_and_upserts_interoperate_with_python_sqlite  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_program_execution  readonly_busy_constraint_missing_and_invalid_database_errors_are_explicit  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_sqlite_program_execution  short_transfers_interruptions_zero_progress_and_retry_budgets_execute_actual_sample_helpers  TBD  environment: libsqlite3 is not installed (ld cannot find -lsqlite3)
+extended_url_adoption_execution  connected_socket_generation_reaches_real_http_wire_without_reconnect  TBD  environment: the oracle imports h11, which is not installed
+extended_url_adoption_execution  invalid_socket_prepared_deadline_and_cleanup_failures_retire_both_inputs  TBD  environment: the oracle imports h11, which is not installed
+extended_url_client_execution  dns_url_preserves_nss_order_retires_refused_endpoint_and_adopts_one_selected_fd  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_url_client_execution  url_tls_verifies_original_dns_or_ip_and_never_replays_after_tls_or_http_failure  TBD  oracle: the Python syscall/allocation oracle assertion fails; fails at 61df289b
+extended_websocket_wire_execution  websocket_binary_fragmented_messages_and_outgoing_frames_match_python_websockets  TBD  environment: the oracle imports websockets, which is not installed
+
+# CLI suites: pre-existing since the 10-2x full runs (RESUME_STATE: cli_daemon
+# 2, cli_diagnostics 4, cli_lsp 1); still failing on the Phase 1 tree.
+cli_daemon  cli_daemon_first_wasm_job_creates_no_pipelines_and_runs  TBD  daemon readiness creates pipelines for the first Wasm job (pre-existing)
+cli_daemon  cli_daemon_reuses_capacity_for_twenty_jobs_on_each_target  TBD  capacity report says cold_or_grown_workspace, test expects retained_capacity (pre-existing)
+cli_diagnostics  cli_check_unknown_token_can_render_json_diagnostic_at_token_span  TBD  reports LNC0046, test expects LNC0016 (pre-existing)
+cli_diagnostics  cli_diagnostics_explain_prints_single_code_json_without_compiling_source  TBD  unsupported_feature.next_step no longer mentions --emit=wasm (pre-existing)
+cli_diagnostics  cli_diagnostics_registry_prints_combined_registry_json_without_compiling_source  TBD  registry JSON differs from the expected catalog (pre-existing)
+cli_diagnostics  diagnostic_registry_json_contains_code_metadata_categories_and_unsupported_boundaries  TBD  registry JSON differs from the expected catalog (pre-existing)
+cli_lsp  cli_lsp_capabilities_reports_no_run_diagnostic_contract  TBD  capabilities diagnostic contract differs from the registry (pre-existing)

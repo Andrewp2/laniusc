@@ -1,5 +1,7 @@
 # CLI help nested error-pattern admission
 
+Status (2026-10-27): fixed on `lang`. Lowering gave each match arm one tag check, so a nested variant pattern such as `Err(Error::OutputTooSmall(required))` lost its inner check and the optimizer rejected the stray rows (`LNC0057`). Each nested variant pattern now opens its own check inside its arm and falls through to the next arm on a mismatch. `nested_error.lani` compiles and exits 0.
+
 Status: the complete public help smoke and the standalone pair below confirm a
 target-generation dependency for these two nested `Result`/local-error patterns.
 Explicitly typed error extraction compiles and executes. No compiler

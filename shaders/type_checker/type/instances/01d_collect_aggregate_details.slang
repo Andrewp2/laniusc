@@ -9,6 +9,7 @@ import hir_records;
 import type_checker.calls.explicit_constant_operand;
 import type_checker.checked_array_counts;
 import type_checker.constant_publication;
+import status;
 
 struct Params
 {
@@ -29,6 +30,7 @@ StructuredBuffer<uint> path_segment_base;
 StructuredBuffer<uint> path_segment_token;
 StructuredBuffer<uint> module_type_path_type;
 
+RWStructuredBuffer<uint> status;
 RWStructuredBuffer<uint> type_expr_ref_tag;
 RWStructuredBuffer<uint> type_expr_ref_payload;
 
@@ -153,7 +155,18 @@ void publish_array_or_slice_details(uint node, uint token, bool is_array)
     if (accepted && checked_source_literal_value(operand, SCALAR_U32, literal))
         accepted = publish_checked_constant_atom_at(operand, literal, length);
     else if (accepted)
-        accepted = checked_named_constant_operand(KernelTypeRefs(), operand, 0u, length.x, length.y);
+    {
+        // A named length keeps its own type, which must be an integer. The
+        // error is at the array type, where layout checks would otherwise
+        // report a missing layout.
+        uint scalar = checked_named_constant_scalar(KernelTypeRefs(), operand);
+        if (scalar != 0u && !scalar_is_integer(scalar))
+        {
+            record_min_token_error(status, token, 3u, 0u);
+            accepted = false;
+        }
+        else accepted = checked_named_constant_operand(KernelTypeRefs(), operand, 0u, length.x, length.y);
+    }
     if (accepted)
         accepted = checked_source_array_length_valid(length.x, length.y, gParams.n_tokens);
     uint count;

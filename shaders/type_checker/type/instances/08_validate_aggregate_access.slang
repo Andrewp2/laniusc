@@ -463,6 +463,14 @@ void validate_struct_literal_field_row(uint field_row)
     if (valid_compact_node(value_root) && type_ref_is_never(
             call_inference_result_tag[value_root], call_inference_result_payload[value_root]))
         return;
+    // A call whose checked result is the field's expected reference fits it.
+    // A static bound-trait call (`W::echo(value)`) has that result but no
+    // scalar return code.
+    uint expected_tag = struct_init_field_expected_ref_tag[field_token];
+    if (expected_tag >= 1u && expected_tag <= 3u &&
+        call_inference_result_tag[value_root] == expected_tag &&
+        call_inference_result_payload[value_root] == struct_init_field_expected_ref_payload[field_token])
+        return;
     uint value_token = INVALID;
     uint actual;
     if (scalar_is_known(expected))

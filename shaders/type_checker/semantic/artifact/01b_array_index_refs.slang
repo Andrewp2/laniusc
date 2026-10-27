@@ -180,7 +180,14 @@ bool publish_array_length(uint node, uint instance, out uint count)
     if (valid_token(range_literal))
         record_min_token_error(status, range_literal, 24u, SCALAR_U32);
     else if (!symbolic)
-        record_min_token_error(status, compact_hir_core[node].token_start, 6u, 0x474e0006u);
+    {
+        // A language error already at this array type (a length of the wrong
+        // type, type_instances/01d) explains the missing layout.
+        uint token = compact_hir_core[node].token_start;
+        bool diagnosed = status[STATUS_OK_SLOT] == 0u && status[STATUS_TOKEN_SLOT] == token &&
+            status[STATUS_CODE_SLOT] != 6u;
+        if (!diagnosed) record_min_token_error(status, token, 6u, 0x474e0006u);
+    }
     return false;
 }
 

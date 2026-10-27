@@ -1,5 +1,7 @@
 # Nested enum-pattern admission
 
+Status (2026-10-27): fixed on `lang`. Nested variant patterns, imported and generic ones included, now type-check and lower. `nested_io.lani` compiles and its four assertions pass.
+
 `original_exchange.lani` preserves the exact direct HTTPS consumer rejected
 before any resource-campaign case executed. Its SHA-256 is
 `4be4ec59195da23cec8bc364551904b15e57c9fade33009cb18be708fe1da131`.

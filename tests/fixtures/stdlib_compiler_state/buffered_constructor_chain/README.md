@@ -1,5 +1,7 @@
 # Buffered constructor-result chain capture
 
+Status (2026-10-27): still open, and a missing inference feature rather than a wrong result. `with_capacity<T>` binds `T` only through its return type, and the receiving `Vec<u8>` context belongs to the outer `.unwrap()` call. Passing it down needs the method's self pattern (`Result<T,E>`) to project that context onto the inner call's declared result. The receiver-context pass (`calls/03a4b`) does not do that projection yet. The diagnostic now comes from `calls/03a7_validate_required_generics` (slot 0).
+
 `original.lani` is an exact captured copy of the complete buffered composition
 fixture before its explicit Result-local adjustment. It is not a newly executed
 minimal reduction. Its historical pending-admission header is intentionally

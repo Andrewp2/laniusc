@@ -1,0 +1,35 @@
+// Nested variant patterns: a failed inner check falls through to later arms.
+module app::main;
+enum Color { Red, Green }
+enum Slot { Has(Color), Empty }
+enum Tree { Top(Slot), Bottom }
+enum Bar { X(i32), Y }
+enum Foo { Pair(Bar, i32), Solo(i32) }
+
+fn depth(t: Tree) -> i32 {
+    return match (t) {
+        Tree::Top(Slot::Has(Color::Green)) -> 1,
+        Tree::Top(Slot::Has(c)) -> 2,
+        Tree::Top(_) -> 3,
+        _ -> 4,
+    };
+}
+
+fn sibling(v: Foo) -> i32 {
+    return match (v) {
+        Foo::Pair(Bar::X(a), b) -> a * 10 + b,
+        Foo::Pair(Bar::Y, b) -> 1000 + b,
+        Foo::Solo(s) -> s,
+    };
+}
+
+fn main() -> i32 {
+    if (depth(Tree::Top(Slot::Has(Color::Green))) != 1) { return 1; }
+    if (depth(Tree::Top(Slot::Has(Color::Red))) != 2) { return 2; }
+    if (depth(Tree::Top(Slot::Empty)) != 3) { return 3; }
+    if (depth(Tree::Bottom) != 4) { return 4; }
+    if (sibling(Foo::Pair(Bar::X(4), 2)) != 42) { return 5; }
+    if (sibling(Foo::Pair(Bar::Y, 3)) != 1003) { return 6; }
+    if (sibling(Foo::Solo(9)) != 9) { return 7; }
+    return 0;
+}

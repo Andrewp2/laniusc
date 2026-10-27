@@ -1,7 +1,9 @@
 // Publish each call's environments as CT_ENV records (call_env.slang). One
 // lane per call node. Bindings keep the old graphs' selection order:
 //
-// - value (03e): explicit, argument claims in claim order, result context;
+// - value (03e): explicit, argument claims in claim order, result context,
+//   then claims of literals that can take context (a receiver or result
+//   binding gives such a literal its type);
 // - expected (03k): explicit, result context, then argument claims ranked by
 //   literal context (a literal that can take context ranks after a value of
 //   known type);
@@ -90,10 +92,10 @@ uint literal_claim_rank(uint row)
 }
 
 // The accepted claim of (callee, slot): the first row, or with `ranked` the
-// first row of the lowest literal rank.
-bool claim_binding(uint callee, uint slot, bool ranked, out uint tag, out uint payload)
+// first row of the lowest literal rank, which `rank` returns.
+bool claim_binding(uint callee, uint slot, bool ranked, out uint tag, out uint payload, out uint rank)
 {
-    tag = 0u; payload = INVALID;
+    tag = 0u; payload = INVALID; rank = 0u;
     uint capacity; uint stride;
     call_generic_claim_callee.GetDimensions(capacity, stride);
     uint count = min(call_generic_claim_count_out[0u], capacity);
@@ -116,6 +118,7 @@ bool claim_binding(uint callee, uint slot, bool ranked, out uint tag, out uint p
     }
     if (accepted == INVALID) return false;
     tag = call_generic_claim_ref_tag[accepted]; payload = call_generic_claim_ref_payload[accepted];
+    rank = accepted_rank;
     return true;
 }
 
@@ -136,10 +139,9 @@ bool binding_operand(uint token, uint which, uint item, out uint tag, out uint p
     if (checked_explicit_environment_argument(environment, item, tag, payload)) return true;
     uint context_tag; uint context_payload;
     bool context = checked_context_environment_argument(environment, item, context_tag, context_payload);
-    if (!context || which == 0u)
-    {
-        if (claim_binding(token, item, which == 1u, tag, payload)) return true;
-    }
+    uint rank;
+    if ((!context || which == 0u) && claim_binding(token, item, which == 1u || context, tag, payload, rank) &&
+        (!context || rank == 0u)) return true;
     tag = context_tag; payload = context_payload;
     return context;
 }

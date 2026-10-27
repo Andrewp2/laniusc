@@ -1,5 +1,7 @@
 # Native-provider probe match composition
 
+Status (2026-10-27): fixed on `lang`, by the same name-lookup tree fix as `cli_match_shadow`. Both preserved probes compile. Run without the provider harness they trap, exactly like the accepted `files_probe.lani`.
+
 Status: both preserved complete probes reject with `LNC0005` at the wildcard
 arm expression. Both small controls below compile and execute; they do not
 reproduce the failure and do not support a general None/wildcard limitation.

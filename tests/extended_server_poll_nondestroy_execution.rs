@@ -32,7 +32,8 @@ fn both_server_helpers_transfer_empty_reports_without_an_application_destroy_imp
         Command::new("python3")
             .arg(root.join("tests/fixtures/native_c/validate_linked_elf.py"))
             .arg(executable.path()),
-        Duration::from_secs(10),
+        // The validator walks every function of a ~10 MB executable (~13 s).
+        Duration::from_secs(60),
     );
     common::assert_command_success("no-Destroy server helpers linked ELF", &validation);
     std::fs::set_permissions(executable.path(), std::fs::Permissions::from_mode(0o700)).unwrap();

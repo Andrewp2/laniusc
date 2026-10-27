@@ -21,6 +21,15 @@ Current fixture contract:
 - If a sample demonstrates a source-level helper that is frontend-only today,
   say so in the test or docs that promote it.
 
+Top-level samples that need their own stdin or arguments are listed in
+`DEDICATED.tsv`, each with the test file that runs it. The fixed-input runner
+skips them, and the loader checks that the named test file names the sample.
+(The runner's own stdin is the single byte `S`.)
+
+Samples that ignore SIGPIPE through `std::signal` are tagged `x86_64` only:
+that module calls Linux system calls, and the Wasm target has no binding for
+it yet.
+
 The `library/` directory holds application examples whose arguments, binary
 output or additional source roots require dedicated execution tests. Each has
 documented commands, target support and failure cases; the top-level fixed-input

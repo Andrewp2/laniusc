@@ -1,5 +1,7 @@
 # CLI match-result binding reproduction
 
+Status (2026-10-27): fixed on `lang`. The cause was not the shadowing. The resident type-check workspace is sized by the largest unit seen so far (here the imported modules), and the name-lookup tree is laid out for that capacity. The lookup recomputed the layout from the current unit's smaller token count, read empty leaves, and missed the live `let at`. The tree builder now publishes its layout and the lookup reads it. `original.lani` compiles and its output matches `control.lani`.
+
 On 2026-10-23, the full `original.lani` source failed with LNC0005 at line 139:
 `at` is unresolved immediately after a `let at = match ...` whose payload
 bindings are also named `at`. `control.lani` changes only the outer local name to

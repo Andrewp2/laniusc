@@ -1,10 +1,12 @@
 impl<const N:u64> [i32;N] {
     fn first(self)->i32 { return self[0]; }
+    // Lanius has no address-of expression; a &self method borrows.
+    fn array_ref(&self)->&[i32;N] { return self; }
 }
 fn relay<const N:u64>(values:&[i32;N])->i32 { return values.first(); }
 fn main()->i32 {
     let values:[i32;2] = [41,43];
-    let borrowed:&[i32;2] = &values;
+    let borrowed:&[i32;2] = values.array_ref();
     if (borrowed.first() != 41) { return 1; }
     if (relay(borrowed) != 41) { return 2; }
     return 0;

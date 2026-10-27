@@ -3376,11 +3376,11 @@ fn lowering_compiler_graph_builder(
         ],
     })?;
     graph.add_pass(PassDesc {
-        name: "lir.semantic.scatter",
+        name: "lir.semantic.schedule",
         phase: CompilerPhase::SemanticLowering,
         dispatch_domain: ResourceDomain::SemanticInstructions,
-        // The pass is two dispatches: scatter, then try_rows over the rows of
-        // each `value?`. try_rows reads only bindings scatter also reflects.
+        // Each semantic row's owner and execution schedule, before scatter
+        // materializes the row.
         accesses: vec![
             PassAccess::read("compact_expr_parent", hir_expr_parent),
             PassAccess::read("semantic_place_original_count", semantic_place_original_count),
@@ -3546,6 +3546,181 @@ fn lowering_compiler_graph_builder(
             PassAccess::read("semantic_execution_rank", execution_rank_a),
             PassAccess::write("semantic_lir_schedule", semantic_schedule),
             PassAccess::write("semantic_owner_by_instruction", semantic_owner),
+        ],
+    })?;
+    graph.add_pass(PassDesc {
+        name: "lir.semantic.scatter",
+        phase: CompilerPhase::SemanticLowering,
+        dispatch_domain: ResourceDomain::SemanticInstructions,
+        // The pass is two dispatches: scatter, then try_rows over the rows of
+        // each `value?`. try_rows reads only bindings scatter also reflects,
+        // and writes the schedule of the rows it appends.
+        accesses: vec![
+            PassAccess::read("compact_expr_parent", hir_expr_parent),
+            PassAccess::read("semantic_place_original_count", semantic_place_original_count),
+            PassAccess::read("semantic_place_function_flags", semantic_place_function_flags),
+            PassAccess::read("semantic_place_storage_by_token", semantic_place_storage_by_token),
+            PassAccess::read("semantic_place_address_by_token", semantic_place_address_by_token),
+            PassAccess::read("semantic_receiver_call_by_hir", semantic_receiver_call_by_hir),
+            PassAccess::read("semantic_calls_by_hir", checked_calls),
+            PassAccess::read("semantic_lir_params", semantic_params),
+            PassAccess::read("semantic_lir_locals", semantic_locals),
+
+            PassAccess::read("compact_hir_count", hir_count),
+            PassAccess::read("compact_hir_core", hir_core),
+            PassAccess::read("compact_hir_links", hir_links),
+            PassAccess::read("compact_hir_payload", hir_payload),
+            PassAccess::read("compact_fields", hir_fields),
+            PassAccess::read("compact_const_value", hir_const_value),
+            PassAccess::read("semantic_expr_type", semantic_types),
+            PassAccess::read("semantic_expr_ref_tag", semantic_expr_ref_tags),
+            PassAccess::read("semantic_expr_ref_payload", semantic_expr_ref_payloads),
+            PassAccess::read(
+                "semantic_aggregate_decl_token",
+                semantic_aggregate_decl_tokens,
+            ),
+            PassAccess::read(
+                "semantic_aggregate_word_count",
+                semantic_aggregate_word_counts,
+            ),
+            PassAccess::read("type_instance_native_words", type_instance_native_words),
+            PassAccess::read("type_instance_kind", type_instance_kind),
+            PassAccess::read("type_instance_decl_token", type_instance_decl_token),
+            PassAccess::read("type_instance_arg_count", type_instance_arg_count),
+            PassAccess::read("type_instance_arg_start", type_instance_arg_start),
+            PassAccess::read("type_instance_arg_ref_tag", type_instance_arg_ref_tag),
+            PassAccess::read(
+                "type_instance_arg_ref_payload",
+                type_instance_arg_ref_payload,
+            ),
+            PassAccess::read("type_instance_arg_row_start", type_instance_arg_row_start),
+            PassAccess::read(
+                "type_instance_arg_row_count_out",
+                type_instance_arg_row_count,
+            ),
+            PassAccess::read(
+                "type_instance_arg_row_ref_tag",
+                type_instance_arg_row_ref_tag,
+            ),
+            PassAccess::read(
+                "type_instance_arg_row_ref_payload",
+                type_instance_arg_row_ref_payload,
+            ),
+            PassAccess::read("type_instance_elem_ref_tag", type_instance_elem_ref_tag),
+            PassAccess::read(
+                "type_instance_elem_ref_payload",
+                type_instance_elem_ref_payload,
+            ),
+            PassAccess::read("type_instance_len_kind", type_instance_len_kind),
+            PassAccess::read("type_instance_len_payload", type_instance_len_payload),
+            PassAccess::read("external_type_library_id", external_type_library_id),
+            PassAccess::read("external_type_unit_id", external_type_unit_id),
+            PassAccess::read("external_type_local_index", external_type_local_index),
+            PassAccess::read("imported_layout_kind", imported_layout_kind),
+            PassAccess::read("type_generic_param_slot_by_token", type_generic_param_slot),
+            PassAccess::read_write("checked_constant_atoms", checked_constant_atoms),
+            PassAccess::read_write("checked_constant_projections", checked_constant_projections),
+            PassAccess::read("type_const_param_scalar_by_token", type_const_param_scalar),
+            PassAccess::read("type_const_param_slot_by_token", type_const_param_slot),
+            PassAccess::read("semantic_array_length", semantic_array_lengths),
+            PassAccess::read("semantic_iterable_kind", semantic_iterable_kinds),
+            PassAccess::read("semantic_value_id", semantic_value_ids),
+            PassAccess::read("semantic_value_type", semantic_value_types),
+            PassAccess::read("semantic_value_const_by_hir", checked_value_consts),
+            PassAccess::read(
+                "semantic_value_const_present_by_hir",
+                checked_value_const_present,
+            ),
+            PassAccess::read("semantic_call_target", semantic_call_targets),
+            PassAccess::read("semantic_call_kind", semantic_call_kinds),
+            PassAccess::read("semantic_call_result_type", semantic_call_result_types),
+            PassAccess::read(
+                "semantic_call_symbol_library_id",
+                semantic_call_symbol_library_ids,
+            ),
+            PassAccess::read(
+                "semantic_call_symbol_unit_id",
+                semantic_call_symbol_unit_ids,
+            ),
+            PassAccess::read(
+                "semantic_call_symbol_local_index",
+                semantic_call_symbol_local_indices,
+            ),
+            PassAccess::read("semantic_function_id", semantic_function_ids),
+            PassAccess::read(
+                "semantic_function_id_by_token",
+                semantic_function_id_by_token,
+            ),
+            PassAccess::read("semantic_lir_functions", semantic_functions),
+            PassAccess::read("semantic_control_depth_by_hir", semantic_control_depths),
+            PassAccess::read("semantic_member_field_ordinal", member_field_ordinals),
+            PassAccess::read(
+                "semantic_member_field_word_offset",
+                member_field_word_offsets,
+            ),
+            PassAccess::read("semantic_member_field_word_count", member_field_word_counts),
+            PassAccess::read(
+                "semantic_aggregate_hir_by_name_token",
+                semantic_aggregate_hir_by_name_token,
+            ),
+            PassAccess::read(
+                "semantic_struct_word_count_by_hir",
+                semantic_struct_word_count_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_struct_field_start_by_hir",
+                semantic_struct_field_start_by_hir,
+            ),
+            PassAccess::read(
+                "semantic_struct_field_word_offset_by_row",
+                semantic_struct_field_word_offset_by_row,
+            ),
+            PassAccess::read(
+                "semantic_struct_field_word_count_by_row",
+                semantic_struct_field_word_count_by_row,
+            ),
+            PassAccess::read("compact_expr_root", hir_expr_root),
+            PassAccess::read("compact_nearest_loop", hir_nearest_loop),
+            PassAccess::read("compact_array_element_start", hir_array_element_start),
+            PassAccess::read(
+                "compact_array_element_owner_count",
+                hir_array_element_owner_count,
+            ),
+            PassAccess::read("compact_array_element_row_count", hir_array_element_count),
+            PassAccess::read("compact_field_count", hir_field_count),
+            PassAccess::read("compact_call_arg_count", hir_call_arg_count),
+            PassAccess::read("compact_call_args", hir_call_args),
+            PassAccess::read("compact_variant_count", hir_variant_count),
+            PassAccess::read("compact_variants", hir_variants),
+            PassAccess::read("compact_variant_payload_start", hir_variant_payload_start),
+            PassAccess::read("compact_variant_payload_count", hir_variant_payload_count),
+            PassAccess::read(
+                "compact_variant_payload_row_count",
+                hir_variant_payload_row_count,
+            ),
+            PassAccess::read("compact_variant_payloads", hir_variant_payloads),
+            PassAccess::read("compact_match_arm_count", hir_match_arm_count),
+            PassAccess::read("compact_match_arms", hir_match_arms),
+            PassAccess::read("compact_match_payload_start", hir_match_payload_start),
+            PassAccess::read("compact_match_payload_count", hir_match_payload_count),
+            PassAccess::read(
+                "compact_match_payload_row_count",
+                hir_match_payload_row_count,
+            ),
+            PassAccess::read("compact_match_payloads", hir_match_payloads),
+            PassAccess::read(
+                "semantic_argument_value_layout",
+                semantic_argument_value_layout,
+            ),
+            PassAccess::read("semantic_argument_mode_by_hir", checked_argument_modes),
+            PassAccess::read("semantic_lir_count", semantic_counts),
+            PassAccess::read("semantic_lir_offset", semantic_offsets),
+            PassAccess::read("semantic_lir_value_row_by_hir", semantic_value_row_by_hir),
+            PassAccess::read("semantic_lir_total", semantic_total),
+            PassAccess::read("semantic_execution_rank", execution_rank_a),
+            // try_rows schedules the rows it appends.
+            PassAccess::logical_write("semantic_lir_schedule", semantic_schedule),
+            PassAccess::read("semantic_owner_by_instruction", semantic_owner),
             PassAccess::write("semantic_lir_core", semantic_core),
             PassAccess::write("semantic_lir_operands", semantic_operands),
             PassAccess::write(
@@ -11762,6 +11937,7 @@ mod tests {
                 "scan/counted/02_hierarchy_down",
             ),
             ("lir.semantic.scan.apply", "scan/counted/02_apply"),
+            ("lir.semantic.schedule", "codegen/lir/semantic/schedule"),
             ("lir.semantic.scatter", "codegen/lir/semantic/scatter"),
             ("lir.semantic.call_args", "codegen/lir/semantic/call_args"),
             (

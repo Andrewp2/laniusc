@@ -24,6 +24,7 @@ StructuredBuffer<HirMatchArm> compact_match_arms;
 StructuredBuffer<uint> compact_match_payload_row_count;
 StructuredBuffer<HirMatchPayload> compact_match_payloads;
 StructuredBuffer<uint> name_id_by_token;
+StructuredBuffer<uint> language_name_id;
 
 RWStructuredBuffer<uint> hir_value_decl_name_present;
 RWStructuredBuffer<uint> hir_visible_decl_flag;
@@ -33,6 +34,7 @@ static const uint INVALID = 0xffffffffu;
 static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 static const uint LANGUAGE_SYMBOL_COUNT = 79u;
+static const uint LANGUAGE_SYMBOL_WILDCARD = 19u;
 
 uint linear_thread_id(uint3 dtid)
 {
@@ -70,6 +72,12 @@ void main(uint3 dtid: SV_DispatchThreadID)
         return;
     uint name_id = name_id_by_token[binder_token];
     if (name_id == INVALID || name_id >= gParams.n_tokens + LANGUAGE_SYMBOL_COUNT)
+        return;
+    // Only a single name binds. `_` and nested variant paths are matched,
+    // not declared: as declarations, a later arm's same spelling would be
+    // an out-of-scope use of them.
+    if (compact_hir_core[payload.pattern].token_end != binder_token + 1u ||
+        name_id == language_name_id[LANGUAGE_SYMBOL_WILDCARD])
         return;
 
     atomic_u32_or(hir_value_decl_name_present, name_id, 1u);
