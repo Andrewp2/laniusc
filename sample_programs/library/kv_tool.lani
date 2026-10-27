@@ -13,6 +13,8 @@ import ext::kv;
 import ext::cli;
 import ext::cli_commands;
 import ext::cli_help;
+import ext::cli_response;
+import ext::cli_response_files;
 import std::args;
 import std::atomic_file;
 import std::entropy;
@@ -27,7 +29,7 @@ struct Outcome {
     code: i32, notice: Notice, visibility: std::atomic_file::Visibility,
     cleanup_failed: bool, diagnostic_failed: bool
 }
-// Both paths borrow the one argument snapshot. Split raw bytes rather than
+// Both paths borrow the live expanded arguments. Split raw bytes rather than
 // normalizing the final component, so a trailing slash or '/.' cannot retarget.
 struct Target { parent: core::path::Path, leaf: core::path::Path }
 struct Invocation { command:i32, operands:[core::slice::View<u8>], count:i32, help:bool }
@@ -280,23 +282,8 @@ fn operand(state:&Invocation,item:ext::cli_commands::ScopedOperand) -> bool {
     if(item.command!=state.command || state.command==0 || state.count==3) { return false; }
     state.operands[state.count]=item.argument.bytes; state.count+=1; return true;
 }
-fn arguments(args:std::args::Arguments) -> Outcome {
-    let help_spec=ext::cli::Spec { id:100,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag };
-    let options:[ext::cli_commands::OptionSpec;1]=[ext::cli_commands::OptionSpec { spec:help_spec,global:true,value_name:literal("",0),help:literal("Show command help",17) }];
-    let globals=core::slice::View { values:options,start:0,length:1 };
-    let empty=core::slice::View { values:options,start:0,length:0 };
-    let commands:[ext::cli_commands::Command;7]=[
-        ext::cli_commands::Command { id:0,parent:-1,name:literal("kv-tool",7),summary:literal("Bounded byte-key snapshot store",31),operands:literal("",0),ordering:ext::cli::Ordering::Intermixed,options:globals },
-        node(1,literal("init",4),literal("Create an empty database",24),literal("DB",2),empty),
-        node(2,literal("put",3),literal("Insert or replace a byte value",30),literal("DB KEY_HEX VALUE_HEX",20),empty),
-        node(3,literal("remove",6),literal("Remove a byte key",17),literal("DB KEY_HEX",10),empty),
-        node(4,literal("get",3),literal("Write the exact stored value",28),literal("DB KEY_HEX",10),empty),
-        node(5,literal("list",4),literal("List sorted hexadecimal entries",31),literal("DB",2),empty),
-        node(6,literal("check",5),literal("Validate the complete snapshot",30),literal("DB",2),empty)
-    ];
-    let schema=core::slice::View { values:commands,start:0,length:7 };
-    let scratch:[ext::cli::Spec;1]=[help_spec];
-    let prepared=ext::cli_commands::parser(args.as_view(),schema,core::slice::View { values:scratch,start:0,length:1 });
+fn dispatch(values:core::slice::View<core::slice::View<u8>>,schema:core::slice::View<ext::cli_commands::Command>,scratch:core::slice::View<ext::cli::Spec>) -> Outcome {
+    let prepared=ext::cli_commands::parser(values,schema,scratch);
     if(prepared.is_err()) { return ordinary(2); } let parser=prepared.unwrap();
     let empty_operand=literal("",0); let operands:[core::slice::View<u8>;3]=[empty_operand,empty_operand,empty_operand];
     let state=Invocation { command:0,operands:operands,count:0,help:false };
@@ -316,6 +303,54 @@ fn arguments(args:std::args::Arguments) -> Outcome {
     if(state.help) { return help(schema,state.command); }
     if(state.count!=needed) { return ordinary(2); }
     return process(state.command,core::slice::View { values:operands,start:0,length:state.count });
+}
+fn response_file_error(error:ext::cli_response_files::Error) -> Outcome {
+    let status=match(error.cause) {
+        ext::cli_response_files::Cause::AllocationFailed->4,
+        ext::cli_response_files::Cause::Io(cause)->io_code(cause),
+        _ ->2
+    };
+    let outcome=ordinary(status);
+    let closing=match(error.phase) { ext::cli_response_files::Phase::Close->true,_ ->false };
+    if(closing || error.cleanup.is_some()) { return cleanup_failure(outcome); }
+    return outcome;
+}
+fn response_error(failure:ext::cli_response::Failure<ext::cli_response_files::Error>) -> Outcome {
+    return match(failure.cause) {
+        ext::cli_response::Cause::Provider(error)->response_file_error(error),
+        ext::cli_response::Cause::AllocationFailed->ordinary(4),
+        ext::cli_response::Cause::InvalidState->ordinary(3),
+        ext::cli_response::Cause::ProviderContract->ordinary(3),
+        _ ->ordinary(2)
+    };
+}
+fn arguments(args:std::args::Arguments) -> Outcome {
+    let help_spec=ext::cli::Spec { id:100,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag };
+    let options:[ext::cli_commands::OptionSpec;1]=[ext::cli_commands::OptionSpec { spec:help_spec,global:true,value_name:literal("",0),help:literal("Show command help",17) }];
+    let globals=core::slice::View { values:options,start:0,length:1 };
+    let empty=core::slice::View { values:options,start:0,length:0 };
+    let commands:[ext::cli_commands::Command;7]=[
+        ext::cli_commands::Command { id:0,parent:-1,name:literal("kv-tool",7),summary:literal("Bounded byte-key snapshot store",31),operands:literal("",0),ordering:ext::cli::Ordering::Intermixed,options:globals },
+        node(1,literal("init",4),literal("Create an empty database",24),literal("DB",2),empty),
+        node(2,literal("put",3),literal("Insert or replace a byte value",30),literal("DB KEY_HEX VALUE_HEX",20),empty),
+        node(3,literal("remove",6),literal("Remove a byte key",17),literal("DB KEY_HEX",10),empty),
+        node(4,literal("get",3),literal("Write the exact stored value",28),literal("DB KEY_HEX",10),empty),
+        node(5,literal("list",4),literal("List sorted hexadecimal entries",31),literal("DB",2),empty),
+        node(6,literal("check",5),literal("Validate the complete snapshot",30),literal("DB",2),empty)
+    ];
+    let schema=core::slice::View { values:commands,start:0,length:7 };
+    let scratch:[ext::cli::Spec;1]=[help_spec];
+    if(ext::cli_commands::validate(schema).is_err()) { return ordinary(2); }
+    // This single-threaded program never changes cwd. Merely admitting Files
+    // performs no filesystem operation; only explicit @ directives load files.
+    let made=ext::cli_response_files::files(-100,4096,false);
+    if(made.is_err()) { return response_file_error(made.unwrap_err()); }
+    let provider=made.unwrap(); let expansion=ext::cli_response::empty();
+    let bounds=ext::cli_response::Limits { max_arguments:8,max_tokens:256,max_argument_bytes:262144,max_output_bytes:262144,max_file_bytes:262144,max_source_bytes:1048576,max_files:16,max_depth:8,max_path_bytes:4095,max_work:8388608 };
+    let prepared=expansion.prepare<ext::cli_response_files::Files,ext::cli_response_files::Error>(args.as_view(),provider.borrow(),bounds);
+    if(prepared.is_err()) { let outcome=response_error(prepared.unwrap_err()); expansion.destroy(); return outcome; }
+    let outcome=dispatch(expansion.arguments().unwrap(),schema,core::slice::View { values:scratch,start:0,length:1 });
+    expansion.destroy(); return outcome;
 }
 fn report(outcome: Outcome) -> i32 {
     let okay: bool = !outcome.diagnostic_failed;

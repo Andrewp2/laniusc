@@ -4,9 +4,9 @@
 mutations and lookup, and reads and writes a versioned binary snapshot. The
 `kv-tool` program now delegates snapshot publication to
 [`std::atomic_file`](stdlib-atomic-files.md), using the shared TempFile owner.
-The command-hierarchy/generated-help application compiles and passes 130 native
-process group cases across three direct all-syscall oracle invocations, with
-overlapping setup/baselines. Production code is Lanius; Python is only an
+Bounded response-file preprocessing compiles and passes its focused 55-case
+direct native group. Earlier hierarchy/publication receipts retain their
+source-specific scope below. Production code is Lanius; Python is only an
 independent test oracle. The
 [application receipts](#current-application-receipts) separate those source revisions.
 
@@ -148,8 +148,8 @@ Command names match exactly. Root-global `-h`/`--help` is inherited by every
 command, and generated help describes the selected command. The root accepts
 options before command selection; leaves use OptionsFirst, so their first DB
 operand ends option recognition. Put help before DB, for example
-`kv-tool put --help` or `kv-tool -h put`. Parse the complete command line before
-help or file access: unknown commands/options and extra operands reject even
+`kv-tool put --help` or `kv-tool -h put`. Parse the complete expanded command
+line before help or database access: unknown commands/options and extra operands reject even
 with help; missing required operands are waived only for help. Without help,
 the application checks each command's exact operand count.
 
@@ -170,6 +170,61 @@ stdout prefix. A checked SIGPIPE-ignore policy runs before argument ownership
 or any output; failed installation returns 3 without writing. This policy
 allows explicit owner cleanup after a real closed-reader write failure.
 Other data-output operations retain their existing I/O contracts.
+
+### Response files
+
+`@path` splices response-file arguments before command parsing, including after
+`--`. For example, `kv-tool @update.rsp` can read
+`put 'db name.kv' 00ff 80ff00`. ASCII space/TAB/CR/LF separate tokens; matching
+quotes group bytes and adjacent pieces concatenate. Backslash quotes the next
+byte. Empty quoted arguments, non-UTF-8 bytes and literal `#`, `$`, `*` and `~`
+are preserved. NUL, an unfinished quote or a trailing backslash reject.
+There is no shell expansion or comment syntax. Original host argv is already
+tokenized and is not reparsed as quoted text.
+
+`@` alone is literal; `@@text` emits literal `@text` without expanding again.
+Thus a DB named `@db.kv` uses `kv-tool init @@db.kv`, also after a parser `--`.
+This is an intentional change to ordinary argv containing leading `@`/`@@`.
+Quoting inside a response file does not disable expansion. `@-` reads a file
+named `-`, not stdin. All relative nested references use the process's stable
+cwd, not the including file's parent. Absolute paths retain native semantics.
+The single-threaded app never changes cwd; the provider borrows AT_FDCWD.
+It rejects a final symlink and nonregular input, using read-only, CLOEXEC,
+NONBLOCK and NOCTTY flags. Ancestor symlinks and absolute paths are ordinary
+host lookup; no directory confinement or atomic file snapshot is promised.
+
+The complete schema is admitted before provider use. Complete preprocessing
+then precedes command parsing, help and every database operation. Explicit
+response files can therefore be read even when expanded CLI syntax rejects
+or requests help. Ordinary arguments without directives add no file access.
+Expansion owns stable copies, source bytes and final argument views until the
+database outcome returns, then releases them on success or failure. Store,
+path splitting and atomic-publication code are unchanged.
+
+| Expansion limit | Value |
+| --- | ---: |
+| Raw argv count / aggregate bytes | 8 / 262,144 |
+| Final arguments / aggregate output bytes | 8 / 262,144 |
+| One argument / one response file bytes | 262,144 / 262,144 |
+| All source bytes, including original argv | 1,048,576 |
+| Tokens, including directives and initial argv | 256 |
+| File loads / nested file depth | 16 / 8 |
+| One response path bytes | 4,095 |
+| Expansion work units | 8,388,608 |
+| Native provider calls, including close/EINTR | 4,096 |
+
+Repeated loads count again; cycles stop at a finite limit. Exact file-byte caps
+require actual EOF, with at most one excess byte consumed to reject oversize
+input. These limits bound retained library owners and work; they are not an
+exact heap/RSS cap or filesystem wall-time deadline. See the
+[response-file contract](library-response-files-plan.md).
+
+Syntax, resource and nonregular-file failures return 2; ordinary provider I/O
+returns 3; allocation failure returns 4. Primary close or simultaneous cleanup
+failure returns existing status 8 while preserving the primary diagnostic.
+No failed preprocessing reaches database operations or publishes partial argv.
+
+### Database operands
 
 Keys and values in arguments use even-length hexadecimal, accepting either
 letter case. An empty shell argument represents empty bytes. `get` writes the
@@ -291,20 +346,58 @@ snapshot contracts are unchanged by this application migration.
 
 ### Current application receipts
 
-The hierarchy application is frozen at SHA-256 `f07fd52f...`. Its command
+The response-file application is frozen at SHA-256 `789143f6...`. Compile exit
+0 is recorded in `target/stdlib-work/response-kv-compile-first.log`; its ELF is
+SHA-256 `00889c44...`. The focused `responses` group passes **55 process group
+cases** in `response-kv-native-artifact-retry.log`, including all 18 allocation
+denials derived from the successful nested-help baseline. Those 18 cover that
+baseline's argv/expansion/source-file owners, not every allocation path in the
+whole application. A separate post-database-open allocation failure is also
+included in the 55, alongside the published/unsynced status 6 case.
+
+The group checks ordinary no-file-access behavior, response-backed complete Store
+operations, fixed-cwd nesting, quotes/raw/escaped paths, expansion after `--`,
+malformed/nonregular input, depth/file/count/EOF limits, dynamically reached
+response-owner OOMs, I/O recovery, real EPIPE, and preserved database failure
+outcomes while the expansion owner remains live. All syscalls are observed;
+expected response-path/fd generations close before database effects and all
+source mappings/fds release before the validated native exit. Ten response-effect
+and eleven artifact-name CPU controls pass separately.
+
+The first group attempt (`response-kv-native-first.log`) ran ten cases, then
+failed in Python artifact naming before launching case11: `@sub/start.rsp`
+became part of an artifact path. The corrected oracle uses a stable counter
+and validated label, never argv. No compiler/runtime or application change
+was required; the unchanged ELF passed the full retry. Those first ten partial
+cases are not added to 55. Oracle SHA-256 is `057bb27a...`; the fixture guide
+records full identities and the independently reviewed scope.
+
+These are direct Python process cases with baselines/overlap, not a passing
+Rust libtest. The registered KV driver separately built with `--no-run` alongside
+the native response-resource driver in 2.09 seconds combined
+(`response-resource-kv-drivers-build-first.log`), producing
+`extended_kv_execution-3b7e887700dd7ba6`. That is shared build time, not a
+per-driver measurement, and adds no native cases.
+The earlier 130-case hierarchy and 64-case atomic campaigns were not rerun on this source
+and are not added to 55. This is finite native Linux x86_64 CPU execution emitted
+by the GPU compiler on local ext4, not user GPU-kernel or broader-host support.
+
+### Historical hierarchy application receipts
+
+The earlier hierarchy application is frozen at SHA-256 `f07fd52f...`. Its command
 collection and generated help reuse
 the [frozen command hierarchy contract](library-cli-commands-plan.md). The
 database operations, snapshot encoding and AtomicFile workflow retain their
-previous code and outcome contracts. The current oracle uses the unchanged
+previous code and outcome contracts. That campaign used the unchanged
 verified raw allocator authority
 with full-width source/fd accounting and explicit signal-event admission.
 Twenty-four hierarchy CPU controls and eleven existing read/open binding controls
 pass separately, as do 48 helper CPU controls; these are not native cases.
 
-The current executable compiles and passes all three direct Python groups with
+That source compiled and passed all three direct Python groups with
 full syscall observation. Logs under `target/stdlib-work/` record:
 
-| Gate | Current receipt |
+| Gate | Receipt for that source |
 | --- | --- |
 | Compile | `cli-commands-kv-admission-first.log`, exit 0 |
 | Hierarchy | `cli-commands-kv-hierarchy-all-syscalls.log`, 66 process group cases |
@@ -329,16 +422,16 @@ partial-observation cases are repeated coverage and are not added to 130.
 This was an oracle observation gap; no application/library defect was found.
 
 The registered tests were not executed through libtest for this receipt.
-Their current driver builds successfully with `--no-run` in 51.67 seconds
+Its registered driver built successfully with `--no-run` in 51.67 seconds
 (`cli-commands-kv-driver-build-first.log`); this is separate build admission,
 with no additional native cases.
-Current oracle/helper hashes are `b3ec740f...`/`f7adcfca...`; ELF SHA-256 is
+That campaign's oracle/helper hashes are `b3ec740f...`/`f7adcfca...`; ELF SHA-256 is
 `46770678...`; flat parser `ext::cli` is `9f11981f...`, hierarchy `6eb4db7a...` and
 help `a7198a2a...`. The fixture guide records full identities. The 66-case group
 accepts root and six child help goldens, exact/over snapshot limits, complete
 parse/help policy, no filesystem calls on help/rejected CLI input, real EPIPE and
 escaped raw/command-looking DB paths. The other two groups preserve complete
-snapshot equality and publication/error/cleanup outcomes on the current source.
+snapshot equality and publication/error/cleanup outcomes on that source.
 
 This is finite native Linux x86_64 CPU execution emitted by the GPU compiler;
 it does not establish user GPU-kernel or broader-host support. The earlier

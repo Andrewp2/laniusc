@@ -8,11 +8,12 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Applications retain arity, defaults, conflicts and help policy. Selected native Linux x86_64 semantics, pure no-host/no-allocation contracts and the real KV application pass; no automatic owner or lifetime enforcement is supplied. Completion and response files remain separate work.
+Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Applications retain arity, defaults, conflicts and help policy. Selected native Linux x86_64 semantics, pure no-host/no-allocation contracts and the real KV application pass; no automatic owner or lifetime enforcement is supplied. Optional response preprocessing has separate ownership/provider contracts; shell completion remains open.
 
 ## Contract and evidence guides
 
 - [extended-cli-commands](../../extended-cli-commands.md)
+- [extended-cli-response](../../extended-cli-response.md)
 
 Declaration counts: enum: 2; field: 24; function: 2; impl: 1; method: 3; struct: 6; variant: 15.
 

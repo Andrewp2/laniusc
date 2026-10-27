@@ -1,0 +1,91 @@
+// Actual Expansion with a scripted provider's separately owned error payload.
+// Three 16Q reports + held payload, ACK '!' after each. No filesystem service.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::cli_response;
+import ext::cli_response::Provider;
+import std::linux;
+import std::stream;
+
+struct OwnedError { kind:i32, bytes:Vec<u8> }
+struct Holder { bytes:Vec<u8> }
+struct Script { calls:i32 }
+impl Script { fn borrow(&self) -> &Script { return self; } }
+impl Holder { fn borrow(&self) -> &Holder { return self; } }
+fn retain_error(output:[u64],holder:&Holder,error:OwnedError) -> u64 {
+    assert(holder.bytes.capacity()==0); holder.bytes=error.bytes;
+    output[5]=error.kind as u64; return 100+(error.kind as u64);
+}
+fn bytes(text:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count };
+}
+pub impl Provider<OwnedError> for Script {
+    pub fn load(&self,path:View<u8>,maximum:i32) -> Result<Vec<u8>,OwnedError> {
+        self.calls+=1; assert(maximum>=9);
+        let owner:Vec<u8> =alloc::vec::new<u8>();
+        if(self.calls==1) {
+            assert(path.len()==3 && path.values[path.start]==111 && path.values[path.start+1]==110 && path.values[path.start+2]==101);
+            if(owner.try_extend(bytes("held @bad",9)).is_err()) { owner.destroy(); return Err(OwnedError { kind:2,bytes:alloc::vec::new<u8>() }); }
+            return Ok(owner);
+        }
+        assert(self.calls==2 && path.len()==3 && path.values[path.start]==98 && path.values[path.start+1]==97 && path.values[path.start+2]==100);
+        if(owner.try_extend(bytes("failure",7)).is_err()) { owner.destroy(); return Err(OwnedError { kind:2,bytes:alloc::vec::new<u8>() }); }
+        return Err(OwnedError { kind:1,bytes:owner });
+    }
+}
+fn mark(value:u8) {
+    let storage:[u8;1]=[value]; let stderr=std::stream::stderr();
+    assert(core::io::write_all(stderr.borrow(),storage,0,1).is_ok());
+}
+fn emit(output:[u64],held:&Vec<u8>) {
+    output[6]=held.len() as u64; let packed:[u8;128]=[0;128]; let index:i32=0;
+    while(index<16) { let byte:i32=0; while(byte<8) { packed[index*8+byte]=((output[index]>>(byte*8))&255) as u8; byte+=1; } index+=1; }
+    let stdout=std::stream::stdout(); assert(core::io::write_all(stdout.borrow(),packed,0,128).is_ok());
+    let view=held.as_view(); assert(core::io::write_all(stdout.borrow(),view.values,view.start,view.len()).is_ok());
+    let ack:[u8;1]=[0]; let stdin=std::stream::stdin();
+    assert(core::io::read_exact(stdin.borrow(),ack,0,1).is_ok() && ack[0]==33);
+}
+fn main() -> i32 {
+    let output:[u64;16]=[0;16]; output[0]=1381189170;
+    let unused:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    output[1]=std::linux::call(39,View { values:unused,start:0,length:0 }).unwrap() as u64;
+    let provider:Script=Script { calls:0 }; let owner=ext::cli_response::empty();
+    let argv:[View<u8>;1]=[bytes("@one",4)];
+    mark(69); let result=owner.prepare<Script,OwnedError>(View { values:argv,start:0,length:1 },provider.borrow(),ext::cli_response::default_limits()); mark(101);
+    assert(result.is_err() && !owner.is_ready() && owner.arguments().is_none() && owner.origin(0).is_none());
+    let failure:ext::cli_response::Failure<OwnedError> =result.unwrap_err();
+    let holder:Holder=Holder { bytes:alloc::vec::new<u8>() };
+    output[3]=match(failure.cause) { ext::cli_response::Cause::AllocationFailed->5,
+        ext::cli_response::Cause::Provider(error)->retain_error(output,holder.borrow(),error),_ ->999 };
+    let held:Vec<u8> =holder.bytes; holder.bytes=alloc::vec::new<u8>();
+    assert(output[3]==5 || output[3]==101 || output[3]==102);
+    output[4]=provider.calls as u64;
+    if(owner.original(0).is_some()) {
+        let original=owner.original(0).unwrap(); assert(original.len()==4 && original.values[original.start]==64); output[7]=1;
+    }
+    if(owner.source(0).is_some()) { output[8]=1; }
+    if(owner.source(1).is_some()) { output[9]=1; assert(!owner.source(1).unwrap().loaded); }
+    if(owner.raw_source(0).is_some()) { output[10]=owner.raw_source(0).unwrap().len() as u64; }
+    output[12]=(failure.at.source as i64) as u64; output[13]=(failure.at.argument as i64) as u64;
+    output[14]=failure.at.start as u64; output[15]=failure.at.length as u64;
+    if(output[3]==101) { assert(provider.calls==2 && held.len()==7 && output[7]==1 && output[8]==1 && output[9]==1 && output[10]==9); }
+    output[2]=0; emit(output,held.borrow());
+    mark(68); owner.destroy(); owner.destroy(); mark(100);
+    assert(!owner.is_ready() && owner.original(0).is_none() && owner.source(0).is_none() && owner.raw_source(0).is_none());
+    if(held.len()>0) { let index:i32=0; let expected=bytes("failure",7);
+        while(index<7) { assert(held.at(index)==expected.values[index]); index+=1; }
+    }
+    output[2]=1; emit(output,held.borrow());
+    mark(72); held.destroy(); held.destroy(); mark(104);
+    output[2]=2; emit(output,held.borrow()); return 0;
+}

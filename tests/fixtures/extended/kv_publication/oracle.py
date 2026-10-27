@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -106,6 +107,11 @@ def bind(before, after, item):
     return right
 
 
+def artifact_prefix(count, label=None):
+    safe = label if label and re.fullmatch(r"[A-Za-z0-9_-]{1,64}", label) else "run"
+    return "%03d-%s" % (count, safe)
+
+
 class Suite:
     def __init__(self, executable, group):
         self.executable = Path(executable).resolve()
@@ -124,7 +130,7 @@ class Suite:
 
     def run(self, directory, cwd, args, *, status=0, output=b"", diagnostic=b"", rules=(), baseline=None, label=None, closed_stdout=False):
         self.count += 1
-        prefix = "%03d-%s" % (self.count, label or (os.fsdecode(args[0]) if args else "no-arguments"))
+        prefix = artifact_prefix(self.count, label)
         trace = directory / (prefix + ".trace")
         cmd = command(self.executable, trace, rules, string_limit=64 if self.group == "roundtrips" else 4096) + list(args)
         (directory / (prefix + ".command.txt")).write_text(repr(cmd) + "\n")
@@ -169,6 +175,222 @@ def contents(cwd, name, records):
 def child_help(name):
     _, summary, operands = next(row for row in COMMANDS if row[0] == name)
     return b"Usage: kv-tool " + name + b" [OPTIONS] " + operands + b"\n" + summary + b"\n" + HELP_OPTIONS
+
+
+def tree(cwd):
+    result = {}
+    def visit(base, prefix=b""):
+        for entry in os.scandir(base):
+            name = prefix + entry.name
+            kind = stat.S_IFMT(entry.stat(follow_symlinks=False).st_mode)
+            if kind == stat.S_IFDIR:
+                result[name] = (kind, b"")
+                visit(entry.path, name + b"/")
+            elif kind == stat.S_IFREG:
+                result[name] = (kind, Path(os.fsdecode(entry.path)).read_bytes())
+            elif kind == stat.S_IFLNK:
+                result[name] = (kind, os.readlink(entry.path))
+            else:
+                result[name] = (kind, b"")
+    visit(os.fsencode(cwd))
+    return result
+
+
+def response_only(result, paths, *, partial=False):
+    opens = selected(result, "openat")
+    observed = []
+    for entry in opens:
+        args = LEDGER.arguments(entry["args"])
+        assert args[0] == "AT_FDCWD", entry
+        flags = set(args[2].split("|"))
+        assert {"O_RDONLY", "O_CLOEXEC", "O_NONBLOCK", "O_NOCTTY", "O_NOFOLLOW"} <= flags and not flags & {"O_CREAT", "O_TRUNC", "O_RDWR", "O_WRONLY"}, entry
+        observed.append(LEDGER.quoted(args[1]))
+    assert observed == (list(paths)[:len(observed)] if partial else list(paths)), (observed, paths)
+    owners = result["acquisitions"]
+    assert all(owner["acquired"]["name"] == "openat" and owner["closed"] is not None for owner in owners), owners
+    assert all(left["closed"]["index"] < right["acquired"]["index"] for left, right in zip(owners, owners[1:])), owners
+    for entry in result["events"]:
+        name, args = entry["name"], LEDGER.arguments(entry["args"])
+        assert name in {"mmap", "munmap", "rt_sigaction", "write", "openat", "read", "statx", "close"}, entry
+        if name == "write":
+            assert args[0] in ("1", "2"), ("response preprocessing wrote a file", entry)
+        if name in ("read", "statx", "close"):
+            fd = int(args[0])
+            active = [owner for owner in owners if owner["fd"] == fd and owner["acquired"]["index"] < entry["index"] <= owner["closed"]["index"]]
+            assert len(active) == 1, ("response I/O did not use the actual live source generation", entry, owners)
+            if name == "statx":
+                assert LEDGER.quoted(args[1]) == b"" and "AT_EMPTY_PATH" in args[2], entry
+
+
+def response_prefix(result, paths):
+    owners = result["acquisitions"][:len(paths)]
+    assert len(owners) == len(paths) and paths, owners
+    end = owners[-1]["closed"]["index"]
+    prefix = dict(result, events=[entry for entry in result["events"] if entry["index"] <= end], acquisitions=owners)
+    response_only(prefix, paths)
+    return end
+
+
+def responses(suite):
+    directory, cwd = suite.case("ordinary-no-provider")
+    for index, args, status, output, diagnostic in [(0, ["--help"], 0, ROOT_HELP, b""), (1, ["unknown"], 2, b"", INVALID),
+                                                   (2, ["@@missing.rsp"], 2, b"", INVALID)]:
+        result = suite.run(directory, cwd, args, status=status, output=output, diagnostic=diagnostic, label="ordinary-%d" % index)
+        no_filesystem(result)
+        assert set(os.listdir(cwd)) == {"sentinel"}
+
+    directory, cwd = suite.case("quoted-store-workflow")
+    records = {}
+    operations = [(b"init 'db name.kv'", 0, b"", None),
+                  (b"put 'db name.kv' 00ff 80ff00", 0, b"", {b"\0\xff": b"\x80\xff\0"}),
+                  (b'put "db name.kv" "" ""', 0, b"", {b"\0\xff": b"\x80\xff\0", b"": b""}),
+                  (b"get 'db name.kv' 00ff", 0, b"\x80\xff\0", None),
+                  (b"list 'db name.kv'", 0, b"\t\n00ff\t80ff00\n", None),
+                  (b"check 'db name.kv'", 0, b"", None),
+                  (b"remove 'db name.kv' 00ff", 0, b"", {b"": b""})]
+    for index, (raw, status, output, updated) in enumerate(operations):
+        (cwd / "op.rsp").write_bytes(raw)
+        before = tree(cwd)
+        result = suite.run(directory, cwd, ["@op.rsp"], status=status, output=output, label="operation-%d" % index)
+        response_prefix(result, [b"op.rsp"])
+        if updated is not None: records = updated
+        expected = dict(before)
+        expected[b"db name.kv"] = (stat.S_IFREG, SNAPSHOT.encode(records))
+        assert tree(cwd) == expected
+
+    directory, cwd = suite.case("fixed-cwd-nesting")
+    (cwd / "sub").mkdir()
+    (cwd / "sub/start.rsp").write_bytes(b"@args.rsp")
+    (cwd / "sub/args.rsp").write_bytes(b"init WRONG.kv")
+    (cwd / "args.rsp").write_bytes(b"init right.kv")
+    before = tree(cwd)
+    result = suite.run(directory, cwd, ["@sub/start.rsp"])
+    response_prefix(result, [b"sub/start.rsp", b"args.rsp"])
+    before[b"right.kv"] = (stat.S_IFREG, SNAPSHOT.encode({}))
+    assert tree(cwd) == before
+
+    for index, name, args in [(0, b"db after.kv", [b"init", b"--", b"@name.rsp"]),
+                              (1, b"@literal.kv", [b"init", b"@@literal.kv"]),
+                              (2, b"raw-\xff.kv", [b"@raw-\xff.rsp"])]:
+        directory, cwd = suite.case("raw-directive-%d" % index)
+        paths = []
+        if index == 0:
+            (cwd / "name.rsp").write_bytes(b"'db after.kv'"); paths = [b"name.rsp"]
+        if index == 2:
+            Path(os.fsdecode(os.fsencode(cwd) + b"/raw-\xff.rsp")).write_bytes(b"init 'raw-\xff.kv'"); paths = [b"raw-\xff.rsp"]
+        before = tree(cwd)
+        result = suite.run(directory, cwd, args)
+        if paths: response_prefix(result, paths)
+        before[name] = (stat.S_IFREG, SNAPSHOT.encode({}))
+        assert tree(cwd) == before
+
+    directory, cwd = suite.case("preprocessing-rejection")
+    bad = [(b"--help unknown", 2, INVALID), (b"put missing/db 0 00", 2, INVALID),
+           (b"'unfinished", 2, INVALID), (b"--help\\", 2, INVALID), (b"--help\0", 2, INVALID),
+           (b"", 2, INVALID), (b" ".join([b"--help"] * 9), 2, INVALID)]
+    for index, (raw, status, diagnostic) in enumerate(bad):
+        (cwd / "bad.rsp").write_bytes(raw)
+        before = tree(cwd)
+        result = suite.run(directory, cwd, ["@bad.rsp"], status=status, diagnostic=diagnostic, label="bad-%d" % index)
+        response_only(result, [b"bad.rsp"])
+        assert tree(cwd) == before
+    (cwd / "quoted.rsp").write_bytes(b"'@missing.rsp'")
+    before = tree(cwd)
+    result = suite.run(directory, cwd, ["@quoted.rsp"], status=3, diagnostic=IO)
+    response_only(result, [b"quoted.rsp", b"missing.rsp"])
+    assert tree(cwd) == before
+    (cwd / "-").write_bytes(b"--help")
+    before = tree(cwd)
+    result = suite.run(directory, cwd, ["@-"], output=ROOT_HELP)
+    response_only(result, [b"-"])
+    assert tree(cwd) == before
+    (cwd / "not-regular").mkdir()
+    result = suite.run(directory, cwd, ["@not-regular"], status=2, diagnostic=INVALID)
+    response_only(result, [b"not-regular"])
+    (cwd / "link.rsp").symlink_to("-")
+    result = suite.run(directory, cwd, ["@link.rsp"], status=3, diagnostic=IO)
+    response_only(result, [b"link.rsp"])
+
+    directory, cwd = suite.case("response-limits")
+    (cwd / "cycle.rsp").write_bytes(b"@cycle.rsp")
+    before = tree(cwd)
+    result = suite.run(directory, cwd, ["@cycle.rsp"], status=2, diagnostic=INVALID)
+    response_only(result, [b"cycle.rsp"] * 8)
+    assert tree(cwd) == before
+    (cwd / "empty.rsp").write_bytes(b"")
+    (cwd / "repeat.rsp").write_bytes(b" ".join([b"@empty.rsp"] * 17))
+    before = tree(cwd)
+    result = suite.run(directory, cwd, ["@repeat.rsp"], status=2, diagnostic=INVALID)
+    response_only(result, [b"repeat.rsp"] + [b"empty.rsp"] * 15)
+    assert tree(cwd) == before
+    for length, status, output, diagnostic in [(262144, 0, ROOT_HELP, b""), (262145, 2, b"", INVALID)]:
+        (cwd / "large.rsp").write_bytes(b"--help" + b" " * (length - 6))
+        before = tree(cwd)
+        result = suite.run(directory, cwd, ["@large.rsp"], status=status, output=output, diagnostic=diagnostic, label="file-bytes-%d" % length)
+        response_only(result, [b"large.rsp"])
+        observed_bytes = sum(int(entry["result"].split()[0]) for entry in selected(result, "read") if entry["result"].split()[0].isdecimal())
+        assert observed_bytes == length
+        assert tree(cwd) == before
+
+    directory, cwd = suite.case("response-owners-baseline")
+    (cwd / "outer.rsp").write_bytes(b"@help.rsp")
+    (cwd / "help.rsp").write_bytes(b"--help")
+    before = tree(cwd)
+    baseline = suite.run(directory, cwd, ["@outer.rsp"], output=ROOT_HELP)
+    response_only(baseline, [b"outer.rsp", b"help.rsp"])
+    points = baseline["source"]["allocations"]
+    assert 0 < len(points) <= 256
+    for allocation in points:
+        result = suite.run(directory, cwd, ["@outer.rsp"], status=4, diagnostic=ALLOCATION,
+                           rules=[rule("mmap", allocation["ordinal"], "ENOMEM")], baseline=baseline, label="response-oom-%d" % allocation["ordinal"])
+        response_only(result, [b"outer.rsp", b"help.rsp"], partial=True)
+        assert tree(cwd) == before
+    for call in ("openat", "read"):
+        target = selected(baseline, call)[0]
+        result = suite.run(directory, cwd, ["@outer.rsp"], status=3, diagnostic=IO,
+                           rules=[rule(call, target["ordinal"], "EIO")], baseline=baseline, label="response-" + call + "-eio")
+        response_only(result, [b"outer.rsp", b"help.rsp"], partial=True)
+    read = selected(baseline, "read")[0]
+    recovered = suite.run(directory, cwd, ["@outer.rsp"], output=ROOT_HELP,
+                          rules=[rule("read", read["ordinal"], "EINTR")], baseline=baseline, label="response-read-eintr")
+    response_only(recovered, [b"outer.rsp", b"help.rsp"])
+    broken = suite.run(directory, cwd, ["@outer.rsp"], status=3, diagnostic=IO, closed_stdout=True, label="response-closed-reader")
+    response_only(broken, [b"outer.rsp", b"help.rsp"])
+    actual = [entry for entry in selected(broken, "write") if LEDGER.arguments(entry["args"])[0] == "1"]
+    assert len(actual) == 1 and actual[0]["result"].startswith("-1 EPIPE ") and "INJECTED" not in actual[0]["result"]
+    assert tree(cwd) == before
+
+    def mutation_case(label):
+        directory, cwd = suite.case(label)
+        (cwd / "change.rsp").write_bytes(b"put db.kv 00 ff")
+        (cwd / "db.kv").write_bytes(SNAPSHOT.encode({}))
+        return directory, cwd
+    directory, cwd = mutation_case("response-mutation-baseline")
+    mutation = suite.run(directory, cwd, ["@change.rsp"])
+    boundary = response_prefix(mutation, [b"change.rsp"])
+    assert (cwd / "db.kv").read_bytes() == SNAPSHOT.encode({b"\0": b"\xff"})
+    data_owners = [owner for owner in mutation["acquisitions"] if owner["acquired"]["name"] == "openat"
+                   and LEDGER.quoted(LEDGER.arguments(owner["acquired"]["args"])[1]) == b"db.kv"]
+    assert len(data_owners) == 1 and data_owners[0]["acquired"]["index"] > boundary
+    allocations_after_database_open = [entry for entry in mutation["source"]["allocations"] if entry["index"] > data_owners[0]["acquired"]["index"]]
+    assert allocations_after_database_open
+    directory, cwd = mutation_case("database-oom-retains-expansion-cleanup")
+    before = tree(cwd)
+    target = allocations_after_database_open[0]
+    failed = suite.run(directory, cwd, ["@change.rsp"], status=4, diagnostic=ALLOCATION,
+                       rules=[rule("mmap", target["ordinal"], "ENOMEM")], baseline=mutation)
+    response_prefix(failed, [b"change.rsp"])
+    assert tree(cwd) == before
+    syncs = selected(mutation, "fsync")
+    assert len(syncs) == 2
+    directory, cwd = mutation_case("published-status-retains-expansion-cleanup")
+    before = tree(cwd)
+    published = suite.run(directory, cwd, ["@change.rsp"], status=6, diagnostic=PUBLISHED,
+                          rules=[rule("fsync", syncs[-1]["ordinal"], "EIO")], baseline=mutation)
+    response_prefix(published, [b"change.rsp"])
+    before[b"db.kv"] = (stat.S_IFREG, SNAPSHOT.encode({b"\0": b"\xff"}))
+    assert tree(cwd) == before
+    suite.done(" response-source-oom=%d" % len(points))
 
 
 def hierarchy(suite):
@@ -433,12 +655,58 @@ def controls():
     print("kv-hierarchy CPU-controls=%d native-cases=0" % count)
 
 
+def response_controls():
+    count = 0
+    def reject(action):
+        nonlocal count
+        try: action()
+        except AssertionError: count += 1
+        else: raise AssertionError("invalid response-file identity/effect witness accepted")
+    text = ('[10] openat(AT_FDCWD, "\\x61", O_RDONLY|O_CLOEXEC|O_NONBLOCK|O_NOCTTY|O_NOFOLLOW) = 3\n'
+            '[10] statx(3, "", AT_EMPTY_PATH, STATX_BASIC_STATS, {}) = 0\n'
+            '[10] read(3, "\\x2d\\x68", 1024) = 2\n'
+            '[10] close(3) = 0\n')
+    found = LEDGER.events(text)
+    owner = dict(fd=3, generation=1, acquired=found[0], closed=found[-1])
+    original = dict(events=found, acquisitions=[owner])
+    response_only(original, [b"a"]); count += 1
+    response_only(original, [b"a", b"b"], partial=True); count += 1
+    reject(lambda: response_only(original, [b"a", b"b"]))
+    reject(lambda: response_only(original, [b"b"]))
+    for index, changes in [(0, dict(args=found[0]["args"].replace("|O_NOFOLLOW", ""))),
+                           (1, dict(args=found[1]["args"].replace("AT_EMPTY_PATH", "0"))),
+                           (2, dict(args=found[2]["args"].replace("3,", "4,", 1))),
+                           (2, dict(index=4))]:
+        altered = [dict(entry, **changes) if at == index else entry for at, entry in enumerate(found)]
+        reject(lambda altered=altered: response_only(dict(original, events=altered), [b"a"]))
+    wrote = dict(name="write", args='3, "\\x61", 1', result="1", index=2)
+    reject(lambda: response_only(dict(original, events=[*found[:2], wrote, *found[2:]]), [b"a"]))
+    assert response_prefix(original, [b"a"]) == found[-1]["index"]; count += 1
+    print("kv-response CPU-controls=%d native-cases=0" % count)
+
+
+def artifact_controls():
+    count = 0
+    assert artifact_prefix(11) == "011-run"; count += 1
+    assert artifact_prefix(11, "nested-source") == "011-nested-source"; count += 1
+    for label in ("@sub/start.rsp", "../../outside", "/absolute", "nul\0byte", ".", "\\windows", "raw-\udcff", "x" * 65):
+        prefix = artifact_prefix(11, label)
+        assert prefix == "011-run" and Path(prefix).name == prefix and "\0" not in prefix, (label, prefix)
+        count += 1
+    assert artifact_prefix(11, "same") != artifact_prefix(12, "same"); count += 1
+    print("kv-artifact CPU-controls=%d native-cases=0" % count)
+
+
 if __name__ == "__main__" and sys.argv[1:] == ["controls"]:
     controls()
+elif __name__ == "__main__" and sys.argv[1:] == ["response-controls"]:
+    response_controls()
+elif __name__ == "__main__" and sys.argv[1:] == ["artifact-controls"]:
+    artifact_controls()
 elif __name__ == "__main__":
     suite = Suite(sys.argv[1], sys.argv[2])
     try:
-        {"roundtrips": roundtrips, "publication": publication, "hierarchy": hierarchy}[suite.group](suite)
+        {"roundtrips": roundtrips, "publication": publication, "hierarchy": hierarchy, "responses": responses}[suite.group](suite)
     except BaseException:
         print("KV application evidence: %s" % suite.directory, file=sys.stderr)
         raise

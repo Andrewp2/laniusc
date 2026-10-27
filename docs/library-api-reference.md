@@ -5,7 +5,7 @@ and `extended/`. Each module page retains public signatures, generic bounds,
 enclosing impl/trait headers, types, fields, enum variants and constants, with
 links to their exact source lines. Function bodies are omitted. Direct source
 imports link to the corresponding module pages; item imports also link to the
-exact declaration's source line.
+source declaration lines.
 
 This improves discovery. It does not complete the semantic API reference.
 Linked guides own runtime behavior, target evidence, errors, ownership,
@@ -39,58 +39,65 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the command hierarchy/help source/API freeze, the bounded writer and
-`--check` both exit zero for **253 pages from 252 source modules, with 8,346
-lexical public declaration markers**. Five outputs change relative to the
-ordinary nested-iteration freeze: the [index](api/README.md),
-[flat parser](api/ext/cli.md), new [command router](api/ext/cli_commands.md), new
-[help renderer](api/ext/cli_help.md) and [KV module](api/ext/kv.md). They retain
-the public schema, scoped events/errors, caller-scratch parser, terminator
-getter and measured caller-buffer help, linked to the
-[contract guide](extended-cli-commands.md).
+At the accepted response-file source/API freeze, the bounded writer and
+`--check` both exit zero for **256 pages from 255 source modules, with 8,384
+lexical public declaration markers**. Seven outputs change relative to the
+hierarchy freeze: the [index](api/README.md),
+[flat parser](api/ext/cli.md), [command router](api/ext/cli_commands.md),
+[KV module](api/ext/kv.md) and three new pages for
+[byte tokenization](api/ext/response.md),
+[owned expansion](api/ext/cli_response.md) and the
+[native file provider](api/ext/cli_response_files.md). Guide links and notes
+separate grammar, provider/owner contracts, native services and application
+policy. Source generation itself proves no runtime behavior.
 
-Production freezes are flat parser `9f11981f...`, command routing
-`6eb4db7a...`, help `a7198a2a...` and the migrated KV application
-`f07fd52f...`. The selected increment is accepted on its finite native Linux
-x86_64 profile: two semantic Rust tests, both direct public smokes and the pure
-contract executable, one selected flat-parser regression and three direct
-all-syscall KV groups. The latter total 130 overlapping cases, not three current
-Rust-libtest passes or 260 cases after the observation retry. The new KV driver
-has separate `--no-run` admission. Source generation itself proves no runtime
-behavior and does not complete the full library goal.
+Production freezes remain tokenizer `a997585c...`, expansion `35b6ee83...`
+and native provider `461037b8...`; the response-backed KV application is
+`789143f6...`. The selected increment has finite native Linux x86_64
+acceptance: two portable semantic Rust tests, three direct public smokes,
+pure syscall observations, 39/31 direct native provider/resource cases and
+55 current application cases. The direct groups have overlap and are not
+current native Rust-libtest passes. Exact sources, receipts, ownership and
+historical scopes belong to the [response guide](extended-cli-response.md)
+and [current application guide](extended-kv.md#current-application-receipts).
+The complete standard and extended library goal remains open.
 
-Current generation receipts are
-`target/stdlib-work/cli-commands-reference-final-writer.log` and
-`cli-commands-reference-final-check.log` in that directory. Brief metadata
-links to the [command guide](extended-cli-commands.md),
-[flat-parser guide](extended-cli.md) and
-[KV application guide](extended-kv.md#current-application-receipts); these own
-exact source identities, executable receipts and historical scopes. Public
-`pub` spellings are counted lexically, including required public implementations
-of private helpers. This is not a count of externally usable APIs or working
-functions.
+Final generation receipts are
+`target/stdlib-work/response-reference-final-retry-writer.log` and
+`response-reference-final-retry-check.log` in that directory. The first writer
+attempt stopped before publishing any pages because its item lookup conflated
+the public `Provider` trait and `Cause::Provider` value variant
+(`response-reference-final-writer.log`). The documentation-tool correction
+retains both source declaration links in their distinct type/value namespaces,
+without selecting an importing use-site target. Single-target rendering is
+unchanged; ambiguity within either namespace still fails. No production or
+compiler change was made for reference generation.
 
-The existing scanner rule excludes known local private helper implementation
-blocks while retaining public, unknown, external, primitive and generic-parameter
-receivers. No generator code or tests changed for this increment. Its earlier
-nested-iteration controls passed three focused cases in 0.002s and **29 full
-CPU tests in 3.711s**, recorded in
-`target/stdlib-work/nested-iteration-reference-generator-tests-first.log`.
-Those controls cover private-owner suppression, positive receiver retention,
-unsupported public syntax, imports/source spans, lexical counts and output
-ownership. Unchanged tests were not repeated for source/metadata regeneration.
+Eight focused CPU tests pass in **3.613s**, recorded in
+`target/stdlib-work/response-reference-final-retry-tests.log`. They cover mixed
+namespace links, same-namespace ambiguity, existing single-item spellings,
+whole-module precedence, missing/private items, non-reexport and the current
+source inventory/import links. Earlier scanner controls passed three focused
+cases and 29 full CPU tests in 3.711s at the nested-iteration checkpoint;
+those unchanged branches were not broadly rerun for this change.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
-hashes before generation and after the final check. The generator writes only
-the reference tree. The ordinary nested freeze had 251 pages, 250 modules and
-8,329 markers (`infallible-nested-reference-final-{writer,check}.log`); the
-replacement-sink freeze had 251/250/8,309
-(`replacement-reference-final-{writer,check}.log`). Earlier partial replacement
-receipts retain their then-pending runtime classification. The preceding
-fallible nested freeze had 251/250/8,295; filesystem had 251/250/8,259;
-reusable regex had 250/249/8,220; archive had 250/249/8,197. Earlier
-language-adoption/AtomicFile inventory had 246 pages, 245 modules and 8,119
-markers. Each retains its guide-defined source and runtime scope.
+hashes before generation and after the final check, recorded in
+`target/stdlib-work/response-reference-human-{before,after}.sha256`. The writer
+changes only generated pages. Public `pub` spellings are counted lexically,
+including required public implementations of private helpers; this is not a
+count of externally usable APIs or working functions.
+
+The hierarchy freeze had 253 pages, 252 modules and 8,346 markers
+(`cli-commands-reference-final-{writer,check}.log`). Its source and 130-case
+application receipts remain historical and were not rerun on the current KV
+source. The ordinary nested freeze had 251/250/8,329
+(`infallible-nested-reference-final-{writer,check}.log`); replacement sinks had
+251/250/8,309 (`replacement-reference-final-{writer,check}.log`); fallible nested
+iteration had 251/250/8,295; filesystem had 251/250/8,259; reusable regex had
+250/249/8,220; archives had 250/249/8,197. The earlier language-adoption and
+AtomicFile inventory had 246/245/8,119. Each retains its guide-defined source
+and runtime scope.
 
 ## Source boundaries
 
@@ -128,16 +135,22 @@ the [item-import contract](language-ergonomics.md#item-imports):
 - An inventoried module matching the entire path wins, even if the prefix
   module contains a public item with that same final name.
 - Otherwise, the prefix must be an inventoried module and the last segment
-  must identify exactly one public declaration there. Variants of public enums
-  have module-level names, including `core::result::Ok`; their declaration links
-  point to the variant's own source line.
-- Private, missing or ambiguous items fail with the importing file/line.
+  must identify a public declaration in each applicable namespace. Structs,
+  enums, traits and type aliases occupy the type namespace; functions,
+  extern functions, constants and enum variants occupy the value namespace.
+  A shared spelling can link one declaration from each namespace. Both source
+  declarations are retained; the inventory does not infer use-site resolution.
+- Public enum variants have module-level names, including `core::result::Ok`;
+  links point to the variant's own source line.
+- Private, missing or same-namespace ambiguous items fail with the importing file/line.
   Struct fields, impl methods and private-enum variants are not module items.
   Imported names are not re-exported. Aliases, globs and `use` are unsupported.
 
-An item link preserves the full written import path, identifies its declaration
-kind, links the owning module page and the exact declaration, and retains a
-separate link to the import line. Existing module links keep their format.
+An item link preserves the full written import path, identifies declaration
+kinds, links the owning module page and the exact declarations, and retains a
+separate link to the import line. Single-target and module links keep their
+format; a plural link labels the distinct namespaces and links both source
+locations without choosing a use-site target.
 This static inventory lookup does not replace compiler package/name resolution,
 type checking or runtime verification. Short public signatures keep their
 original source spelling; the generator does not expand imported type names.

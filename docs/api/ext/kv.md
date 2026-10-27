@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. The current hierarchy kv_tool reuses canonical routing/help and the unchanged anchored AtomicFile publication workflow; three direct full-syscall groups pass 130 overlapping cases, including reached allocation/I/O faults, on native Linux x86_64/ext4. These are not three Rust-libtest receipts; weaker selected-trace observations and the earlier 64-case application freeze remain historical, without adding to 130. Published-unsynced, visibility-unconfirmed and retained-cleanup outcomes remain explicit. Cooperative namespaces, manual owners, no locking or universal crash guarantee; CRC is noncryptographic.
+Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Current response-backed kv_tool source 789143f6 passes one direct 55-case group, including 18 source allocation denials in its nested-help baseline, a post-database OOM and published-unsynced status 6 within that count. The earlier hierarchy source f07fd52f/130-case and 64-case atomic campaigns were not rerun and remain historical. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic.
 
 ## Contract and evidence guides
 

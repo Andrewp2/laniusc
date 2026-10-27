@@ -527,3 +527,7 @@ fn native_cli_atomic_publication_races_faults_and_reached_allocations_report_vis
 fn native_cli_hierarchy_help_and_raw_path_routing_have_no_premature_file_effects() {
     application_group("hierarchy");
 }
+#[test]
+fn native_cli_response_files_preflight_raw_arguments_and_release_all_expansion_owners() {
+    application_group("responses");
+}

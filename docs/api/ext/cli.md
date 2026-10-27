@@ -14,6 +14,7 @@ Canonical borrowed option lexer with sticky errors, fused EOF and exact event lo
 
 - [extended-cli](../../extended-cli.md)
 - [extended-cli-commands](../../extended-cli-commands.md)
+- [extended-cli-response](../../extended-cli-response.md)
 
 Declaration counts: enum: 4; field: 19; function: 1; impl: 1; method: 2; struct: 5; variant: 12.
 

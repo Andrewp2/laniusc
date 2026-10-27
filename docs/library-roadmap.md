@@ -57,7 +57,7 @@ tests, target support, and relevant performance evidence.
 | Storage | Database interfaces; executable [SQLite integration](extended-sqlite.md), [persistent binary key/value application](extended-sqlite-kv.md) and key-value snapshots; broader database/storage interfaces remain |
 | Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests, verified client/server TLS and mutual TLS execute with explicit trust and manual owners; standalone encryption/signature APIs, application identity/authorization and broader certificate policy remain open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
-| Application utilities | CLI option parsing, command hierarchies, caller-buffer generated help, logging, configuration, tables, progress reporting; completion, response files and richer application validation remain |
+| Application utilities | CLI option parsing, command hierarchies, caller-buffer generated help, bounded response-file preprocessing, logging, configuration, tables and progress reporting; completion and richer application validation remain |
 | Media | Image codecs, pixel operations, audio codecs and signal utilities |
 
 The [compiled byte-glob module](extended-glob.md) and its streaming path-filter
@@ -543,9 +543,57 @@ than a request to replace implementation work with more tests.
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
 | Mathematics | Big integers, finite decimals, ordinary statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. | Additional number theory, decimal exceptional/transcendental behavior, weighted/higher statistics, sparse/advanced decompositions and further distributions remain as listed above. Preserve finite-domain and accuracy limits. |
-| Application and media utilities | CLI event parsing, command hierarchy and caller-buffer generated help execute; the migrated KV CLI passes its finite hierarchy/roundtrip/publication groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows retain their executable profiles. | Shell completion, response files, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
+| Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Shell completion, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
+
+### Accepted response files
+
+The [response-file contract](extended-cli-response.md) and
+[plan](library-response-files-plan.md) add three distinct modules: pure
+`ext::response` grammar/mapping, owned `ext::cli_response` expansion over a
+generic provider and explicit `ext::cli_response_files` loading from a borrowed
+directory. Stable final argv feeds both existing parsers. No option lexer is
+duplicated; expansion retains captured failure diagnostics and transfers
+provider errors to the caller.
+
+Two portable semantic Rust tests pass together in 8.93s after a separate 3.37s
+build (`response-semantics-first.log`): 96 native records contain 17 grammar,
+ten syntax and 69 expansion/limit cases. Separate pure contracts exercise
+raw mappings, logical bounds, canaries and actual signed strides. Tokenizer,
+owned-expansion and native-provider public smokes compile and exit zero.
+Full traces of the tokenizer smoke and pure contracts contain only launch and
+final raw exit under mmap denial; no allocation attempt occurs, so this is
+not OOM-recovery evidence.
+
+Current [KV source](extended-kv.md#current-application-receipts) `789143f6...`
+passes its focused response group: 55 process cases, including all 18 source
+allocation denials from the nested-help baseline, a post-database OOM and the
+published/unsynced status 6 case. Those cases are included in 55. Artifact-aware
+oracle `057bb27a...` retains the earlier failed observation separately.
+Earlier hierarchy source `f07fd52f...` and its 130 cases were not rerun and are
+not added to this receipt. Current resource/KV Rust drivers have a separate
+combined `--no-run` build in 2.09s
+(`response-resource-kv-drivers-build-first.log`), without a current native
+Rust-test execution claim.
+
+Two direct native oracle groups now pass: provider 39 and resources 31,
+including all 29 reached source OOM positions and two resource baselines.
+These 70 overlapping group cases are not two current Rust-libtest passes.
+Actual live ACK checkpoints check descriptor generations and source maps;
+owned provider errors remain usable after Expansion destruction. Receipts are
+`response-files-provider-native-first.log` and
+`response-files-resources-native-first.log`. Final probes are `f8a564cb...`
+and `5b28229c...`; oracle `a472...` has 39 CPU controls and complete phase/syscall
+observation after two review gaps were corrected before native acceptance.
+Those CPU controls are separate from executable case counts.
+
+Source identities and exact public smoke/semantic receipts are in the module
+guide. The selected increment is accepted on finite native Linux x86_64 CPU
+output from the GPU compiler.
+Fixed-base lookup is not containment, cycles are bounded by explicit limits,
+and storage limits are not an exact heap/RSS cap. Shell completion, broader
+application policy and the full standard/extended library goal remain open.
 
 ### Accepted command hierarchy and help
 
@@ -564,7 +612,7 @@ exit zero under full syscall observation and mmap denial, with no allocation
 attempt. This establishes no OOM-recovery path. One selected old flat-parser
 test passes in 6.04s after a separate 2.32s build; seven were filtered out.
 
-Current [KV application](extended-kv.md#current-application-receipts) source
+Historical [hierarchy KV application](extended-kv.md#historical-hierarchy-application-receipts) source
 `f07fd52f...` passes three direct groups: hierarchy66, roundtrips33 and
 publication31, including 13 reached source OOMs and 15 I/O faults. The total is
 130 overlapping cases, not three current Rust-libtest passes. All syscalls are
@@ -575,8 +623,9 @@ The registered KV driver builds with `--no-run` in 51.67s separately.
 Flat parser `9f11981f...`, command routing `6eb4db7a...` and help
 `a7198a2a...` retain the selected native Linux x86_64 CPU profile emitted by the
 GPU compiler. A minimal nested-error-pattern dependency has a typed-match
-executable control and does not block the APIs. Completion, response files,
-richer application validation and the full library goal remain open.
+executable control and does not block the APIs. Response preprocessing has its
+separate in-progress scope above. Completion, richer application validation
+and the full library goal remain open.
 
 ### Accepted ordinary nested iteration
 
@@ -768,13 +817,21 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [response-file preprocessing](library-response-files-plan.md):
+  portable semantics and all three public smokes pass. Direct native provider
+  and resource groups pass 39/31 cases, with all 29 reached source OOMs and
+  live-owner checks. These are separate from two portable Rust tests. Current KV response
+  group passes 55 cases, including 18 reached source OOMs, one post-database
+  OOM and status 6 within that count. Current resource/KV drivers have build
+  admission only; their direct native receipts do not become Rust-libtest passes.
 - Accepted [command hierarchy and help](library-cli-commands-plan.md): two
   semantic Rust tests, both public smokes and a pure contract executable pass,
   including full syscall observation with no allocation attempt. One selected
   flat-parser regression passes; its other seven tests were filtered out.
-  Current KV passes three direct all-syscall groups totaling 130 overlapping
-  cases, not three native Rust tests. Its new registered driver has build-only
-  admission. Completion, response files and application validation remain open.
+  Historical hierarchy KV source `f07fd52f...` passes three direct all-syscall
+  groups totaling 130 overlapping cases, not three native Rust tests or current
+  response-source reruns. Its then-new registered driver had build admission.
+  Completion and richer application validation remain open.
 - Accepted [ordinary nested-iteration increment](library-infallible-nested-plan.md):
   core `5034fbac...` adds Flatten/FlatMap through the existing shared engine and
   true empty Infallible retirement. One direct public smoke, two semantic Rust
@@ -1572,8 +1629,10 @@ the rest of the family scope above stays open.
   allocations suffice at both 4,096 and 32,768 arguments. Those original
   flat-parser/checksum receipts retain their source scope. The separately
   accepted [hierarchy and generated help](extended-cli-commands.md) now address
-  routing and usage output through caller storage; completion and response files
-  remain. Logging executes as documented below.
+  routing and usage output through caller storage. Optional
+  [response preprocessing](extended-cli-response.md) now has portable semantic,
+  native provider/resource and current KV application receipts. Completion remains open.
+  Logging executes as documented below.
 - Configuration: [`ext::config`](extended-config.md) executes strict JSON object
   sources, bounded file loading, typed borrowed queries and explicit shallow
   overlays with source indices. The checksum application combines configuration

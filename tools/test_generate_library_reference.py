@@ -248,6 +248,36 @@ pub extern "C" fn native() -> i32;
         self.assertNotIn("(item:", page)
         self.assertNotIn("[declaration]", page)
 
+    def test_item_import_links_distinct_type_and_value_namespaces(self):
+        (self.root / "stdlib/core/a.lani").write_text('''module core::a;
+pub enum Cause<H> { Provider(H) }
+pub trait Provider<H> { fn load() -> H; }
+''')
+        (self.root / "extended/ext/b.lani").write_text(
+            "module ext::b;\nimport core::a::Provider;\n")
+        output, _ = reference.generate(self.root)
+        page = output["docs/api/ext/b.md"]
+        self.assertIn("[core::a::Provider](../core/a.md) (items in separate namespaces: variant, trait; no use-site resolution)", page)
+        self.assertIn("[variant declaration](../../../stdlib/core/a.lani#L2)", page)
+        self.assertIn("[trait declaration](../../../stdlib/core/a.lani#L3)", page)
+        self.assertIn("[source](../../../extended/ext/b.lani#L2)", page)
+        self.assertLess(page.index("[variant declaration]"), page.index("[trait declaration]"))
+
+    def test_item_import_rejects_ambiguity_within_either_namespace(self):
+        (self.root / "extended/ext/b.lani").write_text(
+            "module ext::b;\nimport core::a::Provider;\n")
+        cases = [
+            "pub enum First { Provider } pub enum Second { Provider }",
+            "pub trait Provider { fn call(); } pub struct Provider {}",
+            "pub fn Provider() {} pub enum Cause { Provider }",
+            "pub trait Provider { fn call(); } pub enum First { Provider } pub enum Second { Provider }",
+        ]
+        for declarations in cases:
+            (self.root / "stdlib/core/a.lani").write_text("module core::a;\n" + declarations)
+            with self.subTest(source=declarations), self.assertRaisesRegex(
+                    reference.ReferenceError, r"extended/ext/b.lani:2: ambiguous public item import: core::a::Provider"):
+                reference.generate(self.root)
+
     def test_missing_private_and_nested_items_are_rejected_at_import_line(self):
         (self.root / "stdlib/core/a.lani").write_text('''module core::a;
 fn private_function() {}

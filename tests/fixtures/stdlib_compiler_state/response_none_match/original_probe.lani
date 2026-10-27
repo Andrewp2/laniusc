@@ -1,0 +1,179 @@
+// Test-only real Files provider, with caller-owned base and acknowledged owners.
+// Request: 8 little-endian u64 words, then path_length bytes.
+// mode, max_bytes, max_calls, follow, repeats, path_case, path_length, repair_fd.
+// Reports: 32 little-endian u64 words + payload, each followed by ACK '!'.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::path;
+import core::result;
+import core::slice::View;
+import ext::cli_response;
+import ext::cli_response::Provider;
+import ext::cli_response_files;
+import ext::cli_response_files::Files;
+import std::file;
+import std::file_ops;
+import std::linux;
+import std::stream;
+
+fn bytes(text:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count };
+}
+fn path(text:str,count:i32) -> core::path::Path { return core::path::from_view(bytes(text,count)).unwrap(); }
+fn word(input:[u8],offset:i32) -> u64 {
+    let value:u64=0; let index:i32=0;
+    while(index<8) { value|=(input[offset+index] as u64)<<(index*8); index+=1; }
+    return value;
+}
+fn mark(value:u8) {
+    let storage:[u8;1]=[value]; let stderr=std::stream::stderr();
+    assert(core::io::write_all(stderr.borrow(),storage,0,1).is_ok());
+}
+fn io(error:core::io::Error) -> u64 {
+    return match(error) { core::io::Error::Host(code)->code as u64,
+        core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,
+        core::io::Error::InvalidInput->900,core::io::Error::InvalidCount->901,_ ->902 };
+}
+fn phase(value:ext::cli_response_files::Phase) -> u64 {
+    return match(value) { ext::cli_response_files::Phase::Admission->1,
+        ext::cli_response_files::Phase::Open->2,ext::cli_response_files::Phase::Metadata->3,
+        ext::cli_response_files::Phase::Read->4,ext::cli_response_files::Phase::Close->5 };
+}
+fn cause(value:ext::cli_response_files::Cause) -> u64 {
+    return match(value) { ext::cli_response_files::Cause::Bounds->1,
+        ext::cli_response_files::Cause::CallLimit->2,ext::cli_response_files::Cause::NotRegular->3,
+        ext::cli_response_files::Cause::ByteLimit->4,ext::cli_response_files::Cause::AllocationFailed->5,
+        ext::cli_response_files::Cause::Io(error)->1000+io(error) };
+}
+fn record_error(output:[u64],at:i32,error:ext::cli_response_files::Error) {
+    output[at]=1; output[at+1]=phase(error.phase); output[at+2]=cause(error.cause);
+    if(error.cleanup.is_some()) { output[at+3]=io(error.cleanup.unwrap()); }
+}
+fn load(provider:&Files,name:View<u8>,maximum:i32,output:[u64],at:i32) -> Vec<u8> {
+    mark(76); let result=provider.load(name,maximum); mark(108);
+    if(result.is_err()) { record_error(output,at,result.unwrap_err()); output[at+6]=provider.calls(); return alloc::vec::new<u8>(); }
+    let owner:Vec<u8> =result.unwrap(); output[at+4]=owner.len() as u64;
+    output[at+5]=owner.capacity() as u64; output[at+6]=provider.calls(); return owner;
+}
+fn emit(output:[u64],payload:View<u8>) {
+    output[7]=payload.len() as u64; let packed:[u8;256]=[0;256]; let index:i32=0;
+    while(index<32) { let byte:i32=0; while(byte<8) { packed[index*8+byte]=((output[index]>>(byte*8))&255) as u8; byte+=1; } index+=1; }
+    let stdout=std::stream::stdout(); assert(core::io::write_all(stdout.borrow(),packed,0,256).is_ok());
+    assert(core::io::write_all(stdout.borrow(),payload.values,payload.start,payload.len()).is_ok());
+}
+fn ack() {
+    let storage:[u8;1]=[0]; let stdin=std::stream::stdin();
+    assert(core::io::read_exact(stdin.borrow(),storage,0,1).is_ok() && storage[0]==33);
+}
+fn raw_close(fd:u64) {
+    // A strace close error skips physical close. This separately marked repair
+    // is test cleanup after the library's one attempt, never a library retry.
+    assert(fd<2147483648); mark(81);
+    let args:[std::linux::Argument;1]=[std::linux::Argument::Word(fd as i64)];
+    assert(std::linux::call(3,View { values:args,start:0,length:1 }).unwrap()==0); mark(113);
+}
+fn expansion_error(output:[u64],failure:ext::cli_response::Failure<ext::cli_response_files::Error>) {
+    output[8]=1; output[9]=100;
+    output[10]=match(failure.cause) {
+        ext::cli_response::Cause::Provider(error)->100+cause(error.cause),
+        ext::cli_response::Cause::AllocationFailed->5,
+        ext::cli_response::Cause::Syntax(_)->20,
+        ext::cli_response::Cause::InvalidState->21,
+        ext::cli_response::Cause::Bounds->22,
+        ext::cli_response::Cause::SourceLimit->23,
+        ext::cli_response::Cause::TokenLimit->24,
+        ext::cli_response::Cause::ArgumentLimit->25,
+        ext::cli_response::Cause::ArgumentBytes->26,
+        ext::cli_response::Cause::OutputLimit->27,
+        ext::cli_response::Cause::FileLimit->28,
+        ext::cli_response::Cause::DepthLimit->29,
+        ext::cli_response::Cause::PathLimit->30,
+        ext::cli_response::Cause::WorkLimit->31,
+        ext::cli_response::Cause::ProviderContract->32
+    };
+    let native:Option<ext::cli_response_files::Error> =match(failure.cause) {
+        ext::cli_response::Cause::Provider(error)->Some(error), _ ->None()
+    };
+    if(native.is_some()) { record_error(output,8,native.unwrap()); output[10]+=100; }
+    output[28]=(failure.at.source as i64) as u64; output[29]=(failure.at.argument as i64) as u64;
+    output[30]=failure.at.start as u64; output[31]=failure.at.length as u64;
+}
+fn main() -> i32 {
+    let request:[u8;64]=[0;64]; let stdin=std::stream::stdin();
+    assert(core::io::read_exact(stdin.borrow(),request,0,64).is_ok());
+    let mode=word(request,0); let maximum=word(request,8) as i32;
+    let allowance=word(request,16); let follow=word(request,24)!=0;
+    let repeats=word(request,32); let selector=word(request,40);
+    let length=word(request,48) as i32; let repair=word(request,56);
+    assert(mode<=6 && repeats>=1 && repeats<=2 && selector<=4 && length>=0 && length<=4096);
+    let storage:[u8;4098]=[90;4098];
+    assert(core::io::read_exact(stdin.borrow(),storage,1,length).is_ok());
+    let name:View<u8> =View { values:storage,start:1,length:length };
+    if(selector==1) { name.start=-1; }
+    if(selector==2) { name.length=-1; }
+    if(selector==3) { name.start=2147483647; name.length=2; }
+    if(selector==4) { name.length=0; }
+    let output:[u64;32]=[0;32]; output[0]=1381189169; output[1]=1; output[4]=mode; output[24]=repeats;
+    let no_args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    output[3]=std::linux::call(39,View { values:no_args,start:0,length:0 }).unwrap() as u64;
+    let base:std::file::File=std::file::File { handle:-1 }; let base_fd:i32=-1;
+    if(mode!=4 && mode!=6) {
+        let options=std::file_ops::options(); options.directory=true; options.no_follow=true;
+        mark(66); base=std::file_ops::open(path("base",4),options).unwrap(); mark(98);
+        base_fd=base.raw_handle().unwrap();
+    }
+    if(mode==6) { base_fd=std::file_ops::AT_FDCWD; }
+    output[5]=(base_fd as i64) as u64;
+    if(mode==1) {
+        mark(82); assert(std::file_ops::rename_at(std::file_ops::AT_FDCWD,path("base",4),std::file_ops::AT_FDCWD,path("moved",5),std::file_ops::RenamePolicy::Replace).is_ok());
+        assert(std::file_ops::create_dir_at(std::file_ops::AT_FDCWD,path("base",4),448).is_ok()); mark(114);
+    }
+    if(mode==2) {
+        let options=std::file_ops::options(); options.directory=true; options.no_follow=true;
+        mark(72); let other=std::file_ops::open(path("elsewhere",9),options).unwrap();
+        let args:[std::linux::Argument;1]=[std::linux::Argument::Word(other.raw_handle().unwrap() as i64)];
+        assert(std::linux::call(81,View { values:args,start:0,length:1 }).unwrap()==0);
+        assert(other.close().is_ok()); mark(104);
+    }
+    if(mode==3) { mark(80); assert(base.close().is_ok()); mark(112); }
+    let created=ext::cli_response_files::files(base_fd,allowance,follow);
+    let returned:Vec<u8> =alloc::vec::new<u8>(); let expansion=ext::cli_response::empty();
+    let payload:View<u8> =View { values:storage,start:0,length:0 };
+    if(created.is_err()) { record_error(output,8,created.unwrap_err()); }
+    else {
+        let provider:Files=created.unwrap();
+        if(mode==5) {
+            assert(repeats==1 && selector==0);
+            let argv:[View<u8>;1]=[name]; let limits=ext::cli_response::default_limits();
+            limits.max_file_bytes=maximum; limits.max_source_bytes=65536; limits.max_output_bytes=32768;
+            mark(69); let result=expansion.prepare<Files,ext::cli_response_files::Error>(View { values:argv,start:0,length:1 },provider.borrow(),limits); mark(101);
+            if(result.is_err()) { expansion_error(output,result.unwrap_err()); }
+            else { output[12]=result.unwrap() as u64; let arguments=expansion.arguments().unwrap();
+                if(arguments.len()>0) { payload=arguments.get(0).unwrap(); }
+            }
+            output[26]=expansion.is_ready() as u64;
+            if(expansion.source(0).is_some()) { output[27]=1; }
+        } else {
+            returned=load(provider.borrow(),name,maximum,output,8);
+            if(repeats==2) { mark(68); returned.destroy(); mark(100); returned=load(provider.borrow(),name,maximum,output,16); }
+            payload=returned.as_view();
+        }
+        output[6]=provider.calls();
+    }
+    if(base.is_open()) {
+        mark(86); let args:[std::linux::Argument;2]=[std::linux::Argument::Word(base_fd as i64),std::linux::Argument::Word(1)];
+        assert(std::linux::call(72,View { values:args,start:0,length:2 }).is_ok()); mark(118); output[25]=1;
+    }
+    output[2]=0; emit(output,payload); ack();
+    if(repair!=18446744073709551615) { assert(output[11]!=0 || (output[9]==5 && output[8]==1)); raw_close(repair); }
+    mark(68); returned.destroy(); expansion.destroy(); expansion.destroy(); mark(100);
+    if(base.is_open()) { mark(80); assert(base.close().is_ok()); assert(base.close().is_ok()); mark(112); }
+    output[2]=1; output[7]=0; output[25]=0; output[26]=0;
+    emit(output,View { values:storage,start:0,length:0 }); ack(); return 0;
+}

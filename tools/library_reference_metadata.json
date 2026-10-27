@@ -598,21 +598,37 @@
     "ext::cli": {
       "guides": [
         "docs/extended-cli.md",
-        "docs/extended-cli-commands.md"
+        "docs/extended-cli-commands.md",
+        "docs/extended-cli-response.md"
       ],
       "note": "Canonical borrowed option lexer with sticky errors, fused EOF and exact event locations. The explicit-terminator getter distinguishes an actual -- from OptionsFirst stopping or a required value. Command routing reuses this lexer; its exclusive scratch ownership differs from the flat parser's independent position copies. The selected current flat regression and linked hierarchy gates pass on native Linux x86_64; original broader flat-parser/checksum receipts retain their historical source scope."
     },
     "ext::cli_commands": {
       "guides": [
-        "docs/extended-cli-commands.md"
+        "docs/extended-cli-commands.md",
+        "docs/extended-cli-response.md"
       ],
-      "note": "Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Applications retain arity, defaults, conflicts and help policy. Selected native Linux x86_64 semantics, pure no-host/no-allocation contracts and the real KV application pass; no automatic owner or lifetime enforcement is supplied. Completion and response files remain separate work."
+      "note": "Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Applications retain arity, defaults, conflicts and help policy. Selected native Linux x86_64 semantics, pure no-host/no-allocation contracts and the real KV application pass; no automatic owner or lifetime enforcement is supplied. Optional response preprocessing has separate ownership/provider contracts; shell completion remains open."
     },
     "ext::cli_help": {
       "guides": [
         "docs/extended-cli-commands.md"
       ],
       "note": "Deterministic measured help over the command schema, rendered into caller storage without allocation, printing or host access. Complete preflight preserves output on every error and leaves the unused tail unchanged on success. Selected native Linux x86_64 golden, bounds/stride, pure no-host and real-application gates pass; applications own output delivery and help policy."
+    },
+    "ext::cli_response": {
+      "guides": [
+        "docs/extended-cli-response.md",
+        "docs/library-response-files-plan.md"
+      ],
+      "note": "Opt-in owned response expansion over a generic Provider<H>, with copied argv, retained paths/raw sources/decoded spans, depth-first frames and stable final views published only on complete success. Provider errors transfer to the caller; Expansion owns its independent storage, with explicit destroy and borrowed-view lifetimes. Portable semantic tests, actual-parser composition and the selected native/resource groups pass on Linux x86_64. The resource group covers 29 reached source allocation failures plus two baselines, live maps/fds and an owned provider error surviving Expansion destruction. These direct receipts are not current Rust-libtest passes. Limits bound engine bytes/counts/work, not exact heap/RSS or provider wall time; there is no file-identity cycle detector or sandbox."
+    },
+    "ext::cli_response_files": {
+      "guides": [
+        "docs/extended-cli-response.md",
+        "docs/library-response-files-plan.md"
+      ],
+      "note": "Explicit Linux file provider borrowing one stable directory descriptor for all relative includes. It checks regular-file metadata and actual EOF, admits finite native-call credits with a close reserve and retires each acquired descriptor once even on close error. The public smoke and a direct 39-case provider oracle group execute on Linux x86_64, with admission, fixed-base lookup, byte/call caps and native failure/cleanup checks. The separate 31-case ownership group has 29 reached source OOMs and two baselines; counts overlap and are not two Rust-libtest passes. Source byte grants can be reduced by expansion source/work budgets. Ordinary lookup is not containment, and call limits do not bound filesystem wall time."
     },
     "ext::compression": {
       "guides": [
@@ -808,7 +824,7 @@
       "guides": [
         "docs/extended-kv.md"
       ],
-      "note": "Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. The current hierarchy kv_tool reuses canonical routing/help and the unchanged anchored AtomicFile publication workflow; three direct full-syscall groups pass 130 overlapping cases, including reached allocation/I/O faults, on native Linux x86_64/ext4. These are not three Rust-libtest receipts; weaker selected-trace observations and the earlier 64-case application freeze remain historical, without adding to 130. Published-unsynced, visibility-unconfirmed and retained-cleanup outcomes remain explicit. Cooperative namespaces, manual owners, no locking or universal crash guarantee; CRC is noncryptographic."
+      "note": "Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Current response-backed kv_tool source 789143f6 passes one direct 55-case group, including 18 source allocation denials in its nested-help baseline, a post-database OOM and published-unsynced status 6 within that count. The earlier hierarchy source f07fd52f/130-case and 64-case atomic campaigns were not rerun and remain historical. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic."
     },
     "ext::lexer": {
       "guides": [
@@ -888,6 +904,13 @@
         "docs/library-regex-workspace-plan.md"
       ],
       "note": "Borrowed split fields and independent owned literal/numeric-template replacement share canonical Regex Search storage. Split construction validates Input without acquiring a workspace; the first next admitted by terminal, match, call and work limits charges its attempt before constructing Search. Split/literal replacement use two-slot span storage, while templates retain full captures through final empty-EOF expansion. Workspace construction OOM is Regex(AllocationFailed) on that charged attempt, and no owned Match is acquired per delimiter or template match. All seven current tests pass across separate 12.70-second, 11.36-second and 10.89-second commands on GPU-compiler-emitted Linux x86_64 native code: lazy-admission/ownership checks, 288 model cases, 89 explicit tables, direct contracts, all 41 library and 25 CLI reached OOM positions, 24 exact/rejected/help CLI cases and four read/write EINTR/EIO schedules. The lazy fixture observes nine requested allocations/416 bytes for span storage versus nine/928 for full captures of the same pattern. Earlier six-group and 77/43 allocation-failure receipts describe the previous implementation and are not current allocation acceptance. Search budgets reserve configured VM allowances, not every CPU instruction, I/O call or process byte; other targets remain unverified."
+    },
+    "ext::response": {
+      "guides": [
+        "docs/extended-cli-response.md",
+        "docs/library-response-files-plan.md"
+      ],
+      "note": "Pure strict byte tokenization and decoded-to-raw mapping without allocation or host services. Complete syntax, bounds and capacity preflight preserve caller output on failure. Native Linux x86_64 portable semantic contracts and public smoke execute, including quoted/escaped/raw bytes and signed strides. Full pure traces contain only launch/exit under mmap denial, with no allocation attempt; this is not OOM-recovery evidence. Expansion and native loading remain separate modules."
     },
     "ext::schema": {
       "guides": [

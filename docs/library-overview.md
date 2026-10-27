@@ -1,6 +1,11 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[response-file increment](library-response-files-plan.md) adds pure byte
+tokenization, owned provider-driven expansion and an explicit native file
+provider. Portable semantic tests, all three public smokes, direct native
+provider/resource groups and the focused response-backed KV application group
+pass. This increment is accepted on the finite native profile below. The preceding
 [command hierarchy and help increment](library-cli-commands-plan.md) is
 implemented and accepted on the finite native profile below. Two semantic Rust
 tests, pure contract/smoke programs under full syscall observation, a selected
@@ -46,6 +51,44 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**Accepted response files.**
+
+[Response preprocessing](extended-cli-response.md) is opt-in and runs before
+either existing CLI parser. `ext::response` owns the byte grammar and raw-offset
+mapping; `ext::cli_response` retains copied argv and file diagnostics through a
+generic provider; `ext::cli_response_files` loads from one borrowed base
+directory. Expansion publishes stable argument views only after complete
+success. Providers transfer content owners or caller-owned errors; cleanup and
+borrowed lifetimes remain explicit.
+
+| Surface | Current finite scope |
+| --- | --- |
+| Portable semantics | Two Rust tests pass together in 8.93s after a separate 3.37s build. One native model processes 96 records: 17 grammar, ten syntax and 69 expansion/limit cases; a separate pure contract program checks mapping, bounds, canaries and signed strides. |
+| Pure programs | The public tokenizer smoke and contract program pass full syscall tracing with mmap denial. Only launch/final exit occur; no allocation attempt is made. This is not OOM-recovery evidence. |
+| Public composition | Tokenizer, generic expansion and native-provider public smokes compile and exit zero. The expansion smoke feeds the same final argv to both actual parsers and retains provider-failure diagnostics. |
+| Native provider | One direct oracle group passes 39 cases for file admission, fixed-base lookup, actual EOF/byte caps, call budgets and native failure/cleanup behavior. |
+| Expansion resources | One direct oracle group passes 31 cases: 29 reached source allocation failures and two baselines. Live ACK checkpoints check source maps/fds; an owned provider error remains usable after Expansion destruction. |
+| [Current KV application](extended-kv.md#current-application-receipts) | The response group passes 55 overlapping process cases, including all 18 source allocation denials in its nested-help baseline, one post-database OOM and the published/unsynced status 6 case. The latter cases are included in 55. |
+
+Portable sources are tokenizer `a997585c...` and expansion `35b6ee83...`;
+the provider is `461037b8...`. The current application is `789143f6...` with
+artifact-aware oracle `057bb27a...`. Receipts under `target/stdlib-work/` include
+`response-semantics-first.log`, `response-{public-smoke,contracts}-no-host.{trace,log}`,
+the three public smoke receipts linked in the
+[module guide](extended-cli-response.md#current-executable-evidence), and
+`response-kv-native-artifact-retry.log`. Native receipts are
+`response-files-provider-native-first.log` and
+`response-files-resources-native-first.log`: 70 overlapping group cases,
+not two current Rust-libtest passes. Current resource/KV drivers have separate
+combined `--no-run` admission in 2.09s. Native probe `f8a564cb...`, resource probe
+`5b28229c...` and reviewed oracle `a472...` retain their exact scope in the guide.
+Earlier hierarchy source `f07fd52f...`
+and its 130 cases were not rerun on this application revision and are not
+added to 55. Native Linux x86_64 CPU output from the GPU compiler is the current
+target; no user-program GPU execution follows. Shell completion, richer
+application policy and the broader library goal remain open. Fixed-base lookup
+is not containment, and byte/work limits are not an exact heap/RSS cap.
+
 **Accepted command hierarchy and help.**
 
 [Command routing and generated help](extended-cli-commands.md) use the existing
@@ -60,14 +103,14 @@ the flat parser's position-copy contract remains separate.
 | Public and pure admission | Both actual public smokes and the current contract program exit zero. Full syscall traces contain only launch/final raw exit, with no allocation attempt under mmap denial. This is not OOM-recovery evidence. |
 | Semantics | Two Rust tests pass together in 10.10s after a separate 0.39s build: 30 schema mutations, six literal help goldens and 28 routing/event/location sequences in one model process. |
 | Existing flat parser | One selected test passes in 6.04s after a separate 2.32s build; seven tests were filtered out. Earlier flat-parser/checksum receipts retain their original scope. |
-| [Current KV application](extended-kv.md#current-application-receipts) | Three direct groups pass 130 overlapping cases: hierarchy66, roundtrips33, publication31, including 13 reached source OOMs and 15 I/O faults. Every syscall is observed; these are not three current Rust-libtest passes. |
+| [Historical hierarchy KV application](extended-kv.md#historical-hierarchy-application-receipts) | Three direct groups pass 130 overlapping cases on source `f07fd52f...`: hierarchy66, roundtrips33, publication31, including 13 reached source OOMs and 15 I/O faults. Every syscall is observed; these are not three current Rust-libtest passes or reruns of the response-file application. |
 
 Sources are flat parser `9f11981f...`, routing `6eb4db7a...`, help
 `a7198a2a...` and application `f07fd52f...`. Receipts under
 `target/stdlib-work/` are `cli-commands-semantic-owner-aliases.log`,
 `cli-commands-flat-parser-regression-first.log`,
 `cli-commands-contracts-aliases-no-host.{trace,log}` and
-`cli-commands-{public-smoke,help-smoke}-no-host.{trace,log}`. Current app logs
+`cli-commands-{public-smoke,help-smoke}-no-host.{trace,log}`. Hierarchy app logs
 are `cli-commands-kv-{hierarchy,roundtrips,publication}-all-syscalls.log`.
 Earlier selected-call traces missed possible unlisted calls; their repeated
 130 cases are weaker observations, not another 130 accepted cases. The new KV
@@ -78,8 +121,9 @@ root/child help, with `--` for dashed database paths. Its Store/snapshot and
 AtomicFile publication logic retain their prior contracts. A separate minimal
 nested-error-pattern compiler dependency has an executable typed-match control.
 Targets remain native Linux x86_64 CPU output from the GPU compiler. Shell
-completion, response files, richer application validation and the full library
-goal remain open; no user-program GPU execution follows.
+completion, richer application validation and the full library goal remain
+open. Response preprocessing has its separate acceptance scope above; no
+user-program GPU execution follows.
 
 **Accepted ordinary nested iteration.**
 

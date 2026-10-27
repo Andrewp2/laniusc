@@ -18,6 +18,10 @@ ownership and current executable receipts are separate from the flat-parser
 checkpoint below. In particular, hierarchy parser copies cannot independently
 fork over shared mutable scratch.
 
+Optional [response-file preprocessing](extended-cli-response.md) produces stable
+owned arguments for either parser. Its strict byte grammar, source diagnostics,
+provider ownership and native-file evidence are separate from token parsing.
+
 ## Host snapshots
 
 `std::args::snapshot(first, maximum_count, maximum_bytes)` returns
@@ -119,7 +123,8 @@ conflicts, defaults, numeric conversion, help and required operands. Values and
 operands preserve arbitrary bytes; they need not be UTF-8. This parser consumes
 already separated argument tokens; it never interprets quotes, escapes or a
 command string. Optional [command routing and automatic help](extended-cli-commands.md)
-now build on this parser; completion and response files remain open.
+now build on this parser. [Response files](extended-cli-response.md) are an
+opt-in preprocessing layer; completion remains separate work.
 
 Schema validation uses pairwise duplicate checks. Option lookup scans the
 schema: parsing costs O(input bytes + occurrences × schema lookup cost), with
@@ -225,5 +230,6 @@ Configuration loading now has its own [contracts and execution suite](extended-c
 [Structured logging](extended-log.md),
 [directory operations](stdlib-directory.md) and
 [command hierarchy/help](extended-cli-commands.md) execute on their documented
-profiles. Completion, response files and broader runtime support remain on the
+profiles. [Response preprocessing](extended-cli-response.md) has separate
+contracts and receipts. Completion and broader runtime support remain on the
 [library roadmap](library-roadmap.md).

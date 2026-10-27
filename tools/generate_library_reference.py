@@ -396,11 +396,17 @@ class Scanner:
         return Module(self.module, self.path, self.imports, declarations, self.public_keywords, self.module_line)
 
 
-def import_target(importer: Module, name: str, line: int,
-                  known: dict[str, Module]) -> tuple[Module, Declaration | None]:
-    """Link an inventoried module first, otherwise one public item of its prefix."""
+def import_targets(importer: Module, name: str, line: int,
+                   known: dict[str, Module]) -> tuple[Module, tuple[Declaration, ...]]:
+    """Link source declarations, retaining distinct type/value namespaces.
+
+    Imported visibility is built/resolved separately per namespace in the
+    compiler's 09e_build_import_visible_key_tables / 10b_resolve_imported_paths;
+    02c2_scatter_variant_decl_records assigns enum variants to the value table.
+    These links do not infer which declaration an importing use site selects.
+    """
     if name in known:
-        return known[name], None
+        return known[name], ()
     prefix, separator, item_name = name.rpartition("::")
     if separator and prefix in known:
         owner = known[prefix]
@@ -409,10 +415,12 @@ def import_target(importer: Module, name: str, line: int,
         items.extend(variant for item in owner.declarations if item.kind == "enum"
                      for variant in item.children)
         matches = [item for item in items if item.name == item_name]
-        if len(matches) == 1:
-            return owner, matches[0]
         if matches:
-            raise ReferenceError(f"{importer.path}:{line}: ambiguous public item import: {name}")
+            namespaces = ["type" if item.kind in {"type alias", "struct", "enum", "trait"}
+                          else "value" for item in matches]
+            if len(namespaces) != len(set(namespaces)):
+                raise ReferenceError(f"{importer.path}:{line}: ambiguous public item import: {name}")
+            return owner, tuple(sorted(matches, key=lambda item: item.line))
         raise ReferenceError(f"{importer.path}:{line}: public item absent from inventory: {name}")
     raise ReferenceError(f"{importer.path}:{line}: declared import absent from inventory: {name}")
 
@@ -449,7 +457,7 @@ def discover(root: Path) -> list[Module]:
     known = {module.name: module for module in modules}
     for module in modules:
         for name, line in module.imports:
-            import_target(module, name, line, known)
+            import_targets(module, name, line, known)
     return sorted(modules, key=lambda module: (LAYERS.index(module.name.split("::")[0]), module.name))
 
 
@@ -551,10 +559,15 @@ def render_module(module: Module, metadata: dict, known: dict) -> str:
     else:
         result.append("Direct source imports; this is not a package-resolution or transitive dependency result.\n")
         for name, line in module.imports:
-            target, item = import_target(module, name, line, known)
+            target, items = import_targets(module, name, line, known)
             imported = "- " + link(path, page_path(target), name)
-            if item is not None:
+            if len(items) == 1:
+                item = items[0]
                 imported += f" (item: {item.kind}) · " + link(path, target.path, "declaration", item.line)
+            elif items:
+                imported += " (items in separate namespaces: " + ", ".join(item.kind for item in items) + "; no use-site resolution)"
+                for item in items:
+                    imported += " · " + link(path, target.path, f"{item.kind} declaration", item.line)
             result.append(imported + " · " + link(path, module.path, "source", line))
         result.append("")
     groups = [("Types, fields and variants", {"type alias", "struct", "enum"}),
