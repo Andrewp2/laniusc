@@ -1,0 +1,83 @@
+// Direct resumable consumer: test markers surround API calls, never a TLS loop.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::https_client;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::linux;
+import std::poll;
+import std::signal;
+import std::stream;
+extern "C" fn duplex_test_stat(index: i32, field: i32) -> i64;
+extern "C" fn duplex_test_arm_next(fault: i32);
+fn bytes(value: str, length: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length); return core::slice::view<u8>(raw,length).unwrap(); }
+fn word(raw: [u8], at: i32) -> i32 { return ((raw[at] as u32)|((raw[at+1] as u32)<<8)|((raw[at+2] as u32)<<16)|((raw[at+3] as u32)<<24)) as i32; }
+fn mark(value: str) { let output = std::stream::stderr(); let part = bytes(value,1); core::io::write_all(output.borrow(),part.values,part.start,part.length).unwrap(); }
+fn inactive(value: ext::https_client::Failure) -> bool { return match(value.cause) { ext::https_client::Cause::Inactive -> true, _ -> false }; }
+fn ready() -> ext::http_client::Readiness { return ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false }; }
+fn output(words: [i32], length: i32) { let sink = std::stream::stdout(); let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),length*4); core::io::write_all(sink.borrow(),raw,0,length*4).unwrap(); }
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let source = std::stream::stdin(); let input: [i32;16] = [0;16]; let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input),64); core::io::read_exact(source.borrow(),raw,0,64).unwrap();
+    let args = std::args::snapshot(1,1,8192).unwrap(); let limits = ext::openssl_tls::default_limits(); limits.io_bytes = word(raw,16);
+    let context = ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(args.get(0).unwrap()),limits).unwrap(); args.destroy();
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new(); let backing: [u8;32] = [165;32]; backing[7] = 0; backing[8] = 255; backing[9] = 0; backing[10] = 10; let letter: i32 = 0; while (letter < 12) { backing[16+letter] = bytes("fixture.test",12).get(letter).unwrap(); letter += 1; }
+    let request = ext::http_client::Request { method:bytes("POST",4),target:bytes("/j00",4),authority:bytes("batch.example",13),headers:fields.as_view(),body:core::slice::View<u8> { values:backing,start:7,length:4 } };
+    let options = ext::http_client::default_options(); options.trailing = ext::http_client::Trailing::Reject;
+    let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(2000)).unwrap();
+    let prepared: ext::http_client::Prepared = ext::http_client::prepare_until(request,options,deadline).unwrap();
+    if (word(raw,4) > 0) { duplex_test_arm_next(word(raw,4)); }
+    let endpoint = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:word(raw,0) as u16 });
+    let identity = ext::openssl_tls::Identity::Dns(core::slice::View<u8> { values:backing,start:16,length:12 });
+    let owner: ext::https_client::Exchange = ext::https_client::begin_with_context_until(prepared.borrow(),endpoint,context.borrow(),identity,ext::https_client::default_options()).unwrap();
+    assert(!prepared.is_active()); prepared.destroy(); context.destroy(); fields.destroy(); backing[7] = 7; backing[8] = 7; backing[9] = 7; backing[10] = 7; letter = 0; while (letter < 12) { backing[16+letter] = 88; letter += 1; }
+    assert(duplex_test_stat(-1,0) == 1 && owner.negotiated_version() == 0);
+    let polls = std::poll::new(1).unwrap(); let requests: [std::poll::Request;1] = [std::poll::Request { handle:-1,events:0 }];
+    let readiness = ready(); let response: core::option::Option<ext::http_client::Response> = core::option::None(); let count: i32 = 0; let aborted: bool = false; let close_error: bool = false;
+    while (response.is_none() && !aborted) {
+        assert(count < 10000); count += 1;
+        let native_before: i64 = duplex_test_stat(-1,3); let calls_before: u64 = owner.tls_stats().calls;
+        mark("S"); let got = owner.step(readiness); mark("s");
+        assert(duplex_test_stat(-1,3)-native_before >= 0 && duplex_test_stat(-1,3)-native_before <= 1);
+        assert(owner.tls_stats().calls-calls_before == (duplex_test_stat(-1,3)-native_before) as u64);
+        assert(got.is_ok()); response = got.unwrap(); readiness = ready();
+        if (response.is_some()) { break; }
+        if (word(raw,8) != 0 && owner.negotiated_version() != 0 && owner.stats().request_sent > 0) {
+            let fd: i32 = owner.raw_handle().unwrap(); mark("A"); let stopped = owner.abort(); mark("a"); aborted = true;
+            if (word(raw,12) == 0) { assert(stopped.is_ok() && stopped.unwrap()); }
+            else {
+                assert(stopped.is_err()); let error = stopped.unwrap_err(); assert(match(error.cause) { ext::https_client::Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false });
+                assert(match(error.stage) { ext::https_client::Stage::Close -> true, _ -> false }); assert(owner.last_failure().is_some()); close_error = true;
+                // strace's fake failed close skipped the kernel close. Repair
+                // that injected test descriptor outside the disarmed owner.
+                let values: [std::linux::Argument;1] = [std::linux::Argument::Word(fd as i64)]; assert(std::linux::call(3,core::slice::view<std::linux::Argument>(values,1).unwrap()).unwrap() == 0);
+            }
+            assert(match(owner.status()) { ext::http_client::Status::Aborted -> true, _ -> false }); break;
+        }
+        let interest = owner.interest(); if (!interest.immediate) {
+            let before: i64 = duplex_test_stat(-1,3); mark("W"); assert(owner.before_wait().unwrap()); mark("w"); assert(duplex_test_stat(-1,3) == before);
+            let events: u32 = 0; if (interest.readable) { events |= std::poll::READABLE; } if (interest.writable) { events |= std::poll::WRITABLE; }
+            requests[0] = std::poll::Request { handle:owner.raw_handle().unwrap(),events:events };
+            polls.poll_ms(core::slice::view<std::poll::Request>(requests,1).unwrap(),100).unwrap(); let found = polls.readiness(0).unwrap();
+            readiness = ext::http_client::Readiness { readable:found.readable(),writable:found.writable(),hangup:found.hangup() || found.read_closed(),error:found.error() || found.invalid() };
+        }
+    }
+    let version: i32 = owner.negotiated_version(); assert(version == 771 || version == 772); assert(owner.raw_handle().is_none());
+    assert(inactive(owner.step(ready()).unwrap_err()) && inactive(owner.before_wait().unwrap_err()) && !owner.abort().unwrap());
+    if (close_error) { let error = owner.last_failure().unwrap(); assert(match(error.cause) { ext::https_client::Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false }); assert(match(error.stage) { ext::https_client::Stage::Close -> true, _ -> false }); }
+    assert(owner.negotiated_version() == version && duplex_test_stat(-1,0) == 0 && duplex_test_stat(-1,1) == 0 && duplex_test_stat(-1,2) == 0); polls.destroy();
+    let words: [i32;16] = [0;16]; words[0] = 1213415986; words[1] = version; words[2] = count; words[3] = owner.tls_stats().calls as i32; words[4] = duplex_test_stat(0,5) as i32; words[5] = duplex_test_stat(0,6) as i32; words[6] = duplex_test_stat(0,8) as i32; if (aborted) { words[7] = 1; } if (close_error) { words[8] = 1; }
+    if (response.is_some()) { let result = response.unwrap(); words[9] = result.as_view().length; words[10] = result.body().length; output(words,16); let sink = std::stream::stdout(); let wire = result.as_view(); core::io::write_all(sink.borrow(),wire.values,wire.start,wire.length).unwrap(); let body = result.body(); core::io::write_all(sink.borrow(),body.values,body.start,body.length).unwrap(); result.destroy(); }
+    else { output(words,16); }
+    let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0;
+}

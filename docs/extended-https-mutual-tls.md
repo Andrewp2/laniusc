@@ -5,14 +5,17 @@ The existing [`https-fetch`](extended-https-fetch.md) and
 mutual TLS. The client still verifies the service's chain and DNS/IP identity;
 the service additionally requires a client certificate admitted by its
 configured client trust file. System OpenSSL 3 performs every certificate,
-private-key and TLS operation. Lanius composes the existing HTTP codec, owned
-sockets, buffered TLS stream, deadlines and resource bounds.
+private-key and TLS operation. The fetch uses the shared HTTP Protocol and
+[resumable verified HTTPS driver](extended-https-client.md); the sequential
+service retains its buffered TLS stream. Both own their sockets, deadlines
+and resource bounds explicitly.
 
-All four focused application groups pass GPU compilation followed by native
-Linux x86_64 execution with libc startup, `libssl.so.3` and `libcrypto.so.3`:
-109 application/consumer process cases across two separate receipts. The
-ordinary HTTPS client and service receipts remain documented in their guides;
-those earlier results cover their stated source and regression scope.
+After the fetch migration, all three focused application groups pass GPU
+compilation followed by native Linux x86_64 execution with libc startup,
+`libssl.so.3` and `libcrypto.so.3`: 101 application process cases in 18.14
+seconds. The separate prepared-context stream consumer retains its historical
+eight-case evidence and was deliberately excluded from this app rerun. The
+ordinary client and service guides retain their own acceptance scopes.
 
 ## Command lines and trust roles
 
@@ -127,11 +130,11 @@ does not prove remote admission; a subsequent read can receive a fatal alert.
 The certificate and Finished ordering is defined in
 [RFC 8446 sections 4.4.1 and 4.4.4](https://www.rfc-editor.org/rfc/rfc8446.html#section-4.4.1).
 
-The fetch continues through its bounded response read, canonical HTTP parser,
-body decoder and final stream checks. It publishes no body if that exchange
-fails. A required service emits no HTTP response for a rejected client. A
-client may already have submitted request plaintext before learning of a late
-rejection; this profile does not promise delivery rollback. After a later
+The fetch continues through the shared Protocol's bounded response read,
+canonical validation and body decoding, then TLS/socket cleanup. It publishes
+no body if that exchange fails. A required service emits no HTTP response for
+a rejected client. A client may already have submitted request plaintext before
+learning of a late rejection; this profile does not promise delivery rollback. After a later
 response/output failure, a service response or fetch stdout can contain a
 prefix under the existing application contracts.
 
@@ -141,9 +144,16 @@ output or SIGPIPE-policy failure. Configuration errors in the service fail
 before it publishes a listening endpoint. Diagnostic writes retain their
 independent finite retry budgets and preserve the original status on failure.
 
-## Prepared-context ownership
+## Context and prepared-stream ownership
 
-The client credential branch uses the additive prepared factory:
+The fetch constructs a verified OpenSSL Context with the supplied client
+credentials, then passes a borrow to `https_client::exchange_until`. It destroys
+its Context on every exchange result. The Exchange retains its own reference
+and identity copy through attachment; the native Session then retains the
+context policy. Request preparation, framing and decoding use the same
+HTTP Protocol as the ordinary client and HTTPS batches.
+
+The separate buffered-stream API still provides this prepared factory:
 
 ```text
 tls_stream::connect_with_context_until(
@@ -158,7 +168,7 @@ tls_stream::connect_with_context_until(
 The factory borrows the context on success and every error. It never destroys
 that caller owner. A successful native Session retains its own OpenSSL context
 reference, so the caller may destroy its Context as soon as the factory
-returns. The fetch does so on every result. The stream derives its write-queue
+returns. The stream derives its write-queue
 and native read caps from `Context.io_bytes()` rather than silently substituting
 default limits.
 
@@ -182,16 +192,21 @@ The existing byte, work, I/O-call and TLS-call options apply to both profiles.
 Defaults remain 5,000 ms, 65,536 I/O operations and 32,768 TLS operations. The
 client defaults to a 2 MiB response and 1 MiB decoded body/output; the service
 defaults to a 2 MiB request/response and 1 MiB decoded body. TLS plaintext staging
-and the stream queue are capped at 16,384 bytes. Full bounds and HTTP limits
+is capped at 16,384 bytes. The fetch drives at most 1,024 bytes per active
+request write or response read and has no separate stream queue; the service
+retains its bounded stream queue. Full bounds and HTTP limits
 remain in the [fetch](extended-https-fetch.md#bounds-and-deadlines) and
 [service](extended-https-server.md#bounds-and-deadline-scope) guides.
 
-The fetch creates its absolute deadline before preparing credentials. Native
-credential loading is synchronous and occurs before the prepared connector's
-first deadline check; it is not preempted and does not spend connector I/O
-counters. Its elapsed time still spends the same already-created deadline.
-After entry, the prepared factory charges configuration once and carries the
-same counters and deadline through the shared connection core.
+The fetch creates its absolute deadline before loading its OpenSSL Context
+and credentials. Native credential loading is synchronous and is not
+preempted or counted as a transport I/O attempt. Its elapsed time still spends
+the same already-created deadline. The shared Protocol/Exchange carries that
+deadline and its counters through request preparation, connection, handshake,
+HTTP processing and local shutdown. Fetch I/O allowances now count TCP leaves,
+TLS attempts and poll participation; work uses the shared HTTP accounting.
+The separate prepared-stream factory retains its own Configure charge and
+stream counters.
 
 The service loads its credentials and client trust before creating the
 listener and before any per-slot deadline. Each sequential slot then uses the
@@ -212,22 +227,39 @@ standard HTTP parsers inspect the application messages. The shared raw TLS
 fixture generates and independently verifies certificates using the OpenSSL
 CLI in temporary storage; no private fixture keys are checked in.
 
-All four groups passed on the selected profile:
+### Current migrated application receipt
+
+On 2026-10-26, these three application groups passed together after migration
+of the fetch to `https_client::exchange_until`:
 
 | Group | Accepted process cases | Scope |
 | --- | --- | --- |
 | Matrix | 35 | TLS 1.2/1.3, different trusted clients, absent EKU, complete intermediate chains, DNS/IP and IPv4/IPv6, independent client trust, ordinary public HTTPS, native application pairs and three sequential slots |
 | Failures | 34 | Missing, expired, incompatible-purpose, untrusted and incomplete client chains; mandatory service trust/identity; late alerts; rejected native application pairs with no HTTP response/body output |
 | Limits | 32 | Paired flags, empty/missing credentials, malformed/mismatched/encrypted keys, client trust setup, exact body/output limits, call/work caps and accept/handshake/request deadlines |
-| Prepared context | 8 | Borrowing on success/errors, caller destruction before stream use, configured three-byte I/O cap, copied queue, original Configure counter, closed/invalid/deadline/name/refused/stalled paths |
 
-The prepared-context group passed its eight cases in 6.21 seconds, recorded in
-`target/stdlib-work/https-mutual-prepared-first.log`. The matrix, failures and
-limits groups passed their combined 101 cases in 15.23 seconds, recorded in
-`target/stdlib-work/https-mutual-app-groups.log`. These are distinct selected
-test invocations, not a whole-suite receipt. Each app pair counts two native
-processes; Python peers are not counted as additional cases. The compiled ELFs
-also passed generated-function boundary and OpenSSL dependency checks.
+The 101 cases passed in 18.14 seconds, recorded in
+`target/stdlib-work/https-mutual-tls-shared-fetch-app-first.log`. The run
+deliberately excluded the prepared-context stream consumer and is not a
+four-group whole-suite receipt. Each app pair counts two native processes;
+Python peers are not additional cases. The compiled ELFs also passed
+generated-function boundary and OpenSSL dependency checks.
+
+### Historical prepared-context and application receipts
+
+The prepared-context stream group previously passed eight cases in 6.21
+seconds, recorded in `target/stdlib-work/https-mutual-prepared-first.log`.
+It checks borrowing on success/errors, caller destruction before stream use,
+a configured three-byte I/O cap, copied queue, original Configure counter and
+closed/invalid/deadline/name/refused/stalled paths. It was deliberately excluded
+from the migrated application rerun; those 101 cases do not replace this
+separate consumer's earlier evidence.
+
+Before the migration, the three application groups passed 101 cases in 15.23
+seconds, recorded in `target/stdlib-work/https-mutual-app-groups.log`. Together
+with the earlier prepared consumer, those historical receipts covered 109
+process cases through separate invocations. The new receipt above establishes
+the migrated app independently.
 
 These elapsed times describe the focused test invocations, not an application
 throughput benchmark. The finite fixtures do not establish every certificate,
@@ -235,7 +267,7 @@ trust store, provider, network schedule, allocation failure or host
 configuration. The applications remain sequential with no keepalive or
 principal/route authorization. No other host or GPU-kernel execution claim is
 made. Focused regressions for the earlier owned-Context/default stream paths
-are separate gates and are not included in these 109 cases.
+are separate gates and are not included in the current 101 application cases.
 
 ```sh
 timeout --kill-after=2s 110s env \

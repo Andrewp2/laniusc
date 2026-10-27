@@ -1,0 +1,212 @@
+// Pure bounded extraction namespace. One manual owner; no archive or host I/O.
+module ext::archive_plan;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+pub enum Kind { File, Directory }
+pub enum ErrorKind { Bounds, Limits, Path, Component, Depth, Entries, Nodes, Paths, Work, Duplicate, Conflict, Allocation, InvalidState }
+pub struct Error { kind: ErrorKind, ordinal: i32, offset: i32 }
+pub struct Limits {
+    max_entries: i32, max_nodes: i32, max_path_bytes: i32, max_component_bytes: i32,
+    max_depth: i32, max_stored_path_bytes: i32, max_work: u64
+}
+pub struct Node {
+    parent: i32, kind: Kind, explicit: bool, ordinal: i32,
+    path_start: i32, path_length: i32, component_start: i32, component_length: i32, depth: i32
+}
+pub struct Plan {
+    nodes: alloc::vec::Vec<Node>, paths: alloc::vec::Vec<u8>, entries: alloc::vec::Vec<i32>,
+    limits: Limits, work: u64, sealed: bool, active: bool, failure: core::option::Option<Error>
+}
+struct Prepared { first_missing: i32, parent: i32, target: i32, nodes: i32, paths: i32 }
+
+pub fn default_limits() -> Limits {
+    return Limits { max_entries:4096,max_nodes:8192,max_path_bytes:4095,max_component_bytes:255,
+        max_depth:64,max_stored_path_bytes:16777216,max_work:134217728 };
+}
+fn error(kind: ErrorKind, ordinal: i32, offset: i32) -> Error { return Error { kind:kind,ordinal:ordinal,offset:offset }; }
+pub fn reservation_bytes(limits: Limits) -> core::result::Result<u64,Error> {
+    if (limits.max_entries < 0 || limits.max_nodes < 0 || limits.max_path_bytes < 0
+        || limits.max_component_bytes < 0 || limits.max_component_bytes > 255
+        || limits.max_depth < 0 || limits.max_stored_path_bytes < 0) {
+        return core::result::Err(error(ErrorKind::Limits,-1,-1));
+    }
+    if ((limits.max_nodes as usize) > 2147483647/core::mem::size_of<Node>()
+        || (limits.max_entries as usize) > 2147483647/core::mem::size_of<i32>()) {
+        return core::result::Err(error(ErrorKind::Limits,-1,-1));
+    }
+    return core::result::Ok((limits.max_nodes as u64)*(core::mem::size_of<Node>() as u64)
+        +(limits.max_stored_path_bytes as u64)+(limits.max_entries as u64)*(core::mem::size_of<i32>() as u64));
+}
+pub fn new(limits: Limits) -> core::result::Result<Plan,Error> {
+    let checked = reservation_bytes(limits);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let nodes: core::result::Result<alloc::vec::Vec<Node>,alloc::vec::Error> = alloc::vec::with_capacity(limits.max_nodes);
+    if (nodes.is_err()) { return core::result::Err(error(ErrorKind::Allocation,-1,-1)); }
+    let owned_nodes = nodes.unwrap();
+    let paths: core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> = alloc::vec::with_capacity(limits.max_stored_path_bytes);
+    if (paths.is_err()) { owned_nodes.destroy(); return core::result::Err(error(ErrorKind::Allocation,-1,-1)); }
+    let owned_paths = paths.unwrap();
+    let entries: core::result::Result<alloc::vec::Vec<i32>,alloc::vec::Error> = alloc::vec::with_capacity(limits.max_entries);
+    if (entries.is_err()) { owned_paths.destroy(); owned_nodes.destroy(); return core::result::Err(error(ErrorKind::Allocation,-1,-1)); }
+    return core::result::Ok(Plan { nodes:owned_nodes,paths:owned_paths,entries:entries.unwrap(),limits:limits,
+        work:0,sealed:false,active:true,failure:core::option::None() });
+}
+fn part(bytes: core::slice::View<u8>, start: i32, length: i32) -> core::slice::View<u8> {
+    return core::slice::View { values:bytes.values,start:bytes.start+start,length:length };
+}
+fn directory(kind: Kind) -> bool { return match(kind) { Kind::Directory -> true, Kind::File -> false }; }
+
+pub impl Plan {
+    pub fn borrow(&self) -> &Plan { return self; }
+    pub fn node_count(&self) -> i32 { return self.nodes.len(); }
+    pub fn entry_count(&self) -> i32 { return self.entries.len(); }
+    pub fn work_used(&self) -> u64 { return self.work; }
+    pub fn is_sealed(&self) -> bool { return self.active && self.sealed && self.failure.is_none(); }
+    pub fn reserved_bytes(&self) -> u64 {
+        return (self.nodes.capacity() as u64)*(core::mem::size_of<Node>() as u64)
+            +(self.paths.capacity() as u64)+(self.entries.capacity() as u64)*(core::mem::size_of<i32>() as u64);
+    }
+    pub fn node(&self, index: i32) -> core::option::Option<Node> {
+        if (!self.active) { return core::option::None(); } return self.nodes.get(index);
+    }
+    pub fn entry(&self, index: i32) -> core::option::Option<i32> {
+        if (!self.active) { return core::option::None(); } return self.entries.get(index);
+    }
+    pub fn path(&self, index: i32) -> core::option::Option<core::slice::View<u8>> {
+        let found = self.node(index); if (found.is_none()) { return core::option::None(); }
+        let value = found.unwrap(); return core::option::Some(part(self.paths.as_view(),value.path_start,value.path_length));
+    }
+    pub fn component(&self, index: i32) -> core::option::Option<core::slice::View<u8>> {
+        let found = self.node(index); if (found.is_none()) { return core::option::None(); }
+        let value = found.unwrap(); return core::option::Some(part(self.paths.as_view(),value.component_start,value.component_length));
+    }
+    fn fail(&self, kind: ErrorKind, ordinal: i32, offset: i32) -> Error {
+        if (self.failure.is_none()) { self.failure = core::option::Some(error(kind,ordinal,offset)); }
+        return self.failure.unwrap();
+    }
+    fn charge(&self, amount: u64, ordinal: i32, offset: i32) -> core::result::Result<bool,Error> {
+        if (amount > self.limits.max_work-self.work) { return core::result::Err(self.fail(ErrorKind::Work,ordinal,offset)); }
+        self.work += amount; return core::result::Ok(true);
+    }
+    fn validate(&self, path: core::slice::View<u8>, kind: Kind, ordinal: i32) -> core::result::Result<i32,Error> {
+        if (path.start < 0 || path.length < 0 || path.start > 2147483647-path.length) { return core::result::Err(self.fail(ErrorKind::Bounds,ordinal,-1)); }
+        // Three units per raw byte plus one covers character validation,
+        // separator/component bookkeeping and dot/drive/suffix observations.
+        self.charge((path.length as u64)*3+1,ordinal,0)?;
+        let length = path.length;
+        if (length > 0 && directory(kind) && path.values[path.start+length-1] == 47) { length -= 1; }
+        if (length == 0) { return core::result::Err(self.fail(ErrorKind::Path,ordinal,0)); }
+        if (length > self.limits.max_path_bytes) { return core::result::Err(self.fail(ErrorKind::Path,ordinal,self.limits.max_path_bytes)); }
+        if (path.values[path.start] == 47) { return core::result::Err(self.fail(ErrorKind::Path,ordinal,0)); }
+        if (length > 1 && path.values[path.start+1] == 58) { return core::result::Err(self.fail(ErrorKind::Path,ordinal,1)); }
+        if (!directory(kind) && path.values[path.start+length-1] == 47) { return core::result::Err(self.fail(ErrorKind::Path,ordinal,length-1)); }
+        let start: i32 = 0; let at: i32 = 0; let depth: i32 = 0;
+        while (at <= length) {
+            let boundary = at == length;
+            if (!boundary) {
+                let value = path.values[path.start+at];
+                if (value == 0 || value == 92) { return core::result::Err(self.fail(ErrorKind::Path,ordinal,at)); }
+                boundary = value == 47;
+            }
+            if (boundary) {
+                let count = at-start;
+                if (count == 0) { return core::result::Err(self.fail(ErrorKind::Component,ordinal,start)); }
+                if (count > self.limits.max_component_bytes) { return core::result::Err(self.fail(ErrorKind::Component,ordinal,start+self.limits.max_component_bytes)); }
+                if (path.values[path.start+start] == 46) {
+                    if (count == 1 || (count == 2 && path.values[path.start+start+1] == 46)) { return core::result::Err(self.fail(ErrorKind::Component,ordinal,start)); }
+                }
+                if (depth == self.limits.max_depth) { return core::result::Err(self.fail(ErrorKind::Depth,ordinal,start)); }
+                depth += 1;
+                if (at == length) { break; }
+                start = at+1;
+            }
+            at += 1;
+        }
+        return core::result::Ok(length);
+    }
+    fn find(&self, parent: i32, path: core::slice::View<u8>, start: i32, length: i32, ordinal: i32) -> core::result::Result<i32,Error> {
+        let index: i32 = 0;
+        while (index < self.nodes.len()) {
+            self.charge(1,ordinal,start)?;
+            let value = self.nodes.at(index);
+            if (value.parent == parent && value.component_length == length) {
+                let at: i32 = 0; let equal = true;
+                while (at < length && equal) {
+                    self.charge(1,ordinal,start+at)?;
+                    equal = self.paths.at(value.component_start+at) == path.values[path.start+start+at]; at += 1;
+                }
+                if (equal) { return core::result::Ok(index); }
+            }
+            index += 1;
+        }
+        return core::result::Ok(-1);
+    }
+    fn prepare(&self, path: core::slice::View<u8>, length: i32, kind: Kind, ordinal: i32) -> core::result::Result<Prepared,Error> {
+        self.charge(length as u64,ordinal,0)?;
+        let result = Prepared { first_missing:-1,parent:-1,target:-1,nodes:0,paths:0 };
+        let parent: i32 = -1; let start: i32 = 0; let end: i32 = 0;
+        while (start < length) {
+            end = start; while (end < length && path.values[path.start+end] != 47) { end += 1; }
+            let selected: i32 = -1;
+            if (result.first_missing < 0) { selected = self.find(parent,path,start,end-start,ordinal)?; }
+            if (selected >= 0) {
+                let node = self.nodes.at(selected);
+                if (end < length && !directory(node.kind)) { return core::result::Err(self.fail(ErrorKind::Conflict,ordinal,start)); }
+                if (end == length) {
+                    if (directory(node.kind) != directory(kind)) { return core::result::Err(self.fail(ErrorKind::Conflict,ordinal,start)); }
+                    if (node.explicit) { return core::result::Err(self.fail(ErrorKind::Duplicate,ordinal,start)); }
+                    result.target = selected;
+                }
+                parent = selected;
+            } else {
+                if (result.first_missing < 0) { result.first_missing = start; result.parent = parent; }
+                if (result.nodes == self.limits.max_nodes-self.nodes.len()) { return core::result::Err(self.fail(ErrorKind::Nodes,ordinal,start)); }
+                if (end > self.limits.max_stored_path_bytes-self.paths.len()-result.paths) { return core::result::Err(self.fail(ErrorKind::Paths,ordinal,start)); }
+                result.paths += end; result.nodes += 1; result.target = self.nodes.len()+result.nodes-1;
+            }
+            if (end == length) { start = length; } else { start = end+1; }
+        }
+        let work: u64 = (result.paths as u64)+(result.nodes as u64)+1;
+        if (result.first_missing >= 0) { work += (length-result.first_missing) as u64; }
+        else { work += 1; } // implied-directory metadata update
+        self.charge(work,ordinal,0)?;
+        return core::result::Ok(result);
+    }
+    pub fn add(&self, path: core::slice::View<u8>, kind: Kind, ordinal: i32) -> core::result::Result<i32,Error> {
+        if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); }
+        if (!self.active || self.sealed || ordinal != self.entries.len()) { return core::result::Err(self.fail(ErrorKind::InvalidState,ordinal,-1)); }
+        if (self.entries.len() == self.limits.max_entries) { return core::result::Err(self.fail(ErrorKind::Entries,ordinal,-1)); }
+        let length = self.validate(path,kind,ordinal)?;
+        let ready = self.prepare(path,length,kind,ordinal)?;
+        if (ready.first_missing < 0) {
+            let value = self.nodes.at(ready.target); value.explicit = true; value.ordinal = ordinal;
+            self.nodes.set(ready.target,value).unwrap();
+        } else {
+            let parent = ready.parent; let start = ready.first_missing; let depth: i32 = 1;
+            if (parent >= 0) { depth = self.nodes.at(parent).depth+1; }
+            while (start < length) {
+                let end = start; while (end < length && path.values[path.start+end] != 47) { end += 1; }
+                let final = end == length; let selected = Kind::Directory; let entry_ordinal: i32 = -1;
+                if (final) { selected = kind; entry_ordinal = ordinal; }
+                let offset = self.paths.len(); self.paths.try_extend(part(path,0,end)).unwrap();
+                let index = self.nodes.len();
+                self.nodes.try_push(Node { parent:parent,kind:selected,explicit:final,ordinal:entry_ordinal,path_start:offset,path_length:end,
+                    component_start:offset+start,component_length:end-start,depth:depth }).unwrap();
+                parent = index;
+                if (final) { start = length; } else { depth += 1; start = end+1; }
+            }
+        }
+        self.entries.try_push(ready.target).unwrap(); return core::result::Ok(ready.target);
+    }
+    pub fn seal(&self) -> core::result::Result<i32,Error> {
+        if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); }
+        if (!self.active) { return core::result::Err(self.fail(ErrorKind::InvalidState,-1,-1)); }
+        if (!self.sealed) { self.charge(1,self.entries.len(),-1)?; self.sealed = true; }
+        return core::result::Ok(self.entries.len());
+    }
+    pub fn destroy(&self) { self.nodes.destroy(); self.paths.destroy(); self.entries.destroy(); self.active = false; self.sealed = false; }
+}

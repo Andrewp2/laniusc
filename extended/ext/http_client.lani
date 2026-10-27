@@ -44,6 +44,7 @@ struct State { options: Options, deadline: core::time::Deadline, last: core::tim
 impl State { fn borrow(&self) -> &State { return self; } }
 pub fn default_options() -> Options { return Options { trailing:Trailing::Discard,wire:ext::http::default_limits(),request_bytes:17825792,response_bytes:18874368,interim_count:8,interim_bytes:65536,io_calls:1048576,work:268435456 }; }
 pub impl Response {
+    pub fn borrow(&self) -> &Response { return self; }
     pub fn as_view(&self) -> core::slice::View<u8> { return self.wire.as_view().subview(self.final_offset,self.final_offset+self.validated.consumed).unwrap(); }
     pub fn message(&self) -> ext::http::Message { return self.validated; }
     pub fn body(&self) -> core::slice::View<u8> { return self.decoded.as_view(); }
@@ -181,6 +182,10 @@ pub fn prepare_until(request: Request, options: Options, deadline: core::time::D
     let track: Track = Track { cursor:made.unwrap(),charged:0,close:false,eof:false,status:0,head_end:0,validated:core::option::None() };
     return core::result::Ok(Prepared { owner:owner,state:state,track:track,active:true });
 }
+fn adoption_failure(protocol: &Protocol, socket: &std::socket::Socket, failure: Failure) -> Failure {
+    let closed = socket.close(); if (closed.is_err()) { failure.cleanup = core::option::Some(closed.unwrap_err()); }
+    protocol.abort(); return failure;
+}
 pub impl Prepared {
     pub fn borrow(&self) -> &Prepared { return self; }
     pub fn stats(&self) -> Stats { return self.state.stats; }
@@ -205,6 +210,37 @@ pub impl Prepared {
             protocol.abort(); return core::result::Err(failure);
         }
         return core::result::Ok(Exchange { protocol:protocol,socket:socket,endpoint:endpoint,phase:Phase::ConnectStart,status:Status::Active,read_blocked:false,write_blocked:false,send_turn:false,failure:core::option::None() });
+    }
+    // Consume both inputs before admission. Only the transferred descriptor is
+    // queried; no socket is opened, connected or used for request I/O here.
+    pub fn adopt_connected(&self, socket: &std::socket::Socket) -> core::result::Result<Exchange,Failure> {
+        let domain: std::socket::Family = socket.family(); let kind: std::socket::Kind = socket.kind();
+        let handle: core::option::Option<i32> = socket.take_handle(); let moved = self.into_protocol();
+        if (handle.is_none()) {
+            if (moved.is_err()) { return core::result::Err(moved.unwrap_err()); }
+            let protocol: Protocol = moved.unwrap(); protocol.state.stage = Stage::Connect;
+            let error: Failure = protocol.failure(Cause::Io(core::io::Error::InvalidInput)); protocol.abort(); return core::result::Err(error);
+        }
+        // take_handle returned a nonnegative handle, the constructor's only
+        // fallible condition. Preserve the original Socket metadata.
+        let owned: std::socket::Socket = std::socket::from_owned_handle(handle.unwrap(),domain,kind).unwrap();
+        if (moved.is_err()) {
+            let error: Failure = moved.unwrap_err(); let closed = owned.close();
+            if (closed.is_err()) { error.cleanup = core::option::Some(closed.unwrap_err()); } return core::result::Err(error);
+        }
+        let protocol: Protocol = moved.unwrap(); protocol.state.stage = Stage::Connect;
+        let tcp: bool = match(kind) { std::socket::Kind::Tcp -> true, _ -> false };
+        if (!tcp) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),protocol.failure(Cause::Io(core::io::Error::InvalidInput)))); }
+        let before = protocol.before_io(Stage::Connect); if (before.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),before.unwrap_err())); }
+        let nonblocking = owned.is_nonblocking(); let after = protocol.check();
+        if (after.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),after.unwrap_err())); }
+        if (nonblocking.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),protocol.failure(Cause::Io(nonblocking.unwrap_err())))); }
+        if (!nonblocking.unwrap()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),protocol.failure(Cause::Io(core::io::Error::InvalidInput)))); }
+        let peer_before = protocol.before_io(Stage::Connect); if (peer_before.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),peer_before.unwrap_err())); }
+        let peer = owned.peer_addr(); let peer_after = protocol.check();
+        if (peer_after.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),peer_after.unwrap_err())); }
+        if (peer.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),protocol.failure(Cause::Io(peer.unwrap_err())))); }
+        return core::result::Ok(Exchange { protocol:protocol,socket:owned,endpoint:peer.unwrap(),phase:Phase::Protocol,status:Status::Active,read_blocked:false,write_blocked:false,send_turn:false,failure:core::option::None() });
     }
 }
 pub impl Protocol {
@@ -468,6 +504,24 @@ pub impl Exchange {
         }
         let progressed = advance(self,ready); if (progressed.is_err()) { return core::result::Err(stop(self,progressed.unwrap_err())); } return core::result::Ok(core::option::None());
     }
+    // Resume this owner with the same poll loop used by exchange_until.
+    // step preserves Failed diagnostics and rejects Complete/Aborted owners.
+    pub fn run(&self) -> core::result::Result<Response,Failure> {
+        let ready: Readiness = empty_readiness();
+        while (true) {
+            let result = self.step(ready); ready = empty_readiness();
+            if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+            if (result.unwrap().is_some()) { return core::result::Ok(result.unwrap().unwrap()); }
+            let interest: Interest = self.interest(); if (interest.immediate) { continue; }
+            let charged = self.before_wait(); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); } if (!charged.unwrap()) { continue; }
+            let remaining: core::time::Duration = self.protocol.remaining(); let milliseconds: i32 = 2147483647;
+            if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
+            let waited = self.socket.wait_ms(interest.readable,interest.writable,milliseconds);
+            if (waited.is_err()) { if (!core::io::is_interrupted(waited.unwrap_err())) { let failure: Failure = self.protocol.failure(Cause::Io(waited.unwrap_err())); return core::result::Err(stop(self.borrow(),failure)); } }
+            else { let observed: std::socket::Ready = waited.unwrap(); ready = Readiness { readable:observed.readable,writable:observed.writable,hangup:observed.hangup,error:observed.error }; }
+        }
+        return core::result::Err(inactive(self.protocol.state.borrow()));
+    }
     pub fn abort(&self) -> core::result::Result<bool,Failure> {
         if (!running(self.status)) { return core::result::Ok(false); }
         self.protocol.state.stage = Stage::Close; let closed = self.socket.close();
@@ -478,18 +532,5 @@ pub impl Exchange {
 }
 pub fn exchange_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Response,Failure> {
     let made = begin_until(endpoint,request,options,deadline); if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
-    let exchange: Exchange = made.unwrap(); let ready: Readiness = empty_readiness();
-    while (true) {
-        let result = exchange.step(ready); ready = empty_readiness();
-        if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
-        if (result.unwrap().is_some()) { return core::result::Ok(result.unwrap().unwrap()); }
-        let interest: Interest = exchange.interest(); if (interest.immediate) { continue; }
-        let charged = exchange.before_wait(); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); } if (!charged.unwrap()) { continue; }
-        let remaining: core::time::Duration = exchange.protocol.remaining(); let milliseconds: i32 = 2147483647;
-        if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
-        let waited = exchange.socket.wait_ms(interest.readable,interest.writable,milliseconds);
-        if (waited.is_err()) { if (!core::io::is_interrupted(waited.unwrap_err())) { let failure: Failure = exchange.protocol.failure(Cause::Io(waited.unwrap_err())); return core::result::Err(stop(exchange.borrow(),failure)); } }
-        else { let observed: std::socket::Ready = waited.unwrap(); ready = Readiness { readable:observed.readable,writable:observed.writable,hangup:observed.hangup,error:observed.error }; }
-    }
-    return core::result::Err(inactive(exchange.protocol.state.borrow()));
+    let exchange: Exchange = made.unwrap(); return exchange.run();
 }

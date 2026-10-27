@@ -18,7 +18,7 @@ import std::stream;
 fn word(bytes: [u8], at: i32) -> i32 { return ((bytes[at] as u32) | ((bytes[at+1] as u32)<<8) | ((bytes[at+2] as u32)<<16) | ((bytes[at+3] as u32)<<24)) as i32; }
 fn number(value: i32) { std::io_decimal::write_i32(1,value); }
 fn colon() { std::io::write_byte(1,58); }
-fn cause(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::Syntax(at) -> 1, ext::regex::Error::Unsupported(at) -> 2, ext::regex::Error::Limit(at) -> 3, ext::regex::Error::AllocationFailed -> 4, ext::regex::Error::Bounds -> 5, ext::regex::Error::InvalidUtf8(at) -> 6, ext::regex::Error::WorkLimit -> 7 }; }
+fn cause(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::Syntax(at) -> 1, ext::regex::Error::Unsupported(at) -> 2, ext::regex::Error::Limit(at) -> 3, ext::regex::Error::AllocationFailed -> 4, ext::regex::Error::Bounds -> 5, ext::regex::Error::InvalidUtf8(at) -> 6, ext::regex::Error::WorkLimit -> 7, ext::regex::Error::WorkspaceTooSmall -> 8 }; }
 fn offset(error: ext::regex::Error) -> i32 { return match(error) { ext::regex::Error::Syntax(at) -> at, ext::regex::Error::Unsupported(at) -> at, ext::regex::Error::Limit(at) -> at, ext::regex::Error::InvalidUtf8(at) -> at, _ -> 0 }; }
 fn error(error: ext::lexer::Error) {
     let kind: i32 = match(error) {
@@ -29,7 +29,7 @@ fn error(error: ext::lexer::Error) {
         ext::lexer::Error::Search(index,position,value) -> 10, ext::lexer::Error::NoMatch(position) -> 11,
         ext::lexer::Error::EmptyMatch(index,position) -> 12, ext::lexer::Error::StepLimit(position) -> 13,
         ext::lexer::Error::TokenLimit(position) -> 14, ext::lexer::Error::SearchCallLimit(index,position) -> 15,
-        ext::lexer::Error::SearchWorkLimit(index,position) -> 16
+        ext::lexer::Error::SearchWorkLimit(index,position) -> 16, ext::lexer::Error::Workspace(value) -> 17
     };
     let rule: i32 = match(error) {
         ext::lexer::Error::PatternLimit(index) -> index, ext::lexer::Error::StateLimit(index) -> index,
@@ -46,7 +46,7 @@ fn error(error: ext::lexer::Error) {
     };
     let code: i32 = match(error) {
         ext::lexer::Error::Pattern(index,value) -> cause(value), ext::lexer::Error::Input(value) -> cause(value),
-        ext::lexer::Error::Search(index,position,value) -> cause(value), _ -> 0
+        ext::lexer::Error::Search(index,position,value) -> cause(value), ext::lexer::Error::Workspace(value) -> cause(value), _ -> 0
     };
     std::io::write_byte(1,69); number(kind); colon(); number(rule); colon(); number(at); colon(); number(code);
 }

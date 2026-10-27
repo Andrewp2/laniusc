@@ -4,7 +4,8 @@ The [module index](api/README.md) inventories source declarations in `stdlib/`
 and `extended/`. Each module page retains public signatures, generic bounds,
 enclosing impl/trait headers, types, fields, enum variants and constants, with
 links to their exact source lines. Function bodies are omitted. Direct source
-imports link to the corresponding module pages.
+imports link to the corresponding module pages; item imports also link to the
+source declaration lines.
 
 This improves discovery. It does not complete the semantic API reference.
 Linked guides own runtime behavior, target evidence, errors, ownership,
@@ -18,9 +19,9 @@ closure. Use the compiler's package resolver for source distribution.
 From the repository root, with Python 3.10 or newer:
 
 ```sh
-timeout --kill-after=2s 100s python3 tools/generate_library_reference.py
-timeout --kill-after=2s 100s python3 tools/generate_library_reference.py --check
-timeout --kill-after=2s 100s python3 -m unittest discover -s tools -p test_generate_library_reference.py
+timeout --kill-after=2s 100s python3 -B tools/generate_library_reference.py
+timeout --kill-after=2s 100s python3 -B tools/generate_library_reference.py --check
+timeout --kill-after=2s 100s python3 -B tools/test_generate_library_reference.py
 ```
 
 These commands are CPU-only and require no compiler binary, shader build or
@@ -36,6 +37,110 @@ banner under `docs/api/`. It refuses to replace a handwritten file at an output
 path, rejects symlinks and preserves unrelated files. Generated pages are not
 edited by hand. The handwritten guide you are reading is outside that tree.
 
+### Current completion generation receipt
+
+The [completion contract](extended-cli-complete.md) covers three new modules:
+portable `ext::cli_complete`, literal-word `ext::bash_words` and reply encoder
+`ext::cli_bash`. Canonical parser prefix operations belong to `ext::cli` and
+`ext::cli_commands`; they preserve strict parsing and share option lookup.
+Reviewed metadata links these source APIs without treating the Bash host
+adapter as a portable service. The selected increment has finite native
+Linux x86_64, Bash 5.2 and bash-completion 2.11 acceptance; the full library goal
+remains open. Other shells and arbitrary Bash expansion are outside this scope.
+
+The current source/API freeze includes parser `b47aae72...`, command routing
+`5dae9842...`, completion `f863a063...`, literal words `2b086426...`, reply encoder
+`b6036015...`, application `9a83795a...` and Bash adapter `f7934bc9...`.
+Portable contracts and the direct public prefix smoke pass no-host observation;
+one Rust model test passes 67 cases, and direct decoder/reply execution checks
+389 records. Native query owner/OOM/output and current response regression
+receipts remain separate from 51 function cases across two profiles, 26 PTY
+cases, two quote-boundary cases and two watchdog controls. Neither combined
+Rust-driver build admission nor direct process receipts imply native Rust-test
+execution. Exact runtime receipts and source histories belong to the module
+and fixture guides.
+
+The bounded writer and `--check` both exit zero for **259 pages from 258
+source modules, with 8,432 lexical public declaration markers**. The index
+contains 12,645 declaration/member entries; these counts describe source
+inventory, not verified operations. Exactly seven generated outputs change:
+the [index](api/README.md), [flat parser](api/ext/cli.md),
+[command router](api/ext/cli_commands.md), [KV module](api/ext/kv.md), and the
+three new [completion](api/ext/cli_complete.md),
+[literal word](api/ext/bash_words.md) and [reply encoder](api/ext/cli_bash.md)
+pages. The guide was frozen at `4bca036f...` before generation.
+
+Receipts are `target/stdlib-work/completion-reference-final-writer.log` and
+`completion-reference-final-check.log`; writer/check took 1.99s/2.09s in their
+respective tool calls. Protected root `README.md`, `AI_POLICY.md` and
+`CONTRIBUTING.md` have matching before/after SHA256 records in
+`completion-reference-human-{before,after}.sha256`. The generator implementation
+is unchanged; no scanner tests were rerun solely for new guide mappings.
+Generation establishes declaration discovery, not runtime behavior. The
+accepted response generation below remains historical.
+
+### Accepted response-checkpoint generation receipt
+
+At the accepted response-file source/API freeze, the bounded writer and
+`--check` both exit zero for **256 pages from 255 source modules, with 8,384
+lexical public declaration markers**. Seven outputs change relative to the
+hierarchy freeze: the [index](api/README.md),
+[flat parser](api/ext/cli.md), [command router](api/ext/cli_commands.md),
+[KV module](api/ext/kv.md) and three new pages for
+[byte tokenization](api/ext/response.md),
+[owned expansion](api/ext/cli_response.md) and the
+[native file provider](api/ext/cli_response_files.md). Guide links and notes
+separate grammar, provider/owner contracts, native services and application
+policy. Source generation itself proves no runtime behavior.
+
+Production freezes remain tokenizer `a997585c...`, expansion `35b6ee83...`
+and native provider `461037b8...`; the response-backed KV application is
+`789143f6...`. The selected increment has finite native Linux x86_64
+acceptance: two portable semantic Rust tests, three direct public smokes,
+pure syscall observations, 39/31 direct native provider/resource cases and
+55 current application cases. The direct groups have overlap and are not
+current native Rust-libtest passes. Exact sources, receipts, ownership and
+historical scopes belong to the [response guide](extended-cli-response.md)
+and [current application guide](extended-kv.md#current-application-receipts).
+The complete standard and extended library goal remains open.
+
+Final generation receipts are
+`target/stdlib-work/response-reference-final-retry-writer.log` and
+`response-reference-final-retry-check.log` in that directory. The first writer
+attempt stopped before publishing any pages because its item lookup conflated
+the public `Provider` trait and `Cause::Provider` value variant
+(`response-reference-final-writer.log`). The documentation-tool correction
+retains both source declaration links in their distinct type/value namespaces,
+without selecting an importing use-site target. Single-target rendering is
+unchanged; ambiguity within either namespace still fails. No production or
+compiler change was made for reference generation.
+
+Eight focused CPU tests pass in **3.613s**, recorded in
+`target/stdlib-work/response-reference-final-retry-tests.log`. They cover mixed
+namespace links, same-namespace ambiguity, existing single-item spellings,
+whole-module precedence, missing/private items, non-reexport and the current
+source inventory/import links. Earlier scanner controls passed three focused
+cases and 29 full CPU tests in 3.711s at the nested-iteration checkpoint;
+those unchanged branches were not broadly rerun for this change.
+
+The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
+hashes before generation and after the final check, recorded in
+`target/stdlib-work/response-reference-human-{before,after}.sha256`. The writer
+changes only generated pages. Public `pub` spellings are counted lexically,
+including required public implementations of private helpers; this is not a
+count of externally usable APIs or working functions.
+
+The hierarchy freeze had 253 pages, 252 modules and 8,346 markers
+(`cli-commands-reference-final-{writer,check}.log`). Its source and 130-case
+application receipts remain historical and were not rerun on the current KV
+source. The ordinary nested freeze had 251/250/8,329
+(`infallible-nested-reference-final-{writer,check}.log`); replacement sinks had
+251/250/8,309 (`replacement-reference-final-{writer,check}.log`); fallible nested
+iteration had 251/250/8,295; filesystem had 251/250/8,259; reusable regex had
+250/249/8,220; archives had 250/249/8,197. The earlier language-adoption and
+AtomicFile inventory had 246/245/8,119. Each retains its guide-defined source
+and runtime scope.
+
 ## Source boundaries
 
 `tools/generate_library_reference.py` is documentation tooling. Declaration
@@ -47,19 +152,52 @@ counts and enum payloads. Unknown public declaration shapes stop generation
 with a source path and line instead of silently disappearing from the index.
 
 The scanner does not validate the language grammar, infer types, resolve trait
-calls, decide semantic visibility or act as a compiler fallback. A public
+calls or act as a compiler fallback. Import-link checks use declared public
+ownership in the source, not compiler visibility analysis. A public
 method is retained with its complete impl header, including an impl not itself
-spelled `pub`; trait members are retained under their public trait. Fields and
-variants appear under their declared public owner, without implying that
-arbitrary construction or mutation satisfies that owner's invariants. Private
-function bodies and private helper types are excluded.
+spelled `pub`; trait members are retained under their public trait. A complete
+module scan first records local struct/enum visibility. An impl whose direct
+nominal receiver is one of those known private local types is excluded together
+with its methods, even if the impl must be spelled `pub`. Later type declarations
+and same-module-qualified receivers are recognized; generic binders shadowing
+a local type name remain generic receivers. Public/unknown/external/primitive
+receivers retain their existing treatment. The scanner does not resolve aliases,
+imports, generic bounds or arbitrary composite types to infer additional private
+owners. Unsupported public shapes are still rejected during the complete scan
+before this filter; all lexical `pub` markers remain counted.
+
+Fields and variants appear under their declared public owner, without implying
+that arbitrary construction or mutation satisfies that owner's invariants.
+Private function bodies and private helper types are excluded.
 
 All `.lani` sources in the two roots are scanned, including newly added modules.
-Module paths must match their root-relative source paths and declared imports
-must name an inventoried source. This checks the inventory's links; it does not
-replace compiler module resolution. Limits are 4,096 files, 4 MiB per source
-file, one million documentation tokens per file and 64 MiB total source bytes.
-Opened files must be regular UTF-8 files.
+Module paths must match their root-relative source paths. Import links follow
+the [item-import contract](language-ergonomics.md#item-imports):
+
+- An inventoried module matching the entire path wins, even if the prefix
+  module contains a public item with that same final name.
+- Otherwise, the prefix must be an inventoried module and the last segment
+  must identify a public declaration in each applicable namespace. Structs,
+  enums, traits and type aliases occupy the type namespace; functions,
+  extern functions, constants and enum variants occupy the value namespace.
+  A shared spelling can link one declaration from each namespace. Both source
+  declarations are retained; the inventory does not infer use-site resolution.
+- Public enum variants have module-level names, including `core::result::Ok`;
+  links point to the variant's own source line.
+- Private, missing or same-namespace ambiguous items fail with the importing file/line.
+  Struct fields, impl methods and private-enum variants are not module items.
+  Imported names are not re-exported. Aliases, globs and `use` are unsupported.
+
+An item link preserves the full written import path, identifies declaration
+kinds, links the owning module page and the exact declarations, and retains a
+separate link to the import line. Single-target and module links keep their
+format; a plural link labels the distinct namespaces and links both source
+locations without choosing a use-site target.
+This static inventory lookup does not replace compiler package/name resolution,
+type checking or runtime verification. Short public signatures keep their
+original source spelling; the generator does not expand imported type names.
+Limits are 4,096 files, 4 MiB per source file, one million documentation tokens
+per file and 64 MiB total source bytes. Opened files must be regular UTF-8 files.
 
 ## Reviewed guide mappings and status notes
 

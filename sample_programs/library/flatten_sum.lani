@@ -1,0 +1,180 @@
+// Physical row owners -> FlatMap/scalar retirement -> TryScan -> staged output.
+module app::main;
+import alloc::vec;
+import core::clone_values::Infallible;
+import core::decimal;
+import core::i64;
+import core::io;
+import core::io::Read;
+import core::io::Write;
+import core::iter;
+import core::iter::Iterator;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import std::args;
+import std::signal;
+import std::stream;
+
+enum AppError { Input, Limit, Overflow, Allocation, Io }
+struct Config { input:i32,rows:i32,values:i32,output:i32,reads:i32,writes:i32 }
+struct Counts { rows:i32,values:i32 }
+struct RowMap<T> { marker:Option<T> }
+struct Retire {}
+struct Running { total:i64 }
+impl<T> RowMap<T> { fn borrow(&self) -> &RowMap<T> { return self; } }
+impl Retire { fn borrow(&self) -> &Retire { return self; } }
+impl Running { fn borrow(&self) -> &Running { return self; } }
+pub impl<T> core::iter::Mapper<alloc::vec::Vec<T>,alloc::vec::IntoIter<T>> for RowMap<T> {
+    pub fn apply(&self,row:alloc::vec::Vec<T>) -> alloc::vec::IntoIter<T> { return row.take_iter(); }
+}
+pub impl core::iter::InnerRetirement<alloc::vec::IntoIter<i64>,Infallible> for Retire {
+    pub fn try_retire(&self,inner:alloc::vec::IntoIter<i64>) -> Option<core::iter::RetireFailure<alloc::vec::IntoIter<i64>,Infallible>> {
+        // i64 items own no resources. Consume all cursor storage without a
+        // fallible finish; the nested engine calls this only after exhaustion.
+        let remainder=inner.take_remaining(); remainder.destroy();
+        return None();
+    }
+}
+pub impl core::iter::Mapper<i64,Result<Option<i64>,AppError>> for Running {
+    pub fn apply(&self,value:i64) -> Result<Option<i64>,AppError> {
+        let added=core::i64::checked_add(self.total,value);
+        if(added.is_none()) { return Err(AppError::Overflow); }
+        self.total=added.unwrap(); return Ok(Some(self.total));
+    }
+}
+fn literal(text:str,count:i32) -> View<u8> { return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count }; }
+fn same(a:View<u8>,b:View<u8>) -> bool { if(a.length!=b.length) { return false; } let at:i32=0; while(at<a.length) { if(a.values[a.start+at]!=b.values[b.start+at]) { return false; } at+=1; } return true; }
+fn horizontal(byte:u8) -> bool { return byte==32 || byte==9 || byte==11 || byte==12 || byte==13; }
+fn code(error:AppError) -> i32 { return match(error) { AppError::Allocation->4,AppError::Io->3,_ ->2 }; }
+fn flag(name:View<u8>) -> i32 {
+    if(same(name,literal("--input-bytes",13))) { return 0; } if(same(name,literal("--rows",6))) { return 1; }
+    if(same(name,literal("--values",8))) { return 2; } if(same(name,literal("--output-bytes",14))) { return 3; }
+    if(same(name,literal("--read-calls",12))) { return 4; } if(same(name,literal("--write-calls",13))) { return 5; } return -1;
+}
+fn config(arguments:std::args::Arguments) -> Result<Config,AppError> {
+    let limits:[i32;6]=[65536,1024,8192,172032,1024,1024]; let maxima:[u32;6]=[1048576,4096,65536,1376256,65536,65536];
+    let seen:u32=0; let at:i32=0;
+    while(at<arguments.len()) {
+        if(at+1>=arguments.len()) { return Err(AppError::Input); } let id=flag(arguments.get(at).unwrap()); if(id<0) { return Err(AppError::Input); }
+        let bit:u32=1; bit=bit<<id; if((seen&bit)!=0) { return Err(AppError::Input); } seen=seen|bit;
+        let value=arguments.get(at+1).unwrap(); let parsed=core::decimal::parse_u32_range(value.values,value.start,value.length);
+        if(parsed.is_err()) { return Err(AppError::Input); } let number=parsed.unwrap(); if(number>maxima[id]) { return Err(AppError::Limit); } limits[id]=number as i32; at+=2;
+    }
+    return Ok(Config { input:limits[0],rows:limits[1],values:limits[2],output:limits[3],reads:limits[4],writes:limits[5] });
+}
+fn read_input(limits:Config) -> Result<alloc::vec::Vec<u8>,AppError> {
+    let made:Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(limits.input);
+    if(made.is_err()) { return Err(AppError::Allocation); } let bytes=made.unwrap(); let scratch:[u8;1024]=[0;1024]; let calls:i32=0;
+    let source=std::stream::stdin();
+    while(true) {
+        if(calls==limits.reads) { bytes.destroy(); return Err(AppError::Limit); }
+        let remaining=limits.input-bytes.len(); let count=remaining; if(count>1024) { count=1024; } if(count==0) { count=1; } calls+=1;
+        let got=source.read(scratch,0,count);
+        if(got.is_err()) { if(!core::io::is_interrupted(got.unwrap_err())) { bytes.destroy(); return Err(AppError::Io); } }
+        else {
+            let count_got=got.unwrap(); if(count_got<0 || count_got>count) { bytes.destroy(); return Err(AppError::Io); }
+            if(count_got==0) { return Ok(bytes); }
+            if(remaining==0) { bytes.destroy(); return Err(AppError::Limit); }
+            if(bytes.try_extend(View { values:scratch,start:0,length:count_got }).is_err()) { bytes.destroy(); return Err(AppError::Allocation); }
+        }
+    }
+    return Err(AppError::Io);
+}
+fn validate(input:View<u8>,limits:Config) -> Result<Counts,AppError> {
+    let counts=Counts { rows:0,values:0 }; let at:i32=0;
+    while(at<input.length) {
+        if(counts.rows==limits.rows) { return Err(AppError::Limit); } counts.rows+=1;
+        let end=at; while(end<input.length && input.values[input.start+end]!=10) { end+=1; }
+        while(at<end) {
+            if(horizontal(input.values[input.start+at])) { at+=1; }
+            else {
+                if(counts.values==limits.values) { return Err(AppError::Limit); }
+                let begin=at; while(at<end && !horizontal(input.values[input.start+at])) { at+=1; }
+                if(core::decimal::parse_i64_range(input.values,input.start+begin,at-begin).is_err()) { return Err(AppError::Input); } counts.values+=1;
+            }
+        } at=end+1;
+    } return Ok(counts);
+}
+fn destroy_rows(rows:alloc::vec::Vec<alloc::vec::Vec<i64>>) { let at:i32=0; while(at<rows.len()) { rows.get(at).unwrap().destroy(); at+=1; } rows.destroy(); }
+fn build(input:View<u8>,counts:Counts) -> Result<alloc::vec::Vec<alloc::vec::Vec<i64>>,AppError> {
+    let allocated:Result<alloc::vec::Vec<alloc::vec::Vec<i64>>,alloc::vec::Error> =alloc::vec::with_capacity(counts.rows);
+    if(allocated.is_err()) { return Err(AppError::Allocation); } let rows=allocated.unwrap(); let at:i32=0;
+    while(at<input.length) {
+        let end=at; while(end<input.length && input.values[input.start+end]!=10) { end+=1; }
+        let cursor=at; let count:i32=0;
+        while(cursor<end) { if(horizontal(input.values[input.start+cursor])) { cursor+=1; } else { count+=1; while(cursor<end && !horizontal(input.values[input.start+cursor])) { cursor+=1; } } }
+        let capacity=count; if(capacity==0) { capacity=1; }
+        let made:Result<alloc::vec::Vec<i64>,alloc::vec::Error> =alloc::vec::with_capacity(capacity);
+        if(made.is_err()) { destroy_rows(rows); return Err(AppError::Allocation); } let row=made.unwrap();
+        while(at<end) {
+            if(horizontal(input.values[input.start+at])) { at+=1; }
+            else { let begin=at; while(at<end && !horizontal(input.values[input.start+at])) { at+=1; }
+                let parsed=core::decimal::parse_i64_range(input.values,input.start+begin,at-begin);
+                if(parsed.is_err()) { row.destroy(); destroy_rows(rows); return Err(AppError::Input); }
+                if(row.try_push(parsed.unwrap()).is_err()) { row.destroy(); destroy_rows(rows); return Err(AppError::Allocation); }
+            }
+        }
+        if(rows.try_push(row).is_err()) { row.destroy(); destroy_rows(rows); return Err(AppError::Allocation); } at=end+1;
+    } return Ok(rows);
+}
+fn deliver(bytes:View<u8>,maximum:i32) -> Result<bool,AppError> {
+    let sink=std::stream::stdout(); let at:i32=0; let calls:i32=0;
+    while(at<bytes.length) {
+        if(calls==maximum) { return Err(AppError::Limit); } calls+=1; let count=bytes.length-at; if(count>1024) { count=1024; }
+        let sent=sink.write(bytes.values,bytes.start+at,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return Err(AppError::Io); } }
+        else { let amount=sent.unwrap(); if(amount<=0 || amount>count) { return Err(AppError::Io); } at+=amount; }
+    } return Ok(true);
+}
+fn pipeline(rows:alloc::vec::Vec<alloc::vec::Vec<i64>>,limits:Config) -> i32 {
+    let made:Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(limits.output);
+    if(made.is_err()) { destroy_rows(rows); return 4; } let staged=made.unwrap(); let outer=rows.take_iter();
+    let mapper:RowMap<i64> =RowMap { marker:None() }; let retirement=Retire {}; let running=Running { total:0 };
+    let flat:core::iter::FlatMap<alloc::vec::IntoIter<alloc::vec::Vec<i64>>,RowMap<i64>,Retire,alloc::vec::Vec<i64>,alloc::vec::IntoIter<i64>,i64> =core::iter::flat_map(outer.borrow(),mapper.borrow(),retirement.borrow());
+    let scan=core::iter::try_scan(flat.borrow(),running.borrow()); let status:i32=0; let scratch:[u8;20]=[0;20];
+    while(status==0) {
+        let next=scan.next(); if(next.is_none()) { break; } let item=next.unwrap();
+        if(item.is_err()) { status=code(item.unwrap_err()); }
+        else {
+            let formatted=core::decimal::format_i64(scratch,0,20,item.unwrap());
+            if(formatted.is_err()) { status=3; }
+            else { let count=formatted.unwrap(); if(count+1>limits.output-staged.len()) { status=2; }
+                else { if(staged.try_extend(View { values:scratch,start:0,length:count }).is_err()) { status=4; }
+                    else { if(staged.try_push(10).is_err()) { status=4; } } }
+            }
+        }
+    }
+    // Close nested traversal first. Recover the actual updated active cursor,
+    // release its remainder, then every not-yet-mapped outer row and backing.
+    let active=flat.take_active(); if(active.is_some()) { let inner=active.unwrap(); let remainder=inner.take_remaining(); remainder.destroy(); inner.try_finish(); }
+    if(flat.try_finish().is_some()) { if(status==0) { status=3; } }
+    while(true) { let next=outer.next(); if(next.is_none()) { break; } next.unwrap().destroy(); }
+    if(outer.try_finish().is_some()) { if(status==0) { status=3; } } rows.destroy();
+    if(status==0) { let sent=deliver(staged.as_view(),limits.writes); if(sent.is_err()) { status=code(sent.unwrap_err()); } }
+    staged.destroy(); return status;
+}
+fn run(limits:Config) -> i32 {
+    let read=read_input(limits); if(read.is_err()) { return code(read.unwrap_err()); } let input=read.unwrap();
+    let checked=validate(input.as_view(),limits); if(checked.is_err()) { input.destroy(); return code(checked.unwrap_err()); }
+    let made=build(input.as_view(),checked.unwrap()); input.destroy();
+    if(made.is_err()) { return code(made.unwrap_err()); } return pipeline(made.unwrap(),limits);
+}
+fn main() -> i32 {
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured=std::args::snapshot(1,12,512);
+    if(captured.is_err()) { return match(captured.unwrap_err()) { std::args::Error::AllocationFailed->4,std::args::Error::HostRead(index)->3,_ ->2 }; }
+    let arguments=captured.unwrap(); let status:i32=0;
+    if(arguments.len()==1 && same(arguments.get(0).unwrap(),literal("--help",6))) {
+        let help=literal("usage: flatten_sum [--input-bytes N] [--rows N] [--values N] [--output-bytes N] [--read-calls N] [--write-calls N]\n",115);
+        if(deliver(help,64).is_err()) { status=3; }
+    } else { let parsed=config(arguments); if(parsed.is_err()) { status=code(parsed.unwrap_err()); } else { status=run(parsed.unwrap()); } }
+    arguments.destroy();
+    if(status!=0) { let error=literal("flatten_sum: I/O or ownership failure\n",38); if(status==2) { error=literal("flatten_sum: invalid input, overflow or limit\n",46); } if(status==4) { error=literal("flatten_sum: allocation failed\n",31); } let sink=std::stream::stderr(); sink.write(error.values,error.start,error.length); }
+    return status;
+}

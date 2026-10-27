@@ -1,0 +1,161 @@
+// Pure response syntax, preflight and mapping over live caller storage.
+module app::main;
+import core::mem;
+import core::slice;
+import core::slice::View;
+import core::result::Result;
+import ext::response;
+
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let i: i32 = 0; while (i < left.length) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn error_code(error: ext::response::Error) -> i32 {
+    return match (error) {
+        ext::response::Error::Bounds -> 1, ext::response::Error::Nul(at) -> 100+at,
+        ext::response::Error::TrailingEscape(at) -> 200+at, ext::response::Error::UnclosedQuote(at) -> 300+at,
+        ext::response::Error::BytesTooSmall(count) -> 400+count, ext::response::Error::TokensTooSmall(count) -> 500+count,
+        ext::response::Error::NotSingleToken -> 600, ext::response::Error::DecodedBounds -> 700
+    };
+}
+fn same(left: ext::response::Span, right: ext::response::Span) -> bool {
+    return left.raw_start == right.raw_start && left.raw_length == right.raw_length && left.start == right.start && left.length == right.length;
+}
+fn bytes_intact(values: [u8], start: i32, end: i32) {
+    let i: i32 = start; while (i < end) { assert(values[i] == 90); i += 1; }
+}
+fn spans_intact(values: [ext::response::Span], start: i32, end: i32, sentinel: ext::response::Span) {
+    let i: i32 = start; while (i < end) { assert(same(values[i],sentinel)); i += 1; }
+}
+fn rejected(input: View<u8>, bytes: View<u8>, spans: View<ext::response::Span>, expected: i32) {
+    let result: Result<ext::response::Shape,ext::response::Error> = ext::response::tokenize_into(input,bytes,spans);
+    assert(result.is_err()); let cause: ext::response::Error = result.unwrap_err(); assert(error_code(cause) == expected);
+}
+fn check_case(input: View<u8>, decoded: View<u8>, expected: View<ext::response::Span>, offsets: View<i32>) {
+    let sentinel: ext::response::Span = ext::response::Span { raw_start: -7, raw_length: -8, start: -9, length: -10 };
+    let native_bytes: [u8;64] = [90;64]; let native_spans: [ext::response::Span;10] = [sentinel;10];
+    assert(core::mem::slice_stride(input.values) < 0 && core::mem::slice_stride(native_bytes) < 0 && core::mem::slice_stride(native_spans) < 0);
+    let input_words: [i32;24] = [0;24]; let output_words: [i32;16] = [0;16];
+    let positive_input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input_words),96);
+    let positive_output: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),64);
+    assert(core::mem::slice_stride(positive_input) == 1 && core::mem::slice_stride(positive_output) == 1);
+    let i: i32 = 0; while (i < 96) { positive_input[i] = 90; i += 1; }
+    i = 0; while (i < input.length) { positive_input[i+1] = input.values[input.start+i]; i += 1; }
+    let mode: i32 = 0;
+    while (mode < 2) {
+        let source: View<u8> = input; let bytes: [u8] = native_bytes;
+        if (mode == 1) { source = View<u8> { values: positive_input, start: 1, length: input.length }; bytes = positive_output; }
+        i = 0; while (i < 64) { bytes[i] = 90; i += 1; }
+        i = 0; while (i < 10) { native_spans[i] = sentinel; i += 1; }
+        let byte_view: View<u8> = View<u8> { values: bytes, start: 1, length: decoded.length };
+        let span_view: View<ext::response::Span> = core::slice::view_range(native_spans,1,expected.length).unwrap();
+        let shape: ext::response::Shape = ext::response::measure(source).unwrap();
+        assert(shape.tokens == expected.length && shape.bytes == decoded.length);
+        if (decoded.length > 0) {
+            rejected(source,View<u8> { values: bytes, start: 1, length: decoded.length-1 },span_view,400+decoded.length);
+            bytes_intact(bytes,0,64); spans_intact(native_spans,0,10,sentinel);
+        }
+        if (expected.length > 0) {
+            rejected(source,byte_view,core::slice::view_range(native_spans,1,expected.length-1).unwrap(),500+expected.length);
+            bytes_intact(bytes,0,64); spans_intact(native_spans,0,10,sentinel);
+        }
+        let written: ext::response::Shape = ext::response::tokenize_into(source,byte_view,span_view).unwrap();
+        assert(written.tokens == shape.tokens && written.bytes == shape.bytes && equal(byte_view,decoded));
+        bytes_intact(bytes,0,1); bytes_intact(bytes,1+decoded.length,64);
+        spans_intact(native_spans,0,1,sentinel); spans_intact(native_spans,1+expected.length,10,sentinel);
+        let mapping: i32 = 0; i = 0;
+        while (i < expected.length) {
+            let span: ext::response::Span = native_spans[1+i]; assert(same(span,expected.values[expected.start+i]));
+            let token: View<u8> = source.subview(span.raw_start,span.raw_start+span.raw_length).unwrap();
+            let byte: i32 = 0;
+            while (byte <= span.length) {
+                assert(ext::response::raw_offset(token,byte).unwrap() == offsets.values[offsets.start+mapping]);
+                byte += 1; mapping += 1;
+            }
+            let negative: Result<i32,ext::response::Error> = ext::response::raw_offset(token,-1);
+            let past: Result<i32,ext::response::Error> = ext::response::raw_offset(token,span.length+1);
+            assert(negative.is_err() && error_code(negative.unwrap_err()) == 700 && past.is_err() && error_code(past.unwrap_err()) == 700);
+            i += 1;
+        }
+        assert(mapping == offsets.length && equal(source,input));
+        assert(positive_input[0] == 90 && positive_input[input.length+1] == 90);
+        mode += 1;
+    }
+}
+fn syntax_error(input: View<u8>, expected: i32) {
+    let measured: Result<ext::response::Shape,ext::response::Error> = ext::response::measure(input);
+    assert(measured.is_err() && error_code(measured.unwrap_err()) == expected);
+    let sentinel: ext::response::Span = ext::response::Span { raw_start: -7, raw_length: -8, start: -9, length: -10 };
+    let bytes: [u8;64] = [90;64]; let spans: [ext::response::Span;10] = [sentinel;10];
+    // Full syntax wins over insufficient capacities, with no partial prefix.
+    rejected(input,core::slice::view_range(bytes,1,0).unwrap(),core::slice::view_range(spans,1,0).unwrap(),expected);
+    bytes_intact(bytes,0,64); spans_intact(spans,0,10,sentinel);
+}
+fn main() -> i32 {
+    let raw_0: [u8;2] = [90,90];
+    let decoded_0: [u8;1] = [90];
+    let spans_0: [ext::response::Span;1] = [ext::response::Span { raw_start: 0, raw_length: 0, start: 0, length: 0 }];
+    let maps_0: [i32;1] = [0];
+    check_case(core::slice::view_range(raw_0,1,0).unwrap(),core::slice::view(decoded_0,0).unwrap(),core::slice::view(spans_0,0).unwrap(),core::slice::view(maps_0,0).unwrap());
+    let raw_1: [u8;6] = [90,32,9,13,10,90];
+    let decoded_1: [u8;1] = [90];
+    let spans_1: [ext::response::Span;1] = [ext::response::Span { raw_start: 0, raw_length: 0, start: 0, length: 0 }];
+    let maps_1: [i32;1] = [0];
+    check_case(core::slice::view_range(raw_1,1,4).unwrap(),core::slice::view(decoded_1,0).unwrap(),core::slice::view(spans_1,0).unwrap(),core::slice::view(maps_1,0).unwrap());
+    let raw_2: [u8;17] = [90,111,110,101,9,32,116,119,111,13,10,116,104,114,101,101,90];
+    let decoded_2: [u8;11] = [111,110,101,116,119,111,116,104,114,101,101];
+    let spans_2: [ext::response::Span;3] = [ext::response::Span { raw_start: 0, raw_length: 3, start: 0, length: 3 },ext::response::Span { raw_start: 5, raw_length: 3, start: 3, length: 3 },ext::response::Span { raw_start: 10, raw_length: 5, start: 6, length: 5 }];
+    let maps_2: [i32;14] = [0,1,2,3,0,1,2,3,0,1,2,3,4,5];
+    check_case(core::slice::view_range(raw_2,1,15).unwrap(),core::slice::view(decoded_2,11).unwrap(),core::slice::view(spans_2,3).unwrap(),core::slice::view(maps_2,14).unwrap());
+    let raw_3: [u8;17] = [90,97,98,34,32,99,34,39,100,39,32,39,39,32,34,34,90];
+    let decoded_3: [u8;5] = [97,98,32,99,100];
+    let spans_3: [ext::response::Span;3] = [ext::response::Span { raw_start: 0, raw_length: 9, start: 0, length: 5 },ext::response::Span { raw_start: 10, raw_length: 2, start: 5, length: 0 },ext::response::Span { raw_start: 13, raw_length: 2, start: 5, length: 0 }];
+    let maps_3: [i32;8] = [0,1,3,4,7,9,2,2];
+    check_case(core::slice::view_range(raw_3,1,15).unwrap(),core::slice::view(decoded_3,5).unwrap(),core::slice::view(spans_3,3).unwrap(),core::slice::view(maps_3,8).unwrap());
+    let raw_4: [u8;21] = [90,97,92,32,98,32,34,99,92,34,100,34,32,39,101,92,39,102,39,32,90];
+    let decoded_4: [u8;9] = [97,32,98,99,34,100,101,39,102];
+    let spans_4: [ext::response::Span;3] = [ext::response::Span { raw_start: 0, raw_length: 4, start: 0, length: 3 },ext::response::Span { raw_start: 5, raw_length: 6, start: 3, length: 3 },ext::response::Span { raw_start: 12, raw_length: 6, start: 6, length: 3 }];
+    let maps_4: [i32;12] = [0,2,3,4,1,3,4,6,1,3,4,6];
+    check_case(core::slice::view_range(raw_4,1,19).unwrap(),core::slice::view(decoded_4,9).unwrap(),core::slice::view(spans_4,3).unwrap(),core::slice::view(maps_4,12).unwrap());
+    let raw_5: [u8;14] = [90,120,92,10,121,32,255,128,32,35,36,42,126,90];
+    let decoded_5: [u8;9] = [120,10,121,255,128,35,36,42,126];
+    let spans_5: [ext::response::Span;3] = [ext::response::Span { raw_start: 0, raw_length: 4, start: 0, length: 3 },ext::response::Span { raw_start: 5, raw_length: 2, start: 3, length: 2 },ext::response::Span { raw_start: 8, raw_length: 4, start: 5, length: 4 }];
+    let maps_5: [i32;12] = [0,2,3,4,0,1,2,0,1,2,3,4];
+    check_case(core::slice::view_range(raw_5,1,12).unwrap(),core::slice::view(decoded_5,9).unwrap(),core::slice::view(spans_5,3).unwrap(),core::slice::view(maps_5,12).unwrap());
+    let bad_0: [u8;16] = [90,103,111,111,100,32,98,97,100,0,108,97,116,101,114,90];
+    syntax_error(core::slice::view_range(bad_0,1,14).unwrap(),108);
+    let bad_1: [u8;6] = [90,97,98,99,92,90];
+    syntax_error(core::slice::view_range(bad_1,1,4).unwrap(),203);
+    let bad_2: [u8;6] = [90,34,97,98,99,90];
+    syntax_error(core::slice::view_range(bad_2,1,4).unwrap(),300);
+    let bad_3: [u8;9] = [90,111,107,32,39,97,98,99,90];
+    syntax_error(core::slice::view_range(bad_3,1,7).unwrap(),303);
+    let bad_4: [u8;5] = [90,34,97,92,90];
+    syntax_error(core::slice::view_range(bad_4,1,3).unwrap(),202);
+    let bad_5: [u8;5] = [90,39,97,92,90];
+    syntax_error(core::slice::view_range(bad_5,1,3).unwrap(),202);
+    let sentinel: ext::response::Span = ext::response::Span { raw_start: -7, raw_length: -8, start: -9, length: -10 };
+    let bytes: [u8;64] = [90;64]; let spans: [ext::response::Span;10] = [sentinel;10];
+    let good: [u8;3] = [97,98,99]; let input: View<u8> = core::slice::view(good,3).unwrap();
+    let output: View<u8> = core::slice::view_range(bytes,1,3).unwrap(); let entries: View<ext::response::Span> = core::slice::view_range(spans,1,1).unwrap();
+    rejected(input,View<u8> { values: bytes, start: -1, length: 3 },entries,1);
+    rejected(input,View<u8> { values: bytes, start: 1, length: -1 },entries,1);
+    rejected(input,View<u8> { values: bytes, start: 2147483647, length: 1 },entries,1);
+    rejected(input,output,View<ext::response::Span> { values: spans, start: -1, length: 1 },1);
+    rejected(input,output,View<ext::response::Span> { values: spans, start: 0, length: -1 },1);
+    rejected(input,output,View<ext::response::Span> { values: spans, start: 2147483647, length: 1 },1);
+    rejected(View<u8> { values: good, start: -1, length: 3 },output,entries,1);
+    rejected(View<u8> { values: good, start: 0, length: -1 },output,entries,1);
+    rejected(View<u8> { values: good, start: 2147483647, length: 1 },output,entries,1);
+    bytes_intact(bytes,0,64); spans_intact(spans,0,10,sentinel);
+    let not_single: [u8;5] = [32,97,32,98,32]; let index: i32 = 0;
+    // Leading separator, trailing separator, two tokens and no token.
+    let starts: [i32;4] = [0,1,1,0]; let lengths: [i32;4] = [2,2,3,0];
+    while (index < 4) {
+        let result: Result<i32,ext::response::Error> = ext::response::raw_offset(core::slice::view_range(not_single,starts[index],lengths[index]).unwrap(),0);
+        assert(result.is_err() && error_code(result.unwrap_err()) == 600); index += 1;
+    }
+    let invalid: Result<i32,ext::response::Error> = ext::response::raw_offset(View<u8> { values: good, start: -1, length: 3 },0);
+    assert(invalid.is_err() && error_code(invalid.unwrap_err()) == 1);
+    return 0;
+}

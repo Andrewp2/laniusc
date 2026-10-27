@@ -1,0 +1,390 @@
+// Test-only ownership/fault checkpoints around the actual core::iter adapters.
+module app::main;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+import std::linux;
+
+fn mark(value:u8) { let storage:[i32;1]=[value as i32]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(storage),1)==1); }
+fn receive(pointer:ptr,count:i32) { let at:i32=0; while(at<count) { let got=std::io::read_stdin(pointer+(at as usize),(count-at) as usize); assert(got>0 && got<=count-at); at+=got; } }
+fn send(pointer:ptr,count:i32) { let at:i32=0; while(at<count) { let got=std::io::write_stdout(pointer+(at as usize),(count-at) as usize); assert(got>0 && got<=count-at); at+=got; } }
+fn word(value:u64) { let storage:[i32;2]=[(value&4294967295) as i32,(value>>32) as i32]; send(core::mem::i32_array_data_ptr(storage),8); }
+fn ack() { let storage:[i32;1]=[0]; receive(core::mem::i32_array_data_ptr(storage),1); assert(storage[0]==65); }
+
+struct Audit {
+    outer:i32, inner:i32, retire:i32, maps:i32, received:i32,
+    scratch_freed:i32, backing_freed:i32, errors_made:i32, errors_freed:i32,
+    recovered_steps:i32, held:core::option::Option<alloc::string::String>
+}
+impl Audit { fn borrow(&self) -> &Audit { return self; } }
+struct Fault { kind:i32, message:alloc::string::String, stamp:u64, audit:&Audit, live:bool }
+impl Fault {
+    fn borrow(&self) -> &Fault { return self; }
+    fn destroy(&self) {
+        if(!self.live) { return; }
+        mark(69); self.message.destroy(); self.live=false;
+        let audit:&Audit=self.audit; audit.errors_freed+=1;
+    }
+}
+fn allocation(audit:&Audit) -> Fault { return Fault { kind:3,message:alloc::string::new(),stamp:18446744073709551615,audit:audit,live:false }; }
+fn fault(kind:i32,audit:&Audit) -> Fault {
+    let bytes:[u8;5]=[69,0,195,169,82]; let made=alloc::string::from_utf8(bytes,5);
+    if(made.is_err()) { return allocation(audit); }
+    audit.errors_made+=1;
+    return Fault { kind:kind,message:made.unwrap(),stamp:18446744073709551615,audit:audit,live:true };
+}
+fn check_fault(value:&Fault) {
+    assert(value.stamp==18446744073709551615);
+    if(value.kind==3) { assert(!value.live && value.message.capacity()==0); return; }
+    assert(value.live && (value.kind==1 || value.kind==2) && value.message.byte_len()==5);
+    let expected:[u8;5]=[69,0,195,169,82]; let i:i32=0;
+    while(i<5) { assert(value.message.byte_at(i).unwrap()==expected[i]); i+=1; }
+}
+fn item(id:i32,index:i32,audit:&Audit) -> core::result::Result<alloc::string::String,Fault> {
+    let bytes:[u8;8]=[(65+id*3+index) as u8,0,195,169,240,159,153,130];
+    let made=alloc::string::from_utf8(bytes,8);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); } return core::result::Ok(made.unwrap());
+}
+fn check_item(value:alloc::string::String,first:u8) {
+    assert(value.byte_len()==8);
+    let expected:[u8;8]=[first,0,195,169,240,159,153,130]; let i:i32=0;
+    while(i<8) { assert(value.byte_at(i).unwrap()==expected[i]); i+=1; }
+}
+fn accept(value:alloc::string::String,audit:&Audit) {
+    assert(audit.received<6); check_item(value,(68+audit.received) as u8);
+    if(audit.received==0) { assert(audit.held.is_none()); audit.held=core::option::Some(value); }
+    else { mark(68); value.destroy(); }
+    audit.received+=1;
+}
+fn check_held(audit:&Audit) { if(audit.held.is_some()) { check_item(audit.held.unwrap(),68); } }
+fn release_held(audit:&Audit) {
+    let held= audit.held; audit.held=core::option::None();
+    if(held.is_some()) { let value=held.unwrap(); mark(72); value.destroy(); value.destroy(); assert(value.capacity()==0); }
+}
+
+// Only the fixture's resource policy needs these queries/cleanup operations.
+// Production adapters require only the canonical Iterator item contract.
+pub trait CursorOwner {
+    pub fn left(&self) -> i32;
+    pub fn reserved(&self) -> i32;
+    pub fn finish(&self);
+}
+pub impl CursorOwner for alloc::vec::IntoIter<alloc::string::String> {
+    pub fn left(&self) -> i32 { return self.remaining(); }
+    pub fn reserved(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self) { assert(self.try_finish().is_none()); }
+}
+pub impl CursorOwner for alloc::deque::IntoIter<alloc::string::String> {
+    pub fn left(&self) -> i32 { return self.remaining(); }
+    pub fn reserved(&self) -> i32 { return self.capacity(); }
+    pub fn finish(&self) { assert(self.try_finish().is_none()); }
+}
+struct Inner<J> { cursor:J, scratch:alloc::vec::Vec<u8>, id:i32, steps:i32, audit:&Audit }
+pub impl<J> core::iter::Iterator<alloc::string::String> for Inner<J> where J:core::iter::Iterator<alloc::string::String> {
+    pub fn next(&self) -> core::option::Option<alloc::string::String> {
+        mark(73); let audit:&Audit=self.audit; audit.inner+=1;
+        let cursor:J=self.cursor;
+        let found:core::option::Option<alloc::string::String> =cursor.next();
+        self.cursor=cursor; return found;
+    }
+}
+fn deep_inner<J>(value:Inner<J>) where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner {
+    // This local receives the cursor's sole cleanup authority. The consumed
+    // value's old field is not polled or destroyed after this transfer.
+    let cursor:J=value.cursor;
+    while(true) { let found:core::option::Option<alloc::string::String> =cursor.next(); if(found.is_none()) { break; } let owned=found.unwrap(); mark(68); owned.destroy(); }
+    let audit:&Audit=value.audit;
+    if(value.scratch.capacity()>0) { value.scratch.destroy(); audit.scratch_freed+=1; }
+    if(cursor.reserved()>0) { cursor.finish(); audit.backing_freed+=1; }
+}
+struct Policy<J> { audit:&Audit, fail:bool }
+impl<J> Policy<J> { fn borrow(&self) -> &Policy<J> { return self; } }
+pub impl<J> core::iter::InnerRetirement<Inner<J>,Fault> for Policy<J>
+    where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner {
+    pub fn try_retire(&self,inner:Inner<J>) -> core::option::Option<core::iter::RetireFailure<Inner<J>,Fault>> {
+        mark(82); let audit:&Audit=self.audit; audit.retire+=1;
+        assert(inner.cursor.left()==0); inner.steps+=1;
+        if(inner.scratch.capacity()>0) { inner.scratch.destroy(); audit.scratch_freed+=1; }
+        if(self.fail && inner.id==1 && inner.steps==1) {
+            let error=fault(1,audit); mark(114);
+            return core::option::Some(core::iter::RetireFailure { inner:inner,error:error });
+        }
+        assert(inner.cursor.reserved()==3); inner.cursor.finish(); audit.backing_freed+=1;
+        assert(inner.cursor.reserved()==0); mark(114); return core::option::None();
+    }
+}
+fn scratch(audit:&Audit) -> core::result::Result<alloc::vec::Vec<u8>,Fault> {
+    let made=alloc::vec::with_capacity<u8>(5);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); }
+    let value=made.unwrap(); value.try_push(83).unwrap(); return core::result::Ok(value);
+}
+fn destroy_vector(value:&alloc::vec::Vec<alloc::string::String>) {
+    while(true) { let found=value.pop(); if(found.is_none()) { break; } let owned=found.unwrap(); mark(68); owned.destroy(); } value.destroy();
+}
+fn destroy_ring(value:&alloc::deque::Deque<alloc::string::String>) {
+    while(true) { let found=value.pop_front(); if(found.is_none()) { break; } let owned=found.unwrap(); mark(68); owned.destroy(); } value.destroy();
+}
+fn vector(id:i32,audit:&Audit) -> core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String>>,Fault> {
+    let made=alloc::vec::with_capacity<alloc::string::String>(3);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); } let owner=made.unwrap();
+    let made_scratch=scratch(audit);
+    if(made_scratch.is_err()) { owner.destroy(); return core::result::Err(made_scratch.unwrap_err()); } let temporary=made_scratch.unwrap();
+    if(id>0) { let index:i32=0; while(index<3) {
+        let made_item=item(id,index,audit);
+        if(made_item.is_err()) { destroy_vector(owner.borrow()); temporary.destroy(); return core::result::Err(made_item.unwrap_err()); }
+        owner.try_push(made_item.unwrap()).unwrap(); index+=1;
+    } }
+    let cursor=owner.take_iter(); owner.destroy();
+    return core::result::Ok(Inner { cursor:cursor,scratch:temporary,id:id,steps:0,audit:audit });
+}
+fn ring(id:i32,audit:&Audit) -> core::result::Result<Inner<alloc::deque::IntoIter<alloc::string::String>>,Fault> {
+    let made=alloc::deque::with_capacity<alloc::string::String>(3);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); } let owner=made.unwrap();
+    let made_scratch=scratch(audit);
+    if(made_scratch.is_err()) { owner.destroy(); return core::result::Err(made_scratch.unwrap_err()); } let temporary=made_scratch.unwrap();
+    if(id>0) { let index:i32=0; while(index<3) {
+        let logical:i32=index-1; if(index==0) { logical=2; }
+        let made_item=item(id,logical,audit);
+        if(made_item.is_err()) { destroy_ring(owner.borrow()); temporary.destroy(); return core::result::Err(made_item.unwrap_err()); }
+        owner.try_push_back(made_item.unwrap()).unwrap(); index+=1;
+    }
+        let first=owner.pop_front().unwrap(); owner.try_push_back(first).unwrap();
+        assert(owner.head==1 && owner.as_views().first.len()==2 && owner.as_views().second.len()==1);
+    }
+    let cursor=owner.take_iter(); owner.destroy();
+    return core::result::Ok(Inner { cursor:cursor,scratch:temporary,id:id,steps:0,audit:audit });
+}
+
+struct Outer<J> { values:alloc::vec::IntoIter<Inner<J>>, audit:&Audit, done:bool }
+impl<J> Outer<J> { fn borrow(&self) -> &Outer<J> { return self; } }
+pub impl<J> core::iter::Iterator<Inner<J>> for Outer<J> {
+    pub fn next(&self) -> core::option::Option<Inner<J>> {
+        if(self.done) { return core::option::None(); }
+        mark(79); let audit:&Audit=self.audit; audit.outer+=1;
+        let found:core::option::Option<Inner<J>> =self.values.next(); if(found.is_none()) { self.done=true; } return found;
+    }
+}
+fn destroy_outer<J>(owner:&Outer<J>) where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner {
+    let remaining=owner.values.take_remaining(); let index:i32=0;
+    while(index<remaining.len()) { deep_inner(remaining.at(index)); index+=1; } remaining.destroy();
+}
+fn flat_vector(audit:&Audit) -> core::result::Result<Outer<alloc::vec::IntoIter<alloc::string::String>>,Fault> {
+    let made=alloc::vec::with_capacity<Inner<alloc::vec::IntoIter<alloc::string::String>>>(3);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); } let owner=made.unwrap(); let index:i32=0;
+    while(index<3) {
+        let made_inner=vector(index,audit);
+        if(made_inner.is_err()) { let i:i32=0; while(i<owner.len()) { deep_inner(owner.at(i)); i+=1; } owner.destroy(); return core::result::Err(made_inner.unwrap_err()); }
+        owner.try_push(made_inner.unwrap()).unwrap(); index+=1;
+    }
+    return core::result::Ok(Outer { values:owner.take_iter(),audit:audit,done:false });
+}
+fn flat_ring(audit:&Audit) -> core::result::Result<Outer<alloc::deque::IntoIter<alloc::string::String>>,Fault> {
+    let made=alloc::vec::with_capacity<Inner<alloc::deque::IntoIter<alloc::string::String>>>(3);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); } let owner=made.unwrap(); let index:i32=0;
+    while(index<3) {
+        let made_inner=ring(index,audit);
+        if(made_inner.is_err()) { let i:i32=0; while(i<owner.len()) { deep_inner(owner.at(i)); i+=1; } owner.destroy(); return core::result::Err(made_inner.unwrap_err()); }
+        owner.try_push(made_inner.unwrap()).unwrap(); index+=1;
+    }
+    return core::result::Ok(Outer { values:owner.take_iter(),audit:audit,done:false });
+}
+
+struct Rows { values:alloc::vec::IntoIter<alloc::string::String>, audit:&Audit, done:bool }
+impl Rows { fn borrow(&self) -> &Rows { return self; } }
+pub impl core::iter::Iterator<alloc::string::String> for Rows {
+    pub fn next(&self) -> core::option::Option<alloc::string::String> {
+        if(self.done) { return core::option::None(); }
+        mark(79); let audit:&Audit=self.audit; audit.outer+=1;
+        let found=self.values.next(); if(found.is_none()) { self.done=true; } return found;
+    }
+}
+fn rows(audit:&Audit) -> core::result::Result<Rows,Fault> {
+    let made=alloc::vec::with_capacity<alloc::string::String>(3);
+    if(made.is_err()) { return core::result::Err(allocation(audit)); } let owner=made.unwrap(); let id:i32=0;
+    while(id<3) {
+        let bytes:[u8;4]=[82,id as u8,195,169]; let row=alloc::string::from_utf8(bytes,4);
+        if(row.is_err()) { destroy_vector(owner.borrow()); return core::result::Err(allocation(audit)); }
+        owner.try_push(row.unwrap()).unwrap(); id+=1;
+    }
+    return core::result::Ok(Rows { values:owner.take_iter(),audit:audit,done:false });
+}
+fn destroy_rows(owner:&Rows) { let remaining=owner.values.take_remaining(); destroy_vector(remaining.borrow()); }
+fn row_id(value:alloc::string::String) -> i32 {
+    assert(value.byte_len()==4 && value.byte_at(0).unwrap()==82 && value.byte_at(2).unwrap()==195 && value.byte_at(3).unwrap()==169);
+    let id=value.byte_at(1).unwrap() as i32; assert(id>=0 && id<3); return id;
+}
+struct Make<J> { audit:&Audit, fail:bool }
+impl<J> Make<J> { fn borrow(&self) -> &Make<J> { return self; } }
+fn map_failure(audit:&Audit) -> Fault {
+    let partial=alloc::vec::with_capacity<u8>(11);
+    if(partial.is_err()) { return allocation(audit); }
+    let owner=partial.unwrap(); owner.try_push(99).unwrap(); owner.destroy();
+    return fault(2,audit);
+}
+pub impl core::iter::Mapper<alloc::string::String,core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String>>,Fault>> for Make<alloc::vec::IntoIter<alloc::string::String>> {
+    pub fn apply(&self,value:alloc::string::String) -> core::result::Result<Inner<alloc::vec::IntoIter<alloc::string::String>>,Fault> {
+        mark(77); let audit:&Audit=self.audit; audit.maps+=1; let id=row_id(value); value.destroy();
+        if(self.fail && id==1) { let error=map_failure(audit); mark(109); return core::result::Err(error); }
+        let made=vector(id,audit); mark(109); return made;
+    }
+}
+pub impl core::iter::Mapper<alloc::string::String,core::result::Result<Inner<alloc::deque::IntoIter<alloc::string::String>>,Fault>> for Make<alloc::deque::IntoIter<alloc::string::String>> {
+    pub fn apply(&self,value:alloc::string::String) -> core::result::Result<Inner<alloc::deque::IntoIter<alloc::string::String>>,Fault> {
+        mark(77); let audit:&Audit=self.audit; audit.maps+=1; let id=row_id(value); value.destroy();
+        if(self.fail && id==1) { let error=map_failure(audit); mark(109); return core::result::Err(error); }
+        let made=ring(id,audit); mark(109); return made;
+    }
+}
+
+fn status(error:core::option::Option<Fault>) -> i32 { if(error.is_some() && error.unwrap().kind==3) { return 4; } return 0; }
+fn checkpoint(pid:u64,phase:u64,code:i32,backend:i32,flavor:i32,profile:i32,audit:&Audit,
+              error:core::option::Option<Fault>,active:bool,remaining:i32,ready:bool) {
+    word(1313420337); word(pid); word(phase); word(code as u64); word(backend as u64); word(flavor as u64); word(profile as u64);
+    word(audit.outer as u64); word(audit.inner as u64); word(audit.retire as u64); word(audit.maps as u64); word(audit.received as u64);
+    let held:u64=0; if(audit.held.is_some()) { held=audit.held.unwrap().capacity() as u64; }
+    let errors:u64=0; let kind:i32=0; if(error.is_some()) { errors=error.unwrap().message.capacity() as u64; kind=error.unwrap().kind; }
+    word(held); word(errors); word(0); if(active) { word(1); } else { word(0); }
+    word(remaining as u64); word(audit.recovered_steps as u64); word(audit.scratch_freed as u64); word(audit.backing_freed as u64);
+    word(audit.errors_made as u64); word(audit.errors_freed as u64); word(kind as u64);
+    if(ready) { word(1); } else { word(0); } ack();
+}
+fn finish_errors(pid:u64,code:i32,backend:i32,flavor:i32,profile:i32,audit:&Audit,error:core::option::Option<Fault>,ready:bool) {
+    check_held(audit); if(error.is_some()) { check_fault(error.unwrap().borrow()); }
+    checkpoint(pid,2,code,backend,flavor,profile,audit,error,false,0,ready);
+    mark(75);
+    let previous=error; error=core::option::None();
+    if(previous.is_some()) { let owned=previous.unwrap(); owned.destroy(); owned.destroy(); assert(owned.message.capacity()==0); }
+    release_held(audit); mark(107);
+    assert(audit.errors_made==audit.errors_freed);
+    checkpoint(pid,3,code,backend,flavor,profile,audit,error,false,0,ready);
+}
+fn setup_error(pid:u64,backend:i32,flavor:i32,profile:i32,audit:&Audit,error:Fault) -> i32 {
+    assert(error.kind==3 && audit.outer==0 && audit.inner==0 && audit.retire==0 && audit.maps==0 && audit.received==0);
+    let failure=core::option::Some(error);
+    checkpoint(pid,0,4,backend,flavor,profile,audit,failure,false,0,false);
+    checkpoint(pid,1,4,backend,flavor,profile,audit,failure,false,0,false);
+    finish_errors(pid,4,backend,flavor,profile,audit,failure,false); return 4;
+}
+fn pull<A>(adapter:&A,audit:&Audit,profile:i32) -> core::option::Option<Fault>
+    where A:core::iter::Iterator<core::result::Result<alloc::string::String,Fault>> {
+    while(true) {
+        let found:core::option::Option<core::result::Result<alloc::string::String,Fault>> =adapter.next(); if(found.is_none()) { return core::option::None(); }
+        let result=found.unwrap(); if(result.is_err()) { let error=result.unwrap_err(); check_fault(error.borrow()); return core::option::Some(error); }
+        accept(result.unwrap(),audit); if(profile==2) { return core::option::None(); }
+    }
+    return core::option::None();
+}
+fn recover<J>(inner:Inner<J>,policy:&Policy<J>,audit:&Audit,error:core::option::Option<Fault>,profile:i32)
+    where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner {
+    let cursor:J=inner.cursor;
+    if(error.is_some()) {
+        // These fields distinguish the returned, partially retired J from an
+        // older shallow alias. Scratch has REALLY been released before Err.
+        assert(inner.steps==1 && inner.scratch.capacity()==0 && cursor.left()==0 && cursor.reserved()==3);
+        audit.recovered_steps=inner.steps;
+    } else {
+        assert(profile==2 && inner.steps==0 && inner.scratch.capacity()==5 && cursor.left()==2);
+        audit.recovered_steps=inner.steps;
+        while(true) { let found:core::option::Option<alloc::string::String> =cursor.next(); if(found.is_none()) { break; } accept(found.unwrap(),audit); }
+    }
+    inner.cursor=cursor;
+    assert(policy.try_retire(inner).is_none()); check_held(audit);
+    if(error.is_some()) { check_fault(error.unwrap().borrow()); }
+}
+fn run_flat<J>(made:core::result::Result<Outer<J>,Fault>,pid:u64,backend:i32,profile:i32,audit:&Audit) -> i32
+    where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner {
+    if(made.is_err()) { return setup_error(pid,backend,0,profile,audit,made.unwrap_err()); }
+    let source=made.unwrap(); let policy:Policy<J> =Policy { audit:audit,fail:profile==1 };
+    let none:core::option::Option<Fault> =core::option::None();
+    checkpoint(pid,0,0,backend,0,profile,audit,none,false,source.values.remaining(),true);
+    mark(67);
+    let adapter:core::iter::TryFlatten<Outer<J>,Inner<J>,Policy<J>,alloc::string::String,Fault> =
+        core::iter::try_flatten<Outer<J>,Inner<J>,Policy<J>,alloc::string::String,Fault>(source.borrow(),policy.borrow());
+    assert(!adapter.has_active() && adapter.take_active().is_none() && adapter.next().is_none() && adapter.try_finish().is_none());
+    adapter=core::iter::try_flatten<Outer<J>,Inner<J>,Policy<J>,alloc::string::String,Fault>(source.borrow(),policy.borrow());
+    assert(audit.outer==0 && audit.inner==0 && audit.retire==0 && !adapter.has_active()); mark(99);
+    mark(84); let error=pull(adapter.borrow(),audit,profile); mark(116); let code=status(error);
+    if(adapter.has_active()) { assert(adapter.try_finish().is_some() && adapter.has_active()); }
+    if(error.is_some()) { let calls=audit.outer+audit.inner+audit.retire; assert(adapter.next().is_none() && adapter.next().is_none()); assert(audit.outer+audit.inner+audit.retire==calls); }
+    if(profile==2 && error.is_none()) { assert(adapter.has_active() && source.values.remaining()==1 && audit.received==1); }
+    checkpoint(pid,1,code,backend,0,profile,audit,error,adapter.has_active(),source.values.remaining(),true);
+    mark(75);
+    let active=adapter.take_active();
+    if(active.is_some()) { recover(active.unwrap(),policy.borrow(),audit,error,profile); }
+    assert(adapter.take_active().is_none() && adapter.next().is_none() && adapter.try_finish().is_none());
+    if(profile==2 && error.is_none()) {
+        let resumed:core::iter::TryFlatten<Outer<J>,Inner<J>,Policy<J>,alloc::string::String,Fault> =
+            core::iter::try_flatten<Outer<J>,Inner<J>,Policy<J>,alloc::string::String,Fault>(source.borrow(),policy.borrow());
+        let rest=pull(resumed.borrow(),audit,0); assert(rest.is_none() && !resumed.has_active() && resumed.try_finish().is_none());
+    }
+    destroy_outer(source.borrow()); mark(107);
+    if(error.is_none()) { assert(audit.received==6); }
+    finish_errors(pid,code,backend,0,profile,audit,error,true); return code;
+}
+// Borrow the caller-owned mapper through a bare generic bound. The equivalent
+// applied where subject Make<J>:Mapper<...> is isolated in compiler-state tests.
+fn run_map<J,M>(made:core::result::Result<Rows,Fault>,mapper:&M,pid:u64,backend:i32,profile:i32,audit:&Audit) -> i32
+    where J:core::iter::Iterator<alloc::string::String>,J:CursorOwner,
+          M:core::iter::Mapper<alloc::string::String,core::result::Result<Inner<J>,Fault>> {
+    if(made.is_err()) { return setup_error(pid,backend,1,profile,audit,made.unwrap_err()); }
+    let source=made.unwrap(); let policy:Policy<J> =Policy { audit:audit,fail:profile==1 };
+    let none:core::option::Option<Fault> =core::option::None();
+    checkpoint(pid,0,0,backend,1,profile,audit,none,false,source.values.remaining(),true);
+    mark(67);
+    let adapter:core::iter::TryFlatMap<Rows,M,Policy<J>,alloc::string::String,Inner<J>,alloc::string::String,Fault> =
+        core::iter::try_flat_map<Rows,M,Policy<J>,alloc::string::String,Inner<J>,alloc::string::String,Fault>(source.borrow(),mapper,policy.borrow());
+    assert(!adapter.has_active() && adapter.take_active().is_none() && adapter.next().is_none() && adapter.try_finish().is_none());
+    adapter=core::iter::try_flat_map<Rows,M,Policy<J>,alloc::string::String,Inner<J>,alloc::string::String,Fault>(source.borrow(),mapper,policy.borrow());
+    assert(audit.outer==0 && audit.inner==0 && audit.retire==0 && audit.maps==0); mark(99);
+    mark(84); let error=pull(adapter.borrow(),audit,profile); mark(116); let code=status(error);
+    if(adapter.has_active()) { assert(adapter.try_finish().is_some() && adapter.has_active()); }
+    if(error.is_some()) { let calls=audit.outer+audit.inner+audit.retire+audit.maps; assert(adapter.next().is_none() && adapter.next().is_none()); assert(audit.outer+audit.inner+audit.retire+audit.maps==calls); }
+    if(profile==2 && error.is_none()) { assert(adapter.has_active() && source.values.remaining()==1 && audit.received==1); }
+    checkpoint(pid,1,code,backend,1,profile,audit,error,adapter.has_active(),source.values.remaining(),true);
+    mark(75);
+    let active=adapter.take_active(); if(active.is_some()) { recover(active.unwrap(),policy.borrow(),audit,error,profile); }
+    assert(adapter.take_active().is_none() && adapter.next().is_none() && adapter.try_finish().is_none());
+    if(profile==2 && error.is_none()) {
+        let resumed:core::iter::TryFlatMap<Rows,M,Policy<J>,alloc::string::String,Inner<J>,alloc::string::String,Fault> =
+            core::iter::try_flat_map<Rows,M,Policy<J>,alloc::string::String,Inner<J>,alloc::string::String,Fault>(source.borrow(),mapper,policy.borrow());
+        // The resumed mapper owns a different cleanup state: the first inner
+        // and its two remaining items have already been recovered, and the
+        // consumer's held output must survive a later construction failure.
+        let rest=pull(resumed.borrow(),audit,0);
+        assert(!resumed.has_active() && resumed.try_finish().is_none());
+        assert(resumed.take_active().is_none() && resumed.next().is_none());
+        if(rest.is_some()) { assert(rest.unwrap().kind==3); error=rest; code=status(error); }
+    }
+    destroy_rows(source.borrow()); mark(107);
+    if(error.is_none()) { assert(audit.received==6); }
+    finish_errors(pid,code,backend,1,profile,audit,error,true); return code;
+}
+fn integer(bytes:[u8],offset:i32) -> i32 {
+    return ((bytes[offset] as u32)|((bytes[offset+1] as u32)<<8)|((bytes[offset+2] as u32)<<16)|((bytes[offset+3] as u32)<<24)) as i32;
+}
+fn main() -> i32 {
+    let header:[i32;3]=[0;3]; let pointer=core::mem::i32_array_data_ptr(header); receive(pointer,12);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,12);
+    let backend=integer(bytes,0); let flavor=integer(bytes,4); let profile=integer(bytes,8);
+    assert(backend>=0 && backend<=1 && flavor>=0 && flavor<=1 && profile>=0 && profile<=3 && (flavor==1 || profile<3));
+    let arguments:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    let pid=std::linux::call(39,core::slice::View { values:arguments,start:0,length:0 }).unwrap() as u64;
+    let audit=Audit { outer:0,inner:0,retire:0,maps:0,received:0,scratch_freed:0,backing_freed:0,errors_made:0,errors_freed:0,
+        recovered_steps:0,held:core::option::None() };
+    if(flavor==0) {
+        if(backend==0) { return run_flat<alloc::vec::IntoIter<alloc::string::String>>(flat_vector(audit.borrow()),pid,backend,profile,audit.borrow()); }
+        return run_flat<alloc::deque::IntoIter<alloc::string::String>>(flat_ring(audit.borrow()),pid,backend,profile,audit.borrow());
+    }
+    if(backend==0) {
+        let mapper:Make<alloc::vec::IntoIter<alloc::string::String>> =Make { audit:audit.borrow(),fail:profile==3 };
+        return run_map<alloc::vec::IntoIter<alloc::string::String>,Make<alloc::vec::IntoIter<alloc::string::String>>>(rows(audit.borrow()),mapper.borrow(),pid,backend,profile,audit.borrow());
+    }
+    let mapper:Make<alloc::deque::IntoIter<alloc::string::String>> =Make { audit:audit.borrow(),fail:profile==3 };
+    return run_map<alloc::deque::IntoIter<alloc::string::String>,Make<alloc::deque::IntoIter<alloc::string::String>>>(rows(audit.borrow()),mapper.borrow(),pid,backend,profile,audit.borrow());
+}

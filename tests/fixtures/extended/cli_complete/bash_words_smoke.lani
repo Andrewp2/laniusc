@@ -1,0 +1,57 @@
+// Public pure decoder admission; runtime acceptance is recorded separately.
+module app::main;
+import core::mem;
+import core::slice::View;
+import ext::bash_words;
+import ext::bash_words::Mode;
+import ext::bash_words::Quote;
+
+fn unquoted(shape:ext::bash_words::Shape) -> bool {
+    return match(shape.quote) { Quote::Unquoted->true,Quote::Single->false,Quote::Double->false };
+}
+fn required(error:ext::bash_words::Error) -> i32 {
+    return match(error) {
+        ext::bash_words::Error::Bounds->-1,ext::bash_words::Error::Nul(nul)->-1,
+        ext::bash_words::Error::Expansion(expansion)->-1,ext::bash_words::Error::Operator(operator)->-1,
+        ext::bash_words::Error::Whitespace(whitespace)->-1,ext::bash_words::Error::UnclosedQuote(quote)->-1,
+        ext::bash_words::Error::TrailingEscape(escape)->-1,ext::bash_words::Error::OutputTooSmall(count)->count
+    };
+}
+fn trailing(error:ext::bash_words::Error) -> i32 {
+    return match(error) {
+        ext::bash_words::Error::Bounds->-1,ext::bash_words::Error::Nul(nul)->-1,
+        ext::bash_words::Error::Expansion(expansion)->-1,ext::bash_words::Error::Operator(operator)->-1,
+        ext::bash_words::Error::Whitespace(whitespace)->-1,ext::bash_words::Error::UnclosedQuote(quote)->-1,
+        ext::bash_words::Error::TrailingEscape(escape)->escape,ext::bash_words::Error::OutputTooSmall(count)->-1
+    };
+}
+fn main() -> i32 {
+    let raw:[u8;13]=[90,97,34,32,98,34,39,99,39,92,32,100,90];
+    let output:[u8;10]=[90;10];
+    assert(core::mem::slice_stride(raw)<0 && core::mem::slice_stride(output)<0);
+    let word:View<u8> =View { values:raw,start:1,length:11 };
+    let short=ext::bash_words::decode_into(word,Mode::Complete,View { values:output,start:2,length:5 });
+    assert(short.is_err());
+    assert(required(short.unwrap_err())==6);
+    let i:i32=0; while(i<10) { assert(output[i]==90); i+=1; }
+    let done=ext::bash_words::decode_into(word,Mode::Complete,View { values:output,start:2,length:6 }).unwrap();
+    assert(done.bytes==6 && unquoted(done) && !done.incomplete_escape);
+    let expected:[u8;6]=[97,32,98,99,32,100];
+    i=0; while(i<6) { assert(output[i+2]==expected[i]); i+=1; }
+    assert(output[0]==90 && output[1]==90 && output[8]==90 && output[9]==90);
+
+    let pending:[u8;3]=[34,97,92];
+    let prefix=ext::bash_words::measure(View { values:pending,start:0,length:3 },Mode::Prefix).unwrap();
+    let double:bool=match(prefix.quote) { Quote::Unquoted->false,Quote::Single->false,Quote::Double->true };
+    assert(prefix.bytes==1 && double && prefix.incomplete_escape);
+    let strict=ext::bash_words::measure(View { values:pending,start:0,length:3 },Mode::Complete);
+    assert(strict.is_err());
+    assert(trailing(strict.unwrap_err())==2);
+
+    let special:[u8;8]=[34,92,113,92,33,92,36,34];
+    let decoded=ext::bash_words::decode_into(View { values:special,start:0,length:8 },Mode::Complete,View { values:output,start:1,length:5 }).unwrap();
+    assert(decoded.bytes==5 && unquoted(decoded) && !decoded.incomplete_escape);
+    let literal:[u8;5]=[92,113,92,33,36];
+    i=0; while(i<5) { assert(output[i+1]==literal[i]); i+=1; }
+    return 0;
+}

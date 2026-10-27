@@ -1,0 +1,70 @@
+// Initial real-stdlib owning replacement admission. Full fault protocol follows
+// only after this actual API/owner composition is admitted by the root.
+module app::main;
+import alloc::string;
+import alloc::tree_map;
+import alloc::vec;
+import core::cmp;
+import core::iter;
+import core::option;
+import core::result;
+
+struct Key { id:i32, representative:i32, text:alloc::string::String }
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.id<right.id; }
+    pub fn le(left:Key,right:Key) -> bool { return left.id<=right.id; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.id>right.id; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.id>=right.id; }
+}
+struct Delivery { text:alloc::string::String }
+struct History<T> { values:alloc::vec::Vec<T>, reject:bool }
+impl<T> History<T> { fn borrow(&self) -> &History<T> { return self; } }
+pub impl<T> core::iter::TrySink<T,Delivery> for History<T> {
+    pub fn try_accept(&self,item:T) -> core::option::Option<Delivery> {
+        if(self.reject) {
+            let bytes:[u8;5]=[69,0,195,169,82];
+            return core::option::Some(Delivery { text:alloc::string::from_utf8(bytes,5).unwrap() });
+        }
+        self.values.try_push(item).unwrap(); return core::option::None();
+    }
+}
+fn text(first:u8) -> alloc::string::String {
+    let bytes:[u8;8]=[first,0,195,169,240,159,153,130];
+    return alloc::string::from_utf8(bytes,8).unwrap();
+}
+fn entry(id:i32,representative:i32) -> alloc::tree_map::Entry<Key,alloc::string::String> {
+    return alloc::tree_map::Entry {
+        key:Key { id:id,representative:representative,text:text(representative as u8) },
+        value:text((representative+32) as u8)
+    };
+}
+fn release(item:alloc::tree_map::Entry<Key,alloc::string::String>) { item.key.text.destroy(); item.value.destroy(); }
+fn main() -> i32 {
+    let map:alloc::tree_map::TreeMap<Key,alloc::string::String> =alloc::tree_map::with_capacity<Key,alloc::string::String>(1).unwrap();
+    let original:alloc::tree_map::Entry<Key,alloc::string::String> =entry(1,65);
+    assert(map.try_insert(original.key,original.value).unwrap().is_none()); assert(map.len()==map.capacity());
+    let input:alloc::vec::Vec<alloc::tree_map::Entry<Key,alloc::string::String>> =alloc::vec::with_capacity<alloc::tree_map::Entry<Key,alloc::string::String>>(2).unwrap();
+    input.try_push(entry(1,66)).unwrap(); input.try_push(entry(2,67)).unwrap();
+    let source:alloc::vec::IntoIter<alloc::tree_map::Entry<Key,alloc::string::String>> =input.take_iter();
+    let history:History<alloc::tree_map::Entry<Key,alloc::string::String>> =History { values:alloc::vec::new<alloc::tree_map::Entry<Key,alloc::string::String>>(),reject:true };
+    let result:core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<alloc::tree_map::Entry<Key,alloc::string::String>,alloc::tree_map::Error,Delivery>> =
+        core::iter::try_replace_up_to<alloc::vec::IntoIter<alloc::tree_map::Entry<Key,alloc::string::String>>,alloc::tree_map::TreeMap<Key,alloc::string::String>,History<alloc::tree_map::Entry<Key,alloc::string::String>>,alloc::tree_map::Entry<Key,alloc::string::String>,alloc::tree_map::Error,Delivery>(source.borrow(),map.borrow(),history.borrow(),2);
+    assert(result.is_err());
+    let failure:core::iter::ReplacementFailure<alloc::tree_map::Entry<Key,alloc::string::String>,alloc::tree_map::Error,Delivery> =result.unwrap_err();
+    let tag:i32=match(failure) { Rejected(progress,incoming,error)->1, Undelivered(progress,old,error)->2 };
+    let progress:core::iter::ReplacementProgress=match(failure) { Rejected(progress,incoming,error)->progress, Undelivered(progress,old,error)->progress };
+    let old:alloc::tree_map::Entry<Key,alloc::string::String> =match(failure) { Rejected(progress,incoming,error)->incoming, Undelivered(progress,old,error)->old };
+    let error:core::option::Option<Delivery> =match(failure) { Rejected(progress,incoming,error)->core::option::None(), Undelivered(progress,old,error)->core::option::Some(error) };
+    assert(tag==2 && progress.committed==1 && progress.replaced==1 && source.remaining()==1 && history.values.len()==0);
+    let stored:alloc::tree_map::Entry<Key,alloc::string::String> =map.first().unwrap();
+    assert(stored.key.representative==66 && stored.key.text.byte_at(0).unwrap()==66 && stored.value.byte_at(0).unwrap()==98);
+    assert(old.key.representative==65 && old.key.text.byte_at(0).unwrap()==65 && old.value.byte_at(0).unwrap()==97);
+    let owned_error:Delivery=error.unwrap(); assert(owned_error.text.byte_len()==5);
+    release(old); owned_error.text.destroy();
+    let remainder:alloc::vec::Vec<alloc::tree_map::Entry<Key,alloc::string::String>> =source.take_remaining();
+    let next:alloc::tree_map::Entry<Key,alloc::string::String> =remainder.pop().unwrap(); assert(next.key.representative==67); release(next); remainder.destroy();
+    let cursor:alloc::tree_map::IntoIter<Key,alloc::string::String> =map.take_iter();
+    let current:alloc::tree_map::Entry<Key,alloc::string::String> =cursor.next().unwrap(); release(current);
+    assert(cursor.try_finish().is_none()); map.destroy(); input.destroy(); history.values.destroy();
+    return 0;
+}

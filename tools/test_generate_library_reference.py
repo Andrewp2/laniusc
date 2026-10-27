@@ -74,6 +74,46 @@ trait Private { pub fn hidden() -> i32; }
         self.assertEqual(second.signature, "impl Other")
         self.assertEqual(second.children[0].signature, "pub fn read(&self) -> i32")
 
+    def test_private_nominal_implementations_do_not_publish_helpers(self):
+        source = '''module core::sample;
+pub trait Read<T> { pub fn read(value:T) -> T; }
+pub impl<T> Read<T> for Hidden<T> { pub fn read(value:T) -> T { return value; } }
+impl Hidden<i32> { pub fn leak() {} }
+pub impl<T> core::sample::Hidden<T> { pub fn leak_qualified() {} }
+pub impl Read<i32> for Secret { pub fn read(value:i32) -> i32 { return value; } }
+struct Hidden<T> { value:T }
+enum Secret { Empty }
+'''
+        module = self.scan(source)
+        self.assertEqual([(item.kind, item.name) for item in module.declarations], [("trait", "Read")])
+        self.assertEqual([item.name for item in module.declarations[0].children], ["read"])
+        self.assertEqual(module.public_keywords, sum(token.text == "pub" for token in reference.tokens(source)))
+
+    def test_public_unknown_external_and_shadowed_receivers_remain_visible(self):
+        module = self.scan('''module core::sample;
+struct Hidden<T> { value:T }
+pub struct Visible<T> { value:T }
+pub trait Read<T> { fn read(value:T) -> T; }
+pub impl<T, const N:usize> Read<T> for Visible<Hidden<T>> where T:a::Trait<T> { pub fn read(value:T) -> T { return value; } }
+impl core::sample::Visible<i32> { pub fn local() {} }
+pub impl Read<i32> for external::Hidden<i32> { pub fn external() {} }
+pub impl Read<i32> for i32 { pub fn builtin() {} }
+pub impl Read<i32> for Imported { pub fn unknown() {} }
+pub impl<Hidden:a::Trait<core::pair::Pair<i32,u8>>> Read<Hidden> for Hidden { pub fn generic() {} }
+pub impl Read<i32> for [Hidden<i32>;2] { pub fn array() {} }
+''')
+        blocks = [item for item in module.declarations if item.kind == "impl"]
+        self.assertEqual([item.children[0].name for item in blocks],
+                         ["read", "local", "external", "builtin", "unknown", "generic", "array"])
+        self.assertEqual([item.name for item in module.declarations[0].children], ["value"])
+        self.assertEqual([item.name for item in module.declarations[1].children], ["read"])
+
+    def test_hidden_receiver_still_rejects_unsupported_public_syntax(self):
+        with self.assertRaisesRegex(reference.ReferenceError, "unsupported public declaration shape"):
+            self.scan('''module core::sample; struct Hidden {}
+pub impl Hidden { pub unsafe fn action() {} }
+''')
+
     def test_externs_aliases_and_constant_initializer(self):
         module = self.scan('''module core::sample;
 pub extern "lanius_std" fn send(value: ptr, count: usize) -> i32;
@@ -108,9 +148,24 @@ pub const PAIR: Pair<i32, i32> = Pair { first: 1, second: 2 };
         self.assertEqual(module.name, "core::sample")
         self.assertEqual(module.imports, [("core::option", 1), ("ext::thing", 1)])
         for source in ["pub fn missing() {}", "module core::a; module core::b;", 'module core::a; import "other";',
-                       "module core::a; import core::b as b;", "module core::a; import core::b; import core::b;"]:
+                       "module core::a; import core::b as b;", "module core::a; import core::b::*;",
+                       "module core::a; use core::b;", "module core::a; import core::b; import core::b;"]:
             with self.subTest(source=source), self.assertRaises(reference.ReferenceError):
                 self.scan(source)
+
+    def test_item_imports_and_ergonomic_bodies_preserve_source_spans(self):
+        module = self.scan('''module core::sample;
+import core::result::Result;
+pub fn read() -> Result<i32, Error> {
+    let item = load()?;
+    let inferred = choose(item);
+    return Ok(inferred);
+}
+''')
+        self.assertEqual(module.imports, [("core::result::Result", 2)])
+        self.assertEqual(module.declarations[0].signature, "pub fn read() -> Result<i32, Error>")
+        self.assertEqual((module.declarations[0].line, module.declarations[0].end_line), (3, 3))
+        self.assertEqual(module.public_keywords, 1)
 
     def test_public_markers_cannot_disappear_in_skipped_shapes(self):
         for source in ["module core::a; struct Private { pub field: i32 }",
@@ -147,6 +202,104 @@ class GenerationTests(unittest.TestCase):
         self.assertNotIn("return value", output["docs/api/core/a.md"])
         self.assertEqual(output, reference.generate(self.root)[0])
         self.assertNotIn(str(self.root), "\n".join(output.values()))
+
+    def test_item_import_links_the_public_declaration_and_keeps_module_import(self):
+        (self.root / "extended/ext/b.lani").write_text('''module ext::b;
+import core::a;
+import core::a::first;
+pub fn call(value:i32) -> i32 { let result = first(value); return result; }
+''')
+        output, modules = reference.generate(self.root)
+        page = output["docs/api/ext/b.md"]
+        self.assertIn("[core::a](../core/a.md) · [source](../../../extended/ext/b.lani#L2)", page)
+        self.assertIn("[core::a::first](../core/a.md) (item: function)", page)
+        self.assertIn("[declaration](../../../stdlib/core/a.lani#L1)", page)
+        self.assertIn("[source](../../../extended/ext/b.lani#L3)", page)
+        self.assertEqual(modules[1].imports, [("core::a", 2), ("core::a::first", 3)])
+        self.assertNotIn("docs/api/core/a/first.md", output)
+
+    def test_item_import_accepts_public_declaration_kinds_and_enum_variants(self):
+        (self.root / "stdlib/core/a.lani").write_text('''module core::a;
+pub struct Value { field:i32 }
+pub enum Choice { One(i32), Empty }
+pub trait Read { fn read() -> i32; }
+pub const LIMIT:i32 = 4;
+pub type Alias = i32;
+pub extern "C" fn native() -> i32;
+''')
+        imports = [("Value", "struct"), ("Choice", "enum"), ("One", "variant"),
+                   ("Empty", "variant"), ("Read", "trait"), ("LIMIT", "constant"),
+                   ("Alias", "type alias"), ("native", "extern function")]
+        (self.root / "extended/ext/b.lani").write_text(
+            "module ext::b;\n" + "".join(f"import core::a::{name};\n" for name, _ in imports))
+        output, _ = reference.generate(self.root)
+        page = output["docs/api/ext/b.md"]
+        for name, kind in imports:
+            self.assertIn(f"[core::a::{name}](../core/a.md) (item: {kind})", page)
+
+    def test_whole_module_path_wins_over_same_named_public_item(self):
+        nested = self.root / "stdlib/core/a/first.lani"
+        nested.parent.mkdir()
+        nested.write_text("module core::a::first; pub fn nested() {}\n")
+        (self.root / "extended/ext/b.lani").write_text("module ext::b; import core::a::first;\n")
+        output, _ = reference.generate(self.root)
+        page = output["docs/api/ext/b.md"]
+        self.assertIn("[core::a::first](../core/a/first.md)", page)
+        self.assertNotIn("(item:", page)
+        self.assertNotIn("[declaration]", page)
+
+    def test_item_import_links_distinct_type_and_value_namespaces(self):
+        (self.root / "stdlib/core/a.lani").write_text('''module core::a;
+pub enum Cause<H> { Provider(H) }
+pub trait Provider<H> { fn load() -> H; }
+''')
+        (self.root / "extended/ext/b.lani").write_text(
+            "module ext::b;\nimport core::a::Provider;\n")
+        output, _ = reference.generate(self.root)
+        page = output["docs/api/ext/b.md"]
+        self.assertIn("[core::a::Provider](../core/a.md) (items in separate namespaces: variant, trait; no use-site resolution)", page)
+        self.assertIn("[variant declaration](../../../stdlib/core/a.lani#L2)", page)
+        self.assertIn("[trait declaration](../../../stdlib/core/a.lani#L3)", page)
+        self.assertIn("[source](../../../extended/ext/b.lani#L2)", page)
+        self.assertLess(page.index("[variant declaration]"), page.index("[trait declaration]"))
+
+    def test_item_import_rejects_ambiguity_within_either_namespace(self):
+        (self.root / "extended/ext/b.lani").write_text(
+            "module ext::b;\nimport core::a::Provider;\n")
+        cases = [
+            "pub enum First { Provider } pub enum Second { Provider }",
+            "pub trait Provider { fn call(); } pub struct Provider {}",
+            "pub fn Provider() {} pub enum Cause { Provider }",
+            "pub trait Provider { fn call(); } pub enum First { Provider } pub enum Second { Provider }",
+        ]
+        for declarations in cases:
+            (self.root / "stdlib/core/a.lani").write_text("module core::a;\n" + declarations)
+            with self.subTest(source=declarations), self.assertRaisesRegex(
+                    reference.ReferenceError, r"extended/ext/b.lani:2: ambiguous public item import: core::a::Provider"):
+                reference.generate(self.root)
+
+    def test_missing_private_and_nested_items_are_rejected_at_import_line(self):
+        (self.root / "stdlib/core/a.lani").write_text('''module core::a;
+fn private_function() {}
+struct PrivateType { field:i32 }
+enum PrivateEnum { PrivateVariant }
+const PRIVATE:i32 = 1;
+pub struct Value { field:i32 }
+pub enum Choice { Variant }
+impl Value { pub fn method() {} }
+''')
+        for name in ["absent", "private_function", "PrivateType", "PrivateEnum", "PrivateVariant",
+                     "PRIVATE", "field", "method", "Value::method", "Choice::Variant"]:
+            (self.root / "extended/ext/b.lani").write_text(f"module ext::b;\nimport core::a::{name};\n")
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    reference.ReferenceError, r"extended/ext/b.lani:2: .*absent from inventory"):
+                reference.generate(self.root)
+
+    def test_item_imports_do_not_reexport_imported_names(self):
+        (self.root / "extended/ext/b.lani").write_text("module ext::b; import core::a::first;\n")
+        (self.root / "extended/ext/c.lani").write_text("module ext::c;\nimport ext::b::first;\n")
+        with self.assertRaisesRegex(reference.ReferenceError, "public item absent from inventory: ext::b::first"):
+            reference.generate(self.root)
 
     def test_reviewed_support_status_and_declaration_note(self):
         (self.root / "docs/contract.md").write_text("# Reviewed contract\n")

@@ -1,0 +1,93 @@
+module app::main;
+import core::mem;
+import core::slice;
+import ext::archive_plan;
+
+fn text(value: str, count: i32) -> core::slice::View<u8> {
+    return core::slice::View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count };
+}
+fn limits() -> ext::archive_plan::Limits {
+    return ext::archive_plan::Limits { max_entries:16,max_nodes:32,max_path_bytes:64,max_component_bytes:16,max_depth:8,max_stored_path_bytes:512,max_work:100000 };
+}
+fn tag(kind: ext::archive_plan::ErrorKind) -> i32 {
+    return match(kind) {
+        ext::archive_plan::ErrorKind::Bounds->1,ext::archive_plan::ErrorKind::Limits->2,
+        ext::archive_plan::ErrorKind::Path->3,ext::archive_plan::ErrorKind::Component->4,
+        ext::archive_plan::ErrorKind::Depth->5,ext::archive_plan::ErrorKind::Entries->6,
+        ext::archive_plan::ErrorKind::Nodes->7,ext::archive_plan::ErrorKind::Paths->8,
+        ext::archive_plan::ErrorKind::Work->9,ext::archive_plan::ErrorKind::Duplicate->10,
+        ext::archive_plan::ErrorKind::Conflict->11,ext::archive_plan::ErrorKind::Allocation->12,
+        ext::archive_plan::ErrorKind::InvalidState->13
+    };
+}
+fn equal(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool {
+    if (a.length != b.length) { return false; } let at:i32=0;
+    while (at<a.length) { if (a.values[a.start+at]!=b.values[b.start+at]) { return false; } at+=1; } return true;
+}
+fn reject(input: core::slice::View<u8>, kind: ext::archive_plan::Kind, expected: i32, offset: i32) {
+    let plan=ext::archive_plan::new(limits()).unwrap(); let bytes=plan.reserved_bytes();
+    let first=plan.add(input,kind,0).unwrap_err(); assert(tag(first.kind)==expected && first.ordinal==0 && first.offset==offset);
+    assert(plan.node_count()==0 && plan.entry_count()==0 && !plan.is_sealed()); let work=plan.work_used();
+    let again=plan.add(text("valid",5),ext::archive_plan::Kind::File,123).unwrap_err();
+    let sealed=plan.seal().unwrap_err();
+    assert(tag(again.kind)==expected && again.ordinal==first.ordinal && again.offset==first.offset);
+    assert(tag(sealed.kind)==expected && sealed.ordinal==first.ordinal && sealed.offset==first.offset);
+    assert(plan.work_used()==work && plan.reserved_bytes()==bytes && plan.node_count()==0);
+    plan.destroy(); plan.destroy(); assert(plan.reserved_bytes()==0 && plan.node(0).is_none());
+}
+fn cap(selected: ext::archive_plan::Limits, input: core::slice::View<u8>, expected: i32) {
+    let plan=ext::archive_plan::new(selected).unwrap(); let failure=plan.add(input,ext::archive_plan::Kind::File,0).unwrap_err();
+    assert(tag(failure.kind)==expected && plan.node_count()==0 && plan.entry_count()==0); plan.destroy();
+}
+fn main() -> i32 {
+    let options=limits(); let plan=ext::archive_plan::new(options).unwrap();
+    assert(plan.reserved_bytes()==ext::archive_plan::reservation_bytes(options).unwrap());
+    let input:[u8;5]=[0;5]; input[0]=7;input[1]=97;input[2]=47;input[3]=98;input[4]=8;
+    let view=core::slice::view_range(input,1,3).unwrap();
+    assert(plan.add(view,ext::archive_plan::Kind::File,0).unwrap()==1);
+    let original=plan.path(1).unwrap(); input[1]=120;input[3]=121;
+    assert(equal(original,text("a/b",3)) && equal(plan.component(1).unwrap(),text("b",1)));
+    let implied=plan.node(0).unwrap(); assert(implied.parent==-1 && implied.depth==1 && !implied.explicit && implied.ordinal==-1);
+    assert(plan.add(text("a/",2),ext::archive_plan::Kind::Directory,1).unwrap()==0);
+    assert(plan.add(text("a/c",3),ext::archive_plan::Kind::File,2).unwrap()==2);
+    assert(plan.node_count()==3 && plan.entry_count()==3 && plan.entry(0).unwrap()==1 && plan.entry(1).unwrap()==0);
+    assert(plan.node(0).unwrap().explicit && plan.node(0).unwrap().ordinal==1 && equal(original,text("a/b",3)));
+    assert(plan.node(-1).is_none() && plan.path(3).is_none() && plan.component(-1).is_none() && plan.entry(3).is_none());
+    assert(plan.seal().unwrap()==3 && plan.is_sealed()); let work=plan.work_used();
+    assert(plan.seal().unwrap()==3 && plan.work_used()==work);
+    assert(tag(plan.add(text("late",4),ext::archive_plan::Kind::File,3).unwrap_err().kind)==13 && !plan.is_sealed());
+    plan.destroy(); assert(plan.node_count()==0 && plan.entry_count()==0 && plan.reserved_bytes()==0);
+    let file=ext::archive_plan::Kind::File; let dir=ext::archive_plan::Kind::Directory;
+    reject(text("",0),file,3,0); reject(text("/a",2),file,3,0); reject(text("a\\b",3),file,3,1);
+    reject(text("a\0b",3),file,3,1); reject(text("C:x",3),file,3,1); reject(text("a//b",4),file,4,2);
+    reject(text("./a",3),file,4,0); reject(text("a/../b",6),file,4,2); reject(text("d//",3),dir,4,2);
+    reject(text("d/",2),file,3,1); reject(text(".",1),dir,4,0); reject(text("..",2),file,4,0);
+    let one:[u8;1]=[1]; reject(core::slice::View { values:one,start:-1,length:1 },file,1,-1);
+    let first=ext::archive_plan::new(limits()).unwrap(); first.add(text("a",1),file,0).unwrap();
+    let conflict=first.add(text("a/b",3),file,1).unwrap_err(); assert(tag(conflict.kind)==11 && conflict.offset==0 && first.node_count()==1); first.destroy();
+    let reverse=ext::archive_plan::new(limits()).unwrap(); reverse.add(text("a/b",3),file,0).unwrap();
+    assert(tag(reverse.add(text("a",1),file,1).unwrap_err().kind)==11 && reverse.node_count()==2); reverse.destroy();
+    let duplicate=ext::archive_plan::new(limits()).unwrap(); duplicate.add(text("d/",2),dir,0).unwrap();
+    assert(tag(duplicate.add(text("d",1),dir,1).unwrap_err().kind)==10); duplicate.destroy();
+    options=limits(); options.max_entries=0; cap(options,text("a",1),6);
+    options=limits(); options.max_nodes=1; cap(options,text("a/b",3),7);
+    options=limits(); options.max_stored_path_bytes=3; cap(options,text("a/b",3),8);
+    options=limits(); options.max_path_bytes=2; cap(options,text("a/b",3),3);
+    options=limits(); options.max_component_bytes=1; cap(options,text("ab",2),4);
+    options=limits(); options.max_depth=1; cap(options,text("a/b",3),5);
+    options=limits(); options.max_nodes=2; options.max_stored_path_bytes=4; options.max_path_bytes=3; options.max_component_bytes=1; options.max_depth=2;
+    let exact=ext::archive_plan::new(options).unwrap(); exact.add(text("a/b",3),file,0).unwrap(); assert(exact.node_count()==2); exact.seal().unwrap(); exact.destroy();
+    options=limits(); options.max_path_bytes=1; let slash=ext::archive_plan::new(options).unwrap(); slash.add(text("a/",2),dir,0).unwrap(); slash.destroy();
+    options=limits(); options.max_work=10; let metered=ext::archive_plan::new(options).unwrap();
+    metered.add(text("a",1),file,0).unwrap(); assert(metered.work_used()==9); metered.seal().unwrap(); assert(metered.work_used()==10); metered.destroy();
+    options.max_work=9; let short=ext::archive_plan::new(options).unwrap(); short.add(text("a",1),file,0).unwrap();
+    assert(tag(short.seal().unwrap_err().kind)==9 && short.work_used()==9 && !short.is_sealed()); short.destroy();
+    options.max_work=8; cap(options,text("a",1),9);
+    options=limits(); options.max_entries=-1; assert(tag(ext::archive_plan::new(options).unwrap_err().kind)==2);
+    options=limits(); options.max_component_bytes=256; assert(tag(ext::archive_plan::reservation_bytes(options).unwrap_err().kind)==2);
+    options=limits(); options.max_nodes=2147483647; assert(tag(ext::archive_plan::new(options).unwrap_err().kind)==2);
+    options=limits(); options.max_entries=0;options.max_nodes=0;options.max_stored_path_bytes=0;options.max_work=1;
+    let empty=ext::archive_plan::new(options).unwrap(); assert(empty.reserved_bytes()==0 && empty.seal().unwrap()==0); empty.destroy();
+    let wrong=ext::archive_plan::new(limits()).unwrap(); assert(tag(wrong.add(text("a",1),file,1).unwrap_err().kind)==13); wrong.destroy();
+    return 0;
+}

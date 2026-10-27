@@ -1,0 +1,107 @@
+// Test-only driver/factory/handler; dispatch is through the real public traits.
+// Protocol input/output acknowledgements are scripted, not network evidence.
+module admission::probe;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_server;
+import ext::server_poll;
+import std::socket;
+
+pub fn bytes(value: str, length: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length);
+    return core::slice::view<u8>(raw,length).unwrap();
+}
+pub fn statistics() -> ext::http_server::Stats {
+    return ext::http_server::Stats { received:0,retained:0,decoded:0,buffered_discarded:0,drain_received:0,response_bytes:0,response_sent:0,continue_sent:0,io_calls:0,work:0,scan_work:0,cleanup_calls:0,cleanup_errors:0,write_shutdown:false,peer_eof:false,final_started:false,closed:false };
+}
+pub struct Driver<E> { owner: ext::http_server::Protocol, socket: std::socket::Socket, revision: u64, error: core::option::Option<E> }
+pub struct Factory<E> { options: ext::http_server::Options, error: core::option::Option<E>, begun: i32 }
+pub impl<E> Factory<E> { pub fn borrow(&self) -> &Factory<E> { return self; } }
+pub struct Handler<A> { error: core::option::Option<A>, heads: i32, requests: i32, rejected: i32 }
+pub impl<A> Handler<A> { pub fn borrow(&self) -> &Handler<A> { return self; } }
+fn immediate(owner: &ext::http_server::Protocol) -> bool {
+    return match(owner.need()) { ext::http_server::Need::Input(count) -> false, ext::http_server::Need::Drain(count) -> false, _ -> true };
+}
+
+pub impl<E> ext::server_poll::Driver<E> for Driver<E> {
+    pub fn protocol(&self) -> &ext::http_server::Protocol { return self.owner.borrow(); }
+    pub fn stats(&self) -> ext::http_server::Stats { return self.owner.stats(); }
+    pub fn transport_calls(&self) -> core::option::Option<u64> { return core::option::None(); }
+    pub fn rejection(&self) -> core::option::Option<ext::http_server::Rejection> { return self.owner.rejection(); }
+    pub fn interest(&self) -> ext::http_client::Interest {
+        let local: bool = immediate(self.owner.borrow());
+        return ext::http_client::Interest { readable:!local,writable:false,immediate:local };
+    }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { return self.socket.raw_handle(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,E> {
+        self.owner.check().unwrap(); if (immediate(self.owner.borrow())) { return core::result::Ok(false); }
+        return core::result::Ok(self.owner.before_wait().unwrap());
+    }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_server::Event>,E> {
+        assert(!ready.readable && !ready.writable && !ready.hangup && !ready.error);
+        if (self.error.is_some()) {
+            let error: E = self.error.unwrap(); self.error = core::option::None(); self.owner.abort();
+            self.socket.close().unwrap(); self.owner.record_close(true,core::option::None()).unwrap(); return core::result::Err(error);
+        }
+        if (match(self.owner.need()) { ext::http_server::Need::Local -> true, _ -> false }) { self.owner.advance().unwrap(); }
+        let revision: u64 = self.owner.event_revision();
+        if (revision != 0 && revision != self.revision) { self.revision = revision; return core::result::Ok(self.owner.event()); }
+        return core::result::Ok(core::option::None());
+    }
+    pub fn read_body(&self, decision: ext::http_server::BodyDecision) -> core::result::Result<bool,E> { return core::result::Ok(self.owner.read_body(decision).unwrap()); }
+    pub fn abort(&self) -> core::result::Result<bool,E> {
+        let active: bool = self.socket.is_open(); self.owner.abort();
+        if (active) { self.socket.close().unwrap(); self.owner.record_close(true,core::option::None()).unwrap(); }
+        return core::result::Ok(active);
+    }
+    pub fn destroy(&self) { assert(!self.socket.is_open() && self.error.is_none()); self.owner.destroy(); }
+}
+pub impl<E> ext::server_poll::Factory<Driver<E>,E> for Factory<E> {
+    pub fn reservation(&self) -> core::result::Result<ext::server_poll::Reservation,ext::server_poll::Cause> {
+        let amount: u64 = ext::http_server::reservation_bytes(self.options).unwrap();
+        return core::result::Ok(ext::server_poll::Reservation { work:self.options.work,bytes:amount });
+    }
+    pub fn begin(&self, accepted: std::socket::Accepted, deadline: core::time::Deadline) -> core::result::Result<Driver<E>,E> {
+        self.begun += 1; let owner: ext::http_server::Protocol = ext::http_server::protocol(self.options,deadline).unwrap();
+        if (self.error.is_some()) {
+            let error: E = self.error.unwrap(); self.error = core::option::None(); owner.abort(); accepted.socket.close().unwrap();
+            owner.record_close(true,core::option::None()).unwrap(); owner.destroy(); return core::result::Err(error);
+        }
+        return core::result::Ok(Driver<E> { owner:owner,socket:accepted.socket,revision:0,error:core::option::None() });
+    }
+    pub fn failure_stats(&self, error: E) -> ext::http_server::Stats { return statistics(); }
+    pub fn failure_transport_calls(&self, error: E) -> core::option::Option<u64> { return core::option::None(); }
+    pub fn shared_failure(&self, error: E) -> core::option::Option<ext::server_poll::Cause> { return core::option::None(); }
+}
+fn stage(reply: &ext::server_poll::Reply, request: ext::http_server::Request) {
+    assert(reply.head().is_some() && request.body.length == 3 && request.body.get(0).unwrap() == 0 && request.body.get(1).unwrap() == 128 && request.body.get(2).unwrap() == 255);
+    let body: [u8;3] = [0,128,255]; let value: [u8;5] = [115,116,97,103,101];
+    let field: ext::http::Field = ext::http::Field { raw:bytes("",0),name:bytes("X-Probe",7),value:core::slice::view<u8>(value,5).unwrap(),offset:0 };
+    let fields: [ext::http::Field;1] = [field];
+    let response: ext::http_server::Response = ext::http_server::Response { status:200,reason:bytes("OK",2),headers:core::slice::view<ext::http::Field>(fields,1).unwrap(),body:core::slice::view<u8>(body,3).unwrap(),date:core::time::unix_epoch() };
+    assert(!reply.is_staged() && reply.last_failure().is_none());
+    let invalid: ext::http_server::Response = response; invalid.status = 101;
+    assert(reply.stage(invalid).is_err() && reply.last_failure().is_some() && !reply.is_staged());
+    reply.stage(response).unwrap(); assert(reply.is_staged() && reply.last_failure().is_none());
+    body[0] = 77; body[1] = 77; body[2] = 77; value[0] = 77; value[1] = 77; value[2] = 77; value[3] = 77; value[4] = 77;
+}
+pub impl<A> ext::server_poll::Handler<A> for Handler<A> {
+    pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server::RequestHead, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,A> {
+        self.heads += 1; assert(id == 4294967297 && head.head.method.length == 4 && !reply.is_staged());
+        return core::result::Ok(ext::server_poll::Decision::Read(ext::http_server::BodyDecision::Read));
+    }
+    pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,A> {
+        self.requests += 1; assert(id == 4294967297);
+        if (self.error.is_some()) { let error: A = self.error.unwrap(); self.error = core::option::None(); return core::result::Err(error); }
+        stage(reply,request); return core::result::Ok(ext::server_poll::Decision::Responded);
+    }
+    pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,A> {
+        self.rejected += 1; assert(!reply.is_staged()); return core::result::Ok(ext::server_poll::Decision::Abort);
+    }
+}

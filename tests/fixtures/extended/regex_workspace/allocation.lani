@@ -1,0 +1,35 @@
+// Constructor-only baseline has exactly nine owned i32 vectors. ACKs permit
+// observation after construction/failure and explicit cleanup before exit.
+module app::main;
+import core::mem;
+import core::slice::view;
+import ext::regex;
+import std::io;
+import std::linux;
+fn word(value:u64) {
+    let storage:[i32;2]=[(value&4294967295) as i32,(value>>32) as i32];
+    let pointer=core::mem::i32_array_data_ptr(storage); let at:i32=0;
+    while(at<8) { let sent=std::io::write_stdout(pointer+(at as usize),(8-at) as usize); assert(sent>0 && sent<=8-at); at+=sent; }
+}
+fn ack() { let bytes:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(bytes),1)==1 && bytes[0]==65); }
+fn frame(pid:u64,phase:u64,status:u64,states:u64,groups:u64,bytes:u64) {
+    word(1380406097); word(pid); word(phase); word(status); word(states); word(groups); word(bytes); word(0); ack();
+}
+fn limit(value:ext::regex::Error) -> bool { return match(value) { ext::regex::Error::Limit(at)->at==0,_ ->false }; }
+fn main() -> i32 {
+    let arguments:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    let pid=std::linux::call(39,view(arguments,0).unwrap()).unwrap() as u64;
+    assert(limit(ext::regex::workspace(0,1).unwrap_err())); assert(limit(ext::regex::workspace(-1,1).unwrap_err()));
+    assert(limit(ext::regex::workspace(65537,1).unwrap_err())); assert(limit(ext::regex::workspace(1,0).unwrap_err()));
+    assert(limit(ext::regex::workspace(1,-1).unwrap_err())); assert(limit(ext::regex::workspace(1,130).unwrap_err()));
+    let made=ext::regex::workspace(17,5);
+    if(made.is_err()) {
+        assert(match(made.unwrap_err()) { ext::regex::Error::AllocationFailed->true,_ ->false });
+        frame(pid,1,4,0,0,0); frame(pid,3,4,0,0,0); return 4;
+    }
+    let owner=made.unwrap(); assert(owner.group_count()==0 && owner.work_used()==0 && owner.span(0).is_none());
+    assert(owner.state_capacity()==17 && owner.group_capacity()==5);
+    frame(pid,1,0,17,5,owner.owned_bytes()); owner.destroy(); owner.destroy();
+    assert(owner.state_capacity()==0 && owner.group_capacity()==0 && owner.owned_bytes()==0 && owner.span(0).is_none());
+    frame(pid,3,0,0,0,0); return 0;
+}

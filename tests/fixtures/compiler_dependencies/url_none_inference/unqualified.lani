@@ -1,0 +1,15 @@
+// Candidate item-import collision; compilation and execution are pending.
+module app::main;
+import core::option;
+import core::option::Option;
+import core::option::None;
+import fixture::peer;
+
+fn main() -> i32 {
+    let absent: Option<i32> = None();
+    if (!absent.is_none()) { return 1; }
+    let need: fixture::peer::Need = fixture::peer::Need::Read;
+    let read: bool = match (need) { fixture::peer::Need::Read -> true, _ -> false };
+    if (!read) { return 2; }
+    return 0;
+}

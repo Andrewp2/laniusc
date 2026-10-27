@@ -1,0 +1,138 @@
+// Pure response-file byte grammar. No allocation, host access or option parsing.
+// Keep physical backing live and input immutable. tokenize_into's three stores
+// must be mutually disjoint; logical views cannot establish physical backing
+// or enforce aliasing. Spans and offsets are relative to their logical views.
+module ext::response;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+
+pub struct Shape { tokens: i32, bytes: i32 }
+pub struct Span { raw_start: i32, raw_length: i32, start: i32, length: i32 }
+pub enum Error {
+    Bounds, Nul(i32), TrailingEscape(i32), UnclosedQuote(i32),
+    BytesTooSmall(i32), TokensTooSmall(i32), NotSingleToken, DecodedBounds
+}
+
+struct Walk { shape: Shape, first_raw: i32, raw_end: i32, mapped: i32 }
+struct Sink {
+    bytes: View<u8>, spans: View<Span>, writing: bool, map_byte: i32,
+    total: i32, tokens: i32, first_raw: i32, raw_end: i32, mapped: i32
+}
+
+fn valid<T>(value: View<T>) -> bool {
+    return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length;
+}
+fn byte(value: View<u8>, index: i32) -> u8 { return value.values[value.start+index]; }
+fn separator(value: u8) -> bool { return value == 32 || value == 9 || value == 13 || value == 10; }
+
+impl Sink {
+    fn emit(&self, value: u8, raw: i32) {
+        if (self.total == self.map_byte) { self.mapped = raw; }
+        if (self.writing) { self.bytes.values[self.bytes.start+self.total] = value; }
+        self.total += 1;
+    }
+    fn finish(&self, raw_start: i32, raw_end: i32, decoded_start: i32) {
+        if (self.tokens == 0) { self.first_raw = raw_start; }
+        self.raw_end = raw_end;
+        if (self.writing) {
+            self.spans.values[self.spans.start+self.tokens] = Span {
+                raw_start: raw_start, raw_length: raw_end-raw_start,
+                start: decoded_start, length: self.total-decoded_start
+            };
+        }
+        self.tokens += 1;
+    }
+}
+
+// The sole grammar traversal. Quote/escape syntax only removes bytes, and each
+// token consumes a nonempty raw span, so both i32 totals are <= input.length.
+// Writing is private and only used after complete syntax/capacity admission.
+fn walk(input: View<u8>, bytes: View<u8>, spans: View<Span>, writing: bool, map_byte: i32) -> Result<Walk,Error> {
+    if (!valid(input)) { return Err(Error::Bounds); }
+    let sink = Sink {
+        bytes: bytes, spans: spans, writing: writing, map_byte: map_byte,
+        total: 0, tokens: 0, first_raw: -1, raw_end: 0, mapped: -1
+    };
+    let position: i32 = 0;
+    while (position < input.length) {
+        while (position < input.length && separator(byte(input,position))) { position += 1; }
+        if (position == input.length) { break; }
+        let raw_start: i32 = position;
+        let decoded_start: i32 = sink.total;
+        let quote: u8 = 0;
+        let quote_start: i32 = 0;
+        while (position < input.length) {
+            let current: u8 = byte(input,position);
+            if (current == 0) { return Err(Error::Nul(position)); }
+            // Test escapes before quote termination: a final backslash is the
+            // primary syntax error even when a surrounding quote is unclosed.
+            if (current == 92) {
+                if (position+1 == input.length) { return Err(Error::TrailingEscape(position)); }
+                position += 1;
+                let escaped: u8 = byte(input,position);
+                if (escaped == 0) { return Err(Error::Nul(position)); }
+                sink.emit(escaped,position); position += 1; continue;
+            }
+            if (quote != 0) {
+                if (current == quote) { quote = 0; }
+                else { sink.emit(current,position); }
+                position += 1; continue;
+            }
+            if (current == 39 || current == 34) {
+                quote = current; quote_start = position; position += 1; continue;
+            }
+            if (separator(current)) { break; }
+            sink.emit(current,position); position += 1;
+        }
+        if (quote != 0) { return Err(Error::UnclosedQuote(quote_start)); }
+        sink.finish(raw_start,position,decoded_start);
+    }
+    return Ok(Walk {
+        shape: Shape { tokens: sink.tokens, bytes: sink.total },
+        first_raw: sink.first_raw, raw_end: sink.raw_end, mapped: sink.mapped
+    });
+}
+
+fn inspect(input: View<u8>, map_byte: i32) -> Result<Walk,Error> {
+    // Unused output descriptors are never written or returned from this call.
+    let scratch: [Span;1] = [Span { raw_start: 0, raw_length: 0, start: 0, length: 0 }];
+    let spans: View<Span> = View<Span> { values: scratch, start: 0, length: 0 };
+    return walk(input,input,spans,false,map_byte);
+}
+
+pub fn measure(input: View<u8>) -> Result<Shape,Error> {
+    let result = inspect(input,-1)?;
+    return Ok(result.shape);
+}
+
+// Complete syntax, both logical output ranges, then byte/token capacities are
+// admitted before mutation. Every failure preserves both complete output stores.
+// Success writes required prefixes only, without a NUL or extra span sentinel.
+pub fn tokenize_into(input: View<u8>, bytes: View<u8>, spans: View<Span>) -> Result<Shape,Error> {
+    let expected = measure(input)?;
+    if (!valid(bytes) || !valid(spans)) { return Err(Error::Bounds); }
+    if (bytes.length < expected.bytes) { return Err(Error::BytesTooSmall(expected.bytes)); }
+    if (spans.length < expected.tokens) { return Err(Error::TokensTooSmall(expected.tokens)); }
+    let written = walk(input,bytes,spans,true,-1);
+    // The identical admitted immutable input cannot fail on its writing pass.
+    assert(written.is_ok());
+    let actual = written.unwrap().shape;
+    assert(actual.tokens == expected.tokens && actual.bytes == expected.bytes);
+    return Ok(actual);
+}
+
+// Syntax is checked completely, then the one-token/no-outer-whitespace contract,
+// then the decoded offset. Real bytes map past quote/escape syntax to their raw
+// byte; the endpoint (including an empty token) maps to the raw token end.
+pub fn raw_offset(token: View<u8>, decoded_byte: i32) -> Result<i32,Error> {
+    let result = inspect(token,decoded_byte)?;
+    if (result.shape.tokens != 1 || result.first_raw != 0 || result.raw_end != token.length) {
+        return Err(Error::NotSingleToken);
+    }
+    if (decoded_byte < 0 || decoded_byte > result.shape.bytes) { return Err(Error::DecodedBounds); }
+    if (decoded_byte == result.shape.bytes) { return Ok(token.length); }
+    assert(result.mapped >= 0);
+    return Ok(result.mapped);
+}

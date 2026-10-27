@@ -1,0 +1,14 @@
+// Confirmed reduction: nested Host(number) binding is rejected with LNC0006.
+module app::main;
+import core::io;
+enum Cause { Io(core::io::Error), Other }
+fn host_five(value: Cause) -> bool {
+    return match(value) { Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false };
+}
+fn main() -> i32 {
+    assert(host_five(Cause::Io(core::io::Error::Host(5))));
+    assert(!host_five(Cause::Io(core::io::Error::Host(4))));
+    assert(!host_five(Cause::Io(core::io::Error::Interrupted)));
+    assert(!host_five(Cause::Other));
+    return 0;
+}

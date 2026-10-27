@@ -1,0 +1,68 @@
+// Native syscall phases expose lazy scratch ownership, not library hooks.
+module app::main;
+import core::mem;
+import core::result;
+import core::text;
+import ext::regex;
+import ext::regex_text;
+import std::io;
+import std::io_decimal;
+
+fn text(value:str,count:i32) -> core::text::Text {
+    return core::text::from_utf8(core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count),count).unwrap();
+}
+fn mark(value:i32) { let raw:[i32;1]=[value];assert(std::io::write_stderr(core::mem::i32_array_data_ptr(raw),1)==1); }
+fn limits() -> ext::regex_text::SearchLimits {
+    return ext::regex_text::SearchLimits { max_matches:64,max_calls:65,max_work:650000 };
+}
+fn rejected(pattern:&ext::regex::Regex,input:core::text::Text,mode:i32) {
+    let cap=limits(); if(mode==0) { cap.max_matches=0;cap.max_calls=0;cap.max_work=0; }
+    if(mode==1) { cap.max_calls=0;cap.max_work=0; }
+    if(mode==2) { cap.max_work=9999; }
+    let cursor=ext::regex_text::split(pattern,input,cap).unwrap();
+    if(mode==0) { assert(cursor.next().unwrap().unwrap().equals(input)); }
+    else {
+        let failure=cursor.next().unwrap_err();
+        if(mode==1) { assert(match(failure) { ext::regex_text::Error::SearchCallLimit->true,_ ->false }); }
+        else { assert(match(failure) { ext::regex_text::Error::SearchWorkLimit->true,_ ->false }); }
+    }
+    assert(cursor.usage().calls==0 && cursor.usage().matches==0 && cursor.usage().reserved_work==0);
+    assert(cursor.next().unwrap().is_none() && cursor.next().unwrap().is_none());
+    cursor.destroy();cursor.destroy();
+}
+fn replace(pattern:&ext::regex::Regex,input:core::text::Text,cap:ext::regex_text::ReplaceLimits,templated:bool)
+    -> core::result::Result<ext::regex_text::Replacement,ext::regex_text::Error> {
+    if(templated) { return ext::regex_text::replace_template(pattern,input,text("",0),cap); }
+    return ext::regex_text::replace_literal(pattern,input,text("",0),cap);
+}
+fn replacement(pattern:&ext::regex::Regex,input:core::text::Text,templated:bool) {
+    let cap=ext::regex_text::default_replace_limits();cap.search=limits();cap.max_output_bytes=0;cap.max_replacement_bytes=0;
+    let result=replace(pattern,input,cap,templated).unwrap();
+    assert(result.output.byte_len()==0 && result.output.capacity()==0);
+    assert(result.usage.matches==8 && result.usage.calls==9 && result.usage.reserved_work==90000);
+    result.destroy();result.destroy();
+}
+fn main() -> i32 {
+    let options=ext::regex::options();options.max_work=10000;
+    let pattern=ext::regex::compile(text("(a)(b)?",7),options).unwrap();let input=text("aaaaaaaa",8);
+    assert(pattern.group_count()==3);
+    mark(65);let span=ext::regex::workspace(pattern.state_count(),1).unwrap();span.destroy();mark(97);
+    mark(66);let full=ext::regex::workspace(pattern.state_count(),pattern.group_count()).unwrap();full.destroy();mark(98);
+    mark(90);rejected(pattern.borrow(),input,0);mark(122);
+    mark(67);rejected(pattern.borrow(),input,1);mark(99);
+    mark(87);rejected(pattern.borrow(),input,2);mark(119);
+    mark(83);let cursor=ext::regex_text::split(pattern.borrow(),input,limits()).unwrap();mark(115);
+    mark(78);assert(cursor.next().unwrap().unwrap().length==0);
+    assert(cursor.usage().matches==1 && cursor.usage().calls==1 && cursor.usage().reserved_work==10000);mark(110);
+    mark(68);let fields:i32=1;
+    while(true) { let next=cursor.next().unwrap();if(next.is_none()) { break; }assert(next.unwrap().length==0);fields+=1; }
+    assert(fields==9 && cursor.usage().matches==8 && cursor.usage().calls==9 && cursor.usage().reserved_work==90000);
+    cursor.destroy();cursor.destroy();assert(cursor.next().unwrap().is_none());mark(100);
+    mark(76);replacement(pattern.borrow(),input,false);mark(108);
+    mark(84);replacement(pattern.borrow(),input,true);mark(116);
+    let empty=ext::regex::compile(text("(a*)",4),options).unwrap();
+    mark(69);let result=ext::regex_text::replace_template(empty.borrow(),text("a",1),text("[$1:$0]",7),ext::regex_text::default_replace_limits()).unwrap();
+    assert(result.output.as_text().equals(text("[a:a][:]",8)) && result.usage.matches==2 && result.usage.calls==2);
+    result.destroy();mark(101);empty.destroy();pattern.destroy();
+    std::io_decimal::write_i32(1,0);std::io::write_byte(1,10);return 0;
+}

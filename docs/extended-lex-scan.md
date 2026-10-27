@@ -5,6 +5,11 @@ one reusable [`ext::lexer`](extended-lexer.md), and scans all of stdin. It
 publishes either byte spans or counts by rule id. CLI parsing, CSV decoding,
 matching, counting, formatting and I/O run in Lanius.
 
+The current source uses one eager span-only regex workspace per nonempty lexer
+cursor. All five current application tests pass native x86_64 Linux execution,
+including matching/admission, scripted I/O, reached OOM/I/O faults and the
+4,096-token resource observation. Earlier per-probe receipts remain historical.
+
 Build and run from the repository root:
 
 ```sh
@@ -105,12 +110,16 @@ Skipping still charges a step, calls and reserved work. These counters are
 limits, not measured CPU instructions or elapsed time.
 
 The library validates input once and reuses its validated descriptor for rule
-probes. The app separately validates its buffered stdin before scanning. The
-current regex engine allocates canonical scratch and successful Match storage
-during probes and releases it before the next probe. Scratch initialization,
-capture copying, Unicode operations and allocation cost lie outside the VM
-counter. Longest matching can examine text beyond a winning token and revisit
-suffixes at later positions. This command makes no allocation-free or linear
+probes. The app separately validates its buffered stdin before scanning. For
+nonempty input, `Lexer.scan` then prepares one owned canonical workspace sized
+to the largest actual compiled rule and group zero. Rule probes reuse it and
+return plain spans, creating no discarded Match owner. Constructor OOM is an
+eager scan failure before any rule call/work charge. Empty input creates no
+scratch. Scratch construction/reset, register copying, Unicode operations and
+allocation cost lie outside the VM counter. Longest matching can examine text
+beyond a winning token and revisit suffixes at later positions. The lexer
+creates no allocations during token-returning `next` calls; this whole command
+still owns buffered input, staged output and counters, and makes no linear
 whole-scan claim.
 
 ## Publication, I/O and cleanup
@@ -138,10 +147,12 @@ supply an external deadline.
 
 The lexer owns its compiled programs. After compilation, the app releases the
 CSV table and borrowed rule descriptors before scanning. The cursor borrows
-the lexer and input; the app ends it before freeing either owner. Output stores
+the lexer and input and owns its workspace; the app ends it before freeing
+either owner. Output stores
 only formatted numbers, so the input may then be released before publication.
-Every temporary Match is released by the lexer. All paths explicitly release
-their buffers, table, counter map, metadata vector, compiled lexer and argument
+The lexer releases workspace once on EOF, error or cursor destruction; tokens
+refer only to input. Independent cursors have independent scratch. All paths
+explicitly release their buffers, table, counter map, metadata vector, compiled lexer and argument
 snapshot. Copies of owner descriptors remain aliases; none grants a second
 cleanup authority or automatic destruction.
 
@@ -150,15 +161,78 @@ cleanup authority or automatic destruction.
 | 0 | Successful CSV publication or standalone help. |
 | 2 | Invalid arguments/rules/UTF-8, matching failure, or a configured content/work/staging limit. |
 | 3 | Host I/O, read/write-call exhaustion, close or publication failure; also a failed diagnostic write. |
-| 4 | Allocation failure, including nested regex compile/search allocation failures. |
+| 4 | Allocation failure, including regex compilation and eager cursor workspace setup. |
 
 Diagnostics use stderr and identify the stage, with zero-based rule and byte
 positions when available. A failed diagnostic write changes the exit to 3.
 
-## Focused acceptance
+## Current workspace acceptance
+
+All **five** application tests passed GPU compilation and native x86_64 Linux
+execution in two separate serialized invocations:
+
+| Current scope | Tests | Elapsed | Receipt under `target/stdlib-work/` |
+| --- | ---: | ---: | --- |
+| Real grammar model/boundaries, malformed/admission/nonpublication cases, scripted production I/O | 3 | 13.63s | `lex-scan-workspace-behavior-io-first.log` |
+| Reached application OOM/native I/O faults and the 4,096-token resource observation | 2 | 16.66s | `lex-scan-workspace-faults-cost-first.log` |
+
+The accepted app source SHA256 is
+`7454037c6cbdd7f46227611c5b4a317b57ec9e168c525233e1971465f05ea10c`.
+The matching model checks 124 grammar inputs in both spans/counts modes plus
+exact longest/tie, Unicode byte-offset, CSV and EOF-budget boundaries. The
+other behavioral gates preserve malformed/admission/limit failures with no
+premature stdout, and scripted partial progress, EINTR, WouldBlock, zero/invalid
+counts and EOF probes against the actual production I/O helpers.
+
+Both one-token modes passed all **30** dynamically reached application mmap
+failure positions. Each run binds the injected ordinal to the successful
+baseline's native instruction address and exact allocation arguments, then
+requires typed allocation failure, no stdout and complete verified source
+release. Raw ELF runtime provenance and full-width requested address/length
+accounting are mandatory; a local allocation-count summary cannot admit a
+source site. Only the uniquely baseline-derived bounded temporary Frame
+episode is allowed after a sticky construction failure. The
+[workspace migration receipt](../tests/fixtures/extended/lex_scan/workspace-migration.md)
+records that scope; the older OOM17 witness does not fix a current ordinal.
+
+The same group passed reached read/write EINTR, read/write/close EIO, confirmed
+publication-prefix, `/dev/full` and closed-stdin controls. Ordinary and OOM
+paths require successful rule-descriptor closes. The synthetic close-EIO case
+checks one logical retirement and exact error propagation: strace skips the
+physical close, so it does not establish a natural Linux close failure or
+physical descriptor release for that injected case.
+
+### Current resource observation
+
+The counts-mode fixture emitted exactly 4,096 tokens and recorded:
+
+| Verified whole-program source cost | Observed value |
+| --- | ---: |
+| Source mmap requests | 32 |
+| Cumulative requested bytes | 8,895 |
+| Peak live requested bytes | 6,868 |
+| Explicit source releases | Balanced |
+| Traced correctness/cost harness wall time, including setup and verification | 79.624585ms |
+
+This is whole-program verified source allocation, including setup, rule
+compilation, input, workspace and output handling. Requested bytes are neither
+rounded kernel pages nor RSS, and these totals are not an isolated scan
+allocation count. The clock starts before temporary rules/input/trace setup
+and ends after child execution, trace reading, output checks and verified
+Python ledger validation. The application executable had already been compiled
+by the earlier OOM test in that combined invocation; this time does not measure
+compilation or isolated application execution.
+
+The historical 36,887-request/10.278540515-second observation below remains a
+separate receipt. There was no fresh old-version baseline, controlled timing
+comparison or timing-ratio claim. The current observation is a finite
+correctness/cost receipt, without a throughput or timing threshold.
+
+## Historical focused acceptance
 
 [`tests/extended_lex_scan_execution.rs`](../tests/extended_lex_scan_execution.rs)
-defines five Linux x86_64 groups. It compiles the real CLI once and one source
+defines five Linux x86_64 groups. The historical receipts below predate the
+workspace ownership change. That campaign compiled the real CLI once and one source
 fixture that appends scripted readers/writers to the same production helpers.
 
 - An independent character-class oracle checks 124 bounded example-grammar
@@ -191,8 +265,8 @@ retains that failure and the separately verified minimal Read controls: the
 untyped reduction rejects at the same result inspection, and the typed control
 compiles and exits 0. No compiler cause or repair is claimed.
 
-Root's serialized GPU compilation and native x86_64 Linux execution have these
-separate accepted receipts under `target/stdlib-work/`:
+The earlier serialized GPU compilation and native x86_64 Linux execution had
+these separate accepted receipts under `target/stdlib-work/`:
 
 | Groups | Result | Elapsed | Receipt |
 | --- | --- | ---: | --- |
@@ -200,7 +274,7 @@ separate accepted receipts under `target/stdlib-work/`:
 | Admission failures, scripted production I/O, resource observation | All three groups passed. | 14.16 s | `lex-scan-errors-scripted-resource.log` |
 | Allocation failures and native I/O faults | Passed; all 30 reached mmap fault positions in each mode, then exact syscall-fault and publication checks. | 8.36 s | `lex-scan-oom-bounded-frame.log` |
 
-The resource run counted exactly 4,096 visible tokens, made **36,887 mmap
+The historical resource run counted exactly 4,096 visible tokens, made **36,887 mmap
 requests**, and released every mapping. Its captured traced wall time was
 **10.278540515 seconds**. The requests include whole-program setup, rule
 compilation, scan scratch and output handling. This is an observed finite
@@ -225,8 +299,10 @@ confirmed publication-prefix, `/dev/full` and closed-stdin cases. Exact marker
 assertions confirm the intended syscall, errno and ordinal for each injected
 fault. All five groups therefore have accepted evidence from the three
 separate runs above; this does not describe a single combined suite run. The
-production app did not change after its exact I/O result annotations; only
-the OOM harness changed for the final group.
+production app in that historical campaign did not change after its exact I/O
+result annotations; only the OOM harness changed for its final group. The
+current revision separately adds workspace-error mapping and eager cursor
+ownership through the lexer.
 
 CPU checks have audited literal byte lengths and the independent oracle; they
 also reject malformed fault markers and unexpected OOM continuations. They

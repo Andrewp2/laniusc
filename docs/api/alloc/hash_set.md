@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `alloc`. Role: module. Profile: **Source inventory**.
 
-Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence.
+Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide.
 
 ## Contract and evidence guides
 
@@ -16,8 +16,9 @@ Owning cursors also execute with explicit transfer, retained backing, O(1) recov
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 - [stdlib-owning-hash](../../stdlib-owning-hash.md)
+- [stdlib-replacement-sinks](../../stdlib-replacement-sinks.md)
 
-Declaration counts: enum: 1; field: 3; function: 2; impl: 6; method: 33; struct: 3; variant: 1.
+Declaration counts: enum: 1; field: 3; function: 2; impl: 7; method: 34; struct: 3; variant: 1.
 
 ## Declared imports
 
@@ -327,9 +328,26 @@ pub impl<T> core::iter::TrySink<T, alloc::hash_map::SinkError> for HashSet<T>
 pub fn try_accept(&self, item: T) -> core::option::Option<alloc::hash_map::SinkError>
 ```
 
-### impl at line 130
+### impl at line 132
 
-[Source line 130](../../../stdlib/alloc/hash_set.lani#L130)
+[Source line 132](../../../stdlib/alloc/hash_set.lani#L132)
+
+```lanius
+pub impl<T> core::iter::TryReplaceSink<T,alloc::hash_map::Error> for HashSet<T>
+    where T: core::hash::Hash<T>, T: core::cmp::Eq<T>
+```
+
+#### method: try_replace_item
+
+[Source line 134](../../../stdlib/alloc/hash_set.lani#L134)
+
+```lanius
+pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,alloc::hash_map::Error>
+```
+
+### impl at line 139
+
+[Source line 139](../../../stdlib/alloc/hash_set.lani#L139)
 
 ```lanius
 pub impl<T> Iter<T>
@@ -337,15 +355,15 @@ pub impl<T> Iter<T>
 
 #### method: borrow
 
-[Source line 131](../../../stdlib/alloc/hash_set.lani#L131)
+[Source line 140](../../../stdlib/alloc/hash_set.lani#L140)
 
 ```lanius
 pub fn borrow(&self) -> &Iter<T>
 ```
 
-### impl at line 134
+### impl at line 143
 
-[Source line 134](../../../stdlib/alloc/hash_set.lani#L134)
+[Source line 143](../../../stdlib/alloc/hash_set.lani#L143)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Iter<T>
@@ -353,15 +371,15 @@ pub impl<T> core::iter::Iterator<T> for Iter<T>
 
 #### method: next
 
-[Source line 135](../../../stdlib/alloc/hash_set.lani#L135)
+[Source line 144](../../../stdlib/alloc/hash_set.lani#L144)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 138
+### impl at line 147
 
-[Source line 138](../../../stdlib/alloc/hash_set.lani#L138)
+[Source line 147](../../../stdlib/alloc/hash_set.lani#L147)
 
 ```lanius
 pub impl<T> IntoIter<T>
@@ -369,7 +387,7 @@ pub impl<T> IntoIter<T>
 
 #### method: borrow
 
-[Source line 139](../../../stdlib/alloc/hash_set.lani#L139)
+[Source line 148](../../../stdlib/alloc/hash_set.lani#L148)
 
 ```lanius
 pub fn borrow(&self) -> &IntoIter<T>
@@ -377,7 +395,7 @@ pub fn borrow(&self) -> &IntoIter<T>
 
 #### method: remaining
 
-[Source line 140](../../../stdlib/alloc/hash_set.lani#L140)
+[Source line 149](../../../stdlib/alloc/hash_set.lani#L149)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -385,7 +403,7 @@ pub fn remaining(&self) -> i32
 
 #### method: capacity
 
-[Source line 141](../../../stdlib/alloc/hash_set.lani#L141)
+[Source line 150](../../../stdlib/alloc/hash_set.lani#L150)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -393,7 +411,7 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 142](../../../stdlib/alloc/hash_set.lani#L142)
+[Source line 151](../../../stdlib/alloc/hash_set.lani#L151)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -401,7 +419,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: try_finish
 
-[Source line 144](../../../stdlib/alloc/hash_set.lani#L144)
+[Source line 153](../../../stdlib/alloc/hash_set.lani#L153)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<IntoIterError>
@@ -409,15 +427,15 @@ pub fn try_finish(&self) -> core::option::Option<IntoIterError>
 
 #### method: take_remaining
 
-[Source line 151](../../../stdlib/alloc/hash_set.lani#L151)
+[Source line 160](../../../stdlib/alloc/hash_set.lani#L160)
 
 ```lanius
 pub fn take_remaining(&self) -> HashSet<T>
 ```
 
-### impl at line 154
+### impl at line 163
 
-[Source line 154](../../../stdlib/alloc/hash_set.lani#L154)
+[Source line 163](../../../stdlib/alloc/hash_set.lani#L163)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for IntoIter<T>
@@ -425,7 +443,7 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 
 #### method: next
 
-[Source line 155](../../../stdlib/alloc/hash_set.lani#L155)
+[Source line 164](../../../stdlib/alloc/hash_set.lani#L164)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>

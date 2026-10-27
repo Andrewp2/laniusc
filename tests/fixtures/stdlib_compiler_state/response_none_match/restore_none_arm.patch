@@ -1,0 +1,13 @@
+--- tests/fixtures/stdlib_compiler_state/response_none_match/typed_probe.lani
++++ tests/fixtures/stdlib_compiler_state/response_none_match/typed_probe.lani
+@@ -97,9 +97,8 @@
+         ext::cli_response::Cause::WorkLimit->31,
+         ext::cli_response::Cause::ProviderContract->32
+     };
+-    let absent:Option<ext::cli_response_files::Error> =None();
+     let native:Option<ext::cli_response_files::Error> =match(failure.cause) {
+-        ext::cli_response::Cause::Provider(error)->Some(error), _ ->absent
++        ext::cli_response::Cause::Provider(error)->Some(error), _ ->None()
+     };
+     if(native.is_some()) { record_error(output,8,native.unwrap()); output[10]+=100; }
+     output[28]=(failure.at.source as i64) as u64; output[29]=(failure.at.argument as i64) as u64;

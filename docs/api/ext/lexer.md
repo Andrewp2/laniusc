@@ -8,14 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-prefix search. The longest byte span wins, with declaration order resolving ties; skip rules consume input and empty winners or unmatched input are terminal errors. Cursors borrow the compiled Lexer and validated immutable input, and tokens borrow input bytes. Construction, input, step, token, search-call and reserved VM-allowance limits are explicit; the guides define allocation costs, work-counter scope and the current execution evidence.
+Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-prefix span search. The longest byte span wins, with declaration order resolving ties; skip rules consume input and empty winners or unmatched input are terminal errors. Each nonempty cursor eagerly owns one two-slot Workspace sized to the largest actual rule program; empty input needs none. Cursor construction validates limits, logical bounds, the input-byte cap and UTF-8 before acquiring scratch. Cursors borrow the compiled Lexer and immutable input, while returned tokens borrow input bytes rather than scratch. Token selection reuses the workspace without source allocation; terminal calls can release it. All six current tests pass across separate 12.79-second and 11.88-second commands: owner/interleaving, admission/contracts, 576 model cases across three layouts, 63 explicit tables and all 30 reached OOM positions. The current lex-scan application separately passes all five tests across 13.63-second and 16.66-second commands: 124 grammar inputs in both modes plus boundaries, admission/nonpublication, scripted I/O and all 30 reached source OOM positions per mode. Its 4,096-token observation records 32 verified source mmap requests, 8,895 total requested bytes and 6,868 peak live requested bytes with balanced releases. The 79.624585ms traced correctness/cost harness time includes setup and verification, not isolated application or compiler throughput. Earlier 120-position lexer receipts and the 36,887-allocation application observation retain their previous implementation/accounting scope. Search work counts VM state/class visits; initialization, capture copies, Unicode-table CPU, process RSS and wall time are outside that counter, and competing rules may rescan suffixes.
 
 ## Contract and evidence guides
 
 - [extended-lexer](../../extended-lexer.md)
 - [extended-lex-scan](../../extended-lex-scan.md)
+- [library-regex-workspace-plan](../../library-regex-workspace-plan.md)
 
-Declaration counts: enum: 1; field: 30; function: 3; impl: 2; method: 10; struct: 8; variant: 16.
+Declaration counts: enum: 1; field: 32; function: 3; impl: 2; method: 10; struct: 8; variant: 17.
 
 ## Declared imports
 
@@ -304,6 +305,14 @@ Pattern(i32,ext::regex::Error)
 Input(ext::regex::Error)
 ```
 
+#### variant: Workspace
+
+[Source line 17](../../../extended/ext/lexer.lani#L17)
+
+```lanius
+Workspace(ext::regex::Error)
+```
+
 #### variant: Search
 
 [Source line 18](../../../extended/ext/lexer.lani#L18)
@@ -416,6 +425,14 @@ rules: alloc::vec::Vec<CompiledRule>
 states: i32
 ```
 
+#### field: workspace_states
+
+[Source line 24](../../../extended/ext/lexer.lani#L24)
+
+```lanius
+workspace_states: i32
+```
+
 ### struct: Cursor
 
 [Source line 27](../../../extended/ext/lexer.lani#L27)
@@ -470,6 +487,14 @@ at: i32
 
 ```lanius
 done: bool
+```
+
+#### field: workspace
+
+[Source line 27](../../../extended/ext/lexer.lani#L27)
+
+```lanius
+workspace: core::option::Option<ext::regex::Workspace>
 ```
 
 ## Free functions and extern declarations
@@ -548,9 +573,9 @@ pub fn destroy(&self)
 pub fn scan(&self, text: core::text::Text, limits: ScanLimits) -> core::result::Result<Cursor,Error>
 ```
 
-### impl at line 88
+### impl at line 100
 
-[Source line 88](../../../extended/ext/lexer.lani#L88)
+[Source line 100](../../../extended/ext/lexer.lani#L100)
 
 ```lanius
 pub impl Cursor
@@ -558,7 +583,7 @@ pub impl Cursor
 
 #### method: borrow
 
-[Source line 89](../../../extended/ext/lexer.lani#L89)
+[Source line 101](../../../extended/ext/lexer.lani#L101)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor
@@ -566,7 +591,7 @@ pub fn borrow(&self) -> &Cursor
 
 #### method: position
 
-[Source line 90](../../../extended/ext/lexer.lani#L90)
+[Source line 102](../../../extended/ext/lexer.lani#L102)
 
 ```lanius
 pub fn position(&self) -> i32
@@ -574,7 +599,7 @@ pub fn position(&self) -> i32
 
 #### method: usage
 
-[Source line 91](../../../extended/ext/lexer.lani#L91)
+[Source line 103](../../../extended/ext/lexer.lani#L103)
 
 ```lanius
 pub fn usage(&self) -> Usage
@@ -582,7 +607,7 @@ pub fn usage(&self) -> Usage
 
 #### method: destroy
 
-[Source line 92](../../../extended/ext/lexer.lani#L92)
+[Source line 104](../../../extended/ext/lexer.lani#L104)
 
 ```lanius
 pub fn destroy(&self)
@@ -590,7 +615,7 @@ pub fn destroy(&self)
 
 #### method: next
 
-[Source line 94](../../../extended/ext/lexer.lani#L94)
+[Source line 109](../../../extended/ext/lexer.lani#L109)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Token>,Error>

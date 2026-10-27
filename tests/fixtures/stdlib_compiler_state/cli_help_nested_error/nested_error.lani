@@ -1,0 +1,10 @@
+module app::main;
+import core::result;
+enum Error { OutputTooSmall(u64), UnknownCommandId(i32) }
+fn main() -> i32 {
+    let rejected: core::result::Result<i32,Error> = core::result::Err(Error::OutputTooSmall(113));
+    assert(match (rejected) { core::result::Err(Error::OutputTooSmall(required)) -> required == 113, _ -> false });
+    let unknown: core::result::Result<i32,Error> = core::result::Err(Error::UnknownCommandId(99));
+    assert(match (unknown) { core::result::Err(Error::UnknownCommandId(id)) -> id == 99, _ -> false });
+    return 0;
+}

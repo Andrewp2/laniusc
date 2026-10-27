@@ -66,7 +66,7 @@ fn oracle(mode: &str, exe: &std::path::Path) -> String {
     summary
 }
 #[test]
-fn http_server_retained_views_checked_date_preflight_and_exact_staged_send_retry_execute() {
+fn http_server_retained_views_atomic_preflight_and_sticky_fatal_replay_execute() {
     let exe = compile("tests/fixtures/extended/http_server_contracts.lani");
     assert!(oracle("native", exe.path()).contains("http-server-native cases=3"));
 }
@@ -85,5 +85,24 @@ fn http_server_exact_drain_probe_late_success_progress_expect_preflight_and_cli_
 }
 #[test]
 fn http_server_every_reached_allocation_leaf_io_retry_quota_close_and_real_stdio_faults_cleanup() {
-    assert!(oracle("faults", cli().path()).contains("http-server-faults cases=35"));
+    let summary = oracle("faults", cli().path());
+    let mut fields = summary.split_whitespace();
+    assert_eq!(fields.next(), Some("http-server-faults"));
+    let cases: usize = fields
+        .next()
+        .unwrap()
+        .strip_prefix("cases=")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let allocations: usize = fields
+        .next()
+        .unwrap()
+        .strip_prefix("source-allocation-positions=")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(allocations > 0, "{summary}");
+    assert_eq!(cases, allocations.checked_add(18).unwrap(), "{summary}");
+    assert!(fields.next().is_none(), "{summary}");
 }

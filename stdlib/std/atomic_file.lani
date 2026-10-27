@@ -1,0 +1,227 @@
+// Bounded sequential file publication on local x86_64 Linux filesystems.
+// Manual owner; one active copy, cooperative parent namespace, no hidden retry
+// of rename/close and no rollback after publication. See stdlib-atomic-files.md.
+module std::atomic_file;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::temp_file;
+
+pub struct Options { temporary:std::temp_file::Limits, policy:std::file_ops::RenamePolicy, max_bytes:u64, write_calls:u64, directory_sync_calls:u64 }
+pub enum State { Inactive, Writing, Failed, Published, Kept, Released }
+pub enum Visibility { NotPublished, Published, Unconfirmed }
+pub enum Stage { Validate, Allocate, Create, Write, SyncFile, CloseFile, Rename, Disarm, SyncDirectory, Cleanup, Keep }
+pub enum Error { InvalidState, InvalidOptions, InvalidDestination, AllocationFailed, Bounds, ByteLimit, WriteLimit, DirectorySyncLimit, NoProgress, InvalidCount, Io(core::io::Error), Temporary(std::temp_file::Failure), Ownership(std::temp_file::Error) }
+pub struct Stats { bytes:u64, writes:u64, file_syncs:u64, renames:u64, directory_syncs:u64 }
+pub struct Diagnostic { stage:Stage, cause:Error, completed:u64 }
+pub struct Receipt {
+    state:State, visibility:Visibility, stats:Stats, temporary_stats:std::temp_file::Stats,
+    file_synced:bool, directory_synced:bool, file_open:bool, directory_open:bool,
+    temporary_owned:bool, retained:bool, cleanup:std::temp_file::Cleanup,
+    last_error:core::option::Option<Diagnostic>
+}
+pub struct Failure { stage:Stage, cause:Error, completed:u64, receipt:Receipt }
+pub struct AtomicFile {
+    temporary:std::temp_file::TempFile, destination_bytes:alloc::vec::Vec<u8>, options:Options,
+    current:State, visible:Visibility, counters:Stats, file_synced:bool, directory_synced:bool,
+    cleanup_record:std::temp_file::Cleanup, latest_cleanup:std::temp_file::Cleanup,
+    primary:core::option::Option<Diagnostic>, latest_error:core::option::Option<Diagnostic>,
+    committed:core::option::Option<core::result::Result<Receipt,Failure>>
+}
+
+pub fn default_options() -> Options {
+    return Options { temporary:std::temp_file::default_limits(),policy:std::file_ops::RenamePolicy::Replace,max_bytes:16777216,write_calls:65536,directory_sync_calls:8 };
+}
+fn empty_cleanup() -> std::temp_file::Cleanup {
+    return std::temp_file::Cleanup { file_close_attempted:false,file_close_error:core::option::None(),remove_attempted:false,removal:std::temp_file::Removal::NotOwned,remove_error:core::option::None(),directory_close_attempted:false,directory_close_error:core::option::None(),retained:false };
+}
+fn empty_stats() -> Stats { return Stats { bytes:0,writes:0,file_syncs:0,renames:0,directory_syncs:0 }; }
+pub fn empty() -> AtomicFile {
+    return AtomicFile { temporary:std::temp_file::empty(),destination_bytes:alloc::vec::new(),options:default_options(),current:State::Inactive,visible:Visibility::NotPublished,counters:empty_stats(),file_synced:false,directory_synced:false,cleanup_record:empty_cleanup(),latest_cleanup:empty_cleanup(),primary:core::option::None(),latest_error:core::option::None(),committed:core::option::None() };
+}
+fn valid(view:core::slice::View<u8>) -> bool { return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length; }
+fn component(view:core::slice::View<u8>) -> bool {
+    if(!valid(view) || view.length==0 || view.length>std::temp_file::MAX_COMPONENT_BYTES) { return false; }
+    let index:i32=0; while(index<view.length) { let byte:u8=view.values[view.start+index]; if(byte==0 || byte==47) { return false; } index+=1; }
+    if(view.length==1 && view.values[view.start]==46) { return false; }
+    if(view.length==2 && view.values[view.start]==46 && view.values[view.start+1]==46) { return false; }
+    return true;
+}
+fn interrupted(error:Error) -> bool { return match(error) { Error::Io(value)->match(value) { core::io::Error::Interrupted->true,_ ->false },_ ->false }; }
+// Only documented ordinary local failures establish non-publication. EIO,
+// undocumented EINTR/EAGAIN and unexpected adapter counts remain unconfirmed.
+fn rename_visibility(error:core::io::Error) -> Visibility {
+    let ordinary:bool=match(error) {
+        core::io::Error::Host(code)->code==1 || code==2 || code==9 || code==12 || code==13 || code==14 || code==16 || code==17 || code==18 || code==20 || code==21 || code==22 || code==28 || code==30 || code==31 || code==36 || code==38 || code==39 || code==40 || code==95 || code==122,
+        _ ->false
+    };
+    if(ordinary) { return Visibility::NotPublished; } return Visibility::Unconfirmed;
+}
+
+pub impl AtomicFile {
+    pub fn borrow(&self) -> &AtomicFile { return self; }
+    fn temporary_retained(&self) -> bool { return match(self.temporary.state()) { std::temp_file::State::Inactive->false,std::temp_file::State::Released->false,_ ->true }; }
+    fn retained(&self) -> bool { return self.destination_bytes.capacity()!=0 || self.temporary_retained(); }
+    pub fn temporary_name(&self) -> core::slice::View<u8> { return self.temporary.name(); }
+    pub fn destination(&self) -> core::slice::View<u8> { return self.destination_bytes.as_view(); }
+    // Borrowed inspection identifiers, not ownership or permission for I/O.
+    pub fn file_handle(&self) -> core::option::Option<i32> { return self.temporary.file().raw_handle(); }
+    pub fn directory_handle(&self) -> core::option::Option<i32> { return self.temporary.directory().raw_handle(); }
+    pub fn last_cleanup(&self) -> std::temp_file::Cleanup { return self.latest_cleanup; }
+    pub fn receipt(&self) -> Receipt {
+        let cleanup:std::temp_file::Cleanup=self.cleanup_record; cleanup.retained=self.temporary_retained();
+        return Receipt { state:self.current,visibility:self.visible,stats:self.counters,temporary_stats:self.temporary.stats(),file_synced:self.file_synced,directory_synced:self.directory_synced,file_open:self.temporary.file().is_open(),directory_open:self.temporary.directory().is_open(),temporary_owned:self.temporary.owns_temporary_name(),retained:self.retained(),cleanup:cleanup,last_error:self.latest_error };
+    }
+    pub fn last_failure(&self) -> core::option::Option<Failure> {
+        if(core::option::is_none(self.primary)) { return core::option::None(); }
+        let cause:Diagnostic=core::option::unwrap(self.primary);
+        return core::option::Some(Failure { stage:cause.stage,cause:cause.cause,completed:cause.completed,receipt:self.receipt() });
+    }
+    fn failure(&self,stage:Stage,cause:Error,completed:u64,sticky:bool) -> Failure {
+        let diagnostic:Diagnostic=Diagnostic { stage:stage,cause:cause,completed:completed }; self.latest_error=core::option::Some(diagnostic);
+        if(sticky) {
+            if(core::option::is_none(self.primary)) { self.primary=core::option::Some(diagnostic); }
+            let published:bool=match(self.visible) { Visibility::Published->true,_ ->false };
+            let released:bool=match(self.current) { State::Released->true,_ ->false };
+            if(!published && !released) { self.current=State::Failed; }
+        }
+        if(core::option::is_some(self.primary)) { return core::option::unwrap(self.last_failure()); }
+        return Failure { stage:stage,cause:cause,completed:completed,receipt:self.receipt() };
+    }
+    fn merge_cleanup(&self,value:std::temp_file::Cleanup) {
+        self.latest_cleanup=value;
+        self.cleanup_record.file_close_attempted=self.cleanup_record.file_close_attempted || value.file_close_attempted;
+        self.cleanup_record.remove_attempted=self.cleanup_record.remove_attempted || value.remove_attempted;
+        self.cleanup_record.directory_close_attempted=self.cleanup_record.directory_close_attempted || value.directory_close_attempted;
+        if(core::option::is_none(self.cleanup_record.file_close_error) && core::option::is_some(value.file_close_error)) { self.cleanup_record.file_close_error=value.file_close_error; }
+        if(core::option::is_none(self.cleanup_record.remove_error) && core::option::is_some(value.remove_error)) { self.cleanup_record.remove_error=value.remove_error; }
+        if(core::option::is_none(self.cleanup_record.directory_close_error) && core::option::is_some(value.directory_close_error)) { self.cleanup_record.directory_close_error=value.directory_close_error; }
+        if(value.remove_attempted) { self.cleanup_record.removal=value.removal; }
+        self.cleanup_record.retained=value.retained;
+    }
+
+    pub fn create_in(&self,parent:&std::file::File,destination:core::path::Path,options:Options) -> core::result::Result<bool,Failure> {
+        let reusable:bool=match(self.current) { State::Inactive->true,State::Released->true,_ ->false };
+        if(!reusable || self.retained()) { return core::result::Err(self.failure(Stage::Validate,Error::InvalidState,0,false)); }
+        self.temporary=std::temp_file::empty(); self.options=options; self.current=State::Inactive; self.visible=Visibility::NotPublished; self.counters=empty_stats(); self.file_synced=false; self.directory_synced=false; self.cleanup_record=empty_cleanup(); self.latest_cleanup=empty_cleanup(); self.primary=core::option::None(); self.latest_error=core::option::None(); self.committed=core::option::None();
+        if(options.temporary.name_attempts==0 || options.temporary.name_attempts>std::temp_file::MAX_NAME_ATTEMPTS || options.temporary.entropy_calls==0 || options.temporary.entropy_calls>std::temp_file::MAX_ENTROPY_CALLS || options.directory_sync_calls==0) {
+            return core::result::Err(self.failure(Stage::Validate,Error::InvalidOptions,0,true));
+        }
+        let name:core::slice::View<u8> =destination.as_bytes();
+        if(!component(name)) { return core::result::Err(self.failure(Stage::Validate,Error::InvalidDestination,0,true)); }
+        let made:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(name.length);
+        if(core::result::is_err(made)) { return core::result::Err(self.failure(Stage::Allocate,Error::AllocationFailed,0,true)); }
+        self.destination_bytes=core::result::unwrap(made); self.current=State::Failed;
+        if(core::result::is_err(self.destination_bytes.try_extend(name))) { return core::result::Err(self.failure(Stage::Allocate,Error::AllocationFailed,0,true)); }
+        let owned:core::path::Path=core::result::unwrap(core::path::from_view(self.destination_bytes.as_view()));
+        let created=self.temporary.create_in_excluding(parent,owned,options.temporary);
+        if(core::result::is_err(created)) { return core::result::Err(self.failure(Stage::Create,Error::Temporary(core::result::unwrap_err(created)),0,true)); }
+        self.current=State::Writing; self.latest_error=core::option::None(); return core::result::Ok(true);
+    }
+
+    fn validate_write(&self,input:core::slice::View<u8>) -> core::result::Result<i32,Failure> {
+        let writing:bool=match(self.current) { State::Writing->true,_ ->false };
+        if(!writing) { return core::result::Err(self.failure(Stage::Write,Error::InvalidState,0,false)); }
+        if(!valid(input)) { return core::result::Err(self.failure(Stage::Write,Error::Bounds,0,false)); }
+        if(self.counters.bytes>self.options.max_bytes || (input.length as u64)>self.options.max_bytes-self.counters.bytes) { return core::result::Err(self.failure(Stage::Write,Error::ByteLimit,0,false)); }
+        return core::result::Ok(input.length);
+    }
+    fn attempt(&self,input:core::slice::View<u8>,completed:u64) -> core::result::Result<i32,Failure> {
+        if(self.counters.writes==self.options.write_calls) { return core::result::Err(self.failure(Stage::Write,Error::WriteLimit,completed,true)); }
+        let amount:i32=input.length; if(amount>1024) { amount=1024; } self.counters.writes+=1;
+        let written=self.temporary.file().write(input.values,input.start,amount);
+        if(core::result::is_err(written)) {
+            let error:core::io::Error=core::result::unwrap_err(written);
+            let bad_count:bool=match(error) { core::io::Error::InvalidCount->true,_ ->false };
+            if(bad_count) { return core::result::Err(self.failure(Stage::Write,Error::InvalidCount,completed,true)); }
+            let cause:Error=Error::Io(error); return core::result::Err(self.failure(Stage::Write,cause,completed,!interrupted(cause)));
+        }
+        let count:i32=core::result::unwrap(written);
+        if(count==0) { return core::result::Err(self.failure(Stage::Write,Error::NoProgress,completed,true)); }
+        if(count<0 || count>amount) { return core::result::Err(self.failure(Stage::Write,Error::InvalidCount,completed,true)); }
+        self.counters.bytes+=count as u64; self.latest_error=core::option::None(); return core::result::Ok(count);
+    }
+    pub fn write(&self,input:core::slice::View<u8>) -> core::result::Result<i32,Failure> {
+        let checked=self.validate_write(input); if(core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        if(input.length==0) { self.latest_error=core::option::None(); return core::result::Ok(0); }
+        return self.attempt(input,0);
+    }
+    pub fn write_all(&self,input:core::slice::View<u8>) -> core::result::Result<u64,Failure> {
+        let checked=self.validate_write(input); if(core::result::is_err(checked)) { return core::result::Err(core::result::unwrap_err(checked)); }
+        let completed:i32=0;
+        while(completed<input.length) {
+            let remaining:core::slice::View<u8> =core::slice::View { values:input.values,start:input.start+completed,length:input.length-completed };
+            let written=self.attempt(remaining,completed as u64);
+            if(core::result::is_err(written)) {
+                let failure:Failure=core::result::unwrap_err(written);
+                if(!interrupted(failure.cause) || core::option::is_some(self.primary)) { return core::result::Err(failure); }
+            } else { completed+=core::result::unwrap(written); }
+        }
+        self.latest_error=core::option::None(); return core::result::Ok(completed as u64);
+    }
+
+    fn cache_failure(&self,stage:Stage,cause:Error) -> core::result::Result<Receipt,Failure> {
+        let result:core::result::Result<Receipt,Failure> =core::result::Err(self.failure(stage,cause,0,true)); self.committed=core::option::Some(result); return result;
+    }
+    pub fn commit(&self) -> core::result::Result<Receipt,Failure> {
+        if(core::option::is_some(self.committed)) { return core::option::unwrap(self.committed); }
+        let writing:bool=match(self.current) { State::Writing->true,_ ->false };
+        if(!writing) { return self.cache_failure(Stage::Validate,Error::InvalidState); }
+        self.current=State::Failed; self.counters.file_syncs+=1;
+        let synced=std::file_ops::sync_all(self.temporary.file());
+        if(core::result::is_err(synced)) { return self.cache_failure(Stage::SyncFile,Error::Io(core::result::unwrap_err(synced))); }
+        self.file_synced=true;
+        let closed=self.temporary.close_file(); self.merge_cleanup(self.temporary.last_cleanup());
+        if(core::result::is_err(closed)) { return self.cache_failure(Stage::CloseFile,Error::Temporary(core::result::unwrap_err(closed))); }
+        let from:core::path::Path=core::result::unwrap(core::path::from_view(self.temporary.name()));
+        let to:core::path::Path=core::result::unwrap(core::path::from_view(self.destination_bytes.as_view()));
+        let directory:i32=core::option::unwrap(self.temporary.directory().raw_handle()); self.counters.renames+=1;
+        let renamed=std::file_ops::rename_at(directory,from,directory,to,self.options.policy);
+        if(core::result::is_err(renamed)) { let error:core::io::Error=core::result::unwrap_err(renamed); self.visible=rename_visibility(error); return self.cache_failure(Stage::Rename,Error::Io(error)); }
+        // Pure local transitions precede the next syscall. No destination name
+        // is ever adopted as a temporary deletion target.
+        self.visible=Visibility::Published; self.current=State::Published;
+        let disarmed=self.temporary.keep();
+        if(core::result::is_err(disarmed)) { return self.cache_failure(Stage::Disarm,Error::Ownership(core::result::unwrap_err(disarmed))); }
+        self.latest_error=core::option::None();
+        let result=self.sync_directory(); self.committed=core::option::Some(result); return result;
+    }
+
+    fn sync_directory(&self) -> core::result::Result<Receipt,Failure> {
+        if(self.counters.directory_syncs==self.options.directory_sync_calls) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::DirectorySyncLimit,0,true)); }
+        self.counters.directory_syncs+=1; let synced=std::file_ops::sync_all(self.temporary.directory());
+        if(core::result::is_err(synced)) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::Io(core::result::unwrap_err(synced)),0,true)); }
+        self.directory_synced=true; self.latest_error=core::option::None(); return self.cleanup();
+    }
+    pub fn retry_directory_sync(&self) -> core::result::Result<Receipt,Failure> {
+        let published:bool=match(self.visible) { Visibility::Published->true,_ ->false };
+        if(!published) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::InvalidState,0,false)); }
+        if(self.directory_synced) { self.latest_error=core::option::None(); return core::result::Ok(self.receipt()); }
+        if(!self.temporary.directory().is_open()) { return core::result::Err(self.failure(Stage::SyncDirectory,Error::InvalidState,0,false)); }
+        return self.sync_directory();
+    }
+    pub fn keep(&self) -> core::result::Result<bool,Failure> {
+        let kept:bool=match(self.current) { State::Kept->true,_ ->false }; if(kept) { self.latest_error=core::option::None(); return core::result::Ok(false); }
+        if(!self.temporary.owns_temporary_name()) { return core::result::Err(self.failure(Stage::Keep,Error::InvalidState,0,false)); }
+        let result=self.temporary.keep();
+        if(core::result::is_err(result)) { return core::result::Err(self.failure(Stage::Keep,Error::Ownership(core::result::unwrap_err(result)),0,true)); }
+        self.current=State::Kept; self.latest_error=core::option::None(); return core::result::Ok(core::result::unwrap(result));
+    }
+    pub fn cleanup(&self) -> core::result::Result<Receipt,Failure> {
+        let cleaned=self.temporary.cleanup();
+        let latest:std::temp_file::Cleanup=self.temporary.last_cleanup(); self.merge_cleanup(latest);
+        if(!latest.retained) { self.destination_bytes.destroy(); self.current=State::Released; }
+        else {
+            let published:bool=match(self.visible) { Visibility::Published->true,_ ->false };
+            if(!published) { self.current=State::Failed; }
+        }
+        if(core::result::is_err(cleaned)) { return core::result::Err(self.failure(Stage::Cleanup,Error::Temporary(core::result::unwrap_err(cleaned)),0,true)); }
+        self.latest_error=core::option::None(); return core::result::Ok(self.receipt());
+    }
+    pub fn destroy(&self) -> core::result::Result<Receipt,Failure> { return self.cleanup(); }
+}

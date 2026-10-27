@@ -180,6 +180,21 @@ def limits(directory):
     run([address, "localhost", ca, "/"], 3)
 
 
+def empty_and_large(directory):
+    # Zero is an actual finite allowance, not an alias for the default.
+    for options in (("--max-body", "0"), ("--max-output", "0"),
+                    ("--max-stdout-calls", "0"),
+                    ("--max-body", "0", "--max-output", "0", "--max-stdout-calls", "0")):
+        case(directory, fixed(b""), body=b"", options=options)
+    # The assertion compares every byte received through the real executable.
+    # Generous explicit limits separate this scale check from exact-cap tests.
+    body = binary(1_048_576)
+    case(directory, fixed(body), body=body, options=(
+        "--timeout", "5000", "--max-response", "4194304", "--max-body", "2097152",
+        "--max-output", "2097152", "--max-io", "131072",
+        "--max-tls", "65536", "--max-work", "268435456"))
+
+
 def stream(directory):
     global CASES
     expected = b"ab\0\xff\n\0x"
@@ -210,5 +225,6 @@ def stream(directory):
 with tempfile.TemporaryDirectory(prefix="laniusc_https_fetch_") as name:
     directory = Path(name)
     generate(directory)
-    {"matrix": matrix, "failures": failures, "limits": limits, "stream": stream}[MODE](directory)
+    {"matrix": matrix, "failures": failures, "limits": limits,
+     "empty-and-large": empty_and_large, "stream": stream}[MODE](directory)
 print(f"https-fetch-{MODE} cases={CASES}")

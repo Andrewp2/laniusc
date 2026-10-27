@@ -1,0 +1,231 @@
+// Owned named temporary files on x86_64 Linux. The parent namespace must be
+// exclusive/cooperative: dirfd anchoring does not secure hostile child names.
+// Manual owner; keep one active copy. No hidden cleanup or close retry.
+module std::temp_file;
+import alloc::vec;
+import core::io;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::entropy;
+import std::file;
+import std::file_ops;
+
+pub const NAME_BYTES:i32=37;
+pub const MAX_COMPONENT_BYTES:i32=255;
+pub const MAX_NAME_ATTEMPTS:u32=1024;
+pub const MAX_ENTROPY_CALLS:u64=1048576;
+pub struct Limits { name_attempts:u32, entropy_calls:u64 }
+pub enum State { Inactive, Open, ClosedNamed, Kept, CleanupPending, Released }
+pub enum Stage { Validate, Allocate, Duplicate, Metadata, Flags, Entropy, Create, CloseFile, Remove, CloseDirectory }
+pub enum Error { InvalidState, InvalidLimits, InvalidName, AllocationFailed, UnavailableMetadata, NotDirectory, UnsupportedDescriptor, NameLimit, Io(core::io::Error), Entropy(std::entropy::Failure) }
+pub enum Removal { NotOwned, Removed, AlreadyAbsent, Unconfirmed }
+pub struct Stats { name_attempts:u32, open_attempts:u32, collisions:u32, excluded:u32, entropy_calls:u64 }
+pub struct Cleanup {
+    file_close_attempted:bool, file_close_error:core::option::Option<core::io::Error>,
+    remove_attempted:bool, removal:Removal, remove_error:core::option::Option<core::io::Error>,
+    directory_close_attempted:bool, directory_close_error:core::option::Option<core::io::Error>,
+    retained:bool
+}
+pub struct Failure { stage:Stage, cause:Error, state:State, stats:Stats, cleanup:Cleanup }
+struct Diagnostic { stage:Stage, cause:Error }
+pub struct TempFile {
+    file_owner:std::file::File, directory_owner:std::file::File,
+    name_bytes:alloc::vec::Vec<u8>, owns_name:bool, kept:bool, current:State,
+    counters:Stats, cleanup_record:Cleanup, primary:core::option::Option<Diagnostic>
+}
+
+pub fn default_limits() -> Limits { return Limits { name_attempts:32,entropy_calls:128 }; }
+fn empty_stats() -> Stats { return Stats { name_attempts:0,open_attempts:0,collisions:0,excluded:0,entropy_calls:0 }; }
+fn empty_cleanup() -> Cleanup {
+    return Cleanup { file_close_attempted:false,file_close_error:core::option::None(),remove_attempted:false,removal:Removal::NotOwned,remove_error:core::option::None(),directory_close_attempted:false,directory_close_error:core::option::None(),retained:false };
+}
+pub fn empty() -> TempFile {
+    return TempFile { file_owner:std::file::File { handle:-1 },directory_owner:std::file::File { handle:-1 },name_bytes:alloc::vec::new(),owns_name:false,kept:false,current:State::Inactive,counters:empty_stats(),cleanup_record:empty_cleanup(),primary:core::option::None() };
+}
+fn valid(view:core::slice::View<u8>) -> bool { return view.start>=0 && view.length>=0 && view.start<=2147483647-view.length; }
+fn component(view:core::slice::View<u8>) -> bool {
+    if(!valid(view) || view.length==0 || view.length>MAX_COMPONENT_BYTES) { return false; }
+    let index:i32=0;
+    while(index<view.length) { let value:u8=view.values[view.start+index]; if(value==0 || value==47) { return false; } index+=1; }
+    if(view.length==1 && view.values[view.start]==46) { return false; }
+    if(view.length==2 && view.values[view.start]==46 && view.values[view.start+1]==46) { return false; }
+    return true;
+}
+fn host(error:core::io::Error,code:i32) -> bool { return match(error) { core::io::Error::Host(value)->value==code, _->false }; }
+fn digit(value:u8) -> u8 { if(value<10) { return 48+value; } return 87+value; }
+
+pub impl TempFile {
+    pub fn borrow(&self) -> &TempFile { return self; }
+    pub fn state(&self) -> State { return self.current; }
+    pub fn stats(&self) -> Stats { return self.counters; }
+    pub fn last_cleanup(&self) -> Cleanup { return self.cleanup_record; }
+    pub fn owns_temporary_name(&self) -> bool { return self.owns_name; }
+    // These borrow real owners. Do not close/take/replace either borrowed File.
+    // The directory borrow is for inspection/anchored operations respecting the
+    // same namespace authority. The sole AtomicFile publication layer may
+    // rename a closed owned source, then immediately call pure keep() before
+    // another syscall. Other borrowers must not change the temporary name.
+    pub fn file(&self) -> &std::file::File { return self.file_owner.borrow(); }
+    pub fn directory(&self) -> &std::file::File { return self.directory_owner.borrow(); }
+    // Empty until we own a created name. Keep retains this borrow until cleanup.
+    pub fn name(&self) -> core::slice::View<u8> {
+        if(self.owns_name || self.kept) { return self.name_bytes.as_view(); }
+        return core::slice::View { values:self.name_bytes.as_slice(),start:0,length:0 };
+    }
+    pub fn last_failure(&self) -> core::option::Option<Failure> {
+        if(core::option::is_none(self.primary)) { return core::option::None(); }
+        let cause:Diagnostic=core::option::unwrap(self.primary);
+        let receipt:Cleanup=self.cleanup_record; receipt.retained=self.has_resources();
+        return core::option::Some(Failure { stage:cause.stage,cause:cause.cause,state:self.current,stats:self.counters,cleanup:receipt });
+    }
+    fn remember(&self,stage:Stage,cause:Error) {
+        if(core::option::is_none(self.primary)) { self.primary=core::option::Some(Diagnostic { stage:stage,cause:cause }); }
+    }
+    fn failed(&self,stage:Stage,cause:Error) -> Failure {
+        self.remember(stage,cause); return core::option::unwrap(self.last_failure());
+    }
+    fn has_resources(&self) -> bool { return self.file_owner.is_open() || self.directory_owner.is_open() || self.name_bytes.capacity()!=0 || self.owns_name; }
+    fn can_create(&self) -> bool { return match(self.current) { State::Inactive->true,State::Released->true,_ ->false }; }
+
+    pub fn create_in(&self,parent:&std::file::File,limits:Limits) -> core::result::Result<bool,Failure> {
+        return self.create(parent,core::option::None(),limits);
+    }
+    // Excluded component is validated/copied before effects. Equality consumes
+    // one name attempt and fresh entropy, but makes no exclusive-open attempt.
+    pub fn create_in_excluding(&self,parent:&std::file::File,excluded:core::path::Path,limits:Limits) -> core::result::Result<bool,Failure> {
+        return self.create(parent,core::option::Some(excluded),limits);
+    }
+    fn create(&self,parent:&std::file::File,excluded:core::option::Option<core::path::Path>,limits:Limits) -> core::result::Result<bool,Failure> {
+        if(!self.can_create() || self.has_resources()) {
+            let receipt:Cleanup=self.cleanup_record; receipt.retained=self.has_resources();
+            return core::result::Err(Failure { stage:Stage::Validate,cause:Error::InvalidState,state:self.current,stats:self.counters,cleanup:receipt });
+        }
+        self.counters=empty_stats(); self.cleanup_record=empty_cleanup(); self.primary=core::option::None(); self.current=State::Inactive;
+        if(limits.name_attempts==0 || limits.name_attempts>MAX_NAME_ATTEMPTS || limits.entropy_calls==0 || limits.entropy_calls>MAX_ENTROPY_CALLS) {
+            return core::result::Err(self.failed(Stage::Validate,Error::InvalidLimits));
+        }
+        let reserved_storage:[u8;255]=[0;255]; let reserved:[u8]=reserved_storage; let reserved_length:i32=0;
+        if(core::option::is_some(excluded)) {
+            let name:core::slice::View<u8> =core::option::unwrap(excluded).as_bytes();
+            if(!component(name)) { return core::result::Err(self.failed(Stage::Validate,Error::InvalidName)); }
+            reserved_length=name.length; let index:i32=0;
+            while(index<reserved_length) { reserved[index]=name.values[name.start+index]; index+=1; }
+        }
+        let made:core::result::Result<alloc::vec::Vec<u8>,alloc::vec::Error> =alloc::vec::with_capacity(NAME_BYTES);
+        if(core::result::is_err(made)) { return core::result::Err(self.failed(Stage::Allocate,Error::AllocationFailed)); }
+        self.name_bytes=core::result::unwrap(made); self.current=State::CleanupPending;
+        if(core::result::is_err(self.name_bytes.try_resize(NAME_BYTES,0))) { return core::result::Err(self.failed(Stage::Allocate,Error::AllocationFailed)); }
+        let copied=std::file_ops::duplicate(parent,0,true);
+        if(core::result::is_err(copied)) { return core::result::Err(self.failed(Stage::Duplicate,Error::Io(core::result::unwrap_err(copied)))); }
+        self.directory_owner=core::result::unwrap(copied);
+        let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
+        let queried=std::file_ops::metadata_file_into(self.directory_owner.borrow(),metadata.borrow());
+        if(core::result::is_err(queried)) { return core::result::Err(self.failed(Stage::Metadata,Error::Io(core::result::unwrap_err(queried)))); }
+        if(!metadata.has(1)) { return core::result::Err(self.failed(Stage::Metadata,Error::UnavailableMetadata)); }
+        let directory:bool=match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Directory->true,_ ->false };
+        if(!directory) { return core::result::Err(self.failed(Stage::Metadata,Error::NotDirectory)); }
+        let flags=std::file_ops::status_flags(self.directory_owner.borrow());
+        if(core::result::is_err(flags)) { return core::result::Err(self.failed(Stage::Flags,Error::Io(core::result::unwrap_err(flags)))); }
+        if((core::result::unwrap(flags)&2097152)!=0) { return core::result::Err(self.failed(Stage::Flags,Error::UnsupportedDescriptor)); }
+        let calls:std::entropy::Budget=std::entropy::budget(limits.entropy_calls);
+        let random:[u8;16]=[0;16]; let name:[u8]=self.name_bytes.as_slice();
+        let options:std::file_ops::OpenOptions=std::file_ops::options();
+        options.access=std::file_ops::Access::ReadWrite; options.create=true; options.exclusive=true; options.no_follow=true; options.mode=384;
+        while(self.counters.name_attempts<limits.name_attempts) {
+            self.counters.name_attempts+=1;
+            let filled=std::entropy::fill_bounded(calls.borrow(),random,0,16);
+            self.counters.entropy_calls=limits.entropy_calls-calls.remaining();
+            if(core::result::is_err(filled)) { return core::result::Err(self.failed(Stage::Entropy,Error::Entropy(core::result::unwrap_err(filled)))); }
+            name[0]=46; name[1]=116; name[2]=109; name[3]=112; name[4]=45;
+            let index:i32=0;
+            while(index<16) { name[5+index*2]=digit(random[index]>>4); name[6+index*2]=digit(random[index]&15); index+=1; }
+            let equal:bool=reserved_length==NAME_BYTES; index=0;
+            while(equal && index<NAME_BYTES) { if(name[index]!=reserved[index]) { equal=false; } index+=1; }
+            if(equal) { self.counters.excluded+=1; }
+            else {
+                self.counters.open_attempts+=1;
+                let path:core::path::Path=core::result::unwrap(core::path::from_view(self.name_bytes.as_view()));
+                let opened=std::file_ops::open_at(core::option::unwrap(self.directory_owner.raw_handle()),path,options);
+                if(core::result::is_ok(opened)) {
+                    self.file_owner=core::result::unwrap(opened); self.owns_name=true; self.kept=false; self.current=State::Open;
+                    return core::result::Ok(true);
+                }
+                let error:core::io::Error=core::result::unwrap_err(opened);
+                if(!host(error,17)) { return core::result::Err(self.failed(Stage::Create,Error::Io(error))); }
+                self.counters.collisions+=1;
+            }
+        }
+        return core::result::Err(self.failed(Stage::Create,Error::NameLimit));
+    }
+
+    // Retire only the file descriptor; keep the name and directory anchor.
+    // Useful for checked sync/close before a later explicit publication.
+    pub fn close_file(&self) -> core::result::Result<bool,Failure> {
+        if(!self.file_owner.is_open()) { return core::result::Ok(false); }
+        let receipt:Cleanup=empty_cleanup(); receipt.file_close_attempted=true;
+        let closed=self.file_owner.close();
+        if(self.owns_name) { self.current=State::ClosedNamed; }
+        if(core::result::is_err(closed)) { let error:core::io::Error=core::result::unwrap_err(closed); receipt.file_close_error=core::option::Some(error); self.remember(Stage::CloseFile,Error::Io(error)); }
+        receipt.retained=self.has_resources(); self.cleanup_record=receipt;
+        if(core::result::is_err(closed)) { return core::result::Err(core::option::unwrap(self.last_failure())); }
+        return core::result::Ok(true);
+    }
+
+    // Same owner, no allocation or I/O. Later cleanup closes owners/backing but
+    // leaves this name. On a failed unlink it also transfers that recovery duty
+    // to the caller without dropping the anchor or borrowed name information.
+    // AtomicFile also uses this pure disarm immediately after successful rename;
+    // its retained name is then the old source label, not a claim it still exists.
+    pub fn keep(&self) -> core::result::Result<bool,Error> {
+        if(self.kept) { return core::result::Ok(false); }
+        if(!self.owns_name) { return core::result::Err(Error::InvalidState); }
+        self.owns_name=false; self.kept=true; self.current=State::Kept; return core::result::Ok(true);
+    }
+
+    pub fn cleanup(&self) -> core::result::Result<Cleanup,Failure> {
+        let receipt:Cleanup=empty_cleanup();
+        if(!self.has_resources()) { self.current=State::Released; self.cleanup_record=receipt; return core::result::Ok(receipt); }
+        let failed:bool=false;
+        if(self.file_owner.is_open()) {
+            receipt.file_close_attempted=true; let closed=self.file_owner.close();
+            if(core::result::is_err(closed)) {
+                let error:core::io::Error=core::result::unwrap_err(closed); receipt.file_close_error=core::option::Some(error); failed=true;
+                self.remember(Stage::CloseFile,Error::Io(error));
+            }
+        }
+        if(self.owns_name) {
+            receipt.removal=Removal::Unconfirmed;
+            let raw:core::option::Option<i32> =self.directory_owner.raw_handle();
+            if(core::option::is_none(raw)) {
+                receipt.remove_error=core::option::Some(core::io::Error::Host(9)); failed=true; self.remember(Stage::Remove,Error::Io(core::io::Error::Host(9)));
+            } else {
+                receipt.remove_attempted=true;
+                let path:core::path::Path=core::result::unwrap(core::path::from_view(self.name_bytes.as_view()));
+                let removed=std::file_ops::remove_file_at(core::option::unwrap(raw),path);
+                if(core::result::is_ok(removed)) { self.owns_name=false; receipt.removal=Removal::Removed; }
+                else {
+                    let error:core::io::Error=core::result::unwrap_err(removed);
+                    if(host(error,2)) { self.owns_name=false; receipt.removal=Removal::AlreadyAbsent; }
+                    else { receipt.remove_error=core::option::Some(error); failed=true; self.remember(Stage::Remove,Error::Io(error)); }
+                }
+            }
+        }
+        if(self.owns_name) { self.current=State::CleanupPending; }
+        else {
+            if(self.directory_owner.is_open()) {
+                receipt.directory_close_attempted=true; let closed=self.directory_owner.close();
+                if(core::result::is_err(closed)) {
+                    let error:core::io::Error=core::result::unwrap_err(closed); receipt.directory_close_error=core::option::Some(error); failed=true;
+                    self.remember(Stage::CloseDirectory,Error::Io(error));
+                }
+            }
+            self.name_bytes.destroy(); self.kept=false; self.current=State::Released;
+        }
+        receipt.retained=self.has_resources(); self.cleanup_record=receipt;
+        if(failed) { return core::result::Err(core::option::unwrap(self.last_failure())); }
+        return core::result::Ok(receipt);
+    }
+    pub fn destroy(&self) -> core::result::Result<Cleanup,Failure> { return self.cleanup(); }
+}

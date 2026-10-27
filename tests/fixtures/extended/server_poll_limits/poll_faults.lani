@@ -1,0 +1,88 @@
+// Additive real-Exchange controls; strace injects only the marked target poll.
+module app::main;
+import core::clone;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_server;
+import ext::http_server_poll;
+import ext::server_poll;
+import std::args;
+import std::clock;
+import std::poll;
+import std::socket;
+import std::stream;
+
+struct ApplicationError { code: i32 }
+pub impl core::clone::Destroy<ApplicationError> for ApplicationError { pub fn destroy_value(owned: ApplicationError) { assert(false); } }
+struct Handler { rejected: i32 }
+impl Handler { fn borrow(&self) -> &Handler { return self; } }
+pub impl ext::server_poll::Handler<ApplicationError> for Handler {
+    pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server::RequestHead, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ApplicationError> { assert(false); return core::result::Ok(ext::server_poll::Decision::Abort); }
+    pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ApplicationError> { assert(false); return core::result::Ok(ext::server_poll::Decision::Abort); }
+    pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ApplicationError> { assert(id == 0); self.rejected += 1; return core::result::Ok(ext::server_poll::Decision::Abort); }
+}
+fn mark(phase: i32, mode: i32, fd: i32, polls: u64) {
+    let marker: [i32;5] = [0x53504654,phase,mode,fd,polls as i32]; let wire: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(marker),20); let sink = std::stream::stderr(); core::io::write_all(sink.borrow(),wire,0,20).unwrap();
+}
+fn poll_eio(error: ext::server_poll::Cause) -> bool { return match(error) { ext::server_poll::Cause::Poll(value) -> match(value) { std::poll::Error::Io(cause) -> match(cause) { core::io::Error::Host(code) -> code == 5, _ -> false }, _ -> false }, _ -> false }; }
+fn waiting(server: &ext::server_poll::Server<ext::http_server_poll::Driver,ext::http_server::Failure,ext::http_server_poll::Factory,Handler,ApplicationError>) -> ext::server_poll::PollInterest {
+    let turns: i32 = 0;
+    while (turns < 16) {
+        turns += 1; server.step().unwrap(); assert(server.stats().active == 1);
+        let prepared = server.prepare_wait().unwrap();
+        if (prepared.requests.length > 0 && !prepared.immediate) { assert(prepared.requests.length == 2 && prepared.requests.get(0).unwrap().handle == -1 && prepared.requests.get(1).unwrap().handle >= 0); return prepared; }
+    }
+    assert(false); return server.prepare_wait().unwrap();
+}
+fn drain(server: &ext::server_poll::Server<ext::http_server_poll::Driver,ext::http_server::Failure,ext::http_server_poll::Factory,Handler,ApplicationError>) {
+    let turns: i32 = 0; while (!server.is_complete()) { assert(turns < 16); turns += 1; server.step().unwrap(); }
+}
+fn main() -> i32 {
+    let args = std::args::snapshot(1,1,1).unwrap(); assert(args.len() == 1); let mode: i32 = (args.get(0).unwrap().get(0).unwrap() as i32)-48; assert(mode >= 0 && mode <= 2);
+    let until = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_secs(20)).unwrap();
+    let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(2).unwrap(); let listener_fd: i32 = listener.raw_handle().unwrap();
+    let options = ext::http_server::default_options(); options.request_bytes = 1024; options.request.head_bytes = 256; options.request.body_bytes = 0; options.request.trailers = 0; options.work = 65536; options.io_calls = 256;
+    let factory = ext::http_server_poll::factory(options); let handler: Handler = Handler { rejected:0 };
+    let limits = ext::server_poll::default_limits(); limits.max_accepted = 2; limits.concurrency = 1;
+    let server = ext::http_server_poll::new<Handler,ApplicationError>(listener.borrow(),factory.borrow(),handler.borrow(),limits,until).unwrap();
+    let client = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); client.connect_until(listener.local_addr().unwrap(),until).unwrap(); server.step().unwrap(); assert(server.stop_accepting() && !server.is_complete());
+    let first = waiting(server.borrow()); let fd: i32 = first.requests.get(1).unwrap().handle; assert(fd != listener_fd && server.stats().polls == 0);
+    let prefix: [u8;1] = [71]; assert(client.send(core::slice::view<u8>(prefix,1).unwrap()).unwrap() == 1);
+    mark(10,mode,fd,server.stats().polls); assert(server.poll_once().unwrap()); mark(11,mode,fd,server.stats().polls); assert(server.stats().polls == 1);
+    // Consume the warm readable result, parse its single partial-head byte,
+    // then reach real EAGAIN. PollSet still retains that prior readable result.
+    let prior = waiting(server.borrow()); assert(prior.requests.get(1).unwrap().handle == fd);
+    let pending: core::option::Option<ext::server_poll::ConnectionInfo> = match(server.get(0).unwrap()) { ext::server_poll::Outcome::Pending(info) -> core::option::Some(info), _ -> core::option::None() };
+    assert(pending.unwrap().stats.received == 1 && pending.unwrap().stats.retained == 1 && !pending.unwrap().stats.peer_eof);
+    client.shutdown(std::socket::Shutdown::Write).unwrap();
+    let before = server.stats(); mark(20,mode,fd,before.polls); let polled = server.poll_once(); mark(21,mode,fd,server.stats().polls);
+    assert(server.stats().polls == before.polls+1 && server.stats().waits == before.waits+1);
+    if (mode == 2) {
+        assert(polled.is_err() && poll_eio(polled.unwrap_err()) && poll_eio(server.last_failure().unwrap()) && server.is_complete() && server.stats().active == 0);
+        let calls: u64 = server.stats().polls; assert(poll_eio(server.step().unwrap_err()) && poll_eio(server.poll_once().unwrap_err()) && server.stats().polls == calls && handler.rejected == 0);
+    } else {
+        assert(polled.is_ok() && polled.unwrap() && server.last_failure().is_none() && server.stats().active == 1);
+        if (mode == 1) {
+            let io: u64 = server.stats().io_calls; mark(30,mode,fd,server.stats().polls); assert(!server.step().unwrap()); mark(31,mode,fd,server.stats().polls); assert(server.stats().io_calls == io && server.stats().active == 1);
+            let fresh = server.prepare_wait().unwrap(); assert(fresh.epoch != prior.epoch && fresh.requests.length == 2 && fresh.requests.get(1).unwrap().handle == fd && !fresh.immediate);
+            let zero: [std::poll::Readiness;2] = [std::poll::Readiness { bits:0 },std::poll::Readiness { bits:0 }];
+            assert(match(server.resume(prior.epoch,core::slice::view<std::poll::Readiness>(zero,2).unwrap()).unwrap_err()) { ext::server_poll::Cause::InvalidPublication -> true, _ -> false });
+            server.resume(fresh.epoch,core::slice::view<std::poll::Readiness>(zero,2).unwrap()).unwrap(); let after: u64 = server.stats().io_calls; assert(!server.step().unwrap() && server.stats().io_calls == after);
+            mark(40,mode,fd,server.stats().polls); assert(server.poll_once().unwrap()); mark(41,mode,fd,server.stats().polls); assert(server.stats().polls == before.polls+2);
+        }
+        drain(server.borrow()); assert(handler.rejected == 1 && server.last_failure().is_none());
+    }
+    let report = server.take_report().unwrap(); assert(report.len() == 1 && report.stats.accepted == 1 && report.stats.aborted == 1 && report.stats.failed == 0 && report.stats.active == 0 && report.stats.reserved_work == 0 && report.stats.reserved_bytes == 0);
+    let selected: core::option::Option<ext::server_poll::Abort<ext::http_server::Failure>> = match(report.get(0).unwrap()) { ext::server_poll::Outcome::Aborted(value) -> core::option::Some(value), _ -> core::option::None() };
+    let item = selected.unwrap(); assert(item.info.id == 0 && item.info.stats.received == 1 && item.info.stats.retained == 1 && item.info.stats.closed && item.info.stats.cleanup_calls == 1 && item.info.stats.cleanup_errors == 0 && item.cleanup.is_none());
+    if (mode == 2) { assert(item.info.rejection.is_none() && !item.info.stats.peer_eof); } else { assert(item.info.rejection.is_some() && item.info.stats.peer_eof); }
+    let physical: i32 = report.stats.polls as i32; report.destroy(); report.destroy(); assert(!server.destroy());
+    let eof: [u8;1] = [0]; assert(client.receive_until(core::slice::view<u8>(eof,1).unwrap(),until).unwrap() == 0); client.close().unwrap(); assert(listener.raw_handle().unwrap() == listener_fd && listener.is_nonblocking().unwrap()); listener.close().unwrap(); args.destroy();
+    let marker: [i32;4] = [0x53504654,mode,physical,1]; let wire: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(marker),16); let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),wire,0,16).unwrap();
+    let source = std::stream::stdin(); let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 1); return 0;
+}

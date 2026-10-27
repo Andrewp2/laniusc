@@ -1,0 +1,398 @@
+// Test-only ownership evidence around actual replacement sink facades.
+module app::main;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::vec;
+import core::cmp;
+import core::hash;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+import std::linux;
+
+fn mark(value:u8) { let bytes:[i32;1]=[value as i32]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(bytes),1)==1); }
+fn read(pointer:ptr,count:i32) { let at:i32=0; while(at<count) { let found:i32=std::io::read_stdin(pointer+(at as usize),(count-at) as usize); assert(found>0 && found<=count-at); at+=found; } }
+fn word(value:u64) { let bytes:[i32;2]=[(value&4294967295) as i32,(value>>32) as i32]; let at:i32=0; let pointer:ptr=core::mem::i32_array_data_ptr(bytes); while(at<8) { let found:i32=std::io::write_stdout(pointer+(at as usize),(8-at) as usize); assert(found>0 && found<=8-at); at+=found; } }
+fn ack() { let bytes:[i32;1]=[0]; read(core::mem::i32_array_data_ptr(bytes),1); assert(bytes[0]==65); }
+pub enum BuildError { Allocation }
+struct Key { id:i32, representative:i32, text:alloc::string::String }
+pub impl core::hash::Hash<Key> for Key { pub fn hash(value:Key) -> u32 { return 1; } }
+pub impl core::cmp::Eq<Key> for Key {
+    pub fn eq(left:Key,right:Key) -> bool { return left.id==right.id; }
+    pub fn ne(left:Key,right:Key) -> bool { return left.id!=right.id; }
+}
+pub impl core::cmp::Ord<Key> for Key {
+    pub fn lt(left:Key,right:Key) -> bool { return left.id<right.id; }
+    pub fn le(left:Key,right:Key) -> bool { return left.id<=right.id; }
+    pub fn gt(left:Key,right:Key) -> bool { return left.id>right.id; }
+    pub fn ge(left:Key,right:Key) -> bool { return left.id>=right.id; }
+}
+fn text(first:u8) -> core::result::Result<alloc::string::String,BuildError> {
+    let bytes:[u8;8]=[first,0,195,169,240,159,153,130];
+    let made:core::result::Result<alloc::string::String,alloc::string::Error> =alloc::string::from_utf8(bytes,8);
+    if(made.is_err()) { return core::result::Err(BuildError::Allocation); } return core::result::Ok(made.unwrap());
+}
+fn key(id:i32,representative:i32) -> core::result::Result<Key,BuildError> {
+    let made:core::result::Result<alloc::string::String,BuildError> =text(representative as u8);
+    if(made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    return core::result::Ok(Key { id:id,representative:representative,text:made.unwrap() });
+}
+fn check_text(value:alloc::string::String,first:u8) {
+    let bytes:[u8;8]=[first,0,195,169,240,159,153,130]; assert(value.byte_len()==8 && value.capacity()==8);
+    let index:i32=0; while(index<8) { assert(value.byte_at(index).unwrap()==bytes[index]); index+=1; }
+}
+pub trait Payload<T> {
+    pub fn make(id:i32,representative:i32) -> core::result::Result<T,BuildError>;
+    pub fn identity(&self) -> i32;
+    pub fn stamp(&self) -> i32;
+    pub fn key_bytes(&self) -> i32;
+    pub fn value_bytes(&self) -> i32;
+    pub fn check(&self);
+    pub fn release(&self);
+}
+pub impl Payload<Key> for Key {
+    pub fn make(id:i32,representative:i32) -> core::result::Result<Key,BuildError> { return key(id,representative); }
+    pub fn identity(&self) -> i32 { return self.id; }
+    pub fn stamp(&self) -> i32 { return self.representative; }
+    pub fn key_bytes(&self) -> i32 { return self.text.capacity(); }
+    pub fn value_bytes(&self) -> i32 { return 0; }
+    pub fn check(&self) { check_text(self.text,self.representative as u8); }
+    pub fn release(&self) { mark(70); self.text.destroy(); }
+}
+fn emit_item<T>(item:T) where T:Payload<T> {
+    item.check(); word(item.identity() as u64); word(item.stamp() as u64);
+    word(item.key_bytes() as u64); word(item.value_bytes() as u64);
+}
+fn emit_cursor<I,T>(cursor:&I) where I:core::iter::Iterator<T>,T:Payload<T> {
+    while(true) { let found:core::option::Option<T> =cursor.next(); if(found.is_none()) { break; } emit_item(found.unwrap()); }
+}
+fn release_cursor<I,T>(cursor:&I) where I:core::iter::Iterator<T>,T:Payload<T> {
+    while(true) { let found:core::option::Option<T> =cursor.next(); if(found.is_none()) { break; } let item:T=found.unwrap(); item.release(); }
+}
+pub trait StorageError { pub fn allocation(&self) -> bool; }
+pub impl StorageError for alloc::hash_map::Error {
+    pub fn allocation(&self) -> bool { return match(self) { alloc::hash_map::Error::InvalidCapacity->false,alloc::hash_map::Error::CapacityOverflow->false,alloc::hash_map::Error::AllocationFailed->true }; }
+}
+pub impl StorageError for alloc::tree_map::Error {
+    pub fn allocation(&self) -> bool { return match(self) { alloc::tree_map::Error::InvalidCapacity->false,alloc::tree_map::Error::CapacityOverflow->false,alloc::tree_map::Error::AllocationFailed->true,alloc::tree_map::Error::InvalidOrder->false,alloc::tree_map::Error::InvalidRange->false,alloc::tree_map::Error::NotEmpty->false }; }
+}
+// Only observation, reserve and cleanup; no replacement algorithm here.
+pub trait Store<T,E> {
+    pub fn reserve(&self,capacity:i32) -> core::result::Result<i32,E>;
+    pub fn count(&self) -> i32;
+    pub fn reserved(&self) -> i32;
+    pub fn emit(&self);
+    pub fn cleanup(&self);
+}
+
+pub impl Payload<alloc::hash_map::Entry<Key,alloc::string::String>> for alloc::hash_map::Entry<Key,alloc::string::String> {
+    pub fn make(id:i32,representative:i32) -> core::result::Result<alloc::hash_map::Entry<Key,alloc::string::String>,BuildError> {
+        let made_key:core::result::Result<Key,BuildError> =key(id,representative);
+        if(made_key.is_err()) { return core::result::Err(made_key.unwrap_err()); } let owned_key:Key=made_key.unwrap();
+        let made_value:core::result::Result<alloc::string::String,BuildError> =text((representative+32) as u8);
+        if(made_value.is_err()) { mark(70); owned_key.text.destroy(); return core::result::Err(made_value.unwrap_err()); }
+        return core::result::Ok(alloc::hash_map::Entry { key:owned_key,value:made_value.unwrap() });
+    }
+    pub fn identity(&self) -> i32 { return self.key.id; }
+    pub fn stamp(&self) -> i32 { return self.key.representative; }
+    pub fn key_bytes(&self) -> i32 { return self.key.text.capacity(); }
+    pub fn value_bytes(&self) -> i32 { return self.value.capacity(); }
+    pub fn check(&self) { check_text(self.key.text,self.key.representative as u8); check_text(self.value,(self.key.representative+32) as u8); }
+    pub fn release(&self) { mark(70); self.key.text.destroy(); self.value.destroy(); }
+}
+
+pub impl Payload<alloc::tree_map::Entry<Key,alloc::string::String>> for alloc::tree_map::Entry<Key,alloc::string::String> {
+    pub fn make(id:i32,representative:i32) -> core::result::Result<alloc::tree_map::Entry<Key,alloc::string::String>,BuildError> {
+        let made_key:core::result::Result<Key,BuildError> =key(id,representative);
+        if(made_key.is_err()) { return core::result::Err(made_key.unwrap_err()); } let owned_key:Key=made_key.unwrap();
+        let made_value:core::result::Result<alloc::string::String,BuildError> =text((representative+32) as u8);
+        if(made_value.is_err()) { mark(70); owned_key.text.destroy(); return core::result::Err(made_value.unwrap_err()); }
+        return core::result::Ok(alloc::tree_map::Entry { key:owned_key,value:made_value.unwrap() });
+    }
+    pub fn identity(&self) -> i32 { return self.key.id; }
+    pub fn stamp(&self) -> i32 { return self.key.representative; }
+    pub fn key_bytes(&self) -> i32 { return self.key.text.capacity(); }
+    pub fn value_bytes(&self) -> i32 { return self.value.capacity(); }
+    pub fn check(&self) { check_text(self.key.text,self.key.representative as u8); check_text(self.value,(self.key.representative+32) as u8); }
+    pub fn release(&self) { mark(70); self.key.text.destroy(); self.value.destroy(); }
+}
+
+pub impl Store<alloc::hash_map::Entry<Key,alloc::string::String>,alloc::hash_map::Error> for alloc::hash_map::HashMap<Key,alloc::string::String> {
+    pub fn reserve(&self,capacity:i32) -> core::result::Result<i32,alloc::hash_map::Error> { return self.try_reserve(capacity); }
+    pub fn count(&self) -> i32 { return self.len(); }
+    pub fn reserved(&self) -> i32 { return self.capacity(); }
+    pub fn emit(&self) {
+        let cursor:alloc::hash_map::Iter<Key,alloc::string::String> =self.iter();
+        emit_cursor<alloc::hash_map::Iter<Key,alloc::string::String>,alloc::hash_map::Entry<Key,alloc::string::String>>(cursor.borrow());
+    }
+    pub fn cleanup(&self) {
+        let cursor:alloc::hash_map::IntoIter<Key,alloc::string::String> =self.take_iter();
+        release_cursor<alloc::hash_map::IntoIter<Key,alloc::string::String>,alloc::hash_map::Entry<Key,alloc::string::String>>(cursor.borrow());
+        assert(cursor.try_finish().is_none()); self.destroy();
+    }
+}
+
+pub impl Store<alloc::tree_map::Entry<Key,alloc::string::String>,alloc::tree_map::Error> for alloc::tree_map::TreeMap<Key,alloc::string::String> {
+    pub fn reserve(&self,capacity:i32) -> core::result::Result<i32,alloc::tree_map::Error> { return self.try_reserve(capacity); }
+    pub fn count(&self) -> i32 { return self.len(); }
+    pub fn reserved(&self) -> i32 { return self.capacity(); }
+    pub fn emit(&self) {
+        let cursor:alloc::tree_map::Cursor<Key,alloc::string::String> =self.iter();
+        emit_cursor<alloc::tree_map::Cursor<Key,alloc::string::String>,alloc::tree_map::Entry<Key,alloc::string::String>>(cursor.borrow());
+    }
+    pub fn cleanup(&self) {
+        let cursor:alloc::tree_map::IntoIter<Key,alloc::string::String> =self.take_iter();
+        release_cursor<alloc::tree_map::IntoIter<Key,alloc::string::String>,alloc::tree_map::Entry<Key,alloc::string::String>>(cursor.borrow());
+        assert(cursor.try_finish().is_none()); self.destroy();
+    }
+}
+
+pub impl Store<Key,alloc::hash_map::Error> for alloc::hash_set::HashSet<Key> {
+    pub fn reserve(&self,capacity:i32) -> core::result::Result<i32,alloc::hash_map::Error> { return self.try_reserve(capacity); }
+    pub fn count(&self) -> i32 { return self.len(); }
+    pub fn reserved(&self) -> i32 { return self.capacity(); }
+    pub fn emit(&self) {
+        let cursor:alloc::hash_set::Iter<Key> =self.iter();
+        emit_cursor<alloc::hash_set::Iter<Key>,Key>(cursor.borrow());
+    }
+    pub fn cleanup(&self) {
+        let cursor:alloc::hash_set::IntoIter<Key> =self.take_iter();
+        release_cursor<alloc::hash_set::IntoIter<Key>,Key>(cursor.borrow());
+        assert(cursor.try_finish().is_none()); self.destroy();
+    }
+}
+
+pub impl Store<Key,alloc::tree_map::Error> for alloc::tree_set::TreeSet<Key> {
+    pub fn reserve(&self,capacity:i32) -> core::result::Result<i32,alloc::tree_map::Error> { return self.try_reserve(capacity); }
+    pub fn count(&self) -> i32 { return self.len(); }
+    pub fn reserved(&self) -> i32 { return self.capacity(); }
+    pub fn emit(&self) {
+        let cursor:alloc::tree_set::Cursor<Key> =self.iter();
+        emit_cursor<alloc::tree_set::Cursor<Key>,Key>(cursor.borrow());
+    }
+    pub fn cleanup(&self) {
+        let cursor:alloc::tree_set::IntoIter<Key> =self.take_iter();
+        release_cursor<alloc::tree_set::IntoIter<Key>,Key>(cursor.borrow());
+        assert(cursor.try_finish().is_none()); self.destroy();
+    }
+}
+
+struct Audit { source:i32,replacement:i32,delivery:i32 }
+impl Audit { fn borrow(&self) -> &Audit { return self; } }
+struct Input<T> { values:alloc::vec::IntoIter<T>,audit:&Audit }
+impl<T> Input<T> { fn borrow(&self) -> &Input<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Input<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        mark(83); let audit:&Audit=self.audit; audit.source+=1;
+        let found:core::option::Option<T> =self.values.next(); return found;
+    }
+}
+struct Forward<R,T,E> { actual:&R,audit:&Audit }
+impl<R,T,E> Forward<R,T,E> { fn borrow(&self) -> &Forward<R,T,E> { return self; } }
+pub impl<R,T,E> core::iter::TryReplaceSink<T,E> for Forward<R,T,E> where R:core::iter::TryReplaceSink<T,E> {
+    pub fn try_replace_item(&self,item:T) -> core::result::Result<core::option::Option<T>,E> {
+        mark(82); let audit:&Audit=self.audit; audit.replacement+=1; let actual:&R=self.actual;
+        let result:core::result::Result<core::option::Option<T>,E> =actual.try_replace_item(item);
+        mark(114); return result;
+    }
+}
+struct Delivery { kind:i32,text:alloc::string::String }
+impl Delivery {
+    fn destroy(&self) { if(self.text.capacity()>0) { mark(69); } self.text.destroy(); self.kind=0; }
+    fn check(&self) {
+        if(self.text.capacity()==0) { assert(self.text.byte_len()==0); return; }
+        let bytes:[u8;5]=[69,0,195,169,82]; assert(self.kind==1 && self.text.byte_len()==5 && self.text.capacity()==5);
+        let at:i32=0; while(at<5) { assert(self.text.byte_at(at).unwrap()==bytes[at]); at+=1; }
+    }
+}
+fn no_error() -> Delivery { return Delivery { kind:0,text:alloc::string::new() }; }
+struct History<T> { values:alloc::vec::Vec<T>,limit:i32,audit:&Audit }
+impl<T> History<T> { fn borrow(&self) -> &History<T> { return self; } }
+pub impl<T> core::iter::TrySink<T,Delivery> for History<T> {
+    pub fn try_accept(&self,item:T) -> core::option::Option<Delivery> {
+        mark(68); let audit:&Audit=self.audit; audit.delivery+=1;
+        if(self.values.len()>=self.limit) {
+            let bytes:[u8;5]=[69,0,195,169,82];
+            let made:core::result::Result<alloc::string::String,alloc::string::Error> =alloc::string::from_utf8(bytes,5);
+            if(made.is_err()) { mark(100); return core::option::Some(Delivery { kind:3,text:alloc::string::new() }); }
+            mark(100); return core::option::Some(Delivery { kind:1,text:made.unwrap() });
+        }
+        let added:core::result::Result<i32,alloc::vec::Error> =self.values.try_push(item);
+        mark(100); if(added.is_err()) { return core::option::Some(Delivery { kind:2,text:alloc::string::new() }); }
+        return core::option::None();
+    }
+}
+struct State<T> {
+    status:i32,tag:i32,pending_kind:i32,pending:core::option::Option<T>,held:core::option::Option<T>,
+    committed:u64,replaced:u64,error:Delivery,secondary:i32,hold_wanted:i32
+}
+impl<T> State<T> { fn borrow(&self) -> &State<T> { return self; } }
+fn captured<T,E>(result:core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<T,E,Delivery>>,state:&State<T>,primary:bool) -> bool
+    where T:Payload<T>,E:StorageError {
+    if(result.is_ok()) {
+        let done:core::iter::ReplacementTransfer=result.unwrap(); assert(done.exhausted);
+        state.committed+=done.progress.committed; state.replaced+=done.progress.replaced; return true;
+    }
+    let failure:core::iter::ReplacementFailure<T,E,Delivery> =result.unwrap_err();
+    let tag:i32=match(failure) { Rejected(progress,incoming,error)->1,Undelivered(progress,old,error)->2 };
+    let progress:core::iter::ReplacementProgress=match(failure) { Rejected(progress,incoming,error)->progress,Undelivered(progress,old,error)->progress };
+    let item:T=match(failure) { Rejected(progress,incoming,error)->incoming,Undelivered(progress,old,error)->old };
+    let rejected:core::option::Option<E> =match(failure) { Rejected(progress,incoming,error)->core::option::Some(error),Undelivered(progress,old,error)->core::option::None() };
+    let undelivered:core::option::Option<Delivery> =match(failure) { Rejected(progress,incoming,error)->core::option::None(),Undelivered(progress,old,error)->core::option::Some(error) };
+    let cause:Delivery=no_error();
+    if(tag==1) { let error:E=rejected.unwrap(); assert(error.allocation()); cause.kind=10; }
+    else { cause=undelivered.unwrap(); cause.check(); assert(cause.kind>=1 && cause.kind<=3); }
+    assert(state.pending.is_none()); item.check(); state.pending=core::option::Some(item); state.pending_kind=tag;
+    state.committed+=progress.committed; state.replaced+=progress.replaced;
+    let allocation_failed:bool=cause.kind!=1;
+    if(primary) { state.tag=tag; state.error=cause; if(tag==2) { state.hold_wanted=item.stamp(); } }
+    else { state.secondary=cause.kind; cause.destroy(); }
+    if(allocation_failed) { state.status=4; } return false;
+}
+fn input_identity(profile:i32,index:i32) -> i32 {
+    if(profile!=0) { return 1; } let ids:[i32;7]=[1,2,1,3,1,4,5]; return ids[index];
+}
+fn release_input<T>(source:&Input<T>) where T:Payload<T> {
+    let remaining:alloc::vec::Vec<T> =source.values.take_remaining();
+    while(true) { let found:core::option::Option<T> =remaining.pop(); if(found.is_none()) { break; } let item:T=found.unwrap(); item.release(); }
+    remaining.destroy();
+}
+fn cleanup<R,T,E>(destination:&R,source:&Input<T>,history:&History<T>,state:&State<T>,retain:bool)
+    where T:Payload<T>,R:Store<T,E> {
+    release_input(source); destination.cleanup();
+    while(true) {
+        let found:core::option::Option<T> =history.values.pop(); if(found.is_none()) { break; } let item:T=found.unwrap();
+        if(retain && state.held.is_none() && (state.hold_wanted<0 || item.stamp()==state.hold_wanted)) { state.held=core::option::Some(item); }
+        else { item.release(); }
+    }
+    history.values.destroy();
+}
+fn report<R,T,E>(pid:u64,phase:u64,backend:i32,profile:i32,ready:bool,destination:&R,source:&Input<T>,history:&History<T>,state:&State<T>,input_count:i32,setup_count:i32)
+    where T:Payload<T>,R:Store<T,E> {
+    state.error.check();
+    word(1347621681); word(pid); word(phase); word(backend as u64); word(profile as u64); word(state.status as u64); if(ready) { word(1); } else { word(0); } word(state.tag as u64);
+    word(state.committed); word(state.replaced); let audit:&Audit=source.audit; word(audit.source as u64); word(audit.replacement as u64); word(audit.delivery as u64);
+    word(destination.count() as u64); word(destination.reserved() as u64); word(source.values.remaining() as u64); word(source.values.capacity() as u64);
+    word(history.values.len() as u64); word(history.values.capacity() as u64);
+    if(state.pending.is_some()) { let item:T=state.pending.unwrap(); word(1); word(item.identity() as u64); word(item.stamp() as u64); } else { word(0); word(0); word(0); }
+    if(state.held.is_some()) { let item:T=state.held.unwrap(); word(1); word(item.identity() as u64); word(item.stamp() as u64); } else { word(0); word(0); word(0); }
+    word(state.error.kind as u64); word(state.error.text.capacity() as u64); word(state.secondary as u64); word(input_count as u64); word(setup_count as u64); word(core::mem::size_of<T>() as u64); word(0);
+    destination.emit();
+    let index:i32=0; while(index<history.values.len()) { let item:T=history.values.at(index); emit_item(item); index+=1; }
+    let view:core::slice::View<T> =source.values.as_view(); index=0; while(index<view.len()) { let item:T=view.get(index).unwrap(); emit_item(item); index+=1; }
+    if(state.pending.is_some()) { emit_item(state.pending.unwrap()); } if(state.held.is_some()) { emit_item(state.held.unwrap()); } ack();
+}
+fn run<R,T,E>(destination:&R,backend:i32,profile:i32,pid:u64) -> i32
+    where T:Payload<T>,E:StorageError,R:Store<T,E>,R:core::iter::TryReplaceSink<T,E> {
+    let audit:Audit=Audit { source:0,replacement:0,delivery:0 };
+    let history:History<T> =History { values:alloc::vec::new<T>(),limit:16,audit:audit.borrow() }; if(profile==3) { history.limit=1; }
+    let values:alloc::vec::Vec<T> =alloc::vec::new<T>();
+    let state:State<T> =State { status:0,tag:0,pending_kind:0,pending:core::option::None(),held:core::option::None(),committed:0,replaced:0,error:no_error(),secondary:0,hold_wanted:-1 };
+    let failed:bool=false; let setup_count:i32=0; let input_count:i32=3; if(profile==0) { input_count=7; }
+    mark(85);
+    if(profile!=0) {
+        mark(80); let reserved:core::result::Result<i32,E> =destination.reserve(1); mark(112);
+        if(reserved.is_err()) { let error:E=reserved.unwrap_err(); assert(error.allocation()); failed=true; }
+        if(!failed) {
+            let wanted:i32=1; if(profile==2) { wanted=destination.reserved(); } assert(wanted>0 && wanted<=16);
+            let id:i32=1; while(id<=wanted) {
+                let stamp:i32=50; if(profile==2) { stamp+=id; }
+                mark(66); let made:core::result::Result<T,BuildError> =T::make(id,stamp); mark(98);
+                if(made.is_err()) { failed=true; break; } let item:T=made.unwrap();
+                mark(80); let inserted:core::result::Result<core::option::Option<T>,E> =destination.try_replace_item(item); mark(112);
+                if(inserted.is_err()) { let error:E=inserted.unwrap_err(); assert(error.allocation()); item.release(); failed=true; break; }
+                assert(inserted.unwrap().is_none()); setup_count+=1; id+=1;
+            }
+        }
+    }
+    if(!failed) {
+        mark(65); let made:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> =alloc::vec::with_capacity<T>(input_count); mark(97);
+        if(made.is_err()) { failed=true; } else { values=made.unwrap(); }
+    }
+    if(!failed) {
+        let index:i32=0; while(index<input_count) {
+            mark(66); let made:core::result::Result<T,BuildError> =T::make(input_identity(profile,index),65+index); mark(98);
+            if(made.is_err()) { failed=true; break; } values.try_push(made.unwrap()).unwrap(); index+=1;
+        }
+    }
+    if(!failed && (profile==2 || profile==3)) {
+        let capacity:i32=1; if(profile==2) { capacity=input_count; }
+        mark(72); let made:core::result::Result<alloc::vec::Vec<T>,alloc::vec::Error> =alloc::vec::with_capacity<T>(capacity); mark(104);
+        if(made.is_err()) { failed=true; } else { history.values=made.unwrap(); }
+    }
+    mark(117);
+    let source:Input<T> =Input { values:values.take_iter(),audit:audit.borrow() }; values.destroy();
+    let forward:Forward<R,T,E> =Forward { actual:destination,audit:audit.borrow() };
+    if(failed) {
+        state.status=4; state.tag=3; mark(75); cleanup<R,T,E>(destination,source.borrow(),history.borrow(),state.borrow(),false); mark(107);
+        let phase:u64=0; while(phase<5) { report<R,T,E>(pid,phase,backend,profile,false,destination,source.borrow(),history.borrow(),state.borrow(),input_count,setup_count); phase+=1; }
+        return 4;
+    }
+    report<R,T,E>(pid,0,backend,profile,true,destination,source.borrow(),history.borrow(),state.borrow(),input_count,setup_count);
+    mark(67);
+    let zero:core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<T,E,Delivery>> =core::iter::try_replace_up_to<Input<T>,Forward<R,T,E>,History<T>,T,E,Delivery>(source.borrow(),forward.borrow(),history.borrow(),0);
+    assert(zero.is_ok() && zero.unwrap().progress.committed==0 && zero.unwrap().progress.replaced==0 && !zero.unwrap().exhausted);
+    assert(audit.source==0 && audit.replacement==0 && audit.delivery==0); mark(99);
+    mark(84);
+    let first:core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<T,E,Delivery>> =core::iter::try_replace_up_to<Input<T>,Forward<R,T,E>,History<T>,T,E,Delivery>(source.borrow(),forward.borrow(),history.borrow(),18446744073709551615);
+    let finished:bool=captured<T,E>(first,state.borrow(),true); mark(116);
+    report<R,T,E>(pid,1,backend,profile,true,destination,source.borrow(),history.borrow(),state.borrow(),input_count,setup_count);
+    mark(75); history.limit=16; let attempts:i32=0;
+    while(!finished) {
+        attempts+=1; assert(attempts<=16);
+        if(state.pending.is_some()) {
+            let item:T=state.pending.unwrap(); state.pending=core::option::None();
+            if(state.pending_kind==1) {
+                let retried:core::result::Result<core::option::Option<T>,E> =forward.try_replace_item(item);
+                if(retried.is_err()) { let error:E=retried.unwrap_err(); assert(error.allocation()); state.status=4; state.secondary=10; state.pending=core::option::Some(item); }
+                else {
+                    state.committed+=1; state.pending_kind=0;
+                    let old:core::option::Option<T> =retried.unwrap();
+                    if(old.is_some()) { state.replaced+=1; state.pending=old; state.pending_kind=2; }
+                }
+            } else {
+                assert(state.pending_kind==2);
+                let error:core::option::Option<Delivery> =history.try_accept(item);
+                if(error.is_some()) { let owned:Delivery=error.unwrap(); owned.check(); assert(owned.kind==2 || owned.kind==3); state.status=4; state.secondary=owned.kind; owned.destroy(); state.pending=core::option::Some(item); }
+                else { state.pending_kind=0; }
+            }
+        }
+        if(state.pending.is_none()) {
+            let resumed:core::result::Result<core::iter::ReplacementTransfer,core::iter::ReplacementFailure<T,E,Delivery>> =core::iter::try_replace_up_to<Input<T>,Forward<R,T,E>,History<T>,T,E,Delivery>(source.borrow(),forward.borrow(),history.borrow(),18446744073709551615);
+            finished=captured<T,E>(resumed,state.borrow(),false);
+        }
+    }
+    mark(107); assert(state.pending.is_none() && source.values.remaining()==0 && state.committed==input_count as u64);
+    report<R,T,E>(pid,2,backend,profile,true,destination,source.borrow(),history.borrow(),state.borrow(),input_count,setup_count);
+    mark(75); cleanup<R,T,E>(destination,source.borrow(),history.borrow(),state.borrow(),true); mark(107);
+    assert(state.held.is_some()); let held:T=state.held.unwrap(); held.check(); if(state.hold_wanted>=0) { assert(held.stamp()==state.hold_wanted); }
+    report<R,T,E>(pid,3,backend,profile,true,destination,source.borrow(),history.borrow(),state.borrow(),input_count,setup_count);
+    mark(75); state.held=core::option::None(); held.release(); state.error.destroy(); state.error.destroy(); mark(107);
+    report<R,T,E>(pid,4,backend,profile,true,destination,source.borrow(),history.borrow(),state.borrow(),input_count,setup_count); return state.status;
+}
+fn main() -> i32 {
+    let request:[i32;2]=[0;2]; read(core::mem::i32_array_data_ptr(request),8); let backend:i32=request[0]; let profile:i32=request[1];
+    assert(backend>=0 && backend<=3 && profile>=0 && profile<=3);
+    let arguments:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    let pid:u64=std::linux::call(39,core::slice::View { values:arguments,start:0,length:0 }).unwrap() as u64;
+    if(backend==0) {
+        let destination:alloc::hash_map::HashMap<Key,alloc::string::String> =alloc::hash_map::new<Key,alloc::string::String>();
+        return run<alloc::hash_map::HashMap<Key,alloc::string::String>,alloc::hash_map::Entry<Key,alloc::string::String>,alloc::hash_map::Error>(destination.borrow(),backend,profile,pid);
+    }
+    if(backend==1) {
+        let destination:alloc::tree_map::TreeMap<Key,alloc::string::String> =alloc::tree_map::new<Key,alloc::string::String>();
+        return run<alloc::tree_map::TreeMap<Key,alloc::string::String>,alloc::tree_map::Entry<Key,alloc::string::String>,alloc::tree_map::Error>(destination.borrow(),backend,profile,pid);
+    }
+    if(backend==2) {
+        let destination:alloc::hash_set::HashSet<Key> =alloc::hash_set::new<Key>();
+        return run<alloc::hash_set::HashSet<Key>,Key,alloc::hash_map::Error>(destination.borrow(),backend,profile,pid);
+    }
+    let destination:alloc::tree_set::TreeSet<Key> =alloc::tree_set::new<Key>();
+    return run<alloc::tree_set::TreeSet<Key>,Key,alloc::tree_map::Error>(destination.borrow(),backend,profile,pid);
+}

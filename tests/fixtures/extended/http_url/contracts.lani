@@ -1,0 +1,90 @@
+// Actual public URL owner, shared DNS policy and borrowed-view boundaries.
+module app::main;
+import core::mem;
+import core::slice;
+import core::slice::View;
+import core::result::Result;
+import core::option::Option;
+import core::net;
+import ext::host_name;
+import ext::http_url;
+
+fn lit(value: str, count: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count), start: 0, length: count };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let i: i32 = 0; while (i < left.length) { if (left.values[left.start+i] != right.values[right.start+i]) { return false; } i += 1; } return true;
+}
+fn inactive(url: &ext::http_url::Url) -> bool {
+    return !url.is_open() && url.scheme().is_none() && url.host_kind().is_none() && url.host().is_none() && url.ip().is_none() && url.port().is_none() && url.authority().is_none() && url.target().is_none();
+}
+fn kind(error: ext::http_url::Error) -> i32 {
+    return match (error.kind) {
+        ext::http_url::ErrorKind::Bounds -> 1, ext::http_url::ErrorKind::InvalidLimits -> 2,
+        ext::http_url::ErrorKind::Uri -> 3, ext::http_url::ErrorKind::Scheme -> 4,
+        ext::http_url::ErrorKind::Authority -> 5, ext::http_url::ErrorKind::Userinfo -> 6,
+        ext::http_url::ErrorKind::Host -> 7, ext::http_url::ErrorKind::Port -> 8,
+        ext::http_url::ErrorKind::TargetLimit -> 9, ext::http_url::ErrorKind::AllocationFailed -> 10
+    };
+}
+fn rejected(input: View<u8>, limits: ext::http_url::Limits, expected: i32) -> bool {
+    let result: Result<ext::http_url::Url,ext::http_url::Error> = ext::http_url::parse(input,limits);
+    assert(result.is_err()); let error: ext::http_url::Error = result.unwrap_err();
+    assert(kind(error) == expected && (expected == 3 || error.syntax.is_none())); return true;
+}
+fn snapshot(layout: i32) -> bool {
+    let original: View<u8> = lit("HtTpS://ExAmPle.COM:00443/a%2Fb/../c//?q=%25#ignored",52);
+    let native: [u8;64] = [90;64]; let packed_words: [i32;16] = [0;16];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_words),64);
+    assert(core::mem::slice_stride(native) < 0 && core::mem::slice_stride(packed) == 1);
+    let backing: [u8] = native; if (layout == 1) { backing = packed; }
+    let i: i32 = 0; while (i < 64) { backing[i] = 90; i += 1; }
+    i = 0; while (i < original.length) { backing[3+i] = original.values[original.start+i]; i += 1; }
+    let url: ext::http_url::Url = ext::http_url::parse(View<u8> { values: backing, start: 3, length: original.length },ext::http_url::default_limits()).unwrap();
+    assert(url.is_open());
+    i = 3; while (i < 3+original.length) { backing[i] = 88; i += 1; }
+    assert(backing[0] == 90 && backing[2] == 90 && backing[3+original.length] == 90 && backing[63] == 90);
+    let scheme: ext::http_url::Scheme = url.scheme().unwrap();
+    let host_kind: ext::http_url::HostKind = url.host_kind().unwrap();
+    assert(match (scheme) { ext::http_url::Scheme::Https -> true, _ -> false });
+    assert(match (host_kind) { ext::http_url::HostKind::Dns -> true, _ -> false });
+    assert(equal(url.host().unwrap(),lit("ExAmPle.COM",11)) && url.ip().is_none() && url.port().unwrap() == 443);
+    assert(equal(url.authority().unwrap(),lit("ExAmPle.COM:00443",17)));
+    assert(equal(url.target().unwrap(),lit("/a%2Fb/../c//?q=%25",19)));
+    assert(url.destroy() && inactive(url.borrow()) && !url.destroy() && inactive(url.borrow())); return true;
+}
+fn numeric(input: View<u8>, expected_kind: i32, host: View<u8>, authority: View<u8>, target: View<u8>, port: u16, octets: View<u8>) -> bool {
+    let url: ext::http_url::Url = ext::http_url::parse(input,ext::http_url::default_limits()).unwrap();
+    let actual_kind: ext::http_url::HostKind = url.host_kind().unwrap();
+    assert(match (actual_kind) { ext::http_url::HostKind::Ipv4 -> expected_kind == 4, ext::http_url::HostKind::Ipv6 -> expected_kind == 6, _ -> false });
+    let ip: core::net::IpAddr = url.ip().unwrap(); let bytes: [u8;16] = [90;16];
+    let count: i32 = ip.write_octets(core::slice::view(bytes,16).unwrap()).unwrap();
+    assert(ip.version() == expected_kind && equal(core::slice::view(bytes,count).unwrap(),octets));
+    assert(equal(url.host().unwrap(),host) && equal(url.authority().unwrap(),authority) && equal(url.target().unwrap(),target) && url.port().unwrap() == port);
+    assert(url.destroy() && inactive(url.borrow()) && !url.destroy()); return true;
+}
+fn main() -> i32 {
+    assert(snapshot(0) && snapshot(1));
+    let v4: [u8;4] = [127,0,0,1]; let v6: [u8;16] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1];
+    assert(numeric(lit("http://127.0.0.1?",17),4,lit("127.0.0.1",9),lit("127.0.0.1",9),lit("/?",2),80,core::slice::view(v4,4).unwrap()));
+    assert(numeric(lit("https://[::1]:065535/#x",23),6,lit("::1",3),lit("[::1]:065535",12),lit("/",1),65535,core::slice::view(v6,16).unwrap()));
+    let defaults: ext::http_url::Limits = ext::http_url::default_limits(); assert(defaults.url_bytes == 16384 && defaults.target_bytes == 8192);
+    let storage: [u8;4] = [90;4];
+    assert(rejected(View<u8> { values: storage, start: -1, length: 1 },defaults,1));
+    assert(rejected(View<u8> { values: storage, start: 0, length: -1 },defaults,1));
+    assert(rejected(View<u8> { values: storage, start: 2147483647, length: 1 },defaults,1));
+    assert(rejected(lit("http://a",8),ext::http_url::Limits { url_bytes: 0, target_bytes: 1 },2));
+    assert(rejected(lit("http://a",8),ext::http_url::Limits { url_bytes: 8, target_bytes: 1048577 },2));
+    assert(rejected(lit("ftp://a",7),defaults,4));
+    assert(rejected(lit("http://@a",9),defaults,6));
+    assert(rejected(lit("http://127.1",12),defaults,7));
+    assert(rejected(lit("http://a:",9),defaults,8));
+    assert(rejected(lit("http://a/abc",12),ext::http_url::Limits { url_bytes: 12, target_bytes: 3 },9));
+    assert(ext::host_name::check_dns(lit("a-b.XN--p1ai",12),253).unwrap() == 0);
+    let empty: Result<i32,ext::host_name::Error> = ext::host_name::check_dns(lit("",0),253);
+    let invalid: Result<i32,ext::host_name::Error> = ext::host_name::check_dns(lit("a_",2),253);
+    let capped: Result<i32,ext::host_name::Error> = ext::host_name::check_dns(lit("abc",3),2);
+    assert(empty.is_err() && invalid.is_err() && capped.is_err());
+    assert(storage[0] == 90 && storage[3] == 90); return 0;
+}

@@ -3601,6 +3601,109 @@ fn main() {
 }
 
 #[test]
+fn package_lockfile_records_item_imports_and_replays_declaring_modules() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "item_import", None);
+    let app_root = root.join("src/app");
+    std::fs::create_dir_all(&app_root).expect("create item-import source root");
+    let helper = app_root.join("helper.lani");
+    std::fs::write(
+        &helper,
+        "module app::helper;\npub fn value() -> i32 { return 7; }\n",
+    )
+    .expect("write declaring module");
+    std::fs::write(
+        app_root.join("main.lani"),
+        "module app::main;\nimport app::helper::value;\nfn main() -> i32 { return value(); }\n",
+    )
+    .expect("write item-import entry");
+    let manifest = PackageManifest::parse_json(
+        r#"{"package":"item-import","roots":["src"],"entry":"src/app/main.lani"}"#,
+    )
+    .expect("parse item-import package");
+    let resolved = manifest.resolve_from_dir(&root).expect("resolve package");
+    let lockfile = PackageLockfile::from_resolved_manifest(&resolved)
+        .expect("lock item import through its declaring module");
+    let json = lockfile
+        .to_json_pretty()
+        .expect("serialize item-import lock");
+    let mut document: serde_json::Value = serde_json::from_str(&json).expect("parse lock JSON");
+    assert_import_graph_edge(
+        &document,
+        1,
+        "app::main",
+        "app::helper::value",
+        1,
+        "app::helper",
+    );
+    let replay = PackageLockfile::parse_json(&json).expect("round-trip literal item edge");
+    let paths = replay.load_path_manifest().expect("replay item import");
+    assert_eq!(paths.files.len(), 2);
+    assert!(paths.files.iter().any(|file| {
+        file.path == std::fs::canonicalize(&helper).expect("canonical declaring module")
+    }));
+
+    // One item segment is permitted. An arbitrary ancestor is not a target.
+    mutable_import_edge(&mut document, "app::helper::value").insert(
+        "import_path".to_string(),
+        serde_json::Value::String("app::helper::value::nested".to_string()),
+    );
+    let tampered = serde_json::to_string(&document).expect("serialize tampered item edge");
+    let error = PackageLockfile::parse_json(&tampered)
+        .expect_err("item imports must not bypass target module identity");
+    assert_import_path_module_mismatch_error(&error, "app::helper::value::nested", "app::helper");
+    std::fs::remove_dir_all(root).expect("remove item-import package");
+}
+
+#[test]
+fn package_lockfile_prefers_whole_module_over_item_prefix() {
+    let root = common::temp_artifact_path("laniusc_package_manifest", "whole_before_item", None);
+    let app_root = root.join("src/app");
+    std::fs::create_dir_all(app_root.join("helper")).expect("create colliding module directory");
+    let parent = app_root.join("helper.lani");
+    std::fs::write(
+        &parent,
+        "module app::helper;\npub fn value() -> i32 { return 1; }\n",
+    )
+    .expect("write possible item owner");
+    let whole = app_root.join("helper/value.lani");
+    std::fs::write(
+        &whole,
+        "module app::helper::value;\npub fn get() -> i32 { return 2; }\n",
+    )
+    .expect("write whole-path module");
+    std::fs::write(
+        app_root.join("main.lani"),
+        "module app::main;\nimport app::helper::value;\nfn main() -> i32 { return app::helper::value::get(); }\n",
+    )
+    .expect("write whole-module entry");
+    let manifest = PackageManifest::parse_json(
+        r#"{"package":"whole-before-item","roots":["src"],"entry":"src/app/main.lani"}"#,
+    )
+    .expect("parse whole-module package");
+    let resolved = manifest.resolve_from_dir(&root).expect("resolve package");
+    let lockfile = PackageLockfile::from_resolved_manifest(&resolved).expect("lock whole module");
+    let json = lockfile
+        .to_json_pretty()
+        .expect("serialize whole-module lock");
+    let document: serde_json::Value = serde_json::from_str(&json).expect("parse lock JSON");
+    assert_import_graph_edge(
+        &document,
+        1,
+        "app::main",
+        "app::helper::value",
+        1,
+        "app::helper::value",
+    );
+    let replay = PackageLockfile::parse_json(&json).expect("round-trip whole-module lock");
+    let paths = replay.load_path_manifest().expect("replay whole module");
+    let canonical_whole = std::fs::canonicalize(whole).expect("canonical whole module");
+    let canonical_parent = std::fs::canonicalize(parent).expect("canonical item owner");
+    assert!(paths.files.iter().any(|file| file.path == canonical_whole));
+    assert!(!paths.files.iter().any(|file| file.path == canonical_parent));
+    std::fs::remove_dir_all(root).expect("remove whole-module package");
+}
+
+#[test]
 fn package_lockfile_records_and_validates_import_graph() {
     let root = common::temp_artifact_path("laniusc_package_manifest", "import_graph", None);
     let app_root = root.join("src").join("app");

@@ -1,0 +1,213 @@
+// Allocation-free, byte-preserving help for an admitted command hierarchy.
+// Keep all schema backing immutable and live; output must not overlap it or
+// a live command parser's scratch. Logical views are checked, physical backing
+// and exclusive access remain caller obligations.
+module ext::cli_help;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::cli_commands;
+
+struct Render {
+    output: core::slice::View<u8>, writing: bool, total: u64, overflow: bool
+}
+
+impl Render {
+    fn add(&self, count: u64) -> bool {
+        if (self.overflow) { return false; }
+        if (self.total > 18446744073709551615-count) {
+            self.overflow = true; return false;
+        }
+        self.total += count; return true;
+    }
+    fn byte(&self, value: u8) {
+        let at: u64 = self.total;
+        if (!self.add(1)) { return; }
+        if (self.writing) { self.output.values[self.output.start+(at as i32)] = value; }
+    }
+    fn bytes(&self, value: core::slice::View<u8>) {
+        let at: u64 = self.total;
+        if (!self.add(value.length as u64)) { return; }
+        if (self.writing) {
+            let index: i32 = 0;
+            while (index < value.length) {
+                self.output.values[self.output.start+(at as i32)+index] = value.values[value.start+index];
+                index += 1;
+            }
+        }
+    }
+    fn text(&self, value: str, count: i32) {
+        if (!self.writing) { self.add(count as u64); return; }
+        let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+        self.bytes(core::slice::View { values: raw, start: 0, length: count });
+    }
+    fn value_label(&self, option: ext::cli_commands::OptionSpec, long_form: bool) {
+        let arity: i32 = match (option.spec.arity) {
+            ext::cli::Arity::Flag -> 0, ext::cli::Arity::Required -> 1,
+            ext::cli::Arity::Optional -> 2
+        };
+        if (arity == 1) {
+            self.text(" <",2); self.bytes(option.value_name); self.byte(62); return;
+        }
+        if (arity == 2) {
+            self.byte(91); if (long_form) { self.byte(61); }
+            self.bytes(option.value_name); self.byte(93);
+        }
+    }
+    fn option_line(&self, option: ext::cli_commands::OptionSpec) {
+        self.text("  ",2);
+        if (option.spec.short != 0) {
+            self.byte(45); self.byte(option.spec.short); self.value_label(option,false);
+        }
+        if (option.spec.long.length > 0) {
+            if (option.spec.short != 0) { self.text(", ",2); }
+            self.text("--",2); self.bytes(option.spec.long); self.value_label(option,true);
+        }
+        if (option.help.length > 0) { self.text("    ",4); self.bytes(option.help); }
+        self.byte(10);
+    }
+}
+
+// Only called after validate: every parent is an earlier declaration index.
+// Ancestors therefore appear in path order when declarations are scanned.
+fn ancestor(commands: core::slice::View<ext::cli_commands::Command>, candidate: i32, selected: i32) -> bool {
+    let current: i32 = selected;
+    while (current >= candidate) {
+        if (current == candidate) { return true; }
+        current = commands.values[commands.start+current].parent;
+    }
+    return false;
+}
+
+fn index_of(commands: core::slice::View<ext::cli_commands::Command>, command_id: i32) -> i32 {
+    let index: i32 = 0;
+    while (index < commands.length) {
+        if (commands.values[commands.start+index].id == command_id) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+
+fn has_options(commands: core::slice::View<ext::cli_commands::Command>, selected: i32) -> bool {
+    let index: i32 = 0;
+    while (index <= selected) {
+        if (ancestor(commands,index,selected)) {
+            let options: core::slice::View<ext::cli_commands::OptionSpec> = commands.values[commands.start+index].options;
+            let option: i32 = 0;
+            while (option < options.length) {
+                if (index == selected || options.values[options.start+option].global) { return true; }
+                option += 1;
+            }
+        }
+        index += 1;
+    }
+    return false;
+}
+
+fn has_children(commands: core::slice::View<ext::cli_commands::Command>, selected: i32) -> bool {
+    let index: i32 = selected+1;
+    while (index < commands.length) {
+        if (commands.values[commands.start+index].parent == selected) { return true; }
+        index += 1;
+    }
+    return false;
+}
+
+// One layout implementation serves measurement and writing. A writing call is
+// made only after this exact layout has measured successfully and fits output.
+// Measurement reads metadata/lengths only and never touches output storage.
+fn render(commands: core::slice::View<ext::cli_commands::Command>, selected: i32, output: core::slice::View<u8>, writing: bool) -> Render {
+    let result: Render = Render { output: output, writing: writing, total: 0, overflow: false };
+    let command: ext::cli_commands::Command = commands.values[commands.start+selected];
+    let options_present: bool = has_options(commands,selected);
+    let children_present: bool = has_children(commands,selected);
+    result.text("Usage: ",7);
+    let index: i32 = 0;
+    let first: bool = true;
+    while (index <= selected) {
+        if (ancestor(commands,index,selected)) {
+            if (!first) { result.byte(32); }
+            result.bytes(commands.values[commands.start+index].name); first = false;
+        }
+        index += 1;
+    }
+    if (options_present) { result.text(" [OPTIONS]",10); }
+    if (children_present) { result.text(" [COMMAND]",10); }
+    if (command.operands.length > 0) {
+        if (children_present) { result.text(" [-- ",5); }
+        else { result.byte(32); }
+        result.bytes(command.operands);
+        if (children_present) { result.byte(93); }
+    }
+    result.byte(10);
+    if (command.summary.length > 0) { result.bytes(command.summary); result.byte(10); }
+    if (options_present) {
+        result.text("\nOptions:\n",10);
+        index = 0;
+        while (index <= selected) {
+            if (ancestor(commands,index,selected)) {
+                let options: core::slice::View<ext::cli_commands::OptionSpec> = commands.values[commands.start+index].options;
+                let option_index: i32 = 0;
+                while (option_index < options.length) {
+                    let option: ext::cli_commands::OptionSpec = options.values[options.start+option_index];
+                    if (index == selected || option.global) { result.option_line(option); }
+                    option_index += 1;
+                }
+            }
+            index += 1;
+        }
+    }
+    if (children_present) {
+        result.text("\nCommands:\n",11);
+        index = selected+1;
+        while (index < commands.length) {
+            let child: ext::cli_commands::Command = commands.values[commands.start+index];
+            if (child.parent == selected) {
+                result.text("  ",2); result.bytes(child.name);
+                if (child.summary.length > 0) { result.text("    ",4); result.bytes(child.summary); }
+                result.byte(10);
+            }
+            index += 1;
+        }
+    }
+    return result;
+}
+
+fn measured(commands: core::slice::View<ext::cli_commands::Command>, selected: i32) -> core::result::Result<u64,ext::cli_commands::Error> {
+    // This valid schema view supplies a descriptor, never a write destination.
+    let unused: core::slice::View<u8> = commands.values[commands.start+selected].name;
+    let result: Render = render(commands,selected,unused,false);
+    if (result.overflow) { return core::result::Err(ext::cli_commands::Error::SizeOverflow); }
+    return core::result::Ok(result.total);
+}
+
+// Complete hierarchy validation precedes ID resolution and size accumulation,
+// including declarations outside the requested command's subtree.
+pub fn help_len(commands: core::slice::View<ext::cli_commands::Command>, command_id: i32) -> core::result::Result<u64,ext::cli_commands::Error> {
+    let admitted: core::result::Result<u64,ext::cli_commands::Error> = ext::cli_commands::validate(commands);
+    if (core::result::is_err(admitted)) { return core::result::Err(core::result::unwrap_err(admitted)); }
+    let selected: i32 = index_of(commands,command_id);
+    if (selected < 0) { return core::result::Err(ext::cli_commands::Error::UnknownCommandId(command_id)); }
+    return measured(commands,selected);
+}
+
+// Every error precedes every write. Success writes exactly the measured prefix,
+// preserves unused tail/outside bytes, and adds no trailing NUL. Both passes
+// use the same immutable metadata and layout; no allocation or host call occurs.
+pub fn help_into(commands: core::slice::View<ext::cli_commands::Command>, command_id: i32, output: core::slice::View<u8>) -> core::result::Result<i32,ext::cli_commands::Error> {
+    let admitted: core::result::Result<u64,ext::cli_commands::Error> = ext::cli_commands::validate(commands);
+    if (core::result::is_err(admitted)) { return core::result::Err(core::result::unwrap_err(admitted)); }
+    let selected: i32 = index_of(commands,command_id);
+    if (selected < 0) { return core::result::Err(ext::cli_commands::Error::UnknownCommandId(command_id)); }
+    let size: core::result::Result<u64,ext::cli_commands::Error> = measured(commands,selected);
+    if (core::result::is_err(size)) { return core::result::Err(core::result::unwrap_err(size)); }
+    if (output.start < 0 || output.length < 0 || output.start > 2147483647-output.length) {
+        return core::result::Err(ext::cli_commands::Error::Bounds);
+    }
+    let required: u64 = core::result::unwrap(size);
+    if (required > output.length as u64) { return core::result::Err(ext::cli_commands::Error::OutputTooSmall(required)); }
+    let written: Render = render(commands,selected,output,true);
+    assert(!written.overflow && written.total == required);
+    return core::result::Ok(required as i32);
+}

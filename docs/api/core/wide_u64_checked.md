@@ -16,74 +16,77 @@ Declaration counts: function: 9.
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::option](option.md) · [source](../../../stdlib/core/wide_u64_checked.lani#L4)
-- [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/wide_u64_checked.lani#L5)
+- [core::option::Option](option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../stdlib/core/wide_u64_checked.lani#L4)
+- [core::option::Some](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../stdlib/core/wide_u64_checked.lani#L5)
+- [core::option::None](option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../stdlib/core/wide_u64_checked.lani#L6)
+- [core::option::unwrap_or](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L33) · [source](../../../stdlib/core/wide_u64_checked.lani#L7)
+- [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/wide_u64_checked.lani#L8)
 
 ## Free functions and extern declarations
 
 ### function: checked_add
 
-[Source line 7](../../../stdlib/core/wide_u64_checked.lani#L7)
+[Source line 10](../../../stdlib/core/wide_u64_checked.lani#L10)
 
 ```lanius
 pub fn checked_add(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option::Option<core::wide_u64::WideU64>
+) -> Option<core::wide_u64::WideU64>
 ```
 
 ### function: checked_sub
 
-[Source line 17](../../../stdlib/core/wide_u64_checked.lani#L17)
+[Source line 20](../../../stdlib/core/wide_u64_checked.lani#L20)
 
 ```lanius
 pub fn checked_sub(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option::Option<core::wide_u64::WideU64>
+) -> Option<core::wide_u64::WideU64>
 ```
 
 ### function: checked_mul
 
-[Source line 26](../../../stdlib/core/wide_u64_checked.lani#L26)
+[Source line 29](../../../stdlib/core/wide_u64_checked.lani#L29)
 
 ```lanius
 pub fn checked_mul(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option::Option<core::wide_u64::WideU64>
+) -> Option<core::wide_u64::WideU64>
 ```
 
 ### function: checked_div
 
-[Source line 40](../../../stdlib/core/wide_u64_checked.lani#L40)
+[Source line 43](../../../stdlib/core/wide_u64_checked.lani#L43)
 
 ```lanius
 pub fn checked_div(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option::Option<core::wide_u64::WideU64>
+) -> Option<core::wide_u64::WideU64>
 ```
 
 ### function: checked_rem
 
-[Source line 50](../../../stdlib/core/wide_u64_checked.lani#L50)
+[Source line 53](../../../stdlib/core/wide_u64_checked.lani#L53)
 
 ```lanius
 pub fn checked_rem(
     left: core::wide_u64::WideU64, right: core::wide_u64::WideU64
-) -> core::option::Option<core::wide_u64::WideU64>
+) -> Option<core::wide_u64::WideU64>
 ```
 
 ### function: checked_pow
 
-[Source line 61](../../../stdlib/core/wide_u64_checked.lani#L61)
+[Source line 64](../../../stdlib/core/wide_u64_checked.lani#L64)
 
 ```lanius
 pub fn checked_pow(
     base: core::wide_u64::WideU64, exponent: u32
-) -> core::option::Option<core::wide_u64::WideU64>
+) -> Option<core::wide_u64::WideU64>
 ```
 
 ### function: saturating_add
 
-[Source line 87](../../../stdlib/core/wide_u64_checked.lani#L87)
+[Source line 82](../../../stdlib/core/wide_u64_checked.lani#L82)
 
 ```lanius
 pub fn saturating_add(
@@ -93,7 +96,7 @@ pub fn saturating_add(
 
 ### function: saturating_sub
 
-[Source line 94](../../../stdlib/core/wide_u64_checked.lani#L94)
+[Source line 89](../../../stdlib/core/wide_u64_checked.lani#L89)
 
 ```lanius
 pub fn saturating_sub(
@@ -103,7 +106,7 @@ pub fn saturating_sub(
 
 ### function: saturating_mul
 
-[Source line 101](../../../stdlib/core/wide_u64_checked.lani#L101)
+[Source line 96](../../../stdlib/core/wide_u64_checked.lani#L96)
 
 ```lanius
 pub fn saturating_mul(

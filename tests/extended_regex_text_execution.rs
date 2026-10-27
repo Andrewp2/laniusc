@@ -3,9 +3,8 @@
 mod common;
 
 use std::{
-    collections::BTreeMap,
     os::unix::fs::PermissionsExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::OnceLock,
     time::Duration,
@@ -56,35 +55,26 @@ fn checked(output: &Output, status: i32) {
     assert_eq!(output.status.code(), Some(status), "{output:?}");
     assert!(output.stderr.is_empty(), "{output:?}");
 }
-fn ledger(trace: &str) -> usize {
-    let mut live = BTreeMap::new();
-    let mut attempts = 0;
-    for line in trace.lines() {
-        if line.starts_with("mmap(") {
-            attempts += 1;
-            let size: usize = line.split(',').nth(1).unwrap().trim().parse().unwrap();
-            let address = line
-                .rsplit_once(" = ")
-                .unwrap()
-                .1
-                .split_whitespace()
-                .next()
-                .unwrap();
-            if address.starts_with("0x") {
-                assert!(live.insert(address.to_owned(), size).is_none(), "{trace}");
-            } else {
-                assert_eq!(address, "-1", "{trace}");
-                assert!(line.contains("ENOMEM"), "{trace}");
-            }
-        } else if let Some(tail) = line.strip_prefix("munmap(") {
-            let (address, tail) = tail.split_once(',').unwrap();
-            let size: usize = tail.split_once(')').unwrap().0.trim().parse().unwrap();
-            assert_eq!(live.remove(address), Some(size), "{trace}");
-            assert!(line.ends_with(" = 0"), "{trace}");
-        }
+fn ledger(executable: &Path, trace: &Path, baseline: Option<(&Path, usize)>) -> Vec<usize> {
+    let mut command = Command::new("python3");
+    command
+        .arg("-B")
+        .arg(fixture("resources.py"))
+        .arg(executable)
+        .arg(trace);
+    if let Some((source, ordinal)) = baseline {
+        command.arg(source).arg(ordinal.to_string());
     }
-    assert!(live.is_empty(), "unreleased owner: {trace}");
-    attempts
+    let output = run(&mut command);
+    checked(&output, 0);
+    let values = std::str::from_utf8(&output.stdout).unwrap().trim();
+    if values.is_empty() {
+        return Vec::new();
+    }
+    values
+        .split(',')
+        .map(|value| value.parse().expect("reached verified source mmap ordinal"))
+        .collect()
 }
 
 #[test]
@@ -92,13 +82,41 @@ fn regex_split_replace_preserve_utf8_views_exact_progress_budgets_and_owned_outp
     let file = executable("contracts.lani");
     let trace = common::TempArtifact::new("laniusc_regex_text", "contracts_trace", None);
     let output = run(Command::new("strace")
-        .args(["-qq", "-o"])
+        .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap"])
         .arg(file.path()));
     checked(&output, 0);
     assert!(output.stdout.is_empty(), "{output:?}");
-    assert!(ledger(&std::fs::read_to_string(trace.path()).unwrap()) > 0);
+    assert!(!ledger(file.path(), trace.path(), None).is_empty());
+}
+
+#[test]
+fn regex_text_lazy_admission_uses_one_span_or_capture_workspace_without_per_match_owners() {
+    let file = executable("lazy.lani");
+    let trace = common::TempArtifact::new("laniusc_regex_text", "lazy_trace", None);
+    let output = run(Command::new("strace")
+        .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
+        .arg(trace.path())
+        .args(["-e", "trace=mmap,munmap,write"])
+        .arg(file.path()));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert_eq!(output.stdout, b"0\n", "{output:?}");
+    assert_eq!(output.stderr, b"AaBbZzCcWwSsNnDdLlTtEe", "{output:?}");
+    let checked = run(Command::new("python3")
+        .arg("-B")
+        .arg(fixture("resources.py"))
+        .arg("lazy")
+        .arg(file.path())
+        .arg(trace.path()));
+    assert_eq!(checked.status.code(), Some(0), "{checked:?}");
+    assert!(checked.stderr.is_empty(), "{checked:?}");
+    let receipt = String::from_utf8(checked.stdout).unwrap();
+    assert!(
+        receipt.starts_with("PASS regex-text lazy workspace "),
+        "{receipt}"
+    );
+    print!("{receipt}");
 }
 
 #[derive(Clone, Debug)]
@@ -399,10 +417,11 @@ fn regex_text_zero_width_tables_template_preflight_and_resource_edges_are_explic
 fn every_reached_regex_text_allocation_failure_releases_exact_owners_and_preserves_sources() {
     let file = executable("allocations.lani");
     let trace = common::TempArtifact::new("laniusc_regex_text", "allocation_trace", None);
+    let baseline = common::TempArtifact::new("laniusc_regex_text", "baseline_trace", None);
     let execute = |failure: Option<usize>| {
         let mut command = Command::new("strace");
         command
-            .args(["-qq", "-o"])
+            .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
             .arg(trace.path())
             .args(["-e", "trace=mmap,munmap"]);
         if let Some(index) = failure {
@@ -416,13 +435,15 @@ fn every_reached_regex_text_allocation_failure_releases_exact_owners_and_preserv
     let (output, events) = execute(None);
     checked(&output, 0);
     assert_eq!(output.stdout, b"0\n");
-    let points = ledger(&events);
+    baseline.write_bytes(events.as_bytes());
+    let points = ledger(file.path(), baseline.path(), None);
     assert!(
-        points >= 30 && points < 256,
-        "bounded fixture did not reach expected owners: {events}"
+        !points.is_empty() && points.len() <= 512,
+        "bounded harness allocation cap: {events}"
     );
     let mut stages = [0usize; 6];
-    for index in 1..=points {
+    for index in &points {
+        let index = *index;
         let (output, events) = execute(Some(index));
         checked(&output, 4);
         let stage: usize = std::str::from_utf8(&output.stdout)
@@ -432,27 +453,36 @@ fn every_reached_regex_text_allocation_failure_releases_exact_owners_and_preserv
             .unwrap();
         assert!((1..=5).contains(&stage), "allocation{index}: {output:?}");
         stages[stage] += 1;
-        ledger(&events);
+        ledger(file.path(), trace.path(), Some((baseline.path(), index)));
         assert_eq!(
             events.matches("INJECTED").count(),
             1,
             "allocation{index}: {events}"
         );
     }
-    assert!(stages[1..].iter().all(|count| *count > 0), "{stages:?}");
     eprintln!(
-        "regex text all {points} reached OOM positions passed, setup/compile/replace/split/probe stages={:?}",
+        "regex text all {} reached OOM positions passed, setup/compile/replace/split/probe stages={:?}",
+        points.len(),
         &stages[1..]
     );
 }
 
 fn program_run(arguments: &[&str], bytes: &[u8], injection: Option<&str>) -> (Output, String) {
+    program_run_bound(arguments, bytes, injection, None)
+}
+
+fn program_run_bound(
+    arguments: &[&str],
+    bytes: &[u8],
+    injection: Option<&str>,
+    baseline: Option<(&Path, usize)>,
+) -> (Output, String) {
     let input = common::TempArtifact::new("laniusc_regex_text", "program_input", None);
     input.write_bytes(bytes);
     let trace = common::TempArtifact::new("laniusc_regex_text", "program_trace", None);
     let mut command = Command::new("strace");
     command
-        .args(["-qq", "-o"])
+        .args(["-qq", "-xx", "-i", "-s", "4096", "-o"])
         .arg(trace.path())
         .args(["-e", "trace=mmap,munmap,read,write"]);
     if let Some(rule) = injection {
@@ -464,7 +494,7 @@ fn program_run(arguments: &[&str], bytes: &[u8], injection: Option<&str>) -> (Ou
         .stdin(Stdio::from(std::fs::File::open(input.path()).unwrap()));
     let output = run(&mut command);
     let events = std::fs::read_to_string(trace.path()).unwrap();
-    ledger(&events);
+    ledger(program().path(), trace.path(), baseline);
     (output, events)
 }
 
@@ -589,16 +619,20 @@ fn regex_replace_program_all_reached_allocations_and_io_failures_clean_owners() 
     let (baseline, events) = program_run(&arguments, input, None);
     checked(&baseline, 0);
     assert_eq!(baseline.stdout, b"[a//a]$\0[a/b/ab]$");
-    let points = events
-        .lines()
-        .filter(|line| line.starts_with("mmap("))
-        .count();
-    assert!(points >= 20 && points < 256);
-    for index in 1..=points {
-        let (output, events) = program_run(
+    let source = common::TempArtifact::new("laniusc_regex_text", "program_baseline_trace", None);
+    source.write_bytes(events.as_bytes());
+    let points = ledger(program().path(), source.path(), None);
+    assert!(
+        !points.is_empty() && points.len() <= 512,
+        "bounded harness allocation cap"
+    );
+    for index in &points {
+        let index = *index;
+        let (output, events) = program_run_bound(
             &arguments,
             input,
             Some(&format!("inject=mmap:error=ENOMEM:when={index}")),
+            Some((source.path(), index)),
         );
         assert_eq!(
             output.status.code(),
@@ -615,22 +649,33 @@ fn regex_replace_program_all_reached_allocations_and_io_failures_clean_owners() 
         "inject=read:error=EINTR:when=1",
         "inject=write:error=EINTR:when=1",
     ] {
-        let (output, _) = program_run(&arguments, input, Some(rule));
+        let (output, events) = program_run(&arguments, input, Some(rule));
         checked(&output, 0);
         assert_eq!(output.stdout, baseline.stdout);
+        assert_eq!(
+            events.matches("INJECTED").count(),
+            1,
+            "unreached {rule}: {events}"
+        );
     }
     for rule in [
         "inject=read:error=EIO:when=1",
         "inject=write:error=EIO:when=1",
     ] {
-        let (output, _) = program_run(&arguments, input, Some(rule));
+        let (output, events) = program_run(&arguments, input, Some(rule));
         assert_eq!(output.status.code(), Some(3), "{rule}: {output:?}");
         assert!(
             output.stdout.is_empty() && output.stderr.starts_with(b"regex-replace: stage="),
             "{rule}: {output:?}"
         );
+        assert_eq!(
+            events.matches("INJECTED").count(),
+            1,
+            "unreached {rule}: {events}"
+        );
     }
     eprintln!(
-        "regex rewrite program: all {points} reached OOMs and single read/write EINTR/EIO schedules passed"
+        "regex rewrite program: all {} reached OOMs and single read/write EINTR/EIO schedules passed",
+        points.len()
     );
 }

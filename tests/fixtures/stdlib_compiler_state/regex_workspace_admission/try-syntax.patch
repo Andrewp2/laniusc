@@ -1,0 +1,85 @@
+--- a/ext/regex.lani
++++ b/ext/regex.lani
+@@ -603,13 +603,11 @@
+         return self.search_with(input,start,true,true,storage);
+     }
+     pub fn find_span_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<Option<Span>,Error> {
+-        let checked = self.search_with(input,start,false,false,storage);
+-        if (checked.is_err()) { return Err(checked.unwrap_err()); }
++        self.search_with(input,start,false,false,storage)?;
+         return Ok(storage.span(0));
+     }
+     pub fn longest_prefix_span_with(&self, input: Input, start: i32, storage: &Workspace) -> Result<Option<Span>,Error> {
+-        let checked = self.search_with(input,start,true,false,storage);
+-        if (checked.is_err()) { return Err(checked.unwrap_err()); }
++        self.search_with(input,start,true,false,storage)?;
+         return Ok(storage.span(0));
+     }
+     // Consumes a private temporary workspace immediately after the sole VM
+@@ -617,45 +615,29 @@
+     fn owned_search(&self, input: Input, start: i32, longest_prefix: bool) -> Result<Option<Match>,Error> {
+         let text = input.text;
+         if (start < 0 || start > text.length || !text.is_char_boundary(start)) { return Err(Error::Bounds); }
+-        let allocated = workspace(self.code.len(),self.groups);
+-        if (allocated.is_err()) { return Err(allocated.unwrap_err()); }
+-        let storage = allocated.unwrap();
++        let storage = workspace(self.code.len(),self.groups)?;
+         let result = self.search_with(input,start,longest_prefix,true,storage.borrow());
+         if (result.is_err()) { let error = result.unwrap_err(); storage.destroy(); return Err(error); }
+         if (!result.unwrap()) { storage.destroy(); return Ok(None()); }
+         let captures = storage.candidate; storage.candidate = alloc::vec::new(); storage.destroy();
+         return Ok(Some(Match { captures: captures }));
+     }
+-    pub fn find_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error> {
+-        let checked = input(text);
+-        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+-        return self.owned_search(checked.unwrap(),start,false);
+-    }
++    pub fn find_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error> { return self.owned_search(input(text)?,start,false); }
+     // Anchored at start, with the longest endpoint and ordinary Pike capture
+     // priority on ties. Assertions retain the complete validated input context.
+     pub fn longest_prefix_in(&self, input: Input, start: i32) -> Result<Option<Match>,Error> { return self.owned_search(input,start,true); }
+-    pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error> {
+-        let checked = input(text);
+-        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+-        return self.longest_prefix_in(checked.unwrap(),start);
+-    }
++    pub fn longest_prefix_from(&self, text: core::text::Text, start: i32) -> Result<Option<Match>,Error> { return self.longest_prefix_in(input(text)?,start); }
+     pub fn longest_prefix(&self, text: core::text::Text) -> Result<Option<Match>,Error> { return self.longest_prefix_from(text,0); }
+     pub fn find(&self, text: core::text::Text) -> Result<Option<Match>,Error> { return self.find_from(text,0); }
+     pub fn is_match(&self, text: core::text::Text) -> Result<bool,Error> {
+-        let validated = input(text);
+-        if (validated.is_err()) { return Err(validated.unwrap_err()); }
+-        let checked = validated.unwrap();
+-        let allocated = workspace(self.code.len(),1);
+-        if (allocated.is_err()) { return Err(allocated.unwrap_err()); }
+-        let storage = allocated.unwrap();
++        let checked = input(text)?;
++        let storage = workspace(self.code.len(),1)?;
+         let result = self.search_with(checked,0,false,false,storage.borrow());
+         storage.destroy(); return result;
+     }
+     fn iterator(&self, input: Input, captures: bool) -> Result<Search,Error> {
+         let groups: i32 = 1; if (captures) { groups = self.groups; }
+-        let allocated = workspace(self.code.len(),groups);
+-        if (allocated.is_err()) { return Err(allocated.unwrap_err()); }
+-        let storage = allocated.unwrap();
++        let storage = workspace(self.code.len(),groups)?;
+         return Ok(Search {
+             regex: Regex { code: self.code, terms: self.terms, entry: self.entry, groups: self.groups, config: self.config },
+             input: input, workspace: storage, position: 0, captures: captures, done: false
+@@ -663,13 +645,7 @@
+     }
+     pub fn capture_iter(&self, input: Input) -> Result<Search,Error> { return self.iterator(input,true); }
+     pub fn span_iter(&self, input: Input) -> Result<Search,Error> { return self.iterator(input,false); }
+-    pub fn find_iter(&self, text: core::text::Text) -> Result<Matches,Error> {
+-        let checked = input(text);
+-        if (checked.is_err()) { return Err(checked.unwrap_err()); }
+-        let made = self.capture_iter(checked.unwrap());
+-        if (made.is_err()) { return Err(made.unwrap_err()); }
+-        return Ok(Matches { search: made.unwrap() });
+-    }
++    pub fn find_iter(&self, text: core::text::Text) -> Result<Matches,Error> { return Ok(Matches { search: self.capture_iter(input(text)?)? }); }
+ }
+ pub impl Match {
+     pub fn group_count(&self) -> i32 { return self.captures.len() / 2; }

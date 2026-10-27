@@ -12,7 +12,9 @@ import ext::inflate;
 pub enum Method { Stored, Deflate }
 pub struct Limits { max_archive: i32, max_entries: i32, max_entry: i32, max_total: u64, max_work: u64 }
 pub enum Error { Bounds, ArchiveLimit, EntryLimit, TotalLimit, WorkLimit, SizeOverflow, Truncated, Signature, HeaderMismatch, Descriptor, Overlap, Zip64, MultiDisk, Encryption, UnsupportedMethod, UnsupportedFlags, UnsupportedVersion, UnsupportedExtra, Encoding, Name, Checksum, SizeMismatch, TrailingData, OutputLimit, AllocationFailed, Deflate(ext::inflate::Error), Encode(ext::deflate::Error) }
-pub struct Entry { name: core::slice::View<u8>, comment: core::slice::View<u8>, extra: core::slice::View<u8>, local_extra: core::slice::View<u8>, data: core::slice::View<u8>, method: Method, utf8: bool, flags: i32, crc32: u32, compressed_size: i32, uncompressed_size: i32, modified_time: i32, modified_date: i32, external_attributes: u32, local_offset: i32, local_end: i32 }
+// version_made_by retains the full unsigned central-directory creator word;
+// its high byte identifies the host convention for external_attributes.
+pub struct Entry { name: core::slice::View<u8>, comment: core::slice::View<u8>, extra: core::slice::View<u8>, local_extra: core::slice::View<u8>, data: core::slice::View<u8>, method: Method, utf8: bool, flags: i32, crc32: u32, compressed_size: i32, uncompressed_size: i32, modified_time: i32, modified_date: i32, version_made_by: i32, external_attributes: u32, local_offset: i32, local_end: i32 }
 pub struct Archive { source: core::slice::View<u8>, comment: core::slice::View<u8>, entries: i32, directory_start: i32, directory_end: i32 }
 pub struct Cursor { archive: Archive, position: i32, remaining_entries: i32 }
 pub struct Source { name: core::slice::View<u8>, data: core::slice::View<u8>, method: Method, utf8: bool }
@@ -103,7 +105,7 @@ fn read_entry(view: core::slice::View<u8>, position: i32, end: i32, locals_end: 
         if (core::result::is_err(described)) { return core::result::Err(core::result::unwrap_err(described)); } local_end = core::result::unwrap(described);
     }
     let kind: Method = Method::Stored; if (method == 8) { kind = Method::Deflate; }
-    return core::result::Ok(Parsed { entry: Entry { name: name, comment: comment, extra: fields, local_extra: local_fields, data: part(view,data_start,data_end), method: kind, utf8: (flags & 2048) != 0, flags: flags, crc32: checksum, compressed_size: compressed, uncompressed_size: unpacked, modified_time: u16(view,position+12), modified_date: u16(view,position+14), external_attributes: u32(view,position+38), local_offset: local, local_end: local_end }, next: position+length });
+    return core::result::Ok(Parsed { entry: Entry { name: name, comment: comment, extra: fields, local_extra: local_fields, data: part(view,data_start,data_end), method: kind, utf8: (flags & 2048) != 0, flags: flags, crc32: checksum, compressed_size: compressed, uncompressed_size: unpacked, modified_time: u16(view,position+12), modified_date: u16(view,position+14), version_made_by: u16(view,position+4), external_attributes: u32(view,position+38), local_offset: local, local_end: local_end }, next: position+length });
 }
 // Called only for a previously validated directory entry.
 fn previous_end(view: core::slice::View<u8>, position: i32) -> i32 {

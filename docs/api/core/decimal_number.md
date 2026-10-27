@@ -18,10 +18,12 @@ Declaration counts: enum: 1; field: 15; function: 4; impl: 1; method: 6; struct:
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::decimal](decimal.md) · [source](../../../stdlib/core/decimal_number.lani#L5)
-- [core::option](option.md) · [source](../../../stdlib/core/decimal_number.lani#L6)
-- [core::result](result.md) · [source](../../../stdlib/core/decimal_number.lani#L7)
-- [core::slice](slice.md) · [source](../../../stdlib/core/decimal_number.lani#L8)
+- [core::decimal::len_u64](decimal.md) (item: function) · [declaration](../../../stdlib/core/decimal.lani#L107) · [source](../../../stdlib/core/decimal_number.lani#L5)
+- [core::option::unwrap](option.md) (item: function) · [declaration](../../../stdlib/core/option.lani#L29) · [source](../../../stdlib/core/decimal_number.lani#L6)
+- [core::result::Result](result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../stdlib/core/decimal_number.lani#L7)
+- [core::result::Ok](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../stdlib/core/decimal_number.lani#L8)
+- [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/decimal_number.lani#L9)
+- [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../stdlib/core/decimal_number.lani#L10)
 
 ## Types, fields and variants
 
@@ -29,7 +31,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ErrorKind
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 pub enum ErrorKind
@@ -37,7 +39,7 @@ pub enum ErrorKind
 
 #### variant: Bounds
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 Bounds
@@ -45,7 +47,7 @@ Bounds
 
 #### variant: Syntax
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 Syntax
@@ -53,7 +55,7 @@ Syntax
 
 #### variant: ScratchTooSmall
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 ScratchTooSmall
@@ -61,7 +63,7 @@ ScratchTooSmall
 
 #### variant: WorkLimit
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 WorkLimit
@@ -69,7 +71,7 @@ WorkLimit
 
 #### variant: ZeroDivisor
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 ZeroDivisor
@@ -77,7 +79,7 @@ ZeroDivisor
 
 #### variant: CapacityOverflow
 
-[Source line 10](../../../stdlib/core/decimal_number.lani#L10)
+[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
 
 ```lanius
 CapacityOverflow
@@ -85,7 +87,7 @@ CapacityOverflow
 
 ### struct: Error
 
-[Source line 11](../../../stdlib/core/decimal_number.lani#L11)
+[Source line 13](../../../stdlib/core/decimal_number.lani#L13)
 
 ```lanius
 pub struct Error
@@ -93,7 +95,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 11](../../../stdlib/core/decimal_number.lani#L11)
+[Source line 13](../../../stdlib/core/decimal_number.lani#L13)
 
 ```lanius
 kind: ErrorKind
@@ -101,7 +103,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 11](../../../stdlib/core/decimal_number.lani#L11)
+[Source line 13](../../../stdlib/core/decimal_number.lani#L13)
 
 ```lanius
 offset: i32
@@ -109,7 +111,7 @@ offset: i32
 
 ### struct: Decimal
 
-[Source line 12](../../../stdlib/core/decimal_number.lani#L12)
+[Source line 14](../../../stdlib/core/decimal_number.lani#L14)
 
 ```lanius
 pub struct Decimal
@@ -117,15 +119,15 @@ pub struct Decimal
 
 #### field: raw
 
-[Source line 13](../../../stdlib/core/decimal_number.lani#L13)
+[Source line 15](../../../stdlib/core/decimal_number.lani#L15)
 
 ```lanius
-raw: core::slice::View<u8>
+raw: View<u8>
 ```
 
 #### field: negative
 
-[Source line 13](../../../stdlib/core/decimal_number.lani#L13)
+[Source line 15](../../../stdlib/core/decimal_number.lani#L15)
 
 ```lanius
 negative: bool
@@ -133,7 +135,7 @@ negative: bool
 
 #### field: mantissa_start
 
-[Source line 13](../../../stdlib/core/decimal_number.lani#L13)
+[Source line 15](../../../stdlib/core/decimal_number.lani#L15)
 
 ```lanius
 mantissa_start: i32
@@ -141,7 +143,7 @@ mantissa_start: i32
 
 #### field: integer_digits
 
-[Source line 14](../../../stdlib/core/decimal_number.lani#L14)
+[Source line 16](../../../stdlib/core/decimal_number.lani#L16)
 
 ```lanius
 integer_digits: i32
@@ -149,7 +151,7 @@ integer_digits: i32
 
 #### field: total_digits
 
-[Source line 14](../../../stdlib/core/decimal_number.lani#L14)
+[Source line 16](../../../stdlib/core/decimal_number.lani#L16)
 
 ```lanius
 total_digits: i32
@@ -157,7 +159,7 @@ total_digits: i32
 
 #### field: first
 
-[Source line 14](../../../stdlib/core/decimal_number.lani#L14)
+[Source line 16](../../../stdlib/core/decimal_number.lani#L16)
 
 ```lanius
 first: i32
@@ -165,7 +167,7 @@ first: i32
 
 #### field: last
 
-[Source line 14](../../../stdlib/core/decimal_number.lani#L14)
+[Source line 16](../../../stdlib/core/decimal_number.lani#L16)
 
 ```lanius
 last: i32
@@ -173,7 +175,7 @@ last: i32
 
 #### field: dot
 
-[Source line 14](../../../stdlib/core/decimal_number.lani#L14)
+[Source line 16](../../../stdlib/core/decimal_number.lani#L16)
 
 ```lanius
 dot: bool
@@ -181,7 +183,7 @@ dot: bool
 
 #### field: exponent_start
 
-[Source line 15](../../../stdlib/core/decimal_number.lani#L15)
+[Source line 17](../../../stdlib/core/decimal_number.lani#L17)
 
 ```lanius
 exponent_start: i32
@@ -189,7 +191,7 @@ exponent_start: i32
 
 #### field: exponent_length
 
-[Source line 15](../../../stdlib/core/decimal_number.lani#L15)
+[Source line 17](../../../stdlib/core/decimal_number.lani#L17)
 
 ```lanius
 exponent_length: i32
@@ -197,7 +199,7 @@ exponent_length: i32
 
 #### field: exponent_negative
 
-[Source line 15](../../../stdlib/core/decimal_number.lani#L15)
+[Source line 17](../../../stdlib/core/decimal_number.lani#L17)
 
 ```lanius
 exponent_negative: bool
@@ -205,7 +207,7 @@ exponent_negative: bool
 
 ### struct: Multiple
 
-[Source line 17](../../../stdlib/core/decimal_number.lani#L17)
+[Source line 19](../../../stdlib/core/decimal_number.lani#L19)
 
 ```lanius
 pub struct Multiple
@@ -213,7 +215,7 @@ pub struct Multiple
 
 #### field: value
 
-[Source line 17](../../../stdlib/core/decimal_number.lani#L17)
+[Source line 19](../../../stdlib/core/decimal_number.lani#L19)
 
 ```lanius
 value: bool
@@ -221,7 +223,7 @@ value: bool
 
 #### field: work
 
-[Source line 17](../../../stdlib/core/decimal_number.lani#L17)
+[Source line 19](../../../stdlib/core/decimal_number.lani#L19)
 
 ```lanius
 work: u64
@@ -231,27 +233,27 @@ work: u64
 
 ### function: parse
 
-[Source line 34](../../../stdlib/core/decimal_number.lani#L34)
+[Source line 36](../../../stdlib/core/decimal_number.lani#L36)
 
 ```lanius
-pub fn parse(raw: core::slice::View<u8>) -> core::result::Result<Decimal, Error>
+pub fn parse(raw: View<u8>) -> Result<Decimal, Error>
 ```
 
 ### function: scratch_len
 
-[Source line 205](../../../stdlib/core/decimal_number.lani#L205)
+[Source line 207](../../../stdlib/core/decimal_number.lani#L207)
 
 ```lanius
-pub fn scratch_len(divisor: Decimal) -> core::result::Result<i32, Error>
+pub fn scratch_len(divisor: Decimal) -> Result<i32, Error>
 ```
 
 ### function: is_multiple_of_counted
 
-[Source line 248](../../../stdlib/core/decimal_number.lani#L248)
+[Source line 250](../../../stdlib/core/decimal_number.lani#L250)
 
 ```lanius
-pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: core::slice::View<u8>, max_work: u64)
-    -> core::result::Result<Multiple, Error>
+pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: View<u8>, max_work: u64)
+    -> Result<Multiple, Error>
 ```
 
 ### function: is_multiple_of
@@ -259,15 +261,15 @@ pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: core
 [Source line 293](../../../stdlib/core/decimal_number.lani#L293)
 
 ```lanius
-pub fn is_multiple_of(dividend: Decimal, divisor: Decimal, scratch: core::slice::View<u8>, max_work: u64)
-    -> core::result::Result<bool, Error>
+pub fn is_multiple_of(dividend: Decimal, divisor: Decimal, scratch: View<u8>, max_work: u64)
+    -> Result<bool, Error>
 ```
 
 ## Implementation blocks and public methods
 
-### impl at line 168
+### impl at line 170
 
-[Source line 168](../../../stdlib/core/decimal_number.lani#L168)
+[Source line 170](../../../stdlib/core/decimal_number.lani#L170)
 
 ```lanius
 pub impl Decimal
@@ -275,7 +277,7 @@ pub impl Decimal
 
 #### method: borrow
 
-[Source line 169](../../../stdlib/core/decimal_number.lani#L169)
+[Source line 171](../../../stdlib/core/decimal_number.lani#L171)
 
 ```lanius
 pub fn borrow(&self) -> &Decimal
@@ -283,7 +285,7 @@ pub fn borrow(&self) -> &Decimal
 
 #### method: is_zero
 
-[Source line 175](../../../stdlib/core/decimal_number.lani#L175)
+[Source line 177](../../../stdlib/core/decimal_number.lani#L177)
 
 ```lanius
 pub fn is_zero(&self) -> bool
@@ -291,7 +293,7 @@ pub fn is_zero(&self) -> bool
 
 #### method: is_negative
 
-[Source line 177](../../../stdlib/core/decimal_number.lani#L177)
+[Source line 179](../../../stdlib/core/decimal_number.lani#L179)
 
 ```lanius
 pub fn is_negative(&self) -> bool
@@ -299,7 +301,7 @@ pub fn is_negative(&self) -> bool
 
 #### method: is_integer
 
-[Source line 178](../../../stdlib/core/decimal_number.lani#L178)
+[Source line 180](../../../stdlib/core/decimal_number.lani#L180)
 
 ```lanius
 pub fn is_integer(&self) -> bool
@@ -307,7 +309,7 @@ pub fn is_integer(&self) -> bool
 
 #### method: compare
 
-[Source line 183](../../../stdlib/core/decimal_number.lani#L183)
+[Source line 185](../../../stdlib/core/decimal_number.lani#L185)
 
 ```lanius
 pub fn compare(&self, other: Decimal) -> i32
@@ -315,7 +317,7 @@ pub fn compare(&self, other: Decimal) -> i32
 
 #### method: equal
 
-[Source line 202](../../../stdlib/core/decimal_number.lani#L202)
+[Source line 204](../../../stdlib/core/decimal_number.lani#L204)
 
 ```lanius
 pub fn equal(&self, other: Decimal) -> bool

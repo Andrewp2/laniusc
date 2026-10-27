@@ -1,0 +1,53 @@
+// The concrete convenience facades transfer reports without disposing A.
+module app::main;
+import alloc::vec;
+import core::net;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http_server;
+import ext::http_server_poll;
+import ext::https_server;
+import ext::https_server_poll;
+import ext::openssl_tls;
+import ext::server_poll;
+import std::args;
+import std::clock;
+import std::socket;
+
+// Deliberately no Destroy implementation. Every callback must remain unused.
+struct ManualError { code: i32 }
+struct Handler { calls: i32 }
+impl Handler { fn borrow(&self) -> &Handler { return self; } }
+pub impl ext::server_poll::Handler<ManualError> for Handler {
+    pub fn head(&self, id: u64, peer: core::net::SocketAddr, head: ext::http_server::RequestHead, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ManualError> { self.calls += 1; return core::result::Err(ManualError { code:1 }); }
+    pub fn request(&self, id: u64, request: ext::http_server::Request, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ManualError> { self.calls += 1; return core::result::Err(ManualError { code:2 }); }
+    pub fn rejected(&self, id: u64, rejection: ext::http_server::Rejection, reply: &ext::server_poll::Reply) -> core::result::Result<ext::server_poll::Decision,ManualError> { self.calls += 1; return core::result::Err(ManualError { code:3 }); }
+}
+fn release_empty<E,A>(report: ext::server_poll::Report<E,A>) {
+    assert(report.len() == 0 && report.stats.accepted == 0 && report.stats.active == 0);
+    assert(report.stats.accept_calls == 0 && report.stats.waits == 0 && report.stats.polls == 0 && report.stats.operations == 0 && report.stats.handler_calls == 0);
+    assert(report.outcomes.capacity() == 0);
+    // Public Vec storage can be released without disposing elements when the
+    // report is empty. Allocate real empty capacity to exercise that release.
+    report.outcomes.try_reserve(1).unwrap(); assert(report.outcomes.capacity() > 0 && report.len() == 0);
+    report.outcomes.destroy(); assert(report.outcomes.capacity() == 0 && report.len() == 0);
+    report.outcomes.destroy();
+}
+fn main() -> i32 {
+    let args = std::args::snapshot(1,2,8192).unwrap(); assert(args.len() == 2);
+    let empty: [u8;1] = [0];
+    let context = ext::openssl_tls::new_server(args.get(0).unwrap(),args.get(1).unwrap(),core::slice::view<u8>(empty,0).unwrap(),ext::openssl_tls::ClientAuthentication::Unauthenticated,ext::openssl_tls::default_limits()).unwrap();
+    let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(1).unwrap();
+    let fd: i32 = listener.raw_handle().unwrap();
+    let handler: Handler = Handler { calls:0 }; let limits = ext::server_poll::default_limits(); limits.max_accepted = 0;
+    let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_secs(5)).unwrap();
+    let plain: core::result::Result<ext::server_poll::Report<ext::http_server::Failure,ManualError>,ext::server_poll::ServiceFailure<ext::http_server::Failure,ManualError>> = ext::http_server_poll::serve_until<Handler,ManualError>(listener.borrow(),handler.borrow(),ext::http_server::default_options(),limits,deadline);
+    release_empty<ext::http_server::Failure,ManualError>(plain.unwrap());
+    assert(listener.raw_handle().unwrap() == fd && listener.is_nonblocking().unwrap() && handler.calls == 0);
+    let tls: core::result::Result<ext::server_poll::Report<ext::https_server::Failure,ManualError>,ext::server_poll::ServiceFailure<ext::https_server::Failure,ManualError>> = ext::https_server_poll::serve_until<Handler,ManualError>(listener.borrow(),context.borrow(),handler.borrow(),ext::http_server::default_options(),ext::https_server::default_options(),limits,deadline);
+    release_empty<ext::https_server::Failure,ManualError>(tls.unwrap());
+    assert(listener.raw_handle().unwrap() == fd && listener.is_nonblocking().unwrap() && context.is_open() && handler.calls == 0);
+    listener.close().unwrap(); context.destroy(); context.destroy(); args.destroy(); return 0;
+}

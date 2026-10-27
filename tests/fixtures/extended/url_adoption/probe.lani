@@ -1,0 +1,110 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import std::args;
+import std::clock;
+import std::linux;
+import std::signal;
+import std::socket;
+import std::stream;
+
+fn lit(value:str,count:i32) -> core::slice::View<u8> {
+    let raw:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn number(value:core::slice::View<u8>) -> i32 {
+    let out:i32=0; let index:i32=0;
+    while(index<value.length) { let byte=value.get(index).unwrap(); assert(byte>=48 && byte<=57); out=out*10+(byte-48) as i32; index+=1; }
+    return out;
+}
+fn mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); core::io::write_all(sink.borrow(),bytes,0,1).unwrap(); }
+fn ack() { let bytes:[u8;1]=[0]; let source=std::stream::stdin(); core::io::read_exact(source.borrow(),bytes,0,1).unwrap(); assert(bytes[0]==43); }
+fn emit(words:[u64]) {
+    let bytes:[u8;192]=[0;192]; let index:i32=0;
+    while(index<24) { let part:i32=0; while(part<8) { bytes[index*8+part]=(words[index]>>(part*8)) as u8; part+=1; } index+=1; }
+    let sink=std::stream::stdout(); core::io::write_all(sink.borrow(),bytes,0,192).unwrap();
+}
+fn io_code(error:core::io::Error) -> u64 {
+    return match(error) { core::io::Error::InvalidInput->1,core::io::Error::Host(value)->1000+value as u64,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,_ ->99 };
+}
+fn cause(value:ext::http_client::Cause) -> u64 {
+    return match(value) { ext::http_client::Cause::Timeout->3,ext::http_client::Cause::Io(error)->4,ext::http_client::Cause::IoLimit->10,ext::http_client::Cause::Inactive->13,_ ->99 };
+}
+fn detail(value:ext::http_client::Cause) -> u64 {
+    return match(value) { ext::http_client::Cause::Io(error)->io_code(error),_ ->0 };
+}
+fn stage(value:ext::http_client::Stage) -> u64 {
+    return match(value) { ext::http_client::Stage::Prepare->0,ext::http_client::Stage::Open->1,ext::http_client::Stage::Connect->2,ext::http_client::Stage::Send->3,ext::http_client::Stage::Receive->4,ext::http_client::Stage::Shutdown->5,ext::http_client::Stage::Validate->6,ext::http_client::Stage::Decode->7,ext::http_client::Stage::Close->8,ext::http_client::Stage::Publish->9 };
+}
+fn fill(words:[u64],tag:u64,prepared:&ext::http_client::Prepared,socket:&std::socket::Socket,stats:ext::http_client::Stats) {
+    words[0]=1431456833; words[1]=tag; words[4]=0; words[5]=0;
+    if(prepared.is_active()) { words[4]=1; } if(socket.is_open()) { words[5]=1; }
+    words[12]=stats.request_bytes as u64; words[13]=stats.request_sent as u64;
+    words[14]=stats.response_received; words[15]=stats.io_calls; words[16]=stats.work;
+}
+fn error(words:[u64],failure:ext::http_client::Failure) {
+    words[8]=cause(failure.cause); words[9]=detail(failure.cause); words[10]=stage(failure.stage); words[11]=0;
+    if(failure.cleanup.is_some()) { words[11]=io_code(failure.cleanup.unwrap()); }
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let arguments=std::args::snapshot(1,3,256).unwrap();
+    let endpoint=core::net::parse_socket(arguments.get(0).unwrap()).unwrap();
+    let mode=number(arguments.get(1).unwrap()); let close_fault:bool=number(arguments.get(2).unwrap())==1;
+    assert(mode>=0 && mode<=7); assert(!close_fault || mode==1); arguments.destroy();
+    let now=std::clock::monotonic_now().unwrap(); let milliseconds:u64=4000;
+    if(mode==6) { milliseconds=100; }
+    let deadline=core::time::deadline_after(now,core::time::from_millis(milliseconds)).unwrap();
+    let empty=lit("",0); let fields:[ext::http::Field;1]=[ext::http::Field { raw:empty,name:empty,value:empty,offset:0 }];
+    let body:[u8;8]=[9,9,0,255,13,10,9,9];
+    let request=ext::http_client::Request { method:lit("POST",4),target:lit("/adopt?q=x",10),authority:lit("adopt.example:8080",18),headers:core::slice::View { values:fields,start:0,length:0 },body:core::slice::view_range(body,2,4).unwrap() };
+    let options=ext::http_client::default_options(); options.trailing=ext::http_client::Trailing::Reject;
+    if(mode==7) { options.io_calls=1; }
+    mark(80); let prepared=ext::http_client::prepare_until(request,options,deadline).unwrap();
+    if(mode==5) { assert(prepared.destroy()); } mark(112);
+    mark(67); let kind:std::socket::Kind=std::socket::Kind::Tcp;
+    if(mode==4) { kind=std::socket::Kind::Udp; }
+    let supplied=std::socket::create(std::socket::Family::Ipv4,kind,true).unwrap(); let selected=supplied.raw_handle().unwrap();
+    if(mode==0 || mode==3 || mode==5 || mode==6 || mode==7) { supplied.connect_until(endpoint,deadline).unwrap(); }
+    if(mode==2) { supplied.close().unwrap(); }
+    if(mode==3) { supplied.set_nonblocking(false).unwrap(); } mark(99);
+    let words:[u64;24]=[0;24]; words[2]=mode as u64; words[3]=selected as u64;
+    words[17]=deadline.instant.ticks.seconds; words[18]=deadline.instant.ticks.nanos as u64;
+    if(close_fault) { words[22]=1; }
+    fill(words,0,prepared.borrow(),supplied.borrow(),prepared.stats()); emit(words); ack();
+    mark(65); let adopted=prepared.adopt_connected(supplied.borrow()); mark(97);
+    assert(!prepared.is_active() && !supplied.is_open() && supplied.raw_handle().is_none());
+    if(adopted.is_err()) {
+        assert(mode!=0); let failure:ext::http_client::Failure=adopted.unwrap_err();
+        assert(failure.cleanup.is_some()==close_fault);
+        if(close_fault) { assert(io_code(failure.cleanup.unwrap())==1005); }
+        fill(words,1,prepared.borrow(),supplied.borrow(),failure.stats); error(words,failure); words[19]=2; emit(words); ack();
+        if(close_fault) {
+            mark(75); let repair:[std::linux::Argument;1]=[std::linux::Argument::Word(selected as i64)];
+            assert(std::linux::call(3,core::slice::view(repair,1).unwrap()).unwrap()==0); mark(107);
+        }
+        mark(84); let again=prepared.adopt_connected(supplied.borrow()); assert(again.is_err() && cause(again.unwrap_err().cause)==13);
+        assert(!prepared.destroy() && !prepared.destroy() && supplied.close().is_ok()); words[21]=1; mark(116);
+        fill(words,2,prepared.borrow(),supplied.borrow(),failure.stats); emit(words); ack(); return 0;
+    }
+    assert(mode==0); let exchange:ext::http_client::Exchange=adopted.unwrap();
+    assert(exchange.raw_handle().unwrap()==selected); words[6]=selected as u64; words[7]=1;
+    fill(words,1,prepared.borrow(),supplied.borrow(),exchange.stats()); emit(words); ack();
+    mark(82); let completed:core::result::Result<ext::http_client::Response,ext::http_client::Failure> =exchange.run(); mark(114);
+    assert(completed.is_ok()); let response:ext::http_client::Response=completed.unwrap();
+    assert(response.message().head.status==200 && response.body().length==4);
+    assert(response.body().get(0).unwrap()==0 && response.body().get(1).unwrap()==255 && response.body().get(2).unwrap()==13 && response.body().get(3).unwrap()==10);
+    assert(response.stats.request_sent==response.stats.request_bytes && !response.stats.upload_stopped);
+    mark(68); response.destroy(); mark(100);
+    mark(84); let again=exchange.run(); assert(again.is_err() && cause(again.unwrap_err().cause)==13);
+    assert(!exchange.abort().unwrap() && !prepared.destroy() && supplied.close().is_ok()); words[21]=1; mark(116);
+    assert(exchange.raw_handle().is_none()); words[6]=0; words[19]=1;
+    fill(words,2,prepared.borrow(),supplied.borrow(),exchange.stats()); emit(words); ack(); return 0;
+}

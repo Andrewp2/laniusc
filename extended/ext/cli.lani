@@ -13,9 +13,16 @@ pub struct Argument { bytes: core::slice::View<u8>, at: Location }
 pub struct Occurrence { id: i32, at: Location, value: core::option::Option<Argument> }
 pub enum Event { Option(Occurrence), Operand(Argument) }
 pub enum Error { InvalidSpec(i32), DuplicateSpec(i32), UnknownOption(Location), MissingValue(Location), UnexpectedValue(Location) }
+pub struct Pending { spec: Spec, at: Location }
+pub enum PrefixKind { Word, LongOption, ShortOption, Value }
+pub struct Prefix {
+    kind: PrefixKind, prefix: core::slice::View<u8>, stem: core::slice::View<u8>,
+    option: core::option::Option<Spec>
+}
 pub struct Parser {
     arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering,
-    index: i32, short_offset: i32, ended: bool, failure: core::option::Option<Error>,
+    index: i32, short_offset: i32, ended: bool, terminated: bool, failure: core::option::Option<Error>,
+    prefix_mode: bool, pending: core::option::Option<Pending>,
 }
 
 fn byte(bytes: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(bytes.get(index)); }
@@ -25,6 +32,24 @@ fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
     let index: i32 = 0; while (index < left.len()) { if (byte(left, index) != byte(right, index)) { return false; } index += 1; } return true;
 }
 fn part(bytes: core::slice::View<u8>, start: i32, end: i32) -> core::slice::View<u8> { return core::result::unwrap(bytes.subview(start, end)); }
+fn short_spec(specs: core::slice::View<Spec>, name: u8) -> core::option::Option<Spec> {
+    let index: i32 = 0;
+    while (index < specs.len()) {
+        let spec: Spec = core::option::unwrap(specs.get(index));
+        if (spec.short != 0 && spec.short == name) { return core::option::Some(spec); }
+        index += 1;
+    }
+    return core::option::None();
+}
+fn long_spec(specs: core::slice::View<Spec>, name: core::slice::View<u8>) -> core::option::Option<Spec> {
+    let index: i32 = 0;
+    while (index < specs.len()) {
+        let spec: Spec = core::option::unwrap(specs.get(index));
+        if (!spec.long.is_empty() && equal(spec.long,name)) { return core::option::Some(spec); }
+        index += 1;
+    }
+    return core::option::None();
+}
 
 // Validate every schema entry before consuming arguments. id is nonnegative;
 // short=0 or an empty long name disables that spelling, but not both.
@@ -47,10 +72,24 @@ pub fn parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::
         }
         index += 1;
     }
-    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, ended: false, failure: core::option::None() });
+    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, ended: false, terminated: false, failure: core::option::None(), prefix_mode: false, pending: core::option::None() });
+}
+
+// This explicit mode admits a trailing required option as pending. Strict
+// parser() keeps its MissingValue error, including its sticky failure state.
+pub fn prefix_parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering) -> core::result::Result<Parser,Error> {
+    let checked: core::result::Result<Parser,Error> = parser(arguments,specs,ordering);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let value: Parser = checked.unwrap(); value.prefix_mode = true;
+    return core::result::Ok(value);
 }
 
 pub impl Parser {
+    // Distinguish an actual terminator from an OptionsFirst operand. A required
+    // option value equal to '--' never enters the terminator branch.
+    pub fn explicitly_terminated(&self) -> bool { return self.terminated; }
+    pub fn options_ended(&self) -> bool { return self.ended; }
+    pub fn pending_required(&self) -> core::option::Option<Pending> { return self.pending; }
     fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Event>, Error> {
         self.failure = core::option::Some(error); return core::result::Err(error);
     }
@@ -63,17 +102,22 @@ pub impl Parser {
         let required: bool = match (spec.arity) { Arity::Required -> true, _ -> false };
         if (core::option::is_some(attached)) { return self.emit(spec, at, attached); }
         if (!required) { return self.emit(spec, at, core::option::None()); }
-        if (self.index == self.arguments.len()) { return self.fail(Error::MissingValue(at)); }
+        if (self.index == self.arguments.len()) {
+            if (self.prefix_mode) {
+                self.pending = core::option::Some(Pending { spec: spec, at: at });
+                return core::result::Ok(core::option::None());
+            }
+            return self.fail(Error::MissingValue(at));
+        }
         let value: core::slice::View<u8> = core::option::unwrap(self.arguments.get(self.index));
         let argument: Argument = Argument { bytes: value, at: Location { argument: self.index, byte: 0 } }; self.index += 1;
         return self.emit(spec, at, core::option::Some(argument));
     }
     fn short_option(&self, token: core::slice::View<u8>) -> core::result::Result<core::option::Option<Event>, Error> {
         let at: Location = Location { argument: self.index, byte: self.short_offset }; let name: u8 = byte(token, self.short_offset);
-        let found: i32 = -1; let index: i32 = 0;
-        while (index < self.specs.len()) { let spec: Spec = core::option::unwrap(self.specs.get(index)); if (spec.short != 0 && spec.short == name) { found = index; break; } index += 1; }
-        if (found < 0) { return self.fail(Error::UnknownOption(at)); }
-        let spec: Spec = core::option::unwrap(self.specs.get(found)); self.short_offset += 1;
+        let found: core::option::Option<Spec> = short_spec(self.specs,name);
+        if (found.is_none()) { return self.fail(Error::UnknownOption(at)); }
+        let spec: Spec = found.unwrap(); self.short_offset += 1;
         let flag: bool = match (spec.arity) { Arity::Flag -> true, _ -> false };
         if (flag) {
             if (self.short_offset == token.len()) { self.index += 1; self.short_offset = 0; }
@@ -88,10 +132,10 @@ pub impl Parser {
     fn long_option(&self, token: core::slice::View<u8>) -> core::result::Result<core::option::Option<Event>, Error> {
         let at: Location = Location { argument: self.index, byte: 2 }; let end: i32 = 2;
         while (end < token.len() && byte(token, end) != 61) { end += 1; }
-        let name: core::slice::View<u8> = part(token, 2, end); let found: i32 = -1; let index: i32 = 0;
-        while (index < self.specs.len()) { let spec: Spec = core::option::unwrap(self.specs.get(index)); if (!spec.long.is_empty() && equal(spec.long, name)) { found = index; break; } index += 1; }
-        if (found < 0) { return self.fail(Error::UnknownOption(at)); }
-        let spec: Spec = core::option::unwrap(self.specs.get(found));
+        let name: core::slice::View<u8> = part(token, 2, end);
+        let found: core::option::Option<Spec> = long_spec(self.specs,name);
+        if (found.is_none()) { return self.fail(Error::UnknownOption(at)); }
+        let spec: Spec = found.unwrap();
         let flag: bool = match (spec.arity) { Arity::Flag -> true, _ -> false };
         if (flag && end < token.len()) { return self.fail(Error::UnexpectedValue(Location { argument: self.index, byte: end })); }
         let value: core::option::Option<Argument> = core::option::None();
@@ -102,12 +146,13 @@ pub impl Parser {
     // Repetition and conflicts are application policy, so every occurrence emits.
     pub fn next(&self) -> core::result::Result<core::option::Option<Event>, Error> {
         if (core::option::is_some(self.failure)) { return core::result::Err(core::option::unwrap(self.failure)); }
+        if (self.pending.is_some()) { return core::result::Ok(core::option::None()); }
         while (self.index < self.arguments.len()) {
             let token: core::slice::View<u8> = core::option::unwrap(self.arguments.get(self.index));
             if (self.short_offset > 0) { return self.short_option(token); }
             if (!self.ended && token.len() >= 2 && byte(token, 0) == 45) {
                 if (byte(token, 1) == 45) {
-                    if (token.len() == 2) { self.ended = true; self.index += 1; }
+                    if (token.len() == 2) { self.ended = true; self.terminated = true; self.index += 1; }
                     else { return self.long_option(token); }
                 } else { self.short_offset = 1; return self.short_option(token); }
             } else {
@@ -118,5 +163,49 @@ pub impl Parser {
             }
         }
         return core::result::Ok(core::option::None());
+    }
+
+    // Classify only a caller-admitted active prefix. Complete words must first
+    // pass through next(). The borrowed results refer to prefix/schema, never
+    // to this parser's scratch or a temporary option record.
+    pub fn classify_prefix(&self, prefix: core::slice::View<u8>) -> core::result::Result<Prefix,Error> {
+        if (self.failure.is_some()) { return core::result::Err(self.failure.unwrap()); }
+        let empty: core::slice::View<u8> = part(prefix,0,0);
+        if (self.pending.is_some()) {
+            let pending: Pending = self.pending.unwrap();
+            return core::result::Ok(Prefix { kind: PrefixKind::Value, prefix: prefix, stem: empty, option: core::option::Some(pending.spec) });
+        }
+        if (self.ended || prefix.len() == 0 || byte(prefix,0) != 45) {
+            return core::result::Ok(Prefix { kind: PrefixKind::Word, prefix: prefix, stem: empty, option: core::option::None() });
+        }
+        if (prefix.len() >= 2 && byte(prefix,1) == 45) {
+            let end: i32 = 2;
+            while (end < prefix.len() && byte(prefix,end) != 61) { end += 1; }
+            let name: core::slice::View<u8> = part(prefix,2,end);
+            if (end == prefix.len()) {
+                return core::result::Ok(Prefix { kind: PrefixKind::LongOption, prefix: name, stem: part(prefix,0,2), option: core::option::None() });
+            }
+            let found: core::option::Option<Spec> = long_spec(self.specs,name);
+            if (found.is_none()) { return core::result::Err(Error::UnknownOption(Location { argument: self.index, byte: 2 })); }
+            let spec: Spec = found.unwrap();
+            let flag: bool = match (spec.arity) { Arity::Flag -> true, _ -> false };
+            if (flag) { return core::result::Err(Error::UnexpectedValue(Location { argument: self.index, byte: end })); }
+            return core::result::Ok(Prefix { kind: PrefixKind::Value, prefix: part(prefix,end+1,prefix.len()), stem: part(prefix,0,end+1), option: core::option::Some(spec) });
+        }
+        let position: i32 = 1; let previous: core::option::Option<Spec> = core::option::None();
+        while (position < prefix.len()) {
+            let found: core::option::Option<Spec> = short_spec(self.specs,byte(prefix,position));
+            if (found.is_none()) {
+                if (position+1 < prefix.len()) { return core::result::Err(Error::UnknownOption(Location { argument: self.index, byte: position })); }
+                return core::result::Ok(Prefix { kind: PrefixKind::ShortOption, prefix: part(prefix,position,prefix.len()), stem: part(prefix,0,position), option: core::option::None() });
+            }
+            let spec: Spec = found.unwrap(); position += 1;
+            let flag: bool = match (spec.arity) { Arity::Flag -> true, _ -> false };
+            if (!flag) {
+                return core::result::Ok(Prefix { kind: PrefixKind::Value, prefix: part(prefix,position,prefix.len()), stem: part(prefix,0,position), option: core::option::Some(spec) });
+            }
+            previous = core::option::Some(spec);
+        }
+        return core::result::Ok(Prefix { kind: PrefixKind::ShortOption, prefix: empty, stem: prefix, option: previous });
     }
 }

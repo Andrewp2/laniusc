@@ -1,0 +1,14 @@
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+enum Value { Payload(i32), Other }
+fn choose(value: Value) -> Option<i32> {
+    let selected: Option<i32> = match (value) { Value::Payload(number) -> Some(number), _ -> None() };
+    return selected;
+}
+fn main() -> i32 {
+    assert(choose(Value::Other).is_none());
+    assert(choose(Value::Payload(17)).unwrap() == 17);
+    return 0;
+}

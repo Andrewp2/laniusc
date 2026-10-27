@@ -1,0 +1,94 @@
+// Real plain Exchange cleanup after Reply.stage has failed its Protocol.
+module app::main;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_server;
+import ext::server_poll;
+import std::args;
+import std::clock;
+import std::linux;
+import std::poll;
+import std::signal;
+import std::socket;
+import std::stream;
+
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),count).unwrap(); }
+fn number(part: core::slice::View<u8>) -> i32 { return core::decimal::parse_u32_range(part.values,part.start,part.length).unwrap() as i32; }
+fn mark(text: str) { let sink = std::stream::stderr(); let part = bytes(text,1); core::io::write_all(sink.borrow(),part.values,0,1).unwrap(); }
+fn hash(part: core::slice::View<u8>) -> u32 { let value: u32 = 5381; let i: i32 = 0; while (i < part.length) { value = value*33+part.get(i).unwrap() as u32; i += 1; } return value; }
+fn host_five(error: core::io::Error) -> bool { return match(error) { core::io::Error::Host(code) -> code == 5, _ -> false }; }
+fn fd_open(fd: i32) -> bool {
+    let args: [std::linux::Argument;2] = [std::linux::Argument::Word(fd as i64),std::linux::Argument::Word(1)];
+    let result = std::linux::call(72,core::slice::view<std::linux::Argument>(args,2).unwrap());
+    if (result.is_ok()) { return true; } assert(match(result.unwrap_err()) { std::linux::Error::System(code) -> code == 9, _ -> false }); return false;
+}
+fn same_stats(left: ext::http_server::Stats, right: ext::http_server::Stats) -> bool {
+    return left.received == right.received && left.retained == right.retained && left.decoded == right.decoded && left.buffered_discarded == right.buffered_discarded && left.drain_received == right.drain_received && left.response_bytes == right.response_bytes && left.response_sent == right.response_sent && left.continue_sent == right.continue_sent && left.io_calls == right.io_calls && left.work == right.work && left.scan_work == right.scan_work && left.cleanup_calls == right.cleanup_calls && left.cleanup_errors == right.cleanup_errors && left.write_shutdown == right.write_shutdown && left.peer_eof == right.peer_eof && left.final_started == right.final_started && left.closed == right.closed;
+}
+fn preparation(error: ext::http_server::Failure) {
+    assert(match(error.cause) { ext::http_server::Cause::WorkLimit -> true, _ -> false });
+    assert(match(error.stage) { ext::http_server::Stage::Prepare -> true, _ -> false }); assert(error.rejection.is_none());
+}
+fn primary(error: ext::http_server::Failure, expected: ext::http_server::Stats, close_fault: bool) {
+    preparation(error); assert(same_stats(error.stats,expected)); assert(error.cleanup_attempted && error.cleanup.is_some() == close_fault);
+    if (close_fault) { assert(host_five(error.cleanup.unwrap())); }
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let args = std::args::snapshot(1,1,8).unwrap(); assert(args.len() == 1);
+    let close_fault: bool = number(args.get(0).unwrap()) != 0; args.destroy();
+    let options = ext::http_server::default_options(); options.request_bytes = 2048; options.work = 8192; options.request.head_bytes = 1024; options.request.line_bytes = 512; options.request.headers = 16; options.request.trailers = 1; options.request.trailer_bytes = 128; options.response_bytes = 131072; options.response.body_bytes = 65536;
+    let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(4000)).unwrap();
+    // The native process creates both source-owned descriptors. Passing a TCP
+    // fd through strace would also give the tracer a copy and obstruct peer EOF
+    // while this child waits at its final pre-exit checkpoint.
+    mark("C"); let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(1).unwrap();
+    let port: u64 = match(listener.local_addr().unwrap()) { core::net::SocketAddr::V4(address) -> address.port as u64, _ -> 0 }; assert(port != 0);
+    let announcement: [u64;2] = [1213421622,port]; let startup: [u8;16] = [0;16]; let word: i32 = 0;
+    while (word < 2) { let byte: i32 = 0; while (byte < 8) { startup[word*8+byte] = (announcement[word]>>(byte*8)) as u8; byte += 1; } word += 1; }
+    let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),startup,0,16).unwrap(); let input = std::stream::stdin(); let connected: [u8;1] = [0]; core::io::read_exact(input.borrow(),connected,0,1).unwrap(); assert(connected[0] == 43);
+    let accepted = listener.accept(true).unwrap(); let fd: i32 = accepted.socket.raw_handle().unwrap(); listener.close().unwrap();
+    let owner = ext::http_server::begin_connected(accepted.socket,accepted.peer,options,deadline).unwrap(); mark("c");
+    let poll = std::poll::new(1).unwrap(); let readiness = ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false }; let steps: i32 = 0;
+    while (true) {
+        assert(steps < 10000); steps += 1; mark("S"); let event = owner.step(readiness).unwrap(); mark("s"); readiness = ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false };
+        if (event.is_some()) { assert(match(event.unwrap()) { ext::http_server::Event::Head(head) -> true, _ -> false }); break; }
+        let interest = owner.interest(); if (!interest.immediate) {
+            mark("W"); assert(owner.before_wait().unwrap()); mark("w"); let events: u32 = 0; if (interest.readable) { events |= std::poll::READABLE; } if (interest.writable) { events |= std::poll::WRITABLE; }
+            let requests: [std::poll::Request;1] = [std::poll::Request { handle:owner.raw_handle().unwrap(),events:events }];
+            mark("P"); poll.poll_ms(core::slice::view<std::poll::Request>(requests,1).unwrap(),25).unwrap(); mark("p"); let found = poll.readiness(0).unwrap();
+            readiness = ext::http_client::Readiness { readable:found.readable(),writable:found.writable(),hangup:found.hangup() || found.read_closed(),error:found.error() || found.invalid() };
+        }
+    }
+    let head = owner.protocol().head().unwrap().head.raw; let saved_hash: u32 = hash(head); let body: alloc::vec::Vec<u8> = alloc::vec::new(); body.try_resize(65536,171).unwrap(); let fields: [ext::http::Field;0] = [];
+    let reply = ext::server_poll::reply(owner.protocol()); mark("R");
+    let original = reply.stage(ext::http_server::Response { status:413,reason:bytes("Limit",5),headers:core::slice::view<ext::http::Field>(fields,0).unwrap(),body:body.as_view(),date:core::time::system_time(0,0).unwrap() }).unwrap_err(); mark("r");
+    preparation(original); assert(!reply.is_staged() && reply.last_failure().is_some()); assert(!original.cleanup_attempted && original.cleanup.is_none() && !original.stats.closed && original.stats.cleanup_calls == 0 && original.stats.cleanup_errors == 0);
+    assert(match(owner.status()) { ext::http_server::Status::Failed -> true, _ -> false }); assert(owner.raw_handle().is_none() && fd_open(fd)); assert(original.stats.response_bytes == 0 && original.stats.response_sent == 0 && original.stats.received == head.len() as u64); body.destroy();
+    mark("A"); let aborted = owner.abort(); mark("a"); let final_stats: ext::http_server::Stats = original.stats; final_stats.closed = true; final_stats.cleanup_calls = 1; final_stats.cleanup_errors = close_fault as u64;
+    if (close_fault) {
+        let cleanup = aborted.unwrap_err(); assert(match(cleanup.cause) { ext::http_server::Cause::Io(error) -> host_five(error), _ -> false }); assert(match(cleanup.stage) { ext::http_server::Stage::Close -> true, _ -> false });
+        assert(cleanup.cleanup_attempted && cleanup.cleanup.is_none() && cleanup.rejection.is_none() && same_stats(cleanup.stats,final_stats));
+        // strace skipped the actual kernel close. The disarmed wrapper must not
+        // retry it; repair this test fd explicitly, outside its cleanup epoch.
+        assert(fd_open(fd)); let raw: [std::linux::Argument;1] = [std::linux::Argument::Word(fd as i64)]; mark("K"); assert(std::linux::call(3,core::slice::view<std::linux::Argument>(raw,1).unwrap()).unwrap() == 0); mark("k");
+    } else { assert(aborted.unwrap()); }
+    assert(!fd_open(fd)); primary(owner.last_terminal_failure().unwrap(),final_stats,close_fault); assert(same_stats(owner.stats(),final_stats)); assert(hash(head) == saved_hash);
+    // The original preparation snapshot is a value and retains its pre-close
+    // progress. Replays carry the final cleanup receipt without replacing it.
+    preparation(original); assert(!original.stats.closed && original.stats.cleanup_calls == 0 && !original.cleanup_attempted && original.cleanup.is_none());
+    mark("T"); let i: i32 = 0; while (i < 3) { primary(owner.step(readiness).unwrap_err(),final_stats,close_fault); primary(owner.before_wait().unwrap_err(),final_stats,close_fault); assert(!owner.abort().unwrap()); i += 1; } mark("t");
+    assert(hash(head) == saved_hash); mark("X"); assert(owner.destroy().unwrap()); assert(!owner.destroy().unwrap()); mark("x"); poll.destroy();
+    let values: [u64;16] = [1213421622,close_fault as u64,steps as u64,final_stats.received,final_stats.io_calls,final_stats.work,final_stats.scan_work,final_stats.cleanup_calls,final_stats.cleanup_errors,final_stats.response_sent as u64,saved_hash as u64,19,6,0,0,0];
+    if (close_fault) { values[14] = 6; values[15] = 10; } let output: [u8;128] = [0;128]; i = 0; while (i < 16) { let j: i32 = 0; while (j < 8) { output[i*8+j] = (values[i]>>(j*8)) as u8; j += 1; } i += 1; }
+    core::io::write_all(sink.borrow(),output,0,128).unwrap(); let ack: [u8;1] = [0]; core::io::read_exact(input.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0;
+}

@@ -1,6 +1,8 @@
 """Real HTTPS service oracle: verified Python/OpenSSL clients and stdlib HTTP."""
 import http.client
+from email.utils import parsedate_to_datetime
 import importlib.util
+import io
 from pathlib import Path
 import select
 import socket
@@ -90,7 +92,7 @@ class Service:
         self.process.kill()
         return self.startup, self.process.communicate(timeout=2)
 
-    def finish(self, expected=0, *, diagnostic=None, reports=1):
+    def finish(self, expected=0, *, diagnostic=None, reports=1, codes=None):
         global CASES
         output, errors = self.process.communicate(timeout=8)
         CASES += 1
@@ -107,13 +109,26 @@ class Service:
             assert len(diagnostics) == 1 and diagnostics[0].startswith(b"https-serve: "), errors
             if diagnostic:
                 assert diagnostic in diagnostics[0], (diagnostic, errors)
-        for record in records:
+        expected_codes = [expected] * reports if codes is None else list(codes)
+        assert len(expected_codes) == reports
+        required = {"received", "sent", "response", "interim", "drain", "tail", "io",
+                    "cleanup", "cleanup-errors", "work", "scan", "id", "rejected",
+                    "shutdown", "eof", "closed", "code", "tls", "failed"}
+        for index, (record, code) in enumerate(zip(records, expected_codes)):
+            assert set(record) == required, record
             for name in record:
                 record[name] = int(record[name])
-            assert record["sent"] <= record["accepted"] <= record["response"], record
-            assert record["failed"] == int(expected != 0), record
-            if expected == 0:
-                assert record["sent"] == record["accepted"] == record["response"], record
+                assert record[name] >= 0, record
+            assert record["id"] == index, records
+            assert record["code"] == code and record["failed"] == int(code != 0), record
+            assert record["sent"] <= record["response"] and record["interim"] in (0, 25), record
+            assert record["closed"] == record["cleanup"] == 1, record
+            assert record["cleanup-errors"] == 0, record
+            if code == 0:
+                assert record["sent"] == record["response"], record
+                assert record["shutdown"] == record["eof"] == 1, record
+                assert record["rejected"] == 0, record
+                assert record["io"] > 0 and record["work"] > 0 and record["tls"] > 0, record
         return records
 
     def __exit__(self, *_):
@@ -133,11 +148,14 @@ def connect(service, *, identity="localhost", trust="root", version=None):
         raise
 
 
-def response(connection, *, method="GET", status=200, body=b"ok\n", statuses=None, allow=None):
+def response(connection, *, method="GET", status=200, body=b"ok\n", statuses=None, allow=None, http_version=11):
     result = RecordingResponse(connection, method=method)
     result.begin()
     assert result.status == status, (result.status, result.getheaders())
-    assert result.version == 11
+    assert result.version == http_version
+    dates = result.headers.get_all("Date")
+    assert len(dates or []) == 1 and len(dates[0]) == 29 and dates[0].endswith(" GMT"), dates
+    assert parsedate_to_datetime(dates[0]).utcoffset().total_seconds() == 0, dates
     assert result.headers.get_all("Connection") == ["close"]
     assert result.headers.get_all("Transfer-Encoding") is None
     if method != "HEAD":
@@ -151,11 +169,18 @@ def response(connection, *, method="GET", status=200, body=b"ok\n", statuses=Non
     # close_notify, rather than a tolerated abrupt transport EOF.
     assert connection.recv(1) == b""
     result.close()
+    # Complete both authenticated directions, then require real transport EOF.
+    # A raw TCP close cannot stand in for the peer's native close_notify.
+    transport = connection.unwrap()
+    try:
+        assert transport.recv(1) == b""
+    finally:
+        transport.close()
 
 
 def case(directory, wire=None, *, options=(), method="GET", expected_body=b"ok\n",
          status=200, allow=None, identity="localhost", trust="root", version=None,
-         certificate="valid", ipv6=False, fragment=0, statuses=(200,)):
+         certificate="valid", ipv6=False, fragment=0, statuses=(200,), http_version=11):
     with Service(directory, options=options, certificate=certificate, ipv6=ipv6) as service:
         with connect(service, identity=identity, trust=trust, version=version) as connection:
             data = request() if wire is None else wire
@@ -165,10 +190,50 @@ def case(directory, wire=None, *, options=(), method="GET", expected_body=b"ok\n
             else:
                 connection.sendall(data)
             response(connection, method=method, body=expected_body, status=status,
-                     allow=allow, statuses=list(statuses))
+                     allow=allow, statuses=list(statuses), http_version=http_version)
         records = service.finish()
         assert records[0]["received"] == len(data), records
         return records[0]
+
+
+
+def retained_tail(directory):
+    first, following = request(), request(target="/must-not-be-processed")
+    with Service(directory) as service:
+        with connect(service) as connection:
+            connection.sendall(first + following)
+            wire = bytearray()
+            while True:
+                block = connection.recv(4096)
+                if not block:
+                    break  # suppress_ragged_eofs=False requires native notification.
+                wire.extend(block)
+                assert len(wire) <= 16384, wire
+            transport = connection.unwrap()
+            try:
+                assert transport.recv(1) == b""
+            finally:
+                transport.close()
+        # Parse frozen bytes so an HTTP reader cannot prefetch and discard a
+        # forbidden second response before the socket-EOF assertion sees it.
+        class Retained(io.BytesIO):
+            def close(self):
+                pass  # inspected below, then explicitly released by the base class
+        source = Retained(bytes(wire))
+        class FrozenSocket:
+            def makefile(self, _mode):
+                return source
+        message = RecordingResponse(FrozenSocket())
+        message.begin()
+        assert message.statuses == [200] and message.version == 11, wire
+        assert message.headers.get_all("Connection") == ["close"]
+        assert message.headers.get_all("Content-Length") == ["3"]
+        assert message.read() == b"ok\n" and source.tell() == len(wire), wire
+        message.close()
+        io.BytesIO.close(source)
+        record = service.finish()[0]
+        assert record["received"] == len(first) + len(following), record
+        assert record["tail"] + record["drain"] == len(following), record
 
 
 def no_response(connection):
@@ -196,6 +261,33 @@ def bad_http(directory, wire, *, options=(), expected=3, diagnostic=b"HTTP reque
         return service.finish(expected, diagnostic=diagnostic)
 
 
+
+def allowance_rejection(directory, options, counter, allowance, *, construction=False):
+    # These are specifically finite-allowance controls, not a fallback for
+    # malformed requests or trust failures. Every attempted peer is accepted.
+    with Service(directory, options=options) as service:
+        connection = None
+        try:
+            connection = connect(service)
+        except (ssl.SSLError, ConnectionResetError, BrokenPipeError):
+            pass  # the selected cap can end the owner before handshake completes
+        else:
+            try:
+                connection.sendall(request())
+            except (ssl.SSLError, ConnectionResetError, BrokenPipeError):
+                pass
+            no_response(connection)
+        finally:
+            if connection is not None:
+                connection.close()
+        record = service.finish(2, diagnostic=b"limit", reports=1)[0]
+        assert record[counter] == allowance, record
+        assert record["sent"] == record["response"] == record["received"] == 0, record
+        if construction:
+            # HTTP-work reservation fails before attaching or driving TLS.
+            assert record["tls"] == record["io"] == record["work"] == 0, record
+
+
 def matrix(directory):
     case(directory)
     case(directory, request("HEAD"), method="HEAD", expected_body=b"")
@@ -206,8 +298,9 @@ def matrix(directory):
     wire = request("POST", "/echo", chunked(body), fields=(("Transfer-Encoding", "chunked"),))
     case(directory, wire, method="POST", expected_body=body, fragment=13)
     case(directory, request("POST", "/echo", chunked(b""), fields=(("Transfer-Encoding", "chunked"),)), method="POST", expected_body=b"")
-    case(directory, request(version="1.0"))
-    case(directory, request("POST", "/echo", b"old", version="1.0", fields=(("Expect", "unsupported"),)), method="POST", expected_body=b"old")
+    case(directory, request(version="1.0"), http_version=10)
+    case(directory, request("POST", "/echo", b"old", version="1.0", fields=(("Expect", "unsupported"),)), method="POST", status=417, expected_body=b"", statuses=(417,), http_version=10)
+    case(directory, request("POST", "/echo", b"recognized\0expect", version="1.0", fields=(("Expect", "100-continue"),)), method="POST", expected_body=b"recognized\0expect", statuses=(200,), http_version=10)
     case(directory, request(target="/missing"), status=404, expected_body=b"", statuses=(404,))
     case(directory, request("POST", "/health", b"ignored"), method="POST", status=405, expected_body=b"", allow="GET, HEAD", statuses=(405,))
     case(directory, request(target="/echo"), status=405, expected_body=b"", allow="POST", statuses=(405,))
@@ -228,7 +321,9 @@ def matrix(directory):
                 response(connection, method="POST", body=body, statuses=[200])
             service.finish()
     body = b"already\0buffered"
-    case(directory, request("POST", "/echo", body, fields=(("Expect", "100-continue"),)), method="POST", expected_body=body)
+    case(directory, request("POST", "/echo", body, fields=(("Expect", "100-continue"),)), method="POST", expected_body=body, statuses=(100, 200))
+    # Retained following bytes are bounded discard, never a second response.
+    retained_tail(directory)
     for fields in ((("Expect", "unsupported"),), (("Expect", "100-continue"), ("Expect", "100-continue"))):
         wire = request("POST", "/echo", b"", fields=(*fields, ("Content-Length", "99")))
         case(directory, wire, method="POST", status=417, expected_body=b"", statuses=(417,))
@@ -270,7 +365,7 @@ def failures(directory):
             else:
                 connection.close()
                 raise AssertionError("verification unexpectedly succeeded")
-            service.finish(3, diagnostic=b"TLS", reports=0)
+            service.finish(3, diagnostic=b"TLS", reports=1)
     invalid = [
         b"GET /health HTTP/1.1\r\n\r\n",
         b"GET /health HTTP/1.1\r\nHost: localhost\r\nHost: duplicate\r\n\r\n",
@@ -280,7 +375,6 @@ def failures(directory):
         request("POST", "/echo", b"0\r\nContent-Length: 0\r\n\r\n", fields=(("Transfer-Encoding", "chunked"),)),
         request(target="/bad%2Z"),
         b"GET /health HTTP/1.1\r\nHost: localhost\r\n folded: bad\r\n\r\n",
-        request() + request(),
     ]
     for wire in invalid:
         bad_http(directory, wire)
@@ -333,11 +427,15 @@ def limits(directory):
         bad_http(directory, request(), options=(option, str(exact - 1)), expected=2, diagnostic=b"limit")
     for option in ("--max-request", "--max-body", "--max-response", "--max-work", "--max-head", "--max-headers", "--max-chunks"):
         wire = request("POST", "/echo", b"x") if option == "--max-body" else request("POST", "/echo", chunked(b"x"), fields=(("Transfer-Encoding", "chunked"),)) if option == "--max-chunks" else request()
-        bad_http(directory, wire, options=(option, "0"), expected=2, diagnostic=b"limit")
-    # Idle accepts, a connected silent handshake, and a partially sent HTTP
-    # request all consume the SAME original slot deadline.
+        if option == "--max-work":
+            allowance_rejection(directory, (option, "0"), "work", 0, construction=True)
+        else:
+            bad_http(directory, wire, options=(option, "0"), expected=2, diagnostic=b"limit")
+    # Listener waiting has a fixed service deadline. Accepted owners have
+    # their own accepted-at deadline, capped by that same service deadline.
     for phase in ("accept", "handshake", "request"):
-        with Service(directory, options=("--timeout", "150")) as service:
+        options = ("--timeout", "1000", "--service-timeout", "150") if phase == "accept" else ("--timeout", "150", "--service-timeout", "1000")
+        with Service(directory, options=options) as service:
             raw = None
             if phase == "handshake":
                 raw = socket.create_connection(service.endpoint, timeout=2)
@@ -345,24 +443,21 @@ def limits(directory):
                 raw = connect(service)
                 raw.sendall(b"GET /health HTTP/1.1\r\n")
             try:
-                service.finish(3, diagnostic=b"timeout", reports=int(phase == "request"))
+                service.finish(3, diagnostic=b"timeout", reports=int(phase != "accept"))
                 assert time.monotonic() - service.start < 2
             finally:
                 if raw is not None:
                     raw.close()
-    for options, status in ((("--timeout", "0"), 3), (("--max-io", "0"), 2), (("--max-io", "1"), 2)):
+    # Configuration/expired-service rejection precedes any kernel acceptance.
+    for options, status in ((("--timeout", "0"), 3), (("--max-io", "0"), 2), (("--max-tls", "0"), 2)):
         with Service(directory, options=options) as service:
             service.finish(status, reports=0)
-    for options in (("--max-io", "4"), ("--max-tls", "0"), ("--max-tls", "1")):
-        with Service(directory, options=options) as service:
-            try:
-                connection = connect(service)
-            except (OSError, ssl.SSLError):
-                pass
-            else:
-                connection.close()
-            service.finish(2, reports=0)
-    invalid = [("--requests", "0"), ("--requests", "65"), ("--timeout", "60001"),
+    # I/O is a per-accepted-owner bound, so an idle-listener wait cannot spend
+    # it. Bind each tiny cap to a real accepted connection and exact counter.
+    for flag, allowance, counter in (("--max-io", 1, "io"), ("--max-io", 4, "io"), ("--max-tls", 1, "tls")):
+        allowance_rejection(directory, (flag, str(allowance)), counter, allowance)
+    invalid = [("--requests", "0"), ("--requests", "65"), ("--concurrency", "0"), ("--concurrency", "17"),
+               ("--service-timeout", "-1"), ("--service-timeout", "3840001"), ("--timeout", "60001"),
                ("--max-body", "16777217"), ("--max-head", "65537"), ("--max-headers", "1025"),
                ("--max-chunks", "65537"), ("--max-io", "-1"), ("--max-work", "2147483648"),
                ("--unknown",), ("--max-tls",), ("--max-io", "+1")]

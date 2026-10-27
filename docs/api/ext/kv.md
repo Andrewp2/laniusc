@@ -8,9 +8,12 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Completion application source 9a83795a passes 18 direct query cases plus three no-file traces, 16 allocation cases (13 reached OOMs and three baselines), and 12 output cases (three baselines plus nine fault/recovery cases). Full traces check pre-exit releases, without live ACK checkpoints. The existing 55-case response campaign also passes on this source, including 18 reached source OOMs. Final Bash adapter f7934bc9 passes 51 function cases across two option profiles, 26 PTY cases and two additional fresh-cwd quote-transition cases; the unchanged watchdog separately passes two deadline/child-cleanup controls. These are direct process receipts, not Rust-libtest passes. Response-checkpoint source 789143f6, earlier f07fd52f/130-case hierarchy and 64-case atomic campaigns retain separate histories; no counts are added across revisions. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic.
+
 ## Contract and evidence guides
 
 - [extended-kv](../../extended-kv.md)
+- [extended-cli-complete](../../extended-cli-complete.md)
 
 Declaration counts: enum: 2; field: 10; function: 4; impl: 1; method: 9; struct: 3; variant: 19.
 

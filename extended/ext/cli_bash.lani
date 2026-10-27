@@ -1,0 +1,137 @@
+// Pure NUL-record framing for an explicitly selected Bash completion policy.
+// Inputs stay immutable/live; output is disjoint from every borrowed input.
+// Logical bounds are checked; physical backing and lifetimes remain manual.
+module ext::cli_bash;
+import core::mem;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::bash_words;
+
+pub enum Mode { Candidates, Files, None }
+pub struct Reply {
+    mode:Mode, append_space:bool, quote:ext::bash_words::Quote,
+    continuation:ext::bash_words::Quote, trim:View<u8>, stem:View<u8>, prefix:View<u8>,
+    candidates:View<View<u8>>
+}
+pub enum Error {
+    Bounds, InvalidReply, NulTrim(i32), NulStem(i32), NulPrefix(i32), NulCandidate(i32,i32),
+    OutputTooSmall(u64), SizeOverflow
+}
+
+fn valid<T>(value:View<T>) -> bool {
+    return value.start>=0 && value.length>=0 && value.start<=2147483647-value.length;
+}
+fn validate(reply:Reply) -> Result<bool,Error> {
+    if(!valid(reply.trim) || !valid(reply.stem) || !valid(reply.prefix) || !valid(reply.candidates)) { return Err(Error::Bounds); }
+    let candidate:i32=0;
+    while(candidate<reply.candidates.length) {
+        if(!valid(reply.candidates.values[reply.candidates.start+candidate])) { return Err(Error::Bounds); }
+        candidate+=1;
+    }
+    let mode:i32=match(reply.mode) { Mode::Candidates->0,Mode::Files->1,Mode::None->2 };
+    if((mode!=0 && reply.candidates.length!=0) || (mode!=1 && (reply.stem.length!=0 || reply.prefix.length!=0)) || (mode==2 && reply.trim.length!=0)) {
+        return Err(Error::InvalidReply);
+    }
+    let index:i32=0;
+    while(index<reply.trim.length) {
+        if(reply.trim.values[reply.trim.start+index]==0) { return Err(Error::NulTrim(index)); } index+=1;
+    }
+    index=0;
+    while(index<reply.stem.length) {
+        if(reply.stem.values[reply.stem.start+index]==0) { return Err(Error::NulStem(index)); } index+=1;
+    }
+    index=0;
+    while(index<reply.prefix.length) {
+        if(reply.prefix.values[reply.prefix.start+index]==0) { return Err(Error::NulPrefix(index)); } index+=1;
+    }
+    candidate=0;
+    while(candidate<reply.candidates.length) {
+        let value:View<u8> =reply.candidates.values[reply.candidates.start+candidate]; index=0;
+        while(index<value.length) {
+            if(value.values[value.start+index]==0) { return Err(Error::NulCandidate(candidate,index)); } index+=1;
+        }
+        candidate+=1;
+    }
+    return Ok(true);
+}
+
+struct Render { output:View<u8>, writing:bool, total:u64, overflow:bool }
+impl Render {
+    fn add(&self,count:u64) -> bool {
+        if(self.overflow) { return false; }
+        if(self.total>18446744073709551615-count) { self.overflow=true; return false; }
+        self.total+=count; return true;
+    }
+    fn byte(&self,value:u8) {
+        let at:u64=self.total;
+        if(!self.add(1)) { return; }
+        if(self.writing) { self.output.values[self.output.start+(at as i32)]=value; }
+    }
+    fn bytes(&self,value:View<u8>) {
+        let at:u64=self.total;
+        if(!self.add(value.length as u64)) { return; }
+        if(self.writing) {
+            let index:i32=0;
+            while(index<value.length) {
+                self.output.values[self.output.start+(at as i32)+index]=value.values[value.start+index]; index+=1;
+            }
+        }
+    }
+    fn text(&self,value:str,count:i32) {
+        if(!self.writing) { self.add(count as u64); return; }
+        let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+        self.bytes(View { values:bytes,start:0,length:count });
+    }
+    fn decimal(&self,count:i32) {
+        // count is a validated View length, so ten decimal digits suffice.
+        let value:u64=count as u64; let divisor:u64=1;
+        while(value/divisor>=10) { divisor*=10; }
+        while(divisor>0) { self.byte(48+(value/divisor) as u8); value%=divisor; divisor/=10; }
+    }
+    fn quote(&self,value:ext::bash_words::Quote) {
+        let state:i32=match(value) { ext::bash_words::Quote::Unquoted->0,
+            ext::bash_words::Quote::Single->1,ext::bash_words::Quote::Double->2 };
+        if(state==0) { self.text("unquoted",8); }
+        if(state==1) { self.text("single",6); }
+        if(state==2) { self.text("double",6); }
+        self.byte(0);
+    }
+}
+
+// One layout serves measuring and writing, including every NUL delimiter.
+fn render(reply:Reply,output:View<u8>,writing:bool) -> Render {
+    let sink=Render { output:output,writing:writing,total:0,overflow:false };
+    sink.text("lanius-completion-1",19); sink.byte(0);
+    let mode:i32=match(reply.mode) { Mode::Candidates->0,Mode::Files->1,Mode::None->2 };
+    if(mode==0) { sink.text("candidates",10); }
+    if(mode==1) { sink.text("files",5); }
+    if(mode==2) { sink.text("none",4); }
+    sink.byte(0);
+    if(reply.append_space) { sink.text("space",5); } else { sink.text("nospace",7); }
+    sink.byte(0); sink.quote(reply.quote); sink.quote(reply.continuation);
+    sink.bytes(reply.trim); sink.byte(0); sink.bytes(reply.stem); sink.byte(0); sink.bytes(reply.prefix); sink.byte(0);
+    sink.decimal(reply.candidates.length); sink.byte(0);
+    let index:i32=0;
+    while(index<reply.candidates.length) { sink.bytes(reply.candidates.values[reply.candidates.start+index]); sink.byte(0); index+=1; }
+    sink.text("end",3); sink.byte(0); return sink;
+}
+
+pub fn measure(reply:Reply) -> Result<u64,Error> {
+    validate(reply)?;
+    let measured=render(reply,reply.stem,false);
+    if(measured.overflow) { return Err(Error::SizeOverflow); }
+    return Ok(measured.total);
+}
+
+// Entire reply validation/measurement, output range, then capacity precede all
+// writes. Success preserves unused output bytes and writes the final end NUL.
+pub fn encode_into(reply:Reply,output:View<u8>) -> Result<i32,Error> {
+    let required=measure(reply)?;
+    if(!valid(output)) { return Err(Error::Bounds); }
+    let capacity:u64=output.length as u64;
+    if(required>capacity) { return Err(Error::OutputTooSmall(required)); }
+    let written=render(reply,output,true);
+    assert(!written.overflow && written.total==required); return Ok(required as i32);
+}

@@ -1,0 +1,251 @@
+// Test-only in-memory transport driver for the public concrete HTTP Protocol.
+// Confirmed sends and completed transport cleanup are supplied by this driver;
+// this fixture owns no socket, TLS session, or external transport operation.
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import std::clock;
+import std::stream;
+
+fn lit(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view<u8>(raw,count).unwrap();
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let i: i32 = 0; while (i < left.length) { if (left.get(i).unwrap() != right.get(i).unwrap()) { return false; } i += 1; }
+    return true;
+}
+fn status(value: ext::http_client::Status) -> i32 {
+    return match(value) { ext::http_client::Status::Active -> 0, ext::http_client::Status::Complete -> 1, ext::http_client::Status::Failed -> 2, ext::http_client::Status::Aborted -> 3 };
+}
+fn cause(value: ext::http_client::Cause) -> i32 {
+    return match(value) {
+        ext::http_client::Cause::BoundaryMismatch -> 1,
+        ext::http_client::Cause::ResponseLimit -> 2,
+        ext::http_client::Cause::BodyLimit -> 3,
+        ext::http_client::Cause::Inactive -> 4,
+        ext::http_client::Cause::Http(error) -> match(error) { ext::http::Error::Malformed(at) -> 5, _ -> 50 },
+        ext::http_client::Cause::Io(error) -> match(error) { core::io::Error::WriteZero -> 6, _ -> 60 },
+        ext::http_client::Cause::IoLimit -> 7,
+        _ -> 99
+    };
+}
+fn offset(value: ext::http_client::Cause) -> i32 {
+    return match(value) { ext::http_client::Cause::Http(error) -> match(error) { ext::http::Error::Malformed(at) -> at, _ -> -1 }, _ -> -1 };
+}
+fn stage(value: ext::http_client::Stage) -> i32 {
+    return match(value) { ext::http_client::Stage::Prepare -> 0, ext::http_client::Stage::Open -> 1, ext::http_client::Stage::Connect -> 2, ext::http_client::Stage::Send -> 3, ext::http_client::Stage::Receive -> 4, ext::http_client::Stage::Shutdown -> 5, ext::http_client::Stage::Validate -> 6, ext::http_client::Stage::Decode -> 7, ext::http_client::Stage::Close -> 8, ext::http_client::Stage::Publish -> 9 };
+}
+fn same_stats(left: ext::http_client::Stats, right: ext::http_client::Stats) -> bool {
+    return left.request_bytes == right.request_bytes && left.request_sent == right.request_sent && left.response_received == right.response_received && left.interim_count == right.interim_count && left.discarded_bytes == right.discarded_bytes && left.io_calls == right.io_calls && left.work == right.work && left.upload_stopped == right.upload_stopped && left.write_shutdown == right.write_shutdown;
+}
+fn same_failure(left: ext::http_client::Failure, right: ext::http_client::Failure) -> bool {
+    return cause(left.cause) == cause(right.cause) && offset(left.cause) == offset(right.cause) && stage(left.stage) == stage(right.stage) && left.message_offset == right.message_offset && same_stats(left.stats,right.stats) && left.cleanup.is_none() && right.cleanup.is_none();
+}
+// Every caller-owned request allocation is released before this function
+// returns. A successful Prepared must own all request bytes independently.
+fn prepared(options: ext::http_client::Options, body_length: i32) -> ext::http_client::Prepared {
+    let method: alloc::vec::Vec<u8> = alloc::vec::from_view<u8>(lit("POST",4)).unwrap();
+    let target: alloc::vec::Vec<u8> = alloc::vec::from_view<u8>(lit("/protocol?q=x",13)).unwrap();
+    let authority: alloc::vec::Vec<u8> = alloc::vec::from_view<u8>(lit("protocol.example",16)).unwrap();
+    let name: alloc::vec::Vec<u8> = alloc::vec::from_view<u8>(lit("X-Caller",8)).unwrap();
+    let value: alloc::vec::Vec<u8> = alloc::vec::from_view<u8>(lit("owned",5)).unwrap();
+    let fields: alloc::vec::Vec<ext::http::Field> = alloc::vec::new<ext::http::Field>();
+    fields.try_push(ext::http::Field { raw:lit("",0),name:name.as_view(),value:value.as_view(),offset:0 }).unwrap();
+    let body: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); body.try_resize(body_length,90 as u8).unwrap();
+    if (body_length >= 4) { body.set(0,0 as u8).unwrap(); body.set(1,255 as u8).unwrap(); body.set(2,13 as u8).unwrap(); body.set(3,10 as u8).unwrap(); }
+    let request: ext::http_client::Request = ext::http_client::Request { method:method.as_view(),target:target.as_view(),authority:authority.as_view(),headers:fields.as_view(),body:body.as_view() };
+    let deadline: core::time::Deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(30000)).unwrap();
+    let result: core::result::Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(request,options,deadline);
+    method.destroy(); target.destroy(); authority.destroy(); name.destroy(); value.destroy(); fields.destroy(); body.destroy();
+    return result.unwrap();
+}
+fn protocol(options: ext::http_client::Options, body_length: i32) -> ext::http_client::Protocol {
+    let owner: ext::http_client::Prepared = prepared(options,body_length);
+    let before: ext::http_client::Stats = owner.stats(); assert(owner.is_active() && before.request_bytes > body_length && before.io_calls == 0);
+    let moved: core::result::Result<ext::http_client::Protocol,ext::http_client::Failure> = owner.into_protocol();
+    assert(!owner.is_active() && !owner.destroy() && !owner.destroy());
+    assert(cause(owner.into_protocol().unwrap_err().cause) == 4);
+    let actual: ext::http_client::Protocol = moved.unwrap(); assert(same_stats(actual.stats(),before));
+    return actual;
+}
+fn local(owner: &ext::http_client::Protocol) -> ext::http_client::Need {
+    let turns: i32 = 0;
+    while (turns < 16) {
+        let event: ext::http_client::Need = owner.advance().unwrap();
+        if (!match(event) { ext::http_client::Need::Local -> true, _ -> false }) { return event; }
+        turns += 1;
+    }
+    assert(false); return ext::http_client::Need::Local;
+}
+fn transfer(owner: &ext::http_client::Protocol) {
+    assert(match(local(owner)) { ext::http_client::Need::Transfer -> true, _ -> false });
+}
+fn upload(owner: &ext::http_client::Protocol) {
+    let turns: i32 = 0;
+    while (owner.stats().request_sent < owner.stats().request_bytes) {
+        assert(turns < 16);
+        let part: core::slice::View<u8> = owner.start_send().unwrap().unwrap();
+        assert(part.length > 0 && part.length <= 1024 && owner.pending_send_bytes() == part.length);
+        owner.before_io(ext::http_client::Stage::Send).unwrap();
+        owner.commit_send(part.length).unwrap(); assert(owner.pending_send_bytes() == 0); turns += 1;
+    }
+    assert(owner.start_send().unwrap().is_none());
+}
+fn complete(owner: &ext::http_client::Protocol) -> ext::http_client::Response {
+    assert(match(local(owner)) { ext::http_client::Need::FinishTransport -> true, _ -> false });
+    assert(status(owner.status()) == 0 && owner.pending_send_bytes() == 0 && owner.last_failure().is_none());
+    // The in-memory driver owns no transport resources requiring cleanup.
+    owner.transport_finished().unwrap();
+    let event: ext::http_client::Need = local(owner);
+    let response: ext::http_client::Response = match(event) { ext::http_client::Need::Complete(value) -> value, _ -> core::panic::panic() };
+    assert(status(owner.status()) == 1 && !owner.abort() && !owner.abort() && owner.last_failure().is_none());
+    assert(cause(owner.advance().unwrap_err().cause) == 4 && cause(owner.check().unwrap_err().cause) == 4);
+    assert(cause(owner.transport_finished().unwrap_err().cause) == 4);
+    return response;
+}
+fn sticky(owner: &ext::http_client::Protocol, first: ext::http_client::Failure) {
+    assert(status(owner.status()) == 2 && same_failure(owner.last_failure().unwrap(),first));
+    assert(same_failure(owner.failure(ext::http_client::Cause::Timeout),first));
+    assert(same_failure(owner.advance().unwrap_err(),first) && same_failure(owner.check().unwrap_err(),first));
+    assert(same_failure(owner.before_wait().unwrap_err(),first));
+    assert(same_failure(owner.start_send().unwrap_err(),first));
+    assert(owner.abort() && !owner.abort() && owner.pending_send_bytes() == 0);
+    assert(status(owner.status()) == 2 && same_stats(owner.stats(),first.stats));
+    assert(same_failure(owner.last_failure().unwrap(),first));
+    assert(same_failure(owner.feed(lit("!",1)).unwrap_err(),first));
+    assert(same_failure(owner.commit_send(1).unwrap_err(),first));
+    assert(!owner.abort());
+}
+
+fn owned_completion() {
+    let options: ext::http_client::Options = ext::http_client::default_options(); options.trailing = ext::http_client::Trailing::Reject;
+    let owner: ext::http_client::Protocol = protocol(options,4); transfer(owner.borrow()); upload(owner.borrow());
+    let wire: alloc::vec::Vec<u8> = alloc::vec::from_view<u8>(lit("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 103 Early Hints\r\nLink: x\r\n\r\nHTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\n",112)).unwrap();
+    let binary: [u8;4] = [0,255,13,10]; wire.try_extend(core::slice::view<u8>(binary,4).unwrap()).unwrap();
+    wire.try_extend(lit("\r\n0\r\nX-Check: yes\r\n\r\n",21)).unwrap();
+    // Native u8 arrays have their actual native stride; the nonzero-start
+    // view is copied by feed before its backing is overwritten and released.
+    let storage: [u8;160] = [165;160]; let count: i32 = wire.len(); let i: i32 = 0;
+    while (i < count) { storage[i+3] = wire.get(i).unwrap(); i += 1; }
+    owner.before_io(ext::http_client::Stage::Receive).unwrap(); owner.feed(core::slice::view_range<u8>(storage,3,count).unwrap()).unwrap();
+    wire.destroy(); i = 0; while (i < 160) { storage[i] = 0; i += 1; }
+    let response: ext::http_client::Response = complete(owner.borrow());
+    let message: ext::http::Message = response.message();
+    assert(message.head.status == 200 && equal(message.head.method,lit("POST",4)));
+    assert(message.trailer_count == 1 && equal(response.body(),core::slice::view<u8>(binary,4).unwrap()));
+    let infos: core::slice::View<ext::http::Head> = response.informational();
+    assert(infos.length == 2 && infos.get(0).unwrap().status == 100 && infos.get(1).unwrap().status == 103);
+    assert(equal(infos.get(0).unwrap().method,lit("POST",4)) && equal(infos.get(1).unwrap().method,lit("POST",4)));
+    assert(equal(infos.get(1).unwrap().lookup(lit("Link",4)).unwrap().value,lit("x",1)));
+    assert(equal(response.as_view().subview(0,16).unwrap(),lit("HTTP/1.1 200 OK\r",16)));
+    assert(response.as_view().length == message.consumed && response.stats.response_received == count as u64 && response.stats.interim_count == 2 && response.stats.discarded_bytes == 0);
+    response.destroy();
+}
+fn send_reservations() {
+    let owner: ext::http_client::Protocol = protocol(ext::http_client::default_options(),2048); transfer(owner.borrow());
+    let first: core::slice::View<u8> = owner.start_send().unwrap().unwrap(); assert(first.length == 1024);
+    assert(equal(first.subview(0,29).unwrap(),lit("POST /protocol?q=x HTTP/1.1\r\n",29)));
+    owner.commit_send(17).unwrap(); assert(owner.stats().request_sent == 17 && owner.pending_send_bytes() == 0);
+    let next: core::slice::View<u8> = owner.start_send().unwrap().unwrap(); assert(next.length == 1024);
+    assert(equal(next.subview(0,1007).unwrap(),first.subview(17,1024).unwrap()));
+    assert(owner.cancel_send().unwrap() && !owner.cancel_send().unwrap() && owner.stats().request_sent == 17);
+    let repeated: core::slice::View<u8> = owner.start_send().unwrap().unwrap(); assert(equal(repeated,next));
+    owner.commit_send(23).unwrap(); assert(owner.stats().request_sent == 40 && owner.pending_send_bytes() == 0);
+    upload(owner.borrow()); assert(owner.stats().request_sent == owner.stats().request_bytes);
+    assert(owner.abort() && !owner.abort() && status(owner.status()) == 3);
+    assert(cause(owner.advance().unwrap_err().cause) == 4 && owner.last_failure().is_none());
+}
+fn early_final() {
+    let owner: ext::http_client::Protocol = protocol(ext::http_client::default_options(),0); transfer(owner.borrow());
+    let reserved: core::slice::View<u8> = owner.start_send().unwrap().unwrap();
+    owner.feed(lit("HTTP/1.1 413 Too Large\r\nContent-Length: 2\r\n\r\n",45)).unwrap();
+    assert(match(local(owner.borrow())) { ext::http_client::Need::StopUpload -> true, _ -> false });
+    assert(owner.stats().upload_stopped && !owner.stats().write_shutdown && owner.stats().request_sent == 0 && owner.pending_send_bytes() == reserved.length);
+    owner.acknowledge_stop().unwrap(); assert(!owner.stats().write_shutdown);
+    owner.commit_send(7).unwrap(); assert(owner.stats().request_sent == 7 && owner.pending_send_bytes() == 0);
+    transfer(owner.borrow()); assert(owner.start_send().unwrap().is_none());
+    owner.record_write_shutdown().unwrap(); assert(owner.stats().write_shutdown);
+    owner.feed(lit("no",2)).unwrap(); let response: ext::http_client::Response = complete(owner.borrow());
+    assert(response.message().head.status == 413 && equal(response.body(),lit("no",2)));
+    assert(response.stats.upload_stopped && response.stats.write_shutdown && response.stats.request_sent == 7 && response.stats.request_sent < response.stats.request_bytes);
+    response.destroy();
+}
+fn premature_acknowledgements() {
+    let early: ext::http_client::Protocol = protocol(ext::http_client::default_options(),0); transfer(early.borrow());
+    let error: ext::http_client::Failure = early.transport_finished().unwrap_err(); assert(cause(error.cause) == 1); sticky(early.borrow(),error);
+    let pending: ext::http_client::Protocol = protocol(ext::http_client::default_options(),0); transfer(pending.borrow());
+    pending.start_send().unwrap().unwrap(); pending.feed(lit("HTTP/1.1 204 OK\r\n\r\n",19)).unwrap();
+    assert(match(local(pending.borrow())) { ext::http_client::Need::StopUpload -> true, _ -> false }); pending.acknowledge_stop().unwrap();
+    assert(match(local(pending.borrow())) { ext::http_client::Need::FinishTransport -> true, _ -> false }); assert(pending.pending_send_bytes() > 0);
+    let error: ext::http_client::Failure = pending.transport_finished().unwrap_err(); assert(cause(error.cause) == 1 && error.stats.request_sent == 0); sticky(pending.borrow(),error);
+}
+fn close_caps() {
+    let mode: i32 = 0;
+    while (mode < 3) {
+        let options: ext::http_client::Options = ext::http_client::default_options(); options.response_bytes = 22; if (mode == 2) { options.response_bytes = 23; } options.wire.body_bytes = 3;
+        let owner: ext::http_client::Protocol = protocol(options,0); transfer(owner.borrow()); upload(owner.borrow());
+        owner.feed(lit("HTTP/1.0 200 OK\r\n\r\nabc",22)).unwrap(); transfer(owner.borrow());
+        assert(owner.receive_limit().unwrap() == 1 && owner.stats().response_received == 22 as u64);
+        if (mode == 0) {
+            owner.feed_eof().unwrap(); let response: ext::http_client::Response = complete(owner.borrow());
+            assert(equal(response.body(),lit("abc",3)) && response.stats.response_received == 22 as u64 && response.stats.discarded_bytes == 0); response.destroy();
+        } else {
+            let error: ext::http_client::Failure = owner.feed(lit("d",1)).unwrap_err();
+            if (mode == 1) { assert(cause(error.cause) == 2); } else { assert(cause(error.cause) == 3); }
+            assert(error.stats.response_received == 23 as u64 && stage(error.stage) == 4); sticky(owner.borrow(),error);
+        }
+        mode += 1;
+    }
+}
+fn trailing_policies() {
+    let reject: i32 = 0;
+    while (reject < 2) {
+        let options: ext::http_client::Options = ext::http_client::default_options(); if (reject == 1) { options.trailing = ext::http_client::Trailing::Reject; }
+        let owner: ext::http_client::Protocol = protocol(options,0); transfer(owner.borrow()); upload(owner.borrow());
+        owner.feed(lit("HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabcTAIL",70)).unwrap();
+        if (reject == 0) {
+            let response: ext::http_client::Response = complete(owner.borrow());
+            assert(equal(response.body(),lit("abc",3)) && response.as_view().length == 41 && response.informational().length == 1);
+            assert(response.stats.response_received == 70 as u64 && response.stats.discarded_bytes == 4); response.destroy();
+        } else {
+            let failed: bool = false; let turns: i32 = 0;
+            while (!failed && turns < 8) {
+                let got: core::result::Result<ext::http_client::Need,ext::http_client::Failure> = owner.advance();
+                if (got.is_err()) {
+                    let error: ext::http_client::Failure = got.unwrap_err(); assert(cause(error.cause) == 5 && offset(error.cause) == 41 && error.message_offset == 25);
+                    assert(error.stats.interim_count == 1 && error.stats.response_received == 70 as u64 && error.stats.discarded_bytes == 0); sticky(owner.borrow(),error); failed = true;
+                } else { assert(match(got.unwrap()) { ext::http_client::Need::Local -> true, _ -> false }); }
+                turns += 1;
+            }
+            assert(failed);
+        }
+        reject += 1;
+    }
+}
+fn reservation_misuse_and_budget() {
+    let duplicate: ext::http_client::Protocol = protocol(ext::http_client::default_options(),0); transfer(duplicate.borrow()); duplicate.start_send().unwrap().unwrap();
+    let error: ext::http_client::Failure = duplicate.start_send().unwrap_err(); assert(cause(error.cause) == 1); sticky(duplicate.borrow(),error);
+    let zero: ext::http_client::Protocol = protocol(ext::http_client::default_options(),0); transfer(zero.borrow()); zero.start_send().unwrap().unwrap();
+    let error: ext::http_client::Failure = zero.commit_send(0).unwrap_err(); assert(cause(error.cause) == 6 && error.stats.request_sent == 0); sticky(zero.borrow(),error);
+    let options: ext::http_client::Options = ext::http_client::default_options(); options.io_calls = 2;
+    let limited: ext::http_client::Protocol = protocol(options,0); transfer(limited.borrow());
+    limited.before_wait().unwrap(); assert(limited.stats().io_calls == 1 as u64);
+    limited.before_io(ext::http_client::Stage::Send).unwrap(); assert(limited.stats().io_calls == 2 as u64);
+    let error: ext::http_client::Failure = limited.before_wait().unwrap_err(); assert(cause(error.cause) == 7 && stage(error.stage) == 3 && error.stats.io_calls == 2 as u64); sticky(limited.borrow(),error);
+    let released: ext::http_client::Prepared = prepared(ext::http_client::default_options(),0); assert(released.destroy() && !released.destroy() && !released.is_active()); assert(cause(released.into_protocol().unwrap_err().cause) == 4);
+}
+fn main() -> i32 {
+    owned_completion(); send_reservations(); early_final(); premature_acknowledgements(); close_caps(); trailing_policies(); reservation_misuse_and_budget();
+    let marker: core::slice::View<u8> = lit("protocol states checked\n",24); let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),marker.values,marker.start,marker.length).unwrap();
+    return 0;
+}

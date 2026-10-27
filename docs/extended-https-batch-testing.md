@@ -20,14 +20,15 @@ remote services. These tests do not establish support for another platform.
 
 | Group | Planned finite executable scope | Acceptance |
 | --- | --- | --- |
-| Verified overlap | Five invocations: two connection/request barrier waves, held-first refill, concurrency one, IPv6 with IP verification; stack/Vec job backing, strided/packed byte backing and extracted response ownership | Pending |
-| Framing and buffered plaintext | Four invocations: fixed, chunked, authenticated close-delimited and HEAD; binary bytes, trailers, tiny TLS read buffers and peer-held open connections | Pending |
-| Typed peer policy | Eleven invocations: DNS/IP mismatch, expiry, absent intermediate, wrong purpose; verified TLS 1.2/1.3 client chains; absent, expired, wrong-purpose and untrusted client credentials | Pending |
-| Duplex transport | Six invocations: bounded 4 MiB early-final upload under TLS 1.3 and TLS 1.2, abrupt EOF, cut encrypted record, already-received surplus plaintext, informational heads with chunked trailers | Pending |
-| Limits and cancellation | Sixteen invocations: empty zero budgets, invalid/zero budgets, preparation before network, exact/below retained-result caps, per-job TLS/I/O exhaustion and a common deadline retaining one completed response | Pending |
-| Resumption, faults and resources | Cross-direction WANT, native fatal errors, context-retain failure, every source allocation reached by one two-job baseline, recovery, and six direct resumable/abort invocations | Pending |
+| Verified overlap | Five invocations: two connection/request barrier waves, held-first refill, concurrency one, IPv6 with IP verification; stack/Vec job backing, strided/packed byte backing and extracted response ownership | Passed: 5 cases |
+| Framing and buffered plaintext | Four invocations: fixed, chunked, authenticated close-delimited and HEAD; binary bytes, trailers, tiny TLS read buffers and peer-held open connections | Passed: 4 cases |
+| Typed peer policy | Eleven invocations: DNS/IP mismatch, expiry, absent intermediate, wrong purpose; verified TLS 1.2/1.3 client chains; absent, expired, wrong-purpose and untrusted client credentials | Passed: 11 cases |
+| Duplex transport | Six invocations: bounded 4 MiB early-final upload under TLS 1.3 and TLS 1.2, abrupt EOF, cut encrypted record, already-received surplus plaintext, informational heads with chunked trailers | Passed: 6 cases |
+| Limits and cancellation | Sixteen invocations: empty zero budgets, invalid/zero budgets, preparation before network, exact/below retained-result caps, per-job TLS/I/O exhaustion and a common deadline retaining one completed response | Passed: 16 cases |
+| Resumption, faults and resources | Cross-direction WANT, native fatal errors, context-retain failure, every source allocation reached by one two-job baseline, recovery, and six direct resumable/abort invocations | Passed: 66 cases, including 42 source-allocation positions |
 
-The allocation-position count will come from the observed native baseline.
+The observed two-job baseline reached 42 source-allocation positions; 16
+faulted positions were reached after socket creation.
 This is a finite schedule, not an enumeration of all TLS record partitions,
 network interleavings, native heap allocation paths or HTTP features.
 
@@ -157,7 +158,35 @@ external timeout from leaving a product child running.
 
 ## Acceptance
 
-Native acceptance is pending the root's serialized compiler/execution queue.
+The initial two native groups passed on Linux x86_64/glibc with OpenSSL 3:
+five verified overlap cases and four framing/buffered-plaintext cases. The
+two-group invocation finished in 11.01 seconds with zero failures; its local
+receipt is `target/stdlib-work/https-batch-initial-two-groups-first.log`.
+The next three groups passed 11 typed-policy, six duplex-transport and 16
+limits/cancellation cases in a separate 14.04-second invocation with zero
+failures. Its local receipt is
+`target/stdlib-work/https-batch-policy-transport-limits-first.log`.
+The last group passed 66 cases in 37.52 seconds with zero failures:
+42 reached source-allocation ENOMEM positions and 24 controls, including
+six direct resumable/abort invocations. Sixteen allocation faults occurred
+after socket creation. Its local receipt is
+`target/stdlib-work/https-batch-resource-direct-typed-retry.log`.
+All runs used the shared scheduler with the wait-retirement correction.
+
+All six groups have native acceptance through these separate invocations,
+covering 108 cases on the profile stated above.
+The first resource-group attempt stopped before any Python campaign case:
+the direct consumer's nested `Cause::Io(Error::Host(number))` pattern was
+parsed but rejected with `AssignMismatch` / `LNC0006` at the bound value.
+The unchanged original, diagnostic, confirmed 14-line rejection and executed
+two-match control are preserved in
+[compiler_admission](../tests/fixtures/extended/https_batch/compiler_admission/README.md).
+The active consumer selects the typed I/O payload before matching Host(5),
+retaining both exact error assertions, and passed the complete retry above.
+The standalone nested-pattern reduction also rejects with LNC0006; the explicit
+two-match control compiles and executes all four assertions with exit zero. The initial
+10.24-second compile rejection is not evidence of a production TLS failure.
 Python syntax and scoped whitespace checks have passed; they are test
-infrastructure checks, not HTTPS execution receipts. Earlier raw TLS, HTTP
-batch and HTTPS application results have separate scope.
+infrastructure checks, not additional HTTPS execution receipts. The
+`https_fetch` program, earlier raw TLS and HTTP batch tests have separate
+scope; these library receipts do not accept the revised application.

@@ -19,6 +19,8 @@ pub struct Job { endpoint: core::net::SocketAddr, request: ext::http_client::Req
 // Response. abort releases the owner even when its returned E reports failure.
 // Statistics remain readable after terminal calls; readiness/interest must
 // agree, with before_wait Ok(false) leaving immediate work available to step.
+// Ok(true) preserves the preceding non-immediate Interest and the current
+// descriptor identity through registration in the shared poll request.
 pub trait Driver<E> {
     pub fn stats(&self) -> ext::http_client::Stats;
     pub fn interest(&self) -> ext::http_client::Interest;
@@ -30,6 +32,8 @@ pub trait Driver<E> {
 // Jobs and error arguments are borrowed shallow descriptors. begin consumes
 // and disarms the actual Prepared on every result; it never prepares a second
 // request. Classification/stat queries do not consume or retain error owners.
+// Backing borrowed by a returned E must remain valid through that error's last
+// use/destruction in a Report, Failure, or taken Outcome, including after return.
 pub trait Factory<J,D,E> {
     pub fn request(&self, job: J) -> ext::http_client::Request;
     pub fn begin(&self, prepared: &ext::http_client::Prepared, job: J) -> core::result::Result<D,E>;
@@ -284,7 +288,13 @@ fn wait<J,D,E,F>(run: &Run<D,E>, factory: &F) -> core::result::Result<bool,Cause
                     if (gate.is_err()) { let recorded = terminal_error<J,D,E,F>(run,slot.borrow(),gate.unwrap_err(),factory); return counted; }
                     slot.owner = core::option::Some(owner); put_slot(run,index,slot); return counted;
                 }
-                if (gate.is_err()) { let terminal: core::result::Result<bool,Cause> = terminal_error<J,D,E,F>(run,slot.borrow(),gate.unwrap_err(),factory); if (terminal.is_err()) { return terminal; } }
+                if (gate.is_err()) {
+                    let terminal: core::result::Result<bool,Cause> = terminal_error<J,D,E,F>(run,slot.borrow(),gate.unwrap_err(),factory);
+                    // A local failure frees this slot. Return to admission
+                    // before waiting on siblings which may depend on queued
+                    // jobs; terminal_error already released its work credit.
+                    return terminal;
+                }
                 else {
                     slot.owner = core::option::Some(owner); put_slot(run,index,slot);
                     if (!gate.unwrap()) { immediate = true; }

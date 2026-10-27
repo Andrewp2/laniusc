@@ -10,6 +10,7 @@
 // copies share upstream references. Discarded transferred owners can leak;
 // owning-cursor Destroy helpers cannot recover items no longer in the source.
 module core::iter;
+import core::clone_values;
 import core::cmp;
 import core::option;
 import core::ordering;
@@ -28,6 +29,15 @@ pub trait Iterator<T> {
 // cleanup authority remains with the application; no Destroy is implied.
 pub trait Mapper<T, U> {
     pub fn apply(&self, value: T) -> U;
+}
+
+// Retirement transfers one exhausted inner by value. None consumes all its
+// backing cleanup authority. Some returns the ACTUAL updated recoverable inner
+// and a separately transferred error; no rollback or implicit Destroy occurs.
+// Never retain or operate an older shallow copy after handing inner over.
+pub struct RetireFailure<J,E> { inner: J, error: E }
+pub trait InnerRetirement<J,E> {
+    pub fn try_retire(&self, inner: J) -> core::option::Option<RetireFailure<J,E>>;
 }
 
 // Left-fold callbacks receive the accumulator first. Replaced accumulators
@@ -57,6 +67,25 @@ pub trait TrySink<T, E> {
     pub fn try_accept(&self, item: T) -> core::option::Option<E>;
 }
 
+// A checked replacement destination for one complete shallow item. Err leaves
+// incoming cleanup authority with caller and publishes no partial insertion.
+// Ok(None) stores a new item; Ok(Some(old)) stores the incoming item and returns
+// the complete displaced owner. No clone/Destroy or rollback is implicit.
+pub trait TryReplaceSink<T,E> {
+    pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,E>;
+}
+
+// Relative to this call only: replaced <= committed. A displaced-delivery
+// failure includes its CURRENT committed replacement in both counters.
+pub struct ReplacementProgress { committed: u64, replaced: u64 }
+pub struct ReplacementTransfer { progress: ReplacementProgress, exhausted: bool }
+pub enum ReplacementFailure<T,RE,DE> {
+    // Destination rejected this incoming T; no current commit occurred.
+    Rejected(ReplacementProgress,T,RE),
+    // Replacement committed. This T is the OLD item, rejected by delivery.
+    Undelivered(ReplacementProgress,T,DE),
+}
+
 // A transfer stops at the quota without probing again. exhausted means an
 // actual None was observed, not that a quota-ending source is known nonempty.
 pub struct Transfer { accepted: u64, exhausted: bool }
@@ -79,6 +108,24 @@ pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
 pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
 pub struct Map<I, M, T, U> { source: &I, mapper: &M, done: bool }
+// Scan callbacks hold their own state. None stops, unlike FilterMap's skip.
+// Keep source/mapper/state alive and do not reenter from a source or callback.
+pub struct Scan<I,M,T,U> { source: &I, mapper: &M, done: bool }
+pub struct TryScan<I,M,T,U,E> { source: &I, mapper: &M, done: bool }
+pub enum NestedFinishError { Active }
+// One active manual owner, initially absent; no default J or eager outer pull.
+// Copies alias cleanup authority. Recover active before abandoning an adapter.
+// Borrowed yielded items must not outlive inner backing retired by later next.
+// Source, mapper and retirement callbacks must not reenter the adapter.
+struct NestedState<J> { active: core::option::Option<J>, done: bool }
+pub struct TryFlatten<I,J,R,T,E> { source: &I, retirement: &R, state: NestedState<J> }
+pub struct TryFlatMap<I,M,R,S,J,T,E> { source: &I, mapper: &M, retirement: &R, state: NestedState<J> }
+// Ordinary facades require a genuinely infallible retirement policy. They use
+// the same state/traversal and manual-owner rules as their Try counterparts.
+pub struct Flatten<I,J,R,T> { source: &I, retirement: &R, state: NestedState<J> }
+pub struct FlatMap<I,M,R,S,J,T> { source: &I, mapper: &M, retirement: &R, state: NestedState<J> }
+struct NestedIdentity<J,E> {}
+struct NestedLift<M,S,J> { mapper: &M }
 pub struct Zip<A, B, T, U> { left: &A, right: &B, done: bool }
 pub struct Enumerate<I, T> { source: &I, next_index: u64, max_used: bool, done: bool }
 pub struct Filter<I, P, T> { source: &I, predicate: &P, done: bool }
@@ -162,6 +209,62 @@ pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
 pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
     where I: Iterator<T>, M: Mapper<T, U> {
     return Map { source: source, mapper: mapper, done: false };
+}
+
+// Lazy construction. Each next pulls at most one item and calls the borrowed
+// stateful mapper at most once. A callback None consumes that item and fuses.
+// Consumed items/replaced callback state retain application cleanup policy.
+pub fn scan<I,M,T,U>(source: &I, mapper: &M) -> Scan<I,M,T,U>
+    where I: Iterator<T>, M: Mapper<T,core::option::Option<U>> {
+    return Scan { source: source, mapper: mapper, done: false };
+}
+
+// An error is one Some(Err), followed only by None. No extra source poll,
+// callback invocation, rollback, allocation or automatic error destruction.
+pub fn try_scan<I,M,T,U,E>(source: &I, mapper: &M) -> TryScan<I,M,T,U,E>
+    where I: Iterator<T>, M: Mapper<T,core::result::Result<core::option::Option<U>,E>> {
+    return TryScan { source: source, mapper: mapper, done: false };
+}
+
+// Caller keeps the outer and retirement policy alive. One next may cross many
+// empty inners; bound the outer itself when that work must be finite. A Take
+// downstream does not bound empty-inner acquisition or retirement work.
+// Constructors allocate nothing and invoke no source or callback.
+pub fn try_flatten<I,J,R,T,E>(source: &I, retirement: &R) -> TryFlatten<I,J,R,T,E>
+    where I: Iterator<J>, J: Iterator<T>, R: InnerRetirement<J,E> {
+    let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
+    return TryFlatten { source: source, retirement: retirement, state: state };
+}
+
+// Mapper errors consume their current outer item, yield once and fuse with no
+// active inner. Mapper owns cleanup of any partial construction on failure.
+// A returned inner cannot borrow mapper call-local backing. Source/mapper/
+// policy and all externally borrowed backing must outlive their uses here.
+pub fn try_flat_map<I,M,R,S,J,T,E>(source: &I, mapper: &M, retirement: &R) -> TryFlatMap<I,M,R,S,J,T,E>
+    where I: Iterator<S>, M: Mapper<S,core::result::Result<J,E>>,
+        J: Iterator<T>, R: InnerRetirement<J,E> {
+    let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
+    return TryFlatMap { source: source, mapper: mapper, retirement: retirement, state: state };
+}
+
+// No eager pull/allocation/default J. Infallible is the existing empty enum,
+// not an inhabited sentinel. Policies with reportable cleanup errors must use
+// try_flatten; an ordinary policy may not silently ignore such a failure.
+pub fn flatten<I,J,R,T>(source: &I, retirement: &R) -> Flatten<I,J,R,T>
+    where I: Iterator<J>, J: Iterator<T>, R: InnerRetirement<J,core::clone_values::Infallible> {
+    let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
+    return Flatten { source: source, retirement: retirement, state: state };
+}
+
+// Mapper returns J directly; fallible construction belongs to try_flat_map.
+// Caller owns mapper/state/backing lifetime. Returned J cannot borrow temporary
+// call-local storage. Empty-inner work, nonreentry and yielded-borrow lifetimes
+// are identical to try_flatten/try_flat_map, including explicit early recovery.
+pub fn flat_map<I,M,R,S,J,T>(source: &I, mapper: &M, retirement: &R) -> FlatMap<I,M,R,S,J,T>
+    where I: Iterator<S>, M: Mapper<S,J>, J: Iterator<T>,
+        R: InnerRetirement<J,core::clone_values::Infallible> {
+    let state: NestedState<J> = NestedState { active: core::option::None(), done: false };
+    return FlatMap { source: source, mapper: mapper, retirement: retirement, state: state };
 }
 
 // Selection callbacks reuse Mapper: bool selects an original shallow item,
@@ -413,6 +516,60 @@ pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
     return core::result::Ok(Transfer { accepted: accepted, exhausted: false });
 }
 
+// At most limit immediate source calls/replacement attempts. Each old item is
+// delivered once through the existing TrySink contract before another pull.
+// Zero touches no object; a quota stop never probes for EOF. One next/hash/
+// callback may do unbounded work internally, outside this immediate-call quota.
+//
+// Rejected returns the incoming owner: retry/release it before source resume.
+// Undelivered returns the OLD owner after the incoming replacement committed:
+// retry only its delivery, retain it elsewhere or release it, not replacement.
+// Earlier commits/deliveries are never rolled back. Returned errors/items and
+// stored inputs keep their shallow cleanup authority; nothing is destroyed.
+// Caller also retains an owning source's remainder and exhausted backing.
+//
+// Keep source/destinations/backing alive and separate. No borrowed source into
+// either mutating destination; callbacks must not reenter or mutate peers.
+// A delivery error must neither retain old nor publish a partial insertion.
+// Partial-output writers cannot claim this rejection contract. This helper
+// itself performs no allocation or host work; callbacks own their effects.
+pub fn try_replace_up_to<I,R,D,T,RE,DE>(source: &I, replacement: &R, displaced: &D, limit: u64)
+    -> core::result::Result<ReplacementTransfer,ReplacementFailure<T,RE,DE>>
+    where I: Iterator<T>, R: TryReplaceSink<T,RE>, D: TrySink<T,DE> {
+    let committed: u64 = 0;
+    let replaced: u64 = 0;
+    while (committed < limit) {
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) {
+            let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+            return core::result::Ok(ReplacementTransfer { progress: progress, exhausted: true });
+        }
+        let value: T = item.unwrap();
+        let stored: core::result::Result<core::option::Option<T>,RE> = replacement.try_replace_item(value);
+        if (stored.is_err()) {
+            let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+            let failure: ReplacementFailure<T,RE,DE> = ReplacementFailure::Rejected(progress,value,stored.unwrap_err());
+            return core::result::Err(failure);
+        }
+        // committed < limit <= MAX. replaced <= old committed, so either
+        // increment remains <= the new committed count without MAX+1.
+        committed += 1;
+        let previous: core::option::Option<T> = stored.unwrap();
+        if (previous.is_some()) {
+            replaced += 1;
+            let old: T = previous.unwrap();
+            let failed: core::option::Option<DE> = displaced.try_accept(old);
+            if (failed.is_some()) {
+                let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+                let failure: ReplacementFailure<T,RE,DE> = ReplacementFailure::Undelivered(progress,old,failed.unwrap());
+                return core::result::Err(failure);
+            }
+        }
+    }
+    let progress: ReplacementProgress = ReplacementProgress { committed: committed, replaced: replaced };
+    return core::result::Ok(ReplacementTransfer { progress: progress, exhausted: false });
+}
+
 // At most limit next calls; no probe when the quota is reached. exhausted says
 // a None was observed, rather than claiming the next item is definitely Some.
 // Each successful item is discarded as a shallow value; no Destroy is called.
@@ -624,6 +781,216 @@ pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
         let mapper: &M = self.mapper;
         let mapped: U = mapper.apply(value);
         return core::option::Some(mapped);
+    }
+}
+
+pub impl<I,M,T,U> Scan<I,M,T,U> {
+    pub fn borrow(&self) -> &Scan<I,M,T,U> { return self; }
+}
+
+pub impl<I,M,T,U> Iterator<U> for Scan<I,M,T,U>
+    where I: Iterator<T>, M: Mapper<T,core::option::Option<U>> {
+    pub fn next(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { self.done = true; return core::option::None(); }
+        let mapper: &M = self.mapper;
+        let mapped: core::option::Option<U> = mapper.apply(item.unwrap());
+        if (mapped.is_none()) { self.done = true; }
+        return mapped;
+    }
+}
+
+pub impl<I,M,T,U,E> TryScan<I,M,T,U,E> {
+    pub fn borrow(&self) -> &TryScan<I,M,T,U,E> { return self; }
+}
+
+pub impl<I,M,T,U,E> Iterator<core::result::Result<U,E>> for TryScan<I,M,T,U,E>
+    where I: Iterator<T>, M: Mapper<T,core::result::Result<core::option::Option<U>,E>> {
+    pub fn next(&self) -> core::option::Option<core::result::Result<U,E>> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { self.done = true; return core::option::None(); }
+        let mapper: &M = self.mapper;
+        let mapped: core::result::Result<core::option::Option<U>,E> = mapper.apply(item.unwrap());
+        if (mapped.is_err()) {
+            self.done = true;
+            return core::option::Some(core::result::Err(mapped.unwrap_err()));
+        }
+        let selected: core::option::Option<U> = mapped.unwrap();
+        if (selected.is_none()) { self.done = true; return core::option::None(); }
+        return core::option::Some(core::result::Ok(selected.unwrap()));
+    }
+}
+
+impl<J> NestedState<J> {
+    fn borrow(&self) -> &NestedState<J> { return self; }
+    fn has_active(&self) -> bool { return self.active.is_some(); }
+    fn take_active(&self) -> core::option::Option<J> {
+        let previous: core::option::Option<J> = self.active;
+        self.active = core::option::None(); self.done = true;
+        return previous;
+    }
+    fn try_finish(&self) -> core::option::Option<NestedFinishError> {
+        if (self.active.is_some()) { return core::option::Some(NestedFinishError::Active); }
+        self.done = true;
+        return core::option::None();
+    }
+}
+
+impl<J,E> NestedIdentity<J,E> {
+    fn borrow(&self) -> &NestedIdentity<J,E> { return self; }
+}
+pub impl<J,E> Mapper<J,core::result::Result<J,E>> for NestedIdentity<J,E> {
+    pub fn apply(&self, value: J) -> core::result::Result<J,E> { return core::result::Ok(value); }
+}
+
+// Call-scoped bridge only. It borrows the actual caller mapper; neither this
+// record nor its reference is ever retained by the nested traversal engine.
+impl<M,S,J> NestedLift<M,S,J> {
+    fn borrow(&self) -> &NestedLift<M,S,J> { return self; }
+}
+pub impl<M,S,J> Mapper<S,core::result::Result<J,core::clone_values::Infallible>> for NestedLift<M,S,J>
+    where M: Mapper<S,J> {
+    pub fn apply(&self, value: S) -> core::result::Result<J,core::clone_values::Infallible> {
+        let mapper: &M = self.mapper;
+        let inner: J = mapper.apply(value);
+        return core::result::Ok(inner);
+    }
+}
+
+// Only the engine's outer transport Result is removed. If T is itself an
+// Option or Result its None/Err remains an ordinary yielded item. No fallible
+// error is erased: a lawful value of Infallible cannot be constructed.
+fn infallible_nested_item<T>(item: core::option::Option<core::result::Result<T,core::clone_values::Infallible>>)
+    -> core::option::Option<T> {
+    if (item.is_none()) { return core::option::None(); }
+    let value: core::result::Result<T,core::clone_values::Infallible> = item.unwrap();
+    return core::option::Some(value.unwrap());
+}
+
+// The only nested traversal engine. It borrows these arguments for this call
+// and stores only transferred J values. No local mapper/provider escapes.
+// Move out and clear BEFORE local next or policy calls. Reinstall a mutated
+// local after an item; after failure reinstall ONLY the policy-returned J.
+fn nested_next<I,M,R,S,J,T,E>(state: &NestedState<J>, source: &I, mapper: &M, retirement: &R)
+    -> core::option::Option<core::result::Result<T,E>>
+    where I: Iterator<S>, M: Mapper<S,core::result::Result<J,E>>,
+        J: Iterator<T>, R: InnerRetirement<J,E> {
+    if (state.done) { return core::option::None(); }
+    while (true) {
+        if (state.active.is_some()) {
+            let inner: J = state.active.unwrap();
+            state.active = core::option::None();
+            let item: core::option::Option<T> = inner.next();
+            if (item.is_some()) {
+                state.active = core::option::Some(inner);
+                return core::option::Some(core::result::Ok(item.unwrap()));
+            }
+            let retired: core::option::Option<RetireFailure<J,E>> = retirement.try_retire(inner);
+            if (retired.is_some()) {
+                let failure: RetireFailure<J,E> = retired.unwrap();
+                state.active = core::option::Some(failure.inner);
+                state.done = true;
+                return core::option::Some(core::result::Err(failure.error));
+            }
+            // Successful retirement consumed inner; no earlier copy is used.
+            // The next loop turn may now acquire the next outer item.
+        } else {
+            let outer: core::option::Option<S> = source.next();
+            if (outer.is_none()) { state.done = true; return core::option::None(); }
+            let mapped: core::result::Result<J,E> = mapper.apply(outer.unwrap());
+            if (mapped.is_err()) {
+                state.done = true;
+                return core::option::Some(core::result::Err(mapped.unwrap_err()));
+            }
+            state.active = core::option::Some(mapped.unwrap());
+        }
+    }
+    return core::option::None();
+}
+
+pub impl<I,J,R,T,E> TryFlatten<I,J,R,T,E> {
+    pub fn borrow(&self) -> &TryFlatten<I,J,R,T,E> { return self; }
+    pub fn has_active(&self) -> bool { return self.state.has_active(); }
+    // Close and transfer the actual active inner. Never poll, retire or drain
+    // the borrowed outer; its remaining cleanup authority stays with caller.
+    pub fn take_active(&self) -> core::option::Option<J> { return self.state.take_active(); }
+    // Rejection preserves all state, including an already-fused failed inner.
+    pub fn try_finish(&self) -> core::option::Option<NestedFinishError> { return self.state.try_finish(); }
+}
+
+pub impl<I,J,R,T,E> Iterator<core::result::Result<T,E>> for TryFlatten<I,J,R,T,E>
+    where I: Iterator<J>, J: Iterator<T>, R: InnerRetirement<J,E> {
+    pub fn next(&self) -> core::option::Option<core::result::Result<T,E>> {
+        let state: &NestedState<J> = self.state.borrow();
+        let source: &I = self.source;
+        let retirement: &R = self.retirement;
+        let identity: NestedIdentity<J,E> = NestedIdentity {};
+        return nested_next<I,NestedIdentity<J,E>,R,J,J,T,E>(state,source,identity.borrow(),retirement);
+    }
+}
+
+pub impl<I,M,R,S,J,T,E> TryFlatMap<I,M,R,S,J,T,E> {
+    pub fn borrow(&self) -> &TryFlatMap<I,M,R,S,J,T,E> { return self; }
+    pub fn has_active(&self) -> bool { return self.state.has_active(); }
+    pub fn take_active(&self) -> core::option::Option<J> { return self.state.take_active(); }
+    pub fn try_finish(&self) -> core::option::Option<NestedFinishError> { return self.state.try_finish(); }
+}
+
+pub impl<I,M,R,S,J,T,E> Iterator<core::result::Result<T,E>> for TryFlatMap<I,M,R,S,J,T,E>
+    where I: Iterator<S>, M: Mapper<S,core::result::Result<J,E>>,
+        J: Iterator<T>, R: InnerRetirement<J,E> {
+    pub fn next(&self) -> core::option::Option<core::result::Result<T,E>> {
+        let state: &NestedState<J> = self.state.borrow();
+        let source: &I = self.source;
+        let mapper: &M = self.mapper;
+        let retirement: &R = self.retirement;
+        return nested_next<I,M,R,S,J,T,E>(state,source,mapper,retirement);
+    }
+}
+
+pub impl<I,J,R,T> Flatten<I,J,R,T> {
+    pub fn borrow(&self) -> &Flatten<I,J,R,T> { return self; }
+    pub fn has_active(&self) -> bool { return self.state.has_active(); }
+    pub fn take_active(&self) -> core::option::Option<J> { return self.state.take_active(); }
+    pub fn try_finish(&self) -> core::option::Option<NestedFinishError> { return self.state.try_finish(); }
+}
+
+pub impl<I,J,R,T> Iterator<T> for Flatten<I,J,R,T>
+    where I: Iterator<J>, J: Iterator<T>, R: InnerRetirement<J,core::clone_values::Infallible> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let state: &NestedState<J> = self.state.borrow();
+        let source: &I = self.source;
+        let retirement: &R = self.retirement;
+        let identity: NestedIdentity<J,core::clone_values::Infallible> = NestedIdentity {};
+        let item: core::option::Option<core::result::Result<T,core::clone_values::Infallible>> =
+            nested_next<I,NestedIdentity<J,core::clone_values::Infallible>,R,J,J,T,core::clone_values::Infallible>(state,source,identity.borrow(),retirement);
+        return infallible_nested_item<T>(item);
+    }
+}
+
+pub impl<I,M,R,S,J,T> FlatMap<I,M,R,S,J,T> {
+    pub fn borrow(&self) -> &FlatMap<I,M,R,S,J,T> { return self; }
+    pub fn has_active(&self) -> bool { return self.state.has_active(); }
+    pub fn take_active(&self) -> core::option::Option<J> { return self.state.take_active(); }
+    pub fn try_finish(&self) -> core::option::Option<NestedFinishError> { return self.state.try_finish(); }
+}
+
+pub impl<I,M,R,S,J,T> Iterator<T> for FlatMap<I,M,R,S,J,T>
+    where I: Iterator<S>, M: Mapper<S,J>, J: Iterator<T>,
+        R: InnerRetirement<J,core::clone_values::Infallible> {
+    pub fn next(&self) -> core::option::Option<T> {
+        let state: &NestedState<J> = self.state.borrow();
+        let source: &I = self.source;
+        let mapper: &M = self.mapper;
+        let retirement: &R = self.retirement;
+        let lifted: NestedLift<M,S,J> = NestedLift { mapper: mapper };
+        let item: core::option::Option<core::result::Result<T,core::clone_values::Infallible>> =
+            nested_next<I,NestedLift<M,S,J>,R,S,J,T,core::clone_values::Infallible>(state,source,lifted.borrow(),retirement);
+        return infallible_nested_item<T>(item);
     }
 }
 

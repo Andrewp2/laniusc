@@ -14,17 +14,17 @@ pub struct Usage { steps: i32, tokens: i32, calls: i32, reserved_work: i64 }
 pub struct Token { rule: i32, id: i32, span: ext::regex::Span, text: core::text::Text }
 pub enum Error {
     Bounds, InvalidLimits, RuleLimit, PatternLimit(i32), StateLimit(i32), InputLimit,
-    AllocationFailed, Pattern(i32,ext::regex::Error), Input(ext::regex::Error),
+    AllocationFailed, Pattern(i32,ext::regex::Error), Input(ext::regex::Error), Workspace(ext::regex::Error),
     Search(i32,i32,ext::regex::Error), NoMatch(i32), EmptyMatch(i32,i32),
     StepLimit(i32), TokenLimit(i32), SearchCallLimit(i32,i32), SearchWorkLimit(i32,i32)
 }
 // Internal descriptors are public only because fields are not opaque. Do not
 // forge/mutate them. Copying Lexer aliases its single manual owner.
 pub struct CompiledRule { id: i32, skip: bool, regex: ext::regex::Regex }
-pub struct Lexer { rules: alloc::vec::Vec<CompiledRule>, states: i32 }
-// One active cursor handle borrows Lexer and validated immutable input. It
-// retains no allocation between calls; copies must not advance independently.
-pub struct Cursor { rules: alloc::vec::Vec<CompiledRule>, input: ext::regex::Input, limits: ScanLimits, used: Usage, at: i32, done: bool }
+pub struct Lexer { rules: alloc::vec::Vec<CompiledRule>, states: i32, workspace_states: i32 }
+// One active cursor owns its fixed span workspace and borrows Lexer/input.
+// Distinct scans have distinct scratch; copies must not advance independently.
+pub struct Cursor { rules: alloc::vec::Vec<CompiledRule>, input: ext::regex::Input, limits: ScanLimits, used: Usage, at: i32, done: bool, workspace: core::option::Option<ext::regex::Workspace> }
 
 pub fn default_build_limits() -> BuildLimits { return BuildLimits { max_rules: 128, max_pattern_bytes: 1048576, max_states: 65536 }; }
 pub fn default_scan_limits() -> ScanLimits {
@@ -51,7 +51,7 @@ pub fn compile(rules: core::slice::View<Rule>, options: ext::regex::Options, lim
         if (pattern.length > limits.max_pattern_bytes - total) { return core::result::Err(Error::PatternLimit(index)); }
         total += pattern.length; index += 1;
     }
-    let output = Lexer { rules: alloc::vec::new(), states: 0 };
+    let output = Lexer { rules: alloc::vec::new(), states: 0, workspace_states: 0 };
     // Reserve the complete outer owner before compiling any rule leaves.
     if (output.rules.try_reserve(rules.length).is_err()) { return core::result::Err(Error::AllocationFailed); }
     index = 0;
@@ -63,7 +63,7 @@ pub fn compile(rules: core::slice::View<Rule>, options: ext::regex::Options, lim
         if (regex.state_count() > limits.max_states - output.states) { regex.destroy(); output.destroy(); return core::result::Err(Error::StateLimit(index)); }
         let states: i32 = regex.state_count();
         if (output.rules.try_push(CompiledRule { id: rule.id, skip: rule.skip, regex: regex }).is_err()) { regex.destroy(); output.destroy(); return core::result::Err(Error::AllocationFailed); }
-        output.states += states; index += 1;
+        output.states += states; if (states > output.workspace_states) { output.workspace_states = states; } index += 1;
     }
     return core::result::Ok(output);
 }
@@ -74,7 +74,7 @@ pub impl Lexer {
     pub fn destroy(&self) {
         let rules = self.rules.as_slice(); let index: i32 = 0;
         while (index < self.rules.len()) { rules[index].regex.destroy(); index += 1; }
-        self.rules.destroy(); self.states = 0;
+        self.rules.destroy(); self.states = 0; self.workspace_states = 0;
     }
     pub fn scan(&self, text: core::text::Text, limits: ScanLimits) -> core::result::Result<Cursor,Error> {
         if (!valid_scan(limits)) { return core::result::Err(Error::InvalidLimits); }
@@ -82,14 +82,29 @@ pub impl Lexer {
         if (text.length > limits.max_input_bytes) { return core::result::Err(Error::InputLimit); }
         let checked = ext::regex::input(text);
         if (checked.is_err()) { return core::result::Err(Error::Input(checked.unwrap_err())); }
-        return core::result::Ok(Cursor { rules: self.rules, input: checked.unwrap(), limits: limits, used: empty_usage(), at: 0, done: false });
+        let workspace: core::option::Option<ext::regex::Workspace> = core::option::None();
+        if (text.length != 0) {
+            // Group zero only. Subgroup Save instructions remain in the same
+            // canonical VM traversal without enlarging span-search scratch.
+            let made = ext::regex::workspace(self.workspace_states,1);
+            if (made.is_err()) {
+                let error = made.unwrap_err();
+                if (match(error) { ext::regex::Error::AllocationFailed -> true, _ -> false }) { return core::result::Err(Error::AllocationFailed); }
+                return core::result::Err(Error::Workspace(error));
+            }
+            workspace = core::option::Some(made.unwrap());
+        }
+        return core::result::Ok(Cursor { rules: self.rules, input: checked.unwrap(), limits: limits, used: empty_usage(), at: 0, done: false, workspace: workspace });
     }
 }
 pub impl Cursor {
     pub fn borrow(&self) -> &Cursor { return self; }
     pub fn position(&self) -> i32 { return self.at; }
     pub fn usage(&self) -> Usage { return self.used; }
-    pub fn destroy(&self) { self.done = true; }
+    pub fn destroy(&self) {
+        self.done = true;
+        if (self.workspace.is_some()) { let workspace = self.workspace.unwrap(); workspace.destroy(); self.workspace = core::option::None(); }
+    }
     fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Token>,Error> { self.destroy(); return core::result::Err(error); }
     pub fn next(&self) -> core::result::Result<core::option::Option<Token>,Error> {
         if (self.done) { return core::result::Ok(core::option::None()); }
@@ -104,12 +119,15 @@ pub impl Cursor {
                 if (self.used.calls == self.limits.max_calls) { return self.fail(Error::SearchCallLimit(index,self.at)); }
                 if (allowance > self.limits.max_work - self.used.reserved_work) { return self.fail(Error::SearchWorkLimit(index,self.at)); }
                 self.used.calls += 1; self.used.reserved_work += allowance;
-                let result = rule.regex.longest_prefix_in(self.input,self.at);
+                let workspace = self.workspace.unwrap();
+                let result = rule.regex.longest_prefix_span_with(self.input,self.at,workspace.borrow());
+                // Search mutates the shallow owner's descriptor (list swaps,
+                // active result/work metadata), so retain that updated value.
+                self.workspace = core::option::Some(workspace);
                 if (result.is_err()) { return self.fail(Error::Search(index,self.at,result.unwrap_err())); }
                 let found = result.unwrap();
                 if (found.is_some()) {
-                    let matched = found.unwrap(); let span = matched.span(0).unwrap();
-                    matched.destroy();
+                    let span = found.unwrap();
                     if (winner < 0 || span.end > end) { winner = index; end = span.end; }
                 }
                 index += 1;

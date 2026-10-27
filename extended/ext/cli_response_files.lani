@@ -1,0 +1,123 @@
+// Native Linux response-file provider. One transient file owner per load.
+// The base fd is borrowed and stable; AT_FDCWD additionally requires stable cwd.
+module ext::cli_response_files;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::io;
+import core::io::Read;
+import core::option::Option;
+import core::option::None;
+import core::option::Some;
+import core::path;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::cli_response::Provider;
+import std::file::File;
+import std::file_ops;
+
+pub enum Phase { Admission, Open, Metadata, Read, Close }
+pub enum Cause { Bounds, CallLimit, NotRegular, ByteLimit, AllocationFailed, Io(core::io::Error) }
+pub struct Error { phase:Phase, cause:Cause, cleanup:Option<core::io::Error> }
+// Copies transfer the call-budget authority; keep one active instance.
+// The caller keeps the borrowed directory descriptor live through every load.
+pub struct Files { directory_fd:i32, maximum_calls:u64, used:u64, follow_symlinks:bool }
+
+fn failure(phase:Phase,cause:Cause) -> Error {
+    return Error { phase:phase,cause:cause,cleanup:None() };
+}
+
+pub fn files(directory_fd:i32,maximum_calls:u64,follow_symlinks:bool) -> Result<Files,Error> {
+    if(directory_fd<0 && directory_fd!=std::file_ops::AT_FDCWD) {
+        return Err(failure(Phase::Admission,Cause::Bounds));
+    }
+    return Ok(Files { directory_fd:directory_fd,maximum_calls:maximum_calls,used:0,follow_symlinks:follow_symlinks });
+}
+
+fn allocation_cause(error:alloc::vec::Error) -> Cause {
+    return match(error) {
+        alloc::vec::Error::AllocationFailed -> Cause::AllocationFailed,
+        alloc::vec::Error::Bounds -> Cause::Bounds,
+        alloc::vec::Error::InvalidCapacity -> Cause::Bounds,
+        alloc::vec::Error::CapacityOverflow -> Cause::Bounds
+    };
+}
+
+pub impl Files {
+    pub fn borrow(&self) -> &Files { return self; }
+    pub fn calls(&self) -> u64 { return self.used; }
+
+    // All acquired-file operations preserve one exclusive credit for close.
+    fn charge(&self) -> bool {
+        if(self.used>=self.maximum_calls) { return false; }
+        if(self.maximum_calls-self.used<=1) { return false; }
+        self.used+=1; return true;
+    }
+    fn close_owned(&self,file:&File) -> Result<i32,core::io::Error> {
+        // load admits this credit before open; no operation can consume it.
+        self.used+=1; return file.close();
+    }
+    fn failed(&self,file:&File,bytes:&Vec<u8>,phase:Phase,cause:Cause) -> Result<Vec<u8>,Error> {
+        bytes.destroy();
+        let error:Error=failure(phase,cause);
+        let closed:Result<i32,core::io::Error> =self.close_owned(file);
+        if(closed.is_err()) { error.cleanup=Some(closed.unwrap_err()); }
+        return Err(error);
+    }
+}
+
+pub impl Provider<Error> for Files {
+    pub fn load(&self,path:View<u8>,maximum_bytes:i32) -> Result<Vec<u8>,Error> {
+        if(maximum_bytes<0 || path.start<0 || path.length<=0 || path.length>4095 || path.start>2147483647-path.length) {
+            return Err(failure(Phase::Admission,Cause::Bounds));
+        }
+        let parsed:Result<core::path::Path,core::path::Error> =core::path::from_view(path);
+        if(parsed.is_err()) { return Err(failure(Phase::Admission,Cause::Bounds)); }
+        if(self.used>self.maximum_calls) { return Err(failure(Phase::Admission,Cause::CallLimit)); }
+        if(self.maximum_calls-self.used<4) { return Err(failure(Phase::Admission,Cause::CallLimit)); }
+
+        let options:std::file_ops::OpenOptions=std::file_ops::options();
+        options.access=std::file_ops::Access::Read;
+        options.close_on_exec=true; options.nonblocking=true;
+        options.no_controlling_terminal=true; options.no_follow=!self.follow_symlinks;
+        self.used+=1;
+        let opened:Result<File,core::io::Error> =std::file_ops::open_at(self.directory_fd,parsed.unwrap(),options);
+        if(opened.is_err()) { return Err(failure(Phase::Open,Cause::Io(opened.unwrap_err()))); }
+        let file:File=opened.unwrap();
+        let bytes:Vec<u8> =alloc::vec::new<u8>();
+        let metadata:std::file_ops::Metadata=std::file_ops::empty_metadata();
+        if(!self.charge()) { return self.failed(file.borrow(),bytes.borrow(),Phase::Metadata,Cause::CallLimit); }
+        let queried:Result<i32,core::io::Error> =std::file_ops::metadata_file_into(file.borrow(),metadata.borrow());
+        if(queried.is_err()) { return self.failed(file.borrow(),bytes.borrow(),Phase::Metadata,Cause::Io(queried.unwrap_err())); }
+        // STATX_TYPE is required. Size metadata never establishes actual EOF.
+        if(!metadata.has(1)) { return self.failed(file.borrow(),bytes.borrow(),Phase::Metadata,Cause::Io(core::io::Error::InvalidCount)); }
+        let regular:bool=match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Regular->true, _->false };
+        if(!regular) { return self.failed(file.borrow(),bytes.borrow(),Phase::Metadata,Cause::NotRegular); }
+
+        let storage:[u8;4096]=[0;4096];
+        while(true) {
+            let remaining:i32=maximum_bytes-bytes.len();
+            let count:i32=remaining; if(count>4096) { count=4096; }
+            // At the cap, consume at most one extra byte to distinguish exact
+            // EOF from an oversized file, without extending the output owner.
+            if(count==0) { count=1; }
+            if(!self.charge()) { return self.failed(file.borrow(),bytes.borrow(),Phase::Read,Cause::CallLimit); }
+            let received:Result<i32,core::io::Error> =file.read(storage,0,count);
+            if(received.is_err()) {
+                let error:core::io::Error=received.unwrap_err();
+                if(!core::io::is_interrupted(error)) { return self.failed(file.borrow(),bytes.borrow(),Phase::Read,Cause::Io(error)); }
+            } else {
+                let got:i32=received.unwrap();
+                if(got<0 || got>count) { return self.failed(file.borrow(),bytes.borrow(),Phase::Read,Cause::Io(core::io::Error::InvalidCount)); }
+                if(got==0) { break; }
+                if(got>remaining) { return self.failed(file.borrow(),bytes.borrow(),Phase::Read,Cause::ByteLimit); }
+                let added:Result<i32,alloc::vec::Error> =bytes.try_extend(View { values:storage,start:0,length:got });
+                if(added.is_err()) { return self.failed(file.borrow(),bytes.borrow(),Phase::Read,allocation_cause(added.unwrap_err())); }
+            }
+        }
+        let closed:Result<i32,core::io::Error> =self.close_owned(file.borrow());
+        if(closed.is_err()) { bytes.destroy(); return Err(failure(Phase::Close,Cause::Io(closed.unwrap_err()))); }
+        return Ok(bytes);
+    }
+}

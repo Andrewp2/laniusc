@@ -102,18 +102,20 @@
         "docs/stdlib-hash-collections.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-hash.md"
+        "docs/stdlib-owning-hash.md",
+        "docs/stdlib-replacement-sinks.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
     },
     "alloc::hash_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-hash.md"
+        "docs/stdlib-owning-hash.md",
+        "docs/stdlib-replacement-sinks.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide."
     },
     "alloc::io": {
       "guides": [
@@ -136,18 +138,21 @@
         "docs/stdlib-tree-map.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-tree.md"
+        "docs/stdlib-owning-tree.md",
+        "docs/stdlib-replacement-sinks.md",
+        "docs/stdlib-latest-values.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink delegates canonical replacement of both key and value, returning the complete old Entry. Finite replacement model, strict-owner and reached-OOM gates pass on the native Linux profile; the linked guide owns exact scope."
     },
     "alloc::tree_set": {
       "guides": [
         "docs/stdlib-owned-sets.md",
         "docs/stdlib-collection-iterators.md",
         "docs/stdlib-iterator-collection-sinks.md",
-        "docs/stdlib-owning-tree.md"
+        "docs/stdlib-owning-tree.md",
+        "docs/stdlib-replacement-sinks.md"
       ],
-      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence."
+      "note": "Owning cursors also execute with explicit transfer, retained backing, O(1) recovery and remaining-owner destruction; the owning cursor guide defines bounds, costs and native evidence. TryReplaceSink stores the incoming representative and returns the old one, using canonical try_replace. Existing duplicate-preserving insertion/sink policy is unchanged; the new replacement facade has finite model/owner/reached-OOM acceptance in the linked guide."
     },
     "alloc::vec": {
       "guides": [
@@ -323,9 +328,14 @@
         "docs/stdlib-owning-iterators.md",
         "docs/stdlib-iterator-sources.md",
         "docs/stdlib-iterator-lookahead.md",
-        "docs/stdlib-column-extrema.md"
+        "docs/stdlib-column-extrema.md",
+        "docs/stdlib-nested-iteration.md",
+        "docs/stdlib-infallible-nested.md",
+        "docs/stdlib-flatten-sum.md",
+        "docs/stdlib-replacement-sinks.md",
+        "docs/stdlib-latest-values.md"
       ],
-      "note": "Peekable borrows its upstream cursor and exposes borrowed shallow observations. For owning sources, cached-item recovery transfers that item's cleanup authority; finish rejects a populated cache or closes only the adapter without polling upstream. Position search uses relative checked u64 indices; minimum keeps the first tied representative and maximum the last. Reductions retain the existing caller-managed ownership policy; the guides define source resumption, callback order, overflow and focused native evidence."
+      "note": "Shared fused iteration, scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Ordinary Flatten/FlatMap use real empty Infallible retirement through the existing nested engine, preserving actual updated-inner recovery; their selected semantic, live-owner and real-application gates pass on native Linux x86_64. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. Linked guides retain each receipt's source scope, direct-oracle versus Rust-test distinction and separate zero-sized return-call compiler dependency. Keep backing alive, prohibit reentrancy, and bound upstream work separately from output quotas."
     },
     "core::math": {
       "guides": [
@@ -530,16 +540,52 @@
         "docs/stdlib-iterator-transfer.md"
       ]
     },
+    "ext::archive_extract": {
+      "guides": [
+        "docs/extended-archive-extraction.md",
+        "docs/extended-unpack.md",
+        "docs/library-archive-extraction-plan.md"
+      ],
+      "note": "Content-only materializer over sealed archive_source::Prepared and the canonical AtomicFile owner. One manual Run uses anchored single-component directory walks and NoReplace per file, retaining per-node publication/sync/cleanup history and explicit kept-name transfer. Run's requested-owned cap includes Prepared, report/stack tables, recovery storage and one maximum ZIP decoded candidate; the caller's input owner is separate. Eleven direct Python groups pass 100 process invocations on one CLI-compiled ELF, including calibrations/overlap and 14 reached source ENOMEM cases. These cover normal/existing/partial trees, bounds, namespace/sync/write/close/rename faults, retained publication and recovery. The Rust driver has build admission, not a passing direct libtest rerun. The initial Rust-libtest fixture syntax failure occurred before native execution; later native harness corrections are recorded in the fixture guide. Separate unpack receipts pass 69 initial libtest-driven process invocations plus five direct retained-ELF input-fault invocations. Tested native Linux x86_64/kernel7.0.0-38/ext4 under /tmp. Cooperative stable namespace only; partial output remains, without directory transaction, rollback, hostile-directory containment, native blocking-time or aggregate DEFLATE CPU guarantees."
+    },
     "ext::archive_index": {
       "guides": [
         "docs/extended-archive-index.md"
       ],
       "note": "Persistent immutable ZIP snapshots and ordinal catalogs execute through SQLite on Linux x86_64/glibc. Seven focused native groups cover binary duplicate names and keys, all-entry CRC preflight, independent owners, pinned read consistency, explicit transaction uncertainty, native faults and 29 import plus 23 read allocation failures. The real archive-index program imports, lists, reads and exports a measured 1,024-entry, 8 MiB expanded archive."
     },
+    "ext::archive_plan": {
+      "guides": [
+        "docs/extended-archive-plan.md",
+        "docs/library-archive-extraction-plan.md"
+      ],
+      "note": "Pure allocation-backed raw-byte namespace planner with complete path/type/duplicate/file-ancestor validation, implied/explicit directory coalescing and a sealed terminal state. It parses no archive and performs no filesystem operation. Fixed node/path/entry capacities, checked requested-byte reservation and bounded planning work are explicit; errors retain ordinal/offset and poison later mutation. Direct native contracts and 76 independent modeled namespaces pass, plus a separate four-process allocation baseline/three-reached-ENOMEM receipt with balanced release. Model namespaces are not process counts. Borrowed path/component views end at explicit destroy; no automatic lifetime or hostile-namespace guarantee."
+    },
+    "ext::archive_profile": {
+      "guides": [
+        "docs/extended-archive-profile.md",
+        "docs/library-archive-extraction-plan.md"
+      ],
+      "note": "Content-only extraction metadata policy over canonical TAR/ZIP entries: regular files/directories, DOS0/Unix3 creator attributes, explicit type consistency and a narrow validated ignored-extra allowlist. Names remain raw canonical archive bytes; Unicode alternatives do not replace them. Four native groups pass 222 authored cases (TAR18, ZIP84, extras108, bounds/strides12). This allocation-free classifier performs no filesystem operation, namespace planning, ownership/permission restoration or ZIP payload CRC/decode validation; physical borrowed backing remains the caller's obligation."
+    },
+    "ext::archive_source": {
+      "guides": [
+        "docs/extended-archive-source.md",
+        "docs/extended-unpack.md"
+      ],
+      "note": "Complete borrowed TAR/ZIP metadata admission into one manual Prepared owner containing a sealed Plan and ordered Member table. TAR consumes the full footer; ZIP completes structural metadata before allocation, then both adapters apply the extraction profile and namespace policy to every member. Independent archive/namespace/payload oracles pass TAR26, ZIP26, limits58 and allocation10 process invocations: 120 across four Rust tests, including repeated baselines and eight reached source OOM cases with pre-exit release checks. Packed/nonzero and actual signed-stride -8 views execute. max_owned_bytes counts configured Plan+Member requested capacities only, excluding borrowed input, Run and later decoded ZIP owners. Metadata success does not verify ZIP payload integrity; consumers must call canonical zip::extract, including for empty directories."
+    },
     "ext::audio": {
       "guides": [
         "docs/extended-audio.md"
       ]
+    },
+    "ext::bash_words": {
+      "guides": [
+        "docs/extended-cli-complete.md",
+        "docs/library-completion-plan.md"
+      ],
+      "note": "Allocation-free literal Bash-word measurement/decoding into caller storage. Complete and Prefix modes share one traversal; syntax, logical ranges and capacity are admitted before writes. It preserves non-UTF-8 bytes, supports literal quote/escape concatenation and explicitly rejects expansions/operators outside the documented profile. Pure contracts and a 389-record decoder/reply model execute on native Linux x86_64. This is neither shell evaluation nor the response-file grammar; the separate adapter has finite Bash 5.2/bash-completion 2.11 function and actual PTY insertion acceptance. Other shells and arbitrary expansions are outside this literal profile."
     },
     "ext::big_int": {
       "guides": [
@@ -558,8 +604,54 @@
     },
     "ext::cli": {
       "guides": [
-        "docs/extended-cli.md"
-      ]
+        "docs/extended-cli.md",
+        "docs/extended-cli-commands.md",
+        "docs/extended-cli-response.md",
+        "docs/extended-cli-complete.md"
+      ],
+      "note": "Canonical borrowed option lexer with sticky strict errors, fused EOF and exact locations. Shared short/long lookup and explicit prefix parsing classify active names, clusters and attached/pending values; strict parsing still reports MissingValue. The terminator getter distinguishes actual -- from OptionsFirst stopping or a required value. Command routing reuses this lexer; hierarchy scratch ownership differs from flat-parser position copies. Current completion semantics, two hierarchy regressions and one selected flat regression execute on native Linux x86_64. Earlier broad flat-parser/checksum receipts retain their historical source scope."
+    },
+    "ext::cli_bash": {
+      "guides": [
+        "docs/extended-cli-complete.md",
+        "docs/library-completion-plan.md"
+      ],
+      "note": "Pure measured NUL-record completion reply encoder over borrowed data and caller output. It preflights mode consistency, ranges, NUL and complete capacity, preserving output on error; quote/continuation/trim metadata is transported without applying shell insertion policy. Pure contracts and the 389-record decoder/reply model execute on native Linux x86_64. The separate Bash 5.2/bash-completion 2.11 adapter owns filesystem enumeration, host bounds and literal Readline insertion; finite function/PTY and watchdog gates pass on the linked host profile. Host glob allocations/enumeration time remain outside Lanius source caps; direct receipts are not Rust-libtest passes."
+    },
+    "ext::cli_commands": {
+      "guides": [
+        "docs/extended-cli-commands.md",
+        "docs/extended-cli-response.md",
+        "docs/extended-cli-complete.md"
+      ],
+      "note": "Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Explicit prefix parsing and scoped classification reuse the canonical lexer; context consumers retain original schema/argument backing rather than scratch. Current completion semantics and both hierarchy regression tests execute on native Linux x86_64. Applications retain arity, defaults, conflicts, help and completion value policy. Response preprocessing has separate provider/owner contracts; finite Bash 5.2/bash-completion 2.11 function/PTY acceptance is documented separately from portable command routing."
+    },
+    "ext::cli_complete": {
+      "guides": [
+        "docs/extended-cli-complete.md",
+        "docs/library-completion-plan.md"
+      ],
+      "note": "Portable borrowed completion over canonical ext::cli prefix classification and ext::cli_commands scopes. Context inspects only completed words and the active cursor prefix, retains no mutable scope scratch and distinguishes pending required values from strict MissingValue errors. Suggestions write whole decoded prefix replacements with explicit identities/ranges, atomic output/position errors and fused iteration; schema/argument/value lifetimes remain caller obligations. Pure no-host contracts and one 67-case native model test pass on Linux x86_64. This module allocates nothing and performs no I/O; the native query separately passes 16 allocation cases (13 reached OOMs plus three baselines) and 12 output cases. Direct public flat/scoped prefix getter execution also passes no-host observation. The separate Bash adapter passes finite function, real PTY and watchdog gates on Bash 5.2/bash-completion 2.11; other shells are not established."
+    },
+    "ext::cli_help": {
+      "guides": [
+        "docs/extended-cli-commands.md"
+      ],
+      "note": "Deterministic measured help over the command schema, rendered into caller storage without allocation, printing or host access. Complete preflight preserves output on every error and leaves the unused tail unchanged on success. Selected native Linux x86_64 golden, bounds/stride, pure no-host and real-application gates pass; applications own output delivery and help policy."
+    },
+    "ext::cli_response": {
+      "guides": [
+        "docs/extended-cli-response.md",
+        "docs/library-response-files-plan.md"
+      ],
+      "note": "Opt-in owned response expansion over a generic Provider<H>, with copied argv, retained paths/raw sources/decoded spans, depth-first frames and stable final views published only on complete success. Provider errors transfer to the caller; Expansion owns its independent storage, with explicit destroy and borrowed-view lifetimes. Portable semantic tests, actual-parser composition and the selected native/resource groups pass on Linux x86_64. The resource group covers 29 reached source allocation failures plus two baselines, live maps/fds and an owned provider error surviving Expansion destruction. These direct receipts are not current Rust-libtest passes. Limits bound engine bytes/counts/work, not exact heap/RSS or provider wall time; there is no file-identity cycle detector or sandbox."
+    },
+    "ext::cli_response_files": {
+      "guides": [
+        "docs/extended-cli-response.md",
+        "docs/library-response-files-plan.md"
+      ],
+      "note": "Explicit Linux file provider borrowing one stable directory descriptor for all relative includes. It checks regular-file metadata and actual EOF, admits finite native-call credits with a close reserve and retires each acquired descriptor once even on close error. The public smoke and a direct 39-case provider oracle group execute on Linux x86_64, with admission, fixed-base lookup, byte/call caps and native failure/cleanup checks. The separate 31-case ownership group has 29 reached source OOMs and two baselines; counts overlap and are not two Rust-libtest passes. Source byte grants can be reduced by expansion source/work budgets. Ordinary lookup is not containment, and call limits do not bound filesystem wall time."
     },
     "ext::compression": {
       "guides": [
@@ -653,18 +745,26 @@
       "guides": [
         "docs/extended-http-batch.md",
         "docs/extended-http-batch-testing.md",
-        "docs/extended-fetch-many.md"
+        "docs/extended-fetch-many.md",
+        "docs/extended-https-batch.md"
       ],
-      "note": "Bounded concurrent cleartext HTTP uses one thread and a reusable std::poll PollSet over canonical Prepared/Exchange owners. All requests are prepared before sockets; input-order outcomes retain successful responses across global failure and transfer individually through Report.take. One common deadline, concurrency, pending/completed logical byte caps, scheduler operations and reserved aggregate protocol work are explicit. Logical retention caps exclude allocator capacities, temporary candidates and RSS. All seven batch groups and all five fetch-many application groups pass across separate native Linux x86-64 receipts, including causal overlap, partial outcomes, limits, reached-allocation cleanup and queued admission after consecutive begin failures without an intervening blocking poll. The 64-job application scale control peaks at four sockets; its allocation/requested-byte measurements are finite trace evidence, not RSS or throughput guarantees. TLS resumability and threads remain separate work."
+      "note": "One generic one-thread/PollSet engine owns canonical HTTP preparation, admission, refill, accounting and input-order partial results. run_with_until accepts typed Factory/Driver/error parameters; run_until supplies the plain adapter. Report/Failure.destroy require Destroy<E>; take transfers cleanup authority. before_wait Ok(true) preserves observed Interest and descriptor identity through registration. Borrowed E backing outlives final Report/taken-outcome use and destruction, including after run return. Current plain execution passes eight groups and 103 cases through two receipts: seven original groups/102 cases in 13.00 seconds and one causal wait-retirement case in 10.07 seconds. The first retirement fixture failed under incoherent validation/work caps; coherent caps preserve its original allowance and causal assertions, and the retry passes without a product accounting change. All six connected HTTPS groups separately pass 108 cases. Historical 480432e8 receipts retain separate scope; current fetch-many also passes all five application groups in 24.18 seconds, including all 59 reached allocation failures and a 64-job/four-socket control. Logical retention/work caps exclude allocator capacities, temporary candidates, native transport storage/CPU and RSS. Worker threads remain separate work.",
+      "declarations": {
+        "run_with_until": "Shared scheduler over typed jobs, Factory and Driver; begin consumes canonical Prepared on every result. Job/factory backing stays borrowed through return; borrowed E backing additionally survives final Report/taken-outcome use and destruction. before_wait Ok(true) preserves interest/descriptor identity through registration. Current plain eight-group/103-case and HTTPS six-group/108-case receipts are separate.",
+        "run_until": "Plain HTTP adapter over the same generic engine, returning Report<http_client::Failure> and Failure<http_client::Failure>. All eight current plain groups pass 103 cases across two native Linux x86_64 receipts."
+      }
     },
     "ext::http_client": {
       "guides": [
         "docs/extended-http-client.md",
         "docs/extended-http-exchange-testing.md",
         "docs/extended-http-batch.md",
-        "docs/extended-fetch-many.md"
+        "docs/extended-fetch-many.md",
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch.md",
+        "docs/extended-http-protocol-testing.md"
       ],
-      "note": "Prepared copies and validates all request backing without opening a socket; begin transfers that owner into a resumable Exchange. Caller-driven steps never poll and perform at most one active network leaf, with 1024-byte send/receive quanta, explicit readiness and one absolute deadline. Manual owners transfer one Response or release once on failure/abort. exchange_until drives this same engine. All five focused direct Exchange groups (83 cases, including both 12/14-position reached-allocation sweeps) and all six synchronous regression groups (188 cases) pass across separate native Linux x86-64 receipts after refactoring. This cleartext numeric-endpoint profile does not establish resumable TLS or worker threads.",
+      "note": "Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified.",
       "declarations": {
         "prepare_until": "Canonical request preflight and owned staging without sockets; successful Prepared owners must be consumed with begin or destroyed.",
         "begin_until": "Preparation followed by consuming Prepared.begin; socket opening only, with connect and HTTP progress performed by Exchange.step.",
@@ -673,8 +773,60 @@
     },
     "ext::http_server": {
       "guides": [
-        "docs/extended-http-server.md"
-      ]
+        "docs/extended-http-server.md",
+        "docs/library-server-concurrency-plan.md",
+        "docs/extended-https-server-exchange.md",
+        "docs/library-server-contract.md"
+      ],
+      "note": "Shared server Protocol and one-leaf plain Exchange, with Connection as a synchronous facade. Current Linux x86_64/glibc receipts cover 50 distinct direct cases: four steps, 11 decisions/views, four drain, six lifecycle, 23 faults and two abort/close-error cases. Stronger typed OOM reruns cover the same 23 cases across 15 reached sites; two invalid-count reruns repeat lifecycle cases, not extra coverage. The facade separately passes three cases in 10.72 seconds. Latched Head/Request/Rejected decisions, explicit Continue, atomic response staging, stable views until destroy, sticky fatal failures and retained rejection diagnostics are explicit. Abort retires transport while preserving backing; destroy releases backing. Canonical HTTP codecs remain the wire authority. Earlier sequential receipts retain their historical scope; concurrent handlers stage local views through the reply sink. The current plain app separately passes matrix 30, quota 1, limits 16, boundaries 25 and faults 41 across separate groups; these are 113 process-case invocations with known quota overlap, not 113 distinct cases. Faults reach 23 source-allocation positions. A separate actual plain-driver scheduler gate passes two reached poll-fault cases and one calibration: EINTR requires fresh publication and recovery without stale readiness, while EIO publishes PollIo(5), cleans live owners and preserves the caller listener."
+    },
+    "ext::http_server_poll": {
+      "guides": [
+        "docs/extended-server-poll.md",
+        "docs/library-server-contract.md"
+      ],
+      "note": "Plain factory/driver adapter over the single server_poll engine and http_server::Exchange. Factory, caller-owned listener and handler stay live unchanged through Server destruction. The actual plain health/echo program passes two causal native cases: held partial-head with queued refill and held 4 MiB response reader with real EAGAIN before healthy-sibling completion. Both enforce at most two active accepted owners and three sockets including the listener, with complete responses, EOF and acceptance-order reports. A separate traced 64-connection observation transfers 4,194,304 body bytes with eight-client demand, active/socket peaks four/five, 1,224 verified source allocations and 1,165,325 peak live requested source bytes in 3.346761 seconds. These source metrics exclude native heaps, bootstrap, kernel memory and RSS. Current plain application groups pass matrix 30, quota 1, limits 16, boundaries 25 and faults 41 across separate receipts, with 23 reached source-allocation positions. These 113 process-case invocations include the standalone quota repeated inside faults and are not distinct coverage. Historical sequential receipts retain their own scope. The thin serve_until helper does not require A:Destroy; both helpers pass a native empty-report transfer control with a non-Destroy application error type (21.84 seconds). The empty-report helper scope remains separate from the accepted three-profile populated E/A control."
+    },
+    "ext::https_batch": {
+      "guides": [
+        "docs/extended-https-batch.md",
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch-testing.md",
+        "docs/extended-http-batch.md"
+      ],
+      "note": "Thin verified HTTPS factory/driver adapter over the single generic HTTP batch engine. Jobs borrow numeric endpoints, certificate identities and HTTP Requests; job/context backing remains unchanged through return. All HTTP requests prepare before sockets; per-job TLS option/identity admission and native verification occur later. Typed results preserve complete HTTPS diagnostics, input order, response ownership and partial outcomes. OpenSSL performs TLS and cryptography; callers establish SIGPIPE policy, and TLS 1.2/1.3 retry/closure scope follows https_client. All six connected groups pass 108 cases through three Linux x86_64/glibc/OpenSSL 3 receipts, including 42 reached source-allocation failures and six direct-step/abort controls. Plain batch separately passes eight groups/103 cases. The migrated HTTPS fetch passes four app groups/63 cases, and mutual-TLS application modes pass three groups/101 cases excluding prepared-context streams. Historical and current receipt scopes remain distinct; worker/server orchestration remains open.",
+      "declarations": {
+        "run_until": "Runs verified HTTPS jobs through http_batch.run_with_until with typed https_client::Failure outcomes, one shared Context/deadline and explicit HTTP/TLS/scheduler budgets. Six focused groups pass 108 cases on Linux x86_64; application and plain-batch receipts have separate scopes."
+      }
+    },
+    "ext::https_client": {
+      "guides": [
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch.md",
+        "docs/extended-https-batch-testing.md",
+        "docs/extended-openssl-tls.md"
+      ],
+      "note": "Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a second HTTP parser. Begin consumes Prepared on every result, retaining an independent native Context reference and copying identity bytes before one nonblocking socket opens. Steps never poll; TLS uses stable staged writes, independent readiness needs and explicit TLS-call/I/O/deadline budgets. Early-final closure distinguishes TLS 1.3 notification from TLS 1.2 deferral; authenticated EOF is required for close-delimited bodies. Typed metadata preserves HTTP/TLS/cleanup diagnostics. Six connected HTTPS groups pass 108 cases across three native Linux x86_64/glibc/OpenSSL 3 receipts, including 42 reached source-allocation failures and six direct-step/abort controls. The migrated HTTPS app separately passes four groups/63 cases, and affected mutual-TLS app modes pass three groups/101 cases excluding prepared-context streams. These finite receipts do not establish every TLS schedule or another target. A confirmed 14-line nested enum-pattern reduction rejects with LNC0006; its explicit two-match x86_64 control executes all four assertions. No compiler or production transport change was needed for that expression spelling.",
+      "declarations": {
+        "begin_with_context_until": "Consumes and disarms canonical Prepared, preserving its deadline and charged HTTP state. Retains an independent native Context reference and identity copy; successful begin owns the transport until terminal cleanup.",
+        "exchange_until": "Synchronous facade over the same resumable verified Exchange and canonical HTTP Protocol; caller trust, identity, SIGPIPE policy and absolute deadline remain explicit."
+      }
+    },
+    "ext::https_server": {
+      "guides": [
+        "docs/extended-https-server-exchange.md",
+        "docs/library-server-contract.md",
+        "docs/library-server-concurrency-plan.md"
+      ],
+      "note": "Shared server Protocol over OpenSSL 3 on Linux x86_64/glibc. Thirty-four direct native cases across seven groups pass through separate receipts: six verified steps, two early closures, four fatal-preparation/abort cleanup, four normal-close cleanup, six constructor/quota, four constructor-allocation and eight paired TLS 1.2/1.3 teardown cases. The teardown receipt is 21.05 seconds and checks missing-alert timeout, a cut native record, drain-cap overflow, authenticated empty input, pre-exit release and sticky replay. Cleanup groups each reach two close EIO injections; constructor allocation reaches three dynamic source failures, excluding native OpenSSL heap allocations. begin_connected consumes its accepted nonblocking socket on entry/error and eagerly creates a Session while ServerContext is borrowed; SSL_new retains the native reference. Steps never poll and perform zero or one active TLS attempt. HTTP events require verified handshake policy, stable writes survive WANT, and both protocol versions require local notify plus bounded discard to authenticated peer EOF before terminal publication. The raw 12-case closure experiment is distinct lower-layer evidence. SIGPIPE policy and manual ownership remain explicit; cryptography stays in OpenSSL. Rare WANT schedules and clock failures after native calls retain finite coverage gaps."
+    },
+    "ext::https_server_poll": {
+      "guides": [
+        "docs/extended-server-poll.md",
+        "docs/extended-https-server-exchange.md",
+        "docs/library-server-contract.md"
+      ],
+      "note": "Verified TLS factory/driver adapter over the single server_poll engine and https_server::Exchange. Keep ServerContext, factory, listener and handler alive unchanged through Server destruction; each begun Session holds its own native reference. Typed outcomes preserve HTTP/TLS diagnostics and transport-call counts. Two actual TLS 1.3 causal cases pass held-handshake queued refill and held 4 MiB backpressure with real EAGAIN, verified bytes, authenticated closure and acceptance-order reports; both enforce two accepted owners and three sockets including the listener. The current HTTPS app separately passes 102 matrix/failure/limit cases across three invocations, and mutual-TLS modes pass 101 with the accepted fetch executable and current serve executable. These Python receipts have no wall-time claim. A separate traced 64-connection observation transfers 4,194,304 body bytes with eight-client demand, active/socket peaks four/five, 1,419 verified source allocations and 1,352,377 peak live requested source bytes in 4.226492 seconds; native/OpenSSL heap, bootstrap, kernel memory and RSS are excluded. Direct teardown has an eight-case paired receipt. The actual Server separately passes three populated owned E/A profiles and seven active-cap/cancellation profiles; a separate actual plain-driver gate passes two reached poll faults and one calibration. Mixed invalid/valid mutual-TLS admission under concurrency remains outside the sequential application matrices. OpenSSL performs TLS and cryptography. The thin serve_until helper does not require A:Destroy; both helpers pass a native empty-report transfer control with a non-Destroy application error type (21.84 seconds). The empty-report helper scope remains separate from the accepted three-profile populated E/A control."
     },
     "ext::image": {
       "guides": [
@@ -693,15 +845,18 @@
     },
     "ext::kv": {
       "guides": [
-        "docs/extended-kv.md"
-      ]
+        "docs/extended-kv.md",
+        "docs/extended-cli-complete.md"
+      ],
+      "note": "Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Completion application source 9a83795a passes 18 direct query cases plus three no-file traces, 16 allocation cases (13 reached OOMs and three baselines), and 12 output cases (three baselines plus nine fault/recovery cases). Full traces check pre-exit releases, without live ACK checkpoints. The existing 55-case response campaign also passes on this source, including 18 reached source OOMs. Final Bash adapter f7934bc9 passes 51 function cases across two option profiles, 26 PTY cases and two additional fresh-cwd quote-transition cases; the unchanged watchdog separately passes two deadline/child-cleanup controls. These are direct process receipts, not Rust-libtest passes. Response-checkpoint source 789143f6, earlier f07fd52f/130-case hierarchy and 64-case atomic campaigns retain separate histories; no counts are added across revisions. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic."
     },
     "ext::lexer": {
       "guides": [
         "docs/extended-lexer.md",
-        "docs/extended-lex-scan.md"
+        "docs/extended-lex-scan.md",
+        "docs/library-regex-workspace-plan.md"
       ],
-      "note": "Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-prefix search. The longest byte span wins, with declaration order resolving ties; skip rules consume input and empty winners or unmatched input are terminal errors. Cursors borrow the compiled Lexer and validated immutable input, and tokens borrow input bytes. Construction, input, step, token, search-call and reserved VM-allowance limits are explicit; the guides define allocation costs, work-counter scope and the current execution evidence."
+      "note": "Ordered UTF-8 token rules reuse the canonical regex engine's anchored longest-prefix span search. The longest byte span wins, with declaration order resolving ties; skip rules consume input and empty winners or unmatched input are terminal errors. Each nonempty cursor eagerly owns one two-slot Workspace sized to the largest actual rule program; empty input needs none. Cursor construction validates limits, logical bounds, the input-byte cap and UTF-8 before acquiring scratch. Cursors borrow the compiled Lexer and immutable input, while returned tokens borrow input bytes rather than scratch. Token selection reuses the workspace without source allocation; terminal calls can release it. All six current tests pass across separate 12.79-second and 11.88-second commands: owner/interleaving, admission/contracts, 576 model cases across three layouts, 63 explicit tables and all 30 reached OOM positions. The current lex-scan application separately passes all five tests across 13.63-second and 16.66-second commands: 124 grammar inputs in both modes plus boundaries, admission/nonpublication, scripted I/O and all 30 reached source OOM positions per mode. Its 4,096-token observation records 32 verified source mmap requests, 8,895 total requested bytes and 6,868 peak live requested bytes with balanced releases. The 79.624585ms traced correctness/cost harness time includes setup and verification, not isolated application or compiler throughput. Earlier 120-position lexer receipts and the 36,887-allocation application observation retain their previous implementation/accounting scope. Search work counts VM state/class visits; initialization, capture copies, Unicode-table CPU, process RSS and wall time are outside that counter, and competing rules may rescan suffixes."
     },
     "ext::linalg": {
       "guides": [
@@ -727,9 +882,11 @@
         "docs/extended-openssl-tls-server.md",
         "docs/extended-openssl-mutual-tls.md",
         "docs/extended-https-mutual-tls.md",
-        "docs/library-native-c.md"
+        "docs/library-native-c.md",
+        "docs/extended-https-client.md",
+        "docs/extended-https-batch-testing.md"
       ],
-      "note": "Client, server and mutual TLS use OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Client credentials preserve mandatory server chain and DNS/IP verification. Server policy explicitly selects Unauthenticated or Required trust; required sessions check native client purpose, verification success and certificate presence, with session caching and tickets disabled. Certificate admission does not assign an application principal or authorize routes. Both roles share noninteractive credential loading and native passphrase cleansing. Manual sessions borrow connected nonblocking sockets; callers supply deadlines and SIGPIPE policy. Linked guides define later-alert handling, native resource bounds and separate execution receipts."
+      "note": "Client, server and mutual TLS delegate to OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Mandatory client-side server chain/DNS/IP verification and explicit server required-peer policy do not assign application authorization. Manual sessions borrow connected nonblocking sockets and require caller deadlines/SIGPIPE policy. Current independent read/write readiness, stable staged retries, permitted duplex interleaving, read quiescence, local shutdown, version diagnostics and Context retention pass nine new duplex groups/36 cases, including all five reached source-allocation failures. Selected legacy client/server/mutual-TLS retry guards separately pass 3, 1 and 6 cases; these are not full reruns of all historical TLS suites. Current connected HTTPS and migrated application receipts have separate scope. Native crypto CPU/storage costs are outside logical HTTP quotas."
     },
     "ext::parse": {
       "guides": [
@@ -760,20 +917,37 @@
       "guides": [
         "docs/extended-regex.md",
         "docs/extended-regex-text.md",
-        "docs/extended-lexer.md"
+        "docs/extended-lexer.md",
+        "docs/library-regex-workspace-plan.md"
       ],
-      "note": "The read-only search_work_limit accessor exposes the existing per-search VM allowance for aggregate adapters. Validated Input and anchored longest-prefix methods reuse the existing ordered Pike engine while preserving full-input assertions and capture priority on equal endpoints; ordinary find and Matches retain leftmost-first behavior. The lexer guide defines endpoint selection and borrowed input lifetime. Bounded split/replacement continue to reuse the canonical Matches cursor."
+      "note": "One ordered Pike engine now supports reusable fixed-capacity Workspace storage and canonical Search cursors. Workspace owns nine fixed vectors, borrows neither program nor input and can be reused across compatible programs. Full-capture and two-slot span searches invalidate previous capture publication and reset work on every attempt; insufficient or destroyed storage reports WorkspaceTooSmall without allocation or VM execution. Search owns its Workspace and borrows Regex plus validated immutable Input. capture_iter retains full captures and span_iter uses group zero; next centralizes scalar empty-match progress and releases/fuses on None, error or destroy. A successful final empty EOF match retains captures until the next call or destruction so template expansion can consume them. Convenience Match results retain independent owned captures. Current strict capacity/reset/owner contracts pass one native fixture in 6.12 seconds, all nine reached constructor OOMs plus a baseline pass ten processes, and 839 independent reuse/span model scenarios pass in 6.99 seconds. The 9.19-second mixed constructor/model command includes a pre-native model fixture failure and is not an allocation-only duration. Both current ordinary Regex/input regression tests pass in 10.50 seconds; their older allocation subprobe uses legacy accounting and is separate from the new strict workspace ledger. Equivalent explicit propagation guards avoid a retained module-level lowering dependency; smaller question-mark controls execute and no single failing operator has been isolated. VM work allowances exclude initialization/capture-copy/Unicode-table CPU, allocator CPU, RSS and wall time."
     },
     "ext::regex_text": {
       "guides": [
-        "docs/extended-regex-text.md"
+        "docs/extended-regex-text.md",
+        "docs/library-regex-workspace-plan.md"
       ],
-      "note": "Borrowed split fields and independent owned literal/numeric-template replacement execute through the GPU compiler on Linux x86_64. All six focused groups pass through separate receipts: direct contracts, 288 independent nonempty reference cases, 89 explicit zero-width/template/budget cases, all 77 reached library allocation failures, 24 CLI cases, and all 43 reached CLI allocation failures plus four I/O schedules. Search budgets reserve complete configured VM allowances; they do not count every CPU instruction or I/O call. Other targets remain unverified."
+      "note": "Borrowed split fields and independent owned literal/numeric-template replacement share canonical Regex Search storage. Split construction validates Input without acquiring a workspace; the first next admitted by terminal, match, call and work limits charges its attempt before constructing Search. Split/literal replacement use two-slot span storage, while templates retain full captures through final empty-EOF expansion. Workspace construction OOM is Regex(AllocationFailed) on that charged attempt, and no owned Match is acquired per delimiter or template match. All seven current tests pass across separate 12.70-second, 11.36-second and 10.89-second commands on GPU-compiler-emitted Linux x86_64 native code: lazy-admission/ownership checks, 288 model cases, 89 explicit tables, direct contracts, all 41 library and 25 CLI reached OOM positions, 24 exact/rejected/help CLI cases and four read/write EINTR/EIO schedules. The lazy fixture observes nine requested allocations/416 bytes for span storage versus nine/928 for full captures of the same pattern. Earlier six-group and 77/43 allocation-failure receipts describe the previous implementation and are not current allocation acceptance. Search budgets reserve configured VM allowances, not every CPU instruction, I/O call or process byte; other targets remain unverified."
+    },
+    "ext::response": {
+      "guides": [
+        "docs/extended-cli-response.md",
+        "docs/library-response-files-plan.md"
+      ],
+      "note": "Pure strict byte tokenization and decoded-to-raw mapping without allocation or host services. Complete syntax, bounds and capacity preflight preserve caller output on failure. Native Linux x86_64 portable semantic contracts and public smoke execute, including quoted/escaped/raw bytes and signed strides. Full pure traces contain only launch/exit under mmap denial, with no allocation attempt; this is not OOM-recovery evidence. Expansion and native loading remain separate modules."
     },
     "ext::schema": {
       "guides": [
         "docs/extended-schema.md"
       ]
+    },
+    "ext::server_poll": {
+      "guides": [
+        "docs/extended-server-poll.md",
+        "docs/library-server-contract.md",
+        "docs/library-server-concurrency-plan.md"
+      ],
+      "note": "One shared typed, caller-driven server scheduler and synchronous facade own bounded admission, cooperative fair progress, poll publication, reservations, cancellation and acceptance-order reports. Seventeen scripted profiles execute the actual Server: seven earlier owner/publication/refill/reservation profiles, three populated owned E/A profiles in 13.60 seconds and seven active-cap/cancellation profiles in 13.42 seconds. The no-Destroy empty-report helper control is separate (21.84 seconds). Four actual plain/TLS 1.3 causal cases pass held setup with queued refill and held 4 MiB backpressure, real EAGAIN, sibling progress, closure/reports and two-owner/three-socket caps. Current plain groups pass matrix 30/quota 1/limits 16/boundaries 25/faults 41: 113 process-case invocations, including quota overlap, with 23 reached source OOM positions. HTTPS/mutual-TLS regressions separately pass 102/101 cases. Both 64-connection scale observations pass demand eight/caps four plus five and exact 64 KiB bodies/reports; source requested-byte peaks 1,165,325/1,352,377 exclude native heaps, bootstrap, kernel memory and RSS. A separate actual plain-driver gate passes two reached poll-fault cases and one calibration, not two more scripted profiles. EINTR requires fresh publication and recovery without stale readiness; EIO publishes shared PollIo(5), cleans up live owners and preserves the caller listener. The retry reuses the compiled ELF and has no elapsed-time claim. Rare native TLS WANT/clock and mixed invalid/valid mutual-TLS concurrency schedules retain finite gaps. Reply.stage copies handler-local backing during the call; request views cannot escape to retired-slot reports. Listener/factory/handler backing remains borrowed through Server destruction, while borrowed error backing must outlive returned/taken outcomes. Logical reservations are not RSS, native crypto CPU or heap quotas. Worker threads remain separate work."
     },
     "ext::settings": {
       "guides": [
@@ -840,7 +1014,7 @@
         "docs/extended-openssl-mutual-tls.md",
         "docs/extended-https-mutual-tls.md"
       ],
-      "note": "Shared buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_context_until borrows a prepared client Context on every outcome, derives queue/read caps from that Context and retains a native reference through a successful Session. The ordinary connector owns its optional client Context; accepted server construction consumes its socket on every result and retains a native context reference. One absolute deadline and explicit byte/call budgets cover connection and handshake. Linked guides define buffered acceptance, stable retries, manual cleanup, mutual TLS policy and separate application/prepared-context execution receipts; TLS and sensitive operations remain in OpenSSL."
+      "note": "Buffered client/server TLS streams use OpenSSL 3 on Linux x86_64. connect_with_context_until borrows a prepared client Context, derives queue/read caps from it and retains a native reference through a successful Session. The ordinary connector owns its optional client Context; accepted server construction consumes its socket on every result and retains a native reference. One absolute deadline and explicit byte/call budgets cover connection and handshake. Linked guides define stable retries, manual cleanup and mutual-TLS policy. Historical stream/prepared-context receipts predate the independent OpenSSL retry revision; current selected native retry guards and migrated HTTPS application receipts have separate scopes. Excluded full buffered/prepared-context groups retain their historical receipt scope; the current selected gate did not rerun them. TLS and sensitive operations stay in OpenSSL."
     },
     "ext::toml": {
       "guides": [
@@ -955,6 +1129,7 @@
         "docs/extended-zip.md",
         "docs/extended-fetch-many.md"
       ],
+      "note": "Entry.version_made_by retains the raw unsigned 16-bit central creator word, without changing parser acceptance or writer defaults. Eight independent records execute through packed and nonzero native-strided views in one focused native Rust test. Creator-dependent extraction policy belongs to archive_profile; metadata parsing does not verify payload CRC/decode.",
       "declarations": {
         "validate_name": "Allocation-free validation of the canonical writer name policy before archive construction; trailing-slash entries still require empty data during encode. The existing ZIP contract passes with this public helper."
       }
@@ -968,6 +1143,14 @@
       "guides": [
         "docs/stdlib-process-context.md"
       ]
+    },
+    "std::atomic_file": {
+      "guides": [
+        "docs/stdlib-atomic-files.md",
+        "docs/stdlib-temp-files.md",
+        "docs/extended-kv.md"
+      ],
+      "note": "Bounded sequential publication implemented in Lanius over TempFile and existing Linux descriptor calls. Keep one in-place manual owner; destination bytes are copied before effects. Replace/NoReplace commit syncs and closes the file once, renames once, immediately records Published/disarms deletion, then syncs the anchored directory. Receipts preserve NotPublished/Published/Unconfirmed visibility, confirmed bytes, current resources and separate primary/latest/cleanup errors. Cached commit is inert; explicit directory-sync retry never writes or renames. Failed removal retains recovery ownership; cleanup never unlinks the destination. Native Linux x86_64/kernel 7.0.0-38-generic/ext4 under /tmp passes owner 9, bounds 25, publication 6 and faults 26: 66 process invocations across four groups including baselines; preliminary smoke overlaps. A live-anchor Published checkpoint precedes ACK-controlled explicit sync retry. The bounds retry fixes only the oracle owned-fd write selector and reuses the unchanged probe ELF. Thirty-six CPU ledger controls and Rust --no-run admission are separate from native execution. Actual source/fd ownership is observed before exit. Parent mutation authority must be exclusive/cooperative; attempts/bytes are bounded, blocking time is not. No hostile-directory, network-filesystem, locking, universal power-loss or automatic-destructor guarantee; no new runtime binding or crypto implementation."
     },
     "std::clock": {
       "guides": [
@@ -1034,8 +1217,12 @@
     "std::file_ops": {
       "guides": [
         "docs/stdlib-file-operations.md",
-        "docs/stdlib-file-resize.md"
-      ]
+        "docs/stdlib-file-resize.md",
+        "docs/stdlib-temp-files.md",
+        "docs/stdlib-directory-at.md",
+        "docs/stdlib-filesystem-links.md"
+      ],
+      "note": "Checked Linux x86_64 descriptor operations over std::linux, with owned File handles and explicit one-attempt host errors. remove_file_at and rename_at use unlinkat/renameat2, Replace/NoReplace, complete path staging and no retry/existence-check/copy fallback. Their earlier primitive group passes 27 process invocations on kernel 7.0.0-38-generic/ext4 under /tmp; preliminary bounds evidence overlaps. The earlier allocation-free create_dir_at/remove_dir_at use mkdirat/unlinkat(AT_REMOVEDIR), validate full path/mode before one attempt and preserve caller ownership. Their three focused native groups pass namespace24/bounds19/faults12 process invocations, including two repeated baselines and reached errno/invalid-count injections. General host path resolution still applies; EEXIST is not proof of a safe directory. These primitives supply no durability, automatic rollback or hostile-directory authority. TempFile and AtomicFile apply their separate cooperative namespace/publication/recovery contracts. Nine additional link/readlink and descriptor/path permission functions plus LinkRead are accepted at source freeze 21269e34 on the documented native Linux x86_64/ext4 profile. Both paths are staged before link/symlink effects; bounded readlink uses a private packed probe and validates its returned count before caller-buffer mutation, with explicit incomplete status when the probe fills. Mode validation precedes descriptor/path admission; raw fchmodat has three arguments and follows the final symlink. These one-attempt allocation-free additions are not covered by the earlier primitive receipts. Their five groups pass links 28, readlink 19, permissions 12, bounds 45 and faults 35, totaling 139 accepted group cases across separate commands. The first 34 fault cases repeat in the successful fault-only retry, which replaced an unlaunchable large strace poke with a known 16-byte prefix/full-count control; real readlink outputs remain fully compared. Native syscall instruction provenance and zero source allocation are checked. The initial comparison/cast parser ambiguity was isolated and expressed with an equivalent widening-cast local, without compiler changes. Injected skipped closes establish logical retirement rather than physical close success."
     },
     "std::filesystem": {
       "guides": [
@@ -1136,6 +1323,20 @@
       ],
       "profile": "Unbound host declarations",
       "note": "Thread spawn/join/yield/current-ID extern declarations have no runtime binding. Source metadata helpers do not implement threads."
+    },
+    "std::temp_dir": {
+      "guides": [
+        "docs/stdlib-temp-directories.md",
+        "docs/stdlib-mktemp-dir.md"
+      ],
+      "note": "Named temporary-directory ownership implemented in Lanius at source freeze 56898b00, with all four groups accepted: owner 9, admission/entropy 19, creation faults 8 and cleanup faults 10. These total 46 accepted group cases across three native commands, not cumulative executions; oracle retries repeat earlier cases. Callback shadowing and a duplicate getrandom injection rule were harness defects, corrected without production changes. The final entropy control binds one first-draw injection and verifies real subsequent entropy. One manual owner reserves its name, retains a CLOEXEC parent duplicate, uses bounded OS entropy for exclusive mkdir, records removal duty before the child open, and never recursively deletes children. Nonempty/removal failure preserves remaining child/parent/name resources for explicit retry or same-owner keep. Close attempts retire descriptors once, preserving separate primary and cleanup errors. Parent namespaces must be cooperative; no hostile-name, crash scavenging, automatic-destruction or broader-platform guarantee follows. Earlier TempFile and archive-directory receipts do not establish this distinct mkdir/open/removal lifecycle. The real mktemp_dir application separately passes all four tests: normal 5, arguments 13, allocations 4 and faults 26, totaling 48 process invocations across two native Linux x86_64/kernel7.0.0-38/ext4-/tmp receipts, with overlapping setup/baselines. Allocation cases include all three reached source OOMs; actual closed-reader help/creation pipes require native EPIPE. The application source is 118f9a78 with FileOps 21269e34. Sixteen CPU controls and driver build admission remain separate. Skipped-close injections establish logical retirement and expose physically open descriptors until exit. TempDir controls number 45, separately from native execution. Owner 9 is accepted within a mixed 6.88-second command, creation 8/cleanup 10 within a mixed 7.66-second command and admission 19 in 6.07 seconds; mixed-command times include other harness failures, not isolated passing-group durations."
+    },
+    "std::temp_file": {
+      "guides": [
+        "docs/stdlib-temp-files.md",
+        "docs/stdlib-file-operations.md"
+      ],
+      "note": "Named temporary-file ownership implemented in Lanius over bounded OS entropy and existing Linux calls. Keep one manual TempFile owner; creation retains a CLOEXEC directory duplicate, validates directory metadata/flags and exclusively creates a 0600 no-follow file from a fresh 16-byte OS-entropy candidate. Destination exclusion occurs before open. Same-owner keep disarms deletion without I/O; file close retires once; failed removal retains name/anchor authority for explicit retry or keep. Parent namespaces must be exclusive/cooperative, not hostile. Combined TempFile/FileOps acceptance covers 78 process invocations across owner 8/collisions 6/validation 18/faults 19/primitives 27 on native Linux x86_64/kernel 7.0.0-38-generic/ext4 under /tmp, including repeated baselines rather than distinct behaviors. Faults reach one 37-byte dynamic source OOM; 26 CPU controls and three verified runtime pairs per ELF support source/fd ledgers and applicable pre-exit ownership checks. Cargo --no-run driver admission is separate from native execution. AtomicFile, kv_tool migration, crash durability and scavenging remain outside this checkpoint. No cryptographic algorithm or new runtime binding is added."
     },
     "std::time": {
       "guides": [

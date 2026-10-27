@@ -11,23 +11,18 @@ import core::slice;
 import core::time;
 import ext::cli;
 import ext::http;
+import ext::http_client;
+import ext::https_client;
 import ext::openssl_tls;
-import ext::tls_stream;
 import std::args;
 import std::clock;
 import std::signal;
 import std::stream;
 
-enum Error { Arguments, Limit, Allocation, Clock, Http(ext::http::Error), Tls(ext::openssl_tls::Error), Transport(ext::tls_stream::Failure), Output }
+enum Error { Arguments, Limit, Allocation, Clock, Tls(ext::openssl_tls::Error), Exchange(ext::https_client::Failure), Output }
 struct Options { endpoint: core::slice::View<u8>, peer: core::slice::View<u8>, ca: core::slice::View<u8>, target: core::slice::View<u8>, client_cert: core::option::Option<core::slice::View<u8>>, client_key: core::option::Option<core::slice::View<u8>>, operands: i32, help: bool, timeout: i32, max_response: i32, max_body: i32, max_output: i32, max_io: u64, max_tls: u64, max_work: u64, stdout_calls: i32 }
 impl Options { fn borrow(&self) -> &Options { return self; } }
-struct Work { used: u64, maximum: u64 }
-impl Work { fn borrow(&self) -> &Work { return self; } }
 fn literal(value: str, count: i32) -> core::slice::View<u8> { let bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count); return core::slice::view(bytes,count).unwrap(); }
-fn eq(left: core::slice::View<u8>, value: str, count: i32) -> bool {
-    let right: core::slice::View<u8> = literal(value,count); if (left.len() != count) { return false; }
-    let i: i32 = 0; while (i < count) { if (left.get(i).unwrap() != right.get(i).unwrap()) { return false; } i += 1; } return true;
-}
 fn write_stdout(bytes: core::slice::View<u8>, calls: i32, handle: i32) -> bool {
     let sink: std::stream::Descriptor = std::stream::from_handle(handle); let completed: i32 = 0; let remaining: i32 = calls;
     while (completed < bytes.len()) {
@@ -53,16 +48,43 @@ fn native_tls_error(error: ext::openssl_tls::Error) -> i32 {
         _ -> report(3,literal("https-fetch: TLS operation failed\n",34))
     };
 }
-fn tls_error(failure: ext::tls_stream::Failure) -> i32 {
+fn http_error(detail: ext::http::Error, preparing: bool) -> i32 {
+    return match (detail) {
+        ext::http::Error::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)),
+        ext::http::Error::Limit(n) -> report(2,literal("https-fetch: HTTP limit exceeded\n",33)),
+        _ -> match (preparing) {
+            true -> report(2,literal("https-fetch: invalid arguments\n",31)),
+            false -> report(3,literal("https-fetch: invalid or incomplete HTTP response\n",49))
+        }
+    };
+}
+fn protocol_error(failure: ext::http_client::Failure) -> i32 {
+    let preparing: bool = match (failure.stage) { ext::http_client::Stage::Prepare -> true, _ -> false };
     return match (failure.cause) {
-        ext::tls_stream::Cause::InvalidLimits -> report(2,literal("https-fetch: invalid limits\n",28)),
-        ext::tls_stream::Cause::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)),
-        ext::tls_stream::Cause::Timeout -> report(3,literal("https-fetch: network timeout\n",29)),
-        ext::tls_stream::Cause::IoLimit -> report(2,literal("https-fetch: network call limit exceeded\n",41)),
-        ext::tls_stream::Cause::TlsLimit -> report(2,literal("https-fetch: TLS call limit exceeded\n",37)),
-        ext::tls_stream::Cause::ReadLimit -> report(2,literal("https-fetch: response limit exceeded\n",37)),
-        ext::tls_stream::Cause::WriteLimit -> report(2,literal("https-fetch: request limit exceeded\n",36)),
-        ext::tls_stream::Cause::Tls(error) -> native_tls_error(error),
+        ext::http_client::Cause::InvalidOptions -> report(2,literal("https-fetch: invalid limits\n",28)),
+        ext::http_client::Cause::UnsupportedRequest -> report(2,literal("https-fetch: invalid arguments\n",31)),
+        ext::http_client::Cause::UnsupportedHeader(n) -> report(2,literal("https-fetch: invalid arguments\n",31)),
+        ext::http_client::Cause::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)),
+        ext::http_client::Cause::Timeout -> report(3,literal("https-fetch: network timeout\n",29)),
+        ext::http_client::Cause::Clock(detail) -> report(3,literal("https-fetch: monotonic clock failed\n",36)),
+        ext::http_client::Cause::Http(detail) -> http_error(detail,preparing),
+        ext::http_client::Cause::RequestLimit -> report(2,literal("https-fetch: request limit exceeded\n",36)),
+        ext::http_client::Cause::ResponseLimit -> report(2,literal("https-fetch: response limit exceeded\n",37)),
+        ext::http_client::Cause::BodyLimit -> report(2,literal("https-fetch: body limit exceeded\n",33)),
+        ext::http_client::Cause::InterimLimit -> report(2,literal("https-fetch: informational response limit exceeded\n",51)),
+        ext::http_client::Cause::IoLimit -> report(2,literal("https-fetch: network call limit exceeded\n",41)),
+        ext::http_client::Cause::WorkLimit -> report(2,literal("https-fetch: byte or work limit exceeded\n",41)),
+        ext::http_client::Cause::UnsupportedUpgrade -> report(3,literal("https-fetch: invalid or incomplete HTTP response\n",49)),
+        ext::http_client::Cause::BoundaryMismatch -> report(3,literal("https-fetch: invalid or incomplete HTTP response\n",49)),
+        _ -> report(3,literal("https-fetch: network operation failed\n",38))
+    };
+}
+fn exchange_error(failure: ext::https_client::Failure) -> i32 {
+    return match (failure.cause) {
+        ext::https_client::Cause::Http(detail) -> protocol_error(detail),
+        ext::https_client::Cause::Tls(detail) -> native_tls_error(detail),
+        ext::https_client::Cause::InvalidOptions -> report(2,literal("https-fetch: invalid limits\n",28)),
+        ext::https_client::Cause::TlsLimit -> report(2,literal("https-fetch: TLS call limit exceeded\n",37)),
         _ -> report(3,literal("https-fetch: network operation failed\n",38))
     };
 }
@@ -71,16 +93,10 @@ fn error(error: Error) -> i32 { return match (error) {
     Error::Limit -> report(2,literal("https-fetch: byte or work limit exceeded\n",41)),
     Error::Allocation -> report(4,literal("https-fetch: allocation failed\n",31)),
     Error::Clock -> report(3,literal("https-fetch: monotonic clock failed\n",36)),
-    Error::Http(detail) -> match (detail) { ext::http::Error::AllocationFailed -> report(4,literal("https-fetch: allocation failed\n",31)), ext::http::Error::Limit(n) -> report(2,literal("https-fetch: HTTP limit exceeded\n",33)), _ -> report(3,literal("https-fetch: invalid or incomplete HTTP response\n",49)) },
     Error::Tls(detail) -> native_tls_error(detail),
-    Error::Transport(failure) -> tls_error(failure),
+    Error::Exchange(failure) -> exchange_error(failure),
     Error::Output -> report(5,literal("https-fetch: output I/O or call limit failed\n",45))
 }; }
-fn charge(work: &Work, amount: u64) -> bool { if (amount > work.maximum - work.used) { return false; } work.used += amount; return true; }
-fn stream_error(stream: &ext::tls_stream::Stream) -> Error {
-    if (stream.last_failure().is_some()) { return Error::Transport(stream.last_failure().unwrap()); }
-    return Error::Output;
-}
 fn authority(peer: core::slice::View<u8>, endpoint: core::net::SocketAddr) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
     let output: alloc::vec::Vec<u8> = alloc::vec::new();
     let parsed = core::net::parse_ip(peer); let bracket: bool = false;
@@ -96,122 +112,46 @@ fn authority(peer: core::slice::View<u8>, endpoint: core::net::SocketAddr) -> co
     }
     return core::result::Ok(output);
 }
-fn request(options: &Options, endpoint: core::net::SocketAddr, limits: ext::http::Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
-    if (options.target.is_empty() || options.target.get(0).unwrap() != 47 || options.target.len() > 8192) { return core::result::Err(Error::Arguments); }
-    let named = authority(options.peer,endpoint); if (named.is_err()) { return named; }
-    let host: alloc::vec::Vec<u8> = named.unwrap(); let line: alloc::vec::Vec<u8> = alloc::vec::new();
-    if (line.try_extend(literal("GET ",4)).is_err() || line.try_extend(options.target).is_err() || line.try_extend(literal(" HTTP/1.1",9)).is_err()) { host.destroy(); line.destroy(); return core::result::Err(Error::Allocation); }
-    let fields: [ext::http::Field; 2] = [
-        ext::http::Field { raw: literal("",0), name: literal("Host",4), value: host.as_view(), offset: 0 },
-        ext::http::Field { raw: literal("",0), name: literal("Connection",10), value: literal("close",5), offset: 0 }
-    ];
-    let encoded = ext::http::encode_request(line.as_view(),core::slice::view(fields,2).unwrap(),literal("",0),limits);
-    host.destroy(); line.destroy();
-    if (encoded.is_err()) {
-        let failure: Error = match (encoded.unwrap_err()) { ext::http::Error::AllocationFailed -> Error::Allocation, ext::http::Error::Limit(n) -> Error::Limit, _ -> Error::Arguments };
-        return core::result::Err(failure);
+fn context(options: &Options) -> core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> {
+    if (options.client_cert.is_some()) {
+        return ext::openssl_tls::new_with_credentials(ext::openssl_tls::Trust::CaFile(options.ca),options.client_cert.unwrap(),options.client_key.unwrap(),literal("",0),ext::openssl_tls::default_limits());
     }
-    let bytes: alloc::vec::Vec<u8> = encoded.unwrap(); if (bytes.len() > 16384) { bytes.destroy(); return core::result::Err(Error::Limit); }
-    return core::result::Ok(bytes);
+    return ext::openssl_tls::new(ext::openssl_tls::Trust::CaFile(options.ca),ext::openssl_tls::default_limits());
 }
-fn receive(stream: &ext::tls_stream::Stream, options: &Options, limits: ext::http::Limits, work: &Work) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
-    let wire: alloc::vec::Vec<u8> = alloc::vec::new();
-    let made = ext::http::cursor(ext::http::CursorMode::Response,limits,options.max_response,work.maximum - work.used);
-    if (made.is_err()) { return core::result::Err(Error::Http(made.unwrap_err())); }
-    let cursor: ext::http::Cursor = made.unwrap(); let charged: u64 = 0; let offset: i32 = 0; let interims: i32 = 0; let status: i32 = 0; let eof: bool = false;
-    let scratch: [u8; 1024] = [0; 1024];
-    while (true) {
-        let checked = stream.check(); if (checked.is_err()) { wire.destroy(); return core::result::Err(Error::Transport(checked.unwrap_err())); }
-        let scanned = cursor.advance(wire.as_view().subview(offset,wire.len()).unwrap(),literal("GET",3),eof);
-        let used: u64 = cursor.work(); let paid: bool = charge(work,used - charged); charged = used;
-        if (!paid) { wire.destroy(); return core::result::Err(Error::Limit); }
-        if (scanned.is_err()) { wire.destroy(); return core::result::Err(Error::Http(scanned.unwrap_err())); }
-        let event: ext::http::Scan = scanned.unwrap();
-        let head: bool = match (event) { ext::http::Scan::HeadReady(v) -> true, _ -> false };
-        if (head) {
-            status = match (event) { ext::http::Scan::HeadReady(v) -> v.status, _ -> 0 };
-            if (status == 101) { wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Unsupported(offset))); }
-            continue;
-        }
-        let complete: bool = match (event) { ext::http::Scan::Boundary(v) -> true, _ -> false };
-        if (complete) {
-            let boundary: ext::http::FrameBoundary = match (event) { ext::http::Scan::Boundary(v) -> v, _ -> ext::http::FrameBoundary { consumed: 0, decoded_length: 0 } };
-            let end: i32 = offset + boundary.consumed;
-            if (boundary.consumed < 0 || end < offset || end > wire.len()) { wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Bounds)); }
-            let selected: core::slice::View<u8> = wire.as_view().subview(offset,end).unwrap();
-            let allowance: u64 = 4 * (selected.len() as u64);
-            if (status >= 200) { allowance += 4 * (limits.head_bytes as u64) * ((limits.trailers as u64) + 1); }
-            if (!charge(work,allowance)) { wire.destroy(); return core::result::Err(Error::Limit); }
-            let parsed = ext::http::parse_response(selected,literal("GET",3),eof,limits);
-            if (parsed.is_err()) { wire.destroy(); return core::result::Err(Error::Http(parsed.unwrap_err())); }
-            let message: ext::http::Message = parsed.unwrap();
-            if (message.consumed != boundary.consumed || message.decoded_length != boundary.decoded_length) { wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Bounds)); }
-            if (status < 200) {
-                interims += 1; if (interims > 8 || end > 65536) { wire.destroy(); return core::result::Err(Error::Limit); }
-                offset = end;
-                let next = ext::http::cursor(ext::http::CursorMode::Response,limits,options.max_response - offset,work.maximum - work.used);
-                if (next.is_err()) { wire.destroy(); return core::result::Err(Error::Http(next.unwrap_err())); }
-                cursor = next.unwrap(); charged = 0; continue;
-            }
-            if (end != wire.len()) { wire.destroy(); return core::result::Err(Error::Http(ext::http::Error::Malformed(end))); }
-            if (message.decoded_length > options.max_output || !charge(work,2 * (message.decoded_length as u64))) { wire.destroy(); return core::result::Err(Error::Limit); }
-            let allocated = alloc::vec::with_capacity<u8>(message.decoded_length);
-            if (allocated.is_err()) { wire.destroy(); return core::result::Err(Error::Allocation); }
-            let output: alloc::vec::Vec<u8> = allocated.unwrap();
-            if (output.try_resize(message.decoded_length,0 as u8).is_err()) { output.destroy(); wire.destroy(); return core::result::Err(Error::Allocation); }
-            let decoded = ext::http::decode_into(message,output.as_view()); wire.destroy();
-            if (decoded.is_err()) { output.destroy(); return core::result::Err(Error::Http(decoded.unwrap_err())); }
-            if (decoded.unwrap() != message.decoded_length) { output.destroy(); return core::result::Err(Error::Http(ext::http::Error::Bounds)); }
-            let final_check = stream.check(); if (final_check.is_err()) { output.destroy(); return core::result::Err(Error::Transport(final_check.unwrap_err())); }
-            return core::result::Ok(output);
-        }
-        let capacity: i32 = options.max_response - wire.len(); let amount: i32 = capacity;
-        if (amount > 1024) { amount = 1024; } if (amount == 0) { amount = 1; }
-        let got = stream.read(scratch,0,amount);
-        if (got.is_err()) { wire.destroy(); return core::result::Err(stream_error(stream)); }
-        let count: i32 = got.unwrap(); if (count == 0) { eof = true; continue; }
-        if (count > capacity) { wire.destroy(); return core::result::Err(Error::Limit); }
-        if (wire.try_extend(core::slice::view(scratch,count).unwrap()).is_err()) { wire.destroy(); return core::result::Err(Error::Allocation); }
-    }
-    return core::result::Err(Error::Arguments);
-}
-fn connect_profile(options: &Options, endpoint: core::net::SocketAddr, identity: ext::openssl_tls::Identity, limits: ext::tls_stream::Limits, deadline: core::time::Deadline) -> core::result::Result<ext::tls_stream::Stream,Error> {
-    if (options.client_cert.is_none()) {
-        let connected: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::connect_until(endpoint,ext::openssl_tls::Trust::CaFile(options.ca),identity,ext::openssl_tls::default_limits(),limits,deadline);
-        if (connected.is_err()) { return core::result::Err(Error::Transport(connected.unwrap_err())); } return core::result::Ok(connected.unwrap());
-    }
-    let created: core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> = ext::openssl_tls::new_with_credentials(ext::openssl_tls::Trust::CaFile(options.ca),options.client_cert.unwrap(),options.client_key.unwrap(),literal("",0),ext::openssl_tls::default_limits());
-    if (created.is_err()) { return core::result::Err(Error::Tls(created.unwrap_err())); } let context = created.unwrap();
-    let connected: core::result::Result<ext::tls_stream::Stream,ext::tls_stream::Failure> = ext::tls_stream::connect_with_context_until(endpoint,context.borrow(),identity,limits,deadline);
-    context.destroy();
-    if (connected.is_err()) { return core::result::Err(Error::Transport(connected.unwrap_err())); } return core::result::Ok(connected.unwrap());
-}
-fn fetch(options: &Options) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+fn fetch(options: &Options) -> core::result::Result<ext::http_client::Response,Error> {
     if (options.client_cert.is_some() != options.client_key.is_some()) { return core::result::Err(Error::Arguments); }
     if (options.client_cert.is_some() && (options.client_cert.unwrap().is_empty() || options.client_key.unwrap().is_empty())) { return core::result::Err(Error::Arguments); }
-    let endpoint = core::net::parse_socket(options.endpoint); if (endpoint.is_err() || endpoint.unwrap().port() == 0 || options.peer.is_empty() || options.ca.is_empty()) { return core::result::Err(Error::Arguments); }
-    let limits: ext::http::Limits = ext::http::default_limits(); limits.head_bytes = 16384; limits.headers = 64; limits.trailers = 16; limits.body_bytes = options.max_body;
-    let encoded = request(options,endpoint.unwrap(),limits); if (encoded.is_err()) { return encoded; }
-    let request: alloc::vec::Vec<u8> = encoded.unwrap(); let work: Work = Work { used: 0, maximum: options.max_work };
-    if (!charge(work.borrow(),4 * (request.len() as u64))) { request.destroy(); return core::result::Err(Error::Limit); }
-    let now = std::clock::monotonic_now(); if (now.is_err()) { request.destroy(); return core::result::Err(Error::Clock); }
+    let endpoint = core::net::parse_socket(options.endpoint);
+    if (endpoint.is_err() || endpoint.unwrap().port() == 0 || options.peer.is_empty() || options.ca.is_empty()) { return core::result::Err(Error::Arguments); }
+    if (options.target.is_empty() || options.target.get(0).unwrap() != 47 || options.target.len() > 8192) { return core::result::Err(Error::Arguments); }
+    let named = authority(options.peer,endpoint.unwrap()); if (named.is_err()) { return core::result::Err(named.unwrap_err()); }
+    let host: alloc::vec::Vec<u8> = named.unwrap();
+    let now = std::clock::monotonic_now(); if (now.is_err()) { host.destroy(); return core::result::Err(Error::Clock); }
     let shifted = core::time::deadline_after(now.unwrap(),core::time::from_millis(options.timeout as u64));
-    if (shifted.is_err()) { request.destroy(); return core::result::Err(Error::Clock); }
+    if (shifted.is_err()) { host.destroy(); return core::result::Err(Error::Clock); }
+    // One deadline includes synchronous native context/credential loading and
+    // every subsequent HTTP preparation, network, decode and shutdown check.
+    let created: core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> = context(options);
+    if (created.is_err()) { host.destroy(); return core::result::Err(Error::Tls(created.unwrap_err())); }
+    let tls_context: ext::openssl_tls::Context = created.unwrap();
     let identity: ext::openssl_tls::Identity = ext::openssl_tls::Identity::Dns(options.peer);
     if (core::net::parse_ip(options.peer).is_ok()) { identity = ext::openssl_tls::Identity::Ip(options.peer); }
-    let transport: ext::tls_stream::Limits = ext::tls_stream::Limits { io_calls: options.max_io, tls_calls: options.max_tls, read_bytes: (options.max_response as u64) + 1, written_bytes: request.len() as u64 };
-    let connected: core::result::Result<ext::tls_stream::Stream,Error> = connect_profile(options,endpoint.unwrap(),identity,transport,shifted.unwrap());
-    if (connected.is_err()) { request.destroy(); return core::result::Err(connected.unwrap_err()); }
-    let stream: ext::tls_stream::Stream = connected.unwrap();
-    let sent = core::io::write_all(stream.borrow(),request.as_slice(),0,request.len()); request.destroy();
-    if (sent.is_err() || stream.flush().is_err()) { let failed: Error = stream_error(stream.borrow()); stream.close(); return core::result::Err(failed); }
-    let received = receive(stream.borrow(),options,limits,work.borrow());
-    if (received.is_err()) { stream.close(); return received; }
-    let output: alloc::vec::Vec<u8> = received.unwrap();
-    let stopped = stream.shutdown(); if (stopped.is_err()) { output.destroy(); stream.close(); return core::result::Err(Error::Transport(stopped.unwrap_err())); }
-    let checked = stream.check(); if (checked.is_err()) { output.destroy(); stream.close(); return core::result::Err(Error::Transport(checked.unwrap_err())); }
-    let closed = stream.close(); if (closed.is_err()) { output.destroy(); return core::result::Err(Error::Transport(closed.unwrap_err())); }
-    return core::result::Ok(output);
+    let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new();
+    let request: ext::http_client::Request = ext::http_client::Request { method: literal("GET",3), target: options.target, authority: host.as_view(), headers: headers.as_view(), body: literal("",0) };
+    let http_options: ext::http_client::Options = ext::http_client::default_options();
+    http_options.trailing = ext::http_client::Trailing::Reject;
+    http_options.request_bytes = 16384; http_options.response_bytes = options.max_response;
+    http_options.wire.head_bytes = 16384; http_options.wire.headers = 64;
+    http_options.wire.trailers = 16; http_options.wire.body_bytes = options.max_body;
+    http_options.interim_count = 8; http_options.interim_bytes = 65536;
+    http_options.io_calls = options.max_io; http_options.work = options.max_work;
+    let tls_options: ext::https_client::Options = ext::https_client::Options { tls_calls: options.max_tls };
+    let received: core::result::Result<ext::http_client::Response,ext::https_client::Failure> = ext::https_client::exchange_until(endpoint.unwrap(),tls_context.borrow(),identity,request,http_options,tls_options,shifted.unwrap());
+    tls_context.destroy(); headers.destroy(); host.destroy();
+    if (received.is_err()) { return core::result::Err(Error::Exchange(received.unwrap_err())); }
+    let response: ext::http_client::Response = received.unwrap();
+    if (response.body().len() > options.max_output) { response.destroy(); return core::result::Err(Error::Limit); }
+    return core::result::Ok(response);
 }
 fn apply(options: &Options, item: ext::cli::Occurrence) -> bool {
     if (item.id == 1) { options.help = true; return true; }
@@ -259,7 +199,8 @@ fn arguments(values: std::args::Arguments) -> i32 {
     }
     if (options.operands != 4) { return error(Error::Arguments); }
     let result = fetch(options.borrow()); if (result.is_err()) { return error(result.unwrap_err()); }
-    let output: alloc::vec::Vec<u8> = result.unwrap(); let written: bool = write_stdout(output.as_view(),options.stdout_calls,1); output.destroy();
+    let response: ext::http_client::Response = result.unwrap();
+    let written: bool = write_stdout(response.body(),options.stdout_calls,1); response.destroy();
     if (!written) { return error(Error::Output); } return 0;
 }
 fn main() -> i32 {

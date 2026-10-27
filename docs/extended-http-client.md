@@ -503,19 +503,14 @@ resolver activity inside the HTTP client.
 
 ## Focused execution evidence
 
-The shared transport-free Protocol extraction and new trailing policy are
-pending their current compiler/native gates. The receipts below establish the
-preceding `480432e8` HTTP implementation; they do not establish acceptance of
-these new Protocol entry points or the refactored plain driver. Existing
-public plain Exchange/exchange_until signatures remain the same, and callers
-using default_options select the existing Discard behavior. A direct Options
-literal must now supply trailing explicitly.
-
-
-The synchronous client regression and the five direct Prepared/Exchange groups
-passed after the resumable refactor on the native Linux x86-64 profile through
-the production GPU compiler. Their separate receipts and finite scopes are
-recorded below.
+The shared transport-free Protocol extraction, its direct state contracts, and
+the refactored plain driver have passed the focused gates below. These tests
+use the production GPU compiler to generate and execute Linux x86-64 native
+programs; they do not execute an HTTP program on the GPU. Existing public plain
+Exchange/exchange_until signatures remain the same, and callers using
+default_options select the existing Discard behavior. A direct Options literal
+must now supply trailing explicitly. Direct Protocol cases exercise both
+Discard and Reject.
 
 `tests/extended_http_client_execution.rs` compiles native public contracts and
 the CLI. The native fixture destroys caller method storage before inspecting
@@ -537,27 +532,44 @@ broken stdout/stderr pipes and failed signal setup. Oracles require test-only
 Python h11; production uses no Python, Rust parser, JSON bridge, or external
 network nameserver/service.
 
-All six synchronous regression groups passed in 26.85 seconds, recorded in
-`target/stdlib-work/http-exchange-client-regressions-current.log`. They report
-188 cases: one native contract, 47 matrix, 21 limit/early-final, 34 rejection,
-73 fault and 12 CLI/I/O cases. The two allocation paths reach 13 body and 22
-report mappings; each reached allocation is failed individually and checked
-for cleanup. The 1 MiB response case recorded 0.120329 seconds of client-process
-wall time, including startup and transfer but excluding compilation. This is
-one native peer/process observation, not a standalone throughput measurement.
-The late-shutdown control verifies a successful shutdown syscall and its
-recorded progress before the delayed return causes the original deadline to
-expire.
+### Current extraction acceptance
 
-`tests/extended_http_exchange_execution.rs` adds 83 direct cases: three
-stepping/readiness, 20 framing, two early-final, 10 lifecycle and 48 fault
-cases. The strengthened steps, framing and early-final groups passed in the
-mixed 9.35-second invocation recorded in
-`target/stdlib-work/http-exchange-all-groups-current.log`. Lifecycle and fault
-groups passed their focused 8.58-second retry in
-`target/stdlib-work/http-exchange-two-groups-retry.log`. The allocation
+| Gate | Passed scope | Time | Receipt in `target/stdlib-work/` |
+| --- | --- | ---: | --- |
+| Synchronous client | Six groups, 188 cases | 27.70 s | `http-client-shared-protocol-sync-regressions-first.log` |
+| Direct Exchange steps | One group, three cases | 7.93 s | `http-protocol-extraction-steps-first.log` |
+| Remaining direct Exchange groups | Four groups, 80 cases | 9.90 s | `http-exchange-shared-protocol-remaining-regressions-first.log` |
+| Direct Protocol | One executable state-contract group | 7.94 s | `http-protocol-direct-contracts-first.log` |
+
+These are separate invocations. The shared production HTTP source remained
+unchanged between the direct steps receipt and the remaining Exchange groups.
+All five direct Exchange groups are therefore accepted across those two
+receipts, with 83 cases in total.
+
+The current synchronous run reports one native contract, 47 matrix, 21
+limit/early-final, 34 rejection, 73 fault and 12 CLI/I/O cases. Its two
+allocation paths reach 13 body and 22 report mappings; each reached allocation
+is failed individually and checked for cleanup. The 1 MiB response case recorded
+0.138848 seconds of client-process wall time, including startup and transfer
+but excluding compilation. This is one native peer/process observation, not
+a standalone throughput measurement. The late-shutdown control verifies a
+successful shutdown syscall and its recorded progress before the delayed
+return causes the original deadline to expire.
+
+`tests/extended_http_exchange_execution.rs` adds three stepping/readiness, 20
+framing, two early-final, 10 lifecycle and 48 fault cases. Its two allocation
 workloads reached 12 and 14 engine allocation positions, each failed once.
 These counts are separate from the synchronous 188-case regression.
+
+`tests/extended_http_protocol_execution.rs` directly drives the concrete owner
+without a network transport. It checks reservation/partial-commit/cancellation
+sequences, an early final head with a previously reserved send, explicit
+transport acknowledgement, exact-cap EOF and overflow, trailing policy,
+sticky failures, and ownership transfer. Its successful trace contains 247
+mapping events, all explicitly balanced by matching unmaps, and no network or
+poll calls. That count describes allocation activity in one run, not 247
+allocation-denial cases. See the
+[direct Protocol testing guide](extended-http-protocol-testing.md).
 
 Direct-call trace epochs check no internal poll, one active network leaf per
 step, 1024-byte send/receive bounds, cumulative accounting and confirmed
@@ -569,3 +581,19 @@ full coverage limits are in the
 [Exchange testing guide](extended-http-exchange-testing.md). These finite
 loopback cases do not establish hard CPU preemption or general HTTP
 conformance.
+
+### Historical resumable-refactor receipts
+
+The preceding `480432e8` implementation passed its six synchronous groups in
+26.85 seconds in
+`target/stdlib-work/http-exchange-client-regressions-current.log`. Its 1 MiB
+native peer/process observation was 0.120329 seconds. Those older numbers are
+not the current extraction's execution receipt or a comparative benchmark.
+
+The older direct Exchange acceptance combined the strengthened steps, framing
+and early-final groups from the mixed 9.35-second invocation in
+`target/stdlib-work/http-exchange-all-groups-current.log` with lifecycle and
+faults from the 8.58-second focused retry in
+`target/stdlib-work/http-exchange-two-groups-retry.log`. The Exchange testing
+guide retains the two harness-failure classifications. These historical cases
+are not added to the current run's totals.

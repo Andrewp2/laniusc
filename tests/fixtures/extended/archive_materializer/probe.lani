@@ -1,0 +1,143 @@
+// Actual Run owner; binary frames keep resources observable before host ACK.
+module app::main;
+import core::io;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::path;
+import core::result::Result;
+import core::slice::View;
+import ext::archive_extract;
+import ext::archive_plan;
+import ext::archive_source;
+import ext::zip;
+import std::atomic_file;
+import std::entropy;
+import std::file;
+import std::file_ops;
+import std::io;
+import std::linux;
+import std::temp_file;
+
+fn receive(pointer:ptr,count:i32) { let at:i32=0; while(at<count) { let got=std::io::read_stdin(pointer+(at as usize),(count-at) as usize); assert(got>0 && got<=count-at); at+=got; } }
+fn send(pointer:ptr,count:i32) { let at:i32=0; while(at<count) { let size=count-at; if(size>1024) { size=1024; } let got=std::io::write_stdout(pointer+(at as usize),size as usize); assert(got>0 && got<=size); at+=got; } }
+fn mark(value:u8) { let raw:[i32;1]=[value as i32]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(raw),1)==1); }
+fn ack() { let raw:[i32;1]=[0]; receive(core::mem::i32_array_data_ptr(raw),1); assert(raw[0]==65); }
+fn get(input:[u8],index:i32)->u64 { let value:u64=0; let at:i32=0; while(at<8) { value=value|((input[index*8+at] as u64)<<(at*8)); at+=1; } return value; }
+fn bytes(value:str,count:i32)->View<u8> { return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count }; }
+fn io(error:core::io::Error)->u64 { return match(error) { core::io::Error::Host(value)->value as u64,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,core::io::Error::InvalidInput->900,core::io::Error::InvalidCount->901,_ ->902 }; }
+fn optional(error:Option<core::io::Error>)->u64 { if(error.is_none()) { return 0; } return io(error.unwrap()); }
+fn entropy(error:std::entropy::Error)->u64 { return match(error) { std::entropy::Error::Bounds->1,std::entropy::Error::NoProgress->2,std::entropy::Error::InvalidCount->3,std::entropy::Error::CallLimit->4,std::entropy::Error::Host(value)->100+value as u64 }; }
+fn temporary(error:std::temp_file::Error)->u64 { return match(error) { std::temp_file::Error::InvalidState->1,std::temp_file::Error::InvalidLimits->2,std::temp_file::Error::InvalidName->3,std::temp_file::Error::AllocationFailed->4,std::temp_file::Error::UnavailableMetadata->5,std::temp_file::Error::NotDirectory->6,std::temp_file::Error::UnsupportedDescriptor->7,std::temp_file::Error::NameLimit->8,std::temp_file::Error::Io(value)->1000+io(value),std::temp_file::Error::Entropy(value)->2000+entropy(value.cause) }; }
+fn atomic_cause(error:std::atomic_file::Error)->u64 { return match(error) { std::atomic_file::Error::InvalidState->1,std::atomic_file::Error::InvalidOptions->2,std::atomic_file::Error::InvalidDestination->3,std::atomic_file::Error::AllocationFailed->4,std::atomic_file::Error::Bounds->5,std::atomic_file::Error::ByteLimit->6,std::atomic_file::Error::WriteLimit->7,std::atomic_file::Error::DirectorySyncLimit->8,std::atomic_file::Error::NoProgress->9,std::atomic_file::Error::InvalidCount->10,std::atomic_file::Error::Io(value)->1000+io(value),std::atomic_file::Error::Temporary(value)->10000+temporary(value.cause),std::atomic_file::Error::Ownership(value)->20000+temporary(value) }; }
+fn atomic_stage(value:std::atomic_file::Stage)->u64 { return match(value) { std::atomic_file::Stage::Validate->1,std::atomic_file::Stage::Allocate->2,std::atomic_file::Stage::Create->3,std::atomic_file::Stage::Write->4,std::atomic_file::Stage::SyncFile->5,std::atomic_file::Stage::CloseFile->6,std::atomic_file::Stage::Rename->7,std::atomic_file::Stage::Disarm->8,std::atomic_file::Stage::SyncDirectory->9,std::atomic_file::Stage::Cleanup->10,std::atomic_file::Stage::Keep->11 }; }
+fn atomic_state(value:std::atomic_file::State)->u64 { return match(value) { std::atomic_file::State::Inactive->0,std::atomic_file::State::Writing->1,std::atomic_file::State::Failed->2,std::atomic_file::State::Published->3,std::atomic_file::State::Kept->4,std::atomic_file::State::Released->5 }; }
+fn visibility(value:std::atomic_file::Visibility)->u64 { return match(value) { std::atomic_file::Visibility::NotPublished->0,std::atomic_file::Visibility::Published->1,std::atomic_file::Visibility::Unconfirmed->2 }; }
+fn removal(value:std::temp_file::Removal)->u64 { return match(value) { std::temp_file::Removal::NotOwned->0,std::temp_file::Removal::Removed->1,std::temp_file::Removal::AlreadyAbsent->2,std::temp_file::Removal::Unconfirmed->3 }; }
+fn zip_error(value:ext::zip::Error)->u64 { return match(value) { ext::zip::Error::Bounds->1,ext::zip::Error::ArchiveLimit->2,ext::zip::Error::EntryLimit->3,ext::zip::Error::TotalLimit->4,ext::zip::Error::WorkLimit->5,ext::zip::Error::SizeOverflow->6,ext::zip::Error::Truncated->7,ext::zip::Error::Signature->8,ext::zip::Error::HeaderMismatch->9,ext::zip::Error::Descriptor->10,ext::zip::Error::Overlap->11,ext::zip::Error::Zip64->12,ext::zip::Error::MultiDisk->13,ext::zip::Error::Encryption->14,ext::zip::Error::UnsupportedMethod->15,ext::zip::Error::UnsupportedFlags->16,ext::zip::Error::UnsupportedVersion->17,ext::zip::Error::UnsupportedExtra->18,ext::zip::Error::Encoding->19,ext::zip::Error::Name->20,ext::zip::Error::Checksum->21,ext::zip::Error::SizeMismatch->22,ext::zip::Error::TrailingData->23,ext::zip::Error::OutputLimit->24,ext::zip::Error::AllocationFailed->25,ext::zip::Error::Deflate(_)->26,ext::zip::Error::Encode(_)->27 }; }
+fn cause(value:ext::archive_extract::Cause)->u64 { return match(value) { ext::archive_extract::Cause::InvalidState->1,ext::archive_extract::Cause::InvalidLimits->2,ext::archive_extract::Cause::InvalidPrepared->3,ext::archive_extract::Cause::OwnedLimit->4,ext::archive_extract::Cause::DepthLimit->5,ext::archive_extract::Cause::HostLimit->6,ext::archive_extract::Cause::CleanupLimit->7,ext::archive_extract::Cause::WriteLimit->8,ext::archive_extract::Cause::SyncLimit->9,ext::archive_extract::Cause::EntropyLimit->10,ext::archive_extract::Cause::NameLimit->11,ext::archive_extract::Cause::StepLimit->12,ext::archive_extract::Cause::AllocationFailed->13,ext::archive_extract::Cause::UnavailableMetadata->14,ext::archive_extract::Cause::NotDirectory->15,ext::archive_extract::Cause::UnsupportedDescriptor->16,ext::archive_extract::Cause::NamespaceChanged->17,ext::archive_extract::Cause::Retained->18,ext::archive_extract::Cause::Bounds->19,ext::archive_extract::Cause::Io(_)->20,ext::archive_extract::Cause::Zip(_)->21,ext::archive_extract::Cause::Atomic(_)->22 }; }
+fn stage(value:ext::archive_extract::Stage)->u64 { return match(value) { ext::archive_extract::Stage::Validate->1,ext::archive_extract::Stage::Reserve->2,ext::archive_extract::Stage::Root->3,ext::archive_extract::Stage::Decode->4,ext::archive_extract::Stage::Walk->5,ext::archive_extract::Stage::CreateDirectory->6,ext::archive_extract::Stage::OpenDirectory->7,ext::archive_extract::Stage::SyncChild->8,ext::archive_extract::Stage::SyncParent->9,ext::archive_extract::Stage::CreateFile->10,ext::archive_extract::Stage::Write->11,ext::archive_extract::Stage::Commit->12,ext::archive_extract::Stage::Close->13,ext::archive_extract::Stage::Cleanup->14,ext::archive_extract::Stage::RetrySync->15,ext::archive_extract::Stage::Keep->16,ext::archive_extract::Stage::Transfer->17,ext::archive_extract::Stage::Destroy->18 }; }
+fn state(value:ext::archive_extract::State)->u64 { return match(value) { ext::archive_extract::State::Empty->0,ext::archive_extract::State::Running->1,ext::archive_extract::State::Complete->2,ext::archive_extract::State::Failed->3,ext::archive_extract::State::Destroyed->4 }; }
+fn kind(value:ext::archive_plan::Kind)->u64 { return match(value) { ext::archive_plan::Kind::File->0,ext::archive_plan::Kind::Directory->1 }; }
+fn source_cause(value:ext::archive_source::Cause)->u64 { return match(value) { ext::archive_source::Cause::Bounds->1,ext::archive_source::Cause::InvalidLimits->2,ext::archive_source::Cause::ArchiveLimit->3,ext::archive_source::Cause::EntryLimit->4,ext::archive_source::Cause::TotalLimit->5,ext::archive_source::Cause::MetadataLimit->6,ext::archive_source::Cause::OwnedLimit->7,ext::archive_source::Cause::AllocationFailed->8,ext::archive_source::Cause::Plan(_)->9,ext::archive_source::Cause::Profile(_)->10,ext::archive_source::Cause::Tar(_)->11,ext::archive_source::Cause::Zip(_)->12 }; }
+// Preserve the typed planner-allocation leaf in the previously unused high
+// half of the source cause word, without changing frame widths or offsets.
+fn source_word(value:ext::archive_source::Cause)->u64 { let detail:u64=0; let allocation:bool=match(value) { ext::archive_source::Cause::Plan(item)->match(item.kind) { ext::archive_plan::ErrorKind::Allocation->true,_ ->false },_ ->false }; if(allocation) { detail=12; } return source_cause(value)|(detail<<32); }
+struct Sink { data:[u8], at:i32 }
+impl Sink {
+    fn borrow(&self)->&Sink { return self; }
+    fn word(&self,value:u64) { assert(self.at<=32760); let at:i32=0; while(at<8) { self.data[self.at+at]=((value>>(at*8))&255) as u8; at+=1; } self.at+=8; }
+    fn signed(&self,value:i32) { self.word((value as u32) as u64); }
+    fn flag(&self,value:bool) { self.word(value as u64); }
+    fn zero(&self,count:i32) { let at:i32=0; while(at<count) { self.word(0); at+=1; } }
+    fn blob(&self,value:View<u8>) { assert(value.length>=0 && self.at<=32768-value.length); let at:i32=0; while(at<value.length) { self.data[self.at+at]=value.values[value.start+at]; at+=1; } self.at+=value.length; }
+    fn receipt(&self,value:Option<std::atomic_file::Receipt>) {
+        if(value.is_none()) { self.zero(32); return; } let item=value.unwrap();
+        self.word(atomic_state(item.state)); self.word(visibility(item.visibility)); self.word(item.stats.bytes); self.word(item.stats.writes); self.word(item.stats.file_syncs); self.word(item.stats.renames); self.word(item.stats.directory_syncs);
+        self.flag(item.file_synced); self.flag(item.directory_synced); self.flag(item.file_open); self.flag(item.directory_open); self.flag(item.temporary_owned); self.flag(item.retained);
+        let clean=item.cleanup; self.flag(clean.file_close_attempted); self.word(optional(clean.file_close_error)); self.flag(clean.remove_attempted); self.word(removal(clean.removal)); self.word(optional(clean.remove_error)); self.flag(clean.directory_close_attempted); self.word(optional(clean.directory_close_error)); self.flag(clean.retained);
+        self.word(item.temporary_stats.name_attempts as u64); self.word(item.temporary_stats.open_attempts as u64); self.word(item.temporary_stats.collisions as u64); self.word(item.temporary_stats.excluded as u64); self.word(item.temporary_stats.entropy_calls);
+        if(item.last_error.is_some()) { let error=item.last_error.unwrap(); self.word(atomic_cause(error.cause)); self.word(atomic_stage(error.stage)); self.word(error.completed); } else { self.zero(3); } self.zero(3);
+    }
+    fn failure(&self,value:Option<ext::archive_extract::Failure>) {
+        if(value.is_none()) { self.zero(40); return; } let error=value.unwrap();
+        self.word(cause(error.cause)); self.word(stage(error.stage)); self.signed(error.ordinal); self.signed(error.node);
+        let detail:u64=match(error.cause) { ext::archive_extract::Cause::Io(item)->io(item),ext::archive_extract::Cause::Zip(item)->zip_error(item),ext::archive_extract::Cause::Atomic(item)->atomic_cause(item.cause),_ ->0 };
+        self.word(detail);
+        let atomic:Option<std::atomic_file::Failure> = match(error.cause) { ext::archive_extract::Cause::Atomic(item)->Some(item),_ ->None() };
+        if(atomic.is_some()) { self.word(atomic_stage(atomic.unwrap().stage)); self.word(atomic.unwrap().completed); self.word(0); self.receipt(Some(atomic.unwrap().receipt)); }
+        else { self.zero(35); }
+    }
+    fn stats(&self,item:ext::archive_extract::Stats) { self.word(item.entries_seen); self.word(item.entries_completed); self.word(item.created_directories); self.word(item.published_files); self.word(item.bytes); self.word(item.writes); self.word(item.name_attempts); self.word(item.entropy_calls); self.word(item.syncs); self.word(item.host_charged); self.word(item.cleanup_reserved); self.word(item.cleanup_charged); self.word(item.namespace_closes); self.word(item.cleanup_errors); self.word(item.steps); self.word(item.owned_bytes); self.word(item.peak_fds); }
+    fn node(&self,item:ext::archive_extract::NodeStatus,path:View<u8>) {
+        self.signed(item.node); self.signed(item.ordinal); self.word(kind(item.kind)); self.flag(item.explicit); self.flag(item.visited); self.flag(item.created); self.signed(item.created_ordinal); self.word(item.open_attempts); self.flag(item.opened); self.word(item.child_sync_attempts); self.flag(item.child_synced); self.word(optional(item.child_sync_error)); self.word(item.parent_sync_attempts); self.flag(item.parent_synced); self.word(optional(item.parent_sync_error)); self.word(item.close_attempts); self.word(optional(item.close_error)); self.flag(item.file_attempted); self.flag(item.published); self.flag(item.kept); self.flag(item.identity.is_some());
+        if(item.identity.is_some()) { let id=item.identity.unwrap(); self.word(id.inode); self.word(id.device_major as u64); self.word(id.device_minor as u64); } else { self.zero(3); }
+        self.flag(item.receipt.is_some()); self.receipt(item.receipt); self.word(path.length as u64); self.blob(path);
+    }
+}
+fn result_code(value:Option<Result<bool,ext::archive_extract::Failure>>)->u64 { if(value.is_none()) { return 0; } let item=value.unwrap(); if(item.is_err()) { return 3; } if(item.unwrap()) { return 1; } return 2; }
+fn result_failure(value:Option<Result<bool,ext::archive_extract::Failure>>)->Option<ext::archive_extract::Failure> { if(value.is_none()) { return None(); } let item=value.unwrap(); if(item.is_err()) { return Some(item.unwrap_err()); } return None(); }
+fn equal(first:Result<bool,ext::archive_extract::Failure>,second:Result<bool,ext::archive_extract::Failure>)->bool {
+    if(first.is_err()!=second.is_err()) { return false; } if(first.is_ok()) { return first.unwrap() && !second.unwrap(); }
+    let storage:[i32;160]=[0;160]; let packed:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),640); let sink=Sink { data:packed,at:0 };
+    sink.failure(Some(first.unwrap_err())); sink.failure(Some(second.unwrap_err())); assert(sink.at==640);
+    let at:i32=0; while(at<320) { if(packed[at]!=packed[at+320]) { return false; } at+=1; } return true;
+}
+fn emit(checkpoint:u64,pid:u64,source:Option<ext::archive_source::Prepared>,source_error:Option<ext::archive_source::Error>,root:&std::file::File,run:&ext::archive_extract::Run,input:View<u8>,layout:u64,result:Option<Result<bool,ext::archive_extract::Failure>>,action:Option<Result<bool,ext::archive_extract::Failure>>,taken:View<u8>,cached:bool) {
+    let storage:[i32;8192]=[0;8192]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,32768); let sink=Sink { data:packed,at:4 };
+    let count:i32=0; while(run.node_status(count).is_some()) { count+=1; assert(count<=48); }
+    let recovery=run.recovery_name(); assert(recovery.length<=37 && taken.length<=37);
+    sink.word(1096303960); sink.word(1); sink.word(checkpoint); sink.word(pid);
+    if(source_error.is_some()) { sink.word(source_word(source_error.unwrap().cause)); sink.signed(source_error.unwrap().ordinal); } else { sink.word(0); sink.signed(-1); }
+    sink.word(result_code(result)); sink.word(state(run.state())); sink.flag(run.resources_remaining());
+    let raw:i32= -1; if(root.raw_handle().is_some()) { raw=root.raw_handle().unwrap(); } sink.signed(raw);
+    sink.word(layout); sink.word((core::mem::slice_stride(input.values) as i64) as u64); sink.signed(input.start); sink.signed(input.length); sink.signed(count); sink.signed(recovery.length); sink.signed(run.current_node()); sink.signed(run.current_ordinal()); sink.word(result_code(action)); sink.signed(taken.length);
+    sink.stats(run.stats()); sink.failure(run.last_failure()); sink.failure(run.cleanup_failure()); sink.failure(result_failure(action)); sink.receipt(run.current_receipt()); sink.flag(cached); sink.word(optional(run.root_close_error())); sink.flag(run.current_receipt().is_some());
+    assert(sink.at==4+192*8);
+    let padding:[u8;37]=[0;37]; let at:i32=0; while(at<recovery.length) { padding[at]=recovery.values[recovery.start+at]; at+=1; } sink.blob(View { values:padding,start:0,length:37 });
+    at=0; while(at<37) { padding[at]=0; at+=1; } at=0; while(at<taken.length) { padding[at]=taken.values[taken.start+at]; at+=1; } sink.blob(View { values:padding,start:0,length:37 });
+    at=0; while(at<count) { assert(source.is_some()); sink.node(run.node_status(at).unwrap(),source.unwrap().plan().path(at).unwrap()); at+=1; }
+    let size=sink.at-4; at=0; while(at<4) { packed[at]=((size>>(at*8))&255) as u8; at+=1; } send(pointer,sink.at); ack();
+}
+fn repair(raw:u64) { assert(raw<2147483648); mark(81); let args:[std::linux::Argument;1]=[std::linux::Argument::Word(raw as i64)]; assert(std::linux::call(3,View { values:args,start:0,length:1 }).unwrap()==0); mark(113); }
+// Test child only: Signal has no SIGXFSZ variant. Match std::signal's verified
+// kernel layout; asm/signal.h SIGXFSZ=25 and unistd_64.h rt_sigaction=13.
+fn ignore_file_size_signal() { mark(72); let action:[i32;8]=[1,0,0,0,0,0,0,0]; let zero:ptr=0; let args:[std::linux::Argument;4]=[std::linux::Argument::Word(25),std::linux::Argument::Address(core::mem::i32_array_data_ptr(action)),std::linux::Argument::Address(zero),std::linux::Argument::Word(8)]; assert(std::linux::call(13,View { values:args,start:0,length:4 }).unwrap()==0); mark(104); }
+fn prepare(format:u64,input:View<u8>,limits:ext::archive_source::Limits)->Result<ext::archive_source::Prepared,ext::archive_source::Error> { if(format==0) { return ext::archive_source::from_tar(input,limits); } return ext::archive_source::from_zip(input,limits); }
+fn main()->i32 {
+    let request_words:[i32;58]=[0;58]; let request_pointer=core::mem::i32_array_data_ptr(request_words); receive(request_pointer,232); let request:[u8]=core::mem::typed_slice_from_raw_parts(request_pointer,232);
+    let format=get(request,0); let layout=get(request,1); let mode=get(request,2); let length=get(request,3) as i32; let repair_fd=get(request,4); let root_case=get(request,5);
+    assert(format<=1 && layout<=2 && mode<=3 && root_case<=3 && length>=0 && length<=65528);
+    let storage:[i32;16384]=[0;16384]; let pointer=core::mem::i32_array_data_ptr(storage); let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,65536); let offset:i32=0; if(layout==1) { offset=7; } receive(pointer+(offset as usize),length);
+    let native:[u8;8192]=[165;8192]; let input:View<u8> = View { values:packed,start:offset,length:length };
+    if(layout==2) { assert(length<=8188); let at:i32=0; while(at<length) { native[3+at]=packed[offset+at]; at+=1; } input=View { values:native,start:3,length:length }; assert(core::mem::slice_stride(input.values)!=1); }
+    let limits=ext::archive_source::Limits { max_archive:get(request,6) as i32,max_entry:get(request,7) as i32,max_total:get(request,8),zip_work:get(request,9),metadata_work:get(request,10),max_owned_bytes:get(request,11),plan:ext::archive_plan::Limits { max_entries:get(request,12) as i32,max_nodes:get(request,13) as i32,max_path_bytes:get(request,14) as i32,max_component_bytes:get(request,15) as i32,max_depth:get(request,16) as i32,max_stored_path_bytes:get(request,17) as i32,max_work:get(request,18) } };
+    let run_limits=ext::archive_extract::Limits { max_owned_bytes:get(request,19),max_depth:get(request,20) as i32,max_host_calls:get(request,21),max_cleanup_calls:get(request,22),max_write_calls:get(request,23),max_sync_calls:get(request,24),max_entropy_calls:get(request,25),max_name_attempts:get(request,26),max_zip_output:get(request,27) as i32,max_steps:get(request,28) };
+    let prepared=prepare(format,input,limits);
+    let source:Option<ext::archive_source::Prepared> = None(); let source_error:Option<ext::archive_source::Error> = None();
+    if(prepared.is_ok()) { source=Some(prepared.unwrap()); } else { source_error=Some(prepared.unwrap_err()); }
+    let root=std::file::File { handle:-1 }; if(source.is_some()) {
+        if(root_case==1) { let words:[i32;2]=[0;2]; let pointer=core::mem::i32_array_data_ptr(words); let name:[u8]=core::mem::typed_slice_from_raw_parts(pointer,8); name[0]=114; name[1]=111; name[2]=111; name[3]=116; let args:[std::linux::Argument;4]=[std::linux::Argument::Word(-100),std::linux::Argument::Address(pointer),std::linux::Argument::Word(2097152|65536|524288),std::linux::Argument::Word(0)]; root=std::file::from_owned_handle(std::linux::call(257,View { values:args,start:0,length:4 }).unwrap() as i32).unwrap(); }
+        else { let options=std::file_ops::options(); options.directory=root_case!=2; options.no_follow=true; let selected=bytes("root",4); if(root_case==2) { selected=bytes("regular-root",12); } root=std::file_ops::open(core::path::from_view(selected).unwrap(),options).unwrap(); }
+        if(root_case==3) { root.close().unwrap(); }
+    }
+    let args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)]; let pid=std::linux::call(39,View { values:args,start:0,length:0 }).unwrap() as u64;
+    let run=ext::archive_extract::empty(); let result:Option<Result<bool,ext::archive_extract::Failure>> = None(); let action:Option<Result<bool,ext::archive_extract::Failure>> = None(); let taken_storage:[u8;37]=[0;37]; let taken:View<u8> = View { values:taken_storage,start:0,length:0 }; let cached:bool=false;
+    emit(0,pid,source,source_error,root.borrow(),run.borrow(),input,layout,result,action,taken,cached);
+    if(mode==3) { ignore_file_size_signal(); }
+    if(source.is_some()) { mark(69); result=Some(run.execute(source.unwrap().borrow(),root.borrow(),run_limits)); mark(101); mark(88); let repeated=run.execute(source.unwrap().borrow(),root.borrow(),run_limits); cached=equal(result.unwrap(),repeated); assert(cached); mark(120); }
+    emit(1,pid,source,source_error,root.borrow(),run.borrow(),input,layout,result,action,taken,cached);
+    if(repair_fd!=18446744073709551615) { repair(repair_fd); }
+    if(source.is_some()) {
+        if(mode==1) { mark(82); action=Some(run.retry_current_directory_sync()); mark(114); }
+        else { if(mode==2) { mark(75); action=Some(run.keep_current()); mark(107); let current=run.node_status(run.current_node()); if(current.is_some() && current.unwrap().kept) { mark(84); let copy:View<u8> = View { values:taken_storage,start:0,length:37 }; assert(run.take_kept_name(copy).unwrap()==37); taken.length=37; mark(116); } }
+            else { mark(65); action=Some(run.cleanup()); mark(97); } }
+    }
+    emit(2,pid,source,source_error,root.borrow(),run.borrow(),input,layout,result,action,taken,cached);
+    mark(66); run.cleanup().unwrap(); mark(98); mark(68); assert(run.destroy().unwrap()); assert(!run.destroy().unwrap()); mark(100);
+    if(source.is_some()) { let owner=source.unwrap(); owner.destroy(); owner.destroy(); source=Some(owner); }
+    mark(80); root.close().unwrap(); mark(112);
+    assert(!run.resources_remaining()); emit(3,pid,source,source_error,root.borrow(),run.borrow(),input,layout,result,action,taken,cached);
+    return 0;
+}

@@ -34,6 +34,35 @@ No-follow checks the final component. Earlier path components can resolve
 through symlinks. A trailing slash has Linux directory-resolution semantics.
 These calls do not implement a filesystem sandbox or an atomic path snapshot.
 
+## Descriptor-relative name mutations
+
+`remove_file_at(directory_fd, path)` removes one non-directory name with
+unlinkat flags zero. `rename_at(old_directory_fd, old_path, new_directory_fd,
+new_path, policy)` selects `RenamePolicy::Replace` or `NoReplace` through
+renameat2. Relative paths use their corresponding directory descriptor;
+absolute paths ignore it. Intermediate components keep ordinary host resolution,
+including symlinks and `..`.
+
+Both rename arguments are staged and validated before the one host attempt.
+The existing logical View/NUL checks and 4095-byte path cap apply. Only zero
+native success is accepted; an unexpected nonzero result is InvalidCount.
+Unsupported kernel/filesystem flags and other errno values propagate. There is
+no existence-check, copy/delete or older-kernel fallback. These allocation-free
+wrappers provide namespace operations; they do not establish durability or
+exclusive authority over names in a hostile directory.
+
+The new primitive group passes 27 process cases in
+`target/stdlib-work/file-at-primitives-group-first.log` on native Linux x86_64,
+kernel `7.0.0-38-generic`, with ext4 temporary directories under `/tmp`. It covers
+relative/nested/raw/absolute paths, both rename policies, final symlinks, host
+errors, one-attempt injected errors/invalid counts and rejected logical/NUL/
+overlong paths before mutation. Source-runtime sites and descriptor generations
+are checked by the independent oracle. The preliminary bounds receipt overlaps
+this group and adds no new distinct case. Other kernels/filesystems are outside
+this finite receipt. See [owned temporary files](stdlib-temp-files.md) for the
+combined five-group evidence and the stricter component/cooperative-namespace
+contract used by `TempFile`.
+
 ## Position, synchronization and duplication
 
 `seek(file, offset, origin)` returns the resulting signed 64-bit byte position.

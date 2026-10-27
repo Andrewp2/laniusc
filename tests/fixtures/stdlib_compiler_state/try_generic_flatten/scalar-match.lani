@@ -1,0 +1,20 @@
+// Explicit-match control for scalar-try.lani; same inputs and checks.
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+fn flatten<T>(value: Option<Option<T>>) -> Option<T> {
+    let absent: Option<T> = None();
+    return match (value) { Some(inner) -> inner, None -> absent };
+}
+
+fn main() -> i32 {
+    let present: Option<Option<i32>> = Some(Some(-7));
+    let hollow: Option<Option<i32>> = Some(None());
+    let absent: Option<Option<i32>> = None();
+    if (flatten(present).unwrap() != -7) { return 1; }
+    if (flatten(hollow).is_some()) { return 2; }
+    if (flatten(absent).is_some()) { return 3; }
+    return 0;
+}

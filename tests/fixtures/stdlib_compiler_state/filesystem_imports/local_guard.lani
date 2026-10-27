@@ -1,0 +1,11 @@
+module app::main;
+fn valid(received:i64,requested:i32) -> bool {
+    let wide:i64=requested as i64;
+    if(received<0 || received>wide) { return false; }
+    return true;
+}
+fn main() -> i32 {
+    assert(valid(0,4) && valid(4,4));
+    assert(!valid(-1,4) && !valid(5,4));
+    return 0;
+}

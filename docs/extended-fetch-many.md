@@ -206,6 +206,15 @@ copied into failure diagnostics; they are not a success telemetry interface.
 I/O accounting includes conservative poll-participation reservations, so a
 later global failure can leave charged participation without a physical poll.
 
+The app uses `ext::http_batch::Report<ext::http_client::Failure>` and
+`Outcome<ext::http_client::Failure>` for plain HTTP. A global
+`Failure<ext::http_client::Failure>` owns its retained report. An aborted
+outcome's cleanup field now retains a complete client Failure. For that field,
+the app reports the secondary cleanup error first, falling back to an I/O cause
+when no secondary error exists. A failed outcome still reports its separate
+cleanup field. The generic scheduler migration preserves the CLI diagnostics
+and exit behavior.
+
 The CSV table backs name, target and authority views until batch return and ZIP
 encoding. Completed Response owners back projected body views only during
 encoding. The app never destroys a borrowed Response copy: it destroys the
@@ -218,22 +227,31 @@ or stale-alias safety claim.
 ## Focused acceptance
 
 [`tests/extended_fetch_many_execution.rs`](../tests/extended_fetch_many_execution.rs)
-defines five focused native groups. All five passed on Linux x86_64 through
-the GPU compiler, in separate invocations:
+defines five focused native groups. On 2026-10-26, all five passed together on
+Linux x86_64 through the GPU compiler against the generic batch scheduler and
+shared HTTP Protocol. The complete driver reported five passed, zero failed
+and zero filtered out in 24.18 seconds:
+
+| Receipt under `target/stdlib-work/` | Accepted groups and cases | Duration |
+| --- | --- | ---: |
+| `fetch-many-generic-batch-current-regressions-first.log` | Matrix: 16; failures: 31; limits: 66; resources: 61, including all 59 reached allocation-failure positions; real I/O: 19; one scripted group exercising 38 production `read_input`/`publish` scenarios. | 24.18 s |
+
+The earlier implementation passed the same five groups across separate
+invocations. Those historical receipts remain useful context:
 
 | Receipt under `target/stdlib-work/` | Accepted groups and cases | Duration |
 | --- | --- | ---: |
 | `fetch-many-failures-limits-io-first.log` | Limits: 66; real I/O: 19; appended production stream helpers: 38 internal scenarios. The earlier 30-case failures group also passed here. | 18.81 s |
 | `fetch-many-matrix-failures-resources-final.log` | Matrix: 16; expanded failures: 31; resources: 61, including all 59 reached allocation-failure positions. | 15.63 s |
 
-These receipts establish the five groups separately; there was no single
-all-green invocation of the complete driver. The matrix checks independent CSV
-and ZIP interpretation, causal concurrent request overlap, input-order archive
-output despite later-row-first completion, status comments, quoting and body
-framing. The failures and limits groups check admission before sockets, status
-policy, protocol/transport rejection and explicit byte/work/I/O bounds. Real
-and scripted I/O checks preserve confirmed output prefixes and finite retry
-budgets.
+The historical receipts established the groups separately; the current receipt
+above establishes one passing invocation of the complete driver. The matrix
+checks independent CSV and ZIP interpretation, causal concurrent request
+overlap, input-order archive output despite later-row-first completion, status
+comments, quoting and body framing. The failures and limits groups check
+admission before sockets, status policy, protocol/transport rejection and
+explicit byte/work/I/O bounds. Real and scripted I/O checks preserve confirmed
+output prefixes and finite retry budgets.
 
 The initial matrix invocation failed after 10.08 s in
 `fetch-many-matrix-first.log`: its positive HTTP 204 fixture incorrectly included
@@ -251,13 +269,16 @@ baseline, not every allocation path for every input. Each oracle invocation
 also runs 15 CPU controls that reject malformed or mismatched injection
 markers; those controls are separate from native process-case counts.
 
-One traced scale case fetched 64 jobs with 65,536 decoded body bytes and
-produced a 72,861-byte ZIP. It observed four simultaneous sockets, 1,133
-allocation requests and a peak of 349,680 live requested mapping bytes. Its
-observed elapsed time was 0.245 s under tracing. The requested-byte ledger does
-not measure page rounding, peak RSS or the tracer's memory. This is one bounded
-correctness/resource observation, with no comparative throughput or larger-load
-performance claim.
+The current traced scale case fetched 64 jobs with 65,536 decoded body bytes
+and produced a 72,861-byte ZIP. It observed four simultaneous sockets, 1,133
+allocation requests and a peak of 350,928 live requested mapping bytes. Its
+observed elapsed time was 0.235 s under tracing. The earlier run observed the
+same job/body/archive sizes, socket cap and allocation count, with a peak of
+349,680 requested bytes and 0.245 s elapsed. These are separate observations;
+the current generic scheduler receipt does not replace the historical values.
+The requested-byte ledger does not measure page rounding, peak RSS or the
+tracer's memory. These are bounded correctness/resource observations, with no
+comparative throughput or larger-load performance claim.
 
 Test-only peers provide numeric loopback endpoints; the application itself does
 not start a server or invoke a helper process. The driver requires `strace`

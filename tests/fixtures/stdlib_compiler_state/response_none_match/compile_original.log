@@ -1,0 +1,6 @@
+error[LNC0005]: unresolved identifier
+ --> tests/fixtures/extended/cli_response/files_probe.lani:101:65
+    |
+101 |         ext::cli_response::Cause::Provider(error)->Some(error), _ ->None()
+    |                                                                 ^ not found in this scope
+     = note: declare the value before using it or import its defining module

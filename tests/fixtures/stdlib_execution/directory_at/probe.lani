@@ -1,0 +1,36 @@
+// Request5Q(operation,mode,path-length,view-case,parent-case)+4096 path bytes.
+// Two8Q reports: ready then result, each followed by a host ACK byte '!'.
+module app::main;
+import core::io::Error;
+import core::io::read_exact;
+import core::io::write_all;
+import core::mem;
+import core::path::Path;
+import core::result::Result;
+import core::slice::View;
+import std::file_ops::options;
+import std::file_ops::open;
+import std::file_ops::create_dir_at;
+import std::file_ops::remove_dir_at;
+import std::linux;
+import std::stream;
+
+fn bytes(value:str,length:i32)->View<u8>{return View{values:core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),length),start:0,length:length};}
+fn path(value:str,length:i32)->Path{return Path{bytes:bytes(value,length)};}
+fn word(input:[u8],offset:i32)->u64{let value:u64=0;let i:i32=0;while(i<8){value|=(input[offset+i] as u64)<<(i*8);i+=1;}return value;}
+fn status(result:Result<i32,Error>)->u64{if(result.is_ok()){assert(result.unwrap()==0);return 0;}return match(result.unwrap_err()){Error::Host(code)->code as u64,Error::Interrupted->4,Error::WouldBlock->11,Error::InvalidInput->200,Error::InvalidCount->201,_ ->202};}
+fn mark(value:u8){let raw:[u8;1]=[value];let sink=std::stream::stderr();write_all(sink.borrow(),raw,0,1).unwrap();}
+fn emit(report:[u64],phase:u64){report[1]=phase;let raw:[u8;64]=[0;64];let i:i32=0;while(i<8){let j:i32=0;while(j<8){raw[i*8+j]=((report[i]>>(j*8))&255) as u8;j+=1;}i+=1;}let sink=std::stream::stdout();write_all(sink.borrow(),raw,0,64).unwrap();let ack:[u8;1]=[0];let source=std::stream::stdin();read_exact(source.borrow(),ack,0,1).unwrap();assert(ack[0]==33);}
+fn elsewhere(){let storage:[i32;3]=[0;3];let pointer=core::mem::i32_array_data_ptr(storage);let raw:[u8]=core::mem::typed_slice_from_raw_parts(pointer,12);raw[0]=101;raw[1]=108;raw[2]=115;raw[3]=101;raw[4]=119;raw[5]=104;raw[6]=101;raw[7]=114;raw[8]=101;let args:[std::linux::Argument;1]=[std::linux::Argument::Address(pointer)];assert(std::linux::call(80,View{values:args,start:0,length:1}).unwrap()==0);}
+fn main()->i32{
+    let input:[u8;40]=[0;40];let source=std::stream::stdin();read_exact(source.borrow(),input,0,40).unwrap();
+    let operation=word(input,0);let mode=word(input,8);let count=word(input,16);let view_case=word(input,24);let parent_case=word(input,32);assert(operation<=1&&mode<=4294967295&&count<=4096&&view_case<=3&&parent_case<=3);
+    let storage:[i32;1024]=[0;1024];let packed:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),4096);read_exact(source.borrow(),packed,0,4096).unwrap();
+    let settings=options();settings.directory=parent_case!=2;settings.no_follow=true;let selected=path("anchor",6);if(parent_case==2){selected=path("regular",7);}let parent=open(selected,settings).unwrap();
+    let owner_fd=parent.raw_handle().unwrap();let target_fd=owner_fd;if(parent_case==1){target_fd=-1;}
+    let pid_args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];let report:[u64;8]=[0;8];report[0]=1145655857;report[2]=std::linux::call(39,View{values:pid_args,start:0,length:0}).unwrap() as u64;report[3]=owner_fd as u64;report[4]=target_fd as u64;report[6]=operation;report[7]=mode;
+    emit(report,0);if(parent_case==3){elsewhere();}
+    let input_path=Path{bytes:View{values:packed,start:0,length:count as i32}};if(view_case==1){input_path.bytes.start=-1;}if(view_case==2){input_path.bytes.start=2147483647;input_path.bytes.length=2;}if(view_case==3){input_path.bytes.length=-1;}
+    mark(67);if(operation==0){report[5]=status(create_dir_at(target_fd,input_path,mode as u32));}else{report[5]=status(remove_dir_at(target_fd,input_path));}mark(99);
+    mark(80);parent.close().unwrap();mark(112);emit(report,1);return 0;
+}

@@ -1,0 +1,7 @@
+GPU source-pack type-check rejection: token=60 code=AssignMismatch detail=0
+error[LNC0006]: type mismatch
+ --> tests/fixtures/extended/https_batch/compiler_admission/nested_io.lani:6:59
+  |
+6 |     return match(value) { Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false };
+  |                                                           ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type

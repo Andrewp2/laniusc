@@ -1,0 +1,325 @@
+// Actual public response/expansion modules. Binary framing is test-only.
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::mem;
+import core::io;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice;
+import core::slice::View;
+import std::stream;
+import ext::response;
+import ext::cli_response;
+import ext::cli;
+import ext::cli_commands;
+
+fn literal(value: str, length: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length), start: 0, length: length };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0; while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; } return true;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout(); assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn payload(value: View<u8>) {
+    word(value.length as u64); let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),value.values,value.start,value.length).is_ok());
+}
+fn origin(value: ext::cli_response::Origin) {
+    word((value.source+1) as u64); word((value.argument+1) as u64); word(value.start as u64); word(value.length as u64);
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0; let index: i32 = 0;
+    while (index < 8) { result |= (bytes[offset+index] as u64) << (index*8); index += 1; } return result;
+}
+struct Code { kind: i32, detail: i32, extra: i32 }
+fn response_code(error: ext::response::Error) -> Code {
+    return match (error) {
+        ext::response::Error::Bounds -> Code { kind: 1, detail: 0, extra: 0 },
+        ext::response::Error::Nul(at) -> Code { kind: 2, detail: at, extra: 0 },
+        ext::response::Error::TrailingEscape(at) -> Code { kind: 3, detail: at, extra: 0 },
+        ext::response::Error::UnclosedQuote(at) -> Code { kind: 4, detail: at, extra: 0 },
+        ext::response::Error::BytesTooSmall(count) -> Code { kind: 5, detail: count, extra: 0 },
+        ext::response::Error::TokensTooSmall(count) -> Code { kind: 6, detail: count, extra: 0 },
+        ext::response::Error::NotSingleToken -> Code { kind: 7, detail: 0, extra: 0 },
+        ext::response::Error::DecodedBounds -> Code { kind: 8, detail: 0, extra: 0 }
+    };
+}
+fn pure(bytes: [u8], length: i32) {
+    assert(length >= 0 && length <= 160);
+    let input: View<u8> = View<u8> { values: bytes, start: 64, length: length };
+    let measured: Result<ext::response::Shape,ext::response::Error> = ext::response::measure(input);
+    word(0x525350); word(0);
+    if (measured.is_err()) {
+        let error: ext::response::Error = measured.unwrap_err(); let diagnostic: Code = response_code(error);
+        word(1); word(diagnostic.kind as u64); word(diagnostic.detail as u64); return;
+    }
+    let shape: ext::response::Shape = measured.unwrap(); assert(shape.bytes <= 160 && shape.tokens <= 16);
+    let decoded: [u8;164] = [90;164];
+    let sentinel: ext::response::Span = ext::response::Span { raw_start: -1, raw_length: -2, start: -3, length: -4 };
+    let spans: [ext::response::Span;18] = [sentinel;18];
+    let output: View<u8> = core::slice::view_range(decoded,1,shape.bytes).unwrap();
+    let written: ext::response::Shape = ext::response::tokenize_into(input,output,core::slice::view_range(spans,1,shape.tokens).unwrap()).unwrap();
+    assert(shape.tokens == written.tokens && shape.bytes == written.bytes && decoded[0] == 90 && decoded[shape.bytes+1] == 90);
+    assert(spans[0].raw_start == -1 && spans[shape.tokens+1].raw_length == -2);
+    word(0); word(shape.tokens as u64); word(shape.bytes as u64); payload(output);
+    let index: i32 = 0;
+    while (index < shape.tokens) {
+        let span: ext::response::Span = spans[1+index]; word(span.raw_start as u64); word(span.raw_length as u64); word(span.start as u64); word(span.length as u64);
+        let token: View<u8> = input.subview(span.raw_start,span.raw_start+span.raw_length).unwrap();
+        let byte: i32 = 0; while (byte <= span.length) { word(ext::response::raw_offset(token,byte).unwrap() as u64); byte += 1; }
+        index += 1;
+    }
+}
+
+struct HostError { code: i32, path_length: i32 }
+struct ScriptProvider {
+    paths: [View<u8>], contents: [View<u8>], errors: [i32], count: i32, oversize: bool,
+    calls: i32, trace_bytes: [u8], trace_lengths: [i32], trace_maximum: [i32]
+}
+impl ScriptProvider { fn borrow(&self) -> &ScriptProvider { return self; } }
+pub impl ext::cli_response::Provider<HostError> for ScriptProvider {
+    pub fn load(&self, path: View<u8>, maximum_bytes: i32) -> Result<Vec<u8>,HostError> {
+        assert(self.calls < 8 && path.length <= 16 && maximum_bytes >= 0);
+        let slot: i32 = self.calls; self.calls += 1; self.trace_lengths[slot] = path.length; self.trace_maximum[slot] = maximum_bytes;
+        let byte: i32 = 0; while (byte < path.length) { self.trace_bytes[slot*16+byte] = path.values[path.start+byte]; byte += 1; }
+        let found: i32 = -1; let index: i32 = 0;
+        while (index < self.count) { if (equal(path,self.paths[index])) { found = index; } index += 1; }
+        if (found < 0) { return Err(HostError { code: 404, path_length: path.length }); }
+        if (self.errors[found] != 0) { return Err(HostError { code: self.errors[found], path_length: path.length }); }
+        let content: View<u8> = self.contents[found];
+        if (!self.oversize && content.length > maximum_bytes) { return Err(HostError { code: 600+found, path_length: path.length }); }
+        let copied: Result<Vec<u8>,alloc::vec::Error> = alloc::vec::from_view(content);
+        if (copied.is_err()) { return Err(HostError { code: 999, path_length: path.length }); }
+        return Ok(copied.unwrap());
+    }
+}
+fn syntax_code(error: ext::response::Error) -> Code {
+    let inner: Code = response_code(error); return Code { kind: 14, detail: inner.kind, extra: inner.detail };
+}
+fn cause_code(cause: ext::cli_response::Cause<HostError>) -> Code {
+    return match (cause) {
+        ext::cli_response::Cause::InvalidState -> Code { kind: 1, detail: 0, extra: 0 },
+        ext::cli_response::Cause::Bounds -> Code { kind: 2, detail: 0, extra: 0 },
+        ext::cli_response::Cause::SourceLimit -> Code { kind: 3, detail: 0, extra: 0 },
+        ext::cli_response::Cause::TokenLimit -> Code { kind: 4, detail: 0, extra: 0 },
+        ext::cli_response::Cause::ArgumentLimit -> Code { kind: 5, detail: 0, extra: 0 },
+        ext::cli_response::Cause::ArgumentBytes -> Code { kind: 6, detail: 0, extra: 0 },
+        ext::cli_response::Cause::OutputLimit -> Code { kind: 7, detail: 0, extra: 0 },
+        ext::cli_response::Cause::FileLimit -> Code { kind: 8, detail: 0, extra: 0 },
+        ext::cli_response::Cause::DepthLimit -> Code { kind: 9, detail: 0, extra: 0 },
+        ext::cli_response::Cause::PathLimit -> Code { kind: 10, detail: 0, extra: 0 },
+        ext::cli_response::Cause::WorkLimit -> Code { kind: 11, detail: 0, extra: 0 },
+        ext::cli_response::Cause::AllocationFailed -> Code { kind: 12, detail: 0, extra: 0 },
+        ext::cli_response::Cause::ProviderContract -> Code { kind: 13, detail: 0, extra: 0 },
+        ext::cli_response::Cause::Syntax(error) -> syntax_code(error),
+        ext::cli_response::Cause::Provider(error) -> Code { kind: 15, detail: error.code, extra: error.path_length }
+    };
+}
+fn locate_code(error: ext::cli_response::LocateError) -> i32 {
+    return match (error) { ext::cli_response::LocateError::NotReady -> 1, ext::cli_response::LocateError::Bounds -> 2, ext::cli_response::LocateError::WorkLimit -> 3, _ -> 99 };
+}
+fn locate_rejected(owner: &ext::cli_response::Expansion, argument: i32, byte: i32, work: u64, expected: i32) {
+    let result: Result<ext::cli_response::Origin,ext::cli_response::LocateError> = owner.locate(ext::cli::Location { argument: argument, byte: byte },work);
+    assert(result.is_err()); let error: ext::cli_response::LocateError = result.unwrap_err(); assert(locate_code(error) == expected);
+}
+fn configured(category: u64, value: u64) -> ext::cli_response::Limits {
+    let limits: ext::cli_response::Limits = ext::cli_response::default_limits();
+    limits.max_arguments = 16; limits.max_tokens = 32; limits.max_argument_bytes = 64;
+    limits.max_output_bytes = 512; limits.max_file_bytes = 160; limits.max_source_bytes = 1024;
+    limits.max_files = 8; limits.max_depth = 4; limits.max_path_bytes = 16; limits.max_work = 1048576;
+    if (category == 0) { limits.max_arguments = value as i32; }
+    if (category == 1) { limits.max_tokens = value as i32; }
+    if (category == 2) { limits.max_argument_bytes = value as i32; }
+    if (category == 3) { limits.max_output_bytes = value as i32; }
+    if (category == 4) { limits.max_file_bytes = value as i32; }
+    if (category == 5) { limits.max_source_bytes = value as i32; }
+    if (category == 6) { limits.max_files = value as i32; }
+    if (category == 7) { limits.max_depth = value as i32; }
+    if (category == 8) { limits.max_path_bytes = value as i32; }
+    if (category == 9) { limits.max_work = value; }
+    return limits;
+}
+fn option(owner: i32, item: ext::cli::Occurrence) {
+    word(2); word(owner as u64); word(item.id as u64); word(item.at.argument as u64); word(item.at.byte as u64); word(item.value.is_some() as u64);
+    if (item.value.is_some()) { let argument: ext::cli::Argument = item.value.unwrap(); word(argument.at.argument as u64); word(argument.at.byte as u64); payload(argument.bytes); }
+}
+fn operand(owner: i32, item: ext::cli::Argument) { word(3); word(owner as u64); word(item.at.argument as u64); word(item.at.byte as u64); payload(item.bytes); }
+fn cli_error(error: ext::cli::Error) -> Code {
+    return match (error) { ext::cli::Error::UnknownOption(at) -> Code { kind: 2, detail: at.argument, extra: at.byte }, ext::cli::Error::MissingValue(at) -> Code { kind: 3, detail: at.argument, extra: at.byte }, ext::cli::Error::UnexpectedValue(at) -> Code { kind: 4, detail: at.argument, extra: at.byte }, _ -> Code { kind: 99, detail: 0, extra: 0 } };
+}
+fn emit_error(owner: &ext::cli_response::Expansion, current: i32, error: Code) {
+    assert(error.kind >= 1 && error.kind <= 4); word(4); word(current as u64); word(error.kind as u64); word(error.detail as u64); word(error.extra as u64);
+    origin(owner.locate(ext::cli::Location { argument: error.detail, byte: error.extra },18446744073709551615).unwrap());
+}
+fn emit_flat(item: ext::cli::Event) {
+    match (item) { ext::cli::Event::Option(value) -> option(40,value), ext::cli::Event::Operand(value) -> operand(40,value) };
+}
+fn emit_hierarchy(item: ext::cli_commands::Event) {
+    let selected: Option<ext::cli_commands::Selection> = match (item) { ext::cli_commands::Event::Command(value) -> Some(value), _ -> None() };
+    if (selected.is_some()) { let value: ext::cli_commands::Selection = selected.unwrap(); word(1); word(value.id as u64); word(value.at.argument as u64); word(value.at.byte as u64); return; }
+    let opt: Option<ext::cli_commands::ScopedOption> = match (item) { ext::cli_commands::Event::Option(value) -> Some(value), _ -> None() };
+    if (opt.is_some()) { let value: ext::cli_commands::ScopedOption = opt.unwrap(); option(value.command,value.occurrence); return; }
+    let value: ext::cli_commands::ScopedOperand = match (item) { ext::cli_commands::Event::Operand(value) -> value, _ -> ext::cli_commands::ScopedOperand { command: -1, argument: ext::cli::Argument { bytes: literal("",0), at: ext::cli::Location { argument: 0, byte: 0 } } } };
+    assert(value.command >= 0); operand(value.command,value.argument);
+}
+fn parsers(owner: &ext::cli_response::Expansion) {
+    let args: View<View<u8>> = owner.arguments().unwrap(); let empty: View<u8> = literal("",0);
+    let config: ext::cli::Spec = ext::cli::Spec { id: 1, long: literal("config",6), short: 67, arity: ext::cli::Arity::Required };
+    let verbose: ext::cli::Spec = ext::cli::Spec { id: 2, long: literal("verbose",7), short: 118, arity: ext::cli::Arity::Flag };
+    let specs: [ext::cli::Spec;2] = [config,verbose];
+    let flat: ext::cli::Parser = ext::cli::parser(args,core::slice::view(specs,2).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    let done: bool = false; let count: i32 = 0;
+    while (!done) {
+        assert(count < 24); count += 1;
+        let result: Result<Option<ext::cli::Event>,ext::cli::Error> = flat.next();
+        if (result.is_err()) { emit_error(owner,40,cli_error(result.unwrap_err())); assert(flat.next().is_err()); done = true; }
+        else { let item: Option<ext::cli::Event> = result.unwrap(); if (item.is_none()) { assert(flat.next().unwrap().is_none()); done = true; } else { emit_flat(item.unwrap()); } }
+    }
+    word(0); word(40);
+    let options: [ext::cli_commands::OptionSpec;2] = [
+        ext::cli_commands::OptionSpec { spec: config, global: true, value_name: literal("TEXT",4), help: empty },
+        ext::cli_commands::OptionSpec { spec: verbose, global: true, value_name: empty, help: empty }
+    ];
+    let root: ext::cli_commands::Command = ext::cli_commands::Command { id: 40, parent: -1, name: literal("tool",4), summary: empty, operands: empty, ordering: ext::cli::Ordering::OptionsFirst, options: core::slice::view(options,2).unwrap() };
+    let nodes: [ext::cli_commands::Command;3] = [root,
+        ext::cli_commands::Command { id: 17, parent: 0, name: literal("work",4), summary: empty, operands: empty, ordering: ext::cli::Ordering::OptionsFirst, options: core::slice::view(options,0).unwrap() },
+        ext::cli_commands::Command { id: 91, parent: 1, name: literal("run",3), summary: empty, operands: empty, ordering: ext::cli::Ordering::Intermixed, options: core::slice::view(options,0).unwrap() }
+    ];
+    let scratch: [ext::cli::Spec;2] = [config,config];
+    let hierarchy: ext::cli_commands::Parser = ext::cli_commands::parser(args,core::slice::view(nodes,3).unwrap(),core::slice::view(scratch,2).unwrap()).unwrap();
+    done = false; count = 0;
+    while (!done) {
+        assert(count < 24); count += 1;
+        let result: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = hierarchy.next();
+        if (result.is_err()) {
+            let failure: ext::cli_commands::Error = result.unwrap_err();
+            let token: Option<ext::cli::Error> = match (failure) { ext::cli_commands::Error::Token(id,error) -> Some(error), _ -> None() };
+            assert(token.is_some());
+            let command: i32 = match (failure) { ext::cli_commands::Error::Token(id,error) -> id, _ -> -1 };
+            assert(command == hierarchy.current()); emit_error(owner,command,cli_error(token.unwrap())); assert(hierarchy.next().is_err()); done = true;
+        } else { let item: Option<ext::cli_commands::Event> = result.unwrap(); if (item.is_none()) { assert(hierarchy.next().unwrap().is_none()); done = true; } else { emit_hierarchy(item.unwrap()); } }
+    }
+    word(0); word(hierarchy.current() as u64);
+}
+fn expand(bytes: [u8]) {
+    let use_cli: u64 = decode(bytes,8); let argc: i32 = decode(bytes,16) as i32; let files: i32 = decode(bytes,24) as i32;
+    assert(argc >= 0 && argc <= 8 && files >= 0 && files <= 4 && use_cli <= 1);
+    let limits: ext::cli_response::Limits = configured(decode(bytes,32),decode(bytes,40));
+    let oversize: bool = decode(bytes,48) != 0;
+    let empty: View<u8> = View<u8> { values: bytes, start: 0, length: 0 };
+    let arguments: [View<u8>;10] = [empty;10]; let paths: [View<u8>;4] = [empty;4]; let contents: [View<u8>;4] = [empty;4]; let errors: [i32;4] = [0;4];
+    let index: i32 = 0;
+    while (index < argc) { let length: i32 = decode(bytes,64+index*56) as i32; assert(length >= 0 && length <= 48); arguments[index+1] = View<u8> { values: bytes, start: 72+index*56, length: length }; index += 1; }
+    index = 0;
+    while (index < files) {
+        let offset: i32 = 512+index*200; let path_length: i32 = decode(bytes,offset) as i32; let length: i32 = decode(bytes,offset+24) as i32;
+        assert(path_length >= 0 && path_length <= 16 && length >= 0 && length <= 160);
+        paths[index] = View<u8> { values: bytes, start: offset+8, length: path_length }; contents[index] = View<u8> { values: bytes, start: offset+32, length: length }; errors[index] = decode(bytes,offset+192) as i32; index += 1;
+    }
+    let trace: [u8;128] = [90;128]; let trace_lengths: [i32;8] = [0;8]; let maxima: [i32;8] = [0;8];
+    let provider: ScriptProvider = ScriptProvider { paths: paths, contents: contents, errors: errors, count: files, oversize: oversize, calls: 0, trace_bytes: trace, trace_lengths: trace_lengths, trace_maximum: maxima };
+    let owner: ext::cli_response::Expansion = ext::cli_response::empty();
+    assert(!owner.is_ready() && owner.arguments().is_none() && owner.origin(0).is_none() && owner.original(0).is_none() && owner.source(0).is_none());
+    locate_rejected(owner.borrow(),0,0,18446744073709551615,1);
+    let args: View<View<u8>> = core::slice::view_range(arguments,1,argc).unwrap();
+    let result: Result<i32,ext::cli_response::Failure<HostError>> = owner.prepare<ScriptProvider,HostError>(args,provider.borrow(),limits);
+    let successful: bool = result.is_ok(); word(0x525350); word(1); word((!successful) as u64);
+    if (!successful) {
+        let failure: ext::cli_response::Failure<HostError> = result.unwrap_err(); let diagnostic: Code = cause_code(failure.cause);
+        word(diagnostic.kind as u64); word(diagnostic.detail as u64); word(diagnostic.extra as u64); origin(failure.at);
+        assert(!owner.is_ready() && owner.arguments().is_none() && owner.origin(0).is_none()); locate_rejected(owner.borrow(),0,0,18446744073709551615,1);
+    } else { assert(owner.is_ready() && result.unwrap() == owner.arguments().unwrap().length); }
+    // A second attempt is inert on success AND failure, even with invalidlimits.
+    let bad_limits: ext::cli_response::Limits = limits; bad_limits.max_arguments = -1; let calls: i32 = provider.calls;
+    let second: Result<i32,ext::cli_response::Failure<HostError>> = owner.prepare<ScriptProvider,HostError>(args,provider.borrow(),bad_limits);
+    assert(second.is_err()); let repeated: ext::cli_response::Failure<HostError> = second.unwrap_err();
+    assert(cause_code(repeated.cause).kind == 1 && provider.calls == calls && owner.is_ready() == successful);
+    // All source/argv backing supplied by the peer is now overwritten. Every
+    // following diagnostic/output/path/raw view must come from owned snapshots.
+    index = 0; while (index < 1312) { bytes[index] = 0; index += 1; }
+    word(provider.calls as u64); index = 0;
+    while (index < provider.calls) { payload(View<u8> { values: trace, start: index*16, length: trace_lengths[index] }); word(maxima[index] as u64); index += 1; }
+    word(owner.is_ready() as u64); let count: i32 = 0;
+    if (owner.is_ready()) { count = owner.arguments().unwrap().length; }
+    word(count as u64); index = 0;
+    while (index < count) {
+        let values: View<View<u8>> = owner.arguments().unwrap(); let value: View<u8> = values.values[values.start+index]; payload(value);
+        let at: ext::cli_response::Origin = owner.origin(index).unwrap(); origin(at);
+        let byte: i32 = 0;
+        while (byte <= value.length) { origin(owner.locate(ext::cli::Location { argument: index, byte: byte },18446744073709551615).unwrap()); byte += 1; }
+        locate_rejected(owner.borrow(),index,-1,18446744073709551615,2); locate_rejected(owner.borrow(),index,value.length+1,18446744073709551615,2);
+        locate_rejected(owner.borrow(),index,0,at.length as u64,3);
+        assert(owner.locate(ext::cli::Location { argument: index, byte: 0 },(at.length as u64)+1).is_ok());
+        index += 1;
+    }
+    if (owner.is_ready()) { locate_rejected(owner.borrow(),-1,0,18446744073709551615,2); locate_rejected(owner.borrow(),count,0,18446744073709551615,2); }
+    assert(owner.origin(-1).is_none() && owner.origin(count).is_none());
+    let originals: i32 = 0; while (owner.original(originals).is_some()) { assert(originals < 8); originals += 1; }
+    word(originals as u64); index = 0; while (index < originals) { payload(owner.original(index).unwrap()); index += 1; }
+    assert(owner.original(-1).is_none());
+    let sources: i32 = 0; while (owner.source(sources).is_some()) { assert(sources < 8); sources += 1; }
+    word(sources as u64); index = 0;
+    while (index < sources) {
+        let info: ext::cli_response::SourceInfo = owner.source(index).unwrap(); payload(info.path); origin(info.included_at); word(info.loaded as u64);
+        let raw: Option<View<u8>> = owner.raw_source(index); assert(raw.is_some() == info.loaded);
+        if (raw.is_some()) { payload(raw.unwrap()); } else { payload(empty); }
+        index += 1;
+    }
+    assert(owner.source(-1).is_none() && owner.raw_source(-1).is_none() && owner.raw_source(sources).is_none());
+    if (use_cli == 1 && owner.is_ready()) { word(1); parsers(owner.borrow()); } else { word(0); }
+    owner.destroy(); owner.destroy();
+    assert(!owner.is_ready() && owner.arguments().is_none() && owner.origin(0).is_none() && owner.original(0).is_none() && owner.source(0).is_none() && owner.raw_source(0).is_none());
+    locate_rejected(owner.borrow(),0,0,18446744073709551615,1);
+    let reset: Result<i32,ext::cli_response::Failure<HostError>> = owner.prepare<ScriptProvider,HostError>(core::slice::view(arguments,0).unwrap(),provider.borrow(),ext::cli_response::default_limits());
+    assert(reset.unwrap() == 0 && owner.is_ready() && owner.arguments().unwrap().length == 0 && provider.calls == calls);
+    owner.destroy(); owner.destroy(); word(1);
+}
+fn bounds_controls() {
+    let at: [u8;2] = [64,65]; let empty: View<u8> = core::slice::view(at,0).unwrap();
+    let args: [View<u8>;4] = [empty,core::slice::view(at,2).unwrap(),empty,empty];
+    let paths: [View<u8>;1] = [empty]; let errors: [i32;1] = [0];
+    let trace: [u8;128] = [90;128]; let sizes: [i32;8] = [0;8]; let maxima: [i32;8] = [0;8];
+    let provider: ScriptProvider = ScriptProvider { paths: paths, contents: paths, errors: errors, count: 0, oversize: false, calls: 0, trace_bytes: trace, trace_lengths: sizes, trace_maximum: maxima };
+    let owner: ext::cli_response::Expansion = ext::cli_response::empty(); let mode: i32 = 0;
+    while (mode < 4) {
+        let input: View<View<u8>> = core::slice::view_range(args,1,2).unwrap();
+        if (mode == 0) { input = View<View<u8>> { values: args, start: -1, length: 1 }; }
+        if (mode == 1) { input = View<View<u8>> { values: args, start: 2147483647, length: 1 }; }
+        if (mode == 2) { args[2] = View<u8> { values: at, start: -1, length: 1 }; }
+        if (mode == 3) { args[2] = View<u8> { values: at, start: 0, length: -1 }; }
+        let result: Result<i32,ext::cli_response::Failure<HostError>> = owner.prepare<ScriptProvider,HostError>(input,provider.borrow(),ext::cli_response::default_limits());
+        assert(result.is_err()); let failure: ext::cli_response::Failure<HostError> = result.unwrap_err();
+        assert(cause_code(failure.cause).kind == 2 && failure.at.source == -1 && failure.at.start == 0 && failure.at.length == 0);
+        let argument: i32 = -1; if (mode >= 2) { argument = 1; } assert(failure.at.argument == argument);
+        assert(provider.calls == 0 && !owner.is_ready() && owner.arguments().is_none() && owner.original(0).is_none() && owner.source(0).is_none());
+        owner.destroy(); owner.destroy(); mode += 1;
+    }
+}
+fn main() -> i32 {
+    bounds_controls();
+    let defaults: ext::cli_response::Limits = ext::cli_response::default_limits();
+    assert(defaults.max_arguments == 4096 && defaults.max_tokens == 8192 && defaults.max_argument_bytes == 65536 && defaults.max_output_bytes == 1048576 && defaults.max_file_bytes == 1048576 && defaults.max_source_bytes == 4194304 && defaults.max_files == 64 && defaults.max_depth == 16 && defaults.max_path_bytes == 4095 && defaults.max_work == 33554432);
+    // Packed positive byte view over live stack backing avoids a repeated-u8
+    // literal count dependency. All1312 bytes remain backed during each call.
+    let storage: [i32;328] = [0;328]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),1312);
+    assert(core::mem::slice_stride(bytes) == 1);
+    let input: std::stream::Descriptor = std::stream::stdin();
+    while (true) {
+        let result: Result<i32,core::io::Error> = input.read(bytes,0,1312); assert(result.is_ok());
+        let count: i32 = result.unwrap(); if (count == 0) { return 0; }
+        if (count < 1312) { assert(core::io::read_exact(input.borrow(),bytes,count,1312-count).is_ok()); }
+        let mode: u64 = decode(bytes,0); assert(mode <= 1);
+        if (mode == 0) { pure(bytes,decode(bytes,8) as i32); } else { expand(bytes); }
+    }
+    return 0;
+}

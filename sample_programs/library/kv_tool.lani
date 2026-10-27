@@ -1,18 +1,56 @@
-// Native bounded snapshot store. Explicit disposable sibling scratch path.
+// Native bounded snapshot store. Atomic publication through an anchored parent.
 module app::main;
 import alloc::io;
 import alloc::vec;
 import core::io;
+import core::io::Write;
 import core::mem;
 import core::option;
 import core::path;
 import core::result;
 import core::slice;
 import ext::kv;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_help;
+import ext::bash_words;
+import ext::cli_complete;
+import ext::cli_bash;
+import ext::cli_response;
+import ext::cli_response_files;
 import std::args;
+import std::atomic_file;
+import std::entropy;
 import std::file;
-import std::filesystem;
+import std::file_ops;
 import std::stream;
+import std::temp_file;
+import std::signal;
+
+enum Notice { None, Invalid, Io, Allocation, Exists, PublishedUnsynced, Unconfirmed }
+struct Outcome {
+    code: i32, notice: Notice, visibility: std::atomic_file::Visibility,
+    cleanup_failed: bool, diagnostic_failed: bool
+}
+// Both paths borrow the live expanded arguments. Split raw bytes rather than
+// normalizing the final component, so a trailing slash or '/.' cannot retarget.
+struct Target { parent: core::path::Path, leaf: core::path::Path }
+struct Invocation { command:i32, operands:[core::slice::View<u8>], count:i32, help:bool }
+impl Invocation { fn borrow(&self) -> &Invocation { return self; } }
+
+fn ordinary(code: i32) -> Outcome {
+    let notice: Notice = Notice::None;
+    if (code == 2) { notice = Notice::Invalid; }
+    if (code == 3) { notice = Notice::Io; }
+    if (code == 4) { notice = Notice::Allocation; }
+    return Outcome { code: code, notice: notice, visibility: std::atomic_file::Visibility::NotPublished,
+        cleanup_failed: false, diagnostic_failed: false };
+}
+fn cleanup_failure(outcome: Outcome) -> Outcome { outcome.code = 8; outcome.cleanup_failed = true; return outcome; }
+fn close_outcome(file: &std::file::File, outcome: Outcome) -> Outcome {
+    if (file.close().is_err()) { return cleanup_failure(outcome); }
+    return outcome;
+}
 
 fn literal(text: str, count: i32) -> core::slice::View<u8> { return core::slice::View { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count), start: 0, length: count }; }
 fn same(a: core::slice::View<u8>, b: core::slice::View<u8>) -> bool { if (a.length != b.length) { return false; } let i: i32 = 0; while (i < a.length) { if (a.values[a.start+i] != b.values[b.start+i]) { return false; } i += 1; } return true; }
@@ -26,23 +64,128 @@ fn unhex(text: core::slice::View<u8>) -> core::result::Result<alloc::vec::Vec<u8
     let result: alloc::vec::Vec<u8> = alloc::vec::new(); if (core::result::is_err(result.try_resize(text.length/2,0))) { result.destroy(); return core::result::Err(4); }
     let bytes: [u8] = result.as_slice(); i = 0; while (i < result.len()) { bytes[i] = (hex_digit(text.values[text.start+i*2])*16+hex_digit(text.values[text.start+i*2+1])) as u8; i += 1; } return core::result::Ok(result);
 }
-fn load(path: core::path::Path) -> core::result::Result<ext::kv::Store,i32> {
-    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read); if (core::result::is_err(opened)) { return core::result::Err(io_code(core::result::unwrap_err(opened))); } let file: std::file::File = core::result::unwrap(opened);
-    let input: alloc::io::Buffer = core::result::unwrap(alloc::io::with_limit(9437184)); let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),input.borrow()); let closed: core::result::Result<i32,core::io::Error> = file.close();
-    if (core::result::is_err(copied)) { input.destroy(); return core::result::Err(io_code(core::result::unwrap_err(copied).cause)); } if (core::result::is_err(closed)) { input.destroy(); return core::result::Err(3); }
-    let decoded: core::result::Result<ext::kv::Store,ext::kv::Error> = ext::kv::decode(core::result::unwrap(core::slice::view(input.as_bytes(),input.len())),limits()); input.destroy(); if (core::result::is_err(decoded)) { return core::result::Err(error_code(core::result::unwrap_err(decoded))); } return core::result::Ok(core::result::unwrap(decoded));
+fn read_store(file: std::file::File) -> core::result::Result<ext::kv::Store,Outcome> {
+    let input: alloc::io::Buffer = alloc::io::with_limit(9437184).unwrap();
+    let copied: core::result::Result<u64,core::io::CopyFailure> = std::stream::copy(file.borrow(),input.borrow());
+    let outcome: Outcome = ordinary(0);
+    if (copied.is_err()) { outcome = ordinary(io_code(copied.unwrap_err().cause)); }
+    outcome = close_outcome(file.borrow(),outcome);
+    if (outcome.code != 0) { input.destroy(); return core::result::Err(outcome); }
+    let decoded: core::result::Result<ext::kv::Store,ext::kv::Error> = ext::kv::decode(core::slice::view(input.as_bytes(),input.len()).unwrap(),limits());
+    input.destroy();
+    if (decoded.is_err()) { return core::result::Err(ordinary(error_code(decoded.unwrap_err()))); }
+    return core::result::Ok(decoded.unwrap());
 }
-fn save(store: &ext::kv::Store, path: core::path::Path, scratch: core::path::Path) -> i32 {
-    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::kv::Error> = ext::kv::encode(store,9437184,134217728); if (core::result::is_err(encoded)) { return error_code(core::result::unwrap_err(encoded)); } let bytes: alloc::vec::Vec<u8> = core::result::unwrap(encoded);
-    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(scratch,std::file::OpenMode::Create); if (core::result::is_err(opened)) { bytes.destroy(); return io_code(core::result::unwrap_err(opened)); } let file: std::file::File = core::result::unwrap(opened);
-    let complete: bool = core::result::is_ok(core::io::write_all(file.borrow(),bytes.as_slice(),0,bytes.len())); let closed: bool = core::result::is_ok(file.close()); bytes.destroy();
-    if (!complete || !closed) { std::filesystem::remove_file(scratch); return 3; }
-    let renamed: core::result::Result<i32,core::io::Error> = std::filesystem::rename(scratch,path); if (core::result::is_err(renamed)) { std::filesystem::remove_file(scratch); return 3; } return 0;
+fn load(path: core::path::Path) -> core::result::Result<ext::kv::Store,Outcome> {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read);
+    if (opened.is_err()) { return core::result::Err(ordinary(io_code(opened.unwrap_err()))); }
+    return read_store(opened.unwrap());
 }
-fn sibling(path: core::path::Path, scratch: core::path::Path) -> bool {
-    if (path.byte_len() > 4095 || scratch.byte_len() > 4095 || path.equals(scratch)) { return false; }
-    if (core::option::is_none(path.file_name()) || core::option::is_none(scratch.file_name())) { return false; }
-    let a: core::option::Option<core::path::Path> = path.parent(); let b: core::option::Option<core::path::Path> = scratch.parent(); if (core::option::is_none(a) || core::option::is_none(b)) { return false; } return core::option::unwrap(a).equals(core::option::unwrap(b));
+fn load_at(parent: &std::file::File, leaf: core::path::Path) -> core::result::Result<ext::kv::Store,Outcome> {
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open_at(parent.raw_handle().unwrap(),leaf,std::file_ops::options());
+    if (opened.is_err()) { return core::result::Err(ordinary(io_code(opened.unwrap_err()))); }
+    return read_store(opened.unwrap());
+}
+fn target(path: core::path::Path) -> core::result::Result<Target,Outcome> {
+    let bytes: core::slice::View<u8> = path.as_bytes();
+    if (bytes.length == 0 || bytes.length > 4095) { return core::result::Err(ordinary(2)); }
+    let slash: i32 = -1; let index: i32 = 0;
+    while (index < bytes.length) { if (bytes.values[bytes.start+index] == 47) { slash = index; } index += 1; }
+    let leaf: core::slice::View<u8> = core::slice::View { values: bytes.values, start: bytes.start+slash+1, length: bytes.length-slash-1 };
+    if (leaf.length == 0 || leaf.length > 255 || same(leaf,literal(".",1)) || same(leaf,literal("..",2))) { return core::result::Err(ordinary(2)); }
+    let parent: core::path::Path = core::path::from_view(literal(".",1)).unwrap();
+    if (slash >= 0) {
+        let count: i32 = slash; if (slash == 0) { count = 1; }
+        parent = core::path::from_view(core::slice::View { values: bytes.values, start: bytes.start, length: count }).unwrap();
+    }
+    return core::result::Ok(Target { parent: parent, leaf: core::path::from_view(leaf).unwrap() });
+}
+fn temporary_code(error: std::temp_file::Error) -> i32 {
+    return match(error) {
+        std::temp_file::Error::AllocationFailed -> 4,
+        std::temp_file::Error::InvalidLimits -> 2,
+        std::temp_file::Error::InvalidName -> 2,
+        std::temp_file::Error::NameLimit -> 2,
+        std::temp_file::Error::Io(cause) -> io_code(cause),
+        std::temp_file::Error::Entropy(failure) -> match(failure.cause) { std::entropy::Error::CallLimit -> 2, _ -> 3 },
+        _ -> 3
+    };
+}
+fn atomic_code(error: std::atomic_file::Error) -> i32 {
+    return match(error) {
+        std::atomic_file::Error::AllocationFailed -> 4,
+        std::atomic_file::Error::InvalidOptions -> 2,
+        std::atomic_file::Error::InvalidDestination -> 2,
+        std::atomic_file::Error::Bounds -> 2,
+        std::atomic_file::Error::ByteLimit -> 2,
+        std::atomic_file::Error::WriteLimit -> 2,
+        std::atomic_file::Error::DirectorySyncLimit -> 2,
+        std::atomic_file::Error::Io(cause) -> io_code(cause),
+        std::atomic_file::Error::Temporary(failure) -> temporary_code(failure.cause),
+        std::atomic_file::Error::Ownership(cause) -> temporary_code(cause),
+        _ -> 3
+    };
+}
+fn atomic_failure(failure: std::atomic_file::Failure) -> Outcome {
+    let receipt: std::atomic_file::Receipt = failure.receipt;
+    let outcome: Outcome = ordinary(atomic_code(failure.cause)); outcome.visibility = receipt.visibility;
+    let visibility: i32 = match(receipt.visibility) {
+        std::atomic_file::Visibility::Published -> 1,
+        std::atomic_file::Visibility::Unconfirmed -> 2,
+        std::atomic_file::Visibility::NotPublished -> 0
+    };
+    if (visibility == 1 && !receipt.directory_synced) { outcome.code = 6; outcome.notice = Notice::PublishedUnsynced; }
+    if (visibility == 2) { outcome.code = 7; outcome.notice = Notice::Unconfirmed; }
+    if (visibility == 0) {
+        let renamed: bool = match(failure.stage) { std::atomic_file::Stage::Rename -> true, _ -> false };
+        let exists: bool = match(failure.cause) { std::atomic_file::Error::Io(cause) -> match(cause) { core::io::Error::Host(code) -> code == 17, _ -> false }, _ -> false };
+        if (renamed && exists) { outcome.code = 2; outcome.notice = Notice::Exists; }
+    }
+    return outcome;
+}
+fn cleanup_errors(receipt: std::temp_file::Cleanup) -> bool {
+    return receipt.file_close_error.is_some() || receipt.remove_error.is_some() || receipt.directory_close_error.is_some();
+}
+fn release_atomic(owner: &std::atomic_file::AtomicFile, outcome: Outcome) -> Outcome {
+    // Preserve historical action/cleanup errors while reading CURRENT visibility.
+    let released: core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure> = owner.cleanup();
+    let receipt: std::atomic_file::Receipt = owner.receipt(); outcome.visibility = receipt.visibility;
+    if (released.is_err() || cleanup_errors(receipt.cleanup)) { outcome = cleanup_failure(outcome); }
+    if (receipt.temporary_owned) {
+        // Unlink was unconfirmed. Report the live recovery name, then explicitly
+        // accept the named residue; the next cleanup cannot unlink it again.
+        let okay: bool = write(literal("kv-tool: retained temporary name in database directory: ",56),true);
+        if (!write(owner.temporary_name(),true)) { okay = false; }
+        if (!write(literal("\n",1),true)) { okay = false; }
+        if (!okay) { outcome.diagnostic_failed = true; }
+        let kept: core::result::Result<bool,std::atomic_file::Failure> = owner.keep();
+        // temporary_owned is the public keep precondition; no I/O or allocation
+        // can fail this ownership transition.
+        assert(kept.is_ok());
+        let retired: core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure> = owner.cleanup();
+        receipt = owner.receipt(); outcome.visibility = receipt.visibility;
+        if (retired.is_err() || cleanup_errors(receipt.cleanup)) { outcome = cleanup_failure(outcome); }
+    }
+    assert(!receipt.retained);
+    return outcome;
+}
+fn publish(store: &ext::kv::Store, parent: &std::file::File, leaf: core::path::Path, policy: std::file_ops::RenamePolicy) -> Outcome {
+    // Canonical encoding completes before temporary creation or publication.
+    let encoded: core::result::Result<alloc::vec::Vec<u8>,ext::kv::Error> = ext::kv::encode(store,9437184,134217728);
+    if (encoded.is_err()) { return ordinary(error_code(encoded.unwrap_err())); }
+    let bytes: alloc::vec::Vec<u8> = encoded.unwrap();
+    let options: std::atomic_file::Options = std::atomic_file::default_options();
+    options.policy = policy; options.max_bytes = 9437184; options.write_calls = 1048576; options.directory_sync_calls = 1;
+    let owner: std::atomic_file::AtomicFile = std::atomic_file::empty();
+    let created: core::result::Result<bool,std::atomic_file::Failure> = owner.create_in(parent,leaf,options);
+    if (created.is_err()) { bytes.destroy(); return release_atomic(owner.borrow(),atomic_failure(created.unwrap_err())); }
+    let written: core::result::Result<u64,std::atomic_file::Failure> = owner.write_all(bytes.as_view());
+    bytes.destroy();
+    if (written.is_err()) { return release_atomic(owner.borrow(),atomic_failure(written.unwrap_err())); }
+    let committed: core::result::Result<std::atomic_file::Receipt,std::atomic_file::Failure> = owner.commit();
+    let outcome: Outcome = ordinary(0);
+    if (committed.is_err()) { outcome = atomic_failure(committed.unwrap_err()); }
+    return release_atomic(owner.borrow(),outcome);
 }
 fn listing(store: &ext::kv::Store) -> i32 {
     let size: i64 = (store.byte_len() as i64)*2+(store.len() as i64)*2; if (size > 18874368) { return 2; }
@@ -51,26 +194,337 @@ fn listing(store: &ext::kv::Store) -> i32 {
     while (index < store.len()) { let entry: ext::kv::Entry = core::result::unwrap(store.entry(index)); let side: i32 = 0; while (side < 2) { let source: core::slice::View<u8> = entry.key; if (side == 1) { source = entry.value; } let i: i32 = 0; while (i < source.length) { let value: i32 = source.values[source.start+i] as i32; bytes[at] = alphabet.values[value/16]; bytes[at+1] = alphabet.values[value%16]; at += 2; i += 1; } bytes[at] = 9; if (side == 1) { bytes[at] = 10; } at += 1; side += 1; } index += 1; }
     let okay: bool = write(output.as_view(),false); output.destroy(); if (!okay) { return 3; } return 0;
 }
-fn process(args: std::args::Arguments) -> i32 {
-    if (args.len() < 2) { return 2; } let command: core::slice::View<u8> = core::option::unwrap(args.get(0)); let mode: i32 = 0;
-    if (same(command,literal("init",4))) { mode = 1; } if (same(command,literal("put",3))) { mode = 2; } if (same(command,literal("remove",6))) { mode = 3; } if (same(command,literal("get",3))) { mode = 4; } if (same(command,literal("list",4))) { mode = 5; } if (same(command,literal("check",5))) { mode = 6; }
-    let count: i32 = 2; if (mode == 1 || mode == 4) { count = 3; } if (mode == 2) { count = 5; } if (mode == 3) { count = 4; } if (mode == 0 || args.len() != count) { return 2; }
-    let path_result: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(core::option::unwrap(args.get(1))); if (core::result::is_err(path_result)) { return 2; } let path: core::path::Path = core::result::unwrap(path_result); let scratch: core::path::Path = path;
-    if (mode <= 3) { let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(core::option::unwrap(args.get(2))); if (core::result::is_err(parsed)) { return 2; } scratch = core::result::unwrap(parsed); if (!sibling(path,scratch)) { return 2; } }
-    if (mode == 1) { let existing: core::result::Result<std::file::File,core::io::Error> = std::file::open(path,std::file::OpenMode::Read); if (core::result::is_ok(existing)) { let file: std::file::File = core::result::unwrap(existing); if (core::result::is_err(file.close())) { return 3; } return 2; } let missing: bool = match (core::result::unwrap_err(existing)) { core::io::Error::Host(code) -> code == 2, _ -> false }; if (!missing) { return 3; } let empty: ext::kv::Store = ext::kv::new(); let status: i32 = save(empty.borrow(),path,scratch); empty.destroy(); return status; }
+fn mutate(mode: i32, path: core::path::Path, key: core::slice::View<u8>, value: core::slice::View<u8>) -> Outcome {
+    let selected: core::result::Result<Target,Outcome> = target(path);
+    if (selected.is_err()) { return selected.unwrap_err(); }
+    let names: Target = selected.unwrap();
+    let options: std::file_ops::OpenOptions = std::file_ops::options(); options.directory = true;
+    let opened: core::result::Result<std::file::File,core::io::Error> = std::file_ops::open(names.parent,options);
+    if (opened.is_err()) { return ordinary(io_code(opened.unwrap_err())); }
+    let parent: std::file::File = opened.unwrap();
+    if (mode == 1) {
+        // No existence check: the publication itself arbitrates NoReplace.
+        let store: ext::kv::Store = ext::kv::new();
+        let outcome: Outcome = publish(store.borrow(),parent.borrow(),names.leaf,std::file_ops::RenamePolicy::NoReplace);
+        store.destroy(); return close_outcome(parent.borrow(),outcome);
+    }
+    let loaded: core::result::Result<ext::kv::Store,Outcome> = load_at(parent.borrow(),names.leaf);
+    if (loaded.is_err()) { return close_outcome(parent.borrow(),loaded.unwrap_err()); }
+    let store: ext::kv::Store = loaded.unwrap(); let outcome: Outcome = ordinary(0);
+    if (mode == 2) {
+        let put: core::result::Result<ext::kv::Put,ext::kv::Error> = store.put(key,value,limits());
+        if (put.is_err()) { outcome = ordinary(error_code(put.unwrap_err())); }
+        else { outcome = publish(store.borrow(),parent.borrow(),names.leaf,std::file_ops::RenamePolicy::Replace); }
+    } else {
+        let removed: core::result::Result<bool,ext::kv::Error> = store.remove(key,134217728);
+        if (removed.is_err()) { outcome = ordinary(error_code(removed.unwrap_err())); }
+        else {
+            if (removed.unwrap()) { outcome = publish(store.borrow(),parent.borrow(),names.leaf,std::file_ops::RenamePolicy::Replace); }
+            else { outcome = ordinary(5); }
+        }
+    }
+    store.destroy(); return close_outcome(parent.borrow(),outcome);
+}
+fn process(mode:i32, operands:core::slice::View<core::slice::View<u8>>) -> Outcome {
+    let count:i32=1; if(mode==3 || mode==4) { count=2; } if(mode==2) { count=3; }
+    if(mode<1 || mode>6 || operands.length!=count) { return ordinary(2); }
+    let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(operands.get(0).unwrap());
+    if (parsed.is_err()) { return ordinary(2); }
+    let path: core::path::Path = parsed.unwrap();
     let key: alloc::vec::Vec<u8> = alloc::vec::new(); let value: alloc::vec::Vec<u8> = alloc::vec::new();
-    if (mode >= 2 && mode <= 4) { let position: i32 = 3; if (mode == 4) { position = 2; } let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(core::option::unwrap(args.get(position))); if (core::result::is_err(decoded)) { return core::result::unwrap_err(decoded); } key = core::result::unwrap(decoded); }
-    if (mode == 2) { let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(core::option::unwrap(args.get(4))); if (core::result::is_err(decoded)) { key.destroy(); return core::result::unwrap_err(decoded); } value = core::result::unwrap(decoded); }
-    let loaded: core::result::Result<ext::kv::Store,i32> = load(path); if (core::result::is_err(loaded)) { key.destroy(); value.destroy(); return core::result::unwrap_err(loaded); } let store: ext::kv::Store = core::result::unwrap(loaded); let status: i32 = 0;
-    if (mode == 2) { let put: core::result::Result<ext::kv::Put,ext::kv::Error> = store.put(key.as_view(),value.as_view(),limits()); if (core::result::is_err(put)) { status = error_code(core::result::unwrap_err(put)); } else { status = save(store.borrow(),path,scratch); } }
-    if (mode == 3) { let removed: core::result::Result<bool,ext::kv::Error> = store.remove(key.as_view(),134217728); if (core::result::is_err(removed)) { status = error_code(core::result::unwrap_err(removed)); } else { if (core::result::unwrap(removed)) { status = save(store.borrow(),path,scratch); } else { status = 5; } } }
-    if (mode == 4) { let found: core::result::Result<core::option::Option<core::slice::View<u8>>,ext::kv::Error> = store.get(key.as_view(),134217728); if (core::result::is_err(found)) { status = error_code(core::result::unwrap_err(found)); } else { let item: core::option::Option<core::slice::View<u8>> = core::result::unwrap(found); if (core::option::is_none(item)) { status = 5; } else { if (!write(core::option::unwrap(item),false)) { status = 3; } } } }
+    if (mode >= 2 && mode <= 4) {
+        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(operands.get(1).unwrap());
+        if (decoded.is_err()) { return ordinary(decoded.unwrap_err()); }
+        key = decoded.unwrap();
+    }
+    if (mode == 2) {
+        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(operands.get(2).unwrap());
+        if (decoded.is_err()) { key.destroy(); return ordinary(decoded.unwrap_err()); }
+        value = decoded.unwrap();
+    }
+    if (mode <= 3) {
+        let outcome: Outcome = mutate(mode,path,key.as_view(),value.as_view());
+        key.destroy(); value.destroy(); return outcome;
+    }
+    let loaded: core::result::Result<ext::kv::Store,Outcome> = load(path);
+    if (loaded.is_err()) { key.destroy(); value.destroy(); return loaded.unwrap_err(); }
+    let store: ext::kv::Store = loaded.unwrap(); let status: i32 = 0;
+    if (mode == 4) {
+        let found: core::result::Result<core::option::Option<core::slice::View<u8>>,ext::kv::Error> = store.get(key.as_view(),134217728);
+        if (found.is_err()) { status = error_code(found.unwrap_err()); }
+        else {
+            let item: core::option::Option<core::slice::View<u8>> = found.unwrap();
+            if (item.is_none()) { status = 5; } else { if (!write(item.unwrap(),false)) { status = 3; } }
+        }
+    }
     if (mode == 5) { status = listing(store.borrow()); }
-    key.destroy(); value.destroy(); store.destroy(); return status;
+    key.destroy(); value.destroy(); store.destroy(); return ordinary(status);
+}
+fn node(id:i32,name:core::slice::View<u8>,summary:core::slice::View<u8>,operands:core::slice::View<u8>,options:core::slice::View<ext::cli_commands::OptionSpec>) -> ext::cli_commands::Command {
+    return ext::cli_commands::Command { id:id,parent:0,name:name,summary:summary,operands:operands,ordering:ext::cli::Ordering::OptionsFirst,options:options };
+}
+fn help(commands:core::slice::View<ext::cli_commands::Command>,command:i32) -> Outcome {
+    let storage:[u8;4096]=[0;4096];
+    let rendered=ext::cli_help::help_into(commands,command,core::slice::View { values:storage,start:0,length:4096 });
+    if(rendered.is_err()) { return ordinary(3); }
+    let length=rendered.unwrap(); let offset:i32=0; let calls:i32=0; let sink=std::stream::stdout();
+    while(offset<length) {
+        if(calls==64) { return ordinary(3); } calls+=1;
+        let count=length-offset; if(count>1024) { count=1024; }
+        let sent=sink.write(storage,offset,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return ordinary(3); } }
+        else { let got=sent.unwrap(); if(got<=0 || got>count) { return ordinary(3); } offset+=got; }
+    }
+    return ordinary(0);
+}
+fn selected(state:&Invocation,item:ext::cli_commands::Selection) -> bool { state.command=item.id; return true; }
+fn option(state:&Invocation,item:ext::cli_commands::ScopedOption) -> bool {
+    if(item.occurrence.id!=100) { return false; } state.help=true; return true;
+}
+fn operand(state:&Invocation,item:ext::cli_commands::ScopedOperand) -> bool {
+    if(item.command!=state.command || state.command==0 || state.count==3) { return false; }
+    state.operands[state.count]=item.argument.bytes; state.count+=1; return true;
+}
+fn dispatch(values:core::slice::View<core::slice::View<u8>>,schema:core::slice::View<ext::cli_commands::Command>,scratch:core::slice::View<ext::cli::Spec>) -> Outcome {
+    let prepared=ext::cli_commands::parser(values,schema,scratch);
+    if(prepared.is_err()) { return ordinary(2); } let parser=prepared.unwrap();
+    let empty_operand=literal("",0); let operands:[core::slice::View<u8>;3]=[empty_operand,empty_operand,empty_operand];
+    let state=Invocation { command:0,operands:operands,count:0,help:false };
+    while(true) {
+        let next=parser.next(); if(next.is_err()) { return ordinary(2); }
+        let found=next.unwrap(); if(found.is_none()) { break; }
+        let valid=match(found.unwrap()) {
+            ext::cli_commands::Event::Command(item)->selected(state.borrow(),item),
+            ext::cli_commands::Event::Option(item)->option(state.borrow(),item),
+            ext::cli_commands::Event::Operand(item)->operand(state.borrow(),item)
+        };
+        if(!valid) { return ordinary(2); }
+    }
+    if(state.command==0) { if(state.help) { return help(schema,0); } return ordinary(2); }
+    let needed:i32=1; if(state.command==3 || state.command==4) { needed=2; } if(state.command==2) { needed=3; }
+    if(state.count>needed) { return ordinary(2); }
+    if(state.help) { return help(schema,state.command); }
+    if(state.count!=needed) { return ordinary(2); }
+    return process(state.command,core::slice::View { values:operands,start:0,length:state.count });
+}
+fn response_file_error(error:ext::cli_response_files::Error) -> Outcome {
+    let status=match(error.cause) {
+        ext::cli_response_files::Cause::AllocationFailed->4,
+        ext::cli_response_files::Cause::Io(cause)->io_code(cause),
+        _ ->2
+    };
+    let outcome=ordinary(status);
+    let closing=match(error.phase) { ext::cli_response_files::Phase::Close->true,_ ->false };
+    if(closing || error.cleanup.is_some()) { return cleanup_failure(outcome); }
+    return outcome;
+}
+fn response_error(failure:ext::cli_response::Failure<ext::cli_response_files::Error>) -> Outcome {
+    return match(failure.cause) {
+        ext::cli_response::Cause::Provider(error)->response_file_error(error),
+        ext::cli_response::Cause::AllocationFailed->ordinary(4),
+        ext::cli_response::Cause::InvalidState->ordinary(3),
+        ext::cli_response::Cause::ProviderContract->ordinary(3),
+        _ ->ordinary(2)
+    };
+}
+// Completion is an explicit host-query mode. It never constructs a response
+// provider or enters Store/publication operations. All borrowed words stay
+// backed by decoded until the framed reply has been delivered.
+fn completion_write(bytes:core::slice::View<u8>) -> Outcome {
+    let sink=std::stream::stdout(); let offset:i32=0; let calls:i32=0;
+    while(offset<bytes.length) {
+        if(calls==64) { return ordinary(3); } calls+=1;
+        let count=bytes.length-offset; if(count>1024) { count=1024; }
+        let sent=sink.write(bytes.values,bytes.start+offset,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return ordinary(3); } }
+        else { let got=sent.unwrap(); if(got<=0 || got>count) { return ordinary(3); } offset+=got; }
+    }
+    return ordinary(0);
+}
+fn completion_reply(reply:ext::cli_bash::Reply) -> Outcome {
+    let measured=ext::cli_bash::measure(reply);
+    if(measured.is_err()) { return ordinary(2); }
+    let needed=measured.unwrap(); if(needed>32768) { return ordinary(2); }
+    let buffer:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(buffer.try_resize(needed as i32,0).is_err()) { buffer.destroy(); return ordinary(4); }
+    let encoded=ext::cli_bash::encode_into(reply,buffer.as_view());
+    if(encoded.is_err()) { buffer.destroy(); return ordinary(2); }
+    let outcome=completion_write(buffer.as_view()); buffer.destroy(); return outcome;
+}
+struct CompletionBridge { quote:ext::bash_words::Quote,continuation:ext::bash_words::Quote,trim:core::slice::View<u8>,end:bool }
+fn completion_none(bridge:CompletionBridge) -> Outcome {
+    let empty=literal("",0); let slots:[core::slice::View<u8>;1]=[empty];
+    return completion_reply(ext::cli_bash::Reply { mode:ext::cli_bash::Mode::None,append_space:bridge.end,quote:bridge.quote,continuation:bridge.continuation,trim:empty,stem:empty,prefix:empty,candidates:core::slice::View { values:slots,start:0,length:0 } });
+}
+fn completion_files(stem:core::slice::View<u8>,prefix:core::slice::View<u8>,bridge:CompletionBridge) -> Outcome {
+    if(prefix.length>4095) { return ordinary(2); }
+    let empty=literal("",0); let slots:[core::slice::View<u8>;1]=[empty];
+    return completion_reply(ext::cli_bash::Reply { mode:ext::cli_bash::Mode::Files,append_space:bridge.end,quote:bridge.quote,continuation:bridge.continuation,trim:bridge.trim,stem:stem,prefix:prefix,candidates:core::slice::View { values:slots,start:0,length:0 } });
+}
+fn completion_candidates(context:ext::cli_complete::Context,bridge:CompletionBridge) -> Outcome {
+    let empty=literal("",0); let no_values:[ext::cli_complete::Value;1]=[ext::cli_complete::Value { bytes:empty,append_space:true }];
+    let made=context.suggestions(core::slice::View { values:no_values,start:0,length:0 });
+    if(made.is_err()) { return ordinary(2); } let candidates=made.unwrap();
+    let backing:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(backing.try_resize(32768,0).is_err()) { backing.destroy(); return ordinary(4); }
+    let slots:[core::slice::View<u8>;32]=[empty;32];
+    let count:i32=0; let used:i32=0; let append_space:bool=bridge.end;
+    while(true) {
+        let available=32768-used; if(available>4096) { available=4096; }
+        let output=core::slice::View { values:backing.as_slice(),start:used,length:available };
+        let found=candidates.next(output);
+        if(found.is_err()) { backing.destroy(); return ordinary(2); }
+        let item=found.unwrap(); if(item.is_none()) { break; }
+        if(count==32) { backing.destroy(); return ordinary(2); }
+        let suggestion=item.unwrap();
+        slots[count]=core::slice::View { values:backing.as_slice(),start:used,length:suggestion.bytes };
+        used+=suggestion.bytes; count+=1;
+        if(!suggestion.append_space) { append_space=false; }
+    }
+    let outcome=completion_reply(ext::cli_bash::Reply { mode:ext::cli_bash::Mode::Candidates,append_space:append_space,quote:bridge.quote,continuation:bridge.continuation,trim:bridge.trim,stem:empty,prefix:empty,candidates:core::slice::View { values:slots,start:0,length:count } });
+    backing.destroy(); return outcome;
+}
+fn completion_decoded(words:core::slice::View<core::slice::View<u8>>,incomplete:bool,bridge:CompletionBridge,schema:core::slice::View<ext::cli_commands::Command>,scratch:core::slice::View<ext::cli::Spec>) -> Outcome {
+    let last=words.length-1; let index:i32=0;
+    while(index<last) {
+        let word=words.values[words.start+index];
+        if(word.length>1 && word.values[word.start]==64) {
+            if(word.values[word.start+1]!=64) {
+                // The directive makes later argv unknown, but invalid complete
+                // words before it must still fail the canonical prefix check.
+                let before=core::slice::View { values:words.values,start:words.start,length:index };
+                let checked=ext::cli_complete::context(before,ext::cli::Location { argument:index,byte:0 },schema,scratch);
+                if(checked.is_err()) { return ordinary(2); }
+                return completion_none(bridge);
+            }
+            words.values[words.start+index]=word.subview(1,word.length).unwrap();
+        }
+        index+=1;
+    }
+    let prefix=words.values[words.start+last]; let response:bool=false;
+    if(prefix.length>0 && prefix.values[prefix.start]==64) {
+        if(prefix.length>1 && prefix.values[prefix.start+1]==64) {
+            prefix=prefix.subview(1,prefix.length).unwrap(); words.values[words.start+last]=prefix;
+        } else { response=true; }
+    }
+    let inspected=ext::cli_complete::context(words,ext::cli::Location { argument:last,byte:prefix.length },schema,scratch);
+    if(inspected.is_err()) { return ordinary(2); } let context=inspected.unwrap();
+    if(incomplete) { return completion_none(bridge); }
+    if(response) { return completion_files(literal("@",1),prefix.subview(1,prefix.length).unwrap(),bridge); }
+    let operand=match(context.kind()) { ext::cli_complete::Kind::Operand->true,_ ->false };
+    if(operand) {
+        if(context.command()!=0 && context.operand_index()==0) { return completion_files(context.stem(),context.prefix(),bridge); }
+        return completion_none(bridge);
+    }
+    return completion_candidates(context,bridge);
+}
+fn completion(values:core::slice::View<core::slice::View<u8>>,schema:core::slice::View<ext::cli_commands::Command>,scratch:core::slice::View<ext::cli::Spec>) -> Outcome {
+    if(values.length<4 || values.length>12) { return ordinary(2); }
+    let ending=values.values[values.start+1]; let end:bool=same(ending,literal("1",1));
+    if(!end && !same(ending,literal("0",1))) { return ordinary(2); }
+    let rawtrim=values.values[values.start+2]; let prefix=values.values[values.start+3];
+    if(rawtrim.length>prefix.length) { return ordinary(2); }
+    if(!same(rawtrim,prefix.subview(0,rawtrim.length).unwrap())) { return ordinary(2); }
+    let trimmed=ext::bash_words::measure(rawtrim,ext::bash_words::Mode::Prefix);
+    if(trimmed.is_err()) { return ordinary(2); } let trimshape=trimmed.unwrap();
+    if(trimshape.incomplete_escape || trimshape.bytes>4096) { return ordinary(2); }
+    let total:i32=trimshape.bytes; let index:i32=4;
+    while(index<values.length) {
+        let shape=ext::bash_words::measure(values.values[values.start+index],ext::bash_words::Mode::Complete);
+        if(shape.is_err()) { return ordinary(2); } let size=shape.unwrap().bytes;
+        if(size>4096 || total>32768-size) { return ordinary(2); } total+=size; index+=1;
+    }
+    let shape=ext::bash_words::measure(prefix,ext::bash_words::Mode::Prefix);
+    if(shape.is_err()) { return ordinary(2); } let active=shape.unwrap();
+    if(active.bytes>4096 || total>32768-active.bytes) { return ordinary(2); } total+=active.bytes;
+    let decoded:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(decoded.try_resize(total,0).is_err()) { decoded.destroy(); return ordinary(4); }
+    let empty=literal("",0); let slots:[core::slice::View<u8>;9]=[empty;9];
+    let offset:i32=0; let count:i32=0; index=4;
+    while(index<values.length) {
+        let output=core::slice::View { values:decoded.as_slice(),start:offset,length:total-offset };
+        let parsed=ext::bash_words::decode_into(values.values[values.start+index],ext::bash_words::Mode::Complete,output);
+        if(parsed.is_err()) { decoded.destroy(); return ordinary(2); } let size=parsed.unwrap().bytes;
+        slots[count]=core::slice::View { values:decoded.as_slice(),start:offset,length:size }; count+=1; offset+=size; index+=1;
+    }
+    let output=core::slice::View { values:decoded.as_slice(),start:offset,length:active.bytes };
+    let parsed=ext::bash_words::decode_into(prefix,ext::bash_words::Mode::Prefix,output);
+    if(parsed.is_err()) { decoded.destroy(); return ordinary(2); }
+    slots[count]=output; count+=1; offset+=active.bytes;
+    let trim=core::slice::View { values:decoded.as_slice(),start:offset,length:trimshape.bytes };
+    let parsedtrim=ext::bash_words::decode_into(rawtrim,ext::bash_words::Mode::Prefix,trim);
+    if(parsedtrim.is_err()) { decoded.destroy(); return ordinary(2); }
+    let bridge=CompletionBridge { quote:trimshape.quote,continuation:active.quote,trim:trim,end:end };
+    let outcome=completion_decoded(core::slice::View { values:slots,start:0,length:count },active.incomplete_escape,bridge,schema,scratch);
+    decoded.destroy(); return outcome;
+}
+fn arguments(args:std::args::Arguments) -> Outcome {
+    let help_spec=ext::cli::Spec { id:100,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag };
+    let options:[ext::cli_commands::OptionSpec;1]=[ext::cli_commands::OptionSpec { spec:help_spec,global:true,value_name:literal("",0),help:literal("Show command help",17) }];
+    let globals=core::slice::View { values:options,start:0,length:1 };
+    let empty=core::slice::View { values:options,start:0,length:0 };
+    let commands:[ext::cli_commands::Command;7]=[
+        ext::cli_commands::Command { id:0,parent:-1,name:literal("kv-tool",7),summary:literal("Bounded byte-key snapshot store",31),operands:literal("",0),ordering:ext::cli::Ordering::Intermixed,options:globals },
+        node(1,literal("init",4),literal("Create an empty database",24),literal("DB",2),empty),
+        node(2,literal("put",3),literal("Insert or replace a byte value",30),literal("DB KEY_HEX VALUE_HEX",20),empty),
+        node(3,literal("remove",6),literal("Remove a byte key",17),literal("DB KEY_HEX",10),empty),
+        node(4,literal("get",3),literal("Write the exact stored value",28),literal("DB KEY_HEX",10),empty),
+        node(5,literal("list",4),literal("List sorted hexadecimal entries",31),literal("DB",2),empty),
+        node(6,literal("check",5),literal("Validate the complete snapshot",30),literal("DB",2),empty)
+    ];
+    let schema=core::slice::View { values:commands,start:0,length:7 };
+    let scratch:[ext::cli::Spec;1]=[help_spec];
+    if(ext::cli_commands::validate(schema).is_err()) { return ordinary(2); }
+    if(args.len()>0 && same(args.get(0).unwrap(),literal("--lanius-complete-bash",22))) { return completion(args.as_view(),schema,core::slice::View { values:scratch,start:0,length:1 }); }
+    if(args.len()>8) { return ordinary(2); }
+    // This single-threaded program never changes cwd. Merely admitting Files
+    // performs no filesystem operation; only explicit @ directives load files.
+    let made=ext::cli_response_files::files(-100,4096,false);
+    if(made.is_err()) { return response_file_error(made.unwrap_err()); }
+    let provider=made.unwrap(); let expansion=ext::cli_response::empty();
+    let bounds=ext::cli_response::Limits { max_arguments:8,max_tokens:256,max_argument_bytes:262144,max_output_bytes:262144,max_file_bytes:262144,max_source_bytes:1048576,max_files:16,max_depth:8,max_path_bytes:4095,max_work:8388608 };
+    let prepared=expansion.prepare<ext::cli_response_files::Files,ext::cli_response_files::Error>(args.as_view(),provider.borrow(),bounds);
+    if(prepared.is_err()) { let outcome=response_error(prepared.unwrap_err()); expansion.destroy(); return outcome; }
+    let outcome=dispatch(expansion.arguments().unwrap(),schema,core::slice::View { values:scratch,start:0,length:1 });
+    expansion.destroy(); return outcome;
+}
+fn report(outcome: Outcome) -> i32 {
+    let okay: bool = !outcome.diagnostic_failed;
+    let notice: i32 = match(outcome.notice) {
+        Notice::None -> 0, Notice::Invalid -> 1, Notice::Io -> 2,
+        Notice::Allocation -> 3, Notice::Exists -> 4,
+        Notice::PublishedUnsynced -> 5, Notice::Unconfirmed -> 6
+    };
+    if (notice == 1) { if (!write(literal("kv-tool: invalid input or resource limit\n",41),true)) { okay = false; } }
+    if (notice == 2) { if (!write(literal("kv-tool: I/O failure\n",21),true)) { okay = false; } }
+    if (notice == 3) { if (!write(literal("kv-tool: allocation failed\n",27),true)) { okay = false; } }
+    if (notice == 4) { if (!write(literal("kv-tool: database already exists\n",33),true)) { okay = false; } }
+    if (notice == 5) { if (!write(literal("kv-tool: snapshot published; directory sync unconfirmed\n",56),true)) { okay = false; } }
+    if (notice == 6) { if (!write(literal("kv-tool: publication visibility unconfirmed\n",44),true)) { okay = false; } }
+    if (outcome.cleanup_failed) {
+        let published: bool = match(outcome.visibility) { std::atomic_file::Visibility::Published -> true, _ -> false };
+        let unsynced: bool = match(outcome.notice) { Notice::PublishedUnsynced -> true, _ -> false };
+        if (published && !unsynced) {
+            if (!write(literal("kv-tool: snapshot published; cleanup failed\n",44),true)) { okay = false; }
+        } else {
+            if (!write(literal("kv-tool: cleanup failed\n",24),true)) { okay = false; }
+        }
+    }
+    // Failed stderr cannot erase an already known publication/cleanup outcome.
+    if (!okay && outcome.code == 0) { return 3; }
+    return outcome.code;
 }
 fn main() -> i32 {
-    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,5,262144); let status: i32 = 0;
-    if (core::result::is_err(captured)) { status = match (core::result::unwrap_err(captured)) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 }; }
-    else { let args: std::args::Arguments = core::result::unwrap(captured); if (args.len() == 1 && same(core::option::unwrap(args.get(0)),literal("--help",6))) { if (!write(literal("Usage: kv-tool init DB SCRATCH | put DB SCRATCH KEY_HEX VALUE_HEX | remove DB SCRATCH KEY_HEX | get DB KEY_HEX | list DB | check DB\n",132),false)) { status = 3; } } else { status = process(args); } args.destroy(); }
-    let okay: bool = true; if (status == 2) { okay = write(literal("kv-tool: invalid input or resource limit\n",41),true); } if (status == 3) { okay = write(literal("kv-tool: I/O failure\n",21),true); } if (status == 4) { okay = write(literal("kv-tool: allocation failed\n",27),true); } if (!okay) { return 3; } return status;
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,12,262144);
+    let outcome: Outcome = ordinary(0);
+    if (captured.is_err()) {
+        let status: i32 = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 };
+        outcome = ordinary(status);
+    } else {
+        let args: std::args::Arguments = captured.unwrap();
+        outcome = arguments(args);
+        args.destroy();
+    }
+    return report(outcome);
 }

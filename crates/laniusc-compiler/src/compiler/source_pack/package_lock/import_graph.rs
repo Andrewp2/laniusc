@@ -166,7 +166,13 @@ impl PackageLockfileImportGraph {
                     import.target_module_path
                 )));
             }
-            if import.target_module_path != import.import_path {
+            let item_module = import
+                .import_path
+                .rsplit_once("::")
+                .map(|(module, _)| module);
+            if import.target_module_path != import.import_path
+                && item_module != Some(import.target_module_path.as_str())
+            {
                 return Err(package_lockfile_error(format!(
                     "import graph edge {edge_index} import path {} resolves to target module {}; package imports must resolve by declared module identity",
                     import.import_path, import.target_module_path

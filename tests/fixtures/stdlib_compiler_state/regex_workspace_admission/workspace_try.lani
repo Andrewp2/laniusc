@@ -1,0 +1,69 @@
+// Standalone compiler-admission reduction; no regex parser or matcher import.
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+pub enum Error { Limit(i32), AllocationFailed }
+// Fixed-capacity storage for one active search at a time. Public fields are
+// internal descriptors, not a forgeable or stable storage format. Capacity is
+// independent of a particular program/input and never grows during search.
+pub struct Workspace {
+    current: alloc::vec::Vec<i32>, next: alloc::vec::Vec<i32>,
+    current_caps: alloc::vec::Vec<i32>, next_caps: alloc::vec::Vec<i32>,
+    stack: alloc::vec::Vec<i32>, stack_caps: alloc::vec::Vec<i32>,
+    seen: alloc::vec::Vec<i32>, temporary: alloc::vec::Vec<i32>, candidate: alloc::vec::Vec<i32>,
+    states_reserved: i32, groups_reserved: i32, bytes_reserved: u64,
+    active_states: i32, slots: i32, result_groups: i32, matched: bool,
+    work: i32, max_work: i32, failed: bool
+}
+fn sized(value: &alloc::vec::Vec<i32>, count: i32, fill: i32) -> bool { return value.try_resize(count,fill).is_ok(); }
+// Groups include group zero. Reserve exactly the requested nine Vec owners;
+// invalid dimensions/byte arithmetic fail before the first allocation.
+pub fn workspace(states: i32, groups: i32) -> Result<Workspace,Error> {
+    if (states < 1 || states > 65536 || groups < 1 || groups > 129) { return Err(Error::Limit(0)); }
+    if (groups > 2147483647 / 2) { return Err(Error::Limit(0)); }
+    let slots: i32 = groups * 2;
+    if (states > 2147483647 / slots) { return Err(Error::Limit(0)); }
+    let matrix: i32 = states * slots;
+    let elements: u64 = 4 * (states as u64) + 3 * (matrix as u64) + 2 * (slots as u64);
+    let width: u64 = core::mem::size_of<i32>() as u64;
+    if (width > 0 && (elements > 18446744073709551615 / width || (matrix as u64) > 2147483647 / width)) { return Err(Error::Limit(0)); }
+    let value = Workspace {
+        current: alloc::vec::new(), next: alloc::vec::new(),
+        current_caps: alloc::vec::new(), next_caps: alloc::vec::new(),
+        stack: alloc::vec::new(), stack_caps: alloc::vec::new(),
+        seen: alloc::vec::new(), temporary: alloc::vec::new(), candidate: alloc::vec::new(),
+        states_reserved: states, groups_reserved: groups, bytes_reserved: elements * width,
+        active_states: 0, slots: 0, result_groups: 0, matched: false,
+        work: 0, max_work: 0, failed: false
+    };
+    if (!sized(value.current.borrow(),states,0) || !sized(value.next.borrow(),states,0) ||
+        !sized(value.current_caps.borrow(),matrix,-1) || !sized(value.next_caps.borrow(),matrix,-1) ||
+        !sized(value.stack.borrow(),states,0) || !sized(value.stack_caps.borrow(),matrix,-1) ||
+        !sized(value.seen.borrow(),states,0) || !sized(value.temporary.borrow(),slots,-1) || !sized(value.candidate.borrow(),slots,-1)) {
+        value.destroy(); return Err(Error::AllocationFailed);
+    }
+    return Ok(value);
+}
+pub impl Workspace {
+    pub fn destroy(&self) {
+        self.current.destroy(); self.next.destroy(); self.current_caps.destroy(); self.next_caps.destroy();
+        self.stack.destroy(); self.stack_caps.destroy(); self.seen.destroy(); self.temporary.destroy(); self.candidate.destroy();
+        self.states_reserved = 0; self.groups_reserved = 0; self.bytes_reserved = 0;
+        self.active_states = 0; self.slots = 0; self.result_groups = 0; self.matched = false;
+        self.max_work = 0; self.failed = false;
+    }
+}
+// Sole changed boundary: propagation of the owned multi-vector result.
+fn propagated() -> Result<Workspace,Error> {
+    let value = workspace(4,1)?;
+    return Ok(value);
+}
+fn main() -> i32 {
+    let value = propagated().unwrap();
+    value.destroy(); value.destroy();
+    return 0;
+}

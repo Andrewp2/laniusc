@@ -1,0 +1,20 @@
+
+running 1 test
+test resumable_wants_native_faults_and_every_reached_source_allocation_release_resources ... GPU source-pack type-check rejection: token=54035 code=AssignMismatch detail=0
+
+thread 'resumable_wants_native_faults_and_every_reached_source_allocation_release_resources' (27061) panicked at tests/extended_https_batch_execution.rs:162:37:
+HTTPS direct Exchange fixture: error[LNC0006]: type mismatch
+ --> /home/andrew-peterson/code/laniusc/tests/fixtures/extended/https_batch/exchange.lani:59:156
+   |
+59 |                 assert(stopped.is_err()); let error = stopped.unwrap_err(); assert(match(error.cause) { ext::https_client::Cause::Io(core::io::Error::Host(number)) -> number == 5, _ -> false });
+   |                                                                                                                                                            ^^^^^^ value type does not match this context
+     = note: change the expression or the annotation so both sides have the same type
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    resumable_wants_native_faults_and_every_reached_source_allocation_release_resources
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 10.24s

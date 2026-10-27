@@ -1,7 +1,8 @@
-// One bounded staged HTTP/1 connection. Caller owns the listener and policy.
+// One canonical server protocol, bounded plain driver and synchronous facade.
 module ext::http_server;
 import alloc::vec;
 import core::calendar;
+import core::clone;
 import core::io;
 import core::mem;
 import core::net;
@@ -10,6 +11,7 @@ import core::result;
 import core::slice;
 import core::time;
 import ext::http;
+import ext::http_client;
 import ext::uri;
 import std::clock;
 import std::socket;
@@ -18,22 +20,34 @@ pub struct Options { request: ext::http::Limits, response: ext::http::Limits, re
 pub enum Stage { Accept, Head, Continue, Body, Validate, Decode, Prepare, Send, Shutdown, Drain, Close }
 pub enum Cause { InvalidOptions, InvalidState, AllocationFailed, Timeout, Clock(std::clock::Error), Io(core::io::Error), Http(ext::http::Error), Date(core::calendar::Error), UnsupportedResponse, UnsupportedHeader(i32), ExpectationRequired, RequestLimit, RequestLineLimit, RequestTargetLimit, ResponseLimit, BodyLimit, DrainLimit, IoLimit, WorkLimit, BoundaryMismatch }
 pub struct Stats { received: u64, retained: i32, decoded: i32, buffered_discarded: i32, drain_received: u64, response_bytes: i32, response_sent: i32, continue_sent: i32, io_calls: u64, work: u64, scan_work: u64, cleanup_calls: u64, cleanup_errors: u64, write_shutdown: bool, peer_eof: bool, final_started: bool, closed: bool }
-pub struct Failure { cause: Cause, stage: Stage, stats: Stats, cleanup_attempted: bool, cleanup: core::option::Option<core::io::Error> }
+pub struct Rejection { cause: Cause, stage: Stage, stats: Stats }
+pub struct Failure { cause: Cause, stage: Stage, stats: Stats, cleanup_attempted: bool, cleanup: core::option::Option<core::io::Error>, rejection: core::option::Option<Rejection> }
+pub impl core::clone::Destroy<Failure> for Failure { pub fn destroy_value(owned: Failure) {} }
 pub enum TargetForm { Origin, Absolute, Authority, Asterisk }
 pub struct Target { form: TargetForm, scheme: core::option::Option<core::slice::View<u8>>, authority: core::option::Option<core::slice::View<u8>>, path: core::slice::View<u8>, query: core::option::Option<core::slice::View<u8>> }
 pub enum Expectation { None, Continue, Unsupported }
 pub struct RequestHead { head: ext::http::Head, target: Target, expectation: Expectation }
 pub struct Request { message: ext::http::Message, body: core::slice::View<u8> }
 pub struct Response { status: i32, reason: core::slice::View<u8>, headers: core::slice::View<ext::http::Field>, body: core::slice::View<u8>, date: core::time::SystemTime }
-// Single active owner, fields maintained by library. All published views live
-// until destroy, including after close/error. No external descriptor aliases.
-pub struct Connection {
-    socket: std::socket::Socket, remote: core::net::SocketAddr, options: Options,
-    deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, phase: i32,
+pub enum Status { Active, Complete, Failed, Aborted }
+pub enum BodyDecision { Read, ContinueThenRead }
+pub enum SendKind { Continue, Final }
+pub enum Event { Head(RequestHead), Request(Request), Rejected(Rejection), Empty, Complete(Stats) }
+pub enum Need { Local, Input(i32), Output(SendKind), Decision, Shutdown, Drain(i32), FinishTransport }
+enum Phase { ScanHead, InputHead, Head, Continue, ScanBody, InputBody, Validate, Decode, Request, Rejected, Final, Shutdown, Drain, Finish, Terminal }
+// All published views survive abort/error/close until the actual destroy.
+pub struct Protocol {
+    options: Options, deadline: core::time::Deadline, last: core::time::Instant, stage: Stage, phase: Phase, current: Status,
     progress: Stats, head_wire: alloc::vec::Vec<u8>, wire: alloc::vec::Vec<u8>, decoded: alloc::vec::Vec<u8>, response_wire: alloc::vec::Vec<u8>,
     cursor: ext::http::Cursor, header: core::option::Option<RequestHead>, request: core::option::Option<Request>,
-    input_eof: bool, final_staged: bool, continue_staged: bool, terminal: core::option::Option<Cause>
+    boundary: core::option::Option<ext::http::FrameBoundary>, validated: core::option::Option<ext::http::Message>,
+    input_eof: bool, final_staged: bool, continue_staged: bool, empty: bool, owned: bool,
+    sending: i32, sending_kind: SendKind, rejected: core::option::Option<Rejection>, terminal: core::option::Option<Failure>,
+    current_event: core::option::Option<Event>, revision: u64
 }
+pub struct Exchange { owner: Protocol, socket: std::socket::Socket, remote: core::net::SocketAddr, published: u64, read_blocked: bool, write_blocked: bool, receive_turn: bool }
+pub struct Connection { exchange: Exchange, head_taken: bool, body_requested: bool, request_taken: bool }
+
 pub fn default_options() -> Options {
     let request = ext::http::default_limits(); request.body_bytes = 1048576;
     let response = ext::http::default_limits(); response.body_bytes = 1048576;
@@ -42,70 +56,191 @@ pub fn default_options() -> Options {
 fn limits(l: ext::http::Limits) -> bool { return l.head_bytes >= 0 && l.line_bytes >= 0 && l.headers >= 0 && l.body_bytes >= 0 && l.trailer_bytes >= 0 && l.trailers >= 0 && l.chunks >= 0; }
 fn options_valid(o: Options) -> bool { return limits(o.request) && limits(o.response) && o.request_bytes >= 0 && o.response_bytes >= 0 && o.drain_bytes >= 0 && o.io_calls > 0; }
 fn empty_stats() -> Stats { return Stats { received:0,retained:0,decoded:0,buffered_discarded:0,drain_received:0,response_bytes:0,response_sent:0,continue_sent:0,io_calls:0,work:0,scan_work:0,cleanup_calls:0,cleanup_errors:0,write_shutdown:false,peer_eof:false,final_started:false,closed:false }; }
-fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(s),n); return core::slice::view(raw,n).unwrap(); }
+fn initial_failure(cause: Cause, stats: Stats) -> Failure { return Failure { cause:cause,stage:Stage::Accept,stats:stats,cleanup_attempted:false,cleanup:core::option::None(),rejection:core::option::None() }; }
+fn literal(s: str, n: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(s),n); return core::slice::view<u8>(raw,n).unwrap(); }
 fn valid<T>(v: core::slice::View<T>) -> bool { return v.start >= 0 && v.length >= 0 && v.start <= 2147483647-v.length; }
 fn eq(v: core::slice::View<u8>, s: str, n: i32) -> bool { if (v.len() != n) { return false; } let other = literal(s,n); let i: i32 = 0; while (i < n) { if (v.get(i).unwrap() != other.get(i).unwrap()) { return false; } i += 1; } return true; }
 fn named(v: core::slice::View<u8>, s: str, n: i32) -> bool { return ext::http::equal_name(v,literal(s,n)); }
 fn transient(e: core::io::Error) -> bool { return match(e) { core::io::Error::Interrupted -> true, core::io::Error::WouldBlock -> true, _ -> false }; }
-struct Budget { options: Options, deadline: core::time::Deadline, last: core::time::Instant, stats: Stats }
-impl Budget { fn borrow(&self) -> &Budget { return self; } }
-fn initial_failure(cause: Cause, stats: Stats, attempted: bool, cleanup: core::option::Option<core::io::Error>) -> Failure { return Failure { cause:cause,stage:Stage::Accept,stats:stats,cleanup_attempted:attempted,cleanup:cleanup }; }
+fn blocked(e: core::io::Error) -> bool { return match(e) { core::io::Error::WouldBlock -> true, _ -> false }; }
+fn running(s: Status) -> bool { return match(s) { Status::Active -> true, _ -> false }; }
 fn check_time(last: core::time::Instant, deadline: core::time::Deadline) -> core::result::Result<core::time::Instant,Cause> {
     let got = std::clock::monotonic_now(); if (got.is_err()) { return core::result::Err(Cause::Clock(got.unwrap_err())); }
     let now = got.unwrap(); if (now.compare(last) < 0) { return core::result::Err(Cause::Clock(std::clock::Error::ClockReversed)); }
     if (deadline.is_expired(now)) { return core::result::Err(Cause::Timeout); } return core::result::Ok(now);
 }
-fn accept_call(b: &Budget) -> core::result::Result<bool,Cause> {
-    let now = check_time(b.last,b.deadline); if (now.is_err()) { return core::result::Err(now.unwrap_err()); } b.last = now.unwrap();
-    if (b.stats.io_calls == b.options.io_calls) { return core::result::Err(Cause::IoLimit); } b.stats.io_calls += 1; return core::result::Ok(true);
+fn milliseconds(span: core::time::Duration) -> i32 { if (span.seconds > 2147483 as u64) { return 2147483647; } let n: u64 = span.seconds*1000+((span.nanos as u64)+999999)/1000000; if (n > 2147483647 as u64) { return 2147483647; } return n as i32; }
+fn rejectable(cause: Cause) -> bool { return match(cause) {
+    Cause::AllocationFailed -> true, Cause::RequestLimit -> true, Cause::RequestLineLimit -> true, Cause::RequestTargetLimit -> true, Cause::BodyLimit -> true,
+    Cause::Http(e) -> match(e) { ext::http::Error::Incomplete(n) -> true, ext::http::Error::Malformed(n) -> true, ext::http::Error::Limit(n) -> true, ext::http::Error::Unsupported(n) -> true, ext::http::Error::AllocationFailed -> true, _ -> false }, _ -> false }; }
+fn command_fatal(cause: Cause) -> bool { return match(cause) { Cause::Timeout -> true, Cause::Clock(e) -> true, Cause::IoLimit -> true, Cause::WorkLimit -> true, Cause::BoundaryMismatch -> true, _ -> false }; }
+pub fn reservation_bytes(options: Options) -> core::result::Result<u64,Cause> {
+    if (!options_valid(options)) { return core::result::Err(Cause::InvalidOptions); }
+    let head: i32 = options.request.head_bytes; if (head > options.request_bytes) { head = options.request_bytes; }
+    let body: i32 = options.request.body_bytes; if (body > options.request_bytes) { body = options.request_bytes; }
+    let line: i32 = options.response.line_bytes; if (line > options.response_bytes) { line = options.response_bytes; }
+    let fields: u64 = ((options.response.headers as u64)+2)*(core::mem::size_of<ext::http::Field>() as u64);
+    return core::result::Ok((head as u64)+(options.request_bytes as u64)+(body as u64)+(options.response_bytes as u64)+(line as u64)+fields);
 }
-fn milliseconds(deadline: core::time::Deadline, now: core::time::Instant) -> i32 { let span = deadline.remaining(now); if (span.seconds > 2147483 as u64) { return 2147483647; } let n: u64 = span.seconds*1000+((span.nanos as u64)+999999)/1000000; if (n > 2147483647 as u64) { return 2147483647; } return n as i32; }
-pub fn accept_until(listener: &std::socket::Socket, options: Options, deadline: core::time::Deadline) -> core::result::Result<Connection,Failure> {
-    let stats = empty_stats();
-    if (!options_valid(options) || deadline.instant.ticks.nanos >= 1000000000 || !listener.is_open() || match(listener.kind()) { std::socket::Kind::Udp -> true, _ -> false }) { return core::result::Err(initial_failure(Cause::InvalidOptions,stats,false,core::option::None())); }
-    let scan_allowance: u64 = (options.request_bytes as u64)*2;
-    if (scan_allowance > options.work) { return core::result::Err(initial_failure(Cause::WorkLimit,stats,false,core::option::None())); } stats.work = scan_allowance;
-    let first = std::clock::monotonic_now(); if (first.is_err()) { return core::result::Err(initial_failure(Cause::Clock(first.unwrap_err()),stats,false,core::option::None())); }
-    let b = Budget { options:options,deadline:deadline,last:first.unwrap(),stats:stats };
-    let permit = accept_call(b.borrow()); if (permit.is_err()) { return core::result::Err(initial_failure(permit.unwrap_err(),b.stats,false,core::option::None())); }
-    let flag = listener.is_nonblocking(); let after = check_time(b.last,deadline);
-    if (flag.is_err()) { return core::result::Err(initial_failure(Cause::Io(flag.unwrap_err()),b.stats,false,core::option::None())); }
-    if (after.is_err()) { return core::result::Err(initial_failure(after.unwrap_err(),b.stats,false,core::option::None())); } b.last = after.unwrap(); if (!flag.unwrap()) { return core::result::Err(initial_failure(Cause::InvalidOptions,b.stats,false,core::option::None())); }
-    while (true) {
-        let permit = accept_call(b.borrow()); if (permit.is_err()) { return core::result::Err(initial_failure(permit.unwrap_err(),b.stats,false,core::option::None())); }
-        let got = listener.accept(true);
-        if (got.is_ok()) {
-            let accepted = got.unwrap(); let observed = check_time(b.last,deadline);
-            if (observed.is_err()) { b.stats.cleanup_calls += 1; let closed = accepted.socket.close(); b.stats.closed = true; if (closed.is_err()) { b.stats.cleanup_errors += 1; } let cleanup: core::option::Option<core::io::Error> = core::option::None(); if (closed.is_err()) { cleanup = core::option::Some(closed.unwrap_err()); } return core::result::Err(initial_failure(observed.unwrap_err(),b.stats,true,cleanup)); }
-            let framing = ext::http::cursor(ext::http::CursorMode::Request,options.request,options.request_bytes,scan_allowance);
-            return core::result::Ok(Connection { socket:accepted.socket,remote:accepted.peer,options:options,deadline:deadline,last:observed.unwrap(),stage:Stage::Head,phase:0,progress:b.stats,
-                head_wire:alloc::vec::new(),wire:alloc::vec::new(),decoded:alloc::vec::new(),response_wire:alloc::vec::new(),cursor:framing.unwrap(),header:core::option::None(),request:core::option::None(),input_eof:false,final_staged:false,continue_staged:false,terminal:core::option::None() });
-        }
-        let failure: std::socket::AcceptFailure = got.unwrap_err();
-        if (failure.cleanup_attempted) { b.stats.cleanup_calls += 1; b.stats.closed = true; } if (failure.cleanup_error.is_some()) { b.stats.cleanup_errors += 1; }
-        let observed = check_time(b.last,deadline);
-        if (!transient(failure.cause) || failure.cleanup_attempted) { return core::result::Err(initial_failure(Cause::Io(failure.cause),b.stats,failure.cleanup_attempted,failure.cleanup_error)); }
-        if (observed.is_err()) { return core::result::Err(initial_failure(observed.unwrap_err(),b.stats,failure.cleanup_attempted,failure.cleanup_error)); } b.last = observed.unwrap();
-        let permit = accept_call(b.borrow()); if (permit.is_err()) { return core::result::Err(initial_failure(permit.unwrap_err(),b.stats,false,core::option::None())); }
-        let waited = listener.wait_ms(true,false,milliseconds(deadline,b.last)); let observed = check_time(b.last,deadline);
-        if (observed.is_err()) { return core::result::Err(initial_failure(observed.unwrap_err(),b.stats,false,core::option::None())); } b.last = observed.unwrap();
-        if (waited.is_err() && !transient(waited.unwrap_err())) { return core::result::Err(initial_failure(Cause::Io(waited.unwrap_err()),b.stats,false,core::option::None())); }
-    }
-    return core::result::Err(initial_failure(Cause::InvalidState,b.stats,false,core::option::None()));
+pub fn protocol(options: Options, deadline: core::time::Deadline) -> core::result::Result<Protocol,Failure> {
+    let stats: Stats = empty_stats();
+    if (!options_valid(options) || deadline.instant.ticks.nanos >= 1000000000) { return core::result::Err(initial_failure(Cause::InvalidOptions,stats)); }
+    let allowance: u64 = (options.request_bytes as u64)*2;
+    if (allowance > options.work) { return core::result::Err(initial_failure(Cause::WorkLimit,stats)); } stats.work = allowance;
+    let now = check_time(core::time::instant(core::time::zero()),deadline); if (now.is_err()) { return core::result::Err(initial_failure(now.unwrap_err(),stats)); }
+    let made = ext::http::cursor(ext::http::CursorMode::Request,options.request,options.request_bytes,allowance);
+    if (made.is_err()) { return core::result::Err(initial_failure(Cause::Http(made.unwrap_err()),stats)); }
+    return core::result::Ok(Protocol { options:options,deadline:deadline,last:now.unwrap(),stage:Stage::Head,phase:Phase::ScanHead,current:Status::Active,progress:stats,
+        head_wire:alloc::vec::new<u8>(),wire:alloc::vec::new<u8>(),decoded:alloc::vec::new<u8>(),response_wire:alloc::vec::new<u8>(),cursor:made.unwrap(),
+        header:core::option::None(),request:core::option::None(),boundary:core::option::None(),validated:core::option::None(),input_eof:false,final_staged:false,continue_staged:false,empty:false,owned:true,sending:0,sending_kind:SendKind::Final,
+        rejected:core::option::None(),terminal:core::option::None(),current_event:core::option::None(),revision:0 });
 }
-pub impl Connection {
-    pub fn borrow(&self) -> &Connection { return self; }
-    pub fn peer(&self) -> core::net::SocketAddr { return self.remote; }
+
+pub impl Protocol {
+    pub fn borrow(&self) -> &Protocol { return self; }
+    pub fn status(&self) -> Status { return self.current; }
+    pub fn stage(&self) -> Stage { return self.stage; }
     pub fn stats(&self) -> Stats { return self.progress; }
-    fn failure(&self, cause: Cause) -> Failure { return Failure { cause:cause,stage:self.stage,stats:self.progress,cleanup_attempted:false,cleanup:core::option::None() }; }
-    pub fn close(&self) -> core::result::Result<Stats,Failure> {
-        self.stage = Stage::Close; let attempted: bool = self.socket.is_open(); if (attempted) { self.progress.cleanup_calls += 1; }
-        let closed = self.socket.close(); self.progress.closed = true; self.phase = 7;
-        if (closed.is_err()) { self.progress.cleanup_errors += 1; let failure = self.failure(Cause::Io(closed.unwrap_err())); failure.cleanup_attempted = attempted; return core::result::Err(failure); } return core::result::Ok(self.progress);
+    pub fn logical_bytes(&self) -> u64 { return (self.head_wire.len() as u64)+(self.wire.len() as u64)+(self.decoded.len() as u64)+(self.response_wire.len() as u64); }
+    pub fn remaining(&self) -> core::time::Duration { return self.deadline.remaining(self.last); }
+    pub fn rejection(&self) -> core::option::Option<Rejection> { return self.rejected; }
+    pub fn last_terminal_failure(&self) -> core::option::Option<Failure> { return self.terminal; }
+    pub fn head(&self) -> core::option::Option<RequestHead> { return self.header; }
+    pub fn request(&self) -> core::option::Option<Request> { return self.request; }
+    pub fn final_staged(&self) -> bool { return self.final_staged; }
+    pub fn event(&self) -> core::option::Option<Event> { return self.current_event; }
+    pub fn event_revision(&self) -> u64 { return self.revision; }
+    pub fn pending_send_bytes(&self) -> i32 { return self.sending; }
+    fn local_failure(&self, cause: Cause) -> Failure { return Failure { cause:cause,stage:self.stage,stats:self.progress,cleanup_attempted:false,cleanup:core::option::None(),rejection:self.rejected }; }
+    fn guard(&self) -> core::result::Result<bool,Failure> { if (self.terminal.is_some()) { return core::result::Err(self.terminal.unwrap()); } if (!running(self.current)) { return core::result::Err(self.local_failure(Cause::InvalidState)); } return core::result::Ok(true); }
+    pub fn failure(&self, cause: Cause) -> Failure {
+        if (self.terminal.is_some()) { return self.terminal.unwrap(); }
+        if (!running(self.current)) { return self.local_failure(Cause::InvalidState); }
+        let error: Failure = self.local_failure(cause);
+        // A final post-close clock check can establish the fatal cause after
+        // record_close has already retired the native owner successfully.
+        error.cleanup_attempted = self.progress.closed && self.progress.cleanup_calls > 0;
+        self.terminal = core::option::Some(error); self.current = Status::Failed; self.current_event = core::option::None(); return error;
     }
-    pub fn destroy(&self) -> core::result::Result<i32,core::io::Error> {
-        let closed = self.close(); self.response_wire.destroy(); self.decoded.destroy(); self.wire.destroy(); self.head_wire.destroy(); self.phase = 9;
-        if (closed.is_err()) { return core::result::Err(match(closed.unwrap_err().cause) { Cause::Io(e) -> e, _ -> core::io::Error::InvalidInput }); } return core::result::Ok(0);
+    fn active(&self) -> core::result::Result<bool,Cause> { let now = check_time(self.last,self.deadline); if (now.is_err()) { return core::result::Err(now.unwrap_err()); } self.last = now.unwrap(); return core::result::Ok(true); }
+    fn pay(&self, units: u64) -> core::result::Result<bool,Cause> { if (units > self.options.work-self.progress.work) { return core::result::Err(Cause::WorkLimit); } self.progress.work += units; return core::result::Ok(true); }
+    pub fn check(&self) -> core::result::Result<bool,Failure> { let guard = self.guard(); if (guard.is_err()) { return guard; } let now = self.active(); if (now.is_err()) { return core::result::Err(self.failure(now.unwrap_err())); } return core::result::Ok(true); }
+    pub fn before_io(&self, stage: Stage) -> core::result::Result<bool,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return guard; } self.stage = stage;
+        let now = self.check(); if (now.is_err()) { return now; } if (self.progress.io_calls == self.options.io_calls) { return core::result::Err(self.failure(Cause::IoLimit)); }
+        self.progress.io_calls += 1; if (match(stage) { Stage::Send -> true, _ -> false }) { self.progress.final_started = true; } return core::result::Ok(true);
+    }
+    pub fn before_wait(&self) -> core::result::Result<bool,Failure> {
+        let now = self.check(); if (now.is_err()) { return now; } if (self.progress.io_calls == self.options.io_calls) { return core::result::Err(self.failure(Cause::IoLimit)); } self.progress.io_calls += 1; return core::result::Ok(true);
+    }
+    fn publish(&self, event: Event) { self.current_event = core::option::Some(event); self.revision += 1; }
+    fn rejected_or_failed(&self, cause: Cause) -> core::result::Result<Need,Failure> {
+        if (!rejectable(cause)) { return core::result::Err(self.failure(cause)); }
+        if (self.rejected.is_none()) { self.rejected = core::option::Some(Rejection { cause:cause,stage:self.stage,stats:self.progress }); }
+        self.phase = Phase::Rejected; self.publish(Event::Rejected(self.rejected.unwrap())); return core::result::Ok(Need::Decision);
+    }
+    fn command_error(&self, cause: Cause) -> Failure { if (command_fatal(cause)) { return self.failure(cause); } return self.local_failure(cause); }
+    pub fn need(&self) -> Need {
+        if (!running(self.current)) { return Need::Local; }
+        if (match(self.phase) { Phase::Continue -> true, _ -> false }) { if (self.progress.continue_sent == 25 && self.sending == 0) { return Need::Local; } return Need::Output(SendKind::Continue); }
+        if (match(self.phase) { Phase::Final -> true, _ -> false }) { if (self.progress.response_sent == self.progress.response_bytes && self.sending == 0) { return Need::Local; } return Need::Output(SendKind::Final); }
+        if (match(self.phase) { Phase::Drain -> true, _ -> false }) { if (self.progress.peer_eof || self.progress.drain_received > self.options.drain_bytes as u64) { return Need::Local; } return Need::Drain(self.discard_capacity()); }
+        return match(self.phase) {
+            Phase::InputHead -> self.input_need(), Phase::InputBody -> self.input_need(),
+            Phase::Head -> Need::Decision, Phase::Request -> Need::Decision, Phase::Rejected -> Need::Decision,
+            Phase::Shutdown -> Need::Shutdown,
+            Phase::Finish -> Need::FinishTransport, _ -> Need::Local
+        };
+    }
+    fn input_need(&self) -> Need { let remaining: i32 = self.options.request_bytes-self.wire.len(); if (remaining <= 0) { return Need::Local; } if (remaining > 1024) { remaining = 1024; } return Need::Input(remaining); }
+    fn discard_capacity(&self) -> i32 { let remaining: u64 = (self.options.drain_bytes as u64)-self.progress.drain_received; if (remaining == 0) { return 1; } if (remaining > 1024 as u64) { return 1024; } return remaining as i32; }
+    pub fn read_body(&self, decision: BodyDecision) -> core::result::Result<bool,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return guard; } self.stage = Stage::Body;
+        if (!match(self.phase) { Phase::Head -> true, _ -> false } || self.final_staged || self.continue_staged) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        let now = self.check(); if (now.is_err()) { return now; }
+        let expected: i32 = match(self.header.unwrap().expectation) { Expectation::None -> 0, Expectation::Continue -> 1, Expectation::Unsupported -> 2 };
+        let continuing: bool = match(decision) { BodyDecision::ContinueThenRead -> true, _ -> false };
+        if (expected == 2 || (expected == 1 && !continuing)) { return core::result::Err(self.local_failure(Cause::ExpectationRequired)); }
+        if (continuing && expected != 1) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        if (continuing) { let paid = self.pay(25); if (paid.is_err()) { return core::result::Err(self.failure(paid.unwrap_err())); } self.continue_staged = true; self.phase = Phase::Continue; }
+        else { self.phase = Phase::ScanBody; } self.current_event = core::option::None(); return core::result::Ok(true);
+    }
+    pub fn respond(&self, response: Response) -> core::result::Result<bool,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return guard; } self.stage = Stage::Prepare;
+        let decision: bool = match(self.phase) { Phase::Head -> true, Phase::Request -> true, Phase::Rejected -> true, _ -> false };
+        if (!decision || self.final_staged || self.sending != 0 || (self.continue_staged && self.progress.continue_sent != 25)) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        let staged = self.prepare_response(response); if (staged.is_err()) { return core::result::Err(self.command_error(staged.unwrap_err())); } return core::result::Ok(true);
+    }
+    pub fn receive_limit(&self) -> core::result::Result<i32,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
+        let input: bool = match(self.phase) { Phase::InputHead -> true, Phase::InputBody -> true, _ -> false };
+        if (!input || self.input_eof) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        let remaining: i32 = self.options.request_bytes-self.wire.len(); if (remaining <= 0) { return core::result::Err(self.local_failure(Cause::RequestLimit)); } if (remaining > 1024) { remaining = 1024; } return core::result::Ok(remaining);
+    }
+    pub fn feed(&self, bytes: core::slice::View<u8>) -> core::result::Result<bool,Failure> {
+        let capacity = self.receive_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); }
+        if (!valid(bytes) || bytes.length <= 0 || bytes.length > capacity.unwrap()) { return core::result::Err(self.failure(Cause::Io(core::io::Error::InvalidCount))); }
+        self.progress.received += bytes.length as u64; let now = self.check(); if (now.is_err()) { return now; }
+        let paid = self.pay(bytes.length as u64); if (paid.is_err()) { return core::result::Err(self.failure(paid.unwrap_err())); }
+        if (self.wire.try_extend(bytes).is_err()) { let rejected = self.rejected_or_failed(Cause::AllocationFailed); if (rejected.is_err()) { return core::result::Err(rejected.unwrap_err()); } return core::result::Ok(true); }
+        self.progress.retained = self.wire.len(); self.phase = match(self.phase) { Phase::InputHead -> Phase::ScanHead, _ -> Phase::ScanBody }; return self.check();
+    }
+    pub fn feed_eof(&self) -> core::result::Result<bool,Failure> {
+        let capacity = self.receive_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); }
+        self.input_eof = true; self.progress.peer_eof = true; self.phase = match(self.phase) { Phase::InputHead -> Phase::ScanHead, _ -> Phase::ScanBody }; return self.check();
+    }
+    pub fn start_send(&self) -> core::result::Result<core::option::Option<core::slice::View<u8>>,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
+        let interim: bool = match(self.phase) { Phase::Continue -> true, _ -> false }; let final: bool = match(self.phase) { Phase::Final -> true, _ -> false };
+        if ((!interim && !final) || self.sending != 0) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        let bytes = self.response_wire.as_view(); let offset: i32 = self.progress.response_sent;
+        if (interim) { bytes = literal("HTTP/1.1 100 Continue\r\n\r\n",25); offset = self.progress.continue_sent; }
+        let count: i32 = bytes.length-offset; if (count == 0) { return core::result::Ok(core::option::None()); } if (count > 1024) { count = 1024; }
+        self.sending = count; self.sending_kind = SendKind::Final; if (interim) { self.sending_kind = SendKind::Continue; } return core::result::Ok(core::option::Some(bytes.subview(offset,offset+count).unwrap()));
+    }
+    pub fn commit_send(&self, count: i32) -> core::result::Result<bool,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return guard; } if (self.sending == 0) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        if (count <= 0) { return core::result::Err(self.failure(Cause::Io(core::io::Error::WriteZero))); } if (count > self.sending) { return core::result::Err(self.failure(Cause::Io(core::io::Error::InvalidCount))); }
+        if (match(self.sending_kind) { SendKind::Continue -> true, _ -> false }) { self.progress.continue_sent += count; } else { self.progress.response_sent += count; }
+        self.sending = 0; return self.check();
+    }
+    pub fn cancel_send(&self) -> core::result::Result<bool,Failure> { let guard = self.guard(); if (guard.is_err()) { return guard; } let pending: bool = self.sending != 0; self.sending = 0; return core::result::Ok(pending); }
+    pub fn drain_limit(&self) -> core::result::Result<i32,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return core::result::Err(guard.unwrap_err()); }
+        let allowed: bool = match(self.phase) { Phase::Final -> true, Phase::Shutdown -> true, Phase::Drain -> true, _ -> false };
+        if (!allowed || self.progress.peer_eof) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        if (self.progress.drain_received > self.options.drain_bytes as u64) { return core::result::Err(self.failure(Cause::DrainLimit)); } return core::result::Ok(self.discard_capacity());
+    }
+    pub fn discard(&self, count: i32) -> core::result::Result<bool,Failure> {
+        let capacity = self.drain_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); }
+        if (count < 0 || count > capacity.unwrap()) { return core::result::Err(self.failure(Cause::Io(core::io::Error::InvalidCount))); }
+        self.progress.received += count as u64; self.progress.drain_received += count as u64; if (count == 0) { self.progress.peer_eof = true; }
+        let now = self.check(); if (now.is_err()) { return now; } let paid = self.pay(count as u64); if (paid.is_err()) { return core::result::Err(self.failure(paid.unwrap_err())); }
+        if (self.progress.drain_received > self.options.drain_bytes as u64) { return core::result::Err(self.failure(Cause::DrainLimit)); } return core::result::Ok(true);
+    }
+    pub fn record_write_shutdown(&self, peer_eof: bool) -> core::result::Result<bool,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return guard; }
+        let shutdown: bool = match(self.phase) { Phase::Shutdown -> true, Phase::Finish -> self.empty, _ -> false };
+        if (!shutdown || self.progress.write_shutdown) { return core::result::Err(self.local_failure(Cause::InvalidState)); }
+        self.progress.write_shutdown = true; if (peer_eof) { self.progress.peer_eof = true; }
+        if (match(self.phase) { Phase::Shutdown -> true, _ -> false }) { self.phase = Phase::Drain; } return self.check();
+    }
+    pub fn record_close(&self, attempted: bool, cleanup: core::option::Option<core::io::Error>) -> core::result::Result<bool,Failure> {
+        if (self.progress.closed) { if (self.terminal.is_some()) { return core::result::Err(self.terminal.unwrap()); } return core::result::Ok(false); }
+        if (attempted) { self.progress.cleanup_calls += 1; } if (cleanup.is_some()) { self.progress.cleanup_errors += 1; } self.progress.closed = true;
+        if (self.terminal.is_some()) { let error: Failure = self.terminal.unwrap(); error.stats = self.progress; error.cleanup_attempted = attempted; error.cleanup = cleanup; self.terminal = core::option::Some(error); return core::result::Err(error); }
+        if (cleanup.is_some()) { self.stage = Stage::Close; let error: Failure = self.local_failure(Cause::Io(cleanup.unwrap())); error.cleanup_attempted = attempted; self.terminal = core::option::Some(error); self.current = Status::Failed; self.current_event = core::option::None(); return core::result::Err(error); } return core::result::Ok(true);
+    }
+    pub fn transport_finished(&self) -> core::result::Result<bool,Failure> {
+        let guard = self.guard(); if (guard.is_err()) { return guard; }
+        if (!match(self.phase) { Phase::Finish -> true, _ -> false } || self.sending != 0 || !self.progress.closed || (!self.empty && (!self.progress.write_shutdown || !self.progress.peer_eof))) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
+        self.stage = Stage::Close; let now = self.check(); if (now.is_err()) { return now; }
+        self.current = Status::Complete; self.phase = Phase::Terminal; if (self.empty) { self.publish(Event::Empty); } else { self.publish(Event::Complete(self.progress)); } return core::result::Ok(true);
+    }
+    pub fn abort(&self) -> bool { if (!running(self.current)) { return false; } self.current = Status::Aborted; self.phase = Phase::Terminal; self.sending = 0; self.current_event = core::option::None(); return true; }
+    pub fn destroy(&self) -> bool {
+        if (!self.owned) { return false; } self.owned = false; self.abort(); self.head_wire.destroy(); self.wire.destroy(); self.decoded.destroy(); self.response_wire.destroy();
+        self.header = core::option::None(); self.request = core::option::None(); self.boundary = core::option::None(); self.validated = core::option::None(); self.current_event = core::option::None(); self.sending = 0; return true;
     }
 }
 
@@ -132,18 +267,22 @@ fn expectation(h: ext::http::Head) -> Expectation {
     let body: bool = match(h.kind) { ext::http::BodyKind::Chunked -> true, ext::http::BodyKind::Fixed -> h.content_length > 0, _ -> false };
     if (!body) { return Expectation::None; } return Expectation::Continue;
 }
-pub impl Connection {
-    fn active(&self) -> core::result::Result<bool,Cause> { let read = check_time(self.last,self.deadline); if (read.is_err()) { return core::result::Err(read.unwrap_err()); } self.last = read.unwrap(); return core::result::Ok(true); }
-    fn pay(&self, units: u64) -> core::result::Result<bool,Cause> { if (units > self.options.work-self.progress.work) { return core::result::Err(Cause::WorkLimit); } self.progress.work += units; return core::result::Ok(true); }
-    fn call(&self) -> core::result::Result<bool,Cause> { let before = self.active(); if (before.is_err()) { return before; } if (self.progress.io_calls == self.options.io_calls) { return core::result::Err(Cause::IoLimit); } self.progress.io_calls += 1; return core::result::Ok(true); }
-    fn wait(&self, readable: bool, writable: bool) -> core::result::Result<bool,Cause> {
-        while (true) { let allowed = self.call(); if (allowed.is_err()) { return allowed; } let waited = self.socket.wait_ms(readable,writable,milliseconds(self.deadline,self.last)); let after = self.active();
-            if (waited.is_err() && !transient(waited.unwrap_err())) { return core::result::Err(Cause::Io(waited.unwrap_err())); } if (after.is_err()) { return after; } if (waited.is_ok() && !waited.unwrap().timed_out) { return core::result::Ok(true); } }
-        return core::result::Err(Cause::InvalidState);
-    }
-    // Rejection status only. Inspect through the failed scan, never a later
-    // SP/CRLF already present in an unfragmented prefix. 0=not first line,
-    // 1=other overlong first line, 2=the failure lies inside its target span.
+fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:literal("",0),name:name,value:value,offset:0 }; }
+fn decimal(out: &alloc::vec::Vec<u8>, value: i32) -> bool { let scratch: [u8;10] = [0;10]; let at: i32 = 10; let n: i32 = value; while (true) { at -= 1; scratch[at] = (48+n%10) as u8; n /= 10; if (n == 0) { break; } } return out.try_extend(core::slice::view_range(scratch,at,10-at).unwrap()).is_ok(); }
+fn digit_count(value: i32) -> i32 { let n: i32 = value; let digits: i32 = 1; while (n >= 10) { n /= 10; digits += 1; } return digits; }
+fn date_number(out: core::slice::View<u8>, at: i32, width: i32, value: i32) { let n: i32 = value; let i: i32 = width; while (i > 0) { i -= 1; out.try_set(at+i,(48+n%10) as u8).unwrap(); n /= 10; } }
+fn date_into(value: core::time::SystemTime, out: core::slice::View<u8>) -> core::result::Result<bool,Cause> {
+    if (!valid(out) || out.len() < 29) { return core::result::Err(Cause::Http(ext::http::Error::Bounds)); }
+    let got = core::calendar::from_system_time(value,core::calendar::utc()); if (got.is_err()) { return core::result::Err(Cause::Date(got.unwrap_err())); }
+    let dt = got.unwrap().local; if (dt.date.year < 0 || dt.date.year > 9999) { return core::result::Err(Cause::Date(core::calendar::Error::YearOutOfRange)); }
+    let weekdays = literal("MonTueWedThuFriSatSun",21); let months = literal("JanFebMarAprMayJunJulAugSepOctNovDec",36);
+    let i: i32 = 0; while (i < 3) { out.try_set(i,weekdays.get((dt.date.weekday()-1)*3+i).unwrap()).unwrap(); out.try_set(8+i,months.get((dt.date.month-1)*3+i).unwrap()).unwrap(); i += 1; }
+    out.try_set(3,44).unwrap(); out.try_set(4,32).unwrap(); date_number(out,5,2,dt.date.day); out.try_set(7,32).unwrap(); out.try_set(11,32).unwrap(); date_number(out,12,4,dt.date.year); out.try_set(16,32).unwrap(); date_number(out,17,2,dt.time.hour); out.try_set(19,58).unwrap(); date_number(out,20,2,dt.time.minute); out.try_set(22,58).unwrap(); date_number(out,23,2,dt.time.second); out.try_set(25,32).unwrap(); out.try_set(26,71).unwrap(); out.try_set(27,77).unwrap(); out.try_set(28,84).unwrap(); return core::result::Ok(true);
+}
+
+pub impl Protocol {
+    // Inspect only through the failed scan. A later delimiter in an already
+    // received whole prefix must not change line/target rejection policy.
     fn request_line_limit(&self, offset: i32) -> core::result::Result<i32,Cause> {
         if (offset <= self.options.request.line_bytes || self.options.request.line_bytes == 2147483647) { return core::result::Ok(0); }
         let n: i32 = self.options.request.line_bytes+1; if (n > self.wire.len()) { return core::result::Ok(0); }
@@ -159,128 +298,77 @@ pub impl Connection {
             let error = got.unwrap_err(); let at: core::option::Option<i32> = match(error) { ext::http::Error::Limit(n) -> core::option::Some(n), _ -> core::option::None() };
             if (at.is_some()) { let classified = self.request_line_limit(at.unwrap()); if (classified.is_err()) { return core::result::Err(classified.unwrap_err()); } if (classified.unwrap() == 2) { return core::result::Err(Cause::RequestTargetLimit); } if (classified.unwrap() == 1) { return core::result::Err(Cause::RequestLineLimit); } }
             return core::result::Err(Cause::Http(error));
-        } let after = self.active(); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(got.unwrap());
-    }
-    fn receive_wire(&self) -> core::result::Result<bool,Cause> {
-        let remaining: i32 = self.options.request_bytes-self.wire.len(); if (remaining <= 0) { return core::result::Err(Cause::RequestLimit); }
-        let count: i32 = remaining; if (count > 1024) { count = 1024; }
-        let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
-        while (true) {
-            let allowed = self.call(); if (allowed.is_err()) { return allowed; } let got = self.socket.receive(core::slice::view(scratch,count).unwrap());
-            if (got.is_ok()) { self.progress.received += got.unwrap() as u64; if (got.unwrap() == 0) { self.input_eof = true; self.progress.peer_eof = true; } }
-            let after = self.active();
-            if (got.is_err() && !transient(got.unwrap_err())) { return core::result::Err(Cause::Io(got.unwrap_err())); } if (after.is_err()) { return after; }
-            if (got.is_ok()) {
-                let n: i32 = got.unwrap(); let paid = self.pay(n as u64); if (paid.is_err()) { return paid; }
-                if (self.wire.try_extend(core::slice::view(scratch,n).unwrap()).is_err()) { return core::result::Err(Cause::AllocationFailed); } self.progress.retained = self.wire.len(); return core::result::Ok(n > 0);
-            }
-            let waited = self.wait(true,false); if (waited.is_err()) { return waited; }
         }
-        return core::result::Err(Cause::InvalidState);
+        let after = self.active(); if (after.is_err()) { return core::result::Err(after.unwrap_err()); } return core::result::Ok(got.unwrap());
     }
-    fn head_inner(&self) -> core::result::Result<core::option::Option<RequestHead>,Cause> {
-        while (true) {
-            let event = self.scan(); if (event.is_err()) { return core::result::Err(event.unwrap_err()); }
-            let info: core::option::Option<ext::http::HeadInfo> = match(event.unwrap()) { ext::http::Scan::HeadReady(h) -> core::option::Some(h), _ -> core::option::None() };
+    fn store_head(&self, info: ext::http::HeadInfo) -> core::result::Result<bool,Cause> {
+        let n: i32 = info.head_end; if (n < 0 || n > self.wire.len() || self.header.is_some()) { return core::result::Err(Cause::BoundaryMismatch); }
+        let paid = self.pay((n as u64)*4); if (paid.is_err()) { return paid; }
+        let copied = alloc::vec::from_view<u8>(self.wire.as_view().subview(0,n).unwrap()); if (copied.is_err()) { return core::result::Err(Cause::AllocationFailed); }
+        let owner: alloc::vec::Vec<u8> = copied.unwrap(); let parsed = ext::http::parse_request_head(owner.as_view(),self.options.request);
+        if (parsed.is_err()) { owner.destroy(); return core::result::Err(Cause::Http(parsed.unwrap_err())); }
+        let h: ext::http::Head = parsed.unwrap(); let target = head_target(h); if (target.is_err()) { owner.destroy(); return core::result::Err(target.unwrap_err()); }
+        let view: RequestHead = RequestHead { head:h,target:target.unwrap(),expectation:expectation(h) };
+        let after = self.active(); if (after.is_err()) { owner.destroy(); return after; }
+        self.head_wire = owner; self.header = core::option::Some(view);
+        let fixed: bool = match(h.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
+        if (fixed && (h.content_length > self.options.request.body_bytes || h.content_length > self.options.request_bytes-n)) { return core::result::Err(Cause::BodyLimit); }
+        self.phase = Phase::Head; self.publish(Event::Head(view)); return core::result::Ok(true);
+    }
+    fn validate_request(&self) -> core::result::Result<bool,Cause> {
+        let b: ext::http::FrameBoundary = self.boundary.unwrap(); self.stage = Stage::Validate;
+        let paid = self.pay((b.consumed as u64)*4+4*(self.options.request.head_bytes as u64)*((self.options.request.trailers as u64)+1)); if (paid.is_err()) { return paid; }
+        let parsed = ext::http::parse_request(self.wire.as_view().subview(0,b.consumed).unwrap(),self.input_eof,self.options.request);
+        if (parsed.is_err()) { return core::result::Err(Cause::Http(parsed.unwrap_err())); } let message: ext::http::Message = parsed.unwrap();
+        if (message.consumed != b.consumed || message.decoded_length != b.decoded_length) { return core::result::Err(Cause::BoundaryMismatch); }
+        let after = self.active(); if (after.is_err()) { return after; } self.validated = core::option::Some(message); self.phase = Phase::Decode; return core::result::Ok(true);
+    }
+    fn decode_request(&self) -> core::result::Result<bool,Cause> {
+        self.stage = Stage::Decode; let message: ext::http::Message = self.validated.unwrap();
+        let paid = self.pay(2*(message.encoded_body.len() as u64)+2*(message.decoded_length as u64)); if (paid.is_err()) { return paid; }
+        let storage: alloc::vec::Vec<u8> = alloc::vec::new<u8>(); if (storage.try_resize(message.decoded_length,0 as u8).is_err()) { storage.destroy(); return core::result::Err(Cause::AllocationFailed); }
+        let got = ext::http::decode_into(message,storage.as_view()); if (got.is_err()) { storage.destroy(); return core::result::Err(Cause::Http(got.unwrap_err())); }
+        if (got.unwrap() != message.decoded_length) { storage.destroy(); return core::result::Err(Cause::BoundaryMismatch); }
+        let after = self.active(); if (after.is_err()) { storage.destroy(); return after; }
+        self.decoded = storage; self.progress.decoded = message.decoded_length; self.progress.retained = message.consumed;
+        let request: Request = Request { message:message,body:self.decoded.as_view() }; self.request = core::option::Some(request); self.phase = Phase::Request; self.publish(Event::Request(request)); return core::result::Ok(true);
+    }
+    pub fn advance(&self) -> core::result::Result<Need,Failure> {
+        let checked = self.check(); if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+        let heading: bool = match(self.phase) { Phase::ScanHead -> true, _ -> false };
+        let body: bool = match(self.phase) { Phase::ScanBody -> true, _ -> false };
+        if (heading || body) {
+            self.stage = Stage::Head; if (body) { self.stage = Stage::Body; }
+            if (heading && self.input_eof && self.wire.is_empty()) { self.empty = true; self.phase = Phase::Finish; self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); }
+            let got = self.scan(); if (got.is_err()) { return self.rejected_or_failed(got.unwrap_err()); }
+            let event: ext::http::Scan = got.unwrap();
+            if (match(event) { ext::http::Scan::NeedMore -> true, _ -> false }) { self.phase = Phase::InputHead; if (body) { self.phase = Phase::InputBody; } return core::result::Ok(self.need()); }
+            let info: core::option::Option<ext::http::HeadInfo> = match(event) { ext::http::Scan::HeadReady(v) -> core::option::Some(v), _ -> core::option::None() };
             if (info.is_some()) {
-                let n: i32 = info.unwrap().head_end; let paid = self.pay((n as u64)*4); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
-                let copied = alloc::vec::from_view(self.wire.as_view().subview(0,n).unwrap()); if (copied.is_err()) { return core::result::Err(Cause::AllocationFailed); }
-                let owner: alloc::vec::Vec<u8> = copied.unwrap(); let parsed = ext::http::parse_request_head(owner.as_view(),self.options.request); if (parsed.is_err()) { owner.destroy(); return core::result::Err(Cause::Http(parsed.unwrap_err())); }
-                let h = parsed.unwrap(); let target = head_target(h); if (target.is_err()) { owner.destroy(); return core::result::Err(target.unwrap_err()); }
-                let view = RequestHead { head:h,target:target.unwrap(),expectation:expectation(h) };
-                let after = self.active(); if (after.is_err()) { owner.destroy(); return core::result::Err(after.unwrap_err()); }
-                self.head_wire = owner; self.header = core::option::Some(view); self.phase = 1;
-                let fixed: bool = match(h.kind) { ext::http::BodyKind::Fixed -> true, _ -> false };
-                if (fixed && (h.content_length > self.options.request.body_bytes || h.content_length > self.options.request_bytes-n)) { return core::result::Err(Cause::BodyLimit); }
-                return core::result::Ok(core::option::Some(view));
+                if (!heading) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
+                let stored = self.store_head(info.unwrap()); if (stored.is_err()) { return self.rejected_or_failed(stored.unwrap_err()); } return core::result::Ok(Need::Decision);
             }
-            let received = self.receive_wire(); if (received.is_err()) { return core::result::Err(received.unwrap_err()); }
-            if (!received.unwrap() && self.wire.is_empty()) { self.phase = 8; return core::result::Ok(core::option::None()); }
+            let found: core::option::Option<ext::http::FrameBoundary> = match(event) { ext::http::Scan::Boundary(v) -> core::option::Some(v), _ -> core::option::None() };
+            if (!body || found.is_none()) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
+            let boundary: ext::http::FrameBoundary = found.unwrap(); if (boundary.consumed < 0 || boundary.consumed > self.wire.len()) { return core::result::Err(self.failure(Cause::BoundaryMismatch)); }
+            self.progress.buffered_discarded = self.wire.len()-boundary.consumed; self.boundary = found; self.phase = Phase::Validate; return core::result::Ok(Need::Local);
         }
-        return core::result::Err(Cause::InvalidState);
-    }
-    pub fn read_head(&self) -> core::result::Result<core::option::Option<RequestHead>,Failure> {
-        if (self.phase != 0) { return core::result::Err(self.failure(Cause::InvalidState)); } self.stage = Stage::Head;
-        let got = self.head_inner(); if (got.is_err()) { let cause = got.unwrap_err(); self.phase = 3; if (uncertain(cause)) { self.phase = 8; self.terminal = core::option::Some(cause); } return core::result::Err(self.failure(cause)); } return core::result::Ok(got.unwrap());
-    }
-    fn request_inner(&self) -> core::result::Result<Request,Cause> {
-        while (true) {
-            let event = self.scan(); if (event.is_err()) { return core::result::Err(event.unwrap_err()); }
-            let found: core::option::Option<ext::http::FrameBoundary> = match(event.unwrap()) { ext::http::Scan::Boundary(b) -> core::option::Some(b), _ -> core::option::None() };
-            if (found.is_some()) {
-                let b = found.unwrap(); if (b.consumed < 0 || b.consumed > self.wire.len()) { return core::result::Err(Cause::BoundaryMismatch); }
-                self.progress.buffered_discarded = self.wire.len()-b.consumed;
-                self.stage = Stage::Validate; let allowance: u64 = (b.consumed as u64)*4+4*(self.options.request.head_bytes as u64)*((self.options.request.trailers as u64)+1);
-                let paid = self.pay(allowance); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
-                let parsed = ext::http::parse_request(self.wire.as_view().subview(0,b.consumed).unwrap(),self.input_eof,self.options.request);
-                if (parsed.is_err()) { return core::result::Err(Cause::Http(parsed.unwrap_err())); } let message = parsed.unwrap();
-                if (message.consumed != b.consumed || message.decoded_length != b.decoded_length) { return core::result::Err(Cause::BoundaryMismatch); }
-                let after = self.active(); if (after.is_err()) { return core::result::Err(after.unwrap_err()); }
-                self.stage = Stage::Decode; let paid = self.pay(2*(message.encoded_body.len() as u64)+2*(b.decoded_length as u64)); if (paid.is_err()) { return core::result::Err(paid.unwrap_err()); }
-                let storage: alloc::vec::Vec<u8> = alloc::vec::new(); if (storage.try_resize(b.decoded_length,0 as u8).is_err()) { storage.destroy(); return core::result::Err(Cause::AllocationFailed); }
-                let decoded = ext::http::decode_into(message,storage.as_view()); if (decoded.is_err()) { storage.destroy(); return core::result::Err(Cause::Http(decoded.unwrap_err())); }
-                let after = self.active(); if (after.is_err()) { storage.destroy(); return core::result::Err(after.unwrap_err()); }
-                self.decoded = storage; self.progress.decoded = b.decoded_length; self.progress.retained = b.consumed;
-                // Keep wire allocation immutable, including observed tail; Message
-                // only exposes the exact selected prefix. No later growth.
-                let request = Request { message:message,body:self.decoded.as_view() }; self.request = core::option::Some(request); self.phase = 2; return core::result::Ok(request);
-            }
-            let got = self.receive_wire(); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        if (match(self.phase) { Phase::InputHead -> true, Phase::InputBody -> true, _ -> false }) {
+            let capacity = self.receive_limit(); if (capacity.is_err()) { return self.rejected_or_failed(capacity.unwrap_err().cause); } return core::result::Ok(Need::Input(capacity.unwrap()));
         }
-        return core::result::Err(Cause::InvalidState);
+        if (match(self.phase) { Phase::Validate -> true, _ -> false }) { let validated = self.validate_request(); if (validated.is_err()) { return self.rejected_or_failed(validated.unwrap_err()); } return core::result::Ok(Need::Local); }
+        if (match(self.phase) { Phase::Decode -> true, _ -> false }) { let decoded = self.decode_request(); if (decoded.is_err()) { return self.rejected_or_failed(decoded.unwrap_err()); } return core::result::Ok(Need::Decision); }
+        if (match(self.phase) { Phase::Continue -> true, _ -> false }) { if (self.progress.continue_sent == 25 && self.sending == 0) { self.phase = Phase::ScanBody; self.stage = Stage::Body; return core::result::Ok(Need::Local); } return core::result::Ok(Need::Output(SendKind::Continue)); }
+        if (match(self.phase) { Phase::Final -> true, _ -> false }) { if (self.progress.response_sent == self.progress.response_bytes && self.sending == 0) { self.phase = Phase::Shutdown; self.stage = Stage::Shutdown; return core::result::Ok(Need::Shutdown); } return core::result::Ok(Need::Output(SendKind::Final)); }
+        if (match(self.phase) { Phase::Drain -> true, _ -> false }) { if (self.progress.peer_eof) { self.phase = Phase::Finish; self.stage = Stage::Close; return core::result::Ok(Need::FinishTransport); } let capacity = self.drain_limit(); if (capacity.is_err()) { return core::result::Err(capacity.unwrap_err()); } return core::result::Ok(Need::Drain(capacity.unwrap())); }
+        return core::result::Ok(self.need());
     }
-    pub fn read_request(&self) -> core::result::Result<Request,Failure> {
-        self.stage = Stage::Body;
-        if (self.phase != 1 || (self.progress.continue_sent > 0 && self.progress.continue_sent < 25)) { return core::result::Err(self.failure(Cause::InvalidState)); }
-        let expected: i32 = match(self.header.unwrap().expectation) { Expectation::Continue -> 1, Expectation::Unsupported -> 2, _ -> 0 };
-        if (expected == 2 || (expected == 1 && self.progress.continue_sent != 25)) { return core::result::Err(self.failure(Cause::ExpectationRequired)); }
-        let got = self.request_inner(); if (got.is_err()) { let cause = got.unwrap_err(); self.phase = 3; if (uncertain(cause)) { self.phase = 8; self.terminal = core::option::Some(cause); } return core::result::Err(self.failure(cause)); } return core::result::Ok(got.unwrap());
-    }
-}
-
-fn uncertain(cause: Cause) -> bool { return match(cause) { Cause::Io(e) -> match(e) { core::io::Error::InvalidCount -> true, _ -> false }, _ -> false }; }
-fn field(name: core::slice::View<u8>, value: core::slice::View<u8>) -> ext::http::Field { return ext::http::Field { raw:literal("",0),name:name,value:value,offset:0 }; }
-fn decimal(out: &alloc::vec::Vec<u8>, value: i32) -> bool { let scratch: [u8;10] = [0;10]; let at: i32 = 10; let n: i32 = value; while (true) { at -= 1; scratch[at] = (48+n%10) as u8; n /= 10; if (n == 0) { break; } } return out.try_extend(core::slice::view_range(scratch,at,10-at).unwrap()).is_ok(); }
-fn digit_count(value: i32) -> i32 { let n: i32 = value; let digits: i32 = 1; while (n >= 10) { n /= 10; digits += 1; } return digits; }
-fn date_number(out: core::slice::View<u8>, at: i32, width: i32, value: i32) { let n: i32 = value; let i: i32 = width; while (i > 0) { i -= 1; out.try_set(at+i,(48+n%10) as u8).unwrap(); n /= 10; } }
-fn date_into(value: core::time::SystemTime, out: core::slice::View<u8>) -> core::result::Result<bool,Cause> {
-    if (!valid(out) || out.len() < 29) { return core::result::Err(Cause::Http(ext::http::Error::Bounds)); }
-    let got = core::calendar::from_system_time(value,core::calendar::utc()); if (got.is_err()) { return core::result::Err(Cause::Date(got.unwrap_err())); }
-    let dt = got.unwrap().local; if (dt.date.year < 0 || dt.date.year > 9999) { return core::result::Err(Cause::Date(core::calendar::Error::YearOutOfRange)); }
-    let weekdays = literal("MonTueWedThuFriSatSun",21); let months = literal("JanFebMarAprMayJunJulAugSepOctNovDec",36);
-    let i: i32 = 0; while (i < 3) { out.try_set(i,weekdays.get((dt.date.weekday()-1)*3+i).unwrap()).unwrap(); out.try_set(8+i,months.get((dt.date.month-1)*3+i).unwrap()).unwrap(); i += 1; }
-    out.try_set(3,44).unwrap(); out.try_set(4,32).unwrap(); date_number(out,5,2,dt.date.day); out.try_set(7,32).unwrap(); out.try_set(11,32).unwrap(); date_number(out,12,4,dt.date.year); out.try_set(16,32).unwrap(); date_number(out,17,2,dt.time.hour); out.try_set(19,58).unwrap(); date_number(out,20,2,dt.time.minute); out.try_set(22,58).unwrap(); date_number(out,23,2,dt.time.second); out.try_set(25,32).unwrap(); out.try_set(26,71).unwrap(); out.try_set(27,77).unwrap(); out.try_set(28,84).unwrap(); return core::result::Ok(true);
-}
-pub impl Connection {
-    fn send_some(&self, input: core::slice::View<u8>, interim: bool) -> core::result::Result<bool,Cause> {
-        let permit = self.call(); if (permit.is_err()) { return permit; }
-        if (!interim) { self.progress.final_started = true; }
-        let got = self.socket.send(input);
-        if (got.is_ok()) { if (interim) { self.progress.continue_sent += got.unwrap(); } else { self.progress.response_sent += got.unwrap(); } }
-        let after = self.active();
-        if (got.is_err() && !transient(got.unwrap_err())) { return core::result::Err(Cause::Io(got.unwrap_err())); } if (after.is_err()) { return after; }
-        if (got.is_err()) { return core::result::Ok(false); } if (got.unwrap() == 0) { return core::result::Err(Cause::Io(core::io::Error::WriteZero)); } return core::result::Ok(true);
-    }
-    fn continue_inner(&self) -> core::result::Result<bool,Cause> {
-        if (!self.continue_staged) { let paid = self.pay(25); if (paid.is_err()) { return paid; } self.continue_staged = true; }
-        let wire = literal("HTTP/1.1 100 Continue\r\n\r\n",25);
-        while (self.progress.continue_sent < 25) {
-            let wrote = self.send_some(wire.subview(self.progress.continue_sent,25).unwrap(),true); if (wrote.is_err()) { return wrote; }
-            if (!wrote.unwrap()) { let waited = self.wait(false,true); if (waited.is_err()) { return waited; } }
-        }
-        return core::result::Ok(true);
-    }
-    pub fn send_continue(&self) -> core::result::Result<Stats,Failure> {
-        self.stage = Stage::Continue;
-        if (self.phase != 1 || self.progress.continue_sent == 25 || !match(self.header.unwrap().expectation) { Expectation::Continue -> true, _ -> false }) { return core::result::Err(self.failure(Cause::InvalidState)); }
-        let got = self.continue_inner(); if (got.is_err()) { let cause = got.unwrap_err(); if (uncertain(cause)) { self.phase = 8; self.terminal = core::option::Some(cause); } return core::result::Err(self.failure(cause)); } return core::result::Ok(self.progress);
-    }
-    fn prepare(&self, response: Response) -> core::result::Result<bool,Cause> {
+    fn prepare_response(&self, response: Response) -> core::result::Result<bool,Cause> {
         let observed = self.active(); if (observed.is_err()) { return observed; }
         if (!valid(response.reason) || !valid(response.headers) || !valid(response.body)) { return core::result::Err(Cause::Http(ext::http::Error::Bounds)); }
         let method = literal("GET",3); let version: i32 = 11;
         if (self.header.is_some()) { method = self.header.unwrap().head.method; version = self.header.unwrap().head.version; }
-        if (response.status < 200 || response.status > 599 || (eq(method,"CONNECT",7) && response.status < 300) || (self.header.is_none() && (response.status < 400 || !response.body.is_empty())) || (self.phase != 2 && response.status < 300) || (self.phase == 3 && response.status < 400)) { return core::result::Err(Cause::UnsupportedResponse); }
+        if (response.status < 200 || response.status > 599 || (eq(method,"CONNECT",7) && response.status < 300) || (self.header.is_none() && (response.status < 400 || !response.body.is_empty())) || (self.request.is_none() && response.status < 300) || (self.rejected.is_some() && response.status < 400)) { return core::result::Err(Cause::UnsupportedResponse); }
         let omit: bool = eq(method,"HEAD",4) || response.status == 204 || response.status == 304;
         if ((omit || response.status == 205) && !response.body.is_empty()) { return core::result::Err(Cause::UnsupportedResponse); }
         let extra: i32 = 3; if (omit) { extra = 2; }
@@ -309,54 +397,269 @@ pub impl Connection {
         if (parsed.unwrap().consumed != owner.len()) { owner.destroy(); return core::result::Err(Cause::BoundaryMismatch); }
         let after = self.active(); if (after.is_err()) { owner.destroy(); return after; }
         if (self.request.is_none() && self.header.is_some()) { self.progress.buffered_discarded = self.wire.len()-self.header.unwrap().head.raw.len(); }
-        self.response_wire = owner; self.progress.response_bytes = owner.len(); self.final_staged = true; self.phase = 4; return core::result::Ok(true);
+        self.response_wire = owner; self.progress.response_bytes = owner.len(); self.final_staged = true; self.phase = Phase::Final; self.current_event = core::option::None(); return core::result::Ok(true);
     }
-    fn discard_once(&self) -> core::result::Result<bool,Cause> {
-        if (self.progress.peer_eof) { return core::result::Ok(false); }
-        if (self.progress.drain_received > self.options.drain_bytes as u64) { return core::result::Err(Cause::DrainLimit); }
-        let remaining: i32 = self.options.drain_bytes-(self.progress.drain_received as i32); let count: i32 = remaining; if (count > 1024) { count = 1024; } if (count == 0) { count = 1; }
-        let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(storage),1024);
-        let permit = self.call(); if (permit.is_err()) { return permit; } let got = self.socket.receive(core::slice::view(scratch,count).unwrap());
-        if (got.is_ok()) { self.progress.received += got.unwrap() as u64; self.progress.drain_received += got.unwrap() as u64; if (got.unwrap() == 0) { self.progress.peer_eof = true; } }
-        let after = self.active();
-        if (got.is_err() && !transient(got.unwrap_err())) { return core::result::Err(Cause::Io(got.unwrap_err())); } if (after.is_err()) { return after; }
-        if (got.is_err()) { return core::result::Ok(false); } let paid = self.pay(got.unwrap() as u64); if (paid.is_err()) { return paid; }
-        if (got.unwrap() > remaining) { return core::result::Err(Cause::DrainLimit); } return core::result::Ok(true);
+}
+
+fn empty_ready() -> ext::http_client::Readiness { return ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false }; }
+fn cleanup_error(closed: core::result::Result<i32,core::io::Error>) -> core::option::Option<core::io::Error> { if (closed.is_err()) { return core::option::Some(closed.unwrap_err()); } return core::option::None(); }
+fn initial_close(socket: &std::socket::Socket, error: Failure) -> Failure {
+    let failure: Failure = error; let attempted: bool = socket.is_open(); let closed = socket.close();
+    failure.cleanup_attempted = attempted; failure.cleanup = cleanup_error(closed); failure.stats.closed = true;
+    if (attempted) { failure.stats.cleanup_calls += 1; } if (closed.is_err()) { failure.stats.cleanup_errors += 1; } return failure;
+}
+fn exchange_owner(owner: Protocol, socket: std::socket::Socket, peer: core::net::SocketAddr) -> Exchange { return Exchange { owner:owner,socket:socket,remote:peer,published:0,read_blocked:false,write_blocked:false,receive_turn:false }; }
+fn stop(exchange: &Exchange, error: Failure) -> Failure {
+    if (exchange.owner.last_terminal_failure().is_none()) { exchange.owner.stage = error.stage; exchange.owner.failure(error.cause); }
+    if (!exchange.owner.progress.closed) { let attempted: bool = exchange.socket.is_open(); let closed = exchange.socket.close(); exchange.owner.record_close(attempted,cleanup_error(closed)); }
+    return exchange.owner.last_terminal_failure().unwrap();
+}
+pub fn begin_connected(socket: std::socket::Socket, peer: core::net::SocketAddr, options: Options, deadline: core::time::Deadline) -> core::result::Result<Exchange,Failure> {
+    let made = protocol(options,deadline); if (made.is_err()) { return core::result::Err(initial_close(socket.borrow(),made.unwrap_err())); }
+    let exchange: Exchange = exchange_owner(made.unwrap(),socket,peer);
+    if (!exchange.socket.is_open() || match(exchange.socket.kind()) { std::socket::Kind::Udp -> true, _ -> false }) { let error = stop(exchange.borrow(),exchange.owner.failure(Cause::InvalidOptions)); exchange.owner.destroy(); return core::result::Err(error); }
+    let before = exchange.owner.before_io(Stage::Accept); if (before.is_err()) { let error = stop(exchange.borrow(),before.unwrap_err()); exchange.owner.destroy(); return core::result::Err(error); }
+    let flag = exchange.socket.is_nonblocking(); let after = exchange.owner.check();
+    if (after.is_err()) { let error = stop(exchange.borrow(),after.unwrap_err()); exchange.owner.destroy(); return core::result::Err(error); }
+    if (flag.is_err()) { let error = stop(exchange.borrow(),exchange.owner.failure(Cause::Io(flag.unwrap_err()))); exchange.owner.destroy(); return core::result::Err(error); }
+    if (!flag.unwrap()) { let error = stop(exchange.borrow(),exchange.owner.failure(Cause::InvalidOptions)); exchange.owner.destroy(); return core::result::Err(error); }
+    return core::result::Ok(exchange);
+}
+fn publish(exchange: &Exchange) -> core::option::Option<Event> {
+    let event: core::option::Option<Event> = exchange.owner.event();
+    if (event.is_none() || exchange.published == exchange.owner.event_revision()) { return core::option::None(); }
+    exchange.published = exchange.owner.event_revision(); return event;
+}
+fn receive_step(exchange: &Exchange, count: i32, discard: bool) -> core::result::Result<bool,Failure> {
+    if (exchange.read_blocked) { return core::result::Ok(false); }
+    let stage: Stage = exchange.owner.stage(); if (discard) { stage = Stage::Drain; }
+    let before = exchange.owner.before_io(stage); if (before.is_err()) { return before; }
+    let storage: [i32;256] = [0;256]; let scratch: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),1024);
+    let result = exchange.socket.receive(core::slice::view<u8>(scratch,count).unwrap());
+    if (result.is_ok()) {
+        let got: i32 = result.unwrap(); if (got < 0 || got > count) { return core::result::Err(exchange.owner.failure(Cause::Io(core::io::Error::InvalidCount))); }
+        let fed: core::result::Result<bool,Failure> = core::result::Ok(true);
+        if (discard) { fed = exchange.owner.discard(got); }
+        else { if (got == 0) { fed = exchange.owner.feed_eof(); } else { fed = exchange.owner.feed(core::slice::view<u8>(scratch,got).unwrap()); } }
+        if (fed.is_err()) { return fed; } exchange.read_blocked = false; exchange.write_blocked = false; exchange.receive_turn = false; return core::result::Ok(true);
     }
-    fn finish_inner(&self) -> core::result::Result<bool,Cause> {
-        if (self.phase == 4) {
-            self.stage = Stage::Send;
-            while (self.progress.response_sent < self.response_wire.len()) {
-                let wrote = self.send_some(self.response_wire.as_view().subview(self.progress.response_sent,self.response_wire.len()).unwrap(),false); if (wrote.is_err()) { return wrote; }
-                if (self.progress.response_sent == self.response_wire.len()) { break; }
-                let drained = self.discard_once(); if (drained.is_err()) { return drained; }
-                if (!wrote.unwrap()) { let ready = self.wait(!self.progress.peer_eof,true); if (ready.is_err()) { return ready; } }
+    let after = exchange.owner.check(); if (after.is_err()) { return after; }
+    let error: core::io::Error = result.unwrap_err(); if (transient(error)) { if (blocked(error)) { exchange.read_blocked = true; } return core::result::Ok(false); }
+    return core::result::Err(exchange.owner.failure(Cause::Io(error)));
+}
+fn send_step(exchange: &Exchange, kind: SendKind) -> core::result::Result<bool,Failure> {
+    if (exchange.write_blocked) { return core::result::Ok(false); }
+    let reserved = exchange.owner.start_send(); if (reserved.is_err()) { return core::result::Err(reserved.unwrap_err()); } if (reserved.unwrap().is_none()) { return core::result::Ok(false); }
+    let stage: Stage = Stage::Send; if (match(kind) { SendKind::Continue -> true, _ -> false }) { stage = Stage::Continue; }
+    let before = exchange.owner.before_io(stage); if (before.is_err()) { return before; }
+    let result = exchange.socket.send(reserved.unwrap().unwrap());
+    if (result.is_ok()) { let committed = exchange.owner.commit_send(result.unwrap()); if (committed.is_err()) { return committed; } exchange.read_blocked = false; exchange.write_blocked = false; exchange.receive_turn = true; return core::result::Ok(true); }
+    let cancelled = exchange.owner.cancel_send(); if (cancelled.is_err()) { return cancelled; }
+    let after = exchange.owner.check(); if (after.is_err()) { return after; }
+    let error: core::io::Error = result.unwrap_err(); if (transient(error)) { if (blocked(error)) { exchange.write_blocked = true; } return core::result::Ok(false); }
+    return core::result::Err(exchange.owner.failure(Cause::Io(error)));
+}
+pub impl Exchange {
+    pub fn borrow(&self) -> &Exchange { return self; }
+    pub fn protocol(&self) -> &Protocol { return self.owner.borrow(); }
+    pub fn peer(&self) -> core::net::SocketAddr { return self.remote; }
+    pub fn stats(&self) -> Stats { return self.owner.stats(); }
+    pub fn status(&self) -> Status { return self.owner.status(); }
+    pub fn rejection(&self) -> core::option::Option<Rejection> { return self.owner.rejection(); }
+    pub fn last_terminal_failure(&self) -> core::option::Option<Failure> { return self.owner.last_terminal_failure(); }
+    pub fn remaining(&self) -> core::time::Duration { return self.owner.remaining(); }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { if (!running(self.owner.status())) { return core::option::None(); } return self.socket.raw_handle(); }
+    pub fn interest(&self) -> ext::http_client::Interest {
+        let interest: ext::http_client::Interest = ext::http_client::Interest { readable:false,writable:false,immediate:false };
+        if (!running(self.owner.status())) { return interest; }
+        if (self.owner.event().is_some() && self.published != self.owner.event_revision()) { interest.immediate = true; return interest; }
+        let need: Need = self.owner.need();
+        if (match(need) { Need::Decision -> true, _ -> false }) { return interest; }
+        if (match(need) { Need::Input(n) -> true, Need::Drain(n) -> true, _ -> false }) { interest.readable = true; interest.immediate = !self.read_blocked; return interest; }
+        let output: core::option::Option<SendKind> = match(need) { Need::Output(kind) -> core::option::Some(kind), _ -> core::option::None() };
+        if (output.is_some()) {
+            interest.writable = true; interest.immediate = !self.write_blocked;
+            if (match(output.unwrap()) { SendKind::Final -> true, _ -> false } && !self.owner.stats().peer_eof) { interest.readable = true; if (!self.read_blocked) { interest.immediate = true; } }
+            return interest;
+        }
+        if (match(need) { Need::Shutdown -> true, _ -> false }) { interest.writable = true; interest.immediate = !self.write_blocked; return interest; }
+        interest.immediate = true; return interest;
+    }
+    pub fn before_wait(&self) -> core::result::Result<bool,Failure> {
+        let checked = self.owner.check(); if (checked.is_err()) { if (self.owner.last_terminal_failure().is_some()) { return core::result::Err(stop(self,checked.unwrap_err())); } return checked; }
+        if (self.interest().immediate || match(self.owner.need()) { Need::Decision -> true, _ -> false }) { return core::result::Ok(false); }
+        let paid = self.owner.before_wait(); if (paid.is_err()) { return core::result::Err(stop(self,paid.unwrap_err())); } return core::result::Ok(true);
+    }
+    pub fn read_body(&self, decision: BodyDecision) -> core::result::Result<bool,Failure> {
+        let result = self.owner.read_body(decision); if (result.is_err() && self.owner.last_terminal_failure().is_some()) { return core::result::Err(stop(self,result.unwrap_err())); } return result;
+    }
+    pub fn respond(&self, response: Response) -> core::result::Result<bool,Failure> {
+        let result = self.owner.respond(response); if (result.is_err() && self.owner.last_terminal_failure().is_some()) { return core::result::Err(stop(self,result.unwrap_err())); } return result;
+    }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<Event>,Failure> {
+        if (self.owner.last_terminal_failure().is_some()) { return core::result::Err(stop(self,self.owner.last_terminal_failure().unwrap())); }
+        if (!running(self.owner.status())) { return core::result::Ok(publish(self)); }
+        let checked = self.owner.check(); if (checked.is_err()) { return core::result::Err(stop(self,checked.unwrap_err())); }
+        if (ready.readable || ready.hangup || ready.error) { self.read_blocked = false; }
+        if (ready.writable || ready.hangup || ready.error) { self.write_blocked = false; }
+        let event: core::option::Option<Event> = publish(self); if (event.is_some()) { return core::result::Ok(event); }
+        let need: Need = self.owner.need();
+        if (match(need) { Need::Local -> true, _ -> false }) { let result = self.owner.advance(); if (result.is_err()) { return core::result::Err(stop(self,result.unwrap_err())); } return core::result::Ok(publish(self)); }
+        if (match(need) { Need::Decision -> true, _ -> false }) { return core::result::Ok(core::option::None()); }
+        let input: core::option::Option<i32> = match(need) { Need::Input(count) -> core::option::Some(count), _ -> core::option::None() };
+        if (input.is_some()) { let got = receive_step(self,input.unwrap(),false); if (got.is_err()) { return core::result::Err(stop(self,got.unwrap_err())); } return core::result::Ok(publish(self)); }
+        let output: core::option::Option<SendKind> = match(need) { Need::Output(kind) -> core::option::Some(kind), _ -> core::option::None() };
+        if (output.is_some()) {
+            let final: bool = match(output.unwrap()) { SendKind::Final -> true, _ -> false };
+            if (final && !self.owner.stats().peer_eof && !self.read_blocked && (self.write_blocked || self.receive_turn)) {
+                let capacity = self.owner.drain_limit(); if (capacity.is_err()) { return core::result::Err(stop(self,capacity.unwrap_err())); }
+                let got = receive_step(self,capacity.unwrap(),true); if (got.is_err()) { return core::result::Err(stop(self,got.unwrap_err())); }
+            } else { let wrote = send_step(self,output.unwrap()); if (wrote.is_err()) { return core::result::Err(stop(self,wrote.unwrap_err())); } }
+            return core::result::Ok(core::option::None());
+        }
+        if (match(need) { Need::Shutdown -> true, _ -> false }) {
+            if (self.write_blocked) { return core::result::Ok(core::option::None()); }
+            let before = self.owner.before_io(Stage::Shutdown); if (before.is_err()) { return core::result::Err(stop(self,before.unwrap_err())); }
+            let result = self.socket.shutdown(std::socket::Shutdown::Write);
+            if (result.is_ok()) { let recorded = self.owner.record_write_shutdown(false); if (recorded.is_err()) { return core::result::Err(stop(self,recorded.unwrap_err())); } self.read_blocked = false; self.write_blocked = false; }
+            else { let after = self.owner.check(); if (after.is_err()) { return core::result::Err(stop(self,after.unwrap_err())); } if (!transient(result.unwrap_err())) { return core::result::Err(stop(self,self.owner.failure(Cause::Io(result.unwrap_err())))); } if (blocked(result.unwrap_err())) { self.write_blocked = true; } }
+            return core::result::Ok(core::option::None());
+        }
+        let drain: core::option::Option<i32> = match(need) { Need::Drain(count) -> core::option::Some(count), _ -> core::option::None() };
+        if (drain.is_some()) { let got = receive_step(self,drain.unwrap(),true); if (got.is_err()) { return core::result::Err(stop(self,got.unwrap_err())); } return core::result::Ok(core::option::None()); }
+        if (match(need) { Need::FinishTransport -> true, _ -> false }) {
+            let attempted: bool = self.socket.is_open(); let closed = self.socket.close(); let recorded = self.owner.record_close(attempted,cleanup_error(closed));
+            if (recorded.is_err()) { return core::result::Err(recorded.unwrap_err()); }
+            let finished = self.owner.transport_finished(); if (finished.is_err()) { return core::result::Err(stop(self,finished.unwrap_err())); } return core::result::Ok(publish(self));
+        }
+        return core::result::Err(stop(self,self.owner.failure(Cause::BoundaryMismatch)));
+    }
+    pub fn abort(&self) -> core::result::Result<bool,Failure> {
+        // Reply.stage may have latched a fatal Protocol error directly. Native
+        // ownership still has to retire even though Protocol is already Failed.
+        if (!self.socket.is_open() && !running(self.owner.status())) { return core::result::Ok(false); }
+        let had_terminal: bool = self.owner.last_terminal_failure().is_some(); self.owner.abort();
+        let attempted: bool = self.socket.is_open(); let closed = self.socket.close(); let recorded = self.owner.record_close(attempted,cleanup_error(closed));
+        if (closed.is_err() && recorded.is_err()) {
+            if (had_terminal) {
+                // Abort reports this new cleanup cause separately. The cached
+                // primary still contains its original cause plus this close.
+                let cleanup: Failure = self.owner.local_failure(Cause::Io(closed.unwrap_err())); cleanup.stage = Stage::Close; cleanup.cleanup_attempted = attempted;
+                return core::result::Err(cleanup);
             }
-            self.phase = 5;
+            return core::result::Err(recorded.unwrap_err());
         }
-        while (self.phase == 5) {
-            self.stage = Stage::Shutdown; let permit = self.call(); if (permit.is_err()) { return permit; }
-            let ended = self.socket.shutdown(std::socket::Shutdown::Write); if (ended.is_ok()) { self.progress.write_shutdown = true; self.phase = 6; }
-            let after = self.active(); if (ended.is_err() && !transient(ended.unwrap_err())) { return core::result::Err(Cause::Io(ended.unwrap_err())); } if (after.is_err()) { return after; }
-        }
-        self.stage = Stage::Drain;
-        while (!self.progress.peer_eof) { let read = self.discard_once(); if (read.is_err()) { return read; } if (!read.unwrap()) { let ready = self.wait(true,false); if (ready.is_err()) { return ready; } } }
         return core::result::Ok(true);
     }
+    pub fn destroy(&self) -> core::result::Result<bool,Failure> {
+        let aborted = self.abort(); let released: bool = self.owner.destroy(); if (aborted.is_err()) { return core::result::Err(aborted.unwrap_err()); } return core::result::Ok(released || aborted.unwrap());
+    }
+}
+
+// Acceptance and synchronous methods alone wait/retry. They drive the same
+// Protocol/Exchange and never implement another codec or transfer state machine.
+pub fn accept_until(listener: &std::socket::Socket, options: Options, deadline: core::time::Deadline) -> core::result::Result<Connection,Failure> {
+    if (!listener.is_open() || match(listener.kind()) { std::socket::Kind::Udp -> true, _ -> false }) { return core::result::Err(initial_failure(Cause::InvalidOptions,empty_stats())); }
+    let made = protocol(options,deadline); if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+    let owner: Protocol = made.unwrap(); let before = owner.before_io(Stage::Accept);
+    if (before.is_err()) { let error: Failure = before.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+    let flag = listener.is_nonblocking(); let after = owner.check();
+    if (after.is_err()) { let error: Failure = after.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+    if (flag.is_err() || !flag.unwrap()) { let cause: Cause = Cause::InvalidOptions; if (flag.is_err()) { cause = Cause::Io(flag.unwrap_err()); } let error: Failure = owner.failure(cause); owner.destroy(); return core::result::Err(error); }
+    while (true) {
+        let before = owner.before_io(Stage::Accept); if (before.is_err()) { let error: Failure = before.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+        let got = listener.accept(true);
+        if (got.is_ok()) {
+            let accepted: std::socket::Accepted = got.unwrap(); let exchange: Exchange = exchange_owner(owner,accepted.socket,accepted.peer);
+            let after = exchange.owner.check(); if (after.is_err()) { let error = stop(exchange.borrow(),after.unwrap_err()); exchange.owner.destroy(); return core::result::Err(error); }
+            exchange.owner.stage = Stage::Head;
+            return core::result::Ok(Connection { exchange:exchange,head_taken:false,body_requested:false,request_taken:false });
+        }
+        let failure: std::socket::AcceptFailure = got.unwrap_err();
+        if (!transient(failure.cause) || failure.cleanup_attempted) {
+            owner.failure(Cause::Io(failure.cause)); if (failure.cleanup_attempted) { owner.record_close(true,failure.cleanup_error); }
+            let error: Failure = owner.last_terminal_failure().unwrap(); owner.destroy(); return core::result::Err(error);
+        }
+        let after = owner.check(); if (after.is_err()) { let error: Failure = after.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+        let charged = owner.before_wait(); if (charged.is_err()) { let error: Failure = charged.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+        let waited = listener.wait_ms(true,false,milliseconds(owner.remaining())); let after = owner.check();
+        if (after.is_err()) { let error: Failure = after.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+        if (waited.is_err() && !transient(waited.unwrap_err())) { let error: Failure = owner.failure(Cause::Io(waited.unwrap_err())); owner.destroy(); return core::result::Err(error); }
+    }
+    return core::result::Err(owner.local_failure(Cause::InvalidState));
+}
+fn synchronous_wait(exchange: &Exchange) -> core::result::Result<ext::http_client::Readiness,Failure> {
+    let interest: ext::http_client::Interest = exchange.interest(); if (interest.immediate || !running(exchange.status())) { return core::result::Ok(empty_ready()); }
+    if (match(exchange.protocol().need()) { Need::Decision -> true, _ -> false }) { return core::result::Err(exchange.owner.local_failure(Cause::InvalidState)); }
+    let charged = exchange.before_wait(); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); } if (!charged.unwrap()) { return core::result::Ok(empty_ready()); }
+    let waited = exchange.socket.wait_ms(interest.readable,interest.writable,milliseconds(exchange.remaining()));
+    if (waited.is_err()) { if (!transient(waited.unwrap_err())) { return core::result::Err(stop(exchange,exchange.owner.failure(Cause::Io(waited.unwrap_err())))); } return core::result::Ok(empty_ready()); }
+    let ready: std::socket::Ready = waited.unwrap(); return core::result::Ok(ext::http_client::Readiness { readable:ready.readable,writable:ready.writable,hangup:ready.hangup,error:ready.error });
+}
+fn synchronous_event(exchange: &Exchange) -> core::result::Result<Event,Failure> {
+    let ready: ext::http_client::Readiness = empty_ready();
+    while (true) {
+        let got = exchange.step(ready); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        if (got.unwrap().is_some()) { return core::result::Ok(got.unwrap().unwrap()); }
+        if (!running(exchange.status())) { return core::result::Err(exchange.owner.local_failure(Cause::InvalidState)); }
+        let waited = synchronous_wait(exchange); if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); } ready = waited.unwrap();
+    }
+    return core::result::Err(exchange.owner.local_failure(Cause::InvalidState));
+}
+fn rejection_failure(owner: &Protocol, rejection: Rejection) -> Failure { return Failure { cause:rejection.cause,stage:rejection.stage,stats:owner.stats(),cleanup_attempted:false,cleanup:core::option::None(),rejection:core::option::Some(rejection) }; }
+pub impl Connection {
+    pub fn borrow(&self) -> &Connection { return self; }
+    pub fn peer(&self) -> core::net::SocketAddr { return self.exchange.peer(); }
+    pub fn stats(&self) -> Stats { return self.exchange.stats(); }
+    pub fn read_head(&self) -> core::result::Result<core::option::Option<RequestHead>,Failure> {
+        if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
+        if (self.head_taken) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        let got = synchronous_event(self.exchange.borrow()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        let event: Event = got.unwrap(); let head: core::option::Option<RequestHead> = match(event) { Event::Head(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (head.is_some()) { self.head_taken = true; return core::result::Ok(head); }
+        if (match(event) { Event::Empty -> true, _ -> false }) { self.head_taken = true; return core::result::Ok(core::option::None()); }
+        let rejected: core::option::Option<Rejection> = match(event) { Event::Rejected(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (rejected.is_some()) { self.head_taken = true; return core::result::Err(rejection_failure(self.exchange.protocol(),rejected.unwrap())); }
+        return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState));
+    }
+    pub fn send_continue(&self) -> core::result::Result<Stats,Failure> {
+        if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
+        if (!self.head_taken || self.body_requested || self.request_taken) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        let requested = self.exchange.read_body(BodyDecision::ContinueThenRead); if (requested.is_err()) { return core::result::Err(requested.unwrap_err()); } self.body_requested = true;
+        let ready: ext::http_client::Readiness = empty_ready();
+        while (self.exchange.stats().continue_sent < 25) {
+            let got = self.exchange.step(ready); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+            if (got.unwrap().is_some()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+            if (self.exchange.stats().continue_sent == 25) { break; }
+            let waited = synchronous_wait(self.exchange.borrow()); if (waited.is_err()) { return core::result::Err(waited.unwrap_err()); } ready = waited.unwrap();
+        }
+        return core::result::Ok(self.stats());
+    }
+    pub fn read_request(&self) -> core::result::Result<Request,Failure> {
+        if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
+        if (!self.head_taken || self.request_taken || self.exchange.protocol().final_staged()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        if (!self.body_requested) { let requested = self.exchange.read_body(BodyDecision::Read); if (requested.is_err()) { return core::result::Err(requested.unwrap_err()); } self.body_requested = true; }
+        let got = synchronous_event(self.exchange.borrow()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        let event: Event = got.unwrap(); let request: core::option::Option<Request> = match(event) { Event::Request(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (request.is_some()) { self.request_taken = true; return core::result::Ok(request.unwrap()); }
+        let rejected: core::option::Option<Rejection> = match(event) { Event::Rejected(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (rejected.is_some()) { return core::result::Err(rejection_failure(self.exchange.protocol(),rejected.unwrap())); }
+        return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState));
+    }
     pub fn finish(&self) -> core::result::Result<Stats,Failure> {
-        if (self.terminal.is_some()) { return core::result::Err(self.failure(self.terminal.unwrap())); }
-        if (self.phase == 7 && self.final_staged && self.progress.response_sent == self.progress.response_bytes && self.progress.write_shutdown && self.progress.peer_eof) { return core::result::Ok(self.progress); }
-        if (!self.final_staged || self.phase < 4 || self.phase > 6) { return core::result::Err(self.failure(Cause::InvalidState)); }
-        let got = self.finish_inner();
-        if (got.is_err()) { let cause = got.unwrap_err(); if (uncertain(cause)) { self.phase = 8; self.terminal = core::option::Some(cause); } return core::result::Err(self.failure(cause)); }
-        self.stage = Stage::Close; let observed = self.active(); let closed = self.close();
-        if (observed.is_err()) { let failure = self.failure(observed.unwrap_err()); failure.cleanup_attempted = closed.is_ok() || closed.unwrap_err().cleanup_attempted; if (closed.is_err()) { failure.cleanup = core::option::Some(match(closed.unwrap_err().cause) { Cause::Io(e) -> e, _ -> core::io::Error::InvalidInput }); } self.terminal = core::option::Some(failure.cause); return core::result::Err(failure); }
-        if (closed.is_err()) { self.terminal = core::option::Some(closed.unwrap_err().cause); return closed; }
-        let after = self.active(); if (after.is_err()) { self.terminal = core::option::Some(after.unwrap_err()); let failure = self.failure(after.unwrap_err()); failure.cleanup_attempted = true; return core::result::Err(failure); } return core::result::Ok(self.progress);
+        if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
+        if (!self.exchange.protocol().final_staged()) { return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState)); }
+        if (match(self.exchange.status()) { Status::Complete -> true, _ -> false }) { return core::result::Ok(self.stats()); }
+        let got = synchronous_event(self.exchange.borrow()); if (got.is_err()) { return core::result::Err(got.unwrap_err()); }
+        let done: core::option::Option<Stats> = match(got.unwrap()) { Event::Complete(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (done.is_some()) { return core::result::Ok(done.unwrap()); } return core::result::Err(self.exchange.owner.local_failure(Cause::InvalidState));
     }
     pub fn reply(&self, response: Response) -> core::result::Result<Stats,Failure> {
-        self.stage = Stage::Prepare;
-        if ((self.phase != 1 && self.phase != 2 && self.phase != 3) || self.final_staged || (self.continue_staged && self.progress.continue_sent != 25)) { return core::result::Err(self.failure(Cause::InvalidState)); }
-        let staged = self.prepare(response); if (staged.is_err()) { return core::result::Err(self.failure(staged.unwrap_err())); } return self.finish();
+        if (self.exchange.last_terminal_failure().is_some()) { return core::result::Err(self.exchange.last_terminal_failure().unwrap()); }
+        let staged = self.exchange.respond(response); if (staged.is_err()) { return core::result::Err(staged.unwrap_err()); } return self.finish();
+    }
+    pub fn close(&self) -> core::result::Result<Stats,Failure> { let stopped = self.exchange.abort(); if (stopped.is_err()) { return core::result::Err(stopped.unwrap_err()); } return core::result::Ok(self.stats()); }
+    pub fn destroy(&self) -> core::result::Result<i32,core::io::Error> {
+        let destroyed = self.exchange.destroy(); if (destroyed.is_err()) { let error: Failure = destroyed.unwrap_err(); if (error.cleanup.is_some()) { return core::result::Err(error.cleanup.unwrap()); } return core::result::Err(match(error.cause) { Cause::Io(value) -> value, _ -> core::io::Error::InvalidInput }); } return core::result::Ok(0);
     }
 }

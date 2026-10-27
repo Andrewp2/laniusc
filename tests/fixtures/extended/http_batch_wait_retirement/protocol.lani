@@ -1,0 +1,122 @@
+// Test-only Driver contract failure around real HTTP Exchanges. No native
+// fault is injected: job 1 deliberately retires from before_wait after upload.
+module app::main;
+import alloc::vec;
+import core::fmt;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::panic;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_batch;
+import ext::http_client;
+import std::clock;
+import std::stream;
+
+struct Audit { held_pending: bool, witnessed: bool, retired: i32, queued: i32 }
+impl Audit { fn borrow(&self) -> &Audit { return self; } }
+struct Job { ordinal: i32, endpoint: core::net::SocketAddr, request: ext::http_client::Request }
+struct Factory { audit: &Audit }
+impl Factory { fn borrow(&self) -> &Factory { return self; } }
+struct Driver { ordinal: i32, owner: ext::http_client::Exchange, audit: &Audit }
+fn bytes(value: str, count: i32) -> core::slice::View<u8> { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count); return core::slice::view<u8>(raw,count).unwrap(); }
+fn marker(value: str, count: i32) { let part = bytes(value,count); let sink = std::stream::stderr(); core::io::write_all(sink.borrow(),part.values,part.start,part.length).unwrap(); }
+fn word(raw: [u8], at: i32) -> i32 { return ((raw[at] as u32)|((raw[at+1] as u32)<<8)|((raw[at+2] as u32)<<16)|((raw[at+3] as u32)<<24)) as i32; }
+fn output(words: [i32], count: i32) { let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_slice_data_ptr(words),count*4); let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),raw,0,count*4).unwrap(); }
+fn data(part: core::slice::View<u8>) { let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),part.values,part.start,part.length).unwrap(); }
+fn diagnostic_number(value: u64) {
+    let storage: [u8;32] = [0;32]; let formatter = core::fmt::buffer(storage,0,32).unwrap(); formatter.write_unsigned(value,core::fmt::decimal());
+    let count: i32 = formatter.finish().unwrap(); let sink = std::stream::stderr(); core::io::write_all(sink.borrow(),storage,0,count).unwrap();
+}
+fn diagnostic(report: &ext::http_batch::Report<ext::http_client::Failure>) {
+    marker("unexpected-batch-counts complete=",33); diagnostic_number(report.stats.complete as u64); marker(" failed=",8); diagnostic_number(report.stats.failed as u64); marker(" aborted=",9); diagnostic_number(report.stats.aborted as u64); marker("\n",1);
+    let index: i32 = 0;
+    while (index < report.len()) {
+        let item: ext::http_batch::Outcome<ext::http_client::Failure> = report.get(index).unwrap();
+        let failure: core::option::Option<ext::http_client::Failure> = match(item) { ext::http_batch::Outcome::Failed(error) -> core::option::Some(error), _ -> core::option::None() };
+        if (failure.is_some()) {
+            let error: ext::http_client::Failure = failure.unwrap();
+            marker("failed job=",11); diagnostic_number(index as u64);
+            let work_limit: bool = match(error.cause) { ext::http_client::Cause::WorkLimit -> true, _ -> false };
+            let timeout: bool = match(error.cause) { ext::http_client::Cause::Timeout -> true, _ -> false };
+            if (work_limit) { marker(" cause=work-limit",17); } else { if (timeout) { marker(" cause=timeout",14); } else { marker(" cause=other",12); } }
+            marker(" work=",6); diagnostic_number(error.stats.work); marker(" io=",4); diagnostic_number(error.stats.io_calls); marker(" sent=",6); diagnostic_number(error.stats.request_sent as u64); marker(" received=",10); diagnostic_number(error.stats.response_received); marker("\n",1);
+        }
+        index += 1;
+    }
+}
+pub impl ext::http_batch::Factory<Job,Driver,ext::http_client::Failure> for Factory {
+    pub fn request(&self, job: Job) -> ext::http_client::Request { return job.request; }
+    pub fn begin(&self, prepared: &ext::http_client::Prepared, job: Job) -> core::result::Result<Driver,ext::http_client::Failure> {
+        if (job.ordinal == 2) { assert(self.audit.retired == 1 && self.audit.queued == 0); }
+        let made: core::result::Result<ext::http_client::Exchange,ext::http_client::Failure> = prepared.begin(job.endpoint);
+        if (made.is_err()) { return core::result::Err(made.unwrap_err()); }
+        let owner: ext::http_client::Exchange = made.unwrap();
+        if (job.ordinal == 2) { self.audit.queued += 1; marker("queued-admitted\n",16); }
+        return core::result::Ok(Driver { ordinal: job.ordinal, owner: owner, audit: self.audit });
+    }
+    pub fn from_http_failure(&self, failure: ext::http_client::Failure) -> ext::http_client::Failure { return failure; }
+    pub fn failure_stats(&self, failure: ext::http_client::Failure) -> ext::http_client::Stats { return failure.stats; }
+    pub fn shared_failure(&self, failure: ext::http_client::Failure) -> core::option::Option<ext::http_batch::Cause> {
+        return match(failure.cause) { ext::http_client::Cause::Timeout -> core::option::Some(ext::http_batch::Cause::Timeout), ext::http_client::Cause::Clock(error) -> core::option::Some(ext::http_batch::Cause::Clock(error)), _ -> core::option::None() };
+    }
+}
+pub impl ext::http_batch::Driver<ext::http_client::Failure> for Driver {
+    pub fn stats(&self) -> ext::http_client::Stats { return self.owner.stats(); }
+    pub fn interest(&self) -> ext::http_client::Interest {
+        let interest: ext::http_client::Interest = self.owner.interest();
+        if (self.ordinal == 0) { let stats: ext::http_client::Stats = self.owner.stats(); self.audit.held_pending = stats.request_bytes > 0 && stats.request_sent == stats.request_bytes && !interest.immediate && interest.readable && !interest.writable; }
+        return interest;
+    }
+    pub fn raw_handle(&self) -> core::option::Option<i32> { return self.owner.raw_handle(); }
+    pub fn before_wait(&self) -> core::result::Result<bool,ext::http_client::Failure> {
+        if (self.ordinal == 0 && self.audit.held_pending && !self.audit.witnessed) { self.audit.witnessed = true; marker("held-read-pending\n",18); }
+        let before: ext::http_client::Stats = self.owner.stats();
+        if (self.ordinal == 1 && self.audit.held_pending && self.audit.witnessed && before.request_bytes > 0 && before.request_sent == before.request_bytes) {
+            assert(self.audit.retired == 0 && self.audit.queued == 0);
+            let ended: core::result::Result<bool,ext::http_client::Failure> = self.owner.abort(); assert(ended.is_ok() && ended.unwrap());
+            let final: ext::http_client::Stats = self.owner.stats(); assert(final.request_sent == before.request_sent && final.work >= before.work && final.io_calls >= before.io_calls && self.owner.raw_handle().is_none());
+            self.audit.retired += 1; marker("wait-retired\n",13);
+            return core::result::Err(ext::http_client::Failure { cause: ext::http_client::Cause::Io(core::io::Error::Host(9001)), stage: ext::http_client::Stage::Close, message_offset: 0, stats: final, cleanup: core::option::None() });
+        }
+        return self.owner.before_wait();
+    }
+    pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,ext::http_client::Failure> { return self.owner.step(ready); }
+    pub fn abort(&self) -> core::result::Result<bool,ext::http_client::Failure> { return self.owner.abort(); }
+}
+fn stats(words: [i32], value: ext::http_client::Stats) { words[6] = value.request_bytes; words[7] = value.request_sent; words[8] = value.response_received as i32; words[9] = value.interim_count; words[10] = value.io_calls as i32; words[11] = value.work as i32; }
+fn result(value: ext::http_batch::Outcome<ext::http_client::Failure>) {
+    let words: [i32;16] = [0;16];
+    let response: core::option::Option<ext::http_client::Response> = match(value) { ext::http_batch::Outcome::Complete(owner) -> core::option::Some(owner), _ -> core::option::None() };
+    if (response.is_some()) { let owner: ext::http_client::Response = response.unwrap(); words[0] = 1; stats(words,owner.stats); words[12] = owner.as_view().len(); words[13] = owner.body().len(); words[14] = owner.message().head.status; words[15] = owner.message().trailer_count; output(words,16); data(owner.as_view()); data(owner.body()); return; }
+    let failure: core::option::Option<ext::http_client::Failure> = match(value) { ext::http_batch::Outcome::Failed(error) -> core::option::Some(error), _ -> core::option::None() };
+    assert(failure.is_some()); let error: ext::http_client::Failure = failure.unwrap();
+    assert(match(error.cause) { ext::http_client::Cause::Io(value) -> match(value) { core::io::Error::Host(number) -> number == 9001, _ -> false }, _ -> false });
+    assert(match(error.stage) { ext::http_client::Stage::Close -> true, _ -> false }); assert(error.cleanup.is_none());
+    words[0] = 2; words[1] = 4; words[2] = 8; words[3] = 9001; stats(words,error.stats); output(words,16);
+}
+fn main() -> i32 {
+    let source = std::stream::stdin(); let ports: [u8;12] = [0;12]; core::io::read_exact(source.borrow(),ports,0,12).unwrap();
+    let headers: alloc::vec::Vec<ext::http::Field> = alloc::vec::new();
+    let request = ext::http_client::Request { method: bytes("POST",4), target: bytes("/j00",4), authority: bytes("batch.example",13), headers: headers.as_view(), body: bytes("",0) };
+    let empty: Job = Job { ordinal: -1, endpoint: core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: 0 }), request: request };
+    let jobs: [Job;3] = [empty;3]; let targets: [u8;12] = [47,106,48,48,47,106,48,49,47,106,48,50]; let bodies: [u8;12] = [0,255,0,10,0,255,1,10,0,255,2,10]; let index: i32 = 0;
+    while (index < 3) { let item: ext::http_client::Request = request; item.target = core::slice::view_range<u8>(targets,index*4,4).unwrap(); item.body = core::slice::view_range<u8>(bodies,index*4,4).unwrap(); jobs[index] = Job { ordinal: index, endpoint: core::net::SocketAddr::V4(core::net::SocketAddrV4 { address: core::net::ipv4(127,0,0,1), port: word(ports,index*4) as u16 }), request: item }; index += 1; }
+    let audit: Audit = Audit { held_pending: false, witnessed: false, retired: 0, queued: 0 }; let factory: Factory = Factory { audit: audit.borrow() };
+    let options: ext::http_client::Options = ext::http_client::default_options(); options.request_bytes = 8192; options.response_bytes = 8192; options.wire.body_bytes = 4096; options.work = 1000000; options.io_calls = 10000;
+    options.wire.head_bytes = 4096; options.wire.line_bytes = 1024; options.wire.headers = 16; options.wire.trailers = 16; options.wire.trailer_bytes = 1024;
+    let limits: ext::http_batch::Limits = ext::http_batch::default_limits(); limits.concurrency = 2; limits.max_jobs = 3; limits.operations = 100000; limits.work = 32000000;
+    let deadline: core::time::Deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(3000)).unwrap();
+    let got: core::result::Result<ext::http_batch::Report<ext::http_client::Failure>,ext::http_batch::Failure<ext::http_client::Failure>> = ext::http_batch::run_with_until<Job,Driver,ext::http_client::Failure,Factory>(core::slice::view<Job>(jobs,3).unwrap(),factory.borrow(),options,limits,deadline);
+    assert(got.is_ok()); let report: ext::http_batch::Report<ext::http_client::Failure> = got.unwrap();
+    assert(audit.witnessed && audit.retired == 1 && audit.queued == 1 && report.len() == 3);
+    let expected: bool = report.stats.started == 3 && report.stats.complete == 2 && report.stats.failed == 1 && report.stats.aborted == 0 && report.stats.discarded == 0 && report.stats.peak_active == 2;
+    if (!expected) { diagnostic(report.borrow()); } assert(expected);
+    headers.destroy(); let words: [i32;20] = [0;20]; words[0] = 1212301617; words[2] = report.len(); words[3] = report.stats.jobs; words[4] = report.stats.started; words[5] = report.stats.complete; words[6] = report.stats.failed; words[7] = report.stats.aborted; words[8] = report.stats.discarded; words[9] = report.stats.peak_active; words[10] = report.stats.operations as i32; words[11] = report.stats.polls as i32; words[12] = report.stats.io_calls as i32; words[13] = report.stats.work as i32; words[14] = report.stats.pending_bytes as i32; words[15] = report.stats.peak_pending_bytes as i32; words[16] = report.stats.wire_bytes as i32; words[17] = report.stats.body_bytes as i32; output(words,20);
+    index = 0; while (index < report.len()) { result(report.get(index).unwrap()); index += 1; } report.destroy(); report.destroy();
+    marker("owners-released\n",16); let checkpoint: [i32;1] = [1212301618]; output(checkpoint,1); let ack: [u8;1] = [0]; core::io::read_exact(source.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0;
+}

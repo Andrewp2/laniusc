@@ -1,0 +1,55 @@
+// Test-only error owners used by the real public server generic admission.
+module admission::errors;
+import alloc::vec;
+import core::clone;
+import core::option;
+import core::result;
+
+pub struct Ledger { acquired: i32, released: i32, transport: i32, application: i32 }
+pub impl Ledger { pub fn borrow(&self) -> &Ledger { return self; } }
+pub enum ScalarTransport { Code(i64), Empty }
+pub enum ScalarApplication { Code(u64), Empty }
+pub struct Payload { bytes: alloc::vec::Vec<u8>, stamp: core::result::Result<core::option::Option<i64>,bool> }
+pub struct Transport { value: core::option::Option<core::result::Result<Payload,i64>>, ledger: &Ledger }
+pub struct Application { value: core::result::Result<core::option::Option<Payload>,bool>, ledger: &Ledger }
+
+fn payload(ledger: &Ledger, stamp: i64) -> Payload {
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(3).unwrap();
+    bytes.try_push(0 as u8).unwrap(); bytes.try_push(128 as u8).unwrap(); bytes.try_push(255 as u8).unwrap();
+    let marked: core::result::Result<core::option::Option<i64>,bool> = core::result::Ok(core::option::Some(stamp));
+    ledger.acquired += 1; return Payload { bytes: bytes, stamp: marked };
+}
+pub fn transport(ledger: &Ledger) -> Transport {
+    let owner: Payload = payload(ledger,-4294967297);
+    let wrapped: core::result::Result<Payload,i64> = core::result::Ok(owner);
+    return Transport { value: core::option::Some(wrapped), ledger: ledger };
+}
+pub fn application(ledger: &Ledger) -> Application {
+    let owner: Payload = payload(ledger,4294967297);
+    let wrapped: core::result::Result<core::option::Option<Payload>,bool> = core::result::Ok(core::option::Some(owner));
+    return Application { value: wrapped, ledger: ledger };
+}
+pub fn check_transport(error: Transport) {
+    let owner: Payload = error.value.unwrap().unwrap();
+    assert(owner.stamp.unwrap().unwrap() == -4294967297);
+    assert(owner.bytes.len() == 3 && owner.bytes.at(0) == 0 && owner.bytes.at(1) == 128 && owner.bytes.at(2) == 255);
+}
+pub fn check_application(error: Application) {
+    let owner: Payload = error.value.unwrap().unwrap();
+    assert(owner.stamp.unwrap().unwrap() == 4294967297);
+    assert(owner.bytes.len() == 3 && owner.bytes.at(0) == 0 && owner.bytes.at(1) == 128 && owner.bytes.at(2) == 255);
+}
+pub impl core::clone::Destroy<Transport> for Transport {
+    pub fn destroy_value(owned: Transport) {
+        check_transport(owned); let owner: Payload = owned.value.unwrap().unwrap();
+        owner.bytes.destroy(); owned.ledger.released += 1; owned.ledger.transport += 1;
+    }
+}
+pub impl core::clone::Destroy<Application> for Application {
+    pub fn destroy_value(owned: Application) {
+        check_application(owned); let owner: Payload = owned.value.unwrap().unwrap();
+        owner.bytes.destroy(); owned.ledger.released += 1; owned.ledger.application += 1;
+    }
+}
+pub impl core::clone::Destroy<ScalarTransport> for ScalarTransport { pub fn destroy_value(owned: ScalarTransport) {} }
+pub impl core::clone::Destroy<ScalarApplication> for ScalarApplication { pub fn destroy_value(owned: ScalarApplication) {} }

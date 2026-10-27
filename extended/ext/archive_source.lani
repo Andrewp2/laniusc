@@ -1,0 +1,175 @@
+// Complete archive metadata admission before filesystem mutation. One manual
+// owner of the namespace/member tables; archive payload bytes remain borrowed.
+module ext::archive_source;
+import alloc::vec::Vec;
+import alloc::vec::with_capacity;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::archive_plan;
+import ext::archive_profile;
+import ext::tar;
+import ext::zip;
+
+pub struct Limits {
+    plan:ext::archive_plan::Limits, max_archive:i32, max_entry:i32,
+    max_total:u64, zip_work:u64, metadata_work:u64, max_owned_bytes:u64
+}
+pub enum Cause {
+    Bounds, InvalidLimits, ArchiveLimit, EntryLimit, TotalLimit, MetadataLimit,
+    OwnedLimit, AllocationFailed, Plan(ext::archive_plan::Error),
+    Profile(ext::archive_profile::Error), Tar(ext::tar::Error), Zip(ext::zip::Error)
+}
+pub struct Error { cause:Cause, ordinal:i32 }
+pub enum Payload { Tar(View<u8>), Zip(ext::zip::Entry) }
+pub struct Member { node:i32, kind:ext::archive_plan::Kind, payload:Payload }
+pub struct Prepared {
+    namespace:ext::archive_plan::Plan, members:Vec<Member>, limits:Limits,
+    total:u64, metadata_charged:u64, live:bool
+}
+
+pub fn default_limits() -> Limits {
+    return Limits { plan:ext::archive_plan::default_limits(),max_archive:67108864,
+        max_entry:16777216,max_total:134217728,zip_work:16777216,
+        metadata_work:16777216,max_owned_bytes:33554432 };
+}
+fn error(cause:Cause,ordinal:i32) -> Error { return Error { cause:cause,ordinal:ordinal }; }
+fn valid(input:View<u8>) -> bool {
+    return input.start>=0 && input.length>=0 && input.start<=2147483647-input.length;
+}
+pub fn reservation_bytes(limits:Limits) -> Result<u64,Error> {
+    if(limits.max_archive<0 || limits.max_entry<0) { return Err(error(Cause::InvalidLimits,-1)); }
+    let plan=ext::archive_plan::reservation_bytes(limits.plan);
+    if(plan.is_err()) { return Err(error(Cause::Plan(plan.unwrap_err()),-1)); }
+    let width=core::mem::size_of<Member>() as u64;
+    if(width==0 || width>2147483647 || (limits.plan.max_entries as u64)>2147483647/width) {
+        return Err(error(Cause::InvalidLimits,-1));
+    }
+    let members=width*(limits.plan.max_entries as u64);
+    let base=plan.unwrap();
+    if(members>18446744073709551615-base) { return Err(error(Cause::InvalidLimits,-1)); }
+    let total=base+members;
+    if(total>limits.max_owned_bytes) { return Err(error(Cause::OwnedLimit,-1)); }
+    return Ok(total);
+}
+fn allocate(limits:Limits) -> Result<Prepared,Error> {
+    let reserved=reservation_bytes(limits);
+    if(reserved.is_err()) { return Err(reserved.unwrap_err()); }
+    let built=ext::archive_plan::new(limits.plan);
+    if(built.is_err()) { return Err(error(Cause::Plan(built.unwrap_err()),-1)); }
+    let namespace=built.unwrap();
+    let made=with_capacity<Member>(limits.plan.max_entries);
+    if(made.is_err()) { namespace.destroy(); return Err(error(Cause::AllocationFailed,-1)); }
+    return Ok(Prepared { namespace:namespace,members:made.unwrap(),limits:limits,
+        total:0,metadata_charged:0,live:true });
+}
+fn admit_input(input:View<u8>,limits:Limits) -> Result<i32,Error> {
+    if(!valid(input)) { return Err(error(Cause::Bounds,-1)); }
+    let checked=reservation_bytes(limits);
+    if(checked.is_err()) { return Err(checked.unwrap_err()); }
+    if(input.length>limits.max_archive) { return Err(error(Cause::ArchiveLimit,-1)); }
+    return Ok(0);
+}
+fn dispose(owner:&Prepared,failure:Error) -> Result<Prepared,Error> {
+    owner.destroy(); return Err(failure);
+}
+fn plan_kind(kind:ext::archive_profile::Kind) -> ext::archive_plan::Kind {
+    return match(kind) { ext::archive_profile::Kind::File->ext::archive_plan::Kind::File,
+        ext::archive_profile::Kind::Directory->ext::archive_plan::Kind::Directory };
+}
+
+pub impl Prepared {
+    pub fn borrow(&self) -> &Prepared { return self; }
+    pub fn is_live(&self) -> bool { return self.live; }
+    pub fn plan(&self) -> &ext::archive_plan::Plan { return self.namespace.borrow(); }
+    pub fn len(&self) -> i32 { if(!self.live) { return 0; } return self.members.len(); }
+    pub fn decoded_total(&self) -> u64 { return self.total; }
+    pub fn metadata_units(&self) -> u64 { return self.metadata_charged; }
+    pub fn reserved_bytes(&self) -> u64 {
+        return self.namespace.reserved_bytes()+(self.members.capacity() as u64)*(core::mem::size_of<Member>() as u64);
+    }
+    // Member and path views are read-only, shallow borrows. Keep this owner and
+    // the complete immutable archive backing alive through every consumer.
+    pub fn member(&self,index:i32) -> Option<Member> {
+        if(!self.live || index<0 || index>=self.members.len()) { return None(); }
+        return Some(self.members.as_slice()[index]);
+    }
+    fn charge(&self,units:u64,ordinal:i32) -> Result<i32,Error> {
+        if(units>self.limits.metadata_work-self.metadata_charged) { return Err(error(Cause::MetadataLimit,ordinal)); }
+        self.metadata_charged+=units; return Ok(0);
+    }
+    fn add(&self,path:View<u8>,kind:ext::archive_plan::Kind,payload:Payload,count:i32) -> Result<i32,Error> {
+        let ordinal=self.members.len();
+        if(ordinal==self.limits.plan.max_entries) { return Err(error(Cause::EntryLimit,ordinal)); }
+        if(count<0 || count>self.limits.max_entry) { return Err(error(Cause::EntryLimit,ordinal)); }
+        if((count as u64)>self.limits.max_total-self.total) { return Err(error(Cause::TotalLimit,ordinal)); }
+        let node=self.namespace.add(path,kind,ordinal);
+        if(node.is_err()) { return Err(error(Cause::Plan(node.unwrap_err()),ordinal)); }
+        // Capacity was reserved before reading members; this cannot grow.
+        if(self.members.try_push(Member { node:node.unwrap(),kind:kind,payload:payload }).is_err()) {
+            return Err(error(Cause::AllocationFailed,ordinal));
+        }
+        self.total+=count as u64; return Ok(ordinal);
+    }
+    pub fn destroy(&self) {
+        if(!self.live) { return; }
+        self.members.destroy(); self.namespace.destroy(); self.live=false;
+    }
+}
+
+pub fn from_tar(input:View<u8>,limits:Limits) -> Result<Prepared,Error> {
+    let checked=admit_input(input,limits); if(checked.is_err()) { return Err(checked.unwrap_err()); }
+    let started=ext::tar::reader(input);
+    if(started.is_err()) { return Err(error(Cause::Tar(started.unwrap_err()),-1)); }
+    let reader=started.unwrap(); let made=allocate(limits);
+    if(made.is_err()) { return made; } let owner=made.unwrap();
+    let storage:[u8;256]=[0;256]; let scratch:View<u8> =View { values:storage,start:0,length:256 };
+    while(true) {
+        let ordinal=owner.len(); let next=reader.next();
+        if(next.is_err()) { return dispose(owner.borrow(),error(Cause::Tar(next.unwrap_err()),ordinal)); }
+        let found=next.unwrap(); if(found.is_none()) { break; } let entry=found.unwrap();
+        if(ordinal==limits.plan.max_entries) { return dispose(owner.borrow(),error(Cause::EntryLimit,ordinal)); }
+        let charged=owner.charge((entry.path_len() as u64)*2+1,ordinal);
+        if(charged.is_err()) { return dispose(owner.borrow(),charged.unwrap_err()); }
+        let classified=ext::archive_profile::tar_kind(entry);
+        if(classified.is_err()) { return dispose(owner.borrow(),error(Cause::Profile(classified.unwrap_err()),ordinal)); }
+        let copied=entry.copy_path(scratch);
+        if(copied.is_err()) { return dispose(owner.borrow(),error(Cause::Tar(copied.unwrap_err()),ordinal)); }
+        let path:View<u8> =View { values:storage,start:0,length:copied.unwrap() };
+        let added=owner.add(path,plan_kind(classified.unwrap()),Payload::Tar(entry.data),entry.data.length);
+        if(added.is_err()) { return dispose(owner.borrow(),added.unwrap_err()); }
+    }
+    let sealed=owner.namespace.seal();
+    if(sealed.is_err()) { return dispose(owner.borrow(),error(Cause::Plan(sealed.unwrap_err()),owner.len())); }
+    return Ok(owner);
+}
+
+pub fn from_zip(input:View<u8>,limits:Limits) -> Result<Prepared,Error> {
+    let checked=admit_input(input,limits); if(checked.is_err()) { return Err(checked.unwrap_err()); }
+    let zip_limits=ext::zip::Limits { max_archive:limits.max_archive,max_entries:limits.plan.max_entries,
+        max_entry:limits.max_entry,max_total:limits.max_total,max_work:limits.zip_work };
+    let parsed=ext::zip::parse(input,zip_limits);
+    if(parsed.is_err()) { return Err(error(Cause::Zip(parsed.unwrap_err()),-1)); }
+    let cursor=parsed.unwrap().cursor(); let made=allocate(limits);
+    if(made.is_err()) { return made; } let owner=made.unwrap();
+    while(true) {
+        let next=cursor.next(); if(next.is_none()) { break; } let entry=next.unwrap(); let ordinal=owner.len();
+        // Conservative metadata-byte charge covers the profile's linear TLV,
+        // UTF-8 and kind checks. ZIP structural parse work is a separate cap.
+        let units=4*((entry.extra.length as u64)+(entry.local_extra.length as u64))+(entry.name.length as u64)+1;
+        let charged=owner.charge(units,ordinal);
+        if(charged.is_err()) { return dispose(owner.borrow(),charged.unwrap_err()); }
+        let classified=ext::archive_profile::zip_kind(entry);
+        if(classified.is_err()) { return dispose(owner.borrow(),error(Cause::Profile(classified.unwrap_err()),ordinal)); }
+        let added=owner.add(entry.name,plan_kind(classified.unwrap()),Payload::Zip(entry),entry.uncompressed_size);
+        if(added.is_err()) { return dispose(owner.borrow(),added.unwrap_err()); }
+    }
+    let sealed=owner.namespace.seal();
+    if(sealed.is_err()) { return dispose(owner.borrow(),error(Cause::Plan(sealed.unwrap_err()),owner.len())); }
+    return Ok(owner);
+}

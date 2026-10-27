@@ -141,6 +141,15 @@ pub impl<T> core::iter::TrySink<T, alloc::tree_map::SinkError> for TreeSet<T>
     }
 }
 
+// Explicit replacement returns the stored representative, not the supplied
+// duplicate returned by try_insert. Existing TrySink rejection stays distinct.
+pub impl<T> core::iter::TryReplaceSink<T,alloc::tree_map::Error> for TreeSet<T>
+    where T: core::cmp::Ord<T> {
+    pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,alloc::tree_map::Error> {
+        return self.try_replace(item);
+    }
+}
+
 pub impl<T> Cursor<T> {
     pub fn borrow(&self) -> &Cursor<T> { return self; }
     pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }

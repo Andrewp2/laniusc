@@ -1,0 +1,83 @@
+module app::main;
+import core::mem;
+import core::option::Option;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import ext::cli;
+import ext::cli_commands;
+
+fn bytes(value: str, length: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length), start: 0, length: length };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (left.values[left.start+index] != right.values[right.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn main() -> i32 {
+    let empty: View<u8> = bytes("",0);
+    let config: ext::cli::Spec = ext::cli::Spec { id: 741, long: bytes("config",6), short: 67, arity: ext::cli::Arity::Required };
+    let specs: [ext::cli::Spec;1] = [config];
+    let schema: View<ext::cli::Spec> = core::slice::view(specs,1).unwrap();
+    let words: [View<u8>;1] = [bytes("--config",8)];
+    let arguments: View<View<u8>> = core::slice::view(words,1).unwrap();
+    let strict: ext::cli::Parser = ext::cli::parser(arguments,schema,ext::cli::Ordering::Intermixed).unwrap();
+    let strict_result: Result<Option<ext::cli::Event>,ext::cli::Error> = strict.next();
+    assert(strict_result.is_err());
+    let strict_error: ext::cli::Error = strict_result.unwrap_err();
+    let missing: ext::cli::Location = match (strict_error) {
+        ext::cli::Error::MissingValue(at) -> at, _ -> ext::cli::Location { argument: -1, byte: -1 }
+    };
+    assert(missing.argument == 0 && missing.byte == 2 && strict.next().is_err() && strict.pending_required().is_none());
+
+    let prefix: ext::cli::Parser = ext::cli::prefix_parser(arguments,schema,ext::cli::Ordering::Intermixed).unwrap();
+    assert(prefix.pending_required().is_none());
+    assert(prefix.next().unwrap().is_none());
+    let pending: ext::cli::Pending = prefix.pending_required().unwrap();
+    let required: bool = match (pending.spec.arity) { ext::cli::Arity::Required -> true, _ -> false };
+    assert(required && pending.spec.id == 741 && pending.spec.short == 67 && equal(pending.spec.long,bytes("config",6)));
+    assert(pending.at.argument == 0 && pending.at.byte == 2);
+    assert(prefix.next().unwrap().is_none() && prefix.next().unwrap().is_none());
+    let again: ext::cli::Pending = prefix.pending_required().unwrap();
+    assert(again.spec.id == 741 && again.at.argument == 0 && again.at.byte == 2);
+    let active: View<u8> = bytes("--raw",5);
+    let classified: ext::cli::Prefix = prefix.classify_prefix(active).unwrap();
+    let value_kind: bool = match (classified.kind) { ext::cli::PrefixKind::Value -> true, _ -> false };
+    assert(value_kind && equal(classified.prefix,active) && classified.stem.length == 0);
+    assert(classified.option.unwrap().id == 741 && !prefix.options_ended() && !prefix.explicitly_terminated());
+
+    let options: [ext::cli_commands::OptionSpec;1] = [ext::cli_commands::OptionSpec { spec: config, global: true, value_name: bytes("FILE",4), help: empty }];
+    let declarations: View<ext::cli_commands::OptionSpec> = core::slice::view(options,1).unwrap();
+    let none: View<ext::cli_commands::OptionSpec> = core::slice::view(options,0).unwrap();
+    let nodes: [ext::cli_commands::Command;2] = [
+        ext::cli_commands::Command { id: 101, parent: -1, name: bytes("tool",4), summary: empty, operands: empty, ordering: ext::cli::Ordering::OptionsFirst, options: declarations },
+        ext::cli_commands::Command { id: 709, parent: 0, name: bytes("work",4), summary: empty, operands: empty, ordering: ext::cli::Ordering::Intermixed, options: none }
+    ];
+    let commands: View<ext::cli_commands::Command> = core::slice::view(nodes,2).unwrap();
+    let storage: [ext::cli::Spec;1] = [config];
+    let scratch: View<ext::cli::Spec> = core::slice::view(storage,1).unwrap();
+    let scoped_words: [View<u8>;2] = [bytes("work",4),bytes("-C",2)];
+    let scoped_arguments: View<View<u8>> = core::slice::view(scoped_words,2).unwrap();
+    let scoped: ext::cli_commands::Parser = ext::cli_commands::prefix_parser(scoped_arguments,commands,scratch).unwrap();
+    assert(scoped.pending_required().is_none());
+    let selected: ext::cli_commands::Event = scoped.next().unwrap().unwrap();
+    let selected_id: i32 = match (selected) { ext::cli_commands::Event::Command(item) -> item.id, _ -> -1 };
+    assert(selected_id == 709 && scoped.current() == 709 && scoped.operand_index() == 0 && !scoped.selecting_command());
+    assert(scoped.next().unwrap().is_none());
+    let inherited: ext::cli_commands::Pending = scoped.pending_required().unwrap();
+    assert(inherited.command == 101 && inherited.pending.spec.id == 741 && inherited.pending.spec.short == 67);
+    assert(equal(inherited.pending.spec.long,bytes("config",6)) && inherited.pending.at.argument == 1 && inherited.pending.at.byte == 1);
+    assert(scoped.next().unwrap().is_none() && scoped.next().unwrap().is_none() && !scoped.options_ended());
+    let retained: ext::cli_commands::Pending = scoped.pending_required().unwrap();
+    assert(retained.command == 101 && retained.pending.spec.id == 741 && retained.pending.at.argument == 1 && retained.pending.at.byte == 1);
+    let scoped_value: ext::cli_commands::Prefix = scoped.classify_prefix(active).unwrap();
+    let scoped_kind: bool = match (scoped_value.prefix.kind) { ext::cli::PrefixKind::Value -> true, _ -> false };
+    assert(scoped_kind && scoped_value.command == 101 && scoped_value.prefix.option.unwrap().id == 741);
+    assert(equal(scoped_value.prefix.prefix,active) && scoped_value.prefix.stem.length == 0);
+    return 0;
+}

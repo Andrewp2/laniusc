@@ -1,0 +1,5 @@
+module app::main;
+import ext::regex;
+fn main() -> i32 {
+    return 0;
+}

@@ -1,0 +1,332 @@
+// Owned, opt-in response expansion over a caller provider. No host service or
+// option parsing lives here. One manual Expansion owner retains diagnostics;
+// copies alias its authority and cannot be prepared/destroyed independently.
+module ext::cli_response;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::cli;
+import ext::response;
+
+pub trait Provider<H> {
+    pub fn load(&self, path: View<u8>, maximum_bytes: i32) -> Result<Vec<u8>,H>;
+}
+pub struct Origin { source: i32, argument: i32, start: i32, length: i32 }
+pub struct SourceInfo { path: View<u8>, included_at: Origin, loaded: bool }
+pub struct Limits {
+    max_arguments: i32, max_tokens: i32, max_argument_bytes: i32,
+    max_output_bytes: i32, max_file_bytes: i32, max_source_bytes: i32,
+    max_files: i32, max_depth: i32, max_path_bytes: i32, max_work: u64
+}
+pub enum Cause<H> {
+    InvalidState, Bounds, SourceLimit, TokenLimit, ArgumentLimit,
+    ArgumentBytes, OutputLimit, FileLimit, DepthLimit, PathLimit,
+    WorkLimit, AllocationFailed, ProviderContract,
+    Syntax(ext::response::Error), Provider(H)
+}
+pub struct Failure<H> { cause: Cause<H>, at: Origin }
+pub enum LocateError { NotReady, Bounds, WorkLimit, Syntax(ext::response::Error) }
+
+struct Source {
+    path: Vec<u8>, included_at: Origin, loaded: bool,
+    raw: Vec<u8>, decoded: Vec<u8>, spans: Vec<ext::response::Span>
+}
+struct Frame { source: i32, position: i32 }
+struct Token { at: Origin, start: i32, length: i32 }
+struct Output { at: Origin, start: i32, length: i32, removed: i32 }
+pub struct Expansion {
+    started: bool, ready: bool, limits: Limits, work: u64,
+    source_bytes: i32, tokens: i32, output_bytes: i32, position: i32,
+    originals: Vec<Vec<u8>>, sources: Vec<Source>, frames: Vec<Frame>,
+    output: Vec<Output>, views: Vec<View<u8>>
+}
+
+pub fn default_limits() -> Limits {
+    return Limits {
+        max_arguments: 4096, max_tokens: 8192, max_argument_bytes: 65536,
+        max_output_bytes: 1048576, max_file_bytes: 1048576,
+        max_source_bytes: 4194304, max_files: 64, max_depth: 16,
+        max_path_bytes: 4095, max_work: 33554432
+    };
+}
+pub fn empty() -> Expansion {
+    return Expansion {
+        started: false, ready: false, limits: default_limits(), work: 0,
+        source_bytes: 0, tokens: 0, output_bytes: 0, position: 0,
+        originals: alloc::vec::new<Vec<u8>>(), sources: alloc::vec::new<Source>(),
+        frames: alloc::vec::new<Frame>(), output: alloc::vec::new<Output>(), views: alloc::vec::new<View<u8>>()
+    };
+}
+fn sentinel() -> Origin { return Origin { source: -1, argument: -1, start: 0, length: 0 }; }
+fn issue<H>(cause: Cause<H>, at: Origin) -> Failure<H> { return Failure<H> { cause: cause, at: at }; }
+fn valid<T>(value: View<T>) -> bool {
+    return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length;
+}
+fn valid_limits(value: Limits) -> bool {
+    return value.max_arguments >= 0 && value.max_tokens >= 0 && value.max_argument_bytes >= 0 &&
+        value.max_output_bytes >= 0 && value.max_file_bytes >= 0 && value.max_source_bytes >= 0 &&
+        value.max_files >= 0 && value.max_depth >= 0 && value.max_path_bytes >= 0;
+}
+fn byte(value: View<u8>, index: i32) -> u8 { return value.values[value.start+index]; }
+fn original_origin(argument: i32, length: i32) -> Origin {
+    return Origin { source: -1, argument: argument, start: 0, length: length };
+}
+fn source_origin(source: i32, length: i32) -> Origin {
+    return Origin { source: source, argument: -1, start: 0, length: length };
+}
+fn syntax_origin(source: i32, length: i32, error: ext::response::Error) -> Origin {
+    let offset: i32 = match (error) {
+        ext::response::Error::Nul(at) -> at,
+        ext::response::Error::TrailingEscape(at) -> at,
+        ext::response::Error::UnclosedQuote(at) -> at,
+        _ -> -1
+    };
+    if (offset < 0) { return source_origin(source,length); }
+    return Origin { source: source, argument: -1, start: offset, length: 1 };
+}
+
+pub impl Expansion {
+    pub fn borrow(&self) -> &Expansion { return self; }
+    pub fn is_ready(&self) -> bool { return self.ready; }
+    pub fn arguments(&self) -> Option<View<View<u8>>> {
+        if (!self.ready) { return None(); }
+        return Some(self.views.as_view());
+    }
+    pub fn origin(&self, index: i32) -> Option<Origin> {
+        if (!self.ready || index < 0 || index >= self.output.len()) { return None(); }
+        return Some(self.output.at(index).at);
+    }
+    pub fn original(&self, index: i32) -> Option<View<u8>> {
+        if (index < 0 || index >= self.originals.len()) { return None(); }
+        let bytes: Vec<u8> = self.originals.at(index); return Some(bytes.as_view());
+    }
+    pub fn source(&self, index: i32) -> Option<SourceInfo> {
+        if (index < 0 || index >= self.sources.len()) { return None(); }
+        let source: Source = self.sources.at(index);
+        return Some(SourceInfo { path: source.path.as_view(), included_at: source.included_at, loaded: source.loaded });
+    }
+    pub fn raw_source(&self, index: i32) -> Option<View<u8>> {
+        if (index < 0 || index >= self.sources.len()) { return None(); }
+        let source: Source = self.sources.at(index);
+        if (!source.loaded) { return None(); }
+        return Some(source.raw.as_view());
+    }
+    fn charge(&self, amount: u64) -> bool {
+        if (amount > self.limits.max_work-self.work) { return false; }
+        self.work += amount; return true;
+    }
+    fn decoded(&self, at: Origin, start: i32, length: i32) -> View<u8> {
+        if (at.source < 0) {
+            let owner: Vec<u8> = self.originals.at(at.argument);
+            let whole: View<u8> = owner.as_view();
+            return View<u8> { values: whole.values, start: whole.start+start, length: length };
+        }
+        let source: Source = self.sources.at(at.source);
+        let whole: View<u8> = source.decoded.as_view();
+        return View<u8> { values: whole.values, start: whole.start+start, length: length };
+    }
+    // Advance only offset records. Source/argv backing stays owned and stable;
+    // exhausted frame descriptors carry no independent cleanup authority.
+    fn pull(&self) -> Option<Token> {
+        while (!self.frames.is_empty()) {
+            let index: i32 = self.frames.len()-1;
+            let frame: Frame = self.frames.at(index);
+            let source: Source = self.sources.at(frame.source);
+            if (frame.position == source.spans.len()) { self.frames.pop(); }
+            else {
+                let span: ext::response::Span = source.spans.at(frame.position);
+                frame.position += 1; self.frames.set(index,frame).unwrap();
+                return Some(Token {
+                    at: Origin { source: frame.source, argument: -1, start: span.raw_start, length: span.raw_length },
+                    start: span.start, length: span.length
+                });
+            }
+        }
+        if (self.position == self.originals.len()) { return None(); }
+        let index: i32 = self.position; self.position += 1;
+        let bytes: Vec<u8> = self.originals.at(index);
+        return Some(Token { at: original_origin(index,bytes.len()), start: 0, length: bytes.len() });
+    }
+    fn append<H>(&self, token: Token, removed: i32) -> Result<bool,Failure<H>> {
+        let length: i32 = token.length-removed;
+        if (self.output.len() == self.limits.max_arguments) { return Err(issue<H>(Cause::ArgumentLimit,token.at)); }
+        if (length > self.limits.max_output_bytes-self.output_bytes) { return Err(issue<H>(Cause::OutputLimit,token.at)); }
+        if (!self.charge(1)) { return Err(issue<H>(Cause::WorkLimit,token.at)); }
+        let added = self.output.try_push(Output { at: token.at, start: token.start+removed, length: length, removed: removed });
+        if (added.is_err()) { return Err(issue<H>(Cause::AllocationFailed,token.at)); }
+        self.output_bytes += length; return Ok(true);
+    }
+    fn include<P,H>(&self, token: Token, provider: &P) -> Result<bool,Failure<H>> where P: Provider<H> {
+        let bytes: View<u8> = self.decoded(token.at,token.start,token.length);
+        let path: View<u8> = View<u8> { values: bytes.values, start: bytes.start+1, length: bytes.length-1 };
+        if (path.length > self.limits.max_path_bytes) { return Err(issue<H>(Cause::PathLimit,token.at)); }
+        if (self.sources.len() == self.limits.max_files) { return Err(issue<H>(Cause::FileLimit,token.at)); }
+        if (self.frames.len() == self.limits.max_depth) { return Err(issue<H>(Cause::DepthLimit,token.at)); }
+        if (!self.charge(1)) { return Err(issue<H>(Cause::WorkLimit,token.at)); }
+        // Every acquisition before record insertion still names the including
+        // token. Reserve the frame too, before any provider can run.
+        if (self.frames.try_reserve(1).is_err() || self.sources.try_reserve(1).is_err()) { return Err(issue<H>(Cause::AllocationFailed,token.at)); }
+        let copied: Vec<u8> = alloc::vec::new();
+        if (copied.try_extend(path).is_err()) { copied.destroy(); return Err(issue<H>(Cause::AllocationFailed,token.at)); }
+        let source: Source = Source { path: copied, included_at: token.at, loaded: false, raw: alloc::vec::new<u8>(), decoded: alloc::vec::new<u8>(), spans: alloc::vec::new<ext::response::Span>() };
+        let index: i32 = self.sources.len();
+        let added = self.sources.try_push(source);
+        if (added.is_err()) { copied.destroy(); return Err(issue<H>(Cause::AllocationFailed,token.at)); }
+        let grant: i32 = self.limits.max_file_bytes;
+        let remaining: i32 = self.limits.max_source_bytes-self.source_bytes;
+        if (remaining < grant) { grant = remaining; }
+        let work_grant: u64 = (self.limits.max_work-self.work)/4;
+        if (work_grant < grant as u64) { grant = work_grant as i32; }
+        let requested: Origin = source_origin(index,0);
+        let loaded: Result<Vec<u8>,H> = provider.load(source.path.as_view(),grant);
+        if (loaded.is_err()) { return Err(issue<H>(Cause::Provider(loaded.unwrap_err()),requested)); }
+        let raw: Vec<u8> = loaded.unwrap();
+        if (raw.len() > grant) { raw.destroy(); return Err(issue<H>(Cause::ProviderContract,requested)); }
+        source.raw = raw; source.loaded = true; self.sources.set(index,source).unwrap();
+        // The admitted grant proves these two additions fit their allowances.
+        assert(self.charge((raw.len() as u64)*4)); self.source_bytes += raw.len();
+        let measured: Result<ext::response::Shape,ext::response::Error> = ext::response::measure(raw.as_view());
+        if (measured.is_err()) {
+            let error: ext::response::Error = measured.unwrap_err();
+            return Err(issue<H>(Cause::Syntax(error),syntax_origin(index,raw.len(),error)));
+        }
+        let shape: ext::response::Shape = measured.unwrap();
+        let entire: Origin = source_origin(index,raw.len());
+        if (shape.tokens > self.limits.max_tokens-self.tokens) { return Err(issue<H>(Cause::TokenLimit,entire)); }
+        self.tokens += shape.tokens;
+        let token_work: u64 = (shape.bytes as u64)*2+(shape.tokens as u64);
+        if (!self.charge(token_work)) { return Err(issue<H>(Cause::WorkLimit,entire)); }
+        let decoded: Vec<u8> = source.decoded;
+        let byte_capacity = decoded.try_resize(shape.bytes,0);
+        source.decoded = decoded; self.sources.set(index,source).unwrap();
+        if (byte_capacity.is_err()) { return Err(issue<H>(Cause::AllocationFailed,entire)); }
+        let spans: Vec<ext::response::Span> = source.spans;
+        let span_capacity = spans.try_resize(shape.tokens,ext::response::Span { raw_start: 0, raw_length: 0, start: 0, length: 0 });
+        source.spans = spans; self.sources.set(index,source).unwrap();
+        if (span_capacity.is_err()) { return Err(issue<H>(Cause::AllocationFailed,entire)); }
+        let tokenized: Result<ext::response::Shape,ext::response::Error> = ext::response::tokenize_into(raw.as_view(),decoded.as_view(),spans.as_view());
+        if (tokenized.is_err()) {
+            let error: ext::response::Error = tokenized.unwrap_err();
+            return Err(issue<H>(Cause::Syntax(error),syntax_origin(index,raw.len(),error)));
+        }
+        // Admit every decoded token, including directives and empty tokens,
+        // before any child provider call from this file can occur.
+        let position: i32 = 0;
+        while (position < spans.len()) {
+            let span: ext::response::Span = spans.at(position);
+            if (span.length > self.limits.max_argument_bytes) {
+                let at: Origin = Origin { source: index, argument: -1, start: span.raw_start, length: span.raw_length };
+                return Err(issue<H>(Cause::ArgumentBytes,at));
+            }
+            position += 1;
+        }
+        self.frames.try_push(Frame { source: index, position: 0 }).unwrap();
+        return Ok(true);
+    }
+
+    // Initial admission and copying precede every provider call. Errors retain
+    // acquired expansion storage but never retain an H or publish partial argv.
+    pub fn prepare<P,H>(&self, arguments: View<View<u8>>, provider: &P, limits: Limits) -> Result<i32,Failure<H>> where P: Provider<H> {
+        if (self.started) { return Err(issue<H>(Cause::InvalidState,sentinel())); }
+        self.started = true; self.limits = limits;
+        if (!valid_limits(limits) || !valid(arguments)) { return Err(issue<H>(Cause::Bounds,sentinel())); }
+        if (arguments.length > limits.max_tokens) { return Err(issue<H>(Cause::TokenLimit,sentinel())); }
+        let total: i32 = 0; let index: i32 = 0;
+        while (index < arguments.length) {
+            let bytes: View<u8> = arguments.values[arguments.start+index];
+            if (!valid(bytes)) { return Err(issue<H>(Cause::Bounds,original_origin(index,0))); }
+            let at: Origin = original_origin(index,bytes.length);
+            if (bytes.length > limits.max_argument_bytes) { return Err(issue<H>(Cause::ArgumentBytes,at)); }
+            if (bytes.length > limits.max_source_bytes-total) { return Err(issue<H>(Cause::SourceLimit,at)); }
+            total += bytes.length; index += 1;
+        }
+        // Counts/bytes are i32-bounded, so the exact raw+token charge fits u64.
+        let initial_work: u64 = (total as u64)*3+(arguments.length as u64);
+        if (!self.charge(initial_work)) { return Err(issue<H>(Cause::WorkLimit,sentinel())); }
+        index = 0;
+        while (index < arguments.length) {
+            let bytes: View<u8> = arguments.values[arguments.start+index];
+            let position: i32 = 0;
+            while (position < bytes.length) {
+                if (byte(bytes,position) == 0) {
+                    let at: Origin = Origin { source: -1, argument: index, start: position, length: 1 };
+                    return Err(issue<H>(Cause::Syntax(ext::response::Error::Nul(position)),at));
+                }
+                position += 1;
+            }
+            index += 1;
+        }
+        self.source_bytes = total; self.tokens = arguments.length;
+        index = 0;
+        while (index < arguments.length) {
+            let bytes: View<u8> = arguments.values[arguments.start+index];
+            let copied: Vec<u8> = alloc::vec::new();
+            if (copied.try_extend(bytes).is_err()) { copied.destroy(); return Err(issue<H>(Cause::AllocationFailed,original_origin(index,bytes.length))); }
+            if (self.originals.try_push(copied).is_err()) { copied.destroy(); return Err(issue<H>(Cause::AllocationFailed,original_origin(index,bytes.length))); }
+            index += 1;
+        }
+        let next: Option<Token> = self.pull();
+        while (next.is_some()) {
+            let token: Token = next.unwrap();
+            let bytes: View<u8> = self.decoded(token.at,token.start,token.length);
+            let result: Result<bool,Failure<H>> = Ok(true);
+            if (bytes.length > 1 && byte(bytes,0) == 64) {
+                if (byte(bytes,1) == 64) { result = self.append<H>(token,1); }
+                else { result = self.include<P,H>(token,provider); }
+            } else { result = self.append<H>(token,0); }
+            if (result.is_err()) { return Err(result.unwrap_err()); }
+            next = self.pull();
+        }
+        index = 0;
+        while (index < self.output.len()) {
+            let argument: Output = self.output.at(index);
+            let bytes: View<u8> = self.decoded(argument.at,argument.start,argument.length);
+            if (self.views.try_push(bytes).is_err()) { return Err(issue<H>(Cause::AllocationFailed,argument.at)); }
+            index += 1;
+        }
+        self.ready = true; return Ok(self.views.len());
+    }
+
+    pub fn locate(&self, location: ext::cli::Location, maximum_work: u64) -> Result<Origin,LocateError> {
+        if (!self.ready) { return Err(LocateError::NotReady); }
+        if (location.argument < 0 || location.argument >= self.output.len()) { return Err(LocateError::Bounds); }
+        let output: Output = self.output.at(location.argument);
+        if (location.byte < 0 || location.byte > output.length) { return Err(LocateError::Bounds); }
+        if ((output.at.length as u64)+1 > maximum_work) { return Err(LocateError::WorkLimit); }
+        let offset: i32 = output.removed+location.byte;
+        let start: i32 = offset;
+        if (output.at.source >= 0) {
+            let source: Source = self.sources.at(output.at.source);
+            let raw: View<u8> = source.raw.as_view();
+            let token: View<u8> = View<u8> { values: raw.values, start: raw.start+output.at.start, length: output.at.length };
+            let mapped: Result<i32,ext::response::Error> = ext::response::raw_offset(token,offset);
+            if (mapped.is_err()) { return Err(LocateError::Syntax(mapped.unwrap_err())); }
+            start = output.at.start+mapped.unwrap();
+        }
+        let length: i32 = 0; if (location.byte < output.length) { length = 1; }
+        return Ok(Origin { source: output.at.source, argument: output.at.argument, start: start, length: length });
+    }
+
+    // Only nested byte/metadata owners belong to this object. An arbitrary H
+    // previously returned by prepare remains solely the caller's responsibility.
+    pub fn destroy(&self) {
+        self.ready = false;
+        self.views.destroy(); self.output.destroy(); self.frames.destroy();
+        let index: i32 = 0;
+        while (index < self.sources.len()) {
+            let source: Source = self.sources.at(index);
+            source.spans.destroy(); source.decoded.destroy(); source.raw.destroy(); source.path.destroy();
+            index += 1;
+        }
+        self.sources.destroy(); index = 0;
+        while (index < self.originals.len()) { let bytes: Vec<u8> = self.originals.at(index); bytes.destroy(); index += 1; }
+        self.originals.destroy(); self.started = false; self.limits = default_limits();
+        self.work = 0; self.source_bytes = 0; self.tokens = 0; self.output_bytes = 0; self.position = 0;
+    }
+}

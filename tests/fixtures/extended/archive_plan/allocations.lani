@@ -1,0 +1,19 @@
+module app::main;
+import core::io;
+import core::slice;
+import ext::archive_plan;
+import std::stream;
+fn main() -> i32 {
+    let limits=ext::archive_plan::Limits { max_entries:3,max_nodes:7,max_path_bytes:32,max_component_bytes:16,max_depth:4,max_stored_path_bytes:96,max_work:10000 };
+    let made=ext::archive_plan::new(limits);
+    if (made.is_err()) { return match(made.unwrap_err().kind) { ext::archive_plan::ErrorKind::Allocation->4,_ ->2 }; }
+    let plan=made.unwrap(); let reserved=plan.reserved_bytes();
+    assert(reserved==ext::archive_plan::reservation_bytes(limits).unwrap());
+    let name:[u8;3]=[97,47,98]; plan.add(core::slice::view(name,3).unwrap(),ext::archive_plan::Kind::File,0).unwrap();
+    plan.add(core::slice::view(name,1).unwrap(),ext::archive_plan::Kind::Directory,1).unwrap();
+    plan.seal().unwrap(); plan.destroy(); plan.destroy(); assert(plan.reserved_bytes()==0);
+    let bytes:[u8;8]=[0;8];let at:i32=0;
+    while(at<8) { bytes[at]=((reserved>>(at*8))&255) as u8;at+=1; }
+    let output=std::stream::stdout();core::io::write_all(output.borrow(),bytes,0,8).unwrap();
+    return 0;
+}

@@ -1,0 +1,252 @@
+// Executable admission candidate, not production flatten. One generic active
+// owner uses the canonical Iterator protocol and explicit value retirement.
+module app::main;
+import alloc::deque;
+import alloc::string;
+import alloc::vec;
+import core::iter;
+import core::option;
+import core::result;
+
+pub struct RetireFailure<J,E> { inner: J, error: E }
+pub trait Retirement<J,E> {
+    // None consumes all inner cleanup authority. Some returns the actual
+    // updated inner plus an independently transferred error. No rollback.
+    pub fn try_retire(&self, inner: J) -> core::option::Option<RetireFailure<J,E>>;
+}
+
+struct Active<J,R,T,E> {
+    value: core::option::Option<J>, policy: &R, done: bool, calls: i32
+}
+impl<J,R,T,E> Active<J,R,T,E> {
+    fn take_active(&self) -> core::option::Option<J> {
+        let previous: core::option::Option<J> = self.value;
+        self.value = core::option::None(); self.done = true;
+        return previous;
+    }
+}
+pub impl<J,R,T,E> core::iter::Iterator<core::result::Result<T,E>> for Active<J,R,T,E>
+    where J: core::iter::Iterator<T>, R: Retirement<J,E> {
+    pub fn next(&self) -> core::option::Option<core::result::Result<T,E>> {
+        if (self.done || self.value.is_none()) { return core::option::None(); }
+        let inner: J = self.value.unwrap();
+        self.value = core::option::None();
+        self.calls += 1;
+        let item: core::option::Option<T> = inner.next();
+        if (item.is_some()) {
+            self.value = core::option::Some(inner);
+            return core::option::Some(core::result::Ok(item.unwrap()));
+        }
+        // inner's old local copy becomes inactive at this call. A rejection
+        // must reinstall returned.inner, never the old shallow inner copy.
+        let retired: core::option::Option<RetireFailure<J,E>> = self.policy.try_retire(inner);
+        self.done = true;
+        if (retired.is_some()) {
+            let failure: RetireFailure<J,E> = retired.unwrap();
+            self.value = core::option::Some(failure.inner);
+            return core::option::Some(core::result::Err(failure.error));
+        }
+        return core::option::None();
+    }
+}
+
+struct Audit { calls: i32, scratch_freed: i32, backing_freed: i32, errors_made: i32, errors_freed: i32 }
+impl Audit { fn borrow(&self) -> &Audit { return self; } }
+struct Fault { message: alloc::string::String, stamp: u64, audit: &Audit, live: bool }
+impl Fault {
+    fn borrow(&self) -> &Fault { return self; }
+    fn destroy(&self) {
+        if (!self.live) { return; }
+        self.live = false;
+        self.message.destroy();
+        assert(self.message.byte_len() == 0 && self.message.bytes.capacity() == 0);
+        let audit: &Audit = self.audit; audit.errors_freed += 1;
+    }
+}
+fn fault(audit: &Audit) -> Fault {
+    let bytes: [u8;5] = [69,0,195,169,82];
+    let message: alloc::string::String = alloc::string::from_utf8(bytes,5).unwrap();
+    audit.errors_made += 1;
+    return Fault { message: message, stamp: 18446744073709551615, audit: audit, live: true };
+}
+fn check_fault(error: &Fault) {
+    assert(error.live && error.stamp == 18446744073709551615);
+    assert(error.message.byte_len() == 5 && error.message.byte_at(0).unwrap() == 69);
+    assert(error.message.byte_at(1).unwrap() == 0 && error.message.byte_at(2).unwrap() == 195);
+    assert(error.message.byte_at(3).unwrap() == 169 && error.message.byte_at(4).unwrap() == 82);
+}
+
+struct Wide { number: u64, signed: i64, cells: [u64;2], nested: core::option::Option<core::result::Result<[u64;2],u64>> }
+fn item(index: i32) -> Wide {
+    if (index == 0) {
+        let cells: [u64;2] = [18446744073709551615,4294967297];
+        let nested: core::result::Result<[u64;2],u64> = core::result::Ok(cells);
+        return Wide { number: 18446744073709551615, signed: -4294967297, cells: cells,
+            nested: core::option::Some(nested) };
+    }
+    if (index == 1) {
+        let code: u64 = 4294967297;
+        let nested: core::result::Result<[u64;2],u64> = core::result::Err(code);
+        return Wide { number: 9223372036854775808, signed: 9223372036854775807,
+            cells: [13,18446744073709551615], nested: core::option::Some(nested) };
+    }
+    return Wide { number: 4294967297, signed: -7, cells: [0,9223372036854775808], nested: core::option::None() };
+}
+fn check_item(value: Wide, index: i32) {
+    if (index == 0) {
+        assert(value.number == 18446744073709551615 && value.signed == -4294967297);
+        assert(value.cells[0] == 18446744073709551615 && value.cells[1] == 4294967297);
+        let nested: [u64;2] = value.nested.unwrap().unwrap();
+        assert(nested[0] == 18446744073709551615 && nested[1] == 4294967297);
+        return;
+    }
+    if (index == 1) {
+        assert(value.number == 9223372036854775808 && value.signed == 9223372036854775807);
+        assert(value.cells[0] == 13 && value.cells[1] == 18446744073709551615);
+        assert(value.nested.unwrap().unwrap_err() == 4294967297);
+        return;
+    }
+    assert(value.number == 4294967297 && value.signed == -7);
+    assert(value.cells[0] == 0 && value.cells[1] == 9223372036854775808 && value.nested.is_none());
+}
+
+// A real partial retirement first releases scratch, then fails while the
+// cursor backing remains owned. Scalar steps and the disarmed scratch record
+// distinguish returned updated J from the old shallow copy.
+struct Inner<J,T> { cursor: J, scratch: alloc::vec::Vec<u8>, steps: i32 }
+pub impl<J,T> core::iter::Iterator<T> for Inner<J,T> where J: core::iter::Iterator<T> {
+    pub fn next(&self) -> core::option::Option<T> { return self.cursor.next(); }
+}
+// Distinct receiver patterns identify the two caller policy implementations;
+// the same Active<J,R,T,E> engine still handles both arbitrary concrete Js.
+struct Policy<J> { audit: &Audit, fail_first: bool }
+impl<J> Policy<J> { fn borrow(&self) -> &Policy<J> { return self; } }
+pub impl<T> Retirement<Inner<alloc::vec::IntoIter<T>,T>,Fault> for Policy<alloc::vec::IntoIter<T>> {
+    pub fn try_retire(&self, inner: Inner<alloc::vec::IntoIter<T>,T>)
+        -> core::option::Option<RetireFailure<Inner<alloc::vec::IntoIter<T>,T>,Fault>> {
+        let audit: &Audit = self.audit; audit.calls += 1;
+        assert(inner.cursor.remaining() == 0); inner.steps += 1;
+        if (inner.scratch.capacity() > 0) { inner.scratch.destroy(); audit.scratch_freed += 1; }
+        if (self.fail_first && inner.steps == 1) {
+            return core::option::Some(RetireFailure { inner: inner, error: fault(audit) });
+        }
+        let backing: alloc::vec::Vec<T> = inner.cursor.take_remaining();
+        assert(backing.len() == 0 && backing.capacity() == 3);
+        backing.destroy();
+        assert(backing.capacity() == 0 && inner.cursor.capacity() == 0);
+        audit.backing_freed += 1;
+        return core::option::None();
+    }
+}
+pub impl<T> Retirement<Inner<alloc::deque::IntoIter<T>,T>,Fault> for Policy<alloc::deque::IntoIter<T>> {
+    pub fn try_retire(&self, inner: Inner<alloc::deque::IntoIter<T>,T>)
+        -> core::option::Option<RetireFailure<Inner<alloc::deque::IntoIter<T>,T>,Fault>> {
+        let audit: &Audit = self.audit; audit.calls += 1;
+        assert(inner.cursor.remaining() == 0); inner.steps += 1;
+        if (inner.scratch.capacity() > 0) { inner.scratch.destroy(); audit.scratch_freed += 1; }
+        if (self.fail_first && inner.steps == 1) {
+            return core::option::Some(RetireFailure { inner: inner, error: fault(audit) });
+        }
+        let backing: alloc::deque::Deque<T> = inner.cursor.take_remaining();
+        assert(backing.len() == 0 && backing.capacity() == 3);
+        backing.destroy();
+        assert(backing.capacity() == 0 && inner.cursor.capacity() == 0);
+        audit.backing_freed += 1;
+        return core::option::None();
+    }
+}
+fn scratch() -> alloc::vec::Vec<u8> {
+    let owner: alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(5).unwrap();
+    owner.try_push(83).unwrap(); owner.try_push(0).unwrap(); owner.try_push(84).unwrap();
+    return owner;
+}
+fn vector() -> Inner<alloc::vec::IntoIter<Wide>,Wide> {
+    let owner: alloc::vec::Vec<Wide> = alloc::vec::with_capacity<Wide>(3).unwrap();
+    owner.try_push(item(0)).unwrap(); owner.try_push(item(1)).unwrap(); owner.try_push(item(2)).unwrap();
+    let cursor: alloc::vec::IntoIter<Wide> = owner.take_iter();
+    assert(owner.capacity() == 0 && cursor.capacity() == 3); owner.destroy();
+    return Inner { cursor: cursor, scratch: scratch(), steps: 0 };
+}
+fn ring() -> Inner<alloc::deque::IntoIter<Wide>,Wide> {
+    let owner: alloc::deque::Deque<Wide> = alloc::deque::with_capacity<Wide>(3).unwrap();
+    owner.try_push_back(item(2)).unwrap(); owner.try_push_back(item(0)).unwrap(); owner.try_push_back(item(1)).unwrap();
+    check_item(owner.pop_front().unwrap(),2); owner.try_push_back(item(2)).unwrap();
+    assert(owner.head == 1 && owner.as_views().first.len() == 2 && owner.as_views().second.len() == 1);
+    let cursor: alloc::deque::IntoIter<Wide> = owner.take_iter();
+    assert(owner.capacity() == 0 && cursor.capacity() == 3); owner.destroy();
+    return Inner { cursor: cursor, scratch: scratch(), steps: 0 };
+}
+
+fn run_vec(profile: i32) {
+    let audit: Audit = Audit { calls: 0, scratch_freed: 0, backing_freed: 0, errors_made: 0, errors_freed: 0 };
+    let policy: Policy<alloc::vec::IntoIter<Wide>> = Policy { audit: audit.borrow(), fail_first: profile == 1 };
+    let source: Inner<alloc::vec::IntoIter<Wide>,Wide> = vector();
+    let active: Active<Inner<alloc::vec::IntoIter<Wide>,Wide>,Policy<alloc::vec::IntoIter<Wide>>,Wide,Fault> =
+        Active { value: core::option::Some(source), policy: policy.borrow(), done: false, calls: 0 };
+    check_item(active.next().unwrap().unwrap(),0);
+    if (profile == 2) {
+        let recovered: Inner<alloc::vec::IntoIter<Wide>,Wide> = active.take_active().unwrap();
+        assert(recovered.cursor.remaining() == 2 && recovered.steps == 0 && audit.calls == 0);
+        assert(active.next().is_none() && active.take_active().is_none() && active.calls == 1);
+        check_item(recovered.next().unwrap(),1); check_item(recovered.next().unwrap(),2);
+        assert(recovered.next().is_none());
+        let retired: core::option::Option<RetireFailure<Inner<alloc::vec::IntoIter<Wide>,Wide>,Fault>> = policy.try_retire(recovered);
+        assert(retired.is_none() && audit.calls == 1 && audit.errors_made == 0);
+    } else {
+        check_item(active.next().unwrap().unwrap(),1); check_item(active.next().unwrap().unwrap(),2);
+        let terminal: core::option::Option<core::result::Result<Wide,Fault>> = active.next();
+        assert(active.calls == 4 && audit.calls == 1 && audit.scratch_freed == 1);
+        assert(active.next().is_none() && active.calls == 4 && audit.calls == 1);
+        if (profile == 1) {
+            let error: Fault = terminal.unwrap().unwrap_err(); check_fault(error.borrow());
+            assert(audit.backing_freed == 0 && audit.errors_made == 1 && audit.errors_freed == 0);
+            let recovered: Inner<alloc::vec::IntoIter<Wide>,Wide> = active.take_active().unwrap();
+            assert(recovered.steps == 1 && recovered.scratch.capacity() == 0 && recovered.cursor.capacity() == 3);
+            assert(recovered.cursor.remaining() == 0 && active.take_active().is_none() && active.next().is_none());
+            let retried: core::option::Option<RetireFailure<Inner<alloc::vec::IntoIter<Wide>,Wide>,Fault>> = policy.try_retire(recovered);
+            assert(retried.is_none() && audit.calls == 2);
+            check_fault(error.borrow()); error.destroy(); error.destroy();
+            assert(audit.errors_made == 1 && audit.errors_freed == 1);
+        } else { assert(terminal.is_none() && active.take_active().is_none() && audit.errors_made == 0); }
+    }
+    assert(audit.scratch_freed == 1 && audit.backing_freed == 1);
+}
+fn run_deque(profile: i32) {
+    let audit: Audit = Audit { calls: 0, scratch_freed: 0, backing_freed: 0, errors_made: 0, errors_freed: 0 };
+    let policy: Policy<alloc::deque::IntoIter<Wide>> = Policy { audit: audit.borrow(), fail_first: profile == 1 };
+    let source: Inner<alloc::deque::IntoIter<Wide>,Wide> = ring();
+    let active: Active<Inner<alloc::deque::IntoIter<Wide>,Wide>,Policy<alloc::deque::IntoIter<Wide>>,Wide,Fault> =
+        Active { value: core::option::Some(source), policy: policy.borrow(), done: false, calls: 0 };
+    check_item(active.next().unwrap().unwrap(),0);
+    if (profile == 2) {
+        let recovered: Inner<alloc::deque::IntoIter<Wide>,Wide> = active.take_active().unwrap();
+        assert(recovered.cursor.remaining() == 2 && recovered.steps == 0 && audit.calls == 0);
+        assert(active.next().is_none() && active.take_active().is_none() && active.calls == 1);
+        check_item(recovered.next().unwrap(),1); check_item(recovered.next().unwrap(),2);
+        assert(recovered.next().is_none());
+        let retired: core::option::Option<RetireFailure<Inner<alloc::deque::IntoIter<Wide>,Wide>,Fault>> = policy.try_retire(recovered);
+        assert(retired.is_none() && audit.calls == 1 && audit.errors_made == 0);
+    } else {
+        check_item(active.next().unwrap().unwrap(),1); check_item(active.next().unwrap().unwrap(),2);
+        let terminal: core::option::Option<core::result::Result<Wide,Fault>> = active.next();
+        assert(active.calls == 4 && audit.calls == 1 && audit.scratch_freed == 1);
+        assert(active.next().is_none() && active.calls == 4 && audit.calls == 1);
+        if (profile == 1) {
+            let error: Fault = terminal.unwrap().unwrap_err(); check_fault(error.borrow());
+            assert(audit.backing_freed == 0 && audit.errors_made == 1 && audit.errors_freed == 0);
+            let recovered: Inner<alloc::deque::IntoIter<Wide>,Wide> = active.take_active().unwrap();
+            assert(recovered.steps == 1 && recovered.scratch.capacity() == 0 && recovered.cursor.capacity() == 3);
+            assert(recovered.cursor.remaining() == 0 && active.take_active().is_none() && active.next().is_none());
+            let retried: core::option::Option<RetireFailure<Inner<alloc::deque::IntoIter<Wide>,Wide>,Fault>> = policy.try_retire(recovered);
+            assert(retried.is_none() && audit.calls == 2);
+            check_fault(error.borrow()); error.destroy(); error.destroy();
+            assert(audit.errors_made == 1 && audit.errors_freed == 1);
+        } else { assert(terminal.is_none() && active.take_active().is_none() && audit.errors_made == 0); }
+    }
+    assert(audit.scratch_freed == 1 && audit.backing_freed == 1);
+}
+fn main() -> i32 {
+    let profile: i32 = 0;
+    while (profile < 3) { run_vec(profile); run_deque(profile); profile += 1; }
+    return 0;
+}

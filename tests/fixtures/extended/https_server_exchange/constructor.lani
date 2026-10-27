@@ -1,0 +1,105 @@
+// Constructor ownership and exact pre-HTTP TLS/I/O boundaries. No TLS peer.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::net;
+import core::option;
+import core::slice;
+import core::time;
+import ext::http_client;
+import ext::http_server;
+import ext::https_server;
+import ext::openssl_tls;
+import std::args;
+import std::clock;
+import std::signal;
+import std::socket;
+import std::stream;
+extern "C" fn duplex_test_fd_open(fd: i32) -> i32;
+extern "C" fn duplex_test_stat(index: i32, field: i32) -> i64;
+fn bytes(text: str, count: i32) -> core::slice::View<u8> { return core::slice::view<u8>(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),count).unwrap(); }
+fn number(part: core::slice::View<u8>) -> i32 { return core::decimal::parse_u32_range(part.values,part.start,part.length).unwrap() as i32; }
+fn mark(text: str) { let sink = std::stream::stderr(); let part = bytes(text,1); core::io::write_all(sink.borrow(),part.values,0,1).unwrap(); }
+fn empty(stats: ext::http_server::Stats) {
+    assert(stats.received == 0 && stats.retained == 0 && stats.decoded == 0 && stats.buffered_discarded == 0 && stats.drain_received == 0);
+    assert(stats.response_bytes == 0 && stats.response_sent == 0 && stats.continue_sent == 0 && !stats.final_started && !stats.write_shutdown && !stats.peer_eof);
+    assert(stats.work == 512 && stats.scan_work == 0);
+}
+fn failure(error: ext::https_server::Failure, mode: i32, oom: bool) {
+    let calls: u64 = 0; let io_calls: u64 = 1; if (mode == 0) { io_calls = 0; } if (mode == 2 || mode == 4) { calls = 1; io_calls = 2; }
+    empty(error.stats); assert(error.stats.io_calls == io_calls && error.stats.closed && error.stats.cleanup_calls == 1 && error.stats.cleanup_errors == 0);
+    assert(error.cleanup_attempted && error.cleanup.is_none() && error.rejection.is_none());
+    assert(error.tls.calls == calls && error.tls.handshakes == calls && error.tls.reads == 0 && error.tls.writes == 0 && error.tls.shutdowns == 0);
+    if (mode == 0) { assert(match(error.cause) { ext::https_server::Cause::InvalidOptions -> true, _ -> false }); assert(match(error.stage) { ext::https_server::Stage::Configure -> true, _ -> false }); }
+    else { if (mode == 1 || oom) {
+        let tls: core::option::Option<ext::openssl_tls::Error> = match(error.cause) { ext::https_server::Cause::Tls(value) -> core::option::Some(value), _ -> core::option::None() }; assert(tls.is_some());
+        assert(match(error.stage) { ext::https_server::Stage::Attach -> true, _ -> false }); assert(match(tls.unwrap().phase) { ext::openssl_tls::Phase::Session -> true, _ -> false });
+        if (oom) { assert(match(tls.unwrap().cause) { ext::openssl_tls::Cause::AllocationFailed -> true, _ -> false }); }
+        else { assert(match(tls.unwrap().cause) { ext::openssl_tls::Cause::Closed -> true, _ -> false }); }
+        assert(tls.unwrap().ssl_error == 0 && tls.unwrap().code == 0 && tls.unwrap().verify_code == 0 && tls.unwrap().system == 0);
+    } else {
+        assert(match(error.stage) { ext::https_server::Stage::Handshake -> true, _ -> false });
+        if (mode == 2) { assert(match(error.cause) { ext::https_server::Cause::TlsLimit -> true, _ -> false }); }
+        else {
+            let http: core::option::Option<ext::http_server::Failure> = match(error.cause) { ext::https_server::Cause::Http(value) -> core::option::Some(value), _ -> core::option::None() }; assert(http.is_some());
+            assert(match(http.unwrap().cause) { ext::http_server::Cause::IoLimit -> true, _ -> false }); assert(match(http.unwrap().stage) { ext::http_server::Stage::Head -> true, _ -> false });
+            empty(http.unwrap().stats); assert(http.unwrap().stats.io_calls == io_calls && http.unwrap().stats.closed && http.unwrap().stats.cleanup_calls == 1 && http.unwrap().stats.cleanup_errors == 0);
+            assert(http.unwrap().cleanup_attempted && http.unwrap().cleanup.is_none() && http.unwrap().rejection.is_none());
+        }
+    } }
+}
+fn main() -> i32 {
+    std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).unwrap();
+    let args = std::args::snapshot(1,4,32768).unwrap(); assert(args.len() == 4); let mode: i32 = number(args.get(2).unwrap()); let oom: bool = number(args.get(3).unwrap()) != 0; assert(mode >= 0 && mode <= 5 && (!oom || mode == 5));
+    let limits = ext::openssl_tls::default_limits(); limits.io_bytes = 97;
+    let context = ext::openssl_tls::new_server(args.get(0).unwrap(),args.get(1).unwrap(),bytes("",0),ext::openssl_tls::ClientAuthentication::Unauthenticated,limits).unwrap();
+    if (mode == 1) { context.destroy(); assert(!context.is_open()); }
+    let options = ext::http_server::default_options(); options.work = 8192; options.request_bytes = 256;
+    options.request.head_bytes = 256; options.request.line_bytes = 128; options.request.headers = 4; options.request.body_bytes = 0; options.request.trailer_bytes = 0; options.request.trailers = 0;
+    options.response_bytes = 256; options.response.head_bytes = 256; options.response.line_bytes = 128; options.response.headers = 4; options.response.body_bytes = 0;
+    if (mode == 3) { options.io_calls = 1; } if (mode == 4) { options.io_calls = 2; }
+    let tls_options = ext::https_server::default_options(); if (mode == 0) { tls_options.tls_calls = 0; } if (mode == 2) { tls_options.tls_calls = 1; }
+    mark("C"); let listener = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap(); listener.bind(core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 })).unwrap(); listener.listen(1).unwrap();
+    let port: u64 = match(listener.local_addr().unwrap()) { core::net::SocketAddr::V4(value) -> value.port as u64, _ -> 0 }; assert(port > 0);
+    let startup: [u8;16] = [0;16]; let j: i32 = 0; while (j < 8) { startup[j] = (1213421622 as u64 >> (j*8)) as u8; startup[8+j] = (port >> (j*8)) as u8; j += 1; } let initial_output = std::stream::stdout(); core::io::write_all(initial_output.borrow(),startup,0,16).unwrap();
+    let control = std::stream::stdin(); let connected: [u8;1] = [0]; core::io::read_exact(control.borrow(),connected,0,1).unwrap(); assert(connected[0] == 43);
+    let accepted = listener.accept(true).unwrap(); listener.close().unwrap(); let fd: i32 = accepted.socket.raw_handle().unwrap(); mark("c");
+    let deadline = core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_millis(4000)).unwrap();
+    assert(duplex_test_stat(-1,3) == 0); mark("B"); let made = ext::https_server::begin_connected(accepted.socket,accepted.peer,context.borrow(),options,tls_options,deadline); mark("b"); context.destroy(); args.destroy();
+    let calls: u64 = 0; let io_calls: u64 = 0; let steps: u64 = 0; let waits: u64 = 0; let failed: bool = mode != 5 || oom;
+    if (mode <= 1 || oom) {
+        let error: ext::https_server::Failure = made.unwrap_err(); failure(error,mode,oom); calls = error.tls.calls; io_calls = error.stats.io_calls;
+    } else {
+        let owner: ext::https_server::Exchange = made.unwrap(); empty(owner.stats()); assert(owner.stats().io_calls == 1 && !owner.stats().closed && owner.stats().cleanup_calls == 0);
+        assert(owner.tls_stats().calls == 0 && duplex_test_stat(-1,3) == 0 && duplex_test_stat(-1,0) == 0 && duplex_test_stat(-1,1) == 1 && duplex_test_fd_open(fd) == 1);
+        assert(owner.negotiated_version() == 0 && owner.protocol().event_revision() == 0 && owner.protocol().event().is_none());
+        let ready = ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false };
+        if (mode == 5) {
+            mark("A"); assert(owner.abort().unwrap()); mark("a"); assert(match(owner.status()) { ext::http_server::Status::Aborted -> true, _ -> false }); assert(owner.last_terminal_failure().is_none());
+            mark("S"); assert(owner.step(ready).unwrap().is_none()); mark("s"); steps += 1; mark("W"); assert(!owner.before_wait().unwrap()); mark("w"); waits += 1;
+        } else {
+            if (mode == 2 || mode == 4) {
+                mark("S"); assert(owner.step(ready).unwrap().is_none()); mark("s"); steps += 1;
+                empty(owner.stats()); assert(owner.stats().io_calls == 2 && owner.tls_stats().calls == 1 && owner.tls_stats().handshakes == 1);
+                assert(duplex_test_stat(-1,3) == 1 && duplex_test_stat(0,3) == 1 && duplex_test_stat(0,4) == 1);
+                let interest = owner.interest(); assert(interest.readable && !interest.writable && interest.immediate == (mode == 2));
+                assert(owner.negotiated_version() == 0 && owner.protocol().event_revision() == 0 && owner.protocol().event().is_none());
+            }
+            if (mode == 4) { mark("W"); failure(owner.before_wait().unwrap_err(),mode,false); mark("w"); waits += 1; }
+            else { mark("S"); failure(owner.step(ready).unwrap_err(),mode,false); mark("s"); steps += 1; }
+            let before: i64 = duplex_test_stat(-1,3); failure(owner.last_terminal_failure().unwrap(),mode,false);
+            assert(match(owner.status()) { ext::http_server::Status::Failed -> true, _ -> false });
+            mark("S"); failure(owner.step(ready).unwrap_err(),mode,false); mark("s"); steps += 1; mark("W"); failure(owner.before_wait().unwrap_err(),mode,false); mark("w"); waits += 1;
+            assert(duplex_test_stat(-1,3) == before);
+        }
+        empty(owner.stats()); assert(owner.stats().closed && owner.stats().cleanup_calls == 1 && owner.stats().cleanup_errors == 0 && !owner.abort().unwrap());
+        assert(owner.raw_handle().is_none() && owner.negotiated_version() == 0 && owner.rejection().is_none() && owner.protocol().event().is_none() && owner.protocol().event_revision() == 0);
+        calls = owner.tls_stats().calls; io_calls = owner.stats().io_calls;
+        mark("X"); assert(owner.destroy().unwrap()); assert(!owner.destroy().unwrap()); mark("x"); assert(duplex_test_stat(-1,3) == calls as i64);
+    }
+    assert(duplex_test_fd_open(fd) == 0 && duplex_test_stat(-1,0) == 0 && duplex_test_stat(-1,1) == 0 && duplex_test_stat(-1,2) == 0 && duplex_test_stat(-1,3) == calls as i64);
+    let values: [u64;16] = [1213421623,mode as u64,oom as u64,failed as u64,calls,io_calls,steps,waits,1,0,0,0,0,0,0,fd as u64];
+    let output: [u8;128] = [0;128]; let i: i32 = 0; while (i < 16) { let j: i32 = 0; while (j < 8) { output[i*8+j] = (values[i]>>(j*8)) as u8; j += 1; } i += 1; }
+    let sink = std::stream::stdout(); core::io::write_all(sink.borrow(),output,0,128).unwrap(); let input = std::stream::stdin(); let ack: [u8;1] = [0]; core::io::read_exact(input.borrow(),ack,0,1).unwrap(); assert(ack[0] == 33); return 0;
+}

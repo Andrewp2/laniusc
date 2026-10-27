@@ -1,0 +1,114 @@
+// Literal Bash-word decoding only. No shell execution, expansion, allocation
+// or host calls. Keep input immutable/live and decode output disjoint from it.
+// Logical starts/counts are checked; physical backing remains a precondition.
+module ext::bash_words;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+
+pub enum Mode { Complete, Prefix }
+pub enum Quote { Unquoted, Single, Double }
+pub struct Shape { bytes:i32, quote:Quote, incomplete_escape:bool }
+pub enum Error {
+    Bounds, Nul(i32), Expansion(i32), Operator(i32), Whitespace(i32),
+    UnclosedQuote(i32), TrailingEscape(i32), OutputTooSmall(i32)
+}
+
+struct Sink { output:View<u8>, writing:bool, count:i32 }
+impl Sink {
+    fn emit(&self,value:u8) {
+        if(self.writing) { self.output.values[self.output.start+self.count]=value; }
+        self.count+=1;
+    }
+}
+fn valid(value:View<u8>) -> bool {
+    return value.start>=0 && value.length>=0 && value.start<=2147483647-value.length;
+}
+fn byte(value:View<u8>,at:i32) -> u8 { return value.values[value.start+at]; }
+fn expansion(value:u8) -> bool {
+    return value==36 || value==96 || value==42 || value==63 || value==91 || value==93 || value==123 || value==125 || value==126 || value==33;
+}
+fn operator(value:u8) -> bool {
+    return value==124 || value==38 || value==59 || value==40 || value==41 || value==60 || value==62;
+}
+fn shape(count:i32,quote:i32,incomplete:bool) -> Shape {
+    let state:Quote=Quote::Unquoted;
+    if(quote==1) { state=Quote::Single; }
+    if(quote==2) { state=Quote::Double; }
+    return Shape { bytes:count,quote:state,incomplete_escape:incomplete };
+}
+
+// The sole traversal for measuring/writing. Each emission consumes at least
+// one input byte, so count cannot exceed the admitted signed input length.
+fn walk(word:View<u8>,mode:Mode,output:View<u8>,writing:bool) -> Result<Shape,Error> {
+    if(!valid(word)) { return Err(Error::Bounds); }
+    let prefix:bool=match(mode) { Mode::Complete->false,Mode::Prefix->true };
+    let sink:Sink=Sink { output:output,writing:writing,count:0 };
+    let at:i32=0; let quote:i32=0; let opening:i32=0; let started:bool=false;
+    while(at<word.length) {
+        let current:u8=byte(word,at);
+        if(current==0) { return Err(Error::Nul(at)); }
+        if(quote==1) {
+            if(current==39) { quote=0; }
+            else { sink.emit(current); }
+            at+=1; continue;
+        }
+        if(current==92) {
+            if(at+1==word.length) {
+                if(prefix) { return Ok(shape(sink.count,quote,true)); }
+                return Err(Error::TrailingEscape(at));
+            }
+            let next:u8=byte(word,at+1);
+            if(next==0) { return Err(Error::Nul(at+1)); }
+            if(next==10) { at+=2; continue; }
+            if(quote==2) {
+                // Bash removes a double-quoted backslash only before these
+                // four bytes or LF. In particular \q and \! retain it;
+                // consuming \! together suppresses the history-syntax gate.
+                if(next!=36 && next!=96 && next!=34 && next!=92) { sink.emit(92); }
+            }
+            sink.emit(next); started=true; at+=2; continue;
+        }
+        if(quote==2) {
+            if(current==34) { quote=0; }
+            else {
+                if(current==36 || current==96 || current==33) { return Err(Error::Expansion(at)); }
+                sink.emit(current);
+            }
+            at+=1; continue;
+        }
+        if(current==39 || current==34) {
+            quote=1; if(current==34) { quote=2; }
+            opening=at; started=true; at+=1; continue;
+        }
+        if(current==32 || current==9 || current==10) { return Err(Error::Whitespace(at)); }
+        if(operator(current)) { return Err(Error::Operator(at)); }
+        // An initial unquoted # starts a shell comment. An empty quoted piece
+        // already starts a word, so ''# and a# remain literal spellings.
+        if(current==35 && !started) { return Err(Error::Operator(at)); }
+        if(expansion(current)) { return Err(Error::Expansion(at)); }
+        sink.emit(current); started=true; at+=1;
+    }
+    if(quote!=0 && !prefix) { return Err(Error::UnclosedQuote(opening)); }
+    return Ok(shape(sink.count,quote,false));
+}
+
+// Errors carry logical raw-byte offsets, except Bounds and OutputTooSmall:
+// the latter reports the full required decoded byte count. Prefix preserves
+// open-quote state; a pending bare/double escape emits no trailing backslash.
+pub fn measure(word:View<u8>,mode:Mode) -> Result<Shape,Error> {
+    return walk(word,mode,word,false);
+}
+
+// Full input syntax, output logical range, then complete capacity are checked
+// before writing. Success preserves the unused tail and adds no NUL byte.
+pub fn decode_into(word:View<u8>,mode:Mode,output:View<u8>) -> Result<Shape,Error> {
+    let expected:Shape=measure(word,mode)?;
+    if(!valid(output)) { return Err(Error::Bounds); }
+    if(output.length<expected.bytes) { return Err(Error::OutputTooSmall(expected.bytes)); }
+    let written:Result<Shape,Error> =walk(word,mode,output,true);
+    assert(written.is_ok());
+    let actual:Shape=written.unwrap(); assert(actual.bytes==expected.bytes);
+    return Ok(actual);
+}

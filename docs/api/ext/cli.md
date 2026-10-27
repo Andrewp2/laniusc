@@ -8,11 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Canonical borrowed option lexer with sticky strict errors, fused EOF and exact locations. Shared short/long lookup and explicit prefix parsing classify active names, clusters and attached/pending values; strict parsing still reports MissingValue. The terminator getter distinguishes actual -- from OptionsFirst stopping or a required value. Command routing reuses this lexer; hierarchy scratch ownership differs from flat-parser position copies. Current completion semantics, two hierarchy regressions and one selected flat regression execute on native Linux x86_64. Earlier broad flat-parser/checksum receipts retain their historical source scope.
+
 ## Contract and evidence guides
 
 - [extended-cli](../../extended-cli.md)
+- [extended-cli-commands](../../extended-cli-commands.md)
+- [extended-cli-response](../../extended-cli-response.md)
+- [extended-cli-complete](../../extended-cli-complete.md)
 
-Declaration counts: enum: 4; field: 18; function: 1; impl: 1; method: 1; struct: 5; variant: 12.
+Declaration counts: enum: 5; field: 27; function: 2; impl: 1; method: 5; struct: 7; variant: 16.
 
 ## Declared imports
 
@@ -274,9 +279,113 @@ MissingValue(Location)
 UnexpectedValue(Location)
 ```
 
-### struct: Parser
+### struct: Pending
 
 [Source line 16](../../../extended/ext/cli.lani#L16)
+
+```lanius
+pub struct Pending
+```
+
+#### field: spec
+
+[Source line 16](../../../extended/ext/cli.lani#L16)
+
+```lanius
+spec: Spec
+```
+
+#### field: at
+
+[Source line 16](../../../extended/ext/cli.lani#L16)
+
+```lanius
+at: Location
+```
+
+### enum: PrefixKind
+
+[Source line 17](../../../extended/ext/cli.lani#L17)
+
+```lanius
+pub enum PrefixKind
+```
+
+#### variant: Word
+
+[Source line 17](../../../extended/ext/cli.lani#L17)
+
+```lanius
+Word
+```
+
+#### variant: LongOption
+
+[Source line 17](../../../extended/ext/cli.lani#L17)
+
+```lanius
+LongOption
+```
+
+#### variant: ShortOption
+
+[Source line 17](../../../extended/ext/cli.lani#L17)
+
+```lanius
+ShortOption
+```
+
+#### variant: Value
+
+[Source line 17](../../../extended/ext/cli.lani#L17)
+
+```lanius
+Value
+```
+
+### struct: Prefix
+
+[Source line 18](../../../extended/ext/cli.lani#L18)
+
+```lanius
+pub struct Prefix
+```
+
+#### field: kind
+
+[Source line 19](../../../extended/ext/cli.lani#L19)
+
+```lanius
+kind: PrefixKind
+```
+
+#### field: prefix
+
+[Source line 19](../../../extended/ext/cli.lani#L19)
+
+```lanius
+prefix: core::slice::View<u8>
+```
+
+#### field: stem
+
+[Source line 19](../../../extended/ext/cli.lani#L19)
+
+```lanius
+stem: core::slice::View<u8>
+```
+
+#### field: option
+
+[Source line 20](../../../extended/ext/cli.lani#L20)
+
+```lanius
+option: core::option::Option<Spec>
+```
+
+### struct: Parser
+
+[Source line 22](../../../extended/ext/cli.lani#L22)
 
 ```lanius
 pub struct Parser
@@ -284,7 +393,7 @@ pub struct Parser
 
 #### field: arguments
 
-[Source line 17](../../../extended/ext/cli.lani#L17)
+[Source line 23](../../../extended/ext/cli.lani#L23)
 
 ```lanius
 arguments: core::slice::View<core::slice::View<u8>>
@@ -292,7 +401,7 @@ arguments: core::slice::View<core::slice::View<u8>>
 
 #### field: specs
 
-[Source line 17](../../../extended/ext/cli.lani#L17)
+[Source line 23](../../../extended/ext/cli.lani#L23)
 
 ```lanius
 specs: core::slice::View<Spec>
@@ -300,7 +409,7 @@ specs: core::slice::View<Spec>
 
 #### field: ordering
 
-[Source line 17](../../../extended/ext/cli.lani#L17)
+[Source line 23](../../../extended/ext/cli.lani#L23)
 
 ```lanius
 ordering: Ordering
@@ -308,7 +417,7 @@ ordering: Ordering
 
 #### field: index
 
-[Source line 18](../../../extended/ext/cli.lani#L18)
+[Source line 24](../../../extended/ext/cli.lani#L24)
 
 ```lanius
 index: i32
@@ -316,7 +425,7 @@ index: i32
 
 #### field: short_offset
 
-[Source line 18](../../../extended/ext/cli.lani#L18)
+[Source line 24](../../../extended/ext/cli.lani#L24)
 
 ```lanius
 short_offset: i32
@@ -324,44 +433,108 @@ short_offset: i32
 
 #### field: ended
 
-[Source line 18](../../../extended/ext/cli.lani#L18)
+[Source line 24](../../../extended/ext/cli.lani#L24)
 
 ```lanius
 ended: bool
 ```
 
+#### field: terminated
+
+[Source line 24](../../../extended/ext/cli.lani#L24)
+
+```lanius
+terminated: bool
+```
+
 #### field: failure
 
-[Source line 18](../../../extended/ext/cli.lani#L18)
+[Source line 24](../../../extended/ext/cli.lani#L24)
 
 ```lanius
 failure: core::option::Option<Error>
+```
+
+#### field: prefix_mode
+
+[Source line 25](../../../extended/ext/cli.lani#L25)
+
+```lanius
+prefix_mode: bool
+```
+
+#### field: pending
+
+[Source line 25](../../../extended/ext/cli.lani#L25)
+
+```lanius
+pending: core::option::Option<Pending>
 ```
 
 ## Free functions and extern declarations
 
 ### function: parser
 
-[Source line 31](../../../extended/ext/cli.lani#L31)
+[Source line 56](../../../extended/ext/cli.lani#L56)
 
 ```lanius
 pub fn parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering) -> core::result::Result<Parser, Error>
 ```
 
+### function: prefix_parser
+
+[Source line 80](../../../extended/ext/cli.lani#L80)
+
+```lanius
+pub fn prefix_parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering) -> core::result::Result<Parser,Error>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 53
+### impl at line 87
 
-[Source line 53](../../../extended/ext/cli.lani#L53)
+[Source line 87](../../../extended/ext/cli.lani#L87)
 
 ```lanius
 pub impl Parser
 ```
 
+#### method: explicitly_terminated
+
+[Source line 90](../../../extended/ext/cli.lani#L90)
+
+```lanius
+pub fn explicitly_terminated(&self) -> bool
+```
+
+#### method: options_ended
+
+[Source line 91](../../../extended/ext/cli.lani#L91)
+
+```lanius
+pub fn options_ended(&self) -> bool
+```
+
+#### method: pending_required
+
+[Source line 92](../../../extended/ext/cli.lani#L92)
+
+```lanius
+pub fn pending_required(&self) -> core::option::Option<Pending>
+```
+
 #### method: next
 
-[Source line 103](../../../extended/ext/cli.lani#L103)
+[Source line 147](../../../extended/ext/cli.lani#L147)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Event>, Error>
+```
+
+#### method: classify_prefix
+
+[Source line 171](../../../extended/ext/cli.lani#L171)
+
+```lanius
+pub fn classify_prefix(&self, prefix: core::slice::View<u8>) -> core::result::Result<Prefix,Error>
 ```

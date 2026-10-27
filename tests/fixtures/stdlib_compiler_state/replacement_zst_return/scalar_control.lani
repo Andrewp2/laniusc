@@ -1,0 +1,14 @@
+// Same caller record and zero-sized arguments; scalar return is the control.
+struct Progress { committed: u64, replaced: u64 }
+struct Unit {}
+fn forward(progress: Progress, item: Unit, error: Unit) -> u64 {
+    assert(progress.committed == 2 && progress.replaced == 1);
+    return progress.committed*10+progress.replaced;
+}
+fn main() -> i32 {
+    let progress: Progress = Progress { committed: 2, replaced: 1 };
+    assert(progress.committed == 2 && progress.replaced == 1);
+    let forwarded: u64 = forward(progress,Unit {},Unit {});
+    assert(forwarded == 21);
+    return 0;
+}

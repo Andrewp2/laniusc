@@ -1,0 +1,24 @@
+// Same constructor arithmetic, without Vec owners, allocation, or regex import.
+module app::main;
+import core::mem;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+
+pub enum Error { Limit(i32), AllocationFailed }
+pub fn required_bytes(states: i32, groups: i32) -> Result<u64,Error> {
+    if (states < 1 || states > 65536 || groups < 1 || groups > 129) { return Err(Error::Limit(0)); }
+    if (groups > 2147483647 / 2) { return Err(Error::Limit(0)); }
+    let slots: i32 = groups * 2;
+    if (states > 2147483647 / slots) { return Err(Error::Limit(0)); }
+    let matrix: i32 = states * slots;
+    let elements: u64 = 4 * (states as u64) + 3 * (matrix as u64) + 2 * (slots as u64);
+    let width: u64 = core::mem::size_of<i32>() as u64;
+    if (width > 0 && (elements > 18446744073709551615 / width || (matrix as u64) > 2147483647 / width)) { return Err(Error::Limit(0)); }
+    return Ok(elements * width);
+}
+fn main() -> i32 {
+    let bytes = required_bytes(4,1).unwrap();
+    assert(bytes == 44 * (core::mem::size_of<i32>() as u64));
+    return 0;
+}

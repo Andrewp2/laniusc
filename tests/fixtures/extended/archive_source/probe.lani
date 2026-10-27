@@ -1,0 +1,268 @@
+// Test-only binary protocol and ACK checkpoints around the real Prepared owner.
+module app::main;
+import core::mem;
+import core::slice::View;
+import core::slice::view;
+import core::result::Result;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import ext::archive_source;
+import ext::archive_plan;
+import ext::archive_profile;
+import ext::tar;
+import ext::zip;
+import std::io;
+import std::linux;
+
+fn receive(pointer:ptr,count:i32) {
+    let at:i32=0;
+    while(at<count) {
+        let got=std::io::read_stdin(pointer+(at as usize),(count-at) as usize);
+        assert(got>0 && got<=count-at); at+=got;
+    }
+}
+fn send(pointer:ptr,count:i32) {
+    let at:i32=0;
+    while(at<count) {
+        let got=std::io::write_stdout(pointer+(at as usize),(count-at) as usize);
+        assert(got>0 && got<=count-at); at+=got;
+    }
+}
+fn word(value:u64) {
+    let packed:[i32;2]=[(value&4294967295) as i32,(value>>32) as i32];
+    send(core::mem::i32_array_data_ptr(packed),8);
+}
+fn frame(size:i32) {
+    assert(size>=0 && size<=32768);
+    let packed:[i32;1]=[size]; send(core::mem::i32_array_data_ptr(packed),4);
+}
+fn bytes(input:View<u8>) {
+    let storage:[i32;256]=[0;256];
+    let pointer=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,1024);
+    let at:i32=0;
+    while(at<input.length) {
+        let count=input.length-at; if(count>1024) { count=1024; }
+        let i:i32=0; while(i<count) { packed[i]=input.values[input.start+at+i]; i+=1; }
+        send(pointer,count); at+=count;
+    }
+}
+fn integer(input:View<u8>,index:i32) -> u64 {
+    let result:u64=0; let i:i32=0;
+    while(i<8) { result=result|((input.values[input.start+index*8+i] as u64)<<(i*8)); i+=1; }
+    return result;
+}
+fn ack() {
+    let storage:[i32;1]=[0]; let pointer=core::mem::i32_array_data_ptr(storage);
+    receive(pointer,1); assert(storage[0]==65);
+}
+fn flag(value:bool) -> u64 { if(value) { return 1; } return 0; }
+fn signed(value:i32) -> u64 { return (value as u32) as u64; }
+fn kind(value:ext::archive_plan::Kind) -> u64 {
+    return match(value) { ext::archive_plan::Kind::File->0,ext::archive_plan::Kind::Directory->1 };
+}
+fn plan_error(value:ext::archive_plan::ErrorKind) -> u64 {
+    return match(value) {
+        ext::archive_plan::ErrorKind::Bounds->1,ext::archive_plan::ErrorKind::Limits->2,
+        ext::archive_plan::ErrorKind::Path->3,ext::archive_plan::ErrorKind::Component->4,
+        ext::archive_plan::ErrorKind::Depth->5,ext::archive_plan::ErrorKind::Entries->6,
+        ext::archive_plan::ErrorKind::Nodes->7,ext::archive_plan::ErrorKind::Paths->8,
+        ext::archive_plan::ErrorKind::Work->9,ext::archive_plan::ErrorKind::Duplicate->10,
+        ext::archive_plan::ErrorKind::Conflict->11,ext::archive_plan::ErrorKind::Allocation->12,
+        ext::archive_plan::ErrorKind::InvalidState->13
+    };
+}
+fn profile_error(value:ext::archive_profile::Error) -> u64 {
+    return match(value) {
+        ext::archive_profile::Error::UnsupportedCreator->1,ext::archive_profile::Error::UnsupportedType->2,
+        ext::archive_profile::Error::ContradictoryType->3,ext::archive_profile::Error::UnsupportedExtra->4,
+        ext::archive_profile::Error::MalformedExtra->5,ext::archive_profile::Error::DirectoryData->6,
+        ext::archive_profile::Error::Bounds->7
+    };
+}
+fn tar_error(value:ext::tar::Error) -> u64 {
+    return match(value) {
+        ext::tar::Error::Bounds->1,ext::tar::Error::UnexpectedEof->2,
+        ext::tar::Error::MissingFooter->3,ext::tar::Error::InvalidChecksum->4,
+        ext::tar::Error::UnsupportedFormat->5,ext::tar::Error::InvalidNumber->6,
+        ext::tar::Error::NumberOverflow->7,ext::tar::Error::InvalidName->8,
+        ext::tar::Error::UnsupportedType->9,ext::tar::Error::InvalidSize->10,
+        ext::tar::Error::InvalidPadding->11,ext::tar::Error::TrailingData->12,
+        ext::tar::Error::PathTooLong->13,ext::tar::Error::LinkTooLong->14,
+        ext::tar::Error::NameTooLong->15,ext::tar::Error::CapacityOverflow->16,
+        ext::tar::Error::OutputTooSmall->17,ext::tar::Error::Finished->18,
+        ext::tar::Error::InvalidState->19
+    };
+}
+fn zip_error(value:ext::zip::Error) -> u64 {
+    return match(value) {
+        ext::zip::Error::Bounds->1,ext::zip::Error::ArchiveLimit->2,
+        ext::zip::Error::EntryLimit->3,ext::zip::Error::TotalLimit->4,
+        ext::zip::Error::WorkLimit->5,ext::zip::Error::SizeOverflow->6,
+        ext::zip::Error::Truncated->7,ext::zip::Error::Signature->8,
+        ext::zip::Error::HeaderMismatch->9,ext::zip::Error::Descriptor->10,
+        ext::zip::Error::Overlap->11,ext::zip::Error::Zip64->12,
+        ext::zip::Error::MultiDisk->13,ext::zip::Error::Encryption->14,
+        ext::zip::Error::UnsupportedMethod->15,ext::zip::Error::UnsupportedFlags->16,
+        ext::zip::Error::UnsupportedVersion->17,ext::zip::Error::UnsupportedExtra->18,
+        ext::zip::Error::Encoding->19,ext::zip::Error::Name->20,
+        ext::zip::Error::Checksum->21,ext::zip::Error::SizeMismatch->22,
+        ext::zip::Error::TrailingData->23,ext::zip::Error::OutputLimit->24,
+        ext::zip::Error::AllocationFailed->25,ext::zip::Error::Deflate(_)->26,
+        ext::zip::Error::Encode(_)->27
+    };
+}
+fn cause(value:ext::archive_source::Cause) -> u64 {
+    return match(value) {
+        ext::archive_source::Cause::Bounds->1,ext::archive_source::Cause::InvalidLimits->2,
+        ext::archive_source::Cause::ArchiveLimit->3,ext::archive_source::Cause::EntryLimit->4,
+        ext::archive_source::Cause::TotalLimit->5,ext::archive_source::Cause::MetadataLimit->6,
+        ext::archive_source::Cause::OwnedLimit->7,ext::archive_source::Cause::AllocationFailed->8,
+        ext::archive_source::Cause::Plan(_)->9,ext::archive_source::Cause::Profile(_)->10,
+        ext::archive_source::Cause::Tar(_)->11,ext::archive_source::Cause::Zip(_)->12
+    };
+}
+fn detail(value:ext::archive_source::Cause) -> u64 {
+    return match(value) {
+        ext::archive_source::Cause::Plan(item)->plan_error(item.kind),
+        ext::archive_source::Cause::Profile(item)->profile_error(item),
+        ext::archive_source::Cause::Tar(item)->tar_error(item),
+        ext::archive_source::Cause::Zip(item)->zip_error(item),_ ->0
+    };
+}
+fn prepare(format:u64,input:View<u8>,limits:ext::archive_source::Limits)
+    -> Result<ext::archive_source::Prepared,ext::archive_source::Error> {
+    if(format==0) { return ext::archive_source::from_tar(input,limits); }
+    assert(format==1); return ext::archive_source::from_zip(input,limits);
+}
+fn payload_tag(payload:ext::archive_source::Payload) -> u64 {
+    return match(payload) { ext::archive_source::Payload::Tar(_)->0,ext::archive_source::Payload::Zip(_)->1 };
+}
+fn payload_bytes(payload:ext::archive_source::Payload) -> View<u8> {
+    return match(payload) { ext::archive_source::Payload::Tar(data)->data,ext::archive_source::Payload::Zip(entry)->entry.data };
+}
+fn zip_entry(payload:ext::archive_source::Payload) -> ext::zip::Entry {
+    let selected:Option<ext::zip::Entry> =match(payload) {
+        ext::archive_source::Payload::Zip(entry)->Some(entry),ext::archive_source::Payload::Tar(_)->None()
+    };
+    return selected.unwrap();
+}
+fn header(pid:u64,input:View<u8>,length:i32,reservation:u64,code:u64,subcode:u64,ordinal:i32,
+          members:i32,nodes:i32,total:u64,metadata:u64,work:u64,sealed:bool,live:bool,verify:u64) {
+    word(1095910227); word(1); word(pid); word(code); word(subcode); word(signed(ordinal));
+    word(length as u64); word((core::mem::slice_stride(input.values) as i64) as u64); word(signed(input.start));
+    word(core::mem::size_of<ext::archive_plan::Node>() as u64);
+    word(core::mem::size_of<ext::archive_source::Member>() as u64); word(reservation);
+    word(members as u64); word(nodes as u64); word(total); word(metadata); word(work);
+    word(flag(sealed)); word(flag(live)); word(verify);
+}
+fn inspect(owner:&ext::archive_source::Prepared,pid:u64,input:View<u8>,length:i32,verify:u64) {
+    let plan=owner.plan(); let size:i32=160+owner.len()*64; let index:i32=0;
+    while(index<plan.node_count()) {
+        let node=plan.node(index).unwrap(); size+=56+node.path_length+node.component_length; index+=1;
+    }
+    frame(size);
+    header(pid,input,length,owner.reserved_bytes(),0,0,-1,owner.len(),plan.node_count(),
+           owner.decoded_total(),owner.metadata_units(),plan.work_used(),plan.is_sealed(),owner.is_live(),verify);
+    assert(owner.member(-1).is_none() && owner.member(owner.len()).is_none());
+    index=0;
+    while(index<plan.node_count()) {
+        let node=plan.node(index).unwrap();
+        word(signed(node.parent)); word(kind(node.kind)); word(flag(node.explicit)); word(signed(node.ordinal));
+        word(node.depth as u64); word(node.path_length as u64); word(node.component_length as u64);
+        bytes(plan.path(index).unwrap()); bytes(plan.component(index).unwrap()); index+=1;
+    }
+    index=0;
+    while(index<owner.len()) {
+        let member=owner.member(index).unwrap(); assert(plan.entry(index).unwrap()==member.node);
+        word(member.node as u64); word(kind(member.kind));
+        let tag=payload_tag(member.payload); let data=payload_bytes(member.payload);
+        if(tag==0) {
+            word(0); word(data.length as u64); word(data.length as u64);
+            word((core::mem::slice_stride(data.values) as i64) as u64); word(0); word(0);
+        } else {
+            let entry=zip_entry(member.payload);
+            word(1); word(entry.uncompressed_size as u64); word(entry.compressed_size as u64);
+            word((core::mem::slice_stride(entry.data.values) as i64) as u64);
+            word(entry.version_made_by as u64); word(entry.external_attributes as u64);
+        }
+        index+=1;
+    }
+}
+fn payloads(owner:&ext::archive_source::Prepared,maximum:i32) {
+    let index:i32=0;
+    while(index<owner.len()) {
+        let member=owner.member(index).unwrap();
+        if(payload_tag(member.payload)==0) {
+            let data=payload_bytes(member.payload);
+            assert(data.length<=4096); frame(24+data.length); word(index as u64); word(0); word(data.length as u64); bytes(data);
+        } else {
+            let decoded=ext::zip::extract(zip_entry(member.payload),maximum);
+            if(decoded.is_err()) { frame(24); word(index as u64); word(zip_error(decoded.unwrap_err())); word(0); }
+            else {
+                let data=decoded.unwrap(); assert(data.len()<=4096);
+                frame(24+data.len()); word(index as u64); word(0); word(data.len() as u64); bytes(data.as_view()); data.destroy();
+            }
+        }
+        index+=1;
+    }
+}
+fn released(pid:u64) {
+    frame(24); word(1095910227); word(3); word(pid);
+}
+fn main() -> i32 {
+    let request_words:[i32;36]=[0;36]; let request_pointer=core::mem::i32_array_data_ptr(request_words);
+    receive(request_pointer,144);
+    let request_bytes:[u8]=core::mem::typed_slice_from_raw_parts(request_pointer,144);
+    let request:View<u8> =View { values:request_bytes,start:0,length:144 };
+    let format=integer(request,0); let layout=integer(request,1); let verify=integer(request,2);
+    let length=integer(request,3) as i32; let invalid=integer(request,4);
+    assert(length>=0 && length<=32760 && layout<=2 && verify<=1 && invalid<=3);
+    let limits=ext::archive_source::Limits {
+        max_archive:integer(request,5) as i32,max_entry:integer(request,6) as i32,max_total:integer(request,7),
+        zip_work:integer(request,8),metadata_work:integer(request,9),max_owned_bytes:integer(request,10),
+        plan:ext::archive_plan::Limits { max_entries:integer(request,11) as i32,max_nodes:integer(request,12) as i32,
+            max_path_bytes:integer(request,13) as i32,max_component_bytes:integer(request,14) as i32,
+            max_depth:integer(request,15) as i32,max_stored_path_bytes:integer(request,16) as i32,max_work:integer(request,17) }
+    };
+    let storage:[i32;8192]=[0;8192]; let pointer=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,32768);
+    let saved_words:[i32;8192]=[0;8192];
+    let saved:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::i32_array_data_ptr(saved_words),32768);
+    let offset:i32=0; if(layout==1) { offset=7; }
+    receive(pointer+(offset as usize),length);
+    let native:[u8;4096]=[165;4096]; let input:View<u8> =View { values:packed,start:offset,length:length };
+    let index:i32=0; while(index<length) { saved[index]=packed[offset+index]; index+=1; }
+    if(layout==2) {
+        assert(length<=4090); index=0;
+        while(index<length) { native[3+index]=saved[index]; index+=1; }
+        input=View { values:native,start:3,length:length };
+        assert(core::mem::slice_stride(input.values)!=1);
+    }
+    if(invalid==1) { input.start = -1; }
+    if(invalid==2) { input.length = -1; }
+    if(invalid==3) { input.start=2147483647; input.length=1; }
+    let arguments:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    let pid=std::linux::call(39,view(arguments,0).unwrap()).unwrap() as u64;
+    let reservation=ext::archive_source::reservation_bytes(limits);
+    let reserved:u64=0; if(reservation.is_ok()) { reserved=reservation.unwrap(); }
+    let prepared=prepare(format,input,limits);
+    if(prepared.is_err()) {
+        let failure=prepared.unwrap_err(); frame(160);
+        header(pid,input,length,reserved,cause(failure.cause),detail(failure.cause),failure.ordinal,0,0,0,0,0,false,false,0);
+        ack(); released(pid); ack(); return 0;
+    }
+    let owner=prepared.unwrap(); assert(owner.plan().is_sealed() && owner.reserved_bytes()==reserved);
+    inspect(owner.borrow(),pid,input,length,verify); ack();
+    if(verify==1) { payloads(owner.borrow(),limits.max_entry); }
+    owner.destroy();
+    assert(!owner.is_live() && owner.len()==0 && owner.member(0).is_none() && owner.reserved_bytes()==0);
+    assert(!owner.plan().is_sealed() && owner.plan().node_count()==0);
+    owner.destroy();
+    if(invalid==0) {
+        index=0; while(index<length) { assert(input.values[input.start+index]==saved[index]); index+=1; }
+    }
+    if(layout==2) { assert(native[0]==165 && native[2]==165 && native[3+length]==165); }
+    released(pid); ack(); return 0;
+}

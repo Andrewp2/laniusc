@@ -127,6 +127,15 @@ pub impl<T> core::iter::TrySink<T, alloc::hash_map::SinkError> for HashSet<T>
     }
 }
 
+// Explicit replacement keeps the supplied representative and returns the old
+// one. Do not delegate to duplicate-preserving try_insert/TrySink instead.
+pub impl<T> core::iter::TryReplaceSink<T,alloc::hash_map::Error> for HashSet<T>
+    where T: core::hash::Hash<T>, T: core::cmp::Eq<T> {
+    pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,alloc::hash_map::Error> {
+        return self.try_replace(item);
+    }
+}
+
 pub impl<T> Iter<T> {
     pub fn borrow(&self) -> &Iter<T> { return self; }
 }

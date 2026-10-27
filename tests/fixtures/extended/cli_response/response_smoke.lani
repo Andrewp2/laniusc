@@ -1,0 +1,74 @@
+// Public pure-tokenizer admission. The independent campaign owns wider tables.
+module app::main;
+import core::mem;
+import core::slice::View;
+import ext::response;
+
+fn literal(value: str, count: i32) -> View<u8> {
+    let values: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return View<u8> { values: values, start: 0, length: count };
+}
+fn byte_canaries(values: [u8], start: i32, end: i32) {
+    let index: i32 = start;
+    while (index < end) { assert(values[index] == 165); index += 1; }
+}
+fn span_is(value: ext::response::Span, raw_start: i32, raw_length: i32, start: i32, length: i32) {
+    assert(value.raw_start == raw_start && value.raw_length == raw_length);
+    assert(value.start == start && value.length == length);
+}
+fn main() -> i32 {
+    // Logical input is a""' b' c\ d '' over actual descending native storage.
+    let raw: [u8;17] = [90,97,34,34,39,32,98,39,32,99,92,32,100,32,39,39,90];
+    assert(core::mem::slice_stride(raw) < 0);
+    let input: View<u8> = View<u8> { values: raw, start: 1, length: 15 };
+    let shape = ext::response::measure(input).unwrap();
+    assert(shape.tokens == 3 && shape.bytes == 6);
+    let decoded: [u8;12] = [165;12];
+    let marker = ext::response::Span { raw_start: -7, raw_length: -7, start: -7, length: -7 };
+    let recorded: [ext::response::Span;5] = [marker;5];
+    let spans: View<ext::response::Span> = View<ext::response::Span> { values: recorded, start: 1, length: 3 };
+    let small: View<u8> = View<u8> { values: decoded, start: 2, length: 5 };
+    let rejected = ext::response::tokenize_into(input,small,spans);
+    let error: ext::response::Error = rejected.unwrap_err();
+    assert(match (error) { ext::response::Error::BytesTooSmall(required) -> required == 6, _ -> false });
+    byte_canaries(decoded,0,12);
+    let index: i32 = 0;
+    while (index < 5) { span_is(recorded[index],-7,-7,-7,-7); index += 1; }
+    let output: View<u8> = View<u8> { values: decoded, start: 2, length: 8 };
+    let short_spans: View<ext::response::Span> = View<ext::response::Span> { values: recorded, start: 1, length: 2 };
+    let token_error: ext::response::Error = ext::response::tokenize_into(input,output,short_spans).unwrap_err();
+    assert(match (token_error) { ext::response::Error::TokensTooSmall(required) -> required == 3, _ -> false });
+    byte_canaries(decoded,0,12); index = 0;
+    while (index < 5) { span_is(recorded[index],-7,-7,-7,-7); index += 1; }
+    let actual = ext::response::tokenize_into(input,output,spans).unwrap();
+    assert(actual.tokens == shape.tokens && actual.bytes == shape.bytes);
+    let expected: View<u8> = literal("a bc d",6); index = 0;
+    while (index < 6) { assert(decoded[2+index] == expected.values[index]); index += 1; }
+    byte_canaries(decoded,0,2); byte_canaries(decoded,8,12);
+    span_is(recorded[0],-7,-7,-7,-7); span_is(recorded[4],-7,-7,-7,-7);
+    span_is(recorded[1],0,7,0,3); span_is(recorded[2],8,4,3,3); span_is(recorded[3],13,2,6,0);
+    assert(raw[0] == 90 && raw[16] == 90);
+    let first: View<u8> = View<u8> { values: raw, start: 1, length: 7 };
+    assert(ext::response::raw_offset(first,0).unwrap() == 0);
+    assert(ext::response::raw_offset(first,1).unwrap() == 4);
+    assert(ext::response::raw_offset(first,2).unwrap() == 5);
+    assert(ext::response::raw_offset(first,3).unwrap() == 7);
+    let second: View<u8> = View<u8> { values: raw, start: 9, length: 4 };
+    assert(ext::response::raw_offset(second,1).unwrap() == 2);
+    assert(ext::response::raw_offset(second,3).unwrap() == 4);
+    let empty: View<u8> = View<u8> { values: raw, start: 14, length: 2 };
+    assert(ext::response::raw_offset(empty,0).unwrap() == 2);
+    let bad_offset: ext::response::Error = ext::response::raw_offset(first,4).unwrap_err();
+    assert(match (bad_offset) { ext::response::Error::DecodedBounds -> true, _ -> false });
+    let outer_space: ext::response::Error = ext::response::raw_offset(literal(" a",2),0).unwrap_err();
+    assert(match (outer_space) { ext::response::Error::NotSingleToken -> true, _ -> false });
+    let malformed: [u8;3] = [34,97,92];
+    let trailing: ext::response::Error = ext::response::measure(View<u8> { values: malformed, start: 0, length: 3 }).unwrap_err();
+    assert(match (trailing) { ext::response::Error::TrailingEscape(at) -> at == 2, _ -> false });
+    let unclosed: ext::response::Error = ext::response::measure(View<u8> { values: malformed, start: 0, length: 2 }).unwrap_err();
+    assert(match (unclosed) { ext::response::Error::UnclosedQuote(at) -> at == 0, _ -> false });
+    let nul_raw: [u8;5] = [90,97,0,98,90];
+    let nul: ext::response::Error = ext::response::measure(View<u8> { values: nul_raw, start: 1, length: 3 }).unwrap_err();
+    assert(match (nul) { ext::response::Error::Nul(at) -> at == 1, _ -> false });
+    return 0;
+}

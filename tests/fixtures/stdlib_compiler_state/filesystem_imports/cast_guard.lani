@@ -1,0 +1,10 @@
+module app::main;
+fn valid(received:i64,requested:i32) -> bool {
+    if(received<0 || received>(requested as i64)) { return false; }
+    return true;
+}
+fn main() -> i32 {
+    assert(valid(0,4) && valid(4,4));
+    assert(!valid(-1,4) && !valid(5,4));
+    return 0;
+}

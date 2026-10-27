@@ -1,5 +1,6 @@
 """Actual HTTPS apps with native OpenSSL peers and runtime-only mTLS credentials."""
 import http.client
+from email.utils import parsedate_to_datetime
 import importlib.util
 import io
 from pathlib import Path
@@ -137,7 +138,7 @@ class Service:
         self.address = value
         return self
 
-    def finish(self, expected=0, *, reports=1):
+    def finish(self, expected=0, *, reports=1, codes=None, tls_calls=None):
         global CASES
         output, errors = self.process.communicate(timeout=8)
         CASES += 1
@@ -150,10 +151,24 @@ class Service:
             assert len(diagnostics) == 1 and diagnostics[0].startswith(b"https-serve: "), errors
         else:
             assert not diagnostics, errors
-        for line in records:
+        expected_codes = [expected] * reports if codes is None else list(codes)
+        assert len(expected_codes) == reports
+        required = {"received", "sent", "response", "interim", "drain", "tail", "io",
+                    "cleanup", "cleanup-errors", "work", "scan", "id", "rejected",
+                    "shutdown", "eof", "closed", "code", "tls", "failed"}
+        for index, (line, code) in enumerate(zip(records, expected_codes)):
             values = {name: int(value) for name, value in (item.split("=") for item in line.decode().split())}
-            assert values["sent"] <= values["accepted"] <= values["response"], values
-            assert values["failed"] == int(expected != 0), values
+            assert set(values) == required and all(value >= 0 for value in values.values()), values
+            assert values["id"] == index and values["code"] == code, values
+            assert values["failed"] == int(code != 0), values
+            assert values["sent"] <= values["response"] and values["interim"] in (0, 25), values
+            if tls_calls is not None:
+                assert values["tls"] == tls_calls and values["sent"] == values["response"] == 0, values
+            assert values["closed"] == values["cleanup"] == 1 and values["cleanup-errors"] == 0, values
+            if code == 0:
+                assert values["sent"] == values["response"], values
+                assert values["shutdown"] == values["eof"] == 1 and values["rejected"] == 0, values
+                assert values["tls"] > 0 and values["io"] > 0 and values["work"] > 0, values
         return errors
 
     def __exit__(self, *_):
@@ -177,13 +192,21 @@ def response(connection, *, method="POST", body=PAYLOAD):
     message.begin()
     assert message.status == 200 and message.headers.get_all("Connection") == ["close"]
     assert message.headers.get_all("Content-Length") == [str(len(body))]
+    dates = message.headers.get_all("Date")
+    assert len(dates or []) == 1 and len(dates[0]) == 29 and dates[0].endswith(" GMT"), dates
+    assert parsedate_to_datetime(dates[0]).utcoffset().total_seconds() == 0, dates
     assert message.read() == body
     assert connection.recv(1) == b""
     message.close()
+    transport = connection.unwrap()
+    try:
+        assert transport.recv(1) == b""
+    finally:
+        transport.close()
 
 
 def serve_case(directory, *, certificate="client", required=True, version=None, identity="localhost",
-               client_trust="root", expected=0, options=(), ipv6=False):
+               client_trust="root", expected=0, options=(), ipv6=False, tls_calls=None):
     with Service(directory, required=required, client_trust=client_trust, options=options, ipv6=ipv6) as service:
         connection = None
         observed = bytearray()
@@ -209,7 +232,7 @@ def serve_case(directory, *, certificate="client", required=True, version=None, 
             if connection is not None:
                 connection.close()
         assert not observed, observed
-        return service.finish(expected, reports=1 if expected == 0 else 0)
+        return service.finish(expected, reports=1, tls_calls=tls_calls)
 
 
 def matrix(directory):
@@ -246,7 +269,7 @@ def failures(directory):
                                             ("client", "localhost", "untrusted"), ("client", "wrong.invalid", "root")):
         with Service(directory, client_trust=client_trust) as service:
             run_fetch(directory, service.address, certificate=certificate, peer=peer, expected=3)
-            service.finish(3, reports=0)
+            service.finish(3, reports=1)
 
 
 def direct(executable, arguments, expected):
@@ -281,10 +304,13 @@ def limits(directory):
         fetch_case(directory, options=(option, len(PAYLOAD) - 1), expected=2)
     for options in (("--max-io", "4"), ("--max-tls", "1")):
         fetch_case(directory, options=options, expected=2)
-    for options in (("--max-tls", "0"), ("--max-tls", "1")):
-        serve_case(directory, options=options, expected=2)
+    # Zero TLS allowance fails Factory admission, not a client handshake.
+    with Service(directory, options=("--max-tls", "0")) as service:
+        service.finish(2, reports=0)
+    serve_case(directory, options=("--max-tls", "1"), expected=2, tls_calls=1)
     for phase in ("accept", "handshake", "request"):
-        with Service(directory, options=("--timeout", "150")) as service:
+        options = ("--timeout", "1000", "--service-timeout", "150") if phase == "accept" else ("--timeout", "150", "--service-timeout", "1000")
+        with Service(directory, options=options) as service:
             connection = None
             if phase == "handshake":
                 connection = socket.create_connection(service.endpoint, timeout=3)
@@ -292,7 +318,7 @@ def limits(directory):
                 connection = connect(service)
                 connection.sendall(b"GET /health HTTP/1.1\r\n")
             try:
-                errors = service.finish(3, reports=int(phase == "request"))
+                errors = service.finish(3, reports=int(phase != "accept"))
                 assert b"timeout" in errors
             finally:
                 if connection is not None:

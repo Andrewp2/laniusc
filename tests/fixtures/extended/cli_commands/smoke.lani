@@ -1,0 +1,100 @@
+module app::main;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import ext::cli;
+import ext::cli_commands;
+
+fn bytes(value: str, length: i32) -> View<u8> {
+    return core::slice::view(core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length),length).unwrap();
+}
+fn next(parser: &ext::cli_commands::Parser) -> ext::cli_commands::Event {
+    let result: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = parser.next();
+    let item: Option<ext::cli_commands::Event> = result.unwrap(); return item.unwrap();
+}
+fn selected(event: ext::cli_commands::Event) -> i32 {
+    return match (event) { ext::cli_commands::Event::Command(item) -> item.id, _ -> -1 };
+}
+fn option(event: ext::cli_commands::Event) -> Option<ext::cli_commands::ScopedOption> {
+    return match (event) { ext::cli_commands::Event::Option(item) -> Some(item), _ -> None() };
+}
+fn operand(event: ext::cli_commands::Event) -> Option<ext::cli_commands::ScopedOperand> {
+    return match (event) { ext::cli_commands::Event::Operand(item) -> Some(item), _ -> None() };
+}
+
+fn main() -> i32 {
+    let empty: View<u8> = bytes("",0);
+    let verbose: ext::cli::Spec = ext::cli::Spec { id: 1, long: bytes("verbose",7), short: 118, arity: ext::cli::Arity::Flag };
+    let root_value: ext::cli::Spec = ext::cli::Spec { id: 8, long: bytes("root",4), short: 114, arity: ext::cli::Arity::Required };
+    let color: ext::cli::Spec = ext::cli::Spec { id: 2, long: bytes("color",5), short: 99, arity: ext::cli::Arity::Optional };
+    let input: ext::cli::Spec = ext::cli::Spec { id: 8, long: bytes("input",5), short: 105, arity: ext::cli::Arity::Required };
+    let field: ext::cli::Spec = ext::cli::Spec { id: 8, long: bytes("field",5), short: 102, arity: ext::cli::Arity::Required };
+    let root_options: [ext::cli_commands::OptionSpec;2] = [
+        ext::cli_commands::OptionSpec { spec: verbose, global: true, value_name: empty, help: bytes("Verbose output",14) },
+        ext::cli_commands::OptionSpec { spec: root_value, global: false, value_name: bytes("VALUE",5), help: empty }
+    ];
+    let db_options: [ext::cli_commands::OptionSpec;2] = [
+        ext::cli_commands::OptionSpec { spec: color, global: true, value_name: bytes("WHEN",4), help: empty },
+        ext::cli_commands::OptionSpec { spec: input, global: false, value_name: bytes("PATH",4), help: empty }
+    ];
+    let leaf_options: [ext::cli_commands::OptionSpec;1] = [ext::cli_commands::OptionSpec { spec: field, global: false, value_name: bytes("FIELD",5), help: empty }];
+    let commands: [ext::cli_commands::Command;4] = [
+        ext::cli_commands::Command { id: 40, parent: -1, name: bytes("tool",4), summary: empty, operands: empty, ordering: ext::cli::Ordering::OptionsFirst, options: core::slice::view(root_options,2).unwrap() },
+        ext::cli_commands::Command { id: 7, parent: 0, name: bytes("db",2), summary: empty, operands: empty, ordering: ext::cli::Ordering::OptionsFirst, options: core::slice::view(db_options,2).unwrap() },
+        ext::cli_commands::Command { id: 99, parent: 1, name: bytes("show",4), summary: empty, operands: bytes("[FILE]",6), ordering: ext::cli::Ordering::OptionsFirst, options: core::slice::view(leaf_options,1).unwrap() },
+        ext::cli_commands::Command { id: 3, parent: 1, name: bytes("write",5), summary: empty, operands: empty, ordering: ext::cli::Ordering::Intermixed, options: core::slice::view(leaf_options,1).unwrap() }
+    ];
+    let schema: View<ext::cli_commands::Command> = core::slice::view(commands,4).unwrap();
+    assert(ext::cli_commands::validate(schema).unwrap() == 3);
+    let sentinel: ext::cli::Spec = ext::cli::Spec { id: 77, long: empty, short: 122, arity: ext::cli::Arity::Flag };
+    let storage: [ext::cli::Spec;5] = [sentinel,sentinel,sentinel,sentinel,sentinel];
+    let scratch: View<ext::cli::Spec> = core::slice::view_range(storage,1,3).unwrap();
+    let arguments: [View<u8>;10] = [bytes("-vr",3),bytes("--",2),bytes("db",2),bytes("-cblue",6),bytes("show",4),bytes("-v",2),bytes("--field=write",13),bytes("--",2),bytes("db",2),bytes("-v",2)];
+    let args: View<View<u8>> = core::slice::view(arguments,10).unwrap();
+    let rejected: Result<ext::cli_commands::Parser,ext::cli_commands::Error> = ext::cli_commands::parser(args,schema,core::slice::view_range(storage,1,2).unwrap());
+    assert(rejected.is_err());
+    let required: u64 = match (rejected.unwrap_err()) { ext::cli_commands::Error::ScratchTooSmall(count) -> count, _ -> 0 };
+    assert(required == 3 && storage[0].id == 77 && storage[1].id == 77 && storage[4].id == 77);
+
+    let parser: ext::cli_commands::Parser = ext::cli_commands::parser(args,schema,scratch).unwrap();
+    assert(parser.current() == 40);
+    let first: ext::cli_commands::ScopedOption = option(next(parser.borrow())).unwrap();
+    assert(first.command == 40 && first.occurrence.id == 1 && first.occurrence.at.argument == 0 && first.occurrence.at.byte == 1);
+    let second: ext::cli_commands::ScopedOption = option(next(parser.borrow())).unwrap();
+    let required_value: ext::cli::Argument = second.occurrence.value.unwrap();
+    assert(second.command == 40 && second.occurrence.id == 8 && second.occurrence.at.byte == 2);
+    assert(required_value.at.argument == 1 && required_value.bytes.length == 2 && required_value.bytes.get(0).unwrap() == 45);
+    assert(selected(next(parser.borrow())) == 7 && parser.current() == 7);
+    let colored: ext::cli_commands::ScopedOption = option(next(parser.borrow())).unwrap();
+    let attached: ext::cli::Argument = colored.occurrence.value.unwrap();
+    assert(colored.command == 7 && colored.occurrence.id == 2 && attached.at.argument == 3 && attached.at.byte == 2 && attached.bytes.length == 4);
+    assert(selected(next(parser.borrow())) == 99 && parser.current() == 99);
+    let inherited: ext::cli_commands::ScopedOption = option(next(parser.borrow())).unwrap();
+    assert(inherited.command == 40 && inherited.occurrence.id == 1 && inherited.occurrence.at.argument == 5);
+    let local: ext::cli_commands::ScopedOption = option(next(parser.borrow())).unwrap();
+    assert(local.command == 99 && local.occurrence.id == 8 && local.occurrence.value.unwrap().at.argument == 6);
+    let escaped: ext::cli_commands::ScopedOperand = operand(next(parser.borrow())).unwrap();
+    let dashed: ext::cli_commands::ScopedOperand = operand(next(parser.borrow())).unwrap();
+    assert(escaped.command == 99 && escaped.argument.at.argument == 8 && dashed.command == 99 && dashed.argument.at.argument == 9);
+    assert(parser.next().unwrap().is_none() && parser.next().unwrap().is_none());
+    assert(storage[0].id == 77 && storage[4].id == 77 && storage[1].id == 1 && storage[2].id == 2 && storage[3].id == 8);
+
+    let stop_words: [View<u8>;2] = [bytes("--",2),bytes("db",2)];
+    let stopped: ext::cli_commands::Parser = ext::cli_commands::parser(core::slice::view(stop_words,2).unwrap(),schema,scratch).unwrap();
+    let stopped_word: ext::cli_commands::ScopedOperand = operand(next(stopped.borrow())).unwrap();
+    assert(stopped_word.command == 40 && stopped_word.argument.at.argument == 1 && stopped.current() == 40 && stopped.next().unwrap().is_none());
+    let unknown_words: [View<u8>;3] = [bytes("db",2),bytes("missing",7),bytes("-v",2)];
+    let unknown: ext::cli_commands::Parser = ext::cli_commands::parser(core::slice::view(unknown_words,3).unwrap(),schema,scratch).unwrap();
+    assert(selected(next(unknown.borrow())) == 7);
+    let failed: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = unknown.next();
+    assert(failed.is_err());
+    let at: i32 = match (failed.unwrap_err()) { ext::cli_commands::Error::UnknownCommand(location) -> location.argument, _ -> -1 };
+    assert(at == 1 && unknown.next().is_err() && unknown.current() == 7);
+    let absent: ext::cli_commands::Parser = ext::cli_commands::parser(core::slice::view(arguments,0).unwrap(),schema,scratch).unwrap();
+    assert(absent.current() == 40 && absent.next().unwrap().is_none() && absent.next().unwrap().is_none());
+    return 0;
+}

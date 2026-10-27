@@ -144,6 +144,8 @@ class Scanner:
         self.module = ""
         self.module_line = 1
         self.imports = []
+        self.private_nominals = set()
+        self.public_nominals = set()
 
     def error(self, message, position=None):
         position = self.position if position is None else position
@@ -193,7 +195,7 @@ class Scanner:
         if (not parts or len(parts) % 2 != 1
                 or any(not IDENTIFIER.fullmatch(part) for part in parts[::2])
                 or any(part != "::" for part in parts[1::2])):
-            self.error(f"unsupported {keyword} path; inventory does not resolve imports", start)
+            self.error(f"unsupported {keyword} path; expected identifiers separated by ::", start)
         name = "".join(parts)
         if keyword == "module":
             if self.module or start != 0:
@@ -252,6 +254,61 @@ class Scanner:
                 raise ReferenceError(f"{self.path}:{declaration.line}: duplicate {declaration.kind} {declaration.name}")
             seen.add(key)
 
+    def local_impl_receiver(self, declaration):
+        """Recognize only a direct local nominal receiver; resolve no types."""
+        header = [token.text for token in tokens(declaration.signature, self.path)]
+        position = 2 if header[0] == "pub" else 1  # after impl
+        parameters = set()
+        if position < len(header) and header[position] == "<":
+            depth, need_name = 1, True
+            position += 1
+            while position < len(header) and depth:
+                word = header[position]
+                if depth == 1 and need_name and IDENTIFIER.fullmatch(word) and word != "const":
+                    parameters.add(word)
+                    need_name = False
+                if depth == 1 and word == ",":
+                    need_name = True
+                depth += (word == "<") - (word == ">")
+                position += 1
+            if depth:
+                return None
+
+        # Find the receiver after a top-level `for`, or directly after impl's
+        # parameters for an inherent block. Bounds do not belong to the receiver.
+        start, stop, depth = position, len(header), 0
+        for index in range(position, len(header)):
+            word = header[index]
+            if depth == 0:
+                if word == "for":
+                    start = index + 1
+                elif word == "where":
+                    stop = index
+                    break
+            depth += (word == "<") - (word == ">")
+        receiver = header[start:stop]
+        if not receiver or not IDENTIFIER.fullmatch(receiver[0]):
+            return None
+        path, position = [receiver[0]], 1
+        while position + 1 < len(receiver) and receiver[position] == "::":
+            if not IDENTIFIER.fullmatch(receiver[position + 1]):
+                return None
+            path.append(receiver[position + 1])
+            position += 2
+        if position < len(receiver):
+            if receiver[position] != "<":
+                return None
+            depth = 0
+            for index in range(position, len(receiver)):
+                depth += (receiver[index] == "<") - (receiver[index] == ">")
+                if depth == 0 and index != len(receiver) - 1:
+                    return None
+            if depth:
+                return None
+        if len(path) == 1:
+            return None if path[0] in parameters else path[0]
+        return path[-1] if path[:-1] == self.module.split("::") else None
+
     def items(self, context="module", visible=True):
         result = []
         while self.position < len(self.tokens) and self.word() != "}":
@@ -304,6 +361,7 @@ class Scanner:
                 closing = self.close_body(opening)
                 declaration = self.span(start, opening, keyword, name)
                 if keyword in ("struct", "enum"):
+                    (self.public_nominals if public else self.private_nominals).add(name)
                     if public:
                         declaration.children = self.members(opening, closing, "field" if keyword == "struct" else "variant")
                 else:
@@ -329,7 +387,42 @@ class Scanner:
         for position, token in enumerate(self.tokens):
             if token.text == "pub" and position not in self.public_positions:
                 self.error("unsupported public declaration marker outside inventoried item boundary", position)
+        # A public trait implementation does not make its private local owner
+        # public. Filter only after the complete scan, including later owners
+        # and unsupported-public-syntax checks. Lexical pub counts stay intact.
+        private = self.private_nominals - self.public_nominals
+        declarations = [item for item in declarations
+                        if item.kind != "impl" or self.local_impl_receiver(item) not in private]
         return Module(self.module, self.path, self.imports, declarations, self.public_keywords, self.module_line)
+
+
+def import_targets(importer: Module, name: str, line: int,
+                   known: dict[str, Module]) -> tuple[Module, tuple[Declaration, ...]]:
+    """Link source declarations, retaining distinct type/value namespaces.
+
+    Imported visibility is built/resolved separately per namespace in the
+    compiler's 09e_build_import_visible_key_tables / 10b_resolve_imported_paths;
+    02c2_scatter_variant_decl_records assigns enum variants to the value table.
+    These links do not infer which declaration an importing use site selects.
+    """
+    if name in known:
+        return known[name], ()
+    prefix, separator, item_name = name.rpartition("::")
+    if separator and prefix in known:
+        owner = known[prefix]
+        items = [item for item in owner.declarations if item.kind != "impl"]
+        # Public enum variants also have module-level import names.
+        items.extend(variant for item in owner.declarations if item.kind == "enum"
+                     for variant in item.children)
+        matches = [item for item in items if item.name == item_name]
+        if matches:
+            namespaces = ["type" if item.kind in {"type alias", "struct", "enum", "trait"}
+                          else "value" for item in matches]
+            if len(namespaces) != len(set(namespaces)):
+                raise ReferenceError(f"{importer.path}:{line}: ambiguous public item import: {name}")
+            return owner, tuple(sorted(matches, key=lambda item: item.line))
+        raise ReferenceError(f"{importer.path}:{line}: public item absent from inventory: {name}")
+    raise ReferenceError(f"{importer.path}:{line}: declared import absent from inventory: {name}")
 
 
 def discover(root: Path) -> list[Module]:
@@ -361,11 +454,10 @@ def discover(root: Path) -> list[Module]:
     names = [module.name for module in modules]
     if len(names) != len(set(names)):
         raise ReferenceError("duplicate module identity")
-    known = set(names)
+    known = {module.name: module for module in modules}
     for module in modules:
         for name, line in module.imports:
-            if name not in known:
-                raise ReferenceError(f"{module.path}:{line}: declared import absent from inventory: {name}")
+            import_targets(module, name, line, known)
     return sorted(modules, key=lambda module: (LAYERS.index(module.name.split("::")[0]), module.name))
 
 
@@ -466,8 +558,17 @@ def render_module(module: Module, metadata: dict, known: dict) -> str:
         result.append("None.\n")
     else:
         result.append("Direct source imports; this is not a package-resolution or transitive dependency result.\n")
-        result.extend("- " + link(path, page_path(known[name]), name) + " · " + link(path, module.path, "source", line)
-                      for name, line in module.imports)
+        for name, line in module.imports:
+            target, items = import_targets(module, name, line, known)
+            imported = "- " + link(path, page_path(target), name)
+            if len(items) == 1:
+                item = items[0]
+                imported += f" (item: {item.kind}) · " + link(path, target.path, "declaration", item.line)
+            elif items:
+                imported += " (items in separate namespaces: " + ", ".join(item.kind for item in items) + "; no use-site resolution)"
+                for item in items:
+                    imported += " · " + link(path, target.path, f"{item.kind} declaration", item.line)
+            result.append(imported + " · " + link(path, module.path, "source", line))
         result.append("")
     groups = [("Types, fields and variants", {"type alias", "struct", "enum"}),
               ("Constants", {"constant"}), ("Free functions and extern declarations", {"function", "extern function"}),

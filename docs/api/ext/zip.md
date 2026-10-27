@@ -8,12 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Entry.version_made_by retains the raw unsigned 16-bit central creator word, without changing parser acceptance or writer defaults. Eight independent records execute through packed and nonzero native-strided views in one focused native Rust test. Creator-dependent extraction policy belongs to archive_profile; metadata parsing does not verify payload CRC/decode.
+
 ## Contract and evidence guides
 
 - [extended-zip](../../extended-zip.md)
 - [extended-fetch-many](../../extended-fetch-many.md)
 
-Declaration counts: enum: 2; field: 33; function: 5; impl: 2; method: 5; struct: 5; variant: 29.
+Declaration counts: enum: 2; field: 34; function: 5; impl: 2; method: 5; struct: 5; variant: 29.
 
 ## Declared imports
 
@@ -330,7 +332,7 @@ Encode(ext::deflate::Error)
 
 ### struct: Entry
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 pub struct Entry
@@ -338,7 +340,7 @@ pub struct Entry
 
 #### field: name
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 name: core::slice::View<u8>
@@ -346,7 +348,7 @@ name: core::slice::View<u8>
 
 #### field: comment
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 comment: core::slice::View<u8>
@@ -354,7 +356,7 @@ comment: core::slice::View<u8>
 
 #### field: extra
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 extra: core::slice::View<u8>
@@ -362,7 +364,7 @@ extra: core::slice::View<u8>
 
 #### field: local_extra
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 local_extra: core::slice::View<u8>
@@ -370,7 +372,7 @@ local_extra: core::slice::View<u8>
 
 #### field: data
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 data: core::slice::View<u8>
@@ -378,7 +380,7 @@ data: core::slice::View<u8>
 
 #### field: method
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 method: Method
@@ -386,7 +388,7 @@ method: Method
 
 #### field: utf8
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 utf8: bool
@@ -394,7 +396,7 @@ utf8: bool
 
 #### field: flags
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 flags: i32
@@ -402,7 +404,7 @@ flags: i32
 
 #### field: crc32
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 crc32: u32
@@ -410,7 +412,7 @@ crc32: u32
 
 #### field: compressed_size
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 compressed_size: i32
@@ -418,7 +420,7 @@ compressed_size: i32
 
 #### field: uncompressed_size
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 uncompressed_size: i32
@@ -426,7 +428,7 @@ uncompressed_size: i32
 
 #### field: modified_time
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 modified_time: i32
@@ -434,15 +436,23 @@ modified_time: i32
 
 #### field: modified_date
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 modified_date: i32
 ```
 
+#### field: version_made_by
+
+[Source line 17](../../../extended/ext/zip.lani#L17)
+
+```lanius
+version_made_by: i32
+```
+
 #### field: external_attributes
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 external_attributes: u32
@@ -450,7 +460,7 @@ external_attributes: u32
 
 #### field: local_offset
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 local_offset: i32
@@ -458,7 +468,7 @@ local_offset: i32
 
 #### field: local_end
 
-[Source line 15](../../../extended/ext/zip.lani#L15)
+[Source line 17](../../../extended/ext/zip.lani#L17)
 
 ```lanius
 local_end: i32
@@ -466,7 +476,7 @@ local_end: i32
 
 ### struct: Archive
 
-[Source line 16](../../../extended/ext/zip.lani#L16)
+[Source line 18](../../../extended/ext/zip.lani#L18)
 
 ```lanius
 pub struct Archive
@@ -474,7 +484,7 @@ pub struct Archive
 
 #### field: source
 
-[Source line 16](../../../extended/ext/zip.lani#L16)
+[Source line 18](../../../extended/ext/zip.lani#L18)
 
 ```lanius
 source: core::slice::View<u8>
@@ -482,7 +492,7 @@ source: core::slice::View<u8>
 
 #### field: comment
 
-[Source line 16](../../../extended/ext/zip.lani#L16)
+[Source line 18](../../../extended/ext/zip.lani#L18)
 
 ```lanius
 comment: core::slice::View<u8>
@@ -490,7 +500,7 @@ comment: core::slice::View<u8>
 
 #### field: entries
 
-[Source line 16](../../../extended/ext/zip.lani#L16)
+[Source line 18](../../../extended/ext/zip.lani#L18)
 
 ```lanius
 entries: i32
@@ -498,7 +508,7 @@ entries: i32
 
 #### field: directory_start
 
-[Source line 16](../../../extended/ext/zip.lani#L16)
+[Source line 18](../../../extended/ext/zip.lani#L18)
 
 ```lanius
 directory_start: i32
@@ -506,7 +516,7 @@ directory_start: i32
 
 #### field: directory_end
 
-[Source line 16](../../../extended/ext/zip.lani#L16)
+[Source line 18](../../../extended/ext/zip.lani#L18)
 
 ```lanius
 directory_end: i32
@@ -514,7 +524,7 @@ directory_end: i32
 
 ### struct: Cursor
 
-[Source line 17](../../../extended/ext/zip.lani#L17)
+[Source line 19](../../../extended/ext/zip.lani#L19)
 
 ```lanius
 pub struct Cursor
@@ -522,7 +532,7 @@ pub struct Cursor
 
 #### field: archive
 
-[Source line 17](../../../extended/ext/zip.lani#L17)
+[Source line 19](../../../extended/ext/zip.lani#L19)
 
 ```lanius
 archive: Archive
@@ -530,7 +540,7 @@ archive: Archive
 
 #### field: position
 
-[Source line 17](../../../extended/ext/zip.lani#L17)
+[Source line 19](../../../extended/ext/zip.lani#L19)
 
 ```lanius
 position: i32
@@ -538,7 +548,7 @@ position: i32
 
 #### field: remaining_entries
 
-[Source line 17](../../../extended/ext/zip.lani#L17)
+[Source line 19](../../../extended/ext/zip.lani#L19)
 
 ```lanius
 remaining_entries: i32
@@ -546,7 +556,7 @@ remaining_entries: i32
 
 ### struct: Source
 
-[Source line 18](../../../extended/ext/zip.lani#L18)
+[Source line 20](../../../extended/ext/zip.lani#L20)
 
 ```lanius
 pub struct Source
@@ -554,7 +564,7 @@ pub struct Source
 
 #### field: name
 
-[Source line 18](../../../extended/ext/zip.lani#L18)
+[Source line 20](../../../extended/ext/zip.lani#L20)
 
 ```lanius
 name: core::slice::View<u8>
@@ -562,7 +572,7 @@ name: core::slice::View<u8>
 
 #### field: data
 
-[Source line 18](../../../extended/ext/zip.lani#L18)
+[Source line 20](../../../extended/ext/zip.lani#L20)
 
 ```lanius
 data: core::slice::View<u8>
@@ -570,7 +580,7 @@ data: core::slice::View<u8>
 
 #### field: method
 
-[Source line 18](../../../extended/ext/zip.lani#L18)
+[Source line 20](../../../extended/ext/zip.lani#L20)
 
 ```lanius
 method: Method
@@ -578,7 +588,7 @@ method: Method
 
 #### field: utf8
 
-[Source line 18](../../../extended/ext/zip.lani#L18)
+[Source line 20](../../../extended/ext/zip.lani#L20)
 
 ```lanius
 utf8: bool
@@ -588,7 +598,7 @@ utf8: bool
 
 ### function: default_limits
 
-[Source line 25](../../../extended/ext/zip.lani#L25)
+[Source line 27](../../../extended/ext/zip.lani#L27)
 
 ```lanius
 pub fn default_limits() -> Limits
@@ -596,7 +606,7 @@ pub fn default_limits() -> Limits
 
 ### function: parse
 
-[Source line 142](../../../extended/ext/zip.lani#L142)
+[Source line 144](../../../extended/ext/zip.lani#L144)
 
 ```lanius
 pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Result<Archive,Error>
@@ -604,7 +614,7 @@ pub fn parse(input: core::slice::View<u8>, limits: Limits) -> core::result::Resu
 
 ### function: extract
 
-[Source line 178](../../../extended/ext/zip.lani#L178)
+[Source line 180](../../../extended/ext/zip.lani#L180)
 
 ```lanius
 pub fn extract(entry: Entry, max_output: i32) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -612,7 +622,7 @@ pub fn extract(entry: Entry, max_output: i32) -> core::result::Result<alloc::vec
 
 ### function: validate_name
 
-[Source line 211](../../../extended/ext/zip.lani#L211)
+[Source line 213](../../../extended/ext/zip.lani#L213)
 
 ```lanius
 pub fn validate_name(name: core::slice::View<u8>, utf8: bool) -> core::result::Result<i32,Error>
@@ -622,7 +632,7 @@ Allocation-free validation of the canonical writer name policy before archive co
 
 ### function: encode
 
-[Source line 217](../../../extended/ext/zip.lani#L217)
+[Source line 219](../../../extended/ext/zip.lani#L219)
 
 ```lanius
 pub fn encode(entries: core::slice::View<Source>, comment: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
@@ -630,9 +640,9 @@ pub fn encode(entries: core::slice::View<Source>, comment: core::slice::View<u8>
 
 ## Implementation blocks and public methods
 
-### impl at line 160
+### impl at line 162
 
-[Source line 160](../../../extended/ext/zip.lani#L160)
+[Source line 162](../../../extended/ext/zip.lani#L162)
 
 ```lanius
 pub impl Archive
@@ -640,7 +650,7 @@ pub impl Archive
 
 #### method: len
 
-[Source line 161](../../../extended/ext/zip.lani#L161)
+[Source line 163](../../../extended/ext/zip.lani#L163)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -648,7 +658,7 @@ pub fn len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 162](../../../extended/ext/zip.lani#L162)
+[Source line 164](../../../extended/ext/zip.lani#L164)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -656,15 +666,15 @@ pub fn is_empty(&self) -> bool
 
 #### method: cursor
 
-[Source line 163](../../../extended/ext/zip.lani#L163)
+[Source line 165](../../../extended/ext/zip.lani#L165)
 
 ```lanius
 pub fn cursor(&self) -> Cursor
 ```
 
-### impl at line 168
+### impl at line 170
 
-[Source line 168](../../../extended/ext/zip.lani#L168)
+[Source line 170](../../../extended/ext/zip.lani#L170)
 
 ```lanius
 pub impl Cursor
@@ -672,7 +682,7 @@ pub impl Cursor
 
 #### method: remaining
 
-[Source line 169](../../../extended/ext/zip.lani#L169)
+[Source line 171](../../../extended/ext/zip.lani#L171)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -680,7 +690,7 @@ pub fn remaining(&self) -> i32
 
 #### method: next
 
-[Source line 170](../../../extended/ext/zip.lani#L170)
+[Source line 172](../../../extended/ext/zip.lani#L172)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<Entry>

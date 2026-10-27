@@ -44,6 +44,12 @@ fn setup_failure(protocol: &ext::http_client::Protocol, context: core::option::O
     if (context.is_some()) { let owner: ext::openssl_tls::Context = context.unwrap(); owner.destroy(); }
     identity.destroy(); let error: Failure = metadata(cause,stage,protocol.stats(),zero_tls()); protocol.abort(); return error;
 }
+fn adoption_close(socket: &std::socket::Socket, error: Failure) -> Failure {
+    let closed = socket.close(); if (closed.is_err()) { error.cleanup = core::option::Some(closed.unwrap_err()); } return error;
+}
+fn adoption_failure(protocol: &ext::http_client::Protocol, socket: &std::socket::Socket, context: core::option::Option<ext::openssl_tls::Context>, identity: &alloc::vec::Vec<u8>, stage: Stage, cause: Cause) -> Failure {
+    return adoption_close(socket,setup_failure(protocol,context,identity,stage,cause));
+}
 fn release_context(exchange: &Exchange) {
     let held: core::option::Option<ext::openssl_tls::Context> = exchange.context; exchange.context = core::option::None();
     if (held.is_some()) { let owner: ext::openssl_tls::Context = held.unwrap(); owner.destroy(); }
@@ -105,6 +111,50 @@ pub fn begin_with_context_until(prepared: &ext::http_client::Prepared, endpoint:
         read_amount: 0, write_amount: 0, maximum_io: context.io_bytes(), version: 0, stopped_upload: false, notified: false, peer_closed: false, failure: core::option::None() };
     let after = checked(owner.borrow()); if (after.is_err()) { return core::result::Err(stop(owner.borrow(),after.unwrap_err())); }
     return core::result::Ok(owner);
+}
+// Consume preparation and the connected Socket before any fallible admission.
+// Native socket queries use the HTTP allowance; TLS attachment is deferred to
+// step, so successful adoption has no Session or TLS I/O attempts yet.
+pub fn adopt_connected_with_context_until(prepared: &ext::http_client::Prepared, socket: &std::socket::Socket, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, options: Options) -> core::result::Result<Exchange,Failure> {
+    let domain: std::socket::Family = socket.family(); let kind: std::socket::Kind = socket.kind();
+    let handle: core::option::Option<i32> = socket.take_handle();
+    let moved: core::result::Result<ext::http_client::Protocol,ext::http_client::Failure> = prepared.into_protocol();
+    if (handle.is_none()) {
+        if (moved.is_err()) { let error: ext::http_client::Failure = moved.unwrap_err(); return core::result::Err(metadata(Cause::Http(error),Stage::Prepare,error.stats,zero_tls())); }
+        let protocol: ext::http_client::Protocol = moved.unwrap(); let error: Failure = metadata(Cause::Io(core::io::Error::InvalidInput),Stage::Connect,protocol.stats(),zero_tls());
+        protocol.abort(); return core::result::Err(error);
+    }
+    // A handle taken from Socket is nonnegative; preserve its family/kind.
+    let owned: std::socket::Socket = std::socket::from_owned_handle(handle.unwrap(),domain,kind).unwrap();
+    if (moved.is_err()) { let error: ext::http_client::Failure = moved.unwrap_err(); return core::result::Err(adoption_close(owned.borrow(),metadata(Cause::Http(error),Stage::Prepare,error.stats,zero_tls()))); }
+    let protocol: ext::http_client::Protocol = moved.unwrap(); let name: alloc::vec::Vec<u8> = alloc::vec::new();
+    let tcp: bool = match(kind) { std::socket::Kind::Tcp -> true, _ -> false };
+    if (!tcp) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::None(),name.borrow(),Stage::Connect,Cause::Io(core::io::Error::InvalidInput))); }
+    if (options.tls_calls == 0) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::None(),name.borrow(),Stage::Retain,Cause::InvalidOptions)); }
+    let observed = protocol.check(); if (observed.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::None(),name.borrow(),Stage::Retain,Cause::Http(observed.unwrap_err()))); }
+    let validated: core::result::Result<i32,ext::openssl_tls::Error> = context.validate_identity(identity);
+    if (validated.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::None(),name.borrow(),Stage::Retain,Cause::Tls(validated.unwrap_err()))); }
+    let retained: core::result::Result<ext::openssl_tls::Context,ext::openssl_tls::Error> = context.retain();
+    if (retained.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::None(),name.borrow(),Stage::Retain,Cause::Tls(retained.unwrap_err()))); }
+    let held: ext::openssl_tls::Context = retained.unwrap();
+    let source: core::slice::View<u8> = match(identity) { ext::openssl_tls::Identity::Dns(value) -> value, ext::openssl_tls::Identity::Ip(value) -> value };
+    if (name.try_extend(source).is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Retain,Cause::Http(protocol.failure(ext::http_client::Cause::AllocationFailed)))); }
+    let before = protocol.before_io(ext::http_client::Stage::Connect);
+    if (before.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Http(before.unwrap_err()))); }
+    let nonblocking = owned.is_nonblocking(); let after = protocol.check();
+    if (after.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Http(after.unwrap_err()))); }
+    if (nonblocking.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Io(nonblocking.unwrap_err()))); }
+    if (!nonblocking.unwrap()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Io(core::io::Error::InvalidInput))); }
+    let peer_before = protocol.before_io(ext::http_client::Stage::Connect);
+    if (peer_before.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Http(peer_before.unwrap_err()))); }
+    let peer = owned.peer_addr(); let peer_after = protocol.check();
+    if (peer_after.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Http(peer_after.unwrap_err()))); }
+    if (peer.is_err()) { return core::result::Err(adoption_failure(protocol.borrow(),owned.borrow(),core::option::Some(held),name.borrow(),Stage::Connect,Cause::Io(peer.unwrap_err()))); }
+    return core::result::Ok(Exchange { protocol:protocol,socket:owned,context:core::option::Some(held),session:core::option::None(),identity:name,
+        dns:match(identity) { ext::openssl_tls::Identity::Dns(value) -> true, _ -> false },endpoint:peer.unwrap(),options:options,
+        tls:zero_tls(),stage:Stage::Attach,phase:Phase::Attach,action:Action::Local,current:ext::http_client::Status::Active,
+        read_blocked:false,write_blocked:false,send_turn:false,wait_blocked:false,wait_need:ext::openssl_tls::Need::None,
+        read_amount:0,write_amount:0,maximum_io:context.io_bytes(),version:0,stopped_upload:false,notified:false,peer_closed:false,failure:core::option::None() });
 }
 fn upload(exchange: &Exchange) -> bool { let stats: ext::http_client::Stats = exchange.protocol.stats(); return !exchange.notified && !stats.upload_stopped && stats.request_sent < stats.request_bytes; }
 fn pending_write(exchange: &Exchange) -> i32 { if (exchange.session.is_none()) { return 0; } return exchange.session.unwrap().pending_write_bytes(); }
@@ -366,6 +416,23 @@ pub impl Exchange {
     pub fn interest(&self) -> ext::http_client::Interest { return driver_interest(self); }
     pub fn before_wait(&self) -> core::result::Result<bool,Failure> { return driver_wait(self); }
     pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,Failure> { return driver_step(self,ready); }
+    // Resume the same driver and stored deadline, preserving terminal guards.
+    pub fn run(&self) -> core::result::Result<ext::http_client::Response,Failure> {
+        let ready: ext::http_client::Readiness = empty_ready();
+        while (true) {
+            let progress = driver_step(self,ready); ready = empty_ready();
+            if (progress.is_err()) { return core::result::Err(progress.unwrap_err()); }
+            if (progress.unwrap().is_some()) { return core::result::Ok(progress.unwrap().unwrap()); }
+            let interest: ext::http_client::Interest = driver_interest(self); if (interest.immediate) { continue; }
+            let charged = driver_wait(self); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); } if (!charged.unwrap()) { continue; }
+            let remaining: core::time::Duration = self.protocol.remaining(); let milliseconds: i32 = 2147483647;
+            if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
+            let waited: core::result::Result<std::socket::Ready,core::io::Error> = self.socket.wait_ms(interest.readable,interest.writable,milliseconds);
+            if (waited.is_err()) { if (!core::io::is_interrupted(waited.unwrap_err())) { return core::result::Err(stop(self,Cause::Io(waited.unwrap_err()))); } }
+            else { let event: std::socket::Ready = waited.unwrap(); ready = ext::http_client::Readiness { readable: event.readable, writable: event.writable, hangup: event.hangup, error: event.error }; }
+        }
+        return core::result::Err(metadata(Cause::Inactive,self.stage,self.protocol.stats(),self.tls));
+    }
     pub fn abort(&self) -> core::result::Result<bool,Failure> { return driver_abort(self); }
 }
 // Explicit synchronous facade: one preparation and the same resumable owner.
@@ -374,18 +441,5 @@ pub fn exchange_until(endpoint: core::net::SocketAddr, context: &ext::openssl_tl
     let made: core::result::Result<ext::http_client::Prepared,ext::http_client::Failure> = ext::http_client::prepare_until(request,http_options,deadline);
     if (made.is_err()) { let error: ext::http_client::Failure = made.unwrap_err(); return core::result::Err(metadata(Cause::Http(error),Stage::Prepare,error.stats,zero_tls())); }
     let prepared: ext::http_client::Prepared = made.unwrap(); let begun = begin_with_context_until(prepared.borrow(),endpoint,context,identity,tls_options);
-    if (begun.is_err()) { return core::result::Err(begun.unwrap_err()); } let owner: Exchange = begun.unwrap(); let ready: ext::http_client::Readiness = empty_ready();
-    while (true) {
-        let progress = driver_step(owner.borrow(),ready); ready = empty_ready();
-        if (progress.is_err()) { return core::result::Err(progress.unwrap_err()); }
-        if (progress.unwrap().is_some()) { return core::result::Ok(progress.unwrap().unwrap()); }
-        let interest: ext::http_client::Interest = driver_interest(owner.borrow()); if (interest.immediate) { continue; }
-        let charged = driver_wait(owner.borrow()); if (charged.is_err()) { return core::result::Err(charged.unwrap_err()); } if (!charged.unwrap()) { continue; }
-        let remaining: core::time::Duration = owner.protocol.remaining(); let milliseconds: i32 = 2147483647;
-        if (remaining.seconds <= 2147483 as u64) { let rounded: u64 = remaining.seconds*1000+((remaining.nanos as u64)+999999)/1000000; if (rounded < 2147483647 as u64) { milliseconds = rounded as i32; } }
-        let waited: core::result::Result<std::socket::Ready,core::io::Error> = owner.socket.wait_ms(interest.readable,interest.writable,milliseconds);
-        if (waited.is_err()) { if (!core::io::is_interrupted(waited.unwrap_err())) { return core::result::Err(stop(owner.borrow(),Cause::Io(waited.unwrap_err()))); } }
-        else { let event: std::socket::Ready = waited.unwrap(); ready = ext::http_client::Readiness { readable: event.readable, writable: event.writable, hangup: event.hangup, error: event.error }; }
-    }
-    return core::result::Err(metadata(Cause::Inactive,owner.stage,owner.protocol.stats(),owner.tls));
+    if (begun.is_err()) { return core::result::Err(begun.unwrap_err()); } let owner: Exchange = begun.unwrap(); return owner.run();
 }

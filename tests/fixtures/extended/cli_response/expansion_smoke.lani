@@ -1,0 +1,119 @@
+module app::main;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::mem;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_response;
+
+fn bytes(value: str, length: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length), start: 0, length: length };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (left.values[left.start+index] != right.values[right.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+enum Fault { Missing, Limited, Allocation }
+struct Files { calls: i32 }
+impl Files { fn borrow(&self) -> &Files { return self; } }
+fn copied(value: View<u8>, maximum: i32) -> Result<Vec<u8>,Fault> {
+    if (value.length > maximum) { return Err(Fault::Limited); }
+    let result: Result<Vec<u8>,alloc::vec::Error> = alloc::vec::from_view(value);
+    if (result.is_err()) { return Err(Fault::Allocation); }
+    return Ok(result.unwrap());
+}
+pub impl ext::cli_response::Provider<Fault> for Files {
+    pub fn load(&self, path: View<u8>, maximum_bytes: i32) -> Result<Vec<u8>,Fault> {
+        self.calls += 1;
+        if (equal(path,bytes("a",1))) { return copied(bytes("--name \"two words\" @b @@tag ''",30),maximum_bytes); }
+        if (equal(path,bytes("b",1))) { return copied(bytes("left right",10),maximum_bytes); }
+        return Err(Fault::Missing);
+    }
+}
+fn invalid(cause: ext::cli_response::Cause<Fault>) -> bool {
+    return match (cause) { ext::cli_response::Cause::InvalidState -> true, _ -> false };
+}
+fn provider_error(cause: ext::cli_response::Cause<Fault>) -> Option<Fault> {
+    return match (cause) { ext::cli_response::Cause::Provider(error) -> Some(error), _ -> None() };
+}
+fn main() -> i32 {
+    let files: Files = Files { calls: 0 };
+    let owner: ext::cli_response::Expansion = ext::cli_response::empty();
+    assert(!owner.is_ready() && owner.arguments().is_none() && owner.original(0).is_none());
+    let first: [u8;2] = [64,97];
+    let arguments: [View<u8>;4] = [View<u8> { values: first, start: 0, length: 2 },bytes("@@direct",8),bytes("--",2),bytes("tail",4)];
+    let input: View<View<u8>> = View<View<u8>> { values: arguments, start: 0, length: 4 };
+    let limits: ext::cli_response::Limits = ext::cli_response::default_limits();
+    let prepared: Result<i32,ext::cli_response::Failure<Fault>> = owner.prepare<Files,Fault>(input,files.borrow(),limits);
+    assert(prepared.unwrap() == 9 && files.calls == 2 && owner.is_ready());
+    let values: View<View<u8>> = owner.arguments().unwrap();
+    assert(equal(values.get(0).unwrap(),bytes("--name",6)) && equal(values.get(1).unwrap(),bytes("two words",9)));
+    assert(equal(values.get(2).unwrap(),bytes("left",4)) && equal(values.get(3).unwrap(),bytes("right",5)));
+    assert(equal(values.get(4).unwrap(),bytes("@tag",4)) && values.get(5).unwrap().length == 0);
+    assert(equal(values.get(6).unwrap(),bytes("@direct",7)) && equal(values.get(7).unwrap(),bytes("--",2)) && equal(values.get(8).unwrap(),bytes("tail",4)));
+    first[1] = 122;
+    assert(equal(owner.original(0).unwrap(),bytes("@a",2)) && equal(owner.source(0).unwrap().path,bytes("a",1)));
+    assert(owner.source(0).unwrap().loaded && owner.source(1).unwrap().loaded && owner.source(2).is_none());
+    let included: ext::cli_response::Origin = owner.source(1).unwrap().included_at;
+    assert(included.source == 0 && included.argument == -1 && included.start == 19 && included.length == 2);
+    let full: ext::cli_response::Origin = owner.origin(1).unwrap();
+    assert(full.source == 0 && full.start == 7 && full.length == 11);
+    let mapped: ext::cli_response::Origin = owner.locate(ext::cli::Location { argument: 1, byte: 4 },12).unwrap();
+    assert(mapped.source == 0 && mapped.argument == -1 && mapped.start == 12 && mapped.length == 1);
+    let quoted_end: ext::cli_response::Origin = owner.locate(ext::cli::Location { argument: 1, byte: 9 },12).unwrap();
+    assert(quoted_end.start == 18 && quoted_end.length == 0);
+    let escaped: ext::cli_response::Origin = owner.locate(ext::cli::Location { argument: 4, byte: 0 },6).unwrap();
+    assert(escaped.source == 0 && escaped.start == 23 && escaped.length == 1);
+    let empty: ext::cli_response::Origin = owner.locate(ext::cli::Location { argument: 5, byte: 0 },3).unwrap();
+    assert(empty.source == 0 && empty.start == 30 && empty.length == 0);
+    let original: ext::cli_response::Origin = owner.locate(ext::cli::Location { argument: 6, byte: 0 },9).unwrap();
+    assert(original.source == -1 && original.argument == 1 && original.start == 1 && original.length == 1);
+    assert(owner.locate(ext::cli::Location { argument: 1, byte: 0 },11).is_err());
+    assert(owner.locate(ext::cli::Location { argument: 1, byte: 10 },12).is_err());
+    let second: Result<i32,ext::cli_response::Failure<Fault>> = owner.prepare<Files,Fault>(input,files.borrow(),limits);
+    assert(second.is_err() && invalid(second.unwrap_err().cause) && owner.is_ready() && files.calls == 2);
+
+    // The same expanded argv feeds both canonical parsers without another
+    // expansion, including the required value and the explicit terminator.
+    let spec: ext::cli::Spec = ext::cli::Spec { id: 7, long: bytes("name",4), short: 110, arity: ext::cli::Arity::Required };
+    let specs: [ext::cli::Spec;1] = [spec];
+    let flat: ext::cli::Parser = ext::cli::parser(values,View<ext::cli::Spec> { values: specs, start: 0, length: 1 },ext::cli::Ordering::Intermixed).unwrap();
+    let flat_count: i32 = 0; let flat_next = flat.next().unwrap();
+    while (flat_next.is_some()) { flat_count += 1; flat_next = flat.next().unwrap(); }
+    assert(flat_count == 7 && flat.explicitly_terminated());
+    let options: [ext::cli_commands::OptionSpec;1] = [ext::cli_commands::OptionSpec { spec: spec, global: false, value_name: bytes("TEXT",4), help: bytes("",0) }];
+    let root: ext::cli_commands::Command = ext::cli_commands::Command { id: 40, parent: -1, name: bytes("tool",4), summary: bytes("",0), operands: bytes("FILES",5), ordering: ext::cli::Ordering::Intermixed, options: View<ext::cli_commands::OptionSpec> { values: options, start: 0, length: 1 } };
+    let nodes: [ext::cli_commands::Command;1] = [root]; let scratch: [ext::cli::Spec;1] = [spec];
+    let commands: ext::cli_commands::Parser = ext::cli_commands::parser(values,View<ext::cli_commands::Command> { values: nodes, start: 0, length: 1 },View<ext::cli::Spec> { values: scratch, start: 0, length: 1 }).unwrap();
+    let command_count: i32 = 0; let command_next = commands.next().unwrap();
+    while (command_next.is_some()) { command_count += 1; command_next = commands.next().unwrap(); }
+    assert(command_count == 7 && commands.current() == 40);
+    owner.destroy(); owner.destroy();
+    assert(!owner.is_ready() && owner.original(0).is_none() && owner.source(0).is_none());
+
+    let missing_args: [View<u8>;1] = [bytes("@missing",8)];
+    let missing: Result<i32,ext::cli_response::Failure<Fault>> = owner.prepare<Files,Fault>(View<View<u8>> { values: missing_args, start: 0, length: 1 },files.borrow(),limits);
+    assert(missing.is_err() && !owner.is_ready() && owner.arguments().is_none() && owner.origin(0).is_none());
+    let failure: ext::cli_response::Failure<Fault> = missing.unwrap_err();
+    let host: Fault = provider_error(failure.cause).unwrap();
+    assert(match (host) { Fault::Missing -> true, _ -> false });
+    assert(failure.at.source == 0 && failure.at.argument == -1 && failure.at.start == 0 && failure.at.length == 0);
+    assert(equal(owner.original(0).unwrap(),bytes("@missing",8)) && equal(owner.source(0).unwrap().path,bytes("missing",7)));
+    assert(!owner.source(0).unwrap().loaded && owner.raw_source(0).is_none() && files.calls == 3);
+    owner.destroy();
+    let zero: Result<i32,ext::cli_response::Failure<Fault>> = owner.prepare<Files,Fault>(View<View<u8>> { values: arguments, start: 0, length: 0 },files.borrow(),limits);
+    assert(zero.unwrap() == 0 && owner.is_ready() && owner.arguments().unwrap().length == 0 && files.calls == 3);
+    owner.destroy(); owner.destroy(); return 0;
+}

@@ -2,15 +2,17 @@
 // Valid Decimal values come from parse; keep their bytes alive and unchanged.
 // See docs/stdlib-decimal-number.md for scratch and work contracts.
 module core::decimal_number;
-import core::decimal;
-import core::option;
-import core::result;
-import core::slice;
+import core::decimal::len_u64;
+import core::option::unwrap;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
 
 pub enum ErrorKind { Bounds, Syntax, ScratchTooSmall, WorkLimit, ZeroDivisor, CapacityOverflow }
 pub struct Error { kind: ErrorKind, offset: i32 }
 pub struct Decimal {
-    raw: core::slice::View<u8>, negative: bool, mantissa_start: i32,
+    raw: View<u8>, negative: bool, mantissa_start: i32,
     integer_digits: i32, total_digits: i32, first: i32, last: i32, dot: bool,
     exponent_start: i32, exponent_length: i32, exponent_negative: bool,
 }
@@ -23,20 +25,20 @@ struct Adjusted {
 const BASE: i64 = 1000000000000000000;
 
 fn error(kind: ErrorKind, offset: i32) -> Error { return Error { kind: kind, offset: offset }; }
-fn valid(view: core::slice::View<u8>) -> bool {
+fn valid(view: View<u8>) -> bool {
     return view.start >= 0 && view.length >= 0 && view.start <= 2147483647 - view.length;
 }
-fn byte(view: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(view.get(index)); }
+fn byte(view: View<u8>, index: i32) -> u8 { return unwrap(view.get(index)); }
 fn digit(value: u8) -> bool { return value >= 48 && value <= 57; }
 
 // Strict RFC 8259 number token, without surrounding whitespace or delimiters.
 // Syntax offsets are relative to the selected view; a missing byte uses len().
-pub fn parse(raw: core::slice::View<u8>) -> core::result::Result<Decimal, Error> {
-    if (!valid(raw)) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
+pub fn parse(raw: View<u8>) -> Result<Decimal, Error> {
+    if (!valid(raw)) { return Err(error(ErrorKind::Bounds,-1)); }
     let count: i32 = raw.len(); let position: i32 = 0; let negative: bool = false;
     if (position < count && byte(raw,position) == 45) { negative = true; position += 1; }
     let start: i32 = position;
-    if (position >= count || !digit(byte(raw,position))) { return core::result::Err(error(ErrorKind::Syntax,position)); }
+    if (position >= count || !digit(byte(raw,position))) { return Err(error(ErrorKind::Syntax,position)); }
     if (byte(raw,position) == 48) { position += 1; }
     else { while (position < count && digit(byte(raw,position))) { position += 1; } }
     let integer_digits: i32 = position - start; let dot: bool = false; let fractional: i32 = 0;
@@ -44,7 +46,7 @@ pub fn parse(raw: core::slice::View<u8>) -> core::result::Result<Decimal, Error>
         dot = true; position += 1; let fraction_start: i32 = position;
         while (position < count && digit(byte(raw,position))) { position += 1; }
         fractional = position - fraction_start;
-        if (fractional == 0) { return core::result::Err(error(ErrorKind::Syntax,position)); }
+        if (fractional == 0) { return Err(error(ErrorKind::Syntax,position)); }
     }
     let exponent_start: i32 = position; let exponent_length: i32 = 0; let exponent_negative: bool = false;
     if (position < count && (byte(raw,position) == 101 || byte(raw,position) == 69)) {
@@ -54,12 +56,12 @@ pub fn parse(raw: core::slice::View<u8>) -> core::result::Result<Decimal, Error>
         }
         let first_digit: i32 = position;
         while (position < count && digit(byte(raw,position))) { position += 1; }
-        if (position == first_digit) { return core::result::Err(error(ErrorKind::Syntax,position)); }
+        if (position == first_digit) { return Err(error(ErrorKind::Syntax,position)); }
         exponent_start = first_digit;
         while (exponent_start < position && byte(raw,exponent_start) == 48) { exponent_start += 1; }
         exponent_length = position - exponent_start;
     }
-    if (position != count) { return core::result::Err(error(ErrorKind::Syntax,position)); }
+    if (position != count) { return Err(error(ErrorKind::Syntax,position)); }
     if (exponent_length == 0) { exponent_negative = false; }
     let total: i32 = integer_digits + fractional; let index: i32 = 0; let first: i32 = -1; let last: i32 = -1;
     while (index < total) {
@@ -67,7 +69,7 @@ pub fn parse(raw: core::slice::View<u8>) -> core::result::Result<Decimal, Error>
         if (byte(raw,offset) != 48) { if (first < 0) { first = index; } last = index; }
         index += 1;
     }
-    return core::result::Ok(Decimal { raw:raw, negative:negative, mantissa_start:start,
+    return Ok(Decimal { raw:raw, negative:negative, mantissa_start:start,
         integer_digits:integer_digits, total_digits:total, first:first, last:last, dot:dot,
         exponent_start:exponent_start, exponent_length:exponent_length, exponent_negative:exponent_negative });
 }
@@ -92,7 +94,7 @@ impl Work {
 fn unlimited() -> Work { return Work { remaining:18446744073709551615,used:0,failed:false }; }
 fn small_adjusted(value: Decimal, signed: i64) -> Adjusted {
     let magnitude: u64 = signed as u64; if (signed < 0) { magnitude = (0 - signed) as u64; }
-    return Adjusted { source:value, negative:signed < 0, length:core::decimal::len_u64(magnitude) as i32,
+    return Adjusted { source:value, negative:signed < 0, length:len_u64(magnitude) as i32,
         small:true, magnitude:magnitude, prefix_length:0, original_prefix:0, carry:0, pivot:0, tail:0 };
 }
 
@@ -202,19 +204,19 @@ pub impl Decimal {
     pub fn equal(&self, other: Decimal) -> bool { return self.compare(other) == 0; }
 }
 
-pub fn scratch_len(divisor: Decimal) -> core::result::Result<i32, Error> {
-    if (divisor.is_zero()) { return core::result::Err(error(ErrorKind::ZeroDivisor,-1)); }
+pub fn scratch_len(divisor: Decimal) -> Result<i32, Error> {
+    if (divisor.is_zero()) { return Err(error(ErrorKind::ZeroDivisor,-1)); }
     let count: i32 = coefficient_length(divisor);
-    if (count == 2147483647) { return core::result::Err(error(ErrorKind::CapacityOverflow,-1)); }
-    return core::result::Ok(count + 1);
+    if (count == 2147483647) { return Err(error(ErrorKind::CapacityOverflow,-1)); }
+    return Ok(count + 1);
 }
-fn set(scratch: core::slice::View<u8>, index: i32, value: u8) { scratch.values[scratch.start + index] = value; }
-fn remainder_zero(scratch: core::slice::View<u8>, width: i32, work: &Work) -> bool {
+fn set(scratch: View<u8>, index: i32, value: u8) { scratch.values[scratch.start + index] = value; }
+fn remainder_zero(scratch: View<u8>, width: i32, work: &Work) -> bool {
     let index: i32 = 0;
     while (index < width) { if (!work.step()) { return false; } if (byte(scratch,index) != 0) { return false; } index += 1; }
     return true;
 }
-fn remainder_compare(scratch: core::slice::View<u8>, width: i32, divisor: Decimal, work: &Work) -> i32 {
+fn remainder_compare(scratch: View<u8>, width: i32, divisor: Decimal, work: &Work) -> i32 {
     let index: i32 = 0;
     while (index < width) {
         if (!work.step()) { return 0; }
@@ -224,7 +226,7 @@ fn remainder_compare(scratch: core::slice::View<u8>, width: i32, divisor: Decima
     return 0;
 }
 // Prior remainder is < divisor, so shift+one digit requires at most 9 subtracts.
-fn remainder_step(scratch: core::slice::View<u8>, width: i32, divisor: Decimal, next: u8, work: &Work) -> bool {
+fn remainder_step(scratch: View<u8>, width: i32, divisor: Decimal, next: u8, work: &Work) -> bool {
     let index: i32 = 0;
     while (index < width - 1) { if (!work.step()) { return false; } set(scratch,index,byte(scratch,index + 1)); index += 1; }
     if (!work.step()) { return false; } set(scratch,width - 1,next);
@@ -245,32 +247,30 @@ fn remainder_step(scratch: core::slice::View<u8>, width: i32, divisor: Decimal, 
 
 // Scratch contains numeric digits and must not alias either immutable input.
 // Error can leave scratch changed; Bounds/ScratchTooSmall/ZeroDivisor do not.
-pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: core::slice::View<u8>, max_work: u64)
-    -> core::result::Result<Multiple, Error> {
-    let needed: core::result::Result<i32,Error> = scratch_len(divisor);
-    if (core::result::is_err(needed)) { return core::result::Err(core::result::unwrap_err(needed)); }
-    if (!valid(scratch)) { return core::result::Err(error(ErrorKind::Bounds,-1)); }
-    let width: i32 = core::result::unwrap(needed);
-    if (scratch.len() < width) { return core::result::Err(error(ErrorKind::ScratchTooSmall,-1)); }
+pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: View<u8>, max_work: u64)
+    -> Result<Multiple, Error> {
+    let width = scratch_len(divisor)?;
+    if (!valid(scratch)) { return Err(error(ErrorKind::Bounds,-1)); }
+    if (scratch.len() < width) { return Err(error(ErrorKind::ScratchTooSmall,-1)); }
     let work: Work = Work { remaining:max_work,used:0,failed:false };
-    if (!work.step()) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
-    if (dividend.is_zero()) { return core::result::Ok(Multiple {value:true,work:work.used}); }
+    if (!work.step()) { return Err(error(ErrorKind::WorkLimit,-1)); }
+    if (dividend.is_zero()) { return Ok(Multiple {value:true,work:work.used}); }
     let order: i32 = compare_scales(dividend,divisor,0,work.borrow());
-    if (work.failed) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
-    if (order < 0) { return core::result::Ok(Multiple {value:false,work:work.used}); }
+    if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+    if (order < 0) { return Ok(Multiple {value:false,work:work.used}); }
     let index: i32 = 0;
     while (index < width) {
-        if (!work.step()) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
+        if (!work.step()) { return Err(error(ErrorKind::WorkLimit,-1)); }
         set(scratch,index,0); index += 1;
     }
     let count: i32 = coefficient_length(dividend); index = 0;
     while (index < count) {
-        if (!remainder_step(scratch,width,divisor,coefficient_digit(dividend,index),work.borrow())) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
+        if (!remainder_step(scratch,width,divisor,coefficient_digit(dividend,index),work.borrow())) { return Err(error(ErrorKind::WorkLimit,-1)); }
         index += 1;
     }
     let zero: bool = remainder_zero(scratch,width,work.borrow());
-    if (work.failed) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
-    if (zero) { return core::result::Ok(Multiple {value:true,work:work.used}); }
+    if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+    if (zero) { return Ok(Multiple {value:true,work:work.used}); }
     // B < 10^digits. v2(B) < 4*digits and v5(B) < 4*digits; every
     // repairable factor is exhausted by this cap, regardless of exponent size.
     let cap: i64 = (coefficient_length(divisor) as i64) * 4;
@@ -278,21 +278,20 @@ pub fn is_multiple_of_counted(dividend: Decimal, divisor: Decimal, scratch: core
     while (low < high) {
         let middle: i64 = low + (high - low + 1) / 2;
         let comparison: i32 = compare_scales(dividend,divisor,middle,work.borrow());
-        if (work.failed) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
+        if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
         if (comparison >= 0) { low = middle; } else { high = middle - 1; }
     }
     let step: i64 = 0;
     while (step < low) {
-        if (!remainder_step(scratch,width,divisor,0,work.borrow())) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
+        if (!remainder_step(scratch,width,divisor,0,work.borrow())) { return Err(error(ErrorKind::WorkLimit,-1)); }
         zero = remainder_zero(scratch,width,work.borrow());
-        if (work.failed) { return core::result::Err(error(ErrorKind::WorkLimit,-1)); }
-        if (zero) { return core::result::Ok(Multiple {value:true,work:work.used}); } step += 1;
+        if (work.failed) { return Err(error(ErrorKind::WorkLimit,-1)); }
+        if (zero) { return Ok(Multiple {value:true,work:work.used}); } step += 1;
     }
-    return core::result::Ok(Multiple {value:false,work:work.used});
+    return Ok(Multiple {value:false,work:work.used});
 }
-pub fn is_multiple_of(dividend: Decimal, divisor: Decimal, scratch: core::slice::View<u8>, max_work: u64)
-    -> core::result::Result<bool, Error> {
-    let result: core::result::Result<Multiple,Error> = is_multiple_of_counted(dividend,divisor,scratch,max_work);
-    if (core::result::is_err(result)) { return core::result::Err(core::result::unwrap_err(result)); }
-    let multiple: Multiple = core::result::unwrap(result); return core::result::Ok(multiple.value);
+pub fn is_multiple_of(dividend: Decimal, divisor: Decimal, scratch: View<u8>, max_work: u64)
+    -> Result<bool, Error> {
+    let multiple = is_multiple_of_counted(dividend,divisor,scratch,max_work)?;
+    return Ok(multiple.value);
 }

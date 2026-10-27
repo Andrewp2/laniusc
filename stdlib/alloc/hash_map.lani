@@ -266,6 +266,15 @@ pub impl<K, V> core::iter::TrySink<Entry<K, V>, SinkError> for HashMap<K, V>
     }
 }
 
+// Unlike TrySink duplicate rejection, store both incoming key/value and return
+// the complete old entry. Canonical insertion retains inputs on storage error.
+pub impl<K,V> core::iter::TryReplaceSink<Entry<K,V>,Error> for HashMap<K,V>
+    where K: core::hash::Hash<K>, K: core::cmp::Eq<K> {
+    pub fn try_replace_item(&self, item: Entry<K,V>) -> core::result::Result<core::option::Option<Entry<K,V>>,Error> {
+        return self.try_insert(item.key,item.value);
+    }
+}
+
 pub impl<K, V> Iter<K, V> {
     pub fn borrow(&self) -> &Iter<K, V> { return self; }
 }

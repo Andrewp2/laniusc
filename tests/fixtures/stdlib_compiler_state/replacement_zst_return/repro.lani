@@ -1,0 +1,13 @@
+// Standalone call-boundary reproduction: no imports, enums or transfer helper.
+struct Progress { committed: u64, replaced: u64 }
+struct Unit {}
+fn forward(progress: Progress, item: Unit, error: Unit) -> Unit {
+    assert(progress.committed == 2 && progress.replaced == 1);
+    return item;
+}
+fn main() -> i32 {
+    let progress: Progress = Progress { committed: 2, replaced: 1 };
+    assert(progress.committed == 2 && progress.replaced == 1);
+    let forwarded: Unit = forward(progress,Unit {},Unit {});
+    return 0;
+}

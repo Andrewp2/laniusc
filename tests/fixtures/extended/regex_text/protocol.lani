@@ -26,7 +26,7 @@ fn error(value: ext::regex_text::Error) {
         ext::regex_text::Error::Template(at) -> 5, ext::regex_text::Error::Capture(at,group) -> 6,
         ext::regex_text::Error::SearchCallLimit -> 7, ext::regex_text::Error::SearchWorkLimit -> 8,
         ext::regex_text::Error::OutputLimit -> 9, ext::regex_text::Error::ReplacementLimit -> 10, ext::regex_text::Error::AllocationFailed -> 11,
-        ext::regex_text::Error::Regex(cause) -> match(cause) { ext::regex::Error::Syntax(at) -> 21, ext::regex::Error::Unsupported(at) -> 22, ext::regex::Error::Limit(at) -> 23, ext::regex::Error::AllocationFailed -> 24, ext::regex::Error::Bounds -> 25, ext::regex::Error::InvalidUtf8(at) -> 26, ext::regex::Error::WorkLimit -> 27 }
+        ext::regex_text::Error::Regex(cause) -> match(cause) { ext::regex::Error::Syntax(at) -> 21, ext::regex::Error::Unsupported(at) -> 22, ext::regex::Error::Limit(at) -> 23, ext::regex::Error::AllocationFailed -> 24, ext::regex::Error::Bounds -> 25, ext::regex::Error::InvalidUtf8(at) -> 26, ext::regex::Error::WorkLimit -> 27, ext::regex::Error::WorkspaceTooSmall -> 28 }
     };
     let offset: i32 = match(value) { ext::regex_text::Error::Template(at) -> at, ext::regex_text::Error::Capture(at,group) -> at, ext::regex_text::Error::Text(cause) -> match(cause) { core::text::Error::InvalidUtf8(at) -> at, _ -> 0 }, _ -> 0 };
     let group: i32 = match(value) { ext::regex_text::Error::Capture(at,number) -> number, _ -> 0 };

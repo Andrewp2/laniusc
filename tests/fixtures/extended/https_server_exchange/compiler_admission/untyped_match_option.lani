@@ -1,0 +1,15 @@
+// Candidate reduction of the actual unannotated server fixture rejection.
+module app::main;
+import core::option;
+struct Diagnostic { code: i32 }
+enum Cause { Native(Diagnostic), Other }
+struct Failure { cause: Cause }
+fn select(error: Failure) -> i32 {
+    let selected = match(error.cause) { Cause::Native(value) -> core::option::Some(value), _ -> core::option::None() };
+    if (selected.is_none()) { return -1; }
+    return selected.unwrap().code;
+}
+fn main() -> i32 {
+    assert(select(Failure { cause:Cause::Native(Diagnostic { code:37 }) }) == 37);
+    assert(select(Failure { cause:Cause::Other }) == -1); return 0;
+}

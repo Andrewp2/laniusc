@@ -1,0 +1,114 @@
+// Public interface admission and owner transfer, not concurrent-server evidence.
+module app::main;
+import alloc::vec;
+import core::clone;
+import core::net;
+import core::option;
+import core::result;
+import core::slice;
+import core::time;
+import ext::http;
+import ext::http_client;
+import ext::http_server;
+import ext::server_poll;
+import std::clock;
+import std::socket;
+import admission::errors;
+import admission::probe;
+
+struct Pair { accepted: std::socket::Accepted, client: std::socket::Socket }
+fn deadline() -> core::time::Deadline { return core::time::deadline_after(std::clock::monotonic_now().unwrap(),core::time::from_secs(30)).unwrap(); }
+fn pair(until: core::time::Deadline) -> Pair {
+    let listener: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    let local: core::net::SocketAddr = core::net::SocketAddr::V4(core::net::SocketAddrV4 { address:core::net::ipv4(127,0,0,1),port:0 });
+    listener.bind(local).unwrap(); listener.listen(1).unwrap();
+    let client: std::socket::Socket = std::socket::create(std::socket::Family::Ipv4,std::socket::Kind::Tcp,true).unwrap();
+    client.connect_until(listener.local_addr().unwrap(),until).unwrap();
+    let accepted: std::socket::Accepted = listener.accept(true).unwrap(); listener.close().unwrap();
+    return Pair { accepted:accepted,client:client };
+}
+fn local(protocol: &ext::http_server::Protocol) {
+    let count: i32 = 0;
+    while (match(protocol.need()) { ext::http_server::Need::Local -> true, _ -> false }) {
+        assert(count < 32); count += 1; protocol.advance().unwrap();
+    }
+}
+fn exercise<D,E,F,H,A>(factory: &F, handler: &H, until: core::time::Deadline) -> core::option::Option<A>
+    where D: ext::server_poll::Driver<E>, F: ext::server_poll::Factory<D,E>, H: ext::server_poll::Handler<A> {
+    let allowance: ext::server_poll::Reservation = factory.reservation().unwrap(); assert(allowance.work > 0 && allowance.bytes > 0);
+    let sockets: Pair = pair(until); let driver: D = factory.begin(sockets.accepted,until).unwrap();
+    assert(driver.raw_handle().is_some() && driver.transport_calls().is_none() && driver.rejection().is_none());
+    local(driver.protocol()); assert(!driver.interest().immediate); driver.protocol().feed(admission::probe::bytes("POST /admit HTTP/1.1\r\nHost: probe.test\r\nContent-Length: 3\r\n\r\n",61)).unwrap();
+    let ready: ext::http_client::Readiness = ext::http_client::Readiness { readable:false,writable:false,hangup:false,error:false };
+    let count: i32 = 0; let observed: core::option::Option<ext::http_server::Event> = core::option::None();
+    while (observed.is_none()) { assert(count < 32); count += 1; observed = driver.step(ready).unwrap(); }
+    assert(driver.step(ready).unwrap().is_none()); let first: ext::http_server::Event = observed.unwrap();
+    let selected: core::option::Option<ext::http_server::RequestHead> = match(first) { ext::http_server::Event::Head(value) -> core::option::Some(value), _ -> core::option::None() };
+    let head: ext::http_server::RequestHead = selected.unwrap(); let snapshot: core::slice::View<u8> = head.head.raw;
+    let sink: ext::server_poll::Reply = ext::server_poll::reply(driver.protocol());
+    let choice: ext::server_poll::Decision = handler.head(4294967297,sockets.accepted.peer,head,sink.borrow()).unwrap();
+    let read: core::option::Option<ext::http_server::BodyDecision> = match(choice) { ext::server_poll::Decision::Read(value) -> core::option::Some(value), _ -> core::option::None() };
+    driver.read_body(read.unwrap()).unwrap(); local(driver.protocol());
+    let bytes: [u8;3] = [0,128,255]; driver.protocol().feed(core::slice::view<u8>(bytes,3).unwrap()).unwrap();
+    count = 0; observed = core::option::None();
+    while (observed.is_none()) { assert(count < 32); count += 1; observed = driver.step(ready).unwrap(); }
+    assert(driver.step(ready).unwrap().is_none()); let second: ext::http_server::Event = observed.unwrap();
+    let requested: core::option::Option<ext::http_server::Request> = match(second) { ext::http_server::Event::Request(value) -> core::option::Some(value), _ -> core::option::None() };
+    assert(snapshot.length == 61 && snapshot.get(0).unwrap() == 80 && head.head.method.get(0).unwrap() == 80);
+    let reply: ext::server_poll::Reply = ext::server_poll::reply(driver.protocol());
+    let handled: core::result::Result<ext::server_poll::Decision,A> = handler.request(4294967297,requested.unwrap(),reply.borrow());
+    let error: core::option::Option<A> = core::option::None();
+    if (handled.is_err()) { error = core::option::Some(handled.unwrap_err()); assert(!reply.is_staged()); }
+    else {
+        assert(match(handled.unwrap()) { ext::server_poll::Decision::Responded -> true, _ -> false }); assert(reply.is_staged() && reply.last_failure().is_none());
+        local(driver.protocol()); let output: core::slice::View<u8> = driver.protocol().start_send().unwrap().unwrap();
+        let parsed: ext::http::Message = ext::http::parse_response(output,admission::probe::bytes("POST",4),false,ext::http::default_limits()).unwrap();
+        assert(parsed.head.status == 200 && parsed.encoded_body.length == 3 && parsed.encoded_body.get(0).unwrap() == 0 && parsed.encoded_body.get(1).unwrap() == 128 && parsed.encoded_body.get(2).unwrap() == 255);
+        let field: ext::http::Field = parsed.head.lookup(admission::probe::bytes("X-Probe",7)).unwrap();
+        assert(field.value.length == 5 && field.value.get(0).unwrap() == 115 && field.value.get(4).unwrap() == 101);
+        driver.protocol().cancel_send().unwrap();
+    }
+    assert(driver.stats().decoded == 3 && !driver.before_wait().unwrap());
+    assert(driver.abort().unwrap() && !driver.abort().unwrap()); driver.destroy(); sockets.client.close().unwrap(); return error;
+}
+fn begin_failure<D,E,F>(factory: &F, until: core::time::Deadline) -> E where D: ext::server_poll::Driver<E>, F: ext::server_poll::Factory<D,E> {
+    let sockets: Pair = pair(until); let got: core::result::Result<D,E> = factory.begin(sockets.accepted,until); assert(got.is_err()); sockets.client.close().unwrap();
+    let error: E = got.unwrap_err(); assert(factory.failure_stats(error).received == 0 && factory.failure_transport_calls(error).is_none() && factory.shared_failure(error).is_none()); return error;
+}
+fn info(id: u64) -> ext::server_poll::ConnectionInfo { return ext::server_poll::ConnectionInfo { id:id,peer:core::option::None(),stats:admission::probe::statistics(),rejection:core::option::None(),transport_calls:core::option::Some(4294967297) }; }
+fn scalar(until: core::time::Deadline) {
+    let factory: admission::probe::Factory<admission::errors::ScalarTransport> = admission::probe::Factory { options:ext::http_server::default_options(),error:core::option::None(),begun:0 };
+    let handler: admission::probe::Handler<admission::errors::ScalarApplication> = admission::probe::Handler { error:core::option::None(),heads:0,requests:0,rejected:0 };
+    let result: core::option::Option<admission::errors::ScalarApplication> = exercise<admission::probe::Driver<admission::errors::ScalarTransport>,admission::errors::ScalarTransport,admission::probe::Factory<admission::errors::ScalarTransport>,admission::probe::Handler<admission::errors::ScalarApplication>,admission::errors::ScalarApplication>(factory.borrow(),handler.borrow(),until);
+    assert(result.is_none() && factory.begun == 1 && handler.heads == 1 && handler.requests == 1);
+    let report: ext::server_poll::Report<admission::errors::ScalarTransport,admission::errors::ScalarApplication> = ext::server_poll::empty_report<admission::errors::ScalarTransport,admission::errors::ScalarApplication>();
+    let item: ext::server_poll::Outcome<admission::errors::ScalarTransport,admission::errors::ScalarApplication> = ext::server_poll::Outcome::Complete(info(4294967297)); report.outcomes.try_push(item).unwrap();
+    let taken: core::option::Option<ext::server_poll::Outcome<admission::errors::ScalarTransport,admission::errors::ScalarApplication>> = report.take(0); assert(taken.is_some() && report.take(0).is_none()); report.destroy(); report.destroy();
+    let stamp: u64 = match(taken.unwrap()) { ext::server_poll::Outcome::Complete(value) -> value.id, _ -> 0 }; assert(stamp == 4294967297);
+    ext::server_poll::destroy_outcome<admission::errors::ScalarTransport,admission::errors::ScalarApplication>(taken.unwrap());
+}
+fn nested(until: core::time::Deadline) {
+    let ledger: admission::errors::Ledger = admission::errors::Ledger { acquired:0,released:0,transport:0,application:0 };
+    let factory: admission::probe::Factory<admission::errors::Transport> = admission::probe::Factory { options:ext::http_server::default_options(),error:core::option::None(),begun:0 };
+    let handler: admission::probe::Handler<admission::errors::Application> = admission::probe::Handler { error:core::option::None(),heads:0,requests:0,rejected:0 };
+    assert(exercise<admission::probe::Driver<admission::errors::Transport>,admission::errors::Transport,admission::probe::Factory<admission::errors::Transport>,admission::probe::Handler<admission::errors::Application>,admission::errors::Application>(factory.borrow(),handler.borrow(),until).is_none());
+    handler.error = core::option::Some(admission::errors::application(ledger.borrow()));
+    let application: admission::errors::Application = exercise<admission::probe::Driver<admission::errors::Transport>,admission::errors::Transport,admission::probe::Factory<admission::errors::Transport>,admission::probe::Handler<admission::errors::Application>,admission::errors::Application>(factory.borrow(),handler.borrow(),until).unwrap();
+    factory.error = core::option::Some(admission::errors::transport(ledger.borrow()));
+    let primary: admission::errors::Transport = begin_failure<admission::probe::Driver<admission::errors::Transport>,admission::errors::Transport,admission::probe::Factory<admission::errors::Transport>>(factory.borrow(),until);
+    let report: ext::server_poll::Report<admission::errors::Transport,admission::errors::Application> = ext::server_poll::empty_report<admission::errors::Transport,admission::errors::Application>();
+    let failed: ext::server_poll::TransportFailure<admission::errors::Transport> = ext::server_poll::TransportFailure { info:info(1),error:primary,cleanup:core::option::Some(admission::errors::transport(ledger.borrow())) };
+    let first: ext::server_poll::Outcome<admission::errors::Transport,admission::errors::Application> = ext::server_poll::Outcome::Failed(failed); report.outcomes.try_push(first).unwrap();
+    let app: ext::server_poll::ApplicationFailure<admission::errors::Transport,admission::errors::Application> = ext::server_poll::ApplicationFailure { info:info(2),error:application,preparation:core::option::None(),cleanup:core::option::Some(admission::errors::transport(ledger.borrow())) };
+    let second: ext::server_poll::Outcome<admission::errors::Transport,admission::errors::Application> = ext::server_poll::Outcome::HandlerFailed(app); report.outcomes.try_push(second).unwrap();
+    let abort: ext::server_poll::Abort<admission::errors::Transport> = ext::server_poll::Abort { info:info(3),cleanup:core::option::Some(admission::errors::transport(ledger.borrow())) };
+    let third: ext::server_poll::Outcome<admission::errors::Transport,admission::errors::Application> = ext::server_poll::Outcome::Aborted(abort); report.outcomes.try_push(third).unwrap();
+    assert(ledger.acquired == 5 && ledger.released == 0 && report.get(-1).is_none() && report.get(3).is_none());
+    let selected: core::option::Option<ext::server_poll::Outcome<admission::errors::Transport,admission::errors::Application>> = report.take(1);
+    assert(selected.is_some() && report.take(1).is_none() && report.take(-1).is_none() && report.take(3).is_none()); report.destroy(); report.destroy(); assert(report.len() == 0 && ledger.released == 3);
+    let app_error: core::option::Option<admission::errors::Application> = match(selected.unwrap()) { ext::server_poll::Outcome::HandlerFailed(value) -> core::option::Some(value.error), _ -> core::option::None() };
+    let cleanup: core::option::Option<admission::errors::Transport> = match(selected.unwrap()) { ext::server_poll::Outcome::HandlerFailed(value) -> value.cleanup, _ -> core::option::None() };
+    admission::errors::check_application(app_error.unwrap()); admission::errors::check_transport(cleanup.unwrap());
+    ext::server_poll::destroy_outcome<admission::errors::Transport,admission::errors::Application>(selected.unwrap()); assert(ledger.released == 5 && ledger.transport == 4 && ledger.application == 1);
+}
+fn main() -> i32 { let until: core::time::Deadline = deadline(); scalar(until); nested(until); return 0; }

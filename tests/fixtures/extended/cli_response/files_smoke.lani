@@ -1,0 +1,52 @@
+// Public native-provider admission. Run from the repository root.
+module app::main;
+import core::mem;
+import core::slice::View;
+import ext::cli_response::Provider;
+import ext::cli_response_files;
+import ext::cli_response_files::Files;
+import ext::cli_response_files::files;
+import std::file_ops;
+
+fn literal(text:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count };
+}
+fn is_bounds(error:ext::cli_response_files::Error) -> bool {
+    return match(error.cause) { ext::cli_response_files::Cause::Bounds->true, _->false };
+}
+fn is_call_limit(error:ext::cli_response_files::Error) -> bool {
+    return match(error.cause) { ext::cli_response_files::Cause::CallLimit->true, _->false };
+}
+fn is_byte_limit(error:ext::cli_response_files::Error) -> bool {
+    return match(error.cause) { ext::cli_response_files::Cause::ByteLimit->true, _->false };
+}
+fn is_not_regular(error:ext::cli_response_files::Error) -> bool {
+    return match(error.cause) { ext::cli_response_files::Cause::NotRegular->true, _->false };
+}
+fn main() -> i32 {
+    assert(files(-1,4,true).is_err());
+    let name=literal("tests/fixtures/extended/cli_response/files_smoke.lani",53);
+    let limited:Files=files(std::file_ops::AT_FDCWD,3,false).unwrap();
+    let denied=limited.load(name,65536);
+    assert(denied.is_err() && is_call_limit(denied.unwrap_err()) && limited.calls()==0);
+    let nul:[u8;1]=[0];
+    let invalid=limited.load(View { values:nul,start:0,length:1 },1);
+    assert(invalid.is_err() && is_bounds(invalid.unwrap_err()) && limited.calls()==0);
+    let negative=limited.load(name,-1);
+    assert(negative.is_err() && is_bounds(negative.unwrap_err()) && limited.calls()==0);
+
+    let provider:Files=files(std::file_ops::AT_FDCWD,18446744073709551615,false).unwrap();
+    let loaded=provider.load(name,65536);
+    assert(loaded.is_ok()); let bytes=loaded.unwrap();
+    assert(bytes.len()>0 && bytes.len()<4096 && bytes.at(0)==47 && bytes.at(1)==47);
+    bytes.destroy(); assert(bytes.capacity()==0);
+    let first_calls:u64=provider.calls(); assert(first_calls>=5);
+
+    let oversized=provider.load(name,0);
+    assert(oversized.is_err() && is_byte_limit(oversized.unwrap_err()) && oversized.unwrap_err().cleanup.is_none());
+    let zero_calls:u64=provider.calls(); assert(zero_calls-first_calls==4);
+    let directory=provider.load(literal(".",1),64);
+    assert(directory.is_err() && is_not_regular(directory.unwrap_err()) && directory.unwrap_err().cleanup.is_none());
+    assert(provider.calls()-zero_calls==3);
+    return 0;
+}

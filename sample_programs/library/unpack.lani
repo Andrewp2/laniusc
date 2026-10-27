@@ -1,0 +1,377 @@
+// Bounded content-only archive extraction. Manual owners, no rollback/resume.
+module app::main;
+import alloc::vec::Vec;
+import alloc::vec::with_capacity;
+import alloc::vec;
+import core::io;
+import core::io::Read;
+import core::io::Write;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import core::mem;
+import core::path;
+import ext::archive_extract;
+import ext::archive_plan;
+import ext::archive_source;
+import std::args;
+import std::atomic_file;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+
+struct Config { format:i32,root:View<u8>,input:View<u8>,limits:[u64;25] }
+struct Input { bytes:Vec<u8>,reads:u64,code:i32,error:i32,close_error:i32 }
+struct Output { buffer:Vec<u8>,used:i32,bytes:u64,writes:u64,max_bytes:u64,max_writes:u64,failed:bool }
+
+fn literal(text:str,count:i32) -> View<u8> { return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(text),count),start:0,length:count }; }
+fn same(a:View<u8>,b:View<u8>) -> bool { if(a.length!=b.length) { return false; } let at:i32=0; while(at<a.length) { if(a.values[a.start+at]!=b.values[b.start+at]) { return false; } at+=1; } return true; }
+fn empty_view() -> View<u8> { let bytes:[u8;0]=[]; return View { values:bytes,start:0,length:0 }; }
+fn io_code(error:core::io::Error) -> i32 { return match(error) { core::io::Error::Host(code)->code,core::io::Error::Interrupted->4,core::io::Error::WouldBlock->11,core::io::Error::InvalidCount->-2,core::io::Error::AllocationFailed->-3,_ ->-1 }; }
+fn optional_io(error:Option<core::io::Error>) -> i32 { if(error.is_none()) { return 0; } return io_code(error.unwrap()); }
+fn decimal(value:View<u8>) -> Result<u64,i32> {
+    if(value.length==0) { return Err(2); } let number:u64=0; let at:i32=0;
+    while(at<value.length) { let byte=value.values[value.start+at]; if(byte<48 || byte>57) { return Err(2); }
+        let digit:u64=(byte-48) as u64; if(number>(18446744073709551615-digit)/10) { return Err(2); } number=number*10+digit; at+=1; }
+    return Ok(number);
+}
+fn flag(name:View<u8>) -> i32 {
+    if(same(name,literal("--input-bytes",13))) { return 0; }
+    if(same(name,literal("--input-reads",13))) { return 1; }
+    if(same(name,literal("--entries",9))) { return 2; }
+    if(same(name,literal("--nodes",7))) { return 3; }
+    if(same(name,literal("--depth",7))) { return 4; }
+    if(same(name,literal("--path-bytes",12))) { return 5; }
+    if(same(name,literal("--component-bytes",17))) { return 6; }
+    if(same(name,literal("--path-storage-bytes",20))) { return 7; }
+    if(same(name,literal("--entry-bytes",13))) { return 8; }
+    if(same(name,literal("--decoded-bytes",15))) { return 9; }
+    if(same(name,literal("--plan-work",11))) { return 10; }
+    if(same(name,literal("--zip-work",10))) { return 11; }
+    if(same(name,literal("--metadata-work",15))) { return 12; }
+    if(same(name,literal("--source-owned-bytes",20))) { return 13; }
+    if(same(name,literal("--run-owned-bytes",17))) { return 14; }
+    if(same(name,literal("--program-owned-bytes",21))) { return 15; }
+    if(same(name,literal("--host-calls",12))) { return 16; }
+    if(same(name,literal("--cleanup-calls",15))) { return 17; }
+    if(same(name,literal("--write-calls",13))) { return 18; }
+    if(same(name,literal("--sync-calls",12))) { return 19; }
+    if(same(name,literal("--entropy-calls",15))) { return 20; }
+    if(same(name,literal("--name-attempts",15))) { return 21; }
+    if(same(name,literal("--steps",7))) { return 22; }
+    if(same(name,literal("--report-bytes",14))) { return 23; }
+    if(same(name,literal("--report-writes",15))) { return 24; }
+    return -1;
+}
+fn parse(args:std::args::Arguments) -> Result<Config,i32> {
+    let config=Config { format:0,root:empty_view(),input:empty_view(),limits:[67108864,131072,4096,8192,64,4095,255,16777216,16777216,134217728,134217728,16777216,16777216,33554432,67108864,268435456,1048576,1048576,1048576,1048576,1048576,262144,16777216,67108864,131072] };
+    let seen:u64=0; let at:i32=0; let separator:bool=false;
+    while(at<args.len()) {
+        let name=args.get(at).unwrap();
+        if(same(name,literal("--",2))) { if(at+2!=args.len()) { return Err(2); } config.input=args.get(at+1).unwrap(); separator=true; break; }
+        let id=flag(name); if(same(name,literal("--format",8))) { id=25; } if(same(name,literal("--root",6))) { id=26; }
+        if(id<0 || at+1>=args.len()) { return Err(2); } let bit:u64=1; bit=bit<<id;
+        if((seen&bit)!=0) { return Err(2); } seen=seen|bit; let value=args.get(at+1).unwrap();
+        if(id==25) {
+            if(same(value,literal("tar",3))) { config.format=1; } else { if(same(value,literal("zip",3))) { config.format=2; } else { return Err(2); } }
+        } else { if(id==26) { config.root=value; } else { let number=decimal(value)?; config.limits[id]=number; } }
+        at+=2;
+    }
+    if(!separator || config.format==0 || config.root.length==0 || config.input.length==0 || config.root.length>4095 || config.input.length>4095) { return Err(2); }
+    let indexes:[i32;8]=[0,2,3,4,5,6,7,8]; let index:i32=0;
+    while(index<8) { if(config.limits[indexes[index]]>2147483647) { return Err(2); } index+=1; }
+    if(config.limits[5]>4095 || config.limits[6]>255) { return Err(2); }
+    return Ok(config);
+}
+fn source_limits(config:Config) -> ext::archive_source::Limits {
+    let limits=ext::archive_source::default_limits();
+    limits.max_archive=config.limits[0] as i32; limits.plan.max_entries=config.limits[2] as i32; limits.plan.max_nodes=config.limits[3] as i32;
+    limits.plan.max_depth=config.limits[4] as i32; limits.plan.max_path_bytes=config.limits[5] as i32; limits.plan.max_component_bytes=config.limits[6] as i32;
+    limits.plan.max_stored_path_bytes=config.limits[7] as i32; limits.max_entry=config.limits[8] as i32; limits.max_total=config.limits[9];
+    limits.plan.max_work=config.limits[10]; limits.zip_work=config.limits[11]; limits.metadata_work=config.limits[12]; limits.max_owned_bytes=config.limits[13]; return limits;
+}
+fn run_limits(config:Config) -> ext::archive_extract::Limits {
+    let limits=ext::archive_extract::default_limits(); limits.max_owned_bytes=config.limits[14]; limits.max_depth=config.limits[4] as i32;
+    limits.max_host_calls=config.limits[16]; limits.max_cleanup_calls=config.limits[17]; limits.max_write_calls=config.limits[18]; limits.max_sync_calls=config.limits[19];
+    limits.max_entropy_calls=config.limits[20]; limits.max_name_attempts=config.limits[21]; limits.max_steps=config.limits[22]; limits.max_zip_output=config.limits[8] as i32; return limits;
+}
+fn owned_preflight(args:std::args::Arguments,config:Config) -> bool {
+    let nested=config.limits[13]; if(config.limits[14]>nested) { nested=config.limits[14]; }
+    let fixed:u64=(args.byte_len() as u64)+(args.entries.capacity() as u64)*(core::mem::size_of<View<u8>>() as u64)+16384+config.limits[0];
+    return fixed<=config.limits[15] && nested<=config.limits[15]-fixed;
+}
+fn read_input(config:Config) -> Input {
+    let input=Input { bytes:alloc::vec::new(),reads:0,code:0,error:0,close_error:0 };
+    let options=std::file_ops::options(); options.no_follow=true; options.nonblocking=true;
+    let opened=std::file_ops::open(core::path::from_view(config.input).unwrap(),options);
+    if(opened.is_err()) { input.code=3; input.error=io_code(opened.unwrap_err()); return input; }
+    let file=opened.unwrap(); let metadata=std::file_ops::empty_metadata();
+    let queried=std::file_ops::metadata_file_into(file.borrow(),metadata.borrow());
+    if(queried.is_err()) { input.code=3; input.error=io_code(queried.unwrap_err()); }
+    else { if(!metadata.has(1) || !match(std::file_ops::kind(metadata.mode)) { std::file_ops::Kind::Regular->true,_ ->false }) { input.code=3; input.error=-4; } }
+    if(input.code==0) {
+        let allocated:Result<Vec<u8>,alloc::vec::Error> =with_capacity(config.limits[0] as i32);
+        if(allocated.is_err()) { input.code=4; } else { input.bytes=allocated.unwrap(); }
+    }
+    let scratch:[u8;1024]=[0;1024]; let done:bool=false;
+    while(input.code==0 && !done) {
+        if(input.reads==config.limits[1]) { input.code=2; input.error=-5; break; }
+        let remaining:i32=(config.limits[0] as i32)-input.bytes.len(); let count:i32=remaining; if(count>1024) { count=1024; } if(count==0) { count=1; }
+        input.reads+=1; let got=file.read(scratch,0,count);
+        if(got.is_err()) { let error=got.unwrap_err(); if(!core::io::is_interrupted(error)) { input.code=3; input.error=io_code(error); } }
+        else {
+            let received=got.unwrap(); if(received<0 || received>count) { input.code=3; input.error=-2; }
+            else { if(received==0) { done=true; } else { if(remaining==0) { input.code=2; input.error=-6; }
+                else { let appended=input.bytes.try_extend(View { values:scratch,start:0,length:received }); if(appended.is_err()) { input.code=4; } } } }
+        }
+    }
+    let closed=file.close(); if(closed.is_err()) { input.close_error=io_code(closed.unwrap_err()); if(input.code==0) { input.code=3; } }
+    return input;
+}
+fn output(max_bytes:u64,max_writes:u64) -> Result<Output,i32> {
+    let allocated:Result<Vec<u8>,alloc::vec::Error> =with_capacity(16384); if(allocated.is_err()) { return Err(4); }
+    let buffer=allocated.unwrap(); if(buffer.try_resize(16384,0).is_err()) { buffer.destroy(); return Err(4); }
+    return Ok(Output { buffer:buffer,used:0,bytes:0,writes:0,max_bytes:max_bytes,max_writes:max_writes,failed:false });
+}
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn text(&self,value:View<u8>) { if(self.failed) { return; } if(value.length>self.buffer.len()-self.used) { self.failed=true; return; }
+        let at:i32=0; while(at<value.length) { self.buffer.set(self.used,value.values[value.start+at]).unwrap(); self.used+=1; at+=1; } }
+    fn number(&self,value:u64) { let digits:[u8;20]=[0;20]; let count:i32=0; let remaining=value;
+        while(count==0 || remaining>0) { digits[count]=(remaining%10) as u8+48; count+=1; remaining=remaining/10; }
+        while(count>0) { count-=1; self.text(View { values:digits,start:count,length:1 }); } }
+    fn signed(&self,value:i32) { if(value<0) { self.text(literal("-",1)); self.number((0-(value as i64)) as u64); } else { self.number(value as u64); } }
+    fn boolean(&self,value:bool) { if(value) { self.number(1); } else { self.number(0); } }
+    fn hex(&self,value:View<u8>) { let digits=literal("0123456789abcdef",16); let at:i32=0; while(at<value.length && !self.failed) { let byte=value.values[value.start+at]; self.text(View { values:digits.values,start:digits.start+(byte/16) as i32,length:1 }); self.text(View { values:digits.values,start:digits.start+(byte%16) as i32,length:1 }); at+=1; } }
+    fn emit(&self,error:bool) {
+        if(self.failed) { return; } self.text(literal("\n",1)); if(self.failed) { return; }
+        if((self.used as u64)>self.max_bytes-self.bytes) { self.failed=true; return; }
+        let sink=std::stream::stdout(); if(error) { sink=std::stream::stderr(); }
+        let offset:i32=0; while(offset<self.used) {
+            if(self.writes==self.max_writes) { self.failed=true; return; } let count=self.used-offset; if(count>1024) { count=1024; } self.writes+=1;
+            let result=sink.write(self.buffer.as_slice(),offset,count);
+            if(result.is_err()) { if(!core::io::is_interrupted(result.unwrap_err())) { self.failed=true; return; } }
+            else { let sent=result.unwrap(); if(sent<=0 || sent>count) { self.failed=true; return; } offset+=sent; self.bytes+=sent as u64; }
+        } self.used=0;
+    }
+    fn destroy(&self) { self.buffer.destroy(); }
+}
+
+fn source_cause(value:ext::archive_source::Cause) -> i32 {
+    return match(value) { ext::archive_source::Cause::Bounds->1,ext::archive_source::Cause::InvalidLimits->2,ext::archive_source::Cause::ArchiveLimit->3,ext::archive_source::Cause::EntryLimit->4,ext::archive_source::Cause::TotalLimit->5,ext::archive_source::Cause::MetadataLimit->6,ext::archive_source::Cause::OwnedLimit->7,ext::archive_source::Cause::AllocationFailed->8,ext::archive_source::Cause::Plan(error)->100+match(error.kind) { ext::archive_plan::ErrorKind::Bounds->1,ext::archive_plan::ErrorKind::Limits->2,ext::archive_plan::ErrorKind::Path->3,ext::archive_plan::ErrorKind::Component->4,ext::archive_plan::ErrorKind::Depth->5,ext::archive_plan::ErrorKind::Entries->6,ext::archive_plan::ErrorKind::Nodes->7,ext::archive_plan::ErrorKind::Paths->8,ext::archive_plan::ErrorKind::Work->9,ext::archive_plan::ErrorKind::Duplicate->10,ext::archive_plan::ErrorKind::Conflict->11,ext::archive_plan::ErrorKind::Allocation->12,ext::archive_plan::ErrorKind::InvalidState->13 },ext::archive_source::Cause::Profile(error)->200,ext::archive_source::Cause::Tar(error)->300,ext::archive_source::Cause::Zip(error)->400 };
+}
+fn source_code(value:ext::archive_source::Cause) -> i32 { let cause=source_cause(value); if(cause==8 || cause==112) { return 4; } return 2; }
+fn run_stage(value:ext::archive_extract::Stage) -> i32 {
+    return match(value) { ext::archive_extract::Stage::Validate->1,ext::archive_extract::Stage::Reserve->2,ext::archive_extract::Stage::Root->3,ext::archive_extract::Stage::Decode->4,ext::archive_extract::Stage::Walk->5,ext::archive_extract::Stage::CreateDirectory->6,ext::archive_extract::Stage::OpenDirectory->7,ext::archive_extract::Stage::SyncChild->8,ext::archive_extract::Stage::SyncParent->9,ext::archive_extract::Stage::CreateFile->10,ext::archive_extract::Stage::Write->11,ext::archive_extract::Stage::Commit->12,ext::archive_extract::Stage::Close->13,ext::archive_extract::Stage::Cleanup->14,ext::archive_extract::Stage::RetrySync->15,ext::archive_extract::Stage::Keep->16,ext::archive_extract::Stage::Transfer->17,ext::archive_extract::Stage::Destroy->18 };
+}
+fn run_cause(value:ext::archive_extract::Cause) -> i32 {
+    return match(value) { ext::archive_extract::Cause::InvalidState->1,ext::archive_extract::Cause::InvalidLimits->2,ext::archive_extract::Cause::InvalidPrepared->3,ext::archive_extract::Cause::OwnedLimit->4,ext::archive_extract::Cause::DepthLimit->5,ext::archive_extract::Cause::HostLimit->6,ext::archive_extract::Cause::CleanupLimit->7,ext::archive_extract::Cause::WriteLimit->8,ext::archive_extract::Cause::SyncLimit->9,ext::archive_extract::Cause::EntropyLimit->10,ext::archive_extract::Cause::NameLimit->11,ext::archive_extract::Cause::StepLimit->12,ext::archive_extract::Cause::AllocationFailed->13,ext::archive_extract::Cause::UnavailableMetadata->14,ext::archive_extract::Cause::NotDirectory->15,ext::archive_extract::Cause::UnsupportedDescriptor->16,ext::archive_extract::Cause::NamespaceChanged->17,ext::archive_extract::Cause::Retained->18,ext::archive_extract::Cause::Bounds->19,ext::archive_extract::Cause::Io(error)->1000+io_code(error),ext::archive_extract::Cause::Zip(error)->2000,ext::archive_extract::Cause::Atomic(error)->3000 };
+}
+fn state(value:ext::archive_extract::State) -> i32 { return match(value) { ext::archive_extract::State::Empty->0,ext::archive_extract::State::Running->1,ext::archive_extract::State::Complete->2,ext::archive_extract::State::Failed->3,ext::archive_extract::State::Destroyed->4 }; }
+fn receipt(out:&Output,value:std::atomic_file::Receipt) {
+    out.text(literal(" visibility=",12)); out.number(match(value.visibility) { std::atomic_file::Visibility::NotPublished->0,std::atomic_file::Visibility::Published->1,std::atomic_file::Visibility::Unconfirmed->2 });
+    out.text(literal(" file_synced=",13)); out.boolean(value.file_synced);
+    out.text(literal(" directory_synced=",18)); out.boolean(value.directory_synced);
+    out.text(literal(" temporary_owned=",17)); out.boolean(value.temporary_owned);
+    out.text(literal(" file_open=",11)); out.boolean(value.file_open);
+    out.text(literal(" directory_open=",16)); out.boolean(value.directory_open);
+    out.text(literal(" retained=",10)); out.boolean(value.retained);
+    out.text(literal(" confirmed_bytes=",17)); out.number(value.stats.bytes);
+    out.text(literal(" write_attempts=",16)); out.number(value.stats.writes);
+    out.text(literal(" file_syncs=",12)); out.number(value.stats.file_syncs);
+    out.text(literal(" renames=",9)); out.number(value.stats.renames);
+    out.text(literal(" directory_syncs=",17)); out.number(value.stats.directory_syncs);
+    out.text(literal(" file_close_attempted=",22)); out.boolean(value.cleanup.file_close_attempted);
+    out.text(literal(" file_close_error=",18)); out.signed(optional_io(value.cleanup.file_close_error));
+    out.text(literal(" remove_attempted=",18)); out.boolean(value.cleanup.remove_attempted);
+    out.text(literal(" remove_error=",14)); out.signed(optional_io(value.cleanup.remove_error));
+    out.text(literal(" directory_close_attempted=",27)); out.boolean(value.cleanup.directory_close_attempted);
+    out.text(literal(" directory_close_error=",23)); out.signed(optional_io(value.cleanup.directory_close_error));
+}
+fn failure(out:&Output,kind:View<u8>,value:Option<ext::archive_extract::Failure>) {
+    out.text(literal("failure kind=",13)); out.text(kind);
+    out.text(literal(" present=",9)); out.boolean(value.is_some());
+    if(value.is_some()) { let error=value.unwrap();
+    out.text(literal(" cause=",7)); out.signed(run_cause(error.cause));
+    out.text(literal(" stage=",7)); out.signed(run_stage(error.stage));
+    out.text(literal(" ordinal=",9)); out.signed(error.ordinal);
+    out.text(literal(" node=",6)); out.signed(error.node);
+        let atomic:Option<std::atomic_file::Failure> =match(error.cause) { ext::archive_extract::Cause::Atomic(detail)->Some(detail),_ ->None() };
+        if(atomic.is_some()) { let detail=atomic.unwrap();
+    out.text(literal(" atomic_stage=",14)); out.number(match(detail.stage) { std::atomic_file::Stage::Validate->1,std::atomic_file::Stage::Allocate->2,std::atomic_file::Stage::Create->3,std::atomic_file::Stage::Write->4,std::atomic_file::Stage::SyncFile->5,std::atomic_file::Stage::CloseFile->6,std::atomic_file::Stage::Rename->7,std::atomic_file::Stage::Disarm->8,std::atomic_file::Stage::SyncDirectory->9,std::atomic_file::Stage::Cleanup->10,std::atomic_file::Stage::Keep->11 });
+    out.text(literal(" atomic_io=",11)); out.signed(match(detail.cause) { std::atomic_file::Error::Io(error)->io_code(error),_ ->0 });
+    out.text(literal(" atomic_completed=",18)); out.number(detail.completed);
+            receipt(out,detail.receipt);
+        }
+    } out.emit(false);
+}
+fn current(out:&Output,kind:View<u8>,run:&ext::archive_extract::Run) {
+    out.text(literal("current phase=",14)); out.text(kind);
+    out.text(literal(" node=",6)); out.signed(run.current_node());
+    out.text(literal(" ordinal=",9)); out.signed(run.current_ordinal());
+    out.text(literal(" receipt=",9)); out.boolean(run.current_receipt().is_some());
+    if(run.current_receipt().is_some()) { receipt(out,run.current_receipt().unwrap()); }
+    out.text(literal(" resources_remaining=",21)); out.boolean(run.resources_remaining());
+    out.emit(false);
+}
+fn nodes(out:&Output,source:&ext::archive_source::Prepared,run:&ext::archive_extract::Run) {
+    let index:i32=0; while(index<source.plan().node_count() && !out.failed) {
+        let node=source.plan().node(index).unwrap(); let status=run.node_status(index);
+    out.text(literal("node",4));
+    out.text(literal(" index=",7)); out.signed(index);
+    out.text(literal(" ordinal=",9)); out.signed(node.ordinal);
+    out.text(literal(" kind=",6)); out.number(match(node.kind) { ext::archive_plan::Kind::File->1,ext::archive_plan::Kind::Directory->2 });
+    out.text(literal(" explicit=",10)); out.boolean(node.explicit);
+    out.text(literal(" path_hex=",10)); out.hex(source.plan().path(index).unwrap());
+    out.text(literal(" status_available=",18)); out.boolean(status.is_some());
+        if(status.is_some()) { let value=status.unwrap();
+    out.text(literal(" visited=",9)); out.boolean(value.visited);
+    out.text(literal(" created=",9)); out.boolean(value.created);
+    out.text(literal(" opened=",8)); out.boolean(value.opened);
+    out.text(literal(" child_synced=",14)); out.boolean(value.child_synced);
+    out.text(literal(" parent_synced=",15)); out.boolean(value.parent_synced);
+    out.text(literal(" file_attempted=",16)); out.boolean(value.file_attempted);
+    out.text(literal(" published=",11)); out.boolean(value.published);
+    out.text(literal(" kept=",6)); out.boolean(value.kept);
+    out.text(literal(" open_attempts=",15)); out.number(value.open_attempts);
+    out.text(literal(" child_sync_attempts=",21)); out.number(value.child_sync_attempts);
+    out.text(literal(" parent_sync_attempts=",22)); out.number(value.parent_sync_attempts);
+    out.text(literal(" close_attempts=",16)); out.number(value.close_attempts);
+    out.text(literal(" created_ordinal=",17)); out.signed(value.created_ordinal);
+    out.text(literal(" child_sync_error=",18)); out.signed(optional_io(value.child_sync_error));
+    out.text(literal(" parent_sync_error=",19)); out.signed(optional_io(value.parent_sync_error));
+    out.text(literal(" close_error=",13)); out.signed(optional_io(value.close_error));
+    out.text(literal(" receipt=",9)); out.boolean(value.receipt.is_some());
+            if(value.receipt.is_some()) { receipt(out,value.receipt.unwrap()); }
+        } out.emit(false); index+=1;
+    }
+}
+fn summary(out:&Output,code:i32,input:Input,source:&ext::archive_source::Prepared,run:&ext::archive_extract::Run) {
+    let stats=run.stats();
+    out.text(literal("unpack",6));
+    out.text(literal(" code=",6)); out.signed(code);
+    out.text(literal(" state=",7)); out.signed(state(run.state()));
+    out.text(literal(" input_bytes=",13)); out.signed(input.bytes.len());
+    out.text(literal(" input_reads=",13)); out.number(input.reads);
+    out.text(literal(" input_close_error=",19)); out.signed(input.close_error);
+    out.text(literal(" entries=",9)); out.signed(source.len());
+    out.text(literal(" nodes=",7)); out.signed(source.plan().node_count());
+    out.text(literal(" entries_seen=",14)); out.number(stats.entries_seen);
+    out.text(literal(" entries_completed=",19)); out.number(stats.entries_completed);
+    out.text(literal(" created_directories=",21)); out.number(stats.created_directories);
+    out.text(literal(" published_files=",17)); out.number(stats.published_files);
+    out.text(literal(" bytes=",7)); out.number(stats.bytes);
+    out.text(literal(" writes=",8)); out.number(stats.writes);
+    out.text(literal(" name_attempts=",15)); out.number(stats.name_attempts);
+    out.text(literal(" entropy_calls=",15)); out.number(stats.entropy_calls);
+    out.text(literal(" syncs=",7)); out.number(stats.syncs);
+    out.text(literal(" host_charged=",14)); out.number(stats.host_charged);
+    out.text(literal(" cleanup_reserved=",18)); out.number(stats.cleanup_reserved);
+    out.text(literal(" cleanup_charged=",17)); out.number(stats.cleanup_charged);
+    out.text(literal(" namespace_closes=",18)); out.number(stats.namespace_closes);
+    out.text(literal(" cleanup_errors=",16)); out.number(stats.cleanup_errors);
+    out.text(literal(" steps=",7)); out.number(stats.steps);
+    out.text(literal(" owned_bytes=",13)); out.number(stats.owned_bytes);
+    out.text(literal(" peak_fds=",10)); out.number(stats.peak_fds);
+    out.text(literal(" root_close_error=",18)); out.signed(optional_io(run.root_close_error()));
+    out.text(literal(" resources_remaining=",21)); out.boolean(run.resources_remaining());
+    out.emit(false);
+}
+fn early(out:&Output,code:i32,phase:View<u8>,cause:i32,ordinal:i32,input_bytes:i32,input_reads:u64,close_error:i32) {
+    out.text(literal("unpack",6));
+    out.text(literal(" code=",6)); out.signed(code);
+    out.text(literal(" phase=",7)); out.text(phase);
+    out.text(literal(" cause=",7)); out.signed(cause);
+    out.text(literal(" ordinal=",9)); out.signed(ordinal);
+    out.text(literal(" input_bytes=",13)); out.signed(input_bytes);
+    out.text(literal(" input_reads=",13)); out.number(input_reads);
+    out.text(literal(" input_close_error=",19)); out.signed(close_error);
+    out.emit(true);
+}
+
+fn prepare(config:Config,input:View<u8>) -> Result<ext::archive_source::Prepared,ext::archive_source::Error> {
+    if(config.format==1) { return ext::archive_source::from_tar(input,source_limits(config)); }
+    return ext::archive_source::from_zip(input,source_limits(config));
+}
+fn execute(config:Config,out:&Output) -> i32 {
+    let input=read_input(config);
+    if(input.code!=0) { early(out,input.code,literal("input",5),input.error,-1,input.bytes.len(),input.reads,input.close_error); input.bytes.destroy(); return input.code; }
+    let parsed=prepare(config,input.bytes.as_view());
+    if(parsed.is_err()) { let error=parsed.unwrap_err(); let code=source_code(error.cause); early(out,code,literal("source",6),source_cause(error.cause),error.ordinal,input.bytes.len(),input.reads,input.close_error); input.bytes.destroy(); return code; }
+    let source=parsed.unwrap();
+    let options=std::file_ops::options(); options.directory=true; options.no_follow=true; options.nonblocking=true;
+    let opened=std::file_ops::open(core::path::from_view(config.root).unwrap(),options);
+    if(opened.is_err()) { early(out,3,literal("root",4),io_code(opened.unwrap_err()),-1,input.bytes.len(),input.reads,input.close_error); source.destroy(); input.bytes.destroy(); return 3; }
+    let root=opened.unwrap(); let run=ext::archive_extract::empty(); let code:i32=0;
+    // No early return after Run starts: retain source/input and report storage.
+    let result=run.execute(source.borrow(),root.borrow(),run_limits(config));
+    if(result.is_err()) { code=5; }
+    let root_closed=root.close(); if(root_closed.is_err() && code==0) { code=6; }
+    failure(out,literal("execution",9),run.last_failure());
+    current(out,literal("execution",9),run.borrow());
+    // Recovery never continues the archive, and never erases its primary code.
+    let before=run.current_receipt();
+    if(before.is_some()) {
+        let value=before.unwrap(); let published:bool=match(value.visibility) { std::atomic_file::Visibility::Published->true,_ ->false };
+        if(published && !value.directory_synced && value.directory_open) { let retried=run.retry_current_directory_sync(); if(retried.is_err() && code==0) { code=6; } }
+    }
+    let cleaned=run.cleanup(); if(cleaned.is_err() && code==0) { code=6; }
+    let copied:[u8;37]=[0;37]; let kept_length:i32=0; let recovery_node=run.current_node();
+    let remaining=run.current_receipt();
+    if(remaining.is_some() && remaining.unwrap().temporary_owned) {
+        let kept=run.keep_current(); if(kept.is_err() && code==0) { code=6; }
+    }
+    // A keep can succeed before its subsequent cleanup reports an error.
+    let status=run.node_status(recovery_node);
+    if(status.is_some() && status.unwrap().kept && run.recovery_name().length==37) {
+        let transferred=run.take_kept_name(View { values:copied,start:0,length:37 });
+        if(transferred.is_err()) { if(code==0) { code=6; } } else { kept_length=transferred.unwrap(); }
+    }
+    if(run.resources_remaining()) { let retried_cleanup=run.cleanup(); if(retried_cleanup.is_err() && code==0) { code=6; } }
+    nodes(out,source.borrow(),run.borrow()); current(out,literal("cleanup",7),run.borrow());
+    failure(out,literal("cleanup",7),run.cleanup_failure());
+    let root_error:i32=0; if(root_closed.is_err()) { root_error=io_code(root_closed.unwrap_err()); }
+    out.text(literal("caller",6)); out.text(literal(" root_close_error=",18)); out.signed(root_error); out.emit(false);
+    if(kept_length!=0) {
+        out.text(literal("recovery node=",14)); out.signed(recovery_node); out.text(literal(" parent_hex=",12));
+        if(recovery_node>=0) { let parent=source.plan().node(recovery_node).unwrap().parent; if(parent>=0) { out.hex(source.plan().path(parent).unwrap()); } }
+        out.text(literal(" name_hex=",10)); out.hex(View { values:copied,start:0,length:kept_length }); out.text(literal(" duty_transferred=1",19)); out.emit(false);
+    }
+    if(run.resources_remaining() && code==0) { code=6; }
+    summary(out,code,input,source.borrow(),run.borrow());
+    let destroyed=run.destroy();
+    if(destroyed.is_err() && code==0) { code=6; }
+    out.text(literal("release destroyed=",18)); out.boolean(destroyed.is_ok()); out.text(literal(" resources_remaining=",21)); out.boolean(run.resources_remaining()); out.emit(false);
+    source.destroy(); input.bytes.destroy();
+    if(out.failed && code==0) { code=7; } return code;
+}
+fn main() -> i32 {
+    // Turn a closed report pipe into a counted write error, preserving the
+    // extraction outcome instead of terminating before explicit cleanup.
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured=std::args::snapshot(1,128,262144);
+    if(captured.is_err()) { return match(captured.unwrap_err()) { std::args::Error::AllocationFailed->4,std::args::Error::HostRead(index)->3,_ ->2 }; }
+    let args=captured.unwrap();
+    if(args.len()==1 && same(args.get(0).unwrap(),literal("--help",6))) {
+        let made=output(16384,64); if(made.is_err()) { args.destroy(); return 4; }
+        let out=made.unwrap(); out.text(literal("Usage: unpack --format tar|zip --root OUTPUT_DIRECTORY [--NAME VALUE ...] -- ARCHIVE_FILE\nContent only: ownership, permissions, timestamps, links, and other archive metadata are ignored or rejected by the profile.\nExisting root; regular no-follow nonblocking input is fully read and closed before output mutation.\nNoReplace publication in a cooperative stable namespace; failures can leave partial output. No directory transaction or hard wall-clock limit.\nAll numbers are unsigned decimal. Each option occurs once. No short options or --name=value syntax.\nLimits: --input-bytes --input-reads --entries --nodes --depth --path-bytes --component-bytes --path-storage-bytes --entry-bytes --decoded-bytes --plan-work --zip-work --metadata-work --source-owned-bytes --run-owned-bytes --program-owned-bytes --host-calls --cleanup-calls --write-calls --sync-calls --entropy-calls --name-attempts --steps --report-bytes --report-writes\nReports use canonical path hex, node/ordinal identities, current publication/sync/cleanup facts, and kept recovery names. Report failure is nonzero and can obscure recovery diagnostics.\n",1114)); out.emit(false); let failed=out.failed; out.destroy(); args.destroy(); if(failed) { return 7; } return 0;
+    }
+    let parsed=parse(args);
+    if(parsed.is_err()) {
+        let made=output(16384,64); if(made.is_ok()) { let out=made.unwrap(); early(out.borrow(),2,literal("arguments",9),0,-1,0,0,0); out.destroy(); } args.destroy(); return 2;
+    }
+    let config=parsed.unwrap();
+    if(!owned_preflight(args,config)) { args.destroy(); return 2; }
+    // Validate source reservations without reading/opening anything, then
+    // reserve every report byte before any potential output namespace effect.
+    let reserved=ext::archive_source::reservation_bytes(source_limits(config));
+    if(reserved.is_err()) { let code=source_code(reserved.unwrap_err().cause); args.destroy(); return code; }
+    let made=output(config.limits[23],config.limits[24]);
+    if(made.is_err()) { args.destroy(); return 4; }
+    let out=made.unwrap(); let code=execute(config,out.borrow()); out.destroy(); args.destroy(); return code;
+}

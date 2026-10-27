@@ -1,0 +1,305 @@
+// Portable completion over the canonical CLI prefix parser. All storage is
+// borrowed. Context drops the parser/scratch lease before returning; schema,
+// arguments and caller values remain immutable and backed until final use.
+module ext::cli_complete;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::cli;
+import ext::cli_commands;
+
+pub enum Kind { Command, Operand, LongOption, ShortOption, OptionValue }
+pub struct Replacement { at: ext::cli::Location, length: i32 }
+pub struct OptionIdentity { command: i32, option: i32 }
+pub struct Value { bytes: View<u8>, append_space: bool }
+pub struct Suggestion {
+    bytes: i32, command: i32, option: i32, kind: Kind,
+    append_space: bool, replacement: Replacement
+}
+pub enum Error {
+    Bounds, Nul(ext::cli::Location), ValueNul(i32,i32),
+    Commands(ext::cli_commands::Error), OutputTooSmall(u64)
+}
+pub struct Context {
+    commands: View<ext::cli_commands::Command>, selected: i32, operands: i32,
+    category: Kind, active_prefix: View<u8>, active_stem: View<u8>,
+    range: Replacement, identity: Option<OptionIdentity>, cluster: Option<ext::cli::Spec>,
+    options: bool, inside: bool
+}
+pub struct Suggestions { context: Context, values: View<Value>, position: u64, done: bool }
+// Rendering is head + dashes + (short or tail) + optional '='. These borrowed
+// pieces never point into a temporary option record or parser scope scratch.
+struct Candidate {
+    head: View<u8>, tail: View<u8>, dashes: i32, short: u8, equals: bool,
+    command: i32, option: i32, kind: Kind, append_space: bool
+}
+
+fn valid<T>(value: View<T>) -> bool {
+    return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length;
+}
+fn byte(value: View<u8>, index: i32) -> u8 { return value.values[value.start+index]; }
+fn part(value: View<u8>, start: i32, length: i32) -> View<u8> {
+    return View<u8> { values: value.values, start: value.start+start, length: length };
+}
+fn starts(value: View<u8>, prefix: View<u8>) -> bool {
+    if (prefix.length > value.length) { return false; }
+    let index: i32 = 0;
+    while (index < prefix.length) { if (byte(value,index) != byte(prefix,index)) { return false; } index += 1; }
+    return true;
+}
+fn command_at(commands: View<ext::cli_commands::Command>, index: i32) -> ext::cli_commands::Command {
+    return commands.values[commands.start+index];
+}
+fn ancestor(commands: View<ext::cli_commands::Command>, selected: i32, candidate: i32) -> bool {
+    let current: i32 = selected;
+    while (current >= 0) {
+        if (current == candidate) { return true; }
+        current = command_at(commands,current).parent;
+    }
+    return false;
+}
+fn ordinary(kind: Kind) -> bool { return match (kind) { Kind::Command -> true, Kind::Operand -> true, _ -> false }; }
+fn operand(kind: Kind) -> bool { return match (kind) { Kind::Operand -> true, Kind::OptionValue -> true, _ -> false }; }
+fn long_kind(kind: Kind) -> bool { return match (kind) { Kind::LongOption -> true, _ -> false }; }
+fn short_kind(kind: Kind) -> bool { return match (kind) { Kind::ShortOption -> true, _ -> false }; }
+fn command_kind(kind: Kind) -> bool { return match (kind) { Kind::Command -> true, _ -> false }; }
+fn scan_nul(value: View<u8>) -> i32 {
+    let index: i32 = 0;
+    while (index < value.length) { if (byte(value,index) == 0) { return index; } index += 1; }
+    return -1;
+}
+
+// Only complete words and bytes through the cursor are inspected. Logical
+// descriptors must be valid; physical backing and disjoint scratch are caller
+// preconditions, as for the canonical command parser.
+pub fn context(arguments: View<View<u8>>, at: ext::cli::Location,
+    commands: View<ext::cli_commands::Command>, scratch: View<ext::cli::Spec>) -> Result<Context,Error> {
+    if (!valid(arguments) || at.argument < 0 || at.argument > arguments.length || at.byte < 0) { return Err(Error::Bounds); }
+    let active: Option<View<u8>> = None();
+    if (at.argument == arguments.length) {
+        if (at.byte != 0) { return Err(Error::Bounds); }
+    } else {
+        let value: View<u8> = arguments.values[arguments.start+at.argument];
+        if (!valid(value) || at.byte > value.length) { return Err(Error::Bounds); }
+        active = Some(value);
+    }
+    let completed: View<View<u8>> = View<View<u8>> { values: arguments.values, start: arguments.start, length: at.argument };
+    let admitted: Result<ext::cli_commands::Parser,ext::cli_commands::Error> = ext::cli_commands::prefix_parser(completed,commands,scratch);
+    if (admitted.is_err()) { return Err(Error::Commands(admitted.unwrap_err())); }
+    let parser: ext::cli_commands::Parser = admitted.unwrap();
+    let index: i32 = 0;
+    while (index < completed.length) {
+        let value: View<u8> = completed.values[completed.start+index];
+        let nul: i32 = scan_nul(value);
+        if (nul >= 0) { return Err(Error::Nul(ext::cli::Location { argument: index, byte: nul })); }
+        index += 1;
+    }
+    // Empty endpoint storage is borrowed from the admitted nonempty root name.
+    let prefix: View<u8> = part(command_at(commands,0).name,0,0); let inside: bool = false;
+    if (active.is_some()) {
+        let value: View<u8> = active.unwrap(); prefix = part(value,0,at.byte); inside = at.byte < value.length;
+        let nul: i32 = scan_nul(prefix);
+        if (nul >= 0) { return Err(Error::Nul(ext::cli::Location { argument: at.argument, byte: nul })); }
+    }
+    while (true) {
+        let next: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = parser.next();
+        if (next.is_err()) { return Err(Error::Commands(next.unwrap_err())); }
+        if (next.unwrap().is_none()) { break; }
+    }
+    let classified: Result<ext::cli_commands::Prefix,ext::cli_commands::Error> = parser.classify_prefix(prefix);
+    if (classified.is_err()) { return Err(Error::Commands(classified.unwrap_err())); }
+    let scoped: ext::cli_commands::Prefix = classified.unwrap(); let item: ext::cli::Prefix = scoped.prefix;
+    let kind: Kind = match (item.kind) {
+        ext::cli::PrefixKind::LongOption -> Kind::LongOption,
+        ext::cli::PrefixKind::ShortOption -> Kind::ShortOption,
+        ext::cli::PrefixKind::Value -> Kind::OptionValue,
+        _ -> Kind::Operand
+    };
+    if (ordinary(kind) && parser.selecting_command() && !parser.options_ended()) { kind = Kind::Command; }
+    let identity: Option<OptionIdentity> = None();
+    let value_kind: bool = match (kind) { Kind::OptionValue -> true, _ -> false };
+    if (value_kind) { let spec: ext::cli::Spec = item.option.unwrap(); identity = Some(OptionIdentity { command: scoped.command, option: spec.id }); }
+    let selected: i32 = 0;
+    while (command_at(commands,selected).id != parser.current()) { selected += 1; }
+    return Ok(Context {
+        commands: commands, selected: selected, operands: parser.operand_index(), category: kind,
+        active_prefix: item.prefix, active_stem: item.stem,
+        range: Replacement { at: ext::cli::Location { argument: at.argument, byte: 0 }, length: at.byte },
+        identity: identity, cluster: item.option, options: !parser.options_ended(), inside: inside
+    });
+}
+
+pub impl Context {
+    pub fn borrow(&self) -> &Context { return self; }
+    pub fn command(&self) -> i32 { return command_at(self.commands,self.selected).id; }
+    pub fn operand_index(&self) -> i32 { return self.operands; }
+    pub fn kind(&self) -> Kind { return self.category; }
+    pub fn prefix(&self) -> View<u8> { return self.active_prefix; }
+    pub fn stem(&self) -> View<u8> { return self.active_stem; }
+    pub fn replacement(&self) -> Replacement { return self.range; }
+    pub fn option(&self) -> Option<OptionIdentity> { return self.identity; }
+    // All policy values are admitted before returning an iterator. Values are
+    // relevant only for operands/option values; schema names need no provider.
+    pub fn suggestions(&self, values: View<Value>) -> Result<Suggestions,Error> {
+        if (!valid(values)) { return Err(Error::Bounds); }
+        let index: i32 = 0;
+        while (index < values.length) {
+            let value: Value = values.values[values.start+index];
+            if (!valid(value.bytes)) { return Err(Error::Bounds); }
+            let nul: i32 = scan_nul(value.bytes);
+            if (nul >= 0) { return Err(Error::ValueNul(index,nul)); }
+            index += 1;
+        }
+        let copy: Context = Context {
+            commands: self.commands, selected: self.selected, operands: self.operands,
+            category: self.category, active_prefix: self.active_prefix, active_stem: self.active_stem,
+            range: self.range, identity: self.identity, cluster: self.cluster,
+            options: self.options, inside: self.inside
+        };
+        return Ok(Suggestions { context: copy, values: values, position: 0, done: false });
+    }
+}
+
+fn literal(head: View<u8>, tail: View<u8>, command: i32, option: i32, kind: Kind, space: bool) -> Candidate {
+    return Candidate { head: head, tail: tail, dashes: 0, short: 0, equals: false,
+        command: command, option: option, kind: kind, append_space: space };
+}
+fn short_candidate(context: Context, declaration: ext::cli::Spec, owner: i32) -> Candidate {
+    let dashes: i32 = 0;
+    if (ordinary(context.category)) { dashes = 1; }
+    let flag: bool = match (declaration.arity) { ext::cli::Arity::Flag -> true, _ -> false };
+    return Candidate { head: context.active_stem, tail: part(context.active_prefix,0,0), dashes: dashes,
+        short: declaration.short, equals: false, command: owner, option: declaration.id,
+        kind: Kind::ShortOption, append_space: flag };
+}
+fn long_candidate(context: Context, declaration: ext::cli::Spec, owner: i32) -> Candidate {
+    let dashes: i32 = 0;
+    if (ordinary(context.category)) { dashes = 2; }
+    if (short_kind(context.category)) { dashes = 1; }
+    let flag: bool = match (declaration.arity) { ext::cli::Arity::Flag -> true, _ -> false };
+    return Candidate { head: context.active_stem, tail: declaration.long, dashes: dashes,
+        short: 0, equals: !flag, command: owner, option: declaration.id,
+        kind: Kind::LongOption, append_space: flag };
+}
+
+// Select by ordinal over immutable declarations. Position is committed only
+// after output admission/write, making all output failures retryable and atomic.
+// Counts fit u64: at most 2*(2^31-1)^2 option aliases plus command/value views.
+fn candidate_at(context: Context, values: View<Value>, wanted: u64) -> Option<Candidate> {
+    let position: u64 = 0; let empty: View<u8> = part(context.active_prefix,0,0);
+    if (short_kind(context.category) && context.cluster.is_some()) {
+        let spec: ext::cli::Spec = context.cluster.unwrap();
+        if (wanted == position) {
+            let owner: i32 = 0;
+            while (owner <= context.selected) {
+                if (ancestor(context.commands,context.selected,owner)) {
+                    let command: ext::cli_commands::Command = command_at(context.commands,owner);
+                    let option: i32 = 0;
+                    while (option < command.options.length) {
+                        let declaration: ext::cli_commands::OptionSpec = command.options.values[command.options.start+option];
+                        if ((owner == context.selected || declaration.global) && declaration.spec.id == spec.id) {
+                            return Some(literal(context.active_stem,empty,command.id,spec.id,Kind::ShortOption,true));
+                        }
+                        option += 1;
+                    }
+                }
+                owner += 1;
+            }
+        }
+        position += 1;
+    }
+    if (command_kind(context.category)) {
+        let index: i32 = context.selected+1;
+        while (index < context.commands.length) {
+            let command: ext::cli_commands::Command = command_at(context.commands,index);
+            if (command.parent == context.selected && starts(command.name,context.active_prefix)) {
+                if (wanted == position) { return Some(literal(context.active_stem,command.name,command.id,-1,Kind::Command,true)); }
+                position += 1;
+            }
+            index += 1;
+        }
+    }
+    let names: bool = long_kind(context.category) || short_kind(context.category) ||
+        (ordinary(context.category) && context.active_prefix.length == 0 && context.options);
+    if (names) {
+        let shorts: bool = !long_kind(context.category);
+        let longs: bool = !short_kind(context.category) ||
+            (context.active_stem.length == 1 && context.active_prefix.length == 0 && context.cluster.is_none());
+        let owner: i32 = 0;
+        while (owner <= context.selected) {
+            if (ancestor(context.commands,context.selected,owner)) {
+                let command: ext::cli_commands::Command = command_at(context.commands,owner);
+                let option: i32 = 0;
+                while (option < command.options.length) {
+                    let declaration: ext::cli_commands::OptionSpec = command.options.values[command.options.start+option];
+                    if (owner == context.selected || declaration.global) {
+                        let spec: ext::cli::Spec = declaration.spec;
+                        let short_match: bool = context.active_prefix.length == 0;
+                        if (context.active_prefix.length == 1) { short_match = byte(context.active_prefix,0) == spec.short; }
+                        if (shorts && spec.short != 0 && short_match) {
+                            if (wanted == position) { return Some(short_candidate(context,spec,command.id)); }
+                            position += 1;
+                        }
+                        if (longs && spec.long.length != 0 && starts(spec.long,context.active_prefix)) {
+                            if (wanted == position) { return Some(long_candidate(context,spec,command.id)); }
+                            position += 1;
+                        }
+                    }
+                    option += 1;
+                }
+            }
+            owner += 1;
+        }
+    }
+    if (operand(context.category)) {
+        let owner: i32 = command_at(context.commands,context.selected).id; let option: i32 = -1;
+        if (context.identity.is_some()) { let identity: OptionIdentity = context.identity.unwrap(); owner = identity.command; option = identity.option; }
+        let index: i32 = 0;
+        while (index < values.length) {
+            let value: Value = values.values[values.start+index];
+            if (starts(value.bytes,context.active_prefix)) {
+                if (wanted == position) { return Some(literal(context.active_stem,value.bytes,owner,option,context.category,value.append_space)); }
+                position += 1;
+            }
+            index += 1;
+        }
+    }
+    return None();
+}
+fn required(candidate: Candidate) -> u64 {
+    let size: u64 = candidate.head.length as u64 + candidate.tail.length as u64 + candidate.dashes as u64;
+    if (candidate.short != 0) { size += 1; }
+    if (candidate.equals) { size += 1; }
+    return size;
+}
+fn write_candidate(candidate: Candidate, output: View<u8>) -> i32 {
+    let position: i32 = 0; let index: i32 = 0;
+    while (index < candidate.head.length) { output.values[output.start+position] = byte(candidate.head,index); position += 1; index += 1; }
+    index = 0;
+    while (index < candidate.dashes) { output.values[output.start+position] = 45; position += 1; index += 1; }
+    if (candidate.short != 0) { output.values[output.start+position] = candidate.short; position += 1; }
+    index = 0;
+    while (index < candidate.tail.length) { output.values[output.start+position] = byte(candidate.tail,index); position += 1; index += 1; }
+    if (candidate.equals) { output.values[output.start+position] = 61; position += 1; }
+    return position;
+}
+pub impl Suggestions {
+    pub fn borrow(&self) -> &Suggestions { return self; }
+    pub fn next(&self, output: View<u8>) -> Result<Option<Suggestion>,Error> {
+        if (!valid(output)) { return Err(Error::Bounds); }
+        if (self.done) { return Ok(None()); }
+        let next: Option<Candidate> = candidate_at(self.context,self.values,self.position);
+        if (next.is_none()) { self.done = true; return Ok(None()); }
+        let candidate: Candidate = next.unwrap(); let size: u64 = required(candidate);
+        if (size > output.length as u64) { return Err(Error::OutputTooSmall(size)); }
+        let written: i32 = write_candidate(candidate,output);
+        self.position += 1;
+        return Ok(Some(Suggestion { bytes: written, command: candidate.command, option: candidate.option,
+            kind: candidate.kind, append_space: candidate.append_space && !self.context.inside,
+            replacement: self.context.range }));
+    }
+}

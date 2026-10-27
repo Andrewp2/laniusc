@@ -1,0 +1,54 @@
+// Binary host-oracle fixture; every observed namespace comes from real Plan.
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+import ext::archive_plan;
+import std::stream;
+fn number() -> u64 {
+    let bytes:[u8;8]=[0;8]; let input=std::stream::stdin(); core::io::read_exact(input.borrow(),bytes,0,8).unwrap();
+    let value:u64=0;let at:i32=0;while(at<8) { value|=(bytes[at] as u64)<<(at*8);at+=1; }return value;
+}
+fn word(value:u64) {
+    let bytes:[u8;8]=[0;8];let at:i32=0;while(at<8) { bytes[at]=((value>>(at*8))&255) as u8;at+=1; }
+    let output=std::stream::stdout();core::io::write_all(output.borrow(),bytes,0,8).unwrap();
+}
+fn raw(bytes:core::slice::View<u8>) { let output=std::stream::stdout();core::io::write_all(output.borrow(),bytes.values,bytes.start,bytes.length).unwrap(); }
+fn kind(value:ext::archive_plan::ErrorKind) -> u64 {
+    return match(value) { ext::archive_plan::ErrorKind::Bounds->1,ext::archive_plan::ErrorKind::Limits->2,
+        ext::archive_plan::ErrorKind::Path->3,ext::archive_plan::ErrorKind::Component->4,
+        ext::archive_plan::ErrorKind::Depth->5,ext::archive_plan::ErrorKind::Entries->6,
+        ext::archive_plan::ErrorKind::Nodes->7,ext::archive_plan::ErrorKind::Paths->8,
+        ext::archive_plan::ErrorKind::Work->9,ext::archive_plan::ErrorKind::Duplicate->10,
+        ext::archive_plan::ErrorKind::Conflict->11,ext::archive_plan::ErrorKind::Allocation->12,
+        ext::archive_plan::ErrorKind::InvalidState->13 };
+}
+fn row(plan:&ext::archive_plan::Plan,result:core::result::Result<i32,ext::archive_plan::Error>) {
+    if(result.is_ok()) { word(0);word(18446744073709551615);word(18446744073709551615);word(result.unwrap() as u64); }
+    else { let error=result.unwrap_err();word(kind(error.kind));word((error.ordinal as i64) as u64);word((error.offset as i64) as u64);word(18446744073709551615); }
+    word(plan.node_count() as u64);word(plan.entry_count() as u64);word(plan.work_used());
+}
+fn run() {
+    let entries=number() as i32;let nodes=number() as i32;let paths=number() as i32;
+    let components=number() as i32;let depth=number() as i32;let stored=number() as i32;let work=number();
+    let limits=ext::archive_plan::Limits { max_entries:entries,max_nodes:nodes,max_path_bytes:paths,
+        max_component_bytes:components,max_depth:depth,max_stored_path_bytes:stored,max_work:work };
+    let plan=ext::archive_plan::new(limits).unwrap();let count=number();assert(count<=256);let step:u64=0;
+    let backing:[u8;4096]=[0;4096];let input=std::stream::stdin();
+    while(step<count) {
+        let selected=number();let ordinal=number() as i32;let length=number() as i32;assert(length>=0 && length<=4096);
+        core::io::read_exact(input.borrow(),backing,0,length).unwrap();let mode=ext::archive_plan::Kind::File;
+        if(selected==1) { mode=ext::archive_plan::Kind::Directory; }
+        row(plan.borrow(),plan.add(core::slice::view(backing,length).unwrap(),mode,ordinal));step+=1;
+    }
+    row(plan.borrow(),plan.seal());word(plan.node_count() as u64);let index:i32=0;
+    while(index<plan.node_count()) {
+        let node=plan.node(index).unwrap();word((node.parent as i64) as u64);let selected:u64=0;
+        if(match(node.kind) { ext::archive_plan::Kind::Directory->true,_ ->false }) { selected=1; }
+        word(selected);word(node.explicit as u64);word((node.ordinal as i64) as u64);word(node.path_start as u64);word(node.path_length as u64);
+        word(node.component_start as u64);word(node.component_length as u64);word(node.depth as u64);raw(plan.path(index).unwrap());raw(plan.component(index).unwrap());index+=1;
+    }
+    word(plan.entry_count() as u64);index=0;while(index<plan.entry_count()) { word(plan.entry(index).unwrap() as u64);index+=1; }
+    word(plan.is_sealed() as u64);word(plan.reserved_bytes());plan.destroy();assert(plan.reserved_bytes()==0);
+}
+fn main() -> i32 { let cases=number();assert(cases<=256);let at:u64=0;while(at<cases) { run();at+=1; }return 0; }

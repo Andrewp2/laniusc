@@ -1,0 +1,130 @@
+// Real connector only. 8 little-endian u64 request words then URL bytes:
+// deadline_case,family,max_results,max_attempts,socket_calls,seconds,nanos,len.
+// Three 40-word reports: before connect, after connect, after cleanup. ACK '+'
+// after each; the second ACK also supplies a u64 test-only skipped-close fd.
+module app::main;
+import core::io;
+import core::mem;
+import core::net;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::slice::View;
+import core::time;
+import ext::http_url;
+import ext::url_connect;
+import std::clock;
+import std::linux;
+import std::resolve;
+import std::stream;
+
+fn word(bytes:[u8],at:i32) -> u64 {
+    let value:u64=0; let i:i32=0; while(i<8) { value|=(bytes[at+i] as u64)<<(i*8); i+=1; } return value;
+}
+fn mark(value:u8) { let bytes:[u8;1]=[value]; let out=std::stream::stderr(); core::io::write_all(out.borrow(),bytes,0,1).unwrap(); }
+fn ack() { let bytes:[u8;1]=[0]; let input=std::stream::stdin(); core::io::read_exact(input.borrow(),bytes,0,1).unwrap(); assert(bytes[0]==43); }
+fn emit(words:[u64]) {
+    let bytes:[u8;320]=[0;320]; let at:i32=0;
+    while(at<40) { let part:i32=0; while(part<8) { bytes[at*8+part]=(words[at]>>(part*8)) as u8; part+=1; } at+=1; }
+    let out=std::stream::stdout(); core::io::write_all(out.borrow(),bytes,0,320).unwrap();
+}
+fn io(error:core::io::Error) -> u64 {
+    return match(error) { core::io::Error::Host(code)->code as u64,core::io::Error::Interrupted->4,
+        core::io::Error::WouldBlock->11,core::io::Error::InvalidInput->900,core::io::Error::InvalidCount->901,_ ->902 };
+}
+fn stage(value:ext::url_connect::Stage) -> u64 {
+    return match(value) { ext::url_connect::Stage::Validate->1,ext::url_connect::Stage::Resolve->2,
+        ext::url_connect::Stage::Open->3,ext::url_connect::Stage::Connect->4,ext::url_connect::Stage::Poll->5,
+        ext::url_connect::Stage::Verify->6,ext::url_connect::Stage::Close->7 };
+}
+fn clock(error:std::clock::Error) -> u64 {
+    return match(error) { std::clock::Error::Host(code)->1000+code as u64,std::clock::Error::InvalidTimestamp->1,
+        std::clock::Error::InvalidStatus->2,std::clock::Error::InvalidDuration->3,std::clock::Error::Overflow->4,std::clock::Error::ClockReversed->5 };
+}
+fn time(error:core::time::Error) -> u64 {
+    return match(error) { core::time::Error::Overflow->1,core::time::Error::Negative->2,
+        core::time::Error::DivisionByZero->3,core::time::Error::InvalidNanoseconds->4 };
+}
+fn resolve(output:[u64],error:std::resolve::Error) -> u64 {
+    output[29]=match(error.phase) { std::resolve::Phase::Input->1,std::resolve::Phase::Host->2,
+        std::resolve::Phase::Service->3,std::resolve::Phase::Lookup->4,std::resolve::Phase::Results->5 };
+    output[30]=match(error.cause) { std::resolve::Cause::Bounds->1,std::resolve::Cause::InvalidLimits->2,
+        std::resolve::Cause::InvalidOptions->3,std::resolve::Cause::Empty->4,std::resolve::Cause::Nul->5,
+        std::resolve::Cause::NonAscii->6,std::resolve::Cause::InvalidHost->7,std::resolve::Cause::InvalidService->8,
+        std::resolve::Cause::MissingInput->9,std::resolve::Cause::AllocationFailed->10,std::resolve::Cause::Native->11,
+        std::resolve::Cause::ResultLimit->12,std::resolve::Cause::UnsupportedResult->13,std::resolve::Cause::InvalidResult->14 };
+    output[31]=(error.code as i64) as u64; output[32]=(error.system as i64) as u64; return 300;
+}
+fn cause(output:[u64],value:ext::url_connect::Cause) -> u64 {
+    return match(value) { ext::url_connect::Cause::InvalidState->1,ext::url_connect::Cause::InvalidOptions->2,
+        ext::url_connect::Cause::NoAddresses->3,ext::url_connect::Cause::Exhausted->4,
+        ext::url_connect::Cause::AttemptLimit->5,ext::url_connect::Cause::CallLimit->6,ext::url_connect::Cause::Timeout->7,
+        ext::url_connect::Cause::Clock(error)->100+clock(error),ext::url_connect::Cause::Time(error)->200+time(error),
+        ext::url_connect::Cause::Resolve(error)->resolve(output,error),ext::url_connect::Cause::Io(error)->1000+io(error) };
+}
+fn endpoint(output:[u64],at:i32,value:core::net::SocketAddr) {
+    output[at]=value.address().version() as u64; output[at+1]=value.port() as u64; output[at+4]=value.scope_id() as u64;
+    match(value.address()) {
+        core::net::IpAddr::V4(address)->{ output[at+2]=address.to_bits() as u64; },
+        core::net::IpAddr::V6(address)->{ output[at+2]=address.high; output[at+3]=address.low; }
+    }
+}
+fn stats(output:[u64],value:ext::url_connect::Stats) {
+    output[6]=value.resolver_calls; output[7]=value.addresses as u64; output[8]=value.attempts as u64;
+    output[9]=value.socket_calls; output[10]=value.polls;
+}
+fn last(output:[u64],value:Option<ext::url_connect::AttemptFailure>) {
+    if(value.is_none()) { return; } let error=value.unwrap(); output[18]=1;
+    output[19]=error.index as u64; output[20]=stage(error.stage); output[21]=io(error.cause); output[22]=error.timed_out as u64;
+    endpoint(output,23,error.endpoint);
+}
+fn failure(output:[u64],value:ext::url_connect::Failure) {
+    output[4]=stage(value.stage); output[5]=cause(output,value.cause); stats(output,value.stats);
+    output[11]=(value.index as i64) as u64;
+    if(value.endpoint.is_some()) { output[12]=1; endpoint(output,13,value.endpoint.unwrap()); }
+    last(output,value.last_attempt); if(value.cleanup.is_some()) { output[28]=io(value.cleanup.unwrap()); }
+}
+fn repair(fd:u64) {
+    assert(fd<2147483648); mark(81);
+    let args:[std::linux::Argument;1]=[std::linux::Argument::Word(fd as i64)];
+    assert(std::linux::call(3,View { values:args,start:0,length:1 }).unwrap()==0); mark(113);
+}
+fn main() -> i32 {
+    let input=std::stream::stdin(); let request:[u8;64]=[0;64]; core::io::read_exact(input.borrow(),request,0,64).unwrap();
+    let selected=word(request,0); let family=word(request,8); let length=word(request,56) as i32;
+    assert(selected<=3 && family<=2 && length>=0 && length<=16384);
+    let bytes:[u8;16386]=[90;16386]; core::io::read_exact(input.borrow(),bytes,1,length).unwrap();
+    mark(85); let url=ext::http_url::parse(View { values:bytes,start:1,length:length },ext::http_url::default_limits()).unwrap();
+    let options=ext::url_connect::default_options();
+    if(family==1) { options.family=std::resolve::Family::Ipv4; } if(family==2) { options.family=std::resolve::Family::Ipv6; }
+    options.max_results=word(request,16) as i32; options.max_attempts=word(request,24) as i32;
+    options.socket_calls=word(request,32); options.attempt_timeout=core::time::Duration { seconds:word(request,40),nanos:word(request,48) as u32 };
+    let at=core::time::instant(core::time::zero());
+    if(selected==0 || selected==3) { at=std::clock::monotonic_now().unwrap().checked_add(core::time::from_secs(4)).unwrap(); }
+    if(selected==2) { at.ticks.nanos=1000000000; }
+    if(selected==3) { options.attempt_timeout=core::time::Duration { seconds:18446744073709551615,nanos:0 }; }
+    let deadline=core::time::deadline_at(at); mark(117);
+    let words:[u64;40]=[0;40]; words[0]=1431456845; words[11]=18446744073709551615; words[33]=18446744073709551615;
+    let args:[std::linux::Argument;1]=[std::linux::Argument::Word(0)];
+    words[2]=std::linux::call(39,View { values:args,start:0,length:0 }).unwrap() as u64;
+    emit(words); ack();
+    mark(67); let result=ext::url_connect::connect_until(url.borrow(),options,deadline); mark(99);
+    let retained:Option<ext::url_connect::Connection> =None();
+    if(result.is_err()) { failure(words,result.unwrap_err()); }
+    else {
+        let connection=result.unwrap(); retained=Some(connection); words[3]=1;
+        let info=connection.info(); stats(words,info.stats); words[11]=info.index as u64; words[12]=1;
+        endpoint(words,13,info.endpoint); last(words,info.last_attempt); words[33]=connection.socket().raw_handle().unwrap() as u64;
+    }
+    words[1]=1; emit(words); ack();
+    let repair_word:[u8;8]=[0;8]; core::io::read_exact(input.borrow(),repair_word,0,8).unwrap(); let repair_fd=word(repair_word,0);
+    if(repair_fd!=18446744073709551615) { assert(words[28]!=0 && retained.is_none()); repair(repair_fd); }
+    words[38]=repair_fd;
+    mark(68);
+    if(retained.is_some()) {
+        let connection=retained.unwrap(); words[34]=connection.close().unwrap() as u64; words[35]=connection.close().unwrap() as u64;
+        assert(words[34]==1 && words[35]==0); retained=None(); words[33]=18446744073709551615;
+    }
+    words[36]=url.destroy() as u64; words[37]=url.destroy() as u64; assert(words[36]==1 && words[37]==0); mark(100);
+    words[1]=2; emit(words); ack(); return 0;
+}

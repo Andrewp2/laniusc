@@ -1,0 +1,22 @@
+// Diagnostic-only unaccepted compiler reproduction; not a passing test gate.
+module app::main;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+
+struct Payload { first:i32, last:i32 }
+
+fn flatten<T>(value: Option<Option<T>>) -> Option<T> {
+    return value?;
+}
+
+fn main() -> i32 {
+    let present: Option<Option<Payload>> = Some(Some(Payload { first:-2147483648,last:2147483647 }));
+    let hollow: Option<Option<Payload>> = Some(None());
+    let absent: Option<Option<Payload>> = None();
+    let value = flatten(present).unwrap();
+    if (value.first != -2147483648 || value.last != 2147483647) { return 1; }
+    if (flatten(hollow).is_some()) { return 2; }
+    if (flatten(absent).is_some()) { return 3; }
+    return 0;
+}

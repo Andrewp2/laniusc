@@ -1,0 +1,383 @@
+module app::main;
+import core::mem;
+import core::io;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::stream;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_help;
+
+fn lit(value: str, count: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count), start: 0, length: count };
+}
+fn spec(id: i32, name: View<u8>, short: u8, arity: ext::cli::Arity) -> ext::cli::Spec {
+    return ext::cli::Spec { id: id, long: name, short: short, arity: arity };
+}
+fn declaration(item: ext::cli::Spec, global: bool, label: View<u8>, help: View<u8>) -> ext::cli_commands::OptionSpec {
+    return ext::cli_commands::OptionSpec { spec: item, global: global, value_name: label, help: help };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; }
+    return true;
+}
+
+fn check(condition: bool, code: u64) {
+    if (!condition) {
+        let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+        while (index < 8) { bytes[index] = ((code >> (index*8)) & 255) as u8; index += 1; }
+        let output: std::stream::Descriptor = std::stream::stderr();
+        core::io::write_all(output.borrow(),bytes,0,8); assert(false);
+    }
+}
+fn code(error: ext::cli_commands::Error) -> i32 {
+    return match (error) {
+        ext::cli_commands::Error::Bounds -> 1,
+        ext::cli_commands::Error::EmptySchema -> 2,
+        ext::cli_commands::Error::InvalidCommand(node) -> 100+node,
+        ext::cli_commands::Error::DuplicateCommand(node) -> 200+node,
+        ext::cli_commands::Error::InvalidOption(node,option) -> 300+10*node+option,
+        ext::cli_commands::Error::DuplicateOption(node,option) -> 400+10*node+option,
+        ext::cli_commands::Error::ScratchTooSmall(count) -> 500+count as i32,
+        ext::cli_commands::Error::UnknownCommandId(id) -> 600+id,
+        ext::cli_commands::Error::OutputTooSmall(count) -> 1000+count as i32,
+        _ -> 99
+    };
+}
+fn arity(value: ext::cli::Arity) -> i32 {
+    return match (value) { ext::cli::Arity::Flag -> 0, ext::cli::Arity::Required -> 1, ext::cli::Arity::Optional -> 2 };
+}
+fn same_spec(left: ext::cli::Spec, right: ext::cli::Spec) -> bool {
+    return left.id == right.id && left.short == right.short && arity(left.arity) == arity(right.arity) && equal(left.long,right.long);
+}
+fn untouched(storage: [ext::cli::Spec], sentinel: ext::cli::Spec) {
+    let index: i32 = 0; while (index < 7) { check(same_spec(storage[index],sentinel),10+index as u64); index += 1; }
+}
+fn bytes_untouched(storage: [u8], start: i32, end: i32) {
+    let index: i32 = start; while (index < end) { check(storage[index] == 90,20+index as u64); index += 1; }
+}
+// Every invalid schema is also tested through parser and both help entrances.
+// No constructor may mutate scratch or output even for a late descendant error.
+fn reject(commands: View<ext::cli_commands::Command>, args: View<View<u8>>, scratch: View<ext::cli::Spec>, storage: [ext::cli::Spec], sentinel: ext::cli::Spec, expected: i32) {
+    let validation: Result<u64,ext::cli_commands::Error> = ext::cli_commands::validate(commands);
+    check(validation.is_err(),1000); check(code(validation.unwrap_err()) == expected,1001);
+    let parsed: Result<ext::cli_commands::Parser,ext::cli_commands::Error> = ext::cli_commands::parser(args,commands,scratch);
+    check(parsed.is_err(),1002); check(code(parsed.unwrap_err()) == expected,1003); untouched(storage,sentinel);
+    let length: Result<u64,ext::cli_commands::Error> = ext::cli_help::help_len(commands,999);
+    check(length.is_err(),1004); check(code(length.unwrap_err()) == expected,1005);
+    let output: [u8;320] = [90;320];
+    let written: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,999,core::slice::view_range(output,1,318).unwrap());
+    check(written.is_err(),1006); check(code(written.unwrap_err()) == expected,1007); bytes_untouched(output,0,320);
+}
+fn parser_rejected(commands: View<ext::cli_commands::Command>, args: View<View<u8>>, scratch: View<ext::cli::Spec>, storage: [ext::cli::Spec], sentinel: ext::cli::Spec, expected: i32) {
+    let parsed: Result<ext::cli_commands::Parser,ext::cli_commands::Error> = ext::cli_commands::parser(args,commands,scratch);
+    check(parsed.is_err(),1100); check(code(parsed.unwrap_err()) == expected,1101); untouched(storage,sentinel);
+}
+fn help_case(commands: View<ext::cli_commands::Command>, id: i32, golden: View<u8>) {
+    let count: i32 = golden.length;
+    check(ext::cli_help::help_len(commands,id).unwrap() == count as u64,1200+id as u64);
+    let output: [u8;320] = [90;320];
+    let zero: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,id,core::slice::view_range(output,1,0).unwrap());
+    check(zero.is_err() && code(zero.unwrap_err()) == 1000+count,1201); bytes_untouched(output,0,320);
+    let short: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,id,core::slice::view_range(output,1,count-1).unwrap());
+    check(short.is_err() && code(short.unwrap_err()) == 1000+count,1202); bytes_untouched(output,0,320);
+    let exact: View<u8> = core::slice::view_range(output,1,count).unwrap();
+    check(ext::cli_help::help_into(commands,id,exact).unwrap() == count && equal(exact,golden),1203);
+    bytes_untouched(output,0,1); bytes_untouched(output,1+count,320);
+    // Re-render into a larger view: exact same prefix, no NUL and no tail write.
+    check(ext::cli_help::help_into(commands,id,core::slice::view_range(output,1,318).unwrap()).unwrap() == count,1204);
+    check(equal(exact,golden),1205); bytes_untouched(output,1+count,320);
+    let invalid: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,999,exact);
+    check(invalid.is_err() && code(invalid.unwrap_err()) == 1599,1206); check(equal(exact,golden),1207); bytes_untouched(output,1+count,320);
+    let negative: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,id,View<u8> { values: output, start: -1, length: count });
+    check(negative.is_err() && code(negative.unwrap_err()) == 1,1208);
+    let negative_count: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,id,View<u8> { values: output, start: 0, length: -1 });
+    check(negative_count.is_err() && code(negative_count.unwrap_err()) == 1,1209);
+    let overflow: Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,id,View<u8> { values: output, start: 2147483647, length: 1 });
+    check(overflow.is_err() && code(overflow.unwrap_err()) == 1,1210); check(equal(exact,golden),1211);
+    bytes_untouched(output,0,1); bytes_untouched(output,1+count,320);
+}
+fn event(parser: &ext::cli_commands::Parser) -> ext::cli_commands::Event {
+    let result: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = parser.next();
+    let item: Option<ext::cli_commands::Event> = result.unwrap(); return item.unwrap();
+}
+fn selected(value: ext::cli_commands::Event) -> Option<ext::cli_commands::Selection> {
+    return match (value) { ext::cli_commands::Event::Command(item) -> Some(item), _ -> None() };
+}
+
+fn main() -> i32 {
+    let profile: u64 = 0;
+    let empty: View<u8> = lit("",0);
+    let raw_help: [u8;5] = [100,101,115,116,255];
+    let root_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(10,lit("verbose",7),118,ext::cli::Arity::Flag),true,empty,lit("chatty",6)),
+        declaration(spec(20,lit("config",6),67,ext::cli::Arity::Required),true,lit("FILE",4),lit("cfg",3)),
+        declaration(spec(30,lit("root-only",9),120,ext::cli::Arity::Flag),false,empty,lit("root",4))
+    ];
+    let work_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(40,lit("quiet",5),113,ext::cli::Arity::Flag),true,empty,empty),
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(50,lit("output",6),111,ext::cli::Arity::Required),false,lit("OUT",3),core::slice::view(raw_help,5).unwrap())
+    ];
+    let run_options: [ext::cli_commands::OptionSpec;2] = [
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(60,lit("force",5),102,ext::cli::Arity::Flag),false,empty,empty)
+    ];
+    let list_options: [ext::cli_commands::OptionSpec;1] = [declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Required),false,lit("ITEM",4),lit("list",4))];
+    let root_order: ext::cli::Ordering = ext::cli::Ordering::OptionsFirst;
+    let leaf_order: ext::cli::Ordering = ext::cli::Ordering::Intermixed;
+    if (profile == 1) { root_order = ext::cli::Ordering::Intermixed; leaf_order = ext::cli::Ordering::OptionsFirst; }
+    let root: ext::cli_commands::Command = ext::cli_commands::Command { id: 40, parent: -1, name: lit("tool",4), summary: lit("Root",4), operands: lit("ROOT",4), ordering: root_order, options: core::slice::view(root_options,3).unwrap() };
+    // Physical node start1; parent fields are indices relative to this view.
+    let nodes: [ext::cli_commands::Command;6] = [root,root,
+        ext::cli_commands::Command { id: 17, parent: 0, name: lit("work",4), summary: lit("Work",4), operands: lit("ITEM",4), ordering: root_order, options: core::slice::view(work_options,3).unwrap() },
+        ext::cli_commands::Command { id: 91, parent: 1, name: lit("run",3), summary: lit("Run",3), operands: lit("PATH",4), ordering: leaf_order, options: core::slice::view(run_options,2).unwrap() },
+        ext::cli_commands::Command { id: 6, parent: 0, name: lit("list",4), summary: lit("List",4), operands: lit("ITEM",4), ordering: leaf_order, options: core::slice::view(list_options,1).unwrap() },root];
+    let commands: View<ext::cli_commands::Command> = core::slice::view_range(nodes,1,4).unwrap();
+    let sentinel: ext::cli::Spec = spec(901,lit("sentinel",8),115,ext::cli::Arity::Flag);
+    let storage: [ext::cli::Spec;7] = [sentinel;7];
+    let scratch: View<ext::cli::Spec> = core::slice::view_range(storage,1,5).unwrap();
+
+    check(commands.start == 1 && scratch.start == 1,1300);
+    check(ext::cli_commands::validate(commands).unwrap() == 5,1301);
+    let args_storage: [View<u8>;1] = [lit("--unknown",9)];
+    let args: View<View<u8>> = core::slice::view(args_storage,1).unwrap();
+    let no_args: View<View<u8>> = core::slice::view(args_storage,0).unwrap();
+    let root_saved: ext::cli_commands::Command = nodes[1];
+    let work_saved: ext::cli_commands::Command = nodes[2];
+    let run_saved: ext::cli_commands::Command = nodes[3];
+    let list_saved: ext::cli_commands::Command = nodes[4];
+    let force_saved: ext::cli_commands::OptionSpec = run_options[1];
+    let mode_saved: ext::cli_commands::OptionSpec = work_options[1];
+    let root_flag: ext::cli_commands::OptionSpec = root_options[2];
+    // empty schema
+
+    reject(core::slice::view_range(nodes,1,0).unwrap(),args,scratch,storage,sentinel,2);
+
+    // invalid root parent
+    nodes[1].parent = 0;
+    reject(commands,args,scratch,storage,sentinel,100);
+    nodes[1] = root_saved;
+    // negative later parent
+    nodes[3].parent = -1;
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // forward parent
+    nodes[3].parent = 3;
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // self parent
+    nodes[3].parent = 2;
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // negative logical id
+    nodes[3].id = -1;
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // duplicate logical id
+    nodes[4].id = 91;
+    reject(commands,args,scratch,storage,sentinel,203);
+    nodes[4] = list_saved;
+    // duplicate sibling name
+    nodes[4].name = lit("work",4);
+    reject(commands,args,scratch,storage,sentinel,203);
+    nodes[4] = list_saved;
+    // empty command name
+    nodes[3].name = empty;
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // leading dash
+    nodes[3].name = lit("-run",4);
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // leading underscore
+    nodes[3].name = lit("_run",4);
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // control summary
+    nodes[4].summary = lit("bad\n",4);
+    reject(commands,args,scratch,storage,sentinel,103);
+    nodes[4] = list_saved;
+    // control operands
+    nodes[3].operands = lit("bad\t",4);
+    reject(commands,args,scratch,storage,sentinel,102);
+    nodes[3] = run_saved;
+    // late invalid option id
+    run_options[1].spec.id = -1;
+    reject(commands,args,scratch,storage,sentinel,321);
+    run_options[1] = force_saved;
+    // late disabled spellings
+    run_options[1].spec.long = empty; run_options[1].spec.short = 0;
+    reject(commands,args,scratch,storage,sentinel,321);
+    run_options[1] = force_saved;
+    // late invalid short
+    run_options[1].spec.short = 95;
+    reject(commands,args,scratch,storage,sentinel,321);
+    run_options[1] = force_saved;
+    // late invalid long
+    run_options[1].spec.long = lit("f_orce",6);
+    reject(commands,args,scratch,storage,sentinel,321);
+    run_options[1] = force_saved;
+    // flag with value label
+    run_options[1].value_name = lit("BAD",3);
+    reject(commands,args,scratch,storage,sentinel,321);
+    run_options[1] = force_saved;
+    // optional without value label
+    work_options[1].value_name = empty;
+    reject(commands,args,scratch,storage,sentinel,311);
+    work_options[1] = mode_saved;
+    // required without value label
+    work_options[2].value_name = empty;
+    reject(commands,args,scratch,storage,sentinel,312);
+    work_options[2].value_name = lit("OUT",3);
+    // control option help
+    run_options[1].help = lit("bad\r",4);
+    reject(commands,args,scratch,storage,sentinel,321);
+    run_options[1] = force_saved;
+    // inherited id conflict
+    run_options[1].spec.id = 10;
+    reject(commands,args,scratch,storage,sentinel,421);
+    run_options[1] = force_saved;
+    // inherited short conflict
+    run_options[1].spec.short = 118;
+    reject(commands,args,scratch,storage,sentinel,421);
+    run_options[1] = force_saved;
+    // inherited long conflict
+    run_options[1].spec.long = lit("config",6);
+    reject(commands,args,scratch,storage,sentinel,421);
+    run_options[1] = force_saved;
+    // middle ancestor global conflict
+    run_options[1].spec.short = 113;
+    reject(commands,args,scratch,storage,sentinel,421);
+    run_options[1] = force_saved;
+    // current duplicate id
+    run_options[1].spec.id = 30;
+    reject(commands,args,scratch,storage,sentinel,421);
+    run_options[1] = force_saved;
+    // global creates descendant conflict
+    root_options[2].global = true;
+    reject(commands,args,scratch,storage,sentinel,411);
+    root_options[2] = root_flag;
+    // bad nested option view
+    run_options[1].spec.long.start = -1;
+    reject(commands,args,scratch,storage,sentinel,1);
+    run_options[1] = force_saved;
+    // bad nested options count
+    nodes[3].options.length = -1;
+    reject(commands,args,scratch,storage,sentinel,1);
+    nodes[3] = run_saved;
+    // bad metadata arithmetic
+    nodes[3].summary.start = 2147483647; nodes[3].summary.length = 1;
+    reject(commands,args,scratch,storage,sentinel,1);
+    nodes[3] = run_saved;
+
+    // Same command names under different parents are valid; invisible parent
+    // locals and sibling option identities already deliberately repeat.
+    nodes[3].name = lit("work",4); check(ext::cli_commands::validate(commands).unwrap() == 5,1400); nodes[3] = run_saved;
+    // Only public logical bounds are tested; no unbacked physical element is read.
+    let negative_commands: View<ext::cli_commands::Command> = View<ext::cli_commands::Command> { values: nodes, start: -1, length: 4 };
+    reject(negative_commands,args,scratch,storage,sentinel,1);
+    let overflow_commands: View<ext::cli_commands::Command> = View<ext::cli_commands::Command> { values: nodes, start: 2147483647, length: 1 };
+    reject(overflow_commands,args,scratch,storage,sentinel,1);
+    parser_rejected(commands,args,core::slice::view_range(storage,1,4).unwrap(),storage,sentinel,505);
+    parser_rejected(commands,no_args,core::slice::view_range(storage,1,3).unwrap(),storage,sentinel,505);
+    let negative_scratch: View<ext::cli::Spec> = View<ext::cli::Spec> { values: storage, start: -1, length: 5 };
+    parser_rejected(commands,no_args,negative_scratch,storage,sentinel,1);
+    let negative_args: View<View<u8>> = View<View<u8>> { values: args_storage, start: 0, length: -1 };
+    parser_rejected(commands,negative_args,scratch,storage,sentinel,1);
+    args_storage[0] = View<u8> { values: raw_help, start: -1, length: 1 };
+    parser_rejected(commands,args,scratch,storage,sentinel,1);
+    // Schema admission precedes even the malformed token descriptor above.
+    run_options[1].spec.id = -1;
+    reject(commands,args,scratch,storage,sentinel,321); run_options[1] = force_saved;
+    args_storage[0] = lit("--unknown",9);
+    // Capacity admission also precedes any token inspection.
+    args_storage[0] = View<u8> { values: raw_help, start: 0, length: -1 };
+    parser_rejected(commands,args,core::slice::view_range(storage,1,4).unwrap(),storage,sentinel,505);
+    args_storage[0] = lit("--unknown",9);
+
+    // EOF does not impose application operand/child requirements or reserve help.
+    let absent: ext::cli_commands::Parser = ext::cli_commands::parser(no_args,commands,scratch).unwrap();
+    check(absent.current() == 40 && absent.next().unwrap().is_none() && absent.next().unwrap().is_none(),1401);
+    check(same_spec(storage[0],sentinel) && same_spec(storage[6],sentinel),1402);
+    check(same_spec(storage[1],root_options[0].spec) && same_spec(storage[2],root_options[1].spec) && same_spec(storage[3],root_options[2].spec),1403);
+    // Exact capacity5; root writes only its3entry prefix, preserving unusedscratch.
+    check(same_spec(storage[4],sentinel) && same_spec(storage[5],sentinel),1404);
+    let help_args: [View<u8>;1] = [lit("--help",6)];
+    let not_reserved: ext::cli_commands::Parser = ext::cli_commands::parser(core::slice::view(help_args,1).unwrap(),commands,scratch).unwrap();
+    let missing_help: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = not_reserved.next();
+    check(missing_help.is_err(),1405);
+
+    // Two independent parsers have distinct mutable scratch; interleave actual
+    // public calls without promising shared-scratch forks or alias detection.
+    let first_storage: [ext::cli::Spec;7] = [sentinel;7];
+    let second_storage: [ext::cli::Spec;7] = [sentinel;7];
+    let padded: [u8;6] = [33,119,111,114,107,33];
+    let first_args: [View<u8>;3] = [empty,core::slice::view_range(padded,1,4).unwrap(),lit("run",3)];
+    let second_args: [View<u8>;2] = [lit("list",4),lit("-v",2)];
+    let first: ext::cli_commands::Parser = ext::cli_commands::parser(core::slice::view_range(first_args,1,2).unwrap(),commands,core::slice::view_range(first_storage,1,5).unwrap()).unwrap();
+    let second: ext::cli_commands::Parser = ext::cli_commands::parser(core::slice::view(second_args,2).unwrap(),commands,core::slice::view_range(second_storage,1,5).unwrap()).unwrap();
+    let first_selection: ext::cli_commands::Selection = selected(event(first.borrow())).unwrap();
+    check(first_selection.id == 17 && first_selection.at.argument == 0 && first_selection.at.byte == 0,1406);
+    check(selected(event(second.borrow())).unwrap().id == 6,1407);
+    check(selected(event(first.borrow())).unwrap().id == 91,1408);
+    let second_event: ext::cli_commands::Event = event(second.borrow());
+    let owner: i32 = match (second_event) { ext::cli_commands::Event::Option(item) -> item.command, _ -> -1 };
+    check(owner == 40 && first.current() == 91 && second.current() == 6,1409);
+    check(first.next().unwrap().is_none() && second.next().unwrap().is_none(),1410);
+    check(same_spec(first_storage[0],sentinel) && same_spec(first_storage[6],sentinel) && same_spec(second_storage[0],sentinel) && same_spec(second_storage[6],sentinel),1411);
+    check(padded[0] == 33 && padded[5] == 33 && equal(first_args[1],lit("work",4)) && equal(second_args[1],lit("-v",2)),1412);
+
+    // Canonical explicit terminator bit: required '--' is only a value.
+    let flat_specs: [ext::cli::Spec;1] = [root_options[1].spec];
+    let value_args: [View<u8>;2] = [lit("--config",8),lit("--",2)];
+    let value_parser: ext::cli::Parser = ext::cli::parser(core::slice::view(value_args,2).unwrap(),core::slice::view(flat_specs,1).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    check(!value_parser.explicitly_terminated(),1413); check(value_parser.next().unwrap().is_some(),1414);
+    check(!value_parser.explicitly_terminated() && value_parser.next().unwrap().is_none(),1415);
+    let terminator_args: [View<u8>;1] = [lit("--",2)];
+    let terminator: ext::cli::Parser = ext::cli::parser(core::slice::view(terminator_args,1).unwrap(),core::slice::view(flat_specs,1).unwrap(),ext::cli::Ordering::Intermixed).unwrap();
+    check(!terminator.explicitly_terminated() && terminator.next().unwrap().is_none() && terminator.explicitly_terminated(),1416);
+
+    // Literal golden for logical command40; raw bytes, no rendering oracle.
+    let golden_40: [u8;186] = [85,115,97,103,101,58,32,116,111,111,108,32,91,79,80,84,73,79,78,83,93,32,91,67,79,77,77,65,78,68,93,32,91,45,45,32,82,79,79,84,93,10,82,111,111,116,10,10,79,112,116,105,111,110,115,58,10,32,32,45,118,44,32,45,45,118,101,114,98,111,115,101,32,32,32,32,99,104,97,116,116,121,10,32,32,45,67,32,60,70,73,76,69,62,44,32,45,45,99,111,110,102,105,103,32,60,70,73,76,69,62,32,32,32,32,99,102,103,10,32,32,45,120,44,32,45,45,114,111,111,116,45,111,110,108,121,32,32,32,32,114,111,111,116,10,10,67,111,109,109,97,110,100,115,58,10,32,32,119,111,114,107,32,32,32,32,87,111,114,107,10,32,32,108,105,115,116,32,32,32,32,76,105,115,116,10];
+    help_case(commands,40,core::slice::view(golden_40,186).unwrap());
+
+    // Literal golden for logical command17; raw bytes, no rendering oracle.
+    let golden_17: [u8;233] = [85,115,97,103,101,58,32,116,111,111,108,32,119,111,114,107,32,91,79,80,84,73,79,78,83,93,32,91,67,79,77,77,65,78,68,93,32,91,45,45,32,73,84,69,77,93,10,87,111,114,107,10,10,79,112,116,105,111,110,115,58,10,32,32,45,118,44,32,45,45,118,101,114,98,111,115,101,32,32,32,32,99,104,97,116,116,121,10,32,32,45,67,32,60,70,73,76,69,62,44,32,45,45,99,111,110,102,105,103,32,60,70,73,76,69,62,32,32,32,32,99,102,103,10,32,32,45,113,44,32,45,45,113,117,105,101,116,10,32,32,45,120,91,77,79,68,69,93,44,32,45,45,109,111,100,101,91,61,77,79,68,69,93,32,32,32,32,115,116,121,108,101,10,32,32,45,111,32,60,79,85,84,62,44,32,45,45,111,117,116,112,117,116,32,60,79,85,84,62,32,32,32,32,100,101,115,116,255,10,10,67,111,109,109,97,110,100,115,58,10,32,32,114,117,110,32,32,32,32,82,117,110,10];
+    help_case(commands,17,core::slice::view(golden_17,233).unwrap());
+
+    // Literal golden for logical command91; raw bytes, no rendering oracle.
+    let golden_91: [u8;175] = [85,115,97,103,101,58,32,116,111,111,108,32,119,111,114,107,32,114,117,110,32,91,79,80,84,73,79,78,83,93,32,80,65,84,72,10,82,117,110,10,10,79,112,116,105,111,110,115,58,10,32,32,45,118,44,32,45,45,118,101,114,98,111,115,101,32,32,32,32,99,104,97,116,116,121,10,32,32,45,67,32,60,70,73,76,69,62,44,32,45,45,99,111,110,102,105,103,32,60,70,73,76,69,62,32,32,32,32,99,102,103,10,32,32,45,113,44,32,45,45,113,117,105,101,116,10,32,32,45,120,91,77,79,68,69,93,44,32,45,45,109,111,100,101,91,61,77,79,68,69,93,32,32,32,32,115,116,121,108,101,10,32,32,45,102,44,32,45,45,102,111,114,99,101,10];
+    help_case(commands,91,core::slice::view(golden_91,175).unwrap());
+
+    // Literal golden for logical command6; raw bytes, no rendering oracle.
+    let golden_6: [u8;144] = [85,115,97,103,101,58,32,116,111,111,108,32,108,105,115,116,32,91,79,80,84,73,79,78,83,93,32,73,84,69,77,10,76,105,115,116,10,10,79,112,116,105,111,110,115,58,10,32,32,45,118,44,32,45,45,118,101,114,98,111,115,101,32,32,32,32,99,104,97,116,116,121,10,32,32,45,67,32,60,70,73,76,69,62,44,32,45,45,99,111,110,102,105,103,32,60,70,73,76,69,62,32,32,32,32,99,102,103,10,32,32,45,120,32,60,73,84,69,77,62,44,32,45,45,109,111,100,101,32,60,73,84,69,77,62,32,32,32,32,108,105,115,116,10];
+    help_case(commands,6,core::slice::view(golden_6,144).unwrap());
+
+    // No-options/no-children/empty metadata omit whole optional sections.
+    let bare_options: View<ext::cli_commands::OptionSpec> = core::slice::view(root_options,0).unwrap();
+    let bare_root: ext::cli_commands::Command = ext::cli_commands::Command { id: 0, parent: -1, name: lit("tiny",4), summary: empty, operands: empty, ordering: ext::cli::Ordering::Intermixed, options: bare_options };
+    let bare_nodes: [ext::cli_commands::Command;1] = [bare_root];
+    help_case(core::slice::view(bare_nodes,1).unwrap(),0,lit("Usage: tiny\n",12));
+    // Disabled aliases must not introduce commas or lose arity labels.
+    let alias_options: [ext::cli_commands::OptionSpec;6] = [
+        declaration(spec(1,empty,97,ext::cli::Arity::Flag),false,empty,empty),
+        declaration(spec(2,lit("alpha",5),0,ext::cli::Arity::Flag),false,empty,empty),
+        declaration(spec(3,empty,98,ext::cli::Arity::Required),false,lit("VALUE",5),empty),
+        declaration(spec(4,lit("beta",4),0,ext::cli::Arity::Required),false,lit("FILE",4),empty),
+        declaration(spec(5,empty,99,ext::cli::Arity::Optional),false,lit("MODE",4),empty),
+        declaration(spec(6,lit("color",5),0,ext::cli::Arity::Optional),false,lit("WHEN",4),empty)
+    ];
+    let alias_root: ext::cli_commands::Command = ext::cli_commands::Command { id: 73, parent: -1, name: lit("alias",5), summary: empty, operands: empty, ordering: ext::cli::Ordering::Intermixed, options: core::slice::view(alias_options,6).unwrap() };
+    let alias_nodes: [ext::cli_commands::Command;1] = [alias_root];
+    let alias_golden: [u8;105] = [85,115,97,103,101,58,32,97,108,105,97,115,32,91,79,80,84,73,79,78,83,93,10,10,79,112,116,105,111,110,115,58,10,32,32,45,97,10,32,32,45,45,97,108,112,104,97,10,32,32,45,98,32,60,86,65,76,85,69,62,10,32,32,45,45,98,101,116,97,32,60,70,73,76,69,62,10,32,32,45,99,91,77,79,68,69,93,10,32,32,45,45,99,111,108,111,114,91,61,87,72,69,78,93,10];
+    help_case(core::slice::view(alias_nodes,1).unwrap(),73,core::slice::view(alias_golden,105).unwrap());
+    check(raw_help[4] == 255 && equal(nodes[1].name,lit("tool",4)) && equal(nodes[3].name,lit("run",3)),1500);
+    return 0;
+}

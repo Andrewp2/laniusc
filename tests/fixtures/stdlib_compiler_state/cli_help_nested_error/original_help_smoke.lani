@@ -1,0 +1,77 @@
+// Small public-import admission; independent semantic gates cover more shapes.
+module app::main;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_help;
+
+fn literal(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::View<u8> { values: raw, start: 0, length: count };
+}
+fn equal(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (left.values[left.start+index] != right.values[right.start+index]) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn canaries(values: [u8], from: i32, to: i32) {
+    let index: i32 = from;
+    while (index < to) { assert(values[index] == 90); index += 1; }
+}
+fn main() -> i32 {
+    let empty: core::slice::View<u8> = literal("",0);
+    let verbose: ext::cli_commands::OptionSpec = ext::cli_commands::OptionSpec {
+        spec: ext::cli::Spec { id: 1, long: literal("verbose",7), short: 118, arity: ext::cli::Arity::Flag },
+        global: true, value_name: empty, help: literal("verbose",7)
+    };
+    let output: ext::cli_commands::OptionSpec = ext::cli_commands::OptionSpec {
+        spec: ext::cli::Spec { id: 2, long: literal("output",6), short: 111, arity: ext::cli::Arity::Required },
+        global: false, value_name: literal("PATH",4), help: literal("output",6)
+    };
+    let color: ext::cli_commands::OptionSpec = ext::cli_commands::OptionSpec {
+        spec: ext::cli::Spec { id: 3, long: literal("color",5), short: 99, arity: ext::cli::Arity::Optional },
+        global: false, value_name: literal("MODE",4), help: literal("color",5)
+    };
+    let root_options: [ext::cli_commands::OptionSpec;2] = [verbose,output];
+    let leaf_options: [ext::cli_commands::OptionSpec;1] = [color];
+    let root: ext::cli_commands::Command = ext::cli_commands::Command {
+        id: 10, parent: -1, name: literal("tool",4), summary: literal("root",4), operands: literal("FILES",5),
+        ordering: ext::cli::Ordering::Intermixed,
+        options: core::slice::View<ext::cli_commands::OptionSpec> { values: root_options, start: 0, length: 2 }
+    };
+    let leaf: ext::cli_commands::Command = ext::cli_commands::Command {
+        id: 20, parent: 0, name: literal("run",3), summary: literal("execute",7), operands: literal("INPUT",5),
+        ordering: ext::cli::Ordering::OptionsFirst,
+        options: core::slice::View<ext::cli_commands::OptionSpec> { values: leaf_options, start: 0, length: 1 }
+    };
+    // A nonzero logical start must not make parent indices absolute.
+    let nodes: [ext::cli_commands::Command;3] = [root,root,leaf];
+    let commands: core::slice::View<ext::cli_commands::Command> = core::slice::View<ext::cli_commands::Command> { values: nodes, start: 1, length: 2 };
+    let leaf_help: core::slice::View<u8> = literal("Usage: tool run [OPTIONS] INPUT\nexecute\n\nOptions:\n  -v, --verbose    verbose\n  -c[MODE], --color[=MODE]    color\n",113);
+    let root_help: core::slice::View<u8> = literal("Usage: tool [OPTIONS] [COMMAND] [-- FILES]\nroot\n\nOptions:\n  -v, --verbose    verbose\n  -o <PATH>, --output <PATH>    output\n\nCommands:\n  run    execute\n",152);
+    assert(ext::cli_help::help_len(commands,20).unwrap() == 113);
+    assert(ext::cli_help::help_len(commands,10).unwrap() == 152);
+    let storage: [u8;192] = [90;192];
+    let small: core::slice::View<u8> = core::slice::View<u8> { values: storage, start: 3, length: 112 };
+    let rejected: core::result::Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,20,small);
+    assert(match (rejected) { core::result::Err(ext::cli_commands::Error::OutputTooSmall(required)) -> required == 113, _ -> false });
+    canaries(storage,0,192);
+    let exact: core::slice::View<u8> = core::slice::View<u8> { values: storage, start: 3, length: 113 };
+    assert(ext::cli_help::help_into(commands,20,exact).unwrap() == 113 && equal(exact,leaf_help));
+    canaries(storage,0,3); canaries(storage,116,192);
+    let root_storage: [u8;192] = [90;192];
+    let roomy: core::slice::View<u8> = core::slice::View<u8> { values: root_storage, start: 2, length: 160 };
+    assert(ext::cli_help::help_into(commands,10,roomy).unwrap() == 152);
+    let prefix: core::slice::View<u8> = core::slice::View<u8> { values: root_storage, start: 2, length: 152 };
+    assert(equal(prefix,root_help)); canaries(root_storage,0,2); canaries(root_storage,154,192);
+    let unknown: core::result::Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,99,roomy);
+    assert(match (unknown) { core::result::Err(ext::cli_commands::Error::UnknownCommandId(id)) -> id == 99, _ -> false });
+    assert(equal(prefix,root_help)); canaries(root_storage,0,2); canaries(root_storage,154,192);
+    return 0;
+}
