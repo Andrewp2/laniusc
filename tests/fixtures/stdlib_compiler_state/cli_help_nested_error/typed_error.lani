@@ -1,0 +1,12 @@
+module app::main;
+import core::result;
+enum Error { OutputTooSmall(u64), UnknownCommandId(i32) }
+fn main() -> i32 {
+    let rejected: core::result::Result<i32,Error> = core::result::Err(Error::OutputTooSmall(113));
+    let rejected_error: Error = core::result::unwrap_err(rejected);
+    assert(match (rejected_error) { Error::OutputTooSmall(required) -> required == 113, _ -> false });
+    let unknown: core::result::Result<i32,Error> = core::result::Err(Error::UnknownCommandId(99));
+    let unknown_error: Error = core::result::unwrap_err(unknown);
+    assert(match (unknown_error) { Error::UnknownCommandId(id) -> id == 99, _ -> false });
+    return 0;
+}

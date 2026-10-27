@@ -15,7 +15,7 @@ pub enum Event { Option(Occurrence), Operand(Argument) }
 pub enum Error { InvalidSpec(i32), DuplicateSpec(i32), UnknownOption(Location), MissingValue(Location), UnexpectedValue(Location) }
 pub struct Parser {
     arguments: core::slice::View<core::slice::View<u8>>, specs: core::slice::View<Spec>, ordering: Ordering,
-    index: i32, short_offset: i32, ended: bool, failure: core::option::Option<Error>,
+    index: i32, short_offset: i32, ended: bool, terminated: bool, failure: core::option::Option<Error>,
 }
 
 fn byte(bytes: core::slice::View<u8>, index: i32) -> u8 { return core::option::unwrap(bytes.get(index)); }
@@ -47,10 +47,13 @@ pub fn parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::
         }
         index += 1;
     }
-    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, ended: false, failure: core::option::None() });
+    return core::result::Ok(Parser { arguments: arguments, specs: specs, ordering: ordering, index: 0, short_offset: 0, ended: false, terminated: false, failure: core::option::None() });
 }
 
 pub impl Parser {
+    // Distinguish an actual terminator from an OptionsFirst operand. A required
+    // option value equal to '--' never enters the terminator branch.
+    pub fn explicitly_terminated(&self) -> bool { return self.terminated; }
     fn fail(&self, error: Error) -> core::result::Result<core::option::Option<Event>, Error> {
         self.failure = core::option::Some(error); return core::result::Err(error);
     }
@@ -107,7 +110,7 @@ pub impl Parser {
             if (self.short_offset > 0) { return self.short_option(token); }
             if (!self.ended && token.len() >= 2 && byte(token, 0) == 45) {
                 if (byte(token, 1) == 45) {
-                    if (token.len() == 2) { self.ended = true; self.index += 1; }
+                    if (token.len() == 2) { self.ended = true; self.terminated = true; self.index += 1; }
                     else { return self.long_option(token); }
                 } else { self.short_offset = 1; return self.short_option(token); }
             } else {

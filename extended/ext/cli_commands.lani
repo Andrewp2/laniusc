@@ -1,0 +1,303 @@
+// Allocation-free command routing over the canonical ext::cli token parser.
+// Each live Parser exclusively borrows its scratch; copies transfer authority
+// and cannot fork independently. Arguments, schema and metadata stay immutable
+// and backed for the entire lifetime. Scratch must not overlap those inputs.
+module ext::cli_commands;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::result::Ok;
+import core::result::Err;
+import core::slice::View;
+import ext::cli;
+
+pub struct OptionSpec {
+    spec: ext::cli::Spec, global: bool, value_name: View<u8>, help: View<u8>
+}
+pub struct Command {
+    id: i32, parent: i32, name: View<u8>, summary: View<u8>, operands: View<u8>,
+    ordering: ext::cli::Ordering, options: View<OptionSpec>
+}
+pub struct Selection { id: i32, at: ext::cli::Location }
+pub struct ScopedOption { command: i32, occurrence: ext::cli::Occurrence }
+pub struct ScopedOperand { command: i32, argument: ext::cli::Argument }
+pub enum Event { Command(Selection), Option(ScopedOption), Operand(ScopedOperand) }
+pub enum Error {
+    Bounds, EmptySchema, InvalidCommand(i32), DuplicateCommand(i32),
+    InvalidOption(i32,i32), DuplicateOption(i32,i32), ScratchTooSmall(u64),
+    UnknownCommand(ext::cli::Location), Token(i32,ext::cli::Error),
+    UnknownCommandId(i32), OutputTooSmall(u64), SizeOverflow
+}
+pub struct Parser {
+    commands: View<Command>, scratch: View<ext::cli::Spec>, flat: ext::cli::Parser,
+    selected: i32, selecting: bool, done: bool, failure: Option<Error>
+}
+
+fn valid<T>(value: View<T>) -> bool {
+    return value.start >= 0 && value.length >= 0 && value.start <= 2147483647-value.length;
+}
+fn byte(value: View<u8>, index: i32) -> u8 { return value.values[value.start+index]; }
+fn alphanumeric(value: u8) -> bool {
+    return (value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57);
+}
+fn word(value: View<u8>) -> bool {
+    if (value.length == 0) { return false; }
+    let index: i32 = 0;
+    while (index < value.length) {
+        let current: u8 = byte(value,index);
+        if (!alphanumeric(current) && (index == 0 || (current != 45 && current != 95))) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn caption(value: View<u8>) -> bool {
+    let index: i32 = 0;
+    while (index < value.length) {
+        let current: u8 = byte(value,index);
+        if (current < 32 || current == 127) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) {
+        if (byte(left,index) != byte(right,index)) { return false; }
+        index += 1;
+    }
+    return true;
+}
+fn command_at(commands: View<Command>, index: i32) -> Command {
+    return commands.values[commands.start+index];
+}
+fn option_at(options: View<OptionSpec>, index: i32) -> OptionSpec {
+    return options.values[options.start+index];
+}
+// This helper is used only after the entire parent graph has been admitted.
+fn ancestor(commands: View<Command>, selected: i32, candidate: i32) -> bool {
+    let current: i32 = selected;
+    while (current >= 0) {
+        if (current == candidate) { return true; }
+        current = command_at(commands,current).parent;
+    }
+    return false;
+}
+fn conflict(left: ext::cli::Spec, right: ext::cli::Spec) -> bool {
+    return left.id == right.id || (left.short != 0 && left.short == right.short) ||
+        (left.long.length != 0 && equal(left.long,right.long));
+}
+// Reuse the original schema grammar without writing caller scratch or exposing
+// a parser whose borrowed stack schema can escape this call.
+fn valid_spec(spec: ext::cli::Spec, ordering: ext::cli::Ordering) -> bool {
+    let single: [ext::cli::Spec;1] = [spec];
+    let unused: [View<u8>;1] = [spec.long];
+    let specs: View<ext::cli::Spec> = View<ext::cli::Spec> { values: single, start: 0, length: 1 };
+    let arguments: View<View<u8>> = View<View<u8>> { values: unused, start: 0, length: 0 };
+    let result: Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(arguments,specs,ordering);
+    return result.is_ok();
+}
+
+// Validate all declarations and every possible scope before any routing or
+// scratch mutation. Returned capacity is the maximum across all descendants.
+pub fn validate(commands: View<Command>) -> Result<u64,Error> {
+    if (!valid(commands)) { return Err(Error::Bounds); }
+    if (commands.length == 0) { return Err(Error::EmptySchema); }
+    let node: i32 = 0;
+    while (node < commands.length) {
+        let command: Command = command_at(commands,node);
+        if (!valid(command.name) || !valid(command.summary) || !valid(command.operands) || !valid(command.options)) { return Err(Error::Bounds); }
+        if (command.id < 0 || !word(command.name) || !caption(command.summary) || !caption(command.operands)) { return Err(Error::InvalidCommand(node)); }
+        if (node == 0) {
+            if (command.parent != -1) { return Err(Error::InvalidCommand(node)); }
+        } else {
+            if (command.parent < 0 || command.parent >= node) { return Err(Error::InvalidCommand(node)); }
+        }
+        let previous: i32 = 0;
+        while (previous < node) {
+            let other: Command = command_at(commands,previous);
+            if (other.id == command.id || (other.parent == command.parent && equal(other.name,command.name))) { return Err(Error::DuplicateCommand(node)); }
+            previous += 1;
+        }
+        let option: i32 = 0;
+        while (option < command.options.length) {
+            let declaration: OptionSpec = option_at(command.options,option);
+            if (!valid(declaration.spec.long) || !valid(declaration.value_name) || !valid(declaration.help)) { return Err(Error::Bounds); }
+            let flag: bool = match (declaration.spec.arity) { ext::cli::Arity::Flag -> true, _ -> false };
+            if (!valid_spec(declaration.spec,command.ordering) || !caption(declaration.help)) { return Err(Error::InvalidOption(node,option)); }
+            if (flag) {
+                if (declaration.value_name.length != 0) { return Err(Error::InvalidOption(node,option)); }
+            } else {
+                if (!word(declaration.value_name)) { return Err(Error::InvalidOption(node,option)); }
+            }
+            option += 1;
+        }
+        node += 1;
+    }
+
+    let maximum: u64 = 0;
+    node = 0;
+    while (node < commands.length) {
+        let command: Command = command_at(commands,node);
+        // At most (2^31-1)^2 declarations can belong to one path, so this
+        // u64 count cannot overflow for logically valid counted views.
+        let count: u64 = 0;
+        let declaring: i32 = 0;
+        while (declaring <= node) {
+            if (ancestor(commands,node,declaring)) {
+                let owner: Command = command_at(commands,declaring);
+                let option: i32 = 0;
+                while (option < owner.options.length) {
+                    let declaration: OptionSpec = option_at(owner.options,option);
+                    if (declaring == node || declaration.global) { count += 1; }
+                    option += 1;
+                }
+            }
+            declaring += 1;
+        }
+        if (count > maximum) { maximum = count; }
+
+        // Every conflict first becomes visible at its later declaration's
+        // node. Earlier inherited-global pairs were checked at that ancestor.
+        let option: i32 = 0;
+        while (option < command.options.length) {
+            let declaration: OptionSpec = option_at(command.options,option);
+            declaring = 0;
+            while (declaring <= node) {
+                if (ancestor(commands,node,declaring)) {
+                    let owner: Command = command_at(commands,declaring);
+                    let end: i32 = owner.options.length;
+                    if (declaring == node) { end = option; }
+                    let previous: i32 = 0;
+                    while (previous < end) {
+                        let other: OptionSpec = option_at(owner.options,previous);
+                        if ((declaring == node || other.global) && conflict(declaration.spec,other.spec)) { return Err(Error::DuplicateOption(node,option)); }
+                        previous += 1;
+                    }
+                }
+                declaring += 1;
+            }
+            option += 1;
+        }
+        node += 1;
+    }
+    return Ok(maximum);
+}
+
+// Parent-before-child indices put all ancestors in path order even when sibling
+// subtrees are interleaved. Only the required scratch prefix is overwritten.
+fn materialize(commands: View<Command>, selected: i32, scratch: View<ext::cli::Spec>) -> View<ext::cli::Spec> {
+    let count: i32 = 0; let declaring: i32 = 0;
+    while (declaring <= selected) {
+        if (ancestor(commands,selected,declaring)) {
+            let command: Command = command_at(commands,declaring);
+            let option: i32 = 0;
+            while (option < command.options.length) {
+                let declaration: OptionSpec = option_at(command.options,option);
+                if (declaring == selected || declaration.global) {
+                    scratch.values[scratch.start+count] = declaration.spec; count += 1;
+                }
+                option += 1;
+            }
+        }
+        declaring += 1;
+    }
+    return View<ext::cli::Spec> { values: scratch.values, start: scratch.start, length: count };
+}
+fn child(commands: View<Command>, parent: i32, name: View<u8>) -> i32 {
+    let index: i32 = parent+1;
+    while (index < commands.length) {
+        let command: Command = command_at(commands,index);
+        if (command.parent == parent && equal(command.name,name)) { return index; }
+        index += 1;
+    }
+    return -1;
+}
+fn children(commands: View<Command>, parent: i32) -> bool {
+    let index: i32 = parent+1;
+    while (index < commands.length) {
+        if (command_at(commands,index).parent == parent) { return true; }
+        index += 1;
+    }
+    return false;
+}
+fn declaring_id(commands: View<Command>, selected: i32, id: i32) -> Option<i32> {
+    let declaring: i32 = 0;
+    while (declaring <= selected) {
+        if (ancestor(commands,selected,declaring)) {
+            let command: Command = command_at(commands,declaring);
+            let option: i32 = 0;
+            while (option < command.options.length) {
+                let declaration: OptionSpec = option_at(command.options,option);
+                if ((declaring == selected || declaration.global) && declaration.spec.id == id) { return Some(command.id); }
+                option += 1;
+            }
+        }
+        declaring += 1;
+    }
+    return None();
+}
+
+pub fn parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error> {
+    if (!valid(arguments) || !valid(scratch)) { return Err(Error::Bounds); }
+    let checked: Result<u64,Error> = validate(commands);
+    if (checked.is_err()) { return Err(checked.unwrap_err()); }
+    if (checked.unwrap() > scratch.length as u64) { return Err(Error::ScratchTooSmall(checked.unwrap())); }
+    // Argument descriptors are examined only after complete schema/capacity
+    // admission. Logical argument-view failures also leave scratch unchanged.
+    let index: i32 = 0;
+    while (index < arguments.length) {
+        if (!valid(arguments.values[arguments.start+index])) { return Err(Error::Bounds); }
+        index += 1;
+    }
+    let root: Command = command_at(commands,0);
+    let scope: View<ext::cli::Spec> = materialize(commands,0,scratch);
+    let flat: Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(arguments,scope,root.ordering);
+    if (flat.is_err()) { return Err(Error::Token(root.id,flat.unwrap_err())); }
+    return Ok(Parser { commands: commands, scratch: scratch, flat: flat.unwrap(), selected: 0, selecting: true, done: false, failure: None() });
+}
+
+pub impl Parser {
+    pub fn borrow(&self) -> &Parser { return self; }
+    pub fn current(&self) -> i32 { return command_at(self.commands,self.selected).id; }
+    fn fail(&self, error: Error) -> Result<Option<Event>,Error> {
+        self.failure = Some(error); return Err(error);
+    }
+    fn route_option(&self, item: ext::cli::Occurrence) -> Result<Option<Event>,Error> {
+        let owner: i32 = declaring_id(self.commands,self.selected,item.id).unwrap();
+        return Ok(Some(Event::Option(ScopedOption { command: owner, occurrence: item })));
+    }
+    fn route_operand(&self, item: ext::cli::Argument) -> Result<Option<Event>,Error> {
+        let flat: ext::cli::Parser = self.flat;
+        if (flat.explicitly_terminated()) { self.selecting = false; }
+        if (self.selecting && children(self.commands,self.selected)) {
+            let selected: i32 = child(self.commands,self.selected,item.bytes);
+            if (selected < 0) { return self.fail(Error::UnknownCommand(item.at)); }
+            let command: Command = command_at(self.commands,selected);
+            flat.specs = materialize(self.commands,selected,self.scratch);
+            flat.ordering = command.ordering; flat.ended = false;
+            self.flat = flat; self.selected = selected;
+            return Ok(Some(Event::Command(Selection { id: command.id, at: item.at })));
+        }
+        self.selecting = false;
+        return Ok(Some(Event::Operand(ScopedOperand { command: self.current(), argument: item })));
+    }
+    // Only the canonical flat parser reads tokens. Transitions preserve its
+    // global cursor and explicit terminator, changing just scope and ordering.
+    pub fn next(&self) -> Result<Option<Event>,Error> {
+        if (self.failure.is_some()) { return Err(self.failure.unwrap()); }
+        if (self.done) { return Ok(None()); }
+        let flat: ext::cli::Parser = self.flat;
+        let parsed: Result<Option<ext::cli::Event>,ext::cli::Error> = flat.next();
+        self.flat = flat;
+        if (parsed.is_err()) { return self.fail(Error::Token(self.current(),parsed.unwrap_err())); }
+        let next: Option<ext::cli::Event> = parsed.unwrap();
+        if (next.is_none()) { self.done = true; return Ok(None()); }
+        let event: ext::cli::Event = next.unwrap();
+        return match (event) {
+            ext::cli::Event::Option(item) -> self.route_option(item),
+            ext::cli::Event::Operand(item) -> self.route_operand(item)
+        };
+    }
+}

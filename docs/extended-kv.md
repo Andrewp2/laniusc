@@ -4,10 +4,11 @@
 mutations and lookup, and reads and writes a versioned binary snapshot. The
 `kv-tool` program now delegates snapshot publication to
 [`std::atomic_file`](stdlib-atomic-files.md), using the shared TempFile owner.
-The migrated application compiled and passed 64 native process invocations
-across two focused groups on x86_64 Linux/ext4. Production code is Lanius;
-Python is only an independent test oracle. The [current application receipts](#current-application-receipts)
-state the finite acceptance scope.
+The command-hierarchy/generated-help application compiles and passes 130 native
+process group cases across three direct all-syscall oracle invocations, with
+overlapping setup/baselines. Production code is Lanius; Python is only an
+independent test oracle. The
+[application receipts](#current-application-receipts) separate those source revisions.
 
 ## Storage and ownership
 
@@ -140,7 +141,35 @@ kv-tool get DB KEY_HEX
 kv-tool list DB
 kv-tool check DB
 kv-tool --help
+kv-tool put --help
 ```
+
+Command names match exactly. Root-global `-h`/`--help` is inherited by every
+command, and generated help describes the selected command. The root accepts
+options before command selection; leaves use OptionsFirst, so their first DB
+operand ends option recognition. Put help before DB, for example
+`kv-tool put --help` or `kv-tool -h put`. Parse the complete command line before
+help or file access: unknown commands/options and extra operands reject even
+with help; missing required operands are waived only for help. Without help,
+the application checks each command's exact operand count.
+
+An actual `--` ends both option recognition and command routing. A dashed DB
+name therefore uses `kv-tool init -- --help` or
+`kv-tool put -- -db.kv 00 ff`; DB bytes remain unchanged. This is an intentional
+parsing change from the earlier positional-only CLI, which treated `--help`
+and `--` in the DB position as ordinary names. A terminator before a command
+leaves no selected command and fails. At a selected leaf, a DB named `list` or
+another command remains an operand. No path normalization or UTF-8 conversion
+is introduced.
+
+Help renders through `ext::cli_help` into a 4,096-byte logical view backed by a
+fixed caller stack array,
+then permits at most 64 write attempts, each at most 1,024 bytes, including
+EINTR and short progress. Help failure returns 3 and may expose a confirmed
+stdout prefix. A checked SIGPIPE-ignore policy runs before argument ownership
+or any output; failed installation returns 3 without writing. This policy
+allows explicit owner cleanup after a real closed-reader write failure.
+Other data-output operations retain their existing I/O contracts.
 
 Keys and values in arguments use even-length hexadecimal, accepting either
 letter case. An empty shell argument represents empty bytes. `get` writes the
@@ -216,7 +245,7 @@ durable. There is no automatic cleanup on process death or crash scavenger.
 
 The CLI caps input snapshot bytes at 9 MiB, live bytes at 8 MiB, entries at 4,096,
 each key at 64 KiB, each value at 4 MiB, and work at 128 Mi units. It caps captured
-arguments at four and their combined bytes at 256 KiB. Hex arguments are also
+arguments at eight and their combined bytes at 256 KiB. Hex arguments are also
 subject to the host's argument-size limit. A listing can contain at most 18 MiB.
 Publication permits at most 9 MiB confirmed bytes and 1,048,576 write attempts,
 including short-write and EINTR attempts, with at most 1,024 bytes per attempt.
@@ -262,7 +291,62 @@ snapshot contracts are unchanged by this application migration.
 
 ### Current application receipts
 
-The actual migrated `kv_tool.lani` compiled to a native x86_64 Linux executable
+The hierarchy application is frozen at SHA-256 `f07fd52f...`. Its command
+collection and generated help reuse
+the [frozen command hierarchy contract](library-cli-commands-plan.md). The
+database operations, snapshot encoding and AtomicFile workflow retain their
+previous code and outcome contracts. The current oracle uses the unchanged
+verified raw allocator authority
+with full-width source/fd accounting and explicit signal-event admission.
+Twenty-four hierarchy CPU controls and eleven existing read/open binding controls
+pass separately, as do 48 helper CPU controls; these are not native cases.
+
+The current executable compiles and passes all three direct Python groups with
+full syscall observation. Logs under `target/stdlib-work/` record:
+
+| Gate | Current receipt |
+| --- | --- |
+| Compile | `cli-commands-kv-admission-first.log`, exit 0 |
+| Hierarchy | `cli-commands-kv-hierarchy-all-syscalls.log`, 66 process group cases |
+| Round trips | `cli-commands-kv-roundtrips-all-syscalls.log`, 33 process group cases |
+| Publication | `cli-commands-kv-publication-all-syscalls.log`, 31 process group cases including all 13 reached source OOM positions and 15 I/O controls |
+
+These total 130 group cases with overlapping setup/baselines, not independent
+properties or three passing Rust libtests. The helper observes every syscall,
+validates exactly one successful launch of the expected executable and one
+final exit from the raw image with the captured process status, and rejects
+all other calls outside the admitted application set. Source mappings must
+be explicitly released and acquired fd generations closed by observed calls
+before that exit; process death cannot satisfy cleanup. Help and CLI-syntax,
+arity or hexadecimal rejection admit only signal policy, argument ownership
+and output calls between those endpoints.
+
+The first `cli-commands-kv-{hierarchy,roundtrips,publication}-first.log` runs
+used a selected-call trace filter. Independent review found that unlisted
+calls such as `unlink` or `socket` could be invisible. The corrected helper and
+oracle reran all three groups against the unchanged ELF; those earlier 130
+partial-observation cases are repeated coverage and are not added to 130.
+This was an oracle observation gap; no application/library defect was found.
+
+The registered tests were not executed through libtest for this receipt.
+Their current driver builds successfully with `--no-run` in 51.67 seconds
+(`cli-commands-kv-driver-build-first.log`); this is separate build admission,
+with no additional native cases.
+Current oracle/helper hashes are `b3ec740f...`/`f7adcfca...`; ELF SHA-256 is
+`46770678...`; flat parser `ext::cli` is `9f11981f...`, hierarchy `6eb4db7a...` and
+help `a7198a2a...`. The fixture guide records full identities. The 66-case group
+accepts root and six child help goldens, exact/over snapshot limits, complete
+parse/help policy, no filesystem calls on help/rejected CLI input, real EPIPE and
+escaped raw/command-looking DB paths. The other two groups preserve complete
+snapshot equality and publication/error/cleanup outcomes on the current source.
+
+This is finite native Linux x86_64 CPU execution emitted by the GPU compiler;
+it does not establish user GPU-kernel or broader-host support. The earlier
+64-case source revision below remains historical and is not added to 130.
+
+### Historical atomic-publication application receipts
+
+The earlier `kv_tool.lani` compiled to a native x86_64 Linux executable
 and passed both focused application groups against that reused ELF on the
 selected local ext4 profile. The receipts under `target/stdlib-work/` are:
 

@@ -39,33 +39,35 @@ edited by hand. The handwritten guide you are reading is outside that tree.
 
 ### Current generation receipt
 
-At the ordinary nested-iteration source/API freeze, the bounded writer and
-`--check` both exit zero for **251 pages from 250 source modules, with 8,329
-lexical public declaration markers**. Exactly two outputs change relative to
-the replacement-sink freeze: the [index](api/README.md) and
-[core::iter](api/core/iter.md). They retain `Flatten`, `FlatMap`, the actual
-`Infallible` retirement bounds and recovery methods, with a link to the
-[ordinary nested-iteration contract](stdlib-infallible-nested.md). The private
-mapping bridge is excluded by the existing known-local-private owner rule.
+At the command hierarchy/help source/API freeze, the bounded writer and
+`--check` both exit zero for **253 pages from 252 source modules, with 8,346
+lexical public declaration markers**. Five outputs change relative to the
+ordinary nested-iteration freeze: the [index](api/README.md),
+[flat parser](api/ext/cli.md), new [command router](api/ext/cli_commands.md), new
+[help renderer](api/ext/cli_help.md) and [KV module](api/ext/kv.md). They retain
+the public schema, scoped events/errors, caller-scratch parser, terminator
+getter and measured caller-buffer help, linked to the
+[contract guide](extended-cli-commands.md).
 
-Core source is `5034fbac...`; all earlier traversal bodies are unchanged.
-The selected increment is accepted on its finite native Linux x86_64 profile:
-one direct public smoke, two semantic/model Rust tests, three negative-bound
-Rust tests, eight direct live-owner cases and four direct current
-[flatten_sum groups](stdlib-flatten-sum.md#current-ordinary-adapter-receipts).
-The model compares 24 schedules in one native process; the owner and app groups
-are direct oracle receipts, not current passing Rust libtests. Linked guides
-own exact identities, limits and receipts. Source generation itself proves no
-runtime behavior and does not complete the full library goal.
+Production freezes are flat parser `9f11981f...`, command routing
+`6eb4db7a...`, help `a7198a2a...` and the migrated KV application
+`f07fd52f...`. The selected increment is accepted on its finite native Linux
+x86_64 profile: two semantic Rust tests, both direct public smokes and the pure
+contract executable, one selected flat-parser regression and three direct
+all-syscall KV groups. The latter total 130 overlapping cases, not three current
+Rust-libtest passes or 260 cases after the observation retry. The new KV driver
+has separate `--no-run` admission. Source generation itself proves no runtime
+behavior and does not complete the full library goal.
 
-The current generation receipts are
-`target/stdlib-work/infallible-nested-reference-final-writer.log` and
-`infallible-nested-reference-final-check.log` in that directory. Metadata stays
-brief; the [module guide](stdlib-infallible-nested.md),
-[application guide](stdlib-flatten-sum.md) and [overview](library-overview.md)
-record execution and historical source scope separately. Public `pub`
-spellings are counted lexically, including required public implementations of
-private helpers; this is not a count of externally usable APIs or working
+Current generation receipts are
+`target/stdlib-work/cli-commands-reference-final-writer.log` and
+`cli-commands-reference-final-check.log` in that directory. Brief metadata
+links to the [command guide](extended-cli-commands.md),
+[flat-parser guide](extended-cli.md) and
+[KV application guide](extended-kv.md#current-application-receipts); these own
+exact source identities, executable receipts and historical scopes. Public
+`pub` spellings are counted lexically, including required public implementations
+of private helpers. This is not a count of externally usable APIs or working
 functions.
 
 The existing scanner rule excludes known local private helper implementation
@@ -80,9 +82,10 @@ ownership. Unchanged tests were not repeated for source/metadata regeneration.
 
 The root `README.md`, `AI_POLICY.md` and `CONTRIBUTING.md` have matching SHA-256
 hashes before generation and after the final check. The generator writes only
-the reference tree. The replacement-sink freeze had 251 pages, 250 modules and
-8,309 markers, with its final writer/check receipts in
-`replacement-reference-final-{writer,check}.log`. Earlier partial replacement
+the reference tree. The ordinary nested freeze had 251 pages, 250 modules and
+8,329 markers (`infallible-nested-reference-final-{writer,check}.log`); the
+replacement-sink freeze had 251/250/8,309
+(`replacement-reference-final-{writer,check}.log`). Earlier partial replacement
 receipts retain their then-pending runtime classification. The preceding
 fallible nested freeze had 251/250/8,295; filesystem had 251/250/8,259;
 reusable regex had 250/249/8,220; archive had 250/249/8,197. Earlier

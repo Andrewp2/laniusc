@@ -3,12 +3,16 @@ module app::main;
 import alloc::io;
 import alloc::vec;
 import core::io;
+import core::io::Write;
 import core::mem;
 import core::option;
 import core::path;
 import core::result;
 import core::slice;
 import ext::kv;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_help;
 import std::args;
 import std::atomic_file;
 import std::entropy;
@@ -16,6 +20,7 @@ import std::file;
 import std::file_ops;
 import std::stream;
 import std::temp_file;
+import std::signal;
 
 enum Notice { None, Invalid, Io, Allocation, Exists, PublishedUnsynced, Unconfirmed }
 struct Outcome {
@@ -25,6 +30,8 @@ struct Outcome {
 // Both paths borrow the one argument snapshot. Split raw bytes rather than
 // normalizing the final component, so a trailing slash or '/.' cannot retarget.
 struct Target { parent: core::path::Path, leaf: core::path::Path }
+struct Invocation { command:i32, operands:[core::slice::View<u8>], count:i32, help:bool }
+impl Invocation { fn borrow(&self) -> &Invocation { return self; } }
 
 fn ordinary(code: i32) -> Outcome {
     let notice: Notice = Notice::None;
@@ -213,30 +220,20 @@ fn mutate(mode: i32, path: core::path::Path, key: core::slice::View<u8>, value: 
     }
     store.destroy(); return close_outcome(parent.borrow(),outcome);
 }
-fn process(args: std::args::Arguments) -> Outcome {
-    if (args.len() < 2) { return ordinary(2); }
-    let command: core::slice::View<u8> = args.get(0).unwrap(); let mode: i32 = 0;
-    if (same(command,literal("init",4))) { mode = 1; }
-    if (same(command,literal("put",3))) { mode = 2; }
-    if (same(command,literal("remove",6))) { mode = 3; }
-    if (same(command,literal("get",3))) { mode = 4; }
-    if (same(command,literal("list",4))) { mode = 5; }
-    if (same(command,literal("check",5))) { mode = 6; }
-    let count: i32 = 2;
-    if (mode == 3 || mode == 4) { count = 3; }
-    if (mode == 2) { count = 4; }
-    if (mode == 0 || args.len() != count) { return ordinary(2); }
-    let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(args.get(1).unwrap());
+fn process(mode:i32, operands:core::slice::View<core::slice::View<u8>>) -> Outcome {
+    let count:i32=1; if(mode==3 || mode==4) { count=2; } if(mode==2) { count=3; }
+    if(mode<1 || mode>6 || operands.length!=count) { return ordinary(2); }
+    let parsed: core::result::Result<core::path::Path,core::path::Error> = core::path::from_view(operands.get(0).unwrap());
     if (parsed.is_err()) { return ordinary(2); }
     let path: core::path::Path = parsed.unwrap();
     let key: alloc::vec::Vec<u8> = alloc::vec::new(); let value: alloc::vec::Vec<u8> = alloc::vec::new();
     if (mode >= 2 && mode <= 4) {
-        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(args.get(2).unwrap());
+        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(operands.get(1).unwrap());
         if (decoded.is_err()) { return ordinary(decoded.unwrap_err()); }
         key = decoded.unwrap();
     }
     if (mode == 2) {
-        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(args.get(3).unwrap());
+        let decoded: core::result::Result<alloc::vec::Vec<u8>,i32> = unhex(operands.get(2).unwrap());
         if (decoded.is_err()) { key.destroy(); return ordinary(decoded.unwrap_err()); }
         value = decoded.unwrap();
     }
@@ -257,6 +254,68 @@ fn process(args: std::args::Arguments) -> Outcome {
     }
     if (mode == 5) { status = listing(store.borrow()); }
     key.destroy(); value.destroy(); store.destroy(); return ordinary(status);
+}
+fn node(id:i32,name:core::slice::View<u8>,summary:core::slice::View<u8>,operands:core::slice::View<u8>,options:core::slice::View<ext::cli_commands::OptionSpec>) -> ext::cli_commands::Command {
+    return ext::cli_commands::Command { id:id,parent:0,name:name,summary:summary,operands:operands,ordering:ext::cli::Ordering::OptionsFirst,options:options };
+}
+fn help(commands:core::slice::View<ext::cli_commands::Command>,command:i32) -> Outcome {
+    let storage:[u8;4096]=[0;4096];
+    let rendered=ext::cli_help::help_into(commands,command,core::slice::View { values:storage,start:0,length:4096 });
+    if(rendered.is_err()) { return ordinary(3); }
+    let length=rendered.unwrap(); let offset:i32=0; let calls:i32=0; let sink=std::stream::stdout();
+    while(offset<length) {
+        if(calls==64) { return ordinary(3); } calls+=1;
+        let count=length-offset; if(count>1024) { count=1024; }
+        let sent=sink.write(storage,offset,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return ordinary(3); } }
+        else { let got=sent.unwrap(); if(got<=0 || got>count) { return ordinary(3); } offset+=got; }
+    }
+    return ordinary(0);
+}
+fn selected(state:&Invocation,item:ext::cli_commands::Selection) -> bool { state.command=item.id; return true; }
+fn option(state:&Invocation,item:ext::cli_commands::ScopedOption) -> bool {
+    if(item.occurrence.id!=100) { return false; } state.help=true; return true;
+}
+fn operand(state:&Invocation,item:ext::cli_commands::ScopedOperand) -> bool {
+    if(item.command!=state.command || state.command==0 || state.count==3) { return false; }
+    state.operands[state.count]=item.argument.bytes; state.count+=1; return true;
+}
+fn arguments(args:std::args::Arguments) -> Outcome {
+    let help_spec=ext::cli::Spec { id:100,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag };
+    let options:[ext::cli_commands::OptionSpec;1]=[ext::cli_commands::OptionSpec { spec:help_spec,global:true,value_name:literal("",0),help:literal("Show command help",17) }];
+    let globals=core::slice::View { values:options,start:0,length:1 };
+    let empty=core::slice::View { values:options,start:0,length:0 };
+    let commands:[ext::cli_commands::Command;7]=[
+        ext::cli_commands::Command { id:0,parent:-1,name:literal("kv-tool",7),summary:literal("Bounded byte-key snapshot store",31),operands:literal("",0),ordering:ext::cli::Ordering::Intermixed,options:globals },
+        node(1,literal("init",4),literal("Create an empty database",24),literal("DB",2),empty),
+        node(2,literal("put",3),literal("Insert or replace a byte value",30),literal("DB KEY_HEX VALUE_HEX",20),empty),
+        node(3,literal("remove",6),literal("Remove a byte key",17),literal("DB KEY_HEX",10),empty),
+        node(4,literal("get",3),literal("Write the exact stored value",28),literal("DB KEY_HEX",10),empty),
+        node(5,literal("list",4),literal("List sorted hexadecimal entries",31),literal("DB",2),empty),
+        node(6,literal("check",5),literal("Validate the complete snapshot",30),literal("DB",2),empty)
+    ];
+    let schema=core::slice::View { values:commands,start:0,length:7 };
+    let scratch:[ext::cli::Spec;1]=[help_spec];
+    let prepared=ext::cli_commands::parser(args.as_view(),schema,core::slice::View { values:scratch,start:0,length:1 });
+    if(prepared.is_err()) { return ordinary(2); } let parser=prepared.unwrap();
+    let empty_operand=literal("",0); let operands:[core::slice::View<u8>;3]=[empty_operand,empty_operand,empty_operand];
+    let state=Invocation { command:0,operands:operands,count:0,help:false };
+    while(true) {
+        let next=parser.next(); if(next.is_err()) { return ordinary(2); }
+        let found=next.unwrap(); if(found.is_none()) { break; }
+        let valid=match(found.unwrap()) {
+            ext::cli_commands::Event::Command(item)->selected(state.borrow(),item),
+            ext::cli_commands::Event::Option(item)->option(state.borrow(),item),
+            ext::cli_commands::Event::Operand(item)->operand(state.borrow(),item)
+        };
+        if(!valid) { return ordinary(2); }
+    }
+    if(state.command==0) { if(state.help) { return help(schema,0); } return ordinary(2); }
+    let needed:i32=1; if(state.command==3 || state.command==4) { needed=2; } if(state.command==2) { needed=3; }
+    if(state.count>needed) { return ordinary(2); }
+    if(state.help) { return help(schema,state.command); }
+    if(state.count!=needed) { return ordinary(2); }
+    return process(state.command,core::slice::View { values:operands,start:0,length:state.count });
 }
 fn report(outcome: Outcome) -> i32 {
     let okay: bool = !outcome.diagnostic_failed;
@@ -285,16 +344,15 @@ fn report(outcome: Outcome) -> i32 {
     return outcome.code;
 }
 fn main() -> i32 {
-    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,4,262144);
+    if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,8,262144);
     let outcome: Outcome = ordinary(0);
     if (captured.is_err()) {
         let status: i32 = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 };
         outcome = ordinary(status);
     } else {
         let args: std::args::Arguments = captured.unwrap();
-        if (args.len() == 1 && same(args.get(0).unwrap(),literal("--help",6))) {
-            if (!write(literal("Usage: kv-tool init DB | put DB KEY_HEX VALUE_HEX | remove DB KEY_HEX | get DB KEY_HEX | list DB | check DB\n",108),false)) { outcome = ordinary(3); }
-        } else { outcome = process(args); }
+        outcome = arguments(args);
         args.destroy();
     }
     return report(outcome);

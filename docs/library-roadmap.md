@@ -35,7 +35,7 @@ package distribution is a separate deliverable.
 | Memory | Allocation contracts, layout, owned buffers, arenas, explicit destruction and clone behavior | Allocator bindings, raw views and stable chunked arenas with generic typed allocations execute. [Fallible View cloning](stdlib-clone.md) constructs independent String/user-record memory owners and releases completed destination elements on error. Layout consolidation, compiler-enforced lifetimes and automatic destruction remain |
 | Collections | Vec, deque, hash map/set, ordered map/set, heap, bitset, fixed-capacity containers | Borrowed-owner alloc Vec, deque and bitset, inline generic Vec/Eq Set, hash/tree maps and sets, and min/max heaps execute. Owned sets include representative ownership and all four fallible algebra operations through shared map engines. Explicit TryClone/Destroy View cloning now composes through nested Vec types with independent owners, typed error layers and recursive cleanup. Opt-in deep HashMap cloning executes with independent nested owners and typed key/value failure cleanup; opt-in recursive deque cloning also executes with logical ring and owned-error rollback coverage. Opt-in deep heap cloning also executes with Min/Max priority and nested/owned-error failure coverage. Opt-in deep TreeMap cloning also executes with sorted staging, independent nested owners, typed key/value rollback and empty/zero-sized coverage. Existing inherent collection clone methods retain shallow entry/key/value copies. Silent-failure legacy map/set/text owners are retired. Opt-in deep HashSet and TreeSet cloning also execute with typed rollback and representative-preserving models. The protected std::vec/heap migration, additional owner compositions and automatic ownership remain |
 | I/O | Reader/writer contracts, buffers, exact/all operations, cursors, stdin/stdout/stderr, errors | Shared traits, cursors, owned sinks, descriptor/file adapters and reusable multi-descriptor readiness execute. Polling preserves old publication on errors and uses explicit observed deadlines. Imported/nested generic Read/Write transport passes native contracts and checked cache reuse. Fixed-capacity buffered adapters execute with read-ahead/pending handoff, explicit finish/discard, partial-I/O and allocation failures, nested composition and a binary-copy application. Runtime writer formatting shares these contracts and leaves flush/finish explicit |
-| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Named TempFile ownership and descriptor-relative Replace/NoReplace/removal pass five native groups on the documented Linux/ext4 profile. AtomicFile's bounded publication/recovery owner now passes 66 process invocations across four groups; the anchored no-SCRATCH kv_tool passes 64 across two. Checked descriptor-relative directory creation/removal now passes namespace24/bounds19/faults12 invocations across three groups. These finite receipts preserve visibility/durability/cleanup distinctions without locking or universal crash guarantees. Checked link/readlink and descriptor/path permissions pass five groups totaling 139 accepted group cases; mktemp_dir passes 48 process invocations. TempDir passes all four groups totaling 46 accepted group cases. Automatic owner destruction and broader platform support remain |
+| Files and paths | File handles, metadata, directories, walking, lexical paths, filesystem operations | Owned files and paths, lexical operations, checked mutations, configurable/relative opens, seek/resize, metadata, sync, duplication, raw directory iteration and bounded anchored walking execute on native Linux. Bounded copying checks descriptor capabilities and inode aliases before truncation, preserves progress on error and tests actual EOF even for zero-size pseudo-files. Real copy and directory-report applications check output and cleanup. Named TempFile ownership and descriptor-relative Replace/NoReplace/removal pass five native groups on the documented Linux/ext4 profile. AtomicFile's bounded publication/recovery owner passes 66 process invocations across four groups. The current anchored hierarchy kv_tool passes 130 overlapping cases across three direct groups; its earlier no-SCRATCH 64-case receipt retains its historical source scope. Checked descriptor-relative directory creation/removal now passes namespace24/bounds19/faults12 invocations across three groups. These finite receipts preserve visibility/durability/cleanup distinctions without locking or universal crash guarantees. Checked link/readlink and descriptor/path permissions pass five groups totaling 139 accepted group cases; mktemp_dir passes 48 process invocations. TempDir passes all four groups totaling 46 accepted group cases. Automatic owner destruction and broader platform support remain |
 | Processes and environment | Arguments, environment, working directory, subprocesses, pipes, exit status | Raw-byte snapshots, explicit argv/environment/PATH/cwd, fork/exec, redirected files, owned pipes, cached waits and child signaling execute on the documented single-threaded Linux profile. Bounded concurrent stdin/stdout/stderr capture preserves partial progress, startup certainty and child ownership across errors. Explicit new groups, anchored signaling and non-reaping observation pass five focused API groups; a TERM/grace/KILL supervisor passes five groups and 53 cases, across separate receipts. Group escape/containment and concurrent spawn policy remain |
 | Time and randomness | Duration, instant, system time, deadlines, deterministic generators, OS entropy | Typed nanosecond arithmetic, calendars, native clocks, deadline waits, deterministic generators, sampling/shuffle and checked OS entropy execute. Optional TZif/POSIX zones provide conversion and ambiguity candidates; four continuous and four discrete distributions have bounded generic sampling and explicit numerical domains. Additional clocks and distribution families remain |
 | Networking | Addresses, sockets, TCP, UDP, resolution, deadlines, explicit host errors | Numeric IPv4/IPv6 and CIDR values, owned TCP/UDP, polling, deadlines, options and half-close execute via the Linux boundary. System hostname/service resolution delegates to libc with explicit hints and owned ordered results on Linux x86_64/glibc; all four library groups and five CLI groups pass across separate receipts. Blocking NSS memory/time are outside local byte/result caps. Optional DNS transport queries explicit numeric servers with correlated UDP/TCP fallback; bounded cleartext HTTP/1 client and staged server connections use explicit transport, deadlines and resource limits. At checkpoint 480432e8, resumable Prepared/Exchange passed all five direct groups (83 cases), one-thread/poll batches passed all seven groups, and fetch-many passed all five application groups across separate receipts. The current shared Protocol passes direct state/ownership execution; refactored plain synchronous/direct clients pass 188/83 cases, generic plain batches pass eight groups/103 cases and HTTPS batches pass six groups/108 cases through separate native receipts. The migrated HTTPS fetch and mutual-TLS application groups pass 63 and 101 cases respectively. The current fetch-many passes all five integration groups in 24.18 seconds; the nested-pattern compiler reduction is confirmed alongside an executable explicit-match control. Excluded buffered/prepared-context receipts retain their older scope. Older receipts do not cover the revised boundaries. Manual owners and one common deadline are explicit. Real TCP/DNS/fetch/local-service programs exercise transfers. Checked native C calls, OpenSSL digests and client TLS with peer verification execute. Client TLS requires explicit peer trust/identity, borrowed nonblocking sockets and caller deadlines/SIGPIPE policy; the preceding TLS stream/HTTPS application passed 62 cases across four groups with numeric endpoints, explicit trust/identity, deadlines and manual cleanup. Server TLS and a bounded HTTPS service execute through OpenSSL. Earlier client credential/required fresh client-chain verification receipts cover 107 cases across six groups; earlier prepared-context/mutual-TLS HTTPS modes cover another 109 cases across four groups. Unauthenticated public service remains an explicit policy. Application identity/authorization, broader certificate APIs, asynchronous resolution/NSS resource policy, interface discovery, complete concurrent-server acceptance, keepalive and broader client policies remain; old std::net declarations remain unbound |
@@ -57,7 +57,7 @@ tests, target support, and relevant performance evidence.
 | Storage | Database interfaces; executable [SQLite integration](extended-sqlite.md), [persistent binary key/value application](extended-sqlite-kv.md) and key-value snapshots; broader database/storage interfaces remain |
 | Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests, verified client/server TLS and mutual TLS execute with explicit trust and manual owners; standalone encryption/signature APIs, application identity/authorization and broader certificate policy remain open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
-| Application utilities | CLI parsing, logging, configuration, tables, progress reporting |
+| Application utilities | CLI option parsing, command hierarchies, caller-buffer generated help, logging, configuration, tables, progress reporting; completion, response files and richer application validation remain |
 | Media | Image codecs, pixel operations, audio codecs and signal utilities |
 
 The [compiled byte-glob module](extended-glob.md) and its streaming path-filter
@@ -371,12 +371,14 @@ outside reapers, arbitrary concurrent spawn and process-tree containment remain
 outside this initial ownership contract.
 
 [Byte key/value storage](extended-kv.md) provides atomic owned mutations and
-canonical CRC-checked snapshots. Its current file program uses
+canonical CRC-checked snapshots. Its file program uses
 [AtomicFile](stdlib-atomic-files.md) to publish complete snapshots through one
-anchored parent/leaf, with NoReplace init and Replace updates. Two native groups
-pass 64 process invocations, including reached allocation/I/O faults and explicit
-Published-unsynced, unconfirmed visibility and retained-cleanup outcomes. Earlier
-caller-scratch CLI receipts remain historical. This finite local-filesystem
+anchored parent/leaf, with NoReplace init and Replace updates. The current
+command-hierarchy migration passes three direct groups totaling 130 overlapping
+cases, including reached allocation/I/O faults and explicit Published-unsynced,
+unconfirmed visibility and retained-cleanup outcomes. Final traces observe every
+syscall. The older 64-case AtomicFile CLI and caller-scratch receipts retain
+their historical source scope. This finite local-filesystem
 profile supplies neither locking nor concurrent transactions or universal
 power-loss guarantees. A separate native
 [SQLite adapter](extended-sqlite.md) and
@@ -541,9 +543,40 @@ than a request to replace implementation work with more tests.
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
 | Mathematics | Big integers, finite decimals, ordinary statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. | Additional number theory, decimal exceptional/transcendental behavior, weighted/higher statistics, sparse/advanced decompositions and further distributions remain as listed above. Preserve finite-domain and accuracy limits. |
-| Application and media utilities | CLI event parsing, settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows execute. | CLI subcommands/automatic usage/completion/response files, richer configuration discovery/validation, color management, additional media formats/playback and signal algorithms remain. |
+| Application and media utilities | CLI event parsing, command hierarchy and caller-buffer generated help execute; the migrated KV CLI passes its finite hierarchy/roundtrip/publication groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT workflows retain their executable profiles. | Shell completion, response files, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
+
+### Accepted command hierarchy and help
+
+The [command contract](extended-cli-commands.md) and
+[plan](library-cli-commands-plan.md) add routing and deterministic measured help
+through the canonical option lexer. The modules use borrowed schema/arguments,
+exclusive caller scratch and caller output, with whole-schema admission and
+unchanged output on help failure. They allocate no storage and access no host
+service.
+Application arity/default/conflict/help policy remains explicit.
+
+Two semantic Rust tests pass together in 10.10s after a separate 0.39s build:
+30 schema mutations, six literal help goldens and 28 model sequences in one
+native model process. Both actual public smokes and the final contract program
+exit zero under full syscall observation and mmap denial, with no allocation
+attempt. This establishes no OOM-recovery path. One selected old flat-parser
+test passes in 6.04s after a separate 2.32s build; seven were filtered out.
+
+Current [KV application](extended-kv.md#current-application-receipts) source
+`f07fd52f...` passes three direct groups: hierarchy66, roundtrips33 and
+publication31, including 13 reached source OOMs and 15 I/O faults. The total is
+130 overlapping cases, not three current Rust-libtest passes. All syscalls are
+observed in `cli-commands-kv-{hierarchy,roundtrips,publication}-all-syscalls.log`;
+earlier selected-call observations repeat those cases and do not add 130.
+The registered KV driver builds with `--no-run` in 51.67s separately.
+
+Flat parser `9f11981f...`, command routing `6eb4db7a...` and help
+`a7198a2a...` retain the selected native Linux x86_64 CPU profile emitted by the
+GPU compiler. A minimal nested-error-pattern dependency has a typed-match
+executable control and does not block the APIs. Completion, response files,
+richer application validation and the full library goal remain open.
 
 ### Accepted ordinary nested iteration
 
@@ -735,6 +768,13 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [command hierarchy and help](library-cli-commands-plan.md): two
+  semantic Rust tests, both public smokes and a pure contract executable pass,
+  including full syscall observation with no allocation attempt. One selected
+  flat-parser regression passes; its other seven tests were filtered out.
+  Current KV passes three direct all-syscall groups totaling 130 overlapping
+  cases, not three native Rust tests. Its new registered driver has build-only
+  admission. Completion, response files and application validation remain open.
 - Accepted [ordinary nested-iteration increment](library-infallible-nested-plan.md):
   core `5034fbac...` adds Flatten/FlatMap through the existing shared engine and
   true empty Infallible retirement. One direct public smoke, two semantic Rust
@@ -862,8 +902,8 @@ the rest of the family scope above stays open.
   reports. Exact result validation is outside the timer. This one sample adds
   no finite-case count or compiler/throughput ratio; receipt:
   `archive-unpack-observation-first.log`.
-- [AtomicFile publication](stdlib-atomic-files.md) and the
-  [`kv_tool` migration](extended-kv.md#current-application-receipts) now pass their
+- [AtomicFile publication](stdlib-atomic-files.md) and the earlier
+  [`kv_tool` migration](extended-kv.md#historical-atomic-publication-application-receipts) pass their
   selected native gates on Linux x86_64, kernel `7.0.0-38-generic`, ext4 under
   `/tmp`. AtomicFile owner nine, bounds 25, publication six and faults 26 total
   66 process invocations across four groups, including baselines. The preliminary
@@ -875,7 +915,7 @@ the rest of the family scope above stays open.
   Receipts are `atomic-file-owner-group-first.log`,
   `atomic-file-bounds-selector-retry.log`, `atomic-file-publication-first.log`
   and `atomic-file-faults-first.log` under `target/stdlib-work/`.
-  The migrated application removes caller-supplied SCRATCH operands, anchors
+  That historical application removes caller-supplied SCRATCH operands, anchors
   load/publication to one parent/leaf, uses NoReplace for init and Replace for
   updates, and preserves publication/cleanup outcomes even if stderr fails.
   Round trips 33 and publication 31 total 64 process invocations across two
@@ -886,8 +926,8 @@ the rest of the family scope above stays open.
   no compiler change was made. Eleven KV CPU binding controls and two Rust
   driver `--no-run` admissions are separate from actual direct native oracles;
   no libtest execution is claimed. The portable Store API/snapshot format are
-  unchanged, and old scratch-path CLI receipts remain historical. Source/API
-  surfaces are frozen for reference generation. Namespace authority remains
+  unchanged. Its 64 cases and older scratch-path CLI receipts are not added to
+  the current hierarchy application's 130-case receipt above. Namespace authority remains
   exclusive/cooperative, without locking, network-filesystem semantics or
   universal power-loss guarantees. The [archive increment](library-archive-extraction-plan.md)
   now composes that foundation within its accepted finite native profile.
@@ -1529,8 +1569,11 @@ the rest of the family scope above stays open.
   groups cover schema errors, 96 generated command lines, allocation failures,
   32,768-argument lists and a streaming file-checksum application with injected
   I/O errors. Parsing makes no allocations after capture; two snapshot
-  allocations suffice at both 4,096 and 32,768 arguments. Higher-level CLI help,
-  subcommands remain; logging executes as documented below.
+  allocations suffice at both 4,096 and 32,768 arguments. Those original
+  flat-parser/checksum receipts retain their source scope. The separately
+  accepted [hierarchy and generated help](extended-cli-commands.md) now address
+  routing and usage output through caller storage; completion and response files
+  remain. Logging executes as documented below.
 - Configuration: [`ext::config`](extended-config.md) executes strict JSON object
   sources, bounded file loading, typed borrowed queries and explicit shallow
   overlays with source indices. The checksum application combines configuration

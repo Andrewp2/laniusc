@@ -8,11 +8,14 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Canonical borrowed option lexer with sticky errors, fused EOF and exact event locations. The explicit-terminator getter distinguishes an actual -- from OptionsFirst stopping or a required value. Command routing reuses this lexer; its exclusive scratch ownership differs from the flat parser's independent position copies. The selected current flat regression and linked hierarchy gates pass on native Linux x86_64; original broader flat-parser/checksum receipts retain their historical source scope.
+
 ## Contract and evidence guides
 
 - [extended-cli](../../extended-cli.md)
+- [extended-cli-commands](../../extended-cli-commands.md)
 
-Declaration counts: enum: 4; field: 18; function: 1; impl: 1; method: 1; struct: 5; variant: 12.
+Declaration counts: enum: 4; field: 19; function: 1; impl: 1; method: 2; struct: 5; variant: 12.
 
 ## Declared imports
 
@@ -330,6 +333,14 @@ short_offset: i32
 ended: bool
 ```
 
+#### field: terminated
+
+[Source line 18](../../../extended/ext/cli.lani#L18)
+
+```lanius
+terminated: bool
+```
+
 #### field: failure
 
 [Source line 18](../../../extended/ext/cli.lani#L18)
@@ -358,9 +369,17 @@ pub fn parser(arguments: core::slice::View<core::slice::View<u8>>, specs: core::
 pub impl Parser
 ```
 
+#### method: explicitly_terminated
+
+[Source line 56](../../../extended/ext/cli.lani#L56)
+
+```lanius
+pub fn explicitly_terminated(&self) -> bool
+```
+
 #### method: next
 
-[Source line 103](../../../extended/ext/cli.lani#L103)
+[Source line 106](../../../extended/ext/cli.lani#L106)
 
 ```lanius
 pub fn next(&self) -> core::result::Result<core::option::Option<Event>, Error>

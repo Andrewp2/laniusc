@@ -1,0 +1,22 @@
+--- tests/fixtures/extended/cli_commands/help_smoke.lani
++++ tests/fixtures/extended/cli_commands/help_smoke.lani
+@@ -60,8 +60,7 @@
+     let storage: [u8;192] = [90;192];
+     let small: core::slice::View<u8> = core::slice::View<u8> { values: storage, start: 3, length: 112 };
+     let rejected: core::result::Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,20,small);
+-    let rejected_error: ext::cli_commands::Error = core::result::unwrap_err(rejected);
+-    assert(match (rejected_error) { ext::cli_commands::Error::OutputTooSmall(required) -> required == 113, _ -> false });
++    assert(match (rejected) { core::result::Err(ext::cli_commands::Error::OutputTooSmall(required)) -> required == 113, _ -> false });
+     canaries(storage,0,192);
+     let exact: core::slice::View<u8> = core::slice::View<u8> { values: storage, start: 3, length: 113 };
+     assert(ext::cli_help::help_into(commands,20,exact).unwrap() == 113 && equal(exact,leaf_help));
+@@ -72,8 +71,7 @@
+     let prefix: core::slice::View<u8> = core::slice::View<u8> { values: root_storage, start: 2, length: 152 };
+     assert(equal(prefix,root_help)); canaries(root_storage,0,2); canaries(root_storage,154,192);
+     let unknown: core::result::Result<i32,ext::cli_commands::Error> = ext::cli_help::help_into(commands,99,roomy);
+-    let unknown_error: ext::cli_commands::Error = core::result::unwrap_err(unknown);
+-    assert(match (unknown_error) { ext::cli_commands::Error::UnknownCommandId(id) -> id == 99, _ -> false });
++    assert(match (unknown) { core::result::Err(ext::cli_commands::Error::UnknownCommandId(id)) -> id == 99, _ -> false });
+     assert(equal(prefix,root_help)); canaries(root_storage,0,2); canaries(root_storage,154,192);
+     return 0;
+ }

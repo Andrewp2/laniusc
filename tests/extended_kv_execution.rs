@@ -523,3 +523,7 @@ fn native_file_cli_round_trips_binary_values_and_replaces_only_validated_complet
 fn native_cli_atomic_publication_races_faults_and_reached_allocations_report_visibility() {
     application_group("publication");
 }
+#[test]
+fn native_cli_hierarchy_help_and_raw_path_routing_have_no_premature_file_effects() {
+    application_group("hierarchy");
+}

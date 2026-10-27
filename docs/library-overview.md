@@ -1,7 +1,11 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
-[ordinary nested-iteration increment](library-infallible-nested-plan.md)
+[command hierarchy and help increment](library-cli-commands-plan.md) is
+implemented and accepted on the finite native profile below. Two semantic Rust
+tests, pure contract/smoke programs under full syscall observation, a selected
+flat-parser regression and three migrated KV application groups pass. The
+preceding [ordinary nested-iteration increment](library-infallible-nested-plan.md)
 implements `Flatten` and `FlatMap` through the existing nested engine and the
 true empty `Infallible` error type. Public admission, two semantic/model Rust
 tests, three negative-bound tests, all eight strict-owner cases and the migrated
@@ -36,11 +40,46 @@ nested generic Option compiler dependency retained separately. This adds no new
 API family. The preceding accepted increment is
 [AtomicFile publication and the key-value application migration](library-atomic-files-plan.md).
 [AtomicFile](stdlib-atomic-files.md) and the
-[migrated CLI](extended-kv.md#current-application-receipts) now have finite native
+[earlier migrated CLI](extended-kv.md#historical-atomic-publication-application-receipts) have finite native
 acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Accepted command hierarchy and help.**
+
+[Command routing and generated help](extended-cli-commands.md) use the existing
+option lexer. Whole-schema admission checks inherited option scopes and maximum
+scratch capacity before parsing. Help measures before writing into caller
+storage, preserving output on failure. These pure modules allocate no storage
+and perform no host I/O. A hierarchy parser exclusively borrows its scratch;
+the flat parser's position-copy contract remains separate.
+
+| Surface | Accepted finite scope |
+| --- | --- |
+| Public and pure admission | Both actual public smokes and the current contract program exit zero. Full syscall traces contain only launch/final raw exit, with no allocation attempt under mmap denial. This is not OOM-recovery evidence. |
+| Semantics | Two Rust tests pass together in 10.10s after a separate 0.39s build: 30 schema mutations, six literal help goldens and 28 routing/event/location sequences in one model process. |
+| Existing flat parser | One selected test passes in 6.04s after a separate 2.32s build; seven tests were filtered out. Earlier flat-parser/checksum receipts retain their original scope. |
+| [Current KV application](extended-kv.md#current-application-receipts) | Three direct groups pass 130 overlapping cases: hierarchy66, roundtrips33, publication31, including 13 reached source OOMs and 15 I/O faults. Every syscall is observed; these are not three current Rust-libtest passes. |
+
+Sources are flat parser `9f11981f...`, routing `6eb4db7a...`, help
+`a7198a2a...` and application `f07fd52f...`. Receipts under
+`target/stdlib-work/` are `cli-commands-semantic-owner-aliases.log`,
+`cli-commands-flat-parser-regression-first.log`,
+`cli-commands-contracts-aliases-no-host.{trace,log}` and
+`cli-commands-{public-smoke,help-smoke}-no-host.{trace,log}`. Current app logs
+are `cli-commands-kv-{hierarchy,roundtrips,publication}-all-syscalls.log`.
+Earlier selected-call traces missed possible unlisted calls; their repeated
+130 cases are weaker observations, not another 130 accepted cases. The new KV
+driver has `--no-run` admission in 51.67s, separately from direct execution.
+
+The application validates the complete CLI before file access and generates
+root/child help, with `--` for dashed database paths. Its Store/snapshot and
+AtomicFile publication logic retain their prior contracts. A separate minimal
+nested-error-pattern compiler dependency has an executable typed-match control.
+Targets remain native Linux x86_64 CPU output from the GPU compiler. Shell
+completion, response files, richer application validation and the full library
+goal remain open; no user-program GPU execution follows.
 
 **Accepted ordinary nested iteration.**
 
@@ -337,19 +376,21 @@ Receipts under `target/stdlib-work/` are `atomic-file-owner-group-first.log`,
 cases. Source allocations and native descriptor generations are checked before
 exit; this does not account for all host/kernel memory or prove every schedule.
 
-The migrated `kv_tool` passes round trips 33 and publication 31: **64 process
-invocations across two groups**, including 13 reached source-allocation failures
+The earlier AtomicFile-migrated `kv_tool` passes round trips 33 and publication
+31: **64 process invocations across two groups**, including 13 reached source-allocation failures
 and 15 I/O controls in the publication group. Its new arities omit SCRATCH and
 anchor mutation load/publication to one parent/leaf, with NoReplace init and
 Replace updates. Published-but-unsynced, unconfirmed visibility and retained
 cleanup remain explicit outcomes, including when stderr delivery fails.
-The current receipts are `kv-tool-atomic-syntax-retry-compile.log`,
+The historical receipts are `kv-tool-atomic-syntax-retry-compile.log`,
 `kv-tool-atomic-roundtrips-first.log` and `kv-tool-atomic-publication-first.log`.
 The first compile failure was unsupported application match-arm syntax; the
 correction required no compiler change. Eleven CPU binding controls and two
 Rust driver `--no-run` admissions remain separate from native oracle execution;
-no Rust libtest execution is claimed. Portable Store/snapshot tests retain
-their prior scope, and earlier caller-scratch CLI receipts remain historical.
+no Rust libtest execution is claimed. The current hierarchy application has its
+separate 130-case receipt above; the old 64 cases are not added to it. Portable
+Store/snapshot tests retain their prior scope, and earlier caller-scratch CLI
+receipts remain historical.
 
 These operations use Lanius over existing Linux calls. The accepted namespace is
 exclusive/cooperative; no locking, hostile-directory, network-filesystem or
@@ -411,10 +452,10 @@ Rare WANT schedules, clock failures after native TLS calls and concurrent
 mixed invalid/valid mutual-TLS admissions retain finite coverage gaps. The
 sequential mutual-TLS matrices do not establish that mixed concurrent schedule.
 The [declaration reference](library-api-reference.md#current-generation-receipt)
-passes its bounded writer and final check for the ordinary nested-iteration
-source/API freeze: 251 pages, 250 modules and 8,329 lexical public declaration
-markers. Only the index and core::iter page change relative to the preceding
-replacement freeze. Runtime acceptance is recorded separately; source extraction
+passes its bounded writer and final check for the command hierarchy/help
+source/API freeze: 253 pages, 252 modules and 8,346 lexical public declaration
+markers. Five outputs change: the index, flat parser, new command/help pages
+and KV metadata, relative to the preceding ordinary nested freeze. Runtime acceptance is recorded separately; source extraction
 and negative compiler admission accept no runtime gate themselves. Source
 inventory evidence does not establish runtime support or library completion.
 

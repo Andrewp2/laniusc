@@ -1,0 +1,152 @@
+module app::main;
+import core::mem;
+import core::io;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::stream;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_help;
+
+fn lit(value: str, count: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count), start: 0, length: count };
+}
+fn spec(id: i32, name: View<u8>, short: u8, arity: ext::cli::Arity) -> ext::cli::Spec {
+    return ext::cli::Spec { id: id, long: name, short: short, arity: arity };
+}
+fn declaration(item: ext::cli::Spec, global: bool, label: View<u8>, help: View<u8>) -> ext::cli_commands::OptionSpec {
+    return ext::cli_commands::OptionSpec { spec: item, global: global, value_name: label, help: help };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; }
+    return true;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+
+struct Diagnostic { command: i32, kind: i32, argument: i32, byte: i32 }
+fn token_diagnostic(command: i32, error: ext::cli::Error) -> Diagnostic {
+    let kind: i32 = match (error) { ext::cli::Error::UnknownOption(at) -> 2, ext::cli::Error::MissingValue(at) -> 3, ext::cli::Error::UnexpectedValue(at) -> 4, _ -> 99 };
+    let at: ext::cli::Location = match (error) { ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: -1, byte: -1 } };
+    assert(kind != 99);
+    return Diagnostic { command: command, kind: kind, argument: at.argument, byte: at.byte };
+}
+fn diagnostic(error: ext::cli_commands::Error) -> Diagnostic {
+    return match (error) {
+        ext::cli_commands::Error::UnknownCommand(at) -> Diagnostic { command: -1, kind: 1, argument: at.argument, byte: at.byte },
+        ext::cli_commands::Error::Token(command,cause) -> token_diagnostic(command,cause),
+        _ -> Diagnostic { command: -2, kind: 99, argument: -1, byte: -1 }
+    };
+}
+fn same(left: Diagnostic, right: Diagnostic) -> bool {
+    return left.command == right.command && left.kind == right.kind && left.argument == right.argument && left.byte == right.byte;
+}
+fn payload(value: View<u8>) {
+    word(value.length as u64);
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),value.values,value.start,value.length).is_ok());
+}
+fn emit_command(value: ext::cli_commands::Selection) { word(1); word(value.id as u64); word(value.at.argument as u64); word(value.at.byte as u64); }
+fn emit_option(value: ext::cli_commands::ScopedOption) {
+    let item: ext::cli::Occurrence = value.occurrence;
+    word(2); word(value.command as u64); word(item.id as u64); word(item.at.argument as u64); word(item.at.byte as u64); word(item.value.is_some() as u64);
+    if (item.value.is_some()) { let argument: ext::cli::Argument = item.value.unwrap(); word(argument.at.argument as u64); word(argument.at.byte as u64); payload(argument.bytes); }
+}
+fn emit_operand(value: ext::cli_commands::ScopedOperand) {
+    word(3); word(value.command as u64); word(value.argument.at.argument as u64); word(value.argument.at.byte as u64); payload(value.argument.bytes);
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let value: u64 = 0; let index: i32 = 0;
+    while (index < 8) { value |= (bytes[offset+index] as u64) << (index*8); index += 1; }
+    return value;
+}
+fn run(bytes: [u8]) {
+    let profile: u64 = decode(bytes,0); let argc: i32 = decode(bytes,8) as i32;
+    assert(profile <= 1 && argc >= 0 && argc <= 8);
+    let empty: View<u8> = lit("",0);
+    let raw_help: [u8;5] = [100,101,115,116,255];
+    let root_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(10,lit("verbose",7),118,ext::cli::Arity::Flag),true,empty,lit("chatty",6)),
+        declaration(spec(20,lit("config",6),67,ext::cli::Arity::Required),true,lit("FILE",4),lit("cfg",3)),
+        declaration(spec(30,lit("root-only",9),120,ext::cli::Arity::Flag),false,empty,lit("root",4))
+    ];
+    let work_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(40,lit("quiet",5),113,ext::cli::Arity::Flag),true,empty,empty),
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(50,lit("output",6),111,ext::cli::Arity::Required),false,lit("OUT",3),core::slice::view(raw_help,5).unwrap())
+    ];
+    let run_options: [ext::cli_commands::OptionSpec;2] = [
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(60,lit("force",5),102,ext::cli::Arity::Flag),false,empty,empty)
+    ];
+    let list_options: [ext::cli_commands::OptionSpec;1] = [declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Required),false,lit("ITEM",4),lit("list",4))];
+    let root_order: ext::cli::Ordering = ext::cli::Ordering::OptionsFirst;
+    let leaf_order: ext::cli::Ordering = ext::cli::Ordering::Intermixed;
+    if (profile == 1) { root_order = ext::cli::Ordering::Intermixed; leaf_order = ext::cli::Ordering::OptionsFirst; }
+    let root: ext::cli_commands::Command = ext::cli_commands::Command { id: 40, parent: -1, name: lit("tool",4), summary: lit("Root",4), operands: lit("ROOT",4), ordering: root_order, options: core::slice::view(root_options,3).unwrap() };
+    // Physical node start1; parent fields are indices relative to this view.
+    let nodes: [ext::cli_commands::Command;6] = [root,root,
+        ext::cli_commands::Command { id: 17, parent: 0, name: lit("work",4), summary: lit("Work",4), operands: lit("ITEM",4), ordering: root_order, options: core::slice::view(work_options,3).unwrap() },
+        ext::cli_commands::Command { id: 91, parent: 1, name: lit("run",3), summary: lit("Run",3), operands: lit("PATH",4), ordering: leaf_order, options: core::slice::view(run_options,2).unwrap() },
+        ext::cli_commands::Command { id: 6, parent: 0, name: lit("list",4), summary: lit("List",4), operands: lit("ITEM",4), ordering: leaf_order, options: core::slice::view(list_options,1).unwrap() },root];
+    let commands: View<ext::cli_commands::Command> = core::slice::view_range(nodes,1,4).unwrap();
+    let sentinel: ext::cli::Spec = spec(901,lit("sentinel",8),115,ext::cli::Arity::Flag);
+    let storage: [ext::cli::Spec;7] = [sentinel;7];
+    let scratch: View<ext::cli::Spec> = core::slice::view_range(storage,1,5).unwrap();
+    let arguments: [View<u8>;10] = [empty;10]; let index: i32 = 0;
+    while (index < 8) {
+        let length: i32 = decode(bytes,16+index*40) as i32; assert(length >= 0 && length <= 32);
+        arguments[index+1] = View<u8> { values: bytes, start: 24+index*40, length: length }; index += 1;
+    }
+    let args: View<View<u8>> = core::slice::view_range(arguments,1,argc).unwrap();
+    let parser: ext::cli_commands::Parser = ext::cli_commands::parser(args,commands,scratch).unwrap();
+    word(0x434c49); word(parser.current() as u64);
+    let done: bool = false; let count: i32 = 0;
+    while (!done) {
+        assert(count < 32); count += 1;
+        let result: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = parser.next();
+        if (result.is_err()) {
+            let failure: Diagnostic = diagnostic(result.unwrap_err());
+            // Bind the actual Token owner, not only the current parser state.
+            if (failure.kind != 1) { assert(failure.command == parser.current()); }
+            word(4); word(parser.current() as u64); word(failure.kind as u64); word(failure.argument as u64); word(failure.byte as u64);
+            index = 0;
+            while (index < 3) {
+                let repeated: Result<Option<ext::cli_commands::Event>,ext::cli_commands::Error> = parser.next();
+                assert(repeated.is_err() && same(failure,diagnostic(repeated.unwrap_err()))); index += 1;
+            }
+            done = true;
+        } else {
+            let item: Option<ext::cli_commands::Event> = result.unwrap();
+            if (item.is_none()) {
+                let current: i32 = parser.current();
+                assert(parser.next().unwrap().is_none() && parser.next().unwrap().is_none() && parser.current() == current); done = true;
+            } else {
+                let event: ext::cli_commands::Event = item.unwrap();
+                match (event) { ext::cli_commands::Event::Command(value) -> emit_command(value), ext::cli_commands::Event::Option(value) -> emit_option(value), ext::cli_commands::Event::Operand(value) -> emit_operand(value) };
+            }
+        }
+    }
+    word(0); word(parser.current() as u64);
+    assert(storage[0].id == 901 && storage[6].id == 901 && nodes[0].id == 40 && nodes[5].id == 40);
+}
+fn main() -> i32 {
+    let input: std::stream::Descriptor = std::stream::stdin(); let bytes: [u8;336] = [0;336];
+    while (true) {
+        let first: Result<i32,core::io::Error> = input.read(bytes,0,336); assert(first.is_ok());
+        let count: i32 = first.unwrap(); if (count == 0) { return 0; }
+        if (count < 336) { assert(core::io::read_exact(input.borrow(),bytes,count,336-count).is_ok()); }
+        run(bytes);
+    }
+    return 0;
+}

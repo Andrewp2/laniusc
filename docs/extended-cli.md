@@ -10,6 +10,14 @@ Both have execution evidence on **x86_64 Linux using the GPU compiler**.
 This does not establish GPU execution of user programs or other host support.
 Importing the parser requires the optional `extended` source root.
 
+Two additional optional modules provide
+[command hierarchies and generated help](extended-cli-commands.md):
+`ext::cli_commands` routes through this same option lexer using caller-owned
+scratch, and `ext::cli_help` renders into caller storage. Their schema,
+ownership and current executable receipts are separate from the flat-parser
+checkpoint below. In particular, hierarchy parser copies cannot independently
+fork over shared mutable scratch.
+
 ## Host snapshots
 
 `std::args::snapshot(first, maximum_count, maximum_bytes)` returns
@@ -87,6 +95,11 @@ event order and leaving the argument array untouched. `OptionsFirst` makes the
 first operand end option recognition; everything afterward, including `--`, is
 an operand. Neither mode reads environment variables or reorders arguments.
 
+`Parser.explicitly_terminated()` reports whether an actual `--` terminator was
+consumed. It remains false when OptionsFirst stops at an operand or when `--`
+is consumed as a required option value. This distinction supports command
+routing without changing the flat parser's event grammar.
+
 `Parser.next()` returns `Result<Option<Event>, Error>`. `Event::Option` contains
 an `Occurrence` with the schema ID, option `Location` and optional value
 `Argument`. `Event::Operand` contains an Argument. Arguments contain borrowed
@@ -105,8 +118,8 @@ Repetition emits every occurrence. Applications decide duplicate-option policy,
 conflicts, defaults, numeric conversion, help and required operands. Values and
 operands preserve arbitrary bytes; they need not be UTF-8. This parser consumes
 already separated argument tokens; it never interprets quotes, escapes or a
-command string. Subcommands, automatic usage generation, completion and response
-files are remaining higher-level CLI work.
+command string. Optional [command routing and automatic help](extended-cli-commands.md)
+now build on this parser; completion and response files remain open.
 
 Schema validation uses pairwise duplicate checks. Option lookup scans the
 schema: parsing costs O(input bytes + occurrences × schema lookup cost), with
@@ -154,7 +167,14 @@ The stdin example prints `cbf43926`.
 
 ## Execution and scale evidence
 
-Eight groups in `tests/extended_cli_execution.rs` pass:
+The original flat-parser/checksum checkpoint passed eight groups in
+`tests/extended_cli_execution.rs`. These receipts and timings retain that source
+scope. The current hierarchy increment reruns one selected flat-parser test
+successfully in 6.04s after a separate 2.32s build, with seven tests filtered
+out (`cli-commands-flat-parser-regression-first.log`). Current hierarchy/help
+and application evidence is in the [companion guide](extended-cli-commands.md).
+
+Original coverage:
 
 - Schema validation, parser forks, array-stride/nonzero-offset views and fused
   exhaustion run with every allocation denied. A synthetic attached value
@@ -202,7 +222,8 @@ checksum uses packed i32 scratch storage. The earlier large-byte-repeat
 checker error was subsequently [fixed in `e59a9183`](compiler-array-repeat-context.md);
 the CLI measurements above retain their original checkpoint.
 Configuration loading now has its own [contracts and execution suite](extended-config.md).
-[Structured logging](extended-log.md) and
-[directory operations](stdlib-directory.md) now execute. Higher-level CLI
-facilities and broader runtime support remain on the
+[Structured logging](extended-log.md),
+[directory operations](stdlib-directory.md) and
+[command hierarchy/help](extended-cli-commands.md) execute on their documented
+profiles. Completion, response files and broader runtime support remain on the
 [library roadmap](library-roadmap.md).
