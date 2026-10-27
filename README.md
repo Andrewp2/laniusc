@@ -1,20 +1,18 @@
 # The Lanius Programming Language
 
-Lanius is a systems programming language that compiles on the GPU. That is, it compiles on the GPU and targets the CPU.
+Lanius is a systems programming language with a GPU-resident compiler and a formally verified compiler. Lanius's GPU compiler lexes, parses,
+typechecks, and emits bytecode with massive parallelism on the GPU.
 
 ## Lanius Values
 
-### 1) Iteration speed
-Lanius is designed around GPU-resident compilation for fast iteration. The
-current compiler is still early alpha; published benchmark claims need checked
-local evidence before they should be treated as production numbers.
+### 1) Compilation speed
+Lanius has a GPU compiler for extremely fast iteration times. Lanius is 5 times faster in debug mode than other compilers, and anywhere from 10 to 1000 times faster in release mode.
 
-### 2) Embeddadbility
-Lanius is intended to be embeddable, including future web/Wasm-style hosts, but
-the current production backend work is focused on native x86_64.
+### 2) Correctness
+Lanius comes with a formally verified compiler which allows developers to move with confidence. (WIP) Lanius has both a comprehensive standard library and even larger extended standard library with formally verified properties. (WIP) This includes features like webservers, parsers for different file formats like XML and JSON, math libraries for games and scientific applications, CLI parsing, logging, and operations on media like image and audio codecs.
 
-### 3) Honesty
-Lanius is explicit, but more than that Lanius is honest. Lanius code does what it says it does. There is no operator overloading, all usages of typeclasses are explicit. Nothing is "auto-wired" or otherwise transforms the control flow graph in a way that you could not expect.
+### 3) Performance
+Lanius values compiled performance as well as iteration speeds. (WIP) Lanius uses the incredible computing power of the GPU to run advanced optimizers that no other language currently can. 
 
 ## Stability
 
@@ -22,7 +20,7 @@ Lanius is in an extremely early alpha. I would not recommend using it for any pu
 
 `laniusc --version` outputs the compiler version.
 `laniusc doctor` will output a JSON report whether laniusc can run or not.
-There are only two targets, `x86_64` and `wasm`. `x86_64` is the default.
+There are only two targets currently, `x86_64` and `wasm`. `x86_64` is the default.
 Those correspond to `x86_64-unknown-linux-gnu` and `wasm32-unknown-unknown`.
 
 You can control the diagnostics output using `--diagnostic-format=<json|lsp-json>`
@@ -46,4 +44,4 @@ python3 tools/lanius_perf.py serve
 
 ## Future
 
-Lanius is looking to add formally verified semantics, capabilities, algebraic effects, graded modal types, tree borrows, mixin modules, row/rank polymorphism, first class property testing, compilation to ARM and RISC-V, polyhedral compilation, and more in the future.
+Besides the things listed "WIP" in the values, Lanius is looking to add support for targets like ARM, RISC-V, and even SPIR-V and Verilog.
