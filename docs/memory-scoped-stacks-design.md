@@ -334,8 +334,8 @@ shared mutable state goes into a pool and is addressed by handles; a handle is
 an index, not a reference, so it is not subject to exclusivity.
 
 Raw `ptr` code stays as the escape hatch, outside both checks, and carries
-separation-logic proof obligations. The README's "tree borrows" item would
-define the aliasing contract between raw pointers and checked references.
+separation-logic proof obligations. An aliasing model such as Tree Borrows
+would define the contract between raw pointers and checked references.
 
 ## Parallelism
 
