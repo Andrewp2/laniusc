@@ -13,6 +13,9 @@ import ext::kv;
 import ext::cli;
 import ext::cli_commands;
 import ext::cli_help;
+import ext::bash_words;
+import ext::cli_complete;
+import ext::cli_bash;
 import ext::cli_response;
 import ext::cli_response_files;
 import std::args;
@@ -324,6 +327,137 @@ fn response_error(failure:ext::cli_response::Failure<ext::cli_response_files::Er
         _ ->ordinary(2)
     };
 }
+// Completion is an explicit host-query mode. It never constructs a response
+// provider or enters Store/publication operations. All borrowed words stay
+// backed by decoded until the framed reply has been delivered.
+fn completion_write(bytes:core::slice::View<u8>) -> Outcome {
+    let sink=std::stream::stdout(); let offset:i32=0; let calls:i32=0;
+    while(offset<bytes.length) {
+        if(calls==64) { return ordinary(3); } calls+=1;
+        let count=bytes.length-offset; if(count>1024) { count=1024; }
+        let sent=sink.write(bytes.values,bytes.start+offset,count);
+        if(sent.is_err()) { if(!core::io::is_interrupted(sent.unwrap_err())) { return ordinary(3); } }
+        else { let got=sent.unwrap(); if(got<=0 || got>count) { return ordinary(3); } offset+=got; }
+    }
+    return ordinary(0);
+}
+fn completion_reply(reply:ext::cli_bash::Reply) -> Outcome {
+    let measured=ext::cli_bash::measure(reply);
+    if(measured.is_err()) { return ordinary(2); }
+    let needed=measured.unwrap(); if(needed>32768) { return ordinary(2); }
+    let buffer:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(buffer.try_resize(needed as i32,0).is_err()) { buffer.destroy(); return ordinary(4); }
+    let encoded=ext::cli_bash::encode_into(reply,buffer.as_view());
+    if(encoded.is_err()) { buffer.destroy(); return ordinary(2); }
+    let outcome=completion_write(buffer.as_view()); buffer.destroy(); return outcome;
+}
+struct CompletionBridge { quote:ext::bash_words::Quote,continuation:ext::bash_words::Quote,trim:core::slice::View<u8>,end:bool }
+fn completion_none(bridge:CompletionBridge) -> Outcome {
+    let empty=literal("",0); let slots:[core::slice::View<u8>;1]=[empty];
+    return completion_reply(ext::cli_bash::Reply { mode:ext::cli_bash::Mode::None,append_space:bridge.end,quote:bridge.quote,continuation:bridge.continuation,trim:empty,stem:empty,prefix:empty,candidates:core::slice::View { values:slots,start:0,length:0 } });
+}
+fn completion_files(stem:core::slice::View<u8>,prefix:core::slice::View<u8>,bridge:CompletionBridge) -> Outcome {
+    if(prefix.length>4095) { return ordinary(2); }
+    let empty=literal("",0); let slots:[core::slice::View<u8>;1]=[empty];
+    return completion_reply(ext::cli_bash::Reply { mode:ext::cli_bash::Mode::Files,append_space:bridge.end,quote:bridge.quote,continuation:bridge.continuation,trim:bridge.trim,stem:stem,prefix:prefix,candidates:core::slice::View { values:slots,start:0,length:0 } });
+}
+fn completion_candidates(context:ext::cli_complete::Context,bridge:CompletionBridge) -> Outcome {
+    let empty=literal("",0); let no_values:[ext::cli_complete::Value;1]=[ext::cli_complete::Value { bytes:empty,append_space:true }];
+    let made=context.suggestions(core::slice::View { values:no_values,start:0,length:0 });
+    if(made.is_err()) { return ordinary(2); } let candidates=made.unwrap();
+    let backing:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(backing.try_resize(32768,0).is_err()) { backing.destroy(); return ordinary(4); }
+    let slots:[core::slice::View<u8>;32]=[empty;32];
+    let count:i32=0; let used:i32=0; let append_space:bool=bridge.end;
+    while(true) {
+        let available=32768-used; if(available>4096) { available=4096; }
+        let output=core::slice::View { values:backing.as_slice(),start:used,length:available };
+        let found=candidates.next(output);
+        if(found.is_err()) { backing.destroy(); return ordinary(2); }
+        let item=found.unwrap(); if(item.is_none()) { break; }
+        if(count==32) { backing.destroy(); return ordinary(2); }
+        let suggestion=item.unwrap();
+        slots[count]=core::slice::View { values:backing.as_slice(),start:used,length:suggestion.bytes };
+        used+=suggestion.bytes; count+=1;
+        if(!suggestion.append_space) { append_space=false; }
+    }
+    let outcome=completion_reply(ext::cli_bash::Reply { mode:ext::cli_bash::Mode::Candidates,append_space:append_space,quote:bridge.quote,continuation:bridge.continuation,trim:bridge.trim,stem:empty,prefix:empty,candidates:core::slice::View { values:slots,start:0,length:count } });
+    backing.destroy(); return outcome;
+}
+fn completion_decoded(words:core::slice::View<core::slice::View<u8>>,incomplete:bool,bridge:CompletionBridge,schema:core::slice::View<ext::cli_commands::Command>,scratch:core::slice::View<ext::cli::Spec>) -> Outcome {
+    let last=words.length-1; let index:i32=0;
+    while(index<last) {
+        let word=words.values[words.start+index];
+        if(word.length>1 && word.values[word.start]==64) {
+            if(word.values[word.start+1]!=64) {
+                // The directive makes later argv unknown, but invalid complete
+                // words before it must still fail the canonical prefix check.
+                let before=core::slice::View { values:words.values,start:words.start,length:index };
+                let checked=ext::cli_complete::context(before,ext::cli::Location { argument:index,byte:0 },schema,scratch);
+                if(checked.is_err()) { return ordinary(2); }
+                return completion_none(bridge);
+            }
+            words.values[words.start+index]=word.subview(1,word.length).unwrap();
+        }
+        index+=1;
+    }
+    let prefix=words.values[words.start+last]; let response:bool=false;
+    if(prefix.length>0 && prefix.values[prefix.start]==64) {
+        if(prefix.length>1 && prefix.values[prefix.start+1]==64) {
+            prefix=prefix.subview(1,prefix.length).unwrap(); words.values[words.start+last]=prefix;
+        } else { response=true; }
+    }
+    let inspected=ext::cli_complete::context(words,ext::cli::Location { argument:last,byte:prefix.length },schema,scratch);
+    if(inspected.is_err()) { return ordinary(2); } let context=inspected.unwrap();
+    if(incomplete) { return completion_none(bridge); }
+    if(response) { return completion_files(literal("@",1),prefix.subview(1,prefix.length).unwrap(),bridge); }
+    let operand=match(context.kind()) { ext::cli_complete::Kind::Operand->true,_ ->false };
+    if(operand) {
+        if(context.command()!=0 && context.operand_index()==0) { return completion_files(context.stem(),context.prefix(),bridge); }
+        return completion_none(bridge);
+    }
+    return completion_candidates(context,bridge);
+}
+fn completion(values:core::slice::View<core::slice::View<u8>>,schema:core::slice::View<ext::cli_commands::Command>,scratch:core::slice::View<ext::cli::Spec>) -> Outcome {
+    if(values.length<4 || values.length>12) { return ordinary(2); }
+    let ending=values.values[values.start+1]; let end:bool=same(ending,literal("1",1));
+    if(!end && !same(ending,literal("0",1))) { return ordinary(2); }
+    let rawtrim=values.values[values.start+2]; let prefix=values.values[values.start+3];
+    if(rawtrim.length>prefix.length) { return ordinary(2); }
+    if(!same(rawtrim,prefix.subview(0,rawtrim.length).unwrap())) { return ordinary(2); }
+    let trimmed=ext::bash_words::measure(rawtrim,ext::bash_words::Mode::Prefix);
+    if(trimmed.is_err()) { return ordinary(2); } let trimshape=trimmed.unwrap();
+    if(trimshape.incomplete_escape || trimshape.bytes>4096) { return ordinary(2); }
+    let total:i32=trimshape.bytes; let index:i32=4;
+    while(index<values.length) {
+        let shape=ext::bash_words::measure(values.values[values.start+index],ext::bash_words::Mode::Complete);
+        if(shape.is_err()) { return ordinary(2); } let size=shape.unwrap().bytes;
+        if(size>4096 || total>32768-size) { return ordinary(2); } total+=size; index+=1;
+    }
+    let shape=ext::bash_words::measure(prefix,ext::bash_words::Mode::Prefix);
+    if(shape.is_err()) { return ordinary(2); } let active=shape.unwrap();
+    if(active.bytes>4096 || total>32768-active.bytes) { return ordinary(2); } total+=active.bytes;
+    let decoded:alloc::vec::Vec<u8> =alloc::vec::new();
+    if(decoded.try_resize(total,0).is_err()) { decoded.destroy(); return ordinary(4); }
+    let empty=literal("",0); let slots:[core::slice::View<u8>;9]=[empty;9];
+    let offset:i32=0; let count:i32=0; index=4;
+    while(index<values.length) {
+        let output=core::slice::View { values:decoded.as_slice(),start:offset,length:total-offset };
+        let parsed=ext::bash_words::decode_into(values.values[values.start+index],ext::bash_words::Mode::Complete,output);
+        if(parsed.is_err()) { decoded.destroy(); return ordinary(2); } let size=parsed.unwrap().bytes;
+        slots[count]=core::slice::View { values:decoded.as_slice(),start:offset,length:size }; count+=1; offset+=size; index+=1;
+    }
+    let output=core::slice::View { values:decoded.as_slice(),start:offset,length:active.bytes };
+    let parsed=ext::bash_words::decode_into(prefix,ext::bash_words::Mode::Prefix,output);
+    if(parsed.is_err()) { decoded.destroy(); return ordinary(2); }
+    slots[count]=output; count+=1; offset+=active.bytes;
+    let trim=core::slice::View { values:decoded.as_slice(),start:offset,length:trimshape.bytes };
+    let parsedtrim=ext::bash_words::decode_into(rawtrim,ext::bash_words::Mode::Prefix,trim);
+    if(parsedtrim.is_err()) { decoded.destroy(); return ordinary(2); }
+    let bridge=CompletionBridge { quote:trimshape.quote,continuation:active.quote,trim:trim,end:end };
+    let outcome=completion_decoded(core::slice::View { values:slots,start:0,length:count },active.incomplete_escape,bridge,schema,scratch);
+    decoded.destroy(); return outcome;
+}
 fn arguments(args:std::args::Arguments) -> Outcome {
     let help_spec=ext::cli::Spec { id:100,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag };
     let options:[ext::cli_commands::OptionSpec;1]=[ext::cli_commands::OptionSpec { spec:help_spec,global:true,value_name:literal("",0),help:literal("Show command help",17) }];
@@ -341,6 +475,8 @@ fn arguments(args:std::args::Arguments) -> Outcome {
     let schema=core::slice::View { values:commands,start:0,length:7 };
     let scratch:[ext::cli::Spec;1]=[help_spec];
     if(ext::cli_commands::validate(schema).is_err()) { return ordinary(2); }
+    if(args.len()>0 && same(args.get(0).unwrap(),literal("--lanius-complete-bash",22))) { return completion(args.as_view(),schema,core::slice::View { values:scratch,start:0,length:1 }); }
+    if(args.len()>8) { return ordinary(2); }
     // This single-threaded program never changes cwd. Merely admitting Files
     // performs no filesystem operation; only explicit @ directives load files.
     let made=ext::cli_response_files::files(-100,4096,false);
@@ -380,7 +516,7 @@ fn report(outcome: Outcome) -> i32 {
 }
 fn main() -> i32 {
     if(std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
-    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,8,262144);
+    let captured: core::result::Result<std::args::Arguments,std::args::Error> = std::args::snapshot(1,12,262144);
     let outcome: Outcome = ordinary(0);
     if (captured.is_err()) {
         let status: i32 = match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(at) -> 3, _ -> 2 };

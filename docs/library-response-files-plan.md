@@ -275,6 +275,6 @@ successful smaller controls remain separate, without a general pattern claim.
 The [module guide](extended-cli-response.md#current-executable-evidence),
 [portable fixture guide](../tests/fixtures/extended/cli_response/README.md),
 [native resource guide](../tests/fixtures/extended/cli_response/files_README.md)
-and [application guide](extended-kv.md#current-application-receipts) record exact
+and [application guide](extended-kv.md#historical-response-application-receipts) record exact
 receipts and failure/target limits. This selected increment is accepted;
 shell completion and the full library goal remain open.

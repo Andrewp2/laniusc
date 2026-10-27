@@ -1,0 +1,128 @@
+// Binary test transport around the actual pure Bash word/frame APIs.
+module app::main;
+import core::io;
+import core::mem;
+import core::slice::View;
+import ext::bash_words;
+import ext::cli_bash;
+import std::stream;
+
+fn word(input:[u8],offset:i32) -> u64 {
+    let result:u64=0; let i:i32=0; while(i<8) { result|=(input[offset+i] as u64)<<(i*8); i+=1; } return result;
+}
+fn fill(values:[u8],count:i32) { let i:i32=0; while(i<count) { values[i]=165; i+=1; } }
+fn guards(values:[u8],start:i32,end:i32) { let i:i32=start; while(i<end) { assert(values[i]==165); i+=1; } }
+fn position(output:[u64],tag:u64,at:i32) -> u64 { output[2]=(at as i64) as u64; return tag; }
+fn pair(output:[u64],tag:u64,left:i32,right:i32) -> u64 { output[2]=left as u64; output[3]=right as u64; return tag; }
+fn decoder_error(error:ext::bash_words::Error,output:[u64]) -> u64 {
+    return match(error) { ext::bash_words::Error::Bounds->1,
+        ext::bash_words::Error::Nul(at)->position(output,2,at),
+        ext::bash_words::Error::Expansion(at)->position(output,3,at),
+        ext::bash_words::Error::Operator(at)->position(output,4,at),
+        ext::bash_words::Error::Whitespace(at)->position(output,5,at),
+        ext::bash_words::Error::UnclosedQuote(at)->position(output,6,at),
+        ext::bash_words::Error::TrailingEscape(at)->position(output,7,at),
+        ext::bash_words::Error::OutputTooSmall(required)->position(output,8,required) };
+}
+fn encoder_error(error:ext::cli_bash::Error,output:[u64]) -> u64 {
+    return match(error) { ext::cli_bash::Error::Bounds->1,ext::cli_bash::Error::InvalidReply->2,
+        ext::cli_bash::Error::NulStem(at)->position(output,3,at),
+        ext::cli_bash::Error::NulPrefix(at)->position(output,4,at),
+        ext::cli_bash::Error::NulCandidate(candidate,at)->pair(output,5,candidate,at),
+        ext::cli_bash::Error::OutputTooSmall(required)->output_size(output,required),
+        ext::cli_bash::Error::SizeOverflow->7,ext::cli_bash::Error::NulTrim(at)->position(output,8,at) };
+}
+fn output_size(output:[u64],required:u64) -> u64 { output[2]=required; return 6; }
+fn quote(value:ext::bash_words::Quote) -> u64 {
+    return match(value) { ext::bash_words::Quote::Unquoted->0,ext::bash_words::Quote::Single->1,ext::bash_words::Quote::Double->2 };
+}
+fn quote_from(value:u64) -> ext::bash_words::Quote {
+    if(value==0) { return ext::bash_words::Quote::Unquoted; }
+    if(value==1) { return ext::bash_words::Quote::Single; }
+    return ext::bash_words::Quote::Double;
+}
+fn emit(header:[u64],payload:View<u8>) {
+    let packed:[u8;96]=[0;96]; let i:i32=0;
+    while(i<12) { let j:i32=0; while(j<8) { packed[i*8+j]=((header[i]>>(j*8))&255) as u8; j+=1; } i+=1; }
+    let stdout=std::stream::stdout(); assert(core::io::write_all(stdout.borrow(),packed,0,96).is_ok());
+    assert(core::io::write_all(stdout.borrow(),payload.values,payload.start,payload.length).is_ok());
+}
+fn main() -> i32 {
+    let stdin=std::stream::stdin(); let first:[u8;8]=[0;8];
+    assert(core::io::read_exact(stdin.borrow(),first,0,8).is_ok()); let cases=word(first,0); assert(cases<=1024);
+    let current:u64=0;
+    while(current<cases) {
+        let request:[u8;128]=[0;128]; assert(core::io::read_exact(stdin.borrow(),request,0,128).is_ok());
+        let operation=word(request,0); let mode=word(request,8); let spacing=word(request,16)!=0;
+        let first_length=word(request,24) as i32; let prefix_length=word(request,32) as i32;
+        let count=word(request,40) as i32; let capacity=word(request,48) as i32;
+        let layout=word(request,56); let input_case=word(request,64); let output_case=word(request,72);
+        let trim_length=word(request,80) as i32; let quote_state=word(request,88); let continuation=word(request,96);
+        assert(operation<=1 && first_length>=0 && prefix_length>=0 && first_length<=4096-prefix_length);
+        assert(trim_length>=0 && trim_length<=4096-first_length-prefix_length && quote_state<=2 && continuation<=2);
+        assert(count>=0 && count<=32 && capacity>=0 && capacity<=8192 && layout<=3 && input_case<=8 && output_case<=3);
+        let stack_input:[u8;4098]=[165;4098]; let input_words:[i32;1025]=[0;1025];
+        let packed_input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(input_words),4098);
+        fill(packed_input,4098); let input:View<u8> =View { values:stack_input,start:1,length:first_length };
+        if((layout&1)!=0) { input.values=packed_input; }
+        assert(core::io::read_exact(stdin.borrow(),input.values,1,first_length+prefix_length+trim_length).is_ok());
+        let prefix:View<u8> =View { values:input.values,start:1+first_length,length:prefix_length };
+        let trim:View<u8> =View { values:input.values,start:1+first_length+prefix_length,length:trim_length };
+        let empty:View<u8> =View { values:input.values,start:0,length:0 };
+        let candidates:[View<u8>;34]=[empty;34]; let all:View<View<u8>> =View { values:candidates,start:1,length:count };
+        let total:i32=first_length+prefix_length+trim_length; let index:i32=0;
+        while(index<count) {
+            let encoded:[u8;8]=[0;8]; assert(core::io::read_exact(stdin.borrow(),encoded,0,8).is_ok());
+            let length=word(encoded,0) as i32; assert(length>=0 && length<=4096-total);
+            assert(core::io::read_exact(stdin.borrow(),input.values,1+total,length).is_ok());
+            candidates[index+1]=View { values:input.values,start:1+total,length:length }; total+=length; index+=1;
+        }
+        if(input_case==1) { input.start=-1; }
+        if(input_case==2) { input.length=-1; }
+        if(input_case==3) { input.start=2147483647; input.length=2; }
+        if(input_case==4) { all.start=-1; }
+        if(input_case==5) { assert(count>0); let invalid:View<u8> =candidates[1]; invalid.start=2147483647; invalid.length=2; candidates[1]=invalid; }
+        if(input_case==6) { prefix.start=-1; }
+        if(input_case==7) { all.length=-1; }
+        if(input_case==8) { trim.start=-1; }
+        let stack_output:[u8;8194]=[165;8194]; let output_words:[i32;2049]=[0;2049];
+        let packed_output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),8194);
+        fill(packed_output,8194); let output:View<u8> =View { values:stack_output,start:2,length:capacity };
+        if((layout&2)!=0) { output.values=packed_output; }
+        if(output_case==1) { output.start=-1; }
+        if(output_case==2) { output.length=-1; }
+        if(output_case==3) { output.start=2147483647; output.length=2; }
+        let response:[u64;12]=[0;12]; response[0]=operation; response[4]=18446744073709551615;
+        response[8]=2; response[9]=2;
+        if(core::mem::slice_stride(input.values)>0) { response[8]=1; }
+        if(core::mem::slice_stride(output.values)>0) { response[9]=1; }
+        let written:i32=0;
+        if(operation==0) {
+            assert(mode<=1 && count==0 && prefix_length==0 && trim_length==0 && input_case<=3);
+            let selected=ext::bash_words::Mode::Complete; if(mode==1) { selected=ext::bash_words::Mode::Prefix; }
+            let measured=ext::bash_words::measure(input,selected);
+            if(measured.is_ok()) { response[4]=measured.unwrap().bytes as u64; }
+            let result=ext::bash_words::decode_into(input,selected,output);
+            if(result.is_err()) { response[1]=decoder_error(result.unwrap_err(),response); }
+            else { let shape=result.unwrap(); assert(measured.is_ok()); let prior=measured.unwrap();
+                assert(prior.bytes==shape.bytes && quote(prior.quote)==quote(shape.quote) && prior.incomplete_escape==shape.incomplete_escape);
+                written=shape.bytes; response[6]=quote(shape.quote); response[7]=shape.incomplete_escape as u64;
+            }
+        } else {
+            assert(mode<=2); let selected=ext::cli_bash::Mode::Candidates;
+            if(mode==1) { selected=ext::cli_bash::Mode::Files; } if(mode==2) { selected=ext::cli_bash::Mode::None; }
+            let reply=ext::cli_bash::Reply { mode:selected,append_space:spacing,
+                quote:quote_from(quote_state),continuation:quote_from(continuation),trim:trim,
+                stem:input,prefix:prefix,candidates:all };
+            let measured=ext::cli_bash::measure(reply); if(measured.is_ok()) { response[4]=measured.unwrap(); }
+            let result=ext::cli_bash::encode_into(reply,output);
+            if(result.is_err()) { response[1]=encoder_error(result.unwrap_err(),response); }
+            else { written=result.unwrap(); assert(measured.is_ok() && measured.unwrap()==written as u64); }
+        }
+        if(response[1]!=0) { assert(written==0); guards(output.values,0,8194); }
+        else { guards(output.values,0,2); guards(output.values,2+written,8194); }
+        guards(input.values,0,1); guards(input.values,1+total,4098);
+        response[5]=written as u64; emit(response,View { values:output.values,start:2,length:written }); current+=1;
+    }
+    return 0;
+}

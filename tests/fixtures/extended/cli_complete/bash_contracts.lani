@@ -1,0 +1,141 @@
+// Pure public reply/word contracts. This entry performs no I/O or allocation.
+module app::main;
+import core::mem;
+import core::slice::View;
+import ext::bash_words;
+import ext::cli_bash;
+
+fn bytes(value:str,count:i32) -> View<u8> {
+    return View { values:core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count),start:0,length:count };
+}
+fn blank(values:[u8],count:i32) { let i:i32=0; while(i<count) { values[i]=165; i+=1; } }
+fn untouched(values:[u8],start:i32,end:i32) { let i:i32=start; while(i<end) { assert(values[i]==165); i+=1; } }
+fn equal(values:[u8],start:i32,expected:View<u8>) {
+    let i:i32=0; while(i<expected.len()) { assert(values[start+i]==expected.values[expected.start+i]); i+=1; }
+}
+fn record(output:View<u8>,at:i32,expected:View<u8>) -> i32 {
+    equal(output.values,output.start+at,expected); assert(output.values[output.start+at+expected.len()]==0);
+    return at+expected.len()+1;
+}
+fn quote(value:ext::bash_words::Quote) -> i32 {
+    return match(value) { ext::bash_words::Quote::Unquoted->0,ext::bash_words::Quote::Single->1,ext::bash_words::Quote::Double->2 };
+}
+fn quote_record(output:View<u8>,at:i32,value:ext::bash_words::Quote) -> i32 {
+    let state=quote(value);
+    if(state==0) { return record(output,at,bytes("unquoted",8)); }
+    if(state==1) { return record(output,at,bytes("single",6)); }
+    return record(output,at,bytes("double",6));
+}
+fn decoded(raw:View<u8>,mode:ext::bash_words::Mode,expected:View<u8>,state:i32,pending:bool) {
+    let storage:[u8;256]=[165;256]; assert(core::mem::slice_stride(storage)<0);
+    let output:View<u8> =View { values:storage,start:3,length:240 };
+    let measured=ext::bash_words::measure(raw,mode).unwrap();
+    let written=ext::bash_words::decode_into(raw,mode,output).unwrap();
+    assert(measured.bytes==expected.len() && written.bytes==expected.len());
+    assert(quote(measured.quote)==state && quote(written.quote)==state);
+    assert(measured.incomplete_escape==pending && written.incomplete_escape==pending);
+    equal(storage,3,expected); untouched(storage,0,3); untouched(storage,3+written.bytes,256);
+}
+fn decoder_error(error:ext::bash_words::Error,at:i32) -> i32 {
+    return match(error) {
+        ext::bash_words::Error::Bounds->1,
+        ext::bash_words::Error::Nul(found)->2+(found-at)*100,
+        ext::bash_words::Error::Expansion(found)->3+(found-at)*100,
+        ext::bash_words::Error::Operator(found)->4+(found-at)*100,
+        ext::bash_words::Error::Whitespace(found)->5+(found-at)*100,
+        ext::bash_words::Error::UnclosedQuote(found)->6+(found-at)*100,
+        ext::bash_words::Error::TrailingEscape(found)->7+(found-at)*100,
+        ext::bash_words::Error::OutputTooSmall(found)->8+(found-at)*100
+    };
+}
+fn rejected(raw:View<u8>,mode:ext::bash_words::Mode,tag:i32,at:i32) {
+    let storage:[u8;64]=[165;64]; let output:View<u8> =View { values:storage,start:1,length:60 };
+    let result=ext::bash_words::decode_into(raw,mode,output);
+    assert(result.is_err() && decoder_error(result.unwrap_err(),at)==tag); untouched(storage,0,64);
+}
+fn encoder_error(error:ext::cli_bash::Error) -> i32 {
+    return match(error) { ext::cli_bash::Error::Bounds->1,ext::cli_bash::Error::InvalidReply->2,
+        ext::cli_bash::Error::NulStem(_)->3,ext::cli_bash::Error::NulPrefix(_)->4,
+        ext::cli_bash::Error::NulCandidate(_, _)->5,ext::cli_bash::Error::OutputTooSmall(_)->6,
+        ext::cli_bash::Error::SizeOverflow->7,ext::cli_bash::Error::NulTrim(_)->8 };
+}
+fn refused(reply:ext::cli_bash::Reply,tag:i32) {
+    let storage:[u8;256]=[165;256]; let result=ext::cli_bash::encode_into(reply,View { values:storage,start:2,length:250 });
+    assert(result.is_err() && encoder_error(result.unwrap_err())==tag); untouched(storage,0,256);
+}
+fn framed(reply:ext::cli_bash::Reply,mode:View<u8>,spacing:View<u8>,count:View<u8>,packed:bool) {
+    let storage:[u8;512]=[165;512]; let words:[i32;128]=[0;128];
+    let positive:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),512);
+    blank(positive,512); assert(core::mem::slice_stride(storage)<0 && core::mem::slice_stride(positive)==1);
+    let destination:View<u8> =View { values:storage,start:3,length:500 };
+    if(packed) { destination.values=positive; }
+    let size=ext::cli_bash::measure(reply).unwrap(); let small=destination; small.length=(size as i32)-1;
+    let denied=ext::cli_bash::encode_into(reply,small);
+    assert(denied.is_err()); let error=denied.unwrap_err();
+    assert(match(error) { ext::cli_bash::Error::OutputTooSmall(required)->required==size,_ ->false });
+    untouched(destination.values,0,512);
+    let exact=destination; exact.length=size as i32;
+    let written=ext::cli_bash::encode_into(reply,exact).unwrap(); assert(written as u64==size);
+    let at:i32=record(destination,0,bytes("lanius-completion-1",19));
+    at=record(destination,at,mode); at=record(destination,at,spacing);
+    at=quote_record(destination,at,reply.quote); at=quote_record(destination,at,reply.continuation);
+    at=record(destination,at,reply.trim); at=record(destination,at,reply.stem);
+    at=record(destination,at,reply.prefix); at=record(destination,at,count);
+    let i:i32=0; while(i<reply.candidates.len()) { at=record(destination,at,reply.candidates.values[reply.candidates.start+i]); i+=1; }
+    at=record(destination,at,bytes("end",3)); assert(at==written);
+    untouched(destination.values,0,3); untouched(destination.values,3+written,512);
+}
+fn main() -> i32 {
+    let empty=bytes("",0); let candidates:[View<u8>;14]=[empty;14];
+    candidates[1]=bytes("init",4); let raw:[u8;5]=[108,10,255,33,90];
+    candidates[2]=View { values:raw,start:0,length:4 }; candidates[3]=empty;
+    let reply=ext::cli_bash::Reply { mode:ext::cli_bash::Mode::Candidates,append_space:true,
+        quote:ext::bash_words::Quote::Unquoted,continuation:ext::bash_words::Quote::Unquoted,
+        trim:empty,stem:empty,prefix:empty,candidates:View { values:candidates,start:1,length:3 } };
+    framed(reply,bytes("candidates",10),bytes("space",5),bytes("3",1),false);
+    let i:i32=1; while(i<13) { candidates[i]=bytes("x",1); i+=1; }
+    reply.candidates.length=12; reply.append_space=false;
+    reply.quote=ext::bash_words::Quote::Single; reply.continuation=ext::bash_words::Quote::Double;
+    reply.trim=bytes("--x=",4); // framing does not interpret trim against words
+    framed(reply,bytes("candidates",10),bytes("nospace",7),bytes("12",2),true);
+    reply.mode=ext::cli_bash::Mode::Files; reply.candidates.length=0; reply.stem=bytes("--db=",5);
+    reply.prefix=View { values:raw,start:1,length:2 };
+    framed(reply,bytes("files",5),bytes("nospace",7),bytes("0",1),true);
+    reply.mode=ext::cli_bash::Mode::None; reply.trim=empty; reply.stem=empty; reply.prefix=empty; reply.append_space=true;
+    framed(reply,bytes("none",4),bytes("space",5),bytes("0",1),false);
+    reply.candidates.length=1; refused(reply,2); reply.candidates.length=0;
+    reply.trim=bytes("x",1); refused(reply,2); reply.trim=empty;
+    reply.prefix=bytes("x",1); refused(reply,2); reply.prefix=empty;
+    reply.mode=ext::cli_bash::Mode::Candidates; reply.stem=bytes("x",1); refused(reply,2); reply.stem=empty;
+    reply.candidates.length=1; candidates[1]=View { values:raw,start:-1,length:1 }; refused(reply,1);
+    reply.mode=ext::cli_bash::Mode::None; refused(reply,1); // nested bounds precede mode
+    candidates[1]=empty; reply.candidates.length=0; reply.candidates.start=2147483647; reply.candidates.length=2; refused(reply,1);
+    reply.candidates.start=1; reply.candidates.length=0; reply.mode=ext::cli_bash::Mode::Files;
+    let nul:[u8;3]=[97,0,98]; reply.stem=View { values:nul,start:0,length:3 }; refused(reply,3);
+    reply.stem=empty; reply.prefix=View { values:nul,start:0,length:3 }; refused(reply,4);
+    reply.prefix=empty; reply.mode=ext::cli_bash::Mode::Candidates; reply.candidates.length=1;
+    candidates[1]=View { values:nul,start:0,length:3 }; refused(reply,5);
+    candidates[1]=empty; reply.trim=View { values:nul,start:0,length:3 }; refused(reply,8); reply.trim=empty;
+    candidates[1]=empty; let out:[u8;128]=[165;128];
+    let bad_output:View<u8> =View { values:out,start:2147483647,length:2 };
+    assert(encoder_error(ext::cli_bash::encode_into(reply,bad_output).unwrap_err())==1); untouched(out,0,128);
+
+    let bare:[u8;4]=[97,92,32,98]; decoded(View { values:bare,start:0,length:4 },ext::bash_words::Mode::Complete,bytes("a b",3),0,false);
+    let joined:[u8;8]=[97,39,98,99,39,34,100,34]; decoded(View { values:joined,start:0,length:8 },ext::bash_words::Mode::Complete,bytes("abcd",4),0,false);
+    let doubled:[u8;7]=[34,97,92,113,92,33,34]; let expected:[u8;5]=[97,92,113,92,33];
+    decoded(View { values:doubled,start:0,length:7 },ext::bash_words::Mode::Complete,View { values:expected,start:0,length:5 },0,false);
+    let single:[u8;8]=[39,36,96,42,33,10,255,39];
+    decoded(View { values:single,start:0,length:8 },ext::bash_words::Mode::Complete,View { values:single,start:1,length:6 },0,false);
+    let open:[u8;3]=[39,97,92]; decoded(View { values:open,start:0,length:3 },ext::bash_words::Mode::Prefix,View { values:open,start:1,length:2 },1,false);
+    rejected(View { values:open,start:0,length:3 },ext::bash_words::Mode::Complete,6,0);
+    let pending:[u8;3]=[34,97,92]; decoded(View { values:pending,start:0,length:3 },ext::bash_words::Mode::Prefix,bytes("a",1),2,true);
+    rejected(View { values:pending,start:0,length:3 },ext::bash_words::Mode::Complete,7,2);
+    rejected(bytes("a b",3),ext::bash_words::Mode::Complete,5,1);
+    rejected(bytes("a;b",3),ext::bash_words::Mode::Complete,4,1);
+    rejected(bytes("$x",2),ext::bash_words::Mode::Prefix,3,0);
+    rejected(View { values:nul,start:0,length:3 },ext::bash_words::Mode::Prefix,2,1);
+    let output:View<u8> =View { values:out,start:2,length:0 };
+    assert(decoder_error(ext::bash_words::decode_into(bytes("x",1),ext::bash_words::Mode::Complete,output).unwrap_err(),1)==8);
+    untouched(out,0,128);
+    return 0;
+}

@@ -22,6 +22,8 @@ pub struct Command {
 pub struct Selection { id: i32, at: ext::cli::Location }
 pub struct ScopedOption { command: i32, occurrence: ext::cli::Occurrence }
 pub struct ScopedOperand { command: i32, argument: ext::cli::Argument }
+pub struct Pending { command: i32, pending: ext::cli::Pending }
+pub struct Prefix { command: i32, prefix: ext::cli::Prefix }
 pub enum Event { Command(Selection), Option(ScopedOption), Operand(ScopedOperand) }
 pub enum Error {
     Bounds, EmptySchema, InvalidCommand(i32), DuplicateCommand(i32),
@@ -31,7 +33,7 @@ pub enum Error {
 }
 pub struct Parser {
     commands: View<Command>, scratch: View<ext::cli::Spec>, flat: ext::cli::Parser,
-    selected: i32, selecting: bool, done: bool, failure: Option<Error>
+    selected: i32, selecting: bool, operands: i32, done: bool, failure: Option<Error>
 }
 
 fn valid<T>(value: View<T>) -> bool {
@@ -239,7 +241,7 @@ fn declaring_id(commands: View<Command>, selected: i32, id: i32) -> Option<i32> 
     return None();
 }
 
-pub fn parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error> {
+fn parser_mode(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>, prefix: bool) -> Result<Parser,Error> {
     if (!valid(arguments) || !valid(scratch)) { return Err(Error::Bounds); }
     let checked: Result<u64,Error> = validate(commands);
     if (checked.is_err()) { return Err(checked.unwrap_err()); }
@@ -255,12 +257,41 @@ pub fn parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<
     let scope: View<ext::cli::Spec> = materialize(commands,0,scratch);
     let flat: Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(arguments,scope,root.ordering);
     if (flat.is_err()) { return Err(Error::Token(root.id,flat.unwrap_err())); }
-    return Ok(Parser { commands: commands, scratch: scratch, flat: flat.unwrap(), selected: 0, selecting: true, done: false, failure: None() });
+    let engine: ext::cli::Parser = flat.unwrap(); engine.prefix_mode = prefix;
+    return Ok(Parser { commands: commands, scratch: scratch, flat: engine, selected: 0, selecting: true, operands: 0, done: false, failure: None() });
+}
+
+pub fn parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error> {
+    return parser_mode(arguments,commands,scratch,false);
+}
+// Explicitly allow a final required option to await a future active word.
+pub fn prefix_parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error> {
+    return parser_mode(arguments,commands,scratch,true);
 }
 
 pub impl Parser {
     pub fn borrow(&self) -> &Parser { return self; }
     pub fn current(&self) -> i32 { return command_at(self.commands,self.selected).id; }
+    pub fn operand_index(&self) -> i32 { return self.operands; }
+    pub fn selecting_command(&self) -> bool { return self.selecting && children(self.commands,self.selected); }
+    pub fn options_ended(&self) -> bool { let flat: ext::cli::Parser = self.flat; return flat.options_ended(); }
+    pub fn pending_required(&self) -> Option<Pending> {
+        let flat: ext::cli::Parser = self.flat;
+        let pending: Option<ext::cli::Pending> = flat.pending_required();
+        if (pending.is_none()) { return None(); }
+        let value: ext::cli::Pending = pending.unwrap();
+        return Some(Pending { command: declaring_id(self.commands,self.selected,value.spec.id).unwrap(), pending: value });
+    }
+    pub fn classify_prefix(&self, value: View<u8>) -> Result<Prefix,Error> {
+        if (!valid(value)) { return Err(Error::Bounds); }
+        if (self.failure.is_some()) { return Err(self.failure.unwrap()); }
+        let flat: ext::cli::Parser = self.flat;
+        let classified: Result<ext::cli::Prefix,ext::cli::Error> = flat.classify_prefix(value);
+        if (classified.is_err()) { return Err(Error::Token(self.current(),classified.unwrap_err())); }
+        let item: ext::cli::Prefix = classified.unwrap(); let owner: i32 = self.current();
+        if (item.option.is_some()) { let spec: ext::cli::Spec = item.option.unwrap(); owner = declaring_id(self.commands,self.selected,spec.id).unwrap(); }
+        return Ok(Prefix { command: owner, prefix: item });
+    }
     fn fail(&self, error: Error) -> Result<Option<Event>,Error> {
         self.failure = Some(error); return Err(error);
     }
@@ -277,10 +308,11 @@ pub impl Parser {
             let command: Command = command_at(self.commands,selected);
             flat.specs = materialize(self.commands,selected,self.scratch);
             flat.ordering = command.ordering; flat.ended = false;
-            self.flat = flat; self.selected = selected;
+            self.flat = flat; self.selected = selected; self.operands = 0;
             return Ok(Some(Event::Command(Selection { id: command.id, at: item.at })));
         }
         self.selecting = false;
+        self.operands += 1;
         return Ok(Some(Event::Operand(ScopedOperand { command: self.current(), argument: item })));
     }
     // Only the canonical flat parser reads tokens. Transitions preserve its

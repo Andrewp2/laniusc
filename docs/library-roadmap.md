@@ -57,7 +57,7 @@ tests, target support, and relevant performance evidence.
 | Storage | Database interfaces; executable [SQLite integration](extended-sqlite.md), [persistent binary key/value application](extended-sqlite-kv.md) and key-value snapshots; broader database/storage interfaces remain |
 | Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests, verified client/server TLS and mutual TLS execute with explicit trust and manual owners; standalone encryption/signature APIs, application identity/authorization and broader certificate policy remain open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
-| Application utilities | CLI option parsing, command hierarchies, caller-buffer generated help, bounded response-file preprocessing, logging, configuration, tables and progress reporting; completion and richer application validation remain |
+| Application utilities | CLI option parsing, command hierarchies, caller-buffer generated help, bounded response-file preprocessing, canonical prefix parsing and portable completion, literal Bash-word decoding, reply framing, logging, configuration, tables and progress reporting; the Bash 5.2/bash-completion 2.11 adapter has finite function/PTY acceptance; richer application validation and other shell adapters remain |
 | Media | Image codecs, pixel operations, audio codecs and signal utilities |
 
 The [compiled byte-glob module](extended-glob.md) and its streaming path-filter
@@ -543,9 +543,54 @@ than a request to replace implementation work with more tests.
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
 | Mathematics | Big integers, finite decimals, ordinary statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. | Additional number theory, decimal exceptional/transcendental behavior, weighted/higher statistics, sparse/advanced decompositions and further distributions remain as listed above. Preserve finite-domain and accuracy limits. |
-| Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Shell completion, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
+| Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Portable completion, literal Bash words and reply frames pass finite semantics/pure contracts; the Bash adapter passes function/PTY/watchdog gates, and native queries pass owner/OOM/output groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Other shell adapters, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
+
+### Accepted command completion
+
+The [completion contract](extended-cli-complete.md) and
+[plan](library-completion-plan.md) reuse canonical prefix parsing and command
+routing. `ext::cli_complete` borrows immutable schema/arguments, releases the
+scratch lease before returning Context and writes whole-prefix suggestions
+atomically into caller output. `ext::bash_words` decodes only the documented
+literal shell-word profile. `ext::cli_bash` measures/encodes NUL-record replies;
+the Bash adapter separately owns host enumeration and Readline insertion.
+
+Current finite native Linux x86_64 receipts accept the direct portable contract
+and direct public prefix-parser smoke under no-host observation, one Rust
+67-case core model test in 6.76s (one test
+filtered out), both hierarchy regressions in 9.91s and one selected flat test.
+The final direct literal-decoder/reply contract also passes no-host observation;
+a separate direct native process checks 389 model records (270/119). Native KV
+queries pass 18 cases plus three no-file traces on source `9a83795a...`.
+Query owner/output groups pass separately: 16 allocation cases (13 reached
+OOMs and three baselines) and 12 output cases (three baselines and nine
+fault/recovery cases). Full traces check pre-exit release, without live ACK.
+The existing response campaign also passes 55 cases/18 source OOMs on the current
+completion application. Final adapter `f7934bc9...` passes 51 function cases
+across two option profiles, 26 real PTY cases and two fresh-cwd leading-quote
+transition cases. Its unchanged watchdog on source `8a1fc69f...` separately
+passes both failed/missing-sleep controls; held shells show producer, watchdog
+and sleep children gone before exit. Exact argv, suffixes, byte names and
+frame/status rejection are checked. Receipts are
+`completion-bash-pty-quote-retry{19-boundary,20,21-function}.log` and
+`completion-bash-pty-quote-retry14-deadline.log` under `target/stdlib-work/`.
+Combined shell/resource Rust-driver build admission is 3.56s; the final shell
+driver separately builds in 1.75s. These build receipts execute no native Rust
+tests, and the direct shell groups are not Rust-libtest passes. No-allocation
+observations establish zero attempted allocations, not OOM recovery.
+
+The selected CLI increment is accepted on native Linux x86_64, Bash 5.2 and
+bash-completion 2.11. Other shells and arbitrary expansion syntax are outside
+this profile; host glob enumeration time/memory are not bounded by Lanius caps.
+The accepted response checkpoint `68189363` and application
+`789143f6...` remain separate; their historical 55-case database/response
+receipt is not added to the current 55-case rerun. The module guide owns current
+source identities and receipt paths. The full library goal remains open. The next intended
+increment is resolving/URL-based connected-client policy; existing numeric
+HTTP/HTTPS and URI APIs do not establish that workflow. Compiler/runtime and
+other family dependencies remain in the [dependency ledger](library-dependencies.md).
 
 ### Accepted response files
 
@@ -566,7 +611,8 @@ Full traces of the tokenizer smoke and pure contracts contain only launch and
 final raw exit under mmap denial; no allocation attempt occurs, so this is
 not OOM-recovery evidence.
 
-Current [KV source](extended-kv.md#current-application-receipts) `789143f6...`
+Response-checkpoint [KV source](extended-kv.md#historical-response-application-receipts)
+`789143f6...`
 passes its focused response group: 55 process cases, including all 18 source
 allocation denials from the nested-help baseline, a post-database OOM and the
 published/unsynced status 6 case. Those cases are included in 55. Artifact-aware
@@ -592,8 +638,9 @@ Source identities and exact public smoke/semantic receipts are in the module
 guide. The selected increment is accepted on finite native Linux x86_64 CPU
 output from the GPU compiler.
 Fixed-base lookup is not containment, cycles are bounded by explicit limits,
-and storage limits are not an exact heap/RSS cap. Shell completion, broader
-application policy and the full standard/extended library goal remain open.
+and storage limits are not an exact heap/RSS cap. Completion has its separate
+current status above; broader application policy and the full standard/extended
+library goal remain open.
 
 ### Accepted command hierarchy and help
 
@@ -624,8 +671,9 @@ Flat parser `9f11981f...`, command routing `6eb4db7a...` and help
 `a7198a2a...` retain the selected native Linux x86_64 CPU profile emitted by the
 GPU compiler. A minimal nested-error-pattern dependency has a typed-match
 executable control and does not block the APIs. Response preprocessing has its
-separate in-progress scope above. Completion, richer application validation
-and the full library goal remain open.
+separate accepted scope above. The completion increment is also accepted on
+its finite profile; richer application validation and the full library goal
+remain open.
 
 ### Accepted ordinary nested iteration
 
@@ -817,6 +865,14 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [command completion](extended-cli-complete.md): canonical prefix
+  parsing and three portable modules pass contract/model checks; selected
+  parser regressions, native query owner/OOM/output groups, actual Bash
+  function/PTY/quote-boundary and watchdog gates pass on the documented profile.
+  Direct and Rust receipts remain separate. The full goal remains open.
+- Next intended increment: resolving/URL-based connected-client policy over
+  the existing URI and native HTTP/HTTPS foundations. Freeze its policy and
+  dependencies separately; no implementation or acceptance is claimed here.
 - Accepted [response-file preprocessing](library-response-files-plan.md):
   portable semantics and all three public smokes pass. Direct native provider
   and resource groups pass 39/31 cases, with all 29 reached source OOMs and
@@ -831,7 +887,7 @@ the rest of the family scope above stays open.
   Historical hierarchy KV source `f07fd52f...` passes three direct all-syscall
   groups totaling 130 overlapping cases, not three native Rust tests or current
   response-source reruns. Its then-new registered driver had build admission.
-  Completion and richer application validation remain open.
+  Completion has its separate current scope above; richer application validation remains open.
 - Accepted [ordinary nested-iteration increment](library-infallible-nested-plan.md):
   core `5034fbac...` adds Flatten/FlatMap through the existing shared engine and
   true empty Infallible retirement. One direct public smoke, two semantic Rust

@@ -580,6 +580,13 @@
         "docs/extended-audio.md"
       ]
     },
+    "ext::bash_words": {
+      "guides": [
+        "docs/extended-cli-complete.md",
+        "docs/library-completion-plan.md"
+      ],
+      "note": "Allocation-free literal Bash-word measurement/decoding into caller storage. Complete and Prefix modes share one traversal; syntax, logical ranges and capacity are admitted before writes. It preserves non-UTF-8 bytes, supports literal quote/escape concatenation and explicitly rejects expansions/operators outside the documented profile. Pure contracts and a 389-record decoder/reply model execute on native Linux x86_64. This is neither shell evaluation nor the response-file grammar; the separate adapter has finite Bash 5.2/bash-completion 2.11 function and actual PTY insertion acceptance. Other shells and arbitrary expansions are outside this literal profile."
+    },
     "ext::big_int": {
       "guides": [
         "docs/extended-big-int.md"
@@ -599,16 +606,32 @@
       "guides": [
         "docs/extended-cli.md",
         "docs/extended-cli-commands.md",
-        "docs/extended-cli-response.md"
+        "docs/extended-cli-response.md",
+        "docs/extended-cli-complete.md"
       ],
-      "note": "Canonical borrowed option lexer with sticky errors, fused EOF and exact event locations. The explicit-terminator getter distinguishes an actual -- from OptionsFirst stopping or a required value. Command routing reuses this lexer; its exclusive scratch ownership differs from the flat parser's independent position copies. The selected current flat regression and linked hierarchy gates pass on native Linux x86_64; original broader flat-parser/checksum receipts retain their historical source scope."
+      "note": "Canonical borrowed option lexer with sticky strict errors, fused EOF and exact locations. Shared short/long lookup and explicit prefix parsing classify active names, clusters and attached/pending values; strict parsing still reports MissingValue. The terminator getter distinguishes actual -- from OptionsFirst stopping or a required value. Command routing reuses this lexer; hierarchy scratch ownership differs from flat-parser position copies. Current completion semantics, two hierarchy regressions and one selected flat regression execute on native Linux x86_64. Earlier broad flat-parser/checksum receipts retain their historical source scope."
+    },
+    "ext::cli_bash": {
+      "guides": [
+        "docs/extended-cli-complete.md",
+        "docs/library-completion-plan.md"
+      ],
+      "note": "Pure measured NUL-record completion reply encoder over borrowed data and caller output. It preflights mode consistency, ranges, NUL and complete capacity, preserving output on error; quote/continuation/trim metadata is transported without applying shell insertion policy. Pure contracts and the 389-record decoder/reply model execute on native Linux x86_64. The separate Bash 5.2/bash-completion 2.11 adapter owns filesystem enumeration, host bounds and literal Readline insertion; finite function/PTY and watchdog gates pass on the linked host profile. Host glob allocations/enumeration time remain outside Lanius source caps; direct receipts are not Rust-libtest passes."
     },
     "ext::cli_commands": {
       "guides": [
         "docs/extended-cli-commands.md",
-        "docs/extended-cli-response.md"
+        "docs/extended-cli-response.md",
+        "docs/extended-cli-complete.md"
       ],
-      "note": "Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Applications retain arity, defaults, conflicts and help policy. Selected native Linux x86_64 semantics, pure no-host/no-allocation contracts and the real KV application pass; no automatic owner or lifetime enforcement is supplied. Optional response preprocessing has separate ownership/provider contracts; shell completion remains open."
+      "note": "Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Explicit prefix parsing and scoped classification reuse the canonical lexer; context consumers retain original schema/argument backing rather than scratch. Current completion semantics and both hierarchy regression tests execute on native Linux x86_64. Applications retain arity, defaults, conflicts, help and completion value policy. Response preprocessing has separate provider/owner contracts; finite Bash 5.2/bash-completion 2.11 function/PTY acceptance is documented separately from portable command routing."
+    },
+    "ext::cli_complete": {
+      "guides": [
+        "docs/extended-cli-complete.md",
+        "docs/library-completion-plan.md"
+      ],
+      "note": "Portable borrowed completion over canonical ext::cli prefix classification and ext::cli_commands scopes. Context inspects only completed words and the active cursor prefix, retains no mutable scope scratch and distinguishes pending required values from strict MissingValue errors. Suggestions write whole decoded prefix replacements with explicit identities/ranges, atomic output/position errors and fused iteration; schema/argument/value lifetimes remain caller obligations. Pure no-host contracts and one 67-case native model test pass on Linux x86_64. This module allocates nothing and performs no I/O; the native query separately passes 16 allocation cases (13 reached OOMs plus three baselines) and 12 output cases. Direct public flat/scoped prefix getter execution also passes no-host observation. The separate Bash adapter passes finite function, real PTY and watchdog gates on Bash 5.2/bash-completion 2.11; other shells are not established."
     },
     "ext::cli_help": {
       "guides": [
@@ -822,9 +845,10 @@
     },
     "ext::kv": {
       "guides": [
-        "docs/extended-kv.md"
+        "docs/extended-kv.md",
+        "docs/extended-cli-complete.md"
       ],
-      "note": "Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Current response-backed kv_tool source 789143f6 passes one direct 55-case group, including 18 source allocation denials in its nested-help baseline, a post-database OOM and published-unsynced status 6 within that count. The earlier hierarchy source f07fd52f/130-case and 64-case atomic campaigns were not rerun and remain historical. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic."
+      "note": "Portable owned Store and CRC-checked snapshot APIs retain their earlier model/format/failure receipts. Completion application source 9a83795a passes 18 direct query cases plus three no-file traces, 16 allocation cases (13 reached OOMs and three baselines), and 12 output cases (three baselines plus nine fault/recovery cases). Full traces check pre-exit releases, without live ACK checkpoints. The existing 55-case response campaign also passes on this source, including 18 reached source OOMs. Final Bash adapter f7934bc9 passes 51 function cases across two option profiles, 26 PTY cases and two additional fresh-cwd quote-transition cases; the unchanged watchdog separately passes two deadline/child-cleanup controls. These are direct process receipts, not Rust-libtest passes. Response-checkpoint source 789143f6, earlier f07fd52f/130-case hierarchy and 64-case atomic campaigns retain separate histories; no counts are added across revisions. Store/anchored AtomicFile publication logic is unchanged, with explicit visibility/cleanup outcomes. Native Linux x86_64/ext4 evidence is finite; cooperative namespaces, manual owners, no locking or universal crash guarantee. CRC is noncryptographic."
     },
     "ext::lexer": {
       "guides": [

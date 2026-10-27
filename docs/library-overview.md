@@ -1,6 +1,13 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[completion increment](library-completion-plan.md) implements canonical prefix
+parsing, portable completion, literal Bash-word decoding and reply framing.
+Portable contracts/models and selected parser regressions pass; native KV query
+semantics, owner/reached-OOM and output-failure groups also pass. The Bash 5.2/
+bash-completion 2.11 adapter passes real function, PTY, quote-boundary and
+watchdog checks. This selected increment is accepted on its finite profile.
+The preceding accepted
 [response-file increment](library-response-files-plan.md) adds pure byte
 tokenization, owned provider-driven expansion and an explicit native file
 provider. Portable semantic tests, all three public smokes, direct native
@@ -51,6 +58,53 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**Accepted command completion.**
+
+[Portable completion and the Bash adapter](extended-cli-complete.md) separate
+three allocation-free modules from host behavior. `ext::cli_complete` reuses
+canonical prefix parsing and command scopes; a Context retains no mutable
+option scratch. `ext::bash_words` admits a literal word profile without
+expansion. `ext::cli_bash` preflights complete reply frames into caller storage.
+Only the separate Bash adapter enumerates filenames or applies Readline
+insertion/quoting policy. Other shells are outside this selected increment.
+
+| Surface | Current finite scope |
+| --- | --- |
+| Portable completion | The direct contract and public prefix-parser smoke pass full syscall observation with only launch/exit and no allocation attempt. One Rust model test passes 67 cases in 6.76s, with one other test filtered out. |
+| Canonical parser regressions | Both hierarchy tests pass in 9.91s; one selected flat-parser test passes, with seven filtered out. |
+| Literal decoder and reply encoder | The final direct contract executable passes with no host/allocation calls. A direct native model checks 389 records in one process: 270 decoder and 119 reply records. These are not two current Rust-libtest passes. |
+| Native KV query | Eighteen direct query cases and three no-file-access traces pass on completion source `9a83795a...`. |
+| Query owners and output | Sixteen allocation cases pass, including 13 reached OOMs and three baselines. Twelve output cases pass: three baselines and nine fault/recovery cases. Full traces verify pre-exit releases, not live ACK checkpoints. |
+| Existing response workflow | The 55-case response group passes again on source `9a83795a...`, including 18 source OOMs. It is separate from query counts and the historical response-source receipt. |
+| Bash function and terminal insertion | Final adapter `f7934bc9...` passes 51 function cases under two option profiles, 26 real PTY cases and two additional fresh-cwd quote-transition cases with exact executed argv. |
+| Host deadline guard | Two controls pass on watchdog source `8a1fc69f...`, unchanged by final insertion edits. Both held shells show producer/watchdog/sleep children gone before exit. |
+
+Sources are flat parser `b47aae72...`, routing `5dae9842...`, completion
+`f863a063...`, literal words `2b086426...` and reply framing `b6036015...`.
+The final host adapter is `f7934bc9...`.
+Receipts under `target/stdlib-work/` include `completion-core-contracts-no-host`,
+`completion-core-model-first.log`, `completion-hierarchy-regressions-first.log`,
+`completion-flat-parser-regression-first.log`,
+`completion-bash-contracts-final-no-host`, `completion-bash-model-native-first.log`,
+`completion-kv-query-diagnostic-retry.log`,
+`completion-kv-query-{allocations,output}-first.log`,
+`completion-kv-response-regression-argument-retry.log`,
+`completion-bash-pty-quote-retry{19-boundary,20,21-function}.log` and
+`completion-bash-pty-quote-retry14-deadline.log`. The first response regression
+invocation used an incorrect harness argument order and failed before native launch; it
+adds no cases. Three Bash/shell/resource Rust drivers have separate combined
+`--no-run` admission in 3.56s. The final shell driver separately builds in 1.75s
+(`completion-shell-final-driver-build-first.log`); neither build executes native
+Rust tests. Pure no-allocation traces do not prove OOM recovery. The current native target is Linux x86_64 CPU output
+from the GPU compiler; user-program GPU execution is not established.
+The accepted response checkpoint `68189363` and source `789143f6...` retain
+their separate historical scope below. This completes the selected CLI increment.
+Other shells, arbitrary Bash expansions, host glob memory/time bounds and the
+full library goal remain open. Resolving/URL-based connected-client policy is
+the next intended increment; existing numeric clients and URI utilities retain
+their current scope. The [dependency ledger](library-dependencies.md) remains
+separate from accepted finite API evidence.
+
 **Accepted response files.**
 
 [Response preprocessing](extended-cli-response.md) is opt-in and runs before
@@ -68,11 +122,11 @@ borrowed lifetimes remain explicit.
 | Public composition | Tokenizer, generic expansion and native-provider public smokes compile and exit zero. The expansion smoke feeds the same final argv to both actual parsers and retains provider-failure diagnostics. |
 | Native provider | One direct oracle group passes 39 cases for file admission, fixed-base lookup, actual EOF/byte caps, call budgets and native failure/cleanup behavior. |
 | Expansion resources | One direct oracle group passes 31 cases: 29 reached source allocation failures and two baselines. Live ACK checkpoints check source maps/fds; an owned provider error remains usable after Expansion destruction. |
-| [Current KV application](extended-kv.md#current-application-receipts) | The response group passes 55 overlapping process cases, including all 18 source allocation denials in its nested-help baseline, one post-database OOM and the published/unsynced status 6 case. The latter cases are included in 55. |
+| [Response-checkpoint KV application](extended-kv.md#historical-response-application-receipts) | The response group passes 55 overlapping process cases, including all 18 source allocation denials in its nested-help baseline, one post-database OOM and the published/unsynced status 6 case. The latter cases are included in 55. |
 
 Portable sources are tokenizer `a997585c...` and expansion `35b6ee83...`;
-the provider is `461037b8...`. The current application is `789143f6...` with
-artifact-aware oracle `057bb27a...`. Receipts under `target/stdlib-work/` include
+the provider is `461037b8...`. The response-checkpoint application is
+`789143f6...` with artifact-aware oracle `057bb27a...`. Receipts under `target/stdlib-work/` include
 `response-semantics-first.log`, `response-{public-smoke,contracts}-no-host.{trace,log}`,
 the three public smoke receipts linked in the
 [module guide](extended-cli-response.md#current-executable-evidence), and
@@ -85,8 +139,9 @@ combined `--no-run` admission in 2.09s. Native probe `f8a564cb...`, resource pro
 Earlier hierarchy source `f07fd52f...`
 and its 130 cases were not rerun on this application revision and are not
 added to 55. Native Linux x86_64 CPU output from the GPU compiler is the current
-target; no user-program GPU execution follows. Shell completion, richer
-application policy and the broader library goal remain open. Fixed-base lookup
+target; no user-program GPU execution follows. Completion has its separate
+implementation/acceptance status above; richer application policy and the
+broader library goal remain open. Fixed-base lookup
 is not containment, and byte/work limits are not an exact heap/RSS cap.
 
 **Accepted command hierarchy and help.**
@@ -120,9 +175,9 @@ The application validates the complete CLI before file access and generates
 root/child help, with `--` for dashed database paths. Its Store/snapshot and
 AtomicFile publication logic retain their prior contracts. A separate minimal
 nested-error-pattern compiler dependency has an executable typed-match control.
-Targets remain native Linux x86_64 CPU output from the GPU compiler. Shell
-completion, richer application validation and the full library goal remain
-open. Response preprocessing has its separate acceptance scope above; no
+Targets remain native Linux x86_64 CPU output from the GPU compiler. Completion
+has its separate current scope above; richer application validation and the
+full library goal remain open. Response preprocessing has its separate acceptance scope above; no
 user-program GPU execution follows.
 
 **Accepted ordinary nested iteration.**

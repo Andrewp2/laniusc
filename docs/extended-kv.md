@@ -4,8 +4,11 @@
 mutations and lookup, and reads and writes a versioned binary snapshot. The
 `kv-tool` program now delegates snapshot publication to
 [`std::atomic_file`](stdlib-atomic-files.md), using the shared TempFile owner.
-Bounded response-file preprocessing compiles and passes its focused 55-case
-direct native group. Earlier hierarchy/publication receipts retain their
+Bounded response-file preprocessing passes its focused 55-case direct native
+group on the completion-enabled application. The reserved completion query
+uses the same command schema and runs before response or database access;
+see [completion and the Bash adapter](extended-cli-complete.md).
+Earlier hierarchy/publication receipts retain their
 source-specific scope below. Production code is Lanius; Python is only an
 independent test oracle. The
 [application receipts](#current-application-receipts) separate those source revisions.
@@ -346,7 +349,35 @@ snapshot contracts are unchanged by this application migration.
 
 ### Current application receipts
 
-The response-file application is frozen at SHA-256 `789143f6...`. Compile exit
+The completion-enabled application is source SHA-256 `9a83795a...`, with retained
+`target/stdlib-work/completion-kv.elf` SHA-256 `bcd80b7c...`.
+Compilation succeeds in `completion-kv-compile-first.log`. The query group in
+`completion-kv-query-diagnostic-retry.log` passes 18 cases and three additional
+no-file-access traces. Completion does not load response files or open a
+database; filename enumeration is a separate Bash host operation.
+
+Two direct resource groups pass on that same executable:
+`completion-kv-query-allocations-first.log` records 16 cases, including three
+baselines and all 13 reached source allocation failures;
+`completion-kv-query-output-first.log` records 12 cases, including three
+baselines and nine output-failure/recovery controls. Full traces check explicit
+source release before exit. These are overlapping group counts, not unique
+scenario totals or live acknowledged-owner checkpoints. See the
+[resource fixture guide](../tests/fixtures/extended/cli_complete/resources_README.md).
+
+The existing `responses` group also passes all 55 cases, including its 18
+reached source allocation failures, on this application revision in
+`completion-kv-response-regression-argument-retry.log`. The initial invocation
+used the wrong harness argument order and failed before native execution.
+The earlier 55-case response-checkpoint receipt below retains its historical
+scope; the repeated cases are not added to claim 110 scenarios. Current Bash
+and real-terminal insertion receipts are recorded separately in the
+[completion guide](extended-cli-complete.md).
+
+### Historical response application receipts
+
+This preceding response-file checkpoint is frozen at SHA-256 `789143f6...`.
+It predates completion integration. Compile exit
 0 is recorded in `target/stdlib-work/response-kv-compile-first.log`; its ELF is
 SHA-256 `00889c44...`. The focused `responses` group passes **55 process group
 cases** in `response-kv-native-artifact-retry.log`, including all 18 allocation

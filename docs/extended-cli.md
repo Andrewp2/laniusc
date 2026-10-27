@@ -21,6 +21,11 @@ fork over shared mutable scratch.
 Optional [response-file preprocessing](extended-cli-response.md) produces stable
 owned arguments for either parser. Its strict byte grammar, source diagnostics,
 provider ownership and native-file evidence are separate from token parsing.
+[Portable completion](extended-cli-complete.md) now shares canonical prefix
+classification and explicit pending-value parsing. Its selected pure/model
+checks pass; query owner/OOM and output groups pass separately. The Bash
+5.2/bash-completion 2.11 adapter also has finite function and actual PTY
+insertion receipts in the completion guide.
 
 ## Host snapshots
 
@@ -124,7 +129,8 @@ operands preserve arbitrary bytes; they need not be UTF-8. This parser consumes
 already separated argument tokens; it never interprets quotes, escapes or a
 command string. Optional [command routing and automatic help](extended-cli-commands.md)
 now build on this parser. [Response files](extended-cli-response.md) are an
-opt-in preprocessing layer; completion remains separate work.
+opt-in preprocessing layer; [completion](extended-cli-complete.md) has a separate
+portable/host boundary and current acceptance scope.
 
 Schema validation uses pairwise duplicate checks. Option lookup scans the
 schema: parsing costs O(input bytes + occurrences × schema lookup cost), with
@@ -231,5 +237,7 @@ Configuration loading now has its own [contracts and execution suite](extended-c
 [directory operations](stdlib-directory.md) and
 [command hierarchy/help](extended-cli-commands.md) execute on their documented
 profiles. [Response preprocessing](extended-cli-response.md) has separate
-contracts and receipts. Completion and broader runtime support remain on the
-[library roadmap](library-roadmap.md).
+contracts and receipts. [Completion](extended-cli-complete.md) has selected
+portable/query semantics and owner acceptance, plus finite Bash function/PTY
+insertion and watchdog receipts.
+Broader runtime support remains on the [library roadmap](library-roadmap.md).

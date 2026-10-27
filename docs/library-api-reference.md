@@ -37,7 +37,49 @@ banner under `docs/api/`. It refuses to replace a handwritten file at an output
 path, rejects symlinks and preserves unrelated files. Generated pages are not
 edited by hand. The handwritten guide you are reading is outside that tree.
 
-### Current generation receipt
+### Current completion generation receipt
+
+The [completion contract](extended-cli-complete.md) covers three new modules:
+portable `ext::cli_complete`, literal-word `ext::bash_words` and reply encoder
+`ext::cli_bash`. Canonical parser prefix operations belong to `ext::cli` and
+`ext::cli_commands`; they preserve strict parsing and share option lookup.
+Reviewed metadata links these source APIs without treating the Bash host
+adapter as a portable service. The selected increment has finite native
+Linux x86_64, Bash 5.2 and bash-completion 2.11 acceptance; the full library goal
+remains open. Other shells and arbitrary Bash expansion are outside this scope.
+
+The current source/API freeze includes parser `b47aae72...`, command routing
+`5dae9842...`, completion `f863a063...`, literal words `2b086426...`, reply encoder
+`b6036015...`, application `9a83795a...` and Bash adapter `f7934bc9...`.
+Portable contracts and the direct public prefix smoke pass no-host observation;
+one Rust model test passes 67 cases, and direct decoder/reply execution checks
+389 records. Native query owner/OOM/output and current response regression
+receipts remain separate from 51 function cases across two profiles, 26 PTY
+cases, two quote-boundary cases and two watchdog controls. Neither combined
+Rust-driver build admission nor direct process receipts imply native Rust-test
+execution. Exact runtime receipts and source histories belong to the module
+and fixture guides.
+
+The bounded writer and `--check` both exit zero for **259 pages from 258
+source modules, with 8,432 lexical public declaration markers**. The index
+contains 12,645 declaration/member entries; these counts describe source
+inventory, not verified operations. Exactly seven generated outputs change:
+the [index](api/README.md), [flat parser](api/ext/cli.md),
+[command router](api/ext/cli_commands.md), [KV module](api/ext/kv.md), and the
+three new [completion](api/ext/cli_complete.md),
+[literal word](api/ext/bash_words.md) and [reply encoder](api/ext/cli_bash.md)
+pages. The guide was frozen at `4bca036f...` before generation.
+
+Receipts are `target/stdlib-work/completion-reference-final-writer.log` and
+`completion-reference-final-check.log`; writer/check took 1.99s/2.09s in their
+respective tool calls. Protected root `README.md`, `AI_POLICY.md` and
+`CONTRIBUTING.md` have matching before/after SHA256 records in
+`completion-reference-human-{before,after}.sha256`. The generator implementation
+is unchanged; no scanner tests were rerun solely for new guide mappings.
+Generation establishes declaration discovery, not runtime behavior. The
+accepted response generation below remains historical.
+
+### Accepted response-checkpoint generation receipt
 
 At the accepted response-file source/API freeze, the bounded writer and
 `--check` both exit zero for **256 pages from 255 source modules, with 8,384

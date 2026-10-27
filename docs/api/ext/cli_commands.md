@@ -8,14 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Applications retain arity, defaults, conflicts and help policy. Selected native Linux x86_64 semantics, pure no-host/no-allocation contracts and the real KV application pass; no automatic owner or lifetime enforcement is supplied. Optional response preprocessing has separate ownership/provider contracts; shell completion remains open.
+Borrowed command hierarchy with complete schema/scope validation, exact locations and exclusive caller-owned option scratch. Explicit prefix parsing and scoped classification reuse the canonical lexer; context consumers retain original schema/argument backing rather than scratch. Current completion semantics and both hierarchy regression tests execute on native Linux x86_64. Applications retain arity, defaults, conflicts, help and completion value policy. Response preprocessing has separate provider/owner contracts; finite Bash 5.2/bash-completion 2.11 function/PTY acceptance is documented separately from portable command routing.
 
 ## Contract and evidence guides
 
 - [extended-cli-commands](../../extended-cli-commands.md)
 - [extended-cli-response](../../extended-cli-response.md)
+- [extended-cli-complete](../../extended-cli-complete.md)
 
-Declaration counts: enum: 2; field: 24; function: 2; impl: 1; method: 3; struct: 6; variant: 15.
+Declaration counts: enum: 2; field: 29; function: 3; impl: 1; method: 8; struct: 8; variant: 15.
 
 ## Declared imports
 
@@ -210,9 +211,57 @@ command: i32
 argument: ext::cli::Argument
 ```
 
-### enum: Event
+### struct: Pending
 
 [Source line 25](../../../extended/ext/cli_commands.lani#L25)
+
+```lanius
+pub struct Pending
+```
+
+#### field: command
+
+[Source line 25](../../../extended/ext/cli_commands.lani#L25)
+
+```lanius
+command: i32
+```
+
+#### field: pending
+
+[Source line 25](../../../extended/ext/cli_commands.lani#L25)
+
+```lanius
+pending: ext::cli::Pending
+```
+
+### struct: Prefix
+
+[Source line 26](../../../extended/ext/cli_commands.lani#L26)
+
+```lanius
+pub struct Prefix
+```
+
+#### field: command
+
+[Source line 26](../../../extended/ext/cli_commands.lani#L26)
+
+```lanius
+command: i32
+```
+
+#### field: prefix
+
+[Source line 26](../../../extended/ext/cli_commands.lani#L26)
+
+```lanius
+prefix: ext::cli::Prefix
+```
+
+### enum: Event
+
+[Source line 27](../../../extended/ext/cli_commands.lani#L27)
 
 ```lanius
 pub enum Event
@@ -220,7 +269,7 @@ pub enum Event
 
 #### variant: Command
 
-[Source line 25](../../../extended/ext/cli_commands.lani#L25)
+[Source line 27](../../../extended/ext/cli_commands.lani#L27)
 
 ```lanius
 Command(Selection)
@@ -228,7 +277,7 @@ Command(Selection)
 
 #### variant: Option
 
-[Source line 25](../../../extended/ext/cli_commands.lani#L25)
+[Source line 27](../../../extended/ext/cli_commands.lani#L27)
 
 ```lanius
 Option(ScopedOption)
@@ -236,7 +285,7 @@ Option(ScopedOption)
 
 #### variant: Operand
 
-[Source line 25](../../../extended/ext/cli_commands.lani#L25)
+[Source line 27](../../../extended/ext/cli_commands.lani#L27)
 
 ```lanius
 Operand(ScopedOperand)
@@ -244,7 +293,7 @@ Operand(ScopedOperand)
 
 ### enum: Error
 
-[Source line 26](../../../extended/ext/cli_commands.lani#L26)
+[Source line 28](../../../extended/ext/cli_commands.lani#L28)
 
 ```lanius
 pub enum Error
@@ -252,7 +301,7 @@ pub enum Error
 
 #### variant: Bounds
 
-[Source line 27](../../../extended/ext/cli_commands.lani#L27)
+[Source line 29](../../../extended/ext/cli_commands.lani#L29)
 
 ```lanius
 Bounds
@@ -260,7 +309,7 @@ Bounds
 
 #### variant: EmptySchema
 
-[Source line 27](../../../extended/ext/cli_commands.lani#L27)
+[Source line 29](../../../extended/ext/cli_commands.lani#L29)
 
 ```lanius
 EmptySchema
@@ -268,7 +317,7 @@ EmptySchema
 
 #### variant: InvalidCommand
 
-[Source line 27](../../../extended/ext/cli_commands.lani#L27)
+[Source line 29](../../../extended/ext/cli_commands.lani#L29)
 
 ```lanius
 InvalidCommand(i32)
@@ -276,7 +325,7 @@ InvalidCommand(i32)
 
 #### variant: DuplicateCommand
 
-[Source line 27](../../../extended/ext/cli_commands.lani#L27)
+[Source line 29](../../../extended/ext/cli_commands.lani#L29)
 
 ```lanius
 DuplicateCommand(i32)
@@ -284,7 +333,7 @@ DuplicateCommand(i32)
 
 #### variant: InvalidOption
 
-[Source line 28](../../../extended/ext/cli_commands.lani#L28)
+[Source line 30](../../../extended/ext/cli_commands.lani#L30)
 
 ```lanius
 InvalidOption(i32,i32)
@@ -292,7 +341,7 @@ InvalidOption(i32,i32)
 
 #### variant: DuplicateOption
 
-[Source line 28](../../../extended/ext/cli_commands.lani#L28)
+[Source line 30](../../../extended/ext/cli_commands.lani#L30)
 
 ```lanius
 DuplicateOption(i32,i32)
@@ -300,7 +349,7 @@ DuplicateOption(i32,i32)
 
 #### variant: ScratchTooSmall
 
-[Source line 28](../../../extended/ext/cli_commands.lani#L28)
+[Source line 30](../../../extended/ext/cli_commands.lani#L30)
 
 ```lanius
 ScratchTooSmall(u64)
@@ -308,7 +357,7 @@ ScratchTooSmall(u64)
 
 #### variant: UnknownCommand
 
-[Source line 29](../../../extended/ext/cli_commands.lani#L29)
+[Source line 31](../../../extended/ext/cli_commands.lani#L31)
 
 ```lanius
 UnknownCommand(ext::cli::Location)
@@ -316,7 +365,7 @@ UnknownCommand(ext::cli::Location)
 
 #### variant: Token
 
-[Source line 29](../../../extended/ext/cli_commands.lani#L29)
+[Source line 31](../../../extended/ext/cli_commands.lani#L31)
 
 ```lanius
 Token(i32,ext::cli::Error)
@@ -324,7 +373,7 @@ Token(i32,ext::cli::Error)
 
 #### variant: UnknownCommandId
 
-[Source line 30](../../../extended/ext/cli_commands.lani#L30)
+[Source line 32](../../../extended/ext/cli_commands.lani#L32)
 
 ```lanius
 UnknownCommandId(i32)
@@ -332,7 +381,7 @@ UnknownCommandId(i32)
 
 #### variant: OutputTooSmall
 
-[Source line 30](../../../extended/ext/cli_commands.lani#L30)
+[Source line 32](../../../extended/ext/cli_commands.lani#L32)
 
 ```lanius
 OutputTooSmall(u64)
@@ -340,7 +389,7 @@ OutputTooSmall(u64)
 
 #### variant: SizeOverflow
 
-[Source line 30](../../../extended/ext/cli_commands.lani#L30)
+[Source line 32](../../../extended/ext/cli_commands.lani#L32)
 
 ```lanius
 SizeOverflow
@@ -348,7 +397,7 @@ SizeOverflow
 
 ### struct: Parser
 
-[Source line 32](../../../extended/ext/cli_commands.lani#L32)
+[Source line 34](../../../extended/ext/cli_commands.lani#L34)
 
 ```lanius
 pub struct Parser
@@ -356,7 +405,7 @@ pub struct Parser
 
 #### field: commands
 
-[Source line 33](../../../extended/ext/cli_commands.lani#L33)
+[Source line 35](../../../extended/ext/cli_commands.lani#L35)
 
 ```lanius
 commands: View<Command>
@@ -364,7 +413,7 @@ commands: View<Command>
 
 #### field: scratch
 
-[Source line 33](../../../extended/ext/cli_commands.lani#L33)
+[Source line 35](../../../extended/ext/cli_commands.lani#L35)
 
 ```lanius
 scratch: View<ext::cli::Spec>
@@ -372,7 +421,7 @@ scratch: View<ext::cli::Spec>
 
 #### field: flat
 
-[Source line 33](../../../extended/ext/cli_commands.lani#L33)
+[Source line 35](../../../extended/ext/cli_commands.lani#L35)
 
 ```lanius
 flat: ext::cli::Parser
@@ -380,7 +429,7 @@ flat: ext::cli::Parser
 
 #### field: selected
 
-[Source line 34](../../../extended/ext/cli_commands.lani#L34)
+[Source line 36](../../../extended/ext/cli_commands.lani#L36)
 
 ```lanius
 selected: i32
@@ -388,15 +437,23 @@ selected: i32
 
 #### field: selecting
 
-[Source line 34](../../../extended/ext/cli_commands.lani#L34)
+[Source line 36](../../../extended/ext/cli_commands.lani#L36)
 
 ```lanius
 selecting: bool
 ```
 
+#### field: operands
+
+[Source line 36](../../../extended/ext/cli_commands.lani#L36)
+
+```lanius
+operands: i32
+```
+
 #### field: done
 
-[Source line 34](../../../extended/ext/cli_commands.lani#L34)
+[Source line 36](../../../extended/ext/cli_commands.lani#L36)
 
 ```lanius
 done: bool
@@ -404,7 +461,7 @@ done: bool
 
 #### field: failure
 
-[Source line 34](../../../extended/ext/cli_commands.lani#L34)
+[Source line 36](../../../extended/ext/cli_commands.lani#L36)
 
 ```lanius
 failure: Option<Error>
@@ -414,7 +471,7 @@ failure: Option<Error>
 
 ### function: validate
 
-[Source line 104](../../../extended/ext/cli_commands.lani#L104)
+[Source line 106](../../../extended/ext/cli_commands.lani#L106)
 
 ```lanius
 pub fn validate(commands: View<Command>) -> Result<u64,Error>
@@ -422,17 +479,25 @@ pub fn validate(commands: View<Command>) -> Result<u64,Error>
 
 ### function: parser
 
-[Source line 242](../../../extended/ext/cli_commands.lani#L242)
+[Source line 264](../../../extended/ext/cli_commands.lani#L264)
 
 ```lanius
 pub fn parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error>
 ```
 
+### function: prefix_parser
+
+[Source line 268](../../../extended/ext/cli_commands.lani#L268)
+
+```lanius
+pub fn prefix_parser(arguments: View<View<u8>>, commands: View<Command>, scratch: View<ext::cli::Spec>) -> Result<Parser,Error>
+```
+
 ## Implementation blocks and public methods
 
-### impl at line 261
+### impl at line 272
 
-[Source line 261](../../../extended/ext/cli_commands.lani#L261)
+[Source line 272](../../../extended/ext/cli_commands.lani#L272)
 
 ```lanius
 pub impl Parser
@@ -440,7 +505,7 @@ pub impl Parser
 
 #### method: borrow
 
-[Source line 262](../../../extended/ext/cli_commands.lani#L262)
+[Source line 273](../../../extended/ext/cli_commands.lani#L273)
 
 ```lanius
 pub fn borrow(&self) -> &Parser
@@ -448,15 +513,55 @@ pub fn borrow(&self) -> &Parser
 
 #### method: current
 
-[Source line 263](../../../extended/ext/cli_commands.lani#L263)
+[Source line 274](../../../extended/ext/cli_commands.lani#L274)
 
 ```lanius
 pub fn current(&self) -> i32
 ```
 
+#### method: operand_index
+
+[Source line 275](../../../extended/ext/cli_commands.lani#L275)
+
+```lanius
+pub fn operand_index(&self) -> i32
+```
+
+#### method: selecting_command
+
+[Source line 276](../../../extended/ext/cli_commands.lani#L276)
+
+```lanius
+pub fn selecting_command(&self) -> bool
+```
+
+#### method: options_ended
+
+[Source line 277](../../../extended/ext/cli_commands.lani#L277)
+
+```lanius
+pub fn options_ended(&self) -> bool
+```
+
+#### method: pending_required
+
+[Source line 278](../../../extended/ext/cli_commands.lani#L278)
+
+```lanius
+pub fn pending_required(&self) -> Option<Pending>
+```
+
+#### method: classify_prefix
+
+[Source line 285](../../../extended/ext/cli_commands.lani#L285)
+
+```lanius
+pub fn classify_prefix(&self, value: View<u8>) -> Result<Prefix,Error>
+```
+
 #### method: next
 
-[Source line 288](../../../extended/ext/cli_commands.lani#L288)
+[Source line 320](../../../extended/ext/cli_commands.lani#L320)
 
 ```lanius
 pub fn next(&self) -> Result<Option<Event>,Error>

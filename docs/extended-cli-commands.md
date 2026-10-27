@@ -138,7 +138,10 @@ the same payload assertions. This dependency does not block the public APIs;
 no compiler cause or general nested-pattern restriction is established.
 
 [Response preprocessing](extended-cli-response.md) has separate contracts and
-receipts. Shell completion and richer application validation remain on the
+receipts. [Completion](extended-cli-complete.md) now reuses this schema and the
+canonical prefix parser; portable/query semantics and query owner/output groups
+pass; the Bash 5.2/bash-completion 2.11 adapter has finite actual function/PTY
+insertion and watchdog receipts. Richer application validation remains on the
 [library roadmap](library-roadmap.md). Compiler dependencies remain in the
 [dependency ledger](library-dependencies.md); this increment changes no
 compiler IR, ABI, extraction, proof or runtime implementation.

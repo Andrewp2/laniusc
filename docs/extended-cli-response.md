@@ -172,7 +172,7 @@ the original compile, trap and diagnostic trace remain separate records.
 | --- | --- | --- |
 | Real native file provider | 39 direct cases cover borrowed/fixed-base descriptors, file admission, byte caps, call budgets and injected I/O/close failures | `response-files-provider-native-first.log` |
 | Resource and owned-error campaigns | 31 direct cases: two healthy baselines plus 29 individually reached allocation failures, with live acknowledged owner checks | `response-files-resources-native-first.log` |
-| [Migrated KV application](extended-kv.md#current-application-receipts) | 55 direct cases, including all 18 source-allocation denials from its nested-help baseline, a post-database-open OOM and published-unsynced outcome | `response-kv-native-artifact-retry.log` |
+| [Response-checkpoint KV application](extended-kv.md#historical-response-application-receipts) | 55 direct cases, including all 18 source-allocation denials from its nested-help baseline, a post-database-open OOM and published-unsynced outcome | `response-kv-native-artifact-retry.log` |
 | Registered native/KV drivers | Combined `--no-run` build passes in 2.09s, separately from direct oracle execution | `response-resource-kv-drivers-build-first.log` |
 
 The two native groups total 70 group cases with overlapping setup, not two

@@ -1,0 +1,180 @@
+module app::main;
+import core::mem;
+import core::io;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::stream;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_complete;
+
+fn lit(value: str, count: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count), start: 0, length: count };
+}
+fn spec(id: i32, name: View<u8>, short: u8, arity: ext::cli::Arity) -> ext::cli::Spec {
+    return ext::cli::Spec { id: id, long: name, short: short, arity: arity };
+}
+fn declaration(item: ext::cli::Spec, global: bool, label: View<u8>, help: View<u8>) -> ext::cli_commands::OptionSpec {
+    return ext::cli_commands::OptionSpec { spec: item, global: global, value_name: label, help: help };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; }
+    return true;
+}
+fn word(value: u64) {
+    let bytes: [u8;8] = [0;8]; let index: i32 = 0;
+    while (index < 8) { bytes[index] = ((value >> (index*8)) & 255) as u8; index += 1; }
+    let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+
+fn payload(value: View<u8>) {
+    word(value.length as u64); let output: std::stream::Descriptor = std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),value.values,value.start,value.length).is_ok());
+}
+fn decode(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0; let index: i32 = 0;
+    while (index < 8) { result |= (bytes[offset+index] as u64) << (index*8); index += 1; } return result;
+}
+fn kind(value: ext::cli_complete::Kind) -> i32 {
+    return match (value) { ext::cli_complete::Kind::Command -> 0, ext::cli_complete::Kind::Operand -> 1, ext::cli_complete::Kind::LongOption -> 2, ext::cli_complete::Kind::ShortOption -> 3, ext::cli_complete::Kind::OptionValue -> 4 };
+}
+struct Code { kind: i32, command: i32, first: i32, second: i32 }
+fn token_code(command: i32, error: ext::cli::Error) -> Code {
+    let value: i32 = match (error) { ext::cli::Error::UnknownOption(at) -> 102, ext::cli::Error::MissingValue(at) -> 103, ext::cli::Error::UnexpectedValue(at) -> 104, _ -> 199 };
+    let at: ext::cli::Location = match (error) { ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: 0, byte: 0 } };
+    return Code { kind: value, command: command, first: at.argument, second: at.byte };
+}
+fn command_code(error: ext::cli_commands::Error) -> Code {
+    return match (error) {
+        ext::cli_commands::Error::Bounds -> Code { kind: 20, command: 0, first: 0, second: 0 },
+        ext::cli_commands::Error::EmptySchema -> Code { kind: 21, command: 0, first: 0, second: 0 },
+        ext::cli_commands::Error::InvalidCommand(at) -> Code { kind: 22, command: 0, first: at, second: 0 },
+        ext::cli_commands::Error::DuplicateCommand(at) -> Code { kind: 23, command: 0, first: at, second: 0 },
+        ext::cli_commands::Error::InvalidOption(node,option) -> Code { kind: 24, command: 0, first: node, second: option },
+        ext::cli_commands::Error::DuplicateOption(node,option) -> Code { kind: 25, command: 0, first: node, second: option },
+        ext::cli_commands::Error::ScratchTooSmall(count) -> Code { kind: 26, command: 0, first: count as i32, second: 0 },
+        ext::cli_commands::Error::UnknownCommand(at) -> Code { kind: 50, command: 0, first: at.argument, second: at.byte },
+        ext::cli_commands::Error::Token(command,error) -> token_code(command,error),
+        _ -> Code { kind: 299, command: 0, first: 0, second: 0 }
+    };
+}
+fn error_code(error: ext::cli_complete::Error) -> Code {
+    return match (error) {
+        ext::cli_complete::Error::Bounds -> Code { kind: 1, command: 0, first: 0, second: 0 },
+        ext::cli_complete::Error::Nul(at) -> Code { kind: 2, command: 0, first: at.argument, second: at.byte },
+        ext::cli_complete::Error::ValueNul(index,byte) -> Code { kind: 3, command: 0, first: index, second: byte },
+        ext::cli_complete::Error::OutputTooSmall(count) -> Code { kind: 4, command: 0, first: count as i32, second: 0 },
+        ext::cli_complete::Error::Commands(error) -> command_code(error)
+    };
+}
+fn canaries(bytes: [u8], start: i32, end: i32) {
+    let index: i32 = start; while (index < end) { assert(bytes[index] == 90); index += 1; }
+}
+fn same_range(left: ext::cli_complete::Replacement, right: ext::cli_complete::Replacement) -> bool {
+    return left.at.argument == right.at.argument && left.at.byte == right.at.byte && left.length == right.length;
+}
+fn same(left: ext::cli_complete::Suggestion, right: ext::cli_complete::Suggestion) -> bool {
+    return left.bytes == right.bytes && left.command == right.command && left.option == right.option && kind(left.kind) == kind(right.kind) && left.append_space == right.append_space && same_range(left.replacement,right.replacement);
+}
+fn replacement(value: ext::cli_complete::Replacement) { word(value.at.argument as u64); word(value.at.byte as u64); word(value.length as u64); }
+fn run(bytes: [u8]) {
+    let profile: u64 = decode(bytes,0); let argc: i32 = decode(bytes,8) as i32; let argument: i32 = decode(bytes,16) as i32; let cursor: i32 = decode(bytes,24) as i32; let count: i32 = decode(bytes,32) as i32;
+    assert(profile <= 1 && argc >= 0 && argc <= 8 && count >= 0 && count <= 4);
+    let empty: View<u8> = lit("",0);
+    let raw_help: [u8;5] = [100,101,115,116,255];
+    let root_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(10,lit("verbose",7),118,ext::cli::Arity::Flag),true,empty,lit("chatty",6)),
+        declaration(spec(20,lit("config",6),67,ext::cli::Arity::Required),true,lit("FILE",4),lit("cfg",3)),
+        declaration(spec(30,lit("root-only",9),120,ext::cli::Arity::Flag),false,empty,lit("root",4))
+    ];
+    let work_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(40,lit("quiet",5),113,ext::cli::Arity::Flag),true,empty,empty),
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(50,lit("output",6),111,ext::cli::Arity::Required),false,lit("OUT",3),core::slice::view(raw_help,5).unwrap())
+    ];
+    let run_options: [ext::cli_commands::OptionSpec;2] = [
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(60,lit("force",5),102,ext::cli::Arity::Flag),false,empty,empty)
+    ];
+    let list_options: [ext::cli_commands::OptionSpec;1] = [declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Required),false,lit("ITEM",4),lit("list",4))];
+    let root_order: ext::cli::Ordering = ext::cli::Ordering::OptionsFirst;
+    let leaf_order: ext::cli::Ordering = ext::cli::Ordering::Intermixed;
+    if (profile == 1) { root_order = ext::cli::Ordering::Intermixed; leaf_order = ext::cli::Ordering::OptionsFirst; }
+    let root: ext::cli_commands::Command = ext::cli_commands::Command { id: 40, parent: -1, name: lit("tool",4), summary: lit("Root",4), operands: lit("ROOT",4), ordering: root_order, options: core::slice::view(root_options,3).unwrap() };
+    // Physical node start1; parent fields are indices relative to this view.
+    let nodes: [ext::cli_commands::Command;6] = [root,root,
+        ext::cli_commands::Command { id: 17, parent: 0, name: lit("work",4), summary: lit("Work",4), operands: lit("ITEM",4), ordering: root_order, options: core::slice::view(work_options,3).unwrap() },
+        ext::cli_commands::Command { id: 91, parent: 1, name: lit("run",3), summary: lit("Run",3), operands: lit("PATH",4), ordering: leaf_order, options: core::slice::view(run_options,2).unwrap() },
+        ext::cli_commands::Command { id: 6, parent: 0, name: lit("list",4), summary: lit("List",4), operands: lit("ITEM",4), ordering: leaf_order, options: core::slice::view(list_options,1).unwrap() },root];
+    let commands: View<ext::cli_commands::Command> = core::slice::view_range(nodes,1,4).unwrap();
+    let sentinel: ext::cli::Spec = spec(901,lit("sentinel",8),115,ext::cli::Arity::Flag);
+    let storage: [ext::cli::Spec;7] = [sentinel;7];
+    let scratch: View<ext::cli::Spec> = core::slice::view_range(storage,1,5).unwrap();
+
+    let arguments: [View<u8>;10] = [empty;10]; let index: i32 = 0;
+    while (index < argc) { let length: i32 = decode(bytes,40+index*40) as i32; assert(length >= 0 && length <= 32); arguments[index+1] = View<u8> { values: bytes, start: 48+index*40, length: length }; index += 1; }
+    let blank: ext::cli_complete::Value = ext::cli_complete::Value { bytes: empty, append_space: false };
+    let values: [ext::cli_complete::Value;6] = [blank;6]; index = 0;
+    while (index < count) {
+        let offset: i32 = 360+index*40; let length: i32 = decode(bytes,offset) as i32; assert(length >= 0 && length <= 24);
+        values[index+1] = ext::cli_complete::Value { bytes: View<u8> { values: bytes, start: offset+8, length: length }, append_space: decode(bytes,offset+32) != 0 }; index += 1;
+    }
+    let input: View<View<u8>> = core::slice::view_range(arguments,1,argc).unwrap();
+    let result: Result<ext::cli_complete::Context,ext::cli_complete::Error> = ext::cli_complete::context(input,ext::cli::Location { argument: argument, byte: cursor },commands,scratch);
+    word(0x434d50);
+    if (result.is_err()) {
+        let error: ext::cli_complete::Error = result.unwrap_err(); let diagnostic: Code = error_code(error);
+        word(1); word(diagnostic.kind as u64); word(diagnostic.command as u64); word(diagnostic.first as u64); word(diagnostic.second as u64); return;
+    }
+    let context: ext::cli_complete::Context = result.unwrap(); word(0);
+    word(context.command() as u64); word(context.operand_index() as u64); word(kind(context.kind()) as u64); payload(context.prefix()); payload(context.stem()); replacement(context.replacement());
+    let option: Option<ext::cli_complete::OptionIdentity> = context.option(); word(option.is_some() as u64);
+    if (option.is_some()) { let id: ext::cli_complete::OptionIdentity = option.unwrap(); word(id.command as u64); word(id.option as u64); }
+    // Context may borrow schema/input but must not keep construction scratch.
+    index = 0; while (index < 7) { storage[index] = sentinel; index += 1; }
+    let suggestions: ext::cli_complete::Suggestions = context.suggestions(core::slice::view_range(values,1,count).unwrap()).unwrap();
+    let fork: ext::cli_complete::Suggestions = suggestions;
+    let native: [u8;64] = [90;64]; assert(core::mem::slice_stride(native) < 0);
+    let packed_storage: [i32;16] = [0;16]; let positive: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_storage),64);
+    assert(core::mem::slice_stride(positive) == 1);
+    let done: bool = false; let attempts: i32 = 0;
+    while (!done) {
+        assert(attempts < 32); attempts += 1;
+        index = 0; while (index < 64) { native[index] = 90; positive[index] = 90; index += 1; }
+        let first: Option<ext::cli_complete::Suggestion> = suggestions.next(core::slice::view_range(native,1,62).unwrap()).unwrap();
+        let second: Option<ext::cli_complete::Suggestion> = fork.next(View<u8> { values: positive, start: 1, length: 62 }).unwrap();
+        assert(first.is_some() == second.is_some());
+        if (first.is_none()) {
+            assert(suggestions.next(core::slice::view_range(native,1,62).unwrap()).unwrap().is_none());
+            assert(fork.next(View<u8> { values: positive, start: 1, length: 62 }).unwrap().is_none());
+            canaries(native,0,64); canaries(positive,0,64); done = true; word(0);
+        } else {
+            let item: ext::cli_complete::Suggestion = first.unwrap(); assert(same(item,second.unwrap()) && item.bytes >= 0 && item.bytes <= 62 && item.command >= 0 && item.option >= -1);
+            let text: View<u8> = core::slice::view_range(native,1,item.bytes).unwrap();
+            assert(equal(text,View<u8> { values: positive, start: 1, length: item.bytes }));
+            canaries(native,0,1); canaries(native,1+item.bytes,64); canaries(positive,0,1); canaries(positive,1+item.bytes,64);
+            assert(same_range(item.replacement,context.replacement()));
+            word(1); payload(text); word(item.command as u64); word((item.option+1) as u64); word(kind(item.kind) as u64); word(item.append_space as u64); replacement(item.replacement);
+        }
+    }
+    assert(storage[0].id == 901 && storage[6].id == 901 && nodes[0].id == 40 && nodes[5].id == 40);
+}
+fn main() -> i32 {
+    let storage: [i32;130] = [0;130]; let bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),520);
+    assert(core::mem::slice_stride(bytes) == 1);
+    let input: std::stream::Descriptor = std::stream::stdin();
+    while (true) {
+        let result: Result<i32,core::io::Error> = input.read(bytes,0,520); assert(result.is_ok()); let count: i32 = result.unwrap();
+        if (count == 0) { return 0; }
+        if (count < 520) { assert(core::io::read_exact(input.borrow(),bytes,count,520-count).is_ok()); }
+        run(bytes);
+    }
+    return 0;
+}

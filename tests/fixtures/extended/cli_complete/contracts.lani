@@ -1,0 +1,229 @@
+module app::main;
+import core::mem;
+import core::io;
+import core::option::Option;
+import core::option::Some;
+import core::option::None;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import std::stream;
+import ext::cli;
+import ext::cli_commands;
+import ext::cli_complete;
+
+fn lit(value: str, count: i32) -> View<u8> {
+    return View<u8> { values: core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count), start: 0, length: count };
+}
+fn spec(id: i32, name: View<u8>, short: u8, arity: ext::cli::Arity) -> ext::cli::Spec {
+    return ext::cli::Spec { id: id, long: name, short: short, arity: arity };
+}
+fn declaration(item: ext::cli::Spec, global: bool, label: View<u8>, help: View<u8>) -> ext::cli_commands::OptionSpec {
+    return ext::cli_commands::OptionSpec { spec: item, global: global, value_name: label, help: help };
+}
+fn equal(left: View<u8>, right: View<u8>) -> bool {
+    if (left.length != right.length) { return false; }
+    let index: i32 = 0;
+    while (index < left.length) { if (left.values[left.start+index] != right.values[right.start+index]) { return false; } index += 1; }
+    return true;
+}
+fn kind(value: ext::cli_complete::Kind) -> i32 {
+    return match (value) { ext::cli_complete::Kind::Command -> 0, ext::cli_complete::Kind::Operand -> 1, ext::cli_complete::Kind::LongOption -> 2, ext::cli_complete::Kind::ShortOption -> 3, ext::cli_complete::Kind::OptionValue -> 4 };
+}
+struct Code { kind: i32, command: i32, first: i32, second: i32 }
+fn token_code(command: i32, error: ext::cli::Error) -> Code {
+    let value: i32 = match (error) { ext::cli::Error::UnknownOption(at) -> 102, ext::cli::Error::MissingValue(at) -> 103, ext::cli::Error::UnexpectedValue(at) -> 104, _ -> 199 };
+    let at: ext::cli::Location = match (error) { ext::cli::Error::UnknownOption(at) -> at, ext::cli::Error::MissingValue(at) -> at, ext::cli::Error::UnexpectedValue(at) -> at, _ -> ext::cli::Location { argument: 0, byte: 0 } };
+    return Code { kind: value, command: command, first: at.argument, second: at.byte };
+}
+fn command_code(error: ext::cli_commands::Error) -> Code {
+    return match (error) {
+        ext::cli_commands::Error::Bounds -> Code { kind: 20, command: 0, first: 0, second: 0 },
+        ext::cli_commands::Error::EmptySchema -> Code { kind: 21, command: 0, first: 0, second: 0 },
+        ext::cli_commands::Error::InvalidCommand(at) -> Code { kind: 22, command: 0, first: at, second: 0 },
+        ext::cli_commands::Error::DuplicateCommand(at) -> Code { kind: 23, command: 0, first: at, second: 0 },
+        ext::cli_commands::Error::InvalidOption(node,option) -> Code { kind: 24, command: 0, first: node, second: option },
+        ext::cli_commands::Error::DuplicateOption(node,option) -> Code { kind: 25, command: 0, first: node, second: option },
+        ext::cli_commands::Error::ScratchTooSmall(count) -> Code { kind: 26, command: 0, first: count as i32, second: 0 },
+        ext::cli_commands::Error::UnknownCommand(at) -> Code { kind: 50, command: 0, first: at.argument, second: at.byte },
+        ext::cli_commands::Error::Token(command,error) -> token_code(command,error),
+        _ -> Code { kind: 299, command: 0, first: 0, second: 0 }
+    };
+}
+fn error_code(error: ext::cli_complete::Error) -> Code {
+    return match (error) {
+        ext::cli_complete::Error::Bounds -> Code { kind: 1, command: 0, first: 0, second: 0 },
+        ext::cli_complete::Error::Nul(at) -> Code { kind: 2, command: 0, first: at.argument, second: at.byte },
+        ext::cli_complete::Error::ValueNul(index,byte) -> Code { kind: 3, command: 0, first: index, second: byte },
+        ext::cli_complete::Error::OutputTooSmall(count) -> Code { kind: 4, command: 0, first: count as i32, second: 0 },
+        ext::cli_complete::Error::Commands(error) -> command_code(error)
+    };
+}
+fn canaries(bytes: [u8], start: i32, end: i32) {
+    let index: i32 = start; while (index < end) { assert(bytes[index] == 90); index += 1; }
+}
+fn same_range(left: ext::cli_complete::Replacement, right: ext::cli_complete::Replacement) -> bool {
+    return left.at.argument == right.at.argument && left.at.byte == right.at.byte && left.length == right.length;
+}
+fn same(left: ext::cli_complete::Suggestion, right: ext::cli_complete::Suggestion) -> bool {
+    return left.bytes == right.bytes && left.command == right.command && left.option == right.option && kind(left.kind) == kind(right.kind) && left.append_space == right.append_space && same_range(left.replacement,right.replacement);
+}
+
+fn arity(value: ext::cli::Arity) -> i32 { return match (value) { ext::cli::Arity::Flag -> 0, ext::cli::Arity::Required -> 1, ext::cli::Arity::Optional -> 2 }; }
+fn same_spec(left: ext::cli::Spec, right: ext::cli::Spec) -> bool {
+    return left.id == right.id && left.short == right.short && arity(left.arity) == arity(right.arity) && equal(left.long,right.long);
+}
+fn scratch_intact(values: [ext::cli::Spec], sentinel: ext::cli::Spec) { let i: i32 = 0; while (i < 7) { assert(same_spec(values[i],sentinel)); i += 1; } }
+fn failed_next(iterator: &ext::cli_complete::Suggestions, output: View<u8>, expected: i32, size: i32) {
+    let result: Result<Option<ext::cli_complete::Suggestion>,ext::cli_complete::Error> = iterator.next(output);
+    assert(result.is_err()); let error: ext::cli_complete::Error = result.unwrap_err(); let diagnostic: Code = error_code(error);
+    assert(diagnostic.kind == expected && diagnostic.first == size);
+}
+fn failed_context(arguments: View<View<u8>>, at: ext::cli::Location, commands: View<ext::cli_commands::Command>, scratch: View<ext::cli::Spec>, expected: i32, first: i32, second: i32) {
+    let result: Result<ext::cli_complete::Context,ext::cli_complete::Error> = ext::cli_complete::context(arguments,at,commands,scratch);
+    assert(result.is_err()); let error: ext::cli_complete::Error = result.unwrap_err(); let diagnostic: Code = error_code(error);
+    assert(diagnostic.kind == expected && diagnostic.first == first && diagnostic.second == second);
+}
+struct Expected { text: View<u8>, command: i32, option: i32, kind: ext::cli_complete::Kind, space: bool }
+fn item(text: View<u8>, command: i32, option: i32, category: ext::cli_complete::Kind, space: bool) -> Expected { return Expected { text: text, command: command, option: option, kind: category, space: space }; }
+fn sequence(iterator: ext::cli_complete::Suggestions, expected: View<Expected>, range: ext::cli_complete::Replacement) {
+    let fork: ext::cli_complete::Suggestions = iterator;
+    let native: [u8;64] = [90;64]; assert(core::mem::slice_stride(native) < 0);
+    let words: [i32;16] = [0;16]; let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),64); assert(core::mem::slice_stride(packed) == 1);
+    let i: i32 = 0;
+    while (i < expected.length) {
+        let target: Expected = expected.values[expected.start+i]; let j: i32 = 0; while (j < 64) { native[j] = 90; packed[j] = 90; j += 1; }
+        let first: Option<ext::cli_complete::Suggestion> = iterator.next(core::slice::view_range(native,1,target.text.length).unwrap()).unwrap();
+        let second: Option<ext::cli_complete::Suggestion> = fork.next(View<u8> { values: packed, start: 2, length: 61 }).unwrap();
+        assert(first.is_some() && second.is_some()); let value: ext::cli_complete::Suggestion = first.unwrap(); assert(same(value,second.unwrap()));
+        assert(value.bytes == target.text.length && value.command == target.command && value.option == target.option && kind(value.kind) == kind(target.kind) && value.append_space == target.space && same_range(value.replacement,range));
+        assert(equal(core::slice::view_range(native,1,value.bytes).unwrap(),target.text) && equal(View<u8> { values: packed, start: 2, length: value.bytes },target.text));
+        canaries(native,0,1); canaries(native,1+value.bytes,64); canaries(packed,0,2); canaries(packed,2+value.bytes,64); i += 1;
+    }
+    let j: i32 = 0; while (j < 64) { native[j] = 90; packed[j] = 90; j += 1; }
+    assert(iterator.next(core::slice::view(native,64).unwrap()).unwrap().is_none() && iterator.next(core::slice::view(native,64).unwrap()).unwrap().is_none());
+    assert(fork.next(View<u8> { values: packed, start: 0, length: 64 }).unwrap().is_none() && fork.next(View<u8> { values: packed, start: 0, length: 64 }).unwrap().is_none());
+    canaries(native,0,64); canaries(packed,0,64);
+}
+fn main() -> i32 {
+    let profile: u64 = 0;
+    let empty: View<u8> = lit("",0);
+    let raw_help: [u8;5] = [100,101,115,116,255];
+    let root_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(10,lit("verbose",7),118,ext::cli::Arity::Flag),true,empty,lit("chatty",6)),
+        declaration(spec(20,lit("config",6),67,ext::cli::Arity::Required),true,lit("FILE",4),lit("cfg",3)),
+        declaration(spec(30,lit("root-only",9),120,ext::cli::Arity::Flag),false,empty,lit("root",4))
+    ];
+    let work_options: [ext::cli_commands::OptionSpec;3] = [
+        declaration(spec(40,lit("quiet",5),113,ext::cli::Arity::Flag),true,empty,empty),
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(50,lit("output",6),111,ext::cli::Arity::Required),false,lit("OUT",3),core::slice::view(raw_help,5).unwrap())
+    ];
+    let run_options: [ext::cli_commands::OptionSpec;2] = [
+        declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Optional),false,lit("MODE",4),lit("style",5)),
+        declaration(spec(60,lit("force",5),102,ext::cli::Arity::Flag),false,empty,empty)
+    ];
+    let list_options: [ext::cli_commands::OptionSpec;1] = [declaration(spec(30,lit("mode",4),120,ext::cli::Arity::Required),false,lit("ITEM",4),lit("list",4))];
+    let root_order: ext::cli::Ordering = ext::cli::Ordering::OptionsFirst;
+    let leaf_order: ext::cli::Ordering = ext::cli::Ordering::Intermixed;
+    if (profile == 1) { root_order = ext::cli::Ordering::Intermixed; leaf_order = ext::cli::Ordering::OptionsFirst; }
+    let root: ext::cli_commands::Command = ext::cli_commands::Command { id: 40, parent: -1, name: lit("tool",4), summary: lit("Root",4), operands: lit("ROOT",4), ordering: root_order, options: core::slice::view(root_options,3).unwrap() };
+    // Physical node start1; parent fields are indices relative to this view.
+    let nodes: [ext::cli_commands::Command;6] = [root,root,
+        ext::cli_commands::Command { id: 17, parent: 0, name: lit("work",4), summary: lit("Work",4), operands: lit("ITEM",4), ordering: root_order, options: core::slice::view(work_options,3).unwrap() },
+        ext::cli_commands::Command { id: 91, parent: 1, name: lit("run",3), summary: lit("Run",3), operands: lit("PATH",4), ordering: leaf_order, options: core::slice::view(run_options,2).unwrap() },
+        ext::cli_commands::Command { id: 6, parent: 0, name: lit("list",4), summary: lit("List",4), operands: lit("ITEM",4), ordering: leaf_order, options: core::slice::view(list_options,1).unwrap() },root];
+    let commands: View<ext::cli_commands::Command> = core::slice::view_range(nodes,1,4).unwrap();
+    let sentinel: ext::cli::Spec = spec(901,lit("sentinel",8),115,ext::cli::Arity::Flag);
+    let storage: [ext::cli::Spec;7] = [sentinel;7];
+    let scratch: View<ext::cli::Spec> = core::slice::view_range(storage,1,5).unwrap();
+
+    let inputs: [View<u8>;3] = [empty,empty,empty]; let no_args: View<View<u8>> = core::slice::view_range(inputs,1,0).unwrap();
+    let zero: ext::cli::Location = ext::cli::Location { argument: 0, byte: 0 };
+    let context: ext::cli_complete::Context = ext::cli_complete::context(no_args,zero,commands,scratch).unwrap();
+    assert(context.command() == 40 && context.operand_index() == 0 && kind(context.kind()) == 0 && context.prefix().length == 0 && context.stem().length == 0 && context.option().is_none());
+    let range: ext::cli_complete::Replacement = context.replacement(); assert(range.at.argument == 0 && range.at.byte == 0 && range.length == 0);
+    // No returned context retains the construction scratch lease.
+    let i: i32 = 0; while (i < 7) { storage[i] = sentinel; i += 1; }
+    let value: ext::cli_complete::Value = ext::cli_complete::Value { bytes: lit("blue",4), append_space: true };
+    let policy: [ext::cli_complete::Value;3] = [value,value,value];
+    let values: View<ext::cli_complete::Value> = core::slice::view_range(policy,1,1).unwrap();
+    let iterator: ext::cli_complete::Suggestions = context.suggestions(values).unwrap();
+    let output: [u8;64] = [90;64];
+    failed_next(iterator.borrow(),core::slice::view_range(output,1,3).unwrap(),4,4); canaries(output,0,64);
+    failed_next(iterator.borrow(),core::slice::view_range(output,1,0).unwrap(),4,4); canaries(output,0,64);
+    failed_next(iterator.borrow(),View<u8> { values: output, start: -1, length: 4 },1,0); canaries(output,0,64);
+    failed_next(iterator.borrow(),View<u8> { values: output, start: 0, length: -1 },1,0); canaries(output,0,64);
+    failed_next(iterator.borrow(),View<u8> { values: output, start: 2147483647, length: 1 },1,0); canaries(output,0,64);
+    let root_expected: [Expected;8] = [
+        item(lit("work",4),17,-1,ext::cli_complete::Kind::Command,true), item(lit("list",4),6,-1,ext::cli_complete::Kind::Command,true),
+        item(lit("-v",2),40,10,ext::cli_complete::Kind::ShortOption,true), item(lit("--verbose",9),40,10,ext::cli_complete::Kind::LongOption,true),
+        item(lit("-C",2),40,20,ext::cli_complete::Kind::ShortOption,false), item(lit("--config=",9),40,20,ext::cli_complete::Kind::LongOption,false),
+        item(lit("-x",2),40,30,ext::cli_complete::Kind::ShortOption,true), item(lit("--root-only",11),40,30,ext::cli_complete::Kind::LongOption,true)
+    ];
+    sequence(iterator,core::slice::view(root_expected,8).unwrap(),range); scratch_intact(storage,sentinel);
+
+    // Complete schema/capacity admission precedes malformed completed tokens.
+    let saved: ext::cli_commands::OptionSpec = run_options[1]; run_options[1].spec.id = -1;
+    inputs[1] = lit("--unknown",9);
+    failed_context(core::slice::view_range(inputs,1,1).unwrap(),ext::cli::Location { argument: 1, byte: 0 },commands,scratch,24,2,1); scratch_intact(storage,sentinel);
+    run_options[1] = saved;
+    failed_context(no_args,zero,commands,core::slice::view_range(storage,1,4).unwrap(),26,5,0); scratch_intact(storage,sentinel);
+    failed_context(View<View<u8>> { values: inputs, start: -1, length: 1 },zero,commands,scratch,1,0,0);
+    failed_context(View<View<u8>> { values: inputs, start: 0, length: -1 },zero,commands,scratch,1,0,0);
+    failed_context(View<View<u8>> { values: inputs, start: 2147483647, length: 1 },zero,commands,scratch,1,0,0);
+    failed_context(no_args,ext::cli::Location { argument: -1, byte: 0 },commands,scratch,1,0,0);
+    failed_context(no_args,ext::cli::Location { argument: 0, byte: -1 },commands,scratch,1,0,0);
+    failed_context(no_args,ext::cli::Location { argument: 0, byte: 1 },commands,scratch,1,0,0);
+    inputs[1] = View<u8> { values: raw_help, start: -1, length: 1 };
+    failed_context(core::slice::view_range(inputs,1,1).unwrap(),zero,commands,scratch,1,0,0);
+    failed_context(core::slice::view_range(inputs,1,1).unwrap(),ext::cli::Location { argument: 1, byte: 0 },commands,scratch,20,0,0);
+    scratch_intact(storage,sentinel); inputs[1] = empty;
+
+    // Policy storage is fully admitted before an iterator is returned.
+    // Earlier contexts/iterators have ended their use before schema mutation.
+    let policy_context: ext::cli_complete::Context = ext::cli_complete::context(no_args,zero,commands,scratch).unwrap();
+    let invalid_values: Result<ext::cli_complete::Suggestions,ext::cli_complete::Error> = policy_context.suggestions(View<ext::cli_complete::Value> { values: policy, start: -1, length: 1 });
+    assert(invalid_values.is_err()); let invalid_error: ext::cli_complete::Error = invalid_values.unwrap_err(); assert(error_code(invalid_error).kind == 1);
+    policy[2].bytes = View<u8> { values: raw_help, start: 0, length: -1 };
+    let bad_nested: Result<ext::cli_complete::Suggestions,ext::cli_complete::Error> = policy_context.suggestions(core::slice::view_range(policy,1,2).unwrap());
+    assert(bad_nested.is_err()); let nested_error: ext::cli_complete::Error = bad_nested.unwrap_err(); assert(error_code(nested_error).kind == 1);
+    let nul: [u8;3] = [97,0,98]; policy[2].bytes = core::slice::view(nul,3).unwrap();
+    let nul_values: Result<ext::cli_complete::Suggestions,ext::cli_complete::Error> = policy_context.suggestions(core::slice::view_range(policy,1,2).unwrap());
+    assert(nul_values.is_err()); let nul_error: ext::cli_complete::Error = nul_values.unwrap_err(); let nul_code: Code = error_code(nul_error); assert(nul_code.kind == 3 && nul_code.first == 1 && nul_code.second == 1);
+    policy[2] = value;
+
+    inputs[1] = lit("--config=bl",11);
+    let attached: ext::cli_complete::Context = ext::cli_complete::context(core::slice::view_range(inputs,1,1).unwrap(),ext::cli::Location { argument: 0, byte: 11 },commands,scratch).unwrap();
+    assert(attached.command() == 40 && kind(attached.kind()) == 4 && equal(attached.prefix(),lit("bl",2)) && equal(attached.stem(),lit("--config=",9)));
+    let identity: ext::cli_complete::OptionIdentity = attached.option().unwrap(); assert(identity.command == 40 && identity.option == 20);
+    let colors: [ext::cli_complete::Value;3] = [ext::cli_complete::Value { bytes: lit("black",5), append_space: false },ext::cli_complete::Value { bytes: lit("blue",4), append_space: true },ext::cli_complete::Value { bytes: lit("red",3), append_space: true }];
+    let colored: ext::cli_complete::Suggestions = attached.suggestions(core::slice::view(colors,3).unwrap()).unwrap();
+    failed_next(colored.borrow(),core::slice::view_range(output,1,13).unwrap(),4,14); canaries(output,0,64);
+    let color_expected: [Expected;2] = [item(lit("--config=black",14),40,20,ext::cli_complete::Kind::OptionValue,false),item(lit("--config=blue",13),40,20,ext::cli_complete::Kind::OptionValue,true)];
+    sequence(colored,core::slice::view(color_expected,2).unwrap(),attached.replacement());
+
+    inputs[1] = lit("--",2);
+    let stopped: ext::cli_complete::Context = ext::cli_complete::context(core::slice::view_range(inputs,1,1).unwrap(),ext::cli::Location { argument: 1, byte: 0 },commands,scratch).unwrap();
+    assert(kind(stopped.kind()) == 1 && stopped.command() == 40 && stopped.operand_index() == 0);
+    let empty_policy: [ext::cli_complete::Value;1] = [ext::cli_complete::Value { bytes: empty, append_space: false }];
+    let empties: ext::cli_complete::Suggestions = stopped.suggestions(core::slice::view(empty_policy,1).unwrap()).unwrap();
+    let empty_expected: [Expected;1] = [item(empty,40,-1,ext::cli_complete::Kind::Operand,false)];
+    sequence(empties,core::slice::view(empty_expected,1).unwrap(),stopped.replacement());
+
+    // Enabled single aliases skip their absent counterpart without blank names.
+    let aliases: [ext::cli_commands::OptionSpec;6] = [
+        declaration(spec(1,empty,97,ext::cli::Arity::Flag),false,empty,empty), declaration(spec(2,lit("alpha",5),0,ext::cli::Arity::Flag),false,empty,empty),
+        declaration(spec(3,empty,98,ext::cli::Arity::Required),false,lit("VALUE",5),empty), declaration(spec(4,lit("beta",4),0,ext::cli::Arity::Required),false,lit("FILE",4),empty),
+        declaration(spec(5,empty,99,ext::cli::Arity::Optional),false,lit("MODE",4),empty), declaration(spec(6,lit("color",5),0,ext::cli::Arity::Optional),false,lit("WHEN",4),empty)
+    ];
+    let alias_root: ext::cli_commands::Command = ext::cli_commands::Command { id: 73, parent: -1, name: lit("alias",5), summary: empty, operands: empty, ordering: ext::cli::Ordering::Intermixed, options: core::slice::view(aliases,6).unwrap() };
+    let alias_nodes: [ext::cli_commands::Command;1] = [alias_root]; let alias_scratch: [ext::cli::Spec;6] = [sentinel;6];
+    let dash_words: [View<u8>;1] = [lit("-",1)];
+    let alias_context: ext::cli_complete::Context = ext::cli_complete::context(core::slice::view(dash_words,1).unwrap(),ext::cli::Location { argument: 0, byte: 1 },core::slice::view(alias_nodes,1).unwrap(),core::slice::view(alias_scratch,6).unwrap()).unwrap();
+    let alias_iterator: ext::cli_complete::Suggestions = alias_context.suggestions(core::slice::view(empty_policy,0).unwrap()).unwrap();
+    let alias_expected: [Expected;6] = [item(lit("-a",2),73,1,ext::cli_complete::Kind::ShortOption,true),item(lit("--alpha",7),73,2,ext::cli_complete::Kind::LongOption,true),item(lit("-b",2),73,3,ext::cli_complete::Kind::ShortOption,false),item(lit("--beta=",7),73,4,ext::cli_complete::Kind::LongOption,false),item(lit("-c",2),73,5,ext::cli_complete::Kind::ShortOption,false),item(lit("--color=",8),73,6,ext::cli_complete::Kind::LongOption,false)];
+    sequence(alias_iterator,core::slice::view(alias_expected,6).unwrap(),alias_context.replacement());
+    assert(nodes[0].id == 40 && nodes[5].id == 40 && raw_help[4] == 255);
+    return 0;
+}
