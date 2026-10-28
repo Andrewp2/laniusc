@@ -1,0 +1,63 @@
+// The lifecycle of an ext::openssl_tls session, as a machine
+// (docs/state-machines-design.md, phases M1 and M2). ext::openssl_tls checks
+// the state each operation needs before it acts, then steps this machine with
+// what happened; it assigns the state nowhere else. The module is pure, so
+// formal/tools/extract.py translates it to Lean
+// (formal/Lanius/Machines/TlsLifecycle.lean), where its trace properties are
+// proved.
+module ext::openssl_tls_lifecycle;
+
+// What happens to a session.
+pub enum Signal { Verified, PeerClosed, Shutdown, Failed, Destroyed }
+
+// A session's state, changed only by these transitions
+// (docs/state-machines-design.md). Each operation checks the state it needs
+// before it acts; the machine records what then happened.
+pub machine Lifecycle on Signal {
+    start Handshake;
+
+    state Handshake {
+        Signal::Verified -> goto Open,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    state Open {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> goto PeerClosed,
+        Signal::Shutdown -> goto Closing,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    state PeerClosed {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> goto Closing,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    // Reading after a local close_notify can still receive the peer's.
+    state Closing {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> goto PeerClosed,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    // A failure destroys the session first, so Failed follows Closed.
+    state Closed {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> stay,
+    }
+    state Failed {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> stay,
+        Signal::Destroyed -> goto Closed,
+    }
+}

@@ -1,8 +1,8 @@
 # State machines: a `machine` item in Lanius
 
-Status: design proposal, 2026-10-27. M0 and M1 are done: see
-[M0 result](#m0-result), [M1 decisions](#m1-decisions) and
-[M1 result](#m1-result). The syntax below is the implemented one except
+Status: design proposal, 2026-10-27. M0, M1 and M2 are done: see
+[M0 result](#m0-result), [M1 decisions](#m1-decisions),
+[M1 result](#m1-result) and [M2 result](#m2-result). The syntax below is the implemented one except
 where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
@@ -582,6 +582,43 @@ Done 2026-10-28.
   machine's state to the public `State`. The TLS suites
   (`extended_openssl_tls_*`, `extended_https_mutual_tls`,
   `extended_https_fetch`) give the same results as before the port.
+
+## M2 result
+
+Done 2026-10-28.
+
+- **Extraction.** `formal/tools/extract.py` reads a `machine` (on an enum
+  event) as what laniusc elaborates it to: `inductive MState`, `structure M`
+  with the fields and a `state` field (laniusc's `state()`), `mStart`, one
+  `M.inS` per state and `M.step : M → E → O × M`, by the `&mut self`
+  translation; a machine without an output has `M.step : M → E → M`. Block
+  arms extract too, in any function: a match statement or `return match`
+  whose arms are returning blocks. The door from this document extracts to
+  the shape in [Proof story](#proof-story).
+- **The TLS machine** moved to its own pure module,
+  `extended/ext/openssl_tls_lifecycle.lani`, so that it extracts whole
+  (`formal/Lanius/Machines/TlsLifecycle.lean`), as `ext::sqlite_statement`
+  does. `ext::openssl_tls` imports it.
+- **`Machine` lemmas** (`formal/Lanius/Machines/Machine.lean`):
+  `Machine.states` (every state a run passes through) with `inv_states`,
+  `run_append`, `Machine.silent` for machines without an output, and the
+  spec monitor `Machine.withSpec`, a second machine beside the first that
+  sees each event and the state it led to. `run_withSpec_fst` proves it
+  changes nothing.
+- **The trace property** (`formal/Lanius/Machines/TlsLifecycleCorrect.lean`).
+  The monitor `ended` records whether `Failed` or `Destroyed` has been seen.
+  `ended_stays_ended`: in every state of every run from `lifecycleStart`,
+  after the monitor has seen one, the session is `Closed` or `Failed`.
+  `never_open_after_failure` says it without the monitor: for any `pre`
+  containing `Failed` and any `post`, the state after `pre ++ post` is not
+  `Open`. The step case is one split over 6 states × 5 signals × the flag
+  and `simp`.
+- **Difftest.** The gate step `machine-tls` runs `fn_difftest.py` on the
+  module: random event sequences (1 to 8 events) from the start state
+  through `step`, in Lean and in laniusc's build, comparing each output, the
+  final state and the fields: 120 cases, 0 mismatches. The same harness on
+  the door (outputs and a field) gave 100 cases, 0 mismatches. `gate.py`
+  builds the proofs.
 
 ## Open questions
 

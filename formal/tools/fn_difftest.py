@@ -325,6 +325,8 @@ def targets(ex):
     """(label, lean head, lanius call builder, params, ret) for each tested function."""
     out = []
     for item in ex.order:
+        if item.get('machine') is not None:
+            continue  # machines(): their state field is private in Lanius
         if item['kind'] == 'fn' and not item['inline'] and item['name'] not in extract.SPEC_FNS:
             name = item['name']
             out.append((name, camel(name), item['params'], item['ret'],
@@ -334,6 +336,17 @@ def targets(ex):
                 label = f'{item["name"]}.{f["name"]}'
                 out.append((label, f'{item["name"]}.{camel(f["name"])}', f['params'], f['ret'],
                             lambda args, m=f['name']: f'{args[0]}.{m}({", ".join(args[1:])})'))
+    return out
+
+
+def machines(ex):
+    """(name, fields, event type, output type or None) of each machine."""
+    out = []
+    for item in ex.order:
+        if item['kind'] == 'struct' and item.get('machine') is not None:
+            step = ex.methods[(item['name'], 'step')]
+            out.append((item['name'], [(f, ft) for f, ft, _ in item['fields'] if f != 'state'],
+                        step['params'][1][1], step['ret']))
     return out
 
 
@@ -426,6 +439,39 @@ def main():
                 lines.append(f'    {ty.lani_render(params[i][1].value(), f"a{i}")};')
             body = '\n'.join(lines + ['    return 0;'])
             cases.append((label, f'(let r := {lean_term}; {lean_text})', f'fn case{index}() -> i32 {{\n{body}\n}}'))
+
+    # A machine: random fields, then a random event sequence from its start
+    # state through `step`; each output, then the state and the fields.
+    for name, fields, event, out in (machines(ex) if shard == 0 else []):
+        for _ in range(args.per_fn * 4):
+            values = [ty.gen(ft, rng, 3) for _, ft in fields]
+            events = [ty.gen(event, rng, 3) for _ in range(rng.randint(1, 8))]
+            start = extract.snake_case(name) + '_start'
+            lean_lets = [f'let m := {camel(start)} {" ".join(ty.lean(v) for v in values)}'.rstrip()]
+            lines = [f'    let a{i}: {ty.lani_type(ft)} = {ty.lani(v, ft)};' for i, (v, (_, ft)) in enumerate(zip(values, fields))]
+            lines.append(f'    let m: {name} = {start}({", ".join(f"a{i}" for i in range(len(fields)))});')
+            shown = []
+            for k, e in enumerate(events):
+                if out is None:
+                    lean_lets.append(f'let m := {name}.step m {ty.lean(e)}')
+                    lines.append(f'    m.step({ty.lani(e, event)});')
+                    continue
+                lean_lets.append(f'let r{k} := {name}.step m {ty.lean(e)}; let m := r{k}.2')
+                if shown:
+                    lines.append('    put(59);')
+                lines.append(f'    {ty.lani_render(out, f"m.step({ty.lani(e, event)})")};')
+                shown.append(ty.lean_render(out, f'r{k}.1'))
+            for k, (t, lean_term, lani_term) in enumerate([(Ty(f'{name}State'), 'm.state', 'm.state()')] +
+                                                          [(ft, f'm.{camel(f)}', f'm.{f}') for f, ft in fields]):
+                if shown:
+                    lines.append('    put(59);')
+                lines.append(f'    {ty.lani_render(t, lani_term)};')
+                shown.append(ty.lean_render(t, lean_term))
+            index = len(cases)
+            body = '\n'.join(lines + ['    return 0;'])
+            term = '(' + '; '.join(lean_lets) + '; ' + ' ++ ";" ++ '.join(shown) + ')'
+            cases.append((f'{name}.step', term, f'fn case{index}() -> i32 {{\n{body}\n}}'))
+        chosen.append((f'{name}.step', None, None, None, None))
 
     # Lean: one line per case.
     lean = [LEAN_HEAD.format(module=args.lean_module), ty.lean_renderers(), '']

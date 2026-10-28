@@ -20,7 +20,15 @@ meaning, and everything else is rejected:
              user enums -> inductive, user structs -> structure
   functions  fn and impl methods (self first) -> def, recursion as written;
              generic functions only as the list operations in SPEC_FNS
-  bodies     let, if/else, return; match on an enum, an Option, or a List
+  bodies     let, if/else, return, `+=` and `-=`; match on an enum, an Option,
+             or a List, with expression arms, or block arms that return (a
+             match statement, or `return match`)
+  machines   a `machine` on an enum event (docs/state-machines-design.md) as
+             what laniusc elaborates it to: inductive MState, structure M with
+             its fields and `state`, `mStart`, one method `M.inS` per state and
+             `M.step : M → E → O × M` (just M with no output). `goto S(a) with
+             o` is `self.state = MState::S(a); return o;`, `stay with o` is
+             `return o;`
   &mut       `&mut T` parameters and `&mut self`, translated as Aeneas does
              a mutable borrow: the Lean function takes the value and returns
              (result, updated values) in parameter order (just the updated
@@ -124,7 +132,7 @@ class Token:
         return f'{self.kind}:{self.text}@{self.line}'
 
 
-PUNCT = ['::', '->', '==', '!=', '<=', '>=', '&&', '||', '>>', '+=',
+PUNCT = ['::', '->', '==', '!=', '<=', '>=', '&&', '||', '>>', '+=', '-=',
          '(', ')', '{', '}', '[', ']', '<', '>', ',', ';', ':', '.', '=', '+', '-', '*', '/', '%', '&', '|', '^', '!']
 
 
@@ -347,6 +355,13 @@ class Parser:
                 inline = False
             elif self.at('impl'):
                 item = self.impl()
+            elif self.at('machine'):
+                if prelude is not None:
+                    fail('a machine cannot be in the prelude', t)
+                for item in self.machine(comments):
+                    item['external'] = external
+                    items.append(('item', item))
+                continue
             else:
                 fail(f'unexpected {t.text!r} at item level', t)
             item['doc'] = comments
@@ -452,6 +467,141 @@ class Parser:
         self.expect('}')
         return {'kind': 'impl', 'name': name, 'fns': fns}
 
+    def machine(self, comments):
+        """A `machine` (docs/state-machines-design.md) as the items it
+        elaborates to, as laniusc does: the enum `{M}State`, the struct `M`
+        with its fields and a `state` field, `{m}_start`, and an impl with one
+        handler per state and `step`. The handlers and `step` take `self` by
+        `&mut`, so `step : M → E → O × M` (just `M` with no output); the field
+        `state` is laniusc's `state()`."""
+        t = self.expect('machine')
+        name = self.ident()
+        self.expect('on')
+        event = self.type_()
+        if event.name not in ('List', 'Option') and event.name[:1].islower():
+            fail('only machines on an enum event are in the extracted subset', t)
+        out = None
+        if self.at('->'):
+            self.next()
+            out = self.type_()
+        self.expect('{')
+        fields, start, states = [], None, []
+        while not self.at('}'):
+            doc = self.peek().comments
+            if self.at('start'):
+                self.next()
+                start = self.ident()
+                self.expect(';')
+                continue
+            if self.at('final'):
+                self.next()
+                if not self.at('state'):
+                    fail('final is followed by state', self.peek())
+            if self.at('state'):
+                st = self.next()
+                sname = self.ident()
+                data = []
+                if self.at('('):
+                    self.next()
+                    while not self.at(')'):
+                        dname = self.ident()
+                        self.expect(':')
+                        data.append((dname, self.type_()))
+                        if self.at(','):
+                            self.next()
+                    self.expect(')')
+                self.expect('{')
+                arms = []
+                while not self.at('}'):
+                    ctor, binders, at = self.pattern()
+                    self.expect('->')
+                    body = self.block() if self.at('{') else [self.transition()]
+                    arms.append((ctor, binders, ('block', body, at), at))
+                    if self.at(','):
+                        self.next()
+                self.expect('}')
+                states.append({'name': sname, 'data': data, 'arms': arms, 'doc': doc, 'token': st})
+                continue
+            field = self.ident()
+            if field == 'state':
+                fail('a machine field named state would hide the state', self.peek(-1))
+            self.expect(':')
+            fields.append((field, self.type_(), doc))
+            if self.at(','):
+                self.next()
+        self.expect('}')
+        if start is None:
+            fail(f'machine {name} has no start state', t)
+        state_type = Ty(f'{name}State')
+        self_ty = Ty(name)
+        mut_self = ('self', Ty('&mut', [self_ty]))
+        enum = {'kind': 'enum', 'name': state_type.name, 'tparams': [],
+                'ctors': [(st['name'], [ty for _, ty in st['data']], st['doc']) for st in states],
+                'doc': [f'The states of {name}.']}
+        struct = {'kind': 'struct', 'name': name, 'tparams': [], 'doc': comments, 'machine': name,
+                  'fields': fields + [('state', state_type, ['The current state (laniusc\'s `state()`).'])]}
+        values = [(f, ('name', [f], t)) for f, _, _ in fields]
+        start_fn = {'kind': 'fn', 'name': f'{snake_case(name)}_start', 'tparams': [],
+                    'params': [(f, ft) for f, ft, _ in fields], 'ret': self_ty, 'self_type': None,
+                    'inline': False, 'machine': name, 'doc': [f'{name} with these fields, in state {start}.'],
+                    'body': [('return', ('struct', name, values + [('state', ('name', [state_type.name, start], t))], t), t)]}
+        handlers, step_arms = [], []
+        event_name = ('name', ['event'], t)
+        for st in states:
+            params = [mut_self] + st['data'] + [('event', event)]
+            body = [('match_stmt', ('match', event_name, st['arms'], st['token']), st['token'])]
+            handlers.append({'kind': 'fn', 'name': f'in_{st["name"]}', 'tparams': [], 'params': params,
+                             'ret': out, 'body': body, 'self_type': self_ty, 'inline': False,
+                             'machine': name, 'doc': st['doc'] or [f'{name}.step in state {st["name"]}.']})
+            binders = [d for d, _ in st['data']]
+            call = ('method', ('name', ['self'], t), f'in_{st["name"]}',
+                    [('name', [b], t) for b in binders] + [event_name], t)
+            if out is not None:
+                arm = [('let', 'output', out, call, t), ('return', ('name', ['output'], t), t)]
+            else:
+                arm = [('call', call, t), ('return', None, t)]
+            step_arms.append(([state_type.name, st['name']], binders, ('block', arm, t), t))
+        state_field = ('field', ('name', ['self'], t), 'state', t)
+        step = {'kind': 'fn', 'name': 'step', 'tparams': [], 'params': [mut_self, ('event', event)], 'ret': out,
+                'body': [('match_stmt', ('match', state_field, step_arms, t), t)], 'self_type': self_ty,
+                'inline': False, 'machine': name, 'doc': [f'One event: the handler of the current state.']}
+        impl = {'kind': 'impl', 'name': name, 'fns': handlers + [step], 'doc': [], 'machine': name}
+        return [enum, struct, start_fn, impl]
+
+    def pattern(self):
+        """A match arm's constructor path and binders."""
+        at = self.peek()
+        ctor = self.path()
+        binders = []
+        if self.at('('):
+            self.next()
+            while not self.at(')'):
+                binders.append(self.ident())
+                if self.at(','):
+                    self.next()
+            self.expect(')')
+        return ctor, binders, at
+
+    def transition(self):
+        """`goto S(args) with e` or `stay with e` (without `with e` when the
+        machine has no output)."""
+        t = self.peek()
+        target, args = None, []
+        if self.at('goto'):
+            self.next()
+            target = self.ident()
+            if self.at('('):
+                args = self.args()
+        elif self.at('stay'):
+            self.next()
+        else:
+            fail('a machine arm ends in goto or stay', t)
+        out = None
+        if self.at('with'):
+            self.next()
+            out = self.expr()
+        return ('transition', target, args, out, t)
+
     def skip_block(self):
         self.expect('{')
         depth = 1
@@ -501,13 +651,24 @@ class Parser:
             value = None if self.at(';') else self.expr()
             self.expect(';')
             return ('return', value, t)
+        if self.at('stay') or (self.at('goto') and self.peek(1).kind == 'ident'):
+            s = self.transition()
+            self.expect(';')
+            return s
         e = self.expr()
         if self.at('='):
             self.next()
             value = self.expr()
             self.expect(';')
             return ('assign', e, value, t)
+        if self.at('+=') or self.at('-='):
+            op = self.next()
+            value = self.expr()
+            self.expect(';')
+            return ('assign', e, ('binary', op.text[0], e, value, op), t)
         self.expect(';')
+        if e[0] == 'match':
+            return ('match_stmt', e, t)
         if e[0] not in ('call', 'method'):
             fail(f'statement {t.text!r} is not in the extracted subset', t)
         return ('call', e, t)
@@ -583,18 +744,10 @@ class Parser:
             self.expect('{')
             arms = []
             while not self.at('}'):
-                at = self.peek()
-                ctor = self.path()
-                binders = []
-                if self.at('('):
-                    self.next()
-                    while not self.at(')'):
-                        binders.append(self.ident())
-                        if self.at(','):
-                            self.next()
-                    self.expect(')')
+                ctor, binders, at = self.pattern()
                 self.expect('->')
-                arms.append((ctor, binders, self.expr(), at))
+                body = ('block', self.block(), at) if self.at('{') else self.expr()
+                arms.append((ctor, binders, body, at))
                 if self.at(','):
                     self.next()
             self.expect('}')
@@ -635,6 +788,21 @@ def camel(name):
 
 def lower_first(name):
     return name[:1].lower() + name[1:]
+
+
+def snake_case(name):
+    """laniusc's machine_elaboration::snake_case: `TlsSession` -> `tls_session`."""
+    out = ''
+    for i, c in enumerate(name):
+        if c.isupper():
+            prev = name[i - 1] if i else ''
+            nxt = name[i + 1] if i + 1 < len(name) else ''
+            if (prev.islower() or prev.isdigit()) or (prev.isupper() and nxt.islower()):
+                out += '_'
+            out += c.lower()
+        else:
+            out += c
+    return out
 
 
 def paren(term, need):
@@ -1013,6 +1181,29 @@ class Extractor:
             names = (['_'] if vty is not None else []) + rebound
             body = self.block(rest, env, ret)
             return (f'let {tuple_pattern(names)} := {paren(term, 1)}\n{body[0]}', 0)
+        if s[0] == 'transition':
+            # goto S(args) with o: `self.state = MState::S(args); return o;`
+            _, target, args, out, t = s
+            if rest:
+                fail('unreachable code after a transition', t)
+            machine = self.current.get('machine')
+            if machine is None:
+                fail('goto and stay are only in machine arms', t)
+            lowered = [('return', out, t)]
+            if target is not None:
+                path = [f'{machine}State', target]
+                value = ('call', path, args, t) if args else ('name', path, t)
+                lowered.insert(0, ('assign', ('field', ('name', ['self'], t), 'state', t), value, t))
+            return self.block(lowered, env, ret)
+        if s[0] == 'match_stmt':
+            if rest:
+                fail('unreachable code after a match whose arms return', s[2])
+            return self.match(s[1], env, None, ret_block=(ret,))[0]
+        if s[0] == 'return' and s[1] is not None and s[1][0] == 'match' and \
+                any(arm[2][0] == 'block' for arm in s[1][2]):
+            if rest:
+                fail('unreachable code after return', s[2])
+            return self.match(s[1], env, None, ret_block=(ret,))[0]
         if s[0] == 'return':
             if rest:
                 fail('unreachable code after return', s[2])
@@ -1407,7 +1598,10 @@ class Extractor:
             return app('UInt8.ofNat', [(f'{paren(term, ATOM)}.toNat', ATOM)]), U8
         fail(f'cast {source!r} as {target!r} is not in the extracted subset', t)
 
-    def match(self, e, env, expected):
+    def match(self, e, env, expected, ret_block=None):
+        """A match expression, or with ret_block = (ret,) a match whose arms
+        are blocks that return (a block arm, or an expression arm of `return
+        match`, returns its value) from a function with result ret."""
         _, scrutinee, arms, t = e
         term, ty = self.infer(scrutinee, env, None)
         ty = ty.strip_box()
@@ -1448,10 +1642,20 @@ class Extractor:
             inner = dict(env)
             lnames = []
             for b, bty in zip(binders, binder_types(ctor)):
-                lnames.append(camel(b))
-                inner[b] = (camel(b), bty)
-            arm_term, arm_ty = self.infer(body, inner, result_ty)
-            if result_ty is None:
+                lname = '_' if b == '_' else camel(b)
+                lnames.append(lname)
+                if b != '_':
+                    inner[b] = (lname, bty)
+            if ret_block is not None:
+                stmts = body[1] if body[0] == 'block' else [('return', body, at)]
+                arm_term, arm_ty = self.block(stmts, inner, ret_block[0]), None
+            elif body[0] == 'block':
+                fail('a block arm must return (use it in a match statement or return match)', at)
+            else:
+                arm_term, arm_ty = self.infer(body, inner, result_ty)
+            if ret_block is not None:
+                pass
+            elif result_ty is None:
                 result_ty = arm_ty
             elif arm_ty.strip_box() != result_ty.strip_box():
                 fail(f'arm {ctor} has type {arm_ty!r}, expected {result_ty!r}', at)
