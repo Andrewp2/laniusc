@@ -116,6 +116,7 @@ fn kind_from_str(s: &str) -> Option<TokenKind> {
         "Distinct" => Distinct,
         "Requires" => Requires,
         "Ensures" => Ensures,
+        "Mut" => Mut,
         "IfLBrace" => IfLBrace,
         "IfRBrace" => IfRBrace,
         _ => return None,

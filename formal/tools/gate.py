@@ -52,6 +52,10 @@ STEPS = [
     ('stdlib-scalars', ['stdlib_oracle.py', '{w}', '--modules', 'core::cmp,core::u64,core::option', '--seed', '{s}'],
      ['run_all', 'laniusc', 'stdlib'], True),
     ('self-host', ['self_host.py', '{w}'], ['run_all', 'lani', 'laniusc', 'stdlib'], True),
+    # The `&mut` extraction pilot against laniusc's build of the same source.
+    ('mut-pilot', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
+                   'formal/lani/mini/mut_pilot.lani', '--lean-module', 'Lanius.Mini.MutPilot'],
+     ['lean', 'lani', 'laniusc', 'stdlib'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -76,7 +80,7 @@ STEPS = [
 
 def inputs():
     """The digest of each kind of input."""
-    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\n')
+    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\n')
     if lean is None:
         raise SystemExit('the Lean definitions are not built')
     run_all = os.path.join(run_cache.FORMAL, '.lake/build/bin/runAll')
@@ -94,7 +98,8 @@ def build():
     """Build what the tests run (a no-op when it is current)."""
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
-                          'lake', 'build', 'runAll', 'Lanius.Mini.FrontLex'], cwd=run_cache.FORMAL, env=env,
+                          'lake', 'build', 'runAll', 'Lanius.Mini.FrontLex',
+                          'Lanius.Mini.MutPilotCorrect'], cwd=run_cache.FORMAL, env=env,
                          capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])

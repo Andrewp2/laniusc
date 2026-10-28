@@ -85,6 +85,7 @@ bool type_grammar_production(uint production)
     case PROD_TYPE_IDENT:
     case PROD_TYPE_ARRAY:
     case PROD_TYPE_REF:
+    case PROD_TYPE_REF_MUT:
     case PROD_TYPE_NEVER:
     case PROD_TYPE_PATH:
     case PROD_TYPE_PATH_IDENT:

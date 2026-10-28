@@ -8245,14 +8245,17 @@ pub fn grammar_part_15() -> List<Rule> {
         empty()))))))))))))))))))));
 }
 
-// Productions 320 to 323:
-// 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires.
+// Productions 320 to 325:
+// 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires,
+// 324 type_ref_mut, 325 param_self_ref_mut.
 pub fn grammar_part_16() -> List<Rule> {
     return cons(Rule { lhs: 150, rhs: cons(Term(200), empty()) },
         cons(Rule { lhs: 151, rhs: empty() },
         cons(Rule { lhs: 151, rhs: cons(Nonterm(152), cons(Nonterm(151), empty())) },
         cons(Rule { lhs: 152, rhs: cons(Term(201), cons(Term(4), cons(Nonterm(53), cons(Term(5), empty())))) },
-        empty()))));
+        cons(Rule { lhs: 38, rhs: cons(Term(25), cons(Term(203), cons(Nonterm(38), empty()))) },
+        cons(Rule { lhs: 35, rhs: cons(Term(25), cons(Term(203), cons(Term(105), empty()))) },
+        empty()))))));
 }
 
 // The productions of grammar/lanius.bnf, by production id.

@@ -4284,6 +4284,15 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     .with_note("a value of a distinct type (`type M = distinct T;`) mixes only with values of the same type and with literals; convert with `as`"),
             )
         }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::EXCLUSIVE_REFERENCE_ALIAS => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "this argument reaches the same value as a `&mut` argument of this call",
+                    ))
+                    .with_note("a `&mut` argument must be the only reference to its value in the call; pass a copy, or make two calls"),
+            )
+        }
         GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {

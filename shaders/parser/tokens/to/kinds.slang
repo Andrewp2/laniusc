@@ -377,6 +377,12 @@ bool constant_argument_sign_context(uint parser_i, uint count, uint prev_comma_k
         bracket_semantic_kind[before - 1u] == TK_TYPE_SEMICOLON;
 }
 
+// A type `&` followed by `mut` opens `&mut T` or `&mut self`.
+uint type_ampersand_kind(uint parser_i, uint count)
+{
+    return raw_kind_at(parser_i + 1u, count) == TK_MUT ? TK_TYPE_AMPERSAND_MUT : TK_TYPE_AMPERSAND;
+}
+
 // `+`, `-` and `&` after an operand are infix; otherwise their roles come
 // from the sign, bound or type context.
 uint semantic_operator_kind_for(uint parser_i, uint count, uint raw_kind, uint prev_comma_kind)
@@ -391,11 +397,11 @@ uint semantic_operator_kind_for(uint parser_i, uint count, uint raw_kind, uint p
             {
                 uint parent_kind = token_direct_lt_kind[parent];
                 if (parent_kind == TK_BOUND_TYPE_ARG_LT || parent_kind == TK_TYPE_ARG_LT ||
-                    parent_kind == TK_PATH_TYPE_ARG_LT) return TK_TYPE_AMPERSAND;
+                    parent_kind == TK_PATH_TYPE_ARG_LT) return type_ampersand_kind(parser_i, count);
             }
             return TK_BOUND_TYPE_AMPERSAND;
         }
-        return infix ? TK_AMPERSAND : TK_TYPE_AMPERSAND;
+        return infix ? TK_AMPERSAND : type_ampersand_kind(parser_i, count);
     }
 
     bool plus = raw_kind == TK_PLUS;

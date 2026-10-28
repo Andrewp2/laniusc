@@ -1,0 +1,13 @@
+// The `&mut` argument and the `&` argument reach the same counter.
+struct Counter { total: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+    fn exclusive(&mut self) -> &mut Counter { return self; }
+}
+fn add_into(dst: &mut Counter, src: &Counter) { dst.total += src.total; }
+
+fn main() -> i32 {
+    let c: Counter = Counter { total: 1 };
+    add_into(c.exclusive(), c.borrow());
+    return c.total;
+}

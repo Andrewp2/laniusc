@@ -21,6 +21,15 @@ meaning, and everything else is rejected:
   functions  fn and impl methods (self first) -> def, recursion as written;
              generic functions only as the list operations in SPEC_FNS
   bodies     let, if/else, return; match on an enum, an Option, or a List
+  &mut       `&mut T` parameters and `&mut self`, translated as Aeneas does
+             a mutable borrow: the Lean function takes the value and returns
+             (result, updated values) in parameter order (just the updated
+             values when there is no result). Assignments `x = e;` and
+             `x.f.g = e;` rebind a local or parameter; a call passing one as a
+             `&mut` argument (a statement, or a let's whole initializer)
+             rebinds it to the returned value. Such an argument is a bare
+             local, used by no other argument of the call (laniusc's
+             exclusivity check, LNC0006, rejects the same calls).
   arithmetic i32/u32/u64 + - * & | ^ wrap, like BitVec; u32/u64 >> by a constant;
              usize only /, since + - * go through the prelude's panicking
              plus/minus/times, which equal Nat + - * whenever they return;
@@ -182,13 +191,20 @@ class Ty:
     def strip_box(self):
         return self.args[0].strip_box() if self.name == 'Box' else self
 
+    def is_mut(self):
+        return self.name == '&mut'
+
+    def value(self):
+        """The type a parameter's value has in the body: T for `&mut T`."""
+        return self.args[0] if self.is_mut() else self
+
 
 USIZE, I32, U32, U64, U8, BOOL = Ty('usize'), Ty('i32'), Ty('u32'), Ty('u64'), Ty('u8'), Ty('bool')
 TYPE_PATHS = {'core::option::Option': 'Option'}
 
 
 def lean_type(t):
-    t = t.strip_box()
+    t = t.value().strip_box()
     simple = {'usize': 'Nat', 'i32': 'BitVec 32', 'u32': 'BitVec 32', 'u64': 'BitVec 64', 'u8': 'UInt8',
               'bool': 'Bool'}
     if t.name in simple:
@@ -243,6 +259,12 @@ class Parser:
         return parts
 
     def type_(self):
+        if self.at('&'):
+            t = self.next()
+            if not self.at('mut'):
+                fail('shared references are not in the extracted subset', t)
+            self.next()
+            return Ty('&mut', [self.type_()])
         name = '::'.join(self.path())
         name = TYPE_PATHS.get(name, name)
         if '::' in name:
@@ -385,11 +407,15 @@ class Parser:
         self.expect('(')
         params = []
         while not self.at(')'):
-            if self.at('self'):
+            if self.at('self') or (self.at('&') and self.at('mut', 1) and self.at('self', 2)):
+                exclusive = self.at('&')
+                if exclusive:
+                    self.next()
+                    self.next()
                 self.next()
                 if self_type is None:
                     fail('self outside an impl', self.peek())
-                params.append(('self', self_type))
+                params.append(('self', Ty('&mut', [self_type]) if exclusive else self_type))
             else:
                 pname = self.ident()
                 self.expect(':')
@@ -472,10 +498,19 @@ class Parser:
             return ('if', cond, then, other, t)
         if self.at('return'):
             self.next()
-            value = self.expr()
+            value = None if self.at(';') else self.expr()
             self.expect(';')
             return ('return', value, t)
-        fail(f'statement {t.text!r} is not in the extracted subset', t)
+        e = self.expr()
+        if self.at('='):
+            self.next()
+            value = self.expr()
+            self.expect(';')
+            return ('assign', e, value, t)
+        self.expect(';')
+        if e[0] not in ('call', 'method'):
+            fail(f'statement {t.text!r} is not in the extracted subset', t)
+        return ('call', e, t)
 
     # expressions ------------------------------------------------------
 
@@ -918,38 +953,63 @@ class Extractor:
         return '  deriving Repr' if item['name'] in self.no_deq else '  deriving DecidableEq, Repr'
 
     def emit_fn(self, f, lean_name, keyword_params=False):
-        if f['ret'] is None:
+        if f['ret'] is None and not mutables(f):
             fail(f'{f["name"]} returns nothing')
         env = {}
         binders = [f'{{{t} : Type}}' for t in f['tparams']]
         self.current = f
         for name, ty in f['params']:
             lname = name + '_' if keyword_params and name in LEAN_KEYWORDS else camel(name)
-            env[name] = (lname, ty)
+            env[name] = (lname, ty.value())
             binders.append(f'({lname} : {lean_type(ty)})')
         body = self.block(f['body'], env, f['ret'])
         self.current = None
-        head = ' '.join([f'def {lean_name}'] + binders) + f' : {lean_type(f["ret"])} :='
+        head = ' '.join([f'def {lean_name}'] + binders) + f' : {result_type(f)} :='
         return '\n'.join(doc(f['doc'], '')) + ('\n' if f['doc'] else '') + head + '\n  ' + indent_tail(body[0], 2) + '\n'
 
     # statements -------------------------------------------------------
 
     def block(self, stmts, env, ret):
         if not stmts:
+            if ret is None and mutables(self.current):
+                return self.returned(None, env)
             fail('a block must end with return')
         s, rest = stmts[0], stmts[1:]
         if s[0] == 'let':
             _, name, ty, value, t = s
-            v = self.expr(value, env, ty)
             lname = camel(name)
             inner = dict(env)
             inner[name] = (lname, ty)
+            if self.is_mut_call(value, env):
+                term, vty, rebound = self.mut_call(value, env)
+                if vty is None or vty.strip_box() != ty.strip_box():
+                    fail(f'expected {ty!r}, found {vty!r}', t)
+                body = self.block(rest, inner, ret)
+                return (f'let {tuple_pattern([lname] + rebound)} := {paren(term, 1)}\n{body[0]}', 0)
+            v = self.expr(value, env, ty)
             body = self.block(rest, inner, ret)
             return (f'let {lname} : {lean_type(ty)} := {paren(v, 1)}\n{body[0]}', 0)
+        if s[0] == 'assign':
+            _, place, value, t = s
+            lname, update = self.assignment(place, value, env, t)
+            body = self.block(rest, env, ret)
+            return (f'let {lname} := {paren(update, 1)}\n{body[0]}', 0)
+        if s[0] == 'call':
+            _, e, t = s
+            if not self.is_mut_call(e, env):
+                fail('a call statement must pass a &mut argument', t)
+            term, vty, rebound = self.mut_call(e, env)
+            names = (['_'] if vty is not None else []) + rebound
+            body = self.block(rest, env, ret)
+            return (f'let {tuple_pattern(names)} := {paren(term, 1)}\n{body[0]}', 0)
         if s[0] == 'return':
             if rest:
                 fail('unreachable code after return', s[2])
-            return self.expr(s[1], env, ret)
+            if (s[1] is None) != (ret is None):
+                fail('return needs a value exactly when the function has a result', s[2])
+            if not mutables(self.current):
+                return self.expr(s[1], env, ret)
+            return self.returned(None if s[1] is None else self.expr(s[1], env, ret), env)
         if s[0] == 'if':
             _, cond, then, other, t = s
             c = self.condition(cond, env)
@@ -962,6 +1022,86 @@ class Extractor:
                 b = self.block(rest, env, ret)
             return (f'if {c} then\n  {indent_tail(a[0], 2)}\nelse\n  {indent_tail(b[0], 2)}', 0)
         fail('unknown statement')
+
+    def returned(self, value, env):
+        """The result tuple: the value (if any), then each `&mut` parameter."""
+        parts = ([value] if value is not None else []) + \
+            [(env[name][0], ATOM) for name, _ in mutables(self.current)]
+        if len(parts) == 1:
+            return parts[0]
+        return ('(' + ', '.join(paren(p, 1) for p in parts) + ')', ATOM)
+
+    def assignment(self, place, value, env, t):
+        """`x = e` or `x.f.g = e`: x's Lean name and its new value."""
+        fields = []
+        while place[0] == 'field':
+            fields.insert(0, place[2])
+            place = place[1]
+        if place[0] != 'name' or len(place[1]) != 1 or place[1][0] not in env:
+            fail('an assignment target is a local or parameter, or fields of one', t)
+        lname, ty = env[place[1][0]]
+        chain = [(lname, ty)]
+        for name in fields:
+            outer = chain[-1][1].strip_box()
+            s = self.structs.get(outer.name)
+            field = next((ft for fn, ft, _ in s['fields'] if fn == name), None) if s else None
+            if field is None:
+                fail(f'no field {outer!r}.{name}', t)
+            chain.append((f'{paren((chain[-1][0], ATOM), ATOM)}.{camel(name)}', field))
+        new = self.expr(value, env, chain[-1][1])
+        for k in range(len(fields) - 1, -1, -1):
+            new = (f'{{ {chain[k][0]} with {camel(fields[k])} := {paren(new, 1)} }}', ATOM)
+        return lname, new
+
+    def callee(self, e, env):
+        """The function a call or method expression calls, or None."""
+        if e[0] == 'call' and len(e[1]) == 1:
+            return self.fns.get(e[1][0])
+        if e[0] == 'method':
+            _, recv_ty = self.infer(e[1], env, None)
+            return self.methods.get((recv_ty.strip_box().name, e[2]))
+        return None
+
+    def is_mut_call(self, e, env):
+        """Whether e calls a function with `&mut` parameters."""
+        if e[0] not in ('call', 'method'):
+            return False
+        f = self.callee(e, env)
+        return f is not None and bool(mutables(f))
+
+    def mut_call(self, e, env):
+        """(term, result type or None, names rebound) of a call with `&mut` arguments."""
+        t = e[-1]
+        f = self.callee(e, env)
+        if f is None or not mutables(f):
+            fail('this call passes no &mut argument', t)
+        if e[0] == 'call':
+            head, args = camel(f['name']), list(e[2])
+        else:
+            head = f'{f["self_type"].name}.{camel(f["name"])}'
+            args = [e[1]] + list(e[3])
+        if f['inline'] or f['name'] in SPEC_FNS:
+            fail('inline functions and list operations cannot take &mut parameters', t)
+        if len(args) != len(f['params']):
+            fail(f'expected {len(f["params"])} arguments, found {len(args)}', t)
+        terms, rebound = [], []
+        for (_, pty), a in zip(f['params'], args):
+            if pty.is_mut():
+                if a[0] != 'name' or len(a[1]) != 1 or a[1][0] not in env:
+                    fail('a &mut argument is a local or parameter', t)
+                lname, aty = env[a[1][0]]
+                if aty.strip_box() != pty.value().strip_box():
+                    fail(f'expected {pty.value()!r}, found {aty!r}', t)
+                if lname in rebound:
+                    fail(f'{a[1][0]} is passed twice as a &mut argument', t)
+                rebound.append(lname)
+                terms.append((lname, ATOM))
+            else:
+                terms.append(self.expr(a, env, pty))
+        for (_, pty), a in zip(f['params'], args):
+            if not pty.is_mut() and set(names_in(a)) & {n for n in names_in_env(env, rebound)}:
+                fail('an argument uses a value passed as a &mut argument of the same call', t)
+        return app(head, terms), f['ret'], rebound
 
     def condition(self, cond, env):
         """An if condition: comparisons stay propositions, other bools are tested with = true."""
@@ -1007,6 +1147,8 @@ class Extractor:
             if payload:
                 fail(f'{ctor} needs arguments', e[-1])
             return (f'{enum}.{lower_first(ctor)}', ATOM), Ty(enum)
+        if self.is_mut_call(e, env):
+            fail('a call with &mut arguments is a statement or a let\'s whole initializer', e[-1])
         if kind == 'call':
             return self.call(e, env, expected)
         if kind == 'method':
@@ -1311,6 +1453,38 @@ class Extractor:
         if seen != set(shapes):
             fail(f'match is missing {sorted(set(shapes) - seen)}', t)
         return (f'match {paren(term, 1)} with\n' + '\n'.join(lines), 0), result_ty
+
+
+def mutables(f):
+    """The `&mut` parameters of f, as (name, T)."""
+    return [(name, ty.value()) for name, ty in f['params'] if ty.is_mut()] if f else []
+
+
+def result_type(f):
+    parts = ([f['ret']] if f['ret'] is not None else []) + [ty for _, ty in mutables(f)]
+    if len(parts) == 1:
+        return lean_type(parts[0])
+    return ' × '.join(atom_type(p) for p in parts)
+
+
+def tuple_pattern(names):
+    return names[0] if len(names) == 1 else '(' + ', '.join(names) + ')'
+
+
+def names_in(e):
+    """The single-segment names an expression mentions."""
+    if isinstance(e, tuple):
+        if e and e[0] == 'name' and len(e[1]) == 1:
+            yield e[1][0]
+        for part in e[1:]:
+            yield from names_in(part)
+    elif isinstance(e, list):
+        for part in e:
+            yield from names_in(part)
+
+
+def names_in_env(env, lnames):
+    return [name for name, (lname, _) in env.items() if lname in lnames]
 
 
 def walk_lets(stmts):

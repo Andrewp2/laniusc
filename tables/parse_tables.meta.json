@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2565,
+    "cells": 2592,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2565,
+    "cells": 2592,
     "conflicts": []
   },
   "ll1_runtime": {
     "nonterminals": 153,
     "start_nonterminal": "file",
-    "predict_cells": 31059,
-    "rhs_symbols": 593
+    "predict_cells": 31365,
+    "rhs_symbols": 599
   },
   "ll1_predictions": [
     {
@@ -2211,6 +2211,12 @@
       "production": 251
     },
     {
+      "nonterminal": "bound_type_arg_tail_after_comma",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
+      "production": 251
+    },
+    {
       "nonterminal": "bound_type_args_opt",
       "lookahead": "TypeAliasAssign",
       "lookahead_id": 110,
@@ -3447,6 +3453,12 @@
       "production": 320
     },
     {
+      "nonterminal": "distinct_opt",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
+      "production": 319
+    },
+    {
       "nonterminal": "else_tail",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -3729,6 +3741,12 @@
       "production": 232
     },
     {
+      "nonterminal": "enum_type_params_opt",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
+      "production": 232
+    },
+    {
       "nonterminal": "enum_variant",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -3762,6 +3780,12 @@
       "nonterminal": "enum_variant_fields_opt",
       "lookahead": "ReturnNever",
       "lookahead_id": 197,
+      "production": 217
+    },
+    {
+      "nonterminal": "enum_variant_fields_opt",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
       "production": 217
     },
     {
@@ -3804,6 +3828,12 @@
       "nonterminal": "enum_variant_fields_tail_after_comma",
       "lookahead": "ReturnNever",
       "lookahead_id": 197,
+      "production": 220
+    },
+    {
+      "nonterminal": "enum_variant_fields_tail_after_comma",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
       "production": 220
     },
     {
@@ -4440,6 +4470,12 @@
       "nonterminal": "generic_argument",
       "lookahead": "ReturnNever",
       "lookahead_id": 197,
+      "production": 294
+    },
+    {
+      "nonterminal": "generic_argument",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
       "production": 294
     },
     {
@@ -5787,6 +5823,12 @@
       "production": 63
     },
     {
+      "nonterminal": "param",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
+      "production": 325
+    },
+    {
       "nonterminal": "param_list_opt",
       "lookahead": "ParamRParen",
       "lookahead_id": 77,
@@ -5808,6 +5850,12 @@
       "nonterminal": "param_list_opt",
       "lookahead": "ParamSelfValue",
       "lookahead_id": 173,
+      "production": 61
+    },
+    {
+      "nonterminal": "param_list_opt",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
       "production": 61
     },
     {
@@ -5844,6 +5892,12 @@
       "nonterminal": "param_tail_after_comma",
       "lookahead": "ParamSelfValue",
       "lookahead_id": 173,
+      "production": 292
+    },
+    {
+      "nonterminal": "param_tail_after_comma",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
       "production": 292
     },
     {
@@ -6312,6 +6366,12 @@
       "nonterminal": "path_type_arg_tail_after_comma",
       "lookahead": "ReturnNever",
       "lookahead_id": 197,
+      "production": 54
+    },
+    {
+      "nonterminal": "path_type_arg_tail_after_comma",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
       "production": 54
     },
     {
@@ -8361,6 +8421,12 @@
       "production": 230
     },
     {
+      "nonterminal": "type_arg_tail_after_comma",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
+      "production": 230
+    },
+    {
       "nonterminal": "type_args_opt",
       "lookahead": "ParamRParen",
       "lookahead_id": 77,
@@ -8623,6 +8689,12 @@
       "lookahead": "ReturnNever",
       "lookahead_id": 197,
       "production": 315
+    },
+    {
+      "nonterminal": "type_expr",
+      "lookahead": "TypeAmpersandMut",
+      "lookahead_id": 204,
+      "production": 324
     },
     {
       "nonterminal": "type_param_bound_list",
@@ -12658,6 +12730,30 @@
         "'GroupLParen'",
         "expr",
         "'GroupRParen'"
+      ]
+    },
+    {
+      "id": 324,
+      "line": 438,
+      "lhs": "type_expr",
+      "tag": "type_ref_mut",
+      "arity": 1,
+      "rhs": [
+        "'TypeAmpersandMut'",
+        "'Mut'",
+        "type_expr"
+      ]
+    },
+    {
+      "id": 325,
+      "line": 439,
+      "lhs": "param",
+      "tag": "param_self_ref_mut",
+      "arity": 0,
+      "rhs": [
+        "'TypeAmpersandMut'",
+        "'Mut'",
+        "'ParamSelfRefValue'"
       ]
     }
   ]

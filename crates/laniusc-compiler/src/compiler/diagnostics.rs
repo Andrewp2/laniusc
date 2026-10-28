@@ -2930,6 +2930,7 @@ fn expected_keyword_text(kind: TokenKind) -> Option<&'static str> {
         TokenKind::Distinct => Some("distinct"),
         TokenKind::Requires => Some("requires"),
         TokenKind::Ensures => Some("ensures"),
+        TokenKind::Mut => Some("mut"),
         _ => None,
     }
 }
@@ -3667,6 +3668,7 @@ fn source_identifier_token_kind(text: &str) -> TokenKind {
         "as" => TokenKind::As,
         "requires" => TokenKind::Requires,
         "ensures" => TokenKind::Ensures,
+        "mut" => TokenKind::Mut,
         _ => TokenKind::Ident,
     }
 }
@@ -3811,6 +3813,7 @@ fn syntax_token_is_keyword(kind: TokenKind) -> bool {
             | TokenKind::As
             | TokenKind::Requires
             | TokenKind::Ensures
+            | TokenKind::Mut
     )
 }
 

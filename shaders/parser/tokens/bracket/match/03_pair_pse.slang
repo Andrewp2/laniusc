@@ -59,6 +59,7 @@ static const uint TK_RBRACKET = 21u;
 static const uint TK_LBRACE = 22u;
 static const uint TK_RBRACE = 23u;
 static const uint TK_AMPERSAND = 25u;
+static const uint TK_MUT = 203u;
 static const uint TK_STRING = 32u;
 static const uint TK_FLOAT = 33u;
 static const uint TK_CHAR = 34u;
@@ -268,7 +269,7 @@ bool type_array_open_context(uint token_i)
                 (prev == TK_ARROW && owner == TK_MATCH_LBRACE)) return false;
         }
         if ((statement_context_kind[current] & 0xffu) == STATEMENT_CONTEXT_TYPE_ALIAS_RHS ||
-            prev == TK_COLON || prev == TK_ARROW || prev == TK_AMPERSAND)
+            prev == TK_COLON || prev == TK_ARROW || prev == TK_AMPERSAND || prev == TK_MUT)
             return true;
         if (inside_type_arg_angle(current) && (prev == TK_LT || prev == TK_COMMA))
             return true;

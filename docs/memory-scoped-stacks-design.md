@@ -2,7 +2,9 @@
 
 Status: design proposal, 2026-10-26. Phase S0 is implemented as
 [`std::scope`](stdlib-scope.md) (2026-10-27); its result is under
-[S0 result](#s0-result-go). The rest is not implemented.
+[S0 result](#s0-result-go). A first step of S4, `&mut` with a call-site
+exclusivity check, is implemented ahead of S1-S3; see
+[S4, first step](#s4-first-step-mut-at-calls). The rest is not implemented.
 
 ## Summary
 
@@ -86,7 +88,8 @@ Sources:
   by reallocating.
 - `alloc::arena` hands out raw `Block { data: ptr, length }` and `View<T>`
   values; `reset`/`clear` invalidate them with no compile-time check.
-- References are shared `&T` only (`value.borrow()`). There is no `&mut`.
+- References are `&T` (`value.borrow()`) and, since S4's first step,
+  `&mut T`. Writing through a `&T` is still accepted.
 - Memory safety of `ptr` code is a proof obligation, not a checked property.
 
 ## Programming model
@@ -437,6 +440,40 @@ showed:
 - **The default allocator should change anyway.** An `mmap` per allocation
   is the bottleneck of every `Vec` and `String` today, whatever S1-S3
   decide.
+
+### S4, first step: `&mut` at calls
+
+Implemented 2026-10-27, before S1-S3, because the verified compiler's
+extraction needs it and it does not depend on roots.
+
+- **Syntax.** `&mut T` is a type and `&mut self` a receiver; `mut` is a
+  keyword. Both check and lower exactly as `&T` and `&self`. A caller gets a
+  `&mut T` the way it gets a `&T`: from a `&mut self` method that returns
+  `self`, or from a `&mut` parameter it holds.
+- **The check.** For a call to a function in the same unit, each `&mut`
+  argument's root (the local or parameter it reaches through fields, indexes,
+  parentheses and method receivers) must differ from the root of every other
+  reference argument, the receiver included. Otherwise the call is rejected
+  with LNC0006, "this argument reaches the same value as a `&mut` argument of
+  this call". One kernel does it,
+  `shaders/type_checker/conditions/compact_exclusive.slang`, under the
+  40000-instruction default.
+
+What it does not do yet:
+
+- It compares roots, not paths: passing `p.left` and `p.right` of one `p`
+  is rejected although the fields are disjoint.
+- It checks calls only. A reference held in a local and used after a `&mut`
+  call is not tracked; that needs the liveness pass of the full S4.
+- Calls into dependencies (the stdlib) are not checked, and neither are
+  aliases made by copying a record that holds a pointer.
+- Writes through `&T` stay legal, so `&T` does not yet mean read-only.
+
+The evidence S4 asks for is the mini compiler's pilot
+(`formal/MINI_COMPILER.md`, "Exclusive references"): `mut_pilot.lani`
+extracts to pure Lean functions that return their `&mut` arguments' new
+values, Lean proves facts about them, and the difftest finds the compiled
+program agrees.
 
 ## Borrowed from Odin and Jai
 

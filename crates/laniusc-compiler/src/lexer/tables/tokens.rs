@@ -275,6 +275,10 @@ define_token_kinds! {
     // contracts `requires (cond)` / `ensures (cond)` after the signature
     Requires,
     Ensures,
+    // keyword retag of `mut`: `&mut T` and `&mut self`
+    Mut,
+    // the `&` of `&mut T` and `&mut self`: its own kind keeps the grammar LL(1)
+    TypeAmpersandMut,
 }
 
 impl TokenKind {
@@ -367,7 +371,7 @@ impl TokenKind {
             Self::PathTypeArgGt | Self::MemberTypeArgGt => {
                 Self::Gt
             }
-            Self::TypeAmpersand | Self::BoundTypeAmpersand => Self::Ampersand,
+            Self::TypeAmpersand | Self::BoundTypeAmpersand | Self::TypeAmpersandMut => Self::Ampersand,
             Self::PrefixPlus | Self::InfixPlus | Self::BoundPlus | Self::ConstantArgumentPlus => Self::Plus,
             Self::PrefixMinus | Self::InfixMinus | Self::ConstantArgumentMinus => Self::Minus,
             Self::PrefixInc | Self::PostfixInc => Self::Inc,
@@ -443,7 +447,7 @@ mod tests {
         let is_raw_kind = |kind: TokenKind| {
             matches!(
                 kind as u32,
-                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=202
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=203
             )
         };
 

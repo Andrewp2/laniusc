@@ -428,3 +428,12 @@ distinct_opt [distinct_some] -> 'Distinct';
 contract_list_opt [contracts_none] -> ;
 contract_list_opt [contracts_more] -> contract contract_list_opt;
 contract [requires] -> 'Requires' 'GroupLParen' expr 'GroupRParen';
+
+# ----- Exclusive references -----
+# `&mut T` and `&mut self` are references that may write. They check and
+# lower as `&T` and `&self`; a separate pass rejects a call whose `&mut`
+# argument shares its root with another reference argument. The `&` before
+# `mut` is retagged `TypeAmpersandMut` so the grammar stays LL(1). The productions
+# sit at the end of the file to keep earlier production IDs.
+type_expr [type_ref_mut] -> 'TypeAmpersandMut' 'Mut' type_expr;
+param [param_self_ref_mut] -> 'TypeAmpersandMut' 'Mut' 'ParamSelfRefValue';

@@ -178,6 +178,7 @@ fn distinct_types_reject_values_of_another_type() {
         "distinct_types_reject_assign.lani",
         "distinct_types_reject_field.lani",
         "distinct_types_reject_method.lani",
+        "distinct_types_reject_ref_method.lani",
     ] {
         assert_rejected(fixture, &["LNC0006", DISTINCT]);
     }
@@ -209,6 +210,18 @@ fn a_broken_requires_clause_traps_before_the_body() {
 #[test]
 fn a_requires_condition_must_be_bool() {
     assert_rejected("requires_not_bool.lani", &["LNC0006"]);
+}
+
+#[test]
+fn mut_references_write_through_to_the_caller() {
+    assert_exit("mut_refs.lani", 0);
+}
+
+#[test]
+fn a_mut_argument_must_not_alias_another_reference_argument() {
+    let shared = "same value as a `&mut` argument";
+    assert_rejected("mut_alias_arguments.lani", &["LNC0006", shared]);
+    assert_rejected("mut_alias_receiver.lani", &["LNC0006", shared]);
 }
 
 // The resident workspace is sized by the largest unit checked so far; this

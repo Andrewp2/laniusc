@@ -24,9 +24,9 @@ def grammarPart14 : List Rule :=
 def grammarPart15 : List Rule :=
   ({ lhs := 140, rhs := Sym.term 6 :: Sym.nonterm 142 :: [] } : Rule) :: ({ lhs := 142, rhs := Sym.term 2 :: [] } : Rule) :: ({ lhs := 142, rhs := Sym.term 33 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 90 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 91 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 34 :: [] } : Rule) :: ({ lhs := 140, rhs := Sym.term 33 :: [] } : Rule) :: ({ lhs := 143, rhs := Sym.nonterm 76 :: Sym.nonterm 144 :: [] } : Rule) :: ({ lhs := 144, rhs := Sym.term 195 :: Sym.nonterm 145 :: Sym.nonterm 144 :: [] } : Rule) :: ({ lhs := 144, rhs := [] } : Rule) :: ({ lhs := 145, rhs := Sym.nonterm 146 :: [] } : Rule) :: ({ lhs := 146, rhs := Sym.nonterm 147 :: Sym.nonterm 148 :: [] } : Rule) :: ({ lhs := 147, rhs := Sym.term 1 :: [] } : Rule) :: ({ lhs := 148, rhs := Sym.term 38 :: Sym.term 38 :: Sym.nonterm 147 :: Sym.nonterm 148 :: [] } : Rule) :: ({ lhs := 148, rhs := [] } : Rule) :: ({ lhs := 38, rhs := Sym.term 19 :: [] } : Rule) :: ({ lhs := 84, rhs := Sym.term 37 :: Sym.nonterm 149 :: [] } : Rule) :: ({ lhs := 149, rhs := Sym.term 2 :: [] } : Rule) :: ({ lhs := 78, rhs := Sym.term 39 :: Sym.nonterm 78 :: [] } : Rule) :: ({ lhs := 150, rhs := [] } : Rule) :: []
 
-/-- Productions 320 to 323: 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires. -/
+/-- Productions 320 to 325: 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires, 324 type_ref_mut, 325 param_self_ref_mut. -/
 def grammarPart16 : List Rule :=
-  ({ lhs := 150, rhs := Sym.term 200 :: [] } : Rule) :: ({ lhs := 151, rhs := [] } : Rule) :: ({ lhs := 151, rhs := Sym.nonterm 152 :: Sym.nonterm 151 :: [] } : Rule) :: ({ lhs := 152, rhs := Sym.term 201 :: Sym.term 4 :: Sym.nonterm 53 :: Sym.term 5 :: [] } : Rule) :: []
+  ({ lhs := 150, rhs := Sym.term 200 :: [] } : Rule) :: ({ lhs := 151, rhs := [] } : Rule) :: ({ lhs := 151, rhs := Sym.nonterm 152 :: Sym.nonterm 151 :: [] } : Rule) :: ({ lhs := 152, rhs := Sym.term 201 :: Sym.term 4 :: Sym.nonterm 53 :: Sym.term 5 :: [] } : Rule) :: ({ lhs := 38, rhs := Sym.term 25 :: Sym.term 203 :: Sym.nonterm 38 :: [] } : Rule) :: ({ lhs := 35, rhs := Sym.term 25 :: Sym.term 203 :: Sym.term 105 :: [] } : Rule) :: []
 
 /-- The productions of grammar/lanius.bnf, by production id. -/
 def grammar : List Rule :=

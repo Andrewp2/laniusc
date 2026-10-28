@@ -100,7 +100,7 @@ uint parameter_type_node(uint node)
         return INVALID;
 
     uint prod = node_kind[node];
-    if (prod == PROD_PARAM_SELF_REF)
+    if (prod == PROD_PARAM_SELF_REF || prod == PROD_PARAM_SELF_REF_MUT)
         return INVALID;
     if (prod == PROD_PARAM_SELF)
         return self_parameter_type_node(node);

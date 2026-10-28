@@ -61,6 +61,7 @@ static const uint TK_WHERE = 104;
 static const uint TK_DISTINCT = 200;
 static const uint TK_REQUIRES = 201;
 static const uint TK_ENSURES = 202;
+static const uint TK_MUT = 203;
 static const uint TK_SELF_VALUE = 105;
 static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
@@ -212,6 +213,8 @@ uint retag_keyword(uint kind, uint start, uint len)
             return TK_LET;
         if (b0 == 102u && b1 == 111u && b2 == 114u)
             return TK_FOR;
+        if (b0 == 109u && b1 == 117u && b2 == 116u)
+            return TK_MUT;
     }
     else if (len == 4u)
     {

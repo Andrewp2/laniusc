@@ -216,7 +216,7 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_path_type(i);
     else if (prod == PROD_TYPE_ARRAY)
         publish_array_or_slice_type(i);
-    else if (prod == PROD_TYPE_REF || prod == PROD_BOUND_TYPE_REF)
+    else if (prod == PROD_TYPE_REF || prod == PROD_TYPE_REF_MUT || prod == PROD_BOUND_TYPE_REF)
         publish_ref_type(i);
     else if (prod == PROD_TYPE_NEVER)
         hir_type_form[i] = HIR_TYPE_FORM_NEVER;

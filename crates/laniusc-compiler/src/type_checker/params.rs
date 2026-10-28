@@ -415,6 +415,11 @@ pub(in crate::type_checker) fn type_alias_passes_required(parser_feature_flags: 
     parser_feature_flags & crate::lexer::features::PARSER_FEATURE_TYPE_ALIASES != 0
 }
 
+/// Whether the `&mut` exclusivity check can find a reference parameter.
+pub(in crate::type_checker) fn exclusive_reference_pass_required(parser_feature_flags: u32) -> bool {
+    parser_feature_flags & crate::lexer::features::PARSER_FEATURE_REFERENCES != 0
+}
+
 /// Whether aggregate field lookup needs its exact struct-field index.
 pub(in crate::type_checker) fn struct_field_index_passes_required(
     parser_feature_flags: u32,
@@ -682,6 +687,7 @@ mod tests {
         struct_field_index_passes_required,
         struct_init_passes_required,
         type_alias_passes_required,
+        exclusive_reference_pass_required,
         visible_decl_key_radix_bits,
         visible_decl_key_radix_steps,
     };
@@ -757,6 +763,8 @@ mod tests {
         assert!(!type_alias_passes_required(PARSER_FEATURE_TYPE_ARGS));
         assert!(type_alias_passes_required(PARSER_FEATURE_TYPE_ALIASES));
         assert!(type_alias_passes_required(u32::MAX));
+        assert!(!exclusive_reference_pass_required(PARSER_FEATURE_TYPE_ALIASES));
+        assert!(exclusive_reference_pass_required(PARSER_FEATURE_REFERENCES));
     }
 
     #[test]

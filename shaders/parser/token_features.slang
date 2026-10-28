@@ -36,6 +36,7 @@ static const uint FEATURE_TK_BOUND_TYPE_ARG_LT = 175u;
 static const uint FEATURE_TK_BOUND_TYPE_ARG_GT = 176u;
 static const uint FEATURE_TK_BOUND_TYPE_AMPERSAND = 179u;
 static const uint FEATURE_TK_PATH_TYPE_ARG_LT = 184u;
+static const uint FEATURE_TK_TYPE_AMPERSAND_MUT = 204u;
 static const uint FEATURE_TK_PATH_TYPE_ARG_GT = 185u;
 static const uint FEATURE_TK_MEMBER_TYPE_ARG_GT = 191u;
 
@@ -44,7 +45,8 @@ public uint parser_feature_flags_for_token(uint raw_kind, uint semantic_kind)
     uint flags = 0u;
     if (raw_kind == FEATURE_TK_FLOAT) flags |= PARSER_FEATURE_FLOAT_LITERALS;
     if (semantic_kind == FEATURE_TK_TYPE_AMPERSAND ||
-        semantic_kind == FEATURE_TK_BOUND_TYPE_AMPERSAND)
+        semantic_kind == FEATURE_TK_BOUND_TYPE_AMPERSAND ||
+        semantic_kind == FEATURE_TK_TYPE_AMPERSAND_MUT)
         flags |= PARSER_FEATURE_REFERENCES;
     if (semantic_kind == FEATURE_TK_TYPE_ARG_LT ||
         semantic_kind == FEATURE_TK_TYPE_ARG_GT ||

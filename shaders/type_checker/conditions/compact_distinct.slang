@@ -67,6 +67,8 @@ static const uint BRAND_BASE = 0xfffffffdu;
 static const uint BRAND_OF_TYPE = 0xfffffffcu;
 static const uint ERR_ASSIGN_MISMATCH = 3u;
 static const uint TK_SELF_VALUE = 105u;
+static const uint TK_AMPERSAND = 25u;
+static const uint TK_MUT = 203u;
 static const uint TK_DISTINCT = 200u;
 static const uint HIR_PARAM = 4u;
 static const uint HIR_TYPE = 5u;
@@ -340,8 +342,13 @@ void main(uint3 dtid: SV_DispatchThreadID)
         uint callee = payload.a;
         if (compact_hir_core[callee].kind == HIR_MEMBER_EXPR && params.count != 0u)
         {
+            // `self`, or the `&` of `&self` and `&mut self`, names the receiver.
             uint first = compact_params[params.start].name_token;
-            skip = valid_token(first) && token_words[first].kind == TK_SELF_VALUE ? 1u : 0u;
+            uint after = valid_token(first + 1u) && token_words[first + 1u].kind == TK_MUT ? first + 2u : first + 1u;
+            bool receiver = valid_token(first) && (token_words[first].kind == TK_SELF_VALUE ||
+                (token_words[first].kind == TK_AMPERSAND && valid_token(after) &&
+                 token_words[after].kind == TK_SELF_VALUE));
+            skip = receiver ? 1u : 0u;
         }
         pairs = min(payload.c, params.count - skip);
     }

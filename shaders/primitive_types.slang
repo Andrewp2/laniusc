@@ -106,6 +106,10 @@ public static const uint NEVER_RETURN_FALLS_OFF = 0x20000002u;
 // differs from the one its context expects (conditions/compact_distinct.slang).
 // PRIMITIVE_CONSTANT
 public static const uint DISTINCT_TYPE_MISMATCH = 0x20000003u;
+// LNC0006 detail of a reference argument whose root is also passed as a
+// `&mut` argument of the same call (conditions/compact_exclusive.slang).
+// PRIMITIVE_CONSTANT
+public static const uint EXCLUSIVE_REFERENCE_ALIAS = 0x20000004u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]

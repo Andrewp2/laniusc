@@ -27,7 +27,7 @@ size relative to the compiler, and Lean check time.
 The difftests run through one gate, from the repository root:
 
 ```text
-python3 -I formal/tools/gate.py                 # quick tier: 9 steps, about 2 minutes cold
+python3 -I formal/tools/gate.py                 # quick tier: 10 steps, about 2 minutes cold
 python3 -I formal/tools/gate.py --tier full     # larger counts, every stdlib module
 ```
 
@@ -1388,3 +1388,38 @@ Limits found on the way:
   so laniusc's build cannot run the self-hosting fixpoint (about 10^8
   allocations); the self-built compiler's own bump allocator can (see the
   self-hosting paragraph of the front end section).
+
+### Exclusive references: the `&mut` extraction pilot
+
+`&mut T` and `&mut self` (phase S4 of `docs/memory-scoped-stacks-design.md`)
+exist so that mutating code still extracts to pure functions. The pilot,
+`formal/lani/mini/mut_pilot.lani`, is a small bank (`Account.deposit`,
+`Account.withdraw`, `transfer`, `relay`, `paid`, `pay_all`). extract.py
+translates it the way Aeneas translates Rust's mutable borrows:
+
+```text
+fn transfer(source: &mut Account, target: &mut Account, amount: u32) -> bool
+def transfer (source : Account) (target : Account) (amount : BitVec 32) : Bool × Account × Account
+```
+
+- A function returns its result, then each `&mut` parameter's final value,
+  in parameter order (just the values when it has no result).
+- `x = e;` and `x.f.g = e;` become `let x := { x with f := ... }`.
+- A call that passes `&mut` arguments is a statement or a `let`'s whole
+  initializer: `let (moved, source) := Account.withdraw source amount`.
+- A `&mut` argument is a bare local that no other argument of the call uses.
+  laniusc rejects the same calls (LNC0006), so the translation is never asked
+  to model an alias.
+
+`Lanius/Mini/MutPilotCorrect.lean` proves seven facts about the extracted
+definitions, among them that a transfer conserves the sum of the two
+balances and that a relay's result is the total before it (`bv_omega`, no
+`bv_decide`). Gate step `mut-pilot` runs `fn_difftest.py` on the pilot: each
+case calls the function natively with references to locals, prints the result
+and then each local, and compares that with the Lean tuple. 2026-10-27: 300
+cases on seed 7 and 180 in the gate, no differences; one wrong `+ 1` in a
+copy of `deposit` gives 40 mismatches in 60 cases.
+
+Not covered: `&mut` into a field or an array element (`f(x.field)`: the
+argument must be a bare local), and `&mut` in `compiler.lani`, which stays as
+it is.

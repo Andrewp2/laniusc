@@ -1,0 +1,12 @@
+type Meters = distinct i64;
+type Seconds = distinct i64;
+struct Odometer { total: Meters }
+impl Odometer {
+    fn add(&self, m: Meters) -> Meters { return self.total + m; }
+}
+fn main() -> i32 {
+    let o: Odometer = Odometer { total: 1 };
+    let s: Seconds = 2;
+    let m: Meters = o.add(s);
+    return 0;
+}

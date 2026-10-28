@@ -154,6 +154,7 @@ static const uint TK_WHERE = 104u;
 static const uint TK_SELF_VALUE = 105u;
 static const uint TK_TYPE_ALIAS_ASSIGN = 110u;
 static const uint TK_DISTINCT = 200u;
+static const uint TK_MUT = 203u;
 static const uint TK_MATCH_LBRACE = 119u;
 static const uint TK_MATCH_RBRACE = 120u;
 static const uint TK_IMPL_LBRACE = 121u;
@@ -314,7 +315,9 @@ bool is_generic_comma_kind(uint kind)
 
 bool is_self_receiver_ref_amp(uint i)
 {
-    if (token_kind(i) != TK_AMPERSAND || token_kind(i + 1u) != TK_SELF_VALUE || i == 0u)
+    // `&mut self` and `&self` open a receiver the same way.
+    uint self_i = token_kind(i + 1u) == TK_MUT ? i + 2u : i + 1u;
+    if (token_kind(i) != TK_AMPERSAND || token_kind(self_i) != TK_SELF_VALUE || i == 0u)
         return false;
     uint prev = token_kind(i - 1u);
     return prev == TK_PARAM_LPAREN || prev == TK_LPAREN || prev == TK_PARAM_COMMA ||
@@ -1465,6 +1468,17 @@ void main(uint3 tid: SV_DispatchThreadID)
         check_raw_plus_minus(i);
     else if (is_self_receiver_ref_amp(i))
     {
+    }
+    // `&mut T` is a type; `mut` appears nowhere else.
+    else if (kind == TK_AMPERSAND && token_kind(i + 1u) == TK_MUT)
+    {
+        if (!is_type_start(token_kind(i + 2u)))
+            record_error(i + 1u, ERR_EXPECTED_TOKEN, TK_TYPE_IDENT);
+    }
+    else if (kind == TK_MUT)
+    {
+        if (i == 0u || token_kind(i - 1u) != TK_AMPERSAND)
+            record_error(i, ERR_EXPECTED_TOKEN, TK_AMPERSAND);
     }
     else if (is_binary_operator(kind))
         check_binary_operator(i);

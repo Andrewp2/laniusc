@@ -1,0 +1,33 @@
+// `&mut T` and `&mut self` write through to the caller's value. A caller
+// gets a reference from a `&self` or `&mut self` method, as with `&T`.
+struct Counter { total: i32 }
+impl Counter {
+    fn borrow(&self) -> &Counter { return self; }
+    fn exclusive(&mut self) -> &mut Counter { return self; }
+    fn add(&mut self, by: i32) { self.total += by; }
+    fn absorb(&mut self, other: &Counter) { self.total += other.total; }
+    fn get(&self) -> i32 { return self.total; }
+}
+
+fn bump(c: &mut Counter) { c.total += 1; }
+fn add_into(dst: &mut Counter, src: &Counter) { dst.total += src.total; }
+// `&mut [T]` is a type like `&[T]`.
+fn fill(values: &mut [i32], value: i32) { values[0] = value; }
+struct Pair { left: Counter, right: Counter }
+
+fn main() -> i32 {
+    let a: Counter = Counter { total: 1 };
+    let b: Counter = Counter { total: 10 };
+    a.add(2);
+    bump(a.exclusive());
+    a.absorb(b.borrow());
+    if (a.get() != 14) { return 1; }
+    // Different roots never conflict.
+    add_into(b.exclusive(), a.borrow());
+    if (b.get() != 24) { return 2; }
+    let p: Pair = Pair { left: Counter { total: 1 }, right: Counter { total: 2 } };
+    let q: Pair = Pair { left: Counter { total: 3 }, right: Counter { total: 4 } };
+    p.left.absorb(q.right.borrow());
+    if (p.left.get() != 5) { return 3; }
+    return 0;
+}

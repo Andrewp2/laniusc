@@ -2503,6 +2503,12 @@ impl GpuTypeChecker {
                     .compact_distinct
                     .record(encoder)?;
             }
+            if exclusive_reference_pass_required(parser_feature_flags) {
+                bind_groups
+                    .semantic_projection
+                    .compact_exclusive
+                    .record(encoder)?;
+            }
             bind_groups
                 .semantic_projection
                 .compact_aggregate_requests

@@ -149,6 +149,7 @@ pub(super) const CONDITIONS_COMPACT_EXPR_PASS: &str = "type_check.conditions.com
 pub(super) const CONDITIONS_COMPACT_STMT_PASS: &str = "type_check.conditions.compact_stmt";
 pub(super) const CONDITIONS_COMPACT_DISTINCT_PASS: &str = "type_check.conditions.compact_distinct";
 pub(super) const CONDITIONS_COMPACT_DISTINCT_NODES_PASS: &str = "type_check.conditions.compact_distinct_nodes";
+pub(super) const CONDITIONS_COMPACT_EXCLUSIVE_PASS: &str = "type_check.conditions.compact_exclusive";
 pub(super) const CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS: &str =
     "type_check.conditions.compact_aggregate_requests";
 pub(super) const CONDITIONS_AGGREGATE_ARGS_CALLS_PASS: &str =
@@ -4793,6 +4794,14 @@ fn build_graph(
                 kernels,
                 "type_checker/conditions/compact_distinct",
                 reflected_bindings!["distinct_hir_node_by_token" => distinct_hir_node_by_token: Read],
+            )?;
+            graph.add_kernel_pass_by_name(
+                CONDITIONS_COMPACT_EXCLUSIVE_PASS,
+                CompilerPhase::TypeCheck,
+                ResourceDomain::HirNodes,
+                kernels,
+                "type_checker/conditions/compact_exclusive",
+                reflected_bindings![],
             )?;
             graph.add_kernel_pass_by_name(
                 CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS,

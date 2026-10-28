@@ -346,11 +346,13 @@ compiler that someone actually runs is one of these two:
 
 1. **The Lanius build.** laniusc compiles `formal/lani/mini/compiler.lani`.
    Two things are trusted here:
-   - **The extractor.** `formal/tools/extract.py` (1,227 lines of Python) is
+   - **The extractor.** `formal/tools/extract.py` (1,683 lines of Python) is
      trusted to give each construct it accepts the Lean meaning that Lanius
      gives it. It maps types one to one (`i32` and `u32` to `BitVec 32`,
      `u64` to `BitVec 64`, `usize` to `Nat`, `u8` to `UInt8`, `List<T>` to
      `List T`, `Box<T>` to `T`) and rejects anything outside the subset.
+     `compiler.lani` and `frontend.lani` have no `&mut`; the translation of
+     `&mut` parameters is used only by the pilot (see "`&mut` pilot" below).
    - **The prelude table.** `PRELUDE_FNS` and `PRELUDE_TYPES` in
      `extract.py` are trusted. `boxed` and `unbox` are the identity,
      `plus`/`times`/`minus` are `Nat` `+`/`*`/`-` on every run that returns
@@ -404,6 +406,31 @@ compiler that someone actually runs is one of these two:
    runtime are trusted: GMP `Nat`, and the `@[extern]` and `implemented_by`
    implementations of `BitVec`, `UInt8` and `List`. The kernel does not see
    any of this code.
+
+### `&mut` pilot
+
+`formal/lani/mini/mut_pilot.lani` is extracted to `Lanius/Mini/MutPilot.lean`
+with `&mut` parameters translated Aeneas style: a function takes each `&mut`
+argument's value and returns `(result, updated values)`, an assignment
+through a parameter rebinds it, and a call rebinds each `&mut` argument to
+the value returned for it. Trusted, beyond the rest of this section:
+
+- **Exclusivity.** The translation is right only if no other argument of a
+  call reaches a `&mut` argument's value. laniusc rejects such a call
+  (`shaders/type_checker/conditions/compact_exclusive.slang`, LNC0006), and
+  extract.py rejects it again (a `&mut` argument must be a bare local, used by
+  no other argument). Both compare roots at the call; neither follows aliases
+  made by copying a record that holds a pointer, and the pilot has none.
+- **By-reference passing.** laniusc passes a `&mut` argument by address, so
+  the callee's writes reach the caller's local. `fn_difftest.py --source
+  formal/lani/mini/mut_pilot.lani` checks it (gate step `mut-pilot`): each
+  case prints the `&mut` locals after the call and compares them with the
+  Lean tuple. Whether a by-value record argument is copied is not checked;
+  `paid` gives the same result either way.
+
+`Lanius/Mini/MutPilotCorrect.lean` proves facts about the extracted
+definitions (a transfer conserves the two balances, a relay's result is the
+total before it); nothing else depends on them.
 
 ## 6. The x86 model
 

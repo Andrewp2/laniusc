@@ -50,6 +50,7 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
         b"where" => Some(TokenKind::Where),
         b"requires" => Some(TokenKind::Requires),
         b"ensures" => Some(TokenKind::Ensures),
+        b"mut" => Some(TokenKind::Mut),
         _ => None,
     }
 }

@@ -10,7 +10,10 @@ function natively, and compare canonical renderings of the results.
 
 The Lanius side is a copy of formal/lani/mini/compiler.lani with only its
 module line changed, followed by generated renderers and one function per
-case, so the code under test is the extracted source byte for byte. A Lanius
+case, so the code under test is the extracted source byte for byte. A function
+with `&mut` parameters (formal/lani/mini/mut_pilot.lani, with --source and
+--lean-module) is called with references to locals, and the case prints the
+result and then each of those locals, which the Lean side's tuple must match. A Lanius
 run that does not return is not a mismatch: the extracted definitions agree
 with every run that returns. That covers a panic (minus below zero, which
 Lean's Nat truncates) and a native stack overflow (SIGSEGV), since Lean has no
@@ -22,6 +25,7 @@ count, and the summary reports each failure by function and signal.
 import argparse
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -333,7 +337,7 @@ def targets(ex):
     return out
 
 
-LEAN_HEAD = '''import Lanius.Mini.Compiler
+LEAN_HEAD = '''import {module}
 open Lanius.Mini
 
 def hexDigit (n : Nat) : String := String.singleton ("0123456789abcdef".toList.getD n '0')
@@ -369,6 +373,8 @@ def main():
     parser.add_argument('--laniusc', default=os.path.join(ROOT, 'target/release/laniusc'))
     parser.add_argument('--source', default=SOURCE,
                         help='Lanius source (default: the mini compiler; the Lean side is always the built one)')
+    parser.add_argument('--lean-module', default='Lanius.Mini.Compiler',
+                        help='the Lean module extracted from --source')
     args = parser.parse_args()
     rng = random.Random(args.seed)
     os.makedirs(os.path.join(args.workdir, 'app'), exist_ok=True)
@@ -381,19 +387,48 @@ def main():
     shard, shards = (int(part) for part in args.shard.split('/'))
     chosen = [t for i, t in enumerate(targets(ex)) if i % shards == shard]
     cases = []  # (label, lean expr, lanius case fn)
+    exclusive = set()  # struct types passed to a `&mut` parameter
     for label, lean_head, params, ret, call in chosen:
         for _ in range(args.per_fn):
-            values = [ty.gen(pt, rng, 3) for _, pt in params]
+            values = [ty.gen(pt.value(), rng, 3) for _, pt in params]
             lean_args = [ty.lean(v) for v in values]
             lean_term = f'({" ".join([lean_head] + lean_args)})'
-            lets = [f'    let a{i}: {ty.lani_type(pt)} = {ty.lani(v, pt)};'
+            lets = [f'    let a{i}: {ty.lani_type(pt.value())} = {ty.lani(v, pt.value())};'
                     for i, (v, (_, pt)) in enumerate(zip(values, params))]
             index = len(cases)
-            body = '\n'.join(lets + [f'    return {ty.lani_render(ret, call([f"a{i}" for i in range(len(params))]))};'])
-            cases.append((label, ty.lean_render(ret, lean_term), f'fn case{index}() -> i32 {{\n{body}\n}}'))
+            mutated = [i for i, (name, pt) in enumerate(params) if pt.is_mut()]
+            if not mutated:
+                body = '\n'.join(lets + [f'    return {ty.lani_render(ret, call([f"a{i}" for i in range(len(params))]))};'])
+                cases.append((label, ty.lean_render(ret, lean_term), f'fn case{index}() -> i32 {{\n{body}\n}}'))
+                continue
+            # A receiver is borrowed by the method call; other `&mut`
+            # arguments by the harness's exclusive() methods.
+            receiver = params[0][0] == 'self'
+            names = []
+            for i, (name, pt) in enumerate(params):
+                if pt.is_mut() and not (receiver and i == 0):
+                    exclusive.add(pt.value().name)
+                    names.append(f'a{i}.harness_exclusive()')
+                else:
+                    names.append(f'a{i}')
+            shown = ([ret] if ret is not None else []) + [params[i][1].value() for i in mutated]
+            fields = ['r' + '.2' * k + ('.1' if k < len(shown) - 1 else '') for k in range(len(shown))]
+            lean_text = ' ++ ";" ++ '.join(ty.lean_render(t, f) for t, f in zip(shown, fields))
+            lines = list(lets)
+            if ret is not None:
+                lines.append(f'    let r: {ty.lani_type(ret)} = {call(names)};')
+                lines.append(f'    {ty.lani_render(ret, "r")};')
+            else:
+                lines.append(f'    {call(names)};')
+            for k, i in enumerate(mutated):
+                if k or ret is not None:
+                    lines.append('    put(59);')
+                lines.append(f'    {ty.lani_render(params[i][1].value(), f"a{i}")};')
+            body = '\n'.join(lines + ['    return 0;'])
+            cases.append((label, f'(let r := {lean_term}; {lean_text})', f'fn case{index}() -> i32 {{\n{body}\n}}'))
 
     # Lean: one line per case.
-    lean = [LEAN_HEAD, ty.lean_renderers(), '']
+    lean = [LEAN_HEAD.format(module=args.lean_module), ty.lean_renderers(), '']
     for index, (_, term, _) in enumerate(cases):
         lean.append(f'def case{index} : String := {term}')
     for chunk in range(0, len(cases), 100):
@@ -404,8 +439,10 @@ def main():
     open(lean_path, 'w').write('\n'.join(lean) + '\n')
 
     # Lanius: the compiler source as module app::main, then the harness.
-    body = source.replace('module mini::compiler;', 'module app::main;\nimport std::io_byte;\nimport std::process;', 1)
+    body = re.sub(r'^module \S+;', 'module app::main;\nimport std::io_byte;\nimport std::process;', source, count=1, flags=re.M)
     tail = [LANI_TAIL_HEAD]
+    for name in sorted(exclusive):
+        tail.append(f'impl {name} {{\n    fn harness_exclusive(&mut self) -> &mut {name} {{\n        return self;\n    }}\n}}')
     for t in sorted(ty.need_nil, key=repr):
         tail.append(f'fn nil_{key(t)}() -> List<{ty.lani_type(t)}> {{\n    return empty();\n}}')
     for t in sorted(ty.need_none, key=repr):
