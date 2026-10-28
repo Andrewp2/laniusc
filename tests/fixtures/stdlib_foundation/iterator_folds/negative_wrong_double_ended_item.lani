@@ -1,0 +1,19 @@
+module app::main;
+import core::iter;
+import core::option;
+struct MismatchedEnds {}
+impl MismatchedEnds { fn borrow(&self) -> &MismatchedEnds { return self; } }
+pub impl core::iter::Iterator<i32> for MismatchedEnds {
+    pub fn next(&self) -> core::option::Option<i32> { return core::option::None(); }
+}
+pub impl core::iter::DoubleEndedIterator<u64> for MismatchedEnds {
+    pub fn next_back(&self) -> core::option::Option<u64> { return core::option::None(); }
+}
+struct Sum {}
+impl Sum { fn borrow(&self) -> &Sum { return self; } }
+pub impl core::iter::Folder<i64,i32> for Sum { pub fn apply(&self,accumulator:i64,value:i32) -> i64 { return accumulator+(value as i64); } }
+fn main() -> i32 {
+    let source:MismatchedEnds=MismatchedEnds {}; let folder:Sum=Sum {};
+    let rejected:i64=core::iter::rfold<MismatchedEnds,Sum,i32,i64>(source.borrow(),0,folder.borrow()); // rejected_fold_bound
+    return 0;
+}

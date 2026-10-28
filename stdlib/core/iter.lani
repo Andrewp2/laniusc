@@ -56,7 +56,7 @@ pub trait InnerRetirement<J,E> {
     pub fn try_retire(&self, inner: J) -> core::option::Option<RetireFailure<J,E>>;
 }
 
-// Left-fold callbacks receive the accumulator first. Replaced accumulators
+// Fold callbacks receive the accumulator first. Replaced accumulators
 // and consumed items are shallow values; keep their cleanup authority outside
 // the fold when a callback omits them from its returned value.
 pub trait Folder<A, T> {
@@ -1389,4 +1389,111 @@ pub impl<I, P, T> Iterator<T> for SkipWhile<I, P, T>
         }
         return core::option::None();
     }
+}
+
+// A bounded fold's actual callback-success count, relative to this call.
+// exhausted means a real None was observed; quota completion does not probe.
+pub struct FoldProgress<A> { accumulator:A, folded:u64, exhausted:bool }
+// The failing item is already consumed. The callback's error carries any
+// updated owner/item recovery state; no older accumulator alias is returned.
+pub struct FoldFailure<E> { folded:u64, error:E }
+
+// Seed the accumulator with the first item, without a synthetic identity or
+// a callback for that item. Empty and singleton sources need no folder call.
+pub fn reduce<I,F,T>(source:&I,folder:&F) -> core::option::Option<T>
+    where I:Iterator<T>, F:Folder<T,T> {
+    let first:core::option::Option<T> =source.next();
+    if(first.is_none()) { return first; }
+    return core::option::Some(fold<I,F,T,T>(source,first.unwrap(),folder));
+}
+pub fn try_reduce<I,F,T,E>(source:&I,folder:&F) -> core::result::Result<core::option::Option<T>,E>
+    where I:Iterator<T>, F:TryFolder<T,T,E> {
+    let first:core::option::Option<T> =source.next();
+    if(first.is_none()) { return core::result::Ok(first); }
+    let folded:core::result::Result<T,E> =try_fold<I,F,T,T,E>(source,first.unwrap(),folder);
+    if(folded.is_err()) { return core::result::Err(folded.unwrap_err()); }
+    return core::result::Ok(core::option::Some(folded.unwrap()));
+}
+
+// Consume only the back end, retaining callback order (accumulator,item).
+// No associativity, commutativity, implicit clone or destruction is assumed.
+pub fn rfold<I,F,T,A>(source:&I,initial:A,folder:&F) -> A
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:Folder<A,T> {
+    let accumulator:A=initial;
+    while(true) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return accumulator; }
+        accumulator=folder.apply(accumulator,item.unwrap());
+    }
+    return accumulator;
+}
+pub fn try_rfold<I,F,T,A,E>(source:&I,initial:A,folder:&F) -> core::result::Result<A,E>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:TryFolder<A,T,E> {
+    let accumulator:A=initial;
+    while(true) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return core::result::Ok(accumulator); }
+        let step:core::result::Result<A,E> =folder.try_apply(accumulator,item.unwrap());
+        if(step.is_err()) { return step; }
+        accumulator=step.unwrap();
+    }
+    return core::result::Ok(accumulator);
+}
+
+// At most limit direct front pulls. Zero leaves both borrowed objects alone.
+// Increment only after callback success while folded<limit, including MAX.
+pub fn fold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
+    where I:Iterator<T>, F:Folder<A,T> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next();
+        if(item.is_none()) { return FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }; }
+        accumulator=folder.apply(accumulator,item.unwrap()); folded+=1;
+    }
+    return FoldProgress { accumulator:accumulator,folded:folded,exhausted:false };
+}
+pub fn try_fold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
+    -> core::result::Result<FoldProgress<A>,FoldFailure<E>>
+    where I:Iterator<T>, F:TryFolder<A,T,E> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next();
+        if(item.is_none()) { return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }); }
+        let step:core::result::Result<A,E> =folder.try_apply(accumulator,item.unwrap());
+        if(step.is_err()) {
+            let error:E=step.unwrap_err();
+            return core::result::Err(FoldFailure { folded:folded,error:error });
+        }
+        accumulator=step.unwrap(); folded+=1;
+    }
+    return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:false });
+}
+
+// Same progress/error rules, selecting only next_back. Front and back share
+// the source's current remainder; either direction may resume between calls.
+pub fn rfold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:Folder<A,T> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }; }
+        accumulator=folder.apply(accumulator,item.unwrap()); folded+=1;
+    }
+    return FoldProgress { accumulator:accumulator,folded:folded,exhausted:false };
+}
+pub fn try_rfold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
+    -> core::result::Result<FoldProgress<A>,FoldFailure<E>>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:TryFolder<A,T,E> {
+    let accumulator:A=initial; let folded:u64=0;
+    while(folded<limit) {
+        let item:core::option::Option<T> =source.next_back();
+        if(item.is_none()) { return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:true }); }
+        let step:core::result::Result<A,E> =folder.try_apply(accumulator,item.unwrap());
+        if(step.is_err()) {
+            let error:E=step.unwrap_err();
+            return core::result::Err(FoldFailure { folded:folded,error:error });
+        }
+        accumulator=step.unwrap(); folded+=1;
+    }
+    return core::result::Ok(FoldProgress { accumulator:accumulator,folded:folded,exhausted:false });
 }

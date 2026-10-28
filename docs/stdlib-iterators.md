@@ -17,6 +17,12 @@ those additions by themselves.
 The [exact-size protocol](stdlib-exact-size-iterators.md) separately specifies
 `remaining_count() -> u64` for selected finite sources and adapters; its
 current verification status and exclusions are in that guide.
+The separate [reduction and bounded-fold increment](stdlib-iterator-folds.md)
+adds front reduction, reverse folds and bounded forward/reverse progress with
+explicit consumed-item errors. All seven new library and four byte-summary
+application gates pass on native Linux x86_64, with selected old regressions
+and the compiler inference dependency recorded separately. Older receipts
+here retain their source/API scope.
 
 [Collection, Text and bitset cursors](stdlib-collection-iterators.md) implement
 the same protocol. Their separate native gates check mixed traversal,

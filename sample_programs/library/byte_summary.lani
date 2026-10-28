@@ -1,0 +1,182 @@
+// Binary summaries through resumable bounded fallible folds in either direction.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Summary { count:u64, sum:u64, minimum:u8, maximum:u8, first:u8, last:u8 }
+enum Processing { CountOverflow, SumOverflow, InvalidProgress, CallLimit }
+struct Collect {}
+impl Collect { fn borrow(&self) -> &Collect { return self; } }
+struct Options { batch:u64, reverse:bool, help:bool, batch_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Writes { bytes:u64, calls:u64 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text { return core::text::from_utf8_unchecked(value.values,value.start,value.length); }
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if ((count <= 0) || (count > bytes.length-completed)) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("byte-summary: operation failed\n",31),2,8); return status; }
+fn csv_status(error:ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 6 }; }
+fn read(input:&Vec<u8>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 16384) { return 2; } calls += 1;
+        let remaining:i32 = 4194304-input.len(); let count:i32 = remaining;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,count);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let got = received.unwrap(); if ((got < 0) || (got > count)) { return 3; }
+        if (got == 0) { return 0; } if (got > remaining) { return 2; }
+        if (input.try_extend(core::slice::view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+
+pub impl core::iter::TryFolder<Summary,u8,Processing> for Collect {
+    pub fn try_apply(&self, accumulator:Summary, value:u8) -> Result<Summary,Processing> {
+        let maximum:u64 = 18446744073709551615;
+        if (accumulator.count == maximum) { return core::result::Err(Processing::CountOverflow); }
+        if ((value as u64) > maximum-accumulator.sum) { return core::result::Err(Processing::SumOverflow); }
+        let next = Summary { count:accumulator.count+1,sum:accumulator.sum+(value as u64),minimum:accumulator.minimum,maximum:accumulator.maximum,first:accumulator.first,last:value };
+        if (accumulator.count == 0) { next.minimum = value; next.maximum = value; next.first = value; }
+        else {
+            if (value < next.minimum) { next.minimum = value; }
+            if (value > next.maximum) { next.maximum = value; }
+        }
+        return core::result::Ok(next);
+    }
+}
+fn batch(source:&core::slice::Iter<u8>, total:Summary, folder:&Collect, options:&Options)
+    -> Result<core::iter::FoldProgress<Summary>,core::iter::FoldFailure<Processing>> {
+    if (options.reverse) {
+        return core::iter::try_rfold_up_to<core::slice::Iter<u8>,Collect,u8,Summary,Processing>(source,total,folder,options.batch);
+    }
+    return core::iter::try_fold_up_to<core::slice::Iter<u8>,Collect,u8,Summary,Processing>(source,total,folder,options.batch);
+}
+fn summarize(input:&Vec<u8>, options:&Options) -> Result<Summary,Processing> {
+    // Backing and callback remain live and unchanged throughout all resumptions.
+    let source:core::slice::Iter<u8> = input.iter(); let folder = Collect {};
+    let total = Summary { count:0,sum:0,minimum:0,maximum:0,first:0,last:0 }; let calls:u64 = 0;
+    while(true) {
+        if (calls == 8388608) { return core::result::Err(Processing::CallLimit); } calls += 1;
+        let before:u64 = total.count;
+        let made:Result<core::iter::FoldProgress<Summary>,core::iter::FoldFailure<Processing>> = batch(source.borrow(),total,folder.borrow(),options);
+        if (made.is_err()) { return core::result::Err(made.unwrap_err().error); }
+        let progress = made.unwrap(); total = progress.accumulator;
+        if ((progress.folded > options.batch) || (total.count < before) || (total.count-before != progress.folded) || (total.count > (input.len() as u64))) { return core::result::Err(Processing::InvalidProgress); }
+        if (progress.exhausted) {
+            if ((progress.folded >= options.batch) || (total.count != (input.len() as u64))) { return core::result::Err(Processing::InvalidProgress); }
+            return core::result::Ok(total);
+        }
+        if (progress.folded != options.batch) { return core::result::Err(Processing::InvalidProgress); }
+        // Quota completion is not EOF. The next call resumes the same cursor.
+    }
+    return core::result::Err(Processing::InvalidProgress);
+}
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i32 {
+    let bounds = ext::csv_write::Limits { max_output:4096-state.bytes,max_write_calls:64-state.calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record(output,record,bounds);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err(); state.bytes += failure.written; state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> csv_status(detail),
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 6 },
+            _ -> 6
+        };
+    }
+    let progress = sent.unwrap(); state.bytes += progress.written; state.calls += progress.write_calls; return 0;
+}
+fn render(total:Summary, output:&alloc::io::Buffer) -> i32 {
+    let record = ext::csv::new(); let state = Writes { bytes:0,calls:0 }; let status:i32 = 0;
+    let header:[View<u8>;6] = [literal("count",5),literal("sum",3),literal("min",3),literal("max",3),literal("first",5),literal("last",4)];
+    let index:i32 = 0;
+    while(index < 6) {
+        let pushed = record.try_push_field(text(header[index]));
+        if (pushed.is_err()) { status = csv_status(pushed.unwrap_err()); break; } index += 1;
+    }
+    if (status == 0) { status = emit(output,record.borrow(),state.borrow()); } record.clear();
+    let numbers:[u64;6] = [total.count,total.sum,total.minimum as u64,total.maximum as u64,total.first as u64,total.last as u64]; index = 0;
+    while((status == 0) && (index < 6)) {
+        let digits:[u8;20] = [0;20]; let field:View<u8> = literal("",0);
+        if ((index < 2) || (total.count != 0)) {
+            let formatted = core::decimal::format_u64(digits,0,20,numbers[index]);
+            if (formatted.is_err()) { status = 6; break; }
+            field = core::slice::view(digits,formatted.unwrap()).unwrap();
+        }
+        let pushed = record.try_push_field(text(field));
+        if (pushed.is_err()) { status = csv_status(pushed.unwrap_err()); break; } index += 1;
+    }
+    if (status == 0) { status = emit(output,record.borrow(),state.borrow()); }
+    record.destroy(); return status;
+}
+fn run(options:&Options) -> i32 {
+    let input:Vec<u8> = alloc::vec::new(); let status:i32 = read(input.borrow());
+    if (status != 0) { input.destroy(); return status; }
+    let made:Result<Summary,Processing> = summarize(input.borrow(),options); input.destroy();
+    if (made.is_err()) { return 6; } let total = made.unwrap();
+    let created = alloc::io::with_limit(4096); if (created.is_err()) { return 4; }
+    let output = created.unwrap(); status = render(total,output.borrow());
+    if (status == 0 && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,64)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;3] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("batch",5),short:98,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("reverse",7),short:114,arity:ext::cli::Arity::Flag }
+    ];
+    let made = ext::cli::parser(values,core::slice::view(specs,3).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap(); let options = Options { batch:4096,reverse:false,help:false,batch_set:false };
+    while(true) {
+        let event = parser.next(); if (event.is_err()) { return report(2); } let next = event.unwrap(); if (next.is_none()) { break; }
+        let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (item.is_none()) { return report(2); } let found = item.unwrap();
+        if (found.id == 1) { if (options.help) { return report(2); } options.help = true; }
+        if (found.id == 3) { if (options.reverse) { return report(2); } options.reverse = true; }
+        if (found.id == 2) {
+            let value = found.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
+            if (parsed.is_err() || (parsed.unwrap() < 1) || (parsed.unwrap() > 1048576) || options.batch_set) { return report(2); }
+            options.batch_set = true; options.batch = parsed.unwrap();
+        }
+    }
+    if (options.help) {
+        let help = literal("Usage: byte-summary [--batch N] [--reverse] [--help]\nRead binary stdin through EOF; summarize bytes with bounded fallible iterator folds.\nOutput CSV: count,sum,min,max,first,last; reverse changes traversal first/last.\nBatch: 1..1048576 (default 4096). Empty byte fields are blank for empty input.\nShort options: -b N, -r, -h. Duplicate options are errors.\nLimits: 4 MiB input, 16384 read calls, 8388608 fold calls, 4096 staged output bytes.\n",441);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,24,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

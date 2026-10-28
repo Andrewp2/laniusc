@@ -1,0 +1,66 @@
+// Test-only binary model: eight u64 header words kind,n,pre_front,pre_back,
+// fail_mode,target,initial,commands; then op,quota,seed per command.
+// Seed u64::MAX reuses the current accumulator. Operations 0..7 are the new
+// APIs, 8/9 are direct front/back resumption. Each result is 16 u64 words;
+// the case ends with a trace length and triples (event,accumulator,item).
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+import std::io;
+fn read_exact(pointer:ptr,count:i32,eof:bool) -> bool { let done:i32=0; while(done<count) { let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got>=0); if(got==0) { assert(eof && done==0); return false; } done+=got; } return true; }
+fn write_all(pointer:ptr,count:i32) { let done:i32=0; while(done<count) { let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got>0); done+=got; } }
+fn get64(bytes:[u8],offset:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; } return value; }
+struct Output { bytes:[u8], pointer:ptr, used:i32 }
+impl Output { fn borrow(&self) -> &Output { return self; } fn flush(&self) { write_all(self.pointer,self.used); self.used=0; } fn word(&self,value:u64) { if(self.used==4096) { self.flush(); } let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; } self.used+=8; } }
+struct Log { kinds:[i64], first:[i64], second:[i64], used:i32 }
+impl Log { fn borrow(&self) -> &Log { return self; } fn add(&self,kind:i64,first:i64,second:i64) { assert(self.used<128); self.kinds[self.used]=kind; self.first[self.used]=first; self.second[self.used]=second; self.used+=1; } }
+struct State { log:&Log, front_polls:u64, back_polls:u64, front_ok:u64, back_ok:u64, callbacks:u64, maps:u64, queries:u64 }
+impl State { fn borrow(&self) -> &State { return self; } }
+struct Meter<I,T> { source:&I, state:&State }
+impl<I,T> Meter<I,T> { fn borrow(&self) -> &Meter<I,T> { return self; } }
+pub impl<I,T> core::iter::Iterator<T> for Meter<I,T> where I:core::iter::Iterator<T> { pub fn next(&self) -> core::option::Option<T> { let state:&State=self.state; let log:&Log=state.log; log.add(1,0,0); state.front_polls+=1; let source:&I=self.source; let item:core::option::Option<T> =source.next(); if(item.is_some()) { state.front_ok+=1; } return item; } }
+pub impl<I,T> core::iter::DoubleEndedIterator<T> for Meter<I,T> where I:core::iter::DoubleEndedIterator<T> { pub fn next_back(&self) -> core::option::Option<T> { let state:&State=self.state; let log:&Log=state.log; log.add(2,0,0); state.back_polls+=1; let source:&I=self.source; let item:core::option::Option<T> =source.next_back(); if(item.is_some()) { state.back_ok+=1; } return item; } }
+pub impl<I,T> core::iter::ExactSizeIterator<T> for Meter<I,T> where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> { pub fn remaining_count(&self) -> u64 { let state:&State=self.state; let log:&Log=state.log; log.add(7,0,0); state.queries+=1; let source:&I=self.source; return source.remaining_count(); } }
+struct Promote { state:&State }
+impl Promote { fn borrow(&self) -> &Promote { return self; } }
+pub impl core::iter::Mapper<i32,i64> for Promote { pub fn apply(&self,value:i32) -> i64 { let state:&State=self.state; let log:&Log=state.log; let result:i64=value as i64; log.add(3,value as i64,result); state.maps+=1; return result; } }
+struct Transform { state:&State }
+impl Transform { fn borrow(&self) -> &Transform { return self; } }
+pub impl core::iter::Mapper<i64,i64> for Transform { pub fn apply(&self,value:i64) -> i64 { let state:&State=self.state; let log:&Log=state.log; let result:i64=value*2+1; log.add(4,value,result); state.maps+=1; return result; } }
+struct Failure { item:i64, before:i64, stamp:u64, call:u64 }
+struct Folder { state:&State, mode:i32, target:i64 }
+impl Folder { fn borrow(&self) -> &Folder { return self; } }
+pub impl core::iter::Folder<i64,i64> for Folder { pub fn apply(&self,accumulator:i64,value:i64) -> i64 { let state:&State=self.state; let log:&Log=state.log; log.add(5,accumulator,value); state.callbacks+=1; return accumulator*17+value+1; } }
+pub impl core::iter::TryFolder<i64,i64,Failure> for Folder { pub fn try_apply(&self,accumulator:i64,value:i64) -> core::result::Result<i64,Failure> { let state:&State=self.state; let log:&Log=state.log; log.add(6,accumulator,value); state.callbacks+=1; let fail:bool=false; if(self.mode==1) { fail=value==self.target; } if(self.mode==2) { fail=state.callbacks==self.target as u64; } if(self.mode==3) { fail=value!=self.target; } if(fail) { return core::result::Err(Failure { item:value,before:accumulator,stamp:18446744073709551615-(value as u64)*131-state.callbacks,call:state.callbacks }); } return core::result::Ok(accumulator*17+value+1); } }
+fn prepare<I,T>(source:&Meter<I,T>,front:i32,back:i32) where I:core::iter::Iterator<T>,I:core::iter::DoubleEndedIterator<T> { let i:i32=0; while(i<front) { let item:core::option::Option<T> =source.next(); assert(item.is_some()); i+=1; } i=0; while(i<back) { let item:core::option::Option<T> =source.next_back(); assert(item.is_some()); i+=1; } }
+fn observe<I>(source:&I,state:&State,folder:&Folder,bytes:[u8],commands:i32,initial:i64,output:&Output) where I:core::iter::Iterator<i64>,I:core::iter::DoubleEndedIterator<i64> {
+ let carry:i64=initial; let index:i32=0;
+ while(index<commands) { let at:i32=64+index*24; let op:u64=get64(bytes,at); let quota:u64=get64(bytes,at+8); let raw_seed:u64=get64(bytes,at+16); let seed:i64=raw_seed as i64; if(raw_seed==18446744073709551615) { seed=carry; }
+  let tag:u64=0; let accumulator:i64=0; let folded:u64=18446744073709551615; let exhausted:bool=false; let error:Failure=Failure { item:0,before:0,stamp:0,call:0 }; let failed:bool=false;
+  if(op==0) { let result:core::option::Option<i64> =core::iter::reduce<I,Folder,i64>(source,folder); if(result.is_some()) { tag=1; accumulator=result.unwrap(); carry=accumulator; } }
+  if(op==1) { let result:core::result::Result<core::option::Option<i64>,Failure> =core::iter::try_reduce<I,Folder,i64,Failure>(source,folder); if(result.is_err()) { tag=4; error=result.unwrap_err(); failed=true; } else { let item:core::option::Option<i64> =result.unwrap(); if(item.is_some()) { tag=1; accumulator=item.unwrap(); carry=accumulator; } } }
+  if(op==2) { tag=2; accumulator=core::iter::rfold<I,Folder,i64,i64>(source,seed,folder); carry=accumulator; }
+  if(op==3) { let result:core::result::Result<i64,Failure> =core::iter::try_rfold<I,Folder,i64,i64,Failure>(source,seed,folder); if(result.is_err()) { tag=4; error=result.unwrap_err(); failed=true; } else { tag=2; accumulator=result.unwrap(); carry=accumulator; } }
+  if(op==4 || op==6) { let result:core::iter::FoldProgress<i64> =core::iter::FoldProgress<i64> { accumulator:seed,folded:0,exhausted:false }; if(op==4) { result=core::iter::fold_up_to<I,Folder,i64,i64>(source,seed,folder,quota); } else { result=core::iter::rfold_up_to<I,Folder,i64,i64>(source,seed,folder,quota); } tag=3; accumulator=result.accumulator; folded=result.folded; exhausted=result.exhausted; carry=accumulator; }
+  if(op==5 || op==7) { let result:core::result::Result<core::iter::FoldProgress<i64>,core::iter::FoldFailure<Failure>> =core::result::Ok(core::iter::FoldProgress<i64> { accumulator:seed,folded:0,exhausted:false }); if(op==5) { result=core::iter::try_fold_up_to<I,Folder,i64,i64,Failure>(source,seed,folder,quota); } else { result=core::iter::try_rfold_up_to<I,Folder,i64,i64,Failure>(source,seed,folder,quota); } if(result.is_err()) { let fault:core::iter::FoldFailure<Failure> =result.unwrap_err(); tag=5; folded=fault.folded; error=fault.error; failed=true; } else { let progress:core::iter::FoldProgress<i64> =result.unwrap(); tag=3; accumulator=progress.accumulator; folded=progress.folded; exhausted=progress.exhausted; carry=accumulator; } }
+  if(op==8 || op==9) { let item:core::option::Option<i64> =core::option::None(); if(op==8) { item=source.next(); } else { item=source.next_back(); } tag=6; if(item.is_some()) { tag=7; accumulator=item.unwrap(); } }
+  if(failed) { carry=error.before; }
+  output.word(op); output.word(tag); output.word(accumulator as u64); output.word(folded); output.word(exhausted as u64); output.word(error.item as u64); output.word(error.before as u64); output.word(error.stamp); output.word(error.call); output.word(state.front_ok); output.word(state.back_ok); output.word(state.front_polls); output.word(state.back_polls); output.word(state.callbacks); output.word(state.maps); output.word(state.queries); index+=1;
+ }
+}
+fn run(bytes:[u8],output:&Output) {
+ let kind:i32=get64(bytes,0) as i32; let length:i32=get64(bytes,8) as i32; let front:i32=get64(bytes,16) as i32; let back:i32=get64(bytes,24) as i32; let mode:i32=get64(bytes,32) as i32; let target:i64=get64(bytes,40) as i64; let initial:i64=get64(bytes,48) as i64; let commands:i32=get64(bytes,56) as i32;
+ let kinds:[i64;128]=[0;128]; let first:[i64;128]=[0;128]; let second:[i64;128]=[0;128]; let log:Log=Log { kinds:kinds,first:first,second:second,used:0 }; let state:State=State { log:log.borrow(),front_polls:0,back_polls:0,front_ok:0,back_ok:0,callbacks:0,maps:0,queries:0 }; let folder:Folder=Folder { state:state.borrow(),mode:mode,target:target };
+ if(kind==0 || kind==3) { let backing:[i64;10]=[99;10]; let i:i32=0; while(i<length) { backing[i+1]=(i+1) as i64; i+=1; } let view:core::slice::View<i64> =core::slice::view_range(backing,1,length).unwrap(); let cursor:core::slice::Iter<i64> =view.iter(); let source:Meter<core::slice::Iter<i64>,i64> =Meter { source:cursor.borrow(),state:state.borrow() }; prepare<core::slice::Iter<i64>,i64>(source.borrow(),front,back); if(kind==0) { observe<Meter<core::slice::Iter<i64>,i64>>(source.borrow(),state.borrow(),folder.borrow(),bytes,commands,initial,output); } else { let transform:Transform=Transform { state:state.borrow() }; let mapped:core::iter::Map<Meter<core::slice::Iter<i64>,i64>,Transform,i64,i64> =core::iter::map<Meter<core::slice::Iter<i64>,i64>,Transform,i64,i64>(source.borrow(),transform.borrow()); observe<core::iter::Map<Meter<core::slice::Iter<i64>,i64>,Transform,i64,i64>>(mapped.borrow(),state.borrow(),folder.borrow(),bytes,commands,initial,output); } assert(backing[0]==99 && backing[length+1]==99); i=0; while(i<length) { assert(backing[i+1]==(i+1) as i64); i+=1; } }
+ else { let cursor:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(1,length+1)); let source:Meter<core::iter::RangeI32,i32> =Meter { source:cursor.borrow(),state:state.borrow() }; prepare<core::iter::RangeI32,i32>(source.borrow(),front,back); let promote:Promote=Promote { state:state.borrow() }; let mapped:core::iter::Map<Meter<core::iter::RangeI32,i32>,Promote,i32,i64> =core::iter::map<Meter<core::iter::RangeI32,i32>,Promote,i32,i64>(source.borrow(),promote.borrow()); if(kind==1) { observe<core::iter::Map<Meter<core::iter::RangeI32,i32>,Promote,i32,i64>>(mapped.borrow(),state.borrow(),folder.borrow(),bytes,commands,initial,output); } else { let reverse:core::iter::Rev<core::iter::Map<Meter<core::iter::RangeI32,i32>,Promote,i32,i64>,i64> =core::iter::rev<core::iter::Map<Meter<core::iter::RangeI32,i32>,Promote,i32,i64>,i64>(mapped.borrow()); observe<core::iter::Rev<core::iter::Map<Meter<core::iter::RangeI32,i32>,Promote,i32,i64>,i64>>(reverse.borrow(),state.borrow(),folder.borrow(),bytes,commands,initial,output); } }
+ output.word(log.used as u64); let i:i32=0; while(i<log.used) { output.word(kinds[i] as u64); output.word(first[i] as u64); output.word(second[i] as u64); i+=1; }
+}
+fn main() -> i32 {
+ let input_words:[i32;64]=[0;64]; let pointer:ptr=core::mem::i32_array_data_ptr(input_words); let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,256); let output_words:[i32;1024]=[0;1024]; let output_ptr:ptr=core::mem::i32_array_data_ptr(output_words); let output_bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(output_ptr,4096); let output:Output=Output { bytes:output_bytes,pointer:output_ptr,used:0 };
+ while(read_exact(pointer,64,true)) { let kind:u64=get64(bytes,0); let length:u64=get64(bytes,8); let front:u64=get64(bytes,16); let back:u64=get64(bytes,24); let mode:u64=get64(bytes,32); let commands:u64=get64(bytes,56); assert(kind<=3 && length<=8 && front+back<=length && mode<=3 && commands<=6); assert(read_exact(pointer+64,(commands*24) as i32,false)); run(bytes,output.borrow()); }
+ output.flush(); return 0;
+}

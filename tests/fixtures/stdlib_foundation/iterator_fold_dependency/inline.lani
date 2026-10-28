@@ -1,0 +1,25 @@
+// Diagnostic candidate: a generic method result nested in a generic record.
+// No core::iter import or iterator/callback machinery is needed here.
+module app::main;
+import core::result;
+
+struct Failure<E> { folded:u64, error:E }
+
+fn carry<A,E>(step:core::result::Result<A,E>) -> core::result::Result<A,Failure<E>> {
+    if (step.is_err()) {
+        return core::result::Err(Failure { folded:3, error:step.unwrap_err() });
+    }
+    return core::result::Ok(step.unwrap());
+}
+
+fn main() -> i32 {
+    let failed:core::result::Result<i32,u64> = core::result::Err(9223372036854775825);
+    let error_result:core::result::Result<i32,Failure<u64>> = carry<i32,u64>(failed);
+    assert(error_result.is_err());
+    let error:Failure<u64> = error_result.unwrap_err();
+    assert(error.folded == 3 && error.error == 9223372036854775825);
+    let passed:core::result::Result<i32,u64> = core::result::Ok(41);
+    let success:core::result::Result<i32,Failure<u64>> = carry<i32,u64>(passed);
+    assert(success.is_ok() && success.unwrap() == 41);
+    return 0;
+}

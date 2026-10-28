@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[iterator reduction/bounded-fold increment](stdlib-iterator-folds.md) adds
+eight consumers using canonical Iterator/DoubleEndedIterator and Folder/
+TryFolder traits. Quotas, actual EOF observation, successful progress and
+consumed-item errors are explicit; callbacks retain their resource policy.
+All seven new library tests and four application groups pass, including
+10,696 model cases/37,104 state commands, 24 selected allocation denials and
+87 byte-summary process cases. Two dependency checks and two selected old
+regressions retain separate scopes. This finite native Linux x86_64 increment
+is accepted; prior iterator receipts remain historical. The preceding
 [sparse conjugate-gradient increment](extended-sparse-cg.md) specifies a
 solver for symmetric positive-definite CSR systems, with optional Jacobi
 preconditioning, fresh residual checks after every update and explicit
@@ -147,6 +156,40 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Iterator reductions and bounded folds.**
+
+The [eight new fold consumers](stdlib-iterator-folds.md) cover reduction
+without a synthetic initial value, reverse accumulation and resumable bounded
+folds in either direction. Reverse calls require explicit Iterator and
+DoubleEndedIterator bounds for the same item type. Callback argument order
+is always accumulator first.
+
+`FoldProgress` reports successful callback count and an observed EOF flag.
+Zero quotas touch neither source nor folder; reaching quota makes no extra
+EOF or metadata query. A fallible callback has already consumed its current
+item when `FoldFailure` reports earlier successful applications. Recovery
+must use actual owners carried in the callback error. The consumer layer
+adds no allocation, clone, destruction or source retirement; source/callback
+work and manual ownership remain separate obligations. All seven new library
+tests pass on native Linux x86_64 CPU output from the GPU compiler: three
+contract tests (9.13s), three owner/recovery tests (7.62s) and one independent
+state model (9.10s). All eight APIs execute without allocation services under
+pure callbacks; two negative groups reject eight invalid bound compositions.
+Actual nested String-owner recovery includes 24 selected setup/callback
+growth denials with full address/size cleanup. The model observes 10,696 cases
+and 37,104 state commands over four source forms in one native process,
+including exact progress/errors, polls, traces and absent metadata queries.
+
+Two selected old consumer/reverse regressions separately pass in
+7.26s/10.96s. Two dependency tests (4.39s) establish one
+[record-field inference diagnostic](../tests/fixtures/stdlib_foundation/iterator_fold_dependency/README.md)
+and one executing typed-local control, with no compiler repair claim.
+The real [byte-summary program](stdlib-byte-summary.md) passes model 40
+in 9.92s, then CLI32/bounds1/I/O14 in 9.33s: four groups and 87 unique native
+process cases. Earlier exact-size/reverse receipts keep their source scope;
+the new increment supplies no automatic ownership, arbitrary generic or
+device-execution claim.
 
 **Sparse conjugate-gradient systems.**
 

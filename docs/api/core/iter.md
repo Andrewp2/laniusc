@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-Shared fused iteration, scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Ordinary Flatten/FlatMap use real empty Infallible retirement through the existing nested engine, preserving actual updated-inner recovery; their selected semantic, live-owner and real-application gates pass on native Linux x86_64. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. Linked guides retain each receipt's source scope, direct-oracle versus Rust-test distinction and separate zero-sized return-call compiler dependency. Keep backing alive, prohibit reentrancy, and bound upstream work separately from output quotas. DoubleEndedIterator<T> pairs next_back with the same Iterator<T> remainder; both bounds are explicit and None from either end fuses both. Borrowed Rev swaps direction without eager pulls, allocation, item caching or cleanup. Selected leaves and Map/Filter/FilterMap/Chain propagate reverse support; Take/Skip/Zip/Enumerate remain forward-only and compose after Rev. All four registered reverse runtime tests pass on Linux x86_64 across two disjoint commands: 7740 independent model commands, primary/extra no-allocation contracts, four collection scenarios with seven full-address/size matched releases and two exact LNC0008 bound rejections. The real timeline-tail composition separately passes all four registered runtime tests and 71 process cases; direct earlier runs cover the same cases. Forward/backward methods have single canonical trait implementations; the retained duplicate-method compiler reduction does not imply a general generic payload failure. Reverse support alone grants no exact-size promise; no new OOM campaign, formal proof, automatic lifetime/destruction or device runtime claim follows. ExactSizeIterator<T> separately adds remaining_count()->u64 under a matching explicit Iterator<T> bound. Selected finite leaves and existing O(1) collection remainders propagate through Rev/Map/Take/Skip/StepBy/Peekable, with no pulls, callbacks, item reads, host calls, allocation or cleanup during counts. StepBy distinguishes initial/later blocks and Peekable counts a cache without relaxing its source-resumption policy. Zip is excluded for borrowed-source aliases; Chain for unrepresentable sums. No Repeat, callback-dependent/nested, checked-index Enumerate or borrowed hash/tree implementation is added. Valid state, manual lifetimes and source/callback nonreentrancy remain required; no unchecked memory trust. All four exact-size library gates pass on native Linux x86_64 across two receipts: three nonmodel passes in 11.82 seconds (the same command records a model fixture visibility failure), then an isolated corrected model pass in 8.44 seconds. The independent sequence/deque model checks 10714 cases and 35922 steps across 18 modes; pure contracts add no memory syscalls, observed collection backings have full-address/size matched releases, and five invalid capabilities reject with LNC0008. The real sample-bytes app uses optional Rev/Skip/StepBy/Take and exact safe reservation while retaining checked appends; all four application tests pass in 9.44 seconds/95 cases, including two reached allocation denials. One selected unchanged reverse-model regression passes in 7.27 seconds/7740 commands, without an old-suite-wide rerun claim. The narrow chained generic Option receiver dependency has an executed typed-local control; no compiler production change or unchecked count trust is added.
+Shared fused iteration, scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Ordinary Flatten/FlatMap use real empty Infallible retirement through the existing nested engine, preserving actual updated-inner recovery; their selected semantic, live-owner and real-application gates pass on native Linux x86_64. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. Linked guides retain each receipt's source scope, direct-oracle versus Rust-test distinction and separate zero-sized return-call compiler dependency. Keep backing alive, prohibit reentrancy, and bound upstream work separately from output quotas. DoubleEndedIterator<T> pairs next_back with the same Iterator<T> remainder; both bounds are explicit and None from either end fuses both. Borrowed Rev swaps direction without eager pulls, allocation, item caching or cleanup. Selected leaves and Map/Filter/FilterMap/Chain propagate reverse support; Take/Skip/Zip/Enumerate remain forward-only and compose after Rev. All four registered reverse runtime tests pass on Linux x86_64 across two disjoint commands: 7740 independent model commands, primary/extra no-allocation contracts, four collection scenarios with seven full-address/size matched releases and two exact LNC0008 bound rejections. The real timeline-tail composition separately passes all four registered runtime tests and 71 process cases; direct earlier runs cover the same cases. Forward/backward methods have single canonical trait implementations; the retained duplicate-method compiler reduction does not imply a general generic payload failure. Reverse support alone grants no exact-size promise; no new OOM campaign, formal proof, automatic lifetime/destruction or device runtime claim follows. ExactSizeIterator<T> separately adds remaining_count()->u64 under a matching explicit Iterator<T> bound. Selected finite leaves and existing O(1) collection remainders propagate through Rev/Map/Take/Skip/StepBy/Peekable, with no pulls, callbacks, item reads, host calls, allocation or cleanup during counts. StepBy distinguishes initial/later blocks and Peekable counts a cache without relaxing its source-resumption policy. Zip is excluded for borrowed-source aliases; Chain for unrepresentable sums. No Repeat, callback-dependent/nested, checked-index Enumerate or borrowed hash/tree implementation is added. Valid state, manual lifetimes and source/callback nonreentrancy remain required; no unchecked memory trust. All four exact-size library gates pass on native Linux x86_64 across two receipts: three nonmodel passes in 11.82 seconds (the same command records a model fixture visibility failure), then an isolated corrected model pass in 8.44 seconds. The independent sequence/deque model checks 10714 cases and 35922 steps across 18 modes; pure contracts add no memory syscalls, observed collection backings have full-address/size matched releases, and five invalid capabilities reject with LNC0008. The real sample-bytes app uses optional Rev/Skip/StepBy/Take and exact safe reservation while retaining checked appends; all four application tests pass in 9.44 seconds/95 cases, including two reached allocation denials. One selected unchanged reverse-model regression passes in 7.27 seconds/7740 commands, without an old-suite-wide rerun claim. The narrow chained generic Option receiver dependency has an executed typed-local control; no compiler production change or unchecked count trust is added. The new reduction/reverse-fold/bounded-fold increment adds reduce, try_reduce, rfold, try_rfold and four forward/reverse up_to functions through existing Folder/TryFolder traits. FoldProgress counts successful applications and actual None; zero quotas do no source/folder/metadata work and quota termination adds no EOF probe. FoldFailure.folded excludes the failing callback from its count; FoldFailure.error may carry the already-consumed failing item and actual updated accumulator. Counters remain safe at u64::MAX. The consumer layer adds no allocation, Clone/Destroy, source retirement or cleanup authority; callback/source work and recovery retain manual policy. Frozen source 1c9ab092 passes all seven new library tests: contracts3/9.13s, owners3/7.62s and model1/9.10s. Contracts execute all eight APIs with compound/nested values and Infallible errors without allocation services, and reject eight invalid bound compositions. Owner gates recover actual nested String owners, correct remainders and 24 selected setup/callback growth denials with full address/size cleanup. The independent model checks 10696 cases/37104 state commands across four source forms in one batched native process, including progress/error identities, polls, callback traces and absent metadata queries. Two selected old consumer/reverse contract regressions pass separately in 7.26s/10.96s without a broader suite rerun. Two compiler dependency checks pass in 4.39s: one valid inline projection form rejects LNC0006 and one typed-local error control compiles/executes; no compiler repair or generic-payload restriction follows. Byte-summary passes four groups/87 native process cases across selected model40/9.92s and CLI32+bounds1+IO14/9.33s. Historical iterator receipts retain their older API/source scope. Executed target is native Linux x86_64 CPU output from the GPU compiler; no arbitrary generic-composition, device execution, automatic ownership or formal-proof claim follows.
 
 ## Contract and evidence guides
 
@@ -32,8 +32,10 @@ Shared fused iteration, scan/nested adapters and bounded transfers retain explic
 - [stdlib-timeline-tail](../../stdlib-timeline-tail.md)
 - [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 - [stdlib-sample-bytes](../../stdlib-sample-bytes.md)
+- [stdlib-iterator-folds](../../stdlib-iterator-folds.md)
+- [stdlib-byte-summary](../../stdlib-byte-summary.md)
 
-Declaration counts: enum: 4; field: 81; function: 42; impl: 70; method: 89; struct: 29; trait: 10; trait member: 10; variant: 5.
+Declaration counts: enum: 4; field: 86; function: 50; impl: 70; method: 89; struct: 31; trait: 10; trait member: 10; variant: 5.
 
 ## Declared imports
 
@@ -1005,6 +1007,62 @@ advanced: u64
 exhausted: bool
 ```
 
+### struct: FoldProgress
+
+[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+
+```lanius
+pub struct FoldProgress<A>
+```
+
+#### field: accumulator
+
+[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+
+```lanius
+accumulator:A
+```
+
+#### field: folded
+
+[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+
+```lanius
+folded:u64
+```
+
+#### field: exhausted
+
+[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+
+```lanius
+exhausted:bool
+```
+
+### struct: FoldFailure
+
+[Source line 1399](../../../stdlib/core/iter.lani#L1399)
+
+```lanius
+pub struct FoldFailure<E>
+```
+
+#### field: folded
+
+[Source line 1399](../../../stdlib/core/iter.lani#L1399)
+
+```lanius
+folded:u64
+```
+
+#### field: error
+
+[Source line 1399](../../../stdlib/core/iter.lani#L1399)
+
+```lanius
+error:E
+```
+
 ## Free functions and extern declarations
 
 ### function: empty
@@ -1378,6 +1436,96 @@ pub fn try_replace_up_to<I,R,D,T,RE,DE>(source: &I, replacement: &R, displaced: 
 ```lanius
 pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<T>
 ```
+
+### function: reduce
+
+[Source line 1403](../../../stdlib/core/iter.lani#L1403)
+
+```lanius
+pub fn reduce<I,F,T>(source:&I,folder:&F) -> core::option::Option<T>
+    where I:Iterator<T>, F:Folder<T,T>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Uses the first front item as accumulator; empty None and singleton Some make no callback. Later items fold accumulator-first until None.
+
+### function: try_reduce
+
+[Source line 1409](../../../stdlib/core/iter.lani#L1409)
+
+```lanius
+pub fn try_reduce<I,F,T,E>(source:&I,folder:&F) -> core::result::Result<core::option::Option<T>,E>
+    where I:Iterator<T>, F:TryFolder<T,T,E>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Returns Result<Option<T>,E>; empty/singleton make no callback. First callback Err consumes its current item and propagates E immediately, leaving the unconsumed source resumable.
+
+### function: rfold
+
+[Source line 1420](../../../stdlib/core/iter.lani#L1420)
+
+```lanius
+pub fn rfold<I,F,T,A>(source:&I,initial:A,folder:&F) -> A
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:Folder<A,T>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Requires explicit Iterator<T> and DoubleEndedIterator<T>; consumes next_back only, using accumulator-first Folder<A,T> calls until None.
+
+### function: try_rfold
+
+[Source line 1430](../../../stdlib/core/iter.lani#L1430)
+
+```lanius
+pub fn try_rfold<I,F,T,A,E>(source:&I,initial:A,folder:&F) -> core::result::Result<A,E>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:TryFolder<A,T,E>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Reverse accumulation with explicit dual source bounds and TryFolder<A,T,E>; Err transfers callback error after consuming that item, with no extra pull or rollback.
+
+### function: fold_up_to
+
+[Source line 1445](../../../stdlib/core/iter.lani#L1445)
+
+```lanius
+pub fn fold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
+    where I:Iterator<T>, F:Folder<A,T>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. At most limit direct front pulls; FoldProgress counts successful applications and only observed None. Zero is no-touch; exact quota stops exhausted=false without an EOF/count query.
+
+### function: try_fold_up_to
+
+[Source line 1455](../../../stdlib/core/iter.lani#L1455)
+
+```lanius
+pub fn try_fold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
+    -> core::result::Result<FoldProgress<A>,FoldFailure<E>>
+    where I:Iterator<T>, F:TryFolder<A,T,E>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Front bounded fallible fold; FoldFailure.folded counts prior Ok callbacks and excludes the failing callback; error E may carry its consumed item. E must carry actual accumulator/item owners when recovery needs them.
+
+### function: rfold_up_to
+
+[Source line 1474](../../../stdlib/core/iter.lani#L1474)
+
+```lanius
+pub fn rfold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:Folder<A,T>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Back bounded fold under explicit matching Iterator/DoubleEndedIterator bounds, with the same zero/no-extra-EOF/progress/u64::MAX rules.
+
+### function: try_rfold_up_to
+
+[Source line 1484](../../../stdlib/core/iter.lani#L1484)
+
+```lanius
+pub fn try_rfold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
+    -> core::result::Result<FoldProgress<A>,FoldFailure<E>>
+    where I:Iterator<T>, I:DoubleEndedIterator<T>, F:TryFolder<A,T,E>
+```
+
+Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Back bounded fallible fold; stops immediately on E with the current item consumed and earlier successful count retained. Resume the correct remaining prefix after handling actual recovery owners.
 
 ## Traits and members
 
