@@ -117,6 +117,11 @@ NaN payload or universal binary64 bit-round-trip contract.
 | `Done` / `Failed` | Further step returns `InvalidState` until reset. |
 | `Finalized` | Further use returns `Closed`. |
 
+These rules are one transition function, `ext::sqlite_statement::transition`,
+and `Statement` changes its state nowhere else. Its Lean translation proves
+that `Column` needs `Row` and that nothing leaves `Finalized`
+([state machines, M0](state-machines-design.md#m0-result)).
+
 There is no implicit reset, execution retry or row loop. BUSY is a native error,
 not a successful empty result. `is_busy(error)` recognizes primary code 5;
 `primary_code(error)` exposes the low-byte native code. LOCKED is code 6 and

@@ -7,6 +7,7 @@ import core::result;
 import core::slice;
 import core::text;
 import core::utf8;
+import ext::sqlite_statement;
 
 pub enum Mode { ReadOnly, ReadWrite, Create }
 pub enum Transaction { Deferred, Immediate, Exclusive }
@@ -24,7 +25,9 @@ pub struct Database { handle: ptr, limits: Limits }
 // SQLite keeps the database live while this native statement exists. Do not
 // copy ownership or modify these fields. Columns borrow the current row only
 // inside each copying/accessor call; no native row pointer escapes this API.
-pub struct Statement { handle: ptr, database: ptr, limits: Limits, current: State, parameters: i32, columns: i32 }
+// `current` changes only through `advance`: ext::sqlite_statement decides every
+// (state, operation) pair, and formal/Lanius/Machines proves its invariants.
+pub struct Statement { handle: ptr, database: ptr, limits: Limits, current: ext::sqlite_statement::State, parameters: i32, columns: i32 }
 struct Packed { storage: ptr, length: i32 }
 struct NativeBytes { storage: ptr, length: i32 }
 
@@ -202,7 +205,7 @@ pub impl Database {
         let columns: i32 = sqlite3_column_count(handle);
         if (parameters < 0 || columns < 0) { sqlite3_finalize(handle); return core::result::Err(error(Cause::UnexpectedNative, Phase::Prepare)); }
         if (parameters > self.limits.variables || columns > self.limits.columns) { sqlite3_finalize(handle); return core::result::Err(error(Cause::Limit, Phase::Prepare)); }
-        return core::result::Ok(Statement { handle: handle, database: self.handle, limits: self.limits, current: State::Ready, parameters: parameters, columns: columns });
+        return core::result::Ok(Statement { handle: handle, database: self.handle, limits: self.limits, current: ext::sqlite_statement::start(), parameters: parameters, columns: columns });
     }
     pub fn begin(&self, mode: Transaction) -> core::result::Result<i32, Error> {
         let sql: core::slice::View<u8> = match (mode) { Transaction::Deferred -> literal("BEGIN DEFERRED", 14), Transaction::Immediate -> literal("BEGIN IMMEDIATE", 15), Transaction::Exclusive -> literal("BEGIN EXCLUSIVE", 15) };
@@ -223,10 +226,26 @@ fn transaction_sql(database: &Database, sql: core::slice::View<u8>) -> core::res
     return statement.finalize();
 }
 
+// Feeds one event to the statement machine and stores the state it returns:
+// whether the operation may go ahead.
+fn advance(statement: &mut Statement, event: ext::sqlite_statement::Event) -> bool {
+    let decided: ext::sqlite_statement::Move = ext::sqlite_statement::transition(statement.current, event);
+    statement.current = decided.next;
+    return decided.allowed;
+}
+fn public_state(state: ext::sqlite_statement::State) -> State {
+    return match (state) {
+        ext::sqlite_statement::State::Ready -> State::Ready,
+        ext::sqlite_statement::State::Row -> State::Row,
+        ext::sqlite_statement::State::Done -> State::Done,
+        ext::sqlite_statement::State::Failed -> State::Failed,
+        ext::sqlite_statement::State::Finalized -> State::Finalized,
+    };
+}
+
 fn bind_ready(statement: &Statement, index: i32) -> core::result::Result<i32, Error> {
     if (!statement.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Bind)); }
-    let ready: bool = match (statement.current) { State::Ready -> true, _ -> false };
-    if (!ready) { return core::result::Err(error(Cause::InvalidState, Phase::Bind)); }
+    if (!advance(statement, ext::sqlite_statement::Event::Bind)) { return core::result::Err(error(Cause::InvalidState, Phase::Bind)); }
     if (index < 1 || index > statement.parameters) { return core::result::Err(error(Cause::Parameter, Phase::Bind)); }
     return core::result::Ok(0);
 }
@@ -251,7 +270,7 @@ fn bind_bytes(statement: &Statement, index: i32, bytes: core::slice::View<u8>, t
 pub impl Statement {
     pub fn borrow(&self) -> &Statement { return self; }
     pub fn is_open(&self) -> bool { return self.handle != 0; }
-    pub fn state(&self) -> State { return self.current; }
+    pub fn state(&self) -> State { return public_state(self.current); }
     pub fn parameter_count(&self) -> i32 { return self.parameters; }
     pub fn column_count(&self) -> i32 { return self.columns; }
     pub fn bind_null(&self, index: i32) -> core::result::Result<i32, Error> {
@@ -275,17 +294,16 @@ pub impl Statement {
     pub fn bind_blob(&self, index: i32, bytes: core::slice::View<u8>) -> core::result::Result<i32, Error> { return bind_bytes(self, index, bytes, false); }
     pub fn step(&self) -> core::result::Result<Step, Error> {
         if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Step)); }
-        let allowed: bool = match (self.current) { State::Ready -> true, State::Row -> true, _ -> false };
-        if (!allowed) { return core::result::Err(error(Cause::InvalidState, Phase::Step)); }
+        if (!advance(self, ext::sqlite_statement::Event::Step)) { return core::result::Err(error(Cause::InvalidState, Phase::Step)); }
         let code: i32 = sqlite3_step(self.handle);
         if (code == 100 || code == 101) {
             self.columns = sqlite3_column_count(self.handle);
-            if (self.columns < 0 || self.columns > self.limits.columns) { self.current = State::Failed; return core::result::Err(error(Cause::Limit, Phase::Step)); }
-            if (code == 100) { self.current = State::Row; return core::result::Ok(Step::Row); }
-            self.current = State::Done; return core::result::Ok(Step::Done);
+            if (self.columns < 0 || self.columns > self.limits.columns) { advance(self, ext::sqlite_statement::Event::StepFailed); return core::result::Err(error(Cause::Limit, Phase::Step)); }
+            if (code == 100) { advance(self, ext::sqlite_statement::Event::StepRow); return core::result::Ok(Step::Row); }
+            advance(self, ext::sqlite_statement::Event::StepDone); return core::result::Ok(Step::Done);
         }
         let failure: Error = native_error(Phase::Step, code);
-        self.current = State::Failed;
+        advance(self, ext::sqlite_statement::Event::StepFailed);
         return core::result::Err(failure);
     }
     // Reset returns to Ready even if SQLite reports the previous step error.
@@ -293,13 +311,12 @@ pub impl Statement {
     pub fn reset(&self) -> core::result::Result<i32, Error> {
         if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Reset)); }
         let code: i32 = sqlite3_reset(self.handle);
-        self.current = State::Ready;
+        advance(self, ext::sqlite_statement::Event::Reset);
         return outcome(Phase::Reset, code);
     }
     pub fn clear_bindings(&self) -> core::result::Result<i32, Error> {
         if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::ClearBindings)); }
-        let ready: bool = match (self.current) { State::Ready -> true, _ -> false };
-        if (!ready) { return core::result::Err(error(Cause::InvalidState, Phase::ClearBindings)); }
+        if (!advance(self, ext::sqlite_statement::Event::ClearBindings)) { return core::result::Err(error(Cause::InvalidState, Phase::ClearBindings)); }
         return outcome(Phase::ClearBindings, sqlite3_clear_bindings(self.handle));
     }
     // SQLite deletes the statement even when it returns an evaluation error.
@@ -307,13 +324,12 @@ pub impl Statement {
     pub fn finalize(&self) -> core::result::Result<i32, Error> {
         if (self.handle == 0) { return core::result::Ok(0); }
         let handle: ptr = self.handle;
-        let nowhere: ptr = 0; self.handle = nowhere; self.database = nowhere; self.current = State::Finalized;
+        let nowhere: ptr = 0; self.handle = nowhere; self.database = nowhere; advance(self, ext::sqlite_statement::Event::Finalize);
         return outcome(Phase::Finalize, sqlite3_finalize(handle));
     }
     pub fn column_type(&self, index: i32) -> core::result::Result<ColumnType, Error> {
         if (!self.is_open()) { return core::result::Err(error(Cause::Closed, Phase::Column)); }
-        let row: bool = match (self.current) { State::Row -> true, _ -> false };
-        if (!row) { return core::result::Err(error(Cause::InvalidState, Phase::Column)); }
+        if (!advance(self, ext::sqlite_statement::Event::Column)) { return core::result::Err(error(Cause::InvalidState, Phase::Column)); }
         if (index < 0 || index >= self.columns) { return core::result::Err(error(Cause::Column, Phase::Column)); }
         let kind: i32 = sqlite3_column_type(self.handle, index);
         if (kind == 1) { return core::result::Ok(ColumnType::Integer); }
@@ -359,13 +375,13 @@ fn column_bytes(statement: &Statement, index: i32, text: bool) -> core::result::
     // other SQLite interface on this connection. Empty BLOB may be null.
     if (pointer == 0) {
         let code: i32 = sqlite3_errcode(statement.database);
-        if ((code & 255) == 7) { statement.current = State::Failed; return core::result::Err(native_error(Phase::Column, code)); }
+        if ((code & 255) == 7) { advance(statement, ext::sqlite_statement::Event::ColumnFailed); return core::result::Err(native_error(Phase::Column, code)); }
         if (text) { return core::result::Err(error(Cause::UnexpectedNative, Phase::Column)); }
     }
     let length: i32 = sqlite3_column_bytes(statement.handle, index);
     if (length == 0) {
         let code: i32 = sqlite3_errcode(statement.database);
-        if ((code & 255) == 7) { statement.current = State::Failed; return core::result::Err(native_error(Phase::Column, code)); }
+        if ((code & 255) == 7) { advance(statement, ext::sqlite_statement::Event::ColumnFailed); return core::result::Err(native_error(Phase::Column, code)); }
     }
     if (length < 0 || (length > 0 && pointer == 0)) { return core::result::Err(error(Cause::UnexpectedNative, Phase::Column)); }
     if (length > statement.limits.column_bytes) { return core::result::Err(error(Cause::Limit, Phase::Column)); }

@@ -56,6 +56,10 @@ STEPS = [
     ('mut-pilot', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
                    'formal/lani/mini/mut_pilot.lani', '--lean-module', 'Lanius.Mini.MutPilot'],
      ['lean', 'lani', 'laniusc', 'stdlib'], True),
+    # The sqlite statement machine (docs/state-machines-design.md, M0).
+    ('machine-sqlite', ['fn_difftest.py', '{w}', '--per-fn', '30', '--seed', '{s}', '--source',
+                        'extended/ext/sqlite_statement.lani', '--lean-module', 'Lanius.Machines.SqliteStatement'],
+     ['lean', 'extended', 'laniusc', 'stdlib'], True),
     # The full tier: larger counts and the rest.
     ('mini-200', ['mini_difftest.py', '{w}', '--count', '200', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'], False),
     ('oracle-300', ['oracle_difftest.py', '{w}', '--count', '300', '--seed', '{s}'], ['lean', 'laniusc', 'stdlib'],
@@ -80,7 +84,7 @@ STEPS = [
 
 def inputs():
     """The digest of each kind of input."""
-    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\n')
+    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\n')
     if lean is None:
         raise SystemExit('the Lean definitions are not built')
     run_all = os.path.join(run_cache.FORMAL, '.lake/build/bin/runAll')
@@ -91,6 +95,7 @@ def inputs():
         'tools': run_cache.tree_digest(os.path.join(ROOT, T)),
         'laniusc': run_cache.file_digest(LANIUSC),
         'stdlib': run_cache.tree_digest(os.path.join(ROOT, 'stdlib')),
+        'extended': run_cache.file_digest(os.path.join(ROOT, 'extended/ext/sqlite_statement.lani')),
     }
 
 
@@ -99,7 +104,7 @@ def build():
     env = dict(os.environ, PATH=os.path.expanduser('~/.elan/bin') + ':' + os.environ['PATH'])
     run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                           'lake', 'build', 'runAll', 'Lanius.Mini.FrontLex',
-                          'Lanius.Mini.MutPilotCorrect'], cwd=run_cache.FORMAL, env=env,
+                          'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect'], cwd=run_cache.FORMAL, env=env,
                          capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])

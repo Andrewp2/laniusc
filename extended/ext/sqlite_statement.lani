@@ -1,0 +1,138 @@
+// The state machine of an ext::sqlite prepared statement, as one transition
+// function (docs/state-machines-design.md, phase M0). ext::sqlite asks it
+// whether an operation is allowed and stores the state it returns; it assigns
+// the state nowhere else. The module is pure, so formal/tools/extract.py
+// translates it to Lean (formal/Lanius/Machines/SqliteStatement.lean), where
+// its invariants are proved.
+//
+// Every (state, event) pair has an arm, with no wildcard: a new state or event
+// fails to compile until each state decides what it does with it. Native
+// results (StepRow, StepDone, StepFailed, ColumnFailed) follow an allowed Step
+// or Column. Elsewhere they are rejected and change nothing.
+module ext::sqlite_statement;
+
+pub enum State { Ready, Row, Done, Failed, Finalized }
+
+pub enum Event {
+    Bind,
+    ClearBindings,
+    // sqlite3_step is about to run; the next event is its result.
+    Step,
+    StepRow,
+    StepDone,
+    // a native error, or a column count over the limit
+    StepFailed,
+    Column,
+    // a column conversion ran out of memory
+    ColumnFailed,
+    Reset,
+    Finalize,
+}
+
+// The state after an event, and whether the operation may go ahead.
+pub struct Move {
+    next: State,
+    allowed: bool,
+}
+
+pub fn start() -> State {
+    return State::Ready;
+}
+
+fn go(next: State) -> Move {
+    return Move { next: next, allowed: true };
+}
+
+fn stay(state: State) -> Move {
+    return Move { next: state, allowed: true };
+}
+
+fn refuse(state: State) -> Move {
+    return Move { next: state, allowed: false };
+}
+
+fn in_ready(event: Event) -> Move {
+    return match (event) {
+        Bind -> stay(State::Ready),
+        ClearBindings -> stay(State::Ready),
+        Step -> stay(State::Ready),
+        StepRow -> go(State::Row),
+        StepDone -> go(State::Done),
+        StepFailed -> go(State::Failed),
+        Column -> refuse(State::Ready),
+        ColumnFailed -> refuse(State::Ready),
+        Reset -> stay(State::Ready),
+        Finalize -> go(State::Finalized),
+    };
+}
+
+fn in_row(event: Event) -> Move {
+    return match (event) {
+        Bind -> refuse(State::Row),
+        ClearBindings -> refuse(State::Row),
+        Step -> stay(State::Row),
+        StepRow -> go(State::Row),
+        StepDone -> go(State::Done),
+        StepFailed -> go(State::Failed),
+        Column -> stay(State::Row),
+        ColumnFailed -> go(State::Failed),
+        Reset -> go(State::Ready),
+        Finalize -> go(State::Finalized),
+    };
+}
+
+fn in_done(event: Event) -> Move {
+    return match (event) {
+        Bind -> refuse(State::Done),
+        ClearBindings -> refuse(State::Done),
+        Step -> refuse(State::Done),
+        StepRow -> refuse(State::Done),
+        StepDone -> refuse(State::Done),
+        StepFailed -> refuse(State::Done),
+        Column -> refuse(State::Done),
+        ColumnFailed -> refuse(State::Done),
+        Reset -> go(State::Ready),
+        Finalize -> go(State::Finalized),
+    };
+}
+
+fn in_failed(event: Event) -> Move {
+    return match (event) {
+        Bind -> refuse(State::Failed),
+        ClearBindings -> refuse(State::Failed),
+        Step -> refuse(State::Failed),
+        StepRow -> refuse(State::Failed),
+        StepDone -> refuse(State::Failed),
+        StepFailed -> refuse(State::Failed),
+        Column -> refuse(State::Failed),
+        ColumnFailed -> refuse(State::Failed),
+        Reset -> go(State::Ready),
+        Finalize -> go(State::Finalized),
+    };
+}
+
+// Finalize again is a no-op that succeeds; everything else is refused.
+fn in_finalized(event: Event) -> Move {
+    return match (event) {
+        Bind -> refuse(State::Finalized),
+        ClearBindings -> refuse(State::Finalized),
+        Step -> refuse(State::Finalized),
+        StepRow -> refuse(State::Finalized),
+        StepDone -> refuse(State::Finalized),
+        StepFailed -> refuse(State::Finalized),
+        Column -> refuse(State::Finalized),
+        ColumnFailed -> refuse(State::Finalized),
+        Reset -> refuse(State::Finalized),
+        Finalize -> stay(State::Finalized),
+    };
+}
+
+pub fn transition(state: State, event: Event) -> Move {
+    return match (state) {
+        Ready -> in_ready(event),
+        Row -> in_row(event),
+        Done -> in_done(event),
+        Failed -> in_failed(event),
+        Finalized -> in_finalized(event),
+    };
+}

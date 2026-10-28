@@ -973,6 +973,12 @@
       ],
       "note": "SQLite database and prepared-statement owners execute on Linux x86_64/glibc through checked C linking with an explicit sqlite3 dependency. Native gates cover 558 typed-value cases, 640 model commands, real persistence and locks, 21 native failure modes and four staging allocation failures. The linked guides define strict value access, ownership, limits, cleanup and the measured bulk workload."
     },
+    "ext::sqlite_statement": {
+      "guides": [
+        "docs/state-machines-design.md"
+      ],
+      "note": "The pure transition function of an ext::sqlite prepared statement: every (state, event) pair in one place, with no wildcard. ext::sqlite changes a statement's state only through it. formal/tools/extract.py translates it to Lean (formal/Lanius/Machines/SqliteStatement.lean), where SqliteStatementCorrect.lean proves that columns are read only on a row and that nothing but another finalize is allowed after finalize."
+    },
     "ext::statistics": {
       "guides": [
         "docs/extended-statistics.md"
@@ -1300,6 +1306,13 @@
         "docs/stdlib-resolve-host.md"
       ],
       "note": "Blocking libc hostname/service resolution uses explicit ASCII input, address-family, TCP/UDP and flag policies. Native order and duplicates are copied into an owned SocketAddr vector; result caps and unsupported native shapes fail without publishing a partial vector. EAI_SYSTEM retains errno captured before cleanup. Local staging/result limits do not bound NSS memory, elapsed lookup time or native cleanup work; the guides define the selected layout/profile and current execution evidence."
+    },
+    "std::scope": {
+      "guides": [
+        "docs/stdlib-scope.md",
+        "docs/memory-scoped-stacks-design.md"
+      ],
+      "note": "Scoped stacks, phase S0: one reservation with two bump ends (packed u8/i32 views low, other views high), marks with two-store release, in-place growth of the newest growable on each end, Scratch frames and Soa2/Soa3 column groups. Executable on x86_64 Linux through the GPU compiler; beat Vec by 8.8-37.6x and alloc::arena by 1.35-1.72x on the S0 benchmarks."
     },
     "std::signal": {
       "guides": [

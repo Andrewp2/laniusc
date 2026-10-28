@@ -1,6 +1,7 @@
 # State machines: a `machine` item in Lanius
 
-Status: design proposal, 2026-10-27. Nothing here is implemented.
+Status: design proposal, 2026-10-27. M0 (no compiler change) is done; see
+[M0 result](#m0-result). The `machine` item itself is not implemented yet.
 
 ## Summary
 
@@ -425,6 +426,60 @@ arm. R5 makes this complete: no state reachable at run time is missed.
 
 M0 is cheap and decides whether the checks and proofs pay off before any
 grammar changes.
+
+## M0 result
+
+Done 2026-10-28, with no compiler change.
+
+**The statement machine.** `extended/ext/sqlite_statement.lani` is
+`ext::sqlite`'s statement state as an `enum State`, an `enum Event` and
+`transition(state, event) -> Move`. `Move` holds the next state and whether
+the operation may go ahead. Each state has one handler with an exhaustive
+`match` over the events, so the module is the shape a `machine` elaborates to.
+`ext::sqlite::Statement` now changes `current` only in `advance`, which stores
+what `transition` returns. Bind, step, column, reset and finalize ask
+`advance` before they touch the native handle, and native results come back
+as `StepRow`, `StepDone`, `StepFailed` and `ColumnFailed`.
+`tests/extended_sqlite_statement_execution.rs` compiles a program that prints
+all 50 (state, event) cells and compares them with an independent model of the
+rules ext::sqlite enforced before the change. The runnable sqlite suites pass
+as before. The tests that compile C against `sqlite3.h` cannot run on this
+machine (no header), before or after.
+
+**Proofs.** `formal/tools/extract.py` translates the module unchanged
+(`formal/Lanius/Machines/SqliteStatement.lean`). A module with no
+prelude types now extracts without the mini compiler's prelude.
+`formal/Lanius/Machines/Machine.lean` defines `Machine.run` and
+`Machine.outputs` and proves `inv_run` and `inv_outputs` by induction.
+`SqliteStatementCorrect.lean` proves:
+
+| Theorem | Statement | Proof |
+|---|---|---|
+| `column_needs_row` | `Column` is allowed only in `Row` | `cases s <;> simp_all` |
+| `finalized_absorbs` | no event sequence leaves `Finalized` | `inv_run`, `cases e <;> simp` |
+| `finalize_is_final` | once `Finalize` is seen, the state is `Finalized` (a monitor flag, as in P's spec machines) | `inv_run`, `cases s <;> cases e <;> cases seen <;> simp_all` |
+| `refused_after_finalize` | after `Finalize`, every event but `Finalize` is refused | from `finalize_is_final`, `cases e <;> simp_all` |
+
+Each proof is one case split and `simp`, as M0's evidence column asked. The gate step
+`machine-sqlite` difftests the extracted `transition` against laniusc's
+build (300 cases, 0 mismatches), and `gate.py` builds the proofs.
+
+**Scanner baseline.** `benchmark_artifacts/machines_m0/` scans 64 MiB of
+generated text for integers and `#` comments, in two ways. `scan_step` is
+the loop-switch shape `step` produces: an `enum Scan { Between,
+InNumber(i64), InComment }` and a `step` function called per byte.
+`scan_direct` is the same scanner as nested loops, the code direct jumps
+should give. `scan_input` only generates the input. On the laptop (5 runs,
+minimum wall time; the checksums agree):
+
+| Program | Total (s) | Scan only (s) |
+|---|---|---|
+| `scan_input` | 1.218 | 0 |
+| `scan_step` | 2.566 | 1.348 |
+| `scan_direct` | 1.724 | 0.506 |
+
+The loop switch costs 2.66 times the nested loops. M3's `run` must beat
+1.348 s of scan time, and 0.506 s is the target.
 
 ## Open questions
 

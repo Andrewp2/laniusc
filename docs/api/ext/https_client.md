@@ -17,7 +17,7 @@ Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a 
 - [extended-https-batch-testing](../../extended-https-batch-testing.md)
 - [extended-openssl-tls](../../extended-openssl-tls.md)
 
-Declaration counts: enum: 2; field: 37; function: 3; impl: 2; method: 12; struct: 4; variant: 18.
+Declaration counts: enum: 2; field: 37; function: 4; impl: 2; method: 13; struct: 4; variant: 18.
 
 ## Declared imports
 
@@ -540,7 +540,7 @@ pub fn default_options() -> Options
 
 ### function: begin_with_context_until
 
-[Source line 84](../../../extended/ext/https_client.lani#L84)
+[Source line 90](../../../extended/ext/https_client.lani#L90)
 
 ```lanius
 pub fn begin_with_context_until(prepared: &ext::http_client::Prepared, endpoint: core::net::SocketAddr, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, options: Options) -> core::result::Result<Exchange,Failure>
@@ -548,9 +548,17 @@ pub fn begin_with_context_until(prepared: &ext::http_client::Prepared, endpoint:
 
 Consumes and disarms canonical Prepared, preserving its deadline and charged HTTP state. Retains an independent native Context reference and identity copy; successful begin owns the transport until terminal cleanup.
 
+### function: adopt_connected_with_context_until
+
+[Source line 118](../../../extended/ext/https_client.lani#L118)
+
+```lanius
+pub fn adopt_connected_with_context_until(prepared: &ext::http_client::Prepared, socket: &std::socket::Socket, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, options: Options) -> core::result::Result<Exchange,Failure>
+```
+
 ### function: exchange_until
 
-[Source line 373](../../../extended/ext/https_client.lani#L373)
+[Source line 440](../../../extended/ext/https_client.lani#L440)
 
 ```lanius
 pub fn exchange_until(endpoint: core::net::SocketAddr, context: &ext::openssl_tls::Context, identity: ext::openssl_tls::Identity, request: ext::http_client::Request, http_options: ext::http_client::Options, tls_options: Options, deadline: core::time::Deadline) -> core::result::Result<ext::http_client::Response,Failure>
@@ -576,9 +584,9 @@ pub impl core::clone::Destroy<Failure> for Failure
 pub fn destroy_value(owned: Failure)
 ```
 
-### impl at line 358
+### impl at line 408
 
-[Source line 358](../../../extended/ext/https_client.lani#L358)
+[Source line 408](../../../extended/ext/https_client.lani#L408)
 
 ```lanius
 pub impl Exchange
@@ -586,7 +594,7 @@ pub impl Exchange
 
 #### method: borrow
 
-[Source line 359](../../../extended/ext/https_client.lani#L359)
+[Source line 409](../../../extended/ext/https_client.lani#L409)
 
 ```lanius
 pub fn borrow(&self) -> &Exchange
@@ -594,7 +602,7 @@ pub fn borrow(&self) -> &Exchange
 
 #### method: stats
 
-[Source line 360](../../../extended/ext/https_client.lani#L360)
+[Source line 410](../../../extended/ext/https_client.lani#L410)
 
 ```lanius
 pub fn stats(&self) -> ext::http_client::Stats
@@ -602,7 +610,7 @@ pub fn stats(&self) -> ext::http_client::Stats
 
 #### method: tls_stats
 
-[Source line 361](../../../extended/ext/https_client.lani#L361)
+[Source line 411](../../../extended/ext/https_client.lani#L411)
 
 ```lanius
 pub fn tls_stats(&self) -> TlsStats
@@ -610,7 +618,7 @@ pub fn tls_stats(&self) -> TlsStats
 
 #### method: status
 
-[Source line 362](../../../extended/ext/https_client.lani#L362)
+[Source line 412](../../../extended/ext/https_client.lani#L412)
 
 ```lanius
 pub fn status(&self) -> ext::http_client::Status
@@ -618,7 +626,7 @@ pub fn status(&self) -> ext::http_client::Status
 
 #### method: last_failure
 
-[Source line 363](../../../extended/ext/https_client.lani#L363)
+[Source line 413](../../../extended/ext/https_client.lani#L413)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Failure>
@@ -626,7 +634,7 @@ pub fn last_failure(&self) -> core::option::Option<Failure>
 
 #### method: negotiated_version
 
-[Source line 364](../../../extended/ext/https_client.lani#L364)
+[Source line 414](../../../extended/ext/https_client.lani#L414)
 
 ```lanius
 pub fn negotiated_version(&self) -> i32
@@ -634,7 +642,7 @@ pub fn negotiated_version(&self) -> i32
 
 #### method: raw_handle
 
-[Source line 365](../../../extended/ext/https_client.lani#L365)
+[Source line 415](../../../extended/ext/https_client.lani#L415)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>
@@ -642,7 +650,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>
 
 #### method: interest
 
-[Source line 366](../../../extended/ext/https_client.lani#L366)
+[Source line 416](../../../extended/ext/https_client.lani#L416)
 
 ```lanius
 pub fn interest(&self) -> ext::http_client::Interest
@@ -650,7 +658,7 @@ pub fn interest(&self) -> ext::http_client::Interest
 
 #### method: before_wait
 
-[Source line 367](../../../extended/ext/https_client.lani#L367)
+[Source line 417](../../../extended/ext/https_client.lani#L417)
 
 ```lanius
 pub fn before_wait(&self) -> core::result::Result<bool,Failure>
@@ -658,15 +666,23 @@ pub fn before_wait(&self) -> core::result::Result<bool,Failure>
 
 #### method: step
 
-[Source line 368](../../../extended/ext/https_client.lani#L368)
+[Source line 418](../../../extended/ext/https_client.lani#L418)
 
 ```lanius
 pub fn step(&self, ready: ext::http_client::Readiness) -> core::result::Result<core::option::Option<ext::http_client::Response>,Failure>
 ```
 
+#### method: run
+
+[Source line 420](../../../extended/ext/https_client.lani#L420)
+
+```lanius
+pub fn run(&self) -> core::result::Result<ext::http_client::Response,Failure>
+```
+
 #### method: abort
 
-[Source line 369](../../../extended/ext/https_client.lani#L369)
+[Source line 436](../../../extended/ext/https_client.lani#L436)
 
 ```lanius
 pub fn abort(&self) -> core::result::Result<bool,Failure>

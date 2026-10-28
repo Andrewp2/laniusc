@@ -1,0 +1,53 @@
+// Prints ext::sqlite_statement's whole transition table: one line per
+// (state, event) pair, in declaration order, as next_state * 10 + allowed.
+module app::main;
+import ext::sqlite_statement;
+
+fn state_at(index: i32) -> ext::sqlite_statement::State {
+    if (index == 0) { return ext::sqlite_statement::State::Ready; }
+    if (index == 1) { return ext::sqlite_statement::State::Row; }
+    if (index == 2) { return ext::sqlite_statement::State::Done; }
+    if (index == 3) { return ext::sqlite_statement::State::Failed; }
+    return ext::sqlite_statement::State::Finalized;
+}
+
+fn event_at(index: i32) -> ext::sqlite_statement::Event {
+    if (index == 0) { return ext::sqlite_statement::Event::Bind; }
+    if (index == 1) { return ext::sqlite_statement::Event::ClearBindings; }
+    if (index == 2) { return ext::sqlite_statement::Event::Step; }
+    if (index == 3) { return ext::sqlite_statement::Event::StepRow; }
+    if (index == 4) { return ext::sqlite_statement::Event::StepDone; }
+    if (index == 5) { return ext::sqlite_statement::Event::StepFailed; }
+    if (index == 6) { return ext::sqlite_statement::Event::Column; }
+    if (index == 7) { return ext::sqlite_statement::Event::ColumnFailed; }
+    if (index == 8) { return ext::sqlite_statement::Event::Reset; }
+    return ext::sqlite_statement::Event::Finalize;
+}
+
+fn index_of(state: ext::sqlite_statement::State) -> i32 {
+    return match (state) {
+        ext::sqlite_statement::State::Ready -> 0,
+        ext::sqlite_statement::State::Row -> 1,
+        ext::sqlite_statement::State::Done -> 2,
+        ext::sqlite_statement::State::Failed -> 3,
+        ext::sqlite_statement::State::Finalized -> 4,
+    };
+}
+
+fn main() -> i32 {
+    let state: i32 = 0;
+    while (state < 5) {
+        let event: i32 = 0;
+        while (event < 10) {
+            let decided: ext::sqlite_statement::Move = ext::sqlite_statement::transition(state_at(state), event_at(event));
+            let allowed: i32 = 0;
+            if (decided.allowed) { allowed = 1; }
+            print(index_of(decided.next) * 10 + allowed);
+            event += 1;
+        }
+        state += 1;
+    }
+    let start: i32 = index_of(ext::sqlite_statement::start());
+    print(start);
+    return 0;
+}

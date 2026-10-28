@@ -37,7 +37,7 @@ meaning, and everything else is rejected:
              bits), u32 -> u64 (zero-extended), i32/u32/u64 -> u8 (low byte)
 
 The prelude section (between `// extract: prelude begin` and `end`) is not
-extracted. Every item in it must be in PRELUDE below with exactly the listed
+extracted; a file that uses no List or Box may omit it and the list operations. Every item in it must be in PRELUDE below with exactly the listed
 signature; calls to it become the listed Lean term. A list operation in
 SPEC_FNS is extracted as Lists.<name> followed by a theorem, checked by Lean,
 that it equals its Lean list function; calls to it from other code are written
@@ -726,7 +726,7 @@ class Extractor:
                 self.order.append(item)
         if in_mutual:
             fail('mutual block is not closed')
-        if not self.prelude_seen:
+        if not self.prelude_seen and self.mentions_prelude_types():
             fail('no prelude section')
         self.no_deq = self.nested_types()
         ctor_names = {lower_first(c) for c in self.ctors}
@@ -734,7 +734,7 @@ class Extractor:
         if clash:
             fail(f'functions named like a constructor resolve to it inside that enum\'s methods: {clash}')
         missing = sorted(set(SPEC_FNS) - set(self.fns))
-        if missing:
+        if missing and self.prelude_seen:
             fail(f'list operations missing: {missing}')
         self.current = None
 
@@ -767,6 +767,17 @@ class Extractor:
                     bad.add(name)
                     changed = True
         return bad
+
+    def mentions_prelude_types(self):
+        """Whether a type or signature uses List or Box. A file without them
+        (a pure state machine, say) needs no prelude or list operations."""
+        def uses(t):
+            return t is not None and (t.name in PRELUDE_TYPES or any(uses(a) for a in t.args))
+        tys = [ft for s in self.structs.values() for _, ft, _ in s['fields']]
+        tys += [p for e in self.enums.values() for _, ps, _ in e['ctors'] for p in ps]
+        fns = list(self.fns.values()) + list(self.methods.values())
+        tys += [pt for f in fns for _, pt in f['params']] + [f['ret'] for f in fns]
+        return any(uses(t) for t in tys)
 
     def check_prelude(self, prelude):
         self.prelude_seen = True
