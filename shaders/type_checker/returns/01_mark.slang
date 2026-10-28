@@ -5,6 +5,10 @@ import primitive_types;
 // if/else controls.  Each if row is a two-bit atomic latch: the thread which
 // completes both arms exclusively carries the fact toward the parent.  This
 // makes nesting depth a data property rather than a host-recorded pass count.
+// A match is a counting latch over its block arms (`pattern -> { ... }`):
+// each arm block's flag is set once, by the first fact that reaches it, and
+// the thread that brings the count to the arm count carries the fact on, so
+// a match whose every arm is a returning block returns.
 
 struct Params
 {
@@ -31,6 +35,8 @@ StructuredBuffer<uint> call_inference_result_payload;
 StructuredBuffer<uint> call_intrinsic_tag;
 StructuredBuffer<uint> compact_call_arg_count;
 StructuredBuffer<HirCallArg> compact_call_args;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
 RWStructuredBuffer<uint> return_fn_flags;
 RWStructuredBuffer<uint> return_block_flags;
 
@@ -44,6 +50,7 @@ static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_IF_STMT = 10u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
+static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_LITERAL_EXPR = 23u;
 static const uint HIR_EXPR_FALSE = 5u;
 static const uint INTRINSIC_ASSERT = 2u;
@@ -124,6 +131,23 @@ uint arm_bit(uint control, uint returning_node)
     return 0u;
 }
 
+// Whether `block` is the block of one of `match`'s arms.
+bool arm_block_of(uint match, uint block)
+{
+    if (!valid_node(block) || compact_hir_core[block].kind != HIR_BLOCK)
+        return false;
+    HirPayload value = compact_hir_payload[match];
+    uint total = compact_match_arm_count[0u];
+    if (value.b >= total || value.c > total - value.b)
+        return false;
+    for (uint ordinal = 0u; ordinal < value.c; ordinal++)
+    {
+        if (compact_match_arms[value.b + ordinal].result == block)
+            return true;
+    }
+    return false;
+}
+
 void publish_guaranteed_return(uint node)
 {
     uint current = node;
@@ -136,6 +160,22 @@ void publish_guaranteed_return(uint node)
             if (valid_node(fn_node) && compact_hir_core[fn_node].kind == HIR_FN)
                 InterlockedMax(return_fn_flags[fn_node], 1u);
             return;
+        }
+        if (compact_hir_core[control].kind == HIR_MATCH_EXPR)
+        {
+            uint block = compact_hir_nearest_block[current];
+            if (!arm_block_of(control, block))
+                return;
+            uint first;
+            InterlockedOr(return_block_flags[block], 1u, first);
+            if (first != 0u)
+                return;
+            uint returned;
+            InterlockedAdd(return_block_flags[control], 1u, returned);
+            if (returned + 1u != compact_hir_payload[control].c)
+                return;
+            current = control;
+            continue;
         }
         if (compact_hir_core[control].kind != HIR_IF_STMT)
             return;

@@ -22,6 +22,9 @@ StructuredBuffer<CompactMethodCore> compact_method_cores;
 StructuredBuffer<uint> fn_return_ref_tag;
 StructuredBuffer<uint> fn_return_ref_payload;
 StructuredBuffer<uint> return_fn_flags;
+StructuredBuffer<uint> return_block_flags;
+StructuredBuffer<uint> compact_match_arm_count;
+StructuredBuffer<HirMatchArm> compact_match_arms;
 // Body specialization packet; zero outside replay. Row 705.w of an
 // instance-copy replay is the first copy row, with bit 31 set when the
 // template's function bodies were left out (declarations-only template).
@@ -34,6 +37,8 @@ static const uint WG_SIZE = 256u;
 static const uint MAX_GROUPS_X = 65535u;
 
 static const uint HIR_FN = 3u;
+static const uint HIR_BLOCK = 6u;
+static const uint HIR_MATCH_EXPR = 34u;
 static const uint HIR_ITEM_KIND_FN = 4u;
 
 static const uint TY_UNKNOWN = 0u;
@@ -100,11 +105,34 @@ void record_error(uint token_i, uint code, uint detail)
     record_min_token_error(status, token_i, code, detail);
 }
 
+// A block arm must not complete: 01_mark flags its block when every path
+// through it returns.
+void validate_block_arms(uint match)
+{
+    HirPayload value = compact_hir_payload[match];
+    uint total = compact_match_arm_count[0u];
+    if (value.b >= total || value.c > total - value.b)
+        return;
+    for (uint ordinal = 0u; ordinal < value.c; ordinal++)
+    {
+        uint block = compact_match_arms[value.b + ordinal].result;
+        if (valid_node(block) && compact_hir_core[block].kind == HIR_BLOCK &&
+            return_block_flags[block] == 0u)
+            record_error(compact_hir_core[block].token_start, ERR_ASSIGN_MISMATCH,
+                BLOCK_ARM_FALLS_THROUGH);
+    }
+}
+
 [shader("compute")]
 [numthreads(256, 1, 1)]
 void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
+    if (valid_node(node) && compact_hir_core[node].kind == HIR_MATCH_EXPR)
+    {
+        validate_block_arms(node);
+        return;
+    }
     if (!function_with_body(node))
         return;
     // A declarations-only template's functions have empty bodies; the

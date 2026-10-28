@@ -327,3 +327,4 @@ static const uint PROD_CONTRACTS_MORE = 322u;
 static const uint PROD_REQUIRES = 323u;
 static const uint PROD_TYPE_REF_MUT = 324u;
 static const uint PROD_PARAM_SELF_REF_MUT = 325u;
+static const uint PROD_ARM_BLOCK = 326u;

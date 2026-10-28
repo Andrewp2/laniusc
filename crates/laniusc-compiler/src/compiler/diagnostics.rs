@@ -556,6 +556,12 @@ pub const DIAGNOSTIC_CODE_REGISTRY: &[DiagnosticCodeInfo] = &[
         "name resolution",
         DiagnosticPrimaryLabelPolicy::Required,
     ),
+    DiagnosticCodeInfo::error(
+        "LNC0076",
+        "invalid machine",
+        "parsing",
+        DiagnosticPrimaryLabelPolicy::Required,
+    ),
 ];
 
 /// Stable diagnostic categories used by registry and category metadata output.
@@ -2238,6 +2244,10 @@ pub(in crate::compiler) fn diagnostic_label_from_source_span(
     len: usize,
     message: impl Into<String>,
 ) -> DiagnosticLabel {
+    // A span of an elaborated machine file labels the machine's own text.
+    if let Some((elaborated, start, len)) = super::machine_elaboration::original_span(source, start, len) {
+        return diagnostic_label_from_source_span(path, elaborated.original(), start, len, message);
+    }
     let source_len = source.len();
     let requested_start = start.min(source_len);
     let requested_end = requested_start.saturating_add(len).min(source_len);
@@ -4795,6 +4805,7 @@ mod tests {
                 "private type in public interface",
                 "name resolution",
             ),
+            ("LNC0076", "invalid machine", "parsing"),
         ];
 
         assert_eq!(DIAGNOSTIC_CODE_REGISTRY.len(), expected.len());

@@ -224,6 +224,16 @@ fn a_mut_argument_must_not_alias_another_reference_argument() {
     assert_rejected("mut_alias_receiver.lani", &["LNC0006", shared]);
 }
 
+#[test]
+fn block_arms_run_statements_and_return() {
+    assert_exit("block_arms.lani", 0);
+}
+
+#[test]
+fn a_block_arm_must_not_fall_through() {
+    assert_rejected("block_arm_falls_through.lani", &["LNC0006", "the end of this block arm can be reached"]);
+}
+
 // The resident workspace is sized by the largest unit checked so far; this
 // preserved program's imports are larger than it. Name lookup must use the
 // scope tree's published layout, not one derived from this unit's tokens.

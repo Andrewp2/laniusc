@@ -437,3 +437,11 @@ contract [requires] -> 'Requires' 'GroupLParen' expr 'GroupRParen';
 # sit at the end of the file to keep earlier production IDs.
 type_expr [type_ref_mut] -> 'TypeAmpersandMut' 'Mut' type_expr;
 param [param_self_ref_mut] -> 'TypeAmpersandMut' 'Mut' 'ParamSelfRefValue';
+
+# ----- Block arms -----
+# `pattern -> { statements }` is a match arm whose block must not fall
+# through: every path returns, so the arm has the never type. The `{` after
+# a match arm's `->` takes the `if` block's brace kinds, so the block is an
+# `if_block` and its statements need no new tokens. The production sits at
+# the end of the file to keep earlier production IDs.
+primary [arm_block] -> if_block;

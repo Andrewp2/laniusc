@@ -1,7 +1,9 @@
 # State machines: a `machine` item in Lanius
 
-Status: design proposal, 2026-10-27. M0 (no compiler change) is done; see
-[M0 result](#m0-result). The `machine` item itself is not implemented yet.
+Status: design proposal, 2026-10-27. M0 and M1 are done: see
+[M0 result](#m0-result), [M1 decisions](#m1-decisions) and
+[M1 result](#m1-result). The syntax below is the implemented one except
+where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
 
@@ -480,6 +482,106 @@ minimum wall time; the checksums agree):
 
 The loop switch costs 2.66 times the nested loops. M3's `run` must beat
 1.348 s of scan time, and 0.506 s is the target.
+
+## M1 decisions
+
+Recorded 2026-10-28, before M1's code. Two facts in the compiler change
+[Fit with the GPU compiler](#fit-with-the-gpu-compiler):
+
+- **Match arms are expressions, and Lanius has no block expressions.** R1's
+  `step` needs arms such as `Input::Unlock(code) -> { if (...) { ... } ... }`.
+  Nothing that exists can hold them: an arm cannot run statements, and a
+  helper function per arm cannot be written either, because the pattern's
+  bindings have types only the checker knows.
+- **Name identity comes from source bytes, and types do not nest.** A
+  reinterpreted `step`, `event` or `self.state` would have no lexeme to point
+  at, and `Door::State::Locked` resolves only if `Door` is a module.
+
+So M1 has two parts.
+
+**M1a: diverging block arms.** `pattern -> { statements }` is a match arm
+whose block must not fall through: every path ends in `return` (or a
+`-> !` call). The arm has type `!`, which the arm join already skips, so the
+match's type comes from its other arms. A `,` follows the block as after any
+arm. This is useful without machines (an early return from one case of a
+`match`). Arms whose block falls through, with unit type, are left for later.
+
+**M1b: elaboration when the file is read.** A `machine` elaborates into
+ordinary Lanius before the frontend runs, on the host, beside import
+discovery (`compiler/machine_elaboration.rs`). The elaborator splits the
+machine's text at its delimiters, copies the pieces and adds fixed text
+around them; a segment table maps each elaborated byte back to the source,
+so diagnostics point at the machine. A file whose bytes do not contain
+`machine` is not touched. This replaces the plan above of a GPU pass that
+reports spans for the host to copy, as generic instance copies do: the
+elaboration must run where files are read, before any GPU work, and a GPU
+pass would have had to walk each machine sequentially anyway. The frontend
+checks the elaborated code like any other.
+
+The rules, as M1 checks them:
+
+- **R2.** An arm is `pattern -> goto ...`, `pattern -> stay ...` or a block
+  arm. A `return` in an arm is rejected. A block arm whose end can be
+  reached is the block-arm check's error.
+- **R3.** Lanius has no static exhaustiveness check (a match without a
+  matching arm traps at run time), so the elaborator checks it. For an enum
+  event, each state must handle every variant with an arm whose payload
+  patterns are `_` or lower-case bindings, and a top-level `_` is rejected.
+  M1 reads the variants from the machine's own file, so the event enum must
+  be declared there. A cross-module event enum needs a GPU exhaustiveness
+  check, which is open. An integer event's last arm must be `_` or a binding.
+- **R4.** Reachability and dead ends as specified, from the `goto` edges.
+- **R5.** Below.
+
+Patterns have no `|` alternatives in Lanius, so each event gets its own arm.
+A machine with no output omits `-> O` (or writes `-> ()`), and its
+transitions take no `with`.
+
+| Source | Elaborated |
+|---|---|
+| `M::State` | `MState`: an enum named by appending `State` (no nested types) |
+| the state | the field `__lanius_state` |
+| the constructor | `pub fn m_start(fields...) -> M`, the machine name in snake case, fields in declaration order |
+| state `S`'s arms | the method `__lanius_in_S(&mut self, data..., __lanius_event: E) -> O`, a `match` of block arms |
+| `step` | `match (self.__lanius_state)` with one block arm per state calling its method |
+| `goto S(a) with o` | `{ self.__lanius_state = MState::S(a); return o; }` |
+| `stay with o` | `return o;` |
+
+Identifiers starting with `__lanius_` are reserved. A source file that uses
+one is rejected, which is what keeps the state private (R5): no code outside
+the machine can name the field or build an `M` with a chosen state. The
+constructor replaces the struct literal of
+[Machine-wide data](#machine-wide-data), because a struct literal would have
+to supply the state.
+
+## M1 result
+
+Done 2026-10-28.
+
+- **Block arms** (`docs/language-ergonomics.md#block-arms`). The parser
+  gives a `{` after a match arm's `->` the `if` block's kinds, the arm's
+  result is the HIR block, and the type checker types it as never. The
+  returns pass counts each match's block arms as a latch and rejects an arm
+  whose end can be reached. Codegen needed no change. Fixtures:
+  `tests/fixtures/language/block_arms.lani`, `block_arm_falls_through.lani`.
+- **`machine`** (`compiler/machine_elaboration.rs`). It elaborates when its
+  file is read, as in [M1 decisions](#m1-decisions), and checks R2-R5;
+  diagnostics map back to the machine's text. LNC0076 is "invalid machine".
+- **Evidence.** `tests/machines_execution.rs`:
+  - `door.lani` (the design's door, with per-state data and an output) and
+    `sum_numbers.lani` (integer events, no output) run;
+  - the door compiles to a program byte-identical to
+    `door_by_hand.lani`, the same machine written as an enum, a struct and
+    a `match` per state, so `step` costs what hand-written code costs;
+  - one rejection per rule, each labeled at the machine's source line.
+- **`ext::openssl_tls`.** `Session`'s state is the machine `Lifecycle on
+  Signal`. Six transitions that were assignments to `current` are
+  `self.lifecycle.step(Signal::...)`: handshake verified, peer close_notify
+  (read and write), shutdown started, failure and destroy. Every state lists
+  every signal. Reads go through `Session::state()`, which maps the
+  machine's state to the public `State`. The TLS suites
+  (`extended_openssl_tls_*`, `extended_https_mutual_tls`,
+  `extended_https_fetch`) give the same results as before the port.
 
 ## Open questions
 

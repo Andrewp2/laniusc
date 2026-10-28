@@ -28,9 +28,75 @@ pub struct Context { handle: ptr, limits: Limits }
 pub struct ServerContext { handle: ptr, limits: Limits, peer_required: bool }
 // One active manual owner. No owner-field edits, copies or concurrent calls.
 // reader/writer/counts remain allocated at fixed addresses through retries.
-pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, current: State, reading: i32, writing: i32, read_requirement: Need, write_requirement: Need, shutdown_requirement: Need, shutdown_started: bool, local_notify_sent: bool, endpoint_role: Role, peer_required: bool }
+pub struct Session { handle: ptr, reader: ptr, writer: ptr, counts: ptr, limits: Limits, lifecycle: Lifecycle, reading: i32, writing: i32, read_requirement: Need, write_requirement: Need, shutdown_requirement: Need, shutdown_started: bool, local_notify_sent: bool, endpoint_role: Role, peer_required: bool }
 struct Packed { storage: ptr, length: i32 }
 struct Credentials { certificate: Packed, key: Packed, passphrase: Packed }
+
+// What happens to a session, for its lifecycle machine.
+enum Signal { Verified, PeerClosed, Shutdown, Failed, Destroyed }
+
+// A session's state, changed only by these transitions
+// (docs/state-machines-design.md). Each operation checks the state it needs
+// before it acts; the machine records what then happened.
+machine Lifecycle on Signal {
+    start Handshake;
+
+    state Handshake {
+        Signal::Verified -> goto Open,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    state Open {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> goto PeerClosed,
+        Signal::Shutdown -> goto Closing,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    state PeerClosed {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> goto Closing,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    // Reading after a local close_notify can still receive the peer's.
+    state Closing {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> goto PeerClosed,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> goto Closed,
+    }
+    // A failure destroys the session first, so Failed follows Closed.
+    state Closed {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> goto Failed,
+        Signal::Destroyed -> stay,
+    }
+    state Failed {
+        Signal::Verified -> stay,
+        Signal::PeerClosed -> stay,
+        Signal::Shutdown -> stay,
+        Signal::Failed -> stay,
+        Signal::Destroyed -> goto Closed,
+    }
+}
+
+fn public_state(state: LifecycleState) -> State {
+    return match (state) {
+        LifecycleState::Handshake -> State::Handshake,
+        LifecycleState::Open -> State::Open,
+        LifecycleState::PeerClosed -> State::PeerClosed,
+        LifecycleState::Closing -> State::Closing,
+        LifecycleState::Closed -> State::Closed,
+        LifecycleState::Failed -> State::Failed,
+    };
+}
 
 pub const MAX_PASSPHRASE_BYTES: i32 = 1023;
 pub fn default_limits() -> Limits { return Limits { path_bytes: 4096, identity_bytes: 253, io_bytes: 16384, verify_depth: 16 }; }
@@ -273,7 +339,7 @@ fn allocate_session(context: ptr, limits: Limits, role: Role, peer_required: boo
     let handle: ptr = SSL_new(context);
     if (handle == 0) { return core::result::Err(queued(Phase::Session, 0, 0, 0)); }
     let nowhere: ptr = 0;
-    let owner: Session = Session { handle: handle, reader: nowhere, writer: nowhere, counts: nowhere, limits: limits, current: State::Handshake, reading: 0, writing: 0, read_requirement: Need::None, write_requirement: Need::None, shutdown_requirement: Need::None, shutdown_started: false, local_notify_sent: false, endpoint_role: role, peer_required: peer_required };
+    let owner: Session = Session { handle: handle, reader: nowhere, writer: nowhere, counts: nowhere, limits: limits, lifecycle: lifecycle_start(), reading: 0, writing: 0, read_requirement: Need::None, write_requirement: Need::None, shutdown_requirement: Need::None, shutdown_started: false, local_notify_sent: false, endpoint_role: role, peer_required: peer_required };
     owner.reader = alloc::allocator::alloc(limits.io_bytes as usize, 8);
     if (owner.reader != 0) { owner.writer = alloc::allocator::alloc(limits.io_bytes as usize, 8); }
     if (owner.writer != 0) { owner.counts = alloc::allocator::alloc(16, 8); }
@@ -374,7 +440,7 @@ pub impl ServerContext {
     }
 }
 
-fn failed(session: &Session, error: Error) -> Error { session.destroy(); session.current = State::Failed; return error; }
+fn failed(session: &Session, error: Error) -> Error { session.destroy(); session.lifecycle.step(Signal::Failed); return error; }
 fn needs_none(need: Need) -> bool { return match (need) { Need::None -> true, _ -> false }; }
 fn needs_read(need: Need) -> bool { return match (need) { Need::Read -> true, _ -> false }; }
 fn needs_write(need: Need) -> bool { return match (need) { Need::Write -> true, _ -> false }; }
@@ -382,7 +448,7 @@ fn open_for_io(session: &Session, phase: Phase) -> core::result::Result<i32, Err
     if (!session.is_open()) { return core::result::Err(local(Cause::Closed, phase)); }
     let reading: bool = match (phase) { Phase::Read -> true, _ -> false };
     let receiving: bool = reading && session.local_notify_sent && needs_none(session.shutdown_requirement);
-    let open: bool = match (session.current) { State::Open -> !session.shutdown_started, State::Closing -> receiving, _ -> false };
+    let open: bool = match (session.state()) { State::Open -> !session.shutdown_started, State::Closing -> receiving, _ -> false };
     if (!open) { return core::result::Err(local(Cause::InvalidState, phase)); }
     return core::result::Ok(0);
 }
@@ -394,9 +460,9 @@ fn zero_count(storage: ptr) { let count: [usize] = core::mem::typed_slice_from_r
 // operation that preserves any remaining peer application data.
 fn shutdown_step(session: &Session) -> core::result::Result<Shutdown, Error> {
     if (!session.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Shutdown)); }
-    let allowed: bool = match (session.current) { State::Open -> true, State::PeerClosed -> true, State::Closing -> true, _ -> false };
+    let allowed: bool = match (session.state()) { State::Open -> true, State::PeerClosed -> true, State::Closing -> true, _ -> false };
     if (!allowed || session.reading != 0 || session.writing != 0) { return core::result::Err(local(Cause::InvalidState, Phase::Shutdown)); }
-    session.shutdown_started = true; session.current = State::Closing;
+    session.shutdown_started = true; session.lifecycle.step(Signal::Shutdown);
     let system_pointer: ptr = __errno_location();
     let system_cell: [i32] = core::mem::typed_slice_from_raw_parts(system_pointer, 1);
     ERR_clear_error(); system_cell[0] = 0;
@@ -415,7 +481,7 @@ fn shutdown_step(session: &Session) -> core::result::Result<Shutdown, Error> {
 pub impl Session {
     pub fn borrow(&self) -> &Session { return self; }
     pub fn is_open(&self) -> bool { return self.handle != 0; }
-    pub fn state(&self) -> State { return self.current; }
+    pub fn state(&self) -> State { return public_state(self.lifecycle.state()); }
     pub fn role(&self) -> Role { return self.endpoint_role; }
     pub fn pending_read_bytes(&self) -> i32 { return self.reading; }
     pub fn pending_write_bytes(&self) -> i32 { return self.writing; }
@@ -425,7 +491,7 @@ pub impl Session {
     // no verified handshake is currently retained by this owner.
     pub fn negotiated_version(&self) -> i32 {
         if (!self.is_open()) { return 0; }
-        let verified: bool = match (self.current) { State::Open -> true, State::PeerClosed -> true, State::Closing -> true, _ -> false };
+        let verified: bool = match (self.state()) { State::Open -> true, State::PeerClosed -> true, State::Closing -> true, _ -> false };
         if (!verified) { return 0; }
         return SSL_version(self.handle);
     }
@@ -449,7 +515,7 @@ pub impl Session {
         let nowhere: ptr = 0;
         self.handle = nowhere; self.reader = nowhere; self.writer = nowhere; self.counts = nowhere;
         self.reading = 0; self.writing = 0; self.read_requirement = Need::None; self.write_requirement = Need::None; self.shutdown_requirement = Need::None;
-        self.shutdown_started = false; self.local_notify_sent = false; self.current = State::Closed;
+        self.shutdown_started = false; self.local_notify_sent = false; self.lifecycle.step(Signal::Destroyed);
         if (handle != 0) { SSL_free(handle); }
         if (reader != 0) { OPENSSL_cleanse(reader, self.limits.io_bytes as usize); alloc::allocator::dealloc(reader, self.limits.io_bytes as usize, 8); }
         if (writer != 0) { OPENSSL_cleanse(writer, self.limits.io_bytes as usize); alloc::allocator::dealloc(writer, self.limits.io_bytes as usize, 8); }
@@ -458,9 +524,9 @@ pub impl Session {
     pub fn handshake(&self) -> core::result::Result<Handshake, Error> {
         if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Handshake)); }
         if (self.reading != 0 || self.writing != 0 || self.shutdown_started) { return core::result::Err(local(Cause::InvalidState, Phase::Handshake)); }
-        let complete: bool = match (self.current) { State::Open -> true, _ -> false };
+        let complete: bool = match (self.state()) { State::Open -> true, _ -> false };
         if (complete) { return core::result::Ok(Handshake::Complete); }
-        let allowed: bool = match (self.current) { State::Handshake -> true, _ -> false };
+        let allowed: bool = match (self.state()) { State::Handshake -> true, _ -> false };
         if (!allowed) { return core::result::Err(local(Cause::InvalidState, Phase::Handshake)); }
         let system_pointer: ptr = __errno_location();
         let system_cell: [i32] = core::mem::typed_slice_from_raw_parts(system_pointer, 1);
@@ -474,7 +540,7 @@ pub impl Session {
                 let certificate: ptr = SSL_get0_peer_certificate(self.handle);
                 if (certificate == 0) { return core::result::Err(failed(self, local(Cause::PeerCertificate, Phase::Handshake))); }
             }
-            self.current = State::Open;
+            self.lifecycle.step(Signal::Verified);
             return core::result::Ok(Handshake::Complete);
         }
         // No intervening OpenSSL function is permitted before this lookup.
@@ -493,7 +559,7 @@ pub impl Session {
     pub fn read_into(&self, output: core::slice::View<u8>) -> core::result::Result<Read, Error> {
         if (!valid(output)) { return core::result::Err(local(Cause::Bounds, Phase::Read)); }
         if (!self.is_open()) { return core::result::Err(local(Cause::Closed, Phase::Read)); }
-        let closed: bool = match (self.current) { State::PeerClosed -> true, _ -> false };
+        let closed: bool = match (self.state()) { State::PeerClosed -> true, _ -> false };
         if (closed) { return core::result::Ok(Read::Closed); }
         let open = open_for_io(self, Phase::Read);
         if (open.is_err()) { return core::result::Err(open.unwrap_err()); }
@@ -523,7 +589,7 @@ pub impl Session {
         let ssl_error: i32 = SSL_get_error(self.handle, result);
         if (ssl_error == 2) { self.read_requirement = Need::Read; return core::result::Ok(Read::WantRead); }
         if (ssl_error == 3) { self.read_requirement = Need::Write; return core::result::Ok(Read::WantWrite); }
-        if (ssl_error == 6) { self.reading = 0; self.read_requirement = Need::None; self.current = State::PeerClosed; OPENSSL_cleanse(self.reader, self.limits.io_bytes as usize); return core::result::Ok(Read::Closed); }
+        if (ssl_error == 6) { self.reading = 0; self.read_requirement = Need::None; self.lifecycle.step(Signal::PeerClosed); OPENSSL_cleanse(self.reader, self.limits.io_bytes as usize); return core::result::Ok(Read::Closed); }
         let error: Error = queued(Phase::Read, ssl_error, system, result);
         return core::result::Err(failed(self, error));
     }
@@ -567,7 +633,7 @@ pub impl Session {
         if (ssl_error == 2) { self.write_requirement = Need::Read; return core::result::Ok(Write::WantRead); }
         if (ssl_error == 3) { self.write_requirement = Need::Write; return core::result::Ok(Write::WantWrite); }
         let error: Error = queued(Phase::Write, ssl_error, system, result);
-        if (ssl_error == 6) { self.writing = 0; self.write_requirement = Need::None; self.current = State::PeerClosed; OPENSSL_cleanse(self.writer, self.limits.io_bytes as usize); return core::result::Err(error); }
+        if (ssl_error == 6) { self.writing = 0; self.write_requirement = Need::None; self.lifecycle.step(Signal::PeerClosed); OPENSSL_cleanse(self.writer, self.limits.io_bytes as usize); return core::result::Err(error); }
         return core::result::Err(failed(self, error));
     }
     pub fn shutdown(&self) -> core::result::Result<Shutdown, Error> {

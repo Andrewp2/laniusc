@@ -125,7 +125,7 @@ fn type_code_note(code: u32) -> String {
 
 /// Prepares already-loaded source text for GPU compiler input.
 pub(in crate::compiler) fn prepare_source_for_gpu(src: &str) -> Result<String, CompileError> {
-    Ok(src.to_string())
+    crate::compiler::machine_elaboration::elaborate_source(Path::new("<source>"), src.to_string())
 }
 
 /// Reads source text from disk and prepares it for GPU compiler input.
@@ -133,7 +133,8 @@ pub(in crate::compiler) fn prepare_source_for_gpu_from_path(
     path: impl AsRef<Path>,
 ) -> Result<String, CompileError> {
     let path = path.as_ref();
-    fs::read_to_string(path).map_err(|err| source_input_read_failed(path, err))
+    let source = fs::read_to_string(path).map_err(|err| source_input_read_failed(path, err))?;
+    crate::compiler::machine_elaboration::elaborate_source(path, source)
 }
 
 pub(super) fn source_tokenization_failed_for_source(

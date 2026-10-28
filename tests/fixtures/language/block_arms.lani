@@ -1,0 +1,63 @@
+// Block arms: `pattern -> { ... }` runs statements, and every path returns.
+enum Input { Open, Close, Lock(u32), Unlock(u32) }
+enum Reply { Done, Ignored, WrongCode }
+
+struct Door { stored: u32, locked: bool, opens: i32 }
+
+impl Door {
+    // A statement `match` whose every arm is a returning block ends the body.
+    fn step(&mut self, event: Input) -> Reply {
+        match (event) {
+            Input::Open -> {
+                if (self.locked) { return Reply::Ignored; }
+                self.opens += 1;
+                return Reply::Done;
+            },
+            Input::Close -> { return Reply::Done; },
+            Input::Lock(code) -> {
+                let doubled: u32 = code * 2;
+                self.stored = doubled;
+                self.locked = true;
+                return Reply::Done;
+            },
+            Input::Unlock(code) -> {
+                if (code * 2 != self.stored) { return Reply::WrongCode; } else { self.locked = false; }
+                return match (code) { 0 -> { return Reply::Ignored; }, _ -> Reply::Done };
+            },
+        };
+    }
+}
+
+fn code(reply: Reply) -> i32 {
+    return match (reply) { Reply::Done -> 1, Reply::Ignored -> 2, Reply::WrongCode -> 3 };
+}
+
+// A block arm beside value arms: the match has the value arms' type.
+fn classify(x: i32) -> i32 {
+    let r: i32 = match (x) {
+        0 -> { return 10; },
+        _ -> x + 1,
+    };
+    return r;
+}
+
+fn sign(x: i32) -> i32 {
+    return match (x) {
+        0 -> { return 0; },
+        _ -> { if (x < 0) { return 0 - 1; } else { return 1; } },
+    };
+}
+
+fn main() -> i32 {
+    if (classify(0) != 10 || classify(4) != 5) { return 1; }
+    if (sign(0) != 0 || sign(0 - 3) != 0 - 1 || sign(9) != 1) { return 2; }
+    let door: Door = Door { stored: 0, locked: false, opens: 0 };
+    if (code(door.step(Input::Open)) != 1) { return 3; }
+    if (code(door.step(Input::Lock(7))) != 1) { return 4; }
+    if (code(door.step(Input::Open)) != 2) { return 5; }
+    if (code(door.step(Input::Unlock(3))) != 3) { return 6; }
+    if (code(door.step(Input::Unlock(7))) != 1) { return 7; }
+    if (code(door.step(Input::Open)) != 1 || door.opens != 2) { return 8; }
+    if (code(door.step(Input::Close)) != 1) { return 9; }
+    return 0;
+}

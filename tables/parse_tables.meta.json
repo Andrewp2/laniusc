@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2592,
+    "cells": 2695,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2592,
+    "cells": 2695,
     "conflicts": []
   },
   "ll1_runtime": {
     "nonterminals": 153,
     "start_nonterminal": "file",
     "predict_cells": 31365,
-    "rhs_symbols": 599
+    "rhs_symbols": 600
   },
   "ll1_predictions": [
     {
@@ -84,6 +84,12 @@
       "nonterminal": "add",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 147
+    },
+    {
+      "nonterminal": "add",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 147
     },
     {
@@ -424,6 +430,12 @@
     },
     {
       "nonterminal": "andexpr",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 121
+    },
+    {
+      "nonterminal": "andexpr",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 121
@@ -688,6 +700,12 @@
     },
     {
       "nonterminal": "arg_list_opt",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 166
+    },
+    {
+      "nonterminal": "arg_list_opt",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 166
@@ -796,6 +814,12 @@
     },
     {
       "nonterminal": "arg_tail_after_comma",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 169
+    },
+    {
+      "nonterminal": "arg_tail_after_comma",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 169
@@ -889,6 +913,12 @@
       "lookahead": "ArrayRBracket",
       "lookahead_id": 64,
       "production": 179
+    },
+    {
+      "nonterminal": "array_elems_opt",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 180
     },
     {
       "nonterminal": "array_elems_opt",
@@ -1003,6 +1033,12 @@
       "lookahead": "ArrayRBracket",
       "lookahead_id": 64,
       "production": 184
+    },
+    {
+      "nonterminal": "array_elems_tail_after_comma",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 183
     },
     {
       "nonterminal": "array_elems_tail_after_comma",
@@ -1122,6 +1158,12 @@
       "nonterminal": "assign",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 105
+    },
+    {
+      "nonterminal": "assign",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 105
     },
     {
@@ -1368,6 +1410,12 @@
       "nonterminal": "bit_and",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 130
+    },
+    {
+      "nonterminal": "bit_and",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 130
     },
     {
@@ -1648,6 +1696,12 @@
     },
     {
       "nonterminal": "bit_or",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 124
+    },
+    {
+      "nonterminal": "bit_or",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 124
@@ -1908,6 +1962,12 @@
       "nonterminal": "bit_xor",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 127
+    },
+    {
+      "nonterminal": "bit_xor",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 127
     },
     {
@@ -2484,6 +2544,12 @@
       "nonterminal": "cast",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 307
+    },
+    {
+      "nonterminal": "cast",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 307
     },
     {
@@ -3142,6 +3208,12 @@
     },
     {
       "nonterminal": "compare",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 137
+    },
+    {
+      "nonterminal": "compare",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 137
@@ -3574,6 +3646,12 @@
     },
     {
       "nonterminal": "else_tail",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 79
+    },
+    {
+      "nonterminal": "else_tail",
       "lookahead": "IfRBrace",
       "lookahead_id": 89,
       "production": 79
@@ -3952,6 +4030,12 @@
     },
     {
       "nonterminal": "equality",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 133
+    },
+    {
+      "nonterminal": "equality",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 133
@@ -4236,6 +4320,12 @@
       "nonterminal": "expr",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 104
+    },
+    {
+      "nonterminal": "expr",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 104
     },
     {
@@ -5260,6 +5350,12 @@
     },
     {
       "nonterminal": "mul",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 151
+    },
+    {
+      "nonterminal": "mul",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 151
@@ -5610,6 +5706,12 @@
       "nonterminal": "orexpr",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 118
+    },
+    {
+      "nonterminal": "orexpr",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 118
     },
     {
@@ -6556,6 +6658,12 @@
     },
     {
       "nonterminal": "postfix",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 160
+    },
+    {
+      "nonterminal": "postfix",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 160
@@ -6925,6 +7033,12 @@
       "lookahead": "Char",
       "lookahead_id": 34,
       "production": 178
+    },
+    {
+      "nonterminal": "primary",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 326
     },
     {
       "nonterminal": "primary",
@@ -7468,6 +7582,12 @@
     },
     {
       "nonterminal": "return_value_opt",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 90
+    },
+    {
+      "nonterminal": "return_value_opt",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 90
@@ -7620,6 +7740,12 @@
       "nonterminal": "shift",
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
+      "production": 143
+    },
+    {
+      "nonterminal": "shift",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 143
     },
     {
@@ -7990,6 +8116,12 @@
     },
     {
       "nonterminal": "stmt",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 85
+    },
+    {
+      "nonterminal": "stmt",
       "lookahead": "True",
       "lookahead_id": 90,
       "production": 85
@@ -8130,6 +8262,12 @@
       "nonterminal": "stmt_list",
       "lookahead": "Continue",
       "lookahead_id": 74,
+      "production": 73
+    },
+    {
+      "nonterminal": "stmt_list",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
       "production": 73
     },
     {
@@ -9067,6 +9205,12 @@
       "lookahead": "PrefixMinus",
       "lookahead_id": 60,
       "production": 157
+    },
+    {
+      "nonterminal": "unary",
+      "lookahead": "IfLBrace",
+      "lookahead_id": 88,
+      "production": 159
     },
     {
       "nonterminal": "unary",
@@ -12754,6 +12898,16 @@
         "'TypeAmpersandMut'",
         "'Mut'",
         "'ParamSelfRefValue'"
+      ]
+    },
+    {
+      "id": 326,
+      "line": 447,
+      "lhs": "primary",
+      "tag": "arm_block",
+      "arity": 1,
+      "rhs": [
+        "if_block"
       ]
     }
   ]

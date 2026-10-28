@@ -4275,6 +4275,15 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     .with_note("a `-> !` function must not return: end every path with a call to another `-> !` function (such as core::panic::panic()) or `assert(false)`, or change the return type"),
             )
         }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::BLOCK_ARM_FALLS_THROUGH => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "the end of this block arm can be reached",
+                    ))
+                    .with_note("a block arm (`pattern -> { ... }`) must not complete: end every path through it with `return` or a call to a `-> !` function"),
+            )
+        }
         GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::DISTINCT_TYPE_MISMATCH => {
             CompileError::Diagnostic(
                 Diagnostic::error("LNC0006", "type mismatch")

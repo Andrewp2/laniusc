@@ -1,6 +1,6 @@
-# Language ergonomics: item imports, `?`, local inference
+# Language ergonomics: item imports, `?`, local inference, block arms
 
-Three features shorten ordinary Lanius code without adding hidden behavior.
+Four features shorten ordinary Lanius code without adding hidden behavior.
 Each section states what the feature does, what it refuses, and the
 decision behind it. Tests: `tests/language_ergonomics_execution.rs`, fixtures
 in `tests/fixtures/language/`.
@@ -82,3 +82,53 @@ decide needs an annotation, e.g. `let v: Vec<i32> = Vec::new();`.
 
 Decision: inference stays local so that each binding's type can be read from
 its own line and its callee's signature.
+
+## Block arms
+
+A match arm can run statements: `pattern -> { statements }`. Its block must
+not complete. Every path through it ends in `return` or a call of a `-> !`
+function, so the arm has the never type and the match takes the type of its
+other arms. A `match` whose every arm is a returning block ends a function
+body the way a `return` does.
+
+```lanius
+fn step(&mut self, event: Input) -> Reply {
+    match (event) {
+        Input::Open -> {
+            if (self.locked) { return Reply::Ignored; }
+            self.opens += 1;
+            return Reply::Done;
+        },
+        Input::Lock(code) -> { self.stored = code; return Reply::Done; },
+        Input::Close -> { return Reply::Done; },
+        Input::Unlock(_) -> { return Reply::Ignored; },
+    };
+}
+```
+
+A block arm that can reach its end is a type error (`LNC0006`): "the end of
+this block arm can be reached". `break` and `continue` inside the block do
+not count as leaving it.
+
+Decision: only diverging blocks for now. A block arm that falls through
+would need a unit-typed match, with joins of unit arms and arms that branch
+to the match's end. The diverging form is what state machines need (each
+arm ends in a transition, docs/state-machines-design.md) and what early
+returns from one case need. Unit arms can be added later without changing
+these programs.
+
+Implementation:
+- A `{` right after a match arm's `->` takes the `if` block's brace kinds
+  (`tokens/delimiters/04_owner_apply`), and the production
+  `primary [arm_block] -> if_block` makes the block a primary. The arm's
+  result is the HIR block (`hir/expr/fields`), so its statements are ordinary
+  statements.
+- `type_checker/modules/10n_type_match_exprs` types a block result as never.
+- `type_checker/returns/01_mark` treats a match as a counting latch over its
+  block arms: a fact that every path through an arm block returns sets that
+  block's flag once, and the arm that completes the count carries the fact to
+  the match's own context. `03_validate` rejects a block arm whose flag is
+  unset.
+- Codegen needs no change: rows are scheduled by token position, so the
+  block's statements fall between the arm's test and its end.
+

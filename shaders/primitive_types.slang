@@ -110,6 +110,10 @@ public static const uint DISTINCT_TYPE_MISMATCH = 0x20000003u;
 // `&mut` argument of the same call (conditions/compact_exclusive.slang).
 // PRIMITIVE_CONSTANT
 public static const uint EXCLUSIVE_REFERENCE_ALIAS = 0x20000004u;
+// LNC0006 detail of a block arm (`pattern -> { ... }`) whose block can reach
+// its end: every path through it must return (returns/03_validate.slang).
+// PRIMITIVE_CONSTANT
+public static const uint BLOCK_ARM_FALLS_THROUGH = 0x20000005u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]
