@@ -30,7 +30,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/archive_source.lani#L10)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/archive_source.lani#L11)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/archive_source.lani#L12)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../extended/ext/archive_source.lani#L13)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/archive_source.lani#L13)
 - [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_source.lani#L14)
 - [ext::archive_profile](archive_profile.md) · [source](../../../extended/ext/archive_source.lani#L15)
 - [ext::tar](tar.md) · [source](../../../extended/ext/archive_source.lani#L16)

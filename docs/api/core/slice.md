@@ -4,9 +4,11 @@
 
 Generated source inventory. Linked guides own runtime and semantic contracts; a listed declaration does not establish executable behavior.
 
-[All modules](../README.md) · [Source](../../../stdlib/core/slice.lani#L10)
+[All modules](../README.md) · [Source](../../../stdlib/core/slice.lani#L11)
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
+
+The seven checked free View ordering APIs validate negative start/length and end overflow before element reads, writes or callbacks; valid empty views are no-touch and singleton sort makes no comparison. Results use view-relative indices. Borrowed per-call Comparator<T,T> or Comparator<T,K> supports lawful total order/equivalence and heterogeneous query classes. Iterative heapsort is in-place, allocation-free and unstable; partition promises whole-value permutation and Less-prefix grouping without relative side order. Bounds/first-last searches require ordered Less/Equal/Greater classes and do not validate that precondition. Raw Ord signatures, fallback policies and nonpositive-as-empty behavior are preserved through Natural and the same engines. Logical checks establish no physical backing length, automatic ownership or unchecked memory trust. All six new registered library tests pass on native Linux x86_64 CPU output from the GPU compiler: three contracts/8.64s (all seven APIs/no memory services and five invalid-bound rejections), two owner and scale tests/12.20s, one model/6.59s (2808 cases/44928 actions/two descending-stride backing forms/six policies). Actual nested String owners have 29 full-address/size matched releases and seven no-memory-service phases; the 32768-record scale gate has five such phases and two exact releases. It observes custom sort 881019 / sortedness 32767 / partition 32768 / maximum query 17 comparisons and legacy 1134417 lt calls; these counts have different units, and whole-lifecycle 267ms is not isolated sort throughput or a compiler ratio. Distinct role callback receivers share a policy to avoid the separately reproduced same-receiver LNC0027 dependency; no public API specialization is added. Sort-rows separately passes model 37, CLI 39, rejection 33 and I/O 13: four registered tests/122 process cases across 12.78s and 9.65s. Three selected current iterator migration tests pass in 16.23s, covering the 1280-schedule/320-extrema/180-position model, owner cleanup and exact capability rejections; two unrelated tests were filtered, and historical application/trap groups were not rerun. The new scale gate exercises shared raw-Ord engines. This finite selected increment is accepted. Historical slice/iterator/fold receipts retain their source/API scope; no arbitrary generic, device or formal-proof claim follows.
 
 ## Contract and evidence guides
 
@@ -14,17 +16,20 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 - [stdlib-slice](../../stdlib-slice.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 - [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
+- [stdlib-slice-ordering](../../stdlib-slice-ordering.md)
+- [stdlib-sort-rows](../../stdlib-sort-rows.md)
 
-Declaration counts: enum: 1; field: 14; function: 40; impl: 4; method: 21; struct: 4; variant: 2.
+Declaration counts: enum: 1; field: 14; function: 47; impl: 4; method: 21; struct: 4; variant: 2.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::cmp](cmp.md) · [source](../../../stdlib/core/slice.lani#L12)
-- [core::ops](ops.md) · [source](../../../stdlib/core/slice.lani#L13)
-- [core::option](option.md) · [source](../../../stdlib/core/slice.lani#L14)
-- [core::result](result.md) · [source](../../../stdlib/core/slice.lani#L15)
+- [core::cmp](cmp.md) · [source](../../../stdlib/core/slice.lani#L13)
+- [core::ops](ops.md) · [source](../../../stdlib/core/slice.lani#L14)
+- [core::option](option.md) · [source](../../../stdlib/core/slice.lani#L15)
+- [core::ordering](ordering.md) · [source](../../../stdlib/core/slice.lani#L16)
+- [core::result](result.md) · [source](../../../stdlib/core/slice.lani#L17)
 
 ## Types, fields and variants
 
@@ -32,7 +37,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: ViewError
 
-[Source line 21](../../../stdlib/core/slice.lani#L21)
+[Source line 23](../../../stdlib/core/slice.lani#L23)
 
 ```lanius
 pub enum ViewError
@@ -40,7 +45,7 @@ pub enum ViewError
 
 #### variant: Bounds
 
-[Source line 21](../../../stdlib/core/slice.lani#L21)
+[Source line 23](../../../stdlib/core/slice.lani#L23)
 
 ```lanius
 Bounds
@@ -48,7 +53,7 @@ Bounds
 
 #### variant: InvalidSize
 
-[Source line 21](../../../stdlib/core/slice.lani#L21)
+[Source line 23](../../../stdlib/core/slice.lani#L23)
 
 ```lanius
 InvalidSize
@@ -56,7 +61,7 @@ InvalidSize
 
 ### struct: View
 
-[Source line 22](../../../stdlib/core/slice.lani#L22)
+[Source line 24](../../../stdlib/core/slice.lani#L24)
 
 ```lanius
 pub struct View<T>
@@ -64,7 +69,7 @@ pub struct View<T>
 
 #### field: values
 
-[Source line 22](../../../stdlib/core/slice.lani#L22)
+[Source line 24](../../../stdlib/core/slice.lani#L24)
 
 ```lanius
 values: [T]
@@ -72,7 +77,7 @@ values: [T]
 
 #### field: start
 
-[Source line 22](../../../stdlib/core/slice.lani#L22)
+[Source line 24](../../../stdlib/core/slice.lani#L24)
 
 ```lanius
 start: i32
@@ -80,7 +85,7 @@ start: i32
 
 #### field: length
 
-[Source line 22](../../../stdlib/core/slice.lani#L22)
+[Source line 24](../../../stdlib/core/slice.lani#L24)
 
 ```lanius
 length: i32
@@ -88,7 +93,7 @@ length: i32
 
 ### struct: Iter
 
-[Source line 23](../../../stdlib/core/slice.lani#L23)
+[Source line 25](../../../stdlib/core/slice.lani#L25)
 
 ```lanius
 pub struct Iter<T>
@@ -96,7 +101,7 @@ pub struct Iter<T>
 
 #### field: values
 
-[Source line 23](../../../stdlib/core/slice.lani#L23)
+[Source line 25](../../../stdlib/core/slice.lani#L25)
 
 ```lanius
 values: [T]
@@ -104,7 +109,7 @@ values: [T]
 
 #### field: front
 
-[Source line 23](../../../stdlib/core/slice.lani#L23)
+[Source line 25](../../../stdlib/core/slice.lani#L25)
 
 ```lanius
 front: i32
@@ -112,7 +117,7 @@ front: i32
 
 #### field: back
 
-[Source line 23](../../../stdlib/core/slice.lani#L23)
+[Source line 25](../../../stdlib/core/slice.lani#L25)
 
 ```lanius
 back: i32
@@ -120,7 +125,7 @@ back: i32
 
 ### struct: Chunks
 
-[Source line 24](../../../stdlib/core/slice.lani#L24)
+[Source line 26](../../../stdlib/core/slice.lani#L26)
 
 ```lanius
 pub struct Chunks<T>
@@ -128,7 +133,7 @@ pub struct Chunks<T>
 
 #### field: values
 
-[Source line 24](../../../stdlib/core/slice.lani#L24)
+[Source line 26](../../../stdlib/core/slice.lani#L26)
 
 ```lanius
 values: [T]
@@ -136,7 +141,7 @@ values: [T]
 
 #### field: position
 
-[Source line 24](../../../stdlib/core/slice.lani#L24)
+[Source line 26](../../../stdlib/core/slice.lani#L26)
 
 ```lanius
 position: i32
@@ -144,7 +149,7 @@ position: i32
 
 #### field: end
 
-[Source line 24](../../../stdlib/core/slice.lani#L24)
+[Source line 26](../../../stdlib/core/slice.lani#L26)
 
 ```lanius
 end: i32
@@ -152,7 +157,7 @@ end: i32
 
 #### field: width
 
-[Source line 24](../../../stdlib/core/slice.lani#L24)
+[Source line 26](../../../stdlib/core/slice.lani#L26)
 
 ```lanius
 width: i32
@@ -160,7 +165,7 @@ width: i32
 
 ### struct: Windows
 
-[Source line 25](../../../stdlib/core/slice.lani#L25)
+[Source line 27](../../../stdlib/core/slice.lani#L27)
 
 ```lanius
 pub struct Windows<T>
@@ -168,7 +173,7 @@ pub struct Windows<T>
 
 #### field: values
 
-[Source line 25](../../../stdlib/core/slice.lani#L25)
+[Source line 27](../../../stdlib/core/slice.lani#L27)
 
 ```lanius
 values: [T]
@@ -176,7 +181,7 @@ values: [T]
 
 #### field: position
 
-[Source line 25](../../../stdlib/core/slice.lani#L25)
+[Source line 27](../../../stdlib/core/slice.lani#L27)
 
 ```lanius
 position: i32
@@ -184,7 +189,7 @@ position: i32
 
 #### field: end
 
-[Source line 25](../../../stdlib/core/slice.lani#L25)
+[Source line 27](../../../stdlib/core/slice.lani#L27)
 
 ```lanius
 end: i32
@@ -192,7 +197,7 @@ end: i32
 
 #### field: width
 
-[Source line 25](../../../stdlib/core/slice.lani#L25)
+[Source line 27](../../../stdlib/core/slice.lani#L27)
 
 ```lanius
 width: i32
@@ -202,7 +207,7 @@ width: i32
 
 ### function: view
 
-[Source line 27](../../../stdlib/core/slice.lani#L27)
+[Source line 29](../../../stdlib/core/slice.lani#L29)
 
 ```lanius
 pub fn view<T>(values: [T], count: i32) -> core::result::Result<View<T>, ViewError>
@@ -210,7 +215,7 @@ pub fn view<T>(values: [T], count: i32) -> core::result::Result<View<T>, ViewErr
 
 ### function: view_range
 
-[Source line 31](../../../stdlib/core/slice.lani#L31)
+[Source line 33](../../../stdlib/core/slice.lani#L33)
 
 ```lanius
 pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Result<View<T>, ViewError>
@@ -218,7 +223,7 @@ pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Resul
 
 ### function: first
 
-[Source line 135](../../../stdlib/core/slice.lani#L135)
+[Source line 137](../../../stdlib/core/slice.lani#L137)
 
 ```lanius
 pub fn first<T>(values: [T]) -> T
@@ -226,7 +231,7 @@ pub fn first<T>(values: [T]) -> T
 
 ### function: first_or
 
-[Source line 140](../../../stdlib/core/slice.lani#L140)
+[Source line 142](../../../stdlib/core/slice.lani#L142)
 
 ```lanius
 pub fn first_or<T>(values: [T], len: i32, fallback: T) -> T
@@ -234,7 +239,7 @@ pub fn first_or<T>(values: [T], len: i32, fallback: T) -> T
 
 ### function: last_or
 
-[Source line 147](../../../stdlib/core/slice.lani#L147)
+[Source line 149](../../../stdlib/core/slice.lani#L149)
 
 ```lanius
 pub fn last_or<T>(values: [T], len: i32, fallback: T) -> T
@@ -242,7 +247,7 @@ pub fn last_or<T>(values: [T], len: i32, fallback: T) -> T
 
 ### function: get_or
 
-[Source line 154](../../../stdlib/core/slice.lani#L154)
+[Source line 156](../../../stdlib/core/slice.lani#L156)
 
 ```lanius
 pub fn get_or<T>(values: [T], len: i32, index: i32, fallback: T) -> T
@@ -250,7 +255,7 @@ pub fn get_or<T>(values: [T], len: i32, index: i32, fallback: T) -> T
 
 ### function: set
 
-[Source line 162](../../../stdlib/core/slice.lani#L162)
+[Source line 164](../../../stdlib/core/slice.lani#L164)
 
 ```lanius
 pub fn set<T>(values: [T], len: i32, index: i32, value: T) -> bool
@@ -258,7 +263,7 @@ pub fn set<T>(values: [T], len: i32, index: i32, value: T) -> bool
 
 ### function: swap
 
-[Source line 171](../../../stdlib/core/slice.lani#L171)
+[Source line 173](../../../stdlib/core/slice.lani#L173)
 
 ```lanius
 pub fn swap<T>(values: [T], len: i32, left: i32, right: i32) -> bool
@@ -266,7 +271,7 @@ pub fn swap<T>(values: [T], len: i32, left: i32, right: i32) -> bool
 
 ### function: fill
 
-[Source line 182](../../../stdlib/core/slice.lani#L182)
+[Source line 184](../../../stdlib/core/slice.lani#L184)
 
 ```lanius
 pub fn fill<T>(values: [T], len: i32, value: T) -> i32
@@ -274,7 +279,7 @@ pub fn fill<T>(values: [T], len: i32, value: T) -> i32
 
 ### function: reverse_in_place
 
-[Source line 207](../../../stdlib/core/slice.lani#L207)
+[Source line 209](../../../stdlib/core/slice.lani#L209)
 
 ```lanius
 pub fn reverse_in_place<T>(values: [T], len: i32) -> i32
@@ -282,7 +287,7 @@ pub fn reverse_in_place<T>(values: [T], len: i32) -> i32
 
 ### function: rotate_left
 
-[Source line 216](../../../stdlib/core/slice.lani#L216)
+[Source line 218](../../../stdlib/core/slice.lani#L218)
 
 ```lanius
 pub fn rotate_left<T>(values: [T], len: i32, amount: i32) -> bool
@@ -290,7 +295,7 @@ pub fn rotate_left<T>(values: [T], len: i32, amount: i32) -> bool
 
 ### function: rotate_right
 
-[Source line 229](../../../stdlib/core/slice.lani#L229)
+[Source line 231](../../../stdlib/core/slice.lani#L231)
 
 ```lanius
 pub fn rotate_right<T>(values: [T], len: i32, amount: i32) -> bool
@@ -298,7 +303,7 @@ pub fn rotate_right<T>(values: [T], len: i32, amount: i32) -> bool
 
 ### function: copy_within
 
-[Source line 239](../../../stdlib/core/slice.lani#L239)
+[Source line 241](../../../stdlib/core/slice.lani#L241)
 
 ```lanius
 pub fn copy_within<T>(values: [T], len: i32, source_start: i32, source_end: i32,
@@ -307,7 +312,7 @@ pub fn copy_within<T>(values: [T], len: i32, source_start: i32, source_end: i32,
 
 ### function: copy_nonoverlapping_prefix
 
-[Source line 269](../../../stdlib/core/slice.lani#L269)
+[Source line 271](../../../stdlib/core/slice.lani#L271)
 
 ```lanius
 pub fn copy_nonoverlapping_prefix<T>(destination: [T], destination_len: i32, source: [T],
@@ -316,7 +321,7 @@ pub fn copy_nonoverlapping_prefix<T>(destination: [T], destination_len: i32, sou
 
 ### function: copy_nonoverlapping_range
 
-[Source line 286](../../../stdlib/core/slice.lani#L286)
+[Source line 288](../../../stdlib/core/slice.lani#L288)
 
 ```lanius
 pub fn copy_nonoverlapping_range<T>(destination: [T], destination_len: i32,
@@ -326,7 +331,7 @@ pub fn copy_nonoverlapping_range<T>(destination: [T], destination_len: i32,
 
 ### function: remove_at
 
-[Source line 310](../../../stdlib/core/slice.lani#L310)
+[Source line 312](../../../stdlib/core/slice.lani#L312)
 
 ```lanius
 pub fn remove_at<T>(values: [T], len: i32, index: i32) -> bool
@@ -334,7 +339,7 @@ pub fn remove_at<T>(values: [T], len: i32, index: i32) -> bool
 
 ### function: insert
 
-[Source line 327](../../../stdlib/core/slice.lani#L327)
+[Source line 329](../../../stdlib/core/slice.lani#L329)
 
 ```lanius
 pub fn insert<T>(values: [T], len: i32, capacity: i32, index: i32, value: T) -> bool
@@ -342,7 +347,7 @@ pub fn insert<T>(values: [T], len: i32, capacity: i32, index: i32, value: T) -> 
 
 ### function: push
 
-[Source line 343](../../../stdlib/core/slice.lani#L343)
+[Source line 345](../../../stdlib/core/slice.lani#L345)
 
 ```lanius
 pub fn push<T>(values: [T], len: i32, capacity: i32, value: T) -> bool
@@ -350,7 +355,7 @@ pub fn push<T>(values: [T], len: i32, capacity: i32, value: T) -> bool
 
 ### function: contains
 
-[Source line 347](../../../stdlib/core/slice.lani#L347)
+[Source line 349](../../../stdlib/core/slice.lani#L349)
 
 ```lanius
 pub fn contains<T>(values: [T], len: i32, needle: T) -> bool where T: core::cmp::PartialEq<T>
@@ -358,7 +363,7 @@ pub fn contains<T>(values: [T], len: i32, needle: T) -> bool where T: core::cmp:
 
 ### function: count
 
-[Source line 358](../../../stdlib/core/slice.lani#L358)
+[Source line 360](../../../stdlib/core/slice.lani#L360)
 
 ```lanius
 pub fn count<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::PartialEq<T>
@@ -366,7 +371,7 @@ pub fn count<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Par
 
 ### function: index_of_or
 
-[Source line 371](../../../stdlib/core/slice.lani#L371)
+[Source line 373](../../../stdlib/core/slice.lani#L373)
 
 ```lanius
 pub fn index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
@@ -375,7 +380,7 @@ pub fn index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
 
 ### function: last_index_of_or
 
-[Source line 384](../../../stdlib/core/slice.lani#L384)
+[Source line 386](../../../stdlib/core/slice.lani#L386)
 
 ```lanius
 pub fn last_index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
@@ -384,7 +389,7 @@ pub fn last_index_of_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i
 
 ### function: starts_with
 
-[Source line 400](../../../stdlib/core/slice.lani#L400)
+[Source line 402](../../../stdlib/core/slice.lani#L402)
 
 ```lanius
 pub fn starts_with<T>(values: [T], len: i32, prefix: [T], prefix_len: i32) -> bool
@@ -393,7 +398,7 @@ pub fn starts_with<T>(values: [T], len: i32, prefix: [T], prefix_len: i32) -> bo
 
 ### function: ends_with
 
-[Source line 418](../../../stdlib/core/slice.lani#L418)
+[Source line 420](../../../stdlib/core/slice.lani#L420)
 
 ```lanius
 pub fn ends_with<T>(values: [T], len: i32, suffix: [T], suffix_len: i32) -> bool
@@ -402,7 +407,7 @@ pub fn ends_with<T>(values: [T], len: i32, suffix: [T], suffix_len: i32) -> bool
 
 ### function: equals
 
-[Source line 437](../../../stdlib/core/slice.lani#L437)
+[Source line 439](../../../stdlib/core/slice.lani#L439)
 
 ```lanius
 pub fn equals<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> bool
@@ -411,7 +416,7 @@ pub fn equals<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> bool
 
 ### function: index_of_subslice
 
-[Source line 459](../../../stdlib/core/slice.lani#L459)
+[Source line 461](../../../stdlib/core/slice.lani#L461)
 
 ```lanius
 pub fn index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32) -> i32
@@ -420,7 +425,7 @@ pub fn index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32)
 
 ### function: last_index_of_subslice
 
-[Source line 475](../../../stdlib/core/slice.lani#L475)
+[Source line 477](../../../stdlib/core/slice.lani#L477)
 
 ```lanius
 pub fn last_index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len: i32) -> i32
@@ -429,7 +434,7 @@ pub fn last_index_of_subslice<T>(values: [T], len: i32, needle: [T], needle_len:
 
 ### function: dedup_adjacent
 
-[Source line 492](../../../stdlib/core/slice.lani#L492)
+[Source line 494](../../../stdlib/core/slice.lani#L494)
 
 ```lanius
 pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::PartialEq<T>
@@ -437,7 +442,7 @@ pub fn dedup_adjacent<T>(values: [T], len: i32) -> i32 where T: core::cmp::Parti
 
 ### function: retain_not_equal
 
-[Source line 512](../../../stdlib/core/slice.lani#L512)
+[Source line 514](../../../stdlib/core/slice.lani#L514)
 
 ```lanius
 pub fn retain_not_equal<T>(values: [T], len: i32, needle: T) -> i32
@@ -446,7 +451,7 @@ pub fn retain_not_equal<T>(values: [T], len: i32, needle: T) -> i32
 
 ### function: compare_lexicographic
 
-[Source line 530](../../../stdlib/core/slice.lani#L530)
+[Source line 532](../../../stdlib/core/slice.lani#L532)
 
 ```lanius
 pub fn compare_lexicographic<T>(left: [T], left_len: i32, right: [T], right_len: i32) -> i32
@@ -455,7 +460,7 @@ pub fn compare_lexicographic<T>(left: [T], left_len: i32, right: [T], right_len:
 
 ### function: min_or
 
-[Source line 557](../../../stdlib/core/slice.lani#L557)
+[Source line 559](../../../stdlib/core/slice.lani#L559)
 
 ```lanius
 pub fn min_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Ord<T>
@@ -463,73 +468,150 @@ pub fn min_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Or
 
 ### function: max_or
 
-[Source line 572](../../../stdlib/core/slice.lani#L572)
+[Source line 574](../../../stdlib/core/slice.lani#L574)
 
 ```lanius
 pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Ord<T>
 ```
 
-### function: is_sorted
+### function: sort_unstable_by
 
-[Source line 588](../../../stdlib/core/slice.lani#L588)
+[Source line 719](../../../stdlib/core/slice.lani#L719)
 
 ```lanius
-pub fn is_sorted<T>(values: [T], len: i32) -> bool where T: core::cmp::Ord<T>
+pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,T>
+```
+
+Checked View<T>, Comparator<T,T>. Returns selected length after in-place allocation-free iterative heapsort; O(n log n) comparisons/O(1) auxiliary storage. Whole shallow values remain a permutation; equal-key order is unspecified. Bounds errors precede reads/writes/callbacks; no allocation, clone, destruction or trap rollback.
+
+### function: is_sorted_by
+
+[Source line 724](../../../stdlib/core/slice.lani#L724)
+
+```lanius
+pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
+    where C:core::ordering::Comparator<T,T>
+```
+
+Checked View<T>, Comparator<T,T>. Returns whether selected elements are nondecreasing; valid empty/singleton is true without comparison. O(n) comparisons, no mutation or ownership transfer.
+
+### function: lower_bound_by
+
+[Source line 731](../../../stdlib/core/slice.lani#L731)
+
+```lanius
+pub fn lower_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,K>
+```
+
+Checked View<T>, Comparator<T,K>. First view-relative index not Less, or length. Requires ordered Less/Equal/Greater classes; O(log n), no validation scan or mutation.
+
+### function: upper_bound_by
+
+[Source line 736](../../../stdlib/core/slice.lani#L736)
+
+```lanius
+pub fn upper_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,K>
+```
+
+Checked View<T>, Comparator<T,K>. First view-relative Greater index, or length. Requires matching sorted query classes; O(log n), no mutation.
+
+### function: binary_search_first_by
+
+[Source line 741](../../../stdlib/core/slice.lani#L741)
+
+```lanius
+pub fn binary_search_first_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
+    where C:core::ordering::Comparator<T,K>
+```
+
+Checked View<T>, Comparator<T,K>. Returns the first equivalent index as Option<i32>, otherwise None; O(log n), deterministic among duplicates, no mutation.
+
+### function: binary_search_last_by
+
+[Source line 747](../../../stdlib/core/slice.lani#L747)
+
+```lanius
+pub fn binary_search_last_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
+    where C:core::ordering::Comparator<T,K>
+```
+
+Checked View<T>, Comparator<T,K>. Returns the last equivalent index as Option<i32>, otherwise None; O(log n), deterministic among duplicates, no mutation.
+
+### function: partition_lt_by
+
+[Source line 755](../../../stdlib/core/slice.lani#L755)
+
+```lanius
+pub fn partition_lt_by<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,K>
+```
+
+Checked View<T>, Comparator<T,K>. In-place whole-value permutation with all Less elements before other elements; returns Less count. O(n) comparisons/O(1) storage, no side-order promise or owner cleanup. Bounds errors are pre-mutation.
+
+### function: is_sorted
+
+[Source line 763](../../../stdlib/core/slice.lani#L763)
+
+```lanius
+pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T>
 ```
 
 ### function: sort
 
-[Source line 622](../../../stdlib/core/slice.lani#L622)
+[Source line 769](../../../stdlib/core/slice.lani#L769)
 
 ```lanius
-pub fn sort<T>(values: [T], len: i32) -> i32 where T: core::cmp::Ord<T>
+pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T>
 ```
 
 ### function: lower_bound
 
-[Source line 645](../../../stdlib/core/slice.lani#L645)
+[Source line 775](../../../stdlib/core/slice.lani#L775)
 
 ```lanius
-pub fn lower_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Ord<T>
+pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T>
 ```
 
 ### function: upper_bound
 
-[Source line 661](../../../stdlib/core/slice.lani#L661)
+[Source line 780](../../../stdlib/core/slice.lani#L780)
 
 ```lanius
-pub fn upper_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Ord<T>
+pub fn upper_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T>
 ```
 
 ### function: binary_search_first_or
 
-[Source line 676](../../../stdlib/core/slice.lani#L676)
+[Source line 786](../../../stdlib/core/slice.lani#L786)
 
 ```lanius
-pub fn binary_search_first_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
-    where T: core::cmp::Ord<T>
+pub fn binary_search_first_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
+    where T:core::cmp::Ord<T>
 ```
 
 ### function: binary_search_last_or
 
-[Source line 686](../../../stdlib/core/slice.lani#L686)
+[Source line 793](../../../stdlib/core/slice.lani#L793)
 
 ```lanius
-pub fn binary_search_last_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
-    where T: core::cmp::Ord<T>
+pub fn binary_search_last_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
+    where T:core::cmp::Ord<T>
 ```
 
 ### function: partition_lt
 
-[Source line 698](../../../stdlib/core/slice.lani#L698)
+[Source line 801](../../../stdlib/core/slice.lani#L801)
 
 ```lanius
-pub fn partition_lt<T>(values: [T], len: i32, pivot: T) -> i32 where T: core::cmp::Ord<T>
+pub fn partition_lt<T>(values:[T],len:i32,pivot:T) -> i32 where T:core::cmp::Ord<T>
 ```
 
 ### function: sum
 
-[Source line 716](../../../stdlib/core/slice.lani#L716)
+[Source line 810](../../../stdlib/core/slice.lani#L810)
 
 ```lanius
 pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::SaturatingAdd<T>
@@ -537,9 +619,9 @@ pub fn sum<T>(values: [T], len: i32, initial: T) -> T where T: core::ops::Satura
 
 ## Implementation blocks and public methods
 
-### impl at line 38
+### impl at line 40
 
-[Source line 38](../../../stdlib/core/slice.lani#L38)
+[Source line 40](../../../stdlib/core/slice.lani#L40)
 
 ```lanius
 pub impl<T> View<T>
@@ -547,7 +629,7 @@ pub impl<T> View<T>
 
 #### method: len
 
-[Source line 39](../../../stdlib/core/slice.lani#L39)
+[Source line 41](../../../stdlib/core/slice.lani#L41)
 
 ```lanius
 pub fn len(&self) -> i32
@@ -555,7 +637,7 @@ pub fn len(&self) -> i32
 
 #### method: is_empty
 
-[Source line 40](../../../stdlib/core/slice.lani#L40)
+[Source line 42](../../../stdlib/core/slice.lani#L42)
 
 ```lanius
 pub fn is_empty(&self) -> bool
@@ -563,7 +645,7 @@ pub fn is_empty(&self) -> bool
 
 #### method: get
 
-[Source line 41](../../../stdlib/core/slice.lani#L41)
+[Source line 43](../../../stdlib/core/slice.lani#L43)
 
 ```lanius
 pub fn get(&self, index: i32) -> core::option::Option<T>
@@ -571,7 +653,7 @@ pub fn get(&self, index: i32) -> core::option::Option<T>
 
 #### method: first
 
-[Source line 45](../../../stdlib/core/slice.lani#L45)
+[Source line 47](../../../stdlib/core/slice.lani#L47)
 
 ```lanius
 pub fn first(&self) -> core::option::Option<T>
@@ -579,7 +661,7 @@ pub fn first(&self) -> core::option::Option<T>
 
 #### method: last
 
-[Source line 46](../../../stdlib/core/slice.lani#L46)
+[Source line 48](../../../stdlib/core/slice.lani#L48)
 
 ```lanius
 pub fn last(&self) -> core::option::Option<T>
@@ -587,7 +669,7 @@ pub fn last(&self) -> core::option::Option<T>
 
 #### method: subview
 
-[Source line 48](../../../stdlib/core/slice.lani#L48)
+[Source line 50](../../../stdlib/core/slice.lani#L50)
 
 ```lanius
 pub fn subview(&self, start: i32, end: i32) -> core::result::Result<View<T>, ViewError>
@@ -595,7 +677,7 @@ pub fn subview(&self, start: i32, end: i32) -> core::result::Result<View<T>, Vie
 
 #### method: try_set
 
-[Source line 53](../../../stdlib/core/slice.lani#L53)
+[Source line 55](../../../stdlib/core/slice.lani#L55)
 
 ```lanius
 pub fn try_set(&self, index: i32, value: T) -> core::result::Result<T, ViewError>
@@ -603,7 +685,7 @@ pub fn try_set(&self, index: i32, value: T) -> core::result::Result<T, ViewError
 
 #### method: copy_within
 
-[Source line 60](../../../stdlib/core/slice.lani#L60)
+[Source line 62](../../../stdlib/core/slice.lani#L62)
 
 ```lanius
 pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::result::Result<i32, ViewError>
@@ -611,7 +693,7 @@ pub fn copy_within(&self, start: i32, end: i32, destination: i32) -> core::resul
 
 #### method: reverse
 
-[Source line 70](../../../stdlib/core/slice.lani#L70)
+[Source line 72](../../../stdlib/core/slice.lani#L72)
 
 ```lanius
 pub fn reverse(&self) -> i32
@@ -619,7 +701,7 @@ pub fn reverse(&self) -> i32
 
 #### method: fill
 
-[Source line 71](../../../stdlib/core/slice.lani#L71)
+[Source line 73](../../../stdlib/core/slice.lani#L73)
 
 ```lanius
 pub fn fill(&self, value: T) -> i32
@@ -627,7 +709,7 @@ pub fn fill(&self, value: T) -> i32
 
 #### method: iter
 
-[Source line 76](../../../stdlib/core/slice.lani#L76)
+[Source line 78](../../../stdlib/core/slice.lani#L78)
 
 ```lanius
 pub fn iter(&self) -> Iter<T>
@@ -635,7 +717,7 @@ pub fn iter(&self) -> Iter<T>
 
 #### method: chunks
 
-[Source line 78](../../../stdlib/core/slice.lani#L78)
+[Source line 80](../../../stdlib/core/slice.lani#L80)
 
 ```lanius
 pub fn chunks(&self, width: i32) -> core::result::Result<Chunks<T>, ViewError>
@@ -643,15 +725,15 @@ pub fn chunks(&self, width: i32) -> core::result::Result<Chunks<T>, ViewError>
 
 #### method: windows
 
-[Source line 83](../../../stdlib/core/slice.lani#L83)
+[Source line 85](../../../stdlib/core/slice.lani#L85)
 
 ```lanius
 pub fn windows(&self, width: i32) -> core::result::Result<Windows<T>, ViewError>
 ```
 
-### impl at line 92
+### impl at line 94
 
-[Source line 92](../../../stdlib/core/slice.lani#L92)
+[Source line 94](../../../stdlib/core/slice.lani#L94)
 
 ```lanius
 pub impl<T> Iter<T>
@@ -659,7 +741,7 @@ pub impl<T> Iter<T>
 
 #### method: borrow
 
-[Source line 93](../../../stdlib/core/slice.lani#L93)
+[Source line 95](../../../stdlib/core/slice.lani#L95)
 
 ```lanius
 pub fn borrow(&self) -> &Iter<T>
@@ -667,7 +749,7 @@ pub fn borrow(&self) -> &Iter<T>
 
 #### method: remaining
 
-[Source line 94](../../../stdlib/core/slice.lani#L94)
+[Source line 96](../../../stdlib/core/slice.lani#L96)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -675,7 +757,7 @@ pub fn remaining(&self) -> i32
 
 #### method: advance
 
-[Source line 97](../../../stdlib/core/slice.lani#L97)
+[Source line 99](../../../stdlib/core/slice.lani#L99)
 
 ```lanius
 pub fn advance(&self, count: i32) -> core::result::Result<i32, ViewError>
@@ -683,15 +765,15 @@ pub fn advance(&self, count: i32) -> core::result::Result<i32, ViewError>
 
 #### method: advance_back
 
-[Source line 103](../../../stdlib/core/slice.lani#L103)
+[Source line 105](../../../stdlib/core/slice.lani#L105)
 
 ```lanius
 pub fn advance_back(&self, count: i32) -> core::result::Result<i32, ViewError>
 ```
 
-### impl at line 110
+### impl at line 112
 
-[Source line 110](../../../stdlib/core/slice.lani#L110)
+[Source line 112](../../../stdlib/core/slice.lani#L112)
 
 ```lanius
 pub impl<T> Chunks<T>
@@ -699,7 +781,7 @@ pub impl<T> Chunks<T>
 
 #### method: borrow
 
-[Source line 111](../../../stdlib/core/slice.lani#L111)
+[Source line 113](../../../stdlib/core/slice.lani#L113)
 
 ```lanius
 pub fn borrow(&self) -> &Chunks<T>
@@ -707,15 +789,15 @@ pub fn borrow(&self) -> &Chunks<T>
 
 #### method: remaining
 
-[Source line 112](../../../stdlib/core/slice.lani#L112)
+[Source line 114](../../../stdlib/core/slice.lani#L114)
 
 ```lanius
 pub fn remaining(&self) -> i32
 ```
 
-### impl at line 119
+### impl at line 121
 
-[Source line 119](../../../stdlib/core/slice.lani#L119)
+[Source line 121](../../../stdlib/core/slice.lani#L121)
 
 ```lanius
 pub impl<T> Windows<T>
@@ -723,7 +805,7 @@ pub impl<T> Windows<T>
 
 #### method: borrow
 
-[Source line 120](../../../stdlib/core/slice.lani#L120)
+[Source line 122](../../../stdlib/core/slice.lani#L122)
 
 ```lanius
 pub fn borrow(&self) -> &Windows<T>
@@ -731,7 +813,7 @@ pub fn borrow(&self) -> &Windows<T>
 
 #### method: remaining
 
-[Source line 121](../../../stdlib/core/slice.lani#L121)
+[Source line 123](../../../stdlib/core/slice.lani#L123)
 
 ```lanius
 pub fn remaining(&self) -> i32

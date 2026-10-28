@@ -1,0 +1,135 @@
+// Finite 32,768-record comparison-growth gate, with no timing-ratio claim.
+module app::main;
+import alloc::vec;
+import core::cmp;
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Count { calls: u64 }
+struct Record { key: i32, id: i32, seal: u64, words: [i32;3], count: &Count }
+struct Order { count: &Count }
+struct Lookup { count: &Count }
+impl Count { fn borrow(&self) -> &Count { return self; } }
+impl Order { fn borrow(&self) -> &Order { return self; } }
+impl Lookup { fn borrow(&self) -> &Lookup { return self; } }
+pub impl core::ordering::Comparator<Record,Record> for Order {
+    pub fn compare(&self, left: Record, right: Record) -> core::ordering::Ordering {
+        self.count.calls += 1; return core::ordering::compare_i32(left.key,right.key);
+    }
+}
+pub impl core::ordering::Comparator<Record,i32> for Lookup {
+    pub fn compare(&self, left: Record, right: i32) -> core::ordering::Ordering {
+        self.count.calls += 1; return core::ordering::compare_i32(left.key,right);
+    }
+}
+pub impl core::cmp::Ord<Record> for Record {
+    pub fn lt(left: Record, right: Record) -> bool { left.count.calls += 1; return left.key < right.key; }
+    pub fn le(left: Record, right: Record) -> bool { left.count.calls += 1; return left.key <= right.key; }
+    pub fn gt(left: Record, right: Record) -> bool { left.count.calls += 1; return left.key > right.key; }
+    pub fn ge(left: Record, right: Record) -> bool { left.count.calls += 1; return left.key >= right.key; }
+}
+fn mark(value: i32) {
+    let bytes: [i32;1] = [value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(bytes),1) == 1);
+}
+fn key(id: i32) -> i32 {
+    if (id == 0) { return -1; }
+    if (id == 32769) { return 1024; }
+    return (((id-1)*8191)%32768)/32;
+}
+fn check(value: Record) {
+    assert(value.id >= 0 && value.id < 32770 && value.key == key(value.id));
+    assert(value.seal == (123456789+104729*(value.id as u64)));
+    assert(value.words[0] == value.id && value.words[1] == -value.id && value.words[2] == value.id%97);
+}
+fn permutation(values: &alloc::vec::Vec<Record>, seen: &alloc::vec::Vec<i32>) {
+    assert(values.len() == 32770 && values.at(0).id == 0 && values.at(32769).id == 32769);
+    let flags: [i32] = seen.as_slice(); let index: i32 = 0;
+    while (index < 32770) { flags[index] = 0; index += 1; }
+    index = 0;
+    while (index < 32770) {
+        let value: Record = values.at(index); check(value);
+        assert(flags[value.id] == 0); flags[value.id] = 1; index += 1;
+    }
+    index = 0; while (index < 32770) { assert(flags[index] == 1); index += 1; }
+}
+fn clamp(value: i32) -> i32 { if (value < 0) { return 0; } if (value > 32768) { return 32768; } return value; }
+fn query_count(count: &Count, previous: u64) -> u64 {
+    assert(count.calls <= 34); if (count.calls > previous) { return count.calls; } return previous;
+}
+fn main() -> i32 {
+    let count: Count = Count { calls: 0 };
+    let order: Order = Order { count: count.borrow() }; let lookup: Lookup = Lookup { count: count.borrow() };
+    let values: alloc::vec::Vec<Record> = alloc::vec::with_capacity<Record>(32770).unwrap();
+    let seen: alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(32770).unwrap();
+    let index: i32 = 0;
+    while (index < 32770) {
+        values.try_push(Record { key: key(index), id: index, seal: 123456789+104729*(index as u64), words: [index,-index,index%97], count: count.borrow() }).unwrap();
+        seen.try_push(0).unwrap(); index += 1;
+    }
+    assert(core::mem::slice_stride(values.as_slice()) < 0);
+    let view: core::slice::View<Record> = values.as_view().subview(1,32769).unwrap();
+    permutation(values.borrow(),seen.borrow());
+    mark(80); count.calls = 0;
+    assert(core::slice::sort_unstable_by<Record,Order>(view.subview(0,0).unwrap(),order.borrow()).unwrap() == 0);
+    assert(core::slice::sort_unstable_by<Record,Order>(view.subview(0,1).unwrap(),order.borrow()).unwrap() == 1);
+    assert(count.calls == 0);
+    assert(core::slice::sort_unstable_by<Record,Order>(view,order.borrow()).unwrap() == 32768);
+    let custom_calls: u64 = count.calls; assert(custom_calls > 0 && custom_calls <= 8*32768*16);
+    count.calls = 0; assert(core::slice::is_sorted_by<Record,Order>(view,order.borrow()).unwrap());
+    let sorted_calls: u64 = count.calls; assert(sorted_calls > 0 && sorted_calls <= 32768); mark(112);
+    permutation(values.borrow(),seen.borrow()); index = 0;
+    while (index < 32768) { assert(view.get(index).unwrap().key == index/32); index += 1; }
+    let max_query_calls: u64 = 0; let needle: i32 = -1;
+    mark(80);
+    while (needle <= 1024) {
+        let low: i32 = clamp(needle*32); let high: i32 = clamp((needle+1)*32);
+        count.calls = 0; assert(core::slice::lower_bound_by<Record,i32,Lookup>(view,needle,lookup.borrow()).unwrap() == low);
+        max_query_calls = query_count(count.borrow(),max_query_calls);
+        count.calls = 0; assert(core::slice::upper_bound_by<Record,i32,Lookup>(view,needle,lookup.borrow()).unwrap() == high);
+        max_query_calls = query_count(count.borrow(),max_query_calls);
+        count.calls = 0;
+        let first: core::option::Option<i32> = core::slice::binary_search_first_by<Record,i32,Lookup>(view,needle,lookup.borrow()).unwrap();
+        max_query_calls = query_count(count.borrow(),max_query_calls); count.calls = 0;
+        let last: core::option::Option<i32> = core::slice::binary_search_last_by<Record,i32,Lookup>(view,needle,lookup.borrow()).unwrap();
+        max_query_calls = query_count(count.borrow(),max_query_calls);
+        if (needle >= 0 && needle < 1024) { assert(first.unwrap() == low && last.unwrap() == high-1); }
+        else { assert(first.is_none() && last.is_none()); }
+        needle += 1;
+    }
+    mark(112); permutation(values.borrow(),seen.borrow()); view.reverse();
+    mark(80); count.calls = 0;
+    let boundary: i32 = core::slice::partition_lt_by<Record,i32,Lookup>(view,512,lookup.borrow()).unwrap();
+    let partition_calls: u64 = count.calls; assert(boundary == 16384 && partition_calls > 0 && partition_calls <= 32768); mark(112);
+    index = 0; while (index < 32768) { assert((view.get(index).unwrap().key < 512) == (index < boundary)); index += 1; }
+    permutation(values.borrow(),seen.borrow()); view.reverse();
+    // Legacy raw Ord APIs must operate on these same compound values and use
+    // their instrumented total order. Extreme guard keys stay at the ends.
+    mark(80); count.calls = 0;
+    assert(core::slice::sort<Record>(values.as_slice(),32770) == 32770);
+    let legacy_calls: u64 = count.calls; assert(legacy_calls > 0 && legacy_calls <= 8*32770*17);
+    count.calls = 0; assert(core::slice::is_sorted<Record>(values.as_slice(),32770));
+    assert(count.calls > 0 && count.calls <= 2*32770); mark(112);
+    permutation(values.borrow(),seen.borrow()); index = 0;
+    while (index < 32768) { assert(view.get(index).unwrap().key == index/32); index += 1; }
+    mark(80); needle = 0;
+    while (needle < 1024) {
+        let actual: Record = view.get(needle*32).unwrap(); assert(actual.key == needle);
+        count.calls = 0; assert(core::slice::lower_bound<Record>(values.as_slice(),32770,actual) == 1+needle*32);
+        assert(count.calls <= 68);
+        count.calls = 0; assert(core::slice::upper_bound<Record>(values.as_slice(),32770,actual) == 1+(needle+1)*32);
+        assert(count.calls <= 68);
+        count.calls = 0; assert(core::slice::binary_search_first_or<Record>(values.as_slice(),32770,actual,-1) == 1+needle*32);
+        assert(count.calls <= 68);
+        count.calls = 0; assert(core::slice::binary_search_last_or<Record>(values.as_slice(),32770,actual,-1) == (needle+1)*32);
+        assert(count.calls <= 68); needle += 1;
+    }
+    mark(112); permutation(values.borrow(),seen.borrow());
+    // Report observed counts independently to the host gate, little-endian i32.
+    let report: [i32;6] = [32768,custom_calls as i32,sorted_calls as i32,partition_calls as i32,legacy_calls as i32,max_query_calls as i32];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),24) == 24);
+    values.destroy(); seen.destroy(); mark(68); return 0;
+}

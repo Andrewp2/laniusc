@@ -8,18 +8,23 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
+Comparator<L,R> is the single canonical borrowed comparison protocol for element/element ordering and heterogeneous element/key lookup. compare borrows its receiver and receives shallow operands by value, returning Ordering; callback traps have no rollback envelope. Iterator min_by/max_by migrate directly to Comparator<T,T>, with no core::iter alias. Natural<T> implements Comparator<T,T> under Ord<T>, checking lt(left,right), then lt(right,left), otherwise Equal. Its borrow() accessor lends the context; raw slice/count algorithms share the checked View engines through this adapter, with no implicit Clone/Destroy. Callbacks borrow shallow arguments and context without cleanup authority; stable lawful ordering, live backing and nonreentrancy remain caller obligations. The current native Linux x86_64 slice increment passes six library gates (three contracts/8.64s, two owner and scale tests/12.20s, one independent model/6.59s), including 2808 cases/44928 actions/two descending-stride compound-record backings/six policies. The separate two dependency checks pass in 2.92s: an import-free same-receiver local trait reproduction reports LNC0027 for two compare implementations with distinct complete trait arguments, while distinct role receiver types sharing one policy compile/execute. Public heterogeneous bounds are unchanged; no compiler repair or general multiple-implementation restriction is claimed. Sort-rows separately passes four registered application groups/122 cases across model 37/12.78s and CLI 39 + rejection 33 + I/O 13/9.65s. Three selected migrated iterator tests pass in 16.23s: the 1280-schedule/320-extrema/180-position model, owner cleanup and exact capability rejections, with two unrelated tests filtered. Historical lookahead application/trap groups were not rerun. This finite selected increment is accepted. No device execution, proof or automatic ownership claim follows.
+
 ## Contract and evidence guides
 
 - [stdlib-comparison](../../stdlib-comparison.md)
+- [stdlib-slice-ordering](../../stdlib-slice-ordering.md)
+- [stdlib-sort-rows](../../stdlib-sort-rows.md)
 
-Declaration counts: enum: 1; function: 20; variant: 3.
+Declaration counts: enum: 1; function: 20; impl: 2; method: 2; struct: 1; trait: 1; trait member: 1; variant: 3.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/ordering.lani#L5)
-- [core::wide_i64](wide_i64.md) · [source](../../../stdlib/core/ordering.lani#L6)
+- [core::cmp](cmp.md) · [source](../../../stdlib/core/ordering.lani#L5)
+- [core::wide_u64](wide_u64.md) · [source](../../../stdlib/core/ordering.lani#L6)
+- [core::wide_i64](wide_i64.md) · [source](../../../stdlib/core/ordering.lani#L7)
 
 ## Types, fields and variants
 
@@ -27,7 +32,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### enum: Ordering
 
-[Source line 8](../../../stdlib/core/ordering.lani#L8)
+[Source line 9](../../../stdlib/core/ordering.lani#L9)
 
 ```lanius
 pub enum Ordering
@@ -35,7 +40,7 @@ pub enum Ordering
 
 #### variant: Less
 
-[Source line 9](../../../stdlib/core/ordering.lani#L9)
+[Source line 10](../../../stdlib/core/ordering.lani#L10)
 
 ```lanius
 Less
@@ -43,7 +48,7 @@ Less
 
 #### variant: Equal
 
-[Source line 10](../../../stdlib/core/ordering.lani#L10)
+[Source line 11](../../../stdlib/core/ordering.lani#L11)
 
 ```lanius
 Equal
@@ -51,17 +56,25 @@ Equal
 
 #### variant: Greater
 
-[Source line 11](../../../stdlib/core/ordering.lani#L11)
+[Source line 12](../../../stdlib/core/ordering.lani#L12)
 
 ```lanius
 Greater
+```
+
+### struct: Natural
+
+[Source line 23](../../../stdlib/core/ordering.lani#L23)
+
+```lanius
+pub struct Natural<T>
 ```
 
 ## Free functions and extern declarations
 
 ### function: compare_i32
 
-[Source line 14](../../../stdlib/core/ordering.lani#L14)
+[Source line 35](../../../stdlib/core/ordering.lani#L35)
 
 ```lanius
 pub fn compare_i32(left: i32, right: i32) -> Ordering
@@ -69,7 +82,7 @@ pub fn compare_i32(left: i32, right: i32) -> Ordering
 
 ### function: compare_u32
 
-[Source line 26](../../../stdlib/core/ordering.lani#L26)
+[Source line 47](../../../stdlib/core/ordering.lani#L47)
 
 ```lanius
 pub fn compare_u32(left: u32, right: u32) -> Ordering
@@ -77,7 +90,7 @@ pub fn compare_u32(left: u32, right: u32) -> Ordering
 
 ### function: compare_u8
 
-[Source line 38](../../../stdlib/core/ordering.lani#L38)
+[Source line 59](../../../stdlib/core/ordering.lani#L59)
 
 ```lanius
 pub fn compare_u8(left: u8, right: u8) -> Ordering
@@ -85,7 +98,7 @@ pub fn compare_u8(left: u8, right: u8) -> Ordering
 
 ### function: compare_i8
 
-[Source line 50](../../../stdlib/core/ordering.lani#L50)
+[Source line 71](../../../stdlib/core/ordering.lani#L71)
 
 ```lanius
 pub fn compare_i8(left: i8, right: i8) -> Ordering
@@ -93,7 +106,7 @@ pub fn compare_i8(left: i8, right: i8) -> Ordering
 
 ### function: compare_i16
 
-[Source line 62](../../../stdlib/core/ordering.lani#L62)
+[Source line 83](../../../stdlib/core/ordering.lani#L83)
 
 ```lanius
 pub fn compare_i16(left: i16, right: i16) -> Ordering
@@ -101,7 +114,7 @@ pub fn compare_i16(left: i16, right: i16) -> Ordering
 
 ### function: compare_u16
 
-[Source line 74](../../../stdlib/core/ordering.lani#L74)
+[Source line 95](../../../stdlib/core/ordering.lani#L95)
 
 ```lanius
 pub fn compare_u16(left: u16, right: u16) -> Ordering
@@ -109,7 +122,7 @@ pub fn compare_u16(left: u16, right: u16) -> Ordering
 
 ### function: compare_char
 
-[Source line 86](../../../stdlib/core/ordering.lani#L86)
+[Source line 107](../../../stdlib/core/ordering.lani#L107)
 
 ```lanius
 pub fn compare_char(left: char, right: char) -> Ordering
@@ -117,7 +130,7 @@ pub fn compare_char(left: char, right: char) -> Ordering
 
 ### function: compare_bool
 
-[Source line 99](../../../stdlib/core/ordering.lani#L99)
+[Source line 120](../../../stdlib/core/ordering.lani#L120)
 
 ```lanius
 pub fn compare_bool(left: bool, right: bool) -> Ordering
@@ -125,7 +138,7 @@ pub fn compare_bool(left: bool, right: bool) -> Ordering
 
 ### function: compare_f32_or
 
-[Source line 112](../../../stdlib/core/ordering.lani#L112)
+[Source line 133](../../../stdlib/core/ordering.lani#L133)
 
 ```lanius
 pub fn compare_f32_or(left: f32, right: f32, fallback: Ordering) -> Ordering
@@ -133,7 +146,7 @@ pub fn compare_f32_or(left: f32, right: f32, fallback: Ordering) -> Ordering
 
 ### function: compare_wide_u64
 
-[Source line 119](../../../stdlib/core/ordering.lani#L119)
+[Source line 140](../../../stdlib/core/ordering.lani#L140)
 
 ```lanius
 pub fn compare_wide_u64(
@@ -144,7 +157,7 @@ pub fn compare_wide_u64(
 
 ### function: compare_wide_i64
 
-[Source line 129](../../../stdlib/core/ordering.lani#L129)
+[Source line 150](../../../stdlib/core/ordering.lani#L150)
 
 ```lanius
 pub fn compare_wide_i64(
@@ -155,7 +168,7 @@ pub fn compare_wide_i64(
 
 ### function: reverse
 
-[Source line 139](../../../stdlib/core/ordering.lani#L139)
+[Source line 160](../../../stdlib/core/ordering.lani#L160)
 
 ```lanius
 pub fn reverse(ordering: Ordering) -> Ordering
@@ -163,7 +176,7 @@ pub fn reverse(ordering: Ordering) -> Ordering
 
 ### function: then
 
-[Source line 147](../../../stdlib/core/ordering.lani#L147)
+[Source line 168](../../../stdlib/core/ordering.lani#L168)
 
 ```lanius
 pub fn then(ordering: Ordering, next: Ordering) -> Ordering
@@ -171,7 +184,7 @@ pub fn then(ordering: Ordering, next: Ordering) -> Ordering
 
 ### function: to_i32
 
-[Source line 155](../../../stdlib/core/ordering.lani#L155)
+[Source line 176](../../../stdlib/core/ordering.lani#L176)
 
 ```lanius
 pub fn to_i32(ordering: Ordering) -> i32
@@ -179,7 +192,7 @@ pub fn to_i32(ordering: Ordering) -> i32
 
 ### function: is_less
 
-[Source line 163](../../../stdlib/core/ordering.lani#L163)
+[Source line 184](../../../stdlib/core/ordering.lani#L184)
 
 ```lanius
 pub fn is_less(ordering: Ordering) -> bool
@@ -187,7 +200,7 @@ pub fn is_less(ordering: Ordering) -> bool
 
 ### function: is_equal
 
-[Source line 171](../../../stdlib/core/ordering.lani#L171)
+[Source line 192](../../../stdlib/core/ordering.lani#L192)
 
 ```lanius
 pub fn is_equal(ordering: Ordering) -> bool
@@ -195,7 +208,7 @@ pub fn is_equal(ordering: Ordering) -> bool
 
 ### function: is_greater
 
-[Source line 179](../../../stdlib/core/ordering.lani#L179)
+[Source line 200](../../../stdlib/core/ordering.lani#L200)
 
 ```lanius
 pub fn is_greater(ordering: Ordering) -> bool
@@ -203,7 +216,7 @@ pub fn is_greater(ordering: Ordering) -> bool
 
 ### function: is_less_or_equal
 
-[Source line 187](../../../stdlib/core/ordering.lani#L187)
+[Source line 208](../../../stdlib/core/ordering.lani#L208)
 
 ```lanius
 pub fn is_less_or_equal(ordering: Ordering) -> bool
@@ -211,7 +224,7 @@ pub fn is_less_or_equal(ordering: Ordering) -> bool
 
 ### function: is_greater_or_equal
 
-[Source line 191](../../../stdlib/core/ordering.lani#L191)
+[Source line 212](../../../stdlib/core/ordering.lani#L212)
 
 ```lanius
 pub fn is_greater_or_equal(ordering: Ordering) -> bool
@@ -219,8 +232,60 @@ pub fn is_greater_or_equal(ordering: Ordering) -> bool
 
 ### function: is_not_equal
 
-[Source line 195](../../../stdlib/core/ordering.lani#L195)
+[Source line 216](../../../stdlib/core/ordering.lani#L216)
 
 ```lanius
 pub fn is_not_equal(ordering: Ordering) -> bool
+```
+
+## Traits and members
+
+### trait: Comparator
+
+[Source line 19](../../../stdlib/core/ordering.lani#L19)
+
+```lanius
+pub trait Comparator<L,R>
+```
+
+#### trait member: compare
+
+[Source line 20](../../../stdlib/core/ordering.lani#L20)
+
+```lanius
+pub fn compare(&self,left:L,right:R) -> Ordering;
+```
+
+## Implementation blocks and public methods
+
+### impl at line 24
+
+[Source line 24](../../../stdlib/core/ordering.lani#L24)
+
+```lanius
+pub impl<T> Natural<T>
+```
+
+#### method: borrow
+
+[Source line 25](../../../stdlib/core/ordering.lani#L25)
+
+```lanius
+pub fn borrow(&self) -> &Natural<T>
+```
+
+### impl at line 27
+
+[Source line 27](../../../stdlib/core/ordering.lani#L27)
+
+```lanius
+pub impl<T> Comparator<T,T> for Natural<T> where T:core::cmp::Ord<T>
+```
+
+#### method: compare
+
+[Source line 28](../../../stdlib/core/ordering.lani#L28)
+
+```lanius
+pub fn compare(&self,left:T,right:T) -> Ordering
 ```

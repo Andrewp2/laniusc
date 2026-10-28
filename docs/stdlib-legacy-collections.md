@@ -92,8 +92,10 @@ Wide integer records implement `Eq` and `Ord` but do not implement `Hash`, so
 those consumers use the checked tree set rather than adding an implicit hash
 policy at the call site.
 
-`std::vec` remains because the formal extractor recognizes that module identity
-and `alloc::binary_heap` still has a documented compiler dependency on it.
+The protected `std::vec` retains active formal vector specification/template
+contracts and remains backing for `alloc::binary_heap`. The mini compiler and
+extractor now use `List`; the [dependency ledger](library-dependencies.md)
+records the formal contract and separate heap-migration compiler dependency.
 The retained vector's failure contract and general generic adapter composition
 remain separate work. This migration does not change compiler, runtime, ABI,
 IR, shaders, or proofs.

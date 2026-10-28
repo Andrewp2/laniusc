@@ -55,8 +55,11 @@ runtime behavior, failure rules and supported targets.
 | Native C libraries | Checked `extern "C"` declarations; optional `ext::openssl_digest` | [Linux x86_64/glibc ABI and linking](../docs/library-native-c.md), [OpenSSL digest ownership](../docs/extended-openssl-digest.md), [binary stdin hashing](../docs/extended-openssl-hash.md) |
 | Tests and benchmarks | `test::assert`, `test::check`, `test::suite`, `test::property`, `test::bench` | [Development workflow](../docs/stdlib-development.md), `tools/lanius-test` |
 
-The older `std::vec` remains for the verified compiler's extraction contract and
-one heap dependency. New programs should use `alloc::vec`. Silent-failure map,
+The protected `std::vec` retains active formal vector specification/template
+contracts and remains heap backing. The mini compiler and extractor use `List`;
+the [dependency ledger](../docs/library-dependencies.md) records the protected
+formal contract and separate heap-migration dependency. New programs should
+use `alloc::vec`. Silent-failure map,
 set, byte-vector and UTF-8 owners have been removed with their repository
 consumers [migrated to checked APIs](../docs/stdlib-legacy-collections.md).
 

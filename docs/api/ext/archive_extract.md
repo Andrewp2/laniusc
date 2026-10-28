@@ -32,7 +32,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Result](../core/result.md) (item: enum) · [declaration](../../../stdlib/core/result.lani#L12) · [source](../../../extended/ext/archive_extract.lani#L11)
 - [core::result::Ok](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L13) · [source](../../../extended/ext/archive_extract.lani#L12)
 - [core::result::Err](../core/result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../extended/ext/archive_extract.lani#L13)
-- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L22) · [source](../../../extended/ext/archive_extract.lani#L14)
+- [core::slice::View](../core/slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../extended/ext/archive_extract.lani#L14)
 - [ext::archive_plan](archive_plan.md) · [source](../../../extended/ext/archive_extract.lani#L15)
 - [ext::archive_source](archive_source.md) · [source](../../../extended/ext/archive_extract.lani#L16)
 - [ext::zip](zip.md) · [source](../../../extended/ext/archive_extract.lani#L17)

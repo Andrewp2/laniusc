@@ -27,7 +27,7 @@ pub impl core::iter::Iterator<Item> for Source {
 }
 pub struct Compare { left: [i32], right: [i32], calls: i32, reverse: bool }
 pub impl Compare { pub fn borrow(&self) -> &Compare { return self; } }
-pub impl core::iter::Comparator<Item> for Compare {
+pub impl core::ordering::Comparator<Item,Item> for Compare {
     pub fn compare(&self,a: Item,b: Item) -> core::ordering::Ordering {
         assert(self.calls<16); self.left[self.calls]=a.id; self.right[self.calls]=b.id; self.calls+=1;
         let left: i32=a.priority; let right: i32=b.priority;
@@ -42,7 +42,7 @@ pub impl core::iter::Mapper<Item,bool> for Predicate {
 }
 pub fn pull<I,T>(source: &I) -> core::option::Option<T> where I: core::iter::Iterator<T> { return source.next(); }
 pub fn observe<I,T>(source: &core::iter::Peekable<I,T>) -> core::option::Option<T> where I: core::iter::Iterator<T> { return source.peek(); }
-pub fn choose<I,C,T>(source: &I,comparator: &C) -> core::option::Option<T> where I: core::iter::Iterator<T>,C: core::iter::Comparator<T> {
+pub fn choose<I,C,T>(source: &I,comparator: &C) -> core::option::Option<T> where I: core::iter::Iterator<T>,C: core::ordering::Comparator<T,T> {
     return core::iter::min_by<I,C,T>(source,comparator);
 }
 pub struct Output { bytes: [u8], used: i32 }

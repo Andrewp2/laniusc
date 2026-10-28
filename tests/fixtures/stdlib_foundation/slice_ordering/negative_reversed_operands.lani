@@ -1,0 +1,16 @@
+module app::main;
+import core::ordering;
+import core::slice;
+struct Item { key:i32 }
+struct Key { key:i64 }
+struct Reversed {}
+impl Reversed { fn borrow(&self) -> &Reversed { return self; } }
+pub impl core::ordering::Comparator<Key,Item> for Reversed {
+    pub fn compare(&self,left:Key,right:Item) -> core::ordering::Ordering { return core::ordering::Ordering::Equal; }
+}
+fn main() -> i32 {
+    let data:[Item;1]=[Item { key:1 }]; let order:Reversed=Reversed {};
+    let view:core::slice::View<Item> =core::slice::view<Item>(data,1).unwrap();
+    let rejected:i32=core::slice::lower_bound_by<Item,Key,Reversed>(view,Key { key:1 },order.borrow()).unwrap(); // rejected_ordering_bound
+    return 0;
+}

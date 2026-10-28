@@ -4,7 +4,7 @@ import core::option;
 import core::ordering;
 struct Compare {}
 impl Compare { fn borrow(&self) -> &Compare { return self; } }
-pub impl core::iter::Comparator<u64> for Compare {
+pub impl core::ordering::Comparator<u64,u64> for Compare {
     pub fn compare(&self,a: u64,b: u64) -> core::ordering::Ordering { return core::ordering::Ordering::Equal; }
 }
 fn main() -> i32 {

@@ -105,17 +105,24 @@ There is no implicit `Destroy`.
 Native floats do not satisfy that total-order bound; use an explicit lawful
 comparison policy or the [float-order wrappers](api/core/float_order.md).
 
-Custom comparison uses:
+Custom comparison uses the canonical trait in `core::ordering`:
 
 ```lanius
-pub trait Comparator<T> {
-    pub fn compare(&self,left: T,right: T) -> core::ordering::Ordering;
+// Declared in core::ordering.
+pub trait Comparator<L,R> {
+    pub fn compare(&self,left: L,right: R) -> core::ordering::Ordering;
 }
 pub fn min_by<I,C,T>(source: &I,comparator: &C) -> Option<T>
-    where I: Iterator<T>, C: Comparator<T>;
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T>;
 pub fn max_by<I,C,T>(source: &I,comparator: &C) -> Option<T>
-    where I: Iterator<T>, C: Comparator<T>;
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T>;
 ```
+
+The [slice-ordering increment](stdlib-slice-ordering.md) moves and generalizes
+this trait so the same protocol also supports heterogeneous queries.
+Implementations and bounds migrate directly; there is no old
+`core::iter::Comparator<T>` alias. The historical receipts below retain their
+original source scope; current migration checks are recorded in the new guide.
 
 All four return `None` for empty input. Otherwise they consume through the
 first upstream `None` and return one original representative. Minimum keeps
@@ -137,8 +144,8 @@ source and callback cost or termination are outside the reduction's control.
 
 ## Focused execution evidence
 
-All five groups in `tests/stdlib_iterator_lookahead_execution.rs` have passing
-evidence across separate runs:
+The historical freeze has passing evidence for all five groups in
+`tests/stdlib_iterator_lookahead_execution.rs` across separate runs:
 
 - Nested optional items, lazy construction, cached finish rejection, cache
   recovery, no-poll finish, source resumption and relative/MAX position edges;
@@ -171,3 +178,11 @@ Library and sample production source remained unchanged throughout these runs.
 The driver retains the shared strict ELF checker. Allocation ledgers and
 bounded independent models give finite evidence, not a proof of all iterator
 programs.
+
+The [canonical comparator migration](stdlib-slice-ordering.md) separately
+passes three selected current tests in 16.23s under
+`slice-ordering-iterator-migration-regression.log`: the 1,280 schedules /
+320 extrema / 180 position model, cached/borrowed owner cleanup and exact
+capability rejections. Two unrelated tests were filtered; the historical
+sample and overflow-trap receipts above were not rerun. The current fixtures
+implement `core::ordering::Comparator<T,T>` directly.

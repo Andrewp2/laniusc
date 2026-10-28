@@ -4,14 +4,16 @@
 // indexing traps if it reaches beyond the view. Functions below specify
 // whether a negative length is treated as empty or rejected without mutation.
 //
-// Searching needs core::cmp::PartialEq and ordering needs core::cmp::Ord. Ordered
-// functions require a lawful total order. Native float membership follows IEEE
-// equality; sorting float encodings needs core::float_order wrappers.
+// Searching needs core::cmp::PartialEq. Ordering uses a borrowed Comparator or
+// the type's global Ord through Natural. Ordered functions require a lawful
+// total order. Native float membership follows IEEE equality; sorting float
+// encodings needs core::float_order wrappers or an explicit total comparator.
 module core::slice;
 
 import core::cmp;
 import core::ops;
 import core::option;
+import core::ordering;
 import core::result;
 
 // Length-bearing borrowed views. Construction checks logical bounds; until
@@ -584,11 +586,19 @@ pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Or
     return highest;
 }
 
-// Empty and single-element views are sorted.
-pub fn is_sorted<T>(values: [T], len: i32) -> bool where T: core::cmp::Ord<T> {
+// Shared ordering engines take an admitted logical View. Ordinary indexing
+// retains its native stride, including negative strides. These functions do
+// not establish physical backing, lifetime or freedom from interfering aliases.
+fn ordering_view_valid<T>(values:View<T>) -> bool {
+    if(values.start<0 || values.length<0) { return false; }
+    return values.start<=2147483647-values.length;
+}
+
+fn is_sorted_engine<T,C>(values:View<T>,comparator:&C) -> bool
+    where C:core::ordering::Comparator<T,T> {
     let index: i32 = 1;
-    while (index < len) {
-        if (T::lt(values[index], values[index - 1])) {
+    while (index < values.length) {
+        if (core::ordering::is_less(comparator.compare(values.values[values.start+index],values.values[values.start+index-1]))) {
             return false;
         }
         index += 1;
@@ -596,58 +606,55 @@ pub fn is_sorted<T>(values: [T], len: i32) -> bool where T: core::cmp::Ord<T> {
     return true;
 }
 
-fn sift_down<T>(values: [T], heap_len: i32, start: i32) where T: core::cmp::Ord<T> {
+fn sift_down_by<T,C>(values:View<T>,heap_len:i32,start:i32,comparator:&C)
+    where C:core::ordering::Comparator<T,T> {
     let root: i32 = start;
+    // A left child exists before doubling root, so neither child arithmetic
+    // nor the admitted view's start+relative-index addition can overflow.
     while (root < heap_len / 2) {
         let child: i32 = root * 2 + 1;
         let largest: i32 = root;
-        if (T::lt(values[largest], values[child])) {
+        if (core::ordering::is_less(comparator.compare(values.values[values.start+largest],values.values[values.start+child]))) {
             largest = child;
         }
-        if (child + 1 < heap_len && T::lt(values[largest], values[child + 1])) {
+        if (child + 1 < heap_len && core::ordering::is_less(comparator.compare(values.values[values.start+largest],values.values[values.start+child+1]))) {
             largest = child + 1;
         }
         if (largest == root) {
             return;
         }
-        let previous: T = values[root];
-        values[root] = values[largest];
-        values[largest] = previous;
+        let previous: T = values.values[values.start+root];
+        values.values[values.start+root] = values.values[values.start+largest];
+        values.values[values.start+largest] = previous;
         root = largest;
     }
 }
 
-// In-place ascending heapsort; not stable. Returns the number of elements
-// sorted; nonpositive lengths return zero and do not touch storage.
-pub fn sort<T>(values: [T], len: i32) -> i32 where T: core::cmp::Ord<T> {
-    if (len <= 0) {
-        return 0;
-    }
-    let start: i32 = len / 2;
+fn sort_engine<T,C>(values:View<T>,comparator:&C) -> i32
+    where C:core::ordering::Comparator<T,T> {
+    let start: i32 = values.length / 2;
     while (start > 0) {
         start -= 1;
-        sift_down(values, len, start);
+        sift_down_by<T,C>(values,values.length,start,comparator);
     }
-    let remaining: i32 = len;
+    let remaining: i32 = values.length;
     while (remaining > 1) {
         remaining -= 1;
-        let previous: T = values[0];
-        values[0] = values[remaining];
-        values[remaining] = previous;
-        sift_down(values, remaining, 0);
+        let previous: T = values.values[values.start];
+        values.values[values.start] = values.values[values.start+remaining];
+        values.values[values.start+remaining] = previous;
+        sift_down_by<T,C>(values,remaining,0,comparator);
     }
-    return len;
+    return values.length;
 }
 
-// Requires nondecreasing input. Returns the first index whose value is not
-// below needle, or len when every value is smaller. A nonpositive len
-// returns zero. The midpoint calculation avoids overflowing i32.
-pub fn lower_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Ord<T> {
+fn lower_bound_engine<T,K,C>(values:View<T>,needle:K,comparator:&C) -> i32
+    where C:core::ordering::Comparator<T,K> {
     let low: i32 = 0;
-    let high: i32 = nonnegative_len(len);
+    let high: i32 = values.length;
     while (low < high) {
         let middle: i32 = low + (high - low) / 2;
-        if (T::lt(values[middle], needle)) {
+        if (core::ordering::is_less(comparator.compare(values.values[values.start+middle],needle))) {
             low = middle + 1;
         } else {
             high = middle;
@@ -656,14 +663,13 @@ pub fn lower_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cm
     return low;
 }
 
-// Requires nondecreasing input. Returns the first index whose value is
-// strictly greater than needle, or len when every value is at most needle.
-pub fn upper_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cmp::Ord<T> {
+fn upper_bound_engine<T,K,C>(values:View<T>,needle:K,comparator:&C) -> i32
+    where C:core::ordering::Comparator<T,K> {
     let low: i32 = 0;
-    let high: i32 = nonnegative_len(len);
+    let high: i32 = values.length;
     while (low < high) {
         let middle: i32 = low + (high - low) / 2;
-        if (T::le(values[middle], needle)) {
+        if (!core::ordering::is_greater(comparator.compare(values.values[values.start+middle],needle))) {
             low = middle + 1;
         } else {
             high = middle;
@@ -672,42 +678,130 @@ pub fn upper_bound<T>(values: [T], len: i32, needle: T) -> i32 where T: core::cm
     return low;
 }
 
-// Requires nondecreasing input and returns the first matching index.
-pub fn binary_search_first_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
-    where T: core::cmp::Ord<T> {
-    let index: i32 = lower_bound(values, len, needle);
-    if (index < len && T::le(values[index], needle)) {
-        return index;
+fn binary_search_first_engine<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::option::Option<i32>
+    where C:core::ordering::Comparator<T,K> {
+    let index: i32 = lower_bound_engine<T,K,C>(values,needle,comparator);
+    if (index < values.length && core::ordering::is_equal(comparator.compare(values.values[values.start+index],needle))) {
+        return core::option::Some(index);
     }
-    return fallback;
+    return core::option::None();
 }
 
-// Requires nondecreasing input and returns the last matching index.
-pub fn binary_search_last_or<T>(values: [T], len: i32, needle: T, fallback: i32) -> i32
-    where T: core::cmp::Ord<T> {
-    let after: i32 = upper_bound(values, len, needle);
-    if (after > 0 && T::le(needle, values[after - 1])) {
-        return after - 1;
+fn binary_search_last_engine<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::option::Option<i32>
+    where C:core::ordering::Comparator<T,K> {
+    let after: i32 = upper_bound_engine<T,K,C>(values,needle,comparator);
+    if (after > 0 && core::ordering::is_equal(comparator.compare(values.values[values.start+after-1],needle))) {
+        return core::option::Some(after-1);
     }
-    return fallback;
+    return core::option::None();
 }
 
-// Partition the first len elements so every element below pivot precedes
-// every other element. Returns the boundary between those groups. Relative
-// order is not preserved. A nonpositive len returns zero without writing.
-pub fn partition_lt<T>(values: [T], len: i32, pivot: T) -> i32 where T: core::cmp::Ord<T> {
+fn partition_lt_engine<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> i32
+    where C:core::ordering::Comparator<T,K> {
     let boundary: i32 = 0;
     let index: i32 = 0;
-    while (index < len) {
-        if (T::lt(values[index], pivot)) {
-            let previous: T = values[boundary];
-            values[boundary] = values[index];
-            values[index] = previous;
+    while (index < values.length) {
+        if (core::ordering::is_less(comparator.compare(values.values[values.start+index],pivot))) {
+            let previous: T = values.values[values.start+boundary];
+            values.values[values.start+boundary] = values.values[values.start+index];
+            values.values[values.start+index] = previous;
             boundary += 1;
         }
         index += 1;
     }
     return boundary;
+}
+
+// Checked entry points validate the complete logical range before any read,
+// mutation or callback. Indices are relative to the selected View. Backing and
+// context must remain live and unchanged through aliases; no clone/Destroy or
+// allocation occurs. Sorting is unstable; exact comparison traces are not promised.
+pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,T> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    return core::result::Ok(sort_engine<T,C>(values,comparator));
+}
+pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
+    where C:core::ordering::Comparator<T,T> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    return core::result::Ok(is_sorted_engine<T,C>(values,comparator));
+}
+// Each query requires all Less, then Equal, then Greater classes. Bounds may
+// equal length; no scan is made to validate this ordering precondition.
+pub fn lower_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,K> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    return core::result::Ok(lower_bound_engine<T,K,C>(values,needle,comparator));
+}
+pub fn upper_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,K> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    return core::result::Ok(upper_bound_engine<T,K,C>(values,needle,comparator));
+}
+pub fn binary_search_first_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
+    where C:core::ordering::Comparator<T,K> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    let found:core::option::Option<i32> =binary_search_first_engine<T,K,C>(values,needle,comparator);
+    return core::result::Ok(found);
+}
+pub fn binary_search_last_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
+    where C:core::ordering::Comparator<T,K> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    let found:core::option::Option<i32> =binary_search_last_engine<T,K,C>(values,needle,comparator);
+    return core::result::Ok(found);
+}
+// Less values precede all others. Only the permutation and boundary are
+// promised; no relative ordering, tie layout or rollback on callback traps.
+pub fn partition_lt_by<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> core::result::Result<i32,ViewError>
+    where C:core::ordering::Comparator<T,K> {
+    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    return core::result::Ok(partition_lt_engine<T,K,C>(values,pivot,comparator));
+}
+
+// Raw slice/count Ord entry points preserve nonpositive-as-empty semantics
+// and delegate to the same engines. Physical backing remains a precondition.
+pub fn is_sorted<T>(values:[T],len:i32) -> bool where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    return is_sorted_engine<T,core::ordering::Natural<T>>(selected,comparator.borrow());
+}
+// In-place ascending heapsort; not stable. Return the number sorted.
+pub fn sort<T>(values:[T],len:i32) -> i32 where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    return sort_engine<T,core::ordering::Natural<T>>(selected,comparator.borrow());
+}
+// Nondecreasing input; first not-Less or first Greater, respectively.
+pub fn lower_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    return lower_bound_engine<T,T,core::ordering::Natural<T>>(selected,needle,comparator.borrow());
+}
+pub fn upper_bound<T>(values:[T],len:i32,needle:T) -> i32 where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    return upper_bound_engine<T,T,core::ordering::Natural<T>>(selected,needle,comparator.borrow());
+}
+// Nondecreasing input; select the exact first/last match or fallback.
+pub fn binary_search_first_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
+    where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    let found:core::option::Option<i32> =binary_search_first_engine<T,T,core::ordering::Natural<T>>(selected,needle,comparator.borrow());
+    return found.unwrap_or(fallback);
+}
+pub fn binary_search_last_or<T>(values:[T],len:i32,needle:T,fallback:i32) -> i32
+    where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    let found:core::option::Option<i32> =binary_search_last_engine<T,T,core::ordering::Natural<T>>(selected,needle,comparator.borrow());
+    return found.unwrap_or(fallback);
+}
+// Unstable Less/non-Less partition of the first nonnegative_len(len) values.
+pub fn partition_lt<T>(values:[T],len:i32,pivot:T) -> i32 where T:core::cmp::Ord<T> {
+    let selected:View<T> =View { values:values,start:0,length:nonnegative_len(len) };
+    let comparator:core::ordering::Natural<T> =core::ordering::Natural {};
+    return partition_lt_engine<T,T,core::ordering::Natural<T>>(selected,pivot,comparator.borrow());
 }
 
 // Adds every element to `initial` with the type's saturating addition, so

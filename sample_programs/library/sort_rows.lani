@@ -1,0 +1,220 @@
+// Bounded CSV ordering through a borrowed per-call comparator and checked view.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::ordering;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Row { record:ext::csv::Record, key:core::text::Text, number:i64, ordinal:i32 }
+struct Rows { values:Vec<Row>, header:Option<ext::csv::Record>, longest:i32 }
+impl Rows {
+    fn borrow(&self) -> &Rows { return self; }
+    fn destroy(&self) {
+        let index:i32 = 0; while(index < self.values.len()) { let row = self.values.at(index); row.record.destroy(); index += 1; }
+        self.values.destroy();
+        if (self.header.is_some()) { let first = self.header.unwrap(); first.destroy(); }
+        self.header = core::option::None(); self.longest = 0;
+    }
+}
+struct Options { column:i32, numeric:bool, descending:bool, header:bool, help:bool, column_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Compare { numeric:bool, descending:bool }
+impl Compare { fn borrow(&self) -> &Compare { return self; } }
+struct Writes { bytes:u64, calls:u64 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text { return core::text::from_utf8_unchecked(value.values,value.start,value.length); }
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if ((count <= 0) || (count > bytes.length-completed)) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("sort-rows: operation failed\n",28),2,8); return status; }
+fn csv_status(error:ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn read(input:&Vec<u8>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 16384) { return 2; } calls += 1;
+        let remaining:i32 = 4194304-input.len(); let count:i32 = remaining;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,count);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let got = received.unwrap(); if ((got < 0) || (got > count)) { return 3; }
+        if (got == 0) { return 0; } if (got > remaining) { return 2; }
+        if (input.try_extend(core::slice::view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+
+pub impl core::ordering::Comparator<Row,Row> for Compare {
+    pub fn compare(&self, left:Row, right:Row) -> core::ordering::Ordering {
+        let answer:core::ordering::Ordering = core::ordering::Ordering::Equal;
+        if (self.numeric) {
+            if (left.number < right.number) { answer = core::ordering::Ordering::Less; }
+            if (left.number > right.number) { answer = core::ordering::Ordering::Greater; }
+        } else {
+            let length:i32 = left.key.length; if (right.key.length < length) { length = right.key.length; }
+            let index:i32 = 0; let different:bool = false;
+            while(index < length) {
+                let a:u8 = left.key.bytes[left.key.start+index]; let b:u8 = right.key.bytes[right.key.start+index];
+                if (a < b) { answer = core::ordering::Ordering::Less; different = true; break; }
+                if (a > b) { answer = core::ordering::Ordering::Greater; different = true; break; }
+                index += 1;
+            }
+            if (!different) { answer = core::ordering::compare_i32(left.key.length,right.key.length); }
+        }
+        if (self.descending) {
+            answer = match(answer) {
+                core::ordering::Ordering::Less -> core::ordering::Ordering::Greater,
+                core::ordering::Ordering::Greater -> core::ordering::Ordering::Less,
+                _ -> core::ordering::Ordering::Equal
+            };
+        }
+        // Direction affects only the primary key; source order always breaks ties.
+        return match(answer) { core::ordering::Ordering::Equal -> core::ordering::compare_i32(left.ordinal,right.ordinal), _ -> answer };
+    }
+}
+fn append(rows:&Rows, record:ext::csv::Record, ordinal:i32, options:&Options) -> i32 {
+    if (options.column >= record.field_count()) { record.destroy(); return 2; }
+    if (options.header && ordinal == 0) { rows.header = core::option::Some(record); return 0; }
+    if (rows.values.len() == 16384) { record.destroy(); return 2; }
+    let key = record.field(options.column).unwrap(); let number:i64 = 0;
+    if (options.numeric) {
+        let parsed = core::decimal::parse_i64_range(key.bytes,key.start,key.length);
+        if (parsed.is_err()) { record.destroy(); return 2; } number = parsed.unwrap();
+    }
+    let row = Row { record:record,key:key,number:number,ordinal:ordinal };
+    if (rows.values.try_push(row).is_err()) { record.destroy(); return 4; }
+    if (key.length > rows.longest) { rows.longest = key.length; } return 0;
+}
+fn collect(input:&Vec<u8>, rows:&Rows, options:&Options) -> i32 {
+    let dialect = ext::csv::default_options(); dialect.max_records = 16384; if (options.header) { dialect.max_records = 16385; }
+    dialect.max_fields = 64; dialect.max_field_bytes = 8192; dialect.max_record_bytes = 65536;
+    let made = ext::csv::decoder(dialect); if (made.is_err()) { return csv_status(made.unwrap_err()); }
+    let parser = made.unwrap(); let offset:i32 = 0; let ordinal:i32 = 0; let status:i32 = 0;
+    while(offset < input.len()) {
+        let fed = parser.feed(input.as_slice(),offset,input.len()-offset);
+        if (fed.is_err()) { status = csv_status(fed.unwrap_err()); break; }
+        let progress = fed.unwrap();
+        if ((progress.consumed <= 0) || (progress.consumed > input.len()-offset)) { status = 6; break; }
+        offset += progress.consumed;
+        if (progress.record) {
+            let record = parser.take_record().unwrap(); status = append(rows,record,ordinal,options); ordinal += 1;
+            if (status != 0) { break; }
+        }
+    }
+    if (status == 0) {
+        let ended = parser.finish();
+        if (ended.is_err()) { status = csv_status(ended.unwrap_err()); }
+        else {
+            if (ended.unwrap()) { let record = parser.take_record().unwrap(); status = append(rows,record,ordinal,options); }
+        }
+    }
+    parser.destroy(); return status;
+}
+fn order(rows:&Rows, options:&Options) -> i32 {
+    let count:u64 = rows.values.len() as u64;
+    if (count > 1) {
+        let span:u64 = 1; let levels:u64 = 0; while(span < count) { span *= 2; levels += 1; }
+        // Bounds above make this factor representable; admit cost before sorting.
+        let comparisons:u64 = 4*count*(levels+1); let cost:u64 = 2;
+        if (!options.numeric) { cost = 2*(rows.longest as u64)+2; }
+        if (cost > 100000000/comparisons) { return 2; }
+    }
+    let comparator = Compare { numeric:options.numeric,descending:options.descending };
+    let sorted:Result<i32,core::slice::ViewError> = core::slice::sort_unstable_by<Row,Compare>(rows.values.as_view(),comparator.borrow());
+    if (sorted.is_err()) { return 6; } return 0;
+}
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i32 {
+    let bounds = ext::csv_write::Limits { max_output:8388608-state.bytes,max_write_calls:65536-state.calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record(output,record,bounds);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err(); state.bytes += failure.written; state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> csv_status(detail),
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 2 },
+            _ -> 2
+        };
+    }
+    let progress = sent.unwrap(); state.bytes += progress.written; state.calls += progress.write_calls; return 0;
+}
+fn process(input:&Vec<u8>, options:&Options, output:&alloc::io::Buffer) -> i32 {
+    let rows = Rows { values:alloc::vec::new(),header:core::option::None(),longest:0 };
+    let status:i32 = collect(input,rows.borrow(),options);
+    if (status == 0) { status = order(rows.borrow(),options); }
+    let state = Writes { bytes:0,calls:0 };
+    if (status == 0 && rows.header.is_some()) { let first = rows.header.unwrap(); status = emit(output,first.borrow(),state.borrow()); }
+    let index:i32 = 0;
+    while((status == 0) && (index < rows.values.len())) {
+        let row = rows.values.at(index); status = emit(output,row.record.borrow(),state.borrow()); index += 1;
+    }
+    rows.destroy(); return status;
+}
+fn run(options:&Options) -> i32 {
+    let input:Vec<u8> = alloc::vec::new(); let status:i32 = read(input.borrow());
+    if (status != 0) { input.destroy(); return status; }
+    let made = alloc::io::with_limit(8388608); if (made.is_err()) { input.destroy(); return 4; }
+    let output = made.unwrap(); status = process(input.borrow(),options,output.borrow()); input.destroy();
+    if (status == 0 && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,16384)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;5] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("column",6),short:99,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("numeric",7),short:110,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:4,long:literal("descending",10),short:114,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:5,long:literal("header",6),short:72,arity:ext::cli::Arity::Flag }
+    ];
+    let made = ext::cli::parser(values,core::slice::view(specs,5).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap(); let options = Options { column:0,numeric:false,descending:false,header:false,help:false,column_set:false };
+    while(true) {
+        let event = parser.next(); if (event.is_err()) { return report(2); } let next = event.unwrap(); if (next.is_none()) { break; }
+        let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (item.is_none()) { return report(2); } let found = item.unwrap();
+        if (found.id == 1) { if (options.help) { return report(2); } options.help = true; }
+        if (found.id == 3) { if (options.numeric) { return report(2); } options.numeric = true; }
+        if (found.id == 4) { if (options.descending) { return report(2); } options.descending = true; }
+        if (found.id == 5) { if (options.header) { return report(2); } options.header = true; }
+        if (found.id == 2) {
+            let value = found.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
+            if (parsed.is_err() || (parsed.unwrap() < 1) || (parsed.unwrap() > 64) || options.column_set) { return report(2); }
+            options.column_set = true; options.column = (parsed.unwrap()-1) as i32;
+        }
+    }
+    if (options.help) {
+        let help = literal("Usage: sort-rows [--column N] [--numeric] [--descending] [--header] [--help]\nRead UTF-8 CSV through EOF; sort by a 1-based column (default 1).\nText order compares UTF-8 bytes; numeric order requires strict signed i64 cells.\nEqual keys retain input order, including descending. --header preserves the first row.\nShort options: -c N, -n, -r, -H, -h. Empty input is allowed.\nLimits: 4 MiB input, 16384 data rows, 64 fields, 8 MiB staged output.\n",442);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,24,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

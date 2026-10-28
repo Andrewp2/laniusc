@@ -1,6 +1,16 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[slice-ordering increment](stdlib-slice-ordering.md) adds seven checked View
+algorithms with per-call comparison policies and heterogeneous keys. One
+canonical `core::ordering::Comparator<L,R>` also serves iterator extrema;
+raw Ord APIs share the same allocation-free engines through Natural. All six
+new library gates pass, including 2,808 independent cases/44,928 actions,
+actual nested String owners and 32,768-record comparison-count coverage.
+The CSV application passes four groups/122 process cases, and three selected
+iterator migration regressions pass separately. This finite increment is
+accepted on native Linux x86_64 CPU output from the GPU compiler.
+The preceding
 [iterator reduction/bounded-fold increment](stdlib-iterator-folds.md) adds
 eight consumers using canonical Iterator/DoubleEndedIterator and Folder/
 TryFolder traits. Quotas, actual EOF observation, successful progress and
@@ -156,6 +166,49 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Comparator-driven slice ordering.**
+
+The [seven checked View APIs](stdlib-slice-ordering.md) provide in-place
+unstable sorting, sortedness, heterogeneous lower/upper bounds, deterministic
+first/last duplicate searches and Less-prefix partitioning. Every call rejects
+negative/overflowing logical metadata before reads, mutation or callbacks.
+Indices are view-relative; valid empty calls make no comparison. Shared
+iterative heapsort/search engines preserve the raw Ord family's existing
+signatures and nonpositive-length behavior through `Natural<T>`.
+
+`core::ordering::Comparator<L,R>` replaces the old iterator-only trait with
+no alias. Iterator min/max retain their representative/tie policies with
+`Comparator<T,T>` bounds. Comparators borrow shallow values and context;
+manual backing, stable policy, nonreentrancy and explicit cleanup remain
+caller obligations. Algorithms neither allocate nor clone/destroy owners.
+
+All six new library tests pass on native Linux x86_64 CPU output from the GPU
+compiler: three contracts (8.64s), two owner/scale gates (12.20s) and one
+independent model (6.59s). Contracts cover all seven APIs and five rejected
+capability compositions. The independent model observes 2,808 cases and
+44,928 actions across two descending-stride compound-record backings and six
+policies, checking whole-record permutation and untouched guards. Actual
+nested String owners have 29 exact releases; seven pure phases invoke no
+mapping/release services. A 32,768-record gate checks asymptotic comparison
+allowances and two exact backing releases; its 267ms whole instrumented
+lifecycle is not isolated sorting throughput or a compiler speed ratio.
+
+The retained [same-receiver compiler dependency](../tests/fixtures/stdlib_foundation/slice_ordering_dependency/README.md)
+has two passing checks (2.92s): an import-free reproduction reports LNC0027
+for distinct comparison-trait applications, and separate receiver types
+compile and execute. Current fixtures share one policy across those role
+receivers; the generic library signatures remain unchanged. The real
+[sort-rows CSV program](stdlib-sort-rows.md) passes all four registered tests
+and 122 process cases: model37/12.78s, then CLI39/rejection33/I/O13 in 9.65s.
+It preserves visible source-row ties through an explicit secondary key while
+the library sort remains unstable. Three selected current iterator tests pass
+in 16.23s: 1,280 four-action schedules, 320 extrema and 180 position cases,
+owner cleanup and exact capability rejections. Two unrelated tests were
+filtered; the historical lookahead application and trap were not rerun.
+This selected finite increment is accepted. Historical slice/iterator/fold
+evidence retains its original source scope; no device execution, formal proof
+or automatic ownership follows.
 
 **Iterator reductions and bounded folds.**
 

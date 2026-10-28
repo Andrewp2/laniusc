@@ -25,6 +25,12 @@ buffers, stack arrays, compound payloads and zero-sized elements.
 Use the constructors to establish the descriptor invariants. Subsequent
 operations use view-relative indices; callers do not resupply lengths.
 
+The [seven comparator-driven ordering functions](stdlib-slice-ordering.md)
+sort, check order, find heterogeneous bounds/first/last matches and partition
+a selected View. They validate logical metadata before reads, mutation or
+callbacks, preserve outside backing and share allocation-free engines with
+the raw Ord family. Their comparator and manual-owner contracts are explicit.
+
 ## Operations
 
 | API | Contract |

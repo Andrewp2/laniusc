@@ -1,0 +1,261 @@
+// Test-only binary adapter for the seven checked comparator-driven View APIs.
+// Each action emits its result, observed comparator count and all backing rows.
+// The oracle permits every valid unstable tie order and partition permutation.
+module app::main;
+
+import core::mem;
+import core::option;
+import core::ordering;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes: [u8], pointer: ptr, used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer, self.used); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 4096) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) {
+            self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8;
+            index += 1;
+        }
+        self.used += 8;
+    }
+}
+
+struct Payload { marker: u64, parts: [i64; 2], flag: core::option::Option<bool> }
+struct Row { key: i64, id: u64, payload: Payload }
+struct Lookup { number: i64, stamp: u64 }
+
+fn row(key: i64, id: u64) -> Row {
+    let flag: core::option::Option<bool> = core::option::None();
+    if (id % 3 != 0) { flag = core::option::Some(id % 2 == 0); }
+    return Row {
+        key: key,
+        id: id,
+        payload: Payload {
+            marker: 18446744073709551615 - id * 17,
+            parts: [(id as i64) * 97 + 3, 4294967296 + (id as i64) * 131],
+            flag: flag
+        }
+    };
+}
+
+fn emit_rows(values: [Row], output: &Output) {
+    let index: i32 = 0;
+    while (index < 20) {
+        let item: Row = values[index];
+        output.word(item.key as u64);
+        output.word(item.id);
+        output.word(item.payload.marker);
+        output.word(item.payload.parts[0] as u64);
+        output.word(item.payload.parts[1] as u64);
+        let flag: u64 = 0;
+        if (item.payload.flag.is_some()) {
+            flag = 1;
+            if (item.payload.flag.unwrap()) { flag = 2; }
+        }
+        output.word(flag);
+        index += 1;
+    }
+}
+
+// The policy is fixed within each call. Counting does not affect its answers.
+struct Context { mode: i32, parameter: i64, key_stamp: u64, calls: u64 }
+impl Context { fn borrow(&self) -> &Context { return self; } }
+// Distinct receivers share one policy. The compiler currently rejects two
+// compare methods on one receiver even for distinct Comparator arguments.
+struct RowCompare { context: &Context }
+struct KeyCompare { context: &Context }
+impl RowCompare { fn borrow(&self) -> &RowCompare { return self; } }
+impl KeyCompare { fn borrow(&self) -> &KeyCompare { return self; } }
+
+fn magnitude(value: i64) -> i64 {
+    if (value < 0) { return 0 - value; }
+    return value;
+}
+
+fn project(mode: i32, parameter: i64, value: i64) -> i64 {
+    if (mode == 0) { return value; }
+    if (mode == 1) { return 0 - value; }
+    if (mode == 2) { return magnitude(value); }
+    if (mode == 3) { return 0 - magnitude(value); }
+    if (mode == 4) { return magnitude(value) / parameter; }
+    return magnitude(value - parameter);
+}
+
+fn relation(mode: i32, parameter: i64, left: i64, right: i64) -> core::ordering::Ordering {
+    let a: i64 = project(mode, parameter, left);
+    let b: i64 = project(mode, parameter, right);
+    if (a < b) { return core::ordering::Less; }
+    if (a > b) { return core::ordering::Greater; }
+    return core::ordering::Equal;
+}
+
+pub impl core::ordering::Comparator<Row, Row> for RowCompare {
+    pub fn compare(&self, left: Row, right: Row) -> core::ordering::Ordering {
+        let context: &Context = self.context;
+        context.calls += 1;
+        return relation(context.mode, context.parameter, left.key, right.key);
+    }
+}
+
+pub impl core::ordering::Comparator<Row, Lookup> for KeyCompare {
+    pub fn compare(&self, left: Row, right: Lookup) -> core::ordering::Ordering {
+        let context: &Context = self.context;
+        assert(right.stamp == context.key_stamp);
+        context.calls += 1;
+        return relation(context.mode, context.parameter, left.key, right.number);
+    }
+}
+
+fn execute(values: [Row], bytes: [u8], count: i32, start: i32, length: i32,
+           actions: i32, output: &Output) {
+    // Both levels of the view have a nonzero offset into the original backing.
+    let parent: core::slice::View<Row> = core::slice::view_range<Row>(values, 1, count + 3).unwrap();
+    let selected: core::slice::View<Row> = parent.subview(1 + start, 1 + start + length).unwrap();
+    let index: i32 = 0;
+    while (index < actions) {
+        let at: i32 = 64 + count * 8 + index * 32;
+        let operation: u64 = get64(bytes, at);
+        let number: i64 = get64(bytes, at + 8) as i64;
+        let mode: i32 = get64(bytes, at + 16) as i32;
+        let parameter: i64 = get64(bytes, at + 24) as i64;
+        assert(operation <= 6 && mode >= 0 && mode <= 5);
+        if (mode == 4) { assert(parameter >= 1 && parameter <= 4); }
+        let context: Context = Context {
+            mode: mode, parameter: parameter,
+            key_stamp: 18364758544493064720 + (index as u64), calls: 0
+        };
+        let rows: RowCompare = RowCompare { context: context.borrow() };
+        let keys: KeyCompare = KeyCompare { context: context.borrow() };
+        let needle: Lookup = Lookup { number: number, stamp: context.key_stamp };
+        let result: i64 = 0;
+        if (operation == 0) {
+            let sorted: core::result::Result<i32, core::slice::ViewError> =
+                core::slice::sort_unstable_by<Row, RowCompare>(selected, rows.borrow());
+            result = sorted.unwrap() as i64;
+        }
+        if (operation == 1) {
+            let sorted: core::result::Result<bool, core::slice::ViewError> =
+                core::slice::is_sorted_by<Row, RowCompare>(selected, rows.borrow());
+            result = sorted.unwrap() as i64;
+        }
+        if (operation == 2) {
+            let bound: core::result::Result<i32, core::slice::ViewError> =
+                core::slice::lower_bound_by<Row, Lookup, KeyCompare>(selected, needle, keys.borrow());
+            result = bound.unwrap() as i64;
+        }
+        if (operation == 3) {
+            let bound: core::result::Result<i32, core::slice::ViewError> =
+                core::slice::upper_bound_by<Row, Lookup, KeyCompare>(selected, needle, keys.borrow());
+            result = bound.unwrap() as i64;
+        }
+        if (operation == 4 || operation == 5) {
+            let found: core::result::Result<core::option::Option<i32>, core::slice::ViewError> =
+                core::result::Ok(core::option::None());
+            if (operation == 4) {
+                found = core::slice::binary_search_first_by<Row, Lookup, KeyCompare>(selected, needle, keys.borrow());
+            } else {
+                found = core::slice::binary_search_last_by<Row, Lookup, KeyCompare>(selected, needle, keys.borrow());
+            }
+            let item: core::option::Option<i32> = found.unwrap();
+            result = -1;
+            if (item.is_some()) { result = item.unwrap() as i64; }
+        }
+        if (operation == 6) {
+            let boundary: core::result::Result<i32, core::slice::ViewError> =
+                core::slice::partition_lt_by<Row, Lookup, KeyCompare>(selected, needle, keys.borrow());
+            result = boundary.unwrap() as i64;
+        }
+        output.word(operation);
+        output.word(result as u64);
+        output.word(context.calls);
+        emit_rows(values, output);
+        index += 1;
+    }
+}
+
+fn run(bytes: [u8], output: &Output) {
+    let layout: u64 = get64(bytes, 0);
+    let count: i32 = get64(bytes, 8) as i32;
+    let start: i32 = get64(bytes, 16) as i32;
+    let length: i32 = get64(bytes, 24) as i32;
+    let actions: i32 = get64(bytes, 32) as i32;
+    let identity: u64 = get64(bytes, 40);
+    let native: [Row; 20] = [row(0, 0); 20];
+    let storage_words: [i32; 1024] = [0; 1024];
+    assert(core::mem::size_of<Row>() * 20 <= 4096);
+    let storage: [Row] = core::mem::typed_slice_from_storage<Row>(
+        core::mem::i32_array_data_ptr(storage_words), 20);
+    let values: [Row] = native;
+    if (layout == 1) { values = storage; }
+    assert(core::mem::slice_stride(values) < 0);
+    let index: i32 = 0;
+    while (index < 20) {
+        values[index] = row(700 + (index as i64), 100000 + (index as u64));
+        index += 1;
+    }
+    index = 0;
+    while (index < count) {
+        values[2 + index] = row(get64(bytes, 64 + index * 8) as i64,
+                               identity * 16 + (index as u64) + 1);
+        index += 1;
+    }
+    execute(values, bytes, count, start, length, actions, output);
+}
+
+fn main() -> i32 {
+    let input_words: [i32; 256] = [0; 256];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_words);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts<u8>(input_pointer, 1024);
+    let output_words: [i32; 1024] = [0; 1024];
+    let output_pointer: ptr = core::mem::i32_array_data_ptr(output_words);
+    let output_bytes: [u8] = core::mem::typed_slice_from_raw_parts<u8>(output_pointer, 4096);
+    let output: Output = Output { bytes: output_bytes, pointer: output_pointer, used: 0 };
+    while (read_exact(input_pointer, 64, true)) {
+        let layout: u64 = get64(input, 0);
+        let count: u64 = get64(input, 8);
+        let start: u64 = get64(input, 16);
+        let length: u64 = get64(input, 24);
+        let actions: u64 = get64(input, 32);
+        assert(layout <= 1 && count <= 12 && start <= count && length <= count - start && actions <= 16);
+        let payload: i32 = (count * 8 + actions * 32) as i32;
+        assert(read_exact(input_pointer + 64, payload, false));
+        run(input, output.borrow());
+    }
+    output.flush();
+    return 0;
+}

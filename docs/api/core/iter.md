@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `core`. Role: module. Profile: **Source inventory**.
 
-Shared fused iteration, scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Ordinary Flatten/FlatMap use real empty Infallible retirement through the existing nested engine, preserving actual updated-inner recovery; their selected semantic, live-owner and real-application gates pass on native Linux x86_64. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. Linked guides retain each receipt's source scope, direct-oracle versus Rust-test distinction and separate zero-sized return-call compiler dependency. Keep backing alive, prohibit reentrancy, and bound upstream work separately from output quotas. DoubleEndedIterator<T> pairs next_back with the same Iterator<T> remainder; both bounds are explicit and None from either end fuses both. Borrowed Rev swaps direction without eager pulls, allocation, item caching or cleanup. Selected leaves and Map/Filter/FilterMap/Chain propagate reverse support; Take/Skip/Zip/Enumerate remain forward-only and compose after Rev. All four registered reverse runtime tests pass on Linux x86_64 across two disjoint commands: 7740 independent model commands, primary/extra no-allocation contracts, four collection scenarios with seven full-address/size matched releases and two exact LNC0008 bound rejections. The real timeline-tail composition separately passes all four registered runtime tests and 71 process cases; direct earlier runs cover the same cases. Forward/backward methods have single canonical trait implementations; the retained duplicate-method compiler reduction does not imply a general generic payload failure. Reverse support alone grants no exact-size promise; no new OOM campaign, formal proof, automatic lifetime/destruction or device runtime claim follows. ExactSizeIterator<T> separately adds remaining_count()->u64 under a matching explicit Iterator<T> bound. Selected finite leaves and existing O(1) collection remainders propagate through Rev/Map/Take/Skip/StepBy/Peekable, with no pulls, callbacks, item reads, host calls, allocation or cleanup during counts. StepBy distinguishes initial/later blocks and Peekable counts a cache without relaxing its source-resumption policy. Zip is excluded for borrowed-source aliases; Chain for unrepresentable sums. No Repeat, callback-dependent/nested, checked-index Enumerate or borrowed hash/tree implementation is added. Valid state, manual lifetimes and source/callback nonreentrancy remain required; no unchecked memory trust. All four exact-size library gates pass on native Linux x86_64 across two receipts: three nonmodel passes in 11.82 seconds (the same command records a model fixture visibility failure), then an isolated corrected model pass in 8.44 seconds. The independent sequence/deque model checks 10714 cases and 35922 steps across 18 modes; pure contracts add no memory syscalls, observed collection backings have full-address/size matched releases, and five invalid capabilities reject with LNC0008. The real sample-bytes app uses optional Rev/Skip/StepBy/Take and exact safe reservation while retaining checked appends; all four application tests pass in 9.44 seconds/95 cases, including two reached allocation denials. One selected unchanged reverse-model regression passes in 7.27 seconds/7740 commands, without an old-suite-wide rerun claim. The narrow chained generic Option receiver dependency has an executed typed-local control; no compiler production change or unchecked count trust is added. The new reduction/reverse-fold/bounded-fold increment adds reduce, try_reduce, rfold, try_rfold and four forward/reverse up_to functions through existing Folder/TryFolder traits. FoldProgress counts successful applications and actual None; zero quotas do no source/folder/metadata work and quota termination adds no EOF probe. FoldFailure.folded excludes the failing callback from its count; FoldFailure.error may carry the already-consumed failing item and actual updated accumulator. Counters remain safe at u64::MAX. The consumer layer adds no allocation, Clone/Destroy, source retirement or cleanup authority; callback/source work and recovery retain manual policy. Frozen source 1c9ab092 passes all seven new library tests: contracts3/9.13s, owners3/7.62s and model1/9.10s. Contracts execute all eight APIs with compound/nested values and Infallible errors without allocation services, and reject eight invalid bound compositions. Owner gates recover actual nested String owners, correct remainders and 24 selected setup/callback growth denials with full address/size cleanup. The independent model checks 10696 cases/37104 state commands across four source forms in one batched native process, including progress/error identities, polls, callback traces and absent metadata queries. Two selected old consumer/reverse contract regressions pass separately in 7.26s/10.96s without a broader suite rerun. Two compiler dependency checks pass in 4.39s: one valid inline projection form rejects LNC0006 and one typed-local error control compiles/executes; no compiler repair or generic-payload restriction follows. Byte-summary passes four groups/87 native process cases across selected model40/9.92s and CLI32+bounds1+IO14/9.33s. Historical iterator receipts retain their older API/source scope. Executed target is native Linux x86_64 CPU output from the GPU compiler; no arbitrary generic-composition, device execution, automatic ownership or formal-proof claim follows.
+Shared fused iteration, scan/nested adapters and bounded transfers retain explicit shallow ownership and manual lifetimes. Ordinary Flatten/FlatMap use real empty Infallible retirement through the existing nested engine, preserving actual updated-inner recovery; their selected semantic, live-owner and real-application gates pass on native Linux x86_64. Replacement transfer distinguishes intact incoming rejection from a complete old item undelivered after commit; recovery must not repeat that replacement. Linked guides retain each receipt's source scope, direct-oracle versus Rust-test distinction and separate zero-sized return-call compiler dependency. Keep backing alive, prohibit reentrancy, and bound upstream work separately from output quotas. DoubleEndedIterator<T> pairs next_back with the same Iterator<T> remainder; both bounds are explicit and None from either end fuses both. Borrowed Rev swaps direction without eager pulls, allocation, item caching or cleanup. Selected leaves and Map/Filter/FilterMap/Chain propagate reverse support; Take/Skip/Zip/Enumerate remain forward-only and compose after Rev. All four registered reverse runtime tests pass on Linux x86_64 across two disjoint commands: 7740 independent model commands, primary/extra no-allocation contracts, four collection scenarios with seven full-address/size matched releases and two exact LNC0008 bound rejections. The real timeline-tail composition separately passes all four registered runtime tests and 71 process cases; direct earlier runs cover the same cases. Forward/backward methods have single canonical trait implementations; the retained duplicate-method compiler reduction does not imply a general generic payload failure. Reverse support alone grants no exact-size promise; no new OOM campaign, formal proof, automatic lifetime/destruction or device runtime claim follows. ExactSizeIterator<T> separately adds remaining_count()->u64 under a matching explicit Iterator<T> bound. Selected finite leaves and existing O(1) collection remainders propagate through Rev/Map/Take/Skip/StepBy/Peekable, with no pulls, callbacks, item reads, host calls, allocation or cleanup during counts. StepBy distinguishes initial/later blocks and Peekable counts a cache without relaxing its source-resumption policy. Zip is excluded for borrowed-source aliases; Chain for unrepresentable sums. No Repeat, callback-dependent/nested, checked-index Enumerate or borrowed hash/tree implementation is added. Valid state, manual lifetimes and source/callback nonreentrancy remain required; no unchecked memory trust. All four exact-size library gates pass on native Linux x86_64 across two receipts: three nonmodel passes in 11.82 seconds (the same command records a model fixture visibility failure), then an isolated corrected model pass in 8.44 seconds. The independent sequence/deque model checks 10714 cases and 35922 steps across 18 modes; pure contracts add no memory syscalls, observed collection backings have full-address/size matched releases, and five invalid capabilities reject with LNC0008. The real sample-bytes app uses optional Rev/Skip/StepBy/Take and exact safe reservation while retaining checked appends; all four application tests pass in 9.44 seconds/95 cases, including two reached allocation denials. One selected unchanged reverse-model regression passes in 7.27 seconds/7740 commands, without an old-suite-wide rerun claim. The narrow chained generic Option receiver dependency has an executed typed-local control; no compiler production change or unchecked count trust is added. The new reduction/reverse-fold/bounded-fold increment adds reduce, try_reduce, rfold, try_rfold and four forward/reverse up_to functions through existing Folder/TryFolder traits. FoldProgress counts successful applications and actual None; zero quotas do no source/folder/metadata work and quota termination adds no EOF probe. FoldFailure.folded excludes the failing callback from its count; FoldFailure.error may carry the already-consumed failing item and actual updated accumulator. Counters remain safe at u64::MAX. The consumer layer adds no allocation, Clone/Destroy, source retirement or cleanup authority; callback/source work and recovery retain manual policy. Frozen source 1c9ab092 passes all seven new library tests: contracts3/9.13s, owners3/7.62s and model1/9.10s. Contracts execute all eight APIs with compound/nested values and Infallible errors without allocation services, and reject eight invalid bound compositions. Owner gates recover actual nested String owners, correct remainders and 24 selected setup/callback growth denials with full address/size cleanup. The independent model checks 10696 cases/37104 state commands across four source forms in one batched native process, including progress/error identities, polls, callback traces and absent metadata queries. Two selected old consumer/reverse contract regressions pass separately in 7.26s/10.96s without a broader suite rerun. Two compiler dependency checks pass in 4.39s: one valid inline projection form rejects LNC0006 and one typed-local error control compiles/executes; no compiler repair or generic-payload restriction follows. Byte-summary passes four groups/87 native process cases across selected model40/9.92s and CLI32+bounds1+IO14/9.33s. Historical iterator receipts retain their older API/source scope. Executed target is native Linux x86_64 CPU output from the GPU compiler; no arbitrary generic-composition, device execution, automatic ownership or formal-proof claim follows. The subsequent slice-ordering increment moves Comparator to core::ordering::Comparator<L,R>; min_by/max_by now require Comparator<T,T>, with no old-name alias and unchanged first-minimum/last-maximum representatives. Six new slice library gates and four sort-rows groups/122 cases pass on native Linux x86_64, separately from the historical iterator receipts above. The same-receiver distinct-argument compare dependency has one LNC0027 reproduction and one executing split-receiver control (two tests/2.92s). Three selected migrated iterator tests pass in 16.23s (the 1280-schedule/320-extrema/180-position model, owner cleanup and exact-bound rejections; two unrelated tests filtered). Historical lookahead application/trap groups were not rerun; no whole-old-suite acceptance is implied.
 
 ## Contract and evidence guides
 
@@ -34,8 +34,9 @@ Shared fused iteration, scan/nested adapters and bounded transfers retain explic
 - [stdlib-sample-bytes](../../stdlib-sample-bytes.md)
 - [stdlib-iterator-folds](../../stdlib-iterator-folds.md)
 - [stdlib-byte-summary](../../stdlib-byte-summary.md)
+- [stdlib-slice-ordering](../../stdlib-slice-ordering.md)
 
-Declaration counts: enum: 4; field: 86; function: 50; impl: 70; method: 89; struct: 31; trait: 10; trait member: 10; variant: 5.
+Declaration counts: enum: 4; field: 86; function: 50; impl: 70; method: 89; struct: 31; trait: 9; trait member: 9; variant: 5.
 
 ## Declared imports
 
@@ -81,7 +82,7 @@ error: E
 
 ### struct: ReplacementProgress
 
-[Source line 96](../../../stdlib/core/iter.lani#L96)
+[Source line 90](../../../stdlib/core/iter.lani#L90)
 
 ```lanius
 pub struct ReplacementProgress
@@ -89,7 +90,7 @@ pub struct ReplacementProgress
 
 #### field: committed
 
-[Source line 96](../../../stdlib/core/iter.lani#L96)
+[Source line 90](../../../stdlib/core/iter.lani#L90)
 
 ```lanius
 committed: u64
@@ -97,7 +98,7 @@ committed: u64
 
 #### field: replaced
 
-[Source line 96](../../../stdlib/core/iter.lani#L96)
+[Source line 90](../../../stdlib/core/iter.lani#L90)
 
 ```lanius
 replaced: u64
@@ -105,7 +106,7 @@ replaced: u64
 
 ### struct: ReplacementTransfer
 
-[Source line 97](../../../stdlib/core/iter.lani#L97)
+[Source line 91](../../../stdlib/core/iter.lani#L91)
 
 ```lanius
 pub struct ReplacementTransfer
@@ -113,7 +114,7 @@ pub struct ReplacementTransfer
 
 #### field: progress
 
-[Source line 97](../../../stdlib/core/iter.lani#L97)
+[Source line 91](../../../stdlib/core/iter.lani#L91)
 
 ```lanius
 progress: ReplacementProgress
@@ -121,7 +122,7 @@ progress: ReplacementProgress
 
 #### field: exhausted
 
-[Source line 97](../../../stdlib/core/iter.lani#L97)
+[Source line 91](../../../stdlib/core/iter.lani#L91)
 
 ```lanius
 exhausted: bool
@@ -129,7 +130,7 @@ exhausted: bool
 
 ### enum: ReplacementFailure
 
-[Source line 98](../../../stdlib/core/iter.lani#L98)
+[Source line 92](../../../stdlib/core/iter.lani#L92)
 
 ```lanius
 pub enum ReplacementFailure<T,RE,DE>
@@ -137,7 +138,7 @@ pub enum ReplacementFailure<T,RE,DE>
 
 #### variant: Rejected
 
-[Source line 100](../../../stdlib/core/iter.lani#L100)
+[Source line 94](../../../stdlib/core/iter.lani#L94)
 
 ```lanius
 Rejected(ReplacementProgress,T,RE)
@@ -145,7 +146,7 @@ Rejected(ReplacementProgress,T,RE)
 
 #### variant: Undelivered
 
-[Source line 102](../../../stdlib/core/iter.lani#L102)
+[Source line 96](../../../stdlib/core/iter.lani#L96)
 
 ```lanius
 Undelivered(ReplacementProgress,T,DE)
@@ -153,7 +154,7 @@ Undelivered(ReplacementProgress,T,DE)
 
 ### struct: Transfer
 
-[Source line 107](../../../stdlib/core/iter.lani#L107)
+[Source line 101](../../../stdlib/core/iter.lani#L101)
 
 ```lanius
 pub struct Transfer
@@ -161,7 +162,7 @@ pub struct Transfer
 
 #### field: accepted
 
-[Source line 107](../../../stdlib/core/iter.lani#L107)
+[Source line 101](../../../stdlib/core/iter.lani#L101)
 
 ```lanius
 accepted: u64
@@ -169,7 +170,7 @@ accepted: u64
 
 #### field: exhausted
 
-[Source line 107](../../../stdlib/core/iter.lani#L107)
+[Source line 101](../../../stdlib/core/iter.lani#L101)
 
 ```lanius
 exhausted: bool
@@ -177,7 +178,7 @@ exhausted: bool
 
 ### struct: TransferError
 
-[Source line 112](../../../stdlib/core/iter.lani#L112)
+[Source line 106](../../../stdlib/core/iter.lani#L106)
 
 ```lanius
 pub struct TransferError<T, E>
@@ -185,7 +186,7 @@ pub struct TransferError<T, E>
 
 #### field: accepted
 
-[Source line 112](../../../stdlib/core/iter.lani#L112)
+[Source line 106](../../../stdlib/core/iter.lani#L106)
 
 ```lanius
 accepted: u64
@@ -193,7 +194,7 @@ accepted: u64
 
 #### field: rejected
 
-[Source line 112](../../../stdlib/core/iter.lani#L112)
+[Source line 106](../../../stdlib/core/iter.lani#L106)
 
 ```lanius
 rejected: T
@@ -201,7 +202,7 @@ rejected: T
 
 #### field: error
 
-[Source line 112](../../../stdlib/core/iter.lani#L112)
+[Source line 106](../../../stdlib/core/iter.lani#L106)
 
 ```lanius
 error: E
@@ -209,7 +210,7 @@ error: E
 
 ### struct: Empty
 
-[Source line 114](../../../stdlib/core/iter.lani#L114)
+[Source line 108](../../../stdlib/core/iter.lani#L108)
 
 ```lanius
 pub struct Empty<T>
@@ -217,7 +218,7 @@ pub struct Empty<T>
 
 ### struct: Once
 
-[Source line 115](../../../stdlib/core/iter.lani#L115)
+[Source line 109](../../../stdlib/core/iter.lani#L109)
 
 ```lanius
 pub struct Once<T>
@@ -225,7 +226,7 @@ pub struct Once<T>
 
 #### field: value
 
-[Source line 115](../../../stdlib/core/iter.lani#L115)
+[Source line 109](../../../stdlib/core/iter.lani#L109)
 
 ```lanius
 value: T
@@ -233,7 +234,7 @@ value: T
 
 #### field: done
 
-[Source line 115](../../../stdlib/core/iter.lani#L115)
+[Source line 109](../../../stdlib/core/iter.lani#L109)
 
 ```lanius
 done: bool
@@ -241,7 +242,7 @@ done: bool
 
 ### struct: Repeat
 
-[Source line 116](../../../stdlib/core/iter.lani#L116)
+[Source line 110](../../../stdlib/core/iter.lani#L110)
 
 ```lanius
 pub struct Repeat<T>
@@ -249,7 +250,7 @@ pub struct Repeat<T>
 
 #### field: value
 
-[Source line 116](../../../stdlib/core/iter.lani#L116)
+[Source line 110](../../../stdlib/core/iter.lani#L110)
 
 ```lanius
 value: T
@@ -257,7 +258,7 @@ value: T
 
 ### struct: Rev
 
-[Source line 119](../../../stdlib/core/iter.lani#L119)
+[Source line 113](../../../stdlib/core/iter.lani#L113)
 
 ```lanius
 pub struct Rev<I,T>
@@ -265,7 +266,7 @@ pub struct Rev<I,T>
 
 #### field: source
 
-[Source line 119](../../../stdlib/core/iter.lani#L119)
+[Source line 113](../../../stdlib/core/iter.lani#L113)
 
 ```lanius
 source: &I
@@ -273,7 +274,7 @@ source: &I
 
 #### field: done
 
-[Source line 119](../../../stdlib/core/iter.lani#L119)
+[Source line 113](../../../stdlib/core/iter.lani#L113)
 
 ```lanius
 done: bool
@@ -281,7 +282,7 @@ done: bool
 
 ### enum: PeekableError
 
-[Source line 120](../../../stdlib/core/iter.lani#L120)
+[Source line 114](../../../stdlib/core/iter.lani#L114)
 
 ```lanius
 pub enum PeekableError
@@ -289,7 +290,7 @@ pub enum PeekableError
 
 #### variant: Cached
 
-[Source line 120](../../../stdlib/core/iter.lani#L120)
+[Source line 114](../../../stdlib/core/iter.lani#L114)
 
 ```lanius
 Cached
@@ -297,7 +298,7 @@ Cached
 
 ### struct: Peekable
 
-[Source line 123](../../../stdlib/core/iter.lani#L123)
+[Source line 117](../../../stdlib/core/iter.lani#L117)
 
 ```lanius
 pub struct Peekable<I,T>
@@ -305,7 +306,7 @@ pub struct Peekable<I,T>
 
 #### field: source
 
-[Source line 123](../../../stdlib/core/iter.lani#L123)
+[Source line 117](../../../stdlib/core/iter.lani#L117)
 
 ```lanius
 source: &I
@@ -313,7 +314,7 @@ source: &I
 
 #### field: cached
 
-[Source line 123](../../../stdlib/core/iter.lani#L123)
+[Source line 117](../../../stdlib/core/iter.lani#L117)
 
 ```lanius
 cached: core::option::Option<T>
@@ -321,7 +322,7 @@ cached: core::option::Option<T>
 
 #### field: done
 
-[Source line 123](../../../stdlib/core/iter.lani#L123)
+[Source line 117](../../../stdlib/core/iter.lani#L117)
 
 ```lanius
 done: bool
@@ -329,7 +330,7 @@ done: bool
 
 ### enum: StepError
 
-[Source line 124](../../../stdlib/core/iter.lani#L124)
+[Source line 118](../../../stdlib/core/iter.lani#L118)
 
 ```lanius
 pub enum StepError
@@ -337,7 +338,7 @@ pub enum StepError
 
 #### variant: Zero
 
-[Source line 124](../../../stdlib/core/iter.lani#L124)
+[Source line 118](../../../stdlib/core/iter.lani#L118)
 
 ```lanius
 Zero
@@ -345,7 +346,7 @@ Zero
 
 ### struct: StepBy
 
-[Source line 125](../../../stdlib/core/iter.lani#L125)
+[Source line 119](../../../stdlib/core/iter.lani#L119)
 
 ```lanius
 pub struct StepBy<I, T>
@@ -353,7 +354,7 @@ pub struct StepBy<I, T>
 
 #### field: source
 
-[Source line 125](../../../stdlib/core/iter.lani#L125)
+[Source line 119](../../../stdlib/core/iter.lani#L119)
 
 ```lanius
 source: &I
@@ -361,7 +362,7 @@ source: &I
 
 #### field: skip
 
-[Source line 125](../../../stdlib/core/iter.lani#L125)
+[Source line 119](../../../stdlib/core/iter.lani#L119)
 
 ```lanius
 skip: u64
@@ -369,7 +370,7 @@ skip: u64
 
 #### field: first
 
-[Source line 125](../../../stdlib/core/iter.lani#L125)
+[Source line 119](../../../stdlib/core/iter.lani#L119)
 
 ```lanius
 first: bool
@@ -377,7 +378,7 @@ first: bool
 
 #### field: done
 
-[Source line 125](../../../stdlib/core/iter.lani#L125)
+[Source line 119](../../../stdlib/core/iter.lani#L119)
 
 ```lanius
 done: bool
@@ -385,7 +386,7 @@ done: bool
 
 ### struct: RangeI32
 
-[Source line 126](../../../stdlib/core/iter.lani#L126)
+[Source line 120](../../../stdlib/core/iter.lani#L120)
 
 ```lanius
 pub struct RangeI32
@@ -393,7 +394,7 @@ pub struct RangeI32
 
 #### field: position
 
-[Source line 126](../../../stdlib/core/iter.lani#L126)
+[Source line 120](../../../stdlib/core/iter.lani#L120)
 
 ```lanius
 position: i64
@@ -401,7 +402,7 @@ position: i64
 
 #### field: end
 
-[Source line 126](../../../stdlib/core/iter.lani#L126)
+[Source line 120](../../../stdlib/core/iter.lani#L120)
 
 ```lanius
 end: i64
@@ -409,7 +410,7 @@ end: i64
 
 ### struct: Take
 
-[Source line 127](../../../stdlib/core/iter.lani#L127)
+[Source line 121](../../../stdlib/core/iter.lani#L121)
 
 ```lanius
 pub struct Take<I, T>
@@ -417,7 +418,7 @@ pub struct Take<I, T>
 
 #### field: source
 
-[Source line 127](../../../stdlib/core/iter.lani#L127)
+[Source line 121](../../../stdlib/core/iter.lani#L121)
 
 ```lanius
 source: &I
@@ -425,7 +426,7 @@ source: &I
 
 #### field: remaining
 
-[Source line 127](../../../stdlib/core/iter.lani#L127)
+[Source line 121](../../../stdlib/core/iter.lani#L121)
 
 ```lanius
 remaining: u64
@@ -433,7 +434,7 @@ remaining: u64
 
 #### field: done
 
-[Source line 127](../../../stdlib/core/iter.lani#L127)
+[Source line 121](../../../stdlib/core/iter.lani#L121)
 
 ```lanius
 done: bool
@@ -441,7 +442,7 @@ done: bool
 
 ### struct: Chain
 
-[Source line 128](../../../stdlib/core/iter.lani#L128)
+[Source line 122](../../../stdlib/core/iter.lani#L122)
 
 ```lanius
 pub struct Chain<A, B, T>
@@ -449,7 +450,7 @@ pub struct Chain<A, B, T>
 
 #### field: left
 
-[Source line 128](../../../stdlib/core/iter.lani#L128)
+[Source line 122](../../../stdlib/core/iter.lani#L122)
 
 ```lanius
 left: &A
@@ -457,7 +458,7 @@ left: &A
 
 #### field: right
 
-[Source line 128](../../../stdlib/core/iter.lani#L128)
+[Source line 122](../../../stdlib/core/iter.lani#L122)
 
 ```lanius
 right: &B
@@ -465,7 +466,7 @@ right: &B
 
 #### field: left_done
 
-[Source line 128](../../../stdlib/core/iter.lani#L128)
+[Source line 122](../../../stdlib/core/iter.lani#L122)
 
 ```lanius
 left_done: bool
@@ -473,7 +474,7 @@ left_done: bool
 
 #### field: right_done
 
-[Source line 128](../../../stdlib/core/iter.lani#L128)
+[Source line 122](../../../stdlib/core/iter.lani#L122)
 
 ```lanius
 right_done: bool
@@ -481,7 +482,7 @@ right_done: bool
 
 #### field: done
 
-[Source line 128](../../../stdlib/core/iter.lani#L128)
+[Source line 122](../../../stdlib/core/iter.lani#L122)
 
 ```lanius
 done: bool
@@ -489,7 +490,7 @@ done: bool
 
 ### struct: Map
 
-[Source line 129](../../../stdlib/core/iter.lani#L129)
+[Source line 123](../../../stdlib/core/iter.lani#L123)
 
 ```lanius
 pub struct Map<I, M, T, U>
@@ -497,7 +498,7 @@ pub struct Map<I, M, T, U>
 
 #### field: source
 
-[Source line 129](../../../stdlib/core/iter.lani#L129)
+[Source line 123](../../../stdlib/core/iter.lani#L123)
 
 ```lanius
 source: &I
@@ -505,7 +506,7 @@ source: &I
 
 #### field: mapper
 
-[Source line 129](../../../stdlib/core/iter.lani#L129)
+[Source line 123](../../../stdlib/core/iter.lani#L123)
 
 ```lanius
 mapper: &M
@@ -513,7 +514,7 @@ mapper: &M
 
 #### field: done
 
-[Source line 129](../../../stdlib/core/iter.lani#L129)
+[Source line 123](../../../stdlib/core/iter.lani#L123)
 
 ```lanius
 done: bool
@@ -521,7 +522,7 @@ done: bool
 
 ### struct: Scan
 
-[Source line 132](../../../stdlib/core/iter.lani#L132)
+[Source line 126](../../../stdlib/core/iter.lani#L126)
 
 ```lanius
 pub struct Scan<I,M,T,U>
@@ -529,7 +530,7 @@ pub struct Scan<I,M,T,U>
 
 #### field: source
 
-[Source line 132](../../../stdlib/core/iter.lani#L132)
+[Source line 126](../../../stdlib/core/iter.lani#L126)
 
 ```lanius
 source: &I
@@ -537,7 +538,7 @@ source: &I
 
 #### field: mapper
 
-[Source line 132](../../../stdlib/core/iter.lani#L132)
+[Source line 126](../../../stdlib/core/iter.lani#L126)
 
 ```lanius
 mapper: &M
@@ -545,7 +546,7 @@ mapper: &M
 
 #### field: done
 
-[Source line 132](../../../stdlib/core/iter.lani#L132)
+[Source line 126](../../../stdlib/core/iter.lani#L126)
 
 ```lanius
 done: bool
@@ -553,7 +554,7 @@ done: bool
 
 ### struct: TryScan
 
-[Source line 133](../../../stdlib/core/iter.lani#L133)
+[Source line 127](../../../stdlib/core/iter.lani#L127)
 
 ```lanius
 pub struct TryScan<I,M,T,U,E>
@@ -561,7 +562,7 @@ pub struct TryScan<I,M,T,U,E>
 
 #### field: source
 
-[Source line 133](../../../stdlib/core/iter.lani#L133)
+[Source line 127](../../../stdlib/core/iter.lani#L127)
 
 ```lanius
 source: &I
@@ -569,7 +570,7 @@ source: &I
 
 #### field: mapper
 
-[Source line 133](../../../stdlib/core/iter.lani#L133)
+[Source line 127](../../../stdlib/core/iter.lani#L127)
 
 ```lanius
 mapper: &M
@@ -577,7 +578,7 @@ mapper: &M
 
 #### field: done
 
-[Source line 133](../../../stdlib/core/iter.lani#L133)
+[Source line 127](../../../stdlib/core/iter.lani#L127)
 
 ```lanius
 done: bool
@@ -585,7 +586,7 @@ done: bool
 
 ### enum: NestedFinishError
 
-[Source line 134](../../../stdlib/core/iter.lani#L134)
+[Source line 128](../../../stdlib/core/iter.lani#L128)
 
 ```lanius
 pub enum NestedFinishError
@@ -593,7 +594,7 @@ pub enum NestedFinishError
 
 #### variant: Active
 
-[Source line 134](../../../stdlib/core/iter.lani#L134)
+[Source line 128](../../../stdlib/core/iter.lani#L128)
 
 ```lanius
 Active
@@ -601,7 +602,7 @@ Active
 
 ### struct: TryFlatten
 
-[Source line 140](../../../stdlib/core/iter.lani#L140)
+[Source line 134](../../../stdlib/core/iter.lani#L134)
 
 ```lanius
 pub struct TryFlatten<I,J,R,T,E>
@@ -609,7 +610,7 @@ pub struct TryFlatten<I,J,R,T,E>
 
 #### field: source
 
-[Source line 140](../../../stdlib/core/iter.lani#L140)
+[Source line 134](../../../stdlib/core/iter.lani#L134)
 
 ```lanius
 source: &I
@@ -617,7 +618,7 @@ source: &I
 
 #### field: retirement
 
-[Source line 140](../../../stdlib/core/iter.lani#L140)
+[Source line 134](../../../stdlib/core/iter.lani#L134)
 
 ```lanius
 retirement: &R
@@ -625,7 +626,7 @@ retirement: &R
 
 #### field: state
 
-[Source line 140](../../../stdlib/core/iter.lani#L140)
+[Source line 134](../../../stdlib/core/iter.lani#L134)
 
 ```lanius
 state: NestedState<J>
@@ -633,7 +634,7 @@ state: NestedState<J>
 
 ### struct: TryFlatMap
 
-[Source line 141](../../../stdlib/core/iter.lani#L141)
+[Source line 135](../../../stdlib/core/iter.lani#L135)
 
 ```lanius
 pub struct TryFlatMap<I,M,R,S,J,T,E>
@@ -641,7 +642,7 @@ pub struct TryFlatMap<I,M,R,S,J,T,E>
 
 #### field: source
 
-[Source line 141](../../../stdlib/core/iter.lani#L141)
+[Source line 135](../../../stdlib/core/iter.lani#L135)
 
 ```lanius
 source: &I
@@ -649,7 +650,7 @@ source: &I
 
 #### field: mapper
 
-[Source line 141](../../../stdlib/core/iter.lani#L141)
+[Source line 135](../../../stdlib/core/iter.lani#L135)
 
 ```lanius
 mapper: &M
@@ -657,7 +658,7 @@ mapper: &M
 
 #### field: retirement
 
-[Source line 141](../../../stdlib/core/iter.lani#L141)
+[Source line 135](../../../stdlib/core/iter.lani#L135)
 
 ```lanius
 retirement: &R
@@ -665,7 +666,7 @@ retirement: &R
 
 #### field: state
 
-[Source line 141](../../../stdlib/core/iter.lani#L141)
+[Source line 135](../../../stdlib/core/iter.lani#L135)
 
 ```lanius
 state: NestedState<J>
@@ -673,7 +674,7 @@ state: NestedState<J>
 
 ### struct: Flatten
 
-[Source line 144](../../../stdlib/core/iter.lani#L144)
+[Source line 138](../../../stdlib/core/iter.lani#L138)
 
 ```lanius
 pub struct Flatten<I,J,R,T>
@@ -681,7 +682,7 @@ pub struct Flatten<I,J,R,T>
 
 #### field: source
 
-[Source line 144](../../../stdlib/core/iter.lani#L144)
+[Source line 138](../../../stdlib/core/iter.lani#L138)
 
 ```lanius
 source: &I
@@ -689,7 +690,7 @@ source: &I
 
 #### field: retirement
 
-[Source line 144](../../../stdlib/core/iter.lani#L144)
+[Source line 138](../../../stdlib/core/iter.lani#L138)
 
 ```lanius
 retirement: &R
@@ -697,7 +698,7 @@ retirement: &R
 
 #### field: state
 
-[Source line 144](../../../stdlib/core/iter.lani#L144)
+[Source line 138](../../../stdlib/core/iter.lani#L138)
 
 ```lanius
 state: NestedState<J>
@@ -705,7 +706,7 @@ state: NestedState<J>
 
 ### struct: FlatMap
 
-[Source line 145](../../../stdlib/core/iter.lani#L145)
+[Source line 139](../../../stdlib/core/iter.lani#L139)
 
 ```lanius
 pub struct FlatMap<I,M,R,S,J,T>
@@ -713,7 +714,7 @@ pub struct FlatMap<I,M,R,S,J,T>
 
 #### field: source
 
-[Source line 145](../../../stdlib/core/iter.lani#L145)
+[Source line 139](../../../stdlib/core/iter.lani#L139)
 
 ```lanius
 source: &I
@@ -721,7 +722,7 @@ source: &I
 
 #### field: mapper
 
-[Source line 145](../../../stdlib/core/iter.lani#L145)
+[Source line 139](../../../stdlib/core/iter.lani#L139)
 
 ```lanius
 mapper: &M
@@ -729,7 +730,7 @@ mapper: &M
 
 #### field: retirement
 
-[Source line 145](../../../stdlib/core/iter.lani#L145)
+[Source line 139](../../../stdlib/core/iter.lani#L139)
 
 ```lanius
 retirement: &R
@@ -737,7 +738,7 @@ retirement: &R
 
 #### field: state
 
-[Source line 145](../../../stdlib/core/iter.lani#L145)
+[Source line 139](../../../stdlib/core/iter.lani#L139)
 
 ```lanius
 state: NestedState<J>
@@ -745,7 +746,7 @@ state: NestedState<J>
 
 ### struct: Zip
 
-[Source line 148](../../../stdlib/core/iter.lani#L148)
+[Source line 142](../../../stdlib/core/iter.lani#L142)
 
 ```lanius
 pub struct Zip<A, B, T, U>
@@ -753,7 +754,7 @@ pub struct Zip<A, B, T, U>
 
 #### field: left
 
-[Source line 148](../../../stdlib/core/iter.lani#L148)
+[Source line 142](../../../stdlib/core/iter.lani#L142)
 
 ```lanius
 left: &A
@@ -761,7 +762,7 @@ left: &A
 
 #### field: right
 
-[Source line 148](../../../stdlib/core/iter.lani#L148)
+[Source line 142](../../../stdlib/core/iter.lani#L142)
 
 ```lanius
 right: &B
@@ -769,7 +770,7 @@ right: &B
 
 #### field: done
 
-[Source line 148](../../../stdlib/core/iter.lani#L148)
+[Source line 142](../../../stdlib/core/iter.lani#L142)
 
 ```lanius
 done: bool
@@ -777,7 +778,7 @@ done: bool
 
 ### struct: Enumerate
 
-[Source line 149](../../../stdlib/core/iter.lani#L149)
+[Source line 143](../../../stdlib/core/iter.lani#L143)
 
 ```lanius
 pub struct Enumerate<I, T>
@@ -785,7 +786,7 @@ pub struct Enumerate<I, T>
 
 #### field: source
 
-[Source line 149](../../../stdlib/core/iter.lani#L149)
+[Source line 143](../../../stdlib/core/iter.lani#L143)
 
 ```lanius
 source: &I
@@ -793,7 +794,7 @@ source: &I
 
 #### field: next_index
 
-[Source line 149](../../../stdlib/core/iter.lani#L149)
+[Source line 143](../../../stdlib/core/iter.lani#L143)
 
 ```lanius
 next_index: u64
@@ -801,7 +802,7 @@ next_index: u64
 
 #### field: max_used
 
-[Source line 149](../../../stdlib/core/iter.lani#L149)
+[Source line 143](../../../stdlib/core/iter.lani#L143)
 
 ```lanius
 max_used: bool
@@ -809,7 +810,7 @@ max_used: bool
 
 #### field: done
 
-[Source line 149](../../../stdlib/core/iter.lani#L149)
+[Source line 143](../../../stdlib/core/iter.lani#L143)
 
 ```lanius
 done: bool
@@ -817,7 +818,7 @@ done: bool
 
 ### struct: Filter
 
-[Source line 150](../../../stdlib/core/iter.lani#L150)
+[Source line 144](../../../stdlib/core/iter.lani#L144)
 
 ```lanius
 pub struct Filter<I, P, T>
@@ -825,7 +826,7 @@ pub struct Filter<I, P, T>
 
 #### field: source
 
-[Source line 150](../../../stdlib/core/iter.lani#L150)
+[Source line 144](../../../stdlib/core/iter.lani#L144)
 
 ```lanius
 source: &I
@@ -833,7 +834,7 @@ source: &I
 
 #### field: predicate
 
-[Source line 150](../../../stdlib/core/iter.lani#L150)
+[Source line 144](../../../stdlib/core/iter.lani#L144)
 
 ```lanius
 predicate: &P
@@ -841,7 +842,7 @@ predicate: &P
 
 #### field: done
 
-[Source line 150](../../../stdlib/core/iter.lani#L150)
+[Source line 144](../../../stdlib/core/iter.lani#L144)
 
 ```lanius
 done: bool
@@ -849,7 +850,7 @@ done: bool
 
 ### struct: FilterMap
 
-[Source line 151](../../../stdlib/core/iter.lani#L151)
+[Source line 145](../../../stdlib/core/iter.lani#L145)
 
 ```lanius
 pub struct FilterMap<I, M, T, U>
@@ -857,7 +858,7 @@ pub struct FilterMap<I, M, T, U>
 
 #### field: source
 
-[Source line 151](../../../stdlib/core/iter.lani#L151)
+[Source line 145](../../../stdlib/core/iter.lani#L145)
 
 ```lanius
 source: &I
@@ -865,7 +866,7 @@ source: &I
 
 #### field: mapper
 
-[Source line 151](../../../stdlib/core/iter.lani#L151)
+[Source line 145](../../../stdlib/core/iter.lani#L145)
 
 ```lanius
 mapper: &M
@@ -873,7 +874,7 @@ mapper: &M
 
 #### field: done
 
-[Source line 151](../../../stdlib/core/iter.lani#L151)
+[Source line 145](../../../stdlib/core/iter.lani#L145)
 
 ```lanius
 done: bool
@@ -881,7 +882,7 @@ done: bool
 
 ### struct: Skip
 
-[Source line 152](../../../stdlib/core/iter.lani#L152)
+[Source line 146](../../../stdlib/core/iter.lani#L146)
 
 ```lanius
 pub struct Skip<I, T>
@@ -889,7 +890,7 @@ pub struct Skip<I, T>
 
 #### field: source
 
-[Source line 152](../../../stdlib/core/iter.lani#L152)
+[Source line 146](../../../stdlib/core/iter.lani#L146)
 
 ```lanius
 source: &I
@@ -897,7 +898,7 @@ source: &I
 
 #### field: remaining
 
-[Source line 152](../../../stdlib/core/iter.lani#L152)
+[Source line 146](../../../stdlib/core/iter.lani#L146)
 
 ```lanius
 remaining: u64
@@ -905,7 +906,7 @@ remaining: u64
 
 #### field: done
 
-[Source line 152](../../../stdlib/core/iter.lani#L152)
+[Source line 146](../../../stdlib/core/iter.lani#L146)
 
 ```lanius
 done: bool
@@ -913,7 +914,7 @@ done: bool
 
 ### struct: TakeWhile
 
-[Source line 153](../../../stdlib/core/iter.lani#L153)
+[Source line 147](../../../stdlib/core/iter.lani#L147)
 
 ```lanius
 pub struct TakeWhile<I, P, T>
@@ -921,7 +922,7 @@ pub struct TakeWhile<I, P, T>
 
 #### field: source
 
-[Source line 153](../../../stdlib/core/iter.lani#L153)
+[Source line 147](../../../stdlib/core/iter.lani#L147)
 
 ```lanius
 source: &I
@@ -929,7 +930,7 @@ source: &I
 
 #### field: predicate
 
-[Source line 153](../../../stdlib/core/iter.lani#L153)
+[Source line 147](../../../stdlib/core/iter.lani#L147)
 
 ```lanius
 predicate: &P
@@ -937,7 +938,7 @@ predicate: &P
 
 #### field: done
 
-[Source line 153](../../../stdlib/core/iter.lani#L153)
+[Source line 147](../../../stdlib/core/iter.lani#L147)
 
 ```lanius
 done: bool
@@ -945,7 +946,7 @@ done: bool
 
 ### struct: SkipWhile
 
-[Source line 154](../../../stdlib/core/iter.lani#L154)
+[Source line 148](../../../stdlib/core/iter.lani#L148)
 
 ```lanius
 pub struct SkipWhile<I, P, T>
@@ -953,7 +954,7 @@ pub struct SkipWhile<I, P, T>
 
 #### field: source
 
-[Source line 154](../../../stdlib/core/iter.lani#L154)
+[Source line 148](../../../stdlib/core/iter.lani#L148)
 
 ```lanius
 source: &I
@@ -961,7 +962,7 @@ source: &I
 
 #### field: predicate
 
-[Source line 154](../../../stdlib/core/iter.lani#L154)
+[Source line 148](../../../stdlib/core/iter.lani#L148)
 
 ```lanius
 predicate: &P
@@ -969,7 +970,7 @@ predicate: &P
 
 #### field: skipping
 
-[Source line 154](../../../stdlib/core/iter.lani#L154)
+[Source line 148](../../../stdlib/core/iter.lani#L148)
 
 ```lanius
 skipping: bool
@@ -977,7 +978,7 @@ skipping: bool
 
 #### field: done
 
-[Source line 154](../../../stdlib/core/iter.lani#L154)
+[Source line 148](../../../stdlib/core/iter.lani#L148)
 
 ```lanius
 done: bool
@@ -985,7 +986,7 @@ done: bool
 
 ### struct: Advance
 
-[Source line 155](../../../stdlib/core/iter.lani#L155)
+[Source line 149](../../../stdlib/core/iter.lani#L149)
 
 ```lanius
 pub struct Advance
@@ -993,7 +994,7 @@ pub struct Advance
 
 #### field: advanced
 
-[Source line 155](../../../stdlib/core/iter.lani#L155)
+[Source line 149](../../../stdlib/core/iter.lani#L149)
 
 ```lanius
 advanced: u64
@@ -1001,7 +1002,7 @@ advanced: u64
 
 #### field: exhausted
 
-[Source line 155](../../../stdlib/core/iter.lani#L155)
+[Source line 149](../../../stdlib/core/iter.lani#L149)
 
 ```lanius
 exhausted: bool
@@ -1009,7 +1010,7 @@ exhausted: bool
 
 ### struct: FoldProgress
 
-[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+[Source line 1390](../../../stdlib/core/iter.lani#L1390)
 
 ```lanius
 pub struct FoldProgress<A>
@@ -1017,7 +1018,7 @@ pub struct FoldProgress<A>
 
 #### field: accumulator
 
-[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+[Source line 1390](../../../stdlib/core/iter.lani#L1390)
 
 ```lanius
 accumulator:A
@@ -1025,7 +1026,7 @@ accumulator:A
 
 #### field: folded
 
-[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+[Source line 1390](../../../stdlib/core/iter.lani#L1390)
 
 ```lanius
 folded:u64
@@ -1033,7 +1034,7 @@ folded:u64
 
 #### field: exhausted
 
-[Source line 1396](../../../stdlib/core/iter.lani#L1396)
+[Source line 1390](../../../stdlib/core/iter.lani#L1390)
 
 ```lanius
 exhausted:bool
@@ -1041,7 +1042,7 @@ exhausted:bool
 
 ### struct: FoldFailure
 
-[Source line 1399](../../../stdlib/core/iter.lani#L1399)
+[Source line 1393](../../../stdlib/core/iter.lani#L1393)
 
 ```lanius
 pub struct FoldFailure<E>
@@ -1049,7 +1050,7 @@ pub struct FoldFailure<E>
 
 #### field: folded
 
-[Source line 1399](../../../stdlib/core/iter.lani#L1399)
+[Source line 1393](../../../stdlib/core/iter.lani#L1393)
 
 ```lanius
 folded:u64
@@ -1057,7 +1058,7 @@ folded:u64
 
 #### field: error
 
-[Source line 1399](../../../stdlib/core/iter.lani#L1399)
+[Source line 1393](../../../stdlib/core/iter.lani#L1393)
 
 ```lanius
 error:E
@@ -1067,7 +1068,7 @@ error:E
 
 ### function: empty
 
-[Source line 157](../../../stdlib/core/iter.lani#L157)
+[Source line 151](../../../stdlib/core/iter.lani#L151)
 
 ```lanius
 pub fn empty<T>() -> Empty<T>
@@ -1075,7 +1076,7 @@ pub fn empty<T>() -> Empty<T>
 
 ### function: once
 
-[Source line 161](../../../stdlib/core/iter.lani#L161)
+[Source line 155](../../../stdlib/core/iter.lani#L155)
 
 ```lanius
 pub fn once<T>(value: T) -> Once<T>
@@ -1083,7 +1084,7 @@ pub fn once<T>(value: T) -> Once<T>
 
 ### function: repeat
 
-[Source line 166](../../../stdlib/core/iter.lani#L166)
+[Source line 160](../../../stdlib/core/iter.lani#L160)
 
 ```lanius
 pub fn repeat<T>(value: T) -> Repeat<T>
@@ -1091,7 +1092,7 @@ pub fn repeat<T>(value: T) -> Repeat<T>
 
 ### function: rev
 
-[Source line 171](../../../stdlib/core/iter.lani#L171)
+[Source line 165](../../../stdlib/core/iter.lani#L165)
 
 ```lanius
 pub fn rev<I,T>(source: &I) -> Rev<I,T>
@@ -1102,7 +1103,7 @@ Borrows the actual cursor under explicit Iterator<T> and DoubleEndedIterator<T> 
 
 ### function: peekable
 
-[Source line 178](../../../stdlib/core/iter.lani#L178)
+[Source line 172](../../../stdlib/core/iter.lani#L172)
 
 ```lanius
 pub fn peekable<I,T>(source: &I) -> Peekable<I,T> where I: Iterator<T>
@@ -1110,7 +1111,7 @@ pub fn peekable<I,T>(source: &I) -> Peekable<I,T> where I: Iterator<T>
 
 ### function: step_by
 
-[Source line 185](../../../stdlib/core/iter.lani#L185)
+[Source line 179](../../../stdlib/core/iter.lani#L179)
 
 ```lanius
 pub fn step_by<I, T>(source: &I, step: u64)
@@ -1119,7 +1120,7 @@ pub fn step_by<I, T>(source: &I, step: u64)
 
 ### function: from_slice
 
-[Source line 193](../../../stdlib/core/iter.lani#L193)
+[Source line 187](../../../stdlib/core/iter.lani#L187)
 
 ```lanius
 pub fn from_slice<T>(values: [T], count: i32)
@@ -1128,7 +1129,7 @@ pub fn from_slice<T>(values: [T], count: i32)
 
 ### function: from_view
 
-[Source line 201](../../../stdlib/core/iter.lani#L201)
+[Source line 195](../../../stdlib/core/iter.lani#L195)
 
 ```lanius
 pub fn from_view<T>(view: core::slice::View<T>)
@@ -1137,7 +1138,7 @@ pub fn from_view<T>(view: core::slice::View<T>)
 
 ### function: range_i32
 
-[Source line 211](../../../stdlib/core/iter.lani#L211)
+[Source line 205](../../../stdlib/core/iter.lani#L205)
 
 ```lanius
 pub fn range_i32(bounds: core::range::Range<i32>) -> RangeI32
@@ -1145,7 +1146,7 @@ pub fn range_i32(bounds: core::range::Range<i32>) -> RangeI32
 
 ### function: range_i32_inclusive
 
-[Source line 218](../../../stdlib/core/iter.lani#L218)
+[Source line 212](../../../stdlib/core/iter.lani#L212)
 
 ```lanius
 pub fn range_i32_inclusive(bounds: core::range::RangeInclusive<i32>) -> RangeI32
@@ -1153,7 +1154,7 @@ pub fn range_i32_inclusive(bounds: core::range::RangeInclusive<i32>) -> RangeI32
 
 ### function: take
 
-[Source line 227](../../../stdlib/core/iter.lani#L227)
+[Source line 221](../../../stdlib/core/iter.lani#L221)
 
 ```lanius
 pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T>
@@ -1161,7 +1162,7 @@ pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T>
 
 ### function: chain
 
-[Source line 231](../../../stdlib/core/iter.lani#L231)
+[Source line 225](../../../stdlib/core/iter.lani#L225)
 
 ```lanius
 pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
@@ -1170,7 +1171,7 @@ pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
 
 ### function: map
 
-[Source line 236](../../../stdlib/core/iter.lani#L236)
+[Source line 230](../../../stdlib/core/iter.lani#L230)
 
 ```lanius
 pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
@@ -1179,7 +1180,7 @@ pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
 
 ### function: scan
 
-[Source line 244](../../../stdlib/core/iter.lani#L244)
+[Source line 238](../../../stdlib/core/iter.lani#L238)
 
 ```lanius
 pub fn scan<I,M,T,U>(source: &I, mapper: &M) -> Scan<I,M,T,U>
@@ -1188,7 +1189,7 @@ pub fn scan<I,M,T,U>(source: &I, mapper: &M) -> Scan<I,M,T,U>
 
 ### function: try_scan
 
-[Source line 251](../../../stdlib/core/iter.lani#L251)
+[Source line 245](../../../stdlib/core/iter.lani#L245)
 
 ```lanius
 pub fn try_scan<I,M,T,U,E>(source: &I, mapper: &M) -> TryScan<I,M,T,U,E>
@@ -1197,7 +1198,7 @@ pub fn try_scan<I,M,T,U,E>(source: &I, mapper: &M) -> TryScan<I,M,T,U,E>
 
 ### function: try_flatten
 
-[Source line 260](../../../stdlib/core/iter.lani#L260)
+[Source line 254](../../../stdlib/core/iter.lani#L254)
 
 ```lanius
 pub fn try_flatten<I,J,R,T,E>(source: &I, retirement: &R) -> TryFlatten<I,J,R,T,E>
@@ -1206,7 +1207,7 @@ pub fn try_flatten<I,J,R,T,E>(source: &I, retirement: &R) -> TryFlatten<I,J,R,T,
 
 ### function: try_flat_map
 
-[Source line 270](../../../stdlib/core/iter.lani#L270)
+[Source line 264](../../../stdlib/core/iter.lani#L264)
 
 ```lanius
 pub fn try_flat_map<I,M,R,S,J,T,E>(source: &I, mapper: &M, retirement: &R) -> TryFlatMap<I,M,R,S,J,T,E>
@@ -1216,7 +1217,7 @@ pub fn try_flat_map<I,M,R,S,J,T,E>(source: &I, mapper: &M, retirement: &R) -> Tr
 
 ### function: flatten
 
-[Source line 280](../../../stdlib/core/iter.lani#L280)
+[Source line 274](../../../stdlib/core/iter.lani#L274)
 
 ```lanius
 pub fn flatten<I,J,R,T>(source: &I, retirement: &R) -> Flatten<I,J,R,T>
@@ -1225,7 +1226,7 @@ pub fn flatten<I,J,R,T>(source: &I, retirement: &R) -> Flatten<I,J,R,T>
 
 ### function: flat_map
 
-[Source line 290](../../../stdlib/core/iter.lani#L290)
+[Source line 284](../../../stdlib/core/iter.lani#L284)
 
 ```lanius
 pub fn flat_map<I,M,R,S,J,T>(source: &I, mapper: &M, retirement: &R) -> FlatMap<I,M,R,S,J,T>
@@ -1235,7 +1236,7 @@ pub fn flat_map<I,M,R,S,J,T>(source: &I, mapper: &M, retirement: &R) -> FlatMap<
 
 ### function: filter
 
-[Source line 300](../../../stdlib/core/iter.lani#L300)
+[Source line 294](../../../stdlib/core/iter.lani#L294)
 
 ```lanius
 pub fn filter<I, P, T>(source: &I, predicate: &P) -> Filter<I, P, T>
@@ -1244,7 +1245,7 @@ pub fn filter<I, P, T>(source: &I, predicate: &P) -> Filter<I, P, T>
 
 ### function: filter_map
 
-[Source line 305](../../../stdlib/core/iter.lani#L305)
+[Source line 299](../../../stdlib/core/iter.lani#L299)
 
 ```lanius
 pub fn filter_map<I, M, T, U>(source: &I, mapper: &M) -> FilterMap<I, M, T, U>
@@ -1253,7 +1254,7 @@ pub fn filter_map<I, M, T, U>(source: &I, mapper: &M) -> FilterMap<I, M, T, U>
 
 ### function: skip
 
-[Source line 312](../../../stdlib/core/iter.lani#L312)
+[Source line 306](../../../stdlib/core/iter.lani#L306)
 
 ```lanius
 pub fn skip<I, T>(source: &I, count: u64) -> Skip<I, T> where I: Iterator<T>
@@ -1261,7 +1262,7 @@ pub fn skip<I, T>(source: &I, count: u64) -> Skip<I, T> where I: Iterator<T>
 
 ### function: take_while
 
-[Source line 317](../../../stdlib/core/iter.lani#L317)
+[Source line 311](../../../stdlib/core/iter.lani#L311)
 
 ```lanius
 pub fn take_while<I, P, T>(source: &I, predicate: &P) -> TakeWhile<I, P, T>
@@ -1270,7 +1271,7 @@ pub fn take_while<I, P, T>(source: &I, predicate: &P) -> TakeWhile<I, P, T>
 
 ### function: skip_while
 
-[Source line 323](../../../stdlib/core/iter.lani#L323)
+[Source line 317](../../../stdlib/core/iter.lani#L317)
 
 ```lanius
 pub fn skip_while<I, P, T>(source: &I, predicate: &P) -> SkipWhile<I, P, T>
@@ -1279,7 +1280,7 @@ pub fn skip_while<I, P, T>(source: &I, predicate: &P) -> SkipWhile<I, P, T>
 
 ### function: zip
 
-[Source line 331](../../../stdlib/core/iter.lani#L331)
+[Source line 325](../../../stdlib/core/iter.lani#L325)
 
 ```lanius
 pub fn zip<A, B, T, U>(left: &A, right: &B) -> Zip<A, B, T, U>
@@ -1288,7 +1289,7 @@ pub fn zip<A, B, T, U>(left: &A, right: &B) -> Zip<A, B, T, U>
 
 ### function: enumerate
 
-[Source line 336](../../../stdlib/core/iter.lani#L336)
+[Source line 330](../../../stdlib/core/iter.lani#L330)
 
 ```lanius
 pub fn enumerate<I, T>(source: &I) -> Enumerate<I, T> where I: Iterator<T>
@@ -1296,7 +1297,7 @@ pub fn enumerate<I, T>(source: &I) -> Enumerate<I, T> where I: Iterator<T>
 
 ### function: enumerate_from
 
-[Source line 343](../../../stdlib/core/iter.lani#L343)
+[Source line 337](../../../stdlib/core/iter.lani#L337)
 
 ```lanius
 pub fn enumerate_from<I, T>(source: &I, first_index: u64) -> Enumerate<I, T>
@@ -1305,7 +1306,7 @@ pub fn enumerate_from<I, T>(source: &I, first_index: u64) -> Enumerate<I, T>
 
 ### function: find
 
-[Source line 350](../../../stdlib/core/iter.lani#L350)
+[Source line 344](../../../stdlib/core/iter.lani#L344)
 
 ```lanius
 pub fn find<I, P, T>(source: &I, predicate: &P) -> core::option::Option<T>
@@ -1314,7 +1315,7 @@ pub fn find<I, P, T>(source: &I, predicate: &P) -> core::option::Option<T>
 
 ### function: find_map
 
-[Source line 362](../../../stdlib/core/iter.lani#L362)
+[Source line 356](../../../stdlib/core/iter.lani#L356)
 
 ```lanius
 pub fn find_map<I, M, T, U>(source: &I, mapper: &M) -> core::option::Option<U>
@@ -1323,7 +1324,7 @@ pub fn find_map<I, M, T, U>(source: &I, mapper: &M) -> core::option::Option<U>
 
 ### function: position
 
-[Source line 377](../../../stdlib/core/iter.lani#L377)
+[Source line 371](../../../stdlib/core/iter.lani#L371)
 
 ```lanius
 pub fn position<I,P,T>(source: &I, predicate: &P) -> core::option::Option<u64>
@@ -1332,7 +1333,7 @@ pub fn position<I,P,T>(source: &I, predicate: &P) -> core::option::Option<u64>
 
 ### function: position_from
 
-[Source line 385](../../../stdlib/core/iter.lani#L385)
+[Source line 379](../../../stdlib/core/iter.lani#L379)
 
 ```lanius
 pub fn position_from<I,P,T>(source: &I, predicate: &P, first_index: u64) -> core::option::Option<u64>
@@ -1341,7 +1342,7 @@ pub fn position_from<I,P,T>(source: &I, predicate: &P, first_index: u64) -> core
 
 ### function: min
 
-[Source line 403](../../../stdlib/core/iter.lani#L403)
+[Source line 397](../../../stdlib/core/iter.lani#L397)
 
 ```lanius
 pub fn min<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: core::cmp::Ord<T>
@@ -1349,7 +1350,7 @@ pub fn min<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: 
 
 ### function: max
 
-[Source line 416](../../../stdlib/core/iter.lani#L416)
+[Source line 410](../../../stdlib/core/iter.lani#L410)
 
 ```lanius
 pub fn max<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: core::cmp::Ord<T>
@@ -1357,25 +1358,29 @@ pub fn max<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: 
 
 ### function: min_by
 
-[Source line 432](../../../stdlib/core/iter.lani#L432)
+[Source line 426](../../../stdlib/core/iter.lani#L426)
 
 ```lanius
 pub fn min_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
-    where I: Iterator<T>, C: Comparator<T>
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T>
 ```
+
+Requires core::ordering::Comparator<T,T> and Iterator<T>; the old iterator trait identity is removed without an alias. Exhausts finite input, preserving the first minimum tied representative, with exactly n-1 comparator calls for nonempty n and no implicit owner cleanup.
 
 ### function: max_by
 
-[Source line 449](../../../stdlib/core/iter.lani#L449)
+[Source line 443](../../../stdlib/core/iter.lani#L443)
 
 ```lanius
 pub fn max_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
-    where I: Iterator<T>, C: Comparator<T>
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T>
 ```
+
+Requires core::ordering::Comparator<T,T> and Iterator<T>; the old iterator trait identity is removed without an alias. Exhausts finite input, preserving the last maximum tied representative, with exactly n-1 comparator calls for nonempty n and no implicit owner cleanup.
 
 ### function: any
 
-[Source line 468](../../../stdlib/core/iter.lani#L468)
+[Source line 462](../../../stdlib/core/iter.lani#L462)
 
 ```lanius
 pub fn any<I, P, T>(source: &I, predicate: &P) -> bool
@@ -1384,7 +1389,7 @@ pub fn any<I, P, T>(source: &I, predicate: &P) -> bool
 
 ### function: all
 
-[Source line 480](../../../stdlib/core/iter.lani#L480)
+[Source line 474](../../../stdlib/core/iter.lani#L474)
 
 ```lanius
 pub fn all<I, P, T>(source: &I, predicate: &P) -> bool
@@ -1393,7 +1398,7 @@ pub fn all<I, P, T>(source: &I, predicate: &P) -> bool
 
 ### function: fold
 
-[Source line 494](../../../stdlib/core/iter.lani#L494)
+[Source line 488](../../../stdlib/core/iter.lani#L488)
 
 ```lanius
 pub fn fold<I, F, T, A>(source: &I, initial: A, folder: &F) -> A
@@ -1402,7 +1407,7 @@ pub fn fold<I, F, T, A>(source: &I, initial: A, folder: &F) -> A
 
 ### function: try_fold
 
-[Source line 506](../../../stdlib/core/iter.lani#L506)
+[Source line 500](../../../stdlib/core/iter.lani#L500)
 
 ```lanius
 pub fn try_fold<I, F, T, A, E>(source: &I, initial: A, folder: &F)
@@ -1411,7 +1416,7 @@ pub fn try_fold<I, F, T, A, E>(source: &I, initial: A, folder: &F)
 
 ### function: try_transfer_up_to
 
-[Source line 525](../../../stdlib/core/iter.lani#L525)
+[Source line 519](../../../stdlib/core/iter.lani#L519)
 
 ```lanius
 pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
@@ -1421,7 +1426,7 @@ pub fn try_transfer_up_to<I, S, T, E>(source: &I, sink: &S, limit: u64)
 
 ### function: try_replace_up_to
 
-[Source line 563](../../../stdlib/core/iter.lani#L563)
+[Source line 557](../../../stdlib/core/iter.lani#L557)
 
 ```lanius
 pub fn try_replace_up_to<I,R,D,T,RE,DE>(source: &I, replacement: &R, displaced: &D, limit: u64)
@@ -1431,7 +1436,7 @@ pub fn try_replace_up_to<I,R,D,T,RE,DE>(source: &I, replacement: &R, displaced: 
 
 ### function: advance_up_to
 
-[Source line 605](../../../stdlib/core/iter.lani#L605)
+[Source line 599](../../../stdlib/core/iter.lani#L599)
 
 ```lanius
 pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<T>
@@ -1439,7 +1444,7 @@ pub fn advance_up_to<I, T>(source: &I, limit: u64) -> Advance where I: Iterator<
 
 ### function: reduce
 
-[Source line 1403](../../../stdlib/core/iter.lani#L1403)
+[Source line 1397](../../../stdlib/core/iter.lani#L1397)
 
 ```lanius
 pub fn reduce<I,F,T>(source:&I,folder:&F) -> core::option::Option<T>
@@ -1450,7 +1455,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: try_reduce
 
-[Source line 1409](../../../stdlib/core/iter.lani#L1409)
+[Source line 1403](../../../stdlib/core/iter.lani#L1403)
 
 ```lanius
 pub fn try_reduce<I,F,T,E>(source:&I,folder:&F) -> core::result::Result<core::option::Option<T>,E>
@@ -1461,7 +1466,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: rfold
 
-[Source line 1420](../../../stdlib/core/iter.lani#L1420)
+[Source line 1414](../../../stdlib/core/iter.lani#L1414)
 
 ```lanius
 pub fn rfold<I,F,T,A>(source:&I,initial:A,folder:&F) -> A
@@ -1472,7 +1477,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: try_rfold
 
-[Source line 1430](../../../stdlib/core/iter.lani#L1430)
+[Source line 1424](../../../stdlib/core/iter.lani#L1424)
 
 ```lanius
 pub fn try_rfold<I,F,T,A,E>(source:&I,initial:A,folder:&F) -> core::result::Result<A,E>
@@ -1483,7 +1488,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: fold_up_to
 
-[Source line 1445](../../../stdlib/core/iter.lani#L1445)
+[Source line 1439](../../../stdlib/core/iter.lani#L1439)
 
 ```lanius
 pub fn fold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
@@ -1494,7 +1499,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: try_fold_up_to
 
-[Source line 1455](../../../stdlib/core/iter.lani#L1455)
+[Source line 1449](../../../stdlib/core/iter.lani#L1449)
 
 ```lanius
 pub fn try_fold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
@@ -1506,7 +1511,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: rfold_up_to
 
-[Source line 1474](../../../stdlib/core/iter.lani#L1474)
+[Source line 1468](../../../stdlib/core/iter.lani#L1468)
 
 ```lanius
 pub fn rfold_up_to<I,F,T,A>(source:&I,initial:A,folder:&F,limit:u64) -> FoldProgress<A>
@@ -1517,7 +1522,7 @@ Accepted on the finite native Linux x86_64 profile; see separate library/applica
 
 ### function: try_rfold_up_to
 
-[Source line 1484](../../../stdlib/core/iter.lani#L1484)
+[Source line 1478](../../../stdlib/core/iter.lani#L1478)
 
 ```lanius
 pub fn try_rfold_up_to<I,F,T,A,E>(source:&I,initial:A,folder:&F,limit:u64)
@@ -1641,25 +1646,9 @@ pub trait TryFolder<A, T, E>
 pub fn try_apply(&self, accumulator: A, value: T) -> core::result::Result<A, E>;
 ```
 
-### trait: Comparator
-
-[Source line 74](../../../stdlib/core/iter.lani#L74)
-
-```lanius
-pub trait Comparator<T>
-```
-
-#### trait member: compare
-
-[Source line 75](../../../stdlib/core/iter.lani#L75)
-
-```lanius
-pub fn compare(&self, left: T, right: T) -> core::ordering::Ordering;
-```
-
 ### trait: TrySink
 
-[Source line 82](../../../stdlib/core/iter.lani#L82)
+[Source line 76](../../../stdlib/core/iter.lani#L76)
 
 ```lanius
 pub trait TrySink<T, E>
@@ -1667,7 +1656,7 @@ pub trait TrySink<T, E>
 
 #### trait member: try_accept
 
-[Source line 83](../../../stdlib/core/iter.lani#L83)
+[Source line 77](../../../stdlib/core/iter.lani#L77)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<E>;
@@ -1675,7 +1664,7 @@ pub fn try_accept(&self, item: T) -> core::option::Option<E>;
 
 ### trait: TryReplaceSink
 
-[Source line 90](../../../stdlib/core/iter.lani#L90)
+[Source line 84](../../../stdlib/core/iter.lani#L84)
 
 ```lanius
 pub trait TryReplaceSink<T,E>
@@ -1683,7 +1672,7 @@ pub trait TryReplaceSink<T,E>
 
 #### trait member: try_replace_item
 
-[Source line 91](../../../stdlib/core/iter.lani#L91)
+[Source line 85](../../../stdlib/core/iter.lani#L85)
 
 ```lanius
 pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Option<T>,E>;
@@ -1691,9 +1680,9 @@ pub fn try_replace_item(&self, item: T) -> core::result::Result<core::option::Op
 
 ## Implementation blocks and public methods
 
-### impl at line 619
+### impl at line 613
 
-[Source line 619](../../../stdlib/core/iter.lani#L619)
+[Source line 613](../../../stdlib/core/iter.lani#L613)
 
 ```lanius
 pub impl<T> Iterator<T> for core::slice::Iter<T>
@@ -1701,15 +1690,15 @@ pub impl<T> Iterator<T> for core::slice::Iter<T>
 
 #### method: next
 
-[Source line 620](../../../stdlib/core/iter.lani#L620)
+[Source line 614](../../../stdlib/core/iter.lani#L614)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 629
+### impl at line 623
 
-[Source line 629](../../../stdlib/core/iter.lani#L629)
+[Source line 623](../../../stdlib/core/iter.lani#L623)
 
 ```lanius
 pub impl<T> DoubleEndedIterator<T> for core::slice::Iter<T>
@@ -1717,15 +1706,15 @@ pub impl<T> DoubleEndedIterator<T> for core::slice::Iter<T>
 
 #### method: next_back
 
-[Source line 630](../../../stdlib/core/iter.lani#L630)
+[Source line 624](../../../stdlib/core/iter.lani#L624)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 637
+### impl at line 631
 
-[Source line 637](../../../stdlib/core/iter.lani#L637)
+[Source line 631](../../../stdlib/core/iter.lani#L631)
 
 ```lanius
 pub impl<T> ExactSizeIterator<T> for core::slice::Iter<T>
@@ -1733,15 +1722,15 @@ pub impl<T> ExactSizeIterator<T> for core::slice::Iter<T>
 
 #### method: remaining_count
 
-[Source line 638](../../../stdlib/core/iter.lani#L638)
+[Source line 632](../../../stdlib/core/iter.lani#L632)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 641
+### impl at line 635
 
-[Source line 641](../../../stdlib/core/iter.lani#L641)
+[Source line 635](../../../stdlib/core/iter.lani#L635)
 
 ```lanius
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T>
@@ -1749,15 +1738,15 @@ pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T>
 
 #### method: next
 
-[Source line 642](../../../stdlib/core/iter.lani#L642)
+[Source line 636](../../../stdlib/core/iter.lani#L636)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::slice::View<T>>
 ```
 
-### impl at line 651
+### impl at line 645
 
-[Source line 651](../../../stdlib/core/iter.lani#L651)
+[Source line 645](../../../stdlib/core/iter.lani#L645)
 
 ```lanius
 pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Chunks<T>
@@ -1765,15 +1754,15 @@ pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Chunks<T>
 
 #### method: remaining_count
 
-[Source line 652](../../../stdlib/core/iter.lani#L652)
+[Source line 646](../../../stdlib/core/iter.lani#L646)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 660
+### impl at line 654
 
-[Source line 660](../../../stdlib/core/iter.lani#L660)
+[Source line 654](../../../stdlib/core/iter.lani#L654)
 
 ```lanius
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T>
@@ -1781,15 +1770,15 @@ pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T>
 
 #### method: next
 
-[Source line 661](../../../stdlib/core/iter.lani#L661)
+[Source line 655](../../../stdlib/core/iter.lani#L655)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::slice::View<T>>
 ```
 
-### impl at line 668
+### impl at line 662
 
-[Source line 668](../../../stdlib/core/iter.lani#L668)
+[Source line 662](../../../stdlib/core/iter.lani#L662)
 
 ```lanius
 pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Windows<T>
@@ -1797,15 +1786,15 @@ pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Windows<T>
 
 #### method: remaining_count
 
-[Source line 669](../../../stdlib/core/iter.lani#L669)
+[Source line 663](../../../stdlib/core/iter.lani#L663)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 676
+### impl at line 670
 
-[Source line 676](../../../stdlib/core/iter.lani#L676)
+[Source line 670](../../../stdlib/core/iter.lani#L670)
 
 ```lanius
 pub impl<T> Empty<T>
@@ -1813,15 +1802,15 @@ pub impl<T> Empty<T>
 
 #### method: borrow
 
-[Source line 677](../../../stdlib/core/iter.lani#L677)
+[Source line 671](../../../stdlib/core/iter.lani#L671)
 
 ```lanius
 pub fn borrow(&self) -> &Empty<T>
 ```
 
-### impl at line 680
+### impl at line 674
 
-[Source line 680](../../../stdlib/core/iter.lani#L680)
+[Source line 674](../../../stdlib/core/iter.lani#L674)
 
 ```lanius
 pub impl<I,T> Peekable<I,T>
@@ -1829,7 +1818,7 @@ pub impl<I,T> Peekable<I,T>
 
 #### method: borrow
 
-[Source line 681](../../../stdlib/core/iter.lani#L681)
+[Source line 675](../../../stdlib/core/iter.lani#L675)
 
 ```lanius
 pub fn borrow(&self) -> &Peekable<I,T>
@@ -1837,7 +1826,7 @@ pub fn borrow(&self) -> &Peekable<I,T>
 
 #### method: has_cached
 
-[Source line 682](../../../stdlib/core/iter.lani#L682)
+[Source line 676](../../../stdlib/core/iter.lani#L676)
 
 ```lanius
 pub fn has_cached(&self) -> bool
@@ -1845,7 +1834,7 @@ pub fn has_cached(&self) -> bool
 
 #### method: peek
 
-[Source line 686](../../../stdlib/core/iter.lani#L686)
+[Source line 680](../../../stdlib/core/iter.lani#L680)
 
 ```lanius
 pub fn peek(&self) -> core::option::Option<T> where I: Iterator<T>
@@ -1853,7 +1842,7 @@ pub fn peek(&self) -> core::option::Option<T> where I: Iterator<T>
 
 #### method: take_cached
 
-[Source line 695](../../../stdlib/core/iter.lani#L695)
+[Source line 689](../../../stdlib/core/iter.lani#L689)
 
 ```lanius
 pub fn take_cached(&self) -> core::option::Option<T>
@@ -1861,15 +1850,15 @@ pub fn take_cached(&self) -> core::option::Option<T>
 
 #### method: try_finish
 
-[Source line 703](../../../stdlib/core/iter.lani#L703)
+[Source line 697](../../../stdlib/core/iter.lani#L697)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<PeekableError>
 ```
 
-### impl at line 710
+### impl at line 704
 
-[Source line 710](../../../stdlib/core/iter.lani#L710)
+[Source line 704](../../../stdlib/core/iter.lani#L704)
 
 ```lanius
 pub impl<I,T> Iterator<T> for Peekable<I,T> where I: Iterator<T>
@@ -1877,15 +1866,15 @@ pub impl<I,T> Iterator<T> for Peekable<I,T> where I: Iterator<T>
 
 #### method: next
 
-[Source line 711](../../../stdlib/core/iter.lani#L711)
+[Source line 705](../../../stdlib/core/iter.lani#L705)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 721
+### impl at line 715
 
-[Source line 721](../../../stdlib/core/iter.lani#L721)
+[Source line 715](../../../stdlib/core/iter.lani#L715)
 
 ```lanius
 pub impl<I,T> ExactSizeIterator<T> for Peekable<I,T>
@@ -1894,15 +1883,15 @@ pub impl<I,T> ExactSizeIterator<T> for Peekable<I,T>
 
 #### method: remaining_count
 
-[Source line 723](../../../stdlib/core/iter.lani#L723)
+[Source line 717](../../../stdlib/core/iter.lani#L717)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 735
+### impl at line 729
 
-[Source line 735](../../../stdlib/core/iter.lani#L735)
+[Source line 729](../../../stdlib/core/iter.lani#L729)
 
 ```lanius
 pub impl<T> Iterator<T> for Empty<T>
@@ -1910,15 +1899,15 @@ pub impl<T> Iterator<T> for Empty<T>
 
 #### method: next
 
-[Source line 736](../../../stdlib/core/iter.lani#L736)
+[Source line 730](../../../stdlib/core/iter.lani#L730)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 739
+### impl at line 733
 
-[Source line 739](../../../stdlib/core/iter.lani#L739)
+[Source line 733](../../../stdlib/core/iter.lani#L733)
 
 ```lanius
 pub impl<T> DoubleEndedIterator<T> for Empty<T>
@@ -1926,15 +1915,15 @@ pub impl<T> DoubleEndedIterator<T> for Empty<T>
 
 #### method: next_back
 
-[Source line 740](../../../stdlib/core/iter.lani#L740)
+[Source line 734](../../../stdlib/core/iter.lani#L734)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 743
+### impl at line 737
 
-[Source line 743](../../../stdlib/core/iter.lani#L743)
+[Source line 737](../../../stdlib/core/iter.lani#L737)
 
 ```lanius
 pub impl<T> ExactSizeIterator<T> for Empty<T>
@@ -1942,15 +1931,15 @@ pub impl<T> ExactSizeIterator<T> for Empty<T>
 
 #### method: remaining_count
 
-[Source line 744](../../../stdlib/core/iter.lani#L744)
+[Source line 738](../../../stdlib/core/iter.lani#L738)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 747
+### impl at line 741
 
-[Source line 747](../../../stdlib/core/iter.lani#L747)
+[Source line 741](../../../stdlib/core/iter.lani#L741)
 
 ```lanius
 pub impl<T> Once<T>
@@ -1958,15 +1947,15 @@ pub impl<T> Once<T>
 
 #### method: borrow
 
-[Source line 748](../../../stdlib/core/iter.lani#L748)
+[Source line 742](../../../stdlib/core/iter.lani#L742)
 
 ```lanius
 pub fn borrow(&self) -> &Once<T>
 ```
 
-### impl at line 751
+### impl at line 745
 
-[Source line 751](../../../stdlib/core/iter.lani#L751)
+[Source line 745](../../../stdlib/core/iter.lani#L745)
 
 ```lanius
 pub impl<T> Iterator<T> for Once<T>
@@ -1974,15 +1963,15 @@ pub impl<T> Iterator<T> for Once<T>
 
 #### method: next
 
-[Source line 752](../../../stdlib/core/iter.lani#L752)
+[Source line 746](../../../stdlib/core/iter.lani#L746)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 759
+### impl at line 753
 
-[Source line 759](../../../stdlib/core/iter.lani#L759)
+[Source line 753](../../../stdlib/core/iter.lani#L753)
 
 ```lanius
 pub impl<T> DoubleEndedIterator<T> for Once<T>
@@ -1990,15 +1979,15 @@ pub impl<T> DoubleEndedIterator<T> for Once<T>
 
 #### method: next_back
 
-[Source line 760](../../../stdlib/core/iter.lani#L760)
+[Source line 754](../../../stdlib/core/iter.lani#L754)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 767
+### impl at line 761
 
-[Source line 767](../../../stdlib/core/iter.lani#L767)
+[Source line 761](../../../stdlib/core/iter.lani#L761)
 
 ```lanius
 pub impl<T> ExactSizeIterator<T> for Once<T>
@@ -2006,15 +1995,15 @@ pub impl<T> ExactSizeIterator<T> for Once<T>
 
 #### method: remaining_count
 
-[Source line 768](../../../stdlib/core/iter.lani#L768)
+[Source line 762](../../../stdlib/core/iter.lani#L762)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 774
+### impl at line 768
 
-[Source line 774](../../../stdlib/core/iter.lani#L774)
+[Source line 768](../../../stdlib/core/iter.lani#L768)
 
 ```lanius
 pub impl<I,T> Rev<I,T>
@@ -2022,15 +2011,15 @@ pub impl<I,T> Rev<I,T>
 
 #### method: borrow
 
-[Source line 775](../../../stdlib/core/iter.lani#L775)
+[Source line 769](../../../stdlib/core/iter.lani#L769)
 
 ```lanius
 pub fn borrow(&self) -> &Rev<I,T>
 ```
 
-### impl at line 778
+### impl at line 772
 
-[Source line 778](../../../stdlib/core/iter.lani#L778)
+[Source line 772](../../../stdlib/core/iter.lani#L772)
 
 ```lanius
 pub impl<I,T> Iterator<T> for Rev<I,T>
@@ -2039,15 +2028,15 @@ pub impl<I,T> Iterator<T> for Rev<I,T>
 
 #### method: next
 
-[Source line 780](../../../stdlib/core/iter.lani#L780)
+[Source line 774](../../../stdlib/core/iter.lani#L774)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 789
+### impl at line 783
 
-[Source line 789](../../../stdlib/core/iter.lani#L789)
+[Source line 783](../../../stdlib/core/iter.lani#L783)
 
 ```lanius
 pub impl<I,T> DoubleEndedIterator<T> for Rev<I,T>
@@ -2056,15 +2045,15 @@ pub impl<I,T> DoubleEndedIterator<T> for Rev<I,T>
 
 #### method: next_back
 
-[Source line 791](../../../stdlib/core/iter.lani#L791)
+[Source line 785](../../../stdlib/core/iter.lani#L785)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 800
+### impl at line 794
 
-[Source line 800](../../../stdlib/core/iter.lani#L800)
+[Source line 794](../../../stdlib/core/iter.lani#L794)
 
 ```lanius
 pub impl<I,T> ExactSizeIterator<T> for Rev<I,T>
@@ -2073,15 +2062,15 @@ pub impl<I,T> ExactSizeIterator<T> for Rev<I,T>
 
 #### method: remaining_count
 
-[Source line 802](../../../stdlib/core/iter.lani#L802)
+[Source line 796](../../../stdlib/core/iter.lani#L796)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 808
+### impl at line 802
 
-[Source line 808](../../../stdlib/core/iter.lani#L808)
+[Source line 802](../../../stdlib/core/iter.lani#L802)
 
 ```lanius
 pub impl<T> Repeat<T>
@@ -2089,15 +2078,15 @@ pub impl<T> Repeat<T>
 
 #### method: borrow
 
-[Source line 809](../../../stdlib/core/iter.lani#L809)
+[Source line 803](../../../stdlib/core/iter.lani#L803)
 
 ```lanius
 pub fn borrow(&self) -> &Repeat<T>
 ```
 
-### impl at line 812
+### impl at line 806
 
-[Source line 812](../../../stdlib/core/iter.lani#L812)
+[Source line 806](../../../stdlib/core/iter.lani#L806)
 
 ```lanius
 pub impl<T> Iterator<T> for Repeat<T>
@@ -2105,15 +2094,15 @@ pub impl<T> Iterator<T> for Repeat<T>
 
 #### method: next
 
-[Source line 813](../../../stdlib/core/iter.lani#L813)
+[Source line 807](../../../stdlib/core/iter.lani#L807)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 816
+### impl at line 810
 
-[Source line 816](../../../stdlib/core/iter.lani#L816)
+[Source line 810](../../../stdlib/core/iter.lani#L810)
 
 ```lanius
 pub impl<I, T> StepBy<I, T>
@@ -2121,15 +2110,15 @@ pub impl<I, T> StepBy<I, T>
 
 #### method: borrow
 
-[Source line 817](../../../stdlib/core/iter.lani#L817)
+[Source line 811](../../../stdlib/core/iter.lani#L811)
 
 ```lanius
 pub fn borrow(&self) -> &StepBy<I, T>
 ```
 
-### impl at line 820
+### impl at line 814
 
-[Source line 820](../../../stdlib/core/iter.lani#L820)
+[Source line 814](../../../stdlib/core/iter.lani#L814)
 
 ```lanius
 pub impl<I, T> Iterator<T> for StepBy<I, T> where I: Iterator<T>
@@ -2137,15 +2126,15 @@ pub impl<I, T> Iterator<T> for StepBy<I, T> where I: Iterator<T>
 
 #### method: next
 
-[Source line 821](../../../stdlib/core/iter.lani#L821)
+[Source line 815](../../../stdlib/core/iter.lani#L815)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 838
+### impl at line 832
 
-[Source line 838](../../../stdlib/core/iter.lani#L838)
+[Source line 832](../../../stdlib/core/iter.lani#L832)
 
 ```lanius
 pub impl<I,T> ExactSizeIterator<T> for StepBy<I,T>
@@ -2154,15 +2143,15 @@ pub impl<I,T> ExactSizeIterator<T> for StepBy<I,T>
 
 #### method: remaining_count
 
-[Source line 840](../../../stdlib/core/iter.lani#L840)
+[Source line 834](../../../stdlib/core/iter.lani#L834)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 852
+### impl at line 846
 
-[Source line 852](../../../stdlib/core/iter.lani#L852)
+[Source line 846](../../../stdlib/core/iter.lani#L846)
 
 ```lanius
 pub impl RangeI32
@@ -2170,7 +2159,7 @@ pub impl RangeI32
 
 #### method: borrow
 
-[Source line 853](../../../stdlib/core/iter.lani#L853)
+[Source line 847](../../../stdlib/core/iter.lani#L847)
 
 ```lanius
 pub fn borrow(&self) -> &RangeI32
@@ -2178,7 +2167,7 @@ pub fn borrow(&self) -> &RangeI32
 
 #### method: remaining
 
-[Source line 854](../../../stdlib/core/iter.lani#L854)
+[Source line 848](../../../stdlib/core/iter.lani#L848)
 
 ```lanius
 pub fn remaining(&self) -> u64
@@ -2186,15 +2175,15 @@ pub fn remaining(&self) -> u64
 
 #### method: advance
 
-[Source line 856](../../../stdlib/core/iter.lani#L856)
+[Source line 850](../../../stdlib/core/iter.lani#L850)
 
 ```lanius
 pub fn advance(&self, count: u64) -> u64
 ```
 
-### impl at line 865
+### impl at line 859
 
-[Source line 865](../../../stdlib/core/iter.lani#L865)
+[Source line 859](../../../stdlib/core/iter.lani#L859)
 
 ```lanius
 pub impl Iterator<i32> for RangeI32
@@ -2202,15 +2191,15 @@ pub impl Iterator<i32> for RangeI32
 
 #### method: next
 
-[Source line 866](../../../stdlib/core/iter.lani#L866)
+[Source line 860](../../../stdlib/core/iter.lani#L860)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<i32>
 ```
 
-### impl at line 874
+### impl at line 868
 
-[Source line 874](../../../stdlib/core/iter.lani#L874)
+[Source line 868](../../../stdlib/core/iter.lani#L868)
 
 ```lanius
 pub impl DoubleEndedIterator<i32> for RangeI32
@@ -2218,15 +2207,15 @@ pub impl DoubleEndedIterator<i32> for RangeI32
 
 #### method: next_back
 
-[Source line 875](../../../stdlib/core/iter.lani#L875)
+[Source line 869](../../../stdlib/core/iter.lani#L869)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<i32>
 ```
 
-### impl at line 883
+### impl at line 877
 
-[Source line 883](../../../stdlib/core/iter.lani#L883)
+[Source line 877](../../../stdlib/core/iter.lani#L877)
 
 ```lanius
 pub impl ExactSizeIterator<i32> for RangeI32
@@ -2234,15 +2223,15 @@ pub impl ExactSizeIterator<i32> for RangeI32
 
 #### method: remaining_count
 
-[Source line 884](../../../stdlib/core/iter.lani#L884)
+[Source line 878](../../../stdlib/core/iter.lani#L878)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 887
+### impl at line 881
 
-[Source line 887](../../../stdlib/core/iter.lani#L887)
+[Source line 881](../../../stdlib/core/iter.lani#L881)
 
 ```lanius
 pub impl<I, T> Take<I, T>
@@ -2250,7 +2239,7 @@ pub impl<I, T> Take<I, T>
 
 #### method: borrow
 
-[Source line 888](../../../stdlib/core/iter.lani#L888)
+[Source line 882](../../../stdlib/core/iter.lani#L882)
 
 ```lanius
 pub fn borrow(&self) -> &Take<I, T>
@@ -2258,15 +2247,15 @@ pub fn borrow(&self) -> &Take<I, T>
 
 #### method: remaining_limit
 
-[Source line 890](../../../stdlib/core/iter.lani#L890)
+[Source line 884](../../../stdlib/core/iter.lani#L884)
 
 ```lanius
 pub fn remaining_limit(&self) -> u64
 ```
 
-### impl at line 893
+### impl at line 887
 
-[Source line 893](../../../stdlib/core/iter.lani#L893)
+[Source line 887](../../../stdlib/core/iter.lani#L887)
 
 ```lanius
 pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T>
@@ -2274,15 +2263,15 @@ pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T>
 
 #### method: next
 
-[Source line 894](../../../stdlib/core/iter.lani#L894)
+[Source line 888](../../../stdlib/core/iter.lani#L888)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 904
+### impl at line 898
 
-[Source line 904](../../../stdlib/core/iter.lani#L904)
+[Source line 898](../../../stdlib/core/iter.lani#L898)
 
 ```lanius
 pub impl<I,T> ExactSizeIterator<T> for Take<I,T>
@@ -2291,15 +2280,15 @@ pub impl<I,T> ExactSizeIterator<T> for Take<I,T>
 
 #### method: remaining_count
 
-[Source line 906](../../../stdlib/core/iter.lani#L906)
+[Source line 900](../../../stdlib/core/iter.lani#L900)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 917
+### impl at line 911
 
-[Source line 917](../../../stdlib/core/iter.lani#L917)
+[Source line 911](../../../stdlib/core/iter.lani#L911)
 
 ```lanius
 pub impl<A, B, T> Chain<A, B, T>
@@ -2307,15 +2296,15 @@ pub impl<A, B, T> Chain<A, B, T>
 
 #### method: borrow
 
-[Source line 918](../../../stdlib/core/iter.lani#L918)
+[Source line 912](../../../stdlib/core/iter.lani#L912)
 
 ```lanius
 pub fn borrow(&self) -> &Chain<A, B, T>
 ```
 
-### impl at line 921
+### impl at line 915
 
-[Source line 921](../../../stdlib/core/iter.lani#L921)
+[Source line 915](../../../stdlib/core/iter.lani#L915)
 
 ```lanius
 pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
@@ -2324,15 +2313,15 @@ pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
 
 #### method: next
 
-[Source line 923](../../../stdlib/core/iter.lani#L923)
+[Source line 917](../../../stdlib/core/iter.lani#L917)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 939
+### impl at line 933
 
-[Source line 939](../../../stdlib/core/iter.lani#L939)
+[Source line 933](../../../stdlib/core/iter.lani#L933)
 
 ```lanius
 pub impl<A,B,T> DoubleEndedIterator<T> for Chain<A,B,T>
@@ -2341,15 +2330,15 @@ pub impl<A,B,T> DoubleEndedIterator<T> for Chain<A,B,T>
 
 #### method: next_back
 
-[Source line 941](../../../stdlib/core/iter.lani#L941)
+[Source line 935](../../../stdlib/core/iter.lani#L935)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 957
+### impl at line 951
 
-[Source line 957](../../../stdlib/core/iter.lani#L957)
+[Source line 951](../../../stdlib/core/iter.lani#L951)
 
 ```lanius
 pub impl<I, M, T, U> Map<I, M, T, U>
@@ -2357,15 +2346,15 @@ pub impl<I, M, T, U> Map<I, M, T, U>
 
 #### method: borrow
 
-[Source line 958](../../../stdlib/core/iter.lani#L958)
+[Source line 952](../../../stdlib/core/iter.lani#L952)
 
 ```lanius
 pub fn borrow(&self) -> &Map<I, M, T, U>
 ```
 
-### impl at line 961
+### impl at line 955
 
-[Source line 961](../../../stdlib/core/iter.lani#L961)
+[Source line 955](../../../stdlib/core/iter.lani#L955)
 
 ```lanius
 pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
@@ -2374,15 +2363,15 @@ pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
 
 #### method: next
 
-[Source line 963](../../../stdlib/core/iter.lani#L963)
+[Source line 957](../../../stdlib/core/iter.lani#L957)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<U>
 ```
 
-### impl at line 975
+### impl at line 969
 
-[Source line 975](../../../stdlib/core/iter.lani#L975)
+[Source line 969](../../../stdlib/core/iter.lani#L969)
 
 ```lanius
 pub impl<I,M,T,U> DoubleEndedIterator<U> for Map<I,M,T,U>
@@ -2391,15 +2380,15 @@ pub impl<I,M,T,U> DoubleEndedIterator<U> for Map<I,M,T,U>
 
 #### method: next_back
 
-[Source line 977](../../../stdlib/core/iter.lani#L977)
+[Source line 971](../../../stdlib/core/iter.lani#L971)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<U>
 ```
 
-### impl at line 990
+### impl at line 984
 
-[Source line 990](../../../stdlib/core/iter.lani#L990)
+[Source line 984](../../../stdlib/core/iter.lani#L984)
 
 ```lanius
 pub impl<I,M,T,U> ExactSizeIterator<U> for Map<I,M,T,U>
@@ -2408,15 +2397,15 @@ pub impl<I,M,T,U> ExactSizeIterator<U> for Map<I,M,T,U>
 
 #### method: remaining_count
 
-[Source line 992](../../../stdlib/core/iter.lani#L992)
+[Source line 986](../../../stdlib/core/iter.lani#L986)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 998
+### impl at line 992
 
-[Source line 998](../../../stdlib/core/iter.lani#L998)
+[Source line 992](../../../stdlib/core/iter.lani#L992)
 
 ```lanius
 pub impl<I,M,T,U> Scan<I,M,T,U>
@@ -2424,15 +2413,15 @@ pub impl<I,M,T,U> Scan<I,M,T,U>
 
 #### method: borrow
 
-[Source line 999](../../../stdlib/core/iter.lani#L999)
+[Source line 993](../../../stdlib/core/iter.lani#L993)
 
 ```lanius
 pub fn borrow(&self) -> &Scan<I,M,T,U>
 ```
 
-### impl at line 1002
+### impl at line 996
 
-[Source line 1002](../../../stdlib/core/iter.lani#L1002)
+[Source line 996](../../../stdlib/core/iter.lani#L996)
 
 ```lanius
 pub impl<I,M,T,U> Iterator<U> for Scan<I,M,T,U>
@@ -2441,15 +2430,15 @@ pub impl<I,M,T,U> Iterator<U> for Scan<I,M,T,U>
 
 #### method: next
 
-[Source line 1004](../../../stdlib/core/iter.lani#L1004)
+[Source line 998](../../../stdlib/core/iter.lani#L998)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<U>
 ```
 
-### impl at line 1016
+### impl at line 1010
 
-[Source line 1016](../../../stdlib/core/iter.lani#L1016)
+[Source line 1010](../../../stdlib/core/iter.lani#L1010)
 
 ```lanius
 pub impl<I,M,T,U,E> TryScan<I,M,T,U,E>
@@ -2457,15 +2446,15 @@ pub impl<I,M,T,U,E> TryScan<I,M,T,U,E>
 
 #### method: borrow
 
-[Source line 1017](../../../stdlib/core/iter.lani#L1017)
+[Source line 1011](../../../stdlib/core/iter.lani#L1011)
 
 ```lanius
 pub fn borrow(&self) -> &TryScan<I,M,T,U,E>
 ```
 
-### impl at line 1020
+### impl at line 1014
 
-[Source line 1020](../../../stdlib/core/iter.lani#L1020)
+[Source line 1014](../../../stdlib/core/iter.lani#L1014)
 
 ```lanius
 pub impl<I,M,T,U,E> Iterator<core::result::Result<U,E>> for TryScan<I,M,T,U,E>
@@ -2474,15 +2463,15 @@ pub impl<I,M,T,U,E> Iterator<core::result::Result<U,E>> for TryScan<I,M,T,U,E>
 
 #### method: next
 
-[Source line 1022](../../../stdlib/core/iter.lani#L1022)
+[Source line 1016](../../../stdlib/core/iter.lani#L1016)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::result::Result<U,E>>
 ```
 
-### impl at line 1126
+### impl at line 1120
 
-[Source line 1126](../../../stdlib/core/iter.lani#L1126)
+[Source line 1120](../../../stdlib/core/iter.lani#L1120)
 
 ```lanius
 pub impl<I,J,R,T,E> TryFlatten<I,J,R,T,E>
@@ -2490,7 +2479,7 @@ pub impl<I,J,R,T,E> TryFlatten<I,J,R,T,E>
 
 #### method: borrow
 
-[Source line 1127](../../../stdlib/core/iter.lani#L1127)
+[Source line 1121](../../../stdlib/core/iter.lani#L1121)
 
 ```lanius
 pub fn borrow(&self) -> &TryFlatten<I,J,R,T,E>
@@ -2498,7 +2487,7 @@ pub fn borrow(&self) -> &TryFlatten<I,J,R,T,E>
 
 #### method: has_active
 
-[Source line 1128](../../../stdlib/core/iter.lani#L1128)
+[Source line 1122](../../../stdlib/core/iter.lani#L1122)
 
 ```lanius
 pub fn has_active(&self) -> bool
@@ -2506,7 +2495,7 @@ pub fn has_active(&self) -> bool
 
 #### method: take_active
 
-[Source line 1131](../../../stdlib/core/iter.lani#L1131)
+[Source line 1125](../../../stdlib/core/iter.lani#L1125)
 
 ```lanius
 pub fn take_active(&self) -> core::option::Option<J>
@@ -2514,15 +2503,15 @@ pub fn take_active(&self) -> core::option::Option<J>
 
 #### method: try_finish
 
-[Source line 1133](../../../stdlib/core/iter.lani#L1133)
+[Source line 1127](../../../stdlib/core/iter.lani#L1127)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<NestedFinishError>
 ```
 
-### impl at line 1136
+### impl at line 1130
 
-[Source line 1136](../../../stdlib/core/iter.lani#L1136)
+[Source line 1130](../../../stdlib/core/iter.lani#L1130)
 
 ```lanius
 pub impl<I,J,R,T,E> Iterator<core::result::Result<T,E>> for TryFlatten<I,J,R,T,E>
@@ -2531,15 +2520,15 @@ pub impl<I,J,R,T,E> Iterator<core::result::Result<T,E>> for TryFlatten<I,J,R,T,E
 
 #### method: next
 
-[Source line 1138](../../../stdlib/core/iter.lani#L1138)
+[Source line 1132](../../../stdlib/core/iter.lani#L1132)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::result::Result<T,E>>
 ```
 
-### impl at line 1147
+### impl at line 1141
 
-[Source line 1147](../../../stdlib/core/iter.lani#L1147)
+[Source line 1141](../../../stdlib/core/iter.lani#L1141)
 
 ```lanius
 pub impl<I,M,R,S,J,T,E> TryFlatMap<I,M,R,S,J,T,E>
@@ -2547,7 +2536,7 @@ pub impl<I,M,R,S,J,T,E> TryFlatMap<I,M,R,S,J,T,E>
 
 #### method: borrow
 
-[Source line 1148](../../../stdlib/core/iter.lani#L1148)
+[Source line 1142](../../../stdlib/core/iter.lani#L1142)
 
 ```lanius
 pub fn borrow(&self) -> &TryFlatMap<I,M,R,S,J,T,E>
@@ -2555,7 +2544,7 @@ pub fn borrow(&self) -> &TryFlatMap<I,M,R,S,J,T,E>
 
 #### method: has_active
 
-[Source line 1149](../../../stdlib/core/iter.lani#L1149)
+[Source line 1143](../../../stdlib/core/iter.lani#L1143)
 
 ```lanius
 pub fn has_active(&self) -> bool
@@ -2563,7 +2552,7 @@ pub fn has_active(&self) -> bool
 
 #### method: take_active
 
-[Source line 1150](../../../stdlib/core/iter.lani#L1150)
+[Source line 1144](../../../stdlib/core/iter.lani#L1144)
 
 ```lanius
 pub fn take_active(&self) -> core::option::Option<J>
@@ -2571,15 +2560,15 @@ pub fn take_active(&self) -> core::option::Option<J>
 
 #### method: try_finish
 
-[Source line 1151](../../../stdlib/core/iter.lani#L1151)
+[Source line 1145](../../../stdlib/core/iter.lani#L1145)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<NestedFinishError>
 ```
 
-### impl at line 1154
+### impl at line 1148
 
-[Source line 1154](../../../stdlib/core/iter.lani#L1154)
+[Source line 1148](../../../stdlib/core/iter.lani#L1148)
 
 ```lanius
 pub impl<I,M,R,S,J,T,E> Iterator<core::result::Result<T,E>> for TryFlatMap<I,M,R,S,J,T,E>
@@ -2589,15 +2578,15 @@ pub impl<I,M,R,S,J,T,E> Iterator<core::result::Result<T,E>> for TryFlatMap<I,M,R
 
 #### method: next
 
-[Source line 1157](../../../stdlib/core/iter.lani#L1157)
+[Source line 1151](../../../stdlib/core/iter.lani#L1151)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::result::Result<T,E>>
 ```
 
-### impl at line 1166
+### impl at line 1160
 
-[Source line 1166](../../../stdlib/core/iter.lani#L1166)
+[Source line 1160](../../../stdlib/core/iter.lani#L1160)
 
 ```lanius
 pub impl<I,J,R,T> Flatten<I,J,R,T>
@@ -2605,7 +2594,7 @@ pub impl<I,J,R,T> Flatten<I,J,R,T>
 
 #### method: borrow
 
-[Source line 1167](../../../stdlib/core/iter.lani#L1167)
+[Source line 1161](../../../stdlib/core/iter.lani#L1161)
 
 ```lanius
 pub fn borrow(&self) -> &Flatten<I,J,R,T>
@@ -2613,7 +2602,7 @@ pub fn borrow(&self) -> &Flatten<I,J,R,T>
 
 #### method: has_active
 
-[Source line 1168](../../../stdlib/core/iter.lani#L1168)
+[Source line 1162](../../../stdlib/core/iter.lani#L1162)
 
 ```lanius
 pub fn has_active(&self) -> bool
@@ -2621,7 +2610,7 @@ pub fn has_active(&self) -> bool
 
 #### method: take_active
 
-[Source line 1169](../../../stdlib/core/iter.lani#L1169)
+[Source line 1163](../../../stdlib/core/iter.lani#L1163)
 
 ```lanius
 pub fn take_active(&self) -> core::option::Option<J>
@@ -2629,15 +2618,15 @@ pub fn take_active(&self) -> core::option::Option<J>
 
 #### method: try_finish
 
-[Source line 1170](../../../stdlib/core/iter.lani#L1170)
+[Source line 1164](../../../stdlib/core/iter.lani#L1164)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<NestedFinishError>
 ```
 
-### impl at line 1173
+### impl at line 1167
 
-[Source line 1173](../../../stdlib/core/iter.lani#L1173)
+[Source line 1167](../../../stdlib/core/iter.lani#L1167)
 
 ```lanius
 pub impl<I,J,R,T> Iterator<T> for Flatten<I,J,R,T>
@@ -2646,15 +2635,15 @@ pub impl<I,J,R,T> Iterator<T> for Flatten<I,J,R,T>
 
 #### method: next
 
-[Source line 1175](../../../stdlib/core/iter.lani#L1175)
+[Source line 1169](../../../stdlib/core/iter.lani#L1169)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 1186
+### impl at line 1180
 
-[Source line 1186](../../../stdlib/core/iter.lani#L1186)
+[Source line 1180](../../../stdlib/core/iter.lani#L1180)
 
 ```lanius
 pub impl<I,M,R,S,J,T> FlatMap<I,M,R,S,J,T>
@@ -2662,7 +2651,7 @@ pub impl<I,M,R,S,J,T> FlatMap<I,M,R,S,J,T>
 
 #### method: borrow
 
-[Source line 1187](../../../stdlib/core/iter.lani#L1187)
+[Source line 1181](../../../stdlib/core/iter.lani#L1181)
 
 ```lanius
 pub fn borrow(&self) -> &FlatMap<I,M,R,S,J,T>
@@ -2670,7 +2659,7 @@ pub fn borrow(&self) -> &FlatMap<I,M,R,S,J,T>
 
 #### method: has_active
 
-[Source line 1188](../../../stdlib/core/iter.lani#L1188)
+[Source line 1182](../../../stdlib/core/iter.lani#L1182)
 
 ```lanius
 pub fn has_active(&self) -> bool
@@ -2678,7 +2667,7 @@ pub fn has_active(&self) -> bool
 
 #### method: take_active
 
-[Source line 1189](../../../stdlib/core/iter.lani#L1189)
+[Source line 1183](../../../stdlib/core/iter.lani#L1183)
 
 ```lanius
 pub fn take_active(&self) -> core::option::Option<J>
@@ -2686,15 +2675,15 @@ pub fn take_active(&self) -> core::option::Option<J>
 
 #### method: try_finish
 
-[Source line 1190](../../../stdlib/core/iter.lani#L1190)
+[Source line 1184](../../../stdlib/core/iter.lani#L1184)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<NestedFinishError>
 ```
 
-### impl at line 1193
+### impl at line 1187
 
-[Source line 1193](../../../stdlib/core/iter.lani#L1193)
+[Source line 1187](../../../stdlib/core/iter.lani#L1187)
 
 ```lanius
 pub impl<I,M,R,S,J,T> Iterator<T> for FlatMap<I,M,R,S,J,T>
@@ -2704,15 +2693,15 @@ pub impl<I,M,R,S,J,T> Iterator<T> for FlatMap<I,M,R,S,J,T>
 
 #### method: next
 
-[Source line 1196](../../../stdlib/core/iter.lani#L1196)
+[Source line 1190](../../../stdlib/core/iter.lani#L1190)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 1208
+### impl at line 1202
 
-[Source line 1208](../../../stdlib/core/iter.lani#L1208)
+[Source line 1202](../../../stdlib/core/iter.lani#L1202)
 
 ```lanius
 pub impl<A, B, T, U> Zip<A, B, T, U>
@@ -2720,15 +2709,15 @@ pub impl<A, B, T, U> Zip<A, B, T, U>
 
 #### method: borrow
 
-[Source line 1209](../../../stdlib/core/iter.lani#L1209)
+[Source line 1203](../../../stdlib/core/iter.lani#L1203)
 
 ```lanius
 pub fn borrow(&self) -> &Zip<A, B, T, U>
 ```
 
-### impl at line 1212
+### impl at line 1206
 
-[Source line 1212](../../../stdlib/core/iter.lani#L1212)
+[Source line 1206](../../../stdlib/core/iter.lani#L1206)
 
 ```lanius
 pub impl<A, B, T, U> Iterator<core::pair::Pair<T, U>> for Zip<A, B, T, U>
@@ -2737,15 +2726,15 @@ pub impl<A, B, T, U> Iterator<core::pair::Pair<T, U>> for Zip<A, B, T, U>
 
 #### method: next
 
-[Source line 1214](../../../stdlib/core/iter.lani#L1214)
+[Source line 1208](../../../stdlib/core/iter.lani#L1208)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::pair::Pair<T, U>>
 ```
 
-### impl at line 1229
+### impl at line 1223
 
-[Source line 1229](../../../stdlib/core/iter.lani#L1229)
+[Source line 1223](../../../stdlib/core/iter.lani#L1223)
 
 ```lanius
 pub impl<I, T> Enumerate<I, T>
@@ -2753,15 +2742,15 @@ pub impl<I, T> Enumerate<I, T>
 
 #### method: borrow
 
-[Source line 1230](../../../stdlib/core/iter.lani#L1230)
+[Source line 1224](../../../stdlib/core/iter.lani#L1224)
 
 ```lanius
 pub fn borrow(&self) -> &Enumerate<I, T>
 ```
 
-### impl at line 1233
+### impl at line 1227
 
-[Source line 1233](../../../stdlib/core/iter.lani#L1233)
+[Source line 1227](../../../stdlib/core/iter.lani#L1227)
 
 ```lanius
 pub impl<I, T> Iterator<core::pair::Pair<u64, T>> for Enumerate<I, T>
@@ -2770,15 +2759,15 @@ pub impl<I, T> Iterator<core::pair::Pair<u64, T>> for Enumerate<I, T>
 
 #### method: next
 
-[Source line 1235](../../../stdlib/core/iter.lani#L1235)
+[Source line 1229](../../../stdlib/core/iter.lani#L1229)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<core::pair::Pair<u64, T>>
 ```
 
-### impl at line 1249
+### impl at line 1243
 
-[Source line 1249](../../../stdlib/core/iter.lani#L1249)
+[Source line 1243](../../../stdlib/core/iter.lani#L1243)
 
 ```lanius
 pub impl<I, P, T> Filter<I, P, T>
@@ -2786,15 +2775,15 @@ pub impl<I, P, T> Filter<I, P, T>
 
 #### method: borrow
 
-[Source line 1250](../../../stdlib/core/iter.lani#L1250)
+[Source line 1244](../../../stdlib/core/iter.lani#L1244)
 
 ```lanius
 pub fn borrow(&self) -> &Filter<I, P, T>
 ```
 
-### impl at line 1253
+### impl at line 1247
 
-[Source line 1253](../../../stdlib/core/iter.lani#L1253)
+[Source line 1247](../../../stdlib/core/iter.lani#L1247)
 
 ```lanius
 pub impl<I, P, T> Iterator<T> for Filter<I, P, T>
@@ -2803,15 +2792,15 @@ pub impl<I, P, T> Iterator<T> for Filter<I, P, T>
 
 #### method: next
 
-[Source line 1255](../../../stdlib/core/iter.lani#L1255)
+[Source line 1249](../../../stdlib/core/iter.lani#L1249)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 1270
+### impl at line 1264
 
-[Source line 1270](../../../stdlib/core/iter.lani#L1270)
+[Source line 1264](../../../stdlib/core/iter.lani#L1264)
 
 ```lanius
 pub impl<I, M, T, U> FilterMap<I, M, T, U>
@@ -2819,15 +2808,15 @@ pub impl<I, M, T, U> FilterMap<I, M, T, U>
 
 #### method: borrow
 
-[Source line 1271](../../../stdlib/core/iter.lani#L1271)
+[Source line 1265](../../../stdlib/core/iter.lani#L1265)
 
 ```lanius
 pub fn borrow(&self) -> &FilterMap<I, M, T, U>
 ```
 
-### impl at line 1276
+### impl at line 1270
 
-[Source line 1276](../../../stdlib/core/iter.lani#L1276)
+[Source line 1270](../../../stdlib/core/iter.lani#L1270)
 
 ```lanius
 pub impl<I,P,T> DoubleEndedIterator<T> for Filter<I,P,T>
@@ -2836,15 +2825,15 @@ pub impl<I,P,T> DoubleEndedIterator<T> for Filter<I,P,T>
 
 #### method: next_back
 
-[Source line 1278](../../../stdlib/core/iter.lani#L1278)
+[Source line 1272](../../../stdlib/core/iter.lani#L1272)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 1291
+### impl at line 1285
 
-[Source line 1291](../../../stdlib/core/iter.lani#L1291)
+[Source line 1285](../../../stdlib/core/iter.lani#L1285)
 
 ```lanius
 pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
@@ -2853,15 +2842,15 @@ pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
 
 #### method: next
 
-[Source line 1293](../../../stdlib/core/iter.lani#L1293)
+[Source line 1287](../../../stdlib/core/iter.lani#L1287)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<U>
 ```
 
-### impl at line 1308
+### impl at line 1302
 
-[Source line 1308](../../../stdlib/core/iter.lani#L1308)
+[Source line 1302](../../../stdlib/core/iter.lani#L1302)
 
 ```lanius
 pub impl<I,M,T,U> DoubleEndedIterator<U> for FilterMap<I,M,T,U>
@@ -2870,15 +2859,15 @@ pub impl<I,M,T,U> DoubleEndedIterator<U> for FilterMap<I,M,T,U>
 
 #### method: next_back
 
-[Source line 1310](../../../stdlib/core/iter.lani#L1310)
+[Source line 1304](../../../stdlib/core/iter.lani#L1304)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<U>
 ```
 
-### impl at line 1324
+### impl at line 1318
 
-[Source line 1324](../../../stdlib/core/iter.lani#L1324)
+[Source line 1318](../../../stdlib/core/iter.lani#L1318)
 
 ```lanius
 pub impl<I, T> Skip<I, T>
@@ -2886,15 +2875,15 @@ pub impl<I, T> Skip<I, T>
 
 #### method: borrow
 
-[Source line 1325](../../../stdlib/core/iter.lani#L1325)
+[Source line 1319](../../../stdlib/core/iter.lani#L1319)
 
 ```lanius
 pub fn borrow(&self) -> &Skip<I, T>
 ```
 
-### impl at line 1328
+### impl at line 1322
 
-[Source line 1328](../../../stdlib/core/iter.lani#L1328)
+[Source line 1322](../../../stdlib/core/iter.lani#L1322)
 
 ```lanius
 pub impl<I, T> Iterator<T> for Skip<I, T> where I: Iterator<T>
@@ -2902,15 +2891,15 @@ pub impl<I, T> Iterator<T> for Skip<I, T> where I: Iterator<T>
 
 #### method: next
 
-[Source line 1329](../../../stdlib/core/iter.lani#L1329)
+[Source line 1323](../../../stdlib/core/iter.lani#L1323)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 1343
+### impl at line 1337
 
-[Source line 1343](../../../stdlib/core/iter.lani#L1343)
+[Source line 1337](../../../stdlib/core/iter.lani#L1337)
 
 ```lanius
 pub impl<I,T> ExactSizeIterator<T> for Skip<I,T>
@@ -2919,15 +2908,15 @@ pub impl<I,T> ExactSizeIterator<T> for Skip<I,T>
 
 #### method: remaining_count
 
-[Source line 1345](../../../stdlib/core/iter.lani#L1345)
+[Source line 1339](../../../stdlib/core/iter.lani#L1339)
 
 ```lanius
 pub fn remaining_count(&self) -> u64
 ```
 
-### impl at line 1353
+### impl at line 1347
 
-[Source line 1353](../../../stdlib/core/iter.lani#L1353)
+[Source line 1347](../../../stdlib/core/iter.lani#L1347)
 
 ```lanius
 pub impl<I, P, T> TakeWhile<I, P, T>
@@ -2935,15 +2924,15 @@ pub impl<I, P, T> TakeWhile<I, P, T>
 
 #### method: borrow
 
-[Source line 1354](../../../stdlib/core/iter.lani#L1354)
+[Source line 1348](../../../stdlib/core/iter.lani#L1348)
 
 ```lanius
 pub fn borrow(&self) -> &TakeWhile<I, P, T>
 ```
 
-### impl at line 1357
+### impl at line 1351
 
-[Source line 1357](../../../stdlib/core/iter.lani#L1357)
+[Source line 1351](../../../stdlib/core/iter.lani#L1351)
 
 ```lanius
 pub impl<I, P, T> Iterator<T> for TakeWhile<I, P, T>
@@ -2952,15 +2941,15 @@ pub impl<I, P, T> Iterator<T> for TakeWhile<I, P, T>
 
 #### method: next
 
-[Source line 1359](../../../stdlib/core/iter.lani#L1359)
+[Source line 1353](../../../stdlib/core/iter.lani#L1353)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 1372
+### impl at line 1366
 
-[Source line 1372](../../../stdlib/core/iter.lani#L1372)
+[Source line 1366](../../../stdlib/core/iter.lani#L1366)
 
 ```lanius
 pub impl<I, P, T> SkipWhile<I, P, T>
@@ -2968,15 +2957,15 @@ pub impl<I, P, T> SkipWhile<I, P, T>
 
 #### method: borrow
 
-[Source line 1373](../../../stdlib/core/iter.lani#L1373)
+[Source line 1367](../../../stdlib/core/iter.lani#L1367)
 
 ```lanius
 pub fn borrow(&self) -> &SkipWhile<I, P, T>
 ```
 
-### impl at line 1376
+### impl at line 1370
 
-[Source line 1376](../../../stdlib/core/iter.lani#L1376)
+[Source line 1370](../../../stdlib/core/iter.lani#L1370)
 
 ```lanius
 pub impl<I, P, T> Iterator<T> for SkipWhile<I, P, T>
@@ -2985,7 +2974,7 @@ pub impl<I, P, T> Iterator<T> for SkipWhile<I, P, T>
 
 #### method: next
 
-[Source line 1378](../../../stdlib/core/iter.lani#L1378)
+[Source line 1372](../../../stdlib/core/iter.lani#L1372)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>

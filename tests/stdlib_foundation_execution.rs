@@ -706,10 +706,11 @@ fn executable_core_function_surface_has_runtime_cases() {
         include_str!("fixtures/stdlib_foundation/float_bits.lani"),
     );
     let slice_fixtures = format!(
-        "{}\n{}\n{}",
+        "{}\n{}\n{}\n{}",
         include_str!("fixtures/stdlib_foundation/core_slice.lani"),
         include_str!("fixtures/stdlib_foundation/core_slice_view.lani"),
         include_str!("fixtures/stdlib_foundation/slice_view_model.lani"),
+        include_str!("fixtures/stdlib_foundation/slice_ordering/contracts.lani"),
     );
     let bitset_fixtures = format!(
         "{}\n{}\n{}",
@@ -816,6 +817,10 @@ fn executable_core_function_surface_has_runtime_cases() {
                 format!(".{name}(")
             };
             let covered = fixture.contains(&call)
+                // Explicit generic calls have `<...>` before the opening
+                // parenthesis. This is a source inventory anchor; the
+                // registered execution gates verify their runtime behavior.
+                || fixture.contains(&format!("{}<", call.trim_end_matches('(')))
                 // Associated factories have no receiver dot. Their runtime
                 // fixtures call Type::factory rather than module::factory.
                 || !line.starts_with("pub fn ")

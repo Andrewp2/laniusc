@@ -69,12 +69,6 @@ pub trait TryFolder<A, T, E> {
     pub fn try_apply(&self, accumulator: A, value: T) -> core::result::Result<A, E>;
 }
 
-// Compare shallow values under a consistent total ordering. Reductions pass
-// the current winner first and the next source item second.
-pub trait Comparator<T> {
-    pub fn compare(&self, left: T, right: T) -> core::ordering::Ordering;
-}
-
 // A fallible destination for one shallow item. None accepts the item; Some
 // rejects it with an error. On rejection the sink must not retain the item or
 // publish a partial insertion. Instrumentation may record the failed attempt.
@@ -430,7 +424,7 @@ pub fn max<I,T>(source: &I) -> core::option::Option<T> where I: Iterator<T>, T: 
 // Comparison callbacks borrow their shallow arguments; they must preserve the
 // values needed by later calls/result. Source/callback work can be unbounded.
 pub fn min_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
-    where I: Iterator<T>, C: Comparator<T> {
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T> {
     let first: core::option::Option<T> = source.next();
     if (first.is_none()) { return first; }
     let winner: T = first.unwrap();
@@ -447,7 +441,7 @@ pub fn min_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
 }
 
 pub fn max_by<I,C,T>(source: &I, comparator: &C) -> core::option::Option<T>
-    where I: Iterator<T>, C: Comparator<T> {
+    where I: Iterator<T>, C: core::ordering::Comparator<T,T> {
     let first: core::option::Option<T> = source.next();
     if (first.is_none()) { return first; }
     let winner: T = first.unwrap();

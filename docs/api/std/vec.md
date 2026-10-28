@@ -8,12 +8,13 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `std`. Role: module. Profile: **Protected legacy**.
 
-Protected extraction identity and a remaining binary-heap backing dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise.
+Protected active formal vector specification/template contract and a remaining binary-heap backing dependency. The mini compiler and extractor use List; the dependency ledger records the formal contract and separate heap-migration compiler dependency. Legacy failure/owner policies differ from alloc::vec; ordinary programs use alloc::vec. This source inventory creates no compatibility alias or new support promise.
 
 ## Contract and evidence guides
 
 - [stdlib-legacy-collections](../../stdlib-legacy-collections.md)
 - [stdlib-checked-sample-migration](../../stdlib-checked-sample-migration.md)
+- [library-dependencies](../../library-dependencies.md)
 
 Declaration counts: constant: 1; field: 3; function: 35; impl: 1; method: 3; struct: 1.
 
