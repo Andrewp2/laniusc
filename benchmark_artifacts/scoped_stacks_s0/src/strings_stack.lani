@@ -1,0 +1,37 @@
+// String-heavy, Goose style: each line grows in place on a scope stack and is
+// released at the end of its iteration.
+import std::scope;
+import core::result;
+import core::slice;
+
+const LINES: i32 = 200000;
+
+fn digits(stack: &std::scope::Stack, line: &std::scope::Grow<u8>, value: i32) {
+    if (value >= 10) { digits(stack, line, value / 10); }
+    std::scope::push<u8>(stack, line, (48 + value % 10) as u8);
+}
+
+fn main() -> i32 {
+    let stack: std::scope::Stack = core::result::unwrap(std::scope::new(1048576));
+    let total: i64 = 0;
+    let line_index: i32 = 0;
+    while (line_index < LINES) {
+        let mark: std::scope::Mark = stack.mark();
+        let line: std::scope::Grow<u8> = std::scope::grow<u8>(stack.borrow());
+        std::scope::push<u8>(stack.borrow(), line.borrow(), 105 as u8); std::scope::push<u8>(stack.borrow(), line.borrow(), 116 as u8);
+        std::scope::push<u8>(stack.borrow(), line.borrow(), 101 as u8); std::scope::push<u8>(stack.borrow(), line.borrow(), 109 as u8);
+        digits(stack.borrow(), line.borrow(), line_index);
+        std::scope::push<u8>(stack.borrow(), line.borrow(), 58 as u8);
+        let pad: i32 = 0;
+        while (pad < line_index % 48) { std::scope::push<u8>(stack.borrow(), line.borrow(), 120 as u8); pad += 1; }
+        std::scope::push<u8>(stack.borrow(), line.borrow(), 10 as u8);
+        let bytes: core::slice::View<u8> = std::scope::view<u8>(stack.borrow(), line);
+        let at: i32 = 0;
+        while (at < bytes.length) { total += (bytes.values[at] as i64) * ((at + 1) as i64); at += 1; }
+        stack.release(mark);
+        line_index += 1;
+    }
+    print(total);
+    stack.destroy();
+    return 0;
+}

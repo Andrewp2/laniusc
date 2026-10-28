@@ -1,6 +1,8 @@
 # Scoped stacks: Goose-style memory in Lanius
 
-Status: design proposal, 2026-10-26. Nothing here is implemented.
+Status: design proposal, 2026-10-26. Phase S0 is implemented as
+[`std::scope`](stdlib-scope.md) (2026-10-27); its result is under
+[S0 result](#s0-result-go). The rest is not implemented.
 
 ## Summary
 
@@ -393,6 +395,48 @@ separation-logic obligations, and should be rare and small.
 
 S0 is cheap and decides whether the rest is worth it. If the library version
 is not faster in Lanius, compiler support will not fix that.
+
+### S0 result: go
+
+Measured on 2026-10-27 on the target laptop: Ryzen 9 5900HX, x86-64 ELF
+from `laniusc --emit x86_64`, best of 5 wall-clock runs. Checksums agree
+across each workload's versions. The sources, runner and raw table are in
+`benchmark_artifacts/scoped_stacks_s0`.
+
+| Workload | `Vec` / per-node allocation | `alloc::arena` | `std::scope` | vs `Vec` | vs arena |
+|---|---|---|---|---|---|
+| strings: 200,000 lines built byte by byte | 5.62 s | 0.46 s | 0.30 s | 18.7x | 1.53x |
+| requests: 50,000 × (24 headers + reply) | 3.78 s | 0.58 s | 0.43 s | 8.8x | 1.35x |
+| tree: 20 trees of depth 15, pointer-linked | 8.73 s, 262 MB | 0.40 s | 0.23 s | 37.6x | 1.72x |
+| layout: 200,000 particles × 50 steps | 0.164 s (records) | | 0.058 s (`Soa`) | | 2.8x |
+
+What the numbers mean:
+
+- **The `Vec` column overstates the case.** Today's native allocator makes
+  one `mmap` per `alloc` and one `mremap` per `realloc`. Any bump allocator
+  beats it by an order of magnitude.
+- **The fair comparison is the arena column.** Both sides bump-allocate
+  there. The stack still wins by 1.35-1.72x.
+- **Where the gain comes from:**
+  - in-place growth of the newest growable: the arena's buffers copy when
+    they double;
+  - two ends, so a request's headers and its reply both grow in place at
+    once;
+  - a two-store release, where the arena resets chunk by chunk.
+- **Layout.** Struct-of-arrays columns are 2.8x faster than records when a
+  loop touches two of eight fields.
+
+The criterion was that the library rewrites beat today's versions; they do,
+by 8.8-37.6x, and they also beat the arena. **S1 is go.** Two things S0
+showed:
+
+- **Packed types run the other way.** In today's raw layout, packed
+  `u8`/`i32` views ascend and every other view descends. One stack end per
+  direction is what makes in-place growth work for both. S2/S3 must keep
+  that, or change the layout contract first.
+- **The default allocator should change anyway.** An `mmap` per allocation
+  is the bottleneck of every `Vec` and `String` today, whatever S1-S3
+  decide.
 
 ## Borrowed from Odin and Jai
 

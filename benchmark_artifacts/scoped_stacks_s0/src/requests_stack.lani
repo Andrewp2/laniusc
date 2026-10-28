@@ -1,0 +1,44 @@
+// Per-request, Goose style: headers grow down from the top of the stack and
+// the reply grows up from the bottom, both in place; one release per request.
+import std::scope;
+import core::result;
+import core::slice;
+
+const REQUESTS: i32 = 50000;
+const HEADERS: i32 = 24;
+
+struct Header { name: i64, value: i64 }
+
+fn main() -> i32 {
+    let stack: std::scope::Stack = core::result::unwrap(std::scope::new(1048576));
+    let total: i64 = 0;
+    let request: i32 = 0;
+    while (request < REQUESTS) {
+        let mark: std::scope::Mark = stack.mark();
+        let headers: std::scope::Grow<Header> = std::scope::grow<Header>(stack.borrow());
+        let index: i32 = 0;
+        while (index < HEADERS) {
+            std::scope::push<Header>(stack.borrow(), headers.borrow(), Header { name: (index * 31 + request) as i64, value: (request % (index + 3)) as i64 });
+            index += 1;
+        }
+        let reply: std::scope::Grow<u8> = std::scope::grow<u8>(stack.borrow());
+        let list: core::slice::View<Header> = std::scope::view<Header>(stack.borrow(), headers);
+        index = 0;
+        while (index < list.length) {
+            let header: Header = list.values[index];
+            let width: i64 = 2 + (header.name + header.value) % 6;
+            let byte: i64 = 0;
+            while (byte < width) { std::scope::push<u8>(stack.borrow(), reply.borrow(), (65 + (header.value + byte) % 26) as u8); byte += 1; }
+            std::scope::push<u8>(stack.borrow(), reply.borrow(), 10 as u8);
+            index += 1;
+        }
+        let bytes: core::slice::View<u8> = std::scope::view<u8>(stack.borrow(), reply);
+        index = 0;
+        while (index < bytes.length) { total += bytes.values[index] as i64; index += 1; }
+        stack.release(mark);
+        request += 1;
+    }
+    print(total);
+    stack.destroy();
+    return 0;
+}

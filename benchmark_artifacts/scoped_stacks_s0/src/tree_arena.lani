@@ -1,0 +1,41 @@
+// Tree on alloc::arena: nodes are bumped from chunks; one reset per tree.
+import alloc::arena;
+import core::mem;
+import core::result;
+
+const DEPTH: i32 = 15;
+const TREES: i32 = 20;
+
+struct Node { left: ptr, right: ptr, value: i64 }
+
+fn build(arena: &alloc::arena::Arena, depth: i32, seed: i64) -> ptr {
+    let empty: ptr = 0;
+    let left: ptr = empty;
+    let right: ptr = empty;
+    if (depth > 0) { left = build(arena, depth - 1, seed * 2); right = build(arena, depth - 1, seed * 2 + 1); }
+    let node: Node = Node { left: left, right: right, value: seed % 1000 };
+    let at: ptr = core::result::unwrap(arena.allocate(core::mem::size_of<Node>(), 8)).data;
+    let slots: [Node] = core::mem::typed_slice_from_storage<Node>(at, 1); slots[0] = node;
+    return at;
+}
+
+fn check(at: ptr) -> i64 {
+    if (at == 0) { return 0; }
+    let node: Node = core::mem::typed_slice_from_storage<Node>(at, 1)[0];
+    return node.value + check(node.left) - check(node.right) / 2;
+}
+
+fn main() -> i32 {
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::Config { chunk_size: 1048576, max_retained: 67108864, max_chunks: 64 }));
+    let total: i64 = 0;
+    let tree: i32 = 0;
+    while (tree < TREES) {
+        let root: ptr = build(arena.borrow(), DEPTH, (tree + 1) as i64);
+        total += check(root);
+        arena.reset();
+        tree += 1;
+    }
+    print(total);
+    arena.destroy();
+    return 0;
+}

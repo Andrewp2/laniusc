@@ -1,0 +1,76 @@
+// Per-request on alloc::arena: header and reply buffers double on the arena,
+// which is reset after each request.
+import alloc::arena;
+import core::mem;
+import core::result;
+
+const REQUESTS: i32 = 50000;
+const HEADERS: i32 = 24;
+
+struct Header { name: i64, value: i64 }
+struct Headers { data: ptr, length: i32, capacity: i32 }
+impl Headers { fn borrow(&self) -> &Headers { return self; } }
+struct Bytes { data: ptr, length: i32, capacity: i32 }
+impl Bytes { fn borrow(&self) -> &Bytes { return self; } }
+
+fn push_header(arena: &alloc::arena::Arena, list: &Headers, item: Header) {
+    if (list.length == list.capacity) {
+        let capacity: i32 = list.capacity * 2;
+        if (capacity < 4) { capacity = 4; }
+        let block: alloc::arena::Block = core::result::unwrap(arena.allocate(core::mem::size_of<Header>() * (capacity as usize), 8));
+        let old: [Header] = core::mem::typed_slice_from_storage<Header>(list.data, list.capacity);
+        let new: [Header] = core::mem::typed_slice_from_storage<Header>(block.data, capacity);
+        let at: i32 = 0; while (at < list.length) { new[at] = old[at]; at += 1; }
+        list.data = block.data; list.capacity = capacity;
+    }
+    let slots: [Header] = core::mem::typed_slice_from_storage<Header>(list.data, list.capacity);
+    slots[list.length] = item; list.length += 1;
+}
+
+fn push_byte(arena: &alloc::arena::Arena, buffer: &Bytes, byte: u8) {
+    if (buffer.length == buffer.capacity) {
+        let capacity: i32 = buffer.capacity * 2;
+        if (capacity < 8) { capacity = 8; }
+        let block: alloc::arena::Block = core::result::unwrap(arena.allocate(capacity as usize, 8));
+        let old: [u8] = core::mem::typed_slice_from_storage<u8>(buffer.data, buffer.length);
+        let new: [u8] = core::mem::typed_slice_from_storage<u8>(block.data, capacity);
+        let at: i32 = 0; while (at < buffer.length) { new[at] = old[at]; at += 1; }
+        buffer.data = block.data; buffer.capacity = capacity;
+    }
+    let slots: [u8] = core::mem::typed_slice_from_storage<u8>(buffer.data, buffer.capacity);
+    slots[buffer.length] = byte; buffer.length += 1;
+}
+
+fn main() -> i32 {
+    let arena: alloc::arena::Arena = core::result::unwrap(alloc::arena::new(alloc::arena::default_config()));
+    let total: i64 = 0;
+    let request: i32 = 0;
+    while (request < REQUESTS) {
+        let empty: ptr = 0;
+        let headers: Headers = Headers { data: empty, length: 0, capacity: 0 };
+        let index: i32 = 0;
+        while (index < HEADERS) {
+            push_header(arena.borrow(), headers.borrow(), Header { name: (index * 31 + request) as i64, value: (request % (index + 3)) as i64 });
+            index += 1;
+        }
+        let reply: Bytes = Bytes { data: empty, length: 0, capacity: 0 };
+        let list: [Header] = core::mem::typed_slice_from_storage<Header>(headers.data, headers.capacity);
+        index = 0;
+        while (index < headers.length) {
+            let header: Header = list[index];
+            let width: i64 = 2 + (header.name + header.value) % 6;
+            let byte: i64 = 0;
+            while (byte < width) { push_byte(arena.borrow(), reply.borrow(), (65 + (header.value + byte) % 26) as u8); byte += 1; }
+            push_byte(arena.borrow(), reply.borrow(), 10 as u8);
+            index += 1;
+        }
+        let bytes: [u8] = core::mem::typed_slice_from_storage<u8>(reply.data, reply.length);
+        index = 0;
+        while (index < reply.length) { total += bytes[index] as i64; index += 1; }
+        arena.reset();
+        request += 1;
+    }
+    print(total);
+    arena.destroy();
+    return 0;
+}

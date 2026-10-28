@@ -1,0 +1,34 @@
+// Layout, columns: the same particles as eight columns in three Soa groups;
+// the update reads only the x and vx columns.
+import std::scope;
+import core::result;
+
+const COUNT: i32 = 200000;
+const STEPS: i32 = 50;
+
+fn main() -> i32 {
+    let stack: std::scope::Stack = core::result::unwrap(std::scope::new(67108864));
+    let motion: std::scope::Soa2<i64, i64> = core::result::unwrap(std::scope::soa2<i64, i64>(stack.borrow(), COUNT));
+    let rest: std::scope::Soa3<i64, i64, i64> = core::result::unwrap(std::scope::soa3<i64, i64, i64>(stack.borrow(), COUNT));
+    let more: std::scope::Soa3<i64, i64, i64> = core::result::unwrap(std::scope::soa3<i64, i64, i64>(stack.borrow(), COUNT));
+    let index: i32 = 0;
+    while (index < COUNT) {
+        let value: i64 = index as i64;
+        motion.push(value, value % 7 - 3);
+        rest.push(value * 2, value * 3, 1);
+        more.push(2, 5, value);
+        index += 1;
+    }
+    let step: i32 = 0;
+    while (step < STEPS) {
+        index = 0;
+        while (index < COUNT) { motion.first[index] = motion.first[index] + motion.second[index]; index += 1; }
+        step += 1;
+    }
+    let total: i64 = 0;
+    index = 0;
+    while (index < COUNT) { total += motion.first[index]; index += 1; }
+    print(total);
+    stack.destroy();
+    return 0;
+}
