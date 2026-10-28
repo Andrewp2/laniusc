@@ -11,6 +11,7 @@ Layer: `ext`. Role: module. Profile: **Source inventory**.
 ## Contract and evidence guides
 
 - [extended-linalg](../../extended-linalg.md)
+- [extended-sparse](../../extended-sparse.md)
 
 Declaration counts: enum: 1; field: 21; function: 20; impl: 4; method: 21; struct: 5; variant: 15.
 

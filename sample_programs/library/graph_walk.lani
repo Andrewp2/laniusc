@@ -1,0 +1,242 @@
+// Bounded weighted directed graph walks through canonical sparse matrices.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::f64;
+import core::float_decimal;
+import core::io;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import ext::sparse;
+import ext::sparse_matrix;
+import ext::sparse_ops;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Options { nodes:i32, steps:i32, source:i32, help:bool, nodes_set:bool, steps_set:bool, source_set:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Writes { bytes:u64, calls:u64 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text { return core::text::from_utf8_unchecked(value.values,value.start,value.length); }
+fn bytes(value:core::text::Text) -> View<u8> { return View { values:value.bytes,start:value.start,length:value.length }; }
+fn equal(left:View<u8>, right:View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index:i32 = 0;
+    while(index < left.length) { if (left.get(index).unwrap() != right.get(index).unwrap()) { return false; } index += 1; } return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if (count <= 0 || count > bytes.length-completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("graph-walk: operation failed\n",29),2,8); return status; }
+fn csv_status(error:ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn read(input:&Vec<u8>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 16384) { return 2; } calls += 1;
+        let remaining:i32 = 4194304-input.len(); let count:i32 = remaining;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,count);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let got = received.unwrap(); if (got < 0 || got > count) { return 3; }
+        if (got == 0) { return 0; } if (got > remaining) { return 2; }
+        if (input.try_extend(core::slice::view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+
+fn limits() -> ext::sparse::Limits { return ext::sparse::Limits { max_dimension:4096,max_entries:69632,max_work:100000000 }; }
+fn sparse_status(error:ext::sparse::Error) -> i32 {
+    return match(error.kind) {
+        ext::sparse::ErrorKind::AllocationFailed -> 4,
+        ext::sparse::ErrorKind::NonFinite -> 6,
+        ext::sparse::ErrorKind::NumericalFailure -> 6,
+        _ -> 2
+    };
+}
+fn collect(input:&Vec<u8>, edges:&Vec<ext::sparse::Triplet>, options:&Options) -> i32 {
+    let dialect = ext::csv::default_options(); dialect.max_records = 65537; dialect.max_fields = 3;
+    dialect.max_field_bytes = 128; dialect.max_record_bytes = 384;
+    let parsed = ext::csv::parse_bytes(input.as_slice(),0,input.len(),dialect);
+    if (parsed.is_err()) { return csv_status(parsed.unwrap_err()); }
+    let table = parsed.unwrap(); let status:i32 = 0;
+    if (table.row_count() < 1 || table.field_count(0).unwrap() != 3) { status = 2; }
+    if (status == 0 && (!equal(bytes(table.field(0,0).unwrap()),literal("source",6)) || !equal(bytes(table.field(0,1).unwrap()),literal("target",6)) || !equal(bytes(table.field(0,2).unwrap()),literal("weight",6)))) { status = 2; }
+    let scratch:[u32;864] = [0;864]; let workspace = core::slice::view(scratch,864).unwrap();
+    let parse_limits = core::float_decimal::default_limits(); parse_limits.max_input = 128; parse_limits.max_digits = 128;
+    let index:i32 = 1;
+    while(status == 0 && index < table.row_count()) {
+        if (table.field_count(index).unwrap() != 3) { status = 2; break; }
+        let from = bytes(table.field(index,0).unwrap()); let to = bytes(table.field(index,1).unwrap());
+        let source = core::decimal::parse_u64_range(from.values,from.start,from.length);
+        let target = core::decimal::parse_u64_range(to.values,to.start,to.length);
+        let weight:Result<f64,core::float_decimal::Error> = core::float_decimal::parse_f64(bytes(table.field(index,2).unwrap()),workspace,parse_limits);
+        if (source.is_err() || target.is_err() || weight.is_err()) { status = 2; break; }
+        if (source.unwrap() >= (options.nodes as u64) || target.unwrap() >= (options.nodes as u64) || !core::f64::is_finite(weight.unwrap()) || weight.unwrap() < 0.0) { status = 2; break; }
+        if (edges.try_push(ext::sparse::Triplet { row:source.unwrap() as i32,column:target.unwrap() as i32,value:weight.unwrap() }).is_err()) { status = 4; break; }
+        index += 1;
+    }
+    table.destroy(); return status;
+}
+fn normalize(matrix:ext::sparse::CsrView, normalized:&Vec<ext::sparse::Triplet>) -> i32 {
+    let ones:Vec<f64> = alloc::vec::new(); let row:i32 = 0;
+    while(row < matrix.rows) {
+        if (ones.try_push(1.0).is_err()) { ones.destroy(); return 4; } row += 1;
+    }
+    // Ordinary increasing-column binary64 sums are validated by real matvec.
+    let made:Result<Vec<f64>,ext::sparse::Error> = ext::sparse_ops::matvec(matrix,ones.as_view(),limits());
+    ones.destroy(); if (made.is_err()) { return sparse_status(made.unwrap_err()); }
+    let sums = made.unwrap(); let status:i32 = 0; row = 0;
+    while(status == 0 && row < matrix.rows) {
+        let first = matrix.offsets.get(row).unwrap(); let end = matrix.offsets.get(row+1).unwrap();
+        let total = sums.at(row);
+        if (!core::f64::is_finite(total) || total < 0.0) { status = 6; break; }
+        if (first == end) {
+            if (normalized.try_push(ext::sparse::Triplet { row:row,column:row,value:1.0 }).is_err()) { status = 4; break; }
+        } else {
+            if (total == 0.0) { status = 6; break; }
+            let index:i32 = first;
+            while(index < end) {
+                let weight = matrix.values.get(index).unwrap();
+                if (weight != 0.0) {
+                    // Divide directly: reciprocal(total) could overflow on tiny rows.
+                    let probability:f64 = weight/total;
+                    if (!core::f64::is_finite(probability) || probability < 0.0) { status = 6; break; }
+                    if (probability != 0.0 && normalized.try_push(ext::sparse::Triplet { row:row,column:matrix.columns.get(index).unwrap(),value:probability }).is_err()) { status = 4; break; }
+                }
+                index += 1;
+            }
+        }
+        row += 1;
+    }
+    sums.destroy(); return status;
+}
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes, fields:View<View<u8>>) -> i32 {
+    record.clear(); let index:i32 = 0;
+    while(index < fields.length) {
+        let pushed = record.try_push_field(text(fields.get(index).unwrap()));
+        if (pushed.is_err()) { return csv_status(pushed.unwrap_err()); } index += 1;
+    }
+    let bounds = ext::csv_write::Limits { max_output:1048576-state.bytes,max_write_calls:65536-state.calls };
+    let sent:Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record(output,record,bounds);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err(); state.bytes += failure.written; state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> csv_status(detail),
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 2 },
+            _ -> 2
+        };
+    }
+    let progress = sent.unwrap(); state.bytes += progress.written; state.calls += progress.write_calls; return 0;
+}
+fn render(mass:&Vec<f64>, output:&alloc::io::Buffer) -> i32 {
+    let record = ext::csv::new(); let state = Writes { bytes:0,calls:0 };
+    let header:[View<u8>;2] = [literal("node",4),literal("mass",4)];
+    let status:i32 = emit(output,record.borrow(),state.borrow(),core::slice::view(header,2).unwrap());
+    let scratch:[u32;864] = [0;864]; let workspace = core::slice::view(scratch,864).unwrap(); let row:i32 = 0;
+    while(status == 0 && row < mass.len()) {
+        let value = mass.at(row); if (!core::f64::is_finite(value) || value < 0.0) { status = 6; break; }
+        let node:[u8;10] = [0;10]; let number:[u8;32] = [0;32];
+        let node_count = core::decimal::format_u32(node,0,10,row as u32);
+        let value_count = core::float_decimal::format_f64_into(value,core::slice::view(number,32).unwrap(),workspace,1000000);
+        if (node_count.is_err() || value_count.is_err()) { status = 6; break; }
+        let fields:[View<u8>;2] = [core::slice::view(node,node_count.unwrap()).unwrap(),core::slice::view(number,value_count.unwrap()).unwrap()];
+        status = emit(output,record.borrow(),state.borrow(),core::slice::view(fields,2).unwrap()); row += 1;
+    }
+    record.destroy(); return status;
+}
+fn advance(matrix:ext::sparse::CsrView, options:&Options, output:&alloc::io::Buffer) -> i32 {
+    let span:u64 = (matrix.rows as u64)+(matrix.values.length as u64)+1;
+    if (options.steps > 0 && span > 100000000/(options.steps as u64)) { return 2; }
+    let mass:Vec<f64> = alloc::vec::new(); let row:i32 = 0;
+    while(row < options.nodes) {
+        let value:f64 = 0.0; if (row == options.source) { value = 1.0; }
+        if (mass.try_push(value).is_err()) { mass.destroy(); return 4; } row += 1;
+    }
+    let step:i32 = 0;
+    while(step < options.steps) {
+        let next:Result<Vec<f64>,ext::sparse::Error> = ext::sparse_ops::matvec(matrix,mass.as_view(),limits());
+        if (next.is_err()) { mass.destroy(); return sparse_status(next.unwrap_err()); }
+        mass.destroy(); mass = next.unwrap(); step += 1;
+    }
+    let status = render(mass.borrow(),output); mass.destroy(); return status;
+}
+fn calculate(edges:&Vec<ext::sparse::Triplet>, options:&Options, output:&alloc::io::Buffer) -> i32 {
+    let made:Result<ext::sparse_matrix::Matrix,ext::sparse::Error> = ext::sparse_matrix::from_triplets(options.nodes,options.nodes,edges.as_view(),limits());
+    if (made.is_err()) { return sparse_status(made.unwrap_err()); } let adjacency = made.unwrap();
+    let normalized:Vec<ext::sparse::Triplet> = alloc::vec::new();
+    let status:i32 = normalize(adjacency.view(),normalized.borrow()); adjacency.destroy();
+    if (status != 0) { normalized.destroy(); return status; }
+    let made:Result<ext::sparse_matrix::Matrix,ext::sparse::Error> = ext::sparse_matrix::from_triplets(options.nodes,options.nodes,normalized.as_view(),limits());
+    normalized.destroy(); if (made.is_err()) { return sparse_status(made.unwrap_err()); } let transition = made.unwrap();
+    let made:Result<ext::sparse_matrix::Matrix,ext::sparse::Error> = ext::sparse_matrix::transpose(transition.view(),limits());
+    transition.destroy(); if (made.is_err()) { return sparse_status(made.unwrap_err()); } let transposed = made.unwrap();
+    status = advance(transposed.view(),options,output); transposed.destroy(); return status;
+}
+fn run(options:&Options) -> i32 {
+    let input:Vec<u8> = alloc::vec::new(); let edges:Vec<ext::sparse::Triplet> = alloc::vec::new();
+    let status:i32 = read(input.borrow());
+    if (status == 0) { status = collect(input.borrow(),edges.borrow(),options); } input.destroy();
+    if (status != 0) { edges.destroy(); return status; }
+    let made = alloc::io::with_limit(1048576); if (made.is_err()) { edges.destroy(); return 4; }
+    let output = made.unwrap(); status = calculate(edges.borrow(),options,output.borrow()); edges.destroy();
+    if (status == 0 && !write(core::slice::view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;4] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("nodes",5),short:110,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("steps",5),short:107,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:4,long:literal("source",6),short:115,arity:ext::cli::Arity::Required }
+    ];
+    let made = ext::cli::parser(values,core::slice::view(specs,4).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap(); let options = Options { nodes:0,steps:1,source:0,help:false,nodes_set:false,steps_set:false,source_set:false };
+    while(true) {
+        let event = parser.next(); if (event.is_err()) { return report(2); } let next = event.unwrap(); if (next.is_none()) { break; }
+        let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (item.is_none()) { return report(2); } let found = item.unwrap();
+        if (found.id == 1) { if (options.help) { return report(2); } options.help = true; }
+        if (found.id == 2 || found.id == 3 || found.id == 4) {
+            let value = found.value.unwrap().bytes; let parsed = core::decimal::parse_u64_range(value.values,value.start,value.length);
+            if (parsed.is_err()) { return report(2); } let number:u64 = parsed.unwrap();
+            if (found.id == 2) { if (options.nodes_set || number < 1 || number > 4096) { return report(2); } options.nodes_set = true; options.nodes = number as i32; }
+            if (found.id == 3) { if (options.steps_set || number > 1000) { return report(2); } options.steps_set = true; options.steps = number as i32; }
+            if (found.id == 4) { if (options.source_set || number > 4095) { return report(2); } options.source_set = true; options.source = number as i32; }
+        }
+    }
+    if (options.nodes_set && options.source >= options.nodes) { return report(2); }
+    if (options.help) {
+        let help = literal("Usage: graph-walk --nodes N [--steps K] [--source S] [--help]\nRead CSV source,target,weight; advance a source unit mass on normalized directed edges.\nNodes: 1..4096; steps: 0..1000 (default 1); source: 0..N-1 (default 0).\nDangling nodes keep their mass. Duplicate edge weights coalesce in input order.\nShort options: -n N, -k K, -s S, -h. Limits: 4 MiB input, 65536 edges.\n",373);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    if (!options.nodes_set) { return report(2); }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,24,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

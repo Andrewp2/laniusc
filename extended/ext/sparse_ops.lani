@@ -1,0 +1,303 @@
+// Independent CSR arithmetic and sparse/dense composition. Inputs are fully
+// validated before output allocation; no input owner or backing is modified.
+// Work admission counts dominant logical phases, not CPU instructions. Keep
+// one active owner for each result; shallow copies do not duplicate cleanup.
+module ext::sparse_ops;
+import alloc::vec;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::linalg;
+import ext::sparse;
+import ext::sparse_matrix;
+
+fn error(kind:ext::sparse::ErrorKind,row:i32,entry:i32) -> ext::sparse::Error {
+    return ext::sparse::Error { kind:kind,row:row,entry:entry };
+}
+fn valid<T>(values:core::slice::View<T>) -> bool {
+    return values.start>=0 && values.length>=0 && values.start<=2147483647-values.length;
+}
+fn integer(values:core::slice::View<i32>,index:i32) -> i32 { return values.values[values.start+index]; }
+fn number(values:core::slice::View<f64>,index:i32) -> f64 { return values.values[values.start+index]; }
+fn limits_ok(limits:ext::sparse::Limits) -> core::result::Result<bool,ext::sparse::Error> {
+    if(limits.max_dimension<0 || limits.max_entries<0) { return core::result::Err(error(ext::sparse::ErrorKind::InvalidLimits,-1,-1)); }
+    return core::result::Ok(true);
+}
+fn owner_shape(rows:i32,cols:i32,limits:ext::sparse::Limits) -> core::result::Result<bool,ext::sparse::Error> {
+    limits_ok(limits)?;
+    if(rows<0 || cols<0) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    // i32 offsets have a four-byte storage ceiling; f64 entries have the
+    // separate eight-byte ceiling checked when their exact count is known.
+    if(rows>limits.max_dimension || cols>limits.max_dimension || rows>=536870911) {
+        return core::result::Err(error(ext::sparse::ErrorKind::DimensionLimit,-1,-1));
+    }
+    return core::result::Ok(true);
+}
+fn checked(a:ext::sparse::CsrView,limits:ext::sparse::Limits) -> core::result::Result<i32,ext::sparse::Error> {
+    return ext::sparse::validate(a,limits);
+}
+fn work(amount:u64,limits:ext::sparse::Limits) -> core::result::Result<bool,ext::sparse::Error> {
+    if(amount>limits.max_work) { return core::result::Err(error(ext::sparse::ErrorKind::WorkLimit,-1,-1)); }
+    return core::result::Ok(true);
+}
+fn product_work(a:u64,b:u64,extra:u64,limits:ext::sparse::Limits) -> core::result::Result<bool,ext::sparse::Error> {
+    if(extra>limits.max_work) { return core::result::Err(error(ext::sparse::ErrorKind::WorkLimit,-1,-1)); }
+    if(a!=0 && b!=0 && a>(limits.max_work-extra)/b) { return core::result::Err(error(ext::sparse::ErrorKind::WorkLimit,-1,-1)); }
+    return core::result::Ok(true);
+}
+fn entry_cap(limits:ext::sparse::Limits) -> i32 {
+    let cap:i32=limits.max_entries; if(cap>268435455) { cap=268435455; } return cap;
+}
+fn allocation_error(cause:alloc::vec::Error,capacity:ext::sparse::ErrorKind) -> ext::sparse::Error {
+    let kind:ext::sparse::ErrorKind=match(cause) {
+        alloc::vec::Error::AllocationFailed->ext::sparse::ErrorKind::AllocationFailed,
+        alloc::vec::Error::Bounds->ext::sparse::ErrorKind::Bounds,
+        _->capacity
+    };
+    return error(kind,-1,-1);
+}
+fn empty(rows:i32,cols:i32) -> ext::sparse_matrix::Matrix {
+    return ext::sparse_matrix::Matrix { offsets:alloc::vec::new(),columns:alloc::vec::new(),values:alloc::vec::new(),rows:rows,cols:cols };
+}
+// Caller already admitted shapes, entry counts, inputs and operation work.
+// Resizing within these exact reservations cannot allocate or fail.
+fn allocated(rows:i32,cols:i32,count:i32) -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> {
+    let out:ext::sparse_matrix::Matrix=empty(rows,cols);
+    let offsets=alloc::vec::with_capacity<i32>(rows+1);
+    if(offsets.is_err()) { return core::result::Err(allocation_error(offsets.unwrap_err(),ext::sparse::ErrorKind::DimensionLimit)); }
+    out.offsets=offsets.unwrap();
+    let columns=alloc::vec::with_capacity<i32>(count);
+    if(columns.is_err()) { out.destroy(); return core::result::Err(allocation_error(columns.unwrap_err(),ext::sparse::ErrorKind::EntryLimit)); }
+    out.columns=columns.unwrap();
+    let values=alloc::vec::with_capacity<f64>(count);
+    if(values.is_err()) { out.destroy(); return core::result::Err(allocation_error(values.unwrap_err(),ext::sparse::ErrorKind::EntryLimit)); }
+    out.values=values.unwrap();
+    out.offsets.try_resize(rows+1,0).unwrap(); out.columns.try_resize(count,0).unwrap(); out.values.try_resize(count,0.0).unwrap();
+    return core::result::Ok(out);
+}
+
+// Two passes over sorted rows: numerical/count preflight, then exact filling.
+// Unmatched explicit zeros are omitted just like computed cancellation zeros.
+fn merge_pass(a:ext::sparse::CsrView,b:ext::sparse::CsrView,subtract:bool,
+    out:&ext::sparse_matrix::Matrix,writing:bool,limits:ext::sparse::Limits) -> core::result::Result<i32,ext::sparse::Error> {
+    let cap:i32=entry_cap(limits); let count:i32=0; let row:i32=0;
+    let offsets:[i32]=out.offsets.as_slice(); let columns:[i32]=out.columns.as_slice(); let values:[f64]=out.values.as_slice();
+    if(writing) { offsets[0]=0; }
+    while(row<a.rows) {
+        let left:i32=integer(a.offsets,row); let left_end:i32=integer(a.offsets,row+1);
+        let right:i32=integer(b.offsets,row); let right_end:i32=integer(b.offsets,row+1);
+        while(left<left_end || right<right_end) {
+            let col:i32=0; let value:f64=0.0; let at:i32=left;
+            if(right==right_end || (left<left_end && integer(a.columns,left)<integer(b.columns,right))) {
+                col=integer(a.columns,left); value=number(a.values,left); left+=1;
+            } else {
+                if(left==left_end || integer(b.columns,right)<integer(a.columns,left)) {
+                    at=right; col=integer(b.columns,right); value=number(b.values,right);
+                    if(subtract) { value=0.0-value; } right+=1;
+                } else {
+                    col=integer(a.columns,left); value=number(a.values,left);
+                    if(subtract) { value-=number(b.values,right); } else { value+=number(b.values,right); }
+                    left+=1; right+=1;
+                }
+            }
+            if(!core::f64::is_finite(value)) { return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,row,at)); }
+            if(value!=0.0) {
+                if(count==cap) { return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,row,at)); }
+                if(writing) { columns[count]=col; values[count]=value; } count+=1;
+            }
+        }
+        if(writing) { offsets[row+1]=count; } row+=1;
+    }
+    return core::result::Ok(count);
+}
+// Operation work = 2*(rows+1+nnzA+nnzB), separate from each validation phase.
+fn merged(a:ext::sparse::CsrView,b:ext::sparse::CsrView,subtract:bool,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> {
+    owner_shape(a.rows,a.cols,limits)?;
+    let na:i32=checked(a,limits)?; let nb:i32=checked(b,limits)?;
+    if(a.rows!=b.rows || a.cols!=b.cols) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    work(2*((a.rows as u64)+1+(na as u64)+(nb as u64)),limits)?;
+    let unused:ext::sparse_matrix::Matrix=empty(0,0);
+    let count:i32=merge_pass(a,b,subtract,unused.borrow(),false,limits)?;
+    let out:ext::sparse_matrix::Matrix=allocated(a.rows,a.cols,count)?;
+    let filled=merge_pass(a,b,subtract,out.borrow(),true,limits);
+    if(filled.is_err()) { out.destroy(); return core::result::Err(filled.unwrap_err()); }
+    return core::result::Ok(out);
+}
+pub fn add(a:ext::sparse::CsrView,b:ext::sparse::CsrView,limits:ext::sparse::Limits) -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> { return merged(a,b,false,limits); }
+pub fn sub(a:ext::sparse::CsrView,b:ext::sparse::CsrView,limits:ext::sparse::Limits) -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> { return merged(a,b,true,limits); }
+
+fn vector_metadata(values:core::slice::View<f64>,length:i32) -> core::result::Result<bool,ext::sparse::Error> {
+    if(!valid<f64>(values)) { return core::result::Err(error(ext::sparse::ErrorKind::Bounds,-1,-1)); }
+    if(values.length!=length) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    return core::result::Ok(true);
+}
+fn vector(values:core::slice::View<f64>,length:i32) -> core::result::Result<bool,ext::sparse::Error> {
+    vector_metadata(values,length)?;
+    let index:i32=0;
+    while(index<length) { if(!core::f64::is_finite(number(values,index))) { return core::result::Err(error(ext::sparse::ErrorKind::NonFinite,-1,index)); } index+=1; }
+    return core::result::Ok(true);
+}
+fn scaling_pass(a:ext::sparse::CsrView,factor:f64,factors:core::slice::View<f64>,mode:i32,
+    out:&ext::sparse_matrix::Matrix,writing:bool,limits:ext::sparse::Limits) -> core::result::Result<i32,ext::sparse::Error> {
+    let cap:i32=entry_cap(limits); let count:i32=0; let row:i32=0;
+    let offsets:[i32]=out.offsets.as_slice(); let columns:[i32]=out.columns.as_slice(); let values:[f64]=out.values.as_slice();
+    if(writing) { offsets[0]=0; }
+    while(row<a.rows) {
+        let entry:i32=integer(a.offsets,row); let end:i32=integer(a.offsets,row+1);
+        while(entry<end) {
+            let col:i32=integer(a.columns,entry); let multiplier:f64=factor;
+            if(mode==1) { multiplier=number(factors,row); }
+            if(mode==2) { multiplier=number(factors,col); }
+            let value:f64=number(a.values,entry)*multiplier;
+            if(!core::f64::is_finite(value)) { return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,row,entry)); }
+            if(value!=0.0) {
+                if(count==cap) { return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,row,entry)); }
+                if(writing) { columns[count]=col; values[count]=value; } count+=1;
+            }
+            entry+=1;
+        }
+        if(writing) { offsets[row+1]=count; } row+=1;
+    }
+    return core::result::Ok(count);
+}
+// Operation work = 2*(rows+1+nnz)+factor_count; scalar factor_count is zero.
+fn scaled(a:ext::sparse::CsrView,factor:f64,factors:core::slice::View<f64>,mode:i32,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> {
+    owner_shape(a.rows,a.cols,limits)?;
+    let count:i32=checked(a,limits)?; let factor_count:i32=0;
+    if(mode==0) {
+        if(!core::f64::is_finite(factor)) { return core::result::Err(error(ext::sparse::ErrorKind::NonFinite,-1,-1)); }
+    } else {
+        factor_count=a.rows; if(mode==2) { factor_count=a.cols; } vector_metadata(factors,factor_count)?;
+    }
+    work(2*((a.rows as u64)+1+(count as u64))+(factor_count as u64),limits)?;
+    if(mode!=0) { vector(factors,factor_count)?; }
+    let unused:ext::sparse_matrix::Matrix=empty(0,0);
+    let kept:i32=scaling_pass(a,factor,factors,mode,unused.borrow(),false,limits)?;
+    let out:ext::sparse_matrix::Matrix=allocated(a.rows,a.cols,kept)?;
+    let filled=scaling_pass(a,factor,factors,mode,out.borrow(),true,limits);
+    if(filled.is_err()) { out.destroy(); return core::result::Err(filled.unwrap_err()); }
+    return core::result::Ok(out);
+}
+pub fn scale(a:ext::sparse::CsrView,factor:f64,limits:ext::sparse::Limits) -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> { return scaled(a,factor,a.values,0,limits); }
+pub fn scale_rows(a:ext::sparse::CsrView,factors:core::slice::View<f64>,limits:ext::sparse::Limits) -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> { return scaled(a,1.0,factors,1,limits); }
+pub fn scale_columns(a:ext::sparse::CsrView,factors:core::slice::View<f64>,limits:ext::sparse::Limits) -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> { return scaled(a,1.0,factors,2,limits); }
+
+fn f64_buffer(count:i32) -> core::result::Result<alloc::vec::Vec<f64>,ext::sparse::Error> {
+    let made=alloc::vec::with_capacity<f64>(count);
+    if(made.is_err()) { return core::result::Err(allocation_error(made.unwrap_err(),ext::sparse::ErrorKind::EntryLimit)); }
+    let out:alloc::vec::Vec<f64> =made.unwrap(); out.try_resize(count,0.0).unwrap(); return core::result::Ok(out);
+}
+// Operation work = cols+rows+nnz. The canonical pure kernel revalidates before
+// private output writes. Its numerical-failure prefix never escapes this owner.
+pub fn matvec(a:ext::sparse::CsrView,x:core::slice::View<f64>,limits:ext::sparse::Limits)
+    -> core::result::Result<alloc::vec::Vec<f64>,ext::sparse::Error> {
+    limits_ok(limits)?;
+    if(a.rows>entry_cap(limits)) { return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,-1,-1)); }
+    let count:i32=checked(a,limits)?; vector_metadata(x,a.cols)?;
+    work((a.cols as u64)+(a.rows as u64)+(count as u64),limits)?;
+    vector(x,a.cols)?;
+    let out:alloc::vec::Vec<f64> =f64_buffer(a.rows)?;
+    let filled=ext::sparse::matvec_into(a,x,out.as_view(),limits);
+    if(filled.is_err()) { out.destroy(); return core::result::Err(filled.unwrap_err().error); }
+    return core::result::Ok(out);
+}
+
+fn dense_error(cause:ext::linalg::Error) -> ext::sparse::Error {
+    let kind:ext::sparse::ErrorKind=match(cause) {
+        ext::linalg::Error::Bounds->ext::sparse::ErrorKind::Bounds,
+        ext::linalg::Error::InvalidStride->ext::sparse::ErrorKind::Bounds,
+        ext::linalg::Error::Overflow->ext::sparse::ErrorKind::EntryLimit,
+        ext::linalg::Error::ElementLimit->ext::sparse::ErrorKind::EntryLimit,
+        ext::linalg::Error::InvalidLimits->ext::sparse::ErrorKind::InvalidLimits,
+        ext::linalg::Error::WorkLimit->ext::sparse::ErrorKind::WorkLimit,
+        ext::linalg::Error::NonFinite->ext::sparse::ErrorKind::NonFinite,
+        ext::linalg::Error::NumericalFailure->ext::sparse::ErrorKind::NumericalFailure,
+        ext::linalg::Error::AllocationFailed->ext::sparse::ErrorKind::AllocationFailed,
+        _->ext::sparse::ErrorKind::Shape
+    };
+    return error(kind,-1,-1);
+}
+fn dense_shape(rows:i32,cols:i32,limits:ext::sparse::Limits) -> core::result::Result<i32,ext::sparse::Error> {
+    limits_ok(limits)?;
+    if(rows<0 || cols<0) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    if(rows>limits.max_dimension || cols>limits.max_dimension) { return core::result::Err(error(ext::sparse::ErrorKind::DimensionLimit,-1,-1)); }
+    // Both factors are nonnegative i32, so their product fits signed i64.
+    let count:i64=(rows as i64)*(cols as i64);
+    if(count>(entry_cap(limits) as i64)) { return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,-1,-1)); }
+    return core::result::Ok(count as i32);
+}
+fn dense_number(a:ext::linalg::MatrixView,row:i32,col:i32) -> f64 { return a.values[a.offset+row*a.row_stride+col*a.col_stride]; }
+fn dense_checked(a:ext::linalg::MatrixView,limits:ext::sparse::Limits) -> core::result::Result<i32,ext::sparse::Error> {
+    let count:i32=dense_shape(a.rows,a.cols,limits)?;
+    let metadata=ext::linalg::validate(a); if(metadata.is_err()) { return core::result::Err(dense_error(metadata.unwrap_err())); }
+    work(count as u64,limits)?;
+    let i:i32=0;
+    while(i<count) {
+        let row:i32=i/a.cols; let value:f64=dense_number(a,row,i%a.cols);
+        if(!core::f64::is_finite(value)) { return core::result::Err(error(ext::sparse::ErrorKind::NonFinite,row,i)); } i+=1;
+    }
+    return core::result::Ok(count);
+}
+// Operation work = 2*dense_count+rows+1. Exact dense zeros, including -0,
+// become absent entries. All logical dense inputs are checked before allocation.
+pub fn from_dense(a:ext::linalg::MatrixView,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> {
+    owner_shape(a.rows,a.cols,limits)?;
+    let elements:i32=dense_checked(a,limits)?; work(2*(elements as u64)+(a.rows as u64)+1,limits)?;
+    let count:i32=0; let i:i32=0;
+    while(i<elements) { if(dense_number(a,i/a.cols,i%a.cols)!=0.0) { count+=1; } i+=1; }
+    let out:ext::sparse_matrix::Matrix=allocated(a.rows,a.cols,count)?;
+    let offsets:[i32]=out.offsets.as_slice(); let columns:[i32]=out.columns.as_slice(); let values:[f64]=out.values.as_slice();
+    let row:i32=0; let at:i32=0; offsets[0]=0;
+    while(row<a.rows) {
+        let col:i32=0;
+        while(col<a.cols) {
+            let value:f64=dense_number(a,row,col);
+            if(value!=0.0) { columns[at]=col; values[at]=value; at+=1; } col+=1;
+        }
+        offsets[row+1]=at; row+=1;
+    }
+    return core::result::Ok(out);
+}
+// Operation work = dense_count+rows+1+nnz. Missing cells begin at positive zero;
+// direct assignment preserves every explicitly stored signed zero.
+pub fn to_dense(a:ext::sparse::CsrView,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::linalg::Matrix,ext::sparse::Error> {
+    let elements:i32=dense_shape(a.rows,a.cols,limits)?; let count:i32=checked(a,limits)?;
+    work((elements as u64)+(a.rows as u64)+1+(count as u64),limits)?;
+    let data:alloc::vec::Vec<f64> =f64_buffer(elements)?; let values:[f64]=data.as_slice(); let row:i32=0;
+    while(row<a.rows) {
+        let entry:i32=integer(a.offsets,row); let end:i32=integer(a.offsets,row+1);
+        while(entry<end) { values[row*a.cols+integer(a.columns,entry)]=number(a.values,entry); entry+=1; } row+=1;
+    }
+    return core::result::Ok(ext::linalg::Matrix { data:data,rows:a.rows,cols:a.cols });
+}
+// Operation work = dense_input_count+dense_output_count+nnz*b.cols+rows+1.
+// Each dot uses increasing CSR inner columns. All logical dense entries are
+// finite-checked even when their sparse coefficient is missing or output empty.
+pub fn matmul_dense(a:ext::sparse::CsrView,b:ext::linalg::MatrixView,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::linalg::Matrix,ext::sparse::Error> {
+    let count:i32=checked(a,limits)?; let incoming:i32=dense_checked(b,limits)?;
+    if(a.cols!=b.rows) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    let elements:i32=dense_shape(a.rows,b.cols,limits)?;
+    let extra:u64=(incoming as u64)+(elements as u64)+(a.rows as u64)+1;
+    product_work(count as u64,b.cols as u64,extra,limits)?;
+    let data:alloc::vec::Vec<f64> =f64_buffer(elements)?; let values:[f64]=data.as_slice(); let row:i32=0;
+    while(row<a.rows) {
+        let col:i32=0; let start:i32=integer(a.offsets,row); let end:i32=integer(a.offsets,row+1);
+        while(col<b.cols) {
+            let sum:f64=0.0; let entry:i32=start;
+            while(entry<end) {
+                let product:f64=number(a.values,entry)*dense_number(b,integer(a.columns,entry),col);
+                if(!core::f64::is_finite(product)) { data.destroy(); return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,row,entry)); }
+                sum+=product;
+                if(!core::f64::is_finite(sum)) { data.destroy(); return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,row,entry)); } entry+=1;
+            }
+            values[row*b.cols+col]=sum; col+=1;
+        }
+        row+=1;
+    }
+    return core::result::Ok(ext::linalg::Matrix { data:data,rows:a.rows,cols:b.cols });
+}

@@ -1,0 +1,12 @@
+module app::main;
+import core::slice;
+import core::slice::view;
+import core::result;
+import ext::sparse;
+fn main() -> i32 {
+    let cells:[i32;1]=[7];
+    let selected:core::result::Result<core::slice::View<i32>,core::slice::ViewError> =view(cells,1);
+    let item:core::slice::View<i32> =selected.unwrap();
+    assert(item.get(0).unwrap()==7);
+    return 0;
+}

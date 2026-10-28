@@ -6,6 +6,15 @@ using `core::f64` and `alloc::vec`; they do not call a host matrix library.
 Runtime coverage targets native x86_64 Linux. This document makes no GPU
 execution claim.
 
+[Canonical CSR matrices](extended-sparse.md) live in the separate
+`ext::sparse`, `ext::sparse_matrix` and `ext::sparse_ops` modules. Their borrowed
+kernel, independent sparse owners, arithmetic and CSR/dense conversion/product
+contracts have separate limits. Its six registered library gates pass on
+native Linux x86_64, including independent dense-composition models and a
+65,536-row sparse scale case. Dense LU/QR here do not become sparse solvers;
+sparse/sparse multiplication and sparse factorization remain outside that
+foundation increment.
+
 ## Views and owners
 
 `row_major(values, count, rows, cols)` borrows the first `rows*cols` logical f64

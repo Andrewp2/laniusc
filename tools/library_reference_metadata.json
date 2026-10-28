@@ -912,7 +912,8 @@
     },
     "ext::linalg": {
       "guides": [
-        "docs/extended-linalg.md"
+        "docs/extended-linalg.md",
+        "docs/extended-sparse.md"
       ]
     },
     "ext::log": {
@@ -1027,6 +1028,40 @@
       "guides": [
         "docs/extended-signal.md"
       ]
+    },
+    "ext::sparse": {
+      "guides": [
+        "docs/extended-sparse.md",
+        "docs/extended-graph-walk.md"
+      ],
+      "note": "Allocation-free borrowed canonical finite binary64 CSR with full validation, row/element lookup and caller-output matvec. Strict sorted unique row columns, legal stored signed zeros and explicit shape/entry/phase-work limits. Pure matvec finite-checks all x entries before output, uses increasing-column binary64 products/additions and reports the completed-row prefix on numerical failure; output must be disjoint from every input backing. Live physical bounds/lifetimes remain manual. All six library gates and four graph-application gates pass on Linux x86_64, including a 3,886-case exact-bit model, analytic 65,536-row sparse scale case and 113 application process cases. The guide records an executed qualified-call workaround for the item-import priority dependency. No native math dependency or user-program GPU execution claim.",
+      "declarations": {
+        "validate": "Checks limits/shape/view metadata and work before reads, every offset before column/value pairs, then column range/order and finite values; returns stored nnz, including explicit zeros.",
+        "matvec_into": "Preflight failures write nothing and report completed=0. Nonfinite product/partial sum leaves earlier complete output rows published, failed row/suffix unchanged. Exact x/out lengths and disjoint output backing are required."
+      }
+    },
+    "ext::sparse_matrix": {
+      "guides": [
+        "docs/extended-sparse.md",
+        "docs/extended-graph-walk.md"
+      ],
+      "note": "Independent canonical CSR owner with three Vec buffers and explicit shape. zeros/from_csr/from_triplets/transpose and try_clone preserve manual cleanup authority; shallow copies alias ownership. COO duplicates sum in original input order and omit computed signed zeros; from_csr/clone/transpose preserve stored zeros. Constructor errors release partial output/staging and preserve inputs. Individual f64/offset/staging capacities and dominant phase-work formulas are in the guide. All six library gates pass; the finite allocation-denial campaigns reach 33 operation failures across constructors and operations, excluding clone input setup, with full address/size releases. The independent model, analytic scale and four graph-application gates/113 process cases pass on Linux x86_64. No automatic ownership or formal leak-freedom claim.",
+      "declarations": {
+        "from_triplets": "Validates complete raw input and phase admission before sorting storage. Sorting uses row/column/original ordinal; duplicate additions follow original input order, reject nonfinite intermediates and omit rounded zero groups. Raw count caps apply before coalescing.",
+        "transpose": "Count/prefix/scatter creates independent canonical output with swapped dimensions and preserved stored values/zero signs; input is immutable and output row-offset capacity is checked before allocation."
+      }
+    },
+    "ext::sparse_ops": {
+      "guides": [
+        "docs/extended-sparse.md",
+        "docs/extended-linalg.md",
+        "docs/extended-graph-walk.md"
+      ],
+      "note": "Owned CSR add/sub/scalar or axis scaling, matvec, dense conversion and CSR-times-dense product. Complete input/factor/work preflight precedes output allocation; computed zero CSR entries are omitted and numerical errors publish no owner. Unused factors/dense cells still require finite values. Dense input/output sizes and vector results obey sparse max_entries plus the hard f64 capacity; work is independent dominant phase admission, not cumulative instruction accounting. Existing dense views retain their own stride/bounds contract. All six library gates pass, including independent exact-bit arithmetic, reached operation-allocation denials and analytic 65,536-row sparse products/dense-admission rejection. All four real graph-application gates pass with 113 process cases on Linux x86_64. Sparse/sparse multiplication and sparse factorization are not supplied.",
+      "declarations": {
+        "matvec": "Returns an independent Vec<f64>; the private caller-output kernel may produce a prefix on arithmetic failure, but this wrapper destroys that owner and returns only the typed error.",
+        "matmul_dense": "Multiplies CSR A by a checked finite dense view B into independent dense output. Uses increasing CSR inner-column dot order; input/output sizes and nnz*B.cols+input_count+output_count+A.rows+1 phase work are checked before allocation."
+      }
     },
     "ext::sqlite": {
       "guides": [

@@ -1,0 +1,180 @@
+// Canonical finite binary64 compressed sparse rows. Borrowed storage only:
+// no allocation, host service or implicit ownership/lifetime enforcement.
+module ext::sparse;
+import core::f64;
+import core::result;
+import core::slice;
+
+pub enum ErrorKind {
+    InvalidLimits, Shape, Bounds, DimensionLimit, EntryLimit, WorkLimit,
+    Offset, Column, Order, NonFinite, NumericalFailure, AllocationFailed
+}
+pub struct Error { kind: ErrorKind, row: i32, entry: i32 }
+pub struct Limits { max_dimension: i32, max_entries: i32, max_work: u64 }
+pub struct Triplet { row: i32, column: i32, value: f64 }
+pub struct CsrView {
+    rows: i32, cols: i32, offsets: core::slice::View<i32>,
+    columns: core::slice::View<i32>, values: core::slice::View<f64>
+}
+pub struct Row { columns: core::slice::View<i32>, values: core::slice::View<f64> }
+pub struct ProductFailure { error: Error, completed: i32 }
+
+pub fn default_limits() -> Limits {
+    return Limits { max_dimension: 1048576, max_entries: 1048576, max_work: 100000000 };
+}
+fn error(kind: ErrorKind, row: i32, entry: i32) -> Error {
+    return Error { kind: kind, row: row, entry: entry };
+}
+fn valid<T>(values: core::slice::View<T>) -> bool {
+    return values.start >= 0 && values.length >= 0 && values.start <= 2147483647-values.length;
+}
+fn integer(values: core::slice::View<i32>, index: i32) -> i32 { return values.get(index).unwrap(); }
+fn number(values: core::slice::View<f64>, index: i32) -> f64 { return values.get(index).unwrap(); }
+
+// Admission reads descriptor metadata only. The dominant validation phase is
+// rows+1+nnz: one complete offset scan and one column/value-pair scan. i32
+// extents are widened BEFORE summing; this sum is less than 2^32.
+fn metadata(value: CsrView, limits: Limits) -> core::result::Result<i32,Error> {
+    if (limits.max_dimension < 0 || limits.max_entries < 0) {
+        return core::result::Err(error(ErrorKind::InvalidLimits,-1,-1));
+    }
+    if (value.rows < 0 || value.cols < 0 || value.rows == 2147483647) {
+        return core::result::Err(error(ErrorKind::Shape,-1,-1));
+    }
+    if (!valid<i32>(value.offsets) || !valid<i32>(value.columns) || !valid<f64>(value.values)) {
+        return core::result::Err(error(ErrorKind::Bounds,-1,-1));
+    }
+    if (value.offsets.len() != value.rows+1 || value.columns.len() != value.values.len()) {
+        return core::result::Err(error(ErrorKind::Shape,-1,-1));
+    }
+    if (value.rows > limits.max_dimension || value.cols > limits.max_dimension) {
+        return core::result::Err(error(ErrorKind::DimensionLimit,-1,-1));
+    }
+    let count: i32 = value.columns.len();
+    if (count > limits.max_entries) { return core::result::Err(error(ErrorKind::EntryLimit,-1,-1)); }
+    let work: u64 = (value.rows as u64)+1+(count as u64);
+    if (work > limits.max_work) { return core::result::Err(error(ErrorKind::WorkLimit,-1,-1)); }
+    return core::result::Ok(count);
+}
+
+// Every offset is checked before any column or value. Backing capacity and
+// lifetime are caller preconditions; valid logical metadata cannot prove them.
+pub fn validate(value: CsrView, limits: Limits) -> core::result::Result<i32,Error> {
+    let admitted: core::result::Result<i32,Error> = metadata(value,limits);
+    if (admitted.is_err()) { return admitted; }
+    let count: i32 = admitted.unwrap(); let first_row: i32 = -1;
+    if (value.rows > 0) { first_row = 0; }
+    let previous: i32 = integer(value.offsets,0);
+    if (previous != 0) { return core::result::Err(error(ErrorKind::Offset,first_row,-1)); }
+    let index: i32 = 1;
+    while (index <= value.rows) {
+        let next: i32 = integer(value.offsets,index);
+        if (next < previous || next < 0 || next > count) {
+            return core::result::Err(error(ErrorKind::Offset,index-1,-1));
+        }
+        previous = next; index += 1;
+    }
+    if (previous != count) {
+        let row: i32 = -1; if (value.rows > 0) { row = value.rows-1; }
+        return core::result::Err(error(ErrorKind::Offset,row,-1));
+    }
+    let row: i32 = 0;
+    while (row < value.rows) {
+        let start: i32 = integer(value.offsets,row); let end: i32 = integer(value.offsets,row+1);
+        let entry: i32 = start; let column: i32 = -1;
+        while (entry < end) {
+            let next: i32 = integer(value.columns,entry);
+            if (next < 0 || next >= value.cols) {
+                return core::result::Err(error(ErrorKind::Column,row,entry));
+            }
+            if (next <= column) { return core::result::Err(error(ErrorKind::Order,row,entry)); }
+            if (!core::f64::is_finite(number(value.values,entry))) {
+                return core::result::Err(error(ErrorKind::NonFinite,row,entry));
+            }
+            column = next; entry += 1;
+        }
+        row += 1;
+    }
+    return core::result::Ok(count);
+}
+
+pub fn view(rows: i32, cols: i32, offsets: core::slice::View<i32>,
+    columns: core::slice::View<i32>, values: core::slice::View<f64>, limits: Limits)
+    -> core::result::Result<CsrView,Error> {
+    let value: CsrView = CsrView { rows: rows, cols: cols, offsets: offsets, columns: columns, values: values };
+    let checked: core::result::Result<i32,Error> = validate(value,limits);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    return core::result::Ok(value);
+}
+
+pub fn row(value: CsrView, index: i32, limits: Limits) -> core::result::Result<Row,Error> {
+    let admitted: core::result::Result<i32,Error> = metadata(value,limits);
+    if (admitted.is_err()) { return core::result::Err(admitted.unwrap_err()); }
+    if (index < 0 || index >= value.rows) { return core::result::Err(error(ErrorKind::Bounds,-1,-1)); }
+    let checked: core::result::Result<i32,Error> = validate(value,limits);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let start: i32 = integer(value.offsets,index); let end: i32 = integer(value.offsets,index+1);
+    return core::result::Ok(Row {
+        columns: value.columns.subview(start,end).unwrap(), values: value.values.subview(start,end).unwrap()
+    });
+}
+
+// Exact lookup preserves an explicitly stored signed zero. An absent entry
+// returns positive zero. Every call revalidates the complete forged view.
+pub fn get(value: CsrView, row: i32, column: i32, limits: Limits) -> core::result::Result<f64,Error> {
+    let admitted: core::result::Result<i32,Error> = metadata(value,limits);
+    if (admitted.is_err()) { return core::result::Err(admitted.unwrap_err()); }
+    if (row < 0 || row >= value.rows) { return core::result::Err(error(ErrorKind::Bounds,-1,-1)); }
+    if (column < 0 || column >= value.cols) { return core::result::Err(error(ErrorKind::Bounds,row,-1)); }
+    let checked: core::result::Result<i32,Error> = validate(value,limits);
+    if (checked.is_err()) { return core::result::Err(checked.unwrap_err()); }
+    let low: i32 = integer(value.offsets,row); let end: i32 = integer(value.offsets,row+1);
+    let high: i32 = end;
+    while (low < high) {
+        let middle: i32 = low+(high-low)/2;
+        if (integer(value.columns,middle) < column) { low = middle+1; } else { high = middle; }
+    }
+    if (low < end && integer(value.columns,low) == column) { return core::result::Ok(number(value.values,low)); }
+    return core::result::Ok(0.0);
+}
+
+fn failed(cause: Error, completed: i32) -> core::result::Result<i32,ProductFailure> {
+    return core::result::Err(ProductFailure { error: cause, completed: completed });
+}
+
+// All output backing must be disjoint from every input backing, including
+// offsets and columns. Views retain their typed physical stride. Preflight
+// writes nothing; arithmetic failure retains exactly the completed row prefix.
+pub fn matvec_into(value: CsrView, x: core::slice::View<f64>, out: core::slice::View<f64>, limits: Limits)
+    -> core::result::Result<i32,ProductFailure> {
+    let admitted: core::result::Result<i32,Error> = metadata(value,limits);
+    if (admitted.is_err()) { return failed(admitted.unwrap_err(),0); }
+    if (!valid<f64>(x) || !valid<f64>(out)) { return failed(error(ErrorKind::Bounds,-1,-1),0); }
+    if (x.len() != value.cols || out.len() != value.rows) { return failed(error(ErrorKind::Shape,-1,-1),0); }
+    // Separate dominant product phase: inspect every x element, then visit
+    // each row and each stored pair. The widened sum is less than 2^33 and is
+    // checked independently of validation, not charged cumulatively with it.
+    let work: u64 = (value.cols as u64)+(value.rows as u64)+(admitted.unwrap() as u64);
+    if (work > limits.max_work) { return failed(error(ErrorKind::WorkLimit,-1,-1),0); }
+    let checked: core::result::Result<i32,Error> = validate(value,limits);
+    if (checked.is_err()) { return failed(checked.unwrap_err(),0); }
+    let column: i32 = 0;
+    while (column < x.len()) {
+        if (!core::f64::is_finite(number(x,column))) { return failed(error(ErrorKind::NonFinite,-1,column),0); }
+        column += 1;
+    }
+    let target: [f64] = out.values; let row: i32 = 0;
+    while (row < value.rows) {
+        let sum: f64 = 0.0;
+        let entry: i32 = integer(value.offsets,row); let end: i32 = integer(value.offsets,row+1);
+        while (entry < end) {
+            let product: f64 = number(value.values,entry)*number(x,integer(value.columns,entry));
+            if (!core::f64::is_finite(product)) { return failed(error(ErrorKind::NumericalFailure,row,entry),row); }
+            sum += product;
+            if (!core::f64::is_finite(sum)) { return failed(error(ErrorKind::NumericalFailure,row,entry),row); }
+            entry += 1;
+        }
+        target[out.start+row] = sum; row += 1;
+    }
+    return core::result::Ok(value.rows);
+}

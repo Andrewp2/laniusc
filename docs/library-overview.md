@@ -1,6 +1,17 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[canonical CSR increment](extended-sparse.md) adds allocation-free borrowed
+validation/lookup/matvec, independent sparse owners and sparse/dense arithmetic.
+Stored-zero rules, ordered binary64 arithmetic, work admission and manual
+backing/cleanup are explicit. Caller-output matvec can publish a completed-row
+prefix on numerical failure; owned operations release partial results.
+All six registered library gates pass, including a 3,886-case independent
+model, 33 reached operation-allocation denials and a 65,536-row analytic
+scale case. The graph application passes all four registered gates and 113
+process cases. This finite increment is accepted on native Linux x86_64.
+It is a foundation for further sparse work, with no compiler or native
+mathematics implementation change. The preceding
 [exact-size iterator increment](stdlib-exact-size-iterators.md) adds an
 explicit `remaining_count() -> u64` contract for selected finite leaves,
 metadata-preserving adapters and collection cursors. Queries do no pulls,
@@ -117,6 +128,42 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Canonical sparse rows and dense composition.**
+
+The [sparse family](extended-sparse.md) separates borrowed finite CSR admission
+from three-buffer owners and owned operations. Canonical rows have sorted
+unique columns and count explicitly stored zeros in `nnz`. Copy/clone/
+transpose preserve signed zeros; COO construction coalesces duplicates in
+original input order, and computed zero entries are omitted. Operations
+reject nonfinite arithmetic rather than silently substituting a zero result.
+
+Addition, subtraction, scalar/axis scaling, owned matvec, dense conversion
+and CSR-times-dense product have explicit shape/cap/work checks. Work units
+are dominant phase estimates, not cumulative instruction/time budgets.
+Every required factor/dense input is validated even if numerically unused.
+The [graph-walk program](extended-graph-walk.md) assembles and normalizes sparse
+transitions, supplies dangling self-loops, transposes and repeatedly calls
+owned matvec; it is a finite walk with no PageRank/convergence claim.
+
+All six registered library gates pass on native Linux x86_64: two semantic
+tests, two allocation-denial tests, one independent numerical model and one
+analytic scale test. The model covers 3,886 cases across 17 modes and two
+backing forms using exact finite-bit comparisons, with separate Fraction
+checks on bounded dyadic arithmetic. The 33 reached operation-allocation
+failures have matched pre-exit releases; this excludes clone input setup
+denials and does not establish every failure schedule or formal leak freedom.
+The 65,536-row tridiagonal has 196,606 entries and exercises assembly,
+transpose, addition, vector/dense products and rejection of a 4,294,967,296-cell
+dense conversion. Its whole-process lifecycle timing is not an isolated
+kernel/compiler benchmark. The real graph application passes all four
+registered tests in 16.31s: model 32, rejection 33, CLI 38 and I/O 10, totaling
+113 process cases. Its module-qualified slice calls work around the retained
+[item-import priority dependency](../tests/fixtures/stdlib_compiler_state/item_import_priority/README.md).
+All ten selected runtime gates are accepted on this finite target profile.
+No broad target, uniform accuracy or formal-proof claim follows.
+Sparse/sparse multiplication, sparse solvers/factorizations and additional
+formats remain separate work.
 
 **Exact remaining iterator counts.**
 
