@@ -91,8 +91,26 @@ fn http_encoder_releases_staging_on_every_allocation_failure() {
         allocations(&std::fs::read_to_string(trace.path()).unwrap())
     };
     let count = execute(None, 0);
-    assert!(count >= 2);
+    assert_eq!(count, 1, "the checked encoder reserves its exact output once");
     for at in 1..=count {
         execute(Some(format!("inject=mmap:error=ENOMEM:when={at}")), 4);
     }
+}
+
+#[test]
+fn http_encoder_preflights_caps_and_uses_one_exact_allocation_per_valid_message() {
+    let exe = executable("tests/fixtures/extended/http_encoder_preflight.lani");
+    let trace = common::TempArtifact::new("laniusc_http", "preflight", None);
+    let output = run(Command::new("strace")
+        .args(["-qq", "-o"])
+        .arg(trace.path())
+        .args(["-e", "trace=mmap,munmap,open,openat,socket,connect"])
+        .arg(exe.path()));
+    assert_eq!(output.status.code(), Some(0), "{output:?}");
+    assert!(output.stdout.is_empty() && output.stderr.is_empty(), "{output:?}");
+    let events = std::fs::read_to_string(trace.path()).unwrap();
+    assert!(!events.contains("socket(") && !events.contains("connect(") && !events.contains("open("), "{events}");
+    // Fifteen successful encodings; cap and invalid-field rejections allocate
+    // nothing. Matching unmaps also check explicit destruction of each owner.
+    assert_eq!(allocations(&events), 15, "{events}");
 }

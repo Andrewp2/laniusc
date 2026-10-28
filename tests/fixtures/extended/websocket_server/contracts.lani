@@ -1,0 +1,418 @@
+// Deterministic server policy and borrowed-transport handshake contracts.
+// No sockets, TLS, entropy, native libraries, or duplicate frame encoder.
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::http;
+import ext::websocket;
+import ext::websocket_stream;
+import ext::websocket_upgrade;
+
+fn bytes(value: str, count: i32) -> core::slice::View<u8> {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn same(left: core::slice::View<u8>, right: core::slice::View<u8>) -> bool {
+    if (left.len()!=right.len()) { return false; }
+    let index: i32=0;
+    while (index<left.len()) {
+        if (left.get(index).unwrap()!=right.get(index).unwrap()) { return false; }
+        index+=1;
+    }
+    return true;
+}
+fn empty() -> core::slice::View<u8> { return bytes("",0); }
+fn request() -> core::slice::View<u8> {
+    return bytes("GET /chat HTTP/1.1\r\nHost: server.example.com\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat, superchat\r\nSec-WebSocket-Extensions: permessage-deflate\r\n\r\n",248);
+}
+fn response() -> core::slice::View<u8> {
+    return bytes("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat\r\n\r\n",159);
+}
+fn accept() -> core::slice::View<u8> { return bytes("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",28); }
+
+// One-shot blocks/interrupts name actual call ordinals. Persistent bad modes
+// deliberately violate the trait count contract or return a native error.
+// Buffers belong to each calling test, and out-of-range reads are impossible.
+struct Script {
+    input: core::slice::View<u8>, position: i32,
+    output: [u8], output_length: i32,
+    read_width: i32, write_width: i32,
+    read_calls: i32, write_calls: i32, flush_calls: i32, flushed: i32,
+    read_block: i32, write_block: i32, flush_block: i32,
+    read_interrupt: i32, write_interrupt: i32, flush_interrupt: i32,
+    read_mode: i32, write_mode: i32, flush_mode: i32,
+    allow_write: bool
+}
+fn script(input: core::slice::View<u8>, output: [u8]) -> Script {
+    return Script { input:input,position:0,output:output,output_length:0,
+        read_width:1024,write_width:1024,
+        read_calls:0,write_calls:0,flush_calls:0,flushed:0,
+        read_block:0,write_block:0,flush_block:0,
+        read_interrupt:0,write_interrupt:0,flush_interrupt:0,
+        read_mode:0,write_mode:0,flush_mode:0,allow_write:false };
+}
+impl Script {
+    fn borrow(&self) -> &Script { return self; }
+    fn calls(&self) -> i32 { return self.read_calls+self.write_calls+self.flush_calls; }
+    fn written(&self) -> core::slice::View<u8> { return core::slice::view(self.output,self.output_length).unwrap(); }
+}
+pub impl core::io::Read for Script {
+    pub fn read(&self, destination:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && core::io::valid_range(offset,count));
+        self.read_calls+=1;
+        if (self.read_calls==self.read_block) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.read_calls==self.read_interrupt) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.read_mode==1) { return core::result::Ok(count+1); }
+        if (self.read_mode==2) { return core::result::Ok(-1); }
+        if (self.read_mode==3) { return core::result::Err(core::io::Error::Host(55)); }
+        let amount:i32=self.input.len()-self.position;
+        if (amount>self.read_width) { amount=self.read_width; }
+        if (amount>count) { amount=count; }
+        let index:i32=0;
+        while (index<amount) { destination[offset+index]=self.input.get(self.position+index).unwrap(); index+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+}
+pub impl core::io::Write for Script {
+    pub fn write(&self, source:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.allow_write && count>0 && core::io::valid_range(offset,count)); self.write_calls+=1;
+        if (self.write_calls==self.write_block) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.write_calls==self.write_interrupt) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.write_mode==1) { return core::result::Ok(count+1); }
+        if (self.write_mode==2) { return core::result::Ok(-1); }
+        if (self.write_mode==3) { return core::result::Err(core::io::Error::Host(55)); }
+        if (self.write_mode==4) { return core::result::Ok(0); }
+        let amount:i32=count; if (amount>self.write_width) { amount=self.write_width; }
+        assert(self.output_length+amount<=4096);
+        let index:i32=0;
+        while (index<amount) { self.output[self.output_length+index]=source[offset+index]; index+=1; }
+        self.output_length+=amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        assert(self.allow_write); self.flush_calls+=1;
+        if (self.flush_calls==self.flush_block) { return core::result::Err(core::io::Error::WouldBlock); }
+        if (self.flush_calls==self.flush_interrupt) { return core::result::Err(core::io::Error::Interrupted); }
+        if (self.flush_mode==1) { return core::result::Ok(1); }
+        if (self.flush_mode==2) { return core::result::Ok(-1); }
+        if (self.flush_mode==3) { return core::result::Err(core::io::Error::Host(55)); }
+        self.flushed+=1; return core::result::Ok(0);
+    }
+}
+
+fn io_code(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::InvalidCount -> 1,
+        core::io::Error::WriteZero -> 2,
+        core::io::Error::UnexpectedEof -> 3,
+        core::io::Error::Host(code) -> 100+code,
+        _ -> 0
+    };
+}
+fn wire_code(error:ext::websocket::Error) -> i32 {
+    return match(error) {
+        ext::websocket::Error::Closed -> 1,
+        ext::websocket::Error::Failed -> 2,
+        ext::websocket::Error::UncleanEof -> 3,
+        ext::websocket::Error::FragmentedEof -> 4,
+        ext::websocket::Error::Protocol(at) -> 5,
+        ext::websocket::Error::InvalidUtf8(at) -> 6,
+        ext::websocket::Error::Handshake -> 7,
+        ext::websocket::Error::Limit(at) -> 8,
+        _ -> 0
+    };
+}
+fn stream_code(failure:ext::websocket_stream::Failure) -> i32 {
+    return match(failure.cause) {
+        ext::websocket_stream::Cause::Bounds -> 1,
+        ext::websocket_stream::Cause::InvalidLimits -> 2,
+        ext::websocket_stream::Cause::Inactive -> 3,
+        ext::websocket_stream::Cause::PendingWrite -> 4,
+        ext::websocket_stream::Cause::BufferLimit -> 5,
+        ext::websocket_stream::Cause::ReadLimit -> 6,
+        ext::websocket_stream::Cause::WriteLimit -> 7,
+        ext::websocket_stream::Cause::IoLimit -> 8,
+        ext::websocket_stream::Cause::UnexpectedEof -> 9,
+        ext::websocket_stream::Cause::Io(error) -> 100+io_code(error),
+        ext::websocket_stream::Cause::Wire(error) -> 1000+wire_code(error),
+        _ -> 0
+    };
+}
+fn upgrade_code(failure:ext::websocket_upgrade::Failure) -> i32 {
+    return match(failure.cause) {
+        ext::websocket_upgrade::Cause::Bounds -> 1,
+        ext::websocket_upgrade::Cause::InvalidLimits -> 2,
+        ext::websocket_upgrade::Cause::Inactive -> 3,
+        ext::websocket_upgrade::Cause::NotReady -> 4,
+        ext::websocket_upgrade::Cause::RequestLimit -> 5,
+        ext::websocket_upgrade::Cause::BufferLimit -> 6,
+        ext::websocket_upgrade::Cause::ReadLimit -> 7,
+        ext::websocket_upgrade::Cause::IoLimit -> 8,
+        ext::websocket_upgrade::Cause::Io(error) -> 100+io_code(error),
+        ext::websocket_upgrade::Cause::Wire(error) -> 1000+wire_code(error),
+        ext::websocket_upgrade::Cause::Http(error) -> 2000,
+        ext::websocket_upgrade::Cause::Stream(error) -> 3000+stream_code(error),
+        _ -> 0
+    };
+}
+fn event_code(event:ext::websocket::Event) -> i32 {
+    return match(event) {
+        ext::websocket::Event::Pending -> 0, ext::websocket::Event::Text -> 1,
+        ext::websocket::Event::Binary -> 2, ext::websocket::Event::Ping -> 9,
+        ext::websocket::Event::Pong -> 10, ext::websocket::Event::Close -> 8
+    };
+}
+
+fn field(name:core::slice::View<u8>, value:core::slice::View<u8>) -> ext::http::Field {
+    return ext::http::Field { raw:empty(),name:name,value:value,offset:0 };
+}
+fn none_fields(fields:[ext::http::Field]) -> core::slice::View<ext::http::Field> {
+    return core::slice::view(fields,0).unwrap();
+}
+fn drive_request(server:&ext::websocket_upgrade::Server<Script>, transport:&Script) {
+    let turns:i32=0;
+    while (!server.has_request() && turns<2000) {
+        let calls:i32=transport.calls(); assert(server.step().is_ok());
+        assert(transport.calls()-calls<=1 && transport.write_calls==0 && transport.flush_calls==0);
+        turns+=1;
+    }
+    assert(turns<2000 && server.has_request() && !server.is_ready());
+    assert(server.stats().io_calls==(transport.calls() as u64));
+}
+fn drive_ready(server:&ext::websocket_upgrade::Server<Script>, transport:&Script) {
+    let turns:i32=0; let reads:i32=transport.read_calls;
+    while (!server.is_ready() && turns<2000) {
+        let calls:i32=transport.calls(); assert(server.step().is_ok());
+        assert(transport.calls()-calls<=1 && transport.read_calls==reads); turns+=1;
+    }
+    assert(turns<2000 && server.is_ready() && server.has_request());
+    assert(server.stats().io_calls==(transport.calls() as u64));
+}
+fn failure(server:&ext::websocket_upgrade::Server<Script>, transport:&Script)
+    -> ext::websocket_upgrade::Failure {
+    let turns:i32=0;
+    while (turns<2000) {
+        let calls:i32=transport.calls(); let result=server.step();
+        assert(transport.calls()-calls<=1);
+        if (result.is_err()) { return result.unwrap_err(); }
+        turns+=1;
+    }
+    assert(false); return server.step().unwrap_err();
+}
+fn sticky(server:&ext::websocket_upgrade::Server<Script>, transport:&Script,
+    saved:ext::websocket_upgrade::Failure) {
+    let calls:i32=transport.calls(); let repeated:ext::websocket_upgrade::Failure=server.step().unwrap_err();
+    assert(upgrade_code(repeated)==upgrade_code(saved) && repeated.completed==saved.completed);
+    assert(repeated.stats.read_bytes==saved.stats.read_bytes && repeated.stats.accepted_bytes==saved.stats.accepted_bytes);
+    assert(repeated.stats.io_calls==saved.stats.io_calls && repeated.stats.work==saved.stats.work);
+    assert(upgrade_code(server.request().unwrap_err())==upgrade_code(saved));
+    assert(upgrade_code(server.into_stream(ext::websocket_stream::default_limits()).unwrap_err())==upgrade_code(saved));
+    let fields:[ext::http::Field;1]=[field(empty(),empty())];
+    assert(upgrade_code(server.accept(none_fields(fields),accept(),core::option::None()).unwrap_err())==upgrade_code(saved));
+    assert(transport.calls()==calls && server.is_active() && !server.has_request() && !server.is_ready());
+}
+
+struct Opaque { marker:i32 }
+impl Opaque { fn borrow(&self) -> &Opaque { return self; } }
+fn constructors() {
+    let opaque:Opaque=Opaque { marker:73 }; let fields:[ext::http::Field;1]=[field(empty(),empty())];
+    let server=ext::websocket_upgrade::server(opaque.borrow(),ext::websocket_upgrade::default_server_limits()).unwrap();
+    assert(server.is_active() && !server.has_request() && !server.is_ready() && server.stats().io_calls==0);
+    assert(upgrade_code(server.request().unwrap_err())==4);
+    assert(upgrade_code(server.accept(none_fields(fields),accept(),core::option::None()).unwrap_err())==4);
+    assert(upgrade_code(server.into_stream(ext::websocket_stream::default_limits()).unwrap_err())==4);
+    assert(server.destroy() && !server.destroy() && opaque.marker==73);
+    assert(upgrade_code(server.request().unwrap_err())==3);
+    assert(upgrade_code(server.accept(none_fields(fields),accept(),core::option::None()).unwrap_err())==3);
+    let mode:i32=0;
+    while (mode<5) {
+        let limits:ext::websocket_upgrade::ServerLimits=ext::websocket_upgrade::default_server_limits();
+        if (mode==0) { limits.buffer_bytes=0; }
+        if (mode==1) { limits.response_bytes=0; }
+        if (mode==2) { limits.response_bytes=67108865; }
+        if (mode==3) { limits.wire.http.head_bytes=limits.buffer_bytes+1; }
+        if (mode==4) { limits.wire.frame_bytes=-1; }
+        assert(upgrade_code(ext::websocket_upgrade::server(opaque.borrow(),limits).unwrap_err())==2); mode+=1;
+    }
+}
+
+fn policy_copy_and_handoff() {
+    let input:[u8;256]=[0;256]; let index:i32=0;
+    while (index<248) { input[index]=request().get(index).unwrap(); index+=1; }
+    let frame:[u8;8]=[129,130,1,2,3,4,110,105]; index=0;
+    while (index<8) { input[248+index]=frame[index]; index+=1; }
+    let output:[u8;4096]=[199;4096]; let transport:Script=script(core::slice::view(input,256).unwrap(),output);
+    transport.read_width=248; transport.write_width=7;
+    transport.write_block=2; transport.write_interrupt=3; transport.flush_block=1; transport.flush_interrupt=2;
+    let server=ext::websocket_upgrade::server(transport.borrow(),ext::websocket_upgrade::default_server_limits()).unwrap();
+    assert(transport.calls()==0); drive_request(server.borrow(),transport.borrow());
+    assert(transport.position==248 && transport.output_length==0 && server.stats().accepted_bytes==0);
+    let parsed:ext::websocket::Request=server.request().unwrap();
+    assert(parsed.protocol_count==2 && same(parsed.key,bytes("dGhlIHNhbXBsZSBub25jZQ==",24)));
+    assert(same(parsed.head.target,bytes("/chat",5)) && ext::websocket::offers(parsed,bytes("chat",4)));
+    index=0; while (index<248) { input[index]=0; index+=1; }
+    let calls:i32=transport.calls(); let repeat:i32=0;
+    while (repeat<3) {
+        assert(match(server.step().unwrap()) { ext::websocket_upgrade::ServerProgress::Request -> true, _ -> false }); repeat+=1;
+    }
+    assert(transport.calls()==calls && same(server.request().unwrap().key,bytes("dGhlIHNhbXBsZSBub25jZQ==",24)));
+    let name:[u8;8]=[88,45,80,111,108,105,99,121]; let value:[u8;3]=[121,101,115];
+    let fields:[ext::http::Field;1]=[field(core::slice::view(name,8).unwrap(),core::slice::view(value,3).unwrap())];
+    let key:[u8;28]=[0;28]; index=0; while (index<28) { key[index]=accept().get(index).unwrap(); index+=1; }
+    let protocol:[u8;4]=[99,104,97,116];
+    assert(server.accept(core::slice::view(fields,1).unwrap(),core::slice::view(key,28).unwrap(),core::option::Some(core::slice::view(protocol,4).unwrap())).unwrap()==174);
+    assert(transport.calls()==calls && transport.output_length==0 && !server.is_ready() && server.has_request());
+    assert(upgrade_code(server.accept(none_fields(fields),accept(),core::option::None()).unwrap_err())==4);
+    index=0; while (index<28) { key[index]=0; index+=1; }
+    index=0; while (index<4) { protocol[index]=0; index+=1; }
+    index=0; while (index<8) { name[index]=0; index+=1; }
+    index=0; while (index<3) { value[index]=0; index+=1; }
+    fields[0]=field(empty(),empty()); transport.allow_write=true;
+    let need_write:i32=0; let turns:i32=0;
+    while (!server.is_ready() && turns<100) {
+        let before:i32=transport.calls(); let progress=server.step().unwrap();
+        if (match(progress) { ext::websocket_upgrade::ServerProgress::NeedWrite -> true, _ -> false }) { need_write+=1; }
+        assert(transport.calls()-before<=1 && transport.read_calls==1); turns+=1;
+    }
+    assert(server.is_ready() && need_write==2 && transport.flushed==1);
+    let expected:core::slice::View<u8> =bytes("HTTP/1.1 101 Switching Protocols\r\nX-Policy: yes\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\nSec-WebSocket-Protocol: chat\r\n\r\n",174);
+    assert(same(transport.written(),expected) && output[174]==199 && server.stats().accepted_bytes==174);
+    assert(same(server.request().unwrap().key,bytes("dGhlIHNhbXBsZSBub25jZQ==",24)));
+    let before:i32=transport.calls();
+    assert(match(server.step().unwrap()) { ext::websocket_upgrade::ServerProgress::Ready -> true, _ -> false });
+    assert(transport.calls()==before);
+    let invalid:ext::websocket_stream::Limits=ext::websocket_stream::default_limits(); invalid.buffer_bytes=13;
+    assert(upgrade_code(server.into_stream(invalid).unwrap_err())==3002 && server.is_ready());
+    assert(server.request().unwrap().protocol_count==2 && transport.calls()==before);
+    let stream=server.into_stream(ext::websocket_stream::default_limits()).unwrap();
+    assert(!server.is_active() && !server.destroy() && upgrade_code(server.request().unwrap_err())==3);
+    // Every borrowed Request view expires at conversion. Read only stream data.
+    let received:ext::websocket::Step=stream.receive().unwrap().unwrap();
+    assert(event_code(received.event)==1 && same(received.payload,bytes("ok",2)));
+    assert(stream.stats().read_bytes==8 && transport.position==256);
+    let unused:[u8;4]=[0;4]; assert(stream.send(true,10,empty(),unused).unwrap()==2 && stream.flush().unwrap());
+    assert(output[174]==138 && output[175]==0 && transport.output_length==176);
+    let done:i32=transport.calls(); assert(stream.destroy() && !stream.destroy() && transport.calls()==done);
+}
+
+fn one_byte_request_and_policy_retry() {
+    let output:[u8;4096]=[199;4096]; let transport:Script=script(request(),output);
+    transport.read_width=1; transport.read_interrupt=2; transport.read_block=3;
+    let limits:ext::websocket_upgrade::ServerLimits=ext::websocket_upgrade::default_server_limits();
+    limits.work=512; limits.response_bytes=159;
+    let server=ext::websocket_upgrade::server(transport.borrow(),limits).unwrap();
+    let need_read:i32=0; let turns:i32=0;
+    while (!server.has_request() && turns<300) {
+        let before:i32=transport.calls(); let progress=server.step().unwrap();
+        if (match(progress) { ext::websocket_upgrade::ServerProgress::NeedRead -> true, _ -> false }) { need_read+=1; }
+        assert(transport.calls()-before<=1); turns+=1;
+    }
+    assert(server.has_request() && need_read==1 && transport.read_calls==250 && transport.write_calls==0);
+    assert(server.stats().read_bytes==248 && server.stats().work>0 && server.stats().work<=512);
+    let fields:[ext::http::Field;1]=[field(bytes("Upgrade",7),bytes("bad",3))]; let calls:i32=transport.calls();
+    assert(upgrade_code(server.accept(core::slice::view(fields,1).unwrap(),accept(),core::option::None()).unwrap_err())==1007);
+    assert(upgrade_code(server.accept(none_fields(fields),bytes("bad",3),core::option::None()).unwrap_err())==1007);
+    assert(upgrade_code(server.accept(none_fields(fields),accept(),core::option::Some(bytes("Chat",4))).unwrap_err())==1007);
+    assert(server.has_request() && !server.is_ready() && transport.calls()==calls);
+    assert(server.accept(none_fields(fields),accept(),core::option::Some(bytes("chat",4))).unwrap()==159);
+    assert(transport.calls()==calls); transport.allow_write=true;
+    drive_ready(server.borrow(),transport.borrow());
+    assert(same(transport.written(),response()) && server.stats().accepted_bytes==159);
+    let done:i32=transport.calls(); assert(server.destroy() && !server.destroy() && transport.calls()==done);
+}
+
+fn response_cap_boundaries() {
+    let delta:i32=0;
+    while (delta<2) {
+        let output:[u8;4096]=[199;4096]; let transport:Script=script(request(),output);
+        let limits:ext::websocket_upgrade::ServerLimits=ext::websocket_upgrade::default_server_limits(); limits.response_bytes=158+delta;
+        let server=ext::websocket_upgrade::server(transport.borrow(),limits).unwrap(); drive_request(server.borrow(),transport.borrow());
+        let fields:[ext::http::Field;1]=[field(empty(),empty())]; let calls:i32=transport.calls();
+        let selected=server.accept(none_fields(fields),accept(),core::option::Some(bytes("chat",4)));
+        if (delta==0) {
+            assert(selected.is_err() && upgrade_code(selected.unwrap_err())==1008);
+            assert(server.has_request() && !server.is_ready() && transport.calls()==calls);
+            // Policy can choose no protocol and stage the smaller valid head.
+            assert(server.accept(none_fields(fields),accept(),core::option::None()).unwrap()==129);
+        } else { assert(selected.unwrap()==159); }
+        assert(transport.calls()==calls && transport.output_length==0); transport.allow_write=true;
+        drive_ready(server.borrow(),transport.borrow()); assert(transport.output_length==129+30*delta);
+        let before:i32=transport.calls(); assert(server.destroy() && !server.destroy() && transport.calls()==before); delta+=1;
+    }
+}
+
+fn invalid_request_and_caps() {
+    let mode:i32=0;
+    while (mode<6) {
+        let input:[u8;249]=[0;249]; let index:i32=0;
+        while (index<248) { input[index]=request().get(index).unwrap(); index+=1; }
+        let count:i32=248; let expected:i32=2000; let completed:i32=248;
+        if (mode==0) { input[0]=0; }
+        if (mode==1) { count=247; completed=247; }
+        if (mode==2) { count=249; input[248]=129; expected=1007; completed=249; }
+        let output:[u8;4096]=[199;4096]; let transport:Script=script(core::slice::view(input,count).unwrap(),output);
+        let limits:ext::websocket_upgrade::ServerLimits=ext::websocket_upgrade::default_server_limits();
+        if (mode==3) { limits.read_bytes=247; expected=7; completed=0; }
+        if (mode==4) { limits.work=1; expected=2000; }
+        if (mode==5) { limits.io_calls=1; transport.read_width=7; expected=8; completed=7; }
+        let server=ext::websocket_upgrade::server(transport.borrow(),limits).unwrap();
+        let saved:ext::websocket_upgrade::Failure=failure(server.borrow(),transport.borrow());
+        assert(upgrade_code(saved)==expected && saved.completed==completed && transport.output_length==0);
+        if (mode==3) { assert(saved.stats.read_bytes==247 && transport.position==247); }
+        if (mode==4) { assert(saved.stats.work<=1); }
+        sticky(server.borrow(),transport.borrow(),saved); assert(server.destroy()); mode+=1;
+    }
+}
+
+fn io_failures_and_write_quota() {
+    let phase:i32=0;
+    while (phase<3) {
+        let mode:i32=1; let maximum:i32=3; if (phase==1) { maximum=4; }
+        while (mode<=maximum) {
+            let output:[u8;4096]=[199;4096]; let transport:Script=script(request(),output);
+            let server=ext::websocket_upgrade::server(transport.borrow(),ext::websocket_upgrade::default_server_limits()).unwrap();
+            if (phase==0) { transport.read_mode=mode; }
+            else {
+                drive_request(server.borrow(),transport.borrow()); let fields:[ext::http::Field;1]=[field(empty(),empty())];
+                assert(server.accept(none_fields(fields),accept(),core::option::Some(bytes("chat",4))).unwrap()==159);
+                transport.allow_write=true;
+                if (phase==1) { transport.write_mode=mode; } else { transport.flush_mode=mode; }
+            }
+            let saved:ext::websocket_upgrade::Failure=failure(server.borrow(),transport.borrow());
+            let expected:i32=101; if (mode==3) { expected=255; } if (mode==4) { expected=102; }
+            assert(upgrade_code(saved)==expected);
+            if (phase<2) { assert(saved.completed==0 && saved.stats.accepted_bytes==0); }
+            else { assert(saved.completed==159 && saved.stats.accepted_bytes==159); }
+            sticky(server.borrow(),transport.borrow(),saved); let calls:i32=transport.calls();
+            assert(server.destroy() && !server.destroy() && transport.calls()==calls); mode+=1;
+        }
+        phase+=1;
+    }
+    let quota:i32=0;
+    while (quota<4) {
+        let output:[u8;4096]=[199;4096]; let transport:Script=script(request(),output);
+        let limits:ext::websocket_upgrade::ServerLimits=ext::websocket_upgrade::default_server_limits(); limits.io_calls=quota as u64;
+        let server=ext::websocket_upgrade::server(transport.borrow(),limits).unwrap();
+        if (quota>0) {
+            drive_request(server.borrow(),transport.borrow()); let fields:[ext::http::Field;1]=[field(empty(),empty())];
+            assert(server.accept(none_fields(fields),accept(),core::option::Some(bytes("chat",4))).unwrap()==159);
+            transport.allow_write=true;
+            if (quota==2) { transport.write_width=7; }
+            if (quota==3) { transport.flush_interrupt=1; }
+        }
+        let saved:ext::websocket_upgrade::Failure=failure(server.borrow(),transport.borrow());
+        assert(upgrade_code(saved)==8 && saved.stats.io_calls==(quota as u64) && transport.calls()==quota);
+        if (quota<2) { assert(saved.completed==0); }
+        if (quota==2) { assert(saved.completed==7 && saved.stats.accepted_bytes==7); }
+        if (quota==3) { assert(saved.completed==159 && saved.stats.accepted_bytes==159); }
+        sticky(server.borrow(),transport.borrow(),saved); assert(server.destroy()); quota+=1;
+    }
+}
+
+fn main() -> i32 {
+    constructors(); policy_copy_and_handoff(); one_byte_request_and_policy_retry();
+    response_cap_boundaries(); invalid_request_and_caps(); io_failures_and_write_quota();
+    return 0;
+}

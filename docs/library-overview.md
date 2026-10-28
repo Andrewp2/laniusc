@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current connected WebSocket increment
+The full library goal remains open. The current WebSocket server increment
+adds a [borrowed server handshake and caller policy pause](extended-websocket-upgrade.md#server-api-and-policy-boundary),
+a [real one-client TCP/TLS echo service](extended-websocket-echo.md) and
+[bounded HTTP encoder preflight](extended-http.md#executable-evidence).
+Separate raw server/client contract processes pass six/eleven scenario functions;
+all eight echo groups and one real Lanius-client integration pass. Three focused
+HTTP Rust runtime tests also pass. The two new server/echo Rust drivers have
+build admission only. Native evidence remains Linux x86_64/glibc/OpenSSL 3;
+automatic lifetime enforcement, full failure campaigns and the full library
+scope remain open. The preceding connected WebSocket increment
 adds a [borrowed client handshake](extended-websocket-upgrade.md),
 [bounded frame stream](extended-websocket-stream.md) and a real
 [one-message TCP/verified-TLS client](extended-websocket-once.md). A raw scripted
@@ -79,6 +88,65 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**Borrowed WebSocket server and bounded echo service.**
+
+[`websocket_upgrade::Server<T>`](extended-websocket-upgrade.md#server-api-and-policy-boundary)
+receives and validates one HTTP upgrade head, then pauses at Request without
+response writes. Caller policy inspects borrowed target/Origin/protocol/key
+metadata and computes Accept through an established provider. Explicit accept
+copies one canonical response; partial writes and inner flush precede Ready.
+Conversion creates the server framing role over the same exclusively borrowed
+transport. Captured bytes after the request head are rejected. Destruction
+frees storage without closing the caller's transport. This extends the module;
+the original 15,585-byte client prefix is unchanged.
+
+The [echo service](extended-websocket-echo.md) listens once on a numeric IPv4/IPv6
+endpoint, publishes the bound endpoint and handles one client. It checks the
+exact `/echo` target and an optional exact Origin before 101, with canonical
+400/403/404 rejections. It echoes one completed message and mirrors a normal
+Close exchange. TLS uses configured OpenSSL credentials and explicitly
+unauthenticated clients; Origin does not authenticate a peer. One cooperative
+five-second deadline includes credentials, listen/accept, upgrade, frames and
+cleanup. Shared HTTP-server Protocol adoption and concurrent scheduling are
+separate integration work.
+
+The [shared HTTP encoder](extended-http.md) now checks bounded serialized size
+and field syntax before reserving one exact head-plus-body output capacity.
+The canonical parser remains the final start-line/head authority. This does
+not promise allocation-free rejection for every malformed input.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Server contract | Six scenario functions in one raw process: policy pause/copying, partial I/O, blocked flush, exact response caps, retryable acceptance and typed/sticky failures; converted framing uses Role::Server |
+| Current client regression | Original eleven scenario functions pass in one raw process against the appended server module and changed HTTP encoder; old full client-app groups were not rerun |
+| HTTP encoder | Three actual Rust runtime tests pass in 12.56s after a 2.13s build, including fifteen exact-capacity valid outputs, selected allocation-free preflight rejections and denial of the one reached output allocation |
+| Echo plain/handshake/rejection/CLI | Separate direct groups pass eleven, twelve, ten and fourteen cases respectively |
+| Echo TLS/credentials/deadline | Separate direct groups pass four, three and one cases respectively; TLS covers versions 1.2/1.3 and local close-notify, and bad credentials fail before listening |
+| Echo readiness output | One separate closed-stdout case returns status 5 while the listener is owned; this does not establish leak freedom |
+| Real integration | One additional native Lanius one-message client completes an exchange with this server |
+| Driver admission | The final server/echo Rust-driver rebuild passes `--no-run` in 1.43s after adding the I/O case; this is separate from the three executed HTTP Rust tests |
+
+Current sources are upgrade `cae29596…`, HTTP `5d495716…`, server fixture
+`44292f11…` and echo app `dcdef14c…`. Raw server/client executable identities
+are `79996579…`/`cb811239…`; echo/current integration-client ELFs are
+`44d1b314…`/`798f00e9…`. Logs under `target/stdlib-work/` are
+`websocket-server-contracts-{compile,native}-first.log`,
+`websocket-transport-current-{compile,native}-first.log`,
+`http-encoder-preflight-module-first.log`,
+`websocket-echo-plain-native-first.log`,
+`websocket-echo-{handshake,rejection,cli,tls,credentials,deadline}-native-corrected-oracle.log`,
+`websocket-echo-io-native-first.log`,
+`websocket-echo-integration-native-first.log` and
+`websocket-server-driver-build-io.log`. The app guide records the corrected
+duplicate-Origin and TLS shutdown oracle expectations and precise prior scope.
+
+These finite passes establish the fresh borrowed server transport and one-client
+example. Persistent/concurrent service, existing HTTP-server/scheduler adoption,
+ws/wss URL policy, application authentication, allocation-failure/leak campaigns,
+all generic/TLS schedules, formal proofs, automatic destruction/borrow checking
+and other targets remain open. Blocking host/credential calls cannot be
+interrupted by the cooperative deadline. Sensitive operations remain in OpenSSL.
+
 **Borrowed WebSocket upgrade and frame transport.**
 
 [`websocket_upgrade::Client<T>`](extended-websocket-upgrade.md) owns immutable
@@ -127,7 +195,7 @@ modules did not change for that repair.
 Target evidence is CPU execution on Linux x86_64. The combined app links
 libssl.so.3, libcrypto.so.3 and libc.so.6 in both modes; its successful TLS
 profile supplies no device execution claim. Allocation-failure injection,
-source/fd leak campaigns, every generic transport/TLS schedule, server-upgrade
+source/fd leak campaigns, every generic transport/TLS schedule, broader server
 orchestration, ws/wss URL policy, origin/authentication policy and other host
 platforms remain open. Cooperative deadlines cannot interrupt blocking host
 calls. Formal proofs, borrow checking and automatic destruction remain future
@@ -161,8 +229,8 @@ optional offered-protocol selection. It supplies no connected service.
 
 The wire guide records exact source/executable identities and logs. Historical
 frame/request suites retain their earlier source scope and were not rerun.
-The borrowed client transport/unread-byte composition now has the separate
-acceptance above. Server upgrade orchestration, broader origin/routing/
+The borrowed client and server compositions now have their separate
+acceptance above. Shared HTTP-server/scheduler adoption, broader origin/routing/
 authentication policy, formal proofs, automatic ownership and other host/device
 targets remain open; nonce/mask entropy and deadlines are explicit policies in
 the one-message client rather than effects of the pure wire API.

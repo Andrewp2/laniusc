@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Generic client opening handshake over a caller-owned borrowed Read/Write transport. Admits/copies the complete validated request and provider-computed canonical expected Accept before inner I/O. Each step performs at most one read/write/flush attempt, preserves accepted request bytes, and uses the canonical HTTP cursor plus WebSocket response validator. Response/head/prefix views borrow frozen owned backing. into_stream transactionally copies every coalesced frame byte to websocket_stream over the same transport; a failed conversion leaves Ready usable, success retires handshake storage. Fatal failures replay without new I/O; destroy frees only memory. One raw Linux x86_64 process executes eleven shared scripted scenarios; the final app separately passes numeric TCP and verified TLS groups with explicit entropy/deadline/cleanup policy. Allocation backing remains an effect; direct socket/TLS/clock/digest operations belong to callers. Server upgrade, ws/wss URL policy, broader schedules/targets, source allocation/leak campaigns, automatic ownership and formal proofs remain open.
+Generic client and server opening handshakes over a caller-owned exclusive Read/Write transport. Client admission copies request and provider-computed expected Accept; each step makes at most one inner read/write/flush attempt. Client conversion copies coalesced frame bytes transactionally into websocket_stream. Server receives/validates one request, rejects already captured trailing bytes, then pauses at Request without writes for caller routing/origin/authentication/provider policy. accept stages one canonical owned response; partial writes and inner flush precede Ready and conversion to Role::Server. Construction/inspection/conversion/destruction retain their documented trait/effect bounds; destroy releases memory without closing inner. Six server scenario functions execute in one raw Linux x86_64 process; the original eleven-function client fixture also passes against the updated module/shared HTTP encoder. The one-client TCP/OpenSSL echo program passes seven functional groups, one additional closed-readiness-stdout case with a live listener and one Lanius-client integration. The output-failure case establishes its status contract without a leak-freedom claim. Client source prefix remains byte-identical; old application groups retain historical scope. Shared HTTP-server/scheduler upgrade adoption, ws/wss URL policy, broader schedules/targets, source allocation/leak campaigns, automatic ownership and formal proofs remain open.
 
 ## Contract and evidence guides
 
@@ -16,8 +16,9 @@ Generic client opening handshake over a caller-owned borrowed Read/Write transpo
 - [extended-websocket-stream](../../extended-websocket-stream.md)
 - [extended-websocket-once](../../extended-websocket-once.md)
 - [extended-websocket](../../extended-websocket.md)
+- [extended-websocket-echo](../../extended-websocket-echo.md)
 
-Declaration counts: enum: 2; field: 24; function: 2; impl: 1; method: 8; struct: 4; variant: 17.
+Declaration counts: enum: 3; field: 40; function: 4; impl: 2; method: 18; struct: 6; variant: 22.
 
 ## Declared imports
 
@@ -414,6 +415,198 @@ fault: core::option::Option<Failure>
 response: core::option::Option<ext::websocket::Response>
 ```
 
+### struct: ServerLimits
+
+[Source line 294](../../../extended/ext/websocket_upgrade.lani#L294)
+
+```lanius
+pub struct ServerLimits
+```
+
+#### field: wire
+
+[Source line 295](../../../extended/ext/websocket_upgrade.lani#L295)
+
+```lanius
+wire: ext::websocket::Limits
+```
+
+#### field: buffer_bytes
+
+[Source line 296](../../../extended/ext/websocket_upgrade.lani#L296)
+
+```lanius
+buffer_bytes: i32
+```
+
+#### field: response_bytes
+
+[Source line 297](../../../extended/ext/websocket_upgrade.lani#L297)
+
+```lanius
+response_bytes: i32
+```
+
+#### field: io_calls
+
+[Source line 298](../../../extended/ext/websocket_upgrade.lani#L298)
+
+```lanius
+io_calls: u64
+```
+
+#### field: read_bytes
+
+[Source line 299](../../../extended/ext/websocket_upgrade.lani#L299)
+
+```lanius
+read_bytes: u64
+```
+
+#### field: work
+
+[Source line 300](../../../extended/ext/websocket_upgrade.lani#L300)
+
+```lanius
+work: u64
+```
+
+### enum: ServerProgress
+
+[Source line 302](../../../extended/ext/websocket_upgrade.lani#L302)
+
+```lanius
+pub enum ServerProgress
+```
+
+#### variant: Again
+
+[Source line 302](../../../extended/ext/websocket_upgrade.lani#L302)
+
+```lanius
+Again
+```
+
+#### variant: NeedRead
+
+[Source line 302](../../../extended/ext/websocket_upgrade.lani#L302)
+
+```lanius
+NeedRead
+```
+
+#### variant: NeedWrite
+
+[Source line 302](../../../extended/ext/websocket_upgrade.lani#L302)
+
+```lanius
+NeedWrite
+```
+
+#### variant: Request
+
+[Source line 302](../../../extended/ext/websocket_upgrade.lani#L302)
+
+```lanius
+Request
+```
+
+#### variant: Ready
+
+[Source line 302](../../../extended/ext/websocket_upgrade.lani#L302)
+
+```lanius
+Ready
+```
+
+### struct: Server
+
+[Source line 304](../../../extended/ext/websocket_upgrade.lani#L304)
+
+```lanius
+pub struct Server<T>
+```
+
+#### field: inner
+
+[Source line 305](../../../extended/ext/websocket_upgrade.lani#L305)
+
+```lanius
+inner: &T
+```
+
+#### field: limits
+
+[Source line 306](../../../extended/ext/websocket_upgrade.lani#L306)
+
+```lanius
+limits: ServerLimits
+```
+
+#### field: progress
+
+[Source line 307](../../../extended/ext/websocket_upgrade.lani#L307)
+
+```lanius
+progress: Stats
+```
+
+#### field: head
+
+[Source line 308](../../../extended/ext/websocket_upgrade.lani#L308)
+
+```lanius
+head: alloc::vec::Vec<u8>
+```
+
+#### field: output
+
+[Source line 309](../../../extended/ext/websocket_upgrade.lani#L309)
+
+```lanius
+output: alloc::vec::Vec<u8>
+```
+
+#### field: cursor
+
+[Source line 310](../../../extended/ext/websocket_upgrade.lani#L310)
+
+```lanius
+cursor: ext::http::Cursor
+```
+
+#### field: phase
+
+[Source line 311](../../../extended/ext/websocket_upgrade.lani#L311)
+
+```lanius
+phase: ServerPhase
+```
+
+#### field: active
+
+[Source line 312](../../../extended/ext/websocket_upgrade.lani#L312)
+
+```lanius
+active: bool
+```
+
+#### field: fault
+
+[Source line 313](../../../extended/ext/websocket_upgrade.lani#L313)
+
+```lanius
+fault: core::option::Option<Failure>
+```
+
+#### field: request_info
+
+[Source line 314](../../../extended/ext/websocket_upgrade.lani#L314)
+
+```lanius
+request_info: core::option::Option<ext::websocket::Request>
+```
+
 ## Free functions and extern declarations
 
 ### function: default_limits
@@ -437,6 +630,27 @@ pub fn client<T>(inner: &T, request: core::slice::View<u8>,
 ```
 
 Requires a complete validated request without trailing bytes and the canonical 28-byte expected Accept computed for its original key. Copies both inputs before success and makes no transport call. The caller retains one live exclusive transport; memory-only destruction and conversion need no I/O trait bound.
+
+### function: default_server_limits
+
+[Source line 317](../../../extended/ext/websocket_upgrade.lani#L317)
+
+```lanius
+pub fn default_server_limits() -> ServerLimits
+```
+
+Wire defaults plus 65536 bytes each for retained request, staged response and read budget, 65536 I/O attempts and 8388608 HTTP cursor work units. Validates response/buffer bounds and nested HTTP/wire limits before publishing the server.
+
+### function: server
+
+[Source line 333](../../../extended/ext/websocket_upgrade.lani#L333)
+
+```lanius
+pub fn server<T>(inner: &T, limits: ServerLimits)
+    -> core::result::Result<Server<T>,Failure>
+```
+
+Creates an empty borrowed server handshake without allocation or transport I/O. Reads one canonical request before a no-write Request policy pause; the caller supplies established-provider Accept and optional offered protocol through accept. Ready requires all response bytes and inner flush; conversion uses Role::Server over the same caller-owned transport.
 
 ## Implementation blocks and public methods
 
@@ -509,6 +723,98 @@ pub fn into_stream(&self, limits: ext::websocket_stream::Limits)
 #### method: destroy
 
 [Source line 287](../../../extended/ext/websocket_upgrade.lani#L287)
+
+```lanius
+pub fn destroy(&self) -> bool
+```
+
+### impl at line 347
+
+[Source line 347](../../../extended/ext/websocket_upgrade.lani#L347)
+
+```lanius
+pub impl<T> Server<T>
+```
+
+#### method: borrow
+
+[Source line 348](../../../extended/ext/websocket_upgrade.lani#L348)
+
+```lanius
+pub fn borrow(&self) -> &Server<T>
+```
+
+#### method: stats
+
+[Source line 349](../../../extended/ext/websocket_upgrade.lani#L349)
+
+```lanius
+pub fn stats(&self) -> Stats
+```
+
+#### method: is_active
+
+[Source line 350](../../../extended/ext/websocket_upgrade.lani#L350)
+
+```lanius
+pub fn is_active(&self) -> bool
+```
+
+#### method: has_request
+
+[Source line 351](../../../extended/ext/websocket_upgrade.lani#L351)
+
+```lanius
+pub fn has_request(&self) -> bool
+```
+
+#### method: is_ready
+
+[Source line 354](../../../extended/ext/websocket_upgrade.lani#L354)
+
+```lanius
+pub fn is_ready(&self) -> bool
+```
+
+#### method: request
+
+[Source line 399](../../../extended/ext/websocket_upgrade.lani#L399)
+
+```lanius
+pub fn request(&self) -> core::result::Result<ext::websocket::Request,Failure>
+```
+
+#### method: accept
+
+[Source line 407](../../../extended/ext/websocket_upgrade.lani#L407)
+
+```lanius
+pub fn accept(&self, fields: core::slice::View<ext::http::Field>,
+        accept: core::slice::View<u8>, protocol: core::option::Option<core::slice::View<u8>>)
+        -> core::result::Result<i32,Failure>
+```
+
+#### method: step
+
+[Source line 420](../../../extended/ext/websocket_upgrade.lani#L420)
+
+```lanius
+pub fn step(&self) -> core::result::Result<ServerProgress,Failure>
+        where T: core::io::Read, T: core::io::Write
+```
+
+#### method: into_stream
+
+[Source line 505](../../../extended/ext/websocket_upgrade.lani#L505)
+
+```lanius
+pub fn into_stream(&self, limits: ext::websocket_stream::Limits)
+        -> core::result::Result<ext::websocket_stream::Stream<T>,Failure>
+```
+
+#### method: destroy
+
+[Source line 514](../../../extended/ext/websocket_upgrade.lani#L514)
 
 ```lanius
 pub fn destroy(&self) -> bool

@@ -8,6 +8,8 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Canonical bounded HTTP wire parser/encoder. Encoders preflight logical ranges, field syntax and serialized head/body size before reserving one exact output Vec; the unchanged parser remains the final start-line/head authority. Current three Rust runtime tests pass in 12.56s on Linux x86_64 CPU output, after a 2.13s build. Fifteen valid focused outputs have fifteen exact-capacity matched allocation/release pairs; selected cap/field preflight rejections allocate no output. The allocation-failure test reaches the sole output allocation and denies it with typed cleanup. These finite gates do not establish arbitrary-size/overflow execution, every caller OOM path, another target or formal memory safety.
+
 ## Contract and evidence guides
 
 - [extended-http](../../extended-http.md)
@@ -812,19 +814,23 @@ pub fn write_head_into(value: Head, destination: core::slice::View<u8>, limits: 
 
 ### function: encode_request
 
-[Source line 417](../../../extended/ext/http.lani#L417)
+[Source line 439](../../../extended/ext/http.lani#L439)
 
 ```lanius
 pub fn encode_request(start_line: core::slice::View<u8>, fields: core::slice::View<Field>, body: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
 ```
 
+Checks bounded fields and serialized size, reserves the exact head-plus-body capacity, stages one canonical request and returns a single manual Vec owner. Final parser validation and release on error remain shared with response encoding.
+
 ### function: encode_response
 
-[Source line 418](../../../extended/ext/http.lani#L418)
+[Source line 440](../../../extended/ext/http.lani#L440)
 
 ```lanius
 pub fn encode_response(start_line: core::slice::View<u8>, method: core::slice::View<u8>, fields: core::slice::View<Field>, body: core::slice::View<u8>, limits: Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error>
 ```
+
+Uses the same bounded preflight/exact-capacity encoder and canonical parser, preserving method/status no-body and prohibited framing policy. Rejecting selected fields/caps precedes output allocation; this does not claim every malformed start line is rejected without allocation.
 
 ## Implementation blocks and public methods
 

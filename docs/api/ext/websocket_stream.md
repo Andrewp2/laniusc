@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Bounded frame/message I/O adapter over the canonical WebSocket wire engine and an exclusively borrowed generic transport. Owns allocator-backed input/output/wire storage; imports no socket/TLS/clock/entropy service. Construction copies prefetch before publication without inner I/O; receive returns None only on actual WouldBlock and retains unread frame bytes. One outgoing frame preserves its accepted suffix and required inner flush phase; sent/local-Close counters advance only after flush. Transport/quota terminal failures are sticky, while local queue/memory admission retains documented retry behavior. Destroy discards storage without flushing, closing inner or sending Close. One raw Linux x86_64 contract process executes eleven scenario functions shared with the upgrade module; the final one-message TCP/OpenSSL app has separate plain9/rejection12/CLI17/I/O3/TLS5 direct receipts. These finite gates leave other transport compositions, source allocation/leak campaigns, device execution, borrow checking and formal proofs unverified.
+Bounded frame/message I/O adapter over the canonical WebSocket wire engine and an exclusively borrowed generic transport. Owns allocator-backed input/output/wire storage; imports no socket/TLS/clock/entropy service. Construction copies prefetch before publication without inner I/O; receive returns None only on actual WouldBlock and retains unread frame bytes. One outgoing frame preserves its accepted suffix and required inner flush phase; the sent-frame counter and local-Close flag advance only after flush. Transport/quota terminal failures are sticky, while local queue/memory admission retains documented retry behavior. Destroy discards storage without flushing, closing inner or sending Close. One raw Linux x86_64 contract process executes eleven scenario functions shared with the upgrade module; the final one-message TCP/OpenSSL app has separate plain9/rejection12/CLI17/I/O3/TLS5 direct receipts. These finite gates leave other transport compositions, source allocation/leak campaigns, device execution, borrow checking and formal proofs unverified. The appended server upgrade converts to Role::Server over the same borrowed transport. Current echo-server groups separately pass plain11/handshake12/rejection10/CLI14/TLS4/credentials3/deadline1, plus one native Lanius-client integration. Earlier client-app groups retain their source/ELF scope; their eleven-scenario scripted fixture also passes against the updated upgrade/HTTP modules.
 
 ## Contract and evidence guides
 
@@ -16,6 +16,7 @@ Bounded frame/message I/O adapter over the canonical WebSocket wire engine and a
 - [extended-websocket-upgrade](../../extended-websocket-upgrade.md)
 - [extended-websocket-once](../../extended-websocket-once.md)
 - [extended-websocket](../../extended-websocket.md)
+- [extended-websocket-echo](../../extended-websocket-echo.md)
 
 Declaration counts: enum: 1; field: 27; function: 2; impl: 1; method: 12; struct: 4; variant: 12.
 
