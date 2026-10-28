@@ -1,4 +1,4 @@
-// RFC 6455 request syntax and extension-free frames/messages.
+// RFC 6455 opening-handshake syntax and extension-free frames/messages.
 // Portable wire processing only. No sockets, TLS, clocks or random generator.
 module ext::websocket;
 import alloc::vec;
@@ -16,6 +16,8 @@ pub struct Limits { frame_bytes: i32, message_bytes: i32, fragments: i32, protoc
 pub struct Frame { fin: bool, opcode: i32, masked: bool, mask: [u8;4], payload: core::slice::View<u8>, consumed: i32 }
 pub struct Step { consumed: i32, event: Event, payload: core::slice::View<u8>, close_code: i32 }
 pub struct Request { head: ext::http::Head, key: core::slice::View<u8>, protocol_count: i32 }
+// The response head and any already-received frame bytes borrow the input.
+pub struct Response { head: ext::http::Head, protocol: core::option::Option<core::slice::View<u8>>, remaining: core::slice::View<u8> }
 struct Flow { opcode: i32, length: i32, fragments: i32, need: i32, low: u8, high: u8 }
 pub struct Connection { role: Role, limits: Limits, incoming: Flow, outgoing: Flow, message: alloc::vec::Vec<u8>, control: alloc::vec::Vec<u8>, received_close: bool, sent_close: bool, failed: bool }
 pub fn default_limits() -> Limits { return Limits { frame_bytes: 16777216, message_bytes: 16777216, fragments: 65536, protocols: 32, http: ext::http::default_limits() }; }
@@ -241,4 +243,70 @@ pub fn encode_request(start_line:core::slice::View<u8>, fields:core::slice::View
     if(!ok) { headers.destroy(); return core::result::Err(Error::AllocationFailed); }
     let encoded=ext::http::encode_request(start_line,headers.as_view(),literal("",0),limits.http); headers.destroy(); if(core::result::is_err(encoded)) { return core::result::Err(http_error(core::result::unwrap_err(encoded))); }
     let owner:alloc::vec::Vec<u8> =core::result::unwrap(encoded); let validated=validate_request(owner.as_view(),limits); if(core::result::is_err(validated)) { let error:Error=core::result::unwrap_err(validated); owner.destroy(); return core::result::Err(error); } return core::result::Ok(owner);
+}
+
+fn valid_accept(value:core::slice::View<u8>) -> bool {
+    if (!valid(value) || value.len()!=28) { return false; }
+    let copied:[u8;28]=[0;28]; let i:i32=0;
+    while (i<28) { copied[i]=byte(value,i); i+=1; }
+    return core::base64::decoded_len_or(copied,28,-1)==20;
+}
+fn single_protocol(value:core::slice::View<u8>) -> bool {
+    if (!valid(value) || value.is_empty()) { return false; }
+    let i:i32=0; while (i<value.len()) { if (!token(byte(value,i))) { return false; } i+=1; }
+    return true;
+}
+
+// Request must come from validate_request and remain unchanged/live. The caller
+// supplies the expected Accept computed for request.key by an established
+// digest provider; this portable function performs no cryptographic operation.
+// Only the HTTP head is consumed. Preserve remaining when handing off transport.
+pub fn validate_response(input:core::slice::View<u8>, request:Request, expected_accept:core::slice::View<u8>, limits:Limits) -> core::result::Result<Response,Error> {
+    if (!valid(input) || !valid(expected_accept) || !valid_limits(limits)) { return core::result::Err(Error::Bounds); }
+    if (!valid_accept(expected_accept)) { return core::result::Err(Error::Handshake); }
+    if (request.protocol_count>limits.protocols) { return core::result::Err(Error::Limit(0)); }
+    let parsed=ext::http::parse_response_head(input,literal("GET",3),limits.http);
+    if (parsed.is_err()) { return core::result::Err(http_error(parsed.unwrap_err())); }
+    let head:ext::http::Head=parsed.unwrap();
+    if (head.version!=11 || head.status!=101) { return core::result::Err(Error::Handshake); }
+    let upgrade=required(head,"upgrade",7); let accept=required(head,"sec-websocket-accept",20);
+    if (upgrade.is_err() || accept.is_err()) { return core::result::Err(Error::Handshake); }
+    if (!named(upgrade.unwrap(),"websocket",9) || !exact(accept.unwrap(),expected_accept) || !contains_header_token(head,"connection",10,"upgrade",7,false)) { return core::result::Err(Error::Handshake); }
+    if (field_count(head,"sec-websocket-extensions",24)!=0) { return core::result::Err(Error::Unsupported); }
+    let selected:core::option::Option<core::slice::View<u8>> =core::option::None();
+    let count:i32=field_count(head,"sec-websocket-protocol",22);
+    if (count>1) { return core::result::Err(Error::Handshake); }
+    if (count==1) {
+        let value:core::slice::View<u8> =head.lookup(literal("Sec-WebSocket-Protocol",22)).unwrap().value;
+        if (!single_protocol(value) || !offers(request,value)) { return core::result::Err(Error::Handshake); }
+        selected=core::option::Some(value);
+    }
+    return core::result::Ok(Response { head:head,protocol:selected,remaining:part(input,head.raw.len(),input.len()) });
+}
+
+// Generate one extension-free HTTP/1.1 101 head. accept is the canonical value
+// computed for this validated Request; the caller owns its digest-provider
+// policy. A selected subprotocol must be a single exact offered token. Caller
+// fields cannot override handshake or framing fields. All errors release staging.
+pub fn encode_response(request:Request, fields:core::slice::View<ext::http::Field>, accept:core::slice::View<u8>, protocol:core::option::Option<core::slice::View<u8>>, limits:Limits) -> core::result::Result<alloc::vec::Vec<u8>,Error> {
+    if (!valid_limits(limits) || !valid(accept) || fields.start<0 || fields.length<0 || fields.start>2147483647-fields.length) { return core::result::Err(Error::Bounds); }
+    if (protocol.is_some() && !valid(protocol.unwrap())) { return core::result::Err(Error::Bounds); }
+    if (!valid_accept(accept)) { return core::result::Err(Error::Handshake); }
+    if (request.protocol_count>limits.protocols) { return core::result::Err(Error::Limit(0)); }
+    if (protocol.is_some() && (!single_protocol(protocol.unwrap()) || !offers(request,protocol.unwrap()))) { return core::result::Err(Error::Handshake); }
+    let owned:i32=3; if (protocol.is_some()) { owned+=1; }
+    if (owned>limits.http.headers || fields.len()>limits.http.headers-owned || limits.http.line_bytes<32 || limits.http.head_bytes<36) { return core::result::Err(Error::Limit(0)); }
+    let headers:alloc::vec::Vec<ext::http::Field> =alloc::vec::new();
+    let copied=caller_fields(fields,headers.borrow(),limits);
+    if (copied.is_err()) { headers.destroy(); return core::result::Err(copied.unwrap_err()); }
+    let ok:bool=add_field(headers.borrow(),literal("Upgrade",7),literal("websocket",9)) && add_field(headers.borrow(),literal("Connection",10),literal("Upgrade",7)) && add_field(headers.borrow(),literal("Sec-WebSocket-Accept",20),accept);
+    if (ok && protocol.is_some()) { ok=add_field(headers.borrow(),literal("Sec-WebSocket-Protocol",22),protocol.unwrap()); }
+    if (!ok) { headers.destroy(); return core::result::Err(Error::AllocationFailed); }
+    let encoded=ext::http::encode_response(literal("HTTP/1.1 101 Switching Protocols",32),literal("GET",3),headers.as_view(),literal("",0),limits.http);
+    headers.destroy();
+    if (encoded.is_err()) { return core::result::Err(http_error(encoded.unwrap_err())); }
+    let owner:alloc::vec::Vec<u8> =encoded.unwrap();
+    let checked=validate_response(owner.as_view(),request,accept,limits);
+    if (checked.is_err()) { let error:Error=checked.unwrap_err(); owner.destroy(); return core::result::Err(error); }
+    return core::result::Ok(owner);
 }

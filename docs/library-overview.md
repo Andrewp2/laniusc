@@ -1,6 +1,13 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[WebSocket upgrade increment](extended-websocket.md#current-upgrade-execution)
+adds portable response validation/encoding, a narrow OpenSSL-backed Accept
+helper and a real offline stdin-to-101-response tool. Direct wire, native
+provider/error and tool groups pass on Linux x86_64; the native helper uses
+OpenSSL 3 libcrypto. This establishes no connected WebSocket transport or
+unread-byte/socket ownership handoff. Both new Rust drivers build; direct
+execution receipts remain separate from unrun runtime libtests. The preceding
 [URL-client increment](library-url-client-plan.md) implements owned HTTP(S) URL
 planning, one ordered TCP selector and separate plain/verified-TLS facades over
 the canonical drivers. Direct URL semantics/owners, socket adoption, connected
@@ -65,6 +72,37 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**WebSocket HTTP/1 upgrade.**
+
+The [portable wire module](extended-websocket.md) validates HTTP/1.1 101
+responses against the original request and a caller-computed expected Accept.
+It checks singleton Upgrade/Accept, Connection tokens, one offered
+case-sensitive protocol selection and rejection of negotiated extensions.
+Returned `remaining` borrows all post-head bytes. The encoder stages one owned
+101 head; explicit Vec destruction remains required. Neither pure operation
+implements a digest or transfers a transport owner.
+
+The separate [OpenSSL helper](extended-openssl-websocket.md) computes the RFC
+Accept value using `EVP_Q_digest`, with packed input, 64-byte native scratch,
+a full-width size cell and output-atomic errors. OpenSSL performs the digest;
+the helper requires libcrypto without libssl and exposes provider failures.
+The [offline tool](extended-websocket-upgrade-program.md) reads through EOF,
+rejects trailing request bytes and writes a fully staged 101 response, with
+optional offered-protocol selection. It supplies no connected service.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Response wire | A direct pure contract program exits zero: 34 malformed responses plus valid/OWS/selection, two layouts, trailing-frame preservation, encoder bounds/caps and caller-field checks |
+| Native Accept | 310 direct cases across two layouts and overlapping input/output; 24 injected cases separately check provider failure, wrong/full-width returned digest size and atomic errors |
+| Offline tool | Separate direct functional22, rejection30, CLI15 and I/O4 groups; no combined distinct-case count or full application allocation-failure campaign is claimed |
+| Driver admission | Both new Rust drivers build with `--no-run` in 2.09s; no runtime-libtest pass follows |
+
+The wire guide records exact source/executable identities and logs. Historical
+frame/request suites retain their earlier source scope and were not rerun.
+Connected HTTP-to-WebSocket transport/unread ownership handoff, origin/routing/
+authentication policy, nonce/mask entropy, deadlines, formal proofs, automatic
+ownership and other host/device targets remain open.
 
 **URL-based HTTP and HTTPS.**
 

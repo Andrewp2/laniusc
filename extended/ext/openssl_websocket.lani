@@ -1,0 +1,78 @@
+// RFC 6455 handshake acceptance through OpenSSL 3. SHA-1 is confined to
+// this protocol operation; OpenSSL performs the digest. Native execution
+// requires the C ABI and libc startup profile described in the module guide.
+module ext::openssl_websocket;
+import core::base64;
+import core::mem;
+import core::result;
+import core::slice;
+
+pub enum Error { Bounds, Capacity, Key, OpenSsl(u64), UnexpectedSize(u64) }
+
+fn valid(bytes: core::slice::View<u8>) -> bool {
+    return bytes.start >= 0 && bytes.length >= 0 && bytes.start <= 2147483647 - bytes.length;
+}
+
+// Compute the 28-byte Sec-WebSocket-Accept field value, without a terminator.
+// The key must be exactly 24 canonical padded Base64 bytes decoding to 16
+// bytes, with HTTP whitespace already removed. Both views must physically
+// back their logical ranges. Strided storage and input/output overlap work.
+// All errors preserve destination; success changes only its first 28 bytes.
+// No Lanius heap allocation occurs. OpenSSL may allocate internally.
+pub fn accept_into(key: core::slice::View<u8>, destination: core::slice::View<u8>) -> core::result::Result<i32, Error> {
+    if (!valid(key) || !valid(destination)) { return core::result::Err(Error::Bounds); }
+    if (destination.length < 28) { return core::result::Err(Error::Capacity); }
+    if (key.length != 24) { return core::result::Err(Error::Key); }
+
+    // Snapshot all key bytes before any write to caller output. The native
+    // call sees only this packed 60-byte key-plus-GUID input, not a View.
+    let input_storage: [i32; 15] = [0; 15];
+    let input_pointer: ptr = core::mem::i32_array_data_ptr(input_storage);
+    let input: [u8] = core::mem::typed_slice_from_raw_parts(input_pointer, 60);
+    let index: i32 = 0;
+    while (index < 24) { input[index] = key.values[key.start + index]; index += 1; }
+    if (core::base64::decoded_len_or(input, 24, -1) != 16) {
+        return core::result::Err(Error::Key);
+    }
+    let guid: str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    let guid_bytes: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(guid), 36);
+    index = 0;
+    while (index < 36) { input[24 + index] = guid_bytes[index]; index += 1; }
+
+    // C names are explicitly NUL terminated in packed bytes. EVP_Q_digest
+    // can write at most EVP_MAX_MD_SIZE (64 in the OpenSSL 3 profile).
+    let name_storage: [i32; 2] = [0; 2];
+    let name_pointer: ptr = core::mem::i32_array_data_ptr(name_storage);
+    let name: [u8] = core::mem::typed_slice_from_raw_parts(name_pointer, 8);
+    name[0] = 83; name[1] = 72; name[2] = 65; name[3] = 49; name[4] = 0;
+    let digest_storage: [i32; 16] = [0; 16];
+    let digest_pointer: ptr = core::mem::i32_array_data_ptr(digest_storage);
+    let digest: [u8] = core::mem::typed_slice_from_raw_parts(digest_pointer, 64);
+    let count: [u64; 1] = [0];
+    let count_pointer: ptr = core::mem::i32_slice_data_ptr(count);
+    let nowhere: ptr = 0;
+    ERR_clear_error();
+    let status: i32 = EVP_Q_digest(nowhere, name_pointer, nowhere, input_pointer, 60 as u64, digest_pointer, count_pointer);
+    if (status != 1) {
+        let code: u64 = ERR_get_error();
+        ERR_clear_error();
+        return core::result::Err(Error::OpenSsl(code));
+    }
+    if (count[0] != 20) { return core::result::Err(Error::UnexpectedSize(count[0])); }
+
+    // Fixed lengths guarantee 28 bytes. Only this final copy commits output.
+    let encoded_storage: [i32; 7] = [0; 7];
+    let encoded_pointer: ptr = core::mem::i32_array_data_ptr(encoded_storage);
+    let encoded: [u8] = core::mem::typed_slice_from_raw_parts(encoded_pointer, 28);
+    core::base64::encode_into(digest, 20, encoded, 28);
+    index = 0;
+    while (index < 28) { destination.values[destination.start + index] = encoded[index]; index += 1; }
+    return core::result::Ok(28);
+}
+
+// OpenSSL 3 raw declarations for Linux x86_64 LP64: C int is i32;
+// size_t and unsigned long are u64. Direct callers own all buffer, ABI,
+// lifetime and error-queue requirements. Link libcrypto through native CRT.
+pub extern "C" fn EVP_Q_digest(context: ptr, algorithm: ptr, properties: ptr, input: ptr, count: u64, output: ptr, output_length: ptr) -> i32;
+pub extern "C" fn ERR_clear_error();
+pub extern "C" fn ERR_get_error() -> u64;

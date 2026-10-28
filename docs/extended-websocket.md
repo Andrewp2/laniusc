@@ -1,14 +1,20 @@
 # WebSocket wire protocol
 
-`ext::websocket` implements HTTP/1 upgrade-request syntax and the extension-free
-frame and message protocol from [RFC 6455](https://www.rfc-editor.org/rfc/rfc6455).
-It validates borrowed input, assembles fragmented messages, exposes controls,
-and encodes checked outgoing frames. Production processing is Lanius. It opens
+`ext::websocket` implements HTTP/1 upgrade request/response syntax and the
+extension-free frame and message protocol from
+[RFC 6455](https://www.rfc-editor.org/rfc/rfc6455). It validates borrowed input,
+preserves post-upgrade frame bytes, assembles fragmented messages, exposes
+controls and encodes checked outgoing heads/frames. Production wire processing
+is Lanius. It opens
 no sockets and supplies no TLS, authentication, origin policy or random source.
 
-The implementation composes `ext::http` and `core::base64`. It does not generate
-or validate a WebSocket upgrade response or a Sec-WebSocket-Accept value.
-The retained APIs pass the focused native execution groups described below.
+The implementation composes `ext::http` and `core::base64`. Response validation
+and encoding take a caller-supplied canonical expected Accept value computed
+for the original request key. They perform no digest operation. The separate
+[`ext::openssl_websocket`](extended-openssl-websocket.md) helper computes that
+value through OpenSSL 3; the portable wire module has no crypto library
+dependency. Current upgrade receipts and historical frame/request receipts
+retain the separate scopes described below.
 [The protocol registry](https://www.iana.org/assignments/websocket/) supplies the
 registered close codes through 1014. RFC 7936 changes subprotocol registration
 procedures, RFC 8307 permits `.well-known` WebSocket URI paths, and RFC 8441 adds
@@ -55,6 +61,68 @@ sources alive and unchanged through protocol lookup.
 The HTTP parser checks Host/target syntax but performs no routing or authority
 policy; callers implementing a real endpoint must supply that context. These
 helpers do not authorize an Origin or authenticate a peer.
+
+## HTTP upgrade response syntax
+
+```text
+Response {
+    head: http::Head,
+    protocol: Option<View<u8>>,
+    remaining: View<u8>
+}
+validate_response(input: View<u8>, request: Request,
+    expected_accept: View<u8>, limits: Limits) -> Result<Response, Error>
+encode_response(request: Request, fields: View<http::Field>,
+    accept: View<u8>, protocol: Option<View<u8>>, limits: Limits)
+    -> Result<alloc::vec::Vec<u8>, Error>
+```
+
+Request must come from `validate_request` and remain unchanged with live
+backing. Both response operations require a 28-byte canonical padded Base64
+value representing 20 digest bytes. The caller must compute it from that
+request's original encoded key using an established digest provider; use
+[`openssl_websocket::accept_into`](extended-openssl-websocket.md) on the native
+profile. These pure operations cannot establish that a supplied value actually
+corresponds to the request key. They compare/encode the supplied bytes.
+
+Validation requires HTTP/1.1 status 101 and exactly one Upgrade field equal to
+`websocket`, compared without ASCII case. Exactly one Sec-WebSocket-Accept
+field must match `expected_accept` byte for byte after HTTP field-whitespace
+trimming. Every Connection field must be a valid token list, and their combined
+tokens must include Upgrade without ASCII case. Duplicate Upgrade/Accept
+fields, an Upgrade list/version suffix, missing or mismatching Accept and
+malformed Connection tokens fail. The HTTP parser rejects Content-Length,
+including zero, and Transfer-Encoding on this 101 response.
+
+The response may omit protocol selection, even when protocols were offered.
+A present Sec-WebSocket-Protocol must occur once, contain one token and match
+an offered request protocol exactly, including case. Any response
+Sec-WebSocket-Extensions field returns Unsupported; no extension is negotiated,
+even when the request contains syntactically valid offers. Other handshake
+violations return Handshake; HTTP syntax, incomplete input and cap errors keep
+the existing mapped error/offset behavior.
+
+Response borrows its HTTP head, optional protocol and `remaining` from input.
+Only the head is consumed. `remaining` starts at `head.raw.len()` and preserves
+all following bytes, including an entire or partial first frame. Keep input
+and request backing alive through their respective borrows. Preserving these
+borrowed bytes does not transfer a connected socket/TLS owner.
+
+`encode_response` emits one HTTP/1.1 101 head with Upgrade, Connection and Accept,
+plus at most one selected offered protocol and checked caller fields. Reserved
+handshake/framing fields cannot be supplied through caller fields. It emits no
+body, Content-Length, Transfer-Encoding or extension selection. HTTP head/line/
+field caps and the offered-protocol cap apply. The encoder validates its staged
+result through the same response validator. Success returns one independent
+Vec owner requiring explicit `destroy()`; every error releases staging and
+publishes no partial owner. New focused gates check wire and cap boundaries;
+they do not establish every response-encoder allocation-failure path.
+
+The [offline server-upgrade tool](extended-websocket-upgrade-program.md) composes
+request validation, OpenSSL acceptance and response encoding. It requires EOF
+on stdin and rejects trailing request bytes. A real connected client/server
+still needs request/response accumulation, deadlines, nonce/mask entropy,
+application policy and explicit transport/unread-byte ownership transfer.
 
 ## Frames and connection state
 
@@ -111,7 +179,7 @@ closed cleanly.
 
 All limits and logical ranges must be nonnegative and nonoverflowing. Physical
 backing must cover each declared range; a view cannot discover a forged physical
-slice length. Parsers allocate nothing. Request generation bounds field count
+slice length. Parsers allocate nothing. Request/response generation bounds field count
 and line sizes before staging; HTTP head budgets also apply. Protocol uniqueness
 checking scans the bounded offered token set rather than allocating a registry
 (worst case O(P²H) for P protocols and H head bytes; the default P cap is 32).
@@ -172,8 +240,10 @@ permits an open or fragmented message capture made of complete frames; it never
 accepts a truncated frame. Trailing bytes after a Close are rejected. `--request`
 reports the parsed request head's protocol count and consumed/remaining boundary;
 later captured frame bytes remain outside that head. It cannot be combined with
-frame/decode options. The CLI provides no upgrade-response mode or subprotocol
-selection option.
+frame/decode options. This existing wire CLI provides no upgrade-response mode
+or subprotocol selection option; the separate
+[websocket-upgrade tool](extended-websocket-upgrade-program.md) handles that
+offline request-to-response workflow.
 
 The CLI reads and stages its whole result before stdout. Malformed/incomplete
 input, protocol errors and resource limits produce no stdout. A write failure
@@ -199,8 +269,8 @@ release of request/frame staging owners.
 `tests/extended_websocket_wire_execution.rs` retains the framing and request
 CLI workflows, input/output limits and ownership/I/O controls. Python's
 `websockets` parser is a test oracle for captured/generated frames; no host
-WebSocket implementation is used in production. Tests for removed upgrade
-response behavior are removed with those APIs.
+WebSocket implementation is used in production. Those retained suites do not
+cover the newly added provider-backed upgrade response operations.
 
 On 2026-10-25, the reduced surface passed both
 `extended_websocket_execution` groups in 12.37 seconds and all four
@@ -208,10 +278,52 @@ On 2026-10-25, the reduced surface passed both
 Lanius through the GPU compiler, validate emitted ELF jumps and execute on
 x86_64 Linux. They cover the retained request/frame APIs, actual program
 output, malformed input, limits, allocation failures and I/O cleanup.
-The local logs are `target/stdlib-work/remove-crypto-websocket.log` and
+The historical local logs are `target/stdlib-work/remove-crypto-websocket.log` and
 `target/stdlib-work/remove-crypto-websocket-wire.log`.
 
 Each runtime invocation used `timeout --kill-after=2s 100s`,
 `flock target/stdlib-work/library-gpu.lock`, and `--test-threads=1` on the
 freshly built driver binary. The three affected Rust drivers built together
 in 86 seconds. No compiler, IR, ABI or proof source changed.
+
+### Current upgrade execution
+
+The new response and OpenSSL-accept surfaces have separate direct executable
+receipts on Linux x86_64 CPU output from the GPU compiler. The pure contract
+program uses no native crypto dependency. The helper and offline tool require
+the native C ABI/CRT profile and OpenSSL 3 `libcrypto`; `libssl` is unnecessary.
+
+| Receipt under `target/stdlib-work/` | Accepted finite scope |
+| --- | --- |
+| `websocket-upgrade-contracts-{compile,native}-first.log` and native trace | Compile/native exit 0: valid/OWS/single-selection responses, 34 malformed wire cases, negative-stride and packed layouts, trailing first-frame preservation, encoder round trips/reserved fields and bounds/cap errors |
+| `websocket-upgrade-accept-native-first.log` | 310 cases across two layouts and overlapping input/output, comparing real OpenSSL output with an independent test-only digest oracle; 24 injected cases check provider failure, wrong/full-width returned size and error-output atomicity |
+| `websocket-upgrade-app-functional-first.log` | 22 offline-tool functional cases |
+| `websocket-upgrade-app-rejection-first.log` | 30 request/protocol/trailing-byte rejection cases |
+| `websocket-upgrade-app-cli-first.log` | 15 argument/help cases |
+| `websocket-upgrade-app-io-first.log` | Four real I/O failure cases, including closed stdout reader |
+
+These direct groups retain separate counts without a distinct-coverage sum.
+New `extended_websocket_upgrade_execution` and
+`extended_websocket_upgrade_app_execution` drivers build with `--no-run` in
+2.09s (`websocket-upgrade-driver-build-first.log`); that only admits the runner.
+Historical request/frame tests were not rerun for this increment.
+
+Current source hashes are `websocket e5d2253c…`, native helper `2c0baac5…` and
+tool `176e8b97…`; contract producer is `9aa3dcb0…`, accept probe `3781b81a…`
+and accept oracle `8f6b7b6e…`. Executable hashes are pure `939ed1f2…`, helper
+`d321f898…` and tool `83a760bf…`. The
+[upgrade fixtures](../tests/fixtures/extended/websocket_upgrade/README.md),
+[OpenSSL helper guide](extended-openssl-websocket.md) and
+[tool guide](extended-websocket-upgrade-program.md) own exact finite checks,
+error/provider policy and remaining gaps.
+
+The unchanged declaration generator and `--check` both pass with **265 pages
+from 264 modules, 8,510 public declaration markers and 12,863 declaration/member
+entries**. Logs are `websocket-upgrade-reference-{writer,check}-first.log`.
+Only the index, existing WebSocket page and new OpenSSL-WebSocket page change.
+These counts describe source discovery. The generator changes no runtime code
+and the three human-maintained root files retain their original hashes.
+
+No connected WebSocket runtime, formal proof, compiler-enforced borrow checking,
+automatic owner cleanup, general digest API or GPU-device service follows from
+this increment. Sensitive digest computation remains in OpenSSL.

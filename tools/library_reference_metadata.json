@@ -913,6 +913,18 @@
       ],
       "note": "Client, server and mutual TLS delegate to OpenSSL 3 libssl/libcrypto on Linux x86_64/glibc. Mandatory client-side server chain/DNS/IP verification and explicit server required-peer policy do not assign application authorization. Manual sessions borrow connected nonblocking sockets and require caller deadlines/SIGPIPE policy. Current independent read/write readiness, stable staged retries, permitted duplex interleaving, read quiescence, local shutdown, version diagnostics and Context retention pass nine new duplex groups/36 cases, including all five reached source-allocation failures. Selected legacy client/server/mutual-TLS retry guards separately pass 3, 1 and 6 cases; these are not full reruns of all historical TLS suites. Current connected HTTPS and migrated application receipts have separate scope. Native crypto CPU/storage costs are outside logical HTTP quotas."
     },
+    "ext::openssl_websocket": {
+      "guides": [
+        "docs/extended-openssl-websocket.md",
+        "docs/extended-websocket.md",
+        "docs/extended-websocket-upgrade-program.md",
+        "docs/library-native-c.md"
+      ],
+      "note": "Narrow RFC 6455 accept-value operation through OpenSSL 3 EVP_Q_digest. Validates the original 24-byte canonical padded Base64 key, snapshots 60 packed key-plus-GUID bytes, uses a separate 64-byte digest scratch and full-width u64 size_t cell, then commits exactly 28 Base64 bytes. Logical bounds/capacity/key/native/wrong-size errors preserve caller output; strided views and overlap work. No Lanius heap allocation or retained native owner, though OpenSSL may allocate internally and provider policy can reject SHA1. Requires Linux x86_64 LP64 native C/CRT and libcrypto, not libssl. Direct execution passes 310 cases across two layouts/overlap and 24 injected provider/size/full-width-size cases. OpenSSL computes the digest for this protocol helper. Peer authentication, connected transport and GPU-device services remain outside its contract.",
+      "declarations": {
+        "accept_into": "Returns Ok(28) and changes only the first 28 logical destination bytes. Requires valid live backing, a canonical 24-byte key decoding to 16 bytes, and destination capacity at least 28. All errors are output-atomic; a reached digest clears/consumes the calling thread OpenSSL error queue. Direct raw extern callers own unchecked ABI, buffer and lifetime contracts."
+      }
+    },
     "ext::parse": {
       "guides": [
         "docs/extended-parse.md"
@@ -1178,8 +1190,15 @@
     },
     "ext::websocket": {
       "guides": [
-        "docs/extended-websocket.md"
-      ]
+        "docs/extended-websocket.md",
+        "docs/extended-openssl-websocket.md",
+        "docs/extended-websocket-upgrade-program.md"
+      ],
+      "note": "Portable HTTP/1 upgrade request/response and extension-free frame/message processing. Response operations take a caller-computed canonical Accept for the original validated Request; no digest implementation or native crypto dependency lives here. Response validation requires HTTP/1.1 101, exact singleton Upgrade/Accept semantics, valid Connection tokens, at most one case-sensitive offered subprotocol and no negotiated extension; borrowed remaining bytes preserve the first-frame boundary. Response encoding stages a checked owned 101 head with explicit Vec destruction and no framing/body. Current direct Linux x86_64 contract execution covers 34 malformed responses plus valid/OWS/selection, stride, trailing-frame and encoder boundaries. Historical request/frame native groups retain their separate earlier source scope and were not rerun. Connected transport/unread ownership handoff, formal proofs and automatic lifetime checking remain open.",
+      "declarations": {
+        "validate_response": "Borrows a complete HTTP/1.1 101 response head against a live validated Request and externally computed canonical expected Accept. Returns borrowed head/optional offered protocol/remaining bytes, preserving all post-head input; performs no digest, allocation or transport handoff.",
+        "encode_response": "Validates an externally computed canonical Accept and optional single offered protocol, rejects caller overrides of handshake/framing fields and emits one owned extension-free 101 head. Every error releases staging; success requires explicit Vec destruction. The caller must establish Accept belongs to request.key."
+      }
     },
     "ext::x509": {
       "guides": [
