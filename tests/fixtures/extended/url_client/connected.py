@@ -88,7 +88,12 @@ def connection_chain(active, attempts, *, plaintext=None):
         assert closed[index][1]["index"] < opened[index + 1][1]["index"], "attempt fd not retired before fallback"
     assert all(key == selected for key, _ in sent), "request replayed to failed endpoint"
     assert len([item for key, item in uses if key == selected and item["name"] == "getpeername" and item["result"] == "0"]) >= 2
-    assert len([item for key, item in uses if key == selected and item["name"] == "fcntl" and "F_GETFL" in item["args"] and item["result"].isdecimal()]) == 1
+    flags = [item for key, item in uses if key == selected and item["name"] == "fcntl" and "F_GETFL" in item["args"]]
+    assert len(flags) == 1, flags
+    # strace prints successful F_GETFL results in hexadecimal, followed by
+    # decoded flag names. Check the value rather than requiring decimal text.
+    value = int(flags[0]["result"].split()[0], 0)
+    assert value >= 0 and value & os.O_NONBLOCK, flags[0]
     if plaintext is not None:
         confirmed = b"".join(TRUSTED.quoted(TRUSTED.arguments(item["args"])[1])[:int(item["result"])]
                              for _, item in sent if item["result"].isdecimal())

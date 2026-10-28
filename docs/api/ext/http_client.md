@@ -8,7 +8,7 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified.
+Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified. The separate URL guide documents consume-on-every-result selected-socket adoption and Exchange.run; its current finite adoption/URL receipts are distinct from the historical numeric-driver counts above.
 
 ## Contract and evidence guides
 
@@ -19,8 +19,9 @@ Prepared canonically validates and copies request backing without sockets. into_
 - [extended-https-client](../../extended-https-client.md)
 - [extended-https-batch](../../extended-https-batch.md)
 - [extended-http-protocol-testing](../../extended-http-protocol-testing.md)
+- [extended-url-client](../../extended-url-client.md)
 
-Declaration counts: enum: 5; field: 62; function: 4; impl: 5; method: 42; struct: 10; variant: 38.
+Declaration counts: enum: 5; field: 62; function: 4; impl: 5; method: 45; struct: 10; variant: 38.
 
 ## Declared imports
 
@@ -975,7 +976,7 @@ pub fn default_options() -> Options
 
 ### function: prepare_until
 
-[Source line 174](../../../extended/ext/http_client.lani#L174)
+[Source line 175](../../../extended/ext/http_client.lani#L175)
 
 ```lanius
 pub fn prepare_until(request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Prepared,Failure>
@@ -985,7 +986,7 @@ Canonical request preflight and owned staging without sockets; successful Prepar
 
 ### function: begin_until
 
-[Source line 339](../../../extended/ext/http_client.lani#L339)
+[Source line 375](../../../extended/ext/http_client.lani#L375)
 
 ```lanius
 pub fn begin_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Exchange,Failure>
@@ -995,7 +996,7 @@ Preparation followed by consuming Prepared.begin; socket opening only, with conn
 
 ### function: exchange_until
 
-[Source line 479](../../../extended/ext/http_client.lani#L479)
+[Source line 533](../../../extended/ext/http_client.lani#L533)
 
 ```lanius
 pub fn exchange_until(endpoint: core::net::SocketAddr, request: Request, options: Options, deadline: core::time::Deadline) -> core::result::Result<Response,Failure>
@@ -1029,9 +1030,17 @@ pub fn destroy_value(owned: Failure)
 pub impl Response
 ```
 
-#### method: as_view
+#### method: borrow
 
 [Source line 47](../../../extended/ext/http_client.lani#L47)
+
+```lanius
+pub fn borrow(&self) -> &Response
+```
+
+#### method: as_view
+
+[Source line 48](../../../extended/ext/http_client.lani#L48)
 
 ```lanius
 pub fn as_view(&self) -> core::slice::View<u8>
@@ -1039,7 +1048,7 @@ pub fn as_view(&self) -> core::slice::View<u8>
 
 #### method: message
 
-[Source line 48](../../../extended/ext/http_client.lani#L48)
+[Source line 49](../../../extended/ext/http_client.lani#L49)
 
 ```lanius
 pub fn message(&self) -> ext::http::Message
@@ -1047,7 +1056,7 @@ pub fn message(&self) -> ext::http::Message
 
 #### method: body
 
-[Source line 49](../../../extended/ext/http_client.lani#L49)
+[Source line 50](../../../extended/ext/http_client.lani#L50)
 
 ```lanius
 pub fn body(&self) -> core::slice::View<u8>
@@ -1055,7 +1064,7 @@ pub fn body(&self) -> core::slice::View<u8>
 
 #### method: informational
 
-[Source line 50](../../../extended/ext/http_client.lani#L50)
+[Source line 51](../../../extended/ext/http_client.lani#L51)
 
 ```lanius
 pub fn informational(&self) -> core::slice::View<ext::http::Head>
@@ -1063,15 +1072,15 @@ pub fn informational(&self) -> core::slice::View<ext::http::Head>
 
 #### method: destroy
 
-[Source line 51](../../../extended/ext/http_client.lani#L51)
+[Source line 52](../../../extended/ext/http_client.lani#L52)
 
 ```lanius
 pub fn destroy(&self)
 ```
 
-### impl at line 184
+### impl at line 189
 
-[Source line 184](../../../extended/ext/http_client.lani#L184)
+[Source line 189](../../../extended/ext/http_client.lani#L189)
 
 ```lanius
 pub impl Prepared
@@ -1079,7 +1088,7 @@ pub impl Prepared
 
 #### method: borrow
 
-[Source line 185](../../../extended/ext/http_client.lani#L185)
+[Source line 190](../../../extended/ext/http_client.lani#L190)
 
 ```lanius
 pub fn borrow(&self) -> &Prepared
@@ -1087,7 +1096,7 @@ pub fn borrow(&self) -> &Prepared
 
 #### method: stats
 
-[Source line 186](../../../extended/ext/http_client.lani#L186)
+[Source line 191](../../../extended/ext/http_client.lani#L191)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -1095,7 +1104,7 @@ pub fn stats(&self) -> Stats
 
 #### method: is_active
 
-[Source line 187](../../../extended/ext/http_client.lani#L187)
+[Source line 192](../../../extended/ext/http_client.lani#L192)
 
 ```lanius
 pub fn is_active(&self) -> bool
@@ -1103,7 +1112,7 @@ pub fn is_active(&self) -> bool
 
 #### method: destroy
 
-[Source line 188](../../../extended/ext/http_client.lani#L188)
+[Source line 193](../../../extended/ext/http_client.lani#L193)
 
 ```lanius
 pub fn destroy(&self) -> bool
@@ -1111,7 +1120,7 @@ pub fn destroy(&self) -> bool
 
 #### method: into_protocol
 
-[Source line 190](../../../extended/ext/http_client.lani#L190)
+[Source line 195](../../../extended/ext/http_client.lani#L195)
 
 ```lanius
 pub fn into_protocol(&self) -> core::result::Result<Protocol,Failure>
@@ -1119,15 +1128,23 @@ pub fn into_protocol(&self) -> core::result::Result<Protocol,Failure>
 
 #### method: begin
 
-[Source line 196](../../../extended/ext/http_client.lani#L196)
+[Source line 201](../../../extended/ext/http_client.lani#L201)
 
 ```lanius
 pub fn begin(&self, endpoint: core::net::SocketAddr) -> core::result::Result<Exchange,Failure>
 ```
 
-### impl at line 210
+#### method: adopt_connected
 
-[Source line 210](../../../extended/ext/http_client.lani#L210)
+[Source line 216](../../../extended/ext/http_client.lani#L216)
+
+```lanius
+pub fn adopt_connected(&self, socket: &std::socket::Socket) -> core::result::Result<Exchange,Failure>
+```
+
+### impl at line 246
+
+[Source line 246](../../../extended/ext/http_client.lani#L246)
 
 ```lanius
 pub impl Protocol
@@ -1135,7 +1152,7 @@ pub impl Protocol
 
 #### method: borrow
 
-[Source line 211](../../../extended/ext/http_client.lani#L211)
+[Source line 247](../../../extended/ext/http_client.lani#L247)
 
 ```lanius
 pub fn borrow(&self) -> &Protocol
@@ -1143,7 +1160,7 @@ pub fn borrow(&self) -> &Protocol
 
 #### method: stats
 
-[Source line 212](../../../extended/ext/http_client.lani#L212)
+[Source line 248](../../../extended/ext/http_client.lani#L248)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -1151,7 +1168,7 @@ pub fn stats(&self) -> Stats
 
 #### method: remaining
 
-[Source line 214](../../../extended/ext/http_client.lani#L214)
+[Source line 250](../../../extended/ext/http_client.lani#L250)
 
 ```lanius
 pub fn remaining(&self) -> core::time::Duration
@@ -1159,7 +1176,7 @@ pub fn remaining(&self) -> core::time::Duration
 
 #### method: status
 
-[Source line 215](../../../extended/ext/http_client.lani#L215)
+[Source line 251](../../../extended/ext/http_client.lani#L251)
 
 ```lanius
 pub fn status(&self) -> Status
@@ -1167,7 +1184,7 @@ pub fn status(&self) -> Status
 
 #### method: last_failure
 
-[Source line 216](../../../extended/ext/http_client.lani#L216)
+[Source line 252](../../../extended/ext/http_client.lani#L252)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Failure>
@@ -1175,7 +1192,7 @@ pub fn last_failure(&self) -> core::option::Option<Failure>
 
 #### method: pending_send_bytes
 
-[Source line 217](../../../extended/ext/http_client.lani#L217)
+[Source line 253](../../../extended/ext/http_client.lani#L253)
 
 ```lanius
 pub fn pending_send_bytes(&self) -> i32
@@ -1183,7 +1200,7 @@ pub fn pending_send_bytes(&self) -> i32
 
 #### method: failure
 
-[Source line 220](../../../extended/ext/http_client.lani#L220)
+[Source line 256](../../../extended/ext/http_client.lani#L256)
 
 ```lanius
 pub fn failure(&self, cause: Cause) -> Failure
@@ -1191,7 +1208,7 @@ pub fn failure(&self, cause: Cause) -> Failure
 
 #### method: check
 
-[Source line 226](../../../extended/ext/http_client.lani#L226)
+[Source line 262](../../../extended/ext/http_client.lani#L262)
 
 ```lanius
 pub fn check(&self) -> core::result::Result<bool,Failure>
@@ -1199,7 +1216,7 @@ pub fn check(&self) -> core::result::Result<bool,Failure>
 
 #### method: before_io
 
-[Source line 231](../../../extended/ext/http_client.lani#L231)
+[Source line 267](../../../extended/ext/http_client.lani#L267)
 
 ```lanius
 pub fn before_io(&self, stage: Stage) -> core::result::Result<bool,Failure>
@@ -1207,7 +1224,7 @@ pub fn before_io(&self, stage: Stage) -> core::result::Result<bool,Failure>
 
 #### method: before_wait
 
-[Source line 237](../../../extended/ext/http_client.lani#L237)
+[Source line 273](../../../extended/ext/http_client.lani#L273)
 
 ```lanius
 pub fn before_wait(&self) -> core::result::Result<bool,Failure>
@@ -1215,7 +1232,7 @@ pub fn before_wait(&self) -> core::result::Result<bool,Failure>
 
 #### method: advance
 
-[Source line 242](../../../extended/ext/http_client.lani#L242)
+[Source line 278](../../../extended/ext/http_client.lani#L278)
 
 ```lanius
 pub fn advance(&self) -> core::result::Result<Need,Failure>
@@ -1223,7 +1240,7 @@ pub fn advance(&self) -> core::result::Result<Need,Failure>
 
 #### method: receive_limit
 
-[Source line 268](../../../extended/ext/http_client.lani#L268)
+[Source line 304](../../../extended/ext/http_client.lani#L304)
 
 ```lanius
 pub fn receive_limit(&self) -> core::result::Result<i32,Failure>
@@ -1231,7 +1248,7 @@ pub fn receive_limit(&self) -> core::result::Result<i32,Failure>
 
 #### method: feed
 
-[Source line 278](../../../extended/ext/http_client.lani#L278)
+[Source line 314](../../../extended/ext/http_client.lani#L314)
 
 ```lanius
 pub fn feed(&self, bytes: core::slice::View<u8>) -> core::result::Result<bool,Failure>
@@ -1239,7 +1256,7 @@ pub fn feed(&self, bytes: core::slice::View<u8>) -> core::result::Result<bool,Fa
 
 #### method: feed_eof
 
-[Source line 290](../../../extended/ext/http_client.lani#L290)
+[Source line 326](../../../extended/ext/http_client.lani#L326)
 
 ```lanius
 pub fn feed_eof(&self) -> core::result::Result<bool,Failure>
@@ -1247,7 +1264,7 @@ pub fn feed_eof(&self) -> core::result::Result<bool,Failure>
 
 #### method: start_send
 
-[Source line 295](../../../extended/ext/http_client.lani#L295)
+[Source line 331](../../../extended/ext/http_client.lani#L331)
 
 ```lanius
 pub fn start_send(&self) -> core::result::Result<core::option::Option<core::slice::View<u8>>,Failure>
@@ -1255,7 +1272,7 @@ pub fn start_send(&self) -> core::result::Result<core::option::Option<core::slic
 
 #### method: commit_send
 
-[Source line 304](../../../extended/ext/http_client.lani#L304)
+[Source line 340](../../../extended/ext/http_client.lani#L340)
 
 ```lanius
 pub fn commit_send(&self, count: i32) -> core::result::Result<bool,Failure>
@@ -1263,7 +1280,7 @@ pub fn commit_send(&self, count: i32) -> core::result::Result<bool,Failure>
 
 #### method: cancel_send
 
-[Source line 312](../../../extended/ext/http_client.lani#L312)
+[Source line 348](../../../extended/ext/http_client.lani#L348)
 
 ```lanius
 pub fn cancel_send(&self) -> core::result::Result<bool,Failure>
@@ -1271,7 +1288,7 @@ pub fn cancel_send(&self) -> core::result::Result<bool,Failure>
 
 #### method: acknowledge_stop
 
-[Source line 316](../../../extended/ext/http_client.lani#L316)
+[Source line 352](../../../extended/ext/http_client.lani#L352)
 
 ```lanius
 pub fn acknowledge_stop(&self) -> core::result::Result<bool,Failure>
@@ -1279,7 +1296,7 @@ pub fn acknowledge_stop(&self) -> core::result::Result<bool,Failure>
 
 #### method: record_write_shutdown
 
-[Source line 322](../../../extended/ext/http_client.lani#L322)
+[Source line 358](../../../extended/ext/http_client.lani#L358)
 
 ```lanius
 pub fn record_write_shutdown(&self) -> core::result::Result<bool,Failure>
@@ -1287,7 +1304,7 @@ pub fn record_write_shutdown(&self) -> core::result::Result<bool,Failure>
 
 #### method: transport_finished
 
-[Source line 327](../../../extended/ext/http_client.lani#L327)
+[Source line 363](../../../extended/ext/http_client.lani#L363)
 
 ```lanius
 pub fn transport_finished(&self) -> core::result::Result<bool,Failure>
@@ -1295,15 +1312,15 @@ pub fn transport_finished(&self) -> core::result::Result<bool,Failure>
 
 #### method: abort
 
-[Source line 334](../../../extended/ext/http_client.lani#L334)
+[Source line 370](../../../extended/ext/http_client.lani#L370)
 
 ```lanius
 pub fn abort(&self) -> bool
 ```
 
-### impl at line 421
+### impl at line 457
 
-[Source line 421](../../../extended/ext/http_client.lani#L421)
+[Source line 457](../../../extended/ext/http_client.lani#L457)
 
 ```lanius
 pub impl Exchange
@@ -1311,7 +1328,7 @@ pub impl Exchange
 
 #### method: borrow
 
-[Source line 422](../../../extended/ext/http_client.lani#L422)
+[Source line 458](../../../extended/ext/http_client.lani#L458)
 
 ```lanius
 pub fn borrow(&self) -> &Exchange
@@ -1319,7 +1336,7 @@ pub fn borrow(&self) -> &Exchange
 
 #### method: stats
 
-[Source line 423](../../../extended/ext/http_client.lani#L423)
+[Source line 459](../../../extended/ext/http_client.lani#L459)
 
 ```lanius
 pub fn stats(&self) -> Stats
@@ -1327,7 +1344,7 @@ pub fn stats(&self) -> Stats
 
 #### method: status
 
-[Source line 424](../../../extended/ext/http_client.lani#L424)
+[Source line 460](../../../extended/ext/http_client.lani#L460)
 
 ```lanius
 pub fn status(&self) -> Status
@@ -1335,7 +1352,7 @@ pub fn status(&self) -> Status
 
 #### method: last_failure
 
-[Source line 425](../../../extended/ext/http_client.lani#L425)
+[Source line 461](../../../extended/ext/http_client.lani#L461)
 
 ```lanius
 pub fn last_failure(&self) -> core::option::Option<Failure>
@@ -1343,7 +1360,7 @@ pub fn last_failure(&self) -> core::option::Option<Failure>
 
 #### method: raw_handle
 
-[Source line 426](../../../extended/ext/http_client.lani#L426)
+[Source line 462](../../../extended/ext/http_client.lani#L462)
 
 ```lanius
 pub fn raw_handle(&self) -> core::option::Option<i32>
@@ -1351,7 +1368,7 @@ pub fn raw_handle(&self) -> core::option::Option<i32>
 
 #### method: interest
 
-[Source line 427](../../../extended/ext/http_client.lani#L427)
+[Source line 463](../../../extended/ext/http_client.lani#L463)
 
 ```lanius
 pub fn interest(&self) -> Interest
@@ -1359,7 +1376,7 @@ pub fn interest(&self) -> Interest
 
 #### method: before_wait
 
-[Source line 436](../../../extended/ext/http_client.lani#L436)
+[Source line 472](../../../extended/ext/http_client.lani#L472)
 
 ```lanius
 pub fn before_wait(&self) -> core::result::Result<bool,Failure>
@@ -1367,15 +1384,23 @@ pub fn before_wait(&self) -> core::result::Result<bool,Failure>
 
 #### method: step
 
-[Source line 443](../../../extended/ext/http_client.lani#L443)
+[Source line 479](../../../extended/ext/http_client.lani#L479)
 
 ```lanius
 pub fn step(&self, ready: Readiness) -> core::result::Result<core::option::Option<Response>,Failure>
 ```
 
+#### method: run
+
+[Source line 509](../../../extended/ext/http_client.lani#L509)
+
+```lanius
+pub fn run(&self) -> core::result::Result<Response,Failure>
+```
+
 #### method: abort
 
-[Source line 471](../../../extended/ext/http_client.lani#L471)
+[Source line 525](../../../extended/ext/http_client.lani#L525)
 
 ```lanius
 pub fn abort(&self) -> core::result::Result<bool,Failure>

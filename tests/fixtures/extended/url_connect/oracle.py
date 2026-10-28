@@ -386,7 +386,10 @@ def failures(suite, port):
         if item["name"] == "connect":
             match = re.search(r'inet_addr\(("[^"\n]*")\)', item["args"])
             assert match, item
-            addresses.append(TRUSTED.quoted(match[1]))
+            # strace's inet_addr decoder may print ordinary address text even
+            # with -xx; byte-string syscall arguments still require hex form.
+            encoded = match[1]
+            addresses.append(TRUSTED.quoted(encoded) if "\\x" in encoded else encoded[1:-1].encode("ascii"))
     assert addresses == [b"127.0.0.2", b"127.0.0.1", b"127.0.0.3", b"127.0.0.1"], addresses
     for mode, code, system in ((3, -11, 13), (4, -2, 0)):
         result = suite.run("eai-%d" % mode, dns, observer_mode=mode)
@@ -441,7 +444,7 @@ def controls():
     for changed in mutations:
         try:
             analyze(changed, profile, executable, final=True)
-        except AssertionError:
+        except (AssertionError, ValueError):
             count += 1
         else:
             raise AssertionError("connector ledger accepted invalid phase/owner/endpoint")

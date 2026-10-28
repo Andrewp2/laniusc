@@ -1,7 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
-[completion increment](library-completion-plan.md) implements canonical prefix
+[URL-client increment](library-url-client-plan.md) implements owned HTTP(S) URL
+planning, one ordered TCP selector and separate plain/verified-TLS facades over
+the canonical drivers. Direct URL semantics/owners, socket adoption, connected
+plain/DNS/TLS groups and connector boundary/failure groups pass on Linux
+x86_64/glibc; HTTPS uses OpenSSL 3. The real fetch program passes its separate
+functional groups. These finite receipts do not establish full wrapper/application
+allocation-failure coverage, every clock/TLS schedule or another target. All five
+new Rust drivers build; native Rust-libtest execution remains unrun. The
+preceding accepted [completion increment](library-completion-plan.md) implements canonical prefix
 parsing, portable completion, literal Bash-word decoding and reply framing.
 Portable contracts/models and selected parser regressions pass; native KV query
 semantics, owner/reached-OOM and output-failure groups also pass. The Bash 5.2/
@@ -58,6 +66,39 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**URL-based HTTP and HTTPS.**
+
+The [connected-client guide](extended-url-client.md) defines five boundaries:
+allocation-free DNS byte admission, allocator-backed owned URL planning,
+synchronous resolver/TCP selection, plain HTTP and explicit OpenSSL HTTPS.
+Request preparation precedes lookup; the canonical driver adopts the selected
+socket generation. The first proven TCP connection ends fallback. TLS identity
+and Host retain the original URL name, and handshake/HTTP failure cannot replay
+onto a spare endpoint. Manual owner transfer/destruction, primary versus
+secondary cleanup errors, real leaf-call quotas and blocking NSS qualifications
+are explicit.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| [URL/helper](extended-http-url.md) | Public contracts, 70 model records on two backing layouts and 16 ownership/failure cases, including four reached allocation denials |
+| Socket adoption | Public smoke, one connected same-generation case and eight failure cases, with one reached close EIO; these plain-adoption failures do not establish every TLS setup path |
+| Connected exchange | Separate direct groups: two plain numeric HTTP cases, one controlled ordered four-address DNS fallback, eight TLS cases across TLS 1.2/1.3; exact Host/target/binary wire, original identity, no reconnect/replay and live pre-exit source/descriptor cleanup |
+| Connector | Twelve admission and eight failure/cleanup cases, separately: deadlines/caps/family before attempt, ordered fallback cap/exhaustion, reserved close credit, native EAI/system errors and reached close EIO |
+| [Real fetch](extended-fetch-url.md) | Separate functional groups of 24 HTTP, 33 CLI/preflight and four HTTPS cases; application source-owner/OOM campaign remains unclaimed |
+| Driver registration | All five new Rust drivers pass combined build admission in 4.24s; these direct executable receipts are not passing native Rust libtests |
+
+Current source hashes are helper `d7fae972…`, URL `24472542…`, connector
+`bd3a3f65…`, plain `58f4989b…` and TLS `06a6ebfa…`. The URL guide records its
+comment-only difference from the executed parser source. The connected guide
+owns exact receipt paths, native executable identities and remaining finite
+coverage gaps. The plain module links/runs without SSL/crypto; the combined
+fetch program intentionally links both. GPU compilation supplies CPU output
+here; no user-program GPU execution follows. A
+[minimal None-name collision](../tests/fixtures/compiler_dependencies/url_none_inference/README.md)
+has an executable module-qualified constructor control and is retained as a
+name-resolution dependency. Automatic ownership, formal proofs, asynchronous
+NSS, pooling/keepalive and connected WebSocket handoff remain open.
+
 **Accepted command completion.**
 
 [Portable completion and the Bash adapter](extended-cli-complete.md) separate
@@ -100,9 +141,9 @@ from the GPU compiler; user-program GPU execution is not established.
 The accepted response checkpoint `68189363` and source `789143f6...` retain
 their separate historical scope below. This completes the selected CLI increment.
 Other shells, arbitrary Bash expansions, host glob memory/time bounds and the
-full library goal remain open. Resolving/URL-based connected-client policy is
-the next intended increment; existing numeric clients and URI utilities retain
-their current scope. The [dependency ledger](library-dependencies.md) remains
+full library goal remain open. The URL-based client now has its separate finite
+acceptance above; existing numeric clients and URI utilities retain their
+own scopes. The [dependency ledger](library-dependencies.md) remains
 separate from accepted finite API evidence.
 
 **Accepted response files.**

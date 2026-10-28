@@ -64,10 +64,11 @@ fn cause(output:[u64],value:ext::url_connect::Cause) -> u64 {
 }
 fn endpoint(output:[u64],at:i32,value:core::net::SocketAddr) {
     output[at]=value.address().version() as u64; output[at+1]=value.port() as u64; output[at+4]=value.scope_id() as u64;
-    match(value.address()) {
-        core::net::IpAddr::V4(address)->{ output[at+2]=address.to_bits() as u64; },
-        core::net::IpAddr::V6(address)->{ output[at+2]=address.high; output[at+3]=address.low; }
-    }
+    output[at+2]=match(value.address()) {
+        core::net::IpAddr::V4(address)->address.to_bits() as u64,
+        core::net::IpAddr::V6(address)->address.high
+    };
+    output[at+3]=match(value.address()) { core::net::IpAddr::V6(address)->address.low,_ ->0 };
 }
 fn stats(output:[u64],value:ext::url_connect::Stats) {
     output[6]=value.resolver_calls; output[7]=value.addresses as u64; output[8]=value.attempts as u64;

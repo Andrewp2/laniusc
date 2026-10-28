@@ -735,6 +735,16 @@
         "docs/extended-glob.md"
       ]
     },
+    "ext::host_name": {
+      "guides": [
+        "docs/extended-http-url.md",
+        "docs/extended-url-client.md"
+      ],
+      "note": "Shared allocation-free ASCII DNS identity admission used by HTTP URL policy and OpenSSL identity validation. Checks logical bounds and caller-selected byte cap, labels, NULs and indexed byte/final-state failures; never normalizes, allocates or resolves. Direct URL contracts and the finite semantic catalog execute on Linux x86_64 CPU output from the GPU compiler. Physical backing/lifetimes remain caller preconditions; no GPU-device execution claim.",
+      "declarations": {
+        "check_dns": "Returns Ok(0) for the selected ASCII DNS profile. Bounds, cap, empty/overlong input and indexed NUL/invalid failures are explicit. Host lookup and URL legacy-numeric rejection belong to separate layers."
+      }
+    },
     "ext::http": {
       "guides": [
         "docs/extended-http.md",
@@ -762,9 +772,10 @@
         "docs/extended-fetch-many.md",
         "docs/extended-https-client.md",
         "docs/extended-https-batch.md",
-        "docs/extended-http-protocol-testing.md"
+        "docs/extended-http-protocol-testing.md",
+        "docs/extended-url-client.md"
       ],
-      "note": "Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified.",
+      "note": "Prepared canonically validates and copies request backing without sockets. into_protocol transfers it to the transport-free Protocol; begin supplies the plain socket driver. Protocol centralizes framing, encoding, decoding, confirmed progress, limits and Response transfer. Trailing selects default Discard or explicit Reject for already-received surplus; neither waits for future bytes. Plain steps never poll and offer at most 1024 bytes per active network leaf. Current direct Protocol execution passes one state/ownership group in 7.94 seconds with 247 explicitly balanced successful mappings and zero network calls, not 247 allocation-denial tests. The refactored synchronous client passes all six groups/188 cases in 27.70 seconds; direct Exchange passes five groups/83 cases through separate 7.93- and 9.90-second receipts with unchanged production source. Historical 480432e8 receipts remain separate. TLS stays in its adapter and OpenSSL; other targets remain unverified. The separate URL guide documents consume-on-every-result selected-socket adoption and Exchange.run; its current finite adoption/URL receipts are distinct from the historical numeric-driver counts above.",
       "declarations": {
         "prepare_until": "Canonical request preflight and owned staging without sockets; successful Prepared owners must be consumed with begin or destroyed.",
         "begin_until": "Preparation followed by consuming Prepared.begin; socket opening only, with connect and HTTP progress performed by Exchange.step.",
@@ -787,6 +798,18 @@
       ],
       "note": "Plain factory/driver adapter over the single server_poll engine and http_server::Exchange. Factory, caller-owned listener and handler stay live unchanged through Server destruction. The actual plain health/echo program passes two causal native cases: held partial-head with queued refill and held 4 MiB response reader with real EAGAIN before healthy-sibling completion. Both enforce at most two active accepted owners and three sockets including the listener, with complete responses, EOF and acceptance-order reports. A separate traced 64-connection observation transfers 4,194,304 body bytes with eight-client demand, active/socket peaks four/five, 1,224 verified source allocations and 1,165,325 peak live requested source bytes in 3.346761 seconds. These source metrics exclude native heaps, bootstrap, kernel memory and RSS. Current plain application groups pass matrix 30, quota 1, limits 16, boundaries 25 and faults 41 across separate receipts, with 23 reached source-allocation positions. These 113 process-case invocations include the standalone quota repeated inside faults and are not distinct coverage. Historical sequential receipts retain their own scope. The thin serve_until helper does not require A:Destroy; both helpers pass a native empty-report transfer control with a non-Destroy application error type (21.84 seconds). The empty-report helper scope remains separate from the accepted three-profile populated E/A control."
     },
+    "ext::http_url": {
+      "guides": [
+        "docs/extended-http-url.md",
+        "docs/extended-url-client.md",
+        "docs/library-url-client-plan.md"
+      ],
+      "note": "Owned absolute HTTP(S) URL planning over canonical URI/IP parsers and shared DNS checks. All syntax/profile/port/target checks precede allocation. Preserves authority and encoded origin-form target spelling, omits validated fragments, rejects userinfo and ambiguous legacy numeric hosts. Allocation backing is its only host effect. Url getters borrow owned storage; destroy is explicit/idempotent and invalidates getters. Direct contracts, 70 records on two layouts and 16 ownership/failure cases including four reached allocation denials pass on Linux x86_64; this is CPU execution, not a user GPU service.",
+      "declarations": {
+        "default_limits": "Defaults: 16384 URL bytes and 8192 generated target bytes; both configured limits must be in 1..1048576.",
+        "parse": "Checks logical bounds, complete URI syntax and the HTTP URL profile before allocating independent URL/target storage. Typed errors retain logical raw offsets and original URI diagnostics; failure publishes no partial owner."
+      }
+    },
     "ext::https_batch": {
       "guides": [
         "docs/extended-https-batch.md",
@@ -804,12 +827,14 @@
         "docs/extended-https-client.md",
         "docs/extended-https-batch.md",
         "docs/extended-https-batch-testing.md",
-        "docs/extended-openssl-tls.md"
+        "docs/extended-openssl-tls.md",
+        "docs/extended-url-client.md"
       ],
-      "note": "Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a second HTTP parser. Begin consumes Prepared on every result, retaining an independent native Context reference and copying identity bytes before one nonblocking socket opens. Steps never poll; TLS uses stable staged writes, independent readiness needs and explicit TLS-call/I/O/deadline budgets. Early-final closure distinguishes TLS 1.3 notification from TLS 1.2 deferral; authenticated EOF is required for close-delimited bodies. Typed metadata preserves HTTP/TLS/cleanup diagnostics. Six connected HTTPS groups pass 108 cases across three native Linux x86_64/glibc/OpenSSL 3 receipts, including 42 reached source-allocation failures and six direct-step/abort controls. The migrated HTTPS app separately passes four groups/63 cases, and affected mutual-TLS app modes pass three groups/101 cases excluding prepared-context streams. These finite receipts do not establish every TLS schedule or another target. A confirmed 14-line nested enum-pattern reduction rejects with LNC0006; its explicit two-match x86_64 control executes all four assertions. No compiler or production transport change was needed for that expression spelling.",
+      "note": "Resumable numeric TCP/OpenSSL transport for the shared HTTP Protocol, without a second HTTP parser. Begin consumes Prepared on every result, retaining an independent native Context reference and copying identity bytes before one nonblocking socket opens. Steps never poll; TLS uses stable staged writes, independent readiness needs and explicit TLS-call/I/O/deadline budgets. Early-final closure distinguishes TLS 1.3 notification from TLS 1.2 deferral; authenticated EOF is required for close-delimited bodies. Typed metadata preserves HTTP/TLS/cleanup diagnostics. Six connected HTTPS groups pass 108 cases across three native Linux x86_64/glibc/OpenSSL 3 receipts, including 42 reached source-allocation failures and six direct-step/abort controls. The migrated HTTPS app separately passes four groups/63 cases, and affected mutual-TLS app modes pass three groups/101 cases excluding prepared-context streams. These finite receipts do not establish every TLS schedule or another target. A confirmed 14-line nested enum-pattern reduction rejects with LNC0006; its explicit two-match x86_64 control executes all four assertions. No compiler or production transport change was needed for that expression spelling. The separate URL guide documents selected-socket adoption and Exchange.run, with eight current direct URL TLS cases kept separate from these historical numeric-driver counts.",
       "declarations": {
         "begin_with_context_until": "Consumes and disarms canonical Prepared, preserving its deadline and charged HTTP state. Retains an independent native Context reference and identity copy; successful begin owns the transport until terminal cleanup.",
-        "exchange_until": "Synchronous facade over the same resumable verified Exchange and canonical HTTP Protocol; caller trust, identity, SIGPIPE policy and absolute deadline remain explicit."
+        "exchange_until": "Synchronous facade over the same resumable verified Exchange and canonical HTTP Protocol; caller trust, identity, SIGPIPE policy and absolute deadline remain explicit.",
+        "adopt_connected_with_context_until": "Consumes Prepared and invalidates the supplied Socket owner on every result. Proves a connected nonblocking TCP socket, retains Context/identity state and starts Attach without opening, connecting or handshaking; the canonical driver owns subsequent cleanup."
       }
     },
     "ext::https_server": {
@@ -1107,6 +1132,44 @@
       "guides": [
         "docs/extended-uri-resolve.md"
       ]
+    },
+    "ext::url_client": {
+      "guides": [
+        "docs/extended-url-client.md",
+        "docs/extended-fetch-url.md",
+        "docs/library-url-client-plan.md"
+      ],
+      "note": "Plain HTTP facade over owned URL planning, the shared TCP selector and canonical HTTP Prepared/Exchange/Response. Validates and copies the request once before lookup, adopts the exact selected socket without reconnecting, and never retries after TCP selection. No OpenSSL source/link dependency. Response ownership/destruction and request/URL backing lifetimes are explicit. Two direct numeric HTTP cases and one controlled four-address DNS fallback case pass with exact Host/target/binary wire checks and live pre-exit source/descriptor cleanup on Linux x86_64/glibc. Connector and real-fetch receipts remain separate; registered Rust runtime tests have no pass claim.",
+      "declarations": {
+        "default_options": "Composes connector defaults and canonical HTTP defaults with explicit Trailing::Reject.",
+        "exchange_until": "Accepts Http only, checks the live URL/connector configuration and canonical request before DNS/socket effects, then transfers one selected connection into the shared driver. Returns one manually destroyed Response or typed stage/transport/cleanup diagnostics; it cannot replay onto spare endpoints."
+      }
+    },
+    "ext::url_connect": {
+      "guides": [
+        "docs/extended-url-client.md",
+        "docs/library-url-client-plan.md",
+        "docs/stdlib-resolve.md"
+      ],
+      "note": "One ordered bounded TCP selector, independent of HTTP/TLS and OpenSSL. Numeric URLs bypass NSS; DNS invokes the existing synchronous resolver at most once and preserves order/duplicates. One socket is live at a time; actual create/connect/poll/SO_ERROR/peer/failed-close calls share a quota with reserved cleanup credit. Explicit global/attempt deadlines, terminal versus endpoint fallback, primary/last-attempt/secondary-cleanup diagnostics and retire-once manual ownership are documented. Direct connector groups pass 12 admission and eight failure/cleanup cases separately on Linux x86_64/glibc. Connected URL DNS and transport groups have separate receipts. Blocking NSS is not deadline-cancellable; arbitrary clock/OOM/native internals and other targets remain outside those finite gates.",
+      "declarations": {
+        "default_options": "Any family, addr_config false, 32 results, 16 attempts, 512 connector socket calls and five seconds per attempt.",
+        "validate_options": "Host-free validation: result/attempt caps 1..4096 and nonzero normalized attempt duration. Zero/one socket-call budgets are valid values that connect_until rejects before native lookup or socket work.",
+        "connect_until": "Borrows a live Url through one synchronous selection. Success transfers one Socket owner into Connection; resolver result backing is released and failed-socket tokens retire once, with close errors preserved. The first proven TCP connection ends fallback. Failure retains exact typed control/native/cleanup metadata."
+      }
+    },
+    "ext::url_tls": {
+      "guides": [
+        "docs/extended-url-client.md",
+        "docs/extended-fetch-url.md",
+        "docs/extended-https-client.md",
+        "docs/library-url-client-plan.md"
+      ],
+      "note": "Verified HTTPS facade over the same TCP selector and canonical HTTPS driver; explicit native ssl/crypto linking and a caller-owned OpenSSL Context are required. Original URL DNS identity drives certificate matching/SNI; numeric hosts use IP SAN without SNI. Preparation precedes lookup; the exact selected Socket is adopted and no handshake/HTTP failure can replay onto spare endpoints. OpenSSL performs cryptography. Eight direct cases across TLS 1.2/1.3 pass identity, mismatch-before-HTTP, authenticated truncated response, no-replay and pre-exit source cleanup checks on Linux x86_64/glibc/OpenSSL 3. Manual Response ownership, source/native quota boundaries and remaining finite-coverage gaps are explicit.",
+      "declarations": {
+        "default_options": "Composes plain URL request/connector defaults with canonical HTTPS TLS-call defaults.",
+        "exchange_until": "Accepts Https only and validates live Context, original URL identity and TLS/request options before selection. Borrows caller inputs through the synchronous call and returns one manually destroyed Response with actual TLS statistics, or typed stage/HTTP/HTTPS/connection/cleanup diagnostics."
+      }
     },
     "ext::wave": {
       "guides": [
