@@ -11,19 +11,19 @@
   },
   "stack_change_table": {
     "witness_inputs": 0,
-    "cells": 2548,
+    "cells": 2565,
     "conflicts": []
   },
   "partial_parse_table": {
     "witness_inputs": 0,
-    "cells": 2548,
+    "cells": 2565,
     "conflicts": []
   },
   "ll1_runtime": {
-    "nonterminals": 150,
+    "nonterminals": 153,
     "start_nonterminal": "file",
-    "predict_cells": 30000,
-    "rhs_symbols": 583
+    "predict_cells": 31059,
+    "rhs_symbols": 593
   },
   "ll1_predictions": [
     {
@@ -2295,6 +2295,12 @@
       "production": 248
     },
     {
+      "nonterminal": "bound_type_args_opt",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 247
+    },
+    {
       "nonterminal": "bound_type_expr",
       "lookahead": "BoundTypeIdent",
       "lookahead_id": 174,
@@ -2406,6 +2412,12 @@
       "nonterminal": "bound_type_path_tail",
       "lookahead": "BoundTypeArgLt",
       "lookahead_id": 175,
+      "production": 246
+    },
+    {
+      "nonterminal": "bound_type_path_tail",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
       "production": 246
     },
     {
@@ -3379,6 +3391,60 @@
       "lookahead": "Const",
       "lookahead_id": 92,
       "production": 208
+    },
+    {
+      "nonterminal": "contract",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 323
+    },
+    {
+      "nonterminal": "contract_list_opt",
+      "lookahead": "FnBlockLBrace",
+      "lookahead_id": 149,
+      "production": 321
+    },
+    {
+      "nonterminal": "contract_list_opt",
+      "lookahead": "ImplFnBlockLBrace",
+      "lookahead_id": 151,
+      "production": 321
+    },
+    {
+      "nonterminal": "contract_list_opt",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 322
+    },
+    {
+      "nonterminal": "distinct_opt",
+      "lookahead": "TypeIdent",
+      "lookahead_id": 80,
+      "production": 319
+    },
+    {
+      "nonterminal": "distinct_opt",
+      "lookahead": "TypeArrayLBracket",
+      "lookahead_id": 85,
+      "production": 319
+    },
+    {
+      "nonterminal": "distinct_opt",
+      "lookahead": "TypeAmpersand",
+      "lookahead_id": 144,
+      "production": 319
+    },
+    {
+      "nonterminal": "distinct_opt",
+      "lookahead": "ReturnNever",
+      "lookahead_id": 197,
+      "production": 319
+    },
+    {
+      "nonterminal": "distinct_opt",
+      "lookahead": "Distinct",
+      "lookahead_id": 200,
+      "production": 320
     },
     {
       "nonterminal": "else_tail",
@@ -7275,6 +7341,12 @@
       "production": 35
     },
     {
+      "nonterminal": "return_type_opt",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 35
+    },
+    {
       "nonterminal": "return_value_opt",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -8463,6 +8535,12 @@
       "production": 226
     },
     {
+      "nonterminal": "type_args_opt",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 226
+    },
+    {
       "nonterminal": "type_array_len",
       "lookahead": "Int",
       "lookahead_id": 2,
@@ -8652,6 +8730,12 @@
       "nonterminal": "type_param_bound_tail",
       "lookahead": "ExternSemicolon",
       "lookahead_id": 164,
+      "production": 240
+    },
+    {
+      "nonterminal": "type_param_bound_tail",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
       "production": 240
     },
     {
@@ -8847,6 +8931,12 @@
       "production": 59
     },
     {
+      "nonterminal": "type_path_tail",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 59
+    },
+    {
       "nonterminal": "unary",
       "lookahead": "Ident",
       "lookahead_id": 1,
@@ -8997,6 +9087,12 @@
       "production": 36
     },
     {
+      "nonterminal": "where_clause_opt",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 36
+    },
+    {
       "nonterminal": "where_predicate",
       "lookahead": "WhereIdent",
       "lookahead_id": 156,
@@ -9063,6 +9159,12 @@
       "production": 40
     },
     {
+      "nonterminal": "where_predicate_tail",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
+      "production": 40
+    },
+    {
       "nonterminal": "where_predicate_tail_after_comma",
       "lookahead": "TypeAliasAssign",
       "lookahead_id": 110,
@@ -9120,6 +9222,12 @@
       "nonterminal": "where_predicate_tail_after_comma",
       "lookahead": "ExternSemicolon",
       "lookahead_id": 164,
+      "production": 42
+    },
+    {
+      "nonterminal": "where_predicate_tail_after_comma",
+      "lookahead": "Requires",
+      "lookahead_id": 201,
       "production": 42
     }
   ],
@@ -9239,7 +9347,7 @@
       "line": 24,
       "lhs": "fn_item",
       "tag": "fn",
-      "arity": 5,
+      "arity": 6,
       "rhs": [
         "'Fn'",
         "'Ident'",
@@ -9249,6 +9357,7 @@
         "'ParamRParen'",
         "return_type_opt",
         "where_clause_opt",
+        "contract_list_opt",
         "fn_block"
       ]
     },
@@ -9269,7 +9378,7 @@
       "line": 26,
       "lhs": "impl_fn_item",
       "tag": "impl_fn",
-      "arity": 5,
+      "arity": 6,
       "rhs": [
         "'Fn'",
         "'Ident'",
@@ -9279,6 +9388,7 @@
         "'ParamRParen'",
         "return_type_opt",
         "where_clause_opt",
+        "contract_list_opt",
         "impl_fn_block"
       ]
     },
@@ -9319,13 +9429,14 @@
       "line": 29,
       "lhs": "type_alias_item",
       "tag": "type_alias",
-      "arity": 3,
+      "arity": 4,
       "rhs": [
         "'Type'",
         "'TypeAliasNameIdent'",
         "enum_type_params_opt",
         "where_clause_opt",
         "'TypeAliasAssign'",
+        "distinct_opt",
         "type_expr",
         "'TypeAliasSemicolon'"
       ]
@@ -12497,6 +12608,56 @@
       "rhs": [
         "'Question'",
         "postfix_tail"
+      ]
+    },
+    {
+      "id": 319,
+      "line": 420,
+      "lhs": "distinct_opt",
+      "tag": "distinct_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 320,
+      "line": 421,
+      "lhs": "distinct_opt",
+      "tag": "distinct_some",
+      "arity": 0,
+      "rhs": [
+        "'Distinct'"
+      ]
+    },
+    {
+      "id": 321,
+      "line": 428,
+      "lhs": "contract_list_opt",
+      "tag": "contracts_none",
+      "arity": 0,
+      "rhs": []
+    },
+    {
+      "id": 322,
+      "line": 429,
+      "lhs": "contract_list_opt",
+      "tag": "contracts_more",
+      "arity": 2,
+      "rhs": [
+        "contract",
+        "contract_list_opt"
+      ]
+    },
+    {
+      "id": 323,
+      "line": 430,
+      "lhs": "contract",
+      "tag": "requires",
+      "arity": 1,
+      "rhs": [
+        "'Requires'",
+        "'GroupLParen'",
+        "expr",
+        "'GroupRParen'"
       ]
     }
   ]

@@ -1,0 +1,8 @@
+type Meters = distinct i64;
+type Seconds = distinct i64;
+fn main() -> i32 {
+    let m: Meters = 4;
+    let s: Seconds = 3;
+    if (m + s > 0) { return 1; }
+    return 0;
+}

@@ -965,6 +965,16 @@ SemanticLirSchedule semantic_schedule(uint node, uint local_row, uint local_coun
             schedule.execution_rank = 0xffffffffu;
             schedule.execution_tie = 0xffffffffu;
         }
+        else if (!loop && semantic_lir_is_contract(hir, payload))
+        {
+            // ELSE, TRAP and CONTROL_END run together at the clause's end.
+            // The condition's span includes the parentheses, so IF_BEGIN
+            // already owns the last tie on `)`; the next token (the next
+            // clause or the body's `{`) opens no rows of its own.
+            schedule.execution_region = hir.token_end;
+            schedule.execution_rank = 0u;
+            schedule.execution_tie = local_row;
+        }
         else if (!loop && local_count == 3u && local_row == 1u)
         {
             schedule.execution_region = bounded_token(payload.d, hir_count, hir.token_end);
@@ -1886,10 +1896,11 @@ SemanticLirRow materialize_original_semantic_lir_row(uint node, uint local_row, 
     {
         operands.a = lir_for_value_hir(payload.b, hir_count);
         // With an else arm, false control skips the synthetic ELSE branch and
-        // enters the following body. Without one it targets CONTROL_END.
-        operands.b = local_count == 3u ? first_row + 1u
-                                       : first_row + local_count - 1u;
-        operands.c = local_count == 3u ? 1u : 0u;
+        // enters the following body. Without one it targets CONTROL_END. A
+        // contract (4 rows) has an else arm: its TRAP.
+        bool else_arm = local_count >= 3u;
+        operands.b = else_arm ? first_row + 1u : first_row + local_count - 1u;
+        operands.c = else_arm ? 1u : 0u;
     }
     else if (op == SEMANTIC_LIR_OP_ELSE)
         operands.a = first_row + local_count - 1u;

@@ -4275,6 +4275,15 @@ pub(in crate::compiler::gpu_compiler) fn type_check_diagnostic_at_span(
                     .with_note("a `-> !` function must not return: end every path with a call to another `-> !` function (such as core::panic::panic()) or `assert(false)`, or change the return type"),
             )
         }
+        GpuTypeCheckCode::AssignMismatch if detail == crate::primitive_types::DISTINCT_TYPE_MISMATCH => {
+            CompileError::Diagnostic(
+                Diagnostic::error("LNC0006", "type mismatch")
+                    .with_primary_label(diagnostic_label_from_source_span(
+                        path, source, start, len, "this value's distinct type differs from the one expected here",
+                    ))
+                    .with_note("a value of a distinct type (`type M = distinct T;`) mixes only with values of the same type and with literals; convert with `as`"),
+            )
+        }
         GpuTypeCheckCode::AssignMismatch
             if assign_mismatch_looks_like_invalid_member_access(source, start, detail) =>
         {

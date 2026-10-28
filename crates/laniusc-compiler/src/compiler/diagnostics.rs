@@ -2927,6 +2927,9 @@ fn expected_keyword_text(kind: TokenKind) -> Option<&'static str> {
         TokenKind::Where => Some("where"),
         TokenKind::SelfValue => Some("self"),
         TokenKind::As => Some("as"),
+        TokenKind::Distinct => Some("distinct"),
+        TokenKind::Requires => Some("requires"),
+        TokenKind::Ensures => Some("ensures"),
         _ => None,
     }
 }
@@ -3662,6 +3665,8 @@ fn source_identifier_token_kind(text: &str) -> TokenKind {
         "where" => TokenKind::Where,
         "self" => TokenKind::SelfValue,
         "as" => TokenKind::As,
+        "requires" => TokenKind::Requires,
+        "ensures" => TokenKind::Ensures,
         _ => TokenKind::Ident,
     }
 }
@@ -3804,6 +3809,8 @@ fn syntax_token_is_keyword(kind: TokenKind) -> bool {
             | TokenKind::Where
             | TokenKind::SelfValue
             | TokenKind::As
+            | TokenKind::Requires
+            | TokenKind::Ensures
     )
 }
 

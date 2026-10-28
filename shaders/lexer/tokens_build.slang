@@ -58,6 +58,9 @@ static const uint TK_IN = 101;
 static const uint TK_EXTERN = 102;
 static const uint TK_TYPE = 103;
 static const uint TK_WHERE = 104;
+static const uint TK_DISTINCT = 200;
+static const uint TK_REQUIRES = 201;
+static const uint TK_ENSURES = 202;
 static const uint TK_SELF_VALUE = 105;
 static const uint TK_DOT_DOT = 182;
 static const uint TK_DOT_DOT_EQUAL = 189;
@@ -270,6 +273,14 @@ uint retag_keyword(uint kind, uint start, uint len)
         if (b0 == 101u && b1 == 120u && b2 == 116u && b3 == 101u && b4 == 114u && b5 == 110u)
             return TK_EXTERN;
     }
+    else if (len == 7u)
+    {
+        if (load_byte_at(in_bytes, start) == 101u && load_byte_at(in_bytes, start + 1u) == 110u &&
+            load_byte_at(in_bytes, start + 2u) == 115u && load_byte_at(in_bytes, start + 3u) == 117u &&
+            load_byte_at(in_bytes, start + 4u) == 114u && load_byte_at(in_bytes, start + 5u) == 101u &&
+            load_byte_at(in_bytes, start + 6u) == 115u)
+            return TK_ENSURES;
+    }
     else if (len == 8u)
     {
         uint b0 = load_byte_at(in_bytes, start);
@@ -283,6 +294,9 @@ uint retag_keyword(uint kind, uint start, uint len)
         if (b0 == 99u && b1 == 111u && b2 == 110u && b3 == 116u &&
             b4 == 105u && b5 == 110u && b6 == 117u && b7 == 101u)
             return TK_CONTINUE;
+        if (b0 == 114u && b1 == 101u && b2 == 113u && b3 == 117u &&
+            b4 == 105u && b5 == 114u && b6 == 101u && b7 == 115u)
+            return TK_REQUIRES;
     }
 
     return kind;
@@ -369,6 +383,38 @@ bool previous_token_is_adjacent_float_dot(uint token_index, uint start, uint fil
     return prev_end == start && float_token_ends_with_dot(prev_kind, prev_start, prev_end);
 }
 
+// `distinct` is a contextual keyword: the lexeme directly between a single
+// `=` and a non-keyword identifier, as in `type Meters = distinct i64;`. No
+// expression has two identifiers in a row, so a value named `distinct` keeps
+// the identifier kind everywhere else.
+bool token_is_distinct_keyword(uint token_index, uint start, uint end_excl, uint file_id, uint total)
+{
+    if (end_excl - start != 8u || token_index == 0u || token_index + 1u >= total)
+        return false;
+    uint spelled = 0u;
+    if (load_byte_at(in_bytes, start) == 100u && load_byte_at(in_bytes, start + 1u) == 105u &&
+        load_byte_at(in_bytes, start + 2u) == 115u && load_byte_at(in_bytes, start + 3u) == 116u &&
+        load_byte_at(in_bytes, start + 4u) == 105u && load_byte_at(in_bytes, start + 5u) == 110u &&
+        load_byte_at(in_bytes, start + 6u) == 99u && load_byte_at(in_bytes, start + 7u) == 116u)
+        spelled = 1u;
+    if (spelled == 0u)
+        return false;
+
+    uint prev_index = token_index - 1u;
+    uint prev_end = end_positions[prev_index];
+    uint2 prev_file_info = file_start_and_id_for_token_end(prev_end);
+    uint next_index = token_index + 1u;
+    uint next_end = end_positions[next_index];
+    uint2 next_file_info = file_start_and_id_for_token_end(next_end);
+    if (prev_file_info.y != file_id || next_file_info.y != file_id)
+        return false;
+    uint prev_start = max(compact_token_start(prev_index), prev_file_info.x);
+    uint next_start = max(compact_token_start(next_index), next_file_info.x);
+    return retag_compact_kind(prev_index, prev_start, prev_end) == TK_ASSIGN &&
+           prev_end == prev_start + 1u &&
+           retag_compact_kind(next_index, next_start, next_end) == TK_IDENT;
+}
+
 bool string_may_be_expression(uint token_index, uint kind, uint file_id)
 {
     if (kind != TK_STRING)
@@ -434,6 +480,9 @@ void tokens_build(uint3 tid: SV_DispatchThreadID)
     {
         kind = TK_DOT_DOT_EQUAL;
     }
+
+    if (kind == TK_IDENT && token_is_distinct_keyword(k, start, end_excl, file_info.y, total))
+        kind = TK_DISTINCT;
 
     // Write final token
     TokenOut t;

@@ -102,6 +102,10 @@ public bool type_ref_is_never(uint tag, uint payload)
 public static const uint NEVER_RETURN_STATEMENT = 0x20000001u;
 // PRIMITIVE_CONSTANT
 public static const uint NEVER_RETURN_FALLS_OFF = 0x20000002u;
+// LNC0006 detail of a value whose distinct type (`type M = distinct T;`)
+// differs from the one its context expects (conditions/compact_distinct.slang).
+// PRIMITIVE_CONSTANT
+public static const uint DISTINCT_TYPE_MISMATCH = 0x20000003u;
 
 // Any primitive identity, never included: canonical IDs and interface leaves.
 [ForceInline]

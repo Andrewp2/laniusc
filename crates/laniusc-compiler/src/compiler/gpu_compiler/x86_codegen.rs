@@ -1977,8 +1977,19 @@ pub impl Maybe<bool> {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../stdlib/std/vec.lani"),
         )
         .expect("read the actual generic vector module");
+        // The rest of the vector's import closure.
+        let mut sources = vec![definitions.to_owned(), memory, vector];
+        for module in ["alloc/allocator", "core/cmp", "core/option", "core/panic", "core/result"] {
+            sources.push(
+                std::fs::read_to_string(
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join(format!("../../stdlib/{module}.lani")),
+                )
+                .expect("read a module the vector imports"),
+            );
+        }
         let provider = pollster::block_on(compiler.compile_source_pack_unit_with_dependency_pages(
-            vec![definitions.to_owned(), memory, vector].into(),
+            sources.into(),
             7,
             0,
             Vec::new().into(),
@@ -2925,7 +2936,7 @@ fn main() -> i32 {
         };
         let compiler = pollster::block_on(GpuCompiler::new()).expect("GPU compiler");
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../stdlib/core");
-        let sources = ["result.lani", "mem.lani"]
+        let sources = ["result.lani", "mem.lani", "cmp.lani", "panic.lani"]
             .iter()
             .map(|name| {
                 std::fs::read_to_string(root.join(name))

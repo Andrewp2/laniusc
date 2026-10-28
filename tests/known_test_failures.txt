@@ -30,7 +30,6 @@ laniusc_compiler  codegen::lowering::tests::physical_gpu_projects_dense_function
 laniusc_compiler  codegen::wasm_lowering::tests::physical_gpu_runs_resident_semantic_to_scheduled_wasm_bytes  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.opt.access.metadata binds semantic_params with 
 laniusc_compiler  codegen::x86_artifact::tests::physical_gpu_emits_runnable_x86_elf_from_uniform_lir  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.x86.byte_count binds semantic_lir_params with 1
 laniusc_compiler  codegen::x86_lowering::tests::physical_gpu_runs_resident_semantic_to_scheduled_x86_lir  TBD  called `Result::unwrap()` on an `Err` value: compiler pass lir.opt.access.metadata binds semantic_params with 
-laniusc_compiler  compiler::diagnostics::tests::diagnostic_explanation_json_describes_known_and_unknown_codes  TBD  assertion failed: value["unsupported_feature"]["next_step"].as_str().expect("unsupported-feature next step sho
 laniusc_compiler  compiler::gpu_compiler::helpers::tests::type_mismatch_note_preserves_unknown_and_array_code_records  TBD  assertion failed: float_note.contains("found float")
 laniusc_compiler  compiler::gpu_compiler::tests::physical_gpu_lowers_the_compilers_checked_compact_hir_for_both_targets  TBD  finish Wasm artifact for shared_host_runtime_calls: GPU lowering failed (flags=0x10, semantic row=5, OptIR row
 laniusc_compiler  compiler::gpu_compiler::typecheck::tests::body_replay_preserves_qualified_alias_parameter_identity  TBD  specialized imported identity aliases: LNC0017 program trait evidence checking failed
@@ -45,12 +44,12 @@ laniusc_compiler  compiler::gpu_compiler::x86_codegen::tests::scalar_body_specia
 laniusc_compiler  gpu::constant_claim_publication_tests::physical_gpu_constant_claim_publication_preserves_precedence_replay_and_explicit_mirror  TBD  type_checker/calls/03a8_validate_explicit_applications requires missing fixture buffer compact_type_args
 laniusc_compiler  gpu::passes_core::compute_pass_counting_tests::every_compute_pass_uses_the_counted_boundary  TBD  assertion `left == right` failed: raw compute-pass boundaries: [
 laniusc_compiler  gpu::passes_core::compute_pass_counting_tests::raw_gpu_commands_remain_confined_to_explicit_boundaries  TBD  GPU commands bypass compiler-graph operation boundaries:
+laniusc_compiler  gpu::readback::lifecycle_tests::gpu_paged_readback_cancels_failed_maps_before_staging_reuse  TBD  flaky under load: reads stale bytes after a cancelled map, possibly a real staging-reuse race
+laniusc_compiler  gpu::readback::gather::tests::gpu_gather_bind_groups_do_not_depend_on_regions  TBD  flaky: bind groups created per thread are 0 or 2 between runs of one build
 
 # Flaky (P10 triage, 2026-10-18, RTX 3070 Laptop). Listed so a pass or a
 # failure of these does not hide a new failure; the checker reports a pass.
 cli_daemon  cli_daemon_accepts_a_unix_socket_session  TBD  flaky: passes alone and with RUST_TEST_THREADS=1; at default threads 5 daemons start at once and the socket (bound after startup) misses the 10 s connect deadline. 5 stdio daemons started together: 2 ready in 1.6-2.5 s, 3 with no ready line after 60 s (multi-daemon startup stall)
-laniusc_compiler  gpu::readback::lifecycle_tests::gpu_paged_readback_cancels_failed_maps_before_staging_reuse  TBD  flaky under load: reads stale bytes after a cancelled map, possibly a real staging-reuse race
-laniusc_compiler  gpu::readback::gather::tests::gpu_gather_bind_groups_do_not_depend_on_regions  TBD  flaky: bind groups created per thread are 0 or 2 between runs of one build
 
 # type_checker_semantics (P12, 2026-10-19, RTX 3070 Laptop): 249 pass, these 5
 # fail on 813b6dd1 with and without 5ab2ee08's checker changes.

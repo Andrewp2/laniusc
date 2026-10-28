@@ -21,12 +21,12 @@ item          [item_type_alias] -> type_alias_item;
 item          [item_impl]    -> impl_item;
 item          [item_trait]   -> trait_item;
 
-fn_item       [fn]           -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt fn_block;
+fn_item       [fn]           -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt contract_list_opt fn_block;
 fn_block      [fn_block]     -> 'FnBlockLBrace' stmt_list 'FnBlockRBrace';
-impl_fn_item  [impl_fn]      -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt impl_fn_block;
+impl_fn_item  [impl_fn]      -> 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt contract_list_opt impl_fn_block;
 impl_fn_block [impl_fn_block] -> 'ImplFnBlockLBrace' stmt_list 'ImplFnBlockRBrace';
 extern_fn_item [extern_fn]   -> 'Extern' extern_abi_opt 'Fn' 'Ident' enum_type_params_opt 'ParamLParen' param_list_opt 'ParamRParen' return_type_opt where_clause_opt 'ExternSemicolon';
-type_alias_item [type_alias] -> 'Type' 'TypeAliasNameIdent' enum_type_params_opt where_clause_opt 'TypeAliasAssign' type_expr 'TypeAliasSemicolon';
+type_alias_item [type_alias] -> 'Type' 'TypeAliasNameIdent' enum_type_params_opt where_clause_opt 'TypeAliasAssign' distinct_opt type_expr 'TypeAliasSemicolon';
 impl_item     [impl_inherent] -> 'InherentImpl' enum_type_params_opt type_expr where_clause_opt 'ImplLBrace' impl_method_list_opt 'ImplRBrace';
 impl_item     [impl_trait]   -> 'TraitImpl' enum_type_params_opt type_expr 'ImplFor' type_expr where_clause_opt 'ImplLBrace' impl_method_list_opt 'ImplRBrace';
 impl_method_list_opt [impl_methods_none] -> ;
@@ -410,3 +410,21 @@ array_repeat_count [array_repeat_count] -> 'ArrayRepeatCount';
 # same enum with the same error type (no conversion). The production sits at
 # the end of the file to keep earlier production IDs.
 postfix_tail [postfix_try] -> 'Question' postfix_tail;
+
+# ----- Distinct types -----
+# `type Meters = distinct i64;` declares a type with the target's
+# representation and operations whose values do not mix with the target's or
+# another distinct type's without a cast. `distinct` is a contextual keyword
+# the lexer retags only between `=` and an identifier. The productions sit at
+# the end of the file to keep earlier production IDs.
+distinct_opt [distinct_none] -> ;
+distinct_opt [distinct_some] -> 'Distinct';
+
+# ----- Function contracts -----
+# `fn f(x: i32) -> i32 requires (x > 0) { ... }`: each `requires` clause is a
+# Boolean condition on the parameters, checked when the function is entered
+# (a failed condition traps, like `assert(false)`). The productions sit at the
+# end of the file to keep earlier production IDs.
+contract_list_opt [contracts_none] -> ;
+contract_list_opt [contracts_more] -> contract contract_list_opt;
+contract [requires] -> 'Requires' 'GroupLParen' expr 'GroupRParen';

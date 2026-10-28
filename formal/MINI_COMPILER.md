@@ -831,7 +831,7 @@ lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
 as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
 `frontend.lani` is about 7,050 hand-written lines, followed by the generated
-grammar table: 318 productions, with terminals as lexer token codes. Two
+grammar table: 324 productions, with terminals as lexer token codes. Two
 tools regenerate it:
 
 ```bash

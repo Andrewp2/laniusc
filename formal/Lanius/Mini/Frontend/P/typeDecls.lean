@@ -50,7 +50,7 @@ def itemDecls (fuel : Nat) (home : List (List Nat)) (item : CTree) : Option Decl
               importDecls home (pathSpellings fuel (kid (kid (kid b 1) 0) 0) (kid (kid (kid b 1) 0) 1))
             else
               if decide (p = (16)) && decide (nodeProd (kid b 3) = (36)) then
-                aliasDecls home (kidToken b 1).text (typeParams fuel (kid b 2)) (kid b 5)
+                aliasDecls home (kidToken b 1).text (typeParams fuel (kid b 2)) (kid b 6)
               else
                 if decide (p = (46)) || decide (p = (43)) || decide (p = (15)) || decide (p = (25)) || decide (p = (16)) then
                   some noDecls

@@ -33,6 +33,7 @@ static const uint TK_COLON = 38u;
 static const uint TK_IMPL = 98u;
 static const uint TK_TYPE_COLON = 108u;
 static const uint TK_TYPE_ALIAS_ASSIGN = 110u;
+static const uint TK_DISTINCT = 200u;
 static const uint TK_RETURN_ARROW = 112u;
 static const uint TK_TYPE_ARG_LT = 131u;
 static const uint TK_TYPE_ARG_COMMA = 135u;
@@ -118,7 +119,7 @@ uint direct_type_path_context_kind(uint parser_i, uint count)
         return 0u;
     if (prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA ||
         prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
-        prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
+        prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_DISTINCT || prev == TK_TYPE_AMPERSAND ||
         prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||
         prev == TK_PATH_TYPE_ARG_LT || prev == TK_PATH_TYPE_ARG_COMMA ||
         prev == TK_ENUM_PAYLOAD_LPAREN || prev == TK_ENUM_FIELD_COMMA ||

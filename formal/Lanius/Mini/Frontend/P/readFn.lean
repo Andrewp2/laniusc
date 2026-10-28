@@ -5,6 +5,7 @@ import Lanius.Mini.Compiler.P.Lists_empty
 import Lanius.Mini.Frontend.P.callParts
 import Lanius.Mini.Frontend.P.compoundOf
 import Lanius.Mini.Frontend.P.hasKids
+import Lanius.Mini.Frontend.P.isEmptyUsize
 import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.projectionRet
 import Lanius.Mini.Frontend.P.typeDecls
@@ -23,10 +24,10 @@ def readFn (fuel : Nat) (decls : Decls) (fd : FnDecl) (args : List Ty) : Option 
   let tenv : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := none, base := (kidToken f 1).start } : FrontEnv)
   let rt : Option RetTy := resultOf fuel tenv (kid f 6)
   let env : FrontEnv := ({ decls := decls, home := fd.home, names := names, subst := args, globals := moduleGlobals decls fd.home, ret := retExpected rt, base := (kidToken f 1).start } : FrontEnv)
-  if names.length = args.length then
+  if decide (names.length = args.length) && decide (nodeProd (kid f 8) = (321)) then
     match listItems fuel (kid f 4) with
     | none => none
-    | some items => funcParams fuel env (paramsOf fuel env fd [] items) rt (kid (kid f 8) 1)
+    | some items => funcParams fuel env (paramsOf fuel env fd [] items) rt (kid (kid f 9) 1)
   else
     none
 

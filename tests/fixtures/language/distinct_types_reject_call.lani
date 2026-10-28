@@ -1,0 +1,8 @@
+type Meters = distinct i64;
+type Seconds = distinct i64;
+fn walk(m: Meters) -> Meters { return m; }
+fn main() -> i32 {
+    let s: Seconds = 3;
+    let m: Meters = walk(s);
+    return 0;
+}

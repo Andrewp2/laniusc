@@ -501,6 +501,15 @@ void publish_if(uint node)
     hir_stmt_record[stmt_slot(node, 3u)] = else_block;
 }
 
+// `requires (cond)`: an `if` record with no then or else arm.
+void publish_requires(uint node)
+{
+    hir_stmt_record[stmt_slot(node, 0u)] = STMT_RECORD_KIND_IF;
+    hir_stmt_record[stmt_slot(node, 1u)] = direct_expr_child_scan(node);
+    hir_stmt_record[stmt_slot(node, 2u)] = INVALID;
+    hir_stmt_record[stmt_slot(node, 3u)] = INVALID;
+}
+
 void publish_while(uint node)
 {
     uint cond = direct_expr_child_scan(node);
@@ -606,6 +615,8 @@ void main(uint3 dtid: SV_DispatchThreadID)
         publish_return_value(i);
     else if (prod == PROD_IF_STMT)
         publish_if(i);
+    else if (prod == PROD_REQUIRES)
+        publish_requires(i);
     else if (prod == PROD_WHILE_STMT)
         publish_while(i);
     else if (prod == PROD_FOR_STMT || hir_kind[i] == HIR_FOR_STMT)

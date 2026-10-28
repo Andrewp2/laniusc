@@ -1226,7 +1226,8 @@ pub fn item_decls(fuel: usize, home: List<List<usize>>, item: CTree) -> core::op
         return import_decls(home, path_spellings(fuel, kid(kid(kid(b, 1), 0), 0), kid(kid(kid(b, 1), 0), 1)));
     }
     if (p == p_type_alias() && node_prod(kid(b, 3)) == p_where_none()) {
-        return alias_decls(home, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 5));
+        // A `distinct` alias (kid 5) runs as its target type.
+        return alias_decls(home, kid_token(b, 1).text, type_params(fuel, kid(b, 2)), kid(b, 6));
     }
     if (p == p_module() || p == p_import() || p == p_extern_fn() || p == p_trait() || p == p_type_alias()) {
         return Some(no_decls());
@@ -6198,10 +6199,12 @@ pub fn read_fn(fuel: usize, decls: Decls, fd: FnDecl, args: List<Ty>) -> core::o
     let tenv: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: None, base: kid_token(f, 1).start };
     let rt: core::option::Option<RetTy> = result_of(fuel, tenv, kid(f, 6));
     let env: FrontEnv = FrontEnv { decls: decls, home: fd.home, names: names, subst: args, globals: module_globals(decls, fd.home), ret: ret_expected(rt), base: kid_token(f, 1).start };
-    if (length(names) == length(args)) {
+    // A `requires` clause would add a run-time check this front end does not
+    // model, so only functions without contracts are read.
+    if (length(names) == length(args) && node_prod(kid(f, 8)) == p_contracts_none()) {
         return match (list_items(fuel, kid(f, 4))) {
             None -> None,
-            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(kid(f, 8), 1)),
+            Some(items) -> func_params(fuel, env, params_of(fuel, env, fd, empty(), items), rt, kid(kid(f, 9), 1)),
         };
     }
     return None;
@@ -7739,7 +7742,8 @@ pub fn front_end_files(g: List<Rule>, files: List<FileInput>) -> core::option::O
 // 140 scalar_constant_argument, 141 member_type_args_opt,
 // 142 generic_argument_magnitude, 143 cast, 144 cast_tail, 145 cast_type,
 // 146 cast_type_path, 147 cast_type_path_segment, 148 cast_type_path_tail,
-// 149 array_repeat_count.
+// 149 array_repeat_count, 150 distinct_opt, 151 contract_list_opt,
+// 152 contract.
 
 // Productions 0 to 19:
 // 0 file, 1 items_more, 2 items_end, 3 item_pub, 4 item_fn, 5 item_extern_fn,
@@ -7758,12 +7762,12 @@ pub fn grammar_part_0() -> List<Rule> {
         cons(Rule { lhs: 2, rhs: cons(Nonterm(8), empty()) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(9), empty()) },
         cons(Rule { lhs: 2, rhs: cons(Nonterm(13), empty()) },
-        cons(Rule { lhs: 3, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(4), empty()))))))))) },
+        cons(Rule { lhs: 3, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(151), cons(Nonterm(4), empty())))))))))) },
         cons(Rule { lhs: 4, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
-        cons(Rule { lhs: 5, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(6), empty()))))))))) },
+        cons(Rule { lhs: 5, rhs: cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Nonterm(151), cons(Nonterm(6), empty())))))))))) },
         cons(Rule { lhs: 6, rhs: cons(Term(22), cons(Nonterm(41), cons(Term(23), empty()))) },
         cons(Rule { lhs: 7, rhs: cons(Term(102), cons(Nonterm(17), cons(Term(67), cons(Term(1), cons(Nonterm(108), cons(Term(4), cons(Nonterm(34), cons(Term(5), cons(Nonterm(18), cons(Nonterm(19), cons(Term(37), empty()))))))))))) },
-        cons(Rule { lhs: 8, rhs: cons(Term(103), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(8), cons(Nonterm(38), cons(Term(37), empty()))))))) },
+        cons(Rule { lhs: 8, rhs: cons(Term(103), cons(Term(1), cons(Nonterm(108), cons(Nonterm(19), cons(Term(8), cons(Nonterm(150), cons(Nonterm(38), cons(Term(37), empty())))))))) },
         cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(108), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))) },
         cons(Rule { lhs: 9, rhs: cons(Term(98), cons(Nonterm(108), cons(Nonterm(38), cons(Term(100), cons(Nonterm(38), cons(Nonterm(19), cons(Term(22), cons(Nonterm(10), cons(Term(23), empty()))))))))) },
         cons(Rule { lhs: 10, rhs: empty() },
@@ -8209,14 +8213,14 @@ pub fn grammar_part_14() -> List<Rule> {
         empty()))))))))))))))))))));
 }
 
-// Productions 300 to 317:
+// Productions 300 to 319:
 // 300 generic_argument_positive, 301 generic_argument_magnitude_integer,
 // 302 generic_argument_magnitude_float, 303 generic_argument_true,
 // 304 generic_argument_false, 305 generic_argument_char,
 // 306 generic_argument_float, 307 cast, 308 cast_tail, 309 cast_end,
 // 310 cast_type_name, 311 cast_type_path, 312 cast_type_path_ident,
 // 313 cast_type_path_more, 314 cast_type_path_end, 315 type_never,
-// 316 array_repeat, 317 array_repeat_count.
+// 316 array_repeat, 317 array_repeat_count, 318 postfix_try, 319 distinct_none.
 pub fn grammar_part_15() -> List<Rule> {
     return cons(Rule { lhs: 140, rhs: cons(Term(6), cons(Nonterm(142), empty())) },
         cons(Rule { lhs: 142, rhs: cons(Term(2), empty()) },
@@ -8236,12 +8240,24 @@ pub fn grammar_part_15() -> List<Rule> {
         cons(Rule { lhs: 38, rhs: cons(Term(19), empty()) },
         cons(Rule { lhs: 84, rhs: cons(Term(37), cons(Nonterm(149), empty())) },
         cons(Rule { lhs: 149, rhs: cons(Term(2), empty()) },
-        empty()))))))))))))))))));
+        cons(Rule { lhs: 78, rhs: cons(Term(39), cons(Nonterm(78), empty())) },
+        cons(Rule { lhs: 150, rhs: empty() },
+        empty()))))))))))))))))))));
+}
+
+// Productions 320 to 323:
+// 320 distinct_some, 321 contracts_none, 322 contracts_more, 323 requires.
+pub fn grammar_part_16() -> List<Rule> {
+    return cons(Rule { lhs: 150, rhs: cons(Term(200), empty()) },
+        cons(Rule { lhs: 151, rhs: empty() },
+        cons(Rule { lhs: 151, rhs: cons(Nonterm(152), cons(Nonterm(151), empty())) },
+        cons(Rule { lhs: 152, rhs: cons(Term(201), cons(Term(4), cons(Nonterm(53), cons(Term(5), empty())))) },
+        empty()))));
 }
 
 // The productions of grammar/lanius.bnf, by production id.
 pub fn grammar() -> List<Rule> {
-    return concat(grammar_part_0(), concat(grammar_part_1(), concat(grammar_part_2(), concat(grammar_part_3(), concat(grammar_part_4(), concat(grammar_part_5(), concat(grammar_part_6(), concat(grammar_part_7(), concat(grammar_part_8(), concat(grammar_part_9(), concat(grammar_part_10(), concat(grammar_part_11(), concat(grammar_part_12(), concat(grammar_part_13(), concat(grammar_part_14(), grammar_part_15())))))))))))))));
+    return concat(grammar_part_0(), concat(grammar_part_1(), concat(grammar_part_2(), concat(grammar_part_3(), concat(grammar_part_4(), concat(grammar_part_5(), concat(grammar_part_6(), concat(grammar_part_7(), concat(grammar_part_8(), concat(grammar_part_9(), concat(grammar_part_10(), concat(grammar_part_11(), concat(grammar_part_12(), concat(grammar_part_13(), concat(grammar_part_14(), concat(grammar_part_15(), grammar_part_16()))))))))))))))));
 }
 
 // extract: inline
@@ -8422,6 +8438,11 @@ fn p_compare() -> usize {
 // extract: inline
 fn p_const() -> usize {
     return 208;
+}
+
+// extract: inline
+fn p_contracts_none() -> usize {
+    return 321;
 }
 
 // extract: inline

@@ -41,6 +41,7 @@ static const uint TK_BOUND_COLON = 107u;
 static const uint TK_TYPE_COLON = 108u;
 static const uint TK_MEMBER_IDENT = 109u;
 static const uint TK_TYPE_ALIAS_ASSIGN = 110u;
+static const uint TK_DISTINCT = 200u;
 static const uint TK_RETURN_ARROW = 112u;
 static const uint TK_TYPE_ARG_LT = 131u;
 static const uint TK_GENERIC_PARAM_LT = 133u;
@@ -117,7 +118,7 @@ uint type_context_identifier_kind(uint prev, bool impl_context)
         return TK_CAST_TYPE_IDENT;
     if (prev == TK_BOUND_TYPE_ARG_LT || prev == TK_BOUND_TYPE_ARG_COMMA ||
         prev == TK_TYPE_COLON || prev == TK_RETURN_ARROW ||
-        prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_TYPE_AMPERSAND ||
+        prev == TK_TYPE_ALIAS_ASSIGN || prev == TK_DISTINCT || prev == TK_TYPE_AMPERSAND ||
         prev == TK_TYPE_ARG_LT || prev == TK_TYPE_ARG_COMMA ||
         prev == TK_PATH_TYPE_ARG_LT || prev == TK_PATH_TYPE_ARG_COMMA ||
         prev == TK_GENERIC_PARAM_LT || prev == TK_GENERIC_PARAM_COMMA ||

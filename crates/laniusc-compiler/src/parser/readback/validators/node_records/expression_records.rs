@@ -1700,6 +1700,10 @@ pub fn validate_hir_statement_records(
                 require_statement_kind(row, HIR_NODE_IF_STMT, "if record")?;
                 require_empty_scope_end(row, "if record")?;
                 let condition = require_expression_edge(row, operand0[row], "if condition")?;
+                // A `requires (cond)` clause is an if record with neither arm.
+                if operand1[row] == INVALID && operand2[row] == INVALID {
+                    continue;
+                }
                 let then_block =
                     require_node_edge(row, operand1[row], &[HIR_NODE_BLOCK], false, "if then arm")?;
                 if token_end[condition] > token_pos[then_block] {

@@ -166,7 +166,11 @@ still a parse tree of the same tokens. Trusted:
   syntax. `lexTokens` adds one keyword that `keywordRules` lacks: `as` is
   token code 195, as in laniusc. Token kinds are laniusc's codes
   (`TokenKind.gpuCode`). The difftest below compares these tokens with
-  laniusc's lexer (kind, start and length).
+  laniusc's lexer (kind, start and length). The keywords `requires` and
+  `ensures` and the contextual `distinct` (2026-10-27) have no rule here, so
+  a file that uses them lexes them as identifiers and its tree is rejected.
+  `read_fn` also rejects a function with a contract list, because the front
+  end does not model a `requires` trap.
 - **The grammar.** The table `grammar` in `frontend.lani` is
   `grammar/lanius.bnf` as laniusc built its parse tables
   (`tables/parse_tables.meta.json`). Production `k` is entry `k`, a terminal

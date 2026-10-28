@@ -161,6 +161,56 @@ fn a_receiver_binding_types_a_literal_argument() {
     assert_exit("receiver_binds_literal_argument.lani", 0);
 }
 
+#[test]
+fn distinct_types_mix_with_themselves_literals_and_casts() {
+    assert_exit("distinct_types_accept.lani", 0);
+    assert_exit("distinct_types_methods.lani", 0);
+}
+
+#[test]
+fn distinct_types_reject_values_of_another_type() {
+    const DISTINCT: &str = "this value's distinct type differs from the one expected here";
+    for fixture in [
+        "distinct_types_reject_let.lani",
+        "distinct_types_reject_call.lani",
+        "distinct_types_reject_binary.lani",
+        "distinct_types_reject_return.lani",
+        "distinct_types_reject_assign.lani",
+        "distinct_types_reject_field.lani",
+        "distinct_types_reject_method.lani",
+    ] {
+        assert_rejected(fixture, &["LNC0006", DISTINCT]);
+    }
+}
+
+#[test]
+fn requires_clauses_that_hold_let_the_body_run() {
+    assert_exit("requires_holds.lani", 0);
+}
+
+#[test]
+fn a_broken_requires_clause_traps_before_the_body() {
+    let bytes = compile("requires_fails.lani").unwrap_or_else(|error| panic!("{error}"));
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        let output = common::run_x86_64_elf_output_expecting_signal(
+            "language ergonomics",
+            "requires_fails",
+            &bytes,
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "4\n", "{output:?}");
+        assert_eq!(output.status.signal(), Some(4), "{output:?}");
+    }
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = bytes;
+}
+
+#[test]
+fn a_requires_condition_must_be_bool() {
+    assert_rejected("requires_not_bool.lani", &["LNC0006"]);
+}
+
 // The resident workspace is sized by the largest unit checked so far; this
 // preserved program's imports are larger than it. Name lookup must use the
 // scope tree's published layout, not one derived from this unit's tokens.

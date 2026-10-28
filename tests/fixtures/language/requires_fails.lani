@@ -1,0 +1,11 @@
+// The second call breaks `halve`'s contract and traps before its body runs.
+fn halve(n: i32) -> i32 requires (n >= 0) {
+    print(n);
+    return n / 2;
+}
+
+fn main() -> i32 {
+    let a: i32 = halve(4);
+    let b: i32 = halve(-6);
+    return a + b;
+}

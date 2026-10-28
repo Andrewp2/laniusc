@@ -133,6 +133,10 @@ pub(in crate::type_checker) struct SemanticProjectionOperations {
     pub(in crate::type_checker) array_index_refs: ComputeOperation,
     pub(in crate::type_checker) compact_expr: ComputeOperation,
     pub(in crate::type_checker) compact_stmt: ComputeOperation,
+    /// Distinct-type brands (`type M = distinct T;`); recorded only when the
+    /// source has a type alias.
+    pub(in crate::type_checker) compact_distinct_nodes: ComputeOperation,
+    pub(in crate::type_checker) compact_distinct: ComputeOperation,
     pub(in crate::type_checker) compact_aggregate_requests: ComputeOperation,
     pub(in crate::type_checker) artifact: ComputeOperation,
     pub(in crate::type_checker) local_const_literals: ComputeOperation,
@@ -517,6 +521,14 @@ impl SemanticProjectionOperations {
             compact_stmt: direct(
                 compiler_graph::CONDITIONS_COMPACT_STMT_PASS,
                 "type_checker/conditions/compact_stmt",
+            )?,
+            compact_distinct_nodes: direct(
+                compiler_graph::CONDITIONS_COMPACT_DISTINCT_NODES_PASS,
+                "type_checker/conditions/compact_distinct_nodes",
+            )?,
+            compact_distinct: direct(
+                compiler_graph::CONDITIONS_COMPACT_DISTINCT_PASS,
+                "type_checker/conditions/compact_distinct",
             )?,
             compact_aggregate_requests: direct(
                 compiler_graph::CONDITIONS_COMPACT_AGGREGATE_REQUESTS_PASS,

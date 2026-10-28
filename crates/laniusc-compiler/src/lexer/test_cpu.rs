@@ -48,6 +48,8 @@ fn keyword_kind(bytes: &[u8]) -> Option<TokenKind> {
         b"trait" => Some(TokenKind::Trait),
         b"type" => Some(TokenKind::Type),
         b"where" => Some(TokenKind::Where),
+        b"requires" => Some(TokenKind::Requires),
+        b"ensures" => Some(TokenKind::Ensures),
         _ => None,
     }
 }
@@ -63,6 +65,23 @@ fn retag_keywords_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
             && let Some(kind) = keyword_kind(&src[start..end])
         {
             token.kind = kind;
+        }
+    }
+}
+
+/// `distinct` between a single `=` and a non-keyword identifier is the
+/// contextual keyword of `type Meters = distinct i64;`; everywhere else it
+/// stays an identifier. Runs after keyword retags, as the GPU lexer does.
+fn retag_distinct_in_place(tokens: &mut [TestCpuToken], src: &[u8]) {
+    for i in 1..tokens.len().saturating_sub(1) {
+        let (prev, token, next) = (tokens[i - 1], tokens[i], tokens[i + 1]);
+        if token.kind == TokenKind::Ident
+            && src.get(token.start..token.start + token.len) == Some(b"distinct".as_slice())
+            && prev.kind == TokenKind::Assign
+            && prev.len == 1
+            && next.kind == TokenKind::Ident
+        {
+            tokens[i].kind = TokenKind::Distinct;
         }
     }
 }
@@ -257,6 +276,7 @@ pub fn lex_on_test_cpu(input: &str) -> Result<Vec<TestCpuToken>, String> {
     out.retain(|token| keep_kind(token.kind));
     retag_inclusive_dotdot_ranges(&mut out);
     retag_keywords_in_place(&mut out, bytes);
+    retag_distinct_in_place(&mut out, bytes);
     Ok(out)
 }
 
@@ -326,6 +346,19 @@ mod tests {
                 LParen, Ident, RParen, LBrace, Return, Ident, Semicolon, RBrace, Else, LBrace,
                 While, LParen, Ident, RParen, LBrace, Break, Semicolon, Continue, Semicolon,
                 RBrace, RBrace, RBrace
+            ]
+        );
+    }
+
+    #[test]
+    fn distinct_is_a_keyword_only_between_assign_and_an_identifier() {
+        use TokenKind::*;
+
+        assert_eq!(
+            kinds("type M = distinct i64; let distinct = 1; x = distinct + distinct;"),
+            vec![
+                Type, Ident, Assign, Distinct, Ident, Semicolon, Let, Ident, Assign, Int,
+                Semicolon, Ident, Assign, Ident, Plus, Ident, Semicolon
             ]
         );
     }

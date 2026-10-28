@@ -42,6 +42,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pConst : Nat :=
   208
 
+@[expose] def Inline.pContractsNone : Nat :=
+  321
+
 @[expose] def Inline.pDivTail : Nat :=
   153
 

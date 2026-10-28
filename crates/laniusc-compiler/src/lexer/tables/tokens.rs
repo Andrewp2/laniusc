@@ -268,6 +268,13 @@ define_token_kinds! {
     ArraySemicolon,
     // parser retag of the integer literal after an ArraySemicolon: the count
     ArrayRepeatCount,
+    // lexer retag of the `distinct` lexeme between `=` and an identifier:
+    // `type Meters = distinct i64;` (a contextual keyword)
+    Distinct,
+    // keyword retags of the `requires` and `ensures` lexemes: function
+    // contracts `requires (cond)` / `ensures (cond)` after the signature
+    Requires,
+    Ensures,
 }
 
 impl TokenKind {
@@ -436,7 +443,7 @@ mod tests {
         let is_raw_kind = |kind: TokenKind| {
             matches!(
                 kind as u32,
-                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195
+                1..=27 | 32..=57 | 66..=75 | 90..=105 | 113 | 182 | 189 | 195 | 200..=202
             )
         };
 

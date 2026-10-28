@@ -81,7 +81,7 @@ fn generate_primitive_type_constants(workspace_root: &Path) {
         generated.push_str(&format!("pub const {name}: u32 = {value};\n"));
         count += 1;
     }
-    assert_eq!(count, 23, "primitive schema must declare 19 identities, 2 packing constants and 2 never-return details");
+    assert_eq!(count, 24, "primitive schema must declare 19 identities, 2 packing constants, 2 never-return details and the distinct-type detail");
     let out_dir = PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR"));
     fs::write(out_dir.join("primitive_types.rs"), generated).expect("write primitive type constants");
 }

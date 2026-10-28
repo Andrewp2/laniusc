@@ -1,0 +1,6 @@
+type Meters = distinct i64;
+fn main() -> i32 {
+    let raw: i64 = 5;
+    let m: Meters = raw;
+    return 0;
+}

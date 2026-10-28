@@ -123,7 +123,10 @@ uint classify(uint prod)
         return HIR_LET_STMT;
     if (prod == PROD_RETURN_STMT)
         return HIR_RETURN_STMT;
-    if (prod == PROD_IF_STMT)
+    // A contract clause `requires (cond)` is an `if` with no blocks: the
+    // checker validates its condition like an `if`'s, and lowering traps when
+    // it is false (codegen/lir/semantic/common.slang).
+    if (prod == PROD_IF_STMT || prod == PROD_REQUIRES)
         return HIR_IF_STMT;
     if (prod == PROD_WHILE_STMT)
         return HIR_WHILE_STMT;

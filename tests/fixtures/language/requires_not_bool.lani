@@ -1,0 +1,2 @@
+fn f(n: i32) -> i32 requires (n) { return n; }
+fn main() -> i32 { return f(1); }
