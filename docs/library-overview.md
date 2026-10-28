@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current WebSocket server increment
+The full library goal remains open. The current
+[reverse-iteration increment](stdlib-iterators.md#double-ended-traversal)
+implements paired front/back traits and a borrowed Rev adapter. All four
+registered reverse tests pass on native Linux x86_64, covering pure contracts,
+7,740 model commands, collection ownership and exact trait-bound rejection.
+The real timeline-tail program passes four more registered tests with 71
+process cases. Fusion, callback order, source lifetimes and cleanup remain
+explicit contracts; this supplies no automatic ownership or device-runtime
+claim. The preceding WebSocket server increment
 adds a [borrowed server handshake and caller policy pause](extended-websocket-upgrade.md#server-api-and-policy-boundary),
 a [real one-client TCP/TLS echo service](extended-websocket-echo.md) and
 [bounded HTTP encoder preflight](extended-http.md#executable-evidence).
@@ -87,6 +95,34 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Double-ended iteration and newest matching timeline records.**
+
+The [paired iterator protocol](stdlib-iterators.md#double-ended-traversal)
+consumes one shared non-crossing remainder. None from either end permanently
+exhausts both directions. Generic callers name `Iterator<T>` and
+`DoubleEndedIterator<T>` explicitly. Borrowed Rev swaps direction without eager
+pulls, allocation, item cache, implicit cloning or cleanup. Selected leaves and
+Map/Filter/FilterMap/Chain expose reverse pulls with their source/callback
+bounds. Take/Skip/Zip/Enumerate remain forward-only and compose after Rev.
+Stateful callbacks run in actual pull order; reverse support supplies no
+exact-size promise.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Reverse protocol | All four registered Rust tests pass across two disjoint commands: model one in 9.40s and the other three in 11.74s |
+| Pure and independent semantics | Five primary plus four extra scenario functions in two raw processes make no mmap/munmap calls; one independent VecDeque model checks 7,740 mixed-end commands |
+| Owners and bounds | Four collection scenarios preserve borrowed aliases, explicit transfer/recovery and seven full-address/size matched backing releases; two invalid Rev bounds reject with LNC0008 |
+| Selected existing callers | Old forward contracts, slice-view and tree-map controls compile/execute after the canonical method move; the tree control retains transitive trait visibility |
+| [Timeline-tail program](stdlib-timeline-tail.md) | All four registered runtime tests pass in 9.15s, covering 71 process cases: model25/rejection24/CLI20/I/O2; earlier direct runs cover the same cases |
+
+Core source is `c2db69bc…`; contract/extra/collection producers are
+`5c682a05…`/`9f6ac75a…`/`bea024ff…`. App source/ELF are
+`6579274d…`/`aca6fc83…`. Final logs are `reverse-model-rust-first.log`,
+`reverse-contracts-rust-formatted.log` and `timeline-tail-rust-final.log` under
+`target/stdlib-work/`. All selected reverse/app acceptance is executable;
+formal proofs, automatic lifetimes/destruction, other reverse adapter families,
+new allocation-failure campaigns and other host/device targets remain open.
 
 **Borrowed WebSocket server and bounded echo service.**
 

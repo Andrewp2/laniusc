@@ -1,0 +1,13 @@
+module app::main;
+import core::iter;
+import core::option;
+struct Forward {}
+impl Forward { fn borrow(&self) -> &Forward { return self; } }
+pub impl core::iter::Iterator<i32> for Forward {
+    pub fn next(&self) -> core::option::Option<i32> { return core::option::None(); }
+}
+fn main() -> i32 {
+    let source:Forward=Forward {};
+    let rejected:core::iter::Rev<Forward,i32> =core::iter::rev<Forward,i32>(source.borrow());
+    return 0;
+}

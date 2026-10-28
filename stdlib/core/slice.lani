@@ -86,16 +86,12 @@ pub impl<T> View<T> {
     }
 }
 
-// Cursors are fused and can be copied to fork their positions. Forward next
-// implements core::iter::Iterator in core::iter; import that module to use it.
+// Cursors are fused and can be copied to fork their positions. next and
+// next_back implement the shared traits in core::iter; import it to use them.
 // next/next_back read current backing values, not a snapshot of the elements.
 pub impl<T> Iter<T> {
     pub fn borrow(&self) -> &Iter<T> { return self; }
     pub fn remaining(&self) -> i32 { return self.back - self.front; }
-    pub fn next_back(&self) -> core::option::Option<T> {
-        if (self.front == self.back) { return core::option::None(); }
-        self.back -= 1; return core::option::Some(self.values[self.back]);
-    }
     // Discard up to count elements without reading them; return actual progress.
     // Negative counts fail without changing the cursor.
     pub fn advance(&self, count: i32) -> core::result::Result<i32, ViewError> {

@@ -1,0 +1,157 @@
+// Six-u64 commands: mode, length A/B, preconsumed A, pulls, end schedule.
+module app::main;
+import core::io;
+import core::iter;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+import std::stream;
+
+struct Log { values:[i32], length:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, value:i32) { assert(self.length<64); self.values[self.length]=value; self.length+=1; }
+    fn check(&self, expected:[i32], count:i32) {
+        assert(self.length==count); let index:i32=0;
+        while (index<count) { assert(self.values[index]==expected[index]); index+=1; }
+    }
+}
+struct Probe { front:i32, back:i32, forward:i32, backward:i32, log:&Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.forward+=1; let log:&Log=self.log;
+        if (self.front==self.back) { return core::option::None(); }
+        let value:i32=self.front; self.front+=1; log.add(100+value); return core::option::Some(value);
+    }
+}
+pub impl core::iter::DoubleEndedIterator<i32> for Probe {
+    pub fn next_back(&self) -> core::option::Option<i32> {
+        self.backward+=1; let log:&Log=self.log;
+        if (self.front==self.back) { return core::option::None(); }
+        self.back-=1; log.add(200+self.back); return core::option::Some(self.back);
+    }
+}
+struct Scale { log:&Log }
+impl Scale { fn borrow(&self) -> &Scale { return self; } }
+pub impl core::iter::Mapper<i32,i32> for Scale {
+    pub fn apply(&self,value:i32) -> i32 { let log:&Log=self.log; log.add(300+value); return value*3+7; }
+}
+struct Even { log:&Log }
+impl Even { fn borrow(&self) -> &Even { return self; } }
+pub impl core::iter::Mapper<i32,bool> for Even {
+    pub fn apply(&self,value:i32) -> bool { let log:&Log=self.log; log.add(400+value); return value%2==0; }
+}
+struct Select { log:&Log }
+impl Select { fn borrow(&self) -> &Select { return self; } }
+pub impl core::iter::Mapper<i32,core::option::Option<i32>> for Select {
+    pub fn apply(&self,value:i32) -> core::option::Option<i32> {
+        let log:&Log=self.log; log.add(500+value);
+        if (value%2!=0) { return core::option::None(); } return core::option::Some(value*2+1);
+    }
+}
+fn word(value:u64) {
+    let bytes:[u8;8]=[0;8]; let index:i32=0;
+    while (index<8) { bytes[index]=((value>>(index*8))&255) as u8; index+=1; }
+    let output:std::stream::Descriptor=std::stream::stdout();
+    assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn decode(bytes:[u8],offset:i32) -> u64 {
+    let value:u64=0; let index:i32=0;
+    while (index<8) { value|=(bytes[offset+index] as u64)<<(index*8); index+=1; } return value;
+}
+fn item(value:core::option::Option<i32>,a:u64,b:u64) {
+    if (value.is_some()) { word(1); word(value.unwrap() as u64); } else { word(0); word(0); }
+    word(a); word(b);
+}
+fn events(log:&Log) {
+    word(log.length as u64); let index:i32=0;
+    while (index<log.length) { word(log.values[index] as u64); index+=1; }
+}
+fn observe<I>(source:&I,a:&Probe,b:&Probe,calls:i32,schedule:u64)
+    where I:core::iter::Iterator<i32>,I:core::iter::DoubleEndedIterator<i32> {
+    let index:i32=0;
+    while (index<calls) {
+        let value:core::option::Option<i32> =core::option::None();
+        if (((schedule>>index)&1)==0) { value=source.next(); } else { value=source.next_back(); }
+        item(value,(a.back-a.front) as u64,(b.back-b.front) as u64); index+=1;
+    }
+    events(a.log);
+}
+fn slice_case(length:i32,pre:i32,calls:i32,schedule:u64) {
+    let backing:[i32;6]=[99,0,1,2,3,99]; let view:core::slice::View<i32> =core::slice::view_range(backing,1,length).unwrap();
+    let source:core::slice::Iter<i32> =view.iter(); let index:i32=0;
+    while (index<pre) { source.next().unwrap(); index+=1; } index=0;
+    while (index<calls) {
+        let value:core::option::Option<i32> =core::option::None();
+        if (((schedule>>index)&1)==0) { value=source.next(); } else { value=source.next_back(); }
+        item(value,source.remaining() as u64,0); index+=1;
+    }
+    word(0); assert(backing[0]==99 && backing[5]==99);
+}
+fn range_case(length:i32,pre:i32,calls:i32,schedule:u64) {
+    let source:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(-2,length-2)); let index:i32=0;
+    while (index<pre) { source.next().unwrap(); index+=1; } index=0;
+    while (index<calls) {
+        let value:core::option::Option<i32> =core::option::None();
+        if (((schedule>>index)&1)==0) { value=source.next(); } else { value=source.next_back(); }
+        item(value,source.remaining(),0); index+=1;
+    }
+    word(0);
+}
+fn run(mode:i32,length:i32,right_length:i32,pre:i32,calls:i32,schedule:u64) {
+    if (mode==0) { slice_case(length,pre,calls,schedule); return; }
+    if (mode==1) { range_case(length,pre,calls,schedule); return; }
+    let storage:[i32;64]=[0;64]; let log:Log=Log { values:storage,length:0 };
+    let a:Probe=Probe { front:0,back:length,forward:0,backward:0,log:log.borrow() };
+    let b:Probe=Probe { front:10,back:10+right_length,forward:0,backward:0,log:log.borrow() };
+    let index:i32=0; while (index<pre) { a.next().unwrap(); index+=1; }
+    let scale:Scale=Scale { log:log.borrow() }; let even:Even=Even { log:log.borrow() }; let select:Select=Select { log:log.borrow() };
+    assert(log.length==pre && a.front==pre && a.backward==0 && b.forward==0 && b.backward==0);
+    if (mode==2) {
+        let reverse:core::iter::Rev<Probe,i32> =core::iter::rev<Probe,i32>(a.borrow());
+        observe<core::iter::Rev<Probe,i32>>(reverse.borrow(),a.borrow(),b.borrow(),calls,schedule);
+    } else { if (mode==3) {
+        let reverse:core::iter::Rev<Probe,i32> =core::iter::rev<Probe,i32>(a.borrow());
+        let twice:core::iter::Rev<core::iter::Rev<Probe,i32>,i32> =core::iter::rev<core::iter::Rev<Probe,i32>,i32>(reverse.borrow());
+        observe<core::iter::Rev<core::iter::Rev<Probe,i32>,i32>>(twice.borrow(),a.borrow(),b.borrow(),calls,schedule);
+    } else { if (mode==4 || mode==8) {
+        let mapped:core::iter::Map<Probe,Scale,i32,i32> =core::iter::map<Probe,Scale,i32,i32>(a.borrow(),scale.borrow());
+        if (mode==4) { observe<core::iter::Map<Probe,Scale,i32,i32>>(mapped.borrow(),a.borrow(),b.borrow(),calls,schedule); }
+        else {
+            let reverse:core::iter::Rev<core::iter::Map<Probe,Scale,i32,i32>,i32> =core::iter::rev<core::iter::Map<Probe,Scale,i32,i32>,i32>(mapped.borrow());
+            observe<core::iter::Rev<core::iter::Map<Probe,Scale,i32,i32>,i32>>(reverse.borrow(),a.borrow(),b.borrow(),calls,schedule);
+        }
+    } else { if (mode==5 || mode==9) {
+        let filtered:core::iter::Filter<Probe,Even,i32> =core::iter::filter<Probe,Even,i32>(a.borrow(),even.borrow());
+        if (mode==5) { observe<core::iter::Filter<Probe,Even,i32>>(filtered.borrow(),a.borrow(),b.borrow(),calls,schedule); }
+        else {
+            let reverse:core::iter::Rev<core::iter::Filter<Probe,Even,i32>,i32> =core::iter::rev<core::iter::Filter<Probe,Even,i32>,i32>(filtered.borrow());
+            observe<core::iter::Rev<core::iter::Filter<Probe,Even,i32>,i32>>(reverse.borrow(),a.borrow(),b.borrow(),calls,schedule);
+        }
+    } else { if (mode==6) {
+        let filtered:core::iter::FilterMap<Probe,Select,i32,i32> =core::iter::filter_map<Probe,Select,i32,i32>(a.borrow(),select.borrow());
+        observe<core::iter::FilterMap<Probe,Select,i32,i32>>(filtered.borrow(),a.borrow(),b.borrow(),calls,schedule);
+    } else {
+        let chain:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(a.borrow(),b.borrow());
+        if (mode==7) { observe<core::iter::Chain<Probe,Probe,i32>>(chain.borrow(),a.borrow(),b.borrow(),calls,schedule); }
+        else {
+            let reverse:core::iter::Rev<core::iter::Chain<Probe,Probe,i32>,i32> =core::iter::rev<core::iter::Chain<Probe,Probe,i32>,i32>(chain.borrow());
+            observe<core::iter::Rev<core::iter::Chain<Probe,Probe,i32>,i32>>(reverse.borrow(),a.borrow(),b.borrow(),calls,schedule);
+        }
+    } } } } }
+}
+fn main() -> i32 {
+    let input:std::stream::Descriptor=std::stream::stdin(); let bytes:[u8;48]=[0;48];
+    while (true) {
+        let result:core::result::Result<i32,core::io::Error> =input.read(bytes,0,48);
+        if (result.is_err()) { return 1; } let count:i32=result.unwrap(); if (count==0) { return 0; }
+        if (count<48) { if (core::io::read_exact(input.borrow(),bytes,count,48-count).is_err()) { return 2; } }
+        let mode:u64=decode(bytes,0); let length:u64=decode(bytes,8); let right:u64=decode(bytes,16);
+        let pre:u64=decode(bytes,24); let calls:u64=decode(bytes,32); let schedule:u64=decode(bytes,40);
+        assert(mode<=10 && length<=4 && right<=3 && pre<=length && calls<=8);
+        run(mode as i32,length as i32,right as i32,pre as i32,calls as i32,schedule);
+    }
+    return 0;
+}

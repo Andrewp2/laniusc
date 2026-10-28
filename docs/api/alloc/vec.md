@@ -16,7 +16,7 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
 - [stdlib-owning-iterators](../../stdlib-owning-iterators.md)
 
-Declaration counts: constant: 1; enum: 2; field: 7; function: 3; impl: 4; method: 45; struct: 2; variant: 5.
+Declaration counts: constant: 1; enum: 2; field: 7; function: 3; impl: 5; method: 45; struct: 2; variant: 5.
 
 ## Declared imports
 
@@ -537,17 +537,9 @@ pub fn is_empty(&self) -> bool
 pub fn as_view(&self) -> core::slice::View<T>
 ```
 
-#### method: next_back
-
-[Source line 252](../../../stdlib/alloc/vec.lani#L252)
-
-```lanius
-pub fn next_back(&self) -> core::option::Option<T>
-```
-
 #### method: try_finish
 
-[Source line 258](../../../stdlib/alloc/vec.lani#L258)
+[Source line 252](../../../stdlib/alloc/vec.lani#L252)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<IntoIterError>
@@ -555,15 +547,15 @@ pub fn try_finish(&self) -> core::option::Option<IntoIterError>
 
 #### method: take_remaining
 
-[Source line 267](../../../stdlib/alloc/vec.lani#L267)
+[Source line 261](../../../stdlib/alloc/vec.lani#L261)
 
 ```lanius
 pub fn take_remaining(&self) -> Vec<T>
 ```
 
-### impl at line 278
+### impl at line 272
 
-[Source line 278](../../../stdlib/alloc/vec.lani#L278)
+[Source line 272](../../../stdlib/alloc/vec.lani#L272)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for IntoIter<T>
@@ -571,15 +563,31 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 
 #### method: next
 
-[Source line 280](../../../stdlib/alloc/vec.lani#L280)
+[Source line 274](../../../stdlib/alloc/vec.lani#L274)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 288
+### impl at line 281
 
-[Source line 288](../../../stdlib/alloc/vec.lani#L288)
+[Source line 281](../../../stdlib/alloc/vec.lani#L281)
+
+```lanius
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
+```
+
+#### method: next_back
+
+[Source line 283](../../../stdlib/alloc/vec.lani#L283)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<T>
+```
+
+### impl at line 291
+
+[Source line 291](../../../stdlib/alloc/vec.lani#L291)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
@@ -587,7 +595,7 @@ pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
 
 #### method: try_accept
 
-[Source line 289](../../../stdlib/alloc/vec.lani#L289)
+[Source line 292](../../../stdlib/alloc/vec.lani#L292)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>

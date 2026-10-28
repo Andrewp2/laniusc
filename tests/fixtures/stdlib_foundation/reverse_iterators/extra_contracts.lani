@@ -1,0 +1,141 @@
+// Allocation-free public bidirectional contracts and callback observations.
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+
+struct Log { values:[i32], length:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, value:i32) { assert(self.length<64); self.values[self.length]=value; self.length+=1; }
+    fn check(&self, expected:[i32], count:i32) {
+        assert(self.length==count); let index:i32=0;
+        while (index<count) { assert(self.values[index]==expected[index]); index+=1; }
+    }
+}
+struct Probe { front:i32, back:i32, forward:i32, backward:i32, log:&Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.forward+=1; let log:&Log=self.log;
+        if (self.front==self.back) { log.add(199); return core::option::None(); }
+        let value:i32=self.front; self.front+=1; log.add(100+value); return core::option::Some(value);
+    }
+}
+pub impl core::iter::DoubleEndedIterator<i32> for Probe {
+    pub fn next_back(&self) -> core::option::Option<i32> {
+        self.backward+=1; let log:&Log=self.log;
+        if (self.front==self.back) { log.add(299); return core::option::None(); }
+        self.back-=1; log.add(200+self.back); return core::option::Some(self.back);
+    }
+}
+enum Fault { Denied(i64,core::option::Option<bool>) }
+type Detail=core::option::Option<core::result::Result<[u64;2],Fault>>;
+struct Packet { id:i32, wide:u64, cells:[i64;2], detail:Detail }
+fn packet(id:i32) -> Packet {
+    let detail:Detail=core::option::None();
+    if (id==0) { let pair:[u64;2]=[18446744073709551615,8589934593]; let result:core::result::Result<[u64;2],Fault> =core::result::Ok(pair); detail=core::option::Some(result); }
+    if (id==1) { let result:core::result::Result<[u64;2],Fault> =core::result::Err(Fault::Denied(-4294967297,core::option::Some(false))); detail=core::option::Some(result); }
+    return Packet { id:id,wide:18446744073709551615-(id as u64),cells:[-9223372036854775808,4294967297+(id as i64)],detail:detail };
+}
+fn check(item:Packet,id:i32) {
+    assert(item.id==id && item.wide==18446744073709551615-(id as u64));
+    assert(item.cells[0]==-9223372036854775808 && item.cells[1]==4294967297+(id as i64));
+    if (id==2) { assert(item.detail.is_none()); }
+    else {
+        let result:core::result::Result<[u64;2],Fault> =item.detail.unwrap();
+        if (id==0) { let pair:[u64;2]=result.unwrap(); assert(pair[0]==18446744073709551615 && pair[1]==8589934593); }
+        else { let error:Fault=result.unwrap_err(); assert(match(error) { Fault::Denied(code,flag) -> code==-4294967297 && !flag.unwrap() }); }
+    }
+}
+struct NestedSelect { marker:i32 }
+impl NestedSelect { fn borrow(&self) -> &NestedSelect { return self; } }
+pub impl core::iter::Mapper<i32,core::option::Option<core::option::Option<i32>>> for NestedSelect {
+    pub fn apply(&self,value:i32) -> core::option::Option<core::option::Option<i32>> {
+        if (value==1) { return core::option::None(); }
+        let inner:core::option::Option<i32> =core::option::None();
+        if (value==2) { inner=core::option::Some(2); }
+        return core::option::Some(inner);
+    }
+}
+struct Pack { marker:i32 }
+impl Pack { fn borrow(&self) -> &Pack { return self; } }
+pub impl core::iter::Mapper<i32,Packet> for Pack {
+    pub fn apply(&self,value:i32) -> Packet { return packet(value); }
+}
+fn nested_filter_map_and_compound_map() {
+    let input:[i32;3]=[0,1,2]; let source:core::slice::Iter<i32> =core::iter::from_slice<i32>(input,3).unwrap();
+    let select:NestedSelect=NestedSelect { marker:0 };
+    let filtered:core::iter::FilterMap<core::slice::Iter<i32>,NestedSelect,i32,core::option::Option<i32>> =core::iter::filter_map<core::slice::Iter<i32>,NestedSelect,i32,core::option::Option<i32>>(source.borrow(),select.borrow());
+    let high:core::option::Option<core::option::Option<i32>> =filtered.next_back();
+    let low:core::option::Option<core::option::Option<i32>> =filtered.next();
+    assert(high.is_some() && high.unwrap().unwrap()==2);
+    assert(low.is_some() && low.unwrap().is_none());
+    assert(filtered.next_back().is_none() && filtered.next().is_none());
+    let other:core::slice::Iter<i32> =core::iter::from_slice<i32>(input,3).unwrap(); let pack:Pack=Pack { marker:0 };
+    let mapped:core::iter::Map<core::slice::Iter<i32>,Pack,i32,Packet> =core::iter::map<core::slice::Iter<i32>,Pack,i32,Packet>(other.borrow(),pack.borrow());
+    check(mapped.next_back().unwrap(),2); check(mapped.next().unwrap(),0); check(mapped.next_back().unwrap(),1);
+    assert(mapped.next().is_none() && mapped.next_back().is_none());
+}
+fn empty_chain_transitions() {
+    let events:[i32;64]=[0;64]; let log:Log=Log { values:events,length:0 };
+    let left:Probe=Probe { front:0,back:0,forward:0,backward:0,log:log.borrow() };
+    let right:Probe=Probe { front:0,back:2,forward:0,backward:0,log:log.borrow() };
+    let chain:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(left.borrow(),right.borrow());
+    assert(chain.next_back().unwrap()==1 && chain.next().unwrap()==0 && chain.next_back().is_none());
+    let calls:i32=log.length; assert(chain.next().is_none() && chain.next_back().is_none() && log.length==calls);
+    assert(left.forward==1 && left.backward==0 && right.forward==1 && right.backward==2);
+    let expected:[i32;4]=[201,199,100,299]; log.check(expected,4);
+    log.length=0;
+    let live:Probe=Probe { front:0,back:2,forward:0,backward:0,log:log.borrow() };
+    let empty:Probe=Probe { front:10,back:10,forward:0,backward:0,log:log.borrow() };
+    let other:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(live.borrow(),empty.borrow());
+    assert(other.next().unwrap()==0 && other.next_back().unwrap()==1 && other.next().is_none());
+    let done:i32=log.length; assert(other.next_back().is_none() && other.next().is_none() && done==log.length);
+    assert(live.forward==2 && live.backward==1 && empty.forward==0 && empty.backward==1);
+    let expected_other:[i32;4]=[100,299,201,199]; log.check(expected_other,4);
+}
+fn both_empty_chain() {
+    let events:[i32;64]=[0;64]; let log:Log=Log { values:events,length:0 };
+    let a:Probe=Probe { front:0,back:0,forward:0,backward:0,log:log.borrow() };
+    let b:Probe=Probe { front:0,back:0,forward:0,backward:0,log:log.borrow() };
+    let forward:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(a.borrow(),b.borrow());
+    assert(forward.next().is_none() && forward.next_back().is_none() && forward.next().is_none());
+    assert(a.forward==1 && b.forward==1 && a.backward==0 && b.backward==0 && log.length==2);
+    let c:Probe=Probe { front:0,back:0,forward:0,backward:0,log:log.borrow() };
+    let d:Probe=Probe { front:0,back:0,forward:0,backward:0,log:log.borrow() };
+    let backward:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(c.borrow(),d.borrow());
+    assert(backward.next_back().is_none() && backward.next().is_none() && backward.next_back().is_none());
+    assert(c.forward==0 && d.forward==0 && c.backward==1 && d.backward==1 && log.length==4);
+}
+struct Unit {}
+fn packed_bytes_and_zero_sized_items() {
+    let stack:[u8;6]=[99,10,20,30,40,99]; let words:[i32;4]=[0;4];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),16);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(packed)==1);
+    let layout:i32=0;
+    while (layout<2) {
+        let backing:[u8]=stack; if (layout==1) { backing=packed; }
+        backing[0]=99; backing[1]=10; backing[2]=20; backing[3]=30; backing[4]=40; backing[5]=99;
+        let view:core::slice::View<u8> =core::slice::view_range(backing,1,4).unwrap();
+        let cursor:core::slice::Iter<u8> =view.iter();
+        let reverse:core::iter::Rev<core::slice::Iter<u8>,u8> =core::iter::rev<core::slice::Iter<u8>,u8>(cursor.borrow());
+        assert(reverse.next().unwrap()==40 && reverse.next_back().unwrap()==10);
+        backing[3]=31; // Both physical layouts remain live borrowed views.
+        assert(reverse.next().unwrap()==31 && reverse.next_back().unwrap()==20);
+        assert(reverse.next().is_none() && reverse.next_back().is_none() && cursor.remaining()==0);
+        assert(backing[0]==99 && backing[5]==99); layout+=1;
+    }
+    assert(core::mem::size_of<Unit>()==0);
+    let values:[Unit;3]=[Unit {},Unit {},Unit {}];
+    let source:core::slice::Iter<Unit> =core::iter::from_slice<Unit>(values,3).unwrap();
+    let reverse:core::iter::Rev<core::slice::Iter<Unit>,Unit> =core::iter::rev<core::slice::Iter<Unit>,Unit>(source.borrow());
+    let first:core::option::Option<Unit> =reverse.next(); let last:core::option::Option<Unit> =reverse.next_back();
+    assert(first.is_some() && last.is_some() && source.remaining()==1);
+    let middle:core::option::Option<Unit> =reverse.next();
+    assert(middle.is_some() && source.remaining()==0 && reverse.next_back().is_none() && reverse.next().is_none());
+}
+fn main() -> i32 { nested_filter_map_and_compound_map(); empty_chain_transitions(); both_empty_chain(); packed_bytes_and_zero_sized_items(); return 0; }

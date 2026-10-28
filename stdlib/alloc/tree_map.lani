@@ -357,14 +357,6 @@ pub impl<K,V> core::iter::TryReplaceSink<Entry<K,V>,Error> for TreeMap<K,V>
 pub impl<K, V> Cursor<K, V> {
     pub fn borrow(&self) -> &Cursor<K, V> { return self; }
     pub fn is_empty(&self) -> bool { return self.front < 0; }
-    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
-        if (self.back < 0) { return core::option::None(); }
-        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
-        let node: Node<K, V> = nodes[self.back];
-        if (self.front == self.back) { self.front = -1; self.back = -1; }
-        else { self.back = adjacent(nodes, self.back, true); }
-        return core::option::Some(node.item);
-    }
 }
 
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
@@ -378,16 +370,22 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for Cursor<K, V> {
     }
 }
 
+pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for Cursor<K, V> {
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
+        if (self.back < 0) { return core::option::None(); }
+        let nodes: [Node<K, V>] = core::mem::typed_slice_from_storage(self.storage, self.reserved);
+        let node: Node<K, V> = nodes[self.back];
+        if (self.front == self.back) { self.front = -1; self.back = -1; }
+        else { self.back = adjacent(nodes, self.back, true); }
+        return core::option::Some(node.item);
+    }
+}
+
 pub impl<K, V> IntoIter<K, V> {
     pub fn borrow(&self) -> &IntoIter<K, V> { return self; }
     pub fn remaining(&self) -> i32 { return self.owner.len(); }
     pub fn capacity(&self) -> i32 { return self.owner.capacity(); }
     pub fn is_empty(&self) -> bool { return self.owner.is_empty(); }
-    // Endpoint removal preserves the canonical AVL tree and transfers a pair
-    // without comparison, cloning, release or allocation. O(log n) per pop.
-    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> {
-        return self.owner.pop_last();
-    }
     // Exhaustion retains backing. Rejecting finish preserves the exact owner;
     // successful finish frees backing and disarms it, repeatably.
     pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
@@ -403,6 +401,12 @@ pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V> {
     pub fn next(&self) -> core::option::Option<Entry<K, V>> {
         return self.owner.pop_first();
     }
+}
+
+pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for IntoIter<K, V> {
+    // Endpoint removal preserves the canonical AVL tree and transfers a pair
+    // without comparison, cloning, release or allocation. O(log n) per pop.
+    pub fn next_back(&self) -> core::option::Option<Entry<K, V>> { return self.owner.pop_last(); }
 }
 
 // Internal set-storage boundary. One typed facade owns each state; temporary

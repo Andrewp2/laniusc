@@ -15,7 +15,7 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
 - [stdlib-owning-iterators](../../stdlib-owning-iterators.md)
 
-Declaration counts: constant: 1; enum: 2; field: 15; function: 3; impl: 6; method: 52; struct: 4; variant: 5.
+Declaration counts: constant: 1; enum: 2; field: 15; function: 3; impl: 8; method: 52; struct: 4; variant: 5.
 
 ## Declared imports
 
@@ -640,17 +640,9 @@ pub fn is_empty(&self) -> bool
 pub fn as_views(&self) -> Views<T>
 ```
 
-#### method: next_back
-
-[Source line 342](../../../stdlib/alloc/deque.lani#L342)
-
-```lanius
-pub fn next_back(&self) -> core::option::Option<T>
-```
-
 #### method: try_finish
 
-[Source line 348](../../../stdlib/alloc/deque.lani#L348)
+[Source line 342](../../../stdlib/alloc/deque.lani#L342)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<IntoIterError>
@@ -658,15 +650,15 @@ pub fn try_finish(&self) -> core::option::Option<IntoIterError>
 
 #### method: take_remaining
 
-[Source line 357](../../../stdlib/alloc/deque.lani#L357)
+[Source line 351](../../../stdlib/alloc/deque.lani#L351)
 
 ```lanius
 pub fn take_remaining(&self) -> Deque<T>
 ```
 
-### impl at line 365
+### impl at line 359
 
-[Source line 365](../../../stdlib/alloc/deque.lani#L365)
+[Source line 359](../../../stdlib/alloc/deque.lani#L359)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for IntoIter<T>
@@ -674,15 +666,31 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 
 #### method: next
 
-[Source line 367](../../../stdlib/alloc/deque.lani#L367)
+[Source line 361](../../../stdlib/alloc/deque.lani#L361)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 375
+### impl at line 368
 
-[Source line 375](../../../stdlib/alloc/deque.lani#L375)
+[Source line 368](../../../stdlib/alloc/deque.lani#L368)
+
+```lanius
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
+```
+
+#### method: next_back
+
+[Source line 370](../../../stdlib/alloc/deque.lani#L370)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<T>
+```
+
+### impl at line 378
+
+[Source line 378](../../../stdlib/alloc/deque.lani#L378)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for Deque<T>
@@ -690,15 +698,15 @@ pub impl<T> core::iter::TrySink<T, Error> for Deque<T>
 
 #### method: try_accept
 
-[Source line 376](../../../stdlib/alloc/deque.lani#L376)
+[Source line 379](../../../stdlib/alloc/deque.lani#L379)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>
 ```
 
-### impl at line 383
+### impl at line 386
 
-[Source line 383](../../../stdlib/alloc/deque.lani#L383)
+[Source line 386](../../../stdlib/alloc/deque.lani#L386)
 
 ```lanius
 pub impl<T> Cursor<T>
@@ -706,7 +714,7 @@ pub impl<T> Cursor<T>
 
 #### method: borrow
 
-[Source line 384](../../../stdlib/alloc/deque.lani#L384)
+[Source line 387](../../../stdlib/alloc/deque.lani#L387)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<T>
@@ -714,23 +722,15 @@ pub fn borrow(&self) -> &Cursor<T>
 
 #### method: remaining
 
-[Source line 385](../../../stdlib/alloc/deque.lani#L385)
+[Source line 388](../../../stdlib/alloc/deque.lani#L388)
 
 ```lanius
 pub fn remaining(&self) -> i32
 ```
 
-#### method: next_back
+### impl at line 395
 
-[Source line 390](../../../stdlib/alloc/deque.lani#L390)
-
-```lanius
-pub fn next_back(&self) -> core::option::Option<T>
-```
-
-### impl at line 396
-
-[Source line 396](../../../stdlib/alloc/deque.lani#L396)
+[Source line 395](../../../stdlib/alloc/deque.lani#L395)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Cursor<T>
@@ -738,8 +738,24 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T>
 
 #### method: next
 
-[Source line 397](../../../stdlib/alloc/deque.lani#L397)
+[Source line 396](../../../stdlib/alloc/deque.lani#L396)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
+```
+
+### impl at line 402
+
+[Source line 402](../../../stdlib/alloc/deque.lani#L402)
+
+```lanius
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T>
+```
+
+#### method: next_back
+
+[Source line 403](../../../stdlib/alloc/deque.lani#L403)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<T>
 ```

@@ -1,0 +1,166 @@
+// Allocation-free public bidirectional contracts and callback observations.
+module app::main;
+import core::iter;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+
+struct Log { values:[i32], length:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn add(&self, value:i32) { assert(self.length<64); self.values[self.length]=value; self.length+=1; }
+    fn check(&self, expected:[i32], count:i32) {
+        assert(self.length==count); let index:i32=0;
+        while (index<count) { assert(self.values[index]==expected[index]); index+=1; }
+    }
+}
+struct Probe { front:i32, back:i32, forward:i32, backward:i32, log:&Log }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe {
+    pub fn next(&self) -> core::option::Option<i32> {
+        self.forward+=1; let log:&Log=self.log;
+        if (self.front==self.back) { log.add(199); return core::option::None(); }
+        let value:i32=self.front; self.front+=1; log.add(100+value); return core::option::Some(value);
+    }
+}
+pub impl core::iter::DoubleEndedIterator<i32> for Probe {
+    pub fn next_back(&self) -> core::option::Option<i32> {
+        self.backward+=1; let log:&Log=self.log;
+        if (self.front==self.back) { log.add(299); return core::option::None(); }
+        self.back-=1; log.add(200+self.back); return core::option::Some(self.back);
+    }
+}
+struct Scale { log:&Log }
+impl Scale { fn borrow(&self) -> &Scale { return self; } }
+pub impl core::iter::Mapper<i32,i32> for Scale {
+    pub fn apply(&self,value:i32) -> i32 { let log:&Log=self.log; log.add(300+value); return value*3+7; }
+}
+struct Even { log:&Log }
+impl Even { fn borrow(&self) -> &Even { return self; } }
+pub impl core::iter::Mapper<i32,bool> for Even {
+    pub fn apply(&self,value:i32) -> bool { let log:&Log=self.log; log.add(400+value); return value%2==0; }
+}
+struct Select { log:&Log }
+impl Select { fn borrow(&self) -> &Select { return self; } }
+pub impl core::iter::Mapper<i32,core::option::Option<i32>> for Select {
+    pub fn apply(&self,value:i32) -> core::option::Option<i32> {
+        let log:&Log=self.log; log.add(500+value);
+        if (value%2!=0) { return core::option::None(); } return core::option::Some(value*2+1);
+    }
+}
+fn pull<I,T>(source:&I, back:bool) -> core::option::Option<T>
+    where I:core::iter::Iterator<T>, I:core::iter::DoubleEndedIterator<T> {
+    let item:core::option::Option<T> =core::option::None();
+    if (back) { item=source.next_back(); } else { item=source.next(); } return item;
+}
+
+enum Fault { Denied(i64,core::option::Option<bool>) }
+type Detail=core::option::Option<core::result::Result<[u64;2],Fault>>;
+struct Packet { id:i32, wide:u64, cells:[i64;2], detail:Detail }
+fn packet(id:i32) -> Packet {
+    let detail:Detail=core::option::None();
+    if (id==0) { let pair:[u64;2]=[18446744073709551615,8589934593]; let result:core::result::Result<[u64;2],Fault> =core::result::Ok(pair); detail=core::option::Some(result); }
+    if (id==1) { let result:core::result::Result<[u64;2],Fault> =core::result::Err(Fault::Denied(-4294967297,core::option::Some(false))); detail=core::option::Some(result); }
+    return Packet { id:id,wide:18446744073709551615-(id as u64),cells:[-9223372036854775808,4294967297+(id as i64)],detail:detail };
+}
+fn check(item:Packet,id:i32) {
+    assert(item.id==id && item.wide==18446744073709551615-(id as u64));
+    assert(item.cells[0]==-9223372036854775808 && item.cells[1]==4294967297+(id as i64));
+    if (id==2) { assert(item.detail.is_none()); }
+    else {
+        let result:core::result::Result<[u64;2],Fault> =item.detail.unwrap();
+        if (id==0) { let pair:[u64;2]=result.unwrap(); assert(pair[0]==18446744073709551615 && pair[1]==8589934593); }
+        else { let error:Fault=result.unwrap_err(); assert(match(error) { Fault::Denied(code,flag) -> code==-4294967297 && !flag.unwrap() }); }
+    }
+}
+fn compound_values() {
+    let values:[Packet;3]=[packet(0),packet(1),packet(2)];
+    let source:core::slice::Iter<Packet> =core::iter::from_slice<Packet>(values,3).unwrap();
+    let reverse:core::iter::Rev<core::slice::Iter<Packet>,Packet> =core::iter::rev<core::slice::Iter<Packet>,Packet>(source.borrow());
+    check(pull<core::iter::Rev<core::slice::Iter<Packet>,Packet>,Packet>(reverse.borrow(),false).unwrap(),2);
+    check(pull<core::iter::Rev<core::slice::Iter<Packet>,Packet>,Packet>(reverse.borrow(),true).unwrap(),0);
+    check(reverse.next().unwrap(),1); assert(reverse.next_back().is_none() && reverse.next().is_none());
+    let absent:core::iter::Empty<Packet> =core::iter::empty<Packet>();
+    let empty:core::iter::Rev<core::iter::Empty<Packet>,Packet> =core::iter::rev<core::iter::Empty<Packet>,Packet>(absent.borrow());
+    assert(empty.next_back().is_none() && empty.next().is_none());
+    let single:core::iter::Once<Packet> =core::iter::once(packet(1));
+    check(pull<core::iter::Once<Packet>,Packet>(single.borrow(),true).unwrap(),1); assert(single.next().is_none() && single.next_back().is_none());
+    let nested:core::iter::Once<core::option::Option<i32>> =core::iter::once<core::option::Option<i32>>(core::option::None());
+    let some_none:core::option::Option<core::option::Option<i32>> =pull<core::iter::Once<core::option::Option<i32>>,core::option::Option<i32>>(nested.borrow(),true);
+    assert(some_none.is_some() && some_none.unwrap().is_none() && nested.next().is_none());
+}
+fn range_and_slice_boundaries() {
+    let range:core::iter::RangeI32=core::iter::range_i32_inclusive(core::range::range_inclusive<i32>(-2147483648,2147483647));
+    assert(range.remaining()==4294967296);
+    assert(pull<core::iter::RangeI32,i32>(range.borrow(),true).unwrap()==2147483647);
+    assert(range.next().unwrap()==-2147483648 && range.remaining()==4294967294);
+    assert(range.advance(4294967293)==4294967293 && range.remaining()==1);
+    assert(range.next_back().unwrap()==2147483646 && range.next().is_none() && range.next_back().is_none());
+    let bounds:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(-3,4));
+    assert(bounds.next().unwrap()==-3);
+    let reverse:core::iter::Rev<core::iter::RangeI32,i32> =core::iter::rev<core::iter::RangeI32,i32>(bounds.borrow());
+    assert(reverse.next().unwrap()==3 && reverse.next_back().unwrap()==-2);
+    let twice:core::iter::Rev<core::iter::Rev<core::iter::RangeI32,i32>,i32> =core::iter::rev<core::iter::Rev<core::iter::RangeI32,i32>,i32>(reverse.borrow());
+    assert(twice.next().unwrap()==-1 && twice.next_back().unwrap()==2 && twice.next().unwrap()==0 && twice.next().unwrap()==1);
+    assert(twice.next_back().is_none() && twice.next().is_none());
+    let zero:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(5,2)); assert(zero.next_back().is_none() && zero.next().is_none());
+    let one:core::iter::RangeI32=core::iter::range_i32_inclusive(core::range::range_inclusive<i32>(2147483647,2147483647));
+    assert(one.next_back().unwrap()==2147483647 && one.next().is_none());
+    let backing:[u64;5]=[99,18446744073709551615,4294967297,8589934593,99];
+    let view:core::slice::View<u64> =core::slice::view_range(backing,1,3).unwrap();
+    let cursor:core::slice::Iter<u64> =view.iter();
+    assert(pull<core::slice::Iter<u64>,u64>(cursor.borrow(),true).unwrap()==8589934593);
+    assert(cursor.next().unwrap()==18446744073709551615 && cursor.next_back().unwrap()==4294967297);
+    assert(cursor.next().is_none() && cursor.next_back().is_none() && backing[0]==99 && backing[4]==99);
+}
+fn reverse_calls_and_copies() {
+    let events:[i32;64]=[0;64]; let log:Log=Log { values:events,length:0 };
+    let source:Probe=Probe { front:0,back:3,forward:0,backward:0,log:log.borrow() };
+    let reverse:core::iter::Rev<Probe,i32> =core::iter::rev<Probe,i32>(source.borrow());
+    assert(log.length==0 && source.forward==0 && source.backward==0);
+    assert(reverse.next().unwrap()==2 && reverse.next_back().unwrap()==0 && source.next().unwrap()==1);
+    assert(reverse.next().is_none()); let calls:i32=source.forward+source.backward;
+    assert(reverse.next_back().is_none() && reverse.next().is_none() && source.forward+source.backward==calls);
+    let expected:[i32;4]=[202,100,101,299]; log.check(expected,4);
+    let other:Probe=Probe { front:0,back:3,forward:0,backward:0,log:log.borrow() };
+    let first:core::iter::Rev<Probe,i32> =core::iter::rev<Probe,i32>(other.borrow()); let copy:core::iter::Rev<Probe,i32> =first;
+    assert(first.next().unwrap()==2 && copy.next().unwrap()==1 && first.next_back().unwrap()==0);
+    assert(first.next().is_none() && copy.next_back().is_none());
+    let after:i32=other.forward+other.backward; assert(first.next_back().is_none() && copy.next().is_none() && after==other.forward+other.backward);
+}
+fn callback_order() {
+    let events:[i32;64]=[0;64]; let log:Log=Log { values:events,length:0 };
+    let source:Probe=Probe { front:0,back:4,forward:0,backward:0,log:log.borrow() }; let scale:Scale=Scale { log:log.borrow() };
+    let mapped:core::iter::Map<Probe,Scale,i32,i32> =core::iter::map<Probe,Scale,i32,i32>(source.borrow(),scale.borrow());
+    assert(mapped.next_back().unwrap()==16 && mapped.next().unwrap()==7);
+    let reverse:core::iter::Rev<core::iter::Map<Probe,Scale,i32,i32>,i32> =core::iter::rev<core::iter::Map<Probe,Scale,i32,i32>,i32>(mapped.borrow());
+    assert(reverse.next().unwrap()==13 && reverse.next_back().unwrap()==10 && mapped.next_back().is_none());
+    assert(reverse.next().is_none() && reverse.next_back().is_none());
+    let expected:[i32;9]=[203,303,100,300,202,302,101,301,299]; log.check(expected,9);
+    log.length=0; let filtered_source:Probe=Probe { front:0,back:6,forward:0,backward:0,log:log.borrow() }; let even:Even=Even { log:log.borrow() };
+    let filtered:core::iter::Filter<Probe,Even,i32> =core::iter::filter<Probe,Even,i32>(filtered_source.borrow(),even.borrow());
+    assert(filtered.next_back().unwrap()==4 && filtered.next().unwrap()==0 && filtered.next_back().unwrap()==2);
+    assert(filtered.next().is_none() && filtered.next_back().is_none());
+    let predicate_order:[i32;13]=[205,405,204,404,100,400,203,403,202,402,101,401,199]; log.check(predicate_order,13);
+    log.length=0; let selecting:Probe=Probe { front:0,back:6,forward:0,backward:0,log:log.borrow() }; let select:Select=Select { log:log.borrow() };
+    let selected:core::iter::FilterMap<Probe,Select,i32,i32> =core::iter::filter_map<Probe,Select,i32,i32>(selecting.borrow(),select.borrow());
+    assert(selected.next().unwrap()==1 && selected.next_back().unwrap()==9 && selected.next_back().unwrap()==5);
+    assert(selected.next().is_none() && selected.next_back().is_none());
+    let selected_order:[i32;13]=[100,500,205,505,204,504,203,503,202,502,101,501,199]; log.check(selected_order,13);
+}
+fn chain_order_and_alias() {
+    let events:[i32;64]=[0;64]; let log:Log=Log { values:events,length:0 };
+    let left:Probe=Probe { front:0,back:2,forward:0,backward:0,log:log.borrow() };
+    let right:Probe=Probe { front:10,back:12,forward:0,backward:0,log:log.borrow() };
+    let chain:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(left.borrow(),right.borrow());
+    assert(log.length==0 && chain.next().unwrap()==0 && chain.next_back().unwrap()==11);
+    assert(chain.next_back().unwrap()==10 && chain.next_back().unwrap()==1 && chain.next().is_none());
+    let calls:i32=log.length; assert(chain.next_back().is_none() && chain.next().is_none() && log.length==calls);
+    let expected:[i32;6]=[100,211,210,299,201,199]; log.check(expected,6);
+    let same:Probe=Probe { front:0,back:5,forward:0,backward:0,log:log.borrow() };
+    let shared:core::iter::Chain<Probe,Probe,i32> =core::iter::chain<Probe,Probe,i32>(same.borrow(),same.borrow());
+    assert(shared.next().unwrap()==0 && shared.next_back().unwrap()==4 && shared.next().unwrap()==1 && shared.next_back().unwrap()==3 && shared.next().unwrap()==2);
+    assert(shared.next_back().is_none() && shared.next().is_none() && same.front==same.back);
+}
+fn main() -> i32 { compound_values(); range_and_slice_boundaries(); reverse_calls_and_copies(); callback_order(); chain_order_and_alias(); return 0; }

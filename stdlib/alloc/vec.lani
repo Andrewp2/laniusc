@@ -248,12 +248,6 @@ pub impl<T> IntoIter<T> {
     pub fn as_view(&self) -> core::slice::View<T> {
         return core::slice::View { values: self.slots(), start: self.front, length: self.remaining() };
     }
-    // Each successful pull transfers that item's cleanup authority to caller.
-    pub fn next_back(&self) -> core::option::Option<T> {
-        if (self.front == self.back) { return core::option::None(); }
-        self.back -= 1; let slots: [T] = self.slots();
-        return core::option::Some(slots[self.back]);
-    }
     // Refuse to release unconsumed owners. Exhaustion alone never frees storage.
     pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
         let count: i32 = self.remaining();
@@ -281,6 +275,15 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
         if (self.front == self.back) { return core::option::None(); }
         let slots: [T] = self.slots(); let item: T = slots[self.front]; self.front += 1;
         return core::option::Some(item);
+    }
+}
+
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
+    // Each successful pull transfers that item's cleanup authority to caller.
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; let slots: [T] = self.slots();
+        return core::option::Some(slots[self.back]);
     }
 }
 

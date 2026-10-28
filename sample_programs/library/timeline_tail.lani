@@ -1,0 +1,183 @@
+// Latest matching CSV timeline records through rev -> filter -> take -> enumerate.
+module app::main;
+import alloc::io;
+import alloc::vec;
+import alloc::vec::Vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::option::Option;
+import core::pair;
+import core::result;
+import core::slice;
+import core::slice::View;
+import core::slice::view;
+import core::text;
+import ext::cli;
+import ext::csv;
+import ext::csv_write;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Entry { level:core::text::Text, message:core::text::Text }
+struct Level { value:Option<View<u8>> }
+impl Level { fn borrow(&self) -> &Level { return self; } }
+struct Options { count:u64, level:Option<View<u8>>, count_set:bool, help:bool }
+impl Options { fn borrow(&self) -> &Options { return self; } }
+struct Writes { bytes:u64, calls:u64 }
+impl Writes { fn borrow(&self) -> &Writes { return self; } }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return view(raw,count).unwrap();
+}
+fn text(value:View<u8>) -> core::text::Text { return core::text::from_utf8_unchecked(value.values,value.start,value.length); }
+fn bytes(value:core::text::Text) -> View<u8> { return View { values:value.bytes,start:value.start,length:value.length }; }
+fn equal(left:View<u8>, right:View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index:i32 = 0;
+    while(index < left.length) { if (left.get(index).unwrap() != right.get(index).unwrap()) { return false; } index += 1; } return true;
+}
+fn valid_level(value:View<u8>) -> bool {
+    if (value.length < 1 || value.length > 32) { return false; }
+    let index:i32 = 0; while(index < value.length) {
+        let byte = value.get(index).unwrap(); let letter:bool = (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122);
+        if (!letter && (index == 0 || !((byte >= 48 && byte <= 57) || byte == 95 || byte == 45))) { return false; } index += 1;
+    }
+    return true;
+}
+pub impl core::iter::Mapper<Entry,bool> for Level {
+    pub fn apply(&self, entry:Entry) -> bool { return self.value.is_none() || equal(bytes(entry.level),self.value.unwrap()); }
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:core::result::Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if (count <= 0 || count > bytes.length-completed) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32) -> i32 { write(literal("timeline-tail: operation failed\n",32),2,8); return status; }
+fn csv_status(error:ext::csv::Error) -> i32 { return match(error) { ext::csv::Error::AllocationFailed -> 4, _ -> 2 }; }
+fn read(input:&Vec<u8>) -> i32 {
+    let source = std::stream::stdin(); let scratch:[u8;4096] = [0;4096]; let calls:i32 = 0;
+    while(true) {
+        if (calls == 4096) { return 2; } calls += 1;
+        let remaining:i32 = 1048576-input.len(); let count:i32 = remaining;
+        if (count > 4096) { count = 4096; } if (count == 0) { count = 1; }
+        let received:core::result::Result<i32,core::io::Error> = source.read(scratch,0,count);
+        if (received.is_err()) { if (core::io::is_interrupted(received.unwrap_err())) { continue; } return 3; }
+        let got = received.unwrap(); if (got < 0 || got > count) { return 3; }
+        if (got == 0) { return 0; } if (got > remaining) { return 2; }
+        if (input.try_extend(view(scratch,got).unwrap()).is_err()) { return 4; }
+    }
+    return 3;
+}
+fn emit(output:&alloc::io::Buffer, record:&ext::csv::Record, state:&Writes) -> i32 {
+    let limits = ext::csv_write::Limits { max_output:2097152-state.bytes,max_write_calls:8192-state.calls };
+    let sent:core::result::Result<ext::csv_write::Progress,ext::csv_write::Failure> = ext::csv_write::write_record(output,record,limits);
+    if (sent.is_err()) {
+        let failure = sent.unwrap_err(); state.bytes += failure.written; state.calls += failure.write_calls;
+        return match(failure.cause) {
+            ext::csv_write::Cause::Csv(detail) -> csv_status(detail),
+            ext::csv_write::Cause::Io(detail) -> match(detail) { core::io::Error::AllocationFailed -> 4, _ -> 2 },
+            _ -> 2
+        };
+    }
+    let progress = sent.unwrap(); state.bytes += progress.written; state.calls += progress.write_calls; return 0;
+}
+fn append(record:&ext::csv::Record, rank:u64, entry:Entry) -> i32 {
+    record.clear(); let digits:[u8;20] = [0;20];
+    let formatted = core::decimal::format_u64(digits,0,20,rank);
+    if (formatted.is_err()) { return 2; }
+    let pushed = record.try_push_field(text(view(digits,formatted.unwrap()).unwrap()));
+    if (pushed.is_err()) { return csv_status(pushed.unwrap_err()); }
+    let pushed = record.try_push_field(entry.level); if (pushed.is_err()) { return csv_status(pushed.unwrap_err()); }
+    let pushed = record.try_push_field(entry.message); if (pushed.is_err()) { return csv_status(pushed.unwrap_err()); } return 0;
+}
+fn select(entries:&Vec<Entry>, options:&Options, output:&alloc::io::Buffer, record:&ext::csv::Record) -> i32 {
+    let state = Writes { bytes:0,calls:0 };
+    let headers:[View<u8>;3] = [literal("rank",4),literal("level",5),literal("message",7)];
+    let index:i32 = 0; while(index < 3) {
+        let pushed = record.try_push_field(text(headers[index])); if (pushed.is_err()) { return csv_status(pushed.unwrap_err()); } index += 1;
+    }
+    let status:i32 = emit(output,record,state.borrow()); if (status != 0) { return status; }
+    // All adapter sources, the predicate, and table-backed Text views remain
+    // live through this loop. None of these adapters owns or destroys a row.
+    let source:core::slice::Iter<Entry> = entries.iter();
+    let backwards:core::iter::Rev<core::slice::Iter<Entry>,Entry> = core::iter::rev<core::slice::Iter<Entry>,Entry>(source.borrow());
+    let predicate = Level { value:options.level };
+    let matching:core::iter::Filter<core::iter::Rev<core::slice::Iter<Entry>,Entry>,Level,Entry> = core::iter::filter<core::iter::Rev<core::slice::Iter<Entry>,Entry>,Level,Entry>(backwards.borrow(),predicate.borrow());
+    let latest:core::iter::Take<core::iter::Filter<core::iter::Rev<core::slice::Iter<Entry>,Entry>,Level,Entry>,Entry> = core::iter::take<core::iter::Filter<core::iter::Rev<core::slice::Iter<Entry>,Entry>,Level,Entry>,Entry>(matching.borrow(),options.count);
+    let numbered:core::iter::Enumerate<core::iter::Take<core::iter::Filter<core::iter::Rev<core::slice::Iter<Entry>,Entry>,Level,Entry>,Entry>,Entry> = core::iter::enumerate<core::iter::Take<core::iter::Filter<core::iter::Rev<core::slice::Iter<Entry>,Entry>,Level,Entry>,Entry>,Entry>(latest.borrow());
+    while(true) {
+        let next:Option<core::pair::Pair<u64,Entry>> = numbered.next(); if (next.is_none()) { return 0; }
+        let item = next.unwrap(); status = append(record,item.first+1,item.second); if (status != 0) { return status; }
+        status = emit(output,record,state.borrow()); if (status != 0) { return status; }
+    }
+    return 0;
+}
+fn process(input:&Vec<u8>, options:&Options, output:&alloc::io::Buffer) -> i32 {
+    let dialect = ext::csv::default_options(); dialect.max_records = 4097; dialect.max_fields = 2;
+    dialect.max_field_bytes = 8192; dialect.max_record_bytes = 8224;
+    let parsed = ext::csv::parse_bytes(input.as_slice(),0,input.len(),dialect); if (parsed.is_err()) { return csv_status(parsed.unwrap_err()); }
+    let table = parsed.unwrap(); let entries:Vec<Entry> = alloc::vec::new(); let status:i32 = 0;
+    if (table.row_count() < 1 || table.field_count(0).unwrap() != 2) { status = 2; }
+    if (status == 0 && (!equal(bytes(table.field(0,0).unwrap()),literal("level",5)) || !equal(bytes(table.field(0,1).unwrap()),literal("message",7)))) { status = 2; }
+    let index:i32 = 1;
+    while(status == 0 && index < table.row_count()) {
+        if (table.field_count(index).unwrap() != 2) { status = 2; break; }
+        let entry = Entry { level:table.field(index,0).unwrap(),message:table.field(index,1).unwrap() };
+        if (!valid_level(bytes(entry.level))) { status = 2; break; }
+        if (entries.try_push(entry).is_err()) { status = 4; break; } index += 1;
+    }
+    let record = ext::csv::new();
+    if (status == 0) { status = select(entries.borrow(),options,output,record.borrow()); }
+    record.destroy(); entries.destroy(); table.destroy(); return status;
+}
+fn run(options:&Options) -> i32 {
+    let input:Vec<u8> = alloc::vec::new(); let status:i32 = read(input.borrow());
+    if (status != 0) { input.destroy(); return status; }
+    let made = alloc::io::with_limit(2097152); if (made.is_err()) { input.destroy(); return 4; }
+    let output = made.unwrap(); status = process(input.borrow(),options,output.borrow()); input.destroy();
+    if (status == 0 && !write(view(output.as_bytes(),output.len()).unwrap(),1,8192)) { status = 5; }
+    output.destroy(); return status;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    let specs:[ext::cli::Spec;3] = [
+        ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
+        ext::cli::Spec { id:2,long:literal("count",5),short:110,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:3,long:literal("level",5),short:108,arity:ext::cli::Arity::Required }
+    ];
+    let made = ext::cli::parser(values,view(specs,3).unwrap(),ext::cli::Ordering::Intermixed); if (made.is_err()) { return report(2); }
+    let parser = made.unwrap(); let options = Options { count:10,level:core::option::None(),count_set:false,help:false };
+    while(true) {
+        let event = parser.next(); if (event.is_err()) { return report(2); } let next = event.unwrap(); if (next.is_none()) { break; }
+        let item:Option<ext::cli::Occurrence> = match(next.unwrap()) { ext::cli::Event::Option(value) -> core::option::Some(value), _ -> core::option::None() };
+        if (item.is_none()) { return report(2); } let found = item.unwrap();
+        if (found.id == 1) { if (options.help) { return report(2); } options.help = true; }
+        if (found.id == 2) {
+            if (options.count_set) { return report(2); } options.count_set = true;
+            let value = found.value.unwrap().bytes; let count = core::decimal::parse_u64_range(value.values,value.start,value.length);
+            if (count.is_err() || count.unwrap() > 4096) { return report(2); } options.count = count.unwrap();
+        }
+        if (found.id == 3) {
+            if (options.level.is_some()) { return report(2); } let value = found.value.unwrap().bytes;
+            if (!valid_level(value)) { return report(2); } options.level = core::option::Some(value);
+        }
+    }
+    if (options.help) {
+        let help = literal("Usage: timeline-tail [--count N] [--level LEVEL] [--help]\nRead CSV level,message through EOF; print CSV rank,level,message newest first.\nDefault count: 10; count range: 0..4096; level is an exact case-sensitive token.\nLimits: 1 MiB input, 4096 events, 8192 bytes per message, 2 MiB staged output.\n",297);
+        if (!write(help,1,64)) { return report(5); } return 0;
+    }
+    let status = run(options.borrow()); if (status != 0) { return report(status); } return 0;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,16,1024);
+    if (captured.is_err()) { return report(match(captured.unwrap_err()) { std::args::Error::AllocationFailed -> 4, std::args::Error::HostRead(index) -> 3, _ -> 2 }); }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

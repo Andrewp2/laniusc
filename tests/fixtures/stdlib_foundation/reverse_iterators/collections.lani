@@ -1,0 +1,100 @@
+// Seven actual backing allocations: three Strings and four collections.
+// Adapters borrow, and returned owner handles transfer cleanup explicitly.
+module app::main;
+import alloc::deque;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::vec;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+fn pull<I,T>(source:&I,back:bool) -> core::option::Option<T>
+    where I:core::iter::Iterator<T>,I:core::iter::DoubleEndedIterator<T> {
+    let result:core::option::Option<T> =core::option::None();
+    if (back) { result=source.next_back(); } else { result=source.next(); } return result;
+}
+fn text(value:str,count:i32) -> alloc::string::String {
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),count);
+    return alloc::string::from_utf8(bytes,count).unwrap();
+}
+fn vector_owners() {
+    let owner:alloc::vec::Vec<alloc::string::String> =alloc::vec::with_capacity<alloc::string::String>(3).unwrap();
+    owner.try_push(text("one",3)).unwrap(); owner.try_push(text("two",3)).unwrap(); owner.try_push(text("three",5)).unwrap();
+    let backing:ptr=owner.storage; let capacity:i32=owner.capacity();
+    let borrowed:core::slice::Iter<alloc::string::String> =owner.iter();
+    let reversed:core::iter::Rev<core::slice::Iter<alloc::string::String>,alloc::string::String> =core::iter::rev<core::slice::Iter<alloc::string::String>,alloc::string::String>(borrowed.borrow());
+    let alias:alloc::string::String=reversed.next().unwrap();
+    assert(alias.byte_len()==5 && alias.byte_at(0).unwrap()==116 && owner.len()==3);
+    assert(alias.bytes.storage==owner.at(2).bytes.storage && owner.at(0).byte_at(0).unwrap()==111);
+    // End use of borrowed aliases and cursors before transferring the backing.
+    let cursor:alloc::vec::IntoIter<alloc::string::String> =owner.take_iter();
+    let reverse:core::iter::Rev<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String> =core::iter::rev<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(cursor.borrow());
+    assert(owner.is_empty() && owner.capacity()==0 && cursor.capacity()==capacity);
+    let last:alloc::string::String=reverse.next().unwrap();
+    assert(last.byte_len()==5 && last.bytes.storage==alias.bytes.storage); last.destroy();
+    let first:alloc::string::String=reverse.next_back().unwrap(); assert(first.byte_at(0).unwrap()==111); first.destroy();
+    assert(cursor.remaining()==1);
+    // Stop using reverse before recovering the underlying owner, without any
+    // adapter cleanup or cloning. The remaining String still owns its bytes.
+    let remaining:alloc::vec::Vec<alloc::string::String> =cursor.take_remaining();
+    assert(cursor.remaining()==0 && cursor.capacity()==0 && remaining.storage==backing && remaining.len()==1);
+    assert(remaining.at(0).byte_len()==3 && remaining.at(0).byte_at(0).unwrap()==116 && remaining.at(0).byte_at(1).unwrap()==119);
+    let middle:alloc::string::String=remaining.pop().unwrap(); middle.destroy(); remaining.destroy();
+    owner.destroy(); remaining.destroy();
+}
+fn deque_leaves() {
+    let owner:alloc::deque::Deque<u64> =alloc::deque::with_capacity<u64>(4).unwrap();
+    owner.try_push_front(4294967298).unwrap(); owner.try_push_front(4294967297).unwrap();
+    owner.try_push_back(4294967299).unwrap(); owner.try_push_back(4294967300).unwrap();
+    let cursor:alloc::deque::Cursor<u64> =owner.iter();
+    let reverse:core::iter::Rev<alloc::deque::Cursor<u64>,u64> =core::iter::rev<alloc::deque::Cursor<u64>,u64>(cursor.borrow());
+    assert(reverse.next().unwrap()==4294967300 && reverse.next_back().unwrap()==4294967297);
+    assert(pull<alloc::deque::Cursor<u64>,u64>(cursor.borrow(),true).unwrap()==4294967299);
+    assert(reverse.next_back().unwrap()==4294967298 && reverse.next().is_none() && reverse.next_back().is_none());
+    let owning:alloc::deque::IntoIter<u64> =owner.take_iter();
+    let owned_reverse:core::iter::Rev<alloc::deque::IntoIter<u64>,u64> =core::iter::rev<alloc::deque::IntoIter<u64>,u64>(owning.borrow());
+    assert(owned_reverse.next().unwrap()==4294967300 && owned_reverse.next_back().unwrap()==4294967297);
+    let recovered:alloc::deque::Deque<u64> =owning.take_remaining();
+    assert(owner.is_empty() && owning.remaining()==0 && recovered.len()==2);
+    assert(recovered.pop_front().unwrap()==4294967298 && recovered.pop_back().unwrap()==4294967299);
+    recovered.destroy(); owner.destroy();
+}
+fn tree_map_leaves() {
+    let owner:alloc::tree_map::TreeMap<i32,u64> =alloc::tree_map::with_capacity<i32,u64>(4).unwrap();
+    owner.try_insert(3,8589934595).unwrap(); owner.try_insert(1,8589934593).unwrap();
+    owner.try_insert(4,8589934596).unwrap(); owner.try_insert(2,8589934594).unwrap();
+    let cursor:alloc::tree_map::Cursor<i32,u64> =owner.range(2,4).unwrap();
+    let reverse:core::iter::Rev<alloc::tree_map::Cursor<i32,u64>,alloc::tree_map::Entry<i32,u64>> =core::iter::rev<alloc::tree_map::Cursor<i32,u64>,alloc::tree_map::Entry<i32,u64>>(cursor.borrow());
+    let high:alloc::tree_map::Entry<i32,u64> =reverse.next().unwrap(); let low:alloc::tree_map::Entry<i32,u64> =reverse.next_back().unwrap();
+    assert(high.key==3 && high.value==8589934595 && low.key==2 && low.value==8589934594);
+    assert(reverse.next().is_none() && reverse.next_back().is_none());
+    let owning:alloc::tree_map::IntoIter<i32,u64> =owner.take_iter();
+    let owned_reverse:core::iter::Rev<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>> =core::iter::rev<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(owning.borrow());
+    assert(owned_reverse.next().unwrap().key==4 && owned_reverse.next_back().unwrap().key==1);
+    let recovered:alloc::tree_map::TreeMap<i32,u64> =owning.take_remaining();
+    assert(owner.is_empty() && owning.remaining()==0 && recovered.len()==2);
+    let first:alloc::tree_map::Entry<i32,u64> =recovered.pop_first().unwrap(); let last:alloc::tree_map::Entry<i32,u64> =recovered.pop_last().unwrap();
+    assert(first.key==2 && first.value==8589934594 && last.key==3 && last.value==8589934595);
+    recovered.destroy(); owner.destroy();
+}
+fn tree_set_leaves() {
+    let owner:alloc::tree_set::TreeSet<i64> =alloc::tree_set::with_capacity<i64>(4).unwrap();
+    owner.try_insert(-4294967297).unwrap(); owner.try_insert(8589934593).unwrap(); owner.try_insert(0).unwrap(); owner.try_insert(4294967297).unwrap();
+    let cursor:alloc::tree_set::Cursor<i64> =owner.iter();
+    let reverse:core::iter::Rev<alloc::tree_set::Cursor<i64>,i64> =core::iter::rev<alloc::tree_set::Cursor<i64>,i64>(cursor.borrow());
+    assert(reverse.next().unwrap()==8589934593 && reverse.next_back().unwrap()==-4294967297);
+    assert(reverse.next().unwrap()==4294967297 && reverse.next_back().unwrap()==0);
+    assert(reverse.next_back().is_none() && reverse.next().is_none());
+    let owning:alloc::tree_set::IntoIter<i64> =owner.take_iter();
+    let owned_reverse:core::iter::Rev<alloc::tree_set::IntoIter<i64>,i64> =core::iter::rev<alloc::tree_set::IntoIter<i64>,i64>(owning.borrow());
+    assert(owned_reverse.next().unwrap()==8589934593 && owned_reverse.next_back().unwrap()==-4294967297);
+    let recovered:alloc::tree_set::TreeSet<i64> =owning.take_remaining();
+    assert(owner.is_empty() && owning.remaining()==0 && recovered.len()==2);
+    assert(recovered.pop_first().unwrap()==0 && recovered.pop_last().unwrap()==4294967297);
+    recovered.destroy(); owner.destroy();
+}
+fn main() -> i32 { vector_owners(); deque_leaves(); tree_map_leaves(); tree_set_leaves(); return 0; }

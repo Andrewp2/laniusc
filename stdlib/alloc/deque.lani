@@ -338,12 +338,6 @@ pub impl<T> IntoIter<T> {
         let second: core::slice::View<T> = core::slice::View { values: slots, start: 0, length: count - first_len };
         return Views { first: first, second: second };
     }
-    // Each successful pull transfers that item's cleanup authority to caller.
-    pub fn next_back(&self) -> core::option::Option<T> {
-        if (self.front == self.back) { return core::option::None(); }
-        self.back -= 1; let slots: [T] = self.slots();
-        return core::option::Some(slots[physical(self.head, self.reserved, self.back)]);
-    }
     // Refuse to release unconsumed owners. Exhaustion alone never frees storage.
     pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
         let count: i32 = self.remaining();
@@ -371,6 +365,15 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
     }
 }
 
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
+    // Each successful pull transfers that item's cleanup authority to caller.
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; let slots: [T] = self.slots();
+        return core::option::Some(slots[physical(self.head, self.reserved, self.back)]);
+    }
+}
+
 // Acceptance has try_push_back's shallow ownership and view invalidation rules.
 pub impl<T> core::iter::TrySink<T, Error> for Deque<T> {
     pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
@@ -387,15 +390,18 @@ pub impl<T> Cursor<T> {
         if (ordinal < self.first.len()) { return self.first.get(ordinal); }
         return self.second.get(ordinal - self.first.len());
     }
-    pub fn next_back(&self) -> core::option::Option<T> {
-        if (self.front == self.back) { return core::option::None(); }
-        self.back -= 1; return self.get(self.back);
-    }
 }
 
 pub impl<T> core::iter::Iterator<T> for Cursor<T> {
     pub fn next(&self) -> core::option::Option<T> {
         if (self.front == self.back) { return core::option::None(); }
         let ordinal: i32 = self.front; self.front += 1; return self.get(ordinal);
+    }
+}
+
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1; return self.get(self.back);
     }
 }

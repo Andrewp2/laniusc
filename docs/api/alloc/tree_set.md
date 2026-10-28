@@ -18,7 +18,7 @@ Owning cursors also execute with explicit transfer, retained backing, O(1) recov
 - [stdlib-owning-tree](../../stdlib-owning-tree.md)
 - [stdlib-replacement-sinks](../../stdlib-replacement-sinks.md)
 
-Declaration counts: enum: 1; field: 3; function: 2; impl: 7; method: 44; struct: 3; variant: 1.
+Declaration counts: enum: 1; field: 3; function: 2; impl: 9; method: 44; struct: 3; variant: 1.
 
 ## Declared imports
 
@@ -416,25 +416,17 @@ pub impl<T> Cursor<T>
 pub fn borrow(&self) -> &Cursor<T>
 ```
 
-#### method: next_back
-
-[Source line 155](../../../stdlib/alloc/tree_set.lani#L155)
-
-```lanius
-pub fn next_back(&self) -> core::option::Option<T>
-```
-
 #### method: is_empty
 
-[Source line 156](../../../stdlib/alloc/tree_set.lani#L156)
+[Source line 155](../../../stdlib/alloc/tree_set.lani#L155)
 
 ```lanius
 pub fn is_empty(&self) -> bool
 ```
 
-### impl at line 159
+### impl at line 158
 
-[Source line 159](../../../stdlib/alloc/tree_set.lani#L159)
+[Source line 158](../../../stdlib/alloc/tree_set.lani#L158)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Cursor<T>
@@ -442,15 +434,31 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T>
 
 #### method: next
 
-[Source line 160](../../../stdlib/alloc/tree_set.lani#L160)
+[Source line 159](../../../stdlib/alloc/tree_set.lani#L159)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 163
+### impl at line 162
+
+[Source line 162](../../../stdlib/alloc/tree_set.lani#L162)
+
+```lanius
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T>
+```
+
+#### method: next_back
 
 [Source line 163](../../../stdlib/alloc/tree_set.lani#L163)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<T>
+```
+
+### impl at line 166
+
+[Source line 166](../../../stdlib/alloc/tree_set.lani#L166)
 
 ```lanius
 pub impl<T> IntoIter<T>
@@ -458,7 +466,7 @@ pub impl<T> IntoIter<T>
 
 #### method: borrow
 
-[Source line 164](../../../stdlib/alloc/tree_set.lani#L164)
+[Source line 167](../../../stdlib/alloc/tree_set.lani#L167)
 
 ```lanius
 pub fn borrow(&self) -> &IntoIter<T>
@@ -466,7 +474,7 @@ pub fn borrow(&self) -> &IntoIter<T>
 
 #### method: remaining
 
-[Source line 165](../../../stdlib/alloc/tree_set.lani#L165)
+[Source line 168](../../../stdlib/alloc/tree_set.lani#L168)
 
 ```lanius
 pub fn remaining(&self) -> i32
@@ -474,7 +482,7 @@ pub fn remaining(&self) -> i32
 
 #### method: capacity
 
-[Source line 166](../../../stdlib/alloc/tree_set.lani#L166)
+[Source line 169](../../../stdlib/alloc/tree_set.lani#L169)
 
 ```lanius
 pub fn capacity(&self) -> i32
@@ -482,23 +490,15 @@ pub fn capacity(&self) -> i32
 
 #### method: is_empty
 
-[Source line 167](../../../stdlib/alloc/tree_set.lani#L167)
+[Source line 170](../../../stdlib/alloc/tree_set.lani#L170)
 
 ```lanius
 pub fn is_empty(&self) -> bool
 ```
 
-#### method: next_back
-
-[Source line 169](../../../stdlib/alloc/tree_set.lani#L169)
-
-```lanius
-pub fn next_back(&self) -> core::option::Option<T>
-```
-
 #### method: try_finish
 
-[Source line 172](../../../stdlib/alloc/tree_set.lani#L172)
+[Source line 171](../../../stdlib/alloc/tree_set.lani#L171)
 
 ```lanius
 pub fn try_finish(&self) -> core::option::Option<IntoIterError>
@@ -506,15 +506,15 @@ pub fn try_finish(&self) -> core::option::Option<IntoIterError>
 
 #### method: take_remaining
 
-[Source line 178](../../../stdlib/alloc/tree_set.lani#L178)
+[Source line 177](../../../stdlib/alloc/tree_set.lani#L177)
 
 ```lanius
 pub fn take_remaining(&self) -> TreeSet<T>
 ```
 
-### impl at line 183
+### impl at line 182
 
-[Source line 183](../../../stdlib/alloc/tree_set.lani#L183)
+[Source line 182](../../../stdlib/alloc/tree_set.lani#L182)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for IntoIter<T>
@@ -522,8 +522,24 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 
 #### method: next
 
-[Source line 184](../../../stdlib/alloc/tree_set.lani#L184)
+[Source line 183](../../../stdlib/alloc/tree_set.lani#L183)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
+```
+
+### impl at line 188
+
+[Source line 188](../../../stdlib/alloc/tree_set.lani#L188)
+
+```lanius
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
+```
+
+#### method: next_back
+
+[Source line 190](../../../stdlib/alloc/tree_set.lani#L190)
+
+```lanius
+pub fn next_back(&self) -> core::option::Option<T>
 ```

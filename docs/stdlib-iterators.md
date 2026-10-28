@@ -10,7 +10,10 @@ into fixed vectors, owned vectors and deques, including rejection recovery.
 [Map, set and heap sink gates](stdlib-iterator-collection-sinks.md) additionally
 check unique-key policies, retained representatives and both heap orders.
 This is native CPU execution evidence; it does not establish user-program GPU
-execution or other targets.
+execution or other targets. The newly implemented
+[double-ended protocol and Rev](#double-ended-traversal) have separate current
+verification status below; historical forward-only groups do not establish
+those additions by themselves.
 
 [Collection, Text and bitset cursors](stdlib-collection-iterators.md) implement
 the same protocol. Their separate native gates check mixed traversal,
@@ -37,6 +40,151 @@ and [mapping callbacks](stdlib-iterator-adapters.md) supply their own per-call
 behavior, allocation, cost and termination.
 Lanius `for` syntax retains its existing compiler lowering; declaring this trait
 does not automatically extend `for` to custom iterator types.
+
+## Double-ended traversal
+
+```text
+pub trait DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T>;
+}
+
+pub fn rev<I,T>(source: &I) -> Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>;
+```
+
+An implementation participating in this paired protocol supplies both traits
+for the same item type. Generic functions name both bounds explicitly; the
+current language does not infer Iterator from DoubleEndedIterator or use
+supertrait syntax here. A backward-only or differently typed implementation
+does not satisfy `rev`.
+
+`next` consumes the first remaining logical item and `next_back` consumes the
+last. They use the **same remainder**, may be interleaved and cannot yield the
+middle item twice. **None from either direction permanently exhausts both**.
+This is a source contract even when callers use the two traits independently;
+forging cursor state or reentering it from a callback is outside that contract.
+
+The design follows Rust's official
+[DoubleEndedIterator](https://doc.rust-lang.org/std/iter/trait.DoubleEndedIterator.html)
+shared-range model and [Rev](https://doc.rust-lang.org/std/iter/struct.Rev.html)
+direction inversion. Lanius deliberately strengthens exhaustion: Rust permits
+later values after None, while this paired Lanius protocol requires permanent
+exhaustion at both ends. Rust also makes Iterator a supertrait; Lanius spells
+out both generic bounds. Reverse traversal alone supplies no exact-size trait.
+
+### Borrowed Rev
+
+`rev` borrows the actual source cursor. Construction makes no source/callback
+call, allocates no storage and captures no items. `Rev::borrow()` supports
+further borrowed composition. Its `next()` calls source `next_back()`; its
+`next_back()` calls source `next()`. Each active pull makes at most one direct
+source call. One local done flag latches the first None in either direction;
+subsequent pulls make no source calls. Two nested Rev adapters restore the
+original direction over the source's current remainder, without rewinding it.
+
+```lani
+let values: [i32; 4] = [2, 3, 5, 7];
+let source: core::slice::Iter<i32> =
+    core::result::unwrap(core::iter::from_slice<i32>(values, 4));
+let backwards: core::iter::Rev<core::slice::Iter<i32>,i32> =
+    core::iter::rev<core::slice::Iter<i32>,i32>(source.borrow());
+let last: core::option::Option<i32> = backwards.next(); // Some(7)
+let first: core::option::Option<i32> = backwards.next_back(); // Some(2)
+// The shared source remainder is now [3, 5].
+```
+
+Source cursor objects, mapper/predicate contexts and all backing owners outlive
+these borrowed adapters. Do not reenter a cursor or mutate it concurrently.
+Sequential pulls through another valid borrow observe the same remainder.
+Copying Rev copies its local done flag and keeps the same borrowed source;
+it creates no independent source or cleanup authority. Ending a Rev borrow
+neither drains the source nor releases its storage. There is no item cache,
+implicit cloning, automatic destruction or snapshot of the input.
+
+Reverse pulls preserve the source's item policy. Borrowed cursors yield shallow
+aliases; owning cursors transfer cleanup authority for each yielded item.
+Discarding a transferred item in a filter or consumer still requires explicit
+caller/callback cleanup. Owning-cursor finish/destroy releases only its actual
+remainder; exhaustion through Rev does not itself release retained backing.
+
+### Implementations and composition
+
+| Source or adapter | Reverse contract |
+| --- | --- |
+| `Empty<T>` / `Once<T>` | Empty is exhausted in both directions; Once has one shared consumed flag |
+| `RangeI32` | Front/back consume the captured ascending interval; widened endpoint arithmetic handles inclusive i32 extrema |
+| `core::slice::Iter<T>` | Uses its existing shared front/back indices, native stride and backing bounds; Vec/Text borrowed factories return this same cursor |
+| `alloc::vec::IntoIter<T>` | Transfers the last remaining item through the canonical trait method; retains explicit finish/destroy policy |
+| Deque `Cursor<T>` / `IntoIter<T>` | Borrowed/owning back access retains the same wrapped logical remainder |
+| TreeMap/TreeSet borrowed and owning cursors | Back pulls the largest remaining entry/key; ordering and owner-release policy remain those of the canonical tree cursors |
+| `Map` / `Filter` / `FilterMap` | Reverse support requires the source to implement both traits, plus the existing typed callback bound |
+| `Chain<A,B,T>` | Requires both traits for both sources; front drains left then right, back drains right then left, sharing each source's exhausted flag |
+
+Map invokes its callback once per successful source pull. Filter and FilterMap
+scan in the requested direction until a match/output or source exhaustion.
+Callbacks run in **pull order**. Stateful callbacks can therefore produce
+different values/selections under different front/back schedules; there is no
+promise that changing direction simply reverses an earlier callback history.
+Chain makes at most two direct source pulls per call. Callback/inner work is
+not a wall-time bound, and filtering can scan arbitrarily many source items.
+A downstream Take limits yielded matches, not scanned items; use a finite
+source or place Take between Rev and Filter when scanned-input work needs its
+own explicit bound.
+
+`Take`, `Skip`, `Zip` and `Enumerate` remain forward-only. Place them after Rev
+when the desired operation is bounded or indexed reverse traversal, such as
+`rev -> filter -> take -> enumerate`. This does not make `rev(take(...))`
+available. Other cursor/adapter families gain no backward trait merely from
+having a forward implementation or an inherent metadata method. Generic reverse
+iteration carries no `remaining()` or exact cardinality promise.
+
+### Current reverse verification
+
+All four `stdlib_reverse_iterator_execution` Rust tests pass through actual
+GPU compilation and Linux x86_64 CPU execution, across two disjoint filtered
+commands. The model test passes in 9.40s; the other three pass in 11.74s.
+These are runtime tests, not build-only admission.
+
+| Registered gate | Accepted finite scope |
+| --- | --- |
+| Pure contracts | `contracts.lani` executes five scenario functions and current `extra_contracts.lani` executes four in separate raw processes. Compound/nested values, mixed ends, range extrema, callback order, empty/aliased Chain, packed/negative-stride bytes and zero-sized values pass with no mmap/munmap calls |
+| Collection ownership | Four scenario functions check borrowed String aliases, explicit owning transfers/destruction, wrapped Deque and tree ranges/ordered owners, plus remaining-owner recovery. All seven actual backing allocations match successful releases by full address and size; Rev adds no hidden clone/drop |
+| Independent model | 7,740 commands compared with a host VecDeque reference cover mixed ends, partially consumed sources, chained remainders and double reverse |
+| Exact trait bounds | Forward-only and wrong-backward-item sources each reject with `LNC0008` at their own Rev construction |
+
+Receipts under `target/stdlib-work/` are `reverse-model-rust-first.log` and
+`reverse-contracts-rust-formatted.log`. Accepted core/slice sources are
+`c2db69bc…`/`b9f2f9c2…`; contract/extra/collection producers are
+`5c682a05…`/`9f6ac75a…`/`bea024ff…`. Earlier direct native runs are admission
+and diagnostic history for these same cases, not additional Rust tests or
+extra distinct coverage. The first extra-contract source had three scenario
+functions, including both-empty Chain; the final source adds packed/strided
+byte and zero-sized Unit coverage as its fourth scenario.
+
+Selected old forward contracts and `core_slice_view.lani` compile and execute
+again after method migration. The existing `tree_map_basic.lani` also passes
+without a direct core::iter import, preserving transitive method visibility.
+These focused controls do not claim a broad old-suite rerun.
+
+The [real timeline program](#latest-matching-timeline-application) separately
+passes all four registered Rust tests and its 71 process cases. No new
+allocation-failure campaign, automatic lifetime/cleanup enforcement, formal
+proof or user-program GPU runtime follows. Target evidence remains native
+Linux x86_64; source callbacks, backing validity and bounded work retain the
+explicit preconditions above.
+
+### Canonical method and compiler boundary
+
+Slice and collection cursor `next`/`next_back` calls now resolve to their single
+public trait implementations. The `.next_back()` call spelling is unchanged.
+The compiler currently rejects a same-named inherent and trait method in the
+same module (`LNC0027`); keeping the old slice inherent method alongside the
+new imported trait also produced ambiguous resolution. The
+[minimal duplicate-method reduction](../tests/fixtures/stdlib_compiler_state/inherent_trait_name/reject_duplicate.lani)
+and [single-trait control](../tests/fixtures/stdlib_compiler_state/inherent_trait_name/trait_only.lani)
+retain that narrow boundary. The current direct reverse contracts compile and
+execute with the canonical trait methods. No compiler change or general generic
+payload limitation is claimed. Backward behavior has one canonical implementation.
 
 ## Items, copies and lifetime
 
@@ -69,7 +217,8 @@ Copy semantics depend on the cursor:
 | `RangeI32` | Independent positions over captured numeric bounds |
 | `alloc::vec::IntoIter<T>` / `alloc::deque::IntoIter<T>` | Aliased storage and cleanup authority; only one active handle is permitted |
 | `Take<I,T>` | Independent quota/done flags; same borrowed source cursor |
-| `Chain<A,B,T>` | Independent phase/done flags; same borrowed source cursors |
+| `Rev<I,T>` | Independent done flag; same borrowed source cursor and shared front/back remainder |
+| `Chain<A,B,T>` | Independent per-source exhaustion/done flags; same borrowed source cursors |
 | `Map<I,M,T,U>` | Independent done flag; same borrowed source and mapper/context |
 | `Zip<A,B,T,U>` | Independent done flag; same borrowed source cursors |
 | `Enumerate<I,T>` | Independent index/done flags; same borrowed source cursor |
@@ -101,7 +250,8 @@ state can invalidate arithmetic, indexing and exhaustion guarantees.
 | `from_view<T>(view:slice::View<T>)` | Same result; retain this view's start/count and native stride |
 | `core::slice::Iter<T>::borrow(&self)` | Borrow this cursor for adapters or consumers |
 | `core::slice::Iter<T>::remaining(&self)` | Exact remaining logical count, i32 |
-| `core::slice::Iter<T>::next(&self)` | Shallow current element, then advance; fused at zero remaining |
+| `core::slice::Iter<T>::next(&self)` | Shallow front element, then advance; fused at zero remaining |
+| `core::slice::Iter<T>::next_back(&self)` | Shallow back element, then retreat; shares the same remaining interval |
 
 Both constructors reject negative count metadata. `from_view` also rejects a
 negative start or an end beyond `i32::MAX`. It checks those conditions before
@@ -121,10 +271,11 @@ then trap at ordinary native indexing. Neither `remaining` nor a successful
 constructor certifies an allocation size.
 
 The checked factories and owner-proven Vec/Text factories return the same
-canonical `core::slice::Iter<T>` as `View.iter()`. Its forward trait method
-lives in `core::iter`; backward access, skipping and metadata methods live in
-`core::slice`. Import `core::iter` where the shared protocol is used. This
-keeps one cursor state and one forward transition without an import cycle.
+canonical `core::slice::Iter<T>` as `View.iter()`. Both `next` and `next_back`
+are canonical shared trait methods implemented in `core::iter`; skipping and
+metadata methods live in `core::slice`. There is no same-named inherent backward
+method. Import `core::iter` where the shared protocol is used. This keeps one
+front/back cursor state without an import cycle or duplicate public methods.
 Access preserves the native descriptor, stride and physical bounds. Packed
 bytes, strided stack values, compound records and zero-sized items follow
 the existing indexing contract. See [cursor integration](stdlib-cursor-integration.md).
@@ -151,11 +302,12 @@ concrete witness wrappers are part of the API.
 
 `range_i32(Range<i32>) -> RangeI32` captures a half-open interval `[start,end)`.
 `range_i32_inclusive(RangeInclusive<i32>) -> RangeI32` captures `[start,end]`.
-Both advance upwards by exactly one. Reversed bounds are empty; equal bounds
+Forward `next` advances upwards by exactly one; `next_back` consumes the
+highest remaining value. Reversed bounds are empty; equal bounds
 are empty for the half-open form and yield one element for the inclusive form.
 Later changes to the original range record do not change the cursor.
 
-`RangeI32` provides `borrow`, `next`, `remaining() -> u64` and
+`RangeI32` provides `borrow`, `next`, `next_back`, `remaining() -> u64` and
 `advance(count:u64) -> u64`. The latter skips `min(count, remaining)` elements
 in O(1), returns the exact skipped count and does not read or produce items.
 This is distinct from the generic consumer, which calls `next` for each item.
@@ -179,8 +331,8 @@ let end: core::option::Option<i32> = source.next(); // None forever
 
 These are finite, concrete i32 cursors. The range records' generic
 membership/partial-order contracts do not imply a generic successor operation.
-This module defines no float, arbitrary-record, descending or custom-step
-iteration policy.
+Backward traversal uses this same interval through `next_back` or Rev. This
+module defines no float, arbitrary-record or custom-step iteration policy.
 
 ## Borrowed adapters
 
@@ -246,6 +398,23 @@ source call.
 Construction and metadata methods are O(1), as are leaf `next` calls. Adapter
 work is O(number of direct upstream calls), and `advance_up_to` is
 O(number of calls made), in addition to the upstream method's work.
+
+## Latest matching timeline application
+
+The [timeline-tail program](stdlib-timeline-tail.md) composes a borrowed slice
+cursor through `rev -> filter -> take -> enumerate` and canonical CSV output.
+It selects newest matching records without building a reversed copy. The CSV
+table and entry-vector backing outlive every borrowed cursor/callback; output
+is staged independently before those owners are destroyed. Its own guide
+records schema, byte/record/output limits and I/O behavior. Four direct native
+groups pass separately: model 25, rejection 24, CLI 20 and I/O 2 cases, including
+exact caps, count zero, UTF-8/CSV content, directory-stdin failure and a closed
+stdout reader. The final application also passes all four registered Rust
+runtime tests in 9.15s, including their strict executable check. These cover
+the same 71 cases and are separate from the iterator protocol tests. Accepted
+source is `6579274d…`, ELF `aca6fc83…` and oracle `233d98e2…`; final runtime
+receipt is `target/stdlib-work/timeline-tail-rust-final.log`. Earlier raw runs
+do not add another 71 distinct cases.
 
 ## Range-statistics application
 

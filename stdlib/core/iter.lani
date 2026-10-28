@@ -24,6 +24,13 @@ pub trait Iterator<T> {
     pub fn next(&self) -> core::option::Option<T>;
 }
 
+// Implement alongside Iterator<T>. Front and back consume the same remaining
+// sequence without crossing. None from either end permanently exhausts both.
+// Generic users name BOTH bounds explicitly; no implicit supertrait is used.
+pub trait DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T>;
+}
+
 // A source-defined callback, with ordinary shallow input/output values. The
 // caller keeps the mapper and any borrowed mutable context alive. Output
 // cleanup authority remains with the application; no Destroy is implied.
@@ -98,6 +105,9 @@ pub struct TransferError<T, E> { accepted: u64, rejected: T, error: E }
 pub struct Empty<T> {}
 pub struct Once<T> { value: T, done: bool }
 pub struct Repeat<T> { value: T }
+// Borrow the actual cursor; no ownership transfer, cache or eager source pull.
+// One done flag fuses both directions, including for a faulty unfused source.
+pub struct Rev<I,T> { source: &I, done: bool }
 pub enum PeekableError { Cached }
 // cached Some(None) for an optional item is distinct from an absent cache.
 // Keep one active ownership-bearing handle; copies grant no cleanup authority.
@@ -106,7 +116,7 @@ pub enum StepError { Zero }
 pub struct StepBy<I, T> { source: &I, skip: u64, first: bool, done: bool }
 pub struct RangeI32 { position: i64, end: i64 }
 pub struct Take<I, T> { source: &I, remaining: u64, done: bool }
-pub struct Chain<A, B, T> { left: &A, right: &B, in_right: bool, done: bool }
+pub struct Chain<A, B, T> { left: &A, right: &B, left_done: bool, right_done: bool, done: bool }
 pub struct Map<I, M, T, U> { source: &I, mapper: &M, done: bool }
 // Scan callbacks hold their own state. None stops, unlike FilterMap's skip.
 // Keep source/mapper/state alive and do not reenter from a source or callback.
@@ -145,6 +155,14 @@ pub fn once<T>(value: T) -> Once<T> { return Once { value: value, done: false };
 // transferred memory owner cannot be repeated safely unless the application
 // keeps a separate cleanup authority and treats yielded handles as aliases.
 pub fn repeat<T>(value: T) -> Repeat<T> { return Repeat { value: value }; }
+
+// Reverse the remaining sequence. Keep source and its backing alive, and end
+// use of this adapter before recovering/freeing its source. Item cleanup stays
+// with the caller; abandoning Rev neither drains nor destroys anything.
+pub fn rev<I,T>(source: &I) -> Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T> {
+    return Rev { source: source, done: false };
+}
 
 // Lazy construction: no source call and no allocation. The source object and
 // its backing must outlive this adapter and all borrowed observations.
@@ -203,7 +221,7 @@ pub fn take<I, T>(source: &I, count: u64) -> Take<I, T> where I: Iterator<T> {
 
 pub fn chain<A, B, T>(left: &A, right: &B) -> Chain<A, B, T>
     where A: Iterator<T>, B: Iterator<T> {
-    return Chain { left: left, right: right, in_right: false, done: false };
+    return Chain { left: left, right: right, left_done: false, right_done: false, done: false };
 }
 
 pub fn map<I, M, T, U>(source: &I, mapper: &M) -> Map<I, M, T, U>
@@ -597,6 +615,16 @@ pub impl<T> Iterator<T> for core::slice::Iter<T> {
     }
 }
 
+// Retain the descriptor/stride and shared front/back bounds. Keeping the
+// canonical method here avoids a core::slice -> core::iter import cycle.
+pub impl<T> DoubleEndedIterator<T> for core::slice::Iter<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.front == self.back) { return core::option::None(); }
+        self.back -= 1;
+        return core::option::Some(self.values[self.back]);
+    }
+}
+
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
     pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
         if (self.position == self.end) { return core::option::None(); }
@@ -664,6 +692,10 @@ pub impl<T> Iterator<T> for Empty<T> {
     pub fn next(&self) -> core::option::Option<T> { return core::option::None(); }
 }
 
+pub impl<T> DoubleEndedIterator<T> for Empty<T> {
+    pub fn next_back(&self) -> core::option::Option<T> { return core::option::None(); }
+}
+
 pub impl<T> Once<T> {
     pub fn borrow(&self) -> &Once<T> { return self; }
 }
@@ -673,6 +705,40 @@ pub impl<T> Iterator<T> for Once<T> {
         if (self.done) { return core::option::None(); }
         self.done = true;
         return core::option::Some(self.value);
+    }
+}
+
+pub impl<T> DoubleEndedIterator<T> for Once<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        self.done = true;
+        return core::option::Some(self.value);
+    }
+}
+
+pub impl<I,T> Rev<I,T> {
+    pub fn borrow(&self) -> &Rev<I,T> { return self; }
+}
+
+pub impl<I,T> Iterator<T> for Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next_back();
+        if (item.is_none()) { self.done = true; }
+        return item;
+    }
+}
+
+pub impl<I,T> DoubleEndedIterator<T> for Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next();
+        if (item.is_none()) { self.done = true; }
+        return item;
     }
 }
 
@@ -728,6 +794,15 @@ pub impl Iterator<i32> for RangeI32 {
     }
 }
 
+pub impl DoubleEndedIterator<i32> for RangeI32 {
+    pub fn next_back(&self) -> core::option::Option<i32> {
+        if (self.position == self.end) { return core::option::None(); }
+        // end may be MAX + 1; subtract while widened before narrowing.
+        self.end -= 1;
+        return core::option::Some(self.end as i32);
+    }
+}
+
 pub impl<I, T> Take<I, T> {
     pub fn borrow(&self) -> &Take<I, T> { return self; }
     // This is a quota, not an exact upper-source cardinality.
@@ -753,15 +828,34 @@ pub impl<A, B, T> Iterator<T> for Chain<A, B, T>
     where A: Iterator<T>, B: Iterator<T> {
     pub fn next(&self) -> core::option::Option<T> {
         if (self.done) { return core::option::None(); }
-        if (!self.in_right) {
+        if (!self.left_done) {
             let left: &A = self.left;
             let item: core::option::Option<T> = left.next();
             if (core::option::is_some(item)) { return item; }
-            self.in_right = true;
+            self.left_done = true;
         }
+        if (self.right_done) { self.done = true; return core::option::None(); }
         let right: &B = self.right;
         let item: core::option::Option<T> = right.next();
-        if (core::option::is_none(item)) { self.done = true; }
+        if (core::option::is_none(item)) { self.right_done = true; self.done = true; }
+        return item;
+    }
+}
+
+pub impl<A,B,T> DoubleEndedIterator<T> for Chain<A,B,T>
+    where A: Iterator<T>, A: DoubleEndedIterator<T>, B: Iterator<T>, B: DoubleEndedIterator<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        if (!self.right_done) {
+            let right: &B = self.right;
+            let item: core::option::Option<T> = right.next_back();
+            if (item.is_some()) { return item; }
+            self.right_done = true;
+        }
+        if (self.left_done) { self.done = true; return core::option::None(); }
+        let left: &A = self.left;
+        let item: core::option::Option<T> = left.next_back();
+        if (item.is_none()) { self.left_done = true; self.done = true; }
         return item;
     }
 }
@@ -780,6 +874,19 @@ pub impl<I, M, T, U> Iterator<U> for Map<I, M, T, U>
         let value: T = core::option::unwrap(item);
         let mapper: &M = self.mapper;
         let mapped: U = mapper.apply(value);
+        return core::option::Some(mapped);
+    }
+}
+
+pub impl<I,M,T,U> DoubleEndedIterator<U> for Map<I,M,T,U>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, M: Mapper<T,U> {
+    pub fn next_back(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let item: core::option::Option<T> = source.next_back();
+        if (item.is_none()) { self.done = true; return core::option::None(); }
+        let mapper: &M = self.mapper;
+        let mapped: U = mapper.apply(item.unwrap());
         return core::option::Some(mapped);
     }
 }
@@ -1060,6 +1167,23 @@ pub impl<I, M, T, U> FilterMap<I, M, T, U> {
     pub fn borrow(&self) -> &FilterMap<I, M, T, U> { return self; }
 }
 
+// Predicates observe values in actual pull order. Rejected owners still need
+// application cleanup, exactly as in forward Filter; no Destroy is implied.
+pub impl<I,P,T> DoubleEndedIterator<T> for Filter<I,P,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, P: Mapper<T,bool> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let predicate: &P = self.predicate;
+        while (true) {
+            let item: core::option::Option<T> = source.next_back();
+            if (item.is_none()) { self.done = true; return item; }
+            if (predicate.apply(item.unwrap())) { return item; }
+        }
+        return core::option::None();
+    }
+}
+
 pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
     where I: Iterator<T>, M: Mapper<T, core::option::Option<U>> {
     pub fn next(&self) -> core::option::Option<U> {
@@ -1072,6 +1196,22 @@ pub impl<I, M, T, U> Iterator<U> for FilterMap<I, M, T, U>
             let value: T = core::option::unwrap(item);
             let mapped: core::option::Option<U> = mapper.apply(value);
             if (core::option::is_some(mapped)) { return mapped; }
+        }
+        return core::option::None();
+    }
+}
+
+pub impl<I,M,T,U> DoubleEndedIterator<U> for FilterMap<I,M,T,U>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, M: Mapper<T,core::option::Option<U>> {
+    pub fn next_back(&self) -> core::option::Option<U> {
+        if (self.done) { return core::option::None(); }
+        let source: &I = self.source;
+        let mapper: &M = self.mapper;
+        while (true) {
+            let item: core::option::Option<T> = source.next_back();
+            if (item.is_none()) { self.done = true; return core::option::None(); }
+            let mapped: core::option::Option<U> = mapper.apply(item.unwrap());
+            if (mapped.is_some()) { return mapped; }
         }
         return core::option::None();
     }

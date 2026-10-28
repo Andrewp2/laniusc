@@ -152,7 +152,6 @@ pub impl<T> core::iter::TryReplaceSink<T,alloc::tree_map::Error> for TreeSet<T>
 
 pub impl<T> Cursor<T> {
     pub fn borrow(&self) -> &Cursor<T> { return self; }
-    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }
     pub fn is_empty(&self) -> bool { return self.state.front < 0; }
 }
 
@@ -160,15 +159,15 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T> {
     pub fn next(&self) -> core::option::Option<T> { return alloc::tree_map::key_next<T>(self.state.borrow()); }
 }
 
+pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T> {
+    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_next_back<T>(self.state.borrow()); }
+}
+
 pub impl<T> IntoIter<T> {
     pub fn borrow(&self) -> &IntoIter<T> { return self; }
     pub fn remaining(&self) -> i32 { return self.state.length; }
     pub fn capacity(&self) -> i32 { return self.state.reserved; }
     pub fn is_empty(&self) -> bool { return self.state.length == 0; }
-    // Canonical endpoint removal: O(log n), no leaf bounds or allocation.
-    pub fn next_back(&self) -> core::option::Option<T> {
-        return alloc::tree_map::key_pop<T>(self.state.borrow(), true);
-    }
     pub fn try_finish(&self) -> core::option::Option<IntoIterError> {
         let count: i32 = self.remaining();
         if (count > 0) { return core::option::Some(IntoIterError::Remaining(count)); }
@@ -184,4 +183,9 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
     pub fn next(&self) -> core::option::Option<T> {
         return alloc::tree_map::key_pop<T>(self.state.borrow(), false);
     }
+}
+
+pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
+    // Canonical endpoint removal: O(log n), no leaf bounds or allocation.
+    pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_pop<T>(self.state.borrow(),true); }
 }

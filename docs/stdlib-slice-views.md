@@ -62,10 +62,11 @@ stay exhausted once they return `None`. Copying a cursor forks its position;
 backing elements remain shared. Mutations through a valid alias are visible
 when a cursor later reads those elements. Overlapping windows also alias.
 
-Forward `next` methods implement the [shared iteration protocol](stdlib-iterators.md)
-in `core::iter`. Import that module to use forward iteration or generic
-adapters/consumers. The inherent methods retain backward access, skipping,
-metadata and borrowing; `core::slice` does not import `core::iter` back.
+The `next` methods implement the [shared Iterator protocol](stdlib-iterators.md)
+in `core::iter`; `Iter<T>::next_back` implements its DoubleEndedIterator protocol
+there too. Import that module for either shared method or generic adapters/
+consumers. Inherent methods retain skipping, metadata and borrowing, without a
+same-named backward method; `core::slice` does not import `core::iter` back.
 Iter yields `T`; Chunks and Windows yield `View<T>` without copying elements.
 The checked factories `core::iter::from_slice/from_view` return the same
 `core::slice::Iter<T>`, with logical metadata validation before cursor creation.
