@@ -1,0 +1,59 @@
+// Selected native syscall schedules; no args snapshot or heap service.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::io;
+
+fn path() -> core::path::Path {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    return core::path::from_view(core::slice::view<u8>(raw,5).unwrap()).unwrap();
+}
+fn pattern(index: i32) -> u8 { return ((index*73+19)%256) as u8; }
+fn status(error: core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::Interrupted -> 104, core::io::Error::WouldBlock -> 111,
+        core::io::Error::Host(n) -> 100+n, core::io::Error::InvalidCount -> 196,
+        core::io::Error::UnexpectedEof -> 197, core::io::Error::WriteZero -> 198,
+        core::io::Error::LimitExceeded -> 199, _ -> 200,
+    };
+}
+fn execute(file: &std::file::File, mode: i32, bytes: [u8]) -> core::result::Result<i32,core::io::Failure> {
+    if (mode == 0 || mode == 1) {
+        let result: core::result::Result<i32,core::io::Error> = core::result::Ok(0);
+        if (mode == 0) { result = file.read_at(bytes,3,4,5); }
+        else { result = file.write_at(bytes,3,4,5); }
+        if (result.is_err()) { return core::result::Err(core::io::Failure { cause: result.unwrap_err(), completed: 0 }); }
+        return core::result::Ok(result.unwrap());
+    }
+    let attempts: i32 = 8; if (mode >= 4) { attempts = 1; }
+    if (mode%2 == 0) { return core::io::read_exact_at<std::file::File>(file,bytes,3,2050,5,attempts); }
+    return core::io::write_all_at<std::file::File>(file,bytes,3,2050,5,attempts);
+}
+fn main() -> i32 {
+    let input: [i32;1] = [0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1) == 1);
+    let mode: i32 = input[0]; assert(mode >= 0 && mode <= 5);
+    let options: std::file_ops::OpenOptions = std::file_ops::options(); options.access = std::file_ops::Access::ReadWrite;
+    let file: std::file::File = std::file_ops::open(path(),options).unwrap();
+    let bytes: [u8;2058] = [211;2058]; let count: i32 = 2050; if (mode < 2) { count = 4; }
+    let writing: bool = mode%2 == 1; let index: i32 = 0;
+    if (writing) { while (index < count) { bytes[3+index] = pattern(index); index += 1; } }
+    let result: core::result::Result<i32,core::io::Failure> = execute(file.borrow(),mode,bytes);
+    let code: i32 = 0; let completed: i32 = 0;
+    if (result.is_err()) { let failure: core::io::Failure = result.unwrap_err(); code = status(failure.cause); completed = failure.completed; }
+    else { completed = result.unwrap(); }
+    assert(completed >= 0 && completed <= count); index = 0;
+    while (index < 2058) {
+        let expected: u8 = 211;
+        if (writing && index >= 3 && index < 3+count) { expected = pattern(index-3); }
+        if (!writing && index >= 3 && index < 3+completed) { expected = pattern(5+index-3); }
+        assert(bytes[index] == expected); index += 1;
+    }
+    assert(std::file_ops::position(file.borrow()).unwrap() == 0);
+    file.close().unwrap(); file.close().unwrap(); assert(!file.is_open());
+    let report: [i32;2] = [code,completed]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),8) == 8); return 0;
+}

@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **273 modules**, **13331 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **273 modules**, **13345 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -50,7 +50,7 @@ Inventory: **273 modules**, **13331 declaration/member entries**. Counts include
 | [core::i32](core/i32.md) | [source](../../stdlib/core/i32.lani#L5) | 141 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
 | [core::i64](core/i64.md) | [source](../../stdlib/core/i64.lani#L6) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
 | [core::i8](core/i8.md) | [source](../../stdlib/core/i8.lani#L5) | 137 | Source inventory | [stdlib-narrow-integers](../stdlib-narrow-integers.md) |
-| [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L2) | 53 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-format-write](../stdlib-format-write.md) |
+| [core::io](core/io.md) | [source](../../stdlib/core/io.lani#L3) | 60 | Source inventory | [stdlib-streams](../stdlib-streams.md), [stdlib-format-write](../stdlib-format-write.md), [stdlib-positional-io](../stdlib-positional-io.md), [stdlib-file-patch](../stdlib-file-patch.md) |
 | [core::isize](core/isize.md) | [source](../../stdlib/core/isize.lani#L5) | 137 | Source inventory | [stdlib-native-integers](../stdlib-native-integers.md) |
 | [core::iter](core/iter.md) | [source](../../stdlib/core/iter.lani#L12) | 353 | Source inventory | [stdlib-iterators](../stdlib-iterators.md), [stdlib-collection-iterators](../stdlib-collection-iterators.md), [stdlib-iterator-adapters](../stdlib-iterator-adapters.md), [stdlib-cursor-integration](../stdlib-cursor-integration.md), [stdlib-iterator-selection](../stdlib-iterator-selection.md), [compiler-iterator-assignment-context](../compiler-iterator-assignment-context.md), [stdlib-iterator-transfer](../stdlib-iterator-transfer.md), [stdlib-iterator-collection-sinks](../stdlib-iterator-collection-sinks.md), [stdlib-owning-iterators](../stdlib-owning-iterators.md), [stdlib-iterator-sources](../stdlib-iterator-sources.md), [stdlib-iterator-lookahead](../stdlib-iterator-lookahead.md), [stdlib-column-extrema](../stdlib-column-extrema.md), [stdlib-nested-iteration](../stdlib-nested-iteration.md), [stdlib-infallible-nested](../stdlib-infallible-nested.md), [stdlib-flatten-sum](../stdlib-flatten-sum.md), [stdlib-replacement-sinks](../stdlib-replacement-sinks.md), [stdlib-latest-values](../stdlib-latest-values.md), [stdlib-timeline-tail](../stdlib-timeline-tail.md), [stdlib-exact-size-iterators](../stdlib-exact-size-iterators.md), [stdlib-sample-bytes](../stdlib-sample-bytes.md), [stdlib-iterator-folds](../stdlib-iterator-folds.md), [stdlib-byte-summary](../stdlib-byte-summary.md), [stdlib-slice-ordering](../stdlib-slice-ordering.md) |
 | [core::math](core/math.md) | [source](../../stdlib/core/math.lani#L27) | 18 | Source inventory | [stdlib-math](../stdlib-math.md) |
@@ -146,7 +146,7 @@ Inventory: **273 modules**, **13331 declaration/member entries**. Counts include
 | [std::file_hex](std/file_hex.md) | [source](../../stdlib/std/file_hex.lani#L4) | 9 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_i64](std/file_hex_wide_i64.md) | [source](../../stdlib/std/file_hex_wide_i64.lani#L2) | 3 | Source inventory | **Unregistered** |
 | [std::file_hex_wide_u64](std/file_hex_wide_u64.md) | [source](../../stdlib/std/file_hex_wide_u64.lani#L2) | 3 | Source inventory | **Unregistered** |
-| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 109 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md), [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-directory-at](../stdlib-directory-at.md), [stdlib-filesystem-links](../stdlib-filesystem-links.md) |
+| [std::file_ops](std/file_ops.md) | [source](../../stdlib/std/file_ops.lani#L2) | 116 | Source inventory | [stdlib-file-operations](../stdlib-file-operations.md), [stdlib-file-resize](../stdlib-file-resize.md), [stdlib-temp-files](../stdlib-temp-files.md), [stdlib-directory-at](../stdlib-directory-at.md), [stdlib-filesystem-links](../stdlib-filesystem-links.md), [stdlib-positional-io](../stdlib-positional-io.md), [stdlib-file-patch](../stdlib-file-patch.md) |
 | [std::filesystem](std/filesystem.md) | [source](../../stdlib/std/filesystem.lani#L4) | 5 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::fs](std/fs.md) | [source](../../stdlib/std/fs.lani#L5) | 105 | Source inventory | [stdlib-filesystem](../stdlib-filesystem.md) |
 | [std::gpu](std/gpu.md) | [source](../../stdlib/std/gpu.lani#L6) | 60 | Unbound host declarations | [library-remaining-api-audit](../library-remaining-api-audit.md), [library-host-prerequisites](../library-host-prerequisites.md) |

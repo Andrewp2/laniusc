@@ -1,6 +1,19 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[positional-I/O increment](stdlib-positional-io.md) adds explicit-offset
+ReadAt/WriteAt contracts, attempt-bounded exact/all helpers and staged File
+adapters. Complete logical/positional spans are admitted before callbacks;
+confirmed progress and failures are explicit. Native operations preserve
+the shared cursor and reject direct I/O and append-mode positional writes.
+Two portable contract tests pass, including one native no-service fixture
+and two capability rejections. The 11,012-case independent model and five
+native-driver tests also pass, including 30 fault schedules/24 reached
+injections. The real file-patch application passes all four groups/82 process
+cases. Selected old stream/FileOps regressions pass separately, and a focused
+amended native contract checks full-span admission before staging. This
+finite native Linux x86_64 increment is accepted. Earlier stream and file
+receipts do not establish these additions. The preceding
 [slice-ordering increment](stdlib-slice-ordering.md) adds seven checked View
 algorithms with per-call comparison policies and heterogeneous keys. One
 canonical `core::ordering::Comparator<L,R>` also serves iterator extrema;
@@ -166,6 +179,44 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Positional I/O.**
+
+The [portable positional family](stdlib-positional-io.md) uses explicit
+`u64` byte positions within the signed-64-bit file-length domain. It validates
+whole spans and nonnegative attempt budgets before dispatch. Empty helpers
+make no callback; short transfers advance both array/file coordinates.
+Interrupted calls spend attempts, and every failure retains only confirmed
+progress. A call quota is separate from callback duration or a host deadline.
+
+The `std::file_ops` File adapter stages at most 1024 bytes through stack
+storage and makes one pread64/pwrite64 transfer after status validation.
+Read bytes publish only after a valid count. It leaves the shared cursor
+unchanged, rejects O_DIRECT and rejects O_APPEND for nonempty writes.
+Manual owner/backing and descriptor/status stability remain caller duties;
+matching/replacement, locking, crash durability and cleanup are not implicit.
+Two portable tests pass in 7.01s: one native no-service contract fixture and
+two exact capability rejections. A selected old stream regression passes in
+11.34s with two native fixtures. The independent portable model passes in
+4.38s with 11,012 cases, 6,836 provider calls and 652 failures after progress.
+Five native-driver tests pass in 13.11s: four fixture groups plus one CPU
+trace-parser check. Native observations include both byte strides, offsets
+above 4 GiB, shared duplicate-cursor preservation, status policies and
+30 fault schedules/24 reached injections. The actual O_DIRECT rejection
+branch executes. A focused amended native-contract test passes in 7.74s,
+checking both full 1025-byte spans at MAX−1024 before any flag or transfer
+call. This reruns one of the five native-driver identities; earlier receipts
+keep their original fixture scope. The real [file-patch application](stdlib-file-patch.md)
+passes its 24-case model in 7.18s and CLI35/preservation6/I/O17 in 7.57s:
+four registered tests and 82 unique process cases across disjoint commands.
+One selected existing FileOps regression passes in 7.12s against the final
+module. Native admission uses the retained
+[typed-local parser idiom](../tests/fixtures/stdlib_compiler_state/filesystem_imports/README.md),
+with no compiler repair claim. The selected native profile is Linux x86_64
+CPU output from the GPU compiler; portable core contracts have no host
+dependency. This selected increment is accepted. Historical receipts retain
+their scope; broader targets, automatic ownership, formal proofs and the
+whole standard/extended library remain open.
 
 **Comparator-driven slice ordering.**
 

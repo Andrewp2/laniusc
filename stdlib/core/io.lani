@@ -1,4 +1,5 @@
-// Allocation-free stream contracts and operations. See docs/stdlib-streams.md.
+// Allocation-free stream and positional I/O contracts and operations.
+// See docs/stdlib-streams.md and docs/stdlib-positional-io.md.
 module core::io;
 import core::result;
 
@@ -207,4 +208,91 @@ pub impl Write for SliceWriter {
         // Writes are already in the caller's buffer; no pending bytes exist.
         return core::result::Ok(0);
     }
+}
+
+// Explicit-offset operations leave the source/writer's shared cursor alone.
+// As with Read/Write, successful counts are in 0..=count and errors confirm no
+// bytes for that call. A nonempty read returning zero reports EOF to callers.
+// Physical backing and lifetime of the claimed array range remain obligations.
+pub trait ReadAt {
+    pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64)
+        -> core::result::Result<i32,Error>;
+}
+pub trait WriteAt {
+    pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64)
+        -> core::result::Result<i32,Error>;
+}
+
+// Both the start and exclusive end fit the signed 64-bit positional domain.
+// Check before casting a negative count or subtracting an out-of-domain start.
+pub fn valid_position(position:u64,count:i32) -> bool {
+    if(count<0 || position>9223372036854775807) { return false; }
+    return (count as u64)<=9223372036854775807-position;
+}
+
+// Every trait call spends an attempt, including Interrupted. Only Interrupted
+// is retried; the budget bounds calls, not their execution time. Completion
+// makes no extra call. Failure reports only the confirmed successful prefix.
+pub fn read_exact_at<R>(reader:&R,destination:[u8],offset:i32,count:i32,
+    position:u64,max_attempts:i32) -> core::result::Result<i32,Failure>
+    where R:ReadAt {
+    if(max_attempts<0 || !valid_range(offset,count) || !valid_position(position,count)) {
+        return core::result::Err(Failure { cause:Error::InvalidInput,completed:0 });
+    }
+    let completed:i32=0;
+    let attempts:i32=0;
+    while(completed<count) {
+        if(attempts>=max_attempts) {
+            return core::result::Err(Failure { cause:Error::LimitExceeded,completed:completed });
+        }
+        attempts+=1;
+        let result:core::result::Result<i32,Error> =reader.read_at(destination,offset+completed,count-completed,position+(completed as u64));
+        if(result.is_err()) {
+            let error:Error=result.unwrap_err();
+            if(is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause:error,completed:completed });
+        }
+        let received:i32=result.unwrap();
+        if(received<0 || received>count-completed) {
+            return core::result::Err(Failure { cause:Error::InvalidCount,completed:completed });
+        }
+        if(received==0) {
+            return core::result::Err(Failure { cause:Error::UnexpectedEof,completed:completed });
+        }
+        completed+=received;
+    }
+    return core::result::Ok(completed);
+}
+
+// Prior confirmed writes remain on failure. No flush, close, rollback,
+// transaction or crash-durability promise is implied by successful completion.
+pub fn write_all_at<W>(writer:&W,source:[u8],offset:i32,count:i32,
+    position:u64,max_attempts:i32) -> core::result::Result<i32,Failure>
+    where W:WriteAt {
+    if(max_attempts<0 || !valid_range(offset,count) || !valid_position(position,count)) {
+        return core::result::Err(Failure { cause:Error::InvalidInput,completed:0 });
+    }
+    let completed:i32=0;
+    let attempts:i32=0;
+    while(completed<count) {
+        if(attempts>=max_attempts) {
+            return core::result::Err(Failure { cause:Error::LimitExceeded,completed:completed });
+        }
+        attempts+=1;
+        let result:core::result::Result<i32,Error> =writer.write_at(source,offset+completed,count-completed,position+(completed as u64));
+        if(result.is_err()) {
+            let error:Error=result.unwrap_err();
+            if(is_interrupted(error)) { continue; }
+            return core::result::Err(Failure { cause:error,completed:completed });
+        }
+        let sent:i32=result.unwrap();
+        if(sent<0 || sent>count-completed) {
+            return core::result::Err(Failure { cause:Error::InvalidCount,completed:completed });
+        }
+        if(sent==0) {
+            return core::result::Err(Failure { cause:Error::WriteZero,completed:completed });
+        }
+        completed+=sent;
+    }
+    return core::result::Ok(completed);
 }

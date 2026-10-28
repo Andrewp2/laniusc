@@ -1,0 +1,208 @@
+// Portable, scripted explicit-offset I/O. No descriptors or host services.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+
+// Positive actions are successful byte counts. Other actions select one
+// result, without mutating backing on errors or deliberately invalid counts.
+// -1 Interrupted; -2 WouldBlock; -3 Host; -4 negative count; -5 too large;
+// -6 AllocationFailed. A zero action is EOF / zero write progress.
+struct Script {
+    data:[u8], actions:[i32], base:u64, calls:i32,
+    offsets:[i32;8], counts:[i32;8], positions:[u64;8]
+}
+fn script(data:[u8],actions:[i32],base:u64) -> Script {
+    return Script { data:data,actions:actions,base:base,calls:0,
+        offsets:[-99;8],counts:[-99;8],positions:[18446744073709551615;8] };
+}
+impl Script {
+    fn borrow(&self) -> &Script { return self; }
+    fn record(&self,offset:i32,count:i32,position:u64) -> i32 {
+        assert(self.calls<8 && count>0 && core::io::valid_range(offset,count));
+        assert(core::io::valid_position(position,count));
+        let call:i32=self.calls; self.calls+=1;
+        self.offsets[call]=offset; self.counts[call]=count; self.positions[call]=position;
+        return self.actions[call];
+    }
+}
+fn action_result(action:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+    if (action==-1) { return core::result::Err(core::io::Error::Interrupted); }
+    if (action==-2) { return core::result::Err(core::io::Error::WouldBlock); }
+    if (action==-3) { return core::result::Err(core::io::Error::Host(-1234567)); }
+    if (action==-4) { return core::result::Ok(-1); }
+    if (action==-5) { return core::result::Ok(count+1); }
+    if (action==-6) { return core::result::Err(core::io::Error::AllocationFailed); }
+    return core::result::Ok(action);
+}
+pub impl core::io::ReadAt for Script {
+    pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64) -> core::result::Result<i32,core::io::Error> {
+        let action:i32=self.record(offset,count,position);
+        if (action>0 && action<=count) {
+            assert(position>=self.base && position-self.base<=7 && (action as u64)<=8-(position-self.base));
+            let start:i32=(position-self.base) as i32; let index:i32=0;
+            while (index<action) { destination[offset+index]=self.data[start+index]; index+=1; }
+        }
+        return action_result(action,count);
+    }
+}
+pub impl core::io::WriteAt for Script {
+    pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64) -> core::result::Result<i32,core::io::Error> {
+        let action:i32=self.record(offset,count,position);
+        if (action>0 && action<=count) {
+            assert(position>=self.base && position-self.base<=7 && (action as u64)<=8-(position-self.base));
+            let start:i32=(position-self.base) as i32; let index:i32=0;
+            while (index<action) { self.data[start+index]=source[offset+index]; index+=1; }
+        }
+        return action_result(action,count);
+    }
+}
+// Any seek/read/restore fallback or incidental sequential write/flush is a
+// contract violation. These methods are deliberately observable tripwires.
+pub impl core::io::Read for Script {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(false); return core::result::Err(core::io::Error::Host(999));
+    }
+}
+pub impl core::io::Write for Script {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(false); return core::result::Err(core::io::Error::Host(999));
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> {
+        assert(false); return core::result::Err(core::io::Error::Host(999));
+    }
+}
+fn read<R>(reader:&R,destination:[u8],offset:i32,count:i32,position:u64,attempts:i32)
+    -> core::result::Result<i32,core::io::Failure> where R:core::io::ReadAt {
+    return core::io::read_exact_at<R>(reader,destination,offset,count,position,attempts);
+}
+fn write<W>(writer:&W,source:[u8],offset:i32,count:i32,position:u64,attempts:i32)
+    -> core::result::Result<i32,core::io::Failure> where W:core::io::WriteAt {
+    return core::io::write_all_at<W>(writer,source,offset,count,position,attempts);
+}
+fn error_code(error:core::io::Error) -> i32 {
+    return match(error) {
+        core::io::Error::InvalidInput -> 1, core::io::Error::LimitExceeded -> 2,
+        core::io::Error::UnexpectedEof -> 3, core::io::Error::WriteZero -> 4,
+        core::io::Error::InvalidCount -> 5, core::io::Error::WouldBlock -> 6,
+        core::io::Error::Host(code) -> code, core::io::Error::AllocationFailed -> 7,
+        _ -> 99
+    };
+}
+fn failure(result:core::result::Result<i32,core::io::Failure>,cause:i32,completed:i32) {
+    assert(result.is_err()); let failed:core::io::Failure=result.unwrap_err();
+    assert(error_code(failed.cause)==cause && failed.completed==completed);
+}
+fn admission(offset:i32,count:i32,position:u64,attempts:i32,expected:i32) {
+    let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,2147483647);
+    let actions:[i32;8]=[0;8]; let transport:Script=script(unread,actions,position);
+    let read_result:core::result::Result<i32,core::io::Failure> =read<Script>(transport.borrow(),unread,offset,count,position,attempts);
+    let write_result:core::result::Result<i32,core::io::Failure> =write<Script>(transport.borrow(),unread,offset,count,position,attempts);
+    if (expected==0) { assert(read_result.unwrap()==0 && write_result.unwrap()==0); }
+    else { failure(read_result,expected,0); failure(write_result,expected,0); }
+    assert(transport.calls==0);
+}
+fn position_and_admission_contracts() {
+    assert(core::io::valid_position(0,2147483647));
+    assert(core::io::valid_position(9223372036854775807,0));
+    assert(core::io::valid_position(9223372036854775806,1));
+    assert(core::io::valid_position(9223372034707292160,2147483647));
+    assert(!core::io::valid_position(9223372034707292161,2147483647));
+    assert(!core::io::valid_position(9223372036854775807,1));
+    assert(!core::io::valid_position(9223372036854775808,0));
+    assert(!core::io::valid_position(18446744073709551615,0));
+    assert(!core::io::valid_position(0,-1));
+    admission(-1,0,0,1,1); admission(0,-1,0,1,1); admission(2147483647,1,0,1,1);
+    admission(0,1,9223372036854775807,1,1);
+    admission(0,0,9223372036854775808,1,1);
+    admission(0,1,18446744073709551615,1,1);
+    admission(0,1,0,-1,1); admission(0,0,0,-1,1);
+    admission(2147483647,0,9223372036854775807,0,0);
+    admission(0,0,0,0,0); admission(0,0,0,2147483647,0);
+    admission(0,1,0,0,2); admission(0,2147483647,0,0,2);
+    admission(0,2147483647,9223372034707292160,0,2);
+    admission(0,2147483647,9223372034707292161,0,1);
+}
+fn check_success_trace(transport:&Script,base:u64) {
+    let offsets:[i32;4]=[2,4,4,5]; let counts:[i32;4]=[4,2,2,1];
+    let positions:[u64;4]=[base,base+2,base+2,base+3];
+    assert(transport.calls==4); let index:i32=0;
+    while (index<4) { assert(transport.offsets[index]==offsets[index] && transport.counts[index]==counts[index] && transport.positions[index]==positions[index]); index+=1; }
+}
+fn short_interrupted_and_layouts() {
+    let actions:[i32;8]=[2,-1,1,1,-3,-3,-3,-3];
+    let base:u64=4294967303;
+    let stack:[u8;8]=[199;8]; let words:[i32;2]=[0;2];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),8);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(packed)==1);
+    let mode:i32=0;
+    while (mode<2) {
+        let buffer:[u8]=stack; if (mode==1) { buffer=packed; }
+        let index:i32=0; while (index<8) { buffer[index]=199; index+=1; }
+        let file:[u8;8]=[11,0,128,255,77,77,77,77]; let reader:Script=script(file,actions,base);
+        assert(read<Script>(reader.borrow(),buffer,2,4,base,4).unwrap()==4); check_success_trace(reader.borrow(),base);
+        assert(buffer[0]==199 && buffer[1]==199 && buffer[2]==11 && buffer[3]==0 && buffer[4]==128 && buffer[5]==255 && buffer[6]==199 && buffer[7]==199);
+        assert(file[0]==11 && file[1]==0 && file[2]==128 && file[3]==255 && file[4]==77 && file[5]==77 && file[6]==77 && file[7]==77);
+        let target:[u8;8]=[77;8]; let writer:Script=script(target,actions,base);
+        assert(write<Script>(writer.borrow(),buffer,2,4,base,2147483647).unwrap()==4); check_success_trace(writer.borrow(),base);
+        assert(target[0]==11 && target[1]==0 && target[2]==128 && target[3]==255 && target[4]==77 && target[5]==77 && target[6]==77 && target[7]==77);
+        assert(buffer[0]==199 && buffer[1]==199 && buffer[2]==11 && buffer[3]==0 && buffer[4]==128 && buffer[5]==255 && buffer[6]==199 && buffer[7]==199);
+        mode+=1;
+    }
+}
+fn failure_prefixes() {
+    let writing:i32=0;
+    while (writing<2) {
+        let action:i32=-6;
+        while (action<=0) {
+            // Interrupted retries, so its exhaustion is checked separately.
+            if (action!=-1) {
+                let actions:[i32;8]=[2,action,-3,-3,-3,-3,-3,-3];
+                let file:[u8;8]=[77;8]; let buffer:[u8;8]=[199;8];
+                if (writing==0) { file[0]=11; file[1]=0; file[2]=128; file[3]=255; }
+                else { buffer[2]=11; buffer[3]=0; buffer[4]=128; buffer[5]=255; }
+                let transport:Script=script(file,actions,4294967303);
+                let expected:i32=7;
+                if (action==-5 || action==-4) { expected=5; }
+                if (action==-3) { expected=-1234567; }
+                if (action==-2) { expected=6; }
+                if (action==0) { expected=3; if (writing==1) { expected=4; } }
+                let result:core::result::Result<i32,core::io::Failure> =core::result::Ok(0);
+                if (writing==0) { result=read<Script>(transport.borrow(),buffer,2,4,4294967303,8); }
+                else { result=write<Script>(transport.borrow(),buffer,2,4,4294967303,8); }
+                failure(result,expected,2);
+                assert(transport.calls==2 && transport.offsets[0]==2 && transport.offsets[1]==4 && transport.counts[0]==4 && transport.counts[1]==2 && transport.positions[0]==4294967303 && transport.positions[1]==4294967305);
+                if (writing==0) { assert(buffer[2]==11 && buffer[3]==0 && buffer[4]==199 && buffer[5]==199); }
+                else { assert(file[0]==11 && file[1]==0 && file[2]==77 && file[3]==77 && buffer[2]==11 && buffer[3]==0 && buffer[4]==128 && buffer[5]==255); }
+                assert(buffer[0]==199 && buffer[1]==199 && buffer[6]==199 && buffer[7]==199 && file[4]==77 && file[7]==77);
+            }
+            action+=1;
+        }
+        writing+=1;
+    }
+}
+fn attempt_budgets_and_upper_endpoint() {
+    let actions:[i32;8]=[-1,1,-1,1,-3,-3,-3,-3];
+    let file:[u8;8]=[11,22,77,77,77,77,77,77]; let destination:[u8;8]=[199;8];
+    let reader:Script=script(file,actions,9223372036854775805);
+    failure(read<Script>(reader.borrow(),destination,2,2,9223372036854775805,3),2,1);
+    assert(reader.calls==3 && destination[2]==11 && destination[3]==199);
+    assert(reader.offsets[0]==2 && reader.offsets[1]==2 && reader.offsets[2]==3 && reader.counts[0]==2 && reader.counts[1]==2 && reader.counts[2]==1);
+    assert(reader.positions[0]==9223372036854775805 && reader.positions[1]==9223372036854775805 && reader.positions[2]==9223372036854775806);
+    let exact:Script=script(file,actions,9223372036854775805);
+    assert(read<Script>(exact.borrow(),destination,2,2,9223372036854775805,4).unwrap()==2 && exact.calls==4 && destination[3]==22);
+    let interrupts:[i32;8]=[-1;8]; let blocked:Script=script(file,interrupts,0);
+    failure(read<Script>(blocked.borrow(),destination,2,2,0,3),2,0);
+    assert(blocked.calls==3 && blocked.positions[0]==0 && blocked.positions[2]==0 && blocked.offsets[2]==2 && blocked.counts[2]==2);
+    let target:[u8;8]=[77;8]; let writer:Script=script(target,actions,9223372036854775805);
+    failure(write<Script>(writer.borrow(),destination,2,2,9223372036854775805,3),2,1);
+    assert(writer.calls==3 && writer.positions[2]==9223372036854775806 && writer.offsets[2]==3 && writer.counts[2]==1 && target[0]==11 && target[1]==77);
+    let interrupted_writer:Script=script(target,interrupts,0);
+    failure(write<Script>(interrupted_writer.borrow(),destination,2,2,0,3),2,0);
+    assert(interrupted_writer.calls==3 && interrupted_writer.positions[2]==0 && interrupted_writer.offsets[2]==2 && target[0]==11 && target[1]==77);
+    target[0]=77;
+    let final_action:[i32;8]=[1,-3,-3,-3,-3,-3,-3,-3]; let endpoint:Script=script(target,final_action,9223372036854775806);
+    assert(write<Script>(endpoint.borrow(),destination,2,1,9223372036854775806,1).unwrap()==1);
+    assert(endpoint.calls==1 && endpoint.positions[0]==9223372036854775806 && endpoint.counts[0]==1 && endpoint.offsets[0]==2 && target[0]==11 && target[1]==77);
+}
+fn main() -> i32 { position_and_admission_contracts(); short_interrupted_and_layouts(); failure_prefixes(); attempt_budgets_and_upper_endpoint(); return 0; }

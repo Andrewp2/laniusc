@@ -1,0 +1,29 @@
+// Flag admission does not issue aligned or unaligned direct I/O: reject it.
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::linux;
+
+fn invalid(error: core::io::Error) -> bool { return match(error) { core::io::Error::InvalidInput -> true, _ -> false }; }
+fn main() -> i32 {
+    let name: [u8;6] = [105,110,112,117,116,0]; let storage: [i32;2] = [0;2];
+    let pointer: ptr = core::mem::i32_array_data_ptr(storage); let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(pointer,8);
+    let index: i32 = 0; while (index < 6) { packed[index] = name[index]; index += 1; }
+    let args: [std::linux::Argument;4] = [std::linux::Argument::Word(-100),std::linux::Argument::Address(pointer),std::linux::Argument::Word(540674),std::linux::Argument::Word(0)];
+    let opened: core::result::Result<i64,std::linux::Error> = std::linux::call(257,core::slice::view<std::linux::Argument>(args,4).unwrap());
+    if (opened.is_err()) {
+        let unsupported: bool = match(opened.unwrap_err()) { std::linux::Error::System(n) -> n == 22 || n == 95, _ -> false };
+        assert(unsupported); return 77;
+    }
+    let handle: i64 = opened.unwrap(); assert(handle >= 0 && handle <= 2147483647);
+    let file: std::file::File = std::file::from_owned_handle(handle as i32).unwrap();
+    let bytes: [u8;8] = [211;8];
+    assert(invalid(file.read_at(bytes,2,2,0).unwrap_err()));
+    assert(invalid(file.write_at(bytes,2,2,0).unwrap_err()));
+    index = 0; while (index < 8) { assert(bytes[index] == 211); index += 1; }
+    file.close().unwrap(); file.close().unwrap(); assert(!file.is_open()); return 0;
+}

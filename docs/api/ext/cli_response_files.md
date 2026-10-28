@@ -24,7 +24,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/cli_response_files.lani#L4)
 - [alloc::vec::Vec](../alloc/vec.md) (item: struct) · [declaration](../../../stdlib/alloc/vec.lani#L16) · [source](../../../extended/ext/cli_response_files.lani#L5)
 - [core::io](../core/io.md) · [source](../../../extended/ext/cli_response_files.lani#L6)
-- [core::io::Read](../core/io.md) (item: trait) · [declaration](../../../stdlib/core/io.lani#L23) · [source](../../../extended/ext/cli_response_files.lani#L7)
+- [core::io::Read](../core/io.md) (item: trait) · [declaration](../../../stdlib/core/io.lani#L24) · [source](../../../extended/ext/cli_response_files.lani#L7)
 - [core::option::Option](../core/option.md) (item: enum) · [declaration](../../../stdlib/core/option.lani#L12) · [source](../../../extended/ext/cli_response_files.lani#L8)
 - [core::option::None](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L14) · [source](../../../extended/ext/cli_response_files.lani#L9)
 - [core::option::Some](../core/option.md) (item: variant) · [declaration](../../../stdlib/core/option.lani#L13) · [source](../../../extended/ext/cli_response_files.lani#L10)

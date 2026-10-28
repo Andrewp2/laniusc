@@ -1,5 +1,6 @@
 // Checked x86_64 Linux descriptor operations. No heap allocation or retries.
 module std::file_ops;
+import core::io;
 import core::io::Error;
 import core::mem;
 import core::option;
@@ -200,3 +201,80 @@ fn query(directory_fd:i32,path:core::path::Path,flags:i64,output:&Metadata) -> R
 pub fn metadata_into(path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error> { return metadata_at_into(AT_FDCWD,path,follow,output); }
 pub fn metadata_at_into(directory_fd:i32,path:core::path::Path,follow:bool,output:&Metadata) -> Result<i32,Error> { let flags:i64=256; if(follow) { flags=0; } return query(directory_fd,path,flags,output); }
 pub fn metadata_file_into(file:&File,output:&Metadata) -> Result<i32,Error> { let got=descriptor(file)?; let empty:[u8;1]=[0]; let path=core::path::from_bytes(empty,0).unwrap(); return query(got as i32,path,4096,output); }
+
+pub const POSITIONAL_CHUNK_BYTES:i32=1024;
+
+// The whole logical range and positional span are checked before owner/status
+// access. The caller prevents concurrent close/replacement and flag mutation,
+// including through duplicates. Neither status checks nor positional I/O lock
+// the file. Empty requests still require a live owner, but make no host calls.
+pub fn read_at(file:&File,destination:View<u8>,position:u64) -> Result<i32,Error> {
+    if(!valid(destination) || !core::io::valid_position(position,destination.length)) {
+        return Err(Error::InvalidInput);
+    }
+    let got:i64=descriptor(file)?;
+    if(destination.length==0) { return Ok(0); }
+    let status:i32=status_flags(file)?;
+    if((status&16384)!=0) { return Err(Error::InvalidInput); }
+    let amount:i32=destination.length;
+    if(amount>POSITIONAL_CHUNK_BYTES) { amount=POSITIONAL_CHUNK_BYTES; }
+    let storage:[i32;256]=[0;256];
+    let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+    let args:[std::linux::Argument;4]=[std::linux::Argument::Word(got),std::linux::Argument::Address(pointer),std::linux::Argument::Word(amount as i64),std::linux::Argument::Word(position as i64)];
+    let received:i64=call(17,view(args,4).unwrap())?;
+    let amount_wide:i64=amount as i64;
+    if(received<0 || received>amount_wide) { return Err(Error::InvalidCount); }
+    // Native bytes remain private until the count is admitted. Indexing the
+    // selected destination retains positive/negative native stride and start.
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,amount);
+    let index:i32=0;
+    while(index<(received as i32)) {
+        destination.values[destination.start+index]=packed[index];
+        index+=1;
+    }
+    return Ok(received as i32);
+}
+
+// One staged pwrite64 attempt. Linux O_APPEND would ignore the requested
+// position, so reject it as well as unsupported direct I/O before source reads.
+// Short counts remain explicit; the shared cursor is never sought or changed.
+pub fn write_at(file:&File,source:View<u8>,position:u64) -> Result<i32,Error> {
+    if(!valid(source) || !core::io::valid_position(position,source.length)) {
+        return Err(Error::InvalidInput);
+    }
+    let got:i64=descriptor(file)?;
+    if(source.length==0) { return Ok(0); }
+    let status:i32=status_flags(file)?;
+    if((status&16384)!=0 || (status&1024)!=0) { return Err(Error::InvalidInput); }
+    let amount:i32=source.length;
+    if(amount>POSITIONAL_CHUNK_BYTES) { amount=POSITIONAL_CHUNK_BYTES; }
+    let storage:[i32;256]=[0;256];
+    let pointer:ptr=core::mem::i32_array_data_ptr(storage);
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts(pointer,amount);
+    let index:i32=0;
+    while(index<amount) {
+        packed[index]=source.values[source.start+index];
+        index+=1;
+    }
+    let args:[std::linux::Argument;4]=[std::linux::Argument::Word(got),std::linux::Argument::Address(pointer),std::linux::Argument::Word(amount as i64),std::linux::Argument::Word(position as i64)];
+    let sent:i64=call(18,view(args,4).unwrap())?;
+    let amount_wide:i64=amount as i64;
+    if(sent<0 || sent>amount_wide) { return Err(Error::InvalidCount); }
+    return Ok(sent as i32);
+}
+
+// Import std::file_ops to bring these portable trait implementations into the
+// compilation. Delegation keeps native and generic validation/error behavior
+// identical; no descriptor is allocated, closed, flushed or synchronized.
+pub impl core::io::ReadAt for File {
+    pub fn read_at(&self,destination:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error> {
+        let selected:View<u8> =View { values:destination,start:offset,length:count };
+        return std::file_ops::read_at(self,selected,position);
+    }
+}
+pub impl core::io::WriteAt for File {
+    pub fn write_at(&self,source:[u8],offset:i32,count:i32,position:u64) -> Result<i32,Error> {
+        let selected:View<u8> =View { values:source,start:offset,length:count };
+        return std::file_ops::write_at(self,selected,position);
+    }
+}

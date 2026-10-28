@@ -1,0 +1,101 @@
+// Bounded exact compare then positional overwrite of an existing file.
+module app::main;
+import core::decimal;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::u8;
+import std::args;
+import std::file;
+import std::file_ops;
+import std::signal;
+import std::stream;
+
+enum Phase { Complete, ReadFailed, Mismatch, WriteFailed }
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+fn equal(left:View<u8>, right:View<u8>) -> bool {
+    if (left.length != right.length) { return false; } let index:i32 = 0;
+    while(index < left.length) { if (left.get(index).unwrap() != right.get(index).unwrap()) { return false; } index += 1; } return true;
+}
+fn write(bytes:View<u8>, handle:i32, maximum:i32) -> bool {
+    let sink = std::stream::from_handle(handle); let completed:i32 = 0; let calls:i32 = 0;
+    while(completed < bytes.length) {
+        if (calls == maximum) { return false; } calls += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) { if (core::io::is_interrupted(sent.unwrap_err())) { continue; } return false; }
+        let count = sent.unwrap(); if ((count <= 0) || (count > bytes.length-completed)) { return false; } completed += count;
+    }
+    return true;
+}
+fn report(status:i32, message:View<u8>) -> i32 { write(message,2,8); return status; }
+fn decode(source:View<u8>, destination:[u8], count:i32) -> bool {
+    let index:i32 = 0;
+    while(index < count) {
+        let high:u8 = core::u8::ascii_hexdigit_value_or(source.get(2*index).unwrap(),255);
+        let low:u8 = core::u8::ascii_hexdigit_value_or(source.get(2*index+1).unwrap(),255);
+        if ((high == 255) || (low == 255)) { return false; }
+        destination[index] = high*16+low; index += 1;
+    }
+    return true;
+}
+fn patch(file:&std::file::File, position:u64, expected:[u8], replacement:[u8], actual:[u8], count:i32) -> Phase {
+    let read:Result<i32,core::io::Failure> = core::io::read_exact_at<std::file::File>(file,actual,0,count,position,16);
+    if (read.is_err()) { return Phase::ReadFailed; }
+    let index:i32 = 0; while(index < count) { if (actual[index] != expected[index]) { return Phase::Mismatch; } index += 1; }
+    let written:Result<i32,core::io::Failure> = core::io::write_all_at<std::file::File>(file,replacement,0,count,position,16);
+    if (written.is_err()) { return Phase::WriteFailed; } return Phase::Complete;
+}
+fn arguments(values:View<View<u8>>) -> i32 {
+    if (values.length == 1) {
+        let argument = values.get(0).unwrap();
+        if (equal(argument,literal("--help",6)) || equal(argument,literal("-h",2))) {
+            if (!write(literal("Usage: file_patch PATH OFFSET EXPECTED_HEX REPLACEMENT_HEX\nReplace bytes only after an exact positional comparison of the existing file.\nOFFSET is ASCII decimal. Hex strings must have equal nonempty even lengths, up to 4096 bytes.\nOpen read/write without create, truncate or append; no atomicity or durability promise.\nLimits: path 4095 bytes, 16 read attempts, 16 write attempts. --help or -h shows help.\n",406),1,64)) { return report(5,literal("file_patch: output failed\n",26)); } return 0;
+        }
+    }
+    if (values.length != 4) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+    let path_bytes = values.get(0).unwrap(); let offset_bytes = values.get(1).unwrap();
+    let expected_hex = values.get(2).unwrap(); let replacement_hex = values.get(3).unwrap();
+    if ((path_bytes.length == 0) || (path_bytes.length > 4095) || (expected_hex.length == 0) || (expected_hex.length > 8192) || (expected_hex.length%2 != 0) || (replacement_hex.length != expected_hex.length)) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+    let path:Result<core::path::Path,core::path::Error> = core::path::from_view(path_bytes);
+    let position = core::decimal::parse_u64_range(offset_bytes.values,offset_bytes.start,offset_bytes.length);
+    if (path.is_err() || position.is_err()) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+    let count:i32 = expected_hex.length/2;
+    if (!core::io::valid_position(position.unwrap(),count)) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+    let expected:[u8;4096] = [0;4096]; let replacement:[u8;4096] = [0;4096]; let actual:[u8;4096] = [0;4096];
+    // Decode both complete inputs before opening. Arrays retain native strides;
+    // the positional descriptor adapter supplies packed syscall staging.
+    if (!decode(expected_hex,expected,count) || !decode(replacement_hex,replacement,count)) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+    let options = std::file_ops::options(); options.access = std::file_ops::Access::ReadWrite;
+    let opened:Result<std::file::File,core::io::Error> = std::file_ops::open(path.unwrap(),options);
+    if (opened.is_err()) { return report(3,literal("file_patch: open failed\n",24)); } let file = opened.unwrap();
+    let phase = patch(file.borrow(),position.unwrap(),expected,replacement,actual,count);
+    // Invalidate and close exactly once before diagnostics, including failures.
+    let closed:Result<i32,core::io::Error> = file.close();
+    let status:i32 = match(phase) {
+        Phase::Complete -> 0,
+        Phase::ReadFailed -> report(3,literal("file_patch: positional read failed\n",35)),
+        Phase::Mismatch -> report(1,literal("file_patch: expected bytes did not match\n",41)),
+        Phase::WriteFailed -> report(3,literal("file_patch: positional write failed\n",36))
+    };
+    if (closed.is_err()) { report(3,literal("file_patch: close failed\n",25)); if (status == 0) { status = 3; } }
+    return status;
+}
+fn main() -> i32 {
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
+    let captured = std::args::snapshot(1,4,24576);
+    if (captured.is_err()) {
+        return match(captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> report(4,literal("file_patch: allocation failed\n",30)),
+            std::args::Error::HostRead(index) -> report(3,literal("file_patch: argument capture failed\n",36)),
+            _ -> report(2,literal("file_patch: invalid arguments\n",30))
+        };
+    }
+    let values = captured.unwrap(); let status = arguments(values.as_view()); values.destroy(); return status;
+}

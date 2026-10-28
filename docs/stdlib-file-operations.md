@@ -99,6 +99,27 @@ descriptor flag. `status_flags` returns the Linux access/status bits;
 That read/modify/write is not a concurrent update primitive. No descriptor
 operation provides locking or a transaction.
 
+## Positional reads and writes
+
+The [positional-I/O increment](stdlib-positional-io.md) adds checked
+`read_at(file, destination, position)` and `write_at(file, source, position)`
+over counted byte Views, plus File implementations of `core::io::ReadAt` and
+`WriteAt`. Full logical/positional admission precedes owner/status checks;
+one transfer stages at most 1024 bytes without changing the shared cursor.
+Nonempty direct I/O is rejected, as are append-mode positional writes.
+Attempt-bounded core helpers handle repeated short transfers and confirmed
+prefix failures. Five new native-driver tests pass in 13.11s: four fixture
+groups plus one CPU trace-parser check, including 30 fault schedules and
+24 reached injections. The actual O_DIRECT rejection branch executes on the
+accepted host. A focused amended native-contract rerun passes in 7.74s,
+checking that full spans reject before the staging clamp/status/transfer;
+the five-test receipt retains its earlier fixture scope. The guide links the retained comparison/cast parser reproduction
+and equivalent typed-i64 local used for returned-count guards; no compiler
+repair is claimed. The real file-patch program passes four groups/82 process
+cases. One selected existing FileOps regression separately passes in 7.12s
+against the final typed-local module; this is not a whole-suite rerun.
+Earlier descriptor receipts do not establish these new operations.
+
 ## Metadata
 
 `empty_metadata()` creates caller-owned output. `metadata_into(path, follow,

@@ -9,6 +9,16 @@ bindings.
 Read/Write contracts, and provides explicit close and ownership transfer.
 Descriptor adapters below continue to borrow handles.
 
+The separate [positional-I/O increment](stdlib-positional-io.md) adds ReadAt /
+WriteAt contracts and attempt-bounded exact/all helpers, with File adapters
+in `std::file_ops`. Each call uses an explicit byte position without changing
+the shared file cursor. Portable contracts, an independent 11,012-case model
+and native adapter gates pass. The real file-patch program passes four
+groups/82 process cases. The stream receipts
+below cover their earlier API/source scope. One selected existing stream
+regression separately passes in 11.34s with two native fixtures; it is not a
+whole-stream-suite rerun.
+
 [Fixed-capacity buffered adapters](stdlib-buffered.md) now execute through these
 same traits. `alloc::buffered::Reader<R>` and `Writer<W>` borrow their inner
 streams and own explicit byte buffers; they support nested wrappers, unread or

@@ -1,0 +1,81 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::option;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+
+fn path() -> core::path::Path {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    return core::path::from_view(core::slice::view<u8>(raw,5).unwrap()).unwrap();
+}
+fn invalid(error: core::io::Error) -> bool { return match(error) { core::io::Error::InvalidInput -> true, _ -> false }; }
+fn bad_fd(error: core::io::Error) -> bool { return match(error) { core::io::Error::Host(n) -> n == 9, _ -> false }; }
+fn pattern(index: i32) -> u8 { return ((index*73+19)%256) as u8; }
+fn positions(first: &std::file::File, second: &std::file::File) {
+    assert(std::file_ops::position(first).unwrap() == 37 && std::file_ops::position(second).unwrap() == 37);
+}
+fn main() -> i32 {
+    let options: std::file_ops::OpenOptions = std::file_ops::options(); options.access = std::file_ops::Access::ReadWrite;
+    let file: std::file::File = std::file_ops::open(path(),options).unwrap();
+    let duplicate: std::file::File = std::file_ops::duplicate(file.borrow(),40,true).unwrap();
+    assert(std::file_ops::seek(file.borrow(),37,std::file_ops::Origin::Start).unwrap() == 37);
+    let packed_storage: [i32;520] = [0;520];
+    let packed: [u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(packed_storage),2080);
+    let native: [u8;2080] = [211;2080];
+    assert(core::mem::slice_stride(packed) == 1 && core::mem::slice_stride(native) < 0);
+    let index: i32 = 0; while (index < 2080) { packed[index] = 211; index += 1; }
+    index = 0; while (index < 2053) { packed[5+index] = pattern(index); index += 1; }
+    let source: core::slice::View<u8> = core::slice::view_range<u8>(packed,5,2053).unwrap();
+    assert(std::file_ops::write_at(file.borrow(),source,100).unwrap() == 1024); positions(file.borrow(),duplicate.borrow());
+    assert(core::io::write_all_at<std::file::File>(duplicate.borrow(),packed,1029,1029,1124,4).unwrap() == 1029);
+    positions(file.borrow(),duplicate.borrow());
+    let destination: core::slice::View<u8> = core::slice::view_range<u8>(native,7,2053).unwrap();
+    assert(std::file_ops::read_at(duplicate.borrow(),destination,100).unwrap() == 1024);
+    assert(core::io::read_exact_at<std::file::File>(file.borrow(),native,1031,1029,1124,4).unwrap() == 1029);
+    positions(file.borrow(),duplicate.borrow());
+    index = 0; while (index < 2080) {
+        if (index >= 7 && index < 2060) { assert(native[index] == pattern(index-7)); }
+        else { assert(native[index] == 211); }
+        if (index < 5 || index >= 2058) { assert(packed[index] == 211); }
+        index += 1;
+    }
+    // Native-negative source to packed-positive destination, both offset views.
+    let small: [u8;12] = [211,211,211,0,128,255,9,10,11,211,211,211];
+    assert(file.write_at(small,3,6,4000).unwrap() == 6);
+    assert(duplicate.read_at(packed,9,6,4000).unwrap() == 6);
+    index = 0; while (index < 6) { assert(packed[9+index] == small[3+index]); index += 1; }
+    assert(packed[8] == pattern(3) && packed[15] == pattern(10)); positions(file.borrow(),duplicate.borrow());
+    let high: u64 = 4294967311;
+    assert(std::file_ops::write_at(duplicate.borrow(),core::slice::view_range<u8>(small,3,6).unwrap(),high).unwrap() == 6);
+    index = 0; while (index < 20) { packed[index] = 211; index += 1; }
+    assert(file.read_at(packed,5,8,high).unwrap() == 6);
+    index = 0; while (index < 20) {
+        if (index >= 5 && index < 11) { assert(packed[index] == small[index-2]); }
+        else { assert(packed[index] == 211); } index += 1;
+    }
+    assert(duplicate.read_at(packed,5,1,high+6).unwrap() == 0 && packed[5] == 0);
+    positions(file.borrow(),duplicate.borrow());
+    let empty: core::slice::View<u8> = core::slice::view_range<u8>(native,3,0).unwrap();
+    assert(std::file_ops::read_at(file.borrow(),empty,9223372036854775807).unwrap() == 0);
+    assert(std::file_ops::write_at(file.borrow(),empty,9223372036854775807).unwrap() == 0);
+    let malformed: core::slice::View<u8> = core::slice::View { values: native, start: -1, length: 1 };
+    assert(invalid(std::file_ops::read_at(file.borrow(),malformed,0).unwrap_err()));
+    malformed.start = 2147483647;
+    assert(invalid(std::file_ops::write_at(file.borrow(),malformed,0).unwrap_err()));
+    assert(invalid(file.read_at(native,0,1,9223372036854775807).unwrap_err()));
+    assert(invalid(file.write_at(native,0,1,9223372036854775808).unwrap_err()));
+    // The staged 1024-byte prefix would fit; the requested 1025-byte span must
+    // be rejected before status validation or transfer, using real backing.
+    assert(invalid(file.read_at(native,3,1025,9223372036854774783).unwrap_err()));
+    assert(invalid(file.write_at(native,3,1025,9223372036854774783).unwrap_err()));
+    positions(file.borrow(),duplicate.borrow());
+    duplicate.close().unwrap(); duplicate.close().unwrap(); file.close().unwrap(); file.close().unwrap();
+    assert(bad_fd(std::file_ops::read_at(file.borrow(),empty,0).unwrap_err()));
+    assert(bad_fd(std::file_ops::write_at(file.borrow(),empty,0).unwrap_err()));
+    assert(invalid(std::file_ops::read_at(file.borrow(),malformed,0).unwrap_err()));
+    return 0;
+}
