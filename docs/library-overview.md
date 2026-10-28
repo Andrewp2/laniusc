@@ -1,6 +1,16 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[sparse conjugate-gradient increment](extended-sparse-cg.md) specifies a
+solver for symmetric positive-definite CSR systems, with optional Jacobi
+preconditioning, fresh residual checks after every update and explicit
+converged/iteration-limited results. Full requested work admission, numerical
+breakdown and manual owner cleanup are part of the contract. All six new
+library gates pass, including a 1,918-case independent model, 27 reached
+allocation denials and a 65,536-row manufactured system. The graph-diffusion
+application passes all four registered gates and 154 process cases. This
+finite native Linux x86_64 increment is accepted; previous sparse receipts
+do not cover this module. The preceding
 [sparse-product increment](extended-sparse-product.md) defines canonical
 CSR-times-CSR multiplication with ordered finite binary64 accumulation,
 reusable column scratch, exact nonzero output reservation and explicit
@@ -138,6 +148,38 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**Sparse conjugate-gradient systems.**
+
+The [CG contract](extended-sparse-cg.md) adds `ext::sparse_cg::solve` with
+`None`/`Jacobi` preconditioning, an independent solution vector and explicit
+`Stop::Converged` or `Stop::IterationLimit`. It verifies exact numerical
+symmetry and Jacobi's positive diagonals; positive definiteness remains a
+caller requirement. Ordinary binary64 dot products can overflow or break down
+even for a mathematically valid SPD system.
+
+Convergence uses the freshly recomputed `b-Ax` initially and after every
+completed update, checked before the iteration limit. Recursive/fresh
+disagreement can restart from the current iterate. The full requested
+`setup + max_iterations*step` allowance is admitted before payload reads,
+including immediately converged systems. No allocation occurs inside the
+iteration loop; scratch/error cleanup and borrowed backing remain explicit.
+All six new library gates pass on native Linux x86_64. Four contract groups
+are accepted across the mixed first command's three passes and a corrected
+admission-only rerun. The 27 reached workspace allocation denials have
+matched explicit releases by full address/size. The independent model passes
+1,918 cases across two backing forms using exact Fraction Gaussian references
+and independently checked fresh residuals/stopping. An executed scalar
+recursive-zero/fresh-one case verifies refusal or a residual-replacement
+restart. The 65,536-row/196,606-entry manufactured system converges within
+20 requested Jacobi steps under a 90,833,350 work allowance, with a separate
+band-residual check after original backing is destroyed. Its whole-process
+lifecycle timing is separate from isolated kernel throughput. The
+[graph-diffusion program](extended-graph-diffuse.md) composes CSR assembly
+with the solver and publishes only converged staged CSV. All four application
+tests pass in 17.42s: model 36, rejection 48, CLI 55 and I/O 15, totaling 154
+process cases. All six new library and four application gates are accepted
+on this finite profile. Older sparse receipt scopes are unchanged.
+
 **Sparse matrix products.**
 
 The [sparse product contract](extended-sparse-product.md) supplies a sparse
@@ -205,7 +247,8 @@ registered tests in 16.31s: model 32, rejection 33, CLI 38 and I/O 10, totaling
 All ten selected runtime gates are accepted on this finite target profile.
 No broad target, uniform accuracy or formal-proof claim follows.
 Those receipts retain the foundation source hashes in its guide. The separate
-sparse product has its own accepted runtime evidence; sparse solvers/
+sparse product has its own accepted runtime evidence. The selected CG solver
+has its own accepted increment; other iterative/direct solvers,
 factorizations and additional formats remain future work.
 
 **Exact remaining iterator counts.**

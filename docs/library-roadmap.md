@@ -158,8 +158,10 @@ independent owners and sparse/dense arithmetic. All six library runtime gates
 and four graph-application gates pass on the finite Linux x86_64 profile.
 The separate [sparse-product increment](extended-sparse-product.md) defines
 CSR-times-CSR multiplication in Lanius. All six new library and four real
-application gates pass on the finite Linux x86_64 profile. Sparse solvers/
-factorizations and additional formats remain separate. The [graph-walk application](extended-graph-walk.md)
+application gates pass on the finite Linux x86_64 profile. The separate
+[CG solver](extended-sparse-cg.md) passes all six new library and four real
+application gates. Other iterative/direct solvers, sparse factorizations and
+additional formats remain separate. The [graph-walk application](extended-graph-walk.md)
 composes actual CSR construction/transpose/matvec with its own finite policy.
 [Normal, exponential, gamma and beta distributions](extended-distributions.md)
 add densities, paired tails and bounded generic sampling, with a
@@ -584,7 +586,7 @@ than a request to replace implementation work with more tests.
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
-| Mathematics | Big integers, finite decimals, ordinary/weighted second-order and unweighted higher statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. The canonical CSR foundation passes six library gates including a 3,886-case model, 33 reached operation-allocation denials and the 65,536-row analytic scale case; the real graph application passes four more gates/113 process cases. The separate sparse product passes all six new library gates, including a 2,194-case model and 16 reached allocation denials; its weighted-path application passes four groups/122 unique process cases across separate original/amended-model receipts. The weighted/higher increment passes eleven registered gates and both ordinary-statistics regressions, including independent Fraction/Decimal models and the 66-case CSV application. | Additional number theory, decimal exceptional/transcendental behavior, weighted higher-order and multivariate higher statistics, sparse/advanced decompositions and further distributions remain. Preserve finite-domain and accuracy limits. |
+| Mathematics | Big integers, finite decimals, ordinary/weighted second-order and unweighted higher statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. The canonical CSR foundation passes six library gates including a 3,886-case model, 33 reached operation-allocation denials and the 65,536-row analytic scale case; the real graph application passes four more gates/113 process cases. The separate sparse product passes all six new library gates, including a 2,194-case model and 16 reached allocation denials; its weighted-path application passes four groups/122 unique process cases across separate original/amended-model receipts. The CG solver passes six library and four graph-diffusion gates/154 application process cases, including a 1,918-case independent model and 27 reached workspace allocation denials. The weighted/higher increment passes eleven registered gates and both ordinary-statistics regressions, including independent Fraction/Decimal models and the 66-case CSV application. | Additional number theory, decimal exceptional/transcendental behavior, weighted higher-order and multivariate higher statistics, other iterative/direct solvers, sparse/advanced decompositions and further distributions remain. Preserve finite-domain and accuracy limits. |
 | Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Portable completion, literal Bash words and reply frames pass finite semantics/pure contracts; the Bash adapter passes function/PTY/watchdog gates, and native queries pass owner/OOM/output groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Other shell adapters, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
@@ -908,6 +910,27 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [sparse CG solver](extended-sparse-cg.md): the fixed contract
+  supplies None/Jacobi preconditioning, exact numerical symmetry checks,
+  fresh residual verification on every update, explicit iteration limits and
+  residual-replacement restarts. Positive definiteness remains a caller
+  requirement. Full requested work is admitted before payload, and workspace
+  cleanup is explicit with no iteration-loop allocation. All six new library
+  gates pass: four contract/denial groups across separate mixed-command and
+  admission-only receipts, the 1,918-case independent model (6.78s) and the
+  65,536-row manufactured system (14.08s). Workspace denial groups reach 27
+  operation failures with full address/size release checks; the model verifies
+  the recursive-zero/fresh-one refusal/restart case. The large system uses
+  196,606 entries, cap 20 and work allowance 90,833,350, with independent
+  residual/value checks after input destruction. Whole-lifecycle timing is
+  not isolated kernel throughput. The real
+  [graph-diffusion program](extended-graph-diffuse.md) assembles a symmetric
+  system and publishes only converged output. Its four registered tests pass
+  in 17.42s with 154 process cases: model 36, rejection 48, CLI 55 and I/O 15.
+  All six new library and four application gates are accepted on the finite
+  native Linux x86_64 profile.
+  No old regression groups were rerun, and earlier sparse receipts retain
+  their own API/source scope.
 - Accepted [sparse matrix product](extended-sparse-product.md): the contract
   adds `ext::sparse_ops::matmul` returning independent canonical CSR, with
   complete input validation, increasing-inner-column accumulation and

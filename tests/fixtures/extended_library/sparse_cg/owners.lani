@@ -1,0 +1,87 @@
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::sparse;
+import ext::sparse_cg;
+import std::io;
+
+fn cg_csr(n:i32,offsets:[i32],columns:[i32],values:[f64],nnz:i32) -> ext::sparse::CsrView {
+    return ext::sparse::CsrView { rows:n,cols:n,offsets:core::slice::view(offsets,n+1).unwrap(),columns:core::slice::view(columns,nnz).unwrap(),values:core::slice::view(values,nnz).unwrap() };
+}
+fn cg_options(steps:i32,jacobi:bool) -> ext::sparse_cg::Options {
+    let options:ext::sparse_cg::Options=ext::sparse_cg::default_options(); options.max_iterations=steps; options.rtol=1e-12; options.atol=0.0;
+    options.preconditioner=ext::sparse_cg::Preconditioner::None; if (jacobi) { options.preconditioner=ext::sparse_cg::Preconditioner::Jacobi; } return options;
+}
+fn cg_expected_work(result:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error>) {
+    assert(result.is_err()); let error:ext::sparse_cg::Error=result.unwrap_err();
+    assert(match(error.kind) { ext::sparse_cg::ErrorKind::WorkLimit -> true, _ -> false }); assert(error.row==-1 && error.entry==-1 && error.iteration==-1);
+}
+fn cg_admission() {
+    let nowhere:ptr=0; let absent_i:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0); let absent_f:[f64]=core::mem::typed_slice_from_raw_parts<f64>(nowhere,0);
+    let a:ext::sparse::CsrView=ext::sparse::CsrView { rows:2,cols:2,
+        offsets:core::slice::View { values:absent_i,start:0,length:3 }, columns:core::slice::View { values:absent_i,start:0,length:2 }, values:core::slice::View { values:absent_f,start:0,length:2 } };
+    let vector:core::slice::View<f64> =core::slice::View { values:absent_f,start:0,length:2 };
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); limits.max_work=215;
+    cg_expected_work(ext::sparse_cg::solve(a,vector,vector,cg_options(1,true),limits));
+    let wide:ext::sparse::Limits=ext::sparse::Limits { max_dimension:2147483647,max_entries:2147483647,max_work:18446744073709551615 };
+    let huge:ext::sparse::CsrView=a; huge.rows=268435455; huge.cols=268435455; huge.offsets.length=268435456; huge.columns.length=0; huge.values.length=0;
+    let huge_vector:core::slice::View<f64> =vector; huge_vector.length=268435455;
+    cg_expected_work(ext::sparse_cg::solve(huge,huge_vector,huge_vector,cg_options(2147483647,false),wide));
+    huge.rows=268435456; huge.cols=268435456; huge.offsets.length=268435457; huge_vector.length=268435456;
+    let capped:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error> =ext::sparse_cg::solve(huge,huge_vector,huge_vector,cg_options(0,false),wide);
+    assert(capped.is_err() && match(capped.unwrap_err().kind) { ext::sparse_cg::ErrorKind::EntryLimit -> true, _ -> false });
+    let malformed_vector:core::slice::View<f64> =vector; malformed_vector.start=-1;
+    let bounds:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error> =ext::sparse_cg::solve(a,malformed_vector,vector,cg_options(1,false),wide);
+    assert(bounds.is_err() && match(bounds.unwrap_err().kind) { ext::sparse_cg::ErrorKind::Bounds -> true, _ -> false });
+    let malformed_a:ext::sparse::CsrView=a; malformed_a.offsets.start=-1;
+    let wrapped:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error> =ext::sparse_cg::solve(malformed_a,vector,vector,cg_options(1,false),wide);
+    assert(wrapped.is_err()); let wrapped_error:ext::sparse_cg::Error=wrapped.unwrap_err();
+    let sparse_bounds:bool=match(wrapped_error.kind) { ext::sparse_cg::ErrorKind::Sparse(cause) -> cg_is_sparse_bounds(cause), _ -> false };
+    assert(sparse_bounds && wrapped_error.row==-1 && wrapped_error.entry==-1 && wrapped_error.iteration==-1);
+    let offsets:[i32;3]=[0,1,2]; let columns:[i32;2]=[0,1]; let values:[f64;2]=[1.0,1.0]; let b:[f64;2]=[core::f64::MAX,core::f64::MAX]; let initial:[f64;2]=[0.0,0.0];
+    let norm:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error> =ext::sparse_cg::solve(cg_csr(2,offsets,columns,values,2),core::slice::view(b,2).unwrap(),core::slice::view(initial,2).unwrap(),cg_options(1,false),wide);
+    assert(norm.is_err()); let norm_error:ext::sparse_cg::Error=norm.unwrap_err();
+    assert(match(norm_error.kind) { ext::sparse_cg::ErrorKind::NumericalFailure -> true, _ -> false }); assert(norm_error.row==-1 && norm_error.entry==1 && norm_error.iteration==-1);
+    let empty:ext::sparse::CsrView=cg_csr(0,offsets,columns,values,0); let no_values:core::slice::View<f64> =core::slice::view(initial,0).unwrap();
+    limits.max_work=59; cg_expected_work(ext::sparse_cg::solve(empty,no_values,no_values,cg_options(1,true),limits)); limits.max_work=60;
+    let solved:ext::sparse_cg::Solution=ext::sparse_cg::solve(empty,no_values,no_values,cg_options(1,true),limits).unwrap();
+    assert(solved.borrow().x.len()==0 && solved.iterations==0 && solved.restarts==0 && solved.residual_norm==0.0 && solved.rhs_norm==0.0 && match(solved.stop) { ext::sparse_cg::Stop::Converged -> true, _ -> false }); solved.destroy();
+}
+fn cg_is_sparse_bounds(cause:ext::sparse::ErrorKind) -> bool { return match(cause) { ext::sparse::ErrorKind::Bounds -> true, _ -> false }; }
+fn cg_owned_run(a:ext::sparse::CsrView,b:core::slice::View<f64>,initial:core::slice::View<f64>,options:ext::sparse_cg::Options,op:i32) {
+    assert(std::io::write_byte(2,82)==1);
+    let result:core::result::Result<ext::sparse_cg::Solution,ext::sparse_cg::Error> =ext::sparse_cg::solve(a,b,initial,options,ext::sparse::default_limits());
+    if (result.is_err()) {
+        let error:ext::sparse_cg::Error=result.unwrap_err();
+        if (match(error.kind) { ext::sparse_cg::ErrorKind::AllocationFailed -> true, _ -> false }) { assert(std::io::write_byte(2,70)==1); return; }
+        let wrapped_numerical:bool=match(error.kind) { ext::sparse_cg::ErrorKind::Sparse(cause) -> cg_is_sparse_numerical(cause), _ -> false };
+        assert(op==4 && wrapped_numerical && error.row==0 && error.entry==0 && error.iteration==0); assert(std::io::write_byte(2,78)==1); return;
+    }
+    assert(op!=4); let solved:ext::sparse_cg::Solution=result.unwrap();
+    assert(solved.borrow().x.len()==a.rows); let converged:bool=match(solved.stop) { ext::sparse_cg::Stop::Converged -> true, _ -> false };
+    if (op==2) { assert(!converged && solved.iterations==1 && solved.residual_norm>0.0); }
+    else { assert(converged && solved.residual_norm==0.0); if (op==3) { assert(solved.iterations==0); } else { assert(solved.iterations==1); } }
+    if (op==1 || op==3) { assert(solved.x.get(0).unwrap()==1.0 && solved.x.get(1).unwrap()==2.0); }
+    if (op==5) { assert(solved.x.get(0).unwrap()==1.0); }
+    solved.destroy(); solved.destroy(); let marker:i32=67; if (!converged) { marker=76; } assert(std::io::write_byte(2,marker)==1);
+}
+fn cg_is_sparse_numerical(cause:ext::sparse::ErrorKind) -> bool { return match(cause) { ext::sparse::ErrorKind::NumericalFailure -> true, _ -> false }; }
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1); let op:i32=input[0]&255;
+    if (op==0) { cg_admission(); assert(std::io::write_byte(2,80)==1); return 0; }
+    let off:[i32;3]=[0,1,2]; let col:[i32;2]=[0,1]; let val:[f64;2]=[2.0,4.0]; let b:[f64;2]=[2.0,8.0]; let initial:[f64;2]=[-0.0,0.0];
+    let options:ext::sparse_cg::Options=cg_options(1,op==1 || op==5); let n:i32=2;
+    if (op==3) { initial[0]=1.0; initial[1]=2.0; options.max_iterations=0; }
+    if (op==4) { n=1; val[0]=core::f64::MAX; }
+    if (op==5) { n=1; val[0]=core::f64::from_bits(1); b[0]=core::f64::from_bits(1); options.rtol=0.0; }
+    cg_owned_run(cg_csr(n,off,col,val,n),core::slice::view(b,n).unwrap(),core::slice::view(initial,n).unwrap(),options,op);
+    assert(op>=1 && op<=5 && off[2]==2 && col[1]==1 && val[1]==4.0 && b[1]==8.0);
+    if (op==3) { assert(initial[0]==1.0 && initial[1]==2.0); }
+    else { assert(core::f64::to_bits(initial[0])==9223372036854775808 && initial[1]==0.0); }
+    if (op<=3) { assert(val[0]==2.0 && b[0]==2.0); }
+    if (op==4) { assert(val[0]==core::f64::MAX && b[0]==2.0); }
+    if (op==5) { assert(core::f64::to_bits(val[0])==1 && core::f64::to_bits(b[0])==1); }
+    return 0;
+}

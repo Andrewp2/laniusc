@@ -14,6 +14,11 @@ with all six new library gates and four application gates accepted on native
 Linux x86_64. The foundation receipts and source identities below do not cover
 that new API.
 
+The separate [CG solver increment](extended-sparse-cg.md) specifies bounded
+None/Jacobi conjugate gradients over these views. All six new library and
+four application gates pass on native Linux x86_64. Historical receipts here
+do not cover that module.
+
 ## Layers and representation
 
 | Module | Responsibility |
@@ -337,8 +342,9 @@ production source was changed.
 Sparse/sparse multiplication is the separate
 [product increment](extended-sparse-product.md), with its own accepted model,
 contract, allocation-denial, analytic scale and real application receipts.
-Sparse factorizations/solvers and additional storage formats remain
-future work. No dense fallback supplies those APIs.
+The selected CG solver has its own accepted increment. Other iterative/direct
+solvers, sparse factorizations and additional storage formats remain future
+work. No dense fallback supplies those APIs.
 The intended graph application is a finite weighted walk, not PageRank or
 a stationary-distribution/convergence algorithm. Other host/device targets,
 automatic ownership and formal proofs remain unclaimed.

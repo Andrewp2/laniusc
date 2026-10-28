@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **272 modules**, **13262 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **273 modules**, **13304 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -264,6 +264,7 @@ Inventory: **272 modules**, **13262 declaration/member entries**. Counts include
 | [ext::settings_env](ext/settings_env.md) | [source](../../extended/ext/settings_env.lani#L3) | 27 | Source inventory | [extended-settings](../extended-settings.md) |
 | [ext::signal](ext/signal.md) | [source](../../extended/ext/signal.lani#L3) | 47 | Source inventory | [extended-signal](../extended-signal.md) |
 | [ext::sparse](ext/sparse.md) | [source](../../extended/ext/sparse.lani#L3) | 43 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-graph-walk](../extended-graph-walk.md) |
+| [ext::sparse_cg](ext/sparse_cg.md) | [source](../../extended/ext/sparse_cg.lani#L4) | 42 | Source inventory | [extended-sparse-cg](../extended-sparse-cg.md), [extended-graph-diffuse](../extended-graph-diffuse.md) |
 | [ext::sparse_matrix](ext/sparse_matrix.md) | [source](../../extended/ext/sparse_matrix.lani#L3) | 16 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sparse_ops](ext/sparse_ops.md) | [source](../../extended/ext/sparse_ops.lani#L5) | 10 | Source inventory | [extended-sparse](../extended-sparse.md), [extended-sparse-product](../extended-sparse-product.md), [extended-sparse-paths](../extended-sparse-paths.md), [extended-linalg](../extended-linalg.md), [extended-graph-walk](../extended-graph-walk.md) |
 | [ext::sqlite](ext/sqlite.md) | [source](../../extended/ext/sqlite.lani#L3) | 145 | Source inventory | [extended-sqlite](../extended-sqlite.md), [library-native-c](../library-native-c.md), [extended-sqlite-kv](../extended-sqlite-kv.md), [extended-sqlite-allocation](../extended-sqlite-allocation.md) |

@@ -1,0 +1,287 @@
+// Finite binary64 preconditioned CG over canonical CSR. The recurrence follows
+// Netlib Templates Figure 2.5; fresh residuals verify EVERY completed update.
+// Manual owners/lifetimes and the caller's SPD requirement remain explicit.
+module ext::sparse_cg;
+import alloc::vec;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::sparse;
+import ext::statistics;
+
+pub enum Preconditioner { None, Jacobi }
+pub enum Stop { Converged, IterationLimit }
+pub struct Options { max_iterations:i32, rtol:f64, atol:f64, preconditioner:Preconditioner }
+pub enum ErrorKind {
+    Sparse(ext::sparse::ErrorKind), InvalidOptions, Shape, Bounds, EntryLimit,
+    WorkLimit, NonFinite, NonSymmetric, NonPositiveDiagonal,
+    NonPositiveCurvature, Breakdown, NumericalFailure, AllocationFailed
+}
+pub struct Error { kind:ErrorKind, row:i32, entry:i32, iteration:i32 }
+pub struct Solution {
+    x:alloc::vec::Vec<f64>, iterations:i32, restarts:i32,
+    residual_norm:f64, rhs_norm:f64, stop:Stop
+}
+pub impl Solution {
+    pub fn borrow(&self) -> &Solution { return self; }
+    // Idempotent through this owner. Copies alias its cleanup authority.
+    pub fn destroy(&self) { self.x.destroy(); }
+}
+pub fn default_options() -> Options {
+    return Options { max_iterations:1000,rtol:0.0000000001,atol:0.0,preconditioner:Preconditioner::Jacobi };
+}
+fn error(kind:ErrorKind,row:i32,entry:i32,iteration:i32) -> Error {
+    return Error { kind:kind,row:row,entry:entry,iteration:iteration };
+}
+fn sparse_error(kind:ext::sparse::ErrorKind,row:i32,entry:i32,iteration:i32) -> Error {
+    return error(ErrorKind::Sparse(kind),row,entry,iteration);
+}
+fn wrapped(cause:ext::sparse::Error,iteration:i32) -> Error { return sparse_error(cause.kind,cause.row,cause.entry,iteration); }
+fn valid<T>(values:core::slice::View<T>) -> bool {
+    return values.start>=0 && values.length>=0 && values.start<=2147483647-values.length;
+}
+fn integer(values:core::slice::View<i32>,index:i32) -> i32 { return values.values[values.start+index]; }
+fn number(values:core::slice::View<f64>,index:i32) -> f64 { return values.values[values.start+index]; }
+
+// Mirror only the shared validator's descriptor admission, so the COMPLETE
+// requested solver allowance precedes every CSR/vector payload read. The
+// public shared validator below remains the canonical payload validator.
+fn metadata(a:ext::sparse::CsrView,limits:ext::sparse::Limits) -> core::result::Result<i32,Error> {
+    if(limits.max_dimension<0 || limits.max_entries<0) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::InvalidLimits,-1,-1,-1)); }
+    if(a.rows<0 || a.cols<0 || a.rows==2147483647) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::Shape,-1,-1,-1)); }
+    if(!valid<i32>(a.offsets) || !valid<i32>(a.columns) || !valid<f64>(a.values)) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::Bounds,-1,-1,-1)); }
+    if(a.offsets.length!=a.rows+1 || a.columns.length!=a.values.length) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::Shape,-1,-1,-1)); }
+    if(a.rows>limits.max_dimension || a.cols>limits.max_dimension) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::DimensionLimit,-1,-1,-1)); }
+    let count:i32=a.columns.length;
+    if(count>limits.max_entries) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::EntryLimit,-1,-1,-1)); }
+    if((a.rows as u64)+1+(count as u64)>limits.max_work) { return core::result::Err(sparse_error(ext::sparse::ErrorKind::WorkLimit,-1,-1,-1)); }
+    return core::result::Ok(count);
+}
+fn admission(a:ext::sparse::CsrView,b:core::slice::View<f64>,initial:core::slice::View<f64>,options:Options,limits:ext::sparse::Limits)
+    -> core::result::Result<i32,Error> {
+    if(options.max_iterations<0 || !core::f64::is_finite(options.rtol) || options.rtol<0.0 || !core::f64::is_finite(options.atol) || options.atol<0.0) {
+        return core::result::Err(error(ErrorKind::InvalidOptions,-1,-1,-1));
+    }
+    let k:i32=metadata(a,limits)?;
+    if(!valid<f64>(b) || !valid<f64>(initial)) { return core::result::Err(error(ErrorKind::Bounds,-1,-1,-1)); }
+    if(a.rows!=a.cols || b.length!=a.rows || initial.length!=a.rows) { return core::result::Err(error(ErrorKind::Shape,-1,-1,-1)); }
+    let n:i32=a.rows;
+    if(n>limits.max_entries || n>268435455) { return core::result::Err(error(ErrorKind::EntryLimit,-1,-1,-1)); }
+    let levels:u64=0; let span:u64=1;
+    while(span<(n as u64)) { span*=2; levels+=1; }
+    // n and k are admitted nonnegative i32. setup/step each fit u64; the
+    // iteration product need not, so compare by division before multiplying.
+    let setup:u64=20*((n as u64)+1)+6*(k as u64)+((k as u64)+(n as u64))*(1+levels);
+    let step:u64=40*((n as u64)+1)+8*(k as u64);
+    if(setup>limits.max_work || (options.max_iterations as u64)>(limits.max_work-setup)/step) {
+        return core::result::Err(error(ErrorKind::WorkLimit,-1,-1,-1));
+    }
+    return core::result::Ok(n);
+}
+fn finite_vector(values:core::slice::View<f64>) -> core::result::Result<bool,Error> {
+    let index:i32=0;
+    while(index<values.length) {
+        if(!core::f64::is_finite(number(values,index))) { return core::result::Err(error(ErrorKind::NonFinite,-1,index,-1)); }
+        index+=1;
+    }
+    return core::result::Ok(true);
+}
+// Binary search one already validated row; never revalidate the whole matrix
+// per entry. A missing numerical counterpart is distinct from a stored zero.
+fn find(a:ext::sparse::CsrView,row:i32,column:i32) -> i32 {
+    let low:i32=integer(a.offsets,row); let end:i32=integer(a.offsets,row+1); let high:i32=end;
+    while(low<high) { let middle:i32=low+(high-low)/2; if(integer(a.columns,middle)<column) { low=middle+1; } else { high=middle; } }
+    if(low<end && integer(a.columns,low)==column) { return low; } return -1;
+}
+fn symmetry(a:ext::sparse::CsrView) -> core::result::Result<bool,Error> {
+    let row:i32=0;
+    while(row<a.rows) {
+        let entry:i32=integer(a.offsets,row); let end:i32=integer(a.offsets,row+1);
+        while(entry<end) {
+            let value:f64=number(a.values,entry);
+            if(value!=0.0) {
+                let other:i32=find(a,integer(a.columns,entry),row);
+                if(other<0 || number(a.values,other)!=value) { return core::result::Err(error(ErrorKind::NonSymmetric,row,entry,-1)); }
+            }
+            entry+=1;
+        }
+        row+=1;
+    }
+    return core::result::Ok(true);
+}
+fn positive_diagonal(a:ext::sparse::CsrView) -> core::result::Result<bool,Error> {
+    let row:i32=0;
+    while(row<a.rows) {
+        let entry:i32=find(a,row,row);
+        if(entry<0) { return core::result::Err(error(ErrorKind::NonPositiveDiagonal,row,-1,-1)); }
+        if(number(a.values,entry)<=0.0) { return core::result::Err(error(ErrorKind::NonPositiveDiagonal,row,entry,-1)); }
+        row+=1;
+    }
+    return core::result::Ok(true);
+}
+fn norm(values:core::slice::View<f64>,iteration:i32) -> core::result::Result<f64,Error> {
+    let accumulated:ext::statistics::ScaledNorm=ext::statistics::scaled_norm(); let index:i32=0;
+    while(index<values.length) {
+        let added=accumulated.push(number(values,index));
+        if(added.is_err()) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,index,iteration)); }
+        index+=1;
+    }
+    let result=accumulated.value();
+    if(result.is_err() || !core::f64::is_finite(result.unwrap())) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,-1,iteration)); }
+    return core::result::Ok(result.unwrap());
+}
+fn converged(residual:f64,rhs:f64,options:Options) -> bool {
+    if(residual<=options.atol) { return true; }
+    // Comparison-only overflow to +infinity simply fails this finite-rtol
+    // predicate. All norms and numerical recurrence values must stay finite.
+    return options.rtol>0.0 && rhs>0.0 && residual/rhs<=options.rtol;
+}
+
+struct Workspace {
+    x:alloc::vec::Vec<f64>, r:alloc::vec::Vec<f64>, z:alloc::vec::Vec<f64>,
+    p:alloc::vec::Vec<f64>, q:alloc::vec::Vec<f64>, diagonal:alloc::vec::Vec<f64>
+}
+impl Workspace {
+    fn borrow(&self) -> &Workspace { return self; }
+    fn destroy(&self) { self.x.destroy(); self.r.destroy(); self.z.destroy(); self.p.destroy(); self.q.destroy(); self.diagonal.destroy(); }
+}
+fn initialize(buffer:&alloc::vec::Vec<f64>,n:i32) -> core::result::Result<bool,Error> {
+    let made=buffer.try_resize(n,0.0);
+    if(made.is_err()) {
+        let kind:ErrorKind=match(made.unwrap_err()) { alloc::vec::Error::AllocationFailed->ErrorKind::AllocationFailed,alloc::vec::Error::Bounds->ErrorKind::Bounds,_->ErrorKind::EntryLimit };
+        return core::result::Err(error(kind,-1,-1,-1));
+    }
+    return core::result::Ok(true);
+}
+fn resize_workspace(w:&Workspace,n:i32,jacobi:bool) -> core::result::Result<bool,Error> {
+    initialize(w.x.borrow(),n)?; initialize(w.r.borrow(),n)?; initialize(w.z.borrow(),n)?;
+    initialize(w.p.borrow(),n)?; initialize(w.q.borrow(),n)?;
+    if(jacobi) { initialize(w.diagonal.borrow(),n)?; } return core::result::Ok(true);
+}
+fn workspace(n:i32,jacobi:bool) -> core::result::Result<Workspace,Error> {
+    let w:Workspace=Workspace { x:alloc::vec::new(),r:alloc::vec::new(),z:alloc::vec::new(),p:alloc::vec::new(),q:alloc::vec::new(),diagonal:alloc::vec::new() };
+    let resized=resize_workspace(w.borrow(),n,jacobi);
+    if(resized.is_err()) { w.destroy(); return core::result::Err(resized.unwrap_err()); } return core::result::Ok(w);
+}
+fn copy(source:[f64],destination:[f64],n:i32) { let index:i32=0; while(index<n) { destination[index]=source[index]; index+=1; } }
+fn dot(a:[f64],b:[f64],n:i32,iteration:i32) -> core::result::Result<f64,Error> {
+    let sum:f64=0.0; let index:i32=0;
+    while(index<n) {
+        let product:f64=a[index]*b[index];
+        if(!core::f64::is_finite(product)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,-1,iteration)); }
+        sum+=product; if(!core::f64::is_finite(sum)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,-1,iteration)); } index+=1;
+    }
+    return core::result::Ok(sum);
+}
+fn rho(w:&Workspace,n:i32,jacobi:bool,iteration:i32) -> core::result::Result<f64,Error> {
+    let r:[f64]=w.r.as_slice(); let z:[f64]=w.z.as_slice(); let diagonal:[f64]=w.diagonal.as_slice(); let index:i32=0;
+    while(index<n) {
+        let value:f64=r[index]; if(jacobi) { value/=diagonal[index]; }
+        if(!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,index,iteration)); }
+        z[index]=value; index+=1;
+    }
+    let value:f64=dot(r,z,n,iteration)?;
+    if(value<=0.0) { return core::result::Err(error(ErrorKind::Breakdown,-1,-1,iteration)); }
+    return core::result::Ok(value);
+}
+fn product(a:ext::sparse::CsrView,x:core::slice::View<f64>,out:core::slice::View<f64>,limits:ext::sparse::Limits,iteration:i32)
+    -> core::result::Result<bool,Error> {
+    let result=ext::sparse::matvec_into(a,x,out,limits);
+    if(result.is_err()) { return core::result::Err(wrapped(result.unwrap_err().error,iteration)); } return core::result::Ok(true);
+}
+fn fresh(a:ext::sparse::CsrView,b:core::slice::View<f64>,w:&Workspace,limits:ext::sparse::Limits,iteration:i32)
+    -> core::result::Result<f64,Error> {
+    product(a,w.x.as_view(),w.q.as_view(),limits,iteration)?;
+    let q:[f64]=w.q.as_slice(); let index:i32=0;
+    while(index<a.rows) {
+        let value:f64=number(b,index)-q[index];
+        if(!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,index,iteration)); }
+        q[index]=value; index+=1;
+    }
+    return norm(w.q.as_view(),iteration);
+}
+struct Finished { iterations:i32, restarts:i32, residual:f64, stop:Stop }
+fn done(iterations:i32,restarts:i32,residual:f64,stop:Stop) -> core::result::Result<Finished,Error> {
+    return core::result::Ok(Finished { iterations:iterations,restarts:restarts,residual:residual,stop:stop });
+}
+// All workspace remains private on error; the caller releases it once. q is
+// reused for the fresh residual only AFTER its Ap use in the recursive update.
+fn iterate(a:ext::sparse::CsrView,b:core::slice::View<f64>,w:&Workspace,options:Options,limits:ext::sparse::Limits,rhs:f64,jacobi:bool)
+    -> core::result::Result<Finished,Error> {
+    let n:i32=a.rows; let x:[f64]=w.x.as_slice(); let r:[f64]=w.r.as_slice(); let z:[f64]=w.z.as_slice(); let p:[f64]=w.p.as_slice(); let q:[f64]=w.q.as_slice();
+    let residual:f64=fresh(a,b,w,limits,-1)?;
+    if(converged(residual,rhs,options)) { return done(0,0,residual,Stop::Converged); }
+    if(options.max_iterations==0) { return done(0,0,residual,Stop::IterationLimit); }
+    copy(q,r,n); let current_rho:f64=rho(w,n,jacobi,0)?; copy(z,p,n);
+    let completed:i32=0; let restarts:i32=0;
+    while(completed<options.max_iterations) {
+        let iteration:i32=completed;
+        product(a,w.p.as_view(),w.q.as_view(),limits,iteration)?;
+        let curvature:f64=dot(p,q,n,iteration)?;
+        if(curvature<0.0) { return core::result::Err(error(ErrorKind::NonPositiveCurvature,-1,-1,iteration)); }
+        if(curvature==0.0) { return core::result::Err(error(ErrorKind::Breakdown,-1,-1,iteration)); }
+        let alpha:f64=current_rho/curvature;
+        if(!core::f64::is_finite(alpha)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,-1,iteration)); }
+        if(alpha==0.0) { return core::result::Err(error(ErrorKind::Breakdown,-1,-1,iteration)); }
+        let index:i32=0;
+        while(index<n) {
+            let term:f64=alpha*p[index]; let next:f64=x[index]+term;
+            if(!core::f64::is_finite(term) || !core::f64::is_finite(next)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,index,iteration)); }
+            x[index]=next; index+=1;
+        }
+        index=0;
+        while(index<n) {
+            let term:f64=alpha*q[index]; let next:f64=r[index]-term;
+            if(!core::f64::is_finite(term) || !core::f64::is_finite(next)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,index,iteration)); }
+            r[index]=next; index+=1;
+        }
+        residual=fresh(a,b,w,limits,iteration)?; completed+=1;
+        if(converged(residual,rhs,options)) { return done(completed,restarts,residual,Stop::Converged); }
+        if(completed==options.max_iterations) { return done(completed,restarts,residual,Stop::IterationLimit); }
+        let recursive:f64=norm(w.r.as_view(),iteration)?;
+        if(converged(recursive,rhs,options)) {
+            // A fresh residual disagreement starts a new ordinary CG segment.
+            copy(q,r,n); current_rho=rho(w,n,jacobi,iteration)?; copy(z,p,n); restarts+=1;
+        } else {
+            let next_rho:f64=rho(w,n,jacobi,iteration)?; let beta:f64=next_rho/current_rho;
+            if(!core::f64::is_finite(beta)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,-1,iteration)); }
+            index=0;
+            while(index<n) {
+                let term:f64=beta*p[index]; let next:f64=z[index]+term;
+                if(!core::f64::is_finite(term) || !core::f64::is_finite(next)) { return core::result::Err(error(ErrorKind::NumericalFailure,-1,index,iteration)); }
+                p[index]=next; index+=1;
+            }
+            current_rho=next_rho;
+        }
+    }
+    return done(completed,restarts,residual,Stop::IterationLimit);
+}
+
+pub fn solve(a:ext::sparse::CsrView,b:core::slice::View<f64>,initial:core::slice::View<f64>,options:Options,limits:ext::sparse::Limits)
+    -> core::result::Result<Solution,Error> {
+    let n:i32=admission(a,b,initial,options,limits)?;
+    let canonical=ext::sparse::validate(a,limits);
+    if(canonical.is_err()) { return core::result::Err(wrapped(canonical.unwrap_err(),-1)); }
+    finite_vector(b)?; finite_vector(initial)?; symmetry(a)?;
+    let jacobi:bool=match(options.preconditioner) { Preconditioner::Jacobi->true,Preconditioner::None->false };
+    if(jacobi) { positive_diagonal(a)?; }
+    let rhs:f64=norm(b,-1)?;
+    if(n==0) { return core::result::Ok(Solution { x:alloc::vec::new(),iterations:0,restarts:0,residual_norm:0.0,rhs_norm:rhs,stop:Stop::Converged }); }
+    let w:Workspace=workspace(n,jacobi)?; let x:[f64]=w.x.as_slice(); let index:i32=0;
+    while(index<n) { x[index]=number(initial,index); index+=1; }
+    if(jacobi) {
+        // Copy admitted positive diagonal values in one linear CSR walk;
+        // avoid adding a second n*log(n) lookup phase to the setup estimate.
+        let diagonal:[f64]=w.diagonal.as_slice(); let row:i32=0;
+        while(row<n) {
+            let entry:i32=integer(a.offsets,row);
+            while(integer(a.columns,entry)<row) { entry+=1; }
+            diagonal[row]=number(a.values,entry); row+=1;
+        }
+    }
+    let result=iterate(a,b,w.borrow(),options,limits,rhs,jacobi);
+    if(result.is_err()) { w.destroy(); return core::result::Err(result.unwrap_err()); }
+    let stopped:Finished=result.unwrap(); let owned:alloc::vec::Vec<f64> =w.x;
+    w.x=alloc::vec::new(); w.destroy();
+    return core::result::Ok(Solution { x:owned,iterations:stopped.iterations,restarts:stopped.restarts,residual_norm:stopped.residual,rhs_norm:rhs,stop:stopped.stop });
+}
