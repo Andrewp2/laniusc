@@ -1,0 +1,64 @@
+// Internal finite-product support for descriptive moment algorithms.
+// Binary exponent extraction follows the normalization in core::math::scalbn.
+// Bounded mantissa products are rounded before one final power-of-two scale;
+// this is not an exactly rounded fused product or arbitrary precision.
+module ext::statistics_scaling;
+import core::f64;
+import core::math;
+
+struct Part { mantissa: f64, exponent: i32 }
+
+// Input is finite and nonzero. Subnormal normalization is exact.
+fn split(value: f64) -> Part {
+    let normalized: f64 = value;
+    let bits: u64 = core::f64::to_bits(normalized);
+    let biased: i32 = ((bits >> 52) & 2047) as i32;
+    let adjustment: i32 = 0;
+    if (biased == 0) {
+        normalized *= 18014398509481984.0;
+        bits = core::f64::to_bits(normalized);
+        biased = ((bits >> 52) & 2047) as i32;
+        adjustment = -54;
+    }
+    let mantissa: f64 = core::f64::from_bits((bits & 9227875636482146303) | 4607182418800017408);
+    return Part { mantissa: mantissa, exponent: biased - 1023 + adjustment };
+}
+
+// Five numerator factors and two denominator factors. Full validation precedes
+// zero handling. Invalid inputs (nonfinite factors or zero denominator) return
+// NaN; clients translate this into their typed numerical error.
+// Mantissa magnitude remains in [1/4,32], exponent sums fit i32. Intermediate
+// products therefore cannot overflow or underflow. Only final scaling can.
+fn combine(a: f64, b: f64, c: f64, d: f64, e: f64, u: f64, v: f64) -> f64 {
+    let factors: [f64;7] = [a,b,c,d,e,u,v];
+    let index: i32 = 0;
+    let zero: bool = false;
+    let sign: u64 = 0;
+    while (index < 7) {
+        let value: f64 = factors[index];
+        if (!core::f64::is_finite(value) || (index >= 5 && value == 0.0)) { return core::f64::nan(); }
+        if (index < 5 && value == 0.0) { zero = true; }
+        sign = sign ^ (core::f64::to_bits(value) & core::f64::SIGN_MASK);
+        index += 1;
+    }
+    if (zero) { return core::f64::from_bits(sign); }
+    let mantissa: f64 = 1.0;
+    let exponent: i32 = 0;
+    index = 0;
+    while (index < 7) {
+        let part: Part = split(factors[index]);
+        if (index < 5) { mantissa *= part.mantissa; exponent += part.exponent; }
+        else { mantissa /= part.mantissa; exponent -= part.exponent; }
+        index += 1;
+    }
+    return core::math::scalbn(mantissa,exponent);
+}
+
+// All helpers use binary64 arithmetic; final underflow yields a signed zero or
+// subnormal, and final overflow yields signed infinity. Callers check domains.
+pub fn product3(a: f64, b: f64, c: f64) -> f64 { return combine(a,b,c,1.0,1.0,1.0,1.0); }
+pub fn product5(a: f64, b: f64, c: f64, d: f64, e: f64) -> f64 { return combine(a,b,c,d,e,1.0,1.0); }
+pub fn quotient2(a: f64, b: f64, denominator: f64) -> f64 { return combine(a,b,1.0,1.0,1.0,denominator,1.0); }
+pub fn quotient4(a: f64, b: f64, c: f64, d: f64, denominator: f64) -> f64 { return combine(a,b,c,d,1.0,denominator,1.0); }
+pub fn quotient5(a: f64, b: f64, c: f64, d: f64, e: f64, denominator: f64) -> f64 { return combine(a,b,c,d,e,denominator,1.0); }
+pub fn quotient2_2(a: f64, b: f64, c: f64, d: f64) -> f64 { return combine(a,b,1.0,1.0,1.0,c,d); }

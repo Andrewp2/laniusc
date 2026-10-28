@@ -1,0 +1,364 @@
+// Finite binary64 weighted descriptive statistics. Nonnegative real mass
+// weights; no implicit frequency, missing-value or sampling-design policy.
+// Centered weighted merges: Pebay et al. (2016), equations 3.26 and 3.27.
+module ext::weighted_statistics;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::statistics;
+import ext::statistics_scaling;
+
+pub const MAX_COUNT: u64 = 9007199254740992;
+pub enum ErrorKind { Empty, InsufficientData, NonFiniteInput, InvalidWeight, Overflow, CountLimit, Bounds, Degenerate }
+pub struct Error { kind: ErrorKind, index: i32 }
+// Library-maintained scalar state. Construct through the factories and retain
+// one mutable state per summary. These records own no allocation or resource.
+pub struct Moments {
+    weights: ext::statistics::CompensatedSum,
+    norm: ext::statistics::ScaledNorm,
+    origin: f64, offset: f64, offset_error: f64,
+    square: f64, square_error: f64,
+    denominator: f64, denominator_error: f64,
+    low: f64, high: f64
+}
+pub struct PairedMoments { x: Moments, y: Moments, cross: f64, cross_error: f64 }
+struct TwoSum { total: f64, correction: f64 }
+// delta = value*factor, with factor either one or two. Keeping a half delta
+// avoids overflowing an opposite-extreme center subtraction before scaling.
+struct Difference { value: f64, factor: f64 }
+
+fn error(kind: ErrorKind, index: i32) -> Error { return Error { kind: kind, index: index }; }
+fn checked(value: f64) -> core::result::Result<f64,Error> {
+    if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    return core::result::Ok(value);
+}
+fn nonnegative(value: f64) -> core::result::Result<f64,Error> {
+    if (!core::f64::is_finite(value) || value < 0.0) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    return core::result::Ok(value);
+}
+fn valid(values: core::slice::View<f64>) -> bool {
+    return values.start >= 0 && values.length >= 0 && values.start <= 2147483647-values.length;
+}
+fn at(values: core::slice::View<f64>, index: i32) -> f64 { return values.get(index).unwrap(); }
+fn weight_error(weight: f64) -> bool { return !core::f64::is_finite(weight) || weight < 0.0; }
+fn scalar_error(cause: ext::statistics::Error) -> Error {
+    return error(match(cause.kind) { ext::statistics::ErrorKind::CountLimit -> ErrorKind::CountLimit, _ -> ErrorKind::Overflow },-1);
+}
+fn compensated(a: f64, correction: f64, b: f64) -> core::result::Result<TwoSum,Error> {
+    let total: f64 = a+b;
+    if (!core::f64::is_finite(total)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    let tail: f64 = (b-total)+a;
+    if (core::f64::abs(a) >= core::f64::abs(b)) { tail = (a-total)+b; }
+    let next: f64 = correction+tail;
+    if (!core::f64::is_finite(next) || !core::f64::is_finite(total+next)) {
+        return core::result::Err(error(ErrorKind::Overflow,-1));
+    }
+    return core::result::Ok(TwoSum { total: total, correction: next });
+}
+fn add_pair(a: f64, ae: f64, b: f64, be: f64, increment: f64)
+    -> core::result::Result<TwoSum,Error> {
+    let first = compensated(a,ae,b); if (first.is_err()) { return first; }
+    let x: TwoSum = first.unwrap(); let second = compensated(x.total,x.correction,be);
+    if (second.is_err()) { return second; } let y: TwoSum = second.unwrap();
+    return compensated(y.total,y.correction,increment);
+}
+pub fn moments() -> Moments {
+    return Moments {
+        weights: ext::statistics::sum(), norm: ext::statistics::scaled_norm(),
+        origin: 0.0, offset: 0.0, offset_error: 0.0,
+        square: 0.0, square_error: 0.0, denominator: 0.0, denominator_error: 0.0,
+        low: 0.0, high: 0.0
+    };
+}
+// Retain the usual first-origin representation while its displacement is
+// ordinary. Rebase large displacements without discarding the low residual.
+fn rebase(value: Moments) -> core::result::Result<Moments,Error> {
+    let first = compensated(value.origin,0.0,value.offset);
+    if (first.is_err()) { return core::result::Err(first.unwrap_err()); }
+    let a: TwoSum = first.unwrap(); let second = compensated(a.total,a.correction,value.offset_error);
+    if (second.is_err()) { return core::result::Err(second.unwrap_err()); }
+    let b: TwoSum = second.unwrap(); value.origin = b.total; value.offset = b.correction; value.offset_error = 0.0;
+    return core::result::Ok(value);
+}
+fn centered(value: Moments) -> core::result::Result<Moments,Error> {
+    if (core::f64::abs(value.offset) <= core::f64::MAX*0.25) { return core::result::Ok(value); }
+    return rebase(value);
+}
+fn difference(a: Moments, b: Moments) -> core::result::Result<Difference,Error> {
+    let origin: f64 = b.origin-a.origin;
+    let offset: f64 = b.offset-a.offset;
+    let tail: f64 = b.offset_error-a.offset_error;
+    let delta: f64 = (origin+offset)+tail;
+    if (core::f64::is_finite(origin) && core::f64::is_finite(offset) && core::f64::is_finite(tail) && core::f64::is_finite(delta)) {
+        return core::result::Ok(Difference { value: delta, factor: 1.0 });
+    }
+    let half: f64 = ((b.origin*0.5-a.origin*0.5)+(b.offset*0.5-a.offset*0.5))
+        +(b.offset_error*0.5-a.offset_error*0.5);
+    if (!core::f64::is_finite(half)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+    return core::result::Ok(Difference { value: half, factor: 2.0 });
+}
+fn cross_increment(x: Difference, y: Difference, wa: f64, wb: f64, weight: f64) -> f64 {
+    return ext::statistics_scaling::quotient5(x.value,y.value,wa,wb,x.factor*y.factor,weight);
+}
+
+pub impl Moments {
+    pub fn borrow(&self) -> &Moments { return self; }
+    pub fn count(&self) -> u64 { return self.weights.count(); }
+    pub fn total_weight(&self) -> core::result::Result<f64,Error> {
+        let value = self.weights.value(); if (value.is_err()) { return core::result::Err(scalar_error(value.unwrap_err())); }
+        return core::result::Ok(value.unwrap());
+    }
+    pub fn mean(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        return checked(self.origin+(self.offset+self.offset_error));
+    }
+    pub fn minimum(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        return core::result::Ok(self.low);
+    }
+    pub fn maximum(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        return core::result::Ok(self.high);
+    }
+    pub fn m2(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        return nonnegative(self.square+self.square_error);
+    }
+    pub fn correction_denominator(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        return nonnegative(self.denominator+self.denominator_error);
+    }
+    fn divisor(&self) -> core::result::Result<f64,Error> {
+        if (self.count() < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); }
+        let value = self.correction_denominator(); if (value.is_err()) { return value; }
+        if (value.unwrap() <= 0.0) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); }
+        return value;
+    }
+    pub fn population_variance(&self) -> core::result::Result<f64,Error> {
+        let square = self.m2(); if (square.is_err()) { return square; }
+        return nonnegative(square.unwrap()/self.total_weight().unwrap());
+    }
+    pub fn reliability_variance(&self) -> core::result::Result<f64,Error> {
+        let denominator = self.divisor(); if (denominator.is_err()) { return denominator; }
+        let square = self.m2(); if (square.is_err()) { return square; }
+        return nonnegative(square.unwrap()/denominator.unwrap());
+    }
+    pub fn population_stddev(&self) -> core::result::Result<f64,Error> {
+        let square = self.m2(); if (square.is_err()) { return square; }
+        return nonnegative(ext::statistics_scaling::quotient2(core::f64::sqrt(square.unwrap()),1.0,
+            core::f64::sqrt(self.total_weight().unwrap())));
+    }
+    pub fn reliability_stddev(&self) -> core::result::Result<f64,Error> {
+        let denominator = self.divisor(); if (denominator.is_err()) { return denominator; }
+        let square = self.m2(); if (square.is_err()) { return square; }
+        return nonnegative(ext::statistics_scaling::quotient2(core::f64::sqrt(square.unwrap()),1.0,
+            core::f64::sqrt(denominator.unwrap())));
+    }
+    pub fn effective_count(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        let weight: f64 = self.total_weight().unwrap();
+        // Use the norm's scaled state rather than round its square root into
+        // a subnormal weight. For three minimum-subnormal equal weights that
+        // rounding would change an effective count of three into 9/4.
+        let value: f64 = ext::statistics_scaling::quotient2_2(weight,weight,self.norm.scale,self.norm.scale)/self.norm.squares;
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        return core::result::Ok(core::f64::min(self.count() as f64,core::f64::max(1.0,value)));
+    }
+    fn snapshot(&self) -> Moments {
+        return Moments { weights: self.weights, norm: self.norm,
+            origin: self.origin, offset: self.offset, offset_error: self.offset_error,
+            square: self.square, square_error: self.square_error,
+            denominator: self.denominator, denominator_error: self.denominator_error,
+            low: self.low, high: self.high };
+    }
+    fn assign(&self, value: Moments) {
+        self.weights = value.weights; self.norm = value.norm;
+        self.origin = value.origin; self.offset = value.offset; self.offset_error = value.offset_error;
+        self.square = value.square; self.square_error = value.square_error;
+        self.denominator = value.denominator; self.denominator_error = value.denominator_error;
+        self.low = value.low; self.high = value.high;
+    }
+    pub fn push(&self, value: f64, weight: f64) -> core::result::Result<bool,Error> {
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::NonFiniteInput,-1)); }
+        if (weight_error(weight)) { return core::result::Err(error(ErrorKind::InvalidWeight,-1)); }
+        if (weight == 0.0) { return core::result::Ok(false); }
+        if (self.count() >= MAX_COUNT) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        let one: Moments = moments();
+        let added = one.weights.push(weight); if (added.is_err()) { return core::result::Err(scalar_error(added.unwrap_err())); }
+        let norm = one.norm.push(weight); if (norm.is_err()) { return core::result::Err(scalar_error(norm.unwrap_err())); }
+        one.origin = value; one.low = value; one.high = value;
+        return self.merge(one);
+    }
+    pub fn merge(&self, other: Moments) -> core::result::Result<bool,Error> {
+        if (other.count() > MAX_COUNT || self.count() > MAX_COUNT-other.count()) {
+            return core::result::Err(error(ErrorKind::CountLimit,-1));
+        }
+        if (other.count() == 0) { return core::result::Ok(false); }
+        if (self.count() == 0) { self.assign(other); return core::result::Ok(true); }
+        let next: Moments = self.snapshot();
+        let added = next.weights.merge(other.weights); if (added.is_err()) { return core::result::Err(scalar_error(added.unwrap_err())); }
+        let norm = next.norm.merge(other.norm); if (norm.is_err()) { return core::result::Err(scalar_error(norm.unwrap_err())); }
+        let wa: f64 = self.total_weight().unwrap(); let wb: f64 = other.total_weight().unwrap();
+        let weight: f64 = next.total_weight().unwrap();
+        let first = centered(self.snapshot()); if (first.is_err()) { return core::result::Err(first.unwrap_err()); }
+        let second = centered(other); if (second.is_err()) { return core::result::Err(second.unwrap_err()); }
+        let base: Moments = first.unwrap(); let tail: Moments = second.unwrap(); let tail_weight: f64 = wb;
+        if (wb > wa) { base = second.unwrap(); tail = first.unwrap(); tail_weight = wa; }
+        let delta = difference(base,tail); if (delta.is_err()) { return core::result::Err(delta.unwrap_err()); }
+        let d: Difference = delta.unwrap();
+        let increment: f64 = ext::statistics_scaling::quotient4(d.value,d.factor,tail_weight,1.0,weight);
+        if (!core::f64::is_finite(base.offset+increment)) {
+            let moved = rebase(base); if (moved.is_err()) { return core::result::Err(moved.unwrap_err()); }
+            base = moved.unwrap();
+        }
+        let average = compensated(base.offset,base.offset_error,increment);
+        if (average.is_err()) { return core::result::Err(average.unwrap_err()); }
+        let mean: TwoSum = average.unwrap(); next.origin = base.origin; next.offset = mean.total; next.offset_error = mean.correction;
+        let normalized = centered(next); if (normalized.is_err()) { return core::result::Err(normalized.unwrap_err()); }
+        next = normalized.unwrap();
+        if (!core::f64::is_finite(next.origin+(next.offset+next.offset_error))) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        let square = add_pair(self.square,self.square_error,other.square,other.square_error,cross_increment(d,d,wa,wb,weight));
+        if (square.is_err()) { return core::result::Err(square.unwrap_err()); }
+        let sq: TwoSum = square.unwrap();
+        if (!core::f64::is_finite(sq.total+sq.correction) || sq.total+sq.correction < 0.0) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        next.square = sq.total; next.square_error = sq.correction;
+        // D = W-Q/W is maintained through its positive pairwise recurrence,
+        // never by subtracting rounded nearly equal W and Q/W.
+        let da: f64 = ext::statistics_scaling::quotient2(self.denominator,wa,weight);
+        let dae: f64 = ext::statistics_scaling::quotient2(self.denominator_error,wa,weight);
+        let db: f64 = ext::statistics_scaling::quotient2(other.denominator,wb,weight);
+        let dbe: f64 = ext::statistics_scaling::quotient2(other.denominator_error,wb,weight);
+        let dd: f64 = ext::statistics_scaling::quotient4(2.0,wa,wb,1.0,weight);
+        let denominator = add_pair(da,dae,db,dbe,dd);
+        if (denominator.is_err()) { return core::result::Err(denominator.unwrap_err()); }
+        let den: TwoSum = denominator.unwrap();
+        if (!core::f64::is_finite(den.total+den.correction) || den.total+den.correction < 0.0) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        next.denominator = den.total; next.denominator_error = den.correction;
+        next.low = core::f64::min(self.low,other.low); next.high = core::f64::max(self.high,other.high);
+        self.assign(next); return core::result::Ok(true);
+    }
+    pub fn push_views(&self, values: core::slice::View<f64>, weights: core::slice::View<f64>)
+        -> core::result::Result<u64,Error> {
+        if (!valid(values) || !valid(weights) || values.len() != weights.len()) {
+            return core::result::Err(error(ErrorKind::Bounds,-1));
+        }
+        let next: Moments = self.snapshot(); let index: i32 = 0;
+        while (index < values.len()) {
+            let added = next.push(at(values,index),at(weights,index));
+            if (added.is_err()) { return core::result::Err(error(added.unwrap_err().kind,index)); }
+            index += 1;
+        }
+        let count: u64 = next.count()-self.count(); self.assign(next); return core::result::Ok(count);
+    }
+}
+pub fn summarize(values: core::slice::View<f64>, weights: core::slice::View<f64>)
+    -> core::result::Result<Moments,Error> {
+    let value: Moments = moments(); let added = value.push_views(values,weights);
+    if (added.is_err()) { return core::result::Err(added.unwrap_err()); } return core::result::Ok(value);
+}
+
+pub fn paired_moments() -> PairedMoments { return PairedMoments { x: moments(), y: moments(), cross: 0.0, cross_error: 0.0 }; }
+fn intercept(mean_y: f64, slope: f64, mean_x: f64) -> f64 {
+    let product: f64 = slope*mean_x; let value: f64 = mean_y-product;
+    if (core::f64::is_finite(product) && core::f64::is_finite(value)) { return value; }
+    let half: f64 = mean_y*0.5-ext::statistics_scaling::product3(slope,mean_x,0.5);
+    return ext::statistics_scaling::product3(half,2.0,1.0);
+}
+pub impl PairedMoments {
+    pub fn borrow(&self) -> &PairedMoments { return self; }
+    pub fn count(&self) -> u64 { return self.x.count(); }
+    pub fn total_weight(&self) -> core::result::Result<f64,Error> { return self.x.total_weight(); }
+    pub fn mean_x(&self) -> core::result::Result<f64,Error> { return self.x.mean(); }
+    pub fn mean_y(&self) -> core::result::Result<f64,Error> { return self.y.mean(); }
+    pub fn population_covariance(&self) -> core::result::Result<f64,Error> {
+        if (self.count() == 0) { return core::result::Err(error(ErrorKind::Empty,-1)); }
+        return checked((self.cross+self.cross_error)/self.total_weight().unwrap());
+    }
+    pub fn reliability_covariance(&self) -> core::result::Result<f64,Error> {
+        let denominator = self.x.divisor(); if (denominator.is_err()) { return denominator; }
+        return checked((self.cross+self.cross_error)/denominator.unwrap());
+    }
+    pub fn push(&self, x: f64, y: f64, weight: f64) -> core::result::Result<bool,Error> {
+        if (!core::f64::is_finite(x) || !core::f64::is_finite(y)) { return core::result::Err(error(ErrorKind::NonFiniteInput,-1)); }
+        if (weight_error(weight)) { return core::result::Err(error(ErrorKind::InvalidWeight,-1)); }
+        if (weight == 0.0) { return core::result::Ok(false); }
+        if (self.count() >= MAX_COUNT) { return core::result::Err(error(ErrorKind::CountLimit,-1)); }
+        let next_x: Moments = self.x; let next_y: Moments = self.y;
+        let xr = next_x.push(x,weight); if (xr.is_err()) { return xr; }
+        let yr = next_y.push(y,weight); if (yr.is_err()) { return yr; }
+        let increment: f64 = 0.0;
+        if (self.count() > 0) {
+            let a = centered(self.x); if (a.is_err()) { return core::result::Err(a.unwrap_err()); }
+            let b = centered(self.y); if (b.is_err()) { return core::result::Err(b.unwrap_err()); }
+            let point_x: Moments = moments(); point_x.origin = x;
+            let point_y: Moments = moments(); point_y.origin = y;
+            let dx = difference(a.unwrap(),point_x); if (dx.is_err()) { return core::result::Err(dx.unwrap_err()); }
+            let dy = difference(b.unwrap(),point_y); if (dy.is_err()) { return core::result::Err(dy.unwrap_err()); }
+            increment = cross_increment(dx.unwrap(),dy.unwrap(),self.total_weight().unwrap(),weight,next_x.total_weight().unwrap());
+        }
+        let cross = compensated(self.cross,self.cross_error,increment);
+        if (cross.is_err()) { return core::result::Err(cross.unwrap_err()); } let value: TwoSum = cross.unwrap();
+        self.x = next_x; self.y = next_y; self.cross = value.total; self.cross_error = value.correction;
+        return core::result::Ok(true);
+    }
+    pub fn merge(&self, other: PairedMoments) -> core::result::Result<bool,Error> {
+        let next_x: Moments = self.x; let next_y: Moments = self.y;
+        let xr = next_x.merge(other.x); if (xr.is_err()) { return xr; }
+        let yr = next_y.merge(other.y); if (yr.is_err()) { return yr; }
+        if (other.count() == 0) { return core::result::Ok(false); }
+        let increment: f64 = 0.0;
+        if (self.count() > 0) {
+            let ax = centered(self.x); if (ax.is_err()) { return core::result::Err(ax.unwrap_err()); }
+            let bx = centered(other.x); if (bx.is_err()) { return core::result::Err(bx.unwrap_err()); }
+            let ay = centered(self.y); if (ay.is_err()) { return core::result::Err(ay.unwrap_err()); }
+            let by = centered(other.y); if (by.is_err()) { return core::result::Err(by.unwrap_err()); }
+            let dx = difference(ax.unwrap(),bx.unwrap()); if (dx.is_err()) { return core::result::Err(dx.unwrap_err()); }
+            let dy = difference(ay.unwrap(),by.unwrap()); if (dy.is_err()) { return core::result::Err(dy.unwrap_err()); }
+            increment = cross_increment(dx.unwrap(),dy.unwrap(),self.total_weight().unwrap(),other.total_weight().unwrap(),next_x.total_weight().unwrap());
+        }
+        let cross = add_pair(self.cross,self.cross_error,other.cross,other.cross_error,increment);
+        if (cross.is_err()) { return core::result::Err(cross.unwrap_err()); } let value: TwoSum = cross.unwrap();
+        self.x = next_x; self.y = next_y; self.cross = value.total; self.cross_error = value.correction;
+        return core::result::Ok(true);
+    }
+    pub fn push_views(&self, x: core::slice::View<f64>, y: core::slice::View<f64>, weights: core::slice::View<f64>)
+        -> core::result::Result<u64,Error> {
+        if (!valid(x) || !valid(y) || !valid(weights) || x.len() != y.len() || x.len() != weights.len()) {
+            return core::result::Err(error(ErrorKind::Bounds,-1));
+        }
+        let next: PairedMoments = PairedMoments { x: self.x, y: self.y, cross: self.cross, cross_error: self.cross_error };
+        let index: i32 = 0;
+        while (index < x.len()) {
+            let added = next.push(at(x,index),at(y,index),at(weights,index));
+            if (added.is_err()) { return core::result::Err(error(added.unwrap_err().kind,index)); }
+            index += 1;
+        }
+        let count: u64 = next.count()-self.count();
+        self.x = next.x; self.y = next.y; self.cross = next.cross; self.cross_error = next.cross_error;
+        return core::result::Ok(count);
+    }
+    pub fn correlation(&self) -> core::result::Result<f64,Error> {
+        if (self.count() < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); }
+        let xx = self.x.m2(); if (xx.is_err()) { return xx; }
+        let yy = self.y.m2(); if (yy.is_err()) { return yy; }
+        if (xx.unwrap() <= 0.0 || yy.unwrap() <= 0.0) { return core::result::Err(error(ErrorKind::Degenerate,-1)); }
+        let value: f64 = ext::statistics_scaling::quotient2_2(self.cross+self.cross_error,1.0,
+            core::f64::sqrt(xx.unwrap()),core::f64::sqrt(yy.unwrap()));
+        if (!core::f64::is_finite(value)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        return core::result::Ok(core::f64::min(1.0,core::f64::max(-1.0,value)));
+    }
+    pub fn linear_fit(&self) -> core::result::Result<ext::statistics::LinearFit,Error> {
+        if (self.count() < 2) { return core::result::Err(error(ErrorKind::InsufficientData,-1)); }
+        let xx = self.x.m2(); if (xx.is_err()) { return core::result::Err(xx.unwrap_err()); }
+        if (xx.unwrap() <= 0.0) { return core::result::Err(error(ErrorKind::Degenerate,-1)); }
+        let slope: f64 = (self.cross+self.cross_error)/xx.unwrap();
+        let origin: f64 = intercept(self.y.mean().unwrap(),slope,self.x.mean().unwrap());
+        if (!core::f64::is_finite(slope) || !core::f64::is_finite(origin)) { return core::result::Err(error(ErrorKind::Overflow,-1)); }
+        let r_squared: f64 = 1.0;
+        if (self.y.m2().unwrap() > 0.0) {
+            let r = self.correlation(); if (r.is_err()) { return core::result::Err(r.unwrap_err()); }
+            r_squared = r.unwrap()*r.unwrap();
+        }
+        return core::result::Ok(ext::statistics::LinearFit { slope: slope, intercept: origin, r_squared: r_squared });
+    }
+}

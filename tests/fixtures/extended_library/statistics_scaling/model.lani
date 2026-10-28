@@ -1,0 +1,41 @@
+// Test-only binary protocol: u64 case count, then (u64 op, six u64 f64 bits).
+// Output is one u64 binary64 result per case. Only the op's actual arity is used.
+module app::main;
+import core::f64;
+import core::mem;
+import ext::statistics_scaling;
+import std::io;
+
+fn read_exact(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) { let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got>0); done+=got; }
+}
+fn write_all(pointer:ptr,count:i32) {
+    let done:i32=0;
+    while(done<count) { let written:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(written>0); done+=written; }
+}
+fn word(bytes:[u8],offset:i32) -> u64 {
+    let result:u64=0; let i:i32=0;
+    while(i<8) { result|=(bytes[offset+i] as u64)<<(8*i); i+=1; } return result;
+}
+fn main() -> i32 {
+    let words:[i32;14]=[0;14]; let pointer:ptr=core::mem::i32_array_data_ptr(words);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts(pointer,56);
+    read_exact(pointer,8); let count:u64=word(bytes,0); assert(count<=8192);
+    let factors:[f64;6]=[1.0;6]; let at:u64=0;
+    while(at<count) {
+        read_exact(pointer,56); let op:i32=word(bytes,0) as i32; assert(op>=0 && op<6);
+        let i:i32=0; while(i<6) { factors[i]=core::f64::from_bits(word(bytes,8+i*8)); i+=1; }
+        let result:f64=match(op) {
+            0->ext::statistics_scaling::product3(factors[0],factors[1],factors[2]),
+            1->ext::statistics_scaling::product5(factors[0],factors[1],factors[2],factors[3],factors[4]),
+            2->ext::statistics_scaling::quotient2(factors[0],factors[1],factors[2]),
+            3->ext::statistics_scaling::quotient4(factors[0],factors[1],factors[2],factors[3],factors[4]),
+            4->ext::statistics_scaling::quotient5(factors[0],factors[1],factors[2],factors[3],factors[4],factors[5]),
+            _->ext::statistics_scaling::quotient2_2(factors[0],factors[1],factors[2],factors[3])
+        };
+        let raw:u64=core::f64::to_bits(result); i=0; while(i<8) { bytes[i]=((raw>>(8*i))&255) as u8; i+=1; }
+        write_all(pointer,8); at+=1;
+    }
+    return 0;
+}

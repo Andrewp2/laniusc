@@ -1,6 +1,17 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[weighted-statistics](extended-weighted-statistics.md) and
+[higher-moment](extended-higher-statistics.md) increment implements portable
+binary64 summaries with named estimator conventions and atomic updates.
+All eleven new registered tests and both ordinary-statistics regressions pass
+on the finite Linux x86_64 profile, including three independent numerical
+models and the real [sample-moments CSV program](extended-sample-moments.md).
+The statistical modules allocate no memory and call no host math service;
+the program uses existing CSV, owned buffers and host streams. Finite-state
+limits, gradual underflow for weighted summaries and explicit higher-moment
+Underflow remain part of the contracts. This selected increment is accepted;
+the full numerical/library scope remains open. The preceding
 [reverse-iteration increment](stdlib-iterators.md#double-ended-traversal)
 implements paired front/back traits and a borrowed Rev adapter. All four
 registered reverse tests pass on native Linux x86_64, covering pure contracts,
@@ -95,6 +106,50 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Weighted second moments and unweighted third/fourth moments.**
+
+[Weighted statistics](extended-weighted-statistics.md) separates population and
+reliability variance/covariance/stddev. Nonnegative finite real weights have a
+positive-observation count, compensated total weight, stable positive-term
+correction denominator and effective count. Zero weight validates coordinates
+then reports no change. Paired summaries add correlation and simple linear
+fit. [Higher statistics](extended-higher-statistics.md) composes ordinary
+Moments with centered M3/M4 and explicitly named population/adjusted shape
+queries. Both families publish whole scalar/merge/batch updates or an indexed
+error. Higher moments reject lost positive M4 for a nonconstant sample;
+ordinary/weighted second moments retain their stated gradual-underflow limits.
+
+The shared statistics-scaling module is implementation support, with bounded
+mantissa products and one final power-of-two scale. It supplies no arbitrary
+precision or exact-rounding contract.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Scaling support | Two registered tests pass in 7.31s; independent Fraction references cover 1,926 cases, including 1,122 exact-bit cases; largest observed distance is two ULPs |
+| Weighted statistics | All three registered gates pass: the initial model/contract/CPU-control run takes 13.07s; the strengthened current paired-contract test separately passes in 6.03s, with an empty mmap/mremap/munmap/brk trace |
+| Weighted numerical model | 1,908 exact-input Fraction/220-digit Decimal cases cover ordered merge trees, paired fits, scaled/imbalanced/subnormal weights and explicit finite error allowances |
+| Higher statistics | Both registered runtime tests pass in 9.54s: 1,212 model cases across 51 datasets/eight modes/two backing forms, plus final Underflow and atomic-failure contracts with zero mapping calls |
+| [Sample-moments program](extended-sample-moments.md) | Four registered runtime tests pass in 9.87s and 66 process cases: model26/rejection30/CLI8/I/O2 |
+| Ordinary-statistics regression | Both original runtime tests pass in 12.06s after the shared Underflow enum extension; ordinary algorithms and gradual-underflow behavior are unchanged |
+
+The focused paired rerun replaces the earlier contract receipt; it is not a
+twelfth distinct new test. Direct and registered numerical/application runs
+overlap the same cases. One weighted gate checks the CPU oracle separately
+from runtime execution. Sources are statistics `7f83f1e8…`, support
+`775960e8…`, weighted `d3cea094…` and higher `3f224ad3…`; the strengthened
+paired contract is `add50150…`. Final receipts under `target/stdlib-work/` are
+`statistics-extension-runtime-final.log`,
+`weighted-statistics-paired-contracts-final.log` and
+`statistics-original-regression.log`.
+
+Both tested `f64` backing forms use descending descriptors; this supplies no
+positive packed-stride claim. The selected profile is accepted on native
+Linux x86_64 CPU output from the GPU compiler. Weighted higher-order and
+multivariate higher moments, broader numerical error bounds, formal proofs,
+automatic borrowed lifetime enforcement and other host/device targets remain
+open. The program's explicit storage and host-I/O layer remains separate
+from the allocation-free statistical modules.
 
 **Double-ended iteration and newest matching timeline records.**
 

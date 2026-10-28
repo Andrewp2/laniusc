@@ -739,6 +739,14 @@
         "docs/extended-glob.md"
       ]
     },
+    "ext::higher_statistics": {
+      "guides": [
+        "docs/extended-higher-statistics.md",
+        "docs/extended-statistics.md",
+        "docs/extended-sample-moments.md"
+      ],
+      "note": "Portable unweighted binary64 central M3/M4 composed with existing ordinary Moments. Explicit population skewness/Pearson and excess kurtosis and adjusted Fisher–Pearson skewness/excess kurtosis; updates and borrowed batches publish all orders atomically, including higher-specific Underflow when nonconstant M4 rounds nonpositive. Both registered runtime tests pass on Linux x86_64 in 9.54 seconds: 1,212 exact-input Fraction/Decimal cases across 51 datasets/eight modes/two descending f64 backing forms, plus atomic/count/view/Underflow contracts with zero mapping calls. An initial positive-stride assertion was corrected in the fixture to the documented descriptor, without a compiler change. The real CSV application passes four registered tests/66 cases against current dependencies. No allocation or host math; finite numerical limits, manual backing lifetimes, positive-subnormal accuracy limits and unclaimed other targets/formal proofs remain explicit."
+    },
     "ext::host_name": {
       "guides": [
         "docs/extended-http-url.md",
@@ -1021,8 +1029,19 @@
     },
     "ext::statistics": {
       "guides": [
-        "docs/extended-statistics.md"
-      ]
+        "docs/extended-statistics.md",
+        "docs/extended-weighted-statistics.md",
+        "docs/extended-higher-statistics.md"
+      ],
+      "note": "Ordinary Moments behavior and state remain unchanged. The shared ErrorKind adds Underflow for the separate higher_statistics fourth-moment profile; weighted second-order statistics use a separate Error type and named population/reliability conventions. Both original runtime regression tests pass in 12.06 seconds after the enum extension."
+    },
+    "ext::statistics_scaling": {
+      "guides": [
+        "docs/extended-weighted-statistics.md",
+        "docs/extended-higher-statistics.md"
+      ],
+      "role": "support",
+      "note": "Implementation support for the weighted/higher moment family. Bounded binary64 mantissa products and quotients defer power-of-two scaling until the end; input validation precedes zero handling. Both registered runtime tests pass on Linux x86_64 in 7.31 seconds. The independent Fraction model covers 1,926 cases over all six helpers, including 1,122 exact-bit cases; the maximum observed distance is two ULPs. Not arbitrary precision, an exactly rounded fused product or a standalone estimator; supported workflows and finite accuracy/target limits follow the linked guides."
     },
     "ext::table": {
       "guides": [
@@ -1242,6 +1261,14 @@
         "default_server_limits": "Wire defaults plus 65536 bytes each for retained request, staged response and read budget, 65536 I/O attempts and 8388608 HTTP cursor work units. Validates response/buffer bounds and nested HTTP/wire limits before publishing the server.",
         "server": "Creates an empty borrowed server handshake without allocation or transport I/O. Reads one canonical request before a no-write Request policy pause; the caller supplies established-provider Accept and optional offered protocol through accept. Ready requires all response bytes and inner flush; conversion uses Role::Server over the same caller-owned transport."
       }
+    },
+    "ext::weighted_statistics": {
+      "guides": [
+        "docs/extended-weighted-statistics.md",
+        "docs/extended-statistics.md",
+        "docs/extended-sample-moments.md"
+      ],
+      "note": "Portable binary64 nonnegative real-weight summaries with separate population/reliability variance/covariance/stddev, positive-weight count, total weight, stable correction denominator, effective count, correlation and simple fit. Coordinates are validated even at zero weight; zero reports explicit no change. Borrowed equal-length batches are atomic and indexed. All three registered gates pass on Linux x86_64: the initial 13.07-second run covers 1,908 independent Fraction/220-digit Decimal cases, contracts and a separate CPU oracle-control test; the strengthened current contract rerun passes in 6.03 seconds with paired shape/count/late-y-overflow rollback and an empty memory syscall trace. The rerun replaces the older contract receipt. The current real CSV program passes four registered tests/66 cases. Both f64 backing forms are descending, with no positive packed-stride claim. No allocation or host math; manual backing lifetimes, finite-state/gradual-underflow limits and unclaimed broader accuracy, targets and formal proofs remain explicit."
     },
     "ext::x509": {
       "guides": [

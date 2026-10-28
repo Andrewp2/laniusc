@@ -1,0 +1,181 @@
+// Portable finite binary64 third/fourth central sums over statistics::Moments.
+// Pairwise shifts: Pébay et al. (2016), §3.1, Eq. (3.1).
+// Standardized population/adjusted measures: WG21 P1708R10, §§2.4–2.5.
+// No allocation, host math, implicit missing-data policy or weighted estimator.
+module ext::higher_statistics;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::statistics;
+import ext::statistics_scaling;
+
+pub const MAX_COUNT: u64 = 9007199254740992;
+// Implementation state: construct with moments/summarize and mutate by methods.
+// M3/M4 are unnormalized central sums, with separate addition compensation.
+pub struct Moments {
+    base: ext::statistics::Moments,
+    third: f64,
+    third_error: f64,
+    fourth: f64,
+    fourth_error: f64
+}
+struct Accumulator { total: f64, correction: f64 }
+fn error(kind: ext::statistics::ErrorKind) -> ext::statistics::Error {
+    return ext::statistics::Error { kind: kind, index: -1 };
+}
+fn checked(value: f64) -> core::result::Result<f64,ext::statistics::Error> {
+    if (!core::f64::is_finite(value)) { return core::result::Err(error(ext::statistics::ErrorKind::Overflow)); }
+    return core::result::Ok(value);
+}
+fn valid(values: core::slice::View<f64>) -> bool {
+    return values.start >= 0 && values.length >= 0 && values.start <= 2147483647-values.length;
+}
+pub fn moments() -> Moments {
+    return Moments { base: ext::statistics::moments(), third: 0.0,
+        third_error: 0.0, fourth: 0.0, fourth_error: 0.0 };
+}
+// Neumaier addition. The caller stages these scalar accumulators, so errors
+// never publish a partially updated Moments or its composed base.
+impl Accumulator {
+    fn add(&self, value: f64) -> core::result::Result<bool,ext::statistics::Error> {
+        let total: f64 = checked(self.total+value)?;
+        let tail: f64 = (value-total)+self.total;
+        if (core::f64::abs(self.total) >= core::f64::abs(value)) { tail = (self.total-total)+value; }
+        let correction: f64 = checked(self.correction+tail)?;
+        checked(total+correction)?;
+        self.total = total; self.correction = correction;
+        return core::result::Ok(true);
+    }
+}
+
+pub impl Moments {
+    pub fn count(&self) -> u64 { return self.base.count(); }
+    pub fn mean(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.mean(); }
+    pub fn minimum(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.minimum(); }
+    pub fn maximum(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.maximum(); }
+    pub fn m2(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.m2(); }
+    pub fn population_variance(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.population_variance(); }
+    pub fn sample_variance(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.sample_variance(); }
+    pub fn population_stddev(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.population_stddev(); }
+    pub fn sample_stddev(&self) -> core::result::Result<f64,ext::statistics::Error> { return self.base.sample_stddev(); }
+    pub fn m3(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        if (self.base.n == 0) { return core::result::Err(error(ext::statistics::ErrorKind::Empty)); }
+        return checked(self.third+self.third_error);
+    }
+    pub fn m4(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        if (self.base.n == 0) { return core::result::Err(error(ext::statistics::ErrorKind::Empty)); }
+        return checked(self.fourth+self.fourth_error);
+    }
+    fn snapshot(&self) -> Moments {
+        return Moments { base: self.base, third: self.third, third_error: self.third_error,
+            fourth: self.fourth, fourth_error: self.fourth_error };
+    }
+    fn assign(&self, value: Moments) -> core::result::Result<bool,ext::statistics::Error> {
+        // A nonconstant population has strictly positive M4. Rounding that
+        // state to zero cannot support meaningful standardized coefficients.
+        if (value.base.low != value.base.high && value.fourth+value.fourth_error <= 0.0) {
+            return core::result::Err(error(ext::statistics::ErrorKind::Underflow));
+        }
+        self.base = value.base; self.third = value.third; self.third_error = value.third_error;
+        self.fourth = value.fourth; self.fourth_error = value.fourth_error;
+        return core::result::Ok(true);
+    }
+    // Expand each old partition about the new mean. Every M2/M3 in a shift
+    // term comes from the old state, including its compensation component.
+    fn combined(&self, other: Moments, next_base: ext::statistics::Moments)
+        -> core::result::Result<Moments,ext::statistics::Error> {
+        if (self.base.n == 0) {
+            return core::result::Ok(Moments { base: next_base, third: other.third,
+                third_error: other.third_error, fourth: other.fourth, fourth_error: other.fourth_error });
+        }
+        if (other.base.n == 0) { return core::result::Ok(self.snapshot()); }
+        let delta: f64 = checked(((other.base.origin-self.base.origin)+(other.base.offset-self.base.offset))+(other.base.offset_error-self.base.offset_error))?;
+        let n_a: f64 = self.base.n as f64; let n_b: f64 = other.base.n as f64;
+        let n: f64 = next_base.n as f64;
+        let ratio_a: f64 = n_a/n; let ratio_b: f64 = n_b/n;
+        let shift_a: f64 = -delta*ratio_b; let shift_b: f64 = delta*ratio_a;
+        let third: Accumulator = Accumulator { total: self.third, correction: self.third_error };
+        third.add(other.third)?; third.add(other.third_error)?;
+        // Retain delta and the ratio as separate product factors for linear
+        // terms, even when materializing the shift would round it to zero.
+        third.add(ext::statistics_scaling::product5(delta,ratio_b,self.base.square,-3.0,1.0))?;
+        third.add(ext::statistics_scaling::product5(delta,ratio_b,self.base.square_error,-3.0,1.0))?;
+        third.add(ext::statistics_scaling::product5(delta,ratio_a,other.base.square,3.0,1.0))?;
+        third.add(ext::statistics_scaling::product5(delta,ratio_a,other.base.square_error,3.0,1.0))?;
+        third.add(ext::statistics_scaling::product5(n_a,shift_a,shift_a,shift_a,1.0))?;
+        third.add(ext::statistics_scaling::product5(n_b,shift_b,shift_b,shift_b,1.0))?;
+
+        let fourth: Accumulator = Accumulator { total: self.fourth, correction: self.fourth_error };
+        fourth.add(other.fourth)?; fourth.add(other.fourth_error)?;
+        fourth.add(ext::statistics_scaling::product5(delta,ratio_b,self.third,-4.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(delta,ratio_b,self.third_error,-4.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(delta,ratio_a,other.third,4.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(delta,ratio_a,other.third_error,4.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(shift_a,shift_a,self.base.square,6.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(shift_a,shift_a,self.base.square_error,6.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(shift_b,shift_b,other.base.square,6.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(shift_b,shift_b,other.base.square_error,6.0,1.0))?;
+        fourth.add(ext::statistics_scaling::product5(n_a,shift_a,shift_a,shift_a,shift_a))?;
+        fourth.add(ext::statistics_scaling::product5(n_b,shift_b,shift_b,shift_b,shift_b))?;
+        return core::result::Ok(Moments { base: next_base, third: third.total,
+            third_error: third.correction, fourth: fourth.total, fourth_error: fourth.correction });
+    }
+    pub fn push(&self, value: f64) -> core::result::Result<bool,ext::statistics::Error> {
+        let next_base: ext::statistics::Moments = self.base;
+        next_base.push(value)?;
+        let one: Moments = moments(); one.base.push(value)?;
+        let next: Moments = self.combined(one,next_base)?;
+        return self.assign(next);
+    }
+    pub fn merge(&self, other: Moments) -> core::result::Result<bool,ext::statistics::Error> {
+        let next_base: ext::statistics::Moments = self.base;
+        next_base.merge(other.base)?;
+        let next: Moments = self.combined(other,next_base)?;
+        return self.assign(next);
+    }
+    // One transaction, with a failing row's logical index in the shared Error.
+    pub fn push_view(&self, values: core::slice::View<f64>) -> core::result::Result<bool,ext::statistics::Error> {
+        if (!valid(values)) { return core::result::Err(error(ext::statistics::ErrorKind::Bounds)); }
+        let next: Moments = self.snapshot(); let index: i32 = 0;
+        while (index < values.length) {
+            let raw: [f64] = values.values;
+            let result: core::result::Result<bool,ext::statistics::Error> = next.push(raw[values.start+index]);
+            if (result.is_err()) {
+                return core::result::Err(ext::statistics::Error { kind: result.unwrap_err().kind, index: index });
+            }
+            index += 1;
+        }
+        return self.assign(next);
+    }
+    pub fn population_skewness(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        let square: f64 = self.m2()?;
+        if (square <= 0.0) { return core::result::Err(error(ext::statistics::ErrorKind::Degenerate)); }
+        let third: f64 = self.m3()?;
+        return checked(ext::statistics_scaling::quotient2_2(core::f64::sqrt(self.base.n as f64),third,square,core::f64::sqrt(square)));
+    }
+    pub fn population_kurtosis(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        let square: f64 = self.m2()?;
+        if (square <= 0.0) { return core::result::Err(error(ext::statistics::ErrorKind::Degenerate)); }
+        let fourth: f64 = self.m4()?;
+        return checked(ext::statistics_scaling::quotient2_2(self.base.n as f64,fourth,square,square));
+    }
+    pub fn population_excess_kurtosis(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        let kurtosis: f64 = self.population_kurtosis()?; return checked(kurtosis-3.0);
+    }
+    pub fn adjusted_skewness(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        if (self.base.n < 3) { return core::result::Err(error(ext::statistics::ErrorKind::InsufficientData)); }
+        let skewness: f64 = self.population_skewness()?; let n: f64 = self.base.n as f64;
+        return checked(ext::statistics_scaling::quotient4(skewness,core::f64::sqrt(n),core::f64::sqrt(n-1.0),1.0,n-2.0));
+    }
+    pub fn adjusted_excess_kurtosis(&self) -> core::result::Result<f64,ext::statistics::Error> {
+        if (self.base.n < 4) { return core::result::Err(error(ext::statistics::ErrorKind::InsufficientData)); }
+        let kurtosis: f64 = self.population_kurtosis()?; let n: f64 = self.base.n as f64;
+        let centered: Accumulator = Accumulator { total: 0.0, correction: 0.0 };
+        centered.add(ext::statistics_scaling::product3(n+1.0,kurtosis,1.0))?;
+        centered.add(-3.0*(n-1.0))?;
+        return checked(ext::statistics_scaling::quotient2_2(n-1.0,checked(centered.total+centered.correction)?,n-2.0,n-3.0));
+    }
+}
+pub fn summarize(values: core::slice::View<f64>) -> core::result::Result<Moments,ext::statistics::Error> {
+    let out: Moments = moments(); out.push_view(values)?; return core::result::Ok(out);
+}

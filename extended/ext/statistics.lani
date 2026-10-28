@@ -7,7 +7,7 @@ import core::result;
 import core::slice;
 
 pub const MAX_COUNT: u64 = 9007199254740992;
-pub enum ErrorKind { Empty, InsufficientData, NonFiniteInput, Overflow, CountLimit, Bounds, InvalidProbability, InvalidQuantileType, NotSorted, ScratchTooSmall, WorkLimit, Degenerate }
+pub enum ErrorKind { Empty, InsufficientData, NonFiniteInput, Overflow, CountLimit, Bounds, InvalidProbability, InvalidQuantileType, NotSorted, ScratchTooSmall, WorkLimit, Degenerate, Underflow }
 pub struct Error { kind: ErrorKind, index: i32 }
 pub enum QuantileType { Type1, Type2, Type3, Type4, Type5, Type6, Type7, Type8, Type9 }
 pub struct LinearFit { slope: f64, intercept: f64, r_squared: f64 }

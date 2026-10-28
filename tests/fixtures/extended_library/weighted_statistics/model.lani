@@ -1,0 +1,151 @@
+// Binary model boundary: four u32 header fields, x/y/weight f64 triples,
+// then two-u32 explicit merge instructions. Public APIs perform all math.
+module app::main;
+import core::f64;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::statistics;
+import ext::weighted_statistics;
+import std::stream;
+
+fn decode(bytes:[u8],offset:i32,count:i32) -> u64 {
+    let value:u64=0; let index:i32=0;
+    while (index<count) { value|=(bytes[offset+index] as u64)<<(8*index); index+=1; } return value;
+}
+fn read(input:&std::stream::Descriptor,bytes:[u8],count:i32,eof:bool) -> bool {
+    let first:core::result::Result<i32,core::io::Error> =input.read(bytes,0,count);
+    assert(first.is_ok()); let got:i32=first.unwrap();
+    if (got==0) { assert(eof); return false; }
+    if (got<count) { assert(core::io::read_exact(input,bytes,got,count-got).is_ok()); } return true;
+}
+fn word(value:u64) {
+    let bytes:[u8;8]=[0;8]; let index:i32=0;
+    while (index<8) { bytes[index]=((value>>(8*index))&255) as u8; index+=1; }
+    let output:std::stream::Descriptor=std::stream::stdout(); assert(core::io::write_all(output.borrow(),bytes,0,8).is_ok());
+}
+fn code(error:ext::weighted_statistics::Error) -> u64 {
+    return match(error.kind) {
+        ext::weighted_statistics::ErrorKind::Empty -> 1,
+        ext::weighted_statistics::ErrorKind::InsufficientData -> 2,
+        ext::weighted_statistics::ErrorKind::NonFiniteInput -> 3,
+        ext::weighted_statistics::ErrorKind::InvalidWeight -> 4,
+        ext::weighted_statistics::ErrorKind::Overflow -> 5,
+        ext::weighted_statistics::ErrorKind::CountLimit -> 6,
+        ext::weighted_statistics::ErrorKind::Bounds -> 7,
+        ext::weighted_statistics::ErrorKind::Degenerate -> 8
+    };
+}
+fn metric(result:core::result::Result<f64,ext::weighted_statistics::Error>) {
+    if (result.is_err()) { assert(result.unwrap_err().index==-1); word(code(result.unwrap_err())); word(0); }
+    else { word(0); word(core::f64::to_bits(result.unwrap())); }
+}
+fn moment_report(state:ext::weighted_statistics::Moments,status:u64,index:i32) {
+    word(status); word(index as u64); word(state.count());
+    metric(state.total_weight()); metric(state.mean()); metric(state.minimum()); metric(state.maximum()); metric(state.m2());
+    metric(state.population_variance()); metric(state.reliability_variance()); metric(state.population_stddev()); metric(state.reliability_stddev());
+    metric(state.effective_count()); metric(state.correction_denominator());
+}
+fn paired_report(state:ext::weighted_statistics::PairedMoments,status:u64,index:i32) {
+    word(status); word(index as u64); word(state.count());
+    metric(state.total_weight()); metric(state.mean_x()); metric(state.mean_y()); metric(state.population_covariance());
+    metric(state.reliability_covariance()); metric(state.correlation());
+    let fit:core::result::Result<ext::statistics::LinearFit,ext::weighted_statistics::Error> =state.linear_fit();
+    if (fit.is_ok()) {
+        let value:ext::statistics::LinearFit=fit.unwrap();
+        word(0); word(core::f64::to_bits(value.slope)); word(0); word(core::f64::to_bits(value.intercept)); word(0); word(core::f64::to_bits(value.r_squared));
+    } else {
+        assert(fit.unwrap_err().index==-1); let kind:u64=code(fit.unwrap_err());
+        word(kind); word(0); word(kind); word(0); word(kind); word(0);
+    }
+    word(0); word(0); word(0); word(0);
+}
+fn run_moments(op:i32,n:i32,nodes:i32,x:core::slice::View<f64>,w:core::slice::View<f64>,left:[i32],right:[i32]) {
+    let state:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); let status:u64=0; let index:i32=-1;
+    if (op==0) {
+        let row:i32=0;
+        while (row<n && status==0) {
+            let result:core::result::Result<bool,ext::weighted_statistics::Error> =state.push(x.get(row).unwrap(),w.get(row).unwrap());
+            if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; } row+=1;
+        }
+    } else { if (op==4) {
+        let result:core::result::Result<ext::weighted_statistics::Moments,ext::weighted_statistics::Error> =ext::weighted_statistics::summarize(x,w);
+        if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; } else { state=result.unwrap(); }
+    } else {
+        let empty:ext::weighted_statistics::Moments=ext::weighted_statistics::moments(); let states:[ext::weighted_statistics::Moments;63]=[empty;63];
+        let row:i32=0;
+        while (row<n && status==0) {
+            let leaf:ext::weighted_statistics::Moments=ext::weighted_statistics::moments();
+            let result:core::result::Result<bool,ext::weighted_statistics::Error> =leaf.push(x.get(row).unwrap(),w.get(row).unwrap());
+            if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; }
+            states[row]=leaf; row+=1;
+        }
+        let node:i32=0;
+        while (node<nodes && status==0) {
+            let joined:ext::weighted_statistics::Moments=states[left[node]]; let other:ext::weighted_statistics::Moments=states[right[node]];
+            let result:core::result::Result<bool,ext::weighted_statistics::Error> =joined.merge(other);
+            if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; }
+            states[n+node]=joined; node+=1;
+        }
+        if (n>0) { state=states[n+nodes-1]; }
+    } }
+    moment_report(state,status,index);
+}
+fn run_paired(op:i32,n:i32,nodes:i32,x:core::slice::View<f64>,y:core::slice::View<f64>,w:core::slice::View<f64>,left:[i32],right:[i32]) {
+    let state:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments(); let status:u64=0; let index:i32=-1;
+    if (op==2) {
+        let row:i32=0;
+        while (row<n && status==0) {
+            let result:core::result::Result<bool,ext::weighted_statistics::Error> =state.push(x.get(row).unwrap(),y.get(row).unwrap(),w.get(row).unwrap());
+            if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; } row+=1;
+        }
+    } else { if (op==5) {
+        let result:core::result::Result<u64,ext::weighted_statistics::Error> =state.push_views(x,y,w);
+        if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; }
+    } else {
+        let empty:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments(); let states:[ext::weighted_statistics::PairedMoments;63]=[empty;63];
+        let row:i32=0;
+        while (row<n && status==0) {
+            let leaf:ext::weighted_statistics::PairedMoments=ext::weighted_statistics::paired_moments();
+            let result:core::result::Result<bool,ext::weighted_statistics::Error> =leaf.push(x.get(row).unwrap(),y.get(row).unwrap(),w.get(row).unwrap());
+            if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; }
+            states[row]=leaf; row+=1;
+        }
+        let node:i32=0;
+        while (node<nodes && status==0) {
+            let joined:ext::weighted_statistics::PairedMoments=states[left[node]]; let other:ext::weighted_statistics::PairedMoments=states[right[node]];
+            let result:core::result::Result<bool,ext::weighted_statistics::Error> =joined.merge(other);
+            if (result.is_err()) { status=code(result.unwrap_err()); index=result.unwrap_err().index; }
+            states[n+node]=joined; node+=1;
+        }
+        if (n>0) { state=states[n+nodes-1]; }
+    } }
+    paired_report(state,status,index);
+}
+fn main() -> i32 {
+    let input:std::stream::Descriptor=std::stream::stdin(); let header:[u8;16]=[0;16]; let triple:[u8;24]=[0;24]; let pair:[u8;8]=[0;8];
+    let left:[i32;31]=[0;31]; let right:[i32;31]=[0;31];
+    let xs:[f64;34]=[99.0;34]; let ys:[f64;34]=[99.0;34]; let ws:[f64;34]=[99.0;34];
+    let words:[i32;204]=[0;204]; let packed:[f64]=core::mem::typed_slice_from_storage(core::mem::i32_array_data_ptr(words),102);
+    while (read(input.borrow(),header,16,true)) {
+        let op:i32=decode(header,0,4) as i32; let n:i32=decode(header,4,4) as i32;
+        let nodes:i32=decode(header,8,4) as i32; let layout:i32=decode(header,12,4) as i32;
+        assert(op>=0 && op<=5 && n>=0 && n<=32 && nodes>=0 && nodes<=31 && layout>=0 && layout<=1);
+        if (op==1 || op==3) { assert((n==0 && nodes==0) || nodes==n-1); } else { assert(nodes==0); }
+        let x:core::slice::View<f64> =core::slice::view_range(xs,1,n).unwrap();
+        let y:core::slice::View<f64> =core::slice::view_range(ys,1,n).unwrap();
+        let w:core::slice::View<f64> =core::slice::view_range(ws,1,n).unwrap();
+        if (layout==1) { x=core::slice::view_range(packed,1,n).unwrap(); y=core::slice::view_range(packed,35,n).unwrap(); w=core::slice::view_range(packed,69,n).unwrap(); }
+        let row:i32=0;
+        while (row<n) {
+            assert(read(input.borrow(),triple,24,false));
+            x.try_set(row,core::f64::from_bits(decode(triple,0,8))).unwrap(); y.try_set(row,core::f64::from_bits(decode(triple,8,8))).unwrap(); w.try_set(row,core::f64::from_bits(decode(triple,16,8))).unwrap(); row+=1;
+        }
+        let node:i32=0;
+        while (node<nodes) { assert(read(input.borrow(),pair,8,false)); left[node]=decode(pair,0,4) as i32; right[node]=decode(pair,4,4) as i32; assert(left[node]>=0 && right[node]>=0 && left[node]<n+node && right[node]<n+node); node+=1; }
+        if (op==0 || op==1 || op==4) { run_moments(op,n,nodes,x,w,left,right); } else { run_paired(op,n,nodes,x,y,w,left,right); }
+        assert(xs[0]==99.0 && xs[33]==99.0 && ys[0]==99.0 && ys[33]==99.0 && ws[0]==99.0 && ws[33]==99.0);
+    }
+    return 0;
+}

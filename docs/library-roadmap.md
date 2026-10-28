@@ -140,13 +140,20 @@ algorithms remain separate work.
 
 [Statistics](extended-statistics.md) provides checked streaming moments,
 covariance/correlation, simple linear fits, compensated sums, scaled norms and
-all nine standard sample-quantile formulas. [Linear algebra](extended-linalg.md)
+all nine standard sample-quantile formulas.
+[Weighted second moments](extended-weighted-statistics.md) and
+[unweighted third/fourth moments](extended-higher-statistics.md) now have separate
+modules and explicit population/reliability or population/adjusted estimator
+names. Their focused native contracts/models execute, and the real
+[sample-moments CSV program](extended-sample-moments.md) passes 66 process
+cases across four registered tests.
+[Linear algebra](extended-linalg.md)
 provides counted strided matrices, owned matrices, products, pivoted LU and
 Householder QR least squares, with explicit numerical and resource limits.
 The [numerical CSV analyzer](extended-data-analyze.md) combines both libraries
 for summaries and optional multiple regression. These are binary64 APIs;
-weighted/higher moments, advanced decompositions and sparse matrices remain
-work. [Normal, exponential, gamma and beta distributions](extended-distributions.md)
+weighted higher-order moments, advanced decompositions and sparse matrices
+remain work. [Normal, exponential, gamma and beta distributions](extended-distributions.md)
 add densities, paired tails and bounded generic sampling, with a
 [CSV sampling program](extended-sample-distribution.md). Their ordinary and
 large-shape accuracy profiles are explicit.
@@ -569,7 +576,7 @@ than a request to replace implementation work with more tests.
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
-| Mathematics | Big integers, finite decimals, ordinary statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. | Additional number theory, decimal exceptional/transcendental behavior, weighted/higher statistics, sparse/advanced decompositions and further distributions remain as listed above. Preserve finite-domain and accuracy limits. |
+| Mathematics | Big integers, finite decimals, ordinary/weighted second-order and unweighted higher statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. The weighted/higher increment passes eleven registered gates and both ordinary-statistics regressions, including independent Fraction/Decimal models and the 66-case CSV application. | Additional number theory, decimal exceptional/transcendental behavior, weighted higher-order and multivariate higher statistics, sparse/advanced decompositions and further distributions remain. Preserve finite-domain and accuracy limits. |
 | Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Portable completion, literal Bash words and reply frames pass finite semantics/pure contracts; the Bash adapter passes function/PTY/watchdog gates, and native queries pass owner/OOM/output groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Other shell adapters, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
@@ -893,6 +900,38 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [weighted](extended-weighted-statistics.md) and
+  [higher-statistics](extended-higher-statistics.md) increment: portable Lanius
+  summaries use explicit population/reliability or population/adjusted
+  estimators, atomic indexed batches and no allocation/host math. Weighted
+  zero mass validates coordinates before returning no change; a compensated
+  positive recurrence maintains the reliability correction denominator.
+  Higher moments compose ordinary Moments and reject a nonconstant update
+  whose positive M4 is lost to underflow. The shared statistics error enum
+  adds that higher-only Underflow variant; ordinary moment operations remain
+  unchanged. The scaling helper is reference support. All eleven new
+  registered tests pass: higher2 in 9.54s, application4 in 9.87s, scaling2 in
+  7.31s and weighted3 in 13.07s, with the strengthened current weighted
+  contract separately passing in 6.03s. That focused rerun replaces the older
+  contract receipt without adding another distinct test. One weighted test
+  checks CPU oracle controls separately from executable Lanius behavior.
+  Independent models cover 1,926 scaling, 1,908 weighted and 1,212 higher cases;
+  both tested `f64` backing forms use descending descriptors, with no positive
+  packed-stride claim. Final contracts check zero-weight validation, paired
+  shape/count/overflow rollback, Underflow, atomic batches and no allocation.
+  The [sample-moments CSV program](extended-sample-moments.md) passes 66 cases:
+  model26/rejection30/CLI8/I/O2. Direct and registered runs overlap the same
+  cases. Both original statistics regression tests pass in 12.06s. Sources are
+  statistics `7f83f1e8…`, support `775960e8…`, weighted `d3cea094…` and higher
+  `3f224ad3…`; final paired contract is `add50150…`. Final logs are
+  `statistics-extension-runtime-final.log`,
+  `weighted-statistics-paired-contracts-final.log` and
+  `statistics-original-regression.log` under `target/stdlib-work/`.
+  This accepts the finite native Linux x86_64 increment. Weighted higher-order
+  and multivariate higher moments, broader accuracy bounds, automatic borrowed
+  lifetimes, formal proofs and other host/device targets remain open. The
+  statistical modules remain allocation-free; the program composes existing
+  owned storage and host stdin/stdout.
 - Accepted [reverse-iteration increment](stdlib-iterators.md#double-ended-traversal):
   `DoubleEndedIterator<T>` and borrowed Rev consume one non-crossing remainder,
   with permanent either-end exhaustion and explicit forward/backward bounds.

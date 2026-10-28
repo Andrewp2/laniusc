@@ -8,11 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+Ordinary Moments behavior and state remain unchanged. The shared ErrorKind adds Underflow for the separate higher_statistics fourth-moment profile; weighted second-order statistics use a separate Error type and named population/reliability conventions. Both original runtime regression tests pass in 12.06 seconds after the enum extension.
+
 ## Contract and evidence guides
 
 - [extended-statistics](../../extended-statistics.md)
+- [extended-weighted-statistics](../../extended-weighted-statistics.md)
+- [extended-higher-statistics](../../extended-higher-statistics.md)
 
-Declaration counts: constant: 1; enum: 2; field: 24; function: 11; impl: 5; method: 33; struct: 7; variant: 21.
+Declaration counts: constant: 1; enum: 2; field: 24; function: 11; impl: 5; method: 33; struct: 7; variant: 22.
 
 ## Declared imports
 
@@ -128,6 +132,14 @@ WorkLimit
 
 ```lanius
 Degenerate
+```
+
+#### variant: Underflow
+
+[Source line 10](../../../extended/ext/statistics.lani#L10)
+
+```lanius
+Underflow
 ```
 
 ### struct: Error

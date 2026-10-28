@@ -1,0 +1,43 @@
+// Both f64 forms descend: a native array and caller-owned native storage.
+// Batch protocol: four little-endian i32 words (op,n,split,layout), n f64s.
+// Output: i32 update status,index,u64 count, then15 (i32 query status,f64) pairs.
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::statistics;
+import ext::higher_statistics;
+import std::io;
+fn read_exact(pointer:ptr,count:i32,eof:bool) -> bool { let done:i32=0; while(done<count) { let got:i32=std::io::read_stdin(pointer+(done as usize),(count-done) as usize); assert(got>=0); if(got==0) { assert(eof && done==0); return false; } done+=got; } return true; }
+fn write_all(pointer:ptr,count:i32) { let done:i32=0; while(done<count) { let got:i32=std::io::write_stdout(pointer+(done as usize),(count-done) as usize); assert(got>0); done+=got; } }
+fn get64(bytes:[u8],offset:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; } return value; }
+fn put32(bytes:[u8],offset:i32,value:i32) { let i:i32=0; while(i<4) { bytes[offset+i]=(((value as u32)>>(i*8))&255) as u8; i+=1; } }
+fn put64(bytes:[u8],offset:i32,value:u64) { let i:i32=0; while(i<8) { bytes[offset+i]=((value>>(i*8))&255) as u8; i+=1; } }
+fn code(error:ext::statistics::Error) -> i32 { return match(error.kind) { Empty->1,InsufficientData->2,NonFiniteInput->3,Overflow->4,CountLimit->5,Bounds->6,Underflow->13,Degenerate->12,_->99 }; }
+fn query(value:ext::higher_statistics::Moments,index:i32) -> core::result::Result<f64,ext::statistics::Error> { return match(index) { 0->value.mean(),1->value.minimum(),2->value.maximum(),3->value.m2(),4->value.m3(),5->value.m4(),6->value.population_variance(),7->value.sample_variance(),8->value.population_stddev(),9->value.sample_stddev(),10->value.population_skewness(),11->value.population_kurtosis(),12->value.population_excess_kurtosis(),13->value.adjusted_skewness(),_->value.adjusted_excess_kurtosis() }; }
+fn main() -> i32 {
+ let header_words:[i32;4]=[0;4]; let header_ptr:ptr=core::mem::i32_array_data_ptr(header_words); let header:[i32]=core::mem::typed_slice_from_raw_parts<i32>(header_ptr,4);
+ let input_words:[i32;256]=[0;256]; let input_ptr:ptr=core::mem::i32_array_data_ptr(input_words); let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(input_ptr,1024);
+ let output_words:[i32;49]=[0;49]; let output_ptr:ptr=core::mem::i32_array_data_ptr(output_words); let output:[u8]=core::mem::typed_slice_from_raw_parts<u8>(output_ptr,196);
+ let native:[f64;132]=[12345.0;132]; let storage_words:[i32;264]=[0;264]; let storage:[f64]=core::mem::typed_slice_from_storage<f64>(core::mem::i32_array_data_ptr(storage_words),132);
+ assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(storage)==-8);
+ while(read_exact(header_ptr,16,true)) {
+  let op:i32=header[0]; let n:i32=header[1]; let split:i32=header[2]; let layout:i32=header[3]; assert(op>=0 && op<=7 && n>=0 && n<=128 && split>=0 && split<=n && layout>=0 && layout<=1); assert(read_exact(input_ptr,n*8,false));
+  let values:[f64]=native; if(layout==1) { values=storage; } let i:i32=0; while(i<132) { values[i]=12345.0; i+=1; } i=0; while(i<n) { values[i+2]=core::f64::from_bits(get64(input,i*8)); i+=1; }
+  let view:core::slice::View<f64> =core::slice::view_range(values,2,n).unwrap(); let a:ext::higher_statistics::Moments =ext::higher_statistics::moments(); let status:i32=0; let failure_index:i32=-1;
+  let changed:core::result::Result<bool,ext::statistics::Error> =core::result::Ok(true);
+  if(op==0 || op==6) { i=0; while(i<n && changed.is_ok()) { changed=a.push(values[i+2]); i+=1; } if(op==6 && changed.is_ok()) { let duplicate:ext::higher_statistics::Moments =a; changed=a.merge(duplicate); } }
+  if(op==1) { changed=a.push_view(view); }
+  if(op==2 || op==3) { let b:ext::higher_statistics::Moments =ext::higher_statistics::moments(); i=0; while(i<n && changed.is_ok()) { if(i<split) { changed=a.push(values[i+2]); } else { changed=b.push(values[i+2]); } i+=1; } if(changed.is_ok()) { if(op==2) { changed=a.merge(b); } else { changed=b.merge(a); a=b; } } }
+  if(op==4) { let empty:ext::higher_statistics::Moments =ext::higher_statistics::moments(); let groups:[ext::higher_statistics::Moments;128]=[empty;128]; i=0; while(i<n && changed.is_ok()) { let leaf:ext::higher_statistics::Moments =ext::higher_statistics::moments(); changed=leaf.push(values[i+2]); groups[i]=leaf; i+=1; } let width:i32=n; while(width>1 && changed.is_ok()) { let read:i32=0; let write:i32=0; while(read<width && changed.is_ok()) { let left:ext::higher_statistics::Moments =groups[read]; if(read+1<width) { changed=left.merge(groups[read+1]); } groups[write]=left; read+=2; write+=1; } width=write; } if(n>0) { a=groups[0]; } }
+  if(op==5) { i=0; while(i<n && changed.is_ok()) { let leaf:ext::higher_statistics::Moments =ext::higher_statistics::moments(); changed=leaf.push(values[i+2]); if(changed.is_ok()) { changed=a.merge(leaf); } i+=1; } }
+  if(op==7) { let summary:core::result::Result<ext::higher_statistics::Moments,ext::statistics::Error> =ext::higher_statistics::summarize(view); if(summary.is_err()) { let error:ext::statistics::Error=summary.unwrap_err(); status=code(error); failure_index=error.index; } else { a=summary.unwrap(); } }
+  if(changed.is_err()) { let error:ext::statistics::Error=changed.unwrap_err(); status=code(error); failure_index=error.index; }
+  assert(values[0]==12345.0 && values[1]==12345.0 && values[n+2]==12345.0 && values[131]==12345.0); i=0; while(i<n) { assert(core::f64::to_bits(values[i+2])==get64(input,i*8)); i+=1; }
+  put32(output,0,status); put32(output,4,failure_index); put64(output,8,a.count()); i=0;
+  while(i<15) { let result:core::result::Result<f64,ext::statistics::Error> =query(a,i); let qstatus:i32=0; let qvalue:f64=0.0; if(result.is_err()) { qstatus=code(result.unwrap_err()); } else { qvalue=result.unwrap(); } put32(output,16+i*12,qstatus); put64(output,20+i*12,core::f64::to_bits(qvalue)); i+=1; }
+  write_all(output_ptr,196);
+ }
+ return 0;
+}

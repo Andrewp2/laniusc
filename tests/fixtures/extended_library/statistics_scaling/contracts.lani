@@ -1,0 +1,77 @@
+// Exact dyadic examples and input-domain/signed-zero contracts. No I/O.
+module app::main;
+import core::f64;
+import core::math;
+import ext::statistics_scaling;
+
+fn same(actual:f64, expected:f64) { assert(core::f64::to_bits(actual)==core::f64::to_bits(expected)); }
+fn power(exponent:i32) -> f64 { return core::math::scalbn(1.0,exponent); }
+fn arity(op:i32) -> i32 { return match(op) { 0->3,1->5,2->3,3->5,4->6,_->4 }; }
+fn numerator_count(op:i32) -> i32 { return match(op) { 0->3,1->5,2->2,3->4,4->5,_->2 }; }
+fn run(op:i32, v:[f64]) -> f64 {
+    return match(op) {
+        0->ext::statistics_scaling::product3(v[0],v[1],v[2]),
+        1->ext::statistics_scaling::product5(v[0],v[1],v[2],v[3],v[4]),
+        2->ext::statistics_scaling::quotient2(v[0],v[1],v[2]),
+        3->ext::statistics_scaling::quotient4(v[0],v[1],v[2],v[3],v[4]),
+        4->ext::statistics_scaling::quotient5(v[0],v[1],v[2],v[3],v[4],v[5]),
+        _->ext::statistics_scaling::quotient2_2(v[0],v[1],v[2],v[3])
+    };
+}
+fn main() -> i32 {
+    let hi:f64=power(900); let lo:f64=power(-900); let minimum:f64=core::f64::from_bits(1);
+    same(ext::statistics_scaling::product3(hi,hi,lo),hi);
+    same(ext::statistics_scaling::product3(lo,lo,hi),lo);
+    same(ext::statistics_scaling::product5(hi,hi,lo,lo,3.0),3.0);
+    same(ext::statistics_scaling::product5(minimum,power(1023),power(51),1.0,1.0),1.0);
+    same(ext::statistics_scaling::quotient2(hi,hi,hi),hi);
+    same(ext::statistics_scaling::quotient2(lo,lo,lo),lo);
+    same(ext::statistics_scaling::quotient4(power(1000),power(1000),power(-1000),power(-1000),power(-1000)),power(1000));
+    same(ext::statistics_scaling::quotient5(minimum,power(1023),power(1023),power(-500),power(-500),power(-28)),1.0);
+    same(ext::statistics_scaling::quotient2_2(power(1000),power(1000),power(1000),power(1000)),1.0);
+    same(ext::statistics_scaling::quotient2_2(minimum,minimum,minimum,minimum),1.0);
+    same(ext::statistics_scaling::quotient2_2(power(1023),minimum,power(-500),power(449)),1.0);
+    same(ext::statistics_scaling::product3(core::f64::MAX,2.0,0.5),core::f64::MAX);
+    same(ext::statistics_scaling::product3(core::f64::MAX,2.0,1.0),core::f64::infinity());
+    same(ext::statistics_scaling::product3(minimum,1.5,1.0),core::f64::from_bits(2));
+    same(ext::statistics_scaling::product5(minimum,0.5,1.0,1.0,1.0),0.0);
+    same(ext::statistics_scaling::product3(minimum,-0.5,1.0),core::f64::from_bits(core::f64::SIGN_MASK));
+    same(ext::statistics_scaling::quotient2(-1.0,1.0,minimum),core::f64::neg_infinity());
+
+    let op:i32=0;
+    while(op<6) {
+        let factors:[f64;6]=[1.0;6]; let count:i32=arity(op); let numerators:i32=numerator_count(op);
+        same(run(op,factors),1.0);
+        // Every sign position, including denominator positions, affects zero.
+        let signs:i32=0;
+        while(signs<64) {
+            let sign:u64=0; let i:i32=0;
+            while(i<count) {
+                factors[i]=1.0;
+                if((signs & (1<<i))!=0) { factors[i]=-1.0; sign=sign ^ core::f64::SIGN_MASK; }
+                i+=1;
+            }
+            let zero_sign:u64=0; if((signs & 1)!=0) { zero_sign=core::f64::SIGN_MASK; }
+            factors[0]=core::f64::from_bits(zero_sign); same(run(op,factors),core::f64::from_bits(sign)); signs+=1;
+        }
+        let position:i32=0;
+        while(position<count) {
+            let variant:i32=0;
+            while(variant<3) {
+                let i:i32=0; while(i<count) { factors[i]=1.0; i+=1; }
+                if(position!=0) { factors[0]=0.0; }
+                factors[position]=match(variant) { 0->core::f64::nan(),1->core::f64::infinity(),_->core::f64::neg_infinity() };
+                assert(core::f64::is_nan(run(op,factors))); variant+=1;
+            }
+            if(position>=numerators) {
+                let i:i32=0; while(i<count) { factors[i]=1.0; i+=1; }
+                factors[position]=0.0; assert(core::f64::is_nan(run(op,factors)));
+                factors[position]=core::f64::from_bits(core::f64::SIGN_MASK); assert(core::f64::is_nan(run(op,factors)));
+                factors[0]=0.0; assert(core::f64::is_nan(run(op,factors)));
+            }
+            position+=1;
+        }
+        op+=1;
+    }
+    return 0;
+}
