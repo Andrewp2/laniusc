@@ -1,0 +1,87 @@
+// Eight u64 words/case: mode,length,pre,argA,argB,argC,steps,base8-actions.
+// Ten u64 words/step: before,present,value,width,finish-error,cached,after,
+// underlying front polls, underlying back polls, mapping callbacks.
+module app::main;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::range;
+import core::result;
+import core::slice;
+import std::stream;
+struct Counts { front:u64, back:u64, maps:u64 }
+impl Counts { fn borrow(&self) -> &Counts { return self; } }
+struct Probe { front:i32, back:i32, counts:&Counts }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+pub impl core::iter::Iterator<i32> for Probe { pub fn next(&self) -> core::option::Option<i32> { let c:&Counts=self.counts; c.front+=1; if(self.front==self.back) { return core::option::None(); } let value:i32=self.front; self.front+=1; return core::option::Some(value); } }
+pub impl core::iter::DoubleEndedIterator<i32> for Probe { pub fn next_back(&self) -> core::option::Option<i32> { let c:&Counts=self.counts; c.back+=1; if(self.front==self.back) { return core::option::None(); } self.back-=1; return core::option::Some(self.back); } }
+pub impl core::iter::ExactSizeIterator<i32> for Probe { pub fn remaining_count(&self) -> u64 { return (self.back-self.front) as u64; } }
+struct Scale { counts:&Counts }
+impl Scale { fn borrow(&self) -> &Scale { return self; } }
+pub impl core::iter::Mapper<i32,i32> for Scale { pub fn apply(&self,value:i32) -> i32 { let c:&Counts=self.counts; c.maps+=1; return value*3+7; } }
+pub struct Encoded { value:u64, width:u64 }
+pub trait Encoder<T> { pub fn encode(&self,value:T) -> Encoded; }
+struct Integer {}
+impl Integer { fn borrow(&self) -> &Integer { return self; } }
+pub impl Encoder<i32> for Integer { pub fn encode(&self,value:i32) -> Encoded { return Encoded { value:value as u64,width:1 }; } }
+struct Group {}
+impl Group { fn borrow(&self) -> &Group { return self; } }
+pub impl Encoder<core::slice::View<i32>> for Group { pub fn encode(&self,value:core::slice::View<i32>) -> Encoded { let encoded:u64=0; let i:i32=0; while(i<value.len()) { encoded|=((value.get(i).unwrap()+1) as u64)<<(i*8); i+=1; } return Encoded { value:encoded,width:value.len() as u64 }; } }
+struct Output { bytes:[u8], used:i32 }
+impl Output {
+ fn borrow(&self) -> &Output { return self; }
+ fn flush(&self) { let output:std::stream::Descriptor=std::stream::stdout(); assert(core::io::write_all(output.borrow(),self.bytes,0,self.used).is_ok()); self.used=0; }
+ fn word(&self,value:u64) { if(self.used==2048) { self.flush(); } let i:i32=0; while(i<8) { self.bytes[self.used+i]=((value>>(i*8))&255) as u8; i+=1; } self.used+=8; }
+}
+fn decode(bytes:[u8],offset:i32) -> u64 { let value:u64=0; let i:i32=0; while(i<8) { value|=(bytes[offset+i] as u64)<<(i*8); i+=1; } return value; }
+fn count<I,T>(source:&I,counts:&Counts) -> u64 where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> {
+ let front:u64=counts.front; let back:u64=counts.back; let maps:u64=counts.maps; let result:u64=source.remaining_count(); assert(source.remaining_count()==result && source.remaining_count()==result); assert(counts.front==front && counts.back==back && counts.maps==maps); return result;
+}
+fn record<E,T>(output:&Output,encoder:&E,value:core::option::Option<T>,before:u64,after:u64,error:bool,cached:bool,counts:&Counts) where E:Encoder<T> {
+ let encoded:Encoded=Encoded { value:0,width:0 }; if(value.is_some()) { encoded=encoder.encode(value.unwrap()); }
+ output.word(before); output.word(value.is_some() as u64); output.word(encoded.value); output.word(encoded.width); output.word(error as u64); output.word(cached as u64); output.word(after); output.word(counts.front); output.word(counts.back); output.word(counts.maps);
+}
+fn observe<I,E,T>(source:&I,encoder:&E,counts:&Counts,steps:i32,schedule:u64,output:&Output) where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T>,E:Encoder<T> {
+ let i:i32=0; while(i<steps) { let action:u64=(schedule>>(i*3))&7; assert(action==0 || action==1 || action==6); let before:u64=count<I,T>(source,counts); let value:core::option::Option<T> =core::option::None(); if(action==1) { value=source.next(); } let after:u64=count<I,T>(source,counts); record<E,T>(output,encoder,value,before,after,false,false,counts); i+=1; }
+}
+fn observe_ends<I,E,T>(source:&I,encoder:&E,counts:&Counts,steps:i32,schedule:u64,output:&Output) where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T>,I:core::iter::DoubleEndedIterator<T>,E:Encoder<T> {
+ let i:i32=0; while(i<steps) { let action:u64=(schedule>>(i*3))&7; assert(action==0 || action==1 || action==2 || action==6); let before:u64=count<I,T>(source,counts); let value:core::option::Option<T> =core::option::None(); if(action==1) { value=source.next(); } if(action==2) { value=source.next_back(); } let after:u64=count<I,T>(source,counts); record<E,T>(output,encoder,value,before,after,false,false,counts); i+=1; }
+}
+fn observe_peek<I>(source:&core::iter::Peekable<I,i32>,counts:&Counts,steps:i32,schedule:u64,output:&Output) where I:core::iter::Iterator<i32>,I:core::iter::ExactSizeIterator<i32> {
+ let encoder:Integer=Integer {}; let i:i32=0; while(i<steps) { let action:u64=(schedule>>(i*3))&7; assert(action==0 || action==1 || action==3 || action==4 || action==5 || action==6); let before:u64=count<core::iter::Peekable<I,i32>,i32>(source,counts); let value:core::option::Option<i32> =core::option::None(); let error:bool=false; if(action==1) { value=source.next(); } if(action==3) { value=source.peek(); } if(action==4) { value=source.take_cached(); } if(action==5) { error=source.try_finish().is_some(); } let after:u64=count<core::iter::Peekable<I,i32>,i32>(source,counts); record<Integer,i32>(output,encoder.borrow(),value,before,after,error,source.has_cached(),counts); i+=1; }
+}
+fn preconsume<I,T>(source:&I,pre:i32) where I:core::iter::Iterator<T> { let i:i32=0; while(i<pre) { let item:core::option::Option<T> =source.next(); assert(item.is_some()); i+=1; } }
+fn run(mode:i32,length:i32,pre:i32,a:u64,b:u64,c:u64,steps:i32,schedule:u64,output:&Output) {
+ let counts:Counts=Counts { front:0,back:0,maps:0 }; let encoder:Integer=Integer {}; let group:Group=Group {};
+ if(mode==0) { let source:core::iter::Empty<i32> =core::iter::empty<i32>(); observe_ends<core::iter::Empty<i32>,Integer,i32>(source.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); return; }
+ if(mode==1) { let source:core::iter::Once<i32> =core::iter::once<i32>(41); if(length==0) { source.next().unwrap(); } preconsume<core::iter::Once<i32>,i32>(source.borrow(),pre); observe_ends<core::iter::Once<i32>,Integer,i32>(source.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); return; }
+ if(mode==2 || mode==17) { let source:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(-2,length-2)); if(mode==17) { source=core::iter::range_i32_inclusive(core::range::range_inclusive<i32>(-2,length-3)); } preconsume<core::iter::RangeI32,i32>(source.borrow(),pre); observe_ends<core::iter::RangeI32,Integer,i32>(source.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); return; }
+ if(mode>=3 && mode<=5) { let backing:[i32;10]=[99,0,1,2,3,4,5,6,7,99]; let view:core::slice::View<i32> =core::slice::view_range(backing,1,length).unwrap();
+  if(mode==3) { let source:core::slice::Iter<i32> =view.iter(); preconsume<core::slice::Iter<i32>,i32>(source.borrow(),pre); observe_ends<core::slice::Iter<i32>,Integer,i32>(source.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+  if(mode==4) { let source:core::slice::Chunks<i32> =view.chunks(a as i32).unwrap(); preconsume<core::slice::Chunks<i32>,core::slice::View<i32>>(source.borrow(),pre); observe<core::slice::Chunks<i32>,Group,core::slice::View<i32>>(source.borrow(),group.borrow(),counts.borrow(),steps,schedule,output); }
+  if(mode==5) { let source:core::slice::Windows<i32> =view.windows(a as i32).unwrap(); preconsume<core::slice::Windows<i32>,core::slice::View<i32>>(source.borrow(),pre); observe<core::slice::Windows<i32>,Group,core::slice::View<i32>>(source.borrow(),group.borrow(),counts.borrow(),steps,schedule,output); }
+  assert(backing[0]==99 && backing[9]==99); return;
+ }
+ let source:Probe=Probe { front:0,back:length,counts:counts.borrow() }; preconsume<Probe,i32>(source.borrow(),pre); let scale:Scale=Scale { counts:counts.borrow() };
+ if(mode==6) { observe_ends<Probe,Integer,i32>(source.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==7) { let adapted:core::iter::Rev<Probe,i32> =core::iter::rev<Probe,i32>(source.borrow()); observe_ends<core::iter::Rev<Probe,i32>,Integer,i32>(adapted.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==8 || mode==9 || mode==16) { let mapped:core::iter::Map<Probe,Scale,i32,i32> =core::iter::map<Probe,Scale,i32,i32>(source.borrow(),scale.borrow());
+  if(mode==8) { observe_ends<core::iter::Map<Probe,Scale,i32,i32>,Integer,i32>(mapped.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+  if(mode==9) { let adapted:core::iter::Rev<core::iter::Map<Probe,Scale,i32,i32>,i32> =core::iter::rev<core::iter::Map<Probe,Scale,i32,i32>,i32>(mapped.borrow()); observe_ends<core::iter::Rev<core::iter::Map<Probe,Scale,i32,i32>,i32>,Integer,i32>(adapted.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+  if(mode==16) { let adapted:core::iter::Peekable<core::iter::Map<Probe,Scale,i32,i32>,i32> =core::iter::peekable<core::iter::Map<Probe,Scale,i32,i32>,i32>(mapped.borrow()); observe_peek<core::iter::Map<Probe,Scale,i32,i32>>(adapted.borrow(),counts.borrow(),steps,schedule,output); }
+ }
+ if(mode==10) { let adapted:core::iter::Take<Probe,i32> =core::iter::take<Probe,i32>(source.borrow(),a); observe<core::iter::Take<Probe,i32>,Integer,i32>(adapted.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==11) { let adapted:core::iter::Skip<Probe,i32> =core::iter::skip<Probe,i32>(source.borrow(),a); observe<core::iter::Skip<Probe,i32>,Integer,i32>(adapted.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==12) { let adapted:core::iter::StepBy<Probe,i32> =core::iter::step_by<Probe,i32>(source.borrow(),a).unwrap(); observe<core::iter::StepBy<Probe,i32>,Integer,i32>(adapted.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==13) { let skipped:core::iter::Skip<Probe,i32> =core::iter::skip<Probe,i32>(source.borrow(),a); let taken:core::iter::Take<core::iter::Skip<Probe,i32>,i32> =core::iter::take<core::iter::Skip<Probe,i32>,i32>(skipped.borrow(),b); let stepped:core::iter::StepBy<core::iter::Take<core::iter::Skip<Probe,i32>,i32>,i32> =core::iter::step_by<core::iter::Take<core::iter::Skip<Probe,i32>,i32>,i32>(taken.borrow(),c).unwrap(); observe<core::iter::StepBy<core::iter::Take<core::iter::Skip<Probe,i32>,i32>,i32>,Integer,i32>(stepped.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==14) { let stepped:core::iter::StepBy<Probe,i32> =core::iter::step_by<Probe,i32>(source.borrow(),c).unwrap(); let skipped:core::iter::Skip<core::iter::StepBy<Probe,i32>,i32> =core::iter::skip<core::iter::StepBy<Probe,i32>,i32>(stepped.borrow(),a); let taken:core::iter::Take<core::iter::Skip<core::iter::StepBy<Probe,i32>,i32>,i32> =core::iter::take<core::iter::Skip<core::iter::StepBy<Probe,i32>,i32>,i32>(skipped.borrow(),b); observe<core::iter::Take<core::iter::Skip<core::iter::StepBy<Probe,i32>,i32>,i32>,Integer,i32>(taken.borrow(),encoder.borrow(),counts.borrow(),steps,schedule,output); }
+ if(mode==15) { let adapted:core::iter::Peekable<Probe,i32> =core::iter::peekable<Probe,i32>(source.borrow()); observe_peek<Probe>(adapted.borrow(),counts.borrow(),steps,schedule,output); }
+}
+fn main() -> i32 {
+ let input:std::stream::Descriptor=std::stream::stdin(); let header:[u8;64]=[0;64]; let output_words:[i32;512]=[0;512]; let output_bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),2048); let output:Output=Output { bytes:output_bytes,used:0 };
+ while(true) { let result:core::result::Result<i32,core::io::Error> =input.read(header,0,64); assert(result.is_ok()); let received:i32=result.unwrap(); if(received==0) { output.flush(); return 0; } if(received<64) { assert(core::io::read_exact(input.borrow(),header,received,64-received).is_ok()); }
+  let mode:u64=decode(header,0); let length:u64=decode(header,8); let pre:u64=decode(header,16); let a:u64=decode(header,24); let b:u64=decode(header,32); let c:u64=decode(header,40); let steps:u64=decode(header,48); let schedule:u64=decode(header,56); assert(mode<=17 && length<=8 && pre<=8 && steps<=12); run(mode as i32,length as i32,pre as i32,a,b,c,steps as i32,schedule,output.borrow());
+ }
+ return 0;
+}

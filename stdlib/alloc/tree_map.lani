@@ -409,6 +409,10 @@ pub impl<K, V> core::iter::DoubleEndedIterator<Entry<K, V>> for IntoIter<K, V> {
     pub fn next_back(&self) -> core::option::Option<Entry<K, V>> { return self.owner.pop_last(); }
 }
 
+pub impl<K, V> core::iter::ExactSizeIterator<Entry<K, V>> for IntoIter<K, V> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}
+
 // Internal set-storage boundary. One typed facade owns each state; temporary
 // typed map/cursor views never escape. Width checks are layout guards, not
 // permission to reinterpret a different key schema. The map above remains the

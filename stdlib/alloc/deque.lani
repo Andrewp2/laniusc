@@ -374,6 +374,10 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
     }
 }
 
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}
+
 // Acceptance has try_push_back's shallow ownership and view invalidation rules.
 pub impl<T> core::iter::TrySink<T, Error> for Deque<T> {
     pub fn try_accept(&self, item: T) -> core::option::Option<Error> {
@@ -404,4 +408,8 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T> {
         if (self.front == self.back) { return core::option::None(); }
         self.back -= 1; return self.get(self.back);
     }
+}
+
+pub impl<T> core::iter::ExactSizeIterator<T> for Cursor<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
 }

@@ -163,3 +163,7 @@ pub impl<T> IntoIter<T> {
 pub impl<T> core::iter::Iterator<T> for IntoIter<T> {
     pub fn next(&self) -> core::option::Option<T> { return alloc::hash_map::key_into_next<T>(self.state.borrow()); }
 }
+
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}

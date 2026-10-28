@@ -17,8 +17,9 @@ Owning cursors also execute with explicit transfer, retained backing, O(1) recov
 - [stdlib-heap-iterators](../../stdlib-heap-iterators.md)
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 - [stdlib-owning-heap](../../stdlib-owning-heap.md)
+- [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 
-Declaration counts: enum: 3; field: 3; function: 4; impl: 4; method: 30; struct: 2; variant: 6.
+Declaration counts: enum: 3; field: 3; function: 4; impl: 5; method: 31; struct: 2; variant: 6.
 
 ## Declared imports
 
@@ -440,9 +441,25 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T> where T: core::cmp::Ord<T>
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 284
+### impl at line 283
+
+[Source line 283](../../../stdlib/alloc/binary_heap.lani#L283)
+
+```lanius
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> where T: core::cmp::Ord<T>
+```
+
+#### method: remaining_count
 
 [Source line 284](../../../stdlib/alloc/binary_heap.lani#L284)
+
+```lanius
+pub fn remaining_count(&self) -> u64
+```
+
+### impl at line 288
+
+[Source line 288](../../../stdlib/alloc/binary_heap.lani#L288)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::Ord<T>
@@ -450,7 +467,7 @@ pub impl<T> core::iter::TrySink<T, Error> for BinaryHeap<T> where T: core::cmp::
 
 #### method: try_accept
 
-[Source line 285](../../../stdlib/alloc/binary_heap.lani#L285)
+[Source line 289](../../../stdlib/alloc/binary_heap.lani#L289)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>

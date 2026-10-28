@@ -1,0 +1,207 @@
+// Exact cardinalities without polling, callbacks, allocation or item reads.
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::range;
+import core::result;
+import core::slice;
+
+fn count<I,T>(source:&I) -> u64
+    where I:core::iter::Iterator<T>, I:core::iter::ExactSizeIterator<T> {
+    return source.remaining_count();
+}
+struct Probe<T> { value:T, left:u64, calls:u64, backs:u64, queries:u64 }
+fn probe<T>(value:T,length:u64) -> Probe<T> {
+    return Probe { value:value,left:length,calls:0,backs:0,queries:0 };
+}
+impl<T> Probe<T> { fn borrow(&self) -> &Probe<T> { return self; } }
+pub impl<T> core::iter::Iterator<T> for Probe<T> {
+    pub fn next(&self) -> core::option::Option<T> {
+        self.calls+=1;
+        if (self.left==0) { return core::option::None(); }
+        self.left-=1; return core::option::Some(self.value);
+    }
+}
+pub impl<T> core::iter::DoubleEndedIterator<T> for Probe<T> {
+    pub fn next_back(&self) -> core::option::Option<T> {
+        self.backs+=1;
+        if (self.left==0) { return core::option::None(); }
+        self.left-=1; return core::option::Some(self.value);
+    }
+}
+pub impl<T> core::iter::ExactSizeIterator<T> for Probe<T> {
+    pub fn remaining_count(&self) -> u64 { self.queries+=1; return self.left; }
+}
+type Payload=core::option::Option<core::result::Result<[u64;2],i64>>;
+struct Packet { id:i32, wide:[u64;2], payload:Payload }
+struct Pack { calls:i32 }
+impl Pack { fn borrow(&self) -> &Pack { return self; } }
+pub impl core::iter::Mapper<i32,Packet> for Pack {
+    pub fn apply(&self,value:i32) -> Packet {
+        self.calls+=1;
+        let detail:core::result::Result<[u64;2],i64> =core::result::Err(-4294967297);
+        return Packet { id:value,wide:[18446744073709551615,8589934593],payload:core::option::Some(detail) };
+    }
+}
+
+fn leaves_and_metadata_only_queries() {
+    let empty:core::iter::Empty<Packet> =core::iter::empty<Packet>();
+    assert(count<core::iter::Empty<Packet>,Packet>(empty.borrow())==0);
+    let detail:Payload=core::option::None();
+    let single:core::iter::Once<Payload> =core::iter::once<Payload>(detail);
+    assert(count<core::iter::Once<Payload>,Payload>(single.borrow())==1);
+    assert(single.next_back().unwrap().is_none() && single.remaining_count()==0 && single.next().is_none());
+    let full:core::iter::RangeI32=core::iter::range_i32_inclusive(core::range::range_inclusive<i32>(-2147483648,2147483647));
+    assert(count<core::iter::RangeI32,i32>(full.borrow())==4294967296);
+    assert(full.next().unwrap()==-2147483648 && full.next_back().unwrap()==2147483647 && full.remaining_count()==4294967294);
+    assert(full.advance(18446744073709551615)==4294967294 && full.remaining_count()==0);
+    assert(full.next().is_none() && full.next_back().is_none());
+    let reversed:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(10,-10));
+    assert(reversed.remaining_count()==0);
+    // Deliberately inaccessible backing: only integer descriptor metadata is
+    // inspected here. Calling next/get on these cursors would be invalid.
+    let nowhere:ptr=0;
+    let unread:[u64]=core::mem::typed_slice_from_raw_parts<u64>(nowhere,2147483647);
+    let view:core::slice::View<u64> =core::slice::view(unread,2147483647).unwrap();
+    let cursor:core::slice::Iter<u64> =view.iter();
+    let chunks:core::slice::Chunks<u64> =view.chunks(2).unwrap();
+    let windows:core::slice::Windows<u64> =view.windows(2).unwrap();
+    assert(count<core::slice::Iter<u64>,u64>(cursor.borrow())==2147483647);
+    assert(count<core::slice::Chunks<u64>,core::slice::View<u64>>(chunks.borrow())==1073741824);
+    assert(count<core::slice::Windows<u64>,core::slice::View<u64>>(windows.borrow())==2147483646);
+    assert(cursor.advance(2147483646).unwrap()==2147483646 && cursor.remaining_count()==1);
+    assert(cursor.advance_back(1).unwrap()==1 && cursor.remaining_count()==0);
+}
+fn lazy_callbacks_reverse_and_shared_source() {
+    let source:Probe<i32> =probe<i32>(17,4); let mapper:Pack=Pack { calls:0 };
+    let mapped:core::iter::Map<Probe<i32>,Pack,i32,Packet> =core::iter::map<Probe<i32>,Pack,i32,Packet>(source.borrow(),mapper.borrow());
+    let reverse:core::iter::Rev<core::iter::Map<Probe<i32>,Pack,i32,Packet>,Packet> =core::iter::rev<core::iter::Map<Probe<i32>,Pack,i32,Packet>,Packet>(mapped.borrow());
+    assert(source.calls==0 && source.backs==0 && source.queries==0 && mapper.calls==0);
+    assert(reverse.remaining_count()==4 && mapped.remaining_count()==4 && mapper.calls==0 && source.calls==0 && source.backs==0);
+    let item:Packet=reverse.next().unwrap();
+    assert(item.id==17 && item.wide[0]==18446744073709551615 && item.wide[1]==8589934593);
+    assert(item.payload.unwrap().unwrap_err()==-4294967297 && mapper.calls==1 && source.backs==1);
+    assert(mapped.remaining_count()==3 && source.next().unwrap()==17 && reverse.remaining_count()==2);
+    assert(reverse.next_back().is_some() && mapped.next_back().is_some() && reverse.remaining_count()==0 && mapper.calls==3);
+    assert(reverse.next().is_none()); let queries:u64=source.queries; let calls:u64=source.calls+source.backs;
+    assert(reverse.remaining_count()==0 && reverse.remaining_count()==0 && source.queries==queries && mapper.calls==3 && source.calls+source.backs==calls);
+    assert(mapped.next().is_none()); queries=source.queries;
+    assert(mapped.remaining_count()==0 && source.queries==queries);
+    // Joint traversal remains valid without claiming min(left,right) counts.
+    let shared:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(0,5));
+    let zipped:core::iter::Zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32> =core::iter::zip<core::iter::RangeI32,core::iter::RangeI32,i32,i32>(shared.borrow(),shared.borrow());
+    let first:core::pair::Pair<i32,i32> =zipped.next().unwrap(); let second:core::pair::Pair<i32,i32> =zipped.next().unwrap();
+    assert(first.first==0 && first.second==1 && second.first==2 && second.second==3 && shared.remaining_count()==1);
+    assert(zipped.next().is_none() && shared.remaining_count()==0 && zipped.next().is_none());
+}
+fn take_skip_and_wide_counts() {
+    let source:Probe<i32> =probe<i32>(9,18446744073709551615);
+    let all:core::iter::Take<Probe<i32>,i32> =core::iter::take<Probe<i32>,i32>(source.borrow(),18446744073709551615);
+    let skipped:core::iter::Skip<Probe<i32>,i32> =core::iter::skip<Probe<i32>,i32>(source.borrow(),18446744073709551614);
+    let none:core::iter::Take<Probe<i32>,i32> =core::iter::take<Probe<i32>,i32>(source.borrow(),0);
+    assert(all.remaining_count()==18446744073709551615 && skipped.remaining_count()==1 && none.remaining_count()==0 && source.calls==0);
+    assert(source.next().is_some() && all.remaining_count()==18446744073709551614 && skipped.remaining_count()==0);
+    assert(none.next().is_none()); let queries:u64=source.queries;
+    assert(none.remaining_count()==0 && source.queries==queries);
+    let small:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(0,5));
+    let limited:core::iter::Take<core::iter::RangeI32,i32> =core::iter::take<core::iter::RangeI32,i32>(small.borrow(),2);
+    let offset:core::iter::Skip<core::iter::RangeI32,i32> =core::iter::skip<core::iter::RangeI32,i32>(small.borrow(),1);
+    assert(limited.remaining_count()==2 && offset.remaining_count()==4 && small.next().unwrap()==0);
+    assert(limited.remaining_count()==2 && offset.remaining_count()==3 && offset.next().unwrap()==2);
+    assert(limited.remaining_count()==2 && limited.next().unwrap()==3 && limited.remaining_count()==1);
+    assert(limited.next().unwrap()==4 && limited.remaining_count()==0 && limited.next().is_none() && offset.remaining_count()==0);
+    let exhausted:Probe<i32> =probe<i32>(1,2);
+    let huge_skip:core::iter::Skip<Probe<i32>,i32> =core::iter::skip<Probe<i32>,i32>(exhausted.borrow(),18446744073709551615);
+    assert(huge_skip.remaining_count()==0 && exhausted.calls==0 && huge_skip.next().is_none() && exhausted.calls==3);
+    queries=exhausted.queries; assert(huge_skip.remaining_count()==0 && exhausted.queries==queries);
+}
+fn step_by_phase_arithmetic() {
+    let source:core::iter::RangeI32=core::iter::range_i32(core::range::range<i32>(0,8));
+    let steps:core::iter::StepBy<core::iter::RangeI32,i32> =core::iter::step_by<core::iter::RangeI32,i32>(source.borrow(),3).unwrap();
+    assert(steps.remaining_count()==3 && steps.next().unwrap()==0 && steps.remaining_count()==2);
+    assert(source.next().unwrap()==1 && source.next().unwrap()==2 && steps.remaining_count()==1);
+    assert(steps.next().unwrap()==5 && steps.remaining_count()==0 && steps.next().is_none() && steps.remaining_count()==0);
+    let huge:Probe<i32> =probe<i32>(7,18446744073709551615);
+    let unit:core::iter::StepBy<Probe<i32>,i32> =core::iter::step_by<Probe<i32>,i32>(huge.borrow(),1).unwrap();
+    let maximal:core::iter::StepBy<Probe<i32>,i32> =core::iter::step_by<Probe<i32>,i32>(huge.borrow(),18446744073709551615).unwrap();
+    assert(unit.remaining_count()==18446744073709551615 && maximal.remaining_count()==1 && huge.calls==0);
+    assert(maximal.next().unwrap()==7 && maximal.remaining_count()==0 && unit.remaining_count()==18446744073709551614 && huge.calls==1);
+    let odd:Probe<i32> =probe<i32>(3,18446744073709551615);
+    let halves:core::iter::StepBy<Probe<i32>,i32> =core::iter::step_by<Probe<i32>,i32>(odd.borrow(),2).unwrap();
+    assert(halves.remaining_count()==9223372036854775808 && odd.calls==0);
+    assert(halves.next().unwrap()==3 && halves.remaining_count()==9223372036854775807 && odd.calls==1);
+    let finite:Probe<i32> =probe<i32>(7,3);
+    let long_step:core::iter::StepBy<Probe<i32>,i32> =core::iter::step_by<Probe<i32>,i32>(finite.borrow(),18446744073709551615).unwrap();
+    assert(long_step.remaining_count()==1 && long_step.next().is_some() && long_step.remaining_count()==0);
+    assert(long_step.next().is_none() && finite.calls==4); let queries:u64=finite.queries;
+    assert(long_step.remaining_count()==0 && finite.queries==queries && long_step.next().is_none() && finite.calls==4);
+    let empty:Probe<i32> =probe<i32>(0,0);
+    let empty_step:core::iter::StepBy<Probe<i32>,i32> =core::iter::step_by<Probe<i32>,i32>(empty.borrow(),2).unwrap();
+    assert(empty_step.remaining_count()==0 && empty.calls==0);
+}
+fn cached_optional_items_and_finish() {
+    let source:Probe<core::option::Option<i32>> =probe<core::option::Option<i32>>(core::option::None(),2);
+    let peek:core::iter::Peekable<Probe<core::option::Option<i32>>,core::option::Option<i32>> =core::iter::peekable<Probe<core::option::Option<i32>>,core::option::Option<i32>>(source.borrow());
+    assert(peek.remaining_count()==2 && source.calls==0 && !peek.has_cached());
+    let cached:core::option::Option<core::option::Option<i32>> =peek.peek();
+    assert(cached.is_some() && cached.unwrap().is_none() && source.calls==1 && peek.remaining_count()==2);
+    assert(peek.try_finish().is_some() && peek.has_cached() && peek.remaining_count()==2 && source.calls==1);
+    let taken:core::option::Option<core::option::Option<i32>> =peek.take_cached();
+    assert(taken.is_some() && taken.unwrap().is_none() && !peek.has_cached() && peek.remaining_count()==1 && source.calls==1);
+    assert(source.next().is_some() && peek.remaining_count()==0 && source.calls==2);
+    assert(peek.try_finish().is_none()); let queries:u64=source.queries;
+    assert(peek.remaining_count()==0 && peek.next().is_none() && peek.peek().is_none() && source.queries==queries && source.calls==2);
+    // A MAX-item source loses one item to the cache before adding that one
+    // back; a valid cache plus source count cannot overflow u64.
+    let huge:Probe<i32> =probe<i32>(5,18446744073709551615);
+    let large_peek:core::iter::Peekable<Probe<i32>,i32> =core::iter::peekable<Probe<i32>,i32>(huge.borrow());
+    assert(large_peek.peek().unwrap()==5 && large_peek.remaining_count()==18446744073709551615 && huge.calls==1);
+    assert(large_peek.take_cached().unwrap()==5 && large_peek.remaining_count()==18446744073709551614);
+    let absent:Probe<i32> =probe<i32>(0,0); let end:core::iter::Peekable<Probe<i32>,i32> =core::iter::peekable<Probe<i32>,i32>(absent.borrow());
+    assert(end.peek().is_none()); queries=absent.queries;
+    assert(end.remaining_count()==0 && end.peek().is_none() && absent.queries==queries && absent.calls==1);
+    let unread:Probe<i32> =probe<i32>(8,3);
+    let closed:core::iter::Peekable<Probe<i32>,i32> =core::iter::peekable<Probe<i32>,i32>(unread.borrow());
+    assert(closed.remaining_count()==3 && closed.try_finish().is_none()); queries=unread.queries;
+    assert(closed.remaining_count()==0 && closed.next().is_none() && closed.peek().is_none());
+    assert(unread.queries==queries && unread.calls==0 && unread.next().unwrap()==8 && unread.remaining_count()==2);
+}
+struct Unit {}
+fn borrowed_storage_chunks_windows_and_zst() {
+    let stack:[u8;7]=[99,10,20,30,40,50,99]; let words:[i32;4]=[0;4];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),16);
+    assert(core::mem::slice_stride(stack)<0 && core::mem::slice_stride(packed)==1);
+    let layout:i32=0;
+    while (layout<2) {
+        let backing:[u8]=stack; if (layout==1) { backing=packed; }
+        backing[0]=99; backing[1]=10; backing[2]=20; backing[3]=30; backing[4]=40; backing[5]=50; backing[6]=99;
+        let view:core::slice::View<u8> =core::slice::view_range(backing,1,5).unwrap();
+        let source:core::slice::Iter<u8> =view.iter();
+        assert(source.remaining_count()==5 && source.next_back().unwrap()==50 && source.remaining_count()==4);
+        backing[1]=11; assert(source.next().unwrap()==11 && source.remaining_count()==3);
+        let chunks:core::slice::Chunks<u8> =view.chunks(2).unwrap();
+        assert(chunks.remaining_count()==3 && chunks.next().unwrap().len()==2 && chunks.remaining_count()==2);
+        assert(chunks.next().unwrap().len()==2 && chunks.remaining_count()==1 && chunks.next().unwrap().first().unwrap()==50);
+        assert(chunks.remaining_count()==0 && chunks.next().is_none());
+        let windows:core::slice::Windows<u8> =view.windows(3).unwrap();
+        assert(windows.remaining_count()==3 && windows.next().unwrap().first().unwrap()==11 && windows.remaining_count()==2);
+        assert(windows.next().unwrap().first().unwrap()==20 && windows.next().unwrap().last().unwrap()==50);
+        assert(windows.remaining_count()==0 && windows.next().is_none());
+        let wide:core::slice::Windows<u8> =view.windows(6).unwrap(); assert(wide.remaining_count()==0 && wide.next().is_none());
+        assert(backing[0]==99 && backing[6]==99); layout+=1;
+    }
+    let values:[Unit;3]=[Unit {},Unit {},Unit {}]; let view:core::slice::View<Unit> =core::slice::view(values,3).unwrap();
+    let units:core::slice::Iter<Unit> =view.iter();
+    assert(core::mem::size_of<Unit>()==0 && units.remaining_count()==3 && units.next().is_some() && units.next_back().is_some() && units.remaining_count()==1);
+    assert(units.next_back().is_some() && units.remaining_count()==0 && units.next().is_none());
+    let chunks:core::slice::Chunks<Unit> =view.chunks(2).unwrap(); let windows:core::slice::Windows<Unit> =view.windows(3).unwrap();
+    assert(chunks.remaining_count()==2 && chunks.next().unwrap().len()==2 && chunks.remaining_count()==1);
+    assert(windows.remaining_count()==1 && windows.next().unwrap().len()==3 && windows.remaining_count()==0);
+}
+fn main() -> i32 {
+    leaves_and_metadata_only_queries(); lazy_callbacks_reverse_and_shared_source();
+    take_skip_and_wide_counts(); step_by_phase_arithmetic(); cached_optional_items_and_finish();
+    borrowed_storage_chunks_windows_and_zst(); return 0;
+}

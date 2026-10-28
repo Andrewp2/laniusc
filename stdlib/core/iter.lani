@@ -31,6 +31,15 @@ pub trait DoubleEndedIterator<T> {
     pub fn next_back(&self) -> core::option::Option<T>;
 }
 
+// Exact successful yields remaining before fused None, in the valid current
+// cursor state. Implement beside Iterator<T>; generic users name both bounds.
+// Query only metadata/upstream counts: no pulls, callbacks, item reads, cleanup,
+// allocation or host calls. This safe behavioral contract grants no permission
+// for unchecked access. External mutation can change the count between calls.
+pub trait ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64;
+}
+
 // A source-defined callback, with ordinary shallow input/output values. The
 // caller keeps the mapper and any borrowed mutable context alive. Output
 // cleanup authority remains with the application; no Destroy is implied.
@@ -625,6 +634,10 @@ pub impl<T> DoubleEndedIterator<T> for core::slice::Iter<T> {
     }
 }
 
+pub impl<T> ExactSizeIterator<T> for core::slice::Iter<T> {
+    pub fn remaining_count(&self) -> u64 { return (self.back-self.front) as u64; }
+}
+
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
     pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
         if (self.position == self.end) { return core::option::None(); }
@@ -635,11 +648,28 @@ pub impl<T> Iterator<core::slice::View<T>> for core::slice::Chunks<T> {
     }
 }
 
+pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Chunks<T> {
+    pub fn remaining_count(&self) -> u64 {
+        let count: i32 = self.end-self.position;
+        let result: u64 = (count/self.width) as u64;
+        if (count%self.width != 0) { result += 1; }
+        return result;
+    }
+}
+
 pub impl<T> Iterator<core::slice::View<T>> for core::slice::Windows<T> {
     pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
         if (self.end - self.position < self.width) { return core::option::None(); }
         let result: core::slice::View<T> = core::slice::View { values: self.values, start: self.position, length: self.width };
         self.position += 1; return core::option::Some(result);
+    }
+}
+
+pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Windows<T> {
+    pub fn remaining_count(&self) -> u64 {
+        let count: i32 = self.end-self.position;
+        if (count < self.width) { return 0; }
+        return ((count-self.width) as u64)+1;
     }
 }
 
@@ -688,12 +718,30 @@ pub impl<I,T> Iterator<T> for Peekable<I,T> where I: Iterator<T> {
     }
 }
 
+pub impl<I,T> ExactSizeIterator<T> for Peekable<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source;
+        let count: u64 = source.remaining_count();
+        if (!self.cached.is_some()) { return count; }
+        // A conforming source cannot leave MAX items after yielding its cache.
+        // Trap an unrepresentable claimed length instead of wrapping to zero.
+        if (count == 18446744073709551615) { core::panic::panic(); }
+        return count+1;
+    }
+}
+
 pub impl<T> Iterator<T> for Empty<T> {
     pub fn next(&self) -> core::option::Option<T> { return core::option::None(); }
 }
 
 pub impl<T> DoubleEndedIterator<T> for Empty<T> {
     pub fn next_back(&self) -> core::option::Option<T> { return core::option::None(); }
+}
+
+pub impl<T> ExactSizeIterator<T> for Empty<T> {
+    pub fn remaining_count(&self) -> u64 { return 0; }
 }
 
 pub impl<T> Once<T> {
@@ -713,6 +761,13 @@ pub impl<T> DoubleEndedIterator<T> for Once<T> {
         if (self.done) { return core::option::None(); }
         self.done = true;
         return core::option::Some(self.value);
+    }
+}
+
+pub impl<T> ExactSizeIterator<T> for Once<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        return 1;
     }
 }
 
@@ -739,6 +794,14 @@ pub impl<I,T> DoubleEndedIterator<T> for Rev<I,T>
         let item: core::option::Option<T> = source.next();
         if (item.is_none()) { self.done = true; }
         return item;
+    }
+}
+
+pub impl<I,T> ExactSizeIterator<T> for Rev<I,T>
+    where I: Iterator<T>, I: DoubleEndedIterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; return source.remaining_count();
     }
 }
 
@@ -769,6 +832,20 @@ pub impl<I, T> Iterator<T> for StepBy<I, T> where I: Iterator<T> {
         let item: core::option::Option<T> = source.next();
         if (core::option::is_none(item)) { self.done = true; }
         return item;
+    }
+}
+
+pub impl<I,T> ExactSizeIterator<T> for StepBy<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; let count: u64 = source.remaining_count();
+        // Construction establishes skip <= MAX-1. Before the first pull,
+        // select positions 0, step, ...; afterward skip precedes every yield.
+        let step: u64 = self.skip+1;
+        let result: u64 = count/step;
+        if (self.first && count%step != 0) { result += 1; }
+        return result;
     }
 }
 
@@ -803,6 +880,10 @@ pub impl DoubleEndedIterator<i32> for RangeI32 {
     }
 }
 
+pub impl ExactSizeIterator<i32> for RangeI32 {
+    pub fn remaining_count(&self) -> u64 { return (self.end-self.position) as u64; }
+}
+
 pub impl<I, T> Take<I, T> {
     pub fn borrow(&self) -> &Take<I, T> { return self; }
     // This is a quota, not an exact upper-source cardinality.
@@ -820,6 +901,19 @@ pub impl<I, T> Iterator<T> for Take<I, T> where I: Iterator<T> {
     }
 }
 
+pub impl<I,T> ExactSizeIterator<T> for Take<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done || self.remaining == 0) { return 0; }
+        let source: &I = self.source; let count: u64 = source.remaining_count();
+        if (count < self.remaining) { return count; }
+        return self.remaining;
+    }
+}
+
+// Chain has no exact-size implementation: two valid u64 counts may sum beyond
+// u64. Zip also has none: its sources may legally share upstream progress, so
+// min(left_count,right_count) need not equal the number of future pairs.
 pub impl<A, B, T> Chain<A, B, T> {
     pub fn borrow(&self) -> &Chain<A, B, T> { return self; }
 }
@@ -888,6 +982,16 @@ pub impl<I,M,T,U> DoubleEndedIterator<U> for Map<I,M,T,U>
         let mapper: &M = self.mapper;
         let mapped: U = mapper.apply(item.unwrap());
         return core::option::Some(mapped);
+    }
+}
+
+// Stateful mapper output/logging is allowed. During apply, a mapper must not
+// independently advance, retire or mutate any upstream traversal state.
+pub impl<I,M,T,U> ExactSizeIterator<U> for Map<I,M,T,U>
+    where I: Iterator<T>, I: ExactSizeIterator<T>, M: Mapper<T,U> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; return source.remaining_count();
     }
 }
 
@@ -1233,6 +1337,16 @@ pub impl<I, T> Iterator<T> for Skip<I, T> where I: Iterator<T> {
         let item: core::option::Option<T> = source.next();
         if (core::option::is_none(item)) { self.done = true; }
         return item;
+    }
+}
+
+pub impl<I,T> ExactSizeIterator<T> for Skip<I,T>
+    where I: Iterator<T>, I: ExactSizeIterator<T> {
+    pub fn remaining_count(&self) -> u64 {
+        if (self.done) { return 0; }
+        let source: &I = self.source; let count: u64 = source.remaining_count();
+        if (count <= self.remaining) { return 0; }
+        return count-self.remaining;
     }
 }
 

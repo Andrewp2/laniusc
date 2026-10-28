@@ -1,0 +1,12 @@
+// Generic return receiver loses method resolution without a typed local.
+module app::main;
+import core::iter;
+import core::option;
+fn present<I,T>(source:&I) -> bool where I:core::iter::Iterator<T> {
+    return source.next().is_some();
+}
+fn main() -> i32 {
+    let source:core::iter::Once<i32> =core::iter::once<i32>(7);
+    assert(present<core::iter::Once<i32>,i32>(source.borrow()));
+    return 0;
+}

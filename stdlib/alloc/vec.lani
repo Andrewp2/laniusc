@@ -287,6 +287,10 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
     }
 }
 
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}
+
 // Acceptance has try_push's shallow ownership and view invalidation rules.
 pub impl<T> core::iter::TrySink<T, Error> for Vec<T> {
     pub fn try_accept(&self, item: T) -> core::option::Option<Error> {

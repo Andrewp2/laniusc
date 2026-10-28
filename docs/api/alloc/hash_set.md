@@ -17,8 +17,9 @@ Owning cursors also execute with explicit transfer, retained backing, O(1) recov
 - [stdlib-iterator-collection-sinks](../../stdlib-iterator-collection-sinks.md)
 - [stdlib-owning-hash](../../stdlib-owning-hash.md)
 - [stdlib-replacement-sinks](../../stdlib-replacement-sinks.md)
+- [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 
-Declaration counts: enum: 1; field: 3; function: 2; impl: 7; method: 34; struct: 3; variant: 1.
+Declaration counts: enum: 1; field: 3; function: 2; impl: 8; method: 35; struct: 3; variant: 1.
 
 ## Declared imports
 
@@ -447,4 +448,20 @@ pub impl<T> core::iter::Iterator<T> for IntoIter<T>
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
+```
+
+### impl at line 167
+
+[Source line 167](../../../stdlib/alloc/hash_set.lani#L167)
+
+```lanius
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
+```
+
+#### method: remaining_count
+
+[Source line 168](../../../stdlib/alloc/hash_set.lani#L168)
+
+```lanius
+pub fn remaining_count(&self) -> u64
 ```

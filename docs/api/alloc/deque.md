@@ -14,8 +14,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-collection-iterators](../../stdlib-collection-iterators.md)
 - [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
 - [stdlib-owning-iterators](../../stdlib-owning-iterators.md)
+- [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 
-Declaration counts: constant: 1; enum: 2; field: 15; function: 3; impl: 8; method: 52; struct: 4; variant: 5.
+Declaration counts: constant: 1; enum: 2; field: 15; function: 3; impl: 10; method: 54; struct: 4; variant: 5.
 
 ## Declared imports
 
@@ -688,9 +689,25 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 378
+### impl at line 377
+
+[Source line 377](../../../stdlib/alloc/deque.lani#L377)
+
+```lanius
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
+```
+
+#### method: remaining_count
 
 [Source line 378](../../../stdlib/alloc/deque.lani#L378)
+
+```lanius
+pub fn remaining_count(&self) -> u64
+```
+
+### impl at line 382
+
+[Source line 382](../../../stdlib/alloc/deque.lani#L382)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for Deque<T>
@@ -698,15 +715,15 @@ pub impl<T> core::iter::TrySink<T, Error> for Deque<T>
 
 #### method: try_accept
 
-[Source line 379](../../../stdlib/alloc/deque.lani#L379)
+[Source line 383](../../../stdlib/alloc/deque.lani#L383)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>
 ```
 
-### impl at line 386
+### impl at line 390
 
-[Source line 386](../../../stdlib/alloc/deque.lani#L386)
+[Source line 390](../../../stdlib/alloc/deque.lani#L390)
 
 ```lanius
 pub impl<T> Cursor<T>
@@ -714,7 +731,7 @@ pub impl<T> Cursor<T>
 
 #### method: borrow
 
-[Source line 387](../../../stdlib/alloc/deque.lani#L387)
+[Source line 391](../../../stdlib/alloc/deque.lani#L391)
 
 ```lanius
 pub fn borrow(&self) -> &Cursor<T>
@@ -722,15 +739,15 @@ pub fn borrow(&self) -> &Cursor<T>
 
 #### method: remaining
 
-[Source line 388](../../../stdlib/alloc/deque.lani#L388)
+[Source line 392](../../../stdlib/alloc/deque.lani#L392)
 
 ```lanius
 pub fn remaining(&self) -> i32
 ```
 
-### impl at line 395
+### impl at line 399
 
-[Source line 395](../../../stdlib/alloc/deque.lani#L395)
+[Source line 399](../../../stdlib/alloc/deque.lani#L399)
 
 ```lanius
 pub impl<T> core::iter::Iterator<T> for Cursor<T>
@@ -738,15 +755,15 @@ pub impl<T> core::iter::Iterator<T> for Cursor<T>
 
 #### method: next
 
-[Source line 396](../../../stdlib/alloc/deque.lani#L396)
+[Source line 400](../../../stdlib/alloc/deque.lani#L400)
 
 ```lanius
 pub fn next(&self) -> core::option::Option<T>
 ```
 
-### impl at line 402
+### impl at line 406
 
-[Source line 402](../../../stdlib/alloc/deque.lani#L402)
+[Source line 406](../../../stdlib/alloc/deque.lani#L406)
 
 ```lanius
 pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T>
@@ -754,8 +771,24 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for Cursor<T>
 
 #### method: next_back
 
-[Source line 403](../../../stdlib/alloc/deque.lani#L403)
+[Source line 407](../../../stdlib/alloc/deque.lani#L407)
 
 ```lanius
 pub fn next_back(&self) -> core::option::Option<T>
+```
+
+### impl at line 413
+
+[Source line 413](../../../stdlib/alloc/deque.lani#L413)
+
+```lanius
+pub impl<T> core::iter::ExactSizeIterator<T> for Cursor<T>
+```
+
+#### method: remaining_count
+
+[Source line 414](../../../stdlib/alloc/deque.lani#L414)
+
+```lanius
+pub fn remaining_count(&self) -> u64
 ```

@@ -15,8 +15,9 @@ Layer: `alloc`. Role: module. Profile: **Source inventory**.
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
 - [stdlib-iterator-transfer](../../stdlib-iterator-transfer.md)
 - [stdlib-owning-iterators](../../stdlib-owning-iterators.md)
+- [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 
-Declaration counts: constant: 1; enum: 2; field: 7; function: 3; impl: 5; method: 45; struct: 2; variant: 5.
+Declaration counts: constant: 1; enum: 2; field: 7; function: 3; impl: 6; method: 46; struct: 2; variant: 5.
 
 ## Declared imports
 
@@ -585,9 +586,25 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T>
 pub fn next_back(&self) -> core::option::Option<T>
 ```
 
-### impl at line 291
+### impl at line 290
+
+[Source line 290](../../../stdlib/alloc/vec.lani#L290)
+
+```lanius
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T>
+```
+
+#### method: remaining_count
 
 [Source line 291](../../../stdlib/alloc/vec.lani#L291)
+
+```lanius
+pub fn remaining_count(&self) -> u64
+```
+
+### impl at line 295
+
+[Source line 295](../../../stdlib/alloc/vec.lani#L295)
 
 ```lanius
 pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
@@ -595,7 +612,7 @@ pub impl<T> core::iter::TrySink<T, Error> for Vec<T>
 
 #### method: try_accept
 
-[Source line 292](../../../stdlib/alloc/vec.lani#L292)
+[Source line 296](../../../stdlib/alloc/vec.lani#L296)
 
 ```lanius
 pub fn try_accept(&self, item: T) -> core::option::Option<Error>

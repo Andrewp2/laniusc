@@ -13,6 +13,7 @@ Layer: `core`. Role: module. Profile: **Source inventory**.
 - [stdlib-slice-views](../../stdlib-slice-views.md)
 - [stdlib-slice](../../stdlib-slice.md)
 - [stdlib-cursor-integration](../../stdlib-cursor-integration.md)
+- [stdlib-exact-size-iterators](../../stdlib-exact-size-iterators.md)
 
 Declaration counts: enum: 1; field: 14; function: 40; impl: 4; method: 21; struct: 4; variant: 2.
 

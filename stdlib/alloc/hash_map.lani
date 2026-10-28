@@ -317,6 +317,10 @@ pub impl<K, V> IntoIter<K, V> {
     }
 }
 
+pub impl<K, V> core::iter::ExactSizeIterator<Entry<K, V>> for IntoIter<K, V> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}
+
 pub impl<K, V> core::iter::Iterator<Entry<K, V>> for IntoIter<K, V> {
     // Each successful pull removes one initialized entry before transferring
     // it. Deleted preserves probe chains if the remainder is later recovered.

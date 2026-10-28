@@ -1,0 +1,219 @@
+// Exact-size queries borrow existing cardinality; no iterator is cloned.
+// Eleven backing allocations: three strings and eight collection owners.
+module app::main;
+import alloc::binary_heap;
+import alloc::deque;
+import alloc::hash_map;
+import alloc::hash_set;
+import alloc::string;
+import alloc::tree_map;
+import alloc::tree_set;
+import alloc::vec;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+
+fn size<I,T>(source: &I, expected: u64)
+    where I: core::iter::Iterator<T>, I: core::iter::ExactSizeIterator<T> {
+    assert(source.remaining_count() == expected);
+    assert(source.remaining_count() == expected);
+}
+fn string(value: str) -> alloc::string::String {
+    let raw: [u8] = core::mem::typed_slice_from_raw_parts(core::mem::string_data_ptr(value),1);
+    return alloc::string::from_utf8(raw,1).unwrap();
+}
+fn vector() {
+    let empty: alloc::vec::Vec<alloc::string::String> = alloc::vec::new();
+    let zero: alloc::vec::IntoIter<alloc::string::String> = empty.take_iter();
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(zero.borrow(),0);
+    assert(zero.try_finish().is_none()); empty.destroy();
+
+    let owner: alloc::vec::Vec<alloc::string::String> = alloc::vec::with_capacity<alloc::string::String>(3).unwrap();
+    owner.try_push(string("A")).unwrap(); owner.try_push(string("B")).unwrap(); owner.try_push(string("C")).unwrap();
+    let cursor: alloc::vec::IntoIter<alloc::string::String> = owner.take_iter();
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(cursor.borrow(),3);
+    let last: alloc::string::String = cursor.next_back().unwrap(); assert(last.byte_at(0).unwrap() == 67); last.destroy();
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(cursor.borrow(),2);
+    assert(cursor.try_finish().is_some());
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(cursor.borrow(),2);
+    let first: alloc::string::String = cursor.next().unwrap(); assert(first.byte_at(0).unwrap() == 65); first.destroy();
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(cursor.borrow(),1);
+    let recovered: alloc::vec::Vec<alloc::string::String> = cursor.take_remaining();
+    assert(recovered.len() == 1 && owner.len() == 0 && cursor.capacity() == 0);
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(cursor.borrow(),0);
+    assert(cursor.try_finish().is_none());
+    let remainder: alloc::vec::IntoIter<alloc::string::String> = recovered.take_iter();
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(remainder.borrow(),1);
+    let middle: alloc::string::String = remainder.next().unwrap(); assert(middle.byte_at(0).unwrap() == 66); middle.destroy();
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(remainder.borrow(),0);
+    assert(remainder.next_back().is_none() && remainder.next().is_none() && remainder.try_finish().is_none());
+    size<alloc::vec::IntoIter<alloc::string::String>,alloc::string::String>(remainder.borrow(),0);
+    assert(remainder.try_finish().is_none()); recovered.destroy(); owner.destroy();
+}
+struct Unit {}
+fn zero_sized_vector() {
+    let owner: alloc::vec::Vec<Unit> = alloc::vec::with_capacity<Unit>(3).unwrap();
+    let unit: Unit = Unit {}; owner.try_push(unit).unwrap(); owner.try_push(unit).unwrap(); owner.try_push(unit).unwrap();
+    let cursor: alloc::vec::IntoIter<Unit> = owner.take_iter();
+    size<alloc::vec::IntoIter<Unit>,Unit>(cursor.borrow(),3);
+    assert(cursor.next().is_some() && cursor.next_back().is_some());
+    size<alloc::vec::IntoIter<Unit>,Unit>(cursor.borrow(),1);
+    let recovered: alloc::vec::Vec<Unit> = cursor.take_remaining();
+    size<alloc::vec::IntoIter<Unit>,Unit>(cursor.borrow(),0);
+    let last: alloc::vec::IntoIter<Unit> = recovered.take_iter(); assert(last.next().is_some());
+    size<alloc::vec::IntoIter<Unit>,Unit>(last.borrow(),0);
+    assert(last.try_finish().is_none()); owner.destroy(); recovered.destroy();
+}
+fn deque() {
+    let empty: alloc::deque::Deque<u64> = alloc::deque::new();
+    let zero: alloc::deque::Cursor<u64> = empty.iter();
+    size<alloc::deque::Cursor<u64>,u64>(zero.borrow(),0);
+    assert(zero.next().is_none() && zero.next_back().is_none());
+    let zero_owner: alloc::deque::IntoIter<u64> = empty.take_iter();
+    size<alloc::deque::IntoIter<u64>,u64>(zero_owner.borrow(),0);
+    assert(zero_owner.try_finish().is_none()); empty.destroy();
+
+    let owner: alloc::deque::Deque<u64> = alloc::deque::with_capacity<u64>(4).unwrap();
+    owner.try_push_back(2).unwrap(); owner.try_push_back(3).unwrap(); owner.try_push_back(4).unwrap(); owner.try_push_front(1).unwrap();
+    let borrowed: alloc::deque::Cursor<u64> = owner.iter();
+    size<alloc::deque::Cursor<u64>,u64>(borrowed.borrow(),4);
+    assert(borrowed.next().unwrap() == 1 && borrowed.next_back().unwrap() == 4);
+    size<alloc::deque::Cursor<u64>,u64>(borrowed.borrow(),2);
+    assert(borrowed.next_back().unwrap() == 3 && borrowed.next().unwrap() == 2);
+    size<alloc::deque::Cursor<u64>,u64>(borrowed.borrow(),0);
+    assert(borrowed.next_back().is_none() && owner.len() == 4);
+    let cursor: alloc::deque::IntoIter<u64> = owner.take_iter();
+    size<alloc::deque::IntoIter<u64>,u64>(cursor.borrow(),4);
+    assert(cursor.next_back().unwrap() == 4 && cursor.next().unwrap() == 1);
+    size<alloc::deque::IntoIter<u64>,u64>(cursor.borrow(),2);
+    assert(cursor.try_finish().is_some());
+    size<alloc::deque::IntoIter<u64>,u64>(cursor.borrow(),2);
+    let recovered: alloc::deque::Deque<u64> = cursor.take_remaining();
+    size<alloc::deque::IntoIter<u64>,u64>(cursor.borrow(),0);
+    assert(recovered.len() == 2 && cursor.try_finish().is_none());
+    let remainder: alloc::deque::IntoIter<u64> = recovered.take_iter();
+    size<alloc::deque::IntoIter<u64>,u64>(remainder.borrow(),2);
+    assert(remainder.next().unwrap() == 2);
+    size<alloc::deque::IntoIter<u64>,u64>(remainder.borrow(),1);
+    assert(remainder.next_back().unwrap() == 3);
+    size<alloc::deque::IntoIter<u64>,u64>(remainder.borrow(),0);
+    assert(remainder.try_finish().is_none() && remainder.try_finish().is_none());
+    size<alloc::deque::IntoIter<u64>,u64>(remainder.borrow(),0);
+    recovered.destroy(); owner.destroy();
+}
+fn hash_map() {
+    let owner: alloc::hash_map::HashMap<i32,u64> = alloc::hash_map::new();
+    let zero: alloc::hash_map::IntoIter<i32,u64> = owner.take_iter();
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(zero.borrow(),0);
+    assert(zero.try_finish().is_none());
+    let key: i32 = 1; while (key <= 4) { owner.try_insert(key,4294967296+(key as u64)).unwrap(); key += 1; }
+    let cursor: alloc::hash_map::IntoIter<i32,u64> = owner.take_iter();
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(cursor.borrow(),4);
+    let first: alloc::hash_map::Entry<i32,u64> = cursor.next().unwrap();
+    assert(first.value == 4294967296+(first.key as u64)); let mask: i32 = 1 << (first.key-1);
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(cursor.borrow(),3);
+    assert(cursor.try_finish().is_some());
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(cursor.borrow(),3);
+    let recovered: alloc::hash_map::HashMap<i32,u64> = cursor.take_remaining();
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(cursor.borrow(),0);
+    assert(recovered.len() == 3 && cursor.try_finish().is_none());
+    let remainder: alloc::hash_map::IntoIter<i32,u64> = recovered.take_iter(); let remaining: u64 = 3;
+    while (remaining > 0) {
+        size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(remainder.borrow(),remaining);
+        let item: alloc::hash_map::Entry<i32,u64> = remainder.next().unwrap(); let bit: i32 = 1 << (item.key-1);
+        assert((mask & bit) == 0 && item.value == 4294967296+(item.key as u64)); mask |= bit; remaining -= 1;
+    }
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(remainder.borrow(),0);
+    assert(mask == 15 && remainder.next().is_none() && remainder.try_finish().is_none());
+    size<alloc::hash_map::IntoIter<i32,u64>,alloc::hash_map::Entry<i32,u64>>(remainder.borrow(),0);
+    recovered.destroy(); owner.destroy();
+}
+fn hash_set() {
+    let owner: alloc::hash_set::HashSet<i64> = alloc::hash_set::new();
+    let zero: alloc::hash_set::IntoIter<i64> = owner.take_iter();
+    size<alloc::hash_set::IntoIter<i64>,i64>(zero.borrow(),0); assert(zero.try_finish().is_none());
+    let key: i64 = 1; while (key <= 4) { owner.try_insert(key).unwrap(); key += 1; }
+    let cursor: alloc::hash_set::IntoIter<i64> = owner.take_iter();
+    size<alloc::hash_set::IntoIter<i64>,i64>(cursor.borrow(),4);
+    let first: i64 = cursor.next().unwrap(); let mask: i32 = 1 << ((first-1) as i32);
+    size<alloc::hash_set::IntoIter<i64>,i64>(cursor.borrow(),3); assert(cursor.try_finish().is_some());
+    size<alloc::hash_set::IntoIter<i64>,i64>(cursor.borrow(),3);
+    let recovered: alloc::hash_set::HashSet<i64> = cursor.take_remaining();
+    size<alloc::hash_set::IntoIter<i64>,i64>(cursor.borrow(),0); assert(recovered.len() == 3 && cursor.try_finish().is_none());
+    let remainder: alloc::hash_set::IntoIter<i64> = recovered.take_iter(); let remaining: u64 = 3;
+    while (remaining > 0) {
+        size<alloc::hash_set::IntoIter<i64>,i64>(remainder.borrow(),remaining);
+        let item: i64 = remainder.next().unwrap(); let bit: i32 = 1 << ((item-1) as i32);
+        assert((mask & bit) == 0); mask |= bit; remaining -= 1;
+    }
+    size<alloc::hash_set::IntoIter<i64>,i64>(remainder.borrow(),0);
+    assert(mask == 15 && remainder.next().is_none() && remainder.try_finish().is_none());
+    size<alloc::hash_set::IntoIter<i64>,i64>(remainder.borrow(),0);
+    recovered.destroy(); owner.destroy();
+}
+fn tree_map() {
+    let owner: alloc::tree_map::TreeMap<i32,u64> = alloc::tree_map::new();
+    let zero: alloc::tree_map::IntoIter<i32,u64> = owner.take_iter();
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(zero.borrow(),0); assert(zero.try_finish().is_none());
+    owner.try_reserve(4).unwrap(); let key: i32 = 1;
+    while (key <= 4) { owner.try_insert(key,4294967296+(key as u64)).unwrap(); key += 1; }
+    let cursor: alloc::tree_map::IntoIter<i32,u64> = owner.take_iter();
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(cursor.borrow(),4);
+    assert(cursor.next_back().unwrap().key == 4 && cursor.next().unwrap().key == 1);
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(cursor.borrow(),2); assert(cursor.try_finish().is_some());
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(cursor.borrow(),2);
+    let recovered: alloc::tree_map::TreeMap<i32,u64> = cursor.take_remaining();
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(cursor.borrow(),0); assert(recovered.len() == 2 && cursor.try_finish().is_none());
+    let remainder: alloc::tree_map::IntoIter<i32,u64> = recovered.take_iter();
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(remainder.borrow(),2);
+    assert(remainder.next().unwrap().value == 4294967298);
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(remainder.borrow(),1);
+    assert(remainder.next_back().unwrap().value == 4294967299);
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(remainder.borrow(),0);
+    assert(remainder.next().is_none() && remainder.try_finish().is_none());
+    size<alloc::tree_map::IntoIter<i32,u64>,alloc::tree_map::Entry<i32,u64>>(remainder.borrow(),0);
+    recovered.destroy(); owner.destroy();
+}
+fn tree_set() {
+    let owner: alloc::tree_set::TreeSet<i64> = alloc::tree_set::new();
+    let zero: alloc::tree_set::IntoIter<i64> = owner.take_iter();
+    size<alloc::tree_set::IntoIter<i64>,i64>(zero.borrow(),0); assert(zero.try_finish().is_none());
+    owner.try_reserve(4).unwrap(); let key: i64 = 1; while (key <= 4) { owner.try_insert(key).unwrap(); key += 1; }
+    let cursor: alloc::tree_set::IntoIter<i64> = owner.take_iter();
+    size<alloc::tree_set::IntoIter<i64>,i64>(cursor.borrow(),4);
+    assert(cursor.next_back().unwrap() == 4 && cursor.next().unwrap() == 1);
+    size<alloc::tree_set::IntoIter<i64>,i64>(cursor.borrow(),2); assert(cursor.try_finish().is_some());
+    size<alloc::tree_set::IntoIter<i64>,i64>(cursor.borrow(),2);
+    let recovered: alloc::tree_set::TreeSet<i64> = cursor.take_remaining();
+    size<alloc::tree_set::IntoIter<i64>,i64>(cursor.borrow(),0); assert(recovered.len() == 2 && cursor.try_finish().is_none());
+    let remainder: alloc::tree_set::IntoIter<i64> = recovered.take_iter();
+    size<alloc::tree_set::IntoIter<i64>,i64>(remainder.borrow(),2); assert(remainder.next().unwrap() == 2);
+    size<alloc::tree_set::IntoIter<i64>,i64>(remainder.borrow(),1); assert(remainder.next_back().unwrap() == 3);
+    size<alloc::tree_set::IntoIter<i64>,i64>(remainder.borrow(),0); assert(remainder.next().is_none() && remainder.try_finish().is_none());
+    size<alloc::tree_set::IntoIter<i64>,i64>(remainder.borrow(),0);
+    recovered.destroy(); owner.destroy();
+}
+fn heap(order: alloc::binary_heap::Order, first: i32, direction: i32) {
+    let owner: alloc::binary_heap::BinaryHeap<i32> = alloc::binary_heap::new<i32>(order);
+    let zero: alloc::binary_heap::IntoIter<i32> = owner.take_iter();
+    size<alloc::binary_heap::IntoIter<i32>,i32>(zero.borrow(),0); assert(zero.try_finish().is_none());
+    owner.try_reserve(4).unwrap(); owner.try_push(3).unwrap(); owner.try_push(1).unwrap(); owner.try_push(4).unwrap(); owner.try_push(2).unwrap();
+    let cursor: alloc::binary_heap::IntoIter<i32> = owner.take_iter();
+    size<alloc::binary_heap::IntoIter<i32>,i32>(cursor.borrow(),4); assert(cursor.next().unwrap() == first);
+    size<alloc::binary_heap::IntoIter<i32>,i32>(cursor.borrow(),3); assert(cursor.try_finish().is_some());
+    size<alloc::binary_heap::IntoIter<i32>,i32>(cursor.borrow(),3);
+    let recovered: alloc::binary_heap::BinaryHeap<i32> = cursor.take_remaining();
+    size<alloc::binary_heap::IntoIter<i32>,i32>(cursor.borrow(),0); assert(recovered.len() == 3 && cursor.try_finish().is_none());
+    let remainder: alloc::binary_heap::IntoIter<i32> = recovered.take_iter(); let remaining: u64 = 3; let expected: i32 = first+direction;
+    while (remaining > 0) {
+        size<alloc::binary_heap::IntoIter<i32>,i32>(remainder.borrow(),remaining); assert(remainder.next().unwrap() == expected);
+        remaining -= 1; expected += direction;
+    }
+    size<alloc::binary_heap::IntoIter<i32>,i32>(remainder.borrow(),0); assert(remainder.next().is_none() && remainder.try_finish().is_none());
+    size<alloc::binary_heap::IntoIter<i32>,i32>(remainder.borrow(),0); recovered.destroy(); owner.destroy();
+}
+fn main() -> i32 {
+    vector(); zero_sized_vector(); deque(); hash_map(); hash_set(); tree_map(); tree_set();
+    heap(alloc::binary_heap::Order::Min,1,1); heap(alloc::binary_heap::Order::Max,4,-1); return 0;
+}

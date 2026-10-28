@@ -1,6 +1,17 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[exact-size iterator increment](stdlib-exact-size-iterators.md) adds an
+explicit `remaining_count() -> u64` contract for selected finite leaves,
+metadata-preserving adapters and collection cursors. Queries do no pulls,
+callbacks, item reads, allocation, cleanup or host I/O. Zip, Chain,
+callback-dependent traversal and checked-index Enumerate are excluded for
+their documented alias, range or cardinality limits. All four library gates
+and four real byte-sampling application gates pass on native Linux x86_64;
+the independent library model covers 10,714 cases/35,922 steps and the
+application covers 95 process cases. A selected unchanged reverse model also
+passes. This finite increment is accepted; no unchecked memory trust or
+automatic ownership follows. The preceding
 [weighted-statistics](extended-weighted-statistics.md) and
 [higher-moment](extended-higher-statistics.md) increment implements portable
 binary64 summaries with named estimator conventions and atomic updates.
@@ -106,6 +117,46 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Exact remaining iterator counts.**
+
+The [exact-size protocol](stdlib-exact-size-iterators.md) requires a matching
+explicit Iterator bound and counts the actual remaining `Some` values. The
+selected leaves include Empty/Once, full i32 ranges, canonical slice/chunk/
+window cursors and collection cursors with existing constant-time remainder
+metadata. Rev/Map/Take/Skip/StepBy/Peekable propagate the contract under their
+source/callback bounds. Take/Skip/StepBy/Peekable remain forward-only; exact
+size does not add a reverse method. StepBy distinguishes its first immediate
+output from later skip-before-output blocks. Peekable includes one occupied
+cache slot without filling it, and retains its cache recovery/owner policy.
+
+Zip has no exact trait because its two borrowed sources can share progress;
+the minimum of their counts need not equal future pair count. Chain can
+exceed `u64` even with two valid source counts. Borrowed hash/tree cursors do
+not gain a traversal scan or new count fields. Existing valid-state,
+backing/lifetime, nonreentrancy and owner rules remain required. Counts are
+snapshots for safe checked planning, with no authority for unchecked writes.
+All four library gates pass across two receipts. Three nonmodel gates pass
+in 11.82s in `exact-size-runtime-accepted.log`, whose model attempt fails on
+a fixture visibility error. The corrected isolated model passes in 8.44s in
+`exact-size-model-visibility-fixed.log`: 10,714 cases/35,922 steps/18 modes,
+with counts derived by draining independent sequence/deque copies. The pure
+contract's memory-syscall trace is empty, collection backings have matched
+full-address/size releases, and five unsupported bounds reject with LNC0008.
+These are four accepted distinct gates, without a combined all-pass claim.
+
+The real [sample-bytes program](stdlib-sample-bytes.md) uses optional Rev,
+Skip, StepBy and Take, then reserves from the final exact count while retaining
+checked appends and an independent byte cap. Four registered tests pass in
+9.44s, covering model37/limits3/CLI39/I/O16: 95 process cases, including two
+reached allocation denials. Receipt is `sample-bytes-runtime-first.log`.
+The unchanged old reverse model separately passes one selected test in 7.27s
+with 7,740 commands, in `exact-size-reverse-regression.log`; no other old-suite
+rerun follows. Logs are under `target/stdlib-work/`. Core source is
+`be05d6c2…`, current pure contract `43e59a04…` and app `f2dc4738…`.
+The narrow generic Option receiver-resolution dependency has an executed
+typed-local control in the exact-size guide. No compiler production changes,
+other targets, formal proofs or automatic lifetime/destruction are claimed.
 
 **Weighted second moments and unweighted third/fourth moments.**
 

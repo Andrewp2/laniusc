@@ -14,6 +14,9 @@ execution or other targets. The newly implemented
 [double-ended protocol and Rev](#double-ended-traversal) have separate current
 verification status below; historical forward-only groups do not establish
 those additions by themselves.
+The [exact-size protocol](stdlib-exact-size-iterators.md) separately specifies
+`remaining_count() -> u64` for selected finite sources and adapters; its
+current verification status and exclusions are in that guide.
 
 [Collection, Text and bitset cursors](stdlib-collection-iterators.md) implement
 the same protocol. Their separate native gates check mixed traversal,
@@ -136,7 +139,12 @@ when the desired operation is bounded or indexed reverse traversal, such as
 `rev -> filter -> take -> enumerate`. This does not make `rev(take(...))`
 available. Other cursor/adapter families gain no backward trait merely from
 having a forward implementation or an inherent metadata method. Generic reverse
-iteration carries no `remaining()` or exact cardinality promise.
+iteration under the backward trait alone carries no `remaining()` or exact
+cardinality promise.
+Generic exact counts require the separate `ExactSizeIterator<T>` bound;
+reverse support by itself does not supply it. Rev/Map can preserve both
+traits under their respective source bounds. Take/Skip/StepBy/Peekable gain
+conditional exact counts while retaining their existing forward-only pulls.
 
 ### Current reverse verification
 
@@ -165,6 +173,12 @@ Selected old forward contracts and `core_slice_view.lani` compile and execute
 again after method migration. The existing `tree_map_basic.lani` also passes
 without a direct core::iter import, preserving transitive method visibility.
 These focused controls do not claim a broad old-suite rerun.
+
+After adding the separate [exact-size capability](stdlib-exact-size-iterators.md),
+the unchanged independent reverse model passes its one selected registered
+test in 7.27s against current core source `be05d6c2…`: 7,740 commands, in
+`target/stdlib-work/exact-size-reverse-regression.log`. This adds no claim
+that the other historical reverse/forward groups were rerun.
 
 The [real timeline program](#latest-matching-timeline-application) separately
 passes all four registered Rust tests and its 71 process cases. No new
@@ -352,6 +366,9 @@ not query upstream. Exhausting the quota also requires no extra upstream probe.
 `remaining_limit() -> u64` reports the remaining successful-item quota. It is
 not an exact source cardinality. A prematurely exhausted Take can retain a
 nonzero quota. `borrow()` permits another adapter to borrow the Take itself.
+When its source also implements `ExactSizeIterator<T>`, the separate
+`remaining_count()` query reports the smaller of current source cardinality
+and quota; it neither consumes items nor changes `remaining_limit()`.
 
 Each `next` invokes at most one direct upstream `next`.
 

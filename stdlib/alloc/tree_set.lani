@@ -189,3 +189,7 @@ pub impl<T> core::iter::DoubleEndedIterator<T> for IntoIter<T> {
     // Canonical endpoint removal: O(log n), no leaf bounds or allocation.
     pub fn next_back(&self) -> core::option::Option<T> { return alloc::tree_map::key_pop<T>(self.state.borrow(),true); }
 }
+
+pub impl<T> core::iter::ExactSizeIterator<T> for IntoIter<T> {
+    pub fn remaining_count(&self) -> u64 { return self.remaining() as u64; }
+}
