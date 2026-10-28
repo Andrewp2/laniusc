@@ -1,0 +1,5 @@
+benchmark	min_s	median_s	peak_rss_kb	checksum
+scan_input	1.216	1.225	65152	956980
+scan_step	2.557	2.570	65152	-184314251
+scan_direct	1.714	1.734	65280	-184314251
+scan_run	2.045	2.053	65408	-184314251

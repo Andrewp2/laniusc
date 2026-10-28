@@ -1,8 +1,9 @@
 # State machines: a `machine` item in Lanius
 
-Status: design proposal, 2026-10-27. M0, M1 and M2 are done: see
+Status: design proposal, 2026-10-27. M0 to M3 are done: see
 [M0 result](#m0-result), [M1 decisions](#m1-decisions),
-[M1 result](#m1-result) and [M2 result](#m2-result). The syntax below is the implemented one except
+[M1 result](#m1-result), [M2 result](#m2-result),
+[M3 decisions](#m3-decisions) and [M3 result](#m3-result). The syntax below is the implemented one except
 where M1 decisions says otherwise (no `|` patterns, the constructor).
 
 ## Summary
@@ -294,7 +295,9 @@ hand, with the same enum layout, so there is nothing to optimize away. A
 codegen test compares the emitted rows of `Door::step` with a hand-written
 `enum` + `match` version and requires them to be identical.
 
-**`run`** lowers each state to a block and each `goto` to a jump:
+**`run`** lowers each state to a block and each `goto` to a jump (M3
+implements it as one loop per state, with jumps between states through one
+dispatch: [M3 decisions](#m3-decisions)):
 
 ```text
 Between:   if (i == n) { store Between; exit }
@@ -620,6 +623,67 @@ Done 2026-10-28.
   the door (outputs and a field) gave 100 cases, 0 mismatches. `gate.py`
   builds the proofs.
 
+## M3 decisions
+
+- **`run` is elaborated, like `step`.** A machine without an output gets
+  `pub fn run(&mut self, events: [E], count: i32)`, which feeds
+  `events[0..count)` through it. A machine with an output has no `run`,
+  which would drop the outputs; it is driven by `step`. `run` is always
+  generated: elaboration cannot see whether another module calls it, and
+  each state's loop is one copy of its arms.
+- **One loop per state, not one block per state.** Lanius has no `goto`
+  below the source, so the lowering in [Lowering](#lowering) is written as
+  structured code. Each state `S` is a method `run_S` whose data are locals
+  and whose `while` loop reads one event per iteration. `stay` and `goto S`
+  back to the same state are `continue` (assigning the locals, with
+  temporaries when there are several, so every value reads the old data).
+  `goto T` to another state stores `T` and returns the position, and `run`'s
+  own loop dispatches on the stored state. So a self-transition is a direct
+  jump and costs no tag store, while a transition between states costs one
+  store and one dispatch. Fully direct jumps between states need an LIR
+  jump row, and are left for when codegen grows one.
+- **Block arms may end in `break` or `continue`** of a loop around the
+  match (`docs/language-ergonomics.md#block-arms`); `run_S`'s arms need it.
+  The returns pass carries such a fact up like a return's, but it stops at
+  the loop, which is a control, and it never marks a function as returning.
+- **The lowering theorem** (`formal/Lanius/Machines/RunLowering.lean`) is
+  stated for any `step` and any `tag : S → T` (which state's loop runs):
+  `Machine.inner` is one state's loop, `Machine.lowered` the dispatch, and
+  `Machine.lowered_eq_run` proves they compute `Machine.run step s events`.
+  The elaborated loops are ordinary Lanius (`while`, `continue`, `return`,
+  field stores), so no new compiler construct needs its own proof.
+
+## M3 result
+
+Done 2026-10-28.
+
+- **`run`** (`compiler/machine_elaboration.rs`, `elaborate_run`), and
+  `break`/`continue` as the end of a block arm
+  (`type_checker/returns/01_mark`).
+- **Tests.** `tests/machines_execution.rs`: `sum_numbers_run.lani` runs the
+  design's `SumNumbers` over a slice, then over an empty one and a second
+  slice from the state the first left. `run_matches_step.lani` drives a
+  machine on enum events with two data values per state, including a swap
+  `goto Holding(second, first)`, and checks that `run` over every prefix of
+  400 events gives the state and fields that `step` gives.
+  `tests/language_ergonomics_execution.rs` has the loop-exit arms and the
+  rejection of a function whose only exit is a `break`.
+- **Benchmark** (`benchmark_artifacts/machines_m3/`, the laptop, 5 runs,
+  minimum wall time, checksums agree):
+
+  | Program | Scan only (s) |
+  |---|---|
+  | `scan_step` (M0 baseline) | 1.341 |
+  | `scan_run` | 0.829 |
+  | `scan_direct` | 0.498 |
+
+  `run` is 1.62 times as fast as the loop switch and beats the baseline. The
+  rest of the gap to the nested loops is the store and dispatch at each
+  transition between states, about one every four bytes in this input.
+- **Proof.** `Machine.lowered_eq_run`, with `Machine.inner_run` (a state's
+  loop runs `step` over the events it consumes and consumes at least one).
+  `gate.py` builds it.
+
 ## Open questions
 
 - **Spelling of the output.** `goto S with out` reads well but adds a keyword.
@@ -628,7 +692,7 @@ Done 2026-10-28.
   `Fault` arms in many states. A `group` of states sharing arms is the
   smallest form of nesting; it must keep R3 and extraction simple.
 - **Generic machines** (`machine Retry<T>`) should follow generic enums.
-- **`run` over iterators.** M3 takes `&[E]`. Running over an `Iterator`
+- **`run` over iterators.** M3 takes a slice and a count. Running over an `Iterator`
   needs the iterator's `next` inlined into each state block.
 - **Early exit from `run`** at a `final` state, reporting the position.
 - **Growable per-state data.** A per-machine `Scratch` reset when entering a

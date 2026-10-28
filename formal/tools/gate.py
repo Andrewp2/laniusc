@@ -88,7 +88,7 @@ STEPS = [
 
 def inputs():
     """The digest of each kind of input."""
-    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\nimport Lanius.Machines.TlsLifecycleCorrect\n')
+    lean = run_cache.olean_digest('import Lanius.Mini.FrontLex\nimport Lanius.Mini.MutPilotCorrect\nimport Lanius.Machines.SqliteStatementCorrect\nimport Lanius.Machines.TlsLifecycleCorrect\nimport Lanius.Machines.RunLowering\n')
     if lean is None:
         raise SystemExit('the Lean definitions are not built')
     run_all = os.path.join(run_cache.FORMAL, '.lake/build/bin/runAll')
@@ -110,7 +110,7 @@ def build():
     run = subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', 'MemoryMax=6G', '-p', 'MemorySwapMax=0',
                           'lake', 'build', 'runAll', 'Lanius.Mini.FrontLex',
                           'Lanius.Mini.MutPilotCorrect', 'Lanius.Machines.SqliteStatementCorrect',
-                          'Lanius.Machines.TlsLifecycleCorrect'], cwd=run_cache.FORMAL, env=env,
+                          'Lanius.Machines.TlsLifecycleCorrect', 'Lanius.Machines.RunLowering'], cwd=run_cache.FORMAL, env=env,
                          capture_output=True, text=True)
     if run.returncode != 0:
         raise SystemExit('lake build failed:\n' + run.stdout[-3000:] + run.stderr[-3000:])

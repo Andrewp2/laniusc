@@ -106,9 +106,14 @@ fn step(&mut self, event: Input) -> Reply {
 }
 ```
 
+Inside a loop, an arm may also end in `break` or `continue` of that loop
+(a state machine's `run` loops use this). Such an arm leaves the match but
+not the function: a function whose only exit is a `break` still needs its
+`return`.
+
 A block arm that can reach its end is a type error (`LNC0006`): "the end of
-this block arm can be reached". `break` and `continue` inside the block do
-not count as leaving it.
+this block arm can be reached". A `break` or `continue` of a loop inside the
+block does not count as leaving it.
 
 Decision: only diverging blocks for now. A block arm that falls through
 would need a unit-typed match, with joins of unit arms and arms that branch
@@ -127,8 +132,9 @@ Implementation:
 - `type_checker/returns/01_mark` treats a match as a counting latch over its
   block arms: a fact that every path through an arm block returns sets that
   block's flag once, and the arm that completes the count carries the fact to
-  the match's own context. `03_validate` rejects a block arm whose flag is
-  unset.
+  the match's own context. A `break` or `continue` publishes the same fact,
+  which stops at its loop and never marks the function. `03_validate`
+  rejects a block arm whose flag is unset.
 - Codegen needs no change: rows are scheduled by token position, so the
   block's statements fall between the arm's test and its end.
 

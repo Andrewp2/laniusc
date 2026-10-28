@@ -9,6 +9,9 @@ import primitive_types;
 // each arm block's flag is set once, by the first fact that reaches it, and
 // the thread that brings the count to the arm count carries the fact on, so
 // a match whose every arm is a returning block returns.
+// A `break` or `continue` also ends an arm block: its fact climbs like a
+// return's but stops at its loop (a control that carries nothing on), and it
+// never marks the function as returning.
 
 struct Params
 {
@@ -48,6 +51,8 @@ static const uint HIR_BLOCK = 6u;
 static const uint HIR_FN = 3u;
 static const uint HIR_RETURN_STMT = 9u;
 static const uint HIR_IF_STMT = 10u;
+static const uint HIR_BREAK_STMT = 12u;
+static const uint HIR_CONTINUE_STMT = 13u;
 static const uint HIR_CALL_EXPR = 19u;
 static const uint HIR_MEMBER_EXPR = 21u;
 static const uint HIR_MATCH_EXPR = 34u;
@@ -148,7 +153,15 @@ bool arm_block_of(uint match, uint block)
     return false;
 }
 
-void publish_guaranteed_return(uint node)
+bool loop_exit_statement(uint node)
+{
+    if (!valid_node(node))
+        return false;
+    uint kind = compact_hir_core[node].kind;
+    return kind == HIR_BREAK_STMT || kind == HIR_CONTINUE_STMT;
+}
+
+void publish_guaranteed_return(uint node, bool loop_exit)
 {
     uint current = node;
     while (valid_node(current))
@@ -157,7 +170,7 @@ void publish_guaranteed_return(uint node)
         if (!valid_node(control))
         {
             uint fn_node = compact_hir_nearest_fn[current];
-            if (valid_node(fn_node) && compact_hir_core[fn_node].kind == HIR_FN)
+            if (!loop_exit && valid_node(fn_node) && compact_hir_core[fn_node].kind == HIR_FN)
                 InterlockedMax(return_fn_flags[fn_node], 1u);
             return;
         }
@@ -200,7 +213,9 @@ void main(uint3 dtid: SV_DispatchThreadID)
 {
     uint node = linear_thread_id(dtid);
     if (return_statement_node(node))
-        publish_guaranteed_return(node);
+        publish_guaranteed_return(node, false);
     else if (diverging_statement_call(node))
-        publish_guaranteed_return(node);
+        publish_guaranteed_return(node, false);
+    else if (loop_exit_statement(node))
+        publish_guaranteed_return(node, true);
 }

@@ -234,6 +234,12 @@ fn a_block_arm_must_not_fall_through() {
     assert_rejected("block_arm_falls_through.lani", &["LNC0006", "the end of this block arm can be reached"]);
 }
 
+#[test]
+fn a_block_arm_can_end_in_break_or_continue() {
+    assert_exit("block_arm_loop_exits.lani", 0);
+    assert_rejected("block_arm_loop_exit_not_return.lani", &["LNC0006", "block_arm_loop_exit_not_return.lani:2"]);
+}
+
 // The resident workspace is sized by the largest unit checked so far; this
 // preserved program's imports are larger than it. Name lookup must use the
 // scope tree's published layout, not one derived from this unit's tokens.

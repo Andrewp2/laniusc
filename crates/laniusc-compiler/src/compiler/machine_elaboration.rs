@@ -717,6 +717,7 @@ fn elaborate_machine(e: &mut Elaborator<'_>, m: &Machine) -> Result<(), CompileE
             event_text: event.trim(),
             covered: Vec::new(),
             last_catch_all: false,
+            run: false,
         };
         elaborate_arms(e, &mut ctx, state)?;
         // R3: every event is handled.
@@ -739,8 +740,93 @@ fn elaborate_machine(e: &mut Elaborator<'_>, m: &Machine) -> Result<(), CompileE
         }
         e.emit("};\n    }\n", state.name);
     }
+    if output.is_none() {
+        elaborate_run(e, m, &state_type, &names, event.trim(), public, event_is_integer)?;
+    }
     e.emit("}\n", anchor);
     check_graph(e, m, &names, start_index, &edges)
+}
+
+/// `run(events, count)` feeds `events[0..count)` through the machine
+/// (docs/state-machines-design.md, M3 decisions): one loop per state, with
+/// the state's data in locals. A transition to the same state continues its
+/// loop; one to another state stores the state and returns to the dispatch.
+/// Only a machine without an output has `run`, which would drop the outputs.
+fn elaborate_run(e: &mut Elaborator<'_>, m: &Machine, state_type: &str, names: &[String], event: &str, public: &str,
+    event_is_integer: bool) -> Result<(), CompileError> {
+    let source = e.source;
+    let anchor = m.name;
+    let r = RESERVED_PREFIX;
+    e.emit(&format!("    {public}fn run(&mut self, {r}events: [{event}], {r}count: i32) {{\n        let {r}at: i32 = 0;\n        while ({r}at < {r}count) {{\n            {r}at = match (self.{r}state) {{\n"), anchor);
+    for (state, state_name) in m.states.iter().zip(names) {
+        let data: Vec<&str> = state.fields.iter().map(|(field, _)| &source[field.start..field.end]).collect();
+        let pattern = if data.is_empty() { String::new() } else { format!("({})", data.join(", ")) };
+        let mut arguments = data.join(", ");
+        if !arguments.is_empty() {
+            arguments.push_str(", ");
+        }
+        e.emit(&format!("                {state_type}::{state_name}{pattern} -> self.{r}run_{state_name}({arguments}{r}events, {r}at, {r}count),\n"), state.name);
+    }
+    e.emit("            };\n        }\n    }\n", anchor);
+    for (index, state) in m.states.iter().enumerate() {
+        e.emit(&format!("    fn {r}run_{}(&mut self, ", names[index]), state.name);
+        for (k, (field, ty)) in state.fields.iter().enumerate() {
+            e.emit(&format!("{r}data_{k}: "), *field);
+            e.copy(ty.0, ty.1);
+            e.emit(", ", *field);
+        }
+        e.emit(&format!("{r}events: [{event}], {r}from: i32, {r}count: i32) -> i32 {{\n"), state.name);
+        for (k, (field, ty)) in state.fields.iter().enumerate() {
+            e.emit("        let ", *field);
+            e.copy(field.start, field.end);
+            e.emit(": ", *field);
+            e.copy(ty.0, ty.1);
+            e.emit(&format!(" = {r}data_{k};\n"), *field);
+        }
+        e.emit(&format!("        let {r}at: i32 = {r}from;\n        while ({r}at < {r}count) {{\n            let {r}event: {event} = {r}events[{r}at];\n            {r}at += 1;\n            match ({r}event) {{"), state.name);
+        let mut edges = Vec::new();
+        let mut ctx = Arms {
+            machine: m,
+            state_type,
+            names,
+            current: index,
+            edges: &mut edges,
+            event_is_integer,
+            event_text: event,
+            covered: Vec::new(),
+            last_catch_all: false,
+            run: true,
+        };
+        elaborate_arms(e, &mut ctx, state)?;
+        let data: Vec<&str> = state.fields.iter().map(|(field, _)| &source[field.start..field.end]).collect();
+        let payload = if data.is_empty() { String::new() } else { format!("({})", data.join(", ")) };
+        e.emit(&format!("}};\n        }}\n        self.{r}state = {state_type}::{}{payload};\n        return {r}at;\n    }}\n", names[index]), state.name);
+    }
+    Ok(())
+}
+
+/// The token ranges `[start, end)` of the comma-separated arguments between
+/// the `(` at `open` and its partner.
+fn arguments(e: &Elaborator<'_>, open: usize) -> Vec<(usize, usize)> {
+    let close = e.partner[open];
+    let mut out = Vec::new();
+    let mut start = open + 1;
+    let mut token = open + 1;
+    while token < close {
+        if e.tokens[token].kind == Kind::Punct && matches!(e.text(token), "(" | "[" | "{") {
+            token = e.partner[token] + 1;
+            continue;
+        }
+        if e.is(token, ",") {
+            out.push((start, token));
+            start = token + 1;
+        }
+        token += 1;
+    }
+    if start < close {
+        out.push((start, close));
+    }
+    out
 }
 
 struct Arms<'m, 'e> {
@@ -755,6 +841,10 @@ struct Arms<'m, 'e> {
     covered: Vec<String>,
     /// Whether the last arm is `_` or a binding (for integer events).
     last_catch_all: bool,
+    /// Elaborating `run`'s loop for this state, not `step`'s handler: a
+    /// transition to this state continues the loop, one to another state
+    /// stores it and returns the position.
+    run: bool,
 }
 
 /// The token after the arm that starts at `token` in a state block ending at
@@ -890,6 +980,9 @@ fn elaborate_block(e: &mut Elaborator<'_>, ctx: &mut Arms<'_, '_>, open: usize, 
 fn transition(e: &mut Elaborator<'_>, ctx: &mut Arms<'_, '_>, token: usize, end: usize) -> Result<usize, CompileError> {
     let keyword = e.tokens[token];
     let mut next = token + 1;
+    if ctx.run {
+        return run_transition(e, ctx, token);
+    }
     if e.is(token, "goto") {
         let target = e.expect_ident(next, "the next state")?;
         let source = e.source;
@@ -925,6 +1018,68 @@ fn transition(e: &mut Elaborator<'_>, ctx: &mut Arms<'_, '_>, token: usize, end:
         return Err(e.fail(token, "this machine has an output: end the transition with `with value`"));
     }
     e.emit("return;", keyword);
+    Ok(next)
+}
+
+/// A transition in `run`'s loop for the current state: `stay` and `goto` the
+/// same state continue the loop (assigning the data locals), `goto` another
+/// state stores it and returns the position. Returns the token after it.
+fn run_transition(e: &mut Elaborator<'_>, ctx: &mut Arms<'_, '_>, token: usize) -> Result<usize, CompileError> {
+    let keyword = e.tokens[token];
+    let r = RESERVED_PREFIX;
+    if !e.is(token, "goto") {
+        e.emit("continue;", keyword);
+        return Ok(token + 1);
+    }
+    let mut next = token + 1;
+    let target = e.expect_ident(next, "the next state")?;
+    let source = e.source;
+    let target_name = &source[target.start..target.end];
+    let Some(target_index) = ctx.names.iter().position(|state| state == target_name) else {
+        return Err(e.fail(next, format!("no state is named `{target_name}`")));
+    };
+    next += 1;
+    let args = if e.is(next, "(") { Some(next) } else { None };
+    if target_index != ctx.current {
+        e.emit(&format!("self.{r}state = {}::", ctx.state_type), keyword);
+        e.copy(target.start, target.end);
+        if let Some(open) = args {
+            let close = e.partner[open];
+            e.copy(e.tokens[open].start, e.tokens[close].end);
+            next = close + 1;
+        }
+        e.emit(&format!("; return {r}at;"), keyword);
+        return Ok(next);
+    }
+    let fields = &ctx.machine.states[ctx.current].fields;
+    if let Some(open) = args {
+        let values = arguments(e, open);
+        if values.len() != fields.len() {
+            return Err(e.fail(open, format!("state `{target_name}` takes {} values", fields.len())));
+        }
+        // Each value is computed from the old data before any is assigned.
+        let single = values.len() == 1;
+        for (k, &(start, end)) in values.iter().enumerate() {
+            if single {
+                e.copy(fields[k].0.start, fields[k].0.end);
+                e.emit(" = ", keyword);
+            } else {
+                e.emit(&format!("let {r}next_{k}: "), keyword);
+                e.copy(fields[k].1.0, fields[k].1.1);
+                e.emit(" = ", keyword);
+            }
+            e.copy(e.tokens[start].start, e.tokens[end - 1].end);
+            e.emit("; ", keyword);
+        }
+        if !single {
+            for k in 0..values.len() {
+                e.copy(fields[k].0.start, fields[k].0.end);
+                e.emit(&format!(" = {r}next_{k}; "), keyword);
+            }
+        }
+        next = e.partner[open] + 1;
+    }
+    e.emit("continue;", keyword);
     Ok(next)
 }
 
@@ -1008,6 +1163,32 @@ pub machine Door on Input -> Reply {
         assert!(text.contains("Input::Open -> { return Reply::Ignored; },"), "{text}");
         assert!(text.contains("Input::Open -> { self.opens += 1; self.__lanius_state = DoorState::Opened; return Reply::Done; },"), "{text}");
         assert!(text.contains("return match (self.__lanius_state) {"), "{text}");
+    }
+
+    #[test]
+    fn run_has_one_loop_per_state() {
+        let text = elaborated("enum Op { Push(i32), Drop }
+machine Pair on Op {
+    start Empty;
+    state Empty {
+        Op::Push(x) -> goto Holding(x, 0),
+        Op::Drop -> stay,
+    }
+    state Holding(first: i32, second: i32) {
+        Op::Push(x) -> goto Holding(x, first),
+        Op::Drop -> goto Empty,
+    }
+}
+");
+        assert!(text.contains("fn run(&mut self, __lanius_events: [Op], __lanius_count: i32) {"), "{text}");
+        assert!(text.contains("PairState::Holding(first, second) -> self.__lanius_run_Holding(first, second, __lanius_events, __lanius_at, __lanius_count),"), "{text}");
+        // A transition to the same state continues its loop, reading the
+        // old data before assigning the new.
+        assert!(text.contains("Op::Push(x) -> { let __lanius_next_0: i32 = x; let __lanius_next_1: i32 = first; first = __lanius_next_0; second = __lanius_next_1; continue; },"), "{text}");
+        assert!(text.contains("Op::Drop -> { continue; },"), "{text}");
+        // One to another state stores it and returns the position.
+        assert!(text.contains("Op::Drop -> { self.__lanius_state = PairState::Empty; return __lanius_at; },"), "{text}");
+        assert!(text.contains("self.__lanius_state = PairState::Holding(first, second);\n        return __lanius_at;"), "{text}");
     }
 
     #[test]

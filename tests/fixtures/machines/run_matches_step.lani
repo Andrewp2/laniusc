@@ -1,0 +1,66 @@
+// `run` computes what `step` does, event by event (M3): a machine on enum
+// events with two data values per state, self-transitions that read the old
+// data (`goto Holding(second, first)` swaps them) and transitions out.
+import alloc::allocator;
+import core::mem;
+
+enum Op { Push(i32), Swap, Flush, Reset }
+
+machine Pair on Op {
+    flushed: i32,
+    resets: i32,
+    start Empty;
+
+    state Empty {
+        Op::Push(x) -> goto Holding(x, 0),
+        Op::Swap -> stay,
+        Op::Flush -> stay,
+        Op::Reset -> { self.resets += 1; stay; },
+    }
+    state Holding(first: i32, second: i32) {
+        Op::Push(x) -> goto Holding(x, first),
+        Op::Swap -> goto Holding(second, first),
+        Op::Flush -> { self.flushed = self.flushed * 31 + first * 7 + second; goto Empty; },
+        Op::Reset -> { self.resets += 1; goto Empty; },
+    }
+}
+
+fn op(seed: u32) -> Op {
+    let pick: u32 = (seed >> 16) % 8;
+    if (pick < 3) { return Op::Push(((seed >> 4) % 100) as i32); }
+    if (pick < 5) { return Op::Swap; }
+    if (pick < 7) { return Op::Flush; }
+    return Op::Reset;
+}
+
+fn code(m: Pair) -> i32 {
+    let state: i32 = match (m.state()) {
+        PairState::Empty -> 1,
+        PairState::Holding(first, second) -> first * 1000 + second,
+    };
+    return m.flushed * 7 + m.resets * 13 + state;
+}
+
+fn main() -> i32 {
+    let count: i32 = 400;
+    let events: [Op] = core::mem::typed_slice_from_storage<Op>(alloc::allocator::alloc((count as usize) * core::mem::size_of<Op>(), 8), count);
+    let seed: u32 = 99;
+    let index: i32 = 0;
+    while (index < count) { seed = seed * 1103515245 + 12345; events[index] = op(seed); index += 1; }
+
+    let stepped: Pair = pair_start(0, 0);
+    let ran: Pair = pair_start(0, 0);
+    let at: i32 = 0;
+    while (at < count) {
+        stepped.step(events[at]);
+        at += 1;
+        // Compare after every prefix: `run` over the first `at` events.
+        let fresh: Pair = pair_start(0, 0);
+        fresh.run(events, at);
+        if (code(fresh) != code(stepped)) { return 1; }
+    }
+    ran.run(events, count);
+    if (code(ran) != code(stepped)) { return 2; }
+    if (stepped.resets == 0 || stepped.flushed == 0) { return 3; }
+    return 0;
+}

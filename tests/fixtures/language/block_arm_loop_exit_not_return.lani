@@ -1,0 +1,15 @@
+// A `break` ends a block arm but does not return from the function.
+fn first_odd(limit: i32) -> i32 {
+    let index: i32 = 0;
+    while (index < limit) {
+        index += 1;
+        match (index % 2) {
+            1 -> { break; },
+            _ -> { continue; },
+        };
+    }
+}
+
+fn main() -> i32 {
+    return first_odd(4);
+}

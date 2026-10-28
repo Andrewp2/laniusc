@@ -77,3 +77,14 @@ fn every_state_is_reachable_and_dead_ends_are_final() {
 fn the_state_is_private() {
     assert_rejected("reject_reserved.lani", &["LNC0076", "reserved"]);
 }
+
+// M3: `run` feeds a slice through the machine, one loop per state.
+#[test]
+fn run_feeds_a_slice_through_the_machine() {
+    assert_exit("sum_numbers_run.lani", 0);
+}
+
+#[test]
+fn run_computes_what_step_does_after_every_prefix() {
+    assert_exit("run_matches_step.lani", 0);
+}

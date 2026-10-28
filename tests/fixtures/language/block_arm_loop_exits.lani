@@ -1,0 +1,28 @@
+// Block arms in a loop may end in `break` or `continue` of that loop.
+enum Op { Add(i32), Skip, Stop }
+
+fn op(index: i32) -> Op {
+    if (index == 7) { return Op::Stop; }
+    if (index % 3 == 0) { return Op::Skip; }
+    return Op::Add(index);
+}
+
+fn total() -> i32 {
+    let sum: i32 = 0;
+    let index: i32 = 0;
+    while (index < 100) {
+        index += 1;
+        match (op(index)) {
+            Op::Add(x) -> { sum += x; continue; },
+            Op::Skip -> { continue; },
+            Op::Stop -> { break; },
+        };
+    }
+    return sum;
+}
+
+fn main() -> i32 {
+    // 1 + 2 + 4 + 5 (3 and 6 skipped, stop at 7)
+    if (total() != 12) { return 1; }
+    return 0;
+}
