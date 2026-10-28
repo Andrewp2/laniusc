@@ -324,6 +324,10 @@ Only the index, existing WebSocket page and new OpenSSL-WebSocket page change.
 These counts describe source discovery. The generator changes no runtime code
 and the three human-maintained root files retain their original hashes.
 
-No connected WebSocket runtime, formal proof, compiler-enforced borrow checking,
-automatic owner cleanup, general digest API or GPU-device service follows from
-this increment. Sensitive digest computation remains in OpenSSL.
+Connected client behavior has separate executable acceptance in the
+[borrowed upgrade layer](extended-websocket-upgrade.md),
+[frame stream](extended-websocket-stream.md) and
+[one-message TCP/TLS program](extended-websocket-once.md). Those layers preserve
+coalesced frame bytes and retain explicit caller transport ownership.
+Formal proofs, compiler-enforced borrowing, automatic cleanup and GPU-device
+services remain open. Sensitive digest computation stays in OpenSSL.

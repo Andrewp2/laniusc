@@ -8,7 +8,7 @@ The documentation scanner preserves declaration spellings and bounds, skips func
 
 [Generation and verification](../library-api-reference.md) · [API conventions](../library-api-conventions.md) · [Remaining library work](../library-roadmap.md)
 
-Inventory: **264 modules**, **12863 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
+Inventory: **266 modules**, **12980 declaration/member entries**. Counts include fields, variants, trait members and separate impl blocks; they are not a count of verified operations.
 
 ## Modules
 
@@ -283,7 +283,9 @@ Inventory: **264 modules**, **12863 declaration/member entries**. Counts include
 | [ext::url_connect](ext/url_connect.md) | [source](../../extended/ext/url_connect.lani#L3) | 63 | Source inventory | [extended-url-client](../extended-url-client.md), [library-url-client-plan](../library-url-client-plan.md), [stdlib-resolve](../stdlib-resolve.md) |
 | [ext::url_tls](ext/url_tls.md) | [source](../../extended/ext/url_tls.lani#L3) | 40 | Source inventory | [extended-url-client](../extended-url-client.md), [extended-fetch-url](../extended-fetch-url.md), [extended-https-client](../extended-https-client.md), [library-url-client-plan](../library-url-client-plan.md) |
 | [ext::wave](ext/wave.md) | [source](../../extended/ext/wave.lani#L2) | 38 | Source inventory | [extended-wave](../extended-wave.md) |
-| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md), [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md) |
+| [ext::websocket](ext/websocket.md) | [source](../../extended/ext/websocket.lani#L3) | 82 | Source inventory | [extended-websocket](../extended-websocket.md), [extended-openssl-websocket](../extended-openssl-websocket.md), [extended-websocket-upgrade-program](../extended-websocket-upgrade-program.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md) |
+| [ext::websocket_stream](ext/websocket_stream.md) | [source](../../extended/ext/websocket_stream.lani#L3) | 59 | Source inventory | [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md) |
+| [ext::websocket_upgrade](ext/websocket_upgrade.md) | [source](../../extended/ext/websocket_upgrade.lani#L3) | 58 | Source inventory | [extended-websocket-upgrade](../extended-websocket-upgrade.md), [extended-websocket-stream](../extended-websocket-stream.md), [extended-websocket-once](../extended-websocket-once.md), [extended-websocket](../extended-websocket.md) |
 | [ext::x509](ext/x509.md) | [source](../../extended/ext/x509.lani#L3) | 141 | Source inventory | [extended-x509](../extended-x509.md), [extended-certificate-info](../extended-certificate-info.md) |
 | [ext::zip](ext/zip.md) | [source](../../extended/ext/zip.lani#L2) | 82 | Source inventory | [extended-zip](../extended-zip.md), [extended-fetch-many](../extended-fetch-many.md) |
 

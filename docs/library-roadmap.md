@@ -53,7 +53,7 @@ tests, target support, and relevant performance evidence.
 | Data formats | JSON, CSV, TOML, binary serialization, schema/validation utilities |
 | Text and parsing | Unicode properties and normalization, regex, lexers, parser utilities, diff and patch |
 | Files and packaging | Globs, directory walking utilities, compression, archives |
-| Network protocols | [WebSocket upgrade responses](extended-websocket.md#http-upgrade-response-syntax) now validate/encode portable 101 wire data using externally computed Accept; a separate OpenSSL helper and offline response tool have finite native provider/error and functional acceptance. A borrowed remaining-byte view is explicit, but connected socket/TLS transfer remains open. [URL-based HTTP/HTTPS](extended-url-client.md) now composes strict owned URL policy, one ordered connector and the canonical clients with finite native exchange, boundary/failure and real-program functional acceptance. Original URL identity/Host, exact selected-socket transfer and no post-selection replay are explicit; remaining source-OOM and broader schedule coverage is documented. HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batches and their CSV-to-ZIP application have separately accepted historical receipts; the current resumable HTTPS batches pass 108 connected cases, plain batches pass 103, and migrated HTTPS/mutual-TLS applications pass 63/101 cases through separate receipts; the current fetch-many also passes all five groups, and a minimal nested-pattern limitation plus executable explicit-match control are confirmed; excluded buffered/prepared-context receipts retain older scope; current server source has finite direct/scheduler/plain-and-TLS application passes but full concurrent-server acceptance, application authorization and broader orchestration remain open |
+| Network protocols | A [borrowed WebSocket client upgrade](extended-websocket-upgrade.md) and [frame stream](extended-websocket-stream.md) preserve coalesced bytes and partial I/O over the same caller-owned transport. One raw contract process executes eleven scenario functions; the real [one-message client](extended-websocket-once.md) passes separate plain9/rejection12/CLI17/I/O3/TLS5 groups on Linux x86_64/OpenSSL 3. Manual ownership, entropy/deadline policy, quotas and explicit cleanup remain required; server orchestration, ws/wss URLs and broader failure/target coverage remain open. [WebSocket upgrade responses](extended-websocket.md#http-upgrade-response-syntax) validate/encode portable 101 wire data using externally computed Accept; the separate OpenSSL helper and offline response tool retain their finite native provider/error and functional acceptance. [URL-based HTTP/HTTPS](extended-url-client.md) now composes strict owned URL policy, one ordered connector and the canonical clients with finite native exchange, boundary/failure and real-program functional acceptance. Original URL identity/Host, exact selected-socket transfer and no post-selection replay are explicit; remaining source-OOM and broader schedule coverage is documented. HTTP client/server, WebSocket request/frame processing, DNS and client TLS with peer verification through OpenSSL; TLS stream/HTTPS executes with numeric endpoints and explicit trust/deadlines/manual ownership; server TLS, required mutual TLS and bounded health/echo HTTPS modes execute; one-thread/poll cleartext batches and their CSV-to-ZIP application have separately accepted historical receipts; the current resumable HTTPS batches pass 108 connected cases, plain batches pass 103, and migrated HTTPS/mutual-TLS applications pass 63/101 cases through separate receipts; the current fetch-many also passes all five groups, and a minimal nested-pattern limitation plus executable explicit-match control are confirmed; excluded buffered/prepared-context receipts retain older scope; current server source has finite direct/scheduler/plain-and-TLS application passes but full concurrent-server acceptance, application authorization and broader orchestration remain open |
 | Storage | Database interfaces; executable [SQLite integration](extended-sqlite.md), [persistent binary key/value application](extended-sqlite-kv.md) and key-value snapshots; broader database/storage interfaces remain |
 | Security | Native-library cryptographic digests, encryption, signatures, certificate trust and TLS; OpenSSL EVP digests, verified client/server TLS and mutual TLS execute with explicit trust and manual owners; standalone encryption/signature APIs, application identity/authorization and broader certificate policy remain open |
 | Mathematics | Big integers, decimal arithmetic, statistics, linear algebra, geometry |
@@ -339,10 +339,17 @@ response generation accepts an externally computed Accept. A separate
 libcrypto, and the [offline upgrade tool](extended-websocket-upgrade-program.md)
 produces a checked 101 head from an EOF-terminated request. Current response/
 provider/tool receipts are separate from historical frame/request tests.
-DNS and WebSocket have real offline programs and independent interoperability/
-failure tests; their protocol-specific connected transport orchestration remains
-separate work. WebSocket still requires an explicit socket/TLS and unread-byte
-ownership handoff rather than merely a parser boundary.
+The [generic client-upgrade layer](extended-websocket-upgrade.md) now owns
+request/response storage and copies the coalesced frame prefix transactionally
+into a [borrowed frame stream](extended-websocket-stream.md). The caller retains
+and exclusively assigns the same transport; destroying either adapter never
+closes it. The [one-message client](extended-websocket-once.md) supplies real
+numeric TCP/verified DNS TLS, OS entropy, one cooperative deadline and Close/
+cleanup policy before output. A raw scripted contract executable and separate
+plain9/rejection12/CLI17/I/O3/TLS5 direct app groups pass on Linux x86_64.
+This does not supply a server-upgrade state machine, ws/wss URL policy, automatic
+ownership, arbitrary transport/schedule coverage or allocation-failure proofs.
+The offline wire/provider receipts retain their earlier separate scopes.
 The [owned socket API](stdlib-sockets.md) and [TCP exchange program](stdlib-tcp-exchange.md)
 provide executable numeric-address TCP/UDP transport independently.
 [DNS transport](extended-dns-client.md) now adds explicit-server queries, fresh
@@ -547,7 +554,7 @@ than a request to replace implementation work with more tests.
 | Iteration | Shared forward iteration, scan/nested traversal and bounded transfer retain their accepted finite scopes. Ordinary Flatten/FlatMap now pass semantic/shape, negative-bound, eight live-owner cases and the migrated flatten_sum groups through the same nested engine. Replacement sinks/helper pass semantic/shape, negative-bound, strict-owner/reached-OOM and real-application gates with pre/postcommit recovery. | Further adapters/consumers remain, with explicit cleanup through the canonical protocol. Preserve manual borrowed lifetimes, nonreentrancy and finite work/target limits; the separate zero-sized function-return dependency remains in the compiler ledger. |
 | Threads and synchronization | `std::thread` declares runtime externs but marks service 8 unbound; no working source atomic/mutex/channel library is present. The checked C profile has no function-pointer entry or C Boolean result. | Checked worker entry, runtime context/lifetime and memory-order admission precede usable thread/join/atomic/synchronization/channel APIs. Poll scheduling is not worker execution. See the [concurrency dependencies](library-concurrency-dependencies.md). |
 | Files, paths and processes | FileOps, directory walking, process groups, TempFile and anchored rename/unlink execute on their documented Linux profiles. AtomicFile/KV has finite local-Linux publication/failure/recovery receipts; descriptor-relative directory creation/removal passes 55 process invocations. Checked link/readlink and permissions pass 139 accepted group cases; mktemp_dir passes 48 process invocations. TempDir passes 46 accepted group cases across four groups. | Automatic owner destruction, concurrent spawn, group escape/containment and other platform bindings retain separate contracts. Preserve each receipt's overlap and finite target scope. Single-name publication does not supply locking or multi-file transactions. |
-| Connected protocols | HTTP/HTTPS and DNS transports execute. The URL facade adds strict owned HTTP(S) planning, ordered NSS/TCP selection and exact socket adoption, with separate plain2/DNS1/TLS8, connector admission12/failures8 and real-fetch functional24/33/4 direct groups. NSS remains synchronous. WebSocket adds portable response validation/encoding, an OpenSSL-backed Accept helper and an offline upgrade tool with separate finite native receipts; it retains a borrowed remaining-byte boundary but no connected transport owner. | Full URL wrapper/application source-OOM acceptance, arbitrary post-leaf clock/TLS schedules, asynchronous NSS, broader orchestration, keepalive/pooling and connected WebSocket remain. HTTP upgrade needs an explicit unread-byte/transport ownership handoff. Do not infer mixed invalid/valid mutual-TLS concurrency from sequential matrices. |
+| Connected protocols | HTTP/HTTPS and DNS transports execute. The URL facade adds strict owned HTTP(S) planning, ordered NSS/TCP selection and exact socket adoption, with separate plain2/DNS1/TLS8, connector admission12/failures8 and real-fetch functional24/33/4 direct groups. NSS remains synchronous. WebSocket adds portable response validation/encoding, OpenSSL Accept, an offline tool and generic borrowed client/frame adapters with transactional coalesced-byte handoff. Eleven scripted scenario functions run in one raw process; separate real-client plain9/rejection12/CLI17/I/O3/TLS5 groups pass. The caller retains the socket/TLS owner and explicitly closes it. | Full URL/WebSocket wrapper/application source-OOM acceptance, leak campaigns, arbitrary clock/TLS/generic-transport schedules, asynchronous NSS, broader orchestration, keepalive/pooling, WebSocket server upgrade and ws/wss URL policy remain. The borrowed client handoff is executable; automatic lifetime/cleanup enforcement remains language work. Do not infer mixed invalid/valid mutual-TLS concurrency from sequential matrices. |
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
@@ -875,7 +882,24 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
-- Current [WebSocket upgrade increment](extended-websocket.md#current-upgrade-execution):
+- Current borrowed WebSocket transport increment: the
+  [client handshake](extended-websocket-upgrade.md) and
+  [frame stream](extended-websocket-stream.md) have one raw Linux x86_64 contract
+  receipt executing eleven scenario functions in one process, with finite
+  split/prefetch/partial-I/O/fault/quota/conversion loops. Sources
+  `c8f4a42d…`/`be16005d…` perform no direct socket/TLS/clock/entropy operation,
+  but own allocator-backed storage and exclusively borrow a caller transport.
+  Final [one-message app](extended-websocket-once.md) `0ae21ee1…` passes separate
+  plain9/rejection12/CLI17/I/O3/TLS5 direct groups; app ELF `1e946119…` links
+  libssl.so.3/libcrypto.so.3/libc.so.6. The app supplies fresh OS entropy,
+  verified DNS TLS and deadline/Close/cleanup policy. Earlier app `5055e3ed…`
+  had an unaccepted TLS owner-lifetime failure; branch-scoped owners and
+  borrowed wrappers fix it without changing the generic modules or compiler.
+  Both new Rust drivers build in 2.00s, with no runtime-libtest pass claim.
+  Source/fd leak or OOM campaigns, every transport/schedule, server-upgrade
+  orchestration, ws/wss URLs, authentication/origin policy, formal proofs,
+  automatic ownership and other targets remain open.
+- Preceding [WebSocket wire-upgrade increment](extended-websocket.md#current-upgrade-execution):
   portable response validation/encoding consumes an externally computed canonical
   expected Accept; the separate [native helper](extended-openssl-websocket.md)
   delegates digest computation to OpenSSL 3 libcrypto. The direct contract
@@ -885,9 +909,10 @@ the rest of the family scope above stays open.
   [offline tool](extended-websocket-upgrade-program.md) passes separate
   functional22/rejection30/CLI15/I/O4 direct groups. Both Rust drivers build in
   2.09s without runtime-libtest execution. Old frame/request receipts remain
-  historical; those suites were not rerun. Connected socket/TLS transfer and
-  unread-byte ownership, application admission policy, automatic ownership,
-  broader allocation-failure coverage, proofs and other targets remain open.
+  historical; those suites were not rerun. The borrowed client/frame transfer
+  now has separate acceptance above. Server orchestration, broader application
+  admission policy, automatic ownership, allocation-failure coverage, proofs
+  and other targets remain open.
 - Accepted [command completion](extended-cli-complete.md): canonical prefix
   parsing and three portable modules pass contract/model checks; selected
   parser regressions, native query owner/OOM/output groups, actual Bash

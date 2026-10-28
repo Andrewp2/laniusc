@@ -1,13 +1,19 @@
 # Standard and extended library overview
 
-The full library goal remains open. The current
-[WebSocket upgrade increment](extended-websocket.md#current-upgrade-execution)
+The full library goal remains open. The current connected WebSocket increment
+adds a [borrowed client handshake](extended-websocket-upgrade.md),
+[bounded frame stream](extended-websocket-stream.md) and a real
+[one-message TCP/verified-TLS client](extended-websocket-once.md). A raw scripted
+contract executable passes eleven scenario functions in one process. The final
+client passes separate plain, rejection, CLI, I/O and TLS groups on Linux
+x86_64/glibc/OpenSSL 3. Explicit manual ownership, coalesced-byte preservation,
+per-layer quotas and caller deadline/entropy policy remain part of the
+contract. Both new Rust drivers build; direct runtime receipts remain separate
+from unrun Rust libtests. The preceding
+[wire-upgrade increment](extended-websocket.md#current-upgrade-execution)
 adds portable response validation/encoding, a narrow OpenSSL-backed Accept
-helper and a real offline stdin-to-101-response tool. Direct wire, native
-provider/error and tool groups pass on Linux x86_64; the native helper uses
-OpenSSL 3 libcrypto. This establishes no connected WebSocket transport or
-unread-byte/socket ownership handoff. Both new Rust drivers build; direct
-execution receipts remain separate from unrun runtime libtests. The preceding
+helper and an offline stdin-to-101-response tool. Its wire/provider/tool receipts
+retain their separate native profiles. The preceding
 [URL-client increment](library-url-client-plan.md) implements owned HTTP(S) URL
 planning, one ordered TCP selector and separate plain/verified-TLS facades over
 the canonical drivers. Direct URL semantics/owners, socket adoption, connected
@@ -73,6 +79,61 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**Borrowed WebSocket upgrade and frame transport.**
+
+[`websocket_upgrade::Client<T>`](extended-websocket-upgrade.md) owns immutable
+request/expected-Accept copies and retained response bytes while exclusively
+borrowing the caller's transport. Each handshake step performs at most one
+inner I/O attempt. The canonical HTTP cursor stops at the response head;
+transactional `into_stream` copies every coalesced frame byte into the
+[frame stream](extended-websocket-stream.md) before retiring handshake storage.
+A failed conversion leaves the ready client usable. These allocation-backed
+adapters import no socket, TLS, clock or entropy service of their own.
+
+The frame stream preserves partial read/write progress, counts actual inner
+read/write/flush attempts and requires inner flush before publishing a sent
+frame or local Close. WouldBlock preserves the pending suffix/phase; terminal
+I/O/quota failures are sticky. Destruction releases adapter storage without
+flushing, closing the caller transport or sending protocol Close. Borrowed
+payload views and the exclusive transport lifetime remain manual preconditions.
+
+The [websocket-once client](extended-websocket-once.md) supplies the native
+policy: explicit numeric endpoint, separate HTTP authority/target and verified
+DNS TLS identity, fresh OS entropy for nonce/masking keys, one cooperative
+network deadline, bounded messages/controls and successful Close/transport
+cleanup before stdout publication. It parses no ws/wss URL and performs no DNS
+lookup, reconnect or replay. OpenSSL owns TLS and the protocol Accept digest.
+
+| Surface | Current finite executable scope |
+| --- | --- |
+| Generic adapters | One raw x86_64 contract process executes eleven scenario functions with finite fault/quota loops: split/prefetched frames, both roles, partial I/O, malformed/EOF/sticky errors, exact limits, source mutation and failed/successful conversion |
+| Real plain client | Nine direct cases: binary/empty/text messages, fragments/Ping/Pong, coalesced frames, extended lengths and masked Close exchange |
+| Real rejection and CLI | Separate groups: twelve protocol/no-publication cases and seventeen argument/input/no-network-on-rejection cases |
+| Real I/O | Three cases: closed stdout reader, stdin failure and the original deadline while waiting for Close |
+| Real TLS client | Five cases: TLS 1.2/1.3, isolated default trust, wrong DNS identity and untrusted CA; application exchange follows authentication |
+| Driver admission | Both new Rust drivers build with `--no-run` in 2.00s; these direct executable receipts are not runtime-libtest passes |
+
+Accepted sources are stream `be16005d…`, upgrade `c8f4a42d…`, scripted producer
+`da71889b…` and final application `0ae21ee1…`. Raw/app executable hashes are
+`6d7a17ee…`/`1e946119…`. Logs under `target/stdlib-work/` are
+`websocket-transport-contracts-{compile,native}-quota-correction.log`,
+`websocket-once-plain-native-empty-upload.log`,
+`websocket-once-{rejection,cli,io,tls}-native-borrowed-owner.log` and
+`websocket-transport-driver-build-first.log`. Earlier app `5055e3ed…` had an
+unaccepted TLS owner-lifetime failure; the final app uses borrowed wrappers with
+branch-scoped owners and has the current five-group receipts. The generic
+modules did not change for that repair.
+
+Target evidence is CPU execution on Linux x86_64. The combined app links
+libssl.so.3, libcrypto.so.3 and libc.so.6 in both modes; its successful TLS
+profile supplies no device execution claim. Allocation-failure injection,
+source/fd leak campaigns, every generic transport/TLS schedule, server-upgrade
+orchestration, ws/wss URL policy, origin/authentication policy and other host
+platforms remain open. Cooperative deadlines cannot interrupt blocking host
+calls. Formal proofs, borrow checking and automatic destruction remain future
+language/runtime work; the documented transfer/error contracts can survive
+those changes.
+
 **WebSocket HTTP/1 upgrade.**
 
 The [portable wire module](extended-websocket.md) validates HTTP/1.1 101
@@ -100,9 +161,11 @@ optional offered-protocol selection. It supplies no connected service.
 
 The wire guide records exact source/executable identities and logs. Historical
 frame/request suites retain their earlier source scope and were not rerun.
-Connected HTTP-to-WebSocket transport/unread ownership handoff, origin/routing/
-authentication policy, nonce/mask entropy, deadlines, formal proofs, automatic
-ownership and other host/device targets remain open.
+The borrowed client transport/unread-byte composition now has the separate
+acceptance above. Server upgrade orchestration, broader origin/routing/
+authentication policy, formal proofs, automatic ownership and other host/device
+targets remain open; nonce/mask entropy and deadlines are explicit policies in
+the one-message client rather than effects of the pure wire API.
 
 **URL-based HTTP and HTTPS.**
 
@@ -135,7 +198,8 @@ here; no user-program GPU execution follows. A
 [minimal None-name collision](../tests/fixtures/compiler_dependencies/url_none_inference/README.md)
 has an executable module-qualified constructor control and is retained as a
 name-resolution dependency. Automatic ownership, formal proofs, asynchronous
-NSS, pooling/keepalive and connected WebSocket handoff remain open.
+NSS, pooling/keepalive and broader connected WebSocket policies remain open;
+the generic borrowed client handoff has its separate acceptance above.
 
 **Accepted command completion.**
 

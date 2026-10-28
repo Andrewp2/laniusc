@@ -8,13 +8,16 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Portable HTTP/1 upgrade request/response and extension-free frame/message processing. Response operations take a caller-computed canonical Accept for the original validated Request; no digest implementation or native crypto dependency lives here. Response validation requires HTTP/1.1 101, exact singleton Upgrade/Accept semantics, valid Connection tokens, at most one case-sensitive offered subprotocol and no negotiated extension; borrowed remaining bytes preserve the first-frame boundary. Response encoding stages a checked owned 101 head with explicit Vec destruction and no framing/body. Current direct Linux x86_64 contract execution covers 34 malformed responses plus valid/OWS/selection, stride, trailing-frame and encoder boundaries. Historical request/frame native groups retain their separate earlier source scope and were not rerun. Connected transport/unread ownership handoff, formal proofs and automatic lifetime checking remain open.
+Portable HTTP/1 upgrade request/response and extension-free frame/message processing. Response operations take a caller-computed canonical Accept for the original validated Request; no digest implementation or native crypto dependency lives here. Response validation requires HTTP/1.1 101, exact singleton Upgrade/Accept semantics, valid Connection tokens, at most one case-sensitive offered subprotocol and no negotiated extension; borrowed remaining bytes preserve the first-frame boundary. Response encoding stages a checked owned 101 head with explicit Vec destruction and no framing/body. Current direct Linux x86_64 contract execution covers 34 malformed responses plus valid/OWS/selection, stride, trailing-frame and encoder boundaries. Historical request/frame native groups retain their separate earlier source scope and were not rerun. The separate generic client-upgrade/frame-stream modules now preserve coalesced bytes over an exclusively borrowed transport, with their own scripted and real-client receipts. Server-upgrade orchestration, formal proofs and automatic lifetime checking remain open.
 
 ## Contract and evidence guides
 
 - [extended-websocket](../../extended-websocket.md)
 - [extended-openssl-websocket](../../extended-openssl-websocket.md)
 - [extended-websocket-upgrade-program](../../extended-websocket-upgrade-program.md)
+- [extended-websocket-stream](../../extended-websocket-stream.md)
+- [extended-websocket-upgrade](../../extended-websocket-upgrade.md)
+- [extended-websocket-once](../../extended-websocket-once.md)
 
 Declaration counts: enum: 3; field: 30; function: 12; impl: 1; method: 8; struct: 6; variant: 22.
 
