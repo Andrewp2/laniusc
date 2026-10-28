@@ -156,8 +156,10 @@ weighted higher-order moments and advanced decompositions remain work.
 The [canonical CSR foundation](extended-sparse.md) has borrowed kernels,
 independent owners and sparse/dense arithmetic. All six library runtime gates
 and four graph-application gates pass on the finite Linux x86_64 profile.
-Sparse/sparse multiplication, sparse solvers/factorizations and
-additional formats remain separate. The [graph-walk application](extended-graph-walk.md)
+The separate [sparse-product increment](extended-sparse-product.md) defines
+CSR-times-CSR multiplication in Lanius. All six new library and four real
+application gates pass on the finite Linux x86_64 profile. Sparse solvers/
+factorizations and additional formats remain separate. The [graph-walk application](extended-graph-walk.md)
 composes actual CSR construction/transpose/matvec with its own finite policy.
 [Normal, exponential, gamma and beta distributions](extended-distributions.md)
 add densities, paired tails and bounded generic sampling, with a
@@ -582,7 +584,7 @@ than a request to replace implementation work with more tests.
 | Native services and security | Scalar C calls, OpenSSL digests/TLS and SQLite execute. The native type enum admits neither C Boolean nor callback/aggregate/variadic forms. | Admit needed foreign-entry/layout contracts separately. Encryption, signatures and broader certificate/trust/application-authorization interfaces still need established native libraries; no sensitive cryptographic algorithm should be implemented here. |
 | Formats, archives and storage | JSON/CSV/TOML/CBOR, the supported schema profile, compression, TAR/ZIP payload codecs, SQLite and indexed snapshots execute. Shared extraction Plan/Profile/Prepared have finite native receipts. The content-only materializer passes 100 direct process invocations across 11 Python groups; the unpack CLI passes 74 through separate libtest-driven/retained-ELF receipts. | Resumable codec/dictionary profiles, broader archive formats, schema vocabulary/reference/output coverage and wider storage interfaces remain. Per-file NoReplace publication is not a directory transaction, hostile namespace sandbox or concurrent database transaction. |
 | Text and parsing | Unicode 17 default algorithms, regex/lexer and parsing utilities execute. Fixed Workspace and canonical Search serve span/full-capture probes; all 23 selected workspace/base-regex/lexer/regex-text/lex-scan tests pass across separate receipts. The new 4,096-token observation records 32 verified source requests and exact owner cleanup. | Locale collation/dictionary segmentation/shaping, richer formatting and further matching interfaces remain. The prior 36,887-allocation observation retains its historical implementation/accounting scope; no compiler-speed or universal throughput ratio follows. No second matcher is introduced. |
-| Mathematics | Big integers, finite decimals, ordinary/weighted second-order and unweighted higher statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. The canonical CSR foundation passes six library gates including a 3,886-case model, 33 reached operation-allocation denials and the 65,536-row analytic scale case; the real graph application passes four more gates/113 process cases. The weighted/higher increment passes eleven registered gates and both ordinary-statistics regressions, including independent Fraction/Decimal models and the 66-case CSV application. | Additional number theory, decimal exceptional/transcendental behavior, weighted higher-order and multivariate higher statistics, sparse/sparse multiplication, sparse/advanced decompositions and further distributions remain. Preserve finite-domain and accuracy limits. |
+| Mathematics | Big integers, finite decimals, ordinary/weighted second-order and unweighted higher statistics, dense LU/QR, distributions and geometry execute with explicit numerical profiles. The canonical CSR foundation passes six library gates including a 3,886-case model, 33 reached operation-allocation denials and the 65,536-row analytic scale case; the real graph application passes four more gates/113 process cases. The separate sparse product passes all six new library gates, including a 2,194-case model and 16 reached allocation denials; its weighted-path application passes four groups/122 unique process cases across separate original/amended-model receipts. The weighted/higher increment passes eleven registered gates and both ordinary-statistics regressions, including independent Fraction/Decimal models and the 66-case CSV application. | Additional number theory, decimal exceptional/transcendental behavior, weighted higher-order and multivariate higher statistics, sparse/advanced decompositions and further distributions remain. Preserve finite-domain and accuracy limits. |
 | Application and media utilities | CLI parsing, command hierarchy and generated help execute. Response tokenization/owned expansion pass portable semantics and public composition; native provider/resource groups pass 70 overlapping cases and current KV responses pass 55. Earlier hierarchy/roundtrip/publication groups retain source `f07fd52f...` scope. Portable completion, literal Bash words and reply frames pass finite semantics/pure contracts; the Bash adapter passes function/PTY/watchdog gates, and native queries pass owner/OOM/output groups. Settings, logging, terminal tables/progress, PNG, WAVE and FFT retain their profiles. | Other shell adapters, richer application/configuration validation, color management, additional media formats/playback and signal algorithms remain. |
 | Distribution and semantic documentation | Selective source bundles and the generated declaration inventory execute. At `f70d9a37`, 35 inventoried modules have no registered contract guide: 18 core and 17 std. | Installation/binary SDK and registry distribution, automatic test discovery/registration and complete semantic API documentation remain. Those 35 are guide-link gaps, not 35 proven missing implementations. Each API still needs executable/contract-only/unsupported classification where relevant. |
 | Targets | Current receipts establish native Linux x86_64 profiles; GPU compilation does not establish user-program GPU execution, and `std::gpu` is explicitly unbound. | Keep per-module target/dependency evidence accurate; broader host targets and user GPU services require real runtime support and execution before claims expand. |
@@ -906,6 +908,25 @@ the rest of the family scope above stays open.
 ## Current work
 
 - Branch: `codex/stdlib`; the full library goal remains open.
+- Accepted [sparse matrix product](extended-sparse-product.md): the contract
+  adds `ext::sparse_ops::matmul` returning independent canonical CSR, with
+  complete input validation, increasing-inner-column accumulation and
+  computed-zero omission. Reusable column scratch, actual output nonzero
+  caps, explicit finite-intermediate failures and the overflow-safe work
+  formula are documented. The implementation's 2,194-case independent model
+  passes in 7.45s and the 65,536-row analytic scale gate passes in 8.38s,
+  computing 327,674 output entries from 196,606 inputs. Four contract/denial
+  gates pass in 13.11s, including allocation-free rejections and 16 reached
+  allocation failures with explicit address/size releases. All six new
+  library gates pass; two selected foundation semantic regressions pass in
+  11.70s on the current module. The real
+  [sparse-paths program](extended-sparse-paths.md) passes all four groups with
+  122 unique process cases: model 34, rejection 37, CLI 36 and I/O 15. The
+  first four-test run passes in 20.45s; the amended model separately passes
+  in 14.73s and replaces the earlier 33-case model. Counts do not add those
+  overlapping model runs. All six new library and four application gates are
+  accepted on native Linux x86_64. Other foundation receipts retain their
+  older API/source scope.
 - Accepted [sparse CSR foundation](extended-sparse.md): allocation-free
   descriptors/validation/row/get/prefix matvec, independent three-vector
   owners, ordered COO coalescing, clone/transpose, sparse add/sub/scales and
@@ -930,9 +951,9 @@ the rest of the family scope above stays open.
   [item-import priority limitation](../tests/fixtures/stdlib_compiler_state/item_import_priority/README.md),
   whose qualified control compiles and executes; no compiler production code
   changed.
-  Sparse/sparse multiplication, sparse factorization/solvers, other formats,
-  formal proofs, automatic ownership and other host/device targets remain
-  outside this increment.
+  Sparse/sparse multiplication has its own current product increment.
+  Sparse factorization/solvers, other formats, formal proofs, automatic
+  ownership and other host/device targets remain outside this foundation.
 - Accepted [exact-size iterator increment](stdlib-exact-size-iterators.md):
   `ExactSizeIterator<T>` supplies an observational `u64` remaining count under
   a matching explicit Iterator bound. Selected finite core leaves and

@@ -8,6 +8,12 @@ library gates and four graph-application gates pass on native Linux x86_64.
 This finite increment is accepted. No compiler production change, native
 mathematics service or Wasm dependency is part of this increment.
 
+The follow-on [sparse product](extended-sparse-product.md) adds
+`ext::sparse_ops::matmul` under separate runtime gates. It is implemented,
+with all six new library gates and four application gates accepted on native
+Linux x86_64. The foundation receipts and source identities below do not cover
+that new API.
+
 ## Layers and representation
 
 | Module | Responsibility |
@@ -144,6 +150,7 @@ Every `ext::sparse_ops` function takes sparse `Limits` and returns
 | `from_dense(a,limits)` | New CSR Matrix from `ext::linalg::MatrixView` |
 | `to_dense(a,limits)` | New `ext::linalg::Matrix` with the CSR shape |
 | `matmul_dense(a,b,limits)` | New dense Matrix: `a.rows` by `b.cols`, requiring `a.cols==b.rows` |
+| `matmul(a,b,limits)` | New CSR Matrix: `a.rows` by `b.cols`, requiring `a.cols==b.rows`; see the separate [sparse-product contract/evidence](extended-sparse-product.md) |
 
 Inputs, factor vectors and phase work are completely admitted before output
 allocation. Every factor is finite-checked, including unused columns and
@@ -169,6 +176,12 @@ releases its vector before returning the error. Sparse/dense product likewise
 releases its partial dense result. **No owned result escapes on failure**;
 inputs are preserved. This differs from caller-output `matvec_into`, whose
 completed row prefix remains published.
+
+Sparse-times-sparse `matmul` uses a reusable column accumulator and a separate
+structural-product work formula. Its output-entry limit reports an output
+column in `entry`; numerical failure reports a left CSR slot. Its two-pass
+scratch ownership, actual rounded nonzero cap and separate runtime status
+are specified in the [product guide](extended-sparse-product.md).
 
 These algorithms do not supply compensation, scaling for arbitrary dynamic
 range, correctly rounded results or a uniform error bound. Gradual underflow
@@ -248,10 +261,11 @@ cap reached during sparse arithmetic identifies the producing row/entry.
 | `NumericalFailure` | A required product, partial sum or result is nonfinite |
 | `AllocationFailed` | The owner/operation layer cannot allocate storage |
 
-## Executed evidence and remaining scope
+## Foundation evidence and remaining scope
 
-Six registered library tests pass across four focused commands, using the
-GPU compiler's native Linux x86_64 CPU output:
+At the source identities below, six foundation library tests pass across four
+focused commands, using the GPU compiler's native Linux x86_64 CPU output.
+These receipts precede the separate sparse-product API:
 
 | Gate | Accepted evidence | Runtime log under `target/stdlib-work/` |
 | --- | --- | --- |
@@ -285,7 +299,7 @@ Its whole native process lifecycle was 1365.553ms, including construction,
 all operations, assertions, destruction and harness work. This observation
 does not isolate a kernel or establish a compiler-speed ratio.
 
-Accepted production SHA-256 identities are:
+Accepted foundation production SHA-256 identities are:
 
 | Source | SHA-256 |
 | --- | --- |
@@ -320,8 +334,11 @@ The application imports `core::slice` and uses `core::slice::view` explicitly.
 This name-resolution dependency has an executed workaround. No compiler
 production source was changed.
 
-Sparse/sparse multiplication, sparse factorizations/solvers and additional
-storage formats remain future work. No dense fallback supplies those APIs.
+Sparse/sparse multiplication is the separate
+[product increment](extended-sparse-product.md), with its own accepted model,
+contract, allocation-denial, analytic scale and real application receipts.
+Sparse factorizations/solvers and additional storage formats remain
+future work. No dense fallback supplies those APIs.
 The intended graph application is a finite weighted walk, not PageRank or
 a stationary-distribution/convergence algorithm. Other host/device targets,
 automatic ownership and formal proofs remain unclaimed.

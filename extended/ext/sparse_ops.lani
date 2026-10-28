@@ -301,3 +301,124 @@ pub fn matmul_dense(a:ext::sparse::CsrView,b:ext::linalg::MatrixView,limits:ext:
     }
     return core::result::Ok(ext::linalg::Matrix { data:data,rows:a.rows,cols:b.cols });
 }
+
+// Column-indexed sparse row accumulator. The touched buffer has reserved
+// capacity but only initializes slots reached in the current row. Its sort
+// changes key publication order, never the order of floating-point sums.
+struct ProductScratch {
+    markers:alloc::vec::Vec<i32>, sums:alloc::vec::Vec<f64>, touched:alloc::vec::Vec<i32>
+}
+impl ProductScratch {
+    fn borrow(&self) -> &ProductScratch { return self; }
+    fn destroy(&self) { self.markers.destroy(); self.sums.destroy(); self.touched.destroy(); }
+}
+fn product_scratch(columns:i32) -> core::result::Result<ProductScratch,ext::sparse::Error> {
+    let scratch:ProductScratch=ProductScratch { markers:alloc::vec::new(),sums:alloc::vec::new(),touched:alloc::vec::new() };
+    let markers=alloc::vec::with_capacity<i32>(columns);
+    if(markers.is_err()) { return core::result::Err(allocation_error(markers.unwrap_err(),ext::sparse::ErrorKind::DimensionLimit)); }
+    scratch.markers=markers.unwrap(); scratch.markers.try_resize(columns,0).unwrap();
+    let sums=alloc::vec::with_capacity<f64>(columns);
+    if(sums.is_err()) { scratch.destroy(); return core::result::Err(allocation_error(sums.unwrap_err(),ext::sparse::ErrorKind::DimensionLimit)); }
+    scratch.sums=sums.unwrap(); scratch.sums.try_resize(columns,0.0).unwrap();
+    let touched=alloc::vec::with_capacity<i32>(columns);
+    if(touched.is_err()) { scratch.destroy(); return core::result::Err(allocation_error(touched.unwrap_err(),ext::sparse::ErrorKind::DimensionLimit)); }
+    scratch.touched=touched.unwrap(); return core::result::Ok(scratch);
+}
+
+// Work = 3*(rows+1+nnzA)+2*b.cols+2*P*(3+ceil_log2(max(b.cols,1))).
+// P counts structural products, including explicit zeros. Only admitted P is
+// accumulated: each addition is bounded by the remaining budget divided by
+// its coefficient, so neither the sum nor its weighted estimate can wrap.
+fn product_admission(a:ext::sparse::CsrView,b:ext::sparse::CsrView,na:i32,limits:ext::sparse::Limits)
+    -> core::result::Result<u64,ext::sparse::Error> {
+    let levels:u64=0; let span:u64=1;
+    while(span<(b.cols as u64)) { span*=2; levels+=1; }
+    let coefficient:u64=2*(3+levels);
+    // Validated dimensions/counts are nonnegative i32. The base is below
+    // 2^35, while coefficient is at most 68. Widen before every addition.
+    let base:u64=3*((a.rows as u64)+1+(na as u64))+2*(b.cols as u64);
+    work(base,limits)?;
+    let maximum:u64=(limits.max_work-base)/coefficient;
+    let products:u64=0; let entry:i32=0;
+    while(entry<na) {
+        let inner:i32=integer(a.columns,entry);
+        let length:u64=(integer(b.offsets,inner+1)-integer(b.offsets,inner)) as u64;
+        if(length>maximum-products) { return core::result::Err(error(ext::sparse::ErrorKind::WorkLimit,-1,-1)); }
+        products+=length; entry+=1;
+    }
+    return core::result::Ok(products);
+}
+
+// Sparse accumulator pattern: scipy/sparse/sparsetools/csr.h csr_matmat.
+// This independent implementation additionally sorts touched indices, checks
+// each intermediate finite result and reserves exact rounded nonzero output.
+fn sparse_product_pass(a:ext::sparse::CsrView,b:ext::sparse::CsrView,scratch:&ProductScratch,
+    out:&ext::sparse_matrix::Matrix,writing:bool,limits:ext::sparse::Limits)
+    -> core::result::Result<i32,ext::sparse::Error> {
+    let markers:[i32]=scratch.markers.as_slice(); let sums:[f64]=scratch.sums.as_slice();
+    let offsets:[i32]=out.offsets.as_slice(); let columns:[i32]=out.columns.as_slice(); let values:[f64]=out.values.as_slice();
+    let cap:i32=entry_cap(limits); let count:i32=0; let row:i32=0;
+    if(writing) { offsets[0]=0; }
+    while(row<a.rows) {
+        let left:i32=integer(a.offsets,row); let left_end:i32=integer(a.offsets,row+1);
+        while(left<left_end) {
+            let inner:i32=integer(a.columns,left); let factor:f64=number(a.values,left);
+            let right:i32=integer(b.offsets,inner); let right_end:i32=integer(b.offsets,inner+1);
+            while(right<right_end) {
+                let col:i32=integer(b.columns,right);
+                let product:f64=factor*number(b.values,right);
+                if(!core::f64::is_finite(product)) { return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,row,left)); }
+                if(markers[col]==0) {
+                    markers[col]=1; sums[col]=0.0;
+                    // At most b.cols distinct columns occur in one row. The
+                    // exact scratch reservation makes this push infallible.
+                    scratch.touched.try_push(col).unwrap();
+                }
+                let sum:f64=sums[col]+product;
+                if(!core::f64::is_finite(sum)) { return core::result::Err(error(ext::sparse::ErrorKind::NumericalFailure,row,left)); }
+                sums[col]=sum; right+=1;
+            }
+            left+=1;
+        }
+        // Canonical publication is sorted only after all row sums finish.
+        let touched:[i32]=scratch.touched.as_slice(); let used:i32=scratch.touched.len();
+        core::slice::sort<i32>(touched,used);
+        let index:i32=0;
+        while(index<used) {
+            let col:i32=touched[index]; let value:f64=sums[col];
+            if(value!=0.0) {
+                if(count==cap) { return core::result::Err(error(ext::sparse::ErrorKind::EntryLimit,row,col)); }
+                if(writing) { columns[count]=col; values[count]=value; } count+=1;
+            }
+            // Clear only reached columns, including cancelled exact zeros.
+            markers[col]=0; sums[col]=0.0; index+=1;
+        }
+        scratch.touched.clear();
+        if(writing) { offsets[row+1]=count; } row+=1;
+    }
+    return core::result::Ok(count);
+}
+
+// Canonical CSR product without a dense matrix or dense row scan. The first
+// pass computes rounded sums/counts; the second repeats the same arithmetic
+// into exact output reservations. No partial output owner escapes on error.
+pub fn matmul(a:ext::sparse::CsrView,b:ext::sparse::CsrView,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> {
+    owner_shape(a.rows,b.cols,limits)?;
+    let na:i32=checked(a,limits)?; checked(b,limits)?;
+    if(a.cols!=b.rows) { return core::result::Err(error(ext::sparse::ErrorKind::Shape,-1,-1)); }
+    let products:u64=product_admission(a,b,na,limits)?;
+    // No structural product needs scratch, even when the right shape is wide.
+    if(products==0) { return allocated(a.rows,b.cols,0); }
+    if(b.cols>268435455) { return core::result::Err(error(ext::sparse::ErrorKind::DimensionLimit,-1,-1)); }
+    let scratch:ProductScratch=product_scratch(b.cols)?;
+    let unused:ext::sparse_matrix::Matrix=empty(0,0);
+    let counted=sparse_product_pass(a,b,scratch.borrow(),unused.borrow(),false,limits);
+    if(counted.is_err()) { scratch.destroy(); return core::result::Err(counted.unwrap_err()); }
+    let made=allocated(a.rows,b.cols,counted.unwrap());
+    if(made.is_err()) { scratch.destroy(); return core::result::Err(made.unwrap_err()); }
+    let out:ext::sparse_matrix::Matrix=made.unwrap();
+    let filled=sparse_product_pass(a,b,scratch.borrow(),out.borrow(),true,limits);
+    if(filled.is_err()) { out.destroy(); scratch.destroy(); return core::result::Err(filled.unwrap_err()); }
+    scratch.destroy(); return core::result::Ok(out);
+}

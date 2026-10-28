@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[sparse-product increment](extended-sparse-product.md) defines canonical
+CSR-times-CSR multiplication with ordered finite binary64 accumulation,
+reusable column scratch, exact nonzero output reservation and explicit
+work/cap admission. All six new library gates pass, including the independent
+2,194-case model, 16 reached allocation denials and the 65,536-row analytic
+product. The real weighted-path application passes four registered gates
+with 122 process cases across separate original/amended-model receipts.
+This finite native Linux x86_64 increment is accepted. Earlier foundation
+receipts do not cover the new API. The preceding
 [canonical CSR increment](extended-sparse.md) adds allocation-free borrowed
 validation/lookup/matvec, independent sparse owners and sparse/dense arithmetic.
 Stored-zero rules, ordered binary64 arithmetic, work admission and manual
@@ -129,6 +138,39 @@ evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
 
+**Sparse matrix products.**
+
+The [sparse product contract](extended-sparse-product.md) supplies a sparse
+`a.rows`-by-`b.cols` result when `a.cols==b.rows`. Full canonical input
+validation includes unused right-hand rows. Accumulation traverses increasing
+left inner columns and then each selected right row; sorted touched columns
+provide canonical output without reordering sums. Explicit zeros participate,
+computed zeros are omitted, and nonfinite intermediates fail atomically.
+The output entry cap counts actual rounded nonzeros after cancellation.
+
+Scratch storage is proportional to `b.cols` and reused across rows/passes;
+structurally empty products need only output offsets. Work admission uses the
+documented overflow-safe dominant-phase formula before scratch allocation or
+scalar multiplication. Physical backing, input immutability and owner cleanup
+remain manual. The independent model passes 2,194 cases in 7.45s across two
+backing forms with exact CSR/finite-bit comparisons and bounded exact-Fraction
+checks. The 65,536-row analytic gate passes in 8.38s: 196,606 input entries,
+327,674 output entries and 589,814 structural products. Its whole native
+lifecycle timing does not isolate kernel throughput. Four contract/denial
+gates pass in 13.11s, covering allocation-free admission rejection and 16
+reached operation-allocation errors with full address/size releases. All six
+new library tests pass on native Linux x86_64. Two selected foundation semantic
+regressions separately pass in 11.70s on the current module; other foundation
+receipts retain their old source scope. The real
+[signed weighted-path application](extended-sparse-paths.md) passes all four
+groups: model 34, rejection 37, CLI 36 and I/O 15, totaling 122 unique process
+cases. The first four-test command passes in 20.45s; its earlier 33-case model
+is superseded by the separately accepted 34-case model in 14.73s, including
+the rounded-value left-association check. The overlapping models are not
+summed as distinct cases. All six new library and four application gates are
+accepted on this finite target profile.
+Device execution and formal proofs remain unclaimed.
+
 **Canonical sparse rows and dense composition.**
 
 The [sparse family](extended-sparse.md) separates borrowed finite CSR admission
@@ -162,8 +204,9 @@ registered tests in 16.31s: model 32, rejection 33, CLI 38 and I/O 10, totaling
 [item-import priority dependency](../tests/fixtures/stdlib_compiler_state/item_import_priority/README.md).
 All ten selected runtime gates are accepted on this finite target profile.
 No broad target, uniform accuracy or formal-proof claim follows.
-Sparse/sparse multiplication, sparse solvers/factorizations and additional
-formats remain separate work.
+Those receipts retain the foundation source hashes in its guide. The separate
+sparse product has its own accepted runtime evidence; sparse solvers/
+factorizations and additional formats remain future work.
 
 **Exact remaining iterator counts.**
 

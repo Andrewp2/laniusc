@@ -1,0 +1,117 @@
+module app::main;
+import core::f64;
+import core::result;
+import core::slice;
+import ext::sparse;
+import ext::sparse_matrix;
+import ext::sparse_ops;
+
+fn kind(error:ext::sparse::Error) -> i32 {
+    return match(error.kind) {
+        ext::sparse::ErrorKind::InvalidLimits -> 1, ext::sparse::ErrorKind::Shape -> 2,
+        ext::sparse::ErrorKind::Bounds -> 3, ext::sparse::ErrorKind::DimensionLimit -> 4,
+        ext::sparse::ErrorKind::EntryLimit -> 5, ext::sparse::ErrorKind::WorkLimit -> 6,
+        ext::sparse::ErrorKind::Offset -> 7, ext::sparse::ErrorKind::Column -> 8,
+        ext::sparse::ErrorKind::Order -> 9, ext::sparse::ErrorKind::NonFinite -> 10,
+        ext::sparse::ErrorKind::NumericalFailure -> 11, ext::sparse::ErrorKind::AllocationFailed -> 12
+    };
+}
+fn csr(rows:i32,cols:i32,offsets:[i32],columns:[i32],values:[f64],nnz:i32) -> ext::sparse::CsrView {
+    return ext::sparse::CsrView { rows:rows,cols:cols,offsets:core::slice::view(offsets,rows+1).unwrap(),columns:core::slice::view(columns,nnz).unwrap(),values:core::slice::view(values,nnz).unwrap() };
+}
+fn rejected(result:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error>,expected:i32,row:i32,entry:i32) {
+    assert(result.is_err()); let error:ext::sparse::Error=result.unwrap_err();
+    assert(kind(error)==expected && error.row==row && error.entry==entry);
+}
+fn product_cell(view:ext::sparse::CsrView,row:i32,column:i32) -> f64 { return ext::sparse::get(view,row,column,ext::sparse::default_limits()).unwrap(); }
+
+fn rectangular_order_independence_and_work_boundary() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let ao:[i32;3]=[0,2,3]; let ac:[i32;3]=[0,2,1]; let av:[f64;3]=[2.0,4.0,3.0];
+    let bo:[i32;4]=[0,1,2,3]; let bc:[i32;3]=[1,0,1]; let bv:[f64;3]=[5.0,7.0,11.0];
+    let a:ext::sparse::CsrView=csr(2,3,ao,ac,av,3); let b:ext::sparse::CsrView=csr(3,2,bo,bc,bv,3);
+    let tight:ext::sparse::Limits=limits; tight.max_work=45;
+    rejected(ext::sparse_ops::matmul(a,b,tight),6,-1,-1);
+    tight.max_work=46; let output:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(a,b,tight).unwrap();
+    let view:ext::sparse::CsrView=output.view();
+    assert(view.rows==2 && view.cols==2 && output.nnz()==2 && view.offsets.get(0).unwrap()==0 && view.offsets.get(1).unwrap()==1 && view.offsets.get(2).unwrap()==2);
+    assert(view.columns.get(0).unwrap()==1 && view.columns.get(1).unwrap()==0 && product_cell(view,0,1)==54.0 && product_cell(view,1,0)==21.0 && product_cell(view,0,0)==0.0);
+    assert(av[0]==2.0 && av[1]==4.0 && bv[2]==11.0 && ao[1]==2 && bc[0]==1);
+    av[0]=99.0; bv[2]=99.0; assert(product_cell(view,0,1)==54.0 && product_cell(view,1,0)==21.0);
+    output.destroy(); output.destroy();
+    let square_off:[i32;3]=[0,2,3]; let square_col:[i32;3]=[0,1,1]; let square_values:[f64;3]=[1.0,2.0,3.0];
+    let same:ext::sparse::CsrView=csr(2,2,square_off,square_col,square_values,3);
+    let squared:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(same,same,limits).unwrap();
+    assert(squared.nnz()==3 && product_cell(squared.view(),0,0)==1.0 && product_cell(squared.view(),0,1)==8.0 && product_cell(squared.view(),1,1)==9.0);
+    assert(square_values[0]==1.0 && square_values[1]==2.0 && square_values[2]==3.0 && square_col[2]==1); squared.destroy();
+}
+fn actual_nonzeros_control_the_output_cap() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); limits.max_entries=6;
+    let ao:[i32;4]=[0,2,4,6]; let ac:[i32;6]=[0,1,0,1,0,1]; let av:[f64;6]=[1.0;6];
+    let bo:[i32;3]=[0,3,6]; let bc:[i32;6]=[0,1,2,0,1,2]; let bv:[f64;6]=[1.0,2.0,3.0,-1.0,-2.0,1.0];
+    let a:ext::sparse::CsrView=csr(3,2,ao,ac,av,6); let b:ext::sparse::CsrView=csr(2,3,bo,bc,bv,6);
+    let output:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(a,b,limits).unwrap();
+    assert(output.nnz()==3); let row:i32=0;
+    while (row<3) { assert(product_cell(output.view(),row,0)==0.0 && product_cell(output.view(),row,1)==0.0 && product_cell(output.view(),row,2)==4.0); row+=1; }
+    output.destroy(); bv[3]=1.0; bv[4]=2.0;
+    rejected(ext::sparse_ops::matmul(a,b,limits),5,2,0);
+    assert(av[5]==1.0 && bv[3]==1.0 && bv[4]==2.0 && bo[2]==6);
+}
+fn metadata_canonical_and_unused_values_are_validated() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let ao:[i32;2]=[0,1]; let ac:[i32;1]=[0]; let av:[f64;1]=[1.0]; let bo:[i32;4]=[0,1,2,3]; let bc:[i32;3]=[0,0,0]; let bv:[f64;3]=[2.0,3.0,4.0];
+    let a:ext::sparse::CsrView=csr(1,3,ao,ac,av,1); let b:ext::sparse::CsrView=csr(3,1,bo,bc,bv,3);
+    let invalid:ext::sparse::Limits=limits; invalid.max_entries=-1; rejected(ext::sparse_ops::matmul(a,b,invalid),1,-1,-1);
+    let broken:ext::sparse::CsrView=a; broken.rows=-1; rejected(ext::sparse_ops::matmul(broken,b,limits),2,-1,-1);
+    broken=a; broken.offsets.start=-1; rejected(ext::sparse_ops::matmul(broken,b,limits),3,-1,-1);
+    broken=b; broken.values.length=2; rejected(ext::sparse_ops::matmul(a,broken,limits),2,-1,-1);
+    broken=b; broken.columns.length=-1; rejected(ext::sparse_ops::matmul(a,broken,limits),3,-1,-1);
+    broken=b; broken.rows=2; rejected(ext::sparse_ops::matmul(a,broken,limits),2,-1,-1);
+    bo[2]=0; rejected(ext::sparse_ops::matmul(a,b,limits),7,1,-1); bo[2]=2;
+    bc[2]=1; rejected(ext::sparse_ops::matmul(a,b,limits),8,2,2); bc[2]=0;
+    bv[2]=core::f64::nan(); rejected(ext::sparse_ops::matmul(a,b,limits),10,2,2); bv[2]=4.0;
+    let duplicate_off:[i32;2]=[0,2]; let duplicate_cols:[i32;2]=[0,0]; let duplicate_vals:[f64;2]=[1.0,2.0];
+    let duplicate:ext::sparse::CsrView=csr(1,3,duplicate_off,duplicate_cols,duplicate_vals,2);
+    rejected(ext::sparse_ops::matmul(duplicate,b,limits),9,0,1);
+    assert(av[0]==1.0 && bv[2]==4.0 && bo[2]==2 && duplicate_cols[1]==0);
+}
+fn ieee_order_failures_and_explicit_zero_visits() {
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let ao:[i32;3]=[0,1,2]; let ac:[i32;3]=[0,0,0]; let av:[f64;3]=[1.0,core::f64::MAX,0.0]; let bo:[i32;4]=[0,1,2,3]; let bc:[i32;3]=[0,0,0]; let bv:[f64;3]=[2.0,1.0,1.0];
+    rejected(ext::sparse_ops::matmul(csr(2,1,ao,ac,av,2),csr(1,1,bo,bc,bv,1),limits),11,1,1);
+    ao[0]=0; ao[1]=3; ac[0]=0; ac[1]=1; ac[2]=2; av[0]=core::f64::MAX; av[1]=core::f64::MAX; av[2]=-core::f64::MAX; bv[0]=1.0;
+    rejected(ext::sparse_ops::matmul(csr(1,3,ao,ac,av,3),csr(3,1,bo,bc,bv,3),limits),11,0,1);
+    ao[1]=1; ac[0]=0; av[0]=-0.0; bv[0]=core::f64::MAX;
+    let a:ext::sparse::CsrView=csr(1,1,ao,ac,av,1); let b:ext::sparse::CsrView=csr(1,1,bo,bc,bv,1);
+    let tight:ext::sparse::Limits=limits; tight.max_work=16; rejected(ext::sparse_ops::matmul(a,b,tight),6,-1,-1);
+    tight.max_work=17; let zero:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(a,b,tight).unwrap();
+    assert(zero.nnz()==0 && core::f64::to_bits(av[0])==9223372036854775808 && bv[0]==core::f64::MAX); zero.destroy();
+    av[0]=core::f64::from_bits(1); bv[0]=0.5; let underflow:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(a,b,limits).unwrap(); assert(underflow.nnz()==0); underflow.destroy();
+    av[0]=core::f64::from_bits(2); let tiny:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(a,b,limits).unwrap(); assert(tiny.nnz()==1 && core::f64::to_bits(product_cell(tiny.view(),0,0))==1); tiny.destroy();
+}
+fn empty_shapes_scratch_capacity_and_widened_work() {
+    let offsets:[i32;2]=[0,0]; let columns:[i32;1]=[0]; let values:[f64;1]=[1.0];
+    let wide:ext::sparse::Limits=ext::sparse::Limits { max_dimension:2147483647,max_entries:2147483647,max_work:18446744073709551615 };
+    let a:ext::sparse::CsrView=csr(0,0,offsets,columns,values,0); let b:ext::sparse::CsrView=csr(0,2147483647,offsets,columns,values,0);
+    let tight:ext::sparse::Limits=wide; tight.max_work=4294967296; rejected(ext::sparse_ops::matmul(a,b,tight),6,-1,-1);
+    tight.max_work=4294967297; let huge_empty:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(a,b,tight).unwrap();
+    assert(huge_empty.view().rows==0 && huge_empty.view().cols==2147483647 && huge_empty.nnz()==0 && ext::sparse::validate(huge_empty.view(),wide).unwrap()==0); huge_empty.destroy();
+    let left_off:[i32;3]=[0,0,0]; let right_off:[i32;1]=[0];
+    let zero_inner:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(csr(2,0,left_off,columns,values,0),csr(0,3,right_off,columns,values,0),wide).unwrap();
+    assert(zero_inner.view().rows==2 && zero_inner.view().cols==3 && zero_inner.nnz()==0 && zero_inner.view().offsets.get(2).unwrap()==0); zero_inner.destroy();
+    offsets[1]=1;
+    let one:ext::sparse::CsrView=csr(1,1,offsets,columns,values,1); let too_wide:ext::sparse::CsrView=csr(1,268435456,offsets,columns,values,1);
+    rejected(ext::sparse_ops::matmul(one,too_wide,wide),4,-1,-1);
+    let empty_off:[i32;2]=[0,0]; let empty_wide:ext::sparse::CsrView=csr(1,268435456,empty_off,columns,values,0);
+    let no_scratch:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(one,empty_wide,wide).unwrap();
+    assert(no_scratch.view().rows==1 && no_scratch.view().cols==268435456 && no_scratch.nnz()==0); no_scratch.destroy();
+    let populated:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(one,one,wide).unwrap(); assert(product_cell(populated.view(),0,0)==1.0); populated.destroy();
+    let far_column:[i32;1]=[7]; let far_value:[f64;1]=[2.0]; let single_entry:ext::sparse::Limits=wide; single_entry.max_entries=1;
+    let sparse_wide:ext::sparse_matrix::Matrix=ext::sparse_ops::matmul(one,csr(1,8,offsets,far_column,far_value,1),single_entry).unwrap();
+    assert(sparse_wide.nnz()==1 && sparse_wide.view().cols==8 && sparse_wide.view().columns.get(0).unwrap()==7 && product_cell(sparse_wide.view(),0,7)==2.0); sparse_wide.destroy();
+}
+fn main() -> i32 {
+    rectangular_order_independence_and_work_boundary(); actual_nonzeros_control_the_output_cap();
+    metadata_canonical_and_unused_values_are_validated(); ieee_order_failures_and_explicit_zero_visits();
+    empty_shapes_scratch_capacity_and_widened_work(); return 0;
+}

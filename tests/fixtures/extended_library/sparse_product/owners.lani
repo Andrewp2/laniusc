@@ -1,0 +1,80 @@
+module app::main;
+import core::f64;
+import core::mem;
+import core::result;
+import core::slice;
+import ext::sparse;
+import ext::sparse_matrix;
+import ext::sparse_ops;
+import std::io;
+
+fn csr(rows:i32,cols:i32,offsets:[i32],columns:[i32],values:[f64],nnz:i32) -> ext::sparse::CsrView {
+    return ext::sparse::CsrView { rows:rows,cols:cols,offsets:core::slice::view(offsets,rows+1).unwrap(),columns:core::slice::view(columns,nnz).unwrap(),values:core::slice::view(values,nnz).unwrap() };
+}
+fn work_rejected(result:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error>) {
+    assert(result.is_err()); let error:ext::sparse::Error=result.unwrap_err();
+    assert(match(error.kind) { ext::sparse::ErrorKind::WorkLimit -> true, _ -> false });
+    assert(error.row==-1 && error.entry==-1);
+}
+fn admission() {
+    let ao:[i32;3]=[0,2,3]; let ac:[i32;3]=[0,2,1]; let av:[f64;3]=[2.0,4.0,3.0];
+    let bo:[i32;4]=[0,1,2,3]; let bc:[i32;3]=[1,0,1]; let bv:[f64;3]=[5.0,7.0,11.0];
+    let a:ext::sparse::CsrView=csr(2,3,ao,ac,av,3); let b:ext::sparse::CsrView=csr(3,2,bo,bc,bv,3);
+    let limits:ext::sparse::Limits=ext::sparse::default_limits(); limits.max_work=45; work_rejected(ext::sparse_ops::matmul(a,b,limits));
+    let offsets:[i32;2]=[0,1]; let columns:[i32;1]=[0]; let values:[f64;1]=[1.0];
+    let wide:ext::sparse::Limits=ext::sparse::Limits { max_dimension:2147483647,max_entries:2147483647,max_work:18446744073709551615 };
+    let hard:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> =ext::sparse_ops::matmul(csr(1,1,offsets,columns,values,1),csr(1,268435456,offsets,columns,values,1),wide);
+    assert(hard.is_err() && match(hard.unwrap_err().kind) { ext::sparse::ErrorKind::DimensionLimit -> true, _ -> false });
+    let nowhere:ptr=0; let absent:[f64]=core::mem::typed_slice_from_raw_parts<f64>(nowhere,0);
+    let malformed:ext::sparse::CsrView=b; malformed.values=core::slice::View { values:absent,start:-1,length:3 };
+    let bounds:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> =ext::sparse_ops::matmul(a,malformed,wide);
+    assert(bounds.is_err() && match(bounds.unwrap_err().kind) { ext::sparse::ErrorKind::Bounds -> true, _ -> false });
+    let empty_off:[i32;1]=[0]; let empty_a:ext::sparse::CsrView=csr(0,0,empty_off,columns,values,0); let empty_b:ext::sparse::CsrView=csr(0,2147483647,empty_off,columns,values,0);
+    limits=wide; limits.max_work=4294967296; work_rejected(ext::sparse_ops::matmul(empty_a,empty_b,limits));
+    assert(av[1]==4.0 && bv[2]==11.0 && values[0]==1.0);
+}
+fn operation(a:ext::sparse::CsrView,b:ext::sparse::CsrView,limits:ext::sparse::Limits,nnz:i32,numerical:bool) {
+    // R proves the selected production operation was entered. No input owner
+    // setup allocates before this marker, so RF is always a reached denial.
+    assert(std::io::write_byte(2,82)==1);
+    let result:core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error> =ext::sparse_ops::matmul(a,b,limits);
+    if (result.is_err()) {
+        let error:ext::sparse::Error=result.unwrap_err();
+        let allocation:bool=match(error.kind) { ext::sparse::ErrorKind::AllocationFailed -> true, _ -> false };
+        if (allocation) { assert(std::io::write_byte(2,70)==1); return; }
+        assert(numerical && match(error.kind) { ext::sparse::ErrorKind::NumericalFailure -> true, _ -> false });
+        assert(error.row==1 && error.entry==1); assert(std::io::write_byte(2,78)==1); return;
+    }
+    assert(!numerical); let owner:ext::sparse_matrix::Matrix=result.unwrap();
+    assert(owner.view().rows==a.rows && owner.view().cols==b.cols && owner.nnz()==nnz && ext::sparse::validate(owner.view(),limits).unwrap()==nnz);
+    owner.destroy(); owner.destroy(); assert(std::io::write_byte(2,83)==1);
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1); let op:i32=input[0]&255;
+    if (op==0) { admission(); assert(std::io::write_byte(2,80)==1); return 0; }
+    let limits:ext::sparse::Limits=ext::sparse::default_limits();
+    let ao:[i32;4]=[0,2,3,0]; let ac:[i32;6]=[0,1,1,0,0,0]; let av:[f64;6]=[1.0,2.0,3.0,0.0,0.0,0.0];
+    let bo:[i32;3]=[0,2,3]; let bc:[i32;6]=[0,1,1,0,0,0]; let bv:[f64;6]=[1.0,2.0,3.0,0.0,0.0,0.0];
+    if (op==1) {
+        operation(csr(2,2,ao,ac,av,3),csr(2,2,bo,bc,bv,3),limits,3,false);
+        assert(ao[1]==2 && bo[2]==3 && av[1]==2.0 && bv[2]==3.0);
+    }
+    if (op==2) {
+        ao[1]=0; ao[2]=0; bo[0]=0; limits.max_dimension=2147483647; limits.max_work=18446744073709551615;
+        operation(csr(2,0,ao,ac,av,0),csr(0,268435456,bo,bc,bv,0),limits,0,false);
+        assert(ao[2]==0 && bo[0]==0 && av[0]==1.0 && bv[0]==1.0);
+    }
+    if (op==3) {
+        ao[0]=0; ao[1]=2; ao[2]=4; ao[3]=6; bo[0]=0; bo[1]=3; bo[2]=6;
+        let index:i32=0; while (index<6) { ac[index]=index%2; bc[index]=index%3; av[index]=1.0; index+=1; }
+        bv[0]=1.0; bv[1]=2.0; bv[2]=3.0; bv[3]=-1.0; bv[4]=-2.0; bv[5]=1.0; limits.max_entries=6;
+        operation(csr(3,2,ao,ac,av,6),csr(2,3,bo,bc,bv,6),limits,3,false);
+        assert(ao[3]==6 && bo[2]==6 && av[5]==1.0 && bv[3]==-1.0 && bc[5]==2);
+    }
+    if (op==4) {
+        ao[1]=1; ao[2]=2; ac[0]=0; ac[1]=0; av[0]=1.0; av[1]=core::f64::MAX; bo[1]=1; bc[0]=0; bv[0]=2.0;
+        operation(csr(2,1,ao,ac,av,2),csr(1,1,bo,bc,bv,1),limits,0,true);
+        assert(av[1]==core::f64::MAX && bv[0]==2.0 && ao[2]==2 && bo[1]==1);
+    }
+    assert(op>=1 && op<=4); return 0;
+}

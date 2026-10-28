@@ -8,15 +8,17 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Owned CSR add/sub/scalar or axis scaling, matvec, dense conversion and CSR-times-dense product. Complete input/factor/work preflight precedes output allocation; computed zero CSR entries are omitted and numerical errors publish no owner. Unused factors/dense cells still require finite values. Dense input/output sizes and vector results obey sparse max_entries plus the hard f64 capacity; work is independent dominant phase admission, not cumulative instruction accounting. Existing dense views retain their own stride/bounds contract. All six library gates pass, including independent exact-bit arithmetic, reached operation-allocation denials and analytic 65,536-row sparse products/dense-admission rejection. All four real graph-application gates pass with 113 process cases on Linux x86_64. Sparse/sparse multiplication and sparse factorization are not supplied.
+Owned CSR add/sub/scalar or axis scaling, matvec, dense conversion and CSR-times-dense product. Complete input/factor/work preflight precedes output allocation; computed zero CSR entries are omitted and numerical errors publish no owner. Unused factors/dense cells still require finite values. Dense input/output sizes and vector results obey sparse max_entries plus the hard f64 capacity; work is independent dominant phase admission, not cumulative instruction accounting. Existing dense views retain their own stride/bounds contract. Historical foundation source fa34680d passes six library gates including exact-bit arithmetic, reached operation-allocation denials and analytic 65,536-row sparse products/dense-admission rejection; the four graph gates pass 113 process cases separately. Current source bc4fb714 implements matmul with CSR-times-CSR ordered finite accumulation, reusable column scratch, actual-nonzero output caps and atomic errors. All six new library gates pass: four contract/denial tests with allocation-free admission rejection and 16 reached operation failures, a 2,194-case independent model and the analytic 65,536-row product. Two selected foundation semantic regressions also pass on the current module; other older receipts retain their source scope. The signed weighted-path program passes all four groups/122 unique process cases across the original command and amended model receipt; overlapping earlier model cases are not added. Foundation receipts do not cover this API. Native Linux x86_64 remains the executable profile. Sparse factorization/solvers remain future work.
 
 ## Contract and evidence guides
 
 - [extended-sparse](../../extended-sparse.md)
+- [extended-sparse-product](../../extended-sparse-product.md)
+- [extended-sparse-paths](../../extended-sparse-paths.md)
 - [extended-linalg](../../extended-linalg.md)
 - [extended-graph-walk](../../extended-graph-walk.md)
 
-Declaration counts: function: 9.
+Declaration counts: function: 10.
 
 ## Declared imports
 
@@ -111,3 +113,14 @@ pub fn matmul_dense(a:ext::sparse::CsrView,b:ext::linalg::MatrixView,limits:ext:
 ```
 
 Multiplies CSR A by a checked finite dense view B into independent dense output. Uses increasing CSR inner-column dot order; input/output sizes and nnz*B.cols+input_count+output_count+A.rows+1 phase work are checked before allocation.
+
+### function: matmul
+
+[Source line 405](../../../extended/ext/sparse_ops.lani#L405)
+
+```lanius
+pub fn matmul(a:ext::sparse::CsrView,b:ext::sparse::CsrView,limits:ext::sparse::Limits)
+    -> core::result::Result<ext::sparse_matrix::Matrix,ext::sparse::Error>
+```
+
+Sparse-times-sparse: all six new library and four application gates pass on native Linux x86_64. Complete canonical input validation, a.cols==b.rows and independent canonical CSR output. Accumulate increasing inner k then right-row j from positive zero; reject nonfinite product/sum at output row and left CSR slot. Drop rounded zeros after accumulation; output EntryLimit identifies output row/column. O(b.cols) scratch is reused in numerical/count and exact-fill passes; structural-empty products need no scratch. Full work formula and hard capacities are in the product guide.
