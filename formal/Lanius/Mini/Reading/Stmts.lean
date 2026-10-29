@@ -1,0 +1,810 @@
+import Lanius.Mini.Reading.Effs
+
+/-! # The reading, V8d: statements
+
+`StmtsR env scope items m`: a statement list, a `let` scoping over the
+statements after it. A statement is a return (of a pure value, of a raw
+slice, or of an effectful one), an `if` or `while` (its condition pure or
+effectful), or an expression statement: an assignment to a local, a field
+of one or a slice element, a compound assignment, a deallocation, an
+assertion, or a call whose value is discarded.
+
+The builder falls back from a pure reading to an effectful one where the
+pure reader fails, which can be for want of fuel, so both readings are
+admitted (SEMANTIC_DECISIONS, "The reading states searches' positive
+part"). -/
+
+namespace Lanius.Mini.Reading
+
+open Lanius.Mini Lanius.Mini.Prod
+
+/-! ## Statement parts -/
+
+theorem peel_postfix : ∀ {c pf : CTree}, Peel c pf → nodeProd pf = pPostfix
+  | _, _, .wrap _ p => peel_postfix p
+  | _, _, .bare _ _ p => peel_postfix p
+  | _, _, .here e => e
+
+/-- `path(args)` with no further postfix, the path a plain name. -/
+def PathCallForm (pf : CTree) : Prop :=
+  nodeProd (kid pf 0) = pIdent ∧ nodeProd (kid (kid pf 0) 1) = pIdentPlain ∧ nodeProd (kid pf 1) = pPostfixCall ∧
+    nodeProd (kid (kid pf 1) 3) = pPostfixEnd
+
+theorem isPathCall_sound {pf : CTree} (h : isPathCall pf = true) : PathCallForm pf := by
+  simpa [isPathCall, PathCallForm, and_assoc] using h
+
+/-- Field `j`'s type in the struct type `t`. -/
+def FieldTyAt (decls : Decls) (t : Ty) (j : Nat) (ty : Ty) : Prop :=
+  ∃ d args ts, t = .tyNamed d args ∧ FieldTys decls d args ts ∧ ts[j]? = some ty
+
+theorem fieldTyAt_sound {fuel : Nat} {decls : Decls} {t : Ty} {j : Nat} :
+    MaybeTy (FieldTyAt decls t j) (fieldTyAt fuel decls t j) := by
+  intro ty h
+  unfold fieldTyAt at h
+  cases t with
+  | tyNamed d args =>
+    simp only [structFieldTys] at h
+    cases hf : fieldTys fuel decls d args with
+    | none => rw [hf] at h; cases h
+    | some ts =>
+      rw [hf] at h
+      exact ⟨d, args, ts, rfl, fieldTys_sound hf, h⟩
+  | tyI32 => cases h
+  | tyBool => cases h
+  | tyUint _ => cases h
+  | tyPtr => cases h
+  | tyIsize => cases h
+  | tySlice _ => cases h
+
+theorem effPostfix_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {expected : Option Ty} {pf : CTree}
+    {x : MEff} (pp : nodeProd pf = pPostfix) (h : effPostfix fuel env scope expected pf = some x) :
+    EffR env scope expected pf x :=
+  (effSound fuel).2.2.2.1 pp h
+
+/-- What a let binds: a let head, or else an effectful expression. -/
+inductive LetInitR (env : FrontEnv) (scope : List Local) (ty : Ty) (init : CTree) : LetHead → Prop
+  | head {hd : LetHead} : LetHeadR env scope ty init hd → LetInitR env scope ty init hd
+  | eval {x : MEff} {hd : LetHead} : EffR env scope (some ty) init x → evalHead (some x) = some hd →
+      LetInitR env scope ty init hd
+
+theorem letHeadOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {ty : Ty} {init : CTree}
+    {hd : LetHead} (h : letHeadOrEval fuel env scope ty init = some hd) : LetInitR env scope ty init hd := by
+  unfold letHeadOrEval at h
+  cases hl : letHead fuel env scope ty init with
+  | some h' =>
+    rw [hl] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact .head (letHead_sound hl)
+  | none =>
+    rw [hl] at h
+    simp only at h
+    cases he : effOf fuel env scope (some ty) init with
+    | none => rw [he] at h; simp [evalHead] at h
+    | some x =>
+      rw [he] at h
+      exact .eval (effOf_sound he) h
+
+/-- `return e;`: e pure, a raw slice in a function returning a slice (a
+slice local numbered by the value's first token, then its return), or
+effectful, stored at the result type. -/
+inductive ReturnR (env : FrontEnv) (scope : List Local) (e : CTree) : MStmt → Prop
+  | pure {x : SrcExpr} : ExprR env scope e x → ReturnR env scope e (.mReturn x)
+  | slice {el : Ty} {first : Token} {rest : List Token} {p l : SrcExpr} : env.ret = some (.tySlice el) →
+      e.leaves = first :: rest → LetHeadR env scope (.tySlice el) e (.sliceOf p l) →
+      ReturnR env scope e (.mLetSlice (first.start - env.base) el p l (.mReturn (.local (first.start - env.base))))
+  | eval {x : MEff} : EffR env scope env.ret e x → ReturnR env scope e (.mReturnEval x)
+
+theorem returnOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e : CTree} {m : MStmt}
+    (h : returnOrEval fuel env scope e = some m) : ReturnR env scope e m := by
+  unfold returnOrEval at h
+  cases hx : exprOf fuel env scope e with
+  | some x =>
+    rw [hx] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact .pure (exprOf_sound hx)
+  | none =>
+    rw [hx] at h
+    simp only at h
+    cases hs : returnSlice fuel env scope e with
+    | some m' =>
+      rw [hs] at h
+      simp only [Option.some.injEq] at h
+      subst h
+      unfold returnSlice at hs
+      cases hr : env.ret with
+      | none => rw [hr] at hs; cases hs
+      | some t =>
+        rw [hr] at hs
+        simp only at hs
+        cases he : sliceElem t with
+        | none => rw [he] at hs; cases hs
+        | some el =>
+          rw [he] at hs
+          simp only at hs
+          rw [sliceElem_eq he] at hr
+          cases ht : treeTokens e with
+          | nil => rw [ht] at hs; cases hs
+          | cons first rest =>
+            rw [ht] at hs
+            simp only [sliceReturned] at hs
+            cases hl : letHead fuel env scope t e with
+            | none => rw [hl] at hs; cases hs
+            | some hd =>
+              rw [hl] at hs
+              rw [sliceElem_eq he] at hl
+              cases hd with
+              | sliceOf p l =>
+                simp only [Option.some.injEq] at hs
+                subst hs
+                exact .slice hr (by rw [← treeTokens_eq]; exact ht) (letHead_sound hl)
+              | plain _ => cases hs
+              | callOf _ => cases hs
+              | variantOf _ _ => cases hs
+              | literalOf _ => cases hs
+              | matchOf _ _ _ => cases hs
+              | allocOf _ _ => cases hs
+              | indexOf _ _ => cases hs
+              | evalOf _ => cases hs
+    | none =>
+      rw [hs] at h
+      simp only at h
+      cases he : effOf fuel env scope env.ret e with
+      | none => rw [he] at h; simp [returnEvalOf] at h
+      | some x =>
+        rw [he] at h
+        simp only [returnEvalOf, Option.some.injEq] at h
+        subst h
+        exact .eval (effOf_sound he)
+
+/-- `if (c) { a } else { b }`, c pure or else effectful. -/
+inductive IfR (env : FrontEnv) (scope : List Local) (c : CTree) (a b : MStmt) : MStmt → Prop
+  | pure {x : SrcExpr} : ExprR env scope c x → IfR env scope c a b (.mIf x a b)
+  | eval {x : MEff} : EffR env scope (some .tyBool) c x → IfR env scope c a b (.mIfEval x a b)
+
+theorem ifOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {c : CTree} {a b : Option MStmt}
+    {m : MStmt} (h : ifOrEval fuel env scope c a b = some m) :
+    ∃ x y, a = some x ∧ b = some y ∧ IfR env scope c x y m := by
+  unfold ifOrEval at h
+  cases hx : exprOf fuel env scope c with
+  | some e =>
+    rw [hx] at h
+    simp only [ifBranches] at h
+    cases a with
+    | none => cases h
+    | some x =>
+      simp only [ifElse] at h
+      cases b with
+      | none => cases h
+      | some y =>
+        simp only [Option.some.injEq] at h
+        subst h
+        exact ⟨x, y, rfl, rfl, .pure (exprOf_sound hx)⟩
+  | none =>
+    rw [hx] at h
+    simp only [ifEvalOf] at h
+    cases he : effOf fuel env scope (some .tyBool) c with
+    | none => rw [he] at h; cases h
+    | some e =>
+      rw [he] at h
+      cases a with
+      | none => cases h
+      | some x =>
+        cases b with
+        | none => cases h
+        | some y =>
+          simp only [Option.some.injEq] at h
+          subst h
+          exact ⟨x, y, rfl, rfl, .eval (effOf_sound he)⟩
+
+/-- `while (c) { body }`, c pure or else effectful. -/
+inductive WhileR (env : FrontEnv) (scope : List Local) (c : CTree) (body : MStmt) : MStmt → Prop
+  | pure {x : SrcExpr} : ExprR env scope c x → WhileR env scope c body (.mWhile x body)
+  | eval {x : MEff} : EffR env scope (some .tyBool) c x → WhileR env scope c body (.mWhileEval x body)
+
+theorem whileOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {c : CTree} {body : Option MStmt}
+    {m : MStmt} (h : whileOrEval fuel env scope c body = some m) :
+    ∃ x, body = some x ∧ WhileR env scope c x m := by
+  unfold whileOrEval at h
+  cases hx : exprOf fuel env scope c with
+  | some e =>
+    rw [hx] at h
+    simp only [whileBody] at h
+    cases body with
+    | none => cases h
+    | some x =>
+      simp only [Option.some.injEq] at h
+      subst h
+      exact ⟨x, rfl, .pure (exprOf_sound hx)⟩
+  | none =>
+    rw [hx] at h
+    simp only [whileEvalOf] at h
+    cases he : effOf fuel env scope (some .tyBool) c with
+    | none => rw [he] at h; cases h
+    | some e =>
+      rw [he] at h
+      cases body with
+      | none => cases h
+      | some x =>
+        simp only [Option.some.injEq] at h
+        subst h
+        exact ⟨x, rfl, .eval (effOf_sound he)⟩
+
+/-! ## Assignments -/
+
+/-- `x = value;` for the local `l`: a call, a pure value, or else an
+effectful one. -/
+inductive SetR (env : FrontEnv) (scope : List Local) (l : Local) (value : CTree) : MStmt → Prop
+  | value {v : SrcExpr} : ExprR env scope value v → SetR env scope l value (.mSet l.id v)
+  | pathCall {pf : CTree} {c : Called} : Peel value pf → PathCallForm pf →
+      PathCallOf env scope l.ty (kid (kid pf 0) 0) (kid (kid pf 1) 1) c → SetR env scope l value (.mSetCall l.id c.inst c.args)
+  | method {pf : CTree} {c : Called} : Peel value pf → MethodForm pf → MethodCallOf env scope l.ty pf c →
+      SetR env scope l value (.mSetCall l.id c.inst c.args)
+  | eval {x : MEff} {m : MStmt} : EffR env scope (some l.ty) value x → setEvalOf l.id (some x) = some m →
+      SetR env scope l value m
+
+theorem setValue_some {id : Nat} {v : Option SrcExpr} {m : MStmt} (h : setValue id v = some m) :
+    ∃ x, v = some x ∧ m = .mSet id x := by
+  cases v with
+  | none => cases h
+  | some x =>
+    simp only [setValue, Option.some.injEq] at h
+    exact ⟨x, rfl, h.symm⟩
+
+theorem setCallOf_some {id : Nat} {c : Option Called} {m : MStmt} (h : setCallOf id c = some m) :
+    ∃ x, c = some x ∧ m = .mSetCall id x.inst x.args := by
+  cases c with
+  | none => cases h
+  | some x =>
+    simp only [setCallOf, Option.some.injEq] at h
+    exact ⟨x, rfl, h.symm⟩
+
+theorem setOrEval_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {l : Local} {value : CTree} {m : MStmt}
+    (h : setOrEval fuel env scope l value = some m) : SetR env scope l value m := by
+  unfold setOrEval at h
+  cases hs : setLocal fuel env scope l value with
+  | some m' =>
+    rw [hs] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    unfold setLocal at hs
+    cases hp : peel fuel value with
+    | none =>
+      rw [hp] at hs
+      obtain ⟨v, hv, rfl⟩ := setValue_some hs
+      exact .value (exprOf_sound hv)
+    | some pf =>
+      rw [hp] at hs
+      simp only [setPostfix] at hs
+      split at hs
+      · rename_i pc
+        obtain ⟨c, hc, rfl⟩ := setCallOf_some hs
+        exact .pathCall (peel_sound hp) (isPathCall_sound pc) (pathCallOf_sound hc)
+      split at hs
+      · rename_i _ mf
+        obtain ⟨c, hc, rfl⟩ := setCallOf_some hs
+        exact .method (peel_sound hp) (isMethodForm_sound mf) (methodCallOf_sound hc)
+      obtain ⟨v, hv, rfl⟩ := setValue_some hs
+      exact .value (exprOf_sound hv)
+  | none =>
+    rw [hs] at h
+    simp only at h
+    cases he : effOf fuel env scope (some l.ty) value with
+    | none => rw [he] at h; simp [setEvalOf] at h
+    | some x =>
+      rw [he] at h
+      exact .eval (effOf_sound he) h
+
+/-- `target = value;`: a local, a field of a local, or an element of a
+slice local. -/
+inductive AssignTargetR (env : FrontEnv) (scope : List Local) (target value : CTree) : MStmt → Prop
+  | «local» {l : Local} {m : MStmt} : nodeProd (kid target 1) = pPostfixEnd → LocalOf scope (kid target 0) l →
+      SetR env scope l value m → AssignTargetR env scope target value m
+  | fieldPure {l : Local} {j : Nat} {v : SrcExpr} : nodeProd (kid target 1) = pPostfixMember →
+      nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
+      LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
+      ExprR env scope value v → AssignTargetR env scope target value (.mSetField l.id j v)
+  | fieldEval {l : Local} {j : Nat} {E : Option Ty} {x : MEff} : nodeProd (kid target 1) = pPostfixMember →
+      nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
+      LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
+      MaybeTy (FieldTyAt env.decls l.ty j) E → EffR env scope E value x →
+      AssignTargetR env scope target value (.mSetFieldEval l.id j x)
+  | indexPure {l : Local} {i v : SrcExpr} : nodeProd (kid target 1) = pPostfixIndex →
+      nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
+      ExprR env scope (kid (kid target 1) 1) i → ExprR env scope value v →
+      AssignTargetR env scope target value (.mSetIndex l.id i v)
+  | indexEval {l : Local} {i v : MEff} : nodeProd (kid target 1) = pPostfixIndex →
+      nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
+      EffR env scope none (kid (kid target 1) 1) i → EffR env scope (sliceElem l.ty) value v →
+      AssignTargetR env scope target value (.mSetIndexEval l.id i v)
+
+theorem assignTarget_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target value : CTree} {m : MStmt}
+    (h : assignTarget fuel env scope target value = some m) : AssignTargetR env scope target value m := by
+  unfold assignTarget at h
+  simp only at h
+  split at h
+  · rename_i pe
+    cases hl : localOf env scope (kid target 0) with
+    | none => rw [hl] at h; cases h
+    | some l =>
+      rw [hl] at h
+      exact .local pe (localOf_sound hl) (setOrEval_sound h)
+  split at h
+  · rename_i _ c
+    simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+    cases hl : localOf env scope (kid target 0) with
+    | none => rw [hl] at h; cases h
+    | some l =>
+      rw [hl] at h
+      simp only [setFieldOrEval] at h
+      cases hj : fieldIndex env l.ty (kidToken (kid target 1) 1).text with
+      | none => rw [hj] at h; cases h
+      | some j =>
+        rw [hj] at h
+        simp only at h
+        cases hv : exprOf fuel env scope value with
+        | some v =>
+          rw [hv] at h
+          simp only [Option.some.injEq] at h
+          subst h
+          exact .fieldPure c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) (exprOf_sound hv)
+        | none =>
+          rw [hv] at h
+          simp only at h
+          cases he : effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value with
+          | none => rw [he] at h; cases h
+          | some x =>
+            rw [he] at h
+            simp only [fieldEvalStmt, Option.some.injEq] at h
+            subst h
+            exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) fieldTyAt_sound (effOf_sound he)
+  split at h
+  · rename_i _ _ c
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+    cases hl : localOf env scope (kid target 0) with
+    | none => rw [hl] at h; cases h
+    | some l =>
+      rw [hl] at h
+      simp only [setIndexOrEval] at h
+      cases hs : setIndexOf l.id (exprOf fuel env scope (kid (kid target 1) 1)) (exprOf fuel env scope value) with
+      | some m' =>
+        rw [hs] at h
+        simp only [Option.some.injEq] at h
+        subst h
+        unfold setIndexOf at hs
+        cases hi : exprOf fuel env scope (kid (kid target 1) 1) with
+        | none => rw [hi] at hs; cases hs
+        | some i =>
+          rw [hi] at hs
+          cases hv : exprOf fuel env scope value with
+          | none => rw [hv] at hs; cases hs
+          | some v =>
+            rw [hv] at hs
+            simp only [Option.some.injEq] at hs
+            subst hs
+            exact .indexPure c.1 c.2 (localOf_sound hl) (exprOf_sound hi) (exprOf_sound hv)
+      | none =>
+        rw [hs] at h
+        simp only [setIndexEvalOf] at h
+        cases hi : effOf fuel env scope none (kid (kid target 1) 1) with
+        | none => rw [hi] at h; cases h
+        | some i =>
+          rw [hi] at h
+          cases hv : effOf fuel env scope (sliceElem l.ty) value with
+          | none => rw [hv] at h; cases h
+          | some v =>
+            rw [hv] at h
+            simp only [Option.some.injEq] at h
+            subst h
+            exact .indexEval c.1 c.2 (localOf_sound hl) (effOf_sound hi) (effOf_sound hv)
+  cases h
+
+/-- `target op= value;`: `x = x op value` or `x.f = x.f op value`, pure, or
+else effectful (also for `/=` and `%=`). -/
+inductive CompoundR (env : FrontEnv) (scope : List Local) (target : CTree) (p : Nat) (value : CTree) : MStmt → Prop
+  | localPure {o : SrcOp} {l : Local} {v : SrcExpr} : compoundOp p = some o → nodeProd (kid target 1) = pPostfixEnd →
+      LocalOf scope (kid target 0) l → ExprR env scope value v →
+      CompoundR env scope target p value (.mSet l.id (.apply o (.local l.id) v))
+  | fieldPure {o : SrcOp} {l : Local} {j : Nat} {v : SrcExpr} : compoundOp p = some o →
+      nodeProd (kid target 1) = pPostfixMember → nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone →
+      nodeProd (kid (kid target 1) 3) = pPostfixEnd → LocalOf scope (kid target 0) l →
+      FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j → ExprR env scope value v →
+      CompoundR env scope target p value (.mSetField l.id j (.apply o (.field l.id j) v))
+  | localEval {l : Local} {x y : MEff} {m : MStmt} : nodeProd (kid target 1) = pPostfixEnd →
+      LocalOf scope (kid target 0) l → EffR env scope (some l.ty) value x →
+      compoundEff p (.xPure (.local l.id)) (some x) = some y → setEvalOf l.id (some y) = some m →
+      CompoundR env scope target p value m
+  | fieldEval {l : Local} {j : Nat} {E : Option Ty} {x y : MEff} : nodeProd (kid target 1) = pPostfixMember →
+      nodeProd (kid (kid target 1) 2) = pMemberTypeArgsNone → nodeProd (kid (kid target 1) 3) = pPostfixEnd →
+      LocalOf scope (kid target 0) l → FieldIndex env.decls l.ty (kidToken (kid target 1) 1).text j →
+      MaybeTy (FieldTyAt env.decls l.ty j) E → EffR env scope E value x →
+      compoundEff p (.xPure (.field l.id j)) (some x) = some y →
+      CompoundR env scope target p value (.mSetFieldEval l.id j y)
+
+theorem compoundEff_some {p : Nat} {left : MEff} {right : Option MEff} {y : MEff}
+    (h : compoundEff p left right = some y) : ∃ x, right = some x ∧ compoundEff p left (some x) = some y := by
+  cases right with
+  | some x => exact ⟨x, rfl, h⟩
+  | none =>
+    unfold compoundEff at h
+    repeat' split at h
+    all_goals simp [xDivideOf, xApplyOf] at h
+
+theorem compoundOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {target : CTree} {p : Nat} {value : CTree}
+    {m : MStmt} (h : compoundOf fuel env scope (some target) p value = some m) : CompoundR env scope target p value m := by
+  simp only [compoundOf] at h
+  cases hp : compoundPure fuel env scope target (compoundOp p) value with
+  | some m' =>
+    rw [hp] at h
+    simp only [Option.some.injEq] at h
+    subst h
+    unfold compoundPure at hp
+    cases ho : compoundOp p with
+    | none => rw [ho] at hp; cases hp
+    | some o =>
+      rw [ho] at hp
+      simp only [compoundTarget] at hp
+      split at hp
+      · rename_i pe
+        cases hl : localOf env scope (kid target 0) with
+        | none => rw [hl] at hp; cases hp
+        | some l =>
+          rw [hl] at hp
+          simp only [compoundValue] at hp
+          cases hv : exprOf fuel env scope value with
+          | none => rw [hv] at hp; cases hp
+          | some v =>
+            rw [hv] at hp
+            simp only [setValue, Option.some.injEq] at hp
+            subst hp
+            exact .localPure ho pe (localOf_sound hl) (exprOf_sound hv)
+      split at hp
+      · rename_i _ c
+        simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+        cases hl : localOf env scope (kid target 0) with
+        | none => rw [hl] at hp; cases hp
+        | some l =>
+          rw [hl] at hp
+          simp only [compoundField] at hp
+          cases hj : fieldIndex env l.ty (kidToken (kid target 1) 1).text with
+          | none => rw [hj] at hp; cases hp
+          | some j =>
+            rw [hj] at hp
+            simp only [compoundValue] at hp
+            cases hv : exprOf fuel env scope value with
+            | none => rw [hv] at hp; cases hp
+            | some v =>
+              rw [hv] at hp
+              simp only [setFieldValue, Option.some.injEq] at hp
+              subst hp
+              exact .fieldPure ho c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) (exprOf_sound hv)
+      cases hp
+  | none =>
+    rw [hp] at h
+    simp only [compoundEval] at h
+    split at h
+    · rename_i pe
+      cases hl : localOf env scope (kid target 0) with
+      | none => rw [hl] at h; cases h
+      | some l =>
+        rw [hl] at h
+        simp only at h
+        cases hy : compoundEff p (.xPure (.local l.id)) (effOf fuel env scope (some l.ty) value) with
+        | none => rw [hy] at h; simp [setEvalOf] at h
+        | some y =>
+          rw [hy] at h
+          obtain ⟨x, hx, hy'⟩ := compoundEff_some hy
+          exact .localEval pe (localOf_sound hl) (effOf_sound hx) hy' h
+    split at h
+    · rename_i _ c
+      simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+      cases hl : localOf env scope (kid target 0) with
+      | none => rw [hl] at h; cases h
+      | some l =>
+        rw [hl] at h
+        simp only [compoundFieldEval] at h
+        cases hj : fieldIndex env l.ty (kidToken (kid target 1) 1).text with
+        | none => rw [hj] at h; cases h
+        | some j =>
+          rw [hj] at h
+          simp only at h
+          cases hy : compoundEff p (.xPure (.field l.id j)) (effOf fuel env scope (fieldTyAt fuel env.decls l.ty j) value) with
+          | none => rw [hy] at h; simp [fieldEvalStmt] at h
+          | some y =>
+            rw [hy] at h
+            simp only [fieldEvalStmt, Option.some.injEq] at h
+            subst h
+            obtain ⟨x, hx, hy'⟩ := compoundEff_some hy
+            exact .fieldEval c.1 c.2.1 c.2.2 (localOf_sound hl) (fieldIndex_sound hj) fieldTyAt_sound (effOf_sound hx) hy'
+    cases h
+
+/-- A call statement: `dealloc(pointer, size, align)`, `assert(c)`, or a
+call whose value is discarded. -/
+inductive CallStmtR (env : FrontEnv) (scope : List Local) (pf : CTree) : MStmt → Prop
+  | free {pointer size align : SrcExpr} {k : Nat} : PathCallForm pf →
+      PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) deallocPath →
+      ArgsOfR env scope (kid (kid pf 1) 1) [pointer, size, align] → ShiftOf align k →
+      CallStmtR env scope pf (.mFree pointer size k)
+  | assert {c : CTree} {x : MEff} : PathCallForm pf →
+      PathSpellings (kid (kid (kid pf 0) 0) 0) (kid (kid (kid pf 0) 0) 1) [textAssert] →
+      Items (kid (kid pf 1) 1) [c] → EffR env scope (some .tyBool) c x → CallStmtR env scope pf (.mAssert x)
+  | discard {x : MEff} : (PathCallForm pf ∨ MethodForm pf) → EffR env scope none pf x →
+      CallStmtR env scope pf (.mDiscard x)
+
+theorem freeOf_sound {es : List SrcExpr} {m : MStmt} (h : freeOf (some es) = some m) :
+    ∃ pointer size align k, es = [pointer, size, align] ∧ ShiftOf align k ∧ m = .mFree pointer size k := by
+  match es, h with
+  | [], h => simp [freeOf] at h
+  | [_], h => simp [freeOf] at h
+  | [_, _], h => simp [freeOf] at h
+  | pointer :: size :: align :: more, h =>
+    simp only [freeOf] at h
+    cases hs : shiftOf align with
+    | none => rw [hs] at h; simp [freeShifted] at h
+    | some k =>
+      rw [hs] at h
+      cases more with
+      | nil =>
+        simp only [freeShifted, Option.some.injEq] at h
+        exact ⟨pointer, size, align, k, rfl, shiftOf_sound hs, h.symm⟩
+      | cons _ _ => simp [freeShifted] at h
+
+theorem callStmt_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {pf : CTree} {m : MStmt}
+    (pp : nodeProd pf = pPostfix) (h : callStmt fuel env scope pf = some m) : CallStmtR env scope pf m := by
+  unfold callStmt at h
+  simp only at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true] at c
+    cases ha : argsOf fuel env scope (kid (kid pf 1) 1) with
+    | none => rw [ha] at h; simp [freeOf] at h
+    | some es =>
+      rw [ha] at h
+      obtain ⟨pointer, size, align, k, rfl, sh, rfl⟩ := freeOf_sound h
+      exact .free (isPathCall_sound c.1) (pathSpellings_sound (isPath_eq c.2)) (argsOf_sound ha) sh
+  split at h
+  · rename_i _ c
+    simp only [Bool.and_eq_true] at c
+    cases hi : listItems fuel (kid (kid pf 1) 1) with
+    | none => rw [hi] at h; simp [assertArg] at h
+    | some items =>
+      rw [hi] at h
+      match items, h, hi with
+      | [], h, _ => simp [assertArg] at h
+      | _ :: _ :: _, h, _ => simp [assertArg] at h
+      | [a], h, hi =>
+        simp only [assertArg] at h
+        cases he : effOf fuel env scope (some .tyBool) a with
+        | none => rw [he] at h; simp [assertOf] at h
+        | some x =>
+          rw [he] at h
+          simp only [assertOf, Option.some.injEq] at h
+          subst h
+          exact .assert (isPathCall_sound c.1) (pathSpellings_sound (isPath_eq c.2)) (listItems_sound hi)
+            (effOf_sound he)
+  split at h
+  · rename_i _ _ c
+    simp only [Bool.or_eq_true] at c
+    cases he : effPostfix fuel env scope none pf with
+    | none => rw [he] at h; simp [discardOf] at h
+    | some x =>
+      rw [he] at h
+      simp only [discardOf, Option.some.injEq] at h
+      subst h
+      refine .discard ?_ (effPostfix_sound pp he)
+      rcases c with c | c
+      · exact .inl (isPathCall_sound c)
+      · exact .inr (isMethodForm_sound c)
+  cases h
+
+/-- An expression statement: `target = value;`, `target op= value;`, or a
+call statement. -/
+inductive AssignR (env : FrontEnv) (scope : List Local) (e : CTree) : MStmt → Prop
+  | set {target : CTree} {m : MStmt} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign →
+      nodeProd (kid (kid e 0) 1) = pAssignSet → Peel (kid (kid e 0) 0) target →
+      AssignTargetR env scope target (kid (kid (kid e 0) 1) 1) m → AssignR env scope e m
+  | compound {target : CTree} {m : MStmt} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign →
+      kidsOf (kid (kid e 0) 1) ≠ [] → nodeProd (kid (kid e 0) 1) ≠ pAssignSet → Peel (kid (kid e 0) 0) target →
+      CompoundR env scope target (nodeProd (kid (kid e 0) 1)) (kid (kid (kid e 0) 1) 1) m → AssignR env scope e m
+  | call {pf : CTree} {m : MStmt} : nodeProd e = pExpr → nodeProd (kid e 0) = pAssign →
+      nodeProd (kid (kid e 0) 1) = pAssignEnd → Peel (kid (kid e 0) 0) pf → CallStmtR env scope pf m →
+      AssignR env scope e m
+
+theorem assignment_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {e : CTree} {m : MStmt}
+    (h : assignment fuel env scope e = some m) : AssignR env scope e m := by
+  unfold assignment at h
+  simp only at h
+  split at h
+  · rename_i c
+    simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+    cases hp : peel fuel (kid (kid e 0) 0) with
+    | none => rw [hp] at h; cases h
+    | some target =>
+      rw [hp] at h
+      exact .set c.1 c.2.1 c.2.2 (peel_sound hp) (assignTarget_sound h)
+  split at h
+  · rename_i _ c
+    simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+    cases hp : peel fuel (kid (kid e 0) 0) with
+    | none => rw [hp] at h; simp [compoundOf] at h
+    | some target =>
+      rw [hp] at h
+      exact .compound c.1 c.2.1 ((hasKids_iff _).1 c.2.2.1) c.2.2.2 (peel_sound hp) (compoundOf_sound h)
+  split at h
+  · rename_i _ _ c
+    simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc] at c
+    cases hp : peel fuel (kid (kid e 0) 0) with
+    | none => rw [hp] at h; cases h
+    | some pf =>
+      rw [hp] at h
+      have pe := peel_sound hp
+      exact .call c.1 c.2.1 c.2.2 pe (callStmt_sound (peel_postfix pe) h)
+  cases h
+
+/-! ## Statement lists -/
+
+mutual
+/-- A block's statement list. -/
+inductive BlockR (env : FrontEnv) : List Local → CTree → MStmt → Prop
+  | mk {scope : List Local} {list : CTree} {items : List CTree} {m : MStmt} : Items list items →
+      StmtsR env scope items m → BlockR env scope list m
+
+/-- A statement list: a let scopes over the statements after it. -/
+inductive StmtsR (env : FrontEnv) : List Local → List CTree → MStmt → Prop
+  | nil {scope : List Local} : StmtsR env scope [] .mNop
+  | «let» {scope : List Local} {s : CTree} {rest : List CTree} {t : Ty} {hd : LetHead} {body m : MStmt} :
+      nodeProd s = pLetStmt → nodeProd (kid s 2) = pLetType → nodeProd (kid s 3) = pLetInit →
+      (kidToken s 1).text ∉ env.globals → TyR env (kid (kid s 2) 1) t →
+      LetInitR env scope t (kid (kid s 3) 1) hd →
+      StmtsR env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } :: scope) rest body →
+      letStmt ((kidToken s 1).start - env.base) t hd body = some m → StmtsR env scope (s :: rest) m
+  | last {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s ≠ pLetStmt → StmtR env scope s m →
+      StmtsR env scope [s] m
+  | seq {scope : List Local} {s next : CTree} {more : List CTree} {a b : MStmt} : nodeProd s ≠ pLetStmt →
+      StmtR env scope s a → StmtsR env scope (next :: more) b → StmtsR env scope (s :: next :: more) (.mThen a b)
+
+/-- A statement other than a let. -/
+inductive StmtR (env : FrontEnv) : List Local → CTree → MStmt → Prop
+  | ret {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pReturnStmt → nodeProd (kid s 1) = pReturnValue →
+      ReturnR env scope (kid (kid s 1) 0) m → StmtR env scope s m
+  | retUnit {scope : List Local} {s : CTree} : nodeProd s = pReturnStmt → nodeProd (kid s 1) = pReturnVoid →
+      StmtR env scope s .mReturnUnit
+  | ifElse {scope : List Local} {s : CTree} {a b m : MStmt} : nodeProd s = pIfStmt → nodeProd (kid s 5) = pElseStmt →
+      BlockR env scope (kid (kid s 4) 1) a → BlockR env scope (kid (kid (kid s 5) 1) 1) b →
+      IfR env scope (kid s 2) a b m → StmtR env scope s m
+  | ifOnly {scope : List Local} {s : CTree} {a m : MStmt} : nodeProd s = pIfStmt → nodeProd (kid s 5) = pElseNone →
+      BlockR env scope (kid (kid s 4) 1) a → IfR env scope (kid s 2) a .mNop m → StmtR env scope s m
+  | «while» {scope : List Local} {s : CTree} {body m : MStmt} : nodeProd s = pWhileStmt →
+      BlockR env scope (kid (kid s 4) 1) body → WhileR env scope (kid s 2) body m → StmtR env scope s m
+  | assign {scope : List Local} {s : CTree} {m : MStmt} : nodeProd s = pExprStmt → AssignR env scope (kid s 0) m →
+      StmtR env scope s m
+end
+
+def StmtSound (fuel : Nat) : Prop :=
+  (∀ {env scope list m}, blockOf fuel env scope list = some m → BlockR env scope list m) ∧
+  (∀ {env scope items m}, stmtsOf fuel env scope items = some m → StmtsR env scope items m) ∧
+  (∀ {env scope s rest m}, stmtFirst fuel env scope s rest = some m → StmtsR env scope (s :: rest) m) ∧
+  (∀ {env scope s rest m}, nodeProd s = pLetStmt → letFirst fuel env scope s rest = some m →
+    StmtsR env scope (s :: rest) m) ∧
+  (∀ {env scope s m}, stmtOf fuel env scope s = some m → StmtR env scope s m)
+
+theorem stmtSound : ∀ fuel, StmtSound fuel
+  | 0 => by
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    all_goals intros
+    all_goals rename_i h
+    · rw [blockOf.eq_def] at h; simp at h
+    · rw [stmtsOf.eq_def] at h; simp at h
+    · rw [stmtFirst.eq_def] at h; simp at h
+    · rw [letFirst.eq_def] at h; simp at h
+    · rw [stmtOf.eq_def] at h; simp at h
+  | f + 1 => by
+    obtain ⟨ihBlock, ihStmts, ihFirst, ihLet, ihStmt⟩ := stmtSound f
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · intro env scope list m h
+      rw [blockOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases hi : listItems (f + 1) list with
+      | none => rw [hi] at h; cases h
+      | some items =>
+        rw [hi] at h
+        exact .mk (listItems_sound hi) (ihStmts h)
+    · intro env scope items m h
+      rw [stmtsOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      cases items with
+      | nil =>
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .nil
+      | cons s rest =>
+        exact ihFirst h
+    · intro env scope s rest m h
+      rw [stmtFirst.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i pl
+        exact ihLet pl h
+      · rename_i pl
+        cases rest with
+        | nil => exact .last pl (ihStmt h)
+        | cons next more =>
+          simp only [thenOf] at h
+          cases ha : stmtOf f env scope s with
+          | none => rw [ha] at h; cases h
+          | some a =>
+            rw [ha] at h
+            simp only [thenRest] at h
+            cases hb : stmtsOf f env scope (next :: more) with
+            | none => rw [hb] at h; cases h
+            | some b =>
+              rw [hb] at h
+              simp only [Option.some.injEq] at h
+              subst h
+              exact .seq pl (ihStmt ha) (ihStmts hb)
+    · intro env scope s rest m pl h
+      rw [letFirst.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at c
+        obtain ⟨⟨lt, li⟩, ng⟩ := c
+        cases ht : tyOf (f + 1) env (kid (kid s 2) 1) with
+        | none => rw [ht] at h; cases h
+        | some t =>
+          rw [ht] at h
+          simp only [letOf] at h
+          cases hh : letHeadOrEval f env scope t (kid (kid s 3) 1) with
+          | none => rw [hh] at h; cases h
+          | some hd =>
+            rw [hh] at h
+            simp only [letBody] at h
+            cases hb : stmtsOf f env ({ name := (kidToken s 1).text, id := (kidToken s 1).start - env.base, ty := t } ::
+                scope) rest with
+            | none => rw [hb] at h; cases h
+            | some body =>
+              rw [hb] at h
+              refine .let pl lt li (fun mem => ?_) (tyOf_sound ht) (letHeadOrEval_sound hh) (ihStmts hb) h
+              rw [(member_iff _ _).2 mem] at ng
+              cases ng
+      · cases h
+    · intro env scope s m h
+      rw [stmtOf.eq_def] at h
+      simp only [Nat.add_one_ne_zero, if_false, Nat.add_sub_cancel] at h
+      split at h
+      · rename_i c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        exact .ret c.1 c.2 (returnOrEval_sound h)
+      split at h
+      · rename_i _ c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        simp only [Option.some.injEq] at h
+        subst h
+        exact .retUnit c.1 c.2
+      split at h
+      · rename_i _ _ c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        obtain ⟨a, b, ha, hb, ir⟩ := ifOrEval_sound h
+        exact .ifElse c.1 c.2 (ihBlock ha) (ihBlock hb) ir
+      split at h
+      · rename_i _ _ _ c
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at c
+        obtain ⟨a, b, ha, hb, ir⟩ := ifOrEval_sound h
+        simp only [Option.some.injEq] at hb
+        subst hb
+        exact .ifOnly c.1 c.2 (ihBlock ha) ir
+      split at h
+      · rename_i _ _ _ _ pw
+        obtain ⟨body, hb, wr⟩ := whileOrEval_sound h
+        exact .while pw (ihBlock hb) wr
+      split at h
+      · rename_i _ _ _ _ _ pa
+        exact .assign pa (assignment_sound h)
+      cases h
+
+theorem blockOf_sound {fuel : Nat} {env : FrontEnv} {scope : List Local} {list : CTree} {m : MStmt}
+    (h : blockOf fuel env scope list = some m) : BlockR env scope list m :=
+  (stmtSound fuel).1 h
+
+end Lanius.Mini.Reading
