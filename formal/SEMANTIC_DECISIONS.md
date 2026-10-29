@@ -555,3 +555,13 @@ without a fuel-adequacy argument. The relation is sound for the builder;
 for an ambiguous call it admits each matching method, where the builder
 rejects the call. Lookups that need no fuel (names, fields, locals,
 parameters, primitive types) are stated exactly, first match included.
+
+The let heads (`Reading.LetHeadR`, V8d) follow the same rule. The builder
+falls back to a plain expression when the peel through wrappers or a unit
+variant's path fails, and both use fuel, so a plain reading is admitted for
+any initializer that reads as an expression. A call's path is read as an
+allocation or raw slice without excluding the named reading, and a match's
+arms are one naming arm per variant without the condition that no other
+arm names it. The tests the builder makes without fuel (the production
+checks, whether a path names a function, the enum a path names) are stated
+exactly.
