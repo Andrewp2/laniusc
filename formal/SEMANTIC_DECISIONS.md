@@ -494,6 +494,18 @@ chooses (`stack` at least `binary.guard`, `heap` at least 1, both below
 (SIGFPE or SIGILL), so the status is never a trap code. The entry is a
 function index; the driver's convention is function 0.
 
+### The pure subset and raw views (decided 10-29)
+
+Proving that the self program never traps undefinedly (V7b) fixed three
+rules of the verified compiler's pure subset. Its checker requires the
+operands of a binary operator to have one type, numbers for arithmetic and
+`bool`s for conditions and `!`. A `boxed`/`unbox` primitive's element type
+must have a native layout within Core's limits (`BoxedAt`), since Core's raw
+view of a type past them traps `typeMismatch`. A boxed value's meaning
+(`VRel.box`) includes that its storage passes `checkRange`, so reading it
+back through a raw view cannot trap. Still open: the extracted `lowerSlice`
+should reject element types past Core's layout limits as well.
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.

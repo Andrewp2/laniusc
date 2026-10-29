@@ -15,7 +15,7 @@ namespace Lanius.Faithful
 
 open Lanius.Mini
 open Lanius.Core (Value)
-open Lanius.Semantics (State Completion evalExpr evalExprs execStmt restoreLocals)
+open Lanius.Semantics (State Completion evalExpr evalExprs evalMatchArms execStmt restoreLocals)
 
 def SafeE (P : Core.Program) (st : State) (e : Core.Expr) : Prop :=
   ∀ k r s, evalExpr k P st e = .trapped r s → s.heap.nextAddress ≤ 2 ^ 64 → undefinedTrap r = false
@@ -332,6 +332,48 @@ theorem safeE_assert {e : Core.Expr} (se : SafeE P st e)
   · rfl
   · obtain ⟨x, rfl⟩ := bool hv
     exact (notBool x rfl).elim
+
+def SafeArms (P : Core.Program) (st : State) (sv : Value) (arms : List (Core.Pattern × Core.Expr)) : Prop :=
+  ∀ k r s, evalMatchArms k P st sv arms = .trapped r s → s.heap.nextAddress ≤ 2 ^ 64 → undefinedTrap r = false
+
+theorem safeArms_nil {sv : Value} : SafeArms P st sv [] := fun _ _ _ h _ => by
+  rw [(arms_nil_trap h).1]; rfl
+
+theorem safeArms_miss {sv : Value} {pat : Core.Pattern} {body : Core.Expr} {arms : List (Core.Pattern × Core.Expr)}
+    (miss : Semantics.matchPattern pat sv = none) (rest : SafeArms P st sv arms) :
+    SafeArms P st sv ((pat, body) :: arms) := by
+  intro k r s h bound
+  obtain ⟨j, -, ⟨-, h⟩ | ⟨bs, s2, hit, -, -⟩⟩ := arms_cons_trap_inv h
+  · exact rest _ _ _ h bound
+  · rw [miss] at hit; cases hit
+
+theorem safeArms_hit {sv : Value} {pat : Core.Pattern} {body : Core.Expr} {arms : List (Core.Pattern × Core.Expr)}
+    {bs : List (Nat × Value)} (hit : Semantics.matchPattern pat sv = some bs) (sb : SafeE P (st.bindLocals bs) body) :
+    SafeArms P st sv ((pat, body) :: arms) := by
+  intro k r s h bound
+  obtain ⟨j, -, ⟨miss, -⟩ | ⟨bs', s2, hit', hb, rfl⟩⟩ := arms_cons_trap_inv h
+  · rw [hit] at miss; cases miss
+  · rw [hit, Option.some.injEq] at hit'
+    subst hit'
+    exact sb _ _ _ hb bound
+
+theorem safeE_match {s : Core.Expr} {arms : List (Core.Pattern × Core.Expr)} {sv : Value}
+    (ks : Known P st s sv) (sa : SafeArms P st sv arms) : SafeE P st (.matchValue s arms) := by
+  intro k r s' h bound
+  obtain ⟨j, -, hs | ⟨sv', s1, hv, ha⟩⟩ := matchValue_trap_inv h
+  · exact (ks.safe hs).elim
+  · obtain ⟨rfl, rfl⟩ := ks.done hv
+    exact sa _ _ _ ha bound
+
+theorem safeE_cast {ty : Core.ScalarTy} {e : Core.Expr} (se : SafeE P st e)
+    (ok : ∀ {k v s}, evalExpr k P st e = .done v s → s.heap.nextAddress ≤ 2 ^ 64 →
+      ∃ u, Semantics.evalScalarCast P.target ty v = .ok u) :
+    SafeE P st (.cast ty e) := by
+  intro k r s h bound
+  obtain ⟨j, -, he | ⟨w, hw, bad⟩⟩ := cast_trap_inv h
+  · exact se _ _ _ he bound
+  · obtain ⟨u, good⟩ := ok hw bound
+    rw [good] at bad; cases bad
 
 /-! ## Safe statements -/
 

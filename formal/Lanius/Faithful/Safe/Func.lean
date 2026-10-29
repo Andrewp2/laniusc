@@ -12,7 +12,7 @@ namespace Lanius.Faithful
 
 open Lanius.Mini
 open Lanius.Core (Value)
-open Lanius.Semantics (State)
+open Lanius.Semantics (State evalExprs)
 
 section
 variable {sp : SrcProgram} {prims : Prims} {outside : List Nat}
@@ -37,6 +37,19 @@ theorem func_safe (pure : PureProg sp prims outside) (primsOk : PrimsOk sp prims
       rw [hf, Option.some.injEq] at found
       subst found
       exact unbox_safe hl el box inv args _ _ _ run bound
+
+/-- A call of a function inside the pure subset, on arguments whose
+completed runs mean pure values: its body traps definedly. -/
+theorem safeE_call_pure (fs : ∀ m, FuncSafe sp prims outside m) {c : Nat} {f : SrcFunc} {st : State}
+    {args : List Core.Expr} (found : sp.funcs[c]? = some f) (notOut : outside.contains c = false)
+    (sa : SafeEs sp.toCore st args)
+    (rels : ∀ {k values s}, evalExprs k sp.toCore st args = .done values s →
+      Inv s ∧ ∃ ps, VRels sp.toCore (boxElem sp prims) s.heap (f.params.map SrcParam.ty) values ps) :
+    SafeE sp.toCore st (.call c args) :=
+  safeE_call found sa fun h => by
+    obtain ⟨inv, ps, rs⟩ := rels h
+    exact ⟨VRels.length_params rs, fun k r s' run bound =>
+      fs k found notOut (VRels.length_params rs) inv bound rs run⟩
 
 end
 

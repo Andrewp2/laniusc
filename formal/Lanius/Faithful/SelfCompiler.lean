@@ -1,4 +1,4 @@
-import Lanius.Faithful.SelfDriver
+import Lanius.Faithful.SafeDriver
 import Lanius.Mini.SourceOutcome
 
 /-! # The self-built verified compiler (roadmap step V7)
@@ -11,9 +11,9 @@ words of source files at `selfInput` and `room` output words after them
 (`selfStart`, `selfHeap`): it faults (every run that stops, stops at a fault:
 out of stack or heap, or a checked trap), or it returns, deterministically,
 -1 when `compileText` rejects the files, and otherwise the length of the
-words of `compileText`'s binary, with those words in the output view; or
-Core's run of `w` reaches an undefined trap. The theorem joins
-`driver_files` (V1, V5) with `compileSource_outcome_from` (V2).
+words of `compileText`'s binary, with those words in the output view. The
+theorem joins `driver_files` (V1, V5) with `compileSource_outcome_from` (V2),
+and `driver_safe` (V7b) rules out the run of `w` Core traps undefinedly in.
 
 What this leaves to trust about the native self-built compiler: that its
 bytes are `compileSource prog`, which `lake exe runAll` computes (Lean's
@@ -152,6 +152,19 @@ theorem start_inv (nonempty : 0 < W.length) : Inv (selfStart W room) where
     rcases ml with rfl | rfl <;> rcases mr with rfl | rfl <;>
       first | rfl | (simp [inputBlock, outputBlock, selfOutput, selfInput] at same; self_omega)
 
+theorem start_range_input (pos : 0 < W.length) :
+    (selfStart W room).heap.checkRange selfInput (W.length * 4) 4 = .ok () := by
+  simp only [Memory.Heap.checkRange, containing_input (W := W) (room := room) (Nat.le_refl _)
+    (by simp only [selfOutput]; omega)]
+  simp [inputBlock, Memory.validAlignment, selfInput]
+  rw [if_neg (by rw [show Nat.log2 4 = 2 by decide]; omega), if_neg (by omega)]
+
+theorem start_range_output (pos : 0 < room) :
+    (selfStart W room).heap.checkRange (selfOutput W) (room * 4) 4 = .ok () := by
+  simp only [Memory.Heap.checkRange, containing_output (W := W) (room := room) (Nat.le_refl _) (by omega)]
+  simp [outputBlock, Memory.validAlignment, selfOutput, selfInput]
+  rw [if_neg (by rw [show Nat.log2 4 = 2 by decide]; omega), if_neg (by omega)]
+
 theorem start_fresh : (selfStart W room).Fresh := ⟨fun _ mem => by simp [selfStart] at mem, rfl⟩
 
 theorem start_corr (nonempty : 0 < W.length) {limit : Nat} (small : limit < 2 ^ 62) :
@@ -265,8 +278,7 @@ code for `w` by a near call with the words of source `files` in the input
 view and `room` words of output view after them (`selfHeap`, `selfBits`),
 any stack window and any heap limit past them. Then the run faults (every
 run of it that stops, stops at a fault), or it returns, deterministically,
-with `compileText files`'s answer (`SelfOutput`), or Core's run of `w`
-reaches an undefined trap. -/
+with `compileText files`'s answer (`SelfOutput`). -/
 theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some B) {files : List SourceFile}
     (fit : FilesFit files) (wordsLt : (filesWords files).length < 2 ^ 31) {room limit : Nat} (roomLt : room < 2 ^ 31)
     (enough : selfNext (filesWords files) room ≤ limit) (small : limit < 2 ^ 62)
@@ -280,17 +292,14 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
       read64 s.memory (s.registers rspRegister - BitVec.ofNat 64 (8 * k + 16)) = (selfBits (filesWords files) room)[k])
     (heapAt : HeapAt window s (selfHeap (filesWords files) room limit)) (stack : StackAt B.guard window s) :
     Faults s ∨
-    (∃ n s' results after, Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
-      SelfOutput (compileText files) (filesWords files) s s') ∨
-    ∃ fuel r st', Semantics.evalExpr fuel prog.toCore (selfStart (filesWords files) room)
-      (.call 0 ((selfArgs (filesWords files) room).map Core.Expr.value)) = .trapped r st' ∧ undefinedTrap r = true ∧
-      st'.heap.nextAddress ≤ limit := by
+    ∃ n s' results after, Steps n s s' ∧ Det n s s' ∧ Returned window s s' results after ∧
+      SelfOutput (compileText files) (filesWords files) s s' := by
   have nonempty := filesWords_pos files
   rcases compileSource_outcome_from compiled fn_w (args_hold wordsLt roomLt) rfl start_fresh
       (start_corr nonempty small) enough s imageBase window bounded loaded apart imageHeap entry params heapAt stack with
     faults | ⟨fuel, v, final, runs, fits, results, after, holds, len, corr, n, s', run, det, ret⟩ | undefined
   · exact .inl faults
-  · refine .inr (.inl ⟨n, s', results, after, run, det, ret, ?_⟩)
+  · refine .inr ⟨n, s', results, after, run, det, ret, ?_⟩
     have result := driver_files fit (start_inv nonempty) (by have := small; simp only [selfHeap] at fits; addr_omega)
       wordsLt roomLt (start_reads wordsLt) start_readable runs
     obtain ⟨r, rfl⟩ : ∃ r, results = [r] := by
@@ -317,6 +326,12 @@ theorem selfCompiler_outcome {B : Binary} (compiled : compileSource prog = some 
       rw [value] at result
       simp only [Value.signed.injEq, true_and] at result
       exact ⟨result.1, written_memory result.2 corr within agree⟩
-  · exact .inr (.inr undefined)
+  · -- Core's run of `w` traps only definedly (`driver_safe`, V7b).
+    obtain ⟨fuel, r, st', trapped, bad, within⟩ := undefined
+    have safe := driver_safe (st := selfStart (filesWords files) room) (start_inv nonempty) wordsLt roomLt
+      (start_reads wordsLt) start_readable (.inr (start_range_input nonempty))
+      (if h : room = 0 then .inl h else .inr (start_range_output (Nat.pos_of_ne_zero h)))
+    rw [safe fuel r st' trapped (Nat.le_trans (by simpa only [selfHeap] using within) (by omega))] at bad
+    cases bad
 
 end Lanius.Faithful.SelfCompiler

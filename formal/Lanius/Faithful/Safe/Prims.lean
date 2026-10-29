@@ -58,32 +58,34 @@ theorem place_local_trap {id : Nat} {x : Value} {acc : Semantics.PlaceAccess} (k
         · rename_i hv; rw [hv] at known; simp at known
         · simp at h
 
-/-- `view[i] = x` on a raw view whose element `i` has an address: only the
-native write can trap, at the state it started from. -/
-theorem set_raw_trap {view x : Nat} {iv : Value} {el : Core.Ty} {a len pos base : Nat} {v : Value}
+/-- `view[i] = x` on a raw view: an index past the length traps
+`arrayBounds`, and otherwise only the native write can trap, at the state it
+started from. -/
+theorem set_raw_trap {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} {a len pos base : Nat} {v : Value}
     (views : st.i32ArrayViews = [])
-    (hview : st.local? view = some (.rawSlice el a len)) (hx : st.local? x = some v)
-    (ix : Semantics.integerIndex iv = .ok pos) (lt : pos < len)
-    (hb : Semantics.rawSliceElementAddress? P el a pos = .ok base)
-    (h : evalExpr k P st (.assign .set (.index (.local view) (.value iv)) (.local x)) = .trapped r s) :
-    s = st ∧ Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap el base v = .error r := by
+    (hview : st.local? view = some (.rawSlice el a len)) (ki : Known P st i iv) (hx : st.local? x = some v)
+    (ix : Semantics.integerIndex iv = .ok pos)
+    (hb : pos < len → Semantics.rawSliceElementAddress? P el a pos = .ok base)
+    (h : evalExpr k P st (.assign .set (.index (.local view) i) (.local x)) = .trapped r s) :
+    s = st ∧ ((len ≤ pos ∧ r = .arrayBounds) ∨
+      pos < len ∧ Semantics.writeNativeValue NativeLayout.maxDepth P st st.heap el base v = .error r) := by
   cases k with
   | zero => simp [evalExpr] at h
   | succ j =>
     simp only [evalExpr] at h
-    cases hp : Semantics.evalPlace j P st .address (.index (.local view) (.value iv)) with
+    cases hp : Semantics.evalPlace j P st .address (.index (.local view) i) with
     | done rp s1 =>
       rw [hp] at h
       simp only at h
       obtain ⟨j', rb, s0, rfl, baseRun, idx⟩ := place_index_inv hp
       obtain ⟨hrb, hs0⟩ := place_local_read hview baseRun
       subst s0
-      obtain ⟨iv', pos', base', ir, hi, -, hb', raw⟩ := idx _ _ _ hrb
-      obtain ⟨rfl, hs1⟩ := value_inv ir
+      obtain ⟨iv', pos', base', ir, hi, lt, hb', raw⟩ := idx _ _ _ hrb
+      obtain ⟨rfl, hs1⟩ := ki.done ir
       subst s1
       rw [ix, Except.ok.injEq] at hi
       subst hi
-      rw [hb, Except.ok.injEq] at hb'
+      rw [hb lt, Except.ok.injEq] at hb'
       subst hb'
       cases hv : evalExpr (j' + 1) P st (.local x) with
       | done u s2 =>
@@ -101,12 +103,14 @@ theorem set_raw_trap {view x : Nat} {iv : Value} {el : Core.Ty} {a len pos base 
           simp only [hw, bind, Except.bind] at h
           simp only [Semantics.Outcome.trapped.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          exact ⟨rfl, rfl⟩
+          exact ⟨rfl, .inr ⟨lt, rfl⟩⟩
       | trapped r2 s2 => exact (local_trap hx hv).elim
       | exited c s2 => rw [hv] at h; simp at h
       | outOfFuel => rw [hv] at h; simp at h
     | trapped r1 s1 =>
-      exfalso
+      rw [hp] at h
+      simp only [Semantics.Outcome.trapped.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
       cases j with
       | zero => simp [Semantics.evalPlace] at hp
       | succ j' =>
@@ -117,20 +121,45 @@ theorem set_raw_trap {view x : Nat} {iv : Value} {el : Core.Ty} {a len pos base 
           subst s0
           rw [hl] at hp
           simp only [hrb] at hp
-          cases hi : evalExpr j' P st (.value iv) with
+          cases hi : evalExpr j' P st i with
           | done u s2 =>
-            obtain ⟨rfl, hs2⟩ := value_inv hi
+            obtain ⟨rfl, hs2⟩ := ki.done hi
             subst s2
             rw [hi] at hp
-            simp [ix, lt, hb] at hp
-          | trapped r2 s2 => exact value_trap hi
+            by_cases lt : pos < len
+            · simp [ix, lt, hb lt] at hp
+            · simp [ix, lt] at hp
+              obtain ⟨rfl, rfl⟩ := hp
+              exact ⟨rfl, .inl ⟨by omega, rfl⟩⟩
+          | trapped r2 s2 => exact (ki.safe hi).elim
           | exited c s2 => rw [hi] at hp; simp at hp
           | outOfFuel => rw [hi] at hp; simp at hp
-        | trapped r0 s0 => exact place_local_trap hview hl
+        | trapped r0 s0 => exact (place_local_trap hview hl).elim
         | exited c s0 => rw [hl] at hp; simp at hp
         | outOfFuel => rw [hl] at hp; simp at hp
     | exited c s1 => rw [hp] at h; simp at h
     | outOfFuel => rw [hp] at h; simp at h
+
+/-- `view[i] = x` on a raw view that completed: only the heap changed. -/
+theorem set_raw_done {view x : Nat} {i : Core.Expr} {iv : Value} {el : Core.Ty} {a len : Nat} {v u : Value}
+    (views : st.i32ArrayViews = [])
+    (hview : st.local? view = some (.rawSlice el a len)) (ki : Known P st i iv) (hx : st.local? x = some v)
+    (h : evalExpr k P st (.assign .set (.index (.local view) i) (.local x)) = .done u s) :
+    ∃ H, s = { st with heap := H } := by
+  obtain ⟨_, rp, s13, rv, s14, s15, -, placeRun, valueRun, written, synced⟩ := assign_inv h
+  obtain ⟨_, rb, s16, -, baseRun, idx⟩ := place_index_inv placeRun
+  obtain ⟨hrb, rfl⟩ := place_local_read hview baseRun
+  obtain ⟨iv', posn, base, ir, hi, -, hb, raw⟩ := idx _ _ _ hrb
+  obtain ⟨rfl, rfl⟩ := ki.done ir
+  obtain ⟨rfl, rfl⟩ := local_eval hx valueRun
+  simp only [Semantics.writeResolvedPlaceNative, raw] at written
+  obtain ⟨H2, -, wrapped⟩ := except_bind_ok written
+  simp only [pure, Except.pure, Except.ok.injEq] at wrapped
+  subst wrapped
+  simp only [Semantics.ResolvedPlace.viewFreeRootWrite, raw, Option.isNone_some, Bool.false_and,
+    Bool.false_eq_true, if_false] at synced
+  rw [syncFrom_ok (st := { s14 with heap := H2 }) views, Except.ok.injEq] at synced
+  exact ⟨H2, synced.symm⟩
 
 theorem allocate_not_trapped {h h' : Memory.Heap} {n m : Nat} (valid : Memory.validAlignment m = true)
     (ok : h.allocate n m = .trapped r h') : False := by
@@ -172,9 +201,9 @@ end
 
 /-- A trapped run of a statement of `sp` ends with the heap cursor at or past
 where it started, so a safety proof may assume the start's cursor in bounds. -/
-theorem SafeS.of_bound {sp : SrcProgram} {st : State} {s : SrcStmt} (inv : Inv st)
+theorem SafeS.of_bound {sp : SrcProgram} {st : State} {s : SrcStmt} (views : st.i32ArrayViews = [])
     (safe : st.heap.nextAddress ≤ 2 ^ 64 → SafeS sp.toCore st s.toCore) : SafeS sp.toCore st s.toCore :=
-  fun k r s' h bound => safe (Nat.le_trans ((execStmt_trap_grows h) inv.views).2 bound) k r s' h bound
+  fun k r s' h bound => safe (Nat.le_trans ((execStmt_trap_grows h) views).2 bound) k r s' h bound
 
 theorem valueWords_pos {P : Core.Program} {T : Core.Ty} {w : Nat}
     (kind : (∃ id, T = .structure id) ∨ ∃ id, T = .enumeration id) (hw : NativeLayout.valueWords? P T = some w) :
@@ -235,7 +264,7 @@ theorem slice_safe {t : SrcType} (el : wordElement sp.decls t = true) {w a : Nat
     (storage : st.local? 28 = some (.pointer a)) (one : st.local? 42 = some (.signed .i32 1))
     (room : st.heap.nextAddress ≤ 2 ^ 64 → a + 8 * w ≤ 2 ^ 64) (range : st.heap.checkRange a (8 * w) 8 = .ok ()) :
     SafeS sp.toCore st (sliceFunc t).body.toCore := by
-  refine SafeS.of_bound inv fun bound => ?_
+  refine SafeS.of_bound inv.views fun bound => ?_
   replace room := room bound
   obtain ⟨slice, kind⟩ := sliceFrom_word el
   have most := valueWords_le kind hw
@@ -490,7 +519,7 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
   -- the rest runs past the allocation, so its cursor bounds the storage's end
   refine SafeS.of_bound (s := .then (.if (.apply .equal (.local 86) .null) (.discard (.eCall panic [])) .nop)
     (.letCall 203 (.slice t) slice [.local 86, .int 1] (.then (.setIndex 203 (.int 0) (.local 9))
-      (.returnEval (.eStruct (.struct id [.ptr]) [.ePure (.local 86)]))))) inv3 fun bound => ?_
+      (.returnEval (.eStruct (.struct id [.ptr]) [.ePure (.local 86)]))))) inv3.views fun bound => ?_
   have room : a + 8 * w ≤ 2 ^ 64 := by
     have : H1.nextAddress ≤ 2 ^ 64 := bound
     rw [next1] at this
@@ -522,8 +551,10 @@ theorem boxed_safe {t : SrcType} {id sizeOf slice panic : Nat} {values ps : List
   have heap4 : (s10.bindLocal 203 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap = H1 := same3.heap
   -- the write: the value's store fits in the storage
   refine safeS_seq (safeS_expression fun k r s h bound => ?_) fun {k s} h => ?_
-  · obtain ⟨rfl, write⟩ := set_raw_trap (P := sp.toCore) (pos := 0) inv4.views view4 x4
-      (by simp [Semantics.integerIndex]) (by decide) (elementAddress_zero kind hw pos) h
+  · obtain ⟨rfl, ⟨bad, -⟩ | write⟩ := set_raw_trap (P := sp.toCore) (pos := 0) inv4.views view4
+      (known_value (.signed .i32 0)) x4 (by simp [Semantics.integerIndex]) (fun _ => elementAddress_zero kind hw pos) h
+    · exact absurd bad (by decide)
+    replace write := write.2
     have spec : Semantics.NativeStoreSpec NativeLayout.maxDepth sp.toCore t.toCore x (8 * w) :=
       store_spec NativeLayout.maxDepth rx (wordElement_wordType el) hw (Nat.le_refl _)
     have readable : (s10.bindLocal 203 (.rawSlice t.toCore (a + 8 * w - 8) 1)).heap.Readable
