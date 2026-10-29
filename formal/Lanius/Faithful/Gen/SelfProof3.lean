@@ -284,4 +284,8 @@ theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl {prog : SrcP
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SrcEnumDecl n :=
   fun h r => prim_cert np h r
 
+theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_SymRule {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_SymRule : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_SymRule = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_mini_selfhost_SymRule prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_SymRule n :=
+  fun h r => prim_cert np h r
+
 end Lanius.Faithful.SelfCert

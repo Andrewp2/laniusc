@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_neg_wide_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : BitVec 64} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 153 RepSrcType) x0 v0 → RepU64 x1 v1 → RepSrcExpr x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : BitVec 64} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 149 RepSrcType) x0 v0 → RepU64 x1 v1 → RepSrcExpr x2 v2 →
     RepSrcExpr (Lanius.Mini.negWideAt x0 x1 x2) w
 
 abbrev Stmt_neg_wide_i32 (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -34,10 +34,10 @@ abbrev Stmt_neg_wide_isize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
 
 abbrev Stmt_wide_inner (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcExpr} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → RepSrcExpr x1 v1 →
-    (RepOption 187 RepU64) (Lanius.Mini.wideInner x0 x1) w
+    (RepOption 192 RepU64) (Lanius.Mini.wideInner x0 x1) w
 
 abbrev Stmt_wide_value (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcExpr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcExpr x0 v0 →
-    (RepOption 187 RepU64) (Lanius.Mini.wideValue x0) w
+    (RepOption 192 RepU64) (Lanius.Mini.wideValue x0) w
 
 end Lanius.Faithful.SelfCert

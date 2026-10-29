@@ -8,7 +8,7 @@ public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmtF_frontEndRead
 public import Lanius.Faithful.Gen.SelfStmtF_frontEndWords
-public import Lanius.Faithful.Gen.SelfStmtF_readCountedTokens
+public import Lanius.Faithful.Gen.SelfStmtF_readCountedBytes
 import all Lanius.Faithful.Gen.SelfSrcF_frontEndWords
 import all Lanius.Mini.Frontend.P.frontEndWords
 

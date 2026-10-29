@@ -22,14 +22,14 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_eff_calls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepMEff x0 v0 →
-    (RepList 134 RepInst) (Lanius.Mini.effCalls x0) w
+    (RepList 130 RepInst) (Lanius.Mini.effCalls x0) w
 
 abbrev Stmt_effs_calls (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 210 RepMEff) x0 v0 →
-    (RepList 134 RepInst) (Lanius.Mini.effsCalls x0) w
+  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 217 RepMEff) x0 v0 →
+    (RepList 130 RepInst) (Lanius.Mini.effsCalls x0) w
 
 abbrev Stmt_read_inst (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Lanius.Mini.Decls} {x2 : Lanius.Mini.Inst} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepNat x0 v0 → RepDecls x1 v1 → RepInst x2 v2 →
-    (RepOption 185 RepMFunc) (Lanius.Mini.readInst x0 x1 x2) w
+    (RepOption 190 RepMFunc) (Lanius.Mini.readInst x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

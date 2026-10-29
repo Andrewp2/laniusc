@@ -25,7 +25,7 @@ abbrev Stmt_build_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 3 RepSrcProgram) (Lanius.Mini.buildFiles x0 x1) w
 
 abbrev Stmt_cons_root (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 121 RepCTree) x0 v0 → (RepOption 75 (RepList 76 RepCTree)) x1 v1 →
+  ∀ {x0 : Option Lanius.Mini.CTree} {x1 : Option (List Lanius.Mini.CTree)} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 119 RepCTree) x0 v0 → (RepOption 75 (RepList 76 RepCTree)) x1 v1 →
     (RepOption 75 (RepList 76 RepCTree)) (Lanius.Mini.consRoot x0 x1) w
 
 abbrev Stmt_files_fuel (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -35,6 +35,22 @@ abbrev Stmt_files_fuel (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
 abbrev Stmt_front_end_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 34 RepRule) x0 v0 → (RepList 42 RepFileInput) x1 v1 →
     (RepOption 3 RepSrcProgram) (Lanius.Mini.frontEndFiles x0 x1) w
+
+abbrev Stmt_lx_digit (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepBool (Lanius.Mini.lxDigit x0) w
+
+abbrev Stmt_lx_ident_continue (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepBool (Lanius.Mini.lxIdentContinue x0) w
+
+abbrev Stmt_lx_ident_start (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepBool (Lanius.Mini.lxIdentStart x0) w
+
+abbrev Stmt_lx_space (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepNat x0 v0 →
+    RepBool (Lanius.Mini.lxSpace x0) w
 
 abbrev Stmt_validate_files (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.Rule} {x1 : List Lanius.Mini.FileInput} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 34 RepRule) x0 v0 → (RepList 42 RepFileInput) x1 v1 →

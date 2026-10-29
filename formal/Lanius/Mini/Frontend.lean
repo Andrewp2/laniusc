@@ -83,7 +83,7 @@ public import Lanius.Mini.Frontend.P.lxLeadingDot
 public import Lanius.Mini.Frontend.P.lxFixed
 public import Lanius.Mini.Frontend.P.lxDotAt
 public import Lanius.Mini.Frontend.P.lxCanonicalKind
-public import Lanius.Mini.Frontend.P.readCountedTokens
+public import Lanius.Mini.Frontend.P.readCountedBytes
 public import Lanius.Mini.Frontend.P.frontEndRead
 public import Lanius.Mini.Frontend.P.frontEndWords
 public import Lanius.Mini.Frontend.P.grammarPart8

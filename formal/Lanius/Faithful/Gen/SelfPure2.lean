@@ -68,19 +68,19 @@ theorem pure217 : PureFunc prog prims outside src217 = true :=
 theorem pure218 : PureFunc prog prims outside src218 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::empty<mini::selfhost::Token> -/
+/-- mini::selfhost::empty<usize> -/
 theorem pure220 : PureFunc prog prims outside src220 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::read_token -/
+/-- mini::selfhost::byte_after -/
 theorem pure221 : PureFunc prog prims outside src221 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::tokens_after -/
+/-- mini::selfhost::file_lexed -/
 theorem pure222 : PureFunc prog prims outside src222 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::empty<usize> -/
+/-- mini::selfhost::lex_source -/
 theorem pure223 : PureFunc prog prims outside src223 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

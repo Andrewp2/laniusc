@@ -22,6 +22,6 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_equality (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 149 RepTyped) (Lanius.Mini.equality x0 x1 x2) w
+    (RepOption 145 RepTyped) (Lanius.Mini.equality x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

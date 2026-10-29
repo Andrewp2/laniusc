@@ -8,9 +8,9 @@ Run from the repository root. `mini::selfhost` is formal/lani/mini/compiler.lani
 followed by the body of formal/lani/mini/frontend.lani (after its prelude and
 its copy of compiler.lani's types), so the front end's `SrcProgram` is the one
 `compile_source` takes. The driver `w(input, words, output, room)` decodes
-lexed files and their parse trees from an i32 slice, runs `front_end_files`
-on `grammar()` and `compile_source`, and writes the entries and the image
-into the output slice.
+source files and their parse trees from an i32 slice, lexes each file with
+`lex_source`, runs `front_end_files` on `grammar()` and `compile_source`, and
+writes the entries and the image into the output slice.
 
   self       Lean's `compileSource` of the driver and mini::selfhost (the
              self-built verified compiler), run natively on each test input;
@@ -59,8 +59,8 @@ import core::option;
 import mini::selfhost;
 
 // The input words, as front_end_words reads them (formal/lani/mini/frontend.lani):
-// the file count, then each file's counted tokens (kind, start, counted
-// text), productions and parents. The output words, as compile_words gives
+// the file count, then each file's counted bytes, productions and parents.
+// The output words, as compile_words gives
 // them: the entry count, the entries, the image length, the bytes. The
 // result is the number of words written, or -1 when the program is
 // rejected. Everything but reading the input and writing the output is pure
@@ -169,26 +169,17 @@ def selfhost_text():
     return compiler.replace('module mini::compiler;', 'module mini::selfhost;', 1) + '\n' + body
 
 
-def layout(files):
-    """The driver's input words for files of (tokens, prods, parents)."""
-    words = [len(files)]
-    for tokens, prods, parents in files:
-        words.append(len(tokens))
-        for kind, start, text in tokens:
-            words += [kind, start, len(text)] + list(text)
-        words += [len(prods)] + list(prods)
-        words += [len(parents)] + list(parents)
+def layout(bases):
+    """The driver's input words (`filesWords` in Lanius/Mini/TextWords.lean)
+    for the files BASE.lani with their trees BASE.prods and BASE.parents."""
+    words = [len(bases)]
+    for base in bases:
+        source = open(base + '.lani', 'rb').read()
+        words += [len(source)] + list(source)
+        for ext in ('.prods', '.parents'):
+            nums = [int(x) for x in open(base + ext).read().split()]
+            words += [len(nums)] + nums
     return words
-
-
-def parse_dump(line):
-    tokens_s, prods_s, parents_s = line.split('|')
-    tokens = []
-    for t in tokens_s.split(' ') if tokens_s else []:
-        kind, start, text = t.split(':')
-        tokens.append((int(kind), int(start), [int(x) for x in text.split('.')] if text else []))
-    nums = lambda s: [int(x) for x in s.split(' ')] if s else []  # noqa: E731
-    return tokens, nums(prods_s), nums(parents_s)
 
 
 def expected_words(status):
@@ -421,7 +412,7 @@ def main():
         tests.append(dict(name='the verified compiler itself', bases=self_bases, fixpoint=True))
     manifest = [f'compile self {" ".join(self_bases)}']
     for k, t in enumerate(tests):
-        manifest += [f'compile t{k} {" ".join(t["bases"])}', f'dump in{k} {" ".join(t["bases"])}']
+        manifest.append(f'compile t{k} {" ".join(t["bases"])}')
     manifest_path = os.path.join(workdir, 'manifest.txt')
     open(manifest_path, 'w').write('\n'.join(manifest) + '\n')
     print(f'time: parse {time.time() - began:.0f} s', file=sys.stderr, flush=True)
@@ -432,18 +423,10 @@ def main():
     began = time.time()
     if lean.returncode != 0:
         raise SystemExit('runAll failed:\n' + lean.stdout[-4000:] + lean.stderr[-4000:])
-    status, inputs = {}, {}
+    status = {}
     for line in lean.stdout.split('\n'):
-        if not line:
-            continue
-        name, rest = line.split(' ', 1)
-        if name.startswith('in'):
-            k = int(name[2:])
-            if rest == 'nolex':
-                inputs[k] = None
-            elif inputs.get(k, []) is not None:
-                inputs.setdefault(k, []).append(parse_dump(rest[5:]))
-        else:
+        if line:
+            name, rest = line.split(' ', 1)
             status[name] = rest
     self_status = status.get('self', 'missing')
     if not self_status.startswith('image'):
@@ -480,11 +463,9 @@ def main():
     os.makedirs(batch)
     open(os.path.join(batch, 'self.image'), 'wb').write(bytes(image))
     open(os.path.join(batch, 'self.entries'), 'w').write(' '.join(map(str, entries)) + '\n')
-    runnable = []
+    runnable = list(range(len(tests)))
     for k, t in enumerate(tests):
-        if inputs.get(k) is not None:
-            words_file(os.path.join(batch, f'in{len(runnable)}.words'), layout(inputs[k]))
-            runnable.append(k)
+        words_file(os.path.join(batch, f'in{k}.words'), layout(t['bases']))
     subprocess.run(['systemd-run', '--user', '--scope', '-q', '-p', f'MemoryMax={args.memory_max}',
                     '-p', 'MemorySwapMax=0', sys.executable, '-I', os.path.abspath(__file__), batch,
                     '--native-batch', '--heap-log2', str(args.heap_log2), '--stack-log2', str(args.stack_log2),
@@ -496,9 +477,6 @@ def main():
     problems, agree, notes = [], 0, []
     for k, t in enumerate(tests):
         want = expected_words(status.get(f't{k}', 'missing'))
-        if inputs.get(k) is None:
-            problems.append(f'{t["name"]}: the Lean lexer rejects it')
-            continue
         got_self, seconds, rss = selfs[k]
         words = read_words(os.path.join(batch, f'in{runnable.index(k)}.words'))
         stdin = b''.join((x & 0xffffffff).to_bytes(4, 'little') for x in [len(words), room] + words)

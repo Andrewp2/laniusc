@@ -111,6 +111,16 @@ theorem proof_cons_of_mini_selfhost_MEff {prog : SrcProgram} {prims : Prims} {ix
   simp only [src_cons_of_mini_selfhost_MEff] at h
   faithful []
 
+theorem proof_cons_of_mini_selfhost_RawTok {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_RawTok ix_boxed_of_mini_selfhost_List_mini_selfhost_RawTok : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_RawTok]? = some (src_cons_of_mini_selfhost_RawTok ix_boxed_of_mini_selfhost_List_mini_selfhost_RawTok)) (np : prims.isPrim ix_cons_of_mini_selfhost_RawTok = false)
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_RawTok prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_RawTok n)) {n : Nat} :
+    Stmt_cons_of_mini_selfhost_RawTok prog prims ix_cons_of_mini_selfhost_RawTok n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_mini_selfhost_RawTok] at h
+  faithful []
+
 theorem proof_cons_of_mini_selfhost_VariantTy {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_VariantTy ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_VariantTy]? = some (src_cons_of_mini_selfhost_VariantTy ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy)) (np : prims.isPrim ix_cons_of_mini_selfhost_VariantTy = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy n)) {n : Nat} :
     Stmt_cons_of_mini_selfhost_VariantTy prog prims ix_cons_of_mini_selfhost_VariantTy n := by
@@ -155,6 +165,15 @@ theorem proof_empty_of_mini_selfhost_ImportDecl {prog : SrcProgram} {prims : Pri
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_empty_of_mini_selfhost_ImportDecl] at h
+  faithful []
+
+theorem proof_empty_of_mini_selfhost_RawTok {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_RawTok : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_RawTok]? = some (src_empty_of_mini_selfhost_RawTok)) (np : prims.isPrim ix_empty_of_mini_selfhost_RawTok = false) {n : Nat} :
+    Stmt_empty_of_mini_selfhost_RawTok prog prims ix_empty_of_mini_selfhost_RawTok n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_mini_selfhost_RawTok] at h
   faithful []
 
 theorem step_get_of_mini_selfhost_FnDecl {prog : SrcProgram} {prims : Prims} {ix_get_of_mini_selfhost_FnDecl ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl : Nat} (fn : prog.funcs[ix_get_of_mini_selfhost_FnDecl]? = some (src_get_of_mini_selfhost_FnDecl ix_minus ix_unbox_of_mini_selfhost_List_mini_selfhost_FnDecl ix_get_of_mini_selfhost_FnDecl)) (np : prims.isPrim ix_get_of_mini_selfhost_FnDecl = false)
@@ -215,6 +234,10 @@ theorem proof_single_of_mini_selfhost_Instr {prog : SrcProgram} {prims : Prims} 
   rw [pcall_succ np fn] at h
   simp only [src_single_of_mini_selfhost_Instr] at h
   faithful []
+
+theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_RawTok {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok = true) {n : Nat} :
+    Stmt_unbox_of_mini_selfhost_List_mini_selfhost_RawTok prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok n :=
+  fun h r => prim_cert np h r
 
 theorem proof_unbox_of_mini_selfhost_List_mini_selfhost_Rule {prog : SrcProgram} {prims : Prims} {ix_unbox_of_mini_selfhost_List_mini_selfhost_Rule : Nat} (np : prims.isPrim ix_unbox_of_mini_selfhost_List_mini_selfhost_Rule = true) {n : Nat} :
     Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Rule prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Rule n :=

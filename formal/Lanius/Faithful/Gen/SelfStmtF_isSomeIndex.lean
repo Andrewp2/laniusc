@@ -29,15 +29,15 @@ abbrev Stmt_is_method_form (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Pr
     RepBool (Lanius.Mini.isMethodForm x0) w
 
 abbrev Stmt_is_some_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 208 RepNat) x0 v0 →
+  ∀ {x0 : Option Nat} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 196 RepNat) x0 v0 →
     RepBool (Lanius.Mini.isSomeIndex x0) w
 
 abbrev Stmt_path_call (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.Split} {x5 : List Lanius.Mini.CTree} {x6 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 213 RepLocal) x2 v2 → RepTy x3 v3 → RepSplit x4 v4 → (RepList 76 RepCTree) x5 v5 → (RepList 20 RepSrcExpr) x6 v6 →
-    (RepOption 230 RepCalled) (Lanius.Mini.pathCall x0 x1 x2 x3 x4 x5 x6) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.Split} {x5 : List Lanius.Mini.CTree} {x6 : List Lanius.Mini.SrcExpr} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 220 RepLocal) x2 v2 → RepTy x3 v3 → RepSplit x4 v4 → (RepList 76 RepCTree) x5 v5 → (RepList 20 RepSrcExpr) x6 v6 →
+    (RepOption 238 RepCalled) (Lanius.Mini.pathCall x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_path_call_of (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 213 RepLocal) x2 v2 → RepTy x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 →
-    (RepOption 230 RepCalled) (Lanius.Mini.pathCallOf x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : Nat} {x1 : Lanius.Mini.FrontEnv} {x2 : List Lanius.Mini.Local} {x3 : Lanius.Mini.Ty} {x4 : Lanius.Mini.CTree} {x5 : Lanius.Mini.CTree} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepNat x0 v0 → RepFrontEnv x1 v1 → (RepList 220 RepLocal) x2 v2 → RepTy x3 v3 → RepCTree x4 v4 → RepCTree x5 v5 →
+    (RepOption 238 RepCalled) (Lanius.Mini.pathCallOf x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

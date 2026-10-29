@@ -38,6 +38,10 @@ theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy {prog : SrcProgr
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_LocalTy n :=
   fun h r => prim_cert np h r
 
+theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_RawTok {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_RawTok : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_RawTok = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_RawTok prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_RawTok n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_Sym {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_Sym : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_Sym = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Sym prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Sym n :=
   fun h r => prim_cert np h r

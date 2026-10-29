@@ -4,10 +4,17 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
 public import Lanius.Faithful.Gen.SelfStmt0
+public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
+public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt6
 public import Lanius.Faithful.Gen.SelfStmt7
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_lxFilterAt
+public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_lxCanonicalKind
+public import Lanius.Faithful.Gen.SelfStmtF_lxDotAt
+public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 import all Lanius.Faithful.Gen.SelfSrcF_lxCanonicalKind
 import all Lanius.Mini.Frontend.P.lxCanonicalKind
 
@@ -28,6 +35,146 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
+theorem proof_byte_after {prog : SrcProgram} {prims : Prims} {ix_byte_after ix_nums_after : Nat} (fn : prog.funcs[ix_byte_after]? = some (src_byte_after ix_nums_after)) (np : prims.isPrim ix_byte_after = false)
+    (ext_nums_after : Certified (∀ {n : Nat}, Stmt_nums_after prog prims ix_nums_after n)) {n : Nat} :
+    Stmt_byte_after prog prims ix_byte_after n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_byte_after] at h
+  faithful [Lanius.Mini.byteAfter]
+
+theorem proof_lex_source {prog : SrcProgram} {prims : Prims} {ix_lex_source ix_length_of_usize ix_plus ix_lx_raw ix_lx_symbol_rules ix_lx_tokens ix_lx_ranges ix_lx_filter ix_lx_keyword_rules : Nat} (fn : prog.funcs[ix_lex_source]? = some (src_lex_source ix_length_of_usize ix_plus ix_lx_raw ix_lx_symbol_rules ix_lx_tokens ix_lx_ranges ix_lx_filter ix_lx_keyword_rules)) (np : prims.isPrim ix_lex_source = false)
+    (ext_length_of_usize : Certified (∀ {n : Nat}, Stmt_length_of_usize prog prims ix_length_of_usize n))
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_raw : Certified (∀ {n : Nat}, Stmt_lx_raw prog prims ix_lx_raw n))
+    (ext_lx_symbol_rules : Certified (∀ {n : Nat}, Stmt_lx_symbol_rules prog prims ix_lx_symbol_rules n))
+    (ext_lx_tokens : Certified (∀ {n : Nat}, Stmt_lx_tokens prog prims ix_lx_tokens n))
+    (ext_lx_ranges : Certified (∀ {n : Nat}, Stmt_lx_ranges prog prims ix_lx_ranges n))
+    (ext_lx_filter : Certified (∀ {n : Nat}, Stmt_lx_filter prog prims ix_lx_filter n))
+    (ext_lx_keyword_rules : Certified (∀ {n : Nat}, Stmt_lx_keyword_rules prog prims ix_lx_keyword_rules n)) {n : Nat} :
+    Stmt_lex_source prog prims ix_lex_source n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lex_source] at h
+  faithful [Lanius.Mini.lexSource]
+
+theorem proof_lx_as_text {prog : SrcProgram} {prims : Prims} {ix_lx_as_text ix_cons_of_usize ix_single_of_usize : Nat} (fn : prog.funcs[ix_lx_as_text]? = some (src_lx_as_text ix_cons_of_usize ix_single_of_usize)) (np : prims.isPrim ix_lx_as_text = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    Stmt_lx_as_text prog prims ix_lx_as_text n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_as_text] at h
+  faithful [Lanius.Mini.lxAsText]
+
+theorem proof_lx_canonical_kind {prog : SrcProgram} {prims : Prims} {ix_lx_canonical_kind ix_minus ix_lx_take ix_lx_keyword : Nat} (fn : prog.funcs[ix_lx_canonical_kind]? = some (src_lx_canonical_kind ix_minus ix_lx_take ix_lx_keyword)) (np : prims.isPrim ix_lx_canonical_kind = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_lx_take : Certified (∀ {n : Nat}, Stmt_lx_take prog prims ix_lx_take n))
+    (ext_lx_keyword : Certified (∀ {n : Nat}, Stmt_lx_keyword prog prims ix_lx_keyword n)) {n : Nat} :
+    Stmt_lx_canonical_kind prog prims ix_lx_canonical_kind n := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_canonical_kind] at h
+  faithful [Lanius.Mini.lxCanonicalKind]
+
+theorem step_lx_filter {prog : SrcProgram} {prims : Prims} {ix_lx_filter ix_empty_of_mini_selfhost_RawTok ix_lx_drop_to ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok ix_lx_filter_at : Nat} (fn : prog.funcs[ix_lx_filter]? = some (src_lx_filter ix_empty_of_mini_selfhost_RawTok ix_lx_drop_to ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok ix_lx_filter_at)) (np : prims.isPrim ix_lx_filter = false)
+    (ext_empty_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_RawTok prog prims ix_empty_of_mini_selfhost_RawTok n))
+    (ext_lx_drop_to : Certified (∀ {n : Nat}, Stmt_lx_drop_to prog prims ix_lx_drop_to n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_RawTok prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok n)) {n : Nat}
+    (ih_lx_filter_at : Certified (Stmt_lx_filter_at prog prims ix_lx_filter_at n)) :
+    Stmt_lx_filter prog prims ix_lx_filter (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_filter] at h
+  faithful [Lanius.Mini.lxFilter]
+
+theorem proof_lx_keyword_rules {prog : SrcProgram} {prims : Prims} {ix_lx_keyword_rules ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_single_of_usize ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_lx_keyword_rules]? = some (src_lx_keyword_rules ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_single_of_usize ix_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_lx_keyword_rules = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_cons_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SymRule prog prims ix_cons_of_mini_selfhost_SymRule n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_empty_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SymRule prog prims ix_empty_of_mini_selfhost_SymRule n)) {n : Nat} :
+    Stmt_lx_keyword_rules prog prims ix_lx_keyword_rules n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_keyword_rules] at h
+  faithful [Lanius.Mini.lxKeywordRules]
+
+theorem proof_lx_range_pair {prog : SrcProgram} {prims : Prims} {ix_lx_range_pair : Nat} (fn : prog.funcs[ix_lx_range_pair]? = some (src_lx_range_pair)) (np : prims.isPrim ix_lx_range_pair = false) {n : Nat} :
+    Stmt_lx_range_pair prog prims ix_lx_range_pair n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_range_pair] at h
+  faithful [Lanius.Mini.lxRangePair]
+
+theorem step_lx_ranges {prog : SrcProgram} {prims : Prims} {ix_lx_ranges ix_empty_of_mini_selfhost_RawTok ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok ix_lx_ranges_at : Nat} (fn : prog.funcs[ix_lx_ranges]? = some (src_lx_ranges ix_empty_of_mini_selfhost_RawTok ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok ix_lx_ranges_at)) (np : prims.isPrim ix_lx_ranges = false)
+    (ext_empty_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_RawTok prog prims ix_empty_of_mini_selfhost_RawTok n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_RawTok prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok n)) {n : Nat}
+    (ih_lx_ranges_at : Certified (Stmt_lx_ranges_at prog prims ix_lx_ranges_at n)) :
+    Stmt_lx_ranges prog prims ix_lx_ranges (n + 1) := by
+  intro x0 v0 w h r0
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_ranges] at h
+  faithful [Lanius.Mini.lxRanges]
+
+theorem proof_lx_symbol_rules {prog : SrcProgram} {prims : Prims} {ix_lx_symbol_rules ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_single_of_usize ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_lx_symbol_rules]? = some (src_lx_symbol_rules ix_cons_of_usize ix_cons_of_mini_selfhost_SymRule ix_single_of_usize ix_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_lx_symbol_rules = false)
+    (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n))
+    (ext_cons_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_SymRule prog prims ix_cons_of_mini_selfhost_SymRule n))
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_empty_of_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_SymRule prog prims ix_empty_of_mini_selfhost_SymRule n)) {n : Nat} :
+    Stmt_lx_symbol_rules prog prims ix_lx_symbol_rules n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_symbol_rules] at h
+  faithful [Lanius.Mini.lxSymbolRules]
+
+theorem proof_lx_token {prog : SrcProgram} {prims : Prims} {ix_lx_token ix_minus ix_lx_token_text ix_lx_take : Nat} (fn : prog.funcs[ix_lx_token]? = some (src_lx_token ix_minus ix_lx_token_text ix_lx_take)) (np : prims.isPrim ix_lx_token = false)
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_lx_token_text : Certified (∀ {n : Nat}, Stmt_lx_token_text prog prims ix_lx_token_text n))
+    (ext_lx_take : Certified (∀ {n : Nat}, Stmt_lx_take prog prims ix_lx_take n)) {n : Nat} :
+    Stmt_lx_token prog prims ix_lx_token n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_token] at h
+  faithful [Lanius.Mini.lxToken]
+
+theorem proof_lx_token_text {prog : SrcProgram} {prims : Prims} {ix_lx_token_text ix_same_text ix_lx_as_text : Nat} (fn : prog.funcs[ix_lx_token_text]? = some (src_lx_token_text ix_same_text ix_lx_as_text)) (np : prims.isPrim ix_lx_token_text = false)
+    (ext_same_text : Certified (∀ {n : Nat}, Stmt_same_text prog prims ix_same_text n))
+    (ext_lx_as_text : Certified (∀ {n : Nat}, Stmt_lx_as_text prog prims ix_lx_as_text n)) {n : Nat} :
+    Stmt_lx_token_text prog prims ix_lx_token_text n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_token_text] at h
+  faithful [Lanius.Mini.lxTokenText]
+
+theorem step_lx_tokens {prog : SrcProgram} {prims : Prims} {ix_lx_tokens ix_empty_of_mini_selfhost_Token ix_lx_tokens_at ix_lx_drop_to ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok : Nat} (fn : prog.funcs[ix_lx_tokens]? = some (src_lx_tokens ix_empty_of_mini_selfhost_Token ix_lx_tokens_at ix_lx_drop_to ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok)) (np : prims.isPrim ix_lx_tokens = false)
+    (ext_empty_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Token prog prims ix_empty_of_mini_selfhost_Token n))
+    (ext_lx_drop_to : Certified (∀ {n : Nat}, Stmt_lx_drop_to prog prims ix_lx_drop_to n))
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_RawTok prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_RawTok n)) {n : Nat}
+    (ih_lx_tokens_at : Certified (Stmt_lx_tokens_at prog prims ix_lx_tokens_at n)) :
+    Stmt_lx_tokens prog prims ix_lx_tokens (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_tokens] at h
+  faithful [Lanius.Mini.lxTokens]
+
 theorem proof_nums_after {prog : SrcProgram} {prims : Prims} {ix_nums_after ix_cons_of_usize : Nat} (fn : prog.funcs[ix_nums_after]? = some (src_nums_after ix_cons_of_usize)) (np : prims.isPrim ix_nums_after = false)
     (ext_cons_of_usize : Certified (∀ {n : Nat}, Stmt_cons_of_usize prog prims ix_cons_of_usize n)) {n : Nat} :
     Stmt_nums_after prog prims ix_nums_after n := by
@@ -37,6 +184,19 @@ theorem proof_nums_after {prog : SrcProgram} {prims : Prims} {ix_nums_after ix_c
   rw [pcall_succ np fn] at h
   simp only [src_nums_after] at h
   faithful [Lanius.Mini.numsAfter]
+
+theorem step_read_bytes {prog : SrcProgram} {prims : Prims} {ix_read_bytes ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_minus ix_empty_of_usize ix_byte_after : Nat} (fn : prog.funcs[ix_read_bytes]? = some (src_read_bytes ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_minus ix_read_bytes ix_empty_of_usize ix_byte_after)) (np : prims.isPrim ix_read_bytes = false)
+    (ext_unbox_of_mini_selfhost_List_i32 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_i32 prog prims ix_unbox_of_mini_selfhost_List_i32 n))
+    (ext_word_num : Certified (∀ {n : Nat}, Stmt_word_num prog prims ix_word_num n))
+    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
+    (ext_empty_of_usize : Certified (∀ {n : Nat}, Stmt_empty_of_usize prog prims ix_empty_of_usize n))
+    (ext_byte_after : Certified (∀ {n : Nat}, Stmt_byte_after prog prims ix_byte_after n)) {n : Nat}
+    (ih_read_bytes : Certified (Stmt_read_bytes prog prims ix_read_bytes n)) :
+    Stmt_read_bytes prog prims ix_read_bytes (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_read_bytes] at h
+  faithful [Lanius.Mini.readBytes]
 
 theorem proof_read_counted_nums {prog : SrcProgram} {prims : Prims} {ix_read_counted_nums ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_read_nums : Nat} (fn : prog.funcs[ix_read_counted_nums]? = some (src_read_counted_nums ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_read_nums)) (np : prims.isPrim ix_read_counted_nums = false)
     (ext_unbox_of_mini_selfhost_List_i32 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_i32 prog prims ix_unbox_of_mini_selfhost_List_i32 n))
@@ -62,62 +222,6 @@ theorem step_read_nums {prog : SrcProgram} {prims : Prims} {ix_read_nums ix_unbo
   rw [pcall_succ np fn] at h
   simp only [src_read_nums] at h
   faithful [Lanius.Mini.readNums]
-
-theorem proof_read_token {prog : SrcProgram} {prims : Prims} {ix_read_token ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_read_token_start : Nat} (fn : prog.funcs[ix_read_token]? = some (src_read_token ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_read_token_start)) (np : prims.isPrim ix_read_token = false)
-    (ext_unbox_of_mini_selfhost_List_i32 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_i32 prog prims ix_unbox_of_mini_selfhost_List_i32 n))
-    (ext_word_num : Certified (∀ {n : Nat}, Stmt_word_num prog prims ix_word_num n))
-    (ext_read_token_start : Certified (∀ {n : Nat}, Stmt_read_token_start prog prims ix_read_token_start n)) {n : Nat} :
-    Stmt_read_token prog prims ix_read_token n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_read_token] at h
-  faithful [Lanius.Mini.readToken]
-
-theorem proof_read_token_start {prog : SrcProgram} {prims : Prims} {ix_read_token_start ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_read_counted_nums ix_read_token_text : Nat} (fn : prog.funcs[ix_read_token_start]? = some (src_read_token_start ix_unbox_of_mini_selfhost_List_i32 ix_word_num ix_read_counted_nums ix_read_token_text)) (np : prims.isPrim ix_read_token_start = false)
-    (ext_unbox_of_mini_selfhost_List_i32 : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_i32 prog prims ix_unbox_of_mini_selfhost_List_i32 n))
-    (ext_word_num : Certified (∀ {n : Nat}, Stmt_word_num prog prims ix_word_num n))
-    (ext_read_counted_nums : Certified (∀ {n : Nat}, Stmt_read_counted_nums prog prims ix_read_counted_nums n))
-    (ext_read_token_text : Certified (∀ {n : Nat}, Stmt_read_token_text prog prims ix_read_token_text n)) {n : Nat} :
-    Stmt_read_token_start prog prims ix_read_token_start n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_read_token_start] at h
-  faithful [Lanius.Mini.readTokenStart]
-
-theorem proof_read_token_text {prog : SrcProgram} {prims : Prims} {ix_read_token_text : Nat} (fn : prog.funcs[ix_read_token_text]? = some (src_read_token_text)) (np : prims.isPrim ix_read_token_text = false) {n : Nat} :
-    Stmt_read_token_text prog prims ix_read_token_text n := by
-  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_read_token_text] at h
-  faithful [Lanius.Mini.readTokenText]
-
-theorem step_read_tokens {prog : SrcProgram} {prims : Prims} {ix_read_tokens ix_minus ix_empty_of_mini_selfhost_Token ix_read_token ix_tokens_after : Nat} (fn : prog.funcs[ix_read_tokens]? = some (src_read_tokens ix_minus ix_read_tokens ix_empty_of_mini_selfhost_Token ix_read_token ix_tokens_after)) (np : prims.isPrim ix_read_tokens = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_empty_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_Token prog prims ix_empty_of_mini_selfhost_Token n))
-    (ext_read_token : Certified (∀ {n : Nat}, Stmt_read_token prog prims ix_read_token n))
-    (ext_tokens_after : Certified (∀ {n : Nat}, Stmt_tokens_after prog prims ix_tokens_after n)) {n : Nat}
-    (ih_read_tokens : Certified (Stmt_read_tokens prog prims ix_read_tokens n)) :
-    Stmt_read_tokens prog prims ix_read_tokens (n + 1) := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rw [pcall_succ np fn] at h
-  simp only [src_read_tokens] at h
-  faithful [Lanius.Mini.readTokens]
-
-theorem proof_tokens_after {prog : SrcProgram} {prims : Prims} {ix_tokens_after ix_cons_of_mini_selfhost_Token : Nat} (fn : prog.funcs[ix_tokens_after]? = some (src_tokens_after ix_cons_of_mini_selfhost_Token)) (np : prims.isPrim ix_tokens_after = false)
-    (ext_cons_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Token prog prims ix_cons_of_mini_selfhost_Token n)) {n : Nat} :
-    Stmt_tokens_after prog prims ix_tokens_after n := by
-  intro x0 x1 v0 v1 w h r0 r1
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_tokens_after] at h
-  faithful [Lanius.Mini.tokensAfter]
 
 theorem proof_word_num {prog : SrcProgram} {prims : Prims} {ix_word_num : Nat} (fn : prog.funcs[ix_word_num]? = some (src_word_num)) (np : prims.isPrim ix_word_num = false) {n : Nat} :
     Stmt_word_num prog prims ix_word_num n := by

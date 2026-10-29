@@ -7,6 +7,11 @@ on but do not prove:
   `compileSource sp = some binary` and Core evaluates `f(args)` to `v`, then
   the code for `f`, entered by a near call in a suitable x86 state, returns
   slots that represent `v`.
+- `Lanius.Mini.compileText_correct` (`Lanius/Mini/TextCorrect.lean`, V5).
+  The same from source text: if `compileText files = some binary`, the
+  files' texts have exactly one reading `sp` (`TextReading`, section 4), and
+  `compileSource_correct`'s conclusion holds of `sp` and `binary`.
+  `compileText_behaviour` is its counterpart for runs that stop.
 - `Lanius.Mini.compileProgram_correct` (`Lanius/Mini/Correct.lean`). The same
   for a mini IR program against the mini big-step semantics.
 - `Lanius.Mini.compileProgram_stops` (`Lanius/Mini/StopsCorrect.lean`, V2c).
@@ -135,7 +140,8 @@ output is kept only when the proved validator accepts it. Nor are
 
 ## 4. The front end
 
-`compileSource_correct` takes a `SrcProgram` value, not source text. Roadmap
+`compileSource_correct` takes a `SrcProgram` value, not source text;
+`compileText_correct` (V5) takes the files' text and composes the two. Roadmap
 step 8 adds a front end that gives source text a `SrcProgram`, by translation
 validation of laniusc's parser:
 
@@ -426,6 +432,13 @@ compiler that someone actually runs is one of these two:
    unique), a heap cursor in range at the end, fewer than 2^31 input words
    and output room, and an output view whose `room * 4` bytes are readable.
    V6 (the startup wrapper) is to discharge the last.
+   Since V5 (10-29) the input is source text: `front_end_words` reads each
+   file's bytes (below 256), productions and parents and lexes the bytes
+   with `lex_source`. `driver_files` (standard axioms) restates
+   `driver_faithful` for the words of files (`filesWords`, in
+   `Mini/TextWords.lean`): the result is the words of `compileText`'s
+   binary, and `compileWords_some` shows that any input the driver accepts
+   is the words of files. The lexer is in the certified functions now.
    The extraction's and the sources' bodies are hidden from other Lean
    modules (module system, for incremental checking); that changes only
    what the elaborator may unfold, not what the kernel checks, and a proof

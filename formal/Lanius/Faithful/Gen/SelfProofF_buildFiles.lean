@@ -81,6 +81,44 @@ theorem proof_front_end_files {prog : SrcProgram} {prims : Prims} {ix_front_end_
   simp only [src_front_end_files] at h
   faithful [Lanius.Mini.frontEndFiles]
 
+theorem proof_lx_digit {prog : SrcProgram} {prims : Prims} {ix_lx_digit : Nat} (fn : prog.funcs[ix_lx_digit]? = some (src_lx_digit)) (np : prims.isPrim ix_lx_digit = false) {n : Nat} :
+    Stmt_lx_digit prog prims ix_lx_digit n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit] at h
+  faithful [Lanius.Mini.lxDigit]
+
+theorem proof_lx_ident_continue {prog : SrcProgram} {prims : Prims} {ix_lx_ident_continue ix_lx_ident_start ix_lx_digit : Nat} (fn : prog.funcs[ix_lx_ident_continue]? = some (src_lx_ident_continue ix_lx_ident_start ix_lx_digit)) (np : prims.isPrim ix_lx_ident_continue = false)
+    (ext_lx_ident_start : Certified (∀ {n : Nat}, Stmt_lx_ident_start prog prims ix_lx_ident_start n))
+    (ext_lx_digit : Certified (∀ {n : Nat}, Stmt_lx_digit prog prims ix_lx_digit n)) {n : Nat} :
+    Stmt_lx_ident_continue prog prims ix_lx_ident_continue n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_ident_continue] at h
+  faithful [Lanius.Mini.lxIdentContinue]
+
+theorem proof_lx_ident_start {prog : SrcProgram} {prims : Prims} {ix_lx_ident_start : Nat} (fn : prog.funcs[ix_lx_ident_start]? = some (src_lx_ident_start)) (np : prims.isPrim ix_lx_ident_start = false) {n : Nat} :
+    Stmt_lx_ident_start prog prims ix_lx_ident_start n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_ident_start] at h
+  faithful [Lanius.Mini.lxIdentStart]
+
+theorem proof_lx_space {prog : SrcProgram} {prims : Prims} {ix_lx_space : Nat} (fn : prog.funcs[ix_lx_space]? = some (src_lx_space)) (np : prims.isPrim ix_lx_space = false) {n : Nat} :
+    Stmt_lx_space prog prims ix_lx_space n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_space] at h
+  faithful [Lanius.Mini.lxSpace]
+
 theorem step_validate_files {prog : SrcProgram} {prims : Prims} {ix_validate_files ix_empty_of_mini_selfhost_CTree ix_cons_root ix_validate_tree ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput : Nat} (fn : prog.funcs[ix_validate_files]? = some (src_validate_files ix_validate_files ix_empty_of_mini_selfhost_CTree ix_cons_root ix_validate_tree ix_unbox_of_mini_selfhost_List_mini_selfhost_FileInput)) (np : prims.isPrim ix_validate_files = false)
     (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
     (ext_cons_root : Certified (∀ {n : Nat}, Stmt_cons_root prog prims ix_cons_root n))

@@ -377,16 +377,6 @@ structure NumsRead where
   rest : List (BitVec 32)
   deriving DecidableEq, Repr
 
-structure TokenRead where
-  token : Token
-  rest : List (BitVec 32)
-  deriving DecidableEq, Repr
-
-structure TokensRead where
-  tokens : List Token
-  rest : List (BitVec 32)
-  deriving DecidableEq, Repr
-
 structure FileRead where
   file : FileInput
   rest : List (BitVec 32)

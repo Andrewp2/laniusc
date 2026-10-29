@@ -50,9 +50,9 @@ theorem proof_only {prog : SrcProgram} {prims : Prims} {ix_only : Nat} (fn : pro
   simp only [src_only] at h
   faithful [Lanius.Mini.only]
 
-theorem proof_shr_first {prog : SrcProgram} {prims : Prims} {ix_shr_first ix_t_gt ix_single_of_usize : Nat} (fn : prog.funcs[ix_shr_first]? = some (src_shr_first ix_t_gt ix_single_of_usize)) (np : prims.isPrim ix_shr_first = false)
-    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+theorem proof_shr_first {prog : SrcProgram} {prims : Prims} {ix_shr_first ix_single_of_usize ix_t_gt : Nat} (fn : prog.funcs[ix_shr_first]? = some (src_shr_first ix_single_of_usize ix_t_gt)) (np : prims.isPrim ix_shr_first = false)
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n)) {n : Nat} :
     Stmt_shr_first prog prims ix_shr_first n := by
   intro x0 v0 w h r0
   rcases n with _ | n
@@ -61,10 +61,10 @@ theorem proof_shr_first {prog : SrcProgram} {prims : Prims} {ix_shr_first ix_t_g
   simp only [src_shr_first] at h
   faithful [Lanius.Mini.shrFirst]
 
-theorem proof_shr_second {prog : SrcProgram} {prims : Prims} {ix_shr_second ix_plus ix_t_gt ix_single_of_usize : Nat} (fn : prog.funcs[ix_shr_second]? = some (src_shr_second ix_plus ix_t_gt ix_single_of_usize)) (np : prims.isPrim ix_shr_second = false)
+theorem proof_shr_second {prog : SrcProgram} {prims : Prims} {ix_shr_second ix_plus ix_single_of_usize ix_t_gt : Nat} (fn : prog.funcs[ix_shr_second]? = some (src_shr_second ix_plus ix_single_of_usize ix_t_gt)) (np : prims.isPrim ix_shr_second = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
+    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n))
+    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n)) {n : Nat} :
     Stmt_shr_second prog prims ix_shr_second n := by
   intro x0 v0 w h r0
   rcases n with _ | n

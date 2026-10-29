@@ -29,7 +29,7 @@ def src_no_token (ix_empty_of_usize : Nat) : SrcFunc := { params := [], ret := t
 def src_starts_with_kind : SrcFunc := { params := [{ id := 17, ty := ty43 }, { id := 38, ty := SrcType.uint (UintTy.usize) }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 17)) ty43 (SrcType.bool) [[], [124, 127]] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.apply (SrcOp.equal) (SrcExpr.field 124 0) (SrcExpr.local 38))]) }
 
 /-- mini::selfhost::with_kid -/
-def src_with_kid (ix_cons_of_mini_selfhost_CTree : Nat) : SrcFunc := { params := [{ id := 9, ty := ty78 }, { id := 21, ty := ty132 }], ret := ty132, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 21)) ty132 ty132 [[156], []] [SrcEff.eVariant ty132 0 [SrcEff.eStruct ty131 [SrcEff.eCall ix_cons_of_mini_selfhost_CTree [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.field 156 0)], SrcEff.ePure (SrcExpr.field 156 1)]], SrcEff.eVariant ty132 1 []]) }
+def src_with_kid (ix_cons_of_mini_selfhost_CTree : Nat) : SrcFunc := { params := [{ id := 9, ty := ty78 }, { id := 21, ty := ty130 }], ret := ty130, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 21)) ty130 ty130 [[156], []] [SrcEff.eVariant ty130 0 [SrcEff.eStruct ty129 [SrcEff.eCall ix_cons_of_mini_selfhost_CTree [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.field 156 0)], SrcEff.ePure (SrcExpr.field 156 1)]], SrcEff.eVariant ty130 1 []]) }
 
 end
 

@@ -280,7 +280,7 @@ theorem pure87 : PureFunc prog prims outside src87 = true :=
 theorem pure88 : PureFunc prog prims outside src88 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 
-/-- mini::selfhost::read_counted_tokens -/
+/-- mini::selfhost::read_counted_bytes -/
 theorem pure89 : PureFunc prog prims outside src89 = true :=
   pureFunc_fast boxElem_self callTy_self (by decide +kernel)
 

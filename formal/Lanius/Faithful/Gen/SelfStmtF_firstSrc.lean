@@ -21,47 +21,47 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_bound_tys (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.SrcType)} {x2 : List Lanius.Mini.LocalTy} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → (RepOption 176 (RepList 67 RepSrcType)) x1 v1 → (RepList 201 RepLocalTy) x2 v2 →
-    (RepList 201 RepLocalTy) (Lanius.Mini.boundTys x0 x1 x2) w
+  ∀ {x0 : List Nat} {x1 : Option (List Lanius.Mini.SrcType)} {x2 : List Lanius.Mini.LocalTy} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepList 24 RepNat) x0 v0 → (RepOption 177 (RepList 67 RepSrcType)) x1 v1 → (RepList 207 RepLocalTy) x2 v2 →
+    (RepList 207 RepLocalTy) (Lanius.Mini.boundTys x0 x1 x2) w
 
 abbrev Stmt_either_ty (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 153 RepSrcType) x0 v0 → (RepOption 153 RepSrcType) x1 v1 →
-    (RepOption 153 RepSrcType) (Lanius.Mini.eitherTy x0 x1) w
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.SrcType} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepOption 149 RepSrcType) x0 v0 → (RepOption 149 RepSrcType) x1 v1 →
+    (RepOption 149 RepSrcType) (Lanius.Mini.eitherTy x0 x1) w
 
 abbrev Stmt_first_ids (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 →
     (RepList 24 RepNat) (Lanius.Mini.firstIds x0) w
 
 abbrev Stmt_first_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 176 (RepList 67 RepSrcType)) x0 v0 →
-    (RepOption 153 RepSrcType) (Lanius.Mini.firstSrc x0) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 177 (RepList 67 RepSrcType)) x0 v0 →
+    (RepOption 149 RepSrcType) (Lanius.Mini.firstSrc x0) w
 
 abbrev Stmt_known_apply (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcType} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 153 RepSrcType) x1 v1 → (RepOption 153 RepSrcType) x2 v2 →
-    (RepOption 153 RepSrcType) (Lanius.Mini.knownApply x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcType} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepSrcOp x0 v0 → (RepOption 149 RepSrcType) x1 v1 → (RepOption 149 RepSrcType) x2 v2 →
+    (RepOption 149 RepSrcType) (Lanius.Mini.knownApply x0 x1 x2) w
 
 abbrev Stmt_known_cast (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepSrcType x0 v0 →
-    (RepOption 153 RepSrcType) (Lanius.Mini.knownCast x0) w
+    (RepOption 149 RepSrcType) (Lanius.Mini.knownCast x0) w
 
 abbrev Stmt_operand_want (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.SrcType} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcOp x0 v0 → (RepOption 153 RepSrcType) x1 v1 → (RepOption 153 RepSrcType) x2 v2 → (RepOption 153 RepSrcType) x3 v3 →
-    (RepOption 153 RepSrcType) (Lanius.Mini.operandWant x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.SrcOp} {x1 : Option Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.SrcType} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcOp x0 v0 → (RepOption 149 RepSrcType) x1 v1 → (RepOption 149 RepSrcType) x2 v2 → (RepOption 149 RepSrcType) x3 v3 →
+    (RepOption 149 RepSrcType) (Lanius.Mini.operandWant x0 x1 x2 x3) w
 
 abbrev Stmt_rest_ids (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List (List Nat)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 30 (RepList 24 RepNat)) x0 v0 →
     (RepList 30 (RepList 24 RepNat)) (Lanius.Mini.restIds x0) w
 
 abbrev Stmt_rest_payloads (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 177 (RepList 71 (RepList 67 RepSrcType))) x0 v0 →
-    (RepOption 177 (RepList 71 (RepList 67 RepSrcType))) (Lanius.Mini.restPayloads x0) w
+  ∀ {x0 : Option (List (List Lanius.Mini.SrcType))} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 178 (RepList 71 (RepList 67 RepSrcType))) x0 v0 →
+    (RepOption 178 (RepList 71 (RepList 67 RepSrcType))) (Lanius.Mini.restPayloads x0) w
 
 abbrev Stmt_rest_src (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 176 (RepList 67 RepSrcType)) x0 v0 →
-    (RepOption 176 (RepList 67 RepSrcType)) (Lanius.Mini.restSrc x0) w
+  ∀ {x0 : Option (List Lanius.Mini.SrcType)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 177 (RepList 67 RepSrcType)) x0 v0 →
+    (RepOption 177 (RepList 67 RepSrcType)) (Lanius.Mini.restSrc x0) w
 
 abbrev Stmt_wide_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : BitVec 64} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 153 RepSrcType) x0 v0 → RepU64 x1 v1 → RepSrcExpr x2 v2 →
+  ∀ {x0 : Option Lanius.Mini.SrcType} {x1 : BitVec 64} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → (RepOption 149 RepSrcType) x0 v0 → RepU64 x1 v1 → RepSrcExpr x2 v2 →
     RepSrcExpr (Lanius.Mini.wideAt x0 x1 x2) w
 
 abbrev Stmt_wide_isize_at (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

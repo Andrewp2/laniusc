@@ -21,15 +21,15 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lower_match (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Option Lanius.Mini.Binding} {x2 : Nat} {x3 : List Lanius.Mini.SrcArm} {x4 : Lanius.Mini.SrcType} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 128 RepBinding) x0 v0 → (RepOption 147 RepBinding) x1 v1 → RepNat x2 v2 → (RepList 22 RepSrcArm) x3 v3 → RepSrcType x4 v4 → RepNat x5 v5 →
-    (RepOption 127 RepStmt) (Lanius.Mini.lowerMatch x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Option Lanius.Mini.Binding} {x2 : Nat} {x3 : List Lanius.Mini.SrcArm} {x4 : Lanius.Mini.SrcType} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 126 RepBinding) x0 v0 → (RepOption 143 RepBinding) x1 v1 → RepNat x2 v2 → (RepList 22 RepSrcArm) x3 v3 → RepSrcType x4 v4 → RepNat x5 v5 →
+    (RepOption 125 RepStmt) (Lanius.Mini.lowerMatch x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_lower_match_arms (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {x2 : Bool} {x3 : List (List Lanius.Mini.SrcType)} {x4 : List Lanius.Mini.SrcArm} {x5 : Lanius.Mini.SrcType} {x6 : Nat} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → (RepList 128 RepBinding) x0 v0 → RepNat x1 v1 → RepBool x2 v2 → (RepList 71 (RepList 67 RepSrcType)) x3 v3 → (RepList 22 RepSrcArm) x4 v4 → RepSrcType x5 v5 → RepNat x6 v6 →
-    (RepOption 127 RepStmt) (Lanius.Mini.lowerMatchArms x0 x1 x2 x3 x4 x5 x6) w
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Nat} {x2 : Bool} {x3 : List (List Lanius.Mini.SrcType)} {x4 : List Lanius.Mini.SrcArm} {x5 : Lanius.Mini.SrcType} {x6 : Nat} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → (RepList 126 RepBinding) x0 v0 → RepNat x1 v1 → RepBool x2 v2 → (RepList 71 (RepList 67 RepSrcType)) x3 v3 → (RepList 22 RepSrcArm) x4 v4 → RepSrcType x5 v5 → RepNat x6 v6 →
+    (RepOption 125 RepStmt) (Lanius.Mini.lowerMatchArms x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_lower_match_on (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.Binding} {x2 : Nat} {x3 : List Lanius.Mini.SrcArm} {x4 : Lanius.Mini.SrcType} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 128 RepBinding) x0 v0 → RepBinding x1 v1 → RepNat x2 v2 → (RepList 22 RepSrcArm) x3 v3 → RepSrcType x4 v4 → RepNat x5 v5 →
-    (RepOption 127 RepStmt) (Lanius.Mini.lowerMatchOn x0 x1 x2 x3 x4 x5) w
+  ∀ {x0 : List Lanius.Mini.Binding} {x1 : Lanius.Mini.Binding} {x2 : Nat} {x3 : List Lanius.Mini.SrcArm} {x4 : Lanius.Mini.SrcType} {x5 : Nat} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → (RepList 126 RepBinding) x0 v0 → RepBinding x1 v1 → RepNat x2 v2 → (RepList 22 RepSrcArm) x3 v3 → RepSrcType x4 v4 → RepNat x5 v5 →
+    (RepOption 125 RepStmt) (Lanius.Mini.lowerMatchOn x0 x1 x2 x3 x4 x5) w
 
 end Lanius.Faithful.SelfCert

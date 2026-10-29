@@ -22,19 +22,19 @@ open Lanius.Faithful.SelfRep
 
 abbrev Stmt_arith_shift_right (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Typed} {x1 : Lanius.Mini.Typed} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepTyped x0 v0 → RepTyped x1 v1 →
-    (RepOption 149 RepTyped) (Lanius.Mini.arithShiftRight x0 x1) w
+    (RepOption 145 RepTyped) (Lanius.Mini.arithShiftRight x0 x1) w
 
 abbrev Stmt_offset_or_arith (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepBinOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 149 RepTyped) (Lanius.Mini.offsetOrArith x0 x1 x2) w
+    (RepOption 145 RepTyped) (Lanius.Mini.offsetOrArith x0 x1 x2) w
 
 abbrev Stmt_order (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 →
-    (RepOption 149 RepTyped) (Lanius.Mini.order x0 x1 x2) w
+    (RepOption 145 RepTyped) (Lanius.Mini.order x0 x1 x2) w
 
 abbrev Stmt_order_uint (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 190 RepUintTy) x3 v3 →
-    (RepOption 149 RepTyped) (Lanius.Mini.orderUint x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.CmpOp} {x1 : Lanius.Mini.Typed} {x2 : Lanius.Mini.Typed} {x3 : Option Lanius.Mini.UintTy} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepCmpOp x0 v0 → RepTyped x1 v1 → RepTyped x2 v2 → (RepOption 195 RepUintTy) x3 v3 →
+    (RepOption 145 RepTyped) (Lanius.Mini.orderUint x0 x1 x2 x3) w
 
 abbrev Stmt_sign_key (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepExpr x0 v0 →

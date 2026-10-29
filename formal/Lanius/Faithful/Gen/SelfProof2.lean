@@ -38,6 +38,10 @@ theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff {prog : SrcProgra
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SrcEff n :=
   fun h r => prim_cert np h r
 
+theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_SymRule {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_SymRule : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_SymRule = true) {n : Nat} :
+    Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SymRule prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SymRule n :=
+  fun h r => prim_cert np h r
+
 theorem proof_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy {prog : SrcProgram} {prims : Prims} {ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy : Nat} (np : prims.isPrim ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy = true) {n : Nat} :
     Stmt_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_VariantTy n :=
   fun h r => prim_cert np h r
@@ -140,6 +144,16 @@ theorem proof_cons_of_mini_selfhost_SrcStructDecl {prog : SrcProgram} {prims : P
   simp only [src_cons_of_mini_selfhost_SrcStructDecl] at h
   faithful []
 
+theorem proof_cons_of_mini_selfhost_SymRule {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_SymRule ix_boxed_of_mini_selfhost_List_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_SymRule]? = some (src_cons_of_mini_selfhost_SymRule ix_boxed_of_mini_selfhost_List_mini_selfhost_SymRule)) (np : prims.isPrim ix_cons_of_mini_selfhost_SymRule = false)
+    (ext_boxed_of_mini_selfhost_List_mini_selfhost_SymRule : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_SymRule prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_SymRule n)) {n : Nat} :
+    Stmt_cons_of_mini_selfhost_SymRule prog prims ix_cons_of_mini_selfhost_SymRule n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_cons_of_mini_selfhost_SymRule] at h
+  faithful []
+
 theorem proof_cons_of_mini_selfhost_Ty {prog : SrcProgram} {prims : Prims} {ix_cons_of_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty : Nat} (fn : prog.funcs[ix_cons_of_mini_selfhost_Ty]? = some (src_cons_of_mini_selfhost_Ty ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty)) (np : prims.isPrim ix_cons_of_mini_selfhost_Ty = false)
     (ext_boxed_of_mini_selfhost_List_mini_selfhost_Ty : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_List_mini_selfhost_Ty prog prims ix_boxed_of_mini_selfhost_List_mini_selfhost_Ty n)) {n : Nat} :
     Stmt_cons_of_mini_selfhost_Ty prog prims ix_cons_of_mini_selfhost_Ty n := by
@@ -221,6 +235,15 @@ theorem proof_empty_of_mini_selfhost_List_mini_selfhost_CTree {prog : SrcProgram
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
   simp only [src_empty_of_mini_selfhost_List_mini_selfhost_CTree] at h
+  faithful []
+
+theorem proof_empty_of_mini_selfhost_SymRule {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_SymRule : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_SymRule]? = some (src_empty_of_mini_selfhost_SymRule)) (np : prims.isPrim ix_empty_of_mini_selfhost_SymRule = false) {n : Nat} :
+    Stmt_empty_of_mini_selfhost_SymRule prog prims ix_empty_of_mini_selfhost_SymRule n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_empty_of_mini_selfhost_SymRule] at h
   faithful []
 
 theorem proof_empty_of_mini_selfhost_VariantTy {prog : SrcProgram} {prims : Prims} {ix_empty_of_mini_selfhost_VariantTy : Nat} (fn : prog.funcs[ix_empty_of_mini_selfhost_VariantTy]? = some (src_empty_of_mini_selfhost_VariantTy)) (np : prims.isPrim ix_empty_of_mini_selfhost_VariantTy = false) {n : Nat} :

@@ -11,6 +11,7 @@ public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_findMethodAt
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pModTail
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pPathMore
+public import Lanius.Faithful.Gen.SelfStmtF_buildFiles
 public import Lanius.Faithful.Gen.SelfStmtF_compoundOf
 public import Lanius.Faithful.Gen.SelfStmtF_consBinder
 public import Lanius.Faithful.Gen.SelfStmtF_consTreeTail
@@ -19,6 +20,9 @@ public import Lanius.Faithful.Gen.SelfStmtF_findConst
 public import Lanius.Faithful.Gen.SelfStmtF_hasKids
 public import Lanius.Faithful.Gen.SelfStmtF_intLiteralAt
 public import Lanius.Faithful.Gen.SelfStmtF_isEmptyUsize
+public import Lanius.Faithful.Gen.SelfStmtF_lxBlockEnd
+public import Lanius.Faithful.Gen.SelfStmtF_lxSpaceEnd
+public import Lanius.Faithful.Gen.SelfStmtF_lxSymbolStart
 public import Lanius.Faithful.Gen.SelfStmtF_matchArms
 public import Lanius.Faithful.Gen.SelfStmtF_monoLoop
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
@@ -76,6 +80,106 @@ theorem step_find_method_at {prog : SrcProgram} {prims : Prims} {ix_find_method_
   rw [pcall_succ np fn] at h
   simp only [src_find_method_at] at h
   faithful [Lanius.Mini.Inline.findMethodAt]
+
+theorem step_lx_block_at {prog : SrcProgram} {prims : Prims} {ix_lx_block_at ix_plus ix_lx_block_next : Nat} (fn : prog.funcs[ix_lx_block_at]? = some (src_lx_block_at ix_plus ix_lx_block_next)) (np : prims.isPrim ix_lx_block_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_block_next : Certified (Stmt_lx_block_next prog prims ix_lx_block_next n)) :
+    Stmt_lx_block_at prog prims ix_lx_block_at (n + 1) := by
+  intro x0 x1 x2 v0 v1 v2 w h r0 r1 r2
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_block_at] at h
+  faithful [Lanius.Mini.Inline.lxBlockAt]
+
+theorem step_lx_block_next {prog : SrcProgram} {prims : Prims} {ix_lx_block_next ix_plus ix_lx_block : Nat} (fn : prog.funcs[ix_lx_block_next]? = some (src_lx_block_next ix_plus ix_lx_block)) (np : prims.isPrim ix_lx_block_next = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_block : Certified (Stmt_lx_block prog prims ix_lx_block n)) :
+    Stmt_lx_block_next prog prims ix_lx_block_next (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_block_next] at h
+  faithful [Lanius.Mini.Inline.lxBlockNext]
+
+theorem proof_lx_digit_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_digit_run_at ix_plus ix_lx_base_digit ix_lx_digit_tail : Nat} (fn : prog.funcs[ix_lx_digit_run_at]? = some (src_lx_digit_run_at ix_plus ix_lx_base_digit ix_lx_digit_tail)) (np : prims.isPrim ix_lx_digit_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_base_digit : Certified (∀ {n : Nat}, Stmt_lx_base_digit prog prims ix_lx_base_digit n))
+    (ext_lx_digit_tail : Certified (∀ {n : Nat}, Stmt_lx_digit_tail prog prims ix_lx_digit_tail n)) {n : Nat} :
+    Stmt_lx_digit_run_at prog prims ix_lx_digit_run_at n := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit_run_at] at h
+  faithful [Lanius.Mini.Inline.lxDigitRunAt]
+
+theorem step_lx_digit_sep {prog : SrcProgram} {prims : Prims} {ix_lx_digit_sep ix_plus ix_lx_base_digit ix_lx_digit_tail : Nat} (fn : prog.funcs[ix_lx_digit_sep]? = some (src_lx_digit_sep ix_plus ix_lx_base_digit ix_lx_digit_tail)) (np : prims.isPrim ix_lx_digit_sep = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_base_digit : Certified (∀ {n : Nat}, Stmt_lx_base_digit prog prims ix_lx_base_digit n)) {n : Nat}
+    (ih_lx_digit_tail : Certified (Stmt_lx_digit_tail prog prims ix_lx_digit_tail n)) :
+    Stmt_lx_digit_sep prog prims ix_lx_digit_sep (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit_sep] at h
+  faithful [Lanius.Mini.Inline.lxDigitSep]
+
+theorem step_lx_digit_tail_at {prog : SrcProgram} {prims : Prims} {ix_lx_digit_tail_at ix_plus ix_unbox_of_mini_selfhost_List_usize ix_lx_base_digit ix_lx_digit_tail ix_lx_digit_sep : Nat} (fn : prog.funcs[ix_lx_digit_tail_at]? = some (src_lx_digit_tail_at ix_plus ix_unbox_of_mini_selfhost_List_usize ix_lx_base_digit ix_lx_digit_tail ix_lx_digit_sep)) (np : prims.isPrim ix_lx_digit_tail_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_unbox_of_mini_selfhost_List_usize : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_usize prog prims ix_unbox_of_mini_selfhost_List_usize n))
+    (ext_lx_base_digit : Certified (∀ {n : Nat}, Stmt_lx_base_digit prog prims ix_lx_base_digit n)) {n : Nat}
+    (ih_lx_digit_tail : Certified (Stmt_lx_digit_tail prog prims ix_lx_digit_tail n))
+    (ih_lx_digit_sep : Certified (Stmt_lx_digit_sep prog prims ix_lx_digit_sep n)) :
+    Stmt_lx_digit_tail_at prog prims ix_lx_digit_tail_at (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_digit_tail_at] at h
+  faithful [Lanius.Mini.Inline.lxDigitTailAt]
+
+theorem proof_lx_exponent_sign {prog : SrcProgram} {prims : Prims} {ix_lx_exponent_sign ix_plus : Nat} (fn : prog.funcs[ix_lx_exponent_sign]? = some (src_lx_exponent_sign ix_plus)) (np : prims.isPrim ix_lx_exponent_sign = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat} :
+    Stmt_lx_exponent_sign prog prims ix_lx_exponent_sign n := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_exponent_sign] at h
+  faithful [Lanius.Mini.Inline.lxExponentSign]
+
+theorem step_lx_ident_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_ident_run_at ix_plus ix_lx_ident_run ix_lx_ident_continue : Nat} (fn : prog.funcs[ix_lx_ident_run_at]? = some (src_lx_ident_run_at ix_plus ix_lx_ident_run ix_lx_ident_continue)) (np : prims.isPrim ix_lx_ident_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_ident_continue : Certified (∀ {n : Nat}, Stmt_lx_ident_continue prog prims ix_lx_ident_continue n)) {n : Nat}
+    (ih_lx_ident_run : Certified (Stmt_lx_ident_run prog prims ix_lx_ident_run n)) :
+    Stmt_lx_ident_run_at prog prims ix_lx_ident_run_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_ident_run_at] at h
+  faithful [Lanius.Mini.Inline.lxIdentRunAt]
+
+theorem step_lx_line_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_line_run_at ix_plus ix_lx_line_run : Nat} (fn : prog.funcs[ix_lx_line_run_at]? = some (src_lx_line_run_at ix_plus ix_lx_line_run)) (np : prims.isPrim ix_lx_line_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_line_run : Certified (Stmt_lx_line_run prog prims ix_lx_line_run n)) :
+    Stmt_lx_line_run_at prog prims ix_lx_line_run_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_line_run_at] at h
+  faithful [Lanius.Mini.Inline.lxLineRunAt]
+
+theorem step_lx_quoted_at {prog : SrcProgram} {prims : Prims} {ix_lx_quoted_at ix_plus ix_lx_quoted : Nat} (fn : prog.funcs[ix_lx_quoted_at]? = some (src_lx_quoted_at ix_plus ix_lx_quoted)) (np : prims.isPrim ix_lx_quoted_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n)) {n : Nat}
+    (ih_lx_quoted : Certified (Stmt_lx_quoted prog prims ix_lx_quoted n)) :
+    Stmt_lx_quoted_at prog prims ix_lx_quoted_at (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_quoted_at] at h
+  faithful [Lanius.Mini.Inline.lxQuotedAt]
+
+theorem step_lx_space_run_at {prog : SrcProgram} {prims : Prims} {ix_lx_space_run_at ix_plus ix_lx_space ix_lx_space_run : Nat} (fn : prog.funcs[ix_lx_space_run_at]? = some (src_lx_space_run_at ix_plus ix_lx_space ix_lx_space_run)) (np : prims.isPrim ix_lx_space_run_at = false)
+    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
+    (ext_lx_space : Certified (∀ {n : Nat}, Stmt_lx_space prog prims ix_lx_space n)) {n : Nat}
+    (ih_lx_space_run : Certified (Stmt_lx_space_run prog prims ix_lx_space_run n)) :
+    Stmt_lx_space_run_at prog prims ix_lx_space_run_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_space_run_at] at h
+  faithful [Lanius.Mini.Inline.lxSpaceRunAt]
 
 theorem step_mono_next {prog : SrcProgram} {prims : Prims} {ix_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_concat_of_mini_selfhost_MFunc ix_single_of_mini_selfhost_MFunc : Nat} (fn : prog.funcs[ix_mono_next]? = some (src_mono_next ix_plus ix_mono_loop ix_add_insts ix_stmt_calls ix_concat_of_mini_selfhost_MFunc ix_single_of_mini_selfhost_MFunc)) (np : prims.isPrim ix_mono_next = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))

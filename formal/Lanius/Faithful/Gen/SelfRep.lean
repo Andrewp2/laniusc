@@ -120,7 +120,7 @@ inductive RepSrcEff : Lanius.Mini.SrcEff → Value → Prop where
   | c0 {x0 : Lanius.Mini.SrcExpr} {v0 : Value} :
       RepSrcExpr x0 v0 → RepSrcEff (Lanius.Mini.SrcEff.ePure x0) (.enumeration 27 0 [v0])
   | c1 {x0 : Nat} {x1 : List Lanius.Mini.SrcEff} {v0 v1 : Value} :
-      RepNat x0 v0 → (RepList 175 RepSrcEff) x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.eCall x0 x1) (.enumeration 27 1 [v0, v1])
+      RepNat x0 v0 → (RepList 176 RepSrcEff) x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.eCall x0 x1) (.enumeration 27 1 [v0, v1])
   | c2 {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.SrcEff} {x2 : Lanius.Mini.SrcEff} {v0 v1 v2 : Value} :
       RepSrcOp x0 v0 → RepSrcEff x1 v1 → RepSrcEff x2 v2 → RepSrcEff (Lanius.Mini.SrcEff.eApply x0 x1 x2) (.enumeration 27 2 [v0, v1, v2])
   | c3 {x0 : Lanius.Mini.SrcEff} {v0 : Value} :
@@ -132,11 +132,11 @@ inductive RepSrcEff : Lanius.Mini.SrcEff → Value → Prop where
   | c6 {x0 : Nat} {x1 : Lanius.Mini.SrcEff} {v0 v1 : Value} :
       RepNat x0 v0 → RepSrcEff x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.eIndex x0 x1) (.enumeration 27 6 [v0, v1])
   | c7 {x0 : Lanius.Mini.SrcType} {x1 : List Lanius.Mini.SrcEff} {v0 v1 : Value} :
-      RepSrcType x0 v0 → (RepList 175 RepSrcEff) x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.eStruct x0 x1) (.enumeration 27 7 [v0, v1])
+      RepSrcType x0 v0 → (RepList 176 RepSrcEff) x1 v1 → RepSrcEff (Lanius.Mini.SrcEff.eStruct x0 x1) (.enumeration 27 7 [v0, v1])
   | c8 {x0 : Lanius.Mini.SrcType} {x1 : Nat} {x2 : List Lanius.Mini.SrcEff} {v0 v1 v2 : Value} :
-      RepSrcType x0 v0 → RepNat x1 v1 → (RepList 175 RepSrcEff) x2 v2 → RepSrcEff (Lanius.Mini.SrcEff.eVariant x0 x1 x2) (.enumeration 27 8 [v0, v1, v2])
+      RepSrcType x0 v0 → RepNat x1 v1 → (RepList 176 RepSrcEff) x2 v2 → RepSrcEff (Lanius.Mini.SrcEff.eVariant x0 x1 x2) (.enumeration 27 8 [v0, v1, v2])
   | c9 {x0 : Lanius.Mini.SrcEff} {x1 : Lanius.Mini.SrcType} {x2 : Lanius.Mini.SrcType} {x3 : List (List Nat)} {x4 : List Lanius.Mini.SrcEff} {v0 v1 v2 v3 v4 : Value} :
-      RepSrcEff x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → (RepList 30 (RepList 24 RepNat)) x3 v3 → (RepList 175 RepSrcEff) x4 v4 → RepSrcEff (Lanius.Mini.SrcEff.eMatch x0 x1 x2 x3 x4) (.enumeration 27 9 [v0, v1, v2, v3, v4])
+      RepSrcEff x0 v0 → RepSrcType x1 v1 → RepSrcType x2 v2 → (RepList 30 (RepList 24 RepNat)) x3 v3 → (RepList 176 RepSrcEff) x4 v4 → RepSrcEff (Lanius.Mini.SrcEff.eMatch x0 x1 x2 x3 x4) (.enumeration 27 9 [v0, v1, v2, v3, v4])
   | c10 {x0 : Lanius.Mini.SrcDivOp} {x1 : Lanius.Mini.SrcEff} {x2 : Lanius.Mini.SrcEff} {v0 v1 v2 : Value} :
       RepSrcDivOp x0 v0 → RepSrcEff x1 v1 → RepSrcEff x2 v2 → RepSrcEff (Lanius.Mini.SrcEff.eDivide x0 x1 x2) (.enumeration 27 10 [v0, v1, v2])
   | c11 {x0 : Nat} {v0 : Value} :
@@ -406,9 +406,9 @@ inductive RepSig : Lanius.Mini.Sig → Value → Prop where
   | c0 {x0 : List Lanius.Mini.SrcType} {x1 : Lanius.Mini.SrcType} {v0 v1 : Value} :
       (RepList 67 RepSrcType) x0 v0 → RepSrcType x1 v1 → RepSig (Lanius.Mini.Sig.mk x0 x1) (.structure 91 [v0, v1])
 
-inductive RepTokensRead : Lanius.Mini.TokensRead → Value → Prop where
-  | c0 {x0 : List Lanius.Mini.Token} {x1 : List (BitVec 32)} {v0 v1 : Value} :
-      (RepList 44 RepToken) x0 v0 → (RepList 0 RepI32) x1 v1 → RepTokensRead (Lanius.Mini.TokensRead.mk x0 x1) (.structure 94 [v0, v1])
+inductive RepNumsRead : Lanius.Mini.NumsRead → Value → Prop where
+  | c0 {x0 : List Nat} {x1 : List (BitVec 32)} {v0 v1 : Value} :
+      (RepList 24 RepNat) x0 v0 → (RepList 0 RepI32) x1 v1 → RepNumsRead (Lanius.Mini.NumsRead.mk x0 x1) (.structure 94 [v0, v1])
 
 inductive RepTypeDecl : Lanius.Mini.TypeDecl → Value → Prop where
   | c0 {x0 : List (List Nat)} {x1 : List Nat} {x2 : List (List Nat)} {x3 : Bool} {x4 : List (List Nat)} {x5 : List Lanius.Mini.CTree} {x6 : List (List Nat)} {x7 : List (List Lanius.Mini.CTree)} {v0 v1 v2 v3 v4 v5 v6 v7 : Value} :
@@ -442,259 +442,277 @@ inductive RepCollected : Lanius.Mini.Collected → Value → Prop where
   | c0 {x0 : Lanius.Mini.Decls} {x1 : List (List (List Nat))} {v0 v1 : Value} :
       RepDecls x0 v0 → (RepList 116 (RepList 30 (RepList 24 RepNat))) x1 v1 → RepCollected (Lanius.Mini.Collected.mk x0 x1) (.structure 115 [v0, v1])
 
-inductive RepNumsRead : Lanius.Mini.NumsRead → Value → Prop where
-  | c0 {x0 : List Nat} {x1 : List (BitVec 32)} {v0 v1 : Value} :
-      (RepList 24 RepNat) x0 v0 → (RepList 0 RepI32) x1 v1 → RepNumsRead (Lanius.Mini.NumsRead.mk x0 x1) (.structure 120 [v0, v1])
-
 inductive RepCursor : Lanius.Mini.Cursor → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Nat} {x2 : List Lanius.Mini.Token} {x3 : Nat} {v0 v1 v2 v3 : Value} :
-      (RepList 24 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 → (RepList 44 RepToken) x2 v2 → RepNat x3 v3 → RepCursor (Lanius.Mini.Cursor.mk x0 x1 x2 x3) (.structure 122 [v0, v1, v2, v3])
+      (RepList 24 RepNat) x0 v0 → (RepList 24 RepNat) x1 v1 → (RepList 44 RepToken) x2 v2 → RepNat x3 v3 → RepCursor (Lanius.Mini.Cursor.mk x0 x1 x2 x3) (.structure 120 [v0, v1, v2, v3])
 
 inductive RepAttached : Lanius.Mini.Attached → Value → Prop where
   | c0 {x0 : List Lanius.Mini.CTree} {x1 : Lanius.Mini.Cursor} {v0 v1 : Value} :
-      (RepList 76 RepCTree) x0 v0 → RepCursor x1 v1 → RepAttached (Lanius.Mini.Attached.mk x0 x1) (.structure 124 [v0, v1])
+      (RepList 76 RepCTree) x0 v0 → RepCursor x1 v1 → RepAttached (Lanius.Mini.Attached.mk x0 x1) (.structure 122 [v0, v1])
 
 inductive RepBinding : Lanius.Mini.Binding → Value → Prop where
   | c0 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.SrcType} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepSrcType x2 v2 → RepBinding (Lanius.Mini.Binding.mk x0 x1 x2) (.structure 129 [v0, v1, v2])
-
-inductive RepTokenRead : Lanius.Mini.TokenRead → Value → Prop where
-  | c0 {x0 : Lanius.Mini.Token} {x1 : List (BitVec 32)} {v0 v1 : Value} :
-      RepToken x0 v0 → (RepList 0 RepI32) x1 v1 → RepTokenRead (Lanius.Mini.TokenRead.mk x0 x1) (.structure 132 [v0, v1])
+      RepNat x0 v0 → RepNat x1 v1 → RepSrcType x2 v2 → RepBinding (Lanius.Mini.Binding.mk x0 x1 x2) (.structure 127 [v0, v1, v2])
 
 inductive RepTy : Lanius.Mini.Ty → Value → Prop where
   | c0 :
-      RepTy (Lanius.Mini.Ty.tyI32) (.enumeration 137 0 [])
+      RepTy (Lanius.Mini.Ty.tyI32) (.enumeration 133 0 [])
   | c1 :
-      RepTy (Lanius.Mini.Ty.tyBool) (.enumeration 137 1 [])
+      RepTy (Lanius.Mini.Ty.tyBool) (.enumeration 133 1 [])
   | c2 {x0 : Lanius.Mini.UintTy} {v0 : Value} :
-      RepUintTy x0 v0 → RepTy (Lanius.Mini.Ty.tyUint x0) (.enumeration 137 2 [v0])
+      RepUintTy x0 v0 → RepTy (Lanius.Mini.Ty.tyUint x0) (.enumeration 133 2 [v0])
   | c3 :
-      RepTy (Lanius.Mini.Ty.tyPtr) (.enumeration 137 3 [])
+      RepTy (Lanius.Mini.Ty.tyPtr) (.enumeration 133 3 [])
   | c4 :
-      RepTy (Lanius.Mini.Ty.tyIsize) (.enumeration 137 4 [])
+      RepTy (Lanius.Mini.Ty.tyIsize) (.enumeration 133 4 [])
   | c5 {x0 : Lanius.Mini.Ty} {v0 : Value} :
-      RepTy x0 v0 → RepTy (Lanius.Mini.Ty.tySlice x0) (.enumeration 137 5 [v0])
+      RepTy x0 v0 → RepTy (Lanius.Mini.Ty.tySlice x0) (.enumeration 133 5 [v0])
   | c6 {x0 : Nat} {x1 : List Lanius.Mini.Ty} {v0 v1 : Value} :
-      RepNat x0 v0 → (RepList 136 RepTy) x1 v1 → RepTy (Lanius.Mini.Ty.tyNamed x0 x1) (.enumeration 137 6 [v0, v1])
+      RepNat x0 v0 → (RepList 132 RepTy) x1 v1 → RepTy (Lanius.Mini.Ty.tyNamed x0 x1) (.enumeration 133 6 [v0, v1])
 
 inductive RepInst : Lanius.Mini.Inst → Value → Prop where
   | c0 {x0 : Nat} {x1 : List Lanius.Mini.Ty} {v0 v1 : Value} :
-      RepNat x0 v0 → (RepList 136 RepTy) x1 v1 → RepInst (Lanius.Mini.Inst.mk x0 x1) (.structure 135 [v0, v1])
+      RepNat x0 v0 → (RepList 132 RepTy) x1 v1 → RepInst (Lanius.Mini.Inst.mk x0 x1) (.structure 131 [v0, v1])
 
 inductive RepArity : Lanius.Mini.Arity → Value → Prop where
   | c0 {x0 : Nat} {x1 : Nat} {v0 v1 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepArity (Lanius.Mini.Arity.mk x0 x1) (.structure 142 [v0, v1])
+      RepNat x0 v0 → RepNat x1 v1 → RepArity (Lanius.Mini.Arity.mk x0 x1) (.structure 138 [v0, v1])
 
 inductive RepTyped : Lanius.Mini.Typed → Value → Prop where
   | c0 {x0 : Lanius.Mini.Expr} {x1 : Lanius.Mini.SrcType} {v0 v1 : Value} :
-      RepExpr x0 v0 → RepSrcType x1 v1 → RepTyped (Lanius.Mini.Typed.mk x0 x1) (.structure 150 [v0, v1])
+      RepExpr x0 v0 → RepSrcType x1 v1 → RepTyped (Lanius.Mini.Typed.mk x0 x1) (.structure 146 [v0, v1])
 
 inductive RepEvaluated : Lanius.Mini.Evaluated → Value → Prop where
   | c0 {x0 : Lanius.Mini.Stmt} {x1 : Lanius.Mini.SrcType} {v0 v1 : Value} :
-      RepStmt x0 v0 → RepSrcType x1 v1 → RepEvaluated (Lanius.Mini.Evaluated.mk x0 x1) (.structure 152 [v0, v1])
+      RepStmt x0 v0 → RepSrcType x1 v1 → RepEvaluated (Lanius.Mini.Evaluated.mk x0 x1) (.structure 148 [v0, v1])
+
+inductive RepRawTok : Lanius.Mini.RawTok → Value → Prop where
+  | c0 {x0 : Nat} {x1 : Nat} {x2 : Nat} {v0 v1 v2 : Value} :
+      RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → RepRawTok (Lanius.Mini.RawTok.mk x0 x1 x2) (.structure 153 [v0, v1, v2])
 
 inductive RepMParam : Lanius.Mini.MParam → Value → Prop where
   | c0 {x0 : Nat} {x1 : Lanius.Mini.Ty} {v0 v1 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepMParam (Lanius.Mini.MParam.mk x0 x1) (.structure 160 [v0, v1])
+      RepNat x0 v0 → RepTy x1 v1 → RepMParam (Lanius.Mini.MParam.mk x0 x1) (.structure 161 [v0, v1])
 
 inductive RepRetTy : Lanius.Mini.RetTy → Value → Prop where
   | c0 :
-      RepRetTy (Lanius.Mini.RetTy.retUnit) (.enumeration 162 0 [])
+      RepRetTy (Lanius.Mini.RetTy.retUnit) (.enumeration 163 0 [])
   | c1 {x0 : Lanius.Mini.Ty} {v0 : Value} :
-      RepTy x0 v0 → RepRetTy (Lanius.Mini.RetTy.retOf x0) (.enumeration 162 1 [v0])
+      RepTy x0 v0 → RepRetTy (Lanius.Mini.RetTy.retOf x0) (.enumeration 163 1 [v0])
 
 inductive RepMEff : Lanius.Mini.MEff → Value → Prop where
   | c0 {x0 : Lanius.Mini.SrcExpr} {v0 : Value} :
-      RepSrcExpr x0 v0 → RepMEff (Lanius.Mini.MEff.xPure x0) (.enumeration 165 0 [v0])
+      RepSrcExpr x0 v0 → RepMEff (Lanius.Mini.MEff.xPure x0) (.enumeration 166 0 [v0])
   | c1 {x0 : Lanius.Mini.Inst} {x1 : List Lanius.Mini.MEff} {v0 v1 : Value} :
-      RepInst x0 v0 → (RepList 210 RepMEff) x1 v1 → RepMEff (Lanius.Mini.MEff.xCall x0 x1) (.enumeration 165 1 [v0, v1])
+      RepInst x0 v0 → (RepList 217 RepMEff) x1 v1 → RepMEff (Lanius.Mini.MEff.xCall x0 x1) (.enumeration 166 1 [v0, v1])
   | c2 {x0 : Lanius.Mini.SrcOp} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepSrcOp x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMEff (Lanius.Mini.MEff.xApply x0 x1 x2) (.enumeration 165 2 [v0, v1, v2])
+      RepSrcOp x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMEff (Lanius.Mini.MEff.xApply x0 x1 x2) (.enumeration 166 2 [v0, v1, v2])
   | c3 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMEff (Lanius.Mini.MEff.xNeg x0) (.enumeration 165 3 [v0])
+      RepMEff x0 v0 → RepMEff (Lanius.Mini.MEff.xNeg x0) (.enumeration 166 3 [v0])
   | c4 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMEff (Lanius.Mini.MEff.xNot x0) (.enumeration 165 4 [v0])
+      RepMEff x0 v0 → RepMEff (Lanius.Mini.MEff.xNot x0) (.enumeration 166 4 [v0])
   | c5 {x0 : Lanius.Mini.SrcType} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
-      RepSrcType x0 v0 → RepMEff x1 v1 → RepMEff (Lanius.Mini.MEff.xCast x0 x1) (.enumeration 165 5 [v0, v1])
+      RepSrcType x0 v0 → RepMEff x1 v1 → RepMEff (Lanius.Mini.MEff.xCast x0 x1) (.enumeration 166 5 [v0, v1])
   | c6 {x0 : Nat} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
-      RepNat x0 v0 → RepMEff x1 v1 → RepMEff (Lanius.Mini.MEff.xIndex x0 x1) (.enumeration 165 6 [v0, v1])
+      RepNat x0 v0 → RepMEff x1 v1 → RepMEff (Lanius.Mini.MEff.xIndex x0 x1) (.enumeration 166 6 [v0, v1])
   | c7 {x0 : Lanius.Mini.Ty} {x1 : List Lanius.Mini.MEff} {v0 v1 : Value} :
-      RepTy x0 v0 → (RepList 210 RepMEff) x1 v1 → RepMEff (Lanius.Mini.MEff.xStruct x0 x1) (.enumeration 165 7 [v0, v1])
+      RepTy x0 v0 → (RepList 217 RepMEff) x1 v1 → RepMEff (Lanius.Mini.MEff.xStruct x0 x1) (.enumeration 166 7 [v0, v1])
   | c8 {x0 : Lanius.Mini.Ty} {x1 : Nat} {x2 : List Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepTy x0 v0 → RepNat x1 v1 → (RepList 210 RepMEff) x2 v2 → RepMEff (Lanius.Mini.MEff.xVariant x0 x1 x2) (.enumeration 165 8 [v0, v1, v2])
+      RepTy x0 v0 → RepNat x1 v1 → (RepList 217 RepMEff) x2 v2 → RepMEff (Lanius.Mini.MEff.xVariant x0 x1 x2) (.enumeration 166 8 [v0, v1, v2])
   | c9 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.Ty} {x3 : List (List Nat)} {x4 : List Lanius.Mini.MEff} {v0 v1 v2 v3 v4 : Value} :
-      RepMEff x0 v0 → RepTy x1 v1 → RepTy x2 v2 → (RepList 30 (RepList 24 RepNat)) x3 v3 → (RepList 210 RepMEff) x4 v4 → RepMEff (Lanius.Mini.MEff.xMatch x0 x1 x2 x3 x4) (.enumeration 165 9 [v0, v1, v2, v3, v4])
+      RepMEff x0 v0 → RepTy x1 v1 → RepTy x2 v2 → (RepList 30 (RepList 24 RepNat)) x3 v3 → (RepList 217 RepMEff) x4 v4 → RepMEff (Lanius.Mini.MEff.xMatch x0 x1 x2 x3 x4) (.enumeration 166 9 [v0, v1, v2, v3, v4])
   | c10 {x0 : Lanius.Mini.SrcDivOp} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepSrcDivOp x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMEff (Lanius.Mini.MEff.xDivide x0 x1 x2) (.enumeration 165 10 [v0, v1, v2])
+      RepSrcDivOp x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMEff (Lanius.Mini.MEff.xDivide x0 x1 x2) (.enumeration 166 10 [v0, v1, v2])
   | c11 {x0 : Nat} {v0 : Value} :
-      RepNat x0 v0 → RepMEff (Lanius.Mini.MEff.xStride x0) (.enumeration 165 11 [v0])
+      RepNat x0 v0 → RepMEff (Lanius.Mini.MEff.xStride x0) (.enumeration 166 11 [v0])
 
 inductive RepMStmt : Lanius.Mini.MStmt → Value → Prop where
   | c0 :
-      RepMStmt (Lanius.Mini.MStmt.mNop) (.enumeration 163 0 [])
+      RepMStmt (Lanius.Mini.MStmt.mNop) (.enumeration 164 0 [])
   | c1 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.SrcExpr} {x3 : Lanius.Mini.MStmt} {v0 v1 v2 v3 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepSrcExpr x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLet x0 x1 x2 x3) (.enumeration 163 1 [v0, v1, v2, v3])
+      RepNat x0 v0 → RepTy x1 v1 → RepSrcExpr x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLet x0 x1 x2 x3) (.enumeration 164 1 [v0, v1, v2, v3])
   | c2 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : List Lanius.Mini.SrcExpr} {x3 : Lanius.Mini.MStmt} {v0 v1 v2 v3 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → (RepList 20 RepSrcExpr) x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetStruct x0 x1 x2 x3) (.enumeration 163 2 [v0, v1, v2, v3])
+      RepNat x0 v0 → RepTy x1 v1 → (RepList 20 RepSrcExpr) x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetStruct x0 x1 x2 x3) (.enumeration 164 2 [v0, v1, v2, v3])
   | c3 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.Inst} {x3 : List Lanius.Mini.SrcExpr} {x4 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepInst x2 v2 → (RepList 20 RepSrcExpr) x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetCall x0 x1 x2 x3 x4) (.enumeration 163 3 [v0, v1, v2, v3, v4])
+      RepNat x0 v0 → RepTy x1 v1 → RepInst x2 v2 → (RepList 20 RepSrcExpr) x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetCall x0 x1 x2 x3 x4) (.enumeration 164 3 [v0, v1, v2, v3, v4])
   | c4 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Nat} {x3 : List Lanius.Mini.SrcExpr} {x4 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → (RepList 20 RepSrcExpr) x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetEnum x0 x1 x2 x3 x4) (.enumeration 163 4 [v0, v1, v2, v3, v4])
+      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → (RepList 20 RepSrcExpr) x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetEnum x0 x1 x2 x3 x4) (.enumeration 164 4 [v0, v1, v2, v3, v4])
   | c5 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Nat} {x3 : Lanius.Mini.Ty} {x4 : List Lanius.Mini.SrcArm} {x5 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 v5 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepTy x3 v3 → (RepList 22 RepSrcArm) x4 v4 → RepMStmt x5 v5 → RepMStmt (Lanius.Mini.MStmt.mLetMatch x0 x1 x2 x3 x4 x5) (.enumeration 163 5 [v0, v1, v2, v3, v4, v5])
+      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepTy x3 v3 → (RepList 22 RepSrcArm) x4 v4 → RepMStmt x5 v5 → RepMStmt (Lanius.Mini.MStmt.mLetMatch x0 x1 x2 x3 x4 x5) (.enumeration 164 5 [v0, v1, v2, v3, v4, v5])
   | c6 {x0 : Nat} {x1 : Lanius.Mini.SrcExpr} {v0 v1 : Value} :
-      RepNat x0 v0 → RepSrcExpr x1 v1 → RepMStmt (Lanius.Mini.MStmt.mSet x0 x1) (.enumeration 163 6 [v0, v1])
+      RepNat x0 v0 → RepSrcExpr x1 v1 → RepMStmt (Lanius.Mini.MStmt.mSet x0 x1) (.enumeration 164 6 [v0, v1])
   | c7 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepSrcExpr x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetField x0 x1 x2) (.enumeration 163 7 [v0, v1, v2])
+      RepNat x0 v0 → RepNat x1 v1 → RepSrcExpr x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetField x0 x1 x2) (.enumeration 164 7 [v0, v1, v2])
   | c8 {x0 : Nat} {x1 : Lanius.Mini.Inst} {x2 : List Lanius.Mini.SrcExpr} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepInst x1 v1 → (RepList 20 RepSrcExpr) x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetCall x0 x1 x2) (.enumeration 163 8 [v0, v1, v2])
+      RepNat x0 v0 → RepInst x1 v1 → (RepList 20 RepSrcExpr) x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetCall x0 x1 x2) (.enumeration 164 8 [v0, v1, v2])
   | c9 {x0 : Lanius.Mini.MStmt} {x1 : Lanius.Mini.MStmt} {v0 v1 : Value} :
-      RepMStmt x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mThen x0 x1) (.enumeration 163 9 [v0, v1])
+      RepMStmt x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mThen x0 x1) (.enumeration 164 9 [v0, v1])
   | c10 {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.MStmt} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
-      RepSrcExpr x0 v0 → RepMStmt x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mIf x0 x1 x2) (.enumeration 163 10 [v0, v1, v2])
+      RepSrcExpr x0 v0 → RepMStmt x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mIf x0 x1 x2) (.enumeration 164 10 [v0, v1, v2])
   | c11 {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.MStmt} {v0 v1 : Value} :
-      RepSrcExpr x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mWhile x0 x1) (.enumeration 163 11 [v0, v1])
+      RepSrcExpr x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mWhile x0 x1) (.enumeration 164 11 [v0, v1])
   | c12 {x0 : Lanius.Mini.SrcExpr} {v0 : Value} :
-      RepSrcExpr x0 v0 → RepMStmt (Lanius.Mini.MStmt.mReturn x0) (.enumeration 163 12 [v0])
+      RepSrcExpr x0 v0 → RepMStmt (Lanius.Mini.MStmt.mReturn x0) (.enumeration 164 12 [v0])
   | c13 {x0 : Nat} {x1 : Lanius.Mini.SrcExpr} {x2 : Nat} {x3 : Lanius.Mini.MStmt} {v0 v1 v2 v3 : Value} :
-      RepNat x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetAlloc x0 x1 x2 x3) (.enumeration 163 13 [v0, v1, v2, v3])
+      RepNat x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetAlloc x0 x1 x2 x3) (.enumeration 164 13 [v0, v1, v2, v3])
   | c14 {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.SrcExpr} {x2 : Nat} {v0 v1 v2 : Value} :
-      RepSrcExpr x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 → RepMStmt (Lanius.Mini.MStmt.mFree x0 x1 x2) (.enumeration 163 14 [v0, v1, v2])
+      RepSrcExpr x0 v0 → RepSrcExpr x1 v1 → RepNat x2 v2 → RepMStmt (Lanius.Mini.MStmt.mFree x0 x1 x2) (.enumeration 164 14 [v0, v1, v2])
   | c15 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.SrcExpr} {x3 : Lanius.Mini.SrcExpr} {x4 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepSrcExpr x2 v2 → RepSrcExpr x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetSlice x0 x1 x2 x3 x4) (.enumeration 163 15 [v0, v1, v2, v3, v4])
+      RepNat x0 v0 → RepTy x1 v1 → RepSrcExpr x2 v2 → RepSrcExpr x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetSlice x0 x1 x2 x3 x4) (.enumeration 164 15 [v0, v1, v2, v3, v4])
   | c16 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Nat} {x3 : Lanius.Mini.SrcExpr} {x4 : Lanius.Mini.MStmt} {v0 v1 v2 v3 v4 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepSrcExpr x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetIndex x0 x1 x2 x3 x4) (.enumeration 163 16 [v0, v1, v2, v3, v4])
+      RepNat x0 v0 → RepTy x1 v1 → RepNat x2 v2 → RepSrcExpr x3 v3 → RepMStmt x4 v4 → RepMStmt (Lanius.Mini.MStmt.mLetIndex x0 x1 x2 x3 x4) (.enumeration 164 16 [v0, v1, v2, v3, v4])
   | c17 {x0 : Nat} {x1 : Lanius.Mini.SrcExpr} {x2 : Lanius.Mini.SrcExpr} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepSrcExpr x1 v1 → RepSrcExpr x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndex x0 x1 x2) (.enumeration 163 17 [v0, v1, v2])
+      RepNat x0 v0 → RepSrcExpr x1 v1 → RepSrcExpr x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndex x0 x1 x2) (.enumeration 164 17 [v0, v1, v2])
   | c18 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : Lanius.Mini.MEff} {x3 : Lanius.Mini.MStmt} {v0 v1 v2 v3 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetEval x0 x1 x2 x3) (.enumeration 163 18 [v0, v1, v2, v3])
+      RepNat x0 v0 → RepTy x1 v1 → RepMEff x2 v2 → RepMStmt x3 v3 → RepMStmt (Lanius.Mini.MStmt.mLetEval x0 x1 x2 x3) (.enumeration 164 18 [v0, v1, v2, v3])
   | c19 {x0 : Nat} {x1 : Lanius.Mini.MEff} {v0 v1 : Value} :
-      RepNat x0 v0 → RepMEff x1 v1 → RepMStmt (Lanius.Mini.MStmt.mSetEval x0 x1) (.enumeration 163 19 [v0, v1])
+      RepNat x0 v0 → RepMEff x1 v1 → RepMStmt (Lanius.Mini.MStmt.mSetEval x0 x1) (.enumeration 164 19 [v0, v1])
   | c20 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MStmt} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
-      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mIfEval x0 x1 x2) (.enumeration 163 20 [v0, v1, v2])
+      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt x2 v2 → RepMStmt (Lanius.Mini.MStmt.mIfEval x0 x1 x2) (.enumeration 164 20 [v0, v1, v2])
   | c21 {x0 : Lanius.Mini.MEff} {x1 : Lanius.Mini.MStmt} {v0 v1 : Value} :
-      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mWhileEval x0 x1) (.enumeration 163 21 [v0, v1])
+      RepMEff x0 v0 → RepMStmt x1 v1 → RepMStmt (Lanius.Mini.MStmt.mWhileEval x0 x1) (.enumeration 164 21 [v0, v1])
   | c22 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mReturnEval x0) (.enumeration 163 22 [v0])
+      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mReturnEval x0) (.enumeration 164 22 [v0])
   | c23 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mDiscard x0) (.enumeration 163 23 [v0])
+      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mDiscard x0) (.enumeration 164 23 [v0])
   | c24 {x0 : Nat} {x1 : Lanius.Mini.MEff} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndexEval x0 x1 x2) (.enumeration 163 24 [v0, v1, v2])
+      RepNat x0 v0 → RepMEff x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetIndexEval x0 x1 x2) (.enumeration 164 24 [v0, v1, v2])
   | c25 {x0 : Nat} {x1 : Nat} {x2 : Lanius.Mini.MEff} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetFieldEval x0 x1 x2) (.enumeration 163 25 [v0, v1, v2])
+      RepNat x0 v0 → RepNat x1 v1 → RepMEff x2 v2 → RepMStmt (Lanius.Mini.MStmt.mSetFieldEval x0 x1 x2) (.enumeration 164 25 [v0, v1, v2])
   | c26 :
-      RepMStmt (Lanius.Mini.MStmt.mReturnUnit) (.enumeration 163 26 [])
+      RepMStmt (Lanius.Mini.MStmt.mReturnUnit) (.enumeration 164 26 [])
   | c27 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mAssert x0) (.enumeration 163 27 [v0])
+      RepMEff x0 v0 → RepMStmt (Lanius.Mini.MStmt.mAssert x0) (.enumeration 164 27 [v0])
 
 inductive RepMFunc : Lanius.Mini.MFunc → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MParam} {x1 : Lanius.Mini.RetTy} {x2 : Lanius.Mini.MStmt} {v0 v1 v2 : Value} :
-      (RepList 159 RepMParam) x0 v0 → RepRetTy x1 v1 → RepMStmt x2 v2 → RepMFunc (Lanius.Mini.MFunc.mk x0 x1 x2) (.structure 158 [v0, v1, v2])
+      (RepList 160 RepMParam) x0 v0 → RepRetTy x1 v1 → RepMStmt x2 v2 → RepMFunc (Lanius.Mini.MFunc.mk x0 x1 x2) (.structure 159 [v0, v1, v2])
 
 inductive RepMono : Lanius.Mini.Mono → Value → Prop where
   | c0 {x0 : List Lanius.Mini.Inst} {x1 : List Lanius.Mini.MFunc} {v0 v1 : Value} :
-      (RepList 134 RepInst) x0 v0 → (RepList 157 RepMFunc) x1 v1 → RepMono (Lanius.Mini.Mono.mk x0 x1) (.structure 156 [v0, v1])
+      (RepList 130 RepInst) x0 v0 → (RepList 158 RepMFunc) x1 v1 → RepMono (Lanius.Mini.Mono.mk x0 x1) (.structure 157 [v0, v1])
 
 inductive RepFact : Lanius.Mini.Fact → Value → Prop where
   | c0 {x0 : Nat} {x1 : Lanius.Mini.Expr} {v0 v1 : Value} :
-      RepNat x0 v0 → RepExpr x1 v1 → RepFact (Lanius.Mini.Fact.mk x0 x1) (.structure 171 [v0, v1])
+      RepNat x0 v0 → RepExpr x1 v1 → RepFact (Lanius.Mini.Fact.mk x0 x1) (.structure 172 [v0, v1])
 
 inductive RepEvaluatedArgs : Lanius.Mini.EvaluatedArgs → Value → Prop where
   | c0 {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.SrcType} {v0 v1 : Value} :
-      RepStmt x0 v0 → (RepList 67 RepSrcType) x1 v1 → RepEvaluatedArgs (Lanius.Mini.EvaluatedArgs.mk x0 x1) (.structure 174 [v0, v1])
+      RepStmt x0 v0 → (RepList 67 RepSrcType) x1 v1 → RepEvaluatedArgs (Lanius.Mini.EvaluatedArgs.mk x0 x1) (.structure 175 [v0, v1])
+
+inductive RepSymRule : Lanius.Mini.SymRule → Value → Prop where
+  | c0 {x0 : List Nat} {x1 : Nat} {v0 v1 : Value} :
+      (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepSymRule (Lanius.Mini.SymRule.mk x0 x1) (.structure 180 [v0, v1])
+
+inductive RepOneTok : Lanius.Mini.OneTok → Value → Prop where
+  | c0 {x0 : Lanius.Mini.RawTok} {v0 : Value} :
+      RepRawTok x0 v0 → RepOneTok (Lanius.Mini.OneTok.oneDone x0) (.enumeration 182 0 [v0])
+  | c1 {x0 : Nat} {v0 : Value} :
+      RepNat x0 v0 → RepOneTok (Lanius.Mini.OneTok.oneFail x0) (.enumeration 182 1 [v0])
 
 inductive RepTables : Lanius.Mini.Tables → Value → Prop where
   | c0 {x0 : Lanius.Mini.Decls} {x1 : List Lanius.Mini.Inst} {x2 : List Lanius.Mini.Inst} {x3 : List (Option Lanius.Mini.SrcType)} {v0 v1 v2 v3 : Value} :
-      RepDecls x0 v0 → (RepList 134 RepInst) x1 v1 → (RepList 134 RepInst) x2 v2 → (RepList 182 (RepOption 153 RepSrcType)) x3 v3 → RepTables (Lanius.Mini.Tables.mk x0 x1 x2 x3) (.structure 181 [v0, v1, v2, v3])
+      RepDecls x0 v0 → (RepList 130 RepInst) x1 v1 → (RepList 130 RepInst) x2 v2 → (RepList 187 (RepOption 149 RepSrcType)) x3 v3 → RepTables (Lanius.Mini.Tables.mk x0 x1 x2 x3) (.structure 186 [v0, v1, v2, v3])
 
 inductive RepPlace : Lanius.Mini.Place → Value → Prop where
   | c0 {x0 : Nat} {x1 : Nat} {x2 : List Nat} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → (RepList 24 RepNat) x2 v2 → RepPlace (Lanius.Mini.Place.mk x0 x1 x2) (.structure 188 [v0, v1, v2])
+      RepNat x0 v0 → RepNat x1 v1 → (RepList 24 RepNat) x2 v2 → RepPlace (Lanius.Mini.Place.mk x0 x1 x2) (.structure 193 [v0, v1, v2])
 
 inductive RepVariants : Lanius.Mini.Variants → Value → Prop where
   | c0 {x0 : List (List Nat)} {x1 : List (List Lanius.Mini.CTree)} {v0 v1 : Value} :
-      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 100 (RepList 76 RepCTree)) x1 v1 → RepVariants (Lanius.Mini.Variants.mk x0 x1) (.structure 197 [v0, v1])
+      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 100 (RepList 76 RepCTree)) x1 v1 → RepVariants (Lanius.Mini.Variants.mk x0 x1) (.structure 203 [v0, v1])
 
 inductive RepLocalTy : Lanius.Mini.LocalTy → Value → Prop where
   | c0 {x0 : Nat} {x1 : Lanius.Mini.SrcType} {v0 v1 : Value} :
-      RepNat x0 v0 → RepSrcType x1 v1 → RepLocalTy (Lanius.Mini.LocalTy.mk x0 x1) (.structure 202 [v0, v1])
+      RepNat x0 v0 → RepSrcType x1 v1 → RepLocalTy (Lanius.Mini.LocalTy.mk x0 x1) (.structure 208 [v0, v1])
 
 inductive RepFrontEnv : Lanius.Mini.FrontEnv → Value → Prop where
   | c0 {x0 : Lanius.Mini.Decls} {x1 : List (List Nat)} {x2 : List (List Nat)} {x3 : List Lanius.Mini.Ty} {x4 : List (List Nat)} {x5 : Option Lanius.Mini.Ty} {x6 : Nat} {v0 v1 v2 v3 v4 v5 v6 : Value} :
-      RepDecls x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 → (RepList 30 (RepList 24 RepNat)) x2 v2 → (RepList 136 RepTy) x3 v3 → (RepList 30 (RepList 24 RepNat)) x4 v4 → (RepOption 192 RepTy) x5 v5 → RepNat x6 v6 → RepFrontEnv (Lanius.Mini.FrontEnv.mk x0 x1 x2 x3 x4 x5 x6) (.structure 204 [v0, v1, v2, v3, v4, v5, v6])
+      RepDecls x0 v0 → (RepList 30 (RepList 24 RepNat)) x1 v1 → (RepList 30 (RepList 24 RepNat)) x2 v2 → (RepList 132 RepTy) x3 v3 → (RepList 30 (RepList 24 RepNat)) x4 v4 → (RepOption 198 RepTy) x5 v5 → RepNat x6 v6 → RepFrontEnv (Lanius.Mini.FrontEnv.mk x0 x1 x2 x3 x4 x5 x6) (.structure 210 [v0, v1, v2, v3, v4, v5, v6])
+
+inductive RepNumScan : Lanius.Mini.NumScan → Value → Prop where
+  | c0 {x0 : Nat} {x1 : Nat} {v0 v1 : Value} :
+      RepNat x0 v0 → RepNat x1 v1 → RepNumScan (Lanius.Mini.NumScan.numDone x0 x1) (.enumeration 213 0 [v0, v1])
+  | c1 {x0 : Nat} {v0 : Value} :
+      RepNat x0 v0 → RepNumScan (Lanius.Mini.NumScan.numFail x0) (.enumeration 213 1 [v0])
+
+inductive RepScan : Lanius.Mini.Scan → Value → Prop where
+  | c0 {x0 : Nat} {v0 : Value} :
+      RepNat x0 v0 → RepScan (Lanius.Mini.Scan.scanDone x0) (.enumeration 214 0 [v0])
+  | c1 {x0 : Nat} {v0 : Value} :
+      RepNat x0 v0 → RepScan (Lanius.Mini.Scan.scanFail x0) (.enumeration 214 1 [v0])
 
 inductive RepFields : Lanius.Mini.Fields → Value → Prop where
   | c0 {x0 : List (List Nat)} {x1 : List Lanius.Mini.CTree} {v0 v1 : Value} :
-      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 76 RepCTree) x1 v1 → RepFields (Lanius.Mini.Fields.mk x0 x1) (.structure 207 [v0, v1])
+      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 76 RepCTree) x1 v1 → RepFields (Lanius.Mini.Fields.mk x0 x1) (.structure 215 [v0, v1])
 
 inductive RepLocal : Lanius.Mini.Local → Value → Prop where
   | c0 {x0 : List Nat} {x1 : Nat} {x2 : Lanius.Mini.Ty} {v0 v1 v2 : Value} :
-      (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepTy x2 v2 → RepLocal (Lanius.Mini.Local.mk x0 x1 x2) (.structure 214 [v0, v1, v2])
+      (RepList 24 RepNat) x0 v0 → RepNat x1 v1 → RepTy x2 v2 → RepLocal (Lanius.Mini.Local.mk x0 x1 x2) (.structure 221 [v0, v1, v2])
 
 inductive RepMParams : Lanius.Mini.MParams → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MParam} {x1 : List Lanius.Mini.Local} {v0 v1 : Value} :
-      (RepList 159 RepMParam) x0 v0 → (RepList 213 RepLocal) x1 v1 → RepMParams (Lanius.Mini.MParams.mk x0 x1) (.structure 212 [v0, v1])
+      (RepList 160 RepMParam) x0 v0 → (RepList 220 RepLocal) x1 v1 → RepMParams (Lanius.Mini.MParams.mk x0 x1) (.structure 219 [v0, v1])
 
 inductive RepSplit : Lanius.Mini.Split → Value → Prop where
   | c0 {x0 : List (List Nat)} {x1 : List Nat} {v0 v1 : Value} :
-      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 24 RepNat) x1 v1 → RepSplit (Lanius.Mini.Split.mk x0 x1) (.structure 223 [v0, v1])
+      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 24 RepNat) x1 v1 → RepSplit (Lanius.Mini.Split.mk x0 x1) (.structure 231 [v0, v1])
 
 inductive RepCalled : Lanius.Mini.Called → Value → Prop where
   | c0 {x0 : Lanius.Mini.Inst} {x1 : List Lanius.Mini.SrcExpr} {v0 v1 : Value} :
-      RepInst x0 v0 → (RepList 20 RepSrcExpr) x1 v1 → RepCalled (Lanius.Mini.Called.mk x0 x1) (.structure 227 [v0, v1])
+      RepInst x0 v0 → (RepList 20 RepSrcExpr) x1 v1 → RepCalled (Lanius.Mini.Called.mk x0 x1) (.structure 235 [v0, v1])
 
 inductive RepLetHead : Lanius.Mini.LetHead → Value → Prop where
   | c0 {x0 : Lanius.Mini.SrcExpr} {v0 : Value} :
-      RepSrcExpr x0 v0 → RepLetHead (Lanius.Mini.LetHead.plain x0) (.enumeration 226 0 [v0])
+      RepSrcExpr x0 v0 → RepLetHead (Lanius.Mini.LetHead.plain x0) (.enumeration 234 0 [v0])
   | c1 {x0 : Lanius.Mini.Called} {v0 : Value} :
-      RepCalled x0 v0 → RepLetHead (Lanius.Mini.LetHead.callOf x0) (.enumeration 226 1 [v0])
+      RepCalled x0 v0 → RepLetHead (Lanius.Mini.LetHead.callOf x0) (.enumeration 234 1 [v0])
   | c2 {x0 : Nat} {x1 : List Lanius.Mini.SrcExpr} {v0 v1 : Value} :
-      RepNat x0 v0 → (RepList 20 RepSrcExpr) x1 v1 → RepLetHead (Lanius.Mini.LetHead.variantOf x0 x1) (.enumeration 226 2 [v0, v1])
+      RepNat x0 v0 → (RepList 20 RepSrcExpr) x1 v1 → RepLetHead (Lanius.Mini.LetHead.variantOf x0 x1) (.enumeration 234 2 [v0, v1])
   | c3 {x0 : List Lanius.Mini.SrcExpr} {v0 : Value} :
-      (RepList 20 RepSrcExpr) x0 v0 → RepLetHead (Lanius.Mini.LetHead.literalOf x0) (.enumeration 226 3 [v0])
+      (RepList 20 RepSrcExpr) x0 v0 → RepLetHead (Lanius.Mini.LetHead.literalOf x0) (.enumeration 234 3 [v0])
   | c4 {x0 : Nat} {x1 : Lanius.Mini.Ty} {x2 : List Lanius.Mini.SrcArm} {v0 v1 v2 : Value} :
-      RepNat x0 v0 → RepTy x1 v1 → (RepList 22 RepSrcArm) x2 v2 → RepLetHead (Lanius.Mini.LetHead.matchOf x0 x1 x2) (.enumeration 226 4 [v0, v1, v2])
+      RepNat x0 v0 → RepTy x1 v1 → (RepList 22 RepSrcArm) x2 v2 → RepLetHead (Lanius.Mini.LetHead.matchOf x0 x1 x2) (.enumeration 234 4 [v0, v1, v2])
   | c5 {x0 : Lanius.Mini.SrcExpr} {x1 : Nat} {v0 v1 : Value} :
-      RepSrcExpr x0 v0 → RepNat x1 v1 → RepLetHead (Lanius.Mini.LetHead.allocOf x0 x1) (.enumeration 226 5 [v0, v1])
+      RepSrcExpr x0 v0 → RepNat x1 v1 → RepLetHead (Lanius.Mini.LetHead.allocOf x0 x1) (.enumeration 234 5 [v0, v1])
   | c6 {x0 : Lanius.Mini.SrcExpr} {x1 : Lanius.Mini.SrcExpr} {v0 v1 : Value} :
-      RepSrcExpr x0 v0 → RepSrcExpr x1 v1 → RepLetHead (Lanius.Mini.LetHead.sliceOf x0 x1) (.enumeration 226 6 [v0, v1])
+      RepSrcExpr x0 v0 → RepSrcExpr x1 v1 → RepLetHead (Lanius.Mini.LetHead.sliceOf x0 x1) (.enumeration 234 6 [v0, v1])
   | c7 {x0 : Nat} {x1 : Lanius.Mini.SrcExpr} {v0 v1 : Value} :
-      RepNat x0 v0 → RepSrcExpr x1 v1 → RepLetHead (Lanius.Mini.LetHead.indexOf x0 x1) (.enumeration 226 7 [v0, v1])
+      RepNat x0 v0 → RepSrcExpr x1 v1 → RepLetHead (Lanius.Mini.LetHead.indexOf x0 x1) (.enumeration 234 7 [v0, v1])
   | c8 {x0 : Lanius.Mini.MEff} {v0 : Value} :
-      RepMEff x0 v0 → RepLetHead (Lanius.Mini.LetHead.evalOf x0) (.enumeration 226 8 [v0])
+      RepMEff x0 v0 → RepLetHead (Lanius.Mini.LetHead.evalOf x0) (.enumeration 234 8 [v0])
 
 inductive RepPathRef : Lanius.Mini.PathRef → Value → Prop where
   | c0 {x0 : List (List Nat)} {x1 : List Lanius.Mini.CTree} {v0 v1 : Value} :
-      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 76 RepCTree) x1 v1 → RepPathRef (Lanius.Mini.PathRef.mk x0 x1) (.structure 235 [v0, v1])
+      (RepList 30 (RepList 24 RepNat)) x0 v0 → (RepList 76 RepCTree) x1 v1 → RepPathRef (Lanius.Mini.PathRef.mk x0 x1) (.structure 243 [v0, v1])
 
 inductive RepVariantAt : Lanius.Mini.VariantAt → Value → Prop where
   | c0 {x0 : Nat} {x1 : Nat} {v0 v1 : Value} :
-      RepNat x0 v0 → RepNat x1 v1 → RepVariantAt (Lanius.Mini.VariantAt.mk x0 x1) (.structure 237 [v0, v1])
+      RepNat x0 v0 → RepNat x1 v1 → RepVariantAt (Lanius.Mini.VariantAt.mk x0 x1) (.structure 245 [v0, v1])
 
 inductive RepBind : Lanius.Mini.Bind → Value → Prop where
   | c0 {x0 : List Nat} {x1 : Lanius.Mini.Ty} {v0 v1 : Value} :
-      (RepList 24 RepNat) x0 v0 → RepTy x1 v1 → RepBind (Lanius.Mini.Bind.mk x0 x1) (.structure 242 [v0, v1])
+      (RepList 24 RepNat) x0 v0 → RepTy x1 v1 → RepBind (Lanius.Mini.Bind.mk x0 x1) (.structure 250 [v0, v1])
 
 inductive RepFound : Lanius.Mini.Found → Value → Prop where
   | c0 {x0 : Nat} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
-      RepNat x0 v0 → (RepList 241 RepBind) x1 v1 → RepFound (Lanius.Mini.Found.mk x0 x1) (.structure 240 [v0, v1])
+      RepNat x0 v0 → (RepList 249 RepBind) x1 v1 → RepFound (Lanius.Mini.Found.mk x0 x1) (.structure 248 [v0, v1])
 
 inductive RepEffArm : Lanius.Mini.EffArm → Value → Prop where
   | c0 {x0 : List Nat} {x1 : Lanius.Mini.MEff} {x2 : Option Lanius.Mini.Ty} {v0 v1 v2 : Value} :
-      (RepList 24 RepNat) x0 v0 → RepMEff x1 v1 → (RepOption 192 RepTy) x2 v2 → RepEffArm (Lanius.Mini.EffArm.mk x0 x1 x2) (.structure 250 [v0, v1, v2])
+      (RepList 24 RepNat) x0 v0 → RepMEff x1 v1 → (RepOption 198 RepTy) x2 v2 → RepEffArm (Lanius.Mini.EffArm.mk x0 x1 x2) (.structure 258 [v0, v1, v2])
 
 inductive RepVariantTy : Lanius.Mini.VariantTy → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Lanius.Mini.Ty} {v0 v1 : Value} :
-      (RepList 24 RepNat) x0 v0 → (RepList 136 RepTy) x1 v1 → RepVariantTy (Lanius.Mini.VariantTy.mk x0 x1) (.structure 253 [v0, v1])
+      (RepList 24 RepNat) x0 v0 → (RepList 132 RepTy) x1 v1 → RepVariantTy (Lanius.Mini.VariantTy.mk x0 x1) (.structure 261 [v0, v1])
 
 inductive RepArgsBound : Lanius.Mini.ArgsBound → Value → Prop where
   | c0 {x0 : List Lanius.Mini.MEff} {x1 : List Lanius.Mini.Bind} {v0 v1 : Value} :
-      (RepList 210 RepMEff) x0 v0 → (RepList 241 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 256 [v0, v1])
+      (RepList 217 RepMEff) x0 v0 → (RepList 249 RepBind) x1 v1 → RepArgsBound (Lanius.Mini.ArgsBound.mk x0 x1) (.structure 264 [v0, v1])
 
 inductive RepBound : Lanius.Mini.Bound → Value → Prop where
   | c0 {x0 : List Nat} {x1 : List Lanius.Mini.Local} {v0 v1 : Value} :
-      (RepList 24 RepNat) x0 v0 → (RepList 213 RepLocal) x1 v1 → RepBound (Lanius.Mini.Bound.mk x0 x1) (.structure 260 [v0, v1])
+      (RepList 24 RepNat) x0 v0 → (RepList 220 RepLocal) x1 v1 → RepBound (Lanius.Mini.Bound.mk x0 x1) (.structure 268 [v0, v1])
 
 attribute [rep_rule] RepUintTy.c0 RepUintTy.c1 RepUintTy.c2 RepUintTy.c3 RepSrcType.c0 RepSrcType.c1 RepSrcType.c2 RepSrcType.c3
 attribute [rep_rule] RepSrcType.c4 RepSrcType.c5 RepSrcType.c6 RepSrcType.c7 RepSrcType.c8 RepSrcParam.c0 RepSrcOp.c0 RepSrcOp.c1
@@ -716,19 +734,20 @@ attribute [rep_rule] RepInstr.c12 RepInstr.c13 RepInstr.c14 RepInstr.c15 RepCode
 attribute [rep_rule] RepSrcDecls.c0 RepFileRead.c0 RepCTree.c0 RepCTree.c1 RepExpr.c0 RepExpr.c1 RepExpr.c2 RepExpr.c3
 attribute [rep_rule] RepExpr.c4 RepStmt.c0 RepStmt.c1 RepStmt.c2 RepStmt.c3 RepStmt.c4 RepStmt.c5 RepStmt.c6
 attribute [rep_rule] RepStmt.c7 RepStmt.c8 RepStmt.c9 RepStmt.c10 RepStmt.c11 RepStmt.c12 RepFunc.c0 RepProgram.c0
-attribute [rep_rule] RepSig.c0 RepTokensRead.c0 RepTypeDecl.c0 RepFnDecl.c0 RepConstDecl.c0 RepImportDecl.c0 RepAliasDecl.c0 RepDecls.c0
-attribute [rep_rule] RepFileDecls.c0 RepCollected.c0 RepNumsRead.c0 RepCursor.c0 RepAttached.c0 RepBinding.c0 RepTokenRead.c0 RepTy.c0
-attribute [rep_rule] RepTy.c1 RepTy.c2 RepTy.c3 RepTy.c4 RepTy.c5 RepTy.c6 RepInst.c0 RepArity.c0
-attribute [rep_rule] RepTyped.c0 RepEvaluated.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0 RepMEff.c1 RepMEff.c2
-attribute [rep_rule] RepMEff.c3 RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8 RepMEff.c9 RepMEff.c10
-attribute [rep_rule] RepMEff.c11 RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4 RepMStmt.c5 RepMStmt.c6
-attribute [rep_rule] RepMStmt.c7 RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13 RepMStmt.c14
-attribute [rep_rule] RepMStmt.c15 RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21 RepMStmt.c22
-attribute [rep_rule] RepMStmt.c23 RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMFunc.c0 RepMono.c0 RepFact.c0
-attribute [rep_rule] RepEvaluatedArgs.c0 RepTables.c0 RepPlace.c0 RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0 RepFields.c0 RepLocal.c0
-attribute [rep_rule] RepMParams.c0 RepSplit.c0 RepCalled.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4
-attribute [rep_rule] RepLetHead.c5 RepLetHead.c6 RepLetHead.c7 RepLetHead.c8 RepPathRef.c0 RepVariantAt.c0 RepBind.c0 RepFound.c0
-attribute [rep_rule] RepEffArm.c0 RepVariantTy.c0 RepArgsBound.c0 RepBound.c0
+attribute [rep_rule] RepSig.c0 RepNumsRead.c0 RepTypeDecl.c0 RepFnDecl.c0 RepConstDecl.c0 RepImportDecl.c0 RepAliasDecl.c0 RepDecls.c0
+attribute [rep_rule] RepFileDecls.c0 RepCollected.c0 RepCursor.c0 RepAttached.c0 RepBinding.c0 RepTy.c0 RepTy.c1 RepTy.c2
+attribute [rep_rule] RepTy.c3 RepTy.c4 RepTy.c5 RepTy.c6 RepInst.c0 RepArity.c0 RepTyped.c0 RepEvaluated.c0
+attribute [rep_rule] RepRawTok.c0 RepMParam.c0 RepRetTy.c0 RepRetTy.c1 RepMEff.c0 RepMEff.c1 RepMEff.c2 RepMEff.c3
+attribute [rep_rule] RepMEff.c4 RepMEff.c5 RepMEff.c6 RepMEff.c7 RepMEff.c8 RepMEff.c9 RepMEff.c10 RepMEff.c11
+attribute [rep_rule] RepMStmt.c0 RepMStmt.c1 RepMStmt.c2 RepMStmt.c3 RepMStmt.c4 RepMStmt.c5 RepMStmt.c6 RepMStmt.c7
+attribute [rep_rule] RepMStmt.c8 RepMStmt.c9 RepMStmt.c10 RepMStmt.c11 RepMStmt.c12 RepMStmt.c13 RepMStmt.c14 RepMStmt.c15
+attribute [rep_rule] RepMStmt.c16 RepMStmt.c17 RepMStmt.c18 RepMStmt.c19 RepMStmt.c20 RepMStmt.c21 RepMStmt.c22 RepMStmt.c23
+attribute [rep_rule] RepMStmt.c24 RepMStmt.c25 RepMStmt.c26 RepMStmt.c27 RepMFunc.c0 RepMono.c0 RepFact.c0 RepEvaluatedArgs.c0
+attribute [rep_rule] RepSymRule.c0 RepOneTok.c0 RepOneTok.c1 RepTables.c0 RepPlace.c0 RepVariants.c0 RepLocalTy.c0 RepFrontEnv.c0
+attribute [rep_rule] RepNumScan.c0 RepNumScan.c1 RepScan.c0 RepScan.c1 RepFields.c0 RepLocal.c0 RepMParams.c0 RepSplit.c0
+attribute [rep_rule] RepCalled.c0 RepLetHead.c0 RepLetHead.c1 RepLetHead.c2 RepLetHead.c3 RepLetHead.c4 RepLetHead.c5 RepLetHead.c6
+attribute [rep_rule] RepLetHead.c7 RepLetHead.c8 RepPathRef.c0 RepVariantAt.c0 RepBind.c0 RepFound.c0 RepEffArm.c0 RepVariantTy.c0
+attribute [rep_rule] RepArgsBound.c0 RepBound.c0
 
 @[pure_rule] theorem ty0_typeId : ty0.typeId = 1 := rfl
 @[pure_rule] theorem ty1_typeId : ty1.typeId = 0 := rfl
@@ -849,148 +868,156 @@ attribute [rep_rule] RepEffArm.c0 RepVariantTy.c0 RepArgsBound.c0 RepBound.c0
 @[pure_rule] theorem ty122_typeId : ty122.typeId = 116 := rfl
 @[pure_rule] theorem ty123_typeId : ty123.typeId = 115 := rfl
 @[pure_rule] theorem ty126_typeId : ty126.typeId = 118 := rfl
-@[pure_rule] theorem ty127_typeId : ty127.typeId = 120 := rfl
-@[pure_rule] theorem ty128_typeId : ty128.typeId = 119 := rfl
-@[pure_rule] theorem ty129_typeId : ty129.typeId = 121 := rfl
-@[pure_rule] theorem ty130_typeId : ty130.typeId = 122 := rfl
-@[pure_rule] theorem ty131_typeId : ty131.typeId = 124 := rfl
+@[pure_rule] theorem ty127_typeId : ty127.typeId = 119 := rfl
+@[pure_rule] theorem ty128_typeId : ty128.typeId = 120 := rfl
+@[pure_rule] theorem ty129_typeId : ty129.typeId = 122 := rfl
+@[pure_rule] theorem ty130_typeId : ty130.typeId = 121 := rfl
 @[pure_rule] theorem ty132_typeId : ty132.typeId = 123 := rfl
-@[pure_rule] theorem ty134_typeId : ty134.typeId = 125 := rfl
-@[pure_rule] theorem ty136_typeId : ty136.typeId = 126 := rfl
-@[pure_rule] theorem ty137_typeId : ty137.typeId = 127 := rfl
-@[pure_rule] theorem ty138_typeId : ty138.typeId = 129 := rfl
-@[pure_rule] theorem ty139_typeId : ty139.typeId = 130 := rfl
-@[pure_rule] theorem ty140_typeId : ty140.typeId = 128 := rfl
-@[pure_rule] theorem ty143_typeId : ty143.typeId = 132 := rfl
-@[pure_rule] theorem ty144_typeId : ty144.typeId = 131 := rfl
-@[pure_rule] theorem ty145_typeId : ty145.typeId = 133 := rfl
-@[pure_rule] theorem ty146_typeId : ty146.typeId = 138 := rfl
-@[pure_rule] theorem ty147_typeId : ty147.typeId = 139 := rfl
-@[pure_rule] theorem ty148_typeId : ty148.typeId = 137 := rfl
-@[pure_rule] theorem ty149_typeId : ty149.typeId = 136 := rfl
-@[pure_rule] theorem ty150_typeId : ty150.typeId = 135 := rfl
-@[pure_rule] theorem ty151_typeId : ty151.typeId = 140 := rfl
-@[pure_rule] theorem ty152_typeId : ty152.typeId = 134 := rfl
-@[pure_rule] theorem ty155_typeId : ty155.typeId = 142 := rfl
-@[pure_rule] theorem ty156_typeId : ty156.typeId = 143 := rfl
-@[pure_rule] theorem ty157_typeId : ty157.typeId = 141 := rfl
-@[pure_rule] theorem ty158_typeId : ty158.typeId = 144 := rfl
-@[pure_rule] theorem ty163_typeId : ty163.typeId = 145 := rfl
-@[pure_rule] theorem ty164_typeId : ty164.typeId = 146 := rfl
-@[pure_rule] theorem ty165_typeId : ty165.typeId = 147 := rfl
+@[pure_rule] theorem ty134_typeId : ty134.typeId = 124 := rfl
+@[pure_rule] theorem ty135_typeId : ty135.typeId = 125 := rfl
+@[pure_rule] theorem ty136_typeId : ty136.typeId = 127 := rfl
+@[pure_rule] theorem ty137_typeId : ty137.typeId = 128 := rfl
+@[pure_rule] theorem ty138_typeId : ty138.typeId = 126 := rfl
+@[pure_rule] theorem ty141_typeId : ty141.typeId = 129 := rfl
+@[pure_rule] theorem ty142_typeId : ty142.typeId = 134 := rfl
+@[pure_rule] theorem ty143_typeId : ty143.typeId = 135 := rfl
+@[pure_rule] theorem ty144_typeId : ty144.typeId = 133 := rfl
+@[pure_rule] theorem ty145_typeId : ty145.typeId = 132 := rfl
+@[pure_rule] theorem ty146_typeId : ty146.typeId = 131 := rfl
+@[pure_rule] theorem ty147_typeId : ty147.typeId = 136 := rfl
+@[pure_rule] theorem ty148_typeId : ty148.typeId = 130 := rfl
+@[pure_rule] theorem ty151_typeId : ty151.typeId = 138 := rfl
+@[pure_rule] theorem ty152_typeId : ty152.typeId = 139 := rfl
+@[pure_rule] theorem ty153_typeId : ty153.typeId = 137 := rfl
+@[pure_rule] theorem ty154_typeId : ty154.typeId = 140 := rfl
+@[pure_rule] theorem ty159_typeId : ty159.typeId = 141 := rfl
+@[pure_rule] theorem ty160_typeId : ty160.typeId = 142 := rfl
+@[pure_rule] theorem ty161_typeId : ty161.typeId = 143 := rfl
+@[pure_rule] theorem ty162_typeId : ty162.typeId = 144 := rfl
+@[pure_rule] theorem ty163_typeId : ty163.typeId = 146 := rfl
+@[pure_rule] theorem ty164_typeId : ty164.typeId = 145 := rfl
 @[pure_rule] theorem ty166_typeId : ty166.typeId = 148 := rfl
-@[pure_rule] theorem ty167_typeId : ty167.typeId = 150 := rfl
+@[pure_rule] theorem ty167_typeId : ty167.typeId = 147 := rfl
 @[pure_rule] theorem ty168_typeId : ty168.typeId = 149 := rfl
-@[pure_rule] theorem ty170_typeId : ty170.typeId = 152 := rfl
-@[pure_rule] theorem ty171_typeId : ty171.typeId = 151 := rfl
-@[pure_rule] theorem ty172_typeId : ty172.typeId = 153 := rfl
-@[pure_rule] theorem ty173_typeId : ty173.typeId = 154 := rfl
-@[pure_rule] theorem ty174_typeId : ty174.typeId = 160 := rfl
+@[pure_rule] theorem ty169_typeId : ty169.typeId = 150 := rfl
+@[pure_rule] theorem ty170_typeId : ty170.typeId = 153 := rfl
+@[pure_rule] theorem ty171_typeId : ty171.typeId = 154 := rfl
+@[pure_rule] theorem ty172_typeId : ty172.typeId = 152 := rfl
+@[pure_rule] theorem ty173_typeId : ty173.typeId = 151 := rfl
+@[pure_rule] theorem ty174_typeId : ty174.typeId = 155 := rfl
 @[pure_rule] theorem ty175_typeId : ty175.typeId = 161 := rfl
-@[pure_rule] theorem ty176_typeId : ty176.typeId = 159 := rfl
-@[pure_rule] theorem ty177_typeId : ty177.typeId = 162 := rfl
-@[pure_rule] theorem ty178_typeId : ty178.typeId = 164 := rfl
-@[pure_rule] theorem ty179_typeId : ty179.typeId = 166 := rfl
+@[pure_rule] theorem ty176_typeId : ty176.typeId = 162 := rfl
+@[pure_rule] theorem ty177_typeId : ty177.typeId = 160 := rfl
+@[pure_rule] theorem ty178_typeId : ty178.typeId = 163 := rfl
+@[pure_rule] theorem ty179_typeId : ty179.typeId = 165 := rfl
 @[pure_rule] theorem ty180_typeId : ty180.typeId = 167 := rfl
-@[pure_rule] theorem ty181_typeId : ty181.typeId = 165 := rfl
-@[pure_rule] theorem ty182_typeId : ty182.typeId = 163 := rfl
-@[pure_rule] theorem ty183_typeId : ty183.typeId = 158 := rfl
-@[pure_rule] theorem ty184_typeId : ty184.typeId = 168 := rfl
-@[pure_rule] theorem ty185_typeId : ty185.typeId = 157 := rfl
-@[pure_rule] theorem ty186_typeId : ty186.typeId = 156 := rfl
-@[pure_rule] theorem ty187_typeId : ty187.typeId = 155 := rfl
-@[pure_rule] theorem ty188_typeId : ty188.typeId = 169 := rfl
-@[pure_rule] theorem ty191_typeId : ty191.typeId = 171 := rfl
+@[pure_rule] theorem ty181_typeId : ty181.typeId = 168 := rfl
+@[pure_rule] theorem ty182_typeId : ty182.typeId = 166 := rfl
+@[pure_rule] theorem ty183_typeId : ty183.typeId = 164 := rfl
+@[pure_rule] theorem ty184_typeId : ty184.typeId = 159 := rfl
+@[pure_rule] theorem ty185_typeId : ty185.typeId = 169 := rfl
+@[pure_rule] theorem ty186_typeId : ty186.typeId = 158 := rfl
+@[pure_rule] theorem ty187_typeId : ty187.typeId = 157 := rfl
+@[pure_rule] theorem ty188_typeId : ty188.typeId = 156 := rfl
+@[pure_rule] theorem ty189_typeId : ty189.typeId = 170 := rfl
 @[pure_rule] theorem ty192_typeId : ty192.typeId = 172 := rfl
-@[pure_rule] theorem ty193_typeId : ty193.typeId = 170 := rfl
-@[pure_rule] theorem ty199_typeId : ty199.typeId = 174 := rfl
-@[pure_rule] theorem ty200_typeId : ty200.typeId = 173 := rfl
-@[pure_rule] theorem ty201_typeId : ty201.typeId = 175 := rfl
-@[pure_rule] theorem ty204_typeId : ty204.typeId = 176 := rfl
+@[pure_rule] theorem ty193_typeId : ty193.typeId = 173 := rfl
+@[pure_rule] theorem ty194_typeId : ty194.typeId = 171 := rfl
+@[pure_rule] theorem ty200_typeId : ty200.typeId = 175 := rfl
+@[pure_rule] theorem ty201_typeId : ty201.typeId = 174 := rfl
+@[pure_rule] theorem ty202_typeId : ty202.typeId = 176 := rfl
 @[pure_rule] theorem ty205_typeId : ty205.typeId = 177 := rfl
 @[pure_rule] theorem ty206_typeId : ty206.typeId = 178 := rfl
-@[pure_rule] theorem ty207_typeId : ty207.typeId = 179 := rfl
-@[pure_rule] theorem ty208_typeId : ty208.typeId = 180 := rfl
-@[pure_rule] theorem ty209_typeId : ty209.typeId = 183 := rfl
+@[pure_rule] theorem ty207_typeId : ty207.typeId = 180 := rfl
+@[pure_rule] theorem ty208_typeId : ty208.typeId = 181 := rfl
+@[pure_rule] theorem ty209_typeId : ty209.typeId = 179 := rfl
 @[pure_rule] theorem ty210_typeId : ty210.typeId = 182 := rfl
-@[pure_rule] theorem ty211_typeId : ty211.typeId = 181 := rfl
+@[pure_rule] theorem ty211_typeId : ty211.typeId = 183 := rfl
 @[pure_rule] theorem ty212_typeId : ty212.typeId = 184 := rfl
 @[pure_rule] theorem ty213_typeId : ty213.typeId = 185 := rfl
-@[pure_rule] theorem ty214_typeId : ty214.typeId = 186 := rfl
+@[pure_rule] theorem ty214_typeId : ty214.typeId = 188 := rfl
 @[pure_rule] theorem ty215_typeId : ty215.typeId = 187 := rfl
-@[pure_rule] theorem ty218_typeId : ty218.typeId = 188 := rfl
-@[pure_rule] theorem ty219_typeId : ty219.typeId = 189 := rfl
-@[pure_rule] theorem ty221_typeId : ty221.typeId = 190 := rfl
-@[pure_rule] theorem ty224_typeId : ty224.typeId = 191 := rfl
-@[pure_rule] theorem ty229_typeId : ty229.typeId = 192 := rfl
-@[pure_rule] theorem ty230_typeId : ty230.typeId = 193 := rfl
-@[pure_rule] theorem ty233_typeId : ty233.typeId = 194 := rfl
-@[pure_rule] theorem ty235_typeId : ty235.typeId = 195 := rfl
-@[pure_rule] theorem ty236_typeId : ty236.typeId = 197 := rfl
-@[pure_rule] theorem ty237_typeId : ty237.typeId = 196 := rfl
-@[pure_rule] theorem ty238_typeId : ty238.typeId = 198 := rfl
-@[pure_rule] theorem ty239_typeId : ty239.typeId = 199 := rfl
+@[pure_rule] theorem ty216_typeId : ty216.typeId = 186 := rfl
+@[pure_rule] theorem ty217_typeId : ty217.typeId = 189 := rfl
+@[pure_rule] theorem ty218_typeId : ty218.typeId = 190 := rfl
+@[pure_rule] theorem ty219_typeId : ty219.typeId = 191 := rfl
+@[pure_rule] theorem ty220_typeId : ty220.typeId = 192 := rfl
+@[pure_rule] theorem ty223_typeId : ty223.typeId = 193 := rfl
+@[pure_rule] theorem ty224_typeId : ty224.typeId = 194 := rfl
+@[pure_rule] theorem ty226_typeId : ty226.typeId = 195 := rfl
+@[pure_rule] theorem ty229_typeId : ty229.typeId = 196 := rfl
+@[pure_rule] theorem ty231_typeId : ty231.typeId = 197 := rfl
+@[pure_rule] theorem ty236_typeId : ty236.typeId = 198 := rfl
+@[pure_rule] theorem ty237_typeId : ty237.typeId = 199 := rfl
 @[pure_rule] theorem ty240_typeId : ty240.typeId = 200 := rfl
-@[pure_rule] theorem ty241_typeId : ty241.typeId = 202 := rfl
-@[pure_rule] theorem ty242_typeId : ty242.typeId = 203 := rfl
 @[pure_rule] theorem ty243_typeId : ty243.typeId = 201 := rfl
-@[pure_rule] theorem ty247_typeId : ty247.typeId = 204 := rfl
-@[pure_rule] theorem ty248_typeId : ty248.typeId = 205 := rfl
-@[pure_rule] theorem ty251_typeId : ty251.typeId = 206 := rfl
-@[pure_rule] theorem ty252_typeId : ty252.typeId = 207 := rfl
-@[pure_rule] theorem ty253_typeId : ty253.typeId = 208 := rfl
-@[pure_rule] theorem ty254_typeId : ty254.typeId = 209 := rfl
-@[pure_rule] theorem ty256_typeId : ty256.typeId = 210 := rfl
-@[pure_rule] theorem ty259_typeId : ty259.typeId = 214 := rfl
-@[pure_rule] theorem ty260_typeId : ty260.typeId = 215 := rfl
-@[pure_rule] theorem ty261_typeId : ty261.typeId = 213 := rfl
-@[pure_rule] theorem ty262_typeId : ty262.typeId = 212 := rfl
-@[pure_rule] theorem ty263_typeId : ty263.typeId = 211 := rfl
-@[pure_rule] theorem ty264_typeId : ty264.typeId = 216 := rfl
+@[pure_rule] theorem ty244_typeId : ty244.typeId = 203 := rfl
+@[pure_rule] theorem ty245_typeId : ty245.typeId = 202 := rfl
+@[pure_rule] theorem ty246_typeId : ty246.typeId = 204 := rfl
+@[pure_rule] theorem ty247_typeId : ty247.typeId = 205 := rfl
+@[pure_rule] theorem ty248_typeId : ty248.typeId = 206 := rfl
+@[pure_rule] theorem ty249_typeId : ty249.typeId = 208 := rfl
+@[pure_rule] theorem ty250_typeId : ty250.typeId = 209 := rfl
+@[pure_rule] theorem ty251_typeId : ty251.typeId = 207 := rfl
+@[pure_rule] theorem ty255_typeId : ty255.typeId = 210 := rfl
+@[pure_rule] theorem ty256_typeId : ty256.typeId = 211 := rfl
+@[pure_rule] theorem ty259_typeId : ty259.typeId = 212 := rfl
+@[pure_rule] theorem ty260_typeId : ty260.typeId = 213 := rfl
+@[pure_rule] theorem ty261_typeId : ty261.typeId = 214 := rfl
+@[pure_rule] theorem ty262_typeId : ty262.typeId = 215 := rfl
+@[pure_rule] theorem ty263_typeId : ty263.typeId = 216 := rfl
 @[pure_rule] theorem ty265_typeId : ty265.typeId = 217 := rfl
-@[pure_rule] theorem ty266_typeId : ty266.typeId = 220 := rfl
-@[pure_rule] theorem ty267_typeId : ty267.typeId = 219 := rfl
-@[pure_rule] theorem ty268_typeId : ty268.typeId = 218 := rfl
-@[pure_rule] theorem ty271_typeId : ty271.typeId = 221 := rfl
+@[pure_rule] theorem ty268_typeId : ty268.typeId = 221 := rfl
+@[pure_rule] theorem ty269_typeId : ty269.typeId = 222 := rfl
+@[pure_rule] theorem ty270_typeId : ty270.typeId = 220 := rfl
+@[pure_rule] theorem ty271_typeId : ty271.typeId = 219 := rfl
+@[pure_rule] theorem ty272_typeId : ty272.typeId = 218 := rfl
 @[pure_rule] theorem ty273_typeId : ty273.typeId = 223 := rfl
-@[pure_rule] theorem ty274_typeId : ty274.typeId = 222 := rfl
-@[pure_rule] theorem ty275_typeId : ty275.typeId = 224 := rfl
-@[pure_rule] theorem ty277_typeId : ty277.typeId = 227 := rfl
-@[pure_rule] theorem ty278_typeId : ty278.typeId = 226 := rfl
-@[pure_rule] theorem ty279_typeId : ty279.typeId = 225 := rfl
-@[pure_rule] theorem ty280_typeId : ty280.typeId = 228 := rfl
+@[pure_rule] theorem ty274_typeId : ty274.typeId = 224 := rfl
+@[pure_rule] theorem ty275_typeId : ty275.typeId = 227 := rfl
+@[pure_rule] theorem ty276_typeId : ty276.typeId = 226 := rfl
+@[pure_rule] theorem ty277_typeId : ty277.typeId = 225 := rfl
+@[pure_rule] theorem ty279_typeId : ty279.typeId = 228 := rfl
 @[pure_rule] theorem ty281_typeId : ty281.typeId = 229 := rfl
-@[pure_rule] theorem ty282_typeId : ty282.typeId = 230 := rfl
 @[pure_rule] theorem ty283_typeId : ty283.typeId = 231 := rfl
-@[pure_rule] theorem ty284_typeId : ty284.typeId = 232 := rfl
-@[pure_rule] theorem ty285_typeId : ty285.typeId = 233 := rfl
-@[pure_rule] theorem ty286_typeId : ty286.typeId = 235 := rfl
-@[pure_rule] theorem ty287_typeId : ty287.typeId = 234 := rfl
-@[pure_rule] theorem ty288_typeId : ty288.typeId = 237 := rfl
-@[pure_rule] theorem ty289_typeId : ty289.typeId = 236 := rfl
-@[pure_rule] theorem ty290_typeId : ty290.typeId = 238 := rfl
-@[pure_rule] theorem ty291_typeId : ty291.typeId = 242 := rfl
-@[pure_rule] theorem ty292_typeId : ty292.typeId = 243 := rfl
-@[pure_rule] theorem ty293_typeId : ty293.typeId = 241 := rfl
+@[pure_rule] theorem ty284_typeId : ty284.typeId = 230 := rfl
+@[pure_rule] theorem ty285_typeId : ty285.typeId = 232 := rfl
+@[pure_rule] theorem ty287_typeId : ty287.typeId = 235 := rfl
+@[pure_rule] theorem ty288_typeId : ty288.typeId = 234 := rfl
+@[pure_rule] theorem ty289_typeId : ty289.typeId = 233 := rfl
+@[pure_rule] theorem ty290_typeId : ty290.typeId = 236 := rfl
+@[pure_rule] theorem ty291_typeId : ty291.typeId = 237 := rfl
+@[pure_rule] theorem ty292_typeId : ty292.typeId = 238 := rfl
+@[pure_rule] theorem ty293_typeId : ty293.typeId = 239 := rfl
 @[pure_rule] theorem ty294_typeId : ty294.typeId = 240 := rfl
-@[pure_rule] theorem ty295_typeId : ty295.typeId = 239 := rfl
-@[pure_rule] theorem ty296_typeId : ty296.typeId = 245 := rfl
-@[pure_rule] theorem ty297_typeId : ty297.typeId = 244 := rfl
-@[pure_rule] theorem ty298_typeId : ty298.typeId = 246 := rfl
-@[pure_rule] theorem ty299_typeId : ty299.typeId = 247 := rfl
+@[pure_rule] theorem ty295_typeId : ty295.typeId = 241 := rfl
+@[pure_rule] theorem ty296_typeId : ty296.typeId = 243 := rfl
+@[pure_rule] theorem ty297_typeId : ty297.typeId = 242 := rfl
+@[pure_rule] theorem ty298_typeId : ty298.typeId = 245 := rfl
+@[pure_rule] theorem ty299_typeId : ty299.typeId = 244 := rfl
+@[pure_rule] theorem ty300_typeId : ty300.typeId = 246 := rfl
 @[pure_rule] theorem ty301_typeId : ty301.typeId = 250 := rfl
 @[pure_rule] theorem ty302_typeId : ty302.typeId = 251 := rfl
 @[pure_rule] theorem ty303_typeId : ty303.typeId = 249 := rfl
 @[pure_rule] theorem ty304_typeId : ty304.typeId = 248 := rfl
-@[pure_rule] theorem ty305_typeId : ty305.typeId = 253 := rfl
-@[pure_rule] theorem ty306_typeId : ty306.typeId = 254 := rfl
+@[pure_rule] theorem ty305_typeId : ty305.typeId = 247 := rfl
+@[pure_rule] theorem ty306_typeId : ty306.typeId = 253 := rfl
 @[pure_rule] theorem ty307_typeId : ty307.typeId = 252 := rfl
-@[pure_rule] theorem ty308_typeId : ty308.typeId = 256 := rfl
+@[pure_rule] theorem ty308_typeId : ty308.typeId = 254 := rfl
 @[pure_rule] theorem ty309_typeId : ty309.typeId = 255 := rfl
-@[pure_rule] theorem ty310_typeId : ty310.typeId = 257 := rfl
-@[pure_rule] theorem ty312_typeId : ty312.typeId = 258 := rfl
-@[pure_rule] theorem ty313_typeId : ty313.typeId = 260 := rfl
-@[pure_rule] theorem ty314_typeId : ty314.typeId = 259 := rfl
-@[pure_rule] theorem ty316_typeId : ty316.typeId = 261 := rfl
+@[pure_rule] theorem ty311_typeId : ty311.typeId = 258 := rfl
+@[pure_rule] theorem ty312_typeId : ty312.typeId = 259 := rfl
+@[pure_rule] theorem ty313_typeId : ty313.typeId = 257 := rfl
+@[pure_rule] theorem ty314_typeId : ty314.typeId = 256 := rfl
+@[pure_rule] theorem ty315_typeId : ty315.typeId = 261 := rfl
+@[pure_rule] theorem ty316_typeId : ty316.typeId = 262 := rfl
+@[pure_rule] theorem ty317_typeId : ty317.typeId = 260 := rfl
+@[pure_rule] theorem ty318_typeId : ty318.typeId = 264 := rfl
+@[pure_rule] theorem ty319_typeId : ty319.typeId = 263 := rfl
+@[pure_rule] theorem ty320_typeId : ty320.typeId = 265 := rfl
+@[pure_rule] theorem ty322_typeId : ty322.typeId = 266 := rfl
+@[pure_rule] theorem ty323_typeId : ty323.typeId = 268 := rfl
+@[pure_rule] theorem ty324_typeId : ty324.typeId = 267 := rfl
+@[pure_rule] theorem ty326_typeId : ty326.typeId = 269 := rfl
 
 end Lanius.Faithful.SelfRep

@@ -21,11 +21,11 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_ite_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Stmt} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepExpr x0 v0 → (RepOption 127 RepStmt) x1 v1 → (RepOption 127 RepStmt) x2 v2 →
-    (RepOption 127 RepStmt) (Lanius.Mini.iteThen x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.Expr} {x1 : Option Lanius.Mini.Stmt} {x2 : Option Lanius.Mini.Stmt} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepExpr x0 v0 → (RepOption 125 RepStmt) x1 v1 → (RepOption 125 RepStmt) x2 v2 →
+    (RepOption 125 RepStmt) (Lanius.Mini.iteThen x0 x1 x2) w
 
 abbrev Stmt_store_one (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.MemWidth} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMemWidth x0 v0 → RepExpr x1 v1 → (RepOption 148 RepExpr) x2 v2 →
-    (RepOption 127 RepStmt) (Lanius.Mini.storeOne x0 x1 x2) w
+  ∀ {x0 : Lanius.Mini.MemWidth} {x1 : Lanius.Mini.Expr} {x2 : Option Lanius.Mini.Expr} {v0 v1 v2 w : Value}, pcall prog prims n ix [v0, v1, v2] = some w → RepMemWidth x0 v0 → RepExpr x1 v1 → (RepOption 144 RepExpr) x2 v2 →
+    (RepOption 125 RepStmt) (Lanius.Mini.storeOne x0 x1 x2) w
 
 end Lanius.Faithful.SelfCert

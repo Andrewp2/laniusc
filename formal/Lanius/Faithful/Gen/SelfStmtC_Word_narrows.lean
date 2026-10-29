@@ -38,14 +38,14 @@ abbrev Stmt_Word_number (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
 
 abbrev Stmt_absorbed (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.BinOp} {x1 : BitVec 64} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepBinOp x0 v0 → RepU64 x1 v1 →
-    (RepOption 187 RepU64) (Lanius.Mini.absorbed x0 x1) w
+    (RepOption 192 RepU64) (Lanius.Mini.absorbed x0 x1) w
 
 abbrev Stmt_fold_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Word} {x1 : Lanius.Mini.BinOp} {x2 : BitVec 64} {x3 : BitVec 64} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepWord x0 v0 → RepBinOp x1 v1 → RepU64 x2 v2 → RepU64 x3 v3 →
-    (RepOption 187 RepU64) (Lanius.Mini.foldConstant x0 x1 x2 x3) w
+    (RepOption 192 RepU64) (Lanius.Mini.foldConstant x0 x1 x2 x3) w
 
 abbrev Stmt_negate_constant (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 187 RepU64) x0 v0 →
-    (RepOption 187 RepU64) (Lanius.Mini.negateConstant x0) w
+  ∀ {x0 : Option (BitVec 64)} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepOption 192 RepU64) x0 v0 →
+    (RepOption 192 RepU64) (Lanius.Mini.negateConstant x0) w
 
 end Lanius.Faithful.SelfCert

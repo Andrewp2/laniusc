@@ -21,19 +21,19 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_lower_slice (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → RepSrcType x1 v1 → (RepOption 148 RepExpr) x2 v2 → (RepOption 148 RepExpr) x3 v3 →
-    (RepOption 145 (RepList 86 RepExpr)) (Lanius.Mini.lowerSlice x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.SrcDecls} {x1 : Lanius.Mini.SrcType} {x2 : Option Lanius.Mini.Expr} {x3 : Option Lanius.Mini.Expr} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepSrcDecls x0 v0 → RepSrcType x1 v1 → (RepOption 144 RepExpr) x2 v2 → (RepOption 144 RepExpr) x3 v3 →
+    (RepOption 141 (RepList 86 RepExpr)) (Lanius.Mini.lowerSlice x0 x1 x2 x3) w
 
 abbrev Stmt_store_cases (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.Expr} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {x5 : Nat} {x6 : List (List Lanius.Mini.SrcType)} {v0 v1 v2 v3 v4 v5 v6 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5, v6] = some w → RepExpr x0 v0 → (RepList 86 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 → RepNat x5 v5 → (RepList 71 (RepList 67 RepSrcType)) x6 v6 →
-    (RepOption 127 RepStmt) (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) w
+    (RepOption 125 RepStmt) (Lanius.Mini.storeCases x0 x1 x2 x3 x4 x5 x6) w
 
 abbrev Stmt_store_type (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → RepSrcType x0 v0 → (RepList 86 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 →
-    (RepOption 127 RepStmt) (Lanius.Mini.storeType x0 x1 x2 x3 x4) w
+    (RepOption 125 RepStmt) (Lanius.Mini.storeType x0 x1 x2 x3 x4) w
 
 abbrev Stmt_store_types (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : List Lanius.Mini.SrcType} {x1 : List Lanius.Mini.Expr} {x2 : Nat} {x3 : Lanius.Mini.Expr} {x4 : Nat} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 67 RepSrcType) x0 v0 → (RepList 86 RepExpr) x1 v1 → RepNat x2 v2 → RepExpr x3 v3 → RepNat x4 v4 →
-    (RepOption 127 RepStmt) (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) w
+    (RepOption 125 RepStmt) (Lanius.Mini.storeTypes x0 x1 x2 x3 x4) w
 
 end Lanius.Faithful.SelfCert

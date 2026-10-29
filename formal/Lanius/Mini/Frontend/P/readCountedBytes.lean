@@ -10,26 +10,32 @@ set_option linter.unusedVariables false
 
 namespace Lanius.Mini
 
-def readCountedTokens (words : List (BitVec 32)) : Option TokensRead :=
+/-- A count, then that many byte values. -/
+def readCountedBytes (words : List (BitVec 32)) : Option NumsRead :=
   match words with
   | [] => none
-  | w :: rest => readTokens rest (wordNum w)
+  | w :: rest => readBytes rest (wordNum w)
 
-def readFileEnd (tokens : List Token) (prods : List Nat) (parents : Option NumsRead) : Option FileRead :=
+def fileLexed (tokens : Option (List Token)) (prods : List Nat) (parents : NumsRead) : Option FileRead :=
+  match tokens with
+  | none => none
+  | some t => some ({ file := ({ tokens := t, prods := prods, parents := parents.nums } : FileInput), rest := parents.rest } : FileRead)
+
+def readFileEnd (source : List Nat) (prods : List Nat) (parents : Option NumsRead) : Option FileRead :=
   match parents with
   | none => none
-  | some q => some ({ file := ({ tokens := tokens, prods := prods, parents := q.nums } : FileInput), rest := q.rest } : FileRead)
+  | some q => fileLexed (lexSource source) prods q
 
-def readFileParents (tokens : List Token) (prods : Option NumsRead) : Option FileRead :=
+def readFileParents (source : List Nat) (prods : Option NumsRead) : Option FileRead :=
   match prods with
   | none => none
-  | some p => readFileEnd tokens p.nums (readCountedNums p.rest)
+  | some p => readFileEnd source p.nums (readCountedNums p.rest)
 
-/-- A file: its counted tokens, productions and parents. -/
+/-- A file: its counted bytes, productions and parents; its tokens are `lex_source` of the bytes. -/
 def readFile (words : List (BitVec 32)) : Option FileRead :=
-  match readCountedTokens words with
+  match readCountedBytes words with
   | none => none
-  | some t => readFileParents t.tokens (readCountedNums t.rest)
+  | some b => readFileParents b.nums (readCountedNums b.rest)
 
 def filesAfter (file : FileInput) (read : Option FilesRead) : Option FilesRead :=
   match read with

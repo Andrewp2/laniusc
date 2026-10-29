@@ -663,6 +663,10 @@ partial def faithfulLoop (ns : Name) (heads : Array Ident) (fuel : Nat) : Tactic
         unless ← unfoldInlineConds do throwError "no inline constants"
         evalTactic (← `(tactic| (unfold $heads*; simp [*]; rep)))
         done) then return
+    -- A recursive function whose inline part has a `match` of its own: its
+    -- equation lemmas split that match, so `rw` with the function fails;
+    -- its definition unfolded is the inline call a hypothesis states.
+    if ← closes (← `(tactic| (rw [$(mkIdent (heads[0]!.getId ++ `eq_def)):ident]; assumption))) then return
   -- The functions applied to constructors, everywhere: the facts the
   -- hypotheses state about the parts, or a contradiction.
   let callees ← phase "ctorCallees" ctorCallees

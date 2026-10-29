@@ -21,7 +21,7 @@ open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
 abbrev Stmt_pure_list (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 210 RepMEff) x0 v0 →
-    (RepOption 232 (RepList 20 RepSrcExpr)) (Lanius.Mini.pureList x0) w
+  ∀ {x0 : List Lanius.Mini.MEff} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 217 RepMEff) x0 v0 →
+    (RepOption 240 (RepList 20 RepSrcExpr)) (Lanius.Mini.pureList x0) w
 
 end Lanius.Faithful.SelfCert

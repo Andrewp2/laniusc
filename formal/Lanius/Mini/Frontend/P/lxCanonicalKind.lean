@@ -106,33 +106,19 @@ def readCountedNums (words : List (BitVec 32)) : Option NumsRead :=
   | [] => none
   | w :: rest => readNums rest (wordNum w)
 
-def readTokenText (kind : Nat) (start : Nat) (text : Option NumsRead) : Option TokenRead :=
-  match text with
-  | none => none
-  | some t => some ({ token := ({ kind := kind, start := start, text := t.nums } : Token), rest := t.rest } : TokenRead)
-
-def readTokenStart (kind : Nat) (words : List (BitVec 32)) : Option TokenRead :=
-  match words with
-  | [] => none
-  | start :: rest => readTokenText kind (wordNum start) (readCountedNums rest)
-
-/-- A token: its kind, start and counted text. -/
-def readToken (words : List (BitVec 32)) : Option TokenRead :=
-  match words with
-  | [] => none
-  | kind :: rest => readTokenStart (wordNum kind) rest
-
-def tokensAfter (token : Token) (read : Option TokensRead) : Option TokensRead :=
-  match read with
-  | none => none
-  | some r => some ({ tokens := token :: r.tokens, rest := r.rest } : TokensRead)
-
-def readTokens (words : List (BitVec 32)) (count : Nat) : Option TokensRead :=
-  if count = 0 then
-    some ({ tokens := [], rest := words } : TokensRead)
+def byteAfter (b : Nat) (read : Option NumsRead) : Option NumsRead :=
+  if 255 < b then
+    none
   else
-    match readToken words with
-    | none => none
-    | some t => tokensAfter t.token (readTokens t.rest (count - 1))
+    numsAfter b read
+
+/-- `count` byte values, then the words after them. -/
+def readBytes (words : List (BitVec 32)) (count : Nat) : Option NumsRead :=
+  if count = 0 then
+    some ({ nums := [], rest := words } : NumsRead)
+  else
+    match words with
+    | [] => none
+    | w :: rest => byteAfter (wordNum w) (readBytes rest (count - 1))
 
 end Lanius.Mini

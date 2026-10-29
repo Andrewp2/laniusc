@@ -25,7 +25,7 @@ abbrev Stmt_Stmt_dead_before (prog : SrcProgram) (prims : Prims) (ix n : Nat) : 
     RepBool (Lanius.Mini.Stmt.deadBefore x0 x1) w
 
 abbrev Stmt_Stmt_optimize (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → (RepList 170 RepFact) x1 v1 →
+  ∀ {x0 : Lanius.Mini.Stmt} {x1 : List Lanius.Mini.Fact} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepStmt x0 v0 → (RepList 171 RepFact) x1 v1 →
     RepStmt (Lanius.Mini.Stmt.optimize x0 x1) w
 
 abbrev Stmt_loop_unless_zero (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=

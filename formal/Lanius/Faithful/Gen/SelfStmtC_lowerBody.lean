@@ -61,7 +61,7 @@ abbrev Stmt_keep_if (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
     (RepOption 63 RepSrcDecls) (Lanius.Mini.keepIf x0 x1) w
 
 abbrev Stmt_lower_body (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 127 RepStmt) x3 v3 →
+  ∀ {x0 : Nat} {x1 : Nat} {x2 : Nat} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepNat x0 v0 → RepNat x1 v1 → RepNat x2 v2 → (RepOption 125 RepStmt) x3 v3 →
     (RepOption 118 RepFunc) (Lanius.Mini.lowerBody x0 x1 x2 x3) w
 
 abbrev Stmt_lower_func (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
@@ -77,7 +77,7 @@ abbrev Stmt_lower_funcs (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop 
     (RepOption 79 (RepList 80 RepFunc)) (Lanius.Mini.lowerFuncs x0 x1 x2) w
 
 abbrev Stmt_unit_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 127 RepStmt) x1 v1 →
-    (RepOption 127 RepStmt) (Lanius.Mini.unitTail x0 x1) w
+  ∀ {x0 : Lanius.Mini.SrcType} {x1 : Option Lanius.Mini.Stmt} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepSrcType x0 v0 → (RepOption 125 RepStmt) x1 v1 →
+    (RepOption 125 RepStmt) (Lanius.Mini.unitTail x0 x1) w
 
 end Lanius.Faithful.SelfCert

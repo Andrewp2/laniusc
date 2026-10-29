@@ -1,5 +1,6 @@
 import Lanius.Faithful.SelfFaithful
 import Lanius.Faithful.Sim.Driver
+import Lanius.Mini.TextWords
 
 /-! # The self-host driver writes what the extraction computes (roadmap V1)
 
@@ -850,5 +851,23 @@ theorem driver_faithful {fuel : Nat} {st st' : State} {v : Value} {inp outp room
   exact Result.heap rfl out
 
 #print axioms driver_faithful
+
+/-- **The driver on source files.** On an input view reading the words of
+files whose numbers fit (`filesWords`, `FilesFit`), a run of `w` that
+completes returns what `Result` says for the words of `compileText`'s
+binary: -1 when the verified compiler rejects the files, and otherwise the
+length of the binary's words, with the output reading them. The words of
+any input the driver accepts are the words of such files (`compileWords_some`). -/
+theorem driver_files {fuel : Nat} {st st' : State} {v : Value} {inp outp room : Nat} {files : List SourceFile}
+    (fit : FilesFit files) (inv : Inv st) (bound : st'.heap.nextAddress ≤ 2 ^ 64)
+    (wordsLt : (filesWords files).length < 2 ^ 31) (roomLt : room < 2 ^ 31)
+    (input : Reads st inp (filesWords files)) (output : st.heap.Readable outp (room * 4))
+    (run : evalExpr fuel prog.toCore st (.call 0 [.value (.pointer inp), .value (.signed .i32 (filesWords files).length),
+      .value (.pointer outp), .value (.signed .i32 room)]) = .done v st') :
+    Result (binaryWords (compileText files)) v st' outp room := by
+  rw [← compileWords_files fit]
+  exact driver_faithful inv bound wordsLt roomLt input output run
+
+#print axioms driver_files
 
 end Lanius.Faithful.SelfDriver

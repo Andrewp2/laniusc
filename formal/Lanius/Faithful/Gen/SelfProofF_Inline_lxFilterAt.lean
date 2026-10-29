@@ -3,7 +3,12 @@ module
 public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_Inline_lxFilterAt
+public import Lanius.Faithful.Gen.SelfStmt1
+public import Lanius.Faithful.Gen.SelfStmt4
+public import Lanius.Faithful.Gen.SelfStmt7
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_lxFilterAt
+public import Lanius.Faithful.Gen.SelfStmtF_lxCanonicalKind
+public import Lanius.Faithful.Gen.SelfStmtF_lxDotAt
 import all Lanius.Faithful.Gen.SelfSrcF_Inline_lxFilterAt
 import all Lanius.Mini.Frontend.P.Inline_lxFilterAt
 
@@ -23,6 +28,38 @@ open Lanius.Core (Value)
 open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
+
+theorem step_lx_filter_at {prog : SrcProgram} {prims : Prims} {ix_lx_filter_at ix_lx_filter ix_cons_of_mini_selfhost_RawTok ix_lx_trivia ix_lx_canonical_kind : Nat} (fn : prog.funcs[ix_lx_filter_at]? = some (src_lx_filter_at ix_lx_filter ix_cons_of_mini_selfhost_RawTok ix_lx_trivia ix_lx_canonical_kind)) (np : prims.isPrim ix_lx_filter_at = false)
+    (ext_cons_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_RawTok prog prims ix_cons_of_mini_selfhost_RawTok n))
+    (ext_lx_trivia : Certified (∀ {n : Nat}, Stmt_lx_trivia prog prims ix_lx_trivia n))
+    (ext_lx_canonical_kind : Certified (∀ {n : Nat}, Stmt_lx_canonical_kind prog prims ix_lx_canonical_kind n)) {n : Nat}
+    (ih_lx_filter : Certified (Stmt_lx_filter prog prims ix_lx_filter n)) :
+    Stmt_lx_filter_at prog prims ix_lx_filter_at (n + 1) := by
+  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_filter_at] at h
+  faithful [Lanius.Mini.Inline.lxFilterAt]
+
+theorem step_lx_ranges_at {prog : SrcProgram} {prims : Prims} {ix_lx_ranges_at ix_lx_ranges ix_cons_of_mini_selfhost_RawTok ix_single_of_mini_selfhost_RawTok ix_lx_range_pair : Nat} (fn : prog.funcs[ix_lx_ranges_at]? = some (src_lx_ranges_at ix_lx_ranges ix_cons_of_mini_selfhost_RawTok ix_single_of_mini_selfhost_RawTok ix_lx_range_pair)) (np : prims.isPrim ix_lx_ranges_at = false)
+    (ext_cons_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_RawTok prog prims ix_cons_of_mini_selfhost_RawTok n))
+    (ext_single_of_mini_selfhost_RawTok : Certified (∀ {n : Nat}, Stmt_single_of_mini_selfhost_RawTok prog prims ix_single_of_mini_selfhost_RawTok n))
+    (ext_lx_range_pair : Certified (∀ {n : Nat}, Stmt_lx_range_pair prog prims ix_lx_range_pair n)) {n : Nat}
+    (ih_lx_ranges : Certified (Stmt_lx_ranges prog prims ix_lx_ranges n)) :
+    Stmt_lx_ranges_at prog prims ix_lx_ranges_at (n + 1) := by
+  intro x0 x1 v0 v1 w h r0 r1
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_ranges_at] at h
+  faithful [Lanius.Mini.Inline.lxRangesAt]
+
+theorem step_lx_tokens_at {prog : SrcProgram} {prims : Prims} {ix_lx_tokens_at ix_lx_tokens ix_cons_of_mini_selfhost_Token ix_lx_token : Nat} (fn : prog.funcs[ix_lx_tokens_at]? = some (src_lx_tokens_at ix_lx_tokens ix_cons_of_mini_selfhost_Token ix_lx_token)) (np : prims.isPrim ix_lx_tokens_at = false)
+    (ext_cons_of_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_Token prog prims ix_cons_of_mini_selfhost_Token n))
+    (ext_lx_token : Certified (∀ {n : Nat}, Stmt_lx_token prog prims ix_lx_token n)) {n : Nat}
+    (ih_lx_tokens : Certified (Stmt_lx_tokens prog prims ix_lx_tokens n)) :
+    Stmt_lx_tokens_at prog prims ix_lx_tokens_at (n + 1) := by
+  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  rw [pcall_succ np fn] at h
+  simp only [src_lx_tokens_at] at h
+  faithful [Lanius.Mini.Inline.lxTokensAt]
 
 theorem proof_p_add {prog : SrcProgram} {prims : Prims} {ix_p_add : Nat} (fn : prog.funcs[ix_p_add]? = some (src_p_add)) (np : prims.isPrim ix_p_add = false) {n : Nat} :
     Stmt_p_add prog prims ix_p_add n := by
