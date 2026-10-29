@@ -532,3 +532,14 @@ The intended next verification boundary is a compiler written in Lanius whose
 passes can be related to this core language. Translation validation can later
 compare artifacts emitted by the CPU and GPU compilers without treating the
 current GPU implementation as the definition of the language.
+
+## The reading's constant values (decided 10-29)
+
+`Reading.ConstValue` (V8c) gives a constant two readings when its value's
+tokens are `n` or `-n`: the literal reading and the wide one. The builder
+tries the literal reading first and uses the wide one only when it fails;
+the relation cannot say "only when it fails", since that is a negative
+condition on the relation itself (constants' values are read with the
+expression relation). Where both readings apply (`n` below 2^31 of an
+unsigned type or `isize`) they denote the same value. The builder is not
+changed: its self-compiled code carries the faithfulness certificates.
