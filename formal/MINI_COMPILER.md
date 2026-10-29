@@ -817,8 +817,9 @@ program's own first; `sourceProgram` is the one-file case.
 Proved, with only `propext` and `Quot.sound`:
 
 - `validate_sound`: when `validateTree g tokens prods parents = some root`, then
-  `Shape g 0 root` (a parse tree of `file`), `Reads root.leaves tokens []`
-  (its leaves are the tokens, with some `>>` read as two `>`) and
+  `Shape g 0 root` (a parse tree of `file`), `Picked root tokens []`
+  (its leaves are the tokens, with some `>>` read as two `>`, and `picks`
+  allows each node's production at its tokens) and
   `root.preorder = prods` (it is laniusc's tree).
 - `validate_derives`: the leaves' token kinds are derived from `file`.
 - `sourceProgram_sound`: the program is `build` of such a tree for the tokens
@@ -827,8 +828,10 @@ Proved, with only `propext` and `Quot.sound`:
   file.
 
 laniusc's lexer and parser are not trusted. The trusted parts are the Lean
-lexer, the grammar table, the grammar's unambiguity (not proved) and `build`
-as the meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
+lexer (since V3 proved equal to the lexical rules), the grammar table,
+`picks` (which of two readings of `x<` an expression has; V4 proved that with
+it the grammar has one reading, `Mini/ParseUnique.lean`) and `build` as the
+meaning of the concrete syntax. TRUSTED_BASE.md section 4 lists them.
 
 `frontend.lani` is about 7,050 hand-written lines, followed by the generated
 grammar table: 324 productions, with terminals as lexer token codes. Two
@@ -837,6 +840,15 @@ tools regenerate it:
 ```bash
 python3 formal/tools/grammar_table.py formal/lani/mini/frontend.lani
 python3 formal/tools/extract.py formal/lani/mini/frontend.lani formal/Lanius/Mini/Frontend.lean
+```
+
+After a grammar change, `formal/tools/grammar_cert.py` rewrites the one-reading
+certificate (`formal/Lanius/Mini/GrammarCert.lean`); it fails if two
+productions of a nonterminal are no longer told apart, and a stale
+certificate fails the kernel's check when the file builds:
+
+```bash
+python3 formal/tools/grammar_cert.py formal/Lanius/Mini/GrammarCert.lean
 ```
 
 Both take `--check`. The source types and list operations sit in an

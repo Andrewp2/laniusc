@@ -19,9 +19,13 @@ statement:
   tokens `rest` left over, except that a `>>` token may be read as its two
   halves, two `>`; laniusc's parser reads the `>>` that closes two type
   argument lists (`Vec<Option<T>>`) that way.
+- `Picked c tokens rest`: `c`'s leaves read the tokens up to `rest`, and
+  `picks` allows each node's production at the tokens from that node on: it
+  rules out two productions the subset does not use and chooses between the
+  two readings of `x<` in an expression (`Unique.lean`).
 
-`validate_sound`: an accepted tree is a parse tree for `file` whose leaves read
-exactly the tokens and whose preorder is exactly laniusc's production list, so
+`validate_sound`: an accepted tree is a parse tree for `file` that is `Picked`
+for exactly the tokens and whose preorder is exactly laniusc's production list, so
 the leaves' token kinds are a sentence of the grammar (`validate_derives`).
 `sourceProgram_sound` ties the front end's program to such a tree. -/
 
@@ -112,6 +116,32 @@ theorem Reads.append {l₁ l₂ tokens mid rest : List Token} :
   | .token r, h => .token (r.append h)
   | .halves k r, h => .halves k (r.append h)
 
+mutual
+/-- `c` reads `tokens`, leaving `rest`, and `picks` allows each node's
+production at the tokens from the node on. -/
+inductive Picked : CTree → List Token → List Token → Prop
+  | leaf {t : Token} {tokens rest : List Token} : Reads [t] tokens rest → Picked (.leaf t) tokens rest
+  | node {prod : Nat} {kids : List CTree} {tokens rest : List Token} :
+      picks prod tokens = true → PickedKids kids tokens rest → Picked (.node prod kids) tokens rest
+
+/-- `kids` read `tokens` one after another, leaving `rest`, each `Picked`. -/
+inductive PickedKids : List CTree → List Token → List Token → Prop
+  | nil {tokens : List Token} : PickedKids [] tokens tokens
+  | cons {c : CTree} {cs : List CTree} {tokens mid rest : List Token} :
+      Picked c tokens mid → PickedKids cs mid rest → PickedKids (c :: cs) tokens rest
+end
+
+mutual
+theorem Picked.reads {c : CTree} {tokens rest : List Token} : Picked c tokens rest → Reads c.leaves tokens rest
+  | .leaf r => by simpa [CTree.leaves] using r
+  | .node _ kids => by simpa [CTree.leaves] using kids.reads
+
+theorem PickedKids.reads {kids : List CTree} {tokens rest : List Token} :
+    PickedKids kids tokens rest → Reads (CTree.leavesOf kids) tokens rest
+  | .nil => by simpa [CTree.leavesOf] using Reads.done
+  | .cons c cs => by simpa [CTree.leavesOf] using c.reads.append cs.reads
+end
+
 /-- What `attach` returns: children for `rhs` of the grammar's shape, whose
 leaves read the tokens it consumed and whose preorder is the productions it
 consumed. -/
@@ -119,7 +149,7 @@ theorem attach_sound (g : List Rule) :
     ∀ (fuel : Nat) (rhs : List Sym) (parent : Nat) (cur : Cursor) (a : Attached),
       attach g fuel rhs parent cur = some a →
       KidsShape g rhs a.kids ∧
-      Reads (CTree.leavesOf a.kids) cur.tokens a.rest.tokens ∧
+      PickedKids a.kids cur.tokens a.rest.tokens ∧
       cur.prods = CTree.preorderOf a.kids ++ a.rest.prods := by
   intro fuel
   induction fuel with
@@ -132,7 +162,7 @@ theorem attach_sound (g : List Rule) :
     | nil =>
         simp at h
         subst h
-        exact ⟨.nil, by simpa [CTree.leavesOf] using Reads.done, by simp [CTree.preorderOf]⟩
+        exact ⟨.nil, .nil, by simp [CTree.preorderOf]⟩
     | cons sym more =>
       cases sym with
       | term kind =>
@@ -150,7 +180,7 @@ theorem attach_sound (g : List Rule) :
               subst h
               obtain ⟨shape, toksEq, prodsEq⟩ := ih _ _ _ _ hrest
               refine ⟨.term hk shape, ?_, ?_⟩
-              · simpa [CTree.leavesOf, CTree.leaves] using Reads.token toksEq
+              · exact .cons (.leaf (.token .done)) toksEq
               · simpa [CTree.preorderOf, CTree.preorder] using prodsEq
           · simp only [hk, if_false] at h
             by_cases hs : tok.kind = 44 ∧ kind = 13
@@ -165,7 +195,7 @@ theorem attach_sound (g : List Rule) :
                 subst h
                 obtain ⟨shape, toksEq, prodsEq⟩ := ih _ _ _ _ hrest
                 refine ⟨.term (by simp [shrFirst, hs₂]) shape, ?_, ?_⟩
-                · simpa [CTree.leavesOf, CTree.leaves] using Reads.halves hs₁ toksEq
+                · exact .cons (.leaf (.halves hs₁ .done)) toksEq
                 · simpa [CTree.preorderOf, CTree.preorder] using prodsEq
             · have : ¬(decide (tok.kind = 44) && decide (kind = 13)) = true := by
                 simpa [Bool.and_eq_true, decide_eq_true_eq] using hs
@@ -178,8 +208,10 @@ theorem attach_sound (g : List Rule) :
           | nil => simp [hprods, hparents] at h
           | cons q qs =>
             simp only [hprods, hparents] at h
-            by_cases hq : q = parent
-            · simp only [hq, ne_eq, not_true_eq_false, if_false] at h
+            by_cases hq : q = parent ∧ picks p cur.tokens = true
+            · obtain ⟨hq, hp⟩ := hq
+              simp only [hq, hp, ne_eq, not_true_eq_false, decide_false, Bool.not_true, Bool.or_self,
+                Bool.false_eq_true, if_false] at h
               cases hg : g[p]? with
               | none => simp [hg] at h
               | some prod =>
@@ -199,19 +231,25 @@ theorem attach_sound (g : List Rule) :
                       obtain ⟨shape₁, toks₁, prods₁⟩ := ih _ _ _ _ hin
                       obtain ⟨shape₂, toks₂, prods₂⟩ := ih _ _ _ _ hrest
                       refine ⟨.nonterm (.node hg hl shape₁) shape₂, ?_, ?_⟩
-                      · simpa [CTree.leavesOf, CTree.leaves] using toks₁.append toks₂
+                      · exact .cons (.node hp toks₁) toks₂
                       · simp only [CTree.preorderOf, CTree.preorder, List.cons_append,
                           List.append_assoc]
                         simp only at prods₁
                         rw [prods₁, prods₂]
                 · simp [hl] at h
-            · simp [hq] at h
+            · have : (decide (q ≠ parent) || !picks p cur.tokens) = true := by
+                by_cases hq' : q = parent
+                · have : ¬picks p cur.tokens = true := fun hp => hq ⟨hq', hp⟩
+                  simp [hq', this]
+                · simp [hq']
+              simp only [this, if_true] at h
+              exact absurd h (by simp)
 
 /-- An accepted parse: a tree for `file` (nonterminal 0) whose leaves read
 exactly the tokens and whose preorder is exactly laniusc's production list. -/
 theorem validate_sound {g : List Rule} {tokens : List Token} {prods parents : List Nat}
     {root : CTree} (h : validateTree g tokens prods parents = some root) :
-    Shape g 0 root ∧ Reads root.leaves tokens [] ∧ root.preorder = prods := by
+    Shape g 0 root ∧ Picked root tokens [] ∧ root.preorder = prods := by
   unfold validateTree at h
   cases ha : attach g (2 * (prods.length + tokens.length) + 2) [Sym.nonterm 0] 4294967295
       { prods := prods, parents := parents, tokens := tokens, index := 0 } with
@@ -247,7 +285,11 @@ theorem validate_sound {g : List Rule} {tokens : List Token} {prods parents : Li
           | nonterm s tail =>
             cases tail
             refine ⟨s, ?_, ?_⟩
-            · simpa [CTree.leavesOf, restTokens] using toksEq
+            · cases toksEq with
+              | cons pc pn =>
+                cases pn
+                rw [restTokens] at pc
+                exact pc
             · simpa [CTree.preorderOf, restProds] using prodsEq.symm
     · simp [hu] at h
 
@@ -264,7 +306,7 @@ them) and whose preorder is laniusc's production list. -/
 theorem sourceProgram_sound {source : List Lanius.Compiler.Lexer.Byte} {prods parents : List Nat}
     {program : SrcProgram} (h : sourceProgram source prods parents = some program) :
     ∃ tokens root, lexTokens source = some tokens ∧
-      Shape grammar 0 root ∧ Reads root.leaves tokens [] ∧ root.preorder = prods ∧
+      Shape grammar 0 root ∧ Picked root tokens [] ∧ root.preorder = prods ∧
       Derives grammar [.nonterm 0] (root.leaves.map Token.kind) ∧
       build (4 * (prods.length + tokens.length) + 16) root = some program := by
   unfold sourceProgram at h
@@ -290,7 +332,7 @@ exactly its tokens and whose preorder is laniusc's production list. -/
 theorem validateFiles_sound {g : List Rule} :
     ∀ {files : List FileInput} {roots : List CTree}, validateFiles g files = some roots →
       ListRel (fun (f : FileInput) (root : CTree) =>
-        Shape g 0 root ∧ Reads root.leaves f.tokens [] ∧ root.preorder = f.prods) files roots
+        Shape g 0 root ∧ Picked root f.tokens [] ∧ root.preorder = f.prods) files roots
   | [], roots, h => by
     simp only [validateFiles, Option.some.injEq] at h
     subst h
@@ -337,7 +379,7 @@ theorem sourceProgramFiles_sound {files : List SourceFile} {program : SrcProgram
       ListRel (fun (f : SourceFile) (i : FileInput) =>
         lexTokens f.source = some i.tokens ∧ i.prods = f.prods) files inputs ∧
       ListRel (fun (i : FileInput) (root : CTree) =>
-        Shape grammar 0 root ∧ Reads root.leaves i.tokens [] ∧ root.preorder = i.prods) inputs roots ∧
+        Shape grammar 0 root ∧ Picked root i.tokens [] ∧ root.preorder = i.prods) inputs roots ∧
       buildFiles (filesFuel inputs) roots = some program := by
   unfold sourceProgramFiles at h
   cases hl : lexFiles files with

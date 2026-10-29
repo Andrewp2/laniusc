@@ -42,6 +42,33 @@ theorem proof_p_xor_tail {prog : SrcProgram} {prims : Prims} {ix_p_xor_tail : Na
   simp only [src_p_xor_tail] at h
   faithful [Lanius.Mini.Inline.pXorTail]
 
+theorem proof_t_colon {prog : SrcProgram} {prims : Prims} {ix_t_colon : Nat} (fn : prog.funcs[ix_t_colon]? = some (src_t_colon)) (np : prims.isPrim ix_t_colon = false) {n : Nat} :
+    Stmt_t_colon prog prims ix_t_colon n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_t_colon] at h
+  faithful [Lanius.Mini.Inline.tColon]
+
+theorem proof_t_eqeq {prog : SrcProgram} {prims : Prims} {ix_t_eqeq : Nat} (fn : prog.funcs[ix_t_eqeq]? = some (src_t_eqeq)) (np : prims.isPrim ix_t_eqeq = false) {n : Nat} :
+    Stmt_t_eqeq prog prims ix_t_eqeq n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_t_eqeq] at h
+  faithful [Lanius.Mini.Inline.tEqeq]
+
+theorem proof_t_ge {prog : SrcProgram} {prims : Prims} {ix_t_ge : Nat} (fn : prog.funcs[ix_t_ge]? = some (src_t_ge)) (np : prims.isPrim ix_t_ge = false) {n : Nat} :
+    Stmt_t_ge prog prims ix_t_ge n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_t_ge] at h
+  faithful [Lanius.Mini.Inline.tGe]
+
 theorem proof_t_gt {prog : SrcProgram} {prims : Prims} {ix_t_gt : Nat} (fn : prog.funcs[ix_t_gt]? = some (src_t_gt)) (np : prims.isPrim ix_t_gt = false) {n : Nat} :
     Stmt_t_gt prog prims ix_t_gt n := by
   intro w h
@@ -51,13 +78,31 @@ theorem proof_t_gt {prog : SrcProgram} {prims : Prims} {ix_t_gt : Nat} (fn : pro
   simp only [src_t_gt] at h
   faithful [Lanius.Mini.Inline.tGt]
 
-theorem proof_t_shr {prog : SrcProgram} {prims : Prims} {ix_t_shr : Nat} (fn : prog.funcs[ix_t_shr]? = some (src_t_shr)) (np : prims.isPrim ix_t_shr = false) {n : Nat} :
-    Stmt_t_shr prog prims ix_t_shr n := by
+theorem proof_t_lbrace {prog : SrcProgram} {prims : Prims} {ix_t_lbrace : Nat} (fn : prog.funcs[ix_t_lbrace]? = some (src_t_lbrace)) (np : prims.isPrim ix_t_lbrace = false) {n : Nat} :
+    Stmt_t_lbrace prog prims ix_t_lbrace n := by
   intro w h
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_t_shr] at h
-  faithful [Lanius.Mini.Inline.tShr]
+  simp only [src_t_lbrace] at h
+  faithful [Lanius.Mini.Inline.tLbrace]
+
+theorem proof_t_lbracket {prog : SrcProgram} {prims : Prims} {ix_t_lbracket : Nat} (fn : prog.funcs[ix_t_lbracket]? = some (src_t_lbracket)) (np : prims.isPrim ix_t_lbracket = false) {n : Nat} :
+    Stmt_t_lbracket prog prims ix_t_lbracket n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_t_lbracket] at h
+  faithful [Lanius.Mini.Inline.tLbracket]
+
+theorem proof_t_le {prog : SrcProgram} {prims : Prims} {ix_t_le : Nat} (fn : prog.funcs[ix_t_le]? = some (src_t_le)) (np : prims.isPrim ix_t_le = false) {n : Nat} :
+    Stmt_t_le prog prims ix_t_le n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_t_le] at h
+  faithful [Lanius.Mini.Inline.tLe]
 
 end Lanius.Faithful.SelfCert

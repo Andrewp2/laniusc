@@ -13,6 +13,7 @@ import Lanius.Mini.Frontend.P.noToken
 import Lanius.Mini.Frontend.P.noTrees
 import Lanius.Mini.Frontend.P.nullConst
 import Lanius.Mini.Frontend.P.scalarOf
+import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.typeDeclAt
 import Lanius.Mini.Frontend.P.typePathSpellings
 import Lanius.Mini.Frontend.P.unitTy

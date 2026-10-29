@@ -51,6 +51,15 @@ theorem proof_p_bit_xor {prog : SrcProgram} {prims : Prims} {ix_p_bit_xor : Nat}
   simp only [src_p_bit_xor] at h
   faithful [Lanius.Mini.Inline.pBitXor]
 
+theorem proof_p_block_stmt {prog : SrcProgram} {prims : Prims} {ix_p_block_stmt : Nat} (fn : prog.funcs[ix_p_block_stmt]? = some (src_p_block_stmt)) (np : prims.isPrim ix_p_block_stmt = false) {n : Nat} :
+    Stmt_p_block_stmt prog prims ix_p_block_stmt n := by
+  intro w h
+  rcases n with _ | n
+  · simp [pcall] at h
+  rw [pcall_succ np fn] at h
+  simp only [src_p_block_stmt] at h
+  faithful [Lanius.Mini.Inline.pBlockStmt]
+
 theorem proof_p_bor_tail {prog : SrcProgram} {prims : Prims} {ix_p_bor_tail : Nat} (fn : prog.funcs[ix_p_bor_tail]? = some (src_p_bor_tail)) (np : prims.isPrim ix_p_bor_tail = false) {n : Nat} :
     Stmt_p_bor_tail prog prims ix_p_bor_tail n := by
   intro w h

@@ -466,6 +466,21 @@ The compiled code checks in Core's order. A store `slice[i] = v` evaluates
 proving `compileSource_stops` found the old order, `v` before the check,
 wrong when `i` is out of bounds and `v` reaches an undefined trap).
 
+### `x<` in an expression (decided 10-29)
+
+The grammar gives `a < b > (c)` two trees: a chain of comparisons and a call
+of the generic path `a<b>`. Lanius reads `x<` in an expression as the start
+of type arguments exactly when, from the `<` on, the matching `>` (angles
+counted outside brackets, a `>>` closing two) comes before any bracket
+closes or a `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`,
+`::` or `{` follows it; otherwise `<` is a comparison. This is laniusc's rule
+(`shaders/parser/tokens/to/angle_kinds.slang`) without its limit of 64
+argument tokens; the verified compiler's validator checks it (`picks`).
+Block statements and a method's type arguments (`x.f<T>(..)`) are outside
+the verified compiler's subset, since they are ambiguous in the same way
+(`{ a } - b;`, `x.f < a > (b)`). With these, every token sequence has at
+most one parse tree (V4, `Mini/ParseUnique.lean`).
+
 ## Decisions still required
 
 - Which NaN payload details are observable through future bit-conversion APIs.

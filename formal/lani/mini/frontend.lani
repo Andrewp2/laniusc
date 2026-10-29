@@ -327,6 +327,113 @@ pub fn with_kid(kid: CTree, rest: core::option::Option<Attached>) -> core::optio
     };
 }
 
+// ---------------------------------------------------------------- the one reading
+
+// The grammar is ambiguous where `x < y` in an expression could also open the
+// type arguments of a generic path `x<y>`: `a < b > (c)` is a comparison chain
+// and a generic call. laniusc reads `x<` as type arguments when the matching
+// `>` (angles counted outside brackets, a `>>` closing two) comes before any
+// bracket closes or `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it,
+// and `(`, `::` or `{` follows it. generic_path_at says that of the tokens
+// from the identifier on; the validator accepts a path segment only if they
+// agree, and formal/Lanius/Mini/Unique.lean proves that then at most one tree
+// reads a file's tokens.
+pub fn starts_with_kind(tokens: List<Token>, kind: usize) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> t.kind == kind,
+    };
+}
+
+pub fn generic_tail(tokens: List<Token>) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> t.kind == t_lparen() || t.kind == t_lbrace() || (t.kind == t_colon() && starts_with_kind(unbox(rest), t_colon())),
+    };
+}
+
+// The tokens after a `<`, with angles type argument lists open and nest
+// brackets open inside the innermost.
+pub fn generic_close(tokens: List<Token>, angles: usize, nest: usize) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> generic_close_at(t.kind, unbox(rest), angles, nest),
+    };
+}
+
+// extract: inline
+fn generic_close_at(gk: usize, grest: List<Token>, gangles: usize, gnest: usize) -> bool {
+    if (gk == t_oror() || gk == t_eqeq() || gk == t_not_equal() || gk == t_le() || gk == t_ge()) {
+        return false;
+    }
+    if (gk == t_lparen() || gk == t_lbracket() || gk == t_lbrace()) {
+        return generic_close(grest, gangles, plus(gnest, 1));
+    }
+    if (gk == t_rparen() || gk == t_rbracket() || gk == t_rbrace()) {
+        if (gnest == 0) {
+            return false;
+        }
+        return generic_close(grest, gangles, minus(gnest, 1));
+    }
+    if (gnest != 0) {
+        return generic_close(grest, gangles, gnest);
+    }
+    if (gk == t_semicolon()) {
+        return false;
+    }
+    if (gk == t_lt()) {
+        return generic_close(grest, plus(gangles, 1), 0);
+    }
+    if (gk == t_gt()) {
+        if (gangles < 2) {
+            return generic_tail(grest);
+        }
+        return generic_close(grest, minus(gangles, 1), 0);
+    }
+    if (gk == t_shr()) {
+        if (gangles == 2) {
+            return generic_tail(grest);
+        }
+        if (gangles < 2) {
+            return false;
+        }
+        return generic_close(grest, minus(gangles, 2), 0);
+    }
+    return generic_close(grest, gangles, 0);
+}
+
+pub fn generic_open(tokens: List<Token>) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> t.kind == t_lt() && generic_close(unbox(rest), 1, 0),
+    };
+}
+
+pub fn generic_path_at(tokens: List<Token>) -> bool {
+    return match (tokens) {
+        Nil -> false,
+        Cons(t, rest) -> generic_open(unbox(rest)),
+    };
+}
+
+// Whether the validator accepts production prod for a node whose tokens
+// begin with `tokens`: not a block statement or a method's type arguments
+// (the subset has neither, and each makes the grammar ambiguous, as in
+// `{ a } - b;` and `x.f < a > (b)`), and a path segment `x` or `x<...>` only
+// as generic_path_at says.
+pub fn picks(prod: usize, tokens: List<Token>) -> bool {
+    if (prod == p_block_stmt() || prod == p_member_type_args_some()) {
+        return false;
+    }
+    if (prod == p_path_ident()) {
+        return !generic_path_at(tokens);
+    }
+    if (prod == p_path_ident_args()) {
+        return generic_path_at(tokens);
+    }
+    return true;
+}
+
 // laniusc's parser reads a `>>` that closes two type argument lists (as in
 // `Vec<Option<T>>`) as two `>`, so a terminal `>` may take the first half of a
 // `>>` token, and the second half is then the next token.
@@ -364,7 +471,7 @@ fn attach_node(cg: List<Rule>, cfuel: usize, cnt: usize, cp: usize, cprod: Rule,
 
 // extract: inline
 fn attach_prod(bg: List<Rule>, bfuel: usize, bnt: usize, bp: usize, bps: List<usize>, bq: usize, bqs: List<usize>, bmore: List<Sym>, bparent: usize, bcur: Cursor) -> core::option::Option<Attached> {
-    if (bq != bparent) {
+    if (bq != bparent || !picks(bp, bcur.tokens)) {
         return None;
     }
     return match (get(bg, bp)) {
@@ -401,8 +508,9 @@ fn attach_sym(sg: List<Rule>, sfuel: usize, sym: Sym, smore: List<Sym>, sparent:
 
 // Attach the trees for the symbols rhs, children of the node with preorder
 // index parent: a terminal takes the next token, which must have its kind; a
-// nonterminal takes the next production, which must have it as its left side
-// and parent as its recorded parent, and then that production's own symbols.
+// nonterminal takes the next production, which must have it as its left side,
+// parent as its recorded parent and `picks` allowing it at the tokens left,
+// and then that production's own symbols.
 pub fn attach(g: List<Rule>, fuel: usize, rhs: List<Sym>, parent: usize, cur: Cursor) -> core::option::Option<Attached> {
     if (fuel == 0) {
         return None;
@@ -9316,6 +9424,11 @@ fn p_bit_xor() -> usize {
 }
 
 // extract: inline
+fn p_block_stmt() -> usize {
+    return 84;
+}
+
+// extract: inline
 fn p_bor_tail() -> usize {
     return 125;
 }
@@ -9668,6 +9781,11 @@ fn p_match_expr() -> usize {
 // extract: inline
 fn p_member_type_args_none() -> usize {
     return 297;
+}
+
+// extract: inline
+fn p_member_type_args_some() -> usize {
+    return 298;
 }
 
 // extract: inline
@@ -10081,8 +10199,78 @@ fn p_xor_tail() -> usize {
 }
 
 // extract: inline
+fn t_colon() -> usize {
+    return 38;
+}
+
+// extract: inline
+fn t_eqeq() -> usize {
+    return 16;
+}
+
+// extract: inline
+fn t_ge() -> usize {
+    return 15;
+}
+
+// extract: inline
 fn t_gt() -> usize {
     return 13;
+}
+
+// extract: inline
+fn t_lbrace() -> usize {
+    return 22;
+}
+
+// extract: inline
+fn t_lbracket() -> usize {
+    return 20;
+}
+
+// extract: inline
+fn t_le() -> usize {
+    return 14;
+}
+
+// extract: inline
+fn t_lparen() -> usize {
+    return 4;
+}
+
+// extract: inline
+fn t_lt() -> usize {
+    return 12;
+}
+
+// extract: inline
+fn t_not_equal() -> usize {
+    return 40;
+}
+
+// extract: inline
+fn t_oror() -> usize {
+    return 18;
+}
+
+// extract: inline
+fn t_rbrace() -> usize {
+    return 23;
+}
+
+// extract: inline
+fn t_rbracket() -> usize {
+    return 21;
+}
+
+// extract: inline
+fn t_rparen() -> usize {
+    return 5;
+}
+
+// extract: inline
+fn t_semicolon() -> usize {
+    return 37;
 }
 
 // extract: inline

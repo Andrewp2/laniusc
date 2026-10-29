@@ -18,6 +18,9 @@ namespace Lanius.Mini
 @[expose] def Inline.pBitXor : Nat :=
   127
 
+@[expose] def Inline.pBlockStmt : Nat :=
+  84
+
 @[expose] def Inline.pBorTail : Nat :=
   125
 

@@ -13,8 +13,8 @@ open Lanius.Mini
 
 noncomputable section
 
-/-- mini::selfhost::attach -/
-def src_attach (ix_minus : Nat) (ix_empty_of_mini_selfhost_CTree : Nat) (ix_attach_sym : Nat) (ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym : Nat) : SrcFunc := { params := [{ id := 7, ty := ty40 }, { id := 22, ty := SrcType.uint (UintTy.usize) }, { id := 35, ty := ty37 }, { id := 51, ty := SrcType.uint (UintTy.usize) }, { id := 66, ty := ty130 }], ret := ty132, body := SrcStmt.then (SrcStmt.if (SrcExpr.apply (SrcOp.equal) (SrcExpr.local 22) (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64)) (SrcStmt.returnEval (SrcEff.eVariant ty132 1 [])) (SrcStmt.nop)) (SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 35)) ty37 ty132 [[], [261, 266]] [SrcEff.eVariant ty132 0 [SrcEff.eStruct ty131 [SrcEff.eCall ix_empty_of_mini_selfhost_CTree [], SrcEff.ePure (SrcExpr.local 66)]], SrcEff.eCall ix_attach_sym [SrcEff.ePure (SrcExpr.local 7), SrcEff.eCall ix_minus [SrcEff.ePure (SrcExpr.local 22), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)], SrcEff.ePure (SrcExpr.local 261), SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym [SrcEff.ePure (SrcExpr.local 266)], SrcEff.ePure (SrcExpr.local 51), SrcEff.ePure (SrcExpr.local 66)]])) }
+/-- mini::selfhost::generic_tail -/
+def src_generic_tail (ix_unbox_of_mini_selfhost_List_mini_selfhost_Token : Nat) (ix_t_lparen : Nat) (ix_t_lbrace : Nat) (ix_t_colon : Nat) (ix_starts_with_kind : Nat) : SrcFunc := { params := [{ id := 13, ty := ty43 }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 13)) ty43 (SrcType.bool) [[], [107, 110]] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.eApply (SrcOp.logicalOr) (SrcEff.eApply (SrcOp.logicalOr) (SrcEff.eApply (SrcOp.equal) (SrcEff.ePure (SrcExpr.field 107 0)) (SrcEff.eCall ix_t_lparen [])) (SrcEff.eApply (SrcOp.equal) (SrcEff.ePure (SrcExpr.field 107 0)) (SrcEff.eCall ix_t_lbrace []))) (SrcEff.eApply (SrcOp.logicalAnd) (SrcEff.eApply (SrcOp.equal) (SrcEff.ePure (SrcExpr.field 107 0)) (SrcEff.eCall ix_t_colon [])) (SrcEff.eCall ix_starts_with_kind [SrcEff.eCall ix_unbox_of_mini_selfhost_List_mini_selfhost_Token [SrcEff.ePure (SrcExpr.local 110)], SrcEff.eCall ix_t_colon []]))]) }
 
 /-- mini::selfhost::kid -/
 def src_kid (ix_kids_of : Nat) (ix_get_or_of_mini_selfhost_CTree : Nat) (ix_no_token : Nat) : SrcFunc := { params := [{ id := 4, ty := ty78 }, { id := 14, ty := SrcType.uint (UintTy.usize) }], ret := ty78, body := SrcStmt.returnEval (SrcEff.eCall ix_get_or_of_mini_selfhost_CTree [SrcEff.eCall ix_kids_of [SrcEff.ePure (SrcExpr.local 4)], SrcEff.ePure (SrcExpr.local 14), SrcEff.eVariant ty78 0 [SrcEff.eCall ix_no_token []]]) }
@@ -25,14 +25,8 @@ def src_kids_of (ix_empty_of_mini_selfhost_CTree : Nat) (ix_unbox_of_mini_selfho
 /-- mini::selfhost::no_token -/
 def src_no_token (ix_empty_of_usize : Nat) : SrcFunc := { params := [], ret := ty41, body := SrcStmt.returnEval (SrcEff.eStruct ty41 [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000000#64), SrcEff.eCall ix_empty_of_usize []]) }
 
-/-- mini::selfhost::only -/
-def src_only : SrcFunc := { params := [{ id := 5, ty := ty78 }, { id := 18, ty := ty79 }], ret := ty129, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 18)) ty79 ty129 [[], [136, 143]] [SrcEff.eVariant ty129 0 [SrcEff.ePure (SrcExpr.local 5)], SrcEff.eVariant ty129 1 []]) }
-
-/-- mini::selfhost::shr_first -/
-def src_shr_first (ix_t_gt : Nat) (ix_single_of_usize : Nat) : SrcFunc := { params := [{ id := 10, ty := ty41 }], ret := ty41, body := SrcStmt.returnEval (SrcEff.eStruct ty41 [SrcEff.eCall ix_t_gt [], SrcEff.ePure (SrcExpr.field 10 1), SrcEff.eCall ix_single_of_usize [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x000000000000003e#64)]]) }
-
-/-- mini::selfhost::shr_second -/
-def src_shr_second (ix_plus : Nat) (ix_t_gt : Nat) (ix_single_of_usize : Nat) : SrcFunc := { params := [{ id := 11, ty := ty41 }], ret := ty41, body := SrcStmt.returnEval (SrcEff.eStruct ty41 [SrcEff.eCall ix_t_gt [], SrcEff.eCall ix_plus [SrcEff.ePure (SrcExpr.field 11 1), SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x0000000000000001#64)], SrcEff.eCall ix_single_of_usize [SrcEff.ePure (SrcExpr.unsigned (UintTy.usize) 0x000000000000003e#64)]]) }
+/-- mini::selfhost::starts_with_kind -/
+def src_starts_with_kind : SrcFunc := { params := [{ id := 17, ty := ty43 }, { id := 38, ty := SrcType.uint (UintTy.usize) }], ret := SrcType.bool, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 17)) ty43 (SrcType.bool) [[], [124, 127]] [SrcEff.ePure (SrcExpr.boolean false), SrcEff.ePure (SrcExpr.apply (SrcOp.equal) (SrcExpr.field 124 0) (SrcExpr.local 38))]) }
 
 /-- mini::selfhost::with_kid -/
 def src_with_kid (ix_cons_of_mini_selfhost_CTree : Nat) : SrcFunc := { params := [{ id := 9, ty := ty78 }, { id := 21, ty := ty132 }], ret := ty132, body := SrcStmt.returnEval (SrcEff.eMatch (SrcEff.ePure (SrcExpr.local 21)) ty132 ty132 [[156], []] [SrcEff.eVariant ty132 0 [SrcEff.eStruct ty131 [SrcEff.eCall ix_cons_of_mini_selfhost_CTree [SrcEff.ePure (SrcExpr.local 9), SrcEff.ePure (SrcExpr.field 156 0)], SrcEff.ePure (SrcExpr.field 156 1)]], SrcEff.eVariant ty132 1 []]) }

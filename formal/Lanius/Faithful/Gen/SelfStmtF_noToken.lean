@@ -20,9 +20,9 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-abbrev Stmt_attach (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : List Lanius.Mini.Rule} {x1 : Nat} {x2 : List Lanius.Mini.Sym} {x3 : Nat} {x4 : Lanius.Mini.Cursor} {v0 v1 v2 v3 v4 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4] = some w → (RepList 34 RepRule) x0 v0 → RepNat x1 v1 → (RepList 36 RepSym) x2 v2 → RepNat x3 v3 → RepCursor x4 v4 →
-    (RepOption 123 RepAttached) (Lanius.Mini.attach x0 x1 x2 x3 x4) w
+abbrev Stmt_generic_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → (RepList 44 RepToken) x0 v0 →
+    RepBool (Lanius.Mini.genericTail x0) w
 
 abbrev Stmt_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → RepNat x1 v1 →
@@ -36,17 +36,9 @@ abbrev Stmt_no_token (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepToken (Lanius.Mini.noToken) w
 
-abbrev Stmt_only (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.CTree} {x1 : List Lanius.Mini.CTree} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepList 76 RepCTree) x1 v1 →
-    (RepOption 121 RepCTree) (Lanius.Mini.only x0 x1) w
-
-abbrev Stmt_shr_first (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepToken x0 v0 →
-    RepToken (Lanius.Mini.shrFirst x0) w
-
-abbrev Stmt_shr_second (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Token} {v0 w : Value}, pcall prog prims n ix [v0] = some w → RepToken x0 v0 →
-    RepToken (Lanius.Mini.shrSecond x0) w
+abbrev Stmt_starts_with_kind (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {x0 : List Lanius.Mini.Token} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → (RepList 44 RepToken) x0 v0 → RepNat x1 v1 →
+    RepBool (Lanius.Mini.startsWithKind x0 x1) w
 
 abbrev Stmt_with_kid (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Lanius.Mini.CTree} {x1 : Option Lanius.Mini.Attached} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepCTree x0 v0 → (RepOption 123 RepAttached) x1 v1 →

@@ -190,14 +190,28 @@ still a parse tree of the same tokens. Trusted:
   table mechanically, and `--check` confirms that it is current. The grammar
   is trusted to say what Lanius's concrete syntax is, including precedence
   and associativity, which it encodes in its levels.
-- **Unambiguity.** It is not proved that the grammar gives each token
-  sequence at most one parse tree. `sourceProgram_sound` says the program is
-  `build` of *some* parse tree of the tokens, namely laniusc's. If the grammar
-  were ambiguous on the subset, a different tree could have a different
-  reading, and the trusted claim is that it does not. The difftest's
-  mutations (a production id, a parent or a token changed, all rejected) are
-  evidence, not a proof. To shrink it: prove the grammar unambiguous on the
-  subset, for example from the determinism of laniusc's LLP tables.
+- **One reading (V4, proved).** The grammar is not unambiguous on the
+  subset, as this file used to claim: `a < b > (c)` is both a comparison chain
+  and a call of a generic path `a<b>`, and `f(a < b, c > (d))` likewise.
+  `picks` (`frontend.lani`, checked by the validator at every node) is part of
+  the syntax's definition: a path segment `x<...>` in an expression is read
+  as type arguments exactly when `generic_path_at` holds of the tokens from
+  `x` on (the matching `>`, counted outside brackets with `>>` closing two,
+  comes before a bracket closes or a `;`, with no `||`, `==`, `!=`, `<=` or
+  `>=` before it, and is followed by `(`, `::` or `{`), which is laniusc's
+  rule without its 64-token limit; and block statements and a method's type
+  arguments (productions 84 and 298), which the subset does not use and which
+  are ambiguous too (`{ a } - b;`, `x.f < a > (b)`), are not allowed.
+  `grammar_unique` (`Mini/ParseUnique.lean`, standard axioms) proves that at
+  most one parse tree for `file` is `Picked` for given tokens, from a
+  certificate of first and follow sets (two token kinds deep, `>>` read
+  either way) that the kernel checks (`grammarCert_ok`,
+  `Mini/GrammarCert.lean`, written by `formal/tools/grammar_cert.py`), and
+  `Cert.parse_unique` (`Mini/Unique.lean`). So `validate_unique`: the tree the
+  validator accepts is the only one, and `sourceProgram_determined` and
+  `sourceProgramFiles_determined`: the front end's program depends on the
+  source text alone, not on the tree laniusc gives. What stays trusted is
+  that `picks` says what the syntax means where it decides.
 - **The reading.** `build` (in `Frontend.lean`) is the meaning of the subset's
   concrete syntax, as `toCore` is the meaning of `SrcProgram` (section 2). It
   makes these choices:

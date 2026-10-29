@@ -4,14 +4,12 @@ public import Lanius.Faithful.Auto
 public import Lanius.Faithful.Gen.SelfRep
 public import Lanius.Faithful.Gen.SelfSrcF_noToken
 public import Lanius.Faithful.Gen.SelfStmt0
-public import Lanius.Faithful.Gen.SelfStmt1
 public import Lanius.Faithful.Gen.SelfStmt2
 public import Lanius.Faithful.Gen.SelfStmt3
 public import Lanius.Faithful.Gen.SelfStmt4
-public import Lanius.Faithful.Gen.SelfStmt5
 public import Lanius.Faithful.Gen.SelfStmt7
-public import Lanius.Faithful.Gen.SelfStmtF_Inline_attachParent
 public import Lanius.Faithful.Gen.SelfStmtF_Inline_pWhileStmt
+public import Lanius.Faithful.Gen.SelfStmtF_Inline_tLparen
 public import Lanius.Faithful.Gen.SelfStmtF_noToken
 import all Lanius.Faithful.Gen.SelfSrcF_noToken
 import all Lanius.Mini.Frontend.P.noToken
@@ -33,16 +31,19 @@ open Lanius.Faithful
 open Lanius.Faithful.Self
 open Lanius.Faithful.SelfRep
 
-theorem step_attach {prog : SrcProgram} {prims : Prims} {ix_attach ix_minus ix_empty_of_mini_selfhost_CTree ix_attach_sym ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym : Nat} (fn : prog.funcs[ix_attach]? = some (src_attach ix_minus ix_empty_of_mini_selfhost_CTree ix_attach_sym ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym)) (np : prims.isPrim ix_attach = false)
-    (ext_minus : Certified (∀ {n : Nat}, Stmt_minus prog prims ix_minus n))
-    (ext_empty_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_empty_of_mini_selfhost_CTree prog prims ix_empty_of_mini_selfhost_CTree n))
-    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Sym : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Sym prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Sym n)) {n : Nat}
-    (ih_attach_sym : Certified (Stmt_attach_sym prog prims ix_attach_sym n)) :
-    Stmt_attach prog prims ix_attach (n + 1) := by
-  intro x0 x1 x2 x3 x4 v0 v1 v2 v3 v4 w h r0 r1 r2 r3 r4
+theorem proof_generic_tail {prog : SrcProgram} {prims : Prims} {ix_generic_tail ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_t_lparen ix_t_lbrace ix_t_colon ix_starts_with_kind : Nat} (fn : prog.funcs[ix_generic_tail]? = some (src_generic_tail ix_unbox_of_mini_selfhost_List_mini_selfhost_Token ix_t_lparen ix_t_lbrace ix_t_colon ix_starts_with_kind)) (np : prims.isPrim ix_generic_tail = false)
+    (ext_unbox_of_mini_selfhost_List_mini_selfhost_Token : Certified (∀ {n : Nat}, Stmt_unbox_of_mini_selfhost_List_mini_selfhost_Token prog prims ix_unbox_of_mini_selfhost_List_mini_selfhost_Token n))
+    (ext_t_lparen : Certified (∀ {n : Nat}, Stmt_t_lparen prog prims ix_t_lparen n))
+    (ext_t_lbrace : Certified (∀ {n : Nat}, Stmt_t_lbrace prog prims ix_t_lbrace n))
+    (ext_t_colon : Certified (∀ {n : Nat}, Stmt_t_colon prog prims ix_t_colon n))
+    (ext_starts_with_kind : Certified (∀ {n : Nat}, Stmt_starts_with_kind prog prims ix_starts_with_kind n)) {n : Nat} :
+    Stmt_generic_tail prog prims ix_generic_tail n := by
+  intro x0 v0 w h r0
+  rcases n with _ | n
+  · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_attach] at h
-  faithful [Lanius.Mini.attach]
+  simp only [src_generic_tail] at h
+  faithful [Lanius.Mini.genericTail]
 
 theorem proof_kid {prog : SrcProgram} {prims : Prims} {ix_kid ix_kids_of ix_get_or_of_mini_selfhost_CTree ix_no_token : Nat} (fn : prog.funcs[ix_kid]? = some (src_kid ix_kids_of ix_get_or_of_mini_selfhost_CTree ix_no_token)) (np : prims.isPrim ix_kid = false)
     (ext_kids_of : Certified (∀ {n : Nat}, Stmt_kids_of prog prims ix_kids_of n))
@@ -77,37 +78,14 @@ theorem proof_no_token {prog : SrcProgram} {prims : Prims} {ix_no_token ix_empty
   simp only [src_no_token] at h
   faithful [Lanius.Mini.noToken]
 
-theorem proof_only {prog : SrcProgram} {prims : Prims} {ix_only : Nat} (fn : prog.funcs[ix_only]? = some (src_only)) (np : prims.isPrim ix_only = false) {n : Nat} :
-    Stmt_only prog prims ix_only n := by
+theorem proof_starts_with_kind {prog : SrcProgram} {prims : Prims} {ix_starts_with_kind : Nat} (fn : prog.funcs[ix_starts_with_kind]? = some (src_starts_with_kind)) (np : prims.isPrim ix_starts_with_kind = false) {n : Nat} :
+    Stmt_starts_with_kind prog prims ix_starts_with_kind n := by
   intro x0 x1 v0 v1 w h r0 r1
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h
-  simp only [src_only] at h
-  faithful [Lanius.Mini.only]
-
-theorem proof_shr_first {prog : SrcProgram} {prims : Prims} {ix_shr_first ix_t_gt ix_single_of_usize : Nat} (fn : prog.funcs[ix_shr_first]? = some (src_shr_first ix_t_gt ix_single_of_usize)) (np : prims.isPrim ix_shr_first = false)
-    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
-    Stmt_shr_first prog prims ix_shr_first n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_shr_first] at h
-  faithful [Lanius.Mini.shrFirst]
-
-theorem proof_shr_second {prog : SrcProgram} {prims : Prims} {ix_shr_second ix_plus ix_t_gt ix_single_of_usize : Nat} (fn : prog.funcs[ix_shr_second]? = some (src_shr_second ix_plus ix_t_gt ix_single_of_usize)) (np : prims.isPrim ix_shr_second = false)
-    (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
-    (ext_t_gt : Certified (∀ {n : Nat}, Stmt_t_gt prog prims ix_t_gt n))
-    (ext_single_of_usize : Certified (∀ {n : Nat}, Stmt_single_of_usize prog prims ix_single_of_usize n)) {n : Nat} :
-    Stmt_shr_second prog prims ix_shr_second n := by
-  intro x0 v0 w h r0
-  rcases n with _ | n
-  · simp [pcall] at h
-  rw [pcall_succ np fn] at h
-  simp only [src_shr_second] at h
-  faithful [Lanius.Mini.shrSecond]
+  simp only [src_starts_with_kind] at h
+  faithful [Lanius.Mini.startsWithKind]
 
 theorem proof_with_kid {prog : SrcProgram} {prims : Prims} {ix_with_kid ix_cons_of_mini_selfhost_CTree : Nat} (fn : prog.funcs[ix_with_kid]? = some (src_with_kid ix_cons_of_mini_selfhost_CTree)) (np : prims.isPrim ix_with_kid = false)
     (ext_cons_of_mini_selfhost_CTree : Certified (∀ {n : Nat}, Stmt_cons_of_mini_selfhost_CTree prog prims ix_cons_of_mini_selfhost_CTree n)) {n : Nat} :

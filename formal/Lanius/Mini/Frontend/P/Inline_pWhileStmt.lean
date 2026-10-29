@@ -15,10 +15,25 @@ namespace Lanius.Mini
 @[expose] def Inline.pXorTail : Nat :=
   128
 
+@[expose] def Inline.tColon : Nat :=
+  38
+
+@[expose] def Inline.tEqeq : Nat :=
+  16
+
+@[expose] def Inline.tGe : Nat :=
+  15
+
 @[expose] def Inline.tGt : Nat :=
   13
 
-@[expose] def Inline.tShr : Nat :=
-  44
+@[expose] def Inline.tLbrace : Nat :=
+  22
+
+@[expose] def Inline.tLbracket : Nat :=
+  20
+
+@[expose] def Inline.tLe : Nat :=
+  14
 
 end Lanius.Mini

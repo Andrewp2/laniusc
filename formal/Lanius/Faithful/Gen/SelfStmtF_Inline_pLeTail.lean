@@ -72,48 +72,8 @@ abbrev Stmt_p_member_type_args_none (prog : SrcProgram) (prims : Prims) (ix n : 
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pMemberTypeArgsNone) w
 
-abbrev Stmt_p_mod_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+abbrev Stmt_p_member_type_args_some (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pModTail) w
-
-abbrev Stmt_p_module (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pModule) w
-
-abbrev Stmt_p_mul (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pMul) w
-
-abbrev Stmt_p_mul_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pMulTail) w
-
-abbrev Stmt_p_ne_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pNeTail) w
-
-abbrev Stmt_p_neg (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pNeg) w
-
-abbrev Stmt_p_not (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pNot) w
-
-abbrev Stmt_p_or_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pOrTail) w
-
-abbrev Stmt_p_orexpr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pOrexpr) w
-
-abbrev Stmt_p_param_named (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pParamNamed) w
-
-abbrev Stmt_p_param_self (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.pParamSelf) w
+    RepNat (Lanius.Mini.Inline.pMemberTypeArgsSome) w
 
 end Lanius.Faithful.SelfCert

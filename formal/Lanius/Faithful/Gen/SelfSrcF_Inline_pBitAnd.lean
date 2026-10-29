@@ -22,6 +22,9 @@ def src_p_bit_or : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize)
 /-- mini::selfhost::p_bit_xor -/
 def src_p_bit_xor : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000007f#64) }
 
+/-- mini::selfhost::p_block_stmt -/
+def src_p_block_stmt : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x0000000000000054#64) }
+
 /-- mini::selfhost::p_bor_tail -/
 def src_p_bor_tail : SrcFunc := { params := [], ret := SrcType.uint (UintTy.usize), body := SrcStmt.return (SrcExpr.unsigned (UintTy.usize) 0x000000000000007d#64) }
 

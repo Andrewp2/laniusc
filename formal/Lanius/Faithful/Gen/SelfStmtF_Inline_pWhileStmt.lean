@@ -28,12 +28,32 @@ abbrev Stmt_p_xor_tail (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.pXorTail) w
 
+abbrev Stmt_t_colon (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.tColon) w
+
+abbrev Stmt_t_eqeq (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.tEqeq) w
+
+abbrev Stmt_t_ge (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.tGe) w
+
 abbrev Stmt_t_gt (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
     RepNat (Lanius.Mini.Inline.tGt) w
 
-abbrev Stmt_t_shr (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+abbrev Stmt_t_lbrace (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {w : Value}, pcall prog prims n ix [] = some w →
-    RepNat (Lanius.Mini.Inline.tShr) w
+    RepNat (Lanius.Mini.Inline.tLbrace) w
+
+abbrev Stmt_t_lbracket (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.tLbracket) w
+
+abbrev Stmt_t_le (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
+  ∀ {w : Value}, pcall prog prims n ix [] = some w →
+    RepNat (Lanius.Mini.Inline.tLe) w
 
 end Lanius.Faithful.SelfCert

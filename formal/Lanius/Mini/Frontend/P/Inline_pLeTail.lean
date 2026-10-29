@@ -48,37 +48,7 @@ namespace Lanius.Mini
 @[expose] def Inline.pMemberTypeArgsNone : Nat :=
   297
 
-@[expose] def Inline.pModTail : Nat :=
-  154
-
-@[expose] def Inline.pModule : Nat :=
-  46
-
-@[expose] def Inline.pMul : Nat :=
-  151
-
-@[expose] def Inline.pMulTail : Nat :=
-  152
-
-@[expose] def Inline.pNeTail : Nat :=
-  135
-
-@[expose] def Inline.pNeg : Nat :=
-  157
-
-@[expose] def Inline.pNot : Nat :=
-  158
-
-@[expose] def Inline.pOrTail : Nat :=
-  119
-
-@[expose] def Inline.pOrexpr : Nat :=
-  118
-
-@[expose] def Inline.pParamNamed : Nat :=
-  62
-
-@[expose] def Inline.pParamSelf : Nat :=
-  63
+@[expose] def Inline.pMemberTypeArgsSome : Nat :=
+  298
 
 end Lanius.Mini

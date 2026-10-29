@@ -1,7 +1,9 @@
 module
 
 public import Lanius.Mini.Frontend.Types
+public import Lanius.Mini.Frontend.P.genericClose
 public import Lanius.Mini.Frontend.P.noToken
+public import Lanius.Mini.Frontend.P.shrFirst
 import Lanius.Mini.Frontend.P.frontEndWords
 import Lanius.Mini.Frontend.P.grammarPart8
 
@@ -31,6 +33,45 @@ def grammarPart16 : List Rule :=
 /-- The productions of grammar/lanius.bnf, by production id. -/
 def grammar : List Rule :=
   grammarPart0 ++ (grammarPart1 ++ (grammarPart2 ++ (grammarPart3 ++ (grammarPart4 ++ (grammarPart5 ++ (grammarPart6 ++ (grammarPart7 ++ (grammarPart8 ++ (grammarPart9 ++ (grammarPart10 ++ (grammarPart11 ++ (grammarPart12 ++ (grammarPart13 ++ (grammarPart14 ++ (grammarPart15 ++ grammarPart16)))))))))))))))
+
+@[expose] def Inline.genericCloseAt (gk : Nat) (grest : List Token) (gangles : Nat) (gnest : Nat) : Bool :=
+  if decide (gk = (18)) || decide (gk = (16)) || decide (gk = (40)) || decide (gk = (14)) || decide (gk = (15)) then
+    false
+  else
+    if decide (gk = (4)) || decide (gk = (20)) || decide (gk = (22)) then
+      genericClose grest gangles (gnest + 1)
+    else
+      if decide (gk = (5)) || decide (gk = (21)) || decide (gk = (23)) then
+        if gnest = 0 then
+          false
+        else
+          genericClose grest gangles (gnest - 1)
+      else
+        if gnest ≠ 0 then
+          genericClose grest gangles gnest
+        else
+          if gk = (37) then
+            false
+          else
+            if gk = (12) then
+              genericClose grest (gangles + 1) 0
+            else
+              if gk = (13) then
+                if gangles < 2 then
+                  genericTail grest
+                else
+                  genericClose grest (gangles - 1) 0
+              else
+                if gk = (44) then
+                  if gangles = 2 then
+                    genericTail grest
+                  else
+                    if gangles < 2 then
+                      false
+                    else
+                      genericClose grest (gangles - 2) 0
+                else
+                  genericClose grest gangles 0
 
 @[expose] def Inline.attachTerm (tg : List Rule) (tfuel : Nat) (tkind : Nat) (tmore : List Sym) (tparent : Nat) (tcur : Cursor) : Option Attached :=
   match tcur.tokens with

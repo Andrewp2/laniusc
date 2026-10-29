@@ -26,58 +26,15 @@ def withKid (kid : CTree) (rest : Option Attached) : Option Attached :=
   | none => none
   | some a => some ({ kids := kid :: a.kids, rest := a.rest } : Attached)
 
-/-- laniusc's parser reads a `>>` that closes two type argument lists (as in `Vec<Option<T>>`) as two `>`, so a terminal `>` may take the first half of a `>>` token, and the second half is then the next token. -/
-def shrFirst (t : Token) : Token :=
-  ({ kind := (13), start := t.start, text := [62] } : Token)
+/-- The grammar is ambiguous where `x < y` in an expression could also open the type arguments of a generic path `x<y>`: `a < b > (c)` is a comparison chain and a generic call. laniusc reads `x<` as type arguments when the matching `>` (angles counted outside brackets, a `>>` closing two) comes before any bracket closes or `;`, no `||`, `==`, `!=`, `<=` or `>=` comes before it, and `(`, `::` or `{` follows it. generic_path_at says that of the tokens from the identifier on; the validator accepts a path segment only if they agree, and formal/Lanius/Mini/Unique.lean proves that then at most one tree reads a file's tokens. -/
+def startsWithKind (tokens : List Token) (kind : Nat) : Bool :=
+  match tokens with
+  | [] => false
+  | t :: rest => decide (t.kind = kind)
 
-def shrSecond (t : Token) : Token :=
-  ({ kind := (13), start := t.start + 1, text := [62] } : Token)
-
-/-- Attach the trees for the symbols rhs, children of the node with preorder index parent: a terminal takes the next token, which must have its kind; a nonterminal takes the next production, which must have it as its left side and parent as its recorded parent, and then that production's own symbols. -/
-def attach (g : List Rule) (fuel : Nat) (rhs : List Sym) (parent : Nat) (cur : Cursor) : Option Attached :=
-  if fuel = 0 then
-    none
-  else
-    match rhs with
-    | [] => some ({ kids := [], rest := cur } : Attached)
-    | sym :: more =>
-      let sfuel : Nat := fuel - 1
-      match sym with
-      | .term kind =>
-        (match cur.tokens with
-         | [] => none
-         | tok :: toks =>
-           if tok.kind = kind then
-             withKid (CTree.leaf tok) (attach g sfuel more parent ({ prods := cur.prods, parents := cur.parents, tokens := toks, index := cur.index } : Cursor))
-           else
-             if decide (tok.kind = (44)) && decide (kind = (13)) then
-               withKid (CTree.leaf (shrFirst tok)) (attach g sfuel more parent ({ prods := cur.prods, parents := cur.parents, tokens := shrSecond tok :: toks, index := cur.index } : Cursor))
-             else
-               none)
-      | .nonterm nt =>
-        match cur.prods with
-        | [] => none
-        | p :: ps =>
-          match cur.parents with
-          | [] => none
-          | q :: qs =>
-            if q ≠ parent then
-              none
-            else
-              match g[p]? with
-              | none => none
-              | some prod =>
-                if prod.lhs ≠ nt then
-                  none
-                else
-                  let inner : Option Attached := attach g sfuel prod.rhs cur.index ({ prods := ps, parents := qs, tokens := cur.tokens, index := cur.index + 1 } : Cursor)
-                  match inner with
-                  | none => none
-                  | some a => withKid (CTree.node p a.kids) (attach g sfuel more parent a.rest)
-
-def only (root : CTree) (more : List CTree) : Option CTree :=
-  match more with
-  | [] => some root
-  | other :: rest => none
+def genericTail (tokens : List Token) : Bool :=
+  match tokens with
+  | [] => false
+  | t :: rest => decide (t.kind = (4)) || decide (t.kind = (22)) || decide (t.kind = (38)) && startsWithKind rest (38)
 
 end Lanius.Mini
