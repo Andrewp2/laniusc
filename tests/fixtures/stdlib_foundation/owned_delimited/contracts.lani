@@ -1,0 +1,284 @@
+module app::main;
+import alloc::buffered;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+
+// Positive fill actions expose up to that many bytes; zero observes EOF.
+// -1..-4 are Interrupted/WouldBlock/Host/AllocationFailed; -10..-12
+// return invalid View metadata without touching any backing storage.
+// Consume zero acknowledges exactly; -1..-4 fail; -5..-7 return invalid
+// negative/excessive/short success counts. This script does not move on those
+// invalid counts; the public contract does not require broken-provider rollback.
+struct Script {
+    view:core::slice::View<u8>, cursor:i32, fill_actions:[i32], consume_actions:[i32],
+    fills:i32, consumes:i32, events:[i32;32], used:i32
+}
+fn script(view:core::slice::View<u8>,fills:[i32],consumes:[i32]) -> Script {
+    return Script { view:view,cursor:0,fill_actions:fills,consume_actions:consumes,
+        fills:0,consumes:0,events:[-99;32],used:0 };
+}
+impl Script {
+    fn borrow(&self) -> &Script { return self; }
+    fn record(&self,event:i32) { assert(self.used<32); self.events[self.used]=event; self.used+=1; }
+}
+fn io_error(action:i32) -> core::io::Error {
+    if(action==-1) { return core::io::Error::Interrupted; }
+    if(action==-2) { return core::io::Error::WouldBlock; }
+    if(action==-3) { return core::io::Error::Host(-90210); }
+    assert(action==-4); return core::io::Error::AllocationFailed;
+}
+pub impl core::io::BufRead for Script {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        assert(self.fills<8); self.record(1);
+        let action:i32=self.fill_actions[self.fills]; self.fills+=1;
+        if(action<=-1 && action>=-4) { return core::result::Err(io_error(action)); }
+        let nowhere:ptr=0; let unread:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+        if(action==-10) { return core::result::Ok(core::slice::View { values:unread,start:-1,length:0 }); }
+        if(action==-11) { return core::result::Ok(core::slice::View { values:unread,start:0,length:-1 }); }
+        if(action==-12) { return core::result::Ok(core::slice::View { values:unread,start:2147483647,length:1 }); }
+        assert(action>=0); let amount:i32=action;
+        if(amount>self.view.length-self.cursor) { amount=self.view.length-self.cursor; }
+        return core::result::Ok(core::slice::View { values:self.view.values,start:self.view.start+self.cursor,length:amount });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.consumes<8 && count>0 && count<=self.view.length-self.cursor); self.record(100+count);
+        let action:i32=self.consume_actions[self.consumes]; self.consumes+=1;
+        if(action<=-1 && action>=-4) { return core::result::Err(io_error(action)); }
+        if(action==-5) { return core::result::Ok(-1); }
+        if(action==-6) { return core::result::Ok(count+1); }
+        if(action==-7) { return core::result::Ok(count-1); }
+        assert(action==0); self.cursor+=count; return core::result::Ok(count);
+    }
+}
+fn view(data:[u8],count:i32) -> core::slice::View<u8> { return core::slice::View { values:data,start:0,length:count }; }
+fn limits(bytes:i32,calls:u64) -> alloc::io::ReadLimits { return alloc::io::ReadLimits { max_bytes:bytes,max_calls:calls }; }
+fn ending(value:alloc::io::ReadEnding) -> i32 {
+    return match(value) { alloc::io::ReadEnding::Delimiter -> 1,alloc::io::ReadEnding::Eof -> 2 };
+}
+fn io_cause(value:core::io::Error) -> i32 {
+    return match(value) {
+        core::io::Error::InvalidCount -> 13,core::io::Error::Interrupted -> 14,
+        core::io::Error::WouldBlock -> 15,core::io::Error::Host(code) -> code,
+        core::io::Error::AllocationFailed -> 16,_ -> 99
+    };
+}
+fn cause(value:alloc::io::ReadError) -> i32 {
+    let code:i32=match(value) {
+        alloc::io::ReadError::InvalidLimits -> 1,alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 3,alloc::io::ReadError::Io(error) -> io_cause(error),
+        alloc::io::ReadError::Text(ignored) -> 4,_ -> 99
+    };
+    return code;
+}
+fn bytes_equal(actual:[u8],count:i32,expected:[u8],length:i32) {
+    assert(count==length); let i:i32=0; while(i<length) { assert(actual[i]==expected[i]); i+=1; }
+}
+fn trace(reader:&Script,expected:[i32],count:i32) {
+    assert(reader.used==count); let i:i32=0; while(i<count) { assert(reader.events[i]==expected[i]); i+=1; }
+}
+fn binary(result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure>,
+    expected:[u8],length:i32,calls:u64,end:i32) -> alloc::io::ReadBytes {
+    assert(result.is_ok()); let record:alloc::io::ReadBytes=result.unwrap();
+    bytes_equal(record.bytes.as_slice(),record.bytes.len(),expected,length);
+    assert(record.calls==calls && record.consumed==(length as u64) && ending(record.ending)==end);
+    return record;
+}
+fn text(result:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure>,
+    expected:[u8],length:i32,calls:u64,end:i32,scalars:i32) -> alloc::io::ReadLine {
+    assert(result.is_ok()); let record:alloc::io::ReadLine=result.unwrap();
+    bytes_equal(record.text.as_bytes(),record.text.byte_len(),expected,length);
+    assert(record.text.scalar_count()==scalars && record.calls==calls && record.consumed==(length as u64) && ending(record.ending)==end);
+    return record;
+}
+fn failure(value:alloc::io::BufferedReadFailure,expected:i32,bytes:[u8],length:i32,calls:u64,consumed:u64,end:i32) {
+    assert(cause(value.cause)==expected && value.calls==calls && value.consumed==consumed);
+    bytes_equal(value.bytes.as_slice(),value.bytes.len(),bytes,length);
+    if(end==0) { assert(value.ending.is_none()); }
+    else { assert(ending(value.ending.unwrap())==end); }
+    value.destroy(); value.destroy();
+    assert(value.bytes.len()==0 && cause(value.cause)==expected && value.calls==calls && value.consumed==consumed);
+}
+
+fn binary_layouts_nested_views_and_repeated_records() {
+    let native:[u8;12]=[199,199,128,0,255,10,13,10,77,88,199,199];
+    let storage:[i32;3]=[0;3];
+    let packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(storage),12);
+    assert(core::mem::slice_stride(native)<0 && core::mem::slice_stride(packed)==1);
+    let fills:[i32;8]=[3;8]; let consumes:[i32;8]=[0;8]; let mode:i32=0;
+    while(mode<2) {
+        let source:[u8]=native; if(mode==1) { source=packed; }
+        let i:i32=0; while(i<12) { source[i]=native[i]; i+=1; }
+        let outer:core::slice::View<u8> =core::slice::view_range(source,1,10).unwrap();
+        let inner:core::slice::View<u8> =outer.subview(1,9).unwrap();
+        assert(inner.start==2 && inner.length==8);
+        let reader:Script=script(inner,fills,consumes); let nul:[u8;2]=[128,0];
+        let first:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(reader.borrow(),0,limits(2,2)),nul,2,2,1);
+        assert(reader.cursor==2 && reader.fills==1 && reader.consumes==1 && core::mem::slice_stride(first.bytes.as_slice())==1);
+        source[2]=42; assert(first.bytes.as_slice()[0]==128); source[2]=128;
+        let bad:[u8;2]=[255,10];
+        let invalid:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(reader.borrow(),limits(2,2));
+        failure(invalid.unwrap_err(),4,bad,2,2,2,1);
+        let crlf:[u8;2]=[13,10];
+        let third:alloc::io::ReadLine=text(alloc::io::read_line<Script>(reader.borrow(),limits(2,2)),crlf,2,2,1,2);
+        assert(reader.cursor==6);
+        let tail:[u8;2]=[77,88];
+        let last:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(reader.borrow(),255,limits(2,3)),tail,2,3,2);
+        let empty:[u8;0]=[];
+        let eof:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(reader.borrow(),0,limits(0,1)),empty,0,1,2);
+        let events:[i32;10]=[1,102,1,102,1,102,1,102,1,1]; trace(reader.borrow(),events,10);
+        assert(reader.cursor==8 && reader.fills==6 && reader.consumes==4);
+        assert(source[0]==199 && source[1]==199 && source[10]==199 && source[11]==199);
+        first.destroy(); third.destroy(); last.destroy(); eof.destroy(); mode+=1;
+    }
+}
+
+fn exact_caps_call_boundaries_and_unread_suffix() {
+    let bytes:[u8;5]=[97,98,99,10,122]; let chunks:[i32;8]=[8;8]; let ack:[i32;8]=[0;8];
+    let capped:Script=script(view(bytes,5),chunks,ack); let prefix:[u8;3]=[97,98,99];
+    let limited:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(capped.borrow(),10,limits(3,3));
+    failure(limited.unwrap_err(),3,prefix,3,3,3,0);
+    let first_events:[i32;3]=[1,103,1]; trace(capped.borrow(),first_events,3);
+    assert(capped.cursor==3 && capped.fills==2 && capped.consumes==1);
+    let lf:[u8;1]=[10]; let resumed:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(capped.borrow(),10,limits(1,2)),lf,1,2,1);
+    assert(capped.cursor==4 && capped.fills==3 && capped.consumes==2);
+    resumed.destroy();
+    let unterminated:Script=script(view(bytes,3),chunks,ack);
+    let exact:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(unterminated.borrow(),10,limits(3,3)),prefix,3,3,2);
+    assert(unterminated.cursor==3 && unterminated.fills==2 && unterminated.consumes==1); exact.destroy();
+    let quota:Script=script(view(bytes,3),chunks,ack);
+    let exhausted:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(quota.borrow(),10,limits(3,2));
+    failure(exhausted.unwrap_err(),2,prefix,3,2,3,0);
+    let quota_events:[i32;2]=[1,103]; trace(quota.borrow(),quota_events,2);
+    assert(quota.cursor==3 && quota.fills==1 && quota.consumes==1);
+    let at_delimiter:Script=script(view(bytes,5),chunks,ack); let record:[u8;4]=[97,98,99,10];
+    let stopped:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(at_delimiter.borrow(),10,limits(4,2)),record,4,2,1);
+    assert(at_delimiter.cursor==4 && at_delimiter.fills==1 && at_delimiter.consumes==1); stopped.destroy();
+    let zero_cap:Script=script(view(bytes,5),chunks,ack); let empty:[u8;0]=[];
+    let zero:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(zero_cap.borrow(),10,limits(0,1));
+    failure(zero.unwrap_err(),3,empty,0,1,0,0);
+    assert(zero_cap.cursor==0 && zero_cap.fills==1 && zero_cap.consumes==0);
+}
+
+fn fills_retry_only_interrupted_and_preserve_prefix() {
+    let bytes:[u8;4]=[11,12,128,0]; let prefix:[u8;2]=[11,12]; let ack:[i32;8]=[0;8]; let action:i32=-4;
+    while(action<=-1) {
+        let fills:[i32;8]=[2,action,2,0,0,0,0,0]; let reader:Script=script(view(bytes,4),fills,ack);
+        let result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(reader.borrow(),0,limits(4,5));
+        if(action==-1) {
+            let record:alloc::io::ReadBytes=binary(result,bytes,4,5,1); record.destroy();
+            let expected:[i32;5]=[1,102,1,1,102]; trace(reader.borrow(),expected,5); assert(reader.cursor==4);
+        } else {
+            failure(result.unwrap_err(),io_cause(io_error(action)),prefix,2,3,2,0);
+            let expected:[i32;3]=[1,102,1]; trace(reader.borrow(),expected,3); assert(reader.cursor==2);
+        }
+        action+=1;
+    }
+    let interrupted:[i32;8]=[-1;8]; let blocked:Script=script(view(bytes,4),interrupted,ack); let empty:[u8;0]=[];
+    let exhausted:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(blocked.borrow(),0,limits(4,2));
+    failure(exhausted.unwrap_err(),2,empty,0,2,0,0);
+    let events:[i32;2]=[1,1]; trace(blocked.borrow(),events,2);
+    let malformed:i32=-12;
+    while(malformed<=-10) {
+        let fills:[i32;8]=[2,malformed,0,0,0,0,0,0]; let reader:Script=script(view(bytes,4),fills,ack);
+        let result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(reader.borrow(),0,limits(2,3));
+        failure(result.unwrap_err(),13,prefix,2,3,2,0);
+        let events:[i32;3]=[1,102,1]; trace(reader.borrow(),events,3); assert(reader.cursor==2); malformed+=1;
+    }
+}
+
+fn consume_failure_keeps_copied_unacknowledged_bytes() {
+    let bytes:[u8;4]=[11,12,128,0]; let tail:[u8;2]=[128,0]; let chunks:[i32;8]=[2;8]; let action:i32=-7;
+    while(action<=-1) {
+        let ack:[i32;8]=[0,action,0,0,0,0,0,0]; let reader:Script=script(view(bytes,4),chunks,ack);
+        let result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Script>(reader.borrow(),0,limits(4,8));
+        let expected:i32=13; if(action>=-4) { expected=io_cause(io_error(action)); }
+        failure(result.unwrap_err(),expected,bytes,4,4,2,0);
+        let events:[i32;4]=[1,102,1,102]; trace(reader.borrow(),events,4);
+        assert(reader.fills==2 && reader.consumes==2);
+        if(action>=-4) {
+            assert(reader.cursor==2);
+            let resumed:alloc::io::ReadBytes=binary(alloc::io::read_until<Script>(reader.borrow(),0,limits(2,2)),tail,2,2,1);
+            assert(reader.cursor==4 && reader.fills==3 && reader.consumes==3); resumed.destroy();
+        }
+        action+=1;
+    }
+}
+
+fn utf8_terminal_precedence_and_owned_transfer() {
+    let bytes:[u8;10]=[226,130,172,0,13,10,240,159,153,130];
+    let chunks:[i32;8]=[1,2,1,2,1,2,1,2]; let ack:[i32;8]=[0;8];
+    let reader:Script=script(view(bytes,10),chunks,ack); let line_bytes:[u8;6]=[226,130,172,0,13,10];
+    let first:alloc::io::ReadLine=text(alloc::io::read_line<Script>(reader.borrow(),limits(6,8)),line_bytes,6,8,1,4);
+    assert(reader.cursor==6 && reader.fills==4 && reader.consumes==4);
+    let storage:ptr=first.text.bytes.storage; let capacity:i32=first.text.capacity();
+    let recovered:alloc::vec::Vec<u8> =first.text.into_bytes();
+    assert(storage!=0 && recovered.storage==storage && recovered.capacity()==capacity && first.text.byte_len()==0);
+    first.destroy(); bytes_equal(recovered.as_slice(),recovered.len(),line_bytes,6);
+    assert(first.calls==8 && first.consumed==6 && ending(first.ending)==1); recovered.destroy();
+    let emoji:[u8;4]=[240,159,153,130];
+    let last:alloc::io::ReadLine=text(alloc::io::read_line<Script>(reader.borrow(),limits(4,7)),emoji,4,7,2,1);
+    let expected:[i32;15]=[1,101,1,102,1,101,1,102,1,101,1,102,1,101,1]; trace(reader.borrow(),expected,15);
+    assert(reader.cursor==10 && reader.fills==8 && reader.consumes==7); last.destroy();
+
+    let invalid:[u8;2]=[255,10]; let prefix:[u8;1]=[255];
+    let ordinary:[i32;8]=[1;8];
+    let source_error:[i32;8]=[1,-3,0,0,0,0,0,0]; let failed:Script=script(view(invalid,2),source_error,ack);
+    let bad_io:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(failed.borrow(),limits(2,3));
+    failure(bad_io.unwrap_err(),-90210,prefix,1,3,1,0);
+    let capped:Script=script(view(invalid,2),ordinary,ack);
+    let bad_cap:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(capped.borrow(),limits(1,3));
+    failure(bad_cap.unwrap_err(),3,prefix,1,3,1,0); assert(capped.cursor==1);
+    let quota:Script=script(view(invalid,2),ordinary,ack);
+    let bad_quota:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(quota.borrow(),limits(2,2));
+    failure(bad_quota.unwrap_err(),2,prefix,1,2,1,0);
+    let eof:Script=script(view(invalid,1),ordinary,ack);
+    let terminal:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(eof.borrow(),limits(1,3));
+    let problem:alloc::io::BufferedReadFailure=terminal.unwrap_err();
+    let text_error:alloc::string::Error=match(problem.cause) { alloc::io::ReadError::Text(value) -> value,_ -> alloc::string::Error::Bounds };
+    assert(match(text_error) { alloc::string::Error::InvalidUtf8(index) -> index==0,_ -> false });
+    failure(problem,4,prefix,1,3,1,2);
+    let terminated:Script=script(view(invalid,2),ordinary,ack);
+    let delimited:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(terminated.borrow(),limits(2,4));
+    failure(delimited.unwrap_err(),4,invalid,2,4,2,1);
+    let coalesced:[i32;8]=[8;8]; let interrupted_consume:[i32;8]=[-1,0,0,0,0,0,0,0];
+    let unacknowledged:Script=script(view(invalid,2),coalesced,interrupted_consume);
+    let rejected_consume:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(unacknowledged.borrow(),limits(2,2));
+    failure(rejected_consume.unwrap_err(),14,invalid,2,2,0,0);
+    assert(unacknowledged.cursor==0 && unacknowledged.fills==1 && unacknowledged.consumes==1);
+    let truncated:[u8;4]=[97,226,130,10]; let partial_scalar:Script=script(view(truncated,4),coalesced,ack);
+    let invalid_scalar:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Script>(partial_scalar.borrow(),limits(4,2));
+    let scalar_failure:alloc::io::BufferedReadFailure=invalid_scalar.unwrap_err();
+    let scalar_error:alloc::string::Error=match(scalar_failure.cause) { alloc::io::ReadError::Text(value) -> value,_ -> alloc::string::Error::Bounds };
+    assert(match(scalar_error) { alloc::string::Error::InvalidUtf8(index) -> index==1,_ -> false });
+    failure(scalar_failure,4,truncated,4,2,4,1);
+    let empty:[u8;0]=[]; let at_eof:Script=script(view(empty,0),ordinary,ack);
+    let nothing:alloc::io::ReadLine=text(alloc::io::read_line<Script>(at_eof.borrow(),limits(0,1)),empty,0,1,2,0); nothing.destroy();
+    let lf:[u8;1]=[10]; let blank:Script=script(view(lf,1),ordinary,ack);
+    let one:alloc::io::ReadLine=text(alloc::io::read_line<Script>(blank.borrow(),limits(1,2)),lf,1,2,1,1); one.destroy();
+}
+
+fn actual_buffered_reader_retains_coalesced_records() {
+    let bytes:[u8;4]=[97,10,98,10]; let inner:core::io::SliceReader=core::io::slice_reader(bytes,4).unwrap();
+    let buffered:alloc::buffered::Reader<core::io::SliceReader> =alloc::buffered::reader<core::io::SliceReader>(inner.borrow(),4).unwrap();
+    let a:[u8;2]=[97,10]; let b:[u8;2]=[98,10]; let empty:[u8;0]=[];
+    let first:alloc::io::ReadBytes=binary(alloc::io::read_until<alloc::buffered::Reader<core::io::SliceReader>>(buffered.borrow(),10,limits(2,2)),a,2,2,1);
+    assert(inner.position()==4 && buffered.buffered().length==2);
+    let second:alloc::io::ReadLine=text(alloc::io::read_line<alloc::buffered::Reader<core::io::SliceReader>>(buffered.borrow(),limits(2,2)),b,2,2,1,2);
+    assert(inner.position()==4 && buffered.buffered().length==0);
+    let eof:alloc::io::ReadLine=text(alloc::io::read_line<alloc::buffered::Reader<core::io::SliceReader>>(buffered.borrow(),limits(0,1)),empty,0,1,2,0);
+    assert(inner.position()==4); assert(buffered.discard()==0 && !buffered.is_active());
+    assert(buffered.discard()==0); bytes_equal(first.bytes.as_slice(),first.bytes.len(),a,2);
+    bytes_equal(second.text.as_bytes(),second.text.byte_len(),b,2);
+    first.destroy(); second.destroy(); eof.destroy();
+}
+fn main() -> i32 {
+    binary_layouts_nested_views_and_repeated_records(); exact_caps_call_boundaries_and_unread_suffix();
+    fills_retry_only_interrupted_and_preserve_prefix(); consume_failure_keeps_copied_unacknowledged_bytes();
+    utf8_terminal_precedence_and_owned_transfer(); actual_buffered_reader_retains_coalesced_records(); return 0;
+}

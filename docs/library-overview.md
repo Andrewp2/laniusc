@@ -1,6 +1,16 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[owned delimiter/line increment](stdlib-owned-delimited.md) composes BufRead
+with retained records, exact fill/consume budgets and terminal UTF-8 adoption.
+Unacknowledged staged bytes, pending provider data and manual cleanup remain
+explicit. All eight registered library tests pass, including the 15,724-case
+model and resource/guarded-failure gates. All 131 application cases and two
+line-sample migrations pass, as do two selected older admission regressions.
+The standalone program and documented examples are verified. This finite
+native Linux x86_64 increment is accepted. Source scanning confirms 21 other
+legacy line-helper consumers remain outside this increment.
+The preceding
 [directed-graph increment](extended-graph.md) defines canonical integer-only
 adjacency, shortest-hop FIFO BFS and lexicographically smallest ready-ID
 ordering. Edge deduplication is independent of numeric sparse coefficient
@@ -297,6 +307,21 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Owned delimiter and line input.**
+
+The [owned-record contract](stdlib-owned-delimited.md) adds BufRead-only
+collection with delimiter-inclusive byte caps and separate fill/consume calls.
+EOF, byte/quota rejection, reserve-before-copy and copy-before-consume progress
+are explicit. Terminal LF/EOF precedes UTF-8 validation and zero-copy String
+adoption; failed consume can leave retained but unacknowledged bytes. A first
+BufRead-only admission, direct contracts, a 15,724-case model and resource
+gates pass across eight registered library tests. All 131 application cases
+and two selected legacy-consumer migrations pass, alongside two selected older
+admission regressions. The documented standalone build/examples pass separately.
+The finite native Linux x86_64 increment is accepted.
+The executable old line helper still has unbounded overlong-record draining;
+its remaining consumers and the full library goal stay open.
 
 **Directed adjacency and dependency ordering.**
 

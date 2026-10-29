@@ -1,0 +1,96 @@
+module app::main;
+import alloc::allocator;
+import alloc::io;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+import std::linux;
+
+struct Probe { input:core::slice::View<u8>, position:i32, fills:i32, consumes:i32 }
+impl Probe { fn borrow(&self) -> &Probe { return self; } }
+fn probe(input:core::slice::View<u8>) -> Probe { return Probe { input:input,position:0,fills:0,consumes:0 }; }
+pub impl core::io::BufRead for Probe {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        self.fills+=1; assert(self.fills<8);
+        if(self.position==0) { return core::result::Ok(self.input); }
+        return core::result::Ok(core::slice::View { values:self.input.values,start:self.input.start+self.position,length:self.input.length-self.position });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && count<=self.input.length-self.position); self.consumes+=1; self.position+=count; return core::result::Ok(count);
+    }
+}
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn limits(bytes:i32,calls:u64) -> alloc::io::ReadLimits { return alloc::io::ReadLimits { max_bytes:bytes,max_calls:calls }; }
+fn kind(error:alloc::io::ReadError) -> i32 {
+    return match(error) { alloc::io::ReadError::ByteLimit->3,alloc::io::ReadError::CallLimit->4,
+        alloc::io::ReadError::InvalidLimits->6,alloc::io::ReadError::Io(error)->io_kind(error),_ ->0 };
+}
+fn io_kind(error:core::io::Error) -> i32 { return match(error) { core::io::Error::InvalidCount->5,_ ->0 }; }
+fn rejected(result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure>,code:i32,calls:u64) {
+    assert(result.is_err()); let failure:alloc::io::BufferedReadFailure=result.unwrap_err();
+    assert(kind(failure.cause)==code && failure.calls==calls && failure.consumed==0 && failure.bytes.is_empty() && failure.ending.is_none());
+    failure.destroy(); failure.destroy(); assert(failure.calls==calls && failure.consumed==0 && failure.ending.is_none());
+}
+fn metadata() {
+    let nowhere:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let starts:[i32;4]=[-1,0,2147483647,1]; let lengths:[i32;4]=[0,-1,1,2147483647]; mark(80); let index:i32=0;
+    while(index<4) {
+        let reader:Probe=probe(core::slice::View { values:absent,start:starts[index],length:lengths[index] });
+        rejected(alloc::io::read_until<Probe>(reader.borrow(),10,limits(0,1)),5,1); assert(reader.fills==1 && reader.consumes==0); index+=1;
+    }
+    let unbacked:core::slice::View<u8> =core::slice::View { values:absent,start:0,length:1 };
+    let capped:Probe=probe(unbacked); rejected(alloc::io::read_until<Probe>(capped.borrow(),10,limits(0,2)),3,1); assert(capped.fills==1 && capped.consumes==0);
+    let quota:Probe=probe(unbacked); rejected(alloc::io::read_until<Probe>(quota.borrow(),10,limits(1,1)),4,1); assert(quota.fills==1 && quota.consumes==0);
+    let never:Probe=probe(unbacked); rejected(alloc::io::read_until<Probe>(never.borrow(),10,limits(1,0)),4,0);
+    rejected(alloc::io::read_until<Probe>(never.borrow(),10,limits(-1,4)),6,0); assert(never.fills==0 && never.consumes==0);
+    let empty:Probe=probe(core::slice::View { values:absent,start:2147483647,length:0 });
+    let line:alloc::io::ReadLine=alloc::io::read_line<Probe>(empty.borrow(),limits(0,1)).unwrap();
+    assert(line.text.is_empty() && line.calls==1 && line.consumed==0 && match(line.ending) { alloc::io::ReadEnding::Eof->true,_ ->false });
+    line.destroy(); line.destroy(); assert(line.calls==1 && line.consumed==0 && empty.fills==1 && empty.consumes==0); mark(112);
+}
+fn tail(mapping:ptr,count:i32) -> core::slice::View<u8> {
+    let begin:ptr=mapping+(4095-(count as usize)); let values:[u8]=core::mem::typed_slice_from_raw_parts<u8>(begin,count+1);
+    return core::slice::View { values:values,start:1,length:count };
+}
+fn input(mapping:ptr,case:i32) -> core::slice::View<u8> {
+    let count:i32=4; if(case==0) { count=0; } if(case==1 || case==2) { count=1; } if(case==6) { count=5; }
+    let bytes:core::slice::View<u8> =tail(mapping,count); bytes.values[0]=211; let index:i32=0;
+    let literals:[u8;5]=[97,98,99,10,90]; if(case==2 || case==5) { literals[0]=10; } if(case==4) { literals[3]=100; }
+    while(index<count) { bytes.values[1+index]=literals[index]; index+=1; } return bytes;
+}
+fn report(case:i32,bytes:&alloc::vec::Vec<u8>,calls:u64,consumed:u64,terminal:i32,reader:&Probe) {
+    let header:[i32;8]=[case,bytes.len(),calls as i32,consumed as i32,terminal,reader.position,reader.fills,reader.consumes];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(header),32)==32);
+    if(bytes.len()>0) { assert(std::io::write_stdout(bytes.storage,bytes.len() as usize)==bytes.len()); }
+}
+fn run(case:i32,reader:&Probe,cap:i32) {
+    mark(67); let result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Probe>(reader,10,limits(cap,8)); mark(86);
+    if(case==6) {
+        assert(result.is_err()); let failure:alloc::io::BufferedReadFailure=result.unwrap_err();
+        assert(kind(failure.cause)==3 && failure.bytes.len()==3 && failure.calls==3 && failure.consumed==3 && failure.ending.is_none());
+        assert(failure.bytes.at(0)==97 && failure.bytes.at(1)==98 && failure.bytes.at(2)==99);
+        report(case,failure.bytes.borrow(),failure.calls,failure.consumed,0,reader); failure.destroy(); failure.destroy(); return;
+    }
+    let record:alloc::io::ReadBytes=result.unwrap(); let terminal:i32=match(record.ending) { alloc::io::ReadEnding::Delimiter->1,alloc::io::ReadEnding::Eof->2 };
+    report(case,record.bytes.borrow(),record.calls,record.consumed,terminal,reader);
+    let calls:u64=record.calls; let consumed:u64=record.consumed;
+    record.destroy(); record.destroy(); assert(record.calls==calls && record.consumed==consumed && match(record.ending) { alloc::io::ReadEnding::Delimiter->terminal==1,alloc::io::ReadEnding::Eof->terminal==2 });
+}
+fn main() -> i32 {
+    let mapping:ptr=alloc::allocator::alloc(8192,8); assert(mapping!=0);
+    let arguments:[std::linux::Argument;3]=[std::linux::Argument::Address(mapping+4096),std::linux::Argument::Word(4096),std::linux::Argument::Word(0)];
+    assert(std::linux::call(10,core::slice::view(arguments,3).unwrap()).unwrap()==0); metadata(); let case:i32=0;
+    while(case<=6) {
+        let bytes:core::slice::View<u8> =input(mapping,case); let reader:Probe=probe(bytes); let cap:i32=bytes.length;
+        if(case==0) { cap=0; } if(case==6) { cap=3; } run(case,reader.borrow(),cap);
+        if(case==6) { assert(reader.position==3); run(7,reader.borrow(),2); assert(reader.position==4); run(8,reader.borrow(),1); assert(reader.position==5); }
+        assert(bytes.values[0]==211); let expected:[u8;5]=[97,98,99,10,90];
+        if(case==2 || case==5) { expected[0]=10; } if(case==4) { expected[3]=100; }
+        let index:i32=0; while(index<bytes.length) { assert(bytes.values[1+index]==expected[index]); index+=1; }
+        case+=1;
+    }
+    alloc::allocator::dealloc(mapping,8192,8); mark(68); return 0;
+}

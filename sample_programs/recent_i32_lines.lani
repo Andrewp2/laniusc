@@ -1,29 +1,50 @@
 // Read decimal i32 lines and print the three most recent values in input order.
-// Exit 2 for empty/overlong input, 3 for malformed/out-of-range input,
+// Exit 2 for an empty/overlong record, 3 for malformed/out-of-range input,
 // 4 for allocation failure, and 5 for signal setup/output failure.
+// Admit 20 payload bytes plus LF per record and 65,536 fill/consume calls
+// across the input. A 1024-byte provider may read ahead; no overlong drain.
 module app::main;
+import alloc::buffered;
 import alloc::deque;
+import alloc::io;
 import core::decimal;
+import core::io;
 import core::result;
 import std::io_byte;
 import std::io_decimal;
-import std::io_line;
 import std::signal;
+import std::stream;
 
 fn main() -> i32 {
     if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
-    let line: [i32;20] = [0;20]; let packed: [u8;20] = [0;20];
+    let input: std::stream::Descriptor = std::stream::stdin();
+    let allocated: core::result::Result<alloc::buffered::Reader<std::stream::Descriptor>, core::io::Error> = alloc::buffered::reader(input.borrow(), 1024);
+    if (allocated.is_err()) { return 4; }
+    let reader: alloc::buffered::Reader<std::stream::Descriptor> = allocated.unwrap();
     let recent: alloc::deque::Deque<i32> = alloc::deque::new();
+    let calls: u64 = 0;
     while (true) {
-        let length: i32 = std::io_line::read_stdin_lf_line_into_i32(line,20);
-        if (length == -1) { break; }
-        if (length <= 0) { recent.destroy(); return 2; }
-        let index: i32 = 0; while (index < length) { packed[index] = line[index] as u8; index += 1; }
-        let parsed: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32(packed,length);
-        if (core::result::is_err(parsed)) { recent.destroy(); return 3; }
+        let limits: alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes: 21, max_calls: 65536 - calls };
+        let received: core::result::Result<alloc::io::ReadBytes, alloc::io::BufferedReadFailure> = alloc::io::read_until(reader.borrow(), 10, limits);
+        if (received.is_err()) {
+            let failure: alloc::io::BufferedReadFailure = received.unwrap_err();
+            let status: i32 = match (failure.cause) { alloc::io::ReadError::Storage(storage_error) -> 4, _ -> 2 };
+            failure.destroy(); reader.discard(); recent.destroy();
+            return status;
+        }
+        let record: alloc::io::ReadBytes = received.unwrap();
+        calls += record.calls;
+        let length: i32 = record.bytes.len();
+        if (length == 0) { record.destroy(); break; }
+        if (record.bytes.at(length - 1) == 10) { length -= 1; }
+        if (length == 0 || length > 20) { record.destroy(); reader.discard(); recent.destroy(); return 2; }
+        let parsed: core::result::Result<i32,core::decimal::ParseError> = core::decimal::parse_i32(record.bytes.as_slice(),length);
+        record.destroy();
+        if (core::result::is_err(parsed)) { reader.discard(); recent.destroy(); return 3; }
         if (recent.len() == 3) { recent.pop_front(); }
-        if (core::result::is_err(recent.try_push_back(core::result::unwrap(parsed)))) { recent.destroy(); return 4; }
+        if (core::result::is_err(recent.try_push_back(core::result::unwrap(parsed)))) { reader.discard(); recent.destroy(); return 4; }
     }
+    reader.discard();
     let index: i32 = 0;
     while (index < recent.len()) {
         if (index > 0 && !std::io_byte::write_stdout_byte(32)) { recent.destroy(); return 5; }

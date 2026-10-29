@@ -131,13 +131,17 @@
       "guides": [
         "docs/stdlib-streams.md",
         "docs/stdlib-owned-input.md",
-        "docs/stdlib-input-stats.md"
+        "docs/stdlib-input-stats.md",
+        "docs/stdlib-owned-delimited.md",
+        "docs/stdlib-line-report.md"
       ],
-      "note": "Buffer retains its existing owned atomic Write-sink contract. New read_to_end/read_to_string compose only core::io::Read with byte and total-call limits. Every delegated call, including Interrupted, EOF and the one-byte cap probe, spends quota before delegation; quota rejection precedes reservation. Capacity grows geometrically before ordinary reads, so allocation failure consumes no additional input. Failures retain admitted bytes, exact calls and only a confirmed over-cap byte in extra. Text validation follows actual EOF, then adopts Vec backing without copying. Reader duration/internal work and manual provider/failure ownership remain separate. All six new library tests and all four input-statistics groups/111 cases pass on native Linux x86_64, including the 17,542-case model, geometric growth and seven reached allocation failures. Historical stream receipts do not establish the additions.",
+      "note": "Buffer retains its atomic Write-sink contract. Whole-input Read collectors retain prefix/probe bytes and reserve before reads; their preceding six-test/111-case receipts keep the source scope in the linked guide. New owned delimiter/line collection requires only canonical BufRead. Record caps include delimiters; quotas count actual fill and consume separately, including errors and EOF, rather than internal Read/host calls or time. Returned metadata precedes EOF/consume-quota checks; empty EOF precedes ByteLimit. Copy occurs before consume, so failure can retain an unacknowledged suffix and only exact prior acknowledgements count as consumed. LF/CR and NUL remain; terminal UTF-8 adoption transfers backing without copying and preserves raw terminal failures. Owners/provider views require manual cleanup and inactive aliases. All eight registered library tests pass on native Linux x86_64, including the 15,724-case model, large records, seven reached reservation failures and guarded observations. All 131 application cases, two migrated samples and two selected older admission regressions pass. Standalone build/examples pass separately and add no case count. Historical fixed-delimiter/whole-input receipts retain their source/API scopes.",
       "declarations": {
         "default_read_limits": "Returns the 16 MiB / 65,536-call profile without allocation or Read calls.",
         "read_to_end": "Borrows a Read-only provider and returns exactly confirmed bytes only after actual EOF. Negative byte limits return InvalidLimits; zero calls returns CallLimit, before allocation/delegation. Retains prefix/probe/call facts in ReadFailure on error; reserves the complete next ordinary request before reading.",
-        "read_to_string": "Uses the same bounded collection engine, observes EOF before validating UTF-8, and adopts backing through alloc::string::from_utf8_vec. Text failure retains all raw bytes and actual calls."
+        "read_to_string": "Uses the same bounded collection engine, observes EOF before validating UTF-8, and adopts backing through alloc::string::from_utf8_vec. Text failure retains all raw bytes and actual calls.",
+        "read_until": "Requires only BufRead; returns a fresh delimiter-inclusive Vec record or retained BufferedReadFailure. Counts actual fill/consume calls; retries only Interrupted fill. Metadata and consume quota precede scanning, reservation and copy. Byte cap peeks through fill without consuming pending data; copied bytes can exceed acknowledged consumption on failure.",
+        "read_line": "Uses the same owned binary engine with LF, preserving LF/CR/NUL. Only successful terminal delimiter/EOF triggers UTF-8 validation and zero-copy String adoption. Text failure retains the whole raw record with Some(ending); binary failures use None and preserve exact acknowledged progress."
       }
     },
     "alloc::path": {

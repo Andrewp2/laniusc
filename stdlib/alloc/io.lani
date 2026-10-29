@@ -4,6 +4,7 @@ module alloc::io;
 import core::io;
 import core::option;
 import core::result;
+import core::slice;
 import alloc::string;
 import alloc::vec;
 
@@ -137,6 +138,153 @@ pub fn read_to_string<R>(reader: &R, limits: ReadLimits)
         return core::result::Err(read_failure(ReadError::Text(error), collected.bytes, collected.calls));
     }
     return core::result::Ok(core::result::unwrap(text));
+}
+
+// Owned buffered records include their delimiter and retain exact direct
+// fill/consume counts. Endings never imply that a provider caches EOF.
+pub enum ReadEnding { Delimiter, Eof }
+pub struct ReadBytes {
+    bytes: alloc::vec::Vec<u8>, ending: ReadEnding, calls: u64, consumed: u64
+}
+pub struct ReadLine {
+    text: alloc::string::String, ending: ReadEnding, calls: u64, consumed: u64
+}
+pub struct BufferedReadFailure {
+    cause: ReadError, bytes: alloc::vec::Vec<u8>, calls: u64, consumed: u64,
+    ending: core::option::Option<ReadEnding>
+}
+
+pub impl ReadBytes {
+    pub fn borrow(&self) -> &ReadBytes { return self; }
+    pub fn destroy(&self) { self.bytes.destroy(); }
+}
+pub impl ReadLine {
+    pub fn borrow(&self) -> &ReadLine { return self; }
+    pub fn destroy(&self) { self.text.destroy(); }
+}
+pub impl BufferedReadFailure {
+    pub fn borrow(&self) -> &BufferedReadFailure { return self; }
+    // Retained bytes may include a staged suffix not acknowledged by consume.
+    // Release only backing; historical cause/ending/progress stay inspectable.
+    pub fn destroy(&self) { self.bytes.destroy(); }
+}
+
+fn buffered_failure(cause: ReadError, bytes: alloc::vec::Vec<u8>, calls: u64, consumed: u64)
+    -> BufferedReadFailure {
+    return BufferedReadFailure {
+        cause: cause, bytes: bytes, calls: calls, consumed: consumed,
+        ending: core::option::None()
+    };
+}
+
+// One binary engine serves arbitrary delimiters and LF text. The borrowed
+// provider remains open; errors neither drain nor roll back its pending data.
+fn collect_delimited<B>(reader: &B, delimiter: u8, limits: ReadLimits)
+    -> core::result::Result<ReadBytes,BufferedReadFailure> where B: core::io::BufRead {
+    let bytes: alloc::vec::Vec<u8> = alloc::vec::new();
+    let calls: u64 = 0;
+    let consumed: u64 = 0;
+    if (limits.max_bytes < 0) {
+        return core::result::Err(buffered_failure(ReadError::InvalidLimits,bytes,calls,consumed));
+    }
+    while (true) {
+        if (calls >= limits.max_calls) {
+            return core::result::Err(buffered_failure(ReadError::CallLimit,bytes,calls,consumed));
+        }
+        calls += 1;
+        let filled: core::result::Result<core::slice::View<u8>,core::io::Error> = reader.fill_buf();
+        if (filled.is_err()) {
+            let error: core::io::Error = filled.unwrap_err();
+            if (core::io::is_interrupted(error)) { continue; }
+            return core::result::Err(buffered_failure(ReadError::Io(error),bytes,calls,consumed));
+        }
+        let available: core::slice::View<u8> = filled.unwrap();
+        // Successful metadata is admitted even for an empty view or when no
+        // consume call remains. No payload access precedes these checks.
+        if (!core::io::valid_range(available.start,available.length)) {
+            return core::result::Err(buffered_failure(ReadError::Io(core::io::Error::InvalidCount),bytes,calls,consumed));
+        }
+        if (available.length == 0) {
+            return core::result::Ok(ReadBytes {
+                bytes: bytes, ending: ReadEnding::Eof, calls: calls, consumed: consumed
+            });
+        }
+        let remaining: i32 = limits.max_bytes-bytes.len();
+        if (remaining == 0) {
+            // A nonempty observation at the cap is not consumed or inspected.
+            return core::result::Err(buffered_failure(ReadError::ByteLimit,bytes,calls,consumed));
+        }
+        if (calls >= limits.max_calls) {
+            return core::result::Err(buffered_failure(ReadError::CallLimit,bytes,calls,consumed));
+        }
+        let amount: i32 = available.length;
+        if (amount > remaining) { amount = remaining; }
+        let selected: i32 = 0;
+        let found: bool = false;
+        while (selected < amount && !found) {
+            let byte: u8 = available.values[available.start+selected];
+            selected += 1;
+            if (byte == delimiter) { found = true; }
+        }
+        let reserved: core::result::Result<i32,alloc::vec::Error> = reserve_read(bytes.borrow(),selected,limits.max_bytes);
+        if (reserved.is_err()) {
+            let error: alloc::vec::Error = reserved.unwrap_err();
+            return core::result::Err(buffered_failure(ReadError::Storage(error),bytes,calls,consumed));
+        }
+        let index: i32 = 0;
+        while (index < selected) {
+            // Complete selection is reserved, so these checked pushes cannot
+            // allocate or fail. Keep the fill borrow live through this copy.
+            bytes.try_push(available.values[available.start+index]).unwrap();
+            index += 1;
+        }
+        // No further use of available or filled: consume may invalidate them.
+        calls += 1;
+        let acknowledged: core::result::Result<i32,core::io::Error> = reader.consume(selected);
+        if (acknowledged.is_err()) {
+            let error: core::io::Error = acknowledged.unwrap_err();
+            // Even Interrupted is terminal. Staged bytes are retained, without
+            // claiming that this rejected request advanced logical input.
+            return core::result::Err(buffered_failure(ReadError::Io(error),bytes,calls,consumed));
+        }
+        if (acknowledged.unwrap() != selected) {
+            return core::result::Err(buffered_failure(ReadError::Io(core::io::Error::InvalidCount),bytes,calls,consumed));
+        }
+        consumed += selected as u64;
+        if (found) {
+            return core::result::Ok(ReadBytes {
+                bytes: bytes, ending: ReadEnding::Delimiter, calls: calls, consumed: consumed
+            });
+        }
+    }
+    return core::result::Ok(ReadBytes {
+        bytes: bytes, ending: ReadEnding::Eof, calls: calls, consumed: consumed
+    });
+}
+
+pub fn read_until<B>(reader: &B, delimiter: u8, limits: ReadLimits)
+    -> core::result::Result<ReadBytes,BufferedReadFailure> where B: core::io::BufRead {
+    return collect_delimited(reader,delimiter,limits);
+}
+
+pub fn read_line<B>(reader: &B, limits: ReadLimits)
+    -> core::result::Result<ReadLine,BufferedReadFailure> where B: core::io::BufRead {
+    let result: core::result::Result<ReadBytes,BufferedReadFailure> = collect_delimited(reader,10,limits);
+    if (result.is_err()) { return core::result::Err(result.unwrap_err()); }
+    let record: ReadBytes = result.unwrap();
+    // Only a terminal delimiter/EOF triggers text validation. Failed adoption
+    // preserves every raw byte; success transfers that same backing/capacity.
+    let text: core::result::Result<alloc::string::String,alloc::string::Error> = alloc::string::from_utf8_vec(record.bytes.borrow());
+    if (text.is_err()) {
+        return core::result::Err(BufferedReadFailure {
+            cause: ReadError::Text(text.unwrap_err()), bytes: record.bytes,
+            calls: record.calls, consumed: record.consumed,
+            ending: core::option::Some(record.ending)
+        });
+    }
+    return core::result::Ok(ReadLine {
+        text: text.unwrap(), ending: record.ending, calls: record.calls, consumed: record.consumed
+    });
 }
 
 pub struct Buffer { bytes: alloc::vec::Vec<u8>, maximum: i32 }

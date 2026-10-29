@@ -1,0 +1,114 @@
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Source { data:alloc::vec::Vec<u8>, position:i32, chunk:i32, visible:i32, fills:i32, consumes:i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+struct Observed { bytes:alloc::vec::Vec<u8>, cause:i32, calls:u64, consumed:u64, ending:i32, offset:i32 }
+impl Observed { fn borrow(&self) -> &Observed { return self; } }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn ending(value:alloc::io::ReadEnding) -> i32 { return match(value) { alloc::io::ReadEnding::Delimiter->1,alloc::io::ReadEnding::Eof->2 }; }
+fn maybe_ending(value:core::option::Option<alloc::io::ReadEnding>) -> i32 { return match(value) { Some(value)->ending(value),None->0 }; }
+fn data_at(mode:i32,index:i32) -> u8 {
+    if(index>=1048576) { let tail:[u8;5]=[78,69,88,84,10]; return tail[index-1048576]; }
+    if(index==1048575) { return 10; }
+    if(mode==0 || mode==3) { let value:i32=(index*37+index/251)%255; if(value>=10) { value+=1; } return value as u8; }
+    if(mode==2 && index==1300) { return 255; }
+    if(index>0 && index%1024==0) { return 162; }
+    if(index%1024==1023) { return 194; }
+    if(index%17==0) { return 0; }
+    return (65+index%26) as u8;
+}
+pub impl core::io::BufRead for Source {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        mark(66); self.fills+=1; assert(self.fills<4096);
+        let count:i32=self.data.len()-self.position; if(count>self.chunk) { count=self.chunk; }
+        self.visible=count;
+        if(count==0) { mark(69); }
+        return core::result::Ok(core::slice::View { values:self.data.as_slice(),start:self.position,length:count });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && count<=self.visible); mark(85); self.consumes+=1;
+        self.position+=count; self.visible-=count;
+        if(self.data.at(self.position-1)==10) { mark(76); }
+        return core::result::Ok(count);
+    }
+}
+fn storage(error:alloc::vec::Error) -> i32 { assert(match(error) { alloc::vec::Error::AllocationFailed->true,_ ->false }); return 1; }
+fn text_offset(error:alloc::string::Error) -> i32 { let offset:i32=match(error) { alloc::string::Error::InvalidUtf8(index)->index,_ -> -1 }; assert(offset==1300); return offset; }
+fn failed(failure:alloc::io::BufferedReadFailure) -> Observed {
+    let cause:i32=match(failure.cause) { alloc::io::ReadError::Storage(error)->storage(error),alloc::io::ReadError::Text(error)->2,_ ->0 };
+    assert(cause!=0); let offset:i32=match(failure.cause) { alloc::io::ReadError::Text(error)->text_offset(error),_ -> -1 };
+    let calls:u64=failure.calls; let consumed:u64=failure.consumed; let terminal:i32=maybe_ending(failure.ending);
+    let cursor:alloc::vec::IntoIter<u8> =failure.bytes.take_iter(); let bytes:alloc::vec::Vec<u8> =cursor.take_remaining();
+    failure.destroy(); failure.destroy();
+    assert(failure.bytes.is_empty() && failure.bytes.capacity()==0 && failure.calls==calls && failure.consumed==consumed && maybe_ending(failure.ending)==terminal);
+    return Observed { bytes:bytes,cause:cause,calls:calls,consumed:consumed,ending:terminal,offset:offset };
+}
+fn collect(source:&Source,maximum:i32,text:bool) -> Observed {
+    let limits:alloc::io::ReadLimits=alloc::io::ReadLimits { max_bytes:maximum,max_calls:8192 }; mark(67);
+    if(text) {
+        let result:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Source>(source,limits); mark(86);
+        if(result.is_err()) { let failure:alloc::io::BufferedReadFailure=result.unwrap_err(); return failed(failure); }
+        let line:alloc::io::ReadLine=result.unwrap(); let calls:u64=line.calls; let consumed:u64=line.consumed; let terminal:i32=ending(line.ending);
+        let pointer:ptr=line.text.bytes.storage; let capacity:i32=line.text.capacity(); mark(80);
+        let bytes:alloc::vec::Vec<u8> =line.text.into_bytes();
+        assert(bytes.storage==pointer && bytes.capacity()==capacity && line.text.is_empty() && line.text.capacity()==0);
+        line.destroy(); line.destroy(); assert(line.calls==calls && line.consumed==consumed && ending(line.ending)==terminal); mark(112);
+        return Observed { bytes:bytes,cause:0,calls:calls,consumed:consumed,ending:terminal,offset:-1 };
+    }
+    let result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Source>(source,10,limits); mark(86);
+    if(result.is_err()) { let failure:alloc::io::BufferedReadFailure=result.unwrap_err(); return failed(failure); }
+    let record:alloc::io::ReadBytes=result.unwrap(); let calls:u64=record.calls; let consumed:u64=record.consumed; let terminal:i32=ending(record.ending);
+    let cursor:alloc::vec::IntoIter<u8> =record.bytes.take_iter(); let bytes:alloc::vec::Vec<u8> =cursor.take_remaining();
+    record.destroy(); record.destroy(); assert(record.calls==calls && record.consumed==consumed && ending(record.ending)==terminal);
+    return Observed { bytes:bytes,cause:0,calls:calls,consumed:consumed,ending:terminal,offset:-1 };
+}
+fn check(bytes:&alloc::vec::Vec<u8>,mode:i32,start:i32,repaired:bool) {
+    let index:i32=0; while(index<bytes.len()) { let expected:u8=data_at(mode,start+index); if(repaired && start+index==1300) { expected=65; } assert(bytes.at(index)==expected); index+=1; }
+}
+fn report(stage:i32,mode:i32,value:&Observed,source:&Source) {
+    let header:[i32;12]=[stage,mode,value.cause,value.bytes.len(),value.calls as i32,value.consumed as i32,value.ending,source.position,source.fills,source.consumes,value.bytes.capacity(),value.offset];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(header),48)==48);
+    let written:i32=0; let attempts:i32=0;
+    while(written<value.bytes.len()) { assert(attempts<1024); attempts+=1; let count:i32=value.bytes.len()-written;
+        let used:i32=std::io::write_stdout(value.bytes.storage+(written as usize),count as usize); assert(used>0 && used<=count); written+=used; }
+}
+fn repair(value:&Observed,mode:i32) {
+    let pointer:ptr=value.bytes.storage; let capacity:i32=value.bytes.capacity(); mark(80); value.bytes.set(1300,65).unwrap();
+    let result:core::result::Result<alloc::string::String,alloc::string::Error> =alloc::string::from_utf8_vec(value.bytes.borrow());
+    let text:alloc::string::String=result.unwrap(); assert(text.bytes.storage==pointer && text.capacity()==capacity && value.bytes.is_empty() && value.bytes.capacity()==0);
+    let bytes:alloc::vec::Vec<u8> =text.into_bytes(); assert(bytes.storage==pointer && bytes.capacity()==capacity && text.is_empty() && text.capacity()==0);
+    check(bytes.borrow(),mode,0,true); text.destroy(); value.bytes.destroy(); mark(112); bytes.destroy(); bytes.destroy();
+}
+fn main() -> i32 {
+    let config:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(config),1)==1); let mode:i32=config[0]&255; assert(mode>=0 && mode<=3);
+    let bytes:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(1048581).unwrap(); let index:i32=0;
+    mark(80); while(index<1048581) { bytes.try_push(data_at(mode,index)).unwrap(); index+=1; } assert(core::mem::slice_stride(bytes.as_slice())==1); mark(112);
+    let chunk:i32=1024; if(mode==3) { chunk=1048581; }
+    let source:Source=Source { data:bytes,position:0,chunk:chunk,visible:0,fills:0,consumes:0 };
+    let first:Observed=collect(source.borrow(),1048576,mode==1 || mode==2);
+    assert(first.bytes.len()==source.position && first.consumed==(source.position as u64)); check(first.bytes.borrow(),mode,0,false); report(0,mode,first.borrow(),source.borrow());
+    if(first.cause==1) {
+        assert(first.ending==0); let start:i32=source.position;
+        let recovered:Observed=collect(source.borrow(),1048576-start,false);
+        assert(recovered.cause==0 && recovered.ending==1 && recovered.bytes.len()==1048576-start && recovered.consumed==((1048576-start) as u64) && source.position==1048576);
+        check(first.bytes.borrow(),mode,0,false); check(recovered.bytes.borrow(),mode,start,false); report(1,mode,recovered.borrow(),source.borrow()); recovered.bytes.destroy(); recovered.bytes.destroy();
+    }
+    if(first.cause==2) { assert(first.ending==1 && first.offset==1300); repair(first.borrow(),mode); }
+    assert(source.position==1048576); first.bytes.destroy(); first.bytes.destroy();
+    // The first delimiter consumes no later buffered byte, including when one
+    // fill exposed the entire following record before the first scan.
+    let next:Observed=collect(source.borrow(),5,false); assert(next.cause==0 && next.bytes.len()==5 && next.consumed==5 && next.ending==1 && source.position==1048581);
+    check(next.bytes.borrow(),mode,1048576,false); report(2,mode,next.borrow(),source.borrow()); next.bytes.destroy(); next.bytes.destroy();
+    let eof:Observed=collect(source.borrow(),0,false); assert(eof.cause==0 && eof.bytes.is_empty() && eof.consumed==0 && eof.calls==1 && eof.ending==2);
+    report(3,mode,eof.borrow(),source.borrow()); eof.bytes.destroy();
+    mark(80); check(source.data.borrow(),mode,0,false); mark(112); source.data.destroy(); mark(68); return 0;
+}

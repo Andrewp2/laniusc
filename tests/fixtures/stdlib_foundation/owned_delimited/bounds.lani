@@ -1,0 +1,84 @@
+module app::main;
+import alloc::io;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+
+// All success views have inaccessible backing. Only descriptor admission,
+// actual empty EOF and quota/cap rejection may occur, never a byte read.
+struct Poison { action:i32, fills:i32, consumes:i32 }
+impl Poison { fn borrow(&self) -> &Poison { return self; } }
+pub impl core::io::BufRead for Poison {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        self.fills+=1; let nowhere:ptr=0; let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+        if(self.action==-1) { return core::result::Err(core::io::Error::Interrupted); }
+        if(self.action==1) { return core::result::Ok(core::slice::View { values:bytes,start:-1,length:0 }); }
+        if(self.action==2) { return core::result::Ok(core::slice::View { values:bytes,start:0,length:-1 }); }
+        if(self.action==3) { return core::result::Ok(core::slice::View { values:bytes,start:2147483647,length:1 }); }
+        if(self.action==4) { return core::result::Ok(core::slice::View { values:bytes,start:2147483647,length:0 }); }
+        if(self.action==5) { return core::result::Ok(core::slice::View { values:bytes,start:0,length:1 }); }
+        if(self.action==6) { return core::result::Ok(core::slice::View { values:bytes,start:0,length:2147483647 }); }
+        assert(self.action==0); return core::result::Ok(core::slice::View { values:bytes,start:0,length:0 });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        self.consumes+=1; assert(false); return core::result::Ok(count);
+    }
+}
+fn source(action:i32) -> Poison { return Poison { action:action,fills:0,consumes:0 }; }
+fn limits(bytes:i32,calls:u64) -> alloc::io::ReadLimits { return alloc::io::ReadLimits { max_bytes:bytes,max_calls:calls }; }
+fn cause(value:alloc::io::ReadError) -> i32 {
+    let io:core::io::Error=core::io::Error::InvalidInput;
+    let is_io:bool=match(value) { alloc::io::ReadError::Io(ignored) -> true,_ -> false };
+    if(is_io) {
+        io=match(value) { alloc::io::ReadError::Io(error) -> error,_ -> core::io::Error::InvalidInput };
+        return match(io) { core::io::Error::InvalidCount -> 4,_ -> 99 };
+    }
+    return match(value) { alloc::io::ReadError::InvalidLimits -> 1,alloc::io::ReadError::CallLimit -> 2,alloc::io::ReadError::ByteLimit -> 3,_ -> 99 };
+}
+fn rejected(value:alloc::io::BufferedReadFailure,expected:i32,calls:u64) {
+    assert(cause(value.cause)==expected && value.calls==calls && value.consumed==0 && value.ending.is_none());
+    assert(value.bytes.len()==0 && value.bytes.capacity()==0 && value.bytes.storage==0); value.destroy(); value.destroy();
+}
+fn main() -> i32 {
+    let defaults:alloc::io::ReadLimits=alloc::io::default_read_limits();
+    assert(defaults.max_bytes==16777216 && defaults.max_calls==65536);
+    let never:Poison=source(5);
+    let invalid_binary:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Poison>(never.borrow(),0,limits(-1,0));
+    let invalid_text:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Poison>(never.borrow(),limits(-2147483648,18446744073709551615));
+    rejected(invalid_binary.unwrap_err(),1,0); rejected(invalid_text.unwrap_err(),1,0);
+    let no_calls:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Poison>(never.borrow(),0,limits(0,0));
+    let no_line_calls:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Poison>(never.borrow(),limits(2147483647,0));
+    rejected(no_calls.unwrap_err(),2,0); rejected(no_line_calls.unwrap_err(),2,0);
+    assert(never.fills==0 && never.consumes==0);
+    let action:i32=0;
+    while(action<=6) {
+        let binary:Poison=source(action); let text:Poison=source(action);
+        let bytes:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Poison>(binary.borrow(),255,limits(0,1));
+        let line:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Poison>(text.borrow(),limits(0,1));
+        if(action==0 || action==4) {
+            let record:alloc::io::ReadBytes=bytes.unwrap(); let string:alloc::io::ReadLine=line.unwrap();
+            assert(record.bytes.len()==0 && record.calls==1 && record.consumed==0 && record.bytes.storage==0);
+            assert(string.text.byte_len()==0 && string.calls==1 && string.consumed==0 && string.text.capacity()==0);
+            assert(match(record.ending) { alloc::io::ReadEnding::Eof -> true,_ -> false });
+            assert(match(string.ending) { alloc::io::ReadEnding::Eof -> true,_ -> false }); record.destroy(); string.destroy();
+        } else {
+            let expected:i32=4; if(action>=5) { expected=3; }
+            rejected(bytes.unwrap_err(),expected,1); rejected(line.unwrap_err(),expected,1);
+        }
+        assert(binary.fills==1 && text.fills==1 && binary.consumes==0 && text.consumes==0);
+        let last_call:Poison=source(action);
+        let unavailable:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Poison>(last_call.borrow(),0,limits(1,1));
+        if(action==0 || action==4) { let record:alloc::io::ReadBytes=unavailable.unwrap(); record.destroy(); }
+        else { let expected:i32=4; if(action>=5) { expected=2; } rejected(unavailable.unwrap_err(),expected,1); }
+        assert(last_call.fills==1 && last_call.consumes==0); action+=1;
+    }
+    let interrupted:Poison=source(-1);
+    let retried:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =alloc::io::read_until<Poison>(interrupted.borrow(),0,limits(1,1));
+    rejected(retried.unwrap_err(),2,1); assert(interrupted.fills==1 && interrupted.consumes==0);
+    let maximum:Poison=source(0);
+    let admitted:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =alloc::io::read_line<Poison>(maximum.borrow(),limits(2147483647,18446744073709551615));
+    let empty:alloc::io::ReadLine=admitted.unwrap();
+    assert(empty.calls==1 && empty.consumed==0 && empty.text.byte_len()==0 && maximum.fills==1); empty.destroy();
+    return 0;
+}

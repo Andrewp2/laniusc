@@ -1,0 +1,71 @@
+module app::main;
+import alloc::io;
+import alloc::string;
+import core::io;
+import core::option;
+import core::result;
+import core::slice;
+
+// This provider intentionally has no Read implementation. Every fill exposes
+// the entire still-buffered suffix, so record boundaries must govern consume.
+struct Buffered { data:[u8], cursor:i32, fills:i32, consumes:i32 }
+impl Buffered { fn borrow(&self) -> &Buffered { return self; } }
+pub impl core::io::BufRead for Buffered {
+    pub fn fill_buf(&self) -> core::result::Result<core::slice::View<u8>,core::io::Error> {
+        self.fills+=1;
+        return core::result::Ok(core::slice::View { values:self.data,start:self.cursor,length:6-self.cursor });
+    }
+    pub fn consume(&self,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(count>0 && count<=6-self.cursor); self.consumes+=1; self.cursor+=count;
+        return core::result::Ok(count);
+    }
+}
+fn binary<B>(reader:&B) -> core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure>
+    where B:core::io::BufRead {
+    return alloc::io::read_until<B>(reader,0,alloc::io::ReadLimits { max_bytes:2,max_calls:2 });
+}
+fn line<B>(reader:&B) -> core::result::Result<core::option::Option<alloc::io::ReadLine>,alloc::io::BufferedReadFailure>
+    where B:core::io::BufRead {
+    let read:core::result::Result<alloc::io::ReadLine,alloc::io::BufferedReadFailure> =
+        alloc::io::read_line<B>(reader,alloc::io::ReadLimits { max_bytes:2,max_calls:2 });
+    if(read.is_err()) { return core::result::Err(read.unwrap_err()); }
+    return core::result::Ok(core::option::Some(read.unwrap()));
+}
+fn delimiter(ending:alloc::io::ReadEnding) -> bool {
+    return match(ending) { alloc::io::ReadEnding::Delimiter -> true, _ -> false };
+}
+fn main() -> i32 {
+    let source:[u8;6]=[97,0,98,10,255,10];
+    let reader:Buffered=Buffered { data:source,cursor:0,fills:0,consumes:0 };
+    let first_result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =binary<Buffered>(reader.borrow());
+    let first:alloc::io::ReadBytes=first_result.unwrap(); let bytes:[u8]=first.bytes.as_slice();
+    assert(first.bytes.len()==2 && bytes[0]==97 && bytes[1]==0);
+    assert(first.calls==2 && first.consumed==2 && delimiter(first.ending));
+    assert(reader.cursor==2 && reader.fills==1 && reader.consumes==1);
+    let second_result:core::result::Result<core::option::Option<alloc::io::ReadLine>,alloc::io::BufferedReadFailure> =line<Buffered>(reader.borrow());
+    let second:alloc::io::ReadLine=second_result.unwrap().unwrap(); let text:[u8]=second.text.as_bytes();
+    assert(second.text.byte_len()==2 && second.text.scalar_count()==2 && text[0]==98 && text[1]==10);
+    assert(second.calls==2 && second.consumed==2 && delimiter(second.ending));
+    assert(reader.cursor==4 && reader.fills==2 && reader.consumes==2);
+    let third:core::result::Result<core::option::Option<alloc::io::ReadLine>,alloc::io::BufferedReadFailure> =line<Buffered>(reader.borrow());
+    assert(third.is_err()); let failure:alloc::io::BufferedReadFailure=third.unwrap_err();
+    let error:alloc::string::Error=match(failure.cause) { alloc::io::ReadError::Text(value) -> value, _ -> alloc::string::Error::Bounds };
+    assert(match(error) { alloc::string::Error::InvalidUtf8(index) -> index==0, _ -> false });
+    assert(failure.bytes.len()==2 && failure.bytes.as_slice()[0]==255 && failure.bytes.as_slice()[1]==10);
+    assert(failure.calls==2 && failure.consumed==2 && delimiter(failure.ending.unwrap()));
+    assert(reader.cursor==6 && reader.fills==3 && reader.consumes==3);
+    let eof_result:core::result::Result<alloc::io::ReadBytes,alloc::io::BufferedReadFailure> =
+        alloc::io::read_until<Buffered>(reader.borrow(),0,alloc::io::ReadLimits { max_bytes:0,max_calls:1 });
+    let eof:alloc::io::ReadBytes=eof_result.unwrap();
+    assert(eof.bytes.len()==0 && eof.calls==1 && eof.consumed==0 && !delimiter(eof.ending));
+    assert(reader.cursor==6 && reader.fills==4 && reader.consumes==3);
+    assert(first.borrow().calls==2 && second.borrow().calls==2 && failure.borrow().calls==2);
+    first.destroy(); second.destroy(); failure.destroy(); eof.destroy();
+    first.destroy(); second.destroy(); failure.destroy(); eof.destroy();
+    assert(first.bytes.len()==0 && second.text.byte_len()==0 && failure.bytes.len()==0);
+    assert(first.calls==2 && first.consumed==2 && delimiter(first.ending));
+    assert(second.calls==2 && second.consumed==2 && delimiter(second.ending));
+    assert(failure.calls==2 && failure.consumed==2 && delimiter(failure.ending.unwrap()));
+    assert(source[0]==97 && source[1]==0 && source[2]==98 && source[3]==10 && source[4]==255 && source[5]==10);
+    return 0;
+}
