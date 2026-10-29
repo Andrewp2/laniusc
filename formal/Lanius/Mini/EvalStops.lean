@@ -1317,6 +1317,192 @@ theorem stops_returnUnit : SrcStops sp mp n .returnUnit := by
   simp only [SrcStmt.toCore, execStmt, Failing] at this
   exact absurd within (Nat.not_le.mpr this)
 
+/-! ### `slice[index] = value` with effectful operands -/
+
+section SetIndex
+
+variable {P : Core.Program} {k : Nat} {st : State} {slice : Nat} {idx e : Core.Expr} {element : Core.Ty}
+  {address length root : Nat}
+
+theorem setIndex_idx_trap {r : Lanius.Trap} {s : State}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.rawSlice element address length) } st)
+    (h : evalExpr (k + 1) P st idx = .trapped r s) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s := by
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [h] at hout
+  exact hout.symm
+
+theorem setIndex_address_undef {iv : Value} {st1 : State} {pos : Nat} {r : Lanius.Trap}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.rawSlice element address length) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (located : Semantics.rawSliceElementAddress? P element address pos = .error r) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r st1 ∧ undefinedTrap r = true := by
+  refine ⟨?_, rawSliceElementAddress_undef P element address pos r located⟩
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [idxRun, posOk, lt, if_true, decide_true, located] at hout
+  exact hout.symm
+
+theorem setIndex_value_trap {iv : Value} {st1 : State} {pos at_ : Nat} {r : Lanius.Trap} {s : State}
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.rawSlice element address length) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (located : Semantics.rawSliceElementAddress? P element address pos = .ok at_)
+    (h : evalExpr (k + 2) P st1 e = .trapped r s) :
+    evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s := by
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [idxRun, posOk, lt, if_true, decide_true, located, h] at hout
+  exact hout.symm
+
+theorem setIndex_value_done {iv : Value} {st1 : State} {pos at_ : Nat} {right : Value} {st2 : State}
+    (views : st2.i32ArrayViews = [])
+    (base : Semantics.evalPlace (k + 1) P st .read (.local slice) =
+      .done { root, projections := [], value := some (.rawSlice element address length) } st)
+    (idxRun : evalExpr (k + 1) P st idx = .done iv st1) (posOk : Semantics.integerIndex iv = .ok pos)
+    (lt : pos < length) (located : Semantics.rawSliceElementAddress? P element address pos = .ok at_)
+    (eRun : evalExpr (k + 2) P st1 e = .done right st2) :
+    (∃ st', evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .done .unit st' ∧
+      st'.heap.nextAddress = st2.heap.nextAddress) ∨
+    ∃ r s, evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = .trapped r s ∧
+      undefinedTrap r = true := by
+  generalize hout : evalExpr (k + 3) P st (.assign .set (.index (.local slice) idx) e) = out
+  rw [evalExpr] at hout
+  rw [Semantics.evalPlace] at hout
+  rw [base] at hout
+  simp only [idxRun, posOk, lt, if_true, decide_true, located, eRun, Semantics.evalAssignValue,
+    Semantics.assignOpBinary?, Semantics.writeResolvedPlaceNative] at hout
+  cases stored : Semantics.writeNativeValue NativeLayout.maxDepth P st2 st2.heap element at_ right with
+  | error r =>
+    simp only [stored, bind, Except.bind] at hout
+    exact .inr ⟨r, _, hout.symm, writeNativeValue_undef _ _ _ _ _ _ _ views r stored⟩
+  | ok heap =>
+    simp only [stored, bind, Except.bind, pure, Except.pure, Semantics.syncI32ViewsFromHeap, views,
+      Semantics.syncI32ViewsFromHeapFrom, ite_self] at hout
+    exact .inl ⟨_, hout.symm, writeNativeValue_next _ stored⟩
+
+end SetIndex
+
+theorem stops_setIndexEval (lowered : lowerFuncs (sigs sp.funcs) sp.decls sp.funcs = some mp.funcs)
+    {slice : Nat} {index value : SrcEff} (ihi : EffStops sp mp n index) (ihv : EffStops sp mp n value) :
+    SrcStops sp mp n (.setIndexEval slice index value) := by
+  intro hp ret scope next stmt frame base st env ok corr fr fresh le hc within fails
+  simp only [SrcStmt.lower, lowerSetIndexEval] at ok
+  split at ok
+  · simp at ok
+  rename_i b found
+  split at ok
+  · simp at ok
+  rename_i element elementOk
+  have bty := eq_of_elementOf elementOk
+  have shape : ∃ i w rest, index.eval (sigs sp.funcs) sp.decls scope next = some i ∧
+      value.eval (sigs sp.funcs) sp.decls scope (next + 1) = some w ∧
+      (i.ty.isI32 || i.ty.isUint .usize) = true ∧
+      stmt = .seq i.stmt (checkThen next (boundsGuard b (.var next)) (.seq w.stmt rest)) := by
+    simp only [storeEvalElement] at ok
+    split at ok
+    · split at ok
+      · simp at ok
+      rename_i i indexOk
+      split at ok
+      · simp at ok
+      rename_i w valueOk
+      simp only [storeEval] at ok
+      split at ok
+      case isFalse => simp at ok
+      rename_i cond
+      simp only [Bool.and_eq_true] at cond
+      simp only [Option.some.injEq] at ok
+      exact ⟨i, w, _, indexOk, valueOk, cond.1, ok.symm⟩
+    · split at ok
+      · simp at ok
+      rename_i i indexOk
+      split at ok
+      · simp at ok
+      rename_i w valueOk
+      have cond := storeEvalWord_cond ok
+      simp only [Bool.and_eq_true] at cond
+      simp only [storeEvalWord] at ok
+      split at ok
+      case isFalse => simp at ok
+      simp only [storeEvalThen] at ok
+      split at ok
+      case isFalse => simp at ok
+      split at ok
+      · simp at ok
+      simp only [Option.some.injEq] at ok
+      exact ⟨i, w, _, indexOk, valueOk, cond.1, ok.symm⟩
+  obtain ⟨i, w, rest, indexOk, valueOk, kind, rfl⟩ := shape
+  have bmem := (lookup_mem found).1
+  obtain ⟨w0, place0, holdsW⟩ := corr.readPlace found 0 sp.toCore
+  rw [bty] at holdsW
+  cases holdsW with
+  | @slice _ len _ _ lenSlot lenSmall =>
+  have placeAt : ∀ f, Semantics.evalPlace (f + 1) sp.toCore st .read (.local slice) =
+      .done { root := frame b.slot, projections := [], value := some (.rawSlice element.toCore (env b.slot).toNat len) }
+        st := fun f => by
+    have refines := Semantics.evalPlace_refines (program := sp.toCore) (state := st) (access := .read)
+      (place := .local slice) (Nat.le_add_left 1 f)
+    rw [place0] at refines
+    exact refines.completed (by intro h; cases h)
+  simp only [SrcStmt.toCore] at fails
+  have efails := fails.expression
+  rcases eff_split lowered ihi indexOk corr fr fresh hc within efails
+      (fun j r s h => ⟨j + 3, s, setIndex_idx_trap (placeAt j)
+        (Semantics.evalExpr_of_le h (by intro h; cases h) (Nat.le_succ j))⟩) with
+    ⟨d, stops⟩ | ⟨k, iv, st1, indexRun, bound1, fresh1, keeps1, locals1, _, d1, env1, hp1, exec1, same1, holds1, hc1⟩
+  · exact ⟨d, .seqFirst stops⟩
+  by_cases zero : (boundsGuard b (.var next)).eval env1 = 0
+  · exact ⟨_, Stops.after exec1 (Stops.check (d := 0) fun h => absurd zero h)⟩
+  have slot2 : b.slot + 1 < next := by
+    have := fr.slots b bmem
+    rw [bty] at this
+    simp only [SrcType.size] at this
+    omega
+  have inBounds := boundsGuard_ne zero
+  rw [same1 _ slot2, lenSlot] at inBounds
+  have scalar : i.ty.isScalar = true := by
+    cases hty : i.ty <;> simp_all [SrcType.isI32, SrcType.isUint, SrcType.isScalar]
+  have posOk := index_ok (t := { expr := .var next, ty := i.ty }) kind (holds_var holds1 scalar) (by omega)
+  have limit := exec1.limit_normal
+  cases located : Semantics.rawSliceElementAddress? sp.toCore element.toCore (env b.slot).toNat
+      ((Expr.var next).eval env1).toNat with
+  | error r =>
+    obtain ⟨run, undefined⟩ := setIndex_address_undef (e := value.toCore) (placeAt k)
+      (value_after indexRun (Nat.le_succ k)) posOk inBounds located
+    have := efails (k + 3)
+    rw [run] at this
+    simp only [Failing] at this
+    rw [undefined] at this
+    cases this
+  | ok at_ =>
+    have efails1 : EFails sp hp1.limit st (.assign .set (.index (.local slice) index.toCore) value.toCore) := by
+      rw [limit]; exact efails
+    rcases eff_split lowered ihv valueOk (corr.after fr fresh keeps1 locals1 same1) (fr.mono (Nat.le_succ _))
+        fresh1 hc1 (by rw [limit]; exact bound1) efails1
+        (fun j r s h => ⟨k + j + 3, s, setIndex_value_trap (placeAt (k + j))
+          (value_after indexRun (by omega)) posOk inBounds located
+          (Semantics.evalExpr_of_le h (by intro h; cases h) (by omega))⟩) with
+      ⟨d, stops⟩ | ⟨j, right, st2, valueRun, bound2, fresh2, -⟩
+    · exact ⟨_, Stops.after exec1 (Stops.check fun _ => .seqFirst stops)⟩
+    · rcases setIndex_value_done fresh2.2 (placeAt (k + j)) (value_after indexRun (by omega)) posOk inBounds
+          located (value_after valueRun (by omega)) with ⟨st', run, keepsNext⟩ | ⟨r, s, run, undefined⟩
+      · exact (efails1.not_done run (by rw [keepsNext]; exact bound2)).elim
+      · have := efails (k + j + 3)
+        rw [run] at this
+        simp only [Failing] at this
+        rw [undefined] at this
+        cases this
+
 end Statements
 
 end Lanius.Mini

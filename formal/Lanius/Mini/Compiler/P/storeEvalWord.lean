@@ -38,14 +38,14 @@ namespace Lanius.Mini
 /-- slice[index] = value on a raw slice of word structs or word enums. -/
 def storeEvalWord (decls : SrcDecls) (b : Binding) (element : SrcType) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
   if wordElement decls element then
-    storeEvalThen i v element (guarded slot (boundsGuard b (Expr.var slot)) (storeType element (slotVars (slot + 1) (SrcType.size element)) 0 (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0))
+    storeEvalThen i v element slot (boundsGuard b (Expr.var slot)) (storeType element (slotVars (slot + 1) (SrcType.size element)) 0 (elementBase b.slot (SrcType.size element) (Expr.var slot)) 0)
   else
     none
 
-/-- The index in slot, the value in slot + 1, then the 32-bit store. -/
+/-- The index in slot and its bounds check, then the value in slot + 1 and the 32-bit store: Core checks the bound before it evaluates the value. -/
 def storeEval (b : Binding) (slot : Nat) (i : Evaluated) (v : Evaluated) : Option Stmt :=
   if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.isI32 v.ty then
-    some (Stmt.seq i.stmt (Stmt.seq v.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1))))))
+    some (Stmt.seq i.stmt (checkThen slot (boundsGuard b (Expr.var slot)) (Stmt.seq v.stmt (Stmt.storeWord MemWidth.m32 (Expr.binary Word.u64 BinOp.add (Expr.var b.slot) (Expr.binary Word.u64 BinOp.mul (Expr.var slot) (Expr.lit 4))) (Expr.var (slot + 1))))))
   else
     none
 

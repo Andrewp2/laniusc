@@ -463,8 +463,8 @@ theorem boolBits_ne_zero (b : Bool) : (boolBits b ≠ 0) = (b = true) := by
   cases b <;> simp [boolBits]
 
 /-- The checks of an effectful word element store. -/
-theorem storeEvalThen_cond {i v : Evaluated} {e : SrcType} {store : Option Stmt} {s : Stmt}
-    (h : storeEvalThen i v e store = some s) :
+theorem storeEvalThen_cond {i v : Evaluated} {e : SrcType} {slot : Nat} {g : Expr} {store : Option Stmt} {s : Stmt}
+    (h : storeEvalThen i v e slot g store = some s) :
     ((i.ty.isI32 || i.ty.isUint .usize) && v.ty.same e) = true := by
   simp only [storeEvalThen] at h
   split at h

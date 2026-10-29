@@ -1600,11 +1600,24 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         ⟨slotVars_length _ _, holds2.congr fun j lt => by
           rw [Nat.zero_add]; exact entry_slotVars env2 (next + 1) _ lt⟩
       have bound3 : heap.nextAddress ≤ hp2.limit := by rw [limit2, limit1]; exact bound
+      have slot2 : b.slot + 1 < next := by
+        have := fr.slots b bmem
+        rw [bty] at this
+        simp only [SrcType.size] at this
+        omega
+      have pass : (boundsGuard b (.var next)).eval env1 = 1 :=
+        boundsGuard_one (by
+          rw [same1 _ slot2, lenSlot]
+          simp only [Expr.eval] at posEq ⊢
+          rw [← same2 next (Nat.lt_succ_self _)]
+          omega)
       have finish : ∀ {s hp'}, Exec mp 0 env2 hp2 s (.normal env2 hp') → HeapCorr heap hp' →
-          Simulates mp hp ret scope frame base st env (i.stmt.seq (w.stmt.seq s)) .next { st2 with heap } :=
+          Simulates mp hp ret scope frame base st env
+            (i.stmt.seq (checkThen next (boundsGuard b (.var next)) (w.stmt.seq s))) .next { st2 with heap } :=
         fun exec hc' =>
         ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
-          .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _)) (exec.mono (Nat.zero_le _))),
+          .seq (exec1.mono (Nat.le_max_left _ _))
+            ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (exec.mono (Nat.zero_le _))).checkThen pass),
           .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
             (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) hc'⟩
       simp only [storeEvalWord] at ok
@@ -1619,20 +1632,8 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       rename_i s sOk
       simp only [Option.some.injEq] at ok
       subst ok
-      replace sOk := guarded_some sOk
-      obtain ⟨s, sOk, rfl⟩ := sOk
-      have slot2 : b.slot + 1 < next := by
-        have := fr.slots b bmem
-        rw [bty] at this
-        simp only [SrcType.size] at this
-        omega
-      have pass : (boundsGuard b (.var next)).eval env2 = 1 :=
-        boundsGuard_one (by
-          rw [same2 _ (by omega), same1 _ slot2, lenSlot]
-          simp only [Expr.eval] at posEq ⊢
-          omega)
       obtain ⟨hp', exec, hc'⟩ := storeElement_sound (mp := mp) hc2 hel posEq located stored flat sOk bound3
-      exact finish (exec.checkThen pass) hc'
+      exact finish exec hc'
     all_goals simp at run
   rename_i isI32
   have eltEq := eq_of_isI32 isI32
@@ -1712,10 +1713,11 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
       rw [bty] at this
       simp only [SrcType.size] at this
       omega
-    have pass : (boundsGuard b (.var next)).eval env2 = 1 :=
+    have pass : (boundsGuard b (.var next)).eval env1 = 1 :=
       boundsGuard_one (by
-        rw [same2 _ (by omega), same1 _ slot2, lenSlot]
+        rw [same1 _ slot2, lenSlot]
         simp only [Expr.eval] at posEq ⊢
+        rw [← same2 next (Nat.lt_succ_self _)]
         omega)
     obtain ⟨hc', inside⟩ := HeapCorr.storeBytesFrom _ 0 hc2 stored
     have inside := inside (by simp [Semantics.i32Bytes])
@@ -1734,8 +1736,8 @@ theorem stmt_setIndexEval (ihe : ∀ m ≤ fuel, EvalSound sp mp m) {slice : Nat
         hp2.limit := by
       rw [address]; simp only [MemWidth.bytes]; addr_omega
     refine ⟨fresh2, ((keeps1.chain keeps2).lower le).trans ⟨fun _ _ => rfl, Nat.le_refl _⟩, max d1 d2, _,
-      .seq (exec1.mono (Nat.le_max_left _ _)) (.seq (exec2.mono (Nat.le_max_right _ _))
-        ((Exec.storeWord room).checkThen pass)),
+      .seq (exec1.mono (Nat.le_max_left _ _))
+        ((Exec.seq (exec2.mono (Nat.le_max_right _ _)) (Exec.storeWord room)).checkThen pass),
       .next (((corr.after fr fresh (keeps1.chain keeps2) (locals2.trans locals1)
         (fun j lt => (same2 j (by omega)).trans (same1 j lt)))).cells_congr rfl fun _ _ => rfl) ?_⟩
     rw [address]

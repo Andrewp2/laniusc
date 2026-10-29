@@ -218,13 +218,14 @@ theorem proof_lower_set_index {prog : SrcProgram} {prims : Prims} {ix_lower_set_
   simp only [src_lower_set_index] at h
   faithful [Lanius.Mini.lowerSetIndex]
 
-theorem proof_store_eval_then {prog : SrcProgram} {prims : Prims} {ix_store_eval_then ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_same ix_SrcType_is_uint : Nat} (fn : prog.funcs[ix_store_eval_then]? = some (src_store_eval_then ix_boxed_of_mini_selfhost_Stmt ix_SrcType_is_i32 ix_SrcType_same ix_SrcType_is_uint)) (np : prims.isPrim ix_store_eval_then = false)
+theorem proof_store_eval_then {prog : SrcProgram} {prims : Prims} {ix_store_eval_then ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_i32 ix_SrcType_same ix_SrcType_is_uint : Nat} (fn : prog.funcs[ix_store_eval_then]? = some (src_store_eval_then ix_boxed_of_mini_selfhost_Stmt ix_check_then ix_SrcType_is_i32 ix_SrcType_same ix_SrcType_is_uint)) (np : prims.isPrim ix_store_eval_then = false)
     (ext_boxed_of_mini_selfhost_Stmt : Certified (∀ {n : Nat}, Stmt_boxed_of_mini_selfhost_Stmt prog prims ix_boxed_of_mini_selfhost_Stmt n))
+    (ext_check_then : Certified (∀ {n : Nat}, Stmt_check_then prog prims ix_check_then n))
     (ext_SrcType_is_i32 : Certified (∀ {n : Nat}, Stmt_SrcType_is_i32 prog prims ix_SrcType_is_i32 n))
     (ext_SrcType_same : Certified (∀ {n : Nat}, Stmt_SrcType_same prog prims ix_SrcType_same n))
     (ext_SrcType_is_uint : Certified (∀ {n : Nat}, Stmt_SrcType_is_uint prog prims ix_SrcType_is_uint n)) {n : Nat} :
     Stmt_store_eval_then prog prims ix_store_eval_then n := by
-  intro x0 x1 x2 x3 v0 v1 v2 v3 w h r0 r1 r2 r3
+  intro x0 x1 x2 x3 x4 x5 v0 v1 v2 v3 v4 v5 w h r0 r1 r2 r3 r4 r5
   rcases n with _ | n
   · simp [pcall] at h
   rw [pcall_succ np fn] at h

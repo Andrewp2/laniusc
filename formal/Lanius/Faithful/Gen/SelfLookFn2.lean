@@ -188,7 +188,7 @@ theorem fn_eval_divide_uint : prog.funcs[664]? = some (src_eval_divide_uint 54 1
 theorem np_eval_divide_uint : prims.isPrim 664 = false := by decide +kernel
 theorem fn_eval_word_stride : prog.funcs[665]? = some (src_eval_word_stride 113 302 877) := get_of_drop at_eval_word_stride
 theorem np_eval_word_stride : prims.isPrim 665 = false := by decide +kernel
-theorem fn_store_eval_then : prog.funcs[666]? = some (src_store_eval_then 164 301 440 453) := get_of_drop at_store_eval_then
+theorem fn_store_eval_then : prog.funcs[666]? = some (src_store_eval_then 164 276 301 440 453) := get_of_drop at_store_eval_then
 theorem np_store_eval_then : prims.isPrim 666 = false := by decide +kernel
 theorem fn_store_type : prog.funcs[667]? = some (src_store_type 54 159 161 176 871 872 878 879 880 881) := get_of_drop at_store_type
 theorem np_store_type : prims.isPrim 667 = false := by decide +kernel

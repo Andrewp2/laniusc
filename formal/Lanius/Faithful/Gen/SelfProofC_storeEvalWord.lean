@@ -255,10 +255,9 @@ theorem proof_store_eval_element {prog : SrcProgram} {prims : Prims} {ix_store_e
   simp only [src_store_eval_element] at h
   faithful [Lanius.Mini.storeEvalElement]
 
-theorem proof_store_eval_word {prog : SrcProgram} {prims : Prims} {ix_store_eval_word ix_plus ix_SrcType_size ix_guarded ix_word_element ix_bounds_guard ix_slot_vars ix_element_base ix_store_eval_then ix_store_type : Nat} (fn : prog.funcs[ix_store_eval_word]? = some (src_store_eval_word ix_plus ix_SrcType_size ix_guarded ix_word_element ix_bounds_guard ix_slot_vars ix_element_base ix_store_eval_then ix_store_type)) (np : prims.isPrim ix_store_eval_word = false)
+theorem proof_store_eval_word {prog : SrcProgram} {prims : Prims} {ix_store_eval_word ix_plus ix_SrcType_size ix_word_element ix_bounds_guard ix_slot_vars ix_element_base ix_store_eval_then ix_store_type : Nat} (fn : prog.funcs[ix_store_eval_word]? = some (src_store_eval_word ix_plus ix_SrcType_size ix_word_element ix_bounds_guard ix_slot_vars ix_element_base ix_store_eval_then ix_store_type)) (np : prims.isPrim ix_store_eval_word = false)
     (ext_plus : Certified (∀ {n : Nat}, Stmt_plus prog prims ix_plus n))
     (ext_SrcType_size : Certified (∀ {n : Nat}, Stmt_SrcType_size prog prims ix_SrcType_size n))
-    (ext_guarded : Certified (∀ {n : Nat}, Stmt_guarded prog prims ix_guarded n))
     (ext_word_element : Certified (∀ {n : Nat}, Stmt_word_element prog prims ix_word_element n))
     (ext_bounds_guard : Certified (∀ {n : Nat}, Stmt_bounds_guard prog prims ix_bounds_guard n))
     (ext_slot_vars : Certified (∀ {n : Nat}, Stmt_slot_vars prog prims ix_slot_vars n))

@@ -3830,12 +3830,13 @@ pub fn eval_arms(sigs: List<Sig>, decls: SrcDecls, scope: List<Binding>, slot: u
 }
 // extract: mutual end
 
-// The index in slot, the value from slot + 1, then the stores of its words.
-pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, store: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
+// The index in slot and its check g, then the value from slot + 1 and the
+// stores of its words.
+pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, slot: usize, g: Expr, store: core::option::Option<Stmt>) -> core::option::Option<Stmt> {
     if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.same(element)) {
         return match (store) {
             None -> None,
-            Some(s) -> Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(s))))),
+            Some(s) -> Some(Seq(boxed(i.stmt), boxed(check_then(slot, g, Seq(boxed(v.stmt), boxed(s)))))),
         };
     }
     return None;
@@ -3844,15 +3845,16 @@ pub fn store_eval_then(i: Evaluated, v: Evaluated, element: SrcType, store: core
 // slice[index] = value on a raw slice of word structs or word enums.
 pub fn store_eval_word(decls: SrcDecls, b: Binding, element: SrcType, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
     if (word_element(decls, element)) {
-        return store_eval_then(i, v, element, guarded(slot, bounds_guard(b, Var(slot)), store_type(element, slot_vars(plus(slot, 1), element.size()), 0, element_base(b.slot, element.size(), Var(slot)), 0)));
+        return store_eval_then(i, v, element, slot, bounds_guard(b, Var(slot)), store_type(element, slot_vars(plus(slot, 1), element.size()), 0, element_base(b.slot, element.size(), Var(slot)), 0));
     }
     return None;
 }
 
-// The index in slot, the value in slot + 1, then the 32-bit store.
+// The index in slot and its bounds check, then the value in slot + 1 and the
+// 32-bit store: Core checks the bound before it evaluates the value.
 pub fn store_eval(b: Binding, slot: usize, i: Evaluated, v: Evaluated) -> core::option::Option<Stmt> {
     if ((i.ty.is_i32() || i.ty.is_uint(Usize)) && v.ty.is_i32()) {
-        return Some(Seq(boxed(i.stmt), boxed(Seq(boxed(v.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1)))))))));
+        return Some(Seq(boxed(i.stmt), boxed(check_then(slot, bounds_guard(b, Var(slot)), Seq(boxed(v.stmt), boxed(StoreWord(M32, Binary(U64, Add, boxed(Var(b.slot)), boxed(Binary(U64, Mul, boxed(Var(slot)), boxed(Lit(4))))), Var(plus(slot, 1)))))))));
     }
     return None;
 }

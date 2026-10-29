@@ -149,12 +149,12 @@ def evalArms (sigs : List Sig) (decls : SrcDecls) (scope : List Binding) (slot :
           | some e => evalArm slot k (evalSame e ty e.stmt) rest later
 end
 
-/-- The index in slot, the value from slot + 1, then the stores of its words. -/
-def storeEvalThen (i : Evaluated) (v : Evaluated) (element : SrcType) (store : Option Stmt) : Option Stmt :=
+/-- The index in slot and its check g, then the value from slot + 1 and the stores of its words. -/
+def storeEvalThen (i : Evaluated) (v : Evaluated) (element : SrcType) (slot : Nat) (g : Expr) (store : Option Stmt) : Option Stmt :=
   if (SrcType.isI32 i.ty || SrcType.isUint i.ty UintTy.usize) && SrcType.same v.ty element then
     match store with
     | none => none
-    | some s => some (Stmt.seq i.stmt (Stmt.seq v.stmt s))
+    | some s => some (Stmt.seq i.stmt (checkThen slot g (Stmt.seq v.stmt s)))
   else
     none
 

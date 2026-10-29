@@ -69,8 +69,8 @@ abbrev Stmt_lower_set_index (prog : SrcProgram) (prims : Prims) (ix n : Nat) : P
     (RepOption 127 RepStmt) (Lanius.Mini.lowerSetIndex x0 x1 x2 x3 x4) w
 
 abbrev Stmt_store_eval_then (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
-  ∀ {x0 : Lanius.Mini.Evaluated} {x1 : Lanius.Mini.Evaluated} {x2 : Lanius.Mini.SrcType} {x3 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 w : Value}, pcall prog prims n ix [v0, v1, v2, v3] = some w → RepEvaluated x0 v0 → RepEvaluated x1 v1 → RepSrcType x2 v2 → (RepOption 127 RepStmt) x3 v3 →
-    (RepOption 127 RepStmt) (Lanius.Mini.storeEvalThen x0 x1 x2 x3) w
+  ∀ {x0 : Lanius.Mini.Evaluated} {x1 : Lanius.Mini.Evaluated} {x2 : Lanius.Mini.SrcType} {x3 : Nat} {x4 : Lanius.Mini.Expr} {x5 : Option Lanius.Mini.Stmt} {v0 v1 v2 v3 v4 v5 w : Value}, pcall prog prims n ix [v0, v1, v2, v3, v4, v5] = some w → RepEvaluated x0 v0 → RepEvaluated x1 v1 → RepSrcType x2 v2 → RepNat x3 v3 → RepExpr x4 v4 → (RepOption 127 RepStmt) x5 v5 →
+    (RepOption 127 RepStmt) (Lanius.Mini.storeEvalThen x0 x1 x2 x3 x4 x5) w
 
 abbrev Stmt_word_stride (prog : SrcProgram) (prims : Prims) (ix n : Nat) : Prop :=
   ∀ {x0 : Nat} {x1 : Nat} {v0 v1 w : Value}, pcall prog prims n ix [v0, v1] = some w → RepNat x0 v0 → RepNat x1 v1 →

@@ -358,7 +358,7 @@ theorem fn_cons_of_mini_selfhost_Expr : prog.funcs[478]? = some (src_cons_of_min
 theorem np_cons_of_mini_selfhost_Expr : prims.isPrim 478 = false := by decide +kernel
 theorem fn_store_eval : prog.funcs[479]? = some (src_store_eval 54 164 276 300 301 305 453) := get_of_drop at_store_eval
 theorem np_store_eval : prims.isPrim 479 = false := by decide +kernel
-theorem fn_store_eval_word : prog.funcs[480]? = some (src_store_eval_word 54 113 166 302 305 332 647 666 667) := get_of_drop at_store_eval_word
+theorem fn_store_eval_word : prog.funcs[480]? = some (src_store_eval_word 54 113 302 305 332 647 666 667) := get_of_drop at_store_eval_word
 theorem np_store_eval_word : prims.isPrim 480 = false := by decide +kernel
 theorem fn_set_field_eval_at : prog.funcs[481]? = some (src_set_field_eval_at 668) := get_of_drop at_set_field_eval_at
 theorem np_set_field_eval_at : prims.isPrim 481 = false := by decide +kernel

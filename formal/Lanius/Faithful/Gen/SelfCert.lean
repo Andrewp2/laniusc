@@ -2921,11 +2921,11 @@ theorem cert_store_eval {n : Nat} :
 
 theorem cert_store_eval_then {n : Nat} :
     Stmt_store_eval_then prog prims 666 n :=
-  @proof_store_eval_then prog prims 666 164 301 440 453 fn_store_eval_then np_store_eval_then ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_SrcType_is_uint⟩ n
+  @proof_store_eval_then prog prims 666 164 276 301 440 453 fn_store_eval_then np_store_eval_then ⟨@cert_boxed_of_mini_selfhost_Stmt⟩ ⟨@cert_check_then⟩ ⟨@cert_SrcType_is_i32⟩ ⟨@cert_SrcType_same⟩ ⟨@cert_SrcType_is_uint⟩ n
 
 theorem cert_store_eval_word {n : Nat} :
     Stmt_store_eval_word prog prims 480 n :=
-  @proof_store_eval_word prog prims 480 54 113 166 302 305 332 647 666 667 fn_store_eval_word np_store_eval_word ⟨@cert_plus⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_guarded⟩ ⟨@cert_word_element⟩ ⟨@cert_bounds_guard⟩ ⟨@cert_slot_vars⟩ ⟨@cert_element_base⟩ ⟨@cert_store_eval_then⟩ ⟨@cert_store_type⟩ n
+  @proof_store_eval_word prog prims 480 54 113 302 305 332 647 666 667 fn_store_eval_word np_store_eval_word ⟨@cert_plus⟩ ⟨@cert_SrcType_size⟩ ⟨@cert_word_element⟩ ⟨@cert_bounds_guard⟩ ⟨@cert_slot_vars⟩ ⟨@cert_element_base⟩ ⟨@cert_store_eval_then⟩ ⟨@cert_store_type⟩ n
 
 theorem cert_store_eval_element {n : Nat} :
     Stmt_store_eval_element prog prims 334 n :=

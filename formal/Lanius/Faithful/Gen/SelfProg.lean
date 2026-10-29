@@ -2298,7 +2298,7 @@ def tail_set_scalar_eval : List SrcFunc :=
 def tail_store_type : List SrcFunc :=
   src_store_type 54 159 161 176 871 872 878 879 880 881 :: tail_set_scalar_eval
 def tail_store_eval_then : List SrcFunc :=
-  src_store_eval_then 164 301 440 453 :: tail_store_type
+  src_store_eval_then 164 276 301 440 453 :: tail_store_type
 def tail_eval_word_stride : List SrcFunc :=
   src_eval_word_stride 113 302 877 :: tail_store_eval_then
 def tail_eval_divide_uint : List SrcFunc :=
@@ -2670,7 +2670,7 @@ def tail_effs_types : List SrcFunc :=
 def tail_set_field_eval_at : List SrcFunc :=
   src_set_field_eval_at 668 :: tail_effs_types
 def tail_store_eval_word : List SrcFunc :=
-  src_store_eval_word 54 113 166 302 305 332 647 666 667 :: tail_set_field_eval_at
+  src_store_eval_word 54 113 302 305 332 647 666 667 :: tail_set_field_eval_at
 def tail_store_eval : List SrcFunc :=
   src_store_eval 54 164 276 300 301 305 453 :: tail_store_eval_word
 def tail_cons_of_mini_selfhost_Expr : List SrcFunc :=
@@ -4118,7 +4118,7 @@ abbrev src476 : SrcFunc := src_eval_stride_of 301 665
 abbrev src477 : SrcFunc := src_empty_of_mini_selfhost_Expr
 abbrev src478 : SrcFunc := src_cons_of_mini_selfhost_Expr 275
 abbrev src479 : SrcFunc := src_store_eval 54 164 276 300 301 305 453
-abbrev src480 : SrcFunc := src_store_eval_word 54 113 166 302 305 332 647 666 667
+abbrev src480 : SrcFunc := src_store_eval_word 54 113 302 305 332 647 666 667
 abbrev src481 : SrcFunc := src_set_field_eval_at 668
 abbrev src482 : SrcFunc := src_effs_types 122 315 337 338 482
 abbrev src483 : SrcFunc := src_keep_if
@@ -4304,7 +4304,7 @@ abbrev src662 : SrcFunc := src_signed_div
 abbrev src663 : SrcFunc := src_SrcType_uint_kind
 abbrev src664 : SrcFunc := src_eval_divide_uint 54 164 453 876
 abbrev src665 : SrcFunc := src_eval_word_stride 113 302 877
-abbrev src666 : SrcFunc := src_store_eval_then 164 301 440 453
+abbrev src666 : SrcFunc := src_store_eval_then 164 276 301 440 453
 abbrev src667 : SrcFunc := src_store_type 54 159 161 176 871 872 878 879 880 881
 abbrev src668 : SrcFunc := src_set_scalar_eval 164 281 311
 abbrev src669 : SrcFunc := src_boxed_of_mini_selfhost_List_mini_selfhost_SrcStructDecl 53 670 882
