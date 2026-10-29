@@ -2,6 +2,7 @@
 // No per-object release, automatic destruction or enforced borrowing lifetime.
 module alloc::arena;
 import alloc::allocator;
+import core::layout;
 import core::mem;
 import core::result;
 import core::slice;
@@ -23,8 +24,11 @@ fn write(chunk: ptr, value: Chunk) { let slots: [Chunk] = core::mem::typed_slice
 fn aligned_offset(value: Chunk, alignment: usize) -> usize {
     // The allocator and header establish an 8-aligned payload. All current
     // native T need at most 8, so offset alignment is sufficient and portable.
-    let remainder: usize = value.used % alignment;
-    if (remainder == 0) { return 0; } return alignment-remainder;
+    // Valid chunks have used<=capacity<=MAX_CHUNK_BYTES and admission already
+    // limits alignment to 1/2/4/8. Rounded used is at most MAX_CHUNK_BYTES+7,
+    // far below layout::MAX_SIZE, so this checked result cannot fail here.
+    let padding:core::result::Result<usize,core::layout::Error> =core::layout::padding_for(value.used,alignment);
+    return core::result::unwrap(padding);
 }
 pub fn new(config: Config) -> core::result::Result<Arena,Error> {
     if (config.chunk_size == 0 || config.chunk_size > MAX_CHUNK_BYTES-header_size() || config.max_chunks < 0) { return core::result::Err(Error::InvalidConfig); }

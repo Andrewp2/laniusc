@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[checked storage-layout increment](stdlib-layout.md) defines eight arithmetic
+APIs for sizes, alignment, padded arrays and explicit record composition.
+Public-field revalidation, deterministic error precedence and the 64-bit
+`MAX_SIZE` profile are fixed. Direct contracts, the 18,878-case independent
+model, three selected arena regressions and the 58-case record-storage program
+pass. This finite native Linux x86_64 increment is accepted. The arena consumer
+shares relative-offset padding while retaining its
+own allocation, alignment and zero-size policies. This does not infer native
+type layout or complete memory/owner consolidation. The preceding
 [Unix stream/socket-pair increment](stdlib-unix-streams.md) specifies local
 AF_UNIX owners, borrowed pathname/abstract addresses and the existing staged
 stream/readiness contracts. One-attempt connect, exact pair publication,
@@ -223,6 +232,24 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Checked storage layouts.**
+
+The [layout guide](stdlib-layout.md) specifies eight allocation-free functions
+with checked size/padding/composition and public-field revalidation. Arrays
+include the last element's stride padding; extend reports its offset without
+implicit tail padding. Zero size and high alignments are arithmetic values,
+separate from native allocator backing and its alignment/zero-size limits.
+Direct contracts pass one test/4.68s with only process-entry/exit syscalls;
+three selected arena regressions pass in 11.98s with four others filtered.
+The real [record-storage program](stdlib-layout-records.md) passes three
+groups/58 cases in 7.32s, including count 65,536, byte readback, three reached
+allocation denials and prepublication arena release. The independent library
+model passes 18,878 cases across all eight APIs and direct/mutated inputs in
+5.46s. This finite native Linux x86_64 increment is accepted; no new compiler
+dependency is introduced. Earlier memory/arena receipts do not establish this
+increment. Native layout inference, over-aligned allocation, automatic
+lifetimes and broader memory consolidation remain separate work.
 
 **Unix streams and socket pairs.**
 

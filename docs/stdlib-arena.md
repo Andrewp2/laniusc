@@ -52,6 +52,12 @@ header occupies a multiple of eight bytes. Each allocation aligns its checked
 payload offset. No pointer-to-integer conversion or assumed page alignment is
 used. Eight serves every current native Lanius type.
 
+Relative payload padding uses the shared
+[`core::layout::padding_for` contract](stdlib-layout.md). Existing chunk bounds
+and admitted alignments ensure that calculation fits. A Layout's arithmetic
+validity does not expand the arena's supported alignments or establish the
+alignment of an arbitrary pointer.
+
 Arbitrary over-alignment needs an additional pointer/alignment capability; the
 current compiler rejects pointer-to-integer casts. The
 [dependency fixtures](../tests/fixtures/stdlib_foundation/arena_dependency/README.md)

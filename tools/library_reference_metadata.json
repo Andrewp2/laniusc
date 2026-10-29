@@ -8,7 +8,8 @@
     },
     "alloc::arena": {
       "guides": [
-        "docs/stdlib-arena.md"
+        "docs/stdlib-arena.md",
+        "docs/stdlib-layout.md"
       ]
     },
     "alloc::binary_heap": {
@@ -398,6 +399,23 @@
         "try_rfold_up_to": "Accepted on the finite native Linux x86_64 profile; see separate library/application evidence in the guide. Back bounded fallible fold; stops immediately on E with the current item consumed and earlier successful count retained. Resume the correct remaining prefix after handling actual recovery owners.",
         "min_by": "Requires core::ordering::Comparator<T,T> and Iterator<T>; the old iterator trait identity is removed without an alias. Exhausts finite input, preserving the first minimum tied representative, with exactly n-1 comparator calls for nonempty n and no implicit owner cleanup.",
         "max_by": "Requires core::ordering::Comparator<T,T> and Iterator<T>; the old iterator trait identity is removed without an alias. Exhausts finite input, preserving the last maximum tied representative, with exactly n-1 comparator calls for nonempty n and no implicit owner cleanup."
+      }
+    },
+    "core::layout": {
+      "guides": [
+        "docs/stdlib-layout.md",
+        "docs/stdlib-layout-records.md"
+      ],
+      "note": "Checked byte-storage arithmetic for the current 64-bit usize/isize profile, with MAX_SIZE=2^63-1. Eight free functions revalidate public Layout fields and report InvalidAlignment before size overflow within each input; extend validates left before right and align_to validates its input before the requested alignment. Arrays use padded stride times count including trailing padding; extend has no implicit final padding. Zero-sized layouts and alignment 2^63 are valid arithmetic values, without allocator backing or pointer authority. No pointer construction/access, native type-layout inference, allocation or host service. Arena now uses padding_for for its already admitted relative chunk offset, retaining its alignment<=8, chunk, dangling-zero-size and native typed-storage policies. Direct native contracts pass one test in 4.68s with trace permitting only entry/exit; three selected arena regressions pass in 11.98s with four others filtered. The record-storage program passes three groups/58 cases in 7.32s, including count 65536, actual byte readback and three reached allocation denials. The independent arbitrary-precision library model passes one test in 5.46s with 18878 cases across all eight functions and direct/mutated inputs (seed 0x1a90a0261031). This finite native Linux x86_64 CPU increment is accepted with no new compiler dependency. Existing memory/arena receipts keep their scope; broader memory/manual-owner consolidation, other targets and proofs remain open.",
+      "declarations": {
+        "from_size_align": "Validates nonzero power-of-two alignment, then rounded-size<=MAX_SIZE; returns the unpadded size and alignment unchanged.",
+        "validate": "Revalidates supplied public Layout fields with alignment error before size error; no trusted-constructor assumption.",
+        "is_valid": "Boolean form of complete Layout validation; no allocation or host effects.",
+        "padding_for": "Minimum alignment padding for an arbitrary usize offset. Rejects invalid alignment first, then offset or rounded extent above MAX_SIZE, before overflowing arithmetic.",
+        "pad_to_align": "Revalidates and adds trailing alignment padding, retaining alignment.",
+        "align_to": "Validates the input Layout before requested alignment, raises to the greater alignment without changing size, then revalidates the result.",
+        "array": "Validates element even when count is zero; stride is padded size and total=stride*count includes the last element padding. Zero stride accepts every usize count; checks multiplication before executing it.",
+        "extend": "Validates left Layout before right, places right after minimum relative alignment padding, and returns offset plus a layout with maximum alignment and no implicit tail padding. Checks complete final rounded validity."
       }
     },
     "core::math": {
