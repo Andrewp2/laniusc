@@ -1,4 +1,4 @@
-// Unweighted shortest hops and lexicographically smallest dependency ordering.
+// Unweighted paths, dependency ordering and canonical strong components.
 // Validate once before operation admission/allocation; never mutate input.
 // Result owners copy shallowly: keep one cleanup authority and end borrows
 // before destroy. Work estimates bound local phases, not elapsed time.
@@ -7,6 +7,7 @@ import alloc::binary_heap;
 import alloc::deque;
 import alloc::vec;
 import core::i32;
+import core::mem;
 import core::option;
 import core::result;
 import core::slice;
@@ -199,4 +200,262 @@ pub fn topological_order(graph: ext::graph::View, limits: ext::graph::Limits)
         return core::result::Err(error(ext::graph::ErrorKind::Cycle, -1));
     }
     return core::result::Ok(out);
+}
+
+// Component IDs increase with each component's smallest original node.
+// They have no topological-order meaning. Copies retain one cleanup authority.
+pub struct StrongComponents {
+    labels: alloc::vec::Vec<i32>, count: i32, active: bool,
+}
+
+pub struct Condensation {
+    components: StrongComponents, graph: ext::graph::Graph, active: bool,
+}
+
+pub impl StrongComponents {
+    pub fn borrow(&self) -> &StrongComponents { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn node_count(&self) -> i32 {
+        if (!self.active) { return 0; }
+        return self.labels.len();
+    }
+    pub fn component_count(&self) -> i32 {
+        if (!self.active) { return 0; }
+        return self.count;
+    }
+    pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Error> {
+        if (!self.active) { return core::result::Err(error(ext::graph::ErrorKind::Closed, -1)); }
+        if (node < 0 || node >= self.labels.len()) {
+            return core::result::Err(error(ext::graph::ErrorKind::Bounds, node));
+        }
+        return core::result::Ok(self.labels.at(node));
+    }
+    pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool, ext::graph::Error> {
+        let first: i32 = self.component(left)?;
+        let second: i32 = self.component(right)?;
+        return core::result::Ok(first == second);
+    }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.labels.destroy(); self.count = 0; self.active = false;
+        return true;
+    }
+}
+
+pub impl Condensation {
+    pub fn borrow(&self) -> &Condensation { return self; }
+    pub fn is_open(&self) -> bool { return self.active; }
+    pub fn node_count(&self) -> i32 {
+        if (!self.active) { return 0; }
+        return self.components.node_count();
+    }
+    pub fn component_count(&self) -> i32 {
+        if (!self.active) { return 0; }
+        return self.components.component_count();
+    }
+    pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Error> {
+        if (!self.active) { return core::result::Err(error(ext::graph::ErrorKind::Closed, -1)); }
+        return self.components.component(node);
+    }
+    pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool, ext::graph::Error> {
+        if (!self.active) { return core::result::Err(error(ext::graph::ErrorKind::Closed, -1)); }
+        return self.components.same_component(left, right);
+    }
+    // Read-only borrow of an independently owned graph, valid until destroy.
+    pub fn view(&self) -> core::option::Option<ext::graph::View> {
+        if (!self.active) { return core::option::None(); }
+        return self.graph.view();
+    }
+    pub fn destroy(&self) -> bool {
+        if (!self.active) { return false; }
+        self.graph.destroy(); self.components.destroy(); self.active = false;
+        return true;
+    }
+}
+
+struct ComponentWorkspace {
+    discovered: alloc::vec::Vec<i32>, lowlinks: alloc::vec::Vec<i32>,
+    active_nodes: alloc::vec::Vec<i32>, frames: alloc::vec::Vec<i32>,
+    cursors: alloc::vec::Vec<i32>,
+}
+
+impl ComponentWorkspace {
+    fn borrow(&self) -> &ComponentWorkspace { return self; }
+    fn destroy(&self) {
+        self.cursors.destroy(); self.frames.destroy(); self.active_nodes.destroy();
+        self.lowlinks.destroy(); self.discovered.destroy();
+    }
+}
+
+fn reserve_components(out: &StrongComponents, workspace: &ComponentWorkspace, nodes: i32)
+    -> core::result::Result<i32, alloc::vec::Error> {
+    out.labels.try_reserve(nodes)?;
+    workspace.discovered.try_reserve(nodes)?;
+    workspace.lowlinks.try_reserve(nodes)?;
+    workspace.active_nodes.try_reserve(nodes)?;
+    workspace.frames.try_reserve(nodes)?;
+    return workspace.cursors.try_reserve(nodes);
+}
+
+// Caller validated the graph and admitted all work/capacities. This shared
+// engine never validates again and retains no source backing in the result.
+fn components_admitted(graph: ext::graph::View)
+    -> core::result::Result<StrongComponents, ext::graph::Error> {
+    let out: StrongComponents = StrongComponents {
+        labels: alloc::vec::new(), count: 0, active: true,
+    };
+    let workspace: ComponentWorkspace = ComponentWorkspace {
+        discovered: alloc::vec::new(), lowlinks: alloc::vec::new(),
+        active_nodes: alloc::vec::new(), frames: alloc::vec::new(),
+        cursors: alloc::vec::new(),
+    };
+    let reserved: core::result::Result<i32, alloc::vec::Error> =
+        reserve_components(out.borrow(), workspace.borrow(), graph.nodes);
+    if (reserved.is_err()) {
+        workspace.destroy(); out.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    // The validated i32 profile admits all six capacities. Each stack holds
+    // each vertex at most once at a time, so subsequent operations cannot grow.
+    out.labels.try_resize(graph.nodes, -1).unwrap();
+    workspace.discovered.try_resize(graph.nodes, -1).unwrap();
+    workspace.lowlinks.try_resize(graph.nodes, -1).unwrap();
+    let labels: [i32] = out.labels.as_slice();
+    let discovered: [i32] = workspace.discovered.as_slice();
+    let low: [i32] = workspace.lowlinks.as_slice();
+    let next_discovery: i32 = 0;
+    let raw_count: i32 = 0;
+    let root: i32 = 0;
+    while (root < graph.nodes) {
+        if (discovered[root] < 0) {
+            discovered[root] = next_discovery; low[root] = next_discovery;
+            next_discovery += 1;
+            workspace.active_nodes.try_push(root).unwrap();
+            workspace.frames.try_push(root).unwrap();
+            workspace.cursors.try_push(integer(graph.offsets, root)).unwrap();
+            while (!workspace.frames.is_empty()) {
+                let depth: i32 = workspace.frames.len() - 1;
+                let node: i32 = workspace.frames.at(depth);
+                let edge: i32 = workspace.cursors.at(depth);
+                let end: i32 = integer(graph.offsets, node + 1);
+                if (edge < end) {
+                    // Advance the parent before descending; each edge is read
+                    // once, including edges into already completed components.
+                    workspace.cursors.set(depth, edge + 1).unwrap();
+                    let target: i32 = integer(graph.targets, edge);
+                    if (discovered[target] < 0) {
+                        discovered[target] = next_discovery; low[target] = next_discovery;
+                        next_discovery += 1;
+                        workspace.active_nodes.try_push(target).unwrap();
+                        workspace.frames.try_push(target).unwrap();
+                        workspace.cursors.try_push(integer(graph.offsets, target)).unwrap();
+                    } else {
+                        // Discovered but unassigned means still on the active
+                        // component stack. Non-tree edges use discovery index.
+                        if (labels[target] < 0 && discovered[target] < low[node]) {
+                            low[node] = discovered[target];
+                        }
+                    }
+                } else {
+                    workspace.frames.pop().unwrap(); workspace.cursors.pop().unwrap();
+                    if (low[node] == discovered[node]) {
+                        while (true) {
+                            let member: i32 = workspace.active_nodes.pop().unwrap();
+                            labels[member] = raw_count;
+                            if (member == node) { break; }
+                        }
+                        raw_count += 1;
+                    }
+                    if (!workspace.frames.is_empty()) {
+                        let parent: i32 = workspace.frames.last().unwrap();
+                        // A tree-child return contributes its lowlink. A child
+                        // already popped as a component cannot lower its parent.
+                        if (low[node] < low[parent]) { low[parent] = low[node]; }
+                    }
+                }
+            }
+        }
+        root += 1;
+    }
+
+    // Reuse lowlinks as raw-ID -> public-ID storage. The first node seen in
+    // each component is its minimum, independent of discovery/pop order.
+    let node: i32 = 0;
+    while (node < graph.nodes) { low[node] = -1; node += 1; }
+    node = 0;
+    while (node < graph.nodes) {
+        let raw: i32 = labels[node];
+        if (low[raw] < 0) { low[raw] = out.count; out.count += 1; }
+        labels[node] = low[raw];
+        node += 1;
+    }
+    workspace.destroy();
+    return core::result::Ok(out);
+}
+
+pub fn strong_components(graph: ext::graph::View, limits: ext::graph::Limits)
+    -> core::result::Result<StrongComponents, ext::graph::Error> {
+    ext::graph::validate(graph, limits)?;
+    let n: u64 = graph.nodes as u64;
+    let m: u64 = graph.targets.length as u64;
+    let required: u64 = (n + 1 + m) + 16 * n + 4 * m + 1;
+    if (required > limits.max_work) {
+        return core::result::Err(error(ext::graph::ErrorKind::WorkLimit, -1));
+    }
+    return components_admitted(graph);
+}
+
+pub fn condensation(graph: ext::graph::View, limits: ext::graph::Limits)
+    -> core::result::Result<Condensation, ext::graph::Error> {
+    ext::graph::validate(graph, limits)?;
+    let capacity: i32 = (2147483647 / core::mem::size_of<ext::graph::Edge>()) as i32;
+    if (graph.targets.length > capacity) {
+        return core::result::Err(error(ext::graph::ErrorKind::EdgeLimit, -1));
+    }
+    let n: u64 = graph.nodes as u64;
+    let m: u64 = graph.targets.length as u64;
+    let height: u64 = 0;
+    let span: u64 = 1;
+    while (span < m) { span *= 2; height += 1; }
+    let construction: u64 = n + 1 + 6 * m + 4 * m * (1 + height);
+    let required: u64 = (n + 1 + m) + 16 * n + 6 * m + 1 + construction;
+    if (required > limits.max_work) {
+        return core::result::Err(error(ext::graph::ErrorKind::WorkLimit, -1));
+    }
+    let components: StrongComponents = components_admitted(graph)?;
+    // All SCC workspaces have retired. Reserve the conservative original edge
+    // count before mapping, even if most edges will remain within components.
+    let reserved: core::result::Result<alloc::vec::Vec<ext::graph::Edge>, alloc::vec::Error> =
+        alloc::vec::with_capacity<ext::graph::Edge>(graph.targets.length);
+    if (reserved.is_err()) {
+        components.destroy();
+        return core::result::Err(error(ext::graph::ErrorKind::AllocationFailed, -1));
+    }
+    let edges: alloc::vec::Vec<ext::graph::Edge> = reserved.unwrap();
+    let node: i32 = 0;
+    while (node < graph.nodes) {
+        let source: i32 = components.labels.at(node);
+        let edge: i32 = integer(graph.offsets, node);
+        let end: i32 = integer(graph.offsets, node + 1);
+        while (edge < end) {
+            let target: i32 = components.labels.at(integer(graph.targets, edge));
+            if (source != target) {
+                edges.try_push(ext::graph::Edge { source: source, target: target }).unwrap();
+            }
+            edge += 1;
+        }
+        node += 1;
+    }
+    // Actual component/pair counts are bounded by n/m, so this constructor's
+    // capacities and admission estimate are covered by the outer preflight.
+    let made: core::result::Result<ext::graph::Graph, ext::graph::Error> =
+        ext::graph::from_edges(components.count, edges.as_view(), limits);
+    edges.destroy();
+    if (made.is_err()) {
+        components.destroy();
+        return core::result::Err(made.unwrap_err());
+    }
+    return core::result::Ok(Condensation {
+        components: components, graph: made.unwrap(), active: true,
+    });
 }

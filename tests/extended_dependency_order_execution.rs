@@ -1,4 +1,4 @@
-//! Independent exhaustive ordering and shortest-path models for the CSV app.
+//! Independent ordering, shortest-path and mutual-reachability models for the CSV app.
 #![cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod common;
 use std::{
@@ -61,17 +61,17 @@ fn oracle(mode: &str, count: usize) {
 }
 #[test]
 fn dependency_order_exhaustive_small_orders_shortest_paths_and_scale_match_reference() {
-    oracle("model", 83);
+    oracle("model", 166);
 }
 #[test]
 fn dependency_order_cycles_csv_bounds_and_exact_eof_reject_before_publication() {
-    oracle("rejection", 40);
+    oracle("rejection", 52);
 }
 #[test]
 fn dependency_order_cli_help_and_option_limits_execute() {
-    oracle("cli", 41);
+    oracle("cli", 58);
 }
 #[test]
 fn dependency_order_reached_owner_failures_io_prefix_and_cleanup_execute() {
-    oracle("io", 19);
+    oracle("io", 36);
 }

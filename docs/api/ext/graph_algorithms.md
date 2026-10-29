@@ -8,14 +8,15 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Uses the canonical ext::graph validation boundary once. BFS retains FIFO first-discovery parents while scanning sorted neighbors; distance is shortest edge count, and ties do not imply the smallest numeric predecessor. Source distance is zero with absent parent; unreachable paths are absent. Query errors distinguish Closed before node Bounds from Ok(None). Kahn ordering uses the existing Min heap to choose the smallest ready ID, producing lexicographically smallest order or Cycle without a partial result. Full weighted work estimates precede allocation/traversal; reserved Deque/heap/workspace loops do not grow. Inputs remain unchanged and partial/result owners have explicit cleanup. All eight library tests and four application groups/183 cases pass on native Linux x86_64 CPU output. The 4,570-case model uses tiny graphs; 65,536-node reservation/scale and physical/fault gates are separate. No device/proof/automatic-lifetime claim.
+Uses the canonical ext::graph validation boundary once. BFS retains FIFO first-discovery parents while scanning sorted neighbors; distance is shortest edge count, and ties do not imply the smallest numeric predecessor. Source distance is zero with absent parent; unreachable paths are absent. Query errors distinguish Closed before node Bounds from Ok(None). Kahn ordering uses the existing Min heap to choose the smallest ready ID, producing lexicographically smallest order or Cycle without a partial result. Full weighted work estimates precede allocation/traversal; reserved Deque/heap/workspace loops do not grow. Inputs remain unchanged and partial/result owners have explicit cleanup. The historical foundation sources passed eight library tests and four application groups/183 cases on native Linux x86_64 CPU output. The 4,570-case model uses tiny graphs; 65,536-node reservation/scale and physical/fault gates are separate. No device/proof/automatic-lifetime claim. StrongComponents and Condensation add independent manual owners and canonical minimum-original-node component IDs, which do not imply topological order. Condensation reuses graph::from_edges for the component DAG. All six new component library tests pass on native Linux x86_64: three direct gates, a 3,218-case mutual-reachability model, 17 reached allocation denials with recovery, and three 65,536-node shapes with complete outputs. The amended dependency-order application passes four groups/312 cases including the new component mode, plus the documented standalone build and both exact CSV examples. Historical foundation receipts do not establish the new functions.
 
 ## Contract and evidence guides
 
 - [extended-graph](../../extended-graph.md)
+- [extended-graph-components](../../extended-graph-components.md)
 - [extended-dependency-order](../../extended-dependency-order.md)
 
-Declaration counts: field: 4; function: 2; impl: 1; method: 7; struct: 1.
+Declaration counts: field: 10; function: 4; impl: 3; method: 22; struct: 3.
 
 ## Declared imports
 
@@ -25,10 +26,11 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [alloc::deque](../alloc/deque.md) · [source](../../../extended/ext/graph_algorithms.lani#L7)
 - [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/graph_algorithms.lani#L8)
 - [core::i32](../core/i32.md) · [source](../../../extended/ext/graph_algorithms.lani#L9)
-- [core::option](../core/option.md) · [source](../../../extended/ext/graph_algorithms.lani#L10)
-- [core::result](../core/result.md) · [source](../../../extended/ext/graph_algorithms.lani#L11)
-- [core::slice](../core/slice.md) · [source](../../../extended/ext/graph_algorithms.lani#L12)
-- [ext::graph](graph.md) · [source](../../../extended/ext/graph_algorithms.lani#L13)
+- [core::mem](../core/mem.md) · [source](../../../extended/ext/graph_algorithms.lani#L10)
+- [core::option](../core/option.md) · [source](../../../extended/ext/graph_algorithms.lani#L11)
+- [core::result](../core/result.md) · [source](../../../extended/ext/graph_algorithms.lani#L12)
+- [core::slice](../core/slice.md) · [source](../../../extended/ext/graph_algorithms.lani#L13)
+- [ext::graph](graph.md) · [source](../../../extended/ext/graph_algorithms.lani#L14)
 
 ## Types, fields and variants
 
@@ -36,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### struct: BfsPaths
 
-[Source line 15](../../../extended/ext/graph_algorithms.lani#L15)
+[Source line 16](../../../extended/ext/graph_algorithms.lani#L16)
 
 ```lanius
 pub struct BfsPaths
@@ -44,7 +46,7 @@ pub struct BfsPaths
 
 #### field: distances
 
-[Source line 16](../../../extended/ext/graph_algorithms.lani#L16)
+[Source line 17](../../../extended/ext/graph_algorithms.lani#L17)
 
 ```lanius
 distances: alloc::vec::Vec<i32>
@@ -52,7 +54,7 @@ distances: alloc::vec::Vec<i32>
 
 #### field: parents
 
-[Source line 17](../../../extended/ext/graph_algorithms.lani#L17)
+[Source line 18](../../../extended/ext/graph_algorithms.lani#L18)
 
 ```lanius
 parents: alloc::vec::Vec<i32>
@@ -60,7 +62,7 @@ parents: alloc::vec::Vec<i32>
 
 #### field: selected_source
 
-[Source line 18](../../../extended/ext/graph_algorithms.lani#L18)
+[Source line 19](../../../extended/ext/graph_algorithms.lani#L19)
 
 ```lanius
 selected_source: i32
@@ -68,7 +70,71 @@ selected_source: i32
 
 #### field: active
 
-[Source line 19](../../../extended/ext/graph_algorithms.lani#L19)
+[Source line 20](../../../extended/ext/graph_algorithms.lani#L20)
+
+```lanius
+active: bool
+```
+
+### struct: StrongComponents
+
+[Source line 207](../../../extended/ext/graph_algorithms.lani#L207)
+
+```lanius
+pub struct StrongComponents
+```
+
+#### field: labels
+
+[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
+
+```lanius
+labels: alloc::vec::Vec<i32>
+```
+
+#### field: count
+
+[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
+
+```lanius
+count: i32
+```
+
+#### field: active
+
+[Source line 208](../../../extended/ext/graph_algorithms.lani#L208)
+
+```lanius
+active: bool
+```
+
+### struct: Condensation
+
+[Source line 211](../../../extended/ext/graph_algorithms.lani#L211)
+
+```lanius
+pub struct Condensation
+```
+
+#### field: components
+
+[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
+
+```lanius
+components: StrongComponents
+```
+
+#### field: graph
+
+[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
+
+```lanius
+graph: ext::graph::Graph
+```
+
+#### field: active
+
+[Source line 212](../../../extended/ext/graph_algorithms.lani#L212)
 
 ```lanius
 active: bool
@@ -78,7 +144,7 @@ active: bool
 
 ### function: bfs
 
-[Source line 72](../../../extended/ext/graph_algorithms.lani#L72)
+[Source line 73](../../../extended/ext/graph_algorithms.lani#L73)
 
 ```lanius
 pub fn bfs(graph: ext::graph::View, source: i32, limits: ext::graph::Limits)
@@ -89,7 +155,7 @@ Validate once, then check the requested source, admit V+4n+2m+1 and allocate res
 
 ### function: topological_order
 
-[Source line 137](../../../extended/ext/graph_algorithms.lani#L137)
+[Source line 138](../../../extended/ext/graph_algorithms.lani#L138)
 
 ```lanius
 pub fn topological_order(graph: ext::graph::View, limits: ext::graph::Limits)
@@ -98,11 +164,33 @@ pub fn topological_order(graph: ext::graph::View, limits: ext::graph::Limits)
 
 Validate once and admit V+4n+2m+4n(1+h(n)); choose minimum ready ID via the existing Min heap. Returns an independent Vec or a Cycle error with node=edge=-1, releasing incomplete output/workspace on failure.
 
+### function: strong_components
+
+[Source line 396](../../../extended/ext/graph_algorithms.lani#L396)
+
+```lanius
+pub fn strong_components(graph: ext::graph::View, limits: ext::graph::Limits)
+    -> core::result::Result<StrongComponents, ext::graph::Error>
+```
+
+Validates once, admits V+16n+4m+1, then uses explicit DFS frames and six reserved i32 buffers. Returns an independent node-to-component owner with dense IDs ordered by component minimum node; empty input needs no allocation. Queries check Closed before Bounds, left before right.
+
+### function: condensation
+
+[Source line 408](../../../extended/ext/graph_algorithms.lani#L408)
+
+```lanius
+pub fn condensation(graph: ext::graph::View, limits: ext::graph::Limits)
+    -> core::result::Result<Condensation, ext::graph::Error>
+```
+
+Validates once, admits native m-Edge capacity before V+16n+6m+1+F(n,m), computes its own mapping and reuses graph::from_edges for distinct inter-component edges. Returns independent mapping and acyclic Graph ownership; component IDs are not topological positions. Empty output still owns offsets [0].
+
 ## Implementation blocks and public methods
 
-### impl at line 35
+### impl at line 36
 
-[Source line 35](../../../extended/ext/graph_algorithms.lani#L35)
+[Source line 36](../../../extended/ext/graph_algorithms.lani#L36)
 
 ```lanius
 pub impl BfsPaths
@@ -110,7 +198,7 @@ pub impl BfsPaths
 
 #### method: borrow
 
-[Source line 36](../../../extended/ext/graph_algorithms.lani#L36)
+[Source line 37](../../../extended/ext/graph_algorithms.lani#L37)
 
 ```lanius
 pub fn borrow(&self) -> &BfsPaths
@@ -118,7 +206,7 @@ pub fn borrow(&self) -> &BfsPaths
 
 #### method: is_open
 
-[Source line 37](../../../extended/ext/graph_algorithms.lani#L37)
+[Source line 38](../../../extended/ext/graph_algorithms.lani#L38)
 
 ```lanius
 pub fn is_open(&self) -> bool
@@ -126,7 +214,7 @@ pub fn is_open(&self) -> bool
 
 #### method: node_count
 
-[Source line 38](../../../extended/ext/graph_algorithms.lani#L38)
+[Source line 39](../../../extended/ext/graph_algorithms.lani#L39)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -134,7 +222,7 @@ pub fn node_count(&self) -> i32
 
 #### method: source
 
-[Source line 42](../../../extended/ext/graph_algorithms.lani#L42)
+[Source line 43](../../../extended/ext/graph_algorithms.lani#L43)
 
 ```lanius
 pub fn source(&self) -> core::option::Option<i32>
@@ -142,7 +230,7 @@ pub fn source(&self) -> core::option::Option<i32>
 
 #### method: distance
 
-[Source line 46](../../../extended/ext/graph_algorithms.lani#L46)
+[Source line 47](../../../extended/ext/graph_algorithms.lani#L47)
 
 ```lanius
 pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i32>, ext::graph::Error>
@@ -150,7 +238,7 @@ pub fn distance(&self, node: i32) -> core::result::Result<core::option::Option<i
 
 #### method: predecessor
 
-[Source line 54](../../../extended/ext/graph_algorithms.lani#L54)
+[Source line 55](../../../extended/ext/graph_algorithms.lani#L55)
 
 ```lanius
 pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Option<i32>, ext::graph::Error>
@@ -158,7 +246,143 @@ pub fn predecessor(&self, node: i32) -> core::result::Result<core::option::Optio
 
 #### method: destroy
 
-[Source line 62](../../../extended/ext/graph_algorithms.lani#L62)
+[Source line 63](../../../extended/ext/graph_algorithms.lani#L63)
+
+```lanius
+pub fn destroy(&self) -> bool
+```
+
+### impl at line 215
+
+[Source line 215](../../../extended/ext/graph_algorithms.lani#L215)
+
+```lanius
+pub impl StrongComponents
+```
+
+#### method: borrow
+
+[Source line 216](../../../extended/ext/graph_algorithms.lani#L216)
+
+```lanius
+pub fn borrow(&self) -> &StrongComponents
+```
+
+#### method: is_open
+
+[Source line 217](../../../extended/ext/graph_algorithms.lani#L217)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: node_count
+
+[Source line 218](../../../extended/ext/graph_algorithms.lani#L218)
+
+```lanius
+pub fn node_count(&self) -> i32
+```
+
+#### method: component_count
+
+[Source line 222](../../../extended/ext/graph_algorithms.lani#L222)
+
+```lanius
+pub fn component_count(&self) -> i32
+```
+
+#### method: component
+
+[Source line 226](../../../extended/ext/graph_algorithms.lani#L226)
+
+```lanius
+pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Error>
+```
+
+#### method: same_component
+
+[Source line 233](../../../extended/ext/graph_algorithms.lani#L233)
+
+```lanius
+pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool, ext::graph::Error>
+```
+
+#### method: destroy
+
+[Source line 238](../../../extended/ext/graph_algorithms.lani#L238)
+
+```lanius
+pub fn destroy(&self) -> bool
+```
+
+### impl at line 245
+
+[Source line 245](../../../extended/ext/graph_algorithms.lani#L245)
+
+```lanius
+pub impl Condensation
+```
+
+#### method: borrow
+
+[Source line 246](../../../extended/ext/graph_algorithms.lani#L246)
+
+```lanius
+pub fn borrow(&self) -> &Condensation
+```
+
+#### method: is_open
+
+[Source line 247](../../../extended/ext/graph_algorithms.lani#L247)
+
+```lanius
+pub fn is_open(&self) -> bool
+```
+
+#### method: node_count
+
+[Source line 248](../../../extended/ext/graph_algorithms.lani#L248)
+
+```lanius
+pub fn node_count(&self) -> i32
+```
+
+#### method: component_count
+
+[Source line 252](../../../extended/ext/graph_algorithms.lani#L252)
+
+```lanius
+pub fn component_count(&self) -> i32
+```
+
+#### method: component
+
+[Source line 256](../../../extended/ext/graph_algorithms.lani#L256)
+
+```lanius
+pub fn component(&self, node: i32) -> core::result::Result<i32, ext::graph::Error>
+```
+
+#### method: same_component
+
+[Source line 260](../../../extended/ext/graph_algorithms.lani#L260)
+
+```lanius
+pub fn same_component(&self, left: i32, right: i32) -> core::result::Result<bool, ext::graph::Error>
+```
+
+#### method: view
+
+[Source line 265](../../../extended/ext/graph_algorithms.lani#L265)
+
+```lanius
+pub fn view(&self) -> core::option::Option<ext::graph::View>
+```
+
+#### method: destroy
+
+[Source line 269](../../../extended/ext/graph_algorithms.lani#L269)
 
 ```lanius
 pub fn destroy(&self) -> bool

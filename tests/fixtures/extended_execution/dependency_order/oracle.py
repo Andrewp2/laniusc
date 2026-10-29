@@ -1,4 +1,4 @@
-"""Permutation-order and dense all-pairs/shortest-path-prefix graph oracles."""
+"""Independent permutation-order, shortest-path and mutual-reachability oracles."""
 from collections import Counter
 import csv
 from io import StringIO
@@ -12,21 +12,25 @@ import sys
 import tempfile
 
 CAP = 4194304
-HELP = (b"Usage: dependency_order --nodes N [--source S] [--help]\n"
-        b"Read CSV before,after and print the lexicographically smallest dependency order.\n"
-        b"N is 0..4096; source and edge IDs are in [0,N). Leading zeros are allowed.\n"
-        b"Output CSV: position,node,hops,predecessor; positions are zero-based.\n"
-        b"--source adds shortest-hop distances and first-discovery predecessors; absent values are empty.\n"
-        b"Cycles, including self-loops, fail without data output. Empty graphs print only the header.\n"
-        b"Short options: -n N, -s S, -h. Duplicate options and operands are errors.\n"
-        b"Limits: 4 MiB input, 65536 raw edges, 128 bytes per field, 1 MiB staged output.\n"
-        b"Input permits 16384 read attempts and output 2048 attempts; interruptions spend attempts.\n"
-        b"Help accepts otherwise valid options and does not read stdin.\n")
+HELP = (b'Usage: dependency_order --nodes N [--source S | --components] [--help]\n'
+        b'Read CSV before,after and print the lexicographically smallest dependency order.\n'
+        b'N is 0..4096; source and edge IDs are in [0,N). Leading zeros are allowed.\n'
+        b'Default CSV: position,node,hops,predecessor; positions are zero-based.\n'
+        b'--source adds shortest-hop distances and first-discovery predecessors; absent values are empty.\n'
+        b'Default mode rejects cycles, including self-loops, without data output.\n'
+        b'--components accepts cycles and prints node,component,position in node order.\n'
+        b'Component IDs follow smallest member IDs; positions follow component dependency order.\n'
+        b'--components and --source cannot be combined. Empty graphs print only the header.\n'
+        b'Short options: -n N, -s S, -C, -h. Duplicate options and operands are errors.\n'
+        b'Limits: 4 MiB input, 65536 raw edges, 128 bytes per field, 1 MiB staged output.\n'
+        b'Input permits 16384 read attempts and output 2048 attempts; interruptions spend attempts.\n'
+        b'Help accepts otherwise valid options and does not read stdin.\n')
 ERROR = b"dependency_order: operation failed\n"
 INPUT_HEADER = b"before,after\n"
 HEADER = ("position", "node", "hops", "predecessor")
+COMPONENT_HEADER = ("node", "component", "position")
 TRACE = "read,write,close,mmap,munmap,mremap,brk,rt_sigaction"
-COUNTS = {"model": 83, "rejection": 40, "cli": 41, "io": 19}
+COUNTS = {"model": 166, "rejection": 52, "cli": 58, "io": 36}
 OUTPUT_CALLS = 2048
 
 
@@ -88,6 +92,48 @@ def reference(nodes, edges, source=None):
     order = ordered_nodes(nodes, edges)
     if order is None: return 2, b""
     return 0, expected_output(order, None if source is None else hop_paths(nodes, edges, source))
+
+
+
+def component_partition(nodes, edges):
+    """Dense transitive closure defines equivalence; no DFS/lowlink traversal."""
+    assert 0 <= nodes <= 8
+    reach = [[left == right for right in range(nodes)] for left in range(nodes)]
+    for left, right in edges:
+        assert 0 <= left < nodes and 0 <= right < nodes
+        reach[left][right] = True
+    for middle in range(nodes):
+        for left in range(nodes):
+            for right in range(nodes):
+                reach[left][right] |= reach[left][middle] and reach[middle][right]
+    groups = []
+    mapping = [-1] * nodes
+    for first in range(nodes):
+        if mapping[first] >= 0: continue
+        members = [node for node in range(nodes) if reach[first][node] and reach[node][first]]
+        assert members[0] == first
+        for node in members:
+            assert mapping[node] == -1
+            mapping[node] = len(groups)
+        groups.append(members)
+    return mapping, groups
+
+
+def component_output(mapping, order):
+    assert sorted(set(mapping)) == list(range(len(order)))
+    assert sorted(order) == list(range(len(order)))
+    position = {component: index for index, component in enumerate(order)}
+    return encode([COMPONENT_HEADER, *((node, component, position[component])
+                   for node, component in enumerate(mapping))], quoted=True)
+
+
+def component_reference(nodes, edges):
+    mapping, groups = component_partition(nodes, edges)
+    between = {(mapping[left], mapping[right]) for left, right in edges
+               if mapping[left] != mapping[right]}
+    order = ordered_nodes(len(groups), between)
+    assert order is not None
+    return 0, component_output(mapping, order)
 
 
 def cap_input():
@@ -184,6 +230,14 @@ class Runner:
                         status=status, output=output, **options)
 
 
+    def components(self, name, nodes, edges, *, wire=None, known=None, arguments=None, **options):
+        status, output = component_reference(nodes, edges) if known is None else known
+        status, output = options.pop("status", status), options.pop("output", output)
+        args = ["--nodes", str(nodes), "--components"]
+        return self.run(name, args if arguments is None else arguments, graph_input(edges) if wire is None else wire,
+                        status=status, output=output, **options)
+
+
 def model(r):
     possible = [(u, v) for u in range(3) for v in range(3) if u != v]
     for mask in range(64):
@@ -218,6 +272,38 @@ def model(r):
             paths = [(n-1-i, i+1 if i<n-1 else None) for i in range(n)]
         r.graph(f"maximum-nodes-{shape}", n, edges, source, known=(0,expected_output(order,paths)))
     r.graph("maximum-input-and-raw-edges", 2, [(0,1)], 0, wire=cap_input())
+    for mask in range(64):
+        edges = [edge for bit, edge in enumerate(possible) if mask & (1 << bit)]
+        r.components(f"components-every-three-node-directed-{mask}", 3, edges)
+    shapes = [
+        ("empty", 0, []), ("singleton", 1, []), ("self-loop", 1, [(0,0)]),
+        ("isolated", 7, []), ("all-self-loops", 5, [(i,i) for i in range(5)]),
+        ("one-cycle", 5, [(i,(i+1)%5) for i in range(5)]),
+        ("reverse-id-order", 4, [(3,2),(2,1),(1,0)]),
+        ("nested-cycle", 7, [(0,1),(1,2),(2,0),(1,3),(3,4),(4,1),(4,5)]),
+        ("completed-target", 7, [(1,2),(2,1),(3,4),(4,3),(4,1),(5,3),(5,0)]),
+        ("active-cross-link", 6, [(0,1),(1,2),(2,0),(0,3),(3,1),(3,4),(4,5),(5,4)]),
+        ("component-ready-tie", 8, [(0,1),(1,0),(2,3),(3,2),(6,7),(7,6),(6,2),(4,0),(2,5)]),
+    ]
+    for name, nodes, edges in shapes: r.components("components-"+name, nodes, edges)
+    shuffled = [(0,2),(2,0),(1,3),(3,1),(4,1),(4,0),(3,5)] * 4
+    rng.shuffle(shuffled)
+    r.components("components-duplicate-shuffled", 7, shuffled)
+    r.components("components-quoted-crlf", 3, [(0,1),(1,0)],
+                 wire=b'"before","after"\r\n"0","1"\r\n"1","0"\r\n')
+    r.components("components-unterminated-final-record", 3, [(2,1)], wire=b"before,after\n2,1")
+    for shape in ("isolated", "single-cycle", "paired-reverse-chain", "self-loops"):
+        n = 4096
+        if shape == "isolated": edges, mapping, order = [], list(range(n)), list(range(n))
+        elif shape == "single-cycle":
+            edges, mapping, order = [(i,(i+1)%n) for i in range(n)], [0]*n, [0]
+        elif shape == "paired-reverse-chain":
+            edges = [(i,i^1) for i in range(n)] + [(i,i-2) for i in range(2,n,2)]
+            mapping, order = [i//2 for i in range(n)], list(reversed(range(n//2)))
+        else: edges, mapping, order = [(i,i) for i in range(n)], list(range(n)), list(range(n))
+        r.components("components-maximum-nodes-"+shape, n, edges, known=(0,component_output(mapping,order)))
+    r.components("components-maximum-input-and-raw-edges", 2, [(0,1)], wire=cap_input())
+
 
 
 def rejection(r):
@@ -245,6 +331,23 @@ def rejection(r):
             assert sum(int(item["answer"]) for item in reads) == length
 
 
+    component_invalid = [b"", b"before,target\n", b"before,after\n3,0\n", b"before,after\n0,3\n",
+                         b"before,after\n-1,0\n", b' before,after\n', b'before,after\n"0"x,1\n',
+                         b"before,after\n" + b"0"*129 + b",1\n"]
+    for index, wire in enumerate(component_invalid):
+        r.run(f"components-invalid-csv-{index}", ["--nodes","3","--components"], wire, status=2, trace=True)
+    r.run("components-raw-edge-over-limit", ["--nodes","2","--components"],
+          INPUT_HEADER + b"0,1\n"*65537, status=2)
+    r.run("components-zero-nodes-edge", ["--nodes","0","--components"], INPUT_HEADER+b"0,0\n",status=2,trace=True)
+    for length in (CAP, CAP+1):
+        found = r.run(f"components-raw-byte-limit-{length}", ["--nodes","2","--components"],
+                      b"x"*length, status=2, trace=True)
+        if r.observes:
+            reads = [item for item in found if item["name"] == "read"]
+            assert reads[-1]["args"].endswith(", 1") and reads[-1]["answer"] == str(int(length > CAP))
+            assert sum(int(item["answer"]) for item in reads) == length
+
+
 def cli(r):
     invalid = [[], ["--nodes"], ["--source","0"], ["--nodes","-1"], ["--nodes","+1"], ["--nodes","4097"],
                ["--nodes","1","--source","1"], ["--nodes","0","--source","0"], ["--nodes","1","--source","4096"],
@@ -261,6 +364,21 @@ def cli(r):
     for index, args in enumerate(valid): r.run(f"help-{index}", args, output=HELP, trace=True, read_error=True, preflight=True)
     r.graph("short-options-leading-zero64", 2, [(0,1)], 0,
             arguments=["-n","0"*63+"2","-s","0"*64])
+
+
+    component_invalid = [["--components"], ["--nodes","1","-CC"], ["--nodes","1","--components","-C"],
+                         ["--nodes","1","--components","--components"], ["--nodes","1","--components=yes"],
+                         ["--nodes","1","--components","--source","0"],
+                         ["--nodes","1","-s","0","-C"], ["--help","--components","--source","0"],
+                         ["--nodes","1","--source","0","--components","--help"],
+                         ["--help","--components","-C"], ["--nodes","4097","--components"],
+                         ["--nodes","1","--components","operand"]]
+    for index, args in enumerate(component_invalid):
+        r.run(f"components-invalid-{index}", args, status=2, trace=True, read_error=True, preflight=True)
+    for index, args in enumerate((["--components","--help"], ["-Ch"], ["--nodes","4096","-C","--help"])):
+        r.run(f"components-help-{index}", args, output=HELP, trace=True, read_error=True, preflight=True)
+    r.components("components-short-alias", 3, [(0,1),(1,0)], arguments=["-n","0003","-C"])
+    r.components("components-short-cluster", 3, [(0,1),(1,0)], arguments=["-Cn3"])
 
 
 def io(r):
@@ -309,10 +427,95 @@ def io(r):
     exercise("output-attempt-cap",status=5,output=b"",budget="write")
 
 
+    # A separate successful native case binds the new path's actual sites. It
+    # is part of the reported count, not an uncounted calibration execution.
+    n, count = 96, 48
+    edges = ([(i,i^1) for i in range(n)] + [(i,i-2) for i in range(2,n,2)]) * 10
+    wire = graph_input(edges)
+    wanted = component_output([i//2 for i in range(n)], list(reversed(range(count))))
+    assert len(wanted) > 1024
+    def component_exercise(name, **options):
+        return r.components(name,n,edges,known=(0,wanted),**options)
+    baseline = component_exercise("components-baseline", trace=True)
+    maps = [item for item in baseline if item["name"] == "mmap"]
+    eof = next(item for item in baseline if item["name"] == "read" and item["answer"] == "0")
+    first_read = next(index for index,item in enumerate(baseline) if item["name"] == "read")
+    first_write = next(index for index,item in enumerate(baseline) if item["name"] == "write" and item["args"].startswith("1,"))
+    def size(item): return int(item["args"].split(",")[1])
+    def release(item):
+        # Choose the first release after this allocation; addresses may be reused.
+        return next(index for index,event in enumerate(baseline) if index > baseline.index(item)
+                    and event["name"] == "munmap" and event["args"].split(",")[0] == item["answer"])
+    for owner in maps[:2]: assert release(owner) < baseline.index(maps[2]) < first_read
+    offsets = [item for item in maps if baseline.index(item)>baseline.index(eof) and size(item)==(n+1)*4]
+    assert len(offsets) == 1, "ambiguous original graph offset allocation"
+    offset_index = maps.index(offsets[0]); targets = maps[offset_index+1]
+    original_edges = len(set(edges)); cross_edges = count-1
+    assert size(targets)==original_edges*4
+    # The source constructor's exact sorted edge staging establishes Edge's
+    # byte width for this emitted executable before matching component pairs.
+    original_staging = maps[offset_index-1]
+    assert size(original_staging) % len(edges) == 0
+    edge_width = size(original_staging)//len(edges)
+    assert edge_width > 0 and release(original_staging) < baseline.index(maps[offset_index+2])
+    phase = maps[offset_index+2:offset_index+16]
+    expected_sizes = [n*4]*6 + [original_edges*edge_width,cross_edges*edge_width,(count+1)*4,cross_edges*4] + [count*4]*4
+    assert list(map(size,phase)) == expected_sizes, (list(map(size,phase)), expected_sizes)
+    labels, *workspaces = phase[:6]
+    pairs, sorted_pairs, dag_offsets, dag_targets = phase[6:10]
+    order, indegrees, ready, positions = phase[10:14]
+    for owner in workspaces: assert release(owner) < baseline.index(pairs)
+    for owner in (pairs, sorted_pairs): assert release(owner) < baseline.index(order)
+    for owner in (indegrees, ready): assert release(owner) < baseline.index(positions)
+    assert release(order) < baseline.index(maps[offset_index+16]), "topological owner remains during rendering"
+    for owner in (labels,dag_offsets,dag_targets,positions,offsets[0],targets): assert release(owner) < first_write
+    live = {}
+    for item in baseline[:first_write]:
+        if item["name"] == "mmap": live[item["answer"]] = size(item)
+        elif item["name"] == "munmap": del live[item["args"].split(",")[0]]
+    assert live == {maps[-1]["answer"]: size(maps[-1])} and size(maps[-1]) >= len(wanted)
+    selected = [labels,workspaces[-1],pairs,sorted_pairs,dag_offsets,dag_targets,order,positions,maps[-1]]
+    assert len({item["ordinal"] for item in selected}) == 9
+    for old in selected:
+        actual = component_exercise(f"components-owner-oom-{old['ordinal']}",status=4,output=b"",trace=True,
+                                    injections=(("mmap",old["ordinal"],"ENOMEM"),))
+        actual_maps = [item for item in actual if item["name"] == "mmap"]
+        assert len(actual_maps) == old["ordinal"], "allocation attempted after reached failure"
+        assert [item["args"] for item in actual_maps] == [item["args"] for item in maps[:old["ordinal"]]]
+    component_exercise("components-read-eintr-retry",trace=True,injections=(("read",1,"EINTR"),))
+    component_exercise("components-later-read-eio",status=3,output=b"",trace=True,injections=(("read",2,"EIO"),))
+    failed=component_exercise("components-required-eof-eio",status=3,output=b"",trace=True,
+                             injections=(("read",eof["ordinal"],"EIO"),))
+    assert sum(int(item["answer"]) for item in failed if item["name"]=="read" and item["answer"].isdigit())==len(wire)
+    component_exercise("components-closed-data-stdout",status=5,output=b"",trace=True,closed_stdout=True)
+    component_exercise("components-write-eintr-retry",trace=True,injections=(("write",1,"EINTR"),))
+    partial=component_exercise("components-actual-output-prefix",status=5,output=wanted[:1024],trace=True,
+                               injections=(("write",2,"EIO"),))
+    assert next(item["answer"] for item in partial if item["name"]=="write")=="1024"
+    component_exercise("components-output-attempt-cap",status=5,output=b"",budget="write")
+
+
 def controls():
-    assert len(HELP)==776 and len(ERROR)==35
+    assert len(HELP)==1023 and len(ERROR)==35
     assert expected_output(())==b'"position","node","hops","predecessor"\r\n'
     assert len(expected_output(()))==40
+
+    assert component_reference(0,[]) == (0,b'"node","component","position"\r\n')
+    assert component_reference(1,[(0,0)]) == (0,b'"node","component","position"\r\n"0","0","0"\r\n')
+    assert component_partition(4,[(0,2),(2,0),(3,1)])[0] == [0,1,0,2]
+    assert component_reference(4,[(0,2),(2,0),(3,1)]) == (0,
+        b'"node","component","position"\r\n"0","0","0"\r\n"1","1","2"\r\n"2","0","0"\r\n"3","2","1"\r\n')
+    component_edges=[(0,1),(1,0),(2,3),(3,2),(4,2),(2,0),(5,5)]
+    assert component_reference(7,component_edges)==component_reference(7,list(reversed(component_edges))*3)
+    # Exact byte comparisons catch reordered node rows, discovery-order labels,
+    # component IDs mistaken for topological positions and missing SCC members.
+    literal=component_reference(4,[(0,2),(2,0),(3,1)])[1]
+    changed=[literal.replace(b'"1","1","2"',b'"1","1","1"'),
+             literal.replace(b'"2","0","0"',b'"2","2","0"'),
+             literal.replace(b'"3","2","1"\r\n',b''),
+             literal.replace(b'"0","0","0"\r\n"1","1","2"',b'"1","1","2"\r\n"0","0","0"')]
+    assert all(wrong != literal for wrong in changed)
+
     assert reference(0,[])==(0,expected_output(()))
     assert ordered_nodes(3,[(0,1),(1,2),(2,0)]) is None
     assert ordered_nodes(1,[(0,0)]) is None
@@ -334,6 +537,9 @@ def controls():
         def run(self,*args,**kwargs): self.count+=1; return []
         def graph(self,name,nodes,edges,source=None,known=None,**kwargs):
             if known is None: reference(nodes,edges,source)
+            self.count+=1; return []
+        def components(self,name,nodes,edges,known=None,**kwargs):
+            if known is None: component_reference(nodes,edges)
             self.count+=1; return []
     for function in (model,rejection,cli):
         r=CounterOnly(); function(r)

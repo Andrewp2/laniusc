@@ -1,0 +1,77 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::result;
+import ext::graph;
+import ext::graph_algorithms;
+import std::io;
+
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn degree(kind:i32,node:i32) -> i32 {
+    if(kind==0) { if(node==65535) { return 0; } return 1; }
+    if(kind==1) { return 1; }
+    if(node/256<255 && (node%256==0 || node%256==255)) { return 2; } return 1;
+}
+fn target(kind:i32,node:i32,slot:i32) -> i32 {
+    if(kind==0) { return node+1; }
+    if(kind==1) { return (node+1)%65536; }
+    if(slot==1) { return (node/256+1)*256; }
+    return (node/256)*256+(node+1)%256;
+}
+fn offset(kind:i32,node:i32) -> i32 {
+    if(kind==0) { if(node==65536) { return 65535; } return node; }
+    if(kind==1) { return node; }
+    let blocks:i32=node/256; if(blocks>255) { blocks=255; }
+    let value:i32=node+blocks*2; if(node/256<255 && node%256>0) { value+=1; } return value;
+}
+fn component(kind:i32,node:i32) -> i32 {
+    if(kind==0) { return node; }
+    if(kind==1) { return 0; }
+    return node/256;
+}
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let kind:i32=header[0]&255; assert(kind>=0 && kind<=2);
+    let edges:i32=65535; let components:i32=65536;
+    if(kind==1) { edges=65536; components=1; }
+    if(kind==2) { edges=66046; components=256; }
+    let offsets:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(65537).unwrap();
+    let targets:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(edges).unwrap();
+    let packed:alloc::vec::Vec<i32> =alloc::vec::with_capacity<i32>(262145).unwrap();
+    mark(80); let node:i32=0;
+    while(node<=65536) { offsets.try_push(offset(kind,node)).unwrap(); node+=1; }
+    node=0; while(node<65536) { let slot:i32=0; while(slot<degree(kind,node)) { targets.try_push(target(kind,node,slot)).unwrap(); slot+=1; } node+=1; }
+    assert(targets.len()==edges); mark(112);
+    let input:ext::graph::View=ext::graph::View { nodes:65536,offsets:offsets.as_view(),targets:targets.as_view() };
+    let limits:ext::graph::Limits=ext::graph::default_limits();
+    mark(67); let strong_result:core::result::Result<ext::graph_algorithms::StrongComponents,ext::graph::Error> =ext::graph_algorithms::strong_components(input,limits); mark(70);
+    let strong:ext::graph_algorithms::StrongComponents=strong_result.unwrap();
+    mark(67); let condensed_result:core::result::Result<ext::graph_algorithms::Condensation,ext::graph::Error> =ext::graph_algorithms::condensation(input,limits); mark(70);
+    let condensed:ext::graph_algorithms::Condensation=condensed_result.unwrap();
+    mark(80); node=0;
+    assert(offsets.len()==65537 && offsets.capacity()==65537 && targets.len()==edges && targets.capacity()==edges);
+    while(node<=65536) { assert(offsets.at(node)==offset(kind,node)); node+=1; }
+    node=0; let edge:i32=0;
+    while(node<65536) { let slot:i32=0; while(slot<degree(kind,node)) { assert(targets.at(edge)==target(kind,node,slot)); slot+=1; edge+=1; } node+=1; }
+    assert(edge==edges); mark(112);
+    targets.destroy(); offsets.destroy();
+    mark(80); assert(strong.is_open() && strong.node_count()==65536 && strong.component_count()==components);
+    assert(condensed.is_open() && condensed.node_count()==65536 && condensed.component_count()==components);
+    node=0; while(node<65536) {
+        let first:i32=strong.component(node).unwrap(); let second:i32=condensed.component(node).unwrap();
+        assert(first==component(kind,node) && second==first); packed.try_push(first).unwrap(); packed.try_push(second).unwrap(); node+=1;
+    }
+    let dag:ext::graph::View=condensed.view().unwrap(); let dag_edges:i32=components-1;
+    assert(dag.nodes==components && dag.offsets.length==components+1 && dag.targets.length==dag_edges);
+    node=0; while(node<=components) { let expected:i32=node; if(node==components) { expected=dag_edges; }
+        let actual:i32=dag.offsets.get(node).unwrap(); assert(actual==expected); packed.try_push(actual).unwrap(); node+=1; }
+    edge=0; while(edge<dag_edges) { let actual:i32=dag.targets.get(edge).unwrap(); assert(actual==edge+1); packed.try_push(actual).unwrap(); edge+=1; }
+    assert(ext::graph::validate(dag,limits).unwrap()==dag_edges); mark(112);
+    assert(strong.destroy() && !strong.destroy() && condensed.destroy() && !condensed.destroy());
+    let report:[i32;7]=[kind,65536,edges,components,dag_edges,packed.len(),(core::mem::size_of<ext::graph::Edge>() as i32)];
+    assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),28)==28);
+    let written:i32=0; let attempts:i32=0; let bytes:i32=packed.len()*4;
+    while(written<bytes) { assert(attempts<1024); attempts+=1; let remaining:i32=bytes-written;
+        let used:i32=std::io::write_stdout(packed.storage+(written as usize),remaining as usize); assert(used>0 && used<=remaining); written+=used; }
+    packed.destroy(); mark(68); return 0;
+}

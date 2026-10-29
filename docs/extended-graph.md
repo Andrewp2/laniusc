@@ -3,9 +3,14 @@
 The [directed-graph increment](library-directed-graph-plan.md) defines
 integer adjacency owners, shortest-hop BFS and deterministic topological order.
 The [storage](../extended/ext/graph.lani) and
-[algorithm](../extended/ext/graph_algorithms.lani) sources pass all eight library
-tests and all four application groups/183 cases on native Linux x86_64. This
-increment is accepted; the full library goal stays open.
+[algorithm](../extended/ext/graph_algorithms.lani) sources passed all eight library
+tests and all four application groups/183 cases on native Linux x86_64 in that
+increment. Those receipts retain their source and API scope. The separate
+[strong-component and condensation increment](extended-graph-components.md)
+adds cycle decomposition and a component DAG. All six new library tests and
+four current application groups/312 cases pass, as do the standalone build and
+both documented examples.
+The full library goal stays open.
 
 ## Adjacency is not a numeric matrix
 
@@ -53,6 +58,11 @@ ext::graph_algorithms adds `bfs(View,source,Limits)->Result<BfsPaths,Error>` and
 is_open, node_count, `source()->Option<i32>`, distance(node) and predecessor(node)
 returning `Result<Option<i32>,Error>`, and `destroy()->bool`. The topological Vec
 is an independent owner that the caller must destroy once.
+
+The separate [component guide](extended-graph-components.md) specifies the new
+`strong_components` and `condensation` APIs, minimum-node component IDs, manual
+result ownership, admission and evidence. Component IDs are not topological
+positions; use `topological_order` on the condensation view when order is needed.
 
 ## Validation and error precedence
 
@@ -139,18 +149,21 @@ nodes are emitted, return Cycle, including for a self-loop. Input is unchanged.
 ## Application, evidence and targets
 
 The [dependency_order program](extended-dependency-order.md) reads before,after
-CSV through bounded owned input and emits position,node,hops,predecessor CSV.
+CSV through bounded owned input and in its default mode emits
+position,node,hops,predecessor CSV. Its separate
+[components mode](extended-graph-components.md#application-and-evidence) accepts
+cycles and reports each original node's component and component-order position.
 Its profile admits 4096 nodes, 65536 raw edges, 4 MiB input / 16384 Read calls
 and 1 MiB staged output. Optional BFS fields distinguish source and unreachable
-nodes. Its separate guide owns exact CLI, wire and publication policy. The
-four application groups pass 183 native cases. Its documented standalone build
+nodes. Its separate guide owns exact CLI, wire and publication policy. The historical foundation
+application receipt passed four groups/183 native cases. Its documented standalone build
 and exact 120-byte CRLF example also pass (directed-graph-app-build-command.log);
 these smoke checks overlap existing cases and add no count.
 
-Current sources are graph d8e52163 and algorithms 57ba3bcf. Separate registered
-receipts below are under target/stdlib-work. All eight library tests pass
-through separate commands, not one combined run. Application groups total 183
-distinct cases (83+40+41+19).
+Historical foundation sources are graph d8e52163 and algorithms 57ba3bcf. Separate registered
+receipts below are under target/stdlib-work. All eight foundation library tests passed
+through separate commands, not one combined run. Historical application groups
+total 183 distinct cases (83+40+41+19).
 
 | Receipt | Accepted scope |
 | --- | --- |
@@ -182,7 +195,8 @@ The accepted target is native Linux x86_64 CPU output from the GPU
 compiler, using existing allocator/collection/provider contracts. User-GPU
 execution, other backends and formal proofs need separate evidence. No compiler,
 ABI, extractor or protected formal-vector contract changes belong here. Other
-graph algorithms remain outside this increment.
+graph algorithms remain outside this foundation increment; strong components
+and condensation have their own [guide and receipts](extended-graph-components.md).
 
 ## Focused targets
 

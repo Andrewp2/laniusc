@@ -1,6 +1,14 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[strong-component increment](extended-graph-components.md) adds independent
+component mappings and canonical condensation graphs, with component IDs ordered
+by minimum original node and explicit admission/cleanup contracts. All six new
+library tests pass, including the 3,218-case model, 17 reached allocation denials
+and three 65,536-node shapes. All four dependency-order groups/312 cases also
+pass, as do the standalone build and documented examples. This finite native
+Linux x86_64 increment is accepted. Historical graph receipts retain their original scope.
+The preceding
 [stable-sort increment](stdlib-stable-sort.md) adds checked alloc::slice
 sorting with one typed workspace, stable equivalent-key order and explicit
 reservation errors before input reads or mutation. Core sorts retain their

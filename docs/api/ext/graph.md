@@ -8,11 +8,12 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
-Integer-only immutable directed simple adjacency, separate from numeric CSR coefficients. Dense node IDs retain isolated nodes; input duplicates collapse and self-loops remain. Canonical offsets/targets have one validation boundary and exact size-based work admission. Validation errors preserve input and carry documented row/relative-edge payloads; construction copies into independent owned vectors. Raw edges are limited before deduplication. Graph/neighbor Views require live backing, inactive aliases and explicit single-owner cleanup; first destroy closes, later calls return false. All eight library tests and four dependency-order groups/183 cases pass on native Linux x86_64 CPU output, including independent models, seven reached allocation failures and separate 65,536-node workloads. Existing sparse/collection receipts keep their scope.
+Integer-only immutable directed simple adjacency, separate from numeric CSR coefficients. Dense node IDs retain isolated nodes; input duplicates collapse and self-loops remain. Canonical offsets/targets have one validation boundary and exact size-based work admission. Validation errors preserve input and carry documented row/relative-edge payloads; construction copies into independent owned vectors. Raw edges are limited before deduplication. Graph/neighbor Views require live backing, inactive aliases and explicit single-owner cleanup; first destroy closes, later calls return false. The historical foundation sources passed eight library tests and four dependency-order groups/183 cases on native Linux x86_64 CPU output, including independent models, seven reached allocation failures and separate 65,536-node workloads. Existing sparse/collection receipts keep their scope.
 
 ## Contract and evidence guides
 
 - [extended-graph](../../extended-graph.md)
+- [extended-graph-components](../../extended-graph-components.md)
 - [extended-dependency-order](../../extended-dependency-order.md)
 
 Declaration counts: enum: 1; field: 15; function: 6; impl: 2; method: 10; struct: 5; variant: 12.

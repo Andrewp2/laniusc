@@ -1,0 +1,113 @@
+module app::main;
+import alloc::vec;
+import core::mem;
+import core::option;
+import core::result;
+import core::slice;
+import ext::graph;
+import ext::graph_algorithms;
+
+fn ints(values:[i32],start:i32,length:i32) -> core::slice::View<i32> { return core::slice::View { values:values,start:start,length:length }; }
+fn shape(nodes:i32,offsets:core::slice::View<i32>,targets:core::slice::View<i32>) -> ext::graph::View { return ext::graph::View { nodes:nodes,offsets:offsets,targets:targets }; }
+fn limits(work:u64) -> ext::graph::Limits { return ext::graph::Limits { max_nodes:20,max_edges:30,max_work:work }; }
+fn query_error<T>(result:core::result::Result<T,ext::graph::Error>,closed:bool,node:i32) {
+    assert(result.is_err()); let error:ext::graph::Error=result.unwrap_err();
+    assert(match(error.kind) { ext::graph::ErrorKind::Closed -> closed,ext::graph::ErrorKind::Bounds -> !closed,_ -> false });
+    assert(error.node==node && error.edge==-1);
+}
+fn components(value:&ext::graph_algorithms::StrongComponents,expected:[i32],nodes:i32,count:i32) {
+    assert(value.is_open() && value.node_count()==nodes && value.component_count()==count);
+    let left:i32=0; while(left<nodes) {
+        assert(value.component(left).unwrap()==expected[left]); let right:i32=0;
+        while(right<nodes) { assert(value.same_component(left,right).unwrap()==(expected[left]==expected[right])); right+=1; } left+=1;
+    }
+}
+fn condensation(value:&ext::graph_algorithms::Condensation,expected:[i32],nodes:i32,count:i32,offsets:[i32],targets:[i32],edges:i32) {
+    assert(value.is_open() && value.node_count()==nodes && value.component_count()==count);
+    let left:i32=0; while(left<nodes) {
+        assert(value.component(left).unwrap()==expected[left]); let right:i32=0;
+        while(right<nodes) { assert(value.same_component(left,right).unwrap()==(expected[left]==expected[right])); right+=1; } left+=1;
+    }
+    let dag:ext::graph::View=value.view().unwrap();
+    assert(dag.nodes==count && dag.offsets.length==count+1 && dag.targets.length==edges);
+    assert(ext::graph::validate(dag,ext::graph::default_limits()).unwrap()==edges);
+    let i:i32=0; while(i<=count) { assert(dag.offsets.values[dag.offsets.start+i]==offsets[i]); i+=1; }
+    i=0; while(i<edges) { assert(dag.targets.values[dag.targets.start+i]==targets[i]); i+=1; }
+}
+fn close_components(value:&ext::graph_algorithms::StrongComponents) {
+    assert(value.destroy() && !value.destroy() && !value.is_open() && value.node_count()==0 && value.component_count()==0);
+    query_error(value.component(0),true,-1); query_error(value.component(-2147483648),true,-1);
+    query_error(value.same_component(-13,2147483647),true,-1); query_error(value.same_component(0,0),true,-1);
+}
+fn close_condensation(value:&ext::graph_algorithms::Condensation) {
+    assert(value.destroy() && !value.destroy() && !value.is_open() && value.node_count()==0 && value.component_count()==0 && value.view().is_none());
+    query_error(value.component(0),true,-1); query_error(value.component(2147483647),true,-1);
+    query_error(value.same_component(-13,2147483647),true,-1); query_error(value.same_component(0,0),true,-1);
+}
+fn bounds(value:&ext::graph_algorithms::StrongComponents,other:&ext::graph_algorithms::Condensation,nodes:i32) {
+    query_error(value.component(-2147483648),false,-2147483648); query_error(value.component(nodes),false,nodes);
+    query_error(other.component(-2147483648),false,-2147483648); query_error(other.component(nodes),false,nodes);
+    query_error(value.same_component(-13,nodes+5),false,-13); query_error(other.same_component(-13,nodes+5),false,-13);
+    query_error(value.same_component(nodes+1,-17),false,nodes+1); query_error(other.same_component(nodes+1,-17),false,nodes+1);
+    if(nodes>0) { query_error(value.same_component(0,-17),false,-17); query_error(other.same_component(0,nodes),false,nodes); }
+}
+fn full_input(offsets:[i32],targets:[i32]) {
+    let expected_offsets:[i32;10]=[99,0,2,4,6,7,8,9,9,98]; let expected_targets:[i32;12]=[77,88,1,2,0,2,3,4,2,5,4,99];
+    let i:i32=0; while(i<10) { assert(offsets[i]==expected_offsets[i]); i+=1; }
+    i=0; while(i<12) { assert(targets[i]==expected_targets[i]); i+=1; }
+}
+fn complete_edges_guards_and_independent_owners() {
+    let offsets:[i32;10]=[99,0,2,4,6,7,8,9,9,98]; let targets:[i32;12]=[77,88,1,2,0,2,3,4,2,5,4,99];
+    let borrowed:ext::graph::View=shape(7,ints(offsets,1,8),ints(targets,2,9));
+    let selected:ext::graph::Limits=ext::graph::default_limits();
+    let first:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(borrowed,selected).unwrap();
+    let second:ext::graph_algorithms::Condensation=ext::graph_algorithms::condensation(borrowed,selected).unwrap();
+    full_input(offsets,targets);
+    let expected:[i32;7]=[0,0,1,1,2,2,3]; let dag_offsets:[i32;5]=[0,1,2,2,2]; let dag_targets:[i32;2]=[1,2];
+    components(first.borrow(),expected,7,4); condensation(second.borrow(),expected,7,4,dag_offsets,dag_targets,2); bounds(first.borrow(),second.borrow(),7);
+    // Both original members 0 and 1 point into component 1; the DAG has only one edge.
+    offsets[1]=99; targets[2]=-1;
+    components(first.borrow(),expected,7,4); condensation(second.borrow(),expected,7,4,dag_offsets,dag_targets,2);
+    offsets[1]=0; targets[2]=1; full_input(offsets,targets);
+    let owned:ext::graph::Graph=ext::graph::from_view(borrowed,selected).unwrap();
+    let third:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(owned.view().unwrap(),selected).unwrap();
+    let fourth:ext::graph_algorithms::Condensation=ext::graph_algorithms::condensation(owned.view().unwrap(),selected).unwrap();
+    assert(owned.destroy() && !owned.destroy());
+    components(third.borrow(),expected,7,4); condensation(fourth.borrow(),expected,7,4,dag_offsets,dag_targets,2);
+    close_components(first.borrow()); close_condensation(second.borrow());
+    components(third.borrow(),expected,7,4); condensation(fourth.borrow(),expected,7,4,dag_offsets,dag_targets,2);
+    let order:alloc::vec::Vec<i32> =ext::graph_algorithms::topological_order(fourth.view().unwrap(),selected).unwrap();
+    assert(order.len()==4 && order.at(0)==0 && order.at(1)==1 && order.at(2)==2 && order.at(3)==3); order.destroy();
+    close_components(third.borrow()); close_condensation(fourth.borrow()); full_input(offsets,targets);
+}
+fn exact_work_boundaries() {
+    let offsets:[i32;4]=[0,1,3,3]; let targets:[i32;3]=[1,0,2];
+    let value:ext::graph::View=shape(3,ints(offsets,0,4),ints(targets,0,3));
+    // V=7, SCC=7+48+12+1=68; F(3,3)=58, condensation=7+48+18+1+58=132.
+    let first:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(value,limits(68)).unwrap();
+    let second:ext::graph_algorithms::Condensation=ext::graph_algorithms::condensation(value,limits(132)).unwrap();
+    let expected:[i32;3]=[0,0,1]; let dag_offsets:[i32;3]=[0,1,1]; let dag_targets:[i32;1]=[1];
+    components(first.borrow(),expected,3,2); condensation(second.borrow(),expected,3,2,dag_offsets,dag_targets,1);
+    close_components(first.borrow()); close_condensation(second.borrow());
+    assert(offsets[0]==0 && offsets[1]==1 && offsets[2]==3 && offsets[3]==3 && targets[0]==1 && targets[1]==0 && targets[2]==2);
+}
+fn empty_isolated_and_self_loop() {
+    let nowhere:ptr=0; let unread:[i32]=core::mem::typed_slice_from_raw_parts<i32>(nowhere,0);
+    let zero:[i32;1]=[0]; let empty:ext::graph::View=shape(0,ints(zero,0,1),ints(unread,2147483647,0));
+    let first:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(empty,limits(2)).unwrap();
+    let second:ext::graph_algorithms::Condensation=ext::graph_algorithms::condensation(empty,limits(3)).unwrap();
+    components(first.borrow(),zero,0,0); condensation(second.borrow(),zero,0,0,zero,zero,0); bounds(first.borrow(),second.borrow(),0);
+    close_components(first.borrow()); close_condensation(second.borrow());
+    let offsets:[i32;4]=[0,0,0,0]; let isolated:ext::graph::View=shape(3,ints(offsets,0,4),ints(unread,0,0));
+    let third:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(isolated,limits(53)).unwrap();
+    let fourth:ext::graph_algorithms::Condensation=ext::graph_algorithms::condensation(isolated,limits(57)).unwrap();
+    let singleton:[i32;3]=[0,1,2]; components(third.borrow(),singleton,3,3); condensation(fourth.borrow(),singleton,3,3,offsets,zero,0);
+    close_components(third.borrow()); close_condensation(fourth.borrow());
+    let loop_offsets:[i32;3]=[0,1,1]; let loop_graph:ext::graph::View=shape(2,ints(loop_offsets,0,3),ints(zero,0,1));
+    let fifth:ext::graph_algorithms::StrongComponents=ext::graph_algorithms::strong_components(loop_graph,limits(41)).unwrap();
+    let sixth:ext::graph_algorithms::Condensation=ext::graph_algorithms::condensation(loop_graph,limits(56)).unwrap();
+    let pair:[i32;2]=[0,1]; let no_edges:[i32;3]=[0,0,0];
+    components(fifth.borrow(),pair,2,2); condensation(sixth.borrow(),pair,2,2,no_edges,zero,0); close_components(fifth.borrow()); close_condensation(sixth.borrow());
+    assert(zero[0]==0 && offsets[0]==0 && offsets[1]==0 && offsets[2]==0 && offsets[3]==0 && loop_offsets[0]==0 && loop_offsets[1]==1 && loop_offsets[2]==1);
+}
+fn main() -> i32 { complete_edges_guards_and_independent_owners(); exact_work_boundaries(); empty_isolated_and_self_loop(); return 0; }

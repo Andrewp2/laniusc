@@ -1,0 +1,206 @@
+// Test-only SCC and condensation binary adapter; host mutual reachability is the oracle.
+module app::main;
+
+import core::mem;
+import core::option;
+import alloc::vec;
+import ext::graph;
+import ext::graph_algorithms;
+import core::result;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes: [u8], pointer: ptr, used: i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer, self.used); self.used = 0; }
+    fn word(&self, value: u64) {
+        if (self.used == 4096) { self.flush(); }
+        let index: i32 = 0;
+        while (index < 8) {
+            self.bytes[self.used + index] = ((value >> (index * 8)) & 255) as u8;
+            index += 1;
+        }
+        self.used += 8;
+    }
+}
+
+fn code(kind: ext::graph::ErrorKind) -> u64 {
+    return match (kind) {
+        ext::graph::ErrorKind::InvalidLimits -> 1, ext::graph::ErrorKind::Bounds -> 2,
+        ext::graph::ErrorKind::NodeLimit -> 3, ext::graph::ErrorKind::EdgeLimit -> 4,
+        ext::graph::ErrorKind::WorkLimit -> 5, ext::graph::ErrorKind::Offset -> 6,
+        ext::graph::ErrorKind::Source -> 7, ext::graph::ErrorKind::Target -> 8,
+        ext::graph::ErrorKind::Order -> 9, ext::graph::ErrorKind::AllocationFailed -> 10,
+        ext::graph::ErrorKind::Cycle -> 11, ext::graph::ErrorKind::Closed -> 12,
+    };
+}
+fn failure(error: ext::graph::Error, output: &Output) {
+    output.word(1); output.word(code(error.kind));
+    output.word(error.node as i64 as u64); output.word(error.edge as i64 as u64);
+}
+fn success(output: &Output) { output.word(0); output.word(0); output.word(18446744073709551615); output.word(18446744073709551615); }
+fn integer_result(value: core::result::Result<i32,ext::graph::Error>, output: &Output) {
+    if (value.is_err()) { failure(value.unwrap_err(),output); return; }
+    success(output); output.word(value.unwrap() as i64 as u64);
+}
+fn boolean_result(value: core::result::Result<bool,ext::graph::Error>, output: &Output) {
+    if (value.is_err()) { failure(value.unwrap_err(),output); return; }
+    success(output); output.word(value.unwrap() as u64);
+}
+fn csr(value: ext::graph::View, output: &Output) {
+    output.word(value.nodes as u64); output.word(value.targets.length as u64);
+    let index:i32=0;
+    while (index<value.offsets.length) { output.word(value.offsets.get(index).unwrap() as i64 as u64); index+=1; }
+    index=0;
+    while (index<value.targets.length) { output.word(value.targets.get(index).unwrap() as i64 as u64); index+=1; }
+}
+fn topology(value: ext::graph::View, output: &Output) {
+    let result:core::result::Result<alloc::vec::Vec<i32>,ext::graph::Error> = ext::graph_algorithms::topological_order(value,ext::graph::default_limits());
+    if (result.is_err()) { failure(result.unwrap_err(),output); return; }
+    let owner:alloc::vec::Vec<i32> = result.unwrap();
+    success(output); output.word(owner.len() as u64);
+    let index:i32=0;
+    while (index<owner.len()) { output.word(owner.get(index).unwrap() as i64 as u64); index+=1; }
+    owner.destroy();
+}
+fn components(result:core::result::Result<ext::graph_algorithms::StrongComponents,ext::graph::Error>, output:&Output) {
+    if (result.is_err()) { failure(result.unwrap_err(),output); return; }
+    let owner:ext::graph_algorithms::StrongComponents = result.unwrap();
+    success(output); output.word(owner.is_open() as u64);
+    let nodes:i32=owner.node_count(); output.word(nodes as u64); output.word(owner.component_count() as u64);
+    let left:i32=0;
+    while (left<nodes) { integer_result(owner.component(left),output); left+=1; }
+    left=0;
+    while (left<nodes) {
+        let right:i32=0;
+        while (right<nodes) { boolean_result(owner.same_component(left,right),output); right+=1; }
+        left+=1;
+    }
+    integer_result(owner.component(-1),output); integer_result(owner.component(nodes),output);
+    integer_result(owner.component(-2147483648),output); integer_result(owner.component(2147483647),output);
+    boolean_result(owner.same_component(-1,nodes),output); boolean_result(owner.same_component(nodes,-1),output);
+    boolean_result(owner.same_component(0,nodes),output); boolean_result(owner.same_component(-1,-2147483648),output);
+    boolean_result(owner.same_component(-2147483648,2147483647),output);
+    boolean_result(owner.same_component(2147483647,-2147483648),output);
+    output.word(owner.destroy() as u64); output.word(owner.is_open() as u64);
+    output.word(owner.node_count() as u64); output.word(owner.component_count() as u64);
+    integer_result(owner.component(-1),output); integer_result(owner.component(2147483647),output);
+    boolean_result(owner.same_component(-1,2147483647),output); boolean_result(owner.same_component(0,0),output);
+    output.word(owner.destroy() as u64);
+}
+fn condensed(result:core::result::Result<ext::graph_algorithms::Condensation,ext::graph::Error>, output:&Output) {
+    if (result.is_err()) { failure(result.unwrap_err(),output); return; }
+    let owner:ext::graph_algorithms::Condensation = result.unwrap();
+    success(output); output.word(owner.is_open() as u64);
+    let nodes:i32=owner.node_count(); output.word(nodes as u64); output.word(owner.component_count() as u64);
+    let left:i32=0;
+    while (left<nodes) { integer_result(owner.component(left),output); left+=1; }
+    left=0;
+    while (left<nodes) {
+        let right:i32=0;
+        while (right<nodes) { boolean_result(owner.same_component(left,right),output); right+=1; }
+        left+=1;
+    }
+    integer_result(owner.component(-1),output); integer_result(owner.component(nodes),output);
+    integer_result(owner.component(-2147483648),output); integer_result(owner.component(2147483647),output);
+    boolean_result(owner.same_component(-1,nodes),output); boolean_result(owner.same_component(nodes,-1),output);
+    boolean_result(owner.same_component(0,nodes),output); boolean_result(owner.same_component(-1,-2147483648),output);
+    boolean_result(owner.same_component(-2147483648,2147483647),output);
+    boolean_result(owner.same_component(2147483647,-2147483648),output);
+    let available:core::option::Option<ext::graph::View> = owner.view(); output.word(available.is_some() as u64);
+    let value:ext::graph::View = available.unwrap(); csr(value,output); topology(value,output);
+    output.word(owner.destroy() as u64); output.word(owner.is_open() as u64);
+    output.word(owner.node_count() as u64); output.word(owner.component_count() as u64);
+    integer_result(owner.component(-1),output); integer_result(owner.component(2147483647),output);
+    boolean_result(owner.same_component(-1,2147483647),output); boolean_result(owner.same_component(0,0),output);
+    let closed:core::option::Option<ext::graph::View> = owner.view(); output.word(closed.is_some() as u64);
+    output.word(owner.destroy() as u64);
+}
+fn inputs(offsets:[i32], targets:[i32], output:&Output) {
+    let index:i32=0;
+    while (index<24) { output.word(offsets[index] as i64 as u64); index+=1; }
+    index=0;
+    while (index<260) { output.word(targets[index] as i64 as u64); index+=1; }
+}
+fn poison(offsets:[i32], targets:[i32]) {
+    let index:i32=0;
+    while (index<24) { offsets[index]=-1700-index; index+=1; }
+    index=0;
+    while (index<260) { targets[index]=-1900-index; index+=1; }
+}
+fn run(input:[u8], output:&Output) {
+    let offset_native:[i32;24]=[0;24]; let target_native:[i32;260]=[0;260];
+    let offset_storage:[i32;24]=[0;24]; let target_storage:[i32;260]=[0;260];
+    let offsets:[i32]=offset_native; let targets:[i32]=target_native;
+    if (get64(input,8)==1) {
+        offsets=core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(offset_storage),24);
+        targets=core::mem::typed_slice_from_raw_parts<i32>(core::mem::i32_array_data_ptr(target_storage),260);
+    }
+    output.word(get64(input,8));
+    output.word(core::mem::slice_stride(offsets) as i64 as u64);
+    output.word(core::mem::slice_stride(targets) as i64 as u64);
+    let index:i32=0;
+    while (index<24) { offsets[index]=-777-index; index+=1; }
+    index=0;
+    while (index<260) { targets[index]=-888-index; index+=1; }
+    let at:i32=96; index=0;
+    while (index<get64(input,80) as i32) { offsets[2+index]=get64(input,at) as i32; index+=1; at+=8; }
+    index=0;
+    while (index<get64(input,88) as i32) { targets[2+index]=get64(input,at) as i32; index+=1; at+=8; }
+    let value:ext::graph::View = ext::graph::View { nodes:get64(input,16) as i32,
+        offsets:core::slice::View { values:offsets,start:get64(input,48) as i32,length:get64(input,56) as i32 },
+        targets:core::slice::View { values:targets,start:get64(input,64) as i32,length:get64(input,72) as i32 } };
+    let limits:ext::graph::Limits = ext::graph::Limits {
+        max_nodes:get64(input,24) as i32,max_edges:get64(input,32) as i32,max_work:get64(input,40) };
+    if (get64(input,0)==0) {
+        let result:core::result::Result<ext::graph_algorithms::StrongComponents,ext::graph::Error> = ext::graph_algorithms::strong_components(value,limits);
+        inputs(offsets,targets,output); poison(offsets,targets); components(result,output);
+    } else {
+        let result:core::result::Result<ext::graph_algorithms::Condensation,ext::graph::Error> = ext::graph_algorithms::condensation(value,limits);
+        inputs(offsets,targets,output); poison(offsets,targets); condensed(result,output);
+    }
+}
+fn main() -> i32 {
+    let input_words:[i32;600]=[0;600]; let pointer:ptr=core::mem::i32_array_data_ptr(input_words);
+    let input:[u8]=core::mem::typed_slice_from_raw_parts<u8>(pointer,2400);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output_bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096);
+    let output:Output=Output { bytes:output_bytes,pointer:output_pointer,used:0 };
+    while (read_exact(pointer,96,true)) {
+        assert(get64(input,0)<=1 && get64(input,8)<=1 && get64(input,80)<=20 && get64(input,88)<=256);
+        let length:i32=((get64(input,80)+get64(input,88))*8) as i32;
+        assert(read_exact(pointer+96,length,false)); run(input,output.borrow());
+    }
+    output.flush(); return 0;
+}

@@ -1,4 +1,4 @@
-// Bounded CSV dependency ordering and optional shortest-hop annotations.
+// Bounded CSV dependency ordering, shortest hops and strong-component reports.
 module app::main;
 import alloc::io;
 import alloc::string;
@@ -22,7 +22,7 @@ import std::args;
 import std::signal;
 import std::stream;
 
-struct Options { nodes:i32, source:i32, help:bool, nodes_set:bool, source_set:bool }
+struct Options { nodes:i32, source:i32, help:bool, nodes_set:bool, source_set:bool, components:bool }
 impl Options { fn borrow(&self) -> &Options { return self; } }
 struct Staged { bytes:u64, calls:u64 }
 impl Staged { fn borrow(&self) -> &Staged { return self; } }
@@ -203,11 +203,65 @@ fn render(order:&Vec<i32>, paths:Option<&ext::graph_algorithms::BfsPaths>, outpu
     }
     record.destroy(); return status;
 }
+fn render_components(components:&ext::graph_algorithms::Condensation, ranks:&Vec<i32>, output:&alloc::io::Buffer) -> i32 {
+    let record:ext::csv::Record = ext::csv::new(); let state:Staged = Staged { bytes:0,calls:0 };
+    let header:[core::slice::View<u8>;3] = [literal("node",4),literal("component",9),literal("position",8)];
+    let status:i32 = emit(output,record.borrow(),state.borrow(),core::slice::view(header,3).unwrap());
+    let node:i32 = 0;
+    while((status == 0) && (node < components.node_count())) {
+        let queried:Result<i32,ext::graph::Error> = components.component(node);
+        if (queried.is_err()) { status = graph_status(queried.unwrap_err()); break; }
+        let component:i32 = queried.unwrap();
+        if ((component < 0) || (component >= ranks.len())) { status = 6; break; }
+        let position:i32 = ranks.at(component);
+        if ((position < 0) || (position >= ranks.len())) { status = 6; break; }
+        let node_bytes:[u8;10] = [0;10]; let component_bytes:[u8;10] = [0;10]; let position_bytes:[u8;10] = [0;10];
+        let node_count:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(node_bytes,0,10,node as u32);
+        let component_count:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(component_bytes,0,10,component as u32);
+        let position_count:Result<i32,core::decimal::FormatError> = core::decimal::format_u32(position_bytes,0,10,position as u32);
+        if (node_count.is_err() || component_count.is_err() || position_count.is_err()) { status = 6; break; }
+        let fields:[core::slice::View<u8>;3] = [core::slice::view(node_bytes,node_count.unwrap()).unwrap(),core::slice::view(component_bytes,component_count.unwrap()).unwrap(),core::slice::view(position_bytes,position_count.unwrap()).unwrap()];
+        status = emit(output,record.borrow(),state.borrow(),core::slice::view(fields,3).unwrap()); node += 1;
+    }
+    record.destroy(); return status;
+}
+fn calculate_components(view:ext::graph::View, nodes:i32, output:&alloc::io::Buffer) -> i32 {
+    let made:Result<ext::graph_algorithms::Condensation,ext::graph::Error> = ext::graph_algorithms::condensation(view,limits());
+    if (made.is_err()) { return graph_status(made.unwrap_err()); }
+    let components:ext::graph_algorithms::Condensation = made.unwrap();
+    let selected:Option<ext::graph::View> = components.view();
+    if (selected.is_none() || (components.node_count() != nodes)) { components.destroy(); return 6; }
+    let count:i32 = components.component_count();
+    let sorted:Result<Vec<i32>,ext::graph::Error> = ext::graph_algorithms::topological_order(selected.unwrap(),limits());
+    if (sorted.is_err()) { components.destroy(); return graph_status(sorted.unwrap_err()); }
+    let order:Vec<i32> = sorted.unwrap();
+    if (order.len() != count) { order.destroy(); components.destroy(); return 6; }
+    let ranks:Vec<i32> = alloc::vec::new();
+    let filled:Result<i32,alloc::vec::Error> = ranks.try_resize(count,-1);
+    if (filled.is_err()) {
+        ranks.destroy(); order.destroy(); components.destroy();
+        return match(filled.unwrap_err()) { alloc::vec::Error::AllocationFailed -> 4, _ -> 6 };
+    }
+    let positions:[i32] = ranks.as_slice(); let position:i32 = 0; let status:i32 = 0;
+    while(position < count) {
+        let component:i32 = order.at(position);
+        if ((component < 0) || (component >= count)) { status = 6; break; }
+        if (positions[component] != -1) { status = 6; break; }
+        positions[component] = position; position += 1;
+    }
+    order.destroy();
+    if (status == 0) { status = render_components(components.borrow(),ranks.borrow(),output); }
+    ranks.destroy(); components.destroy(); return status;
+}
 fn calculate(edges:&Vec<ext::graph::Edge>, options:&Options, output:&alloc::io::Buffer) -> i32 {
     let made:Result<ext::graph::Graph,ext::graph::Error> = ext::graph::from_edges(options.nodes,edges.as_view(),limits());
     if (made.is_err()) { return graph_status(made.unwrap_err()); }
     let graph:ext::graph::Graph = made.unwrap(); let selected:Option<ext::graph::View> = graph.view();
     if (selected.is_none()) { graph.destroy(); return 6; } let view:ext::graph::View = selected.unwrap();
+    if (options.components) {
+        let status:i32 = calculate_components(view,options.nodes,output);
+        graph.destroy(); return status;
+    }
     let sorted:Result<Vec<i32>,ext::graph::Error> = ext::graph_algorithms::topological_order(view,limits());
     if (sorted.is_err()) { graph.destroy(); return graph_status(sorted.unwrap_err()); }
     let order:Vec<i32> = sorted.unwrap();
@@ -243,15 +297,16 @@ fn run(options:&Options) -> i32 {
     output.destroy(); return status;
 }
 fn arguments(values:core::slice::View<core::slice::View<u8>>) -> Result<Options,i32> {
-    let specs:[ext::cli::Spec;3] = [
+    let specs:[ext::cli::Spec;4] = [
         ext::cli::Spec { id:1,long:literal("help",4),short:104,arity:ext::cli::Arity::Flag },
         ext::cli::Spec { id:2,long:literal("nodes",5),short:110,arity:ext::cli::Arity::Required },
-        ext::cli::Spec { id:3,long:literal("source",6),short:115,arity:ext::cli::Arity::Required }
+        ext::cli::Spec { id:3,long:literal("source",6),short:115,arity:ext::cli::Arity::Required },
+        ext::cli::Spec { id:4,long:literal("components",10),short:67,arity:ext::cli::Arity::Flag }
     ];
-    let made:Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(values,core::slice::view(specs,3).unwrap(),ext::cli::Ordering::Intermixed);
+    let made:Result<ext::cli::Parser,ext::cli::Error> = ext::cli::parser(values,core::slice::view(specs,4).unwrap(),ext::cli::Ordering::Intermixed);
     if (made.is_err()) { return core::result::Err(2); }
     let parser:ext::cli::Parser = made.unwrap();
-    let options:Options = Options { nodes:0,source:0,help:false,nodes_set:false,source_set:false };
+    let options:Options = Options { nodes:0,source:0,help:false,nodes_set:false,source_set:false,components:false };
     while(true) {
         let event:Result<Option<ext::cli::Event>,ext::cli::Error> = parser.next();
         if (event.is_err()) { return core::result::Err(2); }
@@ -260,25 +315,29 @@ fn arguments(values:core::slice::View<core::slice::View<u8>>) -> Result<Options,
         if (occurrence.is_none()) { return core::result::Err(2); } let found:ext::cli::Occurrence = occurrence.unwrap();
         if (found.id == 1) { if (options.help) { return core::result::Err(2); } options.help = true; }
         else {
-            let token:core::slice::View<u8> = found.value.unwrap().bytes;
-            if ((token.length < 1) || (token.length > 64)) { return core::result::Err(2); }
-            let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(token.values,token.start,token.length);
-            if (parsed.is_err()) { return core::result::Err(2); } let number:u64 = parsed.unwrap();
-            if (found.id == 2) {
-                if (options.nodes_set || (number > 4096)) { return core::result::Err(2); }
-                options.nodes = number as i32; options.nodes_set = true;
-            } else {
-                if ((found.id != 3) || options.source_set || (number > 4095)) { return core::result::Err(2); }
-                options.source = number as i32; options.source_set = true;
+            if (found.id == 4) { if (options.components) { return core::result::Err(2); } options.components = true; }
+            else {
+                let token:core::slice::View<u8> = found.value.unwrap().bytes;
+                if ((token.length < 1) || (token.length > 64)) { return core::result::Err(2); }
+                let parsed:Result<u64,core::decimal::ParseError> = core::decimal::parse_u64_range(token.values,token.start,token.length);
+                if (parsed.is_err()) { return core::result::Err(2); } let number:u64 = parsed.unwrap();
+                if (found.id == 2) {
+                    if (options.nodes_set || (number > 4096)) { return core::result::Err(2); }
+                    options.nodes = number as i32; options.nodes_set = true;
+                } else {
+                    if ((found.id != 3) || options.source_set || (number > 4095)) { return core::result::Err(2); }
+                    options.source = number as i32; options.source_set = true;
+                }
             }
         }
     }
+    if (options.components && options.source_set) { return core::result::Err(2); }
     if (options.nodes_set && options.source_set && (options.source >= options.nodes)) { return core::result::Err(2); }
     if (!options.help && !options.nodes_set) { return core::result::Err(2); }
     return core::result::Ok(options);
 }
 fn help() -> i32 {
-    let value = literal("Usage: dependency_order --nodes N [--source S] [--help]\nRead CSV before,after and print the lexicographically smallest dependency order.\nN is 0..4096; source and edge IDs are in [0,N). Leading zeros are allowed.\nOutput CSV: position,node,hops,predecessor; positions are zero-based.\n--source adds shortest-hop distances and first-discovery predecessors; absent values are empty.\nCycles, including self-loops, fail without data output. Empty graphs print only the header.\nShort options: -n N, -s S, -h. Duplicate options and operands are errors.\nLimits: 4 MiB input, 65536 raw edges, 128 bytes per field, 1 MiB staged output.\nInput permits 16384 read attempts and output 2048 attempts; interruptions spend attempts.\nHelp accepts otherwise valid options and does not read stdin.\n",776);
+    let value = literal("Usage: dependency_order --nodes N [--source S | --components] [--help]\nRead CSV before,after and print the lexicographically smallest dependency order.\nN is 0..4096; source and edge IDs are in [0,N). Leading zeros are allowed.\nDefault CSV: position,node,hops,predecessor; positions are zero-based.\n--source adds shortest-hop distances and first-discovery predecessors; absent values are empty.\nDefault mode rejects cycles, including self-loops, without data output.\n--components accepts cycles and prints node,component,position in node order.\nComponent IDs follow smallest member IDs; positions follow component dependency order.\n--components and --source cannot be combined. Empty graphs print only the header.\nShort options: -n N, -s S, -C, -h. Duplicate options and operands are errors.\nLimits: 4 MiB input, 65536 raw edges, 128 bytes per field, 1 MiB staged output.\nInput permits 16384 read attempts and output 2048 attempts; interruptions spend attempts.\nHelp accepts otherwise valid options and does not read stdin.\n",1023);
     if (!write(value,1,64)) { return 5; } return 0;
 }
 fn main() -> i32 {

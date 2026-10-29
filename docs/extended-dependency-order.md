@@ -1,14 +1,17 @@
-# Order CSV dependencies
+# Order CSV dependencies and group cycles
 
 `sample_programs/library/dependency_order.lani` reads directed dependency edges,
 computes the lexicographically smallest valid node order and optionally adds
-shortest-hop information from one source. Its CLI is
-`dependency_order --nodes N [--source S] [--help]`.
+shortest-hop information from one source. With `--components`, it accepts
+cycles and reports each node's strong component and that component's position
+in the condensed dependency order. Its CLI is
+`dependency_order --nodes N [--source S | --components] [--help]`.
 
 ## Build and use
 
 With the compiler binary built, run from the repository root. The standalone
-build and exact shell example below have passed; their receipts are recorded
+build and both exact shell examples below passed, along with the 312-case
+integration corpus. Current and historical receipts are recorded separately
 under acceptance.
 
 ```sh
@@ -21,7 +24,7 @@ printf 'before,after\n0,2\n1,2\n2,3\n' | \
   target/stdlib-work/dependency_order --nodes 5 --source 0
 ```
 
-The verified output is the following, with every record terminated by CRLF:
+The first example expects these 120 bytes, with every record terminated by CRLF:
 
 ```csv
 "position","node","hops","predecessor"
@@ -32,12 +35,35 @@ The verified output is the following, with every record terminated by CRLF:
 "4","4","",""
 ```
 
+Components mode permits cyclic groups and self-loops:
+
+```sh
+printf 'before,after\n0,2\n2,0\n1,3\n3,1\n3,0\n4,4\n5,1\n' | \
+  target/stdlib-work/dependency_order --nodes 6 --components
+```
+
+It expects these 109 bytes, again with CRLF record terminators:
+
+```csv
+"node","component","position"
+"0","0","3"
+"1","1","2"
+"2","0","3"
+"3","1","2"
+"4","2","0"
+"5","3","1"
+```
+
+Component 2 is isolated and ready first. Component 3 must precede component 1,
+which must precede component 0. The rows still follow original node IDs.
+
 ## CLI
 
 | Option | Meaning |
 | --- | --- |
 | `--nodes N`, `-n N` | Required node count, 0..4096 |
-| `--source S`, `-s S` | Optional source node, in `[0,N)` |
+| `--source S`, `-s S` | Optional source node, in `[0,N)`; incompatible with components mode |
+| `--components`, `-C` | Report strong components and their dependency positions |
 | `--help`, `-h` | Help, allowing otherwise valid options and requiring no stdin |
 
 CLI numbers are 1..64 ASCII decimal bytes. Leading zeros are allowed; signs,
@@ -49,8 +75,10 @@ canonical `ext::cli` parser accepts attached values, exact long names and a
 
 Help permits omitted N. A supplied N still has to be in range, and a supplied S
 is always bounded to 0..4095. When both are supplied, S must be less than N,
-including in help mode. Ordinary execution requires N; N zero permits no
-source. All CLI checks finish before input collection, and argument storage is
+including in help mode. Components mode and source mode cannot be combined,
+even with help. Repeated components flags, including mixed long/short aliases,
+are errors. Ordinary execution requires N; N zero permits no source. All CLI
+checks finish before input collection, and argument storage is
 destroyed before reading or help publication.
 
 ## CSV and graph semantics
@@ -72,10 +100,11 @@ record budget. Blank records, missing/extra fields and malformed quotes fail.
 An edge `u,v` requires u to precede v. Node IDs are dense and zero-based;
 isolated nodes remain in the result. `ext::graph::from_edges` copies and
 canonicalizes integer edges, removing duplicates idempotently. The raw edge
-cap applies before deduplication. Self-loops remain and cause cycle rejection.
+cap applies before deduplication. Self-loops remain and cause cycle rejection
+in default mode.
 
-`ext::graph_algorithms::topological_order` chooses the smallest currently ready
-ID using the canonical graph. A cycle anywhere returns 2 with empty stdout,
+In default mode, `ext::graph_algorithms::topological_order` chooses the smallest
+currently ready ID using the canonical graph. A cycle anywhere returns 2 with empty stdout,
 including a component unreachable from an optional source. No partial order
 or cycle witness is published. Empty graphs without a source print the header
 only. The program computes the complete order before optional BFS or staging.
@@ -87,10 +116,27 @@ parents. The source has hops zero and empty predecessor; unreachable nodes
 have both fields empty. Without `--source`, both fields are empty for every
 node. Rows stay in topological order, independently of BFS discovery order.
 
-Output always has the four-column header `position,node,hops,predecessor`.
-Positions start at zero. The canonical CSV writer quotes every field, including
-empty fields, and terminates records with CRLF. Numeric fields use canonical
-unsigned decimal. No extra status text or diagnostic goes to stdout.
+Default output has the four-column header `position,node,hops,predecessor`.
+Positions start at zero.
+
+With `--components`, public `condensation` groups two nodes together exactly
+when each can reach the other, including zero-length paths. Component IDs are
+dense and follow the smallest original member in ascending order. An isolated
+node is a singleton; a self-loop creates no extra component. The condensed
+graph has one edge per distinct dependency between different components and
+has no self-loops. Public `topological_order` then gives the lexicographically
+smallest order of component IDs. A component ID does not by itself imply a
+dependency position.
+
+Components output has the three-column header `node,component,position` and
+one row per original node, in ascending original node order. All nodes in one
+component share its zero-based position in the condensed order. No BFS columns
+are present. Empty graphs print this header only. The complete component map
+and order are computed before rendering.
+
+The canonical CSV writer quotes every field, including empty fields, and
+terminates records with CRLF. Numeric fields use canonical unsigned decimal.
+No extra status text or diagnostic goes to stdout.
 
 ## Storage, work and publication
 
@@ -111,11 +157,17 @@ The topological result and optional BFS result each have one cleanup authority.
 Rendering holds only `Option<&BfsPaths>` while the actual BFS owner remains live
 in its branch. It calls public distance/predecessor queries for each output
 node. No owner is fabricated, copied for mutation or returned through an expired
-borrow.
+borrow. In components mode, a Condensation owner holds its independent graph
+and node mapping. A `Vec<i32>` maps each component ID to its topological
+position, giving linear output lookup. The temporary topological order is
+destroyed once this position vector is filled; rendering borrows the
+condensation and positions. Both owners are destroyed on success and ordinary
+failure before the original graph is released.
 
 One reusable CSV Record and `alloc::io::Buffer` stage the entire result. Graph,
-order, paths, raw edges and Record are explicitly destroyed before the first
-stdout write. Only staged output remains live during publication and is
+order, paths, condensation, component positions, raw edges and Record are
+explicitly destroyed before the first stdout write. Only staged output remains
+live during publication and is
 destroyed afterward on success or failure. Every earlier failure releases all
 acquired owners before the diagnostic. A failed private CSV write abandons the
 whole staged result and is never replayed.
@@ -134,8 +186,9 @@ whole staged result and is never replayed.
 | Diagnostic stderr attempts | At most 8 |
 
 Graph construction/validation and algorithms use the fixed limits from the
-[directed-graph plan](library-directed-graph-plan.md). Work units are weighted
-size estimates, not instruction counts or a shared elapsed-time budget. The
+[directed-graph plan](library-directed-graph-plan.md) and
+[strong-components plan](library-graph-components-plan.md). Work units are
+weighted size estimates, not instruction counts or a shared elapsed-time budget. The
 bounded node and raw-edge caps also bound parsing, scanning and rendering.
 The staged byte/call bounds are independent admission policies; valid output
 for 4096 nodes is smaller than 1 MiB. The current native Descriptor stages at
@@ -152,8 +205,8 @@ Standard descriptors are borrowed and never closed.
 
 | Exit | Meaning |
 | ---: | --- |
-| 0 | Complete ordered report, or help written |
-| 2 | Invalid CLI/CSV/endpoints, cycle, byte/call or graph/staging admission limit |
+| 0 | Complete node/component report, or help written |
+| 2 | Invalid CLI/CSV/endpoints, default-mode cycle, byte/call or graph/staging admission limit |
 | 3 | Input I/O or argument-capture host failure |
 | 4 | Argument, input, CSV, edge, graph, algorithm or staging allocation failure |
 | 5 | Data/help output or SIGPIPE-policy failure |
@@ -163,9 +216,72 @@ SIGPIPE is ignored before argument capture. Setup failure returns 5 silently.
 Other errors attempt the exact 35-byte line
 `dependency_order: operation failed\n`, after cleanup, with at most eight
 stderr attempts. Diagnostic failure preserves its primary status. Successful
-runs have empty stderr. Help is exactly 776 bytes; the canonical header is 40.
+runs have empty stderr. Current help is exactly 1023 bytes. The default header
+is 40 bytes; the components header is 31.
 
-All **183 distinct cases** passed on native Linux x86_64 CPU output from the
+### Current components acceptance
+
+All **312 distinct application cases** passed on native Linux x86_64 CPU
+output from the GPU compiler: 183 retained cases and 129 new components cases.
+Each group ran in a separate command with one passing Rust test, zero failures
+and three filtered tests.
+
+| Group | Cases | Runtime | Receipt in `target/stdlib-work/` | Retained evidence |
+| --- | ---: | ---: | --- | --- |
+| Model | 166 | 11.23 s | `graph-components-app-model-accepted.log` | `/tmp/dependency-order-model-y67ubu8p` |
+| Rejection | 52 | 9.66 s | `graph-components-app-rejection-first.log` | `/tmp/dependency-order-rejection-jteoe69x` |
+| CLI | 58 | 8.26 s | `graph-components-app-cli-first.log` | `/tmp/dependency-order-cli-7era8xhv` |
+| I/O | 36 | 9.48 s | `graph-components-app-io-first.log` | `/tmp/dependency-order-io-x54xqwat` |
+
+The components oracle derives groups from mutual reachability and enumerates
+component permutations for the smallest valid order. It checks all 64
+loopless three-node graphs, disconnected and nested cycles, self-loops,
+active cross-links, edges into completed components, duplicates/shuffles,
+component-position ties, four 4096-node shapes and valid exact 4 MiB input.
+Rejection and CLI additions cover input/admission failures, aliases, duplicate
+mode flags, source conflicts in either order and help bypass. The exact
+1023-byte help is checked. Existing default output, cycle failures and BFS
+behavior remain in the accepted corpus.
+
+The components I/O baseline has 96 nodes in 48 two-node cycles connected by a
+reverse component chain. Its trace binds the SCC workspaces, condensed graph,
+topological result and component positions by allocation size, phase and
+lifetime. Nine reached allocation failures cover returned labels, final SCC
+workspace, pair reservation and sorted copy, condensed offsets and targets,
+topological result, component positions and late output growth. Each returns
+4 with no data, releases every successful mapping at its observed address and
+extent, and attempts no later allocation. Additional components I/O cases
+exercise read/write interruptions, later read and EOF errors, real EPIPE,
+a genuine 1024-byte output prefix followed by EIO, and the write-attempt cap.
+These are finite fault and lifetime observations; compact attempt summaries
+establish counts without a full release ledger. Details are in the
+[fixture guide](../tests/fixtures/extended_execution/dependency_order/README.md).
+
+The first model command stopped at parsing an unsupported application
+`else if` before native execution. Rewriting that branch with nested `else`
+and `if` preserved its contract; the accepted model receipt above uses the
+corrected source. No compiler change was needed.
+
+The exact standalone compile above exited 0 with no diagnostic output
+(`graph-components-app-build-command.log`). Both documented shell pipelines
+then exited 0 with empty stderr. All 120 default-mode bytes and all 109
+components-mode bytes matched the literal expected CRLF output
+(`graph-components-app-examples.log`). The outputs are retained as
+`target/stdlib-work/graph-components-app-default-example.csv` and
+`target/stdlib-work/graph-components-app-components-example.csv`. These
+examples overlap the functional corpus and add no distinct case count.
+
+Current accepted producer identities (SHA-256):
+
+- Application: `3cae8b5ff6fe4d7cbd495d7b54155d33a1c941b8e97c4abdd6c3ab5d0a494a3c`.
+- Oracle: `03cc97f2a37ea7dc794ab31b04303d1539a368c2728f3a71fd82661b4ac53597`.
+- `ext::graph`: `d8e5216346edfc3bcf554d17526d4e05ad71b0843a29a51185442085b36b074c`.
+- `ext::graph_algorithms`: `1f1cf7cd4920f05567d53283628d1b119bf93f3d108255ad354522d61267d8a6`.
+
+### Historical default-mode acceptance
+
+The previous program, before components mode and the help change, passed
+**183 distinct cases** on native Linux x86_64 CPU output from the
 GPU compiler. The four registered groups ran in separate commands; each
 receipt has one passing Rust test and three filtered tests.
 
@@ -214,7 +330,7 @@ exited 0 with all 120 literal CRLF bytes verified in
 `target/stdlib-work/directed-graph-app-example.csv`. This example overlaps the
 registered functional corpus and adds no distinct case count.
 
-Accepted producer identities (SHA-256):
+Historical accepted producer identities (SHA-256):
 
 - Application: `03796591ff86a0edd9ba6108888c52e0954b5ea5e63ae7d971700b818eb64f79`.
 - Oracle: `0a34e6c2b53cdb453197dc64ab507d49811e095dc1b8ea26d258b60b4c1f1146`.
