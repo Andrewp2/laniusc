@@ -1,0 +1,111 @@
+// Actual independent-open and duplicate-description advisory locks.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+
+fn path() -> core::path::Path {
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    return core::path::from_view(core::slice::view<u8>(bytes,5).unwrap()).unwrap();
+}
+fn open(marked:bool) -> std::file::File {
+    let options:std::file_ops::OpenOptions=std::file_ops::options();
+    options.access=std::file_ops::Access::ReadWrite;
+    options.append=marked; options.nonblocking=marked;
+    return std::file_ops::open(path(),options).unwrap();
+}
+fn shared(file:&std::file::File,blocking:bool) -> core::result::Result<i32,core::io::Error> {
+    let wait:std::file_ops::LockWait=std::file_ops::LockWait::Nonblocking;
+    if (blocking) { wait=std::file_ops::LockWait::Blocking; }
+    return std::file_ops::lock(file,std::file_ops::LockMode::Shared,wait);
+}
+fn exclusive(file:&std::file::File,blocking:bool) -> core::result::Result<i32,core::io::Error> {
+    let wait:std::file_ops::LockWait=std::file_ops::LockWait::Nonblocking;
+    if (blocking) { wait=std::file_ops::LockWait::Blocking; }
+    return std::file_ops::lock(file,std::file_ops::LockMode::Exclusive,wait);
+}
+fn blocked(result:core::result::Result<i32,core::io::Error>) {
+    assert(result.is_err()); assert(match(result.unwrap_err()) { core::io::Error::WouldBlock -> true, _ -> false });
+}
+fn closed(result:core::result::Result<i32,core::io::Error>) {
+    assert(result.is_err()); assert(match(result.unwrap_err()) { core::io::Error::Host(code) -> code==9, _ -> false });
+}
+fn closed_owner(file:&std::file::File) {
+    assert(!file.is_open() && file.raw_handle().is_none());
+    closed(shared(file,false)); closed(shared(file,true));
+    closed(exclusive(file,false)); closed(exclusive(file,true));
+    closed(std::file_ops::unlock(file)); assert(file.close().unwrap()==0);
+}
+fn compatibility_and_repeats() {
+    let first:std::file::File=open(true); let second:std::file::File=open(false); let third:std::file::File=open(false);
+    let first_flags:i32=std::file_ops::status_flags(first.borrow()).unwrap();
+    let second_flags:i32=std::file_ops::status_flags(second.borrow()).unwrap();
+    let third_flags:i32=std::file_ops::status_flags(third.borrow()).unwrap();
+    assert((first_flags&3072)==3072);
+    assert(std::file_ops::seek(first.borrow(),37,std::file_ops::Origin::Start).unwrap()==37);
+    assert(std::file_ops::seek(second.borrow(),19,std::file_ops::Origin::Start).unwrap()==19);
+    assert(std::file_ops::seek(third.borrow(),7,std::file_ops::Origin::Start).unwrap()==7);
+    assert(shared(first.borrow(),false).unwrap()==0);
+    assert(shared(first.borrow(),false).unwrap()==0); // no reference count
+    assert(shared(second.borrow(),false).unwrap()==0);
+    blocked(exclusive(third.borrow(),false));
+    assert(std::file_ops::unlock(first.borrow()).unwrap()==0);
+    blocked(exclusive(third.borrow(),false)); // second still holds Shared
+    assert(std::file_ops::unlock(second.borrow()).unwrap()==0);
+    assert(exclusive(third.borrow(),false).unwrap()==0);
+    blocked(shared(first.borrow(),false)); blocked(exclusive(second.borrow(),false));
+    assert(exclusive(third.borrow(),false).unwrap()==0); // repeat is not nested
+    assert(std::file_ops::unlock(third.borrow()).unwrap()==0);
+    assert(exclusive(first.borrow(),false).unwrap()==0);
+    // These conversions have no competing holder; no failed-conversion
+    // atomicity or lock retention is inferred.
+    assert(shared(first.borrow(),false).unwrap()==0);
+    assert(shared(second.borrow(),true).unwrap()==0);
+    assert(std::file_ops::unlock(second.borrow()).unwrap()==0);
+    assert(std::file_ops::unlock(first.borrow()).unwrap()==0);
+    assert(shared(first.borrow(),true).unwrap()==0);
+    assert(exclusive(first.borrow(),true).unwrap()==0);
+    assert(shared(first.borrow(),true).unwrap()==0);
+    assert(shared(second.borrow(),false).unwrap()==0);
+    blocked(exclusive(third.borrow(),false));
+    assert(std::file_ops::unlock(first.borrow()).unwrap()==0);
+    assert(std::file_ops::unlock(second.borrow()).unwrap()==0);
+    assert(std::file_ops::unlock(third.borrow()).unwrap()==0); // no held lock
+    assert(std::file_ops::position(first.borrow()).unwrap()==37 && std::file_ops::position(second.borrow()).unwrap()==19 && std::file_ops::position(third.borrow()).unwrap()==7);
+    assert(std::file_ops::status_flags(first.borrow()).unwrap()==first_flags && std::file_ops::status_flags(second.borrow()).unwrap()==second_flags && std::file_ops::status_flags(third.borrow()).unwrap()==third_flags);
+    assert(first.is_open() && second.is_open() && third.is_open());
+    assert(first.close().unwrap()==0); closed_owner(first.borrow());
+    assert(second.close().unwrap()==0 && third.close().unwrap()==0);
+}
+fn duplicate_sharing_and_last_close() {
+    let owner:std::file::File=open(false); let competitor:std::file::File=open(false);
+    let duplicate:std::file::File=std::file_ops::duplicate(owner.borrow(),40,true).unwrap();
+    let owner_flags:i32=std::file_ops::status_flags(owner.borrow()).unwrap();
+    let competitor_flags:i32=std::file_ops::status_flags(competitor.borrow()).unwrap();
+    assert(std::file_ops::seek(owner.borrow(),37,std::file_ops::Origin::Start).unwrap()==37);
+    assert(std::file_ops::seek(competitor.borrow(),19,std::file_ops::Origin::Start).unwrap()==19);
+    assert(exclusive(owner.borrow(),false).unwrap()==0);
+    blocked(shared(competitor.borrow(),false));
+    assert(std::file_ops::unlock(duplicate.borrow()).unwrap()==0);
+    assert(exclusive(competitor.borrow(),false).unwrap()==0);
+    blocked(shared(owner.borrow(),false));
+    assert(std::file_ops::unlock(competitor.borrow()).unwrap()==0);
+    assert(exclusive(owner.borrow(),false).unwrap()==0);
+    assert(shared(duplicate.borrow(),false).unwrap()==0); // changes same OFD
+    assert(shared(competitor.borrow(),false).unwrap()==0);
+    assert(std::file_ops::unlock(competitor.borrow()).unwrap()==0);
+    assert(exclusive(duplicate.borrow(),false).unwrap()==0);
+    assert(std::file_ops::position(owner.borrow()).unwrap()==37 && std::file_ops::position(duplicate.borrow()).unwrap()==37 && std::file_ops::position(competitor.borrow()).unwrap()==19);
+    assert(std::file_ops::status_flags(owner.borrow()).unwrap()==owner_flags && std::file_ops::status_flags(duplicate.borrow()).unwrap()==owner_flags && std::file_ops::status_flags(competitor.borrow()).unwrap()==competitor_flags);
+    assert(owner.close().unwrap()==0); closed_owner(owner.borrow());
+    blocked(shared(competitor.borrow(),false)); // duplicate keeps lock alive
+    assert(duplicate.is_open() && duplicate.close().unwrap()==0); closed_owner(duplicate.borrow());
+    assert(exclusive(competitor.borrow(),false).unwrap()==0); // last close released
+    assert(std::file_ops::unlock(competitor.borrow()).unwrap()==0);
+    assert(competitor.close().unwrap()==0); closed_owner(competitor.borrow());
+}
+fn main() -> i32 { compatibility_and_repeats(); duplicate_sharing_and_last_close(); return 0; }

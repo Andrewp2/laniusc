@@ -1,6 +1,17 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[advisory-locking increment](stdlib-file-locks.md) adds one-attempt borrowed
+File lock/unlock and an explicit cooperative file-patch mode. Open-description
+lifetime, duplicate sharing, failed-conversion uncertainty and manual cleanup
+are explicit; Blocking supplies no deadline and Nonblocking reports contention.
+Two native policy/fault tests, a 1,287-program/24,244-step independent model
+and four process tests pass. Four new locked file-patch groups pass 49 cases.
+This finite native Linux x86_64/local-filesystem increment is accepted.
+One selected positional contract
+and all four ordinary file-patch groups/82 cases pass as current regressions;
+they do not establish locking behavior. Earlier positional and application
+receipts do not establish this increment. The preceding
 [positional-I/O increment](stdlib-positional-io.md) adds explicit-offset
 ReadAt/WriteAt contracts, attempt-bounded exact/all helpers and staged File
 adapters. Complete logical/positional spans are admitted before callbacks;
@@ -179,6 +190,47 @@ acceptance on the profile below. The accepted TempFile prerequisite and server
 evidence retain their checkpoint scope. The
 [remaining-work audit](library-roadmap.md#remaining-work-beyond-atomic-files)
 keeps the broader standard and extended library work visible.
+
+**Advisory file locks.**
+
+The [whole-file lock contract](stdlib-file-locks.md) borrows a live File for
+one Linux flock call with explicit Shared/Exclusive and Blocking/Nonblocking
+choices. Only exact-zero success is accepted; errors retain the existing
+Interrupted/WouldBlock/Host mapping. No implicit retry, allocation, seek,
+sync, unlock or close is introduced. Blocking can wait indefinitely.
+
+The lock belongs to the open description shared by duplicates, with no
+reference-counted acquisitions or single-handle ownership guard. Callers
+coordinate all aliases and explicit unlock/close. Failed conversion must not
+be assumed to preserve the old lock. The local-filesystem contract coordinates
+cooperating processes; pathname replacement, writers ignoring the protocol,
+remote NFS/SMB semantics and durability retain separate limits.
+
+The real [file-patch application](stdlib-file-patch.md) adds leading `--lock`
+through its existing preflight/positional/cleanup path, acquiring nonblocking
+Exclusive before reading and attempting unlock then close after acknowledged
+acquisition. Primary patch status and secondary cleanup errors stay explicit.
+The selected existing positional contract passes in 6.74s against FileOps
+`9ca5ca58`; all four ordinary file-patch groups pass in 7.73s with 82 cases
+against app `b2a6984c`. These are current regressions of the same ordinary
+corpus. A new native policy test passes in the mixed first command (6.86s),
+whose fault test failed a tool-warning harness. The final fault-only test
+passes in 5.45s with 16 schedules/14 reached injections/two controls, including
+an exact-zero check on a 4,294,967,296 result. The independent model passes
+in 5.76s: 1,287 programs, 24,244 steps and four owner slots. Explicit unlock
+normalizes 949 WouldBlock results, including 138 failed conversions, so later
+predictions do not assume retention of a failed conversion's old mode.
+
+All four process tests pass across blocking1/5.97s and lifetime3/5.37s,
+with six native peer lifecycles and three actual syscall-73 waits observed
+before controlling-host release. The locked application passes all four
+groups/49 new cases across model15/7.73s and bounds15+faults15+protection4/7.62s.
+Host probes check exclusion during actual positional reads/writes and release
+before close. The 82 ordinary regression cases remain separate. This selected
+increment is accepted; earlier receipts preserve their source/API scope.
+No compiler/ABI/proof change or new compiler dependency is introduced. Manual
+ownership, remote-filesystem semantics and blocking cancellation/deadlines
+remain explicit limits; the whole library goal remains open.
 
 **Positional I/O.**
 

@@ -9,8 +9,11 @@ import sys
 import tempfile
 
 MAX_POSITION = (1 << 63) - 1
-HELP = (b"Usage: file_patch PATH OFFSET EXPECTED_HEX REPLACEMENT_HEX\n"
+HELP = (b"Usage: file_patch [--lock] PATH OFFSET EXPECTED_HEX REPLACEMENT_HEX\n"
         b"Replace bytes only after an exact positional comparison of the existing file.\n"
+        b"The four-operand form is unlocked; --lock is only a leading fifth operand.\n"
+        b"--lock makes one nonblocking exclusive advisory lock attempt for cooperating clients.\n"
+        b"Status 6 reports lock/unlock failure; an unlock failure may follow changed file data.\n"
         b"OFFSET is ASCII decimal. Hex strings must have equal nonempty even lengths, up to 4096 bytes.\n"
         b"Open read/write without create, truncate or append; no atomicity or durability promise.\n"
         b"Limits: path 4095 bytes, 16 read attempts, 16 write attempts. --help or -h shows help.\n")
@@ -26,7 +29,7 @@ DIAGNOSTICS = {
     "output": b"file_patch: output failed\n",
 }
 COUNTS = {"model": 24, "preservation": 6, "cli": 35, "io": 17}
-TRACE = "openat,close,fcntl,pread64,pwrite64,lseek,read,write,mmap,munmap,mremap,brk,rt_sigaction"
+TRACE = "openat,close,fcntl,flock,pread64,pwrite64,lseek,read,write,mmap,munmap,mremap,brk,rt_sigaction"
 
 
 def pattern(length):
@@ -305,7 +308,7 @@ def io(r):
 
 
 def controls():
-    assert len(HELP) == 406 and len(DIAGNOSTICS["mismatch"]) == 41
+    assert len(HELP) == 662 and len(DIAGNOSTICS["mismatch"]) == 41
     assert replacement(b"prefixOLDsuffix", 6, b"NEW") == b"prefixNEWsuffix"
     assert len(pattern(4096)) == 4096 and len(bytes.fromhex(pattern(4096).hex().upper())) == 4096
     assert MAX_POSITION - 1 + 1 == MAX_POSITION and MAX_POSITION - 1 + 2 > MAX_POSITION

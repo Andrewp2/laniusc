@@ -96,8 +96,30 @@ Duplicates share open-file position and status flags. Their descriptor flags
 are independent. `close_on_exec`/`set_close_on_exec` inspect or change the
 descriptor flag. `status_flags` returns the Linux access/status bits;
 `set_status` changes only append/nonblocking and preserves other current bits.
-That read/modify/write is not a concurrent update primitive. No descriptor
-operation provides locking or a transaction.
+That read/modify/write is not a concurrent update primitive. These
+position/flag/duplication operations acquire no lock and provide no transaction.
+
+## Advisory whole-file locking
+
+The [locking increment](stdlib-file-locks.md) adds `lock(file, mode, wait)`
+and `unlock(file)`, borrowing a live File through one Linux flock attempt.
+Shared/Exclusive modes and Blocking/Nonblocking waits are explicit; only
+exact-zero host success is accepted. Duplicates share open-description lock
+state, acquisition is not reference counted, and failed conversion does not
+promise retention of the old mode. The caller coordinates aliases and manual
+unlock/close; no single-handle guard owns that shared state. Blocking supplies
+no deadline. Local advisory behavior, remote-filesystem qualifications and
+the file-patch cooperative mode are documented separately. Native policy and
+fault gates pass across separate receipts, including 16 fault schedules /
+14 reached injections / two controls. The independent model passes 1,287
+programs/24,244 steps, and all four process tests pass with six native peer
+lifecycles and three observed kernel waits. The cooperative file-patch mode
+passes four new groups/49 process cases. This finite local Linux x86_64
+increment is accepted; NFS/SMB, automatic ownership and broader targets remain
+outside its claim. Earlier descriptor receipts retain their original scope.
+One selected existing amended positional contract separately passes in 6.74s
+against the new FileOps module; ordinary file-patch groups pass 82 existing
+cases in 7.73s as a separate regression corpus.
 
 ## Positional reads and writes
 

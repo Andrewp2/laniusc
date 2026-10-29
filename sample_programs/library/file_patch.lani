@@ -15,7 +15,7 @@ import std::file_ops;
 import std::signal;
 import std::stream;
 
-enum Phase { Complete, ReadFailed, Mismatch, WriteFailed }
+enum Phase { Complete, ReadFailed, Mismatch, WriteFailed, LockFailed }
 fn literal(value:str, count:i32) -> View<u8> {
     let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
     return core::slice::view(raw,count).unwrap();
@@ -56,12 +56,17 @@ fn arguments(values:View<View<u8>>) -> i32 {
     if (values.length == 1) {
         let argument = values.get(0).unwrap();
         if (equal(argument,literal("--help",6)) || equal(argument,literal("-h",2))) {
-            if (!write(literal("Usage: file_patch PATH OFFSET EXPECTED_HEX REPLACEMENT_HEX\nReplace bytes only after an exact positional comparison of the existing file.\nOFFSET is ASCII decimal. Hex strings must have equal nonempty even lengths, up to 4096 bytes.\nOpen read/write without create, truncate or append; no atomicity or durability promise.\nLimits: path 4095 bytes, 16 read attempts, 16 write attempts. --help or -h shows help.\n",406),1,64)) { return report(5,literal("file_patch: output failed\n",26)); } return 0;
+            if (!write(literal("Usage: file_patch [--lock] PATH OFFSET EXPECTED_HEX REPLACEMENT_HEX\nReplace bytes only after an exact positional comparison of the existing file.\nThe four-operand form is unlocked; --lock is only a leading fifth operand.\n--lock makes one nonblocking exclusive advisory lock attempt for cooperating clients.\nStatus 6 reports lock/unlock failure; an unlock failure may follow changed file data.\nOFFSET is ASCII decimal. Hex strings must have equal nonempty even lengths, up to 4096 bytes.\nOpen read/write without create, truncate or append; no atomicity or durability promise.\nLimits: path 4095 bytes, 16 read attempts, 16 write attempts. --help or -h shows help.\n",662),1,64)) { return report(5,literal("file_patch: output failed\n",26)); } return 0;
         }
     }
-    if (values.length != 4) { return report(2,literal("file_patch: invalid arguments\n",30)); }
-    let path_bytes = values.get(0).unwrap(); let offset_bytes = values.get(1).unwrap();
-    let expected_hex = values.get(2).unwrap(); let replacement_hex = values.get(3).unwrap();
+    let operands:View<View<u8>> = values; let cooperative:bool = false;
+    if (values.length == 5) {
+        if (!equal(values.get(0).unwrap(),literal("--lock",6))) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+        cooperative = true; operands = values.subview(1,5).unwrap();
+    }
+    if (operands.length != 4) { return report(2,literal("file_patch: invalid arguments\n",30)); }
+    let path_bytes = operands.get(0).unwrap(); let offset_bytes = operands.get(1).unwrap();
+    let expected_hex = operands.get(2).unwrap(); let replacement_hex = operands.get(3).unwrap();
     if ((path_bytes.length == 0) || (path_bytes.length > 4095) || (expected_hex.length == 0) || (expected_hex.length > 8192) || (expected_hex.length%2 != 0) || (replacement_hex.length != expected_hex.length)) { return report(2,literal("file_patch: invalid arguments\n",30)); }
     let path:Result<core::path::Path,core::path::Error> = core::path::from_view(path_bytes);
     let position = core::decimal::parse_u64_range(offset_bytes.values,offset_bytes.start,offset_bytes.length);
@@ -75,21 +80,34 @@ fn arguments(values:View<View<u8>>) -> i32 {
     let options = std::file_ops::options(); options.access = std::file_ops::Access::ReadWrite;
     let opened:Result<std::file::File,core::io::Error> = std::file_ops::open(path.unwrap(),options);
     if (opened.is_err()) { return report(3,literal("file_patch: open failed\n",24)); } let file = opened.unwrap();
-    let phase = patch(file.borrow(),position.unwrap(),expected,replacement,actual,count);
-    // Invalidate and close exactly once before diagnostics, including failures.
+    let phase:Phase = Phase::Complete; let acquired:bool = false;
+    if (cooperative) {
+        let locked:Result<i32,core::io::Error> = std::file_ops::lock(file.borrow(),std::file_ops::LockMode::Exclusive,std::file_ops::LockWait::Nonblocking);
+        if (locked.is_ok() && (locked.unwrap() == 0)) { acquired = true; } else { phase = Phase::LockFailed; }
+    }
+    if (!cooperative || acquired) { phase = patch(file.borrow(),position.unwrap(),expected,replacement,actual,count); }
+    // Only acknowledged acquisition permits unlock. Attempt all cleanup before
+    // phase/unlock/close diagnostics, preserving the earlier primary failure.
+    let unlock_failed:bool = false;
+    if (acquired) {
+        let unlocked:Result<i32,core::io::Error> = std::file_ops::unlock(file.borrow());
+        unlock_failed = unlocked.is_err();
+    }
     let closed:Result<i32,core::io::Error> = file.close();
     let status:i32 = match(phase) {
         Phase::Complete -> 0,
         Phase::ReadFailed -> report(3,literal("file_patch: positional read failed\n",35)),
         Phase::Mismatch -> report(1,literal("file_patch: expected bytes did not match\n",41)),
-        Phase::WriteFailed -> report(3,literal("file_patch: positional write failed\n",36))
+        Phase::WriteFailed -> report(3,literal("file_patch: positional write failed\n",36)),
+        Phase::LockFailed -> report(6,literal("file_patch: lock failed\n",24))
     };
+    if (unlock_failed) { report(6,literal("file_patch: unlock failed\n",26)); if (status == 0) { status = 6; } }
     if (closed.is_err()) { report(3,literal("file_patch: close failed\n",25)); if (status == 0) { status = 3; } }
     return status;
 }
 fn main() -> i32 {
     if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 5; }
-    let captured = std::args::snapshot(1,4,24576);
+    let captured = std::args::snapshot(1,5,24576);
     if (captured.is_err()) {
         return match(captured.unwrap_err()) {
             std::args::Error::AllocationFailed -> report(4,literal("file_patch: allocation failed\n",30)),

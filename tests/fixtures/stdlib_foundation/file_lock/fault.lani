@@ -1,0 +1,38 @@
+// One selected acquisition/unlock attempt; native driver injects its result.
+module app::main;
+import core::io;
+import core::mem;
+import core::path;
+import core::result;
+import core::slice;
+import std::file;
+import std::file_ops;
+import std::io;
+fn path() -> core::path::Path {
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr("input"),5);
+    return core::path::from_view(core::slice::view<u8>(bytes,5).unwrap()).unwrap();
+}
+fn code(error:core::io::Error) -> i32 {
+    return match(error) { core::io::Error::Interrupted -> 4, core::io::Error::WouldBlock -> 11, core::io::Error::Host(n) -> n, core::io::Error::InvalidCount -> 96, _ -> 99 };
+}
+fn main() -> i32 {
+    let input:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(input),1)==1);
+    let mode:i32=input[0]; assert(mode==0 || mode==1);
+    let options:std::file_ops::OpenOptions=std::file_ops::options(); options.access=std::file_ops::Access::ReadWrite; options.append=true; options.nonblocking=true;
+    let file:std::file::File=std::file_ops::open(path(),options).unwrap(); let raw:i32=file.raw_handle().unwrap();
+    let flags:i32=std::file_ops::status_flags(file.borrow()).unwrap(); assert((flags&3072)==3072);
+    assert(std::file_ops::seek(file.borrow(),37,std::file_ops::Origin::Start).unwrap()==37);
+    let result:core::result::Result<i32,core::io::Error> =core::result::Ok(0);
+    if (mode==0) { result=std::file_ops::lock(file.borrow(),std::file_ops::LockMode::Exclusive,std::file_ops::LockWait::Nonblocking); }
+    else {
+        assert(std::file_ops::lock(file.borrow(),std::file_ops::LockMode::Exclusive,std::file_ops::LockWait::Nonblocking).unwrap()==0);
+        result=std::file_ops::unlock(file.borrow());
+    }
+    let status:i32=0; if (result.is_err()) { status=code(result.unwrap_err()); } else { assert(result.unwrap()==0); }
+    assert(file.is_open() && file.raw_handle().unwrap()==raw);
+    assert(std::file_ops::status_flags(file.borrow()).unwrap()==flags && std::file_ops::position(file.borrow()).unwrap()==37);
+    assert(file.close().unwrap()==0 && file.close().unwrap()==0 && !file.is_open());
+    assert(code(std::file_ops::lock(file.borrow(),std::file_ops::LockMode::Shared,std::file_ops::LockWait::Nonblocking).unwrap_err())==9);
+    assert(code(std::file_ops::unlock(file.borrow()).unwrap_err())==9);
+    let report:[i32;1]=[status]; assert(std::io::write_stdout(core::mem::i32_array_data_ptr(report),4)==4); return 0;
+}

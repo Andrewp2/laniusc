@@ -86,3 +86,21 @@ do not establish atomic compare-and-swap, concurrency safety, crash durability,
 leak freedom, device-side execution, formal verification or exhaustive fault
 coverage. Oracle syntax was checked separately; pure control execution is
 not included in these native case counts.
+
+## Unlocked regression after adding optional locking
+
+All four registered groups pass on the revised application: model24,
+preservation6, CLI35 and I/O17, the same 82 cases, in 7.73 seconds.
+Receipt: `target/stdlib-work/file-lock-file-patch-regression.log`.
+The only oracle changes are the current 662-byte help expectation and
+observing `flock` so unexpected locks in this unlocked workflow fail the
+trace check. The application now also accepts a leading fifth `--lock`
+operand; these four groups do not exercise that mode.
+
+Executed application SHA-256:
+`b2a6984c1bf73d0092327286bf858725ee729dcb4a51f1b13876160fa9ad7528`.
+Executed oracle SHA-256:
+`412368ccc6b4c2cfc87bd642071c06d0af68dbe112f98dc03c487b31da99b6d5`.
+The earlier identities/receipts above remain historical. Separate
+[locking evidence](../../../../docs/stdlib-file-locks.md) is required for
+cooperative protection, lock failures and cleanup.

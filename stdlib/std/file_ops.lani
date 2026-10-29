@@ -278,3 +278,26 @@ pub impl core::io::WriteAt for File {
         return std::file_ops::write_at(self,selected,position);
     }
 }
+
+pub enum LockMode { Shared, Exclusive }
+pub enum LockWait { Blocking, Nonblocking }
+
+// One whole-file advisory flock attempt. Duplicates share the open file
+// description's lock; acquisitions are not counted and conversion has no
+// atomicity guarantee. Coordinate aliases' lock/close operations; keep File live.
+// Blocking may wait indefinitely; Nonblocking reports contention directly.
+pub fn lock(file:&File,mode:LockMode,wait:LockWait) -> Result<i32,Error> {
+    let got:i64=descriptor(file)?;
+    let operation:i64=match(mode) { LockMode::Shared->1, LockMode::Exclusive->2 };
+    let extra:i64=match(wait) { LockWait::Blocking->0, LockWait::Nonblocking->4 };
+    let args:[std::linux::Argument;2]=[std::linux::Argument::Word(got),std::linux::Argument::Word(operation|extra)];
+    return zero(call(73,view(args,2).unwrap()));
+}
+
+// Always ask the host, even if no lock is believed held. Any duplicate may
+// release the shared lock state. No retry, flush, synchronization or close.
+pub fn unlock(file:&File) -> Result<i32,Error> {
+    let got:i64=descriptor(file)?;
+    let args:[std::linux::Argument;2]=[std::linux::Argument::Word(got),std::linux::Argument::Word(8)];
+    return zero(call(73,view(args,2).unwrap()));
+}
