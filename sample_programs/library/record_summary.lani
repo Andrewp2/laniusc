@@ -1,0 +1,234 @@
+// Bounded binary stdin summarized through generic borrowed slice segmentation.
+module app::main;
+import alloc::io;
+import alloc::string;
+import alloc::vec;
+import core::decimal;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::result::Result;
+import core::slice;
+import core::slice::View;
+import core::pair;
+import std::args;
+import std::signal;
+import std::stream;
+
+struct Calls { used:i32 }
+impl Calls { fn borrow(&self) -> &Calls { return self; } }
+enum Failure {
+    Arguments, ArgumentsIo, InputBytes, InputRecords,
+    InputCalls, OutputCalls, Allocation, InputIo, OutputIo
+}
+
+fn literal(value:str, count:i32) -> View<u8> {
+    let raw:[u8] = core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),count);
+    return core::slice::view(raw,count).unwrap();
+}
+
+// The counter is shared by every header/row write. A short write preserves
+// its confirmed prefix; Interrupted spends an attempt without progress.
+fn write(bytes:View<u8>, handle:i32, calls:&Calls, maximum:i32) -> i32 {
+    let sink:std::stream::Descriptor = std::stream::from_handle(handle);
+    let completed:i32 = 0;
+    while (completed < bytes.length) {
+        if (calls.used >= maximum) { return 2; }
+        calls.used += 1;
+        let sent:Result<i32,core::io::Error> = sink.write(bytes.values,bytes.start+completed,bytes.length-completed);
+        if (sent.is_err()) {
+            if (core::io::is_interrupted(sent.unwrap_err())) { continue; }
+            return 3;
+        }
+        let count:i32 = sent.unwrap();
+        if (count <= 0 || count > bytes.length-completed) { return 3; }
+        completed += count;
+    }
+    return 0;
+}
+
+fn report(failure:Failure) -> i32 {
+    let message:View<u8> = match (failure) {
+        Failure::Arguments -> literal("record_summary: arguments are not supported\n",44),
+        Failure::ArgumentsIo -> literal("record_summary: could not read arguments\n",41),
+        Failure::InputBytes -> literal("record_summary: input exceeds 1048576 bytes\n",44),
+        Failure::InputRecords -> literal("record_summary: input exceeds 65536 records\n",44),
+        Failure::InputCalls -> literal("record_summary: read attempt limit exceeded\n",44),
+        Failure::OutputCalls -> literal("record_summary: write attempt limit exceeded\n",45),
+        Failure::Allocation -> literal("record_summary: allocation failed\n",34),
+        Failure::InputIo -> literal("record_summary: input operation failed\n",39),
+        Failure::OutputIo -> literal("record_summary: output operation failed\n",40)
+    };
+    let calls:Calls = Calls { used:0 };
+    if (write(message,2,calls.borrow(),64) != 0) { return 3; }
+    return match (failure) {
+        Failure::ArgumentsIo -> 3,
+        Failure::InputIo -> 3,
+        Failure::OutputIo -> 3,
+        Failure::Allocation -> 4,
+        _ -> 2
+    };
+}
+
+fn read_failure(cause:alloc::io::ReadError) -> Failure {
+    return match (cause) {
+        alloc::io::ReadError::InvalidLimits -> Failure::InputIo,
+        alloc::io::ReadError::CallLimit -> Failure::InputCalls,
+        alloc::io::ReadError::ByteLimit -> Failure::InputBytes,
+        alloc::io::ReadError::Io(error) -> match (error) {
+            core::io::Error::AllocationFailed -> Failure::Allocation,
+            core::io::Error::LimitExceeded -> Failure::InputBytes,
+            _ -> Failure::InputIo
+        },
+        alloc::io::ReadError::Storage(error) -> match (error) {
+            alloc::vec::Error::AllocationFailed -> Failure::Allocation,
+            _ -> Failure::InputIo
+        },
+        alloc::io::ReadError::Text(error) -> match (error) {
+            alloc::string::Error::AllocationFailed -> Failure::Allocation,
+            _ -> Failure::InputIo
+        }
+    };
+}
+
+struct ByteEquals { value:u8 }
+impl ByteEquals { fn borrow(&self) -> &ByteEquals { return self; } }
+pub impl core::iter::Mapper<u8,bool> for ByteEquals {
+    pub fn apply(&self, value:u8) -> bool { return value == self.value; }
+}
+struct EqualBytes {}
+impl EqualBytes { fn borrow(&self) -> &EqualBytes { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for EqualBytes {
+    pub fn apply(&self, values:core::pair::Pair<u8,u8>) -> bool { return values.first == values.second; }
+}
+
+fn admitted_records(input:View<u8>) -> Result<i32,Failure> {
+    let newline:ByteEquals = ByteEquals { value:10 };
+    let prepared:Result<core::slice::SplitInclusive<u8,ByteEquals>,core::slice::ViewError> = core::slice::split_inclusive<u8,ByteEquals>(input,newline.borrow());
+    if (prepared.is_err()) { return core::result::Err(Failure::InputIo); }
+    let records:core::slice::SplitInclusive<u8,ByteEquals> = prepared.unwrap();
+    let count:i32 = 0;
+    while (true) {
+        let found:core::option::Option<View<u8>> = records.next();
+        if (found.is_none()) { return core::result::Ok(count); }
+        count += 1;
+        if (count > 65536) { return core::result::Err(Failure::InputRecords); }
+    }
+    return core::result::Ok(count);
+}
+
+// Inclusive splitting leaves LF in its selected view. Remove only that LF;
+// CR and every other byte remain ordinary record content.
+fn content(record:View<u8>) -> View<u8> {
+    let length:i32 = record.length;
+    if (length > 0) {
+        if (record.values[record.start+length-1] == 10) { length -= 1; }
+    }
+    return record.subview(0,length).unwrap();
+}
+
+fn field(output:[u8], offset:i32, value:i32, ending:u8) -> Result<i32,i32> {
+    if (offset < 0 || offset >= 63) { return core::result::Err(3); }
+    let rendered:Result<i32,core::decimal::FormatError> = core::decimal::format_i32(output,offset,63-offset,value);
+    if (rendered.is_err()) { return core::result::Err(3); }
+    let length:i32 = rendered.unwrap();
+    if (length <= 0 || length > 63-offset) { return core::result::Err(3); }
+    let end:i32 = offset+length;
+    output[end] = ending;
+    return core::result::Ok(end+1);
+}
+
+fn row(output:[u8], number:i32, record:View<u8>, comma:&ByteEquals, equal:&EqualBytes) -> Result<i32,i32> {
+    let prepared_fields:Result<core::slice::Split<u8,ByteEquals>,core::slice::ViewError> = core::slice::split<u8,ByteEquals>(record,comma);
+    if (prepared_fields.is_err()) { return core::result::Err(3); }
+    let fields:core::slice::Split<u8,ByteEquals> = prepared_fields.unwrap();
+    let count:i32 = 0;
+    let empty:i32 = 0;
+    while (true) {
+        let found:core::option::Option<View<u8>> = fields.next();
+        if (found.is_none()) { break; }
+        let part:View<u8> = found.unwrap();
+        count += 1;
+        if (part.length == 0) { empty += 1; }
+    }
+    let prepared_runs:Result<core::slice::ChunkBy<u8,EqualBytes>,core::slice::ViewError> = core::slice::chunk_by<u8,EqualBytes>(record,equal);
+    if (prepared_runs.is_err()) { return core::result::Err(3); }
+    let runs:core::slice::ChunkBy<u8,EqualBytes> = prepared_runs.unwrap();
+    let longest:i32 = 0;
+    while (true) {
+        let found:core::option::Option<View<u8>> = runs.next();
+        if (found.is_none()) { break; }
+        let part:View<u8> = found.unwrap();
+        if (part.length > longest) { longest = part.length; }
+    }
+    let offset:i32 = field(output,0,number,9)?;
+    offset = field(output,offset,record.length,9)?;
+    offset = field(output,offset,count,9)?;
+    offset = field(output,offset,empty,9)?;
+    return field(output,offset,longest,10);
+}
+
+fn publish(input:View<u8>) -> i32 {
+    let newline:ByteEquals = ByteEquals { value:10 };
+    let comma:ByteEquals = ByteEquals { value:44 };
+    let equal:EqualBytes = EqualBytes {};
+    let prepared:Result<core::slice::SplitInclusive<u8,ByteEquals>,core::slice::ViewError> = core::slice::split_inclusive<u8,ByteEquals>(input,newline.borrow());
+    if (prepared.is_err()) { return 3; }
+    let records:core::slice::SplitInclusive<u8,ByteEquals> = prepared.unwrap();
+    let calls:Calls = Calls { used:0 };
+    let status:i32 = write(literal("record\tbytes\tfields\tempty_fields\tlongest_run\n",45),1,calls.borrow(),131072);
+    if (status != 0) { return status; }
+    let output:[u8;64] = [0;64];
+    let number:i32 = 0;
+    while (true) {
+        let found:core::option::Option<View<u8>> = records.next();
+        if (found.is_none()) { return 0; }
+        number += 1;
+        let selected:View<u8> = found.unwrap();
+        let record:View<u8> = content(selected);
+        let rendered:Result<i32,i32> = row(output,number,record,comma.borrow(),equal.borrow());
+        if (rendered.is_err()) { return rendered.unwrap_err(); }
+        status = write(core::slice::view(output,rendered.unwrap()).unwrap(),1,calls.borrow(),131072);
+        if (status != 0) { return status; }
+    }
+    return 0;
+}
+
+fn main() -> i32 {
+    // A failed setup returns without writing: stderr might itself be a closed
+    // pipe, and without SIGPIPE protection a diagnostic could terminate us.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    // A zero-entry snapshot rejects every operand, including --help and --,
+    // before input. Its empty owner needs no allocation or borrowed argv.
+    let captured = std::args::snapshot(1,0,0);
+    if (captured.is_err()) {
+        return report(match (captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> Failure::Allocation,
+            std::args::Error::HostRead(index) -> Failure::ArgumentsIo,
+            _ -> Failure::Arguments
+        });
+    }
+    let arguments = captured.unwrap();
+    arguments.destroy();
+    let source:std::stream::Descriptor = std::stream::stdin();
+    let limits:alloc::io::ReadLimits = alloc::io::ReadLimits { max_bytes:1048576,max_calls:16384 };
+    let collected:Result<alloc::vec::Vec<u8>,alloc::io::ReadFailure> = alloc::io::read_to_end<std::stream::Descriptor>(source.borrow(),limits);
+    if (collected.is_err()) {
+        let failure:alloc::io::ReadFailure = collected.unwrap_err();
+        let cause:Failure = read_failure(failure.cause);
+        failure.destroy();
+        return report(cause);
+    }
+    let input:alloc::vec::Vec<u8> = collected.unwrap();
+    let bytes:View<u8> = input.as_view();
+    let admitted:Result<i32,Failure> = admitted_records(bytes);
+    if (admitted.is_err()) { input.destroy(); return report(admitted.unwrap_err()); }
+    let status:i32 = publish(bytes);
+    // All cursors and views are finished before the sole input owner retires.
+    input.destroy();
+    if (status == 2) { return report(Failure::OutputCalls); }
+    if (status != 0) { return report(Failure::OutputIo); }
+    return 0;
+}

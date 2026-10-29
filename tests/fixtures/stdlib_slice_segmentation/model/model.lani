@@ -1,0 +1,207 @@
+// Test-only callback traces, shared state and borrowed segmentation cursors.
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::result;
+import core::pair;
+import core::slice;
+import std::io;
+
+fn read_exact(pointer: ptr, count: i32, allow_eof: bool) -> bool {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::read_stdin(pointer + (done as usize), (count - done) as usize);
+        assert(got >= 0);
+        if (got == 0) { assert(allow_eof && done == 0); return false; }
+        done += got;
+    }
+    return true;
+}
+
+fn write_all(pointer: ptr, count: i32) {
+    let done: i32 = 0;
+    while (done < count) {
+        let got: i32 = std::io::write_stdout(pointer + (done as usize), (count - done) as usize);
+        assert(got > 0);
+        done += got;
+    }
+}
+
+fn get64(bytes: [u8], offset: i32) -> u64 {
+    let result: u64 = 0;
+    let index: i32 = 0;
+    while (index < 8) {
+        result |= (bytes[offset + index] as u64) << (index * 8);
+        index += 1;
+    }
+    return result;
+}
+
+struct Output { bytes:[u8],pointer:ptr,used:i32 }
+impl Output {
+    fn borrow(&self) -> &Output { return self; }
+    fn flush(&self) { write_all(self.pointer,self.used); self.used=0; }
+    fn byte(&self,value:u8) {
+        if(self.used==4096) { self.flush(); }
+        self.bytes[self.used]=value; self.used+=1;
+    }
+    fn word(&self,value:u64) {
+        let index:i32=0;
+        while(index<8) { self.byte(((value>>(index*8))&255) as u8); index+=1; }
+    }
+}
+struct Context { mode:i32,key:i32,calls:u64,output:&Output }
+impl Context {
+    fn borrow(&self) -> &Context { return self; }
+    fn snapshot(&self) { let output:&Output=self.output; output.word(self.calls); output.byte(self.mode as u8); output.byte(self.key as u8); }
+    fn evaluate(&self,left:u8,right:u8,adjacent:bool) -> bool {
+        self.calls+=1; let tick:u64=self.calls; let answer:bool=false;
+        if(adjacent) {
+            if(self.mode==0) { answer=left==right; }
+            if(self.mode==1) { answer=(((left as i32)^self.key)&15)<=(((right as i32)^self.key)&15); }
+            if(self.mode==2) { answer=((left as u64)+3*(right as u64)+(self.key as u64)+tick)%5!=0; }
+        } else {
+            if(self.mode==0) { answer=(left as i32)==self.key; }
+            if(self.mode==1) { answer=((((left as i32)^self.key)&3) as u64)==tick%4; }
+            if(self.mode==2) { answer=((left as u64)+(self.key as u64)+tick)%5==0; }
+        }
+        let output:&Output=self.output;
+        if(adjacent) { output.byte(161); } else { output.byte(160); }
+        output.word(self.calls); output.byte(self.mode as u8); output.byte(self.key as u8);
+        output.byte(left); output.byte(right);
+        if(answer) { output.byte(1); } else { output.byte(0); }
+        return answer;
+    }
+}
+struct UnaryPredicate { state:&Context }
+impl UnaryPredicate { fn borrow(&self) -> &UnaryPredicate { return self; } }
+struct AdjacentPredicate { state:&Context }
+impl AdjacentPredicate { fn borrow(&self) -> &AdjacentPredicate { return self; } }
+pub impl core::iter::Mapper<u8,bool> for UnaryPredicate {
+    pub fn apply(&self,value:u8) -> bool { let state:&Context=self.state; return state.evaluate(value,0,false); }
+}
+pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for AdjacentPredicate {
+    pub fn apply(&self,value:core::pair::Pair<u8,u8>) -> bool {
+        let state:&Context=self.state; return state.evaluate(value.first,value.second,true);
+    }
+}
+fn item(value:core::option::Option<core::slice::View<u8>>,output:&Output) {
+    if(value.is_none()) { output.byte(0); return; }
+    let view:core::slice::View<u8> = value.unwrap();
+    output.byte(1); output.word(view.start as u64); output.word(view.length as u64);
+    output.word(core::mem::slice_stride(view.values) as i64 as u64);
+    let index:i32=0; while(index<view.length) { output.byte(view.values[view.start+index]); index+=1; }
+}
+fn exercise<I>(seed:I,values:core::slice::View<u8>,state:&Context,actions:[u8],count:i32,output:&Output)
+    where I:core::iter::Iterator<core::slice::View<u8>> {
+    let primary:I=seed; let fork:I=seed;
+    let saved:core::option::Option<core::slice::View<u8>> = core::option::None();
+    let postscript:[i32;11]=[9,10,6,7,8,0,1,0,1,2,1]; let index:i32=0;
+    while(index<count+11) {
+        let op:i32=0; let argument:i32=0; let value:u8=0;
+        if(index<count) {
+            op=actions[index*4] as i32;
+            argument=(actions[index*4+1] as i32)+((actions[index*4+2] as i32)<<8);
+            value=actions[index*4+3];
+        } else {
+            op=postscript[index-count];
+            if(op==6) { value=191; }
+            if(op==7) { argument=2; value=97; }
+        }
+        output.byte(op as u8);
+        if(op<2) {
+            let got:core::option::Option<core::slice::View<u8>> = core::option::None();
+            if(op==0) { got=primary.next(); } else { got=fork.next(); }
+            if(got.is_some()) { saved=got; }
+            item(got,output); state.snapshot();
+        } else { if(op>=2 && op<=5) {
+            if(op==2) { fork=primary; }
+            if(op==3) { primary=fork; }
+            if(op==4) { primary=seed; }
+            if(op==5) { fork=seed; }
+            output.byte(2); state.snapshot();
+        } else { if(op==6 || op==11) {
+            if(op==11) {
+                argument=values.length;
+                if(saved.is_some()) {
+                    let last:core::slice::View<u8> = saved.unwrap(); argument=last.start+last.length-values.start;
+                }
+            }
+            output.byte(3);
+            if(argument<values.length) {
+                let before:u8=values.values[values.start+argument]; values.values[values.start+argument]=value;
+                output.word(argument as u64); output.byte(before); output.byte(value);
+            } else { output.word((-1 as i64) as u64); output.byte(0); output.byte(0); }
+            state.snapshot();
+        } else { if(op==7) {
+            assert(argument<3); state.mode=argument; state.key=value as i32; output.byte(4); state.snapshot();
+        } else { if(op==8) {
+            item(saved,output); state.snapshot();
+        } else {
+            assert(op==9 || op==10); output.byte(5); state.snapshot();
+            let ended:bool=false; let pulls:i32=0;
+            while(!ended) {
+                assert(pulls<values.length+2); output.byte((op-9) as u8);
+                let got:core::option::Option<core::slice::View<u8>> = core::option::None();
+                if(op==9) { got=primary.next(); } else { got=fork.next(); }
+                if(got.is_some()) { saved=got; }
+                item(got,output); state.snapshot(); ended=got.is_none(); pulls+=1;
+            }
+        } } } } }
+        index+=1;
+    }
+}
+fn descriptor(view:core::slice::View<u8>,output:&Output) {
+    output.word(view.start as u64); output.word(view.length as u64);
+    output.word(core::mem::slice_stride(view.values) as i64 as u64);
+}
+fn run(header:[u8],payload:[u8],actions:[u8],output:&Output) {
+    let native:[u8;520]=[0;520]; let words:[i32;130]=[0;130]; let bytes:[u8]=native;
+    if(get64(header,8)==1) { bytes=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(words),520); }
+    let index:i32=0; while(index<520) { bytes[index]=((193+index*19)&255) as u8; index+=1; }
+    let origin:i32=get64(header,16) as i32; let length:i32=get64(header,24) as i32;
+    index=0; while(index<length) { bytes[origin+index]=payload[index]; index+=1; }
+    let values:core::slice::View<u8> = core::slice::view_range<u8>(bytes,origin,length).unwrap();
+    let state:Context=Context { mode:get64(header,32) as i32,key:get64(header,40) as i32,calls:0,output:output };
+    let unary:UnaryPredicate=UnaryPredicate { state:state.borrow() };
+    let adjacent:AdjacentPredicate=AdjacentPredicate { state:state.borrow() };
+    let count:i32=get64(header,48) as i32;
+    descriptor(values,output); state.snapshot();
+    if(get64(header,0)==0) {
+        let admitted:core::result::Result<core::slice::Split<u8,UnaryPredicate>,core::slice::ViewError> = core::slice::split<u8,UnaryPredicate>(values,unary.borrow());
+        let cursor:core::slice::Split<u8,UnaryPredicate> = admitted.unwrap();
+        exercise<core::slice::Split<u8,UnaryPredicate>>(cursor,values,state.borrow(),actions,count,output);
+    }
+    if(get64(header,0)==1) {
+        let admitted:core::result::Result<core::slice::SplitInclusive<u8,UnaryPredicate>,core::slice::ViewError> = core::slice::split_inclusive<u8,UnaryPredicate>(values,unary.borrow());
+        let cursor:core::slice::SplitInclusive<u8,UnaryPredicate> = admitted.unwrap();
+        exercise<core::slice::SplitInclusive<u8,UnaryPredicate>>(cursor,values,state.borrow(),actions,count,output);
+    }
+    if(get64(header,0)==2) {
+        let admitted:core::result::Result<core::slice::ChunkBy<u8,AdjacentPredicate>,core::slice::ViewError> = core::slice::chunk_by<u8,AdjacentPredicate>(values,adjacent.borrow());
+        let cursor:core::slice::ChunkBy<u8,AdjacentPredicate> = admitted.unwrap();
+        exercise<core::slice::ChunkBy<u8,AdjacentPredicate>>(cursor,values,state.borrow(),actions,count,output);
+    }
+    descriptor(values,output); state.snapshot();
+    index=0; while(index<520) { output.byte(bytes[index]); index+=1; }
+}
+fn main() -> i32 {
+    let header_words:[i32;14]=[0;14]; let header_pointer:ptr=core::mem::i32_array_data_ptr(header_words);
+    let header:[u8]=core::mem::typed_slice_from_raw_parts<u8>(header_pointer,56);
+    let payload_words:[i32;128]=[0;128]; let payload_pointer:ptr=core::mem::i32_array_data_ptr(payload_words);
+    let payload:[u8]=core::mem::typed_slice_from_raw_parts<u8>(payload_pointer,512);
+    let action_words:[i32;64]=[0;64]; let action_pointer:ptr=core::mem::i32_array_data_ptr(action_words);
+    let actions:[u8]=core::mem::typed_slice_from_raw_parts<u8>(action_pointer,256);
+    let output_words:[i32;1024]=[0;1024]; let output_pointer:ptr=core::mem::i32_array_data_ptr(output_words);
+    let output:Output=Output { bytes:core::mem::typed_slice_from_raw_parts<u8>(output_pointer,4096),pointer:output_pointer,used:0 };
+    while(read_exact(header_pointer,56,true)) {
+        assert(get64(header,0)<=2 && get64(header,8)<=1 && get64(header,16)<=7 && get64(header,24)<=511);
+        assert(get64(header,32)<=2 && get64(header,40)<=255 && get64(header,48)<=64);
+        assert(read_exact(payload_pointer,get64(header,24) as i32,false));
+        assert(read_exact(action_pointer,4*(get64(header,48) as i32),false));
+        let index:i32=0; while(index<get64(header,48) as i32) { assert(actions[4*index]<=11); index+=1; }
+        run(header,payload,actions,output.borrow());
+    }
+    output.flush(); return 0;
+}

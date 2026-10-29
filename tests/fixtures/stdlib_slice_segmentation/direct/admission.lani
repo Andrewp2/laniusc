@@ -1,0 +1,30 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+struct Item { key:i32, flag:core::option::Option<bool> }
+struct Separator { calls:i32 }
+impl Separator { fn borrow(&self) -> &Separator { return self; } }
+pub impl core::iter::Mapper<Item,bool> for Separator { pub fn apply(&self,value:Item) -> bool { self.calls+=1; return value.key==0; } }
+struct Same { calls:i32 }
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Item,Item>,bool> for Same { pub fn apply(&self,pair:core::pair::Pair<Item,Item>) -> bool { self.calls+=1; return pair.first.key==pair.second.key; } }
+fn segment<I,T>(source:&I,start:i32,length:i32) -> core::slice::View<T> where I:core::iter::Iterator<core::slice::View<T>> {
+    let item:core::option::Option<core::slice::View<T>> =source.next(); let value:core::slice::View<T> =core::option::unwrap<core::slice::View<T>>(item); assert(value.start==start && value.length==length); return value;
+}
+fn ended<I,T>(source:&I) where I:core::iter::Iterator<core::slice::View<T>> {
+    let item:core::option::Option<core::slice::View<T>> =source.next(); assert(match(item) { core::option::None -> true,_ -> false });
+    item=source.next(); assert(match(item) { core::option::None -> true,_ -> false });
+}
+fn main() -> i32 {
+    let guard:Item=Item { key:99,flag:core::option::None() }; let one:Item=Item { key:1,flag:core::option::Some(false) }; let zero:Item=Item { key:0,flag:core::option::Some(true) }; let two:Item=Item { key:2,flag:core::option::None() };
+    let items:[Item;6]=[guard,one,zero,two,two,guard]; let values:core::slice::View<Item> =core::slice::view_range(items,1,4).unwrap(); let predicate:Separator=Separator { calls:0 }; let adjacent:Same=Same { calls:0 };
+    let split:core::slice::Split<Item,Separator> =core::slice::split<Item,Separator>(values,predicate.borrow()).unwrap(); let inclusive:core::slice::SplitInclusive<Item,Separator> =core::slice::split_inclusive<Item,Separator>(values,predicate.borrow()).unwrap(); let chunks:core::slice::ChunkBy<Item,Same> =core::slice::chunk_by<Item,Same>(values,adjacent.borrow()).unwrap(); assert(predicate.calls==0 && adjacent.calls==0);
+    let head:core::slice::View<Item> =segment<core::slice::Split<Item,Separator>,Item>(split.borrow(),1,1); let item:Item=head.values[head.start]; assert(item.key==1 && match(item.flag) { core::option::Some(value) -> !value,core::option::None -> false });
+    segment<core::slice::Split<Item,Separator>,Item>(split.borrow(),3,2); ended<core::slice::Split<Item,Separator>,Item>(split.borrow()); assert(predicate.calls==4);
+    segment<core::slice::SplitInclusive<Item,Separator>,Item>(inclusive.borrow(),1,2); segment<core::slice::SplitInclusive<Item,Separator>,Item>(inclusive.borrow(),3,2); ended<core::slice::SplitInclusive<Item,Separator>,Item>(inclusive.borrow()); assert(predicate.calls==8);
+    segment<core::slice::ChunkBy<Item,Same>,Item>(chunks.borrow(),1,1); segment<core::slice::ChunkBy<Item,Same>,Item>(chunks.borrow(),2,1); segment<core::slice::ChunkBy<Item,Same>,Item>(chunks.borrow(),3,2); ended<core::slice::ChunkBy<Item,Same>,Item>(chunks.borrow()); assert(adjacent.calls==3 && items[0].key==99 && items[5].key==99);
+    return 0;
+}

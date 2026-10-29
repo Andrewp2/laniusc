@@ -79,6 +79,27 @@ The checked factories `core::iter::from_slice/from_view` return the same
 [Cursor integration](stdlib-cursor-integration.md) describes the single state
 representation, caller migration and focused protocol execution evidence.
 
+The [predicate segmentation family](stdlib-slice-segmentation.md) adds checked
+free factories `core::slice::split`, `split_inclusive` and `chunk_by`, yielding
+borrowed Views. Split preserves separator-created empty fields; SplitInclusive
+keeps each separator in its preceding segment; ChunkBy groups adjacent pairs
+while its predicate is true. These factories validate full logical metadata
+and capture a predicate reference without calling it. Mapper capabilities are
+required by their `Iterator<View<T>>` implementations in `core::iter`, so a
+non-Mapper descriptor may be constructed but cannot be iterated. These cursors
+have neither reverse nor exact-size capability. All eight new library gates
+pass, including 5,496 independent model cases and live-owner checks; the binary
+record-summary program passes four groups/94 native cases. The dedicated guide
+keeps their finite target and receipt scopes explicit.
+
+Segmentation is lazy. Library traversal performs no allocation, clone,
+destruction or backing write; a callback retains its own effects. Between-pull
+alias/context changes are observed later, while already-yielded boundaries
+remain fixed. The Views themselves remain aliases, so their element values can
+change through permitted writes. Keep backing and predicate/context storage
+alive and stable, prohibit cursor reentry and backing mutation during a pull,
+and retain manual cleanup authority with the original owners.
+
 ## Executable example
 
 `sample_programs/window_report.lani` reads a window width followed by signed
@@ -125,6 +146,11 @@ Supported execution target: **x86_64 Linux**, compiled by the GPU compiler.
 This is CPU execution evidence; it does not claim user-program GPU execution.
 The view implementation has no host or allocator calls. Other target support
 requires separate execution evidence.
+
+The historical groups below establish the earlier view/cursor APIs, not the
+new segmentation family. Selected current regressions after the shared
+validator/iterator changes are recorded in its
+[guide](stdlib-slice-segmentation.md#evidence-and-supported-scope).
 
 - `tests/stdlib_slice_view_execution.rs`: native contracts for subviews,
   aliasing, mutation, independent cursor positions, exhaustion, negative and

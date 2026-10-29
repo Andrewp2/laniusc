@@ -1,6 +1,15 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[generic slice-segmentation increment](stdlib-slice-segmentation.md) adds
+checked Split, SplitInclusive and ChunkBy factories with Mapper capabilities
+at iteration. Lazy callback order, shallow operands, borrowed aliases and
+manual lifetimes are explicit; no reverse or exact-size promise is added.
+All eight new library gates pass, including 5,496 independent model cases,
+183,248 pulls, stateful alias/copy observations and exact live-owner cleanup.
+The binary record-summary application passes four groups/94 native cases,
+including 11 reached allocation failures. Its standalone build and exact guide
+examples also pass. This finite native Linux x86_64 increment is accepted. The preceding
 [borrowed bidirectional text increment](stdlib-bidirectional-text.md) adds
 LF/CRLF lines and backward scalar/ASCII-word pulls through the canonical iterator
 traits. Mixed directions share one remainder; original scalar indices, six-byte
@@ -12,7 +21,8 @@ allocation-free reporting with reached write-failure recovery. The canonical
 Unicode-report stdin regression also passes. Line-summary passes all four
 groups/102 native cases, including 11 reached allocation failures; standalone
 build/examples also pass. This finite native Linux x86_64 increment is accepted.
-Generic predicate-based slice segmentation remains separate main-library work.
+Its previously listed generic slice-segmentation gap is the current increment
+above, with its own evidence and remaining broader slice scope.
 The preceding
 [resumable decompression increment](extended-streaming-inflate.md) preserves
 DEFLATE bits, tables, history and pending output across chunks; zlib/gzip framing

@@ -131,5 +131,7 @@ timeout --kill-after=2s 100s env \
 Native `str` conversion without an explicit count still needs compiler length
 access. Shared iteration is integrated. Unicode normalization, grapheme
 operations and formatting have separate guides and finite evidence in the
-[library roadmap](library-roadmap.md); their wider policies, generic slice
-segmentation, broader targets and enforced lifetimes remain separate work.
+[library roadmap](library-roadmap.md). Generic slice segmentation has its own
+[increment and evidence](stdlib-slice-segmentation.md), outside these Text
+receipts. Wider text policies, broader targets and enforced lifetimes remain
+separate work.

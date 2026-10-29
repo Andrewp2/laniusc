@@ -1,0 +1,16 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+struct Policy { calls:i32 }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Policy { pub fn apply(&self,value:core::pair::Pair<u8,u8>) -> bool { self.calls+=1; return value.first==value.second; } }
+fn require<I,T>(source:&I) -> core::option::Option<T> where I:core::iter::Iterator<T>,I:core::iter::DoubleEndedIterator<T> { return source.next_back(); }
+fn main() -> i32 {
+    let bytes:[u8;1]=[7]; let selected:core::slice::View<u8> =core::slice::view(bytes,1).unwrap(); let policy:Policy=Policy { calls:0 };
+    let source:core::slice::ChunkBy<u8,Policy> =core::slice::chunk_by<u8,Policy>(selected,policy.borrow()).unwrap();
+    let rejected:core::option::Option<core::slice::View<u8>> =require<core::slice::ChunkBy<u8,Policy>,core::slice::View<u8>>(source.borrow()); // rejected_segmentation_bound
+    return 0;
+}

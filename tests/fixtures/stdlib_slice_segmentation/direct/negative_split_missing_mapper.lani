@@ -1,0 +1,15 @@
+module app::main;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+struct Policy { calls:i32 }
+impl Policy { fn borrow(&self) -> &Policy { return self; } }
+fn require<I,T>(source:&I) -> core::option::Option<core::slice::View<T>> where I:core::iter::Iterator<core::slice::View<T>> { return source.next(); }
+fn main() -> i32 {
+    let bytes:[u8;1]=[7]; let selected:core::slice::View<u8> =core::slice::view(bytes,1).unwrap(); let policy:Policy=Policy { calls:0 };
+    let source:core::slice::Split<u8,Policy> =core::slice::split<u8,Policy>(selected,policy.borrow()).unwrap();
+    let rejected:core::option::Option<core::slice::View<u8>> =require<core::slice::Split<u8,Policy>,u8>(source.borrow()); // rejected_segmentation_bound
+    return 0;
+}

@@ -213,4 +213,5 @@ root cause.
 The initial execution target is native Linux x86_64 CPU output from the GPU
 compiler. Other hosts, user-program GPU execution, automatic lifetime/owner
 enforcement and formal verification remain separate. Generic predicate-based
-slice segmentation is an ordinary main-library gap outside this increment.
+slice segmentation now has a [separate increment and evidence](stdlib-slice-segmentation.md),
+outside these Text receipts.

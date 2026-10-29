@@ -1,0 +1,82 @@
+module app::main;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+fn segment<I,T>(source:&I,start:i32,length:i32) -> core::slice::View<T> where I:core::iter::Iterator<core::slice::View<T>> {
+    let item:core::option::Option<core::slice::View<T>> =source.next(); let value:core::slice::View<T> =core::option::unwrap<core::slice::View<T>>(item); assert(value.start==start && value.length==length); return value;
+}
+fn ended<I,T>(source:&I) where I:core::iter::Iterator<core::slice::View<T>> { let i:i32=0; while(i<3) { let item:core::option::Option<core::slice::View<T>> =source.next(); assert(match(item) { core::option::None -> true,_ -> false }); i+=1; } }
+struct Packet { tag:i32, flag:core::option::Option<core::option::Option<bool>>, wide:[u64;2] }
+fn flag(value:core::option::Option<core::option::Option<bool>>) -> i32 { return match(value) { core::option::None -> 0,core::option::Some(inner) -> match(inner) { core::option::None -> 1,core::option::Some(bit) -> match(bit) { false -> 2,true -> 3 } } }; }
+struct Separator { calls:i32 }
+impl Separator { fn borrow(&self) -> &Separator { return self; } }
+pub impl core::iter::Mapper<Packet,bool> for Separator { pub fn apply(&self,value:Packet) -> bool { self.calls+=1; return value.tag==0; } }
+struct Same { calls:i32 }
+impl Same { fn borrow(&self) -> &Same { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Packet,Packet>,bool> for Same { pub fn apply(&self,pair:core::pair::Pair<Packet,Packet>) -> bool { self.calls+=1; return pair.first.tag==pair.second.tag; } }
+struct Lengths { calls:i32 }
+impl Lengths { fn borrow(&self) -> &Lengths { return self; } }
+pub impl core::iter::Folder<i32,core::slice::View<Packet>> for Lengths { pub fn apply(&self,total:i32,value:core::slice::View<Packet>) -> i32 { self.calls+=1; return total+value.length; } }
+fn packets() {
+    let guard:Packet=Packet { tag:99,flag:core::option::None(),wide:[99,100] }; let first:Packet=Packet { tag:1,flag:core::option::Some(core::option::Some(false)),wide:[18446744073709551615,9223372036854775808] }; let separator:Packet=Packet { tag:0,flag:core::option::None(),wide:[0,0] }; let second:Packet=Packet { tag:1,flag:core::option::Some(core::option::Some(true)),wide:[123,456] }; let third:Packet=Packet { tag:1,flag:core::option::Some(core::option::None()),wide:[789,987] };
+    let backing:[Packet;6]=[guard,first,separator,second,third,guard]; let values:core::slice::View<Packet> =core::slice::view_range(backing,1,4).unwrap(); let policy:Separator=Separator { calls:0 }; let relation:Same=Same { calls:0 };
+    let split:core::slice::Split<Packet,Separator> =core::slice::split<Packet,Separator>(values,policy.borrow()).unwrap(); let zero:core::iter::Take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>> =core::iter::take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>>(split.borrow(),0); ended<core::iter::Take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>>,Packet>(zero.borrow()); assert(policy.calls==0);
+    let prefix:core::iter::Take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>> =core::iter::take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>>(split.borrow(),1); let selected:core::slice::View<Packet> =segment<core::iter::Take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>>,Packet>(prefix.borrow(),1,1); ended<core::iter::Take<core::slice::Split<Packet,Separator>,core::slice::View<Packet>>,Packet>(prefix.borrow()); assert(policy.calls==2);
+    let packet:Packet=selected.values[selected.start]; assert(flag(packet.flag)==2 && packet.wide[0]==18446744073709551615 && packet.wide[1]==9223372036854775808); assert(core::mem::slice_stride(selected.values)==core::mem::slice_stride(backing));
+    selected=segment<core::slice::Split<Packet,Separator>,Packet>(split.borrow(),3,2); packet=selected.values[selected.start]; assert(flag(packet.flag)==3 && packet.wide[0]==123); packet=selected.values[selected.start+1]; assert(flag(packet.flag)==1 && packet.wide[1]==987); ended<core::slice::Split<Packet,Separator>,Packet>(split.borrow()); assert(policy.calls==4);
+    policy.calls=0; let inclusive:core::slice::SplitInclusive<Packet,Separator> =core::slice::split_inclusive<Packet,Separator>(values,policy.borrow()).unwrap(); let inclusive_fork:core::slice::SplitInclusive<Packet,Separator> =inclusive; let folder:Lengths=Lengths { calls:0 };
+    let folded:core::iter::FoldProgress<i32> =core::iter::fold_up_to<core::slice::SplitInclusive<Packet,Separator>,Lengths,core::slice::View<Packet>,i32>(inclusive.borrow(),10,folder.borrow(),0); assert(folded.accumulator==10 && folded.folded==0 && !folded.exhausted && folder.calls==0 && policy.calls==0);
+    folded=core::iter::fold_up_to<core::slice::SplitInclusive<Packet,Separator>,Lengths,core::slice::View<Packet>,i32>(inclusive.borrow(),10,folder.borrow(),1); assert(folded.accumulator==12 && folded.folded==1 && !folded.exhausted && folder.calls==1 && policy.calls==2); segment<core::slice::SplitInclusive<Packet,Separator>,Packet>(inclusive.borrow(),3,2); ended<core::slice::SplitInclusive<Packet,Separator>,Packet>(inclusive.borrow()); assert(policy.calls==4);
+    segment<core::slice::SplitInclusive<Packet,Separator>,Packet>(inclusive_fork.borrow(),1,2); segment<core::slice::SplitInclusive<Packet,Separator>,Packet>(inclusive_fork.borrow(),3,2); ended<core::slice::SplitInclusive<Packet,Separator>,Packet>(inclusive_fork.borrow()); assert(policy.calls==8);
+    let chunks:core::slice::ChunkBy<Packet,Same> =core::slice::chunk_by<Packet,Same>(values,relation.borrow()).unwrap(); let take:core::iter::Take<core::slice::ChunkBy<Packet,Same>,core::slice::View<Packet>> =core::iter::take<core::slice::ChunkBy<Packet,Same>,core::slice::View<Packet>>(chunks.borrow(),1); segment<core::iter::Take<core::slice::ChunkBy<Packet,Same>,core::slice::View<Packet>>,Packet>(take.borrow(),1,1); ended<core::iter::Take<core::slice::ChunkBy<Packet,Same>,core::slice::View<Packet>>,Packet>(take.borrow()); assert(relation.calls==1);
+    segment<core::slice::ChunkBy<Packet,Same>,Packet>(chunks.borrow(),2,1); segment<core::slice::ChunkBy<Packet,Same>,Packet>(chunks.borrow(),3,2); ended<core::slice::ChunkBy<Packet,Same>,Packet>(chunks.borrow()); assert(relation.calls==3);
+    let expected:[Packet;6]=[guard,first,separator,second,third,guard]; let i:i32=0; while(i<6) { assert(backing[i].tag==expected[i].tag && flag(backing[i].flag)==flag(expected[i].flag) && backing[i].wide[0]==expected[i].wide[0] && backing[i].wide[1]==expected[i].wide[1]); i+=1; }
+}
+struct Unary { calls:i32,log:[i32],delimiter:u8 }
+impl Unary { fn borrow(&self) -> &Unary { return self; } }
+pub impl core::iter::Mapper<u8,bool> for Unary { pub fn apply(&self,value:u8) -> bool { self.log[self.calls]=value as i32; self.calls+=1; return value==self.delimiter; } }
+struct Adjacent { calls:i32,left:[i32],right:[i32],mode:i32 }
+impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<u8,u8>,bool> for Adjacent { pub fn apply(&self,pair:core::pair::Pair<u8,u8>) -> bool { self.left[self.calls]=pair.first as i32; self.right[self.calls]=pair.second as i32; self.calls+=1; if(self.mode==0) { return pair.first==pair.second; } return (pair.second as i32)==(pair.first as i32)+1; } }
+fn alias_edits() {
+    let backing:[u8;7]=[255,1,0,2,0,3,255]; let log:[i32;12]=[777;12]; let policy:Unary=Unary { calls:0,log:log,delimiter:0 }; let view:core::slice::View<u8> =core::slice::view_range(backing,1,5).unwrap();
+    let source:core::slice::Split<u8,Unary> =core::slice::split<u8,Unary>(view,policy.borrow()).unwrap(); let first:core::slice::View<u8> =segment<core::slice::Split<u8,Unary>,u8>(source.borrow(),1,1); let fork:core::slice::Split<u8,Unary> =source; assert(policy.calls==2);
+    backing[1]=9; backing[3]=0; backing[4]=4; assert(first.start==1 && first.length==1 && first.get(0).unwrap()==9);
+    segment<core::slice::Split<u8,Unary>,u8>(source.borrow(),3,0); assert(policy.calls==3); policy.delimiter=4;
+    segment<core::slice::Split<u8,Unary>,u8>(source.borrow(),4,0); assert(policy.calls==4); let changed:core::slice::View<u8> =segment<core::slice::Split<u8,Unary>,u8>(fork.borrow(),3,1); assert(changed.get(0).unwrap()==0 && policy.calls==6);
+    segment<core::slice::Split<u8,Unary>,u8>(source.borrow(),5,1); segment<core::slice::Split<u8,Unary>,u8>(fork.borrow(),5,1); ended<core::slice::Split<u8,Unary>,u8>(source.borrow()); ended<core::slice::Split<u8,Unary>,u8>(fork.borrow()); assert(policy.calls==8);
+    let expected_log:[i32;12]=[1,0,0,4,0,4,3,3,777,777,777,777]; let expected_backing:[u8;7]=[255,9,0,0,4,3,255]; let i:i32=0; while(i<12) { assert(log[i]==expected_log[i]); i+=1; } i=0; while(i<7) { assert(backing[i]==expected_backing[i]); i+=1; }
+    // The false boundary pair was already observed. The next pull rereads both
+    // still-live operands, including the first element of the next group.
+    let values:[u8;7]=[255,1,1,2,2,3,255]; let left:[i32;10]=[777;10]; let right:[i32;10]=[777;10]; let relation:Adjacent=Adjacent { calls:0,left:left,right:right,mode:0 }; let selected:core::slice::View<u8> =core::slice::view_range(values,1,5).unwrap(); let groups:core::slice::ChunkBy<u8,Adjacent> =core::slice::chunk_by<u8,Adjacent>(selected,relation.borrow()).unwrap();
+    segment<core::slice::ChunkBy<u8,Adjacent>,u8>(groups.borrow(),1,2); assert(relation.calls==2); let copied:core::slice::ChunkBy<u8,Adjacent> =groups; values[3]=7; values[4]=8; values[5]=9; relation.mode=1;
+    segment<core::slice::ChunkBy<u8,Adjacent>,u8>(groups.borrow(),3,3); assert(relation.calls==4); ended<core::slice::ChunkBy<u8,Adjacent>,u8>(groups.borrow()); segment<core::slice::ChunkBy<u8,Adjacent>,u8>(copied.borrow(),3,3); assert(relation.calls==6); ended<core::slice::ChunkBy<u8,Adjacent>,u8>(copied.borrow());
+    let expected_left:[i32;10]=[1,1,7,8,7,8,777,777,777,777]; let expected_right:[i32;10]=[1,2,8,9,8,9,777,777,777,777]; let expected_values:[u8;7]=[255,1,1,7,8,9,255]; i=0; while(i<10) { assert(left[i]==expected_left[i] && right[i]==expected_right[i]); i+=1; } i=0; while(i<7) { assert(values[i]==expected_values[i]); i+=1; }
+    // Borrowed adapter copies share one upstream cursor, while keeping quotas.
+    policy.calls=0; policy.delimiter=0; let upstream:core::slice::SplitInclusive<u8,Unary> =core::slice::split_inclusive<u8,Unary>(view,policy.borrow()).unwrap(); let take_left:core::iter::Take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>> =core::iter::take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>>(upstream.borrow(),1); let take_right:core::iter::Take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>> =take_left;
+    segment<core::iter::Take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>>,u8>(take_left.borrow(),1,2); segment<core::iter::Take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>>,u8>(take_right.borrow(),3,1); assert(policy.calls==3); ended<core::iter::Take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>>,u8>(take_left.borrow()); ended<core::iter::Take<core::slice::SplitInclusive<u8,Unary>,core::slice::View<u8>>,u8>(take_right.borrow()); assert(policy.calls==3); segment<core::slice::SplitInclusive<u8,Unary>,u8>(upstream.borrow(),4,2); ended<core::slice::SplitInclusive<u8,Unary>,u8>(upstream.borrow()); assert(policy.calls==5);
+}
+struct Unit {}
+struct EverySecond { calls:i32 }
+impl EverySecond { fn borrow(&self) -> &EverySecond { return self; } }
+pub impl core::iter::Mapper<Unit,bool> for EverySecond { pub fn apply(&self,value:Unit) -> bool { self.calls+=1; return self.calls%2==0; } }
+struct NeverJoin { calls:i32 }
+impl NeverJoin { fn borrow(&self) -> &NeverJoin { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<Unit,Unit>,bool> for NeverJoin { pub fn apply(&self,value:core::pair::Pair<Unit,Unit>) -> bool { self.calls+=1; return false; } }
+fn zero_sized() {
+    let units:[Unit;3]=[Unit {},Unit {},Unit {}]; let selected:core::slice::View<Unit> =core::slice::view(units,3).unwrap(); assert(core::mem::slice_stride(units)==0); let policy:EverySecond=EverySecond { calls:0 }; let relation:NeverJoin=NeverJoin { calls:0 };
+    let split:core::slice::Split<Unit,EverySecond> =core::slice::split<Unit,EverySecond>(selected,policy.borrow()).unwrap(); segment<core::slice::Split<Unit,EverySecond>,Unit>(split.borrow(),0,1); segment<core::slice::Split<Unit,EverySecond>,Unit>(split.borrow(),2,1); ended<core::slice::Split<Unit,EverySecond>,Unit>(split.borrow()); assert(policy.calls==3);
+    policy.calls=0; let inclusive:core::slice::SplitInclusive<Unit,EverySecond> =core::slice::split_inclusive<Unit,EverySecond>(selected,policy.borrow()).unwrap(); segment<core::slice::SplitInclusive<Unit,EverySecond>,Unit>(inclusive.borrow(),0,2); segment<core::slice::SplitInclusive<Unit,EverySecond>,Unit>(inclusive.borrow(),2,1); ended<core::slice::SplitInclusive<Unit,EverySecond>,Unit>(inclusive.borrow()); assert(policy.calls==3);
+    let groups:core::slice::ChunkBy<Unit,NeverJoin> =core::slice::chunk_by<Unit,NeverJoin>(selected,relation.borrow()).unwrap(); segment<core::slice::ChunkBy<Unit,NeverJoin>,Unit>(groups.borrow(),0,1); segment<core::slice::ChunkBy<Unit,NeverJoin>,Unit>(groups.borrow(),1,1); segment<core::slice::ChunkBy<Unit,NeverJoin>,Unit>(groups.borrow(),2,1); ended<core::slice::ChunkBy<Unit,NeverJoin>,Unit>(groups.borrow()); assert(relation.calls==2);
+}
+fn exact<I,T>(source:&I) -> u64 where I:core::iter::Iterator<T>,I:core::iter::ExactSizeIterator<T> { return source.remaining_count(); }
+fn back<I,T>(source:&I) -> core::option::Option<T> where I:core::iter::Iterator<T>,I:core::iter::DoubleEndedIterator<T> { return source.next_back(); }
+fn main() -> i32 {
+    packets(); alias_edits(); zero_sized();
+    // Executed positive controls for the separate exact/reverse rejections.
+    let bytes:[u8;2]=[7,8]; let selected:core::slice::View<u8> =core::slice::view(bytes,2).unwrap(); let source:core::slice::Iter<u8> =selected.iter(); assert(exact<core::slice::Iter<u8>,u8>(source.borrow())==2); let last:core::option::Option<u8> =back<core::slice::Iter<u8>,u8>(source.borrow()); assert(last.unwrap()==8); assert(exact<core::slice::Iter<u8>,u8>(source.borrow())==1);
+    return 0;
+}

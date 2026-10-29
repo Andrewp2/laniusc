@@ -1,0 +1,121 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+import std::stream;
+fn mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); assert(core::io::write_all(sink.borrow(),bytes,0,1).is_ok()); }
+fn key(index:i32) -> u8 {
+    if(index<3 || index>=19) { return 255; }
+    let pattern:[u8;16]=[0,0,1,1,1,2,0,3,3,0,0,4,5,5,5,0]; return pattern[index-3];
+}
+fn payload(index:i32,offset:i32) -> u8 {
+    if(offset==0) { return key(index); } if(offset==1) { return index as u8; }
+    return ((index*29+offset*17)%256) as u8;
+}
+fn check(value:alloc::vec::Vec<u8>,index:i32) {
+    assert(value.len()==8 && value.capacity()==8);
+    let offset:i32=0; while(offset<8) { assert(value.at(offset)==payload(index,offset)); offset+=1; }
+}
+struct Unary { calls:i32, strict:bool }
+impl Unary { fn borrow(&self) -> &Unary { return self; } }
+pub impl core::iter::Mapper<alloc::vec::Vec<u8>,bool> for Unary {
+    pub fn apply(&self,value:alloc::vec::Vec<u8>) -> bool {
+        let index:i32=value.at(1) as i32; check(value,index);
+        if(self.strict) { assert(index==self.calls+3); }
+        self.calls+=1; return value.at(0)==0;
+    }
+}
+struct Adjacent { calls:i32, strict:bool }
+impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<alloc::vec::Vec<u8>,alloc::vec::Vec<u8>>,bool> for Adjacent {
+    pub fn apply(&self,values:core::pair::Pair<alloc::vec::Vec<u8>,alloc::vec::Vec<u8>>) -> bool {
+        let first:alloc::vec::Vec<u8> = values.first; let second:alloc::vec::Vec<u8> = values.second;
+        let index:i32=first.at(1) as i32; check(first,index); check(second,index+1);
+        if(self.strict) { assert(index==self.calls+3); }
+        self.calls+=1; return first.at(0)==second.at(0);
+    }
+}
+fn span(value:core::slice::View<alloc::vec::Vec<u8>>,start:i32,length:i32) {
+    assert(value.start==start+3 && value.length==length);
+    let index:i32=0; while(index<length) { let item:alloc::vec::Vec<u8> = value.values[value.start+index]; check(item,start+index+3); index+=1; }
+}
+fn early(values:core::slice::View<alloc::vec::Vec<u8>>) {
+    let unary:Unary=Unary { calls:0,strict:false }; let adjacent:Adjacent=Adjacent { calls:0,strict:false };
+    let invalid:core::slice::View<alloc::vec::Vec<u8>> = core::slice::View { values:values.values,start:2147483647,length:1 };
+    let bad_split=core::slice::split<alloc::vec::Vec<u8>,Unary>(invalid,unary.borrow()); assert(bad_split.is_err());
+    let bad_inclusive=core::slice::split_inclusive<alloc::vec::Vec<u8>,Unary>(invalid,unary.borrow()); assert(bad_inclusive.is_err());
+    let bad_chunk=core::slice::chunk_by<alloc::vec::Vec<u8>,Adjacent>(invalid,adjacent.borrow()); assert(bad_chunk.is_err());
+    let splits:core::slice::Split<alloc::vec::Vec<u8>,Unary> = core::slice::split<alloc::vec::Vec<u8>,Unary>(values,unary.borrow()).unwrap();
+    let inclusive:core::slice::SplitInclusive<alloc::vec::Vec<u8>,Unary> = core::slice::split_inclusive<alloc::vec::Vec<u8>,Unary>(values,unary.borrow()).unwrap();
+    let chunks:core::slice::ChunkBy<alloc::vec::Vec<u8>,Adjacent> = core::slice::chunk_by<alloc::vec::Vec<u8>,Adjacent>(values,adjacent.borrow()).unwrap();
+    assert(unary.calls==0 && adjacent.calls==0);
+    let a:core::option::Option<core::slice::View<alloc::vec::Vec<u8>>> = splits.next(); span(a.unwrap(),0,0);
+    let b:core::option::Option<core::slice::View<alloc::vec::Vec<u8>>> = inclusive.next(); span(b.unwrap(),0,1);
+    let c:core::option::Option<core::slice::View<alloc::vec::Vec<u8>>> = chunks.next(); span(c.unwrap(),0,2);
+    assert(unary.calls==2 && adjacent.calls==2);
+    let split_copy:core::slice::Split<alloc::vec::Vec<u8>,Unary> = splits;
+    let inclusive_copy:core::slice::SplitInclusive<alloc::vec::Vec<u8>,Unary> = inclusive;
+    let chunk_copy:core::slice::ChunkBy<alloc::vec::Vec<u8>,Adjacent> = chunks;
+    a=split_copy.next(); span(a.unwrap(),1,0); a=splits.next(); span(a.unwrap(),1,0);
+    b=inclusive_copy.next(); span(b.unwrap(),1,1); b=inclusive.next(); span(b.unwrap(),1,1);
+    c=chunk_copy.next(); span(c.unwrap(),2,3); c=chunks.next(); span(c.unwrap(),2,3);
+    assert(unary.calls==6 && adjacent.calls==8);
+}
+fn full(values:core::slice::View<alloc::vec::Vec<u8>>,mode:i32) {
+    let unary:Unary=Unary { calls:0,strict:true }; let adjacent:Adjacent=Adjacent { calls:0,strict:true };
+    let splits:core::slice::Split<alloc::vec::Vec<u8>,Unary> = core::slice::split<alloc::vec::Vec<u8>,Unary>(values,unary.borrow()).unwrap();
+    let inclusive:core::slice::SplitInclusive<alloc::vec::Vec<u8>,Unary> = core::slice::split_inclusive<alloc::vec::Vec<u8>,Unary>(values,unary.borrow()).unwrap();
+    let chunks:core::slice::ChunkBy<alloc::vec::Vec<u8>,Adjacent> = core::slice::chunk_by<alloc::vec::Vec<u8>,Adjacent>(values,adjacent.borrow()).unwrap();
+    assert(unary.calls==0 && adjacent.calls==0);
+    let ordinal:i32=0; let next:core::option::Option<core::slice::View<alloc::vec::Vec<u8>>> = core::option::None();
+    while(true) {
+        if(mode==0) { next=splits.next(); } if(mode==1) { next=inclusive.next(); } if(mode==2) { next=chunks.next(); }
+        if(next.is_none()) { break; }
+        let start:i32=16; let length:i32=0;
+        if(mode<2 && ordinal<6) {
+            let offsets:[i32;6]=[0,1,2,7,10,11]; let sizes:[i32;6]=[0,0,4,2,0,4];
+            start=offsets[ordinal]; length=sizes[ordinal]; if(mode==1) { length+=1; }
+        }
+        if(mode==2) {
+            let offsets:[i32;9]=[0,2,5,6,7,9,11,12,15]; let sizes:[i32;9]=[2,3,1,1,2,2,1,3,1];
+            assert(ordinal<9); start=offsets[ordinal]; length=sizes[ordinal];
+        }
+        span(next.unwrap(),start,length); ordinal+=1;
+    }
+    if(mode==0) { assert(ordinal==7 && unary.calls==16); next=splits.next(); }
+    if(mode==1) { assert(ordinal==6 && unary.calls==16); next=inclusive.next(); }
+    if(mode==2) { assert(ordinal==9 && adjacent.calls==15); next=chunks.next(); }
+    assert(next.is_none());
+    if(mode==0) { next=splits.next(); assert(unary.calls==16); }
+    if(mode==1) { next=inclusive.next(); assert(unary.calls==16); }
+    if(mode==2) { next=chunks.next(); assert(adjacent.calls==15); }
+    assert(next.is_none());
+}
+fn preserved(owner:&alloc::vec::Vec<alloc::vec::Vec<u8>>) {
+    assert(owner.len()==23 && owner.capacity()==23); let index:i32=0;
+    while(index<23) { let item:alloc::vec::Vec<u8> = owner.at(index); check(item,index); index+=1; }
+}
+fn main() -> i32 {
+    mark(65); let owner:alloc::vec::Vec<alloc::vec::Vec<u8>> = alloc::vec::with_capacity<alloc::vec::Vec<u8>>(23).unwrap();
+    let index:i32=0; while(index<23) {
+        let item:alloc::vec::Vec<u8> = alloc::vec::with_capacity<u8>(8).unwrap(); let offset:i32=0;
+        while(offset<8) { item.try_push(payload(index,offset)).unwrap(); offset+=1; }
+        owner.try_push(item).unwrap(); index+=1;
+    }
+    mark(80); let view:core::slice::View<alloc::vec::Vec<u8>> = core::slice::view_range(owner.as_slice(),3,16).unwrap(); early(view); mark(112);
+    mark(80); full(view,0); mark(112);
+    mark(80); full(view,1); mark(112);
+    mark(80); full(view,2); mark(112);
+    mark(80); preserved(owner.borrow()); early(view); mark(112);
+    let sink=std::stream::stdout(); index=0;
+    while(index<23) { let item:alloc::vec::Vec<u8> = owner.at(index); assert(core::io::write_all(sink.borrow(),item.as_slice(),0,8).is_ok()); index+=1; }
+    // Every cursor/result is retired. The caller still owns each nested
+    // payload exactly once and retires the outer descriptor storage last.
+    mark(67); index=0;
+    while(index<23) { let item:alloc::vec::Vec<u8> = owner.at(index); item.destroy(); index+=1; }
+    owner.destroy(); mark(69); mark(68); return 0;
+}

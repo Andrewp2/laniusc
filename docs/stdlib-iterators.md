@@ -35,6 +35,17 @@ are explicit, separately from the historical receipts here.
 the same protocol. Their separate native gates check mixed traversal,
 compound map entries, borrowed String aliases and byte/scalar view behavior.
 
+[Predicate slice segmentation](stdlib-slice-segmentation.md) adds forward
+`Iterator<View<T>>` implementations here for `core::slice::Split`,
+`SplitInclusive` and `ChunkBy`. Their checked factories live in core::slice
+and invoke no callback; Mapper capability is required only when iterating.
+Unary predicates classify separator elements, while ChunkBy uses the existing
+Mapper over an adjacent Pair. Exact lazy call order, between-pull aliases and
+shared predicate context are explicit. All eight new library gates pass,
+including 5,496 independent model cases and exact live-owner cleanup; the
+binary record-summary program passes four groups/94 native cases. No reverse
+or exact-size capability is added for these stateful-predicate cursors.
+
 `core::iter` connects borrowed slice cursors, finite i32 range cursors, borrowed
 adapters and bounded consumers through one explicit protocol:
 
@@ -241,6 +252,7 @@ Copy semantics depend on the cursor:
 | Copied value | State after copying |
 | --- | --- |
 | `core::slice::Iter<T>` | Independent positions; same backing elements |
+| `core::slice::Split<T,P>` / `SplitInclusive<T,P>` / `ChunkBy<T,P>` | Independent positions; same live backing and borrowed predicate/context; prior boundaries remain fixed while later calls observe permitted edits |
 | `RangeI32` | Independent positions over captured numeric bounds |
 | `alloc::vec::IntoIter<T>` / `alloc::deque::IntoIter<T>` | Aliased storage and cleanup authority; only one active handle is permitted |
 | `Take<I,T>` | Independent quota/done flags; same borrowed source cursor |

@@ -32,7 +32,7 @@ Direct source imports; this is not a package-resolution or transitive dependency
 - [core::result::Err](result.md) (item: variant) · [declaration](../../../stdlib/core/result.lani#L14) · [source](../../../stdlib/core/path.lani#L17)
 - [core::slice::View](slice.md) (item: struct) · [declaration](../../../stdlib/core/slice.lani#L24) · [source](../../../stdlib/core/path.lani#L18)
 - [core::slice::ViewError](slice.md) (item: enum) · [declaration](../../../stdlib/core/slice.lani#L23) · [source](../../../stdlib/core/path.lani#L19)
-- [core::slice::view_range](slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L33) · [source](../../../stdlib/core/path.lani#L20)
+- [core::slice::view_range](slice.md) (item: function) · [declaration](../../../stdlib/core/slice.lani#L48) · [source](../../../stdlib/core/path.lani#L20)
 
 ## Types, fields and variants
 

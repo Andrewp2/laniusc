@@ -1,0 +1,109 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::iter;
+import core::mem;
+import core::option;
+import core::pair;
+import core::result;
+import core::slice;
+import std::stream;
+fn mark(value:u8) { let bytes:[u8;1]=[value]; let sink=std::stream::stderr(); assert(core::io::write_all(sink.borrow(),bytes,0,1).is_ok()); }
+fn element(index:i32) -> i32 { let pattern:[i32;16]=[0,0,1,1,1,2,0,3,3,0,0,4,5,5,5,0]; return (index/16)*16+pattern[index%16]; }
+struct Unary { calls:i32, strict:bool }
+impl Unary { fn borrow(&self) -> &Unary { return self; } }
+pub impl core::iter::Mapper<i32,bool> for Unary {
+    pub fn apply(&self,value:i32) -> bool { if(self.strict) { assert(value==element(self.calls)); } self.calls+=1; return value%16==0; }
+}
+struct Adjacent { calls:i32, strict:bool }
+impl Adjacent { fn borrow(&self) -> &Adjacent { return self; } }
+pub impl core::iter::Mapper<core::pair::Pair<i32,i32>,bool> for Adjacent {
+    pub fn apply(&self,values:core::pair::Pair<i32,i32>) -> bool {
+        if(self.strict) { assert(values.first==element(self.calls) && values.second==element(self.calls+1)); }
+        self.calls+=1; return values.first%16==values.second%16;
+    }
+}
+fn span(value:core::slice::View<i32>,start:i32,length:i32) {
+    assert(value.start==start+3 && value.length==length);
+    let index:i32=0; while(index<length) { assert(value.values[value.start+index]==element(start+index)); index+=1; }
+}
+fn early(values:core::slice::View<i32>) {
+    let unary:Unary=Unary { calls:0,strict:false }; let adjacent:Adjacent=Adjacent { calls:0,strict:false };
+    let invalid:core::slice::View<i32> = core::slice::View { values:values.values,start:-1,length:0 };
+    let bad_split=core::slice::split<i32,Unary>(invalid,unary.borrow()); assert(bad_split.is_err());
+    let bad_inclusive=core::slice::split_inclusive<i32,Unary>(invalid,unary.borrow()); assert(bad_inclusive.is_err());
+    let bad_chunk=core::slice::chunk_by<i32,Adjacent>(invalid,adjacent.borrow()); assert(bad_chunk.is_err());
+    let splits:core::slice::Split<i32,Unary> = core::slice::split<i32,Unary>(values,unary.borrow()).unwrap();
+    let inclusive:core::slice::SplitInclusive<i32,Unary> = core::slice::split_inclusive<i32,Unary>(values,unary.borrow()).unwrap();
+    let chunks:core::slice::ChunkBy<i32,Adjacent> = core::slice::chunk_by<i32,Adjacent>(values,adjacent.borrow()).unwrap();
+    assert(unary.calls==0 && adjacent.calls==0);
+    let a:core::option::Option<core::slice::View<i32>> = splits.next(); span(a.unwrap(),0,0);
+    let b:core::option::Option<core::slice::View<i32>> = inclusive.next(); span(b.unwrap(),0,1);
+    let c:core::option::Option<core::slice::View<i32>> = chunks.next(); span(c.unwrap(),0,2);
+    assert(unary.calls==2 && adjacent.calls==2);
+    let split_copy:core::slice::Split<i32,Unary> = splits;
+    let inclusive_copy:core::slice::SplitInclusive<i32,Unary> = inclusive;
+    let chunk_copy:core::slice::ChunkBy<i32,Adjacent> = chunks;
+    a=split_copy.next(); span(a.unwrap(),1,0); a=splits.next(); span(a.unwrap(),1,0);
+    b=inclusive_copy.next(); span(b.unwrap(),1,1); b=inclusive.next(); span(b.unwrap(),1,1);
+    c=chunk_copy.next(); span(c.unwrap(),2,3); c=chunks.next(); span(c.unwrap(),2,3);
+    assert(unary.calls==6 && adjacent.calls==8);
+    // Most elements remain unread when all borrowed cursors and views retire.
+}
+fn full(values:core::slice::View<i32>,mode:i32) {
+    let unary:Unary=Unary { calls:0,strict:true }; let adjacent:Adjacent=Adjacent { calls:0,strict:true };
+    let splits:core::slice::Split<i32,Unary> = core::slice::split<i32,Unary>(values,unary.borrow()).unwrap();
+    let inclusive:core::slice::SplitInclusive<i32,Unary> = core::slice::split_inclusive<i32,Unary>(values,unary.borrow()).unwrap();
+    let chunks:core::slice::ChunkBy<i32,Adjacent> = core::slice::chunk_by<i32,Adjacent>(values,adjacent.borrow()).unwrap();
+    assert(unary.calls==0 && adjacent.calls==0);
+    let ordinal:i32=0; let next:core::option::Option<core::slice::View<i32>> = core::option::None();
+    while(true) {
+        if(mode==0) { next=splits.next(); } if(mode==1) { next=inclusive.next(); } if(mode==2) { next=chunks.next(); }
+        if(next.is_none()) { break; }
+        let start:i32=0; let length:i32=0;
+        if(mode<2) {
+            let offsets:[i32;6]=[0,1,2,7,10,11]; let sizes:[i32;6]=[0,0,4,2,0,4];
+            start=(ordinal/6)*16+offsets[ordinal%6]; length=sizes[ordinal%6];
+            if(mode==1) { length+=1; }
+        } else {
+            if(ordinal==0) { start=0; length=2; }
+            else {
+                let offsets:[i32;8]=[2,5,6,7,9,11,12,15]; let sizes:[i32;8]=[3,1,1,2,2,1,3,3];
+                start=((ordinal-1)/8)*16+offsets[(ordinal-1)%8]; length=sizes[(ordinal-1)%8];
+                if(start==values.length-1) { length=1; }
+            }
+        }
+        span(next.unwrap(),start,length); ordinal+=1;
+    }
+    if(mode==0) { assert(ordinal==(values.length/16)*6+1 && unary.calls==values.length); next=splits.next(); }
+    if(mode==1) { assert(ordinal==(values.length/16)*6 && unary.calls==values.length); next=inclusive.next(); }
+    if(mode==2) { assert(ordinal==(values.length/16)*8+1 && adjacent.calls==values.length-1); next=chunks.next(); }
+    assert(next.is_none());
+    if(mode==0) { next=splits.next(); assert(unary.calls==values.length); }
+    if(mode==1) { next=inclusive.next(); assert(unary.calls==values.length); }
+    if(mode==2) { next=chunks.next(); assert(adjacent.calls==values.length-1); }
+    assert(next.is_none());
+}
+fn preserved(owner:&alloc::vec::Vec<i32>,count:i32) {
+    assert(owner.len()==count+7 && owner.capacity()==count+7);
+    let index:i32=0; while(index<count+7) {
+        let expected:i32=-700-index; if(index>=3 && index<count+3) { expected=element(index-3); }
+        assert(owner.at(index)==expected); index+=1;
+    }
+}
+fn exercise(count:i32) {
+    mark(65); let owner:alloc::vec::Vec<i32> = alloc::vec::with_capacity<i32>(count+7).unwrap();
+    let index:i32=0; while(index<count+7) {
+        let value:i32=-700-index; if(index>=3 && index<count+3) { value=element(index-3); }
+        owner.try_push(value).unwrap(); index+=1;
+    }
+    mark(80); let view:core::slice::View<i32> = core::slice::view_range(owner.as_slice(),3,count).unwrap(); early(view); mark(112);
+    mark(80); full(view,0); mark(112);
+    mark(80); full(view,1); mark(112);
+    mark(80); full(view,2); mark(112);
+    mark(80); preserved(owner.borrow(),count); early(view); mark(112);
+    let bytes:[u8]=core::mem::typed_slice_from_raw_parts<u8>(owner.storage,(count+7)*4);
+    let sink=std::stream::stdout(); assert(core::io::write_all(sink.borrow(),bytes,0,(count+7)*4).is_ok());
+    mark(67); owner.destroy(); mark(69);
+}
+fn main() -> i32 { exercise(4096); exercise(65536); mark(68); return 0; }

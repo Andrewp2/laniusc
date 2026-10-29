@@ -3,6 +3,24 @@
 This list records boundaries encountered while building the libraries. A row
 does not mean unrelated library work is blocked.
 
+The [generic slice-segmentation increment](stdlib-slice-segmentation.md) uses
+existing View, Iterator and Mapper contracts. Factory metadata validation is
+independent of predicate capability; Mapper bounds are enforced by iteration.
+Library traversal adds no allocator/host dependency, while callbacks keep their
+own effects and costs. Physical backing, stable borrowed predicate/context and
+manual cleanup remain caller obligations. All eight new library gates pass,
+including a 5,496-case independent model and exact owner/resource checks, as do
+four record-summary groups/94 native cases on Linux x86_64 CPU output. No reverse, ExactSize,
+device-execution, enforced lifetime or proof claim is added.
+The initial model fixture hit `LNC0027` when one receiver implemented both
+unary and Pair Mapper applications, before native execution. The
+[existing same-receiver reduction](../tests/fixtures/stdlib_foundation/slice_ordering_dependency/README.md)
+already pairs that diagnostic shape with an executing split-receiver control.
+The accepted model uses distinct borrowed wrapper receivers sharing the same
+policy context, without specializing these public generic APIs or changing the
+compiler. The nested resource retry corrected only a test-ledger size
+assumption to the existing 24-byte Vec layout; production sources were unchanged.
+
 The [bidirectional Text increment](stdlib-bidirectional-text.md) extends
 existing Iterator/DoubleEndedIterator and UTF-8 contracts. Forward Text scalar
 and word cursors already use the shared iterator protocol. New borrowed line
@@ -13,8 +31,8 @@ pass. The chained generic Option expression below remains a compiler dependency
 with an executing typed-match control; no compiler or ABI repair was made.
 Caller-proven Text validity, immutable physical backing and lifetimes remain
 mandatory; this increment supplies no ExactSize or
-automatic ownership guarantee. Generic slice segmentation remains separate
-library work, not an established compiler blocker. Native Linux x86_64 CPU
+automatic ownership guarantee. Generic slice segmentation now has the separate
+current increment above, not an established compiler blocker. Native Linux x86_64 CPU
 output is the initial target; other hosts, device execution and proofs remain
 separate.
 

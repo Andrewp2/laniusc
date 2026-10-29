@@ -26,15 +26,55 @@ pub struct Iter<T> { values: [T], front: i32, back: i32 }
 pub struct Chunks<T> { values: [T], position: i32, end: i32, width: i32 }
 pub struct Windows<T> { values: [T], position: i32, end: i32, width: i32 }
 
+// Forward predicate cursors borrow the original descriptor and callback.
+// Copies fork their positions but share backing and predicate context. Keep
+// both alive and stable; no clone, allocation or cleanup authority is implied.
+// Iterator impls and their Mapper bounds live in core::iter to avoid a cycle.
+pub struct Split<T,P> { values: [T], predicate: &P, position: i32, end: i32, done: bool }
+pub struct SplitInclusive<T,P> { values: [T], predicate: &P, position: i32, end: i32 }
+pub struct ChunkBy<T,P> { values: [T], predicate: &P, position: i32, end: i32 }
+
+// Check integer metadata only, never backing or callbacks. Physical backing,
+// lifetime and freedom from interfering aliases remain caller obligations.
+fn view_valid<T>(values: View<T>) -> bool {
+    if (values.start < 0 || values.length < 0) { return false; }
+    return values.start <= 2147483647 - values.length;
+}
+
 pub fn view<T>(values: [T], count: i32) -> core::result::Result<View<T>, ViewError> {
     return view_range(values, 0, count);
 }
 
 pub fn view_range<T>(values: [T], start: i32, count: i32) -> core::result::Result<View<T>, ViewError> {
-    if (start < 0 || count < 0 || start > 2147483647 - count) {
-        return core::result::Err(ViewError::Bounds);
-    }
-    return core::result::Ok(View { values: values, start: start, length: count });
+    let selected: View<T> = View { values: values, start: start, length: count };
+    if (!view_valid<T>(selected)) { return core::result::Err(ViewError::Bounds); }
+    return core::result::Ok(selected);
+}
+
+// Exclude separators, retaining leading, adjacent and final empty segments.
+// Empty input yields one empty View. Construction never invokes the predicate;
+// iteration requires P:core::iter::Mapper<T,bool> through core::iter.
+pub fn split<T,P>(values: View<T>, predicate: &P) -> core::result::Result<Split<T,P>,ViewError> {
+    if (!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    let cursor: Split<T,P> = Split { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length, done: false };
+    return core::result::Ok(cursor);
+}
+
+// Include each separator in its preceding segment. Empty input and a terminal
+// separator add no empty segment. The Mapper bound belongs to iteration.
+pub fn split_inclusive<T,P>(values: View<T>, predicate: &P) -> core::result::Result<SplitInclusive<T,P>,ViewError> {
+    if (!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    let cursor: SplitInclusive<T,P> = SplitInclusive { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length };
+    return core::result::Ok(cursor);
+}
+
+// Join adjacent elements while the predicate returns true; false starts the
+// next nonempty run. No equivalence law is needed. Iteration requires
+// P:core::iter::Mapper<core::pair::Pair<T,T>,bool>; construction invokes none.
+pub fn chunk_by<T,P>(values: View<T>, predicate: &P) -> core::result::Result<ChunkBy<T,P>,ViewError> {
+    if (!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    let cursor: ChunkBy<T,P> = ChunkBy { values: values.values, predicate: predicate, position: values.start, end: values.start + values.length };
+    return core::result::Ok(cursor);
 }
 
 pub impl<T> View<T> {
@@ -125,6 +165,16 @@ pub impl<T> Windows<T> {
         if (count < self.width) { return 0; }
         return count - self.width + 1;
     }
+}
+
+pub impl<T,P> Split<T,P> {
+    pub fn borrow(&self) -> &Split<T,P> { return self; }
+}
+pub impl<T,P> SplitInclusive<T,P> {
+    pub fn borrow(&self) -> &SplitInclusive<T,P> { return self; }
+}
+pub impl<T,P> ChunkBy<T,P> {
+    pub fn borrow(&self) -> &ChunkBy<T,P> { return self; }
 }
 
 fn nonnegative_len(len: i32) -> i32 {
@@ -589,11 +639,6 @@ pub fn max_or<T>(values: [T], len: i32, fallback: T) -> T where T: core::cmp::Or
 // Shared ordering engines take an admitted logical View. Ordinary indexing
 // retains its native stride, including negative strides. These functions do
 // not establish physical backing, lifetime or freedom from interfering aliases.
-fn ordering_view_valid<T>(values:View<T>) -> bool {
-    if(values.start<0 || values.length<0) { return false; }
-    return values.start<=2147483647-values.length;
-}
-
 fn is_sorted_engine<T,C>(values:View<T>,comparator:&C) -> bool
     where C:core::ordering::Comparator<T,T> {
     let index: i32 = 1;
@@ -829,7 +874,7 @@ fn partition_lt_engine<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> i32
 // allocation occurs. Sorting is unstable; exact comparison traces are not promised.
 pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<i32,ViewError>
     where C:core::ordering::Comparator<T,T> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     return core::result::Ok(sort_engine<T,C>(values,comparator));
 }
 // Select one zero-based rank and partition its surroundings without sorting
@@ -838,7 +883,7 @@ pub fn sort_unstable_by<T,C>(values:View<T>,comparator:&C) -> core::result::Resu
 // and noninterference remain caller obligations; no cleanup is transferred.
 pub fn select_nth_unstable_by<T,C>(values:View<T>,nth:i32,comparator:&C) -> core::result::Result<View<T>,ViewError>
     where C:core::ordering::Comparator<T,T> {
-    if(!ordering_view_valid<T>(values) || nth<0 || nth>=values.length) {
+    if(!view_valid<T>(values) || nth<0 || nth>=values.length) {
         return core::result::Err(ViewError::Bounds);
     }
     let selected_index:i32 = selection_engine<T,C>(values,nth,comparator);
@@ -847,7 +892,7 @@ pub fn select_nth_unstable_by<T,C>(values:View<T>,nth:i32,comparator:&C) -> core
 }
 pub fn select_nth_unstable<T>(values:View<T>,nth:i32) -> core::result::Result<View<T>,ViewError>
     where T:core::cmp::Ord<T> {
-    if(!ordering_view_valid<T>(values) || nth<0 || nth>=values.length) {
+    if(!view_valid<T>(values) || nth<0 || nth>=values.length) {
         return core::result::Err(ViewError::Bounds);
     }
     let comparator:core::ordering::Natural<T> = core::ordering::Natural {};
@@ -857,30 +902,30 @@ pub fn select_nth_unstable<T>(values:View<T>,nth:i32) -> core::result::Result<Vi
 }
 pub fn is_sorted_by<T,C>(values:View<T>,comparator:&C) -> core::result::Result<bool,ViewError>
     where C:core::ordering::Comparator<T,T> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     return core::result::Ok(is_sorted_engine<T,C>(values,comparator));
 }
 // Each query requires all Less, then Equal, then Greater classes. Bounds may
 // equal length; no scan is made to validate this ordering precondition.
 pub fn lower_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
     where C:core::ordering::Comparator<T,K> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     return core::result::Ok(lower_bound_engine<T,K,C>(values,needle,comparator));
 }
 pub fn upper_bound_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<i32,ViewError>
     where C:core::ordering::Comparator<T,K> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     return core::result::Ok(upper_bound_engine<T,K,C>(values,needle,comparator));
 }
 pub fn binary_search_first_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
     where C:core::ordering::Comparator<T,K> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     let found:core::option::Option<i32> =binary_search_first_engine<T,K,C>(values,needle,comparator);
     return core::result::Ok(found);
 }
 pub fn binary_search_last_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> core::result::Result<core::option::Option<i32>,ViewError>
     where C:core::ordering::Comparator<T,K> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     let found:core::option::Option<i32> =binary_search_last_engine<T,K,C>(values,needle,comparator);
     return core::result::Ok(found);
 }
@@ -888,7 +933,7 @@ pub fn binary_search_last_by<T,K,C>(values:View<T>,needle:K,comparator:&C) -> co
 // promised; no relative ordering, tie layout or rollback on callback traps.
 pub fn partition_lt_by<T,K,C>(values:View<T>,pivot:K,comparator:&C) -> core::result::Result<i32,ViewError>
     where C:core::ordering::Comparator<T,K> {
-    if(!ordering_view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
+    if(!view_valid<T>(values)) { return core::result::Err(ViewError::Bounds); }
     return core::result::Ok(partition_lt_engine<T,K,C>(values,pivot,comparator));
 }
 

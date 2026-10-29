@@ -808,6 +808,72 @@ pub impl<T> ExactSizeIterator<core::slice::View<T>> for core::slice::Windows<T> 
     }
 }
 
+// Scan through the first separator only. Callbacks may update their own
+// context, but must preserve operands/backing and must not mutate backing or
+// reenter/modify the cursor during a pull. Between-pull edits are observed.
+fn slice_split_boundary<T,P>(values: [T], start: i32, end: i32, predicate: &P) -> i32
+    where P: Mapper<T,bool> {
+    let index: i32 = start;
+    while (index < end) {
+        let value: T = values[index];
+        if (predicate.apply(value)) { return index; }
+        index += 1;
+    }
+    return end;
+}
+
+// Each scanned element is classified once, in increasing index order. The
+// done flag distinguishes a pending final empty segment from fused exhaustion.
+// Views retain absolute offsets and the original native descriptor/stride.
+pub impl<T,P> Iterator<core::slice::View<T>> for core::slice::Split<T,P>
+    where P: Mapper<T,bool> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.done) { return core::option::None(); }
+        let start: i32 = self.position;
+        let boundary: i32 = slice_split_boundary<T,P>(self.values,start,self.end,self.predicate);
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: start, length: boundary - start };
+        if (boundary < self.end) { self.position = boundary + 1; }
+        else { self.position = self.end; self.done = true; }
+        return core::option::Some(result);
+    }
+}
+
+pub impl<T,P> Iterator<core::slice::View<T>> for core::slice::SplitInclusive<T,P>
+    where P: Mapper<T,bool> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let start: i32 = self.position;
+        let boundary: i32 = slice_split_boundary<T,P>(self.values,start,self.end,self.predicate);
+        if (boundary < self.end) { boundary += 1; }
+        self.position = boundary;
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: start, length: boundary - start };
+        return core::option::Some(result);
+    }
+}
+
+// Each adjacent pair is classified once in original left/right order. A false
+// boundary pair is not repeated on the next pull. Read both operands afresh:
+// no T survives a pull, so later alias writes affect later comparisons.
+pub impl<T,P> Iterator<core::slice::View<T>> for core::slice::ChunkBy<T,P>
+    where P: Mapper<core::pair::Pair<T,T>,bool> {
+    pub fn next(&self) -> core::option::Option<core::slice::View<T>> {
+        if (self.position == self.end) { return core::option::None(); }
+        let start: i32 = self.position;
+        let index: i32 = start + 1;
+        let predicate: &P = self.predicate;
+        while (index < self.end) {
+            let left: T = self.values[index - 1];
+            let right: T = self.values[index];
+            let pair: core::pair::Pair<T,T> = core::pair::Pair { first: left, second: right };
+            if (!predicate.apply(pair)) { break; }
+            index += 1;
+        }
+        self.position = index;
+        let result: core::slice::View<T> = core::slice::View { values: self.values, start: start, length: index - start };
+        return core::option::Some(result);
+    }
+}
+
 pub impl<T> Empty<T> {
     pub fn borrow(&self) -> &Empty<T> { return self; }
 }
