@@ -1,0 +1,121 @@
+module app::main;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+import std::io;
+
+struct Source { bytes:alloc::vec::Vec<u8>, count:i32, position:i32, calls:i32 }
+struct Sink { bytes:alloc::vec::Vec<u8>, count:i32, position:i32, calls:i32, flushes:i32 }
+impl Source { fn borrow(&self) -> &Source { return self; } }
+impl Sink { fn borrow(&self) -> &Sink { return self; } }
+pub impl core::io::Read for Source {
+    pub fn read(&self, destination:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count) && count>0); self.calls+=1;
+        let used:i32=self.count-self.position; if(used>count) { used=count; }
+        let index:i32=0; while(index<used) { destination[offset+index]=self.bytes.at(3+self.position+index); index+=1; }
+        self.position+=used; return core::result::Ok(used);
+    }
+}
+pub impl core::io::Write for Sink {
+    pub fn write(&self, source:[u8], offset:i32, count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(core::io::valid_range(offset,count) && count>0); self.calls+=1;
+        if(self.calls==2) { return core::result::Err(core::io::Error::Host(5)); }
+        let maximum:i32=521; if(self.calls==1) { maximum=17; }
+        let used:i32=count; if(used>maximum) { used=maximum; }
+        assert(used<=self.count-self.position);
+        let index:i32=0; while(index<used) { self.bytes.set(3+self.position+index,source[offset+index]).unwrap(); index+=1; }
+        self.position+=used; return core::result::Ok(used);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { self.flushes+=1; return core::result::Ok(0); }
+}
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn value(index:i32) -> u8 { return ((index*29+index/251+17)%256) as u8; }
+fn guard(index:i32) -> u8 { return ((index*13+191)%256) as u8; }
+fn source_check(source:&Source) {
+    assert(source.bytes.len()==source.count+7 && source.bytes.capacity()==source.count+7);
+    let index:i32=0; while(index<source.bytes.len()) {
+        let expected:u8=guard(index); if(index>=3 && index<source.count+3) { expected=value(index-3); }
+        assert(source.bytes.at(index)==expected); index+=1;
+    }
+}
+fn sink_check(sink:&Sink) {
+    assert(sink.position==sink.count && sink.bytes.len()==sink.count+7 && sink.bytes.capacity()==sink.count+7 && sink.flushes==0);
+    let index:i32=0; while(index<sink.bytes.len()) {
+        let expected:u8=guard(index); if(index>=3 && index<sink.count+3) { expected=value(index-3); }
+        assert(sink.bytes.at(index)==expected); index+=1;
+    }
+}
+fn scratch_check(scratch:&alloc::vec::Vec<u8>) {
+    assert(scratch.len()==4105 && scratch.capacity()==4105);
+    let index:i32=0; while(index<4105) { if(index<5 || index>=4098) { assert(scratch.at(index)==guard(index)); } index+=1; }
+}
+fn transfer(source:&Source,sink:&Sink,scratch:&alloc::vec::Vec<u8>) {
+    mark(80);
+    let rejected=core::io::copier(source,sink,scratch.as_view().subview(5,5).unwrap());
+    assert(rejected.is_err() && source.calls==0 && sink.calls==0 && sink.flushes==0);
+    let cursor:core::io::Copier<Source,Sink> =core::io::copier(source,sink,scratch.as_view().subview(5,4098).unwrap()).unwrap();
+    assert(cursor.is_active() && !cursor.is_done() && !cursor.is_faulted() && cursor.pending().len()==0);
+    let first=cursor.step(4093,1).unwrap();
+    assert(first.read==4093 && first.written==0 && first.calls==1 && source.calls==1 && sink.calls==0);
+    assert(match(first.stop) { core::io::CopyStop::CallLimit->true,_ ->false });
+    let pending=cursor.pending(); assert(pending.len()==4093);
+    let index:i32=0; while(index<pending.len()) { assert(pending.get(index).unwrap()==value(index)); index+=1; }
+    source_check(source); scratch_check(scratch); mark(112);
+
+    mark(80); let short=cursor.step(0,1).unwrap();
+    assert(short.read==4093 && short.written==17 && short.calls==1 && source.calls==1 && sink.calls==1);
+    let failed=cursor.step(0,1); assert(failed.is_err()); let failure=failed.unwrap_err();
+    assert(match(failure.cause) { core::io::Error::Host(code)->code==5,_ ->false });
+    assert(match(failure.side) { core::io::CopySide::Write->true,_ ->false });
+    assert(failure.read==4093 && failure.written==17 && failure.calls==1);
+    assert(cursor.read_count()==4093 && cursor.written_count()==17 && cursor.is_active() && !cursor.is_faulted());
+    assert(source.calls==1 && source.position==4093 && sink.calls==2 && sink.position==17 && sink.flushes==0);
+    let retained=cursor.pending(); assert(retained.len()==4076);
+    index=0; while(index<retained.len()) { assert(retained.get(index).unwrap()==value(17+index)); index+=1; }
+    source_check(source); scratch_check(scratch); mark(112);
+
+    mark(80); let resumed=cursor.step(0,32).unwrap();
+    assert(resumed.read==4093 && resumed.written==4093 && resumed.calls==8);
+    assert(match(resumed.stop) { core::io::CopyStop::ReadLimit->true,_ ->false });
+    assert(source.calls==1 && source.position==4093 && sink.calls==10 && sink.position==4093 && cursor.pending().is_empty());
+    index=0; while(index<4093) { assert(sink.bytes.at(3+index)==value(index)); index+=1; }
+    source_check(source); scratch_check(scratch); mark(112);
+
+    mark(80); let done:bool=false; let steps:i32=0;
+    while(!done) { assert(steps<1024); steps+=1; let step=cursor.step(8192,256).unwrap();
+        assert(step.calls>0 && step.calls<=256 && step.read==cursor.read_count() && step.written==cursor.written_count());
+        done=match(step.stop) { core::io::CopyStop::Eof->true,_ ->false };
+        assert(done || match(step.stop) { core::io::CopyStop::ReadLimit->true,_ ->false });
+    }
+    assert(cursor.is_active() && cursor.is_done() && !cursor.is_faulted() && cursor.pending().is_empty());
+    assert(cursor.read_count()==(source.count as u64) && cursor.written_count()==(source.count as u64));
+    let reads:i32=source.calls; let writes:i32=sink.calls; let eof=cursor.step(0,0).unwrap();
+    assert(eof.calls==0 && source.calls==reads && sink.calls==writes && match(eof.stop) { core::io::CopyStop::Eof->true,_ ->false });
+    source_check(source); sink_check(sink); scratch_check(scratch); mark(112);
+    // The local cursor and all pending views retire on return. Only the
+    // original callers retain cleanup authority for the three real owners.
+}
+fn publish(bytes:&alloc::vec::Vec<u8>) {
+    let position:i32=0; let calls:i32=0; while(position<bytes.len()) { assert(calls<1024); calls+=1;
+        let used:i32=std::io::write_stdout(bytes.storage+(position as usize),(bytes.len()-position) as usize);
+        assert(used>0 && used<=bytes.len()-position); position+=used; }
+}
+fn run(count:i32) {
+    mark(65);
+    let source:Source=Source { bytes:alloc::vec::with_capacity<u8>(count+7).unwrap(),count:count,position:0,calls:0 };
+    let scratch:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(4105).unwrap();
+    let sink:Sink=Sink { bytes:alloc::vec::with_capacity<u8>(count+7).unwrap(),count:count,position:0,calls:0,flushes:0 };
+    let index:i32=0; while(index<count+7) { let byte:u8=guard(index); if(index>=3 && index<count+3) { byte=value(index-3); }
+        source.bytes.try_push(byte).unwrap(); sink.bytes.try_push(guard(index)).unwrap(); index+=1; }
+    index=0; while(index<4105) { scratch.try_push(guard(index)).unwrap(); index+=1; }
+    mark(83); transfer(source.borrow(),sink.borrow(),scratch.borrow());
+    mark(80); source_check(source.borrow()); sink_check(sink.borrow()); scratch_check(scratch.borrow());
+    // Explicit provider reuse after the local transfer state retired.
+    source.position=0; let probe:[u8;2]=[0,0]; assert(source.read(probe,0,2).unwrap()==2 && probe[0]==value(0) && probe[1]==value(1));
+    assert(sink.flush().unwrap()==0 && sink.flushes==1); mark(112);
+    publish(source.bytes.borrow()); publish(sink.bytes.borrow());
+    mark(82); source.bytes.destroy(); scratch.destroy(); sink.bytes.destroy(); mark(69);
+}
+fn main() -> i32 { run(4096); run(262144); mark(68); return 0; }

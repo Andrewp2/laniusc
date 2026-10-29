@@ -111,6 +111,15 @@ actual call count. I/O, byte, call and storage failures precede text validation.
 Multibyte sequences may cross reads; no replacement, newline normalization or
 incremental text rejection occurs.
 
+The separate [borrowed JSON encoding increment](extended-json-streaming.md)
+uses this existing collector for owned `encode`, with the exact preflighted
+length and `ceil(length/1024)+1` calls including the EOF probe. The migrated
+[normalizer](extended-json-normalize.md) uses the same collector for bounded
+input, then publishes through a borrowed encoder. Its four groups/100 native
+cases pass with separate receipts; that acceptance does not follow from the
+historical collector receipts below. Standalone build/examples also pass,
+without adding application cases.
+
 End every borrowed view and keep shallow aliases inactive before transfer or
 destruction. The result assumes sole cleanup authority. Allocation/capacity
 identity does not establish compiler-native layout, automatic lifetimes or a

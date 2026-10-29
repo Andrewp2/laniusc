@@ -1,53 +1,109 @@
-// Compile with --source-root extended --stdlib-root stdlib.
-// Read UTF-8 JSON, then emit compact JSON preserving numbers and member order.
+// Bounded JSON input; compact output streams from a borrowed document reader.
 module app::main;
 import alloc::io;
 import alloc::string;
+import alloc::vec;
 import core::io;
 import core::result;
+import core::result::Result;
+import core::slice;
 import ext::json;
+import std::args;
+import std::signal;
 import std::stream;
 
-fn json_failure(error: ext::json::Error) -> i32 {
-    let allocation: bool = match (error.kind) { ext::json::ErrorKind::AllocationFailed -> true, _ -> false };
-    if (allocation) { return 4; }
-    return 2;
+fn json_failure(error:ext::json::Error) -> i32 {
+    return match (error.kind) {
+        ext::json::ErrorKind::AllocationFailed -> 4,
+        _ -> 2
+    };
 }
-fn normalize(text: alloc::string::String) -> i32 {
-    let parsed: core::result::Result<ext::json::Document, ext::json::Error> = ext::json::parse(text, ext::json::default_options());
-    if (core::result::is_err(parsed)) { return json_failure(core::result::unwrap_err(parsed)); }
-    let document: ext::json::Document = core::result::unwrap(parsed);
-    let encoded: core::result::Result<alloc::string::String, ext::json::Error> = ext::json::encode(document);
-    document.destroy();
-    if (core::result::is_err(encoded)) { return json_failure(core::result::unwrap_err(encoded)); }
-    let output: alloc::string::String = core::result::unwrap(encoded);
-    let target: std::stream::Descriptor = std::stream::stdout();
-    let written: core::result::Result<i32, core::io::Failure> = core::io::write_all(target.borrow(), output.as_bytes(), 0, output.byte_len());
-    output.destroy();
-    if (core::result::is_err(written)) { return 3; }
-    return 0;
+
+fn read_failure(error:alloc::io::ReadError) -> i32 {
+    return match (error) {
+        alloc::io::ReadError::InvalidLimits -> 2,
+        alloc::io::ReadError::CallLimit -> 2,
+        alloc::io::ReadError::ByteLimit -> 2,
+        alloc::io::ReadError::Io(cause) -> match (cause) {
+            core::io::Error::AllocationFailed -> 4,
+            core::io::Error::LimitExceeded -> 2,
+            _ -> 3
+        },
+        alloc::io::ReadError::Storage(cause) -> match (cause) {
+            alloc::vec::Error::AllocationFailed -> 4,
+            _ -> 2
+        },
+        alloc::io::ReadError::Text(cause) -> match (cause) {
+            alloc::string::Error::AllocationFailed -> 4,
+            _ -> 2
+        }
+    };
 }
+
+fn publish(document:&ext::json::Document) -> i32 {
+    // Exact output admission completes before the first stdout operation.
+    let prepared:Result<ext::json::Encoding,ext::json::Error> = document.encoding();
+    if (prepared.is_err()) { return json_failure(prepared.unwrap_err()); }
+    let encoding:ext::json::Encoding = prepared.unwrap();
+    let output:std::stream::Descriptor = std::stream::stdout();
+    let scratch:[u8;1024] = [0;1024];
+    let prepared_copy:Result<core::io::Copier<ext::json::Encoding,std::stream::Descriptor>,core::io::Error> =
+        core::io::copier<ext::json::Encoding,std::stream::Descriptor>(encoding.borrow(),output.borrow(),core::slice::view(scratch,1024).unwrap());
+    if (prepared_copy.is_err()) { return 3; }
+    let transfer:core::io::Copier<ext::json::Encoding,std::stream::Descriptor> = prepared_copy.unwrap();
+    let calls:u64 = 0;
+    while (true) {
+        // Both encoder reads and descriptor writes spend this global budget.
+        // A fresh read quota after ReadLimit permits the real final EOF read.
+        let result:Result<core::io::CopyStep,core::io::CopyStepFailure> = transfer.step(4096,131072-calls);
+        if (result.is_err()) { transfer.abort(); return 3; }
+        let step:core::io::CopyStep = result.unwrap();
+        calls += step.calls;
+        let status:i32 = match (step.stop) {
+            core::io::CopyStop::Eof -> 0,
+            core::io::CopyStop::ReadLimit -> 1,
+            core::io::CopyStop::CallLimit -> 2,
+            _ -> 3
+        };
+        if (status != 1) { transfer.abort(); return status; }
+    }
+    return 3;
+}
+
 fn main() -> i32 {
-    let source: std::stream::Descriptor = std::stream::stdin();
-    let input: alloc::io::Buffer = alloc::io::new();
-    let received: core::result::Result<u64, core::io::CopyFailure> = std::stream::copy(source.borrow(), input.borrow());
-    if (core::result::is_err(received)) {
-        let failure: core::io::CopyFailure = core::result::unwrap_err(received);
-        let allocation: bool = match (failure.cause) { core::io::Error::AllocationFailed -> true, _ -> false };
-        input.destroy();
-        if (allocation) { return 4; }
-        return 3;
+    // Keep failures quiet even when either standard output is a closed pipe.
+    if (std::signal::set_disposition(std::signal::Signal::BrokenPipe,std::signal::Disposition::Ignore).is_err()) { return 3; }
+    let captured = std::args::snapshot(1,0,0);
+    if (captured.is_err()) {
+        return match (captured.unwrap_err()) {
+            std::args::Error::AllocationFailed -> 4,
+            std::args::Error::HostRead(index) -> 3,
+            _ -> 2
+        };
     }
-    let decoded: core::result::Result<alloc::string::String, alloc::string::Error> = alloc::string::from_utf8(input.as_bytes(), input.len());
+    let arguments = captured.unwrap();
+    arguments.destroy();
+    let source:std::stream::Descriptor = std::stream::stdin();
+    let collected:Result<alloc::string::String,alloc::io::ReadFailure> =
+        alloc::io::read_to_string<std::stream::Descriptor>(source.borrow(),alloc::io::ReadLimits { max_bytes:1048576,max_calls:16384 });
+    if (collected.is_err()) {
+        let failure:alloc::io::ReadFailure = collected.unwrap_err();
+        let status:i32 = read_failure(failure.cause);
+        failure.destroy();
+        return status;
+    }
+    let input:alloc::string::String = collected.unwrap();
+    let options:ext::json::Options = ext::json::Options {
+        max_depth:128,max_nodes:65536,max_string_bytes:1048576,
+        max_number_bytes:1048576,max_output_bytes:1048576,reject_duplicate_keys:false
+    };
+    let parsed:Result<ext::json::Document,ext::json::Error> = ext::json::parse(input,options);
+    // Parse owns copies of every retained token. End the input lifetime before
+    // preflight and streaming; these remaining phases need no heap allocation.
     input.destroy();
-    if (core::result::is_err(decoded)) {
-        let error: alloc::string::Error = core::result::unwrap_err(decoded);
-        let allocation: bool = match (error) { alloc::string::Error::AllocationFailed -> true, _ -> false };
-        if (allocation) { return 4; }
-        return 2;
-    }
-    let text: alloc::string::String = core::result::unwrap(decoded);
-    let status: i32 = normalize(text);
-    text.destroy();
+    if (parsed.is_err()) { return json_failure(parsed.unwrap_err()); }
+    let document:ext::json::Document = parsed.unwrap();
+    let status:i32 = publish(document.borrow());
+    document.destroy();
     return status;
 }

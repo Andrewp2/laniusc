@@ -1,0 +1,12 @@
+module app::main;
+import core::io;
+import core::result;
+import core::slice;
+struct Neither { marker:i32 }
+impl Neither { fn borrow(&self) -> &Neither { return self; } }
+fn main() -> i32 {
+    let bytes:[u8;3]=[0;3]; let missing:Neither=Neither { marker:7 };
+    let reader:core::io::SliceReader=core::io::slice_reader(bytes,3).unwrap();
+    let rejected_copy_bound=core::io::copier(reader.borrow(),missing.borrow(),core::slice::View { values:bytes,start:0,length:1 });
+    return 0;
+}

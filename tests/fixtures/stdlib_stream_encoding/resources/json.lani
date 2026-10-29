@@ -1,0 +1,138 @@
+module app::main;
+import alloc::string;
+import alloc::vec;
+import core::io;
+import core::mem;
+import core::result;
+import core::text;
+import ext::json;
+import std::io;
+
+struct Owned { document:ext::json::Document, original:alloc::string::String, number:alloc::string::String, scratch:alloc::vec::Vec<u8>, count:i32 }
+impl Owned { fn borrow(&self) -> &Owned { return self; } }
+fn mark(value:i32) { let byte:[i32;1]=[value]; assert(std::io::write_stderr(core::mem::i32_array_data_ptr(byte),1)==1); }
+fn literal(value:str,length:i32) -> [u8] { return core::mem::typed_slice_from_raw_parts<u8>(core::mem::string_data_ptr(value),length); }
+fn string(value:str,length:i32) -> alloc::string::String { return alloc::string::from_utf8(literal(value,length),length).unwrap(); }
+fn pattern(index:i32) -> u8 {
+    let bytes:[u8;16]=[97,34,92,10,0,195,169,240,159,153,130,47,8,12,9,13];
+    return bytes[index%16];
+}
+fn escaped(index:i32) -> u8 {
+    let bytes:[u8;48]=[97,92,34,92,92,92,117,48,48,48,97,92,117,48,48,48,48,195,169,240,159,153,130,47,92,117,48,48,48,56,92,117,48,48,48,99,92,117,48,48,48,57,92,117,48,48,48,100];
+    return bytes[index%48];
+}
+fn length(count:i32) -> i32 { return 56+count*3; }
+fn expected(count:i32,index:i32) -> u8 {
+    if(index<12) { let prefix:[u8]=literal("{\"payload\":\"",12); return prefix[index]; }
+    if(index<12+count*3) { return escaped(index-12); }
+    let suffix:[u8]=literal("\",\"rows\":[null,true,false,1.2300e+05,{},[]]}",44);
+    return suffix[index-12-count*3];
+}
+fn equal(text:core::text::Text,value:str,count:i32) {
+    assert(text.byte_len()==count); let bytes:[u8]=literal(value,count);
+    let index:i32=0; while(index<count) { assert(text.byte_at(index).unwrap()==bytes[index]); index+=1; }
+}
+fn setup(count:i32) -> Owned {
+    let bytes:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(count).unwrap();
+    let index:i32=0; while(index<count) { bytes.try_push(pattern(index)).unwrap(); index+=1; }
+    let original:alloc::string::String=alloc::string::from_utf8_vec(bytes.borrow()).unwrap();
+    assert(bytes.len()==0 && bytes.capacity()==0);
+    let number:alloc::string::String=string("1.2300e+05",10);
+    let document:ext::json::Document=ext::json::new(); assert(document.add_object(ext::json::At::Root).unwrap()==0);
+    let key:alloc::string::String=string("payload",7);
+    assert(document.add_string(ext::json::At::Member(0,key),original).unwrap()==1); key.destroy();
+    key=string("rows",4); assert(document.add_array(ext::json::At::Member(0,key)).unwrap()==2); key.destroy();
+    assert(document.add_null(ext::json::At::Element(2)).unwrap()==3);
+    assert(document.add_bool(ext::json::At::Element(2),true).unwrap()==4);
+    assert(document.add_bool(ext::json::At::Element(2),false).unwrap()==5);
+    assert(document.add_number(ext::json::At::Element(2),number).unwrap()==6);
+    assert(document.add_object(ext::json::At::Element(2)).unwrap()==7);
+    assert(document.add_array(ext::json::At::Element(2)).unwrap()==8);
+    let scratch:alloc::vec::Vec<u8> =alloc::vec::with_capacity<u8>(4105).unwrap();
+    index=0; while(index<4105) { scratch.try_push(193).unwrap(); index+=1; }
+    return Owned { document:document,original:original,number:number,scratch:scratch,count:count };
+}
+fn kind(value:ext::json::Kind) -> i32 {
+    return match(value) { ext::json::Kind::Null->0,ext::json::Kind::Boolean->1,ext::json::Kind::Number->2,ext::json::Kind::Text->3,ext::json::Kind::Array->4,ext::json::Kind::Object->5 };
+}
+fn preserved(owner:&Owned) {
+    let doc:ext::json::Document=owner.document;
+    assert(doc.node_count()==9 && doc.root().unwrap()==0);
+    let kinds:[i32;9]=[5,3,4,0,1,1,2,5,4]; let index:i32=0;
+    while(index<9) { assert(kind(doc.kind(index).unwrap())==kinds[index]); index+=1; }
+    assert(doc.child_count(0).unwrap()==2 && doc.first_child(0).unwrap().unwrap()==1);
+    assert(doc.next_sibling(1).unwrap().unwrap()==2 && doc.next_sibling(2).unwrap().is_none());
+    assert(doc.child_count(2).unwrap()==6 && doc.first_child(2).unwrap().unwrap()==3);
+    index=0; while(index<6) { assert(doc.element(2,index).unwrap().unwrap()==3+index);
+        if(index<5) { assert(doc.next_sibling(3+index).unwrap().unwrap()==4+index); }
+        else { assert(doc.next_sibling(3+index).unwrap().is_none()); } index+=1;
+    }
+    assert(doc.element(2,6).unwrap().is_none());
+    assert(doc.boolean(4).unwrap() && !doc.boolean(5).unwrap());
+    assert(doc.child_count(7).unwrap()==0 && doc.child_count(8).unwrap()==0);
+    assert(doc.first_child(7).unwrap().is_none() && doc.first_child(8).unwrap().is_none());
+    equal(doc.key_view(1).unwrap(),"payload",7); equal(doc.key_view(2).unwrap(),"rows",4);
+    equal(doc.number_view(6).unwrap(),"1.2300e+05",10); equal(owner.number.as_text(),"1.2300e+05",10);
+    let text:core::text::Text=doc.string_view(1).unwrap(); assert(text.byte_len()==owner.count && owner.original.byte_len()==owner.count);
+    let source:[u8]=owner.original.as_bytes(); index=0;
+    while(index<owner.count) { assert(source[index]==pattern(index) && text.byte_at(index).unwrap()==pattern(index)); index+=1; }
+    assert(owner.scratch.len()==4105 && owner.scratch.capacity()==4105); index=0;
+    while(index<4105) { if(index<5 || index>=4098) { assert(owner.scratch.at(index)==193); } index+=1; }
+}
+fn publish(pointer:ptr,count:i32) {
+    let position:i32=0; let calls:i32=0; while(position<count) { assert(calls<1024); calls+=1;
+        let used:i32=std::io::write_stdout(pointer+(position as usize),(count-position) as usize);
+        assert(used>0 && used<=count-position); position+=used; }
+}
+fn early(owner:&Owned) {
+    let cursor:ext::json::Encoding=owner.document.encoding().unwrap();
+    let rejected=cursor.read(owner.scratch.as_slice(),-1,1); assert(rejected.is_err());
+    assert(cursor.read(owner.scratch.as_slice(),5,0).unwrap()==0 && cursor.remaining()==(length(owner.count) as u64));
+    assert(cursor.read(owner.scratch.as_slice(),5,13).unwrap()==13);
+    let fork:ext::json::Encoding=cursor;
+    assert(cursor.read(owner.scratch.as_slice(),5,1).unwrap()==1 && owner.scratch.at(5)==expected(owner.count,13));
+    assert(fork.read(owner.scratch.as_slice(),5,1).unwrap()==1 && owner.scratch.at(5)==expected(owner.count,13));
+    assert(cursor.remaining()==fork.remaining()); preserved(owner);
+    // Both forked positions retire here; neither owns document backing.
+}
+fn borrowed(count:i32) {
+    mark(65); let owner:Owned=setup(count); mark(83);
+    mark(80); assert(owner.document.encoded_len().unwrap()==(length(count) as u64)); early(owner.borrow()); mark(112);
+    let cursor:ext::json::Encoding=owner.document.encoding().unwrap();
+    let position:i32=0; let calls:i32=0;
+    while(position<length(count)) {
+        mark(80); assert(calls<1024); calls+=1; let used:i32=cursor.read(owner.scratch.as_slice(),5,4093).unwrap();
+        let wanted:i32=length(count)-position; if(wanted>4093) { wanted=4093; }
+        assert(used==wanted && cursor.remaining()==((length(count)-position-used) as u64));
+        let index:i32=0; while(index<used) { assert(owner.scratch.at(5+index)==expected(count,position+index)); index+=1; }
+        mark(112); publish(owner.scratch.storage+5,used); position+=used;
+    }
+    mark(80); assert(cursor.read(owner.scratch.as_slice(),5,4093).unwrap()==0 && cursor.read(owner.scratch.as_slice(),5,1).unwrap()==0);
+    assert(cursor.remaining()==0); preserved(owner.borrow()); mark(112);
+    mark(82); owner.document.destroy(); owner.original.destroy(); owner.number.destroy(); owner.scratch.destroy(); mark(69);
+}
+fn owned(mode:i32) {
+    mark(65); let owner:Owned=setup(262144); mark(83);
+    mark(80); preserved(owner.borrow()); assert(owner.document.encoded_len().unwrap()==(length(owner.count) as u64)); mark(112);
+    mark(67); let result=ext::json::encode(owner.document); mark(70);
+    if(mode==2) {
+        assert(result.is_err()); let failure=result.unwrap_err();
+        assert(match(failure.kind) { ext::json::ErrorKind::AllocationFailed->true,_ ->false }); assert(failure.offset == -1);
+        mark(80); preserved(owner.borrow()); mark(112);
+        mark(67); result=ext::json::encode(owner.document); mark(70);
+    }
+    let output:alloc::string::String=result.unwrap();
+    mark(80); preserved(owner.borrow()); assert(output.byte_len()==length(owner.count));
+    let bytes:[u8]=output.as_bytes(); let index:i32=0; while(index<output.byte_len()) { assert(bytes[index]==expected(owner.count,index)); index+=1; } mark(112);
+    mark(82); owner.document.destroy(); owner.original.destroy(); owner.number.destroy(); owner.scratch.destroy();
+    // The successful output owns independent storage and survives all source
+    // destruction. It is the only allocation still live in this phase.
+    mark(80); index=0; while(index<output.byte_len()) { assert(bytes[index]==expected(262144,index)); index+=1; } mark(112);
+    publish(output.bytes.storage,output.byte_len()); output.destroy(); mark(69);
+}
+fn main() -> i32 {
+    let header:[i32;1]=[0]; assert(std::io::read_stdin(core::mem::i32_array_data_ptr(header),1)==1);
+    let mode:i32=header[0]&255; assert(mode>=0 && mode<=2);
+    if(mode==0) { borrowed(4096); borrowed(262144); } else { owned(mode); }
+    mark(68); return 0;
+}

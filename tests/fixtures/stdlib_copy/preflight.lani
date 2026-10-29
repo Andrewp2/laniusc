@@ -1,0 +1,161 @@
+module app::main;
+import core::io;
+import core::mem;
+import core::result;
+import core::slice;
+
+struct Log { words:[u64], used:i32 }
+impl Log {
+    fn borrow(&self) -> &Log { return self; }
+    fn record(&self,id:i32,event:i32,offset:i32,count:i32,position:i32,stride:i64,payload:u64) {
+        assert(self.used<128); let at:i32=self.used*8;
+        self.words[at]=id as u64; self.words[at+1]=event as u64; self.words[at+2]=offset as u64;
+        self.words[at+3]=count as u64; self.words[at+4]=position as u64; self.words[at+5]=stride as u64;
+        self.words[at+6]=payload; self.words[at+7]=self.used as u64; self.used+=1;
+    }
+}
+fn error(event:i32) -> core::io::Error {
+    return match(-event) { 1 -> core::io::Error::Interrupted,2 -> core::io::Error::WouldBlock,
+        3 -> core::io::Error::Host(-731),4 -> core::io::Error::InvalidCount,5 -> core::io::Error::WriteZero,
+        6 -> core::io::Error::InvalidInput,7 -> core::io::Error::CountOverflow,8 -> core::io::Error::UnexpectedEof,
+        9 -> core::io::Error::LimitExceeded,_ -> core::io::Error::AllocationFailed };
+}
+fn cause(error:core::io::Error) -> i32 {
+    return match(error) { core::io::Error::Interrupted -> 1,core::io::Error::WouldBlock -> 2,
+        core::io::Error::Host(value) -> value,core::io::Error::InvalidCount -> 4,core::io::Error::WriteZero -> 5,
+        core::io::Error::InvalidInput -> 6,core::io::Error::CountOverflow -> 7,core::io::Error::UnexpectedEof -> 8,
+        core::io::Error::LimitExceeded -> 9,core::io::Error::AllocationFailed -> 10 };
+}
+fn stop(value:core::io::CopyStop) -> i32 { return match(value) { core::io::CopyStop::Eof -> 1,core::io::CopyStop::ReadLimit -> 2,core::io::CopyStop::CallLimit -> 3,core::io::CopyStop::ReadWouldBlock -> 4,core::io::CopyStop::WriteWouldBlock -> 5 }; }
+fn side(value:core::io::CopySide) -> i32 { return match(value) { core::io::CopySide::Read -> 1,core::io::CopySide::Write -> 2,core::io::CopySide::State -> 3 }; }
+struct Probe { bytes:[u8],length:i32,position:i32,id:i32,events:[i32],attempts:i32,log:&Log }
+fn probe(bytes:[u8],length:i32,id:i32,events:[i32],log:&Log) -> Probe { return Probe { bytes:bytes,length:length,position:0,id:id,events:events,attempts:0,log:log }; }
+impl Probe {
+    fn borrow(&self) -> &Probe { return self; }
+    fn event(&self,values:[u8],offset:i32,count:i32) -> i32 {
+        assert(count>0 && count<=8 && core::io::valid_range(offset,count));
+        let event:i32=99; if(self.attempts<16) { event=self.events[self.attempts]; }
+        let payload:u64=0; if(self.id==2) { let i:i32=0; while(i<count) { payload|=(values[offset+i] as u64)<<(i*8); i+=1; } }
+        self.log.record(self.id,event,offset,count,self.position,core::mem::slice_stride(values) as i64,payload);
+        self.attempts+=1; return event;
+    }
+}
+pub impl core::io::Read for Probe {
+    pub fn read(&self,destination:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.id==1); let event:i32=self.event(destination,offset,count);
+        if(event<0 && event>=-10) { return core::result::Err(error(event)); }
+        if(event==-101) { return core::result::Ok(-1); } if(event==-102) { return core::result::Ok(count+1); }
+        if(event==-103) { return core::result::Ok(-2147483648); } if(event==-104) { return core::result::Ok(2147483647); }
+        assert(event>=0); let amount:i32=count; if(amount>event) { amount=event; } if(amount>self.length-self.position) { amount=self.length-self.position; }
+        let i:i32=0; while(i<amount) { destination[offset+i]=self.bytes[2+self.position+i]; i+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+}
+pub impl core::io::Write for Probe {
+    pub fn write(&self,source:[u8],offset:i32,count:i32) -> core::result::Result<i32,core::io::Error> {
+        assert(self.id==2); let event:i32=self.event(source,offset,count);
+        if(event<0 && event>=-10) { return core::result::Err(error(event)); }
+        if(event==-101) { return core::result::Ok(-1); } if(event==-102) { return core::result::Ok(count+1); }
+        if(event==-103) { return core::result::Ok(-2147483648); } if(event==-104) { return core::result::Ok(2147483647); }
+        assert(event>=0); let amount:i32=count; if(amount>event) { amount=event; } assert(self.position+amount<=self.length);
+        let i:i32=0; while(i<amount) { self.bytes[2+self.position+i]=source[offset+i]; i+=1; }
+        self.position+=amount; return core::result::Ok(amount);
+    }
+    pub fn flush(&self) -> core::result::Result<i32,core::io::Error> { assert(false); return core::result::Ok(0); }
+}
+fn checked(value:core::result::Result<core::io::CopyStep,core::io::CopyStepFailure>,read:u64,written:u64,calls:u64,ending:i32) {
+    assert(value.is_ok()); let actual:core::io::CopyStep=value.unwrap(); assert(actual.read==read && actual.written==written && actual.calls==calls && stop(actual.stop)==ending);
+}
+fn failure(value:core::result::Result<core::io::CopyStep,core::io::CopyStepFailure>,read:u64,written:u64,calls:u64,error:i32,which_side:i32) {
+    assert(value.is_err()); let actual:core::io::CopyStepFailure=value.unwrap_err(); assert(actual.read==read && actual.written==written && actual.calls==calls && cause(actual.cause)==error && side(actual.side)==which_side);
+}
+fn pending(copy:&core::io::Copier<Probe,Probe>,start:i32,length:i32,a:i32,b:i32) {
+    let view:core::slice::View<u8> =copy.pending(); assert(view.start==start && view.length==length);
+    if(length>0) { assert(view.values[start]==a as u8); } if(length>1) { assert(view.values[start+1]==b as u8); }
+}
+fn event(log:&Log,index:i32,id:i32,offset:i32,count:i32,position:i32,payload:u64) {
+    let at:i32=index*8; assert(index<log.used && log.words[at]==id as u64 && log.words[at+2]==offset as u64 && log.words[at+3]==count as u64 && log.words[at+4]==position as u64 && log.words[at+6]==payload);
+}
+// END SHARED TEST PROVIDERS
+
+fn invalid_metadata() {
+    let nowhere:ptr=0; let absent:[u8]=core::mem::typed_slice_from_raw_parts<u8>(nowhere,0);
+    let events:[i32;16]=[99;16]; let words:[u64;1024]=[0;1024]; let log:Log=Log { words:words,used:0 };
+    let reader:Probe=probe(absent,0,1,events,log.borrow()); let writer:Probe=probe(absent,0,2,events,log.borrow());
+    let starts:[i32;7]=[0,-1,0,2147483647,1,-2147483648,2147483647];
+    let lengths:[i32;7]=[0,1,-1,1,2147483647,1,0]; let i:i32=0;
+    while(i<7) {
+        let result:core::result::Result<core::io::Copier<Probe,Probe>,core::io::Error> =core::io::copier(reader.borrow(),writer.borrow(),core::slice::View { values:absent,start:starts[i],length:lengths[i] });
+        assert(result.is_err() && cause(result.unwrap_err())==6 && log.used==0); i+=1;
+    }
+    // Valid logical metadata needs no physical access when the work is empty.
+    let copy:core::io::Copier<Probe,Probe> =core::io::copier(reader.borrow(),writer.borrow(),core::slice::View { values:absent,start:2147483646,length:1 }).unwrap();
+    checked(copy.step(0,0),0,0,0,2); checked(copy.step(1,0),0,0,0,3);
+    let span:core::slice::View<u8> =copy.abort(); assert(span.start==2147483646 && span.length==0 && log.used==0);
+}
+fn malformed_successes() {
+    let which:i32=0; while(which<2) {
+        let bad:i32=101; while(bad<=104) {
+            let source:[u8;5]=[91,92,19,23,29]; let output:[u8;6]=[177;6]; let scratch:[u8;6]=[199;6];
+            let r:[i32;16]=[99;16]; let w:[i32;16]=[99;16];
+            if(which==0) { r[0]=1; r[1]=-bad; } else { w[0]=1; w[1]=-bad; }
+            let words:[u64;1024]=[0;1024]; let log:Log=Log { words:words,used:0 };
+            let reader:Probe=probe(source,3,1,r,log.borrow()); let writer:Probe=probe(output,4,2,w,log.borrow());
+            let copy:core::io::Copier<Probe,Probe> =core::io::copier(reader.borrow(),writer.borrow(),core::slice::View { values:scratch,start:2,length:2 }).unwrap();
+            let read:u64=1; if(which==0) { checked(copy.step(1,9),1,1,2,2); }
+            else { checked(copy.step(2,2),2,1,2,3); read=2; }
+            let before:core::slice::View<u8> =copy.pending(); let start:i32=before.start; let length:i32=before.length;
+            failure(copy.step(9,9),read,1,1,4,which+1); assert(copy.is_faulted() && copy.is_active() && !copy.is_done());
+            let after:core::slice::View<u8> =copy.pending(); assert(after.start==start && after.length==length);
+            failure(copy.step(0,0),read,1,0,4,3); failure(copy.step(18446744073709551615,18446744073709551615),read,1,0,4,3);
+            assert(log.used==3 && output[2]==19 && output[3]==177 && copy.read_count()==read && copy.written_count()==1);
+            copy.abort(); assert(copy.is_faulted() && !copy.is_active()); failure(copy.step(0,0),read,1,0,6,3);
+            assert(log.used==3 && scratch[0]==199 && scratch[1]==199 && scratch[4]==199 && scratch[5]==199); bad+=1;
+        } which+=1;
+    }
+}
+fn seeded_headroom() {
+    let source:[u8;6]=[91,92,17,18,19,94]; let output:[u8;6]=[177;6]; let scratch:[u8;8]=[199;8];
+    let r:[i32;16]=[99;16]; let w:[i32;16]=[99;16]; let words:[u64;1024]=[0;1024]; let log:Log=Log { words:words,used:0 };
+    let reader:Probe=probe(source,3,1,r,log.borrow()); let writer:Probe=probe(output,4,2,w,log.borrow());
+    let copy:core::io::Copier<Probe,Probe> =core::io::copier(reader.borrow(),writer.borrow(),core::slice::View { values:scratch,start:2,length:4 }).unwrap();
+    // Seed a consistent empty arithmetic state. Only TWO bytes are transferred.
+    copy.read=18446744073709551613; copy.written=18446744073709551613;
+    checked(copy.step(18446744073709551615,1),18446744073709551615,18446744073709551613,1,3);
+    event(log.borrow(),0,1,2,2,0,0); pending(copy.borrow(),2,2,17,18);
+    checked(copy.step(0,1),18446744073709551615,18446744073709551615,1,2);
+    checked(copy.step(0,0),18446744073709551615,18446744073709551615,0,2);
+    checked(copy.step(1,0),18446744073709551615,18446744073709551615,0,3);
+    failure(copy.step(1,1),18446744073709551615,18446744073709551615,0,7,3);
+    failure(copy.step(18446744073709551615,18446744073709551615),18446744073709551615,18446744073709551615,0,7,3);
+    assert(!copy.is_faulted() && !copy.is_done() && copy.is_active() && reader.position==2 && writer.position==2 && log.used==2);
+    assert(output[2]==17 && output[3]==18 && output[4]==177 && scratch[0]==199 && scratch[1]==199 && scratch[6]==199 && scratch[7]==199);
+}
+fn layouts() {
+    let source_native:[u8;16]=[0;16]; let output_native:[u8;16]=[0;16]; let scratch_native:[u8;16]=[0;16];
+    let source_words:[i32;4]=[0;4]; let output_words:[i32;4]=[0;4]; let scratch_words:[i32;4]=[0;4];
+    let source_packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(source_words),16);
+    let output_packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(output_words),16);
+    let scratch_packed:[u8]=core::mem::typed_slice_from_raw_parts<u8>(core::mem::i32_array_data_ptr(scratch_words),16);
+    assert(core::mem::slice_stride(source_native)<0 && core::mem::slice_stride(output_native)<0 && core::mem::slice_stride(scratch_native)<0);
+    assert(core::mem::slice_stride(source_packed)==1 && core::mem::slice_stride(output_packed)==1 && core::mem::slice_stride(scratch_packed)==1);
+    let mode:i32=0; while(mode<2) {
+        let source:[u8]=source_native; let output:[u8]=output_packed; let scratch:[u8]=scratch_native;
+        if(mode==1) { source=source_packed; output=output_native; scratch=scratch_packed; }
+        let i:i32=0; while(i<16) { source[i]=(i*17) as u8; output[i]=177; scratch[i]=199; i+=1; }
+        let r:[i32;16]=[2;16]; let w:[i32;16]=[1;16]; let words:[u64;1024]=[0;1024]; let log:Log=Log { words:words,used:0 };
+        let reader:Probe=probe(source,7,1,r,log.borrow()); let writer:Probe=probe(output,12,2,w,log.borrow());
+        let copy:core::io::Copier<Probe,Probe> =core::io::copier(reader.borrow(),writer.borrow(),core::slice::View { values:scratch,start:4,length:3 }).unwrap();
+        checked(copy.step(7,1),2,0,1,3); let span:core::slice::View<u8> =copy.pending();
+        assert(span.start==4 && span.length==2 && core::mem::slice_stride(span.values)==core::mem::slice_stride(scratch));
+        checked(copy.step(18446744073709551615,18446744073709551615),7,7,11,1);
+        i=0; while(i<16) {
+            assert(source[i]==(i*17) as u8);
+            if(i>=2 && i<9) { assert(output[i]==source[i]); } else { assert(output[i]==177); }
+            if(i<4 || i>=7) { assert(scratch[i]==199); } i+=1;
+        }
+        assert(log.used==12); i=0; while(i<log.used) { assert(log.words[i*8+5]==core::mem::slice_stride(scratch) as u64); i+=1; }
+        mode+=1;
+    }
+}
+fn main() -> i32 { invalid_metadata(); malformed_successes(); seeded_headroom(); layouts(); return 0; }

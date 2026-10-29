@@ -8,23 +8,29 @@ Generated source inventory. Linked guides own runtime and semantic contracts; a 
 
 Layer: `ext`. Role: module. Profile: **Source inventory**.
 
+The borrowed encoding increment adds Document encoded_len/encoding methods and Encoding implementing canonical core::io::Read. One constant-storage byte generator serves exact output-cap preflight, borrowed emission and owned encode. NoRoot/OutputLimit precede output allocation; copied cursors fork complete byte/escape state while sharing stable immutable document backing. Read validates logical destination range, leaves zero requests unchanged, fills min(request,remaining), permits UTF-8/escape splits and has fused exhaustion. Compact bytes, number spelling, member order/duplicates and lowercase control escaping are preserved. Owned encode uses alloc::io::read_to_string with exact admitted length and ceil(length/1024)+1 calls, including actual EOF; failed output is destroyed and source preserved, with no second whole-output copy. The migrated normalizer uses bounded input and fixed-scratch direct output. All four new JSON library gates pass. Direct tests check every cut of the exact 108-byte wire, two layouts, copied positions, Read composition, owned parity and preflight. The ordered-AST model checks 978 cases (672 admitted/306 rejected), 24774 reads, 8857 copies, 3360 invalid requests, 3155 zero requests and 7056 EOF observations. The 32,940-byte sum of admitted wire lengths is not total traffic. Borrowed output totals 798,832 exact bytes at two text sizes, with fixed 4,093-byte scratch and 24 exact allocations/releases. Two selected owned-output allocation denials at mmap ordinals 13/23 preserve eight source owners and recover 786,488 bytes in the same processes, with 23/33 matched allocations/releases; no exhaustive site claim. The normalizer passes four groups/100 native cases, including 33 reached allocation failures; standalone build and both exact 43/12-byte examples also pass, without adding cases. One selected old JSON builder/query/limits/ownership regression passes separately. Later host-only replay of the app model through a stronger ledger adds no native cases. The historical three JSON groups from 2026-10-22 retain their source/API scope. Initial target is Linux x86_64 CPU output from the GPU compiler; device execution, other hosts, enforced lifetime/ownership and formal proofs remain separate.
+
 ## Contract and evidence guides
 
 - [extended-json](../../extended-json.md)
+- [extended-json-streaming](../../extended-json-streaming.md)
+- [extended-json-normalize](../../extended-json-normalize.md)
 
-Declaration counts: enum: 3; field: 10; function: 5; impl: 1; method: 27; struct: 3; type alias: 1; variant: 29.
+Declaration counts: enum: 3; field: 12; function: 5; impl: 4; method: 32; struct: 4; type alias: 1; variant: 29.
 
 ## Declared imports
 
 Direct source imports; this is not a package-resolution or transitive dependency result.
 
-- [alloc::string](../alloc/string.md) · [source](../../../extended/ext/json.lani#L4)
-- [core::decimal](../core/decimal.md) · [source](../../../extended/ext/json.lani#L5)
-- [core::option](../core/option.md) · [source](../../../extended/ext/json.lani#L6)
-- [core::result](../core/result.md) · [source](../../../extended/ext/json.lani#L7)
-- [core::text](../core/text.md) · [source](../../../extended/ext/json.lani#L8)
-- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/json.lani#L9)
-- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json.lani#L10)
+- [alloc::io](../alloc/io.md) · [source](../../../extended/ext/json.lani#L4)
+- [alloc::string](../alloc/string.md) · [source](../../../extended/ext/json.lani#L5)
+- [core::decimal](../core/decimal.md) · [source](../../../extended/ext/json.lani#L6)
+- [core::io](../core/io.md) · [source](../../../extended/ext/json.lani#L7)
+- [core::option](../core/option.md) · [source](../../../extended/ext/json.lani#L8)
+- [core::result](../core/result.md) · [source](../../../extended/ext/json.lani#L9)
+- [core::text](../core/text.md) · [source](../../../extended/ext/json.lani#L10)
+- [core::utf8](../core/utf8.md) · [source](../../../extended/ext/json.lani#L11)
+- [alloc::vec](../alloc/vec.md) · [source](../../../extended/ext/json.lani#L12)
 
 ## Types, fields and variants
 
@@ -32,7 +38,7 @@ Fields and variants are retained under their declared public owner. Their repres
 
 ### type alias: NodeId
 
-[Source line 12](../../../extended/ext/json.lani#L12)
+[Source line 14](../../../extended/ext/json.lani#L14)
 
 ```lanius
 pub type NodeId = i32;
@@ -40,7 +46,7 @@ pub type NodeId = i32;
 
 ### enum: Kind
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 pub enum Kind
@@ -48,7 +54,7 @@ pub enum Kind
 
 #### variant: Null
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 Null
@@ -56,7 +62,7 @@ Null
 
 #### variant: Boolean
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 Boolean
@@ -64,7 +70,7 @@ Boolean
 
 #### variant: Number
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 Number
@@ -72,7 +78,7 @@ Number
 
 #### variant: Text
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 Text
@@ -80,7 +86,7 @@ Text
 
 #### variant: Array
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 Array
@@ -88,7 +94,7 @@ Array
 
 #### variant: Object
 
-[Source line 13](../../../extended/ext/json.lani#L13)
+[Source line 15](../../../extended/ext/json.lani#L15)
 
 ```lanius
 Object
@@ -96,7 +102,7 @@ Object
 
 ### enum: ErrorKind
 
-[Source line 14](../../../extended/ext/json.lani#L14)
+[Source line 16](../../../extended/ext/json.lani#L16)
 
 ```lanius
 pub enum ErrorKind
@@ -104,7 +110,7 @@ pub enum ErrorKind
 
 #### variant: UnexpectedEnd
 
-[Source line 15](../../../extended/ext/json.lani#L15)
+[Source line 17](../../../extended/ext/json.lani#L17)
 
 ```lanius
 UnexpectedEnd
@@ -112,7 +118,7 @@ UnexpectedEnd
 
 #### variant: UnexpectedByte
 
-[Source line 15](../../../extended/ext/json.lani#L15)
+[Source line 17](../../../extended/ext/json.lani#L17)
 
 ```lanius
 UnexpectedByte
@@ -120,7 +126,7 @@ UnexpectedByte
 
 #### variant: InvalidEscape
 
-[Source line 15](../../../extended/ext/json.lani#L15)
+[Source line 17](../../../extended/ext/json.lani#L17)
 
 ```lanius
 InvalidEscape
@@ -128,7 +134,7 @@ InvalidEscape
 
 #### variant: InvalidSurrogate
 
-[Source line 15](../../../extended/ext/json.lani#L15)
+[Source line 17](../../../extended/ext/json.lani#L17)
 
 ```lanius
 InvalidSurrogate
@@ -136,7 +142,7 @@ InvalidSurrogate
 
 #### variant: InvalidNumber
 
-[Source line 16](../../../extended/ext/json.lani#L16)
+[Source line 18](../../../extended/ext/json.lani#L18)
 
 ```lanius
 InvalidNumber
@@ -144,7 +150,7 @@ InvalidNumber
 
 #### variant: TrailingInput
 
-[Source line 16](../../../extended/ext/json.lani#L16)
+[Source line 18](../../../extended/ext/json.lani#L18)
 
 ```lanius
 TrailingInput
@@ -152,7 +158,7 @@ TrailingInput
 
 #### variant: DepthLimit
 
-[Source line 16](../../../extended/ext/json.lani#L16)
+[Source line 18](../../../extended/ext/json.lani#L18)
 
 ```lanius
 DepthLimit
@@ -160,7 +166,7 @@ DepthLimit
 
 #### variant: NodeLimit
 
-[Source line 16](../../../extended/ext/json.lani#L16)
+[Source line 18](../../../extended/ext/json.lani#L18)
 
 ```lanius
 NodeLimit
@@ -168,7 +174,7 @@ NodeLimit
 
 #### variant: StringLimit
 
-[Source line 16](../../../extended/ext/json.lani#L16)
+[Source line 18](../../../extended/ext/json.lani#L18)
 
 ```lanius
 StringLimit
@@ -176,7 +182,7 @@ StringLimit
 
 #### variant: NumberLimit
 
-[Source line 17](../../../extended/ext/json.lani#L17)
+[Source line 19](../../../extended/ext/json.lani#L19)
 
 ```lanius
 NumberLimit
@@ -184,7 +190,7 @@ NumberLimit
 
 #### variant: OutputLimit
 
-[Source line 17](../../../extended/ext/json.lani#L17)
+[Source line 19](../../../extended/ext/json.lani#L19)
 
 ```lanius
 OutputLimit
@@ -192,7 +198,7 @@ OutputLimit
 
 #### variant: DuplicateKey
 
-[Source line 17](../../../extended/ext/json.lani#L17)
+[Source line 19](../../../extended/ext/json.lani#L19)
 
 ```lanius
 DuplicateKey
@@ -200,7 +206,7 @@ DuplicateKey
 
 #### variant: AllocationFailed
 
-[Source line 17](../../../extended/ext/json.lani#L17)
+[Source line 19](../../../extended/ext/json.lani#L19)
 
 ```lanius
 AllocationFailed
@@ -208,7 +214,7 @@ AllocationFailed
 
 #### variant: Bounds
 
-[Source line 17](../../../extended/ext/json.lani#L17)
+[Source line 19](../../../extended/ext/json.lani#L19)
 
 ```lanius
 Bounds
@@ -216,7 +222,7 @@ Bounds
 
 #### variant: WrongKind
 
-[Source line 18](../../../extended/ext/json.lani#L18)
+[Source line 20](../../../extended/ext/json.lani#L20)
 
 ```lanius
 WrongKind
@@ -224,7 +230,7 @@ WrongKind
 
 #### variant: InvalidPlacement
 
-[Source line 18](../../../extended/ext/json.lani#L18)
+[Source line 20](../../../extended/ext/json.lani#L20)
 
 ```lanius
 InvalidPlacement
@@ -232,7 +238,7 @@ InvalidPlacement
 
 #### variant: InvalidOptions
 
-[Source line 18](../../../extended/ext/json.lani#L18)
+[Source line 20](../../../extended/ext/json.lani#L20)
 
 ```lanius
 InvalidOptions
@@ -240,7 +246,7 @@ InvalidOptions
 
 #### variant: NoRoot
 
-[Source line 18](../../../extended/ext/json.lani#L18)
+[Source line 20](../../../extended/ext/json.lani#L20)
 
 ```lanius
 NoRoot
@@ -248,7 +254,7 @@ NoRoot
 
 #### variant: NotInteger
 
-[Source line 18](../../../extended/ext/json.lani#L18)
+[Source line 20](../../../extended/ext/json.lani#L20)
 
 ```lanius
 NotInteger
@@ -256,7 +262,7 @@ NotInteger
 
 #### variant: NumberOutOfRange
 
-[Source line 18](../../../extended/ext/json.lani#L18)
+[Source line 20](../../../extended/ext/json.lani#L20)
 
 ```lanius
 NumberOutOfRange
@@ -264,7 +270,7 @@ NumberOutOfRange
 
 ### struct: Error
 
-[Source line 20](../../../extended/ext/json.lani#L20)
+[Source line 22](../../../extended/ext/json.lani#L22)
 
 ```lanius
 pub struct Error
@@ -272,7 +278,7 @@ pub struct Error
 
 #### field: kind
 
-[Source line 20](../../../extended/ext/json.lani#L20)
+[Source line 22](../../../extended/ext/json.lani#L22)
 
 ```lanius
 kind: ErrorKind
@@ -280,7 +286,7 @@ kind: ErrorKind
 
 #### field: offset
 
-[Source line 20](../../../extended/ext/json.lani#L20)
+[Source line 22](../../../extended/ext/json.lani#L22)
 
 ```lanius
 offset: i32
@@ -288,7 +294,7 @@ offset: i32
 
 ### struct: Options
 
-[Source line 21](../../../extended/ext/json.lani#L21)
+[Source line 23](../../../extended/ext/json.lani#L23)
 
 ```lanius
 pub struct Options
@@ -296,7 +302,7 @@ pub struct Options
 
 #### field: max_depth
 
-[Source line 22](../../../extended/ext/json.lani#L22)
+[Source line 24](../../../extended/ext/json.lani#L24)
 
 ```lanius
 max_depth: i32
@@ -304,7 +310,7 @@ max_depth: i32
 
 #### field: max_nodes
 
-[Source line 22](../../../extended/ext/json.lani#L22)
+[Source line 24](../../../extended/ext/json.lani#L24)
 
 ```lanius
 max_nodes: i32
@@ -312,7 +318,7 @@ max_nodes: i32
 
 #### field: max_string_bytes
 
-[Source line 22](../../../extended/ext/json.lani#L22)
+[Source line 24](../../../extended/ext/json.lani#L24)
 
 ```lanius
 max_string_bytes: i32
@@ -320,7 +326,7 @@ max_string_bytes: i32
 
 #### field: max_number_bytes
 
-[Source line 23](../../../extended/ext/json.lani#L23)
+[Source line 25](../../../extended/ext/json.lani#L25)
 
 ```lanius
 max_number_bytes: i32
@@ -328,7 +334,7 @@ max_number_bytes: i32
 
 #### field: max_output_bytes
 
-[Source line 23](../../../extended/ext/json.lani#L23)
+[Source line 25](../../../extended/ext/json.lani#L25)
 
 ```lanius
 max_output_bytes: i32
@@ -336,7 +342,7 @@ max_output_bytes: i32
 
 #### field: reject_duplicate_keys
 
-[Source line 23](../../../extended/ext/json.lani#L23)
+[Source line 25](../../../extended/ext/json.lani#L25)
 
 ```lanius
 reject_duplicate_keys: bool
@@ -344,7 +350,7 @@ reject_duplicate_keys: bool
 
 ### enum: At
 
-[Source line 25](../../../extended/ext/json.lani#L25)
+[Source line 27](../../../extended/ext/json.lani#L27)
 
 ```lanius
 pub enum At
@@ -352,7 +358,7 @@ pub enum At
 
 #### variant: Root
 
-[Source line 25](../../../extended/ext/json.lani#L25)
+[Source line 27](../../../extended/ext/json.lani#L27)
 
 ```lanius
 Root
@@ -360,7 +366,7 @@ Root
 
 #### variant: Element
 
-[Source line 25](../../../extended/ext/json.lani#L25)
+[Source line 27](../../../extended/ext/json.lani#L27)
 
 ```lanius
 Element(NodeId)
@@ -368,7 +374,7 @@ Element(NodeId)
 
 #### variant: Member
 
-[Source line 25](../../../extended/ext/json.lani#L25)
+[Source line 27](../../../extended/ext/json.lani#L27)
 
 ```lanius
 Member(NodeId, alloc::string::String)
@@ -376,7 +382,7 @@ Member(NodeId, alloc::string::String)
 
 ### struct: Document
 
-[Source line 96](../../../extended/ext/json.lani#L96)
+[Source line 98](../../../extended/ext/json.lani#L98)
 
 ```lanius
 pub struct Document
@@ -384,7 +390,7 @@ pub struct Document
 
 #### field: nodes
 
-[Source line 96](../../../extended/ext/json.lani#L96)
+[Source line 98](../../../extended/ext/json.lani#L98)
 
 ```lanius
 nodes: alloc::vec::Vec<Node>
@@ -392,17 +398,41 @@ nodes: alloc::vec::Vec<Node>
 
 #### field: options
 
-[Source line 96](../../../extended/ext/json.lani#L96)
+[Source line 98](../../../extended/ext/json.lani#L98)
 
 ```lanius
 options: Options
+```
+
+### struct: Encoding
+
+[Source line 755](../../../extended/ext/json.lani#L755)
+
+```lanius
+pub struct Encoding
+```
+
+#### field: machine
+
+[Source line 755](../../../extended/ext/json.lani#L755)
+
+```lanius
+machine: EncodingMachine
+```
+
+#### field: remaining_bytes
+
+[Source line 755](../../../extended/ext/json.lani#L755)
+
+```lanius
+remaining_bytes: u64
 ```
 
 ## Free functions and extern declarations
 
 ### function: default_options
 
-[Source line 27](../../../extended/ext/json.lani#L27)
+[Source line 29](../../../extended/ext/json.lani#L29)
 
 ```lanius
 pub fn default_options() -> Options
@@ -410,7 +440,7 @@ pub fn default_options() -> Options
 
 ### function: new
 
-[Source line 98](../../../extended/ext/json.lani#L98)
+[Source line 100](../../../extended/ext/json.lani#L100)
 
 ```lanius
 pub fn new() -> Document
@@ -418,7 +448,7 @@ pub fn new() -> Document
 
 ### function: with_options
 
-[Source line 102](../../../extended/ext/json.lani#L102)
+[Source line 104](../../../extended/ext/json.lani#L104)
 
 ```lanius
 pub fn with_options(options: Options) -> core::result::Result<Document, Error>
@@ -426,7 +456,7 @@ pub fn with_options(options: Options) -> core::result::Result<Document, Error>
 
 ### function: parse
 
-[Source line 602](../../../extended/ext/json.lani#L602)
+[Source line 604](../../../extended/ext/json.lani#L604)
 
 ```lanius
 pub fn parse(input: alloc::string::String, options: Options) -> core::result::Result<Document, Error>
@@ -434,17 +464,19 @@ pub fn parse(input: alloc::string::String, options: Options) -> core::result::Re
 
 ### function: encode
 
-[Source line 699](../../../extended/ext/json.lani#L699)
+[Source line 833](../../../extended/ext/json.lani#L833)
 
 ```lanius
 pub fn encode(document: Document) -> core::result::Result<alloc::string::String, Error>
 ```
 
+Owned convenience over the same preflighted Encoding Read engine. NoRoot/OutputLimit occur before output allocation; the exact bounded collector adopts Vec backing as String and releases retained failure output. For valid admitted immutable documents, only allocation failure is reachable during collection; source cleanup authority remains with the caller.
+
 ## Implementation blocks and public methods
 
-### impl at line 119
+### impl at line 121
 
-[Source line 119](../../../extended/ext/json.lani#L119)
+[Source line 121](../../../extended/ext/json.lani#L121)
 
 ```lanius
 pub impl Document
@@ -452,7 +484,7 @@ pub impl Document
 
 #### method: borrow
 
-[Source line 121](../../../extended/ext/json.lani#L121)
+[Source line 123](../../../extended/ext/json.lani#L123)
 
 ```lanius
 pub fn borrow(&self) -> &Document
@@ -460,7 +492,7 @@ pub fn borrow(&self) -> &Document
 
 #### method: node_count
 
-[Source line 122](../../../extended/ext/json.lani#L122)
+[Source line 124](../../../extended/ext/json.lani#L124)
 
 ```lanius
 pub fn node_count(&self) -> i32
@@ -468,7 +500,7 @@ pub fn node_count(&self) -> i32
 
 #### method: root
 
-[Source line 123](../../../extended/ext/json.lani#L123)
+[Source line 125](../../../extended/ext/json.lani#L125)
 
 ```lanius
 pub fn root(&self) -> core::option::Option<NodeId>
@@ -476,7 +508,7 @@ pub fn root(&self) -> core::option::Option<NodeId>
 
 #### method: kind
 
-[Source line 128](../../../extended/ext/json.lani#L128)
+[Source line 130](../../../extended/ext/json.lani#L130)
 
 ```lanius
 pub fn kind(&self, id: NodeId) -> core::result::Result<Kind, Error>
@@ -484,7 +516,7 @@ pub fn kind(&self, id: NodeId) -> core::result::Result<Kind, Error>
 
 #### method: child_count
 
-[Source line 133](../../../extended/ext/json.lani#L133)
+[Source line 135](../../../extended/ext/json.lani#L135)
 
 ```lanius
 pub fn child_count(&self, id: NodeId) -> core::result::Result<i32, Error>
@@ -492,7 +524,7 @@ pub fn child_count(&self, id: NodeId) -> core::result::Result<i32, Error>
 
 #### method: first_child
 
-[Source line 139](../../../extended/ext/json.lani#L139)
+[Source line 141](../../../extended/ext/json.lani#L141)
 
 ```lanius
 pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>, Error>
@@ -500,7 +532,7 @@ pub fn first_child(&self, id: NodeId) -> core::result::Result<core::option::Opti
 
 #### method: next_sibling
 
-[Source line 146](../../../extended/ext/json.lani#L146)
+[Source line 148](../../../extended/ext/json.lani#L148)
 
 ```lanius
 pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Option<NodeId>, Error>
@@ -508,7 +540,7 @@ pub fn next_sibling(&self, id: NodeId) -> core::result::Result<core::option::Opt
 
 #### method: element
 
-[Source line 152](../../../extended/ext/json.lani#L152)
+[Source line 154](../../../extended/ext/json.lani#L154)
 
 ```lanius
 pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::option::Option<NodeId>, Error>
@@ -516,7 +548,7 @@ pub fn element(&self, id: NodeId, index: i32) -> core::result::Result<core::opti
 
 #### method: member
 
-[Source line 163](../../../extended/ext/json.lani#L163)
+[Source line 165](../../../extended/ext/json.lani#L165)
 
 ```lanius
 pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Result<core::option::Option<NodeId>, Error>
@@ -524,7 +556,7 @@ pub fn member(&self, id: NodeId, key: alloc::string::String) -> core::result::Re
 
 #### method: member_text
 
-[Source line 166](../../../extended/ext/json.lani#L166)
+[Source line 168](../../../extended/ext/json.lani#L168)
 
 ```lanius
 pub fn member_text(&self, id: NodeId, key: core::text::Text) -> core::result::Result<core::option::Option<NodeId>, Error>
@@ -532,7 +564,7 @@ pub fn member_text(&self, id: NodeId, key: core::text::Text) -> core::result::Re
 
 #### method: boolean
 
-[Source line 181](../../../extended/ext/json.lani#L181)
+[Source line 183](../../../extended/ext/json.lani#L183)
 
 ```lanius
 pub fn boolean(&self, id: NodeId) -> core::result::Result<bool, Error>
@@ -540,7 +572,7 @@ pub fn boolean(&self, id: NodeId) -> core::result::Result<bool, Error>
 
 #### method: string_view
 
-[Source line 195](../../../extended/ext/json.lani#L195)
+[Source line 197](../../../extended/ext/json.lani#L197)
 
 ```lanius
 pub fn string_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Error>
@@ -548,7 +580,7 @@ pub fn string_view(&self, id: NodeId) -> core::result::Result<core::text::Text, 
 
 #### method: number_view
 
-[Source line 196](../../../extended/ext/json.lani#L196)
+[Source line 198](../../../extended/ext/json.lani#L198)
 
 ```lanius
 pub fn number_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Error>
@@ -556,7 +588,7 @@ pub fn number_view(&self, id: NodeId) -> core::result::Result<core::text::Text, 
 
 #### method: key_view
 
-[Source line 197](../../../extended/ext/json.lani#L197)
+[Source line 199](../../../extended/ext/json.lani#L199)
 
 ```lanius
 pub fn key_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Error>
@@ -564,7 +596,7 @@ pub fn key_view(&self, id: NodeId) -> core::result::Result<core::text::Text, Err
 
 #### method: integer_u64
 
-[Source line 205](../../../extended/ext/json.lani#L205)
+[Source line 207](../../../extended/ext/json.lani#L207)
 
 ```lanius
 pub fn integer_u64(&self, id: NodeId) -> core::result::Result<u64, Error>
@@ -572,7 +604,7 @@ pub fn integer_u64(&self, id: NodeId) -> core::result::Result<u64, Error>
 
 #### method: integer_i64
 
-[Source line 215](../../../extended/ext/json.lani#L215)
+[Source line 217](../../../extended/ext/json.lani#L217)
 
 ```lanius
 pub fn integer_i64(&self, id: NodeId) -> core::result::Result<i64, Error>
@@ -580,7 +612,7 @@ pub fn integer_i64(&self, id: NodeId) -> core::result::Result<i64, Error>
 
 #### method: copy_string
 
-[Source line 234](../../../extended/ext/json.lani#L234)
+[Source line 236](../../../extended/ext/json.lani#L236)
 
 ```lanius
 pub fn copy_string(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error>
@@ -588,7 +620,7 @@ pub fn copy_string(&self, id: NodeId) -> core::result::Result<alloc::string::Str
 
 #### method: copy_number
 
-[Source line 235](../../../extended/ext/json.lani#L235)
+[Source line 237](../../../extended/ext/json.lani#L237)
 
 ```lanius
 pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error>
@@ -596,7 +628,7 @@ pub fn copy_number(&self, id: NodeId) -> core::result::Result<alloc::string::Str
 
 #### method: copy_key
 
-[Source line 236](../../../extended/ext/json.lani#L236)
+[Source line 238](../../../extended/ext/json.lani#L238)
 
 ```lanius
 pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String, Error>
@@ -604,7 +636,7 @@ pub fn copy_key(&self, id: NodeId) -> core::result::Result<alloc::string::String
 
 #### method: add_null
 
-[Source line 318](../../../extended/ext/json.lani#L318)
+[Source line 320](../../../extended/ext/json.lani#L320)
 
 ```lanius
 pub fn add_null(&self, at: At) -> core::result::Result<NodeId, Error>
@@ -612,7 +644,7 @@ pub fn add_null(&self, at: At) -> core::result::Result<NodeId, Error>
 
 #### method: add_bool
 
-[Source line 319](../../../extended/ext/json.lani#L319)
+[Source line 321](../../../extended/ext/json.lani#L321)
 
 ```lanius
 pub fn add_bool(&self, at: At, value: bool) -> core::result::Result<NodeId, Error>
@@ -620,7 +652,7 @@ pub fn add_bool(&self, at: At, value: bool) -> core::result::Result<NodeId, Erro
 
 #### method: add_array
 
-[Source line 320](../../../extended/ext/json.lani#L320)
+[Source line 322](../../../extended/ext/json.lani#L322)
 
 ```lanius
 pub fn add_array(&self, at: At) -> core::result::Result<NodeId, Error>
@@ -628,7 +660,7 @@ pub fn add_array(&self, at: At) -> core::result::Result<NodeId, Error>
 
 #### method: add_object
 
-[Source line 321](../../../extended/ext/json.lani#L321)
+[Source line 323](../../../extended/ext/json.lani#L323)
 
 ```lanius
 pub fn add_object(&self, at: At) -> core::result::Result<NodeId, Error>
@@ -636,7 +668,7 @@ pub fn add_object(&self, at: At) -> core::result::Result<NodeId, Error>
 
 #### method: add_string
 
-[Source line 322](../../../extended/ext/json.lani#L322)
+[Source line 324](../../../extended/ext/json.lani#L324)
 
 ```lanius
 pub fn add_string(&self, at: At, value: alloc::string::String) -> core::result::Result<NodeId, Error>
@@ -644,7 +676,7 @@ pub fn add_string(&self, at: At, value: alloc::string::String) -> core::result::
 
 #### method: add_number
 
-[Source line 326](../../../extended/ext/json.lani#L326)
+[Source line 328](../../../extended/ext/json.lani#L328)
 
 ```lanius
 pub fn add_number(&self, at: At, value: alloc::string::String) -> core::result::Result<NodeId, Error>
@@ -652,7 +684,7 @@ pub fn add_number(&self, at: At, value: alloc::string::String) -> core::result::
 
 #### method: add_i32
 
-[Source line 333](../../../extended/ext/json.lani#L333)
+[Source line 335](../../../extended/ext/json.lani#L335)
 
 ```lanius
 pub fn add_i32(&self, at: At, value: i32) -> core::result::Result<NodeId, Error>
@@ -660,8 +692,72 @@ pub fn add_i32(&self, at: At, value: i32) -> core::result::Result<NodeId, Error>
 
 #### method: destroy
 
-[Source line 346](../../../extended/ext/json.lani#L346)
+[Source line 348](../../../extended/ext/json.lani#L348)
 
 ```lanius
 pub fn destroy(&self)
+```
+
+### impl at line 757
+
+[Source line 757](../../../extended/ext/json.lani#L757)
+
+```lanius
+pub impl Document
+```
+
+#### method: encoded_len
+
+[Source line 761](../../../extended/ext/json.lani#L761)
+
+```lanius
+pub fn encoded_len(&self) -> core::result::Result<u64,Error>
+```
+
+#### method: encoding
+
+[Source line 774](../../../extended/ext/json.lani#L774)
+
+```lanius
+pub fn encoding(&self) -> core::result::Result<Encoding,Error>
+```
+
+### impl at line 780
+
+[Source line 780](../../../extended/ext/json.lani#L780)
+
+```lanius
+pub impl Encoding
+```
+
+#### method: borrow
+
+[Source line 781](../../../extended/ext/json.lani#L781)
+
+```lanius
+pub fn borrow(&self) -> &Encoding
+```
+
+#### method: remaining
+
+[Source line 782](../../../extended/ext/json.lani#L782)
+
+```lanius
+pub fn remaining(&self) -> u64
+```
+
+### impl at line 784
+
+[Source line 784](../../../extended/ext/json.lani#L784)
+
+```lanius
+pub impl core::io::Read for Encoding
+```
+
+#### method: read
+
+[Source line 787](../../../extended/ext/json.lani#L787)
+
+```lanius
+pub fn read(&self, destination: [u8], offset: i32, count: i32) -> core::result::Result<i32,core::io::Error>
 ```

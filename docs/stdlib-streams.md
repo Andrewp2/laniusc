@@ -9,6 +9,18 @@ bindings.
 Read/Write contracts, and provides explicit close and ownership transfer.
 Descriptor adapters below continue to borrow handles.
 
+The [resumable-copy increment](stdlib-resumable-copy.md) adds borrowed Copier
+state with pending scratch, cumulative confirmed bytes and per-step read/call
+quotas. Stops distinguish EOF, quotas and WouldBlock direction; abort preserves
+the tracked suffix. Ordinary errors remain resumable, while malformed successful
+counts fault the state. The blocking copy convenience now uses this same engine.
+A [borrowed JSON encoder](extended-json-streaming.md) supplies an ordinary Read
+provider. All six copier and four JSON library gates pass, including separate
+72-case transfer and 978-case encoding models. The migrated normalizer passes
+four groups/100 native cases, and its standalone build/examples also pass.
+Earlier receipts retain their source/API scope, and selected current stream
+regressions are recorded separately in the copier guide.
+
 The separate [borrowed reader-adapter increment](stdlib-io-adapters.md) adds
 Take byte quotas and Chain concatenation directly to core::io. Read and BufRead
 remain independent capabilities. Actual first-source EOF permanently advances
@@ -77,6 +89,7 @@ projection in [library-dependencies.md](library-dependencies.md).
 | `read_exact(reader, destination, offset, count)` | `Result<i32, Failure>`; fills the range or reports the completed prefix |
 | `write_all(writer, source, offset, count)` | `Result<i32, Failure>`; writes the whole range or reports the completed prefix |
 | `copy(reader, writer, scratch, capacity)` | `Result<u64, CopyFailure>`; copies until EOF using caller-owned scratch |
+| `copier(reader, writer, scratch_view)` | Checked borrowed state; `step(read_limit,max_calls)` retains pending bytes and explicit stops/progress |
 | `Write.flush()` | `Result<i32, Error>`; zero means all library buffering is drained |
 
 Pass borrowed stream owners to the generic helpers, for example
@@ -87,14 +100,16 @@ provide `borrow()`. Custom implementations can expose an equivalent borrow.
 poll, wait for readiness, or impose timeouts. Repeated interruptions can prevent
 completion. Exact reads convert early EOF to `UnexpectedEof`; complete writes
 convert zero progress to `WriteZero`. Counts outside the requested range produce
-`InvalidCount`.
+`InvalidCount`. Copier bounds each step's direct attempts; the blocking
+helpers retain their retry behavior.
 
 `Failure` contains `cause` and `completed`. `CopyFailure` contains `cause`,
 `read` and `written`, all measured from the beginning of that operation. Copy
 may consume an input chunk before a write fails, so `read` may exceed `written`.
 These counts record acknowledged transfers; a broken implementation returning
-an invalid count cannot establish what actually happened. Copy stops with
-`CountOverflow` before requesting a chunk that could overflow its `u64` total.
+an invalid count cannot establish what actually happened. Copy clips each read
+to its remaining `u64` headroom and returns `CountOverflow` when none remains;
+counter exhaustion does not establish EOF.
 
 Copy requires positive scratch capacity. Source, destination and scratch ranges
 must not overlap. Helpers neither flush nor close streams. Failed transfers can
@@ -244,5 +259,7 @@ on the [full library roadmap](library-roadmap.md).
 An imported nested-helper composition exposed a compiler layout limitation.
 The source and reproduction command are retained in
 [stream_copy_dependency](../tests/fixtures/stdlib_foundation/stream_copy_dependency/README.md).
-The production copy operation handles partial writes directly in its own loop;
-the generic traits and progress contracts are unchanged.
+That historical production version handled partial writes directly in its own
+loop. The current copy convenience shares the Copier engine; its new acceptance
+is tracked separately in the [resumable-copy guide](stdlib-resumable-copy.md).
+This source migration alone does not revalidate the retained compiler reduction.

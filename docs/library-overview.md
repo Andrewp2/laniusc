@@ -1,6 +1,19 @@
 # Standard and extended library overview
 
 The full library goal remains open. The current
+[stream-encoding increment](library-stream-encoding-plan.md) joins a portable
+[resumable copier](stdlib-resumable-copy.md) to a borrowed
+[JSON byte reader](extended-json-streaming.md). Pending suffixes, direct-call
+quotas, exact output admission and manual immutable document lifetimes are
+explicit. Blocking copy and owned JSON encode use those same engines; the
+[normalizer](extended-json-normalize.md) publishes through fixed scratch without
+an output String. All ten new library gates pass, including separate 72-case
+transfer and 978-case ordered-document models, live backing and two reached
+owned-encoding allocation failures with recovery. The normalizer passes four
+groups/100 native cases, including 33 reached allocation failures. Three
+selected old regressions and the standalone build/exact examples also pass.
+This finite native Linux x86_64 increment is accepted.
+The preceding
 [generic slice-segmentation increment](stdlib-slice-segmentation.md) adds
 checked Split, SplitInclusive and ChunkBy factories with Mapper capabilities
 at iteration. Lazy callback order, shallow operands, borrowed aliases and
@@ -1969,8 +1982,9 @@ do not verify signatures, certificate trust or TLS peers.
 
 Optional modules use the [`extended` source root](../extended/README.md).
 [`ext::csv`](extended-csv.md) and [`ext::json`](extended-json.md)
-include executable normalizers, generated round trips and allocation-failure
-coverage.
+have earlier normalizer, generated round-trip and allocation-failure receipts
+scoped to their recorded sources. The current JSON streaming normalizer's
+acceptance status is recorded separately above.
 [Reusable CSV records and bounded stream writing](extended-csv-write.md)
 share the canonical encoder, preflight the complete record and retain exact
 accepted-prefix progress. The [column rewrite program](extended-csv-rewrite.md)

@@ -23,6 +23,21 @@ pub struct Failure { cause: Error, completed: i32 }
 // A copy can consume input before a later output error. Preserve both counts.
 pub struct CopyFailure { cause: Error, read: u64, written: u64 }
 
+pub enum CopySide { Read, Write, State }
+pub enum CopyStop { Eof, ReadLimit, CallLimit, ReadWouldBlock, WriteWouldBlock }
+// Byte counters are cumulative; calls counts only this step's direct attempts.
+pub struct CopyStep { read: u64, written: u64, calls: u64, stop: CopyStop }
+pub struct CopyStepFailure { cause: Error, read: u64, written: u64, calls: u64, side: CopySide }
+// One active state controls these borrowed endpoints and scratch. Copies are
+// aliases to one transfer, not independently usable cursor forks. Keep all
+// backing alive/disjoint and do not reenter, edit scratch or use endpoints
+// through another alias while driving the copier. begin/end are relative to
+// scratch.start; read-written is the tracked pending length in valid states.
+pub struct Copier<R,W> {
+    reader: &R, writer: &W, scratch: core::slice::View<u8>, begin: i32, end: i32,
+    read: u64, written: u64, active: bool, eof: bool, faulted: bool
+}
+
 pub trait Read {
     // Ok(0) means EOF for nonempty requests. Err means no bytes transferred
     // by this call. Short successful reads are normal.
@@ -148,49 +163,137 @@ pub fn write_all<W>(writer: &W, source: [u8], offset: i32, count: i32)
     return core::result::Ok(completed);
 }
 
-// Copy through caller-owned scratch space until EOF. Does not flush or close.
-pub fn copy<R, W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
-    -> core::result::Result<u64, CopyFailure> where R: Read, W: Write {
-    if (capacity <= 0) {
-        return core::result::Err(CopyFailure { cause: Error::InvalidInput, read: 0, written: 0 });
+// Admit only logical metadata. Construction touches no backing or provider.
+pub fn copier<R,W>(reader: &R, writer: &W, scratch: core::slice::View<u8>)
+    -> core::result::Result<Copier<R,W>,Error> where R: Read, W: Write {
+    if (scratch.length <= 0 || !valid_range(scratch.start,scratch.length)) {
+        return core::result::Err(Error::InvalidInput);
     }
-    let total: u64 = 0;
-    while (true) {
-        // Reserve counter headroom before consuming another chunk.
-        if (total > 18446744073709551615 - (capacity as u64)) {
-            return core::result::Err(CopyFailure { cause: Error::CountOverflow, read: total, written: total });
-        }
-        let result: core::result::Result<i32, Error> = reader.read(scratch, 0, capacity);
-        if (core::result::is_err(result)) {
-            let error: Error = core::result::unwrap_err(result);
-            if (is_interrupted(error)) { continue; }
-            return core::result::Err(CopyFailure { cause: error, read: total, written: total });
-        }
-        let received: i32 = core::result::unwrap(result);
-        if (received < 0 || received > capacity) {
-            return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total, written: total });
-        }
-        if (received == 0) { return core::result::Ok(total); }
-        let completed: i32 = 0;
-        while (completed < received) {
-            let sent: core::result::Result<i32, Error> = writer.write(scratch, completed, received - completed);
-            if (core::result::is_err(sent)) {
-                let error: Error = core::result::unwrap_err(sent);
+    let value: Copier<R,W> = Copier {
+        reader: reader, writer: writer, scratch: scratch, begin: 0, end: 0,
+        read: 0, written: 0, active: true, eof: false, faulted: false
+    };
+    return core::result::Ok(value);
+}
+
+pub impl<R,W> Copier<R,W> {
+    pub fn borrow(&self) -> &Copier<R,W> { return self; }
+    pub fn read_count(&self) -> u64 { return self.read; }
+    pub fn written_count(&self) -> u64 { return self.written; }
+    pub fn is_active(&self) -> bool { return self.active; }
+    pub fn is_done(&self) -> bool { return self.eof; }
+    pub fn is_faulted(&self) -> bool { return self.faulted; }
+    // Read-only borrow until the next state operation or caller scratch reuse.
+    // After a malformed success this is last acknowledged bookkeeping only:
+    // a nonconforming provider may already have caused unknown effects.
+    pub fn pending(&self) -> core::slice::View<u8> {
+        return core::slice::View { values: self.scratch.values, start: self.scratch.start + self.begin, length: self.end - self.begin };
+    }
+    // Permanently inactivate without cleanup or discard. Repeated abort keeps
+    // the same span and historical counters/flags; no ownership is transferred.
+    pub fn abort(&self) -> core::slice::View<u8> {
+        self.active = false;
+        return self.pending();
+    }
+    fn stopped(&self, calls: u64, stop: CopyStop) -> core::result::Result<CopyStep,CopyStepFailure> {
+        return core::result::Ok(CopyStep { read: self.read, written: self.written, calls: calls, stop: stop });
+    }
+    fn failed(&self, calls: u64, cause: Error, side: CopySide) -> core::result::Result<CopyStep,CopyStepFailure> {
+        return core::result::Err(CopyStepFailure { cause: cause, read: self.read, written: self.written, calls: calls, side: side });
+    }
+    // Drain pending bytes before new reads, even with zero new-read quota.
+    // Every immediate provider attempt spends a call; only Interrupted retries.
+    // Provider-internal work/blocking time is outside this direct-call bound.
+    pub fn step(&self, read_limit: u64, max_calls: u64)
+        -> core::result::Result<CopyStep,CopyStepFailure> where R: Read, W: Write {
+        if (!self.active) { return self.failed(0,Error::InvalidInput,CopySide::State); }
+        if (self.faulted) { return self.failed(0,Error::InvalidCount,CopySide::State); }
+        if (self.eof) { return self.stopped(0,CopyStop::Eof); }
+        let calls: u64 = 0;
+        let received_here: u64 = 0;
+        while (true) {
+            if (self.begin < self.end) {
+                if (calls == max_calls) { return self.stopped(calls,CopyStop::CallLimit); }
+                let count: i32 = self.end - self.begin;
+                let writer: &W = self.writer;
+                calls += 1;
+                let result: core::result::Result<i32,Error> = writer.write(self.scratch.values,self.scratch.start + self.begin,count);
+                if (result.is_err()) {
+                    let error: Error = result.unwrap_err();
+                    if (is_interrupted(error)) { continue; }
+                    let blocked: bool = match (error) { Error::WouldBlock -> true, _ -> false };
+                    if (blocked) { return self.stopped(calls,CopyStop::WriteWouldBlock); }
+                    return self.failed(calls,error,CopySide::Write);
+                }
+                let written: i32 = result.unwrap();
+                if (written < 0 || written > count) {
+                    self.faulted = true;
+                    return self.failed(calls,Error::InvalidCount,CopySide::Write);
+                }
+                if (written == 0) { return self.failed(calls,Error::WriteZero,CopySide::Write); }
+                self.begin += written;
+                self.written += written as u64;
+                if (self.begin == self.end) { self.begin = 0; self.end = 0; }
+                continue;
+            }
+            if (received_here == read_limit) { return self.stopped(calls,CopyStop::ReadLimit); }
+            if (calls == max_calls) { return self.stopped(calls,CopyStop::CallLimit); }
+            let headroom: u64 = 18446744073709551615 - self.read;
+            if (headroom == 0) { return self.failed(calls,Error::CountOverflow,CopySide::State); }
+            let requested: u64 = self.scratch.length as u64;
+            let remaining: u64 = read_limit - received_here;
+            if (requested > remaining) { requested = remaining; }
+            if (requested > headroom) { requested = headroom; }
+            let count: i32 = requested as i32;
+            let reader: &R = self.reader;
+            calls += 1;
+            let result: core::result::Result<i32,Error> = reader.read(self.scratch.values,self.scratch.start,count);
+            if (result.is_err()) {
+                let error: Error = result.unwrap_err();
                 if (is_interrupted(error)) { continue; }
-                return core::result::Err(CopyFailure { cause: error, read: total + (received as u64), written: total + (completed as u64) });
+                let blocked: bool = match (error) { Error::WouldBlock -> true, _ -> false };
+                if (blocked) { return self.stopped(calls,CopyStop::ReadWouldBlock); }
+                return self.failed(calls,error,CopySide::Read);
             }
-            let count: i32 = core::result::unwrap(sent);
-            if (count < 0 || count > received - completed) {
-                return core::result::Err(CopyFailure { cause: Error::InvalidCount, read: total + (received as u64), written: total + (completed as u64) });
+            let received: i32 = result.unwrap();
+            if (received < 0 || received > count) {
+                self.faulted = true;
+                return self.failed(calls,Error::InvalidCount,CopySide::Read);
             }
-            if (count == 0) {
-                return core::result::Err(CopyFailure { cause: Error::WriteZero, read: total + (received as u64), written: total + (completed as u64) });
-            }
-            completed += count;
+            if (received == 0) { self.eof = true; return self.stopped(calls,CopyStop::Eof); }
+            self.read += received as u64;
+            received_here += received as u64;
+            self.begin = 0;
+            self.end = received;
         }
-        total += received as u64;
+        return self.stopped(calls,CopyStop::Eof);
     }
-    return core::result::Ok(total);
+}
+
+// Blocking convenience over the same engine. It neither flushes nor closes,
+// and has no useful small attempt bound. On return its local recovery state
+// is abandoned; use Copier when unwritten scratch bytes must remain resumable.
+pub fn copy<R,W>(reader: &R, writer: &W, scratch: [u8], capacity: i32)
+    -> core::result::Result<u64,CopyFailure> where R: Read, W: Write {
+    let view: core::slice::View<u8> = core::slice::View { values: scratch, start: 0, length: capacity };
+    let admitted: core::result::Result<Copier<R,W>,Error> = copier<R,W>(reader,writer,view);
+    if (admitted.is_err()) {
+        return core::result::Err(CopyFailure { cause: admitted.unwrap_err(), read: 0, written: 0 });
+    }
+    let state: Copier<R,W> = admitted.unwrap();
+    while (true) {
+        let result: core::result::Result<CopyStep,CopyStepFailure> = state.step(18446744073709551615,18446744073709551615);
+        if (result.is_err()) {
+            let error: CopyStepFailure = result.unwrap_err();
+            return core::result::Err(CopyFailure { cause: error.cause, read: error.read, written: error.written });
+        }
+        let progress: CopyStep = result.unwrap();
+        let complete: bool = match (progress.stop) { CopyStop::Eof -> true, _ -> false };
+        if (complete) { return core::result::Ok(progress.written); }
+        let blocked: bool = match (progress.stop) { CopyStop::ReadWouldBlock -> true, CopyStop::WriteWouldBlock -> true, _ -> false };
+        if (blocked) { return core::result::Err(CopyFailure { cause: Error::WouldBlock, read: progress.read, written: progress.written }); }
+    }
+    return core::result::Ok(state.written_count());
 }
 
 pub struct SliceReader { data: [u8], length: i32, cursor: i32 }
